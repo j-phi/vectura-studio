@@ -63,13 +63,13 @@
       const w = this.canvas.width / window.devicePixelRatio;
       const h = this.canvas.height / window.devicePixelRatio;
       this.ctx.clearRect(0, 0, w, h);
-      this.ctx.fillStyle = SETTINGS.bgColor;
+      this.ctx.fillStyle = '#121214';
       this.ctx.fillRect(0, 0, w, h);
       this.ctx.save();
       this.ctx.translate(this.offsetX, this.offsetY);
       this.ctx.scale(this.scale, this.scale);
       const prof = this.engine.currentProfile;
-      this.ctx.fillStyle = '#000000';
+      this.ctx.fillStyle = SETTINGS.bgColor;
       this.ctx.shadowColor = 'rgba(0,0,0,0.5)';
       this.ctx.shadowBlur = 20;
       this.ctx.fillRect(0, 0, prof.width, prof.height);
