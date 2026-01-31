@@ -29,7 +29,7 @@
       }
 
       new ResizeObserver(() => this.resize()).observe(parent);
-      this.canvas.addEventListener('wheel', (e) => this.wheel(e));
+      this.canvas.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
       this.canvas.addEventListener('mousedown', (e) => this.down(e));
       window.addEventListener('mousemove', (e) => this.move(e));
       window.addEventListener('mouseup', () => this.up());
@@ -86,10 +86,9 @@
         this.ctx.lineCap = l.lineCap || 'round';
         this.ctx.beginPath();
         this.ctx.strokeStyle = l.color;
+        const useCurves = Boolean(l.params && l.params.curves);
         l.paths.forEach((path) => {
-          if (path.length < 2) return;
-          this.ctx.moveTo(path[0].x, path[0].y);
-          for (let i = 1; i < path.length; i++) this.ctx.lineTo(path[i].x, path[i].y);
+          this.tracePath(path, useCurves);
         });
         this.ctx.stroke();
       });
@@ -99,8 +98,16 @@
     wheel(e) {
       if (!this.ready) return;
       e.preventDefault();
-      const s = this.scale * (1 + (e.deltaY > 0 ? -0.1 : 0.1));
-      this.scale = Math.max(0.1, Math.min(s, 20));
+      const rect = this.canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const wx = (mx - this.offsetX) / this.scale;
+      const wy = (my - this.offsetY) / this.scale;
+      const zoom = e.deltaY > 0 ? 0.9 : 1.1;
+      const nextScale = Math.max(0.1, Math.min(this.scale * zoom, 20));
+      this.offsetX = mx - wx * nextScale;
+      this.offsetY = my - wy * nextScale;
+      this.scale = nextScale;
       this.draw();
     }
 
@@ -125,6 +132,22 @@
       if (!this.ready || !this.canvas) return;
       this.isDrag = false;
       this.canvas.style.cursor = 'crosshair';
+    }
+
+    tracePath(path, useCurves) {
+      if (!path || path.length < 2) return;
+      this.ctx.moveTo(path[0].x, path[0].y);
+      if (!useCurves || path.length < 3) {
+        for (let i = 1; i < path.length; i++) this.ctx.lineTo(path[i].x, path[i].y);
+        return;
+      }
+      for (let i = 1; i < path.length - 1; i++) {
+        const midX = (path[i].x + path[i + 1].x) / 2;
+        const midY = (path[i].y + path[i + 1].y) / 2;
+        this.ctx.quadraticCurveTo(path[i].x, path[i].y, midX, midY);
+      }
+      const last = path[path.length - 1];
+      this.ctx.lineTo(last.x, last.y);
     }
   }
 

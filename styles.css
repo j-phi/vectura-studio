@@ -4,6 +4,12 @@ body {
   overflow: hidden;
 }
 
+:root {
+  --pane-left-width: 320px;
+  --pane-right-width: 256px;
+  --pane-collapsed-width: 56px;
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -83,6 +89,67 @@ input[type='color']::-webkit-color-swatch {
 
 .formula-text {
   font-variant-ligatures: none;
+}
+
+.pane {
+  width: var(--pane-left-width);
+  flex: 0 0 auto;
+  transition: width 0.2s ease;
+  overflow: hidden;
+}
+
+.pane-left {
+  width: var(--pane-left-width);
+}
+
+.pane-right {
+  width: var(--pane-right-width);
+}
+
+.pane-body {
+  min-height: 0;
+}
+
+.pane-collapsed {
+  width: var(--pane-collapsed-width);
+}
+
+.auto-collapsed .pane:not(.pane-force-open) {
+  width: var(--pane-collapsed-width);
+}
+
+.pane-collapsed .pane-body,
+.auto-collapsed .pane:not(.pane-force-open) .pane-body {
+  display: none;
+}
+
+.pane-collapsed .pane-title,
+.pane-collapsed .pane-meta,
+.auto-collapsed .pane:not(.pane-force-open) .pane-title,
+.auto-collapsed .pane:not(.pane-force-open) .pane-meta {
+  display: none;
+}
+
+.pane-collapsed .pane-header button,
+.auto-collapsed .pane:not(.pane-force-open) .pane-header button {
+  display: none;
+}
+
+#algo-sticky {
+  background: #18181b;
+}
+
+.dual-range {
+  position: relative;
+  height: 20px;
+}
+
+.dual-range input[type='range'] {
+  position: absolute;
+  left: 0;
+  top: 8px;
+  width: 100%;
+  margin: 0;
 }
 
 #modal-overlay {

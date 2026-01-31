@@ -51,6 +51,12 @@
       </div>
       <div class="text-xs text-vectura-muted" id="status-bar" role="status" aria-live="polite">READY</div>
       <div class="flex gap-4">
+        <button id="btn-toggle-left" class="hover:text-vectura-accent transition-colors text-xs" type="button">
+          [HIDE LEFT]
+        </button>
+        <button id="btn-toggle-right" class="hover:text-vectura-accent transition-colors text-xs" type="button">
+          [HIDE RIGHT]
+        </button>
         <button id="btn-settings" class="hover:text-vectura-accent transition-colors text-xs" type="button">
           [SETTINGS]
         </button>
@@ -64,91 +70,95 @@
     </header>
 
     <main class="flex-1 flex overflow-hidden relative">
-      <aside class="w-80 bg-vectura-panel border-r border-vectura-border flex flex-col z-10 shadow-xl">
-        <div class="p-4 border-b border-vectura-border flex justify-between items-center">
-          <span class="font-bold text-vectura-accent">GENERATOR</span>
-          <span class="text-[10px] text-vectura-muted">V.5.1</span>
+      <aside id="left-pane" class="pane pane-left bg-vectura-panel border-r border-vectura-border flex flex-col z-10 shadow-xl">
+        <div class="pane-header p-4 border-b border-vectura-border flex justify-between items-center">
+          <span class="pane-title font-bold text-vectura-accent">GENERATOR</span>
+          <span class="pane-meta text-[10px] text-vectura-muted">V.5.1</span>
         </div>
 
-        <div class="flex-1 overflow-y-auto p-4" id="left-panel-content">
-          <div class="control-group">
-            <label class="control-label">Algorithm</label>
-            <select
-              id="generator-module"
-              class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent mb-4"
-            ></select>
+        <div class="pane-body flex-1 overflow-y-auto" id="left-panel-content">
+          <div id="algo-sticky" class="sticky top-0 z-20 bg-vectura-panel border-b border-vectura-border p-4">
+            <div class="mb-4">
+              <label class="control-label">Algorithm</label>
+              <select
+                id="generator-module"
+                class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent mb-4"
+              ></select>
 
-            <div class="bg-vectura-bg border border-vectura-border p-3">
-              <div class="flex items-center gap-2 mb-2">
-                <div class="w-1 h-3 bg-vectura-muted"></div>
-                <span class="text-[10px] uppercase text-vectura-muted tracking-widest">About</span>
-              </div>
-              <p id="algo-desc" class="text-xs text-vectura-muted leading-relaxed">...</p>
-            </div>
-          </div>
-
-          <div class="control-group">
-            <label class="control-label">Transform &amp; Seed</label>
-            <div class="grid grid-cols-2 gap-2 mb-2">
-              <div>
-                <label class="text-[10px] text-vectura-muted">Seed</label>
-                <input
-                  type="number"
-                  id="inp-seed"
-                  class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
-                />
-              </div>
-              <div>
-                <button
-                  id="btn-rand-seed"
-                  class="w-full h-full bg-vectura-border text-[10px] hover:text-white mt-[1px] hover:bg-vectura-border/80 transition-colors"
-                  type="button"
-                >
-                  RANDOMIZE
-                </button>
-              </div>
-            </div>
-            <div class="grid grid-cols-2 gap-2 mb-2">
-              <div>
-                <label class="text-[10px] text-vectura-muted">Pos X (mm)</label>
-                <input
-                  type="number"
-                  id="inp-pos-x"
-                  class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
-                />
-              </div>
-              <div>
-                <label class="text-[10px] text-vectura-muted">Pos Y (mm)</label>
-                <input
-                  type="number"
-                  id="inp-pos-y"
-                  class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
-                />
-              </div>
-            </div>
-            <div class="grid grid-cols-2 gap-2">
-              <div>
-                <label class="text-[10px] text-vectura-muted">Scale X</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="inp-scale-x"
-                  class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
-                />
-              </div>
-              <div>
-                <label class="text-[10px] text-vectura-muted">Scale Y</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="inp-scale-y"
-                  class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
-                />
+              <div class="bg-vectura-bg border border-vectura-border p-3">
+                <div class="flex items-center gap-2 mb-2">
+                  <div class="w-1 h-3 bg-vectura-muted"></div>
+                  <span class="text-[10px] uppercase text-vectura-muted tracking-widest">About</span>
+                </div>
+                <p id="algo-desc" class="text-xs text-vectura-muted leading-relaxed">...</p>
               </div>
             </div>
           </div>
 
-          <div id="dynamic-controls"></div>
+          <div class="p-4">
+            <div class="control-group">
+              <label class="control-label">Transform &amp; Seed</label>
+              <div class="grid grid-cols-2 gap-2 mb-2">
+                <div>
+                  <label class="text-[10px] text-vectura-muted">Seed</label>
+                  <input
+                    type="number"
+                    id="inp-seed"
+                    class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <button
+                    id="btn-rand-seed"
+                    class="w-full h-full bg-vectura-border text-[10px] hover:text-white mt-[1px] hover:bg-vectura-border/80 transition-colors"
+                    type="button"
+                  >
+                    RANDOMIZE
+                  </button>
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-2 mb-2">
+                <div>
+                  <label class="text-[10px] text-vectura-muted">Pos X (mm)</label>
+                  <input
+                    type="number"
+                    id="inp-pos-x"
+                    class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label class="text-[10px] text-vectura-muted">Pos Y (mm)</label>
+                  <input
+                    type="number"
+                    id="inp-pos-y"
+                    class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
+                  />
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="text-[10px] text-vectura-muted">Scale X</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    id="inp-scale-x"
+                    class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label class="text-[10px] text-vectura-muted">Scale Y</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    id="inp-scale-y"
+                    class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div id="dynamic-controls"></div>
+          </div>
         </div>
       </aside>
 
@@ -173,9 +183,9 @@
         </div>
       </section>
 
-      <aside class="w-64 bg-vectura-panel border-l border-vectura-border flex flex-col z-10 relative overflow-hidden">
-        <div class="p-4 border-b border-vectura-border flex justify-between items-center bg-vectura-panel z-20">
-          <span class="font-bold text-vectura-accent">LAYERS</span>
+      <aside id="right-pane" class="pane pane-right bg-vectura-panel border-l border-vectura-border flex flex-col z-10 relative overflow-hidden">
+        <div class="pane-header p-4 border-b border-vectura-border flex justify-between items-center bg-vectura-panel z-20">
+          <span class="pane-title font-bold text-vectura-accent">LAYERS</span>
           <button
             id="btn-add-layer"
             class="text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors"
@@ -185,93 +195,95 @@
           </button>
         </div>
 
-        <div class="flex-1 overflow-y-auto p-4 relative" id="layer-list"></div>
+        <div class="pane-body flex-1 flex flex-col relative overflow-hidden">
+          <div class="flex-1 overflow-y-auto p-4 relative" id="layer-list"></div>
 
-        <div id="settings-panel" class="absolute inset-0 bg-vectura-panel z-30 flex flex-col border-l border-vectura-border">
-          <div class="p-4 border-b border-vectura-border flex justify-between items-center bg-vectura-panel">
-            <span class="font-bold text-vectura-accent">SETTINGS</span>
-            <button id="btn-close-settings" class="text-vectura-muted hover:text-white" aria-label="Close settings" type="button">
-              ✕
-            </button>
-          </div>
-          <div class="flex-1 overflow-y-auto p-4">
-            <div class="control-group">
-              <label class="control-label">Machine Profile</label>
-              <select
-                id="machine-profile"
-                class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent mb-2"
-              ></select>
-              <div class="flex gap-2">
-                <div class="flex-1">
-                  <label class="control-label">Margin (mm)</label>
+          <div id="settings-panel" class="absolute inset-0 bg-vectura-panel z-30 flex flex-col border-l border-vectura-border">
+            <div class="p-4 border-b border-vectura-border flex justify-between items-center bg-vectura-panel">
+              <span class="font-bold text-vectura-accent">SETTINGS</span>
+              <button id="btn-close-settings" class="text-vectura-muted hover:text-white" aria-label="Close settings" type="button">
+                ✕
+              </button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4">
+              <div class="control-group">
+                <label class="control-label">Machine Profile</label>
+                <select
+                  id="machine-profile"
+                  class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent mb-2"
+                ></select>
+                <div class="flex gap-2">
+                  <div class="flex-1">
+                    <label class="control-label">Margin (mm)</label>
+                    <input
+                      type="number"
+                      id="set-margin"
+                      class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div class="control-group">
+                <label class="control-label">Plotter Physics</label>
+                <div class="grid grid-cols-2 gap-4">
+                  <div>
+                    <label class="text-[10px] text-vectura-muted">Draw Speed (mm/s)</label>
+                    <input
+                      type="number"
+                      id="set-speed-down"
+                      class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label class="text-[10px] text-vectura-muted">Travel Speed (mm/s)</label>
+                    <input
+                      type="number"
+                      id="set-speed-up"
+                      class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div class="control-group border-none">
+                <label class="control-label">Export &amp; Preview</label>
+                <div class="flex items-center justify-between mb-2">
+                  <label class="text-xs text-vectura-muted">Precision</label>
                   <input
                     type="number"
-                    id="set-margin"
-                    class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
+                    id="set-precision"
+                    class="w-12 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none"
+                  />
+                </div>
+                <div class="flex items-center justify-between">
+                  <label class="text-xs text-vectura-muted">Stroke (mm)</label>
+                  <input
+                    type="number"
+                    id="set-stroke"
+                    step="0.1"
+                    class="w-12 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none"
                   />
                 </div>
               </div>
             </div>
-            <div class="control-group">
-              <label class="control-label">Plotter Physics</label>
-              <div class="grid grid-cols-2 gap-4">
-                <div>
-                  <label class="text-[10px] text-vectura-muted">Draw Speed (mm/s)</label>
-                  <input
-                    type="number"
-                    id="set-speed-down"
-                    class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label class="text-[10px] text-vectura-muted">Travel Speed (mm/s)</label>
-                  <input
-                    type="number"
-                    id="set-speed-up"
-                    class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
-                  />
-                </div>
-              </div>
-            </div>
-            <div class="control-group border-none">
-              <label class="control-label">Export &amp; Preview</label>
-              <div class="flex items-center justify-between mb-2">
-                <label class="text-xs text-vectura-muted">Precision</label>
-                <input
-                  type="number"
-                  id="set-precision"
-                  class="w-12 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none"
-                />
-              </div>
-              <div class="flex items-center justify-between">
-                <label class="text-xs text-vectura-muted">Stroke (mm)</label>
-                <input
-                  type="number"
-                  id="set-stroke"
-                  step="0.1"
-                  class="w-12 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none"
-                />
+          </div>
+
+          <div class="p-4 border-t border-vectura-border bg-vectura-bg z-20 relative">
+            <div class="flex items-center justify-between mb-2">
+              <label id="label-bg-color" class="text-xs text-vectura-muted" for="inp-bg-color">Background</label>
+              <div class="relative w-4 h-4 overflow-hidden rounded border border-vectura-border cursor-pointer hover:border-vectura-accent">
+                <input type="color" id="inp-bg-color" aria-label="Background color" />
               </div>
             </div>
           </div>
-        </div>
 
-        <div class="p-4 border-t border-vectura-border bg-vectura-bg z-20 relative">
-          <div class="flex items-center justify-between mb-2">
-            <label id="label-bg-color" class="text-xs text-vectura-muted" for="inp-bg-color">Background</label>
-            <div class="relative w-4 h-4 overflow-hidden rounded border border-vectura-border cursor-pointer hover:border-vectura-accent">
-              <input type="color" id="inp-bg-color" aria-label="Background color" />
+          <div class="p-4 border-t border-vectura-border bg-vectura-bg z-20 relative">
+            <label class="control-label">Estimation</label>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div class="text-vectura-muted">Distance:</div>
+              <div class="text-right text-vectura-accent" id="stat-dist">0m</div>
+              <div class="text-vectura-muted">Est. Time:</div>
+              <div class="text-right text-vectura-accent" id="stat-time">0:00</div>
             </div>
-          </div>
-        </div>
-
-        <div class="p-4 border-t border-vectura-border bg-vectura-bg z-20 relative">
-          <label class="control-label">Estimation</label>
-          <div class="grid grid-cols-2 gap-2 text-xs">
-            <div class="text-vectura-muted">Distance:</div>
-            <div class="text-right text-vectura-accent" id="stat-dist">0m</div>
-            <div class="text-vectura-muted">Est. Time:</div>
-            <div class="text-right text-vectura-accent" id="stat-time">0:00</div>
           </div>
         </div>
       </aside>

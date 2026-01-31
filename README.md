@@ -6,7 +6,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Plotter-first output in millimeters with machine profiles (A3, A4, AxiDraw V3).
 - Layered generation with visibility toggles, ordering, and per-layer stroke/line-cap settings.
 - Seeded, repeatable results with live transform controls (position and scale).
-- Multiple algorithm families (flowfields, boids, attractors, hyphae, cityscapes).
+- Multiple algorithm families (flowfields, lissajous, wavetable, boids, attractors, hyphae, circles).
 - One-click SVG export with configurable precision.
 - Live formula display and estimated pen distance/time.
 
@@ -42,7 +42,9 @@ Each layer is powered by an algorithm with its own parameters and formula previe
 - Boids: emergent flocking paths.
 - Attractors: Lorenz-like and chaotic systems.
 - Hyphae: branching, growth-like structures.
-- Cityscape: skyline blocks with noise-driven variation.
+- Lissajous: harmonic parametric curves.
+- Wavetable: layered noise wave stacks.
+- Circles: circle packing with adjustable range and padding.
 
 Defaults live in `src/config/defaults.js` and descriptions in `src/config/descriptions.js`.
 

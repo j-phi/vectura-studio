@@ -7,7 +7,8 @@
       generate: (p, rng, noise, bounds) => {
         const { m, dW, dH, width, height } = bounds;
         const paths = [];
-        for (let i = 0; i < p.density; i++) {
+        const count = Math.max(1, Math.floor((p.density * dW * dH) / 100000));
+        for (let i = 0; i < count; i++) {
           const path = [];
           let x = m + rng.nextFloat() * dW;
           let y = m + rng.nextFloat() * dH;
@@ -32,6 +33,27 @@
       generate: (p, rng, noise, bounds) => {
         const { m, dW, dH, width, height } = bounds;
         const boids = [];
+        const sepWeight = p.sepWeight ?? 1;
+        const alignWeight = p.alignWeight ?? 1;
+        const cohWeight = p.cohWeight ?? 1;
+        const mode = p.mode || 'birds';
+        const modeSep = mode === 'fish' ? 1.4 : 1;
+        const modeAlign = mode === 'fish' ? 1.3 : 1;
+        const modeCoh = mode === 'fish' ? 0.8 : 1;
+        const verticalDamping = mode === 'fish' ? 0.9 : 1;
+        const maxForce = Math.max(0.001, p.force);
+
+        const setMag = (vx, vy, mag) => {
+          const len = Math.sqrt(vx * vx + vy * vy) || 1;
+          return { x: (vx / len) * mag, y: (vy / len) * mag };
+        };
+
+        const limit = (vx, vy, max) => {
+          const len = Math.sqrt(vx * vx + vy * vy) || 0;
+          if (len > max) return { x: (vx / len) * max, y: (vy / len) * max };
+          return { x: vx, y: vy };
+        };
+
         for (let i = 0; i < p.count; i++) {
           boids.push({
             x: m + rng.nextFloat() * dW,
@@ -50,34 +72,65 @@
             let ay = 0;
             let cx = 0;
             let cy = 0;
-            let tot = 0;
+            let sepCount = 0;
+            let alignCount = 0;
+            let cohCount = 0;
             boids.forEach((other) => {
               if (b === other) return;
               const dx = b.x - other.x;
               const dy = b.y - other.y;
               const dist = Math.sqrt(dx * dx + dy * dy);
               if (dist < p.sepDist) {
-                sx += dx / dist;
-                sy += dy / dist;
+                const safe = dist || 0.0001;
+                sx += dx / safe;
+                sy += dy / safe;
+                sepCount++;
               }
               if (dist < p.alignDist) {
                 ax += other.vx;
                 ay += other.vy;
+                alignCount++;
               }
               if (dist < p.cohDist) {
                 cx += other.x;
                 cy += other.y;
-                tot++;
+                cohCount++;
               }
             });
-            if (tot > 0) {
-              cx = (cx / tot - b.x) * 0.01;
-              cy = (cy / tot - b.y) * 0.01;
-              ax = (ax / tot - b.vx) * 0.05;
-              ay = (ay / tot - b.vy) * 0.05;
+
+            let steerX = 0;
+            let steerY = 0;
+
+            if (sepCount > 0) {
+              sx /= sepCount;
+              sy /= sepCount;
+              const desired = setMag(sx, sy, p.speed);
+              const steer = limit(desired.x - b.vx, desired.y - b.vy, maxForce);
+              steerX += steer.x * sepWeight * modeSep;
+              steerY += steer.y * sepWeight * modeSep;
             }
-            b.vx += sx * p.force + ax + cx;
-            b.vy += sy * p.force + ay + cy;
+
+            if (alignCount > 0) {
+              ax /= alignCount;
+              ay /= alignCount;
+              const desired = setMag(ax, ay, p.speed);
+              const steer = limit(desired.x - b.vx, desired.y - b.vy, maxForce);
+              steerX += steer.x * alignWeight * modeAlign;
+              steerY += steer.y * alignWeight * modeAlign;
+            }
+
+            if (cohCount > 0) {
+              cx /= cohCount;
+              cy /= cohCount;
+              const desired = setMag(cx - b.x, cy - b.y, p.speed);
+              const steer = limit(desired.x - b.vx, desired.y - b.vy, maxForce);
+              steerX += steer.x * cohWeight * modeCoh;
+              steerY += steer.y * cohWeight * modeCoh;
+            }
+
+            b.vx += steerX;
+            b.vy += steerY;
+            b.vy *= verticalDamping;
             const sp = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
             if (sp > p.speed) {
               b.vx = (b.vx / sp) * p.speed;
@@ -100,9 +153,9 @@
       generate: (p, rng, noise, bounds) => {
         const { width, height } = bounds;
         const dt = p.dt;
-        let ax = 0.1;
-        let ay = 0;
-        let az = 0;
+        let ax = rng.nextRange(-0.5, 0.5);
+        let ay = rng.nextRange(-0.5, 0.5);
+        let az = rng.nextRange(-0.5, 0.5);
         const aPath = [];
         const cx = width / 2;
         const cy = height / 2;
@@ -175,87 +228,71 @@
       formula: (p) =>
         `pos += [cos(α), sin(α)] * ${p.segLen}\nif rand() < ${p.branchProb}: branch(α + π/2)`,
     },
-    cityscape: {
-      generate: (p, rng, noise, bounds) => {
-        const { m, width, height } = bounds;
-        const paths = [];
-        const horizon = height * Math.min(0.9, Math.max(0.1, p.horizon ?? 0.7));
-        for (let r = 0; r < p.rows; r++) {
-          const yBase = horizon + r * 15;
-          let currentX = m;
-          while (currentX < width - m) {
-            const w = rng.nextRange(p.minW, p.maxW);
-            const n = noise.noise2D(currentX * 0.01, r * 10);
-            const hBase = rng.nextRange(p.minH, p.maxH);
-            const h = Math.abs(hBase * (1 + n * 0.5));
-            const bPath = [
-              { x: currentX, y: yBase },
-              { x: currentX, y: yBase - h },
-              { x: currentX + w, y: yBase - h },
-              { x: currentX + w, y: yBase },
-              { x: currentX, y: yBase },
-            ];
-            paths.push(bPath);
-
-            if (rng.nextFloat() < p.detail) {
-              const ax = currentX + w / 2;
-              const ay = yBase - h;
-              const ah = rng.nextRange(2, 10);
-              paths.push([
-                { x: ax, y: ay },
-                { x: ax, y: ay - ah },
-              ]);
-            }
-            if (rng.nextFloat() < p.windowProb) {
-              const wx = 3;
-              const wy = 4;
-              for (let bx = currentX + 3; bx < currentX + w - 3; bx += wx) {
-                for (let by = yBase - h + 3; by < yBase - 3; by += wy) {
-                  if (rng.nextFloat() > 0.4) continue;
-                  paths.push([
-                    { x: bx, y: by },
-                    { x: bx, y: by + 2 },
-                  ]);
-                }
-              }
-            }
-            currentX += w;
-          }
-        }
-        return paths;
-      },
-      formula: (p) =>
-        `for row in 0..${p.rows}:\n  h = rand(${p.minH}, ${p.maxH}) * noise(x)\n  rect(x, yBase, w, h)`,
-    },
     circles: {
       generate: (p, rng, noise, bounds) => {
-        const { m, dW, dH } = bounds;
+        const { m, dW, dH, width, height } = bounds;
         const circles = [];
         const paths = [];
         const segments = Math.max(6, Math.floor(p.segments ?? 32));
-        for (let i = 0; i < p.attempts; i++) {
-          if (circles.length >= p.count) break;
-          const r = rng.nextRange(p.minR, p.maxR);
-          const cx = m + r + rng.nextFloat() * (dW - r * 2);
-          const cy = m + r + rng.nextFloat() * (dH - r * 2);
+        const minR = Math.max(0.1, p.minR);
+        const maxR = Math.max(minR, p.maxR);
+        const maxTries = Math.max(50, Math.floor(p.attempts ?? 200));
+        const relaxSteps = 30;
+        let tries = 0;
+
+        const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+
+        while (circles.length < p.count && tries < maxTries) {
+          let r = rng.nextRange(minR, maxR);
+          let x = m + r + rng.nextFloat() * (dW - r * 2);
+          let y = m + r + rng.nextFloat() * (dH - r * 2);
+          const c = { x, y, r };
+
+          for (let step = 0; step < relaxSteps; step++) {
+            let moved = false;
+            for (let other of circles) {
+              const dx = c.x - other.x;
+              const dy = c.y - other.y;
+              const dist = Math.sqrt(dx * dx + dy * dy) || 0.0001;
+              const target = c.r + other.r + p.padding;
+              if (dist < target) {
+                const overlap = target - dist;
+                const nx = dx / dist;
+                const ny = dy / dist;
+                c.x += nx * overlap * 0.6;
+                c.y += ny * overlap * 0.6;
+                c.r = Math.max(minR, c.r - overlap * 0.15);
+                moved = true;
+              }
+            }
+            c.x = clamp(c.x, m + c.r, width - m - c.r);
+            c.y = clamp(c.y, m + c.r, height - m - c.r);
+            if (!moved) break;
+          }
+
           let valid = true;
-          for (let c of circles) {
-            const d = Math.sqrt((cx - c.x) ** 2 + (cy - c.y) ** 2);
-            if (d < c.r + r + p.padding) {
+          for (let other of circles) {
+            const dx = c.x - other.x;
+            const dy = c.y - other.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < c.r + other.r + p.padding - 0.01) {
               valid = false;
               break;
             }
           }
-          if (valid) {
-            circles.push({ x: cx, y: cy, r: r });
-            const cp = [];
-            for (let k = 0; k <= segments; k++) {
-              const ang = (k / segments) * Math.PI * 2;
-              cp.push({ x: cx + Math.cos(ang) * r, y: cy + Math.sin(ang) * r });
-            }
-            paths.push(cp);
-          }
+
+          if (valid) circles.push(c);
+          tries++;
         }
+
+        circles.forEach((c) => {
+          const cp = [];
+          for (let k = 0; k <= segments; k++) {
+            const ang = (k / segments) * Math.PI * 2;
+            cp.push({ x: c.x + Math.cos(ang) * c.r, y: c.y + Math.sin(ang) * c.r });
+          }
+          paths.push(cp);
+        });
         return paths;
       },
       formula: (p) =>
@@ -301,13 +338,21 @@
         const truncate = Boolean(p.truncate);
         const flatCaps = Boolean(p.flatCaps);
         const edgeFade = Math.min(0.45, Math.max(0, p.edgeFade ?? 0.2));
+        const noiseAngle = ((p.noiseAngle ?? 0) * Math.PI) / 180;
+        const cosA = Math.cos(noiseAngle);
+        const sinA = Math.sin(noiseAngle);
         for (let i = 0; i < p.lines; i++) {
           const path = [];
           let hasOutOfBounds = false;
-          const by = m + i * lSpace * p.gap + p.tilt * i;
+          const by = m + i * lSpace * p.gap;
+          const xOffset = p.tilt * i;
           for (let j = 0; j <= pts; j++) {
-            const x = m + j * xStep;
-            const n = noise.noise2D(x * p.zoom * p.freq, by * p.zoom);
+            const x = m + j * xStep + xOffset;
+            const nx = x * p.zoom * p.freq;
+            const ny = by * p.zoom;
+            const rx = nx * cosA - ny * sinA;
+            const ry = nx * sinA + ny * cosA;
+            const n = noise.noise2D(rx, ry);
             const off = Math.abs(n) * p.amplitude;
             let taper = 1.0;
             const distC = Math.abs(j / pts - 0.5) * 2;
@@ -328,7 +373,7 @@
           if (path.length > 1) paths.push(path);
         }
 
-        if (flatCaps) {
+        if (truncate || flatCaps) {
           const top = [];
           const bottom = [];
           for (let j = 0; j <= pts; j++) {
@@ -419,9 +464,10 @@
         const pcy = height / 2;
         const angleStep = p.angleStr * (Math.PI / 180);
         const dotSize = Math.max(0.1, p.dotSize ?? 1);
+        const angleOffset = rng.nextFloat() * Math.PI * 2;
         for (let i = 0; i < p.count; i++) {
           const r = p.spacing * Math.sqrt(i) * p.divergence;
-          const a = i * angleStep;
+          const a = i * angleStep + angleOffset;
           let x = pcx + r * Math.cos(a);
           let y = pcy + r * Math.sin(a);
           const n = noise.noise2D(x * 0.05, y * 0.05);

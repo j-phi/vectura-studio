@@ -4,6 +4,24 @@
 (() => {
   const { MACHINES, SETTINGS, Algorithms, SeededRNG, SimpleNoise, Layer } = window.Vectura || {};
 
+  const smoothPath = (path, amount) => {
+    if (!amount || amount <= 0 || path.length < 3) return path;
+    const smoothed = [path[0]];
+    for (let i = 1; i < path.length - 1; i++) {
+      const prev = path[i - 1];
+      const curr = path[i];
+      const next = path[i + 1];
+      const avgX = (prev.x + next.x) / 2;
+      const avgY = (prev.y + next.y) / 2;
+      smoothed.push({
+        x: curr.x * (1 - amount) + avgX * amount,
+        y: curr.y * (1 - amount) + avgY * amount,
+      });
+    }
+    smoothed.push(path[path.length - 1]);
+    return smoothed;
+  };
+
   class VectorEngine {
     constructor() {
       this.layers = [];
@@ -77,8 +95,8 @@
 
       const algo = Algorithms[layer.type] || Algorithms.flowfield;
       const rawPaths = algo.generate(p, rng, noise, bounds);
-
-      layer.paths = rawPaths.map((path) => path.map((pt) => transform(pt)));
+      const smooth = Math.max(0, Math.min(1, p.smoothing ?? 0));
+      layer.paths = rawPaths.map((path) => smoothPath(path.map((pt) => transform(pt)), smooth));
     }
 
     getFormula(layerId) {
