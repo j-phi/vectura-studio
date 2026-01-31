@@ -4,6 +4,7 @@
 - `index.html` is the app shell and loads Tailwind via CDN. `styles.css` contains custom UI styles.
 - `src/` holds modular JavaScript. Key areas: `src/app/` (bootstrap), `src/core/` (engine, RNG, layers), `src/render/` (canvas renderer), `src/ui/` (controls), `src/config/` (defaults, machines, descriptions), and `src/core/algorithms/`.
 - `dist/` contains prebuilt static assets if a bundled build is produced; it is not required for local development.
+- `README.md` contains information about the project design and capabilities; ALWAYS update this when adding/removing features and always review it to assess if updates are needed when making corrections or changes.
 
 ## Build, Test, and Development Commands
 - `python -m http.server` runs a simple static server at `http://localhost:8000` for local testing.
