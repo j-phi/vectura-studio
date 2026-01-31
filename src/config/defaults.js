@@ -59,15 +59,6 @@
     },
     hyphae: { sources: 2, steps: 50, branchProb: 0.05, angleVar: 0.5, segLen: 3 },
     circles: { count: 500, minR: 2, maxR: 20, padding: 1, attempts: 200 },
-    cityscape: {
-      rows: 3,
-      minW: 10,
-      maxW: 40,
-      minH: 10,
-      maxH: 80,
-      windowProb: 0.3,
-      detail: 0.5,
-    },
   };
 
   window.Vectura.SETTINGS = {
