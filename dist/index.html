@@ -3,10 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta
-      name="description"
-      content="Vectura Studio is a physics-inspired vector generator for plotter-ready line art."
-    />
+    <meta name="description" content="Vectura Studio is a physics-inspired vector generator for plotter-ready line art." />
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#09090b" />
     <title>Vectura Studio | Physics of Line</title>
@@ -17,29 +14,8 @@
       href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@100..800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css" />
-
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            fontFamily: { mono: ['"JetBrains Mono"', 'monospace'] },
-            colors: {
-              vectura: {
-                bg: '#09090b',
-                panel: '#18181b',
-                border: '#27272a',
-                text: '#e4e4e7',
-                muted: '#71717a',
-                accent: '#fafafa',
-                danger: '#ef4444',
-              },
-            },
-          },
-        },
-      };
-    </script>
+    <script type="module" crossorigin src="./assets/index-z8jhxW2T.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-D-Z_HdWN.css">
   </head>
   <body class="font-mono text-sm antialiased h-screen flex flex-col bg-vectura-bg text-vectura-text overflow-hidden">
     <header class="h-12 border-b border-vectura-border bg-vectura-panel flex items-center justify-between px-4 z-20">
@@ -277,17 +253,5 @@
       </aside>
     </main>
 
-    <script src="./src/config/machines.js" defer></script>
-    <script src="./src/config/defaults.js" defer></script>
-    <script src="./src/config/descriptions.js" defer></script>
-    <script src="./src/core/rng.js" defer></script>
-    <script src="./src/core/noise.js" defer></script>
-    <script src="./src/core/algorithms/index.js" defer></script>
-    <script src="./src/core/layer.js" defer></script>
-    <script src="./src/core/engine.js" defer></script>
-    <script src="./src/render/renderer.js" defer></script>
-    <script src="./src/ui/ui.js" defer></script>
-    <script src="./src/app/app.js" defer></script>
-    <script src="./src/main.js" defer></script>
   </body>
 </html>
