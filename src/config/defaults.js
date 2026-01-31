@@ -19,7 +19,8 @@
       damping: 0.001,
       phase: 1.5,
       rotation: 0,
-      resolution: 100,
+      resolution: 200,
+      scale: 0.8,
     },
     wavetable: {
       lines: 40,
@@ -28,6 +29,9 @@
       tilt: 0,
       gap: 1.0,
       freq: 1.0,
+      truncate: false,
+      flatCaps: false,
+      edgeFade: 0.2,
     },
     spiral: { loops: 10, res: 100, noiseAmp: 10, noiseFreq: 0.1, startR: 5 },
     grid: {
@@ -38,7 +42,7 @@
       type: 'warp',
       chaos: 0,
     },
-    phylla: { count: 500, spacing: 5, angleStr: 137.5, divergence: 1.0, noiseInf: 0 },
+    phylla: { count: 500, spacing: 5, angleStr: 137.5, divergence: 1.0, noiseInf: 0, dotSize: 1.0 },
     boids: {
       count: 100,
       steps: 100,
@@ -50,15 +54,32 @@
     },
     attractor: {
       type: 'lorenz',
-      iter: 1000,
+      iter: 1200,
       scale: 3,
       sigma: 10,
       rho: 28,
       beta: 2.66,
       dt: 0.01,
     },
-    hyphae: { sources: 2, steps: 50, branchProb: 0.05, angleVar: 0.5, segLen: 3 },
-    circles: { count: 500, minR: 2, maxR: 20, padding: 1, attempts: 200 },
+    hyphae: {
+      sources: 2,
+      steps: 50,
+      branchProb: 0.05,
+      angleVar: 0.5,
+      segLen: 3,
+      maxBranches: 1000,
+    },
+    circles: { count: 500, minR: 2, maxR: 20, padding: 1, attempts: 200, segments: 32 },
+    cityscape: {
+      rows: 3,
+      minW: 10,
+      maxW: 40,
+      minH: 10,
+      maxH: 80,
+      windowProb: 0.3,
+      detail: 0.5,
+      horizon: 0.7,
+    },
   };
 
   window.Vectura.SETTINGS = {

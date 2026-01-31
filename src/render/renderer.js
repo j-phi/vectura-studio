@@ -78,12 +78,12 @@
       this.ctx.lineWidth = 1 / this.scale;
       this.ctx.strokeRect(0, 0, prof.width, prof.height);
 
-      this.ctx.lineWidth = SETTINGS.strokeWidth;
-      this.ctx.lineCap = 'round';
       this.ctx.lineJoin = 'round';
 
       this.engine.layers.forEach((l) => {
         if (!l.visible) return;
+        this.ctx.lineWidth = l.strokeWidth ?? SETTINGS.strokeWidth;
+        this.ctx.lineCap = l.lineCap || 'round';
         this.ctx.beginPath();
         this.ctx.strokeStyle = l.color;
         l.paths.forEach((path) => {

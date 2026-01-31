@@ -85,6 +85,122 @@ input[type='color']::-webkit-color-swatch {
   font-variant-ligatures: none;
 }
 
+#modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(9, 9, 11, 0.65);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 100;
+}
+
+#modal-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.modal-card {
+  width: min(560px, calc(100% - 32px));
+  max-height: 80vh;
+  overflow: auto;
+  background: #18181b;
+  border: 1px solid #27272a;
+  padding: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.modal-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: #fafafa;
+}
+
+.modal-close {
+  border: 1px solid #27272a;
+  background: #09090b;
+  color: #71717a;
+  width: 24px;
+  height: 24px;
+  border-radius: 9999px;
+  cursor: pointer;
+}
+
+.modal-close:hover {
+  color: #fafafa;
+  border-color: #fafafa;
+}
+
+.modal-text {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #a1a1aa;
+  margin-bottom: 12px;
+}
+
+.modal-illustrations {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.modal-illustration {
+  border: 1px solid #27272a;
+  padding: 10px;
+  background: #09090b;
+}
+
+.modal-illustration svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.modal-ill-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: #71717a;
+  margin-bottom: 6px;
+}
+
+.modal-section {
+  margin-bottom: 16px;
+}
+
+.info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid #27272a;
+  border-radius: 9999px;
+  margin-left: 6px;
+  font-size: 10px;
+  line-height: 1;
+  color: #71717a;
+  background: #18181b;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.info-btn:hover {
+  color: #fafafa;
+  border-color: #fafafa;
+}
+
 #settings-panel {
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   transform: translateX(100%);

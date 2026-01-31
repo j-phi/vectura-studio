@@ -138,7 +138,7 @@
         const { m, dW, dH, width, height } = bounds;
         const branches = [];
         const paths = [];
-        const MAX_BRANCHES = 1000;
+        const MAX_BRANCHES = Math.max(10, Math.floor(p.maxBranches ?? 1000));
         for (let i = 0; i < p.sources; i++) {
           branches.push({
             x: m + rng.nextFloat() * dW,
@@ -175,11 +175,64 @@
       formula: (p) =>
         `pos += [cos(α), sin(α)] * ${p.segLen}\nif rand() < ${p.branchProb}: branch(α + π/2)`,
     },
+    cityscape: {
+      generate: (p, rng, noise, bounds) => {
+        const { m, width, height } = bounds;
+        const paths = [];
+        const horizon = height * Math.min(0.9, Math.max(0.1, p.horizon ?? 0.7));
+        for (let r = 0; r < p.rows; r++) {
+          const yBase = horizon + r * 15;
+          let currentX = m;
+          while (currentX < width - m) {
+            const w = rng.nextRange(p.minW, p.maxW);
+            const n = noise.noise2D(currentX * 0.01, r * 10);
+            const hBase = rng.nextRange(p.minH, p.maxH);
+            const h = Math.abs(hBase * (1 + n * 0.5));
+            const bPath = [
+              { x: currentX, y: yBase },
+              { x: currentX, y: yBase - h },
+              { x: currentX + w, y: yBase - h },
+              { x: currentX + w, y: yBase },
+              { x: currentX, y: yBase },
+            ];
+            paths.push(bPath);
+
+            if (rng.nextFloat() < p.detail) {
+              const ax = currentX + w / 2;
+              const ay = yBase - h;
+              const ah = rng.nextRange(2, 10);
+              paths.push([
+                { x: ax, y: ay },
+                { x: ax, y: ay - ah },
+              ]);
+            }
+            if (rng.nextFloat() < p.windowProb) {
+              const wx = 3;
+              const wy = 4;
+              for (let bx = currentX + 3; bx < currentX + w - 3; bx += wx) {
+                for (let by = yBase - h + 3; by < yBase - 3; by += wy) {
+                  if (rng.nextFloat() > 0.4) continue;
+                  paths.push([
+                    { x: bx, y: by },
+                    { x: bx, y: by + 2 },
+                  ]);
+                }
+              }
+            }
+            currentX += w;
+          }
+        }
+        return paths;
+      },
+      formula: (p) =>
+        `for row in 0..${p.rows}:\n  h = rand(${p.minH}, ${p.maxH}) * noise(x)\n  rect(x, yBase, w, h)`,
+    },
     circles: {
       generate: (p, rng, noise, bounds) => {
         const { m, dW, dH } = bounds;
         const circles = [];
         const paths = [];
+        const segments = Math.max(6, Math.floor(p.segments ?? 32));
         for (let i = 0; i < p.attempts; i++) {
           if (circles.length >= p.count) break;
           const r = rng.nextRange(p.minR, p.maxR);
@@ -196,8 +249,8 @@
           if (valid) {
             circles.push({ x: cx, y: cy, r: r });
             const cp = [];
-            for (let k = 0; k <= 32; k++) {
-              const ang = (k / 32) * Math.PI * 2;
+            for (let k = 0; k <= segments; k++) {
+              const ang = (k / segments) * Math.PI * 2;
               cp.push({ x: cx + Math.cos(ang) * r, y: cy + Math.sin(ang) * r });
             }
             paths.push(cp);
@@ -213,9 +266,13 @@
         const { width, height } = bounds;
         const lcx = width / 2;
         const lcy = height / 2;
-        const scale = Math.min(width, height) * 0.4;
+        const baseScale = Math.min(width, height) * 0.4;
+        const scale = baseScale * (p.scale ?? 1);
         const lPath = [];
-        for (let t = 0; t < 200; t += 0.05) {
+        const tMax = 200;
+        const steps = Math.max(10, Math.floor(p.resolution));
+        const tStep = tMax / steps;
+        for (let t = 0; t < tMax; t += tStep) {
           const amp = Math.exp(-p.damping * t);
           if (amp < 0.01) break;
           let lx = Math.sin(p.freqX * t + p.phase);
@@ -241,8 +298,12 @@
         const lSpace = dH / p.lines;
         const pts = Math.floor(dW / 2);
         const xStep = dW / pts;
+        const truncate = Boolean(p.truncate);
+        const flatCaps = Boolean(p.flatCaps);
+        const edgeFade = Math.min(0.45, Math.max(0, p.edgeFade ?? 0.2));
         for (let i = 0; i < p.lines; i++) {
           const path = [];
+          let hasOutOfBounds = false;
           const by = m + i * lSpace * p.gap + p.tilt * i;
           for (let j = 0; j <= pts; j++) {
             const x = m + j * xStep;
@@ -250,12 +311,34 @@
             const off = Math.abs(n) * p.amplitude;
             let taper = 1.0;
             const distC = Math.abs(j / pts - 0.5) * 2;
-            if (distC > 0.8) taper = 1.0 - (distC - 0.8) / 0.2;
+            if (edgeFade > 0) {
+              const edgeStart = 1 - edgeFade;
+              if (distC > edgeStart) taper = 1.0 - (distC - edgeStart) / edgeFade;
+            }
             const y = by - off * taper;
-            if (y > m && y < height - m) path.push({ x, y });
+            const inside = y > m && y < height - m;
+            if (!inside) hasOutOfBounds = true;
+            if (truncate) {
+              if (inside) path.push({ x, y });
+            } else {
+              path.push({ x, y });
+            }
           }
+          if (!truncate && hasOutOfBounds) continue;
           if (path.length > 1) paths.push(path);
         }
+
+        if (flatCaps) {
+          const top = [];
+          const bottom = [];
+          for (let j = 0; j <= pts; j++) {
+            const x = m + j * xStep;
+            top.push({ x, y: m });
+            bottom.push({ x, y: height - m });
+          }
+          paths.push(top, bottom);
+        }
+
         return paths;
       },
       formula: () => 'y = yBase - (|noise(x,y)| * amplitude)',
@@ -335,6 +418,7 @@
         const pcx = width / 2;
         const pcy = height / 2;
         const angleStep = p.angleStr * (Math.PI / 180);
+        const dotSize = Math.max(0.1, p.dotSize ?? 1);
         for (let i = 0; i < p.count; i++) {
           const r = p.spacing * Math.sqrt(i) * p.divergence;
           const a = i * angleStep;
@@ -346,7 +430,7 @@
           const circle = [];
           for (let k = 0; k <= 8; k++) {
             const ca = (k / 8) * Math.PI * 2;
-            circle.push({ x: x + Math.cos(ca) * 1, y: y + Math.sin(ca) * 1 });
+            circle.push({ x: x + Math.cos(ca) * dotSize, y: y + Math.sin(ca) * dotSize });
           }
           if (x > m && x < width - m && y > m && y < height - m) paths.push(circle);
         }

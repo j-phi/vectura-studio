@@ -2,7 +2,7 @@
  * Layer data model.
  */
 (() => {
-  const { ALGO_DEFAULTS } = window.Vectura || {};
+  const { ALGO_DEFAULTS, SETTINGS } = window.Vectura || {};
 
   class Layer {
     constructor(id, type = 'flowfield', name) {
@@ -16,6 +16,8 @@
       this.params.scaleX = 1;
       this.params.scaleY = 1;
       this.color = '#e4e4e7';
+      this.strokeWidth = SETTINGS?.strokeWidth ?? 0.3;
+      this.lineCap = 'round';
       this.visible = true;
       this.paths = [];
     }
