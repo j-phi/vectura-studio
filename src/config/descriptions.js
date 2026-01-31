@@ -24,7 +24,5 @@
       'Simulates organic growth (like fungi or roots) using a branching algorithm. Sources grow segments and fork based on probability.',
     circles:
       'A packing algorithm that fills space with non-overlapping circles of varying sizes. Creates bubbly, cellular structures.',
-    cityscape:
-      'Generates a procedural skyline with multiple depth layers. Features randomized building silhouettes, window grids, and roof details.',
   };
 })();

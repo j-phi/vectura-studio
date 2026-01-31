@@ -88,15 +88,6 @@
       { id: 'padding', label: 'Padding', type: 'range', min: 0, max: 10, step: 0.5 },
       { id: 'attempts', label: 'Attempts', type: 'range', min: 50, max: 5000, step: 50 },
     ],
-    cityscape: [
-      { id: 'rows', label: 'Rows', type: 'range', min: 1, max: 5, step: 1 },
-      { id: 'minW', label: 'Min Width', type: 'range', min: 5, max: 50, step: 1 },
-      { id: 'maxW', label: 'Max Width', type: 'range', min: 10, max: 100, step: 1 },
-      { id: 'minH', label: 'Min Height', type: 'range', min: 5, max: 100, step: 1 },
-      { id: 'maxH', label: 'Max Height', type: 'range', min: 10, max: 150, step: 1 },
-      { id: 'windowProb', label: 'Window Prob', type: 'range', min: 0, max: 1, step: 0.05 },
-      { id: 'detail', label: 'Roof Detail', type: 'range', min: 0, max: 1, step: 0.05 },
-    ],
   };
 
   class UI {

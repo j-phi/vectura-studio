@@ -175,58 +175,6 @@
       formula: (p) =>
         `pos += [cos(α), sin(α)] * ${p.segLen}\nif rand() < ${p.branchProb}: branch(α + π/2)`,
     },
-    cityscape: {
-      generate: (p, rng, noise, bounds) => {
-        const { m, width, height } = bounds;
-        const paths = [];
-        const horizon = height * 0.7;
-        for (let r = 0; r < p.rows; r++) {
-          const yBase = horizon + r * 15;
-          let currentX = m;
-          while (currentX < width - m) {
-            const w = rng.nextRange(p.minW, p.maxW);
-            const n = noise.noise2D(currentX * 0.01, r * 10);
-            const hBase = rng.nextRange(p.minH, p.maxH);
-            const h = Math.abs(hBase * (1 + n * 0.5));
-            const bPath = [
-              { x: currentX, y: yBase },
-              { x: currentX, y: yBase - h },
-              { x: currentX + w, y: yBase - h },
-              { x: currentX + w, y: yBase },
-              { x: currentX, y: yBase },
-            ];
-            paths.push(bPath);
-
-            if (rng.nextFloat() < p.detail) {
-              const ax = currentX + w / 2;
-              const ay = yBase - h;
-              const ah = rng.nextRange(2, 10);
-              paths.push([
-                { x: ax, y: ay },
-                { x: ax, y: ay - ah },
-              ]);
-            }
-            if (rng.nextFloat() < p.windowProb) {
-              const wx = 3;
-              const wy = 4;
-              for (let bx = currentX + 3; bx < currentX + w - 3; bx += wx) {
-                for (let by = yBase - h + 3; by < yBase - 3; by += wy) {
-                  if (rng.nextFloat() > 0.4) continue;
-                  paths.push([
-                    { x: bx, y: by },
-                    { x: bx, y: by + 2 },
-                  ]);
-                }
-              }
-            }
-            currentX += w;
-          }
-        }
-        return paths;
-      },
-      formula: (p) =>
-        `for row in 0..${p.rows}:\n  h = rand(${p.minH}, ${p.maxH}) * noise(x)\n  rect(x, yBase, w, h)`,
-    },
     circles: {
       generate: (p, rng, noise, bounds) => {
         const { m, dW, dH } = bounds;
