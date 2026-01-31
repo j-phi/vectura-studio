@@ -1,0 +1,1125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vectura Studio | Physics of Line</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@100..800&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { mono: ['"JetBrains Mono"', 'monospace'] },
+                    colors: {
+                        vectura: {
+                            bg: '#09090b', panel: '#18181b', border: '#27272a',
+                            text: '#e4e4e7', muted: '#71717a', accent: '#fafafa', danger: '#ef4444'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Custom Styles -->
+    <style>
+        body { background-color: #09090b; color: #e4e4e7; overflow: hidden; }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #18181b; }
+        ::-webkit-scrollbar-thumb { background: #3f3f46; }
+        ::-webkit-scrollbar-thumb:hover { background: #52525b; }
+
+        /* Form Controls */
+        input[type=range] { -webkit-appearance: none; background: transparent; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 12px; width: 12px; background: #fafafa;
+            cursor: pointer; margin-top: -5px; border: 1px solid #09090b;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%; height: 2px; cursor: pointer; background: #3f3f46;
+        }
+
+        input[type="color"] { -webkit-appearance: none; border: none; width: 100%; height: 100%; padding: 0; background: transparent; cursor: pointer; }
+        input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+        input[type="color"]::-webkit-color-swatch { border: none; border-radius: 9999px; }
+
+        /* Assets */
+        .paper-texture {
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
+            pointer-events: none;
+        }
+
+        /* Utilities */
+        .control-group { @apply mb-6 border-b border-vectura-border pb-6; }
+        .control-label { @apply block text-xs text-vectura-muted uppercase tracking-wider mb-2; }
+        .layer-item.active { @apply border-l-4 border-l-vectura-accent bg-vectura-border/50; }
+        .formula-text { font-variant-ligatures: none; }
+
+        /* Settings Panel Slide Animation */
+        #settings-panel {
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            transform: translateX(100%);
+        }
+        #settings-panel.open {
+            transform: translateX(0);
+        }
+    </style>
+</head>
+<body class="font-mono text-sm antialiased h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="h-12 border-b border-vectura-border bg-vectura-panel flex items-center justify-between px-4 z-20">
+        <div class="flex items-center gap-3">
+            <div class="w-4 h-4 bg-vectura-accent"></div>
+            <h1 class="font-bold tracking-widest text-vectura-accent">VECTURA<span class="font-light text-vectura-muted">.STUDIO</span></h1>
+        </div>
+        <div class="text-xs text-vectura-muted" id="status-bar">READY</div>
+        <div class="flex gap-4">
+            <button id="btn-settings" class="hover:text-vectura-accent transition-colors text-xs">[SETTINGS]</button>
+            <button id="btn-reset-view" class="hover:text-vectura-accent transition-colors text-xs">[RESET VIEW]</button>
+            <button id="btn-export" class="hover:text-vectura-accent transition-colors text-xs font-bold">[EXPORT SVG]</button>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="flex-1 flex overflow-hidden relative">
+        
+        <!-- Left Sidebar: Controls -->
+        <aside class="w-80 bg-vectura-panel border-r border-vectura-border flex flex-col z-10 shadow-xl">
+            <div class="p-4 border-b border-vectura-border flex justify-between items-center">
+                <span class="font-bold text-vectura-accent">GENERATOR</span>
+                <span class="text-[10px] text-vectura-muted">V.5.1</span>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto p-4" id="left-panel-content">
+                <div class="control-group">
+                    <label class="control-label">Algorithm</label>
+                    <select id="generator-module" class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent mb-4">
+                        <!-- Options injected by UI -->
+                    </select>
+
+                    <div class="bg-vectura-bg border border-vectura-border p-3">
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="w-1 h-3 bg-vectura-muted"></div>
+                            <span class="text-[10px] uppercase text-vectura-muted tracking-widest">About</span>
+                        </div>
+                        <p id="algo-desc" class="text-xs text-vectura-muted leading-relaxed">...</p>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">Transform & Seed</label>
+                    <div class="grid grid-cols-2 gap-2 mb-2">
+                        <div>
+                            <label class="text-[10px] text-vectura-muted">Seed</label>
+                            <input type="number" id="inp-seed" class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none">
+                        </div>
+                        <div>
+                            <button id="btn-rand-seed" class="w-full h-full bg-vectura-border text-[10px] hover:text-white mt-[1px] hover:bg-vectura-border/80 transition-colors">RANDOMIZE</button>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 mb-2">
+                         <div><label class="text-[10px] text-vectura-muted">Pos X (mm)</label><input type="number" id="inp-pos-x" class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"></div>
+                         <div><label class="text-[10px] text-vectura-muted">Pos Y (mm)</label><input type="number" id="inp-pos-y" class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"></div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                         <div><label class="text-[10px] text-vectura-muted">Scale X</label><input type="number" step="0.1" id="inp-scale-x" class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"></div>
+                         <div><label class="text-[10px] text-vectura-muted">Scale Y</label><input type="number" step="0.1" id="inp-scale-y" class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"></div>
+                    </div>
+                </div>
+
+                <div id="dynamic-controls"></div>
+            </div>
+        </aside>
+
+        <!-- Center: Canvas & Formula -->
+        <section class="flex-1 flex flex-col bg-[#121214] relative overflow-hidden">
+            <div class="flex-1 relative cursor-crosshair" id="viewport-container">
+                <canvas id="main-canvas" class="block absolute top-0 left-0 outline-none"></canvas>
+                <div class="absolute inset-0 paper-texture opacity-30 pointer-events-none mix-blend-overlay"></div>
+                <div id="notification-area" class="absolute top-4 right-4 flex flex-col gap-2 pointer-events-none z-50"></div>
+            </div>
+
+            <div class="h-auto min-h-[60px] max-h-32 bg-vectura-panel border-t border-vectura-border p-4 z-20 flex flex-col overflow-y-auto">
+                <div class="flex justify-between items-start">
+                    <span class="text-[10px] text-vectura-muted uppercase tracking-widest mb-1">Mathematical Model</span>
+                    <span class="text-[10px] text-vectura-accent" id="formula-seed-display">Seed: ---</span>
+                </div>
+                <p id="formula-display" class="text-xs text-vectura-text font-mono formula-text opacity-80 leading-relaxed">...</p>
+            </div>
+            
+            <div class="absolute bottom-20 left-4 text-[10px] text-vectura-muted pointer-events-none">
+                <p>PAN: Shift + Drag</p>
+                <p>ZOOM: Mouse Wheel</p>
+            </div>
+        </section>
+
+        <!-- Right Sidebar: Layers & Settings -->
+        <aside class="w-64 bg-vectura-panel border-l border-vectura-border flex flex-col z-10 relative overflow-hidden">
+             <div class="p-4 border-b border-vectura-border flex justify-between items-center bg-vectura-panel z-20">
+                <span class="font-bold text-vectura-accent">LAYERS</span>
+                <button id="btn-add-layer" class="text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">+ ADD</button>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto p-4 relative" id="layer-list"></div>
+
+            <div id="settings-panel" class="absolute inset-0 bg-vectura-panel z-30 flex flex-col border-l border-vectura-border">
+                <div class="p-4 border-b border-vectura-border flex justify-between items-center bg-vectura-panel">
+                    <span class="font-bold text-vectura-accent">SETTINGS</span>
+                    <button id="btn-close-settings" class="text-vectura-muted hover:text-white">✕</button>
+                </div>
+                <div class="flex-1 overflow-y-auto p-4">
+                    <div class="control-group">
+                        <label class="control-label">Machine Profile</label>
+                        <select id="machine-profile" class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent mb-2">
+                            <!-- Injected by UI -->
+                        </select>
+                        <div class="flex gap-2">
+                             <div class="flex-1">
+                                <label class="control-label">Margin (mm)</label>
+                                <input type="number" id="set-margin" class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none">
+                             </div>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label class="control-label">Plotter Physics</label>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div><label class="text-[10px] text-vectura-muted">Draw Speed (mm/s)</label><input type="number" id="set-speed-down" class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"></div>
+                            <div><label class="text-[10px] text-vectura-muted">Travel Speed (mm/s)</label><input type="number" id="set-speed-up" class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"></div>
+                        </div>
+                    </div>
+                     <div class="control-group border-none">
+                        <label class="control-label">Export & Preview</label>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="text-xs text-vectura-muted">Precision</label>
+                            <input type="number" id="set-precision" class="w-12 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none">
+                        </div>
+                         <div class="flex items-center justify-between">
+                            <label class="text-xs text-vectura-muted">Stroke (mm)</label>
+                            <input type="number" id="set-stroke" step="0.1" class="w-12 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-4 border-t border-vectura-border bg-vectura-bg z-20 relative">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs text-vectura-muted">Background</span>
+                    <div class="relative w-4 h-4 overflow-hidden rounded border border-vectura-border cursor-pointer hover:border-vectura-accent">
+                        <input type="color" id="inp-bg-color">
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-4 border-t border-vectura-border bg-vectura-bg z-20 relative">
+                <label class="control-label">Estimation</label>
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                    <div class="text-vectura-muted">Distance:</div>
+                    <div class="text-right text-vectura-accent" id="stat-dist">0m</div>
+                    <div class="text-vectura-muted">Est. Time:</div>
+                    <div class="text-right text-vectura-accent" id="stat-time">0:00</div>
+                </div>
+            </div>
+        </aside>
+    </main>
+
+    <!-- Application Logic -->
+    <script>
+        /**
+         * VECTURA STUDIO - SINGLE FILE ARCHITECTURE
+         * Includes Config, Utils, Algorithms, Engine, Renderer, UI, App
+         */
+
+        // --- 1. CONFIGURATION ---
+        const MACHINES = {
+            a3: { name: 'A3 Landscape', width: 420, height: 297 },
+            a4: { name: 'A4 Portrait', width: 210, height: 297 },
+            a4_land: { name: 'A4 Landscape', width: 297, height: 210 },
+            axidraw_v3: { name: 'AxiDraw V3', width: 279, height: 216 },
+        };
+
+        const ALGO_DEFAULTS = {
+            flowfield: { noiseScale: 0.01, density: 1000, stepLen: 5, maxSteps: 50, force: 1.0, chaos: 0.0, octaves: 1 },
+            lissajous: { freqX: 3, freqY: 2, damping: 0.001, phase: 1.5, rotation: 0, resolution: 100 },
+            wavetable: { lines: 40, amplitude: 30, zoom: 0.02, tilt: 0, gap: 1.0, freq: 1.0 },
+            spiral: { loops: 10, res: 100, noiseAmp: 10, noiseFreq: 0.1, startR: 5 },
+            grid: { rows: 20, cols: 20, distortion: 10, noiseScale: 0.05, type: 'warp', chaos: 0 },
+            phylla: { count: 500, spacing: 5, angleStr: 137.5, divergence: 1.0, noiseInf: 0 },
+            boids: { count: 100, steps: 100, speed: 2, sepDist: 10, alignDist: 20, cohDist: 20, force: 0.05 },
+            attractor: { type: 'lorenz', iter: 1000, scale: 3, sigma: 10, rho: 28, beta: 2.66, dt: 0.01 },
+            hyphae: { sources: 2, steps: 50, branchProb: 0.05, angleVar: 0.5, segLen: 3 },
+            circles: { count: 500, minR: 2, maxR: 20, padding: 1, attempts: 200 },
+            cityscape: { rows: 3, minW: 10, maxW: 40, minH: 10, maxH: 80, windowProb: 0.3, detail: 0.5 }
+        };
+
+        const DESCRIPTIONS = {
+            flowfield: "Particles traverse a vector field generated by Simplex noise. Creates organic, fluid-like textures resembling hair or flowing water.",
+            lissajous: "Parametric curves created by the intersection of two sinusoidal waves. Produces elegant, looping harmonic figures often used in signal physics.",
+            wavetable: "Generates terrain-like elevations by modulating horizontal lines with noise. Inspired by the visualization of pulsar radio waves.",
+            spiral: "An Archimedean spiral distorted by noise. Can create vinyl-like grooves or organic coil patterns.",
+            grid: "A rectilinear mesh deformed by noise fields. Supports warping vertices or displacing rows/cols for glitch effects.",
+            phylla: "Arranges points in a spiral pattern based on the golden angle (137.5°). Mimics seed heads in sunflowers and succulents.",
+            boids: "Simulates the flocking behavior of birds (Agents). Rules for Separation, Alignment, and Cohesion create complex emergent movement trails.",
+            attractor: "Plots Strange Attractors (Lorenz, Aizawa). These represent chaotic systems where trajectories orbit a fractal set of states.",
+            hyphae: "Simulates organic growth (like fungi or roots) using a branching algorithm. Sources grow segments and fork based on probability.",
+            circles: "A packing algorithm that fills space with non-overlapping circles of varying sizes. Creates bubbly, cellular structures.",
+            cityscape: "Generates a procedural skyline with multiple depth layers. Features randomized building silhouettes, window grids, and roof details."
+        };
+
+        const SETTINGS = {
+            margin: 20,
+            speedDown: 250,
+            speedUp: 300,
+            precision: 3,
+            strokeWidth: 0.3, // mm
+            bgColor: '#121214',
+            globalLayerCount: 0 
+        };
+
+        // --- 2. UTILITIES ---
+        class SeededRNG {
+            constructor(seed) {
+                this.m = 0x80000000;
+                this.a = 1103515245;
+                this.c = 12345;
+                this.state = seed ? seed : Math.floor(Math.random() * (this.m - 1));
+            }
+            nextInt() {
+                this.state = (this.a * this.state + this.c) % this.m;
+                return this.state;
+            }
+            nextFloat() { return this.nextInt() / (this.m - 1); }
+            nextRange(min, max) { return min + this.nextFloat() * (max - min); }
+        }
+
+        class SimpleNoise {
+            constructor(seed) {
+                this.rng = new SeededRNG(seed);
+                this.perm = new Uint8Array(512);
+                this.grad3 = [[1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],[1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],[0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]];
+                this.seed(seed);
+            }
+            seed(v) {
+                this.rng = new SeededRNG(v);
+                const p = new Uint8Array(256).map((_,i)=>i);
+                for(let i=255; i>0; i--) { 
+                    const r=Math.floor(this.rng.nextFloat()*(i+1)); 
+                    [p[i],p[r]]=[p[r],p[i]]; 
+                }
+                for(let i=0; i<512; i++) this.perm[i]=p[i&255];
+            }
+            dot(g, x, y) { return g[0]*x + g[1]*y; }
+            noise2D(xin, yin) {
+                const F2=0.5*(Math.sqrt(3.0)-1.0), G2=(3.0-Math.sqrt(3.0))/6.0;
+                let s=(xin+yin)*F2, i=Math.floor(xin+s), j=Math.floor(yin+s), t=(i+j)*G2;
+                let X0=i-t, Y0=j-t, x0=xin-X0, y0=yin-Y0;
+                let i1=x0>y0?1:0, j1=x0>y0?0:1;
+                let x1=x0-i1+G2, y1=y0-j1+G2, x2=x0-1.0+2.0*G2, y2=y0-1.0+2.0*G2;
+                let ii=i&255, jj=j&255;
+                let gi0=this.perm[ii+this.perm[jj]]%12, gi1=this.perm[ii+i1+this.perm[jj+j1]]%12, gi2=this.perm[ii+1+this.perm[jj+1]]%12;
+                let n0=0, n1=0, n2=0, t0=0.5-x0*x0-y0*y0, t1=0.5-x1*x1-y1*y1, t2=0.5-x2*x2-y2*y2;
+                if(t0>=0) { t0*=t0; n0=t0*t0*this.dot(this.grad3[gi0],x0,y0); }
+                if(t1>=0) { t1*=t1; n1=t1*t1*this.dot(this.grad3[gi1],x1,y1); }
+                if(t2>=0) { t2*=t2; n2=t2*t2*this.dot(this.grad3[gi2],x2,y2); }
+                return 70.0*(n0+n1+n2);
+            }
+        }
+
+        // --- 3. ALGORITHM LIBRARY ---
+        const Algorithms = {
+            flowfield: {
+                generate: (p, rng, noise, bounds) => {
+                    const { m, dW, dH, width, height } = bounds;
+                    const paths = [];
+                    for(let i=0; i<p.density; i++) {
+                        const path = [];
+                        let x = m + rng.nextFloat()*dW, y = m + rng.nextFloat()*dH;
+                        path.push({x,y});
+                        for(let s=0; s<p.maxSteps; s++) {
+                            let n = noise.noise2D(x*p.noiseScale, y*p.noiseScale);
+                            if(p.octaves > 1) n += 0.5 * noise.noise2D(x*p.noiseScale*2, y*p.noiseScale*2);
+                            const angle = n * Math.PI * 2 * p.force + (rng.nextFloat()*p.chaos);
+                            x += Math.cos(angle) * p.stepLen;
+                            y += Math.sin(angle) * p.stepLen;
+                            if(x<m || x>width-m || y<m || y>height-m) break;
+                            path.push({x,y});
+                        }
+                        if(path.length>1) paths.push(path);
+                    }
+                    return paths;
+                },
+                formula: (p) => `θ = noise(x * ${p.noiseScale}, y * ${p.noiseScale}) * 2π * ${p.force}\npos += [cos(θ), sin(θ)] * ${p.stepLen}`
+            },
+            boids: {
+                generate: (p, rng, noise, bounds) => {
+                    const { m, dW, dH, width, height } = bounds;
+                    const boids = [];
+                    for(let i=0; i<p.count; i++) {
+                        boids.push({
+                            x: m + rng.nextFloat()*dW, y: m + rng.nextFloat()*dH,
+                            vx: (rng.nextFloat()-0.5)*p.speed, vy: (rng.nextFloat()-0.5)*p.speed,
+                            path: []
+                        });
+                    }
+                    for(let t=0; t<p.steps; t++) {
+                        boids.forEach(b => {
+                            b.path.push({x:b.x, y:b.y});
+                            let sx=0, sy=0, ax=0, ay=0, cx=0, cy=0, tot=0;
+                            boids.forEach(other => {
+                                if(b===other) return;
+                                const dx = b.x - other.x, dy = b.y - other.y;
+                                const dist = Math.sqrt(dx*dx + dy*dy);
+                                if(dist < p.sepDist) { sx += dx/dist; sy += dy/dist; }
+                                if(dist < p.alignDist) { ax += other.vx; ay += other.vy; }
+                                if(dist < p.cohDist) { cx += other.x; cy += other.y; tot++; }
+                            });
+                            if(tot>0) { 
+                                cx = (cx/tot - b.x)*0.01; cy = (cy/tot - b.y)*0.01; 
+                                ax = (ax/tot - b.vx)*0.05; ay = (ay/tot - b.vy)*0.05;
+                            }
+                            b.vx += sx*p.force + ax + cx; b.vy += sy*p.force + ay + cy;
+                            const sp = Math.sqrt(b.vx*b.vx + b.vy*b.vy);
+                            if(sp > p.speed) { b.vx = (b.vx/sp)*p.speed; b.vy = (b.vy/sp)*p.speed; }
+                            b.x += b.vx; b.y += b.vy;
+                            if(b.x<m) b.vx *= -1; if(b.x>width-m) b.vx *= -1;
+                            if(b.y<m) b.vy *= -1; if(b.y>height-m) b.vy *= -1;
+                        });
+                    }
+                    return boids.map(b => b.path);
+                },
+                formula: (p) => `v += separate * ${p.sepDist} + align * ${p.alignDist} + cohere * ${p.cohDist}\npos += v * ${p.speed}`
+            },
+            attractor: {
+                generate: (p, rng, noise, bounds) => {
+                    const { width, height } = bounds;
+                    const dt = p.dt;
+                    let ax = 0.1, ay = 0, az = 0;
+                    const aPath = [];
+                    const cx = width/2, cy = height/2;
+                    for(let i=0; i<p.iter; i++) {
+                        let dx, dy, dz;
+                        if(p.type === 'lorenz') {
+                            dx = p.sigma * (ay - ax); dy = ax * (p.rho - az) - ay; dz = ax * ay - p.beta * az;
+                        } else {
+                            dx = (az - 0.7) * ax - 3.5 * ay; dy = 3.5 * ax + (az - 0.7) * ay;
+                            dz = 0.6 + 0.95 * az - (az*az*az)/3 - (ax*ax + ay*ay)*(1 + 0.25*az) + 0.1*az*(ax*ax*ax);
+                        }
+                        ax += dx * dt; ay += dy * dt; az += dz * dt;
+                        aPath.push({ x: cx + ax * p.scale, y: cy + ay * p.scale });
+                    }
+                    return [aPath];
+                },
+                formula: (p) => `dx = ${p.sigma}(y - x)\ndy = x(${p.rho} - z) - y\ndz = xy - ${p.beta}z`
+            },
+            hyphae: {
+                generate: (p, rng, noise, bounds) => {
+                    const { m, dW, dH, width, height } = bounds;
+                    const branches = [];
+                    const paths = [];
+                    const MAX_BRANCHES = 1000;
+                    for(let i=0; i<p.sources; i++) {
+                        branches.push({ x: m + rng.nextFloat()*dW, y: m + rng.nextFloat()*dH, angle: rng.nextFloat()*Math.PI*2, path: [] });
+                    }
+                    for(let t=0; t<p.steps; t++) {
+                        if(branches.length >= MAX_BRANCHES) break;
+                        for(let i=branches.length-1; i>=0; i--) {
+                            const b = branches[i];
+                            b.path.push({x:b.x, y:b.y});
+                            b.x += Math.cos(b.angle) * p.segLen; b.y += Math.sin(b.angle) * p.segLen;
+                            b.angle += (rng.nextFloat()-0.5) * p.angleVar;
+                            if(rng.nextFloat() < p.branchProb && branches.length < MAX_BRANCHES) {
+                                branches.push({x:b.x, y:b.y, angle: b.angle + (Math.PI/2), path:[]});
+                            }
+                            if(b.x<m || b.x>width-m || b.y<m || b.y>height-m) {
+                                branches.splice(i, 1); paths.push(b.path);
+                            }
+                        }
+                    }
+                    branches.forEach(b => paths.push(b.path));
+                    return paths;
+                },
+                formula: (p) => `pos += [cos(α), sin(α)] * ${p.segLen}\nif rand() < ${p.branchProb}: branch(α + π/2)`
+            },
+            cityscape: {
+                generate: (p, rng, noise, bounds) => {
+                    const { m, width, height } = bounds;
+                    const paths = [];
+                    const horizon = height * 0.7; 
+                    for(let r = 0; r < p.rows; r++) {
+                        const yBase = horizon + (r * 15);
+                        let currentX = m;
+                        while(currentX < width - m) {
+                            const w = rng.nextRange(p.minW, p.maxW);
+                            const n = noise.noise2D(currentX * 0.01, r * 10);
+                            const hBase = rng.nextRange(p.minH, p.maxH);
+                            const h = Math.abs(hBase * (1 + n * 0.5)); 
+                            const bPath = [
+                                {x: currentX, y: yBase}, {x: currentX, y: yBase - h}, {x: currentX + w, y: yBase - h}, {x: currentX + w, y: yBase}, {x: currentX, y: yBase} 
+                            ];
+                            paths.push(bPath);
+                            
+                            if(rng.nextFloat() < p.detail) {
+                                const ax = currentX + w/2; const ay = yBase - h; const ah = rng.nextRange(2, 10);
+                                paths.push([{x: ax, y: ay}, {x: ax, y: ay - ah}]);
+                            }
+                            if(rng.nextFloat() < p.windowProb) {
+                                const wx = 3; const wy = 4;
+                                for(let bx = currentX + 3; bx < currentX + w - 3; bx += wx) {
+                                    for(let by = yBase - h + 3; by < yBase - 3; by += wy) {
+                                        if(rng.nextFloat() > 0.4) continue;
+                                        paths.push([{x: bx, y: by}, {x: bx, y: by + 2}]);
+                                    }
+                                }
+                            }
+                            currentX += w;
+                        }
+                    }
+                    return paths;
+                },
+                formula: (p) => `for row in 0..${p.rows}:\n  h = rand(${p.minH}, ${p.maxH}) * noise(x)\n  rect(x, yBase, w, h)`
+            },
+            circles: {
+                generate: (p, rng, noise, bounds) => {
+                    const { m, dW, dH } = bounds;
+                    const circles = [];
+                    const paths = [];
+                    for(let i=0; i<p.attempts; i++) {
+                        if(circles.length >= p.count) break;
+                        const r = rng.nextRange(p.minR, p.maxR);
+                        const cx = m + r + rng.nextFloat()*(dW-r*2); const cy = m + r + rng.nextFloat()*(dH-r*2);
+                        let valid = true;
+                        for(let c of circles) {
+                            const d = Math.sqrt((cx-c.x)**2 + (cy-c.y)**2);
+                            if(d < c.r + r + p.padding) { valid = false; break; }
+                        }
+                        if(valid) {
+                            circles.push({x:cx, y:cy, r:r});
+                            const cp = [];
+                            for(let k=0; k<=32; k++) { const ang = (k/32)*Math.PI*2; cp.push({x: cx + Math.cos(ang)*r, y: cy + Math.sin(ang)*r}); }
+                            paths.push(cp);
+                        }
+                    }
+                    return paths;
+                },
+                formula: (p) => `if dist(p, others) > r + ${p.padding}: add(circle(p, r))\nr = rand(${p.minR}, ${p.maxR})`
+            },
+            lissajous: {
+                generate: (p, rng, noise, bounds) => {
+                    const { width, height } = bounds;
+                    const lcx = width/2, lcy = height/2;
+                    const scale = Math.min(width,height)*0.4;
+                    const lPath = [];
+                    for(let t=0; t<200; t+=0.05) {
+                        const amp = Math.exp(-p.damping*t);
+                        if(amp < 0.01) break;
+                        let lx = Math.sin(p.freqX * t + p.phase); let ly = Math.sin(p.freqY * t);
+                        if(p.rotation !== 0) {
+                            const rot = p.rotation * (Math.PI/180);
+                            const rx = lx*Math.cos(rot) - ly*Math.sin(rot); const ry = lx*Math.sin(rot) + ly*Math.cos(rot);
+                            lx = rx; ly = ry;
+                        }
+                        lPath.push({ x: lcx + lx * scale * amp, y: lcy + ly * scale * amp });
+                    }
+                    return [lPath];
+                },
+                formula: (p) => `x = sin(${p.freqX}t + ${p.phase})\ny = sin(${p.freqY}t)\namp = e^(-${p.damping}t)`
+            },
+            wavetable: {
+                generate: (p, rng, noise, bounds) => {
+                    const { m, dW, dH, height } = bounds;
+                    const paths = [];
+                    const lSpace = dH / p.lines, pts = Math.floor(dW / 2), xStep = dW / pts;
+                    for(let i=0; i<p.lines; i++) {
+                        const path = [];
+                        const by = m + (i * lSpace * p.gap) + (p.tilt * i); 
+                        for(let j=0; j<=pts; j++) {
+                            const x = m + (j * xStep);
+                            const n = noise.noise2D(x*p.zoom*p.freq, by*p.zoom);
+                            const off = Math.abs(n) * p.amplitude;
+                            let taper = 1.0;
+                            const distC = Math.abs((j/pts)-0.5)*2;
+                            if(distC > 0.8) taper = 1.0 - ((distC-0.8)/0.2);
+                            const y = by - (off * taper);
+                            if(y > m && y < height-m) path.push({x,y});
+                        }
+                        if(path.length>1) paths.push(path);
+                    }
+                    return paths;
+                },
+                formula: (p) => "y = yBase - (|noise(x,y)| * amplitude)"
+            },
+            spiral: {
+                generate: (p, rng, noise, bounds) => {
+                    const { m, dW, dH, width, height } = bounds;
+                    const scx=width/2, scy=height/2;
+                    const spath = [];
+                    let r = p.startR, theta = 0;
+                    const maxR = Math.min(dW, dH)/2;
+                    const dr = (maxR - p.startR) / (p.loops * p.res);
+                    const dTheta = (Math.PI*2) / p.res;
+                    while(r < maxR) {
+                        const n = noise.noise2D(Math.cos(theta)*p.noiseFreq, Math.sin(theta)*p.noiseFreq);
+                        const rMod = r + (n * p.noiseAmp);
+                        spath.push({x: scx + Math.cos(theta)*rMod, y: scy + Math.sin(theta)*rMod});
+                        theta += dTheta; r += dr;
+                    }
+                    return [spath];
+                },
+                formula: (p) => "r = r + (noise(θ) * amp)\nx = cos(θ)*r, y = sin(θ)*r"
+            },
+            grid: {
+                generate: (p, rng, noise, bounds) => {
+                    const { m, dW, dH } = bounds;
+                    const paths = [];
+                    const colW = dW / p.cols, rowH = dH / p.rows;
+                    for(let r=0; r<=p.rows; r++) {
+                    const path=[];
+                    for(let c=0; c<=p.cols; c++) {
+                        let x = m + c*colW, y = m + r*rowH;
+                        const n = noise.noise2D(x*p.noiseScale, y*p.noiseScale);
+                        if(p.type === 'warp') { x += Math.cos(n*Math.PI)*p.distortion; y += Math.sin(n*Math.PI)*p.distortion; }
+                        else { y += n * p.distortion; }
+                        x += (rng.nextFloat()-0.5)*p.chaos; y += (rng.nextFloat()-0.5)*p.chaos;
+                        path.push({x,y});
+                    }
+                    paths.push(path);
+                }
+                    for(let c=0; c<=p.cols; c++) {
+                    const path=[];
+                    for(let r=0; r<=p.rows; r++) {
+                        let x = m + c*colW, y = m + r*rowH;
+                        const n = noise.noise2D(x*p.noiseScale, y*p.noiseScale);
+                        if(p.type === 'warp') { x += Math.cos(n*Math.PI)*p.distortion; y += Math.sin(n*Math.PI)*p.distortion; }
+                        else { y += n * p.distortion; }
+                        x += (rng.nextFloat()-0.5)*p.chaos; y += (rng.nextFloat()-0.5)*p.chaos;
+                        path.push({x,y});
+                    }
+                    paths.push(path);
+                }
+                return paths;
+                },
+                formula: (p) => "pos += noise(x,y) * distortion"
+            },
+            phylla: {
+                generate: (p, rng, noise, bounds) => {
+                    const { m, width, height } = bounds;
+                    const paths = [];
+                    const pcx=width/2, pcy=height/2;
+                    const angleStep = p.angleStr * (Math.PI/180);
+                    for(let i=0; i<p.count; i++) {
+                        const r = p.spacing * Math.sqrt(i) * p.divergence;
+                        const a = i * angleStep;
+                        let x = pcx + r * Math.cos(a), y = pcy + r * Math.sin(a);
+                        const n = noise.noise2D(x*0.05, y*0.05);
+                        x += n * p.noiseInf; y += n * p.noiseInf;
+                        const circle = [];
+                        for(let k=0; k<=8; k++) { const ca = (k/8)*Math.PI*2; circle.push({ x: x + Math.cos(ca)*1, y: y + Math.sin(ca)*1 }); }
+                        if(x>m && x<width-m && y>m && y<height-m) paths.push(circle);
+                    }
+                    return paths;
+                },
+                formula: (p) => "θ = i * 137.5°, r = c√i\npos = [cos(θ)*r, sin(θ)*r]"
+            }
+        };
+
+        // --- 4. ENGINE ---
+        class Layer {
+            constructor(id, type = 'flowfield', name) {
+                this.id = id;
+                this.type = type;
+                this.name = name;
+                this.params = JSON.parse(JSON.stringify(ALGO_DEFAULTS[type] || ALGO_DEFAULTS.flowfield));
+                this.params.seed = Math.floor(Math.random() * 99999);
+                this.params.posX = 0; this.params.posY = 0;
+                this.params.scaleX = 1; this.params.scaleY = 1;
+                this.color = '#e4e4e7';
+                this.visible = true;
+                this.paths = [];
+            }
+        }
+
+        class VectorEngine {
+            constructor() {
+                this.layers = [];
+                this.activeLayerId = null;
+                this.currentProfile = MACHINES.a3;
+                this.addLayer('flowfield');
+            }
+
+            addLayer(type = 'flowfield') {
+                const id = Math.random().toString(36).substr(2, 9);
+                SETTINGS.globalLayerCount++;
+                const num = String(SETTINGS.globalLayerCount).padStart(2, '0');
+                const prettyType = type.charAt(0).toUpperCase() + type.slice(1);
+                const name = `${prettyType} ${num}`;
+                const layer = new Layer(id, type, name);
+                this.layers.push(layer);
+                this.activeLayerId = id;
+                this.generate(id);
+                return id;
+            }
+
+            removeLayer(id) {
+                if (this.layers.length <= 1) return; 
+                this.layers = this.layers.filter(l => l.id !== id);
+                if (this.activeLayerId === id) this.activeLayerId = this.layers[this.layers.length - 1].id;
+            }
+            
+            moveLayer(id, direction) {
+                const idx = this.layers.findIndex(l => l.id === id);
+                if (idx === -1) return;
+                const newIdx = idx + direction;
+                if (newIdx >= 0 && newIdx < this.layers.length) {
+                    [this.layers[idx], this.layers[newIdx]] = [this.layers[newIdx], this.layers[idx]];
+                }
+            }
+
+            getActiveLayer() { return this.layers.find(l => l.id === this.activeLayerId); }
+            setProfile(key) { this.currentProfile = MACHINES[key] || MACHINES.a3; }
+
+            generate(layerId) {
+                const layer = this.layers.find(l => l.id === layerId);
+                if (!layer) return;
+
+                const rng = new SeededRNG(layer.params.seed);
+                const noise = new SimpleNoise(layer.params.seed);
+                
+                const { width, height } = this.currentProfile;
+                const m = SETTINGS.margin;
+                const dW = width - m*2;
+                const dH = height - m*2;
+                const p = layer.params;
+
+                const bounds = { width, height, m, dW, dH };
+
+                const transform = (pt) => {
+                    const cx = width/2, cy = height/2;
+                    let x = pt.x - cx; let y = pt.y - cy;
+                    x *= p.scaleX; y *= p.scaleY;
+                    x += cx + p.posX; y += cy + p.posY;
+                    return {x,y};
+                };
+
+                const algo = Algorithms[layer.type] || Algorithms.flowfield;
+                const rawPaths = algo.generate(p, rng, noise, bounds);
+
+                layer.paths = rawPaths.map(path => path.map(pt => transform(pt)));
+            }
+            
+            getFormula(layerId) {
+                const l = this.layers.find(x => x.id === layerId);
+                if(!l) return "Select a layer...";
+                const algo = Algorithms[l.type];
+                return algo && algo.formula ? algo.formula(l.params) : "Procedural Vector Generation";
+            }
+
+            getStats() {
+                let dist = 0;
+                this.layers.forEach(l => {
+                    if(!l.visible) return;
+                    l.paths.forEach(p => {
+                        for(let i=1; i<p.length; i++) {
+                            const dx = p[i].x - p[i-1].x, dy = p[i].y - p[i-1].y;
+                            dist += Math.sqrt(dx*dx+dy*dy);
+                        }
+                    });
+                });
+                const timeSec = (dist / 1000) / (SETTINGS.speedDown/1000); 
+                const m = Math.floor(timeSec/60);
+                const s = Math.floor(timeSec%60);
+                return { distance: Math.round(dist/1000)+'m', time: `${m}:${s.toString().padStart(2,'0')}` };
+            }
+        }
+
+        // --- 5. RENDERER ---
+        class Renderer {
+            constructor(id, engine) {
+                this.canvas = document.getElementById(id);
+                this.ctx = this.canvas.getContext('2d');
+                this.engine = engine;
+                this.scale = 1; this.offsetX = 0; this.offsetY = 0;
+                this.isDrag = false; this.lastM = {x:0,y:0};
+                new ResizeObserver(()=>this.resize()).observe(this.canvas.parentElement);
+                this.canvas.addEventListener('wheel', e => this.wheel(e));
+                this.canvas.addEventListener('mousedown', e => this.down(e));
+                window.addEventListener('mousemove', e => this.move(e));
+                window.addEventListener('mouseup', () => this.up());
+            }
+            resize() {
+                const p = this.canvas.parentElement.getBoundingClientRect();
+                this.canvas.width = p.width * window.devicePixelRatio;
+                this.canvas.height = p.height * window.devicePixelRatio;
+                this.canvas.style.width = p.width+'px'; this.canvas.style.height = p.height+'px';
+                this.ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+                if(this.scale === 1) this.center();
+                this.draw();
+            }
+            center() {
+                const p = this.engine.currentProfile;
+                const r = this.canvas.getBoundingClientRect();
+                const sx = (r.width-60)/p.width, sy = (r.height-60)/p.height;
+                this.scale = Math.min(sx,sy);
+                this.offsetX = (r.width - p.width*this.scale)/2;
+                this.offsetY = (r.height - p.height*this.scale)/2;
+            }
+            draw() {
+                const w=this.canvas.width/window.devicePixelRatio, h=this.canvas.height/window.devicePixelRatio;
+                this.ctx.clearRect(0,0,w,h);
+                this.ctx.fillStyle = SETTINGS.bgColor;
+                this.ctx.fillRect(0,0,w,h);
+                this.ctx.save();
+                this.ctx.translate(this.offsetX, this.offsetY);
+                this.ctx.scale(this.scale, this.scale);
+                const prof = this.engine.currentProfile;
+                this.ctx.fillStyle = '#000000'; 
+                this.ctx.shadowColor = 'rgba(0,0,0,0.5)'; this.ctx.shadowBlur = 20;
+                this.ctx.fillRect(0,0,prof.width, prof.height);
+                this.ctx.shadowBlur = 0;
+                this.ctx.strokeStyle = '#333'; this.ctx.lineWidth = 1/this.scale;
+                this.ctx.strokeRect(0,0,prof.width, prof.height);
+                
+                this.ctx.lineWidth = SETTINGS.strokeWidth; 
+                this.ctx.lineCap = 'round'; this.ctx.lineJoin = 'round';
+                
+                this.engine.layers.forEach(l => {
+                    if(!l.visible) return;
+                    this.ctx.beginPath();
+                    this.ctx.strokeStyle = l.color;
+                    l.paths.forEach(path => {
+                        if(path.length<2) return;
+                        this.ctx.moveTo(path[0].x, path[0].y);
+                        for(let i=1; i<path.length; i++) this.ctx.lineTo(path[i].x, path[i].y);
+                    });
+                    this.ctx.stroke();
+                });
+                this.ctx.restore();
+            }
+            wheel(e) {
+                e.preventDefault();
+                const s = this.scale * (1 + (e.deltaY>0?-0.1:0.1));
+                this.scale = Math.max(0.1, Math.min(s, 20));
+                this.draw();
+            }
+            down(e) { if(e.shiftKey || e.button===1) { this.isDrag=true; this.lastM={x:e.clientX, y:e.clientY}; this.canvas.style.cursor='grabbing'; } }
+            move(e) { if(!this.isDrag) return; this.offsetX += e.clientX - this.lastM.x; this.offsetY += e.clientY - this.lastM.y; this.lastM={x:e.clientX,y:e.clientY}; this.draw(); }
+            up() { this.isDrag=false; this.canvas.style.cursor='crosshair'; }
+        }
+
+        // --- 6. UI ---
+        class UI {
+            constructor(app) {
+                this.app = app;
+                this.controls = {
+                    flowfield: [
+                        { id: 'noiseScale', label: 'Noise Scale', type: 'range', min: 0.001, max: 0.1, step: 0.001 },
+                        { id: 'density', label: 'Density', type: 'range', min: 100, max: 5000, step: 100 },
+                        { id: 'stepLen', label: 'Step Length', type: 'range', min: 1, max: 20, step: 1 },
+                        { id: 'maxSteps', label: 'Max Steps', type: 'range', min: 10, max: 500, step: 10 },
+                        { id: 'force', label: 'Distortion Force', type: 'range', min: 0.1, max: 5.0, step: 0.1 },
+                        { id: 'chaos', label: 'Chaos', type: 'range', min: 0, max: 1.0, step: 0.1 },
+                        { id: 'octaves', label: 'Octaves', type: 'range', min: 1, max: 4, step: 1 },
+                    ],
+                    lissajous: [
+                        { id: 'freqX', label: 'Freq X', type: 'range', min: 1, max: 20, step: 0.1 },
+                        { id: 'freqY', label: 'Freq Y', type: 'range', min: 1, max: 20, step: 0.1 },
+                        { id: 'damping', label: 'Damping', type: 'range', min: 0, max: 0.01, step: 0.0001 },
+                        { id: 'phase', label: 'Phase', type: 'range', min: 0, max: 6.28, step: 0.1 },
+                        { id: 'rotation', label: 'Rotation', type: 'range', min: 0, max: 360, step: 1 },
+                        { id: 'resolution', label: 'Resolution', type: 'range', min: 10, max: 200, step: 10 }
+                    ],
+                    wavetable: [
+                        { id: 'lines', label: 'Lines', type: 'range', min: 5, max: 100, step: 1 },
+                        { id: 'amplitude', label: 'Amplitude', type: 'range', min: 1, max: 100, step: 1 },
+                        { id: 'zoom', label: 'Noise Zoom', type: 'range', min: 0.001, max: 0.1, step: 0.001 },
+                        { id: 'tilt', label: 'Tilt Y', type: 'range', min: -10, max: 10, step: 1 },
+                        { id: 'gap', label: 'Line Gap', type: 'range', min: 0.1, max: 3.0, step: 0.1 },
+                        { id: 'freq', label: 'Frequency', type: 'range', min: 0.1, max: 5.0, step: 0.1 },
+                    ],
+                    spiral: [
+                        { id: 'loops', label: 'Loops', type: 'range', min: 1, max: 50, step: 1 },
+                        { id: 'res', label: 'Resolution', type: 'range', min: 10, max: 200, step: 10 },
+                        { id: 'startR', label: 'Inner Radius', type: 'range', min: 0, max: 50, step: 1 },
+                        { id: 'noiseAmp', label: 'Noise Amp', type: 'range', min: 0, max: 50, step: 1 },
+                        { id: 'noiseFreq', label: 'Noise Freq', type: 'range', min: 0.01, max: 1.0, step: 0.01 },
+                    ],
+                    grid: [
+                        { id: 'rows', label: 'Rows', type: 'range', min: 2, max: 50, step: 1 },
+                        { id: 'cols', label: 'Cols', type: 'range', min: 2, max: 50, step: 1 },
+                        { id: 'distortion', label: 'Distortion', type: 'range', min: 0, max: 50, step: 1 },
+                        { id: 'noiseScale', label: 'Noise Scale', type: 'range', min: 0.01, max: 0.2, step: 0.01 },
+                        { id: 'chaos', label: 'Chaos', type: 'range', min: 0, max: 10, step: 0.1 },
+                    ],
+                    phylla: [
+                        { id: 'count', label: 'Count', type: 'range', min: 100, max: 2000, step: 100 },
+                        { id: 'spacing', label: 'Spacing', type: 'range', min: 1, max: 10, step: 0.1 },
+                        { id: 'angleStr', label: 'Angle', type: 'range', min: 130, max: 140, step: 0.01 },
+                        { id: 'divergence', label: 'Divergence', type: 'range', min: 0.5, max: 2.0, step: 0.1 },
+                        { id: 'noiseInf', label: 'Noise Infl.', type: 'range', min: 0, max: 20, step: 1 },
+                    ],
+                    boids: [
+                        { id: 'count', label: 'Agents', type: 'range', min: 10, max: 300, step: 10 },
+                        { id: 'steps', label: 'Duration', type: 'range', min: 50, max: 500, step: 10 },
+                        { id: 'speed', label: 'Speed', type: 'range', min: 0.5, max: 5, step: 0.1 },
+                        { id: 'sepDist', label: 'Separation', type: 'range', min: 1, max: 50, step: 1 },
+                        { id: 'alignDist', label: 'Alignment', type: 'range', min: 1, max: 50, step: 1 },
+                        { id: 'cohDist', label: 'Cohesion', type: 'range', min: 1, max: 50, step: 1 },
+                        { id: 'force', label: 'Steer Force', type: 'range', min: 0.01, max: 0.2, step: 0.01 },
+                    ],
+                    attractor: [
+                         { id: 'scale', label: 'Scale', type: 'range', min: 1, max: 20, step: 0.1 },
+                         { id: 'iter', label: 'Iterations', type: 'range', min: 100, max: 5000, step: 100 },
+                         { id: 'sigma', label: 'Sigma', type: 'range', min: 1, max: 50, step: 0.1 },
+                         { id: 'rho', label: 'Rho', type: 'range', min: 1, max: 100, step: 0.1 },
+                         { id: 'beta', label: 'Beta', type: 'range', min: 0.1, max: 10, step: 0.1 },
+                         { id: 'dt', label: 'Time Step', type: 'range', min: 0.001, max: 0.05, step: 0.001 },
+                    ],
+                    hyphae: [
+                        { id: 'sources', label: 'Sources', type: 'range', min: 1, max: 10, step: 1 },
+                        { id: 'steps', label: 'Growth Steps', type: 'range', min: 10, max: 200, step: 10 },
+                        { id: 'branchProb', label: 'Branch Prob', type: 'range', min: 0, max: 0.2, step: 0.01 },
+                        { id: 'angleVar', label: 'Wiggle', type: 'range', min: 0, max: 2.0, step: 0.1 },
+                        { id: 'segLen', label: 'Segment Len', type: 'range', min: 1, max: 10, step: 0.1 },
+                    ],
+                    circles: [
+                        { id: 'count', label: 'Max Count', type: 'range', min: 10, max: 1000, step: 10 },
+                        { id: 'minR', label: 'Min Radius', type: 'range', min: 0.5, max: 10, step: 0.5 },
+                        { id: 'maxR', label: 'Max Radius', type: 'range', min: 2, max: 50, step: 1 },
+                        { id: 'padding', label: 'Padding', type: 'range', min: 0, max: 10, step: 0.5 },
+                        { id: 'attempts', label: 'Attempts', type: 'range', min: 50, max: 5000, step: 50 },
+                    ],
+                    cityscape: [
+                        { id: 'rows', label: 'Rows', type: 'range', min: 1, max: 5, step: 1 },
+                        { id: 'minW', label: 'Min Width', type: 'range', min: 5, max: 50, step: 1 },
+                        { id: 'maxW', label: 'Max Width', type: 'range', min: 10, max: 100, step: 1 },
+                        { id: 'minH', label: 'Min Height', type: 'range', min: 5, max: 100, step: 1 },
+                        { id: 'maxH', label: 'Max Height', type: 'range', min: 10, max: 150, step: 1 },
+                        { id: 'windowProb', label: 'Window Prob', type: 'range', min: 0, max: 1, step: 0.05 },
+                        { id: 'detail', label: 'Roof Detail', type: 'range', min: 0, max: 1, step: 0.05 },
+                    ]
+                };
+
+                this.initModuleDropdown();
+                this.bindGlobal();
+                this.renderLayers();
+                this.buildControls();
+                this.updateFormula();
+                this.initSettingsValues();
+            }
+
+            initModuleDropdown() {
+                const select = document.getElementById('generator-module');
+                select.innerHTML = '';
+                Object.keys(ALGO_DEFAULTS).forEach(key => {
+                    const opt = document.createElement('option');
+                    opt.value = key;
+                    opt.innerText = key.charAt(0).toUpperCase() + key.slice(1);
+                    select.appendChild(opt);
+                });
+            }
+
+            initSettingsValues() {
+                document.getElementById('set-margin').value = SETTINGS.margin;
+                document.getElementById('set-speed-down').value = SETTINGS.speedDown;
+                document.getElementById('set-speed-up').value = SETTINGS.speedUp;
+                document.getElementById('set-stroke').value = SETTINGS.strokeWidth;
+                document.getElementById('set-precision').value = SETTINGS.precision;
+                document.getElementById('inp-bg-color').value = SETTINGS.bgColor;
+            }
+
+            bindGlobal() {
+                document.getElementById('btn-add-layer').onclick = () => { 
+                    const t = document.getElementById('generator-module').value; 
+                    this.app.engine.addLayer(t); 
+                    this.renderLayers(); this.app.render(); 
+                };
+                document.getElementById('generator-module').onchange = (e) => {
+                    const l = this.app.engine.getActiveLayer();
+                    if(l) { 
+                        l.type = e.target.value; 
+                        l.params = JSON.parse(JSON.stringify(ALGO_DEFAULTS[l.type]));
+                        l.params.seed = parseInt(document.getElementById('inp-seed').value) || Math.floor(Math.random()*999);
+                        l.params.posX = parseFloat(document.getElementById('inp-pos-x').value) || 0;
+                        l.params.posY = parseFloat(document.getElementById('inp-pos-y').value) || 0;
+                        l.params.scaleX = parseFloat(document.getElementById('inp-scale-x').value) || 1;
+                        l.params.scaleY = parseFloat(document.getElementById('inp-scale-y').value) || 1;
+                        this.buildControls(); 
+                        this.app.regen(); 
+                    }
+                };
+                
+                document.getElementById('inp-bg-color').oninput = (e) => { SETTINGS.bgColor = e.target.value; this.app.render(); };
+                
+                const panel = document.getElementById('settings-panel');
+                document.getElementById('btn-settings').onclick = () => panel.classList.toggle('open');
+                document.getElementById('btn-close-settings').onclick = () => panel.classList.remove('open');
+                
+                document.getElementById('machine-profile').onchange = e => { this.app.engine.setProfile(e.target.value); this.app.renderer.center(); this.app.regen(); };
+                document.getElementById('set-margin').onchange = e => { SETTINGS.margin = parseInt(e.target.value); this.app.regen(); };
+                document.getElementById('set-speed-down').onchange = e => { SETTINGS.speedDown = parseInt(e.target.value); this.app.updateStats(); };
+                document.getElementById('set-speed-up').onchange = e => { SETTINGS.speedUp = parseInt(e.target.value); this.app.updateStats(); };
+                document.getElementById('set-stroke').onchange = e => { SETTINGS.strokeWidth = parseFloat(e.target.value); this.app.render(); };
+
+                document.getElementById('btn-export').onclick = () => this.exportSVG();
+                document.getElementById('btn-reset-view').onclick = () => this.app.renderer.center();
+                
+                const bindTrans = (id, key) => {
+                     document.getElementById(id).onchange = (e) => {
+                        const l = this.app.engine.getActiveLayer();
+                        if(l) { l.params[key] = parseFloat(e.target.value); this.app.regen(); }
+                     }
+                };
+                bindTrans('inp-seed', 'seed');
+                bindTrans('inp-pos-x', 'posX'); bindTrans('inp-pos-y', 'posY');
+                bindTrans('inp-scale-x', 'scaleX'); bindTrans('inp-scale-y', 'scaleY');
+                
+                document.getElementById('btn-rand-seed').onclick = () => {
+                     const l = this.app.engine.getActiveLayer();
+                     if(l) { 
+                         l.params.seed = Math.floor(Math.random()*99999); 
+                         document.getElementById('inp-seed').value = l.params.seed;
+                         this.app.regen(); 
+                         this.updateFormula();
+                     }
+                };
+            }
+
+            renderLayers() {
+                const container = document.getElementById('layer-list');
+                container.innerHTML = '';
+                this.app.engine.layers.slice().reverse().forEach(l => {
+                    const el = document.createElement('div');
+                    const isActive = l.id === this.app.engine.activeLayerId;
+                    el.className = `flex items-center justify-between bg-vectura-bg border border-vectura-border p-2 mb-2 group cursor-pointer hover:bg-vectura-border ${isActive ? 'active' : ''}`;
+                    el.innerHTML = `
+                        <div class="flex items-center gap-2 flex-1 overflow-hidden">
+                            <input type="checkbox" ${l.visible?'checked':''} class="cursor-pointer">
+                            <span class="text-xs truncate ${isActive ? 'text-white font-bold':'text-vectura-muted'}">${l.name}</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <button class="text-[10px] text-vectura-muted hover:text-white px-1 btn-up">▲</button>
+                            <button class="text-[10px] text-vectura-muted hover:text-white px-1 btn-down">▼</button>
+                             <div class="relative w-3 h-3 overflow-hidden rounded-full border border-vectura-border ml-1">
+                                <input type="color" value="${l.color}" class="color-picker">
+                            </div>
+                            <button class="text-xs text-vectura-muted hover:text-vectura-danger px-1 ml-1 btn-del">✕</button>
+                        </div>
+                    `;
+                    el.querySelector('span').onclick = () => { this.app.engine.activeLayerId = l.id; this.renderLayers(); this.buildControls(); this.updateFormula(); };
+                    el.querySelector('input[type=checkbox]').onchange = (e) => { l.visible = e.target.checked; this.app.render(); this.app.updateStats(); };
+                    el.querySelector('.color-picker').oninput = (e) => { l.color = e.target.value; this.app.render(); };
+                    el.querySelector('.btn-del').onclick = (e) => { e.stopPropagation(); this.app.engine.removeLayer(l.id); this.renderLayers(); this.app.render(); };
+                    el.querySelector('.btn-up').onclick = (e) => { e.stopPropagation(); this.app.engine.moveLayer(l.id, 1); this.renderLayers(); this.app.render(); };
+                    el.querySelector('.btn-down').onclick = (e) => { e.stopPropagation(); this.app.engine.moveLayer(l.id, -1); this.renderLayers(); this.app.render(); };
+                    container.appendChild(el);
+                });
+            }
+
+            buildControls() {
+                const container = document.getElementById('dynamic-controls');
+                container.innerHTML = '';
+                const layer = this.app.engine.getActiveLayer();
+                if(!layer) return;
+
+                document.getElementById('generator-module').value = layer.type;
+                document.getElementById('inp-seed').value = layer.params.seed;
+                document.getElementById('inp-pos-x').value = layer.params.posX;
+                document.getElementById('inp-pos-y').value = layer.params.posY;
+                document.getElementById('inp-scale-x').value = layer.params.scaleX;
+                document.getElementById('inp-scale-y').value = layer.params.scaleY;
+                
+                document.getElementById('algo-desc').innerText = DESCRIPTIONS[layer.type] || "No description available.";
+
+                const defs = this.controls[layer.type];
+                if(!defs) return;
+
+                defs.forEach(def => {
+                    const val = layer.params[def.id];
+                    const div = document.createElement('div');
+                    div.className = 'mb-4';
+                    div.innerHTML = `
+                        <div class="flex justify-between mb-1">
+                            <label class="control-label mb-0">${def.label}</label>
+                            <span class="text-xs text-vectura-accent font-mono">${val}</span>
+                        </div>
+                        <input type="range" min="${def.min}" max="${def.max}" step="${def.step}" value="${val}" class="w-full">
+                    `;
+                    const input = div.querySelector('input');
+                    const span = div.querySelector('span');
+                    input.oninput = (e) => span.innerText = e.target.value;
+                    input.onchange = (e) => {
+                        layer.params[def.id] = parseFloat(e.target.value);
+                        this.app.regen();
+                        this.updateFormula();
+                    };
+                    container.appendChild(div);
+                });
+            }
+            
+            updateFormula() {
+                const l = this.app.engine.getActiveLayer();
+                if(!l) return;
+                document.getElementById('formula-display').innerText = this.app.engine.getFormula(l.id);
+                document.getElementById('formula-seed-display').innerText = `Seed: ${l.params.seed}`;
+            }
+
+            exportSVG() {
+                const prof = this.app.engine.currentProfile;
+                let svg = `<?xml version="1.0" standalone="no"?><svg width="${prof.width}mm" height="${prof.height}mm" viewBox="0 0 ${prof.width} ${prof.height}" xmlns="http://www.w3.org/2000/svg">`;
+                this.app.engine.layers.forEach(l => {
+                    if(!l.visible) return;
+                    svg += `<g id="${l.name.replace(/\s/g,'_')}" stroke="black" stroke-width="0.3" fill="none">`;
+                    l.paths.forEach(p => {
+                        if(p.length<2) return;
+                        svg += `<path d="M ${p.map(pt=>`${pt.x.toFixed(3)} ${pt.y.toFixed(3)}`).join(' L ')}" />`;
+                    });
+                    svg += `</g>`;
+                });
+                svg += `</svg>`;
+                const url = URL.createObjectURL(new Blob([svg], {type:'image/svg+xml'}));
+                const a = document.createElement('a'); a.href=url; a.download='vectura.svg'; a.click();
+            }
+        }
+
+        // --- 7. APP BOOTSTRAP ---
+        class App {
+            constructor() {
+                console.log("Initializing Vectura Studio...");
+                this.engine = new VectorEngine();
+                this.renderer = new Renderer('main-canvas', this.engine);
+                this.ui = new UI(this);
+                
+                // Initial Draw
+                this.render();
+            }
+            
+            regen() {
+                this.engine.generate(this.engine.activeLayerId);
+                this.render();
+                this.ui.updateFormula();
+            }
+            
+            render() {
+                this.renderer.draw();
+                this.updateStats();
+            }
+            
+            updateStats() {
+                const s = this.engine.getStats();
+                document.getElementById('stat-dist').innerText = s.distance;
+                document.getElementById('stat-time').innerText = s.time;
+            }
+        }
+
+        window.onload = () => window.app = new App();
+
+    </script>
+</body>
+</html>
