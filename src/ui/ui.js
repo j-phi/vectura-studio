@@ -75,8 +75,9 @@
       { id: 'gap', label: 'Line Gap', type: 'range', min: 0.5, max: 3.0, step: 0.1, infoKey: 'wavetable.gap' },
       { id: 'freq', label: 'Frequency', type: 'range', min: 0.2, max: 12.0, step: 0.1, infoKey: 'wavetable.freq' },
       { id: 'noiseAngle', label: 'Noise Angle', type: 'range', min: -180, max: 180, step: 5, infoKey: 'wavetable.noiseAngle' },
-      { id: 'edgeFade', label: 'Edge Fade', type: 'range', min: 0, max: 0.5, step: 0.02, infoKey: 'wavetable.edgeFade' },
-      { id: 'truncate', label: 'Truncate', type: 'checkbox', infoKey: 'wavetable.truncate' },
+      { id: 'edgeFade', label: 'Edge Fade', type: 'range', min: 0, max: 1, step: 0.02, infoKey: 'wavetable.edgeFade' },
+      { id: 'dampenExtremes', label: 'Dampen Extremes', type: 'checkbox', infoKey: 'wavetable.dampenExtremes' },
+      { id: 'noOverlap', label: 'No Overlap', type: 'checkbox', infoKey: 'wavetable.noOverlap' },
       { id: 'flatCaps', label: 'Flat Top/Bottom', type: 'checkbox', infoKey: 'wavetable.flatCaps' },
     ],
     spiral: [
@@ -104,12 +105,42 @@
       },
     ],
     phylla: [
+      {
+        id: 'shapeType',
+        label: 'Shape',
+        type: 'select',
+        options: [
+          { value: 'circle', label: 'Circle' },
+          { value: 'polygon', label: 'Polygon' },
+        ],
+        infoKey: 'phylla.shapeType',
+      },
       { id: 'count', label: 'Count', type: 'range', min: 100, max: 2000, step: 50, infoKey: 'phylla.count' },
       { id: 'spacing', label: 'Spacing', type: 'range', min: 1, max: 10, step: 0.1, infoKey: 'phylla.spacing' },
       { id: 'angleStr', label: 'Angle', type: 'range', min: 130, max: 140, step: 0.01, infoKey: 'phylla.angleStr' },
       { id: 'divergence', label: 'Divergence', type: 'range', min: 0.5, max: 2.5, step: 0.1, infoKey: 'phylla.divergence' },
       { id: 'noiseInf', label: 'Noise Infl.', type: 'range', min: 0, max: 20, step: 1, infoKey: 'phylla.noiseInf' },
       { id: 'dotSize', label: 'Dot Size', type: 'range', min: 0.5, max: 3, step: 0.1, infoKey: 'phylla.dotSize' },
+      {
+        id: 'sides',
+        label: 'Sides',
+        type: 'range',
+        min: 3,
+        max: 100,
+        step: 1,
+        infoKey: 'phylla.sides',
+        showIf: (params) => params.shapeType === 'polygon',
+      },
+      {
+        id: 'sideJitter',
+        label: 'Side Jitter',
+        type: 'range',
+        min: 0,
+        max: 20,
+        step: 1,
+        infoKey: 'phylla.sideJitter',
+        showIf: (params) => params.shapeType === 'polygon',
+      },
     ],
     boids: [
       { id: 'count', label: 'Agents', type: 'range', min: 10, max: 300, step: 10, infoKey: 'boids.count' },
@@ -350,9 +381,13 @@
       title: 'Edge Fade',
       description: 'Softens the waveform near the left and right edges.',
     },
-    'wavetable.truncate': {
-      title: 'Truncate',
-      description: 'When enabled, removes segments that fall outside the drawing bounds.',
+    'wavetable.dampenExtremes': {
+      title: 'Dampen Extremes',
+      description: 'Scales back displacement near the top and bottom margins.',
+    },
+    'wavetable.noOverlap': {
+      title: 'No Overlap',
+      description: 'Prevents rows from crossing over each other.',
     },
     'wavetable.flatCaps': {
       title: 'Flat Top/Bottom',
@@ -402,6 +437,10 @@
       title: 'Mode',
       description: 'Warp bends both axes; Shift offsets rows vertically using noise.',
     },
+    'phylla.shapeType': {
+      title: 'Shape',
+      description: 'Switch between true circles or polygonal markers.',
+    },
     'phylla.count': {
       title: 'Count',
       description: 'Number of points in the phyllotaxis spiral.',
@@ -425,6 +464,14 @@
     'phylla.dotSize': {
       title: 'Dot Size',
       description: 'Radius of each dot marker.',
+    },
+    'phylla.sides': {
+      title: 'Sides',
+      description: 'Number of sides for polygon markers.',
+    },
+    'phylla.sideJitter': {
+      title: 'Side Jitter',
+      description: 'Random variation applied to polygon side count.',
     },
     'boids.count': {
       title: 'Agents',
@@ -1302,6 +1349,13 @@
               this.buildControls();
               this.updateFormula();
             };
+            nameEl.ondblclick = (e) => {
+              e.stopPropagation();
+              const next = window.prompt('Rename layer', l.name);
+              if (!next) return;
+              l.name = next.trim() || l.name;
+              this.renderLayers();
+            };
           }
           if (visibilityEl) {
             visibilityEl.onchange = (e) => {
@@ -1431,11 +1485,21 @@
 
       const desc = getEl('algo-desc');
       if (desc) desc.innerText = DESCRIPTIONS[layer.type] || 'No description available.';
+      if (moduleSelect) {
+        const algoLabel = moduleSelect.parentElement?.querySelector('.control-label');
+        const infoBtn = algoLabel?.querySelector('.info-btn');
+        if (layer.type === 'phylla') {
+          if (infoBtn) infoBtn.remove();
+        } else if (algoLabel && !infoBtn) {
+          this.attachInfoButton(algoLabel, 'global.algorithm');
+        }
+      }
 
       const defs = [...(this.controls[layer.type] || []), ...COMMON_CONTROLS];
       if (!defs.length) return;
 
       defs.forEach((def) => {
+        if (def.showIf && !def.showIf(layer.params)) return;
         const val = layer.params[def.id];
         const div = document.createElement('div');
         div.className = 'mb-4';

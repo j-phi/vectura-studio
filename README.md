@@ -6,6 +6,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Plotter-first output in millimeters with machine profiles (A3, A4, AxiDraw V3).
 - Layered generation with visibility toggles, ordering, and per-layer stroke/line-cap settings.
 - Seeded, repeatable results with live transform controls (position and scale).
+- Direct canvas manipulation: drag to move the active layer, drag corner handles to resize, and double-click to rename layers.
 - Multiple algorithm families (flowfields, lissajous, wavetable, boids, attractors, hyphae, shape pack).
 - One-click SVG export with configurable precision.
 - Live formula display and estimated pen distance/time.
@@ -30,11 +31,11 @@ Then visit `http://localhost:8000`.
 ## How to Use
 1. Pick an algorithm in the left panel and adjust its parameters.
 2. Use the transform controls (seed, position, scale) to nudge the layer.
-3. Manage layers on the right: add, reorder, hide, or tune stroke width and line cap.
+3. Manage layers on the right: add, reorder, hide, rename (double-click), or tune stroke width and line cap.
 4. Use Settings for machine size, margin, stroke, background, and SVG precision.
 5. Export with the [EXPORT SVG] button.
 
-Pan: Shift + Drag. Zoom: Mouse Wheel.
+Pan: Shift + Drag. Zoom: Mouse Wheel. Move layer: Drag. Resize layer: Drag corner handles.
 
 ## Algorithm Library
 Each layer is powered by an algorithm with its own parameters and formula preview:

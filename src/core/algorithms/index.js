@@ -371,17 +371,19 @@
         const lSpace = dH / p.lines;
         const pts = Math.floor(dW / 2);
         const xStep = dW / pts;
-        const truncate = Boolean(p.truncate);
+        const dampenExtremes = Boolean(p.dampenExtremes);
+        const noOverlap = Boolean(p.noOverlap);
         const flatCaps = Boolean(p.flatCaps);
-        const edgeFade = Math.min(0.45, Math.max(0, p.edgeFade ?? 0.2));
+        const edgeFade = Math.min(1, Math.max(0, p.edgeFade ?? 0.2));
         const noiseAngle = ((p.noiseAngle ?? 0) * Math.PI) / 180;
         const cosA = Math.cos(noiseAngle);
         const sinA = Math.sin(noiseAngle);
+        let prevY = null;
         for (let i = 0; i < p.lines; i++) {
           const path = [];
-          let hasOutOfBounds = false;
           const by = m + i * lSpace * p.gap;
           const xOffset = p.tilt * i;
+          const currY = noOverlap ? new Array(pts + 1) : null;
           for (let j = 0; j <= pts; j++) {
             const x = m + j * xStep + xOffset;
             const nx = x * p.zoom * p.freq;
@@ -389,27 +391,36 @@
             const rx = nx * cosA - ny * sinA;
             const ry = nx * sinA + ny * cosA;
             const n = noise.noise2D(rx, ry);
-            const off = Math.abs(n) * p.amplitude;
+            const off = n * p.amplitude;
             let taper = 1.0;
             const distC = Math.abs(j / pts - 0.5) * 2;
             if (edgeFade > 0) {
               const edgeStart = 1 - edgeFade;
               if (distC > edgeStart) taper = 1.0 - (distC - edgeStart) / edgeFade;
             }
-            const y = by - off * taper;
-            const inside = y > m && y < height - m;
-            if (!inside) hasOutOfBounds = true;
-            if (truncate) {
-              if (inside) path.push({ x, y });
-            } else {
-              path.push({ x, y });
+            let y = by + off * taper;
+            if (dampenExtremes) {
+              const minY = m;
+              const maxY = height - m;
+              if (y < minY || y > maxY) {
+                const limit = Math.max(0, y < minY ? by - minY : maxY - by);
+                const denom = Math.max(0.001, Math.abs(off) * taper);
+                const scale = Math.min(1, limit / denom);
+                y = by + off * taper * scale;
+              }
             }
+            if (noOverlap && prevY) {
+              const minGap = Math.max(0.1, lSpace * p.gap * 0.1);
+              if (y < prevY[j] + minGap) y = prevY[j] + minGap;
+            }
+            path.push({ x, y });
+            if (currY) currY[j] = y;
           }
-          if (!truncate && hasOutOfBounds) continue;
           if (path.length > 1) paths.push(path);
+          if (currY) prevY = currY;
         }
 
-        if (truncate || flatCaps) {
+        if (flatCaps) {
           const top = [];
           const bottom = [];
           for (let j = 0; j <= pts; j++) {
@@ -422,7 +433,7 @@
 
         return paths;
       },
-      formula: () => 'y = yBase - (|noise(x,y)| * amplitude)',
+      formula: () => 'y = yBase + (noise(x,y) * amplitude)',
     },
     spiral: {
       generate: (p, rng, noise, bounds) => {
@@ -500,6 +511,9 @@
         const pcy = height / 2;
         const angleStep = p.angleStr * (Math.PI / 180);
         const dotSize = Math.max(0.1, p.dotSize ?? 1);
+        const shapeType = p.shapeType || 'circle';
+        const baseSides = Math.max(3, Math.min(100, Math.round(p.sides ?? 6)));
+        const sideJitter = Math.max(0, Math.min(50, Math.round(p.sideJitter ?? 0)));
         const angleOffset = rng.nextFloat() * Math.PI * 2;
         for (let i = 0; i < p.count; i++) {
           const r = p.spacing * Math.sqrt(i) * p.divergence;
@@ -509,12 +523,22 @@
           const n = noise.noise2D(x * 0.05, y * 0.05);
           x += n * p.noiseInf;
           y += n * p.noiseInf;
-          const circle = [];
-          for (let k = 0; k <= 8; k++) {
-            const ca = (k / 8) * Math.PI * 2;
-            circle.push({ x: x + Math.cos(ca) * dotSize, y: y + Math.sin(ca) * dotSize });
+          if (x > m && x < width - m && y > m && y < height - m) {
+            if (shapeType === 'circle') {
+              const circle = [];
+              circle.meta = { kind: 'circle', cx: x, cy: y, r: dotSize };
+              paths.push(circle);
+            } else {
+              const jitter = sideJitter ? Math.round((rng.nextFloat() * 2 - 1) * sideJitter) : 0;
+              const sides = Math.max(3, Math.min(100, baseSides + jitter));
+              const poly = [];
+              for (let k = 0; k <= sides; k++) {
+                const ca = (k / sides) * Math.PI * 2;
+                poly.push({ x: x + Math.cos(ca) * dotSize, y: y + Math.sin(ca) * dotSize });
+              }
+              paths.push(poly);
+            }
           }
-          if (x > m && x < width - m && y > m && y < height - m) paths.push(circle);
         }
         return paths;
       },
