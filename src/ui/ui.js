@@ -159,12 +159,77 @@
       { id: 'segLen', label: 'Segment Len', type: 'range', min: 1, max: 8, step: 0.1, infoKey: 'hyphae.segLen' },
       { id: 'maxBranches', label: 'Max Branches', type: 'range', min: 100, max: 3000, step: 50, infoKey: 'hyphae.maxBranches' },
     ],
-    circles: [
-      { id: 'count', label: 'Max Count', type: 'range', min: 20, max: 800, step: 20, infoKey: 'circles.count' },
-      { id: 'radiusRange', label: 'Radius Range', type: 'rangeDual', min: 0.5, max: 120, step: 0.5, minKey: 'minR', maxKey: 'maxR', infoKey: 'circles.radiusRange' },
-      { id: 'padding', label: 'Padding', type: 'range', min: 0, max: 10, step: 0.5, infoKey: 'circles.padding' },
-      { id: 'attempts', label: 'Attempts', type: 'range', min: 100, max: 5000, step: 100, infoKey: 'circles.attempts' },
-      { id: 'segments', label: 'Segments', type: 'range', min: 8, max: 64, step: 2, infoKey: 'circles.segments' },
+    shapePack: [
+      {
+        id: 'shape',
+        label: 'Shape',
+        type: 'select',
+        options: [
+          { value: 'circle', label: 'Circle' },
+          { value: 'polygon', label: 'Polygon' },
+        ],
+        infoKey: 'shapePack.shape',
+      },
+      { id: 'count', label: 'Max Count', type: 'range', min: 20, max: 800, step: 20, infoKey: 'shapePack.count' },
+      {
+        id: 'radiusRange',
+        label: 'Radius Range',
+        type: 'rangeDual',
+        min: 0.5,
+        max: 120,
+        step: 0.5,
+        minKey: 'minR',
+        maxKey: 'maxR',
+        infoKey: 'shapePack.radiusRange',
+      },
+      { id: 'padding', label: 'Padding', type: 'range', min: 0, max: 10, step: 0.5, infoKey: 'shapePack.padding' },
+      { id: 'attempts', label: 'Attempts', type: 'range', min: 100, max: 5000, step: 100, infoKey: 'shapePack.attempts' },
+      { id: 'segments', label: 'Segments', type: 'range', min: 3, max: 64, step: 1, infoKey: 'shapePack.segments' },
+      { id: 'rotation', label: 'Rotation', type: 'range', min: -180, max: 180, step: 1, infoKey: 'shapePack.rotation' },
+      { id: 'rotationStep', label: 'Rotation Step', type: 'range', min: -30, max: 30, step: 1, infoKey: 'shapePack.rotationStep' },
+      {
+        id: 'perspectiveType',
+        label: 'Perspective',
+        type: 'select',
+        options: [
+          { value: 'none', label: 'None' },
+          { value: 'vertical', label: 'Vertical' },
+          { value: 'horizontal', label: 'Horizontal' },
+          { value: 'radial', label: 'Radial' },
+        ],
+        infoKey: 'shapePack.perspectiveType',
+      },
+      { id: 'perspective', label: 'Perspective Amt', type: 'range', min: -1, max: 1, step: 0.05, infoKey: 'shapePack.perspective' },
+      { id: 'perspectiveX', label: 'Perspective X', type: 'range', min: -200, max: 200, step: 5, infoKey: 'shapePack.perspectiveX' },
+      { id: 'perspectiveY', label: 'Perspective Y', type: 'range', min: -200, max: 200, step: 5, infoKey: 'shapePack.perspectiveY' },
+    ],
+    cityscape: [
+      { id: 'count', label: 'Blocks', type: 'range', min: 40, max: 240, step: 10, infoKey: 'cityscape.count' },
+      { id: 'minSize', label: 'Min Size', type: 'range', min: 3, max: 30, step: 1, infoKey: 'cityscape.minSize' },
+      { id: 'padding', label: 'Padding', type: 'range', min: 0, max: 6, step: 0.5, infoKey: 'cityscape.padding' },
+      { id: 'coreX', label: 'Core X', type: 'range', min: -200, max: 200, step: 5, infoKey: 'cityscape.coreX' },
+      { id: 'coreY', label: 'Core Y', type: 'range', min: -200, max: 200, step: 5, infoKey: 'cityscape.coreY' },
+      { id: 'coreSize', label: 'Core Size', type: 'range', min: 20, max: 200, step: 5, infoKey: 'cityscape.coreSize' },
+      { id: 'heightMin', label: 'Height Min', type: 'range', min: 0, max: 40, step: 1, infoKey: 'cityscape.heightMin' },
+      { id: 'heightRange', label: 'Height Range', type: 'range', min: 20, max: 200, step: 5, infoKey: 'cityscape.heightRange' },
+      { id: 'heightVar', label: 'Height Var', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'cityscape.heightVar' },
+      { id: 'heightFalloff', label: 'Height Falloff', type: 'range', min: 0.4, max: 3, step: 0.1, infoKey: 'cityscape.heightFalloff' },
+      { id: 'heightNoise', label: 'Height Noise', type: 'range', min: 0, max: 60, step: 2, infoKey: 'cityscape.heightNoise' },
+      { id: 'heightNoiseFreq', label: 'Noise Freq', type: 'range', min: 0.002, max: 0.05, step: 0.002, infoKey: 'cityscape.heightNoiseFreq' },
+      { id: 'perspective', label: 'Line Scale', type: 'range', min: 0.2, max: 2, step: 0.05, infoKey: 'cityscape.perspective' },
+      { id: 'vpTopX', label: 'VP Top X', type: 'range', min: -1200, max: 1200, step: 20, infoKey: 'cityscape.vpTopX' },
+      { id: 'vpTopY', label: 'VP Top Y', type: 'range', min: -1200, max: 0, step: 20, infoKey: 'cityscape.vpTopY' },
+      { id: 'vpRightX', label: 'VP Right X', type: 'range', min: 0, max: 1600, step: 20, infoKey: 'cityscape.vpRightX' },
+      { id: 'vpRightY', label: 'VP Right Y', type: 'range', min: -1200, max: 1200, step: 20, infoKey: 'cityscape.vpRightY' },
+      { id: 'vpBottomX', label: 'VP Bottom X', type: 'range', min: -1200, max: 1200, step: 20, infoKey: 'cityscape.vpBottomX' },
+      { id: 'vpBottomY', label: 'VP Bottom Y', type: 'range', min: 0, max: 1600, step: 20, infoKey: 'cityscape.vpBottomY' },
+      { id: 'vpLeftX', label: 'VP Left X', type: 'range', min: -1600, max: 0, step: 20, infoKey: 'cityscape.vpLeftX' },
+      { id: 'vpLeftY', label: 'VP Left Y', type: 'range', min: -1200, max: 1200, step: 20, infoKey: 'cityscape.vpLeftY' },
+      { id: 'hatchSpacing', label: 'Hatch Spacing', type: 'range', min: 0.5, max: 6, step: 0.5, infoKey: 'cityscape.hatchSpacing' },
+      { id: 'hatchJitter', label: 'Hatch Jitter', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'cityscape.hatchJitter' },
+      { id: 'voidChance', label: 'Void Chance', type: 'range', min: 0, max: 0.4, step: 0.05, infoKey: 'cityscape.voidChance' },
+      { id: 'topOutline', label: 'Top Outline', type: 'checkbox', infoKey: 'cityscape.topOutline' },
+      { id: 'showPerspective', label: 'Show Perspective', type: 'checkbox', infoKey: 'cityscape.showPerspective' },
     ],
   };
 
@@ -485,25 +550,157 @@
       title: 'Max Branches',
       description: 'Hard cap to prevent runaway growth.',
     },
-    'circles.count': {
+    'shapePack.shape': {
+      title: 'Shape',
+      description: 'Circle outputs true SVG circles; Polygon uses segments and can be rotated.',
+    },
+    'shapePack.count': {
       title: 'Max Count',
-      description: 'Maximum number of circles to place.',
+      description: 'Maximum number of shapes to place.',
     },
-    'circles.radiusRange': {
+    'shapePack.radiusRange': {
       title: 'Radius Range',
-      description: 'Minimum and maximum circle size. Wider ranges mix small and large disks.',
+      description: 'Minimum and maximum size for each packed shape.',
     },
-    'circles.padding': {
+    'shapePack.padding': {
       title: 'Padding',
-      description: 'Extra spacing between circles.',
+      description: 'Extra spacing between shapes.',
     },
-    'circles.attempts': {
+    'shapePack.attempts': {
       title: 'Attempts',
       description: 'Placement iterations before stopping.',
     },
-    'circles.segments': {
+    'shapePack.segments': {
       title: 'Segments',
-      description: 'Circle smoothness. Higher values create smoother curves.',
+      description: 'Polygon sides (min 3). Ignored when Shape = Circle.',
+    },
+    'shapePack.rotation': {
+      title: 'Rotation',
+      description: 'Base rotation in degrees for polygons.',
+    },
+    'shapePack.rotationStep': {
+      title: 'Rotation Step',
+      description: 'Adds rotation per shape index (function-based offset).',
+    },
+    'shapePack.perspectiveType': {
+      title: 'Perspective Type',
+      description: 'Perspective warp applied to polygons (none, vertical, horizontal, radial).',
+    },
+    'shapePack.perspective': {
+      title: 'Perspective Amount',
+      description: 'Strength of the perspective warp. Negative values invert the effect.',
+    },
+    'shapePack.perspectiveX': {
+      title: 'Perspective X',
+      description: 'Horizontal offset for the perspective origin (mm).',
+    },
+    'shapePack.perspectiveY': {
+      title: 'Perspective Y',
+      description: 'Vertical offset for the perspective origin (mm).',
+    },
+    'cityscape.count': {
+      title: 'Blocks',
+      description: 'Target number of building footprints created by subdivision.',
+    },
+    'cityscape.minSize': {
+      title: 'Min Size',
+      description: 'Smallest width or height allowed for a building block.',
+    },
+    'cityscape.padding': {
+      title: 'Padding',
+      description: 'Gap between blocks to create streets and breathing room.',
+    },
+    'cityscape.coreX': {
+      title: 'Core X',
+      description: 'Horizontal offset of the central square from the drawing center.',
+    },
+    'cityscape.coreY': {
+      title: 'Core Y',
+      description: 'Vertical offset of the central square from the drawing center.',
+    },
+    'cityscape.coreSize': {
+      title: 'Core Size',
+      description: 'Side length of the central diamond aligned to the vanishing points.',
+    },
+    'cityscape.heightMin': {
+      title: 'Height Min',
+      description: 'Base extrusion height applied everywhere.',
+    },
+    'cityscape.heightRange': {
+      title: 'Height Range',
+      description: 'Additional height added near the center of the composition.',
+    },
+    'cityscape.heightVar': {
+      title: 'Height Var',
+      description: 'Random per-building height variation as a fraction of the range.',
+    },
+    'cityscape.heightFalloff': {
+      title: 'Height Falloff',
+      description: 'Controls how quickly heights drop as distance from center increases.',
+    },
+    'cityscape.heightNoise': {
+      title: 'Height Noise',
+      description: 'Random variation added to building height.',
+    },
+    'cityscape.heightNoiseFreq': {
+      title: 'Noise Freq',
+      description: 'Frequency of the height noise field.',
+    },
+    'cityscape.perspective': {
+      title: 'Line Scale',
+      description: 'Scales the number of hatch lines per building side.',
+    },
+    'cityscape.vpTopX': {
+      title: 'VP Top X',
+      description: 'X offset for the top vanishing point.',
+    },
+    'cityscape.vpTopY': {
+      title: 'VP Top Y',
+      description: 'Y offset for the top vanishing point.',
+    },
+    'cityscape.vpRightX': {
+      title: 'VP Right X',
+      description: 'X offset for the right vanishing point.',
+    },
+    'cityscape.vpRightY': {
+      title: 'VP Right Y',
+      description: 'Y offset for the right vanishing point.',
+    },
+    'cityscape.vpBottomX': {
+      title: 'VP Bottom X',
+      description: 'X offset for the bottom vanishing point.',
+    },
+    'cityscape.vpBottomY': {
+      title: 'VP Bottom Y',
+      description: 'Y offset for the bottom vanishing point.',
+    },
+    'cityscape.vpLeftX': {
+      title: 'VP Left X',
+      description: 'X offset for the left vanishing point.',
+    },
+    'cityscape.vpLeftY': {
+      title: 'VP Left Y',
+      description: 'Y offset for the left vanishing point.',
+    },
+    'cityscape.hatchSpacing': {
+      title: 'Hatch Spacing',
+      description: 'Distance between facade hatch lines.',
+    },
+    'cityscape.hatchJitter': {
+      title: 'Hatch Jitter',
+      description: 'Random offset applied to hatch line placement.',
+    },
+    'cityscape.voidChance': {
+      title: 'Void Chance',
+      description: 'Randomly skips blocks to carve negative space.',
+    },
+    'cityscape.topOutline': {
+      title: 'Top Outline',
+      description: 'Draws the top face outline of each block.',
+    },
+    'cityscape.showPerspective': {
+      title: 'Show Perspective',
+      description: 'Toggles the guide lines from vanishing points to the core diamond corners.',
     },
   };
 
@@ -522,6 +719,7 @@
       });
     }
     smoothed.push(path[path.length - 1]);
+    if (path.meta) smoothed.meta = path.meta;
     return smoothed;
   };
 
@@ -544,6 +742,28 @@
     return { x, y };
   };
 
+  const transformMeta = (meta, params, bounds) => {
+    if (!meta || meta.kind !== 'circle') return meta;
+    const center = transformPoint({ x: meta.cx, y: meta.cy }, params, bounds);
+    const scaleX = params.scaleX ?? 1;
+    const scaleY = params.scaleY ?? 1;
+    const baseR = Number.isFinite(meta.r) ? meta.r : Math.max(meta.rx ?? 0, meta.ry ?? 0);
+    return {
+      ...meta,
+      cx: center.x,
+      cy: center.y,
+      rx: Math.abs(baseR * scaleX),
+      ry: Math.abs(baseR * scaleY),
+    };
+  };
+
+  const transformPath = (path, params, bounds) => {
+    if (!Array.isArray(path)) return path;
+    const next = path.map((pt) => transformPoint(pt, params, bounds));
+    if (path.meta) next.meta = transformMeta(path.meta, params, bounds);
+    return next;
+  };
+
   const limitPaths = (paths) => {
     const limited = [];
     let total = 0;
@@ -553,6 +773,7 @@
       if (next.length > PREVIEW.maxPointsPerPath) {
         const step = Math.ceil(next.length / PREVIEW.maxPointsPerPath);
         next = next.filter((_, i) => i % step === 0);
+        if (path.meta) next.meta = path.meta;
       }
       total += next.length;
       if (total > PREVIEW.maxPoints) break;
@@ -578,6 +799,23 @@
     return d;
   };
 
+  const shapeToSvg = (path, precision, useCurves) => {
+    if (path && path.meta && path.meta.kind === 'circle') {
+      const fmt = (n) => Number(n).toFixed(precision);
+      const cx = path.meta.cx;
+      const cy = path.meta.cy;
+      const rx = path.meta.rx ?? path.meta.r;
+      const ry = path.meta.ry ?? path.meta.r;
+      if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(rx) || !Number.isFinite(ry)) return '';
+      if (Math.abs(rx - ry) < 0.001) {
+        return `<circle cx="${fmt(cx)}" cy="${fmt(cy)}" r="${fmt(rx)}" />`;
+      }
+      return `<ellipse cx="${fmt(cx)}" cy="${fmt(cy)}" rx="${fmt(rx)}" ry="${fmt(ry)}" />`;
+    }
+    const d = pathToSvg(path, precision, useCurves);
+    return d ? `<path d="${d}" />` : '';
+  };
+
   const renderPreviewSvg = (type, params, options = {}) => {
     if (!Algorithms || !Algorithms[type] || !SeededRNG || !SimpleNoise) return '';
     const width = options.width ?? PREVIEW.width;
@@ -598,15 +836,17 @@
     const noise = new SimpleNoise(seed);
     const rawPaths = Algorithms[type].generate(base, rng, noise, bounds) || [];
     const smooth = clamp(base.smoothing ?? 0, 0, 1);
-    const transformed = rawPaths.map((path) => smoothPath(path.map((pt) => transformPoint(pt, base, bounds)), smooth));
+    const transformed = rawPaths.map((path) => {
+      if (!Array.isArray(path)) return path;
+      return smoothPath(transformPath(path, base, bounds), smooth);
+    });
     const limited = limitPaths(transformed);
     const useCurves = Boolean(base.curves);
     const precision = 2;
     const strokeWidth = options.strokeWidth ?? 1.2;
     const pathsSvg = limited
-      .map((path) => pathToSvg(path, precision, useCurves))
+      .map((path) => shapeToSvg(path, precision, useCurves))
       .filter(Boolean)
-      .map((d) => `<path d="${d}" />`)
       .join('');
     return `
       <svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#fafafa" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">
@@ -770,16 +1010,17 @@
     if (!defs) return null;
     const def = defs.find((item) => item.id === param);
     if (!def) return null;
+    const algoParams = {
+      ...(ALGO_DEFAULTS && ALGO_DEFAULTS[group] ? ALGO_DEFAULTS[group] : baseParams),
+      seed: 1234,
+      posX: 0,
+      posY: 0,
+      scaleX: 1,
+      scaleY: 1,
+    };
     return {
       type: group,
-      baseParams: {
-        ...(ALGO_DEFAULTS && ALGO_DEFAULTS[group] ? ALGO_DEFAULTS[group] : baseParams),
-        seed: 1234,
-        posX: 0,
-        posY: 0,
-        scaleX: 1,
-        scaleY: 1,
-      },
+      baseParams: algoParams,
       def,
     };
   };
@@ -932,7 +1173,8 @@
       Object.keys(ALGO_DEFAULTS).forEach((key) => {
         const opt = document.createElement('option');
         opt.value = key;
-        opt.innerText = key.charAt(0).toUpperCase() + key.slice(1);
+        const label = ALGO_DEFAULTS[key]?.label;
+        opt.innerText = label || key.charAt(0).toUpperCase() + key.slice(1);
         select.appendChild(opt);
       });
     }
@@ -1160,9 +1402,8 @@
         .forEach((l) => {
           const el = document.createElement('div');
           const isActive = l.id === this.app.engine.activeLayerId;
-          el.className = `layer-item flex items-center justify-between bg-vectura-bg border border-vectura-border p-2 mb-2 group cursor-pointer hover:bg-vectura-border ${
-            isActive ? 'active' : ''
-          }`;
+          el.className = `layer-item flex items-center justify-between bg-vectura-bg border border-vectura-border p-2 mb-2 group cursor-pointer hover:bg-vectura-border ${isActive ? 'active' : ''
+            }`;
           el.innerHTML = `
             <div class="flex items-center gap-2 flex-1 overflow-hidden">
               <input type="checkbox" ${l.visible ? 'checked' : ''} class="cursor-pointer" aria-label="Toggle layer visibility">
@@ -1323,7 +1564,8 @@
       const desc = getEl('algo-desc');
       if (desc) desc.innerText = DESCRIPTIONS[layer.type] || 'No description available.';
 
-      const defs = [...(this.controls[layer.type] || []), ...COMMON_CONTROLS];
+      const includeCommon = layer.type !== 'cityscape';
+      const defs = [...(this.controls[layer.type] || []), ...(includeCommon ? COMMON_CONTROLS : [])];
       if (!defs.length) return;
 
       defs.forEach((def) => {
@@ -1491,9 +1733,8 @@
         const useCurves = Boolean(l.params && l.params.curves);
         svg += `<g id="${l.name.replace(/\s/g, '_')}" stroke="black" stroke-width="${strokeWidth}" stroke-linecap="${lineCap}" stroke-linejoin="round" fill="none">`;
         l.paths.forEach((p) => {
-          if (p.length < 2) return;
-          const d = pathToSvg(p, precision, useCurves);
-          if (d) svg += `<path d="${d}" />`;
+          const markup = shapeToSvg(p, precision, useCurves);
+          if (markup) svg += markup;
         });
         svg += `</g>`;
       });

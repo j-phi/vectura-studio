@@ -2,7 +2,7 @@
  * Core vector generation engine.
  */
 (() => {
-  const { MACHINES, SETTINGS, Algorithms, SeededRNG, SimpleNoise, Layer } = window.Vectura || {};
+  const { MACHINES, SETTINGS, ALGO_DEFAULTS, Algorithms, SeededRNG, SimpleNoise, Layer } = window.Vectura || {};
 
   const smoothPath = (path, amount) => {
     if (!amount || amount <= 0 || path.length < 3) return path;
@@ -19,6 +19,7 @@
       });
     }
     smoothed.push(path[path.length - 1]);
+    if (path.meta) smoothed.meta = path.meta;
     return smoothed;
   };
 
@@ -34,7 +35,8 @@
       const id = Math.random().toString(36).substr(2, 9);
       SETTINGS.globalLayerCount++;
       const num = String(SETTINGS.globalLayerCount).padStart(2, '0');
-      const prettyType = type.charAt(0).toUpperCase() + type.slice(1);
+      const defaults = ALGO_DEFAULTS && ALGO_DEFAULTS[type];
+      const prettyType = defaults && defaults.label ? defaults.label : type.charAt(0).toUpperCase() + type.slice(1);
       const name = `${prettyType} ${num}`;
       const layer = new Layer(id, type, name);
       this.layers.push(layer);
@@ -94,9 +96,30 @@
       };
 
       const algo = Algorithms[layer.type] || Algorithms.flowfield;
-      const rawPaths = algo.generate(p, rng, noise, bounds);
+      const rawPaths = algo.generate(p, rng, noise, bounds) || [];
       const smooth = Math.max(0, Math.min(1, p.smoothing ?? 0));
-      layer.paths = rawPaths.map((path) => smoothPath(path.map((pt) => transform(pt)), smooth));
+
+      const transformMeta = (meta) => {
+        if (!meta || meta.kind !== 'circle') return meta;
+        const center = transform({ x: meta.cx, y: meta.cy });
+        const scaleX = p.scaleX ?? 1;
+        const scaleY = p.scaleY ?? 1;
+        const baseR = Number.isFinite(meta.r) ? meta.r : Math.max(meta.rx ?? 0, meta.ry ?? 0);
+        return {
+          ...meta,
+          cx: center.x,
+          cy: center.y,
+          rx: Math.abs(baseR * scaleX),
+          ry: Math.abs(baseR * scaleY),
+        };
+      };
+
+      layer.paths = rawPaths.map((path) => {
+        if (!Array.isArray(path)) return path;
+        const transformed = path.map((pt) => transform(pt));
+        if (path.meta) transformed.meta = transformMeta(path.meta);
+        return smoothPath(transformed, smooth);
+      });
     }
 
     getFormula(layerId) {

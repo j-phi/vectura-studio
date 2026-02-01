@@ -88,7 +88,11 @@
         this.ctx.strokeStyle = l.color;
         const useCurves = Boolean(l.params && l.params.curves);
         l.paths.forEach((path) => {
-          this.tracePath(path, useCurves);
+          if (path && path.meta && path.meta.kind === 'circle') {
+            this.traceCircle(path.meta);
+          } else {
+            this.tracePath(path, useCurves);
+          }
         });
         this.ctx.stroke();
       });
@@ -148,6 +152,22 @@
       }
       const last = path[path.length - 1];
       this.ctx.lineTo(last.x, last.y);
+    }
+
+    traceCircle(meta) {
+      if (!meta) return;
+      const cx = meta.cx ?? meta.x;
+      const cy = meta.cy ?? meta.y;
+      const rx = meta.rx ?? meta.r;
+      const ry = meta.ry ?? meta.r;
+      if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(rx) || !Number.isFinite(ry)) return;
+      if (rx <= 0 || ry <= 0) return;
+      this.ctx.moveTo(cx + rx, cy);
+      if (Math.abs(rx - ry) < 0.001) {
+        this.ctx.arc(cx, cy, rx, 0, Math.PI * 2);
+        return;
+      }
+      this.ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
     }
   }
 
