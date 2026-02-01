@@ -5,8 +5,8 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 ## Highlights
 - Plotter-first output in millimeters with machine profiles (A3, A4, AxiDraw V3).
 - Layered generation with visibility toggles, ordering, and per-layer stroke/line-cap settings.
-- Seeded, repeatable results with live transform controls (position and scale).
-- Direct canvas manipulation: drag to move the selected layer, drag corner handles to resize, and double-click to rename layers.
+- Seeded, repeatable results with live transform controls (position, scale, rotation).
+- Direct canvas manipulation: drag to move the selected layer, drag corner handles to resize, rotate via the upper-right handle, and double-click to rename layers.
 - Fast duplication and nudging: Alt-drag (Option-drag) to duplicate, arrow keys to nudge (Shift for larger steps).
 - Configurable undo with Cmd/Ctrl+Z and adjustable history depth.
 - Multiple algorithm families (flowfields, lissajous, wavetable, boids, attractors, hyphae, shape pack).
@@ -32,12 +32,12 @@ Then visit `http://localhost:8000`.
 
 ## How to Use
 1. Pick an algorithm in the left panel and adjust its parameters.
-2. Use the transform controls (seed, position, scale) to nudge the layer.
+2. Use the transform controls (seed, position, scale, rotation) to nudge the layer.
 3. Manage layers on the right: add, reorder, duplicate, hide, rename (double-click), or tune stroke width and line cap.
-4. Use Settings for machine size, margin, stroke, background, and SVG precision.
+4. Use Settings for machine size, margin, truncation, margin guides, stroke, background, and SVG precision.
 5. Export with the [EXPORT SVG] button.
 
-Pan: Shift + Drag. Zoom: Mouse Wheel. Move layer: Drag. Resize layer: Drag corner handles. Duplicate: Alt-drag.
+Pan: Shift + Drag. Zoom: Mouse Wheel. Move layer: Drag. Resize layer: Drag corner handles. Rotate: Drag the upper-right handle. Duplicate: Alt-drag.
 
 ## Algorithm Library
 Each layer is powered by an algorithm with its own parameters and formula preview:
@@ -47,8 +47,7 @@ Each layer is powered by an algorithm with its own parameters and formula previe
 - Hyphae: branching, growth-like structures.
 - Lissajous: harmonic parametric curves.
 - Wavetable: layered noise wave stacks.
-- Shape Pack: circle/polygon packing with rotation and perspective controls.
-- Cityscape: four-point perspective blocks with inward hatch lines toward a central core.
+- Shape Pack: circle/polygon packing with perspective controls.
 
 Defaults live in `src/config/defaults.js` and descriptions in `src/config/descriptions.js`.
 

@@ -153,6 +153,10 @@
 
       const bounds = { width, height, m, dW, dH };
 
+      const rot = ((p.rotation ?? 0) * Math.PI) / 180;
+      const cosR = Math.cos(rot);
+      const sinR = Math.sin(rot);
+
       const transform = (pt) => {
         const cx = width / 2;
         const cy = height / 2;
@@ -160,8 +164,10 @@
         let y = pt.y - cy;
         x *= p.scaleX;
         y *= p.scaleY;
-        x += cx + p.posX;
-        y += cy + p.posY;
+        const rx = x * cosR - y * sinR;
+        const ry = x * sinR + y * cosR;
+        x = rx + cx + p.posX;
+        y = ry + cy + p.posY;
         return { x, y };
       };
 
@@ -181,6 +187,7 @@
           cy: center.y,
           rx: Math.abs(baseR * scaleX),
           ry: Math.abs(baseR * scaleY),
+          rotation: rot,
         };
       };
 

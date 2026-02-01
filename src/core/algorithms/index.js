@@ -239,7 +239,6 @@
         const maxTries = Math.max(50, Math.floor(p.attempts ?? 200));
         const relaxSteps = 30;
         const shape = p.shape || 'circle';
-        const rotationBase = (p.rotation ?? 0) * (Math.PI / 180);
         const rotationStep = (p.rotationStep ?? 0) * (Math.PI / 180);
         const perspectiveType = p.perspectiveType || 'none';
         const perspective = p.perspective ?? 0;
@@ -316,7 +315,7 @@
         circles.forEach((c, i) => {
           const cp = [];
           const stepCount = shape === 'circle' ? Math.max(24, segments) : Math.max(3, segments);
-          const rot = rotationBase + rotationStep * i;
+          const rot = rotationStep * i;
           for (let k = 0; k <= stepCount; k++) {
             const ang = (k / stepCount) * Math.PI * 2 + (shape === 'circle' ? 0 : rot);
             let pt = { x: c.x + Math.cos(ang) * c.r, y: c.y + Math.sin(ang) * c.r };
@@ -332,7 +331,7 @@
         return paths;
       },
       formula: (p) =>
-        `if dist(p, others) > r + ${p.padding}: add(shape(p, r))\nr = rand(${p.minR}, ${p.maxR})\nrot = ${p.rotation} + i * ${p.rotationStep}\nshape = ${p.shape}, sides = ${p.segments}\npersp = ${p.perspectiveType}(${p.perspective})`,
+        `if dist(p, others) > r + ${p.padding}: add(shape(p, r))\nr = rand(${p.minR}, ${p.maxR})\nrot = i * ${p.rotationStep}\nshape = ${p.shape}, sides = ${p.segments}\npersp = ${p.perspectiveType}(${p.perspective})`,
     },
     lissajous: {
       generate: (p, rng, noise, bounds) => {
@@ -350,13 +349,6 @@
           if (amp < 0.01) break;
           let lx = Math.sin(p.freqX * t + p.phase);
           let ly = Math.sin(p.freqY * t);
-          if (p.rotation !== 0) {
-            const rot = p.rotation * (Math.PI / 180);
-            const rx = lx * Math.cos(rot) - ly * Math.sin(rot);
-            const ry = lx * Math.sin(rot) + ly * Math.cos(rot);
-            lx = rx;
-            ly = ry;
-          }
           lPath.push({ x: lcx + lx * scale * amp, y: lcy + ly * scale * amp });
         }
         return [lPath];
@@ -374,7 +366,14 @@
         const dampenExtremes = Boolean(p.dampenExtremes);
         const noOverlap = Boolean(p.noOverlap);
         const flatCaps = Boolean(p.flatCaps);
-        const edgeFade = Math.min(1, Math.max(0, p.edgeFade ?? 0.2));
+        const edgeFade = Math.max(0, p.edgeFade ?? 0.2);
+        const edgeFadeInner = Math.min(1, edgeFade);
+        const edgeFadeExtra = Math.max(0, edgeFade - 1);
+        const verticalFade = Math.min(1, Math.max(0, p.verticalFade ?? 0));
+        const verticalFadeThreshold = Math.min(1, Math.max(0, p.verticalFadeThreshold ?? 0));
+        const verticalFadeMode = ['none', 'top', 'bottom', 'both'].includes(p.verticalFadeMode)
+          ? p.verticalFadeMode
+          : 'both';
         const noiseAngle = ((p.noiseAngle ?? 0) * Math.PI) / 180;
         const cosA = Math.cos(noiseAngle);
         const sinA = Math.sin(noiseAngle);
@@ -382,6 +381,23 @@
         for (let i = 0; i < p.lines; i++) {
           const path = [];
           const by = m + i * lSpace * p.gap;
+          const tRow = p.lines <= 1 ? 0.5 : i / (p.lines - 1);
+          const fadeStart = 1 - verticalFadeThreshold;
+          let vDist = 0;
+          if (verticalFadeMode === 'top') {
+            vDist = tRow <= 0.5 ? 1 - tRow / 0.5 : 0;
+          } else if (verticalFadeMode === 'bottom') {
+            vDist = tRow >= 0.5 ? (tRow - 0.5) / 0.5 : 0;
+          } else if (verticalFadeMode === 'both') {
+            vDist = Math.abs(tRow - 0.5) * 2;
+          }
+          let vTaper = 1;
+          if (verticalFade > 0 && vDist > 0 && fadeStart < 1) {
+            const t = (vDist - fadeStart) / Math.max(0.0001, 1 - fadeStart);
+            vTaper = 1 - Math.max(0, Math.min(1, t)) * verticalFade;
+          } else if (verticalFade > 0 && vDist >= 1 && fadeStart >= 1) {
+            vTaper = 1 - verticalFade;
+          }
           const xOffset = p.tilt * i;
           const currY = noOverlap ? new Array(pts + 1) : null;
           for (let j = 0; j <= pts; j++) {
@@ -394,19 +410,21 @@
             const off = n * p.amplitude;
             let taper = 1.0;
             const distC = Math.abs(j / pts - 0.5) * 2;
-            if (edgeFade > 0) {
-              const edgeStart = 1 - edgeFade;
-              if (distC > edgeStart) taper = 1.0 - (distC - edgeStart) / edgeFade;
+            if (edgeFade > 0 && edgeFadeInner > 0) {
+              const edgeStart = 1 - edgeFadeInner;
+              if (distC > edgeStart) taper = 1.0 - (distC - edgeStart) / edgeFadeInner;
+              if (edgeFadeExtra > 0) taper *= Math.max(0, 1 - edgeFadeExtra);
             }
-            let y = by + off * taper;
+            const amp = off * taper * vTaper;
+            let y = by + amp;
             if (dampenExtremes) {
               const minY = m;
               const maxY = height - m;
               if (y < minY || y > maxY) {
                 const limit = Math.max(0, y < minY ? by - minY : maxY - by);
-                const denom = Math.max(0.001, Math.abs(off) * taper);
+                const denom = Math.max(0.001, Math.abs(amp));
                 const scale = Math.min(1, limit / denom);
-                y = by + off * taper * scale;
+                y = by + amp * scale;
               }
             }
             if (noOverlap && prevY) {
@@ -423,10 +441,12 @@
         if (flatCaps) {
           const top = [];
           const bottom = [];
+          const bottomOffset = p.tilt * (p.lines - 1);
           for (let j = 0; j <= pts; j++) {
-            const x = m + j * xStep;
-            top.push({ x, y: m });
-            bottom.push({ x, y: height - m });
+            const xTop = m + j * xStep;
+            const xBottom = m + j * xStep + bottomOffset;
+            top.push({ x: xTop, y: m });
+            bottom.push({ x: xBottom, y: height - m });
           }
           paths.push(top, bottom);
         }

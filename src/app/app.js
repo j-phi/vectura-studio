@@ -38,6 +38,12 @@
           strokeWidth: SETTINGS.strokeWidth,
           bgColor: SETTINGS.bgColor,
           undoSteps: SETTINGS.undoSteps,
+          truncate: SETTINGS.truncate,
+          outsideOpacity: SETTINGS.outsideOpacity,
+          marginLineVisible: SETTINGS.marginLineVisible,
+          marginLineWeight: SETTINGS.marginLineWeight,
+          marginLineColor: SETTINGS.marginLineColor,
+          marginLineDotting: SETTINGS.marginLineDotting,
           globalLayerCount: SETTINGS.globalLayerCount,
         },
         selectedLayerId: this.renderer.selectedLayerId,
@@ -54,6 +60,12 @@
       SETTINGS.strokeWidth = s.strokeWidth ?? SETTINGS.strokeWidth;
       SETTINGS.bgColor = s.bgColor ?? SETTINGS.bgColor;
       SETTINGS.undoSteps = s.undoSteps ?? SETTINGS.undoSteps;
+      SETTINGS.truncate = s.truncate ?? SETTINGS.truncate;
+      SETTINGS.outsideOpacity = s.outsideOpacity ?? SETTINGS.outsideOpacity;
+      SETTINGS.marginLineVisible = s.marginLineVisible ?? SETTINGS.marginLineVisible;
+      SETTINGS.marginLineWeight = s.marginLineWeight ?? SETTINGS.marginLineWeight;
+      SETTINGS.marginLineColor = s.marginLineColor ?? SETTINGS.marginLineColor;
+      SETTINGS.marginLineDotting = s.marginLineDotting ?? SETTINGS.marginLineDotting;
       SETTINGS.globalLayerCount = s.globalLayerCount ?? SETTINGS.globalLayerCount;
       this.engine.importState(state.engine);
       this.renderer.selectedLayerId = state.selectedLayerId || this.engine.activeLayerId;

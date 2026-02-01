@@ -23,6 +23,6 @@
     hyphae:
       'Simulates organic growth (like fungi or roots) using a branching algorithm. Sources grow segments and fork based on probability.',
     shapePack:
-      'Packs non-overlapping shapes that can be perfect circles or regular polygons. Supports rotation and perspective warping for angular forms.',
+      'Packs non-overlapping shapes that can be perfect circles or regular polygons. Supports perspective warping for angular forms.',
   };
 })();

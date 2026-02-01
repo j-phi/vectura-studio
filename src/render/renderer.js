@@ -19,6 +19,9 @@
       this.dragStart = { x: 0, y: 0 };
       this.startBounds = null;
       this.tempTransform = null;
+      this.rotateOrigin = null;
+      this.rotateStartAngle = 0;
+      this.rotateStart = 0;
       this.selectedLayerId = null;
       this.onSelectLayer = null;
       this.lastM = { x: 0, y: 0 };
@@ -89,25 +92,69 @@
       this.ctx.lineJoin = 'round';
 
       const selectedLayer = this.getSelectedLayer();
-      this.engine.layers.forEach((l) => {
-        if (!l.visible) return;
-        this.ctx.lineWidth = l.strokeWidth ?? SETTINGS.strokeWidth;
-        this.ctx.lineCap = l.lineCap || 'round';
-        this.ctx.beginPath();
-        this.ctx.strokeStyle = l.color;
-        const useCurves = Boolean(l.params && l.params.curves);
-        l.paths.forEach((path) => {
-          if (path && path.meta && path.meta.kind === 'circle') {
-            const meta =
-              l === selectedLayer && this.tempTransform ? this.transformCircleMeta(path.meta, this.tempTransform) : path.meta;
-            this.traceCircle(meta);
-          } else {
-            const next = l === selectedLayer && this.tempTransform ? this.transformPath(path, this.tempTransform) : path;
-            this.tracePath(next, useCurves);
-          }
+      const m = SETTINGS.margin;
+      const innerW = prof.width - m * 2;
+      const innerH = prof.height - m * 2;
+      const drawLayers = () => {
+        this.engine.layers.forEach((l) => {
+          if (!l.visible) return;
+          this.ctx.lineWidth = l.strokeWidth ?? SETTINGS.strokeWidth;
+          this.ctx.lineCap = l.lineCap || 'round';
+          this.ctx.beginPath();
+          this.ctx.strokeStyle = l.color;
+          const useCurves = Boolean(l.params && l.params.curves);
+          l.paths.forEach((path) => {
+            if (path && path.meta && path.meta.kind === 'circle') {
+              const meta =
+                l === selectedLayer && this.tempTransform ? this.transformCircleMeta(path.meta, this.tempTransform) : path.meta;
+              this.traceCircle(meta);
+            } else {
+              const next = l === selectedLayer && this.tempTransform ? this.transformPath(path, this.tempTransform) : path;
+              this.tracePath(next, useCurves);
+            }
+          });
+          this.ctx.stroke();
         });
-        this.ctx.stroke();
-      });
+      };
+
+      if (SETTINGS.truncate) {
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.rect(m, m, innerW, innerH);
+        this.ctx.clip();
+        drawLayers();
+        this.ctx.restore();
+      } else {
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.rect(m, m, innerW, innerH);
+        this.ctx.clip();
+        drawLayers();
+        this.ctx.restore();
+
+        const outsideAlpha = SETTINGS.outsideOpacity ?? 0.5;
+        if (outsideAlpha > 0) {
+          this.ctx.save();
+          this.ctx.globalAlpha = outsideAlpha;
+          this.ctx.beginPath();
+          this.ctx.rect(0, 0, prof.width, prof.height);
+          this.ctx.rect(m, m, innerW, innerH);
+          this.ctx.clip('evenodd');
+          drawLayers();
+          this.ctx.restore();
+        }
+      }
+
+      if (SETTINGS.marginLineVisible) {
+        this.ctx.save();
+        this.ctx.strokeStyle = SETTINGS.marginLineColor || '#52525b';
+        this.ctx.lineWidth = SETTINGS.marginLineWeight ?? 0.2;
+        const dotting = SETTINGS.marginLineDotting ?? 0;
+        if (dotting > 0) this.ctx.setLineDash([dotting, dotting]);
+        this.ctx.strokeRect(m, m, innerW, innerH);
+        this.ctx.setLineDash([]);
+        this.ctx.restore();
+      }
 
       if (selectedLayer) {
         const bounds = this.getLayerBounds(selectedLayer, this.tempTransform);
@@ -160,11 +207,20 @@
       const handle = this.hitHandle(sx, sy, bounds);
       if (handle) {
         this.isLayerDrag = true;
-        this.dragMode = 'resize';
         this.activeHandle = handle;
         this.dragStart = world;
         this.startBounds = bounds;
-        this.canvas.style.cursor = this.handleCursor(handle);
+        if (handle === 'rotate') {
+          this.dragMode = 'rotate';
+          this.rotateOrigin = this.getBoundsCenter(bounds);
+          this.rotateStart = selectedLayer.params.rotation ?? 0;
+          this.rotateStartAngle = Math.atan2(world.y - this.rotateOrigin.y, world.x - this.rotateOrigin.x);
+          this.tempTransform = { dx: 0, dy: 0, scaleX: 1, scaleY: 1, origin: this.rotateOrigin, rotation: 0 };
+          this.canvas.style.cursor = 'grabbing';
+        } else {
+          this.dragMode = 'resize';
+          this.canvas.style.cursor = this.handleCursor(handle);
+        }
         e.preventDefault();
         return;
       }
@@ -226,6 +282,10 @@
           scaleX = Math.max(0.05, Math.min(Math.abs(scaleX), 20));
           scaleY = Math.max(0.05, Math.min(Math.abs(scaleY), 20));
           this.tempTransform = { dx: 0, dy: 0, scaleX, scaleY, origin };
+        } else if (this.dragMode === 'rotate' && this.rotateOrigin) {
+          const angle = Math.atan2(world.y - this.rotateOrigin.y, world.x - this.rotateOrigin.x);
+          let delta = ((angle - this.rotateStartAngle) * 180) / Math.PI;
+          this.tempTransform = { dx: 0, dy: 0, scaleX: 1, scaleY: 1, origin: this.rotateOrigin, rotation: delta };
         }
         this.draw();
         return;
@@ -246,11 +306,15 @@
           } else if (this.dragMode === 'resize') {
             activeLayer.params.scaleX *= this.tempTransform.scaleX;
             activeLayer.params.scaleY *= this.tempTransform.scaleY;
+          } else if (this.dragMode === 'rotate') {
+            const next = (activeLayer.params.rotation ?? 0) + (this.tempTransform.rotation ?? 0);
+            activeLayer.params.rotation = next;
           }
           this.engine.generate(activeLayer.id);
           this.updateTransformInputs(activeLayer);
         }
         this.tempTransform = null;
+        this.rotateOrigin = null;
       }
       this.isPan = false;
       this.isLayerDrag = false;
@@ -282,6 +346,7 @@
       const cy = meta.cy ?? meta.y;
       const rx = meta.rx ?? meta.r;
       const ry = meta.ry ?? meta.r;
+      const rotation = meta.rotation ?? 0;
       if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(rx) || !Number.isFinite(ry)) return;
       if (rx <= 0 || ry <= 0) return;
       this.ctx.moveTo(cx + rx, cy);
@@ -289,7 +354,7 @@
         this.ctx.arc(cx, cy, rx, 0, Math.PI * 2);
         return;
       }
-      this.ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+      this.ctx.ellipse(cx, cy, rx, ry, rotation, 0, Math.PI * 2);
     }
 
     getSelectedLayer() {
@@ -331,10 +396,18 @@
     transformPoint(pt, temp) {
       if (!temp) return pt;
       const origin = temp.origin || { x: 0, y: 0 };
-      return {
-        x: (pt.x - origin.x) * temp.scaleX + origin.x + temp.dx,
-        y: (pt.y - origin.y) * temp.scaleY + origin.y + temp.dy,
-      };
+      let x = (pt.x - origin.x) * temp.scaleX;
+      let y = (pt.y - origin.y) * temp.scaleY;
+      if (temp.rotation) {
+        const rot = (temp.rotation * Math.PI) / 180;
+        const cosR = Math.cos(rot);
+        const sinR = Math.sin(rot);
+        const rx = x * cosR - y * sinR;
+        const ry = x * sinR + y * cosR;
+        x = rx;
+        y = ry;
+      }
+      return { x: x + origin.x + temp.dx, y: y + origin.y + temp.dy };
     }
 
     transformPath(path, temp) {
@@ -344,12 +417,12 @@
 
     transformCircleMeta(meta, temp) {
       if (!temp || !meta) return meta;
-      const origin = temp.origin || { x: 0, y: 0 };
       const center = this.transformPoint({ x: meta.cx ?? meta.x, y: meta.cy ?? meta.y }, temp);
       const baseR = Number.isFinite(meta.r) ? meta.r : Math.max(meta.rx ?? 0, meta.ry ?? 0);
       const rx = Math.abs(baseR * temp.scaleX);
       const ry = Math.abs(baseR * temp.scaleY);
-      return { ...meta, cx: center.x, cy: center.y, rx, ry };
+      const rot = ((temp.rotation ?? 0) * Math.PI) / 180;
+      return { ...meta, cx: center.x, cy: center.y, rx, ry, rotation: (meta.rotation ?? 0) + rot };
     }
 
     getLayerBounds(layer, temp) {
@@ -386,6 +459,7 @@
 
     drawSelection(bounds) {
       const handleSize = 6 / this.scale;
+      const rotateRadius = 5 / this.scale;
       this.ctx.save();
       this.ctx.strokeStyle = '#f8fafc';
       this.ctx.lineWidth = 1 / this.scale;
@@ -401,6 +475,15 @@
         this.ctx.fill();
         this.ctx.stroke();
       });
+      const rotate = this.getRotateHandlePoint(bounds);
+      this.ctx.beginPath();
+      this.ctx.moveTo(bounds.maxX, bounds.minY);
+      this.ctx.lineTo(rotate.x, rotate.y);
+      this.ctx.stroke();
+      this.ctx.beginPath();
+      this.ctx.arc(rotate.x, rotate.y, rotateRadius, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.stroke();
       this.ctx.restore();
     }
 
@@ -411,6 +494,11 @@
         { key: 'se', x: bounds.maxX, y: bounds.maxY },
         { key: 'sw', x: bounds.minX, y: bounds.maxY },
       ];
+    }
+
+    getRotateHandlePoint(bounds) {
+      const offset = 18 / this.scale;
+      return { key: 'rotate', x: bounds.maxX, y: bounds.minY - offset };
     }
 
     getHandlePoint(handle, bounds) {
@@ -434,6 +522,18 @@
     }
 
     hitHandle(sx, sy, bounds) {
+      const rotate = this.getRotateHandlePoint(bounds);
+      const rotateScreen = this.worldToScreen(rotate.x, rotate.y);
+      const rSize = 8;
+      const rHalf = rSize / 2;
+      if (
+        sx >= rotateScreen.x - rHalf &&
+        sx <= rotateScreen.x + rHalf &&
+        sy >= rotateScreen.y - rHalf &&
+        sy <= rotateScreen.y + rHalf
+      ) {
+        return 'rotate';
+      }
       const handles = this.getHandlePoints(bounds).map((pt) => ({
         key: pt.key,
         screen: this.worldToScreen(pt.x, pt.y),
@@ -470,6 +570,7 @@
     handleCursor(handle) {
       if (handle === 'nw' || handle === 'se') return 'nwse-resize';
       if (handle === 'ne' || handle === 'sw') return 'nesw-resize';
+      if (handle === 'rotate') return 'grab';
       return 'default';
     }
 
@@ -503,10 +604,12 @@
       const posY = document.getElementById('inp-pos-y');
       const scaleX = document.getElementById('inp-scale-x');
       const scaleY = document.getElementById('inp-scale-y');
+      const rotation = document.getElementById('inp-rotation');
       if (posX) posX.value = layer.params.posX;
       if (posY) posY.value = layer.params.posY;
       if (scaleX) scaleX.value = layer.params.scaleX;
       if (scaleY) scaleY.value = layer.params.scaleY;
+      if (rotation) rotation.value = layer.params.rotation;
     }
   }
 

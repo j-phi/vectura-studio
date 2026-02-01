@@ -12,12 +12,13 @@
 
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
   const roundToStep = (value, step) => (step ? Math.round(value / step) * step : value);
-  const TRANSFORM_KEYS = ['seed', 'posX', 'posY', 'scaleX', 'scaleY'];
+  const DISPLAY_PRECISION = 2;
+  const TRANSFORM_KEYS = ['seed', 'posX', 'posY', 'scaleX', 'scaleY', 'rotation'];
   const clone = (obj) => JSON.parse(JSON.stringify(obj));
 
   const formatValue = (value) => {
     if (typeof value === 'number') {
-      const rounded = Math.round(value * 1000) / 1000;
+      const rounded = Math.round(value * Math.pow(10, DISPLAY_PRECISION)) / Math.pow(10, DISPLAY_PRECISION);
       return rounded.toString();
     }
     return value;
@@ -65,7 +66,6 @@
       { id: 'freqY', label: 'Freq Y', type: 'range', min: 0.5, max: 12, step: 0.1, infoKey: 'lissajous.freqY' },
       { id: 'damping', label: 'Damping', type: 'range', min: 0, max: 0.01, step: 0.0001, infoKey: 'lissajous.damping' },
       { id: 'phase', label: 'Phase', type: 'range', min: 0, max: 6.28, step: 0.1, infoKey: 'lissajous.phase' },
-      { id: 'rotation', label: 'Rotation', type: 'range', min: 0, max: 360, step: 1, infoKey: 'lissajous.rotation' },
       { id: 'resolution', label: 'Resolution', type: 'range', min: 50, max: 800, step: 10, infoKey: 'lissajous.resolution' },
       { id: 'scale', label: 'Scale', type: 'range', min: 0.2, max: 1.2, step: 0.05, infoKey: 'lissajous.scale' },
     ],
@@ -77,7 +77,29 @@
       { id: 'gap', label: 'Line Gap', type: 'range', min: 0.5, max: 3.0, step: 0.1, infoKey: 'wavetable.gap' },
       { id: 'freq', label: 'Frequency', type: 'range', min: 0.2, max: 12.0, step: 0.1, infoKey: 'wavetable.freq' },
       { id: 'noiseAngle', label: 'Noise Angle', type: 'range', min: -180, max: 180, step: 5, infoKey: 'wavetable.noiseAngle' },
-      { id: 'edgeFade', label: 'Edge Fade', type: 'range', min: 0, max: 1, step: 0.02, infoKey: 'wavetable.edgeFade' },
+      { id: 'edgeFade', label: 'Edge Fade', type: 'range', min: 0, max: 2, step: 0.05, infoKey: 'wavetable.edgeFade' },
+      { id: 'verticalFade', label: 'Vertical Fade', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'wavetable.verticalFade' },
+      {
+        id: 'verticalFadeThreshold',
+        label: 'Vertical Fade Threshold',
+        type: 'range',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        infoKey: 'wavetable.verticalFadeThreshold',
+      },
+      {
+        id: 'verticalFadeMode',
+        label: 'Vertical Fade Mode',
+        type: 'select',
+        options: [
+          { value: 'none', label: 'None' },
+          { value: 'top', label: 'Top' },
+          { value: 'bottom', label: 'Bottom' },
+          { value: 'both', label: 'Both' },
+        ],
+        infoKey: 'wavetable.verticalFadeMode',
+      },
       { id: 'dampenExtremes', label: 'Dampen Extremes', type: 'checkbox', infoKey: 'wavetable.dampenExtremes' },
       { id: 'noOverlap', label: 'No Overlap', type: 'checkbox', infoKey: 'wavetable.noOverlap' },
       { id: 'flatCaps', label: 'Flat Top/Bottom', type: 'checkbox', infoKey: 'wavetable.flatCaps' },
@@ -218,7 +240,6 @@
       { id: 'padding', label: 'Padding', type: 'range', min: 0, max: 10, step: 0.5, infoKey: 'shapePack.padding' },
       { id: 'attempts', label: 'Attempts', type: 'range', min: 100, max: 5000, step: 100, infoKey: 'shapePack.attempts' },
       { id: 'segments', label: 'Segments', type: 'range', min: 3, max: 64, step: 1, infoKey: 'shapePack.segments' },
-      { id: 'rotation', label: 'Rotation', type: 'range', min: -180, max: 180, step: 1, infoKey: 'shapePack.rotation' },
       { id: 'rotationStep', label: 'Rotation Step', type: 'range', min: -30, max: 30, step: 1, infoKey: 'shapePack.rotationStep' },
       {
         id: 'perspectiveType',
@@ -263,6 +284,10 @@
       title: 'Scale Y',
       description: 'Scales the layer vertically around the center.',
     },
+    'global.rotation': {
+      title: 'Rotation',
+      description: 'Rotates the active layer around its center in degrees.',
+    },
     'global.machineProfile': {
       title: 'Machine Profile',
       description: 'Sets the physical drawing size used for bounds, centering, and export.',
@@ -270,6 +295,30 @@
     'global.margin': {
       title: 'Margin',
       description: 'Keeps a safety border around the drawing area in millimeters.',
+    },
+    'global.truncate': {
+      title: 'Truncate',
+      description: 'Clips strokes to stay inside the margin boundary.',
+    },
+    'global.outsideOpacity': {
+      title: 'Outside Opacity',
+      description: 'Opacity for strokes drawn outside the margin when truncation is disabled.',
+    },
+    'global.marginLineVisible': {
+      title: 'Visible Line',
+      description: 'Shows a non-exported margin boundary on the canvas.',
+    },
+    'global.marginLineWeight': {
+      title: 'Margin Line Weight',
+      description: 'Line weight for the on-canvas margin guide (mm).',
+    },
+    'global.marginLineColor': {
+      title: 'Margin Line Color',
+      description: 'Stroke color for the on-canvas margin guide.',
+    },
+    'global.marginLineDotting': {
+      title: 'Margin Line Dotting',
+      description: 'Dash length for the margin guide. Set to 0 for a solid line.',
     },
     'global.speedDown': {
       title: 'Draw Speed',
@@ -339,10 +388,6 @@
       title: 'Phase',
       description: 'Shifts the X wave relative to Y, changing the knot shape.',
     },
-    'lissajous.rotation': {
-      title: 'Rotation',
-      description: 'Rotates the entire curve in degrees.',
-    },
     'lissajous.resolution': {
       title: 'Resolution',
       description: 'Number of samples along the curve. Higher values create smoother lines.',
@@ -381,7 +426,19 @@
     },
     'wavetable.edgeFade': {
       title: 'Edge Fade',
-      description: 'Softens the waveform near the left and right edges.',
+      description: 'Dampens noise near the left/right edges; higher values can flatten toward the center.',
+    },
+    'wavetable.verticalFade': {
+      title: 'Vertical Fade',
+      description: 'Dampens noise toward the top and bottom rows.',
+    },
+    'wavetable.verticalFadeThreshold': {
+      title: 'Vertical Fade Threshold',
+      description: 'Pushes the vertical fade closer to the center rows.',
+    },
+    'wavetable.verticalFadeMode': {
+      title: 'Vertical Fade Mode',
+      description: 'Choose whether the vertical fade affects the top, bottom, or both.',
     },
     'wavetable.dampenExtremes': {
       title: 'Dampen Extremes',
@@ -573,7 +630,7 @@
     },
     'shapePack.shape': {
       title: 'Shape',
-      description: 'Circle outputs true SVG circles; Polygon uses segments and can be rotated.',
+      description: 'Circle outputs true SVG circles; Polygon uses segments.',
     },
     'shapePack.count': {
       title: 'Max Count',
@@ -594,10 +651,6 @@
     'shapePack.segments': {
       title: 'Segments',
       description: 'Polygon sides (min 3). Ignored when Shape = Circle.',
-    },
-    'shapePack.rotation': {
-      title: 'Rotation',
-      description: 'Base rotation in degrees for polygons.',
     },
     'shapePack.rotationStep': {
       title: 'Rotation Step',
@@ -654,6 +707,15 @@
     const scaleY = params.scaleY ?? 1;
     x *= scaleX;
     y *= scaleY;
+    const rot = ((params.rotation ?? 0) * Math.PI) / 180;
+    if (rot) {
+      const cosR = Math.cos(rot);
+      const sinR = Math.sin(rot);
+      const rx = x * cosR - y * sinR;
+      const ry = x * sinR + y * cosR;
+      x = rx;
+      y = ry;
+    }
     x += cx + (params.posX ?? 0);
     y += cy + (params.posY ?? 0);
     return { x, y };
@@ -665,12 +727,14 @@
     const scaleX = params.scaleX ?? 1;
     const scaleY = params.scaleY ?? 1;
     const baseR = Number.isFinite(meta.r) ? meta.r : Math.max(meta.rx ?? 0, meta.ry ?? 0);
+    const rot = ((params.rotation ?? 0) * Math.PI) / 180;
     return {
       ...meta,
       cx: center.x,
       cy: center.y,
       rx: Math.abs(baseR * scaleX),
       ry: Math.abs(baseR * scaleY),
+      rotation: (meta.rotation ?? 0) + rot,
     };
   };
 
@@ -723,9 +787,16 @@
       const cy = path.meta.cy;
       const rx = path.meta.rx ?? path.meta.r;
       const ry = path.meta.ry ?? path.meta.r;
+      const rotation = path.meta.rotation ?? 0;
       if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(rx) || !Number.isFinite(ry)) return '';
       if (Math.abs(rx - ry) < 0.001) {
         return `<circle cx="${fmt(cx)}" cy="${fmt(cy)}" r="${fmt(rx)}" />`;
+      }
+      if (Math.abs(rotation) > 0.0001) {
+        const deg = ((rotation * 180) / Math.PI).toFixed(3);
+        return `<ellipse cx="${fmt(cx)}" cy="${fmt(cy)}" rx="${fmt(rx)}" ry="${fmt(ry)}" transform="rotate(${deg} ${fmt(
+          cx
+        )} ${fmt(cy)})" />`;
       }
       return `<ellipse cx="${fmt(cx)}" cy="${fmt(cy)}" rx="${fmt(rx)}" ry="${fmt(ry)}" />`;
     }
@@ -749,6 +820,7 @@
     base.posY = base.posY ?? 0;
     base.scaleX = base.scaleX ?? 1;
     base.scaleY = base.scaleY ?? 1;
+    base.rotation = base.rotation ?? 0;
     const rng = new SeededRNG(seed);
     const noise = new SimpleNoise(seed);
     const rawPaths = Algorithms[type].generate(base, rng, noise, bounds) || [];
@@ -1110,8 +1182,15 @@
         { inputId: 'inp-pos-y', infoKey: 'global.posY' },
         { inputId: 'inp-scale-x', infoKey: 'global.scaleX' },
         { inputId: 'inp-scale-y', infoKey: 'global.scaleY' },
+        { inputId: 'inp-rotation', infoKey: 'global.rotation' },
         { inputId: 'machine-profile', infoKey: 'global.machineProfile' },
         { inputId: 'set-margin', infoKey: 'global.margin' },
+        { inputId: 'set-truncate', infoKey: 'global.truncate' },
+        { inputId: 'set-outside-opacity', infoKey: 'global.outsideOpacity' },
+        { inputId: 'set-margin-line', infoKey: 'global.marginLineVisible' },
+        { inputId: 'set-margin-line-weight', infoKey: 'global.marginLineWeight' },
+        { inputId: 'set-margin-line-color', infoKey: 'global.marginLineColor' },
+        { inputId: 'set-margin-line-dotting', infoKey: 'global.marginLineDotting' },
         { inputId: 'set-speed-down', infoKey: 'global.speedDown' },
         { inputId: 'set-speed-up', infoKey: 'global.speedUp' },
         { inputId: 'set-precision', infoKey: 'global.precision' },
@@ -1122,7 +1201,9 @@
         const input = getEl(inputId);
         if (!input) return;
         const label =
-          input.parentElement?.querySelector('label') || input.closest('.control-group')?.querySelector('.control-label');
+          input.parentElement?.querySelector('label') ||
+          input.parentElement?.parentElement?.querySelector('label') ||
+          input.closest('.control-group')?.querySelector('.control-label');
         this.attachInfoButton(label, infoKey);
       });
     }
@@ -1169,6 +1250,12 @@
       const stroke = getEl('set-stroke');
       const precision = getEl('set-precision');
       const undoSteps = getEl('set-undo');
+      const truncate = getEl('set-truncate');
+      const outsideOpacity = getEl('set-outside-opacity');
+      const marginLine = getEl('set-margin-line');
+      const marginLineWeight = getEl('set-margin-line-weight');
+      const marginLineColor = getEl('set-margin-line-color');
+      const marginLineDotting = getEl('set-margin-line-dotting');
       const bgColor = getEl('inp-bg-color');
       if (margin) margin.value = SETTINGS.margin;
       if (speedDown) speedDown.value = SETTINGS.speedDown;
@@ -1176,6 +1263,12 @@
       if (stroke) stroke.value = SETTINGS.strokeWidth;
       if (precision) precision.value = SETTINGS.precision;
       if (undoSteps) undoSteps.value = SETTINGS.undoSteps;
+      if (truncate) truncate.checked = SETTINGS.truncate !== false;
+      if (outsideOpacity) outsideOpacity.value = SETTINGS.outsideOpacity ?? 0.5;
+      if (marginLine) marginLine.checked = Boolean(SETTINGS.marginLineVisible);
+      if (marginLineWeight) marginLineWeight.value = SETTINGS.marginLineWeight ?? 0.2;
+      if (marginLineColor) marginLineColor.value = SETTINGS.marginLineColor ?? '#52525b';
+      if (marginLineDotting) marginLineDotting.value = SETTINGS.marginLineDotting ?? 0;
       if (bgColor) bgColor.value = SETTINGS.bgColor;
     }
 
@@ -1276,6 +1369,12 @@
       const btnCloseSettings = getEl('btn-close-settings');
       const machineProfile = getEl('machine-profile');
       const setMargin = getEl('set-margin');
+      const setTruncate = getEl('set-truncate');
+      const setOutsideOpacity = getEl('set-outside-opacity');
+      const setMarginLine = getEl('set-margin-line');
+      const setMarginLineWeight = getEl('set-margin-line-weight');
+      const setMarginLineColor = getEl('set-margin-line-color');
+      const setMarginLineDotting = getEl('set-margin-line-dotting');
       const setSpeedDown = getEl('set-speed-down');
       const setSpeedUp = getEl('set-speed-up');
       const setStroke = getEl('set-stroke');
@@ -1350,6 +1449,54 @@
           this.app.regen();
         };
       }
+      if (setTruncate) {
+        setTruncate.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          SETTINGS.truncate = e.target.checked;
+          this.app.render();
+        };
+      }
+      if (setOutsideOpacity) {
+        setOutsideOpacity.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          const next = Math.max(0, Math.min(1, parseFloat(e.target.value)));
+          SETTINGS.outsideOpacity = Number.isFinite(next) ? next : 0.5;
+          e.target.value = SETTINGS.outsideOpacity;
+          this.app.render();
+        };
+      }
+      if (setMarginLine) {
+        setMarginLine.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          SETTINGS.marginLineVisible = e.target.checked;
+          this.app.render();
+        };
+      }
+      if (setMarginLineWeight) {
+        setMarginLineWeight.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          const next = Math.max(0.05, parseFloat(e.target.value));
+          SETTINGS.marginLineWeight = Number.isFinite(next) ? next : 0.2;
+          e.target.value = SETTINGS.marginLineWeight;
+          this.app.render();
+        };
+      }
+      if (setMarginLineColor) {
+        setMarginLineColor.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          SETTINGS.marginLineColor = e.target.value || SETTINGS.marginLineColor;
+          this.app.render();
+        };
+      }
+      if (setMarginLineDotting) {
+        setMarginLineDotting.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          const next = Math.max(0, parseFloat(e.target.value));
+          SETTINGS.marginLineDotting = Number.isFinite(next) ? next : 0;
+          e.target.value = SETTINGS.marginLineDotting;
+          this.app.render();
+        };
+      }
       if (setSpeedDown) {
         setSpeedDown.onchange = (e) => {
           if (this.app.pushHistory) this.app.pushHistory();
@@ -1420,6 +1567,7 @@
       bindTrans('inp-pos-y', 'posY');
       bindTrans('inp-scale-x', 'scaleX');
       bindTrans('inp-scale-y', 'scaleY');
+      bindTrans('inp-rotation', 'rotation');
 
       const randSeed = getEl('btn-rand-seed');
       if (randSeed) {
@@ -1544,9 +1692,19 @@
           };
 
           if (nameEl && nameInput) {
-            nameEl.onclick = selectLayer;
+            let nameClickTimer = null;
+            nameEl.onclick = (e) => {
+              e.stopPropagation();
+              if (nameClickTimer) window.clearTimeout(nameClickTimer);
+              nameClickTimer = window.setTimeout(() => {
+                selectLayer();
+                nameClickTimer = null;
+              }, 250);
+            };
             nameEl.ondblclick = (e) => {
               e.stopPropagation();
+              if (nameClickTimer) window.clearTimeout(nameClickTimer);
+              nameClickTimer = null;
               nameEl.classList.add('hidden');
               nameInput.classList.remove('hidden');
               nameInput.focus();
@@ -1723,12 +1881,14 @@
       const posY = getEl('inp-pos-y');
       const scaleX = getEl('inp-scale-x');
       const scaleY = getEl('inp-scale-y');
+      const rotation = getEl('inp-rotation');
       if (moduleSelect) moduleSelect.value = layer.type;
       if (seed) seed.value = layer.params.seed;
       if (posX) posX.value = layer.params.posX;
       if (posY) posY.value = layer.params.posY;
       if (scaleX) scaleX.value = layer.params.scaleX;
       if (scaleY) scaleY.value = layer.params.scaleY;
+      if (rotation) rotation.value = layer.params.rotation;
 
       const desc = getEl('algo-desc');
       if (desc) desc.innerText = DESCRIPTIONS[layer.type] || 'No description available.';
@@ -1935,6 +2095,13 @@
       const prof = this.app.engine.currentProfile;
       const precision = Math.max(0, Math.min(6, SETTINGS.precision ?? 3));
       let svg = `<?xml version="1.0" standalone="no"?><svg width="${prof.width}mm" height="${prof.height}mm" viewBox="0 0 ${prof.width} ${prof.height}" xmlns="http://www.w3.org/2000/svg">`;
+      if (SETTINGS.truncate) {
+        const m = SETTINGS.margin;
+        const w = prof.width - m * 2;
+        const h = prof.height - m * 2;
+        svg += `<defs><clipPath id="margin-clip"><rect x="${m}" y="${m}" width="${w}" height="${h}" /></clipPath></defs>`;
+        svg += `<g clip-path="url(#margin-clip)">`;
+      }
       this.app.engine.layers.forEach((l) => {
         if (!l.visible) return;
         const strokeWidth = (l.strokeWidth ?? SETTINGS.strokeWidth).toFixed(3);
@@ -1947,6 +2114,9 @@
         });
         svg += `</g>`;
       });
+      if (SETTINGS.truncate) {
+        svg += `</g>`;
+      }
       svg += `</svg>`;
       const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
       const a = document.createElement('a');
