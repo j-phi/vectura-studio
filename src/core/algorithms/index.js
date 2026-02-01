@@ -7,7 +7,7 @@
       generate: (p, rng, noise, bounds) => {
         const { m, dW, dH, width, height } = bounds;
         const paths = [];
-        const count = Math.max(1, Math.floor((p.density * dW * dH) / 100000));
+        const count = Math.max(1, Math.floor(p.density));
         for (let i = 0; i < count; i++) {
           const path = [];
           let x = m + rng.nextFloat() * dW;
@@ -344,12 +344,40 @@
         const tMax = 200;
         const steps = Math.max(10, Math.floor(p.resolution));
         const tStep = tMax / steps;
+        const intersects = (a, b, c, d) => {
+          const den = (b.x - a.x) * (d.y - c.y) - (b.y - a.y) * (d.x - c.x);
+          if (Math.abs(den) < 1e-6) return null;
+          const t = ((c.x - a.x) * (d.y - c.y) - (c.y - a.y) * (d.x - c.x)) / den;
+          const u = ((c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x)) / den;
+          if (t <= 1e-4 || t >= 1 - 1e-4 || u <= 1e-4 || u >= 1 - 1e-4) return null;
+          return { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y), t };
+        };
+        let closed = false;
         for (let t = 0; t < tMax; t += tStep) {
           const amp = Math.exp(-p.damping * t);
           if (amp < 0.01) break;
           let lx = Math.sin(p.freqX * t + p.phase);
           let ly = Math.sin(p.freqY * t);
-          lPath.push({ x: lcx + lx * scale * amp, y: lcy + ly * scale * amp });
+          const next = { x: lcx + lx * scale * amp, y: lcy + ly * scale * amp };
+          if (p.closeLines && lPath.length > 2) {
+            const prev = lPath[lPath.length - 1];
+            let hit = null;
+            for (let i = 0; i < lPath.length - 2; i++) {
+              const a = lPath[i];
+              const b = lPath[i + 1];
+              const inter = intersects(prev, next, a, b);
+              if (inter && (!hit || inter.t < hit.t)) hit = inter;
+            }
+            if (hit) {
+              lPath.push({ x: hit.x, y: hit.y });
+              closed = true;
+              break;
+            }
+          }
+          lPath.push(next);
+        }
+        if (p.closeLines && lPath.length > 2 && !closed) {
+          lPath.push({ ...lPath[0] });
         }
         return [lPath];
       },
@@ -358,19 +386,42 @@
     },
     wavetable: {
       generate: (p, rng, noise, bounds) => {
-        const { m, dW, dH, height } = bounds;
+        const { m, height, width } = bounds;
         const paths = [];
-        const lSpace = dH / p.lines;
-        const pts = Math.floor(dW / 2);
-        const xStep = dW / pts;
+        const inset = bounds.truncate ? m : 0;
+        const innerW = width - inset * 2;
+        const innerH = height - inset * 2;
+        const lines = Math.max(1, Math.floor(p.lines));
+        const rowSpan = Math.max(1, lines - 1);
+        const baseSpace = innerH / rowSpan;
+        const gap = Math.max(0.1, p.gap);
+        let lSpace = baseSpace * gap;
+        let totalHeight = lines > 1 ? lSpace * (lines - 1) : 0;
+        if (lines > 1 && totalHeight > innerH) {
+          lSpace = innerH / (lines - 1);
+          totalHeight = lSpace * (lines - 1);
+        }
+        const startY = inset + (innerH - totalHeight) / 2;
+        const pts = Math.max(2, Math.floor(innerW / 2));
+        const xStep = innerW / pts;
         const dampenExtremes = Boolean(p.dampenExtremes);
-        const noOverlap = Boolean(p.noOverlap);
+        const overlapPadding = Math.max(0, p.overlapPadding ?? 0);
         const flatCaps = Boolean(p.flatCaps);
-        const edgeFade = Math.max(0, p.edgeFade ?? 0.2);
-        const edgeFadeInner = Math.min(1, edgeFade);
-        const edgeFadeExtra = Math.max(0, edgeFade - 1);
-        const verticalFade = Math.min(1, Math.max(0, p.verticalFade ?? 0));
-        const verticalFadeThreshold = Math.min(1, Math.max(0, p.verticalFadeThreshold ?? 0));
+        const edgeFade = Math.min(100, Math.max(0, p.edgeFade ?? 0));
+        const edgeFadeStrength = Math.min(1, edgeFade / 100);
+        const edgeFadeThreshold = Math.min(100, Math.max(0, p.edgeFadeThreshold ?? 0));
+        const edgeFadeThresholdStrength = Math.min(1, edgeFadeThreshold / 100);
+        const edgeFadeFeather = Math.min(100, Math.max(0, p.edgeFadeFeather ?? 0));
+        const edgeFadeFeatherStrength = Math.min(1, edgeFadeFeather / 100);
+        const edgeFadeMode = ['none', 'left', 'right', 'both'].includes(p.edgeFadeMode)
+          ? p.edgeFadeMode
+          : 'both';
+        const verticalFade = Math.min(100, Math.max(0, p.verticalFade ?? 0));
+        const verticalFadeStrength = Math.min(1, verticalFade / 100);
+        const verticalFadeThreshold = Math.min(100, Math.max(0, p.verticalFadeThreshold ?? 0));
+        const verticalFadeThresholdStrength = Math.min(1, verticalFadeThreshold / 100);
+        const verticalFadeFeather = Math.min(100, Math.max(0, p.verticalFadeFeather ?? 0));
+        const verticalFadeFeatherStrength = Math.min(1, verticalFadeFeather / 100);
         const verticalFadeMode = ['none', 'top', 'bottom', 'both'].includes(p.verticalFadeMode)
           ? p.verticalFadeMode
           : 'both';
@@ -378,30 +429,43 @@
         const cosA = Math.cos(noiseAngle);
         const sinA = Math.sin(noiseAngle);
         let prevY = null;
-        for (let i = 0; i < p.lines; i++) {
+        let prevOffset = 0;
+        const rowOrder = overlapPadding > 0 ? [...Array(lines).keys()].reverse() : [...Array(lines).keys()];
+        const rowPaths = new Array(lines);
+        rowOrder.forEach((i) => {
           const path = [];
-          const by = m + i * lSpace * p.gap;
-          const tRow = p.lines <= 1 ? 0.5 : i / (p.lines - 1);
-          const fadeStart = 1 - verticalFadeThreshold;
-          let vDist = 0;
-          if (verticalFadeMode === 'top') {
-            vDist = tRow <= 0.5 ? 1 - tRow / 0.5 : 0;
-          } else if (verticalFadeMode === 'bottom') {
-            vDist = tRow >= 0.5 ? (tRow - 0.5) / 0.5 : 0;
-          } else if (verticalFadeMode === 'both') {
-            vDist = Math.abs(tRow - 0.5) * 2;
-          }
+          const by = startY + i * lSpace;
+          const tRow = lines <= 1 ? 0.5 : i / (lines - 1);
           let vTaper = 1;
-          if (verticalFade > 0 && vDist > 0 && fadeStart < 1) {
-            const t = (vDist - fadeStart) / Math.max(0.0001, 1 - fadeStart);
-            vTaper = 1 - Math.max(0, Math.min(1, t)) * verticalFade;
-          } else if (verticalFade > 0 && vDist >= 1 && fadeStart >= 1) {
-            vTaper = 1 - verticalFade;
+          if (verticalFadeStrength > 0 && verticalFadeThresholdStrength > 0 && verticalFadeMode !== 'none') {
+            let vDist = 0;
+            let zone = 0;
+            if (verticalFadeMode === 'top') {
+              vDist = tRow;
+              zone = verticalFadeThresholdStrength;
+            } else if (verticalFadeMode === 'bottom') {
+              vDist = 1 - tRow;
+              zone = verticalFadeThresholdStrength;
+            } else {
+              vDist = Math.min(tRow, 1 - tRow);
+              zone = verticalFadeThresholdStrength / 2;
+            }
+            if (vDist <= zone) {
+              vTaper = Math.max(0, 1 - verticalFadeStrength);
+            } else if (verticalFadeFeatherStrength > 0) {
+              const featherZone = Math.max(0.0001, verticalFadeFeatherStrength / (verticalFadeMode === 'both' ? 2 : 1));
+              if (vDist <= zone + featherZone) {
+                const t = (vDist - zone) / featherZone;
+                const eased = Math.max(0, Math.min(1, t));
+                const damp = (1 - verticalFadeStrength) + eased * verticalFadeStrength;
+                vTaper = Math.max(0, damp);
+              }
+            }
           }
           const xOffset = p.tilt * i;
-          const currY = noOverlap ? new Array(pts + 1) : null;
+          const currY = overlapPadding > 0 ? new Array(pts + 1) : null;
           for (let j = 0; j <= pts; j++) {
-            const x = m + j * xStep + xOffset;
+            const x = inset + j * xStep + xOffset;
             const nx = x * p.zoom * p.freq;
             const ny = by * p.zoom;
             const rx = nx * cosA - ny * sinA;
@@ -409,17 +473,37 @@
             const n = noise.noise2D(rx, ry);
             const off = n * p.amplitude;
             let taper = 1.0;
-            const distC = Math.abs(j / pts - 0.5) * 2;
-            if (edgeFade > 0 && edgeFadeInner > 0) {
-              const edgeStart = 1 - edgeFadeInner;
-              if (distC > edgeStart) taper = 1.0 - (distC - edgeStart) / edgeFadeInner;
-              if (edgeFadeExtra > 0) taper *= Math.max(0, 1 - edgeFadeExtra);
+            if (edgeFadeStrength > 0 && edgeFadeThresholdStrength > 0 && edgeFadeMode !== 'none') {
+              const t = j / pts;
+              let hDist = 0;
+              let zone = 0;
+              if (edgeFadeMode === 'left') {
+                hDist = t;
+                zone = edgeFadeThresholdStrength;
+              } else if (edgeFadeMode === 'right') {
+                hDist = 1 - t;
+                zone = edgeFadeThresholdStrength;
+              } else {
+                hDist = Math.min(t, 1 - t);
+                zone = edgeFadeThresholdStrength / 2;
+              }
+              if (hDist <= zone) {
+                taper = Math.max(0, 1 - edgeFadeStrength);
+              } else if (edgeFadeFeatherStrength > 0) {
+                const featherZone = Math.max(0.0001, edgeFadeFeatherStrength / (edgeFadeMode === 'both' ? 2 : 1));
+                if (hDist <= zone + featherZone) {
+                  const tFeather = (hDist - zone) / featherZone;
+                  const eased = Math.max(0, Math.min(1, tFeather));
+                  const damp = (1 - edgeFadeStrength) + eased * edgeFadeStrength;
+                  taper = Math.max(0, damp);
+                }
+              }
             }
             const amp = off * taper * vTaper;
             let y = by + amp;
             if (dampenExtremes) {
-              const minY = m;
-              const maxY = height - m;
+              const minY = inset;
+              const maxY = height - inset;
               if (y < minY || y > maxY) {
                 const limit = Math.max(0, y < minY ? by - minY : maxY - by);
                 const denom = Math.max(0.001, Math.abs(amp));
@@ -427,26 +511,45 @@
                 y = by + amp * scale;
               }
             }
-            if (noOverlap && prevY) {
-              const minGap = Math.max(0.1, lSpace * p.gap * 0.1);
-              if (y < prevY[j] + minGap) y = prevY[j] + minGap;
+            if (overlapPadding > 0 && prevY) {
+              const minGap = overlapPadding * 0.5;
+              const prevIndex = (x - (inset + prevOffset)) / xStep;
+              if (prevIndex >= 0 && prevIndex <= pts) {
+                const i0 = Math.floor(prevIndex);
+                const i1 = Math.min(pts, i0 + 1);
+                const t = prevIndex - i0;
+                const prevVal = prevY[i0] + (prevY[i1] - prevY[i0]) * t;
+                const ceiling = prevVal - minGap;
+                if (y > ceiling) {
+                  y = ceiling;
+                }
+              }
             }
             path.push({ x, y });
             if (currY) currY[j] = y;
           }
-          if (path.length > 1) paths.push(path);
-          if (currY) prevY = currY;
-        }
+          rowPaths[i] = path.length > 1 ? path : null;
+          if (currY) {
+            prevY = currY;
+            prevOffset = xOffset;
+          }
+        });
+
+        rowPaths.forEach((path) => {
+          if (path) paths.push(path);
+        });
 
         if (flatCaps) {
           const top = [];
           const bottom = [];
-          const bottomOffset = p.tilt * (p.lines - 1);
+          const bottomOffset = p.tilt * (lines - 1);
+          const topY = startY;
+          const bottomY = startY + lSpace * (lines - 1);
           for (let j = 0; j <= pts; j++) {
-            const xTop = m + j * xStep;
-            const xBottom = m + j * xStep + bottomOffset;
-            top.push({ x: xTop, y: m });
-            bottom.push({ x: xBottom, y: height - m });
+            const xTop = inset + j * xStep;
+            const xBottom = inset + j * xStep + bottomOffset;
+            top.push({ x: xTop, y: topY });
+            bottom.push({ x: xBottom, y: bottomY });
           }
           paths.push(top, bottom);
         }
@@ -462,13 +565,19 @@
         const scy = height / 2;
         const spath = [];
         let r = p.startR;
-        let theta = 0;
+        const offset = ((p.angleOffset ?? 0) * Math.PI) / 180;
+        let theta = offset;
         const maxR = Math.min(dW, dH) / 2;
-        const dr = (maxR - p.startR) / (p.loops * p.res);
-        const dTheta = (Math.PI * 2) / p.res;
-        while (r < maxR) {
+        const loops = Math.max(1, p.loops ?? 1);
+        const stepsPerQuad = Math.max(1, Math.floor(p.res ?? 40));
+        const axisSnap = Boolean(p.axisSnap);
+        const dTheta = axisSnap ? (Math.PI / 2) / stepsPerQuad : (Math.PI * 2) / stepsPerQuad;
+        const totalSteps = Math.max(1, Math.floor((Math.PI * 2 * loops) / dTheta));
+        const dr = (maxR - p.startR) / totalSteps;
+        for (let i = 0; i <= totalSteps; i++) {
           const n = noise.noise2D(Math.cos(theta) * p.noiseFreq, Math.sin(theta) * p.noiseFreq);
-          const rMod = r + n * p.noiseAmp;
+          const pulse = 1 + Math.sin(theta * (p.pulseFreq ?? 0)) * (p.pulseAmp ?? 0);
+          const rMod = r * pulse + n * p.noiseAmp;
           spath.push({ x: scx + Math.cos(theta) * rMod, y: scy + Math.sin(theta) * rMod });
           theta += dTheta;
           r += dr;

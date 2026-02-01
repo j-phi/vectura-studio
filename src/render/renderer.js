@@ -22,9 +22,16 @@
       this.rotateOrigin = null;
       this.rotateStartAngle = 0;
       this.rotateStart = 0;
+      this.guides = null;
       this.selectedLayerId = null;
+      this.selectedLayerIds = new Set();
+      this.isSelecting = false;
+      this.selectionStart = null;
+      this.selectionRect = null;
       this.onSelectLayer = null;
       this.lastM = { x: 0, y: 0 };
+      this.snap = null;
+      this.snapAllowed = true;
       this.ready = Boolean(this.canvas && this.ctx);
 
       if (!this.ready) {
@@ -92,24 +99,30 @@
       this.ctx.lineJoin = 'round';
 
       const selectedLayer = this.getSelectedLayer();
+      const selectedLayers = this.getSelectedLayers();
       const m = SETTINGS.margin;
       const innerW = prof.width - m * 2;
       const innerH = prof.height - m * 2;
       const drawLayers = () => {
         this.engine.layers.forEach((l) => {
           if (!l.visible) return;
-          this.ctx.lineWidth = l.strokeWidth ?? SETTINGS.strokeWidth;
+          const pen = SETTINGS.pens?.find((p) => p.id === l.penId) || null;
+          const strokeWidth = pen?.width ?? l.strokeWidth ?? SETTINGS.strokeWidth;
+          this.ctx.lineWidth = strokeWidth;
           this.ctx.lineCap = l.lineCap || 'round';
           this.ctx.beginPath();
-          this.ctx.strokeStyle = l.color;
+          this.ctx.strokeStyle = pen?.color || l.color;
           const useCurves = Boolean(l.params && l.params.curves);
           l.paths.forEach((path) => {
             if (path && path.meta && path.meta.kind === 'circle') {
               const meta =
-                l === selectedLayer && this.tempTransform ? this.transformCircleMeta(path.meta, this.tempTransform) : path.meta;
+                this.selectedLayerIds?.has(l.id) && this.tempTransform
+                  ? this.transformCircleMeta(path.meta, this.tempTransform)
+                  : path.meta;
               this.traceCircle(meta);
             } else {
-              const next = l === selectedLayer && this.tempTransform ? this.transformPath(path, this.tempTransform) : path;
+              const next =
+                this.selectedLayerIds?.has(l.id) && this.tempTransform ? this.transformPath(path, this.tempTransform) : path;
               this.tracePath(next, useCurves);
             }
           });
@@ -156,10 +169,13 @@
         this.ctx.restore();
       }
 
-      if (selectedLayer) {
-        const bounds = this.getLayerBounds(selectedLayer, this.tempTransform);
-        if (bounds) this.drawSelection(bounds);
+      if (SETTINGS.showGuides && this.guides) this.drawGuides(this.guides);
+      if (selectedLayers.length) {
+        const bounds = this.getSelectionBounds(selectedLayers, this.tempTransform);
+        const showHandles = selectedLayers.length === 1;
+        if (bounds) this.drawSelection(bounds, { showHandles });
       }
+      if (this.selectionRect) this.drawSelectionRect(this.selectionRect);
       this.ctx.restore();
     }
 
@@ -196,51 +212,61 @@
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
       const world = this.screenToWorld(sx, sy);
+      const selectedLayers = this.getSelectedLayers();
+      const selectionBounds = this.getSelectionBounds(selectedLayers);
+      if (selectionBounds) {
+        const handle = this.hitHandle(sx, sy, selectionBounds);
+        if (handle) {
+          this.isLayerDrag = true;
+          this.snapAllowed = true;
+          this.activeHandle = handle;
+          this.dragStart = world;
+          this.startBounds = selectionBounds;
+          if (handle === 'rotate') {
+            this.dragMode = 'rotate';
+            this.rotateOrigin = this.getBoundsCenter(selectionBounds);
+            this.rotateStart = this.selectedLayerId ? this.getSelectedLayer()?.params.rotation ?? 0 : 0;
+            this.rotateStartAngle = Math.atan2(world.y - this.rotateOrigin.y, world.x - this.rotateOrigin.x);
+            this.tempTransform = { dx: 0, dy: 0, scaleX: 1, scaleY: 1, origin: this.rotateOrigin, rotation: 0 };
+            this.canvas.style.cursor = 'grabbing';
+          } else {
+            this.dragMode = 'resize';
+            this.canvas.style.cursor = this.handleCursor(handle);
+          }
+          e.preventDefault();
+          return;
+        }
+      }
+
       const topLayer = this.findLayerAtPoint(world);
-      if (topLayer && topLayer.id !== this.selectedLayerId) {
+      if (topLayer && !this.selectedLayerIds.has(topLayer.id)) {
         this.selectLayer(topLayer);
       }
-      const selectedLayer = this.getSelectedLayer();
-      if (!selectedLayer) return;
-      const bounds = this.getLayerBounds(selectedLayer);
-      if (!bounds) return;
-      const handle = this.hitHandle(sx, sy, bounds);
-      if (handle) {
+      const updatedSelected = this.getSelectedLayers();
+      const bounds = this.getSelectionBounds(updatedSelected);
+      if (bounds && this.pointInBounds(world, bounds)) {
         this.isLayerDrag = true;
-        this.activeHandle = handle;
-        this.dragStart = world;
-        this.startBounds = bounds;
-        if (handle === 'rotate') {
-          this.dragMode = 'rotate';
-          this.rotateOrigin = this.getBoundsCenter(bounds);
-          this.rotateStart = selectedLayer.params.rotation ?? 0;
-          this.rotateStartAngle = Math.atan2(world.y - this.rotateOrigin.y, world.x - this.rotateOrigin.x);
-          this.tempTransform = { dx: 0, dy: 0, scaleX: 1, scaleY: 1, origin: this.rotateOrigin, rotation: 0 };
-          this.canvas.style.cursor = 'grabbing';
-        } else {
-          this.dragMode = 'resize';
-          this.canvas.style.cursor = this.handleCursor(handle);
-        }
-        e.preventDefault();
-        return;
-      }
-      if (this.pointInBounds(world, bounds)) {
-        this.isLayerDrag = true;
+        this.snapAllowed = true;
         this.dragMode = 'move';
         this.dragStart = world;
         this.startBounds = bounds;
         this.canvas.style.cursor = 'move';
-        if (e.altKey) {
+        if (e.altKey && updatedSelected.length === 1) {
           if (this.onDuplicateLayer) this.onDuplicateLayer();
-          const dup = this.engine.duplicateLayer ? this.engine.duplicateLayer(selectedLayer.id) : null;
+          const dup = this.engine.duplicateLayer ? this.engine.duplicateLayer(updatedSelected[0].id) : null;
           if (dup) {
             this.selectLayer(dup);
             this.dragStart = world;
-            this.startBounds = this.getLayerBounds(dup) || bounds;
+            this.startBounds = this.getSelectionBounds([dup]) || bounds;
           }
         }
         e.preventDefault();
-      } else if (!topLayer) {
+      } else if (topLayer) {
+        // no-op
+      } else {
+        this.isSelecting = true;
+        this.selectionStart = world;
+        this.selectionRect = { x: world.x, y: world.y, w: 0, h: 0 };
         this.clearSelection();
       }
     }
@@ -270,10 +296,15 @@
           const handlePoint = this.getHandlePoint(this.activeHandle, this.startBounds);
           const startVec = { x: handlePoint.x - origin.x, y: handlePoint.y - origin.y };
           const currVec = { x: world.x - origin.x, y: world.y - origin.y };
-          const safeX = Math.abs(startVec.x) < 0.001 ? 0.001 : startVec.x;
-          const safeY = Math.abs(startVec.y) < 0.001 ? 0.001 : startVec.y;
-          let scaleX = currVec.x / safeX;
-          let scaleY = currVec.y / safeY;
+          const rot = -(this.startBounds.rotation || 0);
+          const cosR = Math.cos(rot);
+          const sinR = Math.sin(rot);
+          const startVecLocal = { x: startVec.x * cosR - startVec.y * sinR, y: startVec.x * sinR + startVec.y * cosR };
+          const currVecLocal = { x: currVec.x * cosR - currVec.y * sinR, y: currVec.x * sinR + currVec.y * cosR };
+          const safeX = Math.abs(startVecLocal.x) < 0.001 ? 0.001 : startVecLocal.x;
+          const safeY = Math.abs(startVecLocal.y) < 0.001 ? 0.001 : startVecLocal.y;
+          let scaleX = currVecLocal.x / safeX;
+          let scaleY = currVecLocal.y / safeY;
           if (e.shiftKey) {
             const uni = Math.abs(scaleX) > Math.abs(scaleY) ? scaleX : scaleY;
             scaleX = uni;
@@ -285,8 +316,32 @@
         } else if (this.dragMode === 'rotate' && this.rotateOrigin) {
           const angle = Math.atan2(world.y - this.rotateOrigin.y, world.x - this.rotateOrigin.x);
           let delta = ((angle - this.rotateStartAngle) * 180) / Math.PI;
+          if (e.shiftKey) {
+            const snap = 15;
+            delta = Math.round(delta / snap) * snap;
+          }
           this.tempTransform = { dx: 0, dy: 0, scaleX: 1, scaleY: 1, origin: this.rotateOrigin, rotation: delta };
         }
+        const activeLayers = this.getSelectedLayers();
+        const bounds = activeLayers.length ? this.getSelectionBounds(activeLayers, this.tempTransform) : null;
+        const needsGuides = SETTINGS.showGuides || SETTINGS.snapGuides;
+        this.snapAllowed = !e.metaKey;
+        this.guides = needsGuides && bounds ? this.computeGuides(activeLayers, bounds) : null;
+        this.snap = SETTINGS.snapGuides && bounds ? this.computeSnap(activeLayers, bounds) : null;
+        this.draw();
+        return;
+      }
+
+      if (this.isSelecting && this.selectionStart) {
+        const rect = this.canvas.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        const world = this.screenToWorld(sx, sy);
+        const x = Math.min(this.selectionStart.x, world.x);
+        const y = Math.min(this.selectionStart.y, world.y);
+        const w = Math.abs(world.x - this.selectionStart.x);
+        const h = Math.abs(world.y - this.selectionStart.y);
+        this.selectionRect = { x, y, w, h };
         this.draw();
         return;
       }
@@ -297,31 +352,197 @@
     up() {
       if (!this.ready || !this.canvas) return;
       if (this.isLayerDrag) {
-        const activeLayer = this.getSelectedLayer();
-        if (activeLayer && this.tempTransform) {
+        const selectedLayers = this.getSelectedLayers();
+        if (selectedLayers.length && this.tempTransform) {
           if (this.onCommitTransform) this.onCommitTransform();
           if (this.dragMode === 'move') {
-            activeLayer.params.posX += this.tempTransform.dx;
-            activeLayer.params.posY += this.tempTransform.dy;
-          } else if (this.dragMode === 'resize') {
-            activeLayer.params.scaleX *= this.tempTransform.scaleX;
-            activeLayer.params.scaleY *= this.tempTransform.scaleY;
+            const snapDx = this.snapAllowed && this.snap ? this.snap.dx || 0 : 0;
+            const snapDy = this.snapAllowed && this.snap ? this.snap.dy || 0 : 0;
+            selectedLayers.forEach((layer) => {
+              layer.params.posX += this.tempTransform.dx + snapDx;
+              layer.params.posY += this.tempTransform.dy + snapDy;
+              this.engine.generate(layer.id);
+            });
+          } else if (this.dragMode === 'resize' && selectedLayers.length === 1) {
+            const activeLayer = selectedLayers[0];
+            let scaleX = this.tempTransform.scaleX;
+            let scaleY = this.tempTransform.scaleY;
+            if (this.snapAllowed && this.snap) {
+              if (this.snap.scaleX) scaleX *= this.snap.scaleX;
+              if (this.snap.scaleY) scaleY *= this.snap.scaleY;
+            }
+            activeLayer.params.scaleX *= scaleX;
+            activeLayer.params.scaleY *= scaleY;
+            this.engine.generate(activeLayer.id);
           } else if (this.dragMode === 'rotate') {
-            const next = (activeLayer.params.rotation ?? 0) + (this.tempTransform.rotation ?? 0);
-            activeLayer.params.rotation = next;
+            const delta = this.tempTransform.rotation ?? 0;
+            const origin = this.rotateOrigin || (this.startBounds ? this.startBounds.origin : null);
+            selectedLayers.forEach((layer) => {
+              const baseOrigin = {
+                x: (layer.origin?.x ?? 0) + (layer.params.posX ?? 0),
+                y: (layer.origin?.y ?? 0) + (layer.params.posY ?? 0),
+              };
+              if (origin) {
+                const rot = (delta * Math.PI) / 180;
+                const cosR = Math.cos(rot);
+                const sinR = Math.sin(rot);
+                const dx = baseOrigin.x - origin.x;
+                const dy = baseOrigin.y - origin.y;
+                const rx = dx * cosR - dy * sinR;
+                const ry = dx * sinR + dy * cosR;
+                layer.params.posX = origin.x + rx - (layer.origin?.x ?? 0);
+                layer.params.posY = origin.y + ry - (layer.origin?.y ?? 0);
+              }
+              layer.params.rotation = (layer.params.rotation ?? 0) + delta;
+              this.engine.generate(layer.id);
+            });
           }
-          this.engine.generate(activeLayer.id);
-          this.updateTransformInputs(activeLayer);
+          const primary = this.getSelectedLayer();
+          if (primary) this.updateTransformInputs(primary);
         }
         this.tempTransform = null;
         this.rotateOrigin = null;
+        this.snap = null;
       }
       this.isPan = false;
       this.isLayerDrag = false;
       this.dragMode = null;
       this.activeHandle = null;
       this.canvas.style.cursor = 'crosshair';
+      this.guides = null;
+      if (this.isSelecting) {
+        const rect = this.selectionRect;
+        if (rect) {
+          const selected = this.engine.layers.filter((layer) => {
+            if (!layer.visible) return false;
+            const bounds = this.getLayerBounds(layer);
+            if (!bounds) return false;
+            const corners = Object.values(bounds.corners);
+            const inRect = corners.some(
+              (pt) => pt.x >= rect.x && pt.x <= rect.x + rect.w && pt.y >= rect.y && pt.y <= rect.y + rect.h
+            );
+            return inRect;
+          });
+          if (selected.length) {
+            this.setSelection(
+              selected.map((layer) => layer.id),
+              selected[selected.length - 1].id
+            );
+          }
+        }
+        this.isSelecting = false;
+        this.selectionStart = null;
+        this.selectionRect = null;
+      }
       this.draw();
+    }
+
+    computeGuides(activeLayers, bounds) {
+      const prof = this.engine.currentProfile;
+      const guides = { center: [], size: [] };
+      const centerX = prof.width / 2;
+      const centerY = prof.height / 2;
+      const tol = 2;
+
+      if (Math.abs(bounds.center.x - centerX) <= tol) {
+        guides.center.push({ x1: centerX, y1: 0, x2: centerX, y2: prof.height });
+      }
+      if (Math.abs(bounds.center.y - centerY) <= tol) {
+        guides.center.push({ x1: 0, y1: centerY, x2: prof.width, y2: centerY });
+      }
+
+      const targetW = bounds.maxX - bounds.minX;
+      const targetH = bounds.maxY - bounds.minY;
+      let widthMatch = false;
+      let heightMatch = false;
+      const activeIds = new Set(activeLayers.map((layer) => layer.id));
+      this.engine.layers.forEach((layer) => {
+        if (activeIds.has(layer.id) || !layer.visible) return;
+        const otherBounds = this.getLayerBounds(layer);
+        if (!otherBounds) return;
+        const w = otherBounds.maxX - otherBounds.minX;
+        const h = otherBounds.maxY - otherBounds.minY;
+        if (Math.abs(w - targetW) <= tol) widthMatch = true;
+        if (Math.abs(h - targetH) <= tol) heightMatch = true;
+      });
+
+      if (widthMatch) {
+        guides.size.push({ x1: bounds.corners.nw.x, y1: bounds.corners.nw.y, x2: bounds.corners.sw.x, y2: bounds.corners.sw.y });
+        guides.size.push({ x1: bounds.corners.ne.x, y1: bounds.corners.ne.y, x2: bounds.corners.se.x, y2: bounds.corners.se.y });
+      }
+      if (heightMatch) {
+        guides.size.push({ x1: bounds.corners.nw.x, y1: bounds.corners.nw.y, x2: bounds.corners.ne.x, y2: bounds.corners.ne.y });
+        guides.size.push({ x1: bounds.corners.sw.x, y1: bounds.corners.sw.y, x2: bounds.corners.se.x, y2: bounds.corners.se.y });
+      }
+
+      return guides.center.length || guides.size.length ? guides : null;
+    }
+
+    computeSnap(activeLayers, bounds) {
+      const prof = this.engine.currentProfile;
+      const centerX = prof.width / 2;
+      const centerY = prof.height / 2;
+      const tol = 2;
+      const snap = { dx: 0, dy: 0, scaleX: 0, scaleY: 0 };
+
+      if (Math.abs(bounds.center.x - centerX) <= tol) {
+        snap.dx = centerX - bounds.center.x;
+      }
+      if (Math.abs(bounds.center.y - centerY) <= tol) {
+        snap.dy = centerY - bounds.center.y;
+      }
+
+      const targetW = bounds.maxX - bounds.minX;
+      const targetH = bounds.maxY - bounds.minY;
+      let bestWidth = null;
+      let bestHeight = null;
+      let bestWDiff = Infinity;
+      let bestHDiff = Infinity;
+      const activeIds = new Set(activeLayers.map((layer) => layer.id));
+      this.engine.layers.forEach((layer) => {
+        if (activeIds.has(layer.id) || !layer.visible) return;
+        const otherBounds = this.getLayerBounds(layer);
+        if (!otherBounds) return;
+        const w = otherBounds.maxX - otherBounds.minX;
+        const h = otherBounds.maxY - otherBounds.minY;
+        const wDiff = Math.abs(w - targetW);
+        const hDiff = Math.abs(h - targetH);
+        if (wDiff <= tol && wDiff < bestWDiff) {
+          bestWDiff = wDiff;
+          bestWidth = w;
+        }
+        if (hDiff <= tol && hDiff < bestHDiff) {
+          bestHDiff = hDiff;
+          bestHeight = h;
+        }
+      });
+      if (bestWidth && targetW > 0) snap.scaleX = bestWidth / targetW;
+      if (bestHeight && targetH > 0) snap.scaleY = bestHeight / targetH;
+
+      return snap;
+    }
+
+    drawGuides(guides) {
+      if (!guides) return;
+      this.ctx.save();
+      this.ctx.lineWidth = 1 / this.scale;
+      this.ctx.setLineDash([6 / this.scale, 4 / this.scale]);
+      this.ctx.strokeStyle = 'rgba(56, 189, 248, 0.6)';
+      guides.center.forEach((line) => {
+        this.ctx.beginPath();
+        this.ctx.moveTo(line.x1, line.y1);
+        this.ctx.lineTo(line.x2, line.y2);
+        this.ctx.stroke();
+      });
+      this.ctx.setLineDash([]);
+      this.ctx.strokeStyle = 'rgba(250, 204, 21, 0.7)';
+      guides.size.forEach((line) => {
+        this.ctx.beginPath();
+        this.ctx.moveTo(line.x1, line.y1);
+        this.ctx.lineTo(line.x2, line.y2);
+        this.ctx.stroke();
+      });
+      this.ctx.restore();
     }
 
     tracePath(path, useCurves) {
@@ -361,14 +582,53 @@
       return this.engine.layers.find((l) => l.id === this.selectedLayerId) || null;
     }
 
-    selectLayer(layer) {
+    getSelectedLayers() {
+      return this.engine.layers.filter((l) => this.selectedLayerIds.has(l.id));
+    }
+
+    selectLayer(layer, options = {}) {
       if (!layer) return;
-      this.selectedLayerId = layer.id;
-      if (this.onSelectLayer) this.onSelectLayer(layer);
+      const { additive = false, toggle = false } = options;
+      if (!additive && !toggle) {
+        this.selectedLayerIds.clear();
+      }
+      if (toggle) {
+        if (this.selectedLayerIds.has(layer.id)) {
+          this.selectedLayerIds.delete(layer.id);
+        } else {
+          this.selectedLayerIds.add(layer.id);
+        }
+      } else {
+        this.selectedLayerIds.add(layer.id);
+      }
+      if (this.selectedLayerIds.size === 0) {
+        this.selectedLayerId = null;
+        if (this.onSelectLayer) this.onSelectLayer(null);
+      } else {
+        this.selectedLayerId = this.selectedLayerIds.has(layer.id)
+          ? layer.id
+          : this.selectedLayerIds.values().next().value;
+        if (this.onSelectLayer) this.onSelectLayer(this.getSelectedLayer());
+      }
+      this.draw();
+    }
+
+    setSelection(ids, primaryId) {
+      this.selectedLayerIds = new Set(ids || []);
+      if (primaryId && this.selectedLayerIds.has(primaryId)) {
+        this.selectedLayerId = primaryId;
+      } else {
+        this.selectedLayerId = this.selectedLayerIds.values().next().value || null;
+      }
+      if (this.onSelectLayer) {
+        const layer = this.getSelectedLayer();
+        this.onSelectLayer(layer || null);
+      }
       this.draw();
     }
 
     clearSelection() {
+      this.selectedLayerIds.clear();
       this.selectedLayerId = null;
       if (this.onSelectLayer) this.onSelectLayer(null);
       this.draw();
@@ -383,6 +643,46 @@
           return bounds ? this.pointInBounds(world, bounds) : false;
         }) || null
       );
+    }
+
+    getSelectionBounds(layers, temp) {
+      if (!layers || layers.length === 0) return null;
+      if (layers.length === 1) {
+        return this.getLayerBounds(layers[0], temp);
+      }
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      layers.forEach((layer) => {
+        const bounds = this.getLayerBounds(layer);
+        if (!bounds) return;
+        const corners = Object.values(bounds.corners);
+        corners.forEach((pt) => {
+          const next = temp ? this.transformPoint(pt, temp) : pt;
+          minX = Math.min(minX, next.x);
+          minY = Math.min(minY, next.y);
+          maxX = Math.max(maxX, next.x);
+          maxY = Math.max(maxY, next.y);
+        });
+      });
+      if (!Number.isFinite(minX)) return null;
+      const center = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+      return {
+        minX,
+        minY,
+        maxX,
+        maxY,
+        rotation: 0,
+        origin: center,
+        center,
+        corners: {
+          nw: { x: minX, y: minY },
+          ne: { x: maxX, y: minY },
+          se: { x: maxX, y: maxY },
+          sw: { x: minX, y: maxY },
+        },
+      };
     }
 
     screenToWorld(x, y) {
@@ -427,10 +727,39 @@
 
     getLayerBounds(layer, temp) {
       if (!layer || !Array.isArray(layer.paths)) return null;
+      const prof = this.engine.currentProfile;
+      const baseOrigin = {
+        x: (layer.origin?.x ?? prof.width / 2) + (layer.params.posX ?? 0),
+        y: (layer.origin?.y ?? prof.height / 2) + (layer.params.posY ?? 0),
+      };
+      const origin = temp ? this.transformPoint(baseOrigin, temp) : baseOrigin;
+      const baseRot = layer.params.rotation ?? 0;
+      const tempRot = temp?.rotation ?? 0;
+      const rot = ((baseRot + tempRot) * Math.PI) / 180;
+      const cosR = Math.cos(rot);
+      const sinR = Math.sin(rot);
+      const unrotate = (pt) => {
+        const dx = pt.x - origin.x;
+        const dy = pt.y - origin.y;
+        return {
+          x: dx * cosR + dy * sinR,
+          y: -dx * sinR + dy * cosR,
+        };
+      };
+
       let minX = Infinity;
       let minY = Infinity;
       let maxX = -Infinity;
       let maxY = -Infinity;
+
+      const addPoint = (pt) => {
+        const local = unrotate(pt);
+        minX = Math.min(minX, local.x);
+        minY = Math.min(minY, local.y);
+        maxX = Math.max(maxX, local.x);
+        maxY = Math.max(maxY, local.y);
+      };
+
       layer.paths.forEach((path) => {
         if (path && path.meta && path.meta.kind === 'circle') {
           const meta = temp ? this.transformCircleMeta(path.meta, temp) : path.meta;
@@ -438,46 +767,73 @@
           const cy = meta.cy ?? meta.y;
           const rx = meta.rx ?? meta.r;
           const ry = meta.ry ?? meta.r;
-          minX = Math.min(minX, cx - rx);
-          maxX = Math.max(maxX, cx + rx);
-          minY = Math.min(minY, cy - ry);
-          maxY = Math.max(maxY, cy + ry);
+          if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(rx) || !Number.isFinite(ry)) return;
+          addPoint({ x: cx - rx, y: cy });
+          addPoint({ x: cx + rx, y: cy });
+          addPoint({ x: cx, y: cy - ry });
+          addPoint({ x: cx, y: cy + ry });
           return;
         }
         if (!Array.isArray(path)) return;
         path.forEach((pt) => {
           const next = temp ? this.transformPoint(pt, temp) : pt;
-          minX = Math.min(minX, next.x);
-          maxX = Math.max(maxX, next.x);
-          minY = Math.min(minY, next.y);
-          maxY = Math.max(maxY, next.y);
+          addPoint(next);
         });
       });
       if (!Number.isFinite(minX)) return null;
-      return { minX, minY, maxX, maxY };
+      const toWorld = (local) => ({
+        x: origin.x + local.x * cosR - local.y * sinR,
+        y: origin.y + local.x * sinR + local.y * cosR,
+      });
+      const nw = toWorld({ x: minX, y: minY });
+      const ne = toWorld({ x: maxX, y: minY });
+      const se = toWorld({ x: maxX, y: maxY });
+      const sw = toWorld({ x: minX, y: maxY });
+      const centerLocal = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+      const center = toWorld(centerLocal);
+      return {
+        minX,
+        minY,
+        maxX,
+        maxY,
+        rotation: rot,
+        origin,
+        center,
+        corners: { nw, ne, se, sw },
+      };
     }
 
-    drawSelection(bounds) {
+    drawSelection(bounds, options = {}) {
+      const { showHandles = true } = options;
       const handleSize = 6 / this.scale;
       const rotateRadius = 5 / this.scale;
+      const { nw, ne, se, sw } = bounds.corners;
       this.ctx.save();
       this.ctx.strokeStyle = '#f8fafc';
       this.ctx.lineWidth = 1 / this.scale;
       this.ctx.setLineDash([4 / this.scale, 4 / this.scale]);
-      this.ctx.strokeRect(bounds.minX, bounds.minY, bounds.maxX - bounds.minX, bounds.maxY - bounds.minY);
+      this.ctx.beginPath();
+      this.ctx.moveTo(nw.x, nw.y);
+      this.ctx.lineTo(ne.x, ne.y);
+      this.ctx.lineTo(se.x, se.y);
+      this.ctx.lineTo(sw.x, sw.y);
+      this.ctx.closePath();
+      this.ctx.stroke();
       this.ctx.setLineDash([]);
       this.ctx.fillStyle = '#111827';
       this.ctx.strokeStyle = '#f8fafc';
-      const handles = this.getHandlePoints(bounds);
-      handles.forEach((pt) => {
-        this.ctx.beginPath();
-        this.ctx.rect(pt.x - handleSize / 2, pt.y - handleSize / 2, handleSize, handleSize);
-        this.ctx.fill();
-        this.ctx.stroke();
-      });
+      if (showHandles) {
+        const handles = this.getHandlePoints(bounds);
+        handles.forEach((pt) => {
+          this.ctx.beginPath();
+          this.ctx.rect(pt.x - handleSize / 2, pt.y - handleSize / 2, handleSize, handleSize);
+          this.ctx.fill();
+          this.ctx.stroke();
+        });
+      }
       const rotate = this.getRotateHandlePoint(bounds);
       this.ctx.beginPath();
-      this.ctx.moveTo(bounds.maxX, bounds.minY);
+      this.ctx.moveTo(ne.x, ne.y);
       this.ctx.lineTo(rotate.x, rotate.y);
       this.ctx.stroke();
       this.ctx.beginPath();
@@ -487,38 +843,57 @@
       this.ctx.restore();
     }
 
+    drawSelectionRect(rect) {
+      if (!rect) return;
+      this.ctx.save();
+      this.ctx.strokeStyle = 'rgba(148, 163, 184, 0.7)';
+      this.ctx.fillStyle = 'rgba(148, 163, 184, 0.12)';
+      this.ctx.lineWidth = 1 / this.scale;
+      this.ctx.setLineDash([4 / this.scale, 4 / this.scale]);
+      this.ctx.beginPath();
+      this.ctx.rect(rect.x, rect.y, rect.w, rect.h);
+      this.ctx.fill();
+      this.ctx.stroke();
+      this.ctx.restore();
+    }
+
     getHandlePoints(bounds) {
       return [
-        { key: 'nw', x: bounds.minX, y: bounds.minY },
-        { key: 'ne', x: bounds.maxX, y: bounds.minY },
-        { key: 'se', x: bounds.maxX, y: bounds.maxY },
-        { key: 'sw', x: bounds.minX, y: bounds.maxY },
+        { key: 'nw', ...bounds.corners.nw },
+        { key: 'ne', ...bounds.corners.ne },
+        { key: 'se', ...bounds.corners.se },
+        { key: 'sw', ...bounds.corners.sw },
       ];
     }
 
     getRotateHandlePoint(bounds) {
       const offset = 18 / this.scale;
-      return { key: 'rotate', x: bounds.maxX, y: bounds.minY - offset };
+      const center = bounds.center;
+      const target = bounds.corners.ne;
+      const vx = target.x - center.x;
+      const vy = target.y - center.y;
+      const len = Math.hypot(vx, vy) || 1;
+      return { key: 'rotate', x: target.x + (vx / len) * offset, y: target.y + (vy / len) * offset };
     }
 
     getHandlePoint(handle, bounds) {
       const map = {
-        nw: { x: bounds.minX, y: bounds.minY },
-        ne: { x: bounds.maxX, y: bounds.minY },
-        se: { x: bounds.maxX, y: bounds.maxY },
-        sw: { x: bounds.minX, y: bounds.maxY },
+        nw: bounds.corners.nw,
+        ne: bounds.corners.ne,
+        se: bounds.corners.se,
+        sw: bounds.corners.sw,
       };
-      return map[handle] || { x: bounds.maxX, y: bounds.maxY };
+      return map[handle] || bounds.corners.se;
     }
 
     getResizeAnchor(handle, bounds) {
       const map = {
-        nw: { x: bounds.maxX, y: bounds.maxY },
-        ne: { x: bounds.minX, y: bounds.maxY },
-        se: { x: bounds.minX, y: bounds.minY },
-        sw: { x: bounds.maxX, y: bounds.minY },
+        nw: bounds.corners.se,
+        ne: bounds.corners.sw,
+        se: bounds.corners.nw,
+        sw: bounds.corners.ne,
       };
-      return map[handle] || this.getBoundsCenter(bounds);
+      return map[handle] || bounds.center;
     }
 
     hitHandle(sx, sy, bounds) {
@@ -534,6 +909,7 @@
       ) {
         return 'rotate';
       }
+      if (this.selectedLayerIds && this.selectedLayerIds.size > 1) return null;
       const handles = this.getHandlePoints(bounds).map((pt) => ({
         key: pt.key,
         screen: this.worldToScreen(pt.x, pt.y),
@@ -547,24 +923,24 @@
     }
 
     getHandleVector(handle, bounds) {
-      const center = this.getBoundsCenter(bounds);
-      const points = {
-        nw: { x: bounds.minX, y: bounds.minY },
-        ne: { x: bounds.maxX, y: bounds.minY },
-        se: { x: bounds.maxX, y: bounds.maxY },
-        sw: { x: bounds.minX, y: bounds.maxY },
-      };
-      const pt = points[handle];
+      const center = bounds.center;
+      const pt = this.getHandlePoint(handle, bounds);
       if (!pt) return { x: 1, y: 1 };
       return { x: pt.x - center.x, y: pt.y - center.y };
     }
 
     getBoundsCenter(bounds) {
-      return { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
+      return bounds.center || { x: 0, y: 0 };
     }
 
     pointInBounds(pt, bounds) {
-      return pt.x >= bounds.minX && pt.x <= bounds.maxX && pt.y >= bounds.minY && pt.y <= bounds.maxY;
+      const dx = pt.x - bounds.origin.x;
+      const dy = pt.y - bounds.origin.y;
+      const cosR = Math.cos(bounds.rotation);
+      const sinR = Math.sin(bounds.rotation);
+      const localX = dx * cosR + dy * sinR;
+      const localY = -dx * sinR + dy * cosR;
+      return localX >= bounds.minX && localX <= bounds.maxX && localY >= bounds.minY && localY <= bounds.maxY;
     }
 
     handleCursor(handle) {
@@ -576,12 +952,12 @@
 
     updateHoverCursor(e) {
       if (!this.canvas) return;
-      const activeLayer = this.getSelectedLayer();
-      if (!activeLayer) {
+      const activeLayers = this.getSelectedLayers();
+      if (!activeLayers.length) {
         this.canvas.style.cursor = 'crosshair';
         return;
       }
-      const bounds = this.getLayerBounds(activeLayer, this.tempTransform);
+      const bounds = this.getSelectionBounds(activeLayers, this.tempTransform);
       if (!bounds) return;
       const rect = this.canvas.getBoundingClientRect();
       const sx = e.clientX - rect.left;

@@ -6,7 +6,7 @@ body {
 
 :root {
   --pane-left-width: 320px;
-  --pane-right-width: 256px;
+  --pane-right-width: 336px;
   --pane-collapsed-width: 56px;
 }
 
@@ -82,9 +82,185 @@ input[type='color']::-webkit-color-swatch {
   margin-bottom: 0.5rem;
 }
 
+.value-chip {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.value-input.hidden {
+  display: none;
+}
+
+.control-section {
+  margin: 1.5rem 0 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #27272a;
+}
+
+.control-section-title {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #a1a1aa;
+}
+
 .layer-item.active {
   border-left: 4px solid #fafafa;
   background-color: rgba(39, 39, 42, 0.5);
+}
+
+.layer-item.selected {
+  border-color: #fafafa;
+}
+
+.layer-grip {
+  display: grid;
+  grid-template-columns: repeat(2, 4px);
+  grid-template-rows: repeat(3, 4px);
+  gap: 2px;
+  padding: 2px;
+}
+
+.layer-grip .dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 9999px;
+  background: #71717a;
+}
+
+.pen-assign {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  margin-right: 4px;
+}
+
+.pen-pill {
+  width: 100%;
+  height: 100%;
+  border: none;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.pen-menu {
+  position: absolute;
+  right: 0;
+  top: 24px;
+  min-width: 160px;
+  background: #09090b;
+  border: 1px solid #27272a;
+  padding: 6px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pen-menu.hidden {
+  display: none;
+}
+
+.pen-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #e4e4e7;
+  text-align: left;
+  font-size: 0.75rem;
+}
+
+.pen-option:hover {
+  border-color: #3f3f46;
+  background: #18181b;
+}
+
+.pen-option.active {
+  border-color: #fafafa;
+}
+
+.pen-option .pen-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.pen-icon {
+  width: 100%;
+  height: 100%;
+  border-radius: 9999px;
+  border: 1px solid #27272a;
+  position: relative;
+  background: #e4e4e7;
+}
+
+.pen-icon::after {
+  content: '';
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: calc(2px + var(--pen-width, 0.3) * 6px);
+  height: calc(2px + var(--pen-width, 0.3) * 6px);
+  transform: translate(-50%, -50%);
+  border-radius: 9999px;
+  background: currentColor;
+}
+
+.pen-assign .pen-icon {
+  color: #e4e4e7;
+}
+
+.pen-select {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.pen-list .pen-icon {
+  border-color: #3f3f46;
+}
+
+.pen-item .pen-icon {
+  flex: 0 0 20px;
+}
+
+.pen-item {
+  gap: 8px;
+}
+
+.pen-width {
+  width: 90px;
+}
+
+.pen-width-value {
+  width: 42px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.pen-grip {
+  display: grid;
+  grid-template-columns: repeat(2, 4px);
+  grid-template-rows: repeat(3, 4px);
+  gap: 2px;
+  padding: 2px;
+  cursor: grab;
+}
+
+.pen-grip:active {
+  cursor: grabbing;
+}
+
+.pen-grip .dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 9999px;
+  background: #71717a;
 }
 
 .formula-text {
@@ -108,6 +284,14 @@ input[type='color']::-webkit-color-swatch {
 
 .pane-header-right {
   padding-left: 48px;
+}
+
+.pane-header-left .pane-meta {
+  margin-right: 32px;
+}
+
+.pane-header-right .pane-title {
+  margin-left: 24px;
 }
 
 .pane-toggle {
@@ -140,6 +324,10 @@ input[type='color']::-webkit-color-swatch {
 
 .pane-toggle-right {
   left: 8px;
+}
+
+.pane-toggle-bottom {
+  right: 12px;
 }
 
 .pane-left {
@@ -205,6 +393,56 @@ input[type='color']::-webkit-color-swatch {
 .pane-resizer:hover::before,
 .pane-resizer.active::before {
   opacity: 0.6;
+}
+
+.bottom-pane {
+  max-height: 180px;
+  transition: max-height 0.2s ease;
+  overflow: hidden;
+  position: relative;
+}
+
+.bottom-pane-header {
+  position: relative;
+  padding-right: 48px;
+}
+
+.bottom-pane-footer {
+  margin-top: auto;
+}
+
+.bottom-pane-collapsed {
+  max-height: 36px;
+}
+
+.bottom-pane-collapsed .bottom-pane-body,
+.bottom-pane-collapsed .bottom-pane-footer {
+  display: none;
+}
+
+.bottom-pane-collapsed .pane-toggle-bottom {
+  transform: translateY(-50%) rotate(-90deg);
+}
+
+.layer-grip {
+  width: 14px;
+  color: #71717a;
+  cursor: grab;
+  font-size: 10px;
+  letter-spacing: 1px;
+  user-select: none;
+}
+
+.layer-item.dragging {
+  opacity: 0.6;
+  transform: translateY(-2px);
+}
+
+.layer-drop-indicator {
+  height: 2px;
+  background: #fafafa;
+  margin: 6px 0;
+  border-radius: 9999px;
 }
 
 #algo-sticky {

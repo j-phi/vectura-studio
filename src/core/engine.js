@@ -23,15 +23,67 @@
     return smoothed;
   };
 
+  const simplifyPath = (path, tolerance) => {
+    if (!tolerance || tolerance <= 0 || path.length < 3) return path;
+    const sq = (n) => n * n;
+    const distToSegmentSq = (p, a, b) => {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      if (dx === 0 && dy === 0) return sq(p.x - a.x) + sq(p.y - a.y);
+      const t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy);
+      if (t <= 0) return sq(p.x - a.x) + sq(p.y - a.y);
+      if (t >= 1) return sq(p.x - b.x) + sq(p.y - b.y);
+      const projX = a.x + t * dx;
+      const projY = a.y + t * dy;
+      return sq(p.x - projX) + sq(p.y - projY);
+    };
+    const keep = new Array(path.length).fill(false);
+    keep[0] = true;
+    keep[path.length - 1] = true;
+    const stack = [[0, path.length - 1]];
+    const tolSq = tolerance * tolerance;
+    while (stack.length) {
+      const [start, end] = stack.pop();
+      let maxDist = 0;
+      let index = -1;
+      for (let i = start + 1; i < end; i++) {
+        const dist = distToSegmentSq(path[i], path[start], path[end]);
+        if (dist > maxDist) {
+          maxDist = dist;
+          index = i;
+        }
+      }
+      if (maxDist > tolSq && index !== -1) {
+        keep[index] = true;
+        stack.push([start, index]);
+        stack.push([index, end]);
+      }
+    }
+    const simplified = path.filter((_, i) => keep[i]);
+    if (path.meta) simplified.meta = path.meta;
+    return simplified.length >= 2 ? simplified : path;
+  };
+
+  const countPathPoints = (paths) => {
+    let lines = 0;
+    let points = 0;
+    paths.forEach((path) => {
+      if (!Array.isArray(path)) return;
+      lines += 1;
+      points += path.length;
+    });
+    return { lines, points };
+  };
+
   class VectorEngine {
     constructor() {
       this.layers = [];
       this.activeLayerId = null;
       this.currentProfile = MACHINES.a3;
-      this.addLayer('flowfield');
+      this.addLayer('wavetable');
     }
 
-    addLayer(type = 'flowfield') {
+    addLayer(type = 'wavetable') {
       const id = Math.random().toString(36).substr(2, 9);
       SETTINGS.globalLayerCount++;
       const num = String(SETTINGS.globalLayerCount).padStart(2, '0');
@@ -54,6 +106,7 @@
           name: layer.name,
           params: JSON.parse(JSON.stringify(layer.params)),
           paramStates: JSON.parse(JSON.stringify(layer.paramStates || {})),
+          penId: layer.penId,
           color: layer.color,
           strokeWidth: layer.strokeWidth,
           lineCap: layer.lineCap,
@@ -68,6 +121,7 @@
         const layer = new Layer(data.id, data.type, data.name);
         layer.params = JSON.parse(JSON.stringify(data.params || {}));
         layer.paramStates = JSON.parse(JSON.stringify(data.paramStates || {}));
+        layer.penId = data.penId ?? layer.penId;
         layer.color = data.color || layer.color;
         layer.strokeWidth = Number.isFinite(data.strokeWidth) ? data.strokeWidth : layer.strokeWidth;
         layer.lineCap = data.lineCap || layer.lineCap;
@@ -151,29 +205,63 @@
       const dH = height - m * 2;
       const p = layer.params;
 
-      const bounds = { width, height, m, dW, dH };
+      const bounds = { width, height, m, dW, dH, truncate: SETTINGS.truncate };
+
+      const algo = Algorithms[layer.type] || Algorithms.flowfield;
+      const rawPaths = algo.generate(p, rng, noise, bounds) || [];
+      const smooth = Math.max(0, Math.min(1, p.smoothing ?? 0));
+      const simplify = Math.max(0, Math.min(1, p.simplify ?? 0));
+
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      rawPaths.forEach((path) => {
+        if (!Array.isArray(path)) return;
+        if (path.meta && path.meta.kind === 'circle') {
+          const cx = path.meta.cx ?? path.meta.x;
+          const cy = path.meta.cy ?? path.meta.y;
+          const rx = path.meta.rx ?? path.meta.r;
+          const ry = path.meta.ry ?? path.meta.r;
+          if (Number.isFinite(cx) && Number.isFinite(cy) && Number.isFinite(rx) && Number.isFinite(ry)) {
+            minX = Math.min(minX, cx - rx);
+            maxX = Math.max(maxX, cx + rx);
+            minY = Math.min(minY, cy - ry);
+            maxY = Math.max(maxY, cy + ry);
+          }
+          return;
+        }
+        path.forEach((pt) => {
+          minX = Math.min(minX, pt.x);
+          minY = Math.min(minY, pt.y);
+          maxX = Math.max(maxX, pt.x);
+          maxY = Math.max(maxY, pt.y);
+        });
+      });
+      if (!Number.isFinite(minX)) {
+        minX = 0;
+        minY = 0;
+        maxX = width;
+        maxY = height;
+      }
+      const origin = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+      layer.origin = origin;
 
       const rot = ((p.rotation ?? 0) * Math.PI) / 180;
       const cosR = Math.cos(rot);
       const sinR = Math.sin(rot);
 
       const transform = (pt) => {
-        const cx = width / 2;
-        const cy = height / 2;
-        let x = pt.x - cx;
-        let y = pt.y - cy;
+        let x = pt.x - origin.x;
+        let y = pt.y - origin.y;
         x *= p.scaleX;
         y *= p.scaleY;
         const rx = x * cosR - y * sinR;
         const ry = x * sinR + y * cosR;
-        x = rx + cx + p.posX;
-        y = ry + cy + p.posY;
+        x = rx + origin.x + p.posX;
+        y = ry + origin.y + p.posY;
         return { x, y };
       };
-
-      const algo = Algorithms[layer.type] || Algorithms.flowfield;
-      const rawPaths = algo.generate(p, rng, noise, bounds) || [];
-      const smooth = Math.max(0, Math.min(1, p.smoothing ?? 0));
 
       const transformMeta = (meta) => {
         if (!meta || meta.kind !== 'circle') return meta;
@@ -191,12 +279,30 @@
         };
       };
 
-      layer.paths = rawPaths.map((path) => {
+      const transformed = rawPaths.map((path) => {
         if (!Array.isArray(path)) return path;
         const transformed = path.map((pt) => transform(pt));
         if (path.meta) transformed.meta = transformMeta(path.meta);
         return smoothPath(transformed, smooth);
       });
+      const rawCounts = countPathPoints(transformed);
+      let finalPaths = transformed;
+      if (simplify > 0) {
+        const tol = simplify * Math.max(dW, dH) * 0.01;
+        finalPaths = transformed.map((path) => {
+          if (!Array.isArray(path)) return path;
+          if (path.meta && path.meta.kind === 'circle') return path;
+          return simplifyPath(path, tol);
+        });
+      }
+      const simplifiedCounts = countPathPoints(finalPaths);
+      layer.stats = {
+        rawLines: rawCounts.lines,
+        rawPoints: rawCounts.points,
+        simplifiedLines: simplifiedCounts.lines,
+        simplifiedPoints: simplifiedCounts.points,
+      };
+      layer.paths = finalPaths;
     }
 
     getFormula(layerId) {

@@ -17,10 +17,13 @@
       this.params.scaleY = 1;
       this.params.rotation = 0;
       this.paramStates = {};
-      this.color = '#e4e4e7';
-      this.strokeWidth = SETTINGS?.strokeWidth ?? 0.3;
+      const defaultPen = SETTINGS?.pens?.[0];
+      this.penId = defaultPen ? defaultPen.id : null;
+      this.color = defaultPen?.color || '#e4e4e7';
+      this.strokeWidth = defaultPen?.width ?? SETTINGS?.strokeWidth ?? 0.3;
       this.lineCap = 'round';
       this.visible = true;
+      this.origin = { x: 0, y: 0 };
       this.paths = [];
     }
   }

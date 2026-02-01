@@ -10,7 +10,7 @@
       this.engine = new VectorEngine();
       this.renderer = new Renderer('main-canvas', this.engine);
       this.ui = new UI(this);
-      this.renderer.selectedLayerId = this.engine.activeLayerId;
+      this.renderer.setSelection([this.engine.activeLayerId], this.engine.activeLayerId);
       this.renderer.onSelectLayer = (layer) => {
         if (layer) this.engine.activeLayerId = layer.id;
         this.ui.renderLayers();
@@ -44,6 +44,9 @@
           marginLineWeight: SETTINGS.marginLineWeight,
           marginLineColor: SETTINGS.marginLineColor,
           marginLineDotting: SETTINGS.marginLineDotting,
+          showGuides: SETTINGS.showGuides,
+          snapGuides: SETTINGS.snapGuides,
+          pens: SETTINGS.pens ? JSON.parse(JSON.stringify(SETTINGS.pens)) : [],
           globalLayerCount: SETTINGS.globalLayerCount,
         },
         selectedLayerId: this.renderer.selectedLayerId,
@@ -66,12 +69,19 @@
       SETTINGS.marginLineWeight = s.marginLineWeight ?? SETTINGS.marginLineWeight;
       SETTINGS.marginLineColor = s.marginLineColor ?? SETTINGS.marginLineColor;
       SETTINGS.marginLineDotting = s.marginLineDotting ?? SETTINGS.marginLineDotting;
+      SETTINGS.showGuides = s.showGuides ?? SETTINGS.showGuides;
+      SETTINGS.snapGuides = s.snapGuides ?? SETTINGS.snapGuides;
+      if (Array.isArray(s.pens) && s.pens.length) {
+        SETTINGS.pens = JSON.parse(JSON.stringify(s.pens));
+      }
       SETTINGS.globalLayerCount = s.globalLayerCount ?? SETTINGS.globalLayerCount;
       this.engine.importState(state.engine);
-      this.renderer.selectedLayerId = state.selectedLayerId || this.engine.activeLayerId;
-      this.engine.activeLayerId = this.renderer.selectedLayerId;
+      const selectedId = state.selectedLayerId || this.engine.activeLayerId;
+      this.renderer.setSelection(selectedId ? [selectedId] : [], selectedId);
+      this.engine.activeLayerId = selectedId;
       this.ui.initSettingsValues();
       this.ui.renderLayers();
+      this.ui.renderPens();
       this.ui.buildControls();
       this.ui.updateFormula();
       this.render();

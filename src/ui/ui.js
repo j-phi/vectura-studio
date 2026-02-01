@@ -15,6 +15,46 @@
   const DISPLAY_PRECISION = 2;
   const TRANSFORM_KEYS = ['seed', 'posX', 'posY', 'scaleX', 'scaleY', 'rotation'];
   const clone = (obj) => JSON.parse(JSON.stringify(obj));
+  const SEEDLESS_ALGOS = new Set(['lissajous']);
+  const usesSeed = (type) => !SEEDLESS_ALGOS.has(type);
+  const mapRange = (value, inMin, inMax, outMin, outMax) => {
+    if (inMax === inMin) return outMin;
+    const t = (value - inMin) / (inMax - inMin);
+    return outMin + (outMax - outMin) * t;
+  };
+
+  const stepPrecision = (step) => {
+    const s = step?.toString?.() || '';
+    if (!s.includes('.')) return 0;
+    return s.split('.')[1].length;
+  };
+
+  const getDisplayConfig = (def) => {
+    const min = def.displayMin ?? def.min;
+    const max = def.displayMax ?? def.max;
+    const step = def.displayStep ?? def.step ?? 1;
+    const unit = def.displayUnit ?? '';
+    const precision = Number.isFinite(def.displayPrecision) ? def.displayPrecision : stepPrecision(step);
+    return { min, max, step, unit, precision };
+  };
+
+  const toDisplayValue = (def, value) => {
+    if (def.displayMin !== undefined || def.displayMax !== undefined) {
+      const dMin = def.displayMin ?? def.min;
+      const dMax = def.displayMax ?? def.max;
+      return mapRange(value, def.min, def.max, dMin, dMax);
+    }
+    return value;
+  };
+
+  const fromDisplayValue = (def, value) => {
+    if (def.displayMin !== undefined || def.displayMax !== undefined) {
+      const dMin = def.displayMin ?? def.min;
+      const dMax = def.displayMax ?? def.max;
+      return mapRange(value, dMin, dMax, def.min, def.max);
+    }
+    return value;
+  };
 
   const formatValue = (value) => {
     if (typeof value === 'number') {
@@ -49,6 +89,15 @@
       type: 'checkbox',
       infoKey: 'common.curves',
     },
+    {
+      id: 'simplify',
+      label: 'Simplify',
+      type: 'range',
+      min: 0,
+      max: 1,
+      step: 0.05,
+      infoKey: 'common.simplify',
+    },
   ];
 
   const CONTROL_DEFS = {
@@ -68,6 +117,7 @@
       { id: 'phase', label: 'Phase', type: 'range', min: 0, max: 6.28, step: 0.1, infoKey: 'lissajous.phase' },
       { id: 'resolution', label: 'Resolution', type: 'range', min: 50, max: 800, step: 10, infoKey: 'lissajous.resolution' },
       { id: 'scale', label: 'Scale', type: 'range', min: 0.2, max: 1.2, step: 0.05, infoKey: 'lissajous.scale' },
+      { id: 'closeLines', label: 'Close Lines', type: 'checkbox', infoKey: 'lissajous.closeLines' },
     ],
     wavetable: [
       { id: 'lines', label: 'Lines', type: 'range', min: 5, max: 160, step: 1, infoKey: 'wavetable.lines' },
@@ -77,20 +127,50 @@
       { id: 'gap', label: 'Line Gap', type: 'range', min: 0.5, max: 3.0, step: 0.1, infoKey: 'wavetable.gap' },
       { id: 'freq', label: 'Frequency', type: 'range', min: 0.2, max: 12.0, step: 0.1, infoKey: 'wavetable.freq' },
       { id: 'noiseAngle', label: 'Noise Angle', type: 'range', min: -180, max: 180, step: 5, infoKey: 'wavetable.noiseAngle' },
-      { id: 'edgeFade', label: 'Edge Fade', type: 'range', min: 0, max: 2, step: 0.05, infoKey: 'wavetable.edgeFade' },
-      { id: 'verticalFade', label: 'Vertical Fade', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'wavetable.verticalFade' },
+      { type: 'section', label: 'Edge Noise Dampening' },
       {
-        id: 'verticalFadeThreshold',
-        label: 'Vertical Fade Threshold',
-        type: 'range',
-        min: 0,
-        max: 1,
-        step: 0.05,
-        infoKey: 'wavetable.verticalFadeThreshold',
+        id: 'edgeFadeMode',
+        label: 'Edge Noise Dampening Mode',
+        type: 'select',
+        options: [
+          { value: 'none', label: 'None' },
+          { value: 'left', label: 'Left' },
+          { value: 'right', label: 'Right' },
+          { value: 'both', label: 'Both' },
+        ],
+        infoKey: 'wavetable.edgeFadeMode',
       },
       {
+        id: 'edgeFade',
+        label: 'Edge Noise Dampening Amount',
+        type: 'range',
+        min: 0,
+        max: 100,
+        step: 1,
+        infoKey: 'wavetable.edgeFade',
+      },
+      {
+        id: 'edgeFadeThreshold',
+        label: 'Edge Noise Dampening Threshold',
+        type: 'range',
+        min: 0,
+        max: 100,
+        step: 1,
+        infoKey: 'wavetable.edgeFadeThreshold',
+      },
+      {
+        id: 'edgeFadeFeather',
+        label: 'Edge Noise Dampening Feather',
+        type: 'range',
+        min: 0,
+        max: 100,
+        step: 1,
+        infoKey: 'wavetable.edgeFadeFeather',
+      },
+      { type: 'section', label: 'Vertical Noise Dampening' },
+      {
         id: 'verticalFadeMode',
-        label: 'Vertical Fade Mode',
+        label: 'Vertical Noise Dampening Mode',
         type: 'select',
         options: [
           { value: 'none', label: 'None' },
@@ -100,16 +180,55 @@
         ],
         infoKey: 'wavetable.verticalFadeMode',
       },
+      {
+        id: 'verticalFade',
+        label: 'Vertical Noise Dampening Amount',
+        type: 'range',
+        min: 0,
+        max: 100,
+        step: 1,
+        infoKey: 'wavetable.verticalFade',
+      },
+      {
+        id: 'verticalFadeThreshold',
+        label: 'Vertical Noise Dampening Threshold',
+        type: 'range',
+        min: 0,
+        max: 100,
+        step: 1,
+        infoKey: 'wavetable.verticalFadeThreshold',
+      },
+      {
+        id: 'verticalFadeFeather',
+        label: 'Vertical Noise Dampening Feather',
+        type: 'range',
+        min: 0,
+        max: 100,
+        step: 1,
+        infoKey: 'wavetable.verticalFadeFeather',
+      },
       { id: 'dampenExtremes', label: 'Dampen Extremes', type: 'checkbox', infoKey: 'wavetable.dampenExtremes' },
-      { id: 'noOverlap', label: 'No Overlap', type: 'checkbox', infoKey: 'wavetable.noOverlap' },
+      {
+        id: 'overlapPadding',
+        label: 'Overlap Padding (mm)',
+        type: 'range',
+        min: 0,
+        max: 5,
+        step: 0.1,
+        infoKey: 'wavetable.overlapPadding',
+      },
       { id: 'flatCaps', label: 'Flat Top/Bottom', type: 'checkbox', infoKey: 'wavetable.flatCaps' },
     ],
     spiral: [
       { id: 'loops', label: 'Loops', type: 'range', min: 1, max: 40, step: 1, infoKey: 'spiral.loops' },
-      { id: 'res', label: 'Resolution', type: 'range', min: 20, max: 240, step: 10, infoKey: 'spiral.res' },
+      { id: 'res', label: 'Points / Quadrant', type: 'range', min: 4, max: 120, step: 2, infoKey: 'spiral.res' },
       { id: 'startR', label: 'Inner Radius', type: 'range', min: 0, max: 60, step: 1, infoKey: 'spiral.startR' },
       { id: 'noiseAmp', label: 'Noise Amp', type: 'range', min: 0, max: 40, step: 1, infoKey: 'spiral.noiseAmp' },
       { id: 'noiseFreq', label: 'Noise Freq', type: 'range', min: 0.01, max: 0.5, step: 0.01, infoKey: 'spiral.noiseFreq' },
+      { id: 'pulseAmp', label: 'Pulse Amp', type: 'range', min: 0, max: 0.4, step: 0.01, infoKey: 'spiral.pulseAmp' },
+      { id: 'pulseFreq', label: 'Pulse Freq', type: 'range', min: 0.5, max: 8, step: 0.1, infoKey: 'spiral.pulseFreq' },
+      { id: 'angleOffset', label: 'Angle Offset', type: 'range', min: -180, max: 180, step: 1, infoKey: 'spiral.angleOffset' },
+      { id: 'axisSnap', label: 'Axis Snap', type: 'checkbox', infoKey: 'spiral.axisSnap' },
     ],
     grid: [
       { id: 'rows', label: 'Rows', type: 'range', min: 2, max: 60, step: 1, infoKey: 'grid.rows' },
@@ -344,6 +463,10 @@
       title: 'Curves',
       description: 'Renders smooth quadratic curves between points instead of straight segments.',
     },
+    'common.simplify': {
+      title: 'Simplify',
+      description: 'Reduces point density while keeping the overall form. Higher values simplify more.',
+    },
     'flowfield.noiseScale': {
       title: 'Noise Scale',
       description: 'Controls the size of the flow field. Lower values create broad, smooth flow; higher values add detail.',
@@ -396,6 +519,10 @@
       title: 'Scale',
       description: 'Overall size of the Lissajous curve.',
     },
+    'lissajous.closeLines': {
+      title: 'Close Lines',
+      description: 'Closes the curve so both ends connect cleanly.',
+    },
     'wavetable.lines': {
       title: 'Lines',
       description: 'Number of horizontal rows in the wavetable.',
@@ -424,29 +551,45 @@
       title: 'Noise Angle',
       description: 'Rotates the noise field direction used to displace the wave.',
     },
+    'wavetable.edgeFadeMode': {
+      title: 'Edge Noise Dampening Mode',
+      description: 'Choose whether noise dampening affects the left, right, or both sides.',
+    },
     'wavetable.edgeFade': {
-      title: 'Edge Fade',
-      description: 'Dampens noise near the left/right edges; higher values can flatten toward the center.',
+      title: 'Edge Noise Dampening Amount',
+      description: 'How strongly noise is dampened near the left/right edges (0-100).',
+    },
+    'wavetable.edgeFadeThreshold': {
+      title: 'Edge Noise Dampening Threshold',
+      description: 'Distance from the left/right edges where dampening applies (0-100). At 100, the full width is dampened.',
+    },
+    'wavetable.edgeFadeFeather': {
+      title: 'Edge Noise Dampening Feather',
+      description: 'Softens the dampening boundary over a 0-100 span (0 = hard edge).',
     },
     'wavetable.verticalFade': {
-      title: 'Vertical Fade',
-      description: 'Dampens noise toward the top and bottom rows.',
+      title: 'Vertical Noise Dampening Amount',
+      description: 'How strongly noise is dampened toward the top/bottom (0-100).',
     },
     'wavetable.verticalFadeThreshold': {
-      title: 'Vertical Fade Threshold',
-      description: 'Pushes the vertical fade closer to the center rows.',
+      title: 'Vertical Noise Dampening Threshold',
+      description: 'Distance from the top/bottom edges where dampening applies (0-100). At 100, the full height is dampened.',
+    },
+    'wavetable.verticalFadeFeather': {
+      title: 'Vertical Noise Dampening Feather',
+      description: 'Softens the dampening boundary over a 0-100 span (0 = hard edge).',
     },
     'wavetable.verticalFadeMode': {
-      title: 'Vertical Fade Mode',
-      description: 'Choose whether the vertical fade affects the top, bottom, or both.',
+      title: 'Vertical Noise Dampening Mode',
+      description: 'Choose whether noise dampening affects the top, bottom, or both.',
     },
     'wavetable.dampenExtremes': {
       title: 'Dampen Extremes',
       description: 'Scales back displacement near the top and bottom margins.',
     },
-    'wavetable.noOverlap': {
-      title: 'No Overlap',
-      description: 'Prevents rows from crossing over each other.',
+    'wavetable.overlapPadding': {
+      title: 'Overlap Padding',
+      description: 'Total vertical buffer (in mm) between adjacent rows. 0 allows overlap.',
     },
     'wavetable.flatCaps': {
       title: 'Flat Top/Bottom',
@@ -458,7 +601,7 @@
     },
     'spiral.res': {
       title: 'Resolution',
-      description: 'Points per revolution. Higher values create smoother spirals.',
+      description: 'Points per quadrant. Higher values create smoother spirals.',
     },
     'spiral.startR': {
       title: 'Inner Radius',
@@ -471,6 +614,22 @@
     'spiral.noiseFreq': {
       title: 'Noise Freq',
       description: 'How quickly the noise changes around the spiral.',
+    },
+    'spiral.pulseAmp': {
+      title: 'Pulse Amp',
+      description: 'Adds a rhythmic bulge to the spiral radius for a breathing effect.',
+    },
+    'spiral.pulseFreq': {
+      title: 'Pulse Freq',
+      description: 'Controls how many pulses appear per revolution.',
+    },
+    'spiral.angleOffset': {
+      title: 'Angle Offset',
+      description: 'Rotates the spiral start angle in degrees.',
+    },
+    'spiral.axisSnap': {
+      title: 'Axis Snap',
+      description: 'Aligns spiral points to the X/Y axes at every quadrant.',
     },
     'grid.rows': {
       title: 'Rows',
@@ -699,8 +858,8 @@
   };
 
   const transformPoint = (pt, params, bounds) => {
-    const cx = bounds.width / 2;
-    const cy = bounds.height / 2;
+    const cx = params.origin?.x ?? bounds.width / 2;
+    const cy = params.origin?.y ?? bounds.height / 2;
     let x = pt.x - cx;
     let y = pt.y - cy;
     const scaleX = params.scaleX ?? 1;
@@ -824,6 +983,39 @@
     const rng = new SeededRNG(seed);
     const noise = new SimpleNoise(seed);
     const rawPaths = Algorithms[type].generate(base, rng, noise, bounds) || [];
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    rawPaths.forEach((path) => {
+      if (!Array.isArray(path)) return;
+      if (path.meta && path.meta.kind === 'circle') {
+        const cx = path.meta.cx ?? path.meta.x;
+        const cy = path.meta.cy ?? path.meta.y;
+        const rx = path.meta.rx ?? path.meta.r;
+        const ry = path.meta.ry ?? path.meta.r;
+        if (Number.isFinite(cx) && Number.isFinite(cy) && Number.isFinite(rx) && Number.isFinite(ry)) {
+          minX = Math.min(minX, cx - rx);
+          maxX = Math.max(maxX, cx + rx);
+          minY = Math.min(minY, cy - ry);
+          maxY = Math.max(maxY, cy + ry);
+        }
+        return;
+      }
+      path.forEach((pt) => {
+        minX = Math.min(minX, pt.x);
+        minY = Math.min(minY, pt.y);
+        maxX = Math.max(maxX, pt.x);
+        maxY = Math.max(maxY, pt.y);
+      });
+    });
+    if (!Number.isFinite(minX)) {
+      minX = 0;
+      minY = 0;
+      maxX = width;
+      maxY = height;
+    }
+    base.origin = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
     const smooth = clamp(base.smoothing ?? 0, 0, 1);
     const transformed = rawPaths.map((path) => {
       if (!Array.isArray(path)) return path;
@@ -1049,15 +1241,24 @@
       this.app = app;
       this.controls = CONTROL_DEFS;
       this.modal = this.createModal();
+      this.openPenMenu = null;
 
       this.initModuleDropdown();
       this.initMachineDropdown();
       this.bindGlobal();
       this.bindShortcuts();
       this.bindInfoButtons();
+      document.addEventListener('click', () => {
+        if (this.openPenMenu) {
+          this.openPenMenu.classList.add('hidden');
+          this.openPenMenu = null;
+        }
+      });
       this.initPaneToggles();
+      this.initBottomPaneToggle();
       this.initPaneResizers();
       this.renderLayers();
+      this.renderPens();
       this.buildControls();
       this.updateFormula();
       this.initSettingsValues();
@@ -1126,6 +1327,109 @@
       this.storeLayerParams(layer);
     }
 
+    randomizeLayerParams(layer) {
+      if (!layer) return;
+      const defs = [...(this.controls[layer.type] || []), ...COMMON_CONTROLS];
+      const rng = (min, max) => min + Math.random() * (max - min);
+      const safeRange = (min, max) => {
+        const span = max - min;
+        if (span <= 0) return { min, max };
+        const pad = span * 0.1;
+        const minSafe = min + pad;
+        const maxSafe = max - pad;
+        if (maxSafe <= minSafe) return { min, max };
+        return { min: minSafe, max: maxSafe };
+      };
+      const roundStep = (value, step, min, max) => {
+        const snapped = roundToStep(value, step);
+        return clamp(snapped, min, max);
+      };
+
+      defs.forEach((def) => {
+        if (def.showIf && !def.showIf(layer.params)) return;
+        if (def.type === 'section') return;
+        if (def.type === 'checkbox') {
+          layer.params[def.id] = Math.random() > 0.5;
+          return;
+        }
+        if (def.type === 'select') {
+          const opts = def.options || [];
+          if (!opts.length) return;
+          const pick = opts[Math.floor(Math.random() * opts.length)];
+          layer.params[def.id] = pick.value;
+          return;
+        }
+        if (def.type === 'rangeDual') {
+          const { min, max } = safeRange(def.min, def.max);
+          const step = def.step ?? 1;
+          let a = rng(min, max);
+          let b = rng(min, max);
+          if (a > b) [a, b] = [b, a];
+          if (b - a < step) b = Math.min(max, a + step);
+          layer.params[def.minKey] = roundStep(a, step, def.min, def.max);
+          layer.params[def.maxKey] = roundStep(b, step, def.min, def.max);
+          return;
+        }
+        if (def.type === 'range') {
+          const { min, max } = safeRange(def.min, def.max);
+          const step = def.step ?? 1;
+          layer.params[def.id] = roundStep(rng(min, max), step, def.min, def.max);
+        }
+      });
+    }
+
+    recenterLayerIfNeeded(layer) {
+      if (!layer || !this.app.renderer) return;
+      const bounds = this.app.renderer.getLayerBounds(layer);
+      if (!bounds) return;
+      const prof = this.app.engine.currentProfile;
+      const inset = SETTINGS.truncate ? SETTINGS.margin : 0;
+      const limitLeft = inset;
+      const limitRight = prof.width - inset;
+      const limitTop = inset;
+      const limitBottom = prof.height - inset;
+      const corners = Object.values(bounds.corners || {});
+      if (!corners.length) return;
+      const minX = Math.min(...corners.map((pt) => pt.x));
+      const maxX = Math.max(...corners.map((pt) => pt.x));
+      const minY = Math.min(...corners.map((pt) => pt.y));
+      const maxY = Math.max(...corners.map((pt) => pt.y));
+      const boundsW = maxX - minX;
+      const boundsH = maxY - minY;
+      const availableW = limitRight - limitLeft;
+      const availableH = limitBottom - limitTop;
+      let shiftX = 0;
+      let shiftY = 0;
+
+      if (boundsW > availableW) {
+        shiftX = (limitLeft + limitRight) / 2 - (minX + maxX) / 2;
+      } else {
+        if (minX < limitLeft) shiftX = limitLeft - minX;
+        if (maxX + shiftX > limitRight) shiftX = limitRight - maxX;
+      }
+
+      if (boundsH > availableH) {
+        shiftY = (limitTop + limitBottom) / 2 - (minY + maxY) / 2;
+      } else {
+        if (minY < limitTop) shiftY = limitTop - minY;
+        if (maxY + shiftY > limitBottom) shiftY = limitBottom - maxY;
+      }
+
+      if (Math.abs(shiftX) > 0.001 || Math.abs(shiftY) > 0.001) {
+        layer.params.posX += shiftX;
+        layer.params.posY += shiftY;
+        this.app.engine.generate(layer.id);
+      }
+    }
+
+    toggleSeedControls(type) {
+      const seedControls = getEl('seed-controls');
+      const show = usesSeed(type);
+      if (seedControls) seedControls.style.display = show ? '' : 'none';
+      const label = getEl('transform-label');
+      if (label) label.textContent = show ? 'Transform & Seed' : 'Transform';
+    }
+
     isDuplicateLayerName(name, excludeId) {
       const normalized = name.trim().toLowerCase();
       return this.app.engine.layers.some(
@@ -1149,6 +1453,13 @@
       this.openModal({
         title: 'Name Unavailable',
         body: `<p class="modal-text">"${name}" is already in use. Layer names must be unique.</p>`,
+      });
+    }
+
+    showValueError(value) {
+      this.openModal({
+        title: 'Invalid Value',
+        body: `<p class="modal-text">"${value}" is outside the allowed range or format.</p>`,
       });
     }
 
@@ -1256,6 +1567,8 @@
       const marginLineWeight = getEl('set-margin-line-weight');
       const marginLineColor = getEl('set-margin-line-color');
       const marginLineDotting = getEl('set-margin-line-dotting');
+      const showGuides = getEl('set-show-guides');
+      const snapGuides = getEl('set-snap-guides');
       const bgColor = getEl('inp-bg-color');
       if (margin) margin.value = SETTINGS.margin;
       if (speedDown) speedDown.value = SETTINGS.speedDown;
@@ -1269,12 +1582,15 @@
       if (marginLineWeight) marginLineWeight.value = SETTINGS.marginLineWeight ?? 0.2;
       if (marginLineColor) marginLineColor.value = SETTINGS.marginLineColor ?? '#52525b';
       if (marginLineDotting) marginLineDotting.value = SETTINGS.marginLineDotting ?? 0;
+      if (showGuides) showGuides.checked = SETTINGS.showGuides !== false;
+      if (snapGuides) snapGuides.checked = SETTINGS.snapGuides !== false;
       if (bgColor) bgColor.value = SETTINGS.bgColor;
     }
 
     initPaneToggles() {
       const leftPane = getEl('left-pane');
       const rightPane = getEl('right-pane');
+      const bottomPane = getEl('bottom-pane');
       const leftBtn = getEl('btn-pane-toggle-left');
       const rightBtn = getEl('btn-pane-toggle-right');
       if (!leftPane || !rightPane || !leftBtn || !rightBtn) return;
@@ -1308,8 +1624,16 @@
         rightPane.classList.remove('pane-collapsed', 'pane-force-open');
         document.body.classList.remove('auto-collapsed');
         document.documentElement.style.setProperty('--pane-left-width', '320px');
-        document.documentElement.style.setProperty('--pane-right-width', '256px');
+        document.documentElement.style.setProperty('--pane-right-width', '336px');
+        if (bottomPane) bottomPane.classList.remove('bottom-pane-collapsed');
       };
+    }
+
+    initBottomPaneToggle() {
+      const bottomPane = getEl('bottom-pane');
+      const btn = getEl('btn-pane-toggle-bottom');
+      if (!bottomPane || !btn) return;
+      btn.addEventListener('click', () => bottomPane.classList.toggle('bottom-pane-collapsed'));
     }
 
     initPaneResizers() {
@@ -1375,6 +1699,8 @@
       const setMarginLineWeight = getEl('set-margin-line-weight');
       const setMarginLineColor = getEl('set-margin-line-color');
       const setMarginLineDotting = getEl('set-margin-line-dotting');
+      const setShowGuides = getEl('set-show-guides');
+      const setSnapGuides = getEl('set-snap-guides');
       const setSpeedDown = getEl('set-speed-down');
       const setSpeedUp = getEl('set-speed-up');
       const setStroke = getEl('set-stroke');
@@ -1388,7 +1714,7 @@
           const t = moduleSelect.value;
           if (this.app.pushHistory) this.app.pushHistory();
           const id = this.app.engine.addLayer(t);
-          if (this.app.renderer) this.app.renderer.selectedLayerId = id;
+          if (this.app.renderer) this.app.renderer.setSelection([id], id);
           this.renderLayers();
           this.app.render();
         };
@@ -1497,6 +1823,19 @@
           this.app.render();
         };
       }
+      if (setShowGuides) {
+        setShowGuides.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          SETTINGS.showGuides = e.target.checked;
+          this.app.render();
+        };
+      }
+      if (setSnapGuides) {
+        setSnapGuides.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          SETTINGS.snapGuides = e.target.checked;
+        };
+      }
       if (setSpeedDown) {
         setSpeedDown.onchange = (e) => {
           if (this.app.pushHistory) this.app.pushHistory();
@@ -1579,6 +1918,9 @@
             l.params.seed = Math.floor(Math.random() * 99999);
             if (seedInput) seedInput.value = l.params.seed;
             this.app.regen();
+            this.recenterLayerIfNeeded(l);
+            this.app.render();
+            this.buildControls();
             this.updateFormula();
           }
         };
@@ -1608,7 +1950,10 @@
           e.preventDefault();
           if (this.app.pushHistory) this.app.pushHistory();
           this.app.engine.removeLayer(selected.id);
-          if (this.app.renderer) this.app.renderer.selectedLayerId = this.app.engine.activeLayerId;
+          if (this.app.renderer) {
+            const nextId = this.app.engine.activeLayerId;
+            this.app.renderer.setSelection(nextId ? [nextId] : [], nextId);
+          }
           this.renderLayers();
           this.app.render();
           return;
@@ -1623,13 +1968,22 @@
         if (dx || dy) {
           e.preventDefault();
           if (this.app.pushHistory) this.app.pushHistory();
-          selected.params.posX += dx;
-          selected.params.posY += dy;
-          this.app.regen();
-          const posX = getEl('inp-pos-x');
-          const posY = getEl('inp-pos-y');
-          if (posX) posX.value = selected.params.posX;
-          if (posY) posY.value = selected.params.posY;
+          const selectedLayers = this.app.renderer?.getSelectedLayers?.() || [];
+          if (selectedLayers.length) {
+            selectedLayers.forEach((layer) => {
+              layer.params.posX += dx;
+              layer.params.posY += dy;
+              this.app.engine.generate(layer.id);
+            });
+            this.app.render();
+            const primary = this.app.renderer?.getSelectedLayer?.();
+            if (primary) {
+              const posX = getEl('inp-pos-x');
+              const posY = getEl('inp-pos-y');
+              if (posX) posX.value = primary.params.posX;
+              if (posY) posY.value = primary.params.posY;
+            }
+          }
         }
       });
     }
@@ -1644,10 +1998,17 @@
         .forEach((l) => {
           const el = document.createElement('div');
           const isActive = l.id === this.app.engine.activeLayerId;
+          const isSelected = this.app.renderer?.selectedLayerIds?.has(l.id);
           el.className = `layer-item flex items-center justify-between bg-vectura-bg border border-vectura-border p-2 mb-2 group cursor-pointer hover:bg-vectura-border ${isActive ? 'active' : ''
-            }`;
+            } ${isSelected ? 'selected' : ''}`;
+          el.dataset.layerId = l.id;
           el.innerHTML = `
             <div class="flex items-center gap-2 flex-1 overflow-hidden">
+              <button class="layer-grip" type="button" aria-label="Reorder layer">
+                <span class="dot"></span><span class="dot"></span>
+                <span class="dot"></span><span class="dot"></span>
+                <span class="dot"></span><span class="dot"></span>
+              </button>
               <input type="checkbox" ${l.visible ? 'checked' : ''} class="cursor-pointer" aria-label="Toggle layer visibility">
               <span class="layer-name text-sm truncate ${isActive ? 'text-white font-bold' : 'text-vectura-muted'}">${l.name}</span>
               <input
@@ -1657,29 +2018,37 @@
               />
             </div>
             <div class="flex items-center gap-1">
+              <div class="pen-assign">
+                <button class="pen-pill" type="button" aria-label="Assign pen">
+                  <div class="pen-icon"></div>
+                </button>
+                <div class="pen-menu hidden"></div>
+              </div>
               <button class="text-sm text-vectura-muted hover:text-white px-1 btn-up" aria-label="Move layer up">▲</button>
               <button class="text-sm text-vectura-muted hover:text-white px-1 btn-down" aria-label="Move layer down">▼</button>
               <button class="text-sm text-vectura-muted hover:text-white px-1 btn-dup" aria-label="Duplicate layer">⧉</button>
-              <button class="text-sm text-vectura-muted hover:text-white px-1 btn-layer-settings" aria-label="Layer settings">⚙</button>
-              <div class="relative w-4 h-4 overflow-hidden rounded-full border border-vectura-border ml-1">
-                <input type="color" value="${l.color}" class="color-picker" aria-label="Layer color">
-              </div>
               <button class="text-sm text-vectura-muted hover:text-vectura-danger px-1 ml-1 btn-del" aria-label="Delete layer">✕</button>
             </div>
           `;
           const nameEl = el.querySelector('.layer-name');
           const nameInput = el.querySelector('.layer-name-input');
           const visibilityEl = el.querySelector('input[type=checkbox]');
-          const colorEl = el.querySelector('.color-picker');
           const delBtn = el.querySelector('.btn-del');
           const upBtn = el.querySelector('.btn-up');
           const downBtn = el.querySelector('.btn-down');
           const dupBtn = el.querySelector('.btn-dup');
-          const settingsBtn = el.querySelector('.btn-layer-settings');
+          const grip = el.querySelector('.layer-grip');
+          const penMenu = el.querySelector('.pen-menu');
+          const penPill = el.querySelector('.pen-pill');
+          const penIcon = el.querySelector('.pen-icon');
 
-          const selectLayer = () => {
-            this.app.engine.activeLayerId = l.id;
-            if (this.app.renderer) this.app.renderer.selectedLayerId = l.id;
+          const selectLayer = (e) => {
+            if (e && e.shiftKey) {
+              this.app.renderer.selectLayer(l, { toggle: true });
+            } else {
+              this.app.renderer.selectLayer(l);
+            }
+            this.app.engine.activeLayerId = this.app.renderer.selectedLayerId || l.id;
             this.renderLayers();
             this.buildControls();
             this.updateFormula();
@@ -1688,7 +2057,7 @@
 
           el.onclick = (e) => {
             if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select')) return;
-            selectLayer();
+            selectLayer(e);
           };
 
           if (nameEl && nameInput) {
@@ -1697,7 +2066,7 @@
               e.stopPropagation();
               if (nameClickTimer) window.clearTimeout(nameClickTimer);
               nameClickTimer = window.setTimeout(() => {
-                selectLayer();
+                selectLayer(e);
                 nameClickTimer = null;
               }, 250);
             };
@@ -1743,30 +2112,19 @@
               this.app.updateStats();
             };
           }
-          if (colorEl) {
-            let armed = false;
-            colorEl.onfocus = () => {
-              if (!armed && this.app.pushHistory) this.app.pushHistory();
-              armed = true;
-            };
-            colorEl.oninput = (e) => {
-              l.color = e.target.value;
-              this.app.render();
-            };
-            colorEl.onchange = () => {
-              armed = false;
-            };
-          }
           if (delBtn) {
             delBtn.onclick = (e) => {
               e.stopPropagation();
-              if (this.app.pushHistory) this.app.pushHistory();
-              this.app.engine.removeLayer(l.id);
-              if (this.app.renderer) this.app.renderer.selectedLayerId = this.app.engine.activeLayerId;
-              this.renderLayers();
-              this.app.render();
-            };
-          }
+            if (this.app.pushHistory) this.app.pushHistory();
+            this.app.engine.removeLayer(l.id);
+            if (this.app.renderer) {
+              const nextId = this.app.engine.activeLayerId;
+              this.app.renderer.setSelection(nextId ? [nextId] : [], nextId);
+            }
+            this.renderLayers();
+            this.app.render();
+          };
+        }
           if (upBtn) {
             upBtn.onclick = (e) => {
               e.stopPropagation();
@@ -1791,20 +2149,276 @@
               if (this.app.pushHistory) this.app.pushHistory();
               const dup = this.app.engine.duplicateLayer(l.id);
               if (dup) {
-                if (this.app.renderer) this.app.renderer.selectedLayerId = dup.id;
+                if (this.app.renderer) this.app.renderer.setSelection([dup.id], dup.id);
                 this.renderLayers();
                 this.app.render();
               }
             };
           }
-          if (settingsBtn) {
-            settingsBtn.onclick = (e) => {
+          if (penMenu && penPill && penIcon) {
+            const pens = SETTINGS.pens || [];
+            const applyPen = (pen) => {
+              if (!pen) return;
+              l.penId = pen.id;
+              l.color = pen.color;
+              l.strokeWidth = pen.width;
+              penIcon.style.background = pen.color;
+              penIcon.style.color = pen.color;
+              penIcon.style.setProperty('--pen-width', pen.width);
+              penIcon.title = pen.name;
+              if (penMenu) {
+                penMenu.querySelectorAll('.pen-option').forEach((opt) => {
+                  opt.classList.toggle('active', opt.dataset.penId === pen.id);
+                });
+              }
+              this.app.render();
+            };
+            const current = pens.find((pen) => pen.id === l.penId) || pens[0];
+            if (current) applyPen(current);
+
+            penMenu.innerHTML = pens
+              .map(
+                (pen) => `
+                  <button type="button" class="pen-option" data-pen-id="${pen.id}">
+                    <span class="pen-icon" style="background:${pen.color}; color:${pen.color}; --pen-width:${pen.width}"></span>
+                    <span class="pen-option-name">${pen.name}</span>
+                  </button>
+                `
+              )
+              .join('');
+            penMenu.querySelectorAll('.pen-option').forEach((opt) => {
+              opt.onclick = (e) => {
+                e.stopPropagation();
+                if (this.app.pushHistory) this.app.pushHistory();
+                const next = pens.find((pen) => pen.id === opt.dataset.penId);
+                applyPen(next);
+                penMenu.classList.add('hidden');
+              };
+            });
+            penPill.onclick = (e) => {
               e.stopPropagation();
-              this.openLayerSettings(l);
+              if (this.openPenMenu && this.openPenMenu !== penMenu) {
+                this.openPenMenu.classList.add('hidden');
+              }
+              penMenu.classList.toggle('hidden');
+              this.openPenMenu = penMenu.classList.contains('hidden') ? null : penMenu;
+            };
+
+            el.ondragover = (ev) => {
+              const types = Array.from(ev.dataTransfer?.types || []);
+              if (!types.length || types.includes('text/pen-id') || types.includes('text/plain')) {
+                ev.preventDefault();
+                el.classList.add('dragging');
+              }
+            };
+            el.ondragleave = () => el.classList.remove('dragging');
+            el.ondrop = (ev) => {
+              ev.preventDefault();
+              el.classList.remove('dragging');
+              const penId = ev.dataTransfer.getData('text/pen-id') || ev.dataTransfer.getData('text/plain');
+              const next = pens.find((pen) => pen.id === penId);
+              if (!next) return;
+              if (this.app.pushHistory) this.app.pushHistory();
+              applyPen(next);
+              penMenu.classList.add('hidden');
+            };
+          }
+          if (grip) {
+            grip.onmousedown = (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const dragEl = el;
+              dragEl.classList.add('dragging');
+              const indicator = document.createElement('div');
+              indicator.className = 'layer-drop-indicator';
+              container.insertBefore(indicator, dragEl.nextSibling);
+              const currentOrder = this.app.engine.layers.map((layer) => layer.id).reverse();
+
+              const onMove = (ev) => {
+                const y = ev.clientY;
+                const items = Array.from(container.querySelectorAll('.layer-item')).filter((item) => item !== dragEl);
+                let inserted = false;
+                for (const item of items) {
+                  const rect = item.getBoundingClientRect();
+                  if (y < rect.top + rect.height / 2) {
+                    container.insertBefore(indicator, item);
+                    inserted = true;
+                    break;
+                  }
+                }
+                if (!inserted) container.appendChild(indicator);
+              };
+
+              const onUp = () => {
+                dragEl.classList.remove('dragging');
+                const siblings = Array.from(container.children);
+                const indicatorIndex = siblings.indexOf(indicator);
+                const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('layer-item'));
+                const newIndex = before.length;
+                indicator.remove();
+                window.removeEventListener('mousemove', onMove);
+                window.removeEventListener('mouseup', onUp);
+
+                const nextOrder = currentOrder.filter((id) => id !== l.id);
+                nextOrder.splice(newIndex, 0, l.id);
+                const nextEngineOrder = nextOrder.slice().reverse();
+                const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
+                this.app.engine.layers = nextEngineOrder.map((id) => map.get(id)).filter(Boolean);
+                this.renderLayers();
+                this.app.render();
+              };
+
+              window.addEventListener('mousemove', onMove);
+              window.addEventListener('mouseup', onUp);
             };
           }
           container.appendChild(el);
         });
+    }
+
+    renderPens() {
+      const container = getEl('pen-list');
+      if (!container) return;
+      container.innerHTML = '';
+      const pens = SETTINGS.pens || [];
+
+      pens.forEach((pen) => {
+        const el = document.createElement('div');
+        el.className = 'pen-item flex items-center justify-between bg-vectura-bg border border-vectura-border p-2 mb-2';
+        el.innerHTML = `
+          <div class="flex items-center gap-2 flex-1 overflow-hidden">
+            <button class="pen-grip" type="button" aria-label="Reorder pen">
+              <span class="dot"></span><span class="dot"></span>
+              <span class="dot"></span><span class="dot"></span>
+              <span class="dot"></span><span class="dot"></span>
+            </button>
+            <div class="pen-icon"></div>
+            <input
+              class="pen-name-input w-full bg-transparent text-xs text-vectura-text focus:outline-none"
+              value="${pen.name}"
+            />
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="relative w-4 h-4 overflow-hidden rounded-full border border-vectura-border">
+              <input type="color" class="pen-color" value="${pen.color}" aria-label="Pen color">
+            </div>
+            <input type="range" min="0.05" max="2" step="0.05" value="${pen.width}" class="pen-width">
+            <span class="text-[10px] text-vectura-muted pen-width-value">${pen.width}</span>
+          </div>
+        `;
+        const icon = el.querySelector('.pen-icon');
+        const grip = el.querySelector('.pen-grip');
+        const nameInput = el.querySelector('.pen-name-input');
+        const colorInput = el.querySelector('.pen-color');
+        const widthInput = el.querySelector('.pen-width');
+        const widthValue = el.querySelector('.pen-width-value');
+
+        const applyIcon = () => {
+          if (!icon) return;
+          icon.style.background = pen.color;
+          icon.style.color = pen.color;
+          icon.style.setProperty('--pen-width', pen.width);
+        };
+        applyIcon();
+
+        if (nameInput) {
+          nameInput.onchange = (e) => {
+            if (this.app.pushHistory) this.app.pushHistory();
+            pen.name = e.target.value.trim() || pen.name;
+            this.renderLayers();
+          };
+        }
+
+        if (colorInput) {
+          colorInput.oninput = (e) => {
+            pen.color = e.target.value;
+            applyIcon();
+            this.app.engine.layers.forEach((layer) => {
+              if (layer.penId === pen.id) {
+                layer.color = pen.color;
+              }
+            });
+            this.app.render();
+          };
+        }
+
+        if (widthInput && widthValue) {
+          widthInput.oninput = (e) => {
+            pen.width = parseFloat(e.target.value);
+            widthValue.textContent = pen.width.toFixed(2);
+            applyIcon();
+            this.app.engine.layers.forEach((layer) => {
+              if (layer.penId === pen.id) {
+                layer.strokeWidth = pen.width;
+              }
+            });
+            this.app.render();
+          };
+        }
+
+        if (icon) {
+          icon.draggable = true;
+          icon.ondragstart = (e) => {
+            e.dataTransfer.effectAllowed = 'copy';
+            e.dataTransfer.setData('text/pen-id', pen.id);
+            e.dataTransfer.setData('text/plain', pen.id);
+          };
+        }
+
+        if (grip) {
+          grip.onmousedown = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const dragEl = el;
+            dragEl.classList.add('dragging');
+            const indicator = document.createElement('div');
+            indicator.className = 'layer-drop-indicator';
+            container.insertBefore(indicator, dragEl);
+            const currentOrder = pens.map((p) => p.id);
+            const startIndex = currentOrder.indexOf(pen.id);
+
+            const onMove = (ev) => {
+              const y = ev.clientY;
+              const items = Array.from(container.querySelectorAll('.pen-item')).filter((item) => item !== dragEl);
+              let inserted = false;
+              for (const item of items) {
+                const rect = item.getBoundingClientRect();
+                if (y < rect.top + rect.height / 2) {
+                  container.insertBefore(indicator, item);
+                  inserted = true;
+                  break;
+                }
+              }
+              if (!inserted) container.appendChild(indicator);
+            };
+
+            const onUp = () => {
+              dragEl.classList.remove('dragging');
+              const siblings = Array.from(container.children);
+              const indicatorIndex = siblings.indexOf(indicator);
+              const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('pen-item'));
+              const newIndex = before.length;
+              indicator.remove();
+              window.removeEventListener('mousemove', onMove);
+              window.removeEventListener('mouseup', onUp);
+
+              if (newIndex !== startIndex) {
+                const nextOrder = currentOrder.filter((id) => id !== pen.id);
+                nextOrder.splice(newIndex, 0, pen.id);
+                const map = new Map(pens.map((p) => [p.id, p]));
+                SETTINGS.pens = nextOrder.map((id) => map.get(id)).filter(Boolean);
+                this.renderPens();
+                this.renderLayers();
+              }
+            };
+
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
+          };
+        }
+
+        container.appendChild(el);
+      });
     }
 
     openLayerSettings(layer) {
@@ -1889,6 +2503,7 @@
       if (scaleX) scaleX.value = layer.params.scaleX;
       if (scaleY) scaleY.value = layer.params.scaleY;
       if (rotation) rotation.value = layer.params.rotation;
+      this.toggleSeedControls(layer.type);
 
       const desc = getEl('algo-desc');
       if (desc) desc.innerText = DESCRIPTIONS[layer.type] || 'No description available.';
@@ -1907,10 +2522,12 @@
       const defs = [...(this.controls[layer.type] || []), ...COMMON_CONTROLS];
       if (!defs.length) return;
 
+      const resetWrap = document.createElement('div');
+      resetWrap.className = 'mb-4 grid grid-cols-2 gap-2';
       const resetBtn = document.createElement('button');
       resetBtn.type = 'button';
       resetBtn.className =
-        'mb-4 w-full text-xs border border-vectura-border px-2 py-2 hover:bg-vectura-border text-vectura-accent transition-colors';
+        'w-full text-xs border border-vectura-border px-2 py-2 hover:bg-vectura-border text-vectura-accent transition-colors';
       resetBtn.textContent = 'Reset to Defaults';
       resetBtn.onclick = () => {
         if (this.app.pushHistory) this.app.pushHistory();
@@ -1924,14 +2541,144 @@
         this.app.regen();
         this.updateFormula();
       };
-      container.appendChild(resetBtn);
+      const randomBtn = document.createElement('button');
+      randomBtn.type = 'button';
+      randomBtn.className =
+        'w-full text-xs border border-vectura-border px-2 py-2 hover:bg-vectura-border text-vectura-muted transition-colors';
+      randomBtn.textContent = 'Randomize Params';
+      randomBtn.onclick = () => {
+        const l = this.app.engine.getActiveLayer();
+        if (!l) return;
+        if (this.app.pushHistory) this.app.pushHistory();
+        this.randomizeLayerParams(l);
+        this.storeLayerParams(l);
+        this.app.regen();
+        this.recenterLayerIfNeeded(l);
+        this.app.render();
+        this.buildControls();
+        this.updateFormula();
+      };
+      resetWrap.appendChild(resetBtn);
+      resetWrap.appendChild(randomBtn);
+      container.appendChild(resetWrap);
+
+      const formatDisplayValue = (def, value) => {
+        const displayVal = toDisplayValue(def, value);
+        const { precision, unit } = getDisplayConfig(def);
+        const factor = Math.pow(10, precision);
+        const rounded = Math.round(displayVal * factor) / factor;
+        return `${rounded}${unit}`;
+      };
+
+      const attachValueEditor = (opts) => {
+        const { def, valueEl, inputEl, getValue, setValue } = opts;
+        if (!valueEl || !inputEl) return;
+        const { min, max, unit } = getDisplayConfig(def);
+        const cleanup = () => {
+          inputEl.classList.add('hidden');
+          valueEl.classList.remove('hidden');
+        };
+        valueEl.onclick = (e) => {
+          e.preventDefault();
+          inputEl.value = formatDisplayValue(def, getValue()).replace(unit, '');
+          valueEl.classList.add('hidden');
+          inputEl.classList.remove('hidden');
+          inputEl.focus();
+          inputEl.select();
+        };
+        inputEl.onkeydown = (e) => {
+          if (e.key === 'Enter') inputEl.blur();
+          if (e.key === 'Escape') {
+            cleanup();
+          }
+        };
+        inputEl.onblur = () => {
+          const raw = inputEl.value.trim().replace(unit, '');
+          const parsed = Number.parseFloat(raw);
+          if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+            this.showValueError(`${raw}${unit}`);
+            cleanup();
+            return;
+          }
+          setValue(parsed);
+          cleanup();
+        };
+      };
 
       defs.forEach((def) => {
         if (def.showIf && !def.showIf(layer.params)) return;
-        const val = layer.params[def.id];
+        if (def.type === 'section') {
+          const section = document.createElement('div');
+          section.className = 'control-section';
+          section.innerHTML = `<div class="control-section-title">${def.label}</div>`;
+          container.appendChild(section);
+          return;
+        }
+        let val = layer.params[def.id];
         const div = document.createElement('div');
         div.className = 'mb-4';
         const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
+        const statsText = () => {
+          const stats = layer.stats || {};
+          const rawLines = stats.rawLines ?? layer.paths?.length ?? 0;
+          const rawPoints = stats.rawPoints ?? 0;
+          const simpLines = stats.simplifiedLines ?? rawLines;
+          const simpPoints = stats.simplifiedPoints ?? rawPoints;
+          return `Lines ${rawLines}→${simpLines} · Points ${rawPoints}→${simpPoints}`;
+        };
+
+        if (def.id === 'simplify') {
+          const { min, max, step } = getDisplayConfig(def);
+          const displayVal = toDisplayValue(def, val);
+          div.innerHTML = `
+            <div class="flex justify-between mb-1">
+              <div class="flex items-center gap-2">
+                <label class="control-label mb-0">${def.label}</label>
+                ${infoBtn}
+              </div>
+              <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(def, val)}</button>
+            </div>
+            <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="w-full mb-2">
+            <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
+            <div class="text-[10px] text-vectura-muted simplify-stats">${statsText()}</div>
+          `;
+          const input = div.querySelector('input');
+          const valueBtn = div.querySelector('.value-chip');
+          const valueInput = div.querySelector('.value-input');
+          const statsEl = div.querySelector('.simplify-stats');
+          if (input && valueBtn && valueInput && statsEl) {
+            input.oninput = (e) => {
+              const nextDisplay = parseFloat(e.target.value);
+              valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
+            };
+            input.onchange = (e) => {
+              if (this.app.pushHistory) this.app.pushHistory();
+              const nextDisplay = parseFloat(e.target.value);
+              layer.params[def.id] = fromDisplayValue(def, nextDisplay);
+              this.storeLayerParams(layer);
+              this.app.regen();
+              statsEl.textContent = statsText();
+              this.updateFormula();
+            };
+            attachValueEditor({
+              def,
+              valueEl: valueBtn,
+              inputEl: valueInput,
+              getValue: () => layer.params[def.id],
+              setValue: (displayVal) => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                layer.params[def.id] = fromDisplayValue(def, displayVal);
+                this.storeLayerParams(layer);
+                this.app.regen();
+                statsEl.textContent = statsText();
+                valueBtn.innerText = formatDisplayValue(def, layer.params[def.id]);
+                this.updateFormula();
+              },
+            });
+          }
+          container.appendChild(div);
+          return;
+        }
 
         if (def.type === 'checkbox') {
           const checked = Boolean(val);
@@ -1964,6 +2711,10 @@
             };
           }
         } else if (def.type === 'select') {
+          if ((val === undefined || val === null) && def.options && def.options.length) {
+            val = def.options[0].value;
+            layer.params[def.id] = val;
+          }
           const optionsHtml = def.options
             .map(
               (opt) =>
@@ -1999,22 +2750,27 @@
         } else if (def.type === 'rangeDual') {
           const minVal = layer.params[def.minKey];
           const maxVal = layer.params[def.maxKey];
+          const { min: displayMin, max: displayMax, step: displayStep, unit } = getDisplayConfig(def);
+          const displayMinVal = toDisplayValue(def, minVal);
+          const displayMaxVal = toDisplayValue(def, maxVal);
           div.innerHTML = `
             <div class="flex justify-between mb-1">
               <div class="flex items-center gap-2">
                 <label class="control-label mb-0">${def.label}</label>
                 ${infoBtn}
               </div>
-              <span class="text-xs text-vectura-accent font-mono">${formatValue(minVal)}-${formatValue(maxVal)}</span>
+              <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(def, minVal)}-${formatDisplayValue(def, maxVal)}</button>
             </div>
             <div class="dual-range">
-              <input type="range" min="${def.min}" max="${def.max}" step="${def.step}" value="${minVal}" data-handle="min">
-              <input type="range" min="${def.min}" max="${def.max}" step="${def.step}" value="${maxVal}" data-handle="max">
+              <input type="range" min="${displayMin}" max="${displayMax}" step="${displayStep}" value="${displayMinVal}" data-handle="min">
+              <input type="range" min="${displayMin}" max="${displayMax}" step="${displayStep}" value="${displayMaxVal}" data-handle="max">
             </div>
+            <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
           `;
           const minInput = div.querySelector('input[data-handle="min"]');
           const maxInput = div.querySelector('input[data-handle="max"]');
-          const span = div.querySelector('span');
+          const valueBtn = div.querySelector('.value-chip');
+          const valueInput = div.querySelector('.value-input');
 
           const syncValues = (changed) => {
             let min = parseFloat(minInput.value);
@@ -2023,14 +2779,19 @@
               if (changed === 'min') max = min;
               else min = max;
             }
-            min = clamp(min, def.min, def.max);
-            max = clamp(max, def.min, def.max);
+            min = clamp(min, displayMin, displayMax);
+            max = clamp(max, displayMin, displayMax);
             minInput.value = min;
             maxInput.value = max;
-            layer.params[def.minKey] = min;
-            layer.params[def.maxKey] = max;
-            if (span) span.innerText = `${formatValue(min)}-${formatValue(max)}`;
-            const minOnTop = min >= max - def.step;
+            layer.params[def.minKey] = fromDisplayValue(def, min);
+            layer.params[def.maxKey] = fromDisplayValue(def, max);
+            if (valueBtn) {
+              valueBtn.innerText = `${formatDisplayValue(def, layer.params[def.minKey])}-${formatDisplayValue(
+                def,
+                layer.params[def.maxKey]
+              )}`;
+            }
+            const minOnTop = min >= max - displayStep;
             minInput.style.zIndex = minOnTop ? 2 : 1;
             maxInput.style.zIndex = minOnTop ? 1 : 2;
           };
@@ -2054,28 +2815,105 @@
               this.updateFormula();
             };
           }
+          if (valueBtn && valueInput) {
+            valueBtn.onclick = (e) => {
+              e.preventDefault();
+              const currMin = toDisplayValue(def, layer.params[def.minKey]);
+              const currMax = toDisplayValue(def, layer.params[def.maxKey]);
+              valueInput.value = `${currMin}${unit}, ${currMax}${unit}`.replace(unit, '');
+              valueBtn.classList.add('hidden');
+              valueInput.classList.remove('hidden');
+              valueInput.focus();
+              valueInput.select();
+            };
+            valueInput.onkeydown = (e) => {
+              if (e.key === 'Enter') valueInput.blur();
+              if (e.key === 'Escape') {
+                valueInput.classList.add('hidden');
+                valueBtn.classList.remove('hidden');
+              }
+            };
+            valueInput.onblur = () => {
+              const raw = valueInput.value.replace(unit, '');
+              const parts = raw.split(',').map((p) => p.trim()).filter(Boolean);
+              if (parts.length !== 2) {
+                this.showValueError(valueInput.value);
+                valueInput.classList.add('hidden');
+                valueBtn.classList.remove('hidden');
+                return;
+              }
+              const minValParsed = Number.parseFloat(parts[0]);
+              const maxValParsed = Number.parseFloat(parts[1]);
+              if (
+                !Number.isFinite(minValParsed) ||
+                !Number.isFinite(maxValParsed) ||
+                minValParsed < displayMin ||
+                maxValParsed > displayMax ||
+                minValParsed > maxValParsed
+              ) {
+                this.showValueError(valueInput.value);
+                valueInput.classList.add('hidden');
+                valueBtn.classList.remove('hidden');
+                return;
+              }
+              if (this.app.pushHistory) this.app.pushHistory();
+              layer.params[def.minKey] = fromDisplayValue(def, minValParsed);
+              layer.params[def.maxKey] = fromDisplayValue(def, maxValParsed);
+              this.storeLayerParams(layer);
+              this.app.regen();
+              valueBtn.innerText = `${formatDisplayValue(def, layer.params[def.minKey])}-${formatDisplayValue(
+                def,
+                layer.params[def.maxKey]
+              )}`;
+              valueInput.classList.add('hidden');
+              valueBtn.classList.remove('hidden');
+              this.updateFormula();
+            };
+          }
         } else {
+          const { min, max, step } = getDisplayConfig(def);
+          const displayVal = toDisplayValue(def, val);
           div.innerHTML = `
             <div class="flex justify-between mb-1">
               <div class="flex items-center gap-2">
                 <label class="control-label mb-0">${def.label}</label>
                 ${infoBtn}
               </div>
-              <span class="text-xs text-vectura-accent font-mono">${formatValue(val)}</span>
+              <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(def, val)}</button>
             </div>
-            <input type="range" min="${def.min}" max="${def.max}" step="${def.step}" value="${val}" class="w-full">
+            <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="w-full">
+            <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
           `;
           const input = div.querySelector('input');
-          const span = div.querySelector('span');
-          if (input && span) {
-            input.oninput = (e) => (span.innerText = formatValue(parseFloat(e.target.value)));
+          const valueBtn = div.querySelector('.value-chip');
+          const valueInput = div.querySelector('.value-input');
+          if (input && valueBtn && valueInput) {
+            input.oninput = (e) => {
+              const nextDisplay = parseFloat(e.target.value);
+              valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
+            };
             input.onchange = (e) => {
               if (this.app.pushHistory) this.app.pushHistory();
-              layer.params[def.id] = parseFloat(e.target.value);
+              const nextDisplay = parseFloat(e.target.value);
+              layer.params[def.id] = fromDisplayValue(def, nextDisplay);
               this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
             };
+            attachValueEditor({
+              def,
+              valueEl: valueBtn,
+              inputEl: valueInput,
+              getValue: () => layer.params[def.id],
+              setValue: (displayVal) => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                layer.params[def.id] = fromDisplayValue(def, displayVal);
+                this.storeLayerParams(layer);
+                this.app.regen();
+                valueBtn.innerText = formatDisplayValue(def, layer.params[def.id]);
+                this.updateFormula();
+              },
+            });
           }
         }
         container.appendChild(div);
@@ -2088,7 +2926,10 @@
       const formula = getEl('formula-display');
       const seedDisplay = getEl('formula-seed-display');
       if (formula) formula.innerText = this.app.engine.getFormula(l.id);
-      if (seedDisplay) seedDisplay.innerText = `Seed: ${l.params.seed}`;
+      if (seedDisplay) {
+        seedDisplay.style.display = usesSeed(l.type) ? '' : 'none';
+        seedDisplay.innerText = `Seed: ${l.params.seed}`;
+      }
     }
 
     exportSVG() {

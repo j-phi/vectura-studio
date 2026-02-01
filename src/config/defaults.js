@@ -4,6 +4,29 @@
 (() => {
   window.Vectura = window.Vectura || {};
   window.Vectura.ALGO_DEFAULTS = {
+    wavetable: {
+      lines: 40,
+      amplitude: 30,
+      zoom: 0.02,
+      tilt: 0,
+      gap: 1.0,
+      freq: 1.0,
+      dampenExtremes: false,
+      overlapPadding: 0,
+      flatCaps: false,
+      edgeFadeMode: 'both',
+      edgeFade: 0,
+      edgeFadeThreshold: 0,
+      edgeFadeFeather: 0,
+      noiseAngle: 0,
+      verticalFade: 0,
+      verticalFadeThreshold: 0,
+      verticalFadeFeather: 0,
+      verticalFadeMode: 'both',
+      smoothing: 0,
+      simplify: 0,
+      curves: false,
+    },
     flowfield: {
       noiseScale: 0.01,
       density: 1000,
@@ -13,6 +36,7 @@
       chaos: 0.0,
       octaves: 1,
       smoothing: 0,
+      simplify: 0,
       curves: false,
     },
     lissajous: {
@@ -23,27 +47,24 @@
       resolution: 200,
       scale: 0.8,
       smoothing: 0,
-      curves: false,
+      simplify: 0,
+      curves: true,
+      closeLines: true,
     },
-    wavetable: {
-      lines: 40,
-      amplitude: 30,
-      zoom: 0.02,
-      tilt: 0,
-      gap: 1.0,
-      freq: 1.0,
-      dampenExtremes: false,
-      noOverlap: false,
-      flatCaps: false,
-      edgeFade: 0.2,
-      noiseAngle: 0,
-      verticalFade: 0,
-      verticalFadeThreshold: 0,
-      verticalFadeMode: 'both',
+    spiral: {
+      loops: 10,
+      res: 100,
+      noiseAmp: 10,
+      noiseFreq: 0.1,
+      startR: 5,
+      angleOffset: 0,
+      pulseAmp: 0,
+      pulseFreq: 2,
+      axisSnap: true,
       smoothing: 0,
+      simplify: 0,
       curves: false,
     },
-    spiral: { loops: 10, res: 100, noiseAmp: 10, noiseFreq: 0.1, startR: 5, smoothing: 0, curves: false },
     grid: {
       rows: 20,
       cols: 20,
@@ -52,6 +73,7 @@
       type: 'warp',
       chaos: 0,
       smoothing: 0,
+      simplify: 0,
       curves: false,
     },
     phylla: {
@@ -65,6 +87,7 @@
       sides: 6,
       sideJitter: 0,
       smoothing: 0,
+      simplify: 0,
       curves: false,
     },
     boids: {
@@ -80,6 +103,7 @@
       cohWeight: 0.9,
       mode: 'birds',
       smoothing: 0,
+      simplify: 0,
       curves: false,
     },
     attractor: {
@@ -91,6 +115,7 @@
       beta: 2.66,
       dt: 0.01,
       smoothing: 0,
+      simplify: 0,
       curves: false,
     },
     hyphae: {
@@ -101,6 +126,7 @@
       segLen: 3,
       maxBranches: 1000,
       smoothing: 0,
+      simplify: 0,
       curves: false,
     },
     shapePack: {
@@ -118,6 +144,7 @@
       perspectiveX: 0,
       perspectiveY: 0,
       smoothing: 0,
+      simplify: 0,
       curves: true,
     },
   };
@@ -136,6 +163,13 @@
     marginLineWeight: 0.2,
     marginLineColor: '#52525b',
     marginLineDotting: 0,
+    showGuides: true,
+    snapGuides: true,
+    pens: [
+      { id: 'pen-1', name: 'Pen 1', color: '#e4e4e7', width: 0.3 },
+      { id: 'pen-2', name: 'Pen 2', color: '#38bdf8', width: 0.5 },
+      { id: 'pen-3', name: 'Pen 3', color: '#facc15', width: 0.8 },
+    ],
     globalLayerCount: 0,
   };
 })();
