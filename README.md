@@ -6,7 +6,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Plotter-first output in millimeters with machine profiles (A3, A4, AxiDraw V3).
 - Layered generation with visibility toggles, ordering, and per-layer stroke/line-cap settings.
 - Seeded, repeatable results with live transform controls (position and scale).
-- Multiple algorithm families (flowfields, lissajous, wavetable, boids, attractors, hyphae, shape pack, cityscapes).
+- Multiple algorithm families (flowfields, lissajous, wavetable, boids, attractors, hyphae, shape pack).
 - One-click SVG export with configurable precision.
 - Live formula display and estimated pen distance/time.
 
