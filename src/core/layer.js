@@ -15,6 +15,7 @@
       this.params.posY = 0;
       this.params.scaleX = 1;
       this.params.scaleY = 1;
+      this.paramStates = {};
       this.color = '#e4e4e7';
       this.strokeWidth = SETTINGS?.strokeWidth ?? 0.3;
       this.lineCap = 'round';

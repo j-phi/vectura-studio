@@ -98,6 +98,50 @@ input[type='color']::-webkit-color-swatch {
   overflow: hidden;
 }
 
+.pane-header {
+  position: relative;
+}
+
+.pane-header-left {
+  padding-right: 48px;
+}
+
+.pane-header-right {
+  padding-left: 48px;
+}
+
+.pane-toggle {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  border: 1px solid #27272a;
+  border-radius: 9999px;
+  background: #09090b;
+  color: #a1a1aa;
+  font-size: 12px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.pane-toggle:hover {
+  color: #fafafa;
+  border-color: #fafafa;
+}
+
+.pane-toggle-left {
+  right: 8px;
+}
+
+.pane-toggle-right {
+  left: 8px;
+}
+
 .pane-left {
   width: var(--pane-left-width);
 }
@@ -130,9 +174,37 @@ input[type='color']::-webkit-color-swatch {
   display: none;
 }
 
-.pane-collapsed .pane-header button,
-.auto-collapsed .pane:not(.pane-force-open) .pane-header button {
+.pane-collapsed .pane-header button:not(.pane-toggle),
+.auto-collapsed .pane:not(.pane-force-open) .pane-header button:not(.pane-toggle) {
   display: none;
+}
+
+.pane-collapsed .pane-toggle,
+.auto-collapsed .pane:not(.pane-force-open) .pane-toggle {
+  transform: translateY(-50%) rotate(90deg);
+}
+
+.pane-resizer {
+  width: 6px;
+  flex: 0 0 auto;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  z-index: 15;
+}
+
+.pane-resizer::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: #18181b;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.pane-resizer:hover::before,
+.pane-resizer.active::before {
+  opacity: 0.6;
 }
 
 #algo-sticky {
@@ -268,11 +340,21 @@ input[type='color']::-webkit-color-swatch {
   border-color: #fafafa;
 }
 
-#settings-panel {
-  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+.settings-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: var(--pane-right-width);
+  display: flex;
+  flex-direction: column;
   transform: translateX(100%);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 40;
+  pointer-events: none;
 }
 
-#settings-panel.open {
+.settings-panel.open {
   transform: translateX(0);
+  pointer-events: auto;
 }

@@ -12,6 +12,8 @@
 
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
   const roundToStep = (value, step) => (step ? Math.round(value / step) * step : value);
+  const TRANSFORM_KEYS = ['seed', 'posX', 'posY', 'scaleX', 'scaleY'];
+  const clone = (obj) => JSON.parse(JSON.stringify(obj));
 
   const formatValue = (value) => {
     if (typeof value === 'number') {
@@ -979,8 +981,10 @@
       this.initModuleDropdown();
       this.initMachineDropdown();
       this.bindGlobal();
+      this.bindShortcuts();
       this.bindInfoButtons();
       this.initPaneToggles();
+      this.initPaneResizers();
       this.renderLayers();
       this.buildControls();
       this.updateFormula();
@@ -1023,6 +1027,57 @@
 
     closeModal() {
       this.modal.overlay.classList.remove('open');
+    }
+
+    getTransformSnapshot(params) {
+      return TRANSFORM_KEYS.reduce((acc, key) => {
+        acc[key] = params[key];
+        return acc;
+      }, {});
+    }
+
+    storeLayerParams(layer) {
+      if (!layer) return;
+      if (!layer.paramStates) layer.paramStates = {};
+      const next = { ...layer.params };
+      TRANSFORM_KEYS.forEach((key) => delete next[key]);
+      layer.paramStates[layer.type] = clone(next);
+    }
+
+    restoreLayerParams(layer, nextType) {
+      if (!layer) return;
+      const base = ALGO_DEFAULTS[nextType] ? clone(ALGO_DEFAULTS[nextType]) : {};
+      const stored = layer.paramStates?.[nextType] ? clone(layer.paramStates[nextType]) : null;
+      const transform = this.getTransformSnapshot(layer.params);
+      layer.type = nextType;
+      layer.params = { ...base, ...(stored || {}), ...transform };
+      this.storeLayerParams(layer);
+    }
+
+    isDuplicateLayerName(name, excludeId) {
+      const normalized = name.trim().toLowerCase();
+      return this.app.engine.layers.some(
+        (layer) => layer.id !== excludeId && layer.name.trim().toLowerCase() === normalized
+      );
+    }
+
+    getUniqueLayerName(base, excludeId) {
+      const clean = base.trim() || 'Layer';
+      if (!this.isDuplicateLayerName(clean, excludeId)) return clean;
+      let count = 2;
+      let next = `${clean} ${count}`;
+      while (this.isDuplicateLayerName(next, excludeId)) {
+        count += 1;
+        next = `${clean} ${count}`;
+      }
+      return next;
+    }
+
+    showDuplicateNameError(name) {
+      this.openModal({
+        title: 'Name Unavailable',
+        body: `<p class="modal-text">"${name}" is already in use. Layer names must be unique.</p>`,
+      });
     }
 
     showInfo(key) {
@@ -1113,20 +1168,22 @@
       const speedUp = getEl('set-speed-up');
       const stroke = getEl('set-stroke');
       const precision = getEl('set-precision');
+      const undoSteps = getEl('set-undo');
       const bgColor = getEl('inp-bg-color');
       if (margin) margin.value = SETTINGS.margin;
       if (speedDown) speedDown.value = SETTINGS.speedDown;
       if (speedUp) speedUp.value = SETTINGS.speedUp;
       if (stroke) stroke.value = SETTINGS.strokeWidth;
       if (precision) precision.value = SETTINGS.precision;
+      if (undoSteps) undoSteps.value = SETTINGS.undoSteps;
       if (bgColor) bgColor.value = SETTINGS.bgColor;
     }
 
     initPaneToggles() {
       const leftPane = getEl('left-pane');
       const rightPane = getEl('right-pane');
-      const leftBtn = getEl('btn-toggle-left');
-      const rightBtn = getEl('btn-toggle-right');
+      const leftBtn = getEl('btn-pane-toggle-left');
+      const rightBtn = getEl('btn-pane-toggle-right');
       if (!leftPane || !rightPane || !leftBtn || !rightBtn) return;
 
       const isCollapsed = (pane) => {
@@ -1134,19 +1191,9 @@
         return auto || pane.classList.contains('pane-collapsed');
       };
 
-      const updateButtons = () => {
-        const leftCollapsed = isCollapsed(leftPane);
-        const rightCollapsed = isCollapsed(rightPane);
-        leftBtn.textContent = leftCollapsed ? '[SHOW LEFT]' : '[HIDE LEFT]';
-        rightBtn.textContent = rightCollapsed ? '[SHOW RIGHT]' : '[HIDE RIGHT]';
-        leftBtn.setAttribute('aria-pressed', leftCollapsed ? 'true' : 'false');
-        rightBtn.setAttribute('aria-pressed', rightCollapsed ? 'true' : 'false');
-      };
-
       const applyAutoCollapse = () => {
         const shouldAuto = window.innerWidth < 1200;
         document.body.classList.toggle('auto-collapsed', shouldAuto);
-        updateButtons();
       };
 
       const togglePane = (pane) => {
@@ -1156,13 +1203,68 @@
         } else {
           pane.classList.toggle('pane-collapsed');
         }
-        updateButtons();
       };
 
       leftBtn.addEventListener('click', () => togglePane(leftPane));
       rightBtn.addEventListener('click', () => togglePane(rightPane));
       window.addEventListener('resize', applyAutoCollapse);
       applyAutoCollapse();
+
+      this.expandPanes = () => {
+        leftPane.classList.remove('pane-collapsed', 'pane-force-open');
+        rightPane.classList.remove('pane-collapsed', 'pane-force-open');
+        document.body.classList.remove('auto-collapsed');
+        document.documentElement.style.setProperty('--pane-left-width', '320px');
+        document.documentElement.style.setProperty('--pane-right-width', '256px');
+      };
+    }
+
+    initPaneResizers() {
+      const leftPane = getEl('left-pane');
+      const rightPane = getEl('right-pane');
+      const leftResizer = getEl('left-resizer');
+      const rightResizer = getEl('right-resizer');
+      if (!leftPane || !rightPane || !leftResizer || !rightResizer) return;
+
+      const minLeft = 200;
+      const maxLeft = 520;
+      const minRight = 200;
+      const maxRight = 520;
+
+      const startDrag = (e, side) => {
+        e.preventDefault();
+        const startX = e.clientX;
+        const startLeft = leftPane.getBoundingClientRect().width;
+        const startRight = rightPane.getBoundingClientRect().width;
+        const resizer = side === 'left' ? leftResizer : rightResizer;
+        resizer.classList.add('active');
+        document.body.classList.remove('auto-collapsed');
+        leftPane.classList.remove('pane-collapsed');
+        rightPane.classList.remove('pane-collapsed');
+
+        const onMove = (ev) => {
+          const dx = ev.clientX - startX;
+          if (side === 'left') {
+            const next = Math.max(minLeft, Math.min(maxLeft, startLeft + dx));
+            document.documentElement.style.setProperty('--pane-left-width', `${next}px`);
+          } else {
+            const next = Math.max(minRight, Math.min(maxRight, startRight - dx));
+            document.documentElement.style.setProperty('--pane-right-width', `${next}px`);
+          }
+        };
+
+        const onUp = () => {
+          resizer.classList.remove('active');
+          window.removeEventListener('mousemove', onMove);
+          window.removeEventListener('mouseup', onUp);
+        };
+
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+      };
+
+      leftResizer.addEventListener('mousedown', (e) => startDrag(e, 'left'));
+      rightResizer.addEventListener('mousedown', (e) => startDrag(e, 'right'));
     }
 
     bindGlobal() {
@@ -1178,13 +1280,16 @@
       const setSpeedUp = getEl('set-speed-up');
       const setStroke = getEl('set-stroke');
       const setPrecision = getEl('set-precision');
+      const setUndo = getEl('set-undo');
       const btnExport = getEl('btn-export');
       const btnResetView = getEl('btn-reset-view');
 
       if (addLayer && moduleSelect) {
         addLayer.onclick = () => {
           const t = moduleSelect.value;
-          this.app.engine.addLayer(t);
+          if (this.app.pushHistory) this.app.pushHistory();
+          const id = this.app.engine.addLayer(t);
+          if (this.app.renderer) this.app.renderer.selectedLayerId = id;
           this.renderLayers();
           this.app.render();
         };
@@ -1194,28 +1299,32 @@
         moduleSelect.onchange = (e) => {
           const l = this.app.engine.getActiveLayer();
           if (l) {
-            l.type = e.target.value;
-            l.params = JSON.parse(JSON.stringify(ALGO_DEFAULTS[l.type]));
-            const seed = getEl('inp-seed');
-            const posX = getEl('inp-pos-x');
-            const posY = getEl('inp-pos-y');
-            const scaleX = getEl('inp-scale-x');
-            const scaleY = getEl('inp-scale-y');
-            l.params.seed = parseInt(seed?.value, 10) || Math.floor(Math.random() * 999);
-            l.params.posX = parseFloat(posX?.value) || 0;
-            l.params.posY = parseFloat(posY?.value) || 0;
-            l.params.scaleX = parseFloat(scaleX?.value) || 1;
-            l.params.scaleY = parseFloat(scaleY?.value) || 1;
+            if (this.app.pushHistory) this.app.pushHistory();
+            this.storeLayerParams(l);
+            const nextType = e.target.value;
+            this.restoreLayerParams(l, nextType);
+            const label = ALGO_DEFAULTS[l.type]?.label;
+            const nextName = label || l.type.charAt(0).toUpperCase() + l.type.slice(1);
+            l.name = this.getUniqueLayerName(nextName, l.id);
             this.buildControls();
             this.app.regen();
+            this.renderLayers();
           }
         };
       }
 
       if (bgColor) {
+        let armed = false;
+        bgColor.onfocus = () => {
+          if (!armed && this.app.pushHistory) this.app.pushHistory();
+          armed = true;
+        };
         bgColor.oninput = (e) => {
           SETTINGS.bgColor = e.target.value;
           this.app.render();
+        };
+        bgColor.onchange = () => {
+          armed = false;
         };
       }
 
@@ -1228,6 +1337,7 @@
 
       if (machineProfile) {
         machineProfile.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
           this.app.engine.setProfile(e.target.value);
           this.app.renderer.center();
           this.app.regen();
@@ -1235,24 +1345,28 @@
       }
       if (setMargin) {
         setMargin.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
           SETTINGS.margin = parseInt(e.target.value, 10);
           this.app.regen();
         };
       }
       if (setSpeedDown) {
         setSpeedDown.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
           SETTINGS.speedDown = parseInt(e.target.value, 10);
           this.app.updateStats();
         };
       }
       if (setSpeedUp) {
         setSpeedUp.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
           SETTINGS.speedUp = parseInt(e.target.value, 10);
           this.app.updateStats();
         };
       }
       if (setStroke) {
         setStroke.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
           SETTINGS.strokeWidth = parseFloat(e.target.value);
           this.app.engine.layers.forEach((layer) => {
             layer.strokeWidth = SETTINGS.strokeWidth;
@@ -1262,9 +1376,19 @@
       }
       if (setPrecision) {
         setPrecision.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
           const next = Math.max(0, Math.min(6, parseInt(e.target.value, 10) || 3));
           SETTINGS.precision = next;
           e.target.value = next;
+        };
+      }
+      if (setUndo) {
+        setUndo.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          const next = Math.max(1, Math.min(200, parseInt(e.target.value, 10) || 20));
+          SETTINGS.undoSteps = next;
+          e.target.value = next;
+          if (this.app.setUndoLimit) this.app.setUndoLimit(next);
         };
       }
 
@@ -1272,7 +1396,11 @@
         btnExport.onclick = () => this.exportSVG();
       }
       if (btnResetView) {
-        btnResetView.onclick = () => this.app.renderer.center();
+        btnResetView.onclick = () => {
+          this.app.renderer.center();
+          if (this.expandPanes) this.expandPanes();
+          this.app.render();
+        };
       }
 
       const bindTrans = (id, key) => {
@@ -1281,6 +1409,7 @@
         el.onchange = (e) => {
           const l = this.app.engine.getActiveLayer();
           if (l) {
+            if (this.app.pushHistory) this.app.pushHistory();
             l.params[key] = parseFloat(e.target.value);
             this.app.regen();
           }
@@ -1298,6 +1427,7 @@
           const l = this.app.engine.getActiveLayer();
           const seedInput = getEl('inp-seed');
           if (l) {
+            if (this.app.pushHistory) this.app.pushHistory();
             l.params.seed = Math.floor(Math.random() * 99999);
             if (seedInput) seedInput.value = l.params.seed;
             this.app.regen();
@@ -1305,6 +1435,55 @@
           }
         };
       }
+    }
+
+    bindShortcuts() {
+      window.addEventListener('keydown', (e) => {
+        const target = e.target;
+        const isInput =
+          target &&
+          (target.tagName === 'INPUT' ||
+            target.tagName === 'TEXTAREA' ||
+            target.tagName === 'SELECT' ||
+            target.isContentEditable);
+        if (isInput) return;
+
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+          e.preventDefault();
+          if (this.app.undo) this.app.undo();
+          return;
+        }
+
+        const selected = this.app.renderer?.getSelectedLayer?.();
+        if (!selected) return;
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.preventDefault();
+          if (this.app.pushHistory) this.app.pushHistory();
+          this.app.engine.removeLayer(selected.id);
+          if (this.app.renderer) this.app.renderer.selectedLayerId = this.app.engine.activeLayerId;
+          this.renderLayers();
+          this.app.render();
+          return;
+        }
+        const step = e.shiftKey ? 10 : 1;
+        let dx = 0;
+        let dy = 0;
+        if (e.key === 'ArrowLeft') dx = -step;
+        if (e.key === 'ArrowRight') dx = step;
+        if (e.key === 'ArrowUp') dy = -step;
+        if (e.key === 'ArrowDown') dy = step;
+        if (dx || dy) {
+          e.preventDefault();
+          if (this.app.pushHistory) this.app.pushHistory();
+          selected.params.posX += dx;
+          selected.params.posY += dy;
+          this.app.regen();
+          const posX = getEl('inp-pos-x');
+          const posY = getEl('inp-pos-y');
+          if (posX) posX.value = selected.params.posX;
+          if (posY) posY.value = selected.params.posY;
+        }
+      });
     }
 
     renderLayers() {
@@ -1322,58 +1501,110 @@
           el.innerHTML = `
             <div class="flex items-center gap-2 flex-1 overflow-hidden">
               <input type="checkbox" ${l.visible ? 'checked' : ''} class="cursor-pointer" aria-label="Toggle layer visibility">
-              <span class="text-xs truncate ${isActive ? 'text-white font-bold' : 'text-vectura-muted'}">${l.name}</span>
+              <span class="layer-name text-sm truncate ${isActive ? 'text-white font-bold' : 'text-vectura-muted'}">${l.name}</span>
+              <input
+                class="layer-name-input hidden w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:outline-none"
+                type="text"
+                value="${l.name}"
+              />
             </div>
             <div class="flex items-center gap-1">
-              <button class="text-[10px] text-vectura-muted hover:text-white px-1 btn-up" aria-label="Move layer up">▲</button>
-              <button class="text-[10px] text-vectura-muted hover:text-white px-1 btn-down" aria-label="Move layer down">▼</button>
-              <button class="text-[10px] text-vectura-muted hover:text-white px-1 btn-layer-settings" aria-label="Layer settings">⚙</button>
-              <div class="relative w-3 h-3 overflow-hidden rounded-full border border-vectura-border ml-1">
+              <button class="text-sm text-vectura-muted hover:text-white px-1 btn-up" aria-label="Move layer up">▲</button>
+              <button class="text-sm text-vectura-muted hover:text-white px-1 btn-down" aria-label="Move layer down">▼</button>
+              <button class="text-sm text-vectura-muted hover:text-white px-1 btn-dup" aria-label="Duplicate layer">⧉</button>
+              <button class="text-sm text-vectura-muted hover:text-white px-1 btn-layer-settings" aria-label="Layer settings">⚙</button>
+              <div class="relative w-4 h-4 overflow-hidden rounded-full border border-vectura-border ml-1">
                 <input type="color" value="${l.color}" class="color-picker" aria-label="Layer color">
               </div>
-              <button class="text-xs text-vectura-muted hover:text-vectura-danger px-1 ml-1 btn-del" aria-label="Delete layer">✕</button>
+              <button class="text-sm text-vectura-muted hover:text-vectura-danger px-1 ml-1 btn-del" aria-label="Delete layer">✕</button>
             </div>
           `;
-          const nameEl = el.querySelector('span');
+          const nameEl = el.querySelector('.layer-name');
+          const nameInput = el.querySelector('.layer-name-input');
           const visibilityEl = el.querySelector('input[type=checkbox]');
           const colorEl = el.querySelector('.color-picker');
           const delBtn = el.querySelector('.btn-del');
           const upBtn = el.querySelector('.btn-up');
           const downBtn = el.querySelector('.btn-down');
+          const dupBtn = el.querySelector('.btn-dup');
           const settingsBtn = el.querySelector('.btn-layer-settings');
 
-          if (nameEl) {
-            nameEl.onclick = () => {
-              this.app.engine.activeLayerId = l.id;
-              this.renderLayers();
-              this.buildControls();
-              this.updateFormula();
-            };
+          const selectLayer = () => {
+            this.app.engine.activeLayerId = l.id;
+            if (this.app.renderer) this.app.renderer.selectedLayerId = l.id;
+            this.renderLayers();
+            this.buildControls();
+            this.updateFormula();
+            this.app.render();
+          };
+
+          el.onclick = (e) => {
+            if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select')) return;
+            selectLayer();
+          };
+
+          if (nameEl && nameInput) {
+            nameEl.onclick = selectLayer;
             nameEl.ondblclick = (e) => {
               e.stopPropagation();
-              const next = window.prompt('Rename layer', l.name);
-              if (!next) return;
-              l.name = next.trim() || l.name;
+              nameEl.classList.add('hidden');
+              nameInput.classList.remove('hidden');
+              nameInput.focus();
+              nameInput.select();
+            };
+            nameInput.onblur = () => {
+              const next = nameInput.value.trim();
+              if (next && next !== l.name) {
+                if (this.isDuplicateLayerName(next, l.id)) {
+                  this.showDuplicateNameError(next);
+                  nameInput.focus();
+                  nameInput.select();
+                  return;
+                }
+                if (this.app.pushHistory) this.app.pushHistory();
+                l.name = next;
+              }
+              nameInput.value = l.name;
+              nameInput.classList.add('hidden');
+              nameEl.classList.remove('hidden');
               this.renderLayers();
+            };
+            nameInput.onkeydown = (e) => {
+              if (e.key === 'Enter') nameInput.blur();
+              if (e.key === 'Escape') {
+                nameInput.value = l.name;
+                nameInput.blur();
+              }
             };
           }
           if (visibilityEl) {
             visibilityEl.onchange = (e) => {
+              if (this.app.pushHistory) this.app.pushHistory();
               l.visible = e.target.checked;
               this.app.render();
               this.app.updateStats();
             };
           }
           if (colorEl) {
+            let armed = false;
+            colorEl.onfocus = () => {
+              if (!armed && this.app.pushHistory) this.app.pushHistory();
+              armed = true;
+            };
             colorEl.oninput = (e) => {
               l.color = e.target.value;
               this.app.render();
+            };
+            colorEl.onchange = () => {
+              armed = false;
             };
           }
           if (delBtn) {
             delBtn.onclick = (e) => {
               e.stopPropagation();
+              if (this.app.pushHistory) this.app.pushHistory();
               this.app.engine.removeLayer(l.id);
+              if (this.app.renderer) this.app.renderer.selectedLayerId = this.app.engine.activeLayerId;
               this.renderLayers();
               this.app.render();
             };
@@ -1381,6 +1612,7 @@
           if (upBtn) {
             upBtn.onclick = (e) => {
               e.stopPropagation();
+              if (this.app.pushHistory) this.app.pushHistory();
               this.app.engine.moveLayer(l.id, 1);
               this.renderLayers();
               this.app.render();
@@ -1389,9 +1621,22 @@
           if (downBtn) {
             downBtn.onclick = (e) => {
               e.stopPropagation();
+              if (this.app.pushHistory) this.app.pushHistory();
               this.app.engine.moveLayer(l.id, -1);
               this.renderLayers();
               this.app.render();
+            };
+          }
+          if (dupBtn) {
+            dupBtn.onclick = (e) => {
+              e.stopPropagation();
+              if (this.app.pushHistory) this.app.pushHistory();
+              const dup = this.app.engine.duplicateLayer(l.id);
+              if (dup) {
+                if (this.app.renderer) this.app.renderer.selectedLayerId = dup.id;
+                this.renderLayers();
+                this.app.render();
+              }
             };
           }
           if (settingsBtn) {
@@ -1451,12 +1696,14 @@
           strokeValueEl.textContent = e.target.value;
         };
         strokeInput.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
           layer.strokeWidth = parseFloat(e.target.value);
           this.app.render();
         };
       }
       if (capSelect) {
         capSelect.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
           layer.lineCap = e.target.value;
           this.app.render();
         };
@@ -1495,8 +1742,29 @@
         }
       }
 
+      this.storeLayerParams(layer);
+
       const defs = [...(this.controls[layer.type] || []), ...COMMON_CONTROLS];
       if (!defs.length) return;
+
+      const resetBtn = document.createElement('button');
+      resetBtn.type = 'button';
+      resetBtn.className =
+        'mb-4 w-full text-xs border border-vectura-border px-2 py-2 hover:bg-vectura-border text-vectura-accent transition-colors';
+      resetBtn.textContent = 'Reset to Defaults';
+      resetBtn.onclick = () => {
+        if (this.app.pushHistory) this.app.pushHistory();
+        const transform = this.getTransformSnapshot(layer.params);
+        if (!layer.paramStates) layer.paramStates = {};
+        delete layer.paramStates[layer.type];
+        const base = ALGO_DEFAULTS[layer.type] ? clone(ALGO_DEFAULTS[layer.type]) : {};
+        layer.params = { ...base, ...transform };
+        this.storeLayerParams(layer);
+        this.buildControls();
+        this.app.regen();
+        this.updateFormula();
+      };
+      container.appendChild(resetBtn);
 
       defs.forEach((def) => {
         if (def.showIf && !def.showIf(layer.params)) return;
@@ -1521,9 +1789,11 @@
           const span = div.querySelector('span');
           if (input && span) {
             input.onchange = (e) => {
+              if (this.app.pushHistory) this.app.pushHistory();
               const next = Boolean(e.target.checked);
               span.innerText = next ? 'ON' : 'OFF';
               layer.params[def.id] = next;
+              this.storeLayerParams(layer);
               if (def.id === 'curves') {
                 this.app.render();
                 this.updateFormula();
@@ -1557,8 +1827,10 @@
           const span = div.querySelector('span');
           if (input && span) {
             input.onchange = (e) => {
+              if (this.app.pushHistory) this.app.pushHistory();
               const next = e.target.value;
               layer.params[def.id] = next;
+              this.storeLayerParams(layer);
               span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
               this.app.regen();
               this.updateFormula();
@@ -1608,12 +1880,16 @@
             minInput.oninput = () => syncValues('min');
             maxInput.oninput = () => syncValues('max');
             minInput.onchange = () => {
+              if (this.app.pushHistory) this.app.pushHistory();
               syncValues('min');
+              this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
             };
             maxInput.onchange = () => {
+              if (this.app.pushHistory) this.app.pushHistory();
               syncValues('max');
+              this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
             };
@@ -1634,7 +1910,9 @@
           if (input && span) {
             input.oninput = (e) => (span.innerText = formatValue(parseFloat(e.target.value)));
             input.onchange = (e) => {
+              if (this.app.pushHistory) this.app.pushHistory();
               layer.params[def.id] = parseFloat(e.target.value);
+              this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
             };

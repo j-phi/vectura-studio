@@ -45,6 +45,76 @@
       return id;
     }
 
+    exportState() {
+      return {
+        activeLayerId: this.activeLayerId,
+        layers: this.layers.map((layer) => ({
+          id: layer.id,
+          type: layer.type,
+          name: layer.name,
+          params: JSON.parse(JSON.stringify(layer.params)),
+          paramStates: JSON.parse(JSON.stringify(layer.paramStates || {})),
+          color: layer.color,
+          strokeWidth: layer.strokeWidth,
+          lineCap: layer.lineCap,
+          visible: layer.visible,
+        })),
+      };
+    }
+
+    importState(state) {
+      if (!state) return;
+      this.layers = (state.layers || []).map((data) => {
+        const layer = new Layer(data.id, data.type, data.name);
+        layer.params = JSON.parse(JSON.stringify(data.params || {}));
+        layer.paramStates = JSON.parse(JSON.stringify(data.paramStates || {}));
+        layer.color = data.color || layer.color;
+        layer.strokeWidth = Number.isFinite(data.strokeWidth) ? data.strokeWidth : layer.strokeWidth;
+        layer.lineCap = data.lineCap || layer.lineCap;
+        layer.visible = data.visible !== false;
+        layer.paths = [];
+        return layer;
+      });
+      this.activeLayerId = state.activeLayerId || (this.layers[0] ? this.layers[0].id : null);
+      this.layers.forEach((l) => this.generate(l.id));
+    }
+
+    duplicateLayer(id) {
+      const source = this.layers.find((l) => l.id === id);
+      if (!source) return null;
+      const newId = Math.random().toString(36).substr(2, 9);
+      SETTINGS.globalLayerCount++;
+      const baseName = `${source.name} Copy`;
+      const existing = new Set(this.layers.map((l) => l.name));
+      let dupName = baseName;
+      let count = 2;
+      while (existing.has(dupName)) {
+        dupName = `${baseName} ${count}`;
+        count += 1;
+      }
+      const layer = new Layer(newId, source.type, dupName);
+      layer.params = JSON.parse(JSON.stringify(source.params));
+      layer.paramStates = JSON.parse(JSON.stringify(source.paramStates || {}));
+      layer.color = source.color;
+      layer.strokeWidth = source.strokeWidth;
+      layer.lineCap = source.lineCap;
+      layer.visible = source.visible;
+      layer.paths = source.paths.map((path) => {
+        if (!Array.isArray(path)) return path;
+        const next = path.map((pt) => ({ ...pt }));
+        if (path.meta) next.meta = { ...path.meta };
+        return next;
+      });
+      const idx = this.layers.findIndex((l) => l.id === id);
+      if (idx >= 0) {
+        this.layers.splice(idx + 1, 0, layer);
+      } else {
+        this.layers.push(layer);
+      }
+      this.activeLayerId = newId;
+      return layer;
+    }
+
     removeLayer(id) {
       if (this.layers.length <= 1) return;
       this.layers = this.layers.filter((l) => l.id !== id);

@@ -18,8 +18,9 @@
       this.activeHandle = null;
       this.dragStart = { x: 0, y: 0 };
       this.startBounds = null;
-      this.startHandleVec = null;
       this.tempTransform = null;
+      this.selectedLayerId = null;
+      this.onSelectLayer = null;
       this.lastM = { x: 0, y: 0 };
       this.ready = Boolean(this.canvas && this.ctx);
 
@@ -87,7 +88,7 @@
 
       this.ctx.lineJoin = 'round';
 
-      const activeLayer = this.engine.getActiveLayer ? this.engine.getActiveLayer() : null;
+      const selectedLayer = this.getSelectedLayer();
       this.engine.layers.forEach((l) => {
         if (!l.visible) return;
         this.ctx.lineWidth = l.strokeWidth ?? SETTINGS.strokeWidth;
@@ -97,18 +98,19 @@
         const useCurves = Boolean(l.params && l.params.curves);
         l.paths.forEach((path) => {
           if (path && path.meta && path.meta.kind === 'circle') {
-            const meta = l === activeLayer && this.tempTransform ? this.transformCircleMeta(path.meta, this.tempTransform) : path.meta;
+            const meta =
+              l === selectedLayer && this.tempTransform ? this.transformCircleMeta(path.meta, this.tempTransform) : path.meta;
             this.traceCircle(meta);
           } else {
-            const next = l === activeLayer && this.tempTransform ? this.transformPath(path, this.tempTransform) : path;
+            const next = l === selectedLayer && this.tempTransform ? this.transformPath(path, this.tempTransform) : path;
             this.tracePath(next, useCurves);
           }
         });
         this.ctx.stroke();
       });
 
-      if (activeLayer) {
-        const bounds = this.getLayerBounds(activeLayer, this.tempTransform);
+      if (selectedLayer) {
+        const bounds = this.getLayerBounds(selectedLayer, this.tempTransform);
         if (bounds) this.drawSelection(bounds);
       }
       this.ctx.restore();
@@ -146,17 +148,22 @@
       const rect = this.canvas.getBoundingClientRect();
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
-      const bounds = this.getLayerBounds(activeLayer);
+      const world = this.screenToWorld(sx, sy);
+      const topLayer = this.findLayerAtPoint(world);
+      if (topLayer && topLayer.id !== this.selectedLayerId) {
+        this.selectLayer(topLayer);
+      }
+      const selectedLayer = this.getSelectedLayer();
+      if (!selectedLayer) return;
+      const bounds = this.getLayerBounds(selectedLayer);
       if (!bounds) return;
       const handle = this.hitHandle(sx, sy, bounds);
-      const world = this.screenToWorld(sx, sy);
       if (handle) {
         this.isLayerDrag = true;
         this.dragMode = 'resize';
         this.activeHandle = handle;
         this.dragStart = world;
         this.startBounds = bounds;
-        this.startHandleVec = this.getHandleVector(handle, bounds);
         this.canvas.style.cursor = this.handleCursor(handle);
         e.preventDefault();
         return;
@@ -167,7 +174,18 @@
         this.dragStart = world;
         this.startBounds = bounds;
         this.canvas.style.cursor = 'move';
+        if (e.altKey) {
+          if (this.onDuplicateLayer) this.onDuplicateLayer();
+          const dup = this.engine.duplicateLayer ? this.engine.duplicateLayer(selectedLayer.id) : null;
+          if (dup) {
+            this.selectLayer(dup);
+            this.dragStart = world;
+            this.startBounds = this.getLayerBounds(dup) || bounds;
+          }
+        }
         e.preventDefault();
+      } else if (!topLayer) {
+        this.clearSelection();
       }
     }
 
@@ -190,9 +208,11 @@
           const dx = world.x - this.dragStart.x;
           const dy = world.y - this.dragStart.y;
           this.tempTransform = { dx, dy, scaleX: 1, scaleY: 1, origin: { x: 0, y: 0 } };
-        } else if (this.dragMode === 'resize' && this.startBounds && this.startHandleVec) {
-          const origin = this.getBoundsCenter(this.startBounds);
-          const startVec = this.startHandleVec;
+        } else if (this.dragMode === 'resize' && this.startBounds && this.activeHandle) {
+          const fromCenter = e.altKey || e.ctrlKey;
+          const origin = fromCenter ? this.getBoundsCenter(this.startBounds) : this.getResizeAnchor(this.activeHandle, this.startBounds);
+          const handlePoint = this.getHandlePoint(this.activeHandle, this.startBounds);
+          const startVec = { x: handlePoint.x - origin.x, y: handlePoint.y - origin.y };
           const currVec = { x: world.x - origin.x, y: world.y - origin.y };
           const safeX = Math.abs(startVec.x) < 0.001 ? 0.001 : startVec.x;
           const safeY = Math.abs(startVec.y) < 0.001 ? 0.001 : startVec.y;
@@ -203,8 +223,8 @@
             scaleX = uni;
             scaleY = uni;
           }
-          scaleX = Math.max(0.05, Math.min(scaleX, 20));
-          scaleY = Math.max(0.05, Math.min(scaleY, 20));
+          scaleX = Math.max(0.05, Math.min(Math.abs(scaleX), 20));
+          scaleY = Math.max(0.05, Math.min(Math.abs(scaleY), 20));
           this.tempTransform = { dx: 0, dy: 0, scaleX, scaleY, origin };
         }
         this.draw();
@@ -217,8 +237,9 @@
     up() {
       if (!this.ready || !this.canvas) return;
       if (this.isLayerDrag) {
-        const activeLayer = this.engine.getActiveLayer ? this.engine.getActiveLayer() : null;
+        const activeLayer = this.getSelectedLayer();
         if (activeLayer && this.tempTransform) {
+          if (this.onCommitTransform) this.onCommitTransform();
           if (this.dragMode === 'move') {
             activeLayer.params.posX += this.tempTransform.dx;
             activeLayer.params.posY += this.tempTransform.dy;
@@ -269,6 +290,34 @@
         return;
       }
       this.ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    }
+
+    getSelectedLayer() {
+      return this.engine.layers.find((l) => l.id === this.selectedLayerId) || null;
+    }
+
+    selectLayer(layer) {
+      if (!layer) return;
+      this.selectedLayerId = layer.id;
+      if (this.onSelectLayer) this.onSelectLayer(layer);
+      this.draw();
+    }
+
+    clearSelection() {
+      this.selectedLayerId = null;
+      if (this.onSelectLayer) this.onSelectLayer(null);
+      this.draw();
+    }
+
+    findLayerAtPoint(world) {
+      const layers = this.engine.layers.slice().reverse();
+      return (
+        layers.find((layer) => {
+          if (!layer.visible) return false;
+          const bounds = this.getLayerBounds(layer);
+          return bounds ? this.pointInBounds(world, bounds) : false;
+        }) || null
+      );
     }
 
     screenToWorld(x, y) {
@@ -364,6 +413,26 @@
       ];
     }
 
+    getHandlePoint(handle, bounds) {
+      const map = {
+        nw: { x: bounds.minX, y: bounds.minY },
+        ne: { x: bounds.maxX, y: bounds.minY },
+        se: { x: bounds.maxX, y: bounds.maxY },
+        sw: { x: bounds.minX, y: bounds.maxY },
+      };
+      return map[handle] || { x: bounds.maxX, y: bounds.maxY };
+    }
+
+    getResizeAnchor(handle, bounds) {
+      const map = {
+        nw: { x: bounds.maxX, y: bounds.maxY },
+        ne: { x: bounds.minX, y: bounds.maxY },
+        se: { x: bounds.minX, y: bounds.minY },
+        sw: { x: bounds.maxX, y: bounds.minY },
+      };
+      return map[handle] || this.getBoundsCenter(bounds);
+    }
+
     hitHandle(sx, sy, bounds) {
       const handles = this.getHandlePoints(bounds).map((pt) => ({
         key: pt.key,
@@ -406,8 +475,11 @@
 
     updateHoverCursor(e) {
       if (!this.canvas) return;
-      const activeLayer = this.engine.getActiveLayer ? this.engine.getActiveLayer() : null;
-      if (!activeLayer) return;
+      const activeLayer = this.getSelectedLayer();
+      if (!activeLayer) {
+        this.canvas.style.cursor = 'crosshair';
+        return;
+      }
       const bounds = this.getLayerBounds(activeLayer, this.tempTransform);
       if (!bounds) return;
       const rect = this.canvas.getBoundingClientRect();
