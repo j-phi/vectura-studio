@@ -2,7 +2,7 @@
  * UI controller for DOM wiring and controls.
  */
 (() => {
-  const { ALGO_DEFAULTS, SETTINGS, DESCRIPTIONS, MACHINES, Algorithms, SeededRNG, SimpleNoise, Layer } =
+  const { ALGO_DEFAULTS, SETTINGS, DESCRIPTIONS, MACHINES, Algorithms, SeededRNG, SimpleNoise, Layer, PALETTES } =
     window.Vectura || {};
 
   const getEl = (id) => {
@@ -221,6 +221,17 @@
       { id: 'gap', label: 'Line Gap', type: 'range', min: 0.5, max: 3.0, step: 0.1, infoKey: 'wavetable.gap' },
       { id: 'freq', label: 'Frequency', type: 'range', min: 0.2, max: 12.0, step: 0.1, infoKey: 'wavetable.freq' },
       { id: 'noiseAngle', label: 'Noise Angle', type: 'range', min: -180, max: 180, step: 5, infoKey: 'wavetable.noiseAngle' },
+      {
+        id: 'continuity',
+        label: 'Continuity',
+        type: 'select',
+        options: [
+          { value: 'none', label: 'None' },
+          { value: 'single', label: 'Single' },
+          { value: 'double', label: 'Double' },
+        ],
+        infoKey: 'wavetable.continuity',
+      },
       { type: 'section', label: 'Edge Noise Dampening' },
       {
         id: 'edgeFadeMode',
@@ -312,6 +323,43 @@
         infoKey: 'wavetable.overlapPadding',
       },
       { id: 'flatCaps', label: 'Flat Top/Bottom', type: 'checkbox', infoKey: 'wavetable.flatCaps' },
+    ],
+    topo: [
+      { id: 'rings', label: 'Rings', type: 'range', min: 3, max: 120, step: 1, infoKey: 'topo.rings' },
+      {
+        id: 'noiseType',
+        label: 'Noise Type',
+        type: 'select',
+        options: [
+          { value: 'simplex', label: 'Simplex' },
+          { value: 'ridged', label: 'Ridged' },
+          { value: 'billow', label: 'Billow' },
+          { value: 'turbulence', label: 'Turbulence' },
+          { value: 'stripes', label: 'Stripes' },
+          { value: 'marble', label: 'Marble' },
+          { value: 'steps', label: 'Steps' },
+          { value: 'triangle', label: 'Triangle' },
+          { value: 'warp', label: 'Warp' },
+          { value: 'cellular', label: 'Cellular' },
+          { value: 'fbm', label: 'Fractal' },
+          { value: 'swirl', label: 'Swirl' },
+          { value: 'radial', label: 'Radial' },
+          { value: 'checker', label: 'Checker' },
+          { value: 'zigzag', label: 'Zigzag' },
+          { value: 'ripple', label: 'Ripple' },
+          { value: 'spiral', label: 'Spiral' },
+          { value: 'grain', label: 'Grain' },
+          { value: 'crosshatch', label: 'Crosshatch' },
+          { value: 'pulse', label: 'Pulse' },
+        ],
+        infoKey: 'topo.noiseType',
+      },
+      { id: 'amplitude', label: 'Noise Amplitude', type: 'range', min: 0, max: 40, step: 1, infoKey: 'topo.amplitude' },
+      { id: 'zoom', label: 'Noise Zoom', type: 'range', min: 0.002, max: 0.1, step: 0.001, infoKey: 'topo.zoom' },
+      { id: 'gap', label: 'Ring Gap', type: 'range', min: 0.4, max: 3.0, step: 0.1, infoKey: 'topo.gap' },
+      { id: 'jitter', label: 'Ring Jitter', type: 'range', min: 0, max: 6, step: 0.1, infoKey: 'topo.jitter' },
+      { id: 'wobble', label: 'Angular Wobble', type: 'range', min: 0, max: 5, step: 0.1, infoKey: 'topo.wobble' },
+      { id: 'angleOffset', label: 'Angle Offset', type: 'range', min: -180, max: 180, step: 5, infoKey: 'topo.angleOffset' },
     ],
     spiral: [
       { id: 'loops', label: 'Loops', type: 'range', min: 1, max: 40, step: 1, infoKey: 'spiral.loops' },
@@ -686,6 +734,10 @@
       title: 'Noise Angle',
       description: 'Rotates the noise field direction used to displace the wave.',
     },
+    'wavetable.continuity': {
+      title: 'Continuity',
+      description: 'Connects adjacent wavetable rows on one side (single) or both sides (double).',
+    },
     'wavetable.edgeFadeMode': {
       title: 'Edge Noise Dampening Mode',
       description: 'Choose whether noise dampening affects the left, right, or both sides.',
@@ -729,6 +781,38 @@
     'wavetable.flatCaps': {
       title: 'Flat Top/Bottom',
       description: 'Adds flat lines at the top and bottom of the wavetable stack.',
+    },
+    'topo.rings': {
+      title: 'Rings',
+      description: 'Number of contour loops generated in the topographic stack.',
+    },
+    'topo.noiseType': {
+      title: 'Noise Type',
+      description: 'Chooses the noise field used to perturb contour radii.',
+    },
+    'topo.amplitude': {
+      title: 'Noise Amplitude',
+      description: 'Strength of the contour displacement from the base ring.',
+    },
+    'topo.zoom': {
+      title: 'Noise Zoom',
+      description: 'Scale of the noise field across each contour.',
+    },
+    'topo.gap': {
+      title: 'Ring Gap',
+      description: 'Spacing multiplier between contour rings.',
+    },
+    'topo.jitter': {
+      title: 'Ring Jitter',
+      description: 'Random radial offset applied per ring for organic variation.',
+    },
+    'topo.wobble': {
+      title: 'Angular Wobble',
+      description: 'Adds sinusoidal waviness around each contour.',
+    },
+    'topo.angleOffset': {
+      title: 'Angle Offset',
+      description: 'Rotates the overall contour field in degrees.',
     },
     'spiral.loops': {
       title: 'Loops',
@@ -1514,6 +1598,7 @@
       this.controls = CONTROL_DEFS;
       this.modal = this.createModal();
       this.openPenMenu = null;
+      this.openPaletteMenu = null;
       this.layerListOrder = [];
       this.lastLayerClickId = null;
       this.layerListFocus = false;
@@ -1528,12 +1613,18 @@
           this.openPenMenu.classList.add('hidden');
           this.openPenMenu = null;
         }
+        if (this.openPaletteMenu) {
+          this.openPaletteMenu.classList.add('hidden');
+          this.openPaletteMenu = null;
+        }
       });
       this.initPaneToggles();
       this.initBottomPaneToggle();
+      this.initBottomPaneResizer();
       this.initPaneResizers();
       this.renderLayers();
       this.renderPens();
+      this.initPaletteControls();
       this.buildControls();
       this.updateFormula();
       this.initSettingsValues();
@@ -1639,6 +1730,7 @@
           <div class="modal-ill-label">Pens &amp; Export</div>
           <div class="text-xs text-vectura-muted leading-relaxed space-y-1">
             <div>Assign pens per layer or selection by dragging a pen onto layers.</div>
+            <div>Use the palette dropdown to recolor pens; add or remove pens from the panel.</div>
             <div>SVG export preserves pen groupings for plotter workflows.</div>
           </div>
         </div>
@@ -2075,6 +2167,162 @@
       select.value = Object.keys(MACHINES)[0] || '';
     }
 
+    getPaletteList() {
+      return Array.isArray(PALETTES) ? PALETTES : window.Vectura?.PALETTES || [];
+    }
+
+    getActivePalette() {
+      const palettes = this.getPaletteList();
+      if (!palettes.length) return null;
+      const target = palettes.find((palette) => palette.id === SETTINGS.paletteId);
+      return target || palettes[0];
+    }
+
+    applyPaletteToPens(palette, options = {}) {
+      if (!palette || !palette.colors || !palette.colors.length) return;
+      const pens = SETTINGS.pens || [];
+      pens.forEach((pen, index) => {
+        pen.color = palette.colors[index % palette.colors.length];
+      });
+      this.app.engine.layers.forEach((layer) => {
+        const pen = pens.find((p) => p.id === layer.penId);
+        if (pen) layer.color = pen.color;
+      });
+      if (!options.skipRender) {
+        this.renderPens();
+        this.renderLayers();
+        this.app.render();
+      }
+    }
+
+    addPen() {
+      if (this.app.pushHistory) this.app.pushHistory();
+      const pens = SETTINGS.pens || [];
+      const palette = this.getActivePalette();
+      const colors = palette?.colors || [];
+      const color = colors.length ? colors[pens.length % colors.length] : '#ffffff';
+      const nextIndex = pens.length + 1;
+      const pen = {
+        id: `pen-${Math.random().toString(36).slice(2, 9)}`,
+        name: `Pen ${nextIndex}`,
+        color,
+        width: SETTINGS.strokeWidth ?? 0.3,
+      };
+      pens.push(pen);
+      this.renderPens();
+      this.renderLayers();
+    }
+
+    removePen(penId) {
+      const pens = SETTINGS.pens || [];
+      if (pens.length <= 1) {
+        this.openModal({
+          title: 'Cannot Remove Pen',
+          body: '<p class="modal-text">At least one pen must remain in the list.</p>',
+        });
+        return;
+      }
+      const idx = pens.findIndex((pen) => pen.id === penId);
+      if (idx === -1) return;
+      if (this.app.pushHistory) this.app.pushHistory();
+      const fallback = pens[idx - 1] || pens[idx + 1];
+      pens.splice(idx, 1);
+      this.app.engine.layers.forEach((layer) => {
+        if (layer.penId === penId && fallback) {
+          layer.penId = fallback.id;
+          layer.color = fallback.color;
+          layer.strokeWidth = fallback.width;
+        }
+      });
+      this.renderPens();
+      this.renderLayers();
+      this.app.render();
+    }
+
+    initPaletteControls() {
+      const toggle = getEl('palette-toggle');
+      const menu = getEl('palette-menu');
+      const options = getEl('palette-options');
+      const search = getEl('palette-search');
+      const addBtn = getEl('btn-add-pen');
+      const palettes = this.getPaletteList();
+      if (!toggle || !menu || !options || !search || !palettes.length) {
+        if (addBtn) addBtn.onclick = () => this.addPen();
+        return;
+      }
+
+      const setActiveLabel = () => {
+        const active = this.getActivePalette();
+        if (active) {
+          SETTINGS.paletteId = active.id;
+          toggle.textContent = active.name;
+        }
+      };
+
+      const renderOptions = (filter = '') => {
+        const term = filter.trim().toLowerCase();
+        options.innerHTML = '';
+        const list = palettes.filter((palette) => palette.name.toLowerCase().includes(term));
+        list.forEach((palette) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'palette-option';
+          btn.dataset.paletteId = palette.id;
+          if (palette.id === SETTINGS.paletteId) btn.classList.add('active');
+          btn.innerHTML = `
+            <span class="palette-name">${palette.name}</span>
+            <span class="palette-swatch">
+              ${(palette.colors || [])
+                .slice(0, 5)
+                .map((color) => `<span style="background:${color}"></span>`)
+                .join('')}
+            </span>
+          `;
+          btn.onclick = (e) => {
+            e.stopPropagation();
+            SETTINGS.paletteId = palette.id;
+            setActiveLabel();
+            this.applyPaletteToPens(palette);
+            menu.classList.add('hidden');
+            this.openPaletteMenu = null;
+          };
+          options.appendChild(btn);
+        });
+      };
+
+      setActiveLabel();
+      renderOptions();
+
+      toggle.onclick = (e) => {
+        e.stopPropagation();
+        const isHidden = menu.classList.contains('hidden');
+        if (isHidden) {
+          if (this.openPenMenu) {
+            this.openPenMenu.classList.add('hidden');
+            this.openPenMenu = null;
+          }
+          if (this.openPaletteMenu && this.openPaletteMenu !== menu) {
+            this.openPaletteMenu.classList.add('hidden');
+          }
+          renderOptions(search.value);
+          menu.classList.remove('hidden');
+          this.openPaletteMenu = menu;
+          search.focus();
+          search.select();
+        } else {
+          menu.classList.add('hidden');
+          this.openPaletteMenu = null;
+        }
+      };
+
+      menu.addEventListener('click', (e) => e.stopPropagation());
+      search.oninput = () => renderOptions(search.value);
+
+      if (addBtn) {
+        addBtn.onclick = () => this.addPen();
+      }
+    }
+
     initSettingsValues() {
       const margin = getEl('set-margin');
       const speedDown = getEl('set-speed-down');
@@ -2150,6 +2398,7 @@
         document.body.classList.remove('auto-collapsed');
         document.documentElement.style.setProperty('--pane-left-width', '320px');
         document.documentElement.style.setProperty('--pane-right-width', '336px');
+        document.documentElement.style.setProperty('--bottom-pane-height', '180px');
         if (bottomPane) bottomPane.classList.remove('bottom-pane-collapsed');
       };
     }
@@ -2159,6 +2408,37 @@
       const btn = getEl('btn-pane-toggle-bottom');
       if (!bottomPane || !btn) return;
       btn.addEventListener('click', () => bottomPane.classList.toggle('bottom-pane-collapsed'));
+    }
+
+    initBottomPaneResizer() {
+      const resizer = getEl('bottom-resizer');
+      const bottomPane = getEl('bottom-pane');
+      if (!resizer || !bottomPane) return;
+      const minHeight = 80;
+      const maxHeight = 360;
+
+      const startDrag = (e) => {
+        e.preventDefault();
+        resizer.classList.add('active');
+        bottomPane.classList.remove('bottom-pane-collapsed');
+        const startY = e.clientY;
+        const startHeight = bottomPane.getBoundingClientRect().height;
+
+        const onMove = (ev) => {
+          const dy = ev.clientY - startY;
+          const next = Math.max(minHeight, Math.min(maxHeight, startHeight - dy));
+          document.documentElement.style.setProperty('--bottom-pane-height', `${next}px`);
+        };
+        const onUp = () => {
+          resizer.classList.remove('active');
+          window.removeEventListener('mousemove', onMove);
+          window.removeEventListener('mouseup', onUp);
+        };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+      };
+
+      resizer.addEventListener('mousedown', startDrag);
     }
 
     initPaneResizers() {
@@ -2754,8 +3034,9 @@
         });
         if (penMenu && penPill && penIcon) {
           const pens = SETTINGS.pens || [];
-          const applyPen = (pen) => {
+          const applyPen = (pen, options = {}) => {
             if (!pen) return;
+            const { render = true } = options;
             group.penId = pen.id;
             group.color = pen.color;
             group.strokeWidth = pen.width;
@@ -2776,10 +3057,13 @@
                 opt.classList.toggle('active', opt.dataset.penId === pen.id);
               });
             }
-            this.app.render();
+            if (render) {
+              this.renderLayers();
+              this.app.render();
+            }
           };
           const current = pens.find((pen) => pen.id === group.penId) || pens[0];
-          if (current) applyPen(current);
+          if (current) applyPen(current, { render: false });
           penMenu.innerHTML = pens
             .map(
               (pen) => `
@@ -3042,8 +3326,9 @@
         }
         if (penMenu && penPill && penIcon) {
           const pens = SETTINGS.pens || [];
-          const applyPen = (pen, targets = [l]) => {
+          const applyPen = (pen, targets = [l], options = {}) => {
             if (!pen) return;
+            const { render = true } = options;
             targets.forEach((target) => {
               target.penId = pen.id;
               target.color = pen.color;
@@ -3058,10 +3343,13 @@
                 opt.classList.toggle('active', opt.dataset.penId === pen.id);
               });
             }
-            this.app.render();
+            if (render) {
+              this.renderLayers();
+              this.app.render();
+            }
           };
           const current = pens.find((pen) => pen.id === l.penId) || pens[0];
-          if (current) applyPen(current);
+          if (current) applyPen(current, [l], { render: false });
 
           penMenu.innerHTML = pens
             .map(
@@ -3177,6 +3465,7 @@
             </div>
             <input type="range" min="0.05" max="2" step="0.05" value="${pen.width}" class="pen-width">
             <span class="text-[10px] text-vectura-muted pen-width-value">${pen.width}</span>
+            <button class="pen-remove" type="button" aria-label="Remove pen">✕</button>
           </div>
         `;
         const icon = el.querySelector('.pen-icon');
@@ -3185,6 +3474,7 @@
         const colorInput = el.querySelector('.pen-color');
         const widthInput = el.querySelector('.pen-width');
         const widthValue = el.querySelector('.pen-width-value');
+        const removeBtn = el.querySelector('.pen-remove');
 
         const applyIcon = () => {
           if (!icon) return;
@@ -3226,6 +3516,14 @@
               }
             });
             this.app.render();
+          };
+        }
+
+        if (removeBtn) {
+          removeBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.removePen(pen.id);
           };
         }
 
@@ -3993,7 +4291,18 @@
       if (!l) return;
       const formula = getEl('formula-display');
       const seedDisplay = getEl('formula-seed-display');
-      if (formula) formula.innerText = this.app.engine.getFormula(l.id);
+      if (formula) {
+        const fmt = (val) => {
+          if (typeof val === 'number') return Number.isFinite(val) ? val.toFixed(3) : `${val}`;
+          if (typeof val === 'boolean') return val ? 'true' : 'false';
+          if (val === null || val === undefined) return '';
+          return `${val}`;
+        };
+        const entries = Object.entries(l.params || {}).map(([key, val]) => `${key} = ${fmt(val)}`);
+        const valuesText = entries.length ? `Values:\\n${entries.join('\\n')}` : '';
+        const formulaText = this.app.engine.getFormula(l.id);
+        formula.innerText = valuesText ? `${formulaText}\\n\\n${valuesText}` : formulaText;
+      }
       if (seedDisplay) {
         seedDisplay.style.display = usesSeed(l.type) ? '' : 'none';
         seedDisplay.innerText = `Seed: ${l.params.seed}`;

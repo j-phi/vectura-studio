@@ -16,9 +16,9 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Parameter randomization and simplification controls with live line/point counts.
 - Fast duplication and nudging: Alt-drag (Option-drag) to duplicate, arrow keys to nudge (Shift for larger steps).
 - Configurable undo with Cmd/Ctrl+Z and adjustable history depth.
-- Multiple algorithm families (flowfields, lissajous, wavetable, boids, attractors, hyphae, shape pack).
+- Multiple algorithm families (flowfields, lissajous, wavetable, topo, boids, attractors, hyphae, shape pack).
 - Wavetable noise library includes image-based noise input.
-- Pen palette with assignable colors/widths, reorderable list, and drag-to-assign per layer or selection.
+- Pen palette with assignable colors/widths, reorderable list, drag-to-assign per layer or selection, plus palette selection and add/remove controls.
 - One-click SVG export with configurable precision and grouping by pen assignment.
 - Live formula display and estimated pen distance/time.
 
@@ -56,6 +56,7 @@ Each layer is powered by an algorithm with its own parameters and formula previe
 - Hyphae: branching, growth-like structures.
 - Lissajous: harmonic parametric curves.
 - Wavetable: layered noise wave stacks with multiple noise types.
+- Topo: stacked contour loops that resemble topographic maps.
 - Spiral: includes optional closure for looping the outer end back into the spiral.
 - Shape Pack: circle/polygon packing with perspective controls.
 
@@ -92,12 +93,13 @@ flowchart LR
 - `src/core/` - vector engine, layers, RNG/noise, and algorithms.
 - `src/render/` - canvas rendering and view transforms.
 - `src/ui/` - panels, controls, settings, and SVG export.
-- `src/config/` - machine profiles, defaults, and UI descriptions.
+- `src/config/` - machine profiles, defaults, UI descriptions, and palette library.
 - `dist/` - optional prebuilt output (not required for local dev).
 
 ## Customization Tips
 - Add new algorithms by extending `src/core/algorithms/index.js` and wiring defaults/UI in `src/config/` and `src/ui/ui.js`.
 - Machine sizes live in `src/config/machines.js` and are used for bounds and export dimensions.
+- Pen palettes live in `src/config/palettes.js` and can be edited or extended.
 - Keep script order intact in `index.html`; `src/main.js` expects globals to be registered on `window.Vectura`.
 
 ## Deployment (GitHub Pages)
