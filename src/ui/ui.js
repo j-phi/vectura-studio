@@ -150,7 +150,16 @@
         infoKey: 'flowfield.maxSteps',
       },
       { id: 'force', label: 'Flow Force', type: 'range', min: 0.1, max: 6.0, step: 0.1, infoKey: 'flowfield.force' },
-      { id: 'angleOffset', label: 'Angle Offset', type: 'range', min: -180, max: 180, step: 5, infoKey: 'flowfield.angleOffset' },
+      {
+        id: 'angleOffset',
+        label: 'Angle Offset',
+        type: 'angle',
+        min: 0,
+        max: 360,
+        step: 1,
+        displayUnit: '°',
+        infoKey: 'flowfield.angleOffset',
+      },
       { id: 'chaos', label: 'Chaos', type: 'range', min: 0, max: 3.0, step: 0.05, infoKey: 'flowfield.chaos' },
       {
         id: 'octaves',
@@ -267,14 +276,24 @@
       { id: 'tilt', label: 'Row Shift', type: 'range', min: -12, max: 12, step: 1, infoKey: 'wavetable.tilt' },
       { id: 'gap', label: 'Line Gap', type: 'range', min: 0.5, max: 3.0, step: 0.1, infoKey: 'wavetable.gap' },
       { id: 'freq', label: 'Frequency', type: 'range', min: 0.2, max: 12.0, step: 0.1, infoKey: 'wavetable.freq' },
-      { id: 'noiseAngle', label: 'Noise Angle', type: 'range', min: -180, max: 180, step: 5, infoKey: 'wavetable.noiseAngle' },
       {
-        id: 'lineOffset',
-        label: 'Line Offset Angle',
-        type: 'range',
+        id: 'noiseAngle',
+        label: 'Noise Angle',
+        type: 'angle',
         min: 0,
         max: 360,
         step: 1,
+        displayUnit: '°',
+        infoKey: 'wavetable.noiseAngle',
+      },
+      {
+        id: 'lineOffset',
+        label: 'Line Offset Angle',
+        type: 'angle',
+        min: 0,
+        max: 360,
+        step: 1,
+        displayUnit: '°',
         infoKey: 'wavetable.lineOffset',
       },
       {
@@ -477,7 +496,26 @@
       { id: 'traceLength', label: 'Trace Length', type: 'range', min: 20, max: 400, step: 5, infoKey: 'rainfall.traceLength' },
       { id: 'traceStep', label: 'Trace Step', type: 'range', min: 2, max: 20, step: 1, infoKey: 'rainfall.traceStep' },
       { id: 'turbulence', label: 'Turbulence', type: 'range', min: 0, max: 1.5, step: 0.05, infoKey: 'rainfall.turbulence' },
-      { id: 'windAngle', label: 'Wind Angle', type: 'range', min: 0, max: 360, step: 1, infoKey: 'rainfall.windAngle' },
+      {
+        id: 'rainfallAngle',
+        label: 'Rainfall Angle',
+        type: 'angle',
+        min: 0,
+        max: 360,
+        step: 1,
+        displayUnit: '°',
+        infoKey: 'rainfall.rainfallAngle',
+      },
+      {
+        id: 'windAngle',
+        label: 'Wind Angle',
+        type: 'angle',
+        min: 0,
+        max: 360,
+        step: 1,
+        displayUnit: '°',
+        infoKey: 'rainfall.windAngle',
+      },
       { id: 'windStrength', label: 'Wind Strength', type: 'range', min: 0, max: 1.5, step: 0.05, infoKey: 'rainfall.windStrength' },
       { id: 'dropSize', label: 'Droplet Size', type: 'range', min: 0, max: 12, step: 0.5, infoKey: 'rainfall.dropSize' },
       {
@@ -499,11 +537,44 @@
         options: [
           { value: 'none', label: 'None' },
           { value: 'spiral', label: 'Spiral' },
-          { value: 'hash', label: 'Hashing' },
+          { value: 'hash', label: 'Grid' },
+          { value: 'crosshatch', label: 'Crosshatch' },
           { value: 'snake', label: 'Snake' },
+          { value: 'sinusoidal', label: 'Sinusoidal' },
         ],
         infoKey: 'rainfall.dropFill',
         showIf: (p) => p.dropShape !== 'none',
+      },
+      {
+        id: 'fillDensity',
+        label: 'Fill Density',
+        type: 'range',
+        min: 0.2,
+        max: 2.0,
+        step: 0.05,
+        infoKey: 'rainfall.fillDensity',
+        showIf: (p) => p.dropShape !== 'none' && p.dropFill !== 'none',
+      },
+      {
+        id: 'fillAngle',
+        label: 'Fill Angle',
+        type: 'angle',
+        min: 0,
+        max: 360,
+        step: 1,
+        displayUnit: '°',
+        infoKey: 'rainfall.fillAngle',
+        showIf: (p) => p.dropShape !== 'none' && p.dropFill !== 'none',
+      },
+      {
+        id: 'fillPadding',
+        label: 'Fill Padding (mm)',
+        type: 'range',
+        min: 0,
+        max: 10,
+        step: 0.1,
+        infoKey: 'rainfall.fillPadding',
+        showIf: (p) => p.dropShape !== 'none' && p.dropFill !== 'none',
       },
       {
         id: 'widthMultiplier',
@@ -520,10 +591,58 @@
         type: 'select',
         options: [
           { value: 'parallel', label: 'Parallel' },
-          { value: 'hash', label: 'Hashing' },
           { value: 'snake', label: 'Snake' },
+          { value: 'sinusoidal', label: 'Sinusoidal' },
         ],
         infoKey: 'rainfall.thickeningMode',
+      },
+      {
+        id: 'trailBreaks',
+        label: 'Trail Breaks',
+        type: 'select',
+        options: [
+          { value: 'none', label: 'None' },
+          { value: 'sparse', label: 'Sparse' },
+          { value: 'regular', label: 'Regular' },
+          { value: 'random', label: 'Random' },
+          { value: 'stutter', label: 'Stutter' },
+          { value: 'dashes', label: 'Dashes' },
+          { value: 'fade', label: 'Fade' },
+          { value: 'burst', label: 'Burst' },
+          { value: 'drip', label: 'Drip' },
+          { value: 'speckle', label: 'Speckle' },
+        ],
+        infoKey: 'rainfall.trailBreaks',
+      },
+      {
+        id: 'breakSpacing',
+        label: 'Break Spacing',
+        type: 'range',
+        min: 2,
+        max: 40,
+        step: 1,
+        infoKey: 'rainfall.breakSpacing',
+        showIf: (p) => p.trailBreaks && p.trailBreaks !== 'none',
+      },
+      {
+        id: 'breakLengthJitter',
+        label: 'Length Randomization',
+        type: 'range',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        infoKey: 'rainfall.breakLengthJitter',
+        showIf: (p) => p.trailBreaks && p.trailBreaks !== 'none',
+      },
+      {
+        id: 'breakWidthJitter',
+        label: 'Width Randomization',
+        type: 'range',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        infoKey: 'rainfall.breakWidthJitter',
+        showIf: (p) => p.trailBreaks && p.trailBreaks !== 'none',
       },
       {
         id: 'silhouetteId',
@@ -539,46 +658,81 @@
         dropLabel: 'Drop silhouette here',
       },
       {
-        id: 'groundType',
-        label: 'Ground Plane',
-        type: 'select',
-        options: [
-          { value: 'none', label: 'None' },
-          { value: 'flat', label: 'Flat' },
-          { value: 'sine', label: 'Sine' },
-          { value: 'noise', label: 'Noise' },
-        ],
-        infoKey: 'rainfall.groundType',
+        id: 'silhouetteWidth',
+        label: 'Silhouette Width (mm)',
+        type: 'range',
+        min: 40,
+        max: 400,
+        step: 5,
+        infoKey: 'rainfall.silhouetteWidth',
+        showIf: (p) => Boolean(p.silhouetteId),
       },
       {
-        id: 'groundHeight',
-        label: 'Ground Height',
+        id: 'silhouetteHeight',
+        label: 'Silhouette Height (mm)',
+        type: 'range',
+        min: 40,
+        max: 400,
+        step: 5,
+        infoKey: 'rainfall.silhouetteHeight',
+        showIf: (p) => Boolean(p.silhouetteId),
+      },
+      {
+        id: 'silhouetteTilesX',
+        label: 'Tiling X',
+        type: 'range',
+        min: 1,
+        max: 6,
+        step: 1,
+        infoKey: 'rainfall.silhouetteTilesX',
+        showIf: (p) => Boolean(p.silhouetteId),
+      },
+      {
+        id: 'silhouetteTilesY',
+        label: 'Tiling Y',
+        type: 'range',
+        min: 1,
+        max: 6,
+        step: 1,
+        infoKey: 'rainfall.silhouetteTilesY',
+        showIf: (p) => Boolean(p.silhouetteId),
+      },
+      {
+        id: 'silhouetteSpacing',
+        label: 'Tile Spacing (mm)',
         type: 'range',
         min: 0,
         max: 100,
         step: 1,
-        infoKey: 'rainfall.groundHeight',
-        showIf: (p) => p.groundType !== 'none',
+        infoKey: 'rainfall.silhouetteSpacing',
+        showIf: (p) => Boolean(p.silhouetteId),
       },
       {
-        id: 'groundAmplitude',
-        label: 'Ground Amplitude',
+        id: 'silhouetteOffsetX',
+        label: 'Offset X (mm)',
         type: 'range',
-        min: 0,
-        max: 60,
+        min: -200,
+        max: 200,
         step: 1,
-        infoKey: 'rainfall.groundAmplitude',
-        showIf: (p) => p.groundType === 'sine' || p.groundType === 'noise',
+        infoKey: 'rainfall.silhouetteOffsetX',
+        showIf: (p) => Boolean(p.silhouetteId),
       },
       {
-        id: 'groundFrequency',
-        label: 'Ground Frequency',
+        id: 'silhouetteOffsetY',
+        label: 'Offset Y (mm)',
         type: 'range',
-        min: 0.005,
-        max: 0.2,
-        step: 0.005,
-        infoKey: 'rainfall.groundFrequency',
-        showIf: (p) => p.groundType === 'sine' || p.groundType === 'noise',
+        min: -200,
+        max: 200,
+        step: 1,
+        infoKey: 'rainfall.silhouetteOffsetY',
+        showIf: (p) => Boolean(p.silhouetteId),
+      },
+      {
+        id: 'silhouetteInvert',
+        label: 'Invert Silhouette',
+        type: 'checkbox',
+        infoKey: 'rainfall.silhouetteInvert',
+        showIf: (p) => Boolean(p.silhouetteId),
       },
     ],
     spiral: [
@@ -589,9 +743,28 @@
       { id: 'noiseFreq', label: 'Noise Freq', type: 'range', min: 0.01, max: 0.5, step: 0.01, infoKey: 'spiral.noiseFreq' },
       { id: 'pulseAmp', label: 'Pulse Amp', type: 'range', min: 0, max: 0.4, step: 0.01, infoKey: 'spiral.pulseAmp' },
       { id: 'pulseFreq', label: 'Pulse Freq', type: 'range', min: 0.5, max: 8, step: 0.1, infoKey: 'spiral.pulseFreq' },
-      { id: 'angleOffset', label: 'Angle Offset', type: 'range', min: -180, max: 180, step: 1, infoKey: 'spiral.angleOffset' },
+      {
+        id: 'angleOffset',
+        label: 'Angle Offset',
+        type: 'angle',
+        min: 0,
+        max: 360,
+        step: 1,
+        displayUnit: '°',
+        infoKey: 'spiral.angleOffset',
+      },
       { id: 'axisSnap', label: 'Axis Snap', type: 'checkbox', infoKey: 'spiral.axisSnap' },
       { id: 'close', label: 'Close Spiral', type: 'checkbox', infoKey: 'spiral.close' },
+      {
+        id: 'closeFeather',
+        label: 'Close Feather',
+        type: 'range',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        infoKey: 'spiral.closeFeather',
+        showIf: (p) => Boolean(p.close),
+      },
     ],
     grid: [
       { id: 'rows', label: 'Rows', type: 'range', min: 2, max: 60, step: 1, infoKey: 'grid.rows' },
@@ -623,7 +796,16 @@
       },
       { id: 'count', label: 'Count', type: 'range', min: 100, max: 2000, step: 50, infoKey: 'phylla.count' },
       { id: 'spacing', label: 'Spacing', type: 'range', min: 1, max: 10, step: 0.1, infoKey: 'phylla.spacing' },
-      { id: 'angleStr', label: 'Angle', type: 'range', min: 130, max: 140, step: 0.01, infoKey: 'phylla.angleStr' },
+      {
+        id: 'angleStr',
+        label: 'Angle',
+        type: 'angle',
+        min: 0,
+        max: 360,
+        step: 0.01,
+        displayUnit: '°',
+        infoKey: 'phylla.angleStr',
+      },
       { id: 'divergence', label: 'Divergence', type: 'range', min: 0.5, max: 2.5, step: 0.1, infoKey: 'phylla.divergence' },
       { id: 'noiseInf', label: 'Noise Infl.', type: 'range', min: 0, max: 20, step: 1, infoKey: 'phylla.noiseInf' },
       { id: 'dotSize', label: 'Dot Size', type: 'range', min: 0.5, max: 3, step: 0.1, infoKey: 'phylla.dotSize' },
@@ -1138,9 +1320,13 @@
       title: 'Turbulence',
       description: 'Adds jitter to rain direction over time.',
     },
+    'rainfall.rainfallAngle': {
+      title: 'Rainfall Angle',
+      description: 'Sets the main direction of the rain (0° = north, 180° = south).',
+    },
     'rainfall.windAngle': {
       title: 'Wind Angle',
-      description: 'Direction the rain falls (0° = north, 180° = south).',
+      description: 'Direction of wind influence on the rain (0° = north, 180° = south).',
     },
     'rainfall.windStrength': {
       title: 'Wind Strength',
@@ -1158,33 +1344,77 @@
       title: 'Droplet Fill',
       description: 'Adds a fill-style texture inside droplets.',
     },
+    'rainfall.fillDensity': {
+      title: 'Fill Density',
+      description: 'Controls spacing or overlap of fill strokes inside droplets.',
+    },
+    'rainfall.fillAngle': {
+      title: 'Fill Angle',
+      description: 'Rotates the fill pattern inside the droplet.',
+    },
+    'rainfall.fillPadding': {
+      title: 'Fill Padding',
+      description: 'Adds padding between the droplet outline and its fill strokes.',
+    },
     'rainfall.widthMultiplier': {
       title: 'Rain Width',
       description: 'Duplicates traces to simulate thicker rainfall.',
     },
     'rainfall.thickeningMode': {
       title: 'Thickening Mode',
-      description: 'How duplicate traces are built (parallel, hash, snake).',
+      description: 'How duplicate traces are built (parallel, snake, sinusoidal).',
+    },
+    'rainfall.trailBreaks': {
+      title: 'Trail Breaks',
+      description: 'Adds controlled breaks and gaps to the rain streaks.',
+    },
+    'rainfall.breakSpacing': {
+      title: 'Break Spacing',
+      description: 'Average spacing between breaks along the trail.',
+    },
+    'rainfall.breakLengthJitter': {
+      title: 'Length Randomization',
+      description: 'Randomizes the length of each trail segment.',
+    },
+    'rainfall.breakWidthJitter': {
+      title: 'Width Randomization',
+      description: 'Randomizes the gap width between trail segments.',
     },
     'rainfall.silhouette': {
       title: 'Silhouette Image',
       description: 'Drops are generated inside the opaque area of the image.',
     },
-    'rainfall.groundType': {
-      title: 'Ground Plane',
-      description: 'Defines a ground line that rain traces stop at.',
+    'rainfall.silhouetteWidth': {
+      title: 'Silhouette Width',
+      description: 'Width of each silhouette tile in millimeters.',
     },
-    'rainfall.groundHeight': {
-      title: 'Ground Height',
-      description: 'Height of the ground plane above the bottom margin.',
+    'rainfall.silhouetteHeight': {
+      title: 'Silhouette Height',
+      description: 'Height of each silhouette tile in millimeters.',
     },
-    'rainfall.groundAmplitude': {
-      title: 'Ground Amplitude',
-      description: 'Amplitude of ground variations for sine/noise ground.',
+    'rainfall.silhouetteTilesX': {
+      title: 'Tiling X',
+      description: 'Number of silhouette tiles across the canvas.',
     },
-    'rainfall.groundFrequency': {
-      title: 'Ground Frequency',
-      description: 'Frequency of ground variations for sine/noise ground.',
+    'rainfall.silhouetteTilesY': {
+      title: 'Tiling Y',
+      description: 'Number of silhouette tiles down the canvas.',
+    },
+    'rainfall.silhouetteSpacing': {
+      title: 'Tile Spacing',
+      description: 'Spacing between silhouette tiles in millimeters.',
+    },
+    'rainfall.silhouetteOffsetX': {
+      title: 'Offset X',
+      description: 'Horizontal offset applied to the silhouette tile grid.',
+    },
+    'rainfall.silhouetteOffsetY': {
+      title: 'Offset Y',
+      description: 'Vertical offset applied to the silhouette tile grid.',
+    },
+    'rainfall.silhouetteInvert': {
+      title: 'Invert Silhouette',
+      description: 'Swaps filled and transparent regions of the silhouette.',
     },
     'spiral.loops': {
       title: 'Loops',
@@ -1225,6 +1455,10 @@
     'spiral.close': {
       title: 'Close Spiral',
       description: 'Connects the outer end back into the spiral with a smooth closing curve.',
+    },
+    'spiral.closeFeather': {
+      title: 'Close Feather',
+      description: 'Controls how softly the closing curve arcs into the next loop.',
     },
     'grid.rows': {
       title: 'Rows',
@@ -2083,6 +2317,9 @@
             For Wavetable image noise, set Noise Type to Image and use Select Image to load a file.
             Rainfall supports silhouette images to constrain where drops appear.
           </div>
+          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
+            Angle controls use circular dials—drag the marker to set direction.
+          </div>
         </div>
         <div class="modal-section">
           <div class="modal-ill-label">Canvas</div>
@@ -2167,7 +2404,14 @@
       defs.forEach((def) => {
         if (def.showIf && !def.showIf(layer.params)) return;
         if (def.type === 'section' || def.type === 'file' || def.type === 'image') return;
-        if (def.type === 'checkbox') {
+        if (def.type === 'angle') {
+          const randMin = Number.isFinite(def.randomMin) ? def.randomMin : def.min;
+          const randMax = Number.isFinite(def.randomMax) ? def.randomMax : def.max;
+          const { min, max } = safeRange(randMin, randMax);
+          const step = def.step ?? 1;
+          layer.params[def.id] = roundStep(rng(min, max), step, def.min, def.max);
+          return;
+        } else if (def.type === 'checkbox') {
           layer.params[def.id] = Math.random() > 0.5;
           return;
         }
@@ -4690,6 +4934,83 @@
               },
             });
           }
+          container.appendChild(div);
+          return;
+        }
+
+        if (def.type === 'angle') {
+          const { min, max, step } = getDisplayConfig(def);
+          const displayVal = clamp(toDisplayValue(def, val), min, max);
+          div.innerHTML = `
+            <div class="flex justify-between mb-1">
+              <div class="flex items-center gap-2">
+                <label class="control-label mb-0">${def.label}</label>
+                ${infoBtn}
+              </div>
+              <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(
+                def,
+                val
+              )}</button>
+            </div>
+            <div class="angle-control">
+              <div class="angle-dial" style="--angle:${displayVal}deg;">
+                <div class="angle-indicator"></div>
+              </div>
+              <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
+            </div>
+          `;
+          const dial = div.querySelector('.angle-dial');
+          const valueBtn = div.querySelector('.value-chip');
+          const valueInput = div.querySelector('.value-input');
+
+          let lastDisplay = displayVal;
+          const setAngle = (nextDisplay, commit = false) => {
+            const clamped = clamp(roundToStep(nextDisplay, step), min, max);
+            lastDisplay = clamped;
+            if (dial) dial.style.setProperty('--angle', `${clamped}deg`);
+            if (valueBtn) valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, clamped));
+            if (commit) {
+              if (this.app.pushHistory) this.app.pushHistory();
+              layer.params[def.id] = fromDisplayValue(def, clamped);
+              this.storeLayerParams(layer);
+              this.app.regen();
+              this.updateFormula();
+            }
+          };
+
+          if (dial) {
+            const updateFromEvent = (e) => {
+              const rect = dial.getBoundingClientRect();
+              const cx = rect.left + rect.width / 2;
+              const cy = rect.top + rect.height / 2;
+              const dx = e.clientX - cx;
+              const dy = e.clientY - cy;
+              let deg = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
+              if (deg < 0) deg += 360;
+              setAngle(deg, false);
+            };
+            dial.addEventListener('mousedown', (e) => {
+              e.preventDefault();
+              updateFromEvent(e);
+              const move = (ev) => updateFromEvent(ev);
+              const up = () => {
+                window.removeEventListener('mousemove', move);
+                setAngle(lastDisplay, true);
+              };
+              window.addEventListener('mousemove', move);
+              window.addEventListener('mouseup', up, { once: true });
+            });
+          }
+
+          attachValueEditor({
+            def,
+            valueEl: valueBtn,
+            inputEl: valueInput,
+            getValue: () => layer.params[def.id],
+            setValue: (displayVal) => {
+              setAngle(displayVal, true);
+            },
+          });
           container.appendChild(div);
           return;
         }

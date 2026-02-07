@@ -779,6 +779,55 @@ input[type='color']::-webkit-color-swatch {
   color: #fafafa;
 }
 
+.angle-control {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.angle-dial {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  border: 1px solid #2a2b31;
+  background: #141418;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.angle-dial:hover {
+  border-color: #3f3f46;
+}
+
+.angle-indicator {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: rotate(var(--angle));
+  transform-origin: center center;
+}
+
+.angle-indicator::before {
+  content: '';
+  position: absolute;
+  width: 2px;
+  height: 20px;
+  background: #ef4444;
+  border-radius: 999px;
+  transform: translate(-1px, -20px);
+}
+
+.angle-indicator::after {
+  content: '';
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  background: #ef4444;
+  border-radius: 999px;
+  transform: translate(-3px, -28px);
+}
+
 .layer-name-input,
 .pen-name-input {
   user-select: text;

@@ -717,7 +717,7 @@
           const currY = overlapPadding > 0 ? new Array(pts + 1) : null;
           for (let j = 0; j <= pts; j++) {
             const baseX = inset + j * xStep + xOffset;
-            const nx = x * p.zoom * p.freq;
+            const nx = baseX * p.zoom * p.freq;
             const ny = by * p.zoom;
             const rx = nx * cosA - ny * sinA;
             const ry = nx * sinA + ny * cosA;
@@ -1312,24 +1312,29 @@
         const traceStep = Math.max(1, p.traceStep ?? 4);
         const steps = Math.max(2, Math.floor(traceLength / traceStep));
         const turbulence = Math.max(0, p.turbulence ?? 0);
+        const rainfallAngle = ((p.rainfallAngle ?? 150) * Math.PI) / 180;
         const windStrength = Math.max(0, p.windStrength ?? 0);
         const windAngle = ((p.windAngle ?? 180) * Math.PI) / 180;
+        const fillAngle = ((p.fillAngle ?? 0) * Math.PI) / 180;
         const dropSize = Math.max(0, p.dropSize ?? 0);
         const widthMultiplier = Math.max(1, Math.round(p.widthMultiplier ?? 1));
         const thickeningMode = p.thickeningMode || 'parallel';
         const dropShape = p.dropShape || 'none';
         const dropFill = p.dropFill || 'none';
-        const groundType = p.groundType || 'none';
-        const groundHeight = Math.max(0, Math.min(dH, p.groundHeight ?? 0));
-        const groundAmplitude = Math.max(0, p.groundAmplitude ?? 0);
-        const groundFrequency = Math.max(0.0001, p.groundFrequency ?? 0.02);
-        const baseGround = height - m - groundHeight;
+        const fillDensity = Math.max(0.2, p.fillDensity ?? 1);
+        const fillPadding = Math.max(0, p.fillPadding ?? 0);
+        const trailBreaks = p.trailBreaks || 'none';
+        const breakSpacing = Math.max(1, p.breakSpacing ?? 10);
+        const breakLengthJitter = Math.max(0, Math.min(1, p.breakLengthJitter ?? 0));
+        const breakWidthJitter = Math.max(0, Math.min(1, p.breakWidthJitter ?? 0));
         const noiseScale = 0.01;
 
+        const baseDirX = Math.sin(rainfallAngle);
+        const baseDirY = -Math.cos(rainfallAngle);
         const windX = Math.sin(windAngle) * windStrength;
         const windY = -Math.cos(windAngle) * windStrength;
-        let dirX = windX;
-        let dirY = 1 + windY;
+        let dirX = baseDirX + windX;
+        let dirY = baseDirY + windY;
         const dirLen = Math.hypot(dirX, dirY) || 1;
         dirX /= dirLen;
         dirY /= dirLen;
@@ -1341,21 +1346,35 @@
         const hasMask = Boolean(mask && mask.data && mask.width && mask.height);
         const maskAlpha = (x, y) => {
           if (!hasMask) return 1;
-          const u = (x - m) / dW;
-          const v = (y - m) / dH;
-          if (u < 0 || u > 1 || v < 0 || v > 1) return 0;
+          const tileW = Math.max(1, p.silhouetteWidth ?? dW);
+          const tileH = Math.max(1, p.silhouetteHeight ?? dH);
+          const tilesX = Math.max(1, Math.round(p.silhouetteTilesX ?? 1));
+          const tilesY = Math.max(1, Math.round(p.silhouetteTilesY ?? 1));
+          const spacing = Math.max(0, p.silhouetteSpacing ?? 0);
+          const offsetX = p.silhouetteOffsetX ?? 0;
+          const offsetY = p.silhouetteOffsetY ?? 0;
+          const totalW = tilesX * tileW + (tilesX - 1) * spacing;
+          const totalH = tilesY * tileH + (tilesY - 1) * spacing;
+          const originX = (width - totalW) / 2 + offsetX;
+          const originY = (height - totalH) / 2 + offsetY;
+          const relX = x - originX;
+          const relY = y - originY;
+          if (relX < 0 || relY < 0 || relX > totalW || relY > totalH) return p.silhouetteInvert ? 1 : 0;
+          const strideX = tileW + spacing;
+          const strideY = tileH + spacing;
+          const tileX = Math.floor(relX / strideX);
+          const tileY = Math.floor(relY / strideY);
+          if (tileX < 0 || tileX >= tilesX || tileY < 0 || tileY >= tilesY) return p.silhouetteInvert ? 1 : 0;
+          const localX = relX - tileX * strideX;
+          const localY = relY - tileY * strideY;
+          if (localX > tileW || localY > tileH) return p.silhouetteInvert ? 1 : 0;
+          const u = localX / tileW;
+          const v = localY / tileH;
           const ix = Math.min(mask.width - 1, Math.max(0, Math.floor(u * mask.width)));
           const iy = Math.min(mask.height - 1, Math.max(0, Math.floor(v * mask.height)));
           const idx = (iy * mask.width + ix) * 4;
-          return (mask.data[idx + 3] ?? 0) / 255;
-        };
-
-        const groundY = (x) => {
-          if (groundType === 'none') return Infinity;
-          if (groundType === 'flat') return baseGround;
-          if (groundType === 'sine') return baseGround + Math.sin(x * groundFrequency) * groundAmplitude;
-          if (groundType === 'noise') return baseGround + noise.noise2D(x * groundFrequency, 0.2) * groundAmplitude;
-          return baseGround;
+          const alpha = (mask.data[idx + 3] ?? 0) / 255;
+          return p.silhouetteInvert ? 1 - alpha : alpha;
         };
 
         const rotatePoint = (pt, angle) => {
@@ -1385,14 +1404,17 @@
             path.push({ ...path[0] });
             paths.push(path);
           } else if (dropShape === 'teardrop') {
-            const pts = [
-              { x: 0, y: size * 1.2 },
-              { x: size * 0.7, y: size * 0.5 },
-              { x: size * 0.85, y: -size * 0.1 },
-              { x: 0, y: -size },
-              { x: -size * 0.85, y: -size * 0.1 },
-              { x: -size * 0.7, y: size * 0.5 },
-            ];
+            const arcSteps = 18;
+            const headR = size;
+            const headY = headR * 0.6;
+            const tailY = -headR * 1.4;
+            const pts = [];
+            for (let i = 0; i <= arcSteps; i++) {
+              const t = i / arcSteps;
+              const theta = t * Math.PI;
+              pts.push({ x: Math.cos(theta) * headR, y: Math.sin(theta) * headR + headY });
+            }
+            pts.push({ x: 0, y: tailY });
             const path = pts.map((pt) => {
               const rotated = rotatePoint(pt, angle);
               return { x: center.x + rotated.x, y: center.y + rotated.y };
@@ -1403,7 +1425,88 @@
 
           if (dropFill !== 'none') {
             const fillPaths = [];
-            const r = size * 0.85;
+            const fillSize = Math.max(0, size - fillPadding);
+            if (fillSize <= 0.1) return paths;
+            const fillRotation = angle + fillAngle;
+            const outline = (() => {
+              if (dropShape === 'circle') {
+                const pts = [];
+                const steps = 32;
+                for (let i = 0; i < steps; i++) {
+                  const t = (i / steps) * Math.PI * 2;
+                  pts.push({ x: Math.cos(t) * fillSize, y: Math.sin(t) * fillSize });
+                }
+                return pts;
+              }
+              if (dropShape === 'square') {
+                return [
+                  { x: -fillSize, y: -fillSize },
+                  { x: fillSize, y: -fillSize },
+                  { x: fillSize, y: fillSize },
+                  { x: -fillSize, y: fillSize },
+                ];
+              }
+              const arcSteps = 18;
+              const headR = fillSize;
+              const headY = headR * 0.6;
+              const tailY = -headR * 1.4;
+              const pts = [];
+              for (let i = 0; i <= arcSteps; i++) {
+                const t = i / arcSteps;
+                const theta = t * Math.PI;
+                pts.push({ x: Math.cos(theta) * headR, y: Math.sin(theta) * headR + headY });
+              }
+              pts.push({ x: 0, y: tailY });
+              return pts;
+            })();
+
+            const rotateOutline = outline.map((pt) => rotatePoint(pt, angle));
+            const outlineAbs = rotateOutline.map((pt) => ({ x: center.x + pt.x, y: center.y + pt.y }));
+
+            const centroid = outlineAbs.reduce(
+              (acc, pt) => ({ x: acc.x + pt.x, y: acc.y + pt.y }),
+              { x: 0, y: 0 }
+            );
+            centroid.x /= outlineAbs.length || 1;
+            centroid.y /= outlineAbs.length || 1;
+
+            const lineSegmentsForAngle = (lineAngle, spacing) => {
+              const dir = { x: Math.cos(lineAngle), y: Math.sin(lineAngle) };
+              const perp = { x: -dir.y, y: dir.x };
+              const projections = outlineAbs.map((pt) => (pt.x - centroid.x) * perp.x + (pt.y - centroid.y) * perp.y);
+              const minProj = Math.min(...projections);
+              const maxProj = Math.max(...projections);
+              const segments = [];
+              const step = Math.max(0.6, spacing);
+              for (let d = minProj; d <= maxProj; d += step) {
+                const p0 = { x: centroid.x + perp.x * d, y: centroid.y + perp.y * d };
+                const intersections = [];
+                for (let i = 0; i < outlineAbs.length; i++) {
+                  const a = outlineAbs[i];
+                  const b = outlineAbs[(i + 1) % outlineAbs.length];
+                  const vx = b.x - a.x;
+                  const vy = b.y - a.y;
+                  const det = dir.x * vy - dir.y * vx;
+                  if (Math.abs(det) < 1e-6) continue;
+                  const dx = a.x - p0.x;
+                  const dy = a.y - p0.y;
+                  const t = (dx * vy - dy * vx) / det;
+                  const u = (dx * dir.y - dy * dir.x) / det;
+                  if (u >= 0 && u <= 1) {
+                    intersections.push({ t, x: p0.x + dir.x * t, y: p0.y + dir.y * t });
+                  }
+                }
+                intersections.sort((a, b) => a.t - b.t);
+                for (let k = 0; k + 1 < intersections.length; k += 2) {
+                  const p1 = intersections[k];
+                  const p2 = intersections[k + 1];
+                  segments.push([p1, p2]);
+                }
+              }
+              return segments;
+            };
+
+            const densitySpacing = Math.max(0.6, fillSize * 0.35) / fillDensity;
             if (dropFill === 'spiral') {
               const loops = 2.6;
               const steps = 40;
@@ -1411,34 +1514,59 @@
               for (let i = 0; i <= steps; i++) {
                 const t = i / steps;
                 const ang = t * loops * Math.PI * 2;
-                const rr = r * (1 - t);
-                const pt = rotatePoint({ x: Math.cos(ang) * rr, y: Math.sin(ang) * rr }, angle);
+                const rr = fillSize * (1 - t);
+                const pt = rotatePoint({ x: Math.cos(ang) * rr, y: Math.sin(ang) * rr }, fillRotation);
                 path.push({ x: center.x + pt.x, y: center.y + pt.y });
               }
               fillPaths.push(path);
-            } else if (dropFill === 'hash') {
-              const lines = Math.max(3, Math.round(r / 2));
-              for (let i = -lines; i <= lines; i++) {
-                const y = (i / lines) * r;
-                const span = Math.sqrt(Math.max(0, r * r - y * y));
-                const p1 = rotatePoint({ x: -span, y }, angle);
-                const p2 = rotatePoint({ x: span, y }, angle);
-                fillPaths.push([
-                  { x: center.x + p1.x, y: center.y + p1.y },
-                  { x: center.x + p2.x, y: center.y + p2.y },
-                ]);
-              }
+            } else if (dropFill === 'hash' || dropFill === 'crosshatch') {
+              const angles =
+                dropFill === 'hash'
+                  ? [fillRotation, fillRotation + Math.PI / 2]
+                  : [fillRotation + Math.PI / 4, fillRotation - Math.PI / 4];
+              angles.forEach((ang) => {
+                const segments = lineSegmentsForAngle(ang, densitySpacing);
+                segments.forEach(([p1, p2]) => {
+                  fillPaths.push([
+                    { x: p1.x, y: p1.y },
+                    { x: p2.x, y: p2.y },
+                  ]);
+                });
+              });
             } else if (dropFill === 'snake') {
-              const steps = 24;
-              const path = [];
-              for (let i = 0; i <= steps; i++) {
-                const t = i / steps;
-                const x = (t - 0.5) * r * 2;
-                const y = Math.sin(t * Math.PI * 2) * r * 0.2;
-                const pt = rotatePoint({ x, y }, angle);
-                path.push({ x: center.x + pt.x, y: center.y + pt.y });
+              const segments = lineSegmentsForAngle(fillRotation, densitySpacing);
+              if (segments.length) {
+                const path = [];
+                segments.forEach(([p1, p2], idx) => {
+                  if (idx % 2 === 0) {
+                    path.push({ x: p1.x, y: p1.y }, { x: p2.x, y: p2.y });
+                  } else {
+                    path.push({ x: p2.x, y: p2.y }, { x: p1.x, y: p1.y });
+                  }
+                });
+                fillPaths.push(path);
               }
-              fillPaths.push(path);
+            } else if (dropFill === 'sinusoidal') {
+              const segments = lineSegmentsForAngle(fillRotation, densitySpacing);
+              const amp = densitySpacing * 0.45;
+              segments.forEach(([p1, p2], idx) => {
+                const dx = p2.x - p1.x;
+                const dy = p2.y - p1.y;
+                const len = Math.hypot(dx, dy) || 1;
+                const steps = Math.max(24, Math.floor(len / 4));
+                const dir = { x: dx / len, y: dy / len };
+                const perp = { x: -dir.y, y: dir.x };
+                const phase = idx % 2 === 0 ? 0 : Math.PI;
+                const cycles = Math.max(1, Math.round(len / (densitySpacing * 3)));
+                const path = [];
+                for (let i = 0; i <= steps; i++) {
+                  const t = i / steps;
+                  const base = { x: p1.x + dir.x * len * t, y: p1.y + dir.y * len * t };
+                  const wave = Math.sin(t * Math.PI * 2 * cycles + phase) * amp;
+                  path.push({ x: base.x + perp.x * wave, y: base.y + perp.y * wave });
+                }
+                fillPaths.push(path);
+              });
             }
             fillPaths.forEach((path) => paths.push(path));
           }
@@ -1461,35 +1589,96 @@
           if (!basePath || basePath.length < 2) return [];
           const paths = [];
           const phase = rng.nextFloat() * Math.PI * 2;
-          const snakeFreq = 2 + widthMultiplier * 0.4;
-          const snakeAmp = spacing * 0.6;
-          offsets.forEach((offset, idx) => {
-            const path = basePath.map((pt, i) => {
+          const waveFreq = 2 + widthMultiplier * 0.4;
+          const waveAmp = spacing * 0.6;
+          const offsetPaths = offsets.map((offset, idx) =>
+            basePath.map((pt, i) => {
               let off = offset;
-              if (thickeningMode === 'snake') {
+              if (thickeningMode === 'sinusoidal') {
                 const t = basePath.length > 1 ? i / (basePath.length - 1) : 0;
-                off += Math.sin(t * Math.PI * 2 * snakeFreq + phase + idx) * snakeAmp;
+                off += Math.sin(t * Math.PI * 2 * waveFreq + phase + idx) * waveAmp;
               }
               return { x: pt.x + perpX * off, y: pt.y + perpY * off };
+            })
+          );
+          if (thickeningMode === 'snake' && offsetPaths.length > 1) {
+            const snake = [];
+            offsetPaths.forEach((path, idx) => {
+              if (idx % 2 === 0) {
+                snake.push(...path);
+              } else {
+                snake.push(...path.slice().reverse());
+              }
             });
-            paths.push(path);
-          });
-          if (thickeningMode === 'hash') {
-            const hashSpacing = Math.max(6, traceStep * 1.5);
-            const stepCount = Math.max(1, Math.floor(traceLength / hashSpacing));
-            const stepEvery = Math.max(2, Math.floor(basePath.length / (stepCount + 1)));
-            const hashLen = spacing * (widthMultiplier + 1.5);
-            for (let i = 0; i < basePath.length; i += stepEvery) {
-              const pt = basePath[i];
-              const hx = perpX * hashLen;
-              const hy = perpY * hashLen;
-              paths.push([
-                { x: pt.x - hx, y: pt.y - hy },
-                { x: pt.x + hx, y: pt.y + hy },
-              ]);
-            }
+            paths.push(snake);
+          } else {
+            offsetPaths.forEach((path) => paths.push(path));
           }
           return paths;
+        };
+
+        const applyTrailBreaks = (path) => {
+          if (!path || path.length < 2 || trailBreaks === 'none') return [path];
+          const baseSeg = Math.max(2, Math.round(breakSpacing / traceStep));
+          const segments = [];
+          let idx = 0;
+          const total = path.length;
+          const lengthJitter = (n) =>
+            Math.max(1, Math.round(n * (1 + (rng.nextFloat() * 2 - 1) * breakLengthJitter)));
+          const gapJitter = (n) =>
+            Math.max(1, Math.round(n * (1 + (rng.nextFloat() * 2 - 1) * breakWidthJitter)));
+          while (idx < total - 1) {
+            const t = idx / Math.max(1, total - 1);
+            let segLen = baseSeg;
+            let gapLen = baseSeg;
+            switch (trailBreaks) {
+              case 'sparse':
+                segLen = baseSeg * 3;
+                gapLen = baseSeg * 2;
+                break;
+              case 'regular':
+                segLen = baseSeg * 2;
+                gapLen = baseSeg;
+                break;
+              case 'random':
+                segLen = baseSeg * (0.5 + rng.nextFloat() * 1.5);
+                gapLen = baseSeg * (0.5 + rng.nextFloat() * 1.5);
+                break;
+              case 'stutter':
+                segLen = baseSeg * 0.7;
+                gapLen = baseSeg * 0.5;
+                break;
+              case 'dashes':
+                segLen = baseSeg * 3;
+                gapLen = baseSeg * 1.3;
+                break;
+              case 'fade':
+                segLen = baseSeg * (2 - t);
+                gapLen = baseSeg * (0.5 + t * 2);
+                break;
+              case 'burst':
+                segLen = baseSeg * 1.2;
+                gapLen = (idx % Math.max(6, baseSeg * 3) === 0 ? baseSeg * 3 : baseSeg * 0.5);
+                break;
+              case 'drip':
+                segLen = baseSeg * (1 + t * 2);
+                gapLen = baseSeg * 0.8;
+                break;
+              case 'speckle':
+                segLen = baseSeg * 0.4;
+                gapLen = baseSeg * 1.6;
+                break;
+              default:
+                break;
+            }
+            segLen = lengthJitter(segLen);
+            gapLen = gapJitter(gapLen);
+            const end = Math.min(total, idx + Math.max(2, Math.round(segLen)));
+            const segment = path.slice(idx, end);
+            if (segment.length >= 2) segments.push(segment);
+            idx = Math.min(total, end + Math.max(1, Math.round(gapLen)));
+          }
+          return segments.length ? segments : [path];
         };
 
         const paths = [];
@@ -1522,14 +1711,15 @@
             px += (dx / len) * traceStep;
             py += (dy / len) * traceStep;
             if (px < m || px > width - m || py < m || py > height - m) break;
-            if (py >= groundY(px)) break;
             if (hasMask && maskAlpha(px, py) < 0.1) break;
             basePath.push({ x: px, y: py });
           }
           if (basePath.length < 2) continue;
-
-          const tracePaths = buildTracePaths(basePath);
-          tracePaths.forEach((path) => paths.push(path));
+          const broken = applyTrailBreaks(basePath);
+          broken.forEach((segment) => {
+            const tracePaths = buildTracePaths(segment);
+            tracePaths.forEach((path) => paths.push(path));
+          });
 
           const dropScale = dropSize * (1 + (widthMultiplier - 1) * 0.2);
           const dropCenter = basePath[0];
@@ -1541,7 +1731,7 @@
         return paths;
       },
       formula: (p) =>
-        `dir = down + wind(${p.windAngle}°, ${p.windStrength})\npos += dir * ${p.traceStep} + noise * ${p.turbulence}`,
+        `dir = angle(${p.rainfallAngle}°) + wind(${p.windAngle}°, ${p.windStrength})\npos += dir * ${p.traceStep} + noise * ${p.turbulence}`,
     },
     spiral: {
       generate: (p, rng, noise, bounds) => {
@@ -1567,41 +1757,62 @@
           theta += dTheta;
           r += dr;
         }
-        if (p.close && spath.length > 3) {
-          const end = spath[spath.length - 1];
-          let bestIdx = 0;
-          let bestDist = Infinity;
+        const paths = [spath];
+        if (p.close && spath.length > 6) {
+          const feather = Math.max(0, Math.min(1, p.closeFeather ?? 0.5));
+          const buildConnection = (from, target) => {
+            const dx = target.x - from.x;
+            const dy = target.y - from.y;
+            const len = Math.hypot(dx, dy) || 1;
+            const mid = { x: (from.x + target.x) / 2, y: (from.y + target.y) / 2 };
+            const offset = Math.min(30, len * (0.15 + feather * 0.35));
+            const control = { x: mid.x - (dy / len) * offset, y: mid.y + (dx / len) * offset };
+            const steps = Math.max(8, Math.floor(len / 6));
+            const path = [];
+            for (let i = 0; i <= steps; i++) {
+              const t = i / steps;
+              const u = 1 - t;
+              const x = u * u * from.x + 2 * u * t * control.x + t * t * target.x;
+              const y = u * u * from.y + 2 * u * t * control.y + t * t * target.y;
+              path.push({ x, y });
+            }
+            return path;
+          };
+
           const exclude = Math.max(6, Math.floor(spath.length * 0.05));
-          const limit = Math.max(1, spath.length - exclude);
-          for (let i = 0; i < limit; i++) {
+          const end = spath[spath.length - 1];
+          let endIdx = 0;
+          let endDist = Infinity;
+          const endLimit = Math.max(1, spath.length - exclude);
+          for (let i = 0; i < endLimit; i++) {
             const pt = spath[i];
             const dx = pt.x - end.x;
             const dy = pt.y - end.y;
             const dist = dx * dx + dy * dy;
-            if (dist < bestDist) {
-              bestDist = dist;
-              bestIdx = i;
+            if (dist < endDist) {
+              endDist = dist;
+              endIdx = i;
             }
           }
-          const target = spath[bestIdx];
-          if (target) {
-            const dx = target.x - end.x;
-            const dy = target.y - end.y;
-            const len = Math.hypot(dx, dy) || 1;
-            const mid = { x: (end.x + target.x) / 2, y: (end.y + target.y) / 2 };
-            const offset = Math.min(20, len * 0.25);
-            const control = { x: mid.x - (dy / len) * offset, y: mid.y + (dx / len) * offset };
-            const steps = 12;
-            for (let i = 1; i <= steps; i++) {
-              const t = i / steps;
-              const u = 1 - t;
-              const x = u * u * end.x + 2 * u * t * control.x + t * t * target.x;
-              const y = u * u * end.y + 2 * u * t * control.y + t * t * target.y;
-              spath.push({ x, y });
+          if (spath[endIdx]) paths.push(buildConnection(end, spath[endIdx]));
+
+          const start = spath[0];
+          let startIdx = exclude;
+          let startDist = Infinity;
+          const startLimit = Math.max(exclude + 1, spath.length - exclude);
+          for (let i = exclude; i < startLimit; i++) {
+            const pt = spath[i];
+            const dx = pt.x - start.x;
+            const dy = pt.y - start.y;
+            const dist = dx * dx + dy * dy;
+            if (dist < startDist) {
+              startDist = dist;
+              startIdx = i;
             }
           }
+          if (spath[startIdx]) paths.push(buildConnection(start, spath[startIdx]));
         }
-        return [spath];
+        return paths;
       },
       formula: () => 'r = r + (noise(θ) * amp)\nx = cos(θ)*r, y = sin(θ)*r',
     },
