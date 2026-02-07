@@ -70,7 +70,7 @@
       <aside id="left-pane" class="pane pane-left bg-vectura-panel border-r border-vectura-border flex flex-col z-10 shadow-xl">
         <div class="pane-header pane-header-left p-4 border-b border-vectura-border flex justify-between items-center">
           <span class="pane-title font-bold text-vectura-accent">GENERATOR</span>
-          <span class="pane-meta text-[10px] text-vectura-muted">V.5.24</span>
+          <span class="pane-meta text-[10px] text-vectura-muted">V.5.28</span>
           <button id="btn-pane-toggle-left" class="pane-toggle pane-toggle-left" type="button" aria-label="Toggle left pane">
             ◀
           </button>
@@ -262,6 +262,8 @@
             <div class="grid grid-cols-2 gap-2 text-xs">
               <div class="text-vectura-muted">Distance:</div>
               <div class="text-right text-vectura-accent" id="stat-dist">0m</div>
+              <div class="text-vectura-muted">Lines:</div>
+              <div class="text-right text-vectura-accent" id="stat-lines">0</div>
               <div class="text-vectura-muted">Est. Time:</div>
               <div class="text-right text-vectura-accent" id="stat-time">0:00</div>
             </div>
@@ -278,11 +280,40 @@
         </div>
         <div class="flex-1 overflow-y-auto p-4">
           <div class="control-group">
-            <label class="control-label">Machine Profile</label>
+            <label class="control-label">Paper Size</label>
             <select
               id="machine-profile"
               class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent mb-2"
             ></select>
+            <div id="custom-size-fields" class="mt-3 hidden">
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="text-[10px] text-vectura-muted">Width (mm)</label>
+                  <input
+                    type="number"
+                    id="set-paper-width"
+                    class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label class="text-[10px] text-vectura-muted">Height (mm)</label>
+                  <input
+                    type="number"
+                    id="set-paper-height"
+                    class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+            <div class="mt-3">
+              <div class="flex items-center justify-between mb-2">
+                <label class="text-xs text-vectura-muted">Orientation</label>
+                <div class="flex items-center gap-2">
+                  <span id="orientation-label" class="text-[10px] text-vectura-muted">Landscape</span>
+                  <input type="checkbox" id="set-orientation" class="cursor-pointer" />
+                </div>
+              </div>
+            </div>
             <div class="flex gap-2">
               <div class="flex-1">
                 <label class="control-label">Margin (mm)</label>
@@ -362,6 +393,15 @@
                     <input type="color" id="set-selection-outline-color" class="w-full h-full cursor-pointer" />
                   </div>
                 </div>
+                <div class="mt-2">
+                  <label class="text-[10px] text-vectura-muted">Outline Width</label>
+                  <input
+                    type="number"
+                    id="set-selection-outline-width"
+                    step="0.1"
+                    class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -403,6 +443,17 @@
                 id="set-stroke"
                 step="0.1"
                 class="w-12 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none"
+              />
+            </div>
+            <div class="flex items-center justify-between mt-3">
+              <label class="text-xs text-vectura-muted">Plotter Optimization</label>
+              <input
+                type="range"
+                id="set-plotter-opt"
+                min="0"
+                max="1"
+                step="0.05"
+                class="w-24"
               />
             </div>
           </div>

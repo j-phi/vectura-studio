@@ -127,9 +127,11 @@
       const s = this.engine.getStats();
       const dist = document.getElementById('stat-dist');
       const time = document.getElementById('stat-time');
+      const lines = document.getElementById('stat-lines');
       if (!dist || !time) return;
       dist.innerText = s.distance;
       time.innerText = s.time;
+      if (lines) lines.innerText = s.lines?.toString?.() || '0';
     }
   }
 

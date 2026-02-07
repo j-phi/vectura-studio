@@ -210,10 +210,57 @@
       {
         id: 'noiseImageId',
         label: 'Noise Image',
-        type: 'file',
+        type: 'image',
         accept: 'image/*',
+        idKey: 'noiseImageId',
+        nameKey: 'noiseImageName',
         infoKey: 'wavetable.noiseImage',
         showIf: (p) => p.noiseType === 'image',
+      },
+      {
+        id: 'imageAlgo',
+        label: 'Image Noise Mode',
+        type: 'select',
+        options: [
+          { value: 'luma', label: 'Luma' },
+          { value: 'invert', label: 'Invert' },
+          { value: 'threshold', label: 'Threshold' },
+          { value: 'posterize', label: 'Posterize' },
+          { value: 'edge', label: 'Edge Detect' },
+          { value: 'blur', label: 'Blur' },
+        ],
+        infoKey: 'wavetable.imageAlgo',
+        showIf: (p) => p.noiseType === 'image',
+      },
+      {
+        id: 'imageThreshold',
+        label: 'Image Threshold',
+        type: 'range',
+        min: 0,
+        max: 1,
+        step: 0.01,
+        infoKey: 'wavetable.imageThreshold',
+        showIf: (p) => p.noiseType === 'image' && p.imageAlgo === 'threshold',
+      },
+      {
+        id: 'imagePosterize',
+        label: 'Posterize Levels',
+        type: 'range',
+        min: 2,
+        max: 10,
+        step: 1,
+        infoKey: 'wavetable.imagePosterize',
+        showIf: (p) => p.noiseType === 'image' && p.imageAlgo === 'posterize',
+      },
+      {
+        id: 'imageBlur',
+        label: 'Image Blur',
+        type: 'range',
+        min: 0,
+        max: 4,
+        step: 1,
+        infoKey: 'wavetable.imageBlur',
+        showIf: (p) => p.noiseType === 'image' && (p.imageAlgo === 'blur' || p.imageAlgo === 'edge'),
       },
       { id: 'amplitude', label: 'Noise Amplitude', type: 'range', min: 2, max: 140, step: 1, infoKey: 'wavetable.amplitude' },
       { id: 'zoom', label: 'Noise Zoom', type: 'range', min: 0.002, max: 0.08, step: 0.001, infoKey: 'wavetable.zoom' },
@@ -221,6 +268,15 @@
       { id: 'gap', label: 'Line Gap', type: 'range', min: 0.5, max: 3.0, step: 0.1, infoKey: 'wavetable.gap' },
       { id: 'freq', label: 'Frequency', type: 'range', min: 0.2, max: 12.0, step: 0.1, infoKey: 'wavetable.freq' },
       { id: 'noiseAngle', label: 'Noise Angle', type: 'range', min: -180, max: 180, step: 5, infoKey: 'wavetable.noiseAngle' },
+      {
+        id: 'lineOffset',
+        label: 'Line Offset Angle',
+        type: 'range',
+        min: 0,
+        max: 360,
+        step: 1,
+        infoKey: 'wavetable.lineOffset',
+      },
       {
         id: 'continuity',
         label: 'Continuity',
@@ -324,8 +380,49 @@
       },
       { id: 'flatCaps', label: 'Flat Top/Bottom', type: 'checkbox', infoKey: 'wavetable.flatCaps' },
     ],
+    rings: [
+      { id: 'rings', label: 'Rings', type: 'range', min: 3, max: 120, step: 1, infoKey: 'rings.rings' },
+      {
+        id: 'noiseType',
+        label: 'Noise Type',
+        type: 'select',
+        options: [
+          { value: 'simplex', label: 'Simplex' },
+          { value: 'ridged', label: 'Ridged' },
+          { value: 'billow', label: 'Billow' },
+          { value: 'turbulence', label: 'Turbulence' },
+          { value: 'stripes', label: 'Stripes' },
+          { value: 'marble', label: 'Marble' },
+          { value: 'steps', label: 'Steps' },
+          { value: 'triangle', label: 'Triangle' },
+          { value: 'warp', label: 'Warp' },
+          { value: 'cellular', label: 'Cellular' },
+          { value: 'fbm', label: 'Fractal' },
+          { value: 'swirl', label: 'Swirl' },
+          { value: 'radial', label: 'Radial' },
+          { value: 'checker', label: 'Checker' },
+          { value: 'zigzag', label: 'Zigzag' },
+          { value: 'ripple', label: 'Ripple' },
+          { value: 'spiral', label: 'Spiral' },
+          { value: 'grain', label: 'Grain' },
+          { value: 'crosshatch', label: 'Crosshatch' },
+          { value: 'pulse', label: 'Pulse' },
+        ],
+        infoKey: 'rings.noiseType',
+      },
+      { id: 'amplitude', label: 'Noise Amplitude', type: 'range', min: 0, max: 40, step: 1, infoKey: 'rings.amplitude' },
+      { id: 'noiseScale', label: 'Noise Scale', type: 'range', min: 0.0001, max: 0.01, step: 0.0001, infoKey: 'rings.noiseScale' },
+      { id: 'noiseOffsetX', label: 'Noise Offset X', type: 'range', min: -200, max: 200, step: 1, infoKey: 'rings.noiseOffsetX' },
+      { id: 'noiseOffsetY', label: 'Noise Offset Y', type: 'range', min: -200, max: 200, step: 1, infoKey: 'rings.noiseOffsetY' },
+      { id: 'noiseLayer', label: 'Noise Layer', type: 'range', min: 0, max: 5, step: 0.1, infoKey: 'rings.noiseLayer' },
+      { id: 'noiseRadius', label: 'Noise Radius', type: 'range', min: 10, max: 200, step: 1, infoKey: 'rings.noiseRadius' },
+      { id: 'gap', label: 'Ring Gap', type: 'range', min: 0.4, max: 3.0, step: 0.1, infoKey: 'rings.gap' },
+      { id: 'offsetX', label: 'Ring Offset X', type: 'range', min: -100, max: 100, step: 1, infoKey: 'rings.offsetX' },
+      { id: 'offsetY', label: 'Ring Offset Y', type: 'range', min: -100, max: 100, step: 1, infoKey: 'rings.offsetY' },
+    ],
     topo: [
-      { id: 'rings', label: 'Rings', type: 'range', min: 3, max: 120, step: 1, infoKey: 'topo.rings' },
+      { id: 'resolution', label: 'Resolution', type: 'range', min: 40, max: 240, step: 5, infoKey: 'topo.resolution' },
+      { id: 'levels', label: 'Contour Levels', type: 'range', min: 4, max: 60, step: 1, infoKey: 'topo.levels' },
       {
         id: 'noiseType',
         label: 'Noise Type',
@@ -354,12 +451,135 @@
         ],
         infoKey: 'topo.noiseType',
       },
-      { id: 'amplitude', label: 'Noise Amplitude', type: 'range', min: 0, max: 40, step: 1, infoKey: 'topo.amplitude' },
-      { id: 'zoom', label: 'Noise Zoom', type: 'range', min: 0.002, max: 0.1, step: 0.001, infoKey: 'topo.zoom' },
-      { id: 'gap', label: 'Ring Gap', type: 'range', min: 0.4, max: 3.0, step: 0.1, infoKey: 'topo.gap' },
-      { id: 'jitter', label: 'Ring Jitter', type: 'range', min: 0, max: 6, step: 0.1, infoKey: 'topo.jitter' },
-      { id: 'wobble', label: 'Angular Wobble', type: 'range', min: 0, max: 5, step: 0.1, infoKey: 'topo.wobble' },
-      { id: 'angleOffset', label: 'Angle Offset', type: 'range', min: -180, max: 180, step: 5, infoKey: 'topo.angleOffset' },
+      { id: 'noiseScale', label: 'Noise Scale', type: 'range', min: 0.0001, max: 0.02, step: 0.0001, infoKey: 'topo.noiseScale' },
+      { id: 'noiseOffsetX', label: 'Noise Offset X', type: 'range', min: -200, max: 200, step: 1, infoKey: 'topo.noiseOffsetX' },
+      { id: 'noiseOffsetY', label: 'Noise Offset Y', type: 'range', min: -200, max: 200, step: 1, infoKey: 'topo.noiseOffsetY' },
+      { id: 'octaves', label: 'Octaves', type: 'range', min: 1, max: 6, step: 1, infoKey: 'topo.octaves' },
+      { id: 'lacunarity', label: 'Lacunarity', type: 'range', min: 1.2, max: 4.0, step: 0.1, infoKey: 'topo.lacunarity' },
+      { id: 'gain', label: 'Gain', type: 'range', min: 0.2, max: 0.9, step: 0.05, infoKey: 'topo.gain' },
+      { id: 'sensitivity', label: 'Sensitivity', type: 'range', min: 0.3, max: 2.5, step: 0.05, infoKey: 'topo.sensitivity' },
+      { id: 'thresholdOffset', label: 'Threshold Offset', type: 'range', min: -1, max: 1, step: 0.05, infoKey: 'topo.thresholdOffset' },
+      {
+        id: 'mappingMode',
+        label: 'Mapping Mode',
+        type: 'select',
+        options: [
+          { value: 'marching', label: 'Marching Squares' },
+          { value: 'smooth', label: 'Smooth' },
+          { value: 'bezier', label: 'Quadratic Bezier' },
+          { value: 'gradient', label: 'Gradient Trace' },
+        ],
+        infoKey: 'topo.mappingMode',
+      },
+    ],
+    rainfall: [
+      { id: 'count', label: 'Drop Count', type: 'range', min: 20, max: 400, step: 10, infoKey: 'rainfall.count' },
+      { id: 'traceLength', label: 'Trace Length', type: 'range', min: 20, max: 400, step: 5, infoKey: 'rainfall.traceLength' },
+      { id: 'traceStep', label: 'Trace Step', type: 'range', min: 2, max: 20, step: 1, infoKey: 'rainfall.traceStep' },
+      { id: 'turbulence', label: 'Turbulence', type: 'range', min: 0, max: 1.5, step: 0.05, infoKey: 'rainfall.turbulence' },
+      { id: 'windAngle', label: 'Wind Angle', type: 'range', min: 0, max: 360, step: 1, infoKey: 'rainfall.windAngle' },
+      { id: 'windStrength', label: 'Wind Strength', type: 'range', min: 0, max: 1.5, step: 0.05, infoKey: 'rainfall.windStrength' },
+      { id: 'dropSize', label: 'Droplet Size', type: 'range', min: 0, max: 12, step: 0.5, infoKey: 'rainfall.dropSize' },
+      {
+        id: 'dropShape',
+        label: 'Droplet Shape',
+        type: 'select',
+        options: [
+          { value: 'none', label: 'None' },
+          { value: 'circle', label: 'Circle' },
+          { value: 'square', label: 'Square' },
+          { value: 'teardrop', label: 'Teardrop' },
+        ],
+        infoKey: 'rainfall.dropShape',
+      },
+      {
+        id: 'dropFill',
+        label: 'Droplet Fill',
+        type: 'select',
+        options: [
+          { value: 'none', label: 'None' },
+          { value: 'spiral', label: 'Spiral' },
+          { value: 'hash', label: 'Hashing' },
+          { value: 'snake', label: 'Snake' },
+        ],
+        infoKey: 'rainfall.dropFill',
+        showIf: (p) => p.dropShape !== 'none',
+      },
+      {
+        id: 'widthMultiplier',
+        label: 'Rain Width',
+        type: 'range',
+        min: 1,
+        max: 4,
+        step: 1,
+        infoKey: 'rainfall.widthMultiplier',
+      },
+      {
+        id: 'thickeningMode',
+        label: 'Thickening Mode',
+        type: 'select',
+        options: [
+          { value: 'parallel', label: 'Parallel' },
+          { value: 'hash', label: 'Hashing' },
+          { value: 'snake', label: 'Snake' },
+        ],
+        infoKey: 'rainfall.thickeningMode',
+      },
+      {
+        id: 'silhouetteId',
+        label: 'Silhouette Image',
+        type: 'image',
+        accept: 'image/*',
+        idKey: 'silhouetteId',
+        nameKey: 'silhouetteName',
+        infoKey: 'rainfall.silhouette',
+        modalTitle: 'Select Silhouette Image',
+        modalLabel: 'Silhouette Image',
+        modalDescription: 'Drop a PNG/SVG with transparency; rain is generated inside opaque pixels.',
+        dropLabel: 'Drop silhouette here',
+      },
+      {
+        id: 'groundType',
+        label: 'Ground Plane',
+        type: 'select',
+        options: [
+          { value: 'none', label: 'None' },
+          { value: 'flat', label: 'Flat' },
+          { value: 'sine', label: 'Sine' },
+          { value: 'noise', label: 'Noise' },
+        ],
+        infoKey: 'rainfall.groundType',
+      },
+      {
+        id: 'groundHeight',
+        label: 'Ground Height',
+        type: 'range',
+        min: 0,
+        max: 100,
+        step: 1,
+        infoKey: 'rainfall.groundHeight',
+        showIf: (p) => p.groundType !== 'none',
+      },
+      {
+        id: 'groundAmplitude',
+        label: 'Ground Amplitude',
+        type: 'range',
+        min: 0,
+        max: 60,
+        step: 1,
+        infoKey: 'rainfall.groundAmplitude',
+        showIf: (p) => p.groundType === 'sine' || p.groundType === 'noise',
+      },
+      {
+        id: 'groundFrequency',
+        label: 'Ground Frequency',
+        type: 'range',
+        min: 0.005,
+        max: 0.2,
+        step: 0.005,
+        infoKey: 'rainfall.groundFrequency',
+        showIf: (p) => p.groundType === 'sine' || p.groundType === 'noise',
+      },
     ],
     spiral: [
       { id: 'loops', label: 'Loops', type: 'range', min: 1, max: 40, step: 1, infoKey: 'spiral.loops' },
@@ -550,9 +770,9 @@
       title: 'Rotation',
       description: 'Rotates the active layer around its center in degrees.',
     },
-    'global.machineProfile': {
-      title: 'Machine Profile',
-      description: 'Sets the physical drawing size used for bounds, centering, and export.',
+    'global.paperSize': {
+      title: 'Paper Size',
+      description: 'Sets the paper dimensions used for bounds, centering, and export.',
     },
     'global.margin': {
       title: 'Margin',
@@ -590,6 +810,10 @@
       title: 'Selection Outline Color',
       description: 'Sets the color used for the selection silhouette.',
     },
+    'global.selectionOutlineWidth': {
+      title: 'Selection Outline Width',
+      description: 'Controls the thickness of the selection silhouette.',
+    },
     'global.speedDown': {
       title: 'Draw Speed',
       description: 'Used for time estimation when the pen is down.',
@@ -605,6 +829,10 @@
     'global.stroke': {
       title: 'Default Stroke',
       description: 'Sets the base line width for all layers in millimeters.',
+    },
+    'global.plotterOptimize': {
+      title: 'Plotter Optimization',
+      description: 'Removes fully overlapping paths for the same pen to reduce redundant plotting.',
     },
     'common.smoothing': {
       title: 'Smoothing',
@@ -710,6 +938,22 @@
       title: 'Noise Image',
       description: 'Uses an uploaded image as the noise source. Brightness values become wave displacement.',
     },
+    'wavetable.imageAlgo': {
+      title: 'Image Noise Mode',
+      description: 'Determines how the image is converted into noise values.',
+    },
+    'wavetable.imageThreshold': {
+      title: 'Image Threshold',
+      description: 'Threshold used to binarize the image before sampling.',
+    },
+    'wavetable.imagePosterize': {
+      title: 'Posterize Levels',
+      description: 'Reduces the image to a fixed number of tonal steps.',
+    },
+    'wavetable.imageBlur': {
+      title: 'Image Blur',
+      description: 'Blurs the image before sampling to smooth out details.',
+    },
     'wavetable.amplitude': {
       title: 'Noise Amplitude',
       description: 'Amount of vertical displacement added by the noise field.',
@@ -733,6 +977,10 @@
     'wavetable.noiseAngle': {
       title: 'Noise Angle',
       description: 'Rotates the noise field direction used to displace the wave.',
+    },
+    'wavetable.lineOffset': {
+      title: 'Line Offset Angle',
+      description: 'Direction for noise displacement (0° = north, 180° = south).',
     },
     'wavetable.continuity': {
       title: 'Continuity',
@@ -782,37 +1030,161 @@
       title: 'Flat Top/Bottom',
       description: 'Adds flat lines at the top and bottom of the wavetable stack.',
     },
-    'topo.rings': {
+    'rings.rings': {
       title: 'Rings',
-      description: 'Number of contour loops generated in the topographic stack.',
+      description: 'Number of concentric rings to generate.',
+    },
+    'rings.noiseType': {
+      title: 'Noise Type',
+      description: 'Chooses the noise field used to perturb ring radii.',
+    },
+    'rings.amplitude': {
+      title: 'Noise Amplitude',
+      description: 'Strength of the ring displacement from the base radius.',
+    },
+    'rings.noiseScale': {
+      title: 'Noise Scale',
+      description: 'Controls the frequency of noise sampling around each ring.',
+    },
+    'rings.noiseOffsetX': {
+      title: 'Noise Offset X',
+      description: 'Shifts the noise sampling circle on the X axis.',
+    },
+    'rings.noiseOffsetY': {
+      title: 'Noise Offset Y',
+      description: 'Shifts the noise sampling circle on the Y axis.',
+    },
+    'rings.noiseLayer': {
+      title: 'Noise Layer',
+      description: 'Offsets each ring to a different slice of noise space.',
+    },
+    'rings.noiseRadius': {
+      title: 'Noise Radius',
+      description: 'Radius of the sampling circle in noise space.',
+    },
+    'rings.gap': {
+      title: 'Ring Gap',
+      description: 'Spacing multiplier between rings.',
+    },
+    'rings.offsetX': {
+      title: 'Ring Offset X',
+      description: 'Moves the ring stack horizontally before transforms.',
+    },
+    'rings.offsetY': {
+      title: 'Ring Offset Y',
+      description: 'Moves the ring stack vertically before transforms.',
+    },
+    'topo.resolution': {
+      title: 'Resolution',
+      description: 'Grid resolution used for sampling the scalar field.',
+    },
+    'topo.levels': {
+      title: 'Contour Levels',
+      description: 'Number of contour bands extracted from the scalar field.',
     },
     'topo.noiseType': {
       title: 'Noise Type',
-      description: 'Chooses the noise field used to perturb contour radii.',
+      description: 'Selects the base noise used to create the height field.',
     },
-    'topo.amplitude': {
-      title: 'Noise Amplitude',
-      description: 'Strength of the contour displacement from the base ring.',
+    'topo.noiseScale': {
+      title: 'Noise Scale',
+      description: 'Controls how quickly noise values change across the field.',
     },
-    'topo.zoom': {
-      title: 'Noise Zoom',
-      description: 'Scale of the noise field across each contour.',
+    'topo.noiseOffsetX': {
+      title: 'Noise Offset X',
+      description: 'Shifts the noise field sampling in X.',
     },
-    'topo.gap': {
-      title: 'Ring Gap',
-      description: 'Spacing multiplier between contour rings.',
+    'topo.noiseOffsetY': {
+      title: 'Noise Offset Y',
+      description: 'Shifts the noise field sampling in Y.',
     },
-    'topo.jitter': {
-      title: 'Ring Jitter',
-      description: 'Random radial offset applied per ring for organic variation.',
+    'topo.octaves': {
+      title: 'Octaves',
+      description: 'Number of noise layers blended into the height field.',
     },
-    'topo.wobble': {
-      title: 'Angular Wobble',
-      description: 'Adds sinusoidal waviness around each contour.',
+    'topo.lacunarity': {
+      title: 'Lacunarity',
+      description: 'Controls how quickly noise frequency increases per octave.',
     },
-    'topo.angleOffset': {
-      title: 'Angle Offset',
-      description: 'Rotates the overall contour field in degrees.',
+    'topo.gain': {
+      title: 'Gain',
+      description: 'Controls how much each octave contributes to the height field.',
+    },
+    'topo.sensitivity': {
+      title: 'Sensitivity',
+      description: 'Adjusts contrast in the field before extracting contours.',
+    },
+    'topo.thresholdOffset': {
+      title: 'Threshold Offset',
+      description: 'Shifts all contour thresholds up or down.',
+    },
+    'topo.mappingMode': {
+      title: 'Mapping Mode',
+      description: 'Selects how contours are traced and smoothed.',
+    },
+    'rainfall.count': {
+      title: 'Drop Count',
+      description: 'Number of rain traces generated across the canvas.',
+    },
+    'rainfall.traceLength': {
+      title: 'Trace Length',
+      description: 'Length of each rain streak in millimeters.',
+    },
+    'rainfall.traceStep': {
+      title: 'Trace Step',
+      description: 'Distance between points along each trace.',
+    },
+    'rainfall.turbulence': {
+      title: 'Turbulence',
+      description: 'Adds jitter to rain direction over time.',
+    },
+    'rainfall.windAngle': {
+      title: 'Wind Angle',
+      description: 'Direction the rain falls (0° = north, 180° = south).',
+    },
+    'rainfall.windStrength': {
+      title: 'Wind Strength',
+      description: 'Scales the wind’s influence on the rain direction.',
+    },
+    'rainfall.dropSize': {
+      title: 'Droplet Size',
+      description: 'Size of the droplet marker at the end of each trace.',
+    },
+    'rainfall.dropShape': {
+      title: 'Droplet Shape',
+      description: 'Selects the marker shape for droplets.',
+    },
+    'rainfall.dropFill': {
+      title: 'Droplet Fill',
+      description: 'Adds a fill-style texture inside droplets.',
+    },
+    'rainfall.widthMultiplier': {
+      title: 'Rain Width',
+      description: 'Duplicates traces to simulate thicker rainfall.',
+    },
+    'rainfall.thickeningMode': {
+      title: 'Thickening Mode',
+      description: 'How duplicate traces are built (parallel, hash, snake).',
+    },
+    'rainfall.silhouette': {
+      title: 'Silhouette Image',
+      description: 'Drops are generated inside the opaque area of the image.',
+    },
+    'rainfall.groundType': {
+      title: 'Ground Plane',
+      description: 'Defines a ground line that rain traces stop at.',
+    },
+    'rainfall.groundHeight': {
+      title: 'Ground Height',
+      description: 'Height of the ground plane above the bottom margin.',
+    },
+    'rainfall.groundAmplitude': {
+      title: 'Ground Amplitude',
+      description: 'Amplitude of ground variations for sine/noise ground.',
+    },
+    'rainfall.groundFrequency': {
+      title: 'Ground Frequency',
+      description: 'Frequency of ground variations for sine/noise ground.',
     },
     'spiral.loops': {
       title: 'Loops',
@@ -1707,6 +2079,10 @@
             Choose an algorithm, adjust its parameters, and refine with transform controls. Use layers to stack
             multiple generations, then export SVG for plotting.
           </p>
+          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
+            For Wavetable image noise, set Noise Type to Image and use Select Image to load a file.
+            Rainfall supports silhouette images to constrain where drops appear.
+          </div>
         </div>
         <div class="modal-section">
           <div class="modal-ill-label">Canvas</div>
@@ -1723,7 +2099,7 @@
             <div>Click to select, Shift-click for ranges, Cmd/Ctrl-click to toggle.</div>
             <div>Drag the grip to reorder; groups can be collapsed with the caret.</div>
             <div>Expand a layer into sublayers for line-by-line control.</div>
-            <div>Selection outline visibility and color can be adjusted in Settings.</div>
+            <div>Selection outline visibility, color, and thickness can be adjusted in Settings.</div>
           </div>
         </div>
         <div class="modal-section">
@@ -1731,6 +2107,7 @@
           <div class="text-xs text-vectura-muted leading-relaxed space-y-1">
             <div>Assign pens per layer or selection by dragging a pen onto layers.</div>
             <div>Use the palette dropdown to recolor pens; add or remove pens from the panel.</div>
+            <div>Plotter Optimization in Settings removes fully overlapping paths per pen.</div>
             <div>SVG export preserves pen groupings for plotter workflows.</div>
           </div>
         </div>
@@ -1789,7 +2166,7 @@
 
       defs.forEach((def) => {
         if (def.showIf && !def.showIf(layer.params)) return;
-        if (def.type === 'section' || def.type === 'file') return;
+        if (def.type === 'section' || def.type === 'file' || def.type === 'image') return;
         if (def.type === 'checkbox') {
           layer.params[def.id] = Math.random() > 0.5;
           return;
@@ -1892,6 +2269,15 @@
       if (!layer || !layer.parentId) return null;
       const group = this.getLayerById(layer.parentId);
       return group && group.isGroup ? group : null;
+    }
+
+    isDescendant(targetId, ancestorId) {
+      let current = this.getLayerById(targetId);
+      while (current && current.parentId) {
+        if (current.parentId === ancestorId) return true;
+        current = this.getLayerById(current.parentId);
+      }
+      return false;
     }
 
     normalizeGroupOrder() {
@@ -2103,7 +2489,7 @@
         { inputId: 'inp-scale-x', infoKey: 'global.scaleX' },
         { inputId: 'inp-scale-y', infoKey: 'global.scaleY' },
         { inputId: 'inp-rotation', infoKey: 'global.rotation' },
-        { inputId: 'machine-profile', infoKey: 'global.machineProfile' },
+        { inputId: 'machine-profile', infoKey: 'global.paperSize' },
         { inputId: 'set-margin', infoKey: 'global.margin' },
         { inputId: 'set-truncate', infoKey: 'global.truncate' },
         { inputId: 'set-outside-opacity', infoKey: 'global.outsideOpacity' },
@@ -2113,10 +2499,12 @@
         { inputId: 'set-margin-line-dotting', infoKey: 'global.marginLineDotting' },
         { inputId: 'set-selection-outline', infoKey: 'global.selectionOutline' },
         { inputId: 'set-selection-outline-color', infoKey: 'global.selectionOutlineColor' },
+        { inputId: 'set-selection-outline-width', infoKey: 'global.selectionOutlineWidth' },
         { inputId: 'set-speed-down', infoKey: 'global.speedDown' },
         { inputId: 'set-speed-up', infoKey: 'global.speedUp' },
         { inputId: 'set-precision', infoKey: 'global.precision' },
         { inputId: 'set-stroke', infoKey: 'global.stroke' },
+        { inputId: 'set-plotter-opt', infoKey: 'global.plotterOptimize' },
       ];
 
       entries.forEach(({ inputId, infoKey }) => {
@@ -2164,7 +2552,7 @@
         opt.innerText = profile.name;
         select.appendChild(opt);
       });
-      select.value = Object.keys(MACHINES)[0] || '';
+      select.value = SETTINGS.paperSize && MACHINES[SETTINGS.paperSize] ? SETTINGS.paperSize : Object.keys(MACHINES)[0] || '';
     }
 
     getPaletteList() {
@@ -2329,6 +2717,7 @@
       const speedUp = getEl('set-speed-up');
       const stroke = getEl('set-stroke');
       const precision = getEl('set-precision');
+      const plotterOpt = getEl('set-plotter-opt');
       const undoSteps = getEl('set-undo');
       const truncate = getEl('set-truncate');
       const outsideOpacity = getEl('set-outside-opacity');
@@ -2340,12 +2729,19 @@
       const snapGuides = getEl('set-snap-guides');
       const selectionOutline = getEl('set-selection-outline');
       const selectionOutlineColor = getEl('set-selection-outline-color');
+      const selectionOutlineWidth = getEl('set-selection-outline-width');
+      const paperWidth = getEl('set-paper-width');
+      const paperHeight = getEl('set-paper-height');
+      const orientationToggle = getEl('set-orientation');
+      const orientationLabel = getEl('orientation-label');
+      const customFields = getEl('custom-size-fields');
       const bgColor = getEl('inp-bg-color');
       if (margin) margin.value = SETTINGS.margin;
       if (speedDown) speedDown.value = SETTINGS.speedDown;
       if (speedUp) speedUp.value = SETTINGS.speedUp;
       if (stroke) stroke.value = SETTINGS.strokeWidth;
       if (precision) precision.value = SETTINGS.precision;
+      if (plotterOpt) plotterOpt.value = SETTINGS.plotterOptimize ?? 0;
       if (undoSteps) undoSteps.value = SETTINGS.undoSteps;
       if (truncate) truncate.checked = SETTINGS.truncate !== false;
       if (outsideOpacity) outsideOpacity.value = SETTINGS.outsideOpacity ?? 0.5;
@@ -2357,7 +2753,18 @@
       if (snapGuides) snapGuides.checked = SETTINGS.snapGuides !== false;
       if (selectionOutline) selectionOutline.checked = SETTINGS.selectionOutline !== false;
       if (selectionOutlineColor) selectionOutlineColor.value = SETTINGS.selectionOutlineColor || '#ef4444';
+      if (selectionOutlineWidth) selectionOutlineWidth.value = SETTINGS.selectionOutlineWidth ?? 0.4;
       if (bgColor) bgColor.value = SETTINGS.bgColor;
+      if (paperWidth) paperWidth.value = SETTINGS.paperWidth ?? 210;
+      if (paperHeight) paperHeight.value = SETTINGS.paperHeight ?? 297;
+      if (orientationToggle) orientationToggle.checked = (SETTINGS.paperOrientation || 'landscape') === 'landscape';
+      if (orientationLabel) {
+        orientationLabel.textContent =
+          (SETTINGS.paperOrientation || 'landscape') === 'landscape' ? 'Landscape' : 'Portrait';
+      }
+      if (customFields) {
+        customFields.classList.toggle('hidden', SETTINGS.paperSize !== 'custom');
+      }
     }
 
     initPaneToggles() {
@@ -2509,11 +2916,18 @@
       const setSnapGuides = getEl('set-snap-guides');
       const setSelectionOutline = getEl('set-selection-outline');
       const setSelectionOutlineColor = getEl('set-selection-outline-color');
+      const setSelectionOutlineWidth = getEl('set-selection-outline-width');
       const setSpeedDown = getEl('set-speed-down');
       const setSpeedUp = getEl('set-speed-up');
       const setStroke = getEl('set-stroke');
       const setPrecision = getEl('set-precision');
+      const setPlotterOpt = getEl('set-plotter-opt');
       const setUndo = getEl('set-undo');
+      const setPaperWidth = getEl('set-paper-width');
+      const setPaperHeight = getEl('set-paper-height');
+      const setOrientation = getEl('set-orientation');
+      const orientationLabel = getEl('orientation-label');
+      const customFields = getEl('custom-size-fields');
       const btnExport = getEl('btn-export');
       const btnResetView = getEl('btn-reset-view');
 
@@ -2574,7 +2988,16 @@
       if (machineProfile) {
         machineProfile.onchange = (e) => {
           if (this.app.pushHistory) this.app.pushHistory();
-          this.app.engine.setProfile(e.target.value);
+          const next = e.target.value;
+          SETTINGS.paperSize = next;
+          if (customFields) customFields.classList.toggle('hidden', next !== 'custom');
+          if (next !== 'custom' && MACHINES && MACHINES[next]) {
+            SETTINGS.paperWidth = MACHINES[next].width;
+            SETTINGS.paperHeight = MACHINES[next].height;
+            if (setPaperWidth) setPaperWidth.value = SETTINGS.paperWidth;
+            if (setPaperHeight) setPaperHeight.value = SETTINGS.paperHeight;
+          }
+          this.app.engine.setProfile(next);
           this.app.renderer.center();
           this.app.regen();
         };
@@ -2661,6 +3084,15 @@
           this.app.render();
         };
       }
+      if (setSelectionOutlineWidth) {
+        setSelectionOutlineWidth.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          const next = Math.max(0.1, parseFloat(e.target.value));
+          SETTINGS.selectionOutlineWidth = Number.isFinite(next) ? next : 0.4;
+          e.target.value = SETTINGS.selectionOutlineWidth;
+          this.app.render();
+        };
+      }
       if (setSpeedDown) {
         setSpeedDown.onchange = (e) => {
           if (this.app.pushHistory) this.app.pushHistory();
@@ -2691,6 +3123,52 @@
           const next = Math.max(0, Math.min(6, parseInt(e.target.value, 10) || 3));
           SETTINGS.precision = next;
           e.target.value = next;
+        };
+      }
+      if (setPaperWidth) {
+        setPaperWidth.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          const next = Math.max(1, parseFloat(e.target.value));
+          if (Number.isFinite(next)) SETTINGS.paperWidth = next;
+          e.target.value = SETTINGS.paperWidth;
+          if (SETTINGS.paperSize === 'custom') {
+            this.app.engine.setProfile('custom');
+            this.app.renderer.center();
+            this.app.regen();
+          }
+        };
+      }
+      if (setPaperHeight) {
+        setPaperHeight.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          const next = Math.max(1, parseFloat(e.target.value));
+          if (Number.isFinite(next)) SETTINGS.paperHeight = next;
+          e.target.value = SETTINGS.paperHeight;
+          if (SETTINGS.paperSize === 'custom') {
+            this.app.engine.setProfile('custom');
+            this.app.renderer.center();
+            this.app.regen();
+          }
+        };
+      }
+      if (setOrientation) {
+        setOrientation.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          SETTINGS.paperOrientation = e.target.checked ? 'landscape' : 'portrait';
+          if (orientationLabel) {
+            orientationLabel.textContent = e.target.checked ? 'Landscape' : 'Portrait';
+          }
+          const key = machineProfile?.value || SETTINGS.paperSize || 'a4';
+          this.app.engine.setProfile(key);
+          this.app.renderer.center();
+          this.app.regen();
+        };
+      }
+      if (setPlotterOpt) {
+        setPlotterOpt.oninput = (e) => {
+          const next = Math.max(0, Math.min(1, parseFloat(e.target.value)));
+          SETTINGS.plotterOptimize = Number.isFinite(next) ? next : 0;
+          this.app.render();
         };
       }
       if (setUndo) {
@@ -2921,6 +3399,8 @@
           const selectedSet = new Set(selectedIds);
           const selectedInUi = currentOrder.filter((id) => selectedSet.has(id));
           if (!selectedInUi.length) return;
+          let dropGroupId = null;
+          let dropTarget = null;
 
           const onMove = (ev) => {
             const y = ev.clientY;
@@ -2935,6 +3415,26 @@
               }
             }
             if (!inserted) container.appendChild(indicator);
+
+            const hovered = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.layer-item');
+            let nextGroup = null;
+            if (hovered && hovered.dataset.layerId) {
+              const hoveredLayer = this.getLayerById(hovered.dataset.layerId);
+              if (hoveredLayer && hoveredLayer.isGroup && !selectedSet.has(hoveredLayer.id)) {
+                nextGroup = hoveredLayer.id;
+              }
+            }
+            if (dropTarget && dropTarget !== hovered) {
+              dropTarget.classList.remove('group-drop-target');
+              dropTarget = null;
+            }
+            if (nextGroup && hovered) {
+              dropGroupId = nextGroup;
+              dropTarget = hovered;
+              dropTarget.classList.add('group-drop-target');
+            } else {
+              dropGroupId = null;
+            }
           };
 
           const onUp = () => {
@@ -2946,6 +3446,41 @@
             indicator.remove();
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp);
+            if (dropTarget) {
+              dropTarget.classList.remove('group-drop-target');
+              dropTarget = null;
+            }
+
+            if (dropGroupId) {
+              const target = this.getLayerById(dropGroupId);
+              if (target && target.isGroup) {
+                if (this.app.pushHistory) this.app.pushHistory();
+                target.groupCollapsed = false;
+                const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
+                const moveIds = selectedInUi.filter((id) => {
+                  if (id === dropGroupId) return false;
+                  const layer = map.get(id);
+                  if (!layer) return false;
+                  if (layer.isGroup && this.isDescendant(dropGroupId, layer.id)) return false;
+                  return true;
+                });
+                const moveSet = new Set(moveIds);
+                const remaining = this.app.engine.layers.filter((layer) => !moveSet.has(layer.id));
+                moveIds.forEach((id) => {
+                  const layer = map.get(id);
+                  if (layer) layer.parentId = dropGroupId;
+                });
+                const insertIndex = remaining.findIndex((layer) => layer.id === dropGroupId);
+                const engineInsert = insertIndex === -1 ? remaining.length : insertIndex;
+                const moveEngineOrder = moveIds.slice().reverse().map((id) => map.get(id)).filter(Boolean);
+                remaining.splice(engineInsert, 0, ...moveEngineOrder);
+                this.app.engine.layers = remaining;
+                this.normalizeGroupOrder();
+                this.renderLayers();
+                this.app.render();
+                return;
+              }
+            }
 
             const nextOrder = currentOrder.filter((id) => !selectedSet.has(id));
             nextOrder.splice(newIndex, 0, ...selectedInUi);
@@ -2968,13 +3503,22 @@
         el.className =
           'layer-item layer-group flex items-center justify-between bg-vectura-bg border border-vectura-border p-2 mb-2';
         el.dataset.layerId = group.id;
-        el.style.paddingLeft = `${8 + depth * 12}px`;
+        const indent = depth * 12;
+        if (indent) {
+          el.style.marginLeft = `${indent}px`;
+          el.style.width = `calc(100% - ${indent}px)`;
+        }
         const isManualGroup = group.groupType === 'group';
         el.innerHTML = `
           <div class="flex items-center gap-2 flex-1 overflow-hidden">
             ${gripMarkup}
             <button class="group-toggle" type="button" aria-label="Toggle group">${group.groupCollapsed ? '▸' : '▾'}</button>
             <span class="layer-name text-sm text-vectura-accent truncate">${group.name}</span>
+            <input
+              class="layer-name-input hidden w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:outline-none"
+              type="text"
+              value="${group.name}"
+            />
             <span class="layer-badge text-[10px] text-vectura-muted uppercase tracking-widest">${typeLabel}</span>
           </div>
           <div class="flex items-center gap-1">
@@ -2995,6 +3539,8 @@
         const penPill = el.querySelector('.pen-pill');
         const penIcon = el.querySelector('.pen-icon');
         const grip = el.querySelector('.layer-grip');
+        const nameEl = el.querySelector('.layer-name');
+        const nameInput = el.querySelector('.layer-name-input');
         if (toggle) {
           toggle.onclick = (e) => {
             e.stopPropagation();
@@ -3028,6 +3574,50 @@
           if (e.target.closest('input')) return;
           e.preventDefault();
         };
+        if (nameEl && nameInput) {
+          let nameClickTimer = null;
+          nameEl.onclick = (e) => {
+            e.stopPropagation();
+            if (nameClickTimer) window.clearTimeout(nameClickTimer);
+            nameClickTimer = window.setTimeout(() => {
+              selectGroupChildren(e);
+              nameClickTimer = null;
+            }, 250);
+          };
+          nameEl.ondblclick = (e) => {
+            e.stopPropagation();
+            if (nameClickTimer) window.clearTimeout(nameClickTimer);
+            nameClickTimer = null;
+            nameEl.classList.add('hidden');
+            nameInput.classList.remove('hidden');
+            nameInput.focus();
+            nameInput.select();
+          };
+          nameInput.onblur = () => {
+            const next = nameInput.value.trim();
+            if (next && next !== group.name) {
+              if (this.isDuplicateLayerName(next, group.id)) {
+                this.showDuplicateNameError(next);
+                nameInput.focus();
+                nameInput.select();
+                return;
+              }
+              if (this.app.pushHistory) this.app.pushHistory();
+              group.name = next;
+            }
+            nameInput.value = group.name;
+            nameInput.classList.add('hidden');
+            nameEl.classList.remove('hidden');
+            this.renderLayers();
+          };
+          nameInput.onkeydown = (e) => {
+            if (e.key === 'Enter') nameInput.blur();
+            if (e.key === 'Escape') {
+              nameInput.value = group.name;
+              nameInput.blur();
+            }
+          };
+        }
         bindLayerReorderGrip(grip, el, {
           ensureSelection: (e) => selectGroupChildren(e, { skipList: true }),
           getSelectedIds: () => [group.id, ...collectDescendants(group.id)],
@@ -3146,7 +3736,11 @@
         const el = document.createElement('div');
         el.className = `layer-item ${isChild ? 'layer-sub' : ''} flex items-center justify-between bg-vectura-bg border border-vectura-border p-2 mb-2 group cursor-pointer hover:bg-vectura-border ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}`;
         el.dataset.layerId = l.id;
-        el.style.paddingLeft = `${8 + depth * 12}px`;
+        const indent = depth * 12;
+        if (indent) {
+          el.style.marginLeft = `${indent}px`;
+          el.style.width = `calc(100% - ${indent}px)`;
+        }
         el.innerHTML = `
           <div class="flex items-center gap-2 flex-1 overflow-hidden">
             ${gripMarkup}
@@ -3419,7 +4013,7 @@
         if (layer.isGroup) {
           renderGroupRow(layer, depth);
           const children = groupMap.get(layer.id) || [];
-          const showChildren = !layer.groupCollapsed || hasSelectedDescendant(layer.id);
+          const showChildren = !layer.groupCollapsed;
           if (showChildren) {
             children.forEach((child) => renderTree(child, depth + 1));
           }
@@ -3745,6 +4339,90 @@
       }
     }
 
+    loadNoiseImageFile(file, layer, nameEl, idKey = 'noiseImageId', nameKey = 'noiseImageName') {
+      if (!file || !layer) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth || img.width;
+          canvas.height = img.naturalHeight || img.height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return;
+          ctx.drawImage(img, 0, 0);
+          const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const store = (window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {});
+          const id = `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+          store[id] = { width: data.width, height: data.height, data: data.data };
+          if (this.app.pushHistory) this.app.pushHistory();
+          layer.params[idKey] = id;
+          layer.params[nameKey] = file.name;
+          if (nameEl) nameEl.textContent = file.name;
+          this.app.regen();
+          this.app.render();
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    openNoiseImageModal(layer, options = {}) {
+      const {
+        nameEl,
+        accept = 'image/*',
+        idKey = 'noiseImageId',
+        nameKey = 'noiseImageName',
+        title = 'Select Noise Image',
+        label = 'Noise Image',
+        description = 'Drop an image here or browse to select a PNG/JPG for noise sampling.',
+        dropLabel = 'Drop image here',
+      } = options;
+      const current = layer?.params?.[nameKey] || 'None selected';
+      const body = `
+        <div class="modal-section">
+          <div class="modal-ill-label">${label}</div>
+          <div class="modal-text text-xs text-vectura-muted mb-3">
+            ${description}
+          </div>
+          <div id="noise-dropzone" class="noise-dropzone">${dropLabel}</div>
+          <div class="flex items-center justify-between mt-3 gap-3">
+            <label class="text-xs text-vectura-muted">Browse</label>
+            <input id="noise-file-input" type="file" accept="${accept}" class="text-[10px] text-vectura-muted" />
+          </div>
+          <div class="text-[10px] text-vectura-muted mt-3">Current: ${current}</div>
+        </div>
+      `;
+      this.openModal({ title, body });
+      const bodyEl = this.modal.bodyEl;
+      const dropzone = bodyEl.querySelector('#noise-dropzone');
+      const fileInput = bodyEl.querySelector('#noise-file-input');
+      const handleFile = (file) => {
+        if (!file) return;
+        this.loadNoiseImageFile(file, layer, nameEl, idKey, nameKey);
+        this.closeModal();
+      };
+      if (dropzone) {
+        dropzone.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          dropzone.classList.add('active');
+        });
+        dropzone.addEventListener('dragleave', () => dropzone.classList.remove('active'));
+        dropzone.addEventListener('drop', (e) => {
+          e.preventDefault();
+          dropzone.classList.remove('active');
+          const file = e.dataTransfer?.files?.[0];
+          handleFile(file);
+        });
+      }
+      if (fileInput) {
+        fileInput.onchange = () => {
+          const file = fileInput.files?.[0];
+          handleFile(file);
+        };
+      }
+    }
+
     buildControls() {
       const container = getEl('dynamic-controls');
       if (!container) return;
@@ -3899,11 +4577,13 @@
           container.appendChild(section);
           return;
         }
-        if (def.type === 'file') {
+        if (def.type === 'image') {
           const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
           const div = document.createElement('div');
           div.className = 'mb-4';
-          const name = layer.params.noiseImageName || 'No file selected';
+          const idKey = def.idKey || `${def.id || 'image'}Id`;
+          const nameKey = def.nameKey || `${def.id || 'image'}Name`;
+          const name = layer.params[nameKey] || 'No file selected';
           div.innerHTML = `
             <div class="flex items-center justify-between mb-1">
               <div class="flex items-center gap-2">
@@ -3913,52 +4593,37 @@
               <button type="button" class="text-[10px] text-vectura-muted hover:text-vectura-accent file-clear">Clear</button>
             </div>
             <div class="flex items-center gap-2">
-              <input type="file" class="flex-1 text-[10px] text-vectura-muted" accept="${def.accept || ''}">
+              <button type="button" class="noise-image-btn text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">
+                Select Image
+              </button>
               <span class="text-[10px] text-vectura-muted file-name truncate">${name}</span>
             </div>
           `;
-          const fileInput = div.querySelector('input[type="file"]');
+          const openBtn = div.querySelector('.noise-image-btn');
           const nameEl = div.querySelector('.file-name');
           const clearBtn = div.querySelector('.file-clear');
           if (clearBtn) {
             clearBtn.onclick = () => {
               if (this.app.pushHistory) this.app.pushHistory();
-              layer.params.noiseImageId = '';
-              layer.params.noiseImageName = '';
+              layer.params[idKey] = '';
+              layer.params[nameKey] = '';
               if (nameEl) nameEl.textContent = 'No file selected';
               this.app.regen();
               this.app.render();
             };
           }
-          if (fileInput) {
-            fileInput.onchange = () => {
-              const file = fileInput.files?.[0];
-              if (!file) return;
-              const reader = new FileReader();
-              reader.onload = () => {
-                const img = new Image();
-                img.onload = () => {
-                  const canvas = document.createElement('canvas');
-                  canvas.width = img.naturalWidth || img.width;
-                  canvas.height = img.naturalHeight || img.height;
-                  const ctx = canvas.getContext('2d');
-                  if (!ctx) return;
-                  ctx.drawImage(img, 0, 0);
-                  const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                  const store = (window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {});
-                  const id = `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-                  store[id] = { width: data.width, height: data.height, data: data.data };
-                  if (this.app.pushHistory) this.app.pushHistory();
-                  layer.params.noiseImageId = id;
-                  layer.params.noiseImageName = file.name;
-                  if (nameEl) nameEl.textContent = file.name;
-                  this.app.regen();
-                  this.app.render();
-                };
-                img.src = reader.result;
-              };
-              reader.readAsDataURL(file);
-            };
+          if (openBtn) {
+            openBtn.onclick = () =>
+              this.openNoiseImageModal(layer, {
+                nameEl,
+                accept: def.accept,
+                idKey,
+                nameKey,
+                title: def.modalTitle,
+                label: def.modalLabel,
+                description: def.modalDescription,
+                dropLabel: def.dropLabel,
+              });
           }
           container.appendChild(div);
           return;
@@ -4312,6 +4977,22 @@
     exportSVG() {
       const prof = this.app.engine.currentProfile;
       const precision = Math.max(0, Math.min(6, SETTINGS.precision ?? 3));
+      const optimize = Math.max(0, SETTINGS.plotterOptimize ?? 0);
+      const tol = optimize > 0 ? Math.max(0.001, optimize) : 0;
+      const quant = (v) => (tol ? Math.round(v / tol) * tol : v);
+      const pathKey = (path) => {
+        if (path && path.meta && path.meta.kind === 'circle') {
+          const cx = path.meta.cx ?? path.meta.x ?? 0;
+          const cy = path.meta.cy ?? path.meta.y ?? 0;
+          const r = path.meta.r ?? path.meta.rx ?? 0;
+          return `c:${quant(cx)},${quant(cy)},${quant(r)}`;
+        }
+        if (!Array.isArray(path)) return '';
+        return path
+          .map((pt) => `${quant(pt.x)},${quant(pt.y)}`)
+          .join('|');
+      };
+      const dedupe = optimize > 0 ? new Map() : null;
       let svg = `<?xml version="1.0" standalone="no"?><svg width="${prof.width}mm" height="${prof.height}mm" viewBox="0 0 ${prof.width} ${prof.height}" xmlns="http://www.w3.org/2000/svg">`;
       if (SETTINGS.truncate) {
         const m = SETTINGS.margin;
@@ -4346,12 +5027,22 @@
         const pen = group.pen || fallbackPen;
         const penName = (pen.name || pen.id || 'Pen').replace(/\s/g, '_');
         svg += `<g id="pen_${penName}" stroke="${pen.color || 'black'}" fill="none">`;
+        let seen = null;
+        if (dedupe) {
+          if (!dedupe.has(key)) dedupe.set(key, new Set());
+          seen = dedupe.get(key);
+        }
         group.layers.forEach((l) => {
           const strokeWidth = (l.strokeWidth ?? pen.width ?? SETTINGS.strokeWidth).toFixed(3);
           const lineCap = l.lineCap || 'round';
           const useCurves = Boolean(l.params && l.params.curves);
           svg += `<g id="${l.name.replace(/\s/g, '_')}" stroke-width="${strokeWidth}" stroke-linecap="${lineCap}" stroke-linejoin="round">`;
           l.paths.forEach((p) => {
+            if (seen) {
+              const key = pathKey(p);
+              if (key && seen.has(key)) return;
+              if (key) seen.add(key);
+            }
             const markup = shapeToSvg(p, precision, useCurves);
             if (markup) svg += markup;
           });

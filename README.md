@@ -16,9 +16,11 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Parameter randomization and simplification controls with live line/point counts.
 - Fast duplication and nudging: Alt-drag (Option-drag) to duplicate, arrow keys to nudge (Shift for larger steps).
 - Configurable undo with Cmd/Ctrl+Z and adjustable history depth.
-- Multiple algorithm families (flowfields, lissajous, wavetable, topo, boids, attractors, hyphae, shape pack).
+- Multiple algorithm families (flowfields, lissajous, wavetable, rings, topo, boids, attractors, hyphae, shape pack).
+- Rainfall generator with wind, droplet styling, and optional silhouette masking.
 - Wavetable noise library includes image-based noise input.
 - Pen palette with assignable colors/widths, reorderable list, drag-to-assign per layer or selection, plus palette selection and add/remove controls.
+- Plotter optimization slider to remove fully overlapping paths per pen before export.
 - One-click SVG export with configurable precision and grouping by pen assignment.
 - Live formula display and estimated pen distance/time.
 
@@ -56,7 +58,9 @@ Each layer is powered by an algorithm with its own parameters and formula previe
 - Hyphae: branching, growth-like structures.
 - Lissajous: harmonic parametric curves.
 - Wavetable: layered noise wave stacks with multiple noise types.
-- Topo: stacked contour loops that resemble topographic maps.
+- Rings: concentric rings with noise-modulated radii.
+- Topo: contours extracted from a noise-based height field.
+- Rainfall: rain traces with droplet shaping, wind, and silhouette/ground controls.
 - Spiral: includes optional closure for looping the outer end back into the spiral.
 - Shape Pack: circle/polygon packing with perspective controls.
 

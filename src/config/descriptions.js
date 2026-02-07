@@ -10,8 +10,12 @@
       'Parametric curves created by the intersection of two sinusoidal waves. Produces elegant, looping harmonic figures often used in signal physics.',
     wavetable:
       'Generates terrain-like elevations by modulating horizontal lines with noise. Inspired by the visualization of pulsar radio waves.',
+    rings:
+      'Creates concentric rings with noise-driven radius modulation for organic, rippling shapes.',
     topo:
-      'Builds stacked contour loops that resemble topographic maps. Noise modulation creates organic elevation bands.',
+      'Builds contour lines from a noise-based height field, similar to a topographic map.',
+    rainfall:
+      'Simulates falling rain traces with optional droplet shapes, wind influence, and silhouette masking.',
     spiral:
       'An Archimedean spiral distorted by noise. Can create vinyl-like grooves or organic coil patterns.',
     grid:

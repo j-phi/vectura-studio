@@ -103,10 +103,32 @@
       const m = SETTINGS.margin;
       const innerW = prof.width - m * 2;
       const innerH = prof.height - m * 2;
+      const optimize = Math.max(0, SETTINGS.plotterOptimize ?? 0);
+      const tol = optimize > 0 ? Math.max(0.001, optimize) : 0;
+      const dedupe = optimize > 0 ? new Map() : null;
+      const quant = (v) => (tol ? Math.round(v / tol) * tol : v);
+      const pathKey = (path) => {
+        if (path && path.meta && path.meta.kind === 'circle') {
+          const cx = path.meta.cx ?? path.meta.x ?? 0;
+          const cy = path.meta.cy ?? path.meta.y ?? 0;
+          const r = path.meta.r ?? path.meta.rx ?? 0;
+          return `c:${quant(cx)},${quant(cy)},${quant(r)}`;
+        }
+        if (!Array.isArray(path)) return '';
+        return path
+          .map((pt) => `${quant(pt.x)},${quant(pt.y)}`)
+          .join('|');
+      };
       const drawLayers = () => {
         this.engine.layers.forEach((l) => {
           if (!l.visible) return;
           const pen = SETTINGS.pens?.find((p) => p.id === l.penId) || null;
+          const penId = l.penId || pen?.id || 'default';
+          let seen = null;
+          if (dedupe) {
+            if (!dedupe.has(penId)) dedupe.set(penId, new Set());
+            seen = dedupe.get(penId);
+          }
           const strokeWidth = pen?.width ?? l.strokeWidth ?? SETTINGS.strokeWidth;
           this.ctx.lineWidth = strokeWidth;
           this.ctx.lineCap = l.lineCap || 'round';
@@ -119,10 +141,20 @@
                 this.selectedLayerIds?.has(l.id) && this.tempTransform
                   ? this.transformCircleMeta(path.meta, this.tempTransform)
                   : path.meta;
+              if (seen) {
+                const key = pathKey({ meta });
+                if (key && seen.has(key)) return;
+                if (key) seen.add(key);
+              }
               this.traceCircle(meta);
             } else {
               const next =
                 this.selectedLayerIds?.has(l.id) && this.tempTransform ? this.transformPath(path, this.tempTransform) : path;
+              if (seen) {
+                const key = pathKey(next);
+                if (key && seen.has(key)) return;
+                if (key) seen.add(key);
+              }
               this.tracePath(next, useCurves);
             }
           });
@@ -135,10 +167,13 @@
         if (!outlineEnabled || !selectedLayers.length) return;
         selectedLayers.forEach((l) => {
           if (!l.visible) return;
+          const isLineLayer = l.parentId || l.type === 'expanded';
+          if (!isLineLayer) return;
           const pen = SETTINGS.pens?.find((p) => p.id === l.penId) || null;
           const strokeWidth = pen?.width ?? l.strokeWidth ?? SETTINGS.strokeWidth;
           const useCurves = Boolean(l.params && l.params.curves);
-          this.ctx.lineWidth = Math.max(0.1, strokeWidth + 0.2);
+          const outlineWidth = SETTINGS.selectionOutlineWidth ?? 0.4;
+          this.ctx.lineWidth = Math.max(0.1, strokeWidth + outlineWidth);
           this.ctx.lineCap = l.lineCap || 'round';
           this.ctx.strokeStyle = outlineColor;
           this.ctx.beginPath();

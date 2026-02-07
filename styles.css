@@ -125,8 +125,13 @@ input[type='color']::-webkit-color-swatch {
   border-style: dashed;
 }
 
+.group-drop-target {
+  border-color: #fafafa;
+  box-shadow: inset 0 0 0 1px rgba(250, 250, 250, 0.6);
+}
+
 .layer-sub {
-  padding-left: 1.5rem;
+  padding-left: 0;
 }
 
 .layer-grip--spacer {
@@ -265,7 +270,9 @@ input[type='color']::-webkit-color-swatch {
 }
 
 .pen-item .pen-icon {
-  flex: 0 0 20px;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
 }
 
 .pen-item {
@@ -755,6 +762,21 @@ input[type='color']::-webkit-color-swatch {
 .pen-remove:hover {
   color: #fafafa;
   border-color: #fafafa;
+}
+
+.noise-dropzone {
+  border: 1px dashed #3f3f46;
+  background: #0f0f12;
+  color: #a1a1aa;
+  font-size: 12px;
+  padding: 24px 12px;
+  text-align: center;
+  border-radius: 10px;
+}
+
+.noise-dropzone.active {
+  border-color: #fafafa;
+  color: #fafafa;
 }
 
 .layer-name-input,

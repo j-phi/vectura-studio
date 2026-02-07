@@ -135,7 +135,8 @@
     constructor() {
       this.layers = [];
       this.activeLayerId = null;
-      this.currentProfile = MACHINES.a3;
+      this.profileKey = SETTINGS.paperSize || 'a4';
+      this.currentProfile = this.resolveProfile();
       this.addLayer('wavetable');
     }
 
@@ -280,8 +281,31 @@
       return this.layers.find((l) => l.id === this.activeLayerId);
     }
 
+    resolveProfile() {
+      const key = this.profileKey || SETTINGS.paperSize || 'a4';
+      const base = MACHINES[key] || MACHINES.a4;
+      let width = base.width;
+      let height = base.height;
+      if (key === 'custom') {
+        const customW = SETTINGS.paperWidth;
+        const customH = SETTINGS.paperHeight;
+        if (Number.isFinite(customW) && customW > 0) width = customW;
+        if (Number.isFinite(customH) && customH > 0) height = customH;
+      }
+      const orientation = SETTINGS.paperOrientation || 'landscape';
+      const isLandscape = orientation === 'landscape';
+      if (isLandscape && width < height) {
+        [width, height] = [height, width];
+      }
+      if (!isLandscape && width > height) {
+        [width, height] = [height, width];
+      }
+      return { name: base.name, width, height };
+    }
+
     setProfile(key) {
-      this.currentProfile = MACHINES[key] || MACHINES.a3;
+      this.profileKey = key;
+      this.currentProfile = this.resolveProfile();
     }
 
     generate(layerId) {
@@ -408,20 +432,59 @@
 
     getStats() {
       let dist = 0;
+      let lines = 0;
+      const optimize = Math.max(0, SETTINGS.plotterOptimize ?? 0);
+      const tol = optimize > 0 ? Math.max(0.001, optimize) : 0;
+      const dedupe = optimize > 0 ? new Map() : null;
+      const quant = (v) => (tol ? Math.round(v / tol) * tol : v);
+      const pathKey = (path) => {
+        if (path && path.meta && path.meta.kind === 'circle') {
+          const cx = path.meta.cx ?? path.meta.x ?? 0;
+          const cy = path.meta.cy ?? path.meta.y ?? 0;
+          const r = path.meta.r ?? path.meta.rx ?? 0;
+          return `c:${quant(cx)},${quant(cy)},${quant(r)}`;
+        }
+        if (!Array.isArray(path)) return '';
+        return path
+          .map((pt) => `${quant(pt.x)},${quant(pt.y)}`)
+          .join('|');
+      };
+      const pathLength = (path) => {
+        if (path && path.meta && path.meta.kind === 'circle') {
+          const r = path.meta.r ?? path.meta.rx ?? 0;
+          return Math.max(0, 2 * Math.PI * r);
+        }
+        if (!Array.isArray(path)) return 0;
+        let len = 0;
+        for (let i = 1; i < path.length; i++) {
+          const dx = path[i].x - path[i - 1].x;
+          const dy = path[i].y - path[i - 1].y;
+          len += Math.sqrt(dx * dx + dy * dy);
+        }
+        return len;
+      };
       this.layers.forEach((l) => {
         if (!l.visible) return;
+        const penId = l.penId || 'default';
+        let seen = null;
+        if (dedupe) {
+          if (!dedupe.has(penId)) dedupe.set(penId, new Set());
+          seen = dedupe.get(penId);
+        }
         l.paths.forEach((p) => {
-          for (let i = 1; i < p.length; i++) {
-            const dx = p[i].x - p[i - 1].x;
-            const dy = p[i].y - p[i - 1].y;
-            dist += Math.sqrt(dx * dx + dy * dy);
+          if (seen) {
+            const key = pathKey(p);
+            if (key && seen.has(key)) return;
+            if (key) seen.add(key);
           }
+          dist += pathLength(p);
+          lines += 1;
         });
       });
       const timeSec = dist / 1000 / (SETTINGS.speedDown / 1000);
       const m = Math.floor(timeSec / 60);
       const s = Math.floor(timeSec % 60);
-      return { distance: Math.round(dist / 1000) + 'm', time: `${m}:${s.toString().padStart(2, '0')}` };
+      return { distance: Math.round(dist / 1000) + 'm', time: `${m}:${s.toString().padStart(2, '0')}`, lines };
     }
   }
 
