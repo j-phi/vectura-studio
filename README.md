@@ -8,6 +8,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Seeded, repeatable results with live transform controls (position, scale, rotation).
 - Direct canvas manipulation: drag to move the selected layer, drag corner handles to resize, rotate via the upper-right handle, and double-click to rename layers.
 - Multi-selection: shift-click layers or drag a marquee, then move/rotate the group together.
+- Expand any layer into per-line sublayers for fine-grained selection and pen assignment.
 - Alignment guides for canvas center and size matching while dragging.
 - Guide visibility and snapping toggles in Settings (Cmd while dragging overrides snapping).
 - Parameter randomization and simplification controls with live line/point counts.
@@ -15,7 +16,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Configurable undo with Cmd/Ctrl+Z and adjustable history depth.
 - Multiple algorithm families (flowfields, lissajous, wavetable, boids, attractors, hyphae, shape pack).
 - Pen palette with assignable colors/widths, reorderable list, and drag-to-assign per layer.
-- One-click SVG export with configurable precision.
+- One-click SVG export with configurable precision and grouping by pen assignment.
 - Live formula display and estimated pen distance/time.
 
 ## Gallery
@@ -38,7 +39,7 @@ Then visit `http://localhost:8000`.
 ## How to Use
 1. Pick an algorithm in the left panel and adjust its parameters.
 2. Use the transform controls (seed, position, scale, rotation) to nudge the layer.
-3. Manage layers on the right: add, reorder (drag the grip), duplicate, hide, rename (double-click), or tune stroke width and line cap.
+3. Manage layers on the right: add, reorder (drag the grip), duplicate, hide, rename (double-click), expand into sublayers, and assign pens.
 4. Use Settings for machine size, margin, truncation, margin guides, stroke, background, and SVG precision.
 5. Export with the [EXPORT SVG] button.
 
@@ -52,6 +53,7 @@ Each layer is powered by an algorithm with its own parameters and formula previe
 - Hyphae: branching, growth-like structures.
 - Lissajous: harmonic parametric curves.
 - Wavetable: layered noise wave stacks.
+- Spiral: includes optional closure for looping the outer end back into the spiral.
 - Shape Pack: circle/polygon packing with perspective controls.
 
 Defaults live in `src/config/defaults.js` and descriptions in `src/config/descriptions.js`.

@@ -64,6 +64,54 @@
     return simplified.length >= 2 ? simplified : path;
   };
 
+  const simplifyPathVisvalingam = (path, tolerance) => {
+    if (!tolerance || tolerance <= 0 || path.length < 3) return path;
+    const areaThreshold = tolerance * tolerance;
+    const pts = path.map((pt) => ({ x: pt.x, y: pt.y }));
+    const keep = new Array(pts.length).fill(true);
+    const area = new Array(pts.length).fill(Infinity);
+    const triArea = (a, b, c) =>
+      Math.abs(
+        (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y)) / 2
+      );
+
+    for (let i = 1; i < pts.length - 1; i++) {
+      area[i] = triArea(pts[i - 1], pts[i], pts[i + 1]);
+    }
+
+    const findNext = (idx, dir) => {
+      let i = idx + dir;
+      while (i > 0 && i < pts.length - 1 && !keep[i]) i += dir;
+      return i;
+    };
+
+    while (true) {
+      let minArea = Infinity;
+      let minIndex = -1;
+      for (let i = 1; i < pts.length - 1; i++) {
+        if (!keep[i]) continue;
+        if (area[i] < minArea) {
+          minArea = area[i];
+          minIndex = i;
+        }
+      }
+      if (minIndex === -1 || minArea >= areaThreshold) break;
+      keep[minIndex] = false;
+      const prev = findNext(minIndex, -1);
+      const next = findNext(minIndex, 1);
+      if (prev > 0 && next < pts.length) {
+        area[prev] = triArea(pts[findNext(prev, -1)], pts[prev], pts[next]);
+      }
+      if (next < pts.length - 1 && prev >= 0) {
+        area[next] = triArea(pts[prev], pts[next], pts[findNext(next, 1)]);
+      }
+    }
+
+    const simplified = pts.filter((_, i) => keep[i]);
+    if (path.meta) simplified.meta = path.meta;
+    return simplified.length >= 2 ? simplified : path;
+  };
+
   const countPathPoints = (paths) => {
     let lines = 0;
     let points = 0;
@@ -74,6 +122,14 @@
     });
     return { lines, points };
   };
+
+  const clonePaths = (paths) =>
+    (paths || []).map((path) => {
+      if (!Array.isArray(path)) return path;
+      const next = path.map((pt) => ({ ...pt }));
+      if (path.meta) next.meta = { ...path.meta };
+      return next;
+    });
 
   class VectorEngine {
     constructor() {
@@ -106,6 +162,12 @@
           name: layer.name,
           params: JSON.parse(JSON.stringify(layer.params)),
           paramStates: JSON.parse(JSON.stringify(layer.paramStates || {})),
+          parentId: layer.parentId,
+          isGroup: layer.isGroup,
+          groupType: layer.groupType,
+          groupParams: layer.groupParams ? JSON.parse(JSON.stringify(layer.groupParams)) : null,
+          groupCollapsed: layer.groupCollapsed,
+          sourcePaths: layer.sourcePaths ? JSON.parse(JSON.stringify(layer.sourcePaths)) : null,
           penId: layer.penId,
           color: layer.color,
           strokeWidth: layer.strokeWidth,
@@ -121,6 +183,12 @@
         const layer = new Layer(data.id, data.type, data.name);
         layer.params = JSON.parse(JSON.stringify(data.params || {}));
         layer.paramStates = JSON.parse(JSON.stringify(data.paramStates || {}));
+        layer.parentId = data.parentId ?? null;
+        layer.isGroup = Boolean(data.isGroup);
+        layer.groupType = data.groupType ?? null;
+        layer.groupParams = data.groupParams ? JSON.parse(JSON.stringify(data.groupParams)) : null;
+        layer.groupCollapsed = Boolean(data.groupCollapsed);
+        layer.sourcePaths = data.sourcePaths ? JSON.parse(JSON.stringify(data.sourcePaths)) : null;
         layer.penId = data.penId ?? layer.penId;
         layer.color = data.color || layer.color;
         layer.strokeWidth = Number.isFinite(data.strokeWidth) ? data.strokeWidth : layer.strokeWidth;
@@ -136,6 +204,7 @@
     duplicateLayer(id) {
       const source = this.layers.find((l) => l.id === id);
       if (!source) return null;
+      if (source.isGroup) return null;
       const newId = Math.random().toString(36).substr(2, 9);
       SETTINGS.globalLayerCount++;
       const baseName = `${source.name} Copy`;
@@ -149,16 +218,13 @@
       const layer = new Layer(newId, source.type, dupName);
       layer.params = JSON.parse(JSON.stringify(source.params));
       layer.paramStates = JSON.parse(JSON.stringify(source.paramStates || {}));
+      layer.parentId = source.parentId ?? null;
+      layer.sourcePaths = source.sourcePaths ? JSON.parse(JSON.stringify(source.sourcePaths)) : null;
       layer.color = source.color;
       layer.strokeWidth = source.strokeWidth;
       layer.lineCap = source.lineCap;
       layer.visible = source.visible;
-      layer.paths = source.paths.map((path) => {
-        if (!Array.isArray(path)) return path;
-        const next = path.map((pt) => ({ ...pt }));
-        if (path.meta) next.meta = { ...path.meta };
-        return next;
-      });
+      layer.paths = clonePaths(source.paths);
       const idx = this.layers.findIndex((l) => l.id === id);
       if (idx >= 0) {
         this.layers.splice(idx + 1, 0, layer);
@@ -170,9 +236,26 @@
     }
 
     removeLayer(id) {
-      if (this.layers.length <= 1) return;
-      this.layers = this.layers.filter((l) => l.id !== id);
-      if (this.activeLayerId === id) this.activeLayerId = this.layers[this.layers.length - 1].id;
+      const target = this.layers.find((l) => l.id === id);
+      if (!target) return;
+      const drawableCount = this.layers.filter((l) => !l.isGroup).length;
+      if (!target.isGroup && drawableCount <= 1) return;
+      const removeIds = new Set([id]);
+      if (target.isGroup) {
+        const childCount = this.layers.filter((l) => l.parentId === id).length;
+        if (drawableCount - childCount <= 0) return;
+        this.layers.forEach((l) => {
+          if (l.parentId === id) removeIds.add(l.id);
+        });
+      } else if (target.parentId) {
+        const parentId = target.parentId;
+        const remaining = this.layers.filter((l) => l.parentId === parentId && l.id !== id).length;
+        if (remaining === 0) removeIds.add(parentId);
+      }
+      this.layers = this.layers.filter((l) => !removeIds.has(l.id));
+      if (removeIds.has(this.activeLayerId)) {
+        this.activeLayerId = this.layers.length ? this.layers[this.layers.length - 1].id : null;
+      }
     }
 
     moveLayer(id, direction) {
@@ -195,6 +278,7 @@
     generate(layerId) {
       const layer = this.layers.find((l) => l.id === layerId);
       if (!layer) return;
+      if (layer.isGroup) return;
 
       const rng = new SeededRNG(layer.params.seed);
       const noise = new SimpleNoise(layer.params.seed);
@@ -208,7 +292,7 @@
       const bounds = { width, height, m, dW, dH, truncate: SETTINGS.truncate };
 
       const algo = Algorithms[layer.type] || Algorithms.flowfield;
-      const rawPaths = algo.generate(p, rng, noise, bounds) || [];
+      const rawPaths = layer.sourcePaths ? clonePaths(layer.sourcePaths) : algo.generate(p, rng, noise, bounds) || [];
       const smooth = Math.max(0, Math.min(1, p.smoothing ?? 0));
       const simplify = Math.max(0, Math.min(1, p.simplify ?? 0));
 
@@ -289,10 +373,11 @@
       let finalPaths = transformed;
       if (simplify > 0) {
         const tol = simplify * Math.max(dW, dH) * 0.01;
+        const useCurves = Boolean(p.curves);
         finalPaths = transformed.map((path) => {
           if (!Array.isArray(path)) return path;
           if (path.meta && path.meta.kind === 'circle') return path;
-          return simplifyPath(path, tol);
+          return useCurves ? simplifyPathVisvalingam(path, tol) : simplifyPath(path, tol);
         });
       }
       const simplifiedCounts = countPathPoints(finalPaths);

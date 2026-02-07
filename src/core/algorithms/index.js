@@ -582,6 +582,40 @@
           theta += dTheta;
           r += dr;
         }
+        if (p.close && spath.length > 3) {
+          const end = spath[spath.length - 1];
+          let bestIdx = 0;
+          let bestDist = Infinity;
+          const exclude = Math.max(6, Math.floor(spath.length * 0.05));
+          const limit = Math.max(1, spath.length - exclude);
+          for (let i = 0; i < limit; i++) {
+            const pt = spath[i];
+            const dx = pt.x - end.x;
+            const dy = pt.y - end.y;
+            const dist = dx * dx + dy * dy;
+            if (dist < bestDist) {
+              bestDist = dist;
+              bestIdx = i;
+            }
+          }
+          const target = spath[bestIdx];
+          if (target) {
+            const dx = target.x - end.x;
+            const dy = target.y - end.y;
+            const len = Math.hypot(dx, dy) || 1;
+            const mid = { x: (end.x + target.x) / 2, y: (end.y + target.y) / 2 };
+            const offset = Math.min(20, len * 0.25);
+            const control = { x: mid.x - (dy / len) * offset, y: mid.y + (dx / len) * offset };
+            const steps = 12;
+            for (let i = 1; i <= steps; i++) {
+              const t = i / steps;
+              const u = 1 - t;
+              const x = u * u * end.x + 2 * u * t * control.x + t * t * target.x;
+              const y = u * u * end.y + 2 * u * t * control.y + t * t * target.y;
+              spath.push({ x, y });
+            }
+          }
+        }
         return [spath];
       },
       formula: () => 'r = r + (noise(θ) * amp)\nx = cos(θ)*r, y = sin(θ)*r',

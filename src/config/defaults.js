@@ -61,6 +61,7 @@
       pulseAmp: 0,
       pulseFreq: 2,
       axisSnap: true,
+      close: false,
       smoothing: 0,
       simplify: 0,
       curves: false,
@@ -146,6 +147,20 @@
       smoothing: 0,
       simplify: 0,
       curves: true,
+    },
+    expanded: {
+      label: 'Expanded Line',
+      hidden: true,
+      smoothing: 0,
+      simplify: 0,
+      curves: false,
+    },
+    group: {
+      label: 'Group',
+      hidden: true,
+      smoothing: 0,
+      simplify: 0,
+      curves: false,
     },
   };
 

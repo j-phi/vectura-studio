@@ -24,5 +24,8 @@
       'Simulates organic growth (like fungi or roots) using a branching algorithm. Sources grow segments and fork based on probability.',
     shapePack:
       'Packs non-overlapping shapes that can be perfect circles or regular polygons. Supports perspective warping for angular forms.',
+    expanded:
+      'Static sublayer created from an expanded generation. Use transform and common controls to refine the line.',
+    group: 'Group container for expanded line sublayers.',
   };
 })();

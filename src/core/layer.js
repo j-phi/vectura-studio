@@ -25,6 +25,12 @@
       this.visible = true;
       this.origin = { x: 0, y: 0 };
       this.paths = [];
+      this.sourcePaths = null;
+      this.parentId = null;
+      this.isGroup = false;
+      this.groupType = null;
+      this.groupParams = null;
+      this.groupCollapsed = false;
     }
   }
 

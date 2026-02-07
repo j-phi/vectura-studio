@@ -2,7 +2,8 @@
  * UI controller for DOM wiring and controls.
  */
 (() => {
-  const { ALGO_DEFAULTS, SETTINGS, DESCRIPTIONS, MACHINES, Algorithms, SeededRNG, SimpleNoise } = window.Vectura || {};
+  const { ALGO_DEFAULTS, SETTINGS, DESCRIPTIONS, MACHINES, Algorithms, SeededRNG, SimpleNoise, Layer } =
+    window.Vectura || {};
 
   const getEl = (id) => {
     const el = document.getElementById(id);
@@ -15,7 +16,7 @@
   const DISPLAY_PRECISION = 2;
   const TRANSFORM_KEYS = ['seed', 'posX', 'posY', 'scaleX', 'scaleY', 'rotation'];
   const clone = (obj) => JSON.parse(JSON.stringify(obj));
-  const SEEDLESS_ALGOS = new Set(['lissajous']);
+  const SEEDLESS_ALGOS = new Set(['lissajous', 'expanded', 'group']);
   const usesSeed = (type) => !SEEDLESS_ALGOS.has(type);
   const mapRange = (value, inMin, inMax, outMin, outMax) => {
     if (inMax === inMin) return outMin;
@@ -101,6 +102,7 @@
   ];
 
   const CONTROL_DEFS = {
+    expanded: [],
     flowfield: [
       { id: 'noiseScale', label: 'Noise Scale', type: 'range', min: 0.001, max: 0.08, step: 0.001, infoKey: 'flowfield.noiseScale' },
       { id: 'density', label: 'Density', type: 'range', min: 200, max: 6000, step: 100, infoKey: 'flowfield.density' },
@@ -229,6 +231,7 @@
       { id: 'pulseFreq', label: 'Pulse Freq', type: 'range', min: 0.5, max: 8, step: 0.1, infoKey: 'spiral.pulseFreq' },
       { id: 'angleOffset', label: 'Angle Offset', type: 'range', min: -180, max: 180, step: 1, infoKey: 'spiral.angleOffset' },
       { id: 'axisSnap', label: 'Axis Snap', type: 'checkbox', infoKey: 'spiral.axisSnap' },
+      { id: 'close', label: 'Close Spiral', type: 'checkbox', infoKey: 'spiral.close' },
     ],
     grid: [
       { id: 'rows', label: 'Rows', type: 'range', min: 2, max: 60, step: 1, infoKey: 'grid.rows' },
@@ -631,6 +634,10 @@
       title: 'Axis Snap',
       description: 'Aligns spiral points to the X/Y axes at every quadrant.',
     },
+    'spiral.close': {
+      title: 'Close Spiral',
+      description: 'Connects the outer end back into the spiral with a smooth closing curve.',
+    },
     'grid.rows': {
       title: 'Rows',
       description: 'Number of horizontal grid lines.',
@@ -922,6 +929,15 @@
     return limited;
   };
 
+  const clonePath = (path) => {
+    if (!Array.isArray(path)) return path;
+    const next = path.map((pt) => ({ ...pt }));
+    if (path.meta) next.meta = { ...path.meta };
+    return next;
+  };
+
+  const clonePaths = (paths) => (paths || []).map((path) => clonePath(path));
+
   const pathToSvg = (path, precision, useCurves) => {
     if (!path || path.length < 2) return '';
     const fmt = (n) => Number(n).toFixed(precision);
@@ -1185,6 +1201,130 @@
       const def = COMMON_CONTROLS.find((item) => item.id === param);
       if (!def) return null;
       return { type: activeType, baseParams, def };
+    }
+
+    if (group === 'wavetable') {
+      const waveBase = {
+        ...(ALGO_DEFAULTS && ALGO_DEFAULTS.wavetable ? ALGO_DEFAULTS.wavetable : baseParams),
+        seed: 1234,
+        posX: 0,
+        posY: 0,
+        scaleX: 1,
+        scaleY: 1,
+      };
+      const def = (CONTROL_DEFS.wavetable || []).find((item) => item.id === param);
+      if (def) {
+        if (param === 'edgeFade') {
+          return {
+            type: 'wavetable',
+            baseParams: { ...waveBase, edgeFadeThreshold: 50, edgeFadeMode: 'both' },
+            def,
+          };
+        }
+        if (param === 'edgeFadeThreshold') {
+          return {
+            type: 'wavetable',
+            baseParams: { ...waveBase, edgeFade: 100, edgeFadeMode: 'both' },
+            def,
+          };
+        }
+        if (param === 'edgeFadeFeather') {
+          return {
+            type: 'wavetable',
+            baseParams: { ...waveBase, edgeFade: 100, edgeFadeThreshold: 50, edgeFadeMode: 'both' },
+            def,
+          };
+        }
+        if (param === 'edgeFadeMode') {
+          return {
+            type: 'wavetable',
+            baseParams: { ...waveBase, edgeFade: 100, edgeFadeThreshold: 40 },
+            def,
+          };
+        }
+        if (param === 'verticalFade') {
+          return {
+            type: 'wavetable',
+            baseParams: { ...waveBase, verticalFadeThreshold: 50, verticalFadeMode: 'both' },
+            def,
+          };
+        }
+        if (param === 'verticalFadeThreshold') {
+          return {
+            type: 'wavetable',
+            baseParams: { ...waveBase, verticalFade: 100, verticalFadeMode: 'both' },
+            def,
+          };
+        }
+        if (param === 'verticalFadeFeather') {
+          return {
+            type: 'wavetable',
+            baseParams: { ...waveBase, verticalFade: 100, verticalFadeThreshold: 50, verticalFadeMode: 'both' },
+            def,
+          };
+        }
+        if (param === 'verticalFadeMode') {
+          return {
+            type: 'wavetable',
+            baseParams: { ...waveBase, verticalFade: 100, verticalFadeThreshold: 40 },
+            def,
+          };
+        }
+      }
+    }
+
+    if (group === 'phylla') {
+      const phyBase = {
+        ...(ALGO_DEFAULTS && ALGO_DEFAULTS.phylla ? ALGO_DEFAULTS.phylla : baseParams),
+        seed: 1234,
+        posX: 0,
+        posY: 0,
+        scaleX: 1,
+        scaleY: 1,
+      };
+      const def = (CONTROL_DEFS.phylla || []).find((item) => item.id === param);
+      if (def && (param === 'sides' || param === 'sideJitter')) {
+        return {
+          type: 'phylla',
+          baseParams: { ...phyBase, shapeType: 'polygon' },
+          def,
+        };
+      }
+    }
+
+    if (group === 'shapePack') {
+      const shapeBase = {
+        ...(ALGO_DEFAULTS && ALGO_DEFAULTS.shapePack ? ALGO_DEFAULTS.shapePack : baseParams),
+        seed: 1234,
+        posX: 0,
+        posY: 0,
+        scaleX: 1,
+        scaleY: 1,
+      };
+      const def = (CONTROL_DEFS.shapePack || []).find((item) => item.id === param);
+      if (def) {
+        if (param === 'segments' || param === 'rotationStep') {
+          return {
+            type: 'shapePack',
+            baseParams: { ...shapeBase, shape: 'polygon' },
+            def,
+          };
+        }
+        if (param === 'perspectiveType') {
+          return {
+            type: 'shapePack',
+            baseParams: { ...shapeBase, shape: 'polygon', perspective: 0.6 },
+            def,
+          };
+        }
+        if (param === 'perspective' || param === 'perspectiveX' || param === 'perspectiveY') {
+          return {
+            type: 'shapePack',
+            baseParams: { ...shapeBase, shape: 'polygon', perspectiveType: 'radial', perspective: 0.6 },
+            def,
+          };
+        }
+      }
     }
 
     const defs = CONTROL_DEFS[group];
@@ -1533,9 +1673,11 @@
       if (!select) return;
       select.innerHTML = '';
       Object.keys(ALGO_DEFAULTS).forEach((key) => {
+        const def = ALGO_DEFAULTS[key];
+        if (def && def.hidden) return;
         const opt = document.createElement('option');
         opt.value = key;
-        const label = ALGO_DEFAULTS[key]?.label;
+        const label = def?.label;
         opt.innerText = label || key.charAt(0).toUpperCase() + key.slice(1);
         select.appendChild(opt);
       });
@@ -1992,129 +2134,203 @@
       const container = getEl('layer-list');
       if (!container) return;
       container.innerHTML = '';
-      this.app.engine.layers
-        .slice()
-        .reverse()
-        .forEach((l) => {
-          const el = document.createElement('div');
-          const isActive = l.id === this.app.engine.activeLayerId;
-          const isSelected = this.app.renderer?.selectedLayerIds?.has(l.id);
-          el.className = `layer-item flex items-center justify-between bg-vectura-bg border border-vectura-border p-2 mb-2 group cursor-pointer hover:bg-vectura-border ${isActive ? 'active' : ''
-            } ${isSelected ? 'selected' : ''}`;
-          el.dataset.layerId = l.id;
-          el.innerHTML = `
-            <div class="flex items-center gap-2 flex-1 overflow-hidden">
-              <button class="layer-grip" type="button" aria-label="Reorder layer">
-                <span class="dot"></span><span class="dot"></span>
-                <span class="dot"></span><span class="dot"></span>
-                <span class="dot"></span><span class="dot"></span>
-              </button>
-              <input type="checkbox" ${l.visible ? 'checked' : ''} class="cursor-pointer" aria-label="Toggle layer visibility">
-              <span class="layer-name text-sm truncate ${isActive ? 'text-white font-bold' : 'text-vectura-muted'}">${l.name}</span>
-              <input
-                class="layer-name-input hidden w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:outline-none"
-                type="text"
-                value="${l.name}"
-              />
-            </div>
-            <div class="flex items-center gap-1">
-              <div class="pen-assign">
-                <button class="pen-pill" type="button" aria-label="Assign pen">
-                  <div class="pen-icon"></div>
-                </button>
-                <div class="pen-menu hidden"></div>
-              </div>
-              <button class="text-sm text-vectura-muted hover:text-white px-1 btn-up" aria-label="Move layer up">▲</button>
-              <button class="text-sm text-vectura-muted hover:text-white px-1 btn-down" aria-label="Move layer down">▼</button>
-              <button class="text-sm text-vectura-muted hover:text-white px-1 btn-dup" aria-label="Duplicate layer">⧉</button>
-              <button class="text-sm text-vectura-muted hover:text-vectura-danger px-1 ml-1 btn-del" aria-label="Delete layer">✕</button>
-            </div>
-          `;
-          const nameEl = el.querySelector('.layer-name');
-          const nameInput = el.querySelector('.layer-name-input');
-          const visibilityEl = el.querySelector('input[type=checkbox]');
-          const delBtn = el.querySelector('.btn-del');
-          const upBtn = el.querySelector('.btn-up');
-          const downBtn = el.querySelector('.btn-down');
-          const dupBtn = el.querySelector('.btn-dup');
-          const grip = el.querySelector('.layer-grip');
-          const penMenu = el.querySelector('.pen-menu');
-          const penPill = el.querySelector('.pen-pill');
-          const penIcon = el.querySelector('.pen-icon');
+      const layers = this.app.engine.layers.slice().reverse();
+      const groupIds = new Set(layers.filter((layer) => layer.isGroup).map((layer) => layer.id));
+      const groupMap = new Map();
+      const orphans = [];
 
-          const selectLayer = (e) => {
-            if (e && e.shiftKey) {
-              this.app.renderer.selectLayer(l, { toggle: true });
-            } else {
-              this.app.renderer.selectLayer(l);
-            }
-            this.app.engine.activeLayerId = this.app.renderer.selectedLayerId || l.id;
+      layers.forEach((layer) => {
+        if (layer.parentId && groupIds.has(layer.parentId)) {
+          if (!groupMap.has(layer.parentId)) groupMap.set(layer.parentId, []);
+          groupMap.get(layer.parentId).push(layer);
+        } else if (layer.parentId) {
+          orphans.push(layer);
+        }
+      });
+
+      const renderGroupRow = (group) => {
+        const el = document.createElement('div');
+        const typeLabel = ALGO_DEFAULTS?.[group.groupType]?.label || group.groupType || 'Group';
+        el.className =
+          'layer-item layer-group flex items-center justify-between bg-vectura-bg border border-vectura-border p-2 mb-2';
+        el.innerHTML = `
+          <div class="flex items-center gap-2 flex-1 overflow-hidden">
+            <button class="group-toggle" type="button" aria-label="Toggle group">${group.groupCollapsed ? '▸' : '▾'}</button>
+            <span class="layer-name text-sm text-vectura-accent truncate">${group.name}</span>
+            <span class="layer-badge text-[10px] text-vectura-muted uppercase tracking-widest">${typeLabel}</span>
+          </div>
+          <div class="flex items-center gap-1">
+            <button class="text-sm text-vectura-muted hover:text-vectura-danger px-1 ml-1 btn-del" aria-label="Delete group">✕</button>
+          </div>
+        `;
+        const toggle = el.querySelector('.group-toggle');
+        const delBtn = el.querySelector('.btn-del');
+        if (toggle) {
+          toggle.onclick = (e) => {
+            e.stopPropagation();
+            group.groupCollapsed = !group.groupCollapsed;
             this.renderLayers();
-            this.buildControls();
-            this.updateFormula();
+          };
+        }
+        if (delBtn) {
+          delBtn.onclick = (e) => {
+            e.stopPropagation();
+            if (this.app.pushHistory) this.app.pushHistory();
+            this.app.engine.removeLayer(group.id);
+            if (this.app.renderer) {
+              const nextId = this.app.engine.activeLayerId;
+              this.app.renderer.setSelection(nextId ? [nextId] : [], nextId);
+            }
+            this.renderLayers();
             this.app.render();
           };
+        }
+        container.appendChild(el);
+      };
 
-          el.onclick = (e) => {
-            if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select')) return;
-            selectLayer(e);
+      const renderLayerRow = (l, opts = {}) => {
+        const isChild = Boolean(opts.isChild);
+        const isActive = l.id === this.app.engine.activeLayerId;
+        const isSelected = this.app.renderer?.selectedLayerIds?.has(l.id);
+        const showExpand = !isChild && !l.isGroup;
+        const gripMarkup = isChild
+          ? '<span class="layer-grip layer-grip--spacer"></span>'
+          : `
+            <button class="layer-grip" type="button" aria-label="Reorder layer">
+              <span class="dot"></span><span class="dot"></span>
+              <span class="dot"></span><span class="dot"></span>
+              <span class="dot"></span><span class="dot"></span>
+            </button>
+          `;
+        const expandMarkup = showExpand
+          ? '<button class="text-sm text-vectura-muted hover:text-white px-1 btn-expand" aria-label="Expand layer">⇲</button>'
+          : '';
+        const moveMarkup = isChild
+          ? ''
+          : `
+            <button class="text-sm text-vectura-muted hover:text-white px-1 btn-up" aria-label="Move layer up">▲</button>
+            <button class="text-sm text-vectura-muted hover:text-white px-1 btn-down" aria-label="Move layer down">▼</button>
+          `;
+        const el = document.createElement('div');
+        el.className = `layer-item ${isChild ? 'layer-sub' : ''} flex items-center justify-between bg-vectura-bg border border-vectura-border p-2 mb-2 group cursor-pointer hover:bg-vectura-border ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}`;
+        el.dataset.layerId = l.id;
+        el.innerHTML = `
+          <div class="flex items-center gap-2 flex-1 overflow-hidden">
+            ${gripMarkup}
+            <input type="checkbox" ${l.visible ? 'checked' : ''} class="cursor-pointer" aria-label="Toggle layer visibility">
+            <span class="layer-name text-sm truncate ${isActive ? 'text-white font-bold' : 'text-vectura-muted'}">${l.name}</span>
+            <input
+              class="layer-name-input hidden w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:outline-none"
+              type="text"
+              value="${l.name}"
+            />
+          </div>
+          <div class="flex items-center gap-1">
+            <div class="pen-assign">
+              <button class="pen-pill" type="button" aria-label="Assign pen">
+                <div class="pen-icon"></div>
+              </button>
+              <div class="pen-menu hidden"></div>
+            </div>
+            ${expandMarkup}
+            ${moveMarkup}
+            <button class="text-sm text-vectura-muted hover:text-white px-1 btn-dup" aria-label="Duplicate layer">⧉</button>
+            <button class="text-sm text-vectura-muted hover:text-vectura-danger px-1 ml-1 btn-del" aria-label="Delete layer">✕</button>
+          </div>
+        `;
+        const nameEl = el.querySelector('.layer-name');
+        const nameInput = el.querySelector('.layer-name-input');
+        const visibilityEl = el.querySelector('input[type=checkbox]');
+        const delBtn = el.querySelector('.btn-del');
+        const upBtn = el.querySelector('.btn-up');
+        const downBtn = el.querySelector('.btn-down');
+        const dupBtn = el.querySelector('.btn-dup');
+        const expandBtn = el.querySelector('.btn-expand');
+        const grip = el.querySelector('.layer-grip');
+        const penMenu = el.querySelector('.pen-menu');
+        const penPill = el.querySelector('.pen-pill');
+        const penIcon = el.querySelector('.pen-icon');
+
+        const selectLayer = (e) => {
+          if (e && e.shiftKey) {
+            this.app.renderer.selectLayer(l, { toggle: true });
+          } else {
+            this.app.renderer.selectLayer(l);
+          }
+          this.app.engine.activeLayerId = this.app.renderer.selectedLayerId || l.id;
+          this.renderLayers();
+          this.buildControls();
+          this.updateFormula();
+          this.app.render();
+        };
+
+        el.onclick = (e) => {
+          if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select')) return;
+          selectLayer(e);
+        };
+
+        if (expandBtn) {
+          expandBtn.onclick = (e) => {
+            e.stopPropagation();
+            this.expandLayer(l);
           };
+        }
 
-          if (nameEl && nameInput) {
-            let nameClickTimer = null;
-            nameEl.onclick = (e) => {
-              e.stopPropagation();
-              if (nameClickTimer) window.clearTimeout(nameClickTimer);
-              nameClickTimer = window.setTimeout(() => {
-                selectLayer(e);
-                nameClickTimer = null;
-              }, 250);
-            };
-            nameEl.ondblclick = (e) => {
-              e.stopPropagation();
-              if (nameClickTimer) window.clearTimeout(nameClickTimer);
+        if (nameEl && nameInput) {
+          let nameClickTimer = null;
+          nameEl.onclick = (e) => {
+            e.stopPropagation();
+            if (nameClickTimer) window.clearTimeout(nameClickTimer);
+            nameClickTimer = window.setTimeout(() => {
+              selectLayer(e);
               nameClickTimer = null;
-              nameEl.classList.add('hidden');
-              nameInput.classList.remove('hidden');
-              nameInput.focus();
-              nameInput.select();
-            };
-            nameInput.onblur = () => {
-              const next = nameInput.value.trim();
-              if (next && next !== l.name) {
-                if (this.isDuplicateLayerName(next, l.id)) {
-                  this.showDuplicateNameError(next);
-                  nameInput.focus();
-                  nameInput.select();
-                  return;
-                }
-                if (this.app.pushHistory) this.app.pushHistory();
-                l.name = next;
+            }, 250);
+          };
+          nameEl.ondblclick = (e) => {
+            e.stopPropagation();
+            if (nameClickTimer) window.clearTimeout(nameClickTimer);
+            nameClickTimer = null;
+            nameEl.classList.add('hidden');
+            nameInput.classList.remove('hidden');
+            nameInput.focus();
+            nameInput.select();
+          };
+          nameInput.onblur = () => {
+            const next = nameInput.value.trim();
+            if (next && next !== l.name) {
+              if (this.isDuplicateLayerName(next, l.id)) {
+                this.showDuplicateNameError(next);
+                nameInput.focus();
+                nameInput.select();
+                return;
               }
-              nameInput.value = l.name;
-              nameInput.classList.add('hidden');
-              nameEl.classList.remove('hidden');
-              this.renderLayers();
-            };
-            nameInput.onkeydown = (e) => {
-              if (e.key === 'Enter') nameInput.blur();
-              if (e.key === 'Escape') {
-                nameInput.value = l.name;
-                nameInput.blur();
-              }
-            };
-          }
-          if (visibilityEl) {
-            visibilityEl.onchange = (e) => {
               if (this.app.pushHistory) this.app.pushHistory();
-              l.visible = e.target.checked;
-              this.app.render();
-              this.app.updateStats();
-            };
-          }
-          if (delBtn) {
-            delBtn.onclick = (e) => {
-              e.stopPropagation();
+              l.name = next;
+            }
+            nameInput.value = l.name;
+            nameInput.classList.add('hidden');
+            nameEl.classList.remove('hidden');
+            this.renderLayers();
+          };
+          nameInput.onkeydown = (e) => {
+            if (e.key === 'Enter') nameInput.blur();
+            if (e.key === 'Escape') {
+              nameInput.value = l.name;
+              nameInput.blur();
+            }
+          };
+        }
+        if (visibilityEl) {
+          visibilityEl.onchange = (e) => {
+            if (this.app.pushHistory) this.app.pushHistory();
+            l.visible = e.target.checked;
+            this.app.render();
+            this.app.updateStats();
+          };
+        }
+        if (delBtn) {
+          delBtn.onclick = (e) => {
+            e.stopPropagation();
             if (this.app.pushHistory) this.app.pushHistory();
             this.app.engine.removeLayer(l.id);
             if (this.app.renderer) {
@@ -2125,155 +2341,171 @@
             this.app.render();
           };
         }
-          if (upBtn) {
-            upBtn.onclick = (e) => {
-              e.stopPropagation();
-              if (this.app.pushHistory) this.app.pushHistory();
-              this.app.engine.moveLayer(l.id, 1);
+        if (upBtn && !isChild) {
+          upBtn.onclick = (e) => {
+            e.stopPropagation();
+            if (this.app.pushHistory) this.app.pushHistory();
+            this.app.engine.moveLayer(l.id, 1);
+            this.renderLayers();
+            this.app.render();
+          };
+        }
+        if (downBtn && !isChild) {
+          downBtn.onclick = (e) => {
+            e.stopPropagation();
+            if (this.app.pushHistory) this.app.pushHistory();
+            this.app.engine.moveLayer(l.id, -1);
+            this.renderLayers();
+            this.app.render();
+          };
+        }
+        if (dupBtn) {
+          dupBtn.onclick = (e) => {
+            e.stopPropagation();
+            if (this.app.pushHistory) this.app.pushHistory();
+            const dup = this.app.engine.duplicateLayer(l.id);
+            if (dup) {
+              if (this.app.renderer) this.app.renderer.setSelection([dup.id], dup.id);
               this.renderLayers();
               this.app.render();
-            };
-          }
-          if (downBtn) {
-            downBtn.onclick = (e) => {
-              e.stopPropagation();
-              if (this.app.pushHistory) this.app.pushHistory();
-              this.app.engine.moveLayer(l.id, -1);
-              this.renderLayers();
-              this.app.render();
-            };
-          }
-          if (dupBtn) {
-            dupBtn.onclick = (e) => {
-              e.stopPropagation();
-              if (this.app.pushHistory) this.app.pushHistory();
-              const dup = this.app.engine.duplicateLayer(l.id);
-              if (dup) {
-                if (this.app.renderer) this.app.renderer.setSelection([dup.id], dup.id);
-                this.renderLayers();
-                this.app.render();
-              }
-            };
-          }
-          if (penMenu && penPill && penIcon) {
-            const pens = SETTINGS.pens || [];
-            const applyPen = (pen) => {
-              if (!pen) return;
-              l.penId = pen.id;
-              l.color = pen.color;
-              l.strokeWidth = pen.width;
-              penIcon.style.background = pen.color;
-              penIcon.style.color = pen.color;
-              penIcon.style.setProperty('--pen-width', pen.width);
-              penIcon.title = pen.name;
-              if (penMenu) {
-                penMenu.querySelectorAll('.pen-option').forEach((opt) => {
-                  opt.classList.toggle('active', opt.dataset.penId === pen.id);
-                });
-              }
-              this.app.render();
-            };
-            const current = pens.find((pen) => pen.id === l.penId) || pens[0];
-            if (current) applyPen(current);
+            }
+          };
+        }
+        if (penMenu && penPill && penIcon) {
+          const pens = SETTINGS.pens || [];
+          const applyPen = (pen) => {
+            if (!pen) return;
+            l.penId = pen.id;
+            l.color = pen.color;
+            l.strokeWidth = pen.width;
+            penIcon.style.background = pen.color;
+            penIcon.style.color = pen.color;
+            penIcon.style.setProperty('--pen-width', pen.width);
+            penIcon.title = pen.name;
+            if (penMenu) {
+              penMenu.querySelectorAll('.pen-option').forEach((opt) => {
+                opt.classList.toggle('active', opt.dataset.penId === pen.id);
+              });
+            }
+            this.app.render();
+          };
+          const current = pens.find((pen) => pen.id === l.penId) || pens[0];
+          if (current) applyPen(current);
 
-            penMenu.innerHTML = pens
-              .map(
-                (pen) => `
-                  <button type="button" class="pen-option" data-pen-id="${pen.id}">
-                    <span class="pen-icon" style="background:${pen.color}; color:${pen.color}; --pen-width:${pen.width}"></span>
-                    <span class="pen-option-name">${pen.name}</span>
-                  </button>
-                `
-              )
-              .join('');
-            penMenu.querySelectorAll('.pen-option').forEach((opt) => {
-              opt.onclick = (e) => {
-                e.stopPropagation();
-                if (this.app.pushHistory) this.app.pushHistory();
-                const next = pens.find((pen) => pen.id === opt.dataset.penId);
-                applyPen(next);
-                penMenu.classList.add('hidden');
-              };
-            });
-            penPill.onclick = (e) => {
+          penMenu.innerHTML = pens
+            .map(
+              (pen) => `
+                <button type="button" class="pen-option" data-pen-id="${pen.id}">
+                  <span class="pen-icon" style="background:${pen.color}; color:${pen.color}; --pen-width:${pen.width}"></span>
+                  <span class="pen-option-name">${pen.name}</span>
+                </button>
+              `
+            )
+            .join('');
+          penMenu.querySelectorAll('.pen-option').forEach((opt) => {
+            opt.onclick = (e) => {
               e.stopPropagation();
-              if (this.openPenMenu && this.openPenMenu !== penMenu) {
-                this.openPenMenu.classList.add('hidden');
-              }
-              penMenu.classList.toggle('hidden');
-              this.openPenMenu = penMenu.classList.contains('hidden') ? null : penMenu;
-            };
-
-            el.ondragover = (ev) => {
-              const types = Array.from(ev.dataTransfer?.types || []);
-              if (!types.length || types.includes('text/pen-id') || types.includes('text/plain')) {
-                ev.preventDefault();
-                el.classList.add('dragging');
-              }
-            };
-            el.ondragleave = () => el.classList.remove('dragging');
-            el.ondrop = (ev) => {
-              ev.preventDefault();
-              el.classList.remove('dragging');
-              const penId = ev.dataTransfer.getData('text/pen-id') || ev.dataTransfer.getData('text/plain');
-              const next = pens.find((pen) => pen.id === penId);
-              if (!next) return;
               if (this.app.pushHistory) this.app.pushHistory();
+              const next = pens.find((pen) => pen.id === opt.dataset.penId);
               applyPen(next);
               penMenu.classList.add('hidden');
             };
-          }
-          if (grip) {
-            grip.onmousedown = (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              const dragEl = el;
-              dragEl.classList.add('dragging');
-              const indicator = document.createElement('div');
-              indicator.className = 'layer-drop-indicator';
-              container.insertBefore(indicator, dragEl.nextSibling);
-              const currentOrder = this.app.engine.layers.map((layer) => layer.id).reverse();
+          });
+          penPill.onclick = (e) => {
+            e.stopPropagation();
+            if (this.openPenMenu && this.openPenMenu !== penMenu) {
+              this.openPenMenu.classList.add('hidden');
+            }
+            penMenu.classList.toggle('hidden');
+            this.openPenMenu = penMenu.classList.contains('hidden') ? null : penMenu;
+          };
 
-              const onMove = (ev) => {
-                const y = ev.clientY;
-                const items = Array.from(container.querySelectorAll('.layer-item')).filter((item) => item !== dragEl);
-                let inserted = false;
-                for (const item of items) {
-                  const rect = item.getBoundingClientRect();
-                  if (y < rect.top + rect.height / 2) {
-                    container.insertBefore(indicator, item);
-                    inserted = true;
-                    break;
-                  }
+          el.ondragover = (ev) => {
+            const types = Array.from(ev.dataTransfer?.types || []);
+            if (!types.length || types.includes('text/pen-id') || types.includes('text/plain')) {
+              ev.preventDefault();
+              el.classList.add('dragging');
+            }
+          };
+          el.ondragleave = () => el.classList.remove('dragging');
+          el.ondrop = (ev) => {
+            ev.preventDefault();
+            el.classList.remove('dragging');
+            const penId = ev.dataTransfer.getData('text/pen-id') || ev.dataTransfer.getData('text/plain');
+            const next = pens.find((pen) => pen.id === penId);
+            if (!next) return;
+            if (this.app.pushHistory) this.app.pushHistory();
+            applyPen(next);
+            penMenu.classList.add('hidden');
+          };
+        }
+        if (grip && !isChild) {
+          grip.onmousedown = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const dragEl = el;
+            dragEl.classList.add('dragging');
+            const indicator = document.createElement('div');
+            indicator.className = 'layer-drop-indicator';
+            container.insertBefore(indicator, dragEl.nextSibling);
+            const currentOrder = this.app.engine.layers.map((layer) => layer.id).reverse();
+
+            const onMove = (ev) => {
+              const y = ev.clientY;
+              const items = Array.from(container.querySelectorAll('.layer-item')).filter((item) => item !== dragEl);
+              let inserted = false;
+              for (const item of items) {
+                const rect = item.getBoundingClientRect();
+                if (y < rect.top + rect.height / 2) {
+                  container.insertBefore(indicator, item);
+                  inserted = true;
+                  break;
                 }
-                if (!inserted) container.appendChild(indicator);
-              };
-
-              const onUp = () => {
-                dragEl.classList.remove('dragging');
-                const siblings = Array.from(container.children);
-                const indicatorIndex = siblings.indexOf(indicator);
-                const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('layer-item'));
-                const newIndex = before.length;
-                indicator.remove();
-                window.removeEventListener('mousemove', onMove);
-                window.removeEventListener('mouseup', onUp);
-
-                const nextOrder = currentOrder.filter((id) => id !== l.id);
-                nextOrder.splice(newIndex, 0, l.id);
-                const nextEngineOrder = nextOrder.slice().reverse();
-                const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
-                this.app.engine.layers = nextEngineOrder.map((id) => map.get(id)).filter(Boolean);
-                this.renderLayers();
-                this.app.render();
-              };
-
-              window.addEventListener('mousemove', onMove);
-              window.addEventListener('mouseup', onUp);
+              }
+              if (!inserted) container.appendChild(indicator);
             };
+
+            const onUp = () => {
+              dragEl.classList.remove('dragging');
+              const siblings = Array.from(container.children);
+              const indicatorIndex = siblings.indexOf(indicator);
+              const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('layer-item'));
+              const newIndex = before.length;
+              indicator.remove();
+              window.removeEventListener('mousemove', onMove);
+              window.removeEventListener('mouseup', onUp);
+
+              const nextOrder = currentOrder.filter((id) => id !== l.id);
+              nextOrder.splice(newIndex, 0, l.id);
+              const nextEngineOrder = nextOrder.slice().reverse();
+              const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
+              this.app.engine.layers = nextEngineOrder.map((id) => map.get(id)).filter(Boolean);
+              this.renderLayers();
+              this.app.render();
+            };
+
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
+          };
+        }
+        container.appendChild(el);
+      };
+
+      layers.forEach((layer) => {
+        if (layer.parentId && groupIds.has(layer.parentId)) return;
+        if (layer.isGroup) {
+          renderGroupRow(layer);
+          const children = groupMap.get(layer.id) || [];
+          const childSelected = children.some((child) => this.app.renderer?.selectedLayerIds?.has(child.id));
+          if (!layer.groupCollapsed || childSelected) {
+            children.forEach((child) => renderLayerRow(child, { isChild: true }));
           }
-          container.appendChild(el);
-        });
+        } else {
+          renderLayerRow(layer);
+        }
+      });
+
+      orphans.forEach((layer) => renderLayerRow(layer));
     }
 
     renderPens() {
@@ -2421,6 +2653,69 @@
       });
     }
 
+    expandLayer(layer) {
+      if (!layer || layer.isGroup || layer.parentId) return;
+      if (!Layer) return;
+      if (this.app.pushHistory) this.app.pushHistory();
+      if (!layer.paths || !layer.paths.length) {
+        this.app.engine.generate(layer.id);
+      }
+      if (!layer.paths || !layer.paths.length) return;
+
+      const groupId = layer.id;
+      const baseName = layer.name;
+      const pad = String(layer.paths.length).length;
+      const children = layer.paths.map((path, index) => {
+        const newId = Math.random().toString(36).substr(2, 9);
+        const child = new Layer(newId, 'expanded', `${baseName} - Line ${String(index + 1).padStart(pad, '0')}`);
+        child.parentId = groupId;
+        child.params.seed = 0;
+        child.params.posX = 0;
+        child.params.posY = 0;
+        child.params.scaleX = 1;
+        child.params.scaleY = 1;
+        child.params.rotation = 0;
+        child.params.curves = Boolean(layer.params.curves);
+        child.params.smoothing = 0;
+        child.params.simplify = 0;
+        child.sourcePaths = [clonePath(path)];
+        child.penId = layer.penId;
+        child.color = layer.color;
+        child.strokeWidth = layer.strokeWidth;
+        child.lineCap = layer.lineCap;
+        child.visible = layer.visible;
+        return child;
+      });
+
+      layer.isGroup = true;
+      layer.groupType = layer.type;
+      layer.groupParams = clone(layer.params);
+      layer.groupCollapsed = false;
+      layer.type = 'group';
+      layer.visible = false;
+      layer.paths = [];
+      layer.sourcePaths = null;
+      layer.paramStates = {};
+
+      const idx = this.app.engine.layers.findIndex((l) => l.id === groupId);
+      if (idx >= 0) {
+        this.app.engine.layers.splice(idx + 1, 0, ...children);
+      } else {
+        this.app.engine.layers.push(...children);
+      }
+
+      children.forEach((child) => this.app.engine.generate(child.id));
+      const primary = children[0];
+      if (primary) {
+        this.app.engine.activeLayerId = primary.id;
+        if (this.app.renderer) this.app.renderer.setSelection([primary.id], primary.id);
+      }
+      this.renderLayers();
+      this.buildControls();
+      this.updateFormula();
+      this.app.render();
+    }
+
     openLayerSettings(layer) {
       const strokeValue = layer.strokeWidth ?? SETTINGS.strokeWidth;
       const capValue = layer.lineCap || 'round';
@@ -2496,7 +2791,24 @@
       const scaleX = getEl('inp-scale-x');
       const scaleY = getEl('inp-scale-y');
       const rotation = getEl('inp-rotation');
-      if (moduleSelect) moduleSelect.value = layer.type;
+      const isGroup = Boolean(layer.isGroup);
+      const isStatic = Boolean(layer.parentId || layer.isGroup);
+      if (moduleSelect) {
+        Array.from(moduleSelect.options).forEach((opt) => {
+          if (opt.dataset.temp === 'true') opt.remove();
+        });
+        const hasOption = Array.from(moduleSelect.options).some((opt) => opt.value === layer.type);
+        if (!hasOption) {
+          const opt = document.createElement('option');
+          opt.value = layer.type;
+          opt.dataset.temp = 'true';
+          opt.innerText = ALGO_DEFAULTS?.[layer.type]?.label || layer.type;
+          moduleSelect.appendChild(opt);
+        }
+        moduleSelect.value = layer.type;
+        moduleSelect.disabled = isStatic;
+        moduleSelect.classList.toggle('opacity-60', isStatic);
+      }
       if (seed) seed.value = layer.params.seed;
       if (posX) posX.value = layer.params.posX;
       if (posY) posY.value = layer.params.posY;
@@ -2515,6 +2827,11 @@
         } else if (algoLabel && !infoBtn) {
           this.attachInfoButton(algoLabel, 'global.algorithm');
         }
+      }
+
+      if (isGroup) {
+        container.innerHTML = '<p class="text-xs text-vectura-muted">Select a sublayer to edit its parameters.</p>';
+        return;
       }
 
       this.storeLayerParams(layer);
@@ -2943,15 +3260,42 @@
         svg += `<defs><clipPath id="margin-clip"><rect x="${m}" y="${m}" width="${w}" height="${h}" /></clipPath></defs>`;
         svg += `<g clip-path="url(#margin-clip)">`;
       }
+      const penMap = new Map((SETTINGS.pens || []).map((pen) => [pen.id, pen]));
+      const fallbackPen = {
+        id: 'default',
+        name: 'Default',
+        color: '#000000',
+        width: SETTINGS.strokeWidth ?? 0.3,
+      };
+      const groups = new Map();
+      const order = [];
       this.app.engine.layers.forEach((l) => {
-        if (!l.visible) return;
-        const strokeWidth = (l.strokeWidth ?? SETTINGS.strokeWidth).toFixed(3);
-        const lineCap = l.lineCap || 'round';
-        const useCurves = Boolean(l.params && l.params.curves);
-        svg += `<g id="${l.name.replace(/\s/g, '_')}" stroke="black" stroke-width="${strokeWidth}" stroke-linecap="${lineCap}" stroke-linejoin="round" fill="none">`;
-        l.paths.forEach((p) => {
-          const markup = shapeToSvg(p, precision, useCurves);
-          if (markup) svg += markup;
+        if (!l.visible || l.isGroup) return;
+        const pen = penMap.get(l.penId) || fallbackPen;
+        const key = pen.id || fallbackPen.id;
+        if (!groups.has(key)) {
+          groups.set(key, { pen, layers: [] });
+          order.push(key);
+        }
+        groups.get(key).layers.push(l);
+      });
+
+      order.forEach((key) => {
+        const group = groups.get(key);
+        if (!group) return;
+        const pen = group.pen || fallbackPen;
+        const penName = (pen.name || pen.id || 'Pen').replace(/\s/g, '_');
+        svg += `<g id="pen_${penName}" stroke="${pen.color || 'black'}" fill="none">`;
+        group.layers.forEach((l) => {
+          const strokeWidth = (l.strokeWidth ?? pen.width ?? SETTINGS.strokeWidth).toFixed(3);
+          const lineCap = l.lineCap || 'round';
+          const useCurves = Boolean(l.params && l.params.curves);
+          svg += `<g id="${l.name.replace(/\s/g, '_')}" stroke-width="${strokeWidth}" stroke-linecap="${lineCap}" stroke-linejoin="round">`;
+          l.paths.forEach((p) => {
+            const markup = shapeToSvg(p, precision, useCurves);
+            if (markup) svg += markup;
+          });
+          svg += `</g>`;
         });
         svg += `</g>`;
       });
