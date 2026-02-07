@@ -6,6 +6,7 @@
 - `dist/` contains prebuilt static assets if a bundled build is produced; it is not required for local development.
 - `README.md` contains information about the project design and capabilities; ALWAYS update this when adding/removing features and always review it to assess if updates are needed when making corrections or changes.
 - A version is present in the HTML of the project; ALWAYS auto-increment this upon making any changes.
+- The in-app help guide and shortcut list must be kept current; update it whenever features or UI behaviors change.
 
 ## Build, Test, and Development Commands
 - `python -m http.server` runs a simple static server at `http://localhost:8000` for local testing.

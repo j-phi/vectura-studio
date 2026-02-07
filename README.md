@@ -12,10 +12,12 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Expand any layer into per-line sublayers for fine-grained selection and pen assignment.
 - Alignment guides for canvas center and size matching while dragging.
 - Guide visibility and snapping toggles in Settings (Cmd while dragging overrides snapping).
+- In-app help guide and shortcut menu (press `?`).
 - Parameter randomization and simplification controls with live line/point counts.
 - Fast duplication and nudging: Alt-drag (Option-drag) to duplicate, arrow keys to nudge (Shift for larger steps).
 - Configurable undo with Cmd/Ctrl+Z and adjustable history depth.
 - Multiple algorithm families (flowfields, lissajous, wavetable, boids, attractors, hyphae, shape pack).
+- Wavetable noise library includes image-based noise input.
 - Pen palette with assignable colors/widths, reorderable list, and drag-to-assign per layer or selection.
 - One-click SVG export with configurable precision and grouping by pen assignment.
 - Live formula display and estimated pen distance/time.
@@ -48,7 +50,7 @@ Pan: Shift + Drag. Zoom: Mouse Wheel. Move layer: Drag. Resize layer: Drag corne
 
 ## Algorithm Library
 Each layer is powered by an algorithm with its own parameters and formula preview:
-- Flowfield: noise-driven vector fields for organic line flows.
+- Flowfield: noise-driven vector fields with selectable noise types, octaves, and minimum-length filtering.
 - Boids: emergent flocking paths.
 - Attractors: Lorenz-like and chaotic systems.
 - Hyphae: branching, growth-like structures.

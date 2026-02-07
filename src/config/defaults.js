@@ -7,6 +7,8 @@
     wavetable: {
       lines: 40,
       noiseType: 'simplex',
+      noiseImageId: '',
+      noiseImageName: '',
       amplitude: 30,
       zoom: 0.02,
       tilt: 0,
@@ -29,13 +31,19 @@
       curves: false,
     },
     flowfield: {
+      noiseType: 'simplex',
       noiseScale: 0.01,
-      density: 1000,
+      lacunarity: 2.0,
+      gain: 0.5,
+      density: 1200,
       stepLen: 5,
-      maxSteps: 50,
+      maxSteps: 200,
       force: 1.0,
-      chaos: 0.0,
-      octaves: 1,
+      angleOffset: 0,
+      chaos: 0.1,
+      octaves: 2,
+      minSteps: 2,
+      minLength: 0,
       smoothing: 0,
       simplify: 0,
       curves: false,
@@ -181,6 +189,8 @@
     marginLineDotting: 0,
     showGuides: true,
     snapGuides: true,
+    selectionOutline: true,
+    selectionOutlineColor: '#ef4444',
     pens: [
       { id: 'pen-1', name: 'Pen 1', color: '#e4e4e7', width: 0.3 },
       { id: 'pen-2', name: 'Pen 2', color: '#38bdf8', width: 0.5 },
@@ -188,4 +198,5 @@
     ],
     globalLayerCount: 0,
   };
+  window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {};
 })();

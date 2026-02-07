@@ -51,6 +51,9 @@
       </div>
       <div class="text-xs text-vectura-muted" id="status-bar" role="status" aria-live="polite">READY</div>
       <div class="flex gap-4">
+        <button id="btn-help" class="hover:text-vectura-accent transition-colors text-xs" type="button">
+          [HELP]
+        </button>
         <button id="btn-settings" class="hover:text-vectura-accent transition-colors text-xs" type="button">
           [SETTINGS]
         </button>
@@ -67,7 +70,7 @@
       <aside id="left-pane" class="pane pane-left bg-vectura-panel border-r border-vectura-border flex flex-col z-10 shadow-xl">
         <div class="pane-header pane-header-left p-4 border-b border-vectura-border flex justify-between items-center">
           <span class="pane-title font-bold text-vectura-accent">GENERATOR</span>
-          <span class="pane-meta text-[10px] text-vectura-muted">V.5.20</span>
+          <span class="pane-meta text-[10px] text-vectura-muted">V.5.23</span>
           <button id="btn-pane-toggle-left" class="pane-toggle pane-toggle-left" type="button" aria-label="Toggle left pane">
             ◀
           </button>
@@ -330,6 +333,18 @@
                 <div class="flex items-center justify-between">
                   <label class="text-xs text-vectura-muted">Snap Guides</label>
                   <input type="checkbox" id="set-snap-guides" class="cursor-pointer" />
+                </div>
+              </div>
+              <div class="mt-4">
+                <div class="flex items-center justify-between mb-2">
+                  <label class="text-xs text-vectura-muted">Selection Outline</label>
+                  <input type="checkbox" id="set-selection-outline" class="cursor-pointer" />
+                </div>
+                <div>
+                  <label class="text-[10px] text-vectura-muted">Outline Color</label>
+                  <div class="relative w-full h-7 overflow-hidden rounded border border-vectura-border">
+                    <input type="color" id="set-selection-outline-color" class="w-full h-full cursor-pointer" />
+                  </div>
                 </div>
               </div>
             </div>

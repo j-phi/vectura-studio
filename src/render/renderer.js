@@ -129,12 +129,42 @@
           this.ctx.stroke();
         });
       };
+      const outlineEnabled = SETTINGS.selectionOutline !== false;
+      const outlineColor = SETTINGS.selectionOutlineColor || '#ef4444';
+      const drawSelectionOutline = () => {
+        if (!outlineEnabled || !selectedLayers.length) return;
+        selectedLayers.forEach((l) => {
+          if (!l.visible) return;
+          const pen = SETTINGS.pens?.find((p) => p.id === l.penId) || null;
+          const strokeWidth = pen?.width ?? l.strokeWidth ?? SETTINGS.strokeWidth;
+          const useCurves = Boolean(l.params && l.params.curves);
+          this.ctx.lineWidth = Math.max(0.1, strokeWidth + 0.2);
+          this.ctx.lineCap = l.lineCap || 'round';
+          this.ctx.strokeStyle = outlineColor;
+          this.ctx.beginPath();
+          l.paths.forEach((path) => {
+            if (path && path.meta && path.meta.kind === 'circle') {
+              const meta =
+                this.selectedLayerIds?.has(l.id) && this.tempTransform
+                  ? this.transformCircleMeta(path.meta, this.tempTransform)
+                  : path.meta;
+              this.traceCircle(meta);
+            } else {
+              const next =
+                this.selectedLayerIds?.has(l.id) && this.tempTransform ? this.transformPath(path, this.tempTransform) : path;
+              this.tracePath(next, useCurves);
+            }
+          });
+          this.ctx.stroke();
+        });
+      };
 
       if (SETTINGS.truncate) {
         this.ctx.save();
         this.ctx.beginPath();
         this.ctx.rect(m, m, innerW, innerH);
         this.ctx.clip();
+        drawSelectionOutline();
         drawLayers();
         this.ctx.restore();
       } else {
@@ -142,6 +172,7 @@
         this.ctx.beginPath();
         this.ctx.rect(m, m, innerW, innerH);
         this.ctx.clip();
+        drawSelectionOutline();
         drawLayers();
         this.ctx.restore();
 
@@ -155,46 +186,6 @@
           this.ctx.clip('evenodd');
           drawLayers();
           this.ctx.restore();
-        }
-      }
-
-      const highlightLayers = selectedLayers.filter((layer) => layer.parentId);
-      if (highlightLayers.length) {
-        const drawHighlights = () => {
-          highlightLayers.forEach((l) => {
-            const pen = SETTINGS.pens?.find((p) => p.id === l.penId) || null;
-            const strokeWidth = pen?.width ?? l.strokeWidth ?? SETTINGS.strokeWidth;
-            const useCurves = Boolean(l.params && l.params.curves);
-            this.ctx.lineWidth = Math.max(strokeWidth + 0.2, strokeWidth * 1.6);
-            this.ctx.lineCap = l.lineCap || 'round';
-            this.ctx.strokeStyle = 'rgba(248, 250, 252, 0.9)';
-            this.ctx.beginPath();
-            l.paths.forEach((path) => {
-              if (path && path.meta && path.meta.kind === 'circle') {
-                const meta =
-                  this.selectedLayerIds?.has(l.id) && this.tempTransform
-                    ? this.transformCircleMeta(path.meta, this.tempTransform)
-                    : path.meta;
-                this.traceCircle(meta);
-              } else {
-                const next =
-                  this.selectedLayerIds?.has(l.id) && this.tempTransform ? this.transformPath(path, this.tempTransform) : path;
-                this.tracePath(next, useCurves);
-              }
-            });
-            this.ctx.stroke();
-          });
-        };
-
-        if (SETTINGS.truncate) {
-          this.ctx.save();
-          this.ctx.beginPath();
-          this.ctx.rect(m, m, innerW, innerH);
-          this.ctx.clip();
-          drawHighlights();
-          this.ctx.restore();
-        } else {
-          drawHighlights();
         }
       }
 
@@ -453,16 +444,7 @@
       if (this.isSelecting) {
         const rect = this.selectionRect;
         if (rect) {
-          const selected = this.engine.layers.filter((layer) => {
-            if (!layer.visible) return false;
-            const bounds = this.getLayerBounds(layer);
-            if (!bounds) return false;
-            const corners = Object.values(bounds.corners);
-            const inRect = corners.some(
-              (pt) => pt.x >= rect.x && pt.x <= rect.x + rect.w && pt.y >= rect.y && pt.y <= rect.y + rect.h
-            );
-            return inRect;
-          });
+          const selected = this.engine.layers.filter((layer) => this.layerIntersectsRect(layer, rect));
           if (selected.length) {
             this.setSelection(
               selected.map((layer) => layer.id),
@@ -986,6 +968,74 @@
       const localX = dx * cosR + dy * sinR;
       const localY = -dx * sinR + dy * cosR;
       return localX >= bounds.minX && localX <= bounds.maxX && localY >= bounds.minY && localY <= bounds.maxY;
+    }
+
+    rectContainsPoint(rect, pt) {
+      return pt.x >= rect.x && pt.x <= rect.x + rect.w && pt.y >= rect.y && pt.y <= rect.y + rect.h;
+    }
+
+    segmentsIntersect(a, b, c, d) {
+      const cross = (p1, p2, p3) => (p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x);
+      const d1 = cross(a, b, c);
+      const d2 = cross(a, b, d);
+      const d3 = cross(c, d, a);
+      const d4 = cross(c, d, b);
+      if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return true;
+      const onSegment = (p1, p2, p3) =>
+        Math.min(p1.x, p2.x) <= p3.x &&
+        p3.x <= Math.max(p1.x, p2.x) &&
+        Math.min(p1.y, p2.y) <= p3.y &&
+        p3.y <= Math.max(p1.y, p2.y);
+      if (d1 === 0 && onSegment(a, b, c)) return true;
+      if (d2 === 0 && onSegment(a, b, d)) return true;
+      if (d3 === 0 && onSegment(c, d, a)) return true;
+      if (d4 === 0 && onSegment(c, d, b)) return true;
+      return false;
+    }
+
+    segmentIntersectsRect(a, b, rect) {
+      if (this.rectContainsPoint(rect, a) || this.rectContainsPoint(rect, b)) return true;
+      const r1 = { x: rect.x, y: rect.y };
+      const r2 = { x: rect.x + rect.w, y: rect.y };
+      const r3 = { x: rect.x + rect.w, y: rect.y + rect.h };
+      const r4 = { x: rect.x, y: rect.y + rect.h };
+      return (
+        this.segmentsIntersect(a, b, r1, r2) ||
+        this.segmentsIntersect(a, b, r2, r3) ||
+        this.segmentsIntersect(a, b, r3, r4) ||
+        this.segmentsIntersect(a, b, r4, r1)
+      );
+    }
+
+    pathIntersectsRect(path, rect) {
+      if (!Array.isArray(path) || path.length < 2) return false;
+      for (let i = 0; i < path.length - 1; i++) {
+        if (this.segmentIntersectsRect(path[i], path[i + 1], rect)) return true;
+      }
+      return false;
+    }
+
+    circleIntersectsRect(meta, rect) {
+      const cx = meta.cx ?? meta.x;
+      const cy = meta.cy ?? meta.y;
+      const r = meta.r ?? Math.max(meta.rx ?? 0, meta.ry ?? 0);
+      if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(r)) return false;
+      if (this.rectContainsPoint(rect, { x: cx, y: cy })) return true;
+      const closestX = Math.max(rect.x, Math.min(cx, rect.x + rect.w));
+      const closestY = Math.max(rect.y, Math.min(cy, rect.y + rect.h));
+      const dx = cx - closestX;
+      const dy = cy - closestY;
+      return dx * dx + dy * dy <= r * r;
+    }
+
+    layerIntersectsRect(layer, rect) {
+      if (!layer || !layer.visible) return false;
+      return layer.paths.some((path) => {
+        if (path && path.meta && path.meta.kind === 'circle') {
+          return this.circleIntersectsRect(path.meta, rect);
+        }
+        return this.pathIntersectsRect(path, rect);
+      });
     }
 
     handleCursor(handle) {

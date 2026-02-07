@@ -104,13 +104,68 @@
   const CONTROL_DEFS = {
     expanded: [],
     flowfield: [
-      { id: 'noiseScale', label: 'Noise Scale', type: 'range', min: 0.001, max: 0.08, step: 0.001, infoKey: 'flowfield.noiseScale' },
-      { id: 'density', label: 'Density', type: 'range', min: 200, max: 6000, step: 100, infoKey: 'flowfield.density' },
-      { id: 'stepLen', label: 'Step Length', type: 'range', min: 1, max: 20, step: 1, infoKey: 'flowfield.stepLen' },
-      { id: 'maxSteps', label: 'Max Steps', type: 'range', min: 20, max: 500, step: 10, infoKey: 'flowfield.maxSteps' },
-      { id: 'force', label: 'Distortion Force', type: 'range', min: 0.1, max: 4.0, step: 0.1, infoKey: 'flowfield.force' },
-      { id: 'chaos', label: 'Chaos', type: 'range', min: 0, max: 1.0, step: 0.05, infoKey: 'flowfield.chaos' },
-      { id: 'octaves', label: 'Octaves', type: 'range', min: 1, max: 4, step: 1, infoKey: 'flowfield.octaves' },
+      {
+        id: 'noiseType',
+        label: 'Noise Type',
+        type: 'select',
+        randomExclude: ['image'],
+        options: [
+          { value: 'simplex', label: 'Simplex' },
+          { value: 'ridged', label: 'Ridged' },
+          { value: 'billow', label: 'Billow' },
+          { value: 'turbulence', label: 'Turbulence' },
+          { value: 'swirl', label: 'Swirl' },
+          { value: 'radial', label: 'Radial' },
+          { value: 'checker', label: 'Checker' },
+          { value: 'curl', label: 'Curl' },
+        ],
+        infoKey: 'flowfield.noiseType',
+      },
+      { id: 'noiseScale', label: 'Noise Scale', type: 'range', min: 0.001, max: 0.2, step: 0.001, infoKey: 'flowfield.noiseScale' },
+      { id: 'lacunarity', label: 'Lacunarity', type: 'range', min: 1.2, max: 4.0, step: 0.1, infoKey: 'flowfield.lacunarity' },
+      { id: 'gain', label: 'Gain', type: 'range', min: 0.2, max: 0.9, step: 0.05, infoKey: 'flowfield.gain' },
+      {
+        id: 'density',
+        label: 'Density',
+        type: 'range',
+        min: 200,
+        max: 12000,
+        step: 100,
+        confirmAbove: 6000,
+        confirmMessage: 'High density can be slow. Continue?',
+        randomMax: 4000,
+        infoKey: 'flowfield.density',
+      },
+      { id: 'stepLen', label: 'Step Length', type: 'range', min: 0.5, max: 30, step: 0.5, infoKey: 'flowfield.stepLen' },
+      {
+        id: 'maxSteps',
+        label: 'Max Steps',
+        type: 'range',
+        min: 20,
+        max: 2000,
+        step: 10,
+        confirmAbove: 1000,
+        confirmMessage: 'Large step counts can be slow. Continue?',
+        randomMax: 600,
+        infoKey: 'flowfield.maxSteps',
+      },
+      { id: 'force', label: 'Flow Force', type: 'range', min: 0.1, max: 6.0, step: 0.1, infoKey: 'flowfield.force' },
+      { id: 'angleOffset', label: 'Angle Offset', type: 'range', min: -180, max: 180, step: 5, infoKey: 'flowfield.angleOffset' },
+      { id: 'chaos', label: 'Chaos', type: 'range', min: 0, max: 3.0, step: 0.05, infoKey: 'flowfield.chaos' },
+      {
+        id: 'octaves',
+        label: 'Octaves',
+        type: 'range',
+        min: 1,
+        max: 6,
+        step: 1,
+        confirmAbove: 4,
+        confirmMessage: 'Higher octaves are slower. Continue?',
+        randomMax: 4,
+        infoKey: 'flowfield.octaves',
+      },
+      { id: 'minSteps', label: 'Minimum Steps', type: 'range', min: 2, max: 200, step: 2, infoKey: 'flowfield.minSteps' },
+      { id: 'minLength', label: 'Minimum Length', type: 'range', min: 0, max: 200, step: 2, infoKey: 'flowfield.minLength' },
     ],
     lissajous: [
       { id: 'freqX', label: 'Freq X', type: 'range', min: 0.5, max: 12, step: 0.1, infoKey: 'lissajous.freqX' },
@@ -138,8 +193,27 @@
           { value: 'triangle', label: 'Triangle' },
           { value: 'warp', label: 'Warp' },
           { value: 'cellular', label: 'Cellular' },
+          { value: 'fbm', label: 'Fractal' },
+          { value: 'swirl', label: 'Swirl' },
+          { value: 'radial', label: 'Radial' },
+          { value: 'checker', label: 'Checker' },
+          { value: 'zigzag', label: 'Zigzag' },
+          { value: 'ripple', label: 'Ripple' },
+          { value: 'spiral', label: 'Spiral' },
+          { value: 'grain', label: 'Grain' },
+          { value: 'crosshatch', label: 'Crosshatch' },
+          { value: 'pulse', label: 'Pulse' },
+          { value: 'image', label: 'Image' },
         ],
         infoKey: 'wavetable.noiseType',
+      },
+      {
+        id: 'noiseImageId',
+        label: 'Noise Image',
+        type: 'file',
+        accept: 'image/*',
+        infoKey: 'wavetable.noiseImage',
+        showIf: (p) => p.noiseType === 'image',
       },
       { id: 'amplitude', label: 'Noise Amplitude', type: 'range', min: 2, max: 140, step: 1, infoKey: 'wavetable.amplitude' },
       { id: 'zoom', label: 'Noise Zoom', type: 'range', min: 0.002, max: 0.08, step: 0.001, infoKey: 'wavetable.zoom' },
@@ -460,6 +534,14 @@
       title: 'Margin Line Dotting',
       description: 'Dash length for the margin guide. Set to 0 for a solid line.',
     },
+    'global.selectionOutline': {
+      title: 'Selection Outline',
+      description: 'Toggles the selection silhouette around chosen lines.',
+    },
+    'global.selectionOutlineColor': {
+      title: 'Selection Outline Color',
+      description: 'Sets the color used for the selection silhouette.',
+    },
     'global.speedDown': {
       title: 'Draw Speed',
       description: 'Used for time estimation when the pen is down.',
@@ -492,6 +574,18 @@
       title: 'Noise Scale',
       description: 'Controls the size of the flow field. Lower values create broad, smooth flow; higher values add detail.',
     },
+    'flowfield.noiseType': {
+      title: 'Noise Type',
+      description: 'Chooses the flavor of noise used to steer direction.',
+    },
+    'flowfield.lacunarity': {
+      title: 'Lacunarity',
+      description: 'Controls how quickly noise frequency increases across octaves.',
+    },
+    'flowfield.gain': {
+      title: 'Gain',
+      description: 'Controls how much each octave contributes to the field.',
+    },
     'flowfield.density': {
       title: 'Density',
       description: 'Number of particles seeded. Higher density adds more paths.',
@@ -505,8 +599,12 @@
       description: 'Caps how long each particle travels before stopping.',
     },
     'flowfield.force': {
-      title: 'Distortion Force',
+      title: 'Flow Force',
       description: 'Amplifies the influence of the noise field on direction.',
+    },
+    'flowfield.angleOffset': {
+      title: 'Angle Offset',
+      description: 'Rotates the entire flow field direction.',
     },
     'flowfield.chaos': {
       title: 'Chaos',
@@ -515,6 +613,14 @@
     'flowfield.octaves': {
       title: 'Octaves',
       description: 'Number of noise layers blended together. More octaves add complexity.',
+    },
+    'flowfield.minSteps': {
+      title: 'Minimum Steps',
+      description: 'Removes very short paths by requiring a minimum number of steps.',
+    },
+    'flowfield.minLength': {
+      title: 'Minimum Length',
+      description: 'Removes short fragments by requiring a minimum path length.',
     },
     'lissajous.freqX': {
       title: 'Freq X',
@@ -551,6 +657,10 @@
     'wavetable.noiseType': {
       title: 'Noise Type',
       description: 'Selects the noise flavor used to shape the wavetable. Each mode has a distinct visual character.',
+    },
+    'wavetable.noiseImage': {
+      title: 'Noise Image',
+      description: 'Uses an uploaded image as the noise source. Brightness values become wave displacement.',
     },
     'wavetable.amplitude': {
       title: 'Noise Amplitude',
@@ -1480,6 +1590,68 @@
       this.modal.overlay.classList.remove('open');
     }
 
+    buildHelpContent(focusShortcuts = false) {
+      const shortcuts = `
+        <div class="modal-section">
+          <div class="modal-ill-label">Keyboard Shortcuts</div>
+          <div class="text-xs text-vectura-muted leading-relaxed space-y-1">
+            <div><span class="text-vectura-accent">?</span> Open shortcuts</div>
+            <div><span class="text-vectura-accent">Cmd/Ctrl + A</span> Select all layers (in layer list)</div>
+            <div><span class="text-vectura-accent">Cmd/Ctrl + G</span> Group selection</div>
+            <div><span class="text-vectura-accent">Cmd/Ctrl + Shift + G</span> Ungroup selection</div>
+            <div><span class="text-vectura-accent">Cmd/Ctrl + [</span> Move layer down</div>
+            <div><span class="text-vectura-accent">Cmd/Ctrl + ]</span> Move layer up</div>
+            <div><span class="text-vectura-accent">Cmd/Ctrl + Shift + [ / ]</span> Send to back / front</div>
+            <div><span class="text-vectura-accent">Delete</span> Remove selected layer(s)</div>
+            <div><span class="text-vectura-accent">Arrow Keys</span> Nudge (Shift = bigger)</div>
+            <div><span class="text-vectura-accent">Alt/Option + Drag</span> Duplicate layer</div>
+            <div><span class="text-vectura-accent">Cmd/Ctrl + Z</span> Undo</div>
+          </div>
+        </div>
+      `;
+      const guidance = `
+        <div class="modal-section">
+          <div class="modal-ill-label">Getting Started</div>
+          <p class="modal-text">
+            Choose an algorithm, adjust its parameters, and refine with transform controls. Use layers to stack
+            multiple generations, then export SVG for plotting.
+          </p>
+        </div>
+        <div class="modal-section">
+          <div class="modal-ill-label">Canvas</div>
+          <div class="text-xs text-vectura-muted leading-relaxed space-y-1">
+            <div>Shift + Drag to pan</div>
+            <div>Mouse wheel to zoom</div>
+            <div>Drag selection box to multi-select</div>
+            <div>Drag to move selection; handles resize; top-right handle rotates (Shift snaps)</div>
+          </div>
+        </div>
+        <div class="modal-section">
+          <div class="modal-ill-label">Layers &amp; Groups</div>
+          <div class="text-xs text-vectura-muted leading-relaxed space-y-1">
+            <div>Click to select, Shift-click for ranges, Cmd/Ctrl-click to toggle.</div>
+            <div>Drag the grip to reorder; groups can be collapsed with the caret.</div>
+            <div>Expand a layer into sublayers for line-by-line control.</div>
+            <div>Selection outline visibility and color can be adjusted in Settings.</div>
+          </div>
+        </div>
+        <div class="modal-section">
+          <div class="modal-ill-label">Pens &amp; Export</div>
+          <div class="text-xs text-vectura-muted leading-relaxed space-y-1">
+            <div>Assign pens per layer or selection by dragging a pen onto layers.</div>
+            <div>SVG export preserves pen groupings for plotter workflows.</div>
+          </div>
+        </div>
+      `;
+      return focusShortcuts ? `${shortcuts}${guidance}` : `${guidance}${shortcuts}`;
+    }
+
+    openHelp(focusShortcuts = false) {
+      const body = this.buildHelpContent(focusShortcuts);
+      const title = focusShortcuts ? 'Keyboard Shortcuts' : 'Help Guide';
+      this.openModal({ title, body });
+    }
+
     getTransformSnapshot(params) {
       return TRANSFORM_KEYS.reduce((acc, key) => {
         acc[key] = params[key];
@@ -1525,20 +1697,23 @@
 
       defs.forEach((def) => {
         if (def.showIf && !def.showIf(layer.params)) return;
-        if (def.type === 'section') return;
+        if (def.type === 'section' || def.type === 'file') return;
         if (def.type === 'checkbox') {
           layer.params[def.id] = Math.random() > 0.5;
           return;
         }
         if (def.type === 'select') {
           const opts = def.options || [];
-          if (!opts.length) return;
-          const pick = opts[Math.floor(Math.random() * opts.length)];
+          const available = def.randomExclude ? opts.filter((opt) => !def.randomExclude.includes(opt.value)) : opts;
+          if (!available.length) return;
+          const pick = available[Math.floor(Math.random() * available.length)];
           layer.params[def.id] = pick.value;
           return;
         }
         if (def.type === 'rangeDual') {
-          const { min, max } = safeRange(def.min, def.max);
+          const randMin = Number.isFinite(def.randomMin) ? def.randomMin : def.min;
+          const randMax = Number.isFinite(def.randomMax) ? def.randomMax : def.max;
+          const { min, max } = safeRange(randMin, randMax);
           const step = def.step ?? 1;
           let a = rng(min, max);
           let b = rng(min, max);
@@ -1549,7 +1724,9 @@
           return;
         }
         if (def.type === 'range') {
-          const { min, max } = safeRange(def.min, def.max);
+          const randMin = Number.isFinite(def.randomMin) ? def.randomMin : def.min;
+          const randMax = Number.isFinite(def.randomMax) ? def.randomMax : def.max;
+          const { min, max } = safeRange(randMin, randMax);
           const step = def.step ?? 1;
           layer.params[def.id] = roundStep(rng(min, max), step, def.min, def.max);
         }
@@ -1628,11 +1805,29 @@
     normalizeGroupOrder() {
       const layers = this.app.engine.layers;
       const groups = layers.filter((layer) => layer.isGroup);
+      const groupIds = new Set(groups.map((group) => group.id));
+      const childrenMap = new Map();
+      layers.forEach((layer) => {
+        if (layer.parentId && groupIds.has(layer.parentId)) {
+          if (!childrenMap.has(layer.parentId)) childrenMap.set(layer.parentId, []);
+          childrenMap.get(layer.parentId).push(layer);
+        }
+      });
+      const getDescendants = (groupId) => {
+        const children = childrenMap.get(groupId) || [];
+        const ids = [];
+        children.forEach((child) => {
+          ids.push(child.id);
+          if (child.isGroup) ids.push(...getDescendants(child.id));
+        });
+        return ids;
+      };
       groups.forEach((group) => {
-        const childIndexes = layers.reduce((acc, layer, idx) => {
-          if (layer.parentId === group.id) acc.push(idx);
-          return acc;
-        }, []);
+        const descendantIds = getDescendants(group.id);
+        if (!descendantIds.length) return;
+        const childIndexes = descendantIds
+          .map((id) => layers.findIndex((layer) => layer.id === id))
+          .filter((idx) => idx >= 0);
         if (!childIndexes.length) return;
         const maxIndex = Math.max(...childIndexes);
         const currentIndex = layers.findIndex((layer) => layer.id === group.id);
@@ -1824,6 +2019,8 @@
         { inputId: 'set-margin-line-weight', infoKey: 'global.marginLineWeight' },
         { inputId: 'set-margin-line-color', infoKey: 'global.marginLineColor' },
         { inputId: 'set-margin-line-dotting', infoKey: 'global.marginLineDotting' },
+        { inputId: 'set-selection-outline', infoKey: 'global.selectionOutline' },
+        { inputId: 'set-selection-outline-color', infoKey: 'global.selectionOutlineColor' },
         { inputId: 'set-speed-down', infoKey: 'global.speedDown' },
         { inputId: 'set-speed-up', infoKey: 'global.speedUp' },
         { inputId: 'set-precision', infoKey: 'global.precision' },
@@ -1893,6 +2090,8 @@
       const marginLineDotting = getEl('set-margin-line-dotting');
       const showGuides = getEl('set-show-guides');
       const snapGuides = getEl('set-snap-guides');
+      const selectionOutline = getEl('set-selection-outline');
+      const selectionOutlineColor = getEl('set-selection-outline-color');
       const bgColor = getEl('inp-bg-color');
       if (margin) margin.value = SETTINGS.margin;
       if (speedDown) speedDown.value = SETTINGS.speedDown;
@@ -1908,6 +2107,8 @@
       if (marginLineDotting) marginLineDotting.value = SETTINGS.marginLineDotting ?? 0;
       if (showGuides) showGuides.checked = SETTINGS.showGuides !== false;
       if (snapGuides) snapGuides.checked = SETTINGS.snapGuides !== false;
+      if (selectionOutline) selectionOutline.checked = SETTINGS.selectionOutline !== false;
+      if (selectionOutlineColor) selectionOutlineColor.value = SETTINGS.selectionOutlineColor || '#ef4444';
       if (bgColor) bgColor.value = SETTINGS.bgColor;
     }
 
@@ -2015,6 +2216,7 @@
       const settingsPanel = getEl('settings-panel');
       const btnSettings = getEl('btn-settings');
       const btnCloseSettings = getEl('btn-close-settings');
+      const btnHelp = getEl('btn-help');
       const machineProfile = getEl('machine-profile');
       const setMargin = getEl('set-margin');
       const setTruncate = getEl('set-truncate');
@@ -2025,6 +2227,8 @@
       const setMarginLineDotting = getEl('set-margin-line-dotting');
       const setShowGuides = getEl('set-show-guides');
       const setSnapGuides = getEl('set-snap-guides');
+      const setSelectionOutline = getEl('set-selection-outline');
+      const setSelectionOutlineColor = getEl('set-selection-outline-color');
       const setSpeedDown = getEl('set-speed-down');
       const setSpeedUp = getEl('set-speed-up');
       const setStroke = getEl('set-stroke');
@@ -2082,6 +2286,9 @@
       }
       if (btnCloseSettings && settingsPanel) {
         btnCloseSettings.onclick = () => settingsPanel.classList.remove('open');
+      }
+      if (btnHelp) {
+        btnHelp.onclick = () => this.openHelp(false);
       }
 
       if (machineProfile) {
@@ -2158,6 +2365,20 @@
         setSnapGuides.onchange = (e) => {
           if (this.app.pushHistory) this.app.pushHistory();
           SETTINGS.snapGuides = e.target.checked;
+        };
+      }
+      if (setSelectionOutline) {
+        setSelectionOutline.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          SETTINGS.selectionOutline = e.target.checked;
+          this.app.render();
+        };
+      }
+      if (setSelectionOutlineColor) {
+        setSelectionOutlineColor.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          SETTINGS.selectionOutlineColor = e.target.value || SETTINGS.selectionOutlineColor;
+          this.app.render();
         };
       }
       if (setSpeedDown) {
@@ -2261,6 +2482,12 @@
             target.tagName === 'SELECT' ||
             target.isContentEditable);
         if (isInput) return;
+
+        if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
+          e.preventDefault();
+          this.openHelp(true);
+          return;
+        }
 
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
           e.preventDefault();
@@ -2375,13 +2602,32 @@
         }
       });
 
-      const bindLayerReorderGrip = (grip, dragEl, ensureSelection) => {
+      const collectDescendants = (groupId) => {
+        const children = groupMap.get(groupId) || [];
+        const ids = [];
+        children.forEach((child) => {
+          ids.push(child.id);
+          if (child.isGroup) ids.push(...collectDescendants(child.id));
+        });
+        return ids;
+      };
+
+      const hasSelectedDescendant = (groupId) => {
+        const children = groupMap.get(groupId) || [];
+        return children.some((child) => {
+          if (this.app.renderer?.selectedLayerIds?.has(child.id)) return true;
+          return child.isGroup ? hasSelectedDescendant(child.id) : false;
+        });
+      };
+
+      const bindLayerReorderGrip = (grip, dragEl, options = {}) => {
+        const { ensureSelection, getSelectedIds } = options;
         if (!grip || !dragEl) return;
         grip.onmousedown = (e) => {
           e.preventDefault();
           e.stopPropagation();
           if (ensureSelection) ensureSelection(e);
-          let selectedIds = Array.from(this.app.renderer?.selectedLayerIds || []);
+          let selectedIds = getSelectedIds ? getSelectedIds() : Array.from(this.app.renderer?.selectedLayerIds || []);
           if (!selectedIds.length) {
             const fallbackId = dragEl.dataset.layerId;
             if (fallbackId) selectedIds = [fallbackId];
@@ -2436,11 +2682,13 @@
         };
       };
 
-      const renderGroupRow = (group) => {
+      const renderGroupRow = (group, depth = 0) => {
         const el = document.createElement('div');
         const typeLabel = ALGO_DEFAULTS?.[group.groupType]?.label || group.groupType || 'Group';
         el.className =
           'layer-item layer-group flex items-center justify-between bg-vectura-bg border border-vectura-border p-2 mb-2';
+        el.dataset.layerId = group.id;
+        el.style.paddingLeft = `${8 + depth * 12}px`;
         const isManualGroup = group.groupType === 'group';
         el.innerHTML = `
           <div class="flex items-center gap-2 flex-1 overflow-hidden">
@@ -2500,7 +2748,10 @@
           if (e.target.closest('input')) return;
           e.preventDefault();
         };
-        bindLayerReorderGrip(grip, el, (e) => selectGroupChildren(e, { skipList: true }));
+        bindLayerReorderGrip(grip, el, {
+          ensureSelection: (e) => selectGroupChildren(e, { skipList: true }),
+          getSelectedIds: () => [group.id, ...collectDescendants(group.id)],
+        });
         if (penMenu && penPill && penIcon) {
           const pens = SETTINGS.pens || [];
           const applyPen = (pen) => {
@@ -2593,6 +2844,7 @@
 
       const renderLayerRow = (l, opts = {}) => {
         const isChild = Boolean(opts.isChild);
+        const depth = opts.depth ?? 0;
         const isActive = l.id === this.app.engine.activeLayerId;
         const isSelected = this.app.renderer?.selectedLayerIds?.has(l.id);
         const parentGroup = this.getGroupForLayer(l);
@@ -2610,6 +2862,7 @@
         const el = document.createElement('div');
         el.className = `layer-item ${isChild ? 'layer-sub' : ''} flex items-center justify-between bg-vectura-bg border border-vectura-border p-2 mb-2 group cursor-pointer hover:bg-vectura-border ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}`;
         el.dataset.layerId = l.id;
+        el.style.paddingLeft = `${8 + depth * 12}px`;
         el.innerHTML = `
           <div class="flex items-center gap-2 flex-1 overflow-hidden">
             ${gripMarkup}
@@ -2862,31 +3115,37 @@
           };
         }
         if (grip) {
-          bindLayerReorderGrip(grip, el, (e) => {
-            if (!this.app.renderer?.selectedLayerIds?.has(l.id)) {
-              selectLayer(e, { skipList: true });
-            }
+          bindLayerReorderGrip(grip, el, {
+            ensureSelection: (e) => {
+              if (!this.app.renderer?.selectedLayerIds?.has(l.id)) {
+                selectLayer(e, { skipList: true });
+              }
+            },
           });
         }
         container.appendChild(el);
         selectableIds.push(l.id);
       };
 
-      layers.forEach((layer) => {
-        if (layer.parentId && groupIds.has(layer.parentId)) return;
+      const renderTree = (layer, depth = 0) => {
         if (layer.isGroup) {
-          renderGroupRow(layer);
+          renderGroupRow(layer, depth);
           const children = groupMap.get(layer.id) || [];
-          const childSelected = children.some((child) => this.app.renderer?.selectedLayerIds?.has(child.id));
-          if (!layer.groupCollapsed || childSelected) {
-            children.forEach((child) => renderLayerRow(child, { isChild: true }));
+          const showChildren = !layer.groupCollapsed || hasSelectedDescendant(layer.id);
+          if (showChildren) {
+            children.forEach((child) => renderTree(child, depth + 1));
           }
         } else {
-          renderLayerRow(layer);
+          renderLayerRow(layer, { isChild: depth > 0, depth });
         }
+      };
+
+      layers.forEach((layer) => {
+        if (layer.parentId && groupIds.has(layer.parentId)) return;
+        renderTree(layer, 0);
       });
 
-      orphans.forEach((layer) => renderLayerRow(layer));
+      orphans.forEach((layer) => renderTree(layer, 0));
       this.layerListOrder = selectableIds;
     }
 
@@ -3047,7 +3306,35 @@
       const groupId = layer.id;
       const baseName = layer.name;
       const pad = String(layer.paths.length).length;
-      const children = layer.paths.map((path, index) => {
+      const pathMeta = layer.paths.map((path, index) => {
+        let minX = Infinity;
+        let minY = Infinity;
+        if (path && path.meta && path.meta.kind === 'circle') {
+          const cx = path.meta.cx ?? path.meta.x ?? 0;
+          const cy = path.meta.cy ?? path.meta.y ?? 0;
+          const rx = path.meta.rx ?? path.meta.r ?? 0;
+          const ry = path.meta.ry ?? path.meta.r ?? 0;
+          minX = cx - rx;
+          minY = cy - ry;
+        } else if (Array.isArray(path)) {
+          path.forEach((pt) => {
+            if (!pt) return;
+            minX = Math.min(minX, pt.x);
+            minY = Math.min(minY, pt.y);
+          });
+        }
+        if (!Number.isFinite(minX)) minX = 0;
+        if (!Number.isFinite(minY)) minY = 0;
+        return { path, index, minX, minY };
+      });
+
+      pathMeta.sort((a, b) => {
+        if (a.minY !== b.minY) return a.minY - b.minY;
+        if (a.minX !== b.minX) return a.minX - b.minX;
+        return a.index - b.index;
+      });
+
+      const children = pathMeta.map((entry, index) => {
         const newId = Math.random().toString(36).substr(2, 9);
         const child = new Layer(newId, 'expanded', `${baseName} - Line ${String(index + 1).padStart(pad, '0')}`);
         child.parentId = groupId;
@@ -3060,7 +3347,7 @@
         child.params.curves = Boolean(layer.params.curves);
         child.params.smoothing = 0;
         child.params.simplify = 0;
-        child.sourcePaths = [clonePath(path)];
+        child.sourcePaths = [clonePath(entry.path)];
         child.penId = layer.penId;
         child.color = layer.color;
         child.strokeWidth = layer.strokeWidth;
@@ -3080,10 +3367,11 @@
       layer.paramStates = {};
 
       const idx = this.app.engine.layers.findIndex((l) => l.id === groupId);
+      const insertChildren = children.slice().reverse();
       if (idx >= 0) {
-        this.app.engine.layers.splice(idx + 1, 0, ...children);
+        this.app.engine.layers.splice(idx + 1, 0, ...insertChildren);
       } else {
-        this.app.engine.layers.push(...children);
+        this.app.engine.layers.push(...insertChildren);
       }
 
       children.forEach((child) => this.app.engine.generate(child.id));
@@ -3311,6 +3599,70 @@
           section.className = 'control-section';
           section.innerHTML = `<div class="control-section-title">${def.label}</div>`;
           container.appendChild(section);
+          return;
+        }
+        if (def.type === 'file') {
+          const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
+          const div = document.createElement('div');
+          div.className = 'mb-4';
+          const name = layer.params.noiseImageName || 'No file selected';
+          div.innerHTML = `
+            <div class="flex items-center justify-between mb-1">
+              <div class="flex items-center gap-2">
+                <label class="control-label mb-0">${def.label}</label>
+                ${infoBtn}
+              </div>
+              <button type="button" class="text-[10px] text-vectura-muted hover:text-vectura-accent file-clear">Clear</button>
+            </div>
+            <div class="flex items-center gap-2">
+              <input type="file" class="flex-1 text-[10px] text-vectura-muted" accept="${def.accept || ''}">
+              <span class="text-[10px] text-vectura-muted file-name truncate">${name}</span>
+            </div>
+          `;
+          const fileInput = div.querySelector('input[type="file"]');
+          const nameEl = div.querySelector('.file-name');
+          const clearBtn = div.querySelector('.file-clear');
+          if (clearBtn) {
+            clearBtn.onclick = () => {
+              if (this.app.pushHistory) this.app.pushHistory();
+              layer.params.noiseImageId = '';
+              layer.params.noiseImageName = '';
+              if (nameEl) nameEl.textContent = 'No file selected';
+              this.app.regen();
+              this.app.render();
+            };
+          }
+          if (fileInput) {
+            fileInput.onchange = () => {
+              const file = fileInput.files?.[0];
+              if (!file) return;
+              const reader = new FileReader();
+              reader.onload = () => {
+                const img = new Image();
+                img.onload = () => {
+                  const canvas = document.createElement('canvas');
+                  canvas.width = img.naturalWidth || img.width;
+                  canvas.height = img.naturalHeight || img.height;
+                  const ctx = canvas.getContext('2d');
+                  if (!ctx) return;
+                  ctx.drawImage(img, 0, 0);
+                  const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                  const store = (window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {});
+                  const id = `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+                  store[id] = { width: data.width, height: data.height, data: data.data };
+                  if (this.app.pushHistory) this.app.pushHistory();
+                  layer.params.noiseImageId = id;
+                  layer.params.noiseImageName = file.name;
+                  if (nameEl) nameEl.textContent = file.name;
+                  this.app.regen();
+                  this.app.render();
+                };
+                img.src = reader.result;
+              };
+              reader.readAsDataURL(file);
+            };
+          }
+          container.appendChild(div);
           return;
         }
         let val = layer.params[def.id];
@@ -3587,14 +3939,29 @@
           const valueBtn = div.querySelector('.value-chip');
           const valueInput = div.querySelector('.value-input');
           if (input && valueBtn && valueInput) {
+            const confirmHeavy = (displayVal) => {
+              const nextVal = fromDisplayValue(def, displayVal);
+              if (Number.isFinite(def.confirmAbove) && nextVal >= def.confirmAbove) {
+                const message = def.confirmMessage || 'This value may be slow. Continue?';
+                if (!window.confirm(message)) {
+                  const resetVal = toDisplayValue(def, layer.params[def.id]);
+                  input.value = resetVal;
+                  valueBtn.innerText = formatDisplayValue(def, layer.params[def.id]);
+                  return null;
+                }
+              }
+              return nextVal;
+            };
             input.oninput = (e) => {
               const nextDisplay = parseFloat(e.target.value);
               valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
             };
             input.onchange = (e) => {
-              if (this.app.pushHistory) this.app.pushHistory();
               const nextDisplay = parseFloat(e.target.value);
-              layer.params[def.id] = fromDisplayValue(def, nextDisplay);
+              const nextVal = confirmHeavy(nextDisplay);
+              if (nextVal === null) return;
+              if (this.app.pushHistory) this.app.pushHistory();
+              layer.params[def.id] = nextVal;
               this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
@@ -3605,8 +3972,10 @@
               inputEl: valueInput,
               getValue: () => layer.params[def.id],
               setValue: (displayVal) => {
+                const nextVal = confirmHeavy(displayVal);
+                if (nextVal === null) return;
                 if (this.app.pushHistory) this.app.pushHistory();
-                layer.params[def.id] = fromDisplayValue(def, displayVal);
+                layer.params[def.id] = nextVal;
                 this.storeLayerParams(layer);
                 this.app.regen();
                 valueBtn.innerText = formatDisplayValue(def, layer.params[def.id]);

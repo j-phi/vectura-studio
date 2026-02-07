@@ -242,11 +242,20 @@
       if (!target.isGroup && drawableCount <= 1) return;
       const removeIds = new Set([id]);
       if (target.isGroup) {
-        const childCount = this.layers.filter((l) => l.parentId === id).length;
+        const collect = (groupId) => {
+          this.layers.forEach((l) => {
+            if (l.parentId === groupId) {
+              removeIds.add(l.id);
+              if (l.isGroup) collect(l.id);
+            }
+          });
+        };
+        collect(id);
+        const childCount = Array.from(removeIds).filter((rid) => {
+          const layer = this.layers.find((l) => l.id === rid);
+          return layer && !layer.isGroup;
+        }).length;
         if (drawableCount - childCount <= 0) return;
-        this.layers.forEach((l) => {
-          if (l.parentId === id) removeIds.add(l.id);
-        });
       } else if (target.parentId) {
         const parentId = target.parentId;
         const remaining = this.layers.filter((l) => l.parentId === parentId && l.id !== id).length;
