@@ -6,6 +6,7 @@
   window.Vectura.ALGO_DEFAULTS = {
     wavetable: {
       lines: 40,
+      noiseType: 'simplex',
       amplitude: 30,
       zoom: 0.02,
       tilt: 0,

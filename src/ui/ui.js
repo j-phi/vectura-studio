@@ -123,7 +123,25 @@
     ],
     wavetable: [
       { id: 'lines', label: 'Lines', type: 'range', min: 5, max: 160, step: 1, infoKey: 'wavetable.lines' },
-      { id: 'amplitude', label: 'Amplitude', type: 'range', min: 2, max: 140, step: 1, infoKey: 'wavetable.amplitude' },
+      {
+        id: 'noiseType',
+        label: 'Noise Type',
+        type: 'select',
+        options: [
+          { value: 'simplex', label: 'Simplex' },
+          { value: 'ridged', label: 'Ridged' },
+          { value: 'billow', label: 'Billow' },
+          { value: 'turbulence', label: 'Turbulence' },
+          { value: 'stripes', label: 'Stripes' },
+          { value: 'marble', label: 'Marble' },
+          { value: 'steps', label: 'Steps' },
+          { value: 'triangle', label: 'Triangle' },
+          { value: 'warp', label: 'Warp' },
+          { value: 'cellular', label: 'Cellular' },
+        ],
+        infoKey: 'wavetable.noiseType',
+      },
+      { id: 'amplitude', label: 'Noise Amplitude', type: 'range', min: 2, max: 140, step: 1, infoKey: 'wavetable.amplitude' },
       { id: 'zoom', label: 'Noise Zoom', type: 'range', min: 0.002, max: 0.08, step: 0.001, infoKey: 'wavetable.zoom' },
       { id: 'tilt', label: 'Row Shift', type: 'range', min: -12, max: 12, step: 1, infoKey: 'wavetable.tilt' },
       { id: 'gap', label: 'Line Gap', type: 'range', min: 0.5, max: 3.0, step: 0.1, infoKey: 'wavetable.gap' },
@@ -530,9 +548,13 @@
       title: 'Lines',
       description: 'Number of horizontal rows in the wavetable.',
     },
+    'wavetable.noiseType': {
+      title: 'Noise Type',
+      description: 'Selects the noise flavor used to shape the wavetable. Each mode has a distinct visual character.',
+    },
     'wavetable.amplitude': {
-      title: 'Amplitude',
-      description: 'Height of the waveform displacement.',
+      title: 'Noise Amplitude',
+      description: 'Amount of vertical displacement added by the noise field.',
     },
     'wavetable.zoom': {
       title: 'Noise Zoom',
@@ -1382,6 +1404,9 @@
       this.controls = CONTROL_DEFS;
       this.modal = this.createModal();
       this.openPenMenu = null;
+      this.layerListOrder = [];
+      this.lastLayerClickId = null;
+      this.layerListFocus = false;
 
       this.initModuleDropdown();
       this.initMachineDropdown();
@@ -1403,6 +1428,19 @@
       this.updateFormula();
       this.initSettingsValues();
       this.attachStaticInfoButtons();
+
+      const rightPane = getEl('right-pane');
+      const layerList = getEl('layer-list');
+      if (layerList) {
+        layerList.addEventListener('mousedown', () => {
+          this.layerListFocus = true;
+        });
+      }
+      document.addEventListener('mousedown', (e) => {
+        if (rightPane && !rightPane.contains(e.target)) {
+          this.layerListFocus = false;
+        }
+      });
     }
 
     createModal() {
@@ -1575,6 +1613,150 @@
       return this.app.engine.layers.some(
         (layer) => layer.id !== excludeId && layer.name.trim().toLowerCase() === normalized
       );
+    }
+
+    getLayerById(id) {
+      return this.app.engine.layers.find((layer) => layer.id === id) || null;
+    }
+
+    getGroupForLayer(layer) {
+      if (!layer || !layer.parentId) return null;
+      const group = this.getLayerById(layer.parentId);
+      return group && group.isGroup ? group : null;
+    }
+
+    normalizeGroupOrder() {
+      const layers = this.app.engine.layers;
+      const groups = layers.filter((layer) => layer.isGroup);
+      groups.forEach((group) => {
+        const childIndexes = layers.reduce((acc, layer, idx) => {
+          if (layer.parentId === group.id) acc.push(idx);
+          return acc;
+        }, []);
+        if (!childIndexes.length) return;
+        const maxIndex = Math.max(...childIndexes);
+        const currentIndex = layers.findIndex((layer) => layer.id === group.id);
+        if (currentIndex === -1) return;
+        if (currentIndex === maxIndex + 1) return;
+        layers.splice(currentIndex, 1);
+        const insertIndex = Math.min(maxIndex + 1, layers.length);
+        layers.splice(insertIndex, 0, group);
+      });
+    }
+
+    moveSelectedLayers(direction) {
+      const selectedIds = Array.from(this.app.renderer?.selectedLayerIds || []).filter((id) => {
+        const layer = this.getLayerById(id);
+        return layer && !layer.isGroup;
+      });
+      if (!selectedIds.length) return;
+      const order = this.app.engine.layers.map((layer) => layer.id);
+      const selected = new Set(selectedIds);
+      if (direction === 'top' || direction === 'bottom') {
+        const keep = order.filter((id) => !selected.has(id));
+        const moving = order.filter((id) => selected.has(id));
+        const next = direction === 'top' ? [...keep, ...moving] : [...moving, ...keep];
+        const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
+        this.app.engine.layers = next.map((id) => map.get(id)).filter(Boolean);
+      } else if (direction === 'up') {
+        for (let i = order.length - 2; i >= 0; i--) {
+          if (selected.has(order[i]) && !selected.has(order[i + 1])) {
+            [order[i], order[i + 1]] = [order[i + 1], order[i]];
+          }
+        }
+        const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
+        this.app.engine.layers = order.map((id) => map.get(id)).filter(Boolean);
+      } else if (direction === 'down') {
+        for (let i = 1; i < order.length; i++) {
+          if (selected.has(order[i]) && !selected.has(order[i - 1])) {
+            [order[i - 1], order[i]] = [order[i], order[i - 1]];
+          }
+        }
+        const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
+        this.app.engine.layers = order.map((id) => map.get(id)).filter(Boolean);
+      }
+      this.normalizeGroupOrder();
+      this.renderLayers();
+      this.app.render();
+    }
+
+    groupSelection() {
+      const selectedIds = Array.from(this.app.renderer?.selectedLayerIds || []).filter((id) => {
+        const layer = this.getLayerById(id);
+        return layer && !layer.isGroup;
+      });
+      if (selectedIds.length < 2) return;
+      if (!Layer) return;
+      if (this.app.pushHistory) this.app.pushHistory();
+      const layers = this.app.engine.layers;
+      const selectedSet = new Set(selectedIds);
+      const selectedLayers = layers.filter((layer) => selectedSet.has(layer.id));
+      const maxIndex = Math.max(...selectedLayers.map((layer) => layers.indexOf(layer)));
+      SETTINGS.globalLayerCount++;
+      const groupName = `Group ${String(SETTINGS.globalLayerCount).padStart(2, '0')}`;
+      const groupId = Math.random().toString(36).substr(2, 9);
+      const group = new Layer(groupId, 'group', groupName);
+      group.isGroup = true;
+      group.groupType = 'group';
+      group.groupCollapsed = false;
+      group.visible = false;
+      const primary = selectedLayers[0];
+      if (primary) {
+        group.penId = primary.penId;
+        group.color = primary.color;
+        group.strokeWidth = primary.strokeWidth;
+        group.lineCap = primary.lineCap;
+      }
+
+      const oldParents = new Set();
+      selectedLayers.forEach((layer) => {
+        if (layer.parentId) oldParents.add(layer.parentId);
+        layer.parentId = groupId;
+        if (group.penId) {
+          layer.penId = group.penId;
+          layer.color = group.color;
+          layer.strokeWidth = group.strokeWidth;
+          layer.lineCap = group.lineCap;
+        }
+      });
+
+      layers.splice(maxIndex + 1, 0, group);
+
+      oldParents.forEach((parentId) => {
+        const stillHas = layers.some((layer) => layer.parentId === parentId);
+        if (!stillHas) {
+          const idx = layers.findIndex((layer) => layer.id === parentId);
+          if (idx >= 0) layers.splice(idx, 1);
+        }
+      });
+
+      this.normalizeGroupOrder();
+      this.renderLayers();
+      this.app.render();
+    }
+
+    ungroupSelection() {
+      const selectedIds = Array.from(this.app.renderer?.selectedLayerIds || []);
+      if (!selectedIds.length) return;
+      if (this.app.pushHistory) this.app.pushHistory();
+      const layers = this.app.engine.layers;
+      const groupIds = new Set();
+      selectedIds.forEach((id) => {
+        const layer = this.getLayerById(id);
+        if (layer?.parentId) groupIds.add(layer.parentId);
+      });
+      if (!groupIds.size) return;
+      groupIds.forEach((groupId) => {
+        layers.forEach((layer) => {
+          if (layer.parentId === groupId) {
+            layer.parentId = null;
+          }
+        });
+        const idx = layers.findIndex((layer) => layer.id === groupId);
+        if (idx >= 0) layers.splice(idx, 1);
+      });
+      this.renderLayers();
+      this.app.render();
     }
 
     getUniqueLayerName(base, excludeId) {
@@ -2086,12 +2268,49 @@
           return;
         }
 
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a' && this.layerListFocus) {
+          e.preventDefault();
+          const all = this.app.engine.layers.filter((layer) => !layer.isGroup).map((layer) => layer.id);
+          const primary = all[all.length - 1] || null;
+          if (this.app.renderer) this.app.renderer.setSelection(all, primary);
+          this.app.engine.activeLayerId = primary;
+          this.renderLayers();
+          this.buildControls();
+          this.updateFormula();
+          this.app.render();
+          return;
+        }
+
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'g') {
+          e.preventDefault();
+          if (e.shiftKey) {
+            this.ungroupSelection();
+          } else {
+            this.groupSelection();
+          }
+          return;
+        }
+
+        if ((e.metaKey || e.ctrlKey) && (e.key === '[' || e.key === ']' || e.key === '{' || e.key === '}')) {
+          e.preventDefault();
+          if (this.app.pushHistory) this.app.pushHistory();
+          const isRight = e.key === ']' || e.key === '}';
+          const direction = isRight ? 'up' : 'down';
+          if (e.shiftKey || e.key === '{' || e.key === '}') {
+            this.moveSelectedLayers(isRight ? 'top' : 'bottom');
+          } else {
+            this.moveSelectedLayers(direction);
+          }
+          return;
+        }
+
         const selected = this.app.renderer?.getSelectedLayer?.();
         if (!selected) return;
         if (e.key === 'Delete' || e.key === 'Backspace') {
           e.preventDefault();
           if (this.app.pushHistory) this.app.pushHistory();
-          this.app.engine.removeLayer(selected.id);
+          const ids = Array.from(this.app.renderer?.selectedLayerIds || []);
+          ids.forEach((id) => this.app.engine.removeLayer(id));
           if (this.app.renderer) {
             const nextId = this.app.engine.activeLayerId;
             this.app.renderer.setSelection(nextId ? [nextId] : [], nextId);
@@ -2138,6 +2357,14 @@
       const groupIds = new Set(layers.filter((layer) => layer.isGroup).map((layer) => layer.id));
       const groupMap = new Map();
       const orphans = [];
+      const selectableIds = [];
+      const gripMarkup = `
+        <button class="layer-grip" type="button" aria-label="Reorder layer">
+          <span class="dot"></span><span class="dot"></span>
+          <span class="dot"></span><span class="dot"></span>
+          <span class="dot"></span><span class="dot"></span>
+        </button>
+      `;
 
       layers.forEach((layer) => {
         if (layer.parentId && groupIds.has(layer.parentId)) {
@@ -2148,28 +2375,204 @@
         }
       });
 
+      const bindLayerReorderGrip = (grip, dragEl, ensureSelection) => {
+        if (!grip || !dragEl) return;
+        grip.onmousedown = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (ensureSelection) ensureSelection(e);
+          let selectedIds = Array.from(this.app.renderer?.selectedLayerIds || []);
+          if (!selectedIds.length) {
+            const fallbackId = dragEl.dataset.layerId;
+            if (fallbackId) selectedIds = [fallbackId];
+          }
+          if (!selectedIds.length) return;
+          dragEl.classList.add('dragging');
+          const indicator = document.createElement('div');
+          indicator.className = 'layer-drop-indicator';
+          container.insertBefore(indicator, dragEl.nextSibling);
+          const currentOrder = this.app.engine.layers.map((layer) => layer.id).reverse();
+          const selectedSet = new Set(selectedIds);
+          const selectedInUi = currentOrder.filter((id) => selectedSet.has(id));
+          if (!selectedInUi.length) return;
+
+          const onMove = (ev) => {
+            const y = ev.clientY;
+            const items = Array.from(container.querySelectorAll('.layer-item')).filter((item) => item !== dragEl);
+            let inserted = false;
+            for (const item of items) {
+              const rect = item.getBoundingClientRect();
+              if (y < rect.top + rect.height / 2) {
+                container.insertBefore(indicator, item);
+                inserted = true;
+                break;
+              }
+            }
+            if (!inserted) container.appendChild(indicator);
+          };
+
+          const onUp = () => {
+            dragEl.classList.remove('dragging');
+            const siblings = Array.from(container.children);
+            const indicatorIndex = siblings.indexOf(indicator);
+            const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('layer-item'));
+            const newIndex = before.length;
+            indicator.remove();
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+
+            const nextOrder = currentOrder.filter((id) => !selectedSet.has(id));
+            nextOrder.splice(newIndex, 0, ...selectedInUi);
+            const nextEngineOrder = nextOrder.slice().reverse();
+            const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
+            this.app.engine.layers = nextEngineOrder.map((id) => map.get(id)).filter(Boolean);
+            this.normalizeGroupOrder();
+            this.renderLayers();
+            this.app.render();
+          };
+
+          window.addEventListener('mousemove', onMove);
+          window.addEventListener('mouseup', onUp);
+        };
+      };
+
       const renderGroupRow = (group) => {
         const el = document.createElement('div');
         const typeLabel = ALGO_DEFAULTS?.[group.groupType]?.label || group.groupType || 'Group';
         el.className =
           'layer-item layer-group flex items-center justify-between bg-vectura-bg border border-vectura-border p-2 mb-2';
+        const isManualGroup = group.groupType === 'group';
         el.innerHTML = `
           <div class="flex items-center gap-2 flex-1 overflow-hidden">
+            ${gripMarkup}
             <button class="group-toggle" type="button" aria-label="Toggle group">${group.groupCollapsed ? '▸' : '▾'}</button>
             <span class="layer-name text-sm text-vectura-accent truncate">${group.name}</span>
             <span class="layer-badge text-[10px] text-vectura-muted uppercase tracking-widest">${typeLabel}</span>
           </div>
           <div class="flex items-center gap-1">
+            ${isManualGroup
+              ? `<div class="pen-assign">
+                  <button class="pen-pill" type="button" aria-label="Assign pen">
+                    <div class="pen-icon"></div>
+                  </button>
+                  <div class="pen-menu hidden"></div>
+                </div>`
+              : ''}
             <button class="text-sm text-vectura-muted hover:text-vectura-danger px-1 ml-1 btn-del" aria-label="Delete group">✕</button>
           </div>
         `;
         const toggle = el.querySelector('.group-toggle');
         const delBtn = el.querySelector('.btn-del');
+        const penMenu = el.querySelector('.pen-menu');
+        const penPill = el.querySelector('.pen-pill');
+        const penIcon = el.querySelector('.pen-icon');
+        const grip = el.querySelector('.layer-grip');
         if (toggle) {
           toggle.onclick = (e) => {
             e.stopPropagation();
             group.groupCollapsed = !group.groupCollapsed;
             this.renderLayers();
+          };
+        }
+        const selectGroupChildren = (e, options = {}) => {
+          const { skipList = false } = options;
+          if (e && (e.shiftKey || e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+          }
+          const children = groupMap.get(group.id) || [];
+          const ids = children.map((child) => child.id);
+          if (ids.length) {
+            const primary = ids[ids.length - 1];
+            if (this.app.renderer) this.app.renderer.setSelection(ids, primary);
+            this.app.engine.activeLayerId = primary;
+            this.lastLayerClickId = primary;
+            if (!skipList) this.renderLayers();
+            this.buildControls();
+            this.updateFormula();
+            this.app.render();
+          }
+        };
+        el.onclick = (e) => {
+          if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select')) return;
+          selectGroupChildren(e);
+        };
+        el.onmousedown = (e) => {
+          if (e.target.closest('input')) return;
+          e.preventDefault();
+        };
+        bindLayerReorderGrip(grip, el, (e) => selectGroupChildren(e, { skipList: true }));
+        if (penMenu && penPill && penIcon) {
+          const pens = SETTINGS.pens || [];
+          const applyPen = (pen) => {
+            if (!pen) return;
+            group.penId = pen.id;
+            group.color = pen.color;
+            group.strokeWidth = pen.width;
+            group.lineCap = group.lineCap || 'round';
+            penIcon.style.background = pen.color;
+            penIcon.style.color = pen.color;
+            penIcon.style.setProperty('--pen-width', pen.width);
+            penIcon.title = pen.name;
+            const children = groupMap.get(group.id) || [];
+            children.forEach((child) => {
+              child.penId = pen.id;
+              child.color = pen.color;
+              child.strokeWidth = pen.width;
+              child.lineCap = group.lineCap;
+            });
+            if (penMenu) {
+              penMenu.querySelectorAll('.pen-option').forEach((opt) => {
+                opt.classList.toggle('active', opt.dataset.penId === pen.id);
+              });
+            }
+            this.app.render();
+          };
+          const current = pens.find((pen) => pen.id === group.penId) || pens[0];
+          if (current) applyPen(current);
+          penMenu.innerHTML = pens
+            .map(
+              (pen) => `
+                <button type="button" class="pen-option" data-pen-id="${pen.id}">
+                  <span class="pen-icon" style="background:${pen.color}; color:${pen.color}; --pen-width:${pen.width}"></span>
+                  <span class="pen-option-name">${pen.name}</span>
+                </button>
+              `
+            )
+            .join('');
+          penMenu.querySelectorAll('.pen-option').forEach((opt) => {
+            opt.onclick = (e) => {
+              e.stopPropagation();
+              if (this.app.pushHistory) this.app.pushHistory();
+              const next = pens.find((pen) => pen.id === opt.dataset.penId);
+              applyPen(next);
+              penMenu.classList.add('hidden');
+            };
+          });
+          penPill.onclick = (e) => {
+            e.stopPropagation();
+            if (this.openPenMenu && this.openPenMenu !== penMenu) {
+              this.openPenMenu.classList.add('hidden');
+            }
+            penMenu.classList.toggle('hidden');
+            this.openPenMenu = penMenu.classList.contains('hidden') ? null : penMenu;
+          };
+          el.ondragover = (ev) => {
+            const types = Array.from(ev.dataTransfer?.types || []);
+            if (!types.length || types.includes('text/pen-id') || types.includes('text/plain')) {
+              ev.preventDefault();
+              el.classList.add('dragging');
+            }
+          };
+          el.ondragleave = () => el.classList.remove('dragging');
+          el.ondrop = (ev) => {
+            ev.preventDefault();
+            el.classList.remove('dragging');
+            const penId = ev.dataTransfer.getData('text/pen-id') || ev.dataTransfer.getData('text/plain');
+            const next = pens.find((pen) => pen.id === penId);
+            if (!next) return;
+            if (this.app.pushHistory) this.app.pushHistory();
+            applyPen(next);
+            penMenu.classList.add('hidden');
           };
         }
         if (delBtn) {
@@ -2192,16 +2595,9 @@
         const isChild = Boolean(opts.isChild);
         const isActive = l.id === this.app.engine.activeLayerId;
         const isSelected = this.app.renderer?.selectedLayerIds?.has(l.id);
+        const parentGroup = this.getGroupForLayer(l);
+        const hidePen = parentGroup && parentGroup.groupType === 'group';
         const showExpand = !isChild && !l.isGroup;
-        const gripMarkup = isChild
-          ? '<span class="layer-grip layer-grip--spacer"></span>'
-          : `
-            <button class="layer-grip" type="button" aria-label="Reorder layer">
-              <span class="dot"></span><span class="dot"></span>
-              <span class="dot"></span><span class="dot"></span>
-              <span class="dot"></span><span class="dot"></span>
-            </button>
-          `;
         const expandMarkup = showExpand
           ? '<button class="text-sm text-vectura-muted hover:text-white px-1 btn-expand" aria-label="Expand layer">⇲</button>'
           : '';
@@ -2226,12 +2622,14 @@
             />
           </div>
           <div class="flex items-center gap-1">
-            <div class="pen-assign">
-              <button class="pen-pill" type="button" aria-label="Assign pen">
-                <div class="pen-icon"></div>
-              </button>
-              <div class="pen-menu hidden"></div>
-            </div>
+            ${hidePen ? '' : `
+              <div class="pen-assign">
+                <button class="pen-pill" type="button" aria-label="Assign pen">
+                  <div class="pen-icon"></div>
+                </button>
+                <div class="pen-menu hidden"></div>
+              </div>
+            `}
             ${expandMarkup}
             ${moveMarkup}
             <button class="text-sm text-vectura-muted hover:text-white px-1 btn-dup" aria-label="Duplicate layer">⧉</button>
@@ -2251,14 +2649,28 @@
         const penPill = el.querySelector('.pen-pill');
         const penIcon = el.querySelector('.pen-icon');
 
-        const selectLayer = (e) => {
-          if (e && e.shiftKey) {
+        const selectLayer = (e, options = {}) => {
+          const { skipList = false } = options;
+          if (e && e.shiftKey && this.lastLayerClickId && this.layerListOrder.length) {
+            const list = this.layerListOrder;
+            const start = list.indexOf(this.lastLayerClickId);
+            const end = list.indexOf(l.id);
+            if (start !== -1 && end !== -1) {
+              const from = Math.min(start, end);
+              const to = Math.max(start, end);
+              const rangeIds = list.slice(from, to + 1);
+              if (this.app.renderer) this.app.renderer.setSelection(rangeIds, l.id);
+            } else {
+              this.app.renderer.selectLayer(l);
+            }
+          } else if (e && (e.metaKey || e.ctrlKey)) {
             this.app.renderer.selectLayer(l, { toggle: true });
           } else {
             this.app.renderer.selectLayer(l);
           }
           this.app.engine.activeLayerId = this.app.renderer.selectedLayerId || l.id;
-          this.renderLayers();
+          this.lastLayerClickId = l.id;
+          if (!skipList) this.renderLayers();
           this.buildControls();
           this.updateFormula();
           this.app.render();
@@ -2267,6 +2679,10 @@
         el.onclick = (e) => {
           if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select')) return;
           selectLayer(e);
+        };
+        el.onmousedown = (e) => {
+          if (e.target.closest('input')) return;
+          e.preventDefault();
         };
 
         if (expandBtn) {
@@ -2373,11 +2789,13 @@
         }
         if (penMenu && penPill && penIcon) {
           const pens = SETTINGS.pens || [];
-          const applyPen = (pen) => {
+          const applyPen = (pen, targets = [l]) => {
             if (!pen) return;
-            l.penId = pen.id;
-            l.color = pen.color;
-            l.strokeWidth = pen.width;
+            targets.forEach((target) => {
+              target.penId = pen.id;
+              target.color = pen.color;
+              target.strokeWidth = pen.width;
+            });
             penIcon.style.background = pen.color;
             penIcon.style.color = pen.color;
             penIcon.style.setProperty('--pen-width', pen.width);
@@ -2407,7 +2825,10 @@
               e.stopPropagation();
               if (this.app.pushHistory) this.app.pushHistory();
               const next = pens.find((pen) => pen.id === opt.dataset.penId);
-              applyPen(next);
+              const selectedLayers = this.app.renderer?.selectedLayerIds?.has(l.id)
+                ? this.app.renderer.getSelectedLayers()
+                : [l];
+              applyPen(next, selectedLayers);
               penMenu.classList.add('hidden');
             };
           });
@@ -2435,60 +2856,20 @@
             const next = pens.find((pen) => pen.id === penId);
             if (!next) return;
             if (this.app.pushHistory) this.app.pushHistory();
-            applyPen(next);
+            const selectedLayers = this.app.renderer?.getSelectedLayers?.() || [];
+            applyPen(next, selectedLayers.length ? selectedLayers : [l]);
             penMenu.classList.add('hidden');
           };
         }
-        if (grip && !isChild) {
-          grip.onmousedown = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const dragEl = el;
-            dragEl.classList.add('dragging');
-            const indicator = document.createElement('div');
-            indicator.className = 'layer-drop-indicator';
-            container.insertBefore(indicator, dragEl.nextSibling);
-            const currentOrder = this.app.engine.layers.map((layer) => layer.id).reverse();
-
-            const onMove = (ev) => {
-              const y = ev.clientY;
-              const items = Array.from(container.querySelectorAll('.layer-item')).filter((item) => item !== dragEl);
-              let inserted = false;
-              for (const item of items) {
-                const rect = item.getBoundingClientRect();
-                if (y < rect.top + rect.height / 2) {
-                  container.insertBefore(indicator, item);
-                  inserted = true;
-                  break;
-                }
-              }
-              if (!inserted) container.appendChild(indicator);
-            };
-
-            const onUp = () => {
-              dragEl.classList.remove('dragging');
-              const siblings = Array.from(container.children);
-              const indicatorIndex = siblings.indexOf(indicator);
-              const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('layer-item'));
-              const newIndex = before.length;
-              indicator.remove();
-              window.removeEventListener('mousemove', onMove);
-              window.removeEventListener('mouseup', onUp);
-
-              const nextOrder = currentOrder.filter((id) => id !== l.id);
-              nextOrder.splice(newIndex, 0, l.id);
-              const nextEngineOrder = nextOrder.slice().reverse();
-              const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
-              this.app.engine.layers = nextEngineOrder.map((id) => map.get(id)).filter(Boolean);
-              this.renderLayers();
-              this.app.render();
-            };
-
-            window.addEventListener('mousemove', onMove);
-            window.addEventListener('mouseup', onUp);
-          };
+        if (grip) {
+          bindLayerReorderGrip(grip, el, (e) => {
+            if (!this.app.renderer?.selectedLayerIds?.has(l.id)) {
+              selectLayer(e, { skipList: true });
+            }
+          });
         }
         container.appendChild(el);
+        selectableIds.push(l.id);
       };
 
       layers.forEach((layer) => {
@@ -2506,6 +2887,7 @@
       });
 
       orphans.forEach((layer) => renderLayerRow(layer));
+      this.layerListOrder = selectableIds;
     }
 
     renderPens() {

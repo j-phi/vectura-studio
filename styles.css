@@ -111,6 +111,10 @@ input[type='color']::-webkit-color-swatch {
   background-color: rgba(39, 39, 42, 0.5);
 }
 
+.layer-item {
+  user-select: none;
+}
+
 .layer-item.selected {
   border-color: #fafafa;
 }
@@ -154,6 +158,7 @@ input[type='color']::-webkit-color-swatch {
   grid-template-rows: repeat(3, 4px);
   gap: 2px;
   padding: 2px;
+  cursor: grab;
 }
 
 .layer-grip .dot {
@@ -454,7 +459,7 @@ input[type='color']::-webkit-color-swatch {
 }
 
 .bottom-pane-collapsed .pane-toggle-bottom {
-  transform: translateY(-50%) rotate(-90deg);
+  transform: translateY(-50%) rotate(90deg);
 }
 
 .layer-grip {
@@ -628,4 +633,12 @@ input[type='color']::-webkit-color-swatch {
 .settings-panel.open {
   transform: translateX(0);
   pointer-events: auto;
+}
+.layer-grip:active {
+  cursor: grabbing;
+}
+
+.layer-name-input,
+.pen-name-input {
+  user-select: text;
 }

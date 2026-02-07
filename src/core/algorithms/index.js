@@ -425,9 +425,66 @@
         const verticalFadeMode = ['none', 'top', 'bottom', 'both'].includes(p.verticalFadeMode)
           ? p.verticalFadeMode
           : 'both';
+        const noiseType = p.noiseType || 'simplex';
         const noiseAngle = ((p.noiseAngle ?? 0) * Math.PI) / 180;
         const cosA = Math.cos(noiseAngle);
         const sinA = Math.sin(noiseAngle);
+        const baseNoise = (x, y) => noise.noise2D(x, y);
+        const hash2D = (x, y) => {
+          const n = Math.sin(x * 127.1 + y * 311.7 + (p.seed ?? 0) * 0.1) * 43758.5453;
+          return n - Math.floor(n);
+        };
+        const cellularNoise = (x, y) => {
+          const xi = Math.floor(x);
+          const yi = Math.floor(y);
+          let minDist = Infinity;
+          for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+              const cx = xi + dx + hash2D(xi + dx, yi + dy);
+              const cy = yi + dy + hash2D(xi + dx + 7.21, yi + dy + 3.17);
+              const dist = Math.hypot(x - cx, y - cy);
+              if (dist < minDist) minDist = dist;
+            }
+          }
+          const v = Math.max(0, Math.min(1, 1 - minDist));
+          return v * 2 - 1;
+        };
+        const noiseValue = (x, y) => {
+          const n = baseNoise(x, y);
+          switch (noiseType) {
+            case 'ridged':
+              return (1 - Math.abs(n)) * 2 - 1;
+            case 'billow':
+              return Math.abs(n) * 2 - 1;
+            case 'turbulence': {
+              const n2 = baseNoise(x * 2, y * 2);
+              const n3 = baseNoise(x * 4, y * 4);
+              const t = (Math.abs(n) + Math.abs(n2) * 0.5 + Math.abs(n3) * 0.25) / 1.75;
+              return t * 2 - 1;
+            }
+            case 'stripes':
+              return Math.sin(x * 2 + n * 1.5);
+            case 'marble':
+              return Math.sin((x + y) * 1.5 + n * 2);
+            case 'steps': {
+              const t = Math.round(((n + 1) / 2) * 5) / 5;
+              return t * 2 - 1;
+            }
+            case 'triangle': {
+              const t = (n + 1) / 2;
+              const tri = 1 - Math.abs((t % 1) * 2 - 1);
+              return tri * 2 - 1;
+            }
+            case 'warp': {
+              const warp = baseNoise(x + n * 1.5, y + n * 1.5);
+              return warp;
+            }
+            case 'cellular':
+              return cellularNoise(x, y);
+            default:
+              return n;
+          }
+        };
         let prevY = null;
         let prevOffset = 0;
         const rowOrder = overlapPadding > 0 ? [...Array(lines).keys()].reverse() : [...Array(lines).keys()];
@@ -470,7 +527,7 @@
             const ny = by * p.zoom;
             const rx = nx * cosA - ny * sinA;
             const ry = nx * sinA + ny * cosA;
-            const n = noise.noise2D(rx, ry);
+            const n = noiseValue(rx, ry);
             const off = n * p.amplitude;
             let taper = 1.0;
             if (edgeFadeStrength > 0 && edgeFadeThresholdStrength > 0 && edgeFadeMode !== 'none') {

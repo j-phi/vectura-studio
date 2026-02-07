@@ -158,6 +158,46 @@
         }
       }
 
+      const highlightLayers = selectedLayers.filter((layer) => layer.parentId);
+      if (highlightLayers.length) {
+        const drawHighlights = () => {
+          highlightLayers.forEach((l) => {
+            const pen = SETTINGS.pens?.find((p) => p.id === l.penId) || null;
+            const strokeWidth = pen?.width ?? l.strokeWidth ?? SETTINGS.strokeWidth;
+            const useCurves = Boolean(l.params && l.params.curves);
+            this.ctx.lineWidth = Math.max(strokeWidth + 0.2, strokeWidth * 1.6);
+            this.ctx.lineCap = l.lineCap || 'round';
+            this.ctx.strokeStyle = 'rgba(248, 250, 252, 0.9)';
+            this.ctx.beginPath();
+            l.paths.forEach((path) => {
+              if (path && path.meta && path.meta.kind === 'circle') {
+                const meta =
+                  this.selectedLayerIds?.has(l.id) && this.tempTransform
+                    ? this.transformCircleMeta(path.meta, this.tempTransform)
+                    : path.meta;
+                this.traceCircle(meta);
+              } else {
+                const next =
+                  this.selectedLayerIds?.has(l.id) && this.tempTransform ? this.transformPath(path, this.tempTransform) : path;
+                this.tracePath(next, useCurves);
+              }
+            });
+            this.ctx.stroke();
+          });
+        };
+
+        if (SETTINGS.truncate) {
+          this.ctx.save();
+          this.ctx.beginPath();
+          this.ctx.rect(m, m, innerW, innerH);
+          this.ctx.clip();
+          drawHighlights();
+          this.ctx.restore();
+        } else {
+          drawHighlights();
+        }
+      }
+
       if (SETTINGS.marginLineVisible) {
         this.ctx.save();
         this.ctx.strokeStyle = SETTINGS.marginLineColor || '#52525b';
@@ -250,7 +290,7 @@
         this.dragMode = 'move';
         this.dragStart = world;
         this.startBounds = bounds;
-        this.canvas.style.cursor = 'move';
+        this.canvas.style.cursor = updatedSelected.length > 1 ? 'grabbing' : 'move';
         if (e.altKey && updatedSelected.length === 1) {
           if (this.onDuplicateLayer) this.onDuplicateLayer();
           const dup = this.engine.duplicateLayer ? this.engine.duplicateLayer(updatedSelected[0].id) : null;
@@ -668,19 +708,24 @@
       });
       if (!Number.isFinite(minX)) return null;
       const center = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+      const localMinX = minX - center.x;
+      const localMinY = minY - center.y;
+      const localMaxX = maxX - center.x;
+      const localMaxY = maxY - center.y;
+      const toWorld = (local) => ({ x: center.x + local.x, y: center.y + local.y });
       return {
-        minX,
-        minY,
-        maxX,
-        maxY,
+        minX: localMinX,
+        minY: localMinY,
+        maxX: localMaxX,
+        maxY: localMaxY,
         rotation: 0,
         origin: center,
         center,
         corners: {
-          nw: { x: minX, y: minY },
-          ne: { x: maxX, y: minY },
-          se: { x: maxX, y: maxY },
-          sw: { x: minX, y: maxY },
+          nw: toWorld({ x: localMinX, y: localMinY }),
+          ne: toWorld({ x: localMaxX, y: localMinY }),
+          se: toWorld({ x: localMaxX, y: localMaxY }),
+          sw: toWorld({ x: localMinX, y: localMaxY }),
         },
       };
     }
@@ -969,7 +1014,7 @@
       }
       const world = this.screenToWorld(sx, sy);
       if (this.pointInBounds(world, bounds)) {
-        this.canvas.style.cursor = 'move';
+        this.canvas.style.cursor = activeLayers.length > 1 ? 'grab' : 'move';
       } else {
         this.canvas.style.cursor = 'crosshair';
       }
