@@ -913,6 +913,30 @@
               const tri = 1 - Math.abs((t % 1) * 2 - 1);
               return tri * 2 - 1;
             }
+            case 'polygon': {
+              const sides = Math.max(3, Math.round(noiseDef?.polygonSides ?? 6));
+              const radius = Math.max(0.1, noiseDef?.polygonRadius ?? 2);
+              const rotation = ((noiseDef?.polygonRotation ?? 0) * Math.PI) / 180;
+              const outline = Math.max(0, noiseDef?.polygonOutline ?? 0);
+              const edge = Math.max(0, noiseDef?.polygonEdgeRadius ?? 0);
+              const ang = Math.atan2(py, px) - rotation;
+              const sector = (Math.PI * 2) / sides;
+              const rel = ((ang % sector) + sector) % sector;
+              const dist = Math.cos(Math.PI / sides) / Math.cos(rel - Math.PI / sides);
+              const maxR = radius * dist;
+              const r = Math.hypot(px, py);
+              const sd = r - maxR;
+              const blend = (d) => {
+                if (edge <= 0) return d <= 0 ? 1 : -1;
+                const t = Math.max(0, Math.min(1, (d + edge) / (edge * 2)));
+                return 1 - t * 2;
+              };
+              if (outline > 0) {
+                const half = outline / 2;
+                return blend(Math.abs(sd) - half);
+              }
+              return blend(sd);
+            }
             case 'warp': {
               const warp = baseNoise(x + n * 1.5 * warpStrength, y + n * 1.5 * warpStrength);
               return warp;
@@ -982,10 +1006,10 @@
               const store = window.Vectura?.NOISE_IMAGES || {};
               const img = noiseDef?.imageId ? store[noiseDef.imageId] : null;
               if (!img || !img.data) return n;
-              const algo = noiseDef?.imageAlgo || 'luma';
-              const blurRadius = Math.max(0, Math.min(6, noiseDef?.imageBlurRadius ?? noiseDef?.imageBlur ?? 0));
-              const blurStrength = Math.max(0, Math.min(1, noiseDef?.imageBlurStrength ?? 1));
               const wrap = noiseDef?.tileMode !== 'off';
+              const invertColor = Boolean(noiseDef?.imageInvertColor);
+              const invertOpacity = Boolean(noiseDef?.imageInvertOpacity);
+              const clamp01 = (v) => Math.max(0, Math.min(1, v));
               const sampleLum = (u, v) => {
                 const uu = wrap ? ((u % 1) + 1) % 1 : Math.max(0, Math.min(1, u));
                 const vv = wrap ? ((v % 1) + 1) % 1 : Math.max(0, Math.min(1, v));
@@ -996,14 +1020,19 @@
                 const r = data[idx] ?? 0;
                 const g = data[idx + 1] ?? 0;
                 const b = data[idx + 2] ?? 0;
-                return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+                let lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+                if (invertColor) lum = 1 - lum;
+                const alpha = (data[idx + 3] ?? 0) / 255;
+                const a = invertOpacity ? 1 - alpha : alpha;
+                return clamp01(lum) * a;
               };
-              const sampleBlur = (u, v, radius = blurRadius) => {
-                if (!radius) return sampleLum(u, v);
+              const sampleBlur = (u, v, radius = 0) => {
+                const r = Math.max(0, Math.round(radius));
+                if (!r) return sampleLum(u, v);
                 let total = 0;
                 let count = 0;
-                for (let dy = -radius; dy <= radius; dy++) {
-                  for (let dx = -radius; dx <= radius; dx++) {
+                for (let dy = -r; dy <= r; dy++) {
+                  for (let dx = -r; dx <= r; dx++) {
                     total += sampleLum(u + dx / img.width, v + dy / img.height);
                     count += 1;
                   }
@@ -1016,98 +1045,200 @@
                 u += 0.5;
                 v += 0.5;
               }
-              if (algo === 'pixelate') {
-                const blocks = Math.max(2, Math.round(noiseDef?.imagePixelate ?? 12));
-                const stepU = 1 / blocks;
-                u = Math.floor(u / stepU) * stepU + stepU / 2;
-                v = Math.floor(v / stepU) * stepU + stepU / 2;
-              }
-              if (algo === 'edge') {
-                const c = sampleBlur(u, v);
-                const sx =
-                  -sampleBlur(u - 1 / img.width, v - 1 / img.height) +
-                  sampleBlur(u + 1 / img.width, v - 1 / img.height) -
-                  2 * sampleBlur(u - 1 / img.width, v) +
-                  2 * sampleBlur(u + 1 / img.width, v) -
-                  sampleBlur(u - 1 / img.width, v + 1 / img.height) +
-                  sampleBlur(u + 1 / img.width, v + 1 / img.height);
-                const sy =
-                  -sampleBlur(u - 1 / img.width, v - 1 / img.height) -
-                  2 * sampleBlur(u, v - 1 / img.height) -
-                  sampleBlur(u + 1 / img.width, v - 1 / img.height) +
-                  sampleBlur(u - 1 / img.width, v + 1 / img.height) +
-                  2 * sampleBlur(u, v + 1 / img.height) +
-                  sampleBlur(u + 1 / img.width, v + 1 / img.height);
-                const mag = Math.min(1, Math.hypot(sx, sy) * 1.5);
-                return (mag + c * 0.2) * 2 - 1;
-              }
-              const baseLum = sampleLum(u, v);
-              const blurLum = sampleBlur(u, v);
-              let lum = blurStrength < 1 ? baseLum + (blurLum - baseLum) * blurStrength : blurLum;
-              if (algo === 'brightness') {
-                const amt = Math.max(-1, Math.min(1, noiseDef?.imageBrightness ?? 0));
-                lum = lum + amt;
-              }
-              if (algo === 'levels') {
-                const low = Math.max(0, Math.min(1, noiseDef?.imageLevelsLow ?? 0));
-                const high = Math.max(low + 0.001, Math.min(1, noiseDef?.imageLevelsHigh ?? 1));
-                lum = (lum - low) / (high - low);
-              }
-              if (algo === 'gamma') {
-                const gamma = Math.max(0.2, Math.min(3, noiseDef?.imageGamma ?? 1));
-                lum = Math.pow(lum, gamma);
-              }
-              if (algo === 'contrast') {
-                const contrast = Math.max(0, Math.min(2, noiseDef?.imageContrast ?? 1));
-                lum = (lum - 0.5) * contrast + 0.5;
-              }
-              if (algo === 'emboss') {
-                const strength = Math.max(0, Math.min(2, noiseDef?.imageEmbossStrength ?? 1));
-                const dx = sampleBlur(u + 1 / img.width, v, 1) - sampleBlur(u - 1 / img.width, v, 1);
-                const dy = sampleBlur(u, v + 1 / img.height, 1) - sampleBlur(u, v - 1 / img.height, 1);
-                lum = 0.5 + (dx + dy) * 0.5 * strength;
-              }
-              if (algo === 'sharpen') {
-                const amount = Math.max(0, Math.min(2, noiseDef?.imageSharpenAmount ?? 1));
-                const radius = Math.max(0, Math.min(4, Math.round(noiseDef?.imageSharpenRadius ?? 1)));
-                const blurred = sampleBlur(u, v, radius);
-                lum = lum + (lum - blurred) * amount;
-              }
-              if (algo === 'invert') lum = 1 - lum;
-              if (algo === 'threshold') {
-                const t = Math.max(0, Math.min(1, noiseDef?.imageThreshold ?? 0.5));
-                lum = lum >= t ? 1 : 0;
-              }
-              if (algo === 'posterize') {
-                const levels = Math.max(2, Math.min(10, Math.round(noiseDef?.imagePosterize ?? 5)));
-                lum = Math.round(lum * (levels - 1)) / (levels - 1);
-              }
-              if (algo === 'solarize') {
-                const t = Math.max(0, Math.min(1, noiseDef?.imageSolarize ?? 0.5));
-                if (lum > t) lum = 1 - lum;
-              }
-              if (algo === 'dither') {
-                const amount = Math.max(0, Math.min(1, noiseDef?.imageDither ?? 0.5));
-                const bayer4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
-                const ix = Math.floor(u * img.width) % 4;
-                const iy = Math.floor(v * img.height) % 4;
-                const threshold = bayer4[iy * 4 + ix] / 16;
-                lum = lum + (threshold - 0.5) * amount;
-                lum = lum >= 0.5 ? 1 : 0;
-              }
-              if (algo === 'median') {
-                const radius = Math.max(1, Math.min(4, Math.round(noiseDef?.imageMedianRadius ?? 1)));
-                const samples = [];
-                for (let dy = -radius; dy <= radius; dy++) {
-                  for (let dx = -radius; dx <= radius; dx++) {
-                    samples.push(sampleLum(u + dx / img.width, v + dy / img.height));
+              const resolveEffects = () => {
+                if (Array.isArray(noiseDef?.imageEffects) && noiseDef.imageEffects.length) return noiseDef.imageEffects;
+                return [
+                  {
+                    ...noiseDef,
+                    enabled: true,
+                    mode: noiseDef?.imageAlgo || 'luma',
+                  },
+                ];
+              };
+              const getParam = (effect, key, fallback) => {
+                if (effect && effect[key] !== undefined) return effect[key];
+                if (noiseDef && noiseDef[key] !== undefined) return noiseDef[key];
+                return fallback;
+              };
+              const applyEffect = (effect, state) => {
+                const mode = effect?.mode || noiseDef?.imageAlgo || 'luma';
+                let nextU = state.u;
+                let nextV = state.v;
+                let lum = state.lum;
+                switch (mode) {
+                  case 'luma':
+                    lum = sampleLum(nextU, nextV);
+                    break;
+                  case 'pixelate': {
+                    const blocks = Math.max(2, Math.round(getParam(effect, 'imagePixelate', 12)));
+                    const stepU = 1 / blocks;
+                    nextU = Math.floor(nextU / stepU) * stepU + stepU / 2;
+                    nextV = Math.floor(nextV / stepU) * stepU + stepU / 2;
+                    lum = sampleLum(nextU, nextV);
+                    break;
                   }
+                  case 'edge': {
+                    const edgeBlur = Math.max(0, Math.min(4, getParam(effect, 'imageEdgeBlur', getParam(effect, 'imageBlur', 0))));
+                    const c = sampleBlur(nextU, nextV, edgeBlur);
+                    const sx =
+                      -sampleBlur(nextU - 1 / img.width, nextV - 1 / img.height, edgeBlur) +
+                      sampleBlur(nextU + 1 / img.width, nextV - 1 / img.height, edgeBlur) -
+                      2 * sampleBlur(nextU - 1 / img.width, nextV, edgeBlur) +
+                      2 * sampleBlur(nextU + 1 / img.width, nextV, edgeBlur) -
+                      sampleBlur(nextU - 1 / img.width, nextV + 1 / img.height, edgeBlur) +
+                      sampleBlur(nextU + 1 / img.width, nextV + 1 / img.height, edgeBlur);
+                    const sy =
+                      -sampleBlur(nextU - 1 / img.width, nextV - 1 / img.height, edgeBlur) -
+                      2 * sampleBlur(nextU, nextV - 1 / img.height, edgeBlur) -
+                      sampleBlur(nextU + 1 / img.width, nextV - 1 / img.height, edgeBlur) +
+                      sampleBlur(nextU - 1 / img.width, nextV + 1 / img.height, edgeBlur) +
+                      2 * sampleBlur(nextU, nextV + 1 / img.height, edgeBlur) +
+                      sampleBlur(nextU + 1 / img.width, nextV + 1 / img.height, edgeBlur);
+                    const mag = Math.min(1, Math.hypot(sx, sy) * 1.5);
+                    lum = mag + c * 0.2;
+                    break;
+                  }
+                  case 'blur': {
+                    const radius = Math.max(0, Math.min(6, getParam(effect, 'imageBlurRadius', 0)));
+                    const strength = Math.max(0, Math.min(1, getParam(effect, 'imageBlurStrength', 1)));
+                    const blurLum = sampleBlur(nextU, nextV, radius);
+                    lum = lum + (blurLum - lum) * strength;
+                    break;
+                  }
+                  case 'lowpass': {
+                    const radius = Math.max(0, Math.min(6, getParam(effect, 'imageLowpassRadius', 2)));
+                    const strength = Math.max(0, Math.min(1, getParam(effect, 'imageLowpassStrength', 0.6)));
+                    const blurLum = sampleBlur(nextU, nextV, radius);
+                    lum = lum + (blurLum - lum) * strength;
+                    break;
+                  }
+                  case 'highpass': {
+                    const radius = Math.max(0, Math.min(6, getParam(effect, 'imageHighpassRadius', 1)));
+                    const strength = Math.max(0, Math.min(2, getParam(effect, 'imageHighpassStrength', 1)));
+                    const blurLum = sampleBlur(nextU, nextV, radius);
+                    lum = clamp01((lum - blurLum) * strength + 0.5);
+                    break;
+                  }
+                  case 'brightness': {
+                    const amt = Math.max(-1, Math.min(1, getParam(effect, 'imageBrightness', 0)));
+                    lum = lum + amt;
+                    break;
+                  }
+                  case 'levels': {
+                    const low = Math.max(0, Math.min(1, getParam(effect, 'imageLevelsLow', 0)));
+                    const high = Math.max(low + 0.001, Math.min(1, getParam(effect, 'imageLevelsHigh', 1)));
+                    lum = (lum - low) / (high - low);
+                    break;
+                  }
+                  case 'gamma': {
+                    const gamma = Math.max(0.2, Math.min(3, getParam(effect, 'imageGamma', 1)));
+                    lum = Math.pow(lum, gamma);
+                    break;
+                  }
+                  case 'contrast': {
+                    const contrast = Math.max(0, Math.min(2, getParam(effect, 'imageContrast', 1)));
+                    lum = (lum - 0.5) * contrast + 0.5;
+                    break;
+                  }
+                  case 'emboss': {
+                    const strength = Math.max(0, Math.min(2, getParam(effect, 'imageEmbossStrength', 1)));
+                    const dx = sampleBlur(nextU + 1 / img.width, nextV, 1) - sampleBlur(nextU - 1 / img.width, nextV, 1);
+                    const dy = sampleBlur(nextU, nextV + 1 / img.height, 1) - sampleBlur(nextU, nextV - 1 / img.height, 1);
+                    lum = 0.5 + (dx + dy) * 0.5 * strength;
+                    break;
+                  }
+                  case 'sharpen': {
+                    const amount = Math.max(0, Math.min(2, getParam(effect, 'imageSharpenAmount', 1)));
+                    const radius = Math.max(0, Math.min(4, Math.round(getParam(effect, 'imageSharpenRadius', 1))));
+                    const blurred = sampleBlur(nextU, nextV, radius);
+                    lum = lum + (lum - blurred) * amount;
+                    break;
+                  }
+                  case 'invert':
+                    lum = 1 - lum;
+                    break;
+                  case 'threshold': {
+                    const t = Math.max(0, Math.min(1, getParam(effect, 'imageThreshold', 0.5)));
+                    lum = lum >= t ? 1 : 0;
+                    break;
+                  }
+                  case 'posterize': {
+                    const levels = Math.max(2, Math.min(10, Math.round(getParam(effect, 'imagePosterize', 5))));
+                    lum = Math.round(lum * (levels - 1)) / (levels - 1);
+                    break;
+                  }
+                  case 'solarize': {
+                    const t = Math.max(0, Math.min(1, getParam(effect, 'imageSolarize', 0.5)));
+                    if (lum > t) lum = 1 - lum;
+                    break;
+                  }
+                  case 'dither': {
+                    const amount = Math.max(0, Math.min(1, getParam(effect, 'imageDither', 0.5)));
+                    const bayer4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+                    const ix = Math.floor(nextU * img.width) % 4;
+                    const iy = Math.floor(nextV * img.height) % 4;
+                    const threshold = bayer4[iy * 4 + ix] / 16;
+                    lum = lum + (threshold - 0.5) * amount;
+                    lum = lum >= 0.5 ? 1 : 0;
+                    break;
+                  }
+                  case 'median': {
+                    const radius = Math.max(1, Math.min(4, Math.round(getParam(effect, 'imageMedianRadius', 1))));
+                    const samples = [];
+                    for (let dy = -radius; dy <= radius; dy++) {
+                      for (let dx = -radius; dx <= radius; dx++) {
+                        samples.push(sampleLum(nextU + dx / img.width, nextV + dy / img.height));
+                      }
+                    }
+                    samples.sort((a, b) => a - b);
+                    lum = samples[Math.floor(samples.length / 2)] ?? lum;
+                    break;
+                  }
+                  case 'vignette': {
+                    const strength = Math.max(0, Math.min(1, getParam(effect, 'imageVignetteStrength', 0.4)));
+                    const radius = Math.max(0.2, Math.min(1, getParam(effect, 'imageVignetteRadius', 0.85)));
+                    const dist = Math.hypot(nextU - 0.5, nextV - 0.5);
+                    const t = Math.max(0, Math.min(1, (dist - radius) / Math.max(0.001, 1 - radius)));
+                    lum = lum * (1 - t * strength);
+                    break;
+                  }
+                  case 'curve': {
+                    const strength = Math.max(0, Math.min(1, getParam(effect, 'imageCurveStrength', 0.4)));
+                    if (lum < 0.5) {
+                      lum = Math.pow(lum * 2, 1 + strength * 2) / 2;
+                    } else {
+                      lum = 1 - Math.pow((1 - lum) * 2, 1 + strength * 2) / 2;
+                    }
+                    break;
+                  }
+                  case 'bandpass': {
+                    const center = Math.max(0, Math.min(1, getParam(effect, 'imageBandCenter', 0.5)));
+                    const width = Math.max(0.05, Math.min(1, getParam(effect, 'imageBandWidth', 0.3)));
+                    const half = width / 2;
+                    const dist = Math.abs(lum - center);
+                    lum = Math.max(0, Math.min(1, 1 - dist / half));
+                    break;
+                  }
+                  default:
+                    break;
                 }
-                samples.sort((a, b) => a - b);
-                lum = samples[Math.floor(samples.length / 2)] ?? lum;
+                return { u: nextU, v: nextV, lum: clamp01(lum) };
+              };
+
+              let state = { u, v, lum: sampleLum(u, v) };
+              const effects = resolveEffects();
+              effects.forEach((effect) => {
+                if (effect && effect.enabled === false) return;
+                state = applyEffect(effect, state);
+              });
+              let lum = clamp01(state.lum);
+              let value = lum * 2 - 1;
+              const style = noiseDef?.imageStyle;
+              if (style && style !== 'none' && style !== 'image') {
+                const styleValue = noiseValue(x, y, { ...noiseDef, type: style, imageId: null, imageEffects: null });
+                value = (value + styleValue) / 2;
               }
-              lum = Math.max(0, Math.min(1, lum));
-              return lum * 2 - 1;
+              return value;
             }
             default:
               return n;
@@ -1212,9 +1343,46 @@
           cellularJitter: 1,
           stepsCount: 5,
           seed: 0,
+          imageStyle: 'none',
+          imageInvertColor: false,
+          imageInvertOpacity: false,
           imageId: p.noiseImageId || '',
           imageName: p.noiseImageName || '',
           imageAlgo: p.imageAlgo || 'luma',
+          imageEffects: [
+            {
+              id: 'effect-1',
+              enabled: true,
+              mode: 'luma',
+              imageBrightness: 0,
+              imageLevelsLow: 0,
+              imageLevelsHigh: 1,
+              imageEmbossStrength: 1,
+              imageSharpenAmount: 1,
+              imageSharpenRadius: 1,
+              imageMedianRadius: 1,
+              imageGamma: 1,
+              imageContrast: 1,
+              imageSolarize: 0.5,
+              imagePixelate: 12,
+              imageDither: 0.5,
+              imageThreshold: 0.5,
+              imagePosterize: 5,
+              imageBlur: 0,
+              imageBlurRadius: 0,
+              imageBlurStrength: 1,
+              imageEdgeBlur: 0,
+              imageHighpassRadius: 1,
+              imageHighpassStrength: 1,
+              imageLowpassRadius: 2,
+              imageLowpassStrength: 0.6,
+              imageVignetteStrength: 0.4,
+              imageVignetteRadius: 0.85,
+              imageCurveStrength: 0.4,
+              imageBandCenter: 0.5,
+              imageBandWidth: 0.3,
+            },
+          ],
           imageThreshold: p.imageThreshold ?? 0.5,
           imagePosterize: p.imagePosterize ?? 5,
           imageBlur: p.imageBlur ?? 0,
@@ -1232,6 +1400,11 @@
           imageSolarize: 0.5,
           imagePixelate: 12,
           imageDither: 0.5,
+          polygonRadius: 2,
+          polygonSides: 6,
+          polygonRotation: 0,
+          polygonOutline: 0,
+          polygonEdgeRadius: 0,
         };
         const noiseStack = (Array.isArray(p.noises) && p.noises.length ? p.noises : [noiseBase]).map((noiseLayer) => ({
           ...noiseBase,
@@ -1951,13 +2124,17 @@
         const count = Math.max(1, Math.floor(p.count ?? 1));
         const traceLength = Math.max(4, p.traceLength ?? 40);
         const traceStep = Math.max(1, p.traceStep ?? 4);
-        const steps = Math.max(2, Math.floor(traceLength / traceStep));
+        const lengthJitter = Math.max(0, Math.min(1, p.lengthJitter ?? 0));
+        const stepJitter = Math.max(0, Math.min(1, p.stepJitter ?? 0));
         const turbulence = Math.max(0, p.turbulence ?? 0);
+        const gustStrength = Math.max(0, Math.min(1, p.gustStrength ?? 0));
         const rainfallAngle = ((p.rainfallAngle ?? 150) * Math.PI) / 180;
+        const angleJitter = ((p.angleJitter ?? 0) * Math.PI) / 180;
         const windStrength = Math.max(0, p.windStrength ?? 0);
         const windAngle = ((p.windAngle ?? 180) * Math.PI) / 180;
         const fillAngle = ((p.fillAngle ?? 0) * Math.PI) / 180;
         const dropSize = Math.max(0, p.dropSize ?? 0);
+        const dropSizeJitter = Math.max(0, Math.min(1, p.dropSizeJitter ?? 0));
         const widthMultiplier = Math.max(1, Math.round(p.widthMultiplier ?? 1));
         const thickeningMode = p.thickeningMode || 'parallel';
         const dropShape = p.dropShape || 'none';
@@ -1970,20 +2147,10 @@
         const breakWidthJitter = Math.max(0, Math.min(1, p.breakWidthJitter ?? 0));
         const breakRandomness = Math.max(0, Math.min(1, p.breakRandomness ?? 0));
         const noiseScale = 0.01;
+        const gustScale = 0.003;
 
-        const baseDirX = Math.sin(rainfallAngle);
-        const baseDirY = -Math.cos(rainfallAngle);
         const windX = Math.sin(windAngle) * windStrength;
         const windY = -Math.cos(windAngle) * windStrength;
-        let headDirX = baseDirX + windX;
-        let headDirY = baseDirY + windY;
-        const headLen = Math.hypot(headDirX, headDirY) || 1;
-        headDirX /= headLen;
-        headDirY /= headLen;
-        const dirX = -headDirX;
-        const dirY = -headDirY;
-        const perpX = -dirY;
-        const perpY = dirX;
 
         const store = window.Vectura?.NOISE_IMAGES || {};
         const mask = p.silhouetteId ? store[p.silhouetteId] : null;
@@ -2246,23 +2413,26 @@
           return paths;
         };
 
-        const spacing = Math.max(0.35, dropSize * 0.25, traceStep * 0.15);
-        const offsets = [];
-        if (widthMultiplier === 1) {
-          offsets.push(0);
-        } else {
-          const half = (widthMultiplier - 1) / 2;
-          for (let i = 0; i < widthMultiplier; i++) {
-            offsets.push((i - half) * spacing);
+        const buildOffsets = (spacing) => {
+          const offsets = [];
+          if (widthMultiplier === 1) {
+            offsets.push(0);
+          } else {
+            const half = (widthMultiplier - 1) / 2;
+            for (let i = 0; i < widthMultiplier; i++) {
+              offsets.push((i - half) * spacing);
+            }
           }
-        }
+          return offsets;
+        };
 
-        const buildTracePaths = (basePath) => {
+        const buildTracePaths = (basePath, perpX, perpY, spacing) => {
           if (!basePath || basePath.length < 2) return [];
           const paths = [];
           const phase = rng.nextFloat() * Math.PI * 2;
           const waveFreq = 2 + widthMultiplier * 0.4;
           const waveAmp = spacing * 0.6;
+          const offsets = buildOffsets(spacing);
           const offsetPaths = offsets.map((offset, idx) =>
             basePath.map((pt, i) => {
               let off = offset;
@@ -2289,9 +2459,9 @@
           return paths;
         };
 
-        const applyTrailBreaks = (path) => {
+        const applyTrailBreaks = (path, stepSize) => {
           if (!path || path.length < 2 || trailBreaks === 'none') return [path];
-          const baseSeg = Math.max(2, Math.round(breakSpacing / traceStep));
+          const baseSeg = Math.max(2, Math.round(breakSpacing / Math.max(0.5, stepSize)));
           const segments = [];
           let idx = 0;
           const total = path.length;
@@ -2376,29 +2546,51 @@
             if (maskAlpha(x, y) < 0.1) continue;
           }
 
+          const angleOffset = angleJitter ? (rng.nextFloat() * 2 - 1) * angleJitter : 0;
+          const localAngle = rainfallAngle + angleOffset;
+          const baseDirX = Math.sin(localAngle);
+          const baseDirY = -Math.cos(localAngle);
+          let headDirX = baseDirX + windX;
+          let headDirY = baseDirY + windY;
+          const headLen = Math.hypot(headDirX, headDirY) || 1;
+          headDirX /= headLen;
+          headDirY /= headLen;
+          const dirX = -headDirX;
+          const dirY = -headDirY;
+          const perpX = -dirY;
+          const perpY = dirX;
+          const lenFactor = lengthJitter > 0 ? 1 + (rng.nextFloat() * 2 - 1) * lengthJitter : 1;
+          const localLength = Math.max(4, traceLength * lenFactor);
+          const stepFactor = stepJitter > 0 ? 1 + (rng.nextFloat() * 2 - 1) * stepJitter : 1;
+          const localStep = Math.max(1, traceStep * stepFactor);
+          const steps = Math.max(2, Math.floor(localLength / localStep));
+          const spacing = Math.max(0.35, dropSize * 0.25, localStep * 0.15);
+
           const basePath = [{ x, y }];
           let px = x;
           let py = y;
           for (let s = 0; s < steps; s++) {
             const n = noise.noise2D(px * noiseScale, py * noiseScale);
             const wobble = n * turbulence;
-            const dx = dirX + perpX * wobble;
-            const dy = dirY + perpY * wobble;
+            const gust = gustStrength > 0 ? noise.noise2D(px * gustScale, py * gustScale) * gustStrength : 0;
+            const dx = dirX + perpX * (wobble + gust);
+            const dy = dirY + perpY * (wobble + gust);
             const len = Math.hypot(dx, dy) || 1;
-            px += (dx / len) * traceStep;
-            py += (dy / len) * traceStep;
+            px += (dx / len) * localStep;
+            py += (dy / len) * localStep;
             if (px < m || px > width - m || py < m || py > height - m) break;
             if (hasMask && maskAlpha(px, py) < 0.1) break;
             basePath.push({ x: px, y: py });
           }
           if (basePath.length < 2) continue;
-          const broken = applyTrailBreaks(basePath);
+          const broken = applyTrailBreaks(basePath, localStep);
           broken.forEach((segment) => {
-            const tracePaths = buildTracePaths(segment);
+            const tracePaths = buildTracePaths(segment, perpX, perpY, spacing);
             tracePaths.forEach((path) => paths.push(path));
           });
 
-          const dropScale = dropSize * (1 + (widthMultiplier - 1) * 0.2);
+          const sizeFactor = dropSizeJitter > 0 ? 1 + (rng.nextFloat() * 2 - 1) * dropSizeJitter : 1;
+          const dropScale = dropSize * sizeFactor * (1 + (widthMultiplier - 1) * 0.2);
           const dropCenter = basePath[0];
           const dropAngle = Math.atan2(headDirX, headDirY) + ((p.dropRotate ?? 0) * Math.PI) / 180;
           buildDropShape(dropCenter, dropScale, dropAngle).forEach((path) => paths.push(path));
@@ -2540,6 +2732,30 @@
               const tri = 1 - Math.abs((t % 1) * 2 - 1);
               return tri * 2 - 1;
             }
+            case 'polygon': {
+              const sides = Math.max(3, Math.round(noiseDef?.polygonSides ?? 6));
+              const radius = Math.max(0.1, noiseDef?.polygonRadius ?? 2);
+              const rotation = ((noiseDef?.polygonRotation ?? 0) * Math.PI) / 180;
+              const outline = Math.max(0, noiseDef?.polygonOutline ?? 0);
+              const edge = Math.max(0, noiseDef?.polygonEdgeRadius ?? 0);
+              const ang = Math.atan2(py, px) - rotation;
+              const sector = (Math.PI * 2) / sides;
+              const rel = ((ang % sector) + sector) % sector;
+              const dist = Math.cos(Math.PI / sides) / Math.cos(rel - Math.PI / sides);
+              const maxR = radius * dist;
+              const r = Math.hypot(px, py);
+              const sd = r - maxR;
+              const blend = (d) => {
+                if (edge <= 0) return d <= 0 ? 1 : -1;
+                const t = Math.max(0, Math.min(1, (d + edge) / (edge * 2)));
+                return 1 - t * 2;
+              };
+              if (outline > 0) {
+                const half = outline / 2;
+                return blend(Math.abs(sd) - half);
+              }
+              return blend(sd);
+            }
             case 'warp': {
               const warp = baseNoise(x + n * 1.5 * warpStrength, y + n * 1.5 * warpStrength);
               return warp;
@@ -2609,10 +2825,10 @@
               const store = window.Vectura?.NOISE_IMAGES || {};
               const img = noiseDef?.imageId ? store[noiseDef.imageId] : null;
               if (!img || !img.data) return n;
-              const algo = noiseDef?.imageAlgo || 'luma';
-              const blurRadius = Math.max(0, Math.min(6, noiseDef?.imageBlurRadius ?? noiseDef?.imageBlur ?? 0));
-              const blurStrength = Math.max(0, Math.min(1, noiseDef?.imageBlurStrength ?? 1));
               const wrap = noiseDef?.tileMode !== 'off';
+              const invertColor = Boolean(noiseDef?.imageInvertColor);
+              const invertOpacity = Boolean(noiseDef?.imageInvertOpacity);
+              const clamp01 = (v) => Math.max(0, Math.min(1, v));
               const sampleLum = (u, v) => {
                 const uu = wrap ? ((u % 1) + 1) % 1 : Math.max(0, Math.min(1, u));
                 const vv = wrap ? ((v % 1) + 1) % 1 : Math.max(0, Math.min(1, v));
@@ -2623,14 +2839,19 @@
                 const r = data[idx] ?? 0;
                 const g = data[idx + 1] ?? 0;
                 const b = data[idx + 2] ?? 0;
-                return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+                let lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+                if (invertColor) lum = 1 - lum;
+                const alpha = (data[idx + 3] ?? 0) / 255;
+                const a = invertOpacity ? 1 - alpha : alpha;
+                return clamp01(lum) * a;
               };
-              const sampleBlur = (u, v, radius = blurRadius) => {
-                if (!radius) return sampleLum(u, v);
+              const sampleBlur = (u, v, radius = 0) => {
+                const r = Math.max(0, Math.round(radius));
+                if (!r) return sampleLum(u, v);
                 let total = 0;
                 let count = 0;
-                for (let dy = -radius; dy <= radius; dy++) {
-                  for (let dx = -radius; dx <= radius; dx++) {
+                for (let dy = -r; dy <= r; dy++) {
+                  for (let dx = -r; dx <= r; dx++) {
                     total += sampleLum(u + dx / img.width, v + dy / img.height);
                     count += 1;
                   }
@@ -2643,98 +2864,200 @@
                 u += 0.5;
                 v += 0.5;
               }
-              if (algo === 'pixelate') {
-                const blocks = Math.max(2, Math.round(noiseDef?.imagePixelate ?? 12));
-                const stepU = 1 / blocks;
-                u = Math.floor(u / stepU) * stepU + stepU / 2;
-                v = Math.floor(v / stepU) * stepU + stepU / 2;
-              }
-              if (algo === 'edge') {
-                const c = sampleBlur(u, v);
-                const sx =
-                  -sampleBlur(u - 1 / img.width, v - 1 / img.height) +
-                  sampleBlur(u + 1 / img.width, v - 1 / img.height) -
-                  2 * sampleBlur(u - 1 / img.width, v) +
-                  2 * sampleBlur(u + 1 / img.width, v) -
-                  sampleBlur(u - 1 / img.width, v + 1 / img.height) +
-                  sampleBlur(u + 1 / img.width, v + 1 / img.height);
-                const sy =
-                  -sampleBlur(u - 1 / img.width, v - 1 / img.height) -
-                  2 * sampleBlur(u, v - 1 / img.height) -
-                  sampleBlur(u + 1 / img.width, v - 1 / img.height) +
-                  sampleBlur(u - 1 / img.width, v + 1 / img.height) +
-                  2 * sampleBlur(u, v + 1 / img.height) +
-                  sampleBlur(u + 1 / img.width, v + 1 / img.height);
-                const mag = Math.min(1, Math.hypot(sx, sy) * 1.5);
-                return (mag + c * 0.2) * 2 - 1;
-              }
-              const baseLum = sampleLum(u, v);
-              const blurLum = sampleBlur(u, v);
-              let lum = blurStrength < 1 ? baseLum + (blurLum - baseLum) * blurStrength : blurLum;
-              if (algo === 'brightness') {
-                const amt = Math.max(-1, Math.min(1, noiseDef?.imageBrightness ?? 0));
-                lum = lum + amt;
-              }
-              if (algo === 'levels') {
-                const low = Math.max(0, Math.min(1, noiseDef?.imageLevelsLow ?? 0));
-                const high = Math.max(low + 0.001, Math.min(1, noiseDef?.imageLevelsHigh ?? 1));
-                lum = (lum - low) / (high - low);
-              }
-              if (algo === 'gamma') {
-                const gamma = Math.max(0.2, Math.min(3, noiseDef?.imageGamma ?? 1));
-                lum = Math.pow(lum, gamma);
-              }
-              if (algo === 'contrast') {
-                const contrast = Math.max(0, Math.min(2, noiseDef?.imageContrast ?? 1));
-                lum = (lum - 0.5) * contrast + 0.5;
-              }
-              if (algo === 'emboss') {
-                const strength = Math.max(0, Math.min(2, noiseDef?.imageEmbossStrength ?? 1));
-                const dx = sampleBlur(u + 1 / img.width, v, 1) - sampleBlur(u - 1 / img.width, v, 1);
-                const dy = sampleBlur(u, v + 1 / img.height, 1) - sampleBlur(u, v - 1 / img.height, 1);
-                lum = 0.5 + (dx + dy) * 0.5 * strength;
-              }
-              if (algo === 'sharpen') {
-                const amount = Math.max(0, Math.min(2, noiseDef?.imageSharpenAmount ?? 1));
-                const radius = Math.max(0, Math.min(4, Math.round(noiseDef?.imageSharpenRadius ?? 1)));
-                const blurred = sampleBlur(u, v, radius);
-                lum = lum + (lum - blurred) * amount;
-              }
-              if (algo === 'invert') lum = 1 - lum;
-              if (algo === 'threshold') {
-                const t = Math.max(0, Math.min(1, noiseDef?.imageThreshold ?? 0.5));
-                lum = lum >= t ? 1 : 0;
-              }
-              if (algo === 'posterize') {
-                const levels = Math.max(2, Math.min(10, Math.round(noiseDef?.imagePosterize ?? 5)));
-                lum = Math.round(lum * (levels - 1)) / (levels - 1);
-              }
-              if (algo === 'solarize') {
-                const t = Math.max(0, Math.min(1, noiseDef?.imageSolarize ?? 0.5));
-                if (lum > t) lum = 1 - lum;
-              }
-              if (algo === 'dither') {
-                const amount = Math.max(0, Math.min(1, noiseDef?.imageDither ?? 0.5));
-                const bayer4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
-                const ix = Math.floor(u * img.width) % 4;
-                const iy = Math.floor(v * img.height) % 4;
-                const threshold = bayer4[iy * 4 + ix] / 16;
-                lum = lum + (threshold - 0.5) * amount;
-                lum = lum >= 0.5 ? 1 : 0;
-              }
-              if (algo === 'median') {
-                const radius = Math.max(1, Math.min(4, Math.round(noiseDef?.imageMedianRadius ?? 1)));
-                const samples = [];
-                for (let dy = -radius; dy <= radius; dy++) {
-                  for (let dx = -radius; dx <= radius; dx++) {
-                    samples.push(sampleLum(u + dx / img.width, v + dy / img.height));
+              const resolveEffects = () => {
+                if (Array.isArray(noiseDef?.imageEffects) && noiseDef.imageEffects.length) return noiseDef.imageEffects;
+                return [
+                  {
+                    ...noiseDef,
+                    enabled: true,
+                    mode: noiseDef?.imageAlgo || 'luma',
+                  },
+                ];
+              };
+              const getParam = (effect, key, fallback) => {
+                if (effect && effect[key] !== undefined) return effect[key];
+                if (noiseDef && noiseDef[key] !== undefined) return noiseDef[key];
+                return fallback;
+              };
+              const applyEffect = (effect, state) => {
+                const mode = effect?.mode || noiseDef?.imageAlgo || 'luma';
+                let nextU = state.u;
+                let nextV = state.v;
+                let lum = state.lum;
+                switch (mode) {
+                  case 'luma':
+                    lum = sampleLum(nextU, nextV);
+                    break;
+                  case 'pixelate': {
+                    const blocks = Math.max(2, Math.round(getParam(effect, 'imagePixelate', 12)));
+                    const stepU = 1 / blocks;
+                    nextU = Math.floor(nextU / stepU) * stepU + stepU / 2;
+                    nextV = Math.floor(nextV / stepU) * stepU + stepU / 2;
+                    lum = sampleLum(nextU, nextV);
+                    break;
                   }
+                  case 'edge': {
+                    const edgeBlur = Math.max(0, Math.min(4, getParam(effect, 'imageEdgeBlur', getParam(effect, 'imageBlur', 0))));
+                    const c = sampleBlur(nextU, nextV, edgeBlur);
+                    const sx =
+                      -sampleBlur(nextU - 1 / img.width, nextV - 1 / img.height, edgeBlur) +
+                      sampleBlur(nextU + 1 / img.width, nextV - 1 / img.height, edgeBlur) -
+                      2 * sampleBlur(nextU - 1 / img.width, nextV, edgeBlur) +
+                      2 * sampleBlur(nextU + 1 / img.width, nextV, edgeBlur) -
+                      sampleBlur(nextU - 1 / img.width, nextV + 1 / img.height, edgeBlur) +
+                      sampleBlur(nextU + 1 / img.width, nextV + 1 / img.height, edgeBlur);
+                    const sy =
+                      -sampleBlur(nextU - 1 / img.width, nextV - 1 / img.height, edgeBlur) -
+                      2 * sampleBlur(nextU, nextV - 1 / img.height, edgeBlur) -
+                      sampleBlur(nextU + 1 / img.width, nextV - 1 / img.height, edgeBlur) +
+                      sampleBlur(nextU - 1 / img.width, nextV + 1 / img.height, edgeBlur) +
+                      2 * sampleBlur(nextU, nextV + 1 / img.height, edgeBlur) +
+                      sampleBlur(nextU + 1 / img.width, nextV + 1 / img.height, edgeBlur);
+                    const mag = Math.min(1, Math.hypot(sx, sy) * 1.5);
+                    lum = mag + c * 0.2;
+                    break;
+                  }
+                  case 'blur': {
+                    const radius = Math.max(0, Math.min(6, getParam(effect, 'imageBlurRadius', 0)));
+                    const strength = Math.max(0, Math.min(1, getParam(effect, 'imageBlurStrength', 1)));
+                    const blurLum = sampleBlur(nextU, nextV, radius);
+                    lum = lum + (blurLum - lum) * strength;
+                    break;
+                  }
+                  case 'lowpass': {
+                    const radius = Math.max(0, Math.min(6, getParam(effect, 'imageLowpassRadius', 2)));
+                    const strength = Math.max(0, Math.min(1, getParam(effect, 'imageLowpassStrength', 0.6)));
+                    const blurLum = sampleBlur(nextU, nextV, radius);
+                    lum = lum + (blurLum - lum) * strength;
+                    break;
+                  }
+                  case 'highpass': {
+                    const radius = Math.max(0, Math.min(6, getParam(effect, 'imageHighpassRadius', 1)));
+                    const strength = Math.max(0, Math.min(2, getParam(effect, 'imageHighpassStrength', 1)));
+                    const blurLum = sampleBlur(nextU, nextV, radius);
+                    lum = clamp01((lum - blurLum) * strength + 0.5);
+                    break;
+                  }
+                  case 'brightness': {
+                    const amt = Math.max(-1, Math.min(1, getParam(effect, 'imageBrightness', 0)));
+                    lum = lum + amt;
+                    break;
+                  }
+                  case 'levels': {
+                    const low = Math.max(0, Math.min(1, getParam(effect, 'imageLevelsLow', 0)));
+                    const high = Math.max(low + 0.001, Math.min(1, getParam(effect, 'imageLevelsHigh', 1)));
+                    lum = (lum - low) / (high - low);
+                    break;
+                  }
+                  case 'gamma': {
+                    const gamma = Math.max(0.2, Math.min(3, getParam(effect, 'imageGamma', 1)));
+                    lum = Math.pow(lum, gamma);
+                    break;
+                  }
+                  case 'contrast': {
+                    const contrast = Math.max(0, Math.min(2, getParam(effect, 'imageContrast', 1)));
+                    lum = (lum - 0.5) * contrast + 0.5;
+                    break;
+                  }
+                  case 'emboss': {
+                    const strength = Math.max(0, Math.min(2, getParam(effect, 'imageEmbossStrength', 1)));
+                    const dx = sampleBlur(nextU + 1 / img.width, nextV, 1) - sampleBlur(nextU - 1 / img.width, nextV, 1);
+                    const dy = sampleBlur(nextU, nextV + 1 / img.height, 1) - sampleBlur(nextU, nextV - 1 / img.height, 1);
+                    lum = 0.5 + (dx + dy) * 0.5 * strength;
+                    break;
+                  }
+                  case 'sharpen': {
+                    const amount = Math.max(0, Math.min(2, getParam(effect, 'imageSharpenAmount', 1)));
+                    const radius = Math.max(0, Math.min(4, Math.round(getParam(effect, 'imageSharpenRadius', 1))));
+                    const blurred = sampleBlur(nextU, nextV, radius);
+                    lum = lum + (lum - blurred) * amount;
+                    break;
+                  }
+                  case 'invert':
+                    lum = 1 - lum;
+                    break;
+                  case 'threshold': {
+                    const t = Math.max(0, Math.min(1, getParam(effect, 'imageThreshold', 0.5)));
+                    lum = lum >= t ? 1 : 0;
+                    break;
+                  }
+                  case 'posterize': {
+                    const levels = Math.max(2, Math.min(10, Math.round(getParam(effect, 'imagePosterize', 5))));
+                    lum = Math.round(lum * (levels - 1)) / (levels - 1);
+                    break;
+                  }
+                  case 'solarize': {
+                    const t = Math.max(0, Math.min(1, getParam(effect, 'imageSolarize', 0.5)));
+                    if (lum > t) lum = 1 - lum;
+                    break;
+                  }
+                  case 'dither': {
+                    const amount = Math.max(0, Math.min(1, getParam(effect, 'imageDither', 0.5)));
+                    const bayer4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+                    const ix = Math.floor(nextU * img.width) % 4;
+                    const iy = Math.floor(nextV * img.height) % 4;
+                    const threshold = bayer4[iy * 4 + ix] / 16;
+                    lum = lum + (threshold - 0.5) * amount;
+                    lum = lum >= 0.5 ? 1 : 0;
+                    break;
+                  }
+                  case 'median': {
+                    const radius = Math.max(1, Math.min(4, Math.round(getParam(effect, 'imageMedianRadius', 1))));
+                    const samples = [];
+                    for (let dy = -radius; dy <= radius; dy++) {
+                      for (let dx = -radius; dx <= radius; dx++) {
+                        samples.push(sampleLum(nextU + dx / img.width, nextV + dy / img.height));
+                      }
+                    }
+                    samples.sort((a, b) => a - b);
+                    lum = samples[Math.floor(samples.length / 2)] ?? lum;
+                    break;
+                  }
+                  case 'vignette': {
+                    const strength = Math.max(0, Math.min(1, getParam(effect, 'imageVignetteStrength', 0.4)));
+                    const radius = Math.max(0.2, Math.min(1, getParam(effect, 'imageVignetteRadius', 0.85)));
+                    const dist = Math.hypot(nextU - 0.5, nextV - 0.5);
+                    const t = Math.max(0, Math.min(1, (dist - radius) / Math.max(0.001, 1 - radius)));
+                    lum = lum * (1 - t * strength);
+                    break;
+                  }
+                  case 'curve': {
+                    const strength = Math.max(0, Math.min(1, getParam(effect, 'imageCurveStrength', 0.4)));
+                    if (lum < 0.5) {
+                      lum = Math.pow(lum * 2, 1 + strength * 2) / 2;
+                    } else {
+                      lum = 1 - Math.pow((1 - lum) * 2, 1 + strength * 2) / 2;
+                    }
+                    break;
+                  }
+                  case 'bandpass': {
+                    const center = Math.max(0, Math.min(1, getParam(effect, 'imageBandCenter', 0.5)));
+                    const width = Math.max(0.05, Math.min(1, getParam(effect, 'imageBandWidth', 0.3)));
+                    const half = width / 2;
+                    const dist = Math.abs(lum - center);
+                    lum = Math.max(0, Math.min(1, 1 - dist / half));
+                    break;
+                  }
+                  default:
+                    break;
                 }
-                samples.sort((a, b) => a - b);
-                lum = samples[Math.floor(samples.length / 2)] ?? lum;
+                return { u: nextU, v: nextV, lum: clamp01(lum) };
+              };
+
+              let state = { u, v, lum: sampleLum(u, v) };
+              const effects = resolveEffects();
+              effects.forEach((effect) => {
+                if (effect && effect.enabled === false) return;
+                state = applyEffect(effect, state);
+              });
+              let lum = clamp01(state.lum);
+              let value = lum * 2 - 1;
+              const style = noiseDef?.imageStyle;
+              if (style && style !== 'none' && style !== 'image') {
+                const styleValue = noiseValue(x, y, { ...noiseDef, type: style, imageId: null, imageEffects: null });
+                value = (value + styleValue) / 2;
               }
-              lum = Math.max(0, Math.min(1, lum));
-              return lum * 2 - 1;
+              return value;
             }
             default:
               return n;
@@ -2823,7 +3146,7 @@
           ? p.noises
           : [
               {
-                type: 'simplex',
+                type: 'turbulence',
                 blend: 'add',
                 amplitude: p.noiseAmp ?? 0,
                 zoom: p.noiseFreq ?? 0.1,
@@ -2839,6 +3162,11 @@
                 cellularJitter: 1,
                 stepsCount: 5,
                 seed: 0,
+                applyMode: 'topdown',
+                imageStyle: 'none',
+                imageInvertColor: false,
+                imageInvertOpacity: false,
+                imageEffects: [],
               },
             ];
         const inset = bounds.truncate ? m : 0;
@@ -2847,7 +3175,7 @@
         const noiseSamplers = noiseLayers
           .filter((layer) => layer && layer.enabled !== false)
           .map((noiseLayer) => {
-            const amplitude = Math.max(0, noiseLayer.amplitude ?? 0);
+            const amplitude = noiseLayer.amplitude ?? 0;
             const zoom = Math.max(0.0001, noiseLayer.zoom ?? 0.02);
             const freq = Math.max(0.1, noiseLayer.freq ?? 1);
             const angle = ((noiseLayer.angle ?? 0) * Math.PI) / 180;
@@ -2857,13 +3185,18 @@
             const tilePadding = noiseLayer.tilePadding ?? 0;
             const cosA = Math.cos(angle);
             const sinA = Math.sin(angle);
+            const applyMode = noiseLayer.applyMode || 'topdown';
             return {
               amplitude,
               blend: noiseLayer.blend || 'add',
-              sample: (x, y) => {
+              sample: (x, y, t, r) => {
                 if (noiseLayer.type === 'image' && tileMode === 'off') {
-                  const u = (x - inset) / innerW - 0.5 + shiftX;
-                  const v = (y - inset) / innerH - 0.5 + shiftY;
+                  let u = (x - inset) / innerW - 0.5 + shiftX;
+                  let v = (y - inset) / innerH - 0.5 + shiftY;
+                  if (applyMode === 'linear') {
+                    u = t - 0.5 + shiftX;
+                    v = r / maxR - 0.5 + shiftY;
+                  }
                   const imageZoom = Math.max(0.1, zoom * 50);
                   const ix = u * imageZoom * freq;
                   const iy = v * imageZoom;
@@ -2871,8 +3204,14 @@
                   const ry = ix * sinA + iy * cosA;
                   return noiseValue(rx, ry, noiseLayer);
                 }
-                const nx = (x + shiftX) * zoom * freq;
-                const ny = (y + shiftY) * zoom;
+                let nx = (x + shiftX) * zoom * freq;
+                let ny = (y + shiftY) * zoom;
+                if (applyMode === 'linear') {
+                  const u = t - 0.5 + shiftX;
+                  const v = r / maxR - 0.5 + shiftY;
+                  nx = u * innerW * zoom * freq;
+                  ny = v * innerH * zoom;
+                }
                 const rx = nx * cosA - ny * sinA;
                 const ry = nx * sinA + ny * cosA;
                 let tx = rx;
@@ -2889,13 +3228,14 @@
         const maxAmp = noiseSamplers.reduce((sum, sampler) => sum + Math.abs(sampler.amplitude || 0), 0) || 1;
 
         for (let i = 0; i <= totalSteps; i++) {
+          const t = totalSteps > 0 ? i / totalSteps : 0;
           const pulse = 1 + Math.sin(theta * (p.pulseFreq ?? 0)) * (p.pulseAmp ?? 0);
           let combined = 0;
           let hasNoise = false;
           const px = scx + Math.cos(theta) * r;
           const py = scy + Math.sin(theta) * r;
           noiseSamplers.forEach((sampler) => {
-            const value = sampler.sample(px, py) * sampler.amplitude;
+            const value = sampler.sample(px, py, t, r) * sampler.amplitude;
             if (!hasNoise) {
               combined = value;
               hasNoise = true;

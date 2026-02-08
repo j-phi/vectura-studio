@@ -191,6 +191,7 @@
     { value: 'marble', label: 'Marble' },
     { value: 'moire', label: 'Moire' },
     { value: 'perlin', label: 'Perlin' },
+    { value: 'polygon', label: 'Polygon' },
     { value: 'pulse', label: 'Pulse' },
     { value: 'radial', label: 'Radial' },
     { value: 'ridged', label: 'Ridged' },
@@ -208,6 +209,49 @@
     { value: 'warp', label: 'Warp' },
     { value: 'weave', label: 'Weave' },
     { value: 'zigzag', label: 'Zigzag' },
+  ];
+
+  const WAVE_NOISE_DESCRIPTIONS = {
+    billow: 'Soft, cloud-like noise from absolute values.',
+    cellular: 'Organic cell fields with crater-like edges.',
+    checker: 'Alternating square grid pattern.',
+    crackle: 'Cracked borders between Voronoi cells.',
+    crosshatch: 'Interlaced angled line texture.',
+    domain: 'Warped noise using domain distortion.',
+    dunes: 'Sweeping dune bands with long gradients.',
+    facet: 'Faceted plateaus with stepped transitions.',
+    fbm: 'Fractal Brownian motion with layered octaves.',
+    grain: 'Fine high-frequency grain texture.',
+    image: 'Uses uploaded image luminance for displacement.',
+    marble: 'Swirled marble streaks from sine warping.',
+    moire: 'Interference waves with repeating offsets.',
+    perlin: 'Classic Perlin gradient noise.',
+    polygon: 'Centered polygon field with adjustable edges.',
+    pulse: 'Radial pulse rings that expand outward.',
+    radial: 'Circular waves emanating from the center.',
+    ridged: 'Sharp ridges from inverted absolute noise.',
+    ripple: 'Concentric ripple rings with falloff.',
+    sawtooth: 'Ramping sawtooth bands.',
+    simplex: 'Simplex gradient noise, smooth and balanced.',
+    spiral: 'Spiral wave interference pattern.',
+    steps: 'Quantized step bands with hard transitions.',
+    stripes: 'Linear stripe bands across the canvas.',
+    swirl: 'Rotational swirl pattern with curls.',
+    triangle: 'Triangle wave pattern with sharp peaks.',
+    turbulence: 'Layered absolute noise with bold contrast.',
+    value: 'Value noise with blockier transitions.',
+    voronoi: 'Voronoi cell distance field.',
+    warp: 'Noise warped by itself for distortion.',
+    weave: 'Woven cross pattern with alternating bands.',
+    zigzag: 'Zigzag chevron waves.',
+  };
+
+  const IMAGE_STYLE_OPTIONS = [
+    { value: 'none', label: 'None' },
+    ...WAVE_NOISE_OPTIONS.filter((opt) => opt.value !== 'image').map((opt) => ({
+      value: opt.value,
+      label: opt.label,
+    })),
   ];
 
   const WAVE_PATTERN_TYPES = [
@@ -241,18 +285,312 @@
     { value: 'hatch-light', label: 'Hatching Density (Tenebrism)' },
   ];
 
+  const IMAGE_EFFECT_OPTIONS = [
+    { value: 'luma', label: 'Luma' },
+    { value: 'brightness', label: 'Brightness' },
+    { value: 'contrast', label: 'Contrast' },
+    { value: 'gamma', label: 'Gamma' },
+    { value: 'levels', label: 'Levels' },
+    { value: 'invert', label: 'Invert' },
+    { value: 'threshold', label: 'Threshold' },
+    { value: 'posterize', label: 'Posterize' },
+    { value: 'edge', label: 'Edge Detect' },
+    { value: 'blur', label: 'Blur' },
+    { value: 'emboss', label: 'Emboss' },
+    { value: 'sharpen', label: 'Sharpen' },
+    { value: 'solarize', label: 'Solarize' },
+    { value: 'pixelate', label: 'Pixelate' },
+    { value: 'dither', label: 'Dither' },
+    { value: 'median', label: 'Median' },
+    { value: 'highpass', label: 'High Pass' },
+    { value: 'lowpass', label: 'Low Pass' },
+    { value: 'vignette', label: 'Vignette' },
+    { value: 'curve', label: 'Tone Curve' },
+    { value: 'bandpass', label: 'Bandpass' },
+  ];
+
+  const IMAGE_EFFECT_DEFS = [
+    {
+      key: 'mode',
+      label: 'Effect Mode',
+      type: 'select',
+      options: IMAGE_EFFECT_OPTIONS,
+      infoKey: 'wavetable.imageAlgo',
+    },
+    {
+      key: 'imageBrightness',
+      label: 'Brightness',
+      type: 'range',
+      min: -1,
+      max: 1,
+      step: 0.05,
+      infoKey: 'wavetable.imageBrightness',
+      showIf: (e) => e.mode === 'brightness',
+    },
+    {
+      key: 'imageLevelsLow',
+      label: 'Levels Low',
+      type: 'range',
+      min: 0,
+      max: 1,
+      step: 0.01,
+      infoKey: 'wavetable.imageLevelsLow',
+      showIf: (e) => e.mode === 'levels',
+    },
+    {
+      key: 'imageLevelsHigh',
+      label: 'Levels High',
+      type: 'range',
+      min: 0,
+      max: 1,
+      step: 0.01,
+      infoKey: 'wavetable.imageLevelsHigh',
+      showIf: (e) => e.mode === 'levels',
+    },
+    {
+      key: 'imageGamma',
+      label: 'Gamma',
+      type: 'range',
+      min: 0.2,
+      max: 3,
+      step: 0.05,
+      infoKey: 'wavetable.imageGamma',
+      showIf: (e) => e.mode === 'gamma',
+    },
+    {
+      key: 'imageContrast',
+      label: 'Contrast',
+      type: 'range',
+      min: 0,
+      max: 2,
+      step: 0.05,
+      infoKey: 'wavetable.imageContrast',
+      showIf: (e) => e.mode === 'contrast',
+    },
+    {
+      key: 'imageEmbossStrength',
+      label: 'Emboss Strength',
+      type: 'range',
+      min: 0,
+      max: 2,
+      step: 0.05,
+      infoKey: 'wavetable.imageEmbossStrength',
+      showIf: (e) => e.mode === 'emboss',
+    },
+    {
+      key: 'imageSharpenAmount',
+      label: 'Sharpen Amount',
+      type: 'range',
+      min: 0,
+      max: 2,
+      step: 0.05,
+      infoKey: 'wavetable.imageSharpenAmount',
+      showIf: (e) => e.mode === 'sharpen',
+    },
+    {
+      key: 'imageSharpenRadius',
+      label: 'Sharpen Radius',
+      type: 'range',
+      min: 0,
+      max: 4,
+      step: 1,
+      infoKey: 'wavetable.imageSharpenRadius',
+      showIf: (e) => e.mode === 'sharpen',
+    },
+    {
+      key: 'imageMedianRadius',
+      label: 'Median Radius',
+      type: 'range',
+      min: 1,
+      max: 4,
+      step: 1,
+      infoKey: 'wavetable.imageMedianRadius',
+      showIf: (e) => e.mode === 'median',
+    },
+    {
+      key: 'imageBlurRadius',
+      label: 'Blur Radius',
+      type: 'range',
+      min: 0,
+      max: 6,
+      step: 1,
+      infoKey: 'wavetable.imageBlurRadius',
+      showIf: (e) => e.mode === 'blur',
+    },
+    {
+      key: 'imageBlurStrength',
+      label: 'Blur Strength',
+      type: 'range',
+      min: 0,
+      max: 1,
+      step: 0.05,
+      infoKey: 'wavetable.imageBlurStrength',
+      showIf: (e) => e.mode === 'blur',
+    },
+    {
+      key: 'imageSolarize',
+      label: 'Solarize Threshold',
+      type: 'range',
+      min: 0,
+      max: 1,
+      step: 0.01,
+      infoKey: 'wavetable.imageSolarize',
+      showIf: (e) => e.mode === 'solarize',
+    },
+    {
+      key: 'imagePixelate',
+      label: 'Pixelate',
+      type: 'range',
+      min: 2,
+      max: 64,
+      step: 1,
+      infoKey: 'wavetable.imagePixelate',
+      showIf: (e) => e.mode === 'pixelate',
+    },
+    {
+      key: 'imageDither',
+      label: 'Dither Amount',
+      type: 'range',
+      min: 0,
+      max: 1,
+      step: 0.05,
+      infoKey: 'wavetable.imageDither',
+      showIf: (e) => e.mode === 'dither',
+    },
+    {
+      key: 'imageThreshold',
+      label: 'Threshold',
+      type: 'range',
+      min: 0,
+      max: 1,
+      step: 0.01,
+      infoKey: 'wavetable.imageThreshold',
+      showIf: (e) => e.mode === 'threshold',
+    },
+    {
+      key: 'imagePosterize',
+      label: 'Posterize Levels',
+      type: 'range',
+      min: 2,
+      max: 10,
+      step: 1,
+      infoKey: 'wavetable.imagePosterize',
+      showIf: (e) => e.mode === 'posterize',
+    },
+    {
+      key: 'imageEdgeBlur',
+      label: 'Edge Blur Radius',
+      type: 'range',
+      min: 0,
+      max: 4,
+      step: 1,
+      infoKey: 'wavetable.imageBlur',
+      showIf: (e) => e.mode === 'edge',
+    },
+    {
+      key: 'imageHighpassRadius',
+      label: 'High Pass Radius',
+      type: 'range',
+      min: 0,
+      max: 6,
+      step: 1,
+      infoKey: 'wavetable.imageHighpassRadius',
+      showIf: (e) => e.mode === 'highpass',
+    },
+    {
+      key: 'imageHighpassStrength',
+      label: 'High Pass Strength',
+      type: 'range',
+      min: 0,
+      max: 2,
+      step: 0.05,
+      infoKey: 'wavetable.imageHighpassStrength',
+      showIf: (e) => e.mode === 'highpass',
+    },
+    {
+      key: 'imageLowpassRadius',
+      label: 'Low Pass Radius',
+      type: 'range',
+      min: 0,
+      max: 6,
+      step: 1,
+      infoKey: 'wavetable.imageLowpassRadius',
+      showIf: (e) => e.mode === 'lowpass',
+    },
+    {
+      key: 'imageLowpassStrength',
+      label: 'Low Pass Strength',
+      type: 'range',
+      min: 0,
+      max: 1,
+      step: 0.05,
+      infoKey: 'wavetable.imageLowpassStrength',
+      showIf: (e) => e.mode === 'lowpass',
+    },
+    {
+      key: 'imageVignetteStrength',
+      label: 'Vignette Strength',
+      type: 'range',
+      min: 0,
+      max: 1,
+      step: 0.05,
+      infoKey: 'wavetable.imageVignetteStrength',
+      showIf: (e) => e.mode === 'vignette',
+    },
+    {
+      key: 'imageVignetteRadius',
+      label: 'Vignette Radius',
+      type: 'range',
+      min: 0.2,
+      max: 1,
+      step: 0.05,
+      infoKey: 'wavetable.imageVignetteRadius',
+      showIf: (e) => e.mode === 'vignette',
+    },
+    {
+      key: 'imageCurveStrength',
+      label: 'Curve Strength',
+      type: 'range',
+      min: 0,
+      max: 1,
+      step: 0.05,
+      infoKey: 'wavetable.imageCurveStrength',
+      showIf: (e) => e.mode === 'curve',
+    },
+    {
+      key: 'imageBandCenter',
+      label: 'Band Center',
+      type: 'range',
+      min: 0,
+      max: 1,
+      step: 0.01,
+      infoKey: 'wavetable.imageBandCenter',
+      showIf: (e) => e.mode === 'bandpass',
+    },
+    {
+      key: 'imageBandWidth',
+      label: 'Band Width',
+      type: 'range',
+      min: 0.05,
+      max: 1,
+      step: 0.01,
+      infoKey: 'wavetable.imageBandWidth',
+      showIf: (e) => e.mode === 'bandpass',
+    },
+  ];
+
   const WAVE_TILE_OPTIONS = [
-    { value: 'grid', label: 'Grid' },
+    { value: 'off', label: 'Off' },
     { value: 'brick', label: 'Brick' },
-    { value: 'hex', label: 'Hex' },
+    { value: 'checker', label: 'Checker' },
     { value: 'diamond', label: 'Diamond' },
-    { value: 'triangle', label: 'Triangle' },
+    { value: 'grid', label: 'Grid' },
+    { value: 'hex', label: 'Hex' },
     { value: 'offset', label: 'Offset' },
     { value: 'radial', label: 'Radial' },
     { value: 'spiral', label: 'Spiral' },
-    { value: 'checker', label: 'Checker' },
+    { value: 'triangle', label: 'Triangle' },
     { value: 'wave', label: 'Wave' },
-    { value: 'off', label: 'Off' },
   ];
 
   const WAVE_NOISE_DEFS = [
@@ -265,13 +603,46 @@
       infoKey: 'wavetable.noiseType',
     },
     {
+      key: 'imageStyle',
+      label: 'Image Style',
+      type: 'select',
+      options: IMAGE_STYLE_OPTIONS,
+      infoKey: 'wavetable.imageStyle',
+      showIf: (n) => n.type === 'image',
+    },
+    {
+      key: 'imageInvertColor',
+      label: 'Invert Color',
+      type: 'checkbox',
+      infoKey: 'wavetable.imageInvertColor',
+      showIf: (n) => n.type === 'image',
+    },
+    {
+      key: 'imageInvertOpacity',
+      label: 'Invert Opacity',
+      type: 'checkbox',
+      infoKey: 'wavetable.imageInvertOpacity',
+      showIf: (n) => n.type === 'image',
+    },
+    {
       key: 'blend',
       label: 'Blend Mode',
       type: 'select',
       options: WAVE_NOISE_BLEND_OPTIONS,
       infoKey: 'wavetable.noiseBlend',
     },
-    { key: 'amplitude', label: 'Noise Amplitude', type: 'range', min: 0.01, max: 150, step: 0.01, infoKey: 'wavetable.amplitude' },
+    {
+      key: 'applyMode',
+      label: 'Apply Mode',
+      type: 'select',
+      options: [
+        { value: 'topdown', label: 'Top Down' },
+        { value: 'linear', label: 'Linear' },
+      ],
+      infoKey: 'wavetable.noiseApplyMode',
+      showIf: (n) => n.applyMode !== undefined,
+    },
+    { key: 'amplitude', label: 'Noise Amplitude', type: 'range', min: -100, max: 100, step: 0.1, infoKey: 'wavetable.amplitude' },
     { key: 'zoom', label: 'Noise Zoom', type: 'range', min: 0.002, max: 0.08, step: 0.001, infoKey: 'wavetable.zoom' },
     { key: 'freq', label: 'Frequency', type: 'range', min: 0.2, max: 12.0, step: 0.1, infoKey: 'wavetable.freq' },
     {
@@ -380,199 +751,55 @@
       showIf: (n) => WAVE_SEEDED_TYPES.includes(n.type),
     },
     {
-      key: 'imageAlgo',
-      label: 'Image Noise Mode',
-      type: 'select',
-      options: [
-        { value: 'luma', label: 'Luma' },
-        { value: 'contrast', label: 'Contrast' },
-        { value: 'gamma', label: 'Gamma' },
-        { value: 'brightness', label: 'Brightness' },
-        { value: 'levels', label: 'Levels' },
-        { value: 'invert', label: 'Invert' },
-        { value: 'threshold', label: 'Threshold' },
-        { value: 'posterize', label: 'Posterize' },
-        { value: 'edge', label: 'Edge Detect' },
-        { value: 'blur', label: 'Blur' },
-        { value: 'emboss', label: 'Emboss' },
-        { value: 'sharpen', label: 'Sharpen' },
-        { value: 'solarize', label: 'Solarize' },
-        { value: 'pixelate', label: 'Pixelate' },
-        { value: 'dither', label: 'Dither' },
-        { value: 'median', label: 'Median' },
-      ],
-      infoKey: 'wavetable.imageAlgo',
-      showIf: (n) => n.type === 'image',
-    },
-    {
-      key: 'imageBrightness',
-      label: 'Image Brightness',
-      type: 'range',
-      min: -1,
-      max: 1,
-      step: 0.05,
-      infoKey: 'wavetable.imageBrightness',
-      showIf: (n) => n.type === 'image' && n.imageAlgo === 'brightness',
-    },
-    {
-      key: 'imageLevelsLow',
-      label: 'Levels Low',
-      type: 'range',
-      min: 0,
-      max: 1,
-      step: 0.01,
-      infoKey: 'wavetable.imageLevelsLow',
-      showIf: (n) => n.type === 'image' && n.imageAlgo === 'levels',
-    },
-    {
-      key: 'imageLevelsHigh',
-      label: 'Levels High',
-      type: 'range',
-      min: 0,
-      max: 1,
-      step: 0.01,
-      infoKey: 'wavetable.imageLevelsHigh',
-      showIf: (n) => n.type === 'image' && n.imageAlgo === 'levels',
-    },
-    {
-      key: 'imageEmbossStrength',
-      label: 'Emboss Strength',
-      type: 'range',
-      min: 0,
-      max: 2,
-      step: 0.05,
-      infoKey: 'wavetable.imageEmbossStrength',
-      showIf: (n) => n.type === 'image' && n.imageAlgo === 'emboss',
-    },
-    {
-      key: 'imageSharpenAmount',
-      label: 'Sharpen Amount',
-      type: 'range',
-      min: 0,
-      max: 2,
-      step: 0.05,
-      infoKey: 'wavetable.imageSharpenAmount',
-      showIf: (n) => n.type === 'image' && n.imageAlgo === 'sharpen',
-    },
-    {
-      key: 'imageSharpenRadius',
-      label: 'Sharpen Radius',
-      type: 'range',
-      min: 0,
-      max: 4,
-      step: 1,
-      infoKey: 'wavetable.imageSharpenRadius',
-      showIf: (n) => n.type === 'image' && n.imageAlgo === 'sharpen',
-    },
-    {
-      key: 'imageMedianRadius',
-      label: 'Median Radius',
-      type: 'range',
-      min: 1,
-      max: 4,
-      step: 1,
-      infoKey: 'wavetable.imageMedianRadius',
-      showIf: (n) => n.type === 'image' && n.imageAlgo === 'median',
-    },
-    {
-      key: 'imageGamma',
-      label: 'Image Gamma',
+      key: 'polygonRadius',
+      label: 'Polygon Radius',
       type: 'range',
       min: 0.2,
-      max: 3,
-      step: 0.05,
-      infoKey: 'wavetable.imageGamma',
-      showIf: (n) => n.type === 'image' && n.imageAlgo === 'gamma',
-    },
-    {
-      key: 'imageContrast',
-      label: 'Image Contrast',
-      type: 'range',
-      min: 0,
-      max: 2,
-      step: 0.05,
-      infoKey: 'wavetable.imageContrast',
-      showIf: (n) => n.type === 'image' && n.imageAlgo === 'contrast',
-    },
-    {
-      key: 'imageBlurRadius',
-      label: 'Blur Radius',
-      type: 'range',
-      min: 0,
-      max: 6,
-      step: 1,
-      infoKey: 'wavetable.imageBlurRadius',
-      showIf: (n) => n.type === 'image' && n.imageAlgo === 'blur',
-    },
-    {
-      key: 'imageBlurStrength',
-      label: 'Blur Strength',
-      type: 'range',
-      min: 0,
-      max: 1,
-      step: 0.05,
-      infoKey: 'wavetable.imageBlurStrength',
-      showIf: (n) => n.type === 'image' && n.imageAlgo === 'blur',
-    },
-    {
-      key: 'imageSolarize',
-      label: 'Solarize Threshold',
-      type: 'range',
-      min: 0,
-      max: 1,
-      step: 0.01,
-      infoKey: 'wavetable.imageSolarize',
-      showIf: (n) => n.type === 'image' && n.imageAlgo === 'solarize',
-    },
-    {
-      key: 'imagePixelate',
-      label: 'Pixelate',
-      type: 'range',
-      min: 2,
-      max: 64,
-      step: 1,
-      infoKey: 'wavetable.imagePixelate',
-      showIf: (n) => n.type === 'image' && n.imageAlgo === 'pixelate',
-    },
-    {
-      key: 'imageDither',
-      label: 'Dither Amount',
-      type: 'range',
-      min: 0,
-      max: 1,
-      step: 0.05,
-      infoKey: 'wavetable.imageDither',
-      showIf: (n) => n.type === 'image' && n.imageAlgo === 'dither',
-    },
-    {
-      key: 'imageThreshold',
-      label: 'Image Threshold',
-      type: 'range',
-      min: 0,
-      max: 1,
-      step: 0.01,
-      infoKey: 'wavetable.imageThreshold',
-      showIf: (n) => n.type === 'image' && n.imageAlgo === 'threshold',
-    },
-    {
-      key: 'imagePosterize',
-      label: 'Posterize Levels',
-      type: 'range',
-      min: 2,
-      max: 10,
-      step: 1,
-      infoKey: 'wavetable.imagePosterize',
-      showIf: (n) => n.type === 'image' && n.imageAlgo === 'posterize',
-    },
-    {
-      key: 'imageBlur',
-      label: 'Edge Blur Radius',
-      type: 'range',
-      min: 0,
       max: 4,
+      step: 0.05,
+      infoKey: 'wavetable.noisePolygonRadius',
+      showIf: (n) => n.type === 'polygon',
+    },
+    {
+      key: 'polygonSides',
+      label: 'Polygon Sides',
+      type: 'range',
+      min: 3,
+      max: 12,
       step: 1,
-      infoKey: 'wavetable.imageBlur',
-      showIf: (n) => n.type === 'image' && n.imageAlgo === 'edge',
+      infoKey: 'wavetable.noisePolygonSides',
+      showIf: (n) => n.type === 'polygon',
+    },
+    {
+      key: 'polygonRotation',
+      label: 'Polygon Rotation',
+      type: 'angle',
+      min: 0,
+      max: 360,
+      step: 1,
+      displayUnit: '°',
+      infoKey: 'wavetable.noisePolygonRotation',
+      showIf: (n) => n.type === 'polygon',
+    },
+    {
+      key: 'polygonOutline',
+      label: 'Outline Width',
+      type: 'range',
+      min: 0,
+      max: 1,
+      step: 0.05,
+      infoKey: 'wavetable.noisePolygonOutline',
+      showIf: (n) => n.type === 'polygon',
+    },
+    {
+      key: 'polygonEdgeRadius',
+      label: 'Edge Radius',
+      type: 'range',
+      min: 0,
+      max: 1,
+      step: 0.05,
+      infoKey: 'wavetable.noisePolygonEdge',
+      showIf: (n) => n.type === 'polygon',
     },
   ];
 
@@ -1038,8 +1265,35 @@
     rainfall: [
       { id: 'count', label: 'Drop Count', type: 'range', min: 20, max: 400, step: 10, infoKey: 'rainfall.count' },
       { id: 'traceLength', label: 'Trace Length', type: 'range', min: 20, max: 400, step: 5, infoKey: 'rainfall.traceLength' },
+      {
+        id: 'lengthJitter',
+        label: 'Length Jitter',
+        type: 'range',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        infoKey: 'rainfall.lengthJitter',
+      },
       { id: 'traceStep', label: 'Trace Step', type: 'range', min: 2, max: 20, step: 1, infoKey: 'rainfall.traceStep' },
+      {
+        id: 'stepJitter',
+        label: 'Step Jitter',
+        type: 'range',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        infoKey: 'rainfall.stepJitter',
+      },
       { id: 'turbulence', label: 'Turbulence', type: 'range', min: 0, max: 1.5, step: 0.05, infoKey: 'rainfall.turbulence' },
+      {
+        id: 'gustStrength',
+        label: 'Gust Strength',
+        type: 'range',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        infoKey: 'rainfall.gustStrength',
+      },
       {
         id: 'rainfallAngle',
         label: 'Rainfall Angle',
@@ -1050,6 +1304,16 @@
         displayUnit: '°',
         inlineGroup: 'rainfallAngles',
         infoKey: 'rainfall.rainfallAngle',
+      },
+      {
+        id: 'angleJitter',
+        label: 'Angle Jitter',
+        type: 'range',
+        min: 0,
+        max: 45,
+        step: 1,
+        displayUnit: '°',
+        infoKey: 'rainfall.angleJitter',
       },
       {
         id: 'windAngle',
@@ -1076,6 +1340,16 @@
       },
       { id: 'windStrength', label: 'Wind Strength', type: 'range', min: 0, max: 1.5, step: 0.05, infoKey: 'rainfall.windStrength' },
       { id: 'dropSize', label: 'Droplet Size', type: 'range', min: 0, max: 12, step: 0.5, infoKey: 'rainfall.dropSize' },
+      {
+        id: 'dropSizeJitter',
+        label: 'Drop Size Jitter',
+        type: 'range',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        infoKey: 'rainfall.dropSizeJitter',
+        showIf: (p) => p.dropShape !== 'none',
+      },
       {
         id: 'dropShape',
         label: 'Droplet Shape',
@@ -1790,12 +2064,71 @@
     },
     'wavetable.noiseType': {
       title: 'Noise Type',
-      description: 'Selects the noise flavor for this noise layer. Each mode has a distinct visual character.',
+      body: (ui) => {
+        const base = ui?.getWavetableNoiseTemplates?.('wavetable')?.base || {};
+        const baseParams = {
+          ...(ALGO_DEFAULTS?.wavetable ? clone(ALGO_DEFAULTS.wavetable) : {}),
+          lines: 40,
+          gap: 1.2,
+          tilt: 0,
+          lineOffset: 0,
+          noises: [],
+        };
+        const items = WAVE_NOISE_OPTIONS.map((opt) => {
+          const desc = WAVE_NOISE_DESCRIPTIONS[opt.value] || '';
+          const params = {
+            ...baseParams,
+            noises: [
+              {
+                ...clone(base),
+                type: opt.value,
+                amplitude: 6,
+                zoom: 0.03,
+                freq: 1,
+                enabled: true,
+              },
+            ],
+          };
+          const svg = renderPreviewSvg('wavetable', params, { strokeWidth: 0.8 });
+          return `
+            <div class="modal-illustration">
+              <div class="modal-ill-label">${opt.label}</div>
+              ${desc ? `<div class="modal-ill-desc">${desc}</div>` : ''}
+              ${svg}
+            </div>
+          `;
+        }).join('');
+        return `
+          <p class="modal-text">
+            Each noise type shapes line displacement differently. Image modes use uploaded luminance as the base signal.
+          </p>
+          <div class="modal-illustrations scrollable">
+            ${items}
+          </div>
+        `;
+      },
+      hidePreview: true,
     },
     'wavetable.noiseBlend': {
       title: 'Blend Mode',
       description:
         'Controls how this noise layer combines with the noises above it. Hatching Density modes bias displacement based on light/dark tone to simulate shading.',
+    },
+    'wavetable.noiseApplyMode': {
+      title: 'Apply Mode',
+      description: 'Top Down samples noise in global canvas space. Linear maps noise along the spiral path.',
+    },
+    'wavetable.imageStyle': {
+      title: 'Image Style',
+      description: 'Applies a secondary noise shaping style to the image luminance before displacement.',
+    },
+    'wavetable.imageInvertColor': {
+      title: 'Invert Color',
+      description: 'Flips the luminance values of the image before effects are applied.',
+    },
+    'wavetable.imageInvertOpacity': {
+      title: 'Invert Opacity',
+      description: 'Inverts the image alpha contribution so transparent areas become active.',
     },
     'wavetable.noiseTileMode': {
       title: 'Tile Mode',
@@ -1810,8 +2143,8 @@
       description: 'Uses an uploaded image as the noise source. Brightness values become wave displacement.',
     },
     'wavetable.imageAlgo': {
-      title: 'Image Noise Mode',
-      description: 'Determines how the image is converted into noise values.',
+      title: 'Image Effect Mode',
+      description: 'Determines how each image effect transforms luminance before displacement.',
     },
     'wavetable.imageBrightness': {
       title: 'Image Brightness',
@@ -1869,6 +2202,42 @@
       title: 'Dither Amount',
       description: 'Applies a patterned threshold to create a stippled tone map.',
     },
+    'wavetable.imageHighpassRadius': {
+      title: 'High Pass Radius',
+      description: 'Kernel size for extracting high-frequency detail.',
+    },
+    'wavetable.imageHighpassStrength': {
+      title: 'High Pass Strength',
+      description: 'Boosts edge contrast from the high-pass filter.',
+    },
+    'wavetable.imageLowpassRadius': {
+      title: 'Low Pass Radius',
+      description: 'Kernel size for smoothing the image.',
+    },
+    'wavetable.imageLowpassStrength': {
+      title: 'Low Pass Strength',
+      description: 'Blends the low-pass filter into the luminance.',
+    },
+    'wavetable.imageVignetteStrength': {
+      title: 'Vignette Strength',
+      description: 'Darkens edges to emphasize the center.',
+    },
+    'wavetable.imageVignetteRadius': {
+      title: 'Vignette Radius',
+      description: 'Controls how far the vignette reaches into the image.',
+    },
+    'wavetable.imageCurveStrength': {
+      title: 'Tone Curve Strength',
+      description: 'Applies an S-curve to emphasize midtones.',
+    },
+    'wavetable.imageBandCenter': {
+      title: 'Band Center',
+      description: 'Target luminance for the bandpass mask.',
+    },
+    'wavetable.imageBandWidth': {
+      title: 'Band Width',
+      description: 'Range of luminance values preserved by bandpass.',
+    },
     'wavetable.imageThreshold': {
       title: 'Image Threshold',
       description: 'Threshold used to binarize the image before sampling.',
@@ -1920,6 +2289,26 @@
     'wavetable.noiseSeed': {
       title: 'Noise Seed',
       description: 'Offsets the noise pattern for seeded modes like Steps or Value.',
+    },
+    'wavetable.noisePolygonRadius': {
+      title: 'Polygon Radius',
+      description: 'Controls the overall size of the polygon noise shape.',
+    },
+    'wavetable.noisePolygonSides': {
+      title: 'Polygon Sides',
+      description: 'Sets the number of sides in the polygon.',
+    },
+    'wavetable.noisePolygonRotation': {
+      title: 'Polygon Rotation',
+      description: 'Rotates the polygon around its center.',
+    },
+    'wavetable.noisePolygonOutline': {
+      title: 'Polygon Outline Width',
+      description: 'Defines the outline thickness when using polygon noise.',
+    },
+    'wavetable.noisePolygonEdge': {
+      title: 'Polygon Edge Radius',
+      description: 'Softens polygon edges for a rounded profile.',
     },
     'wavetable.tilt': {
       title: 'Row Shift',
@@ -2089,17 +2478,33 @@
       title: 'Trace Length',
       description: 'Length of each rain streak in millimeters.',
     },
+    'rainfall.lengthJitter': {
+      title: 'Length Jitter',
+      description: 'Adds randomized variation to the streak length.',
+    },
     'rainfall.traceStep': {
       title: 'Trace Step',
       description: 'Distance between points along each trace.',
+    },
+    'rainfall.stepJitter': {
+      title: 'Step Jitter',
+      description: 'Randomizes spacing between points along each trace.',
     },
     'rainfall.turbulence': {
       title: 'Turbulence',
       description: 'Adds jitter to rain direction over time.',
     },
+    'rainfall.gustStrength': {
+      title: 'Gust Strength',
+      description: 'Adds slower, broader directional gusts to the rain.',
+    },
     'rainfall.rainfallAngle': {
       title: 'Rainfall Angle',
       description: 'Sets the direction the droplet head faces (0° = north, 180° = south).',
+    },
+    'rainfall.angleJitter': {
+      title: 'Angle Jitter',
+      description: 'Random variation applied to each drop’s direction.',
     },
     'rainfall.windAngle': {
       title: 'Wind Angle',
@@ -2116,6 +2521,10 @@
     'rainfall.dropSize': {
       title: 'Droplet Size',
       description: 'Size of the droplet marker at the end of each trace.',
+    },
+    'rainfall.dropSizeJitter': {
+      title: 'Drop Size Jitter',
+      description: 'Adds size variation to droplets for more organic rain.',
     },
     'rainfall.dropShape': {
       title: 'Droplet Shape',
@@ -3173,7 +3582,8 @@
             Rainfall supports silhouette images to constrain where drops appear.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Wavetable noise stacks can be added, reordered, and blended with tile patterns and image modes.
+            Wavetable noise stacks can be added, reordered, and blended with tile patterns and image effects.
+            Image noise includes an Image Effects stack plus optional style shaping.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Harmonograph layers combine damped pendulum waves; tweak frequency, phase, and damping for intricate loops.
@@ -3260,7 +3670,7 @@
       this.storeLayerParams(layer);
     }
 
-    getWavetableNoiseTemplates() {
+    getWavetableNoiseTemplates(source = 'wavetable') {
       const base = {
         enabled: true,
         type: 'simplex',
@@ -3279,10 +3689,48 @@
         cellularJitter: 1,
         stepsCount: 5,
         seed: 0,
+        applyMode: source === 'spiral' ? 'topdown' : undefined,
+        imageStyle: 'none',
+        imageInvertColor: false,
+        imageInvertOpacity: false,
         imageId: '',
         imageName: '',
         imagePreview: '',
         imageAlgo: 'luma',
+        imageEffects: [
+          {
+            id: 'effect-1',
+            enabled: true,
+            mode: 'luma',
+            imageBrightness: 0,
+            imageLevelsLow: 0,
+            imageLevelsHigh: 1,
+            imageEmbossStrength: 1,
+            imageSharpenAmount: 1,
+            imageSharpenRadius: 1,
+            imageMedianRadius: 1,
+            imageGamma: 1,
+            imageContrast: 1,
+            imageSolarize: 0.5,
+            imagePixelate: 12,
+            imageDither: 0.5,
+            imageThreshold: 0.5,
+            imagePosterize: 5,
+            imageBlur: 0,
+            imageBlurRadius: 0,
+            imageBlurStrength: 1,
+            imageEdgeBlur: 0,
+            imageHighpassRadius: 1,
+            imageHighpassStrength: 1,
+            imageLowpassRadius: 2,
+            imageLowpassStrength: 0.6,
+            imageVignetteStrength: 0.4,
+            imageVignetteRadius: 0.85,
+            imageCurveStrength: 0.4,
+            imageBandCenter: 0.5,
+            imageBandWidth: 0.3,
+          },
+        ],
         imageThreshold: 0.5,
         imagePosterize: 5,
         imageBlur: 0,
@@ -3300,8 +3748,13 @@
         imageSolarize: 0.5,
         imagePixelate: 12,
         imageDither: 0.5,
+        polygonRadius: 2,
+        polygonSides: 6,
+        polygonRotation: 0,
+        polygonOutline: 0,
+        polygonEdgeRadius: 0,
       };
-      const templates = (ALGO_DEFAULTS?.wavetable?.noises || []).map((noise, idx) => ({
+      const templates = (ALGO_DEFAULTS?.[source]?.noises || []).map((noise, idx) => ({
         ...base,
         ...clone(noise),
         id: noise?.id || `noise-${idx + 1}`,
@@ -3310,9 +3763,50 @@
       return { base, templates };
     }
 
+    normalizeImageEffects(noise, baseEffect) {
+      if (!noise) return;
+      const effectBase = baseEffect ? clone(baseEffect) : { id: 'effect-1', enabled: true, mode: 'luma' };
+      const mergeEffect = (effect, idx) => ({
+        ...clone(effectBase),
+        ...(effect || {}),
+        id: effect?.id || `effect-${idx + 1}`,
+        enabled: effect?.enabled !== false,
+        mode: effect?.mode || effectBase.mode,
+      });
+
+      if (!Array.isArray(noise.imageEffects) || !noise.imageEffects.length) {
+        const legacy = mergeEffect(
+          {
+            mode: noise.imageAlgo || effectBase.mode || 'luma',
+            imageBrightness: noise.imageBrightness ?? effectBase.imageBrightness,
+            imageLevelsLow: noise.imageLevelsLow ?? effectBase.imageLevelsLow,
+            imageLevelsHigh: noise.imageLevelsHigh ?? effectBase.imageLevelsHigh,
+            imageEmbossStrength: noise.imageEmbossStrength ?? effectBase.imageEmbossStrength,
+            imageSharpenAmount: noise.imageSharpenAmount ?? effectBase.imageSharpenAmount,
+            imageSharpenRadius: noise.imageSharpenRadius ?? effectBase.imageSharpenRadius,
+            imageMedianRadius: noise.imageMedianRadius ?? effectBase.imageMedianRadius,
+            imageGamma: noise.imageGamma ?? effectBase.imageGamma,
+            imageContrast: noise.imageContrast ?? effectBase.imageContrast,
+            imageSolarize: noise.imageSolarize ?? effectBase.imageSolarize,
+            imagePixelate: noise.imagePixelate ?? effectBase.imagePixelate,
+            imageDither: noise.imageDither ?? effectBase.imageDither,
+            imageThreshold: noise.imageThreshold ?? effectBase.imageThreshold,
+            imagePosterize: noise.imagePosterize ?? effectBase.imagePosterize,
+            imageBlur: noise.imageBlur ?? effectBase.imageBlur,
+            imageBlurRadius: noise.imageBlurRadius ?? effectBase.imageBlurRadius,
+            imageBlurStrength: noise.imageBlurStrength ?? effectBase.imageBlurStrength,
+          },
+          0
+        );
+        noise.imageEffects = [legacy];
+        return;
+      }
+      noise.imageEffects = noise.imageEffects.map((effect, idx) => mergeEffect(effect, idx));
+    }
+
     ensureWavetableNoises(layer) {
       if (!layer || layer.type !== 'wavetable') return [];
-      const { base, templates } = this.getWavetableNoiseTemplates();
+      const { base, templates } = this.getWavetableNoiseTemplates('wavetable');
       let noises = layer.params.noises;
       if (!Array.isArray(noises) || !noises.length) {
         const legacy = {
@@ -3356,6 +3850,7 @@
           imagePixelate: base.imagePixelate,
           imageDither: base.imageDither,
         };
+        this.normalizeImageEffects(legacy, base.imageEffects?.[0]);
         noises = [legacy];
         layer.params.noises = noises;
       }
@@ -3370,6 +3865,10 @@
         };
         if (!next.tileMode) next.tileMode = next.type === 'image' ? 'off' : base.tileMode;
         if (next.tileMode === 'off') next.tilePadding = 0;
+        if (!next.imageStyle) next.imageStyle = base.imageStyle || 'none';
+        if (next.imageInvertColor === undefined) next.imageInvertColor = base.imageInvertColor || false;
+        if (next.imageInvertOpacity === undefined) next.imageInvertOpacity = base.imageInvertOpacity || false;
+        this.normalizeImageEffects(next, base.imageEffects?.[0]);
         return next;
       });
       layer.params.noises = noises;
@@ -3378,7 +3877,7 @@
 
     ensureSpiralNoises(layer) {
       if (!layer || layer.type !== 'spiral') return [];
-      const { base, templates } = this.getWavetableNoiseTemplates();
+      const { base, templates } = this.getWavetableNoiseTemplates('spiral');
       let noises = layer.params.noises;
       if (!Array.isArray(noises) || !noises.length) {
         const legacy = {
@@ -3422,6 +3921,7 @@
           imagePixelate: base.imagePixelate,
           imageDither: base.imageDither,
         };
+        this.normalizeImageEffects(legacy, base.imageEffects?.[0]);
         noises = [legacy];
         layer.params.noises = noises;
       }
@@ -3436,6 +3936,11 @@
         };
         if (!next.tileMode) next.tileMode = next.type === 'image' ? 'off' : base.tileMode;
         if (next.tileMode === 'off') next.tilePadding = 0;
+        if (!next.applyMode) next.applyMode = base.applyMode || 'topdown';
+        if (!next.imageStyle) next.imageStyle = base.imageStyle || 'none';
+        if (next.imageInvertColor === undefined) next.imageInvertColor = base.imageInvertColor || false;
+        if (next.imageInvertOpacity === undefined) next.imageInvertOpacity = base.imageInvertOpacity || false;
+        this.normalizeImageEffects(next, base.imageEffects?.[0]);
         return next;
       });
       layer.params.noises = noises;
@@ -3443,12 +3948,23 @@
     }
 
     createWavetableNoise(index = 0) {
-      const { base, templates } = this.getWavetableNoiseTemplates();
+      const { base, templates } = this.getWavetableNoiseTemplates('wavetable');
       const template = templates[index] || templates[templates.length - 1] || base;
       return {
         ...clone(template),
         id: `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
         enabled: true,
+      };
+    }
+
+    createSpiralNoise(index = 0) {
+      const { base, templates } = this.getWavetableNoiseTemplates('spiral');
+      const template = templates[index] || templates[templates.length - 1] || base;
+      return {
+        ...clone(template),
+        id: `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        enabled: true,
+        applyMode: template.applyMode ?? 'topdown',
       };
     }
 
@@ -3814,9 +4330,14 @@
     showInfo(key) {
       const info = INFO[key];
       if (!info) return;
-      const illustration = buildPreviewPair(key, this);
+      const illustration = info.hidePreview ? '' : buildPreviewPair(key, this);
+      const bodyContent = info.body
+        ? typeof info.body === 'function'
+          ? info.body(this)
+          : info.body
+        : `<p class="modal-text">${info.description}</p>`;
       const body = `
-        <p class="modal-text">${info.description}</p>
+        ${bodyContent}
         ${illustration}
       `;
       this.openModal({ title: info.title, body });
@@ -4159,7 +4680,7 @@
         leftPane.classList.remove('pane-collapsed', 'pane-force-open');
         rightPane.classList.remove('pane-collapsed', 'pane-force-open');
         document.body.classList.remove('auto-collapsed');
-        document.documentElement.style.setProperty('--pane-left-width', '320px');
+        document.documentElement.style.setProperty('--pane-left-width', '519px');
         document.documentElement.style.setProperty('--pane-right-width', '336px');
         document.documentElement.style.setProperty('--bottom-pane-height', '180px');
         if (bottomPane) bottomPane.classList.remove('bottom-pane-collapsed');
@@ -6036,7 +6557,7 @@
               this.showValueError(raw);
               return false;
             }
-            setValue(parsed);
+            setValue(parsed, { commit: true });
             return true;
           }
           const parsed = Number.parseFloat(raw);
@@ -6044,7 +6565,7 @@
             this.showValueError(`${raw}${unit}`);
             return false;
           }
-          setValue(parsed);
+          setValue(parsed, { commit: true });
           return true;
         };
 
@@ -6066,7 +6587,10 @@
           if (!Number.isFinite(current)) return;
           const next = clamp(current + delta, min, max);
           const factor = Math.pow(10, precision);
-          input.value = `${Math.round(next * factor) / factor}`;
+          const displayValue = Math.round(next * factor) / factor;
+          input.value = `${displayValue}`;
+          if (parseValue) return;
+          setValue(displayValue, { commit: false, live: true });
         };
 
         input.addEventListener('keydown', (e) => {
@@ -6387,8 +6911,9 @@
                 def,
                 valueEl: valueBtn,
                 getValue: () => pendulum[def.key],
-                setValue: (displayVal) => {
-                  if (this.app.pushHistory) this.app.pushHistory();
+                setValue: (displayVal, opts) => {
+                  const commit = opts?.commit !== false;
+                  if (commit && this.app.pushHistory) this.app.pushHistory();
                   pendulum[def.key] = fromDisplayValue(def, displayVal);
                   this.storeLayerParams(layer);
                   this.app.regen();
@@ -6480,9 +7005,10 @@
                 def,
                 valueEl: valueBtn,
                 getValue: () => pendulum[def.key],
-                setValue: (displayVal) => {
-                  setAngle(displayVal, true);
-                },
+              setValue: (displayVal, opts) => {
+                const commit = opts?.commit !== false;
+                setAngle(displayVal, commit);
+              },
               });
             }
             return control;
@@ -6551,9 +7077,10 @@
           return;
         }
         if (def.type === 'noiseList') {
+          const noiseSource = layer.type === 'spiral' ? 'spiral' : 'wavetable';
           const noises =
             layer.type === 'spiral' ? this.ensureSpiralNoises(layer) : this.ensureWavetableNoises(layer);
-          const { base: noiseBase, templates: noiseTemplates } = this.getWavetableNoiseTemplates();
+          const { base: noiseBase, templates: noiseTemplates } = this.getWavetableNoiseTemplates(noiseSource);
           const getNoiseDefault = (index, key) => {
             const template = noiseTemplates[index] || noiseTemplates[noiseTemplates.length - 1] || noiseBase;
             if (template && Object.prototype.hasOwnProperty.call(template, key)) return template[key];
@@ -6565,7 +7092,8 @@
             const keepBlend = noise.blend;
             Object.keys(noiseBase).forEach((key) => {
               if (key === 'id') return;
-              noise[key] = template[key] !== undefined ? template[key] : noiseBase[key];
+              const nextVal = template[key] !== undefined ? template[key] : noiseBase[key];
+              noise[key] = Array.isArray(nextVal) ? clone(nextVal) : nextVal;
             });
             if (keepType) noise.type = keepType;
             if (keepBlend) noise.blend = keepBlend;
@@ -6575,6 +7103,11 @@
             } else if (!noise.tileMode) {
               noise.tileMode = noiseBase.tileMode || 'off';
             }
+            if (!noise.imageStyle) noise.imageStyle = noiseBase.imageStyle || 'none';
+            if (noise.imageInvertColor === undefined) noise.imageInvertColor = noiseBase.imageInvertColor || false;
+            if (noise.imageInvertOpacity === undefined) noise.imageInvertOpacity = noiseBase.imageInvertOpacity || false;
+            if (noise.applyMode === undefined && noiseBase.applyMode) noise.applyMode = noiseBase.applyMode;
+            this.normalizeImageEffects(noise, noiseBase.imageEffects?.[0]);
           };
 
           const list = document.createElement('div');
@@ -6591,7 +7124,9 @@
           if (addBtn) {
             addBtn.onclick = () => {
               if (this.app.pushHistory) this.app.pushHistory();
-              noises.push(this.createWavetableNoise(noises.length));
+              const nextNoise =
+                layer.type === 'spiral' ? this.createSpiralNoise(noises.length) : this.createWavetableNoise(noises.length);
+              noises.push(nextNoise);
               layer.params.noises = noises;
               this.storeLayerParams(layer);
               this.app.regen();
@@ -6668,8 +7203,9 @@
                 valueEl: valueBtn,
                 inputEl: valueInput,
                 getValue: () => noise[def.key],
-                setValue: (displayVal) => {
-                  if (this.app.pushHistory) this.app.pushHistory();
+                setValue: (displayVal, opts) => {
+                  const commit = opts?.commit !== false;
+                  if (commit && this.app.pushHistory) this.app.pushHistory();
                   noise[def.key] = fromDisplayValue(def, displayVal);
                   this.storeLayerParams(layer);
                   this.app.regen();
@@ -6792,13 +7328,13 @@
             const valueInput = control.querySelector('.value-input');
             let lastDisplay = displayVal;
             if (valueBtn) valueBtn.classList.toggle('opacity-60', !noise.enabled);
-            const setAngle = (nextDisplay, commit = false) => {
+            const setAngle = (nextDisplay, commit = false, live = false) => {
               const clamped = clamp(roundToStep(nextDisplay, step), min, max);
               lastDisplay = clamped;
               if (dial) dial.style.setProperty('--angle', `${clamped}deg`);
               if (valueBtn) valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, clamped));
-              if (commit) {
-                if (this.app.pushHistory) this.app.pushHistory();
+              if (commit || live) {
+                if (commit && this.app.pushHistory) this.app.pushHistory();
                 noise[def.key] = fromDisplayValue(def, clamped);
                 this.storeLayerParams(layer);
                 this.app.regen();
@@ -6845,8 +7381,10 @@
               valueEl: valueBtn,
               inputEl: valueInput,
               getValue: () => noise[def.key],
-              setValue: (displayVal) => {
-                setAngle(displayVal, true);
+              setValue: (displayVal, opts) => {
+                const commit = opts?.commit !== false;
+                const live = Boolean(opts?.live);
+                setAngle(displayVal, commit, live);
               },
             });
             return control;
@@ -6957,6 +7495,293 @@
             }
 
             wrap.classList.toggle('hidden', noise.type !== 'image');
+            return wrap;
+          };
+
+          const buildImageEffectsList = (noise) => {
+            const wrap = document.createElement('div');
+            wrap.className = 'image-effects';
+            if (noise.type !== 'image') {
+              wrap.classList.add('hidden');
+              return wrap;
+            }
+
+            const baseEffect = noiseBase.imageEffects?.[0] || { mode: 'luma', enabled: true };
+            this.normalizeImageEffects(noise, baseEffect);
+
+            const effects = Array.isArray(noise.imageEffects) ? noise.imageEffects : [];
+            const header = document.createElement('div');
+            header.className = 'image-effects-header';
+            header.innerHTML = `
+              <span class="text-[10px] uppercase tracking-widest text-vectura-muted">Image Effects</span>
+              <button type="button" class="image-effect-add text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">
+                + Add Effect
+              </button>
+            `;
+            const addBtn = header.querySelector('.image-effect-add');
+            if (addBtn) {
+              addBtn.onclick = () => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                const next = {
+                  ...clone(baseEffect),
+                  id: `effect-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+                  enabled: true,
+                  mode: baseEffect.mode || 'luma',
+                };
+                effects.push(next);
+                noise.imageEffects = effects;
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.buildControls();
+                this.updateFormula();
+              };
+            }
+            wrap.appendChild(header);
+
+            const effectGripMarkup = `
+              <button class="noise-grip" type="button" aria-label="Reorder effect">
+                <span class="dot"></span><span class="dot"></span>
+                <span class="dot"></span><span class="dot"></span>
+                <span class="dot"></span><span class="dot"></span>
+              </button>
+            `;
+
+            const buildEffectRangeControl = (effect, def) => {
+              const control = document.createElement('div');
+              control.className = 'noise-control';
+              const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
+              const value = effect[def.key] ?? baseEffect[def.key] ?? 0;
+              if (effect[def.key] === undefined) effect[def.key] = value;
+              const { min, max, step } = getDisplayConfig(def);
+              const displayVal = toDisplayValue(def, value);
+              control.innerHTML = `
+                <div class="flex justify-between mb-1">
+                  <div class="flex items-center gap-2">
+                    <label class="control-label mb-0">${def.label}</label>
+                    ${infoBtn}
+                  </div>
+                  <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(
+                    def,
+                    value
+                  )}</button>
+                </div>
+                <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="w-full">
+                <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
+              `;
+              const input = control.querySelector('input[type="range"]');
+              const valueBtn = control.querySelector('.value-chip');
+              const valueInput = control.querySelector('.value-input');
+              if (input && valueBtn) {
+                input.disabled = !noise.enabled || !effect.enabled;
+                valueBtn.classList.toggle('opacity-60', !noise.enabled || !effect.enabled);
+                input.oninput = (e) => {
+                  const nextDisplay = parseFloat(e.target.value);
+                  valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
+                };
+                input.onchange = (e) => {
+                  if (this.app.pushHistory) this.app.pushHistory();
+                  const nextDisplay = parseFloat(e.target.value);
+                  effect[def.key] = fromDisplayValue(def, nextDisplay);
+                  this.storeLayerParams(layer);
+                  this.app.regen();
+                  this.updateFormula();
+                };
+                input.addEventListener('dblclick', (e) => {
+                  e.preventDefault();
+                  const nextVal = baseEffect[def.key];
+                  if (nextVal === undefined) return;
+                  if (this.app.pushHistory) this.app.pushHistory();
+                  effect[def.key] = nextVal;
+                  input.value = toDisplayValue(def, nextVal);
+                  valueBtn.innerText = formatDisplayValue(def, nextVal);
+                  this.storeLayerParams(layer);
+                  this.app.regen();
+                  this.updateFormula();
+                });
+                attachValueEditor({
+                  def,
+                  valueEl: valueBtn,
+                  inputEl: valueInput,
+                  getValue: () => effect[def.key],
+                  setValue: (displayVal, opts) => {
+                    const commit = opts?.commit !== false;
+                    if (commit && this.app.pushHistory) this.app.pushHistory();
+                    effect[def.key] = fromDisplayValue(def, displayVal);
+                    this.storeLayerParams(layer);
+                    this.app.regen();
+                    valueBtn.innerText = formatDisplayValue(def, effect[def.key]);
+                    this.updateFormula();
+                  },
+                });
+              }
+              return control;
+            };
+
+            const buildEffectSelectControl = (effect, def) => {
+              const control = document.createElement('div');
+              control.className = 'noise-control';
+              const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
+              let value = effect[def.key];
+              if ((value === undefined || value === null) && def.options && def.options.length) {
+                value = def.options[0].value;
+                effect[def.key] = value;
+              }
+              const optionsHtml = def.options
+                .map(
+                  (opt) =>
+                    `<option value="${opt.value}" ${value === opt.value ? 'selected' : ''}>${opt.label}</option>`
+                )
+                .join('');
+              const currentLabel = def.options.find((opt) => opt.value === value)?.label || value;
+              control.innerHTML = `
+                <div class="flex justify-between mb-1">
+                  <div class="flex items-center gap-2">
+                    <label class="control-label mb-0">${def.label}</label>
+                    ${infoBtn}
+                  </div>
+                  <span class="text-xs text-vectura-accent font-mono">${currentLabel}</span>
+                </div>
+                <select class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent">
+                  ${optionsHtml}
+                </select>
+              `;
+              const input = control.querySelector('select');
+              const span = control.querySelector('span');
+              if (input && span) {
+                input.disabled = !noise.enabled || !effect.enabled;
+                input.onchange = (e) => {
+                  if (this.app.pushHistory) this.app.pushHistory();
+                  const next = e.target.value;
+                  effect[def.key] = next;
+                  this.storeLayerParams(layer);
+                  span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
+                  this.app.regen();
+                  this.buildControls();
+                  this.updateFormula();
+                };
+              }
+              return control;
+            };
+
+            const bindEffectReorderGrip = (grip, card, effect) => {
+              if (!grip) return;
+              grip.onmousedown = (e) => {
+                e.preventDefault();
+                const dragEl = card;
+                dragEl.classList.add('dragging');
+                const indicator = document.createElement('div');
+                indicator.className = 'image-effect-drop-indicator';
+                wrap.insertBefore(indicator, dragEl.nextSibling);
+                const currentOrder = effects.map((item) => item.id);
+                const startIndex = currentOrder.indexOf(effect.id);
+
+                const onMove = (ev) => {
+                  const y = ev.clientY;
+                  const items = Array.from(wrap.querySelectorAll('.image-effect-card')).filter((item) => item !== dragEl);
+                  let inserted = false;
+                  for (const item of items) {
+                    const rect = item.getBoundingClientRect();
+                    if (y < rect.top + rect.height / 2) {
+                      wrap.insertBefore(indicator, item);
+                      inserted = true;
+                      break;
+                    }
+                  }
+                  if (!inserted) wrap.appendChild(indicator);
+                };
+
+                const onUp = () => {
+                  dragEl.classList.remove('dragging');
+                  const siblings = Array.from(wrap.children);
+                  const indicatorIndex = siblings.indexOf(indicator);
+                  const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('image-effect-card'));
+                  const newIndex = before.length;
+                  indicator.remove();
+                  window.removeEventListener('mousemove', onMove);
+                  window.removeEventListener('mouseup', onUp);
+
+                  if (newIndex !== startIndex) {
+                    const nextOrder = currentOrder.filter((id) => id !== effect.id);
+                    nextOrder.splice(newIndex, 0, effect.id);
+                    const map = new Map(effects.map((item) => [item.id, item]));
+                    noise.imageEffects = nextOrder.map((id) => map.get(id)).filter(Boolean);
+                    this.storeLayerParams(layer);
+                    this.app.regen();
+                    this.buildControls();
+                    this.updateFormula();
+                  }
+                };
+
+                window.addEventListener('mousemove', onMove);
+                window.addEventListener('mouseup', onUp);
+              };
+            };
+
+            effects.forEach((effect, idx) => {
+              if (!effect.id) effect.id = `effect-${idx + 1}`;
+              const card = document.createElement('div');
+              card.className = `image-effect-card${effect.enabled ? '' : ' noise-disabled'}`;
+              card.dataset.effectId = effect.id;
+              const headerRow = document.createElement('div');
+              headerRow.className = 'image-effect-header';
+              headerRow.innerHTML = `
+                <div class="flex items-center gap-2">
+                  ${effectGripMarkup}
+                  <span class="image-effect-title">Effect ${String(idx + 1).padStart(2, '0')}</span>
+                </div>
+                <div class="noise-actions">
+                  <label class="noise-toggle">
+                    <input type="checkbox" ${effect.enabled ? 'checked' : ''}>
+                  </label>
+                  <button type="button" class="noise-delete" aria-label="Delete effect">🗑</button>
+                </div>
+              `;
+              const toggle = headerRow.querySelector('.noise-toggle input');
+              const deleteBtn = headerRow.querySelector('.noise-delete');
+              const grip = headerRow.querySelector('.noise-grip');
+              bindEffectReorderGrip(grip, card, effect);
+              if (toggle) {
+                toggle.onchange = (e) => {
+                  if (this.app.pushHistory) this.app.pushHistory();
+                  effect.enabled = Boolean(e.target.checked);
+                  this.storeLayerParams(layer);
+                  this.app.regen();
+                  this.buildControls();
+                  this.updateFormula();
+                };
+              }
+              if (deleteBtn) {
+                deleteBtn.onclick = () => {
+                  if (effects.length <= 1) {
+                    this.openModal({
+                      title: 'Keep one effect',
+                      body: `<p class="modal-text">At least one image effect is required.</p>`,
+                    });
+                    return;
+                  }
+                  if (this.app.pushHistory) this.app.pushHistory();
+                  const index = effects.findIndex((item) => item.id === effect.id);
+                  if (index >= 0) effects.splice(index, 1);
+                  noise.imageEffects = effects;
+                  this.storeLayerParams(layer);
+                  this.app.regen();
+                  this.buildControls();
+                  this.updateFormula();
+                };
+              }
+              card.appendChild(headerRow);
+
+              const controls = document.createElement('div');
+              controls.className = 'pendulum-controls';
+              IMAGE_EFFECT_DEFS.forEach((def) => {
+                if (def.showIf && !def.showIf(effect)) return;
+                if (def.type === 'select') controls.appendChild(buildEffectSelectControl(effect, def));
+                else controls.appendChild(buildEffectRangeControl(effect, def));
+              });
+              card.appendChild(controls);
+              wrap.appendChild(card);
+            });
+
             return wrap;
           };
 
@@ -7140,6 +7965,9 @@
               if (nDef.key === 'type') {
                 controls.appendChild(buildNoiseImageBlock(noise, idx));
               }
+              if (nDef.key === 'imageInvertOpacity') {
+                controls.appendChild(buildImageEffectsList(noise));
+              }
               if (nDef.key === 'blend' && !toolsInserted) {
                 controls.appendChild(tools);
                 toolsInserted = true;
@@ -7220,8 +8048,9 @@
               valueEl: valueBtn,
               inputEl: valueInput,
               getValue: () => layer.params[def.id],
-              setValue: (displayVal) => {
-                if (this.app.pushHistory) this.app.pushHistory();
+              setValue: (displayVal, opts) => {
+                const commit = opts?.commit !== false;
+                if (commit && this.app.pushHistory) this.app.pushHistory();
                 layer.params[def.id] = fromDisplayValue(def, displayVal);
                 this.storeLayerParams(layer);
                 this.app.regen();
@@ -7261,13 +8090,13 @@
           const valueInput = div.querySelector('.value-input');
 
           let lastDisplay = displayVal;
-          const setAngle = (nextDisplay, commit = false) => {
+          const setAngle = (nextDisplay, commit = false, live = false) => {
             const clamped = clamp(roundToStep(nextDisplay, step), min, max);
             lastDisplay = clamped;
             if (dial) dial.style.setProperty('--angle', `${clamped}deg`);
             if (valueBtn) valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, clamped));
-            if (commit) {
-              if (this.app.pushHistory) this.app.pushHistory();
+            if (commit || live) {
+              if (commit && this.app.pushHistory) this.app.pushHistory();
               layer.params[def.id] = fromDisplayValue(def, clamped);
               this.storeLayerParams(layer);
               this.app.regen();
@@ -7313,8 +8142,10 @@
             valueEl: valueBtn,
             inputEl: valueInput,
             getValue: () => layer.params[def.id],
-            setValue: (displayVal) => {
-              setAngle(displayVal, true);
+            setValue: (displayVal, opts) => {
+              const commit = opts?.commit !== false;
+              const live = Boolean(opts?.live);
+              setAngle(displayVal, commit, live);
             },
           });
           const target = def.inlineGroup ? getAngleGroup(def.inlineGroup) : container;
@@ -7622,9 +8453,10 @@
                 }
                 return { min: minValParsed, max: maxValParsed };
               },
-              setValue: (vals) => {
+              setValue: (vals, opts) => {
                 if (!vals) return;
-                if (this.app.pushHistory) this.app.pushHistory();
+                const commit = opts?.commit !== false;
+                if (commit && this.app.pushHistory) this.app.pushHistory();
                 if (minInput) minInput.value = vals.min;
                 if (maxInput) maxInput.value = vals.max;
                 syncValues();
@@ -7699,10 +8531,11 @@
               valueEl: valueBtn,
               inputEl: valueInput,
               getValue: () => layer.params[def.id],
-              setValue: (displayVal) => {
+              setValue: (displayVal, opts) => {
                 const nextVal = confirmHeavy(displayVal);
                 if (nextVal === null) return;
-                if (this.app.pushHistory) this.app.pushHistory();
+                const commit = opts?.commit !== false;
+                if (commit && this.app.pushHistory) this.app.pushHistory();
                 layer.params[def.id] = nextVal;
                 this.storeLayerParams(layer);
                 this.app.regen();
@@ -7986,7 +8819,7 @@
               valueEl: valueBtn,
               inputEl: valueInput,
               getValue: () => stepConfig[def.key],
-              setValue: (displayVal) => {
+              setValue: (displayVal, opts) => {
                 applyOptimization((cfg) => {
                   const step = cfg.steps.find((s) => s.id === stepConfig.id);
                   if (step) step[def.key] = displayVal;
