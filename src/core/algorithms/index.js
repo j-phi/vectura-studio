@@ -863,7 +863,7 @@
           }
           return norm ? total / norm : total;
         };
-        const noiseValue = (x, y, noiseDef) => {
+        const noiseValue = (x, y, noiseDef, meta = {}) => {
           const noiseType = noiseDef?.type || 'simplex';
           const n = baseNoise(x, y);
           const patternScale = Math.max(0.1, noiseDef?.patternScale ?? 1);
@@ -1009,6 +1009,9 @@
               const wrap = noiseDef?.tileMode !== 'off';
               const invertColor = Boolean(noiseDef?.imageInvertColor);
               const invertOpacity = Boolean(noiseDef?.imageInvertOpacity);
+              const noiseStyle = noiseDef?.noiseStyle || 'linear';
+              const noiseThreshold = Math.max(0, Math.min(1, noiseDef?.noiseThreshold ?? 0));
+              const microFreq = Math.max(0, noiseDef?.microFreq ?? 0);
               const clamp01 = (v) => Math.max(0, Math.min(1, v));
               const sampleLum = (u, v) => {
                 const uu = wrap ? ((u % 1) + 1) % 1 : Math.max(0, Math.min(1, u));
@@ -1232,12 +1235,34 @@
                 state = applyEffect(effect, state);
               });
               let lum = clamp01(state.lum);
-              let value = lum * 2 - 1;
-              const style = noiseDef?.imageStyle;
-              if (style && style !== 'none' && style !== 'image') {
-                const styleValue = noiseValue(x, y, { ...noiseDef, type: style, imageId: null, imageEffects: null });
-                value = (value + styleValue) / 2;
+              const darknessBase = 1 - lum;
+              let impact = darknessBase;
+              switch (noiseStyle) {
+                case 'curve':
+                  impact = impact * impact;
+                  break;
+                case 'angled':
+                  impact = Math.max(0, (impact - 0.5) * 2);
+                  break;
+                case 'noisy':
+                  impact = clamp01(impact + n * 0.25);
+                  break;
+                case 'linear':
+                default:
+                  break;
               }
+              if (noiseThreshold > 0) {
+                impact = impact >= noiseThreshold ? 1 : impact / noiseThreshold;
+              }
+              let value = (lum * 2 - 1) * impact;
+              if (microFreq > 0) {
+                const wx = meta.worldX ?? x;
+                const wy = meta.worldY ?? y;
+                const cyclesPerMm = microFreq / 2;
+                const wave = Math.sin((wx + wy) * cyclesPerMm * Math.PI * 2);
+                value += wave * impact * 0.5;
+              }
+              value = Math.max(-1, Math.min(1, value));
               return value;
             }
             default:
@@ -1343,7 +1368,11 @@
           cellularJitter: 1,
           stepsCount: 5,
           seed: 0,
-          imageStyle: 'none',
+          noiseStyle: 'linear',
+          noiseThreshold: 0,
+          imageWidth: 1,
+          imageHeight: 1,
+          microFreq: 0,
           imageInvertColor: false,
           imageInvertOpacity: false,
           imageId: p.noiseImageId || '',
@@ -1431,16 +1460,20 @@
               sample: (x, y) => {
                 if (noiseLayer.type === 'image' && tileMode === 'off') {
                   const imageZoom = Math.max(0.1, zoom * 50);
+                  const widthScale = noiseLayer.imageWidth ?? freq ?? 1;
+                  const heightScale = noiseLayer.imageHeight ?? 1;
                   const u = (x - inset) / innerW - 0.5 + (noiseLayer.shiftX ?? 0);
                   const v = (y - inset) / innerH - 0.5 + (noiseLayer.shiftY ?? 0);
-                  const ix = u * imageZoom * freq;
-                  const iy = v * imageZoom;
+                  const ix = u * imageZoom * widthScale;
+                  const iy = v * imageZoom * heightScale;
                   const rx = ix * cosA - iy * sinA;
                   const ry = ix * sinA + iy * cosA;
-                  return noiseValue(rx, ry, noiseLayer);
+                  return noiseValue(rx, ry, noiseLayer, { worldX: x, worldY: y });
                 }
-                const nx = (x + shiftX) * zoom * freq;
-                const ny = (y + shiftY) * zoom;
+                const widthScale = noiseLayer.type === 'image' ? (noiseLayer.imageWidth ?? freq ?? 1) : freq;
+                const heightScale = noiseLayer.type === 'image' ? (noiseLayer.imageHeight ?? 1) : 1;
+                const nx = (x + shiftX) * zoom * widthScale;
+                const ny = (y + shiftY) * zoom * heightScale;
                 const rx = nx * cosA - ny * sinA;
                 const ry = nx * sinA + ny * cosA;
                 let tx = rx;
@@ -1450,7 +1483,7 @@
                   tx = tiled.x;
                   ty = tiled.y;
                 }
-                return noiseValue(tx, ty, noiseLayer);
+                return noiseValue(tx, ty, noiseLayer, { worldX: x, worldY: y });
               },
             };
           });
@@ -2346,13 +2379,15 @@
 
             const densitySpacing = Math.max(0.05, fillSize * 0.2) / fillDensity;
             if (dropFill === 'spiral') {
-              const loops = 2.6;
-              const steps = 40;
+              const densityFactor = Math.max(0.2, fillDensity);
+              const loops = 2.2 + densityFactor * 3.4;
+              const steps = Math.max(40, Math.round(120 * densityFactor));
               const path = [];
               for (let i = 0; i <= steps; i++) {
                 const t = i / steps;
                 const ang = t * loops * Math.PI * 2;
-                const rr = fillSize * (1 - t);
+                const minR = Math.max(0, fillSize * (0.04 / densityFactor));
+                const rr = Math.max(minR, fillSize * (1 - t));
                 const pt = rotatePoint({ x: Math.cos(ang) * rr, y: Math.sin(ang) * rr }, fillRotation);
                 path.push({ x: center.x + pt.x, y: center.y + pt.y });
               }
@@ -2592,7 +2627,13 @@
           const sizeFactor = dropSizeJitter > 0 ? 1 + (rng.nextFloat() * 2 - 1) * dropSizeJitter : 1;
           const dropScale = dropSize * sizeFactor * (1 + (widthMultiplier - 1) * 0.2);
           const dropCenter = basePath[0];
-          const dropAngle = Math.atan2(headDirX, headDirY) + ((p.dropRotate ?? 0) * Math.PI) / 180;
+          const baseVec = basePath.length > 1
+            ? { x: basePath[1].x - basePath[0].x, y: basePath[1].y - basePath[0].y }
+            : { x: dirX, y: dirY };
+          const baseLen = Math.hypot(baseVec.x, baseVec.y) || 1;
+          const tx = baseVec.x / baseLen;
+          const ty = baseVec.y / baseLen;
+          const dropAngle = Math.atan2(tx, -ty) + ((p.dropRotate ?? 0) * Math.PI) / 180;
           buildDropShape(dropCenter, dropScale, dropAngle).forEach((path) => paths.push(path));
           created++;
         }
@@ -2682,7 +2723,7 @@
           }
           return norm ? total / norm : total;
         };
-        const noiseValue = (x, y, noiseDef) => {
+        const noiseValue = (x, y, noiseDef, meta = {}) => {
           const noiseType = noiseDef?.type || 'simplex';
           const n = baseNoise(x, y);
           const patternScale = Math.max(0.1, noiseDef?.patternScale ?? 1);
@@ -2828,6 +2869,9 @@
               const wrap = noiseDef?.tileMode !== 'off';
               const invertColor = Boolean(noiseDef?.imageInvertColor);
               const invertOpacity = Boolean(noiseDef?.imageInvertOpacity);
+              const noiseStyle = noiseDef?.noiseStyle || 'linear';
+              const noiseThreshold = Math.max(0, Math.min(1, noiseDef?.noiseThreshold ?? 0));
+              const microFreq = Math.max(0, noiseDef?.microFreq ?? 0);
               const clamp01 = (v) => Math.max(0, Math.min(1, v));
               const sampleLum = (u, v) => {
                 const uu = wrap ? ((u % 1) + 1) % 1 : Math.max(0, Math.min(1, u));
@@ -3051,12 +3095,34 @@
                 state = applyEffect(effect, state);
               });
               let lum = clamp01(state.lum);
-              let value = lum * 2 - 1;
-              const style = noiseDef?.imageStyle;
-              if (style && style !== 'none' && style !== 'image') {
-                const styleValue = noiseValue(x, y, { ...noiseDef, type: style, imageId: null, imageEffects: null });
-                value = (value + styleValue) / 2;
+              const darknessBase = 1 - lum;
+              let impact = darknessBase;
+              switch (noiseStyle) {
+                case 'curve':
+                  impact = impact * impact;
+                  break;
+                case 'angled':
+                  impact = Math.max(0, (impact - 0.5) * 2);
+                  break;
+                case 'noisy':
+                  impact = clamp01(impact + n * 0.25);
+                  break;
+                case 'linear':
+                default:
+                  break;
               }
+              if (noiseThreshold > 0) {
+                impact = impact >= noiseThreshold ? 1 : impact / noiseThreshold;
+              }
+              let value = (lum * 2 - 1) * impact;
+              if (microFreq > 0) {
+                const wx = meta.worldX ?? x;
+                const wy = meta.worldY ?? y;
+                const cyclesPerMm = microFreq / 2;
+                const wave = Math.sin((wx + wy) * cyclesPerMm * Math.PI * 2);
+                value += wave * impact * 0.5;
+              }
+              value = Math.max(-1, Math.min(1, value));
               return value;
             }
             default:
@@ -3163,7 +3229,11 @@
                 stepsCount: 5,
                 seed: 0,
                 applyMode: 'topdown',
-                imageStyle: 'none',
+                noiseStyle: 'linear',
+                noiseThreshold: 0,
+                imageWidth: 1,
+                imageHeight: 1,
+                microFreq: 0,
                 imageInvertColor: false,
                 imageInvertOpacity: false,
                 imageEffects: [],
@@ -3198,19 +3268,23 @@
                     v = r / maxR - 0.5 + shiftY;
                   }
                   const imageZoom = Math.max(0.1, zoom * 50);
-                  const ix = u * imageZoom * freq;
-                  const iy = v * imageZoom;
+                  const widthScale = noiseLayer.imageWidth ?? freq ?? 1;
+                  const heightScale = noiseLayer.imageHeight ?? 1;
+                  const ix = u * imageZoom * widthScale;
+                  const iy = v * imageZoom * heightScale;
                   const rx = ix * cosA - iy * sinA;
                   const ry = ix * sinA + iy * cosA;
-                  return noiseValue(rx, ry, noiseLayer);
+                  return noiseValue(rx, ry, noiseLayer, { worldX: x, worldY: y });
                 }
-                let nx = (x + shiftX) * zoom * freq;
-                let ny = (y + shiftY) * zoom;
+                const widthScale = noiseLayer.type === 'image' ? (noiseLayer.imageWidth ?? freq ?? 1) : freq;
+                const heightScale = noiseLayer.type === 'image' ? (noiseLayer.imageHeight ?? 1) : 1;
+                let nx = (x + shiftX) * zoom * widthScale;
+                let ny = (y + shiftY) * zoom * heightScale;
                 if (applyMode === 'linear') {
                   const u = t - 0.5 + shiftX;
                   const v = r / maxR - 0.5 + shiftY;
-                  nx = u * innerW * zoom * freq;
-                  ny = v * innerH * zoom;
+                  nx = u * innerW * zoom * widthScale;
+                  ny = v * innerH * zoom * heightScale;
                 }
                 const rx = nx * cosA - ny * sinA;
                 const ry = nx * sinA + ny * cosA;
@@ -3221,7 +3295,7 @@
                   tx = tiled.x;
                   ty = tiled.y;
                 }
-                return noiseValue(tx, ty, noiseLayer);
+                return noiseValue(tx, ty, noiseLayer, { worldX: x, worldY: y });
               },
             };
           });
@@ -3280,38 +3354,7 @@
           theta += dTheta;
           r += dr;
         }
-        const paths = [spath];
-        if (p.close && spath.length > 6) {
-          const feather = Math.max(0, Math.min(1, p.closeFeather ?? 0.5));
-          const buildConnection = (from, target) => {
-            const dx = target.x - from.x;
-            const dy = target.y - from.y;
-            const len = Math.hypot(dx, dy) || 1;
-            const mid = { x: (from.x + target.x) / 2, y: (from.y + target.y) / 2 };
-            const offset = Math.min(30, len * (0.15 + feather * 0.35));
-            const control = { x: mid.x - (dy / len) * offset, y: mid.y + (dx / len) * offset };
-            const steps = Math.max(8, Math.floor(len / 6));
-            const path = [];
-            for (let i = 0; i <= steps; i++) {
-              const t = i / steps;
-              const u = 1 - t;
-              const x = u * u * from.x + 2 * u * t * control.x + t * t * target.x;
-              const y = u * u * from.y + 2 * u * t * control.y + t * t * target.y;
-              path.push({ x, y });
-            }
-            return path;
-          };
-
-          const end = spath[spath.length - 1];
-          const offsetSteps = Math.max(1, Math.round(stepsPerLoop * 0.12));
-          const endTargetIdx = Math.max(0, spath.length - 1 - stepsPerLoop + offsetSteps);
-          if (spath[endTargetIdx]) paths.push(buildConnection(end, spath[endTargetIdx]));
-
-          const start = spath[0];
-          const startTargetIdx = Math.min(spath.length - 1, stepsPerLoop + offsetSteps);
-          if (spath[startTargetIdx]) paths.push(buildConnection(start, spath[startTargetIdx]));
-        }
-        return paths;
+        return [spath];
       },
       formula: () => 'r = r + (noise(θ) * amp)\nx = cos(θ)*r, y = sin(θ)*r',
     },

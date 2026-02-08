@@ -27,6 +27,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Optimization pipeline (linesimplify, linesort, filter, multipass) with scope selection, preview overlays, and export toggle.
 - One-click SVG export with configurable precision and grouping by pen assignment.
 - Live formula display and estimated pen distance/time.
+- Planned: Petalis generator (radial petal structures with spiral distribution and center morphing).
 
 ## Gallery
 Sample outputs included in `assets/gallery/`. 
@@ -48,10 +49,11 @@ Then visit `http://localhost:8000`.
 ## How to Use
 1. Pick an algorithm in the left panel and adjust its parameters.
 2. Use the transform controls (seed, position, scale, rotation) to nudge the layer.
-3. Use Global Settings & Optimization for smoothing/curves/simplify plus optional optimization passes and preview.
+3. Use Post-Processing Lab for smoothing/curves/simplify plus optional optimization passes and preview.
 4. Manage layers on the right: add, reorder (drag the grip), duplicate, hide, rename (double-click), expand into sublayers, and assign pens (drag a pen onto a layer to apply to the selection).
 5. Use Settings for machine size, margin, truncation, margin guides, stroke, background, and SVG precision.
-6. Export with the [EXPORT SVG] button.
+6. Save/Open full projects via .vectura files, or import SVGs as new layers.
+7. Export with the [EXPORT SVG] button.
 
 Pan: Shift + Drag. Zoom: Mouse Wheel. Move layer: Drag. Resize layer: Drag corner handles. Rotate: Drag the upper-right handle (Shift snaps). Duplicate: Alt-drag. Expand: Cmd/Ctrl + E.
 
@@ -69,6 +71,7 @@ Each layer is powered by an algorithm with its own parameters and formula previe
 - Rainfall: rain traces with droplet shaping, wind, and silhouette/ground controls.
 - Spiral: includes optional closure for looping the outer end back into the spiral.
 - Shape Pack: circle/polygon packing with perspective controls.
+- Planned: Petalis (radial petal generator with spiral distribution and layered central modifiers).
 
 Defaults live in `src/config/defaults.js` and descriptions in `src/config/descriptions.js`.
 
@@ -110,7 +113,7 @@ flowchart LR
 - Add new algorithms by extending `src/core/algorithms/index.js` and wiring defaults/UI in `src/config/` and `src/ui/ui.js`.
 - Machine sizes live in `src/config/machines.js` and are used for bounds and export dimensions.
 - Pen palettes live in `src/config/palettes.js` and can be edited or extended.
-- Global Settings & Optimization includes smoothing/curves/simplify plus the optimization pipeline (linesimplify, linesort, filter, multipass).
+- Post-Processing Lab includes smoothing/curves/simplify plus the optimization pipeline (linesimplify, linesort, filter, multipass).
 - Keep script order intact in `index.html`; `src/main.js` expects globals to be registered on `window.Vectura`.
 
 ## Deployment (GitHub Pages)

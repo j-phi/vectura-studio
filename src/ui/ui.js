@@ -246,12 +246,11 @@
     zigzag: 'Zigzag chevron waves.',
   };
 
-  const IMAGE_STYLE_OPTIONS = [
-    { value: 'none', label: 'None' },
-    ...WAVE_NOISE_OPTIONS.filter((opt) => opt.value !== 'image').map((opt) => ({
-      value: opt.value,
-      label: opt.label,
-    })),
+  const IMAGE_NOISE_STYLE_OPTIONS = [
+    { value: 'linear', label: 'Linear' },
+    { value: 'curve', label: 'Curved' },
+    { value: 'angled', label: 'Angled' },
+    { value: 'noisy', label: 'Noisy' },
   ];
 
   const WAVE_PATTERN_TYPES = [
@@ -603,11 +602,11 @@
       infoKey: 'wavetable.noiseType',
     },
     {
-      key: 'imageStyle',
-      label: 'Image Style',
+      key: 'noiseStyle',
+      label: 'Noise Style',
       type: 'select',
-      options: IMAGE_STYLE_OPTIONS,
-      infoKey: 'wavetable.imageStyle',
+      options: IMAGE_NOISE_STYLE_OPTIONS,
+      infoKey: 'wavetable.imageNoiseStyle',
       showIf: (n) => n.type === 'image',
     },
     {
@@ -644,7 +643,56 @@
     },
     { key: 'amplitude', label: 'Noise Amplitude', type: 'range', min: -100, max: 100, step: 0.1, infoKey: 'wavetable.amplitude' },
     { key: 'zoom', label: 'Noise Zoom', type: 'range', min: 0.002, max: 0.08, step: 0.001, infoKey: 'wavetable.zoom' },
-    { key: 'freq', label: 'Frequency', type: 'range', min: 0.2, max: 12.0, step: 0.1, infoKey: 'wavetable.freq' },
+    {
+      key: 'imageWidth',
+      label: 'Noise Width',
+      type: 'range',
+      min: 0.1,
+      max: 4,
+      step: 0.05,
+      infoKey: 'wavetable.imageWidth',
+      showIf: (n) => n.type === 'image',
+    },
+    {
+      key: 'imageHeight',
+      label: 'Noise Height',
+      type: 'range',
+      min: 0.1,
+      max: 4,
+      step: 0.05,
+      infoKey: 'wavetable.imageHeight',
+      showIf: (n) => n.type === 'image',
+    },
+    {
+      key: 'microFreq',
+      label: 'Micro Frequency',
+      type: 'range',
+      min: 0,
+      max: 2,
+      step: 0.1,
+      infoKey: 'wavetable.imageMicroFreq',
+      showIf: (n) => n.type === 'image',
+    },
+    {
+      key: 'noiseThreshold',
+      label: 'Noise Threshold',
+      type: 'range',
+      min: 0,
+      max: 1,
+      step: 0.01,
+      infoKey: 'wavetable.imageNoiseThreshold',
+      showIf: (n) => n.type === 'image',
+    },
+    {
+      key: 'freq',
+      label: 'Frequency',
+      type: 'range',
+      min: 0.2,
+      max: 12.0,
+      step: 0.1,
+      infoKey: 'wavetable.freq',
+      showIf: (n) => n.type !== 'image',
+    },
     {
       key: 'angle',
       label: 'Noise Angle',
@@ -2118,9 +2166,25 @@
       title: 'Apply Mode',
       description: 'Top Down samples noise in global canvas space. Linear maps noise along the spiral path.',
     },
-    'wavetable.imageStyle': {
-      title: 'Image Style',
-      description: 'Applies a secondary noise shaping style to the image luminance before displacement.',
+    'wavetable.imageNoiseStyle': {
+      title: 'Noise Style',
+      description: 'Shapes how dark vs. light image values influence the displacement.',
+    },
+    'wavetable.imageNoiseThreshold': {
+      title: 'Noise Threshold',
+      description: 'Controls how dark a pixel must be before it contributes full noise impact.',
+    },
+    'wavetable.imageWidth': {
+      title: 'Noise Width',
+      description: 'Scales image sampling horizontally.',
+    },
+    'wavetable.imageHeight': {
+      title: 'Noise Height',
+      description: 'Scales image sampling vertically.',
+    },
+    'wavetable.imageMicroFreq': {
+      title: 'Micro Frequency',
+      description: 'Adds micro-scale wave modulation based on image darkness.',
     },
     'wavetable.imageInvertColor': {
       title: 'Invert Color',
@@ -3446,6 +3510,14 @@
       });
     }
 
+    scrollLayerToTop(layerId) {
+      const container = getEl('layer-list');
+      if (!container || !layerId) return;
+      const el = container.querySelector(`[data-layer-id="${layerId}"]`);
+      if (!el) return;
+      container.scrollTop = Math.max(0, el.offsetTop);
+    }
+
     createModal() {
       const overlay = document.createElement('div');
       overlay.id = 'modal-overlay';
@@ -3592,11 +3664,14 @@
             Toggle pendulums on/off, add new ones, and enable Pendulum Guides to visualize each contribution.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Global Settings &amp; Optimization holds smoothing, curves, and simplify for the active layer.
+            Post-Processing Lab holds smoothing, curves, and simplify for the active layer.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Optimization tools (linesimplify, linesort, filter, multipass) can be previewed with replace/overlay and
             optionally included on export.
+          </div>
+          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
+            Use Save/Open to store full .vectura projects, and Import SVG to bring external vector paths in as layers.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Angle controls use circular dials—drag the marker to set direction.
@@ -3690,7 +3765,11 @@
         stepsCount: 5,
         seed: 0,
         applyMode: source === 'spiral' ? 'topdown' : undefined,
-        imageStyle: 'none',
+        noiseStyle: 'linear',
+        noiseThreshold: 0,
+        imageWidth: 1,
+        imageHeight: 1,
+        microFreq: 0,
         imageInvertColor: false,
         imageInvertOpacity: false,
         imageId: '',
@@ -3849,6 +3928,11 @@
           imageSolarize: base.imageSolarize,
           imagePixelate: base.imagePixelate,
           imageDither: base.imageDither,
+          noiseStyle: base.noiseStyle,
+          noiseThreshold: base.noiseThreshold,
+          imageWidth: base.imageWidth,
+          imageHeight: base.imageHeight,
+          microFreq: base.microFreq,
         };
         this.normalizeImageEffects(legacy, base.imageEffects?.[0]);
         noises = [legacy];
@@ -3865,7 +3949,14 @@
         };
         if (!next.tileMode) next.tileMode = next.type === 'image' ? 'off' : base.tileMode;
         if (next.tileMode === 'off') next.tilePadding = 0;
-        if (!next.imageStyle) next.imageStyle = base.imageStyle || 'none';
+        if (next.type === 'image' && next.imageWidth === undefined && next.freq !== undefined) {
+          next.imageWidth = next.freq;
+        }
+        if (!next.noiseStyle) next.noiseStyle = base.noiseStyle || 'linear';
+        if (next.noiseThreshold === undefined) next.noiseThreshold = base.noiseThreshold ?? 0;
+        if (next.imageWidth === undefined) next.imageWidth = base.imageWidth ?? 1;
+        if (next.imageHeight === undefined) next.imageHeight = base.imageHeight ?? 1;
+        if (next.microFreq === undefined) next.microFreq = base.microFreq ?? 0;
         if (next.imageInvertColor === undefined) next.imageInvertColor = base.imageInvertColor || false;
         if (next.imageInvertOpacity === undefined) next.imageInvertOpacity = base.imageInvertOpacity || false;
         this.normalizeImageEffects(next, base.imageEffects?.[0]);
@@ -3920,6 +4011,11 @@
           imageSolarize: base.imageSolarize,
           imagePixelate: base.imagePixelate,
           imageDither: base.imageDither,
+          noiseStyle: base.noiseStyle,
+          noiseThreshold: base.noiseThreshold,
+          imageWidth: base.imageWidth,
+          imageHeight: base.imageHeight,
+          microFreq: base.microFreq,
         };
         this.normalizeImageEffects(legacy, base.imageEffects?.[0]);
         noises = [legacy];
@@ -3937,7 +4033,14 @@
         if (!next.tileMode) next.tileMode = next.type === 'image' ? 'off' : base.tileMode;
         if (next.tileMode === 'off') next.tilePadding = 0;
         if (!next.applyMode) next.applyMode = base.applyMode || 'topdown';
-        if (!next.imageStyle) next.imageStyle = base.imageStyle || 'none';
+        if (next.type === 'image' && next.imageWidth === undefined && next.freq !== undefined) {
+          next.imageWidth = next.freq;
+        }
+        if (!next.noiseStyle) next.noiseStyle = base.noiseStyle || 'linear';
+        if (next.noiseThreshold === undefined) next.noiseThreshold = base.noiseThreshold ?? 0;
+        if (next.imageWidth === undefined) next.imageWidth = base.imageWidth ?? 1;
+        if (next.imageHeight === undefined) next.imageHeight = base.imageHeight ?? 1;
+        if (next.microFreq === undefined) next.microFreq = base.microFreq ?? 0;
         if (next.imageInvertColor === undefined) next.imageInvertColor = base.imageInvertColor || false;
         if (next.imageInvertOpacity === undefined) next.imageInvertOpacity = base.imageInvertOpacity || false;
         this.normalizeImageEffects(next, base.imageEffects?.[0]);
@@ -4220,6 +4323,7 @@
       this.normalizeGroupOrder();
       this.renderLayers();
       this.app.render();
+      window.requestAnimationFrame(() => this.scrollLayerToTop(groupId));
     }
 
     groupSelection() {
@@ -4843,6 +4947,11 @@
       const setOrientation = getEl('set-orientation');
       const orientationLabel = getEl('orientation-label');
       const customFields = getEl('custom-size-fields');
+      const btnSaveVectura = getEl('btn-save-vectura');
+      const btnOpenVectura = getEl('btn-open-vectura');
+      const btnImportSvg = getEl('btn-import-svg');
+      const fileOpenVectura = getEl('file-open-vectura');
+      const fileImportSvg = getEl('file-import-svg');
       const btnExport = getEl('btn-export');
       const btnResetView = getEl('btn-reset-view');
 
@@ -5111,6 +5220,25 @@
           this.app.renderer.center();
           if (this.expandPanes) this.expandPanes();
           this.app.render();
+        };
+      }
+      if (btnSaveVectura) {
+        btnSaveVectura.onclick = () => this.saveVecturaFile();
+      }
+      if (btnOpenVectura && fileOpenVectura) {
+        btnOpenVectura.onclick = () => fileOpenVectura.click();
+        fileOpenVectura.onchange = () => {
+          const file = fileOpenVectura.files?.[0];
+          if (file) this.openVecturaFile(file);
+          fileOpenVectura.value = '';
+        };
+      }
+      if (btnImportSvg && fileImportSvg) {
+        btnImportSvg.onclick = () => fileImportSvg.click();
+        fileImportSvg.onchange = () => {
+          const file = fileImportSvg.files?.[0];
+          if (file) this.importSvgFile(file);
+          fileImportSvg.value = '';
         };
       }
 
@@ -6308,6 +6436,13 @@
           if (!owner) return;
           owner[idKey] = id;
           owner[nameKey] = file.name;
+          if (target && target.type === 'image') {
+            owner.zoom = 0.02;
+            owner.imageWidth = owner.imageWidth ?? 1;
+            owner.imageHeight = owner.imageHeight ?? 1;
+            owner.shiftX = owner.shiftX ?? 0;
+            owner.shiftY = owner.shiftY ?? 0;
+          }
           if (previewKey) owner[previewKey] = preview;
           if (nameEl) nameEl.textContent = file.name;
           this.storeLayerParams(layer);
@@ -6628,6 +6763,31 @@
         });
       };
 
+      const attachKeyboardRangeNudge = (input, applyValue) => {
+        if (!input || !applyValue) return;
+        const isArrowKey = (key) => ['ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft'].includes(key);
+        const clearFlag = () => {
+          delete input.dataset.keyboardAdjust;
+        };
+        input.addEventListener('keydown', (e) => {
+          if (!isArrowKey(e.key)) return;
+          input.dataset.keyboardAdjust = '1';
+        });
+        input.addEventListener('keyup', (e) => {
+          if (!isArrowKey(e.key)) return;
+          clearFlag();
+        });
+        input.addEventListener('blur', () => {
+          clearFlag();
+        });
+        input.addEventListener('input', () => {
+          if (!input.dataset.keyboardAdjust) return;
+          const nextDisplay = parseFloat(input.value);
+          if (!Number.isFinite(nextDisplay)) return;
+          applyValue(nextDisplay);
+        });
+      };
+
       const attachValueEditor = (opts) => {
         const { valueEl } = opts;
         if (!valueEl) return;
@@ -6645,7 +6805,7 @@
       globalHeader.type = 'button';
       globalHeader.className = 'global-section-header';
       globalHeader.innerHTML = `
-        <span class="global-section-title">Global Settings &amp; Optimization</span>
+        <span class="global-section-title">Post-Processing Lab</span>
         <span class="global-section-toggle" aria-hidden="true"></span>
       `;
       const globalBody = document.createElement('div');
@@ -6903,6 +7063,12 @@
                 this.app.regen();
                 this.updateFormula();
               };
+              attachKeyboardRangeNudge(input, (nextDisplay) => {
+                pendulum[def.key] = fromDisplayValue(def, nextDisplay);
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.updateFormula();
+              });
               input.addEventListener('dblclick', (e) => {
                 e.preventDefault();
                 resetValue();
@@ -7103,7 +7269,11 @@
             } else if (!noise.tileMode) {
               noise.tileMode = noiseBase.tileMode || 'off';
             }
-            if (!noise.imageStyle) noise.imageStyle = noiseBase.imageStyle || 'none';
+            if (!noise.noiseStyle) noise.noiseStyle = noiseBase.noiseStyle || 'linear';
+            if (noise.noiseThreshold === undefined) noise.noiseThreshold = noiseBase.noiseThreshold ?? 0;
+            if (noise.imageWidth === undefined) noise.imageWidth = noiseBase.imageWidth ?? 1;
+            if (noise.imageHeight === undefined) noise.imageHeight = noiseBase.imageHeight ?? 1;
+            if (noise.microFreq === undefined) noise.microFreq = noiseBase.microFreq ?? 0;
             if (noise.imageInvertColor === undefined) noise.imageInvertColor = noiseBase.imageInvertColor || false;
             if (noise.imageInvertOpacity === undefined) noise.imageInvertOpacity = noiseBase.imageInvertOpacity || false;
             if (noise.applyMode === undefined && noiseBase.applyMode) noise.applyMode = noiseBase.applyMode;
@@ -7194,6 +7364,12 @@
                 this.app.regen();
                 this.updateFormula();
               };
+              attachKeyboardRangeNudge(input, (nextDisplay) => {
+                noise[def.key] = fromDisplayValue(def, nextDisplay);
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.updateFormula();
+              });
               input.addEventListener('dblclick', (e) => {
                 e.preventDefault();
                 resetValue();
@@ -7416,8 +7592,10 @@
                   </button>
                 </div>
                 <div class="noise-image-right">
-                  <button type="button" class="noise-image-clear text-[10px] text-vectura-muted hover:text-vectura-accent${hasImage ? '' : ' hidden'}">Clear</button>
-                  <div class="noise-image-preview ${hasImage ? 'active' : 'hidden'}">${preview}</div>
+                  <div class="noise-image-preview ${hasImage ? 'active' : 'hidden'}">
+                    ${preview}
+                    <button type="button" class="noise-image-clear text-[10px] text-vectura-muted hover:text-vectura-accent${hasImage ? '' : ' hidden'}">Clear</button>
+                  </div>
                   <div class="text-[10px] text-vectura-muted mt-2 noise-image-name${hasImage ? '' : ' hidden'}">${name}</div>
                 </div>
               </div>
@@ -7586,6 +7764,12 @@
                   this.app.regen();
                   this.updateFormula();
                 };
+                attachKeyboardRangeNudge(input, (nextDisplay) => {
+                  effect[def.key] = fromDisplayValue(def, nextDisplay);
+                  this.storeLayerParams(layer);
+                  this.app.regen();
+                  this.updateFormula();
+                });
                 input.addEventListener('dblclick', (e) => {
                   e.preventDefault();
                   const nextVal = baseEffect[def.key];
@@ -8039,6 +8223,13 @@
               statsEl.textContent = statsText();
               this.updateFormula();
             };
+            attachKeyboardRangeNudge(input, (nextDisplay) => {
+              layer.params[def.id] = fromDisplayValue(def, nextDisplay);
+              this.storeLayerParams(layer);
+              this.app.regen();
+              statsEl.textContent = statsText();
+              this.updateFormula();
+            });
             input.addEventListener('dblclick', (e) => {
               e.preventDefault();
               resetToDefault();
@@ -8415,6 +8606,18 @@
               this.app.regen();
               this.updateFormula();
             };
+            attachKeyboardRangeNudge(minInput, () => {
+              syncValues('min');
+              this.storeLayerParams(layer);
+              this.app.regen();
+              this.updateFormula();
+            });
+            attachKeyboardRangeNudge(maxInput, () => {
+              syncValues('max');
+              this.storeLayerParams(layer);
+              this.app.regen();
+              this.updateFormula();
+            });
             minInput.addEventListener('dblclick', (e) => {
               e.preventDefault();
               resetToDefault();
@@ -8522,6 +8725,14 @@
               this.app.regen();
               this.updateFormula();
             };
+            attachKeyboardRangeNudge(input, (nextDisplay) => {
+              const nextVal = confirmHeavy(nextDisplay);
+              if (nextVal === null) return;
+              layer.params[def.id] = nextVal;
+              this.storeLayerParams(layer);
+              this.app.regen();
+              this.updateFormula();
+            });
             input.addEventListener('dblclick', (e) => {
               e.preventDefault();
               resetToDefault();
@@ -9131,6 +9342,276 @@
         seedDisplay.style.display = usesSeed(l.type) ? '' : 'none';
         seedDisplay.innerText = `Seed: ${l.params.seed}`;
       }
+    }
+
+    getAppVersion() {
+      const meta = document.querySelector('.pane-meta');
+      if (!meta) return '';
+      return `${meta.textContent || ''}`.replace('V.', '').trim();
+    }
+
+    saveVecturaFile() {
+      const version = this.getAppVersion();
+      const images = window.Vectura?.NOISE_IMAGES || {};
+      const imagePayload = Object.entries(images).reduce((acc, [id, img]) => {
+        if (!img || !img.data) return acc;
+        acc[id] = {
+          width: img.width,
+          height: img.height,
+          data: Array.from(img.data),
+        };
+        return acc;
+      }, {});
+      const payload = {
+        type: 'vectura',
+        version,
+        created: new Date().toISOString(),
+        state: this.app.captureState(),
+        images: imagePayload,
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const date = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `vectura-${date}.vectura`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    openVecturaFile(file) {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(reader.result);
+          const state = data?.state || data;
+          if (!state?.engine || !state?.settings) {
+            throw new Error('Missing state payload');
+          }
+          if (data?.images) {
+            const store = (window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {});
+            Object.entries(data.images).forEach(([id, img]) => {
+              if (!img || !Array.isArray(img.data)) return;
+              store[id] = {
+                width: img.width,
+                height: img.height,
+                data: new Uint8ClampedArray(img.data),
+              };
+            });
+          }
+          this.app.applyState(state);
+          this.app.history = [];
+          this.app.pushHistory();
+        } catch (err) {
+          this.openModal({
+            title: 'Invalid File',
+            body: `<p class="modal-text">That file could not be loaded as a .vectura document.</p>`,
+          });
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    importSvgFile(file) {
+      if (!file || !Layer) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = reader.result;
+        const groups = this.parseSvgToLayerGroups(text);
+        if (!groups.length) {
+          this.openModal({
+            title: 'No Paths Found',
+            body: `<p class="modal-text">The SVG did not contain any vector paths to import.</p>`,
+          });
+          return;
+        }
+        if (this.app.pushHistory) this.app.pushHistory();
+        const created = [];
+        groups.forEach((group) => {
+          const id = Math.random().toString(36).substr(2, 9);
+          const name = this.getUniqueLayerName(group.name || 'Imported SVG', id);
+          const layer = new Layer(id, 'expanded', name);
+          layer.params.seed = 0;
+          layer.params.smoothing = 0;
+          layer.params.simplify = 0;
+          layer.params.curves = false;
+          layer.sourcePaths = clone(group.paths);
+          if (group.stroke) layer.color = group.stroke;
+          if (Number.isFinite(group.strokeWidth)) layer.strokeWidth = group.strokeWidth;
+          created.push(layer);
+          this.app.engine.layers.push(layer);
+          this.app.engine.generate(layer.id);
+        });
+        const primary = created[created.length - 1];
+        if (primary && this.app.renderer) {
+          this.app.engine.activeLayerId = primary.id;
+          this.app.renderer.setSelection([primary.id], primary.id);
+        }
+        this.renderLayers();
+        this.buildControls();
+        this.updateFormula();
+        this.app.render();
+      };
+      reader.readAsText(file);
+    }
+
+    parseSvgToLayerGroups(svgText) {
+      if (!svgText) return [];
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(svgText, 'image/svg+xml');
+      const svg = doc.querySelector('svg');
+      if (!svg) return [];
+      const parseNumber = (val, fallback = 0) => {
+        if (!val) return fallback;
+        const cleaned = `${val}`.replace(/[^0-9.+-]/g, '');
+        const num = parseFloat(cleaned);
+        return Number.isFinite(num) ? num : fallback;
+      };
+      const viewBox = svg.getAttribute('viewBox');
+      let vbMinX = 0;
+      let vbMinY = 0;
+      let vbW = parseNumber(svg.getAttribute('width'), 0);
+      let vbH = parseNumber(svg.getAttribute('height'), 0);
+      if (viewBox) {
+        const parts = viewBox.split(/[\s,]+/).map((v) => parseFloat(v));
+        if (parts.length >= 4) {
+          [vbMinX, vbMinY, vbW, vbH] = parts;
+        }
+      }
+      const tempSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      if (viewBox) tempSvg.setAttribute('viewBox', viewBox);
+      if (vbW && vbH) {
+        tempSvg.setAttribute('width', vbW);
+        tempSvg.setAttribute('height', vbH);
+      }
+      tempSvg.style.position = 'absolute';
+      tempSvg.style.left = '-9999px';
+      tempSvg.style.top = '-9999px';
+      tempSvg.style.width = '0';
+      tempSvg.style.height = '0';
+      tempSvg.style.visibility = 'hidden';
+      document.body.appendChild(tempSvg);
+
+      const groups = new Map();
+      const order = [];
+      const addGroup = (key, name, stroke, strokeWidth) => {
+        if (!groups.has(key)) {
+          groups.set(key, { name, stroke, strokeWidth, paths: [] });
+          order.push(key);
+        }
+        return groups.get(key);
+      };
+      const elements = svg.querySelectorAll('path, line, polyline, polygon, rect, circle, ellipse');
+      elements.forEach((el) => {
+        const clone = el.cloneNode(true);
+        tempSvg.appendChild(clone);
+        const stroke = el.getAttribute('stroke') || el.style?.stroke || '';
+        const strokeWidth = parseNumber(el.getAttribute('stroke-width') || el.style?.strokeWidth, NaN);
+        const groupLabel =
+          el.closest('g')?.getAttribute('data-name') ||
+          el.closest('g')?.getAttribute('id') ||
+          (stroke && stroke !== 'none' ? `Stroke ${stroke}` : 'Imported SVG');
+        const key = `${groupLabel}|${stroke || 'none'}`;
+        const group = addGroup(key, groupLabel || 'Imported SVG', stroke && stroke !== 'none' ? stroke : null, strokeWidth);
+        const paths = this.svgElementToPaths(clone, vbMinX, vbMinY);
+        paths.forEach((path) => group.paths.push(path));
+        clone.remove();
+      });
+      tempSvg.remove();
+
+      return order.map((key) => groups.get(key)).filter((group) => group.paths && group.paths.length);
+    }
+
+    svgElementToPaths(el, offsetX = 0, offsetY = 0) {
+      if (!el) return [];
+      const tag = el.tagName.toLowerCase();
+      const applyMatrix = (pt, matrix) => {
+        if (!matrix) return pt;
+        return {
+          x: pt.x * matrix.a + pt.y * matrix.c + matrix.e,
+          y: pt.x * matrix.b + pt.y * matrix.d + matrix.f,
+        };
+      };
+      const applyOffset = (pt) => ({ x: pt.x - offsetX, y: pt.y - offsetY });
+      const matrix = typeof el.getCTM === 'function' ? el.getCTM() : null;
+      const normalizePoints = (points) =>
+        points.map((pt) => applyOffset(applyMatrix({ x: pt.x, y: pt.y }, matrix)));
+      const parseNumber = (val, fallback = 0) => {
+        if (val === undefined || val === null) return fallback;
+        const cleaned = `${val}`.replace(/[^0-9.+-]/g, '');
+        const num = parseFloat(cleaned);
+        return Number.isFinite(num) ? num : fallback;
+      };
+
+      if (tag === 'line') {
+        const x1 = parseNumber(el.getAttribute('x1'));
+        const y1 = parseNumber(el.getAttribute('y1'));
+        const x2 = parseNumber(el.getAttribute('x2'));
+        const y2 = parseNumber(el.getAttribute('y2'));
+        return [normalizePoints([{ x: x1, y: y1 }, { x: x2, y: y2 }])];
+      }
+      if (tag === 'polyline' || tag === 'polygon') {
+        const pointsAttr = el.getAttribute('points') || '';
+        const coords = pointsAttr
+          .trim()
+          .split(/[\s,]+/)
+          .map((val) => parseFloat(val))
+          .filter((val) => Number.isFinite(val));
+        const points = [];
+        for (let i = 0; i < coords.length; i += 2) {
+          points.push({ x: coords[i], y: coords[i + 1] });
+        }
+        if (tag === 'polygon' && points.length) points.push({ ...points[0] });
+        return points.length ? [normalizePoints(points)] : [];
+      }
+      if (tag === 'rect') {
+        const x = parseNumber(el.getAttribute('x'));
+        const y = parseNumber(el.getAttribute('y'));
+        const w = parseNumber(el.getAttribute('width'));
+        const h = parseNumber(el.getAttribute('height'));
+        const points = [
+          { x, y },
+          { x: x + w, y },
+          { x: x + w, y: y + h },
+          { x, y: y + h },
+          { x, y },
+        ];
+        return [normalizePoints(points)];
+      }
+      if (tag === 'circle' || tag === 'ellipse') {
+        const cx = parseNumber(el.getAttribute('cx'));
+        const cy = parseNumber(el.getAttribute('cy'));
+        const rx = parseNumber(el.getAttribute(tag === 'circle' ? 'r' : 'rx'));
+        const ry = parseNumber(el.getAttribute(tag === 'circle' ? 'r' : 'ry'));
+        const steps = 48;
+        const points = [];
+        for (let i = 0; i <= steps; i++) {
+          const t = (i / steps) * Math.PI * 2;
+          points.push({ x: cx + Math.cos(t) * rx, y: cy + Math.sin(t) * ry });
+        }
+        return [normalizePoints(points)];
+      }
+      if (tag === 'path') {
+        try {
+          const total = el.getTotalLength();
+          if (!Number.isFinite(total) || total <= 0) return [];
+          const step = Math.max(1, total / 300);
+          const points = [];
+          for (let d = 0; d <= total; d += step) {
+            const pt = el.getPointAtLength(d);
+            points.push({ x: pt.x, y: pt.y });
+          }
+          const end = el.getPointAtLength(total);
+          points.push({ x: end.x, y: end.y });
+          return [normalizePoints(points)];
+        } catch (err) {
+          return [];
+        }
+      }
+      return [];
     }
 
     exportSVG() {

@@ -60,17 +60,28 @@
         <button id="btn-reset-view" class="hover:text-vectura-accent transition-colors text-xs" type="button">
           [RESET VIEW]
         </button>
+        <button id="btn-open-vectura" class="hover:text-vectura-accent transition-colors text-xs" type="button">
+          [OPEN]
+        </button>
+        <button id="btn-save-vectura" class="hover:text-vectura-accent transition-colors text-xs" type="button">
+          [SAVE]
+        </button>
+        <button id="btn-import-svg" class="hover:text-vectura-accent transition-colors text-xs" type="button">
+          [IMPORT SVG]
+        </button>
         <button id="btn-export" class="hover:text-vectura-accent transition-colors text-xs font-bold" type="button">
           [EXPORT SVG]
         </button>
       </div>
     </header>
+    <input id="file-open-vectura" type="file" accept=".vectura,application/json" class="hidden" />
+    <input id="file-import-svg" type="file" accept=".svg,image/svg+xml" class="hidden" />
 
     <main class="flex-1 flex overflow-hidden relative">
       <aside id="left-pane" class="pane pane-left bg-vectura-panel border-r border-vectura-border flex flex-col z-10 shadow-xl">
         <div class="pane-header pane-header-left p-4 border-b border-vectura-border flex justify-between items-center">
           <span class="pane-title font-bold text-vectura-accent">GENERATOR</span>
-          <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.41</span>
+          <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.42</span>
           <button id="btn-pane-toggle-left" class="pane-toggle pane-toggle-left" type="button" aria-label="Toggle left pane">
             ◀
           </button>

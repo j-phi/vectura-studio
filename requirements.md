@@ -211,3 +211,127 @@ Each operation must be independently configurable, re-ordered, and composable. T
 - Requirements document (this file).
 - UI wireframe notes for Optimization + History panels.
 - Proposed test plan and toolchain decision.
+
+---
+
+## 6) Petalis Generator Requirements
+
+### 6.1 Goals
+- Add a new algorithm, "Petalis", that generates radial petal structures in a circular formation.
+- Provide rich, art-directable controls for petal shape, size, count, spacing, spiral behavior, and center morphing.
+- Support layered central effects via a stackable modifier pipeline (orderable, enable/disable per effect).
+- Include 20 named flower presets as selectable settings, each mapped to a curated parameter bundle.
+
+### 6.2 Non-Goals
+- No external dependencies or build steps.
+- No bitmap/raster rendering; output must remain vector paths suitable for plotters.
+- No automatic colorization beyond existing pen palette assignments.
+
+### 6.3 User Experience Requirements
+- "Petalis" appears in the algorithm list with a formula preview and parameter panel.
+- Parameters are grouped into clear sections:
+  - Petal Geometry
+  - Distribution & Spiral
+  - Center Morphing
+  - Central Elements
+  - Shading
+  - Randomness & Seed
+- Live updates on canvas with deterministic output per seed.
+- Preset selector includes the 20 flower names (see 6.6) and applies their parameter bundles.
+
+### 6.4 Functional Requirements
+
+#### A) Petal Geometry
+- Petal shape model supports:
+  - Base profile type: oval, teardrop, lanceolate, heart, spoon.
+  - Width/length ratio.
+  - Tip sharpness and tip curl.
+  - Base flare and base pinch.
+  - Edge waviness (amplitude + frequency).
+- Petal size supports:
+  - Global scale (mm).
+  - Radius-driven scaling curve (center to outer).
+  - Per-petal jitter in size and rotation.
+
+#### B) Distribution & Spiral
+- Petal count supports:
+  - Fixed count or range with jitter.
+  - Multi-ring distribution (inner/outer rings with independent counts).
+- Spiral behavior supports:
+  - Phyllotaxis mode (golden angle, custom angle).
+  - Spiral tightness (radial growth rate).
+  - Angular drift with optional noise.
+  - Ring-to-ring offset.
+
+#### C) Center Morphing (Behavior Near Center)
+- As petals approach the center, support:
+  - Size morph curve (shrink/expand).
+  - Shape morph curve (switch between base profiles).
+  - Curl and waviness adjustments.
+  - Optional "bud mode" that blends petals into a closed center.
+
+#### D) Central Elements
+- Central element types:
+  - Disk, dome, starburst, dot field, filament cluster.
+- Central element parameters:
+  - Radius, density, and radial falloff.
+  - Optional secondary ring (inner corona).
+  - Connection to petals (stitch lines, radial connectors).
+
+#### E) Shading (Inner/Outer Techniques)
+- Inner shading techniques:
+  - Radial hatch, spiral hatch, stipple, gradient line density.
+- Outer shading techniques:
+  - Edge contour hatch, rim strokes, outline emphasis.
+- Controls:
+  - Inner/outer shading toggles with independent densities.
+  - Transition width between inner and outer shading.
+  - Hatch angle / direction with optional noise.
+
+#### F) Central Modifier Stack
+- Provide a stackable modifier pipeline for central elements similar to layer effects:
+  - Each modifier is reorderable, enable/disable, and parameterized.
+  - Example modifiers: ripple, twist, radial noise, density falloff, offset, clip/trim.
+- The pipeline must be deterministic and applied in order.
+
+### 6.5 Data/Architecture Requirements
+- Algorithm lives in `src/core/algorithms/petalis.js` and is registered in `src/core/algorithms/index.js`.
+- Defaults for Petalis in `src/config/defaults.js`.
+- UI labels/descriptions in `src/config/descriptions.js`.
+- Preset bundles in a new config entry (e.g., `src/config/presets.js`) or an existing config file if preferred.
+- Must respect existing engine expectations: output paths in mm, seed-based RNG via `src/core/rng.js`.
+
+### 6.6 Preset Settings (20 Flower Names)
+The preset selector must include at least the following 20 names:
+1) Camellia Japonica Pink Perfection  
+2) Fenestraria Aurantiaca  
+3) Pachyphytum Compactum  
+4) Echeveria Agavoides  
+5) Dahlia Cornel  
+6) Dahlia Ivanetti  
+7) Rosa Chinensis Mutabilis  
+8) Chrysanthemum Morifolium  
+9) Ranunculus Asiaticus  
+10) Anemone Coronaria  
+11) Zinnia Elegans  
+12) Lotus Nelumbo Nucifera  
+13) Helleborus Niger  
+14) Gerbera Jamesonii  
+15) Tulipa Gesneriana  
+16) Iris Germanica  
+17) Gardenia Jasminoides  
+18) Plumeria Rubra  
+19) Cosmos Bipinnatus  
+20) Protea Cynaroides
+
+### 6.7 Performance Requirements
+- Typical render (200-800 petals) should complete in under 150ms on a modern laptop.
+- Must gracefully degrade or show progress when exceeding 500ms.
+- Avoid generating excessively dense hatch lines by default; enforce guardrails on shading density.
+
+### 6.8 Acceptance Criteria
+- Petalis appears in the algorithm list with grouped controls and deterministic output.
+- Preset selector applies all 20 named flower presets without errors.
+- Center morphing visibly changes size/shape as petals approach the core.
+- Central modifier stack allows multiple effects in different orders with distinct results.
+- Inner/outer shading can be independently enabled and produces plotter-ready paths.

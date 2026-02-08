@@ -46,6 +46,23 @@
           marginLineDotting: SETTINGS.marginLineDotting,
           showGuides: SETTINGS.showGuides,
           snapGuides: SETTINGS.snapGuides,
+          selectionOutline: SETTINGS.selectionOutline,
+          selectionOutlineColor: SETTINGS.selectionOutlineColor,
+          selectionOutlineWidth: SETTINGS.selectionOutlineWidth,
+          showCanvasHelp: SETTINGS.showCanvasHelp,
+          paperSize: SETTINGS.paperSize,
+          paperWidth: SETTINGS.paperWidth,
+          paperHeight: SETTINGS.paperHeight,
+          paperOrientation: SETTINGS.paperOrientation,
+          optimizationScope: SETTINGS.optimizationScope,
+          optimizationPreview: SETTINGS.optimizationPreview,
+          optimizationExport: SETTINGS.optimizationExport,
+          optimizationOverlayColor: SETTINGS.optimizationOverlayColor,
+          optimizationOverlayWidth: SETTINGS.optimizationOverlayWidth,
+          plotterOptimize: SETTINGS.plotterOptimize,
+          optimizationDefaults: SETTINGS.optimizationDefaults
+            ? JSON.parse(JSON.stringify(SETTINGS.optimizationDefaults))
+            : null,
           pens: SETTINGS.pens ? JSON.parse(JSON.stringify(SETTINGS.pens)) : [],
           globalLayerCount: SETTINGS.globalLayerCount,
         },
@@ -71,15 +88,36 @@
       SETTINGS.marginLineDotting = s.marginLineDotting ?? SETTINGS.marginLineDotting;
       SETTINGS.showGuides = s.showGuides ?? SETTINGS.showGuides;
       SETTINGS.snapGuides = s.snapGuides ?? SETTINGS.snapGuides;
+      SETTINGS.selectionOutline = s.selectionOutline ?? SETTINGS.selectionOutline;
+      SETTINGS.selectionOutlineColor = s.selectionOutlineColor ?? SETTINGS.selectionOutlineColor;
+      SETTINGS.selectionOutlineWidth = s.selectionOutlineWidth ?? SETTINGS.selectionOutlineWidth;
+      SETTINGS.showCanvasHelp = s.showCanvasHelp ?? SETTINGS.showCanvasHelp;
+      SETTINGS.paperSize = s.paperSize ?? SETTINGS.paperSize;
+      SETTINGS.paperWidth = s.paperWidth ?? SETTINGS.paperWidth;
+      SETTINGS.paperHeight = s.paperHeight ?? SETTINGS.paperHeight;
+      SETTINGS.paperOrientation = s.paperOrientation ?? SETTINGS.paperOrientation;
+      SETTINGS.optimizationScope = s.optimizationScope ?? SETTINGS.optimizationScope;
+      SETTINGS.optimizationPreview = s.optimizationPreview ?? SETTINGS.optimizationPreview;
+      SETTINGS.optimizationExport = s.optimizationExport ?? SETTINGS.optimizationExport;
+      SETTINGS.optimizationOverlayColor = s.optimizationOverlayColor ?? SETTINGS.optimizationOverlayColor;
+      SETTINGS.optimizationOverlayWidth = s.optimizationOverlayWidth ?? SETTINGS.optimizationOverlayWidth;
+      SETTINGS.plotterOptimize = s.plotterOptimize ?? SETTINGS.plotterOptimize;
+      if (s.optimizationDefaults) {
+        SETTINGS.optimizationDefaults = JSON.parse(JSON.stringify(s.optimizationDefaults));
+      }
       if (Array.isArray(s.pens) && s.pens.length) {
         SETTINGS.pens = JSON.parse(JSON.stringify(s.pens));
       }
       SETTINGS.globalLayerCount = s.globalLayerCount ?? SETTINGS.globalLayerCount;
+      if (this.engine && SETTINGS.paperSize) {
+        this.engine.setProfile(SETTINGS.paperSize);
+      }
       this.engine.importState(state.engine);
       const selectedId = state.selectedLayerId || this.engine.activeLayerId;
       this.renderer.setSelection(selectedId ? [selectedId] : [], selectedId);
       this.engine.activeLayerId = selectedId;
       this.ui.initSettingsValues();
+      this.renderer.center();
       this.ui.renderLayers();
       this.ui.renderPens();
       this.ui.buildControls();

@@ -495,6 +495,84 @@
         if (path.meta) transformed.meta = transformMeta(path.meta);
         return smoothPath(transformed, smooth);
       });
+      if (layer.type === 'spiral' && p.close && Array.isArray(transformed[0]) && transformed[0].length > 6) {
+        const path = transformed[0];
+        const resolveFeather = (val) => {
+          const featherVal = Math.max(0, val ?? 0);
+          if (featherVal <= 1) return featherVal * 20;
+          return featherVal;
+        };
+        const featherMm = resolveFeather(p.closeFeather);
+        const buildConnection = (fromIndex, excludeCount) => {
+          const from = path[fromIndex];
+          if (!from) return null;
+          const fromDir = (() => {
+            const nextIdx = fromIndex === 0 ? 1 : fromIndex - 1;
+            const next = path[nextIdx] || from;
+            const dx = fromIndex === 0 ? next.x - from.x : from.x - next.x;
+            const dy = fromIndex === 0 ? next.y - from.y : from.y - next.y;
+            const len = Math.hypot(dx, dy) || 1;
+            return { x: dx / len, y: dy / len };
+          })();
+          let best = null;
+          for (let i = 0; i < path.length - 1; i++) {
+            if (fromIndex === 0 && i < excludeCount) continue;
+            if (fromIndex === path.length - 1 && i > path.length - 2 - excludeCount) continue;
+            const a = path[i];
+            const b = path[i + 1];
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const denom = dx * dx + dy * dy || 1;
+            const t = Math.max(0, Math.min(1, ((from.x - a.x) * dx + (from.y - a.y) * dy) / denom));
+            const cx = a.x + dx * t;
+            const cy = a.y + dy * t;
+            const dist = Math.hypot(from.x - cx, from.y - cy);
+            if (!best || dist < best.dist) {
+              const segLen = Math.hypot(dx, dy) || 1;
+              best = {
+                x: cx,
+                y: cy,
+                dist,
+                dir: { x: dx / segLen, y: dy / segLen },
+              };
+            }
+          }
+          if (!best) return null;
+          const dist = best.dist || 1;
+          const feather = Math.min(dist * 0.45, featherMm || dist * 0.2);
+          const c1 = {
+            x: from.x + fromDir.x * feather,
+            y: from.y + fromDir.y * feather,
+          };
+          const c2 = {
+            x: best.x - best.dir.x * feather,
+            y: best.y - best.dir.y * feather,
+          };
+          const steps = Math.max(8, Math.floor(dist / 3));
+          const curve = [];
+          for (let i = 0; i <= steps; i++) {
+            const t = i / steps;
+            const u = 1 - t;
+            const x =
+              u * u * u * from.x +
+              3 * u * u * t * c1.x +
+              3 * u * t * t * c2.x +
+              t * t * t * best.x;
+            const y =
+              u * u * u * from.y +
+              3 * u * u * t * c1.y +
+              3 * u * t * t * c2.y +
+              t * t * t * best.y;
+            curve.push({ x, y });
+          }
+          return curve;
+        };
+        const skip = Math.max(4, Math.floor(path.length * 0.02));
+        const endConnect = buildConnection(path.length - 1, skip);
+        const startConnect = buildConnection(0, skip);
+        if (endConnect) transformed.push(endConnect);
+        if (startConnect) transformed.push(startConnect);
+      }
       const helperTransformed = helperPaths
         ? helperPaths.map((path) => {
             if (!Array.isArray(path)) return path;
