@@ -212,6 +212,26 @@
         infoKey: 'harmonograph.paperRotation',
       },
       {
+        id: 'widthMultiplier',
+        label: 'Line Thickness',
+        type: 'range',
+        min: 1,
+        max: 6,
+        step: 1,
+        infoKey: 'harmonograph.widthMultiplier',
+      },
+      {
+        id: 'thickeningMode',
+        label: 'Thickening Mode',
+        type: 'select',
+        options: [
+          { value: 'parallel', label: 'Parallel' },
+          { value: 'snake', label: 'Snake' },
+          { value: 'sinusoidal', label: 'Sinusoidal' },
+        ],
+        infoKey: 'harmonograph.thickeningMode',
+      },
+      {
         id: 'dashLength',
         label: 'Dash Length (mm)',
         type: 'range',
@@ -271,84 +291,64 @@
         infoKey: 'harmonograph.segmentLength',
         showIf: (p) => p.renderMode === 'segments',
       },
-      { type: 'section', label: 'Pendulum 1' },
-      { id: 'ampX1', label: 'Amplitude X', type: 'range', min: -200, max: 200, step: 1, infoKey: 'harmonograph.ampX1' },
-      { id: 'ampY1', label: 'Amplitude Y', type: 'range', min: -200, max: 200, step: 1, infoKey: 'harmonograph.ampY1' },
       {
-        id: 'phaseX1',
-        label: 'Phase X',
-        type: 'angle',
+        id: 'gapSize',
+        label: 'Gap Size',
+        type: 'range',
         min: 0,
-        max: 360,
-        step: 1,
-        displayUnit: '°',
-        infoKey: 'harmonograph.phaseX1',
+        max: 20,
+        step: 0.5,
+        displayUnit: 'mm',
+        infoKey: 'harmonograph.gapSize',
+        showIf: (p) => ['dashed', 'points', 'segments'].includes(p.renderMode),
       },
       {
-        id: 'phaseY1',
-        label: 'Phase Y',
-        type: 'angle',
+        id: 'gapOffset',
+        label: 'Gap Offset',
+        type: 'range',
         min: 0,
-        max: 360,
-        step: 1,
-        displayUnit: '°',
-        infoKey: 'harmonograph.phaseY1',
-      },
-      { id: 'freq1', label: 'Frequency', type: 'range', min: 0.5, max: 8, step: 0.01, infoKey: 'harmonograph.freq1' },
-      { id: 'micro1', label: 'Micro Tuning', type: 'range', min: -0.2, max: 0.2, step: 0.001, infoKey: 'harmonograph.micro1' },
-      { id: 'damp1', label: 'Damping', type: 'range', min: 0, max: 0.02, step: 0.0005, infoKey: 'harmonograph.damp1' },
-      { type: 'section', label: 'Pendulum 2' },
-      { id: 'ampX2', label: 'Amplitude X', type: 'range', min: -200, max: 200, step: 1, infoKey: 'harmonograph.ampX2' },
-      { id: 'ampY2', label: 'Amplitude Y', type: 'range', min: -200, max: 200, step: 1, infoKey: 'harmonograph.ampY2' },
-      {
-        id: 'phaseX2',
-        label: 'Phase X',
-        type: 'angle',
-        min: 0,
-        max: 360,
-        step: 1,
-        displayUnit: '°',
-        infoKey: 'harmonograph.phaseX2',
+        max: 20,
+        step: 0.5,
+        displayUnit: 'mm',
+        infoKey: 'harmonograph.gapOffset',
+        showIf: (p) => ['dashed', 'points', 'segments'].includes(p.renderMode),
       },
       {
-        id: 'phaseY2',
-        label: 'Phase Y',
-        type: 'angle',
+        id: 'gapRandomness',
+        label: 'Spacing Randomness',
+        type: 'range',
         min: 0,
-        max: 360,
-        step: 1,
-        displayUnit: '°',
-        infoKey: 'harmonograph.phaseY2',
+        max: 1,
+        step: 0.05,
+        infoKey: 'harmonograph.gapRandomness',
+        showIf: (p) => ['dashed', 'points', 'segments'].includes(p.renderMode),
       },
-      { id: 'freq2', label: 'Frequency', type: 'range', min: 0.5, max: 8, step: 0.01, infoKey: 'harmonograph.freq2' },
-      { id: 'micro2', label: 'Micro Tuning', type: 'range', min: -0.2, max: 0.2, step: 0.001, infoKey: 'harmonograph.micro2' },
-      { id: 'damp2', label: 'Damping', type: 'range', min: 0, max: 0.02, step: 0.0005, infoKey: 'harmonograph.damp2' },
-      { type: 'section', label: 'Pendulum 3' },
-      { id: 'ampX3', label: 'Amplitude X', type: 'range', min: -200, max: 200, step: 1, infoKey: 'harmonograph.ampX3' },
-      { id: 'ampY3', label: 'Amplitude Y', type: 'range', min: -200, max: 200, step: 1, infoKey: 'harmonograph.ampY3' },
+      { type: 'pendulumList' },
+      { type: 'section', label: 'Pendulum Guides' },
       {
-        id: 'phaseX3',
-        label: 'Phase X',
-        type: 'angle',
-        min: 0,
-        max: 360,
-        step: 1,
-        displayUnit: '°',
-        infoKey: 'harmonograph.phaseX3',
+        id: 'showPendulumGuides',
+        label: 'Show Guides',
+        type: 'checkbox',
+        infoKey: 'harmonograph.showPendulumGuides',
       },
       {
-        id: 'phaseY3',
-        label: 'Phase Y',
-        type: 'angle',
-        min: 0,
-        max: 360,
-        step: 1,
-        displayUnit: '°',
-        infoKey: 'harmonograph.phaseY3',
+        id: 'pendulumGuideColor',
+        label: 'Guide Color',
+        type: 'colorModal',
+        infoKey: 'harmonograph.pendulumGuideColor',
+        showIf: (p) => Boolean(p.showPendulumGuides),
       },
-      { id: 'freq3', label: 'Frequency', type: 'range', min: 0.5, max: 8, step: 0.01, infoKey: 'harmonograph.freq3' },
-      { id: 'micro3', label: 'Micro Tuning', type: 'range', min: -0.2, max: 0.2, step: 0.001, infoKey: 'harmonograph.micro3' },
-      { id: 'damp3', label: 'Damping', type: 'range', min: 0, max: 0.02, step: 0.0005, infoKey: 'harmonograph.damp3' },
+      {
+        id: 'pendulumGuideWidth',
+        label: 'Guide Thickness (mm)',
+        type: 'range',
+        min: 0.05,
+        max: 2,
+        step: 0.05,
+        displayUnit: 'mm',
+        infoKey: 'harmonograph.pendulumGuideWidth',
+        showIf: (p) => Boolean(p.showPendulumGuides),
+      },
     ],
     wavetable: [
       { id: 'lines', label: 'Lines', type: 'range', min: 5, max: 160, step: 1, infoKey: 'wavetable.lines' },
@@ -1340,89 +1340,65 @@
       title: 'Segment Length',
       description: 'Length of each short segment.',
     },
-    'harmonograph.ampX1': {
-      title: 'Pendulum 1 Amplitude X',
-      description: 'X amplitude contribution for pendulum 1.',
+    'harmonograph.gapSize': {
+      title: 'Gap Size',
+      description: 'Adds extra spacing between dashes, points, or segments.',
     },
-    'harmonograph.ampY1': {
-      title: 'Pendulum 1 Amplitude Y',
-      description: 'Y amplitude contribution for pendulum 1.',
+    'harmonograph.gapOffset': {
+      title: 'Gap Offset',
+      description: 'Shifts the spacing pattern forward along the path.',
     },
-    'harmonograph.phaseX1': {
-      title: 'Pendulum 1 Phase X',
-      description: 'Phase offset on the X axis for pendulum 1.',
+    'harmonograph.gapRandomness': {
+      title: 'Spacing Randomness',
+      description: 'Randomizes the spacing between elements (0 = none, 1 = maximum).',
     },
-    'harmonograph.phaseY1': {
-      title: 'Pendulum 1 Phase Y',
-      description: 'Phase offset on the Y axis for pendulum 1.',
+    'harmonograph.widthMultiplier': {
+      title: 'Line Thickness',
+      description: 'Stacks multiple parallel strokes to build thicker lines.',
     },
-    'harmonograph.freq1': {
-      title: 'Pendulum 1 Frequency',
-      description: 'Oscillation frequency for pendulum 1.',
+    'harmonograph.thickeningMode': {
+      title: 'Thickening Mode',
+      description: 'Controls how the thickness strokes are arranged (parallel, snake, sinusoidal).',
     },
-    'harmonograph.micro1': {
-      title: 'Pendulum 1 Micro Tuning',
-      description: 'Fine frequency offset for pendulum 1.',
+    'harmonograph.showPendulumGuides': {
+      title: 'Pendulum Guides',
+      description: 'Overlays each pendulum contribution to visualize the motion in the canvas.',
     },
-    'harmonograph.damp1': {
-      title: 'Pendulum 1 Damping',
-      description: 'Decay rate applied to pendulum 1.',
+    'harmonograph.pendulumGuideColor': {
+      title: 'Guide Color',
+      description: 'Stroke color for the pendulum helper overlay.',
     },
-    'harmonograph.ampX2': {
-      title: 'Pendulum 2 Amplitude X',
-      description: 'X amplitude contribution for pendulum 2.',
+    'harmonograph.pendulumGuideWidth': {
+      title: 'Guide Thickness',
+      description: 'Stroke weight for the pendulum helper overlay.',
     },
-    'harmonograph.ampY2': {
-      title: 'Pendulum 2 Amplitude Y',
-      description: 'Y amplitude contribution for pendulum 2.',
+    'harmonograph.ampX': {
+      title: 'Amplitude X',
+      description: 'Horizontal amplitude contribution of this pendulum.',
     },
-    'harmonograph.phaseX2': {
-      title: 'Pendulum 2 Phase X',
-      description: 'Phase offset on the X axis for pendulum 2.',
+    'harmonograph.ampY': {
+      title: 'Amplitude Y',
+      description: 'Vertical amplitude contribution of this pendulum.',
     },
-    'harmonograph.phaseY2': {
-      title: 'Pendulum 2 Phase Y',
-      description: 'Phase offset on the Y axis for pendulum 2.',
+    'harmonograph.phaseX': {
+      title: 'Phase X',
+      description: 'Phase offset for the X oscillator.',
     },
-    'harmonograph.freq2': {
-      title: 'Pendulum 2 Frequency',
-      description: 'Oscillation frequency for pendulum 2.',
+    'harmonograph.phaseY': {
+      title: 'Phase Y',
+      description: 'Phase offset for the Y oscillator.',
     },
-    'harmonograph.micro2': {
-      title: 'Pendulum 2 Micro Tuning',
-      description: 'Fine frequency offset for pendulum 2.',
+    'harmonograph.freq': {
+      title: 'Frequency',
+      description: 'Oscillation frequency for this pendulum.',
     },
-    'harmonograph.damp2': {
-      title: 'Pendulum 2 Damping',
-      description: 'Decay rate applied to pendulum 2.',
+    'harmonograph.micro': {
+      title: 'Micro Tuning',
+      description: 'Fine tuning offset that nudges the frequency.',
     },
-    'harmonograph.ampX3': {
-      title: 'Pendulum 3 Amplitude X',
-      description: 'X amplitude contribution for pendulum 3.',
-    },
-    'harmonograph.ampY3': {
-      title: 'Pendulum 3 Amplitude Y',
-      description: 'Y amplitude contribution for pendulum 3.',
-    },
-    'harmonograph.phaseX3': {
-      title: 'Pendulum 3 Phase X',
-      description: 'Phase offset on the X axis for pendulum 3.',
-    },
-    'harmonograph.phaseY3': {
-      title: 'Pendulum 3 Phase Y',
-      description: 'Phase offset on the Y axis for pendulum 3.',
-    },
-    'harmonograph.freq3': {
-      title: 'Pendulum 3 Frequency',
-      description: 'Oscillation frequency for pendulum 3.',
-    },
-    'harmonograph.micro3': {
-      title: 'Pendulum 3 Micro Tuning',
-      description: 'Fine frequency offset for pendulum 3.',
-    },
-    'harmonograph.damp3': {
-      title: 'Pendulum 3 Damping',
-      description: 'Decay rate applied to pendulum 3.',
+    'harmonograph.damp': {
+      title: 'Damping',
+      description: 'Decay rate applied to this pendulum.',
     },
     'wavetable.lines': {
       title: 'Lines',
@@ -2607,6 +2583,73 @@
       this.modal.overlay.classList.add('open');
     }
 
+    openColorModal({ title, value, onApply }) {
+      const safeValue = value || '#ffffff';
+      const body = `
+        <div class="color-modal">
+          <div class="color-modal-row">
+            <input type="color" class="color-modal-input" value="${safeValue}">
+            <input type="text" class="color-modal-hex" value="${safeValue}" aria-label="Hex color">
+          </div>
+          <div class="color-modal-preview" style="background:${safeValue}"></div>
+          <div class="color-modal-actions">
+            <button type="button" class="color-modal-cancel">Cancel</button>
+            <button type="button" class="color-modal-apply">Apply</button>
+          </div>
+        </div>
+      `;
+      this.openModal({ title, body });
+
+      const input = this.modal.bodyEl.querySelector('.color-modal-input');
+      const hexInput = this.modal.bodyEl.querySelector('.color-modal-hex');
+      const preview = this.modal.bodyEl.querySelector('.color-modal-preview');
+      const cancelBtn = this.modal.bodyEl.querySelector('.color-modal-cancel');
+      const applyBtn = this.modal.bodyEl.querySelector('.color-modal-apply');
+
+      const normalizeHex = (raw) => {
+        if (!raw) return null;
+        let next = raw.trim();
+        if (!next.startsWith('#')) next = `#${next}`;
+        if (/^#[0-9a-fA-F]{3}$/.test(next)) {
+          next = `#${next[1]}${next[1]}${next[2]}${next[2]}${next[3]}${next[3]}`;
+        }
+        if (!/^#[0-9a-fA-F]{6}$/.test(next)) return null;
+        return next.toLowerCase();
+      };
+      const sync = (next) => {
+        if (input) input.value = next;
+        if (hexInput) hexInput.value = next;
+        if (preview) preview.style.background = next;
+      };
+
+      if (input) {
+        input.oninput = (e) => {
+          const next = e.target.value;
+          sync(next);
+        };
+      }
+      if (hexInput) {
+        hexInput.oninput = (e) => {
+          const normalized = normalizeHex(e.target.value);
+          if (normalized) sync(normalized);
+        };
+      }
+      if (cancelBtn) {
+        cancelBtn.onclick = () => this.closeModal();
+      }
+      if (applyBtn) {
+        applyBtn.onclick = () => {
+          const normalized = normalizeHex(hexInput?.value || input?.value || '');
+          if (!normalized) {
+            this.showValueError(hexInput?.value || '');
+            return;
+          }
+          if (onApply) onApply(normalized);
+          this.closeModal();
+        };
+      }
+    }
+
     closeModal() {
       this.modal.overlay.classList.remove('open');
     }
@@ -2645,7 +2688,13 @@
             Harmonograph layers combine damped pendulum waves; tweak frequency, phase, and damping for intricate loops.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
+            Toggle pendulums on/off, add new ones, and enable Pendulum Guides to visualize each contribution.
+          </div>
+          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Angle controls use circular dials—drag the marker to set direction.
+          </div>
+          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
+            Double-click a value to edit it inline. Double-click a control to reset it to defaults.
           </div>
         </div>
         <div class="modal-section">
@@ -5104,30 +5153,58 @@
         return `${rounded}${unit}`;
       };
 
-      const attachValueEditor = (opts) => {
-        const { def, valueEl, inputEl, getValue, setValue } = opts;
-        if (!valueEl || !inputEl) return;
-        const { min, max, unit } = getDisplayConfig(def);
-        const cleanup = () => {
-          inputEl.classList.add('hidden');
-          valueEl.classList.remove('hidden');
-        };
-        valueEl.onclick = (e) => {
-          e.preventDefault();
-          inputEl.value = formatDisplayValue(def, getValue()).replace(unit, '');
-          valueEl.classList.add('hidden');
-          inputEl.classList.remove('hidden');
-          inputEl.focus();
-          inputEl.select();
-        };
-        inputEl.onkeydown = (e) => {
-          if (e.key === 'Enter') inputEl.blur();
-          if (e.key === 'Escape') {
-            cleanup();
+      const getDefaultValue = (def) => {
+        const defaults = (ALGO_DEFAULTS && ALGO_DEFAULTS[layer.type]) || {};
+        if (def.type === 'rangeDual') {
+          if (
+            Object.prototype.hasOwnProperty.call(defaults, def.minKey) &&
+            Object.prototype.hasOwnProperty.call(defaults, def.maxKey)
+          ) {
+            return { min: defaults[def.minKey], max: defaults[def.maxKey] };
           }
+          return null;
+        }
+        if (def.id && Object.prototype.hasOwnProperty.call(defaults, def.id)) {
+          return defaults[def.id];
+        }
+        if (def.default !== undefined) return def.default;
+        return null;
+      };
+
+      const openInlineEditor = (opts) => {
+        const { def, valueEl, getValue, setValue, parseValue, formatValue } = opts;
+        if (!valueEl) return;
+        const { min, max, unit } = getDisplayConfig(def);
+        const rect = valueEl.getBoundingClientRect();
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'inline-value-input';
+        const currentValue = getValue ? getValue() : 0;
+        const displayValue = formatValue ? formatValue(currentValue) : formatDisplayValue(def, currentValue);
+        input.value = `${displayValue}`.replace(unit, '');
+        input.style.left = `${rect.left}px`;
+        input.style.top = `${rect.top}px`;
+        input.style.width = `${Math.max(60, rect.width)}px`;
+        input.style.height = `${Math.max(20, rect.height)}px`;
+        document.body.appendChild(input);
+        input.focus();
+        input.select();
+        const cleanup = () => {
+          if (input.parentElement) input.parentElement.removeChild(input);
         };
-        inputEl.onblur = () => {
-          const raw = inputEl.value.trim().replace(unit, '');
+        const apply = () => {
+          const raw = input.value.trim().replace(unit, '');
+          if (parseValue) {
+            const parsed = parseValue(raw);
+            if (!parsed) {
+              this.showValueError(raw);
+              cleanup();
+              return;
+            }
+            setValue(parsed);
+            cleanup();
+            return;
+          }
           const parsed = Number.parseFloat(raw);
           if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
             this.showValueError(`${raw}${unit}`);
@@ -5136,6 +5213,20 @@
           }
           setValue(parsed);
           cleanup();
+        };
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') apply();
+          if (e.key === 'Escape') cleanup();
+        });
+        input.addEventListener('blur', apply);
+      };
+
+      const attachValueEditor = (opts) => {
+        const { def, valueEl, getValue, setValue, parseValue, formatValue } = opts;
+        if (!valueEl) return;
+        valueEl.ondblclick = (e) => {
+          e.preventDefault();
+          openInlineEditor({ def, valueEl, getValue, setValue, parseValue, formatValue });
         };
       };
 
@@ -5149,6 +5240,96 @@
         }
         return angleGroups.get(key);
       };
+
+      const basePendulumTemplate = {
+        enabled: true,
+        ampX: 100,
+        ampY: 100,
+        phaseX: 0,
+        phaseY: 0,
+        freq: 2,
+        micro: 0,
+        damp: 0.002,
+      };
+      const pendulumTemplates = ((ALGO_DEFAULTS?.harmonograph?.pendulums || []).map((pend, idx) => ({
+        ...basePendulumTemplate,
+        ...clone(pend),
+        id: pend.id || `pend-${idx + 1}`,
+        enabled: pend.enabled !== false,
+      })) || []);
+      const getPendulumDefault = (index, key) => {
+        const template =
+          pendulumTemplates[index] || pendulumTemplates[pendulumTemplates.length - 1] || basePendulumTemplate;
+        return template[key] !== undefined ? template[key] : basePendulumTemplate[key];
+      };
+      const ensurePendulums = () => {
+        let pendulums = layer.params.pendulums;
+        if (!Array.isArray(pendulums) || !pendulums.length) {
+          const legacy = [];
+          for (let i = 1; i <= 3; i += 1) {
+            const ampX = layer.params[`ampX${i}`];
+            const ampY = layer.params[`ampY${i}`];
+            if (ampX === undefined && ampY === undefined) continue;
+            legacy.push({
+              id: `pend-${i}`,
+              enabled: true,
+              ampX: ampX ?? basePendulumTemplate.ampX,
+              ampY: ampY ?? basePendulumTemplate.ampY,
+              phaseX: layer.params[`phaseX${i}`] ?? basePendulumTemplate.phaseX,
+              phaseY: layer.params[`phaseY${i}`] ?? basePendulumTemplate.phaseY,
+              freq: layer.params[`freq${i}`] ?? basePendulumTemplate.freq,
+              micro: layer.params[`micro${i}`] ?? basePendulumTemplate.micro,
+              damp: layer.params[`damp${i}`] ?? basePendulumTemplate.damp,
+            });
+          }
+          pendulums = legacy.length ? legacy : clone(pendulumTemplates);
+          layer.params.pendulums = pendulums;
+        }
+        pendulums = pendulums.map((pend, idx) => ({
+          ...basePendulumTemplate,
+          ...(pend || {}),
+          id: pend?.id || `pend-${idx + 1}`,
+          enabled: pend?.enabled !== false,
+        }));
+        layer.params.pendulums = pendulums;
+        return pendulums;
+      };
+      const createPendulum = (index) => {
+        const template =
+          pendulumTemplates[index] || pendulumTemplates[pendulumTemplates.length - 1] || basePendulumTemplate;
+        return {
+          ...clone(template),
+          id: `pend-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000)}`,
+          enabled: true,
+        };
+      };
+      const pendulumParamDefs = [
+        { key: 'ampX', label: 'Amplitude X', type: 'range', min: -200, max: 200, step: 1, infoKey: 'harmonograph.ampX' },
+        { key: 'ampY', label: 'Amplitude Y', type: 'range', min: -200, max: 200, step: 1, infoKey: 'harmonograph.ampY' },
+        {
+          key: 'phaseX',
+          label: 'Phase X',
+          type: 'angle',
+          min: 0,
+          max: 360,
+          step: 1,
+          displayUnit: '°',
+          infoKey: 'harmonograph.phaseX',
+        },
+        {
+          key: 'phaseY',
+          label: 'Phase Y',
+          type: 'angle',
+          min: 0,
+          max: 360,
+          step: 1,
+          displayUnit: '°',
+          infoKey: 'harmonograph.phaseY',
+        },
+        { key: 'freq', label: 'Frequency', type: 'range', min: 0.5, max: 8, step: 0.01, infoKey: 'harmonograph.freq' },
+        { key: 'micro', label: 'Micro Tuning', type: 'range', min: -0.2, max: 0.2, step: 0.001, infoKey: 'harmonograph.micro' },
+        { key: 'damp', label: 'Damping', type: 'range', min: 0, max: 0.02, step: 0.0005, infoKey: 'harmonograph.damp' },
+      ];
 
       defs.forEach((def) => {
         if (def.showIf && !def.showIf(layer.params)) return;
@@ -5210,6 +5391,250 @@
           container.appendChild(div);
           return;
         }
+        if (def.type === 'pendulumList') {
+          const pendulums = ensurePendulums();
+          const list = document.createElement('div');
+          list.className = 'pendulum-list mb-4';
+          const header = document.createElement('div');
+          header.className = 'pendulum-list-header';
+          header.innerHTML = `
+            <span class="text-[10px] uppercase tracking-widest text-vectura-muted">Pendulums</span>
+            <button type="button" class="pendulum-add text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">
+              + Add Pendulum
+            </button>
+          `;
+          const addBtn = header.querySelector('.pendulum-add');
+          if (addBtn) {
+            addBtn.onclick = () => {
+              if (this.app.pushHistory) this.app.pushHistory();
+              pendulums.push(createPendulum(pendulums.length));
+              layer.params.pendulums = pendulums;
+              this.storeLayerParams(layer);
+              this.app.regen();
+              this.buildControls();
+              this.updateFormula();
+            };
+          }
+          list.appendChild(header);
+
+          const buildRangeControl = (pendulum, def, idx) => {
+            const control = document.createElement('div');
+            control.className = 'pendulum-control';
+            const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
+            const value = pendulum[def.key] ?? getPendulumDefault(idx, def.key);
+            const { min, max, step } = getDisplayConfig(def);
+            const displayVal = toDisplayValue(def, value);
+            control.innerHTML = `
+              <div class="flex justify-between mb-1">
+                <div class="flex items-center gap-2">
+                  <label class="control-label mb-0">${def.label}</label>
+                  ${infoBtn}
+                </div>
+                <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(
+                  def,
+                  value
+                )}</button>
+              </div>
+              <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="w-full">
+            `;
+            const input = control.querySelector('input');
+            const valueBtn = control.querySelector('.value-chip');
+            const resetValue = () => {
+              const nextVal = getPendulumDefault(idx, def.key);
+              if (nextVal === undefined) return;
+              if (this.app.pushHistory) this.app.pushHistory();
+              pendulum[def.key] = nextVal;
+              if (input) input.value = toDisplayValue(def, nextVal);
+              if (valueBtn) valueBtn.innerText = formatDisplayValue(def, nextVal);
+              this.storeLayerParams(layer);
+              this.app.regen();
+              this.updateFormula();
+            };
+            if (input && valueBtn) {
+              input.disabled = !pendulum.enabled;
+              input.oninput = (e) => {
+                const nextDisplay = parseFloat(e.target.value);
+                valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
+              };
+              input.onchange = (e) => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                const nextDisplay = parseFloat(e.target.value);
+                pendulum[def.key] = fromDisplayValue(def, nextDisplay);
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.updateFormula();
+              };
+              input.addEventListener('dblclick', (e) => {
+                e.preventDefault();
+                resetValue();
+              });
+              attachValueEditor({
+                def,
+                valueEl: valueBtn,
+                getValue: () => pendulum[def.key],
+                setValue: (displayVal) => {
+                  if (this.app.pushHistory) this.app.pushHistory();
+                  pendulum[def.key] = fromDisplayValue(def, displayVal);
+                  this.storeLayerParams(layer);
+                  this.app.regen();
+                  valueBtn.innerText = formatDisplayValue(def, pendulum[def.key]);
+                  this.updateFormula();
+                },
+              });
+            }
+            return control;
+          };
+
+          const buildAngleControl = (pendulum, def, idx) => {
+            const control = document.createElement('div');
+            control.className = 'pendulum-control';
+            const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
+            const value = pendulum[def.key] ?? getPendulumDefault(idx, def.key);
+            const { min, max, step } = getDisplayConfig(def);
+            const displayVal = clamp(toDisplayValue(def, value), min, max);
+            control.innerHTML = `
+              <div class="angle-label">
+                <div class="flex items-center gap-2">
+                  <label class="control-label mb-0">${def.label}</label>
+                  ${infoBtn}
+                </div>
+                <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(
+                  def,
+                  value
+                )}</button>
+              </div>
+              <div class="angle-control">
+                <div class="angle-dial" style="--angle:${displayVal}deg;">
+                  <div class="angle-indicator"></div>
+                </div>
+              </div>
+            `;
+            const dial = control.querySelector('.angle-dial');
+            const valueBtn = control.querySelector('.value-chip');
+            let lastDisplay = displayVal;
+            const setAngle = (nextDisplay, commit = false) => {
+              const clamped = clamp(roundToStep(nextDisplay, step), min, max);
+              lastDisplay = clamped;
+              if (dial) dial.style.setProperty('--angle', `${clamped}deg`);
+              if (valueBtn) valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, clamped));
+              if (commit) {
+                if (this.app.pushHistory) this.app.pushHistory();
+                pendulum[def.key] = fromDisplayValue(def, clamped);
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.updateFormula();
+              }
+            };
+            const resetAngle = () => {
+              const nextVal = getPendulumDefault(idx, def.key);
+              if (nextVal === undefined) return;
+              setAngle(toDisplayValue(def, nextVal), true);
+            };
+            if (dial) {
+              dial.classList.toggle('angle-disabled', !pendulum.enabled);
+              dial.addEventListener('mousedown', (e) => {
+                if (!pendulum.enabled) return;
+                e.preventDefault();
+                const updateFromEvent = (ev) => {
+                  const rect = dial.getBoundingClientRect();
+                  const cx = rect.left + rect.width / 2;
+                  const cy = rect.top + rect.height / 2;
+                  const dx = ev.clientX - cx;
+                  const dy = ev.clientY - cy;
+                  let deg = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
+                  if (deg < 0) deg += 360;
+                  setAngle(deg, false);
+                };
+                updateFromEvent(e);
+                const move = (ev) => updateFromEvent(ev);
+                const up = () => {
+                  window.removeEventListener('mousemove', move);
+                  setAngle(lastDisplay, true);
+                };
+                window.addEventListener('mousemove', move);
+                window.addEventListener('mouseup', up, { once: true });
+              });
+              dial.addEventListener('dblclick', (e) => {
+                e.preventDefault();
+                resetAngle();
+              });
+            }
+            if (valueBtn) {
+              valueBtn.classList.toggle('opacity-60', !pendulum.enabled);
+              attachValueEditor({
+                def,
+                valueEl: valueBtn,
+                getValue: () => pendulum[def.key],
+                setValue: (displayVal) => {
+                  setAngle(displayVal, true);
+                },
+              });
+            }
+            return control;
+          };
+
+          pendulums.forEach((pendulum, idx) => {
+            const card = document.createElement('div');
+            card.className = `pendulum-card${pendulum.enabled ? '' : ' pendulum-disabled'}`;
+            const headerRow = document.createElement('div');
+            headerRow.className = 'pendulum-header';
+            headerRow.innerHTML = `
+              <label class="pendulum-title">Pendulum ${idx + 1}</label>
+              <div class="pendulum-actions">
+                <label class="pendulum-toggle">
+                  <input type="checkbox" ${pendulum.enabled ? 'checked' : ''}>
+                  <span>Active</span>
+                </label>
+                <button type="button" class="pendulum-delete" aria-label="Delete pendulum">🗑</button>
+              </div>
+            `;
+            const toggle = headerRow.querySelector('input');
+            const deleteBtn = headerRow.querySelector('.pendulum-delete');
+            if (toggle) {
+              toggle.onchange = (e) => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                pendulum.enabled = Boolean(e.target.checked);
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.buildControls();
+                this.updateFormula();
+              };
+            }
+            if (deleteBtn) {
+              deleteBtn.onclick = () => {
+                if (pendulums.length <= 1) {
+                  this.openModal({
+                    title: 'Pendulum Required',
+                    body: `<p class="modal-text">Keep at least one pendulum active in the harmonograph.</p>`,
+                  });
+                  return;
+                }
+                if (this.app.pushHistory) this.app.pushHistory();
+                pendulums.splice(idx, 1);
+                layer.params.pendulums = pendulums;
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.buildControls();
+                this.updateFormula();
+              };
+            }
+            card.appendChild(headerRow);
+            const controls = document.createElement('div');
+            controls.className = 'pendulum-controls';
+            pendulumParamDefs.forEach((pDef) => {
+              controls.appendChild(
+                pDef.type === 'angle'
+                  ? buildAngleControl(pendulum, pDef, idx)
+                  : buildRangeControl(pendulum, pDef, idx)
+              );
+            });
+            card.appendChild(controls);
+            list.appendChild(card);
+          });
+
+          container.appendChild(list);
+          return;
+        }
         let val = layer.params[def.id];
         const div = document.createElement('div');
         div.className = 'mb-4';
@@ -5243,6 +5668,18 @@
           const valueInput = div.querySelector('.value-input');
           const statsEl = div.querySelector('.simplify-stats');
           if (input && valueBtn && valueInput && statsEl) {
+            const resetToDefault = () => {
+              const defaultVal = getDefaultValue(def);
+              if (defaultVal === null || defaultVal === undefined) return;
+              if (this.app.pushHistory) this.app.pushHistory();
+              layer.params[def.id] = defaultVal;
+              this.storeLayerParams(layer);
+              input.value = toDisplayValue(def, defaultVal);
+              valueBtn.innerText = formatDisplayValue(def, defaultVal);
+              this.app.regen();
+              statsEl.textContent = statsText();
+              this.updateFormula();
+            };
             input.oninput = (e) => {
               const nextDisplay = parseFloat(e.target.value);
               valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
@@ -5256,6 +5693,10 @@
               statsEl.textContent = statsText();
               this.updateFormula();
             };
+            input.addEventListener('dblclick', (e) => {
+              e.preventDefault();
+              resetToDefault();
+            });
             attachValueEditor({
               def,
               valueEl: valueBtn,
@@ -5315,6 +5756,11 @@
               this.updateFormula();
             }
           };
+          const resetAngle = () => {
+            const defaultVal = getDefaultValue(def);
+            if (defaultVal === null || defaultVal === undefined) return;
+            setAngle(toDisplayValue(def, defaultVal), true);
+          };
 
           if (dial) {
             const updateFromEvent = (e) => {
@@ -5337,6 +5783,10 @@
               };
               window.addEventListener('mousemove', move);
               window.addEventListener('mouseup', up, { once: true });
+            });
+            dial.addEventListener('dblclick', (e) => {
+              e.preventDefault();
+              resetAngle();
             });
           }
 
@@ -5384,6 +5834,24 @@
                 this.updateFormula();
               }
             };
+            input.addEventListener('dblclick', (e) => {
+              e.preventDefault();
+              const defaultVal = getDefaultValue(def);
+              if (defaultVal === null || defaultVal === undefined) return;
+              if (this.app.pushHistory) this.app.pushHistory();
+              const next = Boolean(defaultVal);
+              input.checked = next;
+              span.innerText = next ? 'ON' : 'OFF';
+              layer.params[def.id] = next;
+              this.storeLayerParams(layer);
+              if (def.id === 'curves') {
+                this.app.render();
+                this.updateFormula();
+              } else {
+                this.app.regen();
+                this.updateFormula();
+              }
+            });
           }
         } else if (def.type === 'select') {
           if ((val === undefined || val === null) && def.options && def.options.length) {
@@ -5421,11 +5889,100 @@
               this.app.regen();
               this.updateFormula();
             };
+            input.addEventListener('dblclick', (e) => {
+              e.preventDefault();
+              const defaultVal = getDefaultValue(def);
+              const fallback = def.options?.[0]?.value;
+              const next = defaultVal !== null && defaultVal !== undefined ? defaultVal : fallback;
+              if (next === undefined) return;
+              if (this.app.pushHistory) this.app.pushHistory();
+              layer.params[def.id] = next;
+              this.storeLayerParams(layer);
+              input.value = next;
+              span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
+              this.app.regen();
+              this.updateFormula();
+            });
+          }
+        } else if (def.type === 'colorModal') {
+          const colorVal = val || '#ffffff';
+          div.innerHTML = `
+            <div class="flex justify-between mb-1">
+              <div class="flex items-center gap-2">
+                <label class="control-label mb-0">${def.label}</label>
+                ${infoBtn}
+              </div>
+              <button type="button" class="color-modal-trigger text-[10px] text-vectura-accent border border-vectura-border px-2 py-1 rounded">
+                Set Color
+              </button>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="color-swatch" style="background:${colorVal}"></span>
+              <span class="text-xs text-vectura-accent font-mono color-value">${colorVal}</span>
+            </div>
+          `;
+          const btn = div.querySelector('.color-modal-trigger');
+          const swatch = div.querySelector('.color-swatch');
+          const valueEl = div.querySelector('.color-value');
+          if (btn && swatch && valueEl) {
+            btn.onclick = () => {
+              this.openColorModal({
+                title: def.label,
+                value: layer.params[def.id] || colorVal,
+                onApply: (next) => {
+                  if (this.app.pushHistory) this.app.pushHistory();
+                  layer.params[def.id] = next;
+                  this.storeLayerParams(layer);
+                  swatch.style.background = next;
+                  valueEl.textContent = next;
+                  this.app.regen();
+                  this.updateFormula();
+                },
+              });
+            };
+          }
+        } else if (def.type === 'color') {
+          const colorVal = val || '#ffffff';
+          div.innerHTML = `
+            <div class="flex justify-between mb-1">
+              <div class="flex items-center gap-2">
+                <label class="control-label mb-0">${def.label}</label>
+                ${infoBtn}
+              </div>
+              <span class="text-xs text-vectura-accent font-mono">${colorVal}</span>
+            </div>
+            <input type="color" value="${colorVal}" class="w-full h-8 bg-transparent border border-vectura-border rounded">
+          `;
+          const input = div.querySelector('input');
+          const span = div.querySelector('span');
+          if (input && span) {
+            input.oninput = (e) => {
+              span.innerText = e.target.value;
+            };
+            input.onchange = (e) => {
+              if (this.app.pushHistory) this.app.pushHistory();
+              layer.params[def.id] = e.target.value;
+              this.storeLayerParams(layer);
+              this.app.regen();
+              this.updateFormula();
+            };
+            input.addEventListener('dblclick', (e) => {
+              e.preventDefault();
+              const defaultVal = getDefaultValue(def);
+              if (!defaultVal) return;
+              if (this.app.pushHistory) this.app.pushHistory();
+              layer.params[def.id] = defaultVal;
+              input.value = defaultVal;
+              span.innerText = defaultVal;
+              this.storeLayerParams(layer);
+              this.app.regen();
+              this.updateFormula();
+            });
           }
         } else if (def.type === 'rangeDual') {
           const minVal = layer.params[def.minKey];
           const maxVal = layer.params[def.maxKey];
-          const { min: displayMin, max: displayMax, step: displayStep, unit } = getDisplayConfig(def);
+          const { min: displayMin, max: displayMax, step: displayStep } = getDisplayConfig(def);
           const displayMinVal = toDisplayValue(def, minVal);
           const displayMaxVal = toDisplayValue(def, maxVal);
           div.innerHTML = `
@@ -5440,12 +5997,28 @@
               <input type="range" min="${displayMin}" max="${displayMax}" step="${displayStep}" value="${displayMinVal}" data-handle="min">
               <input type="range" min="${displayMin}" max="${displayMax}" step="${displayStep}" value="${displayMaxVal}" data-handle="max">
             </div>
-            <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
           `;
           const minInput = div.querySelector('input[data-handle="min"]');
           const maxInput = div.querySelector('input[data-handle="max"]');
           const valueBtn = div.querySelector('.value-chip');
-          const valueInput = div.querySelector('.value-input');
+          const resetToDefault = () => {
+            const defaults = getDefaultValue(def);
+            if (!defaults || defaults.min === undefined || defaults.max === undefined) return;
+            if (this.app.pushHistory) this.app.pushHistory();
+            layer.params[def.minKey] = defaults.min;
+            layer.params[def.maxKey] = defaults.max;
+            if (minInput) minInput.value = toDisplayValue(def, defaults.min);
+            if (maxInput) maxInput.value = toDisplayValue(def, defaults.max);
+            this.storeLayerParams(layer);
+            this.app.regen();
+            if (valueBtn) {
+              valueBtn.innerText = `${formatDisplayValue(def, layer.params[def.minKey])}-${formatDisplayValue(
+                def,
+                layer.params[def.maxKey]
+              )}`;
+            }
+            this.updateFormula();
+          };
 
           const syncValues = (changed) => {
             let min = parseFloat(minInput.value);
@@ -5489,61 +6062,55 @@
               this.app.regen();
               this.updateFormula();
             };
-          }
-          if (valueBtn && valueInput) {
-            valueBtn.onclick = (e) => {
+            minInput.addEventListener('dblclick', (e) => {
               e.preventDefault();
-              const currMin = toDisplayValue(def, layer.params[def.minKey]);
-              const currMax = toDisplayValue(def, layer.params[def.maxKey]);
-              valueInput.value = `${currMin}${unit}, ${currMax}${unit}`.replace(unit, '');
-              valueBtn.classList.add('hidden');
-              valueInput.classList.remove('hidden');
-              valueInput.focus();
-              valueInput.select();
-            };
-            valueInput.onkeydown = (e) => {
-              if (e.key === 'Enter') valueInput.blur();
-              if (e.key === 'Escape') {
-                valueInput.classList.add('hidden');
-                valueBtn.classList.remove('hidden');
-              }
-            };
-            valueInput.onblur = () => {
-              const raw = valueInput.value.replace(unit, '');
-              const parts = raw.split(',').map((p) => p.trim()).filter(Boolean);
-              if (parts.length !== 2) {
-                this.showValueError(valueInput.value);
-                valueInput.classList.add('hidden');
-                valueBtn.classList.remove('hidden');
-                return;
-              }
-              const minValParsed = Number.parseFloat(parts[0]);
-              const maxValParsed = Number.parseFloat(parts[1]);
-              if (
-                !Number.isFinite(minValParsed) ||
-                !Number.isFinite(maxValParsed) ||
-                minValParsed < displayMin ||
-                maxValParsed > displayMax ||
-                minValParsed > maxValParsed
-              ) {
-                this.showValueError(valueInput.value);
-                valueInput.classList.add('hidden');
-                valueBtn.classList.remove('hidden');
-                return;
-              }
-              if (this.app.pushHistory) this.app.pushHistory();
-              layer.params[def.minKey] = fromDisplayValue(def, minValParsed);
-              layer.params[def.maxKey] = fromDisplayValue(def, maxValParsed);
-              this.storeLayerParams(layer);
-              this.app.regen();
-              valueBtn.innerText = `${formatDisplayValue(def, layer.params[def.minKey])}-${formatDisplayValue(
-                def,
-                layer.params[def.maxKey]
-              )}`;
-              valueInput.classList.add('hidden');
-              valueBtn.classList.remove('hidden');
-              this.updateFormula();
-            };
+              resetToDefault();
+            });
+            maxInput.addEventListener('dblclick', (e) => {
+              e.preventDefault();
+              resetToDefault();
+            });
+          }
+          if (valueBtn) {
+            attachValueEditor({
+              def,
+              valueEl: valueBtn,
+              getValue: () => ({
+                min: layer.params[def.minKey],
+                max: layer.params[def.maxKey],
+              }),
+              formatValue: (current) => {
+                const currMin = toDisplayValue(def, current.min);
+                const currMax = toDisplayValue(def, current.max);
+                return `${currMin}, ${currMax}`;
+              },
+              parseValue: (raw) => {
+                const parts = raw.split(',').map((p) => p.trim()).filter(Boolean);
+                if (parts.length !== 2) return null;
+                const minValParsed = Number.parseFloat(parts[0]);
+                const maxValParsed = Number.parseFloat(parts[1]);
+                if (
+                  !Number.isFinite(minValParsed) ||
+                  !Number.isFinite(maxValParsed) ||
+                  minValParsed < displayMin ||
+                  maxValParsed > displayMax ||
+                  minValParsed > maxValParsed
+                ) {
+                  return null;
+                }
+                return { min: minValParsed, max: maxValParsed };
+              },
+              setValue: (vals) => {
+                if (!vals) return;
+                if (this.app.pushHistory) this.app.pushHistory();
+                if (minInput) minInput.value = vals.min;
+                if (maxInput) maxInput.value = vals.max;
+                syncValues();
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.updateFormula();
+              },
+            });
           }
         } else {
           const { min, max, step } = getDisplayConfig(def);
@@ -5576,6 +6143,17 @@
               }
               return nextVal;
             };
+            const resetToDefault = () => {
+              const defaultVal = getDefaultValue(def);
+              if (defaultVal === null || defaultVal === undefined) return;
+              if (this.app.pushHistory) this.app.pushHistory();
+              layer.params[def.id] = defaultVal;
+              this.storeLayerParams(layer);
+              input.value = toDisplayValue(def, defaultVal);
+              valueBtn.innerText = formatDisplayValue(def, defaultVal);
+              this.app.regen();
+              this.updateFormula();
+            };
             input.oninput = (e) => {
               const nextDisplay = parseFloat(e.target.value);
               valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
@@ -5590,6 +6168,10 @@
               this.app.regen();
               this.updateFormula();
             };
+            input.addEventListener('dblclick', (e) => {
+              e.preventDefault();
+              resetToDefault();
+            });
             attachValueEditor({
               def,
               valueEl: valueBtn,
@@ -5618,16 +6200,67 @@
       const formula = getEl('formula-display');
       const seedDisplay = getEl('formula-seed-display');
       if (formula) {
+        const escapeHtml = (str) =>
+          `${str}`
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
         const fmt = (val) => {
           if (typeof val === 'number') return Number.isFinite(val) ? val.toFixed(3) : `${val}`;
           if (typeof val === 'boolean') return val ? 'true' : 'false';
           if (val === null || val === undefined) return '';
+          if (Array.isArray(val)) return val.map((item) => fmt(item)).join(', ');
+          if (typeof val === 'object') return JSON.stringify(val);
           return `${val}`;
         };
-        const entries = Object.entries(l.params || {}).map(([key, val]) => `${key} = ${fmt(val)}`);
-        const valuesText = entries.length ? `Values:\\n${entries.join('\\n')}` : '';
+        const entries = [];
+        Object.entries(l.params || {}).forEach(([key, val]) => {
+          if (key === 'pendulums' && Array.isArray(val)) {
+            val.forEach((pend, idx) => {
+              if (!pend || typeof pend !== 'object') return;
+              Object.entries(pend).forEach(([pKey, pVal]) => {
+                if (pKey === 'id') return;
+                entries.push([`P${idx + 1}.${pKey}`, fmt(pVal)]);
+              });
+            });
+            return;
+          }
+          if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+            Object.entries(val).forEach(([subKey, subVal]) => {
+              entries.push([`${key}.${subKey}`, fmt(subVal)]);
+            });
+            return;
+          }
+          entries.push([key, fmt(val)]);
+        });
         const formulaText = this.app.engine.getFormula(l.id);
-        formula.innerText = valuesText ? `${formulaText}\\n\\n${valuesText}` : formulaText;
+        const formulaLines = `${formulaText || ''}`.split('\n').filter((line) => line.trim().length);
+        const formulaHtml = formulaLines
+          .map((line) => `<div class="formula-line">${escapeHtml(line)}</div>`)
+          .join('');
+        const valuesHtml = entries.length
+          ? `
+            <div class="formula-values">
+              <div class="formula-values-title">Values</div>
+              ${entries
+                .map(
+                  ([key, val]) =>
+                    `<div class="formula-row"><span class="formula-key">${escapeHtml(
+                      key
+                    )}</span><span class="formula-val">${escapeHtml(val)}</span></div>`
+                )
+                .join('')}
+            </div>
+          `
+          : '';
+        formula.innerHTML = `
+          <div class="formula-block">
+            <div class="formula-equation">${formulaHtml || '<span class="text-vectura-muted">Select a layer...</span>'}</div>
+            ${valuesHtml}
+          </div>
+        `;
       }
       if (seedDisplay) {
         seedDisplay.style.display = usesSeed(l.type) ? '' : 'none';

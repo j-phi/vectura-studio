@@ -161,6 +161,83 @@
           this.ctx.stroke();
         });
       };
+      const drawHelperOverlays = () => {
+        this.engine.layers.forEach((l) => {
+          if (!l.visible || !l.params?.showPendulumGuides) return;
+          if (!l.helperPaths || !l.helperPaths.length) return;
+          const color = l.params.pendulumGuideColor || '#f59e0b';
+          const width = l.params.pendulumGuideWidth ?? 0.25;
+          const useCurves = Boolean(l.params && l.params.curves);
+          l.helperPaths.forEach((path, index) => {
+            if (!Array.isArray(path) || path.length < 2) return;
+            const next =
+              this.selectedLayerIds?.has(l.id) && this.tempTransform ? this.transformPath(path, this.tempTransform) : path;
+            let minX = Infinity;
+            let minY = Infinity;
+            let maxX = -Infinity;
+            let maxY = -Infinity;
+            next.forEach((pt) => {
+              minX = Math.min(minX, pt.x);
+              minY = Math.min(minY, pt.y);
+              maxX = Math.max(maxX, pt.x);
+              maxY = Math.max(maxY, pt.y);
+            });
+            const centerX = (minX + maxX) / 2;
+            const centerY = (minY + maxY) / 2;
+
+            this.ctx.save();
+            this.ctx.lineWidth = width;
+            this.ctx.lineCap = 'round';
+            this.ctx.lineJoin = 'round';
+            this.ctx.strokeStyle = color;
+            this.ctx.globalAlpha = 0.65;
+            this.ctx.beginPath();
+            this.tracePath(next, useCurves);
+            this.ctx.stroke();
+
+            this.ctx.globalAlpha = 0.5;
+            this.ctx.setLineDash([1.5, 1.5]);
+            this.ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+            this.ctx.setLineDash([]);
+
+            this.ctx.globalAlpha = 0.8;
+            const cross = 2.5;
+            this.ctx.beginPath();
+            this.ctx.moveTo(centerX - cross, centerY);
+            this.ctx.lineTo(centerX + cross, centerY);
+            this.ctx.moveTo(centerX, centerY - cross);
+            this.ctx.lineTo(centerX, centerY + cross);
+            this.ctx.stroke();
+
+            const start = next[0];
+            const nextPt = next[1] || start;
+            const dirX = nextPt.x - start.x;
+            const dirY = nextPt.y - start.y;
+            const mag = Math.hypot(dirX, dirY) || 1;
+            const ux = dirX / mag;
+            const uy = dirY / mag;
+            const arrowLen = 6;
+            this.ctx.beginPath();
+            this.ctx.moveTo(start.x, start.y);
+            this.ctx.lineTo(start.x + ux * arrowLen, start.y + uy * arrowLen);
+            this.ctx.stroke();
+
+            this.ctx.fillStyle = color;
+            this.ctx.globalAlpha = 0.9;
+            this.ctx.beginPath();
+            this.ctx.arc(start.x, start.y, 1.2, 0, Math.PI * 2);
+            this.ctx.fill();
+
+            const label = `P${index + 1}`;
+            this.ctx.font = '3px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.textAlign = 'left';
+            this.ctx.fillText(label, start.x + 4, start.y - 4);
+
+            this.ctx.restore();
+          });
+        });
+      };
       const outlineEnabled = SETTINGS.selectionOutline !== false;
       const outlineColor = SETTINGS.selectionOutlineColor || '#ef4444';
       const drawSelectionOutline = () => {
@@ -201,6 +278,7 @@
         this.ctx.clip();
         drawSelectionOutline();
         drawLayers();
+        drawHelperOverlays();
         this.ctx.restore();
       } else {
         this.ctx.save();
@@ -209,6 +287,7 @@
         this.ctx.clip();
         drawSelectionOutline();
         drawLayers();
+        drawHelperOverlays();
         this.ctx.restore();
 
         const outsideAlpha = SETTINGS.outsideOpacity ?? 0.5;

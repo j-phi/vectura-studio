@@ -9,7 +9,7 @@
     "name": "Blues-01",
     "colors": [
       "#ffffff",
-      "#dbeafe",
+      "#bbd9fe",
       "#93c5fd",
       "#3b82f6",
       "#1e3a8a"
@@ -20,7 +20,7 @@
     "name": "Ambers-01",
     "colors": [
       "#fffbeb",
-      "#fde68a",
+      "#fcd45c",
       "#fbbf24",
       "#f59e0b",
       "#b45309"
@@ -229,7 +229,7 @@
     "name": "Cyans-01",
     "colors": [
       "#f0fdfa",
-      "#cffafe",
+      "#a0f2fc",
       "#67e8f9",
       "#06b6d4",
       "#0e7490"
@@ -339,7 +339,7 @@
     "name": "Emeralds-01",
     "colors": [
       "#ecfdf5",
-      "#d1fae5",
+      "#a4f1d0",
       "#6ee7b7",
       "#10b981",
       "#065f46"
@@ -449,7 +449,7 @@
     "name": "Fuchsias-01",
     "colors": [
       "#fdf4ff",
-      "#f5d0fe",
+      "#efa9fc",
       "#e879f9",
       "#d946ef",
       "#86198f"
@@ -559,7 +559,7 @@
     "name": "Grays-01",
     "colors": [
       "#fafafa",
-      "#e5e7eb",
+      "#c4c8d0",
       "#9ca3af",
       "#4b5563",
       "#111827"
@@ -669,7 +669,7 @@
     "name": "Greens-01",
     "colors": [
       "#f0fdf4",
-      "#bbf7d0",
+      "#88ecac",
       "#4ade80",
       "#22c55e",
       "#166534"
@@ -779,7 +779,7 @@
     "name": "Indigos-01",
     "colors": [
       "#eef2ff",
-      "#c7d2fe",
+      "#a8b2fb",
       "#818cf8",
       "#6366f1",
       "#3730a3"
@@ -889,7 +889,7 @@
     "name": "Limes-01",
     "colors": [
       "#f7fee7",
-      "#ecfccb",
+      "#d7f89d",
       "#bef264",
       "#84cc16",
       "#3f6212"
@@ -999,7 +999,7 @@
     "name": "Neutrals-01",
     "colors": [
       "#f5f5f5",
-      "#d4d4d4",
+      "#bebebe",
       "#a3a3a3",
       "#525252",
       "#171717"
@@ -1109,7 +1109,7 @@
     "name": "Oceans-01",
     "colors": [
       "#ecfeff",
-      "#a5f3fc",
+      "#74dbfa",
       "#38bdf8",
       "#1d4ed8",
       "#0f172a"
@@ -1219,7 +1219,7 @@
     "name": "Oranges-01",
     "colors": [
       "#fff7ed",
-      "#fed7aa",
+      "#feca92",
       "#fdba74",
       "#f97316",
       "#9a3412"
@@ -1329,7 +1329,7 @@
     "name": "Pinks-01",
     "colors": [
       "#fdf2f8",
-      "#fbcfe8",
+      "#f8a5d2",
       "#f472b6",
       "#ec4899",
       "#9d174d"
@@ -1439,7 +1439,7 @@
     "name": "Purples-01",
     "colors": [
       "#faf5ff",
-      "#e9d5ff",
+      "#d7b1fe",
       "#c084fc",
       "#a855f7",
       "#6b21a8"
@@ -1549,7 +1549,7 @@
     "name": "Reds-01",
     "colors": [
       "#fef2f2",
-      "#fecaca",
+      "#fba2a2",
       "#f87171",
       "#ef4444",
       "#991b1b"
@@ -1659,7 +1659,7 @@
     "name": "Skies-01",
     "colors": [
       "#f0f9ff",
-      "#bae6fd",
+      "#9fddfd",
       "#7dd3fc",
       "#38bdf8",
       "#0c4a6e"
@@ -1769,7 +1769,7 @@
     "name": "Stones-01",
     "colors": [
       "#f5f5f4",
-      "#e7e5e4",
+      "#cbc7c4",
       "#a8a29e",
       "#57534e",
       "#1c1917"
@@ -1879,7 +1879,7 @@
     "name": "Teals-01",
     "colors": [
       "#f0fdfa",
-      "#ccfbf1",
+      "#9af3e4",
       "#5eead4",
       "#14b8a6",
       "#0f766e"
@@ -1989,7 +1989,7 @@
     "name": "Violets-01",
     "colors": [
       "#f5f3ff",
-      "#ddd6fe",
+      "#c5b4fc",
       "#a78bfa",
       "#8b5cf6",
       "#5b21b6"
@@ -2099,7 +2099,7 @@
     "name": "Yellows-01",
     "colors": [
       "#fefce8",
-      "#fef08a",
+      "#fee96c",
       "#fde047",
       "#facc15",
       "#a16207"

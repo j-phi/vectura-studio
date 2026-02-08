@@ -14,9 +14,11 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Guide visibility and snapping toggles in Settings (Cmd while dragging overrides snapping).
 - In-app help guide and shortcut menu (press `?`).
 - Parameter randomization and simplification controls with live line/point counts.
+- Double-click any value to edit it inline, and double-click a control to reset to defaults.
 - Fast duplication and nudging: Alt-drag (Option-drag) to duplicate, arrow keys to nudge (Shift for larger steps).
 - Configurable undo with Cmd/Ctrl+Z and adjustable history depth.
 - Multiple algorithm families (flowfields, lissajous, harmonograph, wavetable, rings, topo, boids, attractors, hyphae, shape pack).
+- Harmonograph pendulum list with add/delete/toggle controls and optional guide overlay.
 - Rainfall generator with wind, droplet styling, and optional silhouette masking.
 - Wavetable noise library includes image-based noise input.
 - Pen palette with assignable colors/widths, reorderable list, drag-to-assign per layer or selection, plus palette selection and add/remove controls.

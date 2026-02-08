@@ -326,6 +326,7 @@
 
       const algo = Algorithms[layer.type] || Algorithms.flowfield;
       const rawPaths = layer.sourcePaths ? clonePaths(layer.sourcePaths) : algo.generate(p, rng, noise, bounds) || [];
+      const helperPaths = rawPaths.helpers ? clonePaths(rawPaths.helpers) : null;
       const smooth = Math.max(0, Math.min(1, p.smoothing ?? 0));
       const simplify = Math.max(0, Math.min(1, p.simplify ?? 0));
 
@@ -402,6 +403,14 @@
         if (path.meta) transformed.meta = transformMeta(path.meta);
         return smoothPath(transformed, smooth);
       });
+      const helperTransformed = helperPaths
+        ? helperPaths.map((path) => {
+            if (!Array.isArray(path)) return path;
+            const transformed = path.map((pt) => transform(pt));
+            if (path.meta) transformed.meta = transformMeta(path.meta);
+            return smoothPath(transformed, smooth);
+          })
+        : [];
       const rawCounts = countPathPoints(transformed);
       let finalPaths = transformed;
       if (simplify > 0) {
@@ -421,6 +430,7 @@
         simplifiedPoints: simplifiedCounts.points,
       };
       layer.paths = finalPaths;
+      layer.helperPaths = helperTransformed;
     }
 
     getFormula(layerId) {
