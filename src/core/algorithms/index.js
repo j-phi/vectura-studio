@@ -469,6 +469,137 @@
       formula: (p) =>
         `x = sin(${p.freqX}t + ${p.phase})\ny = sin(${p.freqY}t)\namp = e^(-${p.damping}t)`,
     },
+    harmonograph: {
+      generate: (p, rng, noise, bounds) => {
+        const { width, height } = bounds;
+        const cx = width / 2;
+        const cy = height / 2;
+        const samples = Math.max(200, Math.floor(p.samples ?? 4000));
+        const duration = Math.max(1, p.duration ?? 30);
+        const dt = duration / samples;
+        const scale = p.scale ?? 1;
+        const rotSpeed = (p.paperRotation ?? 0) * Math.PI * 2;
+
+        const pendulums = [
+          {
+            ax: p.ampX1 ?? 0,
+            ay: p.ampY1 ?? 0,
+            phaseX: ((p.phaseX1 ?? 0) * Math.PI) / 180,
+            phaseY: ((p.phaseY1 ?? 0) * Math.PI) / 180,
+            freq: p.freq1 ?? 1,
+            micro: p.micro1 ?? 0,
+            damp: Math.max(0, p.damp1 ?? 0),
+          },
+          {
+            ax: p.ampX2 ?? 0,
+            ay: p.ampY2 ?? 0,
+            phaseX: ((p.phaseX2 ?? 0) * Math.PI) / 180,
+            phaseY: ((p.phaseY2 ?? 0) * Math.PI) / 180,
+            freq: p.freq2 ?? 1,
+            micro: p.micro2 ?? 0,
+            damp: Math.max(0, p.damp2 ?? 0),
+          },
+          {
+            ax: p.ampX3 ?? 0,
+            ay: p.ampY3 ?? 0,
+            phaseX: ((p.phaseX3 ?? 0) * Math.PI) / 180,
+            phaseY: ((p.phaseY3 ?? 0) * Math.PI) / 180,
+            freq: p.freq3 ?? 1,
+            micro: p.micro3 ?? 0,
+            damp: Math.max(0, p.damp3 ?? 0),
+          },
+        ];
+
+        const path = [];
+        for (let i = 0; i <= samples; i++) {
+          const t = i * dt;
+          let x = 0;
+          let y = 0;
+          pendulums.forEach((pend) => {
+            const freq = (pend.freq + pend.micro) * Math.PI * 2;
+            const decay = Math.exp(-pend.damp * t);
+            x += pend.ax * Math.sin(freq * t + pend.phaseX) * decay;
+            y += pend.ay * Math.sin(freq * t + pend.phaseY) * decay;
+          });
+          x *= scale;
+          y *= scale;
+          if (rotSpeed) {
+            const ang = rotSpeed * t;
+            const rx = x * Math.cos(ang) - y * Math.sin(ang);
+            const ry = x * Math.sin(ang) + y * Math.cos(ang);
+            x = rx;
+            y = ry;
+          }
+          path.push({ x: cx + x, y: cy + y });
+        }
+
+        const renderMode = p.renderMode || 'line';
+        if (renderMode === 'points') {
+          const stride = Math.max(1, Math.floor(p.pointStride ?? 4));
+          const r = Math.max(0.1, p.pointSize ?? 0.4);
+          const points = [];
+          for (let i = 0; i < path.length; i += stride) {
+            const pt = path[i];
+            const circle = [];
+            circle.meta = { kind: 'circle', cx: pt.x, cy: pt.y, r };
+            points.push(circle);
+          }
+          return points;
+        }
+
+        if (renderMode === 'segments') {
+          const stride = Math.max(1, Math.floor(p.segmentStride ?? p.pointStride ?? 6));
+          const len = Math.max(0.5, p.segmentLength ?? 6);
+          const half = len / 2;
+          const segments = [];
+          for (let i = 1; i < path.length - 1; i += stride) {
+            const prev = path[i - 1];
+            const curr = path[i];
+            const next = path[i + 1];
+            const dx = next.x - prev.x;
+            const dy = next.y - prev.y;
+            const mag = Math.hypot(dx, dy) || 1;
+            const ux = dx / mag;
+            const uy = dy / mag;
+            segments.push([
+              { x: curr.x - ux * half, y: curr.y - uy * half },
+              { x: curr.x + ux * half, y: curr.y + uy * half },
+            ]);
+          }
+          return segments;
+        }
+
+        if (renderMode === 'dashed') {
+          const dash = Math.max(0.5, p.dashLength ?? 4);
+          const gap = Math.max(0, p.dashGap ?? 2);
+          const cycle = dash + gap || dash;
+          const segments = [];
+          let current = [];
+          let dist = 0;
+          for (let i = 1; i < path.length; i++) {
+            const a = path[i - 1];
+            const b = path[i];
+            const segLen = Math.hypot(b.x - a.x, b.y - a.y);
+            if (segLen <= 0) continue;
+            dist += segLen;
+            const draw = (dist % cycle) < dash;
+            if (draw) {
+              if (current.length === 0) current.push(a);
+              current.push(b);
+            } else if (current.length > 1) {
+              segments.push(current);
+              current = [];
+            }
+          }
+          if (current.length > 1) segments.push(current);
+          return segments.length ? segments : [path];
+        }
+
+        return [path];
+      },
+      formula: (p) =>
+        `x = Σ Aᵢ sin((fᵢ+μᵢ)t + φxᵢ) e^(-dᵢ t)\ny = Σ Bᵢ sin((fᵢ+μᵢ)t + φyᵢ) e^(-dᵢ t)`,
+    },
     wavetable: {
       generate: (p, rng, noise, bounds) => {
         const { m, height, width } = bounds;
@@ -1327,17 +1458,20 @@
         const breakSpacing = Math.max(1, p.breakSpacing ?? 10);
         const breakLengthJitter = Math.max(0, Math.min(1, p.breakLengthJitter ?? 0));
         const breakWidthJitter = Math.max(0, Math.min(1, p.breakWidthJitter ?? 0));
+        const breakRandomness = Math.max(0, Math.min(1, p.breakRandomness ?? 0));
         const noiseScale = 0.01;
 
         const baseDirX = Math.sin(rainfallAngle);
         const baseDirY = -Math.cos(rainfallAngle);
         const windX = Math.sin(windAngle) * windStrength;
         const windY = -Math.cos(windAngle) * windStrength;
-        let dirX = baseDirX + windX;
-        let dirY = baseDirY + windY;
-        const dirLen = Math.hypot(dirX, dirY) || 1;
-        dirX /= dirLen;
-        dirY /= dirLen;
+        let headDirX = baseDirX + windX;
+        let headDirY = baseDirY + windY;
+        const headLen = Math.hypot(headDirX, headDirY) || 1;
+        headDirX /= headLen;
+        headDirY /= headLen;
+        const dirX = -headDirX;
+        const dirY = -headDirY;
         const perpX = -dirY;
         const perpY = dirX;
 
@@ -1462,6 +1596,33 @@
 
             const rotateOutline = outline.map((pt) => rotatePoint(pt, angle));
             const outlineAbs = rotateOutline.map((pt) => ({ x: center.x + pt.x, y: center.y + pt.y }));
+            const pointInPoly = (pt, poly) => {
+              let inside = false;
+              for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+                const xi = poly[i].x;
+                const yi = poly[i].y;
+                const xj = poly[j].x;
+                const yj = poly[j].y;
+                const intersect = yi > pt.y !== yj > pt.y && pt.x < ((xj - xi) * (pt.y - yi)) / (yj - yi + 1e-6) + xi;
+                if (intersect) inside = !inside;
+              }
+              return inside;
+            };
+            const clipPath = (path) => {
+              let current = [];
+              const segments = [];
+              path.forEach((pt) => {
+                if (pointInPoly(pt, outlineAbs)) {
+                  current.push(pt);
+                } else {
+                  if (current.length > 1) segments.push(current);
+                  current = [];
+                }
+              });
+              if (current.length > 1) segments.push(current);
+              if (!segments.length) return null;
+              return segments.reduce((best, seg) => (seg.length > best.length ? seg : best), segments[0]);
+            };
 
             const centroid = outlineAbs.reduce(
               (acc, pt) => ({ x: acc.x + pt.x, y: acc.y + pt.y }),
@@ -1518,7 +1679,8 @@
                 const pt = rotatePoint({ x: Math.cos(ang) * rr, y: Math.sin(ang) * rr }, fillRotation);
                 path.push({ x: center.x + pt.x, y: center.y + pt.y });
               }
-              fillPaths.push(path);
+              const clipped = clipPath(path);
+              if (clipped) fillPaths.push(clipped);
             } else if (dropFill === 'hash' || dropFill === 'crosshatch') {
               const angles =
                 dropFill === 'hash'
@@ -1671,8 +1833,9 @@
               default:
                 break;
             }
-            segLen = lengthJitter(segLen);
-            gapLen = gapJitter(gapLen);
+            const randFactor = breakRandomness > 0 ? 1 + (rng.nextFloat() * 2 - 1) * breakRandomness : 1;
+            segLen = lengthJitter(segLen * randFactor);
+            gapLen = gapJitter(gapLen * randFactor);
             const end = Math.min(total, idx + Math.max(2, Math.round(segLen)));
             const segment = path.slice(idx, end);
             if (segment.length >= 2) segments.push(segment);
@@ -1723,7 +1886,7 @@
 
           const dropScale = dropSize * (1 + (widthMultiplier - 1) * 0.2);
           const dropCenter = basePath[0];
-          const dropAngle = Math.atan2(dirX, dirY);
+          const dropAngle = Math.atan2(headDirX, headDirY) + ((p.dropRotate ?? 0) * Math.PI) / 180;
           buildDropShape(dropCenter, dropScale, dropAngle).forEach((path) => paths.push(path));
           created++;
         }

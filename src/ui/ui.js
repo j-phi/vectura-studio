@@ -16,7 +16,7 @@
   const DISPLAY_PRECISION = 2;
   const TRANSFORM_KEYS = ['seed', 'posX', 'posY', 'scaleX', 'scaleY', 'rotation'];
   const clone = (obj) => JSON.parse(JSON.stringify(obj));
-  const SEEDLESS_ALGOS = new Set(['lissajous', 'expanded', 'group']);
+  const SEEDLESS_ALGOS = new Set(['lissajous', 'harmonograph', 'expanded', 'group']);
   const usesSeed = (type) => !SEEDLESS_ALGOS.has(type);
   const mapRange = (value, inMin, inMax, outMin, outMax) => {
     if (inMax === inMin) return outMin;
@@ -184,6 +184,171 @@
       { id: 'resolution', label: 'Resolution', type: 'range', min: 50, max: 800, step: 10, infoKey: 'lissajous.resolution' },
       { id: 'scale', label: 'Scale', type: 'range', min: 0.2, max: 1.2, step: 0.05, infoKey: 'lissajous.scale' },
       { id: 'closeLines', label: 'Close Lines', type: 'checkbox', infoKey: 'lissajous.closeLines' },
+    ],
+    harmonograph: [
+      { type: 'section', label: 'Render' },
+      {
+        id: 'renderMode',
+        label: 'Render Mode',
+        type: 'select',
+        options: [
+          { value: 'line', label: 'Line' },
+          { value: 'dashed', label: 'Dashed Line' },
+          { value: 'points', label: 'Point Field' },
+          { value: 'segments', label: 'Segments' },
+        ],
+        infoKey: 'harmonograph.renderMode',
+      },
+      { id: 'samples', label: 'Samples', type: 'range', min: 400, max: 12000, step: 100, infoKey: 'harmonograph.samples' },
+      { id: 'duration', label: 'Duration (s)', type: 'range', min: 5, max: 120, step: 1, infoKey: 'harmonograph.duration' },
+      { id: 'scale', label: 'Scale', type: 'range', min: 0.2, max: 1.5, step: 0.05, infoKey: 'harmonograph.scale' },
+      {
+        id: 'paperRotation',
+        label: 'Paper Rotation (Hz)',
+        type: 'range',
+        min: -1,
+        max: 1,
+        step: 0.01,
+        infoKey: 'harmonograph.paperRotation',
+      },
+      {
+        id: 'dashLength',
+        label: 'Dash Length (mm)',
+        type: 'range',
+        min: 0.5,
+        max: 20,
+        step: 0.5,
+        infoKey: 'harmonograph.dashLength',
+        showIf: (p) => p.renderMode === 'dashed',
+      },
+      {
+        id: 'dashGap',
+        label: 'Dash Gap (mm)',
+        type: 'range',
+        min: 0,
+        max: 20,
+        step: 0.5,
+        infoKey: 'harmonograph.dashGap',
+        showIf: (p) => p.renderMode === 'dashed',
+      },
+      {
+        id: 'pointStride',
+        label: 'Point Stride',
+        type: 'range',
+        min: 1,
+        max: 20,
+        step: 1,
+        infoKey: 'harmonograph.pointStride',
+        showIf: (p) => p.renderMode === 'points',
+      },
+      {
+        id: 'pointSize',
+        label: 'Point Size (mm)',
+        type: 'range',
+        min: 0.1,
+        max: 2,
+        step: 0.1,
+        infoKey: 'harmonograph.pointSize',
+        showIf: (p) => p.renderMode === 'points',
+      },
+      {
+        id: 'segmentStride',
+        label: 'Segment Stride',
+        type: 'range',
+        min: 1,
+        max: 20,
+        step: 1,
+        infoKey: 'harmonograph.segmentStride',
+        showIf: (p) => p.renderMode === 'segments',
+      },
+      {
+        id: 'segmentLength',
+        label: 'Segment Length (mm)',
+        type: 'range',
+        min: 1,
+        max: 20,
+        step: 0.5,
+        infoKey: 'harmonograph.segmentLength',
+        showIf: (p) => p.renderMode === 'segments',
+      },
+      { type: 'section', label: 'Pendulum 1' },
+      { id: 'ampX1', label: 'Amplitude X', type: 'range', min: -200, max: 200, step: 1, infoKey: 'harmonograph.ampX1' },
+      { id: 'ampY1', label: 'Amplitude Y', type: 'range', min: -200, max: 200, step: 1, infoKey: 'harmonograph.ampY1' },
+      {
+        id: 'phaseX1',
+        label: 'Phase X',
+        type: 'angle',
+        min: 0,
+        max: 360,
+        step: 1,
+        displayUnit: '°',
+        infoKey: 'harmonograph.phaseX1',
+      },
+      {
+        id: 'phaseY1',
+        label: 'Phase Y',
+        type: 'angle',
+        min: 0,
+        max: 360,
+        step: 1,
+        displayUnit: '°',
+        infoKey: 'harmonograph.phaseY1',
+      },
+      { id: 'freq1', label: 'Frequency', type: 'range', min: 0.5, max: 8, step: 0.01, infoKey: 'harmonograph.freq1' },
+      { id: 'micro1', label: 'Micro Tuning', type: 'range', min: -0.2, max: 0.2, step: 0.001, infoKey: 'harmonograph.micro1' },
+      { id: 'damp1', label: 'Damping', type: 'range', min: 0, max: 0.02, step: 0.0005, infoKey: 'harmonograph.damp1' },
+      { type: 'section', label: 'Pendulum 2' },
+      { id: 'ampX2', label: 'Amplitude X', type: 'range', min: -200, max: 200, step: 1, infoKey: 'harmonograph.ampX2' },
+      { id: 'ampY2', label: 'Amplitude Y', type: 'range', min: -200, max: 200, step: 1, infoKey: 'harmonograph.ampY2' },
+      {
+        id: 'phaseX2',
+        label: 'Phase X',
+        type: 'angle',
+        min: 0,
+        max: 360,
+        step: 1,
+        displayUnit: '°',
+        infoKey: 'harmonograph.phaseX2',
+      },
+      {
+        id: 'phaseY2',
+        label: 'Phase Y',
+        type: 'angle',
+        min: 0,
+        max: 360,
+        step: 1,
+        displayUnit: '°',
+        infoKey: 'harmonograph.phaseY2',
+      },
+      { id: 'freq2', label: 'Frequency', type: 'range', min: 0.5, max: 8, step: 0.01, infoKey: 'harmonograph.freq2' },
+      { id: 'micro2', label: 'Micro Tuning', type: 'range', min: -0.2, max: 0.2, step: 0.001, infoKey: 'harmonograph.micro2' },
+      { id: 'damp2', label: 'Damping', type: 'range', min: 0, max: 0.02, step: 0.0005, infoKey: 'harmonograph.damp2' },
+      { type: 'section', label: 'Pendulum 3' },
+      { id: 'ampX3', label: 'Amplitude X', type: 'range', min: -200, max: 200, step: 1, infoKey: 'harmonograph.ampX3' },
+      { id: 'ampY3', label: 'Amplitude Y', type: 'range', min: -200, max: 200, step: 1, infoKey: 'harmonograph.ampY3' },
+      {
+        id: 'phaseX3',
+        label: 'Phase X',
+        type: 'angle',
+        min: 0,
+        max: 360,
+        step: 1,
+        displayUnit: '°',
+        infoKey: 'harmonograph.phaseX3',
+      },
+      {
+        id: 'phaseY3',
+        label: 'Phase Y',
+        type: 'angle',
+        min: 0,
+        max: 360,
+        step: 1,
+        displayUnit: '°',
+        infoKey: 'harmonograph.phaseY3',
+      },
+      { id: 'freq3', label: 'Frequency', type: 'range', min: 0.5, max: 8, step: 0.01, infoKey: 'harmonograph.freq3' },
+      { id: 'micro3', label: 'Micro Tuning', type: 'range', min: -0.2, max: 0.2, step: 0.001, infoKey: 'harmonograph.micro3' },
+      { id: 'damp3', label: 'Damping', type: 'range', min: 0, max: 0.02, step: 0.0005, infoKey: 'harmonograph.damp3' },
     ],
     wavetable: [
       { id: 'lines', label: 'Lines', type: 'range', min: 5, max: 160, step: 1, infoKey: 'wavetable.lines' },
@@ -504,6 +669,7 @@
         max: 360,
         step: 1,
         displayUnit: '°',
+        inlineGroup: 'rainfallAngles',
         infoKey: 'rainfall.rainfallAngle',
       },
       {
@@ -514,7 +680,20 @@
         max: 360,
         step: 1,
         displayUnit: '°',
+        inlineGroup: 'rainfallAngles',
         infoKey: 'rainfall.windAngle',
+      },
+      {
+        id: 'dropRotate',
+        label: 'Drop Head Rotate',
+        type: 'angle',
+        min: 0,
+        max: 360,
+        step: 1,
+        displayUnit: '°',
+        inlineGroup: 'rainfallAngles',
+        infoKey: 'rainfall.dropRotate',
+        showIf: (p) => p.dropShape !== 'none',
       },
       { id: 'windStrength', label: 'Wind Strength', type: 'range', min: 0, max: 1.5, step: 0.05, infoKey: 'rainfall.windStrength' },
       { id: 'dropSize', label: 'Droplet Size', type: 'range', min: 0, max: 12, step: 0.5, infoKey: 'rainfall.dropSize' },
@@ -604,7 +783,6 @@
           { value: 'none', label: 'None' },
           { value: 'sparse', label: 'Sparse' },
           { value: 'regular', label: 'Regular' },
-          { value: 'random', label: 'Random' },
           { value: 'stutter', label: 'Stutter' },
           { value: 'dashes', label: 'Dashes' },
           { value: 'fade', label: 'Fade' },
@@ -613,6 +791,16 @@
           { value: 'speckle', label: 'Speckle' },
         ],
         infoKey: 'rainfall.trailBreaks',
+      },
+      {
+        id: 'breakRandomness',
+        label: 'Break Randomness',
+        type: 'range',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        infoKey: 'rainfall.breakRandomness',
+        showIf: (p) => p.trailBreaks && p.trailBreaks !== 'none',
       },
       {
         id: 'breakSpacing',
@@ -1108,6 +1296,134 @@
       title: 'Close Lines',
       description: 'Closes the curve so both ends connect cleanly.',
     },
+    'harmonograph.renderMode': {
+      title: 'Render Mode',
+      description: 'Choose line, dashed, point field, or segment rendering.',
+    },
+    'harmonograph.samples': {
+      title: 'Samples',
+      description: 'Number of points sampled along the curve.',
+    },
+    'harmonograph.duration': {
+      title: 'Duration',
+      description: 'Time span of the simulated pendulum motion.',
+    },
+    'harmonograph.scale': {
+      title: 'Scale',
+      description: 'Scales the overall drawing size.',
+    },
+    'harmonograph.paperRotation': {
+      title: 'Paper Rotation',
+      description: 'Rotates the drawing over time to add complexity.',
+    },
+    'harmonograph.dashLength': {
+      title: 'Dash Length',
+      description: 'Length of each dash segment.',
+    },
+    'harmonograph.dashGap': {
+      title: 'Dash Gap',
+      description: 'Gap between dash segments.',
+    },
+    'harmonograph.pointStride': {
+      title: 'Point Stride',
+      description: 'Skips points to control point field density.',
+    },
+    'harmonograph.pointSize': {
+      title: 'Point Size',
+      description: 'Radius of each point marker.',
+    },
+    'harmonograph.segmentStride': {
+      title: 'Segment Stride',
+      description: 'Spacing between short segment samples.',
+    },
+    'harmonograph.segmentLength': {
+      title: 'Segment Length',
+      description: 'Length of each short segment.',
+    },
+    'harmonograph.ampX1': {
+      title: 'Pendulum 1 Amplitude X',
+      description: 'X amplitude contribution for pendulum 1.',
+    },
+    'harmonograph.ampY1': {
+      title: 'Pendulum 1 Amplitude Y',
+      description: 'Y amplitude contribution for pendulum 1.',
+    },
+    'harmonograph.phaseX1': {
+      title: 'Pendulum 1 Phase X',
+      description: 'Phase offset on the X axis for pendulum 1.',
+    },
+    'harmonograph.phaseY1': {
+      title: 'Pendulum 1 Phase Y',
+      description: 'Phase offset on the Y axis for pendulum 1.',
+    },
+    'harmonograph.freq1': {
+      title: 'Pendulum 1 Frequency',
+      description: 'Oscillation frequency for pendulum 1.',
+    },
+    'harmonograph.micro1': {
+      title: 'Pendulum 1 Micro Tuning',
+      description: 'Fine frequency offset for pendulum 1.',
+    },
+    'harmonograph.damp1': {
+      title: 'Pendulum 1 Damping',
+      description: 'Decay rate applied to pendulum 1.',
+    },
+    'harmonograph.ampX2': {
+      title: 'Pendulum 2 Amplitude X',
+      description: 'X amplitude contribution for pendulum 2.',
+    },
+    'harmonograph.ampY2': {
+      title: 'Pendulum 2 Amplitude Y',
+      description: 'Y amplitude contribution for pendulum 2.',
+    },
+    'harmonograph.phaseX2': {
+      title: 'Pendulum 2 Phase X',
+      description: 'Phase offset on the X axis for pendulum 2.',
+    },
+    'harmonograph.phaseY2': {
+      title: 'Pendulum 2 Phase Y',
+      description: 'Phase offset on the Y axis for pendulum 2.',
+    },
+    'harmonograph.freq2': {
+      title: 'Pendulum 2 Frequency',
+      description: 'Oscillation frequency for pendulum 2.',
+    },
+    'harmonograph.micro2': {
+      title: 'Pendulum 2 Micro Tuning',
+      description: 'Fine frequency offset for pendulum 2.',
+    },
+    'harmonograph.damp2': {
+      title: 'Pendulum 2 Damping',
+      description: 'Decay rate applied to pendulum 2.',
+    },
+    'harmonograph.ampX3': {
+      title: 'Pendulum 3 Amplitude X',
+      description: 'X amplitude contribution for pendulum 3.',
+    },
+    'harmonograph.ampY3': {
+      title: 'Pendulum 3 Amplitude Y',
+      description: 'Y amplitude contribution for pendulum 3.',
+    },
+    'harmonograph.phaseX3': {
+      title: 'Pendulum 3 Phase X',
+      description: 'Phase offset on the X axis for pendulum 3.',
+    },
+    'harmonograph.phaseY3': {
+      title: 'Pendulum 3 Phase Y',
+      description: 'Phase offset on the Y axis for pendulum 3.',
+    },
+    'harmonograph.freq3': {
+      title: 'Pendulum 3 Frequency',
+      description: 'Oscillation frequency for pendulum 3.',
+    },
+    'harmonograph.micro3': {
+      title: 'Pendulum 3 Micro Tuning',
+      description: 'Fine frequency offset for pendulum 3.',
+    },
+    'harmonograph.damp3': {
+      title: 'Pendulum 3 Damping',
+      description: 'Decay rate applied to pendulum 3.',
+    },
     'wavetable.lines': {
       title: 'Lines',
       description: 'Number of horizontal rows in the wavetable.',
@@ -1322,7 +1638,7 @@
     },
     'rainfall.rainfallAngle': {
       title: 'Rainfall Angle',
-      description: 'Sets the main direction of the rain (0° = north, 180° = south).',
+      description: 'Sets the direction the droplet head faces (0° = north, 180° = south).',
     },
     'rainfall.windAngle': {
       title: 'Wind Angle',
@@ -1331,6 +1647,10 @@
     'rainfall.windStrength': {
       title: 'Wind Strength',
       description: 'Scales the wind’s influence on the rain direction.',
+    },
+    'rainfall.dropRotate': {
+      title: 'Drop Head Rotate',
+      description: 'Rotates the droplet head relative to the rain direction.',
     },
     'rainfall.dropSize': {
       title: 'Droplet Size',
@@ -1367,6 +1687,10 @@
     'rainfall.trailBreaks': {
       title: 'Trail Breaks',
       description: 'Adds controlled breaks and gaps to the rain streaks.',
+    },
+    'rainfall.breakRandomness': {
+      title: 'Break Randomness',
+      description: 'Adds randomness to break timing across all trail modes.',
     },
     'rainfall.breakSpacing': {
       title: 'Break Spacing',
@@ -2316,6 +2640,9 @@
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             For Wavetable image noise, set Noise Type to Image and use Select Image to load a file.
             Rainfall supports silhouette images to constrain where drops appear.
+          </div>
+          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
+            Harmonograph layers combine damped pendulum waves; tweak frequency, phase, and damping for intricate loops.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Angle controls use circular dials—drag the marker to set direction.
@@ -4812,6 +5139,17 @@
         };
       };
 
+      const angleGroups = new Map();
+      const getAngleGroup = (key) => {
+        if (!angleGroups.has(key)) {
+          const row = document.createElement('div');
+          row.className = 'angle-row';
+          container.appendChild(row);
+          angleGroups.set(key, row);
+        }
+        return angleGroups.get(key);
+      };
+
       defs.forEach((def) => {
         if (def.showIf && !def.showIf(layer.params)) return;
         if (def.type === 'section') {
@@ -4942,7 +5280,7 @@
           const { min, max, step } = getDisplayConfig(def);
           const displayVal = clamp(toDisplayValue(def, val), min, max);
           div.innerHTML = `
-            <div class="flex justify-between mb-1">
+            <div class="angle-label">
               <div class="flex items-center gap-2">
                 <label class="control-label mb-0">${def.label}</label>
                 ${infoBtn}
@@ -5011,7 +5349,9 @@
               setAngle(displayVal, true);
             },
           });
-          container.appendChild(div);
+          const target = def.inlineGroup ? getAngleGroup(def.inlineGroup) : container;
+          if (def.inlineGroup) div.classList.add('angle-item');
+          target.appendChild(div);
           return;
         }
 

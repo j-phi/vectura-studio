@@ -785,6 +785,24 @@ input[type='color']::-webkit-color-swatch {
   gap: 12px;
 }
 
+.angle-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.angle-item {
+  margin-bottom: 0;
+}
+
+.angle-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
 .angle-dial {
   position: relative;
   width: 56px;
