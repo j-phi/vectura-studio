@@ -70,7 +70,7 @@
       <aside id="left-pane" class="pane pane-left bg-vectura-panel border-r border-vectura-border flex flex-col z-10 shadow-xl">
         <div class="pane-header pane-header-left p-4 border-b border-vectura-border flex justify-between items-center">
           <span class="pane-title font-bold text-vectura-accent">GENERATOR</span>
-          <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.38</span>
+          <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.40</span>
           <button id="btn-pane-toggle-left" class="pane-toggle pane-toggle-left" type="button" aria-label="Toggle left pane">
             ◀
           </button>
@@ -207,6 +207,7 @@
           <p>ZOOM: Mouse Wheel</p>
           <p>GROUP: Cmd/Ctrl + G</p>
           <p>EXPAND: Cmd/Ctrl + E</p>
+          <p>?: Keyboard Shortcuts</p>
         </div>
       </section>
 
@@ -215,13 +216,20 @@
       <aside id="right-pane" class="pane pane-right bg-vectura-panel border-l border-vectura-border flex flex-col z-10 relative overflow-hidden">
         <div class="pane-header pane-header-right p-4 border-b border-vectura-border flex justify-between items-center bg-vectura-panel z-20">
           <span class="pane-title font-bold text-vectura-accent">LAYERS</span>
-          <button id="btn-pane-toggle-right" class="pane-toggle pane-toggle-right" type="button" aria-label="Toggle right pane">
+          <button
+            id="btn-pane-toggle-right"
+            class="pane-toggle pane-toggle-right"
+            type="button"
+            aria-label="Toggle right pane"
+            title="Toggle layers panel"
+          >
             ▶
           </button>
           <button
             id="btn-add-layer"
             class="text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors"
             type="button"
+            title="Add layer"
           >
             + ADD
           </button>
@@ -234,7 +242,7 @@
               <div class="flex items-center gap-2">
                 <span class="pane-title font-bold text-vectura-accent text-xs">PENS</span>
                 <div class="palette-select relative">
-                  <button id="palette-toggle" class="palette-toggle" type="button" aria-label="Select palette">
+                  <button id="palette-toggle" class="palette-toggle" type="button" aria-label="Select palette" title="Select palette">
                     Blues-01
                   </button>
                   <div id="palette-menu" class="palette-menu hidden">
@@ -243,7 +251,12 @@
                   </div>
                 </div>
               </div>
-              <button id="btn-add-pen" class="text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors" type="button">
+              <button
+                id="btn-add-pen"
+                class="text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors"
+                type="button"
+                title="Add pen"
+              >
                 + ADD
               </button>
             </div>

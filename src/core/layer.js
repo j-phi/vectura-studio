@@ -31,6 +31,10 @@
       this.groupType = null;
       this.groupParams = null;
       this.groupCollapsed = false;
+      const optDefaults = SETTINGS?.optimizationDefaults;
+      this.optimization = optDefaults ? JSON.parse(JSON.stringify(optDefaults)) : null;
+      this.optimizedPaths = null;
+      this.optimizedStats = null;
     }
   }
 

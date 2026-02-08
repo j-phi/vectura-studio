@@ -337,7 +337,7 @@
         const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 
         const applyPerspective = (pt) => {
-          if (shape === 'circle' || !perspective || perspectiveType === 'none') return pt;
+          if (!perspective || perspectiveType === 'none') return pt;
           const dx = pt.x - origin.x;
           const dy = pt.y - origin.y;
           let scale = 1;
@@ -397,6 +397,7 @@
           tries++;
         }
 
+        const usePerspective = perspectiveType !== 'none' && Math.abs(perspective) > 0.0001;
         circles.forEach((c, i) => {
           const cp = [];
           const stepCount = shape === 'circle' ? Math.max(24, segments) : Math.max(3, segments);
@@ -404,13 +405,14 @@
           for (let k = 0; k <= stepCount; k++) {
             const ang = (k / stepCount) * Math.PI * 2 + (shape === 'circle' ? 0 : rot);
             let pt = { x: c.x + Math.cos(ang) * c.r, y: c.y + Math.sin(ang) * c.r };
-            if (shape !== 'circle') pt = applyPerspective(pt);
+            if (shape !== 'circle' || usePerspective) pt = applyPerspective(pt);
             cp.push(pt);
           }
-          cp.meta =
-            shape === 'circle'
-              ? { kind: 'circle', cx: c.x, cy: c.y, r: c.r }
-              : { kind: 'polygon', cx: c.x, cy: c.y, r: c.r, sides: stepCount, rotation: rot };
+          if (shape === 'circle' && !usePerspective) {
+            cp.meta = { kind: 'circle', cx: c.x, cy: c.y, r: c.r };
+          } else {
+            cp.meta = { kind: 'polygon', cx: c.x, cy: c.y, r: c.r, sides: stepCount, rotation: rot };
+          }
           paths.push(cp);
         });
         return paths;
@@ -981,10 +983,12 @@
               const img = noiseDef?.imageId ? store[noiseDef.imageId] : null;
               if (!img || !img.data) return n;
               const algo = noiseDef?.imageAlgo || 'luma';
-              const blur = Math.max(0, Math.min(4, noiseDef?.imageBlur ?? 0));
+              const blurRadius = Math.max(0, Math.min(6, noiseDef?.imageBlurRadius ?? noiseDef?.imageBlur ?? 0));
+              const blurStrength = Math.max(0, Math.min(1, noiseDef?.imageBlurStrength ?? 1));
+              const wrap = noiseDef?.tileMode !== 'off';
               const sampleLum = (u, v) => {
-                const uu = ((u % 1) + 1) % 1;
-                const vv = ((v % 1) + 1) % 1;
+                const uu = wrap ? ((u % 1) + 1) % 1 : Math.max(0, Math.min(1, u));
+                const vv = wrap ? ((v % 1) + 1) % 1 : Math.max(0, Math.min(1, v));
                 const ix = Math.min(img.width - 1, Math.max(0, Math.floor(uu * img.width)));
                 const iy = Math.min(img.height - 1, Math.max(0, Math.floor(vv * img.height)));
                 const idx = (iy * img.width + ix) * 4;
@@ -994,12 +998,12 @@
                 const b = data[idx + 2] ?? 0;
                 return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
               };
-              const sampleBlur = (u, v) => {
-                if (!blur) return sampleLum(u, v);
+              const sampleBlur = (u, v, radius = blurRadius) => {
+                if (!radius) return sampleLum(u, v);
                 let total = 0;
                 let count = 0;
-                for (let dy = -blur; dy <= blur; dy++) {
-                  for (let dx = -blur; dx <= blur; dx++) {
+                for (let dy = -radius; dy <= radius; dy++) {
+                  for (let dx = -radius; dx <= radius; dx++) {
                     total += sampleLum(u + dx / img.width, v + dy / img.height);
                     count += 1;
                   }
@@ -1008,6 +1012,10 @@
               };
               let u = x;
               let v = y;
+              if (!wrap) {
+                u += 0.5;
+                v += 0.5;
+              }
               if (algo === 'pixelate') {
                 const blocks = Math.max(2, Math.round(noiseDef?.imagePixelate ?? 12));
                 const stepU = 1 / blocks;
@@ -1033,7 +1041,18 @@
                 const mag = Math.min(1, Math.hypot(sx, sy) * 1.5);
                 return (mag + c * 0.2) * 2 - 1;
               }
-              let lum = sampleBlur(u, v);
+              const baseLum = sampleLum(u, v);
+              const blurLum = sampleBlur(u, v);
+              let lum = blurStrength < 1 ? baseLum + (blurLum - baseLum) * blurStrength : blurLum;
+              if (algo === 'brightness') {
+                const amt = Math.max(-1, Math.min(1, noiseDef?.imageBrightness ?? 0));
+                lum = lum + amt;
+              }
+              if (algo === 'levels') {
+                const low = Math.max(0, Math.min(1, noiseDef?.imageLevelsLow ?? 0));
+                const high = Math.max(low + 0.001, Math.min(1, noiseDef?.imageLevelsHigh ?? 1));
+                lum = (lum - low) / (high - low);
+              }
               if (algo === 'gamma') {
                 const gamma = Math.max(0.2, Math.min(3, noiseDef?.imageGamma ?? 1));
                 lum = Math.pow(lum, gamma);
@@ -1041,6 +1060,18 @@
               if (algo === 'contrast') {
                 const contrast = Math.max(0, Math.min(2, noiseDef?.imageContrast ?? 1));
                 lum = (lum - 0.5) * contrast + 0.5;
+              }
+              if (algo === 'emboss') {
+                const strength = Math.max(0, Math.min(2, noiseDef?.imageEmbossStrength ?? 1));
+                const dx = sampleBlur(u + 1 / img.width, v, 1) - sampleBlur(u - 1 / img.width, v, 1);
+                const dy = sampleBlur(u, v + 1 / img.height, 1) - sampleBlur(u, v - 1 / img.height, 1);
+                lum = 0.5 + (dx + dy) * 0.5 * strength;
+              }
+              if (algo === 'sharpen') {
+                const amount = Math.max(0, Math.min(2, noiseDef?.imageSharpenAmount ?? 1));
+                const radius = Math.max(0, Math.min(4, Math.round(noiseDef?.imageSharpenRadius ?? 1)));
+                const blurred = sampleBlur(u, v, radius);
+                lum = lum + (lum - blurred) * amount;
               }
               if (algo === 'invert') lum = 1 - lum;
               if (algo === 'threshold') {
@@ -1064,11 +1095,103 @@
                 lum = lum + (threshold - 0.5) * amount;
                 lum = lum >= 0.5 ? 1 : 0;
               }
+              if (algo === 'median') {
+                const radius = Math.max(1, Math.min(4, Math.round(noiseDef?.imageMedianRadius ?? 1)));
+                const samples = [];
+                for (let dy = -radius; dy <= radius; dy++) {
+                  for (let dx = -radius; dx <= radius; dx++) {
+                    samples.push(sampleLum(u + dx / img.width, v + dy / img.height));
+                  }
+                }
+                samples.sort((a, b) => a - b);
+                lum = samples[Math.floor(samples.length / 2)] ?? lum;
+              }
               lum = Math.max(0, Math.min(1, lum));
               return lum * 2 - 1;
             }
             default:
               return n;
+          }
+        };
+        const frac = (v) => v - Math.floor(v);
+        const applyPad = (t, pad) => {
+          if (pad <= 0) return t;
+          const span = 1 - pad * 2;
+          if (span <= 0) return 0.5;
+          return Math.max(0, Math.min(1, (t - pad) / span));
+        };
+        const applyTile = (nx, ny, mode, padding = 0) => {
+          const pad = Math.max(0, Math.min(0.45, padding));
+          switch (mode) {
+            case 'brick': {
+              const row = Math.floor(ny);
+              const fx = applyPad(frac(nx + (row % 2) * 0.5), pad);
+              const fy = applyPad(frac(ny), pad);
+              return { x: fx, y: fy };
+            }
+            case 'hex': {
+              const hy = ny / 0.866;
+              const row = Math.floor(hy);
+              const fx = applyPad(frac(nx + (row % 2) * 0.5), pad);
+              const fy = applyPad(frac(hy), pad);
+              return { x: fx, y: fy };
+            }
+            case 'diamond': {
+              const ax = nx + ny;
+              const ay = -nx + ny;
+              const fx = applyPad(frac(ax), pad);
+              const fy = applyPad(frac(ay), pad);
+              return { x: fx, y: fy };
+            }
+            case 'triangle': {
+              let fx = frac(nx);
+              let fy = frac(ny);
+              if (fx + fy > 1) {
+                fx = 1 - fx;
+                fy = 1 - fy;
+              }
+              return { x: applyPad(fx, pad), y: applyPad(fy, pad) };
+            }
+            case 'offset': {
+              const col = Math.floor(nx);
+              const fx = applyPad(frac(nx), pad);
+              const fy = applyPad(frac(ny + (col % 2) * 0.5), pad);
+              return { x: fx, y: fy };
+            }
+            case 'radial': {
+              const r = Math.hypot(nx, ny);
+              const a = Math.atan2(ny, nx) / (Math.PI * 2) + 0.5;
+              const rr = applyPad(frac(r), pad);
+              const aa = applyPad(frac(a), pad) * Math.PI * 2;
+              return { x: rr * Math.cos(aa), y: rr * Math.sin(aa) };
+            }
+            case 'spiral': {
+              const r = Math.hypot(nx, ny);
+              const a = Math.atan2(ny, nx) / (Math.PI * 2) + 0.5;
+              const spiral = r + a * 0.5;
+              const rr = applyPad(frac(spiral), pad);
+              const aa = applyPad(frac(a), pad) * Math.PI * 2;
+              return { x: rr * Math.cos(aa), y: rr * Math.sin(aa) };
+            }
+            case 'checker': {
+              const cx = Math.floor(nx);
+              const cy = Math.floor(ny);
+              let fx = frac(nx);
+              let fy = frac(ny);
+              if ((cx + cy) % 2 !== 0) fx = 1 - fx;
+              return { x: applyPad(fx, pad), y: applyPad(fy, pad) };
+            }
+            case 'wave': {
+              const fx = applyPad(frac(nx + Math.sin(ny * Math.PI * 2) * 0.1), pad);
+              const fy = applyPad(frac(ny + Math.sin(nx * Math.PI * 2) * 0.1), pad);
+              return { x: fx, y: fy };
+            }
+            case 'grid':
+            default: {
+              const fx = applyPad(frac(nx), pad);
+              const fy = applyPad(frac(ny), pad);
+              return { x: fx, y: fy };
+            }
           }
         };
         const noiseBase = {
@@ -1081,6 +1204,8 @@
           angle: p.noiseAngle ?? 0,
           shiftX: 0,
           shiftY: 0,
+          tileMode: 'off',
+          tilePadding: 0,
           patternScale: 1,
           warpStrength: 1,
           cellularScale: 1,
@@ -1093,6 +1218,15 @@
           imageThreshold: p.imageThreshold ?? 0.5,
           imagePosterize: p.imagePosterize ?? 5,
           imageBlur: p.imageBlur ?? 0,
+          imageBlurRadius: 0,
+          imageBlurStrength: 1,
+          imageBrightness: 0,
+          imageLevelsLow: 0,
+          imageLevelsHigh: 1,
+          imageEmbossStrength: 1,
+          imageSharpenAmount: 1,
+          imageSharpenRadius: 1,
+          imageMedianRadius: 1,
           imageGamma: 1,
           imageContrast: 1,
           imageSolarize: 0.5,
@@ -1116,18 +1250,38 @@
             const amplitude = noiseLayer.amplitude ?? noiseBase.amplitude;
             const shiftX = (noiseLayer.shiftX ?? 0) * innerW * 0.5;
             const shiftY = (noiseLayer.shiftY ?? 0) * innerH * 0.5;
+            const tileMode = noiseLayer.tileMode || 'grid';
+            const tilePadding = noiseLayer.tilePadding ?? 0;
             return {
               blend: noiseLayer.blend || 'add',
               amplitude,
               sample: (x, y) => {
+                if (noiseLayer.type === 'image' && tileMode === 'off') {
+                  const imageZoom = Math.max(0.1, zoom * 50);
+                  const u = (x - inset) / innerW - 0.5 + (noiseLayer.shiftX ?? 0);
+                  const v = (y - inset) / innerH - 0.5 + (noiseLayer.shiftY ?? 0);
+                  const ix = u * imageZoom * freq;
+                  const iy = v * imageZoom;
+                  const rx = ix * cosA - iy * sinA;
+                  const ry = ix * sinA + iy * cosA;
+                  return noiseValue(rx, ry, noiseLayer);
+                }
                 const nx = (x + shiftX) * zoom * freq;
                 const ny = (y + shiftY) * zoom;
                 const rx = nx * cosA - ny * sinA;
                 const ry = nx * sinA + ny * cosA;
-                return noiseValue(rx, ry, noiseLayer);
+                let tx = rx;
+                let ty = ry;
+                if (tileMode && tileMode !== 'off') {
+                  const tiled = applyTile(rx, ry, tileMode, tilePadding);
+                  tx = tiled.x;
+                  ty = tiled.y;
+                }
+                return noiseValue(tx, ty, noiseLayer);
               },
             };
           });
+        const maxAmp = noiseSamplers.reduce((sum, sampler) => sum + Math.abs(sampler.amplitude || 0), 0) || 1;
         let prevY = null;
         let prevOffset = 0;
         const rowOrder = overlapPadding > 0 ? [...Array(lines).keys()].reverse() : [...Array(lines).keys()];
@@ -1188,6 +1342,21 @@
                 case 'min':
                   combined = Math.min(combined, value);
                   break;
+                case 'hatch-dark':
+                case 'hatch-light': {
+                  const baseTone = hasNoise ? Math.max(0, Math.min(1, (combined / maxAmp + 1) / 2)) : 0.5;
+                  const weight = sampler.blend === 'hatch-dark' ? 1 - baseTone : baseTone;
+                  const dirBias =
+                    value >= 0
+                      ? sampler.blend === 'hatch-dark'
+                        ? 0.6
+                        : 1.2
+                      : sampler.blend === 'hatch-dark'
+                        ? 1.2
+                        : 0.6;
+                  combined += value * weight * dirBias;
+                  break;
+                }
                 case 'add':
                 default:
                   combined += value;
@@ -1793,7 +1962,7 @@
         const thickeningMode = p.thickeningMode || 'parallel';
         const dropShape = p.dropShape || 'none';
         const dropFill = p.dropFill || 'none';
-        const fillDensity = Math.max(0.2, p.fillDensity ?? 1);
+        const fillDensity = Math.max(0.1, p.fillDensity ?? 1);
         const fillPadding = Math.max(0, p.fillPadding ?? 0);
         const trailBreaks = p.trailBreaks || 'none';
         const breakSpacing = Math.max(1, p.breakSpacing ?? 10);
@@ -1979,7 +2148,7 @@
               const minProj = Math.min(...projections);
               const maxProj = Math.max(...projections);
               const segments = [];
-              const step = Math.max(0.6, spacing);
+              const step = Math.max(0.2, spacing);
               for (let d = minProj; d <= maxProj; d += step) {
                 const p0 = { x: centroid.x + perp.x * d, y: centroid.y + perp.y * d };
                 const intersections = [];
@@ -2008,7 +2177,7 @@
               return segments;
             };
 
-            const densitySpacing = Math.max(0.6, fillSize * 0.35) / fillDensity;
+            const densitySpacing = Math.max(0.05, fillSize * 0.2) / fillDensity;
             if (dropFill === 'spiral') {
               const loops = 2.6;
               const steps = 40;
@@ -2163,6 +2332,10 @@
                 segLen = baseSeg * 1.2;
                 gapLen = (idx % Math.max(6, baseSeg * 3) === 0 ? baseSeg * 3 : baseSeg * 0.5);
                 break;
+              case 'drop':
+                segLen = baseSeg * (1.5 + t * 2.5);
+                gapLen = baseSeg * (0.6 + (1 - t) * 1.1);
+                break;
               case 'drip':
                 segLen = baseSeg * (1 + t * 2);
                 gapLen = baseSeg * 0.8;
@@ -2239,7 +2412,7 @@
     },
     spiral: {
       generate: (p, rng, noise, bounds) => {
-        const { dW, dH, width, height } = bounds;
+        const { m, dW, dH, width, height } = bounds;
         const scx = width / 2;
         const scy = height / 2;
         const spath = [];
@@ -2251,12 +2424,518 @@
         const stepsPerQuad = Math.max(1, Math.floor(p.res ?? 40));
         const axisSnap = Boolean(p.axisSnap);
         const dTheta = axisSnap ? (Math.PI / 2) / stepsPerQuad : (Math.PI * 2) / stepsPerQuad;
+        const stepsPerLoop = Math.max(4, Math.round((Math.PI * 2) / dTheta));
         const totalSteps = Math.max(1, Math.floor((Math.PI * 2 * loops) / dTheta));
         const dr = (maxR - p.startR) / totalSteps;
+        const baseNoise = (x, y) => noise.noise2D(x, y);
+        const hash2D = (x, y) => {
+          const n = Math.sin(x * 127.1 + y * 311.7 + (p.seed ?? 0) * 0.1) * 43758.5453;
+          return n - Math.floor(n);
+        };
+        const lerp = (a, b, t) => a + (b - a) * t;
+        const smoothstep = (t) => t * t * (3 - 2 * t);
+        const valueNoise = (x, y, seed = 0, smooth = true) => {
+          const xi = Math.floor(x);
+          const yi = Math.floor(y);
+          const xf = x - xi;
+          const yf = y - yi;
+          const u = smooth ? smoothstep(xf) : xf;
+          const v = smooth ? smoothstep(yf) : yf;
+          const sx = seed * 0.17;
+          const sy = seed * 0.11;
+          const n00 = hash2D(xi + sx, yi + sy);
+          const n10 = hash2D(xi + 1 + sx, yi + sy);
+          const n01 = hash2D(xi + sx, yi + 1 + sy);
+          const n11 = hash2D(xi + 1 + sx, yi + 1 + sy);
+          const x1 = lerp(n00, n10, u);
+          const x2 = lerp(n01, n11, u);
+          const val = lerp(x1, x2, v);
+          return val * 2 - 1;
+        };
+        const cellularData = (x, y, jitter = 1) => {
+          const xi = Math.floor(x);
+          const yi = Math.floor(y);
+          let f1 = Infinity;
+          let f2 = Infinity;
+          for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+              const cx = xi + dx + hash2D(xi + dx, yi + dy) * jitter;
+              const cy = yi + dy + hash2D(xi + dx + 7.21, yi + dy + 3.17) * jitter;
+              const dist = Math.hypot(x - cx, y - cy);
+              if (dist < f1) {
+                f2 = f1;
+                f1 = dist;
+              } else if (dist < f2) {
+                f2 = dist;
+              }
+            }
+          }
+          return { f1, f2 };
+        };
+        const cellularNoise = (x, y, jitter = 1) => {
+          const { f1 } = cellularData(x, y, jitter);
+          const v = Math.max(0, Math.min(1, 1 - f1));
+          return v * 2 - 1;
+        };
+        const fbmNoise = (x, y) => {
+          let total = 0;
+          let amp = 1;
+          let freq = 1;
+          let norm = 0;
+          for (let i = 0; i < 4; i++) {
+            total += baseNoise(x * freq, y * freq) * amp;
+            norm += amp;
+            amp *= 0.5;
+            freq *= 2;
+          }
+          return norm ? total / norm : total;
+        };
+        const noiseValue = (x, y, noiseDef) => {
+          const noiseType = noiseDef?.type || 'simplex';
+          const n = baseNoise(x, y);
+          const patternScale = Math.max(0.1, noiseDef?.patternScale ?? 1);
+          const warpStrength = Math.max(0, noiseDef?.warpStrength ?? 1);
+          const cellScale = Math.max(0.1, noiseDef?.cellularScale ?? 1);
+          const cellJitter = Math.max(0, Math.min(1, noiseDef?.cellularJitter ?? 1));
+          const stepsCount = Math.max(2, Math.round(noiseDef?.stepsCount ?? 5));
+          const seed = noiseDef?.seed ?? 0;
+          const px = x * patternScale;
+          const py = y * patternScale;
+          switch (noiseType) {
+            case 'ridged':
+              return (1 - Math.abs(n)) * 2 - 1;
+            case 'billow':
+              return Math.abs(n) * 2 - 1;
+            case 'value':
+              return valueNoise(x, y, seed, false);
+            case 'perlin':
+              return valueNoise(x, y, seed, true);
+            case 'turbulence': {
+              const n2 = baseNoise(x * 2, y * 2);
+              const n3 = baseNoise(x * 4, y * 4);
+              const t = (Math.abs(n) + Math.abs(n2) * 0.5 + Math.abs(n3) * 0.25) / 1.75;
+              return t * 2 - 1;
+            }
+            case 'stripes':
+              return Math.sin(px * 2 + n * 1.5);
+            case 'marble':
+              return Math.sin((px + py) * 1.5 + n * 2);
+            case 'steps': {
+              const shift = ((seed * 0.13) % 1 + 1) % 1;
+              const t = ((n + 1) / 2 + shift) % 1;
+              const stepped = Math.round(t * (stepsCount - 1)) / (stepsCount - 1);
+              return stepped * 2 - 1;
+            }
+            case 'facet': {
+              const t = (n + 1) / 2;
+              const stepped = Math.floor(t * stepsCount) / stepsCount;
+              return stepped * 2 - 1;
+            }
+            case 'sawtooth': {
+              const t = ((px + py * 0.25) % 1 + 1) % 1;
+              return t * 2 - 1;
+            }
+            case 'triangle': {
+              const t = (n + 1) / 2;
+              const tri = 1 - Math.abs((t % 1) * 2 - 1);
+              return tri * 2 - 1;
+            }
+            case 'warp': {
+              const warp = baseNoise(x + n * 1.5 * warpStrength, y + n * 1.5 * warpStrength);
+              return warp;
+            }
+            case 'cellular':
+              return cellularNoise(x * cellScale, y * cellScale, cellJitter);
+            case 'voronoi': {
+              const { f1 } = cellularData(x * cellScale, y * cellScale, cellJitter);
+              const v = Math.max(0, Math.min(1, f1));
+              return v * 2 - 1;
+            }
+            case 'crackle': {
+              const { f1, f2 } = cellularData(x * cellScale, y * cellScale, cellJitter);
+              const edge = Math.max(0, Math.min(1, (f2 - f1) * 3));
+              return (1 - edge) * 2 - 1;
+            }
+            case 'fbm':
+              return fbmNoise(x, y);
+            case 'swirl':
+              return Math.sin(px * 2 + n * 2) * Math.cos(py * 2 + n);
+            case 'radial':
+              return Math.sin(Math.hypot(px, py) * 3 + n * 2);
+            case 'checker': {
+              const cx = Math.floor(px * 4);
+              const cy = Math.floor(py * 4);
+              return (cx + cy) % 2 === 0 ? 1 : -1;
+            }
+            case 'zigzag': {
+              const t = Math.abs((px * 2) % 2 - 1);
+              return (1 - t) * 2 - 1;
+            }
+            case 'ripple':
+              return Math.sin((px + py) * 3 + n * 2);
+            case 'spiral': {
+              const ang = Math.atan2(py, px);
+              const rad = Math.hypot(px, py);
+              return Math.sin(ang * 4 + rad * 2 + n);
+            }
+            case 'grain':
+              return hash2D(x * 10, y * 10) * 2 - 1;
+            case 'crosshatch':
+              return (Math.sin(px * 3) + Math.sin(py * 3)) * 0.5;
+            case 'pulse': {
+              const t = Math.abs(Math.sin(px * 2 + n) * Math.cos(py * 2 + n));
+              return t * 2 - 1;
+            }
+            case 'domain': {
+              const wx = baseNoise(x * 1.7, y * 1.7) * warpStrength;
+              const wy = baseNoise(x * 1.7 + 5.2, y * 1.7 + 1.3) * warpStrength;
+              return baseNoise(x + wx, y + wy);
+            }
+            case 'weave': {
+              const wx = Math.sin(px * 2 + n);
+              const wy = Math.sin(py * 2 + n);
+              return wx * wy;
+            }
+            case 'moire': {
+              const a = Math.sin(px * 2);
+              const b = Math.sin(py * 2.2);
+              return (a + b) * 0.5;
+            }
+            case 'dunes': {
+              const band = Math.sin(px * 2 + n * 1.5);
+              return band;
+            }
+            case 'image': {
+              const store = window.Vectura?.NOISE_IMAGES || {};
+              const img = noiseDef?.imageId ? store[noiseDef.imageId] : null;
+              if (!img || !img.data) return n;
+              const algo = noiseDef?.imageAlgo || 'luma';
+              const blurRadius = Math.max(0, Math.min(6, noiseDef?.imageBlurRadius ?? noiseDef?.imageBlur ?? 0));
+              const blurStrength = Math.max(0, Math.min(1, noiseDef?.imageBlurStrength ?? 1));
+              const wrap = noiseDef?.tileMode !== 'off';
+              const sampleLum = (u, v) => {
+                const uu = wrap ? ((u % 1) + 1) % 1 : Math.max(0, Math.min(1, u));
+                const vv = wrap ? ((v % 1) + 1) % 1 : Math.max(0, Math.min(1, v));
+                const ix = Math.min(img.width - 1, Math.max(0, Math.floor(uu * img.width)));
+                const iy = Math.min(img.height - 1, Math.max(0, Math.floor(vv * img.height)));
+                const idx = (iy * img.width + ix) * 4;
+                const data = img.data;
+                const r = data[idx] ?? 0;
+                const g = data[idx + 1] ?? 0;
+                const b = data[idx + 2] ?? 0;
+                return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+              };
+              const sampleBlur = (u, v, radius = blurRadius) => {
+                if (!radius) return sampleLum(u, v);
+                let total = 0;
+                let count = 0;
+                for (let dy = -radius; dy <= radius; dy++) {
+                  for (let dx = -radius; dx <= radius; dx++) {
+                    total += sampleLum(u + dx / img.width, v + dy / img.height);
+                    count += 1;
+                  }
+                }
+                return count ? total / count : 0;
+              };
+              let u = x;
+              let v = y;
+              if (!wrap) {
+                u += 0.5;
+                v += 0.5;
+              }
+              if (algo === 'pixelate') {
+                const blocks = Math.max(2, Math.round(noiseDef?.imagePixelate ?? 12));
+                const stepU = 1 / blocks;
+                u = Math.floor(u / stepU) * stepU + stepU / 2;
+                v = Math.floor(v / stepU) * stepU + stepU / 2;
+              }
+              if (algo === 'edge') {
+                const c = sampleBlur(u, v);
+                const sx =
+                  -sampleBlur(u - 1 / img.width, v - 1 / img.height) +
+                  sampleBlur(u + 1 / img.width, v - 1 / img.height) -
+                  2 * sampleBlur(u - 1 / img.width, v) +
+                  2 * sampleBlur(u + 1 / img.width, v) -
+                  sampleBlur(u - 1 / img.width, v + 1 / img.height) +
+                  sampleBlur(u + 1 / img.width, v + 1 / img.height);
+                const sy =
+                  -sampleBlur(u - 1 / img.width, v - 1 / img.height) -
+                  2 * sampleBlur(u, v - 1 / img.height) -
+                  sampleBlur(u + 1 / img.width, v - 1 / img.height) +
+                  sampleBlur(u - 1 / img.width, v + 1 / img.height) +
+                  2 * sampleBlur(u, v + 1 / img.height) +
+                  sampleBlur(u + 1 / img.width, v + 1 / img.height);
+                const mag = Math.min(1, Math.hypot(sx, sy) * 1.5);
+                return (mag + c * 0.2) * 2 - 1;
+              }
+              const baseLum = sampleLum(u, v);
+              const blurLum = sampleBlur(u, v);
+              let lum = blurStrength < 1 ? baseLum + (blurLum - baseLum) * blurStrength : blurLum;
+              if (algo === 'brightness') {
+                const amt = Math.max(-1, Math.min(1, noiseDef?.imageBrightness ?? 0));
+                lum = lum + amt;
+              }
+              if (algo === 'levels') {
+                const low = Math.max(0, Math.min(1, noiseDef?.imageLevelsLow ?? 0));
+                const high = Math.max(low + 0.001, Math.min(1, noiseDef?.imageLevelsHigh ?? 1));
+                lum = (lum - low) / (high - low);
+              }
+              if (algo === 'gamma') {
+                const gamma = Math.max(0.2, Math.min(3, noiseDef?.imageGamma ?? 1));
+                lum = Math.pow(lum, gamma);
+              }
+              if (algo === 'contrast') {
+                const contrast = Math.max(0, Math.min(2, noiseDef?.imageContrast ?? 1));
+                lum = (lum - 0.5) * contrast + 0.5;
+              }
+              if (algo === 'emboss') {
+                const strength = Math.max(0, Math.min(2, noiseDef?.imageEmbossStrength ?? 1));
+                const dx = sampleBlur(u + 1 / img.width, v, 1) - sampleBlur(u - 1 / img.width, v, 1);
+                const dy = sampleBlur(u, v + 1 / img.height, 1) - sampleBlur(u, v - 1 / img.height, 1);
+                lum = 0.5 + (dx + dy) * 0.5 * strength;
+              }
+              if (algo === 'sharpen') {
+                const amount = Math.max(0, Math.min(2, noiseDef?.imageSharpenAmount ?? 1));
+                const radius = Math.max(0, Math.min(4, Math.round(noiseDef?.imageSharpenRadius ?? 1)));
+                const blurred = sampleBlur(u, v, radius);
+                lum = lum + (lum - blurred) * amount;
+              }
+              if (algo === 'invert') lum = 1 - lum;
+              if (algo === 'threshold') {
+                const t = Math.max(0, Math.min(1, noiseDef?.imageThreshold ?? 0.5));
+                lum = lum >= t ? 1 : 0;
+              }
+              if (algo === 'posterize') {
+                const levels = Math.max(2, Math.min(10, Math.round(noiseDef?.imagePosterize ?? 5)));
+                lum = Math.round(lum * (levels - 1)) / (levels - 1);
+              }
+              if (algo === 'solarize') {
+                const t = Math.max(0, Math.min(1, noiseDef?.imageSolarize ?? 0.5));
+                if (lum > t) lum = 1 - lum;
+              }
+              if (algo === 'dither') {
+                const amount = Math.max(0, Math.min(1, noiseDef?.imageDither ?? 0.5));
+                const bayer4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+                const ix = Math.floor(u * img.width) % 4;
+                const iy = Math.floor(v * img.height) % 4;
+                const threshold = bayer4[iy * 4 + ix] / 16;
+                lum = lum + (threshold - 0.5) * amount;
+                lum = lum >= 0.5 ? 1 : 0;
+              }
+              if (algo === 'median') {
+                const radius = Math.max(1, Math.min(4, Math.round(noiseDef?.imageMedianRadius ?? 1)));
+                const samples = [];
+                for (let dy = -radius; dy <= radius; dy++) {
+                  for (let dx = -radius; dx <= radius; dx++) {
+                    samples.push(sampleLum(u + dx / img.width, v + dy / img.height));
+                  }
+                }
+                samples.sort((a, b) => a - b);
+                lum = samples[Math.floor(samples.length / 2)] ?? lum;
+              }
+              lum = Math.max(0, Math.min(1, lum));
+              return lum * 2 - 1;
+            }
+            default:
+              return n;
+          }
+        };
+        const frac = (v) => v - Math.floor(v);
+        const applyPad = (t, pad) => {
+          if (pad <= 0) return t;
+          const span = 1 - pad * 2;
+          if (span <= 0) return 0.5;
+          return Math.max(0, Math.min(1, (t - pad) / span));
+        };
+        const applyTile = (nx, ny, mode, padding = 0) => {
+          const pad = Math.max(0, Math.min(0.45, padding));
+          switch (mode) {
+            case 'brick': {
+              const row = Math.floor(ny);
+              const fx = applyPad(frac(nx + (row % 2) * 0.5), pad);
+              const fy = applyPad(frac(ny), pad);
+              return { x: fx, y: fy };
+            }
+            case 'hex': {
+              const hy = ny / 0.866;
+              const row = Math.floor(hy);
+              const fx = applyPad(frac(nx + (row % 2) * 0.5), pad);
+              const fy = applyPad(frac(hy), pad);
+              return { x: fx, y: fy };
+            }
+            case 'diamond': {
+              const ax = nx + ny;
+              const ay = -nx + ny;
+              const fx = applyPad(frac(ax), pad);
+              const fy = applyPad(frac(ay), pad);
+              return { x: fx, y: fy };
+            }
+            case 'triangle': {
+              let fx = frac(nx);
+              let fy = frac(ny);
+              if (fx + fy > 1) {
+                fx = 1 - fx;
+                fy = 1 - fy;
+              }
+              return { x: applyPad(fx, pad), y: applyPad(fy, pad) };
+            }
+            case 'offset': {
+              const col = Math.floor(nx);
+              const fx = applyPad(frac(nx), pad);
+              const fy = applyPad(frac(ny + (col % 2) * 0.5), pad);
+              return { x: fx, y: fy };
+            }
+            case 'radial': {
+              const r = Math.hypot(nx, ny);
+              const a = Math.atan2(ny, nx) / (Math.PI * 2) + 0.5;
+              const rr = applyPad(frac(r), pad);
+              const aa = applyPad(frac(a), pad) * Math.PI * 2;
+              return { x: rr * Math.cos(aa), y: rr * Math.sin(aa) };
+            }
+            case 'spiral': {
+              const r = Math.hypot(nx, ny);
+              const a = Math.atan2(ny, nx);
+              const spiral = r + a * 0.5;
+              const rr = applyPad(frac(spiral), pad);
+              const aa = applyPad(frac(a / (Math.PI * 2) + 0.5), pad) * Math.PI * 2;
+              return { x: rr * Math.cos(aa), y: rr * Math.sin(aa) };
+            }
+            case 'checker': {
+              const fx = frac(nx);
+              const fy = frac(ny);
+              return { x: applyPad(fx, pad), y: applyPad(fy, pad) };
+            }
+            case 'wave': {
+              const fx = frac(nx + Math.sin(ny * Math.PI) * 0.3);
+              const fy = frac(ny + Math.sin(nx * Math.PI) * 0.3);
+              return { x: applyPad(fx, pad), y: applyPad(fy, pad) };
+            }
+            case 'grid':
+            default: {
+              const fx = applyPad(frac(nx), pad);
+              const fy = applyPad(frac(ny), pad);
+              return { x: fx, y: fy };
+            }
+          }
+        };
+
+        const noiseLayers = Array.isArray(p.noises) && p.noises.length
+          ? p.noises
+          : [
+              {
+                type: 'simplex',
+                blend: 'add',
+                amplitude: p.noiseAmp ?? 0,
+                zoom: p.noiseFreq ?? 0.1,
+                freq: 1.0,
+                angle: 0,
+                shiftX: 0,
+                shiftY: 0,
+                tileMode: 'off',
+                tilePadding: 0,
+                patternScale: 1,
+                warpStrength: 1,
+                cellularScale: 1,
+                cellularJitter: 1,
+                stepsCount: 5,
+                seed: 0,
+              },
+            ];
+        const inset = bounds.truncate ? m : 0;
+        const innerW = width - inset * 2;
+        const innerH = height - inset * 2;
+        const noiseSamplers = noiseLayers
+          .filter((layer) => layer && layer.enabled !== false)
+          .map((noiseLayer) => {
+            const amplitude = Math.max(0, noiseLayer.amplitude ?? 0);
+            const zoom = Math.max(0.0001, noiseLayer.zoom ?? 0.02);
+            const freq = Math.max(0.1, noiseLayer.freq ?? 1);
+            const angle = ((noiseLayer.angle ?? 0) * Math.PI) / 180;
+            const shiftX = noiseLayer.shiftX ?? 0;
+            const shiftY = noiseLayer.shiftY ?? 0;
+            const tileMode = noiseLayer.tileMode || 'off';
+            const tilePadding = noiseLayer.tilePadding ?? 0;
+            const cosA = Math.cos(angle);
+            const sinA = Math.sin(angle);
+            return {
+              amplitude,
+              blend: noiseLayer.blend || 'add',
+              sample: (x, y) => {
+                if (noiseLayer.type === 'image' && tileMode === 'off') {
+                  const u = (x - inset) / innerW - 0.5 + shiftX;
+                  const v = (y - inset) / innerH - 0.5 + shiftY;
+                  const imageZoom = Math.max(0.1, zoom * 50);
+                  const ix = u * imageZoom * freq;
+                  const iy = v * imageZoom;
+                  const rx = ix * cosA - iy * sinA;
+                  const ry = ix * sinA + iy * cosA;
+                  return noiseValue(rx, ry, noiseLayer);
+                }
+                const nx = (x + shiftX) * zoom * freq;
+                const ny = (y + shiftY) * zoom;
+                const rx = nx * cosA - ny * sinA;
+                const ry = nx * sinA + ny * cosA;
+                let tx = rx;
+                let ty = ry;
+                if (tileMode && tileMode !== 'off') {
+                  const tiled = applyTile(rx, ry, tileMode, tilePadding);
+                  tx = tiled.x;
+                  ty = tiled.y;
+                }
+                return noiseValue(tx, ty, noiseLayer);
+              },
+            };
+          });
+        const maxAmp = noiseSamplers.reduce((sum, sampler) => sum + Math.abs(sampler.amplitude || 0), 0) || 1;
+
         for (let i = 0; i <= totalSteps; i++) {
-          const n = noise.noise2D(Math.cos(theta) * p.noiseFreq, Math.sin(theta) * p.noiseFreq);
           const pulse = 1 + Math.sin(theta * (p.pulseFreq ?? 0)) * (p.pulseAmp ?? 0);
-          const rMod = r * pulse + n * p.noiseAmp;
+          let combined = 0;
+          let hasNoise = false;
+          const px = scx + Math.cos(theta) * r;
+          const py = scy + Math.sin(theta) * r;
+          noiseSamplers.forEach((sampler) => {
+            const value = sampler.sample(px, py) * sampler.amplitude;
+            if (!hasNoise) {
+              combined = value;
+              hasNoise = true;
+              return;
+            }
+            switch (sampler.blend) {
+              case 'subtract':
+                combined -= value;
+                break;
+              case 'multiply':
+                combined *= value;
+                break;
+              case 'max':
+                combined = Math.max(combined, value);
+                break;
+              case 'min':
+                combined = Math.min(combined, value);
+                break;
+              case 'hatch-dark':
+              case 'hatch-light': {
+                const baseTone = hasNoise ? Math.max(0, Math.min(1, (combined / maxAmp + 1) / 2)) : 0.5;
+                const weight = sampler.blend === 'hatch-dark' ? 1 - baseTone : baseTone;
+                const dirBias =
+                  value >= 0
+                    ? sampler.blend === 'hatch-dark'
+                      ? 0.6
+                      : 1.2
+                    : sampler.blend === 'hatch-dark'
+                      ? 1.2
+                      : 0.6;
+                combined += value * weight * dirBias;
+                break;
+              }
+              case 'add':
+              default:
+                combined += value;
+                break;
+            }
+          });
+          const rMod = r * pulse + (hasNoise ? combined : 0);
           spath.push({ x: scx + Math.cos(theta) * rMod, y: scy + Math.sin(theta) * rMod });
           theta += dTheta;
           r += dr;
@@ -2283,38 +2962,14 @@
             return path;
           };
 
-          const exclude = Math.max(6, Math.floor(spath.length * 0.05));
           const end = spath[spath.length - 1];
-          let endIdx = 0;
-          let endDist = Infinity;
-          const endLimit = Math.max(1, spath.length - exclude);
-          for (let i = 0; i < endLimit; i++) {
-            const pt = spath[i];
-            const dx = pt.x - end.x;
-            const dy = pt.y - end.y;
-            const dist = dx * dx + dy * dy;
-            if (dist < endDist) {
-              endDist = dist;
-              endIdx = i;
-            }
-          }
-          if (spath[endIdx]) paths.push(buildConnection(end, spath[endIdx]));
+          const offsetSteps = Math.max(1, Math.round(stepsPerLoop * 0.12));
+          const endTargetIdx = Math.max(0, spath.length - 1 - stepsPerLoop + offsetSteps);
+          if (spath[endTargetIdx]) paths.push(buildConnection(end, spath[endTargetIdx]));
 
           const start = spath[0];
-          let startIdx = exclude;
-          let startDist = Infinity;
-          const startLimit = Math.max(exclude + 1, spath.length - exclude);
-          for (let i = exclude; i < startLimit; i++) {
-            const pt = spath[i];
-            const dx = pt.x - start.x;
-            const dy = pt.y - start.y;
-            const dist = dx * dx + dy * dy;
-            if (dist < startDist) {
-              startDist = dist;
-              startIdx = i;
-            }
-          }
-          if (spath[startIdx]) paths.push(buildConnection(start, spath[startIdx]));
+          const startTargetIdx = Math.min(spath.length - 1, stepsPerLoop + offsetSteps);
+          if (spath[startTargetIdx]) paths.push(buildConnection(start, spath[startTargetIdx]));
         }
         return paths;
       },

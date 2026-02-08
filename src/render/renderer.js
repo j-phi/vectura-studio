@@ -103,6 +103,9 @@
       const m = SETTINGS.margin;
       const innerW = prof.width - m * 2;
       const innerH = prof.height - m * 2;
+      const previewMode = SETTINGS.optimizationPreview || 'off';
+      const useOptimized = previewMode === 'replace';
+      const showOptimizedOverlay = previewMode === 'overlay';
       const optimize = Math.max(0, SETTINGS.plotterOptimize ?? 0);
       const tol = optimize > 0 ? Math.max(0.001, optimize) : 0;
       const dedupe = optimize > 0 ? new Map() : null;
@@ -135,7 +138,8 @@
           this.ctx.beginPath();
           this.ctx.strokeStyle = pen?.color || l.color;
           const useCurves = Boolean(l.params && l.params.curves);
-          l.paths.forEach((path) => {
+          const paths = useOptimized && l.optimizedPaths ? l.optimizedPaths : l.paths;
+          (paths || []).forEach((path) => {
             if (path && path.meta && path.meta.kind === 'circle') {
               const meta =
                 this.selectedLayerIds?.has(l.id) && this.tempTransform
@@ -159,6 +163,37 @@
             }
           });
           this.ctx.stroke();
+        });
+      };
+      const drawOptimizedOverlay = () => {
+        if (!showOptimizedOverlay) return;
+        const overlayColor = SETTINGS.optimizationOverlayColor || '#38bdf8';
+        const overlayWidth = Math.max(0.05, SETTINGS.optimizationOverlayWidth ?? 0.2);
+        this.engine.layers.forEach((l) => {
+          if (!l.visible || !l.optimizedPaths || !l.optimizedPaths.length) return;
+          const useCurves = Boolean(l.params && l.params.curves);
+          this.ctx.save();
+          this.ctx.lineWidth = overlayWidth;
+          this.ctx.lineCap = l.lineCap || 'round';
+          this.ctx.lineJoin = 'round';
+          this.ctx.strokeStyle = overlayColor;
+          this.ctx.globalAlpha = 0.8;
+          this.ctx.beginPath();
+          l.optimizedPaths.forEach((path) => {
+            if (path && path.meta && path.meta.kind === 'circle') {
+              const meta =
+                this.selectedLayerIds?.has(l.id) && this.tempTransform
+                  ? this.transformCircleMeta(path.meta, this.tempTransform)
+                  : path.meta;
+              this.traceCircle(meta);
+            } else {
+              const next =
+                this.selectedLayerIds?.has(l.id) && this.tempTransform ? this.transformPath(path, this.tempTransform) : path;
+              this.tracePath(next, useCurves);
+            }
+          });
+          this.ctx.stroke();
+          this.ctx.restore();
         });
       };
       const drawHelperOverlays = () => {
@@ -199,6 +234,30 @@
             this.ctx.setLineDash([1.5, 1.5]);
             this.ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
             this.ctx.setLineDash([]);
+
+            this.ctx.globalAlpha = 0.35;
+            this.ctx.setLineDash([2, 2]);
+            this.ctx.beginPath();
+            this.ctx.moveTo(minX, centerY);
+            this.ctx.lineTo(maxX, centerY);
+            this.ctx.moveTo(centerX, minY);
+            this.ctx.lineTo(centerX, maxY);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+
+            this.ctx.globalAlpha = 0.7;
+            this.ctx.fillStyle = color;
+            const marker = 1.4;
+            [
+              [minX, centerY],
+              [maxX, centerY],
+              [centerX, minY],
+              [centerX, maxY],
+            ].forEach(([mx, my]) => {
+              this.ctx.beginPath();
+              this.ctx.arc(mx, my, marker, 0, Math.PI * 2);
+              this.ctx.fill();
+            });
 
             this.ctx.globalAlpha = 0.8;
             const cross = 2.5;
@@ -277,7 +336,8 @@
         this.ctx.rect(m, m, innerW, innerH);
         this.ctx.clip();
         drawSelectionOutline();
-        drawLayers();
+      drawLayers();
+      drawOptimizedOverlay();
         drawHelperOverlays();
         this.ctx.restore();
       } else {

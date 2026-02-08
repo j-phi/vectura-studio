@@ -101,6 +101,81 @@
     },
   ];
 
+  const OPTIMIZATION_STEPS = [
+    {
+      id: 'linesimplify',
+      label: 'Line Simplify',
+      controls: [
+        { key: 'tolerance', label: 'Tolerance (mm)', type: 'range', min: 0, max: 2, step: 0.05 },
+        {
+          key: 'mode',
+          label: 'Mode',
+          type: 'select',
+          options: [
+            { value: 'polyline', label: 'Polyline' },
+            { value: 'curve', label: 'Curve' },
+          ],
+        },
+      ],
+    },
+    {
+      id: 'linesort',
+      label: 'Line Sort',
+      controls: [
+        {
+          key: 'method',
+          label: 'Method',
+          type: 'select',
+          options: [
+            { value: 'nearest', label: 'Nearest' },
+            { value: 'greedy', label: 'Greedy' },
+            { value: 'angle', label: 'Angle' },
+          ],
+        },
+        {
+          key: 'direction',
+          label: 'Direction',
+          type: 'select',
+          options: [
+            { value: 'none', label: 'None' },
+            { value: 'horizontal', label: 'Horizontal' },
+            { value: 'vertical', label: 'Vertical' },
+            { value: 'radial', label: 'Radial' },
+          ],
+        },
+        {
+          key: 'grouping',
+          label: 'Grouping',
+          type: 'select',
+          options: [
+            { value: 'layer', label: 'Per Layer' },
+            { value: 'pen', label: 'Per Pen' },
+            { value: 'combined', label: 'Combined' },
+          ],
+        },
+      ],
+    },
+    {
+      id: 'filter',
+      label: 'Filter',
+      controls: [
+        { key: 'minLength', label: 'Min Length (mm)', type: 'range', min: 0, max: 20, step: 0.2 },
+        { key: 'maxLength', label: 'Max Length (mm)', type: 'range', min: 0, max: 80, step: 0.5 },
+        { key: 'removeTiny', label: 'Remove Tiny', type: 'checkbox' },
+      ],
+    },
+    {
+      id: 'multipass',
+      label: 'Multipass',
+      controls: [
+        { key: 'passes', label: 'Passes', type: 'range', min: 1, max: 6, step: 1 },
+        { key: 'offset', label: 'Offset (mm)', type: 'range', min: 0, max: 2, step: 0.05 },
+        { key: 'jitter', label: 'Jitter (mm)', type: 'range', min: 0, max: 1, step: 0.05 },
+        { key: 'seed', label: 'Seed', type: 'range', min: 0, max: 9999, step: 1 },
+      ],
+    },
+  ];
+
   const WAVE_NOISE_OPTIONS = [
     { value: 'billow', label: 'Billow' },
     { value: 'cellular', label: 'Cellular' },
@@ -162,6 +237,22 @@
     { value: 'multiply', label: 'Multiply' },
     { value: 'max', label: 'Max' },
     { value: 'min', label: 'Min' },
+    { value: 'hatch-dark', label: 'Hatching Density (Chiaroscuro)' },
+    { value: 'hatch-light', label: 'Hatching Density (Tenebrism)' },
+  ];
+
+  const WAVE_TILE_OPTIONS = [
+    { value: 'grid', label: 'Grid' },
+    { value: 'brick', label: 'Brick' },
+    { value: 'hex', label: 'Hex' },
+    { value: 'diamond', label: 'Diamond' },
+    { value: 'triangle', label: 'Triangle' },
+    { value: 'offset', label: 'Offset' },
+    { value: 'radial', label: 'Radial' },
+    { value: 'spiral', label: 'Spiral' },
+    { value: 'checker', label: 'Checker' },
+    { value: 'wave', label: 'Wave' },
+    { value: 'off', label: 'Off' },
   ];
 
   const WAVE_NOISE_DEFS = [
@@ -180,7 +271,7 @@
       options: WAVE_NOISE_BLEND_OPTIONS,
       infoKey: 'wavetable.noiseBlend',
     },
-    { key: 'amplitude', label: 'Noise Amplitude', type: 'range', min: 2, max: 140, step: 1, infoKey: 'wavetable.amplitude' },
+    { key: 'amplitude', label: 'Noise Amplitude', type: 'range', min: 0.01, max: 150, step: 0.01, infoKey: 'wavetable.amplitude' },
     { key: 'zoom', label: 'Noise Zoom', type: 'range', min: 0.002, max: 0.08, step: 0.001, infoKey: 'wavetable.zoom' },
     { key: 'freq', label: 'Frequency', type: 'range', min: 0.2, max: 12.0, step: 0.1, infoKey: 'wavetable.freq' },
     {
@@ -210,6 +301,23 @@
       max: 1,
       step: 0.01,
       infoKey: 'wavetable.noiseShiftY',
+    },
+    {
+      key: 'tileMode',
+      label: 'Tile Mode',
+      type: 'select',
+      options: WAVE_TILE_OPTIONS,
+      infoKey: 'wavetable.noiseTileMode',
+    },
+    {
+      key: 'tilePadding',
+      label: 'Tile Padding',
+      type: 'range',
+      min: 0,
+      max: 0.45,
+      step: 0.01,
+      infoKey: 'wavetable.noiseTilePadding',
+      showIf: (n) => (n.tileMode || 'off') !== 'off',
     },
     {
       key: 'patternScale',
@@ -279,17 +387,92 @@
         { value: 'luma', label: 'Luma' },
         { value: 'contrast', label: 'Contrast' },
         { value: 'gamma', label: 'Gamma' },
+        { value: 'brightness', label: 'Brightness' },
+        { value: 'levels', label: 'Levels' },
         { value: 'invert', label: 'Invert' },
         { value: 'threshold', label: 'Threshold' },
         { value: 'posterize', label: 'Posterize' },
         { value: 'edge', label: 'Edge Detect' },
         { value: 'blur', label: 'Blur' },
+        { value: 'emboss', label: 'Emboss' },
+        { value: 'sharpen', label: 'Sharpen' },
         { value: 'solarize', label: 'Solarize' },
         { value: 'pixelate', label: 'Pixelate' },
         { value: 'dither', label: 'Dither' },
+        { value: 'median', label: 'Median' },
       ],
       infoKey: 'wavetable.imageAlgo',
       showIf: (n) => n.type === 'image',
+    },
+    {
+      key: 'imageBrightness',
+      label: 'Image Brightness',
+      type: 'range',
+      min: -1,
+      max: 1,
+      step: 0.05,
+      infoKey: 'wavetable.imageBrightness',
+      showIf: (n) => n.type === 'image' && n.imageAlgo === 'brightness',
+    },
+    {
+      key: 'imageLevelsLow',
+      label: 'Levels Low',
+      type: 'range',
+      min: 0,
+      max: 1,
+      step: 0.01,
+      infoKey: 'wavetable.imageLevelsLow',
+      showIf: (n) => n.type === 'image' && n.imageAlgo === 'levels',
+    },
+    {
+      key: 'imageLevelsHigh',
+      label: 'Levels High',
+      type: 'range',
+      min: 0,
+      max: 1,
+      step: 0.01,
+      infoKey: 'wavetable.imageLevelsHigh',
+      showIf: (n) => n.type === 'image' && n.imageAlgo === 'levels',
+    },
+    {
+      key: 'imageEmbossStrength',
+      label: 'Emboss Strength',
+      type: 'range',
+      min: 0,
+      max: 2,
+      step: 0.05,
+      infoKey: 'wavetable.imageEmbossStrength',
+      showIf: (n) => n.type === 'image' && n.imageAlgo === 'emboss',
+    },
+    {
+      key: 'imageSharpenAmount',
+      label: 'Sharpen Amount',
+      type: 'range',
+      min: 0,
+      max: 2,
+      step: 0.05,
+      infoKey: 'wavetable.imageSharpenAmount',
+      showIf: (n) => n.type === 'image' && n.imageAlgo === 'sharpen',
+    },
+    {
+      key: 'imageSharpenRadius',
+      label: 'Sharpen Radius',
+      type: 'range',
+      min: 0,
+      max: 4,
+      step: 1,
+      infoKey: 'wavetable.imageSharpenRadius',
+      showIf: (n) => n.type === 'image' && n.imageAlgo === 'sharpen',
+    },
+    {
+      key: 'imageMedianRadius',
+      label: 'Median Radius',
+      type: 'range',
+      min: 1,
+      max: 4,
+      step: 1,
+      infoKey: 'wavetable.imageMedianRadius',
+      showIf: (n) => n.type === 'image' && n.imageAlgo === 'median',
     },
     {
       key: 'imageGamma',
@@ -310,6 +493,26 @@
       step: 0.05,
       infoKey: 'wavetable.imageContrast',
       showIf: (n) => n.type === 'image' && n.imageAlgo === 'contrast',
+    },
+    {
+      key: 'imageBlurRadius',
+      label: 'Blur Radius',
+      type: 'range',
+      min: 0,
+      max: 6,
+      step: 1,
+      infoKey: 'wavetable.imageBlurRadius',
+      showIf: (n) => n.type === 'image' && n.imageAlgo === 'blur',
+    },
+    {
+      key: 'imageBlurStrength',
+      label: 'Blur Strength',
+      type: 'range',
+      min: 0,
+      max: 1,
+      step: 0.05,
+      infoKey: 'wavetable.imageBlurStrength',
+      showIf: (n) => n.type === 'image' && n.imageAlgo === 'blur',
     },
     {
       key: 'imageSolarize',
@@ -363,13 +566,13 @@
     },
     {
       key: 'imageBlur',
-      label: 'Image Blur',
+      label: 'Edge Blur Radius',
       type: 'range',
       min: 0,
       max: 4,
       step: 1,
       infoKey: 'wavetable.imageBlur',
-      showIf: (n) => n.type === 'image' && (n.imageAlgo === 'blur' || n.imageAlgo === 'edge'),
+      showIf: (n) => n.type === 'image' && n.imageAlgo === 'edge',
     },
   ];
 
@@ -904,9 +1107,9 @@
         id: 'fillDensity',
         label: 'Fill Density',
         type: 'range',
-        min: 0.2,
-        max: 2.0,
-        step: 0.05,
+        min: 0.1,
+        max: 12.0,
+        step: 0.1,
         infoKey: 'rainfall.fillDensity',
         showIf: (p) => p.dropShape !== 'none' && p.dropFill !== 'none',
       },
@@ -963,6 +1166,7 @@
           { value: 'dashes', label: 'Dashes' },
           { value: 'fade', label: 'Fade' },
           { value: 'burst', label: 'Burst' },
+          { value: 'drop', label: 'Drop' },
           { value: 'drip', label: 'Drip' },
           { value: 'speckle', label: 'Speckle' },
         ],
@@ -1100,11 +1304,10 @@
       },
     ],
     spiral: [
-      { id: 'loops', label: 'Loops', type: 'range', min: 1, max: 40, step: 1, infoKey: 'spiral.loops' },
+      { id: 'loops', label: 'Loops', type: 'range', min: 1, max: 150, step: 1, infoKey: 'spiral.loops' },
       { id: 'res', label: 'Points / Quadrant', type: 'range', min: 4, max: 120, step: 2, infoKey: 'spiral.res' },
       { id: 'startR', label: 'Inner Radius', type: 'range', min: 0, max: 60, step: 1, infoKey: 'spiral.startR' },
-      { id: 'noiseAmp', label: 'Noise Amp', type: 'range', min: 0, max: 40, step: 1, infoKey: 'spiral.noiseAmp' },
-      { id: 'noiseFreq', label: 'Noise Freq', type: 'range', min: 0.01, max: 0.5, step: 0.01, infoKey: 'spiral.noiseFreq' },
+      { type: 'noiseList' },
       { id: 'pulseAmp', label: 'Pulse Amp', type: 'range', min: 0, max: 0.4, step: 0.01, infoKey: 'spiral.pulseAmp' },
       { id: 'pulseFreq', label: 'Pulse Freq', type: 'range', min: 0.5, max: 8, step: 0.1, infoKey: 'spiral.pulseFreq' },
       {
@@ -1259,10 +1462,11 @@
         label: 'Radius Range',
         type: 'rangeDual',
         min: 0.5,
-        max: 120,
+        max: 200,
         step: 0.5,
         minKey: 'minR',
         maxKey: 'maxR',
+        displayUnit: 'mm',
         infoKey: 'shapePack.radiusRange',
       },
       { id: 'padding', label: 'Padding', type: 'range', min: 0, max: 10, step: 0.5, infoKey: 'shapePack.padding' },
@@ -1590,7 +1794,16 @@
     },
     'wavetable.noiseBlend': {
       title: 'Blend Mode',
-      description: 'Controls how this noise layer combines with the noises above it.',
+      description:
+        'Controls how this noise layer combines with the noises above it. Hatching Density modes bias displacement based on light/dark tone to simulate shading.',
+    },
+    'wavetable.noiseTileMode': {
+      title: 'Tile Mode',
+      description: 'Repeats the noise in patterned tiles (grid, brick, hex, etc.). Off keeps a single centered field.',
+    },
+    'wavetable.noiseTilePadding': {
+      title: 'Tile Padding',
+      description: 'Adds breathing room between tiles by shrinking the active tile area.',
     },
     'wavetable.noiseImage': {
       title: 'Noise Image',
@@ -1600,6 +1813,34 @@
       title: 'Image Noise Mode',
       description: 'Determines how the image is converted into noise values.',
     },
+    'wavetable.imageBrightness': {
+      title: 'Image Brightness',
+      description: 'Offsets the sampled luminance brighter or darker.',
+    },
+    'wavetable.imageLevelsLow': {
+      title: 'Levels Low',
+      description: 'Clips darker tones before remapping the image levels.',
+    },
+    'wavetable.imageLevelsHigh': {
+      title: 'Levels High',
+      description: 'Clips lighter tones before remapping the image levels.',
+    },
+    'wavetable.imageEmbossStrength': {
+      title: 'Emboss Strength',
+      description: 'Emphasizes directional relief like an embossed surface.',
+    },
+    'wavetable.imageSharpenAmount': {
+      title: 'Sharpen Amount',
+      description: 'Boosts local contrast to emphasize edges.',
+    },
+    'wavetable.imageSharpenRadius': {
+      title: 'Sharpen Radius',
+      description: 'Neighborhood size used for sharpening.',
+    },
+    'wavetable.imageMedianRadius': {
+      title: 'Median Radius',
+      description: 'Neighborhood size used for median filtering.',
+    },
     'wavetable.imageGamma': {
       title: 'Image Gamma',
       description: 'Adjusts midtone weighting before sampling the image.',
@@ -1607,6 +1848,14 @@
     'wavetable.imageContrast': {
       title: 'Image Contrast',
       description: 'Boosts or reduces contrast prior to sampling.',
+    },
+    'wavetable.imageBlurRadius': {
+      title: 'Blur Radius',
+      description: 'Radius for blur sampling when Blur mode is active.',
+    },
+    'wavetable.imageBlurStrength': {
+      title: 'Blur Strength',
+      description: 'Blend amount between sharp and blurred luminance.',
     },
     'wavetable.imageSolarize': {
       title: 'Solarize Threshold',
@@ -1629,8 +1878,8 @@
       description: 'Reduces the image to a fixed number of tonal steps.',
     },
     'wavetable.imageBlur': {
-      title: 'Image Blur',
-      description: 'Blurs the image before sampling to smooth out details.',
+      title: 'Edge Blur Radius',
+      description: 'Radius used for edge detection smoothing.',
     },
     'wavetable.amplitude': {
       title: 'Noise Amplitude',
@@ -1878,7 +2127,7 @@
     },
     'rainfall.fillDensity': {
       title: 'Fill Density',
-      description: 'Controls spacing or overlap of fill strokes inside droplets.',
+      description: 'Controls how tightly fill strokes are packed inside droplets (higher fills in more).',
     },
     'rainfall.fillAngle': {
       title: 'Fill Angle',
@@ -2162,7 +2411,7 @@
     },
     'shapePack.radiusRange': {
       title: 'Radius Range',
-      description: 'Minimum and maximum size for each packed shape.',
+      description: 'Minimum and maximum radius for each packed shape (in millimeters).',
     },
     'shapePack.padding': {
       title: 'Padding',
@@ -2924,10 +3173,20 @@
             Rainfall supports silhouette images to constrain where drops appear.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
+            Wavetable noise stacks can be added, reordered, and blended with tile patterns and image modes.
+          </div>
+          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Harmonograph layers combine damped pendulum waves; tweak frequency, phase, and damping for intricate loops.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Toggle pendulums on/off, add new ones, and enable Pendulum Guides to visualize each contribution.
+          </div>
+          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
+            Global Settings &amp; Optimization holds smoothing, curves, and simplify for the active layer.
+          </div>
+          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
+            Optimization tools (linesimplify, linesort, filter, multipass) can be previewed with replace/overlay and
+            optionally included on export.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Angle controls use circular dials—drag the marker to set direction.
@@ -2962,6 +3221,7 @@
             <div>Assign pens per layer or selection by dragging a pen onto layers.</div>
             <div>Use the palette dropdown to recolor pens; add or remove pens from the panel.</div>
             <div>Plotter Optimization in Settings removes fully overlapping paths per pen.</div>
+            <div>Toggle Export Optimized to include optimization passes in the exported SVG.</div>
             <div>SVG export preserves pen groupings for plotter workflows.</div>
           </div>
         </div>
@@ -3011,6 +3271,8 @@
         angle: 0,
         shiftX: 0,
         shiftY: 0,
+        tileMode: 'off',
+        tilePadding: 0,
         patternScale: 1,
         warpStrength: 1,
         cellularScale: 1,
@@ -3024,6 +3286,15 @@
         imageThreshold: 0.5,
         imagePosterize: 5,
         imageBlur: 0,
+        imageBlurRadius: 0,
+        imageBlurStrength: 1,
+        imageBrightness: 0,
+        imageLevelsLow: 0,
+        imageLevelsHigh: 1,
+        imageEmbossStrength: 1,
+        imageSharpenAmount: 1,
+        imageSharpenRadius: 1,
+        imageMedianRadius: 1,
         imageGamma: 1,
         imageContrast: 1,
         imageSolarize: 0.5,
@@ -3055,6 +3326,8 @@
           angle: layer.params.noiseAngle ?? base.angle,
           shiftX: base.shiftX,
           shiftY: base.shiftY,
+          tileMode: base.tileMode,
+          tilePadding: base.tilePadding,
           patternScale: base.patternScale,
           warpStrength: base.warpStrength,
           cellularScale: base.cellularScale,
@@ -3068,6 +3341,15 @@
           imageThreshold: layer.params.imageThreshold ?? base.imageThreshold,
           imagePosterize: layer.params.imagePosterize ?? base.imagePosterize,
           imageBlur: layer.params.imageBlur ?? base.imageBlur,
+          imageBlurRadius: base.imageBlurRadius,
+          imageBlurStrength: base.imageBlurStrength,
+          imageBrightness: base.imageBrightness,
+          imageLevelsLow: base.imageLevelsLow,
+          imageLevelsHigh: base.imageLevelsHigh,
+          imageEmbossStrength: base.imageEmbossStrength,
+          imageSharpenAmount: base.imageSharpenAmount,
+          imageSharpenRadius: base.imageSharpenRadius,
+          imageMedianRadius: base.imageMedianRadius,
           imageGamma: base.imageGamma,
           imageContrast: base.imageContrast,
           imageSolarize: base.imageSolarize,
@@ -3079,13 +3361,82 @@
       }
       noises = noises.map((noise, idx) => {
         const template = templates[idx] || templates[templates.length - 1] || base;
-        return {
+        const next = {
           ...base,
           ...clone(template),
           ...(noise || {}),
           id: noise?.id || template.id || `noise-${idx + 1}`,
           enabled: noise?.enabled !== false,
         };
+        if (!next.tileMode) next.tileMode = next.type === 'image' ? 'off' : base.tileMode;
+        if (next.tileMode === 'off') next.tilePadding = 0;
+        return next;
+      });
+      layer.params.noises = noises;
+      return noises;
+    }
+
+    ensureSpiralNoises(layer) {
+      if (!layer || layer.type !== 'spiral') return [];
+      const { base, templates } = this.getWavetableNoiseTemplates();
+      let noises = layer.params.noises;
+      if (!Array.isArray(noises) || !noises.length) {
+        const legacy = {
+          id: 'noise-1',
+          enabled: true,
+          type: base.type,
+          blend: base.blend,
+          amplitude: layer.params.noiseAmp ?? base.amplitude,
+          zoom: layer.params.noiseFreq ?? base.zoom,
+          freq: base.freq,
+          angle: base.angle,
+          shiftX: base.shiftX,
+          shiftY: base.shiftY,
+          tileMode: base.tileMode,
+          tilePadding: base.tilePadding,
+          patternScale: base.patternScale,
+          warpStrength: base.warpStrength,
+          cellularScale: base.cellularScale,
+          cellularJitter: base.cellularJitter,
+          stepsCount: base.stepsCount,
+          seed: base.seed,
+          imageId: base.imageId,
+          imageName: base.imageName,
+          imagePreview: base.imagePreview,
+          imageAlgo: base.imageAlgo,
+          imageThreshold: base.imageThreshold,
+          imagePosterize: base.imagePosterize,
+          imageBlur: base.imageBlur,
+          imageBlurRadius: base.imageBlurRadius,
+          imageBlurStrength: base.imageBlurStrength,
+          imageBrightness: base.imageBrightness,
+          imageLevelsLow: base.imageLevelsLow,
+          imageLevelsHigh: base.imageLevelsHigh,
+          imageEmbossStrength: base.imageEmbossStrength,
+          imageSharpenAmount: base.imageSharpenAmount,
+          imageSharpenRadius: base.imageSharpenRadius,
+          imageMedianRadius: base.imageMedianRadius,
+          imageGamma: base.imageGamma,
+          imageContrast: base.imageContrast,
+          imageSolarize: base.imageSolarize,
+          imagePixelate: base.imagePixelate,
+          imageDither: base.imageDither,
+        };
+        noises = [legacy];
+        layer.params.noises = noises;
+      }
+      noises = noises.map((noise, idx) => {
+        const template = templates[idx] || templates[templates.length - 1] || base;
+        const next = {
+          ...base,
+          ...clone(template),
+          ...(noise || {}),
+          id: noise?.id || template.id || `noise-${idx + 1}`,
+          enabled: noise?.enabled !== false,
+        };
+        if (!next.tileMode) next.tileMode = next.type === 'image' ? 'off' : base.tileMode;
+        if (next.tileMode === 'off') next.tilePadding = 0;
+        return next;
       });
       layer.params.noises = noises;
       return noises;
@@ -3150,10 +3501,14 @@
 
       defs.forEach((def) => {
         if (def.showIf && !def.showIf(layer.params)) return;
+        if (layer.type === 'harmonograph' && def.id === 'showPendulumGuides') return;
         if (def.type === 'section' || def.type === 'file' || def.type === 'image') return;
         if (def.type === 'noiseList') {
           if (layer.type === 'wavetable') {
             const noises = this.ensureWavetableNoises(layer);
+            noises.forEach((noise) => randomizeNoise(noise));
+          } else if (layer.type === 'spiral') {
+            const noises = this.ensureSpiralNoises(layer);
             noises.forEach((noise) => randomizeNoise(noise));
           }
           return;
@@ -4400,7 +4755,7 @@
       const orphans = [];
       const selectableIds = [];
       const gripMarkup = `
-        <button class="layer-grip" type="button" aria-label="Reorder layer">
+        <button class="layer-grip" type="button" aria-label="Reorder layer" title="Reorder layer">
           <span class="dot"></span><span class="dot"></span>
           <span class="dot"></span><span class="dot"></span>
           <span class="dot"></span><span class="dot"></span>
@@ -4580,7 +4935,7 @@
           <div class="flex items-center gap-1">
             ${isManualGroup
               ? `<div class="pen-assign">
-                  <button class="pen-pill" type="button" aria-label="Assign pen">
+                  <button class="pen-pill" type="button" aria-label="Assign pen" title="Assign pen">
                     <div class="pen-icon"></div>
                   </button>
                   <div class="pen-menu hidden"></div>
@@ -4800,7 +5155,13 @@
         el.innerHTML = `
           <div class="flex items-center gap-2 flex-1 overflow-hidden">
             ${gripMarkup}
-            <input type="checkbox" ${l.visible ? 'checked' : ''} class="cursor-pointer" aria-label="Toggle layer visibility">
+            <input
+              type="checkbox"
+              ${l.visible ? 'checked' : ''}
+              class="cursor-pointer"
+              aria-label="Toggle layer visibility"
+              title="Toggle visibility"
+            >
             <span class="layer-name text-sm truncate ${isActive ? 'text-white font-bold' : 'text-vectura-muted'}">${l.name}</span>
             <input
               class="layer-name-input hidden w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:outline-none"
@@ -4811,7 +5172,7 @@
           <div class="flex items-center gap-1">
             ${hidePen ? '' : `
               <div class="pen-assign">
-                <button class="pen-pill" type="button" aria-label="Assign pen">
+                <button class="pen-pill" type="button" aria-label="Assign pen" title="Assign pen">
                   <div class="pen-icon"></div>
                 </button>
                 <div class="pen-menu hidden"></div>
@@ -5549,6 +5910,8 @@
 
       const algoDefs = this.controls[layer.type] || [];
       const commonDefs = COMMON_CONTROLS;
+      const hasConditionalDefs = algoDefs.some((def) => typeof def.showIf === 'function');
+      const hasNoiseConditional = WAVE_NOISE_DEFS.some((def) => typeof def.showIf === 'function');
       if (!algoDefs.length && !commonDefs.length) return;
 
       if (isGroup) {
@@ -5634,10 +5997,7 @@
         const { def, valueEl, getValue, setValue, parseValue, formatValue } = opts;
         if (!valueEl) return;
         const { min, max, unit, step, precision } = getDisplayConfig(def);
-        const parent = valueEl.parentElement;
-        if (!parent) return;
-        const rect = valueEl.getBoundingClientRect();
-        const parentRect = parent.getBoundingClientRect();
+        const parent = valueEl;
         const input = document.createElement('input');
         input.type = 'text';
         input.className = 'inline-value-input';
@@ -5645,13 +6005,16 @@
         const displayValue = formatValue ? formatValue(currentValue) : formatDisplayValue(def, currentValue);
         input.value = `${displayValue}`.replace(unit, '').trim();
         const prevPosition = parent.style.position;
+        const prevColor = parent.style.color;
+        const prevShadow = parent.style.textShadow;
         if (!prevPosition || prevPosition === 'static') parent.style.position = 'relative';
-        input.style.left = `${rect.left - parentRect.left}px`;
-        input.style.top = `${rect.top - parentRect.top}px`;
-        input.style.width = `${Math.max(60, rect.width)}px`;
-        input.style.height = `${Math.max(20, rect.height)}px`;
+        input.style.left = '0';
+        input.style.top = '0';
+        input.style.width = '100%';
+        input.style.height = '100%';
         parent.appendChild(input);
-        valueEl.style.visibility = 'hidden';
+        parent.style.color = 'transparent';
+        parent.style.textShadow = 'none';
         input.focus();
         input.select();
 
@@ -5660,7 +6023,8 @@
           if (closed) return;
           closed = true;
           if (input.parentElement) input.parentElement.removeChild(input);
-          valueEl.style.visibility = '';
+          parent.style.color = prevColor;
+          parent.style.textShadow = prevShadow;
           if (!prevPosition || prevPosition === 'static') parent.style.position = '';
         };
 
@@ -5872,6 +6236,14 @@
         { key: 'damp', label: 'Damping', type: 'range', min: 0, max: 0.02, step: 0.0005, infoKey: 'harmonograph.damp' },
       ];
 
+      const maybeRebuildControls = () => {
+        if (hasConditionalDefs) this.buildControls();
+      };
+
+      const maybeRebuildNoiseControls = () => {
+        if (hasNoiseConditional) this.buildControls();
+      };
+
       const renderDef = (def, targetEl) => {
         const target = targetEl || container;
         if (def.showIf && !def.showIf(layer.params)) return;
@@ -5915,6 +6287,7 @@
               if (nameEl) nameEl.textContent = 'No file selected';
               this.app.regen();
               this.app.render();
+              maybeRebuildControls();
             };
           }
           if (openBtn) {
@@ -6178,7 +6551,8 @@
           return;
         }
         if (def.type === 'noiseList') {
-          const noises = this.ensureWavetableNoises(layer);
+          const noises =
+            layer.type === 'spiral' ? this.ensureSpiralNoises(layer) : this.ensureWavetableNoises(layer);
           const { base: noiseBase, templates: noiseTemplates } = this.getWavetableNoiseTemplates();
           const getNoiseDefault = (index, key) => {
             const template = noiseTemplates[index] || noiseTemplates[noiseTemplates.length - 1] || noiseBase;
@@ -6187,10 +6561,20 @@
           };
           const resetNoise = (noise, index) => {
             const template = noiseTemplates[index] || noiseTemplates[noiseTemplates.length - 1] || noiseBase;
+            const keepType = noise.type;
+            const keepBlend = noise.blend;
             Object.keys(noiseBase).forEach((key) => {
               if (key === 'id') return;
               noise[key] = template[key] !== undefined ? template[key] : noiseBase[key];
             });
+            if (keepType) noise.type = keepType;
+            if (keepBlend) noise.blend = keepBlend;
+            if (noise.type === 'image') {
+              noise.tileMode = 'off';
+              noise.tilePadding = 0;
+            } else if (!noise.tileMode) {
+              noise.tileMode = noiseBase.tileMode || 'off';
+            }
           };
 
           const list = document.createElement('div');
@@ -6333,11 +6717,21 @@
                 if (this.app.pushHistory) this.app.pushHistory();
                 const next = e.target.value;
                 noise[def.key] = next;
+                if (def.key === 'type') {
+                  const fallbackTileMode = getNoiseDefault(idx, 'tileMode') || 'off';
+                  if (next === 'image') {
+                    noise.tileMode = 'off';
+                    noise.tilePadding = 0;
+                  } else if (!noise.tileMode) {
+                    noise.tileMode = fallbackTileMode;
+                  }
+                }
                 this.storeLayerParams(layer);
                 span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
                 this.app.regen();
                 this.updateFormula();
                 if (def.key === 'type') this.buildControls();
+                else maybeRebuildNoiseControls();
               };
               input.addEventListener('dblclick', (e) => {
                 e.preventDefault();
@@ -6347,12 +6741,22 @@
                 if (next === undefined) return;
                 if (this.app.pushHistory) this.app.pushHistory();
                 noise[def.key] = next;
+                if (def.key === 'type') {
+                  const fallbackTileMode = getNoiseDefault(idx, 'tileMode') || 'off';
+                  if (next === 'image') {
+                    noise.tileMode = 'off';
+                    noise.tilePadding = 0;
+                  } else if (!noise.tileMode) {
+                    noise.tileMode = fallbackTileMode;
+                  }
+                }
                 this.storeLayerParams(layer);
                 input.value = next;
                 span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
                 this.app.regen();
                 this.updateFormula();
                 if (def.key === 'type') this.buildControls();
+                else maybeRebuildNoiseControls();
               });
             }
             return control;
@@ -6451,22 +6855,32 @@
           const buildNoiseImageBlock = (noise, idx) => {
             const wrap = document.createElement('div');
             wrap.className = 'noise-image-block mb-3';
-            const name = noise.imageName || 'No file selected';
-            const preview = noise.imagePreview
+            const hasImage = Boolean(noise.imagePreview);
+            const truncateFilename = (value) => {
+              if (!value) return 'No file selected';
+              const parts = value.split('.');
+              if (parts.length < 2) return value.length > 10 ? `${value.slice(0, 10)}…` : value;
+              const ext = parts.pop();
+              const base = parts.join('.');
+              const shortBase = base.length > 10 ? `${base.slice(0, 10)}…` : base;
+              return `${shortBase}.${ext}`;
+            };
+            const name = truncateFilename(noise.imageName || '');
+            const preview = hasImage
               ? `<img src="${noise.imagePreview}" alt="Noise preview">`
-              : `<div class="noise-image-empty text-[10px] text-vectura-muted">No image</div>`;
+              : `<div class="noise-image-empty text-[10px] text-vectura-muted">Drop image</div>`;
             wrap.innerHTML = `
               <div class="noise-image-row">
                 <div class="noise-image-left">
-                  <div class="noise-dropzone compact">Drop image</div>
-                  <button type="button" class="noise-image-btn text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">
+                  <div class="noise-dropzone compact${hasImage ? ' hidden' : ''}">Drop image</div>
+                  <button type="button" class="noise-image-btn text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors${hasImage ? ' hidden' : ''}">
                     Select Image
                   </button>
                 </div>
                 <div class="noise-image-right">
-                  <div class="noise-image-preview">${preview}</div>
-                  <div class="text-[10px] text-vectura-muted mt-2 noise-image-name">${name}</div>
-                  <button type="button" class="noise-image-clear text-[10px] text-vectura-muted hover:text-vectura-accent mt-1">Clear</button>
+                  <button type="button" class="noise-image-clear text-[10px] text-vectura-muted hover:text-vectura-accent${hasImage ? '' : ' hidden'}">Clear</button>
+                  <div class="noise-image-preview ${hasImage ? 'active' : 'hidden'}">${preview}</div>
+                  <div class="text-[10px] text-vectura-muted mt-2 noise-image-name${hasImage ? '' : ' hidden'}">${name}</div>
                 </div>
               </div>
               <input type="file" accept="image/*" class="noise-image-input hidden">
@@ -6498,6 +6912,21 @@
                 applyFile(file);
               });
             }
+            if (previewEl) {
+              previewEl.addEventListener('dragover', (e) => {
+                if (!noise.enabled) return;
+                e.preventDefault();
+                previewEl.classList.add('active');
+              });
+              previewEl.addEventListener('dragleave', () => previewEl.classList.remove('active'));
+              previewEl.addEventListener('drop', (e) => {
+                if (!noise.enabled) return;
+                e.preventDefault();
+                previewEl.classList.remove('active');
+                const file = e.dataTransfer?.files?.[0];
+                applyFile(file);
+              });
+            }
             if (selectBtn && fileInput) {
               selectBtn.disabled = !noise.enabled;
               selectBtn.onclick = () => {
@@ -6522,6 +6951,7 @@
                 }
                 this.storeLayerParams(layer);
                 this.app.regen();
+                this.buildControls();
                 this.updateFormula();
               };
             }
@@ -6667,6 +7097,7 @@
                 if (this.app.pushHistory) this.app.pushHistory();
                 WAVE_NOISE_DEFS.forEach((nDef) => {
                   if (nDef.showIf && !nDef.showIf(noise)) return;
+                  if (nDef.key === 'type' || nDef.key === 'blend') return;
                   if (nDef.type === 'select') {
                     const opts = nDef.options || [];
                     const available = nDef.randomExclude ? opts.filter((opt) => !nDef.randomExclude.includes(opt.value)) : opts;
@@ -6693,10 +7124,10 @@
                 this.updateFormula();
               };
             }
-            card.appendChild(tools);
 
             const controls = document.createElement('div');
             controls.className = 'pendulum-controls';
+            let toolsInserted = false;
             WAVE_NOISE_DEFS.forEach((nDef) => {
               if (nDef.showIf && !nDef.showIf(noise)) return;
               if (nDef.type === 'angle') {
@@ -6709,7 +7140,12 @@
               if (nDef.key === 'type') {
                 controls.appendChild(buildNoiseImageBlock(noise, idx));
               }
+              if (nDef.key === 'blend' && !toolsInserted) {
+                controls.appendChild(tools);
+                toolsInserted = true;
+              }
             });
+            if (!toolsInserted) controls.appendChild(tools);
             card.appendChild(controls);
             list.appendChild(card);
           });
@@ -6915,6 +7351,7 @@
                 this.app.regen();
                 this.updateFormula();
               }
+              maybeRebuildControls();
             };
             input.addEventListener('dblclick', (e) => {
               e.preventDefault();
@@ -6933,6 +7370,7 @@
                 this.app.regen();
                 this.updateFormula();
               }
+              maybeRebuildControls();
             });
           }
         } else if (def.type === 'select') {
@@ -6970,6 +7408,7 @@
               span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
               this.app.regen();
               this.updateFormula();
+              maybeRebuildControls();
             };
             input.addEventListener('dblclick', (e) => {
               e.preventDefault();
@@ -6984,6 +7423,7 @@
               span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
               this.app.regen();
               this.updateFormula();
+              maybeRebuildControls();
             });
           }
         } else if (def.type === 'colorModal') {
@@ -7275,12 +7715,504 @@
         target.appendChild(div);
       };
 
+      const renderOptimizationPanel = (target) => {
+        if (!target) return;
+        const panel = document.createElement('div');
+        panel.className = 'optimization-panel';
+        panel.innerHTML = `<div class="control-section-title">Optimization</div>`;
+
+        const getTargets = () => {
+          const scope = SETTINGS.optimizationScope || 'active';
+          let targets = [];
+          if (scope === 'selected') {
+            targets = this.app.renderer?.getSelectedLayers?.() || [];
+          } else if (scope === 'all') {
+            targets = this.app.engine.layers.filter((l) => !l.isGroup);
+          } else {
+            const active = this.app.engine.getActiveLayer();
+            if (active) targets = [active];
+          }
+          if (!targets.length) {
+            const active = this.app.engine.getActiveLayer();
+            if (active) targets = [active];
+          }
+          return targets.filter((l) => l && !l.isGroup);
+        };
+
+        const normalizeConfig = (config) => {
+          if (!config) return null;
+          if (!Array.isArray(config.steps)) config.steps = [];
+          const defaults = SETTINGS.optimizationDefaults || { bypassAll: false, steps: [] };
+          const defaultSteps = Array.isArray(defaults.steps) ? defaults.steps : [];
+          const defaultMap = new Map(defaultSteps.map((step) => [step.id, step]));
+          config.steps = config.steps.map((step) => ({
+            ...(defaultMap.get(step.id) || {}),
+            ...step,
+          }));
+          defaultSteps.forEach((step) => {
+            if (!config.steps.some((s) => s.id === step.id)) {
+              config.steps.push(clone(step));
+            }
+          });
+          if (config.bypassAll === undefined) config.bypassAll = defaults.bypassAll ?? false;
+          return config;
+        };
+
+        const getStepDefaults = (id) => {
+          const defaults = SETTINGS.optimizationDefaults || { steps: [] };
+          return (defaults.steps || []).find((step) => step.id === id) || {};
+        };
+
+        const targets = getTargets();
+        const config = targets.length ? normalizeConfig(this.app.engine.ensureLayerOptimization(targets[0])) : null;
+
+        const updateStats = () => {
+          const scopedTargets = getTargets();
+          if (!config || !scopedTargets.length) return;
+          this.app.engine.optimizeLayers(scopedTargets);
+          const before = this.app.engine.computeStats(scopedTargets, { useOptimized: false });
+          const after = this.app.engine.computeStats(scopedTargets, { useOptimized: true });
+          const beforeEl = panel.querySelector('[data-opt-stat="before"]');
+          const afterEl = panel.querySelector('[data-opt-stat="after"]');
+          const formatStats = (stats) =>
+            `Lines ${stats.lines || 0} • Points ${stats.points || 0} • ${stats.distance} • ${stats.time}`;
+          if (beforeEl) beforeEl.textContent = formatStats(before);
+          if (afterEl) afterEl.textContent = formatStats(after);
+        };
+
+        const applyOptimization = (mutator) => {
+          const scopedTargets = getTargets();
+          if (!scopedTargets.length) return;
+          const scope = SETTINGS.optimizationScope || 'active';
+          const baseConfig = normalizeConfig(this.app.engine.ensureLayerOptimization(scopedTargets[0]));
+          if (mutator) mutator(baseConfig);
+          if (scope !== 'active') {
+            const snapshot = clone(baseConfig);
+            scopedTargets.forEach((layer, idx) => {
+              if (idx === 0) return;
+              layer.optimization = clone(snapshot);
+            });
+            this.app.engine.optimizeLayers(scopedTargets, { config: snapshot });
+          } else {
+            this.app.engine.optimizeLayers(scopedTargets, { config: baseConfig });
+          }
+          this.app.render();
+          updateStats();
+        };
+
+        const buildRow = (label, controlEl) => {
+          const row = document.createElement('div');
+          row.className = 'optimization-row';
+          const lab = document.createElement('label');
+          lab.className = 'control-label mb-0';
+          lab.textContent = label;
+          row.appendChild(lab);
+          row.appendChild(controlEl);
+          return row;
+        };
+
+        const scopeSelect = document.createElement('select');
+        scopeSelect.className = 'w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent';
+        scopeSelect.innerHTML = `
+          <option value="active">Active Layer</option>
+          <option value="selected">Selected Layers</option>
+          <option value="all">All Layers</option>
+        `;
+        scopeSelect.value = SETTINGS.optimizationScope || 'active';
+        scopeSelect.onchange = (e) => {
+          SETTINGS.optimizationScope = e.target.value;
+          this.buildControls();
+          this.app.render();
+        };
+        panel.appendChild(buildRow('Scope', scopeSelect));
+
+        const previewSelect = document.createElement('select');
+        previewSelect.className = 'w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent';
+        previewSelect.innerHTML = `
+          <option value="off">Off</option>
+          <option value="replace">Replace</option>
+          <option value="overlay">Overlay</option>
+        `;
+        previewSelect.value = SETTINGS.optimizationPreview || 'off';
+        previewSelect.onchange = (e) => {
+          SETTINGS.optimizationPreview = e.target.value;
+          this.buildControls();
+          this.app.render();
+        };
+        panel.appendChild(buildRow('Preview', previewSelect));
+
+        const exportToggle = document.createElement('input');
+        exportToggle.type = 'checkbox';
+        exportToggle.checked = Boolean(SETTINGS.optimizationExport);
+        exportToggle.onchange = (e) => {
+          SETTINGS.optimizationExport = Boolean(e.target.checked);
+        };
+        panel.appendChild(buildRow('Export Optimized', exportToggle));
+
+        const bypassToggle = document.createElement('input');
+        bypassToggle.type = 'checkbox';
+        bypassToggle.checked = Boolean(config?.bypassAll);
+        bypassToggle.onchange = (e) => {
+          if (!config) return;
+          applyOptimization((cfg) => {
+            cfg.bypassAll = Boolean(e.target.checked);
+          });
+        };
+        panel.appendChild(buildRow('Bypass All', bypassToggle));
+
+        const overlayControls = document.createElement('div');
+        overlayControls.className = 'optimization-overlay';
+        const overlayColor = document.createElement('input');
+        overlayColor.type = 'color';
+        overlayColor.value = SETTINGS.optimizationOverlayColor || '#38bdf8';
+        overlayColor.oninput = (e) => {
+          SETTINGS.optimizationOverlayColor = e.target.value;
+          this.app.render();
+        };
+        const overlayWidth = document.createElement('input');
+        overlayWidth.type = 'range';
+        overlayWidth.min = '0.05';
+        overlayWidth.max = '1';
+        overlayWidth.step = '0.05';
+        overlayWidth.value = SETTINGS.optimizationOverlayWidth ?? 0.2;
+        overlayWidth.oninput = (e) => {
+          const next = parseFloat(e.target.value);
+          SETTINGS.optimizationOverlayWidth = next;
+          overlayWidthLabel.textContent = `${next.toFixed(2)}mm`;
+          this.app.render();
+        };
+        const overlayWidthLabel = document.createElement('span');
+        overlayWidthLabel.className = 'text-[10px] text-vectura-muted';
+        overlayWidthLabel.textContent = `${SETTINGS.optimizationOverlayWidth ?? 0.2}mm`;
+        overlayControls.appendChild(overlayColor);
+        overlayControls.appendChild(overlayWidth);
+        overlayControls.appendChild(overlayWidthLabel);
+        const overlayRow = buildRow('Overlay Style', overlayControls);
+        if ((SETTINGS.optimizationPreview || 'off') !== 'overlay') overlayRow.classList.add('hidden');
+        panel.appendChild(overlayRow);
+
+        const resetBtn = document.createElement('button');
+        resetBtn.type = 'button';
+        resetBtn.className = 'opt-reset';
+        resetBtn.textContent = 'Reset Optimizations';
+        resetBtn.onclick = () => {
+          const defaults = SETTINGS.optimizationDefaults ? clone(SETTINGS.optimizationDefaults) : { bypassAll: false, steps: [] };
+          applyOptimization((cfg) => {
+            cfg.bypassAll = defaults.bypassAll ?? false;
+            cfg.steps = clone(defaults.steps || []);
+          });
+          this.buildControls();
+        };
+        const resetRow = document.createElement('div');
+        resetRow.className = 'optimization-actions';
+        resetRow.appendChild(resetBtn);
+        panel.appendChild(resetRow);
+
+        const stats = document.createElement('div');
+        stats.className = 'optimization-stats';
+        stats.innerHTML = `
+          <div class="optimization-stat-row">
+            <span class="text-[10px] uppercase tracking-widest text-vectura-muted">Before</span>
+            <span class="text-[10px] text-vectura-accent" data-opt-stat="before">Lines 0 • Points 0 • 0m • 0:00</span>
+          </div>
+          <div class="optimization-stat-row">
+            <span class="text-[10px] uppercase tracking-widest text-vectura-muted">After</span>
+            <span class="text-[10px] text-vectura-accent" data-opt-stat="after">Lines 0 • Points 0 • 0m • 0:00</span>
+          </div>
+        `;
+        panel.appendChild(stats);
+
+        if (!config) {
+          target.appendChild(panel);
+          return;
+        }
+
+        const list = document.createElement('div');
+        list.className = 'optimization-list';
+
+        const formatOptValue = (def, value) => {
+          const { precision, unit } = getDisplayConfig(def);
+          const factor = Math.pow(10, precision);
+          const rounded = Math.round((value ?? 0) * factor) / factor;
+          return `${rounded}${unit}`;
+        };
+
+        const buildRangeControl = (stepConfig, def) => {
+          const control = document.createElement('div');
+          control.className = 'optimization-control';
+          const value = stepConfig[def.key] ?? getStepDefaults(stepConfig.id)[def.key] ?? def.min ?? 0;
+          if (stepConfig[def.key] === undefined) stepConfig[def.key] = value;
+          const { min, max, step } = getDisplayConfig(def);
+          control.innerHTML = `
+            <div class="flex justify-between mb-1">
+              <label class="control-label mb-0">${def.label}</label>
+              <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatOptValue(
+                def,
+                value
+              )}</button>
+            </div>
+            <input type="range" min="${min}" max="${max}" step="${step}" value="${value}" class="w-full">
+            <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
+          `;
+          const input = control.querySelector('input[type="range"]');
+          const valueBtn = control.querySelector('.value-chip');
+          const valueInput = control.querySelector('.value-input');
+          if (input && valueBtn) {
+            input.oninput = (e) => {
+              const next = parseFloat(e.target.value);
+              valueBtn.textContent = formatOptValue(def, next);
+            };
+            input.onchange = (e) => {
+              const next = parseFloat(e.target.value);
+              applyOptimization((cfg) => {
+                const step = cfg.steps.find((s) => s.id === stepConfig.id);
+                if (step) step[def.key] = next;
+              });
+            };
+            input.addEventListener('dblclick', (e) => {
+              e.preventDefault();
+              const defaults = getStepDefaults(stepConfig.id);
+              if (defaults[def.key] === undefined) return;
+              const next = defaults[def.key];
+              input.value = next;
+              valueBtn.textContent = formatOptValue(def, next);
+              applyOptimization((cfg) => {
+                const step = cfg.steps.find((s) => s.id === stepConfig.id);
+                if (step) step[def.key] = next;
+              });
+            });
+            attachValueEditor({
+              def,
+              valueEl: valueBtn,
+              inputEl: valueInput,
+              getValue: () => stepConfig[def.key],
+              setValue: (displayVal) => {
+                applyOptimization((cfg) => {
+                  const step = cfg.steps.find((s) => s.id === stepConfig.id);
+                  if (step) step[def.key] = displayVal;
+                });
+              },
+            });
+          }
+          return control;
+        };
+
+        const buildSelectControl = (stepConfig, def) => {
+          const control = document.createElement('div');
+          control.className = 'optimization-control';
+          let value = stepConfig[def.key];
+          if ((value === undefined || value === null) && def.options?.length) {
+            value = def.options[0].value;
+            stepConfig[def.key] = value;
+          }
+          const optionsHtml = (def.options || [])
+            .map((opt) => `<option value="${opt.value}" ${value === opt.value ? 'selected' : ''}>${opt.label}</option>`)
+            .join('');
+          const currentLabel = def.options.find((opt) => opt.value === value)?.label || value;
+          control.innerHTML = `
+            <div class="flex justify-between mb-1">
+              <label class="control-label mb-0">${def.label}</label>
+              <span class="text-xs text-vectura-accent font-mono">${currentLabel}</span>
+            </div>
+            <select class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent">
+              ${optionsHtml}
+            </select>
+          `;
+          const input = control.querySelector('select');
+          const span = control.querySelector('span');
+          if (input && span) {
+            input.onchange = (e) => {
+              const next = e.target.value;
+              applyOptimization((cfg) => {
+                const step = cfg.steps.find((s) => s.id === stepConfig.id);
+                if (step) step[def.key] = next;
+              });
+              span.textContent = def.options.find((opt) => opt.value === next)?.label || next;
+            };
+            input.addEventListener('dblclick', (e) => {
+              e.preventDefault();
+              const defaults = getStepDefaults(stepConfig.id);
+              const next = defaults[def.key] ?? def.options?.[0]?.value;
+              if (next === undefined) return;
+              applyOptimization((cfg) => {
+                const step = cfg.steps.find((s) => s.id === stepConfig.id);
+                if (step) step[def.key] = next;
+              });
+              input.value = next;
+              span.textContent = def.options.find((opt) => opt.value === next)?.label || next;
+            });
+          }
+          return control;
+        };
+
+        const buildCheckboxControl = (stepConfig, def) => {
+          const control = document.createElement('div');
+          control.className = 'optimization-control';
+          const checked = Boolean(stepConfig[def.key]);
+          control.innerHTML = `
+            <div class="flex justify-between mb-1">
+              <label class="control-label mb-0">${def.label}</label>
+              <span class="text-xs text-vectura-accent font-mono">${checked ? 'ON' : 'OFF'}</span>
+            </div>
+            <input type="checkbox" ${checked ? 'checked' : ''} class="w-4 h-4">
+          `;
+          const input = control.querySelector('input');
+          const span = control.querySelector('span');
+          if (input && span) {
+            input.onchange = (e) => {
+              const next = Boolean(e.target.checked);
+              span.textContent = next ? 'ON' : 'OFF';
+              applyOptimization((cfg) => {
+                const step = cfg.steps.find((s) => s.id === stepConfig.id);
+                if (step) step[def.key] = next;
+              });
+            };
+            input.addEventListener('dblclick', (e) => {
+              e.preventDefault();
+              const defaults = getStepDefaults(stepConfig.id);
+              if (defaults[def.key] === undefined) return;
+              const next = Boolean(defaults[def.key]);
+              input.checked = next;
+              span.textContent = next ? 'ON' : 'OFF';
+              applyOptimization((cfg) => {
+                const step = cfg.steps.find((s) => s.id === stepConfig.id);
+                if (step) step[def.key] = next;
+              });
+            });
+          }
+          return control;
+        };
+
+        const bindReorderGrip = (grip, card, stepId) => {
+          if (!grip) return;
+          grip.onmousedown = (e) => {
+            e.preventDefault();
+            const dragEl = card;
+            dragEl.classList.add('dragging');
+            const indicator = document.createElement('div');
+            indicator.className = 'optimization-drop-indicator';
+            list.insertBefore(indicator, dragEl.nextSibling);
+            const currentOrder = config.steps.map((step) => step.id);
+            const startIndex = currentOrder.indexOf(stepId);
+            const onMove = (ev) => {
+              const y = ev.clientY;
+              const items = Array.from(list.querySelectorAll('.optimization-card')).filter((item) => item !== dragEl);
+              let inserted = false;
+              for (const item of items) {
+                const rect = item.getBoundingClientRect();
+                if (y < rect.top + rect.height / 2) {
+                  list.insertBefore(indicator, item);
+                  inserted = true;
+                  break;
+                }
+              }
+              if (!inserted) list.appendChild(indicator);
+            };
+            const onUp = () => {
+              dragEl.classList.remove('dragging');
+              const siblings = Array.from(list.children);
+              const indicatorIndex = siblings.indexOf(indicator);
+              const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('optimization-card'));
+              const newIndex = before.length;
+              indicator.remove();
+              window.removeEventListener('mousemove', onMove);
+              window.removeEventListener('mouseup', onUp);
+              if (newIndex === startIndex || newIndex < 0) return;
+              applyOptimization((cfg) => {
+                const order = cfg.steps.map((step) => step.id).filter((id) => id !== stepId);
+                const targetIndex = Math.max(0, Math.min(order.length, newIndex));
+                order.splice(targetIndex, 0, stepId);
+                const map = new Map(cfg.steps.map((step) => [step.id, step]));
+                cfg.steps = order.map((id) => map.get(id)).filter(Boolean);
+              });
+              this.buildControls();
+            };
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
+          };
+        };
+
+        OPTIMIZATION_STEPS.forEach((def) => {
+          const stepConfig = config.steps.find((step) => step.id === def.id) || { id: def.id, enabled: false, bypass: false };
+          if (!config.steps.find((step) => step.id === def.id)) config.steps.push(stepConfig);
+          const card = document.createElement('div');
+          card.className = 'optimization-card';
+          card.dataset.stepId = def.id;
+          const header = document.createElement('div');
+          header.className = 'optimization-card-header';
+          header.innerHTML = `
+            <div class="optimization-card-title">
+              <button class="optimization-grip" type="button" aria-label="Reorder optimization">
+                <span class="dot"></span><span class="dot"></span>
+                <span class="dot"></span><span class="dot"></span>
+                <span class="dot"></span><span class="dot"></span>
+              </button>
+              <span>${def.label}</span>
+            </div>
+            <div class="optimization-card-actions">
+              <label class="opt-toggle"><input type="checkbox" ${stepConfig.enabled ? 'checked' : ''}>Apply</label>
+              <label class="opt-toggle"><input type="checkbox" ${stepConfig.bypass ? 'checked' : ''}>Bypass</label>
+            </div>
+          `;
+          const grip = header.querySelector('.optimization-grip');
+          bindReorderGrip(grip, card, def.id);
+          const [applyToggle, bypassStepToggle] = header.querySelectorAll('input[type="checkbox"]');
+          if (applyToggle) {
+            applyToggle.onchange = (e) => {
+              const next = Boolean(e.target.checked);
+              applyOptimization((cfg) => {
+                const step = cfg.steps.find((s) => s.id === def.id);
+                if (step) step.enabled = next;
+              });
+              this.buildControls();
+            };
+          }
+          if (bypassStepToggle) {
+            bypassStepToggle.onchange = (e) => {
+              const next = Boolean(e.target.checked);
+              applyOptimization((cfg) => {
+                const step = cfg.steps.find((s) => s.id === def.id);
+                if (step) step.bypass = next;
+              });
+              this.buildControls();
+            };
+          }
+          card.appendChild(header);
+
+          const controlsWrap = document.createElement('div');
+          controlsWrap.className = 'optimization-controls';
+          const isDisabled = !stepConfig.enabled || config.bypassAll;
+          if (isDisabled) controlsWrap.classList.add('is-disabled');
+          (def.controls || []).forEach((cDef) => {
+            let control = null;
+            if (cDef.type === 'select') control = buildSelectControl(stepConfig, cDef);
+            else if (cDef.type === 'checkbox') control = buildCheckboxControl(stepConfig, cDef);
+            else control = buildRangeControl(stepConfig, cDef);
+            if (control) {
+              const inputs = control.querySelectorAll('input, select, button');
+              inputs.forEach((input) => {
+                if (input.type === 'button') return;
+                input.disabled = isDisabled;
+              });
+              controlsWrap.appendChild(control);
+            }
+          });
+          card.appendChild(controlsWrap);
+          list.appendChild(card);
+        });
+
+        panel.appendChild(list);
+        target.appendChild(panel);
+        updateStats();
+      };
+
       if (!isGroup) {
         algoDefs.forEach((def) => renderDef(def, container));
       }
       if (commonDefs.length) {
         container.appendChild(globalSection);
         commonDefs.forEach((def) => renderDef(def, globalBody));
+        renderOptimizationPanel(globalBody);
       }
     }
 
@@ -7371,6 +8303,7 @@
     exportSVG() {
       const prof = this.app.engine.currentProfile;
       const precision = Math.max(0, Math.min(6, SETTINGS.precision ?? 3));
+      const useOptimized = Boolean(SETTINGS.optimizationExport);
       const optimize = Math.max(0, SETTINGS.plotterOptimize ?? 0);
       const tol = optimize > 0 ? Math.max(0.001, optimize) : 0;
       const quant = (v) => (tol ? Math.round(v / tol) * tol : v);
@@ -7387,6 +8320,9 @@
           .join('|');
       };
       const dedupe = optimize > 0 ? new Map() : null;
+      if (useOptimized) {
+        this.app.engine.optimizeLayers(this.app.engine.layers);
+      }
       let svg = `<?xml version="1.0" standalone="no"?><svg width="${prof.width}mm" height="${prof.height}mm" viewBox="0 0 ${prof.width} ${prof.height}" xmlns="http://www.w3.org/2000/svg">`;
       if (SETTINGS.truncate) {
         const m = SETTINGS.margin;
@@ -7431,7 +8367,8 @@
           const lineCap = l.lineCap || 'round';
           const useCurves = Boolean(l.params && l.params.curves);
           svg += `<g id="${l.name.replace(/\s/g, '_')}" stroke-width="${strokeWidth}" stroke-linecap="${lineCap}" stroke-linejoin="round">`;
-          l.paths.forEach((p) => {
+          const paths = useOptimized && l.optimizedPaths ? l.optimizedPaths : l.paths;
+          (paths || []).forEach((p) => {
             if (seen) {
               const key = pathKey(p);
               if (key && seen.has(key)) return;

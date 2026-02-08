@@ -21,9 +21,10 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Multiple algorithm families (flowfields, lissajous, harmonograph, wavetable, rings, topo, boids, attractors, hyphae, shape pack).
 - Harmonograph pendulum list with add/delete/toggle controls and optional guide overlay.
 - Rainfall generator with wind, droplet styling, and optional silhouette masking.
-- Wavetable noise stack with per-noise blend modes, image-based noise input, and drag-to-reorder layers.
+- Wavetable noise stack with per-noise blend modes, tile patterns, image processing modes, and drag-to-reorder layers.
 - Pen palette with assignable colors/widths, reorderable list, drag-to-assign per layer or selection, plus palette selection and add/remove controls.
 - Plotter optimization slider to remove fully overlapping paths per pen before export.
+- Optimization pipeline (linesimplify, linesort, filter, multipass) with scope selection, preview overlays, and export toggle.
 - One-click SVG export with configurable precision and grouping by pen assignment.
 - Live formula display and estimated pen distance/time.
 
@@ -47,9 +48,10 @@ Then visit `http://localhost:8000`.
 ## How to Use
 1. Pick an algorithm in the left panel and adjust its parameters.
 2. Use the transform controls (seed, position, scale, rotation) to nudge the layer.
-3. Manage layers on the right: add, reorder (drag the grip), duplicate, hide, rename (double-click), expand into sublayers, and assign pens (drag a pen onto a layer to apply to the selection).
-4. Use Settings for machine size, margin, truncation, margin guides, stroke, background, and SVG precision.
-5. Export with the [EXPORT SVG] button.
+3. Use Global Settings & Optimization for smoothing/curves/simplify plus optional optimization passes and preview.
+4. Manage layers on the right: add, reorder (drag the grip), duplicate, hide, rename (double-click), expand into sublayers, and assign pens (drag a pen onto a layer to apply to the selection).
+5. Use Settings for machine size, margin, truncation, margin guides, stroke, background, and SVG precision.
+6. Export with the [EXPORT SVG] button.
 
 Pan: Shift + Drag. Zoom: Mouse Wheel. Move layer: Drag. Resize layer: Drag corner handles. Rotate: Drag the upper-right handle (Shift snaps). Duplicate: Alt-drag. Expand: Cmd/Ctrl + E.
 
@@ -108,7 +110,7 @@ flowchart LR
 - Add new algorithms by extending `src/core/algorithms/index.js` and wiring defaults/UI in `src/config/` and `src/ui/ui.js`.
 - Machine sizes live in `src/config/machines.js` and are used for bounds and export dimensions.
 - Pen palettes live in `src/config/palettes.js` and can be edited or extended.
-- Global Settings & Optimization (smoothing/curves/simplify) lives in the left pane and is always available per layer.
+- Global Settings & Optimization includes smoothing/curves/simplify plus the optimization pipeline (linesimplify, linesort, filter, multipass).
 - Keep script order intact in `index.html`; `src/main.js` expects globals to be registered on `window.Vectura`.
 
 ## Deployment (GitHub Pages)

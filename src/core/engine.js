@@ -131,6 +131,98 @@
       return next;
     });
 
+  const clone = (obj) => JSON.parse(JSON.stringify(obj));
+
+  const pathLength = (path) => {
+    if (path && path.meta && path.meta.kind === 'circle') {
+      const r = path.meta.r ?? path.meta.rx ?? 0;
+      return Math.max(0, 2 * Math.PI * r);
+    }
+    if (!Array.isArray(path)) return 0;
+    let len = 0;
+    for (let i = 1; i < path.length; i++) {
+      const dx = path[i].x - path[i - 1].x;
+      const dy = path[i].y - path[i - 1].y;
+      len += Math.sqrt(dx * dx + dy * dy);
+    }
+    return len;
+  };
+
+  const pathEndpoints = (path) => {
+    if (path && path.meta && path.meta.kind === 'circle') {
+      const cx = path.meta.cx ?? path.meta.x ?? 0;
+      const cy = path.meta.cy ?? path.meta.y ?? 0;
+      return { start: { x: cx, y: cy }, end: { x: cx, y: cy } };
+    }
+    if (!Array.isArray(path) || !path.length) return { start: { x: 0, y: 0 }, end: { x: 0, y: 0 } };
+    return { start: path[0], end: path[path.length - 1] };
+  };
+
+  const pathCentroid = (path) => {
+    if (path && path.meta && path.meta.kind === 'circle') {
+      const cx = path.meta.cx ?? path.meta.x ?? 0;
+      const cy = path.meta.cy ?? path.meta.y ?? 0;
+      return { x: cx, y: cy };
+    }
+    if (!Array.isArray(path) || !path.length) return { x: 0, y: 0 };
+    let sx = 0;
+    let sy = 0;
+    path.forEach((pt) => {
+      sx += pt.x;
+      sy += pt.y;
+    });
+    const denom = path.length || 1;
+    return { x: sx / denom, y: sy / denom };
+  };
+
+  const isClosedPath = (path) => {
+    if (!Array.isArray(path) || path.length < 3) return false;
+    const start = path[0];
+    const end = path[path.length - 1];
+    const dx = start.x - end.x;
+    const dy = start.y - end.y;
+    return dx * dx + dy * dy < 1e-6;
+  };
+
+  const closePathIfNeeded = (path, closed) => {
+    if (!closed || !Array.isArray(path) || path.length < 2) return path;
+    const start = path[0];
+    const end = path[path.length - 1];
+    const dx = start.x - end.x;
+    const dy = start.y - end.y;
+    if (dx * dx + dy * dy > 1e-6) {
+      const next = path.slice();
+      next.push({ x: start.x, y: start.y });
+      if (path.meta) next.meta = path.meta;
+      return next;
+    }
+    return path;
+  };
+
+  const reversePath = (path) => {
+    if (!Array.isArray(path)) return path;
+    const next = path.slice().reverse();
+    if (path.meta) next.meta = path.meta;
+    return next;
+  };
+
+  const offsetPath = (path, dx, dy) => {
+    if (path && path.meta && path.meta.kind === 'circle') {
+      const meta = { ...path.meta };
+      const cx = meta.cx ?? meta.x ?? 0;
+      const cy = meta.cy ?? meta.y ?? 0;
+      meta.cx = cx + dx;
+      meta.cy = cy + dy;
+      const next = [];
+      next.meta = meta;
+      return next;
+    }
+    if (!Array.isArray(path)) return path;
+    const next = path.map((pt) => ({ x: pt.x + dx, y: pt.y + dy }));
+    if (path.meta) next.meta = path.meta;
+    return next;
+  };
+
   class VectorEngine {
     constructor() {
       this.layers = [];
@@ -431,6 +523,288 @@
       };
       layer.paths = finalPaths;
       layer.helperPaths = helperTransformed;
+      this.optimizeLayers([layer]);
+    }
+
+    ensureLayerOptimization(layer) {
+      if (!layer) return null;
+      if (!layer.optimization) {
+        const base = SETTINGS.optimizationDefaults ? clone(SETTINGS.optimizationDefaults) : { bypassAll: false, steps: [] };
+        layer.optimization = base;
+      }
+      if (!Array.isArray(layer.optimization.steps)) layer.optimization.steps = [];
+      const defaults = SETTINGS.optimizationDefaults ? clone(SETTINGS.optimizationDefaults) : { bypassAll: false, steps: [] };
+      const defaultSteps = Array.isArray(defaults.steps) ? defaults.steps : [];
+      const defaultMap = new Map(defaultSteps.map((step) => [step.id, step]));
+      const normalized = layer.optimization.steps.map((step) => ({
+        ...(defaultMap.get(step.id) || {}),
+        ...step,
+      }));
+      defaultSteps.forEach((step) => {
+        if (!normalized.some((s) => s.id === step.id)) {
+          normalized.push(clone(step));
+        }
+      });
+      layer.optimization.steps = normalized;
+      if (layer.optimization.bypassAll === undefined) layer.optimization.bypassAll = defaults.bypassAll ?? false;
+      return layer.optimization;
+    }
+
+    optimizeLayers(layers, options = {}) {
+      const targetLayers = (layers || this.layers).filter((layer) => layer && !layer.isGroup);
+      if (!targetLayers.length) return new Map();
+      const runPipeline = (layersToProcess, config) => {
+        if (!config) return new Map();
+        const steps = Array.isArray(config.steps) ? config.steps : [];
+        const shouldRun = !config.bypassAll && steps.some((step) => step && step.enabled && !step.bypass);
+        if (!shouldRun) {
+          layersToProcess.forEach((layer) => {
+            layer.optimizedPaths = null;
+            layer.optimizedStats = null;
+          });
+          return new Map();
+        }
+
+        const working = new Map();
+        layersToProcess.forEach((layer) => {
+          working.set(layer.id, clonePaths(layer.paths || []));
+        });
+
+      const simplifyPaths = (paths, step) => {
+        const tol = Math.max(0, step.tolerance ?? 0);
+        if (!tol) return paths;
+        const useCurves = step.mode === 'curve';
+        return paths.map((path) => {
+          if (!Array.isArray(path)) return path;
+          if (path.meta && path.meta.kind === 'circle') return path;
+          const closed = isClosedPath(path);
+          const next = useCurves ? simplifyPathVisvalingam(path, tol) : simplifyPath(path, tol);
+          return closePathIfNeeded(next, closed);
+        });
+      };
+
+      const filterPaths = (paths, step) => {
+        const minLen = Math.max(0, step.minLength ?? 0);
+        const maxLen = step.maxLength > 0 ? step.maxLength : Infinity;
+        const tinyThreshold = step.removeTiny ? Math.max(minLen, 0.5) : minLen;
+        return paths.filter((path) => {
+          const len = pathLength(path);
+          if (len < tinyThreshold) return false;
+          if (len > maxLen) return false;
+          return true;
+        });
+      };
+
+      const multipassPaths = (paths, step) => {
+        const passes = Math.max(1, Math.round(step.passes ?? 1));
+        if (passes <= 1) return paths;
+        const offset = Math.max(0, step.offset ?? 0);
+        const jitter = Math.max(0, step.jitter ?? 0);
+        const seed = step.seed ?? 0;
+        const passRng = new SeededRNG(seed);
+        const out = [];
+        paths.forEach((path) => {
+          out.push(path);
+          for (let i = 1; i < passes; i++) {
+            const angle = (i / passes) * Math.PI * 2;
+            let dx = Math.cos(angle) * offset;
+            let dy = Math.sin(angle) * offset;
+            if (jitter > 0) {
+              dx += (passRng.nextFloat() * 2 - 1) * jitter;
+              dy += (passRng.nextFloat() * 2 - 1) * jitter;
+            }
+            out.push(offsetPath(path, dx, dy));
+          }
+        });
+        return out;
+      };
+
+      const sortItems = (items, step, origin) => {
+        if (!items.length) return items;
+        const method = step.method || 'nearest';
+        const direction = step.direction || 'none';
+        const getKey = (item) => {
+          const center = pathCentroid(item.path);
+          if (direction === 'horizontal') return center.x;
+          if (direction === 'vertical') return center.y;
+          if (direction === 'radial') {
+            return Math.atan2(center.y - origin.y, center.x - origin.x);
+          }
+          return 0;
+        };
+        if (method === 'angle' || direction === 'radial') {
+          return items.slice().sort((a, b) => getKey(a) - getKey(b));
+        }
+        if (method === 'greedy' && direction !== 'none') {
+          return items.slice().sort((a, b) => getKey(a) - getKey(b));
+        }
+        const allowReverse = method === 'nearest';
+        const remaining = items.slice();
+        const sorted = [];
+        let startIndex = 0;
+        if (direction !== 'none') {
+          let bestVal = Infinity;
+          remaining.forEach((item, idx) => {
+            const val = getKey(item);
+            if (val < bestVal) {
+              bestVal = val;
+              startIndex = idx;
+            }
+          });
+        }
+        let currentItem = remaining.splice(startIndex, 1)[0];
+        sorted.push(currentItem);
+        let current = pathEndpoints(currentItem.path).end;
+        while (remaining.length) {
+          let bestIdx = 0;
+          let bestDist = Infinity;
+          let bestReverse = false;
+          for (let i = 0; i < remaining.length; i++) {
+            const item = remaining[i];
+            const { start, end } = pathEndpoints(item.path);
+            const dx = start.x - current.x;
+            const dy = start.y - current.y;
+            let dist = dx * dx + dy * dy;
+            let reverse = false;
+            if (allowReverse) {
+              const dx2 = end.x - current.x;
+              const dy2 = end.y - current.y;
+              const dist2 = dx2 * dx2 + dy2 * dy2;
+              if (dist2 < dist) {
+                dist = dist2;
+                reverse = true;
+              }
+            }
+            if (dist < bestDist) {
+              bestDist = dist;
+              bestIdx = i;
+              bestReverse = reverse;
+            }
+          }
+          const nextItem = remaining.splice(bestIdx, 1)[0];
+          if (bestReverse) nextItem.path = reversePath(nextItem.path);
+          sorted.push(nextItem);
+          current = pathEndpoints(nextItem.path).end;
+        }
+        return sorted;
+      };
+
+      const applyLineSort = (map, step) => {
+        const grouping = step.grouping || 'layer';
+        const center = layersToProcess.reduce(
+          (acc, layer) => {
+            acc.x += layer.origin?.x ?? 0;
+            acc.y += layer.origin?.y ?? 0;
+            return acc;
+          },
+          { x: 0, y: 0 }
+        );
+        if (layersToProcess.length) {
+          center.x /= layersToProcess.length;
+          center.y /= layersToProcess.length;
+        }
+        if (grouping === 'combined') {
+          const items = [];
+          layersToProcess.forEach((layer) => {
+            (map.get(layer.id) || []).forEach((path) => items.push({ layerId: layer.id, path }));
+          });
+          const sorted = sortItems(items, step, center);
+          const nextMap = new Map(layersToProcess.map((layer) => [layer.id, []]));
+          sorted.forEach((item) => {
+            if (!nextMap.has(item.layerId)) nextMap.set(item.layerId, []);
+            nextMap.get(item.layerId).push(item.path);
+          });
+          return nextMap;
+        }
+        if (grouping === 'pen') {
+          const penGroups = new Map();
+          layersToProcess.forEach((layer) => {
+            const penId = layer.penId || 'default';
+            if (!penGroups.has(penId)) penGroups.set(penId, []);
+            (map.get(layer.id) || []).forEach((path) =>
+              penGroups.get(penId).push({ layerId: layer.id, path })
+            );
+          });
+          const nextMap = new Map(layersToProcess.map((layer) => [layer.id, []]));
+          penGroups.forEach((items) => {
+            const sorted = sortItems(items, step, center);
+            sorted.forEach((item) => {
+              if (!nextMap.has(item.layerId)) nextMap.set(item.layerId, []);
+              nextMap.get(item.layerId).push(item.path);
+            });
+          });
+          return nextMap;
+        }
+        const nextMap = new Map();
+        layersToProcess.forEach((layer) => {
+          const items = (map.get(layer.id) || []).map((path) => ({ layerId: layer.id, path }));
+          const sorted = sortItems(items, step, center);
+          nextMap.set(
+            layer.id,
+            sorted.map((item) => item.path)
+          );
+        });
+        return nextMap;
+      };
+
+      let current = working;
+      steps.forEach((step) => {
+        if (!step || !step.enabled || step.bypass) return;
+        switch (step.id) {
+          case 'linesimplify': {
+            const next = new Map();
+            current.forEach((paths, id) => {
+              next.set(id, simplifyPaths(paths, step));
+            });
+            current = next;
+            break;
+          }
+          case 'filter': {
+            const next = new Map();
+            current.forEach((paths, id) => {
+              next.set(id, filterPaths(paths, step));
+            });
+            current = next;
+            break;
+          }
+          case 'multipass': {
+            const next = new Map();
+            current.forEach((paths, id) => {
+              next.set(id, multipassPaths(paths, step));
+            });
+            current = next;
+            break;
+          }
+          case 'linesort': {
+            current = applyLineSort(current, step);
+            break;
+          }
+          default:
+            break;
+        }
+      });
+
+      layersToProcess.forEach((layer) => {
+        const next = current.get(layer.id) || [];
+        layer.optimizedPaths = next;
+        layer.optimizedStats = countPathPoints(next);
+      });
+      return current;
+      };
+
+      if (options.config) {
+        return runPipeline(targetLayers, options.config);
+      }
+
+      const combined = new Map();
+      targetLayers.forEach((layer) => {
+        const config = this.ensureLayerOptimization(layer);
+        const map = runPipeline([layer], config);
+        map.forEach((paths, id) => {
+          combined.set(id, paths);
+        });
+      });
+      return combined;
     }
 
     getFormula(layerId) {
@@ -440,10 +814,14 @@
       return algo && algo.formula ? algo.formula(l.params) : 'Procedural Vector Generation';
     }
 
-    getStats() {
+    computeStats(layers, options = {}) {
+      const target = (layers || []).filter((l) => l && l.visible);
+      const useOptimized = Boolean(options.useOptimized);
+      const includePlotterOptimize = options.includePlotterOptimize !== false;
       let dist = 0;
       let lines = 0;
-      const optimize = Math.max(0, SETTINGS.plotterOptimize ?? 0);
+      let points = 0;
+      const optimize = includePlotterOptimize ? Math.max(0, SETTINGS.plotterOptimize ?? 0) : 0;
       const tol = optimize > 0 ? Math.max(0.001, optimize) : 0;
       const dedupe = optimize > 0 ? new Map() : null;
       const quant = (v) => (tol ? Math.round(v / tol) * tol : v);
@@ -459,42 +837,35 @@
           .map((pt) => `${quant(pt.x)},${quant(pt.y)}`)
           .join('|');
       };
-      const pathLength = (path) => {
-        if (path && path.meta && path.meta.kind === 'circle') {
-          const r = path.meta.r ?? path.meta.rx ?? 0;
-          return Math.max(0, 2 * Math.PI * r);
-        }
-        if (!Array.isArray(path)) return 0;
-        let len = 0;
-        for (let i = 1; i < path.length; i++) {
-          const dx = path[i].x - path[i - 1].x;
-          const dy = path[i].y - path[i - 1].y;
-          len += Math.sqrt(dx * dx + dy * dy);
-        }
-        return len;
-      };
-      this.layers.forEach((l) => {
-        if (!l.visible) return;
+      target.forEach((l) => {
         const penId = l.penId || 'default';
         let seen = null;
         if (dedupe) {
           if (!dedupe.has(penId)) dedupe.set(penId, new Set());
           seen = dedupe.get(penId);
         }
-        l.paths.forEach((p) => {
+        const paths = useOptimized && l.optimizedPaths ? l.optimizedPaths : l.paths;
+        const count = countPathPoints(paths || []);
+        lines += count.lines;
+        points += count.points;
+        (paths || []).forEach((p) => {
           if (seen) {
             const key = pathKey(p);
             if (key && seen.has(key)) return;
             if (key) seen.add(key);
           }
           dist += pathLength(p);
-          lines += 1;
         });
       });
       const timeSec = dist / 1000 / (SETTINGS.speedDown / 1000);
       const m = Math.floor(timeSec / 60);
       const s = Math.floor(timeSec % 60);
-      return { distance: Math.round(dist / 1000) + 'm', time: `${m}:${s.toString().padStart(2, '0')}`, lines };
+      return { distance: Math.round(dist / 1000) + 'm', time: `${m}:${s.toString().padStart(2, '0')}`, lines, points };
+    }
+
+    getStats(options = {}) {
+      const layers = options.layers || this.layers;
+      return this.computeStats(layers, options);
     }
   }
 
