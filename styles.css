@@ -1170,8 +1170,8 @@ input[type='color']::-webkit-color-swatch {
 }
 
 .inline-value-input {
-  position: fixed;
-  z-index: 9999;
+  position: absolute;
+  z-index: 10;
   background: #0f0f12;
   border: 1px solid #2a2b31;
   color: #ef4444;
@@ -1181,6 +1181,103 @@ input[type='color']::-webkit-color-swatch {
   text-align: right;
   border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.global-section {
+  margin-top: 1.25rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #27272a;
+}
+
+.global-section-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: transparent;
+  border: none;
+  padding: 0 0 0.5rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.global-section-title {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #a1a1aa;
+}
+
+.global-section-toggle {
+  width: 14px;
+  height: 14px;
+  position: relative;
+  display: inline-block;
+  transform: rotate(90deg);
+  transition: transform 0.2s ease;
+}
+
+.global-section-toggle::before {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 3px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 4px 0 4px 6px;
+  border-color: transparent transparent transparent #a1a1aa;
+}
+
+.global-section.collapsed .global-section-toggle {
+  transform: rotate(0deg);
+}
+
+.global-section-body {
+  padding-top: 0.25rem;
+}
+
+.noise-image-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.noise-image-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 120px;
+}
+
+.noise-image-right {
+  flex: 1;
+  min-width: 0;
+}
+
+.noise-image-preview {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border: 1px solid #27272a;
+  border-radius: 6px;
+  background: #111114;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.noise-image-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.noise-dropzone.compact {
+  min-height: 64px;
+  font-size: 10px;
+  padding: 10px;
 }
 
 .layer-name-input,

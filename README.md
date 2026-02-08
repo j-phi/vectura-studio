@@ -108,6 +108,7 @@ flowchart LR
 - Add new algorithms by extending `src/core/algorithms/index.js` and wiring defaults/UI in `src/config/` and `src/ui/ui.js`.
 - Machine sizes live in `src/config/machines.js` and are used for bounds and export dimensions.
 - Pen palettes live in `src/config/palettes.js` and can be edited or extended.
+- Global Settings & Optimization (smoothing/curves/simplify) lives in the left pane and is always available per layer.
 - Keep script order intact in `index.html`; `src/main.js` expects globals to be registered on `window.Vectura`.
 
 ## Deployment (GitHub Pages)

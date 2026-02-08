@@ -102,28 +102,59 @@
   ];
 
   const WAVE_NOISE_OPTIONS = [
-    { value: 'simplex', label: 'Simplex' },
-    { value: 'ridged', label: 'Ridged' },
     { value: 'billow', label: 'Billow' },
-    { value: 'turbulence', label: 'Turbulence' },
-    { value: 'stripes', label: 'Stripes' },
-    { value: 'marble', label: 'Marble' },
-    { value: 'steps', label: 'Steps' },
-    { value: 'triangle', label: 'Triangle' },
-    { value: 'warp', label: 'Warp' },
     { value: 'cellular', label: 'Cellular' },
-    { value: 'fbm', label: 'Fractal' },
-    { value: 'swirl', label: 'Swirl' },
-    { value: 'radial', label: 'Radial' },
     { value: 'checker', label: 'Checker' },
-    { value: 'zigzag', label: 'Zigzag' },
-    { value: 'ripple', label: 'Ripple' },
-    { value: 'spiral', label: 'Spiral' },
-    { value: 'grain', label: 'Grain' },
+    { value: 'crackle', label: 'Crackle' },
     { value: 'crosshatch', label: 'Crosshatch' },
-    { value: 'pulse', label: 'Pulse' },
+    { value: 'domain', label: 'Domain Warp' },
+    { value: 'dunes', label: 'Dunes' },
+    { value: 'facet', label: 'Facet' },
+    { value: 'fbm', label: 'Fractal' },
+    { value: 'grain', label: 'Grain' },
     { value: 'image', label: 'Image' },
+    { value: 'marble', label: 'Marble' },
+    { value: 'moire', label: 'Moire' },
+    { value: 'perlin', label: 'Perlin' },
+    { value: 'pulse', label: 'Pulse' },
+    { value: 'radial', label: 'Radial' },
+    { value: 'ridged', label: 'Ridged' },
+    { value: 'ripple', label: 'Ripple' },
+    { value: 'sawtooth', label: 'Sawtooth' },
+    { value: 'simplex', label: 'Simplex' },
+    { value: 'spiral', label: 'Spiral' },
+    { value: 'steps', label: 'Steps' },
+    { value: 'stripes', label: 'Stripes' },
+    { value: 'swirl', label: 'Swirl' },
+    { value: 'triangle', label: 'Triangle' },
+    { value: 'turbulence', label: 'Turbulence' },
+    { value: 'value', label: 'Value' },
+    { value: 'voronoi', label: 'Voronoi' },
+    { value: 'warp', label: 'Warp' },
+    { value: 'weave', label: 'Weave' },
+    { value: 'zigzag', label: 'Zigzag' },
   ];
+
+  const WAVE_PATTERN_TYPES = [
+    'stripes',
+    'marble',
+    'checker',
+    'zigzag',
+    'ripple',
+    'spiral',
+    'crosshatch',
+    'pulse',
+    'swirl',
+    'radial',
+    'weave',
+    'moire',
+    'sawtooth',
+    'dunes',
+  ];
+  const WAVE_CELL_TYPES = ['cellular', 'voronoi', 'crackle'];
+  const WAVE_STEP_TYPES = ['steps', 'facet'];
+  const WAVE_WARP_TYPES = ['warp', 'domain'];
+  const WAVE_SEEDED_TYPES = ['steps', 'value', 'perlin', 'facet'];
 
   const WAVE_NOISE_BLEND_OPTIONS = [
     { value: 'add', label: 'Additive' },
@@ -163,19 +194,152 @@
       infoKey: 'wavetable.noiseAngle',
     },
     {
+      key: 'shiftX',
+      label: 'Noise X-Shift',
+      type: 'range',
+      min: -1,
+      max: 1,
+      step: 0.01,
+      infoKey: 'wavetable.noiseShiftX',
+    },
+    {
+      key: 'shiftY',
+      label: 'Noise Y-Shift',
+      type: 'range',
+      min: -1,
+      max: 1,
+      step: 0.01,
+      infoKey: 'wavetable.noiseShiftY',
+    },
+    {
+      key: 'patternScale',
+      label: 'Pattern Scale',
+      type: 'range',
+      min: 0.2,
+      max: 6,
+      step: 0.05,
+      infoKey: 'wavetable.noisePatternScale',
+      showIf: (n) => WAVE_PATTERN_TYPES.includes(n.type),
+    },
+    {
+      key: 'warpStrength',
+      label: 'Warp Strength',
+      type: 'range',
+      min: 0,
+      max: 3,
+      step: 0.05,
+      infoKey: 'wavetable.noiseWarpStrength',
+      showIf: (n) => WAVE_WARP_TYPES.includes(n.type),
+    },
+    {
+      key: 'cellularScale',
+      label: 'Cell Scale',
+      type: 'range',
+      min: 0.5,
+      max: 6,
+      step: 0.1,
+      infoKey: 'wavetable.noiseCellScale',
+      showIf: (n) => WAVE_CELL_TYPES.includes(n.type),
+    },
+    {
+      key: 'cellularJitter',
+      label: 'Cell Jitter',
+      type: 'range',
+      min: 0,
+      max: 1,
+      step: 0.05,
+      infoKey: 'wavetable.noiseCellJitter',
+      showIf: (n) => WAVE_CELL_TYPES.includes(n.type),
+    },
+    {
+      key: 'stepsCount',
+      label: 'Step Count',
+      type: 'range',
+      min: 2,
+      max: 16,
+      step: 1,
+      infoKey: 'wavetable.noiseSteps',
+      showIf: (n) => WAVE_STEP_TYPES.includes(n.type),
+    },
+    {
+      key: 'seed',
+      label: 'Noise Seed',
+      type: 'range',
+      min: 0,
+      max: 9999,
+      step: 1,
+      infoKey: 'wavetable.noiseSeed',
+      showIf: (n) => WAVE_SEEDED_TYPES.includes(n.type),
+    },
+    {
       key: 'imageAlgo',
       label: 'Image Noise Mode',
       type: 'select',
       options: [
         { value: 'luma', label: 'Luma' },
+        { value: 'contrast', label: 'Contrast' },
+        { value: 'gamma', label: 'Gamma' },
         { value: 'invert', label: 'Invert' },
         { value: 'threshold', label: 'Threshold' },
         { value: 'posterize', label: 'Posterize' },
         { value: 'edge', label: 'Edge Detect' },
         { value: 'blur', label: 'Blur' },
+        { value: 'solarize', label: 'Solarize' },
+        { value: 'pixelate', label: 'Pixelate' },
+        { value: 'dither', label: 'Dither' },
       ],
       infoKey: 'wavetable.imageAlgo',
       showIf: (n) => n.type === 'image',
+    },
+    {
+      key: 'imageGamma',
+      label: 'Image Gamma',
+      type: 'range',
+      min: 0.2,
+      max: 3,
+      step: 0.05,
+      infoKey: 'wavetable.imageGamma',
+      showIf: (n) => n.type === 'image' && n.imageAlgo === 'gamma',
+    },
+    {
+      key: 'imageContrast',
+      label: 'Image Contrast',
+      type: 'range',
+      min: 0,
+      max: 2,
+      step: 0.05,
+      infoKey: 'wavetable.imageContrast',
+      showIf: (n) => n.type === 'image' && n.imageAlgo === 'contrast',
+    },
+    {
+      key: 'imageSolarize',
+      label: 'Solarize Threshold',
+      type: 'range',
+      min: 0,
+      max: 1,
+      step: 0.01,
+      infoKey: 'wavetable.imageSolarize',
+      showIf: (n) => n.type === 'image' && n.imageAlgo === 'solarize',
+    },
+    {
+      key: 'imagePixelate',
+      label: 'Pixelate',
+      type: 'range',
+      min: 2,
+      max: 64,
+      step: 1,
+      infoKey: 'wavetable.imagePixelate',
+      showIf: (n) => n.type === 'image' && n.imageAlgo === 'pixelate',
+    },
+    {
+      key: 'imageDither',
+      label: 'Dither Amount',
+      type: 'range',
+      min: 0,
+      max: 1,
+      step: 0.05,
+      infoKey: 'wavetable.imageDither',
+      showIf: (n) => n.type === 'image' && n.imageAlgo === 'dither',
     },
     {
       key: 'imageThreshold',
@@ -1436,6 +1600,26 @@
       title: 'Image Noise Mode',
       description: 'Determines how the image is converted into noise values.',
     },
+    'wavetable.imageGamma': {
+      title: 'Image Gamma',
+      description: 'Adjusts midtone weighting before sampling the image.',
+    },
+    'wavetable.imageContrast': {
+      title: 'Image Contrast',
+      description: 'Boosts or reduces contrast prior to sampling.',
+    },
+    'wavetable.imageSolarize': {
+      title: 'Solarize Threshold',
+      description: 'Inverts tones above the threshold for a photographic solarize effect.',
+    },
+    'wavetable.imagePixelate': {
+      title: 'Pixelate',
+      description: 'Samples the image in larger blocks for a chunky pixel effect.',
+    },
+    'wavetable.imageDither': {
+      title: 'Dither Amount',
+      description: 'Applies a patterned threshold to create a stippled tone map.',
+    },
     'wavetable.imageThreshold': {
       title: 'Image Threshold',
       description: 'Threshold used to binarize the image before sampling.',
@@ -1455,6 +1639,38 @@
     'wavetable.zoom': {
       title: 'Noise Zoom',
       description: 'Scale of this noise field along the wavetable.',
+    },
+    'wavetable.noiseShiftX': {
+      title: 'Noise X-Shift',
+      description: 'Offsets the noise field horizontally. 0 keeps it centered.',
+    },
+    'wavetable.noiseShiftY': {
+      title: 'Noise Y-Shift',
+      description: 'Offsets the noise field vertically. 0 keeps it centered.',
+    },
+    'wavetable.noisePatternScale': {
+      title: 'Pattern Scale',
+      description: 'Adjusts the spacing of pattern-driven noises like stripes or moire.',
+    },
+    'wavetable.noiseWarpStrength': {
+      title: 'Warp Strength',
+      description: 'Controls how aggressively the noise field is warped.',
+    },
+    'wavetable.noiseCellScale': {
+      title: 'Cell Scale',
+      description: 'Sets the size of cells for cellular/voronoi noise types.',
+    },
+    'wavetable.noiseCellJitter': {
+      title: 'Cell Jitter',
+      description: 'Randomizes cell positions to soften or sharpen cell boundaries.',
+    },
+    'wavetable.noiseSteps': {
+      title: 'Step Count',
+      description: 'Number of discrete steps for stepped or faceted noise.',
+    },
+    'wavetable.noiseSeed': {
+      title: 'Noise Seed',
+      description: 'Offsets the noise pattern for seeded modes like Steps or Value.',
     },
     'wavetable.tilt': {
       title: 'Row Shift',
@@ -2528,6 +2744,7 @@
       this.layerListOrder = [];
       this.lastLayerClickId = null;
       this.layerListFocus = false;
+      this.globalSectionCollapsed = false;
 
       this.initModuleDropdown();
       this.initMachineDropdown();
@@ -2716,7 +2933,8 @@
             Angle controls use circular dials—drag the marker to set direction.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Double-click a value to edit it inline. Double-click a control to reset it to defaults.
+            Double-click a value to edit it inline (Tab/Shift+Tab to hop between params; arrows nudge, Shift = 10x).
+            Double-click a control to reset it to defaults.
           </div>
         </div>
         <div class="modal-section">
@@ -2791,12 +3009,26 @@
         zoom: 0.02,
         freq: 1.0,
         angle: 0,
+        shiftX: 0,
+        shiftY: 0,
+        patternScale: 1,
+        warpStrength: 1,
+        cellularScale: 1,
+        cellularJitter: 1,
+        stepsCount: 5,
+        seed: 0,
         imageId: '',
         imageName: '',
+        imagePreview: '',
         imageAlgo: 'luma',
         imageThreshold: 0.5,
         imagePosterize: 5,
         imageBlur: 0,
+        imageGamma: 1,
+        imageContrast: 1,
+        imageSolarize: 0.5,
+        imagePixelate: 12,
+        imageDither: 0.5,
       };
       const templates = (ALGO_DEFAULTS?.wavetable?.noises || []).map((noise, idx) => ({
         ...base,
@@ -2821,12 +3053,26 @@
           zoom: layer.params.zoom ?? base.zoom,
           freq: layer.params.freq ?? base.freq,
           angle: layer.params.noiseAngle ?? base.angle,
+          shiftX: base.shiftX,
+          shiftY: base.shiftY,
+          patternScale: base.patternScale,
+          warpStrength: base.warpStrength,
+          cellularScale: base.cellularScale,
+          cellularJitter: base.cellularJitter,
+          stepsCount: base.stepsCount,
+          seed: base.seed,
           imageId: layer.params.noiseImageId || base.imageId,
           imageName: layer.params.noiseImageName || base.imageName,
+          imagePreview: base.imagePreview,
           imageAlgo: layer.params.imageAlgo || base.imageAlgo,
           imageThreshold: layer.params.imageThreshold ?? base.imageThreshold,
           imagePosterize: layer.params.imagePosterize ?? base.imagePosterize,
           imageBlur: layer.params.imageBlur ?? base.imageBlur,
+          imageGamma: base.imageGamma,
+          imageContrast: base.imageContrast,
+          imageSolarize: base.imageSolarize,
+          imagePixelate: base.imagePixelate,
+          imageDither: base.imageDither,
         };
         noises = [legacy];
         layer.params.noises = noises;
@@ -5150,10 +5396,19 @@
       }
     }
 
-    loadNoiseImageFile(file, layer, nameEl, idKey = 'noiseImageId', nameKey = 'noiseImageName', target = null) {
+    loadNoiseImageFile(
+      file,
+      layer,
+      nameEl,
+      idKey = 'noiseImageId',
+      nameKey = 'noiseImageName',
+      target = null,
+      previewKey = ''
+    ) {
       if (!file || !layer) return;
       const reader = new FileReader();
       reader.onload = () => {
+        const preview = reader.result;
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
@@ -5171,10 +5426,13 @@
           if (!owner) return;
           owner[idKey] = id;
           owner[nameKey] = file.name;
+          if (previewKey) owner[previewKey] = preview;
           if (nameEl) nameEl.textContent = file.name;
           this.storeLayerParams(layer);
           this.app.regen();
           this.app.render();
+          this.buildControls();
+          this.updateFormula();
         };
         img.src = reader.result;
       };
@@ -5289,15 +5547,18 @@
         }
       }
 
+      const algoDefs = this.controls[layer.type] || [];
+      const commonDefs = COMMON_CONTROLS;
+      if (!algoDefs.length && !commonDefs.length) return;
+
       if (isGroup) {
-        container.innerHTML = '<p class="text-xs text-vectura-muted">Select a sublayer to edit its parameters.</p>';
-        return;
+        const msg = document.createElement('p');
+        msg.className = 'text-xs text-vectura-muted mb-4';
+        msg.textContent = 'Select a sublayer to edit its parameters.';
+        container.appendChild(msg);
+      } else {
+        this.storeLayerParams(layer);
       }
-
-      this.storeLayerParams(layer);
-
-      const defs = [...(this.controls[layer.type] || []), ...COMMON_CONTROLS];
-      if (!defs.length) return;
 
       const resetWrap = document.createElement('div');
       resetWrap.className = 'mb-4 grid grid-cols-2 gap-2';
@@ -5337,7 +5598,7 @@
       };
       resetWrap.appendChild(resetBtn);
       resetWrap.appendChild(randomBtn);
-      container.appendChild(resetWrap);
+      if (!isGroup) container.appendChild(resetWrap);
 
       const formatDisplayValue = (def, value) => {
         const displayVal = toDisplayValue(def, value);
@@ -5365,64 +5626,150 @@
         return null;
       };
 
+      const valueEditorMap = new WeakMap();
+      const collectValueChips = () =>
+        Array.from(container.querySelectorAll('.value-chip')).filter((chip) => chip.offsetParent !== null);
+
       const openInlineEditor = (opts) => {
         const { def, valueEl, getValue, setValue, parseValue, formatValue } = opts;
         if (!valueEl) return;
-        const { min, max, unit } = getDisplayConfig(def);
+        const { min, max, unit, step, precision } = getDisplayConfig(def);
+        const parent = valueEl.parentElement;
+        if (!parent) return;
         const rect = valueEl.getBoundingClientRect();
+        const parentRect = parent.getBoundingClientRect();
         const input = document.createElement('input');
         input.type = 'text';
         input.className = 'inline-value-input';
         const currentValue = getValue ? getValue() : 0;
         const displayValue = formatValue ? formatValue(currentValue) : formatDisplayValue(def, currentValue);
-        input.value = `${displayValue}`.replace(unit, '');
-        input.style.left = `${rect.left}px`;
-        input.style.top = `${rect.top}px`;
+        input.value = `${displayValue}`.replace(unit, '').trim();
+        const prevPosition = parent.style.position;
+        if (!prevPosition || prevPosition === 'static') parent.style.position = 'relative';
+        input.style.left = `${rect.left - parentRect.left}px`;
+        input.style.top = `${rect.top - parentRect.top}px`;
         input.style.width = `${Math.max(60, rect.width)}px`;
         input.style.height = `${Math.max(20, rect.height)}px`;
-        document.body.appendChild(input);
+        parent.appendChild(input);
+        valueEl.style.visibility = 'hidden';
         input.focus();
         input.select();
+
+        let closed = false;
         const cleanup = () => {
+          if (closed) return;
+          closed = true;
           if (input.parentElement) input.parentElement.removeChild(input);
+          valueEl.style.visibility = '';
+          if (!prevPosition || prevPosition === 'static') parent.style.position = '';
         };
+
         const apply = () => {
           const raw = input.value.trim().replace(unit, '');
           if (parseValue) {
             const parsed = parseValue(raw);
             if (!parsed) {
               this.showValueError(raw);
-              cleanup();
-              return;
+              return false;
             }
             setValue(parsed);
-            cleanup();
-            return;
+            return true;
           }
           const parsed = Number.parseFloat(raw);
           if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
             this.showValueError(`${raw}${unit}`);
+            return false;
+          }
+          setValue(parsed);
+          return true;
+        };
+
+        const openNeighbor = (dir) => {
+          const chips = collectValueChips();
+          const idx = chips.indexOf(valueEl);
+          if (idx === -1) return;
+          const next = chips[idx + dir];
+          if (!next) return;
+          const nextOpts = valueEditorMap.get(next);
+          if (!nextOpts) return;
+          window.requestAnimationFrame(() => openInlineEditor({ ...nextOpts, valueEl: next }));
+        };
+
+        const nudge = (direction, multiplier = 1) => {
+          const numericStep = Number.isFinite(step) && step > 0 ? step : 1;
+          const delta = numericStep * multiplier * direction;
+          const current = Number.parseFloat(input.value);
+          if (!Number.isFinite(current)) return;
+          const next = clamp(current + delta, min, max);
+          const factor = Math.pow(10, precision);
+          input.value = `${Math.round(next * factor) / factor}`;
+        };
+
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            const ok = apply();
+            cleanup();
+            if (!ok) return;
+            return;
+          }
+          if (e.key === 'Escape') {
             cleanup();
             return;
           }
-          setValue(parsed);
-          cleanup();
-        };
-        input.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') apply();
-          if (e.key === 'Escape') cleanup();
+          if (e.key === 'Tab') {
+            e.preventDefault();
+            const ok = apply();
+            cleanup();
+            if (ok) openNeighbor(e.shiftKey ? -1 : 1);
+            return;
+          }
+          if (['ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft'].includes(e.key)) {
+            e.preventDefault();
+            if (parseValue) return;
+            const direction = e.key === 'ArrowUp' || e.key === 'ArrowRight' ? 1 : -1;
+            const mult = e.shiftKey ? 10 : 1;
+            nudge(direction, mult);
+          }
         });
-        input.addEventListener('blur', apply);
+        input.addEventListener('blur', () => {
+          if (!apply()) {
+            cleanup();
+            return;
+          }
+          cleanup();
+        });
       };
 
       const attachValueEditor = (opts) => {
-        const { def, valueEl, getValue, setValue, parseValue, formatValue } = opts;
+        const { valueEl } = opts;
         if (!valueEl) return;
+        valueEditorMap.set(valueEl, opts);
         valueEl.ondblclick = (e) => {
           e.preventDefault();
-          openInlineEditor({ def, valueEl, getValue, setValue, parseValue, formatValue });
+          openInlineEditor({ ...opts, valueEl });
         };
       };
+
+      const globalSection = document.createElement('div');
+      globalSection.className = 'global-section';
+      globalSection.classList.toggle('collapsed', this.globalSectionCollapsed);
+      const globalHeader = document.createElement('button');
+      globalHeader.type = 'button';
+      globalHeader.className = 'global-section-header';
+      globalHeader.innerHTML = `
+        <span class="global-section-title">Global Settings &amp; Optimization</span>
+        <span class="global-section-toggle" aria-hidden="true"></span>
+      `;
+      const globalBody = document.createElement('div');
+      globalBody.className = 'global-section-body';
+      if (this.globalSectionCollapsed) globalBody.style.display = 'none';
+      globalHeader.onclick = () => {
+        this.globalSectionCollapsed = !this.globalSectionCollapsed;
+        globalSection.classList.toggle('collapsed', this.globalSectionCollapsed);
+        globalBody.style.display = this.globalSectionCollapsed ? 'none' : '';
+      };
+      globalSection.appendChild(globalHeader);
+      globalSection.appendChild(globalBody);
 
       const angleGroups = new Map();
       const getAngleGroup = (key) => {
@@ -5525,13 +5872,14 @@
         { key: 'damp', label: 'Damping', type: 'range', min: 0, max: 0.02, step: 0.0005, infoKey: 'harmonograph.damp' },
       ];
 
-      defs.forEach((def) => {
+      const renderDef = (def, targetEl) => {
+        const target = targetEl || container;
         if (def.showIf && !def.showIf(layer.params)) return;
         if (def.type === 'section') {
           const section = document.createElement('div');
           section.className = 'control-section';
           section.innerHTML = `<div class="control-section-title">${def.label}</div>`;
-          container.appendChild(section);
+          target.appendChild(section);
           return;
         }
         if (def.type === 'image') {
@@ -5582,7 +5930,7 @@
                 dropLabel: def.dropLabel,
               });
           }
-          container.appendChild(div);
+          target.appendChild(div);
           return;
         }
         if (def.type === 'pendulumList') {
@@ -5826,7 +6174,7 @@
             list.appendChild(card);
           });
 
-          container.appendChild(list);
+          target.appendChild(list);
           return;
         }
         if (def.type === 'noiseList') {
@@ -6104,26 +6452,35 @@
             const wrap = document.createElement('div');
             wrap.className = 'noise-image-block mb-3';
             const name = noise.imageName || 'No file selected';
+            const preview = noise.imagePreview
+              ? `<img src="${noise.imagePreview}" alt="Noise preview">`
+              : `<div class="noise-image-empty text-[10px] text-vectura-muted">No image</div>`;
             wrap.innerHTML = `
-              <div class="noise-dropzone">Drop image here</div>
-              <div class="flex items-center justify-between mt-2 gap-2">
-                <button type="button" class="noise-image-btn text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">
-                  Select Image
-                </button>
-                <button type="button" class="noise-image-clear text-[10px] text-vectura-muted hover:text-vectura-accent">Clear</button>
+              <div class="noise-image-row">
+                <div class="noise-image-left">
+                  <div class="noise-dropzone compact">Drop image</div>
+                  <button type="button" class="noise-image-btn text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">
+                    Select Image
+                  </button>
+                </div>
+                <div class="noise-image-right">
+                  <div class="noise-image-preview">${preview}</div>
+                  <div class="text-[10px] text-vectura-muted mt-2 noise-image-name">${name}</div>
+                  <button type="button" class="noise-image-clear text-[10px] text-vectura-muted hover:text-vectura-accent mt-1">Clear</button>
+                </div>
               </div>
-              <div class="text-[10px] text-vectura-muted mt-2 noise-image-name">${name}</div>
               <input type="file" accept="image/*" class="noise-image-input hidden">
             `;
             const dropzone = wrap.querySelector('.noise-dropzone');
             const selectBtn = wrap.querySelector('.noise-image-btn');
             const clearBtn = wrap.querySelector('.noise-image-clear');
             const nameEl = wrap.querySelector('.noise-image-name');
+            const previewEl = wrap.querySelector('.noise-image-preview');
             const fileInput = wrap.querySelector('.noise-image-input');
 
             const applyFile = (file) => {
               if (!file) return;
-              this.loadNoiseImageFile(file, layer, nameEl, 'imageId', 'imageName', noise);
+              this.loadNoiseImageFile(file, layer, nameEl, 'imageId', 'imageName', noise, 'imagePreview');
             };
 
             if (dropzone) {
@@ -6158,7 +6515,11 @@
                 if (this.app.pushHistory) this.app.pushHistory();
                 noise.imageId = '';
                 noise.imageName = '';
+                noise.imagePreview = '';
                 if (nameEl) nameEl.textContent = 'No file selected';
+                if (previewEl) {
+                  previewEl.innerHTML = `<div class="noise-image-empty text-[10px] text-vectura-muted">No image</div>`;
+                }
                 this.storeLayerParams(layer);
                 this.app.regen();
                 this.updateFormula();
@@ -6353,7 +6714,7 @@
             list.appendChild(card);
           });
 
-          container.appendChild(list);
+          target.appendChild(list);
           return;
         }
         let val = layer.params[def.id];
@@ -6434,7 +6795,7 @@
               },
             });
           }
-          container.appendChild(div);
+          target.appendChild(div);
           return;
         }
 
@@ -6911,8 +7272,16 @@
             });
           }
         }
-        container.appendChild(div);
-      });
+        target.appendChild(div);
+      };
+
+      if (!isGroup) {
+        algoDefs.forEach((def) => renderDef(def, container));
+      }
+      if (commonDefs.length) {
+        container.appendChild(globalSection);
+        commonDefs.forEach((def) => renderDef(def, globalBody));
+      }
     }
 
     updateFormula() {
@@ -6952,7 +7321,7 @@
             val.forEach((noise, idx) => {
               if (!noise || typeof noise !== 'object') return;
               Object.entries(noise).forEach(([nKey, nVal]) => {
-                if (nKey === 'id') return;
+                if (nKey === 'id' || nKey === 'imagePreview') return;
                 entries.push([`N${idx + 1}.${nKey}`, fmt(nVal)]);
               });
             });
