@@ -10,6 +10,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Multi-selection: shift-click ranges in the layer list, Cmd/Ctrl-click to toggle, or drag a marquee, then move/rotate the group together.
 - Layer grouping/ungrouping via Cmd/Ctrl+G and Cmd/Ctrl+Shift+G.
 - Expand any layer into per-line sublayers for fine-grained selection and pen assignment.
+- Canvas shortcut overlay that stays above the formula panel (toggleable in Settings).
 - Alignment guides for canvas center and size matching while dragging.
 - Guide visibility and snapping toggles in Settings (Cmd while dragging overrides snapping).
 - In-app help guide and shortcut menu (press `?`).
@@ -20,7 +21,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Multiple algorithm families (flowfields, lissajous, harmonograph, wavetable, rings, topo, boids, attractors, hyphae, shape pack).
 - Harmonograph pendulum list with add/delete/toggle controls and optional guide overlay.
 - Rainfall generator with wind, droplet styling, and optional silhouette masking.
-- Wavetable noise library includes image-based noise input.
+- Wavetable noise stack with per-noise blend modes, image-based noise input, and drag-to-reorder layers.
 - Pen palette with assignable colors/widths, reorderable list, drag-to-assign per layer or selection, plus palette selection and add/remove controls.
 - Plotter optimization slider to remove fully overlapping paths per pen before export.
 - One-click SVG export with configurable precision and grouping by pen assignment.
@@ -50,7 +51,7 @@ Then visit `http://localhost:8000`.
 4. Use Settings for machine size, margin, truncation, margin guides, stroke, background, and SVG precision.
 5. Export with the [EXPORT SVG] button.
 
-Pan: Shift + Drag. Zoom: Mouse Wheel. Move layer: Drag. Resize layer: Drag corner handles. Rotate: Drag the upper-right handle (Shift snaps). Duplicate: Alt-drag.
+Pan: Shift + Drag. Zoom: Mouse Wheel. Move layer: Drag. Resize layer: Drag corner handles. Rotate: Drag the upper-right handle (Shift snaps). Duplicate: Alt-drag. Expand: Cmd/Ctrl + E.
 
 ## Algorithm Library
 Each layer is powered by an algorithm with its own parameters and formula preview:

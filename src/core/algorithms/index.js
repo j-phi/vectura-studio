@@ -795,10 +795,6 @@
         const verticalFadeMode = ['none', 'top', 'bottom', 'both'].includes(p.verticalFadeMode)
           ? p.verticalFadeMode
           : 'both';
-        const noiseType = p.noiseType || 'simplex';
-        const noiseAngle = ((p.noiseAngle ?? 0) * Math.PI) / 180;
-        const cosA = Math.cos(noiseAngle);
-        const sinA = Math.sin(noiseAngle);
         const lineOffsetAngle = ((p.lineOffset ?? 180) * Math.PI) / 180;
         const lineOffsetX = Math.sin(lineOffsetAngle);
         const lineOffsetY = -Math.cos(lineOffsetAngle);
@@ -835,7 +831,8 @@
           }
           return norm ? total / norm : total;
         };
-        const noiseValue = (x, y) => {
+        const noiseValue = (x, y, noiseDef) => {
+          const noiseType = noiseDef?.type || 'simplex';
           const n = baseNoise(x, y);
           switch (noiseType) {
             case 'ridged':
@@ -899,10 +896,10 @@
             }
             case 'image': {
               const store = window.Vectura?.NOISE_IMAGES || {};
-              const img = p.noiseImageId ? store[p.noiseImageId] : null;
+              const img = noiseDef?.imageId ? store[noiseDef.imageId] : null;
               if (!img || !img.data) return n;
-              const algo = p.imageAlgo || 'luma';
-              const blur = Math.max(0, Math.min(4, p.imageBlur ?? 0));
+              const algo = noiseDef?.imageAlgo || 'luma';
+              const blur = Math.max(0, Math.min(4, noiseDef?.imageBlur ?? 0));
               const sampleLum = (u, v) => {
                 const uu = ((u % 1) + 1) % 1;
                 const vv = ((v % 1) + 1) % 1;
@@ -951,11 +948,11 @@
               let lum = sampleBlur(u, v);
               if (algo === 'invert') lum = 1 - lum;
               if (algo === 'threshold') {
-                const t = Math.max(0, Math.min(1, p.imageThreshold ?? 0.5));
+                const t = Math.max(0, Math.min(1, noiseDef?.imageThreshold ?? 0.5));
                 lum = lum >= t ? 1 : 0;
               }
               if (algo === 'posterize') {
-                const levels = Math.max(2, Math.min(10, Math.round(p.imagePosterize ?? 5)));
+                const levels = Math.max(2, Math.min(10, Math.round(noiseDef?.imagePosterize ?? 5)));
                 lum = Math.round(lum * (levels - 1)) / (levels - 1);
               }
               return lum * 2 - 1;
@@ -964,6 +961,48 @@
               return n;
           }
         };
+        const noiseBase = {
+          enabled: true,
+          type: p.noiseType || 'simplex',
+          blend: 'add',
+          amplitude: p.amplitude ?? 0,
+          zoom: p.zoom ?? 0.02,
+          freq: p.freq ?? 1,
+          angle: p.noiseAngle ?? 0,
+          imageId: p.noiseImageId || '',
+          imageName: p.noiseImageName || '',
+          imageAlgo: p.imageAlgo || 'luma',
+          imageThreshold: p.imageThreshold ?? 0.5,
+          imagePosterize: p.imagePosterize ?? 5,
+          imageBlur: p.imageBlur ?? 0,
+        };
+        const noiseStack = (Array.isArray(p.noises) && p.noises.length ? p.noises : [noiseBase]).map((noiseLayer) => ({
+          ...noiseBase,
+          ...(noiseLayer || {}),
+          enabled: noiseLayer?.enabled !== false,
+          blend: noiseLayer?.blend || noiseBase.blend,
+        }));
+        const noiseSamplers = noiseStack
+          .filter((noiseLayer) => noiseLayer.enabled !== false)
+          .map((noiseLayer) => {
+            const angle = ((noiseLayer.angle ?? 0) * Math.PI) / 180;
+            const cosA = Math.cos(angle);
+            const sinA = Math.sin(angle);
+            const zoom = noiseLayer.zoom ?? noiseBase.zoom;
+            const freq = noiseLayer.freq ?? noiseBase.freq;
+            const amplitude = noiseLayer.amplitude ?? noiseBase.amplitude;
+            return {
+              blend: noiseLayer.blend || 'add',
+              amplitude,
+              sample: (x, y) => {
+                const nx = x * zoom * freq;
+                const ny = y * zoom;
+                const rx = nx * cosA - ny * sinA;
+                const ry = nx * sinA + ny * cosA;
+                return noiseValue(rx, ry, noiseLayer);
+              },
+            };
+          });
         let prevY = null;
         let prevOffset = 0;
         const rowOrder = overlapPadding > 0 ? [...Array(lines).keys()].reverse() : [...Array(lines).keys()];
@@ -1002,12 +1041,35 @@
           const currY = overlapPadding > 0 ? new Array(pts + 1) : null;
           for (let j = 0; j <= pts; j++) {
             const baseX = inset + j * xStep + xOffset;
-            const nx = baseX * p.zoom * p.freq;
-            const ny = by * p.zoom;
-            const rx = nx * cosA - ny * sinA;
-            const ry = nx * sinA + ny * cosA;
-            const n = noiseValue(rx, ry);
-            const off = n * p.amplitude;
+            let combined = 0;
+            let hasNoise = false;
+            noiseSamplers.forEach((sampler) => {
+              const value = sampler.sample(baseX, by) * sampler.amplitude;
+              if (!hasNoise) {
+                combined = value;
+                hasNoise = true;
+                return;
+              }
+              switch (sampler.blend) {
+                case 'subtract':
+                  combined -= value;
+                  break;
+                case 'multiply':
+                  combined *= value;
+                  break;
+                case 'max':
+                  combined = Math.max(combined, value);
+                  break;
+                case 'min':
+                  combined = Math.min(combined, value);
+                  break;
+                case 'add':
+                default:
+                  combined += value;
+                  break;
+              }
+            });
+            const off = hasNoise ? combined : 0;
             let taper = 1.0;
             if (edgeFadeStrength > 0 && edgeFadeThresholdStrength > 0 && edgeFadeMode !== 'none') {
               const t = j / pts;
@@ -1125,7 +1187,7 @@
         return paths;
       },
       formula: (p) =>
-        `y = yBase + noise(rotate(x*${p.zoom}*${p.freq}, y*${p.zoom})) * ${p.amplitude}\nedge/vertical dampening scales noise`,
+        `y = yBase + Σ noiseᵢ(rotate(x*zoomᵢ*freqᵢ, y*zoomᵢ)) * ampᵢ\nedge/vertical dampening scales noise`,
     },
     rings: {
       generate: (p, rng, noise, bounds) => {

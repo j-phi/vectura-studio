@@ -101,6 +101,114 @@
     },
   ];
 
+  const WAVE_NOISE_OPTIONS = [
+    { value: 'simplex', label: 'Simplex' },
+    { value: 'ridged', label: 'Ridged' },
+    { value: 'billow', label: 'Billow' },
+    { value: 'turbulence', label: 'Turbulence' },
+    { value: 'stripes', label: 'Stripes' },
+    { value: 'marble', label: 'Marble' },
+    { value: 'steps', label: 'Steps' },
+    { value: 'triangle', label: 'Triangle' },
+    { value: 'warp', label: 'Warp' },
+    { value: 'cellular', label: 'Cellular' },
+    { value: 'fbm', label: 'Fractal' },
+    { value: 'swirl', label: 'Swirl' },
+    { value: 'radial', label: 'Radial' },
+    { value: 'checker', label: 'Checker' },
+    { value: 'zigzag', label: 'Zigzag' },
+    { value: 'ripple', label: 'Ripple' },
+    { value: 'spiral', label: 'Spiral' },
+    { value: 'grain', label: 'Grain' },
+    { value: 'crosshatch', label: 'Crosshatch' },
+    { value: 'pulse', label: 'Pulse' },
+    { value: 'image', label: 'Image' },
+  ];
+
+  const WAVE_NOISE_BLEND_OPTIONS = [
+    { value: 'add', label: 'Additive' },
+    { value: 'subtract', label: 'Subtract' },
+    { value: 'multiply', label: 'Multiply' },
+    { value: 'max', label: 'Max' },
+    { value: 'min', label: 'Min' },
+  ];
+
+  const WAVE_NOISE_DEFS = [
+    {
+      key: 'type',
+      label: 'Noise Type',
+      type: 'select',
+      randomExclude: ['image'],
+      options: WAVE_NOISE_OPTIONS,
+      infoKey: 'wavetable.noiseType',
+    },
+    {
+      key: 'blend',
+      label: 'Blend Mode',
+      type: 'select',
+      options: WAVE_NOISE_BLEND_OPTIONS,
+      infoKey: 'wavetable.noiseBlend',
+    },
+    { key: 'amplitude', label: 'Noise Amplitude', type: 'range', min: 2, max: 140, step: 1, infoKey: 'wavetable.amplitude' },
+    { key: 'zoom', label: 'Noise Zoom', type: 'range', min: 0.002, max: 0.08, step: 0.001, infoKey: 'wavetable.zoom' },
+    { key: 'freq', label: 'Frequency', type: 'range', min: 0.2, max: 12.0, step: 0.1, infoKey: 'wavetable.freq' },
+    {
+      key: 'angle',
+      label: 'Noise Angle',
+      type: 'angle',
+      min: 0,
+      max: 360,
+      step: 1,
+      displayUnit: '°',
+      infoKey: 'wavetable.noiseAngle',
+    },
+    {
+      key: 'imageAlgo',
+      label: 'Image Noise Mode',
+      type: 'select',
+      options: [
+        { value: 'luma', label: 'Luma' },
+        { value: 'invert', label: 'Invert' },
+        { value: 'threshold', label: 'Threshold' },
+        { value: 'posterize', label: 'Posterize' },
+        { value: 'edge', label: 'Edge Detect' },
+        { value: 'blur', label: 'Blur' },
+      ],
+      infoKey: 'wavetable.imageAlgo',
+      showIf: (n) => n.type === 'image',
+    },
+    {
+      key: 'imageThreshold',
+      label: 'Image Threshold',
+      type: 'range',
+      min: 0,
+      max: 1,
+      step: 0.01,
+      infoKey: 'wavetable.imageThreshold',
+      showIf: (n) => n.type === 'image' && n.imageAlgo === 'threshold',
+    },
+    {
+      key: 'imagePosterize',
+      label: 'Posterize Levels',
+      type: 'range',
+      min: 2,
+      max: 10,
+      step: 1,
+      infoKey: 'wavetable.imagePosterize',
+      showIf: (n) => n.type === 'image' && n.imageAlgo === 'posterize',
+    },
+    {
+      key: 'imageBlur',
+      label: 'Image Blur',
+      type: 'range',
+      min: 0,
+      max: 4,
+      step: 1,
+      infoKey: 'wavetable.imageBlur',
+      showIf: (n) => n.type === 'image' && (n.imageAlgo === 'blur' || n.imageAlgo === 'edge'),
+    },
+  ];
+
   const CONTROL_DEFS = {
     expanded: [],
     flowfield: [
@@ -352,105 +460,8 @@
     ],
     wavetable: [
       { id: 'lines', label: 'Lines', type: 'range', min: 5, max: 160, step: 1, infoKey: 'wavetable.lines' },
-      {
-        id: 'noiseType',
-        label: 'Noise Type',
-        type: 'select',
-        options: [
-          { value: 'simplex', label: 'Simplex' },
-          { value: 'ridged', label: 'Ridged' },
-          { value: 'billow', label: 'Billow' },
-          { value: 'turbulence', label: 'Turbulence' },
-          { value: 'stripes', label: 'Stripes' },
-          { value: 'marble', label: 'Marble' },
-          { value: 'steps', label: 'Steps' },
-          { value: 'triangle', label: 'Triangle' },
-          { value: 'warp', label: 'Warp' },
-          { value: 'cellular', label: 'Cellular' },
-          { value: 'fbm', label: 'Fractal' },
-          { value: 'swirl', label: 'Swirl' },
-          { value: 'radial', label: 'Radial' },
-          { value: 'checker', label: 'Checker' },
-          { value: 'zigzag', label: 'Zigzag' },
-          { value: 'ripple', label: 'Ripple' },
-          { value: 'spiral', label: 'Spiral' },
-          { value: 'grain', label: 'Grain' },
-          { value: 'crosshatch', label: 'Crosshatch' },
-          { value: 'pulse', label: 'Pulse' },
-          { value: 'image', label: 'Image' },
-        ],
-        infoKey: 'wavetable.noiseType',
-      },
-      {
-        id: 'noiseImageId',
-        label: 'Noise Image',
-        type: 'image',
-        accept: 'image/*',
-        idKey: 'noiseImageId',
-        nameKey: 'noiseImageName',
-        infoKey: 'wavetable.noiseImage',
-        showIf: (p) => p.noiseType === 'image',
-      },
-      {
-        id: 'imageAlgo',
-        label: 'Image Noise Mode',
-        type: 'select',
-        options: [
-          { value: 'luma', label: 'Luma' },
-          { value: 'invert', label: 'Invert' },
-          { value: 'threshold', label: 'Threshold' },
-          { value: 'posterize', label: 'Posterize' },
-          { value: 'edge', label: 'Edge Detect' },
-          { value: 'blur', label: 'Blur' },
-        ],
-        infoKey: 'wavetable.imageAlgo',
-        showIf: (p) => p.noiseType === 'image',
-      },
-      {
-        id: 'imageThreshold',
-        label: 'Image Threshold',
-        type: 'range',
-        min: 0,
-        max: 1,
-        step: 0.01,
-        infoKey: 'wavetable.imageThreshold',
-        showIf: (p) => p.noiseType === 'image' && p.imageAlgo === 'threshold',
-      },
-      {
-        id: 'imagePosterize',
-        label: 'Posterize Levels',
-        type: 'range',
-        min: 2,
-        max: 10,
-        step: 1,
-        infoKey: 'wavetable.imagePosterize',
-        showIf: (p) => p.noiseType === 'image' && p.imageAlgo === 'posterize',
-      },
-      {
-        id: 'imageBlur',
-        label: 'Image Blur',
-        type: 'range',
-        min: 0,
-        max: 4,
-        step: 1,
-        infoKey: 'wavetable.imageBlur',
-        showIf: (p) => p.noiseType === 'image' && (p.imageAlgo === 'blur' || p.imageAlgo === 'edge'),
-      },
-      { id: 'amplitude', label: 'Noise Amplitude', type: 'range', min: 2, max: 140, step: 1, infoKey: 'wavetable.amplitude' },
-      { id: 'zoom', label: 'Noise Zoom', type: 'range', min: 0.002, max: 0.08, step: 0.001, infoKey: 'wavetable.zoom' },
-      { id: 'tilt', label: 'Row Shift', type: 'range', min: -12, max: 12, step: 1, infoKey: 'wavetable.tilt' },
       { id: 'gap', label: 'Line Gap', type: 'range', min: 0.5, max: 3.0, step: 0.1, infoKey: 'wavetable.gap' },
-      { id: 'freq', label: 'Frequency', type: 'range', min: 0.2, max: 12.0, step: 0.1, infoKey: 'wavetable.freq' },
-      {
-        id: 'noiseAngle',
-        label: 'Noise Angle',
-        type: 'angle',
-        min: 0,
-        max: 360,
-        step: 1,
-        displayUnit: '°',
-        infoKey: 'wavetable.noiseAngle',
-      },
+      { id: 'tilt', label: 'Row Shift', type: 'range', min: -12, max: 12, step: 1, infoKey: 'wavetable.tilt' },
       {
         id: 'lineOffset',
         label: 'Line Offset Angle',
@@ -472,6 +483,7 @@
         ],
         infoKey: 'wavetable.continuity',
       },
+      { type: 'noiseList' },
       { type: 'section', label: 'Edge Noise Dampening' },
       {
         id: 'edgeFadeMode',
@@ -1184,6 +1196,10 @@
       title: 'Selection Outline Width',
       description: 'Controls the thickness of the selection silhouette.',
     },
+    'global.canvasHelp': {
+      title: 'Canvas Help',
+      description: 'Shows the quick shortcut overlay near the canvas.',
+    },
     'global.speedDown': {
       title: 'Draw Speed',
       description: 'Used for time estimation when the pen is down.',
@@ -1406,7 +1422,11 @@
     },
     'wavetable.noiseType': {
       title: 'Noise Type',
-      description: 'Selects the noise flavor used to shape the wavetable. Each mode has a distinct visual character.',
+      description: 'Selects the noise flavor for this noise layer. Each mode has a distinct visual character.',
+    },
+    'wavetable.noiseBlend': {
+      title: 'Blend Mode',
+      description: 'Controls how this noise layer combines with the noises above it.',
     },
     'wavetable.noiseImage': {
       title: 'Noise Image',
@@ -1430,11 +1450,11 @@
     },
     'wavetable.amplitude': {
       title: 'Noise Amplitude',
-      description: 'Amount of vertical displacement added by the noise field.',
+      description: 'Amount of vertical displacement added by this noise layer.',
     },
     'wavetable.zoom': {
       title: 'Noise Zoom',
-      description: 'Scale of the noise field along the wavetable.',
+      description: 'Scale of this noise field along the wavetable.',
     },
     'wavetable.tilt': {
       title: 'Row Shift',
@@ -1446,11 +1466,11 @@
     },
     'wavetable.freq': {
       title: 'Frequency',
-      description: 'Noise frequency along the X axis.',
+      description: 'Noise frequency along the X axis for this layer.',
     },
     'wavetable.noiseAngle': {
       title: 'Noise Angle',
-      description: 'Rotates the noise field direction used to displace the wave.',
+      description: 'Rotates this noise field direction used to displace the wave.',
     },
     'wavetable.lineOffset': {
       title: 'Line Offset Angle',
@@ -2528,6 +2548,7 @@
       this.initBottomPaneToggle();
       this.initBottomPaneResizer();
       this.initPaneResizers();
+      this.initCanvasHelp();
       this.renderLayers();
       this.renderPens();
       this.initPaletteControls();
@@ -2663,6 +2684,7 @@
             <div><span class="text-vectura-accent">Cmd/Ctrl + A</span> Select all layers (in layer list)</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + G</span> Group selection</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + Shift + G</span> Ungroup selection</div>
+            <div><span class="text-vectura-accent">Cmd/Ctrl + E</span> Expand selection into sublayers</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + [</span> Move layer down</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + ]</span> Move layer up</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + Shift + [ / ]</span> Send to back / front</div>
@@ -2704,6 +2726,7 @@
             <div>Mouse wheel to zoom</div>
             <div>Drag selection box to multi-select</div>
             <div>Drag to move selection; handles resize; top-right handle rotates (Shift snaps)</div>
+            <div>Canvas shortcut overlay can be toggled in Settings.</div>
           </div>
         </div>
         <div class="modal-section">
@@ -2759,6 +2782,79 @@
       this.storeLayerParams(layer);
     }
 
+    getWavetableNoiseTemplates() {
+      const base = {
+        enabled: true,
+        type: 'simplex',
+        blend: 'add',
+        amplitude: 9,
+        zoom: 0.02,
+        freq: 1.0,
+        angle: 0,
+        imageId: '',
+        imageName: '',
+        imageAlgo: 'luma',
+        imageThreshold: 0.5,
+        imagePosterize: 5,
+        imageBlur: 0,
+      };
+      const templates = (ALGO_DEFAULTS?.wavetable?.noises || []).map((noise, idx) => ({
+        ...base,
+        ...clone(noise),
+        id: noise?.id || `noise-${idx + 1}`,
+        enabled: noise?.enabled !== false,
+      }));
+      return { base, templates };
+    }
+
+    ensureWavetableNoises(layer) {
+      if (!layer || layer.type !== 'wavetable') return [];
+      const { base, templates } = this.getWavetableNoiseTemplates();
+      let noises = layer.params.noises;
+      if (!Array.isArray(noises) || !noises.length) {
+        const legacy = {
+          id: 'noise-1',
+          enabled: true,
+          type: layer.params.noiseType || base.type,
+          blend: base.blend,
+          amplitude: layer.params.amplitude ?? base.amplitude,
+          zoom: layer.params.zoom ?? base.zoom,
+          freq: layer.params.freq ?? base.freq,
+          angle: layer.params.noiseAngle ?? base.angle,
+          imageId: layer.params.noiseImageId || base.imageId,
+          imageName: layer.params.noiseImageName || base.imageName,
+          imageAlgo: layer.params.imageAlgo || base.imageAlgo,
+          imageThreshold: layer.params.imageThreshold ?? base.imageThreshold,
+          imagePosterize: layer.params.imagePosterize ?? base.imagePosterize,
+          imageBlur: layer.params.imageBlur ?? base.imageBlur,
+        };
+        noises = [legacy];
+        layer.params.noises = noises;
+      }
+      noises = noises.map((noise, idx) => {
+        const template = templates[idx] || templates[templates.length - 1] || base;
+        return {
+          ...base,
+          ...clone(template),
+          ...(noise || {}),
+          id: noise?.id || template.id || `noise-${idx + 1}`,
+          enabled: noise?.enabled !== false,
+        };
+      });
+      layer.params.noises = noises;
+      return noises;
+    }
+
+    createWavetableNoise(index = 0) {
+      const { base, templates } = this.getWavetableNoiseTemplates();
+      const template = templates[index] || templates[templates.length - 1] || base;
+      return {
+        ...clone(template),
+        id: `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        enabled: true,
+      };
+    }
+
     randomizeLayerParams(layer) {
       if (!layer) return;
       const defs = [...(this.controls[layer.type] || []), ...COMMON_CONTROLS];
@@ -2776,10 +2872,46 @@
         const snapped = roundToStep(value, step);
         return clamp(snapped, min, max);
       };
+      const randomizeNoise = (noise) => {
+        if (!noise || typeof noise !== 'object') return;
+        WAVE_NOISE_DEFS.forEach((nDef) => {
+          if (nDef.showIf && !nDef.showIf(noise)) return;
+          if (nDef.type === 'select') {
+            const opts = nDef.options || [];
+            const available = nDef.randomExclude ? opts.filter((opt) => !nDef.randomExclude.includes(opt.value)) : opts;
+            if (!available.length) return;
+            const pick = available[Math.floor(Math.random() * available.length)];
+            noise[nDef.key] = pick.value;
+            return;
+          }
+          if (nDef.type === 'angle') {
+            const randMin = Number.isFinite(nDef.randomMin) ? nDef.randomMin : nDef.min;
+            const randMax = Number.isFinite(nDef.randomMax) ? nDef.randomMax : nDef.max;
+            const { min, max } = safeRange(randMin, randMax);
+            const step = nDef.step ?? 1;
+            noise[nDef.key] = roundStep(rng(min, max), step, nDef.min, nDef.max);
+            return;
+          }
+          if (nDef.type === 'range') {
+            const randMin = Number.isFinite(nDef.randomMin) ? nDef.randomMin : nDef.min;
+            const randMax = Number.isFinite(nDef.randomMax) ? nDef.randomMax : nDef.max;
+            const { min, max } = safeRange(randMin, randMax);
+            const step = nDef.step ?? 1;
+            noise[nDef.key] = roundStep(rng(min, max), step, nDef.min, nDef.max);
+          }
+        });
+      };
 
       defs.forEach((def) => {
         if (def.showIf && !def.showIf(layer.params)) return;
         if (def.type === 'section' || def.type === 'file' || def.type === 'image') return;
+        if (def.type === 'noiseList') {
+          if (layer.type === 'wavetable') {
+            const noises = this.ensureWavetableNoises(layer);
+            noises.forEach((noise) => randomizeNoise(noise));
+          }
+          return;
+        }
         if (def.type === 'angle') {
           const randMin = Number.isFinite(def.randomMin) ? def.randomMin : def.min;
           const randMax = Number.isFinite(def.randomMax) ? def.randomMax : def.max;
@@ -3120,6 +3252,7 @@
         { inputId: 'set-selection-outline', infoKey: 'global.selectionOutline' },
         { inputId: 'set-selection-outline-color', infoKey: 'global.selectionOutlineColor' },
         { inputId: 'set-selection-outline-width', infoKey: 'global.selectionOutlineWidth' },
+        { inputId: 'set-canvas-help', infoKey: 'global.canvasHelp' },
         { inputId: 'set-speed-down', infoKey: 'global.speedDown' },
         { inputId: 'set-speed-up', infoKey: 'global.speedUp' },
         { inputId: 'set-precision', infoKey: 'global.precision' },
@@ -3350,6 +3483,7 @@
       const selectionOutline = getEl('set-selection-outline');
       const selectionOutlineColor = getEl('set-selection-outline-color');
       const selectionOutlineWidth = getEl('set-selection-outline-width');
+      const canvasHelp = getEl('set-canvas-help');
       const paperWidth = getEl('set-paper-width');
       const paperHeight = getEl('set-paper-height');
       const orientationToggle = getEl('set-orientation');
@@ -3374,6 +3508,7 @@
       if (selectionOutline) selectionOutline.checked = SETTINGS.selectionOutline !== false;
       if (selectionOutlineColor) selectionOutlineColor.value = SETTINGS.selectionOutlineColor || '#ef4444';
       if (selectionOutlineWidth) selectionOutlineWidth.value = SETTINGS.selectionOutlineWidth ?? 0.4;
+      if (canvasHelp) canvasHelp.checked = SETTINGS.showCanvasHelp !== false;
       if (bgColor) bgColor.value = SETTINGS.bgColor;
       if (paperWidth) paperWidth.value = SETTINGS.paperWidth ?? 210;
       if (paperHeight) paperHeight.value = SETTINGS.paperHeight ?? 297;
@@ -3427,6 +3562,7 @@
         document.documentElement.style.setProperty('--pane-right-width', '336px');
         document.documentElement.style.setProperty('--bottom-pane-height', '180px');
         if (bottomPane) bottomPane.classList.remove('bottom-pane-collapsed');
+        this.updateCanvasHelpPosition();
       };
     }
 
@@ -3434,7 +3570,10 @@
       const bottomPane = getEl('bottom-pane');
       const btn = getEl('btn-pane-toggle-bottom');
       if (!bottomPane || !btn) return;
-      btn.addEventListener('click', () => bottomPane.classList.toggle('bottom-pane-collapsed'));
+      btn.addEventListener('click', () => {
+        bottomPane.classList.toggle('bottom-pane-collapsed');
+        this.updateCanvasHelpPosition();
+      });
     }
 
     initBottomPaneResizer() {
@@ -3455,11 +3594,13 @@
           const dy = ev.clientY - startY;
           const next = Math.max(minHeight, Math.min(maxHeight, startHeight - dy));
           document.documentElement.style.setProperty('--bottom-pane-height', `${next}px`);
+          this.updateCanvasHelpPosition();
         };
         const onUp = () => {
           resizer.classList.remove('active');
           window.removeEventListener('mousemove', onMove);
           window.removeEventListener('mouseup', onUp);
+          this.updateCanvasHelpPosition();
         };
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
@@ -3516,6 +3657,37 @@
       rightResizer.addEventListener('mousedown', (e) => startDrag(e, 'right'));
     }
 
+    initCanvasHelp() {
+      this.canvasHelpEl = getEl('canvas-help');
+      this.updateCanvasHelpVisibility();
+      this.updateCanvasHelpPosition();
+      const bottomPane = getEl('bottom-pane');
+      if (bottomPane && window.ResizeObserver) {
+        const observer = new ResizeObserver(() => this.updateCanvasHelpPosition());
+        observer.observe(bottomPane);
+        this.canvasHelpObserver = observer;
+      }
+      window.addEventListener('resize', () => this.updateCanvasHelpPosition());
+    }
+
+    updateCanvasHelpPosition() {
+      const help = this.canvasHelpEl || getEl('canvas-help');
+      if (!help) return;
+      const bottomPane = getEl('bottom-pane');
+      const rect = bottomPane ? bottomPane.getBoundingClientRect() : null;
+      const offset = rect ? rect.height + 16 : 80;
+      const next = Math.max(48, offset);
+      document.documentElement.style.setProperty('--canvas-help-offset', `${next}px`);
+    }
+
+    updateCanvasHelpVisibility() {
+      const help = this.canvasHelpEl || getEl('canvas-help');
+      if (!help) return;
+      const visible = SETTINGS.showCanvasHelp !== false;
+      help.style.display = visible ? '' : 'none';
+      if (visible) this.updateCanvasHelpPosition();
+    }
+
     bindGlobal() {
       const addLayer = getEl('btn-add-layer');
       const moduleSelect = getEl('generator-module');
@@ -3537,6 +3709,7 @@
       const setSelectionOutline = getEl('set-selection-outline');
       const setSelectionOutlineColor = getEl('set-selection-outline-color');
       const setSelectionOutlineWidth = getEl('set-selection-outline-width');
+      const setCanvasHelp = getEl('set-canvas-help');
       const setSpeedDown = getEl('set-speed-down');
       const setSpeedUp = getEl('set-speed-up');
       const setStroke = getEl('set-stroke');
@@ -3711,6 +3884,13 @@
           SETTINGS.selectionOutlineWidth = Number.isFinite(next) ? next : 0.4;
           e.target.value = SETTINGS.selectionOutlineWidth;
           this.app.render();
+        };
+      }
+      if (setCanvasHelp) {
+        setCanvasHelp.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          SETTINGS.showCanvasHelp = e.target.checked;
+          this.updateCanvasHelpVisibility();
         };
       }
       if (setSpeedDown) {
@@ -3893,6 +4073,16 @@
           } else {
             this.groupSelection();
           }
+          return;
+        }
+
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'e') {
+          e.preventDefault();
+          const selectedLayers = this.app.renderer?.getSelectedLayers?.() || [];
+          const targets = selectedLayers.filter((layer) => layer && !layer.parentId && !layer.isGroup);
+          if (!targets.length) return;
+          if (this.app.pushHistory) this.app.pushHistory();
+          targets.forEach((layer) => this.expandLayer(layer, { skipHistory: true }));
           return;
         }
 
@@ -4132,7 +4322,7 @@
         el.innerHTML = `
           <div class="flex items-center gap-2 flex-1 overflow-hidden">
             ${gripMarkup}
-            <button class="group-toggle" type="button" aria-label="Toggle group">${group.groupCollapsed ? '▸' : '▾'}</button>
+            <button class="group-toggle" type="button" aria-label="Toggle group" title="Toggle group">${group.groupCollapsed ? '▸' : '▾'}</button>
             <span class="layer-name text-sm text-vectura-accent truncate">${group.name}</span>
             <input
               class="layer-name-input hidden w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:outline-none"
@@ -4150,7 +4340,7 @@
                   <div class="pen-menu hidden"></div>
                 </div>`
               : ''}
-            <button class="text-sm text-vectura-muted hover:text-vectura-danger px-1 ml-1 btn-del" aria-label="Delete group">✕</button>
+            <button class="text-sm text-vectura-muted hover:text-vectura-danger px-1 ml-1 btn-del" aria-label="Delete group" title="Delete group">✕</button>
           </div>
         `;
         const toggle = el.querySelector('.group-toggle');
@@ -4345,13 +4535,13 @@
         const hidePen = parentGroup && parentGroup.groupType === 'group';
         const showExpand = !isChild && !l.isGroup;
         const expandMarkup = showExpand
-          ? '<button class="text-sm text-vectura-muted hover:text-white px-1 btn-expand" aria-label="Expand layer">⇲</button>'
+          ? '<button class="text-sm text-vectura-muted hover:text-white px-1 btn-expand" aria-label="Expand layer" title="Expand layer">⇲</button>'
           : '';
         const moveMarkup = isChild
           ? ''
           : `
-            <button class="text-sm text-vectura-muted hover:text-white px-1 btn-up" aria-label="Move layer up">▲</button>
-            <button class="text-sm text-vectura-muted hover:text-white px-1 btn-down" aria-label="Move layer down">▼</button>
+            <button class="text-sm text-vectura-muted hover:text-white px-1 btn-up" aria-label="Move layer up" title="Move layer up">▲</button>
+            <button class="text-sm text-vectura-muted hover:text-white px-1 btn-down" aria-label="Move layer down" title="Move layer down">▼</button>
           `;
         const el = document.createElement('div');
         el.className = `layer-item ${isChild ? 'layer-sub' : ''} flex items-center justify-between bg-vectura-bg border border-vectura-border p-2 mb-2 group cursor-pointer hover:bg-vectura-border ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}`;
@@ -4383,8 +4573,8 @@
             `}
             ${expandMarkup}
             ${moveMarkup}
-            <button class="text-sm text-vectura-muted hover:text-white px-1 btn-dup" aria-label="Duplicate layer">⧉</button>
-            <button class="text-sm text-vectura-muted hover:text-vectura-danger px-1 ml-1 btn-del" aria-label="Delete layer">✕</button>
+            <button class="text-sm text-vectura-muted hover:text-white px-1 btn-dup" aria-label="Duplicate layer" title="Duplicate layer">⧉</button>
+            <button class="text-sm text-vectura-muted hover:text-vectura-danger px-1 ml-1 btn-del" aria-label="Delete layer" title="Delete layer">✕</button>
           </div>
         `;
         const nameEl = el.querySelector('.layer-name');
@@ -4806,10 +4996,11 @@
       });
     }
 
-    expandLayer(layer) {
+    expandLayer(layer, options = {}) {
       if (!layer || layer.isGroup || layer.parentId) return;
       if (!Layer) return;
-      if (this.app.pushHistory) this.app.pushHistory();
+      const { skipHistory = false } = options;
+      if (!skipHistory && this.app.pushHistory) this.app.pushHistory();
       if (!layer.paths || !layer.paths.length) {
         this.app.engine.generate(layer.id);
       }
@@ -4959,7 +5150,7 @@
       }
     }
 
-    loadNoiseImageFile(file, layer, nameEl, idKey = 'noiseImageId', nameKey = 'noiseImageName') {
+    loadNoiseImageFile(file, layer, nameEl, idKey = 'noiseImageId', nameKey = 'noiseImageName', target = null) {
       if (!file || !layer) return;
       const reader = new FileReader();
       reader.onload = () => {
@@ -4976,9 +5167,12 @@
           const id = `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
           store[id] = { width: data.width, height: data.height, data: data.data };
           if (this.app.pushHistory) this.app.pushHistory();
-          layer.params[idKey] = id;
-          layer.params[nameKey] = file.name;
+          const owner = target || layer.params;
+          if (!owner) return;
+          owner[idKey] = id;
+          owner[nameKey] = file.name;
           if (nameEl) nameEl.textContent = file.name;
+          this.storeLayerParams(layer);
           this.app.regen();
           this.app.render();
         };
@@ -5620,13 +5814,540 @@
             }
             card.appendChild(headerRow);
             const controls = document.createElement('div');
-            controls.className = 'pendulum-controls';
+            controls.className = 'noise-controls';
             pendulumParamDefs.forEach((pDef) => {
               controls.appendChild(
                 pDef.type === 'angle'
                   ? buildAngleControl(pendulum, pDef, idx)
                   : buildRangeControl(pendulum, pDef, idx)
               );
+            });
+            card.appendChild(controls);
+            list.appendChild(card);
+          });
+
+          container.appendChild(list);
+          return;
+        }
+        if (def.type === 'noiseList') {
+          const noises = this.ensureWavetableNoises(layer);
+          const { base: noiseBase, templates: noiseTemplates } = this.getWavetableNoiseTemplates();
+          const getNoiseDefault = (index, key) => {
+            const template = noiseTemplates[index] || noiseTemplates[noiseTemplates.length - 1] || noiseBase;
+            if (template && Object.prototype.hasOwnProperty.call(template, key)) return template[key];
+            return noiseBase[key];
+          };
+          const resetNoise = (noise, index) => {
+            const template = noiseTemplates[index] || noiseTemplates[noiseTemplates.length - 1] || noiseBase;
+            Object.keys(noiseBase).forEach((key) => {
+              if (key === 'id') return;
+              noise[key] = template[key] !== undefined ? template[key] : noiseBase[key];
+            });
+          };
+
+          const list = document.createElement('div');
+          list.className = 'noise-list mb-4';
+          const header = document.createElement('div');
+          header.className = 'noise-list-header';
+          header.innerHTML = `
+            <span class="text-[10px] uppercase tracking-widest text-vectura-muted">Noise Stack</span>
+            <button type="button" class="noise-add text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">
+              + Add Noise
+            </button>
+          `;
+          const addBtn = header.querySelector('.noise-add');
+          if (addBtn) {
+            addBtn.onclick = () => {
+              if (this.app.pushHistory) this.app.pushHistory();
+              noises.push(this.createWavetableNoise(noises.length));
+              layer.params.noises = noises;
+              this.storeLayerParams(layer);
+              this.app.regen();
+              this.buildControls();
+              this.updateFormula();
+            };
+          }
+          list.appendChild(header);
+
+          const noiseGripMarkup = `
+            <button class="noise-grip" type="button" aria-label="Reorder noise">
+              <span class="dot"></span><span class="dot"></span>
+              <span class="dot"></span><span class="dot"></span>
+              <span class="dot"></span><span class="dot"></span>
+            </button>
+          `;
+
+          const buildRangeControl = (noise, def, idx) => {
+            const control = document.createElement('div');
+            control.className = 'noise-control';
+            const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
+            const value = noise[def.key] ?? getNoiseDefault(idx, def.key);
+            const { min, max, step } = getDisplayConfig(def);
+            const displayVal = toDisplayValue(def, value);
+            control.innerHTML = `
+              <div class="flex justify-between mb-1">
+                <div class="flex items-center gap-2">
+                  <label class="control-label mb-0">${def.label}</label>
+                  ${infoBtn}
+                </div>
+                <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(
+                  def,
+                  value
+                )}</button>
+              </div>
+              <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="w-full">
+              <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
+            `;
+            const input = control.querySelector('input[type="range"]');
+            const valueBtn = control.querySelector('.value-chip');
+            const valueInput = control.querySelector('.value-input');
+            const resetValue = () => {
+              const nextVal = getNoiseDefault(idx, def.key);
+              if (nextVal === undefined) return;
+              if (this.app.pushHistory) this.app.pushHistory();
+              noise[def.key] = nextVal;
+              if (input) input.value = toDisplayValue(def, nextVal);
+              if (valueBtn) valueBtn.innerText = formatDisplayValue(def, nextVal);
+              this.storeLayerParams(layer);
+              this.app.regen();
+              this.updateFormula();
+            };
+            if (input && valueBtn) {
+              input.disabled = !noise.enabled;
+              valueBtn.classList.toggle('opacity-60', !noise.enabled);
+              input.oninput = (e) => {
+                const nextDisplay = parseFloat(e.target.value);
+                valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
+              };
+              input.onchange = (e) => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                const nextDisplay = parseFloat(e.target.value);
+                noise[def.key] = fromDisplayValue(def, nextDisplay);
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.updateFormula();
+              };
+              input.addEventListener('dblclick', (e) => {
+                e.preventDefault();
+                resetValue();
+              });
+              attachValueEditor({
+                def,
+                valueEl: valueBtn,
+                inputEl: valueInput,
+                getValue: () => noise[def.key],
+                setValue: (displayVal) => {
+                  if (this.app.pushHistory) this.app.pushHistory();
+                  noise[def.key] = fromDisplayValue(def, displayVal);
+                  this.storeLayerParams(layer);
+                  this.app.regen();
+                  valueBtn.innerText = formatDisplayValue(def, noise[def.key]);
+                  this.updateFormula();
+                },
+              });
+            }
+            return control;
+          };
+
+          const buildSelectControl = (noise, def, idx) => {
+            const control = document.createElement('div');
+            control.className = 'noise-control';
+            const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
+            let value = noise[def.key];
+            if ((value === undefined || value === null) && def.options && def.options.length) {
+              value = def.options[0].value;
+              noise[def.key] = value;
+            }
+            const optionsHtml = def.options
+              .map(
+                (opt) =>
+                  `<option value="${opt.value}" ${value === opt.value ? 'selected' : ''}>${opt.label}</option>`
+              )
+              .join('');
+            const currentLabel = def.options.find((opt) => opt.value === value)?.label || value;
+            control.innerHTML = `
+              <div class="flex justify-between mb-1">
+                <div class="flex items-center gap-2">
+                  <label class="control-label mb-0">${def.label}</label>
+                  ${infoBtn}
+                </div>
+                <span class="text-xs text-vectura-accent font-mono">${currentLabel}</span>
+              </div>
+              <select class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent">
+                ${optionsHtml}
+              </select>
+            `;
+            const input = control.querySelector('select');
+            const span = control.querySelector('span');
+            if (input && span) {
+              input.disabled = !noise.enabled;
+              input.onchange = (e) => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                const next = e.target.value;
+                noise[def.key] = next;
+                this.storeLayerParams(layer);
+                span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
+                this.app.regen();
+                this.updateFormula();
+                if (def.key === 'type') this.buildControls();
+              };
+              input.addEventListener('dblclick', (e) => {
+                e.preventDefault();
+                const defaultVal = getNoiseDefault(idx, def.key);
+                const fallback = def.options?.[0]?.value;
+                const next = defaultVal !== undefined ? defaultVal : fallback;
+                if (next === undefined) return;
+                if (this.app.pushHistory) this.app.pushHistory();
+                noise[def.key] = next;
+                this.storeLayerParams(layer);
+                input.value = next;
+                span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
+                this.app.regen();
+                this.updateFormula();
+                if (def.key === 'type') this.buildControls();
+              });
+            }
+            return control;
+          };
+
+          const buildAngleControl = (noise, def, idx) => {
+            const control = document.createElement('div');
+            control.className = 'noise-control';
+            const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
+            const value = noise[def.key] ?? getNoiseDefault(idx, def.key);
+            const { min, max, step } = getDisplayConfig(def);
+            const displayVal = clamp(toDisplayValue(def, value), min, max);
+            control.innerHTML = `
+              <div class="angle-label">
+                <div class="flex items-center gap-2">
+                  <label class="control-label mb-0">${def.label}</label>
+                  ${infoBtn}
+                </div>
+                <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(
+                  def,
+                  value
+                )}</button>
+              </div>
+              <div class="angle-control">
+                <div class="angle-dial" style="--angle:${displayVal}deg;">
+                  <div class="angle-indicator"></div>
+                </div>
+                <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
+              </div>
+            `;
+            const dial = control.querySelector('.angle-dial');
+            const valueBtn = control.querySelector('.value-chip');
+            const valueInput = control.querySelector('.value-input');
+            let lastDisplay = displayVal;
+            if (valueBtn) valueBtn.classList.toggle('opacity-60', !noise.enabled);
+            const setAngle = (nextDisplay, commit = false) => {
+              const clamped = clamp(roundToStep(nextDisplay, step), min, max);
+              lastDisplay = clamped;
+              if (dial) dial.style.setProperty('--angle', `${clamped}deg`);
+              if (valueBtn) valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, clamped));
+              if (commit) {
+                if (this.app.pushHistory) this.app.pushHistory();
+                noise[def.key] = fromDisplayValue(def, clamped);
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.updateFormula();
+              }
+            };
+            const resetAngle = () => {
+              const defaultVal = getNoiseDefault(idx, def.key);
+              if (defaultVal === undefined) return;
+              setAngle(toDisplayValue(def, defaultVal), true);
+            };
+            if (dial) {
+              dial.classList.toggle('angle-disabled', !noise.enabled);
+              const updateFromEvent = (e) => {
+                const rect = dial.getBoundingClientRect();
+                const cx = rect.left + rect.width / 2;
+                const cy = rect.top + rect.height / 2;
+                const dx = e.clientX - cx;
+                const dy = e.clientY - cy;
+                let deg = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
+                if (deg < 0) deg += 360;
+                setAngle(deg, false);
+              };
+              dial.addEventListener('mousedown', (e) => {
+                if (!noise.enabled) return;
+                e.preventDefault();
+                updateFromEvent(e);
+                const move = (ev) => updateFromEvent(ev);
+                const up = () => {
+                  window.removeEventListener('mousemove', move);
+                  setAngle(lastDisplay, true);
+                };
+                window.addEventListener('mousemove', move);
+                window.addEventListener('mouseup', up, { once: true });
+              });
+              dial.addEventListener('dblclick', (e) => {
+                if (!noise.enabled) return;
+                e.preventDefault();
+                resetAngle();
+              });
+            }
+            attachValueEditor({
+              def,
+              valueEl: valueBtn,
+              inputEl: valueInput,
+              getValue: () => noise[def.key],
+              setValue: (displayVal) => {
+                setAngle(displayVal, true);
+              },
+            });
+            return control;
+          };
+
+          const buildNoiseImageBlock = (noise, idx) => {
+            const wrap = document.createElement('div');
+            wrap.className = 'noise-image-block mb-3';
+            const name = noise.imageName || 'No file selected';
+            wrap.innerHTML = `
+              <div class="noise-dropzone">Drop image here</div>
+              <div class="flex items-center justify-between mt-2 gap-2">
+                <button type="button" class="noise-image-btn text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">
+                  Select Image
+                </button>
+                <button type="button" class="noise-image-clear text-[10px] text-vectura-muted hover:text-vectura-accent">Clear</button>
+              </div>
+              <div class="text-[10px] text-vectura-muted mt-2 noise-image-name">${name}</div>
+              <input type="file" accept="image/*" class="noise-image-input hidden">
+            `;
+            const dropzone = wrap.querySelector('.noise-dropzone');
+            const selectBtn = wrap.querySelector('.noise-image-btn');
+            const clearBtn = wrap.querySelector('.noise-image-clear');
+            const nameEl = wrap.querySelector('.noise-image-name');
+            const fileInput = wrap.querySelector('.noise-image-input');
+
+            const applyFile = (file) => {
+              if (!file) return;
+              this.loadNoiseImageFile(file, layer, nameEl, 'imageId', 'imageName', noise);
+            };
+
+            if (dropzone) {
+              dropzone.addEventListener('dragover', (e) => {
+                if (!noise.enabled) return;
+                e.preventDefault();
+                dropzone.classList.add('active');
+              });
+              dropzone.addEventListener('dragleave', () => dropzone.classList.remove('active'));
+              dropzone.addEventListener('drop', (e) => {
+                if (!noise.enabled) return;
+                e.preventDefault();
+                dropzone.classList.remove('active');
+                const file = e.dataTransfer?.files?.[0];
+                applyFile(file);
+              });
+            }
+            if (selectBtn && fileInput) {
+              selectBtn.disabled = !noise.enabled;
+              selectBtn.onclick = () => {
+                if (!noise.enabled) return;
+                fileInput.click();
+              };
+              fileInput.onchange = () => {
+                const file = fileInput.files?.[0];
+                applyFile(file);
+              };
+            }
+            if (clearBtn) {
+              clearBtn.disabled = !noise.enabled;
+              clearBtn.onclick = () => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                noise.imageId = '';
+                noise.imageName = '';
+                if (nameEl) nameEl.textContent = 'No file selected';
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.updateFormula();
+              };
+            }
+
+            wrap.classList.toggle('hidden', noise.type !== 'image');
+            return wrap;
+          };
+
+          const bindNoiseReorderGrip = (grip, card, noise) => {
+            if (!grip) return;
+            grip.onmousedown = (e) => {
+              e.preventDefault();
+              const dragEl = card;
+              dragEl.classList.add('dragging');
+              const indicator = document.createElement('div');
+              indicator.className = 'noise-drop-indicator';
+              list.insertBefore(indicator, dragEl.nextSibling);
+              const currentOrder = noises.map((n) => n.id);
+              const startIndex = currentOrder.indexOf(noise.id);
+
+              const onMove = (ev) => {
+                const y = ev.clientY;
+                const items = Array.from(list.querySelectorAll('.noise-card')).filter((item) => item !== dragEl);
+                let inserted = false;
+                for (const item of items) {
+                  const rect = item.getBoundingClientRect();
+                  if (y < rect.top + rect.height / 2) {
+                    list.insertBefore(indicator, item);
+                    inserted = true;
+                    break;
+                  }
+                }
+                if (!inserted) list.appendChild(indicator);
+              };
+
+              const onUp = () => {
+                dragEl.classList.remove('dragging');
+                const siblings = Array.from(list.children);
+                const indicatorIndex = siblings.indexOf(indicator);
+                const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('noise-card'));
+                const newIndex = before.length;
+                indicator.remove();
+                window.removeEventListener('mousemove', onMove);
+                window.removeEventListener('mouseup', onUp);
+
+                if (newIndex !== startIndex) {
+                  const nextOrder = currentOrder.filter((id) => id !== noise.id);
+                  nextOrder.splice(newIndex, 0, noise.id);
+                  const map = new Map(noises.map((n) => [n.id, n]));
+                  layer.params.noises = nextOrder.map((id) => map.get(id)).filter(Boolean);
+                  this.storeLayerParams(layer);
+                  this.app.regen();
+                  this.buildControls();
+                  this.updateFormula();
+                }
+              };
+
+              window.addEventListener('mousemove', onMove);
+              window.addEventListener('mouseup', onUp);
+            };
+          };
+
+          noises.forEach((noise, idx) => {
+            if (!noise.id) noise.id = `noise-${idx + 1}`;
+            const card = document.createElement('div');
+            card.className = `noise-card${noise.enabled ? '' : ' noise-disabled'}`;
+            card.dataset.noiseId = noise.id;
+            const headerRow = document.createElement('div');
+            headerRow.className = 'noise-header';
+            headerRow.innerHTML = `
+              <div class="flex items-center gap-2">
+                ${noiseGripMarkup}
+                <span class="noise-title">Noise ${String(idx + 1).padStart(2, '0')}</span>
+              </div>
+              <div class="noise-actions">
+                <label class="noise-toggle">
+                  <input type="checkbox" ${noise.enabled ? 'checked' : ''}>
+                </label>
+                <button type="button" class="noise-delete" aria-label="Delete noise">🗑</button>
+              </div>
+            `;
+            const toggle = headerRow.querySelector('.noise-toggle input');
+            const deleteBtn = headerRow.querySelector('.noise-delete');
+            const grip = headerRow.querySelector('.noise-grip');
+            bindNoiseReorderGrip(grip, card, noise);
+            if (toggle) {
+              toggle.onchange = (e) => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                noise.enabled = Boolean(e.target.checked);
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.buildControls();
+                this.updateFormula();
+              };
+            }
+            if (deleteBtn) {
+              deleteBtn.onclick = () => {
+                if (noises.length <= 1) {
+                  this.openModal({
+                    title: 'Keep one noise',
+                    body: `<p class="modal-text">At least one noise layer is required for wavetable generation.</p>`,
+                  });
+                  return;
+                }
+                if (this.app.pushHistory) this.app.pushHistory();
+                const index = noises.findIndex((item) => item.id === noise.id);
+                if (index >= 0) noises.splice(index, 1);
+                layer.params.noises = noises;
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.buildControls();
+                this.updateFormula();
+              };
+            }
+            card.appendChild(headerRow);
+
+            const tools = document.createElement('div');
+            tools.className = 'flex gap-2 mb-3';
+            tools.innerHTML = `
+              <button type="button" class="noise-reset text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted transition-colors">
+                Reset
+              </button>
+              <button type="button" class="noise-rand text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted transition-colors">
+                Randomize
+              </button>
+            `;
+            const resetBtn = tools.querySelector('.noise-reset');
+            const randBtn = tools.querySelector('.noise-rand');
+            if (resetBtn) {
+              resetBtn.disabled = !noise.enabled;
+              resetBtn.onclick = () => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                resetNoise(noise, idx);
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.buildControls();
+                this.updateFormula();
+              };
+            }
+            if (randBtn) {
+              randBtn.disabled = !noise.enabled;
+              randBtn.onclick = () => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                WAVE_NOISE_DEFS.forEach((nDef) => {
+                  if (nDef.showIf && !nDef.showIf(noise)) return;
+                  if (nDef.type === 'select') {
+                    const opts = nDef.options || [];
+                    const available = nDef.randomExclude ? opts.filter((opt) => !nDef.randomExclude.includes(opt.value)) : opts;
+                    if (!available.length) return;
+                    const pick = available[Math.floor(Math.random() * available.length)];
+                    noise[nDef.key] = pick.value;
+                    return;
+                  }
+                  if (nDef.type === 'angle') {
+                    const step = nDef.step ?? 1;
+                    const next = Math.random() * (nDef.max - nDef.min) + nDef.min;
+                    noise[nDef.key] = clamp(roundToStep(next, step), nDef.min, nDef.max);
+                    return;
+                  }
+                  if (nDef.type === 'range') {
+                    const step = nDef.step ?? 1;
+                    const next = Math.random() * (nDef.max - nDef.min) + nDef.min;
+                    noise[nDef.key] = clamp(roundToStep(next, step), nDef.min, nDef.max);
+                  }
+                });
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.buildControls();
+                this.updateFormula();
+              };
+            }
+            card.appendChild(tools);
+
+            const controls = document.createElement('div');
+            controls.className = 'pendulum-controls';
+            WAVE_NOISE_DEFS.forEach((nDef) => {
+              if (nDef.showIf && !nDef.showIf(noise)) return;
+              if (nDef.type === 'angle') {
+                controls.appendChild(buildAngleControl(noise, nDef, idx));
+              } else if (nDef.type === 'select') {
+                controls.appendChild(buildSelectControl(noise, nDef, idx));
+              } else {
+                controls.appendChild(buildRangeControl(noise, nDef, idx));
+              }
+              if (nDef.key === 'type') {
+                controls.appendChild(buildNoiseImageBlock(noise, idx));
+              }
             });
             card.appendChild(controls);
             list.appendChild(card);
@@ -6223,6 +6944,16 @@
               Object.entries(pend).forEach(([pKey, pVal]) => {
                 if (pKey === 'id') return;
                 entries.push([`P${idx + 1}.${pKey}`, fmt(pVal)]);
+              });
+            });
+            return;
+          }
+          if (key === 'noises' && Array.isArray(val)) {
+            val.forEach((noise, idx) => {
+              if (!noise || typeof noise !== 'object') return;
+              Object.entries(noise).forEach(([nKey, nVal]) => {
+                if (nKey === 'id') return;
+                entries.push([`N${idx + 1}.${nKey}`, fmt(nVal)]);
               });
             });
             return;

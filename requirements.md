@@ -199,11 +199,11 @@ Each operation must be independently configurable, re-ordered, and composable. T
 
 ---
 
-## 4) Open Questions
-- Should optimization be stored per layer or globally per document?
-- Should history include selection-only events or only changes that mutate output?
-- What is the maximum acceptable history size for memory usage?
-- Should optimizations be applied to helper guides or only to primary paths?
+## 4) Open Questions (Resolved)
+- Optimization storage: per layer (not global).
+- History scope: only changes that mutate output (exclude selection-only events).
+- Maximum history size: configurable in Settings, default 500MB.
+- Optimization scope: primary paths only (exclude helper guides).
 
 ---
 

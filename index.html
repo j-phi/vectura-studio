@@ -70,7 +70,7 @@
       <aside id="left-pane" class="pane pane-left bg-vectura-panel border-r border-vectura-border flex flex-col z-10 shadow-xl">
         <div class="pane-header pane-header-left p-4 border-b border-vectura-border flex justify-between items-center">
           <span class="pane-title font-bold text-vectura-accent">GENERATOR</span>
-          <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.35</span>
+          <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.37</span>
           <button id="btn-pane-toggle-left" class="pane-toggle pane-toggle-left" type="button" aria-label="Toggle left pane">
             ◀
           </button>
@@ -202,9 +202,11 @@
           </div>
         </div>
 
-        <div class="absolute bottom-20 left-4 text-[10px] text-vectura-muted pointer-events-none">
+        <div id="canvas-help" class="canvas-help text-[10px] text-vectura-muted pointer-events-none">
           <p>PAN: Shift + Drag</p>
           <p>ZOOM: Mouse Wheel</p>
+          <p>GROUP: Cmd/Ctrl + G</p>
+          <p>EXPAND: Cmd/Ctrl + E</p>
         </div>
       </section>
 
@@ -380,6 +382,12 @@
                 <div class="flex items-center justify-between">
                   <label class="text-xs text-vectura-muted">Snap Guides</label>
                   <input type="checkbox" id="set-snap-guides" class="cursor-pointer" />
+                </div>
+              </div>
+              <div class="mt-4">
+                <div class="flex items-center justify-between">
+                  <label class="text-xs text-vectura-muted">Canvas Help</label>
+                  <input type="checkbox" id="set-canvas-help" class="cursor-pointer" />
                 </div>
               </div>
               <div class="mt-4">
