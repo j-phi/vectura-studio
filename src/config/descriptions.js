@@ -16,6 +16,8 @@
       'Creates concentric rings with noise-driven radius modulation for organic, rippling shapes.',
     topo:
       'Builds contour lines from a noise-based height field, similar to a topographic map.',
+    petalis:
+      'Generates layered radial petals with adjustable geometry, spiral distribution, center morphing, and shading.',
     rainfall:
       'Simulates falling rain traces with optional droplet shapes, wind influence, and silhouette masking.',
     spiral:

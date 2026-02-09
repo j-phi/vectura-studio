@@ -2,6 +2,7 @@
  * Procedural algorithm library.
  */
 (() => {
+  const PetalisAlgorithm = window.Vectura?.PetalisAlgorithm;
   const Algorithms = {
     flowfield: {
       generate: (p, rng, noise, bounds) => {
@@ -3445,6 +3446,12 @@
       },
       formula: () => 'θ = i * 137.5°, r = c√i\npos = [cos(θ)*r, sin(θ)*r]',
     },
+    petalis:
+      PetalisAlgorithm ||
+      {
+        generate: () => [],
+        formula: () => 'Petalis algorithm not loaded.',
+      },
   };
 
   window.Vectura = window.Vectura || {};

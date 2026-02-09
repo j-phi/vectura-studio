@@ -2,8 +2,18 @@
  * UI controller for DOM wiring and controls.
  */
 (() => {
-  const { ALGO_DEFAULTS, SETTINGS, DESCRIPTIONS, MACHINES, Algorithms, SeededRNG, SimpleNoise, Layer, PALETTES } =
-    window.Vectura || {};
+  const {
+    ALGO_DEFAULTS,
+    SETTINGS,
+    DESCRIPTIONS,
+    MACHINES,
+    Algorithms,
+    SeededRNG,
+    SimpleNoise,
+    Layer,
+    PALETTES,
+    PETALIS_PRESETS,
+  } = window.Vectura || {};
 
   const getEl = (id) => {
     const el = document.getElementById(id);
@@ -851,6 +861,67 @@
     },
   ];
 
+  const PETALIS_PRESET_OPTIONS = [
+    { value: 'custom', label: 'Custom' },
+    ...(Array.isArray(PETALIS_PRESETS)
+      ? PETALIS_PRESETS.map((preset) => ({ value: preset.id, label: preset.name }))
+      : []),
+  ];
+
+  const PETALIS_MODIFIER_TYPES = [
+    {
+      value: 'ripple',
+      label: 'Ripple',
+      controls: [
+        { key: 'amount', label: 'Amplitude (mm)', type: 'range', min: 0, max: 10, step: 0.1 },
+        { key: 'frequency', label: 'Frequency', type: 'range', min: 1, max: 16, step: 1 },
+      ],
+    },
+    {
+      value: 'twist',
+      label: 'Twist',
+      controls: [{ key: 'amount', label: 'Twist (deg)', type: 'range', min: -90, max: 90, step: 1 }],
+    },
+    {
+      value: 'radialNoise',
+      label: 'Radial Noise',
+      controls: [
+        { key: 'amount', label: 'Noise Amp (mm)', type: 'range', min: 0, max: 6, step: 0.1 },
+        { key: 'scale', label: 'Noise Scale', type: 'range', min: 0.05, max: 1.0, step: 0.05 },
+      ],
+    },
+    {
+      value: 'falloff',
+      label: 'Density Falloff',
+      controls: [{ key: 'amount', label: 'Strength', type: 'range', min: 0, max: 1, step: 0.05 }],
+    },
+    {
+      value: 'offset',
+      label: 'Offset',
+      controls: [
+        { key: 'offsetX', label: 'Offset X (mm)', type: 'range', min: -40, max: 40, step: 1 },
+        { key: 'offsetY', label: 'Offset Y (mm)', type: 'range', min: -40, max: 40, step: 1 },
+      ],
+    },
+    {
+      value: 'clip',
+      label: 'Clip/Trim',
+      controls: [{ key: 'radius', label: 'Clip Radius (mm)', type: 'range', min: 1, max: 120, step: 1 }],
+    },
+  ];
+
+  const createPetalisModifier = (type = 'ripple') => ({
+    id: `mod-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    enabled: true,
+    type,
+    amount: 2,
+    frequency: 6,
+    scale: 0.2,
+    offsetX: 0,
+    offsetY: 0,
+    radius: 12,
+  });
+
   const CONTROL_DEFS = {
     expanded: [],
     flowfield: [
@@ -1099,6 +1170,191 @@
         infoKey: 'harmonograph.pendulumGuideWidth',
         showIf: (p) => Boolean(p.showPendulumGuides),
       },
+    ],
+    petalis: [
+      { type: 'section', label: 'Presets' },
+      {
+        id: 'preset',
+        label: 'Preset',
+        type: 'select',
+        options: PETALIS_PRESET_OPTIONS,
+      },
+      { type: 'section', label: 'Petal Geometry' },
+      {
+        id: 'petalProfile',
+        label: 'Petal Profile',
+        type: 'select',
+        options: [
+          { value: 'oval', label: 'Oval' },
+          { value: 'teardrop', label: 'Teardrop' },
+          { value: 'lanceolate', label: 'Lanceolate' },
+          { value: 'heart', label: 'Heart' },
+          { value: 'spoon', label: 'Spoon' },
+        ],
+      },
+      { id: 'petalScale', label: 'Petal Scale (mm)', type: 'range', min: 8, max: 80, step: 1 },
+      { id: 'petalWidthRatio', label: 'Width/Length Ratio', type: 'range', min: 0.15, max: 0.9, step: 0.01 },
+      { id: 'petalSteps', label: 'Petal Resolution', type: 'range', min: 12, max: 80, step: 2 },
+      { id: 'tipSharpness', label: 'Tip Sharpness', type: 'range', min: 0, max: 1, step: 0.05 },
+      { id: 'tipCurl', label: 'Tip Curl', type: 'range', min: 0, max: 1.2, step: 0.05 },
+      { id: 'baseFlare', label: 'Base Flare', type: 'range', min: 0, max: 0.8, step: 0.05 },
+      { id: 'basePinch', label: 'Base Pinch', type: 'range', min: 0, max: 0.8, step: 0.05 },
+      { id: 'edgeWaveAmp', label: 'Edge Wave Amp', type: 'range', min: 0, max: 0.3, step: 0.01 },
+      { id: 'edgeWaveFreq', label: 'Edge Wave Freq', type: 'range', min: 0, max: 12, step: 0.5 },
+      { type: 'section', label: 'Distribution & Spiral' },
+      { id: 'count', label: 'Petal Count', type: 'range', min: 5, max: 800, step: 1 },
+      {
+        id: 'ringMode',
+        label: 'Ring Mode',
+        type: 'select',
+        options: [
+          { value: 'single', label: 'Single' },
+          { value: 'dual', label: 'Dual' },
+        ],
+      },
+      { id: 'innerCount', label: 'Inner Ring Count', type: 'range', min: 5, max: 400, step: 1, showIf: (p) => p.ringMode === 'dual' },
+      { id: 'outerCount', label: 'Outer Ring Count', type: 'range', min: 5, max: 600, step: 1, showIf: (p) => p.ringMode === 'dual' },
+      { id: 'ringSplit', label: 'Ring Split', type: 'range', min: 0.15, max: 0.85, step: 0.01, showIf: (p) => p.ringMode === 'dual' },
+      {
+        id: 'ringOffset',
+        label: 'Ring Offset',
+        type: 'angle',
+        min: 0,
+        max: 360,
+        step: 1,
+        displayUnit: '°',
+        showIf: (p) => p.ringMode === 'dual',
+      },
+      {
+        id: 'spiralMode',
+        label: 'Phyllotaxis Mode',
+        type: 'select',
+        options: [
+          { value: 'golden', label: 'Golden Angle' },
+          { value: 'custom', label: 'Custom Angle' },
+        ],
+      },
+      {
+        id: 'customAngle',
+        label: 'Custom Angle',
+        type: 'angle',
+        min: 0,
+        max: 360,
+        step: 1,
+        displayUnit: '°',
+        showIf: (p) => p.spiralMode === 'custom',
+      },
+      { id: 'spiralTightness', label: 'Spiral Tightness', type: 'range', min: 0.5, max: 2.5, step: 0.05 },
+      { id: 'radialGrowth', label: 'Radial Growth', type: 'range', min: 0.5, max: 2, step: 0.05 },
+      { type: 'section', label: 'Center Morphing' },
+      { id: 'centerSizeMorph', label: 'Size Morph', type: 'range', min: -0.8, max: 0.8, step: 0.05 },
+      { id: 'centerSizeCurve', label: 'Size Morph Curve', type: 'range', min: 0.5, max: 2.5, step: 0.05 },
+      { id: 'centerShapeMorph', label: 'Shape Morph', type: 'range', min: 0, max: 1, step: 0.05 },
+      {
+        id: 'centerProfile',
+        label: 'Center Profile',
+        type: 'select',
+        options: [
+          { value: 'oval', label: 'Oval' },
+          { value: 'teardrop', label: 'Teardrop' },
+          { value: 'lanceolate', label: 'Lanceolate' },
+          { value: 'heart', label: 'Heart' },
+          { value: 'spoon', label: 'Spoon' },
+        ],
+      },
+      { id: 'centerCurlBoost', label: 'Curl Boost', type: 'range', min: 0, max: 1, step: 0.05 },
+      { id: 'centerWaveBoost', label: 'Wave Boost', type: 'range', min: 0, max: 1, step: 0.05 },
+      { id: 'budMode', label: 'Bud Mode', type: 'checkbox' },
+      { id: 'budRadius', label: 'Bud Radius', type: 'range', min: 0.05, max: 0.6, step: 0.01, showIf: (p) => p.budMode },
+      { id: 'budTightness', label: 'Bud Tightness', type: 'range', min: 0, max: 1, step: 0.05, showIf: (p) => p.budMode },
+      { type: 'section', label: 'Central Elements' },
+      {
+        id: 'centerType',
+        label: 'Center Type',
+        type: 'select',
+        options: [
+          { value: 'disk', label: 'Disk' },
+          { value: 'dome', label: 'Dome' },
+          { value: 'starburst', label: 'Starburst' },
+          { value: 'dot', label: 'Dot Field' },
+          { value: 'filament', label: 'Filament Cluster' },
+        ],
+      },
+      { id: 'centerRadius', label: 'Center Radius (mm)', type: 'range', min: 2, max: 40, step: 1 },
+      { id: 'centerDensity', label: 'Center Density', type: 'range', min: 4, max: 120, step: 1 },
+      { id: 'centerFalloff', label: 'Center Falloff', type: 'range', min: 0, max: 1, step: 0.05 },
+      { id: 'centerRing', label: 'Secondary Ring', type: 'checkbox' },
+      { id: 'centerRingRadius', label: 'Ring Radius (mm)', type: 'range', min: 3, max: 60, step: 1, showIf: (p) => p.centerRing },
+      { id: 'centerRingDensity', label: 'Ring Density', type: 'range', min: 6, max: 120, step: 1, showIf: (p) => p.centerRing },
+      { id: 'centerConnectors', label: 'Connect to Petals', type: 'checkbox' },
+      { id: 'connectorCount', label: 'Connector Count', type: 'range', min: 4, max: 120, step: 1, showIf: (p) => p.centerConnectors },
+      { id: 'connectorLength', label: 'Connector Length (mm)', type: 'range', min: 2, max: 40, step: 1, showIf: (p) => p.centerConnectors },
+      { id: 'connectorJitter', label: 'Connector Jitter', type: 'range', min: 0, max: 1, step: 0.05, showIf: (p) => p.centerConnectors },
+      { type: 'modifierList', label: 'Center Modifiers' },
+      { type: 'section', label: 'Shading' },
+      { id: 'innerShading', label: 'Inner Shading', type: 'checkbox' },
+      {
+        id: 'innerShadingType',
+        label: 'Inner Shading Type',
+        type: 'select',
+        options: [
+          { value: 'radial', label: 'Radial Hatch' },
+          { value: 'spiral', label: 'Spiral Hatch' },
+          { value: 'stipple', label: 'Stipple' },
+          { value: 'gradient', label: 'Gradient Lines' },
+        ],
+        showIf: (p) => p.innerShading,
+      },
+      { id: 'innerDensity', label: 'Inner Density', type: 'range', min: 0, max: 1, step: 0.05, showIf: (p) => p.innerShading },
+      { id: 'outerShading', label: 'Outer Shading', type: 'checkbox' },
+      {
+        id: 'outerShadingType',
+        label: 'Outer Shading Type',
+        type: 'select',
+        options: [
+          { value: 'edge', label: 'Edge Hatch' },
+          { value: 'rim', label: 'Rim Strokes' },
+          { value: 'outline', label: 'Outline Emphasis' },
+        ],
+        showIf: (p) => p.outerShading,
+      },
+      { id: 'outerDensity', label: 'Outer Density', type: 'range', min: 0, max: 1, step: 0.05, showIf: (p) => p.outerShading },
+      { id: 'shadingTransition', label: 'Transition Width', type: 'range', min: 0, max: 1, step: 0.05 },
+      {
+        id: 'hatchAngle',
+        label: 'Hatch Angle',
+        type: 'angle',
+        min: 0,
+        max: 360,
+        step: 1,
+        displayUnit: '°',
+      },
+      { id: 'hatchNoise', label: 'Hatch Noise', type: 'range', min: 0, max: 1, step: 0.05 },
+      { type: 'section', label: 'Randomness & Seed' },
+      { id: 'countJitter', label: 'Count Jitter', type: 'range', min: 0, max: 0.5, step: 0.01 },
+      { id: 'sizeJitter', label: 'Size Jitter', type: 'range', min: 0, max: 0.5, step: 0.01 },
+      {
+        id: 'rotationJitter',
+        label: 'Rotation Jitter',
+        type: 'angle',
+        min: 0,
+        max: 45,
+        step: 1,
+        displayUnit: '°',
+      },
+      {
+        id: 'angularDrift',
+        label: 'Angular Drift',
+        type: 'angle',
+        min: 0,
+        max: 45,
+        step: 1,
+        displayUnit: '°',
+      },
+      { id: 'driftStrength', label: 'Drift Strength', type: 'range', min: 0, max: 1, step: 0.05 },
+      { id: 'driftNoise', label: 'Drift Noise', type: 'range', min: 0.05, max: 1, step: 0.05 },
+      { id: 'radiusScale', label: 'Radius Scale', type: 'range', min: -1, max: 1, step: 0.05 },
+      { id: 'radiusScaleCurve', label: 'Radius Scale Curve', type: 'range', min: 0.5, max: 2.5, step: 0.05 },
     ],
     wavetable: [
       { id: 'lines', label: 'Lines', type: 'range', min: 5, max: 160, step: 1, infoKey: 'wavetable.lines' },
@@ -3656,6 +3912,9 @@
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Wavetable noise stacks can be added, reordered, and blended with tile patterns and image effects.
             Image noise includes an Image Effects stack plus optional style shaping.
+          </div>
+          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
+            Petalis provides flower presets, radial petal controls, and a stackable center modifier pipeline.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Harmonograph layers combine damped pendulum waves; tweak frequency, phase, and damping for intricate loops.
@@ -7242,6 +7501,260 @@
           target.appendChild(list);
           return;
         }
+        if (def.type === 'modifierList') {
+          if (layer.type !== 'petalis') return;
+          const modifiers = Array.isArray(layer.params.centerModifiers) ? layer.params.centerModifiers : [];
+          layer.params.centerModifiers = modifiers;
+
+          const list = document.createElement('div');
+          list.className = 'noise-list mb-4';
+          const header = document.createElement('div');
+          header.className = 'noise-list-header';
+          header.innerHTML = `
+            <span class="text-[10px] uppercase tracking-widest text-vectura-muted">${def.label || 'Center Modifiers'}</span>
+            <button type="button" class="noise-add text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">
+              + Add Modifier
+            </button>
+          `;
+          const addBtn = header.querySelector('.noise-add');
+          if (addBtn) {
+            addBtn.onclick = () => {
+              if (this.app.pushHistory) this.app.pushHistory();
+              modifiers.push(createPetalisModifier('ripple'));
+              layer.params.centerModifiers = modifiers;
+              this.storeLayerParams(layer);
+              this.app.regen();
+              this.buildControls();
+              this.updateFormula();
+            };
+          }
+          list.appendChild(header);
+
+          const modifierGripMarkup = `
+            <button class="noise-grip" type="button" aria-label="Reorder modifier">
+              <span class="dot"></span><span class="dot"></span>
+              <span class="dot"></span><span class="dot"></span>
+              <span class="dot"></span><span class="dot"></span>
+            </button>
+          `;
+
+          const getModifierType = (type) =>
+            PETALIS_MODIFIER_TYPES.find((opt) => opt.value === type) || PETALIS_MODIFIER_TYPES[0];
+
+          const buildModifierRangeControl = (modifier, def) => {
+            const control = document.createElement('div');
+            control.className = 'noise-control';
+            const value = modifier[def.key] ?? def.min ?? 0;
+            if (modifier[def.key] === undefined) modifier[def.key] = value;
+            const { min, max, step } = getDisplayConfig(def);
+            const displayVal = toDisplayValue(def, value);
+            control.innerHTML = `
+              <div class="flex justify-between mb-1">
+                <label class="control-label mb-0">${def.label}</label>
+                <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(
+                  def,
+                  value
+                )}</button>
+              </div>
+              <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="w-full">
+              <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
+            `;
+            const input = control.querySelector('input[type="range"]');
+            const valueBtn = control.querySelector('.value-chip');
+            const valueInput = control.querySelector('.value-input');
+            if (input && valueBtn) {
+              input.disabled = !modifier.enabled;
+              valueBtn.classList.toggle('opacity-60', !modifier.enabled);
+              input.oninput = (e) => {
+                const nextDisplay = parseFloat(e.target.value);
+                valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
+              };
+              input.onchange = (e) => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                const nextDisplay = parseFloat(e.target.value);
+                modifier[def.key] = fromDisplayValue(def, nextDisplay);
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.updateFormula();
+              };
+              attachKeyboardRangeNudge(input, (nextDisplay) => {
+                modifier[def.key] = fromDisplayValue(def, nextDisplay);
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.updateFormula();
+              });
+              input.addEventListener('dblclick', (e) => {
+                e.preventDefault();
+                modifier[def.key] = def.min ?? 0;
+                input.value = toDisplayValue(def, modifier[def.key]);
+                valueBtn.innerText = formatDisplayValue(def, modifier[def.key]);
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.updateFormula();
+              });
+              attachValueEditor({
+                def,
+                valueEl: valueBtn,
+                inputEl: valueInput,
+                getValue: () => modifier[def.key],
+                setValue: (displayVal, opts) => {
+                  const commit = opts?.commit !== false;
+                  if (commit && this.app.pushHistory) this.app.pushHistory();
+                  modifier[def.key] = fromDisplayValue(def, displayVal);
+                  this.storeLayerParams(layer);
+                  this.app.regen();
+                  valueBtn.innerText = formatDisplayValue(def, modifier[def.key]);
+                  this.updateFormula();
+                },
+              });
+            }
+            return control;
+          };
+
+          const bindModifierReorderGrip = (grip, card, modifier) => {
+            if (!grip) return;
+            grip.onmousedown = (e) => {
+              e.preventDefault();
+              const dragEl = card;
+              dragEl.classList.add('dragging');
+              const indicator = document.createElement('div');
+              indicator.className = 'noise-drop-indicator';
+              list.insertBefore(indicator, dragEl.nextSibling);
+              const currentOrder = modifiers.map((item) => item.id);
+              const startIndex = currentOrder.indexOf(modifier.id);
+
+              const onMove = (ev) => {
+                const y = ev.clientY;
+                const items = Array.from(list.querySelectorAll('.noise-card')).filter((item) => item !== dragEl);
+                let inserted = false;
+                for (const item of items) {
+                  const rect = item.getBoundingClientRect();
+                  if (y < rect.top + rect.height / 2) {
+                    list.insertBefore(indicator, item);
+                    inserted = true;
+                    break;
+                  }
+                }
+                if (!inserted) list.appendChild(indicator);
+              };
+
+              const onUp = () => {
+                dragEl.classList.remove('dragging');
+                const siblings = Array.from(list.children);
+                const indicatorIndex = siblings.indexOf(indicator);
+                const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('noise-card'));
+                const newIndex = before.length;
+                indicator.remove();
+                window.removeEventListener('mousemove', onMove);
+                window.removeEventListener('mouseup', onUp);
+
+                if (newIndex !== startIndex) {
+                  const nextOrder = currentOrder.filter((id) => id !== modifier.id);
+                  nextOrder.splice(newIndex, 0, modifier.id);
+                  const map = new Map(modifiers.map((item) => [item.id, item]));
+                  layer.params.centerModifiers = nextOrder.map((id) => map.get(id)).filter(Boolean);
+                  this.storeLayerParams(layer);
+                  this.app.regen();
+                  this.buildControls();
+                  this.updateFormula();
+                }
+              };
+
+              window.addEventListener('mousemove', onMove);
+              window.addEventListener('mouseup', onUp);
+            };
+          };
+
+          modifiers.forEach((modifier, idx) => {
+            if (!modifier.id) modifier.id = `mod-${idx + 1}`;
+            const card = document.createElement('div');
+            card.className = `noise-card${modifier.enabled ? '' : ' noise-disabled'}`;
+            card.dataset.modifierId = modifier.id;
+            const headerRow = document.createElement('div');
+            headerRow.className = 'noise-header';
+            headerRow.innerHTML = `
+              <div class="flex items-center gap-2">
+                ${modifierGripMarkup}
+                <span class="noise-title">Modifier ${String(idx + 1).padStart(2, '0')}</span>
+              </div>
+              <div class="noise-actions">
+                <label class="noise-toggle">
+                  <input type="checkbox" ${modifier.enabled ? 'checked' : ''}>
+                </label>
+                <button type="button" class="noise-delete" aria-label="Delete modifier">🗑</button>
+              </div>
+            `;
+            const toggle = headerRow.querySelector('.noise-toggle input');
+            const deleteBtn = headerRow.querySelector('.noise-delete');
+            const grip = headerRow.querySelector('.noise-grip');
+            bindModifierReorderGrip(grip, card, modifier);
+            if (toggle) {
+              toggle.onchange = (e) => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                modifier.enabled = Boolean(e.target.checked);
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.buildControls();
+                this.updateFormula();
+              };
+            }
+            if (deleteBtn) {
+              deleteBtn.onclick = () => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                const index = modifiers.findIndex((item) => item.id === modifier.id);
+                if (index >= 0) modifiers.splice(index, 1);
+                layer.params.centerModifiers = modifiers;
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.buildControls();
+                this.updateFormula();
+              };
+            }
+            card.appendChild(headerRow);
+
+            const controls = document.createElement('div');
+            controls.className = 'noise-controls';
+            const typeDef = getModifierType(modifier.type);
+            const typeSelect = document.createElement('div');
+            typeSelect.className = 'noise-control';
+            const optionsHtml = PETALIS_MODIFIER_TYPES.map(
+              (opt) => `<option value="${opt.value}" ${modifier.type === opt.value ? 'selected' : ''}>${opt.label}</option>`
+            ).join('');
+            typeSelect.innerHTML = `
+              <div class="flex justify-between mb-1">
+                <label class="control-label mb-0">Modifier Type</label>
+                <span class="text-xs text-vectura-accent font-mono">${typeDef.label}</span>
+              </div>
+              <select class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent">
+                ${optionsHtml}
+              </select>
+            `;
+            const select = typeSelect.querySelector('select');
+            const label = typeSelect.querySelector('span');
+            if (select && label) {
+              select.onchange = (e) => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                const nextType = e.target.value;
+                const next = { ...createPetalisModifier(nextType), id: modifier.id, enabled: modifier.enabled };
+                Object.assign(modifier, next);
+                label.textContent = getModifierType(nextType).label;
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.buildControls();
+                this.updateFormula();
+              };
+            }
+            controls.appendChild(typeSelect);
+            typeDef.controls.forEach((cDef) => {
+              controls.appendChild(buildModifierRangeControl(modifier, cDef));
+            });
+            card.appendChild(controls);
+            list.appendChild(card);
+          });
+
+          target.appendChild(list);
+          return;
+        }
         if (def.type === 'noiseList') {
           const noiseSource = layer.type === 'spiral' ? 'spiral' : 'wavetable';
           const noises =
@@ -8425,6 +8938,23 @@
             input.onchange = (e) => {
               if (this.app.pushHistory) this.app.pushHistory();
               const next = e.target.value;
+              if (layer.type === 'petalis' && def.id === 'preset' && next !== 'custom') {
+                const preset = (PETALIS_PRESETS || []).find((item) => item.id === next);
+                const base = ALGO_DEFAULTS?.petalis ? clone(ALGO_DEFAULTS.petalis) : {};
+                const preserved = new Set([...TRANSFORM_KEYS, 'smoothing', 'simplify', 'curves']);
+                const nextParams = { ...base, ...(preset?.params || {}) };
+                preserved.forEach((key) => {
+                  if (layer.params[key] !== undefined) nextParams[key] = layer.params[key];
+                });
+                nextParams.preset = next;
+                layer.params = { ...layer.params, ...nextParams };
+                this.storeLayerParams(layer);
+                span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
+                this.app.regen();
+                this.buildControls();
+                this.updateFormula();
+                return;
+              }
               layer.params[def.id] = next;
               this.storeLayerParams(layer);
               span.innerText = def.options.find((opt) => opt.value === next)?.label || next;

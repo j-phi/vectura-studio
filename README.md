@@ -22,12 +22,12 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Harmonograph pendulum list with add/delete/toggle controls and optional guide overlay.
 - Rainfall generator with wind, droplet styling, and optional silhouette masking.
 - Wavetable noise stack with per-noise blend modes, tile patterns, image effects, polygon noise, and drag-to-reorder layers.
+- Petalis generator with radial petals, center morphing, shading, and 20 named presets.
 - Pen palette with assignable colors/widths, reorderable list, drag-to-assign per layer or selection, plus palette selection and add/remove controls.
 - Plotter optimization slider to remove fully overlapping paths per pen before export.
 - Optimization pipeline (linesimplify, linesort, filter, multipass) with scope selection, preview overlays, and export toggle.
 - One-click SVG export with configurable precision and grouping by pen assignment.
 - Live formula display and estimated pen distance/time.
-- Planned: Petalis generator (radial petal structures with spiral distribution and center morphing).
 
 ## Gallery
 Sample outputs included in `assets/gallery/`. 
@@ -69,9 +69,9 @@ Each layer is powered by an algorithm with its own parameters and formula previe
 - Rings: concentric rings with noise-modulated radii.
 - Topo: contours extracted from a noise-based height field.
 - Rainfall: rain traces with droplet shaping, wind, and silhouette/ground controls.
+- Petalis: radial petal structures with presets, center modifiers, and shading controls.
 - Spiral: includes optional closure for looping the outer end back into the spiral.
 - Shape Pack: circle/polygon packing with perspective controls.
-- Planned: Petalis (radial petal generator with spiral distribution and layered central modifiers).
 
 Defaults live in `src/config/defaults.js` and descriptions in `src/config/descriptions.js`.
 
@@ -106,13 +106,14 @@ flowchart LR
 - `src/core/` - vector engine, layers, RNG/noise, and algorithms.
 - `src/render/` - canvas rendering and view transforms.
 - `src/ui/` - panels, controls, settings, and SVG export.
-- `src/config/` - machine profiles, defaults, UI descriptions, and palette library.
+- `src/config/` - machine profiles, defaults, UI descriptions, palette library, and Petalis presets.
 - `dist/` - optional prebuilt output (not required for local dev).
 
 ## Customization Tips
 - Add new algorithms by extending `src/core/algorithms/index.js` and wiring defaults/UI in `src/config/` and `src/ui/ui.js`.
 - Machine sizes live in `src/config/machines.js` and are used for bounds and export dimensions.
 - Pen palettes live in `src/config/palettes.js` and can be edited or extended.
+- Petalis presets live in `src/config/presets.js` and map names to parameter bundles.
 - Post-Processing Lab includes smoothing/curves/simplify plus the optimization pipeline (linesimplify, linesort, filter, multipass).
 - Keep script order intact in `index.html`; `src/main.js` expects globals to be registered on `window.Vectura`.
 
