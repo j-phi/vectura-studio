@@ -548,6 +548,13 @@
     const occluders = [];
     const layering = p.layering !== false;
     const ringMode = p.ringMode || 'single';
+    const lengthRatio = Math.max(0.1, p.petalLengthRatio ?? 1);
+    const sizeRatio = Math.max(0.1, p.petalSizeRatio ?? 1);
+    const baseLength = Math.max(4, (p.petalScale ?? 30) * lengthRatio);
+    const baseWidthRatio = (p.petalWidthRatio ?? 0.45) * sizeRatio;
+    const anchorRadius = p.anchorToCenter === false ? 0 : Math.max(0, (p.centerRadius ?? 0) * (p.anchorRadiusRatio ?? 1));
+    const visibilitySpan = baseLength * (lengthRatio + sizeRatio);
+    const visibleMaxR = Math.min(maxRadius, anchorRadius + visibilitySpan);
     const countJitter = clamp(p.countJitter ?? 0, 0, 0.5);
     const petalSteps = clamp(Math.round(p.petalSteps ?? 28), 12, 80);
     const rotationJitter = toRad(p.rotationJitter ?? 0);
@@ -568,13 +575,13 @@
             {
               count: Math.max(1, Math.round((p.innerCount ?? 0) * (1 + rng.nextRange(-countJitter, countJitter)))),
               minR: 0,
-              maxR: maxRadius * ringSplit,
+              maxR: visibleMaxR * ringSplit,
               offset: 0,
             },
             {
               count: Math.max(1, Math.round((p.outerCount ?? 0) * (1 + rng.nextRange(-countJitter, countJitter)))),
-              minR: maxRadius * ringSplit,
-              maxR: maxRadius,
+              minR: visibleMaxR * ringSplit,
+              maxR: visibleMaxR,
               offset: ringOffset,
             },
           ]
@@ -582,7 +589,7 @@
             {
               count: Math.max(1, Math.round((p.count ?? 120) * (1 + rng.nextRange(-countJitter, countJitter)))),
               minR: 0,
-              maxR: maxRadius,
+              maxR: visibleMaxR,
               offset: 0,
             },
           ];
@@ -592,17 +599,18 @@
       for (let i = 0; i < count; i++) {
         const t = count <= 1 ? 0.5 : i / (count - 1);
         const radial = lerp(minR, maxR, Math.pow(t, spiralTightness)) * radialGrowth;
+        const radialBase = anchorRadius + radial;
         const drift = angularDrift * driftStrength * noise.noise2D(i * driftNoise, ringIndex * 2.1);
         let angle = baseAngle * i + offset + drift;
         angle += (rng.nextFloat() - 0.5) * rotationJitter;
-        const centerFactor = clamp(1 - radial / maxRadius, 0, 1);
+        const centerFactor = clamp(1 - radialBase / Math.max(1, visibleMaxR), 0, 1);
         const morphCurve = Math.pow(centerFactor, p.centerSizeCurve ?? 1);
         const sizeMorph = 1 + (p.centerSizeMorph ?? 0) * morphCurve;
         const radiusScale = 1 + (p.radiusScale ?? 0) * Math.pow(t, p.radiusScaleCurve ?? 1);
         const jitter = 1 + (rng.nextFloat() * 2 - 1) * sizeJitter;
-        const length = Math.max(4, (p.petalScale ?? 30) * sizeMorph * radiusScale * jitter);
+        const length = Math.max(4, baseLength * sizeMorph * radiusScale * jitter);
 
-        let widthRatio = p.petalWidthRatio ?? 0.45;
+        let widthRatio = baseWidthRatio;
         const budMode = Boolean(p.budMode);
         if (budMode) {
           const budRadius = clamp(p.budRadius ?? 0.15, 0.05, 0.5);
@@ -611,8 +619,8 @@
           widthRatio *= 1 - budFactor * budTight * 0.6;
         }
 
-        const baseX = center.x + Math.cos(angle) * radial;
-        const baseY = center.y + Math.sin(angle) * radial;
+        const baseX = center.x + Math.cos(angle) * radialBase;
+        const baseY = center.y + Math.sin(angle) * radialBase;
         const morphWeight = clamp((p.centerShapeMorph ?? 0) * morphCurve, 0, 1);
         const curlBoost = (p.centerCurlBoost ?? 0) * centerFactor;
         const waveBoost = (p.centerWaveBoost ?? 0) * centerFactor;
@@ -665,7 +673,7 @@
           noise,
         });
         petals.push({
-          radius: radial,
+          radius: radialBase,
           outline,
           shading: shadingLines,
           bbox: bboxFromPoints(outline),
