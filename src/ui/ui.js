@@ -1195,6 +1195,7 @@
       { id: 'petalScale', label: 'Petal Scale (mm)', type: 'range', min: 8, max: 80, step: 1 },
       { id: 'petalWidthRatio', label: 'Width/Length Ratio', type: 'range', min: 0.15, max: 0.9, step: 0.01 },
       { id: 'petalSteps', label: 'Petal Resolution', type: 'range', min: 12, max: 80, step: 2 },
+      { id: 'layering', label: 'Layering', type: 'checkbox' },
       { id: 'tipSharpness', label: 'Tip Sharpness', type: 'range', min: 0, max: 1, step: 0.05 },
       { id: 'tipCurl', label: 'Tip Curl', type: 'range', min: 0, max: 1.2, step: 0.05 },
       { id: 'baseFlare', label: 'Base Flare', type: 'range', min: 0, max: 0.8, step: 0.05 },

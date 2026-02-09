@@ -413,11 +413,140 @@
     return applyModifiers(paths, p.centerModifiers, center, maxRadius, noise);
   };
 
+  const bboxFromPoints = (pts) => {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    pts.forEach((pt) => {
+      minX = Math.min(minX, pt.x);
+      minY = Math.min(minY, pt.y);
+      maxX = Math.max(maxX, pt.x);
+      maxY = Math.max(maxY, pt.y);
+    });
+    return { minX, minY, maxX, maxY };
+  };
+
+  const bboxIntersects = (a, b) =>
+    !(a.maxX < b.minX || a.minX > b.maxX || a.maxY < b.minY || a.minY > b.maxY);
+
+  const pointInPoly = (pt, poly) => {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const xi = poly[i].x;
+      const yi = poly[i].y;
+      const xj = poly[j].x;
+      const yj = poly[j].y;
+      const intersect = yi > pt.y !== yj > pt.y && pt.x < ((xj - xi) * (pt.y - yi)) / (yj - yi + 1e-9) + xi;
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  };
+
+  const segmentIntersection = (a, b, c, d) => {
+    const r = { x: b.x - a.x, y: b.y - a.y };
+    const s = { x: d.x - c.x, y: d.y - c.y };
+    const denom = r.x * s.y - r.y * s.x;
+    if (Math.abs(denom) < 1e-9) return null;
+    const u = ((c.x - a.x) * r.y - (c.y - a.y) * r.x) / denom;
+    const t = ((c.x - a.x) * s.y - (c.y - a.y) * s.x) / denom;
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return { t, u };
+    return null;
+  };
+
+  const clipSegmentOutside = (a, b, occluders) => {
+    if (!occluders.length) return [[a, b]];
+    const segBox = bboxFromPoints([a, b]);
+    const intersections = [];
+    const insideAny = (pt) => occluders.some((occ) => pointInPoly(pt, occ.points));
+
+    occluders.forEach((occ) => {
+      if (!bboxIntersects(segBox, occ.bbox)) return;
+      const pts = occ.points;
+      const count = pts.length;
+      for (let i = 0; i < count; i++) {
+        const p1 = pts[i];
+        const p2 = pts[(i + 1) % count];
+        const hit = segmentIntersection(a, b, p1, p2);
+        if (hit && hit.t > 1e-6 && hit.t < 1 - 1e-6) intersections.push(hit.t);
+      }
+    });
+    const ts = [0, 1, ...intersections].sort((x, y) => x - y);
+    const uniq = [];
+    ts.forEach((t) => {
+      if (!uniq.length || Math.abs(t - uniq[uniq.length - 1]) > 1e-5) uniq.push(t);
+    });
+    const segments = [];
+    for (let i = 0; i < uniq.length - 1; i++) {
+      const t0 = uniq[i];
+      const t1 = uniq[i + 1];
+      if (t1 - t0 < 1e-5) continue;
+      const mid = (t0 + t1) / 2;
+      const midPt = { x: lerp(a.x, b.x, mid), y: lerp(a.y, b.y, mid) };
+      if (!insideAny(midPt)) {
+        const s0 = { x: lerp(a.x, b.x, t0), y: lerp(a.y, b.y, t0) };
+        const s1 = { x: lerp(a.x, b.x, t1), y: lerp(a.y, b.y, t1) };
+        segments.push([s0, s1]);
+      }
+    }
+    return segments;
+  };
+
+  const clipPathOutside = (path, occluders) => {
+    if (!Array.isArray(path) || path.length < 2) return [];
+    if (!occluders.length) return [path];
+    const output = [];
+    let current = [];
+    const eps = 1e-4;
+    const appendPoint = (pt) => {
+      if (!current.length) {
+        current.push(pt);
+        return;
+      }
+      const last = current[current.length - 1];
+      if (Math.hypot(last.x - pt.x, last.y - pt.y) < eps) return;
+      current.push(pt);
+    };
+    for (let i = 0; i < path.length - 1; i++) {
+      const a = path[i];
+      const b = path[i + 1];
+      const pieces = clipSegmentOutside(a, b, occluders);
+      if (!pieces.length) {
+        if (current.length > 1) output.push(current);
+        current = [];
+        continue;
+      }
+      pieces.forEach((seg, idx) => {
+        const [s0, s1] = seg;
+        if (!current.length) {
+          current = [s0, s1];
+        } else {
+          const last = current[current.length - 1];
+          if (Math.hypot(last.x - s0.x, last.y - s0.y) > eps) {
+            output.push(current);
+            current = [s0, s1];
+          } else {
+            appendPoint(s1);
+          }
+        }
+        if (idx < pieces.length - 1) {
+          output.push(current);
+          current = [];
+        }
+      });
+    }
+    if (current.length > 1) output.push(current);
+    return output;
+  };
+
   const generate = (p, rng, noise, bounds) => {
     const { m, width, height } = bounds;
     const center = { x: width / 2, y: height / 2 };
     const maxRadius = Math.min(width, height) / 2 - m;
     const paths = [];
+    const petals = [];
+    const occluders = [];
+    const layering = p.layering !== false;
     const ringMode = p.ringMode || 'single';
     const countJitter = clamp(p.countJitter ?? 0, 0, 0.5);
     const petalSteps = clamp(Math.round(p.petalSteps ?? 28), 12, 80);
@@ -507,8 +636,6 @@
           waveFreq: p.edgeWaveFreq ?? 2,
           wavePhase,
         });
-        paths.push(outline);
-
         const shadingLines = buildShadingLines({
           length,
           widthRatio,
@@ -537,11 +664,38 @@
           rng,
           noise,
         });
-        shadingLines.forEach((line) => {
-          if (line.length > 1) paths.push(line);
+        petals.push({
+          radius: radial,
+          outline,
+          shading: shadingLines,
+          bbox: bboxFromPoints(outline),
         });
       }
     });
+
+    if (petals.length) {
+      const ordered = petals.slice().sort((a, b) => a.radius - b.radius);
+      ordered.forEach((petal) => {
+        if (layering && occluders.length) {
+          const clippedOutline = clipPathOutside(petal.outline, occluders);
+          clippedOutline.forEach((seg) => {
+            if (seg.length > 1) paths.push(seg);
+          });
+          petal.shading.forEach((line) => {
+            const clipped = clipPathOutside(line, occluders);
+            clipped.forEach((seg) => {
+              if (seg.length > 1) paths.push(seg);
+            });
+          });
+        } else {
+          paths.push(petal.outline);
+          petal.shading.forEach((line) => {
+            if (line.length > 1) paths.push(line);
+          });
+        }
+        occluders.push({ points: petal.outline, bbox: petal.bbox });
+      });
+    }
 
     const centerPaths = buildCentralElements(p, rng, noise, center, maxRadius);
     centerPaths.forEach((path) => paths.push(path));

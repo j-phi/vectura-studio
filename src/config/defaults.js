@@ -172,6 +172,7 @@
       petalScale: 32,
       petalWidthRatio: 0.45,
       petalSteps: 32,
+      layering: true,
       tipSharpness: 0.6,
       tipCurl: 0.4,
       baseFlare: 0.25,
