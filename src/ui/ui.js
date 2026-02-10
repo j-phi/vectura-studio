@@ -33,6 +33,105 @@
     const t = (value - inMin) / (inMax - inMin);
     return outMin + (outMax - outMin) * t;
   };
+  const lerp = (a, b, t) => a + (b - a) * t;
+
+  const segmentIntersection = (a, b, c, d) => {
+    const r = { x: b.x - a.x, y: b.y - a.y };
+    const s = { x: d.x - c.x, y: d.y - c.y };
+    const denom = r.x * s.y - r.y * s.x;
+    if (Math.abs(denom) < 1e-9) return null;
+    const u = ((c.x - a.x) * r.y - (c.y - a.y) * r.x) / denom;
+    const t = ((c.x - a.x) * s.y - (c.y - a.y) * s.x) / denom;
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return t;
+    return null;
+  };
+
+  const segmentCircleIntersections = (a, b, center, radius) => {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const fx = a.x - center.x;
+    const fy = a.y - center.y;
+    const A = dx * dx + dy * dy;
+    const B = 2 * (fx * dx + fy * dy);
+    const C = fx * fx + fy * fy - radius * radius;
+    const disc = B * B - 4 * A * C;
+    if (disc < 0) return [];
+    const sqrt = Math.sqrt(disc);
+    const t1 = (-B - sqrt) / (2 * A);
+    const t2 = (-B + sqrt) / (2 * A);
+    return [t1, t2].filter((t) => t >= 0 && t <= 1);
+  };
+
+  const splitPathByShape = (path, shape) => {
+    if (!Array.isArray(path) || path.length < 2) return null;
+    const output = [];
+    let current = [path[0]];
+    let hit = false;
+    const addSegment = () => {
+      if (current.length > 1) output.push(current);
+      current = [];
+    };
+
+    for (let i = 0; i < path.length - 1; i++) {
+      const a = path[i];
+      const b = path[i + 1];
+      let ts = [];
+      if (shape.mode === 'line' && shape.line) {
+        const t = segmentIntersection(a, b, shape.line.a, shape.line.b);
+        if (t !== null) ts.push(t);
+      } else if (shape.mode === 'rect' && shape.rect) {
+        const { x, y, w, h } = shape.rect;
+        const r1 = { x, y };
+        const r2 = { x: x + w, y };
+        const r3 = { x: x + w, y: y + h };
+        const r4 = { x, y: y + h };
+        [segmentIntersection(a, b, r1, r2),
+          segmentIntersection(a, b, r2, r3),
+          segmentIntersection(a, b, r3, r4),
+          segmentIntersection(a, b, r4, r1),
+        ].forEach((t) => {
+          if (t !== null) ts.push(t);
+        });
+      } else if (shape.mode === 'circle' && shape.circle) {
+        ts = segmentCircleIntersections(a, b, shape.circle, shape.circle.r);
+      }
+
+      ts = ts.filter((t) => t > 1e-4 && t < 1 - 1e-4).sort((t1, t2) => t1 - t2);
+      if (!ts.length) {
+        if (!current.length) current.push(a);
+        current.push(b);
+        continue;
+      }
+
+      hit = true;
+      let lastPoint = a;
+      if (!current.length) current.push(lastPoint);
+      ts.forEach((t) => {
+        const pt = { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) };
+        current.push(pt);
+        addSegment();
+        current.push(pt);
+        lastPoint = pt;
+      });
+      current.push(b);
+    }
+
+    if (current.length > 1) output.push(current);
+    if (!hit) return null;
+    return output;
+  };
+
+  const expandCirclePath = (meta, segments = 80) => {
+    const cx = meta.cx ?? meta.x ?? 0;
+    const cy = meta.cy ?? meta.y ?? 0;
+    const r = meta.r ?? meta.rx ?? 0;
+    const pts = [];
+    for (let i = 0; i <= segments; i++) {
+      const t = (i / segments) * Math.PI * 2;
+      pts.push({ x: cx + Math.cos(t) * r, y: cy + Math.sin(t) * r });
+    }
+    return pts;
+  };
 
   const stepPrecision = (step) => {
     const s = step?.toString?.() || '';
@@ -873,40 +972,58 @@
       value: 'ripple',
       label: 'Ripple',
       controls: [
-        { key: 'amount', label: 'Amplitude (mm)', type: 'range', min: 0, max: 10, step: 0.1 },
-        { key: 'frequency', label: 'Frequency', type: 'range', min: 1, max: 16, step: 1 },
+        { key: 'amount', label: 'Amplitude (mm)', type: 'range', min: 0, max: 10, step: 0.1, infoKey: 'petalis.centerModRippleAmount' },
+        { key: 'frequency', label: 'Frequency', type: 'range', min: 1, max: 16, step: 1, infoKey: 'petalis.centerModRippleFrequency' },
       ],
     },
     {
       value: 'twist',
       label: 'Twist',
-      controls: [{ key: 'amount', label: 'Twist (deg)', type: 'range', min: -90, max: 90, step: 1 }],
+      controls: [{ key: 'amount', label: 'Twist (deg)', type: 'range', min: -90, max: 90, step: 1, infoKey: 'petalis.centerModTwist' }],
     },
     {
       value: 'radialNoise',
       label: 'Radial Noise',
       controls: [
-        { key: 'amount', label: 'Noise Amp (mm)', type: 'range', min: 0, max: 6, step: 0.1 },
-        { key: 'scale', label: 'Noise Scale', type: 'range', min: 0.05, max: 1.0, step: 0.05 },
+        { key: 'amount', label: 'Noise Amp (mm)', type: 'range', min: 0, max: 6, step: 0.1, infoKey: 'petalis.centerModNoiseAmount' },
+        { key: 'scale', label: 'Noise Scale', type: 'range', min: 0.05, max: 1.0, step: 0.05, infoKey: 'petalis.centerModNoiseScale' },
       ],
     },
     {
       value: 'falloff',
       label: 'Density Falloff',
-      controls: [{ key: 'amount', label: 'Strength', type: 'range', min: 0, max: 1, step: 0.05 }],
+      controls: [{ key: 'amount', label: 'Strength', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'petalis.centerModFalloff' }],
     },
     {
       value: 'offset',
       label: 'Offset',
       controls: [
-        { key: 'offsetX', label: 'Offset X (mm)', type: 'range', min: -40, max: 40, step: 1 },
-        { key: 'offsetY', label: 'Offset Y (mm)', type: 'range', min: -40, max: 40, step: 1 },
+        { key: 'offsetX', label: 'Offset X (mm)', type: 'range', min: -40, max: 40, step: 1, infoKey: 'petalis.centerModOffsetX' },
+        { key: 'offsetY', label: 'Offset Y (mm)', type: 'range', min: -40, max: 40, step: 1, infoKey: 'petalis.centerModOffsetY' },
       ],
     },
     {
       value: 'clip',
       label: 'Clip/Trim',
-      controls: [{ key: 'radius', label: 'Clip Radius (mm)', type: 'range', min: 1, max: 120, step: 1 }],
+      controls: [{ key: 'radius', label: 'Clip Radius (mm)', type: 'range', min: 1, max: 120, step: 1, infoKey: 'petalis.centerModClip' }],
+    },
+    {
+      value: 'circularOffset',
+      label: 'Circular Offset',
+      controls: [
+        { key: 'amount', label: 'Offset Amount (mm)', type: 'range', min: 0, max: 12, step: 0.1, infoKey: 'petalis.centerModCircularAmount' },
+        { key: 'randomness', label: 'Randomness', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'petalis.centerModCircularRandomness' },
+        {
+          key: 'direction',
+          label: 'In/Out Bias',
+          type: 'range',
+          min: -1,
+          max: 1,
+          step: 0.05,
+          infoKey: 'petalis.centerModCircularDirection',
+        },
+        { key: 'seed', label: 'Seed', type: 'range', min: 0, max: 9999, step: 1, infoKey: 'petalis.centerModCircularSeed' },
+      ],
     },
   ];
 
@@ -920,6 +1037,100 @@
     offsetX: 0,
     offsetY: 0,
     radius: 12,
+    randomness: 0.5,
+    direction: 0,
+    seed: 0,
+  });
+
+  const PETALIS_PETAL_MODIFIER_TYPES = [
+    {
+      value: 'ripple',
+      label: 'Ripple',
+      controls: [
+        { key: 'amount', label: 'Amplitude (mm)', type: 'range', min: 0, max: 6, step: 0.1, infoKey: 'petalis.petalModRippleAmount' },
+        { key: 'frequency', label: 'Frequency', type: 'range', min: 1, max: 16, step: 1, infoKey: 'petalis.petalModRippleFrequency' },
+      ],
+    },
+    {
+      value: 'twist',
+      label: 'Twist',
+      controls: [{ key: 'amount', label: 'Twist (deg)', type: 'range', min: -60, max: 60, step: 1, infoKey: 'petalis.petalModTwist' }],
+    },
+    {
+      value: 'noise',
+      label: 'Noise',
+      controls: [
+        { key: 'amount', label: 'Noise Amp (mm)', type: 'range', min: 0, max: 4, step: 0.1, infoKey: 'petalis.petalModNoiseAmount' },
+        { key: 'scale', label: 'Noise Scale', type: 'range', min: 0.05, max: 1.0, step: 0.05, infoKey: 'petalis.petalModNoiseScale' },
+      ],
+    },
+    {
+      value: 'shear',
+      label: 'Shear',
+      controls: [{ key: 'amount', label: 'Shear Amount', type: 'range', min: -1, max: 1, step: 0.05, infoKey: 'petalis.petalModShear' }],
+    },
+    {
+      value: 'taper',
+      label: 'Taper',
+      controls: [{ key: 'amount', label: 'Taper Amount', type: 'range', min: -1, max: 1, step: 0.05, infoKey: 'petalis.petalModTaper' }],
+    },
+    {
+      value: 'offset',
+      label: 'Offset',
+      controls: [
+        { key: 'offsetX', label: 'Offset X (mm)', type: 'range', min: -20, max: 20, step: 0.5, infoKey: 'petalis.petalModOffsetX' },
+        { key: 'offsetY', label: 'Offset Y (mm)', type: 'range', min: -20, max: 20, step: 0.5, infoKey: 'petalis.petalModOffsetY' },
+      ],
+    },
+  ];
+
+  const createPetalModifier = (type = 'ripple') => ({
+    id: `petal-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    enabled: true,
+    type,
+    amount: 1.5,
+    frequency: 8,
+    scale: 0.2,
+    offsetX: 0,
+    offsetY: 0,
+  });
+
+  const PETALIS_SHADING_TYPES = [
+    { value: 'radial', label: 'Radial Hatch' },
+    { value: 'parallel', label: 'Parallel Hatch' },
+    { value: 'spiral', label: 'Spiral Hatch' },
+    { value: 'stipple', label: 'Stipple' },
+    { value: 'gradient', label: 'Gradient Lines' },
+    { value: 'edge', label: 'Edge Hatch' },
+    { value: 'rim', label: 'Rim Strokes' },
+    { value: 'outline', label: 'Outline Emphasis' },
+    { value: 'crosshatch', label: 'Crosshatch' },
+    { value: 'chiaroscuro', label: 'Chiaroscuro' },
+    { value: 'contour', label: 'Contour Lines' },
+  ];
+
+  const PETALIS_LINE_TYPES = [
+    { value: 'solid', label: 'Solid' },
+    { value: 'dashed', label: 'Dashed' },
+    { value: 'dotted', label: 'Dotted' },
+    { value: 'stitch', label: 'Stitch' },
+  ];
+
+  const createPetalisShading = (type = 'radial') => ({
+    id: `shade-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    enabled: true,
+    type,
+    widthX: 100,
+    widthY: 60,
+    posX: 50,
+    posY: 50,
+    gapX: 0,
+    gapY: 0,
+    gapPosX: 50,
+    gapPosY: 50,
+    lineType: 'solid',
+    lineSpacing: 1,
+    angle: 0,
   });
 
   const CONTROL_DEFS = {
@@ -1178,6 +1389,7 @@
         label: 'Preset',
         type: 'select',
         options: PETALIS_PRESET_OPTIONS,
+        infoKey: 'petalis.preset',
       },
       { type: 'section', label: 'Petal Geometry' },
       {
@@ -1190,15 +1402,39 @@
           { value: 'lanceolate', label: 'Lanceolate' },
           { value: 'heart', label: 'Heart' },
           { value: 'spoon', label: 'Spoon' },
+          { value: 'rounded', label: 'Rounded' },
+          { value: 'notched', label: 'Notched' },
+          { value: 'spatulate', label: 'Spatulate' },
+          { value: 'marquise', label: 'Marquise' },
+          { value: 'dagger', label: 'Dagger' },
         ],
+        infoKey: 'petalis.petalProfile',
       },
-      { id: 'petalScale', label: 'Petal Scale (mm)', type: 'range', min: 8, max: 80, step: 1 },
-      { id: 'petalWidthRatio', label: 'Width/Length Ratio', type: 'range', min: 0.15, max: 0.9, step: 0.01 },
-      { id: 'petalLengthRatio', label: 'Length Ratio', type: 'range', min: 0.4, max: 2.0, step: 0.05 },
-      { id: 'petalSizeRatio', label: 'Size Ratio', type: 'range', min: 0.4, max: 2.0, step: 0.05 },
-      { id: 'petalSteps', label: 'Petal Resolution', type: 'range', min: 12, max: 80, step: 2 },
-      { id: 'layering', label: 'Layering', type: 'checkbox' },
-      { id: 'anchorToCenter', label: 'Anchor to Center Ring', type: 'checkbox' },
+      { id: 'petalScale', label: 'Petal Scale (mm)', type: 'range', min: 8, max: 80, step: 1, infoKey: 'petalis.petalScale' },
+      {
+        id: 'petalWidthRatio',
+        label: 'Width/Length Ratio',
+        type: 'range',
+        min: 0.15,
+        max: 0.9,
+        step: 0.01,
+        infoKey: 'petalis.petalWidthRatio',
+      },
+      { id: 'petalLengthRatio', label: 'Length Ratio', type: 'range', min: 0.4, max: 2.0, step: 0.05, infoKey: 'petalis.petalLengthRatio' },
+      { id: 'petalSizeRatio', label: 'Size Ratio', type: 'range', min: 0.4, max: 2.0, step: 0.05, infoKey: 'petalis.petalSizeRatio' },
+      { id: 'petalSteps', label: 'Petal Resolution', type: 'range', min: 12, max: 80, step: 2, infoKey: 'petalis.petalSteps' },
+      { id: 'layering', label: 'Layering', type: 'checkbox', infoKey: 'petalis.layering' },
+      {
+        id: 'anchorToCenter',
+        label: 'Anchor to Center Ring',
+        type: 'select',
+        options: [
+          { value: 'off', label: 'Off' },
+          { value: 'central', label: 'Central Petals Only' },
+          { value: 'all', label: 'All Petals' },
+        ],
+        infoKey: 'petalis.anchorToCenter',
+      },
       {
         id: 'anchorRadiusRatio',
         label: 'Anchor Radius Ratio',
@@ -1206,16 +1442,75 @@
         min: 0.2,
         max: 3,
         step: 0.05,
-        showIf: (p) => p.anchorToCenter,
+        showIf: (p) => p.anchorToCenter && p.anchorToCenter !== 'off',
+        infoKey: 'petalis.anchorRadiusRatio',
       },
-      { id: 'tipSharpness', label: 'Tip Sharpness', type: 'range', min: 0, max: 1, step: 0.05 },
-      { id: 'tipCurl', label: 'Tip Curl', type: 'range', min: 0, max: 1.2, step: 0.05 },
-      { id: 'baseFlare', label: 'Base Flare', type: 'range', min: 0, max: 0.8, step: 0.05 },
-      { id: 'basePinch', label: 'Base Pinch', type: 'range', min: 0, max: 0.8, step: 0.05 },
-      { id: 'edgeWaveAmp', label: 'Edge Wave Amp', type: 'range', min: 0, max: 0.3, step: 0.01 },
-      { id: 'edgeWaveFreq', label: 'Edge Wave Freq', type: 'range', min: 0, max: 12, step: 0.5 },
+      { id: 'tipSharpness', label: 'Tip Sharpness', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'petalis.tipSharpness' },
+      { id: 'tipTwist', label: 'Tip Twist', type: 'range', min: 0, max: 10, step: 0.1, infoKey: 'petalis.tipTwist' },
+      { id: 'centerCurlBoost', label: 'Center Tip Twist Boost', type: 'range', min: 0, max: 2, step: 0.05, infoKey: 'petalis.centerCurlBoost' },
+      { id: 'tipCurl', label: 'Tip Curl Rounding', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'petalis.tipCurl' },
+      { id: 'tipCurlDepth', label: 'Tip Curl Depth (%)', type: 'range', min: 0, max: 100, step: 1, displayUnit: '%', infoKey: 'petalis.tipCurlDepth' },
+      { id: 'tipCurlAngle', label: 'Tip Curl Angle', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'petalis.tipCurlAngle' },
+      {
+        id: 'tipCurlInset',
+        label: 'Tip Curl Inset (mm)',
+        type: 'range',
+        min: 0,
+        max: 12,
+        step: 0.1,
+        displayUnit: 'mm',
+        infoKey: 'petalis.tipCurlInset',
+      },
+      {
+        id: 'tipCurlOuterPad',
+        label: 'Tip Curl Outer Padding (mm)',
+        type: 'range',
+        min: 0,
+        max: 12,
+        step: 0.1,
+        displayUnit: 'mm',
+        infoKey: 'petalis.tipCurlOuterPad',
+      },
+      {
+        id: 'tipCurlShadeType',
+        label: 'Curl Shading Type',
+        type: 'select',
+        options: [
+          { value: 'none', label: 'None' },
+          ...PETALIS_SHADING_TYPES.map((opt) => ({ value: opt.value, label: opt.label })),
+        ],
+        infoKey: 'petalis.tipCurlShadeType',
+      },
+      {
+        id: 'tipCurlShadeDistance',
+        label: 'Curl Shading Distance (mm)',
+        type: 'range',
+        min: 0,
+        max: 40,
+        step: 0.5,
+        displayUnit: 'mm',
+        showIf: (p) => p.tipCurlShadeType && p.tipCurlShadeType !== 'none',
+        infoKey: 'petalis.tipCurlShadeDistance',
+      },
+      {
+        id: 'tipCurlShadeMorph',
+        label: 'Curl Shading Morph',
+        type: 'range',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        showIf: (p) => p.tipCurlShadeType && p.tipCurlShadeType !== 'none',
+        infoKey: 'petalis.tipCurlShadeMorph',
+      },
+      { id: 'baseFlare', label: 'Base Flare', type: 'range', min: 0, max: 5, step: 0.05, infoKey: 'petalis.baseFlare' },
+      { id: 'basePinch', label: 'Base Pinch', type: 'range', min: 0, max: 5, step: 0.05, infoKey: 'petalis.basePinch' },
+      { id: 'edgeWaveAmp', label: 'Edge Wave Amp', type: 'range', min: 0, max: 0.6, step: 0.01, infoKey: 'petalis.edgeWaveAmp' },
+      { id: 'edgeWaveFreq', label: 'Edge Wave Freq', type: 'range', min: 0, max: 14, step: 0.5, infoKey: 'petalis.edgeWaveFreq' },
+      { id: 'centerWaveBoost', label: 'Center Wave Boost', type: 'range', min: 0, max: 2, step: 0.05, infoKey: 'petalis.centerWaveBoost' },
+      { type: 'section', label: 'Petal Modifiers' },
+      { type: 'petalModifierList', label: 'Petal Modifiers' },
       { type: 'section', label: 'Distribution & Spiral' },
-      { id: 'count', label: 'Petal Count', type: 'range', min: 5, max: 800, step: 1 },
+      { id: 'count', label: 'Petal Count', type: 'range', min: 5, max: 800, step: 1, infoKey: 'petalis.count' },
       {
         id: 'ringMode',
         label: 'Ring Mode',
@@ -1224,10 +1519,38 @@
           { value: 'single', label: 'Single' },
           { value: 'dual', label: 'Dual' },
         ],
+        infoKey: 'petalis.ringMode',
       },
-      { id: 'innerCount', label: 'Inner Ring Count', type: 'range', min: 5, max: 400, step: 1, showIf: (p) => p.ringMode === 'dual' },
-      { id: 'outerCount', label: 'Outer Ring Count', type: 'range', min: 5, max: 600, step: 1, showIf: (p) => p.ringMode === 'dual' },
-      { id: 'ringSplit', label: 'Ring Split', type: 'range', min: 0.15, max: 0.85, step: 0.01, showIf: (p) => p.ringMode === 'dual' },
+      {
+        id: 'innerCount',
+        label: 'Inner Ring Count',
+        type: 'range',
+        min: 5,
+        max: 400,
+        step: 1,
+        showIf: (p) => p.ringMode === 'dual',
+        infoKey: 'petalis.innerCount',
+      },
+      {
+        id: 'outerCount',
+        label: 'Outer Ring Count',
+        type: 'range',
+        min: 5,
+        max: 600,
+        step: 1,
+        showIf: (p) => p.ringMode === 'dual',
+        infoKey: 'petalis.outerCount',
+      },
+      {
+        id: 'ringSplit',
+        label: 'Ring Split',
+        type: 'range',
+        min: 0.15,
+        max: 0.85,
+        step: 0.01,
+        showIf: (p) => p.ringMode === 'dual',
+        infoKey: 'petalis.ringSplit',
+      },
       {
         id: 'ringOffset',
         label: 'Ring Offset',
@@ -1237,6 +1560,7 @@
         step: 1,
         displayUnit: '°',
         showIf: (p) => p.ringMode === 'dual',
+        infoKey: 'petalis.ringOffset',
       },
       {
         id: 'spiralMode',
@@ -1246,6 +1570,7 @@
           { value: 'golden', label: 'Golden Angle' },
           { value: 'custom', label: 'Custom Angle' },
         ],
+        infoKey: 'petalis.spiralMode',
       },
       {
         id: 'customAngle',
@@ -1256,13 +1581,14 @@
         step: 1,
         displayUnit: '°',
         showIf: (p) => p.spiralMode === 'custom',
+        infoKey: 'petalis.customAngle',
       },
-      { id: 'spiralTightness', label: 'Spiral Tightness', type: 'range', min: 0.5, max: 2.5, step: 0.05 },
-      { id: 'radialGrowth', label: 'Radial Growth', type: 'range', min: 0.5, max: 2, step: 0.05 },
+      { id: 'spiralTightness', label: 'Spiral Tightness', type: 'range', min: 0.5, max: 2.5, step: 0.05, infoKey: 'petalis.spiralTightness' },
+      { id: 'radialGrowth', label: 'Radial Growth', type: 'range', min: 0.5, max: 2, step: 0.05, infoKey: 'petalis.radialGrowth' },
       { type: 'section', label: 'Center Morphing' },
-      { id: 'centerSizeMorph', label: 'Size Morph', type: 'range', min: -0.8, max: 0.8, step: 0.05 },
-      { id: 'centerSizeCurve', label: 'Size Morph Curve', type: 'range', min: 0.5, max: 2.5, step: 0.05 },
-      { id: 'centerShapeMorph', label: 'Shape Morph', type: 'range', min: 0, max: 1, step: 0.05 },
+      { id: 'centerSizeMorph', label: 'Size Morph', type: 'range', min: -100, max: 100, step: 1, infoKey: 'petalis.centerSizeMorph' },
+      { id: 'centerSizeCurve', label: 'Size Morph Curve', type: 'range', min: 0.5, max: 2.5, step: 0.05, infoKey: 'petalis.centerSizeCurve' },
+      { id: 'centerShapeMorph', label: 'Shape Morph', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'petalis.centerShapeMorph' },
       {
         id: 'centerProfile',
         label: 'Center Profile',
@@ -1273,13 +1599,17 @@
           { value: 'lanceolate', label: 'Lanceolate' },
           { value: 'heart', label: 'Heart' },
           { value: 'spoon', label: 'Spoon' },
+          { value: 'rounded', label: 'Rounded' },
+          { value: 'notched', label: 'Notched' },
+          { value: 'spatulate', label: 'Spatulate' },
+          { value: 'marquise', label: 'Marquise' },
+          { value: 'dagger', label: 'Dagger' },
         ],
+        infoKey: 'petalis.centerProfile',
       },
-      { id: 'centerCurlBoost', label: 'Curl Boost', type: 'range', min: 0, max: 1, step: 0.05 },
-      { id: 'centerWaveBoost', label: 'Wave Boost', type: 'range', min: 0, max: 1, step: 0.05 },
-      { id: 'budMode', label: 'Bud Mode', type: 'checkbox' },
-      { id: 'budRadius', label: 'Bud Radius', type: 'range', min: 0.05, max: 0.6, step: 0.01, showIf: (p) => p.budMode },
-      { id: 'budTightness', label: 'Bud Tightness', type: 'range', min: 0, max: 1, step: 0.05, showIf: (p) => p.budMode },
+      { id: 'budMode', label: 'Bud Mode', type: 'checkbox', infoKey: 'petalis.budMode' },
+      { id: 'budRadius', label: 'Bud Radius', type: 'range', min: 0.05, max: 2, step: 0.01, showIf: (p) => p.budMode, infoKey: 'petalis.budRadius' },
+      { id: 'budTightness', label: 'Bud Tightness', type: 'range', min: 0, max: 10, step: 0.1, showIf: (p) => p.budMode, infoKey: 'petalis.budTightness' },
       { type: 'section', label: 'Central Elements' },
       {
         id: 'centerType',
@@ -1292,60 +1622,24 @@
           { value: 'dot', label: 'Dot Field' },
           { value: 'filament', label: 'Filament Cluster' },
         ],
+        infoKey: 'petalis.centerType',
       },
-      { id: 'centerRadius', label: 'Center Radius (mm)', type: 'range', min: 2, max: 40, step: 1 },
-      { id: 'centerDensity', label: 'Center Density', type: 'range', min: 4, max: 120, step: 1 },
-      { id: 'centerFalloff', label: 'Center Falloff', type: 'range', min: 0, max: 1, step: 0.05 },
-      { id: 'centerRing', label: 'Secondary Ring', type: 'checkbox' },
-      { id: 'centerRingRadius', label: 'Ring Radius (mm)', type: 'range', min: 3, max: 60, step: 1, showIf: (p) => p.centerRing },
-      { id: 'centerRingDensity', label: 'Ring Density', type: 'range', min: 6, max: 120, step: 1, showIf: (p) => p.centerRing },
-      { id: 'centerConnectors', label: 'Connect to Petals', type: 'checkbox' },
-      { id: 'connectorCount', label: 'Connector Count', type: 'range', min: 4, max: 120, step: 1, showIf: (p) => p.centerConnectors },
-      { id: 'connectorLength', label: 'Connector Length (mm)', type: 'range', min: 2, max: 40, step: 1, showIf: (p) => p.centerConnectors },
-      { id: 'connectorJitter', label: 'Connector Jitter', type: 'range', min: 0, max: 1, step: 0.05, showIf: (p) => p.centerConnectors },
+      { id: 'centerRadius', label: 'Center Radius (mm)', type: 'range', min: 2, max: 40, step: 1, infoKey: 'petalis.centerRadius' },
+      { id: 'centerDensity', label: 'Center Density', type: 'range', min: 4, max: 120, step: 1, infoKey: 'petalis.centerDensity' },
+      { id: 'centerFalloff', label: 'Center Falloff', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'petalis.centerFalloff' },
+      { id: 'centerRing', label: 'Secondary Ring', type: 'checkbox', infoKey: 'petalis.centerRing' },
+      { id: 'centerRingRadius', label: 'Ring Radius (mm)', type: 'range', min: 3, max: 60, step: 1, showIf: (p) => p.centerRing, infoKey: 'petalis.centerRingRadius' },
+      { id: 'centerRingDensity', label: 'Ring Density', type: 'range', min: 6, max: 120, step: 1, showIf: (p) => p.centerRing, infoKey: 'petalis.centerRingDensity' },
+      { id: 'centerConnectors', label: 'Connect to Petals', type: 'checkbox', infoKey: 'petalis.centerConnectors' },
+      { id: 'connectorCount', label: 'Connector Count', type: 'range', min: 4, max: 120, step: 1, showIf: (p) => p.centerConnectors, infoKey: 'petalis.connectorCount' },
+      { id: 'connectorLength', label: 'Connector Length (mm)', type: 'range', min: 2, max: 40, step: 1, showIf: (p) => p.centerConnectors, infoKey: 'petalis.connectorLength' },
+      { id: 'connectorJitter', label: 'Connector Jitter', type: 'range', min: 0, max: 1, step: 0.05, showIf: (p) => p.centerConnectors, infoKey: 'petalis.connectorJitter' },
       { type: 'modifierList', label: 'Center Modifiers' },
-      { type: 'section', label: 'Shading' },
-      { id: 'innerShading', label: 'Inner Shading', type: 'checkbox' },
-      {
-        id: 'innerShadingType',
-        label: 'Inner Shading Type',
-        type: 'select',
-        options: [
-          { value: 'radial', label: 'Radial Hatch' },
-          { value: 'spiral', label: 'Spiral Hatch' },
-          { value: 'stipple', label: 'Stipple' },
-          { value: 'gradient', label: 'Gradient Lines' },
-        ],
-        showIf: (p) => p.innerShading,
-      },
-      { id: 'innerDensity', label: 'Inner Density', type: 'range', min: 0, max: 1, step: 0.05, showIf: (p) => p.innerShading },
-      { id: 'outerShading', label: 'Outer Shading', type: 'checkbox' },
-      {
-        id: 'outerShadingType',
-        label: 'Outer Shading Type',
-        type: 'select',
-        options: [
-          { value: 'edge', label: 'Edge Hatch' },
-          { value: 'rim', label: 'Rim Strokes' },
-          { value: 'outline', label: 'Outline Emphasis' },
-        ],
-        showIf: (p) => p.outerShading,
-      },
-      { id: 'outerDensity', label: 'Outer Density', type: 'range', min: 0, max: 1, step: 0.05, showIf: (p) => p.outerShading },
-      { id: 'shadingTransition', label: 'Transition Width', type: 'range', min: 0, max: 1, step: 0.05 },
-      {
-        id: 'hatchAngle',
-        label: 'Hatch Angle',
-        type: 'angle',
-        min: 0,
-        max: 360,
-        step: 1,
-        displayUnit: '°',
-      },
-      { id: 'hatchNoise', label: 'Hatch Noise', type: 'range', min: 0, max: 1, step: 0.05 },
+      { type: 'section', label: 'Shading Stack' },
+      { type: 'shadingList', label: 'Shading' },
       { type: 'section', label: 'Randomness & Seed' },
-      { id: 'countJitter', label: 'Count Jitter', type: 'range', min: 0, max: 0.5, step: 0.01 },
-      { id: 'sizeJitter', label: 'Size Jitter', type: 'range', min: 0, max: 0.5, step: 0.01 },
+      { id: 'countJitter', label: 'Count Jitter', type: 'range', min: 0, max: 0.5, step: 0.01, infoKey: 'petalis.countJitter' },
+      { id: 'sizeJitter', label: 'Size Jitter', type: 'range', min: 0, max: 0.5, step: 0.01, infoKey: 'petalis.sizeJitter' },
       {
         id: 'rotationJitter',
         label: 'Rotation Jitter',
@@ -1354,6 +1648,7 @@
         max: 45,
         step: 1,
         displayUnit: '°',
+        infoKey: 'petalis.rotationJitter',
       },
       {
         id: 'angularDrift',
@@ -1363,11 +1658,12 @@
         max: 45,
         step: 1,
         displayUnit: '°',
+        infoKey: 'petalis.angularDrift',
       },
-      { id: 'driftStrength', label: 'Drift Strength', type: 'range', min: 0, max: 1, step: 0.05 },
-      { id: 'driftNoise', label: 'Drift Noise', type: 'range', min: 0.05, max: 1, step: 0.05 },
-      { id: 'radiusScale', label: 'Radius Scale', type: 'range', min: -1, max: 1, step: 0.05 },
-      { id: 'radiusScaleCurve', label: 'Radius Scale Curve', type: 'range', min: 0.5, max: 2.5, step: 0.05 },
+      { id: 'driftStrength', label: 'Drift Strength', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'petalis.driftStrength' },
+      { id: 'driftNoise', label: 'Drift Noise', type: 'range', min: 0.05, max: 1, step: 0.05, infoKey: 'petalis.driftNoise' },
+      { id: 'radiusScale', label: 'Radius Scale', type: 'range', min: -1, max: 1, step: 0.05, infoKey: 'petalis.radiusScale' },
+      { id: 'radiusScaleCurve', label: 'Radius Scale Curve', type: 'range', min: 0.5, max: 2.5, step: 0.05, infoKey: 'petalis.radiusScaleCurve' },
     ],
     wavetable: [
       { id: 'lines', label: 'Lines', type: 'range', min: 5, max: 160, step: 1, infoKey: 'wavetable.lines' },
@@ -3187,6 +3483,402 @@
       title: 'Perspective Y',
       description: 'Vertical offset for the perspective origin (mm).',
     },
+    'petalis.preset': {
+      title: 'Preset',
+      description: 'Loads a curated Petalis recipe. Presets overwrite petal, distribution, center, and shading parameters.',
+    },
+    'petalis.petalProfile': {
+      title: 'Petal Profile',
+      description: 'Selects the base silhouette used to build each petal (oval, teardrop, lanceolate, etc.).',
+    },
+    'petalis.petalScale': {
+      title: 'Petal Scale',
+      description: 'Controls the overall petal size in millimeters before ring scaling or morphing is applied.',
+    },
+    'petalis.petalWidthRatio': {
+      title: 'Width/Length Ratio',
+      description: 'Sets how wide the petal is relative to its length. Lower values create thinner petals.',
+    },
+    'petalis.petalLengthRatio': {
+      title: 'Length Ratio',
+      description: 'Multiplies the petal length without changing the width ratio.',
+    },
+    'petalis.petalSizeRatio': {
+      title: 'Size Ratio',
+      description: 'Scales both width and length uniformly for the petal silhouette.',
+    },
+    'petalis.petalSteps': {
+      title: 'Petal Resolution',
+      description: 'Number of points used to draw each petal. Higher values create smoother curves.',
+    },
+    'petalis.layering': {
+      title: 'Layering',
+      description: 'When enabled, inner petals visually occlude outer petals by clipping overlapping outlines.',
+    },
+    'petalis.anchorToCenter': {
+      title: 'Anchor to Center Ring',
+      description: 'Anchors petals to the central ring (central only, all petals, or off for free radial placement).',
+    },
+    'petalis.anchorRadiusRatio': {
+      title: 'Anchor Radius Ratio',
+      description: 'Scales the anchor radius used for petal attachment to the center ring.',
+    },
+    'petalis.tipSharpness': {
+      title: 'Tip Sharpness',
+      description: 'Controls how pointy the petal tip is. At 0 the tip is fully rounded.',
+    },
+    'petalis.tipTwist': {
+      title: 'Tip Twist',
+      description: 'Rotates the tip shape to create subtle spiraling at the petal tip.',
+    },
+    'petalis.centerCurlBoost': {
+      title: 'Center Tip Twist Boost',
+      description: 'Boosts tip twist for petals closer to the center to emphasize a curled core.',
+    },
+    'petalis.tipCurl': {
+      title: 'Tip Curl',
+      description: 'Rounds the outer petal tip. 0 keeps a sharp edge, 1 approaches a semicircular tip.',
+    },
+    'petalis.tipCurlDepth': {
+      title: 'Tip Curl Depth',
+      description: 'How far the curl V-shape extends toward the petal base (percentage of petal length).',
+    },
+    'petalis.tipCurlAngle': {
+      title: 'Tip Curl Angle',
+      description: 'Controls the shape of the curl V: 1 is pointed, 0 becomes a rounded C-shape.',
+    },
+    'petalis.tipCurlInset': {
+      title: 'Tip Curl Inset',
+      description: 'Offsets the inner curl line toward the petal base to suggest thickness.',
+    },
+    'petalis.tipCurlOuterPad': {
+      title: 'Tip Curl Outer Padding',
+      description: 'Sets the distance between the petal edge and the inner curl line.',
+    },
+    'petalis.tipCurlShadeType': {
+      title: 'Curl Shading Type',
+      description: 'Shading technique used beneath the curl V-shape.',
+    },
+    'petalis.tipCurlShadeDistance': {
+      title: 'Curl Shading Distance',
+      description: 'Depth of the curl shading band beneath the tip curl.',
+    },
+    'petalis.tipCurlShadeMorph': {
+      title: 'Curl Shading Morph',
+      description: 'Morphs the curl shading silhouette from narrow to full-width.',
+    },
+    'petalis.baseFlare': {
+      title: 'Base Flare',
+      description: 'Flares the petal base outward, widening where it attaches to the center.',
+    },
+    'petalis.basePinch': {
+      title: 'Base Pinch',
+      description: 'Narrows the petal base for a tighter, tapered attachment.',
+    },
+    'petalis.edgeWaveAmp': {
+      title: 'Edge Wave Amplitude',
+      description: 'Adds waviness along petal edges. Higher values create deeper scallops.',
+    },
+    'petalis.edgeWaveFreq': {
+      title: 'Edge Wave Frequency',
+      description: 'Controls the number of wave cycles along each petal edge.',
+    },
+    'petalis.centerWaveBoost': {
+      title: 'Center Wave Boost',
+      description: 'Boosts edge waviness for petals nearer the center.',
+    },
+    'petalis.count': {
+      title: 'Petal Count',
+      description: 'Total number of petals when using a single ring layout.',
+    },
+    'petalis.ringMode': {
+      title: 'Ring Mode',
+      description: 'Chooses between a single ring or dual inner/outer rings.',
+    },
+    'petalis.innerCount': {
+      title: 'Inner Ring Count',
+      description: 'Number of petals in the inner ring when dual mode is enabled.',
+    },
+    'petalis.outerCount': {
+      title: 'Outer Ring Count',
+      description: 'Number of petals in the outer ring when dual mode is enabled.',
+    },
+    'petalis.ringSplit': {
+      title: 'Ring Split',
+      description: 'Controls how the radius range is divided between inner and outer rings.',
+    },
+    'petalis.ringOffset': {
+      title: 'Ring Offset',
+      description: 'Rotates the outer ring relative to the inner ring.',
+    },
+    'petalis.spiralMode': {
+      title: 'Phyllotaxis Mode',
+      description: 'Uses the golden angle or a custom angle to distribute petals radially.',
+    },
+    'petalis.customAngle': {
+      title: 'Custom Angle',
+      description: 'Custom phyllotaxis angle in degrees when Phyllotaxis Mode is set to Custom.',
+    },
+    'petalis.spiralTightness': {
+      title: 'Spiral Tightness',
+      description: 'Controls how quickly petals spiral out from the center.',
+    },
+    'petalis.radialGrowth': {
+      title: 'Radial Growth',
+      description: 'Scales the radial distance of petals from the center.',
+    },
+    'petalis.centerSizeMorph': {
+      title: 'Size Morph',
+      description: 'Scales petals near the center up or down based on distance to the core.',
+    },
+    'petalis.centerSizeCurve': {
+      title: 'Size Morph Curve',
+      description: 'Controls how quickly size morphing ramps from center to outer ring.',
+    },
+    'petalis.centerShapeMorph': {
+      title: 'Shape Morph',
+      description: 'Blends between the petal profile and the center profile near the core.',
+    },
+    'petalis.centerProfile': {
+      title: 'Center Profile',
+      description: 'Profile used for petals near the center when shape morphing is active.',
+    },
+    'petalis.budMode': {
+      title: 'Bud Mode',
+      description: 'Shrinks and tightens petals near the center to create a closed bud.',
+    },
+    'petalis.budRadius': {
+      title: 'Bud Radius',
+      description: 'Controls how far from the center the bud effect spreads.',
+    },
+    'petalis.budTightness': {
+      title: 'Bud Tightness',
+      description: 'Strength of the bud squeeze; higher values pull petals tighter.',
+    },
+    'petalis.centerType': {
+      title: 'Center Type',
+      description: 'Selects the central element style (disk, dome, starburst, dot field, filament cluster).',
+    },
+    'petalis.centerRadius': {
+      title: 'Center Radius',
+      description: 'Sets the radius of the central element in millimeters.',
+    },
+    'petalis.centerDensity': {
+      title: 'Center Density',
+      description: 'Controls how many central elements are drawn (dots, rays, filaments).',
+    },
+    'petalis.centerFalloff': {
+      title: 'Center Falloff',
+      description: 'Reduces central element density toward the outer edge of the center.',
+    },
+    'petalis.centerRing': {
+      title: 'Secondary Ring',
+      description: 'Adds a ring of small dots around the center.',
+    },
+    'petalis.centerRingRadius': {
+      title: 'Ring Radius',
+      description: 'Radius of the secondary dot ring.',
+    },
+    'petalis.centerRingDensity': {
+      title: 'Ring Density',
+      description: 'Number of dots in the secondary ring.',
+    },
+    'petalis.centerConnectors': {
+      title: 'Connect to Petals',
+      description: 'Draws connector strokes between the center and nearby petals.',
+    },
+    'petalis.connectorCount': {
+      title: 'Connector Count',
+      description: 'How many connector strokes to generate.',
+    },
+    'petalis.connectorLength': {
+      title: 'Connector Length',
+      description: 'Length of each connector stroke in millimeters.',
+    },
+    'petalis.connectorJitter': {
+      title: 'Connector Jitter',
+      description: 'Random angular variance for connector placement.',
+    },
+    'petalis.countJitter': {
+      title: 'Count Jitter',
+      description: 'Randomizes petal counts per ring for more organic variability.',
+    },
+    'petalis.sizeJitter': {
+      title: 'Size Jitter',
+      description: 'Adds per-petal size variance for natural irregularity.',
+    },
+    'petalis.rotationJitter': {
+      title: 'Rotation Jitter',
+      description: 'Random rotation offset applied to each petal.',
+    },
+    'petalis.angularDrift': {
+      title: 'Angular Drift',
+      description: 'Adds a smooth angular drift across the petal sequence.',
+    },
+    'petalis.driftStrength': {
+      title: 'Drift Strength',
+      description: 'Controls how strongly drift affects petal rotation.',
+    },
+    'petalis.driftNoise': {
+      title: 'Drift Noise',
+      description: 'Noise scale used to modulate angular drift.',
+    },
+    'petalis.radiusScale': {
+      title: 'Radius Scale',
+      description: 'Scales petal radius outward or inward across the ring.',
+    },
+    'petalis.radiusScaleCurve': {
+      title: 'Radius Scale Curve',
+      description: 'Controls how quickly the radius scale changes from center to edge.',
+    },
+    'petalis.centerModRippleAmount': {
+      title: 'Center Ripple Amount',
+      description: 'Amplitude of radial ripples applied to the center elements.',
+    },
+    'petalis.centerModType': {
+      title: 'Center Modifier Type',
+      description: 'Selects which modifier is applied to the center elements (ripple, twist, noise, etc.).',
+    },
+    'petalis.centerModRippleFrequency': {
+      title: 'Center Ripple Frequency',
+      description: 'Number of ripple cycles around the center.',
+    },
+    'petalis.centerModTwist': {
+      title: 'Center Twist',
+      description: 'Rotational twist applied across the center elements.',
+    },
+    'petalis.centerModNoiseAmount': {
+      title: 'Center Noise Amount',
+      description: 'Strength of noise displacement on center elements.',
+    },
+    'petalis.centerModNoiseScale': {
+      title: 'Center Noise Scale',
+      description: 'Scale of noise used to displace center elements.',
+    },
+    'petalis.centerModFalloff': {
+      title: 'Center Falloff Strength',
+      description: 'Compresses center elements toward the core based on radius.',
+    },
+    'petalis.centerModOffsetX': {
+      title: 'Center Offset X',
+      description: 'Offsets center elements horizontally in millimeters.',
+    },
+    'petalis.centerModOffsetY': {
+      title: 'Center Offset Y',
+      description: 'Offsets center elements vertically in millimeters.',
+    },
+    'petalis.centerModClip': {
+      title: 'Center Clip Radius',
+      description: 'Clips center elements to a maximum radius.',
+    },
+    'petalis.centerModCircularAmount': {
+      title: 'Circular Offset Amount',
+      description: 'Magnitude of circular offsets applied to ring elements.',
+    },
+    'petalis.centerModCircularRandomness': {
+      title: 'Circular Offset Randomness',
+      description: 'Controls how much random variation is applied to circular offsets.',
+    },
+    'petalis.centerModCircularDirection': {
+      title: 'Circular Offset Bias',
+      description: 'Biases the circular offset inward, outward, or both.',
+    },
+    'petalis.centerModCircularSeed': {
+      title: 'Circular Offset Seed',
+      description: 'Seed for the circular offset noise pattern.',
+    },
+    'petalis.petalModRippleAmount': {
+      title: 'Petal Ripple Amount',
+      description: 'Amplitude of ripples along the petal length.',
+    },
+    'petalis.petalModType': {
+      title: 'Petal Modifier Type',
+      description: 'Selects which modifier is applied to petals (ripple, twist, noise, shear, taper, offset).',
+    },
+    'petalis.petalModRippleFrequency': {
+      title: 'Petal Ripple Frequency',
+      description: 'Number of ripple cycles along each petal.',
+    },
+    'petalis.petalModTwist': {
+      title: 'Petal Twist',
+      description: 'Twists petals along their length for a corkscrew effect.',
+    },
+    'petalis.petalModNoiseAmount': {
+      title: 'Petal Noise Amount',
+      description: 'Strength of noise displacement applied to petal geometry.',
+    },
+    'petalis.petalModNoiseScale': {
+      title: 'Petal Noise Scale',
+      description: 'Scale of the noise field that perturbs petals.',
+    },
+    'petalis.petalModShear': {
+      title: 'Petal Shear',
+      description: 'Shears petals diagonally to bias the silhouette.',
+    },
+    'petalis.petalModTaper': {
+      title: 'Petal Taper',
+      description: 'Tapers petals toward the tip or base depending on the sign.',
+    },
+    'petalis.petalModOffsetX': {
+      title: 'Petal Offset X',
+      description: 'Offsets petal geometry horizontally in millimeters.',
+    },
+    'petalis.petalModOffsetY': {
+      title: 'Petal Offset Y',
+      description: 'Offsets petal geometry vertically in millimeters.',
+    },
+    'petalis.shadingType': {
+      title: 'Shading Type',
+      description: 'Selects the shading style applied inside or along the petal.',
+    },
+    'petalis.shadingLineType': {
+      title: 'Shading Line Type',
+      description: 'Chooses solid, dashed, dotted, or stitch rendering for the shading strokes.',
+    },
+    'petalis.shadingLineSpacing': {
+      title: 'Line Spacing',
+      description: 'Distance between shading strokes in millimeters.',
+    },
+    'petalis.shadingAngle': {
+      title: 'Hatch Angle',
+      description: 'Rotation of the shading strokes relative to the petal axis.',
+    },
+    'petalis.shadingWidthX': {
+      title: 'Width X',
+      description: 'Horizontal coverage of shading along the petal length (percentage).',
+    },
+    'petalis.shadingPosX': {
+      title: 'Position X',
+      description: 'Horizontal center position of the shading band (percentage).',
+    },
+    'petalis.shadingGapX': {
+      title: 'Gap Width X',
+      description: 'Horizontal gap carved out of the shading band (percentage).',
+    },
+    'petalis.shadingGapPosX': {
+      title: 'Gap Position X',
+      description: 'Horizontal location of the shading gap (percentage).',
+    },
+    'petalis.shadingWidthY': {
+      title: 'Width Y',
+      description: 'Vertical coverage of shading across the petal width (percentage).',
+    },
+    'petalis.shadingPosY': {
+      title: 'Position Y',
+      description: 'Vertical center position of the shading band (percentage).',
+    },
+    'petalis.shadingGapY': {
+      title: 'Gap Width Y',
+      description: 'Vertical gap carved out of the shading band (percentage).',
+    },
+    'petalis.shadingGapPosY': {
+      title: 'Gap Position Y',
+      description: 'Vertical location of the shading gap (percentage).',
+    },
+    'petalis.lightSource': {
+      title: 'Set Light Source',
+      description: 'Places a draggable light source marker on the canvas to preview lighting direction (in development).',
+    },
   };
 
   const smoothPath = (path, amount) => {
@@ -3736,6 +4428,10 @@
       this.lastLayerClickId = null;
       this.layerListFocus = false;
       this.globalSectionCollapsed = false;
+      this.activeTool = SETTINGS.activeTool || 'select';
+      this.scissorMode = SETTINGS.scissorMode || 'line';
+      this.spacePanActive = false;
+      this.previousTool = this.activeTool;
 
       this.initModuleDropdown();
       this.initMachineDropdown();
@@ -3757,6 +4453,7 @@
       this.initBottomPaneResizer();
       this.initPaneResizers();
       this.initCanvasHelp();
+      this.initToolBar();
       this.renderLayers();
       this.renderPens();
       this.initPaletteControls();
@@ -3897,6 +4594,18 @@
           <div class="modal-ill-label">Keyboard Shortcuts</div>
           <div class="text-xs text-vectura-muted leading-relaxed space-y-1">
             <div><span class="text-vectura-accent">?</span> Open shortcuts</div>
+            <div><span class="text-vectura-accent">V</span> Selection tool</div>
+            <div><span class="text-vectura-accent">A</span> Direct selection tool</div>
+            <div><span class="text-vectura-accent">P</span> Pen tool</div>
+            <div><span class="text-vectura-accent">C</span> Scissor tool</div>
+            <div><span class="text-vectura-accent">Space</span> Hand tool (temporary)</div>
+            <div><span class="text-vectura-accent">Enter</span> Commit pen path</div>
+            <div><span class="text-vectura-accent">Double-click</span> Close pen path near start</div>
+            <div><span class="text-vectura-accent">Backspace</span> Remove last pen point</div>
+            <div><span class="text-vectura-accent">Esc</span> Cancel pen/scissor</div>
+            <div><span class="text-vectura-accent">Shift</span> Constrain pen angle / handles (Scissor line snaps 15°)</div>
+            <div><span class="text-vectura-accent">Alt/Option</span> Break pen handles</div>
+            <div><span class="text-vectura-accent">Cmd/Ctrl</span> Temporary selection while using Pen</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + A</span> Select all layers (in layer list)</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + G</span> Group selection</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + Shift + G</span> Ungroup selection</div>
@@ -3927,7 +4636,7 @@
             Image noise includes an Image Effects stack plus optional style shaping.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Petalis provides flower presets, radial petal controls, and a stackable center modifier pipeline.
+            Petalis provides flower presets, radial petal controls, a shading stack, and an in-development light source tool.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Harmonograph layers combine damped pendulum waves; tweak frequency, phase, and damping for intricate loops.
@@ -5186,6 +5895,148 @@
       if (visible) this.updateCanvasHelpPosition();
     }
 
+    updateLightSourceTool() {
+      const btn = getEl('btn-light-source');
+      if (!btn) return;
+      const activeLayer = this.app?.engine?.getActiveLayer?.();
+      const show = activeLayer?.type === 'petalis';
+      btn.classList.toggle('hidden', !show);
+    }
+
+    initToolBar() {
+      const toolbar = getEl('tool-bar');
+      if (!toolbar) return;
+      const toolButtons = Array.from(toolbar.querySelectorAll('.tool-btn[data-tool]'));
+      const subButtons = Array.from(toolbar.querySelectorAll('.tool-sub-btn[data-scissor]'));
+      const scissorButton = toolbar.querySelector('.tool-btn[data-tool="scissor"]');
+      const scissorMenu = toolbar.querySelector('.tool-submenu');
+      const lightSourceBtn = getEl('btn-light-source');
+      let scissorHoldTimer = null;
+      let scissorMenuOpen = false;
+      let scissorHoverBtn = null;
+
+      const syncButtons = () => {
+        toolButtons.forEach((btn) => {
+          btn.classList.toggle('active', btn.dataset.tool === this.activeTool);
+        });
+        subButtons.forEach((btn) => {
+          btn.classList.toggle('active', btn.dataset.scissor === this.scissorMode);
+        });
+      };
+
+      this.setActiveTool = (tool, options = {}) => {
+        if (!tool) return;
+        const { temporary = false } = options;
+        this.activeTool = tool;
+        if (!temporary) {
+          SETTINGS.activeTool = tool;
+          this.previousTool = tool;
+        }
+        if (this.app.renderer?.setTool) this.app.renderer.setTool(tool);
+        syncButtons();
+      };
+
+      this.setScissorMode = (mode) => {
+        if (!mode) return;
+        this.scissorMode = mode;
+        SETTINGS.scissorMode = mode;
+        if (this.app.renderer?.setScissorMode) this.app.renderer.setScissorMode(mode);
+        syncButtons();
+      };
+
+      toolButtons.forEach((btn) => {
+        if (btn.dataset.tool === 'scissor') return;
+        btn.onclick = () => {
+          const tool = btn.dataset.tool;
+          this.setActiveTool(tool);
+        };
+      });
+      subButtons.forEach((btn) => {
+        btn.onclick = () => {
+          const mode = btn.dataset.scissor;
+          this.setActiveTool('scissor');
+          this.setScissorMode(mode);
+        };
+      });
+
+      if (scissorButton && scissorMenu) {
+        const setHover = (btn) => {
+          if (scissorHoverBtn === btn) return;
+          scissorHoverBtn = btn || null;
+          subButtons.forEach((sub) => sub.classList.toggle('hover', sub === scissorHoverBtn));
+        };
+        const openMenu = (e) => {
+          scissorMenuOpen = true;
+          scissorMenu.classList.add('open');
+          setHover(null);
+          if (e) {
+            const target = document.elementFromPoint(e.clientX, e.clientY);
+            const btn = target && target.closest ? target.closest('.tool-sub-btn[data-scissor]') : null;
+            setHover(btn);
+          }
+        };
+        const closeMenu = () => {
+          scissorMenuOpen = false;
+          scissorMenu.classList.remove('open');
+          setHover(null);
+        };
+
+        scissorButton.addEventListener('pointerdown', (e) => {
+          if (e.button !== 0) return;
+          e.preventDefault();
+          if (scissorHoldTimer) window.clearTimeout(scissorHoldTimer);
+          scissorHoldTimer = window.setTimeout(() => {
+            scissorHoldTimer = null;
+            openMenu(e);
+          }, 280);
+        });
+
+        document.addEventListener('pointermove', (e) => {
+          if (!scissorMenuOpen) return;
+          const target = document.elementFromPoint(e.clientX, e.clientY);
+          const btn = target && target.closest ? target.closest('.tool-sub-btn[data-scissor]') : null;
+          setHover(btn);
+        });
+
+        document.addEventListener('pointerup', (e) => {
+          if (scissorHoldTimer) {
+            window.clearTimeout(scissorHoldTimer);
+            scissorHoldTimer = null;
+            this.setActiveTool('scissor');
+            return;
+          }
+          if (!scissorMenuOpen) return;
+          const target = document.elementFromPoint(e.clientX, e.clientY);
+          const btn = target && target.closest ? target.closest('.tool-sub-btn[data-scissor]') : null;
+          if (btn) {
+            const mode = btn.dataset.scissor;
+            this.setActiveTool('scissor');
+            this.setScissorMode(mode);
+          }
+          closeMenu();
+        });
+
+        document.addEventListener('pointerdown', (e) => {
+          if (!scissorMenuOpen) return;
+          if (scissorMenu.contains(e.target) || scissorButton.contains(e.target)) return;
+          closeMenu();
+        });
+      }
+
+      if (lightSourceBtn) {
+        lightSourceBtn.onclick = () => this.startLightSourcePlacement();
+      }
+
+      this.setActiveTool(this.activeTool);
+      this.setScissorMode(this.scissorMode);
+      syncButtons();
+
+      if (this.app.renderer) {
+        this.app.renderer.onPenComplete = (path) => this.createManualLayerFromPath(path);
+        this.app.renderer.onScissor = (payload) => this.applyScissor(payload);
+      }
+    }
+
     bindGlobal() {
       const addLayer = getEl('btn-add-layer');
       const moduleSelect = getEl('generator-module');
@@ -5563,6 +6414,16 @@
             target.isContentEditable);
         if (isInput) return;
 
+        if (e.code === 'Space') {
+          if (!this.spacePanActive) {
+            e.preventDefault();
+            this.spacePanActive = true;
+            this.spacePanTool = this.activeTool;
+            this.setActiveTool?.('hand', { temporary: true });
+          }
+          return;
+        }
+
         if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
           e.preventDefault();
           this.openHelp(true);
@@ -5575,6 +6436,30 @@
           return;
         }
 
+        if (!e.metaKey && !e.ctrlKey) {
+          const key = e.key.toLowerCase();
+          if (key === 'v') {
+            e.preventDefault();
+            this.setActiveTool?.('select');
+            return;
+          }
+          if (key === 'a') {
+            e.preventDefault();
+            this.setActiveTool?.('direct');
+            return;
+          }
+          if (key === 'p') {
+            e.preventDefault();
+            this.setActiveTool?.('pen');
+            return;
+          }
+          if (key === 'c') {
+            e.preventDefault();
+            this.setActiveTool?.('scissor');
+            return;
+          }
+        }
+
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a' && this.layerListFocus) {
           e.preventDefault();
           const all = this.app.engine.layers.filter((layer) => !layer.isGroup).map((layer) => layer.id);
@@ -5585,6 +6470,30 @@
           this.buildControls();
           this.updateFormula();
           this.app.render();
+          return;
+        }
+
+        if (this.activeTool === 'pen') {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            this.app.renderer?.commitPenPath?.();
+            return;
+          }
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            this.app.renderer?.cancelPenPath?.();
+            return;
+          }
+          if (e.key === 'Backspace') {
+            e.preventDefault();
+            this.app.renderer?.undoPenPoint?.();
+            return;
+          }
+        }
+
+        if (this.activeTool === 'scissor' && e.key === 'Escape') {
+          e.preventDefault();
+          this.app.renderer?.cancelScissor?.();
           return;
         }
 
@@ -5619,6 +6528,14 @@
             this.moveSelectedLayers(direction);
           }
           return;
+        }
+
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          if (this.app.renderer?.lightSourceSelected) {
+            e.preventDefault();
+            this.app.renderer.clearLightSource?.();
+            return;
+          }
         }
 
         const selected = this.app.renderer?.getSelectedLayer?.();
@@ -5662,6 +6579,23 @@
               if (posY) posY.value = primary.params.posY;
             }
           }
+        }
+      });
+
+      window.addEventListener('keyup', (e) => {
+        const target = e.target;
+        const isInput =
+          target &&
+          (target.tagName === 'INPUT' ||
+            target.tagName === 'TEXTAREA' ||
+            target.tagName === 'SELECT' ||
+            target.isContentEditable);
+        if (isInput) return;
+        if (e.code === 'Space' && this.spacePanActive) {
+          e.preventDefault();
+          this.spacePanActive = false;
+          const restore = this.spacePanTool || this.previousTool || 'select';
+          this.setActiveTool?.(restore);
         }
       });
     }
@@ -6367,6 +7301,7 @@
 
       orphans.forEach((layer) => renderTree(layer, 0));
       this.layerListOrder = selectableIds;
+      this.updateLightSourceTool();
     }
 
     renderPens() {
@@ -6527,7 +7462,7 @@
     expandLayer(layer, options = {}) {
       if (!layer || layer.isGroup || layer.parentId) return;
       if (!Layer) return;
-      const { skipHistory = false } = options;
+      const { skipHistory = false, returnChildren = false, suppressRender = false, selectChildren = true } = options;
       if (!skipHistory && this.app.pushHistory) this.app.pushHistory();
       if (!layer.paths || !layer.paths.length) {
         this.app.engine.generate(layer.id);
@@ -6540,6 +7475,8 @@
       const pathMeta = layer.paths.map((path, index) => {
         let minX = Infinity;
         let minY = Infinity;
+        const metaGroup = path?.meta?.group;
+        const metaLabel = path?.meta?.label;
         if (path && path.meta && path.meta.kind === 'circle') {
           const cx = path.meta.cx ?? path.meta.x ?? 0;
           const cy = path.meta.cy ?? path.meta.y ?? 0;
@@ -6556,7 +7493,7 @@
         }
         if (!Number.isFinite(minX)) minX = 0;
         if (!Number.isFinite(minY)) minY = 0;
-        return { path, index, minX, minY };
+        return { path, index, minX, minY, group: metaGroup, label: metaLabel };
       });
 
       pathMeta.sort((a, b) => {
@@ -6565,6 +7502,7 @@
         return a.index - b.index;
       });
 
+      const groupNodes = new Map();
       const children = pathMeta.map((entry, index) => {
         const newId = Math.random().toString(36).substr(2, 9);
         const child = new Layer(newId, 'expanded', `${baseName} - Line ${String(index + 1).padStart(pad, '0')}`);
@@ -6584,6 +7522,27 @@
         child.strokeWidth = layer.strokeWidth;
         child.lineCap = layer.lineCap;
         child.visible = layer.visible;
+        if (entry.group) {
+          let groupNode = groupNodes.get(entry.group);
+          if (!groupNode) {
+            const groupId = Math.random().toString(36).substr(2, 9);
+            groupNode = new Layer(groupId, 'group', entry.group);
+            groupNode.isGroup = true;
+            groupNode.groupType = 'group';
+            groupNode.groupCollapsed = false;
+            groupNode.visible = false;
+            groupNode.parentId = layer.id;
+            groupNode.penId = layer.penId;
+            groupNode.color = layer.color;
+            groupNode.strokeWidth = layer.strokeWidth;
+            groupNode.lineCap = layer.lineCap;
+            groupNodes.set(entry.group, groupNode);
+          }
+          child.parentId = groupNode.id;
+          if (entry.label) child.name = entry.label;
+        } else if (entry.label) {
+          child.name = entry.label;
+        }
         return child;
       });
 
@@ -6598,7 +7557,20 @@
       layer.paramStates = {};
 
       const idx = this.app.engine.layers.findIndex((l) => l.id === groupId);
-      const insertChildren = children.slice().reverse();
+      const orderedItems = [];
+      const seenGroups = new Set();
+      pathMeta.forEach((entry, idx) => {
+        const child = children[idx];
+        if (entry.group) {
+          const groupNode = groupNodes.get(entry.group);
+          if (groupNode && !seenGroups.has(groupNode.id)) {
+            orderedItems.push(groupNode);
+            seenGroups.add(groupNode.id);
+          }
+        }
+        orderedItems.push(child);
+      });
+      const insertChildren = orderedItems.reverse();
       if (idx >= 0) {
         this.app.engine.layers.splice(idx + 1, 0, ...insertChildren);
       } else {
@@ -6607,14 +7579,180 @@
 
       children.forEach((child) => this.app.engine.generate(child.id));
       const primary = children[0];
-      if (primary) {
+      if (primary && selectChildren) {
         this.app.engine.activeLayerId = primary.id;
         if (this.app.renderer) this.app.renderer.setSelection([primary.id], primary.id);
       }
+      if (!suppressRender) {
+        this.renderLayers();
+        this.buildControls();
+        this.updateFormula();
+        this.app.render();
+      }
+      if (returnChildren) return children;
+    }
+
+    createManualLayerFromPath(path) {
+      if (!Layer || !Array.isArray(path) || path.length < 2) return;
+      if (this.app.pushHistory) this.app.pushHistory();
+      const engine = this.app.engine;
+      SETTINGS.globalLayerCount++;
+      const num = String(SETTINGS.globalLayerCount).padStart(2, '0');
+      const id = Math.random().toString(36).substr(2, 9);
+      const layer = new Layer(id, 'expanded', `Pen Path ${num}`);
+      const active = engine.getActiveLayer ? engine.getActiveLayer() : null;
+      layer.params.seed = 0;
+      layer.params.posX = 0;
+      layer.params.posY = 0;
+      layer.params.scaleX = 1;
+      layer.params.scaleY = 1;
+      layer.params.rotation = 0;
+      layer.params.curves = Boolean(active?.params?.curves);
+      layer.params.smoothing = 0;
+      layer.params.simplify = 0;
+      layer.parentId = active?.parentId ?? null;
+      if (active) {
+        layer.penId = active.penId;
+        layer.color = active.color;
+        layer.strokeWidth = active.strokeWidth;
+        layer.lineCap = active.lineCap;
+      }
+      const cloned = path.map((pt) => ({ x: pt.x, y: pt.y }));
+      layer.sourcePaths = [cloned];
+      const idx = engine.layers.findIndex((l) => l.id === engine.activeLayerId);
+      const insertIndex = idx >= 0 ? idx + 1 : engine.layers.length;
+      engine.layers.splice(insertIndex, 0, layer);
+      engine.activeLayerId = id;
+      engine.generate(id);
+      if (this.app.renderer) this.app.renderer.setSelection([id], id);
       this.renderLayers();
       this.buildControls();
       this.updateFormula();
       this.app.render();
+    }
+
+    getGroupDescendants(groupId) {
+      const out = [];
+      const walk = (id) => {
+        this.app.engine.layers.forEach((layer) => {
+          if (layer.parentId !== id) return;
+          if (layer.isGroup) {
+            walk(layer.id);
+          } else {
+            out.push(layer);
+          }
+        });
+      };
+      walk(groupId);
+      return out;
+    }
+
+    splitExpandedLayer(layer, segments) {
+      if (!Layer || !layer || !segments || !segments.length) return [];
+      const engine = this.app.engine;
+      const idx = engine.layers.findIndex((l) => l.id === layer.id);
+      const pad = String(segments.length).length;
+      const children = segments.map((seg, i) => {
+        const newId = Math.random().toString(36).substr(2, 9);
+        const child = new Layer(newId, 'expanded', `${layer.name} Cut ${String(i + 1).padStart(pad, '0')}`);
+        child.parentId = layer.parentId;
+        child.params.seed = 0;
+        child.params.posX = 0;
+        child.params.posY = 0;
+        child.params.scaleX = 1;
+        child.params.scaleY = 1;
+        child.params.rotation = 0;
+        child.params.curves = Boolean(layer.params.curves);
+        child.params.smoothing = 0;
+        child.params.simplify = 0;
+        child.sourcePaths = [seg.map((pt) => ({ x: pt.x, y: pt.y }))];
+        child.penId = layer.penId;
+        child.color = layer.color;
+        child.strokeWidth = layer.strokeWidth;
+        child.lineCap = layer.lineCap;
+        child.visible = layer.visible;
+        return child;
+      });
+      if (idx >= 0) {
+        engine.layers.splice(idx, 1, ...children);
+      } else {
+        engine.layers.push(...children);
+      }
+      children.forEach((child) => engine.generate(child.id));
+      return children;
+    }
+
+    applyScissor(payload) {
+      if (!payload) return;
+      const shape = {
+        mode: payload.mode,
+        line: payload.line,
+        rect: payload.rect,
+        circle: payload.circle,
+      };
+      if (!shape.mode) return;
+      if (this.app.pushHistory) this.app.pushHistory();
+
+      const renderer = this.app.renderer;
+      const engine = this.app.engine;
+      const baseTargets = engine.layers.filter((layer) => !layer.isGroup && layer.visible);
+      const targets = [];
+
+      baseTargets.forEach((layer) => {
+        if (layer.isGroup) {
+          targets.push(...this.getGroupDescendants(layer.id));
+          return;
+        }
+        if (layer.type !== 'expanded' && !layer.parentId) {
+          const expanded = this.expandLayer(layer, { skipHistory: true, returnChildren: true, suppressRender: true, selectChildren: false });
+          if (expanded && expanded.length) targets.push(...expanded);
+          return;
+        }
+        targets.push(layer);
+      });
+
+      const uniqueTargets = Array.from(new Map(targets.map((layer) => [layer.id, layer])).values());
+      const newSelection = [];
+
+      uniqueTargets.forEach((layer) => {
+        const src = layer.sourcePaths || layer.paths || [];
+        let segments = [];
+        let didSplit = false;
+        src.forEach((path) => {
+          const basePath = path && path.meta && path.meta.kind === 'circle' ? expandCirclePath(path.meta, 80) : path;
+          const split = splitPathByShape(basePath, shape);
+          if (!split || !split.length) {
+            segments.push(path);
+            return;
+          }
+          segments = segments.concat(split);
+          didSplit = true;
+        });
+        if (!segments.length || !didSplit) return;
+        if (segments.length === 1) {
+          layer.sourcePaths = segments.map((seg) => seg.map((pt) => ({ x: pt.x, y: pt.y })));
+          engine.generate(layer.id);
+          newSelection.push(layer.id);
+          return;
+        }
+        const children = this.splitExpandedLayer(layer, segments);
+        newSelection.push(...children.map((child) => child.id));
+      });
+
+      this.normalizeGroupOrder?.();
+      this.renderLayers();
+      this.app.render();
+      if (newSelection.length && renderer) {
+        const primary = newSelection[newSelection.length - 1];
+        renderer.setSelection(newSelection, primary);
+        engine.activeLayerId = primary;
+      }
+    }
+
+    startLightSourcePlacement() {
+      if (!this.app.renderer) return;
+      this.setActiveTool?.('select');
+      this.app.renderer.setLightSourceMode?.(true);
     }
 
     openLayerSettings(layer) {
@@ -7210,6 +8348,34 @@
           target.appendChild(section);
           return;
         }
+        if (def.type === 'actionButton') {
+          const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
+          const wrapper = document.createElement('div');
+          wrapper.className = 'mb-4';
+          wrapper.innerHTML = `
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-2">
+                <label class="control-label mb-0">${def.label}</label>
+                ${infoBtn}
+              </div>
+            </div>
+            <button type="button" class="w-full text-xs border border-vectura-border px-2 py-2 hover:bg-vectura-border text-vectura-accent transition-colors">
+              ${def.buttonLabel || def.label}
+            </button>
+          `;
+          const btn = wrapper.querySelector('button');
+          if (btn) {
+            btn.onclick = () => {
+              if (def.action === 'setLightSource') {
+                this.startLightSourcePlacement();
+              } else if (typeof def.onClick === 'function') {
+                def.onClick();
+              }
+            };
+          }
+          target.appendChild(wrapper);
+          return;
+        }
         if (def.type === 'image') {
           const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
           const div = document.createElement('div');
@@ -7561,9 +8727,13 @@
             if (modifier[def.key] === undefined) modifier[def.key] = value;
             const { min, max, step } = getDisplayConfig(def);
             const displayVal = toDisplayValue(def, value);
+            const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
             control.innerHTML = `
               <div class="flex justify-between mb-1">
-                <label class="control-label mb-0">${def.label}</label>
+                <div class="flex items-center gap-2">
+                  <label class="control-label mb-0">${def.label}</label>
+                  ${infoBtn}
+                </div>
                 <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(
                   def,
                   value
@@ -7733,9 +8903,13 @@
             const optionsHtml = PETALIS_MODIFIER_TYPES.map(
               (opt) => `<option value="${opt.value}" ${modifier.type === opt.value ? 'selected' : ''}>${opt.label}</option>`
             ).join('');
+            const typeInfoBtn = `<button type="button" class="info-btn" data-info="petalis.centerModType">i</button>`;
             typeSelect.innerHTML = `
               <div class="flex justify-between mb-1">
-                <label class="control-label mb-0">Modifier Type</label>
+                <div class="flex items-center gap-2">
+                  <label class="control-label mb-0">Modifier Type</label>
+                  ${typeInfoBtn}
+                </div>
                 <span class="text-xs text-vectura-accent font-mono">${typeDef.label}</span>
               </div>
               <select class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent">
@@ -7760,6 +8934,555 @@
             controls.appendChild(typeSelect);
             typeDef.controls.forEach((cDef) => {
               controls.appendChild(buildModifierRangeControl(modifier, cDef));
+            });
+            card.appendChild(controls);
+            list.appendChild(card);
+          });
+
+          target.appendChild(list);
+          return;
+        }
+        if (def.type === 'petalModifierList') {
+          if (layer.type !== 'petalis') return;
+          const modifiers = Array.isArray(layer.params.petalModifiers) ? layer.params.petalModifiers : [];
+          layer.params.petalModifiers = modifiers;
+
+          const list = document.createElement('div');
+          list.className = 'noise-list mb-4';
+          const header = document.createElement('div');
+          header.className = 'noise-list-header';
+          header.innerHTML = `
+            <span class="text-[10px] uppercase tracking-widest text-vectura-muted">${def.label || 'Petal Modifiers'}</span>
+            <button type="button" class="noise-add text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">
+              + Add Modifier
+            </button>
+          `;
+          const addBtn = header.querySelector('.noise-add');
+          if (addBtn) {
+            addBtn.onclick = () => {
+              if (this.app.pushHistory) this.app.pushHistory();
+              modifiers.push(createPetalModifier('ripple'));
+              layer.params.petalModifiers = modifiers;
+              this.storeLayerParams(layer);
+              this.app.regen();
+              this.buildControls();
+              this.updateFormula();
+            };
+          }
+          list.appendChild(header);
+
+          const modifierGripMarkup = `
+            <button class="noise-grip" type="button" aria-label="Reorder modifier">
+              <span class="dot"></span><span class="dot"></span>
+              <span class="dot"></span><span class="dot"></span>
+              <span class="dot"></span><span class="dot"></span>
+            </button>
+          `;
+
+          const getModifierType = (type) =>
+            PETALIS_PETAL_MODIFIER_TYPES.find((opt) => opt.value === type) || PETALIS_PETAL_MODIFIER_TYPES[0];
+
+          const buildModifierRangeControl = (modifier, def) => {
+            const control = document.createElement('div');
+            control.className = 'noise-control';
+            const value = modifier[def.key] ?? def.min ?? 0;
+            if (modifier[def.key] === undefined) modifier[def.key] = value;
+            const { min, max, step } = getDisplayConfig(def);
+            const displayVal = toDisplayValue(def, value);
+            const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
+            control.innerHTML = `
+              <div class="flex justify-between mb-1">
+                <div class="flex items-center gap-2">
+                  <label class="control-label mb-0">${def.label}</label>
+                  ${infoBtn}
+                </div>
+                <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(
+                  def,
+                  value
+                )}</button>
+              </div>
+              <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="w-full">
+              <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
+            `;
+            const input = control.querySelector('input[type="range"]');
+            const valueBtn = control.querySelector('.value-chip');
+            const valueInput = control.querySelector('.value-input');
+            if (input && valueBtn) {
+              input.disabled = !modifier.enabled;
+              valueBtn.classList.toggle('opacity-60', !modifier.enabled);
+              input.oninput = (e) => {
+                const nextDisplay = parseFloat(e.target.value);
+                valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
+              };
+              input.onchange = (e) => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                const nextDisplay = parseFloat(e.target.value);
+                modifier[def.key] = fromDisplayValue(def, nextDisplay);
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.updateFormula();
+              };
+              attachKeyboardRangeNudge(input, (nextDisplay) => {
+                modifier[def.key] = fromDisplayValue(def, nextDisplay);
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.updateFormula();
+              });
+              input.addEventListener('dblclick', (e) => {
+                e.preventDefault();
+                modifier[def.key] = def.min ?? 0;
+                input.value = toDisplayValue(def, modifier[def.key]);
+                valueBtn.innerText = formatDisplayValue(def, modifier[def.key]);
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.updateFormula();
+              });
+              attachValueEditor({
+                def,
+                valueEl: valueBtn,
+                inputEl: valueInput,
+                getValue: () => modifier[def.key],
+                setValue: (displayVal, opts) => {
+                  const commit = opts?.commit !== false;
+                  if (commit && this.app.pushHistory) this.app.pushHistory();
+                  modifier[def.key] = fromDisplayValue(def, displayVal);
+                  this.storeLayerParams(layer);
+                  this.app.regen();
+                  valueBtn.innerText = formatDisplayValue(def, modifier[def.key]);
+                  this.updateFormula();
+                },
+              });
+            }
+            return control;
+          };
+
+          const bindModifierReorderGrip = (grip, card, modifier) => {
+            if (!grip) return;
+            grip.onmousedown = (e) => {
+              e.preventDefault();
+              const dragEl = card;
+              dragEl.classList.add('dragging');
+              const indicator = document.createElement('div');
+              indicator.className = 'noise-drop-indicator';
+              list.insertBefore(indicator, dragEl.nextSibling);
+              const currentOrder = modifiers.map((item) => item.id);
+              const startIndex = currentOrder.indexOf(modifier.id);
+
+              const onMove = (ev) => {
+                const y = ev.clientY;
+                const items = Array.from(list.querySelectorAll('.noise-card')).filter((item) => item !== dragEl);
+                let inserted = false;
+                for (const item of items) {
+                  const rect = item.getBoundingClientRect();
+                  if (y < rect.top + rect.height / 2) {
+                    list.insertBefore(indicator, item);
+                    inserted = true;
+                    break;
+                  }
+                }
+                if (!inserted) list.appendChild(indicator);
+              };
+
+              const onUp = () => {
+                dragEl.classList.remove('dragging');
+                const siblings = Array.from(list.children);
+                const indicatorIndex = siblings.indexOf(indicator);
+                const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('noise-card'));
+                const newIndex = before.length;
+                indicator.remove();
+                window.removeEventListener('mousemove', onMove);
+                window.removeEventListener('mouseup', onUp);
+
+                if (newIndex !== startIndex) {
+                  const nextOrder = currentOrder.filter((id) => id !== modifier.id);
+                  nextOrder.splice(newIndex, 0, modifier.id);
+                  const map = new Map(modifiers.map((item) => [item.id, item]));
+                  layer.params.petalModifiers = nextOrder.map((id) => map.get(id)).filter(Boolean);
+                  this.storeLayerParams(layer);
+                  this.app.regen();
+                  this.buildControls();
+                  this.updateFormula();
+                }
+              };
+
+              window.addEventListener('mousemove', onMove);
+              window.addEventListener('mouseup', onUp);
+            };
+          };
+
+          modifiers.forEach((modifier, idx) => {
+            if (!modifier.id) modifier.id = `petal-${idx + 1}`;
+            const card = document.createElement('div');
+            card.className = `noise-card${modifier.enabled ? '' : ' noise-disabled'}`;
+            card.dataset.modifierId = modifier.id;
+            const headerRow = document.createElement('div');
+            headerRow.className = 'noise-header';
+            headerRow.innerHTML = `
+              <div class="flex items-center gap-2">
+                ${modifierGripMarkup}
+                <span class="noise-title">Modifier ${String(idx + 1).padStart(2, '0')}</span>
+              </div>
+              <div class="noise-actions">
+                <label class="noise-toggle">
+                  <input type="checkbox" ${modifier.enabled ? 'checked' : ''}>
+                </label>
+                <button type="button" class="noise-delete" aria-label="Delete modifier">🗑</button>
+              </div>
+            `;
+            const toggle = headerRow.querySelector('.noise-toggle input');
+            const deleteBtn = headerRow.querySelector('.noise-delete');
+            const grip = headerRow.querySelector('.noise-grip');
+            bindModifierReorderGrip(grip, card, modifier);
+            if (toggle) {
+              toggle.onchange = (e) => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                modifier.enabled = Boolean(e.target.checked);
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.buildControls();
+                this.updateFormula();
+              };
+            }
+            if (deleteBtn) {
+              deleteBtn.onclick = () => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                const index = modifiers.findIndex((item) => item.id === modifier.id);
+                if (index >= 0) modifiers.splice(index, 1);
+                layer.params.petalModifiers = modifiers;
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.buildControls();
+                this.updateFormula();
+              };
+            }
+            card.appendChild(headerRow);
+
+            const controls = document.createElement('div');
+            controls.className = 'noise-controls';
+            const typeDef = getModifierType(modifier.type);
+            const typeSelect = document.createElement('div');
+            typeSelect.className = 'noise-control';
+            const optionsHtml = PETALIS_PETAL_MODIFIER_TYPES.map(
+              (opt) => `<option value="${opt.value}" ${modifier.type === opt.value ? 'selected' : ''}>${opt.label}</option>`
+            ).join('');
+            const typeInfoBtn = `<button type="button" class="info-btn" data-info="petalis.petalModType">i</button>`;
+            typeSelect.innerHTML = `
+              <div class="flex justify-between mb-1">
+                <div class="flex items-center gap-2">
+                  <label class="control-label mb-0">Modifier Type</label>
+                  ${typeInfoBtn}
+                </div>
+                <span class="text-xs text-vectura-accent font-mono">${typeDef.label}</span>
+              </div>
+              <select class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent">
+                ${optionsHtml}
+              </select>
+            `;
+            const select = typeSelect.querySelector('select');
+            const label = typeSelect.querySelector('span');
+            if (select && label) {
+              select.onchange = (e) => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                const nextType = e.target.value;
+                const next = { ...createPetalModifier(nextType), id: modifier.id, enabled: modifier.enabled };
+                Object.assign(modifier, next);
+                label.textContent = getModifierType(nextType).label;
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.buildControls();
+                this.updateFormula();
+              };
+            }
+            controls.appendChild(typeSelect);
+            typeDef.controls.forEach((cDef) => {
+              controls.appendChild(buildModifierRangeControl(modifier, cDef));
+            });
+            card.appendChild(controls);
+            list.appendChild(card);
+          });
+
+          target.appendChild(list);
+          return;
+        }
+        if (def.type === 'shadingList') {
+          if (layer.type !== 'petalis') return;
+          const shadings = Array.isArray(layer.params.shadings) ? layer.params.shadings : [];
+          layer.params.shadings = shadings;
+
+          const list = document.createElement('div');
+          list.className = 'noise-list mb-4';
+          const header = document.createElement('div');
+          header.className = 'noise-list-header';
+          header.innerHTML = `
+            <span class="text-[10px] uppercase tracking-widest text-vectura-muted">${def.label || 'Shading Stack'}</span>
+            <button type="button" class="noise-add text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">
+              + Add Shading
+            </button>
+          `;
+          const addBtn = header.querySelector('.noise-add');
+          if (addBtn) {
+            addBtn.onclick = () => {
+              if (this.app.pushHistory) this.app.pushHistory();
+              shadings.push(createPetalisShading('radial'));
+              layer.params.shadings = shadings;
+              this.storeLayerParams(layer);
+              this.app.regen();
+              this.buildControls();
+              this.updateFormula();
+            };
+          }
+          list.appendChild(header);
+
+          const shadingGripMarkup = `
+            <button class="noise-grip" type="button" aria-label="Reorder shading">
+              <span class="dot"></span><span class="dot"></span>
+              <span class="dot"></span><span class="dot"></span>
+              <span class="dot"></span><span class="dot"></span>
+            </button>
+          `;
+
+          const getShadingType = (type) =>
+            PETALIS_SHADING_TYPES.find((opt) => opt.value === type) || PETALIS_SHADING_TYPES[0];
+
+          const buildShadingRangeControl = (shade, def) => {
+            const control = document.createElement('div');
+            control.className = 'noise-control';
+            const value = shade[def.key] ?? def.min ?? 0;
+            if (shade[def.key] === undefined) shade[def.key] = value;
+            const { min, max, step } = getDisplayConfig(def);
+            const displayVal = toDisplayValue(def, value);
+            const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
+            control.innerHTML = `
+              <div class="flex justify-between mb-1">
+                <div class="flex items-center gap-2">
+                  <label class="control-label mb-0">${def.label}</label>
+                  ${infoBtn}
+                </div>
+                <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(
+                  def,
+                  value
+                )}</button>
+              </div>
+              <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="w-full">
+              <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
+            `;
+            const input = control.querySelector('input[type="range"]');
+            const valueBtn = control.querySelector('.value-chip');
+            const valueInput = control.querySelector('.value-input');
+            if (input && valueBtn) {
+              input.disabled = !shade.enabled;
+              valueBtn.classList.toggle('opacity-60', !shade.enabled);
+              input.oninput = (e) => {
+                const nextDisplay = parseFloat(e.target.value);
+                valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
+              };
+              input.onchange = (e) => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                const nextDisplay = parseFloat(e.target.value);
+                shade[def.key] = fromDisplayValue(def, nextDisplay);
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.updateFormula();
+              };
+              attachKeyboardRangeNudge(input, (nextDisplay) => {
+                shade[def.key] = fromDisplayValue(def, nextDisplay);
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.updateFormula();
+              });
+              input.addEventListener('dblclick', (e) => {
+                e.preventDefault();
+                shade[def.key] = def.min ?? 0;
+                input.value = toDisplayValue(def, shade[def.key]);
+                valueBtn.innerText = formatDisplayValue(def, shade[def.key]);
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.updateFormula();
+              });
+              attachValueEditor({
+                def,
+                valueEl: valueBtn,
+                inputEl: valueInput,
+                getValue: () => shade[def.key],
+                setValue: (displayVal, opts) => {
+                  const commit = opts?.commit !== false;
+                  if (commit && this.app.pushHistory) this.app.pushHistory();
+                  shade[def.key] = fromDisplayValue(def, displayVal);
+                  this.storeLayerParams(layer);
+                  this.app.regen();
+                  valueBtn.innerText = formatDisplayValue(def, shade[def.key]);
+                  this.updateFormula();
+                },
+              });
+            }
+            return control;
+          };
+
+          const buildShadingSelect = (shade, def, options) => {
+            const control = document.createElement('div');
+            control.className = 'noise-control';
+            const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
+            let value = shade[def.key];
+            if (value === undefined || value === null) {
+              value = options[0]?.value;
+              shade[def.key] = value;
+            }
+            const optionsHtml = options
+              .map(
+                (opt) => `<option value="${opt.value}" ${value === opt.value ? 'selected' : ''}>${opt.label}</option>`
+              )
+              .join('');
+            const currentLabel = options.find((opt) => opt.value === value)?.label || value;
+            control.innerHTML = `
+              <div class="flex justify-between mb-1">
+                <div class="flex items-center gap-2">
+                  <label class="control-label mb-0">${def.label}</label>
+                  ${infoBtn}
+                </div>
+                <span class="text-xs text-vectura-accent font-mono">${currentLabel}</span>
+              </div>
+              <select class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent">
+                ${optionsHtml}
+              </select>
+            `;
+            const input = control.querySelector('select');
+            const span = control.querySelector('span');
+            if (input && span) {
+              input.disabled = !shade.enabled;
+              input.onchange = (e) => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                shade[def.key] = e.target.value;
+                span.textContent = options.find((opt) => opt.value === shade[def.key])?.label || shade[def.key];
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.updateFormula();
+              };
+            }
+            return control;
+          };
+
+          const bindShadingReorderGrip = (grip, card, shading) => {
+            if (!grip) return;
+            grip.onmousedown = (e) => {
+              e.preventDefault();
+              const dragEl = card;
+              dragEl.classList.add('dragging');
+              const indicator = document.createElement('div');
+              indicator.className = 'noise-drop-indicator';
+              list.insertBefore(indicator, dragEl.nextSibling);
+              const currentOrder = shadings.map((item) => item.id);
+              const startIndex = currentOrder.indexOf(shading.id);
+
+              const onMove = (ev) => {
+                const y = ev.clientY;
+                const items = Array.from(list.querySelectorAll('.noise-card')).filter((item) => item !== dragEl);
+                let inserted = false;
+                for (const item of items) {
+                  const rect = item.getBoundingClientRect();
+                  if (y < rect.top + rect.height / 2) {
+                    list.insertBefore(indicator, item);
+                    inserted = true;
+                    break;
+                  }
+                }
+                if (!inserted) list.appendChild(indicator);
+              };
+
+              const onUp = () => {
+                dragEl.classList.remove('dragging');
+                const siblings = Array.from(list.children);
+                const indicatorIndex = siblings.indexOf(indicator);
+                const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('noise-card'));
+                const newIndex = before.length;
+                indicator.remove();
+                window.removeEventListener('mousemove', onMove);
+                window.removeEventListener('mouseup', onUp);
+
+                if (newIndex !== startIndex) {
+                  const nextOrder = currentOrder.filter((id) => id !== shading.id);
+                  nextOrder.splice(newIndex, 0, shading.id);
+                  const map = new Map(shadings.map((item) => [item.id, item]));
+                  layer.params.shadings = nextOrder.map((id) => map.get(id)).filter(Boolean);
+                  this.storeLayerParams(layer);
+                  this.app.regen();
+                  this.buildControls();
+                  this.updateFormula();
+                }
+              };
+
+              window.addEventListener('mousemove', onMove);
+              window.addEventListener('mouseup', onUp);
+            };
+          };
+
+          const shadingRangeDefs = [
+            { key: 'lineSpacing', label: 'Line Spacing (mm)', type: 'range', min: 0.2, max: 8, step: 0.1, displayUnit: 'mm', infoKey: 'petalis.shadingLineSpacing' },
+            { key: 'angle', label: 'Hatch Angle', type: 'range', min: -90, max: 90, step: 1, displayUnit: '°', infoKey: 'petalis.shadingAngle' },
+            { key: 'widthX', label: 'Width X (%)', type: 'range', min: 0, max: 100, step: 1, displayUnit: '%', infoKey: 'petalis.shadingWidthX' },
+            { key: 'posX', label: 'Position X (%)', type: 'range', min: 0, max: 100, step: 1, displayUnit: '%', infoKey: 'petalis.shadingPosX' },
+            { key: 'gapX', label: 'Gap Width X (%)', type: 'range', min: 0, max: 100, step: 1, displayUnit: '%', infoKey: 'petalis.shadingGapX' },
+            { key: 'gapPosX', label: 'Gap Position X (%)', type: 'range', min: 0, max: 100, step: 1, displayUnit: '%', infoKey: 'petalis.shadingGapPosX' },
+            { key: 'widthY', label: 'Width Y (%)', type: 'range', min: 0, max: 100, step: 1, displayUnit: '%', infoKey: 'petalis.shadingWidthY' },
+            { key: 'posY', label: 'Position Y (%)', type: 'range', min: 0, max: 100, step: 1, displayUnit: '%', infoKey: 'petalis.shadingPosY' },
+            { key: 'gapY', label: 'Gap Width Y (%)', type: 'range', min: 0, max: 100, step: 1, displayUnit: '%', infoKey: 'petalis.shadingGapY' },
+            { key: 'gapPosY', label: 'Gap Position Y (%)', type: 'range', min: 0, max: 100, step: 1, displayUnit: '%', infoKey: 'petalis.shadingGapPosY' },
+          ];
+
+          shadings.forEach((shade, idx) => {
+            if (!shade.id) shade.id = `shade-${idx + 1}`;
+            const card = document.createElement('div');
+            card.className = `noise-card${shade.enabled ? '' : ' noise-disabled'}`;
+            card.dataset.shadingId = shade.id;
+            const headerRow = document.createElement('div');
+            headerRow.className = 'noise-header';
+            headerRow.innerHTML = `
+              <div class="flex items-center gap-2">
+                ${shadingGripMarkup}
+                <span class="noise-title">Shading ${String(idx + 1).padStart(2, '0')}</span>
+              </div>
+              <div class="noise-actions">
+                <label class="noise-toggle">
+                  <input type="checkbox" ${shade.enabled ? 'checked' : ''}>
+                </label>
+                <button type="button" class="noise-delete" aria-label="Delete shading">🗑</button>
+              </div>
+            `;
+            const toggle = headerRow.querySelector('.noise-toggle input');
+            const deleteBtn = headerRow.querySelector('.noise-delete');
+            const grip = headerRow.querySelector('.noise-grip');
+            bindShadingReorderGrip(grip, card, shade);
+            if (toggle) {
+              toggle.onchange = (e) => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                shade.enabled = Boolean(e.target.checked);
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.buildControls();
+                this.updateFormula();
+              };
+            }
+            if (deleteBtn) {
+              deleteBtn.onclick = () => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                const index = shadings.findIndex((item) => item.id === shade.id);
+                if (index >= 0) shadings.splice(index, 1);
+                layer.params.shadings = shadings;
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.buildControls();
+                this.updateFormula();
+              };
+            }
+            card.appendChild(headerRow);
+
+            const controls = document.createElement('div');
+            controls.className = 'noise-controls';
+            const typeSelectDef = { key: 'type', label: 'Shading Type', infoKey: 'petalis.shadingType' };
+            controls.appendChild(buildShadingSelect(shade, typeSelectDef, PETALIS_SHADING_TYPES));
+            const lineTypeDef = { key: 'lineType', label: 'Line Type', infoKey: 'petalis.shadingLineType' };
+            controls.appendChild(buildShadingSelect(shade, lineTypeDef, PETALIS_LINE_TYPES));
+            shadingRangeDefs.forEach((cDef) => {
+              controls.appendChild(buildShadingRangeControl(shade, cDef));
             });
             card.appendChild(controls);
             list.appendChild(card);

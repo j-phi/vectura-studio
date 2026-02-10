@@ -60,6 +60,9 @@
           optimizationOverlayColor: SETTINGS.optimizationOverlayColor,
           optimizationOverlayWidth: SETTINGS.optimizationOverlayWidth,
           plotterOptimize: SETTINGS.plotterOptimize,
+          activeTool: SETTINGS.activeTool,
+          scissorMode: SETTINGS.scissorMode,
+          lightSource: SETTINGS.lightSource ? { ...SETTINGS.lightSource } : null,
           optimizationDefaults: SETTINGS.optimizationDefaults
             ? JSON.parse(JSON.stringify(SETTINGS.optimizationDefaults))
             : null,
@@ -102,6 +105,9 @@
       SETTINGS.optimizationOverlayColor = s.optimizationOverlayColor ?? SETTINGS.optimizationOverlayColor;
       SETTINGS.optimizationOverlayWidth = s.optimizationOverlayWidth ?? SETTINGS.optimizationOverlayWidth;
       SETTINGS.plotterOptimize = s.plotterOptimize ?? SETTINGS.plotterOptimize;
+      SETTINGS.activeTool = s.activeTool ?? SETTINGS.activeTool;
+      SETTINGS.scissorMode = s.scissorMode ?? SETTINGS.scissorMode;
+      SETTINGS.lightSource = s.lightSource ?? SETTINGS.lightSource;
       if (s.optimizationDefaults) {
         SETTINGS.optimizationDefaults = JSON.parse(JSON.stringify(s.optimizationDefaults));
       }
@@ -117,6 +123,12 @@
       this.renderer.setSelection(selectedId ? [selectedId] : [], selectedId);
       this.engine.activeLayerId = selectedId;
       this.ui.initSettingsValues();
+      if (this.ui.setActiveTool) this.ui.setActiveTool(SETTINGS.activeTool || 'select');
+      if (this.ui.setScissorMode) this.ui.setScissorMode(SETTINGS.scissorMode || 'line');
+      if (this.renderer && 'lightSource' in SETTINGS) {
+        this.renderer.lightSource = SETTINGS.lightSource;
+        this.renderer.lightSourceSelected = false;
+      }
       this.renderer.center();
       this.ui.renderLayers();
       this.ui.renderPens();

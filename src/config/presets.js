@@ -239,7 +239,7 @@
         petalScale: 40,
         petalWidthRatio: 0.4,
         count: 90,
-        tipCurl: 0.8,
+        tipTwist: 0.8,
         rotationJitter: 14,
         centerType: 'disk',
         centerRadius: 5,

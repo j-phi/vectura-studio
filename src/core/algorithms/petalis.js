@@ -7,6 +7,76 @@
   const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
   const lerp = (a, b, t) => a + (b - a) * t;
   const toRad = (deg) => (deg * Math.PI) / 180;
+  const tipClamp = (t, tipCurl, sharpness, profile) => {
+    const curl = clamp(tipCurl ?? 0, 0, 1);
+    const sharp = clamp(sharpness ?? 0, 0, 1);
+    const allowFull = profile === 'oval';
+    const minClamp = sharp <= 0 && !allowFull ? 0.06 : 0;
+    const clampAmt = Math.max(0, minClamp * (1 - curl));
+    return clamp(t, clampAmt, 1 - clampAmt);
+  };
+  const tipLengthScale = (tipCurl) => 1 - clamp(tipCurl ?? 0, 0, 1) * 0.35;
+  const pathLength = (path) => {
+    if (!Array.isArray(path) || path.length < 2) return 0;
+    let len = 0;
+    for (let i = 1; i < path.length; i++) {
+      const dx = path[i].x - path[i - 1].x;
+      const dy = path[i].y - path[i - 1].y;
+      len += Math.hypot(dx, dy);
+    }
+    return len;
+  };
+
+  const slicePathByPattern = (path, dash, gap) => {
+    if (!Array.isArray(path) || path.length < 2) return [];
+    const segments = [];
+    let draw = true;
+    let remaining = dash;
+    let current = [];
+
+    for (let i = 0; i < path.length - 1; i++) {
+      let a = path[i];
+      let b = path[i + 1];
+      let segLen = Math.hypot(b.x - a.x, b.y - a.y);
+      if (segLen < 1e-6) continue;
+      while (segLen > 1e-6) {
+        const step = Math.min(segLen, remaining);
+        const t = step / segLen;
+        const pt = { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) };
+        if (draw) {
+          if (!current.length) current.push(a);
+          current.push(pt);
+        }
+        segLen -= step;
+        a = pt;
+        if (Math.abs(step - remaining) < 1e-6) {
+          if (draw && current.length > 1) segments.push(current);
+          current = [];
+          draw = !draw;
+          remaining = draw ? dash : gap;
+        } else {
+          remaining -= step;
+        }
+      }
+    }
+    if (draw && current.length > 1) segments.push(current);
+    return segments;
+  };
+
+  const applyLineType = (path, lineType, spacing) => {
+    if (!Array.isArray(path) || path.length < 2) return [];
+    const safeSpacing = Math.max(0.2, spacing || 0.5);
+    if (lineType === 'dashed') {
+      return slicePathByPattern(path, safeSpacing * 2, safeSpacing * 1.2);
+    }
+    if (lineType === 'dotted') {
+      return slicePathByPattern(path, safeSpacing * 0.4, safeSpacing * 1.4);
+    }
+    if (lineType === 'stitch') {
+      return slicePathByPattern(path, safeSpacing * 1.2, safeSpacing * 0.8);
+    }
+    return [path];
+  };
 
   const profileBase = (t, type) => {
     const s = Math.sin(Math.PI * t);
@@ -21,6 +91,16 @@
         return s * (1 + 0.25 * Math.sin(2 * Math.PI * t));
       case 'spoon':
         return s * (0.7 + 0.3 * (1 - t)) + 0.08 * Math.sin(Math.PI * t);
+      case 'rounded':
+        return Math.pow(s, 0.7);
+      case 'notched':
+        return s * (1 - 0.25 * Math.sin(Math.PI * t));
+      case 'spatulate':
+        return s * (0.5 + 0.5 * t);
+      case 'marquise':
+        return Math.pow(s, 1.9) * (1 + 0.12 * Math.cos(Math.PI * t));
+      case 'dagger':
+        return Math.pow(s, 2.6);
       default:
         return s;
     }
@@ -56,6 +136,7 @@
       length,
       widthRatio,
       steps,
+      tipTwist,
       tipCurl,
       curlBoost,
       baseX,
@@ -73,24 +154,28 @@
     } = opts;
     const left = [];
     const right = [];
-    const curlAmt = tipCurl * (1 + curlBoost);
+    const curlAmt = (tipTwist || 0) * (1 + curlBoost);
+    const effectiveSharpness = clamp(sharpness ?? 0.5, 0, 1) * (1 - clamp(tipCurl ?? 0, 0, 1) * 0.6);
+    const lengthScale = tipLengthScale(tipCurl);
+    const effectiveLength = Math.max(1, length * lengthScale);
     for (let i = 0; i <= steps; i++) {
-      const t = i / steps;
+      const tRaw = i / steps;
+      const t = tipClamp(tRaw, tipCurl, effectiveSharpness, profile);
       const w = widthAt(t, {
         profile,
         centerProfile,
         morphWeight,
-        sharpness,
+        sharpness: effectiveSharpness,
         baseFlare,
         basePinch,
         waveAmp,
         waveFreq,
         wavePhase,
       });
-      const half = (w * widthRatio * length) / 2;
-      const curl = curlAmt * length * 0.15 * t * t;
-      left.push({ x: t * length, y: half + curl });
-      right.push({ x: t * length, y: -half + curl });
+      const half = (w * widthRatio * effectiveLength) / 2;
+      const curl = curlAmt * effectiveLength * 0.02 * t * t;
+      left.push({ x: t * effectiveLength, y: half + curl });
+      right.push({ x: t * effectiveLength, y: -half + curl });
     }
     const outline = left.concat(right.reverse());
     outline.push({ ...outline[0] });
@@ -120,45 +205,47 @@
       angle,
       baseX,
       baseY,
-      inner,
-      innerType,
-      innerDensity,
-      outer,
-      outerType,
-      outerDensity,
-      transition,
-      hatchAngle,
-      hatchNoise,
+      shadings,
+      tipTwist,
+      tipCurl,
+      curlBoost,
       rng,
       noise,
     } = opts;
     const lines = [];
-    const innerBand = clamp(1 - transition, 0.2, 1);
-    const hatchJitter = hatchNoise ? noise.noise2D(baseX * 0.002, baseY * 0.002) * hatchNoise * 30 : 0;
-    const hatch = toRad((hatchAngle || 0) + hatchJitter);
-    const cosH = Math.cos(hatch);
-    const sinH = Math.sin(hatch);
-    const rotate = (pt) => ({ x: pt.x * cosH - pt.y * sinH, y: pt.x * sinH + pt.y * cosH });
+    const active = Array.isArray(shadings) ? shadings.filter((s) => s && s.enabled !== false) : [];
+    if (!active.length) return lines;
 
-    const makeLine = (offset, tStart = 0, tEnd = 1, gradient = 0, spiral = 0) => {
+    const twist = (tipTwist || 0) * (1 + (curlBoost || 0));
+    const effectiveSharpness = clamp(sharpness ?? 0.5, 0, 1) * (1 - clamp(tipCurl ?? 0, 0, 1) * 0.6);
+    const lengthScale = tipLengthScale(tipCurl);
+    const effectiveLength = Math.max(1, length * lengthScale);
+
+    const makeLine = (offset, tStart, tEnd, hatchAngle, gradient = 0, spiral = 0) => {
       const path = [];
+      const hatch = toRad(hatchAngle || 0);
+      const cosH = Math.cos(hatch);
+      const sinH = Math.sin(hatch);
+      const rotate = (pt) => ({ x: pt.x * cosH - pt.y * sinH, y: pt.x * sinH + pt.y * cosH });
       for (let i = 0; i <= steps; i++) {
-        const t = lerp(tStart, tEnd, i / steps);
+        const tRaw = lerp(tStart, tEnd, i / steps);
+        const t = tipClamp(tRaw, tipCurl, effectiveSharpness, profile);
         const w = widthAt(t, {
           profile,
           centerProfile,
           morphWeight,
-          sharpness,
+          sharpness: effectiveSharpness,
           baseFlare,
           basePinch,
           waveAmp,
           waveFreq,
           wavePhase,
         });
-        const half = (w * widthRatio * length) / 2;
+        const half = (w * widthRatio * effectiveLength) / 2;
         const g = gradient ? lerp(1, 0.4, t) : 1;
         const spiralOffset = spiral ? offset + t * 0.3 * spiral : offset;
-        const local = rotate({ x: t * length, y: spiralOffset * half * g });
+        const curl = twist * effectiveLength * 0.02 * t * t;
+        const local = rotate({ x: t * effectiveLength, y: spiralOffset * half * g + curl });
         path.push(local);
       }
       const cosA = Math.cos(angle);
@@ -169,55 +256,70 @@
       }));
     };
 
-    if (inner) {
-      const count = clamp(Math.round(innerDensity * 14), 1, 24);
-      for (let i = 0; i < count; i++) {
-        const frac = (i + 1) / (count + 1);
-        const offset = lerp(-innerBand / 2, innerBand / 2, frac);
-        if (innerType === 'stipple') {
-          const stepsCount = Math.max(6, Math.round(steps / 2));
-          for (let s = 0; s < stepsCount; s++) {
-            const t = (s + 1) / (stepsCount + 1);
-            const w = widthAt(t, {
-              profile,
-              centerProfile,
-              morphWeight,
-              sharpness,
-              baseFlare,
-              basePinch,
-              waveAmp,
-              waveFreq,
-              wavePhase,
-            });
-            const half = (w * widthRatio * length) / 2;
-            const jitter = (rng.nextFloat() - 0.5) * 0.2;
-            const local = rotate({ x: t * length, y: (offset + jitter) * half });
-            const cosA = Math.cos(angle);
-            const sinA = Math.sin(angle);
-            const pt = {
-              x: baseX + local.x * cosA - local.y * sinA,
-              y: baseY + local.x * sinA + local.y * cosA,
-            };
-            lines.push([pt, { x: pt.x + 0.15, y: pt.y + 0.15 }]);
-          }
-        } else if (innerType === 'gradient') {
-          lines.push(makeLine(offset, 0, 1, 1));
-        } else if (innerType === 'spiral') {
-          lines.push(makeLine(offset, 0, 1, 0, 1));
-        } else {
-          lines.push(makeLine(offset, 0, 1, 0));
-        }
-      }
-    }
+    const buildOffsets = (shade, halfWidth) => {
+      const widthY = clamp(shade.widthY ?? 100, 0, 100) / 100;
+      const posY = clamp(shade.posY ?? 50, 0, 100) / 100;
+      const offsetCenter = (posY - 0.5) * 2;
+      const halfRange = widthY;
+      const offsetStart = clamp(offsetCenter - halfRange, -1, 1);
+      const offsetEnd = clamp(offsetCenter + halfRange, -1, 1);
+      const gapY = clamp(shade.gapY ?? 0, 0, 100) / 100;
+      const gapPosY = clamp(shade.gapPosY ?? 50, 0, 100) / 100;
+      const gapCenter = (gapPosY - 0.5) * 2;
+      const gapHalf = gapY;
+      const gapStart = gapCenter - gapHalf;
+      const gapEnd = gapCenter + gapHalf;
+      const spacing = Math.max(0.2, shade.lineSpacing ?? 1);
+      const span = Math.abs(offsetEnd - offsetStart) * halfWidth;
+      const count = Math.max(1, Math.round(span / spacing));
+      return { offsetStart, offsetEnd, gapStart, gapEnd, count };
+    };
 
-    if (outer) {
-      if (outerType === 'outline' || outerType === 'rim') {
+    const buildRanges = (shade) => {
+      const widthX = clamp(shade.widthX ?? 100, 0, 100) / 100;
+      const posX = clamp(shade.posX ?? 50, 0, 100) / 100;
+      const halfRange = widthX / 2;
+      const tStart = clamp(posX - halfRange, 0, 1);
+      const tEnd = clamp(posX + halfRange, 0, 1);
+      const gapX = clamp(shade.gapX ?? 0, 0, 100) / 100;
+      const gapPosX = clamp(shade.gapPosX ?? 50, 0, 100) / 100;
+      const gapHalf = gapX / 2;
+      const gapStart = gapPosX - gapHalf;
+      const gapEnd = gapPosX + gapHalf;
+      const ranges = [];
+      if (gapX > 0 && gapStart < tEnd && gapEnd > tStart) {
+        if (tStart < gapStart) ranges.push([tStart, clamp(gapStart, 0, 1)]);
+        if (gapEnd < tEnd) ranges.push([clamp(gapEnd, 0, 1), tEnd]);
+      } else {
+        ranges.push([tStart, tEnd]);
+      }
+      return ranges;
+    };
+
+    active.forEach((shade) => {
+      const halfWidth = (widthRatio * effectiveLength) / 2;
+      const { offsetStart, offsetEnd, gapStart, gapEnd, count } = buildOffsets(shade, halfWidth);
+      const ranges = buildRanges(shade);
+      const type = shade.type || 'radial';
+      const hatchAngle = shade.angle ?? 0;
+      const lineType = shade.lineType || 'solid';
+      const spacing = Math.max(0.2, shade.lineSpacing ?? 1);
+
+      const emitLine = (path) => {
+        const typed = applyLineType(path, lineType, spacing);
+        typed.forEach((seg) => {
+          if (seg.length > 1) lines.push(seg);
+        });
+      };
+
+      if (type === 'outline' || type === 'rim' || type === 'contour') {
         const outline = buildPetal({
           length,
           widthRatio,
           steps,
-          tipCurl: 0,
-          curlBoost: 0,
+          tipTwist,
+          tipCurl,
+          curlBoost,
           baseX,
           baseY,
           angle,
@@ -231,19 +333,280 @@
           waveFreq,
           wavePhase,
         });
-        lines.push(outline);
-      }
-      if (outerType === 'edge') {
-        const edgeCount = clamp(Math.round(outerDensity * 6), 1, 10);
-        for (let i = 0; i < edgeCount; i++) {
-          const frac = (i + 1) / (edgeCount + 1);
-          const offset = lerp(innerBand / 2, 1, frac);
-          lines.push(makeLine(offset));
-          lines.push(makeLine(-offset));
+        emitLine(outline);
+        if (type === 'rim') {
+          const innerOutline = buildPetal({
+            length: length * 0.98,
+            widthRatio: widthRatio * 0.92,
+            steps,
+            tipTwist,
+            tipCurl,
+            curlBoost,
+            baseX,
+            baseY,
+            angle,
+            profile,
+            centerProfile,
+            morphWeight,
+            sharpness,
+            baseFlare,
+            basePinch,
+            waveAmp,
+            waveFreq,
+            wavePhase,
+          });
+          emitLine(innerOutline);
         }
+        if (type === 'contour') {
+          const levels = clamp(Math.round(count / 2), 2, 10);
+          for (let i = 1; i < levels; i++) {
+            const scale = 1 - (i / (levels + 1)) * 0.35;
+            const inner = buildPetal({
+              length: length * (0.9 + 0.1 * scale),
+              widthRatio: widthRatio * scale,
+              steps,
+              tipTwist,
+              tipCurl,
+              curlBoost,
+              baseX,
+              baseY,
+              angle,
+              profile,
+              centerProfile,
+              morphWeight,
+              sharpness,
+              baseFlare,
+              basePinch,
+              waveAmp,
+              waveFreq,
+              wavePhase,
+            });
+            emitLine(inner);
+          }
+        }
+        return;
+      }
+
+      for (let i = 0; i < count; i++) {
+        const frac = count === 1 ? 0.5 : i / (count - 1);
+        let offset = lerp(offsetStart, offsetEnd, frac);
+        if (offset >= gapStart && offset <= gapEnd) continue;
+        if (type === 'chiaroscuro') {
+          offset = lerp(offsetStart, offsetEnd, Math.pow(frac, 1.6));
+        }
+        ranges.forEach(([tStart, tEnd]) => {
+          if (tEnd <= tStart) return;
+          if (type === 'stipple') {
+            const stepsCount = Math.max(8, Math.round(steps * 0.6));
+            for (let s = 0; s < stepsCount; s++) {
+              const t = lerp(tStart, tEnd, (s + 1) / (stepsCount + 1));
+              const w = widthAt(t, {
+                profile,
+                centerProfile,
+                morphWeight,
+                sharpness,
+                baseFlare,
+                basePinch,
+                waveAmp,
+                waveFreq,
+                wavePhase,
+              });
+              const half = (w * widthRatio * effectiveLength) / 2;
+              const jitter = (rng.nextFloat() - 0.5) * 0.2;
+              const localY = (offset + jitter) * half;
+              const curl = twist * effectiveLength * 0.02 * t * t;
+              const cosA = Math.cos(angle);
+              const sinA = Math.sin(angle);
+              const x = baseX + (t * effectiveLength) * cosA - (localY + curl) * sinA;
+              const y = baseY + (t * effectiveLength) * sinA + (localY + curl) * cosA;
+              lines.push([
+                { x, y },
+                { x: x + 0.2, y: y + 0.2 },
+              ]);
+            }
+          } else if (type === 'spiral') {
+            const path = makeLine(offset, tStart, tEnd, hatchAngle, 0, 1);
+            emitLine(path);
+          } else if (type === 'gradient') {
+            const path = makeLine(offset, tStart, tEnd, hatchAngle, 1, 0);
+            emitLine(path);
+          } else if (type === 'crosshatch') {
+            emitLine(makeLine(offset, tStart, tEnd, hatchAngle, 0, 0));
+            emitLine(makeLine(offset, tStart, tEnd, hatchAngle + 90, 0, 0));
+          } else {
+            const path = makeLine(offset, tStart, tEnd, hatchAngle, 0, 0);
+            emitLine(path);
+          }
+        });
+      }
+    });
+
+    return lines;
+  };
+
+  const buildTipCurlDetails = (opts) => {
+    const {
+      length,
+      widthRatio,
+      steps,
+      profile,
+      centerProfile,
+      morphWeight,
+      sharpness,
+      baseFlare,
+      basePinch,
+      waveAmp,
+      waveFreq,
+      wavePhase,
+      angle,
+      baseX,
+      baseY,
+      tipTwist,
+      tipCurl,
+      curlBoost,
+      tipCurlDepth,
+      tipCurlAngle,
+      tipCurlInset,
+      tipCurlOuterPad,
+      tipCurlShadeType,
+      tipCurlShadeDistance,
+      tipCurlShadeMorph,
+      rng,
+      noise,
+    } = opts;
+
+    const lines = [];
+    const shadeLines = [];
+    const depthPercent = clamp(tipCurlDepth ?? 0, 0, 100);
+    const roundAmt = clamp(tipCurl ?? 0, 0, 1);
+
+    const twist = (tipTwist || 0) * (1 + (curlBoost || 0));
+    const lengthScale = tipLengthScale(tipCurl);
+    const effectiveLength = Math.max(1, length * lengthScale);
+    const tipT = tipClamp(1, tipCurl, sharpness, profile);
+    const w = widthAt(tipT, {
+      profile,
+      centerProfile,
+      morphWeight,
+      sharpness,
+      baseFlare,
+      basePinch,
+      waveAmp,
+      waveFreq,
+      wavePhase,
+    });
+    const half = (w * widthRatio * effectiveLength) / 2;
+    if (half <= 0.001) return { lines, shadeLines };
+    const depthLen = (depthPercent / 100) * Math.max(1, half * 2);
+    if (depthLen <= 0 && roundAmt <= 0.001) return { lines, shadeLines };
+
+    const curl = twist * effectiveLength * 0.02 * tipT * tipT;
+    const pad = Math.min(Math.max(tipCurlOuterPad ?? 0, 0), Math.max(0, half - 0.05));
+    const inset = Math.max(0, tipCurlInset ?? 0);
+    const angleFactor = clamp(tipCurlAngle ?? 1, 0, 1);
+    const vDepth = Math.min(depthLen, effectiveLength * 0.35);
+
+    const toWorld = (pt) => {
+      const cosA = Math.cos(angle);
+      const sinA = Math.sin(angle);
+      return { x: baseX + pt.x * cosA - pt.y * sinA, y: baseY + pt.x * sinA + pt.y * cosA };
+    };
+
+    const buildVCurve = (left, right, apex) => {
+      if (angleFactor >= 0.6) return [left, apex, right];
+      const control = {
+        x: apex.x - vDepth * (1 - angleFactor) * 0.6,
+        y: apex.y,
+      };
+      const pts = [];
+      const segments = 12;
+      for (let i = 0; i <= segments; i++) {
+        const t = i / segments;
+        const a = (1 - t) * (1 - t);
+        const b = 2 * (1 - t) * t;
+        const c = t * t;
+        pts.push({
+          x: left.x * a + control.x * b + right.x * c,
+          y: left.y * a + control.y * b + right.y * c,
+        });
+      }
+      return pts;
+    };
+
+    if (vDepth > 0.001) {
+      const left = { x: effectiveLength, y: half + curl };
+      const right = { x: effectiveLength, y: -half + curl };
+      const apex = { x: effectiveLength - vDepth, y: curl };
+      const outer = buildVCurve(left, right, apex).map(toWorld);
+      outer.meta = { label: 'Tip Curl' };
+      lines.push(outer);
+
+      const innerHalf = Math.max(0.05, half - pad);
+      const innerLeft = { x: effectiveLength - inset, y: innerHalf + curl };
+      const innerRight = { x: effectiveLength - inset, y: -innerHalf + curl };
+      const innerApex = { x: effectiveLength - vDepth - inset, y: curl };
+      if (innerApex.x < innerLeft.x - 0.5) {
+        const inner = buildVCurve(innerLeft, innerRight, innerApex).map(toWorld);
+        inner.meta = { label: 'Tip Curl Inner' };
+        lines.push(inner);
       }
     }
-    return lines;
+
+    const shadeType = tipCurlShadeType || 'none';
+    const shadeDist = Math.max(0, tipCurlShadeDistance ?? 0);
+    if (shadeType !== 'none' && shadeDist > 0) {
+      const tEnd = clamp((effectiveLength - vDepth) / effectiveLength, 0, 1);
+      const tStart = clamp((effectiveLength - vDepth - shadeDist) / effectiveLength, 0, 1);
+      const widthX = Math.abs(tEnd - tStart) * 100;
+      const posX = ((tStart + tEnd) / 2) * 100;
+      const morph = clamp(tipCurlShadeMorph ?? 0, 0, 1);
+      const widthY = lerp(35, 100, morph);
+      const shadeEntry = {
+        enabled: true,
+        type: shadeType,
+        widthX,
+        posX,
+        widthY,
+        posY: 50,
+        gapX: 0,
+        gapY: 0,
+        gapPosX: 50,
+        gapPosY: 50,
+        lineType: 'solid',
+        lineSpacing: Math.max(0.2, shadeDist / 8),
+        angle: 0,
+      };
+      const curlShade = buildShadingLines({
+        length,
+        widthRatio,
+        steps: Math.max(6, Math.round(steps / 2)),
+        profile,
+        centerProfile,
+        morphWeight,
+        sharpness,
+        baseFlare,
+        basePinch,
+        waveAmp,
+        waveFreq,
+        wavePhase,
+        angle,
+        baseX,
+        baseY,
+        shadings: [shadeEntry],
+        tipTwist,
+        tipCurl,
+        curlBoost,
+        rng,
+        noise,
+      });
+      curlShade.forEach((line, idx) => {
+        if (!Array.isArray(line)) return;
+        line.meta = { label: `Tip Curl Shade ${String(idx + 1).padStart(2, '0')}` };
+        shadeLines.push(line);
+      });
+    }
+
+    return { lines, shadeLines };
   };
 
   const expandCircle = (meta, segments = 64) => {
@@ -309,6 +672,16 @@
               a = Math.atan2(y, x);
               break;
             }
+            case 'circularOffset': {
+              const seed = mod.seed ?? 0;
+              const randomness = clamp(mod.randomness ?? 0, 0, 1);
+              const dir = clamp(mod.direction ?? 0, -1, 1);
+              const amp = mod.amount ?? 2;
+              const n = noise.noise2D(x * 0.02 + seed, y * 0.02 - seed);
+              const sign = dir === 0 ? Math.sign(n || 1) : Math.sign(dir);
+              r += sign * Math.abs(n) * amp * randomness;
+              break;
+            }
             default:
               break;
           }
@@ -318,6 +691,73 @@
         return { x: center.x + x, y: center.y + y };
       });
       if (closed && next.length) next[next.length - 1] = { ...next[0] };
+      if (path.meta) next.meta = { ...path.meta };
+      return next;
+    });
+  };
+
+  const applyPetalModifiers = (paths, modifiers, base, angle, length, noise) => {
+    if (!Array.isArray(modifiers) || !modifiers.length) return paths;
+    const active = modifiers.filter((mod) => mod && mod.enabled !== false);
+    if (!active.length) return paths;
+    const cosA = Math.cos(-angle);
+    const sinA = Math.sin(-angle);
+    const invCos = Math.cos(angle);
+    const invSin = Math.sin(angle);
+    const safeLen = Math.max(1, length);
+    return paths.map((path) => {
+      if (!Array.isArray(path) || (path.meta && path.meta.kind === 'circle')) return path;
+      const next = path.map((pt) => {
+        let lx = (pt.x - base.x) * cosA - (pt.y - base.y) * sinA;
+        let ly = (pt.x - base.x) * sinA + (pt.y - base.y) * cosA;
+        active.forEach((mod) => {
+          const t = clamp(lx / safeLen, 0, 1);
+          switch (mod.type) {
+            case 'ripple': {
+              const amp = mod.amount ?? 0;
+              const freq = mod.frequency ?? 6;
+              ly += Math.sin(t * TAU * freq) * amp;
+              break;
+            }
+            case 'twist': {
+              const amt = toRad(mod.amount ?? 0);
+              const twist = amt * t;
+              const rx = lx * Math.cos(twist) - ly * Math.sin(twist);
+              const ry = lx * Math.sin(twist) + ly * Math.cos(twist);
+              lx = rx;
+              ly = ry;
+              break;
+            }
+            case 'noise': {
+              const amp = mod.amount ?? 0;
+              const scale = mod.scale ?? 0.2;
+              const n = noise.noise2D(lx * scale, ly * scale);
+              ly += n * amp;
+              break;
+            }
+            case 'shear': {
+              const amt = mod.amount ?? 0;
+              ly += lx * amt * 0.2;
+              break;
+            }
+            case 'taper': {
+              const amt = mod.amount ?? 0;
+              const scale = 1 + amt * (t - 0.5);
+              ly *= scale;
+              break;
+            }
+            case 'offset': {
+              lx += mod.offsetX ?? 0;
+              ly += mod.offsetY ?? 0;
+              break;
+            }
+            default:
+              break;
+          }
+        });
+        return { x: base.x + lx * invCos - ly * invSin, y: base.y + lx * invSin + ly * invCos };
+      });
+      if (path.meta) next.meta = path.meta;
       return next;
     });
   };
@@ -328,27 +768,44 @@
     const density = Math.max(1, Math.round(p.centerDensity ?? 12));
     const falloff = clamp(p.centerFalloff ?? 0.6, 0, 1);
     const type = p.centerType || 'disk';
+    const labelMap = {
+      disk: 'Disk',
+      dome: 'Dome',
+      starburst: 'Starburst',
+      dot: 'Dot Field',
+      filament: 'Filaments',
+    };
+    const groupLabel = `Center: ${labelMap[type] || 'Elements'}`;
 
     if (type === 'disk') {
       const circle = [];
-      circle.meta = { kind: 'circle', cx: center.x, cy: center.y, r: radius };
+      circle.meta = { kind: 'circle', cx: center.x, cy: center.y, r: radius, group: groupLabel, label: 'Disk' };
       paths.push(circle);
     } else if (type === 'dome') {
       const rings = clamp(Math.round(density / 2), 2, 30);
       for (let i = 0; i < rings; i++) {
         const r = radius * (1 - i / rings);
         const circle = [];
-        circle.meta = { kind: 'circle', cx: center.x, cy: center.y, r: Math.max(0.2, r) };
+        circle.meta = {
+          kind: 'circle',
+          cx: center.x,
+          cy: center.y,
+          r: Math.max(0.2, r),
+          group: groupLabel,
+          label: `Ring ${String(i + 1).padStart(2, '0')}`,
+        };
         paths.push(circle);
       }
     } else if (type === 'starburst') {
       for (let i = 0; i < density; i++) {
         const ang = (i / density) * TAU;
         const len = radius * (0.6 + 0.4 * rng.nextFloat());
-        paths.push([
+        const path = [
           { x: center.x, y: center.y },
           { x: center.x + Math.cos(ang) * len, y: center.y + Math.sin(ang) * len },
-        ]);
+        ];
+        path.meta = { group: groupLabel, label: `Ray ${String(i + 1).padStart(2, '0')}` };
+        paths.push(path);
       }
     } else if (type === 'dot') {
       for (let i = 0; i < density; i++) {
@@ -360,6 +817,8 @@
           cx: center.x + Math.cos(ang) * r,
           cy: center.y + Math.sin(ang) * r,
           r: 0.4 + rng.nextFloat() * 0.6,
+          group: groupLabel,
+          label: `Dot ${String(i + 1).padStart(2, '0')}`,
         };
         paths.push(dot);
       }
@@ -375,6 +834,7 @@
           const rr = len * t;
           curve.push({ x: center.x + Math.cos(curveAng) * rr, y: center.y + Math.sin(curveAng) * rr });
         }
+        curve.meta = { group: groupLabel, label: `Filament ${String(i + 1).padStart(2, '0')}` };
         paths.push(curve);
       }
     }
@@ -390,6 +850,8 @@
           cx: center.x + Math.cos(ang) * ringRadius,
           cy: center.y + Math.sin(ang) * ringRadius,
           r: 0.35 + rng.nextFloat() * 0.4,
+          group: 'Center: Ring',
+          label: `Ring Dot ${String(i + 1).padStart(2, '0')}`,
         };
         paths.push(dot);
       }
@@ -403,10 +865,12 @@
         const ang = (i / count) * TAU;
         const jitterAng = ang + (rng.nextFloat() - 0.5) * jitter;
         const startR = radius * 0.6;
-        paths.push([
+        const path = [
           { x: center.x + Math.cos(jitterAng) * startR, y: center.y + Math.sin(jitterAng) * startR },
           { x: center.x + Math.cos(jitterAng) * (startR + len), y: center.y + Math.sin(jitterAng) * (startR + len) },
-        ]);
+        ];
+        path.meta = { group: 'Center: Connectors', label: `Connector ${String(i + 1).padStart(2, '0')}` };
+        paths.push(path);
       }
     }
 
@@ -547,12 +1011,55 @@
     const petals = [];
     const occluders = [];
     const layering = p.layering !== false;
+    const shadings = Array.isArray(p.shadings) ? p.shadings : [];
+    const legacyShadings = [];
+    if (!shadings.length && (p.innerShading || p.outerShading)) {
+      if (p.innerShading) {
+        legacyShadings.push({
+          id: 'legacy-inner',
+          enabled: true,
+          type: p.innerShadingType || 'radial',
+          widthX: 100,
+          widthY: 60,
+          posX: 50,
+          posY: 50,
+          gapX: 0,
+          gapY: 0,
+          gapPosX: 50,
+          gapPosY: 50,
+          lineType: 'solid',
+          lineSpacing: 1,
+          angle: p.hatchAngle ?? 0,
+        });
+      }
+      if (p.outerShading) {
+        legacyShadings.push({
+          id: 'legacy-outer',
+          enabled: true,
+          type: p.outerShadingType || 'rim',
+          widthX: 100,
+          widthY: 100,
+          posX: 50,
+          posY: 50,
+          gapX: 0,
+          gapY: 0,
+          gapPosX: 50,
+          gapPosY: 50,
+          lineType: 'solid',
+          lineSpacing: 1,
+          angle: p.hatchAngle ?? 0,
+        });
+      }
+    }
+    const shadingStack = shadings.length ? shadings : legacyShadings;
     const ringMode = p.ringMode || 'single';
     const lengthRatio = Math.max(0.1, p.petalLengthRatio ?? 1);
     const sizeRatio = Math.max(0.1, p.petalSizeRatio ?? 1);
     const baseLength = Math.max(4, (p.petalScale ?? 30) * lengthRatio);
     const baseWidthRatio = (p.petalWidthRatio ?? 0.45) * sizeRatio;
-    const anchorRadius = p.anchorToCenter === false ? 0 : Math.max(0, (p.centerRadius ?? 0) * (p.anchorRadiusRatio ?? 1));
+    const anchorMode = p.anchorToCenter || 'central';
+    const anchorRadius =
+      anchorMode === 'off' ? 0 : Math.max(0, (p.centerRadius ?? 0) * (p.anchorRadiusRatio ?? 1));
     const visibilitySpan = baseLength * (lengthRatio + sizeRatio);
     const visibleMaxR = Math.min(maxRadius, anchorRadius + visibilitySpan);
     const countJitter = clamp(p.countJitter ?? 0, 0, 0.5);
@@ -599,13 +1106,14 @@
       for (let i = 0; i < count; i++) {
         const t = count <= 1 ? 0.5 : i / (count - 1);
         const radial = lerp(minR, maxR, Math.pow(t, spiralTightness)) * radialGrowth;
-        const radialBase = anchorRadius + radial;
+        let radialBase = anchorRadius + radial;
+        if (anchorMode === 'all') radialBase = anchorRadius;
         const drift = angularDrift * driftStrength * noise.noise2D(i * driftNoise, ringIndex * 2.1);
         let angle = baseAngle * i + offset + drift;
         angle += (rng.nextFloat() - 0.5) * rotationJitter;
         const centerFactor = clamp(1 - radialBase / Math.max(1, visibleMaxR), 0, 1);
         const morphCurve = Math.pow(centerFactor, p.centerSizeCurve ?? 1);
-        const sizeMorph = 1 + (p.centerSizeMorph ?? 0) * morphCurve;
+        const sizeMorph = 1 + (p.centerSizeMorph ?? 0) * 0.01 * morphCurve;
         const radiusScale = 1 + (p.radiusScale ?? 0) * Math.pow(t, p.radiusScaleCurve ?? 1);
         const jitter = 1 + (rng.nextFloat() * 2 - 1) * sizeJitter;
         const length = Math.max(4, baseLength * sizeMorph * radiusScale * jitter);
@@ -613,10 +1121,11 @@
         let widthRatio = baseWidthRatio;
         const budMode = Boolean(p.budMode);
         if (budMode) {
-          const budRadius = clamp(p.budRadius ?? 0.15, 0.05, 0.5);
-          const budFactor = clamp((centerFactor - (1 - budRadius)) / budRadius, 0, 1);
-          const budTight = clamp(p.budTightness ?? 0.5, 0, 1);
-          widthRatio *= 1 - budFactor * budTight * 0.6;
+          const budRadius = clamp(p.budRadius ?? 0.15, 0.05, 2);
+          const budFactor = clamp((centerFactor - (1 - budRadius)) / Math.max(0.01, budRadius), 0, 1);
+          const budTight = clamp(p.budTightness ?? 0.5, 0, 10);
+          const budEffect = budFactor * budTight * 0.08;
+          widthRatio = Math.max(0.05, widthRatio * (1 - budEffect));
         }
 
         const baseX = center.x + Math.cos(angle) * radialBase;
@@ -625,10 +1134,11 @@
         const curlBoost = (p.centerCurlBoost ?? 0) * centerFactor;
         const waveBoost = (p.centerWaveBoost ?? 0) * centerFactor;
         const wavePhase = rng.nextFloat() * TAU;
-        const outline = buildPetal({
+        let outline = buildPetal({
           length,
           widthRatio,
           steps: petalSteps,
+          tipTwist: p.tipTwist ?? 0,
           tipCurl: p.tipCurl ?? 0,
           curlBoost,
           baseX,
@@ -644,7 +1154,7 @@
           waveFreq: p.edgeWaveFreq ?? 2,
           wavePhase,
         });
-        const shadingLines = buildShadingLines({
+        let shadingLines = buildShadingLines({
           length,
           widthRatio,
           steps: Math.max(6, Math.round(petalSteps / 2)),
@@ -660,17 +1170,24 @@
           angle,
           baseX,
           baseY,
-          inner: Boolean(p.innerShading),
-          innerType: p.innerShadingType || 'radial',
-          innerDensity: clamp(p.innerDensity ?? 0.4, 0, 1),
-          outer: Boolean(p.outerShading),
-          outerType: p.outerShadingType || 'rim',
-          outerDensity: clamp(p.outerDensity ?? 0.4, 0, 1),
-          transition: clamp(p.shadingTransition ?? 0.3, 0, 1),
-          hatchAngle: p.hatchAngle ?? 0,
-          hatchNoise: p.hatchNoise ?? 0,
+          shadings: shadingStack,
+          tipTwist: p.tipTwist ?? 0,
+          tipCurl: p.tipCurl ?? 0,
+          curlBoost,
           rng,
           noise,
+        });
+        // Tip curl detail lines disabled to avoid internal wedges.
+        const modifierBase = { x: baseX, y: baseY };
+        outline = applyPetalModifiers([outline], p.petalModifiers || [], modifierBase, angle, length, noise)[0] || outline;
+        shadingLines = applyPetalModifiers(shadingLines, p.petalModifiers || [], modifierBase, angle, length, noise);
+        const petalIndex = petals.length + 1;
+        const groupLabel = `Petal ${String(petalIndex).padStart(2, '0')}`;
+        outline.meta = { ...(outline.meta || {}), group: groupLabel, label: 'Outline' };
+        shadingLines.forEach((line, idx) => {
+          if (!Array.isArray(line)) return;
+          const nextLabel = line.meta?.label || `Shade ${String(idx + 1).padStart(2, '0')}`;
+          line.meta = { ...(line.meta || {}), group: groupLabel, label: nextLabel };
         });
         petals.push({
           radius: radialBase,
@@ -683,17 +1200,18 @@
 
     if (petals.length) {
       const ordered = petals.slice().sort((a, b) => a.radius - b.radius);
+      const pushSegment = (seg, meta) => {
+        if (!seg || seg.length <= 1) return;
+        if (meta) seg.meta = { ...meta };
+        paths.push(seg);
+      };
       ordered.forEach((petal) => {
         if (layering && occluders.length) {
           const clippedOutline = clipPathOutside(petal.outline, occluders);
-          clippedOutline.forEach((seg) => {
-            if (seg.length > 1) paths.push(seg);
-          });
+          clippedOutline.forEach((seg) => pushSegment(seg, petal.outline.meta));
           petal.shading.forEach((line) => {
             const clipped = clipPathOutside(line, occluders);
-            clipped.forEach((seg) => {
-              if (seg.length > 1) paths.push(seg);
-            });
+            clipped.forEach((seg) => pushSegment(seg, line.meta));
           });
         } else {
           paths.push(petal.outline);

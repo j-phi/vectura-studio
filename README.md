@@ -9,6 +9,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Direct canvas manipulation: drag to move the selected layer, drag corner handles to resize, rotate via the upper-right handle, and double-click to rename layers.
 - Multi-selection: shift-click ranges in the layer list, Cmd/Ctrl-click to toggle, or drag a marquee, then move/rotate the group together.
 - Layer grouping/ungrouping via Cmd/Ctrl+G and Cmd/Ctrl+Shift+G.
+- Illustrator-style tool bar with selection, direct selection, hand, pen (bezier), and scissor tools (V/A/Space/P/C).
 - Expand any layer into per-line sublayers for fine-grained selection and pen assignment.
 - Canvas shortcut overlay that stays above the formula panel (toggleable in Settings).
 - Alignment guides for canvas center and size matching while dragging.
@@ -22,7 +23,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Harmonograph pendulum list with add/delete/toggle controls and optional guide overlay.
 - Rainfall generator with wind, droplet styling, and optional silhouette masking.
 - Wavetable noise stack with per-noise blend modes, tile patterns, image effects, polygon noise, and drag-to-reorder layers.
-- Petalis generator with radial petals, center morphing, shading, and 20 named presets.
+- Petalis generator with radial petals, center morphing, shading, tip curl, and 20 named presets (plus an in-dev light source marker).
 - Pen palette with assignable colors/widths, reorderable list, drag-to-assign per layer or selection, plus palette selection and add/remove controls.
 - Plotter optimization slider to remove fully overlapping paths per pen before export.
 - Optimization pipeline (linesimplify, linesort, filter, multipass) with scope selection, preview overlays, and export toggle.
@@ -55,7 +56,7 @@ Then visit `http://localhost:8000`.
 6. Save/Open full projects via .vectura files, or import SVGs as new layers.
 7. Export with the [EXPORT SVG] button.
 
-Pan: Shift + Drag. Zoom: Mouse Wheel. Move layer: Drag. Resize layer: Drag corner handles. Rotate: Drag the upper-right handle (Shift snaps). Duplicate: Alt-drag. Expand: Cmd/Ctrl + E.
+Pan: Shift + Drag. Zoom: Mouse Wheel. Move layer: Drag. Resize layer: Drag corner handles. Rotate: Drag the upper-right handle (Shift snaps). Duplicate: Alt-drag. Expand: Cmd/Ctrl + E. Pen tool: click to add points, click-drag for bezier curves (Shift constrains, Alt breaks handles), double-click near the first point to close, Enter commits, Esc cancels. Scissor tool: drag a line/rect/circle to split intersecting paths.
 
 ## Algorithm Library
 Each layer is powered by an algorithm with its own parameters and formula preview:

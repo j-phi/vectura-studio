@@ -70,12 +70,135 @@ input[type='color']::-webkit-color-swatch {
 
 .canvas-help {
   position: absolute;
-  left: 16px;
+  left: 88px;
   bottom: var(--canvas-help-offset);
   display: flex;
   flex-direction: column;
   gap: 2px;
   z-index: 18;
+}
+
+.tool-bar {
+  position: absolute;
+  top: 20px;
+  left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 8px;
+  background: #0f0f12;
+  border: 1px solid #27272a;
+  border-radius: 12px;
+  z-index: 30;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+}
+
+.tool-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid #27272a;
+  background: #141417;
+  color: #e4e4e7;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.tool-icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.tool-btn:hover {
+  background: #1f1f23;
+  color: #fafafa;
+}
+
+.tool-btn.active {
+  border-color: #38bdf8;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+}
+
+.tool-divider {
+  height: 1px;
+  width: 100%;
+  background: #27272a;
+  margin: 2px 0;
+}
+
+.tool-group {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+
+.tool-submenu {
+  position: absolute;
+  left: 44px;
+  top: 0;
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid #27272a;
+  background: #0f0f12;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  z-index: 40;
+}
+
+.tool-submenu.open {
+  display: flex;
+}
+
+.tool-sub-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  border: 1px solid #27272a;
+  background: #111113;
+  color: #a1a1aa;
+  font-size: 0.65rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.tool-sub-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.tool-sub-btn:hover {
+  color: #fafafa;
+  background: #1a1a1f;
+}
+
+.tool-sub-btn.hover {
+  color: #fafafa;
+  background: #1a1a1f;
+  border-color: #38bdf8;
+}
+
+.tool-sub-btn.active {
+  border-color: #38bdf8;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.tool-btn.hidden {
+  display: none;
 }
 
 .control-group {

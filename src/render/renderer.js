@@ -28,7 +28,24 @@
       this.isSelecting = false;
       this.selectionStart = null;
       this.selectionRect = null;
+      this.activeTool = SETTINGS.activeTool || 'select';
+      this.scissorMode = SETTINGS.scissorMode || 'line';
+      this.penDraft = null;
+      this.penPreview = null;
+      this.isPenDragging = false;
+      this.penDragAnchor = null;
+      this.penDragStart = null;
+      this.scissorStart = null;
+      this.scissorEnd = null;
+      this.isScissor = false;
+      this.lightSource = SETTINGS.lightSource || null;
+      this.lightSourceSelected = false;
+      this.lightSourcePlacement = false;
+      this.isLightDrag = false;
+      this.lightDragOffset = { x: 0, y: 0 };
       this.onSelectLayer = null;
+      this.onPenComplete = null;
+      this.onScissor = null;
       this.lastM = { x: 0, y: 0 };
       this.snap = null;
       this.snapAllowed = true;
@@ -51,6 +68,267 @@
       this.canvas.addEventListener('mousedown', (e) => this.down(e));
       window.addEventListener('mousemove', (e) => this.move(e));
       window.addEventListener('mouseup', () => this.up());
+    }
+
+    setTool(tool) {
+      if (!tool) return;
+      if (tool !== 'pen') {
+        this.penDraft = null;
+        this.penPreview = null;
+        this.isPenDragging = false;
+        this.penDragAnchor = null;
+        this.penDragStart = null;
+      }
+      if (tool !== 'scissor') {
+        this.isScissor = false;
+        this.scissorStart = null;
+        this.scissorEnd = null;
+      }
+      this.activeTool = tool;
+      this.updateCursor();
+      this.draw();
+    }
+
+    setScissorMode(mode) {
+      if (!mode) return;
+      this.scissorMode = mode;
+      this.draw();
+    }
+
+    setLightSourceMode(active) {
+      this.lightSourcePlacement = Boolean(active);
+      if (this.lightSourcePlacement) {
+        this.lightSourceSelected = false;
+        this.clearSelection();
+      }
+      this.draw();
+    }
+
+    setLightSource(point) {
+      if (!point) return;
+      this.lightSource = { x: point.x, y: point.y };
+      SETTINGS.lightSource = { x: point.x, y: point.y };
+      this.lightSourceSelected = true;
+      this.draw();
+    }
+
+    clearLightSource() {
+      this.lightSource = null;
+      SETTINGS.lightSource = null;
+      this.lightSourceSelected = false;
+      this.lightSourcePlacement = false;
+      this.draw();
+    }
+
+    hitLightSource(world) {
+      if (!this.lightSource || !world) return false;
+      const r = 6 / this.scale;
+      const dx = world.x - this.lightSource.x;
+      const dy = world.y - this.lightSource.y;
+      return dx * dx + dy * dy <= r * r;
+    }
+
+    updateCursor() {
+      if (!this.canvas) return;
+      if (this.activeTool === 'hand') {
+        this.canvas.style.cursor = this.isPan ? 'grabbing' : 'grab';
+        return;
+      }
+      if (this.activeTool === 'pen') {
+        this.canvas.style.cursor = 'crosshair';
+        return;
+      }
+      if (this.activeTool === 'scissor') {
+        this.canvas.style.cursor = 'crosshair';
+        return;
+      }
+      this.canvas.style.cursor = 'crosshair';
+    }
+
+    snapPenAngle(from, to) {
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
+      const dist = Math.hypot(dx, dy);
+      if (!dist) return { ...to };
+      const step = Math.PI / 4;
+      const angle = Math.atan2(dy, dx);
+      const snapped = Math.round(angle / step) * step;
+      return { x: from.x + Math.cos(snapped) * dist, y: from.y + Math.sin(snapped) * dist };
+    }
+
+    snapScissorAngle(from, to, stepDeg = 15) {
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
+      const dist = Math.hypot(dx, dy);
+      if (!dist) return { ...to };
+      const step = (stepDeg * Math.PI) / 180;
+      const angle = Math.atan2(dy, dx);
+      const snapped = Math.round(angle / step) * step;
+      return { x: from.x + Math.cos(snapped) * dist, y: from.y + Math.sin(snapped) * dist };
+    }
+
+    createAnchor(point) {
+      return { x: point.x, y: point.y, in: null, out: null };
+    }
+
+    setAnchorHandles(anchor, target, options = {}) {
+      if (!anchor || !target) return;
+      const { breakHandle = false } = options;
+      const vec = { x: target.x - anchor.x, y: target.y - anchor.y };
+      anchor.out = { x: anchor.x + vec.x, y: anchor.y + vec.y };
+      if (breakHandle) {
+        anchor.in = null;
+      } else {
+        anchor.in = { x: anchor.x - vec.x, y: anchor.y - vec.y };
+      }
+    }
+
+    cubicAt(p0, c1, c2, p1, t) {
+      const u = 1 - t;
+      const tt = t * t;
+      const uu = u * u;
+      const uuu = uu * u;
+      const ttt = tt * t;
+      return {
+        x: uuu * p0.x + 3 * uu * t * c1.x + 3 * u * tt * c2.x + ttt * p1.x,
+        y: uuu * p0.y + 3 * uu * t * c1.y + 3 * u * tt * c2.y + ttt * p1.y,
+      };
+    }
+
+    sampleCubic(p0, c1, c2, p1) {
+      const dist = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+      const handles = Math.hypot(c1.x - p0.x, c1.y - p0.y) + Math.hypot(c2.x - p1.x, c2.y - p1.y);
+      const rough = Math.max(dist, handles);
+      const steps = Math.min(120, Math.max(8, Math.round(rough / 4)));
+      const pts = [];
+      for (let i = 0; i <= steps; i++) {
+        pts.push(this.cubicAt(p0, c1, c2, p1, i / steps));
+      }
+      return pts;
+    }
+
+    buildPenPathFromAnchors(anchors, closed = false) {
+      if (!Array.isArray(anchors) || anchors.length < 2) return [];
+      const pts = [];
+      const count = anchors.length;
+      for (let i = 0; i < count - 1; i++) {
+        const a = anchors[i];
+        const b = anchors[i + 1];
+        let seg;
+        if (!a.out && !b.in) {
+          seg = [a, b];
+        } else {
+          const c1 = a.out || a;
+          const c2 = b.in || b;
+          seg = this.sampleCubic(a, c1, c2, b);
+        }
+        if (pts.length) seg.shift();
+        pts.push(...seg);
+      }
+      if (closed && count > 2) {
+        const a = anchors[count - 1];
+        const b = anchors[0];
+        let seg;
+        if (!a.out && !b.in) {
+          seg = [a, b];
+        } else {
+          const c1 = a.out || a;
+          const c2 = b.in || b;
+          seg = this.sampleCubic(a, c1, c2, b);
+        }
+        if (pts.length) seg.shift();
+        pts.push(...seg);
+      }
+      return pts;
+    }
+
+    handlePenDown(world, e) {
+      if (!world) return;
+      const snapTol = 4 / this.scale;
+
+      if (!this.penDraft) {
+        this.penDraft = { anchors: [this.createAnchor(world)], closed: false };
+        this.isPenDragging = true;
+        this.penDragAnchor = 0;
+        this.penDragStart = world;
+        this.penPreview = null;
+        this.draw();
+        return;
+      }
+
+      const anchors = this.penDraft.anchors || [];
+      if (!anchors.length) {
+        anchors.push(this.createAnchor(world));
+        this.penDraft.anchors = anchors;
+        this.isPenDragging = true;
+        this.penDragAnchor = anchors.length - 1;
+        this.penDragStart = world;
+        this.draw();
+        return;
+      }
+
+      const first = anchors[0];
+      const lastAnchor = anchors[anchors.length - 1];
+      let next = { x: world.x, y: world.y };
+      if (e.shiftKey) next = this.snapPenAngle(lastAnchor, next);
+      const distToStart = Math.hypot(next.x - first.x, next.y - first.y);
+      const isDoubleClick = e.detail && e.detail > 1;
+      if (anchors.length >= 2 && distToStart <= snapTol && isDoubleClick) {
+        this.penDraft.closed = true;
+        this.commitPenPath();
+        return;
+      }
+      const anchor = this.createAnchor(next);
+      anchors.push(anchor);
+      this.penDraft.anchors = anchors;
+      this.isPenDragging = true;
+      this.penDragAnchor = anchors.length - 1;
+      this.penDragStart = next;
+      if (isDoubleClick) {
+        this.commitPenPath();
+        return;
+      }
+      this.draw();
+    }
+
+    commitPenPath() {
+      const anchors = this.penDraft?.anchors || [];
+      if (!this.penDraft || anchors.length < 2) {
+        this.cancelPenPath();
+        return;
+      }
+      const path = this.buildPenPathFromAnchors(anchors, this.penDraft.closed);
+      if (this.onPenComplete) this.onPenComplete(path);
+      this.penDraft = null;
+      this.penPreview = null;
+      this.isPenDragging = false;
+      this.penDragAnchor = null;
+      this.penDragStart = null;
+      this.draw();
+    }
+
+    cancelPenPath() {
+      this.penDraft = null;
+      this.penPreview = null;
+      this.isPenDragging = false;
+      this.penDragAnchor = null;
+      this.penDragStart = null;
+      this.draw();
+    }
+
+    undoPenPoint() {
+      if (!this.penDraft || !this.penDraft.anchors || !this.penDraft.anchors.length) return;
+      this.penDraft.anchors.pop();
+      if (!this.penDraft.anchors.length) this.penDraft = null;
+      this.draw();
+    }
+
+    cancelScissor() {
+      if (!this.isScissor) return;
+      this.isScissor = false;
+      this.scissorStart = null;
+      this.scissorEnd = null;
+      this.draw();
     }
 
     resize() {
@@ -381,6 +659,9 @@
         if (bounds) this.drawSelection(bounds, { showHandles });
       }
       if (this.selectionRect) this.drawSelectionRect(this.selectionRect);
+      if (this.penDraft) this.drawPenPreview();
+      if (this.isScissor && this.scissorStart && this.scissorEnd) this.drawScissorPreview();
+      if (this.lightSource) this.drawLightSource();
       this.ctx.restore();
     }
 
@@ -402,77 +683,112 @@
 
     down(e) {
       if (!this.ready) return;
-      if (e.shiftKey || e.button === 1) {
+      if (this.activeTool === 'hand' || e.shiftKey || e.button === 1) {
         this.isPan = true;
         this.lastM = { x: e.clientX, y: e.clientY };
         this.canvas.style.cursor = 'grabbing';
         return;
       }
 
-      if (e.button !== 0) return;
-      const activeLayer = this.engine.getActiveLayer ? this.engine.getActiveLayer() : null;
-      if (!activeLayer) return;
-
       const rect = this.canvas.getBoundingClientRect();
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
       const world = this.screenToWorld(sx, sy);
-      const selectedLayers = this.getSelectedLayers();
-      const selectionBounds = this.getSelectionBounds(selectedLayers);
-      if (selectionBounds) {
-        const handle = this.hitHandle(sx, sy, selectionBounds);
-        if (handle) {
-          this.isLayerDrag = true;
-          this.snapAllowed = true;
-          this.activeHandle = handle;
-          this.dragStart = world;
-          this.startBounds = selectionBounds;
-          if (handle === 'rotate') {
-            this.dragMode = 'rotate';
-            this.rotateOrigin = this.getBoundsCenter(selectionBounds);
-            this.rotateStart = this.selectedLayerId ? this.getSelectedLayer()?.params.rotation ?? 0 : 0;
-            this.rotateStartAngle = Math.atan2(world.y - this.rotateOrigin.y, world.x - this.rotateOrigin.x);
-            this.tempTransform = { dx: 0, dy: 0, scaleX: 1, scaleY: 1, origin: this.rotateOrigin, rotation: 0 };
-            this.canvas.style.cursor = 'grabbing';
-          } else {
-            this.dragMode = 'resize';
-            this.canvas.style.cursor = this.handleCursor(handle);
-          }
-          e.preventDefault();
-          return;
-        }
+      if (e.button !== 0) return;
+
+      if (this.lightSourcePlacement) {
+        this.setLightSource(world);
+        this.lightSourcePlacement = false;
+        return;
       }
 
-      const topLayer = this.findLayerAtPoint(world);
-      if (topLayer && !this.selectedLayerIds.has(topLayer.id)) {
-        this.selectLayer(topLayer);
+      if (this.hitLightSource(world)) {
+        this.lightSourceSelected = true;
+        this.isLightDrag = true;
+        this.lightDragOffset = { x: world.x - this.lightSource.x, y: world.y - this.lightSource.y };
+        this.clearSelection();
+        this.canvas.style.cursor = 'grabbing';
+        return;
       }
-      const updatedSelected = this.getSelectedLayers();
-      const bounds = this.getSelectionBounds(updatedSelected);
-      if (bounds && this.pointInBounds(world, bounds)) {
-        this.isLayerDrag = true;
-        this.snapAllowed = true;
-        this.dragMode = 'move';
-        this.dragStart = world;
-        this.startBounds = bounds;
-        this.canvas.style.cursor = updatedSelected.length > 1 ? 'grabbing' : 'move';
-        if (e.altKey && updatedSelected.length === 1) {
-          if (this.onDuplicateLayer) this.onDuplicateLayer();
-          const dup = this.engine.duplicateLayer ? this.engine.duplicateLayer(updatedSelected[0].id) : null;
-          if (dup) {
-            this.selectLayer(dup);
+
+      this.lightSourceSelected = false;
+
+      const penSelectOverride = this.activeTool === 'pen' && (e.metaKey || e.ctrlKey);
+      const allowSelection = this.activeTool !== 'pen' || penSelectOverride;
+
+      if (this.activeTool === 'pen' && !penSelectOverride) {
+        this.handlePenDown(world, e);
+        return;
+      }
+      if (this.activeTool === 'scissor') {
+        this.isScissor = true;
+        this.scissorStart = world;
+        this.scissorEnd = world;
+        this.draw();
+        return;
+      }
+
+      if (allowSelection) {
+        const activeLayer = this.engine.getActiveLayer ? this.engine.getActiveLayer() : null;
+        if (!activeLayer) return;
+        const selectedLayers = this.getSelectedLayers();
+        const selectionBounds = this.getSelectionBounds(selectedLayers);
+        if (selectionBounds) {
+          const handle = this.hitHandle(sx, sy, selectionBounds);
+          if (handle) {
+            this.isLayerDrag = true;
+            this.snapAllowed = true;
+            this.activeHandle = handle;
             this.dragStart = world;
-            this.startBounds = this.getSelectionBounds([dup]) || bounds;
+            this.startBounds = selectionBounds;
+            if (handle === 'rotate') {
+              this.dragMode = 'rotate';
+              this.rotateOrigin = this.getBoundsCenter(selectionBounds);
+              this.rotateStart = this.selectedLayerId ? this.getSelectedLayer()?.params.rotation ?? 0 : 0;
+              this.rotateStartAngle = Math.atan2(world.y - this.rotateOrigin.y, world.x - this.rotateOrigin.x);
+              this.tempTransform = { dx: 0, dy: 0, scaleX: 1, scaleY: 1, origin: this.rotateOrigin, rotation: 0 };
+              this.canvas.style.cursor = 'grabbing';
+            } else {
+              this.dragMode = 'resize';
+              this.canvas.style.cursor = this.handleCursor(handle);
+            }
+            e.preventDefault();
+            return;
           }
         }
-        e.preventDefault();
-      } else if (topLayer) {
-        // no-op
-      } else {
-        this.isSelecting = true;
-        this.selectionStart = world;
-        this.selectionRect = { x: world.x, y: world.y, w: 0, h: 0 };
-        this.clearSelection();
+
+        const topLayer =
+          this.activeTool === 'direct' ? this.findLayerAtPointPrecise(world) : this.findLayerAtPoint(world);
+        if (topLayer && !this.selectedLayerIds.has(topLayer.id)) {
+          this.selectLayer(topLayer);
+        }
+        const updatedSelected = this.getSelectedLayers();
+        const bounds = this.getSelectionBounds(updatedSelected);
+        if (bounds && this.pointInBounds(world, bounds)) {
+          this.isLayerDrag = true;
+          this.snapAllowed = true;
+          this.dragMode = 'move';
+          this.dragStart = world;
+          this.startBounds = bounds;
+          this.canvas.style.cursor = updatedSelected.length > 1 ? 'grabbing' : 'move';
+          if (e.altKey && updatedSelected.length === 1) {
+            if (this.onDuplicateLayer) this.onDuplicateLayer();
+            const dup = this.engine.duplicateLayer ? this.engine.duplicateLayer(updatedSelected[0].id) : null;
+            if (dup) {
+              this.selectLayer(dup);
+              this.dragStart = world;
+              this.startBounds = this.getSelectionBounds([dup]) || bounds;
+            }
+          }
+          e.preventDefault();
+        } else if (topLayer) {
+          // no-op
+        } else {
+          this.isSelecting = true;
+          this.selectionStart = world;
+          this.selectionRect = { x: world.x, y: world.y, w: 0, h: 0 };
+          this.clearSelection();
+        }
       }
     }
 
@@ -482,6 +798,20 @@
         this.offsetX += e.clientX - this.lastM.x;
         this.offsetY += e.clientY - this.lastM.y;
         this.lastM = { x: e.clientX, y: e.clientY };
+        this.draw();
+        return;
+      }
+
+      if (this.isLightDrag && this.lightSource) {
+        const rect = this.canvas.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        const world = this.screenToWorld(sx, sy);
+        this.lightSource = {
+          x: world.x - this.lightDragOffset.x,
+          y: world.y - this.lightDragOffset.y,
+        };
+        SETTINGS.lightSource = { ...this.lightSource };
         this.draw();
         return;
       }
@@ -537,6 +867,47 @@
         return;
       }
 
+      if (this.activeTool === 'pen' && this.penDraft) {
+        const rect = this.canvas.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        const next = this.screenToWorld(sx, sy);
+        const anchors = this.penDraft.anchors || [];
+        if (this.isPenDragging && this.penDragAnchor !== null) {
+          const anchor = anchors[this.penDragAnchor];
+          if (anchor) {
+            const target = e.shiftKey ? this.snapPenAngle(anchor, next) : next;
+            const dist = Math.hypot(target.x - anchor.x, target.y - anchor.y);
+            const minDist = 2 / this.scale;
+            if (dist <= minDist) {
+              anchor.in = null;
+              anchor.out = null;
+            } else {
+              this.setAnchorHandles(anchor, target, { breakHandle: e.altKey });
+            }
+            this.penPreview = target;
+          }
+        } else {
+          const last = anchors[anchors.length - 1];
+          this.penPreview = e.shiftKey && last ? this.snapPenAngle(last, next) : next;
+        }
+        this.draw();
+        return;
+      }
+
+      if (this.activeTool === 'scissor' && this.isScissor) {
+        const rect = this.canvas.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        const next = this.screenToWorld(sx, sy);
+        this.scissorEnd =
+          this.scissorMode === 'line' && e.shiftKey && this.scissorStart
+            ? this.snapScissorAngle(this.scissorStart, next, 15)
+            : next;
+        this.draw();
+        return;
+      }
+
       if (this.isSelecting && this.selectionStart) {
         const rect = this.canvas.getBoundingClientRect();
         const sx = e.clientX - rect.left;
@@ -556,6 +927,38 @@
 
     up() {
       if (!this.ready || !this.canvas) return;
+      if (this.isLightDrag) {
+        this.isLightDrag = false;
+        this.canvas.style.cursor = 'crosshair';
+      }
+      if (this.isPenDragging) {
+        this.isPenDragging = false;
+        this.penDragAnchor = null;
+        this.penDragStart = null;
+      }
+      if (this.isScissor) {
+        const start = this.scissorStart;
+        const end = this.scissorEnd;
+        if (start && end && this.onScissor) {
+          if (this.scissorMode === 'rect') {
+            const x = Math.min(start.x, end.x);
+            const y = Math.min(start.y, end.y);
+            const w = Math.abs(end.x - start.x);
+            const h = Math.abs(end.y - start.y);
+            this.onScissor({ mode: 'rect', rect: { x, y, w, h }, start, end });
+          } else if (this.scissorMode === 'circle') {
+            const r = Math.hypot(end.x - start.x, end.y - start.y);
+            this.onScissor({ mode: 'circle', circle: { x: start.x, y: start.y, r }, start, end });
+          } else {
+            this.onScissor({ mode: 'line', line: { a: start, b: end }, start, end });
+          }
+        }
+        this.isScissor = false;
+        this.scissorStart = null;
+        this.scissorEnd = null;
+        this.draw();
+        return;
+      }
       if (this.isLayerDrag) {
         const selectedLayers = this.getSelectedLayers();
         if (selectedLayers.length && this.tempTransform) {
@@ -576,8 +979,19 @@
               if (this.snap.scaleX) scaleX *= this.snap.scaleX;
               if (this.snap.scaleY) scaleY *= this.snap.scaleY;
             }
+            const prof = this.engine.currentProfile;
+            const originLocal = activeLayer.origin || { x: prof.width / 2, y: prof.height / 2 };
+            const baseOrigin = {
+              x: originLocal.x + (activeLayer.params.posX ?? 0),
+              y: originLocal.y + (activeLayer.params.posY ?? 0),
+            };
+            const resizeOrigin = this.tempTransform.origin || baseOrigin;
             activeLayer.params.scaleX *= scaleX;
             activeLayer.params.scaleY *= scaleY;
+            activeLayer.params.posX =
+              (baseOrigin.x - resizeOrigin.x) * scaleX + resizeOrigin.x - originLocal.x;
+            activeLayer.params.posY =
+              (baseOrigin.y - resizeOrigin.y) * scaleY + resizeOrigin.y - originLocal.y;
             this.engine.generate(activeLayer.id);
           } else if (this.dragMode === 'rotate') {
             const delta = this.tempTransform.rotation ?? 0;
@@ -613,7 +1027,7 @@
       this.isLayerDrag = false;
       this.dragMode = null;
       this.activeHandle = null;
-      this.canvas.style.cursor = 'crosshair';
+      this.updateCursor();
       this.guides = null;
       if (this.isSelecting) {
         const rect = this.selectionRect;
@@ -841,6 +1255,58 @@
       );
     }
 
+    distanceToSegmentSq(p, a, b) {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      if (dx === 0 && dy === 0) {
+        const px = p.x - a.x;
+        const py = p.y - a.y;
+        return px * px + py * py;
+      }
+      const t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy);
+      const clamped = Math.max(0, Math.min(1, t));
+      const cx = a.x + clamped * dx;
+      const cy = a.y + clamped * dy;
+      const ox = p.x - cx;
+      const oy = p.y - cy;
+      return ox * ox + oy * oy;
+    }
+
+    findLayerAtPointPrecise(world) {
+      const layers = this.engine.layers.slice().reverse();
+      let best = null;
+      let bestDist = Infinity;
+      layers.forEach((layer) => {
+        if (!layer.visible) return;
+        const stroke = layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
+        const tol = Math.max(1.5, stroke * 2);
+        const tolSq = tol * tol;
+        (layer.paths || []).forEach((path) => {
+          if (path && path.meta && path.meta.kind === 'circle') {
+            const cx = path.meta.cx ?? path.meta.x ?? 0;
+            const cy = path.meta.cy ?? path.meta.y ?? 0;
+            const r = path.meta.r ?? path.meta.rx ?? 0;
+            const dist = Math.abs(Math.hypot(world.x - cx, world.y - cy) - r);
+            if (dist * dist <= tolSq && dist < bestDist) {
+              bestDist = dist;
+              best = layer;
+            }
+            return;
+          }
+          if (!Array.isArray(path) || path.length < 2) return;
+          for (let i = 0; i < path.length - 1; i++) {
+            const d = this.distanceToSegmentSq(world, path[i], path[i + 1]);
+            if (d <= tolSq && d < bestDist) {
+              bestDist = d;
+              best = layer;
+              break;
+            }
+          }
+        });
+      });
+      return best;
+    }
+
     getSelectionBounds(layers, temp) {
       if (!layers || layers.length === 0) return null;
       if (layers.length === 1) {
@@ -1058,6 +1524,120 @@
       this.ctx.restore();
     }
 
+    drawPenPreview() {
+      const anchors = this.penDraft?.anchors || [];
+      if (!anchors.length) return;
+      const last = anchors[anchors.length - 1];
+      const previewAnchors =
+        this.penPreview && !this.isPenDragging ? anchors.concat([this.createAnchor(this.penPreview)]) : anchors.slice();
+      const path = this.buildPenPathFromAnchors(previewAnchors, false);
+      this.ctx.save();
+      this.ctx.strokeStyle = '#38bdf8';
+      this.ctx.lineWidth = 1 / this.scale;
+      this.ctx.setLineDash([4 / this.scale, 4 / this.scale]);
+      this.ctx.beginPath();
+      if (path.length) {
+        this.ctx.moveTo(path[0].x, path[0].y);
+        for (let i = 1; i < path.length; i++) {
+          this.ctx.lineTo(path[i].x, path[i].y);
+        }
+      }
+      this.ctx.stroke();
+      this.ctx.setLineDash([]);
+      this.ctx.fillStyle = '#0f172a';
+      this.ctx.strokeStyle = '#38bdf8';
+      const r = 3 / this.scale;
+      anchors.forEach((anchor, idx) => {
+        if (anchor.in) {
+          this.ctx.beginPath();
+          this.ctx.moveTo(anchor.x, anchor.y);
+          this.ctx.lineTo(anchor.in.x, anchor.in.y);
+          this.ctx.stroke();
+          this.ctx.beginPath();
+          this.ctx.arc(anchor.in.x, anchor.in.y, r * 0.75, 0, Math.PI * 2);
+          this.ctx.stroke();
+        }
+        if (anchor.out) {
+          this.ctx.beginPath();
+          this.ctx.moveTo(anchor.x, anchor.y);
+          this.ctx.lineTo(anchor.out.x, anchor.out.y);
+          this.ctx.stroke();
+          this.ctx.beginPath();
+          this.ctx.arc(anchor.out.x, anchor.out.y, r * 0.75, 0, Math.PI * 2);
+          this.ctx.stroke();
+        }
+        this.ctx.beginPath();
+        this.ctx.arc(anchor.x, anchor.y, r, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.stroke();
+        if (idx === 0) {
+          this.ctx.beginPath();
+          this.ctx.arc(anchor.x, anchor.y, r * 1.5, 0, Math.PI * 2);
+          this.ctx.stroke();
+        }
+      });
+      if (last) {
+        this.ctx.beginPath();
+        this.ctx.arc(last.x, last.y, r * 1.2, 0, Math.PI * 2);
+        this.ctx.stroke();
+      }
+      if (this.penPreview) {
+        this.ctx.beginPath();
+        this.ctx.arc(this.penPreview.x, this.penPreview.y, r * 0.9, 0, Math.PI * 2);
+        this.ctx.stroke();
+      }
+      this.ctx.restore();
+    }
+
+    drawScissorPreview() {
+      if (!this.scissorStart || !this.scissorEnd) return;
+      const a = this.scissorStart;
+      const b = this.scissorEnd;
+      this.ctx.save();
+      this.ctx.strokeStyle = '#f59e0b';
+      this.ctx.lineWidth = 1 / this.scale;
+      this.ctx.setLineDash([6 / this.scale, 4 / this.scale]);
+      if (this.scissorMode === 'rect') {
+        const x = Math.min(a.x, b.x);
+        const y = Math.min(a.y, b.y);
+        const w = Math.abs(b.x - a.x);
+        const h = Math.abs(b.y - a.y);
+        this.ctx.strokeRect(x, y, w, h);
+      } else if (this.scissorMode === 'circle') {
+        const r = Math.hypot(b.x - a.x, b.y - a.y);
+        this.ctx.beginPath();
+        this.ctx.arc(a.x, a.y, r, 0, Math.PI * 2);
+        this.ctx.stroke();
+      } else {
+        this.ctx.beginPath();
+        this.ctx.moveTo(a.x, a.y);
+        this.ctx.lineTo(b.x, b.y);
+        this.ctx.stroke();
+      }
+      this.ctx.restore();
+    }
+
+    drawLightSource() {
+      if (!this.lightSource) return;
+      const r = 6 / this.scale;
+      this.ctx.save();
+      this.ctx.beginPath();
+      this.ctx.fillStyle = '#facc15';
+      this.ctx.strokeStyle = '#f59e0b';
+      this.ctx.lineWidth = 1 / this.scale;
+      this.ctx.arc(this.lightSource.x, this.lightSource.y, r, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.stroke();
+      if (this.lightSourceSelected) {
+        this.ctx.beginPath();
+        this.ctx.strokeStyle = 'rgba(250, 204, 21, 0.7)';
+        this.ctx.lineWidth = 1.5 / this.scale;
+        this.ctx.arc(this.lightSource.x, this.lightSource.y, r * 1.8, 0, Math.PI * 2);
+        this.ctx.stroke();
+      }
+      this.ctx.restore();
+    }
+
     getHandlePoints(bounds) {
       return [
         { key: 'nw', ...bounds.corners.nw },
@@ -1221,6 +1801,24 @@
 
     updateHoverCursor(e) {
       if (!this.canvas) return;
+      if (this.activeTool === 'hand') {
+        this.canvas.style.cursor = this.isPan ? 'grabbing' : 'grab';
+        return;
+      }
+      if (this.activeTool === 'pen' && (e.metaKey || e.ctrlKey)) {
+        // fall through to selection-style cursor handling
+      } else if (this.activeTool === 'pen' || this.activeTool === 'scissor') {
+        this.canvas.style.cursor = 'crosshair';
+        return;
+      }
+      const rect = this.canvas.getBoundingClientRect();
+      const sx = e.clientX - rect.left;
+      const sy = e.clientY - rect.top;
+      const world = this.screenToWorld(sx, sy);
+      if (this.hitLightSource(world)) {
+        this.canvas.style.cursor = this.isLightDrag ? 'grabbing' : 'move';
+        return;
+      }
       const activeLayers = this.getSelectedLayers();
       if (!activeLayers.length) {
         this.canvas.style.cursor = 'crosshair';
@@ -1228,15 +1826,11 @@
       }
       const bounds = this.getSelectionBounds(activeLayers, this.tempTransform);
       if (!bounds) return;
-      const rect = this.canvas.getBoundingClientRect();
-      const sx = e.clientX - rect.left;
-      const sy = e.clientY - rect.top;
       const handle = this.hitHandle(sx, sy, bounds);
       if (handle) {
         this.canvas.style.cursor = this.handleCursor(handle);
         return;
       }
-      const world = this.screenToWorld(sx, sy);
       if (this.pointInBounds(world, bounds)) {
         this.canvas.style.cursor = activeLayers.length > 1 ? 'grab' : 'move';
       } else {
