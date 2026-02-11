@@ -14,6 +14,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Canvas shortcut overlay that stays above the formula panel (toggleable in Settings).
 - Alignment guides for canvas center and size matching while dragging.
 - Guide visibility and snapping toggles in Settings (Cmd while dragging overrides snapping).
+- Optional 10mm grid overlay toggle in Settings for layout alignment.
 - In-app help guide and shortcut menu (press `?`).
 - Parameter randomization and simplification controls with live line/point counts.
 - Double-click any value to edit it inline, and double-click a control to reset to defaults.

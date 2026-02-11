@@ -1410,18 +1410,18 @@
         ],
         infoKey: 'petalis.petalProfile',
       },
-      { id: 'petalScale', label: 'Petal Scale (mm)', type: 'range', min: 8, max: 80, step: 1, infoKey: 'petalis.petalScale' },
+      { id: 'petalScale', label: 'Petal Scale (mm)', type: 'range', min: 1, max: 80, step: 1, infoKey: 'petalis.petalScale' },
       {
         id: 'petalWidthRatio',
         label: 'Width/Length Ratio',
         type: 'range',
-        min: 0.15,
-        max: 0.9,
+        min: 0.01,
+        max: 2,
         step: 0.01,
         infoKey: 'petalis.petalWidthRatio',
       },
-      { id: 'petalLengthRatio', label: 'Length Ratio', type: 'range', min: 0.4, max: 2.0, step: 0.05, infoKey: 'petalis.petalLengthRatio' },
-      { id: 'petalSizeRatio', label: 'Size Ratio', type: 'range', min: 0.4, max: 2.0, step: 0.05, infoKey: 'petalis.petalSizeRatio' },
+      { id: 'petalLengthRatio', label: 'Length Ratio', type: 'range', min: 0.1, max: 5, step: 0.05, infoKey: 'petalis.petalLengthRatio' },
+      { id: 'petalSizeRatio', label: 'Size Ratio', type: 'range', min: 0.01, max: 5, step: 0.05, infoKey: 'petalis.petalSizeRatio' },
       { id: 'petalSteps', label: 'Petal Resolution', type: 'range', min: 12, max: 80, step: 2, infoKey: 'petalis.petalSteps' },
       { id: 'layering', label: 'Layering', type: 'checkbox', infoKey: 'petalis.layering' },
       {
@@ -1446,8 +1446,8 @@
         infoKey: 'petalis.anchorRadiusRatio',
       },
       { id: 'tipSharpness', label: 'Tip Sharpness', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'petalis.tipSharpness' },
-      { id: 'tipTwist', label: 'Tip Twist', type: 'range', min: 0, max: 10, step: 0.1, infoKey: 'petalis.tipTwist' },
-      { id: 'centerCurlBoost', label: 'Center Tip Twist Boost', type: 'range', min: 0, max: 2, step: 0.05, infoKey: 'petalis.centerCurlBoost' },
+      { id: 'tipTwist', label: 'Tip Rotate', type: 'range', min: 0, max: 100, step: 1, infoKey: 'petalis.tipTwist' },
+      { id: 'centerCurlBoost', label: 'Center Tip Rotate Boost', type: 'range', min: 0, max: 100, step: 1, infoKey: 'petalis.centerCurlBoost' },
       { id: 'tipCurl', label: 'Tip Curl Rounding', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'petalis.tipCurl' },
       { id: 'tipCurlDepth', label: 'Tip Curl Depth (%)', type: 'range', min: 0, max: 100, step: 1, displayUnit: '%', infoKey: 'petalis.tipCurlDepth' },
       { id: 'tipCurlAngle', label: 'Tip Curl Angle', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'petalis.tipCurlAngle' },
@@ -1583,8 +1583,8 @@
         showIf: (p) => p.spiralMode === 'custom',
         infoKey: 'petalis.customAngle',
       },
-      { id: 'spiralTightness', label: 'Spiral Tightness', type: 'range', min: 0.5, max: 2.5, step: 0.05, infoKey: 'petalis.spiralTightness' },
-      { id: 'radialGrowth', label: 'Radial Growth', type: 'range', min: 0.5, max: 2, step: 0.05, infoKey: 'petalis.radialGrowth' },
+      { id: 'spiralTightness', label: 'Spiral Tightness', type: 'range', min: 0.5, max: 50, step: 0.1, infoKey: 'petalis.spiralTightness' },
+      { id: 'radialGrowth', label: 'Radial Growth', type: 'range', min: 0.05, max: 20, step: 0.05, infoKey: 'petalis.radialGrowth' },
       { type: 'section', label: 'Center Morphing' },
       { id: 'centerSizeMorph', label: 'Size Morph', type: 'range', min: -100, max: 100, step: 1, infoKey: 'petalis.centerSizeMorph' },
       { id: 'centerSizeCurve', label: 'Size Morph Curve', type: 'range', min: 0.5, max: 2.5, step: 0.05, infoKey: 'petalis.centerSizeCurve' },
@@ -3528,12 +3528,12 @@
       description: 'Controls how pointy the petal tip is. At 0 the tip is fully rounded.',
     },
     'petalis.tipTwist': {
-      title: 'Tip Twist',
+      title: 'Tip Rotate',
       description: 'Rotates the tip shape to create subtle spiraling at the petal tip.',
     },
     'petalis.centerCurlBoost': {
-      title: 'Center Tip Twist Boost',
-      description: 'Boosts tip twist for petals closer to the center to emphasize a curled core.',
+      title: 'Center Tip Rotate Boost',
+      description: 'Boosts tip rotation for petals closer to the center to emphasize a curled core.',
     },
     'petalis.tipCurl': {
       title: 'Tip Curl',
@@ -5687,6 +5687,7 @@
       const marginLineDotting = getEl('set-margin-line-dotting');
       const showGuides = getEl('set-show-guides');
       const snapGuides = getEl('set-snap-guides');
+      const gridOverlay = getEl('set-grid-overlay');
       const selectionOutline = getEl('set-selection-outline');
       const selectionOutlineColor = getEl('set-selection-outline-color');
       const selectionOutlineWidth = getEl('set-selection-outline-width');
@@ -5712,6 +5713,7 @@
       if (marginLineDotting) marginLineDotting.value = SETTINGS.marginLineDotting ?? 0;
       if (showGuides) showGuides.checked = SETTINGS.showGuides !== false;
       if (snapGuides) snapGuides.checked = SETTINGS.snapGuides !== false;
+      if (gridOverlay) gridOverlay.checked = SETTINGS.gridOverlay === true;
       if (selectionOutline) selectionOutline.checked = SETTINGS.selectionOutline !== false;
       if (selectionOutlineColor) selectionOutlineColor.value = SETTINGS.selectionOutlineColor || '#ef4444';
       if (selectionOutlineWidth) selectionOutlineWidth.value = SETTINGS.selectionOutlineWidth ?? 0.4;
@@ -6055,6 +6057,7 @@
       const setMarginLineDotting = getEl('set-margin-line-dotting');
       const setShowGuides = getEl('set-show-guides');
       const setSnapGuides = getEl('set-snap-guides');
+      const setGridOverlay = getEl('set-grid-overlay');
       const setSelectionOutline = getEl('set-selection-outline');
       const setSelectionOutlineColor = getEl('set-selection-outline-color');
       const setSelectionOutlineWidth = getEl('set-selection-outline-width');
@@ -6215,6 +6218,13 @@
         setSnapGuides.onchange = (e) => {
           if (this.app.pushHistory) this.app.pushHistory();
           SETTINGS.snapGuides = e.target.checked;
+        };
+      }
+      if (setGridOverlay) {
+        setGridOverlay.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          SETTINGS.gridOverlay = e.target.checked;
+          this.app.render();
         };
       }
       if (setSelectionOutline) {

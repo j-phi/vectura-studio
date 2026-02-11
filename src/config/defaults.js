@@ -609,6 +609,7 @@
     selectionOutlineColor: '#ef4444',
     selectionOutlineWidth: 0.4,
     showCanvasHelp: true,
+    gridOverlay: false,
     paperSize: 'letter',
     paperWidth: 216,
     paperHeight: 279,

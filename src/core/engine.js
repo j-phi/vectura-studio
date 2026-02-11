@@ -412,7 +412,10 @@
       const m = SETTINGS.margin;
       const dW = width - m * 2;
       const dH = height - m * 2;
-      const p = layer.params;
+      const p =
+        layer.type === 'petalis'
+          ? { ...layer.params, lightSource: SETTINGS.lightSource }
+          : layer.params;
 
       const bounds = { width, height, m, dW, dH, truncate: SETTINGS.truncate };
 

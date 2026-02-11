@@ -131,6 +131,32 @@
     return Math.max(0, w);
   };
 
+  const buildRoundedTipArc = (left, right, roundAmt) => {
+    if (roundAmt <= 0 || left.length < 3 || right.length < 3) {
+      return { left, right, arc: [] };
+    }
+    const leftEdge = left[left.length - 2];
+    const rightEdge = right[right.length - 2];
+    const midY = (leftEdge.y + rightEdge.y) / 2;
+    const half = Math.abs(leftEdge.y - rightEdge.y) / 2;
+    if (half < 1e-4) return { left, right, arc: [] };
+    const bulge = half * roundAmt;
+    const center = { x: leftEdge.x + bulge, y: midY };
+    const radius = Math.hypot(bulge, half);
+    const a0 = Math.atan2(leftEdge.y - center.y, leftEdge.x - center.x);
+    const a1 = Math.atan2(rightEdge.y - center.y, rightEdge.x - center.x);
+    const start = Math.max(a0, a1);
+    const end = Math.min(a0, a1);
+    const steps = Math.max(6, Math.round(12 * roundAmt));
+    const arc = [];
+    for (let i = 1; i < steps; i++) {
+      const t = i / steps;
+      const ang = start + (end - start) * t;
+      arc.push({ x: center.x + Math.cos(ang) * radius, y: center.y + Math.sin(ang) * radius });
+    }
+    return { left: left.slice(0, -1), right: right.slice(0, -1), arc };
+  };
+
   const buildPetal = (opts) => {
     const {
       length,
@@ -161,7 +187,7 @@
     for (let i = 0; i <= steps; i++) {
       const tRaw = i / steps;
       const t = tipClamp(tRaw, tipCurl, effectiveSharpness, profile);
-      const w = widthAt(t, {
+      let w = widthAt(t, {
         profile,
         centerProfile,
         morphWeight,
@@ -177,7 +203,9 @@
       left.push({ x: t * effectiveLength, y: half + curl });
       right.push({ x: t * effectiveLength, y: -half + curl });
     }
-    const outline = left.concat(right.reverse());
+    const roundAmt = clamp(tipCurl ?? 0, 0, 1);
+    const rounded = buildRoundedTipArc(left, right, roundAmt);
+    const outline = rounded.left.concat(rounded.arc, rounded.right.reverse());
     outline.push({ ...outline[0] });
     const cosA = Math.cos(angle);
     const sinA = Math.sin(angle);
@@ -230,7 +258,7 @@
       for (let i = 0; i <= steps; i++) {
         const tRaw = lerp(tStart, tEnd, i / steps);
         const t = tipClamp(tRaw, tipCurl, effectiveSharpness, profile);
-        const w = widthAt(t, {
+        let w = widthAt(t, {
           profile,
           centerProfile,
           morphWeight,
@@ -483,7 +511,8 @@
     const twist = (tipTwist || 0) * (1 + (curlBoost || 0));
     const lengthScale = tipLengthScale(tipCurl);
     const effectiveLength = Math.max(1, length * lengthScale);
-    const tipT = tipClamp(1, tipCurl, sharpness, profile);
+    const tipSample = clamp(1 - 1 / Math.max(12, steps), 0.8, 0.995);
+    const tipT = tipClamp(tipSample, tipCurl, sharpness, profile);
     const w = widthAt(tipT, {
       profile,
       centerProfile,
@@ -497,14 +526,16 @@
     });
     const half = (w * widthRatio * effectiveLength) / 2;
     if (half <= 0.001) return { lines, shadeLines };
-    const depthLen = (depthPercent / 100) * Math.max(1, half * 2);
+    const depthLen = (depthPercent / 100) * effectiveLength;
     if (depthLen <= 0 && roundAmt <= 0.001) return { lines, shadeLines };
 
+    const tipX = tipT * effectiveLength;
     const curl = twist * effectiveLength * 0.02 * tipT * tipT;
     const pad = Math.min(Math.max(tipCurlOuterPad ?? 0, 0), Math.max(0, half - 0.05));
     const inset = Math.max(0, tipCurlInset ?? 0);
     const angleFactor = clamp(tipCurlAngle ?? 1, 0, 1);
-    const vDepth = Math.min(depthLen, effectiveLength * 0.35);
+    const vDepth = Math.min(depthLen, tipX - 0.5, effectiveLength * 0.95);
+    if (vDepth <= 0.001) return { lines, shadeLines };
 
     const toWorld = (pt) => {
       const cosA = Math.cos(angle);
@@ -533,30 +564,37 @@
       return pts;
     };
 
+    let curlClip = null;
     if (vDepth > 0.001) {
-      const left = { x: effectiveLength, y: half + curl };
-      const right = { x: effectiveLength, y: -half + curl };
-      const apex = { x: effectiveLength - vDepth, y: curl };
-      const outer = buildVCurve(left, right, apex).map(toWorld);
+      const left = { x: tipX, y: half + curl };
+      const right = { x: tipX, y: -half + curl };
+      const apex = { x: tipX - vDepth, y: curl };
+      const outerLocal = buildVCurve(left, right, apex);
+      const outer = outerLocal.map(toWorld);
       outer.meta = { label: 'Tip Curl' };
       lines.push(outer);
 
       const innerHalf = Math.max(0.05, half - pad);
-      const innerLeft = { x: effectiveLength - inset, y: innerHalf + curl };
-      const innerRight = { x: effectiveLength - inset, y: -innerHalf + curl };
-      const innerApex = { x: effectiveLength - vDepth - inset, y: curl };
+      const innerLeft = { x: tipX - inset, y: innerHalf + curl };
+      const innerRight = { x: tipX - inset, y: -innerHalf + curl };
+      const innerApex = { x: tipX - vDepth - inset, y: curl };
       if (innerApex.x < innerLeft.x - 0.5) {
-        const inner = buildVCurve(innerLeft, innerRight, innerApex).map(toWorld);
+        const innerLocal = buildVCurve(innerLeft, innerRight, innerApex);
+        const inner = innerLocal.map(toWorld);
         inner.meta = { label: 'Tip Curl Inner' };
         lines.push(inner);
+        curlClip = outerLocal.concat(innerLocal.slice().reverse()).map(toWorld);
+      } else {
+        curlClip = outerLocal.concat([apex, left]).map(toWorld);
       }
     }
 
     const shadeType = tipCurlShadeType || 'none';
     const shadeDist = Math.max(0, tipCurlShadeDistance ?? 0);
     if (shadeType !== 'none' && shadeDist > 0) {
-      const tEnd = clamp((effectiveLength - vDepth) / effectiveLength, 0, 1);
-      const tStart = clamp((effectiveLength - vDepth - shadeDist) / effectiveLength, 0, 1);
+      const depthForShade = Math.min(vDepth, Math.max(0.5, shadeDist));
+      const tEnd = clamp(tipX / effectiveLength, 0, 1);
+      const tStart = clamp((tipX - depthForShade) / effectiveLength, 0, 1);
       const widthX = Math.abs(tEnd - tStart) * 100;
       const posX = ((tStart + tEnd) / 2) * 100;
       const morph = clamp(tipCurlShadeMorph ?? 0, 0, 1);
@@ -606,7 +644,7 @@
       });
     }
 
-    return { lines, shadeLines };
+    return { lines, shadeLines, clip: curlClip };
   };
 
   const expandCircle = (meta, segments = 64) => {
@@ -918,6 +956,65 @@
     return null;
   };
 
+  const segmentIntersectsPoly = (a, b, poly) => {
+    if (!Array.isArray(poly) || poly.length < 2) return false;
+    for (let i = 0; i < poly.length; i++) {
+      const p1 = poly[i];
+      const p2 = poly[(i + 1) % poly.length];
+      const hit = segmentIntersection(a, b, p1, p2);
+      if (hit) return true;
+    }
+    return false;
+  };
+
+  const isPointShadowed = (pt, light, center, occluders) => {
+    if (!light) return true;
+    const toCenter = { x: pt.x - center.x, y: pt.y - center.y };
+    const toLight = { x: light.x - pt.x, y: light.y - pt.y };
+    const centerLen = Math.hypot(toCenter.x, toCenter.y);
+    const facing = centerLen < 1e-4 ? false : toLight.x * toCenter.x + toLight.y * toCenter.y > 0;
+    if (!occluders.length) return !facing;
+    const rayBox = bboxFromPoints([pt, light]);
+    const occluded = occluders.some((occ) => {
+      if (!bboxIntersects(rayBox, occ.bbox)) return false;
+      if (pointInPoly(light, occ.points)) return true;
+      return segmentIntersectsPoly(light, pt, occ.points);
+    });
+    return occluded || !facing;
+  };
+
+  const splitPathByShadow = (path, light, center, occluders) => {
+    if (!light) return [path];
+    if (!Array.isArray(path) || path.length < 2) return [];
+    const segments = [];
+    let current = [];
+    const eps = 1e-4;
+    const append = (pt) => {
+      if (!current.length) {
+        current.push(pt);
+        return;
+      }
+      const last = current[current.length - 1];
+      if (Math.hypot(last.x - pt.x, last.y - pt.y) < eps) return;
+      current.push(pt);
+    };
+    for (let i = 0; i < path.length - 1; i++) {
+      const a = path[i];
+      const b = path[i + 1];
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const shadowed = isPointShadowed(mid, light, center, occluders);
+      if (shadowed) {
+        append(a);
+        append(b);
+      } else {
+        if (current.length > 1) segments.push(current);
+        current = [];
+      }
+    }
+    if (current.length > 1) segments.push(current);
+    return segments;
+  };
+
   const clipSegmentOutside = (a, b, occluders) => {
     if (!occluders.length) return [[a, b]];
     const segBox = bboxFromPoints([a, b]);
@@ -1003,6 +1100,89 @@
     return output;
   };
 
+  const clipSegmentInside = (a, b, poly) => {
+    if (!Array.isArray(poly) || poly.length < 3) return [[a, b]];
+    const segBox = bboxFromPoints([a, b]);
+    const polyBox = bboxFromPoints(poly);
+    if (!bboxIntersects(segBox, polyBox)) return [];
+    const intersections = [];
+    const count = poly.length;
+    for (let i = 0; i < count; i++) {
+      const p1 = poly[i];
+      const p2 = poly[(i + 1) % count];
+      const hit = segmentIntersection(a, b, p1, p2);
+      if (hit && hit.t > 1e-6 && hit.t < 1 - 1e-6) intersections.push(hit.t);
+    }
+    const ts = [0, 1, ...intersections].sort((x, y) => x - y);
+    const uniq = [];
+    ts.forEach((t) => {
+      if (!uniq.length || Math.abs(t - uniq[uniq.length - 1]) > 1e-5) uniq.push(t);
+    });
+    const segments = [];
+    for (let i = 0; i < uniq.length - 1; i++) {
+      const t0 = uniq[i];
+      const t1 = uniq[i + 1];
+      if (t1 - t0 < 1e-5) continue;
+      const mid = (t0 + t1) / 2;
+      const midPt = { x: lerp(a.x, b.x, mid), y: lerp(a.y, b.y, mid) };
+      if (pointInPoly(midPt, poly)) {
+        const s0 = { x: lerp(a.x, b.x, t0), y: lerp(a.y, b.y, t0) };
+        const s1 = { x: lerp(a.x, b.x, t1), y: lerp(a.y, b.y, t1) };
+        segments.push([s0, s1]);
+      }
+    }
+    return segments;
+  };
+
+  const clipPathInside = (path, poly) => {
+    if (!Array.isArray(path) || path.length < 2) return [];
+    if (!Array.isArray(poly) || poly.length < 3) return [path];
+    const output = [];
+    let current = [];
+    const eps = 1e-4;
+    const appendPoint = (pt) => {
+      if (!current.length) {
+        current.push(pt);
+        return;
+      }
+      const last = current[current.length - 1];
+      if (Math.hypot(last.x - pt.x, last.y - pt.y) < eps) return;
+      current.push(pt);
+    };
+    for (let i = 0; i < path.length - 1; i++) {
+      const a = path[i];
+      const b = path[i + 1];
+      const pieces = clipSegmentInside(a, b, poly);
+      if (!pieces.length) {
+        if (current.length > 1) output.push(current);
+        current = [];
+        continue;
+      }
+      pieces.forEach((seg, idx) => {
+        const [s0, s1] = seg;
+        const mid = { x: (s0.x + s1.x) / 2, y: (s0.y + s1.y) / 2 };
+        if (!pointInPoly(mid, poly)) return;
+        if (!current.length) {
+          current = [s0, s1];
+        } else {
+          const last = current[current.length - 1];
+          if (Math.hypot(last.x - s0.x, last.y - s0.y) > eps) {
+            output.push(current);
+            current = [s0, s1];
+          } else {
+            appendPoint(s1);
+          }
+        }
+        if (idx < pieces.length - 1) {
+          output.push(current);
+          current = [];
+        }
+      });
+    }
+    if (current.length > 1) output.push(current);
+    return output;
+  };
+
   const generate = (p, rng, noise, bounds) => {
     const { m, width, height } = bounds;
     const center = { x: width / 2, y: height / 2 };
@@ -1053,6 +1233,10 @@
     }
     const shadingStack = shadings.length ? shadings : legacyShadings;
     const ringMode = p.ringMode || 'single';
+    const normalizeTipRotate = (value) => (value > 10 ? value / 10 : value);
+    const tipRotate = normalizeTipRotate(p.tipTwist ?? 0);
+    const rawCenterBoost = p.centerCurlBoost ?? 0;
+    const centerBoost = rawCenterBoost > 2 ? rawCenterBoost / 50 : rawCenterBoost;
     const lengthRatio = Math.max(0.1, p.petalLengthRatio ?? 1);
     const sizeRatio = Math.max(0.1, p.petalSizeRatio ?? 1);
     const baseLength = Math.max(4, (p.petalScale ?? 30) * lengthRatio);
@@ -1130,15 +1314,15 @@
 
         const baseX = center.x + Math.cos(angle) * radialBase;
         const baseY = center.y + Math.sin(angle) * radialBase;
-        const morphWeight = clamp((p.centerShapeMorph ?? 0) * morphCurve, 0, 1);
-        const curlBoost = (p.centerCurlBoost ?? 0) * centerFactor;
+        const morphWeight = clamp((p.centerShapeMorph ?? 0) * (0.35 + 0.65 * morphCurve), 0, 1);
+        const curlBoost = centerBoost * centerFactor;
         const waveBoost = (p.centerWaveBoost ?? 0) * centerFactor;
         const wavePhase = rng.nextFloat() * TAU;
         let outline = buildPetal({
           length,
           widthRatio,
           steps: petalSteps,
-          tipTwist: p.tipTwist ?? 0,
+          tipTwist: tipRotate,
           tipCurl: p.tipCurl ?? 0,
           curlBoost,
           baseX,
@@ -1171,13 +1355,48 @@
           baseX,
           baseY,
           shadings: shadingStack,
-          tipTwist: p.tipTwist ?? 0,
+          tipTwist: tipRotate,
           tipCurl: p.tipCurl ?? 0,
           curlBoost,
           rng,
           noise,
         });
-        // Tip curl detail lines disabled to avoid internal wedges.
+        const tipCurlDetails = buildTipCurlDetails({
+          length,
+          widthRatio,
+          steps: Math.max(6, Math.round(petalSteps / 2)),
+          profile: p.petalProfile || 'teardrop',
+          centerProfile: p.centerProfile || p.petalProfile || 'teardrop',
+          morphWeight,
+          sharpness: p.tipSharpness ?? 0.5,
+          baseFlare: p.baseFlare ?? 0,
+          basePinch: p.basePinch ?? 0,
+          waveAmp: Math.max(0, (p.edgeWaveAmp ?? 0) * (1 + waveBoost)),
+          waveFreq: p.edgeWaveFreq ?? 2,
+          wavePhase,
+          angle,
+          baseX,
+          baseY,
+          tipTwist: tipRotate,
+          tipCurl: p.tipCurl ?? 0,
+          curlBoost,
+          tipCurlDepth: p.tipCurlDepth ?? 0,
+          tipCurlAngle: p.tipCurlAngle ?? 1,
+          tipCurlInset: p.tipCurlInset ?? 0,
+          tipCurlOuterPad: p.tipCurlOuterPad ?? 0,
+          tipCurlShadeType: p.tipCurlShadeType ?? 'none',
+          tipCurlShadeDistance: p.tipCurlShadeDistance ?? 0,
+          tipCurlShadeMorph: p.tipCurlShadeMorph ?? 0,
+          rng,
+          noise,
+        });
+        if (tipCurlDetails.shadeLines.length) {
+          const curlShade = tipCurlDetails.clip
+            ? tipCurlDetails.shadeLines.flatMap((line) => clipPathInside(line, tipCurlDetails.clip))
+            : tipCurlDetails.shadeLines;
+          shadingLines = shadingLines.concat(curlShade);
+        }
+        if (tipCurlDetails.lines.length) shadingLines = shadingLines.concat(tipCurlDetails.lines);
         const modifierBase = { x: baseX, y: baseY };
         outline = applyPetalModifiers([outline], p.petalModifiers || [], modifierBase, angle, length, noise)[0] || outline;
         shadingLines = applyPetalModifiers(shadingLines, p.petalModifiers || [], modifierBase, angle, length, noise);
@@ -1206,16 +1425,27 @@
         paths.push(seg);
       };
       ordered.forEach((petal) => {
+        let shadingLines = petal.shading;
+        if (p.lightSource) {
+          const shadowed = [];
+          shadingLines.forEach((line) => {
+            const pieces = splitPathByShadow(line, p.lightSource, center, occluders);
+            pieces.forEach((seg) => {
+              if (seg.length > 1) shadowed.push(seg);
+            });
+          });
+          shadingLines = shadowed;
+        }
         if (layering && occluders.length) {
           const clippedOutline = clipPathOutside(petal.outline, occluders);
           clippedOutline.forEach((seg) => pushSegment(seg, petal.outline.meta));
-          petal.shading.forEach((line) => {
+          shadingLines.forEach((line) => {
             const clipped = clipPathOutside(line, occluders);
             clipped.forEach((seg) => pushSegment(seg, line.meta));
           });
         } else {
           paths.push(petal.outline);
-          petal.shading.forEach((line) => {
+          shadingLines.forEach((line) => {
             if (line.length > 1) paths.push(line);
           });
         }

@@ -370,6 +370,7 @@
       this.ctx.shadowBlur = 20;
       this.ctx.fillRect(0, 0, prof.width, prof.height);
       this.ctx.shadowBlur = 0;
+      if (SETTINGS.gridOverlay) this.drawGridOverlay(prof);
       this.ctx.strokeStyle = '#333';
       this.ctx.lineWidth = 1 / this.scale;
       this.ctx.strokeRect(0, 0, prof.width, prof.height);
@@ -662,6 +663,25 @@
       if (this.penDraft) this.drawPenPreview();
       if (this.isScissor && this.scissorStart && this.scissorEnd) this.drawScissorPreview();
       if (this.lightSource) this.drawLightSource();
+      this.ctx.restore();
+    }
+
+    drawGridOverlay(profile) {
+      if (!profile) return;
+      const spacing = 10;
+      this.ctx.save();
+      this.ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      this.ctx.lineWidth = 0.15;
+      this.ctx.beginPath();
+      for (let x = 0; x <= profile.width; x += spacing) {
+        this.ctx.moveTo(x, 0);
+        this.ctx.lineTo(x, profile.height);
+      }
+      for (let y = 0; y <= profile.height; y += spacing) {
+        this.ctx.moveTo(0, y);
+        this.ctx.lineTo(profile.width, y);
+      }
+      this.ctx.stroke();
       this.ctx.restore();
     }
 
