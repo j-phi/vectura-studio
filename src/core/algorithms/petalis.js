@@ -131,6 +131,99 @@
     return Math.max(0, w);
   };
 
+  const cubicBezierPoint = (p0, p1, p2, p3, t) => {
+    const u = 1 - t;
+    const tt = t * t;
+    const uu = u * u;
+    const uuu = uu * u;
+    const ttt = tt * t;
+    return {
+      x: uuu * p0.x + 3 * uu * t * p1.x + 3 * u * tt * p2.x + ttt * p3.x,
+      y: uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y,
+    };
+  };
+
+  const buildLeafProfile = (opts) => {
+    const {
+      length,
+      widthRatio,
+      steps,
+      profile,
+      centerProfile,
+      morphWeight,
+      sharpness,
+      baseFlare,
+      basePinch,
+      waveAmp,
+      waveFreq,
+      wavePhase,
+      leafSidePos,
+      leafSideWidth,
+      leafBaseHandle,
+      leafSideHandle,
+      leafTipHandle,
+    } = opts;
+    const safeSteps = Math.max(8, Math.round(steps));
+    const halfSteps = Math.max(4, Math.round(safeSteps / 2));
+    const sidePos = clamp(leafSidePos ?? 0.45, 0.12, 0.88);
+    const sideWidth = clamp(leafSideWidth ?? 1, 0.2, 2);
+    const maxHalf = Math.max(0.5, (widthRatio * length * 0.5) * sideWidth);
+    const baseHandle = clamp(leafBaseHandle ?? 0.35, 0, 1) * length * 0.5;
+    const sideHandle = clamp(leafSideHandle ?? 0.4, 0, 1) * maxHalf;
+    const tipHandle = clamp(leafTipHandle ?? 0.35, 0, 1) * length * 0.5;
+    const sideX = length * sidePos;
+
+    const seg1 = [
+      { x: 0, y: 0 },
+      { x: baseHandle, y: 0 },
+      { x: sideX, y: Math.max(0, maxHalf - sideHandle) },
+      { x: sideX, y: maxHalf },
+    ];
+    const seg2 = [
+      { x: sideX, y: maxHalf },
+      { x: sideX, y: maxHalf + sideHandle },
+      { x: Math.max(sideX + 0.5, length - tipHandle), y: 0 },
+      { x: length, y: 0 },
+    ];
+    const points = [];
+    for (let i = 0; i <= halfSteps; i++) {
+      const t = i / halfSteps;
+      points.push(cubicBezierPoint(seg1[0], seg1[1], seg1[2], seg1[3], t));
+    }
+    for (let i = 1; i <= halfSteps; i++) {
+      const t = i / halfSteps;
+      points.push(cubicBezierPoint(seg2[0], seg2[1], seg2[2], seg2[3], t));
+    }
+    const adjusted = points.map((pt) => {
+      const t = clamp(pt.x / Math.max(1, length), 0, 1);
+      const base = profileBase(t, profile);
+      const center = profileBase(t, centerProfile || profile);
+      let scale = lerp(base, center, morphWeight);
+      const sharpPow = lerp(0.8, 2.4, clamp(sharpness, 0, 1));
+      scale = Math.pow(Math.max(0, scale), sharpPow);
+      const baseFactor = 1 + (baseFlare - basePinch) * Math.pow(1 - t, 2);
+      const waveFactor = waveAmp > 0 ? 1 + waveAmp * Math.sin(TAU * t * waveFreq + wavePhase) : 1;
+      return { x: pt.x, y: Math.max(0, pt.y * scale * baseFactor * waveFactor) };
+    });
+    return adjusted;
+  };
+
+  const sampleProfileWidth = (x, points) => {
+    if (!Array.isArray(points) || points.length < 2) return 0;
+    if (x <= points[0].x) return points[0].y;
+    if (x >= points[points.length - 1].x) return points[points.length - 1].y;
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1];
+      const b = points[i];
+      if (x <= b.x + 1e-6) {
+        const denom = Math.max(1e-6, b.x - a.x);
+        const t = (x - a.x) / denom;
+        return lerp(a.y, b.y, t);
+      }
+    }
+    return points[points.length - 1].y;
+  };
+
   const buildRoundedTipArc = (left, right, roundAmt) => {
     if (roundAmt <= 0 || left.length < 3 || right.length < 3) {
       return { left, right, arc: [] };
@@ -177,32 +270,45 @@
       waveAmp,
       waveFreq,
       wavePhase,
+      profilePoints,
+      leafSidePos,
+      leafSideWidth,
+      leafBaseHandle,
+      leafSideHandle,
+      leafTipHandle,
     } = opts;
-    const left = [];
-    const right = [];
     const curlAmt = (tipTwist || 0) * (1 + curlBoost);
     const effectiveSharpness = clamp(sharpness ?? 0.5, 0, 1) * (1 - clamp(tipCurl ?? 0, 0, 1) * 0.6);
     const lengthScale = tipLengthScale(tipCurl);
     const effectiveLength = Math.max(1, length * lengthScale);
-    for (let i = 0; i <= steps; i++) {
-      const tRaw = i / steps;
-      const t = tipClamp(tRaw, tipCurl, effectiveSharpness, profile);
-      let w = widthAt(t, {
-        profile,
-        centerProfile,
-        morphWeight,
-        sharpness: effectiveSharpness,
-        baseFlare,
-        basePinch,
-        waveAmp,
-        waveFreq,
-        wavePhase,
-      });
-      const half = (w * widthRatio * effectiveLength) / 2;
+    const baseProfile =
+      profilePoints && profilePoints.length
+        ? profilePoints
+        : buildLeafProfile({
+            length: effectiveLength,
+            widthRatio,
+            steps,
+            profile,
+            centerProfile,
+            morphWeight,
+            sharpness: effectiveSharpness,
+            baseFlare,
+            basePinch,
+            waveAmp,
+            waveFreq,
+            wavePhase,
+            leafSidePos,
+            leafSideWidth,
+            leafBaseHandle,
+            leafSideHandle,
+            leafTipHandle,
+          });
+    const left = baseProfile.map((pt) => {
+      const t = clamp(pt.x / effectiveLength, 0, 1);
       const curl = curlAmt * effectiveLength * 0.02 * t * t;
-      left.push({ x: t * effectiveLength, y: half + curl });
-      right.push({ x: t * effectiveLength, y: -half + curl });
-    }
+      return { x: pt.x, y: pt.y + curl };
+    });
+    const right = left.map((pt) => ({ x: pt.x, y: -pt.y }));
     const roundAmt = clamp(tipCurl ?? 0, 0, 1);
     const rounded = buildRoundedTipArc(left, right, roundAmt);
     const outline = rounded.left.concat(rounded.arc, rounded.right.reverse());
@@ -239,6 +345,7 @@
       curlBoost,
       rng,
       noise,
+      profilePoints,
     } = opts;
     const lines = [];
     const active = Array.isArray(shadings) ? shadings.filter((s) => s && s.enabled !== false) : [];
@@ -258,18 +365,23 @@
       for (let i = 0; i <= steps; i++) {
         const tRaw = lerp(tStart, tEnd, i / steps);
         const t = tipClamp(tRaw, tipCurl, effectiveSharpness, profile);
-        let w = widthAt(t, {
-          profile,
-          centerProfile,
-          morphWeight,
-          sharpness: effectiveSharpness,
-          baseFlare,
-          basePinch,
-          waveAmp,
-          waveFreq,
-          wavePhase,
-        });
-        const half = (w * widthRatio * effectiveLength) / 2;
+        let w;
+        if (profilePoints && profilePoints.length) {
+          w = sampleProfileWidth(t * effectiveLength, profilePoints);
+        } else {
+          w = widthAt(t, {
+            profile,
+            centerProfile,
+            morphWeight,
+            sharpness: effectiveSharpness,
+            baseFlare,
+            basePinch,
+            waveAmp,
+            waveFreq,
+            wavePhase,
+          });
+        }
+        const half = profilePoints && profilePoints.length ? w : (w * widthRatio * effectiveLength) / 2;
         const g = gradient ? lerp(1, 0.4, t) : 1;
         const spiralOffset = spiral ? offset + t * 0.3 * spiral : offset;
         const curl = twist * effectiveLength * 0.02 * t * t;
@@ -298,8 +410,9 @@
       const gapStart = gapCenter - gapHalf;
       const gapEnd = gapCenter + gapHalf;
       const spacing = Math.max(0.2, shade.lineSpacing ?? 1);
+      const density = Math.max(0.2, shade.density ?? 1);
       const span = Math.abs(offsetEnd - offsetStart) * halfWidth;
-      const count = Math.max(1, Math.round(span / spacing));
+      const count = Math.max(1, Math.round((span / spacing) * density));
       return { offsetStart, offsetEnd, gapStart, gapEnd, count };
     };
 
@@ -332,6 +445,8 @@
       const hatchAngle = shade.angle ?? 0;
       const lineType = shade.lineType || 'solid';
       const spacing = Math.max(0.2, shade.lineSpacing ?? 1);
+      const jitter = clamp(shade.jitter ?? 0, 0, 1);
+      const lengthJitter = clamp(shade.lengthJitter ?? 0, 0, 1);
 
       const emitLine = (path) => {
         const typed = applyLineType(path, lineType, spacing);
@@ -418,17 +533,31 @@
       for (let i = 0; i < count; i++) {
         const frac = count === 1 ? 0.5 : i / (count - 1);
         let offset = lerp(offsetStart, offsetEnd, frac);
+        if (jitter > 0) {
+          offset += (rng.nextFloat() - 0.5) * jitter * 0.4;
+        }
+        offset = clamp(offset, -1, 1);
         if (offset >= gapStart && offset <= gapEnd) continue;
         if (type === 'chiaroscuro') {
           offset = lerp(offsetStart, offsetEnd, Math.pow(frac, 1.6));
         }
         ranges.forEach(([tStart, tEnd]) => {
           if (tEnd <= tStart) return;
+          let t0 = tStart;
+          let t1 = tEnd;
+          if (lengthJitter > 0) {
+            const span = Math.max(0.001, tEnd - tStart);
+            const jitterAmt = span * lengthJitter * 0.5;
+            t0 = clamp(tStart + (rng.nextFloat() - 0.5) * jitterAmt, 0, 1);
+            t1 = clamp(tEnd + (rng.nextFloat() - 0.5) * jitterAmt, 0, 1);
+            if (t1 < t0) [t0, t1] = [t1, t0];
+            if (t1 - t0 < 0.01) return;
+          }
           if (type === 'stipple') {
             const stepsCount = Math.max(8, Math.round(steps * 0.6));
             for (let s = 0; s < stepsCount; s++) {
-              const t = lerp(tStart, tEnd, (s + 1) / (stepsCount + 1));
-              const w = widthAt(t, {
+              const t = lerp(t0, t1, (s + 1) / (stepsCount + 1));
+              const w = profilePoints && profilePoints.length ? sampleProfileWidth(t * effectiveLength, profilePoints) : widthAt(t, {
                 profile,
                 centerProfile,
                 morphWeight,
@@ -439,7 +568,7 @@
                 waveFreq,
                 wavePhase,
               });
-              const half = (w * widthRatio * effectiveLength) / 2;
+              const half = profilePoints && profilePoints.length ? w : (w * widthRatio * effectiveLength) / 2;
               const jitter = (rng.nextFloat() - 0.5) * 0.2;
               const localY = (offset + jitter) * half;
               const curl = twist * effectiveLength * 0.02 * t * t;
@@ -453,16 +582,16 @@
               ]);
             }
           } else if (type === 'spiral') {
-            const path = makeLine(offset, tStart, tEnd, hatchAngle, 0, 1);
+            const path = makeLine(offset, t0, t1, hatchAngle, 0, 1);
             emitLine(path);
           } else if (type === 'gradient') {
-            const path = makeLine(offset, tStart, tEnd, hatchAngle, 1, 0);
+            const path = makeLine(offset, t0, t1, hatchAngle, 1, 0);
             emitLine(path);
           } else if (type === 'crosshatch') {
-            emitLine(makeLine(offset, tStart, tEnd, hatchAngle, 0, 0));
-            emitLine(makeLine(offset, tStart, tEnd, hatchAngle + 90, 0, 0));
+            emitLine(makeLine(offset, t0, t1, hatchAngle, 0, 0));
+            emitLine(makeLine(offset, t0, t1, hatchAngle + 90, 0, 0));
           } else {
-            const path = makeLine(offset, tStart, tEnd, hatchAngle, 0, 0);
+            const path = makeLine(offset, t0, t1, hatchAngle, 0, 0);
             emitLine(path);
           }
         });
@@ -470,181 +599,6 @@
     });
 
     return lines;
-  };
-
-  const buildTipCurlDetails = (opts) => {
-    const {
-      length,
-      widthRatio,
-      steps,
-      profile,
-      centerProfile,
-      morphWeight,
-      sharpness,
-      baseFlare,
-      basePinch,
-      waveAmp,
-      waveFreq,
-      wavePhase,
-      angle,
-      baseX,
-      baseY,
-      tipTwist,
-      tipCurl,
-      curlBoost,
-      tipCurlDepth,
-      tipCurlAngle,
-      tipCurlInset,
-      tipCurlOuterPad,
-      tipCurlShadeType,
-      tipCurlShadeDistance,
-      tipCurlShadeMorph,
-      rng,
-      noise,
-    } = opts;
-
-    const lines = [];
-    const shadeLines = [];
-    const depthPercent = clamp(tipCurlDepth ?? 0, 0, 100);
-    const roundAmt = clamp(tipCurl ?? 0, 0, 1);
-
-    const twist = (tipTwist || 0) * (1 + (curlBoost || 0));
-    const lengthScale = tipLengthScale(tipCurl);
-    const effectiveLength = Math.max(1, length * lengthScale);
-    const tipSample = clamp(1 - 1 / Math.max(12, steps), 0.8, 0.995);
-    const tipT = tipClamp(tipSample, tipCurl, sharpness, profile);
-    const w = widthAt(tipT, {
-      profile,
-      centerProfile,
-      morphWeight,
-      sharpness,
-      baseFlare,
-      basePinch,
-      waveAmp,
-      waveFreq,
-      wavePhase,
-    });
-    const half = (w * widthRatio * effectiveLength) / 2;
-    if (half <= 0.001) return { lines, shadeLines };
-    const depthLen = (depthPercent / 100) * effectiveLength;
-    if (depthLen <= 0 && roundAmt <= 0.001) return { lines, shadeLines };
-
-    const tipX = tipT * effectiveLength;
-    const curl = twist * effectiveLength * 0.02 * tipT * tipT;
-    const pad = Math.min(Math.max(tipCurlOuterPad ?? 0, 0), Math.max(0, half - 0.05));
-    const inset = Math.max(0, tipCurlInset ?? 0);
-    const angleFactor = clamp(tipCurlAngle ?? 1, 0, 1);
-    const vDepth = Math.min(depthLen, tipX - 0.5, effectiveLength * 0.95);
-    if (vDepth <= 0.001) return { lines, shadeLines };
-
-    const toWorld = (pt) => {
-      const cosA = Math.cos(angle);
-      const sinA = Math.sin(angle);
-      return { x: baseX + pt.x * cosA - pt.y * sinA, y: baseY + pt.x * sinA + pt.y * cosA };
-    };
-
-    const buildVCurve = (left, right, apex) => {
-      if (angleFactor >= 0.6) return [left, apex, right];
-      const control = {
-        x: apex.x - vDepth * (1 - angleFactor) * 0.6,
-        y: apex.y,
-      };
-      const pts = [];
-      const segments = 12;
-      for (let i = 0; i <= segments; i++) {
-        const t = i / segments;
-        const a = (1 - t) * (1 - t);
-        const b = 2 * (1 - t) * t;
-        const c = t * t;
-        pts.push({
-          x: left.x * a + control.x * b + right.x * c,
-          y: left.y * a + control.y * b + right.y * c,
-        });
-      }
-      return pts;
-    };
-
-    let curlClip = null;
-    if (vDepth > 0.001) {
-      const left = { x: tipX, y: half + curl };
-      const right = { x: tipX, y: -half + curl };
-      const apex = { x: tipX - vDepth, y: curl };
-      const outerLocal = buildVCurve(left, right, apex);
-      const outer = outerLocal.map(toWorld);
-      outer.meta = { label: 'Tip Curl' };
-      lines.push(outer);
-
-      const innerHalf = Math.max(0.05, half - pad);
-      const innerLeft = { x: tipX - inset, y: innerHalf + curl };
-      const innerRight = { x: tipX - inset, y: -innerHalf + curl };
-      const innerApex = { x: tipX - vDepth - inset, y: curl };
-      if (innerApex.x < innerLeft.x - 0.5) {
-        const innerLocal = buildVCurve(innerLeft, innerRight, innerApex);
-        const inner = innerLocal.map(toWorld);
-        inner.meta = { label: 'Tip Curl Inner' };
-        lines.push(inner);
-        curlClip = outerLocal.concat(innerLocal.slice().reverse()).map(toWorld);
-      } else {
-        curlClip = outerLocal.concat([apex, left]).map(toWorld);
-      }
-    }
-
-    const shadeType = tipCurlShadeType || 'none';
-    const shadeDist = Math.max(0, tipCurlShadeDistance ?? 0);
-    if (shadeType !== 'none' && shadeDist > 0) {
-      const depthForShade = Math.min(vDepth, Math.max(0.5, shadeDist));
-      const tEnd = clamp(tipX / effectiveLength, 0, 1);
-      const tStart = clamp((tipX - depthForShade) / effectiveLength, 0, 1);
-      const widthX = Math.abs(tEnd - tStart) * 100;
-      const posX = ((tStart + tEnd) / 2) * 100;
-      const morph = clamp(tipCurlShadeMorph ?? 0, 0, 1);
-      const widthY = lerp(35, 100, morph);
-      const shadeEntry = {
-        enabled: true,
-        type: shadeType,
-        widthX,
-        posX,
-        widthY,
-        posY: 50,
-        gapX: 0,
-        gapY: 0,
-        gapPosX: 50,
-        gapPosY: 50,
-        lineType: 'solid',
-        lineSpacing: Math.max(0.2, shadeDist / 8),
-        angle: 0,
-      };
-      const curlShade = buildShadingLines({
-        length,
-        widthRatio,
-        steps: Math.max(6, Math.round(steps / 2)),
-        profile,
-        centerProfile,
-        morphWeight,
-        sharpness,
-        baseFlare,
-        basePinch,
-        waveAmp,
-        waveFreq,
-        wavePhase,
-        angle,
-        baseX,
-        baseY,
-        shadings: [shadeEntry],
-        tipTwist,
-        tipCurl,
-        curlBoost,
-        rng,
-        noise,
-      });
-      curlShade.forEach((line, idx) => {
-        if (!Array.isArray(line)) return;
-        line.meta = { label: `Tip Curl Shade ${String(idx + 1).padStart(2, '0')}` };
-        shadeLines.push(line);
-      });
-    }
-
-    return { lines, shadeLines, clip: curlClip };
   };
 
   const expandCircle = (meta, segments = 64) => {
@@ -1100,89 +1054,6 @@
     return output;
   };
 
-  const clipSegmentInside = (a, b, poly) => {
-    if (!Array.isArray(poly) || poly.length < 3) return [[a, b]];
-    const segBox = bboxFromPoints([a, b]);
-    const polyBox = bboxFromPoints(poly);
-    if (!bboxIntersects(segBox, polyBox)) return [];
-    const intersections = [];
-    const count = poly.length;
-    for (let i = 0; i < count; i++) {
-      const p1 = poly[i];
-      const p2 = poly[(i + 1) % count];
-      const hit = segmentIntersection(a, b, p1, p2);
-      if (hit && hit.t > 1e-6 && hit.t < 1 - 1e-6) intersections.push(hit.t);
-    }
-    const ts = [0, 1, ...intersections].sort((x, y) => x - y);
-    const uniq = [];
-    ts.forEach((t) => {
-      if (!uniq.length || Math.abs(t - uniq[uniq.length - 1]) > 1e-5) uniq.push(t);
-    });
-    const segments = [];
-    for (let i = 0; i < uniq.length - 1; i++) {
-      const t0 = uniq[i];
-      const t1 = uniq[i + 1];
-      if (t1 - t0 < 1e-5) continue;
-      const mid = (t0 + t1) / 2;
-      const midPt = { x: lerp(a.x, b.x, mid), y: lerp(a.y, b.y, mid) };
-      if (pointInPoly(midPt, poly)) {
-        const s0 = { x: lerp(a.x, b.x, t0), y: lerp(a.y, b.y, t0) };
-        const s1 = { x: lerp(a.x, b.x, t1), y: lerp(a.y, b.y, t1) };
-        segments.push([s0, s1]);
-      }
-    }
-    return segments;
-  };
-
-  const clipPathInside = (path, poly) => {
-    if (!Array.isArray(path) || path.length < 2) return [];
-    if (!Array.isArray(poly) || poly.length < 3) return [path];
-    const output = [];
-    let current = [];
-    const eps = 1e-4;
-    const appendPoint = (pt) => {
-      if (!current.length) {
-        current.push(pt);
-        return;
-      }
-      const last = current[current.length - 1];
-      if (Math.hypot(last.x - pt.x, last.y - pt.y) < eps) return;
-      current.push(pt);
-    };
-    for (let i = 0; i < path.length - 1; i++) {
-      const a = path[i];
-      const b = path[i + 1];
-      const pieces = clipSegmentInside(a, b, poly);
-      if (!pieces.length) {
-        if (current.length > 1) output.push(current);
-        current = [];
-        continue;
-      }
-      pieces.forEach((seg, idx) => {
-        const [s0, s1] = seg;
-        const mid = { x: (s0.x + s1.x) / 2, y: (s0.y + s1.y) / 2 };
-        if (!pointInPoly(mid, poly)) return;
-        if (!current.length) {
-          current = [s0, s1];
-        } else {
-          const last = current[current.length - 1];
-          if (Math.hypot(last.x - s0.x, last.y - s0.y) > eps) {
-            output.push(current);
-            current = [s0, s1];
-          } else {
-            appendPoint(s1);
-          }
-        }
-        if (idx < pieces.length - 1) {
-          output.push(current);
-          current = [];
-        }
-      });
-    }
-    if (current.length > 1) output.push(current);
-    return output;
-  };
-
   const generate = (p, rng, noise, bounds) => {
     const { m, width, height } = bounds;
     const center = { x: width / 2, y: height / 2 };
@@ -1318,6 +1189,27 @@
         const curlBoost = centerBoost * centerFactor;
         const waveBoost = (p.centerWaveBoost ?? 0) * centerFactor;
         const wavePhase = rng.nextFloat() * TAU;
+        const lengthScale = tipLengthScale(p.tipCurl ?? 0);
+        const effectiveLength = Math.max(1, length * lengthScale);
+        const profilePoints = buildLeafProfile({
+          length: effectiveLength,
+          widthRatio,
+          steps: petalSteps,
+          profile: p.petalProfile || 'teardrop',
+          centerProfile: p.centerProfile || p.petalProfile || 'teardrop',
+          morphWeight,
+          sharpness: p.tipSharpness ?? 0.5,
+          baseFlare: p.baseFlare ?? 0,
+          basePinch: p.basePinch ?? 0,
+          waveAmp: Math.max(0, (p.edgeWaveAmp ?? 0) * (1 + waveBoost)),
+          waveFreq: p.edgeWaveFreq ?? 2,
+          wavePhase,
+          leafSidePos: p.leafSidePos,
+          leafSideWidth: p.leafSideWidth,
+          leafBaseHandle: p.leafBaseHandle,
+          leafSideHandle: p.leafSideHandle,
+          leafTipHandle: p.leafTipHandle,
+        });
         let outline = buildPetal({
           length,
           widthRatio,
@@ -1337,6 +1229,12 @@
           waveAmp: Math.max(0, (p.edgeWaveAmp ?? 0) * (1 + waveBoost)),
           waveFreq: p.edgeWaveFreq ?? 2,
           wavePhase,
+          profilePoints,
+          leafSidePos: p.leafSidePos,
+          leafSideWidth: p.leafSideWidth,
+          leafBaseHandle: p.leafBaseHandle,
+          leafSideHandle: p.leafSideHandle,
+          leafTipHandle: p.leafTipHandle,
         });
         let shadingLines = buildShadingLines({
           length,
@@ -1360,43 +1258,8 @@
           curlBoost,
           rng,
           noise,
+          profilePoints,
         });
-        const tipCurlDetails = buildTipCurlDetails({
-          length,
-          widthRatio,
-          steps: Math.max(6, Math.round(petalSteps / 2)),
-          profile: p.petalProfile || 'teardrop',
-          centerProfile: p.centerProfile || p.petalProfile || 'teardrop',
-          morphWeight,
-          sharpness: p.tipSharpness ?? 0.5,
-          baseFlare: p.baseFlare ?? 0,
-          basePinch: p.basePinch ?? 0,
-          waveAmp: Math.max(0, (p.edgeWaveAmp ?? 0) * (1 + waveBoost)),
-          waveFreq: p.edgeWaveFreq ?? 2,
-          wavePhase,
-          angle,
-          baseX,
-          baseY,
-          tipTwist: tipRotate,
-          tipCurl: p.tipCurl ?? 0,
-          curlBoost,
-          tipCurlDepth: p.tipCurlDepth ?? 0,
-          tipCurlAngle: p.tipCurlAngle ?? 1,
-          tipCurlInset: p.tipCurlInset ?? 0,
-          tipCurlOuterPad: p.tipCurlOuterPad ?? 0,
-          tipCurlShadeType: p.tipCurlShadeType ?? 'none',
-          tipCurlShadeDistance: p.tipCurlShadeDistance ?? 0,
-          tipCurlShadeMorph: p.tipCurlShadeMorph ?? 0,
-          rng,
-          noise,
-        });
-        if (tipCurlDetails.shadeLines.length) {
-          const curlShade = tipCurlDetails.clip
-            ? tipCurlDetails.shadeLines.flatMap((line) => clipPathInside(line, tipCurlDetails.clip))
-            : tipCurlDetails.shadeLines;
-          shadingLines = shadingLines.concat(curlShade);
-        }
-        if (tipCurlDetails.lines.length) shadingLines = shadingLines.concat(tipCurlDetails.lines);
         const modifierBase = { x: baseX, y: baseY };
         outline = applyPetalModifiers([outline], p.petalModifiers || [], modifierBase, angle, length, noise)[0] || outline;
         shadingLines = applyPetalModifiers(shadingLines, p.petalModifiers || [], modifierBase, angle, length, noise);

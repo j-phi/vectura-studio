@@ -1116,6 +1116,84 @@
     { value: 'stitch', label: 'Stitch' },
   ];
 
+  const AUTO_COLOR_MODES = [
+    {
+      value: 'concentric',
+      label: 'Concentric Rings',
+      params: [
+        { id: 'radiusStart', label: 'Inner Radius (mm)', type: 'range', min: 0, max: 400, step: 1 },
+        { id: 'radiusEnd', label: 'Outer Radius (mm)', type: 'range', min: 0, max: 600, step: 1 },
+        { id: 'bandSize', label: 'Band Width (mm)', type: 'range', min: 1, max: 200, step: 1 },
+        { id: 'bandOffset', label: 'Band Offset (mm)', type: 'range', min: -200, max: 200, step: 1 },
+        { id: 'bandGrowth', label: 'Band Growth', type: 'range', min: -1, max: 1, step: 0.05 },
+      ],
+    },
+    {
+      value: 'horizontal',
+      label: 'Horizontal Bands',
+      params: [
+        { id: 'bandStart', label: 'Start Y (mm)', type: 'range', min: 0, max: 600, step: 1 },
+        { id: 'bandEnd', label: 'End Y (mm)', type: 'range', min: 0, max: 600, step: 1 },
+        { id: 'bandSize', label: 'Band Height (mm)', type: 'range', min: 1, max: 200, step: 1 },
+        { id: 'bandOffset', label: 'Band Offset (mm)', type: 'range', min: -200, max: 200, step: 1 },
+      ],
+    },
+    {
+      value: 'vertical',
+      label: 'Vertical Bands',
+      params: [
+        { id: 'bandStart', label: 'Start X (mm)', type: 'range', min: 0, max: 600, step: 1 },
+        { id: 'bandEnd', label: 'End X (mm)', type: 'range', min: 0, max: 600, step: 1 },
+        { id: 'bandSize', label: 'Band Width (mm)', type: 'range', min: 1, max: 200, step: 1 },
+        { id: 'bandOffset', label: 'Band Offset (mm)', type: 'range', min: -200, max: 200, step: 1 },
+      ],
+    },
+    {
+      value: 'spiral',
+      label: 'Spiral Sweep',
+      params: [
+        { id: 'angleOffset', label: 'Angle Offset (°)', type: 'range', min: -180, max: 180, step: 1 },
+        { id: 'spiralTurns', label: 'Spiral Turns', type: 'range', min: 0.2, max: 4, step: 0.1 },
+      ],
+    },
+    {
+      value: 'angle',
+      label: 'Angle Slice',
+      params: [
+        { id: 'angleOffset', label: 'Angle Offset (°)', type: 'range', min: -180, max: 180, step: 1 },
+        { id: 'angleSpan', label: 'Angle Span (°)', type: 'range', min: 30, max: 360, step: 5 },
+      ],
+    },
+    {
+      value: 'size',
+      label: 'Size-Based',
+      params: [
+        { id: 'sizeCurve', label: 'Size Curve', type: 'range', min: 0.5, max: 2.5, step: 0.05 },
+        { id: 'sizeInvert', label: 'Invert', type: 'checkbox' },
+      ],
+    },
+    {
+      value: 'random',
+      label: 'Random (Seeded)',
+      params: [{ id: 'randomSeed', label: 'Seed', type: 'range', min: 0, max: 9999, step: 1 }],
+    },
+    {
+      value: 'order',
+      label: 'Layer Order',
+      params: [],
+    },
+    {
+      value: 'reverse',
+      label: 'Reverse Order',
+      params: [],
+    },
+    {
+      value: 'algorithm',
+      label: 'Algorithm Type',
+      params: [],
+    },
+  ];
+
   const createPetalisShading = (type = 'radial') => ({
     id: `shade-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
     enabled: true,
@@ -1130,6 +1208,9 @@
     gapPosY: 50,
     lineType: 'solid',
     lineSpacing: 1,
+    density: 1,
+    jitter: 0,
+    lengthJitter: 0,
     angle: 0,
   });
 
@@ -1422,6 +1503,11 @@
       },
       { id: 'petalLengthRatio', label: 'Length Ratio', type: 'range', min: 0.1, max: 5, step: 0.05, infoKey: 'petalis.petalLengthRatio' },
       { id: 'petalSizeRatio', label: 'Size Ratio', type: 'range', min: 0.01, max: 5, step: 0.05, infoKey: 'petalis.petalSizeRatio' },
+      { id: 'leafSidePos', label: 'Side Position', type: 'range', min: 0.1, max: 0.9, step: 0.01, infoKey: 'petalis.leafSidePos' },
+      { id: 'leafSideWidth', label: 'Side Width', type: 'range', min: 0.2, max: 2, step: 0.01, infoKey: 'petalis.leafSideWidth' },
+      { id: 'leafBaseHandle', label: 'Base Handle', type: 'range', min: 0, max: 1, step: 0.01, infoKey: 'petalis.leafBaseHandle' },
+      { id: 'leafSideHandle', label: 'Side Handle', type: 'range', min: 0, max: 1, step: 0.01, infoKey: 'petalis.leafSideHandle' },
+      { id: 'leafTipHandle', label: 'Tip Handle', type: 'range', min: 0, max: 1, step: 0.01, infoKey: 'petalis.leafTipHandle' },
       { id: 'petalSteps', label: 'Petal Resolution', type: 'range', min: 12, max: 80, step: 2, infoKey: 'petalis.petalSteps' },
       { id: 'layering', label: 'Layering', type: 'checkbox', infoKey: 'petalis.layering' },
       {
@@ -1448,60 +1534,7 @@
       { id: 'tipSharpness', label: 'Tip Sharpness', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'petalis.tipSharpness' },
       { id: 'tipTwist', label: 'Tip Rotate', type: 'range', min: 0, max: 100, step: 1, infoKey: 'petalis.tipTwist' },
       { id: 'centerCurlBoost', label: 'Center Tip Rotate Boost', type: 'range', min: 0, max: 100, step: 1, infoKey: 'petalis.centerCurlBoost' },
-      { id: 'tipCurl', label: 'Tip Curl Rounding', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'petalis.tipCurl' },
-      { id: 'tipCurlDepth', label: 'Tip Curl Depth (%)', type: 'range', min: 0, max: 100, step: 1, displayUnit: '%', infoKey: 'petalis.tipCurlDepth' },
-      { id: 'tipCurlAngle', label: 'Tip Curl Angle', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'petalis.tipCurlAngle' },
-      {
-        id: 'tipCurlInset',
-        label: 'Tip Curl Inset (mm)',
-        type: 'range',
-        min: 0,
-        max: 12,
-        step: 0.1,
-        displayUnit: 'mm',
-        infoKey: 'petalis.tipCurlInset',
-      },
-      {
-        id: 'tipCurlOuterPad',
-        label: 'Tip Curl Outer Padding (mm)',
-        type: 'range',
-        min: 0,
-        max: 12,
-        step: 0.1,
-        displayUnit: 'mm',
-        infoKey: 'petalis.tipCurlOuterPad',
-      },
-      {
-        id: 'tipCurlShadeType',
-        label: 'Curl Shading Type',
-        type: 'select',
-        options: [
-          { value: 'none', label: 'None' },
-          ...PETALIS_SHADING_TYPES.map((opt) => ({ value: opt.value, label: opt.label })),
-        ],
-        infoKey: 'petalis.tipCurlShadeType',
-      },
-      {
-        id: 'tipCurlShadeDistance',
-        label: 'Curl Shading Distance (mm)',
-        type: 'range',
-        min: 0,
-        max: 40,
-        step: 0.5,
-        displayUnit: 'mm',
-        showIf: (p) => p.tipCurlShadeType && p.tipCurlShadeType !== 'none',
-        infoKey: 'petalis.tipCurlShadeDistance',
-      },
-      {
-        id: 'tipCurlShadeMorph',
-        label: 'Curl Shading Morph',
-        type: 'range',
-        min: 0,
-        max: 1,
-        step: 0.05,
-        showIf: (p) => p.tipCurlShadeType && p.tipCurlShadeType !== 'none',
-        infoKey: 'petalis.tipCurlShadeMorph',
-      },
+      { id: 'tipCurl', label: 'Tip Rounding', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'petalis.tipCurl' },
       { id: 'baseFlare', label: 'Base Flare', type: 'range', min: 0, max: 5, step: 0.05, infoKey: 'petalis.baseFlare' },
       { id: 'basePinch', label: 'Base Pinch', type: 'range', min: 0, max: 5, step: 0.05, infoKey: 'petalis.basePinch' },
       { id: 'edgeWaveAmp', label: 'Edge Wave Amp', type: 'range', min: 0, max: 0.6, step: 0.01, infoKey: 'petalis.edgeWaveAmp' },
@@ -1876,7 +1909,7 @@
       },
     ],
     rainfall: [
-      { id: 'count', label: 'Drop Count', type: 'range', min: 20, max: 400, step: 10, infoKey: 'rainfall.count' },
+      { id: 'count', label: 'Drop Count', type: 'range', min: 20, max: 2000, step: 10, infoKey: 'rainfall.count' },
       { id: 'traceLength', label: 'Trace Length', type: 'range', min: 20, max: 400, step: 5, infoKey: 'rainfall.traceLength' },
       {
         id: 'lengthJitter',
@@ -2189,6 +2222,19 @@
         infoKey: 'rainfall.silhouetteInvert',
         showIf: (p) => Boolean(p.silhouetteId),
       },
+      { type: 'section', label: 'Noise Stack' },
+      {
+        id: 'noiseApply',
+        label: 'Noise Target',
+        type: 'select',
+        options: [
+          { value: 'trails', label: 'Trails' },
+          { value: 'droplets', label: 'Droplets' },
+          { value: 'both', label: 'Both' },
+        ],
+        infoKey: 'rainfall.noiseApply',
+      },
+      { type: 'noiseList' },
     ],
     spiral: [
       { id: 'loops', label: 'Loops', type: 'range', min: 1, max: 150, step: 1, infoKey: 'spiral.loops' },
@@ -3239,6 +3285,10 @@
       title: 'Invert Silhouette',
       description: 'Swaps filled and transparent regions of the silhouette.',
     },
+    'rainfall.noiseApply': {
+      title: 'Noise Target',
+      description: 'Choose whether the noise stack affects trails, droplets, or both.',
+    },
     'spiral.loops': {
       title: 'Loops',
       description: 'Number of revolutions in the spiral.',
@@ -3507,6 +3557,26 @@
       title: 'Size Ratio',
       description: 'Scales both width and length uniformly for the petal silhouette.',
     },
+    'petalis.leafSidePos': {
+      title: 'Side Position',
+      description: 'Moves the widest point of the petal up or down along its length.',
+    },
+    'petalis.leafSideWidth': {
+      title: 'Side Width',
+      description: 'Scales the maximum width defined by the side control point.',
+    },
+    'petalis.leafBaseHandle': {
+      title: 'Base Handle',
+      description: 'Adjusts the horizontal bezier handle at the petal base to control roundness.',
+    },
+    'petalis.leafSideHandle': {
+      title: 'Side Handle',
+      description: 'Adjusts the vertical bezier handle at the petal sides to control shoulder roundness.',
+    },
+    'petalis.leafTipHandle': {
+      title: 'Tip Handle',
+      description: 'Adjusts the horizontal bezier handle at the petal tip for roundness.',
+    },
     'petalis.petalSteps': {
       title: 'Petal Resolution',
       description: 'Number of points used to draw each petal. Higher values create smoother curves.',
@@ -3536,36 +3606,8 @@
       description: 'Boosts tip rotation for petals closer to the center to emphasize a curled core.',
     },
     'petalis.tipCurl': {
-      title: 'Tip Curl',
+      title: 'Tip Rounding',
       description: 'Rounds the outer petal tip. 0 keeps a sharp edge, 1 approaches a semicircular tip.',
-    },
-    'petalis.tipCurlDepth': {
-      title: 'Tip Curl Depth',
-      description: 'How far the curl V-shape extends toward the petal base (percentage of petal length).',
-    },
-    'petalis.tipCurlAngle': {
-      title: 'Tip Curl Angle',
-      description: 'Controls the shape of the curl V: 1 is pointed, 0 becomes a rounded C-shape.',
-    },
-    'petalis.tipCurlInset': {
-      title: 'Tip Curl Inset',
-      description: 'Offsets the inner curl line toward the petal base to suggest thickness.',
-    },
-    'petalis.tipCurlOuterPad': {
-      title: 'Tip Curl Outer Padding',
-      description: 'Sets the distance between the petal edge and the inner curl line.',
-    },
-    'petalis.tipCurlShadeType': {
-      title: 'Curl Shading Type',
-      description: 'Shading technique used beneath the curl V-shape.',
-    },
-    'petalis.tipCurlShadeDistance': {
-      title: 'Curl Shading Distance',
-      description: 'Depth of the curl shading band beneath the tip curl.',
-    },
-    'petalis.tipCurlShadeMorph': {
-      title: 'Curl Shading Morph',
-      description: 'Morphs the curl shading silhouette from narrow to full-width.',
     },
     'petalis.baseFlare': {
       title: 'Base Flare',
@@ -3838,6 +3880,18 @@
     'petalis.shadingLineSpacing': {
       title: 'Line Spacing',
       description: 'Distance between shading strokes in millimeters.',
+    },
+    'petalis.shadingDensity': {
+      title: 'Line Density',
+      description: 'Multiplies the number of shading strokes without changing the base spacing.',
+    },
+    'petalis.shadingJitter': {
+      title: 'Line Jitter',
+      description: 'Adds controlled randomness to the spacing of shading strokes.',
+    },
+    'petalis.shadingLengthJitter': {
+      title: 'Length Jitter',
+      description: 'Randomizes how far shading strokes extend along the petal.',
     },
     'petalis.shadingAngle': {
       title: 'Hatch Angle',
@@ -4430,6 +4484,7 @@
       this.globalSectionCollapsed = false;
       this.activeTool = SETTINGS.activeTool || 'select';
       this.scissorMode = SETTINGS.scissorMode || 'line';
+      this.selectionMode = SETTINGS.selectionMode || 'rect';
       this.spacePanActive = false;
       this.previousTool = this.activeTool;
 
@@ -4457,6 +4512,7 @@
       this.renderLayers();
       this.renderPens();
       this.initPaletteControls();
+      this.initAutoColorizationPanel();
       this.buildControls();
       this.updateFormula();
       this.initSettingsValues();
@@ -4865,7 +4921,7 @@
     }
 
     ensureWavetableNoises(layer) {
-      if (!layer || layer.type !== 'wavetable') return [];
+      if (!layer || (layer.type !== 'wavetable' && layer.type !== 'rainfall')) return [];
       const { base, templates } = this.getWavetableNoiseTemplates('wavetable');
       let noises = layer.params.noises;
       if (!Array.isArray(noises) || !noises.length) {
@@ -5671,6 +5727,319 @@
       }
     }
 
+    getAutoColorizationConfig() {
+      const fallback = {
+        enabled: false,
+        scope: 'all',
+        mode: 'concentric',
+        params: {
+          radiusStart: 0,
+          radiusEnd: 0,
+          bandSize: 20,
+          bandOffset: 0,
+          bandGrowth: 0,
+          bandStart: 0,
+          bandEnd: 0,
+          angleOffset: 0,
+          angleSpan: 360,
+          spiralTurns: 1,
+          sizeCurve: 1,
+          sizeInvert: false,
+          randomSeed: 1,
+        },
+      };
+      if (!SETTINGS.autoColorization) SETTINGS.autoColorization = clone(fallback);
+      SETTINGS.autoColorization = { ...fallback, ...(SETTINGS.autoColorization || {}) };
+      SETTINGS.autoColorization.params = {
+        ...fallback.params,
+        ...(SETTINGS.autoColorization.params || {}),
+      };
+      return SETTINGS.autoColorization;
+    }
+
+    initAutoColorizationPanel() {
+      const section = getEl('auto-colorization-section');
+      const header = getEl('auto-colorization-header');
+      const body = getEl('auto-colorization-body');
+      const enabledToggle = getEl('auto-colorization-enabled');
+      const scopeSelect = getEl('auto-colorization-scope');
+      const modeSelect = getEl('auto-colorization-mode');
+      const paramsTarget = getEl('auto-colorization-params');
+      if (!section || !header || !body || !enabledToggle || !scopeSelect || !modeSelect || !paramsTarget) return;
+
+      const config = this.getAutoColorizationConfig();
+      const modeValues = new Set(AUTO_COLOR_MODES.map((mode) => mode.value));
+      if (!modeValues.has(config.mode)) config.mode = AUTO_COLOR_MODES[0].value;
+      const setCollapsed = (next) => {
+        SETTINGS.autoColorizationCollapsed = next;
+        section.classList.toggle('collapsed', next);
+        body.style.display = next ? 'none' : '';
+      };
+      const initialCollapsed = SETTINGS.autoColorizationCollapsed !== false;
+      setCollapsed(initialCollapsed);
+
+      header.onclick = () => setCollapsed(!section.classList.contains('collapsed'));
+
+      modeSelect.innerHTML = AUTO_COLOR_MODES.map((mode) => `<option value="${mode.value}">${mode.label}</option>`).join('');
+
+      enabledToggle.checked = Boolean(config.enabled);
+      scopeSelect.value = config.scope || 'all';
+      modeSelect.value = config.mode || AUTO_COLOR_MODES[0].value;
+
+      const renderParams = () => {
+        paramsTarget.innerHTML = '';
+        const mode = AUTO_COLOR_MODES.find((item) => item.value === config.mode) || AUTO_COLOR_MODES[0];
+        if (!mode || !mode.params || !mode.params.length) {
+          paramsTarget.innerHTML = '<p class="text-xs text-vectura-muted">No additional parameters.</p>';
+          return;
+        }
+        mode.params.forEach((param) => {
+          const wrapper = document.createElement('div');
+          wrapper.className = 'mb-3';
+          if (param.type === 'checkbox') {
+            wrapper.innerHTML = `
+              <div class="flex items-center justify-between">
+                <label class="control-label mb-0">${param.label}</label>
+                <input type="checkbox" class="cursor-pointer" ${config.params[param.id] ? 'checked' : ''} />
+              </div>
+            `;
+            const input = wrapper.querySelector('input');
+            input.onchange = () => {
+              config.params[param.id] = Boolean(input.checked);
+              this.applyAutoColorization({ commit: true });
+            };
+          } else {
+            const value = config.params[param.id] ?? param.min ?? 0;
+            wrapper.innerHTML = `
+              <div class="flex items-center justify-between mb-1">
+                <label class="control-label mb-0">${param.label}</label>
+                <span class="text-xs text-vectura-accent">${value}</span>
+              </div>
+              <input
+                type="range"
+                min="${param.min}"
+                max="${param.max}"
+                step="${param.step ?? 1}"
+                value="${value}"
+                class="w-full"
+              />
+            `;
+            const input = wrapper.querySelector('input');
+            const display = wrapper.querySelector('span');
+            input.oninput = () => {
+              const next = parseFloat(input.value);
+              config.params[param.id] = Number.isFinite(next) ? next : value;
+              if (display) display.textContent = input.value;
+              this.applyAutoColorization({ commit: false });
+            };
+            input.onchange = () => {
+              this.applyAutoColorization({ commit: true });
+            };
+          }
+          paramsTarget.appendChild(wrapper);
+        });
+      };
+
+      enabledToggle.onchange = () => {
+        config.enabled = Boolean(enabledToggle.checked);
+        if (config.enabled) {
+          this.applyAutoColorization({ commit: true });
+        }
+      };
+      scopeSelect.onchange = () => {
+        config.scope = scopeSelect.value;
+        this.applyAutoColorization({ commit: true });
+      };
+      modeSelect.onchange = () => {
+        config.mode = modeSelect.value;
+        renderParams();
+        this.applyAutoColorization({ commit: true });
+      };
+
+      renderParams();
+      if (config.enabled) {
+        this.applyAutoColorization({ commit: false });
+      }
+    }
+
+    getAutoColorizationTargets(scope) {
+      const layers = this.app.engine.layers || [];
+      let targetIds = [];
+      if (scope === 'active') {
+        const active = this.app.engine.getActiveLayer ? this.app.engine.getActiveLayer() : null;
+        if (active) targetIds = [active.id];
+      } else if (scope === 'selected') {
+        const selected = this.app.renderer?.getSelectedLayers?.() || [];
+        if (selected.length) targetIds = selected.map((layer) => layer.id);
+        else {
+          const active = this.app.engine.getActiveLayer ? this.app.engine.getActiveLayer() : null;
+          if (active) targetIds = [active.id];
+        }
+      } else {
+        targetIds = layers.map((layer) => layer.id);
+      }
+      const targetSet = new Set(targetIds);
+      const expanded = [];
+      const childrenByParent = new Map();
+      layers.forEach((layer) => {
+        if (layer.parentId) {
+          if (!childrenByParent.has(layer.parentId)) childrenByParent.set(layer.parentId, []);
+          childrenByParent.get(layer.parentId).push(layer);
+        }
+      });
+      const addLayer = (layer) => {
+        if (!layer) return;
+        if (layer.isGroup) {
+          const children = childrenByParent.get(layer.id) || [];
+          children.forEach((child) => addLayer(child));
+          return;
+        }
+        expanded.push(layer);
+      };
+      layers.forEach((layer) => {
+        if (targetSet.has(layer.id)) addLayer(layer);
+      });
+      return expanded;
+    }
+
+    applyAutoColorization(options = {}) {
+      const { commit = false, force = false } = options;
+      const config = this.getAutoColorizationConfig();
+      if (!config.enabled && !force) return;
+      const pens = SETTINGS.pens || [];
+      if (!pens.length) return;
+      const targets = this.getAutoColorizationTargets(config.scope);
+      if (!targets.length) return;
+
+      const renderer = this.app.renderer;
+      const profile = this.app.engine.currentProfile;
+      const center = { x: profile.width / 2, y: profile.height / 2 };
+      const infos = targets.map((layer, index) => {
+        const bounds = renderer?.getLayerBounds ? renderer.getLayerBounds(layer) : null;
+        const c = bounds?.center || center;
+        const dx = c.x - center.x;
+        const dy = c.y - center.y;
+        const dist = Math.hypot(dx, dy);
+        const angle = Math.atan2(dy, dx);
+        const area = bounds ? Math.abs((bounds.maxX - bounds.minX) * (bounds.maxY - bounds.minY)) : 0;
+        return { layer, index, bounds, center: c, dist, angle, area };
+      });
+      const maxRadius = Math.min(profile.width, profile.height) / 2;
+      const areas = infos.map((info) => info.area);
+      const minArea = Math.min(...areas);
+      const maxArea = Math.max(...areas);
+      const areaSpan = Math.max(1e-6, maxArea - minArea);
+      const mode = config.mode || 'concentric';
+      const params = config.params || {};
+
+      const hashString = (str) => {
+        let h = 0;
+        for (let i = 0; i < str.length; i++) {
+          h = (h << 5) - h + str.charCodeAt(i);
+          h |= 0;
+        }
+        return Math.abs(h);
+      };
+
+      const typeIndex = new Map();
+      let nextTypeIdx = 0;
+
+      const assignIndex = (info, idx) => {
+        const pen = pens[Math.max(0, Math.min(pens.length - 1, idx))] || pens[0];
+        if (!pen) return;
+        const layer = info.layer;
+        layer.penId = pen.id;
+        layer.color = pen.color;
+        layer.strokeWidth = pen.width;
+      };
+
+      const radiusStart = params.radiusStart ?? 0;
+      const radiusEnd = params.radiusEnd && params.radiusEnd > radiusStart ? params.radiusEnd : maxRadius;
+      const bandSize = Math.max(1, params.bandSize ?? 20);
+      const bandOffset = params.bandOffset ?? 0;
+      const bandGrowth = params.bandGrowth ?? 0;
+      const bandStart = params.bandStart ?? 0;
+      const bandEnd = params.bandEnd && params.bandEnd > bandStart ? params.bandEnd : (mode === 'vertical' ? profile.width : profile.height);
+
+      if (commit && this.app.pushHistory) this.app.pushHistory();
+
+      infos.forEach((info) => {
+        let idx = 0;
+        switch (mode) {
+          case 'concentric': {
+            const dist = Math.max(0, info.dist - radiusStart);
+            const span = Math.max(1, radiusEnd - radiusStart);
+            const t = Math.max(0, Math.min(1, dist / span));
+            const growth = 1 + bandGrowth * (t - 0.5);
+            const effectiveBand = Math.max(1, bandSize * growth);
+            idx = Math.floor((dist + bandOffset) / effectiveBand);
+            break;
+          }
+          case 'horizontal': {
+            const pos = info.center.y;
+            const span = Math.max(1, bandEnd - bandStart);
+            const clamped = Math.max(0, Math.min(span, pos - bandStart + bandOffset));
+            idx = Math.floor(clamped / Math.max(1, bandSize));
+            break;
+          }
+          case 'vertical': {
+            const pos = info.center.x;
+            const span = Math.max(1, bandEnd - bandStart);
+            const clamped = Math.max(0, Math.min(span, pos - bandStart + bandOffset));
+            idx = Math.floor(clamped / Math.max(1, bandSize));
+            break;
+          }
+          case 'spiral': {
+            const turns = Math.max(0.2, params.spiralTurns ?? 1);
+            const angle = info.angle + ((params.angleOffset ?? 0) * Math.PI) / 180;
+            const t = (angle / (Math.PI * 2) + 0.5 + info.dist / maxRadius * turns) % 1;
+            idx = Math.floor(t * pens.length);
+            break;
+          }
+          case 'angle': {
+            const offset = params.angleOffset ?? 0;
+            const span = Math.max(10, params.angleSpan ?? 360);
+            const angleDeg = ((info.angle * 180) / Math.PI + 360 + offset) % 360;
+            const t = Math.max(0, Math.min(1, angleDeg / span));
+            idx = Math.floor(t * pens.length);
+            break;
+          }
+          case 'size': {
+            const curve = Math.max(0.5, params.sizeCurve ?? 1);
+            let t = (info.area - minArea) / areaSpan;
+            t = Math.max(0, Math.min(1, Math.pow(t, curve)));
+            if (params.sizeInvert) t = 1 - t;
+            idx = Math.floor(t * pens.length);
+            break;
+          }
+          case 'random': {
+            const seed = params.randomSeed ?? 0;
+            const h = hashString(`${info.layer.id}-${seed}`);
+            idx = h % pens.length;
+            break;
+          }
+          case 'reverse':
+            idx = pens.length - 1 - (info.index % pens.length);
+            break;
+          case 'algorithm': {
+            if (!typeIndex.has(info.layer.type)) {
+              typeIndex.set(info.layer.type, nextTypeIdx++);
+            }
+            idx = typeIndex.get(info.layer.type) % pens.length;
+            break;
+          }
+          case 'order':
+          default:
+            idx = info.index % pens.length;
+            break;
+        }
+        assignIndex(info, idx);
+      });
+
+      this.renderLayers();
+      this.app.render();
+    }
+
     initSettingsValues() {
       const margin = getEl('set-margin');
       const speedDown = getEl('set-speed-down');
@@ -5910,12 +6279,18 @@
       if (!toolbar) return;
       const toolButtons = Array.from(toolbar.querySelectorAll('.tool-btn[data-tool]'));
       const subButtons = Array.from(toolbar.querySelectorAll('.tool-sub-btn[data-scissor]'));
+      const selectButtons = Array.from(toolbar.querySelectorAll('.tool-sub-btn[data-select]'));
       const scissorButton = toolbar.querySelector('.tool-btn[data-tool="scissor"]');
-      const scissorMenu = toolbar.querySelector('.tool-submenu');
+      const scissorMenu = toolbar.querySelector('.tool-submenu[aria-label="Scissor subtools"]');
+      const selectButton = toolbar.querySelector('.tool-btn[data-tool="select"]');
+      const selectMenu = toolbar.querySelector('.tool-submenu[data-menu="select"]');
       const lightSourceBtn = getEl('btn-light-source');
       let scissorHoldTimer = null;
       let scissorMenuOpen = false;
       let scissorHoverBtn = null;
+      let selectHoldTimer = null;
+      let selectMenuOpen = false;
+      let selectHoverBtn = null;
 
       const syncButtons = () => {
         toolButtons.forEach((btn) => {
@@ -5923,6 +6298,9 @@
         });
         subButtons.forEach((btn) => {
           btn.classList.toggle('active', btn.dataset.scissor === this.scissorMode);
+        });
+        selectButtons.forEach((btn) => {
+          btn.classList.toggle('active', btn.dataset.select === this.selectionMode);
         });
       };
 
@@ -5946,6 +6324,14 @@
         syncButtons();
       };
 
+      this.setSelectionMode = (mode) => {
+        if (!mode) return;
+        this.selectionMode = mode;
+        SETTINGS.selectionMode = mode;
+        if (this.app.renderer?.setSelectionMode) this.app.renderer.setSelectionMode(mode);
+        syncButtons();
+      };
+
       toolButtons.forEach((btn) => {
         if (btn.dataset.tool === 'scissor') return;
         btn.onclick = () => {
@@ -5958,6 +6344,13 @@
           const mode = btn.dataset.scissor;
           this.setActiveTool('scissor');
           this.setScissorMode(mode);
+        };
+      });
+      selectButtons.forEach((btn) => {
+        btn.onclick = () => {
+          const mode = btn.dataset.select;
+          this.setActiveTool('select');
+          this.setSelectionMode(mode);
         };
       });
 
@@ -6025,12 +6418,77 @@
         });
       }
 
+      if (selectButton && selectMenu) {
+        const setHover = (btn) => {
+          if (selectHoverBtn === btn) return;
+          selectHoverBtn = btn || null;
+          selectButtons.forEach((sub) => sub.classList.toggle('hover', sub === selectHoverBtn));
+        };
+        const openMenu = (e) => {
+          selectMenuOpen = true;
+          selectMenu.classList.add('open');
+          setHover(null);
+          if (e) {
+            const target = document.elementFromPoint(e.clientX, e.clientY);
+            const btn = target && target.closest ? target.closest('.tool-sub-btn[data-select]') : null;
+            setHover(btn);
+          }
+        };
+        const closeMenu = () => {
+          selectMenuOpen = false;
+          selectMenu.classList.remove('open');
+          setHover(null);
+        };
+
+        selectButton.addEventListener('pointerdown', (e) => {
+          if (e.button !== 0) return;
+          e.preventDefault();
+          if (selectHoldTimer) window.clearTimeout(selectHoldTimer);
+          selectHoldTimer = window.setTimeout(() => {
+            selectHoldTimer = null;
+            openMenu(e);
+          }, 280);
+        });
+
+        document.addEventListener('pointermove', (e) => {
+          if (!selectMenuOpen) return;
+          const target = document.elementFromPoint(e.clientX, e.clientY);
+          const btn = target && target.closest ? target.closest('.tool-sub-btn[data-select]') : null;
+          setHover(btn);
+        });
+
+        document.addEventListener('pointerup', (e) => {
+          if (selectHoldTimer) {
+            window.clearTimeout(selectHoldTimer);
+            selectHoldTimer = null;
+            this.setActiveTool('select');
+            return;
+          }
+          if (!selectMenuOpen) return;
+          const target = document.elementFromPoint(e.clientX, e.clientY);
+          const btn = target && target.closest ? target.closest('.tool-sub-btn[data-select]') : null;
+          if (btn) {
+            const mode = btn.dataset.select;
+            this.setActiveTool('select');
+            this.setSelectionMode(mode);
+          }
+          closeMenu();
+        });
+
+        document.addEventListener('pointerdown', (e) => {
+          if (!selectMenuOpen) return;
+          if (selectMenu.contains(e.target) || selectButton.contains(e.target)) return;
+          closeMenu();
+        });
+      }
+
       if (lightSourceBtn) {
         lightSourceBtn.onclick = () => this.startLightSourcePlacement();
       }
 
       this.setActiveTool(this.activeTool);
       this.setScissorMode(this.scissorMode);
+      this.setSelectionMode(this.selectionMode);
       syncButtons();
 
       if (this.app.renderer) {
@@ -7467,6 +7925,10 @@
 
         container.appendChild(el);
       });
+
+      if (SETTINGS.autoColorization?.enabled) {
+        this.applyAutoColorization({ commit: false });
+      }
     }
 
     expandLayer(layer, options = {}) {
@@ -9427,6 +9889,9 @@
 
           const shadingRangeDefs = [
             { key: 'lineSpacing', label: 'Line Spacing (mm)', type: 'range', min: 0.2, max: 8, step: 0.1, displayUnit: 'mm', infoKey: 'petalis.shadingLineSpacing' },
+            { key: 'density', label: 'Line Density', type: 'range', min: 0.2, max: 3, step: 0.05, infoKey: 'petalis.shadingDensity' },
+            { key: 'jitter', label: 'Line Jitter', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'petalis.shadingJitter' },
+            { key: 'lengthJitter', label: 'Length Jitter', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'petalis.shadingLengthJitter' },
             { key: 'angle', label: 'Hatch Angle', type: 'range', min: -90, max: 90, step: 1, displayUnit: '°', infoKey: 'petalis.shadingAngle' },
             { key: 'widthX', label: 'Width X (%)', type: 'range', min: 0, max: 100, step: 1, displayUnit: '%', infoKey: 'petalis.shadingWidthX' },
             { key: 'posX', label: 'Position X (%)', type: 'range', min: 0, max: 100, step: 1, displayUnit: '%', infoKey: 'petalis.shadingPosX' },

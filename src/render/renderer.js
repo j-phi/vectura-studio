@@ -28,8 +28,13 @@
       this.isSelecting = false;
       this.selectionStart = null;
       this.selectionRect = null;
+      this.selectionMode = SETTINGS.selectionMode || 'rect';
+      this.selectionPath = null;
+      this.lassoPath = null;
+      this.isLassoSelecting = false;
       this.activeTool = SETTINGS.activeTool || 'select';
       this.scissorMode = SETTINGS.scissorMode || 'line';
+      this.penPurpose = 'draw';
       this.penDraft = null;
       this.penPreview = null;
       this.isPenDragging = false;
@@ -78,6 +83,9 @@
         this.isPenDragging = false;
         this.penDragAnchor = null;
         this.penDragStart = null;
+        this.penPurpose = 'draw';
+      } else {
+        this.penPurpose = 'draw';
       }
       if (tool !== 'scissor') {
         this.isScissor = false;
@@ -92,6 +100,16 @@
     setScissorMode(mode) {
       if (!mode) return;
       this.scissorMode = mode;
+      this.draw();
+    }
+
+    setSelectionMode(mode) {
+      if (!mode) return;
+      this.selectionMode = mode;
+      this.selectionRect = null;
+      this.selectionStart = null;
+      this.lassoPath = null;
+      this.isLassoSelecting = false;
       this.draw();
     }
 
@@ -297,8 +315,18 @@
         this.cancelPenPath();
         return;
       }
-      const path = this.buildPenPathFromAnchors(anchors, this.penDraft.closed);
-      if (this.onPenComplete) this.onPenComplete(path);
+      if (this.penPurpose === 'select') {
+        if (anchors.length < 3) {
+          this.cancelPenPath();
+          return;
+        }
+        const path = this.buildPenPathFromAnchors(anchors, true);
+        this.selectLayersByPolygon(path);
+        this.penPurpose = 'draw';
+      } else {
+        const path = this.buildPenPathFromAnchors(anchors, this.penDraft.closed);
+        if (this.onPenComplete) this.onPenComplete(path);
+      }
       this.penDraft = null;
       this.penPreview = null;
       this.isPenDragging = false;
@@ -313,6 +341,7 @@
       this.isPenDragging = false;
       this.penDragAnchor = null;
       this.penDragStart = null;
+      this.penPurpose = 'draw';
       this.draw();
     }
 
@@ -660,6 +689,7 @@
         if (bounds) this.drawSelection(bounds, { showHandles });
       }
       if (this.selectionRect) this.drawSelectionRect(this.selectionRect);
+      if (this.lassoPath) this.drawSelectionPath(this.lassoPath);
       if (this.penDraft) this.drawPenPreview();
       if (this.isScissor && this.scissorStart && this.scissorEnd) this.drawScissorPreview();
       if (this.lightSource) this.drawLightSource();
@@ -749,6 +779,18 @@
       }
 
       if (allowSelection) {
+        if (this.activeTool === 'select' && this.selectionMode === 'pen') {
+          this.penPurpose = 'select';
+          this.handlePenDown(world, e);
+          return;
+        }
+        if (this.activeTool === 'select' && this.selectionMode === 'lasso') {
+          this.isLassoSelecting = true;
+          this.lassoPath = [world];
+          this.clearSelection();
+          this.draw();
+          return;
+        }
         const activeLayer = this.engine.getActiveLayer ? this.engine.getActiveLayer() : null;
         if (!activeLayer) return;
         const selectedLayers = this.getSelectedLayers();
@@ -928,15 +970,38 @@
         return;
       }
 
+      if (this.isLassoSelecting && this.lassoPath) {
+        const rect = this.canvas.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        const world = this.screenToWorld(sx, sy);
+        const last = this.lassoPath[this.lassoPath.length - 1];
+        const minDist = 2 / this.scale;
+        if (!last || Math.hypot(world.x - last.x, world.y - last.y) >= minDist) {
+          this.lassoPath.push(world);
+        }
+        this.draw();
+        return;
+      }
+
       if (this.isSelecting && this.selectionStart) {
         const rect = this.canvas.getBoundingClientRect();
         const sx = e.clientX - rect.left;
         const sy = e.clientY - rect.top;
         const world = this.screenToWorld(sx, sy);
-        const x = Math.min(this.selectionStart.x, world.x);
-        const y = Math.min(this.selectionStart.y, world.y);
-        const w = Math.abs(world.x - this.selectionStart.x);
-        const h = Math.abs(world.y - this.selectionStart.y);
+        const dx = world.x - this.selectionStart.x;
+        const dy = world.y - this.selectionStart.y;
+        let w = Math.abs(dx);
+        let h = Math.abs(dy);
+        let x = Math.min(this.selectionStart.x, world.x);
+        let y = Math.min(this.selectionStart.y, world.y);
+        if (e.metaKey || e.ctrlKey) {
+          const size = Math.max(w, h);
+          w = size;
+          h = size;
+          x = this.selectionStart.x + (dx < 0 ? -size : 0);
+          y = this.selectionStart.y + (dy < 0 ? -size : 0);
+        }
         this.selectionRect = { x, y, w, h };
         this.draw();
         return;
@@ -976,6 +1041,15 @@
         this.isScissor = false;
         this.scissorStart = null;
         this.scissorEnd = null;
+        this.draw();
+        return;
+      }
+      if (this.isLassoSelecting) {
+        if (this.lassoPath && this.lassoPath.length > 2) {
+          this.selectLayersByPolygon(this.lassoPath);
+        }
+        this.isLassoSelecting = false;
+        this.lassoPath = null;
         this.draw();
         return;
       }
@@ -1052,7 +1126,10 @@
       if (this.isSelecting) {
         const rect = this.selectionRect;
         if (rect) {
-          const selected = this.engine.layers.filter((layer) => this.layerIntersectsRect(layer, rect));
+          const selected =
+            this.selectionMode === 'oval'
+              ? this.engine.layers.filter((layer) => this.layerIntersectsPoly(layer, this.ellipseToPoly(rect)))
+              : this.engine.layers.filter((layer) => this.layerIntersectsRect(layer, rect));
           if (selected.length) {
             this.setSelection(
               selected.map((layer) => layer.id),
@@ -1538,9 +1615,38 @@
       this.ctx.lineWidth = 1 / this.scale;
       this.ctx.setLineDash([4 / this.scale, 4 / this.scale]);
       this.ctx.beginPath();
-      this.ctx.rect(rect.x, rect.y, rect.w, rect.h);
+      if (this.selectionMode === 'oval') {
+        this.ctx.ellipse(
+          rect.x + rect.w / 2,
+          rect.y + rect.h / 2,
+          Math.abs(rect.w) / 2,
+          Math.abs(rect.h) / 2,
+          0,
+          0,
+          Math.PI * 2
+        );
+      } else {
+        this.ctx.rect(rect.x, rect.y, rect.w, rect.h);
+      }
       this.ctx.fill();
       this.ctx.stroke();
+      this.ctx.restore();
+    }
+
+    drawSelectionPath(path) {
+      if (!Array.isArray(path) || path.length < 2) return;
+      this.ctx.save();
+      this.ctx.strokeStyle = 'rgba(148, 163, 184, 0.8)';
+      this.ctx.fillStyle = 'rgba(148, 163, 184, 0.08)';
+      this.ctx.lineWidth = 1 / this.scale;
+      this.ctx.setLineDash([4 / this.scale, 4 / this.scale]);
+      this.ctx.beginPath();
+      this.ctx.moveTo(path[0].x, path[0].y);
+      for (let i = 1; i < path.length; i++) this.ctx.lineTo(path[i].x, path[i].y);
+      this.ctx.closePath();
+      this.ctx.stroke();
+      this.ctx.fill();
+      this.ctx.setLineDash([]);
       this.ctx.restore();
     }
 
@@ -1789,6 +1895,96 @@
       return false;
     }
 
+    pointInPoly(point, poly) {
+      let inside = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const xi = poly[i].x;
+        const yi = poly[i].y;
+        const xj = poly[j].x;
+        const yj = poly[j].y;
+        const intersect = yi > point.y !== yj > point.y && point.x < ((xj - xi) * (point.y - yi)) / (yj - yi + 1e-9) + xi;
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    }
+
+    segmentIntersectsPoly(a, b, poly) {
+      if (this.pointInPoly(a, poly) || this.pointInPoly(b, poly)) return true;
+      for (let i = 0; i < poly.length; i++) {
+        const p1 = poly[i];
+        const p2 = poly[(i + 1) % poly.length];
+        if (this.segmentsIntersect(a, b, p1, p2)) return true;
+      }
+      return false;
+    }
+
+    pathIntersectsPoly(path, poly) {
+      if (!Array.isArray(path) || path.length < 2) return false;
+      for (let i = 0; i < path.length - 1; i++) {
+        if (this.segmentIntersectsPoly(path[i], path[i + 1], poly)) return true;
+      }
+      return false;
+    }
+
+    distancePointToSegment(p, a, b) {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const lenSq = dx * dx + dy * dy;
+      if (lenSq < 1e-9) return Math.hypot(p.x - a.x, p.y - a.y);
+      const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq));
+      const proj = { x: a.x + t * dx, y: a.y + t * dy };
+      return Math.hypot(p.x - proj.x, p.y - proj.y);
+    }
+
+    circleIntersectsPoly(meta, poly) {
+      const cx = meta.cx ?? meta.x;
+      const cy = meta.cy ?? meta.y;
+      const r = meta.r ?? Math.max(meta.rx ?? 0, meta.ry ?? 0);
+      if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(r)) return false;
+      const center = { x: cx, y: cy };
+      if (this.pointInPoly(center, poly)) return true;
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i];
+        const b = poly[(i + 1) % poly.length];
+        if (this.distancePointToSegment(center, a, b) <= r) return true;
+      }
+      return false;
+    }
+
+    layerIntersectsPoly(layer, poly) {
+      if (!layer || !layer.visible) return false;
+      return layer.paths.some((path) => {
+        if (path && path.meta && path.meta.kind === 'circle') {
+          return this.circleIntersectsPoly(path.meta, poly);
+        }
+        return this.pathIntersectsPoly(path, poly);
+      });
+    }
+
+    selectLayersByPolygon(poly) {
+      if (!poly || poly.length < 3) return;
+      const selected = this.engine.layers.filter((layer) => this.layerIntersectsPoly(layer, poly));
+      if (selected.length) {
+        this.setSelection(
+          selected.map((layer) => layer.id),
+          selected[selected.length - 1].id
+        );
+      }
+    }
+
+    ellipseToPoly(rect, steps = 36) {
+      const cx = rect.x + rect.w / 2;
+      const cy = rect.y + rect.h / 2;
+      const rx = rect.w / 2;
+      const ry = rect.h / 2;
+      const pts = [];
+      for (let i = 0; i < steps; i++) {
+        const t = (i / steps) * Math.PI * 2;
+        pts.push({ x: cx + Math.cos(t) * rx, y: cy + Math.sin(t) * ry });
+      }
+      return pts;
+    }
+
     circleIntersectsRect(meta, rect) {
       const cx = meta.cx ?? meta.x;
       const cy = meta.cy ?? meta.y;
@@ -1827,7 +2023,11 @@
       }
       if (this.activeTool === 'pen' && (e.metaKey || e.ctrlKey)) {
         // fall through to selection-style cursor handling
-      } else if (this.activeTool === 'pen' || this.activeTool === 'scissor') {
+      } else if (
+        this.activeTool === 'pen' ||
+        this.activeTool === 'scissor' ||
+        (this.activeTool === 'select' && (this.selectionMode === 'pen' || this.selectionMode === 'lasso'))
+      ) {
         this.canvas.style.cursor = 'crosshair';
         return;
       }

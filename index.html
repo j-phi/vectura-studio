@@ -81,7 +81,7 @@
       <aside id="left-pane" class="pane pane-left bg-vectura-panel border-r border-vectura-border flex flex-col z-10 shadow-xl">
         <div class="pane-header pane-header-left p-4 border-b border-vectura-border flex justify-between items-center">
           <span class="pane-title font-bold text-vectura-accent">GENERATOR</span>
-          <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.61</span>
+          <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.63</span>
           <button id="btn-pane-toggle-left" class="pane-toggle pane-toggle-left" type="button" aria-label="Toggle left pane">
             ◀
           </button>
@@ -186,11 +186,50 @@
 
       <section class="flex-1 flex flex-col bg-[#121214] relative overflow-hidden">
         <div id="tool-bar" class="tool-bar" aria-label="Tools">
-          <button class="tool-btn" data-tool="select" type="button" aria-label="Selection Tool (V)" title="Selection (V)">
-            <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 2L14 12H9.5L12.5 21L9.5 22L6.5 13L3 16Z" fill="currentColor" />
-            </svg>
-          </button>
+          <div class="tool-group">
+            <button class="tool-btn" data-tool="select" type="button" aria-label="Selection Tool (V)" title="Selection (V)">
+              <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="4" y="5" width="16" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 3" />
+              </svg>
+            </button>
+            <div class="tool-submenu" data-menu="select" aria-label="Selection subtools">
+              <button class="tool-sub-btn" data-select="rect" type="button" title="Rectangle Selection">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="4" y="6" width="16" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 3" />
+                </svg>
+              </button>
+              <button class="tool-sub-btn" data-select="oval" type="button" title="Oval Selection">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <ellipse cx="12" cy="12" rx="7" ry="5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 3" />
+                </svg>
+              </button>
+              <button class="tool-sub-btn" data-select="pen" type="button" title="Pen Selection">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M4 18C7 9 14 6 20 8"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-dasharray="2 2"
+                  />
+                  <path d="M16.8 6.2l2.6 2.6-3.2 3.2-2.6-2.6z" fill="none" stroke="currentColor" stroke-width="1.4" />
+                </svg>
+              </button>
+              <button class="tool-sub-btn" data-select="lasso" type="button" title="Lasso Selection">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M6 14c1.5-4.5 6.5-6 10-3 2.5 2 2 6-1.5 7.2-3.4 1.2-6.8-0.6-6.8-3.3"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-dasharray="2 2"
+                  />
+                </svg>
+              </button>
+            </div>
+          </div>
           <button class="tool-btn" data-tool="direct" type="button" aria-label="Direct Selection Tool (A)" title="Direct Selection (A)">
             <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M4 2L14 12H9.5L12.5 21L9.5 22L6.5 13L3 16Z" fill="none" stroke="currentColor" stroke-width="1.6" />
@@ -360,6 +399,38 @@
               </button>
             </div>
             <div id="pen-list" class="pen-list"></div>
+          </div>
+
+          <div class="p-4 border-t border-vectura-border bg-vectura-panel">
+            <div id="auto-colorization-section" class="global-section collapsed">
+              <button id="auto-colorization-header" class="global-section-header" type="button">
+                <span class="global-section-title">Auto-Colorization</span>
+                <span class="global-section-toggle" aria-hidden="true"></span>
+              </button>
+              <div id="auto-colorization-body" class="global-section-body" style="display: none;">
+                <div class="control-group border-none pb-0 mb-0">
+                  <div class="flex items-center justify-between mb-3">
+                    <label class="control-label mb-0">Enable</label>
+                    <input id="auto-colorization-enabled" type="checkbox" class="cursor-pointer" />
+                  </div>
+                  <label class="control-label">Scope</label>
+                  <select
+                    id="auto-colorization-scope"
+                    class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent"
+                  >
+                    <option value="active">Active Layer</option>
+                    <option value="selected">Selected Layers</option>
+                    <option value="all">All Layers</option>
+                  </select>
+                  <label class="control-label mt-3">Mode</label>
+                  <select
+                    id="auto-colorization-mode"
+                    class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent"
+                  ></select>
+                  <div id="auto-colorization-params" class="mt-3"></div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="p-4 border-t border-vectura-border bg-vectura-bg z-20 relative">
