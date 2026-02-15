@@ -6,8 +6,8 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Plotter-first output in millimeters with machine profiles (A3, A4, AxiDraw V3).
 - Layered generation with visibility toggles, ordering, and per-layer stroke/line-cap settings.
 - Seeded, repeatable results with live transform controls (position, scale, rotation).
-- Collapsible left-panel sections with persisted state: `Algorithm`, `Transform & Seed`, `Algorithm Configuration`, and `Optimization`.
-- ABOUT card is visible by default and toggled by the Algorithm info button.
+- Collapsible left-panel sections with persisted state: `Algorithm` (including `Transform & Seed`), `Algorithm Configuration`, and `Optimization`.
+- ABOUT card is visible by default, toggled by the Algorithm info button, and remembered in saved UI preferences.
 - Direct canvas manipulation: drag to move the selected layer, drag corner handles to resize, rotate via the upper-right handle, and double-click to rename layers.
 - Multi-selection: shift-click ranges in the layer list, Cmd/Ctrl-click to toggle, or drag a marquee, then move/rotate the group together.
 - Layer grouping/ungrouping via Cmd/Ctrl+G and Cmd/Ctrl+Shift+G.
@@ -80,7 +80,7 @@ CI lives in `.github/workflows/test.yml`:
 
 ## How to Use
 1. Pick an algorithm in the left panel and adjust its parameters.
-2. Use the transform controls (seed, position, scale, rotation) to nudge the layer.
+2. Use the transform controls (seed, position, scale, rotation) inside the Algorithm panel to nudge the layer.
 3. Use Post-Processing Lab for smoothing/curves/simplify plus optional optimization passes and preview.
 4. Manage layers on the right: add, reorder (drag the grip), duplicate, hide, rename (double-click), expand into sublayers, and assign pens (drag a pen onto a layer to apply to the selection).
 5. Use Settings for machine size, margin, truncation, margin guides, stroke, background, SVG precision, auto-colorization, and optional cookie preference saving.

@@ -624,7 +624,6 @@
     gridOverlay: false,
     uiSections: {
       algorithm: false,
-      transformSeed: true,
       algorithmConfiguration: false,
       optimization: true,
     },

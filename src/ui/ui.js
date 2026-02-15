@@ -4728,7 +4728,6 @@
     getLeftSectionDefaults() {
       return {
         algorithm: false,
-        transformSeed: true,
         algorithmConfiguration: false,
         optimization: true,
       };
@@ -4737,7 +4736,6 @@
     getLeftSectionMap() {
       return {
         algorithm: getEl('left-section-algorithm'),
-        transformSeed: getEl('left-section-transform-seed'),
         algorithmConfiguration: getEl('left-section-algorithm-configuration'),
         optimization: getEl('left-section-optimization'),
       };
@@ -4783,6 +4781,10 @@
     setAboutVisible(visible, options = {}) {
       const { persist = true } = options;
       SETTINGS.aboutVisible = visible !== false;
+      if (!SETTINGS.uiSections || typeof SETTINGS.uiSections !== 'object') {
+        SETTINGS.uiSections = { ...this.getLeftSectionDefaults() };
+      }
+      SETTINGS.uiSections.algorithmAbout = SETTINGS.aboutVisible;
       const about = getEl('algo-about');
       if (about) about.style.display = SETTINGS.aboutVisible ? '' : 'none';
       if (!persist) return;
@@ -4791,7 +4793,17 @@
 
     initAboutSection() {
       const closeBtn = getEl('algo-about-close');
-      if (SETTINGS.aboutVisible === undefined) SETTINGS.aboutVisible = true;
+      const remembered =
+        SETTINGS.uiSections &&
+        typeof SETTINGS.uiSections === 'object' &&
+        Object.prototype.hasOwnProperty.call(SETTINGS.uiSections, 'algorithmAbout')
+          ? SETTINGS.uiSections.algorithmAbout
+          : undefined;
+      if (remembered !== undefined) {
+        SETTINGS.aboutVisible = remembered !== false;
+      } else if (SETTINGS.aboutVisible === undefined) {
+        SETTINGS.aboutVisible = true;
+      }
       this.setAboutVisible(SETTINGS.aboutVisible, { persist: false });
       if (closeBtn) {
         closeBtn.onclick = (e) => {
@@ -6004,7 +6016,7 @@
             Use [PETAL DESIGNER] for the single-panel petal editor, or choose Petalis Designer for the embedded inline panel.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Left panel sections are collapsible; ABOUT starts open and can be toggled from the Algorithm info button.
+            Left panel sections are collapsible; Transform &amp; Seed lives inside Algorithm, and ABOUT visibility is remembered.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Harmonograph layers combine damped pendulum waves; tweak frequency, phase, and damping for intricate loops.
