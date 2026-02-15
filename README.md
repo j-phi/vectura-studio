@@ -9,7 +9,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Direct canvas manipulation: drag to move the selected layer, drag corner handles to resize, rotate via the upper-right handle, and double-click to rename layers.
 - Multi-selection: shift-click ranges in the layer list, Cmd/Ctrl-click to toggle, or drag a marquee, then move/rotate the group together.
 - Layer grouping/ungrouping via Cmd/Ctrl+G and Cmd/Ctrl+Shift+G.
-- Illustrator-style tool bar with selection, direct selection, hand, pen (bezier), and scissor tools (V/A/Space/P/C).
+- Illustrator-style tool bar with selection, direct selection, hand, pen (bezier), and scissor tools (V/A/Space/P/C). Press V/C again to cycle subtools.
 - Expand any layer into per-line sublayers for fine-grained selection and pen assignment.
 - Canvas shortcut overlay that stays above the formula panel (toggleable in Settings).
 - Alignment guides for canvas center and size matching while dragging.
@@ -18,7 +18,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - In-app help guide and shortcut menu (press `?`).
 - Parameter randomization and simplification controls with live line/point counts.
 - Double-click any value to edit it inline, and double-click a control to reset to defaults.
-- Fast duplication and nudging: Alt-drag (Option-drag) to duplicate, arrow keys to nudge (Shift for larger steps).
+- Fast duplication and nudging: Cmd/Ctrl+D duplicates selection, Alt-drag (Option-drag) to duplicate, arrow keys to nudge (Shift for larger steps).
 - Configurable undo with Cmd/Ctrl+Z and adjustable history depth.
 - Multiple algorithm families (flowfields, lissajous, harmonograph, wavetable, rings, topo, boids, attractors, hyphae, shape pack).
 - Harmonograph pendulum list with add/delete/toggle controls and optional guide overlay.

@@ -106,6 +106,12 @@
     }
   };
 
+  const sharpnessExponent = (t, sharpness) => {
+    const amt = clamp(sharpness ?? 0, 0, 1);
+    const bias = 0.2 + 0.8 * clamp(t, 0, 1);
+    return lerp(0.9, 2.6, amt * bias);
+  };
+
   const widthAt = (t, opts) => {
     const {
       profile,
@@ -121,7 +127,7 @@
     const base = profileBase(t, profile);
     const center = profileBase(t, centerProfile || profile);
     let w = lerp(base, center, morphWeight);
-    const sharpPow = lerp(0.8, 2.4, clamp(sharpness, 0, 1));
+    const sharpPow = sharpnessExponent(t, sharpness);
     w = Math.pow(Math.max(0, w), sharpPow);
     const baseFactor = 1 + (baseFlare - basePinch) * Math.pow(1 - t, 2);
     w *= baseFactor;
@@ -172,17 +178,22 @@
     const sideHandle = clamp(leafSideHandle ?? 0.4, 0, 1) * maxHalf;
     const tipHandle = clamp(leafTipHandle ?? 0.35, 0, 1) * length * 0.5;
     const sideX = length * sidePos;
+    const isOval = profile === 'oval' || centerProfile === 'oval';
+    const baseHandleX = isOval ? 0 : baseHandle;
+    const baseHandleY = isOval ? maxHalf * clamp(leafBaseHandle ?? 0.35, 0, 1) : 0;
+    const tipCtrlX = isOval ? length : Math.max(sideX + 0.5, length - tipHandle);
+    const tipCtrlY = isOval ? maxHalf * clamp(leafTipHandle ?? 0.35, 0, 1) : 0;
 
     const seg1 = [
       { x: 0, y: 0 },
-      { x: baseHandle, y: 0 },
+      { x: baseHandleX, y: baseHandleY },
       { x: sideX, y: Math.max(0, maxHalf - sideHandle) },
       { x: sideX, y: maxHalf },
     ];
     const seg2 = [
       { x: sideX, y: maxHalf },
       { x: sideX, y: maxHalf + sideHandle },
-      { x: Math.max(sideX + 0.5, length - tipHandle), y: 0 },
+      { x: tipCtrlX, y: tipCtrlY },
       { x: length, y: 0 },
     ];
     const points = [];
@@ -199,7 +210,7 @@
       const base = profileBase(t, profile);
       const center = profileBase(t, centerProfile || profile);
       let scale = lerp(base, center, morphWeight);
-      const sharpPow = lerp(0.8, 2.4, clamp(sharpness, 0, 1));
+      const sharpPow = sharpnessExponent(t, sharpness);
       scale = Math.pow(Math.max(0, scale), sharpPow);
       const baseFactor = 1 + (baseFlare - basePinch) * Math.pow(1 - t, 2);
       const waveFactor = waveAmp > 0 ? 1 + waveAmp * Math.sin(TAU * t * waveFreq + wavePhase) : 1;
@@ -1125,6 +1136,10 @@
     const baseAngle = toRad(spiralMode === 'custom' ? p.customAngle ?? GOLDEN_ANGLE : GOLDEN_ANGLE);
     const spiralTightness = Math.max(0.5, p.spiralTightness ?? 1);
     const radialGrowth = Math.max(0.1, p.radialGrowth ?? 1);
+    const spiralStart = clamp(p.spiralStart ?? 0, 0, 1);
+    const spiralEnd = clamp(p.spiralEnd ?? 1, 0, 1);
+    const spiralMin = Math.min(spiralStart, spiralEnd);
+    const spiralMax = Math.max(spiralStart, spiralEnd);
     const ringSplit = clamp(p.ringSplit ?? 0.5, 0.1, 0.9);
     const ringOffset = toRad(p.ringOffset ?? 0);
     const driftStrength = clamp(p.driftStrength ?? 0, 0, 1);
@@ -1160,7 +1175,8 @@
       const { count, minR, maxR, offset } = ring;
       for (let i = 0; i < count; i++) {
         const t = count <= 1 ? 0.5 : i / (count - 1);
-        const radial = lerp(minR, maxR, Math.pow(t, spiralTightness)) * radialGrowth;
+        const spiralT = lerp(spiralMin, spiralMax, Math.pow(t, spiralTightness));
+        const radial = lerp(minR, maxR, spiralT) * radialGrowth;
         let radialBase = anchorRadius + radial;
         if (anchorMode === 'all') radialBase = anchorRadius;
         const drift = angularDrift * driftStrength * noise.noise2D(i * driftNoise, ringIndex * 2.1);
@@ -1324,7 +1340,7 @@
 
   const formula = (p) =>
     `θ = i * ${p.spiralMode === 'custom' ? p.customAngle ?? GOLDEN_ANGLE : GOLDEN_ANGLE}°\n` +
-    `r = f(i) * ${p.spiralTightness ?? 1}\n` +
+    `r = lerp(${p.spiralStart ?? 0}, ${p.spiralEnd ?? 1}, t^${p.spiralTightness ?? 1}) * ${p.radialGrowth ?? 1}\n` +
     `petal = profile(${p.petalProfile || 'teardrop'})`;
 
   window.Vectura = window.Vectura || {};

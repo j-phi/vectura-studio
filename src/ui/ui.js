@@ -1121,8 +1121,8 @@
       value: 'concentric',
       label: 'Concentric Rings',
       params: [
-        { id: 'radiusStart', label: 'Inner Radius (mm)', type: 'range', min: 0, max: 400, step: 1 },
-        { id: 'radiusEnd', label: 'Outer Radius (mm)', type: 'range', min: 0, max: 600, step: 1 },
+        { id: 'radiusStart', label: 'Inner Radius (%)', type: 'range', min: 0, max: 100, step: 1, unit: '%' },
+        { id: 'radiusEnd', label: 'Outer Radius (%)', type: 'range', min: 0, max: 100, step: 1, unit: '%' },
         { id: 'bandSize', label: 'Band Width (mm)', type: 'range', min: 1, max: 200, step: 1 },
         { id: 'bandOffset', label: 'Band Offset (mm)', type: 'range', min: -200, max: 200, step: 1 },
         { id: 'bandGrowth', label: 'Band Growth', type: 'range', min: -1, max: 1, step: 0.05 },
@@ -1132,8 +1132,8 @@
       value: 'horizontal',
       label: 'Horizontal Bands',
       params: [
-        { id: 'bandStart', label: 'Start Y (mm)', type: 'range', min: 0, max: 600, step: 1 },
-        { id: 'bandEnd', label: 'End Y (mm)', type: 'range', min: 0, max: 600, step: 1 },
+        { id: 'bandStart', label: 'Start Y (%)', type: 'range', min: 0, max: 100, step: 1, unit: '%' },
+        { id: 'bandEnd', label: 'End Y (%)', type: 'range', min: 0, max: 100, step: 1, unit: '%' },
         { id: 'bandSize', label: 'Band Height (mm)', type: 'range', min: 1, max: 200, step: 1 },
         { id: 'bandOffset', label: 'Band Offset (mm)', type: 'range', min: -200, max: 200, step: 1 },
       ],
@@ -1142,8 +1142,8 @@
       value: 'vertical',
       label: 'Vertical Bands',
       params: [
-        { id: 'bandStart', label: 'Start X (mm)', type: 'range', min: 0, max: 600, step: 1 },
-        { id: 'bandEnd', label: 'End X (mm)', type: 'range', min: 0, max: 600, step: 1 },
+        { id: 'bandStart', label: 'Start X (%)', type: 'range', min: 0, max: 100, step: 1, unit: '%' },
+        { id: 'bandEnd', label: 'End X (%)', type: 'range', min: 0, max: 100, step: 1, unit: '%' },
         { id: 'bandSize', label: 'Band Width (mm)', type: 'range', min: 1, max: 200, step: 1 },
         { id: 'bandOffset', label: 'Band Offset (mm)', type: 'range', min: -200, max: 200, step: 1 },
       ],
@@ -1618,6 +1618,8 @@
       },
       { id: 'spiralTightness', label: 'Spiral Tightness', type: 'range', min: 0.5, max: 50, step: 0.1, infoKey: 'petalis.spiralTightness' },
       { id: 'radialGrowth', label: 'Radial Growth', type: 'range', min: 0.05, max: 20, step: 0.05, infoKey: 'petalis.radialGrowth' },
+      { id: 'spiralStart', label: 'Spiral Start', type: 'range', min: 0, max: 1, step: 0.01, infoKey: 'petalis.spiralStart' },
+      { id: 'spiralEnd', label: 'Spiral End', type: 'range', min: 0, max: 1, step: 0.01, infoKey: 'petalis.spiralEnd' },
       { type: 'section', label: 'Center Morphing' },
       { id: 'centerSizeMorph', label: 'Size Morph', type: 'range', min: -100, max: 100, step: 1, infoKey: 'petalis.centerSizeMorph' },
       { id: 'centerSizeCurve', label: 'Size Morph Curve', type: 'range', min: 0.5, max: 2.5, step: 0.05, infoKey: 'petalis.centerSizeCurve' },
@@ -3595,7 +3597,7 @@
     },
     'petalis.tipSharpness': {
       title: 'Tip Sharpness',
-      description: 'Controls how pointy the petal tip is. At 0 the tip is fully rounded.',
+      description: 'Controls how pointy the petal tip is while keeping the base rounded. At 0 the tip is fully rounded.',
     },
     'petalis.tipTwist': {
       title: 'Tip Rotate',
@@ -3668,6 +3670,14 @@
     'petalis.radialGrowth': {
       title: 'Radial Growth',
       description: 'Scales the radial distance of petals from the center.',
+    },
+    'petalis.spiralStart': {
+      title: 'Spiral Start',
+      description: 'Sets where the spiral begins along the radial range (0 = center, 1 = edge).',
+    },
+    'petalis.spiralEnd': {
+      title: 'Spiral End',
+      description: 'Sets where the spiral ends along the radial range (lower values keep outer petals tighter).',
     },
     'petalis.centerSizeMorph': {
       title: 'Size Morph',
@@ -4650,10 +4660,10 @@
           <div class="modal-ill-label">Keyboard Shortcuts</div>
           <div class="text-xs text-vectura-muted leading-relaxed space-y-1">
             <div><span class="text-vectura-accent">?</span> Open shortcuts</div>
-            <div><span class="text-vectura-accent">V</span> Selection tool</div>
+            <div><span class="text-vectura-accent">V</span> Selection tool (press again to cycle modes)</div>
             <div><span class="text-vectura-accent">A</span> Direct selection tool</div>
             <div><span class="text-vectura-accent">P</span> Pen tool</div>
-            <div><span class="text-vectura-accent">C</span> Scissor tool</div>
+            <div><span class="text-vectura-accent">C</span> Scissor tool (press again to cycle modes)</div>
             <div><span class="text-vectura-accent">Space</span> Hand tool (temporary)</div>
             <div><span class="text-vectura-accent">Enter</span> Commit pen path</div>
             <div><span class="text-vectura-accent">Double-click</span> Close pen path near start</div>
@@ -4666,6 +4676,7 @@
             <div><span class="text-vectura-accent">Cmd/Ctrl + G</span> Group selection</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + Shift + G</span> Ungroup selection</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + E</span> Expand selection into sublayers</div>
+            <div><span class="text-vectura-accent">Cmd/Ctrl + D</span> Duplicate selection (Alt/Option + D fallback)</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + [</span> Move layer down</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + ]</span> Move layer up</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + Shift + [ / ]</span> Send to back / front</div>
@@ -5442,6 +5453,31 @@
       this.app.render();
     }
 
+    duplicateLayers(targetLayers, options = {}) {
+      const { select = true } = options;
+      const layers = (targetLayers || []).filter((layer) => layer && !layer.isGroup);
+      if (!layers.length) return [];
+      if (this.app.pushHistory) this.app.pushHistory();
+      const order = this.app.engine.layers.map((layer) => layer.id);
+      const sorted = layers
+        .slice()
+        .sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+      const duplicates = [];
+      sorted.forEach((layer) => {
+        const dup = this.app.engine.duplicateLayer(layer.id);
+        if (dup) duplicates.push(dup);
+      });
+      if (duplicates.length && select && this.app.renderer) {
+        const ids = duplicates.map((layer) => layer.id);
+        const primary = ids[ids.length - 1] || null;
+        this.app.renderer.setSelection(ids, primary);
+      }
+      this.renderLayers();
+      this.buildControls();
+      this.app.render();
+      return duplicates;
+    }
+
     getUniqueLayerName(base, excludeId) {
       const clean = base.trim() || 'Layer';
       if (!this.isDuplicateLayerName(clean, excludeId)) return clean;
@@ -5813,7 +5849,7 @@
             wrapper.innerHTML = `
               <div class="flex items-center justify-between mb-1">
                 <label class="control-label mb-0">${param.label}</label>
-                <span class="text-xs text-vectura-accent">${value}</span>
+                <span class="text-xs text-vectura-accent">${value}${param.unit || ''}</span>
               </div>
               <input
                 type="range"
@@ -5829,10 +5865,12 @@
             input.oninput = () => {
               const next = parseFloat(input.value);
               config.params[param.id] = Number.isFinite(next) ? next : value;
-              if (display) display.textContent = input.value;
+              if (display) display.textContent = `${input.value}${param.unit || ''}`;
               this.applyAutoColorization({ commit: false });
             };
             input.onchange = () => {
+              const next = parseFloat(input.value);
+              config.params[param.id] = Number.isFinite(next) ? next : value;
               this.applyAutoColorization({ commit: true });
             };
           }
@@ -5945,7 +5983,9 @@
       let nextTypeIdx = 0;
 
       const assignIndex = (info, idx) => {
-        const pen = pens[Math.max(0, Math.min(pens.length - 1, idx))] || pens[0];
+        const total = pens.length;
+        const normalized = ((idx % total) + total) % total;
+        const pen = pens[normalized] || pens[0];
         if (!pen) return;
         const layer = info.layer;
         layer.penId = pen.id;
@@ -5953,13 +5993,24 @@
         layer.strokeWidth = pen.width;
       };
 
-      const radiusStart = params.radiusStart ?? 0;
-      const radiusEnd = params.radiusEnd && params.radiusEnd > radiusStart ? params.radiusEnd : maxRadius;
+      const pctToRange = (value, maxValue, fallback) => {
+        const raw = Number.isFinite(value) ? value : fallback;
+        return (clamp(raw, 0, 100) / 100) * maxValue;
+      };
+      const radiusStart = pctToRange(params.radiusStart, maxRadius, 0);
+      const radiusEnd = (() => {
+        const end = pctToRange(params.radiusEnd, maxRadius, 100);
+        return end > radiusStart ? end : maxRadius;
+      })();
       const bandSize = Math.max(1, params.bandSize ?? 20);
       const bandOffset = params.bandOffset ?? 0;
       const bandGrowth = params.bandGrowth ?? 0;
-      const bandStart = params.bandStart ?? 0;
-      const bandEnd = params.bandEnd && params.bandEnd > bandStart ? params.bandEnd : (mode === 'vertical' ? profile.width : profile.height);
+      const bandSpan = mode === 'vertical' ? profile.width : profile.height;
+      const bandStart = pctToRange(params.bandStart, bandSpan, 0);
+      const bandEnd = (() => {
+        const end = pctToRange(params.bandEnd, bandSpan, 100);
+        return end > bandStart ? end : bandSpan;
+      })();
 
       if (commit && this.app.pushHistory) this.app.pushHistory();
 
@@ -6285,12 +6336,21 @@
       const selectButton = toolbar.querySelector('.tool-btn[data-tool="select"]');
       const selectMenu = toolbar.querySelector('.tool-submenu[data-menu="select"]');
       const lightSourceBtn = getEl('btn-light-source');
-      let scissorHoldTimer = null;
-      let scissorMenuOpen = false;
-      let scissorHoverBtn = null;
-      let selectHoldTimer = null;
-      let selectMenuOpen = false;
-      let selectHoverBtn = null;
+      const selectionModes = selectButtons.map((btn) => btn.dataset.select).filter(Boolean);
+      const scissorModes = subButtons.map((btn) => btn.dataset.scissor).filter(Boolean);
+
+      const updateToolIcon = (tool, mode) => {
+        const button = toolbar.querySelector(`.tool-btn[data-tool="${tool}"]`);
+        const icon = button?.querySelector('.tool-icon');
+        const sourceBtn =
+          tool === 'select'
+            ? selectButtons.find((btn) => btn.dataset.select === mode)
+            : subButtons.find((btn) => btn.dataset.scissor === mode);
+        const sourceSvg = sourceBtn?.querySelector('svg');
+        if (!icon || !sourceSvg) return;
+        icon.innerHTML = sourceSvg.innerHTML;
+        icon.setAttribute('viewBox', sourceSvg.getAttribute('viewBox') || '0 0 24 24');
+      };
 
       const syncButtons = () => {
         toolButtons.forEach((btn) => {
@@ -6321,6 +6381,7 @@
         this.scissorMode = mode;
         SETTINGS.scissorMode = mode;
         if (this.app.renderer?.setScissorMode) this.app.renderer.setScissorMode(mode);
+        updateToolIcon('scissor', this.scissorMode);
         syncButtons();
       };
 
@@ -6329,7 +6390,29 @@
         this.selectionMode = mode;
         SETTINGS.selectionMode = mode;
         if (this.app.renderer?.setSelectionMode) this.app.renderer.setSelectionMode(mode);
+        updateToolIcon('select', this.selectionMode);
         syncButtons();
+      };
+
+      const cycleMode = (current, modes) => {
+        if (!modes.length) return current;
+        const idx = modes.indexOf(current);
+        const nextIndex = idx === -1 ? 0 : (idx + 1) % modes.length;
+        return modes[nextIndex];
+      };
+
+      this.cycleToolSubmode = (tool) => {
+        if (tool === 'select') {
+          const next = cycleMode(this.selectionMode, selectionModes);
+          this.setSelectionMode(next);
+          this.setActiveTool('select');
+          return;
+        }
+        if (tool === 'scissor') {
+          const next = cycleMode(this.scissorMode, scissorModes);
+          this.setScissorMode(next);
+          this.setActiveTool('scissor');
+        }
       };
 
       toolButtons.forEach((btn) => {
@@ -6354,133 +6437,95 @@
         };
       });
 
-      if (scissorButton && scissorMenu) {
+      const initSubtoolMenu = (config) => {
+        const { button, menu, buttons, onActivate, onSelect } = config;
+        if (!button || !menu) return;
+        let holdTimer = null;
+        let menuOpen = false;
+        let hoverBtn = null;
+
         const setHover = (btn) => {
-          if (scissorHoverBtn === btn) return;
-          scissorHoverBtn = btn || null;
-          subButtons.forEach((sub) => sub.classList.toggle('hover', sub === scissorHoverBtn));
+          if (hoverBtn === btn) return;
+          hoverBtn = btn || null;
+          buttons.forEach((sub) => sub.classList.toggle('hover', sub === hoverBtn));
         };
         const openMenu = (e) => {
-          scissorMenuOpen = true;
-          scissorMenu.classList.add('open');
+          menuOpen = true;
+          menu.classList.add('open');
           setHover(null);
           if (e) {
             const target = document.elementFromPoint(e.clientX, e.clientY);
-            const btn = target && target.closest ? target.closest('.tool-sub-btn[data-scissor]') : null;
+            const btn = target && target.closest ? target.closest('.tool-sub-btn') : null;
             setHover(btn);
           }
         };
         const closeMenu = () => {
-          scissorMenuOpen = false;
-          scissorMenu.classList.remove('open');
+          menuOpen = false;
+          menu.classList.remove('open');
           setHover(null);
         };
 
-        scissorButton.addEventListener('pointerdown', (e) => {
+        button.addEventListener('pointerdown', (e) => {
           if (e.button !== 0) return;
           e.preventDefault();
-          if (scissorHoldTimer) window.clearTimeout(scissorHoldTimer);
-          scissorHoldTimer = window.setTimeout(() => {
-            scissorHoldTimer = null;
+          if (holdTimer) window.clearTimeout(holdTimer);
+          holdTimer = window.setTimeout(() => {
+            holdTimer = null;
             openMenu(e);
           }, 280);
         });
 
         document.addEventListener('pointermove', (e) => {
-          if (!scissorMenuOpen) return;
+          if (!menuOpen) return;
           const target = document.elementFromPoint(e.clientX, e.clientY);
-          const btn = target && target.closest ? target.closest('.tool-sub-btn[data-scissor]') : null;
+          const btn = target && target.closest ? target.closest('.tool-sub-btn') : null;
           setHover(btn);
         });
 
         document.addEventListener('pointerup', (e) => {
-          if (scissorHoldTimer) {
-            window.clearTimeout(scissorHoldTimer);
-            scissorHoldTimer = null;
-            this.setActiveTool('scissor');
+          if (holdTimer) {
+            window.clearTimeout(holdTimer);
+            holdTimer = null;
+            if (onActivate) onActivate();
             return;
           }
-          if (!scissorMenuOpen) return;
+          if (!menuOpen) return;
           const target = document.elementFromPoint(e.clientX, e.clientY);
-          const btn = target && target.closest ? target.closest('.tool-sub-btn[data-scissor]') : null;
-          if (btn) {
-            const mode = btn.dataset.scissor;
-            this.setActiveTool('scissor');
-            this.setScissorMode(mode);
-          }
+          const btn = target && target.closest ? target.closest('.tool-sub-btn') : null;
+          if (btn && onSelect) onSelect(btn);
           closeMenu();
         });
 
         document.addEventListener('pointerdown', (e) => {
-          if (!scissorMenuOpen) return;
-          if (scissorMenu.contains(e.target) || scissorButton.contains(e.target)) return;
+          if (!menuOpen) return;
+          if (menu.contains(e.target) || button.contains(e.target)) return;
           closeMenu();
         });
-      }
+      };
 
-      if (selectButton && selectMenu) {
-        const setHover = (btn) => {
-          if (selectHoverBtn === btn) return;
-          selectHoverBtn = btn || null;
-          selectButtons.forEach((sub) => sub.classList.toggle('hover', sub === selectHoverBtn));
-        };
-        const openMenu = (e) => {
-          selectMenuOpen = true;
-          selectMenu.classList.add('open');
-          setHover(null);
-          if (e) {
-            const target = document.elementFromPoint(e.clientX, e.clientY);
-            const btn = target && target.closest ? target.closest('.tool-sub-btn[data-select]') : null;
-            setHover(btn);
-          }
-        };
-        const closeMenu = () => {
-          selectMenuOpen = false;
-          selectMenu.classList.remove('open');
-          setHover(null);
-        };
+      initSubtoolMenu({
+        button: scissorButton,
+        menu: scissorMenu,
+        buttons: subButtons,
+        onActivate: () => this.setActiveTool('scissor'),
+        onSelect: (btn) => {
+          const mode = btn.dataset.scissor;
+          this.setActiveTool('scissor');
+          this.setScissorMode(mode);
+        },
+      });
 
-        selectButton.addEventListener('pointerdown', (e) => {
-          if (e.button !== 0) return;
-          e.preventDefault();
-          if (selectHoldTimer) window.clearTimeout(selectHoldTimer);
-          selectHoldTimer = window.setTimeout(() => {
-            selectHoldTimer = null;
-            openMenu(e);
-          }, 280);
-        });
-
-        document.addEventListener('pointermove', (e) => {
-          if (!selectMenuOpen) return;
-          const target = document.elementFromPoint(e.clientX, e.clientY);
-          const btn = target && target.closest ? target.closest('.tool-sub-btn[data-select]') : null;
-          setHover(btn);
-        });
-
-        document.addEventListener('pointerup', (e) => {
-          if (selectHoldTimer) {
-            window.clearTimeout(selectHoldTimer);
-            selectHoldTimer = null;
-            this.setActiveTool('select');
-            return;
-          }
-          if (!selectMenuOpen) return;
-          const target = document.elementFromPoint(e.clientX, e.clientY);
-          const btn = target && target.closest ? target.closest('.tool-sub-btn[data-select]') : null;
-          if (btn) {
-            const mode = btn.dataset.select;
-            this.setActiveTool('select');
-            this.setSelectionMode(mode);
-          }
-          closeMenu();
-        });
-
-        document.addEventListener('pointerdown', (e) => {
-          if (!selectMenuOpen) return;
-          if (selectMenu.contains(e.target) || selectButton.contains(e.target)) return;
-          closeMenu();
-        });
-      }
+      initSubtoolMenu({
+        button: selectButton,
+        menu: selectMenu,
+        buttons: selectButtons,
+        onActivate: () => this.setActiveTool('select'),
+        onSelect: (btn) => {
+          const mode = btn.dataset.select;
+          this.setActiveTool('select');
+          this.setSelectionMode(mode);
+        },
+      });
 
       if (lightSourceBtn) {
         lightSourceBtn.onclick = () => this.startLightSourcePlacement();
@@ -6904,11 +6949,40 @@
           return;
         }
 
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
+          e.preventDefault();
+          e.stopPropagation();
+          const selectedLayers = this.app.renderer?.getSelectedLayers?.() || [];
+          if (selectedLayers.length) {
+            this.duplicateLayers(selectedLayers);
+          } else {
+            const active = this.app.engine.getActiveLayer?.();
+            if (active) this.duplicateLayers([active]);
+          }
+          return;
+        }
+
+        if (!e.metaKey && !e.ctrlKey && e.altKey && e.key.toLowerCase() === 'd') {
+          e.preventDefault();
+          const selectedLayers = this.app.renderer?.getSelectedLayers?.() || [];
+          if (selectedLayers.length) {
+            this.duplicateLayers(selectedLayers);
+          } else {
+            const active = this.app.engine.getActiveLayer?.();
+            if (active) this.duplicateLayers([active]);
+          }
+          return;
+        }
+
         if (!e.metaKey && !e.ctrlKey) {
           const key = e.key.toLowerCase();
           if (key === 'v') {
             e.preventDefault();
-            this.setActiveTool?.('select');
+            if (this.activeTool === 'select') {
+              this.cycleToolSubmode?.('select');
+            } else {
+              this.setActiveTool?.('select');
+            }
             return;
           }
           if (key === 'a') {
@@ -6923,7 +6997,11 @@
           }
           if (key === 'c') {
             e.preventDefault();
-            this.setActiveTool?.('scissor');
+            if (this.activeTool === 'scissor') {
+              this.cycleToolSubmode?.('scissor');
+            } else {
+              this.setActiveTool?.('scissor');
+            }
             return;
           }
         }
@@ -7649,13 +7727,7 @@
         if (dupBtn) {
           dupBtn.onclick = (e) => {
             e.stopPropagation();
-            if (this.app.pushHistory) this.app.pushHistory();
-            const dup = this.app.engine.duplicateLayer(l.id);
-            if (dup) {
-              if (this.app.renderer) this.app.renderer.setSelection([dup.id], dup.id);
-              this.renderLayers();
-              this.app.render();
-            }
+            this.duplicateLayers([l]);
           };
         }
         if (penMenu && penPill && penIcon) {
@@ -8545,6 +8617,9 @@
         const prevPosition = parent.style.position;
         const prevColor = parent.style.color;
         const prevShadow = parent.style.textShadow;
+        const prevWidth = parent.style.width;
+        const prevMinWidth = parent.style.minWidth;
+        const prevFlex = parent.style.flex;
         if (!prevPosition || prevPosition === 'static') parent.style.position = 'relative';
         input.style.left = '0';
         input.style.top = '0';
@@ -8553,8 +8628,20 @@
         parent.appendChild(input);
         parent.style.color = 'transparent';
         parent.style.textShadow = 'none';
+        parent.style.flex = '0 0 auto';
         input.focus();
         input.select();
+
+        const growToFit = () => {
+          input.style.width = 'auto';
+          const padding = 14;
+          const desired = Math.max(parent.offsetWidth, input.scrollWidth + padding);
+          parent.style.minWidth = `${desired}px`;
+          parent.style.width = `${desired}px`;
+          input.style.width = '100%';
+        };
+
+        growToFit();
 
         let closed = false;
         const cleanup = () => {
@@ -8563,6 +8650,9 @@
           if (input.parentElement) input.parentElement.removeChild(input);
           parent.style.color = prevColor;
           parent.style.textShadow = prevShadow;
+          parent.style.width = prevWidth;
+          parent.style.minWidth = prevMinWidth;
+          parent.style.flex = prevFlex;
           if (!prevPosition || prevPosition === 'static') parent.style.position = '';
         };
 
@@ -8635,6 +8725,9 @@
             const mult = e.shiftKey ? 10 : 1;
             nudge(direction, mult);
           }
+        });
+        input.addEventListener('input', () => {
+          growToFit();
         });
         input.addEventListener('blur', () => {
           if (!apply()) {
