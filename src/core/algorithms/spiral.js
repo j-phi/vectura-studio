@@ -1,10 +1,9 @@
 /**
  * spiral algorithm definition.
  */
-(() => {
-  window.Vectura = window.Vectura || {};
-  window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
-  window.Vectura.AlgorithmRegistry.spiral = {
+import { NOISE_IMAGES } from '../../config/defaults.js';
+
+export const spiral = {
       generate: (p, rng, noise, bounds) => {
         const { m, dW, dH, width, height } = bounds;
         const scx = width / 2;
@@ -224,7 +223,7 @@
               return band;
             }
             case 'image': {
-              const store = window.Vectura?.NOISE_IMAGES || {};
+              const store = NOISE_IMAGES;
               const img = noiseDef?.imageId ? store[noiseDef.imageId] : null;
               if (!img || !img.data) return n;
               const wrap = noiseDef?.tileMode !== 'off';
@@ -719,4 +718,3 @@
       },
       formula: () => 'r = r + (noise(θ) * amp)\nx = cos(θ)*r, y = sin(θ)*r',
     };
-})();

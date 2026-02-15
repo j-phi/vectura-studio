@@ -1,10 +1,7 @@
 /**
  * grid algorithm definition.
  */
-(() => {
-  window.Vectura = window.Vectura || {};
-  window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
-  window.Vectura.AlgorithmRegistry.grid = {
+export const grid = {
       generate: (p, rng, noise, bounds) => {
         const { m, dW, dH } = bounds;
         const paths = [];
@@ -50,4 +47,3 @@
       },
       formula: () => 'pos += noise(x,y) * distortion',
     };
-})();

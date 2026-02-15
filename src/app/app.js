@@ -1,13 +1,16 @@
 /**
  * Application orchestrator.
  */
-(() => {
-  const { VectorEngine, Renderer, UI, SETTINGS } = window.Vectura || {};
+import { VectorEngine } from '../core/engine.js';
+import { Renderer } from '../render/renderer.js';
+import { UI } from '../ui/ui.js';
+import { SETTINGS } from '../config/defaults.js';
+
   const clone = (obj) => JSON.parse(JSON.stringify(obj));
   const PREFERENCE_COOKIE = 'vectura_prefs';
   const PREFERENCE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
-  class App {
+  export class App {
     constructor() {
       console.log('Initializing Vectura Studio...');
       this.preferenceCookieName = PREFERENCE_COOKIE;
@@ -372,7 +375,3 @@
       if (lines) lines.innerText = s.lines?.toString?.() || '0';
     }
   }
-
-  window.Vectura = window.Vectura || {};
-  window.Vectura.App = App;
-})();

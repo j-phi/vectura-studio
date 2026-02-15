@@ -1,10 +1,7 @@
 /**
  * hyphae algorithm definition.
  */
-(() => {
-  window.Vectura = window.Vectura || {};
-  window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
-  window.Vectura.AlgorithmRegistry.hyphae = {
+export const hyphae = {
       generate: (p, rng, noise, bounds) => {
         const { m, dW, dH, width, height } = bounds;
         const branches = [];
@@ -46,4 +43,3 @@
       formula: (p) =>
         `pos += [cos(α), sin(α)] * ${p.segLen}\nif rand() < ${p.branchProb}: branch(α + π/2)`,
     };
-})();

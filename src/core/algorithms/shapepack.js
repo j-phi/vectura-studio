@@ -1,10 +1,7 @@
 /**
  * shapePack algorithm definition.
  */
-(() => {
-  window.Vectura = window.Vectura || {};
-  window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
-  window.Vectura.AlgorithmRegistry.shapePack = {
+export const shapePack = {
       generate: (p, rng, noise, bounds) => {
         const { m, dW, dH, width, height } = bounds;
         const circles = [];
@@ -111,4 +108,3 @@
       formula: (p) =>
         `if dist(p, others) > r + ${p.padding}: add(shape(p, r))\nr = rand(${p.minR}, ${p.maxR})\nrot = i * ${p.rotationStep}\nshape = ${p.shape}, sides = ${p.segments}\npersp = ${p.perspectiveType}(${p.perspective})`,
     };
-})();

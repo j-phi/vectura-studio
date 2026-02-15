@@ -1,10 +1,10 @@
 /**
  * Layer data model.
  */
-(() => {
-  const { ALGO_DEFAULTS, SETTINGS } = window.Vectura || {};
+import { ALGO_DEFAULTS, SETTINGS } from '../config/defaults.js';
 
-  class Layer {
+
+  export class Layer {
     constructor(id, type = 'flowfield', name) {
       this.id = id;
       this.type = type;
@@ -37,7 +37,3 @@
       this.optimizedStats = null;
     }
   }
-
-  window.Vectura = window.Vectura || {};
-  window.Vectura.Layer = Layer;
-})();

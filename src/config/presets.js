@@ -1,9 +1,7 @@
 /**
  * Preset library by system.
  */
-(() => {
-  window.Vectura = window.Vectura || {};
-  window.Vectura.PRESETS = [
+export const PRESETS = [
       {
         id: "camellia-japonica-pink-perfection",
         name: "Camellia Japonica Pink Perfection",
@@ -326,6 +324,4 @@
         }
       }
     
-  ];
-  window.Vectura.PETALIS_PRESETS = window.Vectura.PRESETS.filter((preset) => preset.preset_system === 'petalis');
-})();
+  ];export const PETALIS_PRESETS = PRESETS.filter((preset) => preset.preset_system === 'petalis');

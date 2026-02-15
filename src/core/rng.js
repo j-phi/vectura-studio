@@ -1,8 +1,7 @@
 /**
  * Deterministic RNG based on a linear congruential generator.
  */
-(() => {
-  class SeededRNG {
+export class SeededRNG {
     constructor(seed) {
       this.m = 0x80000000;
       this.a = 1103515245;
@@ -23,7 +22,3 @@
       return min + this.nextFloat() * (max - min);
     }
   }
-
-  window.Vectura = window.Vectura || {};
-  window.Vectura.SeededRNG = SeededRNG;
-})();

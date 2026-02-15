@@ -1,6 +1,6 @@
 # Vectura Studio
 
-Vectura Studio is a physics-inspired vector generator for plotter-ready line art. It is deliberately no-build: open `index.html` in a browser and everything runs with modular JavaScript and Tailwind loaded via CDN.
+Vectura Studio is a physics-inspired vector generator for plotter-ready line art. It now uses native browser ESM modules with an optional Vite build pipeline for reproducible `dist/` output and GitHub Pages deployment.
 
 ## Highlights
 - Plotter-first output in millimeters with machine profiles (A3, A4, AxiDraw V3).
@@ -45,14 +45,22 @@ Sample outputs included in `assets/gallery/`.
 | ![Flowfield sample](assets/gallery/flowfield-sample.svg) | ![Boids sample](assets/gallery/boids-sample.svg) | ![Attractor sample](assets/gallery/attractor-sample.svg) |
 
 ## Quick Start
-Option A - open directly:
-- Double-click `index.html`.
+Option A - Vite dev server:
+```bash
+npm install
+npm run dev
+```
 
-Option B - serve locally:
+Option B - static server:
 ```bash
 python -m http.server
 ```
 Then visit `http://localhost:8000`.
+
+Build production assets:
+```bash
+npm run build
+```
 
 ## How to Use
 1. Pick an algorithm in the left panel and adjust its parameters.
@@ -64,7 +72,7 @@ Then visit `http://localhost:8000`.
 7. Use [PETAL DESIGNER] on Petalis/Petalis Designer layers, or switch to the Petalis Designer algorithm for an embedded inline designer panel.
 8. Export with the [EXPORT SVG] button.
 
-Pan: Shift + Drag. Zoom: Mouse Wheel. Move layer: Drag. Resize layer: Drag corner handles. Rotate: Drag the upper-right handle (Shift snaps). Duplicate: Alt-drag. Expand: Cmd/Ctrl + E. Pen tool: click to add points, click-drag for bezier curves (Shift constrains, Alt breaks handles), double-click near the first point to close, Enter commits, Esc cancels. Pen subtools: `+` add anchor, `-` delete anchor, `Shift+C` convert anchor. Direct tool (`A`) edits endpoints and handles on individual line paths. Scissor tool: drag a line/rect/circle to split intersecting paths.
+Pan: Shift + Drag (or hand tool). Zoom: Mouse Wheel / Trackpad / two-finger pinch on touch devices. Move layer: Drag. Resize layer: Drag corner handles. Rotate: Drag the upper-right handle (Shift snaps). Duplicate: Alt-drag. Expand: Cmd/Ctrl + E. Pen tool: click to add points, click-drag for bezier curves (Shift constrains, Alt breaks handles), double-click near the first point to close, Enter commits, Esc cancels. Pen subtools: `+` add anchor, `-` delete anchor, `Shift+C` convert anchor. Direct tool (`A`) edits endpoints and handles on individual line paths. Scissor tool: drag a line/rect/circle to split intersecting paths.
 
 ## Algorithm Library
 Each layer is powered by an algorithm with its own parameters and formula preview:
@@ -90,6 +98,7 @@ Defaults live in `src/config/defaults.js` and descriptions in `src/config/descri
 flowchart LR
   HTML[index.html] --> Main[src/main.js]
   Main --> App[src/app/app.js]
+  Main --> Shim[src/compat/vectura-shim.js]
 
   App --> UI[src/ui/ui.js]
   App --> Engine[src/core/engine.js]
@@ -98,11 +107,14 @@ flowchart LR
   UI --> Controls[Panels & Controls]
   UI --> Export[SVG Export]
   Renderer --> Canvas[(Canvas)]
+  Renderer --> Input[src/render/input-controller.js]
 
   Engine --> Layer[src/core/layer.js]
   Engine --> Algorithms[src/core/algorithms/index.js]
   Engine --> RNG[src/core/rng.js]
   Engine --> Noise[src/core/noise.js]
+
+  UI --> Randomize[src/ui/randomize.js]
 
   Config[src/config/*.js] --> UI
   Config --> Engine
@@ -110,13 +122,14 @@ flowchart LR
 ```
 
 ## Project Structure
-- `index.html` - app shell, Tailwind CDN config, and script order.
+- `index.html` - app shell, Tailwind CDN config, and ESM entrypoint.
 - `styles.css` - custom UI styling and texture effects.
 - `src/app/` - application orchestration and lifecycle.
+- `src/compat/` - temporary `window.Vectura` compatibility shim for console/debug workflows.
 - `src/core/` - vector engine, layers, RNG/noise, and algorithms.
 - `src/core/algorithms/*.js` - one file per algorithm, with `src/core/algorithms/index.js` assembling the registry exposed to the engine.
 - `src/render/` - canvas rendering and view transforms.
-- `src/ui/` - panels, controls, settings, and SVG export.
+- `src/ui/` - panels, controls, settings, SVG export, and randomization services.
 - `src/config/` - machine profiles, defaults, UI descriptions, palette library, and cross-system preset registry.
 - `dist/` - optional prebuilt output (not required for local dev).
 
@@ -126,11 +139,11 @@ flowchart LR
 - Pen palettes live in `src/config/palettes.js` and can be edited or extended.
 - Presets live in `src/config/presets.js` as a shared registry; each entry requires `preset_system`, `id`, `name`, and `params`.
 - Post-Processing Lab includes smoothing/curves/simplify plus the optimization pipeline (linesimplify, linesort, filter, multipass).
-- Keep script order intact in `index.html`; `src/main.js` expects globals to be registered on `window.Vectura`.
+- `src/main.js` is the only runtime script entry in `index.html`; module dependencies are resolved via ESM imports.
 
 ## Deployment (GitHub Pages)
 1. Push this repo to GitHub.
-2. In Settings > Pages, set Source to "Deploy from a branch".
-3. Select your branch (for example, `main`) and the root (`/`) folder.
+2. Ensure GitHub Pages is enabled for Actions-based deployments.
+3. The workflow at `.github/workflows/pages.yml` builds `dist` with `npm run build` and deploys it.
 
-All asset paths are relative (`./...`), so the site works under a GitHub Pages subpath.
+`vite.config.js` uses `base: './'` so built assets remain safe for GitHub Pages subpaths.

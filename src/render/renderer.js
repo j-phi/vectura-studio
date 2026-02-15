@@ -1,10 +1,11 @@
 /**
  * Canvas renderer for vector paths.
  */
-(() => {
-  const { SETTINGS } = window.Vectura || {};
+import { SETTINGS } from '../config/defaults.js';
+import { bindRendererInput } from './input-controller.js';
 
-  class Renderer {
+
+export class Renderer {
     constructor(id, engine) {
       this.canvas = document.getElementById(id);
       this.ctx = this.canvas ? this.canvas.getContext('2d') : null;
@@ -59,6 +60,9 @@
       this.lastM = { x: 0, y: 0 };
       this.snap = null;
       this.snapAllowed = true;
+      this.activePointerId = null;
+      this.touchPoints = new Map();
+      this.pinchState = null;
       this.ready = Boolean(this.canvas && this.ctx);
 
       if (!this.ready) {
@@ -74,10 +78,7 @@
       }
 
       new ResizeObserver(() => this.resize()).observe(parent);
-      this.canvas.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
-      this.canvas.addEventListener('mousedown', (e) => this.down(e));
-      window.addEventListener('mousemove', (e) => this.move(e));
-      window.addEventListener('mouseup', () => this.up());
+      this.unbindInput = bindRendererInput(this);
     }
 
     setTool(tool) {
@@ -1196,7 +1197,46 @@
 
     down(e) {
       if (!this.ready) return;
-      if (this.activeTool === 'hand' || e.shiftKey || e.button === 1) {
+      const isTouch = e.pointerType === 'touch';
+      const isPrimaryButton = e.button === 0 || e.button === -1 || e.button === undefined;
+      const isMiddleButton = e.button === 1;
+      if (isTouch) {
+        this.touchPoints.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (this.touchPoints.size >= 2) {
+          const points = Array.from(this.touchPoints.values()).slice(0, 2);
+          const rect = this.canvas.getBoundingClientRect();
+          const center = {
+            x: (points[0].x + points[1].x) / 2 - rect.left,
+            y: (points[0].y + points[1].y) / 2 - rect.top,
+          };
+          const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y) || 1;
+          this.pinchState = {
+            initialDistance: distance,
+            initialScale: this.scale,
+            anchorWorld: this.screenToWorld(center.x, center.y),
+          };
+          this.isPan = false;
+          this.isLayerDrag = false;
+          this.isSelecting = false;
+          this.isLassoSelecting = false;
+          this.isScissor = false;
+          this.directDrag = null;
+          this.tempTransform = null;
+          return;
+        }
+        e.preventDefault();
+      } else {
+        if (this.activePointerId !== null && e.pointerId !== this.activePointerId) return;
+        this.activePointerId = e.pointerId;
+        if (this.canvas.setPointerCapture && e.pointerId !== undefined) {
+          try {
+            this.canvas.setPointerCapture(e.pointerId);
+          } catch (_) {
+            // no-op when pointer capture is unavailable
+          }
+        }
+      }
+      if (this.activeTool === 'hand' || e.shiftKey || isMiddleButton) {
         this.isPan = true;
         this.lastM = { x: e.clientX, y: e.clientY };
         this.canvas.style.cursor = 'grabbing';
@@ -1207,7 +1247,7 @@
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
       const world = this.screenToWorld(sx, sy);
-      if (e.button !== 0) return;
+      if (!isPrimaryButton) return;
 
       if (this.lightSourcePlacement) {
         this.setLightSource(world);
@@ -1360,6 +1400,32 @@
 
     move(e) {
       if (!this.ready) return;
+      const isTouch = e.pointerType === 'touch';
+      if (isTouch) {
+        if (this.touchPoints.has(e.pointerId)) {
+          this.touchPoints.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        }
+        if (this.pinchState && this.touchPoints.size >= 2) {
+          const points = Array.from(this.touchPoints.values()).slice(0, 2);
+          const rect = this.canvas.getBoundingClientRect();
+          const center = {
+            x: (points[0].x + points[1].x) / 2 - rect.left,
+            y: (points[0].y + points[1].y) / 2 - rect.top,
+          };
+          const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y) || 1;
+          const nextScale = Math.max(
+            0.1,
+            Math.min(this.pinchState.initialScale * (distance / this.pinchState.initialDistance), 20)
+          );
+          this.scale = nextScale;
+          this.offsetX = center.x - this.pinchState.anchorWorld.x * this.scale;
+          this.offsetY = center.y - this.pinchState.anchorWorld.y * this.scale;
+          this.draw();
+          return;
+        }
+      } else if (this.activePointerId !== null && e.pointerId !== undefined && e.pointerId !== this.activePointerId) {
+        return;
+      }
       if (this.isPan) {
         this.offsetX += e.clientX - this.lastM.x;
         this.offsetY += e.clientY - this.lastM.y;
@@ -1520,11 +1586,33 @@
         return;
       }
 
-      this.updateHoverCursor(e);
+      if (e.pointerType !== 'touch') {
+        this.updateHoverCursor(e);
+      }
     }
 
-    up() {
+    up(e) {
       if (!this.ready || !this.canvas) return;
+      const isTouch = e?.pointerType === 'touch';
+      if (isTouch) {
+        this.touchPoints.delete(e.pointerId);
+        if (this.touchPoints.size < 2) {
+          this.pinchState = null;
+        }
+        if (this.touchPoints.size > 0) {
+          return;
+        }
+      } else {
+        if (this.activePointerId !== null && e?.pointerId !== undefined && e.pointerId !== this.activePointerId) return;
+        if (e?.pointerId !== undefined && this.canvas.releasePointerCapture) {
+          try {
+            this.canvas.releasePointerCapture(e.pointerId);
+          } catch (_) {
+            // no-op when pointer capture is unavailable
+          }
+        }
+        this.activePointerId = null;
+      }
       if (this.isLightDrag) {
         this.isLightDrag = false;
         this.canvas.style.cursor = 'crosshair';
@@ -2675,7 +2763,3 @@
       if (rotation) rotation.value = layer.params.rotation;
     }
   }
-
-  window.Vectura = window.Vectura || {};
-  window.Vectura.Renderer = Renderer;
-})();

@@ -1,9 +1,8 @@
-(() => {
-  window.addEventListener('load', () => {
-    if (!window.Vectura || !window.Vectura.App) {
-      console.warn('[Vectura] App failed to load. Check script order.');
-      return;
-    }
-    window.app = new window.Vectura.App();
-  });
-})();
+import { App } from './app/app.js';
+import { installWindowVecturaShim } from './compat/vectura-shim.js';
+
+window.addEventListener('load', () => {
+  installWindowVecturaShim();
+  const app = new App();
+  window.app = app;
+});

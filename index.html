@@ -84,7 +84,7 @@
       <aside id="left-pane" class="pane pane-left bg-vectura-panel border-r border-vectura-border flex flex-col z-10 shadow-xl">
         <div class="pane-header pane-header-left p-4 border-b border-vectura-border flex justify-between items-center">
           <span class="pane-title font-bold text-vectura-accent">GENERATOR</span>
-          <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.69</span>
+          <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.70</span>
           <button id="btn-pane-toggle-left" class="pane-toggle pane-toggle-left" type="button" aria-label="Toggle left pane">
             ◀
           </button>
@@ -378,7 +378,7 @@
 
         <div id="canvas-help" class="canvas-help text-[10px] text-vectura-muted pointer-events-none">
           <p>PAN: Shift + Drag</p>
-          <p>ZOOM: Mouse Wheel</p>
+          <p>ZOOM: Wheel / Trackpad / Pinch</p>
           <p>TOOLS: V Select • A Direct • P Pen • + Add Anchor • - Delete Anchor • Shift+C Anchor • C Scissor • Space Hand</p>
           <p>GROUP: Cmd/Ctrl + G</p>
           <p>EXPAND: Cmd/Ctrl + E</p>
@@ -723,35 +723,6 @@
       </div>
     </main>
 
-    <script src="./src/config/machines.js" defer></script>
-    <script src="./src/config/defaults.js" defer></script>
-    <script src="./src/config/palettes.js" defer></script>
-    <script src="./src/config/presets.js" defer></script>
-    <script src="./src/config/descriptions.js" defer></script>
-    <script src="./src/core/rng.js" defer></script>
-    <script src="./src/core/noise.js" defer></script>
-    <script src="./src/core/algorithms/petalis.js" defer></script>
-    <script src="./src/core/algorithms/flowfield.js" defer></script>
-    <script src="./src/core/algorithms/boids.js" defer></script>
-    <script src="./src/core/algorithms/attractor.js" defer></script>
-    <script src="./src/core/algorithms/hyphae.js" defer></script>
-    <script src="./src/core/algorithms/shapepack.js" defer></script>
-    <script src="./src/core/algorithms/lissajous.js" defer></script>
-    <script src="./src/core/algorithms/harmonograph.js" defer></script>
-    <script src="./src/core/algorithms/wavetable.js" defer></script>
-    <script src="./src/core/algorithms/rings.js" defer></script>
-    <script src="./src/core/algorithms/topo.js" defer></script>
-    <script src="./src/core/algorithms/rainfall.js" defer></script>
-    <script src="./src/core/algorithms/spiral.js" defer></script>
-    <script src="./src/core/algorithms/grid.js" defer></script>
-    <script src="./src/core/algorithms/phylla.js" defer></script>
-    <script src="./src/core/algorithms/petalisdesigner.js" defer></script>
-    <script src="./src/core/algorithms/index.js" defer></script>
-    <script src="./src/core/layer.js" defer></script>
-    <script src="./src/core/engine.js" defer></script>
-    <script src="./src/render/renderer.js" defer></script>
-    <script src="./src/ui/ui.js" defer></script>
-    <script src="./src/app/app.js" defer></script>
-    <script src="./src/main.js" defer></script>
+    <script type="module" src="./src/main.js"></script>
   </body>
 </html>

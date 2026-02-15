@@ -1,10 +1,7 @@
 /**
  * topo algorithm definition.
  */
-(() => {
-  window.Vectura = window.Vectura || {};
-  window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
-  window.Vectura.AlgorithmRegistry.topo = {
+export const topo = {
       generate: (p, rng, noise, bounds) => {
         const { m, width, height } = bounds;
         const inset = bounds.truncate ? m : 0;
@@ -327,4 +324,3 @@
       formula: (p) =>
         `field = noise(x*${p.noiseScale}, y*${p.noiseScale})\ncontours = marchingSquares(field, ${p.levels})`,
     };
-})();

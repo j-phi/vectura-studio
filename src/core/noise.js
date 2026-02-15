@@ -1,10 +1,10 @@
 /**
  * Simple 2D simplex noise generator.
  */
-(() => {
-  const { SeededRNG } = window.Vectura || {};
+import { SeededRNG } from './rng.js';
 
-  class SimpleNoise {
+
+  export class SimpleNoise {
     constructor(seed) {
       this.rng = new SeededRNG(seed);
       this.perm = new Uint8Array(512);
@@ -82,7 +82,3 @@
       return 70.0 * (n0 + n1 + n2);
     }
   }
-
-  window.Vectura = window.Vectura || {};
-  window.Vectura.SimpleNoise = SimpleNoise;
-})();

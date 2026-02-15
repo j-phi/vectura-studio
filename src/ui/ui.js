@@ -1,20 +1,17 @@
 /**
  * UI controller for DOM wiring and controls.
  */
-(() => {
-  const {
-    ALGO_DEFAULTS,
-    SETTINGS,
-    DESCRIPTIONS,
-    MACHINES,
-    Algorithms,
-    SeededRNG,
-    SimpleNoise,
-    Layer,
-    PALETTES,
-    PRESETS,
-    PETALIS_PRESETS,
-  } = window.Vectura || {};
+import { ALGO_DEFAULTS, SETTINGS, NOISE_IMAGES } from '../config/defaults.js';
+import { DESCRIPTIONS } from '../config/descriptions.js';
+import { MACHINES } from '../config/machines.js';
+import { Algorithms } from '../core/algorithms/index.js';
+import { SeededRNG } from '../core/rng.js';
+import { SimpleNoise } from '../core/noise.js';
+import { Layer } from '../core/layer.js';
+import { PALETTES } from '../config/palettes.js';
+import { PRESETS, PETALIS_PRESETS } from '../config/presets.js';
+import { randomizeLayerParams as randomizeLayerParamsService } from './randomize.js';
+
 
   const PETALIS_PRESET_LIBRARY = (Array.isArray(PRESETS) ? PRESETS : Array.isArray(PETALIS_PRESETS) ? PETALIS_PRESETS : [])
     .filter((preset) => (preset?.preset_system || 'petalis') === 'petalis');
@@ -4514,7 +4511,7 @@
     `;
   };
 
-  class UI {
+  export class UI {
     constructor(app) {
       this.app = app;
       this.controls = CONTROL_DEFS;
@@ -4567,11 +4564,11 @@
       const rightPane = getEl('right-pane');
       const layerList = getEl('layer-list');
       if (layerList) {
-        layerList.addEventListener('mousedown', () => {
+        layerList.addEventListener('pointerdown', () => {
           this.layerListFocus = true;
         });
       }
-      document.addEventListener('mousedown', (e) => {
+      document.addEventListener('pointerdown', (e) => {
         if (rightPane && !rightPane.contains(e.target)) {
           this.layerListFocus = false;
         }
@@ -5655,9 +5652,10 @@
           <div class="modal-ill-label">Canvas</div>
           <div class="text-xs text-vectura-muted leading-relaxed space-y-1">
             <div>Shift + Drag to pan</div>
-            <div>Mouse wheel to zoom</div>
+            <div>Mouse wheel / trackpad / pinch to zoom</div>
             <div>Drag selection box to multi-select</div>
             <div>Drag to move selection; handles resize; top-right handle rotates (Shift snaps)</div>
+            <div>Touch: single-finger edit, two-finger pinch/pan.</div>
             <div>Canvas shortcut overlay can be toggled in Settings.</div>
           </div>
         </div>
@@ -6044,105 +6042,14 @@
     }
 
     randomizeLayerParams(layer) {
-      if (!layer) return;
-      const defs = [...(this.controls[layer.type] || []), ...COMMON_CONTROLS];
-      const rng = (min, max) => min + Math.random() * (max - min);
-      const safeRange = (min, max) => {
-        const span = max - min;
-        if (span <= 0) return { min, max };
-        const pad = span * 0.1;
-        const minSafe = min + pad;
-        const maxSafe = max - pad;
-        if (maxSafe <= minSafe) return { min, max };
-        return { min: minSafe, max: maxSafe };
-      };
-      const roundStep = (value, step, min, max) => {
-        const snapped = roundToStep(value, step);
-        return clamp(snapped, min, max);
-      };
-      const randomizeNoise = (noise) => {
-        if (!noise || typeof noise !== 'object') return;
-        WAVE_NOISE_DEFS.forEach((nDef) => {
-          if (nDef.showIf && !nDef.showIf(noise)) return;
-          if (nDef.type === 'select') {
-            const opts = nDef.options || [];
-            const available = nDef.randomExclude ? opts.filter((opt) => !nDef.randomExclude.includes(opt.value)) : opts;
-            if (!available.length) return;
-            const pick = available[Math.floor(Math.random() * available.length)];
-            noise[nDef.key] = pick.value;
-            return;
-          }
-          if (nDef.type === 'angle') {
-            const randMin = Number.isFinite(nDef.randomMin) ? nDef.randomMin : nDef.min;
-            const randMax = Number.isFinite(nDef.randomMax) ? nDef.randomMax : nDef.max;
-            const { min, max } = safeRange(randMin, randMax);
-            const step = nDef.step ?? 1;
-            noise[nDef.key] = roundStep(rng(min, max), step, nDef.min, nDef.max);
-            return;
-          }
-          if (nDef.type === 'range') {
-            const randMin = Number.isFinite(nDef.randomMin) ? nDef.randomMin : nDef.min;
-            const randMax = Number.isFinite(nDef.randomMax) ? nDef.randomMax : nDef.max;
-            const { min, max } = safeRange(randMin, randMax);
-            const step = nDef.step ?? 1;
-            noise[nDef.key] = roundStep(rng(min, max), step, nDef.min, nDef.max);
-          }
-        });
-      };
-
-      defs.forEach((def) => {
-        if (def.showIf && !def.showIf(layer.params)) return;
-        if (layer.type === 'harmonograph' && def.id === 'showPendulumGuides') return;
-        if (def.type === 'section' || def.type === 'file' || def.type === 'image') return;
-        if (def.type === 'noiseList') {
-          if (layer.type === 'wavetable') {
-            const noises = this.ensureWavetableNoises(layer);
-            noises.forEach((noise) => randomizeNoise(noise));
-          } else if (layer.type === 'spiral') {
-            const noises = this.ensureSpiralNoises(layer);
-            noises.forEach((noise) => randomizeNoise(noise));
-          }
-          return;
-        }
-        if (def.type === 'angle') {
-          const randMin = Number.isFinite(def.randomMin) ? def.randomMin : def.min;
-          const randMax = Number.isFinite(def.randomMax) ? def.randomMax : def.max;
-          const { min, max } = safeRange(randMin, randMax);
-          const step = def.step ?? 1;
-          layer.params[def.id] = roundStep(rng(min, max), step, def.min, def.max);
-          return;
-        } else if (def.type === 'checkbox') {
-          layer.params[def.id] = Math.random() > 0.5;
-          return;
-        }
-        if (def.type === 'select') {
-          const opts = def.options || [];
-          const available = def.randomExclude ? opts.filter((opt) => !def.randomExclude.includes(opt.value)) : opts;
-          if (!available.length) return;
-          const pick = available[Math.floor(Math.random() * available.length)];
-          layer.params[def.id] = pick.value;
-          return;
-        }
-        if (def.type === 'rangeDual') {
-          const randMin = Number.isFinite(def.randomMin) ? def.randomMin : def.min;
-          const randMax = Number.isFinite(def.randomMax) ? def.randomMax : def.max;
-          const { min, max } = safeRange(randMin, randMax);
-          const step = def.step ?? 1;
-          let a = rng(min, max);
-          let b = rng(min, max);
-          if (a > b) [a, b] = [b, a];
-          if (b - a < step) b = Math.min(max, a + step);
-          layer.params[def.minKey] = roundStep(a, step, def.min, def.max);
-          layer.params[def.maxKey] = roundStep(b, step, def.min, def.max);
-          return;
-        }
-        if (def.type === 'range') {
-          const randMin = Number.isFinite(def.randomMin) ? def.randomMin : def.min;
-          const randMax = Number.isFinite(def.randomMax) ? def.randomMax : def.max;
-          const { min, max } = safeRange(randMin, randMax);
-          const step = def.step ?? 1;
-          layer.params[def.id] = roundStep(rng(min, max), step, def.min, def.max);
-        }
+      randomizeLayerParamsService(layer, {
+        controlsByType: this.controls,
+        commonControls: COMMON_CONTROLS,
+        waveNoiseDefs: WAVE_NOISE_DEFS,
+        ensureWavetableNoises: (targetLayer) => this.ensureWavetableNoises(targetLayer),
+        ensureSpiralNoises: (targetLayer) => this.ensureSpiralNoises(targetLayer),
+        clamp,
+        roundToStep,
       });
     }
 
@@ -6533,7 +6440,7 @@
     }
 
     getPaletteList() {
-      return Array.isArray(PALETTES) ? PALETTES : window.Vectura?.PALETTES || [];
+      return Array.isArray(PALETTES) ? PALETTES : [];
     }
 
     getActivePalette() {
@@ -7198,6 +7105,14 @@
         e.preventDefault();
         resizer.classList.add('active');
         bottomPane.classList.remove('bottom-pane-collapsed');
+        const pointerId = e.pointerId;
+        if (resizer.setPointerCapture && pointerId !== undefined) {
+          try {
+            resizer.setPointerCapture(pointerId);
+          } catch (_) {
+            // no-op
+          }
+        }
         const startY = e.clientY;
         const startHeight = bottomPane.getBoundingClientRect().height;
 
@@ -7209,15 +7124,22 @@
         };
         const onUp = () => {
           resizer.classList.remove('active');
-          window.removeEventListener('mousemove', onMove);
-          window.removeEventListener('mouseup', onUp);
+          if (resizer.releasePointerCapture && pointerId !== undefined) {
+            try {
+              resizer.releasePointerCapture(pointerId);
+            } catch (_) {
+              // no-op
+            }
+          }
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
           this.updateCanvasHelpPosition();
         };
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
       };
 
-      resizer.addEventListener('mousedown', startDrag);
+      resizer.addEventListener('pointerdown', startDrag);
     }
 
     initPaneResizers() {
@@ -7238,6 +7160,14 @@
         const startLeft = leftPane.getBoundingClientRect().width;
         const startRight = rightPane.getBoundingClientRect().width;
         const resizer = side === 'left' ? leftResizer : rightResizer;
+        const pointerId = e.pointerId;
+        if (resizer.setPointerCapture && pointerId !== undefined) {
+          try {
+            resizer.setPointerCapture(pointerId);
+          } catch (_) {
+            // no-op
+          }
+        }
         resizer.classList.add('active');
         document.body.classList.remove('auto-collapsed');
         leftPane.classList.remove('pane-collapsed');
@@ -7256,16 +7186,23 @@
 
         const onUp = () => {
           resizer.classList.remove('active');
-          window.removeEventListener('mousemove', onMove);
-          window.removeEventListener('mouseup', onUp);
+          if (resizer.releasePointerCapture && pointerId !== undefined) {
+            try {
+              resizer.releasePointerCapture(pointerId);
+            } catch (_) {
+              // no-op
+            }
+          }
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
         };
 
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
       };
 
-      leftResizer.addEventListener('mousedown', (e) => startDrag(e, 'left'));
-      rightResizer.addEventListener('mousedown', (e) => startDrag(e, 'right'));
+      leftResizer.addEventListener('pointerdown', (e) => startDrag(e, 'left'));
+      rightResizer.addEventListener('pointerdown', (e) => startDrag(e, 'right'));
     }
 
     initCanvasHelp() {
@@ -8312,7 +8249,7 @@
       const bindLayerReorderGrip = (grip, dragEl, options = {}) => {
         const { ensureSelection, getSelectedIds } = options;
         if (!grip || !dragEl) return;
-        grip.onmousedown = (e) => {
+        grip.onpointerdown = (e) => {
           e.preventDefault();
           e.stopPropagation();
           if (ensureSelection) ensureSelection(e);
@@ -8375,8 +8312,8 @@
             const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('layer-item'));
             const newIndex = before.length;
             indicator.remove();
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
             if (dropTarget) {
               dropTarget.classList.remove('group-drop-target');
               dropTarget = null;
@@ -8423,8 +8360,8 @@
             this.app.render();
           };
 
-          window.addEventListener('mousemove', onMove);
-          window.addEventListener('mouseup', onUp);
+          window.addEventListener('pointermove', onMove);
+          window.addEventListener('pointerup', onUp);
         };
       };
 
@@ -8501,7 +8438,7 @@
           if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select')) return;
           selectGroupChildren(e);
         };
-        el.onmousedown = (e) => {
+        el.onpointerdown = (e) => {
           if (e.target.closest('input')) return;
           e.preventDefault();
         };
@@ -8747,7 +8684,7 @@
           if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select')) return;
           selectLayer(e);
         };
-        el.onmousedown = (e) => {
+        el.onpointerdown = (e) => {
           if (e.target.closest('input')) return;
           e.preventDefault();
         };
@@ -9079,7 +9016,7 @@
         }
 
         if (grip) {
-          grip.onmousedown = (e) => {
+          grip.onpointerdown = (e) => {
             e.preventDefault();
             e.stopPropagation();
             const dragEl = el;
@@ -9112,8 +9049,8 @@
               const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('pen-item'));
               const newIndex = before.length;
               indicator.remove();
-              window.removeEventListener('mousemove', onMove);
-              window.removeEventListener('mouseup', onUp);
+              window.removeEventListener('pointermove', onMove);
+              window.removeEventListener('pointerup', onUp);
 
               if (newIndex !== startIndex) {
                 const nextOrder = currentOrder.filter((id) => id !== pen.id);
@@ -9125,8 +9062,8 @@
               }
             };
 
-            window.addEventListener('mousemove', onMove);
-            window.addEventListener('mouseup', onUp);
+            window.addEventListener('pointermove', onMove);
+            window.addEventListener('pointerup', onUp);
           };
         }
 
@@ -9531,7 +9468,7 @@
           if (!ctx) return;
           ctx.drawImage(img, 0, 0);
           const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const store = (window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {});
+          const store = (NOISE_IMAGES);
           const id = `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
           store[id] = { width: data.width, height: data.height, data: data.data };
           if (this.app.pushHistory) this.app.pushHistory();
@@ -10299,7 +10236,7 @@
             };
             if (dial) {
               dial.classList.toggle('angle-disabled', !pendulum.enabled);
-              dial.addEventListener('mousedown', (e) => {
+              dial.addEventListener('pointerdown', (e) => {
                 if (!pendulum.enabled) return;
                 e.preventDefault();
                 const updateFromEvent = (ev) => {
@@ -10315,11 +10252,11 @@
                 updateFromEvent(e);
                 const move = (ev) => updateFromEvent(ev);
                 const up = () => {
-                  window.removeEventListener('mousemove', move);
+                  window.removeEventListener('pointermove', move);
                   setAngle(lastDisplay, true);
                 };
-                window.addEventListener('mousemove', move);
-                window.addEventListener('mouseup', up, { once: true });
+                window.addEventListener('pointermove', move);
+                window.addEventListener('pointerup', up, { once: true });
               });
               dial.addEventListener('dblclick', (e) => {
                 e.preventDefault();
@@ -10519,7 +10456,7 @@
 
           const bindModifierReorderGrip = (grip, card, modifier) => {
             if (!grip) return;
-            grip.onmousedown = (e) => {
+            grip.onpointerdown = (e) => {
               e.preventDefault();
               const dragEl = card;
               dragEl.classList.add('dragging');
@@ -10551,8 +10488,8 @@
                 const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('noise-card'));
                 const newIndex = before.length;
                 indicator.remove();
-                window.removeEventListener('mousemove', onMove);
-                window.removeEventListener('mouseup', onUp);
+                window.removeEventListener('pointermove', onMove);
+                window.removeEventListener('pointerup', onUp);
 
                 if (newIndex !== startIndex) {
                   const nextOrder = currentOrder.filter((id) => id !== modifier.id);
@@ -10566,8 +10503,8 @@
                 }
               };
 
-              window.addEventListener('mousemove', onMove);
-              window.addEventListener('mouseup', onUp);
+              window.addEventListener('pointermove', onMove);
+              window.addEventListener('pointerup', onUp);
             };
           };
 
@@ -10781,7 +10718,7 @@
 
           const bindModifierReorderGrip = (grip, card, modifier) => {
             if (!grip) return;
-            grip.onmousedown = (e) => {
+            grip.onpointerdown = (e) => {
               e.preventDefault();
               const dragEl = card;
               dragEl.classList.add('dragging');
@@ -10813,8 +10750,8 @@
                 const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('noise-card'));
                 const newIndex = before.length;
                 indicator.remove();
-                window.removeEventListener('mousemove', onMove);
-                window.removeEventListener('mouseup', onUp);
+                window.removeEventListener('pointermove', onMove);
+                window.removeEventListener('pointerup', onUp);
 
                 if (newIndex !== startIndex) {
                   const nextOrder = currentOrder.filter((id) => id !== modifier.id);
@@ -10828,8 +10765,8 @@
                 }
               };
 
-              window.addEventListener('mousemove', onMove);
-              window.addEventListener('mouseup', onUp);
+              window.addEventListener('pointermove', onMove);
+              window.addEventListener('pointerup', onUp);
             };
           };
 
@@ -11086,7 +11023,7 @@
 
           const bindShadingReorderGrip = (grip, card, shading) => {
             if (!grip) return;
-            grip.onmousedown = (e) => {
+            grip.onpointerdown = (e) => {
               e.preventDefault();
               const dragEl = card;
               dragEl.classList.add('dragging');
@@ -11118,8 +11055,8 @@
                 const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('noise-card'));
                 const newIndex = before.length;
                 indicator.remove();
-                window.removeEventListener('mousemove', onMove);
-                window.removeEventListener('mouseup', onUp);
+                window.removeEventListener('pointermove', onMove);
+                window.removeEventListener('pointerup', onUp);
 
                 if (newIndex !== startIndex) {
                   const nextOrder = currentOrder.filter((id) => id !== shading.id);
@@ -11133,8 +11070,8 @@
                 }
               };
 
-              window.addEventListener('mousemove', onMove);
-              window.addEventListener('mouseup', onUp);
+              window.addEventListener('pointermove', onMove);
+              window.addEventListener('pointerup', onUp);
             };
           };
 
@@ -11509,17 +11446,17 @@
                 if (deg < 0) deg += 360;
                 setAngle(deg, false);
               };
-              dial.addEventListener('mousedown', (e) => {
+              dial.addEventListener('pointerdown', (e) => {
                 if (!noise.enabled) return;
                 e.preventDefault();
                 updateFromEvent(e);
                 const move = (ev) => updateFromEvent(ev);
                 const up = () => {
-                  window.removeEventListener('mousemove', move);
+                  window.removeEventListener('pointermove', move);
                   setAngle(lastDisplay, true);
                 };
-                window.addEventListener('mousemove', move);
-                window.addEventListener('mouseup', up, { once: true });
+                window.addEventListener('pointermove', move);
+                window.addEventListener('pointerup', up, { once: true });
               });
               dial.addEventListener('dblclick', (e) => {
                 if (!noise.enabled) return;
@@ -11824,7 +11761,7 @@
 
             const bindEffectReorderGrip = (grip, card, effect) => {
               if (!grip) return;
-              grip.onmousedown = (e) => {
+              grip.onpointerdown = (e) => {
                 e.preventDefault();
                 const dragEl = card;
                 dragEl.classList.add('dragging');
@@ -11856,8 +11793,8 @@
                   const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('image-effect-card'));
                   const newIndex = before.length;
                   indicator.remove();
-                  window.removeEventListener('mousemove', onMove);
-                  window.removeEventListener('mouseup', onUp);
+                  window.removeEventListener('pointermove', onMove);
+                  window.removeEventListener('pointerup', onUp);
 
                   if (newIndex !== startIndex) {
                     const nextOrder = currentOrder.filter((id) => id !== effect.id);
@@ -11871,8 +11808,8 @@
                   }
                 };
 
-                window.addEventListener('mousemove', onMove);
-                window.addEventListener('mouseup', onUp);
+                window.addEventListener('pointermove', onMove);
+                window.addEventListener('pointerup', onUp);
               };
             };
 
@@ -11946,7 +11883,7 @@
 
           const bindNoiseReorderGrip = (grip, card, noise) => {
             if (!grip) return;
-            grip.onmousedown = (e) => {
+            grip.onpointerdown = (e) => {
               e.preventDefault();
               const dragEl = card;
               dragEl.classList.add('dragging');
@@ -11978,8 +11915,8 @@
                 const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('noise-card'));
                 const newIndex = before.length;
                 indicator.remove();
-                window.removeEventListener('mousemove', onMove);
-                window.removeEventListener('mouseup', onUp);
+                window.removeEventListener('pointermove', onMove);
+                window.removeEventListener('pointerup', onUp);
 
                 if (newIndex !== startIndex) {
                   const nextOrder = currentOrder.filter((id) => id !== noise.id);
@@ -11993,8 +11930,8 @@
                 }
               };
 
-              window.addEventListener('mousemove', onMove);
-              window.addEventListener('mouseup', onUp);
+              window.addEventListener('pointermove', onMove);
+              window.addEventListener('pointerup', onUp);
             };
           };
 
@@ -12286,16 +12223,16 @@
               if (deg < 0) deg += 360;
               setAngle(deg, false);
             };
-            dial.addEventListener('mousedown', (e) => {
+            dial.addEventListener('pointerdown', (e) => {
               e.preventDefault();
               updateFromEvent(e);
               const move = (ev) => updateFromEvent(ev);
               const up = () => {
-                window.removeEventListener('mousemove', move);
+                window.removeEventListener('pointermove', move);
                 setAngle(lastDisplay, true);
               };
-              window.addEventListener('mousemove', move);
-              window.addEventListener('mouseup', up, { once: true });
+              window.addEventListener('pointermove', move);
+              window.addEventListener('pointerup', up, { once: true });
             });
             dial.addEventListener('dblclick', (e) => {
               e.preventDefault();
@@ -13122,7 +13059,7 @@
 
         const bindReorderGrip = (grip, card, stepId) => {
           if (!grip) return;
-          grip.onmousedown = (e) => {
+          grip.onpointerdown = (e) => {
             e.preventDefault();
             const dragEl = card;
             dragEl.classList.add('dragging');
@@ -13152,8 +13089,8 @@
               const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('optimization-card'));
               const newIndex = before.length;
               indicator.remove();
-              window.removeEventListener('mousemove', onMove);
-              window.removeEventListener('mouseup', onUp);
+              window.removeEventListener('pointermove', onMove);
+              window.removeEventListener('pointerup', onUp);
               if (newIndex === startIndex || newIndex < 0) return;
               applyOptimization((cfg) => {
                 const order = cfg.steps.map((step) => step.id).filter((id) => id !== stepId);
@@ -13164,8 +13101,8 @@
               });
               this.buildControls();
             };
-            window.addEventListener('mousemove', onMove);
-            window.addEventListener('mouseup', onUp);
+            window.addEventListener('pointermove', onMove);
+            window.addEventListener('pointerup', onUp);
           };
         };
 
@@ -13345,7 +13282,7 @@
 
     saveVecturaFile() {
       const version = this.getAppVersion();
-      const images = window.Vectura?.NOISE_IMAGES || {};
+      const images = NOISE_IMAGES;
       const imagePayload = Object.entries(images).reduce((acc, [id, img]) => {
         if (!img || !img.data) return acc;
         acc[id] = {
@@ -13385,7 +13322,7 @@
             throw new Error('Missing state payload');
           }
           if (data?.images) {
-            const store = (window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {});
+            const store = (NOISE_IMAGES);
             Object.entries(data.images).forEach(([id, img]) => {
               if (!img || !Array.isArray(img.data)) return;
               store[id] = {
@@ -13699,7 +13636,3 @@
       a.click();
     }
   }
-
-  window.Vectura = window.Vectura || {};
-  window.Vectura.UI = UI;
-})();

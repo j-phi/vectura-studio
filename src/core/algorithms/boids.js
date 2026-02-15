@@ -1,10 +1,7 @@
 /**
  * boids algorithm definition.
  */
-(() => {
-  window.Vectura = window.Vectura || {};
-  window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
-  window.Vectura.AlgorithmRegistry.boids = {
+export const boids = {
       generate: (p, rng, noise, bounds) => {
         const { m, dW, dH, width, height } = bounds;
         const boids = [];
@@ -124,4 +121,3 @@
       formula: (p) =>
         `v += separate * ${p.sepDist} + align * ${p.alignDist} + cohere * ${p.cohDist}\npos += v * ${p.speed}`,
     };
-})();

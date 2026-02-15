@@ -1,10 +1,7 @@
 /**
  * rings algorithm definition.
  */
-(() => {
-  window.Vectura = window.Vectura || {};
-  window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
-  window.Vectura.AlgorithmRegistry.rings = {
+export const rings = {
       generate: (p, rng, noise, bounds) => {
         const { m, width, height } = bounds;
         const inset = bounds.truncate ? m : 0;
@@ -143,4 +140,3 @@
       formula: (p) =>
         `n_x = cosθ * ${p.noiseRadius}, n_y = sinθ * ${p.noiseRadius}\nnoise = noise((n_x+${p.noiseOffsetX})*${p.noiseScale}, (n_y+${p.noiseOffsetY})*${p.noiseScale} + i*${p.noiseLayer})\nr = r0 + ${p.amplitude} * noise`,
     };
-})();

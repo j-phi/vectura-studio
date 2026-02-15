@@ -1,10 +1,7 @@
 /**
  * lissajous algorithm definition.
  */
-(() => {
-  window.Vectura = window.Vectura || {};
-  window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
-  window.Vectura.AlgorithmRegistry.lissajous = {
+export const lissajous = {
       generate: (p, rng, noise, bounds) => {
         const { width, height } = bounds;
         const lcx = width / 2;
@@ -55,4 +52,3 @@
       formula: (p) =>
         `x = sin(${p.freqX}t + ${p.phase})\ny = sin(${p.freqY}t)\namp = e^(-${p.damping}t)`,
     };
-})();

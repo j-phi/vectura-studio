@@ -1,8 +1,7 @@
 /**
  * Petalis algorithm: radial petal structures with center modifiers.
  */
-(() => {
-  const TAU = Math.PI * 2;
+const TAU = Math.PI * 2;
   const GOLDEN_ANGLE = 137.507764;
   const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
   const lerp = (a, b, t) => a + (b - a) * t;
@@ -1415,7 +1414,4 @@
     `θ = i * ${p.spiralMode === 'custom' ? p.customAngle ?? GOLDEN_ANGLE : GOLDEN_ANGLE}°\n` +
     `r = lerp(${p.spiralStart ?? 0}, ${p.spiralEnd ?? 1}, t^${p.spiralTightness ?? 1}) * ${p.radialGrowth ?? 1}\n` +
     `petal = profile(${p.petalProfile || 'teardrop'})`;
-
-  window.Vectura = window.Vectura || {};
-  window.Vectura.PetalisAlgorithm = { generate, formula };
-})();
+export const petalis = { generate, formula };

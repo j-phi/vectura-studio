@@ -1,10 +1,9 @@
 /**
  * wavetable algorithm definition.
  */
-(() => {
-  window.Vectura = window.Vectura || {};
-  window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
-  window.Vectura.AlgorithmRegistry.wavetable = {
+import { NOISE_IMAGES } from '../../config/defaults.js';
+
+export const wavetable = {
       generate: (p, rng, noise, bounds) => {
         const { m, height, width } = bounds;
         const paths = [];
@@ -251,7 +250,7 @@
               return band;
             }
             case 'image': {
-              const store = window.Vectura?.NOISE_IMAGES || {};
+              const store = NOISE_IMAGES;
               const img = noiseDef?.imageId ? store[noiseDef.imageId] : null;
               if (!img || !img.data) return n;
               const wrap = noiseDef?.tileMode !== 'off';
@@ -937,4 +936,3 @@
       formula: (p) =>
         `y = yBase + Σ noiseᵢ(rotate(x*zoomᵢ*freqᵢ, y*zoomᵢ)) * ampᵢ\nedge/vertical dampening scales noise`,
     };
-})();

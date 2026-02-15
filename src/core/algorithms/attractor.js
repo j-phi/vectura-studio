@@ -1,10 +1,7 @@
 /**
  * attractor algorithm definition.
  */
-(() => {
-  window.Vectura = window.Vectura || {};
-  window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
-  window.Vectura.AlgorithmRegistry.attractor = {
+export const attractor = {
       generate: (p, rng, noise, bounds) => {
         const { width, height } = bounds;
         const dt = p.dt;
@@ -41,4 +38,3 @@
       },
       formula: (p) => `dx = ${p.sigma}(y - x)\ndy = x(${p.rho} - z) - y\ndz = xy - ${p.beta}z`,
     };
-})();

@@ -1211,6 +1211,16 @@ input[type='color']::-webkit-color-swatch {
   touch-action: none;
 }
 
+#viewport-container,
+#main-canvas,
+.pane-resizer,
+#bottom-resizer,
+.layer-grip,
+.tool-btn,
+.tool-sub-btn {
+  touch-action: none;
+}
+
 .petal-designer-title {
   font-size: 11px;
   text-transform: uppercase;

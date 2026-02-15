@@ -1,8 +1,13 @@
 /**
  * Core vector generation engine.
  */
-(() => {
-  const { MACHINES, SETTINGS, ALGO_DEFAULTS, Algorithms, SeededRNG, SimpleNoise, Layer } = window.Vectura || {};
+import { MACHINES } from '../config/machines.js';
+import { SETTINGS, ALGO_DEFAULTS } from '../config/defaults.js';
+import { Algorithms } from './algorithms/index.js';
+import { SeededRNG } from './rng.js';
+import { SimpleNoise } from './noise.js';
+import { Layer } from './layer.js';
+
 
   const smoothPath = (path, amount) => {
     if (!amount || amount <= 0 || path.length < 3) return path;
@@ -223,7 +228,7 @@
     return next;
   };
 
-  class VectorEngine {
+  export class VectorEngine {
     constructor() {
       this.layers = [];
       this.activeLayerId = null;
@@ -950,7 +955,3 @@
       return this.computeStats(layers, options);
     }
   }
-
-  window.Vectura = window.Vectura || {};
-  window.Vectura.VectorEngine = VectorEngine;
-})();

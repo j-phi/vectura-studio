@@ -1,9 +1,7 @@
 /**
  * Palette library for pen colors.
  */
-(() => {
-  window.Vectura = window.Vectura || {};
-  window.Vectura.PALETTES = [
+export const PALETTES = [
   {
     "id": "blues-01",
     "name": "Blues-01",
@@ -2205,4 +2203,3 @@
     ]
   }
 ];
-})();

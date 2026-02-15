@@ -1,10 +1,7 @@
 /**
  * phylla algorithm definition.
  */
-(() => {
-  window.Vectura = window.Vectura || {};
-  window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
-  window.Vectura.AlgorithmRegistry.phylla = {
+export const phylla = {
       generate: (p, rng, noise, bounds) => {
         const { m, width, height } = bounds;
         const paths = [];
@@ -45,4 +42,3 @@
       },
       formula: () => 'θ = i * 137.5°, r = c√i\npos = [cos(θ)*r, sin(θ)*r]',
     };
-})();

@@ -1,10 +1,7 @@
 /**
  * flowfield algorithm definition.
  */
-(() => {
-  window.Vectura = window.Vectura || {};
-  window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
-  window.Vectura.AlgorithmRegistry.flowfield = {
+export const flowfield = {
       generate: (p, rng, noise, bounds) => {
         const { m, dW, dH, width, height } = bounds;
         const paths = [];
@@ -115,4 +112,3 @@
       formula: (p) =>
         `θ = noise(x * ${p.noiseScale}, y * ${p.noiseScale}) * 2π * ${p.force}\npos += [cos(θ), sin(θ)] * ${p.stepLen}`,
     };
-})();

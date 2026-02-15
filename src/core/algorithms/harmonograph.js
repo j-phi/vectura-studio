@@ -1,10 +1,7 @@
 /**
  * harmonograph algorithm definition.
  */
-(() => {
-  window.Vectura = window.Vectura || {};
-  window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
-  window.Vectura.AlgorithmRegistry.harmonograph = {
+export const harmonograph = {
       generate: (p, rng, noise, bounds) => {
         const { width, height } = bounds;
         const cx = width / 2;
@@ -289,4 +286,3 @@
       formula: (p) =>
         `x = Σ Aᵢ sin((fᵢ+μᵢ)t + φxᵢ) e^(-dᵢ t)\ny = Σ Bᵢ sin((fᵢ+μᵢ)t + φyᵢ) e^(-dᵢ t)`,
     };
-})();

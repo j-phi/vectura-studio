@@ -1,10 +1,9 @@
 /**
  * rainfall algorithm definition.
  */
-(() => {
-  window.Vectura = window.Vectura || {};
-  window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
-  window.Vectura.AlgorithmRegistry.rainfall = {
+import { NOISE_IMAGES } from '../../config/defaults.js';
+
+export const rainfall = {
       generate: (p, rng, noise, bounds) => {
         const { m, dW, dH, width, height } = bounds;
         const count = Math.max(1, Math.floor(p.count ?? 1));
@@ -243,7 +242,7 @@
                 return band;
               }
               case 'image': {
-                const store = window.Vectura?.NOISE_IMAGES || {};
+                const store = NOISE_IMAGES;
                 const img = noiseDef?.imageId ? store[noiseDef.imageId] : null;
                 if (!img || !img.data) return n;
                 const wrap = noiseDef?.tileMode !== 'off';
@@ -791,7 +790,7 @@
         const windX = Math.sin(windAngle) * windStrength;
         const windY = -Math.cos(windAngle) * windStrength;
 
-        const store = window.Vectura?.NOISE_IMAGES || {};
+        const store = NOISE_IMAGES;
         const mask = p.silhouetteId ? store[p.silhouetteId] : null;
         const hasMask = Boolean(mask && mask.data && mask.width && mask.height);
         const maskAlpha = (x, y) => {
@@ -1253,4 +1252,3 @@
       formula: (p) =>
         `dir = angle(${p.rainfallAngle}°) + wind(${p.windAngle}°, ${p.windStrength})\npos += dir * ${p.traceStep} + noise * ${p.turbulence}`,
     };
-})();

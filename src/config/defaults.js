@@ -1,9 +1,7 @@
 /**
  * Default algorithm parameters and mutable app settings.
  */
-(() => {
-  window.Vectura = window.Vectura || {};
-  window.Vectura.ALGO_DEFAULTS = {
+export const ALGO_DEFAULTS = {
     wavetable: {
       lines: 130,
       noiseType: 'simplex',
@@ -592,10 +590,10 @@
       curves: false,
     },
   };
-  window.Vectura.ALGO_DEFAULTS.petalisDesigner = JSON.parse(JSON.stringify(window.Vectura.ALGO_DEFAULTS.petalis || {}));
-  window.Vectura.ALGO_DEFAULTS.petalisDesigner.label = 'Petalis Designer';
+  ALGO_DEFAULTS.petalisDesigner = JSON.parse(JSON.stringify(ALGO_DEFAULTS.petalis || {}));
+  ALGO_DEFAULTS.petalisDesigner.label = 'Petalis Designer';
 
-  window.Vectura.SETTINGS = {
+export const SETTINGS = {
     margin: 20,
     speedDown: 250,
     speedUp: 300,
@@ -674,5 +672,5 @@
     ],
     globalLayerCount: 0,
   };
-  window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {};
-})();
+
+export const NOISE_IMAGES = {};

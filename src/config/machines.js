@@ -1,9 +1,7 @@
 /**
  * Machine profile definitions.
  */
-(() => {
-  window.Vectura = window.Vectura || {};
-  window.Vectura.MACHINES = {
+export const MACHINES = {
     a0: { name: 'A0', width: 841, height: 1189 },
     a1: { name: 'A1', width: 594, height: 841 },
     a2: { name: 'A2', width: 420, height: 594 },
@@ -26,4 +24,3 @@
     folio: { name: 'US Folio', width: 216, height: 330 },
     custom: { name: 'Custom', width: 210, height: 297 },
   };
-})();
