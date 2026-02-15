@@ -85,6 +85,9 @@
         selectionOutlineWidth: SETTINGS.selectionOutlineWidth,
         showCanvasHelp: SETTINGS.showCanvasHelp,
         gridOverlay: SETTINGS.gridOverlay,
+        uiSections: SETTINGS.uiSections ? clone(SETTINGS.uiSections) : null,
+        aboutVisible: SETTINGS.aboutVisible !== false,
+        touchModifiers: SETTINGS.touchModifiers ? clone(SETTINGS.touchModifiers) : null,
         paperSize: SETTINGS.paperSize,
         paperWidth: SETTINGS.paperWidth,
         paperHeight: SETTINGS.paperHeight,
@@ -128,6 +131,16 @@
       SETTINGS.selectionOutlineWidth = snapshot.selectionOutlineWidth ?? SETTINGS.selectionOutlineWidth;
       SETTINGS.showCanvasHelp = snapshot.showCanvasHelp ?? SETTINGS.showCanvasHelp;
       SETTINGS.gridOverlay = snapshot.gridOverlay ?? SETTINGS.gridOverlay;
+      if (snapshot.uiSections && typeof snapshot.uiSections === 'object') {
+        SETTINGS.uiSections = clone(snapshot.uiSections);
+      }
+      if (snapshot.aboutVisible !== undefined) SETTINGS.aboutVisible = snapshot.aboutVisible !== false;
+      if (snapshot.touchModifiers && typeof snapshot.touchModifiers === 'object') {
+        SETTINGS.touchModifiers = {
+          ...(SETTINGS.touchModifiers || {}),
+          ...snapshot.touchModifiers,
+        };
+      }
       SETTINGS.paperSize = snapshot.paperSize ?? SETTINGS.paperSize;
       SETTINGS.paperWidth = snapshot.paperWidth ?? SETTINGS.paperWidth;
       SETTINGS.paperHeight = snapshot.paperHeight ?? SETTINGS.paperHeight;
@@ -215,6 +228,9 @@
           selectionOutlineWidth: SETTINGS.selectionOutlineWidth,
           showCanvasHelp: SETTINGS.showCanvasHelp,
           gridOverlay: SETTINGS.gridOverlay,
+          uiSections: SETTINGS.uiSections ? clone(SETTINGS.uiSections) : null,
+          aboutVisible: SETTINGS.aboutVisible !== false,
+          touchModifiers: SETTINGS.touchModifiers ? clone(SETTINGS.touchModifiers) : null,
           paperSize: SETTINGS.paperSize,
           paperWidth: SETTINGS.paperWidth,
           paperHeight: SETTINGS.paperHeight,
@@ -267,6 +283,16 @@
       SETTINGS.selectionOutlineWidth = s.selectionOutlineWidth ?? SETTINGS.selectionOutlineWidth;
       SETTINGS.showCanvasHelp = s.showCanvasHelp ?? SETTINGS.showCanvasHelp;
       SETTINGS.gridOverlay = s.gridOverlay ?? SETTINGS.gridOverlay;
+      if (s.uiSections && typeof s.uiSections === 'object') {
+        SETTINGS.uiSections = clone(s.uiSections);
+      }
+      if (s.aboutVisible !== undefined) SETTINGS.aboutVisible = s.aboutVisible !== false;
+      if (s.touchModifiers && typeof s.touchModifiers === 'object') {
+        SETTINGS.touchModifiers = {
+          ...(SETTINGS.touchModifiers || {}),
+          ...s.touchModifiers,
+        };
+      }
       SETTINGS.paperSize = s.paperSize ?? SETTINGS.paperSize;
       SETTINGS.paperWidth = s.paperWidth ?? SETTINGS.paperWidth;
       SETTINGS.paperHeight = s.paperHeight ?? SETTINGS.paperHeight;

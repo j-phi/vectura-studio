@@ -6,6 +6,8 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Plotter-first output in millimeters with machine profiles (A3, A4, AxiDraw V3).
 - Layered generation with visibility toggles, ordering, and per-layer stroke/line-cap settings.
 - Seeded, repeatable results with live transform controls (position, scale, rotation).
+- Collapsible left-panel sections with persisted state: `Algorithm`, `Transform & Seed`, `Algorithm Configuration`, and `Optimization`.
+- ABOUT card is visible by default and toggled by the Algorithm info button.
 - Direct canvas manipulation: drag to move the selected layer, drag corner handles to resize, rotate via the upper-right handle, and double-click to rename layers.
 - Multi-selection: shift-click ranges in the layer list, Cmd/Ctrl-click to toggle, or drag a marquee, then move/rotate the group together.
 - Layer grouping/ungrouping via Cmd/Ctrl+G and Cmd/Ctrl+Shift+G.
@@ -14,6 +16,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Direct path editing for individual line endpoints and bezier handles.
 - Expand any layer into per-line sublayers for fine-grained selection and pen assignment.
 - Canvas shortcut overlay that stays above the formula panel (toggleable in Settings).
+- Tablet/touch parity: pointer-native canvas interactions, one-finger tool input, two-finger pan/pinch zoom, and touch modifier buttons (`Shift`, `Alt`, `Meta`, `Pan`).
 - Alignment guides for canvas center and size matching while dragging.
 - Guide visibility and snapping toggles in Settings (Cmd while dragging overrides snapping).
 - Optional 10mm grid overlay toggle in Settings for layout alignment.
@@ -21,6 +24,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Optional cookie-backed UI preference persistence from Settings.
 - In-app help guide and shortcut menu (press `?`).
 - Parameter randomization and simplification controls with live line/point counts.
+- Algorithm-aware randomization bias for Shape Pack, Petalis, Rainfall, and Lissajous (strong defaults with occasional outliers).
 - Double-click any value to edit it inline, and double-click a control to reset to defaults.
 - Fast duplication and nudging: Cmd/Ctrl+D duplicates selection, Alt-drag (Option-drag) to duplicate, arrow keys to nudge (Shift for larger steps).
 - Configurable undo with Cmd/Ctrl+Z and adjustable history depth.
@@ -30,7 +34,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Wavetable noise stack with per-noise blend modes, tile patterns, image effects, polygon noise, and drag-to-reorder layers.
 - Petalis generator with radial petals, center morphing, shading, tip curl, and 20 named presets (plus an in-dev light source marker).
 - Petalis Designer algorithm variant with an embedded full Petal Designer panel in the parameter stack.
-- Petal Designer window (draggable 2x2 editor) for outer/inner petal profile drawing, copy-left/right, and live shading preview.
+- Petal Designer window and inline editor now use a single-panel workflow with target switching (`Outer`/`Inner`), per-target profile resets, and shading controls.
 - Pen palette with assignable colors/widths, reorderable list, drag-to-assign per layer or selection, double-click-to-apply on selected layers, plus palette selection and add/remove controls.
 - Plotter optimization slider to remove fully overlapping paths per pen before export.
 - Optimization pipeline (linesimplify, linesort, filter, multipass) with scope selection, preview overlays, and export toggle.
@@ -64,7 +68,7 @@ Then visit `http://localhost:8000`.
 7. Use [PETAL DESIGNER] on Petalis/Petalis Designer layers, or switch to the Petalis Designer algorithm for an embedded inline designer panel.
 8. Export with the [EXPORT SVG] button.
 
-Pan: Shift + Drag. Zoom: Mouse Wheel. Move layer: Drag. Resize layer: Drag corner handles. Rotate: Drag the upper-right handle (Shift snaps). Duplicate: Alt-drag. Expand: Cmd/Ctrl + E. Pen tool: click to add points, click-drag for bezier curves (Shift constrains, Alt breaks handles), double-click near the first point to close, Enter commits, Esc cancels. Pen subtools: `+` add anchor, `-` delete anchor, `Shift+C` convert anchor. Direct tool (`A`) edits endpoints and handles on individual line paths. Scissor tool: drag a line/rect/circle to split intersecting paths.
+Pan: Shift + Drag. Zoom: Mouse Wheel. Touch: one-finger tool input, two-finger pan/pinch zoom. Move layer: Drag. Resize layer: Drag corner handles. Rotate: Drag the upper-right handle (Shift snaps). Duplicate: Alt-drag. Expand: Cmd/Ctrl + E. Pen tool: click to add points, click-drag for bezier curves (Shift constrains, Alt breaks handles), double-click near the first point to close, Enter commits, Esc cancels. Pen subtools: `+` add anchor, `-` delete anchor, `Shift+C` convert anchor. Direct tool (`A`) edits endpoints and handles on individual line paths. Scissor tool: drag a line/rect/circle to split intersecting paths.
 
 ## Algorithm Library
 Each layer is powered by an algorithm with its own parameters and formula preview:
@@ -79,7 +83,7 @@ Each layer is powered by an algorithm with its own parameters and formula previe
 - Topo: contours extracted from a noise-based height field.
 - Rainfall: rain traces with droplet shaping, wind, and silhouette/ground controls.
 - Petalis: radial petal structures with presets, center modifiers, and shading controls.
-- Petalis Designer: Petalis variant with embedded interactive petal-shape and shading designer controls.
+- Petalis Designer: Petalis variant with embedded interactive petal-shape and shading designer controls (defaults: 50 petals, `radialGrowth` 0.05, shading off).
 - Spiral: includes optional closure for looping the outer end back into the spiral.
 - Shape Pack: circle/polygon packing with perspective controls.
 
