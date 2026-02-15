@@ -59,6 +59,9 @@
       this.lastM = { x: 0, y: 0 };
       this.snap = null;
       this.snapAllowed = true;
+      this.activePointerId = null;
+      this.touchPointers = new Map();
+      this.touchGesture = null;
       this.ready = Boolean(this.canvas && this.ctx);
 
       if (!this.ready) {
@@ -75,9 +78,16 @@
 
       new ResizeObserver(() => this.resize()).observe(parent);
       this.canvas.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
-      this.canvas.addEventListener('mousedown', (e) => this.down(e));
-      window.addEventListener('mousemove', (e) => this.move(e));
-      window.addEventListener('mouseup', () => this.up());
+      if (window.PointerEvent) {
+        this.canvas.addEventListener('pointerdown', (e) => this.down(e));
+        window.addEventListener('pointermove', (e) => this.move(e));
+        window.addEventListener('pointerup', (e) => this.up(e));
+        window.addEventListener('pointercancel', (e) => this.up(e));
+      } else {
+        this.canvas.addEventListener('mousedown', (e) => this.down(e));
+        window.addEventListener('mousemove', (e) => this.move(e));
+        window.addEventListener('mouseup', (e) => this.up(e));
+      }
     }
 
     setTool(tool) {
@@ -179,6 +189,118 @@
       this.canvas.style.cursor = 'crosshair';
     }
 
+    getModifierState(e = {}) {
+      const mods = SETTINGS.touchModifiers || {};
+      const isTouchPointer = e.pointerType && e.pointerType !== 'mouse';
+      const touchShift = isTouchPointer && Boolean(mods.shift);
+      const touchAlt = isTouchPointer && Boolean(mods.alt);
+      const touchMeta = isTouchPointer && Boolean(mods.meta);
+      const touchPan = isTouchPointer && Boolean(mods.pan);
+      return {
+        shift: Boolean(e.shiftKey || touchShift),
+        alt: Boolean(e.altKey || touchAlt),
+        meta: Boolean(e.metaKey || e.ctrlKey || touchMeta),
+        pan: Boolean(touchPan),
+      };
+    }
+
+    wantsPan(e, modifiers = this.getModifierState(e)) {
+      return this.activeTool === 'hand' || modifiers.shift || modifiers.pan || e.button === 1;
+    }
+
+    isTouchPointer(e) {
+      return e?.pointerType === 'touch';
+    }
+
+    updateTouchPointer(e) {
+      if (!this.isTouchPointer(e)) return;
+      this.touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    }
+
+    removeTouchPointer(e) {
+      if (!this.isTouchPointer(e)) return;
+      this.touchPointers.delete(e.pointerId);
+    }
+
+    canStartTouchGesture() {
+      return !(
+        this.isLayerDrag ||
+        this.isSelecting ||
+        this.isLassoSelecting ||
+        this.isScissor ||
+        this.directDrag ||
+        this.isPenDragging ||
+        this.isLightDrag
+      );
+    }
+
+    getTouchGesturePair() {
+      if (this.touchPointers.size < 2) return null;
+      const points = Array.from(this.touchPointers.values());
+      return [points[0], points[1]];
+    }
+
+    startTouchGesture() {
+      const pair = this.getTouchGesturePair();
+      if (!pair) return false;
+      const [a, b] = pair;
+      const center = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
+      const distance = Math.max(8, Math.hypot(b.x - a.x, b.y - a.y));
+      this.cancelActiveInteractionsForTouchGesture();
+      this.touchGesture = {
+        startDistance: distance,
+        startScale: this.scale,
+        worldCenter: {
+          x: (center.x - this.offsetX) / this.scale,
+          y: (center.y - this.offsetY) / this.scale,
+        },
+      };
+      return true;
+    }
+
+    updateTouchGesture() {
+      const pair = this.getTouchGesturePair();
+      if (!this.touchGesture || !pair) return false;
+      const [a, b] = pair;
+      const center = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
+      const distance = Math.max(8, Math.hypot(b.x - a.x, b.y - a.y));
+      const ratio = distance / Math.max(1e-6, this.touchGesture.startDistance);
+      const nextScale = Math.max(0.1, Math.min(this.touchGesture.startScale * ratio, 20));
+      this.scale = nextScale;
+      this.offsetX = center.x - this.touchGesture.worldCenter.x * nextScale;
+      this.offsetY = center.y - this.touchGesture.worldCenter.y * nextScale;
+      this.draw();
+      return true;
+    }
+
+    stopTouchGesture() {
+      this.touchGesture = null;
+      this.updateCursor();
+    }
+
+    cancelActiveInteractionsForTouchGesture() {
+      this.isPan = false;
+      this.isLayerDrag = false;
+      this.dragMode = null;
+      this.activeHandle = null;
+      this.tempTransform = null;
+      this.snap = null;
+      this.guides = null;
+      this.isLightDrag = false;
+      this.isPenDragging = false;
+      this.penDragAnchor = null;
+      this.penDragStart = null;
+      this.directDrag = null;
+      this.isScissor = false;
+      this.scissorStart = null;
+      this.scissorEnd = null;
+      this.isSelecting = false;
+      this.selectionRect = null;
+      this.selectionStart = null;
+      this.isLassoSelecting = false;
+      this.lassoPath = null;
+    }
+
     snapPenAngle(from, to) {
       const dx = to.x - from.x;
       const dy = to.y - from.y;
@@ -278,6 +400,7 @@
 
     handlePenDown(world, e) {
       if (!world) return;
+      const modifiers = this.getModifierState(e);
       const snapTol = 4 / this.scale;
 
       if (!this.penDraft) {
@@ -304,7 +427,7 @@
       const first = anchors[0];
       const lastAnchor = anchors[anchors.length - 1];
       let next = { x: world.x, y: world.y };
-      if (e.shiftKey) next = this.snapPenAngle(lastAnchor, next);
+      if (modifiers.shift) next = this.snapPenAngle(lastAnchor, next);
       const distToStart = Math.hypot(next.x - first.x, next.y - first.y);
       const isDoubleClick = e.detail && e.detail > 1;
       if (anchors.length >= 2 && distToStart <= snapTol && isDoubleClick) {
@@ -700,7 +823,8 @@
         }
       } else {
         anchor[drag.type] = { x: next.x, y: next.y };
-        if (!e.altKey) {
+        const modifiers = this.getModifierState(e);
+        if (!modifiers.alt) {
           const dx = anchor.x - next.x;
           const dy = anchor.y - next.y;
           const mirror = drag.type === 'in' ? 'out' : 'in';
@@ -1196,10 +1320,38 @@
 
     down(e) {
       if (!this.ready) return;
-      if (this.activeTool === 'hand' || e.shiftKey || e.button === 1) {
+      if (this.isTouchPointer(e)) {
+        this.updateTouchPointer(e);
+        if (this.touchPointers.size >= 2) {
+          if (!this.touchGesture && this.canStartTouchGesture()) this.startTouchGesture();
+          if (this.touchGesture) {
+            if (e.cancelable) e.preventDefault();
+            return;
+          }
+        }
+      }
+
+      if (this.touchGesture) return;
+      if (this.activePointerId !== null && e.pointerId !== undefined && e.pointerId !== this.activePointerId && e.pointerType !== 'mouse') {
+        return;
+      }
+      if (e.pointerId !== undefined) {
+        this.activePointerId = e.pointerId;
+        if (this.canvas.setPointerCapture) {
+          try {
+            this.canvas.setPointerCapture(e.pointerId);
+          } catch (err) {
+            // Ignore pointer capture issues on unsupported combinations.
+          }
+        }
+      }
+
+      const modifiers = this.getModifierState(e);
+      if (this.wantsPan(e, modifiers)) {
         this.isPan = true;
         this.lastM = { x: e.clientX, y: e.clientY };
         this.canvas.style.cursor = 'grabbing';
+        if (e.cancelable) e.preventDefault();
         return;
       }
 
@@ -1207,7 +1359,7 @@
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
       const world = this.screenToWorld(sx, sy);
-      if (e.button !== 0) return;
+      if (e.button !== undefined && e.button !== 0) return;
 
       if (this.lightSourcePlacement) {
         this.setLightSource(world);
@@ -1226,7 +1378,7 @@
 
       this.lightSourceSelected = false;
 
-      const penSelectOverride = this.activeTool === 'pen' && (e.metaKey || e.ctrlKey);
+      const penSelectOverride = this.activeTool === 'pen' && modifiers.meta;
       const allowSelection = this.activeTool !== 'pen' || penSelectOverride;
 
       if (this.activeTool === 'pen' && !penSelectOverride) {
@@ -1337,7 +1489,7 @@
           this.dragStart = world;
           this.startBounds = bounds;
           this.canvas.style.cursor = updatedSelected.length > 1 ? 'grabbing' : 'move';
-          if (e.altKey && updatedSelected.length === 1) {
+          if (modifiers.alt && updatedSelected.length === 1) {
             if (this.onDuplicateLayer) this.onDuplicateLayer();
             const dup = this.engine.duplicateLayer ? this.engine.duplicateLayer(updatedSelected[0].id) : null;
             if (dup) {
@@ -1360,6 +1512,18 @@
 
     move(e) {
       if (!this.ready) return;
+      if (this.isTouchPointer(e)) this.updateTouchPointer(e);
+      if (this.touchGesture) {
+        if (this.touchPointers.size >= 2) {
+          this.updateTouchGesture();
+          if (e.cancelable) e.preventDefault();
+        }
+        return;
+      }
+      if (this.activePointerId !== null && e.pointerId !== undefined && e.pointerId !== this.activePointerId && e.pointerType !== 'mouse') {
+        return;
+      }
+      const modifiers = this.getModifierState(e);
       if (this.isPan) {
         this.offsetX += e.clientX - this.lastM.x;
         this.offsetY += e.clientY - this.lastM.y;
@@ -1401,7 +1565,7 @@
           const dy = world.y - this.dragStart.y;
           this.tempTransform = { dx, dy, scaleX: 1, scaleY: 1, origin: { x: 0, y: 0 } };
         } else if (this.dragMode === 'resize' && this.startBounds && this.activeHandle) {
-          const fromCenter = e.altKey || e.ctrlKey;
+          const fromCenter = modifiers.alt || modifiers.meta;
           const origin = fromCenter ? this.getBoundsCenter(this.startBounds) : this.getResizeAnchor(this.activeHandle, this.startBounds);
           const handlePoint = this.getHandlePoint(this.activeHandle, this.startBounds);
           const startVec = { x: handlePoint.x - origin.x, y: handlePoint.y - origin.y };
@@ -1415,7 +1579,7 @@
           const safeY = Math.abs(startVecLocal.y) < 0.001 ? 0.001 : startVecLocal.y;
           let scaleX = currVecLocal.x / safeX;
           let scaleY = currVecLocal.y / safeY;
-          if (e.shiftKey) {
+          if (modifiers.shift) {
             const uni = Math.abs(scaleX) > Math.abs(scaleY) ? scaleX : scaleY;
             scaleX = uni;
             scaleY = uni;
@@ -1426,7 +1590,7 @@
         } else if (this.dragMode === 'rotate' && this.rotateOrigin) {
           const angle = Math.atan2(world.y - this.rotateOrigin.y, world.x - this.rotateOrigin.x);
           let delta = ((angle - this.rotateStartAngle) * 180) / Math.PI;
-          if (e.shiftKey) {
+          if (modifiers.shift) {
             const snap = 15;
             delta = Math.round(delta / snap) * snap;
           }
@@ -1435,7 +1599,7 @@
         const activeLayers = this.getSelectedLayers();
         const bounds = activeLayers.length ? this.getSelectionBounds(activeLayers, this.tempTransform) : null;
         const needsGuides = SETTINGS.showGuides || SETTINGS.snapGuides;
-        this.snapAllowed = !e.metaKey;
+        this.snapAllowed = !modifiers.meta;
         this.guides = needsGuides && bounds ? this.computeGuides(activeLayers, bounds) : null;
         this.snap = SETTINGS.snapGuides && bounds ? this.computeSnap(activeLayers, bounds) : null;
         this.draw();
@@ -1451,20 +1615,20 @@
         if (this.isPenDragging && this.penDragAnchor !== null) {
           const anchor = anchors[this.penDragAnchor];
           if (anchor) {
-            const target = e.shiftKey ? this.snapPenAngle(anchor, next) : next;
+            const target = modifiers.shift ? this.snapPenAngle(anchor, next) : next;
             const dist = Math.hypot(target.x - anchor.x, target.y - anchor.y);
             const minDist = 2 / this.scale;
             if (dist <= minDist) {
               anchor.in = null;
               anchor.out = null;
             } else {
-              this.setAnchorHandles(anchor, target, { breakHandle: e.altKey });
+              this.setAnchorHandles(anchor, target, { breakHandle: modifiers.alt });
             }
             this.penPreview = target;
           }
         } else {
           const last = anchors[anchors.length - 1];
-          this.penPreview = e.shiftKey && last ? this.snapPenAngle(last, next) : next;
+          this.penPreview = modifiers.shift && last ? this.snapPenAngle(last, next) : next;
         }
         this.draw();
         return;
@@ -1476,7 +1640,7 @@
         const sy = e.clientY - rect.top;
         const next = this.screenToWorld(sx, sy);
         this.scissorEnd =
-          this.scissorMode === 'line' && e.shiftKey && this.scissorStart
+          this.scissorMode === 'line' && modifiers.shift && this.scissorStart
             ? this.snapScissorAngle(this.scissorStart, next, 15)
             : next;
         this.draw();
@@ -1508,7 +1672,7 @@
         let h = Math.abs(dy);
         let x = Math.min(this.selectionStart.x, world.x);
         let y = Math.min(this.selectionStart.y, world.y);
-        if (e.metaKey || e.ctrlKey) {
+        if (modifiers.meta) {
           const size = Math.max(w, h);
           w = size;
           h = size;
@@ -1520,11 +1684,38 @@
         return;
       }
 
-      this.updateHoverCursor(e);
+      if (!this.isTouchPointer(e)) this.updateHoverCursor(e);
     }
 
-    up() {
+    up(e = {}) {
       if (!this.ready || !this.canvas) return;
+      this.removeTouchPointer(e);
+      const clearActivePointer = () => {
+        if (e.pointerId !== undefined && this.canvas.releasePointerCapture) {
+          try {
+            if (this.canvas.hasPointerCapture && this.canvas.hasPointerCapture(e.pointerId)) {
+              this.canvas.releasePointerCapture(e.pointerId);
+            }
+          } catch (err) {
+            // Ignore pointer capture release issues.
+          }
+        }
+        this.activePointerId = null;
+      };
+      if (this.touchGesture) {
+        if (this.touchPointers.size >= 2) {
+          this.updateTouchGesture();
+          return;
+        }
+        this.stopTouchGesture();
+        if (this.touchPointers.size > 0) {
+          clearActivePointer();
+          return;
+        }
+      }
+      if (this.activePointerId !== null && e.pointerId !== undefined && e.pointerId !== this.activePointerId && e.pointerType !== 'mouse') {
+        return;
+      }
       if (this.isLightDrag) {
         this.isLightDrag = false;
         this.canvas.style.cursor = 'crosshair';
@@ -1536,6 +1727,7 @@
       }
       if (this.directDrag) {
         this.endDirectDrag();
+        clearActivePointer();
         return;
       }
       if (this.isScissor) {
@@ -1559,6 +1751,7 @@
         this.scissorStart = null;
         this.scissorEnd = null;
         this.draw();
+        clearActivePointer();
         return;
       }
       if (this.isLassoSelecting) {
@@ -1568,6 +1761,7 @@
         this.isLassoSelecting = false;
         this.lassoPath = null;
         this.draw();
+        clearActivePointer();
         return;
       }
       if (this.isLayerDrag) {
@@ -1659,6 +1853,7 @@
         this.selectionRect = null;
       }
       this.draw();
+      clearActivePointer();
     }
 
     computeGuides(activeLayers, bounds) {
@@ -2601,11 +2796,12 @@
 
     updateHoverCursor(e) {
       if (!this.canvas) return;
+      const modifiers = this.getModifierState(e);
       if (this.activeTool === 'hand') {
         this.canvas.style.cursor = this.isPan ? 'grabbing' : 'grab';
         return;
       }
-      if (this.activeTool === 'pen' && !(e.metaKey || e.ctrlKey) && this.penMode === 'draw') {
+      if (this.activeTool === 'pen' && !modifiers.meta && this.penMode === 'draw') {
         this.canvas.style.cursor = 'crosshair';
         return;
       }
@@ -2627,7 +2823,7 @@
         this.canvas.style.cursor = hit ? 'move' : 'crosshair';
         return;
       }
-      if (this.activeTool === 'pen' && this.penMode !== 'draw' && !(e.metaKey || e.ctrlKey)) {
+      if (this.activeTool === 'pen' && this.penMode !== 'draw' && !modifiers.meta) {
         const control = this.hitDirectControl(world);
         if (control) {
           this.canvas.style.cursor = this.penMode === 'delete' ? 'not-allowed' : 'pointer';

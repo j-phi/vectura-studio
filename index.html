@@ -84,103 +84,149 @@
       <aside id="left-pane" class="pane pane-left bg-vectura-panel border-r border-vectura-border flex flex-col z-10 shadow-xl">
         <div class="pane-header pane-header-left p-4 border-b border-vectura-border flex justify-between items-center">
           <span class="pane-title font-bold text-vectura-accent">GENERATOR</span>
-          <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.69</span>
+<<<<<<< ours
+          <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.70</span>
+=======
+<<<<<<< ours
+<<<<<<< ours
+          <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.71</span>
+=======
+          <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.70</span>
+>>>>>>> theirs
+=======
+          <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.70</span>
+>>>>>>> theirs
+>>>>>>> theirs
           <button id="btn-pane-toggle-left" class="pane-toggle pane-toggle-left" type="button" aria-label="Toggle left pane">
             ◀
           </button>
         </div>
 
         <div class="pane-body flex-1 overflow-y-auto" id="left-panel-content">
-          <div id="algo-sticky" class="sticky top-0 z-20 bg-vectura-panel border-b border-vectura-border p-4">
-            <div class="mb-4">
-              <label class="control-label">Algorithm</label>
-              <select
-                id="generator-module"
-                class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent mb-4"
-              ></select>
-
-              <div class="bg-vectura-bg border border-vectura-border p-3">
-                <div class="flex items-center gap-2 mb-2">
-                  <div class="w-1 h-3 bg-vectura-muted"></div>
-                  <span class="text-[10px] uppercase text-vectura-muted tracking-widest">About</span>
+          <div class="p-4 left-panel-sections">
+            <div id="left-section-algorithm" class="left-panel-section">
+              <button id="left-section-algorithm-header" class="left-panel-section-header" type="button">
+                <span class="left-panel-section-title">Algorithm</span>
+                <span class="left-panel-section-toggle" aria-hidden="true"></span>
+              </button>
+              <div id="left-section-algorithm-body" class="left-panel-section-body">
+                <label class="control-label flex items-center gap-2">
+                  <span>Algorithm</span>
+                  <button type="button" class="info-btn" data-info="global.algorithm" aria-label="Toggle About">i</button>
+                </label>
+                <select
+                  id="generator-module"
+                  class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent mb-4"
+                ></select>
+                <div id="algo-about" class="bg-vectura-bg border border-vectura-border p-3">
+                  <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-2">
+                      <div class="w-1 h-3 bg-vectura-muted"></div>
+                      <span class="text-[10px] uppercase text-vectura-muted tracking-widest">About</span>
+                    </div>
+                    <button id="algo-about-close" type="button" class="info-btn" aria-label="Close About">x</button>
+                  </div>
+                  <p id="algo-desc" class="text-xs text-vectura-muted leading-relaxed">...</p>
                 </div>
-                <p id="algo-desc" class="text-xs text-vectura-muted leading-relaxed">...</p>
-              </div>
-            </div>
-          </div>
-
-          <div class="p-4">
-            <div class="control-group">
-              <label class="control-label" id="transform-label">Transform &amp; Seed</label>
-              <div class="grid grid-cols-2 gap-2 mb-2" id="seed-controls">
-                <div>
-                  <label class="text-[10px] text-vectura-muted">Seed</label>
-                  <input
-                    type="number"
-                    id="inp-seed"
-                    class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <button
-                    id="btn-rand-seed"
-                    class="w-full h-full bg-vectura-border text-[10px] hover:text-white mt-[1px] hover:bg-vectura-border/80 transition-colors"
-                    type="button"
-                  >
-                    RANDOMIZE
-                  </button>
-                </div>
-              </div>
-              <div class="grid grid-cols-2 gap-2 mb-2">
-                <div>
-                  <label class="text-[10px] text-vectura-muted">Pos X (mm)</label>
-                  <input
-                    type="number"
-                    id="inp-pos-x"
-                    class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label class="text-[10px] text-vectura-muted">Pos Y (mm)</label>
-                  <input
-                    type="number"
-                    id="inp-pos-y"
-                    class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
-                  />
-                </div>
-              </div>
-              <div class="grid grid-cols-2 gap-2">
-                <div>
-                  <label class="text-[10px] text-vectura-muted">Scale X</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    id="inp-scale-x"
-                    class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label class="text-[10px] text-vectura-muted">Scale Y</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    id="inp-scale-y"
-                    class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
-                  />
-                </div>
-              </div>
-              <div class="mt-2">
-                <label class="text-[10px] text-vectura-muted">Rotation (deg)</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="inp-rotation"
-                  class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
-                />
               </div>
             </div>
 
-            <div id="dynamic-controls"></div>
+            <div id="left-section-transform-seed" class="left-panel-section">
+              <button id="left-section-transform-seed-header" class="left-panel-section-header" type="button">
+                <span class="left-panel-section-title" id="transform-label">Transform &amp; Seed</span>
+                <span class="left-panel-section-toggle" aria-hidden="true"></span>
+              </button>
+              <div id="left-section-transform-seed-body" class="left-panel-section-body">
+                <div class="control-group border-none p-0 m-0">
+                  <div class="grid grid-cols-2 gap-2 mb-2" id="seed-controls">
+                    <div>
+                      <label class="text-[10px] text-vectura-muted">Seed</label>
+                      <input
+                        type="number"
+                        id="inp-seed"
+                        class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <button
+                        id="btn-rand-seed"
+                        class="w-full h-full bg-vectura-border text-[10px] hover:text-white mt-[1px] hover:bg-vectura-border/80 transition-colors"
+                        type="button"
+                      >
+                        RANDOMIZE
+                      </button>
+                    </div>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2 mb-2">
+                    <div>
+                      <label class="text-[10px] text-vectura-muted">Pos X (mm)</label>
+                      <input
+                        type="number"
+                        id="inp-pos-x"
+                        class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label class="text-[10px] text-vectura-muted">Pos Y (mm)</label>
+                      <input
+                        type="number"
+                        id="inp-pos-y"
+                        class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2">
+                    <div>
+                      <label class="text-[10px] text-vectura-muted">Scale X</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        id="inp-scale-x"
+                        class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label class="text-[10px] text-vectura-muted">Scale Y</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        id="inp-scale-y"
+                        class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div class="mt-2">
+                    <label class="text-[10px] text-vectura-muted">Rotation (deg)</label>
+                    <input
+                      type="number"
+                      step="1"
+                      id="inp-rotation"
+                      class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div id="left-section-algorithm-configuration" class="left-panel-section">
+              <button id="left-section-algorithm-configuration-header" class="left-panel-section-header" type="button">
+                <span class="left-panel-section-title">Algorithm Configuration</span>
+                <span class="left-panel-section-toggle" aria-hidden="true"></span>
+              </button>
+              <div id="left-section-algorithm-configuration-body" class="left-panel-section-body">
+                <div id="dynamic-controls"></div>
+              </div>
+            </div>
+
+            <div id="left-section-optimization" class="left-panel-section">
+              <button id="left-section-optimization-header" class="left-panel-section-header" type="button">
+                <span class="left-panel-section-title">Optimization</span>
+                <span class="left-panel-section-toggle" aria-hidden="true"></span>
+              </button>
+              <div id="left-section-optimization-body" class="left-panel-section-body">
+                <div id="optimization-controls"></div>
+              </div>
+            </div>
           </div>
         </div>
       </aside>
@@ -347,6 +393,12 @@
               />
             </svg>
           </button>
+        </div>
+        <div id="touch-modifier-bar" class="touch-modifier-bar hidden" aria-label="Touch Modifiers">
+          <button type="button" class="touch-mod-btn" data-touch-mod="shift" title="Shift">Shift</button>
+          <button type="button" class="touch-mod-btn" data-touch-mod="alt" title="Alt/Option">Alt</button>
+          <button type="button" class="touch-mod-btn" data-touch-mod="meta" title="Cmd/Ctrl">Cmd</button>
+          <button type="button" class="touch-mod-btn" data-touch-mod="pan" title="Pan">Pan</button>
         </div>
         <div class="flex-1 relative cursor-crosshair" id="viewport-container">
           <canvas id="main-canvas" class="block absolute top-0 left-0 outline-none" role="img" aria-label="Vector preview"></canvas>

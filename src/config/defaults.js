@@ -594,6 +594,9 @@
   };
   window.Vectura.ALGO_DEFAULTS.petalisDesigner = JSON.parse(JSON.stringify(window.Vectura.ALGO_DEFAULTS.petalis || {}));
   window.Vectura.ALGO_DEFAULTS.petalisDesigner.label = 'Petalis Designer';
+  window.Vectura.ALGO_DEFAULTS.petalisDesigner.count = 50;
+  window.Vectura.ALGO_DEFAULTS.petalisDesigner.radialGrowth = 0.05;
+  window.Vectura.ALGO_DEFAULTS.petalisDesigner.shadings = [];
 
   window.Vectura.SETTINGS = {
     margin: 20,
@@ -616,6 +619,19 @@
     selectionOutlineWidth: 0.4,
     showCanvasHelp: true,
     gridOverlay: false,
+    uiSections: {
+      algorithm: false,
+      transformSeed: true,
+      algorithmConfiguration: false,
+      optimization: true,
+    },
+    aboutVisible: true,
+    touchModifiers: {
+      shift: false,
+      alt: false,
+      meta: false,
+      pan: false,
+    },
     selectionMode: 'rect',
     paperSize: 'letter',
     paperWidth: 216,
