@@ -219,6 +219,67 @@
     return adjusted;
   };
 
+  const buildDesignerProfile = (designer, length, widthRatio, steps = 32) => {
+    const anchors = Array.isArray(designer?.anchors) ? designer.anchors : [];
+    if (anchors.length < 2) return null;
+    const usable = anchors
+      .map((anchor) => ({
+        t: clamp(anchor?.t ?? 0, 0, 1),
+        w: Math.max(0, anchor?.w ?? 0),
+        in: anchor?.in
+          ? {
+              t: clamp(anchor.in.t ?? anchor.t ?? 0, 0, 1),
+              w: Math.max(0, anchor.in.w ?? 0),
+            }
+          : null,
+        out: anchor?.out
+          ? {
+              t: clamp(anchor.out.t ?? anchor.t ?? 0, 0, 1),
+              w: Math.max(0, anchor.out.w ?? 0),
+            }
+          : null,
+      }))
+      .sort((a, b) => a.t - b.t);
+    if (usable.length < 2) return null;
+    usable[0].t = 0;
+    usable[0].w = 0;
+    usable[usable.length - 1].t = 1;
+    usable[usable.length - 1].w = 0;
+    const maxHalf = Math.max(0.5, (widthRatio * length * 0.5));
+    const toLocal = (point) => ({
+      x: clamp(point.t, 0, 1) * length,
+      y: Math.max(0, point.w) * maxHalf,
+    });
+    const samples = [];
+    const stepsPerSeg = Math.max(6, Math.round((steps || 32) / Math.max(1, usable.length - 1)));
+    for (let i = 0; i < usable.length - 1; i++) {
+      const a = usable[i];
+      const b = usable[i + 1];
+      const p0 = toLocal(a);
+      const p3 = toLocal(b);
+      const outDefault = {
+        t: lerp(a.t, b.t, 1 / 3),
+        w: a.w,
+      };
+      const inDefault = {
+        t: lerp(a.t, b.t, 2 / 3),
+        w: b.w,
+      };
+      const p1 = toLocal(a.out || outDefault);
+      const p2 = toLocal(b.in || inDefault);
+      for (let s = 0; s <= stepsPerSeg; s++) {
+        const t = s / stepsPerSeg;
+        const pt = cubicBezierPoint(p0, p1, p2, p3, t);
+        if (samples.length && s === 0) continue;
+        samples.push({
+          x: clamp(pt.x, 0, length),
+          y: Math.max(0, pt.y),
+        });
+      }
+    }
+    return samples;
+  };
+
   const sampleProfileWidth = (x, points) => {
     if (!Array.isArray(points) || points.length < 2) return 0;
     if (x <= points[0].x) return points[0].y;
@@ -1173,6 +1234,16 @@
 
     ringDefs.forEach((ring, ringIndex) => {
       const { count, minR, maxR, offset } = ring;
+      const ringDesigner =
+        ringMode === 'dual'
+          ? ringIndex === 0
+            ? p.designerInner
+            : p.designerOuter
+          : p.designerOuter || p.designerInner;
+      const ringProfile = ringDesigner?.profile || p.petalProfile || 'teardrop';
+      const ringCenterProfile = ringMode === 'dual' && ringIndex === 0
+        ? p.centerProfile || ringProfile
+        : p.centerProfile || ringProfile;
       for (let i = 0; i < count; i++) {
         const t = count <= 1 ? 0.5 : i / (count - 1);
         const spiralT = lerp(spiralMin, spiralMax, Math.pow(t, spiralTightness));
@@ -1207,25 +1278,27 @@
         const wavePhase = rng.nextFloat() * TAU;
         const lengthScale = tipLengthScale(p.tipCurl ?? 0);
         const effectiveLength = Math.max(1, length * lengthScale);
-        const profilePoints = buildLeafProfile({
-          length: effectiveLength,
-          widthRatio,
-          steps: petalSteps,
-          profile: p.petalProfile || 'teardrop',
-          centerProfile: p.centerProfile || p.petalProfile || 'teardrop',
-          morphWeight,
-          sharpness: p.tipSharpness ?? 0.5,
-          baseFlare: p.baseFlare ?? 0,
-          basePinch: p.basePinch ?? 0,
-          waveAmp: Math.max(0, (p.edgeWaveAmp ?? 0) * (1 + waveBoost)),
-          waveFreq: p.edgeWaveFreq ?? 2,
-          wavePhase,
-          leafSidePos: p.leafSidePos,
-          leafSideWidth: p.leafSideWidth,
-          leafBaseHandle: p.leafBaseHandle,
-          leafSideHandle: p.leafSideHandle,
-          leafTipHandle: p.leafTipHandle,
-        });
+        const profilePoints =
+          buildDesignerProfile(ringDesigner, effectiveLength, widthRatio, petalSteps) ||
+          buildLeafProfile({
+            length: effectiveLength,
+            widthRatio,
+            steps: petalSteps,
+            profile: ringProfile,
+            centerProfile: ringCenterProfile,
+            morphWeight,
+            sharpness: p.tipSharpness ?? 0.5,
+            baseFlare: p.baseFlare ?? 0,
+            basePinch: p.basePinch ?? 0,
+            waveAmp: Math.max(0, (p.edgeWaveAmp ?? 0) * (1 + waveBoost)),
+            waveFreq: p.edgeWaveFreq ?? 2,
+            wavePhase,
+            leafSidePos: p.leafSidePos,
+            leafSideWidth: p.leafSideWidth,
+            leafBaseHandle: p.leafBaseHandle,
+            leafSideHandle: p.leafSideHandle,
+            leafTipHandle: p.leafTipHandle,
+          });
         let outline = buildPetal({
           length,
           widthRatio,
@@ -1236,8 +1309,8 @@
           baseX,
           baseY,
           angle,
-          profile: p.petalProfile || 'teardrop',
-          centerProfile: p.centerProfile || p.petalProfile || 'teardrop',
+          profile: ringProfile,
+          centerProfile: ringCenterProfile,
           morphWeight,
           sharpness: p.tipSharpness ?? 0.5,
           baseFlare: p.baseFlare ?? 0,
@@ -1256,8 +1329,8 @@
           length,
           widthRatio,
           steps: Math.max(6, Math.round(petalSteps / 2)),
-          profile: p.petalProfile || 'teardrop',
-          centerProfile: p.centerProfile || p.petalProfile || 'teardrop',
+          profile: ringProfile,
+          centerProfile: ringCenterProfile,
           morphWeight,
           sharpness: p.tipSharpness ?? 0.5,
           baseFlare: p.baseFlare ?? 0,

@@ -34,12 +34,15 @@
       this.isLassoSelecting = false;
       this.activeTool = SETTINGS.activeTool || 'select';
       this.scissorMode = SETTINGS.scissorMode || 'line';
+      this.penMode = SETTINGS.penMode || 'draw';
       this.penPurpose = 'draw';
       this.penDraft = null;
       this.penPreview = null;
       this.isPenDragging = false;
       this.penDragAnchor = null;
       this.penDragStart = null;
+      this.directSelection = null;
+      this.directDrag = null;
       this.scissorStart = null;
       this.scissorEnd = null;
       this.isScissor = false;
@@ -51,6 +54,8 @@
       this.onSelectLayer = null;
       this.onPenComplete = null;
       this.onScissor = null;
+      this.onDirectEditStart = null;
+      this.onDirectEditCommit = null;
       this.lastM = { x: 0, y: 0 };
       this.snap = null;
       this.snapAllowed = true;
@@ -87,12 +92,23 @@
       } else {
         this.penPurpose = 'draw';
       }
+      if (tool !== 'direct') {
+        this.directDrag = null;
+      }
       if (tool !== 'scissor') {
         this.isScissor = false;
         this.scissorStart = null;
         this.scissorEnd = null;
       }
       this.activeTool = tool;
+      this.updateCursor();
+      this.draw();
+    }
+
+    setPenMode(mode) {
+      if (!mode) return;
+      this.penMode = mode;
+      SETTINGS.penMode = mode;
       this.updateCursor();
       this.draw();
     }
@@ -325,7 +341,19 @@
         this.penPurpose = 'draw';
       } else {
         const path = this.buildPenPathFromAnchors(anchors, this.penDraft.closed);
-        if (this.onPenComplete) this.onPenComplete(path);
+        if (this.onPenComplete) {
+          const anchorPayload = anchors.map((anchor) => ({
+            x: anchor.x,
+            y: anchor.y,
+            in: anchor.in ? { x: anchor.in.x, y: anchor.in.y } : null,
+            out: anchor.out ? { x: anchor.out.x, y: anchor.out.y } : null,
+          }));
+          this.onPenComplete({
+            path,
+            anchors: anchorPayload,
+            closed: Boolean(this.penDraft.closed),
+          });
+        }
       }
       this.penDraft = null;
       this.penPreview = null;
@@ -358,6 +386,440 @@
       this.scissorStart = null;
       this.scissorEnd = null;
       this.draw();
+    }
+
+    cloneAnchor(anchor) {
+      if (!anchor) return null;
+      return {
+        x: anchor.x,
+        y: anchor.y,
+        in: anchor.in ? { x: anchor.in.x, y: anchor.in.y } : null,
+        out: anchor.out ? { x: anchor.out.x, y: anchor.out.y } : null,
+      };
+    }
+
+    cloneAnchors(anchors) {
+      return (anchors || []).map((anchor) => this.cloneAnchor(anchor));
+    }
+
+    expandCircleMeta(meta, segments = 72) {
+      if (!meta) return [];
+      const cx = meta.cx ?? meta.x ?? 0;
+      const cy = meta.cy ?? meta.y ?? 0;
+      const rx = meta.rx ?? meta.r ?? 0;
+      const ry = meta.ry ?? meta.r ?? 0;
+      const rot = meta.rotation ?? 0;
+      const cosR = Math.cos(rot);
+      const sinR = Math.sin(rot);
+      const pts = [];
+      for (let i = 0; i < segments; i++) {
+        const t = (i / segments) * Math.PI * 2;
+        const ex = Math.cos(t) * rx;
+        const ey = Math.sin(t) * ry;
+        pts.push({
+          x: cx + ex * cosR - ey * sinR,
+          y: cy + ex * sinR + ey * cosR,
+        });
+      }
+      if (pts.length) pts.push({ ...pts[0] });
+      return pts;
+    }
+
+    getLayerTransformParams(layer) {
+      const profile = this.engine.currentProfile;
+      const origin = {
+        x: (layer?.origin?.x ?? profile.width / 2) + (layer?.params?.posX ?? 0),
+        y: (layer?.origin?.y ?? profile.height / 2) + (layer?.params?.posY ?? 0),
+      };
+      const scaleX = layer?.params?.scaleX ?? 1;
+      const scaleY = layer?.params?.scaleY ?? 1;
+      const rot = ((layer?.params?.rotation ?? 0) * Math.PI) / 180;
+      return { origin, scaleX, scaleY, rot, cosR: Math.cos(rot), sinR: Math.sin(rot) };
+    }
+
+    sourceToWorldPoint(layer, point) {
+      if (!layer || !point) return point;
+      const { origin, scaleX, scaleY, cosR, sinR } = this.getLayerTransformParams(layer);
+      let x = point.x - (layer.origin?.x ?? 0);
+      let y = point.y - (layer.origin?.y ?? 0);
+      x *= scaleX;
+      y *= scaleY;
+      const rx = x * cosR - y * sinR;
+      const ry = x * sinR + y * cosR;
+      return { x: rx + origin.x, y: ry + origin.y };
+    }
+
+    worldToSourcePoint(layer, point) {
+      if (!layer || !point) return point;
+      const baseOrigin = layer.origin || { x: 0, y: 0 };
+      const { origin, scaleX, scaleY, cosR, sinR } = this.getLayerTransformParams(layer);
+      const dx = point.x - origin.x;
+      const dy = point.y - origin.y;
+      const ux = dx * cosR + dy * sinR;
+      const uy = -dx * sinR + dy * cosR;
+      const safeX = Math.abs(scaleX) < 1e-6 ? 1 : scaleX;
+      const safeY = Math.abs(scaleY) < 1e-6 ? 1 : scaleY;
+      return { x: ux / safeX + baseOrigin.x, y: uy / safeY + baseOrigin.y };
+    }
+
+    ensureLayerSourcePaths(layer) {
+      if (!layer) return [];
+      if (Array.isArray(layer.sourcePaths) && layer.sourcePaths.length) return layer.sourcePaths;
+      const paths = (layer.paths || []).map((path) => {
+        if (path && path.meta && path.meta.kind === 'circle') {
+          const expanded = this.expandCircleMeta(path.meta, 72);
+          const srcExpanded = expanded.map((pt) => this.worldToSourcePoint(layer, pt));
+          srcExpanded.meta = { kind: 'poly', closed: true };
+          return srcExpanded;
+        }
+        if (!Array.isArray(path)) return [];
+        const src = path.map((pt) => this.worldToSourcePoint(layer, pt));
+        if (path.meta) {
+          const meta = { ...path.meta };
+          delete meta.cx;
+          delete meta.cy;
+          delete meta.rx;
+          delete meta.ry;
+          delete meta.r;
+          delete meta.rotation;
+          src.meta = meta;
+        }
+        return src;
+      });
+      layer.sourcePaths = paths;
+      layer.params.smoothing = 0;
+      layer.params.simplify = 0;
+      return layer.sourcePaths;
+    }
+
+    getDirectSelectionLayer() {
+      if (!this.directSelection) return null;
+      return this.engine.layers.find((layer) => layer.id === this.directSelection.layerId) || null;
+    }
+
+    pathToAnchors(path) {
+      if (!Array.isArray(path) || path.length < 2) return { anchors: [], closed: false };
+      const closedByPoints = (() => {
+        const first = path[0];
+        const last = path[path.length - 1];
+        if (!first || !last) return false;
+        const dx = first.x - last.x;
+        const dy = first.y - last.y;
+        return dx * dx + dy * dy < 1e-6;
+      })();
+      let anchors;
+      let closed = closedByPoints || Boolean(path.meta?.closed);
+      if (Array.isArray(path.meta?.anchors) && path.meta.anchors.length >= 2) {
+        anchors = this.cloneAnchors(path.meta.anchors);
+      } else {
+        const points = closed && path.length > 2 ? path.slice(0, -1) : path;
+        anchors = points.map((pt) => ({ x: pt.x, y: pt.y, in: null, out: null }));
+      }
+      if (closed && anchors.length >= 2) {
+        const first = anchors[0];
+        const last = anchors[anchors.length - 1];
+        const dx = first.x - last.x;
+        const dy = first.y - last.y;
+        if (dx * dx + dy * dy < 1e-6) anchors = anchors.slice(0, -1);
+      }
+      if (anchors.length < 2) closed = false;
+      return { anchors, closed };
+    }
+
+    findPathHitAtPoint(world, options = {}) {
+      if (!world) return null;
+      const { restrictToLayerId = null } = options;
+      const layers = this.engine.layers.slice().reverse();
+      let best = null;
+      let bestDistSq = Infinity;
+      layers.forEach((layer) => {
+        if (!layer || layer.isGroup || !layer.visible) return;
+        if (restrictToLayerId && layer.id !== restrictToLayerId) return;
+        const stroke = layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
+        const tol = Math.max(2.5 / this.scale, stroke * 2);
+        const tolSq = tol * tol;
+        (layer.paths || []).forEach((path, pathIndex) => {
+          if (path && path.meta && path.meta.kind === 'circle') {
+            const cx = path.meta.cx ?? path.meta.x ?? 0;
+            const cy = path.meta.cy ?? path.meta.y ?? 0;
+            const r = path.meta.r ?? Math.max(path.meta.rx ?? 0, path.meta.ry ?? 0);
+            const dist = Math.abs(Math.hypot(world.x - cx, world.y - cy) - r);
+            const dSq = dist * dist;
+            if (dSq <= tolSq && dSq < bestDistSq) {
+              bestDistSq = dSq;
+              best = { layer, pathIndex, path, segmentIndex: 0, point: { x: world.x, y: world.y }, distSq: dSq };
+            }
+            return;
+          }
+          if (!Array.isArray(path) || path.length < 2) return;
+          for (let i = 0; i < path.length - 1; i++) {
+            const a = path[i];
+            const b = path[i + 1];
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const lenSq = dx * dx + dy * dy;
+            if (lenSq < 1e-9) continue;
+            const t = Math.max(0, Math.min(1, ((world.x - a.x) * dx + (world.y - a.y) * dy) / lenSq));
+            const px = a.x + t * dx;
+            const py = a.y + t * dy;
+            const ox = world.x - px;
+            const oy = world.y - py;
+            const dSq = ox * ox + oy * oy;
+            if (dSq <= tolSq && dSq < bestDistSq) {
+              bestDistSq = dSq;
+              best = {
+                layer,
+                pathIndex,
+                path,
+                segmentIndex: i,
+                segmentT: t,
+                point: { x: px, y: py },
+                distSq: dSq,
+              };
+            }
+          }
+        });
+      });
+      return best;
+    }
+
+    setDirectSelection(layer, pathIndex) {
+      if (!layer || !Number.isInteger(pathIndex)) return null;
+      const sourcePaths = this.ensureLayerSourcePaths(layer);
+      const sourcePath = sourcePaths[pathIndex];
+      if (!Array.isArray(sourcePath) || sourcePath.length < 2) return null;
+      const parsed = this.pathToAnchors(sourcePath);
+      if (!parsed.anchors.length) return null;
+      this.directSelection = {
+        layerId: layer.id,
+        pathIndex,
+        anchors: this.cloneAnchors(parsed.anchors),
+        closed: parsed.closed,
+        meta: sourcePath.meta ? { ...sourcePath.meta } : {},
+      };
+      return this.directSelection;
+    }
+
+    clearDirectSelection() {
+      this.directSelection = null;
+      this.directDrag = null;
+      this.draw();
+    }
+
+    getDirectSelectionWorldAnchors() {
+      const layer = this.getDirectSelectionLayer();
+      if (!layer || !this.directSelection?.anchors?.length) return null;
+      const anchors = this.directSelection.anchors.map((anchor) => ({
+        x: this.sourceToWorldPoint(layer, anchor).x,
+        y: this.sourceToWorldPoint(layer, anchor).y,
+        in: anchor.in ? this.sourceToWorldPoint(layer, anchor.in) : null,
+        out: anchor.out ? this.sourceToWorldPoint(layer, anchor.out) : null,
+      }));
+      return { layer, anchors };
+    }
+
+    hitDirectControl(world) {
+      const data = this.getDirectSelectionWorldAnchors();
+      if (!data) return null;
+      const { anchors } = data;
+      const handleTol = 5 / this.scale;
+      const handleTolSq = handleTol * handleTol;
+      for (let i = 0; i < anchors.length; i++) {
+        const anchor = anchors[i];
+        if (anchor.in) {
+          const dx = world.x - anchor.in.x;
+          const dy = world.y - anchor.in.y;
+          if (dx * dx + dy * dy <= handleTolSq) return { type: 'in', index: i };
+        }
+        if (anchor.out) {
+          const dx = world.x - anchor.out.x;
+          const dy = world.y - anchor.out.y;
+          if (dx * dx + dy * dy <= handleTolSq) return { type: 'out', index: i };
+        }
+      }
+      const anchorTol = 6 / this.scale;
+      const anchorTolSq = anchorTol * anchorTol;
+      for (let i = 0; i < anchors.length; i++) {
+        const anchor = anchors[i];
+        const dx = world.x - anchor.x;
+        const dy = world.y - anchor.y;
+        if (dx * dx + dy * dy <= anchorTolSq) return { type: 'anchor', index: i };
+      }
+      return null;
+    }
+
+    applyDirectPath() {
+      const layer = this.getDirectSelectionLayer();
+      const selection = this.directSelection;
+      if (!layer || !selection) return;
+      const sourcePaths = this.ensureLayerSourcePaths(layer);
+      const path = this.buildPenPathFromAnchors(selection.anchors, selection.closed);
+      const meta = { ...(selection.meta || {}), anchors: this.cloneAnchors(selection.anchors), closed: Boolean(selection.closed) };
+      path.meta = meta;
+      sourcePaths[selection.pathIndex] = path;
+      layer.sourcePaths = sourcePaths;
+      this.engine.generate(layer.id);
+      selection.meta = meta;
+    }
+
+    startDirectDrag(control) {
+      if (!control || !this.directSelection) return false;
+      this.directDrag = {
+        type: control.type,
+        index: control.index,
+        moved: false,
+        historyPushed: false,
+      };
+      return true;
+    }
+
+    updateDirectDrag(world, e) {
+      if (!this.directDrag || !this.directSelection) return false;
+      const layer = this.getDirectSelectionLayer();
+      if (!layer) return false;
+      const drag = this.directDrag;
+      const anchor = this.directSelection.anchors[drag.index];
+      if (!anchor) return false;
+      const next = this.worldToSourcePoint(layer, world);
+      if (!drag.historyPushed && this.onDirectEditStart) {
+        this.onDirectEditStart();
+        drag.historyPushed = true;
+      }
+      if (drag.type === 'anchor') {
+        const dx = next.x - anchor.x;
+        const dy = next.y - anchor.y;
+        anchor.x = next.x;
+        anchor.y = next.y;
+        if (anchor.in) {
+          anchor.in.x += dx;
+          anchor.in.y += dy;
+        }
+        if (anchor.out) {
+          anchor.out.x += dx;
+          anchor.out.y += dy;
+        }
+      } else {
+        anchor[drag.type] = { x: next.x, y: next.y };
+        if (!e.altKey) {
+          const dx = anchor.x - next.x;
+          const dy = anchor.y - next.y;
+          const mirror = drag.type === 'in' ? 'out' : 'in';
+          anchor[mirror] = { x: anchor.x + dx, y: anchor.y + dy };
+        }
+      }
+      drag.moved = true;
+      this.applyDirectPath();
+      this.draw();
+      return true;
+    }
+
+    endDirectDrag() {
+      if (!this.directDrag) return;
+      const moved = this.directDrag.moved;
+      this.directDrag = null;
+      if (moved && this.onDirectEditCommit) this.onDirectEditCommit();
+      this.draw();
+    }
+
+    makeAnchorSmooth(index) {
+      if (!this.directSelection?.anchors?.length) return;
+      const anchors = this.directSelection.anchors;
+      const count = anchors.length;
+      const anchor = anchors[index];
+      if (!anchor) return;
+      const prev = anchors[(index - 1 + count) % count] || anchor;
+      const next = anchors[(index + 1) % count] || anchor;
+      const vx = next.x - prev.x;
+      const vy = next.y - prev.y;
+      const len = Math.hypot(vx, vy) || 1;
+      const ux = vx / len;
+      const uy = vy / len;
+      const scale = Math.max(0.8, Math.min(10, len * 0.2));
+      anchor.in = { x: anchor.x - ux * scale, y: anchor.y - uy * scale };
+      anchor.out = { x: anchor.x + ux * scale, y: anchor.y + uy * scale };
+    }
+
+    insertAnchorFromWorld(world, hit = null) {
+      const baseHit = hit || this.findPathHitAtPoint(world, {
+        restrictToLayerId: this.directSelection?.layerId || null,
+      });
+      if (!baseHit) return false;
+      this.selectLayer(baseHit.layer);
+      const selection = this.setDirectSelection(baseHit.layer, baseHit.pathIndex);
+      if (!selection) return false;
+      if (this.onDirectEditStart) this.onDirectEditStart();
+      const insertIndex = Math.max(0, Math.min(selection.anchors.length, (baseHit.segmentIndex ?? 0) + 1));
+      const sourcePoint = this.worldToSourcePoint(baseHit.layer, baseHit.point || world);
+      selection.anchors.splice(insertIndex, 0, {
+        x: sourcePoint.x,
+        y: sourcePoint.y,
+        in: null,
+        out: null,
+      });
+      this.applyDirectPath();
+      if (this.onDirectEditCommit) this.onDirectEditCommit();
+      this.draw();
+      return true;
+    }
+
+    removeAnchorFromWorld(world) {
+      if (!this.directSelection) {
+        const hitPath = this.findPathHitAtPoint(world);
+        if (!hitPath) return false;
+        this.selectLayer(hitPath.layer);
+        if (!this.setDirectSelection(hitPath.layer, hitPath.pathIndex)) return false;
+      }
+      const hit = this.hitDirectControl(world);
+      if (!hit || hit.type !== 'anchor') return false;
+      if (this.directSelection.anchors.length <= 2) return false;
+      if (this.onDirectEditStart) this.onDirectEditStart();
+      this.directSelection.anchors.splice(hit.index, 1);
+      if (this.directSelection.closed && this.directSelection.anchors.length < 3) {
+        this.directSelection.closed = false;
+      }
+      this.applyDirectPath();
+      if (this.onDirectEditCommit) this.onDirectEditCommit();
+      this.draw();
+      return true;
+    }
+
+    toggleAnchorFromWorld(world) {
+      if (!this.directSelection) {
+        const hit = this.findPathHitAtPoint(world);
+        if (!hit) return false;
+        this.selectLayer(hit.layer);
+        if (!this.setDirectSelection(hit.layer, hit.pathIndex)) return false;
+      }
+      let control = this.hitDirectControl(world);
+      if (!control || control.type !== 'anchor') {
+        const hitPath = this.findPathHitAtPoint(world, {
+          restrictToLayerId: this.directSelection?.layerId || null,
+        });
+        if (!hitPath || !this.directSelection?.anchors?.length) return false;
+        const seg = Math.max(0, Math.min((hitPath.segmentIndex ?? 0), this.directSelection.anchors.length - 1));
+        let idx = seg;
+        if (Array.isArray(hitPath.path) && hitPath.path[seg + 1]) {
+          const a = hitPath.path[seg];
+          const b = hitPath.path[seg + 1];
+          const da = Math.hypot(world.x - a.x, world.y - a.y);
+          const db = Math.hypot(world.x - b.x, world.y - b.y);
+          idx = db < da ? Math.min(this.directSelection.anchors.length - 1, seg + 1) : seg;
+        }
+        control = { type: 'anchor', index: idx };
+      }
+      const anchor = this.directSelection.anchors[control.index];
+      if (!anchor) return false;
+      if (this.onDirectEditStart) this.onDirectEditStart();
+      if (anchor.in || anchor.out) {
+        anchor.in = null;
+        anchor.out = null;
+      } else {
+        this.makeAnchorSmooth(control.index);
+      }
+      this.applyDirectPath();
+      if (this.onDirectEditCommit) this.onDirectEditCommit();
+      this.draw();
+      return true;
     }
 
     resize() {
@@ -690,6 +1152,7 @@
       }
       if (this.selectionRect) this.drawSelectionRect(this.selectionRect);
       if (this.lassoPath) this.drawSelectionPath(this.lassoPath);
+      if (this.directSelection) this.drawDirectSelection();
       if (this.penDraft) this.drawPenPreview();
       if (this.isScissor && this.scissorStart && this.scissorEnd) this.drawScissorPreview();
       if (this.lightSource) this.drawLightSource();
@@ -767,7 +1230,22 @@
       const allowSelection = this.activeTool !== 'pen' || penSelectOverride;
 
       if (this.activeTool === 'pen' && !penSelectOverride) {
-        this.handlePenDown(world, e);
+        if (this.penMode === 'draw') {
+          this.handlePenDown(world, e);
+          return;
+        }
+        let handled = false;
+        if (this.penMode === 'add') handled = this.insertAnchorFromWorld(world);
+        if (this.penMode === 'delete') handled = this.removeAnchorFromWorld(world);
+        if (this.penMode === 'anchor') handled = this.toggleAnchorFromWorld(world);
+        if (!handled) {
+          const hit = this.findPathHitAtPoint(world);
+          if (hit) {
+            if (!this.selectedLayerIds.has(hit.layer.id)) this.selectLayer(hit.layer);
+            this.setDirectSelection(hit.layer, hit.pathIndex);
+            this.draw();
+          }
+        }
         return;
       }
       if (this.activeTool === 'scissor') {
@@ -779,6 +1257,32 @@
       }
 
       if (allowSelection) {
+        if (this.activeTool === 'direct') {
+          const directControl = this.hitDirectControl(world);
+          if (directControl) {
+            this.startDirectDrag(directControl);
+            return;
+          }
+          const hit = this.findPathHitAtPoint(world);
+          if (hit) {
+            if (!this.selectedLayerIds.has(hit.layer.id)) this.selectLayer(hit.layer);
+            const selection = this.setDirectSelection(hit.layer, hit.pathIndex);
+            if (selection && selection.anchors.length) {
+              const seg = Math.max(0, Math.min((hit.segmentIndex ?? 0), selection.anchors.length - 1));
+              let idx = seg;
+              if (Array.isArray(hit.path) && hit.path[seg + 1]) {
+                const a = hit.path[seg];
+                const b = hit.path[seg + 1];
+                const da = Math.hypot(world.x - a.x, world.y - a.y);
+                const db = Math.hypot(world.x - b.x, world.y - b.y);
+                idx = db < da ? Math.min(selection.anchors.length - 1, seg + 1) : seg;
+              }
+              this.startDirectDrag({ type: 'anchor', index: idx });
+            }
+            this.draw();
+            return;
+          }
+        }
         if (this.activeTool === 'select' && this.selectionMode === 'pen') {
           this.penPurpose = 'select';
           this.handlePenDown(world, e);
@@ -875,6 +1379,15 @@
         };
         SETTINGS.lightSource = { ...this.lightSource };
         this.draw();
+        return;
+      }
+
+      if (this.directDrag) {
+        const rect = this.canvas.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        const world = this.screenToWorld(sx, sy);
+        this.updateDirectDrag(world, e);
         return;
       }
 
@@ -1020,6 +1533,10 @@
         this.isPenDragging = false;
         this.penDragAnchor = null;
         this.penDragStart = null;
+      }
+      if (this.directDrag) {
+        this.endDirectDrag();
+        return;
       }
       if (this.isScissor) {
         const start = this.scissorStart;
@@ -1317,6 +1834,10 @@
           : this.selectedLayerIds.values().next().value;
         if (this.onSelectLayer) this.onSelectLayer(this.getSelectedLayer());
       }
+      if (this.directSelection && this.directSelection.layerId !== this.selectedLayerId) {
+        this.directSelection = null;
+        this.directDrag = null;
+      }
       this.draw();
     }
 
@@ -1326,6 +1847,10 @@
         this.selectedLayerId = primaryId;
       } else {
         this.selectedLayerId = this.selectedLayerIds.values().next().value || null;
+      }
+      if (this.directSelection && this.directSelection.layerId !== this.selectedLayerId) {
+        this.directSelection = null;
+        this.directDrag = null;
       }
       if (this.onSelectLayer) {
         const layer = this.getSelectedLayer();
@@ -1337,6 +1862,8 @@
     clearSelection() {
       this.selectedLayerIds.clear();
       this.selectedLayerId = null;
+      this.directSelection = null;
+      this.directDrag = null;
       if (this.onSelectLayer) this.onSelectLayer(null);
       this.draw();
     }
@@ -1647,6 +2174,63 @@
       this.ctx.stroke();
       this.ctx.fill();
       this.ctx.setLineDash([]);
+      this.ctx.restore();
+    }
+
+    drawDirectSelection() {
+      const data = this.getDirectSelectionWorldAnchors();
+      if (!data || !data.anchors.length) return;
+      const { anchors } = data;
+      const path = this.buildPenPathFromAnchors(anchors, Boolean(this.directSelection?.closed));
+      this.ctx.save();
+      this.ctx.strokeStyle = '#22d3ee';
+      this.ctx.lineWidth = 1.1 / this.scale;
+      this.ctx.setLineDash([4 / this.scale, 3 / this.scale]);
+      this.ctx.beginPath();
+      if (path.length) {
+        this.ctx.moveTo(path[0].x, path[0].y);
+        for (let i = 1; i < path.length; i++) this.ctx.lineTo(path[i].x, path[i].y);
+        if (this.directSelection?.closed) this.ctx.closePath();
+      }
+      this.ctx.stroke();
+      this.ctx.setLineDash([]);
+
+      const anchorR = 3.2 / this.scale;
+      const handleR = 2.2 / this.scale;
+      anchors.forEach((anchor) => {
+        if (anchor.in) {
+          this.ctx.strokeStyle = 'rgba(34, 211, 238, 0.65)';
+          this.ctx.beginPath();
+          this.ctx.moveTo(anchor.x, anchor.y);
+          this.ctx.lineTo(anchor.in.x, anchor.in.y);
+          this.ctx.stroke();
+          this.ctx.beginPath();
+          this.ctx.fillStyle = '#0f172a';
+          this.ctx.strokeStyle = '#22d3ee';
+          this.ctx.arc(anchor.in.x, anchor.in.y, handleR, 0, Math.PI * 2);
+          this.ctx.fill();
+          this.ctx.stroke();
+        }
+        if (anchor.out) {
+          this.ctx.strokeStyle = 'rgba(34, 211, 238, 0.65)';
+          this.ctx.beginPath();
+          this.ctx.moveTo(anchor.x, anchor.y);
+          this.ctx.lineTo(anchor.out.x, anchor.out.y);
+          this.ctx.stroke();
+          this.ctx.beginPath();
+          this.ctx.fillStyle = '#0f172a';
+          this.ctx.strokeStyle = '#22d3ee';
+          this.ctx.arc(anchor.out.x, anchor.out.y, handleR, 0, Math.PI * 2);
+          this.ctx.fill();
+          this.ctx.stroke();
+        }
+        this.ctx.beginPath();
+        this.ctx.fillStyle = '#0f172a';
+        this.ctx.strokeStyle = '#22d3ee';
+        this.ctx.arc(anchor.x, anchor.y, anchorR, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.stroke();
+      });
       this.ctx.restore();
     }
 
@@ -2021,13 +2605,11 @@
         this.canvas.style.cursor = this.isPan ? 'grabbing' : 'grab';
         return;
       }
-      if (this.activeTool === 'pen' && (e.metaKey || e.ctrlKey)) {
-        // fall through to selection-style cursor handling
-      } else if (
-        this.activeTool === 'pen' ||
-        this.activeTool === 'scissor' ||
-        (this.activeTool === 'select' && (this.selectionMode === 'pen' || this.selectionMode === 'lasso'))
-      ) {
+      if (this.activeTool === 'pen' && !(e.metaKey || e.ctrlKey) && this.penMode === 'draw') {
+        this.canvas.style.cursor = 'crosshair';
+        return;
+      }
+      if (this.activeTool === 'scissor' || (this.activeTool === 'select' && (this.selectionMode === 'pen' || this.selectionMode === 'lasso'))) {
         this.canvas.style.cursor = 'crosshair';
         return;
       }
@@ -2035,6 +2617,28 @@
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
       const world = this.screenToWorld(sx, sy);
+      if (this.activeTool === 'direct') {
+        const control = this.hitDirectControl(world);
+        if (control) {
+          this.canvas.style.cursor = control.type === 'anchor' ? 'move' : 'pointer';
+          return;
+        }
+        const hit = this.findPathHitAtPoint(world);
+        this.canvas.style.cursor = hit ? 'move' : 'crosshair';
+        return;
+      }
+      if (this.activeTool === 'pen' && this.penMode !== 'draw' && !(e.metaKey || e.ctrlKey)) {
+        const control = this.hitDirectControl(world);
+        if (control) {
+          this.canvas.style.cursor = this.penMode === 'delete' ? 'not-allowed' : 'pointer';
+          return;
+        }
+        const hit = this.findPathHitAtPoint(world, {
+          restrictToLayerId: this.directSelection?.layerId || null,
+        });
+        this.canvas.style.cursor = hit ? 'crosshair' : 'crosshair';
+        return;
+      }
       if (this.hitLightSource(world)) {
         this.canvas.style.cursor = this.isLightDrag ? 'grabbing' : 'move';
         return;

@@ -75,7 +75,16 @@ input[type='color']::-webkit-color-swatch {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  width: 150px;
+  max-width: 150px;
   z-index: 18;
+}
+
+.canvas-help p {
+  margin: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
 }
 
 .tool-bar {
@@ -1137,6 +1146,198 @@ input[type='color']::-webkit-color-swatch {
 
 .modal-section {
   margin-bottom: 16px;
+}
+
+.petal-designer-window {
+  position: fixed;
+  z-index: 95;
+  width: min(1080px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  border: 1px solid #334155;
+  border-radius: 14px;
+  background-color: #0b121a;
+  background-image:
+    radial-gradient(circle at top right, rgba(56, 189, 248, 0.12), transparent 48%),
+    linear-gradient(rgba(15, 23, 42, 0.92), rgba(2, 6, 23, 0.95)),
+    linear-gradient(0deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
+  background-size: auto, auto, 20px 20px, 20px 20px;
+  box-shadow: 0 28px 80px rgba(2, 6, 23, 0.7);
+  backdrop-filter: blur(2px);
+}
+
+.petal-designer-window.dragging {
+  cursor: grabbing;
+}
+
+.petal-designer-inline-wrap {
+  width: 100%;
+}
+
+.petal-designer-inline {
+  position: relative;
+  left: auto !important;
+  top: auto !important;
+  width: 100%;
+  max-height: none;
+  overflow: hidden;
+  z-index: 1;
+  box-shadow: 0 14px 34px rgba(2, 6, 23, 0.45);
+}
+
+.petal-designer-inline .petal-designer-header {
+  cursor: default;
+  position: static;
+}
+
+.petal-designer-inline.focused {
+  border-color: #22d3ee;
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.55), 0 14px 34px rgba(2, 6, 23, 0.45);
+}
+
+.petal-designer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #334155;
+  background: rgba(8, 13, 21, 0.86);
+  cursor: grab;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  touch-action: none;
+}
+
+.petal-designer-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: #bae6fd;
+}
+
+.petal-designer-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.petal-tool-btn,
+.petal-close,
+.petal-copy-btn {
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: #cbd5e1;
+  min-width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1;
+  padding: 0 8px;
+}
+
+.petal-tool-btn:hover,
+.petal-close:hover,
+.petal-copy-btn:hover {
+  border-color: #67e8f9;
+  color: #cffafe;
+}
+
+.petal-tool-btn.active {
+  border-color: #22d3ee;
+  color: #22d3ee;
+  background: rgba(34, 211, 238, 0.12);
+}
+
+.petal-designer-controls {
+  display: grid;
+  grid-template-columns: 1fr auto auto 1fr;
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border-bottom: 1px solid #334155;
+  background: rgba(8, 13, 21, 0.74);
+}
+
+.petal-designer-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #94a3b8;
+}
+
+.petal-designer-controls select {
+  border: 1px solid #334155;
+  background: #020617;
+  color: #e2e8f0;
+  padding: 6px 8px;
+  font-size: 11px;
+}
+
+.petal-designer-grid {
+  padding: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.petal-cell {
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(2, 6, 23, 0.72);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.petal-cell-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #7dd3fc;
+}
+
+.petal-cell canvas {
+  width: 100%;
+  max-width: 100%;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: #0f172a;
+  display: block;
+}
+
+.petal-shade-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.petal-shade-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+@media (max-width: 900px) {
+  .petal-designer-controls {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .petal-designer-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .petal-shade-controls {
+    grid-template-columns: 1fr;
+  }
 }
 
 .info-btn {

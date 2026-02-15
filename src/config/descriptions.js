@@ -18,6 +18,8 @@
       'Builds contour lines from a noise-based height field, similar to a topographic map.',
     petalis:
       'Generates layered radial petals with adjustable geometry, spiral distribution, center morphing, and shading.',
+    petalisDesigner:
+      'Petalis variant with an embedded Petal Designer panel for direct outer/inner profile drawing and live shading iteration.',
     rainfall:
       'Simulates falling rain traces with optional droplet shapes, wind influence, and silhouette masking.',
     spiral:

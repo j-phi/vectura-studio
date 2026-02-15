@@ -178,6 +178,8 @@
       leafBaseHandle: 0.35,
       leafSideHandle: 0.4,
       leafTipHandle: 0.35,
+      designerOuter: null,
+      designerInner: null,
       petalSteps: 32,
       layering: true,
       anchorToCenter: 'central',
@@ -590,6 +592,8 @@
       curves: false,
     },
   };
+  window.Vectura.ALGO_DEFAULTS.petalisDesigner = JSON.parse(JSON.stringify(window.Vectura.ALGO_DEFAULTS.petalis || {}));
+  window.Vectura.ALGO_DEFAULTS.petalisDesigner.label = 'Petalis Designer';
 
   window.Vectura.SETTINGS = {
     margin: 20,
@@ -623,7 +627,9 @@
     optimizationOverlayColor: '#38bdf8',
     optimizationOverlayWidth: 0.2,
     activeTool: 'select',
+    penMode: 'draw',
     scissorMode: 'line',
+    cookiePreferencesEnabled: false,
     lightSource: null,
     optimizationDefaults: {
       bypassAll: false,
@@ -639,8 +645,12 @@
     autoColorization: {
       enabled: false,
       scope: 'all',
-      mode: 'concentric',
+      mode: 'none',
       params: {
+        penOffset: 0,
+        penStride: 1,
+        penMirror: false,
+        penJitter: 0,
         radiusStart: 0,
         radiusEnd: 100,
         bandSize: 20,

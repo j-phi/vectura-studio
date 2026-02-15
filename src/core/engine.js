@@ -127,7 +127,7 @@
     (paths || []).map((path) => {
       if (!Array.isArray(path)) return path;
       const next = path.map((pt) => ({ ...pt }));
-      if (path.meta) next.meta = { ...path.meta };
+      if (path.meta) next.meta = JSON.parse(JSON.stringify(path.meta));
       return next;
     });
 
@@ -413,7 +413,7 @@
       const dW = width - m * 2;
       const dH = height - m * 2;
       const p =
-        layer.type === 'petalis'
+        (layer.type === 'petalis' || layer.type === 'petalisDesigner')
           ? { ...layer.params, lightSource: SETTINGS.lightSource }
           : layer.params;
 
@@ -477,7 +477,8 @@
       };
 
       const transformMeta = (meta) => {
-        if (!meta || meta.kind !== 'circle') return meta;
+        if (!meta) return meta;
+        if (meta.kind !== 'circle') return JSON.parse(JSON.stringify(meta));
         const center = transform({ x: meta.cx, y: meta.cy });
         const scaleX = p.scaleX ?? 1;
         const scaleY = p.scaleY ?? 1;
