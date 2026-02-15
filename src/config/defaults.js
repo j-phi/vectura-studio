@@ -197,10 +197,14 @@
       rotationJitter: 6,
       count: 260,
       countJitter: 0.1,
-      ringMode: 'single',
+      ringMode: 'dual',
       innerCount: 120,
       outerCount: 180,
       ringSplit: 0.45,
+      innerOuterLock: false,
+      designerSymmetry: 'none',
+      profileTransitionPosition: 50,
+      profileTransitionFeather: 0,
       ringOffset: 12,
       spiralMode: 'golden',
       customAngle: 137.5,
@@ -600,6 +604,13 @@
   window.Vectura.ALGO_DEFAULTS.petalisDesigner.count = 50;
   window.Vectura.ALGO_DEFAULTS.petalisDesigner.radialGrowth = 0.05;
   window.Vectura.ALGO_DEFAULTS.petalisDesigner.shadings = [];
+  window.Vectura.ALGO_DEFAULTS.petalisDesigner.useDesignerShapeOnly = true;
+  window.Vectura.ALGO_DEFAULTS.petalisDesigner.tipSharpness = 1;
+  window.Vectura.ALGO_DEFAULTS.petalisDesigner.tipTwist = 0;
+  window.Vectura.ALGO_DEFAULTS.petalisDesigner.centerCurlBoost = 0;
+  window.Vectura.ALGO_DEFAULTS.petalisDesigner.tipCurl = 0;
+  window.Vectura.ALGO_DEFAULTS.petalisDesigner.baseFlare = 0;
+  window.Vectura.ALGO_DEFAULTS.petalisDesigner.basePinch = 0;
 
   window.Vectura.SETTINGS = {
     margin: 20,
@@ -620,10 +631,10 @@
     selectionOutline: true,
     selectionOutlineColor: '#ef4444',
     selectionOutlineWidth: 0.4,
-    showCanvasHelp: true,
     gridOverlay: false,
     uiSections: {
       algorithm: false,
+      algorithmTransform: true,
       algorithmConfiguration: false,
       optimization: true,
     },

@@ -17,7 +17,7 @@
         const gapOffset = Math.max(0, p.gapOffset ?? 0);
         const gapRandomness = Math.max(0, Math.min(1, p.gapRandomness ?? 0));
         const widthMultiplier = Math.max(1, Math.round(p.widthMultiplier ?? 1));
-        const thickeningMode = p.thickeningMode || 'parallel';
+        const thickeningMode = p.thickeningMode === 'sinusoidal' ? 'sinusoidal' : 'parallel';
         const loopDrift = p.loopDrift ?? 0;
         const settleThreshold = Math.max(0, p.settleThreshold ?? 0);
         const settleWindow = Math.max(1, Math.floor(p.settleWindow ?? 24));
@@ -201,15 +201,7 @@
                 return { x: pt.x + n.x * off, y: pt.y + n.y * off };
               })
             );
-            if (thickeningMode === 'snake' && offsetPaths.length > 1) {
-              const snake = [];
-              offsetPaths.forEach((op, idx) => {
-                snake.push(...(idx % 2 === 0 ? op : op.slice().reverse()));
-              });
-              thickened.push(snake);
-            } else {
-              offsetPaths.forEach((op) => thickened.push(op));
-            }
+            offsetPaths.forEach((op) => thickened.push(op));
           });
           return thickened.length ? thickened : paths;
         };

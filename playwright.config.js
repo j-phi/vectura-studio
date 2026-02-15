@@ -34,7 +34,11 @@ module.exports = defineConfig({
     {
       name: 'tablet-touch-chromium',
       use: {
-        ...devices['iPad Pro 11'],
+        // Keep touch-tablet interaction coverage while staying on Chromium in CI.
+        ...devices['Desktop Chrome'],
+        viewport: { width: 834, height: 1194 },
+        hasTouch: true,
+        isMobile: true,
       },
       testMatch: /smoke\.spec\.js$/,
     },

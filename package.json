@@ -4,15 +4,17 @@
   "private": true,
   "description": "Vectura Studio - physics-inspired vector generator",
   "scripts": {
+    "patch:test-runtime": "node scripts/patch-vitest-unicode.js",
+    "postinstall": "npm run patch:test-runtime",
     "test": "npm run test:unit && npm run test:integration",
-    "test:unit": "vitest run tests/unit",
-    "test:integration": "vitest run tests/integration",
+    "test:unit": "npm run patch:test-runtime && vitest run tests/unit",
+    "test:integration": "npm run patch:test-runtime && vitest run tests/integration",
     "test:e2e": "playwright test tests/e2e/smoke.spec.js",
-    "test:visual": "vitest run tests/visual",
+    "test:visual": "npm run patch:test-runtime && vitest run tests/visual",
     "test:visual:screenshots": "ENABLE_SCREENSHOT_VISUALS=1 playwright test tests/e2e/visual.spec.js",
-    "test:perf": "vitest run tests/perf",
+    "test:perf": "npm run patch:test-runtime && vitest run tests/perf",
     "test:ci": "npm run test:unit && npm run test:integration && npm run test:e2e",
-    "test:update": "VECTURA_UPDATE_BASELINES=1 npm run test:visual"
+    "test:update": "npm run patch:test-runtime && VECTURA_UPDATE_BASELINES=1 npm run test:visual"
   },
   "devDependencies": {
     "@playwright/test": "^1.50.1",

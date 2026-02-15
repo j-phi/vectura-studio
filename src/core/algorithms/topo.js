@@ -183,18 +183,51 @@
           return { x: pt.x - (diff * fx) / denom, y: pt.y - (diff * fy) / denom };
         };
 
-        const smoothPath = (path, iterations = 1) => {
+        const pointKey = (pt) => `${(pt?.x ?? 0).toFixed(3)},${(pt?.y ?? 0).toFixed(3)}`;
+        const isClosedPath = (path) =>
+          Array.isArray(path) && path.length > 2 && pointKey(path[0]) === pointKey(path[path.length - 1]);
+        const ensureClosedPath = (path) => {
+          if (!Array.isArray(path) || path.length < 2) return path;
+          const next = path.slice();
+          if (isClosedPath(next)) {
+            const first = next[0];
+            next[next.length - 1] = { x: first.x, y: first.y };
+            return next;
+          }
+          const first = next[0];
+          next.push({ x: first.x, y: first.y });
+          return next;
+        };
+
+        const smoothPath = (path, iterations = 1, closed = false) => {
           let pts = path.slice();
+          if (closed && pts.length > 1 && isClosedPath(pts)) {
+            pts = pts.slice(0, -1);
+          }
           for (let iter = 0; iter < iterations; iter++) {
+            if (pts.length < 2) break;
             const next = [];
-            for (let i = 0; i < pts.length - 1; i++) {
-              const p0 = pts[i];
-              const p1 = pts[i + 1];
-              const q = { x: p0.x * 0.75 + p1.x * 0.25, y: p0.y * 0.75 + p1.y * 0.25 };
-              const r = { x: p0.x * 0.25 + p1.x * 0.75, y: p0.y * 0.25 + p1.y * 0.75 };
-              next.push(q, r);
+            if (closed) {
+              for (let i = 0; i < pts.length; i++) {
+                const p0 = pts[i];
+                const p1 = pts[(i + 1) % pts.length];
+                const q = { x: p0.x * 0.75 + p1.x * 0.25, y: p0.y * 0.75 + p1.y * 0.25 };
+                const r = { x: p0.x * 0.25 + p1.x * 0.75, y: p0.y * 0.25 + p1.y * 0.75 };
+                next.push(q, r);
+              }
+            } else {
+              for (let i = 0; i < pts.length - 1; i++) {
+                const p0 = pts[i];
+                const p1 = pts[i + 1];
+                const q = { x: p0.x * 0.75 + p1.x * 0.25, y: p0.y * 0.75 + p1.y * 0.25 };
+                const r = { x: p0.x * 0.25 + p1.x * 0.75, y: p0.y * 0.25 + p1.y * 0.75 };
+                next.push(q, r);
+              }
             }
             pts = next;
+          }
+          if (closed && pts.length > 2) {
+            pts.push({ x: pts[0].x, y: pts[0].y });
           }
           return pts;
         };
@@ -315,9 +348,11 @@
           const linked = linkSegments(segments);
           linked.forEach((path) => {
             if (path.length < 2) return;
+            const closed = isClosedPath(path);
             let next = path;
-            if (p.mappingMode === 'smooth') next = smoothPath(path, 1);
-            if (p.mappingMode === 'bezier') next = smoothPath(path, 2);
+            if (p.mappingMode === 'smooth') next = smoothPath(path, 1, closed);
+            if (p.mappingMode === 'bezier') next = smoothPath(path, 2, closed);
+            if (closed) next = ensureClosedPath(next);
             paths.push(next);
           });
         });

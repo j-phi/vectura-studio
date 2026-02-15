@@ -1,9 +1,10 @@
 # Testing Guide
 
 ## Toolchain
-- Unit/Integration/Visual/Perf: Vitest (`vitest.config.js`)
+- Unit/Integration/Visual/Perf: Vitest (`vitest.config.mjs`)
 - E2E smoke: Playwright (`playwright.config.js`)
 - Runtime loader for browser IIFE modules: `tests/helpers/load-vectura-runtime.js`
+- E2E smoke projects run on Chromium for both desktop and touch-tablet coverage (tablet uses touch/mobile emulation).
 
 ## Local Commands
 - `npm run test` runs `test:unit` and `test:integration`.
@@ -25,7 +26,7 @@
 - `.github/workflows/test.yml` enforces:
   - Pull requests: `test:unit`, `test:integration`, `test:e2e`
   - `main` + nightly schedule: `test:visual`, `test:perf`
-- Playwright artifacts are uploaded from CI for failed or flaky browser runs.
+- Playwright artifacts are uploaded from CI on every `e2e-smoke` run.
 
 ## Writing New Tests
 - Prefer deterministic seeds and explicit parameter overrides.

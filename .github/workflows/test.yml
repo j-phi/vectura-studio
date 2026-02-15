@@ -18,7 +18,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm install
+      - run: npm install --no-audit --no-fund --loglevel=error
       - run: npm run test:unit
 
   integration:
@@ -30,7 +30,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm install
+      - run: npm install --no-audit --no-fund --loglevel=error
       - run: npm run test:integration
 
   e2e-smoke:
@@ -42,7 +42,8 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm install
+      - run: npm install --no-audit --no-fund --loglevel=error
+      # Smoke projects are desktop + touch-tablet emulation on Chromium.
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
       - name: Upload Playwright Report
@@ -64,7 +65,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm install
+      - run: npm install --no-audit --no-fund --loglevel=error
       - run: npm run test:visual
       - name: Upload Visual Artifacts
         if: failure()
@@ -85,5 +86,5 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm install
+      - run: npm install --no-audit --no-fund --loglevel=error
       - run: npm run test:perf

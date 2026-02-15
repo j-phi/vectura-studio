@@ -83,7 +83,7 @@
       <div class="pane-header pane-header-left p-4 border-b border-vectura-border flex justify-between items-center">
         <span class="pane-title font-bold text-vectura-accent">GENERATOR</span>
 
-        <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.74</span>
+        <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.92</span>
 
         <button id="btn-pane-toggle-left" class="pane-toggle pane-toggle-left" type="button"
           aria-label="Toggle left pane">
@@ -115,50 +115,55 @@
                 </div>
                 <p id="algo-desc" class="text-xs text-vectura-muted leading-relaxed">...</p>
               </div>
-              <div class="control-group border-none p-0 m-0 mt-4">
-                <label class="control-label" id="transform-label">Transform &amp; Seed</label>
-                <div class="grid grid-cols-2 gap-2 mb-2" id="seed-controls">
-                  <div>
-                    <label class="text-[10px] text-vectura-muted">Seed</label>
-                    <input type="number" id="inp-seed"
+              <div id="algorithm-transform-section" class="global-section collapsed mt-4">
+                <button id="algorithm-transform-header" class="global-section-header" type="button">
+                  <span class="global-section-title" id="transform-label">Transform &amp; Seed</span>
+                  <span class="global-section-toggle" aria-hidden="true"></span>
+                </button>
+                <div id="algorithm-transform-body" class="global-section-body" style="display: none;">
+                  <div class="grid grid-cols-2 gap-2 mb-2" id="seed-controls">
+                    <div>
+                      <label class="text-[10px] text-vectura-muted">Seed</label>
+                      <input type="number" id="inp-seed"
+                        class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
+                    </div>
+                    <div>
+                      <button id="btn-rand-seed"
+                        class="w-full h-full bg-vectura-border text-[10px] hover:text-white mt-[1px] hover:bg-vectura-border/80 transition-colors"
+                        type="button">
+                        RANDOMIZE
+                      </button>
+                    </div>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2 mb-2">
+                    <div>
+                      <label class="text-[10px] text-vectura-muted">Pos X (mm)</label>
+                      <input type="number" id="inp-pos-x"
+                        class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
+                    </div>
+                    <div>
+                      <label class="text-[10px] text-vectura-muted">Pos Y (mm)</label>
+                      <input type="number" id="inp-pos-y"
+                        class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
+                    </div>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2">
+                    <div>
+                      <label class="text-[10px] text-vectura-muted">Scale X</label>
+                      <input type="number" step="0.1" id="inp-scale-x"
+                        class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
+                    </div>
+                    <div>
+                      <label class="text-[10px] text-vectura-muted">Scale Y</label>
+                      <input type="number" step="0.1" id="inp-scale-y"
+                        class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
+                    </div>
+                  </div>
+                  <div class="mt-2">
+                    <label class="text-[10px] text-vectura-muted">Rotation (deg)</label>
+                    <input type="number" step="1" id="inp-rotation"
                       class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
                   </div>
-                  <div>
-                    <button id="btn-rand-seed"
-                      class="w-full h-full bg-vectura-border text-[10px] hover:text-white mt-[1px] hover:bg-vectura-border/80 transition-colors"
-                      type="button">
-                      RANDOMIZE
-                    </button>
-                  </div>
-                </div>
-                <div class="grid grid-cols-2 gap-2 mb-2">
-                  <div>
-                    <label class="text-[10px] text-vectura-muted">Pos X (mm)</label>
-                    <input type="number" id="inp-pos-x"
-                      class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
-                  </div>
-                  <div>
-                    <label class="text-[10px] text-vectura-muted">Pos Y (mm)</label>
-                    <input type="number" id="inp-pos-y"
-                      class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
-                  </div>
-                </div>
-                <div class="grid grid-cols-2 gap-2">
-                  <div>
-                    <label class="text-[10px] text-vectura-muted">Scale X</label>
-                    <input type="number" step="0.1" id="inp-scale-x"
-                      class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
-                  </div>
-                  <div>
-                    <label class="text-[10px] text-vectura-muted">Scale Y</label>
-                    <input type="number" step="0.1" id="inp-scale-y"
-                      class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
-                  </div>
-                </div>
-                <div class="mt-2">
-                  <label class="text-[10px] text-vectura-muted">Rotation (deg)</label>
-                  <input type="number" step="1" id="inp-rotation"
-                    class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
                 </div>
               </div>
             </div>
@@ -356,18 +361,6 @@
         </div>
       </div>
 
-      <div id="canvas-help" class="canvas-help text-[10px] text-vectura-muted pointer-events-none">
-        <p>PAN: Shift + Drag</p>
-        <p>ZOOM: Mouse Wheel</p>
-        <p>TOOLS: V Select • A Direct • P Pen • + Add Anchor • - Delete Anchor • Shift+C Anchor • C Scissor • Space Hand
-        </p>
-        <p>GROUP: Cmd/Ctrl + G</p>
-        <p>EXPAND: Cmd/Ctrl + E</p>
-        <p>DUPLICATE: Cmd/Ctrl + D (Alt/Option + D fallback)</p>
-        <p>HARMONOGRAPH: Virtual plotter playhead + loop-stop snaps in controls</p>
-        <p>PETAL DESIGNER: [PETAL DESIGNER] (Petalis/Petalis Designer layers)</p>
-        <p>?: Keyboard Shortcuts</p>
-      </div>
     </section>
 
     <div id="right-resizer" class="pane-resizer" aria-hidden="true"></div>
@@ -561,12 +554,6 @@
                 <input type="checkbox" id="set-grid-overlay" class="cursor-pointer" />
               </div>
             </div>
-            <div class="mt-4">
-              <div class="flex items-center justify-between">
-                <label class="text-xs text-vectura-muted">Canvas Help</label>
-                <input type="checkbox" id="set-canvas-help" class="cursor-pointer" />
-              </div>
-            </div>
             <div class="mt-2">
               <div class="flex items-center justify-between">
                 <label class="text-xs text-vectura-muted">Save Preferences in Cookie</label>
@@ -643,6 +630,8 @@
   <script src="./src/config/descriptions.js" defer></script>
   <script src="./src/core/rng.js" defer></script>
   <script src="./src/core/noise.js" defer></script>
+  <script src="./src/core/geometry-utils.js" defer></script>
+  <script src="./src/core/optimization-utils.js" defer></script>
   <script src="./src/core/algorithms/petalis.js" defer></script>
   <script src="./src/core/algorithms/flowfield.js" defer></script>
   <script src="./src/core/algorithms/boids.js" defer></script>
@@ -663,6 +652,7 @@
   <script src="./src/core/layer.js" defer></script>
   <script src="./src/core/engine.js" defer></script>
   <script src="./src/render/renderer.js" defer></script>
+  <script src="./src/ui/randomization-utils.js" defer></script>
   <script src="./src/ui/ui.js" defer></script>
   <script src="./src/app/app.js" defer></script>
   <script src="./src/main.js" defer></script>

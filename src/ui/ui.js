@@ -1374,7 +1374,6 @@
         type: 'select',
         options: [
           { value: 'parallel', label: 'Parallel' },
-          { value: 'snake', label: 'Snake' },
           { value: 'sinusoidal', label: 'Sinusoidal' },
         ],
         infoKey: 'harmonograph.thickeningMode',
@@ -1549,9 +1548,6 @@
       { id: 'petalSizeRatio', label: 'Size Ratio', type: 'range', min: 0.01, max: 5, step: 0.05, infoKey: 'petalis.petalSizeRatio' },
       { id: 'leafSidePos', label: 'Side Position', type: 'range', min: 0.1, max: 0.9, step: 0.01, infoKey: 'petalis.leafSidePos' },
       { id: 'leafSideWidth', label: 'Side Width', type: 'range', min: 0.2, max: 2, step: 0.01, infoKey: 'petalis.leafSideWidth' },
-      { id: 'leafBaseHandle', label: 'Base Handle', type: 'range', min: 0, max: 1, step: 0.01, infoKey: 'petalis.leafBaseHandle' },
-      { id: 'leafSideHandle', label: 'Side Handle', type: 'range', min: 0, max: 1, step: 0.01, infoKey: 'petalis.leafSideHandle' },
-      { id: 'leafTipHandle', label: 'Tip Handle', type: 'range', min: 0, max: 1, step: 0.01, infoKey: 'petalis.leafTipHandle' },
       { id: 'petalSteps', label: 'Petal Resolution', type: 'range', min: 12, max: 80, step: 2, infoKey: 'petalis.petalSteps' },
       { id: 'layering', label: 'Layering', type: 'checkbox', infoKey: 'petalis.layering' },
       {
@@ -1629,6 +1625,32 @@
         infoKey: 'petalis.ringSplit',
       },
       {
+        id: 'innerOuterLock',
+        label: 'Inner = Outer',
+        type: 'checkbox',
+        infoKey: 'petalis.innerOuterLock',
+      },
+      {
+        id: 'profileTransitionPosition',
+        label: 'Profile Transition Position (%)',
+        type: 'range',
+        min: 0,
+        max: 100,
+        step: 1,
+        displayUnit: '%',
+        infoKey: 'petalis.profileTransitionPosition',
+      },
+      {
+        id: 'profileTransitionFeather',
+        label: 'Profile Transition Feather (%)',
+        type: 'range',
+        min: 0,
+        max: 100,
+        step: 1,
+        displayUnit: '%',
+        infoKey: 'petalis.profileTransitionFeather',
+      },
+      {
         id: 'ringOffset',
         label: 'Ring Offset',
         type: 'angle',
@@ -1703,8 +1725,6 @@
       { id: 'connectorLength', label: 'Connector Length (mm)', type: 'range', min: 2, max: 40, step: 1, showIf: (p) => p.centerConnectors, infoKey: 'petalis.connectorLength' },
       { id: 'connectorJitter', label: 'Connector Jitter', type: 'range', min: 0, max: 1, step: 0.05, showIf: (p) => p.centerConnectors, infoKey: 'petalis.connectorJitter' },
       { type: 'modifierList', label: 'Center Modifiers' },
-      { type: 'section', label: 'Shading Stack' },
-      { type: 'shadingList', label: 'Shading' },
       { type: 'section', label: 'Randomness & Seed' },
       { id: 'countJitter', label: 'Count Jitter', type: 'range', min: 0, max: 0.5, step: 0.01, infoKey: 'petalis.countJitter' },
       { id: 'sizeJitter', label: 'Size Jitter', type: 'range', min: 0, max: 0.5, step: 0.01, infoKey: 'petalis.sizeJitter' },
@@ -2460,12 +2480,21 @@
   };
 
   const PETALIS_DESIGNER_REMOVED_CONTROL_IDS = new Set([
+    'petalProfile',
     'tipSharpness',
     'tipTwist',
     'centerCurlBoost',
     'tipCurl',
     'baseFlare',
     'basePinch',
+    'count',
+    'ringMode',
+    'innerCount',
+    'outerCount',
+    'ringSplit',
+    'innerOuterLock',
+    'profileTransitionPosition',
+    'profileTransitionFeather',
   ]);
   const petalisDesignerControls = [
     { type: 'section', label: 'Petal Designer' },
@@ -2548,10 +2577,6 @@
     'global.selectionOutlineWidth': {
       title: 'Selection Outline Width',
       description: 'Controls the thickness of the selection silhouette.',
-    },
-    'global.canvasHelp': {
-      title: 'Canvas Help',
-      description: 'Shows the quick shortcut overlay near the canvas.',
     },
     'global.cookiePreferences': {
       title: 'Cookie Preferences',
@@ -2731,7 +2756,7 @@
     },
     'harmonograph.thickeningMode': {
       title: 'Thickening Mode',
-      description: 'Controls how the thickness strokes are arranged (parallel, snake, sinusoidal).',
+      description: 'Controls how the thickness strokes are arranged (parallel or sinusoidal).',
     },
     'harmonograph.loopDrift': {
       title: 'Anti-Loop Drift',
@@ -3629,18 +3654,6 @@
       title: 'Side Width',
       description: 'Scales the maximum width defined by the side control point.',
     },
-    'petalis.leafBaseHandle': {
-      title: 'Base Handle',
-      description: 'Adjusts the horizontal bezier handle at the petal base to control roundness.',
-    },
-    'petalis.leafSideHandle': {
-      title: 'Side Handle',
-      description: 'Adjusts the vertical bezier handle at the petal sides to control shoulder roundness.',
-    },
-    'petalis.leafTipHandle': {
-      title: 'Tip Handle',
-      description: 'Adjusts the horizontal bezier handle at the petal tip for roundness.',
-    },
     'petalis.petalSteps': {
       title: 'Petal Resolution',
       description: 'Number of points used to draw each petal. Higher values create smoother curves.',
@@ -3712,6 +3725,18 @@
     'petalis.ringSplit': {
       title: 'Ring Split',
       description: 'Controls how the radius range is divided between inner and outer rings.',
+    },
+    'petalis.innerOuterLock': {
+      title: 'Inner = Outer',
+      description: 'Locks the outer profile to mirror the inner profile while editing.',
+    },
+    'petalis.profileTransitionPosition': {
+      title: 'Profile Transition Position',
+      description: 'Sets the radial position where petals transition from inner profile to outer profile.',
+    },
+    'petalis.profileTransitionFeather': {
+      title: 'Profile Transition Feather',
+      description: 'Controls the blend width for transitioning from inner to outer profile.',
     },
     'petalis.ringOffset': {
       title: 'Ring Offset',
@@ -3967,7 +3992,7 @@
     },
     'petalis.shadingAngle': {
       title: 'Hatch Angle',
-      description: 'Rotation of the shading strokes relative to the petal axis.',
+      description: 'Rotation of the shading strokes relative to the petal axis, without shifting the shading band position.',
     },
     'petalis.shadingWidthX': {
       title: 'Width X',
@@ -4553,7 +4578,6 @@
       this.inlinePetalDesigner = null;
       this.layerListOrder = [];
       this.lastLayerClickId = null;
-      this.layerListFocus = false;
       this.globalSectionCollapsed = false;
       this.armedPenId = null;
       this.activeTool = SETTINGS.activeTool || 'select';
@@ -4571,6 +4595,7 @@
       this.bindInfoButtons();
       this.initLeftPanelSections();
       this.initAboutSection();
+      this.initAlgorithmTransformSection();
       this.initTouchModifierBar();
       this.initTouchMouseBridge();
       document.addEventListener('click', () => {
@@ -4587,7 +4612,6 @@
       this.initBottomPaneToggle();
       this.initBottomPaneResizer();
       this.initPaneResizers();
-      this.initCanvasHelp();
       this.initToolBar();
       this.renderLayers();
       this.renderPens();
@@ -4599,18 +4623,6 @@
       this.initSettingsValues();
       this.attachStaticInfoButtons();
 
-      const rightPane = getEl('right-pane');
-      const layerList = getEl('layer-list');
-      if (layerList) {
-        layerList.addEventListener('mousedown', () => {
-          this.layerListFocus = true;
-        });
-      }
-      document.addEventListener('mousedown', (e) => {
-        if (rightPane && !rightPane.contains(e.target)) {
-          this.layerListFocus = false;
-        }
-      });
     }
 
     scrollLayerToTop(layerId) {
@@ -4728,6 +4740,7 @@
     getLeftSectionDefaults() {
       return {
         algorithm: false,
+        algorithmTransform: true,
         algorithmConfiguration: false,
         optimization: true,
       };
@@ -4776,6 +4789,40 @@
           this.setLeftSectionCollapsed(key, next);
         };
       });
+    }
+
+    setAlgorithmTransformCollapsed(collapsed, options = {}) {
+      const { persist = true } = options;
+      if (!SETTINGS.uiSections || typeof SETTINGS.uiSections !== 'object') {
+        SETTINGS.uiSections = { ...this.getLeftSectionDefaults() };
+      }
+      SETTINGS.uiSections.algorithmTransform = Boolean(collapsed);
+      const section = getEl('algorithm-transform-section');
+      if (!section) return;
+      const body = getEl('algorithm-transform-body') || section.querySelector('.global-section-body');
+      section.classList.toggle('collapsed', Boolean(collapsed));
+      if (body) body.style.display = collapsed ? 'none' : '';
+      if (!persist) return;
+      this.app.persistPreferencesDebounced?.();
+    }
+
+    initAlgorithmTransformSection() {
+      const section = getEl('algorithm-transform-section');
+      const header = getEl('algorithm-transform-header');
+      if (!section) return;
+      const defaults = this.getLeftSectionDefaults();
+      if (!SETTINGS.uiSections || typeof SETTINGS.uiSections !== 'object') {
+        SETTINGS.uiSections = { ...defaults };
+      } else {
+        SETTINGS.uiSections = { ...defaults, ...SETTINGS.uiSections };
+      }
+      const collapsed = SETTINGS.uiSections.algorithmTransform !== false;
+      this.setAlgorithmTransformCollapsed(collapsed, { persist: false });
+      if (!header) return;
+      header.onclick = () => {
+        const next = !section.classList.contains('collapsed');
+        this.setAlgorithmTransformCollapsed(next);
+      };
     }
 
     setAboutVisible(visible, options = {}) {
@@ -4948,6 +4995,21 @@
 
     buildProfileDesignerShape(profile = 'teardrop', side = 'outer') {
       const widthScale = side === 'inner' ? 0.86 : 1;
+      const makeOrthogonalShape = (sidePos, sideWidth) => {
+        const sideT = clamp(sidePos, 0.18, 0.86);
+        const sideW = Math.max(0.05, sideWidth);
+        const handleDt = clamp((1 - sideT) * 0.35, 0.07, 0.22);
+        return [
+          { t: 0, w: 0, in: null, out: { t: clamp(sideT * 0.45, 0.05, 0.3), w: 0 } },
+          {
+            t: sideT,
+            w: sideW,
+            in: { t: clamp(sideT - handleDt, 0.02, sideT - 0.02), w: sideW },
+            out: { t: clamp(sideT + handleDt, sideT + 0.02, 0.98), w: sideW },
+          },
+          { t: 1, w: 0, in: { t: clamp(1 - (1 - sideT) * 0.45, 0.7, 0.98), w: 0 }, out: null },
+        ];
+      };
       const scaleAnchor = (anchor) => ({
         ...anchor,
         w: Math.max(0, (anchor.w || 0) * widthScale),
@@ -4955,58 +5017,16 @@
         out: anchor.out ? { ...anchor.out, w: Math.max(0, (anchor.out.w || 0) * widthScale) } : null,
       });
       const templates = {
-        oval: [
-          { t: 0, w: 0, in: null, out: { t: 0.16, w: 0.05 } },
-          { t: 0.5, w: 1.02, in: { t: 0.32, w: 0.95 }, out: { t: 0.68, w: 0.95 } },
-          { t: 1, w: 0, in: { t: 0.84, w: 0.05 }, out: null },
-        ],
-        teardrop: [
-          { t: 0, w: 0, in: null, out: { t: 0.14, w: 0.02 } },
-          { t: 0.43, w: 0.9, in: { t: 0.27, w: 0.82 }, out: { t: 0.59, w: 0.76 } },
-          { t: 1, w: 0, in: { t: 0.82, w: 0 }, out: null },
-        ],
-        lanceolate: [
-          { t: 0, w: 0, in: null, out: { t: 0.22, w: 0 } },
-          { t: 0.52, w: 0.68, in: { t: 0.4, w: 0.62 }, out: { t: 0.68, w: 0.56 } },
-          { t: 1, w: 0, in: { t: 0.9, w: 0 }, out: null },
-        ],
-        heart: [
-          { t: 0, w: 0, in: null, out: { t: 0.12, w: 0.08 } },
-          { t: 0.38, w: 0.94, in: { t: 0.25, w: 0.86 }, out: { t: 0.54, w: 0.8 } },
-          { t: 0.78, w: 0.44, in: { t: 0.68, w: 0.5 }, out: { t: 0.9, w: 0.22 } },
-          { t: 1, w: 0, in: { t: 0.94, w: 0 }, out: null },
-        ],
-        spoon: [
-          { t: 0, w: 0, in: null, out: { t: 0.18, w: 0.04 } },
-          { t: 0.62, w: 1.08, in: { t: 0.44, w: 0.92 }, out: { t: 0.78, w: 0.94 } },
-          { t: 1, w: 0, in: { t: 0.88, w: 0.02 }, out: null },
-        ],
-        rounded: [
-          { t: 0, w: 0, in: null, out: { t: 0.18, w: 0.08 } },
-          { t: 0.5, w: 1.06, in: { t: 0.34, w: 0.96 }, out: { t: 0.66, w: 0.96 } },
-          { t: 1, w: 0, in: { t: 0.82, w: 0.08 }, out: null },
-        ],
-        notched: [
-          { t: 0, w: 0, in: null, out: { t: 0.14, w: 0 } },
-          { t: 0.42, w: 0.9, in: { t: 0.28, w: 0.8 }, out: { t: 0.58, w: 0.75 } },
-          { t: 0.88, w: 0.18, in: { t: 0.8, w: 0.28 }, out: { t: 0.95, w: 0.04 } },
-          { t: 1, w: 0, in: { t: 0.97, w: 0 }, out: null },
-        ],
-        spatulate: [
-          { t: 0, w: 0, in: null, out: { t: 0.24, w: 0.02 } },
-          { t: 0.7, w: 1.02, in: { t: 0.52, w: 0.86 }, out: { t: 0.84, w: 0.9 } },
-          { t: 1, w: 0, in: { t: 0.9, w: 0 }, out: null },
-        ],
-        marquise: [
-          { t: 0, w: 0, in: null, out: { t: 0.2, w: 0 } },
-          { t: 0.5, w: 0.82, in: { t: 0.36, w: 0.74 }, out: { t: 0.64, w: 0.74 } },
-          { t: 1, w: 0, in: { t: 0.8, w: 0 }, out: null },
-        ],
-        dagger: [
-          { t: 0, w: 0, in: null, out: { t: 0.18, w: 0 } },
-          { t: 0.45, w: 0.56, in: { t: 0.34, w: 0.48 }, out: { t: 0.58, w: 0.42 } },
-          { t: 1, w: 0, in: { t: 0.86, w: 0 }, out: null },
-        ],
+        oval: makeOrthogonalShape(0.5, 1.04),
+        teardrop: makeOrthogonalShape(0.44, 0.92),
+        lanceolate: makeOrthogonalShape(0.52, 0.7),
+        heart: makeOrthogonalShape(0.38, 0.98),
+        spoon: makeOrthogonalShape(0.62, 1.1),
+        rounded: makeOrthogonalShape(0.5, 1.06),
+        notched: makeOrthogonalShape(0.46, 0.86),
+        spatulate: makeOrthogonalShape(0.68, 1.02),
+        marquise: makeOrthogonalShape(0.5, 0.84),
+        dagger: makeOrthogonalShape(0.47, 0.58),
       };
       const template = templates[profile] || templates.teardrop;
       return {
@@ -5015,24 +5035,34 @@
       };
     }
 
+    cloneDesignerShape(shape) {
+      return shape ? JSON.parse(JSON.stringify(shape)) : null;
+    }
+
+    syncInnerOuterLock(state) {
+      if (!state || !state.innerOuterLock) return;
+      state.outer = this.cloneDesignerShape(state.inner);
+      state.target = 'inner';
+    }
+
     normalizeDesignerShape(shape) {
       if (!shape || !Array.isArray(shape.anchors)) return;
+      const clampHandleT = (value) => clamp(value, -1, 2);
+      const normalizeHandle = (value, fallbackT, fallbackW) => {
+        if (!value) return null;
+        const t = Number.isFinite(value.t) ? value.t : fallbackT;
+        const w = Number.isFinite(value.w) ? value.w : fallbackW;
+        return {
+          t: clampHandleT(t),
+          w,
+        };
+      };
       shape.anchors = shape.anchors
         .map((anchor) => ({
           t: clamp(anchor?.t ?? 0, 0, 1),
           w: Math.max(0, anchor?.w ?? 0),
-          in: anchor?.in
-            ? {
-                t: clamp(anchor.in.t ?? anchor.t ?? 0, 0, 1),
-                w: Math.max(0, anchor.in.w ?? 0),
-              }
-            : null,
-          out: anchor?.out
-            ? {
-                t: clamp(anchor.out.t ?? anchor.t ?? 0, 0, 1),
-                w: Math.max(0, anchor.out.w ?? 0),
-              }
-            : null,
+          in: normalizeHandle(anchor?.in, anchor?.t ?? 0, anchor?.w ?? 0),
+          out: normalizeHandle(anchor?.out, anchor?.t ?? 0, anchor?.w ?? 0),
         }))
         .sort((a, b) => a.t - b.t);
       if (shape.anchors.length < 2) {
@@ -5047,28 +5077,43 @@
       shape.anchors[shape.anchors.length - 1].t = 1;
       shape.anchors[shape.anchors.length - 1].w = 0;
       shape.anchors[shape.anchors.length - 1].out = null;
+
+      for (let i = 0; i < shape.anchors.length; i++) {
+        const anchor = shape.anchors[i];
+        if (anchor.in) {
+          anchor.in.t = clampHandleT(anchor.in.t);
+          if (!Number.isFinite(anchor.in.w)) anchor.in.w = anchor.w;
+        }
+        if (anchor.out) {
+          anchor.out.t = clampHandleT(anchor.out.t);
+          if (!Number.isFinite(anchor.out.w)) anchor.out.w = anchor.w;
+        }
+      }
+    }
+
+    normalizeDesignerSymmetryMode(value) {
+      if (value === 'horizontal' || value === 'vertical' || value === 'both') return value;
+      return 'none';
     }
 
     ensurePetalDesignerState(layer) {
       if (!layer) return null;
       const params = layer.params || {};
       const shadings = Array.isArray(params.shadings) ? params.shadings : [];
-      const baseShade = (idx) => ({
-        enabled: shadings[idx]?.enabled !== false,
-        type: shadings[idx]?.type || 'parallel',
-        lineType: shadings[idx]?.lineType || 'solid',
-        lineSpacing: Math.max(0.2, shadings[idx]?.lineSpacing ?? 1),
-        density: Math.max(0.2, shadings[idx]?.density ?? 1),
-        angle: shadings[idx]?.angle ?? 0,
-        jitter: clamp(shadings[idx]?.jitter ?? 0, 0, 1),
-        lengthJitter: clamp(shadings[idx]?.lengthJitter ?? 0, 0, 1),
-      });
       const state = {
         layerId: layer.id,
         outer: this.makeDefaultDesignerShape(layer, 'outer'),
         inner: this.makeDefaultDesignerShape(layer, 'inner'),
-        shadeOuter: baseShade(0),
-        shadeInner: baseShade(1),
+        shadings: shadings.map((shade, index) => this.normalizePetalDesignerShading(shade, index)),
+        innerOuterLock: Boolean(params.innerOuterLock),
+        designerSymmetry: this.normalizeDesignerSymmetryMode(params.designerSymmetry),
+        count: Math.round(clamp(params.count ?? params.innerCount ?? 120, 5, 800)),
+        ringMode: params.ringMode === 'single' ? 'single' : 'dual',
+        innerCount: Math.round(clamp(params.innerCount ?? params.count ?? 120, 5, 400)),
+        outerCount: Math.round(clamp(params.outerCount ?? 180, 5, 600)),
+        ringSplit: clamp(params.ringSplit ?? 0.45, 0.15, 0.85),
+        profileTransitionPosition: clamp(params.profileTransitionPosition ?? (params.ringSplit ?? 0.45) * 100, 0, 100),
+        profileTransitionFeather: clamp(params.profileTransitionFeather ?? 0, 0, 100),
         target: 'outer',
         views: {
           outer: { zoom: 1, panX: 0, panY: 0 },
@@ -5077,6 +5122,7 @@
       };
       this.normalizeDesignerShape(state.outer);
       this.normalizeDesignerShape(state.inner);
+      this.syncInnerOuterLock(state);
       return state;
     }
 
@@ -5087,8 +5133,14 @@
         canvasHeight = 220,
       } = options;
       const profileOptions = PETAL_PROFILE_OPTIONS.map((opt) => `<option value="${opt.value}">${opt.label}</option>`).join('');
-      const shadingTypeOptions = PETALIS_SHADING_TYPES.map((opt) => `<option value="${opt.value}">${opt.label}</option>`).join('');
-      const lineTypeOptions = PETALIS_LINE_TYPES.map((opt) => `<option value="${opt.value}">${opt.label}</option>`).join('');
+      const symmetryOptions = [
+        { value: 'none', label: 'None' },
+        { value: 'horizontal', label: 'Horizontal' },
+        { value: 'vertical', label: 'Vertical' },
+        { value: 'both', label: 'Horizontal and Vertical' },
+      ]
+        .map((opt) => `<option value="${opt.value}">${opt.label}</option>`)
+        .join('');
       return `
         <div class="petal-designer-header">
           <div class="petal-designer-title">Petal Designer</div>
@@ -5129,33 +5181,62 @@
           <label>Profile
             <select data-petal-profile-current>${profileOptions}</select>
           </label>
-          <label class="petal-shade-toggle">Shading
-            <input type="checkbox" data-petal-shading-toggle>
+          <label>Symmetry
+            <select data-petal-symmetry>${symmetryOptions}</select>
+          </label>
+        </div>
+        <div class="petal-designer-structure">
+          <label>Ring Mode
+            <select data-petal-ring-mode>
+              <option value="dual">Dual</option>
+              <option value="single">Single</option>
+            </select>
+          </label>
+          <label class="petal-slider-label" data-petal-inner-count-wrap>
+            <span>Inner Ring Count</span>
+            <span class="petal-slider-value" data-petal-slider-value="inner-count" data-petal-slider-precision="0"></span>
+            <input type="range" min="5" max="400" step="1" data-petal-inner-count>
+          </label>
+          <label class="petal-slider-label" data-petal-outer-count-wrap>
+            <span>Outer Ring Count</span>
+            <span class="petal-slider-value" data-petal-slider-value="outer-count" data-petal-slider-precision="0"></span>
+            <input type="range" min="5" max="600" step="1" data-petal-outer-count>
+          </label>
+          <label class="petal-slider-label" data-petal-ring-split-wrap>
+            <span>Ring Split</span>
+            <span class="petal-slider-value" data-petal-slider-value="ring-split" data-petal-slider-precision="2"></span>
+            <input type="range" min="0.15" max="0.85" step="0.01" data-petal-ring-split>
+          </label>
+          <label class="petal-slider-label">
+            <span>Split Feathering</span>
+            <span class="petal-slider-value" data-petal-slider-value="split-feather" data-petal-slider-precision="0" data-petal-slider-unit="%"></span>
+            <input type="range" min="0" max="100" step="1" data-petal-split-feather>
+          </label>
+        </div>
+        <div class="petal-designer-transition">
+          <label class="petal-transition-lock">
+            <input type="checkbox" data-petal-inner-outer-lock>
+            <span>Inner = Outer</span>
           </label>
         </div>
         <div class="petal-designer-grid">
           <div class="petal-cell">
             <div class="petal-cell-title" data-petal-canvas-title>Outer Shape</div>
             <canvas width="${canvasWidth}" height="${canvasHeight}" data-petal-canvas="shape"></canvas>
-            <div class="petal-shade-controls" data-petal-shade-controls>
-              <label>Shading Type
-                <select data-shade-key="type">${shadingTypeOptions}</select>
-              </label>
-              <label>Line Type
-                <select data-shade-key="lineType">${lineTypeOptions}</select>
-              </label>
-              <label>Spacing <input type="range" min="0.2" max="6" step="0.1" data-shade-key="lineSpacing"></label>
-              <label>Density <input type="range" min="0.2" max="3" step="0.05" data-shade-key="density"></label>
-              <label>Angle <input type="range" min="-90" max="90" step="1" data-shade-key="angle"></label>
-              <label>Jitter <input type="range" min="0" max="1" step="0.05" data-shade-key="jitter"></label>
-              <label>Length Jitter <input type="range" min="0" max="1" step="0.05" data-shade-key="lengthJitter"></label>
-            </div>
           </div>
+        </div>
+        <div class="petal-designer-shading">
+          <div class="petal-designer-shading-header">
+            <div class="petal-designer-shading-title">Shading Stack</div>
+            <button type="button" class="petal-copy-btn" data-petal-shading-add>+ Add Shading</button>
+          </div>
+          <div class="petal-designer-shading-stack" data-petal-shading-stack></div>
         </div>
       `;
     }
 
     getPetalDesignerTarget(state) {
+      if (state?.innerOuterLock) return 'inner';
       return state?.target === 'inner' ? 'inner' : 'outer';
     }
 
@@ -5181,39 +5262,272 @@
       return this.getPetalDesignerTarget(state) === 'inner' ? state.inner : state.outer;
     }
 
-    getPetalDesignerActiveShade(state) {
-      return this.getPetalDesignerTarget(state) === 'inner' ? state.shadeInner : state.shadeOuter;
+    normalizePetalDesignerShading(shade = {}, index = 0) {
+      const base = createPetalisShading('radial');
+      return {
+        ...base,
+        ...(shade || {}),
+        id: shade?.id || `designer-shade-${index + 1}`,
+        enabled: shade?.enabled !== false,
+        type: shade?.type || base.type,
+        lineType: shade?.lineType || base.lineType,
+        widthX: clamp(shade?.widthX ?? base.widthX, 0, 100),
+        widthY: clamp(shade?.widthY ?? base.widthY, 0, 100),
+        posX: clamp(shade?.posX ?? base.posX, 0, 100),
+        posY: clamp(shade?.posY ?? base.posY, 0, 100),
+        gapX: clamp(shade?.gapX ?? base.gapX, 0, 100),
+        gapY: clamp(shade?.gapY ?? base.gapY, 0, 100),
+        gapPosX: clamp(shade?.gapPosX ?? base.gapPosX, 0, 100),
+        gapPosY: clamp(shade?.gapPosY ?? base.gapPosY, 0, 100),
+        lineSpacing: clamp(shade?.lineSpacing ?? base.lineSpacing, 0.2, 8),
+        density: clamp(shade?.density ?? base.density, 0.2, 3),
+        jitter: clamp(shade?.jitter ?? base.jitter, 0, 1),
+        lengthJitter: clamp(shade?.lengthJitter ?? base.lengthJitter, 0, 1),
+        angle: clamp(shade?.angle ?? base.angle, -90, 90),
+      };
+    }
+
+    setPetalDesignerSliderValue(pd, key, value) {
+      const root = pd?.root;
+      if (!root) return;
+      const el = root.querySelector(`[data-petal-slider-value="${key}"]`);
+      if (!el) return;
+      const precision = Number.parseInt(el.dataset.petalSliderPrecision || '0', 10);
+      const unit = el.dataset.petalSliderUnit || '';
+      const factor = Math.pow(10, Number.isFinite(precision) ? precision : 0);
+      const rounded = Math.round((Number(value) || 0) * factor) / factor;
+      el.textContent = `${rounded}${unit}`;
+    }
+
+    renderPetalDesignerShadingStack(pd, applyChanges = null) {
+      if (!pd?.root || !pd?.state) return;
+      const list = pd.root.querySelector('[data-petal-shading-stack]');
+      const addBtn = pd.root.querySelector('[data-petal-shading-add]');
+      if (!list || !addBtn) return;
+      const onApply =
+        applyChanges ||
+        pd.applyChanges ||
+        ((opts = {}) => {
+          const live = Boolean(opts.live);
+          this.applyPetalDesignerToLayer(pd.state, {
+            refreshControls: !live,
+            persistState: !live,
+          });
+          this.renderPetalDesigner(pd);
+        });
+      if (!Array.isArray(pd.state.shadings)) pd.state.shadings = [];
+      pd.state.shadings = pd.state.shadings.map((shade, index) => this.normalizePetalDesignerShading(shade, index));
+
+      addBtn.onclick = () => {
+        pd.state.shadings.push(this.normalizePetalDesignerShading(createPetalisShading('radial'), pd.state.shadings.length));
+        this.renderPetalDesignerShadingStack(pd, onApply);
+        onApply();
+      };
+
+      const rangeDefs = [
+        { key: 'lineSpacing', label: 'Line Spacing', min: 0.2, max: 8, step: 0.1, precision: 1, unit: 'mm' },
+        { key: 'density', label: 'Line Density', min: 0.2, max: 3, step: 0.05, precision: 2 },
+        { key: 'jitter', label: 'Line Jitter', min: 0, max: 1, step: 0.05, precision: 2 },
+        { key: 'lengthJitter', label: 'Length Jitter', min: 0, max: 1, step: 0.05, precision: 2 },
+        { key: 'angle', label: 'Hatch Angle', min: -90, max: 90, step: 1, precision: 0, unit: '°' },
+        { key: 'widthX', label: 'Width X', min: 0, max: 100, step: 1, precision: 0, unit: '%' },
+        { key: 'posX', label: 'Position X', min: 0, max: 100, step: 1, precision: 0, unit: '%' },
+        { key: 'gapX', label: 'Gap Width X', min: 0, max: 100, step: 1, precision: 0, unit: '%' },
+        { key: 'gapPosX', label: 'Gap Position X', min: 0, max: 100, step: 1, precision: 0, unit: '%' },
+        { key: 'widthY', label: 'Width Y', min: 0, max: 100, step: 1, precision: 0, unit: '%' },
+        { key: 'posY', label: 'Position Y', min: 0, max: 100, step: 1, precision: 0, unit: '%' },
+        { key: 'gapY', label: 'Gap Width Y', min: 0, max: 100, step: 1, precision: 0, unit: '%' },
+        { key: 'gapPosY', label: 'Gap Position Y', min: 0, max: 100, step: 1, precision: 0, unit: '%' },
+      ];
+
+      const formatValue = (value, precision = 0, unit = '') => {
+        const factor = Math.pow(10, precision);
+        const rounded = Math.round((Number(value) || 0) * factor) / factor;
+        return `${rounded}${unit}`;
+      };
+
+      list.innerHTML = '';
+      pd.state.shadings.forEach((shade, idx) => {
+        const card = document.createElement('div');
+        card.className = `noise-card${shade.enabled ? '' : ' noise-disabled'}`;
+        card.innerHTML = `
+          <div class="noise-header">
+            <div class="flex items-center gap-2">
+              <span class="noise-title">Shading ${String(idx + 1).padStart(2, '0')}</span>
+            </div>
+            <div class="noise-actions">
+              <button type="button" class="petal-copy-btn" data-shade-up title="Move up">↑</button>
+              <button type="button" class="petal-copy-btn" data-shade-down title="Move down">↓</button>
+              <label class="noise-toggle">
+                <input type="checkbox" ${shade.enabled ? 'checked' : ''} data-shade-enabled>
+              </label>
+              <button type="button" class="noise-delete" aria-label="Delete shading" data-shade-delete>🗑</button>
+            </div>
+          </div>
+        `;
+        const controls = document.createElement('div');
+        controls.className = 'noise-controls';
+
+        const makeSelect = (label, key, options) => {
+          const wrap = document.createElement('label');
+          wrap.className = 'petal-slider-label';
+          const optionMarkup = options
+            .map((opt) => `<option value="${opt.value}" ${shade[key] === opt.value ? 'selected' : ''}>${opt.label}</option>`)
+            .join('');
+          wrap.innerHTML = `
+            <span>${label}</span>
+            <span class="petal-slider-value">${options.find((opt) => opt.value === shade[key])?.label || shade[key]}</span>
+            <select data-shade-key="${key}">${optionMarkup}</select>
+          `;
+          const input = wrap.querySelector('select');
+          const valueLabel = wrap.querySelector('.petal-slider-value');
+          if (input && valueLabel) {
+            input.disabled = !shade.enabled;
+            input.onchange = () => {
+              shade[key] = input.value;
+              valueLabel.textContent = options.find((opt) => opt.value === shade[key])?.label || shade[key];
+              onApply();
+            };
+          }
+          return wrap;
+        };
+
+        const makeRange = (def) => {
+          const wrap = document.createElement('label');
+          wrap.className = 'petal-slider-label';
+          const value = clamp(shade[def.key] ?? def.min, def.min, def.max);
+          shade[def.key] = value;
+          wrap.innerHTML = `
+            <span>${def.label}</span>
+            <span class="petal-slider-value">${formatValue(value, def.precision, def.unit || '')}</span>
+            <input type="range" min="${def.min}" max="${def.max}" step="${def.step}" value="${value}" data-shade-key="${def.key}">
+          `;
+          const input = wrap.querySelector('input');
+          const valueLabel = wrap.querySelector('.petal-slider-value');
+          if (input && valueLabel) {
+            input.disabled = !shade.enabled;
+            const onRange = (live = false) => {
+              const next = Number.parseFloat(input.value);
+              if (!Number.isFinite(next)) return;
+              shade[def.key] = clamp(next, def.min, def.max);
+              valueLabel.textContent = formatValue(shade[def.key], def.precision, def.unit || '');
+              onApply({ live });
+            };
+            input.oninput = () => onRange(true);
+            input.onchange = () => onRange(false);
+          }
+          return wrap;
+        };
+
+        controls.appendChild(makeSelect('Shading Type', 'type', PETALIS_SHADING_TYPES));
+        controls.appendChild(makeSelect('Line Type', 'lineType', PETALIS_LINE_TYPES));
+        rangeDefs.forEach((def) => controls.appendChild(makeRange(def)));
+        card.appendChild(controls);
+
+        const upBtn = card.querySelector('[data-shade-up]');
+        const downBtn = card.querySelector('[data-shade-down]');
+        const enabledInput = card.querySelector('[data-shade-enabled]');
+        const deleteBtn = card.querySelector('[data-shade-delete]');
+        if (upBtn) {
+          upBtn.disabled = idx === 0;
+          upBtn.onclick = () => {
+            if (idx <= 0) return;
+            const next = pd.state.shadings.slice();
+            [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
+            pd.state.shadings = next;
+            this.renderPetalDesignerShadingStack(pd, onApply);
+            onApply();
+          };
+        }
+        if (downBtn) {
+          downBtn.disabled = idx >= pd.state.shadings.length - 1;
+          downBtn.onclick = () => {
+            if (idx >= pd.state.shadings.length - 1) return;
+            const next = pd.state.shadings.slice();
+            [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
+            pd.state.shadings = next;
+            this.renderPetalDesignerShadingStack(pd, onApply);
+            onApply();
+          };
+        }
+        if (enabledInput) {
+          enabledInput.onchange = () => {
+            shade.enabled = Boolean(enabledInput.checked);
+            this.renderPetalDesignerShadingStack(pd, onApply);
+            onApply();
+          };
+        }
+        if (deleteBtn) {
+          deleteBtn.onclick = () => {
+            pd.state.shadings.splice(idx, 1);
+            this.renderPetalDesignerShadingStack(pd, onApply);
+            onApply();
+          };
+        }
+        list.appendChild(card);
+      });
     }
 
     syncPetalDesignerControls(pd) {
       if (!pd?.root || !pd?.state) return;
+      this.syncInnerOuterLock(pd.state);
       const side = this.getPetalDesignerTarget(pd.state);
       const shape = this.getPetalDesignerActiveShape(pd.state);
-      const shade = this.getPetalDesignerActiveShade(pd.state);
       const targetSelect = pd.root.querySelector('select[data-petal-target]');
       const profileSelect = pd.root.querySelector('select[data-petal-profile-current]');
-      const shadingToggle = pd.root.querySelector('input[data-petal-shading-toggle]');
-      const shadeControls = pd.root.querySelector('[data-petal-shade-controls]');
+      const symmetrySelect = pd.root.querySelector('select[data-petal-symmetry]');
+      const ringModeSelect = pd.root.querySelector('select[data-petal-ring-mode]');
+      const innerCountInput = pd.root.querySelector('input[data-petal-inner-count]');
+      const outerCountInput = pd.root.querySelector('input[data-petal-outer-count]');
+      const ringSplitInput = pd.root.querySelector('input[data-petal-ring-split]');
+      const splitFeatherInput = pd.root.querySelector('input[data-petal-split-feather]');
+      const innerCountWrap = pd.root.querySelector('[data-petal-inner-count-wrap]');
+      const outerCountWrap = pd.root.querySelector('[data-petal-outer-count-wrap]');
+      const lockToggle = pd.root.querySelector('input[data-petal-inner-outer-lock]');
       const title = pd.root.querySelector('[data-petal-canvas-title]');
+      pd.state.designerSymmetry = this.normalizeDesignerSymmetryMode(pd.state.designerSymmetry);
+      pd.state.count = Math.round(clamp(pd.state.count ?? 120, 5, 800));
+      pd.state.ringMode = pd.state.ringMode === 'single' ? 'single' : 'dual';
+      pd.state.innerCount = Math.round(clamp(pd.state.innerCount ?? pd.state.count ?? 120, 5, 400));
+      pd.state.outerCount = Math.round(clamp(pd.state.outerCount ?? 180, 5, 600));
+      pd.state.ringSplit = clamp(pd.state.ringSplit ?? 0.45, 0.15, 0.85);
+      pd.state.profileTransitionPosition = clamp(pd.state.ringSplit * 100, 0, 100);
+      pd.state.profileTransitionFeather = clamp(pd.state.profileTransitionFeather ?? 0, 0, 100);
       if (title) title.textContent = side === 'inner' ? 'Inner Shape' : 'Outer Shape';
-      if (targetSelect) targetSelect.value = side;
+      if (targetSelect) {
+        const outerOpt = targetSelect.querySelector('option[value="outer"]');
+        if (outerOpt) outerOpt.disabled = Boolean(pd.state.innerOuterLock);
+        targetSelect.value = pd.state.innerOuterLock ? 'inner' : side;
+      }
       if (profileSelect) profileSelect.value = shape?.profile || 'teardrop';
-      if (shadingToggle) shadingToggle.checked = shade?.enabled !== false;
-      if (shadeControls) shadeControls.classList.toggle('hidden', shade?.enabled === false);
-      pd.root.querySelectorAll('[data-shade-key]').forEach((input) => {
-        const key = input.dataset.shadeKey;
-        if (!key || !shade || shade[key] === undefined) return;
-        input.value = shade[key];
-      });
+      if (symmetrySelect) symmetrySelect.value = pd.state.designerSymmetry;
+      if (ringModeSelect) ringModeSelect.value = pd.state.ringMode;
+      if (innerCountInput) innerCountInput.value = pd.state.innerCount;
+      if (outerCountInput) outerCountInput.value = pd.state.outerCount;
+      if (ringSplitInput) ringSplitInput.value = pd.state.ringSplit;
+      if (splitFeatherInput) splitFeatherInput.value = pd.state.profileTransitionFeather;
+      const isDualRing = pd.state.ringMode === 'dual';
+      if (innerCountWrap) innerCountWrap.classList.remove('hidden');
+      if (outerCountWrap) outerCountWrap.classList.toggle('hidden', !isDualRing);
+      if (lockToggle) lockToggle.checked = Boolean(pd.state.innerOuterLock);
+      this.setPetalDesignerSliderValue(pd, 'inner-count', pd.state.innerCount);
+      this.setPetalDesignerSliderValue(pd, 'outer-count', pd.state.outerCount);
+      this.setPetalDesignerSliderValue(pd, 'ring-split', pd.state.ringSplit);
+      this.setPetalDesignerSliderValue(pd, 'split-feather', pd.state.profileTransitionFeather);
     }
 
     bindPetalDesignerUI(pd, options = {}) {
       if (!pd?.root || !pd?.state) return;
       const { refreshControls = true } = options;
-      const applyChanges = () => {
-        this.applyPetalDesignerToLayer(pd.state, { refreshControls });
+      const applyChanges = (opts = {}) => {
+        const live = Boolean(opts.live);
+        this.applyPetalDesignerToLayer(pd.state, {
+          refreshControls: !live && refreshControls,
+          persistState: !live,
+        });
         this.renderPetalDesigner(pd);
       };
+      pd.applyChanges = applyChanges;
       const setTool = (tool) => {
         pd.tool = tool;
         pd.root.querySelectorAll('.petal-tool-btn').forEach((btn) => {
@@ -5222,10 +5536,21 @@
       };
       const targetSelect = pd.root.querySelector('select[data-petal-target]');
       const profileSelect = pd.root.querySelector('select[data-petal-profile-current]');
-      const shadingToggle = pd.root.querySelector('input[data-petal-shading-toggle]');
+      const symmetrySelect = pd.root.querySelector('select[data-petal-symmetry]');
+      const ringModeSelect = pd.root.querySelector('select[data-petal-ring-mode]');
+      const innerCountInput = pd.root.querySelector('input[data-petal-inner-count]');
+      const outerCountInput = pd.root.querySelector('input[data-petal-outer-count]');
+      const ringSplitInput = pd.root.querySelector('input[data-petal-ring-split]');
+      const splitFeatherInput = pd.root.querySelector('input[data-petal-split-feather]');
+      const lockToggle = pd.root.querySelector('input[data-petal-inner-outer-lock]');
       if (targetSelect) {
         targetSelect.onchange = () => {
-          pd.state.target = targetSelect.value === 'inner' ? 'inner' : 'outer';
+          if (pd.state.innerOuterLock && targetSelect.value === 'outer') {
+            pd.state.target = 'inner';
+            targetSelect.value = 'inner';
+          } else {
+            pd.state.target = targetSelect.value === 'inner' ? 'inner' : 'outer';
+          }
           this.syncPetalDesignerControls(pd);
           this.renderPetalDesigner(pd);
         };
@@ -5235,44 +5560,85 @@
           const side = this.getPetalDesignerTarget(pd.state);
           pd.state[side] = this.buildProfileDesignerShape(profileSelect.value, side);
           this.normalizeDesignerShape(pd.state[side]);
+          this.syncInnerOuterLock(pd.state);
           this.syncPetalDesignerControls(pd);
           applyChanges();
         };
       }
-      if (shadingToggle) {
-        shadingToggle.oninput = () => {
-          const shade = this.getPetalDesignerActiveShade(pd.state);
-          shade.enabled = shadingToggle.checked;
+      if (symmetrySelect) {
+        symmetrySelect.onchange = () => {
+          pd.state.designerSymmetry = this.normalizeDesignerSymmetryMode(symmetrySelect.value);
           this.syncPetalDesignerControls(pd);
           applyChanges();
         };
       }
-      pd.root.querySelectorAll('[data-shade-key]').forEach((input) => {
-        const handler = () => {
-          const key = input.dataset.shadeKey;
-          const shade = this.getPetalDesignerActiveShade(pd.state);
-          if (!key || !shade) return;
-          if (key === 'type' || key === 'lineType') {
-            shade[key] = input.value;
-          } else {
-            const next = Number.parseFloat(input.value);
-            if (!Number.isFinite(next)) return;
-            if (key === 'lineSpacing') shade[key] = clamp(next, 0.2, 6);
-            else if (key === 'density') shade[key] = clamp(next, 0.2, 3);
-            else if (key === 'angle') shade[key] = clamp(next, -90, 90);
-            else if (key === 'jitter' || key === 'lengthJitter') shade[key] = clamp(next, 0, 1);
-            else shade[key] = next;
-          }
+      if (ringModeSelect) {
+        ringModeSelect.onchange = () => {
+          pd.state.ringMode = ringModeSelect.value === 'single' ? 'single' : 'dual';
+          this.syncPetalDesignerControls(pd);
           applyChanges();
         };
-        input.oninput = handler;
-        input.onchange = handler;
-      });
+      }
+      if (innerCountInput) {
+        const onInnerCount = (live = false) => {
+          const next = Number.parseFloat(innerCountInput.value);
+          if (!Number.isFinite(next)) return;
+          pd.state.innerCount = Math.round(clamp(next, 5, 400));
+          if (pd.state.ringMode !== 'dual') pd.state.count = pd.state.innerCount;
+          this.syncPetalDesignerControls(pd);
+          applyChanges({ live });
+        };
+        innerCountInput.oninput = () => onInnerCount(true);
+        innerCountInput.onchange = () => onInnerCount(false);
+      }
+      if (outerCountInput) {
+        const onOuterCount = (live = false) => {
+          const next = Number.parseFloat(outerCountInput.value);
+          if (!Number.isFinite(next)) return;
+          pd.state.outerCount = Math.round(clamp(next, 5, 600));
+          this.syncPetalDesignerControls(pd);
+          applyChanges({ live });
+        };
+        outerCountInput.oninput = () => onOuterCount(true);
+        outerCountInput.onchange = () => onOuterCount(false);
+      }
+      if (ringSplitInput) {
+        const onRingSplit = (live = false) => {
+          const next = Number.parseFloat(ringSplitInput.value);
+          if (!Number.isFinite(next)) return;
+          pd.state.ringSplit = clamp(next, 0.15, 0.85);
+          pd.state.profileTransitionPosition = clamp(pd.state.ringSplit * 100, 0, 100);
+          this.syncPetalDesignerControls(pd);
+          applyChanges({ live });
+        };
+        ringSplitInput.oninput = () => onRingSplit(true);
+        ringSplitInput.onchange = () => onRingSplit(false);
+      }
+      if (lockToggle) {
+        lockToggle.onchange = () => {
+          pd.state.innerOuterLock = Boolean(lockToggle.checked);
+          this.syncInnerOuterLock(pd.state);
+          this.syncPetalDesignerControls(pd);
+          applyChanges();
+        };
+      }
+      if (splitFeatherInput) {
+        const onFeather = (live = false) => {
+          const next = Number.parseFloat(splitFeatherInput.value);
+          if (!Number.isFinite(next)) return;
+          pd.state.profileTransitionFeather = clamp(next, 0, 100);
+          this.syncPetalDesignerControls(pd);
+          applyChanges({ live });
+        };
+        splitFeatherInput.oninput = () => onFeather(true);
+        splitFeatherInput.onchange = () => onFeather(false);
+      }
       pd.root.querySelectorAll('.petal-tool-btn').forEach((btn) => {
         btn.onclick = () => setTool(btn.dataset.petalTool || 'direct');
       });
       const closeBtn = pd.root.querySelector('.petal-close');
       if (closeBtn) closeBtn.onclick = () => this.closePetalDesigner();
+      this.renderPetalDesignerShadingStack(pd, applyChanges);
       setTool('direct');
       this.syncPetalDesignerControls(pd);
     }
@@ -5467,12 +5833,68 @@
     bindPetalDesignerCanvases(pd = this.petalDesigner, options = {}) {
       if (!pd?.root) return;
       const { refreshControls = true } = options;
-      const applyChanges = () => {
-        this.applyPetalDesignerToLayer(pd.state, { refreshControls });
+      const applyChanges = (opts = {}) => {
+        const live = Boolean(opts.live);
+        this.applyPetalDesignerToLayer(pd.state, {
+          refreshControls: !live && refreshControls,
+          persistState: !live,
+        });
         this.renderPetalDesigner(pd);
       };
       const canvas = pd.root.querySelector('canvas[data-petal-canvas="shape"]');
       if (!canvas) return;
+      const readModifiers = (e) => {
+        const mods = SETTINGS.touchModifiers || {};
+        const isTouch = e?.pointerType === 'touch';
+        return {
+          shift: Boolean(e?.shiftKey || (isTouch && mods.shift)),
+          alt: Boolean(e?.altKey || (isTouch && mods.alt)),
+          meta: Boolean(e?.metaKey || e?.ctrlKey || (isTouch && mods.meta)),
+        };
+      };
+      const setCursor = (e = null) => {
+        if (!canvas) return;
+        if (pd.canvasPan) {
+          canvas.style.cursor = 'grabbing';
+          return;
+        }
+        const side = this.getPetalDesignerTarget(pd.state);
+        const shape = pd.state?.[side];
+        const view = this.getPetalDesignerView(pd.state, side);
+        let hit = pd.canvasHover || null;
+        if (shape && e && Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
+          const pos = this.getDesignerCanvasPoint(canvas, e);
+          hit = this.hitDesignerShapeControl(shape, canvas, pos, view);
+          pd.canvasHover = hit;
+        }
+        const modifiers = readModifiers(e || {});
+        if (pd.tool === 'direct' || (pd.tool === 'pen' && modifiers.meta)) {
+          if (hit) {
+            canvas.style.cursor = hit.kind === 'anchor' ? 'move' : 'pointer';
+            return;
+          }
+          canvas.style.cursor = 'crosshair';
+          return;
+        }
+        if (pd.tool === 'pen') {
+          if (modifiers.alt && (hit?.kind === 'anchor' || hit?.kind === 'handle')) {
+            canvas.style.cursor = 'copy';
+            return;
+          }
+          canvas.style.cursor = hit ? (hit.kind === 'anchor' ? 'move' : 'pointer') : 'crosshair';
+          return;
+        }
+        if (pd.tool === 'delete') {
+          canvas.style.cursor = hit?.kind === 'anchor' ? 'not-allowed' : 'crosshair';
+          return;
+        }
+        if (pd.tool === 'anchor') {
+          canvas.style.cursor = hit?.kind === 'anchor' ? 'copy' : 'crosshair';
+          return;
+        }
+        canvas.style.cursor = 'crosshair';
+      };
+
       const touchPoints = new Map();
       let pinch = null;
       const readPair = () => {
@@ -5507,37 +5929,76 @@
               }
             }
             e.preventDefault();
+            setCursor(e);
             return;
           }
         }
         if (pinch) return;
+        if (e.button === 1) {
+          e.preventDefault();
+          const side = this.getPetalDesignerTarget(pd.state);
+          pd.canvasPan = { pointerId: e.pointerId, side, x: e.clientX, y: e.clientY };
+          setCursor(e);
+          return;
+        }
+        if (e.button !== undefined && e.button !== 0) return;
         e.preventDefault();
         const side = this.getPetalDesignerTarget(pd.state);
         const shape = pd.state[side];
         const view = this.getPetalDesignerView(pd.state, side);
         const pos = this.getDesignerCanvasPoint(canvas, e);
         const hit = this.hitDesignerShapeControl(shape, canvas, pos, view);
-        if (pd.tool === 'direct') {
+        const modifiers = readModifiers(e);
+        if (pd.tool === 'direct' || (pd.tool === 'pen' && modifiers.meta)) {
           if (hit) {
-            pd.drag = { side, canvas, hit, pointerId: e.pointerId };
+            pd.drag = { mode: 'control', side, canvas, hit, pointerId: e.pointerId };
+            setCursor(e);
             return;
           }
         } else if (pd.tool === 'pen') {
-          this.insertDesignerAnchor(shape, canvas, pos, view);
+          if (modifiers.alt && hit && (hit.kind === 'anchor' || hit.kind === 'handle')) {
+            this.toggleDesignerAnchor(shape, hit.index, hit.kind === 'handle' ? hit.which : null);
+            this.normalizeDesignerShape(shape);
+            this.syncInnerOuterLock(pd.state);
+            applyChanges();
+            setCursor(e);
+            return;
+          }
+          if (hit) {
+            pd.drag = { mode: 'control', side, canvas, hit, pointerId: e.pointerId };
+            setCursor(e);
+            return;
+          }
+          const index = this.insertDesignerAnchor(shape, canvas, pos, view);
+          if (Number.isFinite(index)) {
+            pd.drag = {
+              mode: 'pen-new',
+              side,
+              canvas,
+              pointerId: e.pointerId,
+              index,
+            };
+          }
           applyChanges();
+          setCursor(e);
           return;
         } else if (pd.tool === 'delete') {
           if (hit && hit.kind === 'anchor' && hit.index > 0 && hit.index < shape.anchors.length - 1 && shape.anchors.length > 3) {
             shape.anchors.splice(hit.index, 1);
             this.normalizeDesignerShape(shape);
+            this.syncInnerOuterLock(pd.state);
             applyChanges();
           }
+          setCursor(e);
           return;
         } else if (pd.tool === 'anchor') {
           if (hit && hit.kind === 'anchor') {
             this.toggleDesignerAnchor(shape, hit.index);
+            this.normalizeDesignerShape(shape);
+            this.syncInnerOuterLock(pd.state);
             applyChanges();
           }
+          setCursor(e);
         }
       };
       const onMove = (e) => {
@@ -5557,26 +6018,65 @@
           view.panY = pinch.startPanY + (center.y - pinch.startCenter.y);
           this.renderPetalDesigner(pd);
           if (e.cancelable) e.preventDefault();
+          setCursor(e);
           return;
         }
-        if (!pd.drag) return;
+        if (pd.canvasPan) {
+          if (pd.canvasPan.pointerId !== undefined && e.pointerId !== undefined && pd.canvasPan.pointerId !== e.pointerId) return;
+          const view = this.getPetalDesignerView(pd.state, pd.canvasPan.side);
+          view.panX += e.clientX - pd.canvasPan.x;
+          view.panY += e.clientY - pd.canvasPan.y;
+          pd.canvasPan.x = e.clientX;
+          pd.canvasPan.y = e.clientY;
+          this.renderPetalDesigner(pd);
+          setCursor(e);
+          return;
+        }
+        if (!pd.drag) {
+          if (e.pointerType !== 'touch') {
+            const side = this.getPetalDesignerTarget(pd.state);
+            const shape = pd.state?.[side];
+            const view = this.getPetalDesignerView(pd.state, side);
+            if (shape) {
+              const pos = this.getDesignerCanvasPoint(canvas, e);
+              pd.canvasHover = this.hitDesignerShapeControl(shape, canvas, pos, view);
+            } else {
+              pd.canvasHover = null;
+            }
+            setCursor(e);
+          }
+          return;
+        }
         if (pd.drag.pointerId !== undefined && e.pointerId !== undefined && pd.drag.pointerId !== e.pointerId) return;
         const { side, canvas: dragCanvas, hit } = pd.drag;
         const shape = pd.state[side];
         if (!shape) return;
         const view = this.getPetalDesignerView(pd.state, side);
         const pos = this.getDesignerCanvasPoint(dragCanvas, e);
-        this.updateDesignerDrag(shape, dragCanvas, hit, pos, e, view);
+        if (pd.drag.mode === 'pen-new') {
+          this.updateDesignerPenHandleDrag(shape, pd.drag.index, dragCanvas, pos, e, view);
+        } else {
+          this.updateDesignerDrag(shape, dragCanvas, hit, pos, e, view);
+        }
         this.normalizeDesignerShape(shape);
-        applyChanges();
+        this.syncInnerOuterLock(pd.state);
+        applyChanges({ live: true });
+        setCursor(e);
       };
       const onUp = (e) => {
+        const hadDrag = Boolean(pd.drag);
         if (e.pointerType === 'touch') {
           touchPoints.delete(e.pointerId);
           if (touchPoints.size < 2) pinch = null;
         }
+        if (pd.canvasPan && pd.canvasPan.pointerId !== undefined && e.pointerId !== undefined && pd.canvasPan.pointerId === e.pointerId) {
+          pd.canvasPan = null;
+          setCursor(e);
+        }
         if (pd.drag && pd.drag.pointerId !== undefined && e.pointerId !== undefined && pd.drag.pointerId !== e.pointerId) return;
         pd.drag = null;
+        if (hadDrag) applyChanges();
+        setCursor(e);
       };
       const onWheel = (e) => {
         e.preventDefault();
@@ -5590,19 +6090,57 @@
         view.panX = pos.x - (pos.x - view.panX) * scale;
         view.panY = pos.y - (pos.y - view.panY) * scale;
         this.renderPetalDesigner(pd);
+        setCursor(e);
       };
+      const onLeave = () => {
+        pd.canvasHover = null;
+        setCursor();
+      };
+      const onResize = () => this.renderPetalDesigner(pd);
+      const resizeObserver =
+        typeof ResizeObserver === 'function'
+          ? new ResizeObserver(() => this.renderPetalDesigner(pd))
+          : null;
+      if (resizeObserver) resizeObserver.observe(canvas);
       canvas.addEventListener('pointerdown', onDown);
+      canvas.addEventListener('pointerleave', onLeave);
       canvas.addEventListener('wheel', onWheel, { passive: false });
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
       window.addEventListener('pointercancel', onUp);
+      window.addEventListener('resize', onResize);
       pd.cleanupCanvas = () => {
         canvas.removeEventListener('pointerdown', onDown);
+        canvas.removeEventListener('pointerleave', onLeave);
         canvas.removeEventListener('wheel', onWheel);
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
         window.removeEventListener('pointercancel', onUp);
+        window.removeEventListener('resize', onResize);
+        if (resizeObserver) resizeObserver.disconnect();
       };
+      this.syncDesignerCanvasResolution(canvas);
+      setCursor();
+    }
+
+    getDesignerCanvasMetrics(canvas) {
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
+      const rect = canvas?.getBoundingClientRect?.() || { width: 0, height: 0 };
+      const width = Math.max(1, rect.width || canvas?.clientWidth || canvas?.width / dpr || 1);
+      const height = Math.max(1, rect.height || canvas?.clientHeight || canvas?.height / dpr || 1);
+      return { width, height, dpr };
+    }
+
+    syncDesignerCanvasResolution(canvas) {
+      if (!canvas) return this.getDesignerCanvasMetrics(canvas);
+      const metrics = this.getDesignerCanvasMetrics(canvas);
+      const targetWidth = Math.max(1, Math.round(metrics.width * metrics.dpr));
+      const targetHeight = Math.max(1, Math.round(metrics.height * metrics.dpr));
+      if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+      }
+      return metrics;
     }
 
     getDesignerCanvasPoint(canvas, e) {
@@ -5611,8 +6149,7 @@
     }
 
     designerToCanvas(canvas, point, view = null) {
-      const w = canvas.width;
-      const h = canvas.height;
+      const { width: w, height: h } = this.getDesignerCanvasMetrics(canvas);
       const cx = w * 0.5;
       const baseY = h * 0.88;
       const tSpan = h * 0.74;
@@ -5628,9 +6165,8 @@
       };
     }
 
-    canvasToDesigner(canvas, point, view = null) {
-      const w = canvas.width;
-      const h = canvas.height;
+    canvasToDesigner(canvas, point, view = null, options = {}) {
+      const { width: w, height: h } = this.getDesignerCanvasMetrics(canvas);
       const cx = w * 0.5;
       const baseY = h * 0.88;
       const tSpan = h * 0.74;
@@ -5640,13 +6176,44 @@
       const panY = view?.panY ?? 0;
       const baseX = (point.x - cx - panX) / zoom + cx;
       const baseYY = (point.y - h * 0.5 - panY) / zoom + h * 0.5;
+      const rawT = (baseY - baseYY) / Math.max(1e-6, tSpan);
+      const clampT = options?.clampT !== false;
       return {
-        t: clamp((baseY - baseYY) / Math.max(1e-6, tSpan), 0, 1),
+        t: clampT ? clamp(rawT, 0, 1) : rawT,
         w: (baseX - cx) / Math.max(1e-6, wSpan),
       };
     }
 
-    sampleDesignerEdge(shape, stepsPerSeg = 18) {
+    sampleDesignerWidthAt(edge, t) {
+      if (!Array.isArray(edge) || edge.length < 2) return 0;
+      if (t <= edge[0].t) return Math.max(0, edge[0].w);
+      if (t >= edge[edge.length - 1].t) return Math.max(0, edge[edge.length - 1].w);
+      for (let i = 1; i < edge.length; i++) {
+        const a = edge[i - 1];
+        const b = edge[i];
+        if (t <= b.t + 1e-6) {
+          const denom = Math.max(1e-6, b.t - a.t);
+          const mix = clamp((t - a.t) / denom, 0, 1);
+          return Math.max(0, lerp(a.w, b.w, mix));
+        }
+      }
+      return Math.max(0, edge[edge.length - 1].w);
+    }
+
+    applyDesignerEdgeSymmetry(edge, symmetry = 'none') {
+      if (!Array.isArray(edge) || edge.length < 2) return edge || [];
+      const mode = this.normalizeDesignerSymmetryMode(symmetry);
+      if (mode !== 'horizontal' && mode !== 'both') {
+        return edge.map((pt) => ({ t: clamp(pt.t, 0, 1), w: Math.max(0, pt.w) }));
+      }
+      return edge.map((pt) => {
+        const t = clamp(pt.t, 0, 1);
+        const mirrored = this.sampleDesignerWidthAt(edge, 1 - t);
+        return { t, w: Math.max(0, (Math.max(0, pt.w) + mirrored) * 0.5) };
+      });
+    }
+
+    sampleDesignerEdge(shape, stepsPerSeg = 18, symmetry = 'none') {
       this.normalizeDesignerShape(shape);
       const anchors = shape.anchors || [];
       if (anchors.length < 2) return [];
@@ -5673,11 +6240,11 @@
           out.push({ t: clamp(pt.t, 0, 1), w: Math.max(0, pt.w) });
         }
       }
-      return out;
+      return this.applyDesignerEdgeSymmetry(out, symmetry);
     }
 
-    buildDesignerPolygon(shape) {
-      const right = this.sampleDesignerEdge(shape, 20);
+    buildDesignerPolygon(shape, symmetry = 'none') {
+      const right = this.sampleDesignerEdge(shape, 36, symmetry);
       if (!right.length) return [];
       const left = right
         .slice(1, -1)
@@ -5687,34 +6254,37 @@
     }
 
     drawDesignerGrid(ctx, canvas) {
-      ctx.save();
+      const { width, height, dpr } = this.syncDesignerCanvasResolution(canvas);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.save();
       ctx.fillStyle = '#0f1116';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, width, height);
       ctx.strokeStyle = 'rgba(148,163,184,0.14)';
       ctx.lineWidth = 1;
       const gap = 20;
-      for (let x = 0; x <= canvas.width; x += gap) {
+      for (let x = 0; x <= width; x += gap) {
         ctx.beginPath();
         ctx.moveTo(x + 0.5, 0);
-        ctx.lineTo(x + 0.5, canvas.height);
+        ctx.lineTo(x + 0.5, height);
         ctx.stroke();
       }
-      for (let y = 0; y <= canvas.height; y += gap) {
+      for (let y = 0; y <= height; y += gap) {
         ctx.beginPath();
         ctx.moveTo(0, y + 0.5);
-        ctx.lineTo(canvas.width, y + 0.5);
+        ctx.lineTo(width, y + 0.5);
         ctx.stroke();
       }
       ctx.restore();
     }
 
     drawDesignerShape(canvas, shape, options = {}) {
-      const { shading = null, showControls = false, view = null } = options;
+      const { shading = null, shadings = null, showControls = false, view = null, symmetry = 'none' } = options;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       this.drawDesignerGrid(ctx, canvas);
-      const polygon = this.buildDesignerPolygon(shape);
+      const polygon = this.buildDesignerPolygon(shape, symmetry);
       if (!polygon.length) return;
       const points = polygon.map((pt) => this.designerToCanvas(canvas, pt, view));
 
@@ -5729,25 +6299,75 @@
       ctx.fill();
       ctx.stroke();
 
-      if (shading) {
+      const activeShadings = Array.isArray(shadings)
+        ? shadings.filter((item) => item && item.enabled !== false)
+        : shading
+        ? [shading]
+        : [];
+      if (activeShadings.length) {
         ctx.save();
         ctx.clip();
-        const spacing = Math.max(4, shading.lineSpacing * 10);
-        const density = Math.max(0.2, shading.density ?? 1);
-        const angle = ((shading.angle ?? 0) * Math.PI) / 180;
-        ctx.translate(canvas.width / 2, canvas.height / 2);
-        ctx.rotate(angle);
-        ctx.translate(-canvas.width / 2, -canvas.height / 2);
-        ctx.strokeStyle = 'rgba(125, 211, 252, 0.42)';
-        ctx.lineWidth = 1;
-        const count = Math.round((canvas.width + canvas.height) / (spacing / density));
-        for (let i = -count; i < count; i++) {
-          const y = i * (spacing / density);
-          ctx.beginPath();
-          ctx.moveTo(-canvas.width, y + canvas.height / 2);
-          ctx.lineTo(canvas.width * 2, y + canvas.height / 2);
-          ctx.stroke();
-        }
+        const { width, height } = this.getDesignerCanvasMetrics(canvas);
+        const center = points.reduce(
+          (acc, point) => {
+            acc.x += point.x;
+            acc.y += point.y;
+            return acc;
+          },
+          { x: 0, y: 0 }
+        );
+        center.x /= Math.max(1, points.length);
+        center.y /= Math.max(1, points.length);
+        const span = Math.hypot(width, height) * 1.5;
+        const drawParallel = (shade, extraAngle = 0) => {
+          const spacing = Math.max(4, (shade.lineSpacing ?? 1) * 10);
+          const density = Math.max(0.2, shade.density ?? 1);
+          const angle = (((shade.angle ?? 0) + extraAngle) * Math.PI) / 180;
+          const dir = { x: Math.sin(angle), y: -Math.cos(angle) };
+          const normal = { x: -dir.y, y: dir.x };
+          const step = spacing / density;
+          const count = Math.round((span * 2) / Math.max(1e-6, step));
+          for (let i = -count; i <= count; i++) {
+            const offset = i * step;
+            const cx = center.x + normal.x * offset;
+            const cy = center.y + normal.y * offset;
+            ctx.beginPath();
+            ctx.moveTo(cx - dir.x * span, cy - dir.y * span);
+            ctx.lineTo(cx + dir.x * span, cy + dir.y * span);
+            ctx.stroke();
+          }
+        };
+        activeShadings.forEach((shade, idx) => {
+          const alpha = 0.22 + Math.min(idx, 4) * 0.08;
+          ctx.strokeStyle = `rgba(125, 211, 252, ${Math.min(0.6, alpha).toFixed(2)})`;
+          ctx.fillStyle = ctx.strokeStyle;
+          ctx.lineWidth = 1;
+          if (shade.type === 'stipple') {
+            const dotStep = Math.max(6, (shade.lineSpacing ?? 1) * 12) / Math.max(0.2, shade.density ?? 1);
+            for (let y = -span; y <= span; y += dotStep) {
+              for (let x = -span; x <= span; x += dotStep) {
+                ctx.beginPath();
+                ctx.arc(center.x + x, center.y + y, 0.8, 0, Math.PI * 2);
+                ctx.fill();
+              }
+            }
+            return;
+          }
+          if (shade.type === 'crosshatch') {
+            drawParallel(shade, 0);
+            drawParallel(shade, 90);
+            return;
+          }
+          if (shade.type === 'rim' || shade.type === 'outline') {
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, points[0].y);
+            for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+            ctx.closePath();
+            ctx.stroke();
+            return;
+          }
+          drawParallel(shade, 0);
+        });
         ctx.restore();
       }
 
@@ -5807,9 +6427,24 @@
       return bestDist <= 10 ? best : null;
     }
 
-    toggleDesignerAnchor(shape, index) {
+    toggleDesignerAnchor(shape, index, which = null) {
       const anchor = shape?.anchors?.[index];
       if (!anchor) return;
+      if (which === 'in' || which === 'out') {
+        if (anchor[which]) {
+          anchor[which] = null;
+          return;
+        }
+        const opposite = which === 'in' ? 'out' : 'in';
+        const source = anchor[opposite] || { t: anchor.t + (which === 'out' ? 0.08 : -0.08), w: anchor.w };
+        const dt = anchor.t - source.t;
+        const dw = anchor.w - source.w;
+        anchor[which] = {
+          t: anchor.t + dt,
+          w: anchor.w + dw,
+        };
+        return;
+      }
       if (anchor.in || anchor.out) {
         anchor.in = null;
         anchor.out = null;
@@ -5818,8 +6453,8 @@
       const prev = shape.anchors[Math.max(0, index - 1)] || anchor;
       const next = shape.anchors[Math.min(shape.anchors.length - 1, index + 1)] || anchor;
       const dt = Math.max(0.05, Math.min(0.2, (next.t - prev.t) * 0.33));
-      anchor.in = { t: clamp(anchor.t - dt, 0, 1), w: anchor.w * 0.8 };
-      anchor.out = { t: clamp(anchor.t + dt, 0, 1), w: anchor.w * 0.8 };
+      anchor.in = { t: anchor.t - dt, w: anchor.w };
+      anchor.out = { t: anchor.t + dt, w: anchor.w };
     }
 
     insertDesignerAnchor(shape, canvas, pos, view = null) {
@@ -5830,14 +6465,59 @@
       const prev = shape.anchors[Math.max(0, insertAt - 1)];
       const next = shape.anchors[Math.min(shape.anchors.length - 1, insertAt)];
       const t = clamp(p.t, (prev?.t ?? 0) + 0.02, (next?.t ?? 1) - 0.02);
-      shape.anchors.splice(insertAt, 0, { t, w, in: null, out: null });
+      const dt = Math.max(0.04, Math.min(0.2, ((next?.t ?? 1) - (prev?.t ?? 0)) * 0.18));
+      shape.anchors.splice(insertAt, 0, {
+        t,
+        w,
+        in: { t: t - dt, w },
+        out: { t: t + dt, w },
+      });
       this.normalizeDesignerShape(shape);
+      return insertAt;
+    }
+
+    snapDesignerHandle(anchor, point) {
+      const dt = point.t - anchor.t;
+      const dw = point.w - anchor.w;
+      if (Math.abs(dt) >= Math.abs(dw)) {
+        return { t: point.t, w: anchor.w };
+      }
+      return { t: anchor.t, w: point.w };
+    }
+
+    updateDesignerPenHandleDrag(shape, index, canvas, pos, e, view = null) {
+      const anchor = shape?.anchors?.[index];
+      if (!anchor) return;
+      const pRaw = this.canvasToDesigner(canvas, pos, view, { clampT: false });
+      const p = e?.shiftKey ? this.snapDesignerHandle(anchor, pRaw) : pRaw;
+      const prev = shape.anchors[index - 1];
+      const next = shape.anchors[index + 1];
+      const nextT = clamp(
+        p.t,
+        (prev?.t ?? anchor.t) - 1,
+        (next?.t ?? anchor.t) + 1
+      );
+      const nextW = p.w;
+      const dist = Math.hypot(nextT - anchor.t, nextW - anchor.w);
+      if (dist <= 0.01) {
+        anchor.in = null;
+        anchor.out = null;
+        return;
+      }
+      anchor.out = { t: nextT, w: nextW };
+      const breakHandle = Boolean(e?.altKey || SETTINGS.touchModifiers?.alt);
+      if (!breakHandle) {
+        const dt = anchor.t - nextT;
+        const dw = anchor.w - nextW;
+        anchor.in = { t: anchor.t + dt, w: anchor.w + dw };
+      }
     }
 
     updateDesignerDrag(shape, canvas, hit, pos, e, view = null) {
       const anchor = shape.anchors[hit.index];
       if (!anchor) return;
-      const p = this.canvasToDesigner(canvas, pos, view);
+      const pRaw = this.canvasToDesigner(canvas, pos, view, { clampT: hit.kind === 'anchor' });
+      const p = e?.shiftKey && hit.kind === 'handle' ? this.snapDesignerHandle(anchor, pRaw) : pRaw;
       if (hit.kind === 'anchor') {
         if (hit.index === 0 || hit.index === shape.anchors.length - 1) return;
         const prev = shape.anchors[hit.index - 1];
@@ -5849,18 +6529,18 @@
         anchor.t = nextT;
         anchor.w = nextW;
         if (anchor.in) {
-          anchor.in.t = clamp(anchor.in.t + dt, 0, 1);
-          anchor.in.w = Math.max(0, anchor.in.w + dw);
+          anchor.in.t = anchor.in.t + dt;
+          anchor.in.w = anchor.in.w + dw;
         }
         if (anchor.out) {
-          anchor.out.t = clamp(anchor.out.t + dt, 0, 1);
-          anchor.out.w = Math.max(0, anchor.out.w + dw);
+          anchor.out.t = anchor.out.t + dt;
+          anchor.out.w = anchor.out.w + dw;
         }
       } else if (hit.kind === 'handle') {
         const which = hit.which;
         anchor[which] = {
-          t: clamp(p.t, 0, 1),
-          w: Math.max(0, Math.abs(p.w)),
+          t: p.t,
+          w: p.w,
         };
         const breakHandle = Boolean(e.altKey || SETTINGS.touchModifiers?.alt);
         if (!breakHandle) {
@@ -5868,8 +6548,8 @@
           const dw = anchor.w - anchor[which].w;
           const opposite = which === 'in' ? 'out' : 'in';
           anchor[opposite] = {
-            t: clamp(anchor.t + dt, 0, 1),
-            w: Math.max(0, anchor.w + dw),
+            t: anchor.t + dt,
+            w: anchor.w + dw,
           };
         }
       }
@@ -5881,26 +6561,51 @@
       if (!canvas) return;
       const side = this.getPetalDesignerTarget(pd.state);
       const shape = side === 'inner' ? pd.state.inner : pd.state.outer;
-      const shade = side === 'inner' ? pd.state.shadeInner : pd.state.shadeOuter;
       const view = this.getPetalDesignerView(pd.state, side);
       this.syncPetalDesignerControls(pd);
       this.drawDesignerShape(canvas, shape, {
-        shading: shade?.enabled === false ? null : shade,
+        shadings: Array.isArray(pd.state.shadings) ? pd.state.shadings : [],
         showControls: true,
         view,
+        symmetry: this.normalizeDesignerSymmetryMode(pd.state?.designerSymmetry),
       });
     }
 
     applyPetalDesignerToLayer(state, options = {}) {
-      const { refreshControls = true } = options;
+      const { refreshControls = true, persistState = true } = options;
       if (!state) return;
       const layer = this.getLayerById(state.layerId);
       if (!layer || !isPetalisLayerType(layer.type)) return;
+      this.syncInnerOuterLock(state);
       this.normalizeDesignerShape(state.outer);
       this.normalizeDesignerShape(state.inner);
       const params = layer.params || {};
+      state.designerSymmetry = this.normalizeDesignerSymmetryMode(state.designerSymmetry);
+      state.ringMode = state.ringMode === 'single' ? 'single' : 'dual';
+      state.innerCount = Math.round(clamp(state.innerCount ?? params.innerCount ?? 120, 5, 400));
+      state.outerCount = Math.round(clamp(state.outerCount ?? params.outerCount ?? 180, 5, 600));
+      state.ringSplit = clamp(state.ringSplit ?? params.ringSplit ?? 0.45, 0.15, 0.85);
+      state.profileTransitionPosition = clamp(state.ringSplit * 100, 0, 100);
+      state.profileTransitionFeather = clamp(state.profileTransitionFeather ?? params.profileTransitionFeather ?? 0, 0, 100);
+      state.count = Math.round(
+        clamp(
+          state.ringMode === 'dual' ? state.innerCount + state.outerCount : state.innerCount,
+          5,
+          800
+        )
+      );
       params.designerOuter = JSON.parse(JSON.stringify(state.outer));
       params.designerInner = JSON.parse(JSON.stringify(state.inner));
+      params.designerSymmetry = state.designerSymmetry;
+      params.count = state.count;
+      params.ringMode = state.ringMode;
+      params.innerCount = state.innerCount;
+      params.outerCount = state.outerCount;
+      params.ringSplit = state.ringSplit;
+      params.innerOuterLock = Boolean(state.innerOuterLock);
+      params.profileTransitionPosition = clamp(state.profileTransitionPosition ?? state.ringSplit * 100, 0, 100);
+      params.profileTransitionFeather = clamp(state.profileTransitionFeather ?? 0, 0, 100);
+      params.petalSteps = Math.max(64, Math.round(params.petalSteps ?? 64));
       params.petalProfile = state.outer.profile || params.petalProfile || 'teardrop';
       params.centerProfile = state.inner.profile || params.centerProfile || params.petalProfile || 'teardrop';
       const outerCore = state.outer.anchors.reduce(
@@ -5912,41 +6617,10 @@
       );
       params.leafSidePos = clamp(outerCore.t ?? params.leafSidePos ?? 0.45, 0.1, 0.9);
       params.leafSideWidth = clamp((outerCore.w ?? 0.55) / 0.55, 0.2, 2);
-      params.ringMode = params.ringMode || 'dual';
-      if (!Array.isArray(params.shadings)) params.shadings = [];
-      const ensureShade = (index, base) => {
-        if (!params.shadings[index]) {
-          params.shadings[index] = {
-            id: `designer-shade-${index + 1}`,
-            enabled: base?.enabled === true,
-            type: 'parallel',
-            lineType: 'solid',
-            widthX: 100,
-            widthY: 100,
-            posX: 50,
-            posY: 50,
-            gapX: 0,
-            gapY: 0,
-            gapPosX: 50,
-            gapPosY: 50,
-            lineSpacing: 1,
-            density: 1,
-            angle: 0,
-            jitter: 0,
-            lengthJitter: 0,
-          };
-        }
-        params.shadings[index].type = base.type || params.shadings[index].type || 'parallel';
-        params.shadings[index].lineType = base.lineType || params.shadings[index].lineType || 'solid';
-        params.shadings[index].lineSpacing = Math.max(0.2, base.lineSpacing ?? 1);
-        params.shadings[index].density = Math.max(0.2, base.density ?? 1);
-        params.shadings[index].angle = base.angle ?? 0;
-        params.shadings[index].jitter = clamp(base.jitter ?? 0, 0, 1);
-        params.shadings[index].lengthJitter = clamp(base.lengthJitter ?? 0, 0, 1);
-        params.shadings[index].enabled = base?.enabled !== false;
-      };
-      ensureShade(0, state.shadeOuter);
-      ensureShade(1, state.shadeInner);
+      const shadings = Array.isArray(state.shadings) ? state.shadings : [];
+      state.shadings = shadings.map((shade, index) => this.normalizePetalDesignerShading(shade, index));
+      params.shadings = state.shadings.map((shade, index) => this.normalizePetalDesignerShading(shade, index));
+      if (persistState) this.storeLayerParams(layer);
       this.app.engine.generate(layer.id);
       if (this.app.engine.activeLayerId === layer.id) {
         if (refreshControls) this.buildControls();
@@ -5970,7 +6644,8 @@
             <div><span class="text-vectura-accent">Shift + C</span> Anchor point tool</div>
             <div><span class="text-vectura-accent">C</span> Scissor tool (press again to cycle modes)</div>
             <div><span class="text-vectura-accent">Space</span> Hand tool (temporary)</div>
-            <div><span class="text-vectura-accent">Petal Designer</span> uses A/P/+/-/Shift+C for shape editing</div>
+            <div><span class="text-vectura-accent">Petal Designer</span> A/P/+/-/Shift+C, Shift-constrain, Alt convert/break/remove handle, Cmd/Ctrl temporary direct</div>
+            <div><span class="text-vectura-accent">Petal Designer</span> Middle-click drag pans, mouse wheel zooms to cursor</div>
             <div><span class="text-vectura-accent">Enter</span> Commit pen path</div>
             <div><span class="text-vectura-accent">Double-click</span> Close pen path near start</div>
             <div><span class="text-vectura-accent">Backspace</span> Remove last pen point</div>
@@ -5979,7 +6654,7 @@
             <div><span class="text-vectura-accent">Alt/Option</span> Break pen handles</div>
             <div><span class="text-vectura-accent">Direct Tool</span> Drag endpoints/handles on individual line paths</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl</span> Temporary selection while using Pen</div>
-            <div><span class="text-vectura-accent">Cmd/Ctrl + A</span> Select all layers (in layer list)</div>
+            <div><span class="text-vectura-accent">Cmd/Ctrl + A</span> Select all layers (from anywhere)</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + G</span> Group selection</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + Shift + G</span> Ungroup selection</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + E</span> Expand selection into sublayers</div>
@@ -6010,13 +6685,17 @@
             Image noise includes an Image Effects stack plus optional style shaping.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Petalis provides flower presets, radial petal controls, a shading stack, and an in-development light source tool.
+            Petalis provides flower presets, radial petal controls, inner/outer profile transitions, and a shading stack with in-place hatch-angle rotation (angle rotates internal strokes, not shading placement) plus an in-development light source tool.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Use [PETAL DESIGNER] for the single-panel petal editor, or choose Petalis Designer for the embedded inline panel.
+            Petalis Designer shape comes from its editable inner/outer curves, live ring/split controls, in-panel shading stack, and symmetry mode; legacy petal profile and hidden tip/base modifiers are not applied there.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Left panel sections are collapsible; Transform &amp; Seed lives inside Algorithm, and ABOUT visibility is remembered.
+            Left panel sections are collapsible; Transform &amp; Seed lives inside Algorithm in its own collapsible sub-panel (collapsed by default), and ABOUT visibility is remembered.
+          </div>
+          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
+            Switching algorithms restores position, scale, and rotation to the target algorithm defaults.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Harmonograph layers combine damped pendulum waves; tweak frequency, phase, and damping for intricate loops.
@@ -6026,7 +6705,7 @@
             Use Anti-Loop Drift and Settle Cutoff to curb repeated loop paths.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Harmonograph includes a Virtual Plotter panel with playback speed, scrubbable playhead, and snappable loop stops.
+            Harmonograph includes a Virtual Plotter panel with playback speed controls and a scrubbable playhead preview.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Post-Processing Lab holds smoothing, curves, and simplify for the active layer.
@@ -6045,17 +6724,20 @@
             Double-click a value to edit it inline (Tab/Shift+Tab to hop between params; arrows nudge, Shift = 10x).
             Double-click a control to reset it to defaults.
           </div>
+          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
+            Reset to Defaults restores full algorithm defaults, including transform values (seed, position, scale, rotation).
+          </div>
         </div>
         <div class="modal-section">
           <div class="modal-ill-label">Canvas</div>
           <div class="text-xs text-vectura-muted leading-relaxed space-y-1">
             <div>Shift + Drag to pan</div>
             <div>Mouse wheel to zoom</div>
+            <div>Petal Designer: middle-click drag pans and wheel zooms at cursor.</div>
             <div>Touch: one-finger tool input, two-finger pan/pinch zoom.</div>
             <div>On tablets, use Shift/Alt/Meta/Pan touch modifier buttons near the toolbar.</div>
             <div>Drag selection box to multi-select</div>
             <div>Drag to move selection; handles resize; top-right handle rotates (Shift snaps)</div>
-            <div>Canvas shortcut overlay can be toggled in Settings.</div>
           </div>
         </div>
         <div class="modal-section">
@@ -6075,6 +6757,7 @@
             <div>Touch fallback: tap a pen icon to arm it, then tap layers/groups to apply.</div>
             <div>Use the palette dropdown to recolor pens; add or remove pens from the panel.</div>
             <div>Auto-Colorization includes None mode, one-shot Apply, and Continuous Apply Changes.</div>
+            <div>If Continuous Apply Changes is off, mode/parameter/palette updates are staged until you press Apply.</div>
             <div>Plotter Optimization in Settings removes fully overlapping paths per pen.</div>
             <div>Toggle Export Optimized to include optimization passes in the exported SVG.</div>
             <div>SVG export preserves pen groupings for plotter workflows.</div>
@@ -6090,11 +6773,17 @@
       this.openModal({ title, body });
     }
 
-    getTransformSnapshot(params) {
-      return TRANSFORM_KEYS.reduce((acc, key) => {
-        acc[key] = params[key];
-        return acc;
-      }, {});
+    getDefaultTransformForType(type, currentParams = {}) {
+      const base = ALGO_DEFAULTS[type] || {};
+      const fallbackSeed = Number.isFinite(currentParams.seed) ? currentParams.seed : 1;
+      return {
+        seed: Number.isFinite(base.seed) ? base.seed : fallbackSeed,
+        posX: Number.isFinite(base.posX) ? base.posX : 0,
+        posY: Number.isFinite(base.posY) ? base.posY : 0,
+        scaleX: Number.isFinite(base.scaleX) ? base.scaleX : 1,
+        scaleY: Number.isFinite(base.scaleY) ? base.scaleY : 1,
+        rotation: Number.isFinite(base.rotation) ? base.rotation : 0,
+      };
     }
 
     storeLayerParams(layer) {
@@ -6109,7 +6798,7 @@
       if (!layer) return;
       const base = ALGO_DEFAULTS[nextType] ? clone(ALGO_DEFAULTS[nextType]) : {};
       const stored = layer.paramStates?.[nextType] ? clone(layer.paramStates[nextType]) : null;
-      const transform = this.getTransformSnapshot(layer.params);
+      const transform = this.getDefaultTransformForType(nextType, layer.params);
       layer.type = nextType;
       layer.params = { ...base, ...(stored || {}), ...transform };
       this.storeLayerParams(layer);
@@ -6499,9 +7188,6 @@
           params.innerCount = Math.max(20, Math.round(params.innerCount * ratio));
           params.outerCount = Math.max(30, Math.round(params.outerCount * ratio));
         }
-      }
-      if (Array.isArray(params.shadings) && params.shadings.length > 2) {
-        params.shadings = params.shadings.slice(0, 2);
       }
       if (Math.random() < 0.12) {
         params.count = Math.round(clamp(params.count * 1.35, 60, 520));
@@ -6918,7 +7604,6 @@
         { inputId: 'set-selection-outline', infoKey: 'global.selectionOutline' },
         { inputId: 'set-selection-outline-color', infoKey: 'global.selectionOutlineColor' },
         { inputId: 'set-selection-outline-width', infoKey: 'global.selectionOutlineWidth' },
-        { inputId: 'set-canvas-help', infoKey: 'global.canvasHelp' },
         { inputId: 'set-cookie-preferences', infoKey: 'global.cookiePreferences' },
         { inputId: 'set-speed-down', infoKey: 'global.speedDown' },
         { inputId: 'set-speed-up', infoKey: 'global.speedUp' },
@@ -7009,13 +7694,17 @@
     applyPaletteToPens(palette, options = {}) {
       if (!palette || !palette.colors || !palette.colors.length) return;
       const pens = SETTINGS.pens || [];
+      const autoColorization = this.getAutoColorizationConfig();
+      const applyToLayers = options.applyToLayers !== undefined ? Boolean(options.applyToLayers) : Boolean(autoColorization.enabled);
       pens.forEach((pen, index) => {
         pen.color = palette.colors[index % palette.colors.length];
       });
-      this.app.engine.layers.forEach((layer) => {
-        const pen = pens.find((p) => p.id === layer.penId);
-        if (pen) layer.color = pen.color;
-      });
+      if (applyToLayers) {
+        this.app.engine.layers.forEach((layer) => {
+          const pen = pens.find((p) => p.id === layer.penId);
+          if (pen) layer.color = pen.color;
+        });
+      }
       if (!options.skipRender) {
         this.renderPens();
         this.renderLayers();
@@ -7216,6 +7905,11 @@
       scopeSelect.value = config.scope || 'all';
       modeSelect.value = config.mode || AUTO_COLOR_MODES[0].value;
 
+      const applyIfContinuous = (options = {}) => {
+        if (!config.enabled) return;
+        this.applyAutoColorization(options);
+      };
+
       const renderParams = () => {
         paramsTarget.innerHTML = '';
         const mode = AUTO_COLOR_MODES.find((item) => item.value === config.mode) || AUTO_COLOR_MODES[0];
@@ -7236,7 +7930,7 @@
             const input = wrapper.querySelector('input');
             input.onchange = () => {
               config.params[param.id] = Boolean(input.checked);
-              this.applyAutoColorization({ commit: true });
+              applyIfContinuous({ commit: true });
             };
           } else {
             const value = config.params[param.id] ?? param.min ?? 0;
@@ -7260,12 +7954,12 @@
               const next = parseFloat(input.value);
               config.params[param.id] = Number.isFinite(next) ? next : value;
               if (display) display.textContent = `${input.value}${param.unit || ''}`;
-              this.applyAutoColorization({ commit: false });
+              applyIfContinuous({ commit: false });
             };
             input.onchange = () => {
               const next = parseFloat(input.value);
               config.params[param.id] = Number.isFinite(next) ? next : value;
-              this.applyAutoColorization({ commit: true });
+              applyIfContinuous({ commit: true });
             };
           }
           paramsTarget.appendChild(wrapper);
@@ -7280,12 +7974,12 @@
       };
       scopeSelect.onchange = () => {
         config.scope = scopeSelect.value;
-        this.applyAutoColorization({ commit: true });
+        applyIfContinuous({ commit: true });
       };
       modeSelect.onchange = () => {
         config.mode = modeSelect.value;
         renderParams();
-        this.applyAutoColorization({ commit: true });
+        applyIfContinuous({ commit: true });
       };
       if (applyBtn) {
         applyBtn.onclick = () => {
@@ -7555,7 +8249,6 @@
       const selectionOutline = getEl('set-selection-outline');
       const selectionOutlineColor = getEl('set-selection-outline-color');
       const selectionOutlineWidth = getEl('set-selection-outline-width');
-      const canvasHelp = getEl('set-canvas-help');
       const cookiePreferences = getEl('set-cookie-preferences');
       const paperWidth = getEl('set-paper-width');
       const paperHeight = getEl('set-paper-height');
@@ -7582,7 +8275,6 @@
       if (selectionOutline) selectionOutline.checked = SETTINGS.selectionOutline !== false;
       if (selectionOutlineColor) selectionOutlineColor.value = SETTINGS.selectionOutlineColor || '#ef4444';
       if (selectionOutlineWidth) selectionOutlineWidth.value = SETTINGS.selectionOutlineWidth ?? 0.4;
-      if (canvasHelp) canvasHelp.checked = SETTINGS.showCanvasHelp !== false;
       if (cookiePreferences) cookiePreferences.checked = SETTINGS.cookiePreferencesEnabled === true;
       if (bgColor) bgColor.value = SETTINGS.bgColor;
       if (paperWidth) paperWidth.value = SETTINGS.paperWidth ?? 210;
@@ -7637,7 +8329,6 @@
         document.documentElement.style.setProperty('--pane-right-width', '336px');
         document.documentElement.style.setProperty('--bottom-pane-height', '180px');
         if (bottomPane) bottomPane.classList.remove('bottom-pane-collapsed');
-        this.updateCanvasHelpPosition();
       };
     }
 
@@ -7647,7 +8338,6 @@
       if (!bottomPane || !btn) return;
       btn.addEventListener('click', () => {
         bottomPane.classList.toggle('bottom-pane-collapsed');
-        this.updateCanvasHelpPosition();
       });
     }
 
@@ -7669,13 +8359,11 @@
           const dy = ev.clientY - startY;
           const next = Math.max(minHeight, Math.min(maxHeight, startHeight - dy));
           document.documentElement.style.setProperty('--bottom-pane-height', `${next}px`);
-          this.updateCanvasHelpPosition();
         };
         const onUp = () => {
           resizer.classList.remove('active');
           window.removeEventListener('mousemove', onMove);
           window.removeEventListener('mouseup', onUp);
-          this.updateCanvasHelpPosition();
         };
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
@@ -7730,67 +8418,6 @@
 
       leftResizer.addEventListener('mousedown', (e) => startDrag(e, 'left'));
       rightResizer.addEventListener('mousedown', (e) => startDrag(e, 'right'));
-    }
-
-    initCanvasHelp() {
-      this.canvasHelpEl = getEl('canvas-help');
-      this.updateCanvasHelpVisibility();
-      this.updateCanvasHelpPosition();
-      const bottomPane = getEl('bottom-pane');
-      if (bottomPane && window.ResizeObserver) {
-        const observer = new ResizeObserver(() => this.updateCanvasHelpPosition());
-        observer.observe(bottomPane);
-        this.canvasHelpObserver = observer;
-      }
-      window.addEventListener('resize', () => this.updateCanvasHelpPosition());
-    }
-
-    updateCanvasHelpPosition() {
-      const help = this.canvasHelpEl || getEl('canvas-help');
-      if (!help) return;
-      const bottomPane = getEl('bottom-pane');
-      const rect = bottomPane ? bottomPane.getBoundingClientRect() : null;
-      const offset = rect ? rect.height + 16 : 80;
-      const nextBottom = Math.max(48, offset);
-      document.documentElement.style.setProperty('--canvas-help-offset', `${nextBottom}px`);
-
-      const hostRect = help.parentElement?.getBoundingClientRect();
-      const viewportRect = getEl('viewport-container')?.getBoundingClientRect();
-      if (!hostRect || !viewportRect) return;
-      const viewportLeft = viewportRect.left - hostRect.left;
-      const viewportRight = viewportRect.right - hostRect.left;
-      const helpWidth = Math.max(150, help.offsetWidth || 150);
-      const minLeft = viewportLeft + 8;
-      const maxLeft = Math.max(minLeft, viewportRight - helpWidth - 8);
-      let left = Math.max(minLeft, Math.min(88, maxLeft));
-
-      const renderer = this.app?.renderer;
-      const profile = this.app?.engine?.currentProfile;
-      if (renderer?.worldToScreen && profile) {
-        const topLeft = renderer.worldToScreen(0, 0);
-        const bottomRight = renderer.worldToScreen(profile.width, profile.height);
-        const paperLeft = viewportLeft + Math.min(topLeft.x, bottomRight.x);
-        const paperRight = viewportLeft + Math.max(topLeft.x, bottomRight.x);
-        const pad = 12;
-        const leftOutside = paperLeft - helpWidth - pad;
-        const rightOutside = paperRight + pad;
-        if (leftOutside >= minLeft) {
-          left = leftOutside;
-        } else if (rightOutside <= maxLeft) {
-          left = rightOutside;
-        } else {
-          left = clamp(leftOutside, minLeft, maxLeft);
-        }
-      }
-      help.style.left = `${Math.round(left)}px`;
-    }
-
-    updateCanvasHelpVisibility() {
-      const help = this.canvasHelpEl || getEl('canvas-help');
-      if (!help) return;
-      const visible = SETTINGS.showCanvasHelp !== false;
-      help.style.display = visible ? '' : 'none';
-      if (visible) this.updateCanvasHelpPosition();
     }
 
     updateLightSourceTool() {
@@ -8095,7 +8722,6 @@
       const setSelectionOutline = getEl('set-selection-outline');
       const setSelectionOutlineColor = getEl('set-selection-outline-color');
       const setSelectionOutlineWidth = getEl('set-selection-outline-width');
-      const setCanvasHelp = getEl('set-canvas-help');
       const setCookiePreferences = getEl('set-cookie-preferences');
       const setSpeedDown = getEl('set-speed-down');
       const setSpeedUp = getEl('set-speed-up');
@@ -8283,13 +8909,6 @@
           SETTINGS.selectionOutlineWidth = Number.isFinite(next) ? next : 0.4;
           e.target.value = SETTINGS.selectionOutlineWidth;
           this.app.render();
-        };
-      }
-      if (setCanvasHelp) {
-        setCanvasHelp.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          SETTINGS.showCanvasHelp = e.target.checked;
-          this.updateCanvasHelpVisibility();
         };
       }
       if (setCookiePreferences) {
@@ -8582,7 +9201,7 @@
           }
         }
 
-        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a' && this.layerListFocus) {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
           e.preventDefault();
           const all = this.app.engine.layers.filter((layer) => !layer.isGroup).map((layer) => layer.id);
           const primary = all[all.length - 1] || null;
@@ -9025,22 +9644,26 @@
           const pens = SETTINGS.pens || [];
           const applyPen = (pen, options = {}) => {
             if (!pen) return;
-            const { render = true } = options;
-            group.penId = pen.id;
-            group.color = pen.color;
-            group.strokeWidth = pen.width;
-            group.lineCap = group.lineCap || 'round';
+            const { render = true, syncTargets = true } = options;
+            if (syncTargets) {
+              group.penId = pen.id;
+              group.color = pen.color;
+              group.strokeWidth = pen.width;
+              group.lineCap = group.lineCap || 'round';
+            }
             penIcon.style.background = pen.color;
             penIcon.style.color = pen.color;
             penIcon.style.setProperty('--pen-width', pen.width);
             penIcon.title = pen.name;
-            const children = groupMap.get(group.id) || [];
-            children.forEach((child) => {
-              child.penId = pen.id;
-              child.color = pen.color;
-              child.strokeWidth = pen.width;
-              child.lineCap = group.lineCap;
-            });
+            if (syncTargets) {
+              const children = groupMap.get(group.id) || [];
+              children.forEach((child) => {
+                child.penId = pen.id;
+                child.color = pen.color;
+                child.strokeWidth = pen.width;
+                child.lineCap = group.lineCap;
+              });
+            }
             if (penMenu) {
               penMenu.querySelectorAll('.pen-option').forEach((opt) => {
                 opt.classList.toggle('active', opt.dataset.penId === pen.id);
@@ -9052,7 +9675,7 @@
             }
           };
           const current = pens.find((pen) => pen.id === group.penId) || pens[0];
-          if (current) applyPen(current, { render: false });
+          if (current) applyPen(current, { render: false, syncTargets: false });
           penMenu.innerHTML = pens
             .map(
               (pen) => `
@@ -9326,12 +9949,14 @@
           const pens = SETTINGS.pens || [];
           const applyPen = (pen, targets = [l], options = {}) => {
             if (!pen) return;
-            const { render = true } = options;
-            targets.forEach((target) => {
-              target.penId = pen.id;
-              target.color = pen.color;
-              target.strokeWidth = pen.width;
-            });
+            const { render = true, syncTargets = true } = options;
+            if (syncTargets) {
+              targets.forEach((target) => {
+                target.penId = pen.id;
+                target.color = pen.color;
+                target.strokeWidth = pen.width;
+              });
+            }
             penIcon.style.background = pen.color;
             penIcon.style.color = pen.color;
             penIcon.style.setProperty('--pen-width', pen.width);
@@ -9347,7 +9972,7 @@
             }
           };
           const current = pens.find((pen) => pen.id === l.penId) || pens[0];
-          if (current) applyPen(current, [l], { render: false });
+          if (current) applyPen(current, [l], { render: false, syncTargets: false });
 
           penMenu.innerHTML = pens
             .map(
@@ -10118,7 +10743,7 @@
           micro: pend.micro ?? 0,
           damp: Math.max(0, pend.damp ?? 0),
         }));
-      if (!pendulums.length) return { path: [], stops: [] };
+      if (!pendulums.length) return { path: [], durationSec: 0 };
       const dt = duration / samples;
       const path = [];
       let settleCount = 0;
@@ -10149,50 +10774,19 @@
         }
       }
 
-      if (path.length < 3) return { path, stops: [] };
-      let minX = Infinity;
-      let maxX = -Infinity;
-      let minY = Infinity;
-      let maxY = -Infinity;
-      path.forEach((pt) => {
-        if (pt.x < minX) minX = pt.x;
-        if (pt.x > maxX) maxX = pt.x;
-        if (pt.y < minY) minY = pt.y;
-        if (pt.y > maxY) maxY = pt.y;
-      });
-      const span = Math.max(maxX - minX, maxY - minY, 1);
-      const loopThreshold = Math.max(1.2, span * 0.02);
-      const minGap = Math.max(18, Math.floor(path.length * 0.02));
-      const maxChecks = 120;
-      const stops = [0];
-      const stopSet = new Set(stops);
-      for (let i = minGap; i < path.length; i += 1) {
-        const pt = path[i];
-        let checks = 0;
-        for (let j = 0; j <= i - minGap; j += 1) {
-          const prev = path[j];
-          if (Math.hypot(pt.x - prev.x, pt.y - prev.y) <= loopThreshold) {
-            if (!stopSet.has(j)) {
-              stops.push(j);
-              stopSet.add(j);
-            }
-            break;
-          }
-          checks += 1;
-          if (checks >= maxChecks) break;
-        }
-      }
-      if (!stopSet.has(path.length - 1)) stops.push(path.length - 1);
-      stops.sort((a, b) => a - b);
-      return { path, stops };
+      return { path, durationSec: path[path.length - 1]?.t ?? 0 };
     }
 
     mountHarmonographPlotter(layer, target) {
       if (!target) return;
       const data = this.computeHarmonographPlotterData(layer);
       const speeds = [0.25, 0.5, 1, 2, 4];
-      const initialPlayhead = this.harmonographPlotterState?.playhead ?? 0;
-      const initialSpeed = this.harmonographPlotterState?.speed ?? 1;
+      const maxPlayhead = Math.max(0, data.path.length - 1);
+      const initialPlayhead = clamp(this.harmonographPlotterState?.playhead ?? 0, 0, maxPlayhead);
+      const rememberedSpeed = this.harmonographPlotterState?.speed ?? 1;
+      const initialSpeed = speeds.includes(rememberedSpeed) ? rememberedSpeed : 1;
+      const durationSec = Math.max(0.1, data.durationSec || layer?.params?.duration || 1);
+      const progressPerMs = maxPlayhead > 0 ? maxPlayhead / (durationSec * 1000) : 0;
       const wrapper = document.createElement('div');
       wrapper.className = 'harmonograph-plotter mb-4';
       wrapper.innerHTML = `
@@ -10201,14 +10795,10 @@
           <button type="button" class="harmonograph-plotter-play text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">Play</button>
         </div>
         <canvas class="harmonograph-plotter-canvas" width="240" height="240"></canvas>
-        <div class="harmonograph-plotter-meta text-[10px] text-vectura-muted">Scrub the playhead or snap to detected loop starts.</div>
+        <div class="harmonograph-plotter-meta text-[10px] text-vectura-muted">Scrub the playhead to preview the drawing sequence.</div>
         <div class="harmonograph-plotter-row">
           <label class="text-[10px] uppercase tracking-widest text-vectura-muted">Playhead</label>
-          <input class="harmonograph-plotter-range" type="range" min="0" max="${Math.max(1, data.path.length - 1)}" step="1" value="${clamp(
-            initialPlayhead,
-            0,
-            Math.max(1, data.path.length - 1)
-          )}">
+          <input class="harmonograph-plotter-range" type="range" min="0" max="${maxPlayhead}" step="1" value="${initialPlayhead}">
         </div>
         <div class="harmonograph-plotter-row">
           <label class="text-[10px] uppercase tracking-widest text-vectura-muted">Speed</label>
@@ -10218,29 +10808,22 @@
               .join('')}
           </select>
         </div>
-        <div class="harmonograph-plotter-stops"></div>
       `;
       target.appendChild(wrapper);
       const canvas = wrapper.querySelector('.harmonograph-plotter-canvas');
       const playBtn = wrapper.querySelector('.harmonograph-plotter-play');
       const range = wrapper.querySelector('.harmonograph-plotter-range');
       const speedSelect = wrapper.querySelector('.harmonograph-plotter-speed');
-      const stopsRow = wrapper.querySelector('.harmonograph-plotter-stops');
-      if (!canvas || !range || !speedSelect || !playBtn || !stopsRow) return;
-
-      const stopMarkup = data.stops
-        .slice(0, 12)
-        .map((stop, idx) => `<button type="button" class="harmonograph-stop-btn" data-stop="${stop}">Loop ${idx + 1}</button>`)
-        .join('');
-      stopsRow.innerHTML = stopMarkup || '<span class="text-[10px] text-vectura-muted">No loop stops detected</span>';
-      const stopButtons = Array.from(stopsRow.querySelectorAll('.harmonograph-stop-btn'));
+      if (!canvas || !range || !speedSelect || !playBtn) return;
 
       const state = {
         rafId: null,
         playing: false,
-        playhead: clamp(parseInt(range.value, 10) || 0, 0, Math.max(1, data.path.length - 1)),
-        speed: parseFloat(speedSelect.value) || 1,
+        playhead: clamp(parseInt(range.value, 10) || 0, 0, maxPlayhead),
+        speed: initialSpeed,
         lastTs: 0,
+        maxPlayhead,
+        progressPerMs,
       };
       this.harmonographPlotterState = state;
       const ctx = canvas.getContext('2d');
@@ -10304,11 +10887,12 @@
         const last = state.lastTs || ts;
         const delta = Math.max(0, ts - last);
         state.lastTs = ts;
-        const step = (data.path.length / 6000) * delta * state.speed;
+        const step = delta * state.progressPerMs * state.speed;
         state.playhead += step;
-        if (state.playhead >= data.path.length - 1) {
-          state.playhead = data.path.length - 1;
+        if (state.playhead >= state.maxPlayhead) {
+          state.playhead = state.maxPlayhead;
           state.playing = false;
+          state.rafId = null;
           playBtn.textContent = 'Play';
         }
         range.value = `${Math.round(state.playhead)}`;
@@ -10317,6 +10901,12 @@
       };
 
       playBtn.onclick = () => {
+        if (state.maxPlayhead <= 0) return;
+        if (!state.playing && state.playhead >= state.maxPlayhead) {
+          state.playhead = 0;
+          range.value = '0';
+          draw();
+        }
         state.playing = !state.playing;
         playBtn.textContent = state.playing ? 'Pause' : 'Play';
         if (state.playing) {
@@ -10328,20 +10918,21 @@
         }
       };
       range.oninput = (e) => {
-        state.playhead = parseInt(e.target.value, 10) || 0;
+        state.playhead = clamp(parseInt(e.target.value, 10) || 0, 0, state.maxPlayhead);
+        if (state.playing) state.lastTs = 0;
         draw();
       };
       speedSelect.onchange = (e) => {
-        state.speed = parseFloat(e.target.value) || 1;
+        const nextSpeed = parseFloat(e.target.value);
+        state.speed = Number.isFinite(nextSpeed) ? nextSpeed : 1;
+        if (state.playing) state.lastTs = 0;
       };
-      stopButtons.forEach((btn) => {
-        btn.onclick = () => {
-          const stop = parseInt(btn.dataset.stop || '0', 10) || 0;
-          state.playhead = clamp(stop, 0, data.path.length - 1);
-          range.value = `${state.playhead}`;
-          draw();
-        };
-      });
+      if (state.maxPlayhead <= 0) {
+        playBtn.disabled = true;
+        playBtn.classList.add('opacity-60', 'cursor-not-allowed');
+        range.disabled = true;
+        speedSelect.disabled = true;
+      }
 
       draw();
     }
@@ -10424,7 +11015,7 @@
       resetBtn.textContent = 'Reset to Defaults';
       resetBtn.onclick = () => {
         if (this.app.pushHistory) this.app.pushHistory();
-        const transform = this.getTransformSnapshot(layer.params);
+        const transform = this.getDefaultTransformForType(layer.type, layer.params);
         if (!layer.paramStates) layer.paramStates = {};
         delete layer.paramStates[layer.type];
         const base = ALGO_DEFAULTS[layer.type] ? clone(ALGO_DEFAULTS[layer.type]) : {};
@@ -13112,6 +13703,10 @@
             val = def.options[0].value;
             layer.params[def.id] = val;
           }
+          if (def.options?.length && !def.options.some((opt) => opt.value === val)) {
+            val = def.options[0].value;
+            layer.params[def.id] = val;
+          }
           const optionsHtml = def.options
             .map(
               (opt) =>
@@ -13137,6 +13732,18 @@
             input.onchange = (e) => {
               if (this.app.pushHistory) this.app.pushHistory();
               const next = e.target.value;
+              if (isPetalisLayerType(layer.type) && def.id === 'preset' && next === 'custom') {
+                layer.params.preset = 'custom';
+                layer.params.shadings = [];
+                layer.params.innerShading = false;
+                layer.params.outerShading = false;
+                this.storeLayerParams(layer);
+                span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
+                this.app.regen();
+                this.buildControls();
+                this.updateFormula();
+                return;
+              }
               if (isPetalisLayerType(layer.type) && def.id === 'preset' && next !== 'custom') {
                 const preset = (PETALIS_PRESET_LIBRARY || []).find((item) => item.id === next);
                 const presetBase = layer.type === 'petalisDesigner' ? 'petalisDesigner' : 'petalis';

@@ -19,6 +19,25 @@ const OVERRIDES = {
     centerRingDensity: 20,
     connectorCount: 20,
     shadings: [],
+    innerOuterLock: false,
+    profileTransitionPosition: 48,
+    profileTransitionFeather: 35,
+    designerInner: {
+      profile: 'teardrop',
+      anchors: [
+        { t: 0, w: 0, in: null, out: { t: 0.18, w: 0 } },
+        { t: 0.44, w: 0.78, in: { t: 0.3, w: 0.78 }, out: { t: 0.58, w: 0.78 } },
+        { t: 1, w: 0, in: { t: 0.82, w: 0 }, out: null },
+      ],
+    },
+    designerOuter: {
+      profile: 'spatulate',
+      anchors: [
+        { t: 0, w: 0, in: null, out: { t: 0.24, w: 0 } },
+        { t: 0.62, w: 1.12, in: { t: 0.46, w: 1.12 }, out: { t: 0.76, w: 1.12 } },
+        { t: 1, w: 0, in: { t: 0.86, w: 0 }, out: null },
+      ],
+    },
   },
   petalisDesigner: {
     count: 95,
@@ -27,6 +46,25 @@ const OVERRIDES = {
     centerDensity: 14,
     centerRingDensity: 18,
     shadings: [],
+    innerOuterLock: false,
+    profileTransitionPosition: 42,
+    profileTransitionFeather: 60,
+    designerInner: {
+      profile: 'lanceolate',
+      anchors: [
+        { t: 0, w: 0, in: null, out: { t: 0.2, w: 0 } },
+        { t: 0.5, w: 0.66, in: { t: 0.36, w: 0.66 }, out: { t: 0.64, w: 0.66 } },
+        { t: 1, w: 0, in: { t: 0.82, w: 0 }, out: null },
+      ],
+    },
+    designerOuter: {
+      profile: 'rounded',
+      anchors: [
+        { t: 0, w: 0, in: null, out: { t: 0.22, w: 0 } },
+        { t: 0.56, w: 1.02, in: { t: 0.4, w: 1.02 }, out: { t: 0.72, w: 1.02 } },
+        { t: 1, w: 0, in: { t: 0.84, w: 0 }, out: null },
+      ],
+    },
   },
   spiral: { loops: 9, res: 42 },
   grid: { rows: 16, cols: 16 },

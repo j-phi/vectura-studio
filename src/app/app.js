@@ -83,7 +83,6 @@
         selectionOutline: SETTINGS.selectionOutline,
         selectionOutlineColor: SETTINGS.selectionOutlineColor,
         selectionOutlineWidth: SETTINGS.selectionOutlineWidth,
-        showCanvasHelp: SETTINGS.showCanvasHelp,
         gridOverlay: SETTINGS.gridOverlay,
         uiSections: SETTINGS.uiSections ? clone(SETTINGS.uiSections) : null,
         aboutVisible: SETTINGS.aboutVisible !== false,
@@ -129,7 +128,6 @@
       SETTINGS.selectionOutline = snapshot.selectionOutline ?? SETTINGS.selectionOutline;
       SETTINGS.selectionOutlineColor = snapshot.selectionOutlineColor ?? SETTINGS.selectionOutlineColor;
       SETTINGS.selectionOutlineWidth = snapshot.selectionOutlineWidth ?? SETTINGS.selectionOutlineWidth;
-      SETTINGS.showCanvasHelp = snapshot.showCanvasHelp ?? SETTINGS.showCanvasHelp;
       SETTINGS.gridOverlay = snapshot.gridOverlay ?? SETTINGS.gridOverlay;
       if (snapshot.uiSections && typeof snapshot.uiSections === 'object') {
         SETTINGS.uiSections = clone(snapshot.uiSections);
@@ -226,7 +224,6 @@
           selectionOutline: SETTINGS.selectionOutline,
           selectionOutlineColor: SETTINGS.selectionOutlineColor,
           selectionOutlineWidth: SETTINGS.selectionOutlineWidth,
-          showCanvasHelp: SETTINGS.showCanvasHelp,
           gridOverlay: SETTINGS.gridOverlay,
           uiSections: SETTINGS.uiSections ? clone(SETTINGS.uiSections) : null,
           aboutVisible: SETTINGS.aboutVisible !== false,
@@ -281,7 +278,6 @@
       SETTINGS.selectionOutline = s.selectionOutline ?? SETTINGS.selectionOutline;
       SETTINGS.selectionOutlineColor = s.selectionOutlineColor ?? SETTINGS.selectionOutlineColor;
       SETTINGS.selectionOutlineWidth = s.selectionOutlineWidth ?? SETTINGS.selectionOutlineWidth;
-      SETTINGS.showCanvasHelp = s.showCanvasHelp ?? SETTINGS.showCanvasHelp;
       SETTINGS.gridOverlay = s.gridOverlay ?? SETTINGS.gridOverlay;
       if (s.uiSections && typeof s.uiSections === 'object') {
         SETTINGS.uiSections = clone(s.uiSections);
@@ -382,7 +378,6 @@
 
     render() {
       this.renderer.draw();
-      if (this.ui?.updateCanvasHelpPosition) this.ui.updateCanvasHelpPosition();
       this.updateStats();
       this.persistPreferencesDebounced();
     }

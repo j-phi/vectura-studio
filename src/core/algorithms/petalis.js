@@ -6,6 +6,26 @@
   const GOLDEN_ANGLE = 137.507764;
   const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
   const lerp = (a, b, t) => a + (b - a) * t;
+  const smoothstep = (edge0, edge1, x) => {
+    const denom = Math.max(1e-6, edge1 - edge0);
+    const t = clamp((x - edge0) / denom, 0, 1);
+    return t * t * (3 - 2 * t);
+  };
+  const hasDesignerAnchors = (designer) =>
+    Array.isArray(designer?.anchors) && designer.anchors.length >= 2;
+  const normalizeDesignerSymmetry = (value) => {
+    if (value === 'horizontal' || value === 'vertical' || value === 'both') return value;
+    return 'none';
+  };
+  const profileBlendWeight = (progress, positionPct, featherPct) => {
+    const pos = clamp((positionPct ?? 50) / 100, 0, 1);
+    const feather = clamp((featherPct ?? 0) / 100, 0, 1);
+    if (feather <= 1e-6) return progress >= pos ? 1 : 0;
+    const half = feather * 0.5;
+    const start = pos - half;
+    const end = pos + half;
+    return smoothstep(start, end, progress);
+  };
   const toRad = (deg) => (deg * Math.PI) / 180;
   const tipClamp = (t, tipCurl, sharpness, profile) => {
     const curl = clamp(tipCurl ?? 0, 0, 1);
@@ -222,20 +242,21 @@
   const buildDesignerProfile = (designer, length, widthRatio, steps = 32) => {
     const anchors = Array.isArray(designer?.anchors) ? designer.anchors : [];
     if (anchors.length < 2) return null;
+    const clampHandleT = (value) => clamp(value, -1, 2);
     const usable = anchors
       .map((anchor) => ({
         t: clamp(anchor?.t ?? 0, 0, 1),
         w: Math.max(0, anchor?.w ?? 0),
         in: anchor?.in
           ? {
-              t: clamp(anchor.in.t ?? anchor.t ?? 0, 0, 1),
-              w: Math.max(0, anchor.in.w ?? 0),
+              t: clampHandleT(anchor.in.t ?? anchor.t ?? 0),
+              w: Number.isFinite(anchor.in.w) ? anchor.in.w : anchor?.w ?? 0,
             }
           : null,
         out: anchor?.out
           ? {
-              t: clamp(anchor.out.t ?? anchor.t ?? 0, 0, 1),
-              w: Math.max(0, anchor.out.w ?? 0),
+              t: clampHandleT(anchor.out.t ?? anchor.t ?? 0),
+              w: Number.isFinite(anchor.out.w) ? anchor.out.w : anchor?.w ?? 0,
             }
           : null,
       }))
@@ -247,8 +268,8 @@
     usable[usable.length - 1].w = 0;
     const maxHalf = Math.max(0.5, (widthRatio * length * 0.5));
     const toLocal = (point) => ({
-      x: clamp(point.t, 0, 1) * length,
-      y: Math.max(0, point.w) * maxHalf,
+      x: point.t * length,
+      y: point.w * maxHalf,
     });
     const samples = [];
     const stepsPerSeg = Math.max(6, Math.round((steps || 32) / Math.max(1, usable.length - 1)));
@@ -294,6 +315,44 @@
       }
     }
     return points[points.length - 1].y;
+  };
+
+  const applyDesignerProfileSymmetry = (points, length, symmetry) => {
+    if (!Array.isArray(points) || points.length < 2) return points;
+    const mode = normalizeDesignerSymmetry(symmetry);
+    if (mode !== 'horizontal' && mode !== 'both') {
+      return points.map((pt) => ({ x: pt.x, y: Math.max(0, pt.y) }));
+    }
+    const safeLength = Math.max(1e-6, length ?? points[points.length - 1]?.x ?? 1);
+    return points.map((pt) => {
+      const x = clamp(pt.x, 0, safeLength);
+      const mirroredX = safeLength - x;
+      const mirrored = sampleProfileWidth(mirroredX, points);
+      return {
+        x,
+        y: Math.max(0, (Math.max(0, pt.y) + Math.max(0, mirrored)) * 0.5),
+      };
+    });
+  };
+
+  const blendProfilePoints = (innerPoints, outerPoints, blend, length, steps = 32) => {
+    const hasInner = Array.isArray(innerPoints) && innerPoints.length >= 2;
+    const hasOuter = Array.isArray(outerPoints) && outerPoints.length >= 2;
+    if (!hasInner && !hasOuter) return null;
+    if (!hasInner) return outerPoints.map((pt) => ({ x: pt.x, y: pt.y }));
+    if (!hasOuter) return innerPoints.map((pt) => ({ x: pt.x, y: pt.y }));
+    const mix = clamp(blend, 0, 1);
+    const sampleCount = Math.max(12, Math.round(steps));
+    const out = [];
+    const safeLength = Math.max(1, length);
+    for (let i = 0; i <= sampleCount; i++) {
+      const t = i / sampleCount;
+      const x = safeLength * t;
+      const iw = sampleProfileWidth(x, innerPoints);
+      const ow = sampleProfileWidth(x, outerPoints);
+      out.push({ x, y: Math.max(0, lerp(iw, ow, mix)) });
+    }
+    return out;
   };
 
   const buildRoundedTipArc = (left, right, roundAmt) => {
@@ -430,10 +489,6 @@
 
     const makeLine = (offset, tStart, tEnd, hatchAngle, gradient = 0, spiral = 0) => {
       const path = [];
-      const hatch = toRad(hatchAngle || 0);
-      const cosH = Math.cos(hatch);
-      const sinH = Math.sin(hatch);
-      const rotate = (pt) => ({ x: pt.x * cosH - pt.y * sinH, y: pt.x * sinH + pt.y * cosH });
       for (let i = 0; i <= steps; i++) {
         const tRaw = lerp(tStart, tEnd, i / steps);
         const t = tipClamp(tRaw, tipCurl, effectiveSharpness, profile);
@@ -457,8 +512,33 @@
         const g = gradient ? lerp(1, 0.4, t) : 1;
         const spiralOffset = spiral ? offset + t * 0.3 * spiral : offset;
         const curl = twist * effectiveLength * 0.02 * t * t;
-        const local = rotate({ x: t * effectiveLength, y: spiralOffset * half * g + curl });
-        path.push(local);
+        path.push({ x: t * effectiveLength, y: spiralOffset * half * g + curl });
+      }
+      const hatch = toRad(hatchAngle || 0);
+      if (Math.abs(hatch) > 1e-6 && path.length) {
+        // Rotate hatch orientation around each line's own center so hatch angle
+        // does not translate the shading band across the canvas.
+        const pivot = path.reduce(
+          (acc, pt) => {
+            acc.x += pt.x;
+            acc.y += pt.y;
+            return acc;
+          },
+          { x: 0, y: 0 }
+        );
+        const inv = 1 / path.length;
+        pivot.x *= inv;
+        pivot.y *= inv;
+        const cosH = Math.cos(hatch);
+        const sinH = Math.sin(hatch);
+        for (let i = 0; i < path.length; i++) {
+          const dx = path[i].x - pivot.x;
+          const dy = path[i].y - pivot.y;
+          path[i] = {
+            x: pivot.x + dx * cosH - dy * sinH,
+            y: pivot.y + dx * sinH + dy * cosH,
+          };
+        }
       }
       const cosA = Math.cos(angle);
       const sinA = Math.sin(angle);
@@ -1176,9 +1256,15 @@
     }
     const shadingStack = shadings.length ? shadings : legacyShadings;
     const ringMode = p.ringMode || 'single';
+    const designerShapeOnly = Boolean(p.useDesignerShapeOnly || p.label === 'Petalis Designer');
     const normalizeTipRotate = (value) => (value > 10 ? value / 10 : value);
-    const tipRotate = normalizeTipRotate(p.tipTwist ?? 0);
-    const rawCenterBoost = p.centerCurlBoost ?? 0;
+    const tipTwist = designerShapeOnly ? 0 : p.tipTwist ?? 0;
+    const tipRotate = normalizeTipRotate(tipTwist);
+    const tipCurl = designerShapeOnly ? 0 : p.tipCurl ?? 0;
+    const tipSharpness = designerShapeOnly ? 1 : p.tipSharpness ?? 0.5;
+    const baseFlare = designerShapeOnly ? 0 : p.baseFlare ?? 0;
+    const basePinch = designerShapeOnly ? 0 : p.basePinch ?? 0;
+    const rawCenterBoost = designerShapeOnly ? 0 : p.centerCurlBoost ?? 0;
     const centerBoost = rawCenterBoost > 2 ? rawCenterBoost / 50 : rawCenterBoost;
     const lengthRatio = Math.max(0.1, p.petalLengthRatio ?? 1);
     const sizeRatio = Math.max(0.1, p.petalSizeRatio ?? 1);
@@ -1206,6 +1292,19 @@
     const driftStrength = clamp(p.driftStrength ?? 0, 0, 1);
     const driftNoise = Math.max(0.01, p.driftNoise ?? 0.2);
     const angularDrift = toRad(p.angularDrift ?? 0);
+    let designerInner = hasDesignerAnchors(p.designerInner) ? p.designerInner : null;
+    let designerOuter = hasDesignerAnchors(p.designerOuter) ? p.designerOuter : null;
+    if (p.innerOuterLock) {
+      const locked = designerInner || designerOuter;
+      if (locked) {
+        designerInner = locked;
+        designerOuter = locked;
+      }
+    }
+    const canBlendDesignerProfiles = Boolean(designerInner && designerOuter);
+    const transitionPosition = clamp(p.profileTransitionPosition ?? 50, 0, 100);
+    const transitionFeather = clamp(p.profileTransitionFeather ?? 0, 0, 100);
+    const designerSymmetry = normalizeDesignerSymmetry(p.designerSymmetry);
 
     const ringDefs =
       ringMode === 'dual'
@@ -1240,14 +1339,25 @@
             ? p.designerInner
             : p.designerOuter
           : p.designerOuter || p.designerInner;
-      const ringProfile = ringDesigner?.profile || p.petalProfile || 'teardrop';
-      const ringCenterProfile = ringMode === 'dual' && ringIndex === 0
-        ? p.centerProfile || ringProfile
-        : p.centerProfile || ringProfile;
+      const fallbackRingProfile =
+        ringDesigner?.profile || designerInner?.profile || designerOuter?.profile || p.centerProfile || 'teardrop';
+      const legacyRingProfile = designerShapeOnly ? fallbackRingProfile : ringDesigner?.profile || p.petalProfile || fallbackRingProfile;
+      const innerProfileName = designerInner?.profile || p.centerProfile || legacyRingProfile;
+      const outerProfileName = designerOuter?.profile || (designerShapeOnly ? innerProfileName : p.petalProfile || innerProfileName);
       for (let i = 0; i < count; i++) {
         const t = count <= 1 ? 0.5 : i / (count - 1);
         const spiralT = lerp(spiralMin, spiralMax, Math.pow(t, spiralTightness));
         const radial = lerp(minR, maxR, spiralT) * radialGrowth;
+        const radialProgress = clamp(radial / Math.max(1e-6, visibleMaxR), 0, 1);
+        const transitionMix = canBlendDesignerProfiles
+          ? profileBlendWeight(radialProgress, transitionPosition, transitionFeather)
+          : 0;
+        const ringProfile = canBlendDesignerProfiles
+          ? transitionMix < 0.5
+            ? innerProfileName
+            : outerProfileName
+          : legacyRingProfile;
+        const ringCenterProfile = p.centerProfile || ringProfile;
         let radialBase = anchorRadius + radial;
         if (anchorMode === 'all') radialBase = anchorRadius;
         const drift = angularDrift * driftStrength * noise.noise2D(i * driftNoise, ringIndex * 2.1);
@@ -1276,10 +1386,10 @@
         const curlBoost = centerBoost * centerFactor;
         const waveBoost = (p.centerWaveBoost ?? 0) * centerFactor;
         const wavePhase = rng.nextFloat() * TAU;
-        const lengthScale = tipLengthScale(p.tipCurl ?? 0);
+        const lengthScale = tipLengthScale(tipCurl);
         const effectiveLength = Math.max(1, length * lengthScale);
-        const profilePoints =
-          buildDesignerProfile(ringDesigner, effectiveLength, widthRatio, petalSteps) ||
+        const waveAmp = Math.max(0, (p.edgeWaveAmp ?? 0) * (1 + waveBoost));
+        const fallbackProfile = () =>
           buildLeafProfile({
             length: effectiveLength,
             widthRatio,
@@ -1287,10 +1397,10 @@
             profile: ringProfile,
             centerProfile: ringCenterProfile,
             morphWeight,
-            sharpness: p.tipSharpness ?? 0.5,
-            baseFlare: p.baseFlare ?? 0,
-            basePinch: p.basePinch ?? 0,
-            waveAmp: Math.max(0, (p.edgeWaveAmp ?? 0) * (1 + waveBoost)),
+            sharpness: tipSharpness,
+            baseFlare,
+            basePinch,
+            waveAmp,
             waveFreq: p.edgeWaveFreq ?? 2,
             wavePhase,
             leafSidePos: p.leafSidePos,
@@ -1299,12 +1409,28 @@
             leafSideHandle: p.leafSideHandle,
             leafTipHandle: p.leafTipHandle,
           });
+        let profilePoints = null;
+        if (canBlendDesignerProfiles) {
+          const innerPoints = buildDesignerProfile(designerInner, effectiveLength, widthRatio, petalSteps);
+          const outerPoints = buildDesignerProfile(designerOuter, effectiveLength, widthRatio, petalSteps);
+          profilePoints = blendProfilePoints(
+            innerPoints,
+            outerPoints,
+            transitionMix,
+            effectiveLength,
+            petalSteps
+          );
+        } else {
+          profilePoints = buildDesignerProfile(ringDesigner, effectiveLength, widthRatio, petalSteps);
+        }
+        if (!profilePoints) profilePoints = fallbackProfile();
+        profilePoints = applyDesignerProfileSymmetry(profilePoints, effectiveLength, designerSymmetry);
         let outline = buildPetal({
           length,
           widthRatio,
           steps: petalSteps,
           tipTwist: tipRotate,
-          tipCurl: p.tipCurl ?? 0,
+          tipCurl,
           curlBoost,
           baseX,
           baseY,
@@ -1312,10 +1438,10 @@
           profile: ringProfile,
           centerProfile: ringCenterProfile,
           morphWeight,
-          sharpness: p.tipSharpness ?? 0.5,
-          baseFlare: p.baseFlare ?? 0,
-          basePinch: p.basePinch ?? 0,
-          waveAmp: Math.max(0, (p.edgeWaveAmp ?? 0) * (1 + waveBoost)),
+          sharpness: tipSharpness,
+          baseFlare,
+          basePinch,
+          waveAmp,
           waveFreq: p.edgeWaveFreq ?? 2,
           wavePhase,
           profilePoints,
@@ -1332,10 +1458,10 @@
           profile: ringProfile,
           centerProfile: ringCenterProfile,
           morphWeight,
-          sharpness: p.tipSharpness ?? 0.5,
-          baseFlare: p.baseFlare ?? 0,
-          basePinch: p.basePinch ?? 0,
-          waveAmp: Math.max(0, (p.edgeWaveAmp ?? 0) * (1 + waveBoost)),
+          sharpness: tipSharpness,
+          baseFlare,
+          basePinch,
+          waveAmp,
           waveFreq: p.edgeWaveFreq ?? 2,
           wavePhase,
           angle,
@@ -1343,7 +1469,7 @@
           baseY,
           shadings: shadingStack,
           tipTwist: tipRotate,
-          tipCurl: p.tipCurl ?? 0,
+          tipCurl,
           curlBoost,
           rng,
           noise,
@@ -1411,10 +1537,15 @@
     return paths;
   };
 
-  const formula = (p) =>
-    `θ = i * ${p.spiralMode === 'custom' ? p.customAngle ?? GOLDEN_ANGLE : GOLDEN_ANGLE}°\n` +
-    `r = lerp(${p.spiralStart ?? 0}, ${p.spiralEnd ?? 1}, t^${p.spiralTightness ?? 1}) * ${p.radialGrowth ?? 1}\n` +
-    `petal = profile(${p.petalProfile || 'teardrop'})`;
+  const formula = (p) => {
+    const designerShapeOnly = Boolean(p.useDesignerShapeOnly || p.label === 'Petalis Designer');
+    const profileExpr = designerShapeOnly ? 'designer(inner->outer)' : `profile(${p.petalProfile || 'teardrop'})`;
+    return (
+      `θ = i * ${p.spiralMode === 'custom' ? p.customAngle ?? GOLDEN_ANGLE : GOLDEN_ANGLE}°\n` +
+      `r = lerp(${p.spiralStart ?? 0}, ${p.spiralEnd ?? 1}, t^${p.spiralTightness ?? 1}) * ${p.radialGrowth ?? 1}\n` +
+      `petal = ${profileExpr}`
+    );
+  };
 
   window.Vectura = window.Vectura || {};
   window.Vectura.PetalisAlgorithm = { generate, formula };
