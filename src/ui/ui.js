@@ -4963,61 +4963,6 @@
           { t: 0.38, w: 0.94, in: { t: 0.25, w: 0.86 }, out: { t: 0.54, w: 0.8 } },
           { t: 0.78, w: 0.44, in: { t: 0.68, w: 0.5 }, out: { t: 0.9, w: 0.22 } },
           { t: 1, w: 0, in: { t: 0.94, w: 0 }, out: null },
-<<<<<<< ours
-<<<<<<< ours
-=======
-=======
->>>>>>> theirs
-        ],
-        spoon: [
-          { t: 0, w: 0, in: null, out: { t: 0.18, w: 0.04 } },
-          { t: 0.62, w: 1.08, in: { t: 0.44, w: 0.92 }, out: { t: 0.78, w: 0.94 } },
-          { t: 1, w: 0, in: { t: 0.88, w: 0.02 }, out: null },
-        ],
-        rounded: [
-          { t: 0, w: 0, in: null, out: { t: 0.18, w: 0.08 } },
-          { t: 0.5, w: 1.06, in: { t: 0.34, w: 0.96 }, out: { t: 0.66, w: 0.96 } },
-          { t: 1, w: 0, in: { t: 0.82, w: 0.08 }, out: null },
-        ],
-        notched: [
-          { t: 0, w: 0, in: null, out: { t: 0.14, w: 0 } },
-          { t: 0.42, w: 0.9, in: { t: 0.28, w: 0.8 }, out: { t: 0.58, w: 0.75 } },
-          { t: 0.88, w: 0.18, in: { t: 0.8, w: 0.28 }, out: { t: 0.95, w: 0.04 } },
-          { t: 1, w: 0, in: { t: 0.97, w: 0 }, out: null },
-<<<<<<< ours
-=======
-        ],
-        spatulate: [
-          { t: 0, w: 0, in: null, out: { t: 0.24, w: 0.02 } },
-          { t: 0.7, w: 1.02, in: { t: 0.52, w: 0.86 }, out: { t: 0.84, w: 0.9 } },
-          { t: 1, w: 0, in: { t: 0.9, w: 0 }, out: null },
-        ],
-        marquise: [
-          { t: 0, w: 0, in: null, out: { t: 0.2, w: 0 } },
-          { t: 0.5, w: 0.82, in: { t: 0.36, w: 0.74 }, out: { t: 0.64, w: 0.74 } },
-          { t: 1, w: 0, in: { t: 0.8, w: 0 }, out: null },
-        ],
-        dagger: [
-          { t: 0, w: 0, in: null, out: { t: 0.18, w: 0 } },
-          { t: 0.45, w: 0.56, in: { t: 0.34, w: 0.48 }, out: { t: 0.58, w: 0.42 } },
-          { t: 1, w: 0, in: { t: 0.86, w: 0 }, out: null },
->>>>>>> theirs
-        ],
-        spatulate: [
-          { t: 0, w: 0, in: null, out: { t: 0.24, w: 0.02 } },
-          { t: 0.7, w: 1.02, in: { t: 0.52, w: 0.86 }, out: { t: 0.84, w: 0.9 } },
-          { t: 1, w: 0, in: { t: 0.9, w: 0 }, out: null },
-        ],
-        marquise: [
-          { t: 0, w: 0, in: null, out: { t: 0.2, w: 0 } },
-          { t: 0.5, w: 0.82, in: { t: 0.36, w: 0.74 }, out: { t: 0.64, w: 0.74 } },
-          { t: 1, w: 0, in: { t: 0.8, w: 0 }, out: null },
-        ],
-        dagger: [
-          { t: 0, w: 0, in: null, out: { t: 0.18, w: 0 } },
-          { t: 0.45, w: 0.56, in: { t: 0.34, w: 0.48 }, out: { t: 0.58, w: 0.42 } },
-          { t: 1, w: 0, in: { t: 0.86, w: 0 }, out: null },
->>>>>>> theirs
         ],
         spoon: [
           { t: 0, w: 0, in: null, out: { t: 0.18, w: 0.04 } },
@@ -5050,16 +4995,6 @@
           { t: 0.45, w: 0.56, in: { t: 0.34, w: 0.48 }, out: { t: 0.58, w: 0.42 } },
           { t: 1, w: 0, in: { t: 0.86, w: 0 }, out: null },
         ],
-      };
-      const template = templates[profile] || templates.teardrop;
-      return {
-        profile,
-        anchors: template.map((anchor) => scaleAnchor(anchor)),
-      };
-      const template = templates[profile] || templates.teardrop;
-      return {
-        profile,
-        anchors: template.map((anchor) => scaleAnchor(anchor)),
       };
       const template = templates[profile] || templates.teardrop;
       return {
@@ -5113,71 +5048,8 @@
         lineSpacing: Math.max(0.2, shadings[idx]?.lineSpacing ?? 1),
         density: Math.max(0.2, shadings[idx]?.density ?? 1),
         angle: shadings[idx]?.angle ?? 0,
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-=======
-        enabled: shadings[idx]?.enabled === true,
-=======
-<<<<<<< ours
->>>>>>> theirs
-=======
-        enabled: shadings[idx]?.enabled === true,
-=======
-<<<<<<< ours
->>>>>>> theirs
-=======
-        enabled: shadings[idx]?.enabled === true,
-=======
-<<<<<<< ours
->>>>>>> theirs
-=======
-        enabled: shadings[idx]?.enabled === true,
-=======
-<<<<<<< ours
->>>>>>> theirs
-=======
-        enabled: shadings[idx]?.enabled === true,
-=======
-<<<<<<< ours
->>>>>>> theirs
-=======
-        enabled: shadings[idx]?.enabled === true,
-=======
-<<<<<<< ours
->>>>>>> theirs
-<<<<<<< ours
         jitter: clamp(shadings[idx]?.jitter ?? 0, 0, 1),
         lengthJitter: clamp(shadings[idx]?.lengthJitter ?? 0, 0, 1),
-=======
-        enabled: shadings[idx]?.enabled === true,
->>>>>>> theirs
-=======
-        enabled: shadings[idx]?.enabled === true,
->>>>>>> theirs
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
->>>>>>> theirs
       });
       const state = {
         layerId: layer.id,
@@ -5416,74 +5288,6 @@
       root.className = 'petal-designer-window';
       root.innerHTML = this.createPetalDesignerMarkup();
       document.body.appendChild(root);
-<<<<<<< ours
-=======
-      const profileOuter = root.querySelector('select[data-petal-profile="outer"]');
-      const profileInner = root.querySelector('select[data-petal-profile="inner"]');
-      if (profileOuter) profileOuter.value = state.outer.profile || 'teardrop';
-      if (profileInner) profileInner.value = state.inner.profile || 'teardrop';
-
-      root.querySelectorAll('input[data-shade]').forEach((input) => {
-        const side = input.dataset.shade;
-        const key = input.dataset.shadeKey;
-        const target = side === 'inner' ? state.shadeInner : state.shadeOuter;
-        if (!target || key == null) return;
-        input.value = target[key];
-      });
-
-      const applyChanges = () => {
-        this.applyPetalDesignerToLayer(state);
-        this.renderPetalDesigner();
-      };
-
-      root.querySelectorAll('select[data-petal-profile]').forEach((select) => {
-        select.onchange = () => {
-          const side = select.dataset.petalProfile === 'inner' ? 'inner' : 'outer';
-          state[side].profile = select.value;
-          applyChanges();
-        };
-      });
-
-      root.querySelectorAll('.petal-copy-btn').forEach((btn) => {
-        btn.onclick = () => {
-          if (btn.dataset.copyDirection === 'left-to-right') {
-            state.inner = JSON.parse(JSON.stringify(state.outer));
-            if (profileInner) profileInner.value = state.inner.profile;
-          } else {
-            state.outer = JSON.parse(JSON.stringify(state.inner));
-            if (profileOuter) profileOuter.value = state.outer.profile;
-          }
-          this.normalizeDesignerShape(state.outer);
-          this.normalizeDesignerShape(state.inner);
-          applyChanges();
-        };
-      });
-
-      root.querySelectorAll('input[data-shade]').forEach((input) => {
-        input.oninput = () => {
-          const side = input.dataset.shade === 'inner' ? 'shadeInner' : 'shadeOuter';
-          const key = input.dataset.shadeKey;
-          const val = parseFloat(input.value);
-          if (!Number.isFinite(val) || !key) return;
-          state[side][key] = val;
-          state[side].enabled = true;
-          applyChanges();
-        };
-      });
-
-      root.querySelectorAll('.petal-tool-btn').forEach((btn) => {
-        btn.onclick = () => {
-          this.petalDesigner.tool = btn.dataset.petalTool || 'direct';
-          root.querySelectorAll('.petal-tool-btn').forEach((node) => node.classList.toggle('active', node === btn));
-        };
-      });
-
-      const closeBtn = root.querySelector('.petal-close');
-      if (closeBtn) closeBtn.onclick = () => this.closePetalDesigner();
-
-      const toolDefault = root.querySelector('.petal-tool-btn[data-petal-tool="direct"]');
-      if (toolDefault) toolDefault.classList.add('active');
->>>>>>> theirs
 
       this.petalDesigner = {
         root,
@@ -5535,61 +5339,6 @@
         canvasHeight: 180,
       });
       mountTarget.appendChild(root);
-
-<<<<<<< ours
-=======
-      const profileOuter = root.querySelector('select[data-petal-profile="outer"]');
-      const profileInner = root.querySelector('select[data-petal-profile="inner"]');
-      if (profileOuter) profileOuter.value = state.outer.profile || 'teardrop';
-      if (profileInner) profileInner.value = state.inner.profile || 'teardrop';
-
-      root.querySelectorAll('input[data-shade]').forEach((input) => {
-        const side = input.dataset.shade;
-        const key = input.dataset.shadeKey;
-        const target = side === 'inner' ? state.shadeInner : state.shadeOuter;
-        if (!target || key == null) return;
-        input.value = target[key];
-      });
-
-      root.querySelectorAll('select[data-petal-profile]').forEach((select) => {
-        select.onchange = () => {
-          const side = select.dataset.petalProfile === 'inner' ? 'inner' : 'outer';
-          state[side].profile = select.value;
-          this.applyPetalDesignerToLayer(state, { refreshControls: false });
-          this.renderPetalDesigner(this.inlinePetalDesigner);
-        };
-      });
-
-      root.querySelectorAll('.petal-copy-btn').forEach((btn) => {
-        btn.onclick = () => {
-          if (btn.dataset.copyDirection === 'left-to-right') {
-            state.inner = JSON.parse(JSON.stringify(state.outer));
-            if (profileInner) profileInner.value = state.inner.profile;
-          } else {
-            state.outer = JSON.parse(JSON.stringify(state.inner));
-            if (profileOuter) profileOuter.value = state.outer.profile;
-          }
-          this.normalizeDesignerShape(state.outer);
-          this.normalizeDesignerShape(state.inner);
-          this.applyPetalDesignerToLayer(state, { refreshControls: false });
-          this.renderPetalDesigner(this.inlinePetalDesigner);
-        };
-      });
-
-      root.querySelectorAll('input[data-shade]').forEach((input) => {
-        input.oninput = () => {
-          const side = input.dataset.shade === 'inner' ? 'shadeInner' : 'shadeOuter';
-          const key = input.dataset.shadeKey;
-          const val = parseFloat(input.value);
-          if (!Number.isFinite(val) || !key) return;
-          state[side][key] = val;
-          state[side].enabled = true;
-          this.applyPetalDesignerToLayer(state, { refreshControls: false });
-          this.renderPetalDesigner(this.inlinePetalDesigner);
-        };
-      });
-
->>>>>>> theirs
       const pd = {
         root,
         state,
@@ -6180,72 +5929,9 @@
         params.shadings[index].lineSpacing = Math.max(0.2, base.lineSpacing ?? 1);
         params.shadings[index].density = Math.max(0.2, base.density ?? 1);
         params.shadings[index].angle = base.angle ?? 0;
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-=======
-        params.shadings[index].enabled = base?.enabled === true;
-=======
-<<<<<<< ours
->>>>>>> theirs
-=======
-        params.shadings[index].enabled = base?.enabled === true;
-=======
-<<<<<<< ours
->>>>>>> theirs
-=======
-        params.shadings[index].enabled = base?.enabled === true;
-=======
-<<<<<<< ours
->>>>>>> theirs
-=======
-        params.shadings[index].enabled = base?.enabled === true;
-=======
-<<<<<<< ours
->>>>>>> theirs
-=======
-        params.shadings[index].enabled = base?.enabled === true;
-=======
-<<<<<<< ours
->>>>>>> theirs
-=======
-        params.shadings[index].enabled = base?.enabled === true;
-=======
-<<<<<<< ours
->>>>>>> theirs
-<<<<<<< ours
         params.shadings[index].jitter = clamp(base.jitter ?? 0, 0, 1);
         params.shadings[index].lengthJitter = clamp(base.lengthJitter ?? 0, 0, 1);
-        params.shadings[index].enabled = base.enabled !== false;
-=======
-        params.shadings[index].enabled = base?.enabled === true;
->>>>>>> theirs
-=======
-        params.shadings[index].enabled = base?.enabled === true;
->>>>>>> theirs
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
->>>>>>> theirs
+        params.shadings[index].enabled = base?.enabled !== false;
       };
       ensureShade(0, state.shadeOuter);
       ensureShade(1, state.shadeInner);
@@ -6801,61 +6487,6 @@
           params.innerCount = Math.max(20, Math.round(params.innerCount * ratio));
           params.outerCount = Math.max(30, Math.round(params.outerCount * ratio));
         }
-<<<<<<< ours
-=======
-      });
-      this.applyRandomizationBias(layer);
-    }
-
-    applyRandomizationBias(layer) {
-      if (!layer || !layer.params) return;
-      if (layer.type === 'shapePack') {
-        this.applyShapePackRandomBias(layer.params);
-      } else if (layer.type === 'petalis' || layer.type === 'petalisDesigner') {
-        this.applyPetalisRandomBias(layer.params);
-      } else if (layer.type === 'rainfall') {
-        this.applyRainfallRandomBias(layer.params);
-      } else if (layer.type === 'lissajous') {
-        this.applyLissajousRandomBias(layer.params);
-      }
-    }
-
-    applyShapePackRandomBias(params) {
-      params.count = Math.round(clamp(params.count ?? 320, 220, 760));
-      params.attempts = Math.round(clamp(params.attempts ?? 1800, 900, 5000));
-      params.padding = clamp(params.padding ?? 1, 0, 2.5);
-      const minR = clamp(params.minR ?? 1.5, 0.5, 9);
-      const maxR = clamp(params.maxR ?? 16, minR + 2, 42);
-      params.minR = minR;
-      params.maxR = maxR;
-      params.perspective = clamp(params.perspective ?? 0, -0.35, 0.45);
-      if (Math.random() < 0.15) {
-        params.maxR = clamp(params.maxR * 1.35, params.minR + 2, 55);
-        params.count = Math.round(clamp(params.count * 0.8, 160, 760));
-      }
-    }
-
-    applyPetalisRandomBias(params) {
-      params.petalSteps = Math.round(clamp(params.petalSteps ?? 32, 14, 44));
-      params.count = Math.round(clamp(params.count ?? 240, 40, 360));
-      params.innerCount = Math.round(clamp(params.innerCount ?? 110, 20, 190));
-      params.outerCount = Math.round(clamp(params.outerCount ?? 170, 30, 250));
-      params.spiralTightness = clamp(params.spiralTightness ?? 1.2, 0.7, 5);
-      params.radialGrowth = clamp(params.radialGrowth ?? 1, 0.25, 3.2);
-      params.centerDensity = Math.round(clamp(params.centerDensity ?? 40, 6, 85));
-      params.connectorCount = Math.round(clamp(params.connectorCount ?? 20, 4, 70));
-      if (params.ringMode === 'dual') {
-        const sum = (params.innerCount || 0) + (params.outerCount || 0);
-        const maxDual = 420;
-        if (sum > maxDual) {
-          const ratio = maxDual / Math.max(1, sum);
-          params.innerCount = Math.max(20, Math.round(params.innerCount * ratio));
-          params.outerCount = Math.max(30, Math.round(params.outerCount * ratio));
-        }
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
       }
       if (Array.isArray(params.shadings) && params.shadings.length > 2) {
         params.shadings = params.shadings.slice(0, 2);
