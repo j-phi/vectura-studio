@@ -14,6 +14,7 @@
     PALETTES,
     PRESETS,
     PETALIS_PRESETS,
+    RandomizationUtils,
   } = window.Vectura || {};
 
   const PETALIS_PRESET_LIBRARY = (Array.isArray(PRESETS) ? PRESETS : Array.isArray(PETALIS_PRESETS) ? PETALIS_PRESETS : [])
@@ -4962,6 +4963,61 @@
           { t: 0.38, w: 0.94, in: { t: 0.25, w: 0.86 }, out: { t: 0.54, w: 0.8 } },
           { t: 0.78, w: 0.44, in: { t: 0.68, w: 0.5 }, out: { t: 0.9, w: 0.22 } },
           { t: 1, w: 0, in: { t: 0.94, w: 0 }, out: null },
+<<<<<<< ours
+<<<<<<< ours
+=======
+=======
+>>>>>>> theirs
+        ],
+        spoon: [
+          { t: 0, w: 0, in: null, out: { t: 0.18, w: 0.04 } },
+          { t: 0.62, w: 1.08, in: { t: 0.44, w: 0.92 }, out: { t: 0.78, w: 0.94 } },
+          { t: 1, w: 0, in: { t: 0.88, w: 0.02 }, out: null },
+        ],
+        rounded: [
+          { t: 0, w: 0, in: null, out: { t: 0.18, w: 0.08 } },
+          { t: 0.5, w: 1.06, in: { t: 0.34, w: 0.96 }, out: { t: 0.66, w: 0.96 } },
+          { t: 1, w: 0, in: { t: 0.82, w: 0.08 }, out: null },
+        ],
+        notched: [
+          { t: 0, w: 0, in: null, out: { t: 0.14, w: 0 } },
+          { t: 0.42, w: 0.9, in: { t: 0.28, w: 0.8 }, out: { t: 0.58, w: 0.75 } },
+          { t: 0.88, w: 0.18, in: { t: 0.8, w: 0.28 }, out: { t: 0.95, w: 0.04 } },
+          { t: 1, w: 0, in: { t: 0.97, w: 0 }, out: null },
+<<<<<<< ours
+=======
+        ],
+        spatulate: [
+          { t: 0, w: 0, in: null, out: { t: 0.24, w: 0.02 } },
+          { t: 0.7, w: 1.02, in: { t: 0.52, w: 0.86 }, out: { t: 0.84, w: 0.9 } },
+          { t: 1, w: 0, in: { t: 0.9, w: 0 }, out: null },
+        ],
+        marquise: [
+          { t: 0, w: 0, in: null, out: { t: 0.2, w: 0 } },
+          { t: 0.5, w: 0.82, in: { t: 0.36, w: 0.74 }, out: { t: 0.64, w: 0.74 } },
+          { t: 1, w: 0, in: { t: 0.8, w: 0 }, out: null },
+        ],
+        dagger: [
+          { t: 0, w: 0, in: null, out: { t: 0.18, w: 0 } },
+          { t: 0.45, w: 0.56, in: { t: 0.34, w: 0.48 }, out: { t: 0.58, w: 0.42 } },
+          { t: 1, w: 0, in: { t: 0.86, w: 0 }, out: null },
+>>>>>>> theirs
+        ],
+        spatulate: [
+          { t: 0, w: 0, in: null, out: { t: 0.24, w: 0.02 } },
+          { t: 0.7, w: 1.02, in: { t: 0.52, w: 0.86 }, out: { t: 0.84, w: 0.9 } },
+          { t: 1, w: 0, in: { t: 0.9, w: 0 }, out: null },
+        ],
+        marquise: [
+          { t: 0, w: 0, in: null, out: { t: 0.2, w: 0 } },
+          { t: 0.5, w: 0.82, in: { t: 0.36, w: 0.74 }, out: { t: 0.64, w: 0.74 } },
+          { t: 1, w: 0, in: { t: 0.8, w: 0 }, out: null },
+        ],
+        dagger: [
+          { t: 0, w: 0, in: null, out: { t: 0.18, w: 0 } },
+          { t: 0.45, w: 0.56, in: { t: 0.34, w: 0.48 }, out: { t: 0.58, w: 0.42 } },
+          { t: 1, w: 0, in: { t: 0.86, w: 0 }, out: null },
+>>>>>>> theirs
         ],
         spoon: [
           { t: 0, w: 0, in: null, out: { t: 0.18, w: 0.04 } },
@@ -4994,6 +5050,16 @@
           { t: 0.45, w: 0.56, in: { t: 0.34, w: 0.48 }, out: { t: 0.58, w: 0.42 } },
           { t: 1, w: 0, in: { t: 0.86, w: 0 }, out: null },
         ],
+      };
+      const template = templates[profile] || templates.teardrop;
+      return {
+        profile,
+        anchors: template.map((anchor) => scaleAnchor(anchor)),
+      };
+      const template = templates[profile] || templates.teardrop;
+      return {
+        profile,
+        anchors: template.map((anchor) => scaleAnchor(anchor)),
       };
       const template = templates[profile] || templates.teardrop;
       return {
@@ -5052,6 +5118,18 @@
 <<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+=======
+        enabled: shadings[idx]?.enabled === true,
+=======
+<<<<<<< ours
+>>>>>>> theirs
+=======
+        enabled: shadings[idx]?.enabled === true,
+=======
+<<<<<<< ours
+>>>>>>> theirs
 =======
         enabled: shadings[idx]?.enabled === true,
 =======
@@ -5085,6 +5163,12 @@
 <<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 =======
@@ -6101,6 +6185,18 @@
 <<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+=======
+        params.shadings[index].enabled = base?.enabled === true;
+=======
+<<<<<<< ours
+>>>>>>> theirs
+=======
+        params.shadings[index].enabled = base?.enabled === true;
+=======
+<<<<<<< ours
+>>>>>>> theirs
 =======
         params.shadings[index].enabled = base?.enabled === true;
 =======
@@ -6135,6 +6231,12 @@
 <<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 =======
 >>>>>>> theirs
 =======
@@ -6642,105 +6744,14 @@
     }
 
     randomizeLayerParams(layer) {
-      if (!layer) return;
-      const defs = [...(this.controls[layer.type] || []), ...COMMON_CONTROLS];
-      const rng = (min, max) => min + Math.random() * (max - min);
-      const safeRange = (min, max) => {
-        const span = max - min;
-        if (span <= 0) return { min, max };
-        const pad = span * 0.1;
-        const minSafe = min + pad;
-        const maxSafe = max - pad;
-        if (maxSafe <= minSafe) return { min, max };
-        return { min: minSafe, max: maxSafe };
-      };
-      const roundStep = (value, step, min, max) => {
-        const snapped = roundToStep(value, step);
-        return clamp(snapped, min, max);
-      };
-      const randomizeNoise = (noise) => {
-        if (!noise || typeof noise !== 'object') return;
-        WAVE_NOISE_DEFS.forEach((nDef) => {
-          if (nDef.showIf && !nDef.showIf(noise)) return;
-          if (nDef.type === 'select') {
-            const opts = nDef.options || [];
-            const available = nDef.randomExclude ? opts.filter((opt) => !nDef.randomExclude.includes(opt.value)) : opts;
-            if (!available.length) return;
-            const pick = available[Math.floor(Math.random() * available.length)];
-            noise[nDef.key] = pick.value;
-            return;
-          }
-          if (nDef.type === 'angle') {
-            const randMin = Number.isFinite(nDef.randomMin) ? nDef.randomMin : nDef.min;
-            const randMax = Number.isFinite(nDef.randomMax) ? nDef.randomMax : nDef.max;
-            const { min, max } = safeRange(randMin, randMax);
-            const step = nDef.step ?? 1;
-            noise[nDef.key] = roundStep(rng(min, max), step, nDef.min, nDef.max);
-            return;
-          }
-          if (nDef.type === 'range') {
-            const randMin = Number.isFinite(nDef.randomMin) ? nDef.randomMin : nDef.min;
-            const randMax = Number.isFinite(nDef.randomMax) ? nDef.randomMax : nDef.max;
-            const { min, max } = safeRange(randMin, randMax);
-            const step = nDef.step ?? 1;
-            noise[nDef.key] = roundStep(rng(min, max), step, nDef.min, nDef.max);
-          }
-        });
-      };
-
-      defs.forEach((def) => {
-        if (def.showIf && !def.showIf(layer.params)) return;
-        if (layer.type === 'harmonograph' && def.id === 'showPendulumGuides') return;
-        if (def.type === 'section' || def.type === 'file' || def.type === 'image') return;
-        if (def.type === 'noiseList') {
-          if (layer.type === 'wavetable') {
-            const noises = this.ensureWavetableNoises(layer);
-            noises.forEach((noise) => randomizeNoise(noise));
-          } else if (layer.type === 'spiral') {
-            const noises = this.ensureSpiralNoises(layer);
-            noises.forEach((noise) => randomizeNoise(noise));
-          }
-          return;
-        }
-        if (def.type === 'angle') {
-          const randMin = Number.isFinite(def.randomMin) ? def.randomMin : def.min;
-          const randMax = Number.isFinite(def.randomMax) ? def.randomMax : def.max;
-          const { min, max } = safeRange(randMin, randMax);
-          const step = def.step ?? 1;
-          layer.params[def.id] = roundStep(rng(min, max), step, def.min, def.max);
-          return;
-        } else if (def.type === 'checkbox') {
-          layer.params[def.id] = Math.random() > 0.5;
-          return;
-        }
-        if (def.type === 'select') {
-          const opts = def.options || [];
-          const available = def.randomExclude ? opts.filter((opt) => !def.randomExclude.includes(opt.value)) : opts;
-          if (!available.length) return;
-          const pick = available[Math.floor(Math.random() * available.length)];
-          layer.params[def.id] = pick.value;
-          return;
-        }
-        if (def.type === 'rangeDual') {
-          const randMin = Number.isFinite(def.randomMin) ? def.randomMin : def.min;
-          const randMax = Number.isFinite(def.randomMax) ? def.randomMax : def.max;
-          const { min, max } = safeRange(randMin, randMax);
-          const step = def.step ?? 1;
-          let a = rng(min, max);
-          let b = rng(min, max);
-          if (a > b) [a, b] = [b, a];
-          if (b - a < step) b = Math.min(max, a + step);
-          layer.params[def.minKey] = roundStep(a, step, def.min, def.max);
-          layer.params[def.maxKey] = roundStep(b, step, def.min, def.max);
-          return;
-        }
-        if (def.type === 'range') {
-          const randMin = Number.isFinite(def.randomMin) ? def.randomMin : def.min;
-          const randMax = Number.isFinite(def.randomMax) ? def.randomMax : def.max;
-          const { min, max } = safeRange(randMin, randMax);
-          const step = def.step ?? 1;
-          layer.params[def.id] = roundStep(rng(min, max), step, def.min, def.max);
-        }
+      if (!layer || !RandomizationUtils?.randomizeLayerParams) return;
+      RandomizationUtils.randomizeLayerParams({
+        layer,
+        controls: this.controls,
+        commonControls: COMMON_CONTROLS,
+        waveNoiseDefs: WAVE_NOISE_DEFS,
+        ensureWavetableNoises: () => this.ensureWavetableNoises(layer),
+        ensureSpiralNoises: () => this.ensureSpiralNoises(layer),
       });
       this.applyRandomizationBias(layer);
     }
@@ -6790,6 +6801,61 @@
           params.innerCount = Math.max(20, Math.round(params.innerCount * ratio));
           params.outerCount = Math.max(30, Math.round(params.outerCount * ratio));
         }
+<<<<<<< ours
+=======
+      });
+      this.applyRandomizationBias(layer);
+    }
+
+    applyRandomizationBias(layer) {
+      if (!layer || !layer.params) return;
+      if (layer.type === 'shapePack') {
+        this.applyShapePackRandomBias(layer.params);
+      } else if (layer.type === 'petalis' || layer.type === 'petalisDesigner') {
+        this.applyPetalisRandomBias(layer.params);
+      } else if (layer.type === 'rainfall') {
+        this.applyRainfallRandomBias(layer.params);
+      } else if (layer.type === 'lissajous') {
+        this.applyLissajousRandomBias(layer.params);
+      }
+    }
+
+    applyShapePackRandomBias(params) {
+      params.count = Math.round(clamp(params.count ?? 320, 220, 760));
+      params.attempts = Math.round(clamp(params.attempts ?? 1800, 900, 5000));
+      params.padding = clamp(params.padding ?? 1, 0, 2.5);
+      const minR = clamp(params.minR ?? 1.5, 0.5, 9);
+      const maxR = clamp(params.maxR ?? 16, minR + 2, 42);
+      params.minR = minR;
+      params.maxR = maxR;
+      params.perspective = clamp(params.perspective ?? 0, -0.35, 0.45);
+      if (Math.random() < 0.15) {
+        params.maxR = clamp(params.maxR * 1.35, params.minR + 2, 55);
+        params.count = Math.round(clamp(params.count * 0.8, 160, 760));
+      }
+    }
+
+    applyPetalisRandomBias(params) {
+      params.petalSteps = Math.round(clamp(params.petalSteps ?? 32, 14, 44));
+      params.count = Math.round(clamp(params.count ?? 240, 40, 360));
+      params.innerCount = Math.round(clamp(params.innerCount ?? 110, 20, 190));
+      params.outerCount = Math.round(clamp(params.outerCount ?? 170, 30, 250));
+      params.spiralTightness = clamp(params.spiralTightness ?? 1.2, 0.7, 5);
+      params.radialGrowth = clamp(params.radialGrowth ?? 1, 0.25, 3.2);
+      params.centerDensity = Math.round(clamp(params.centerDensity ?? 40, 6, 85));
+      params.connectorCount = Math.round(clamp(params.connectorCount ?? 20, 4, 70));
+      if (params.ringMode === 'dual') {
+        const sum = (params.innerCount || 0) + (params.outerCount || 0);
+        const maxDual = 420;
+        if (sum > maxDual) {
+          const ratio = maxDual / Math.max(1, sum);
+          params.innerCount = Math.max(20, Math.round(params.innerCount * ratio));
+          params.outerCount = Math.max(30, Math.round(params.outerCount * ratio));
+        }
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
       }
       if (Array.isArray(params.shadings) && params.shadings.length > 2) {
         params.shadings = params.shadings.slice(0, 2);

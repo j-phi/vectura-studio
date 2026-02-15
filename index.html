@@ -38,6 +38,7 @@
   </script>
 </head>
 
+<<<<<<< ours
 <body class="font-mono text-sm antialiased h-screen flex flex-col bg-vectura-bg text-vectura-text overflow-hidden">
   <header class="h-12 border-b border-vectura-border bg-vectura-panel flex items-center justify-between px-4 z-20">
     <div class="flex items-center gap-3">
@@ -90,590 +91,799 @@
           ◀
         </button>
       </div>
-
-      <div class="pane-body flex-1 overflow-y-auto" id="left-panel-content">
-        <div class="p-4 left-panel-sections">
-          <div id="left-section-algorithm" class="left-panel-section">
-            <button id="left-section-algorithm-header" class="left-panel-section-header" type="button">
-              <span class="left-panel-section-title">Algorithm</span>
-              <span class="left-panel-section-toggle" aria-hidden="true"></span>
+      <main class="flex-1 flex overflow-hidden relative">
+        <aside id="left-pane"
+          class="pane pane-left bg-vectura-panel border-r border-vectura-border flex flex-col z-10 shadow-xl">
+          <div
+            class="pane-header pane-header-left p-4 border-b border-vectura-border flex justify-between items-center">
+            <span class="pane-title font-bold text-vectura-accent">GENERATOR</span>
+            <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.70</span>
+            <button id="btn-pane-toggle-left" class="pane-toggle pane-toggle-left" type="button"
+              aria-label="Toggle left pane">
+              ◀
             </button>
-            <div id="left-section-algorithm-body" class="left-panel-section-body">
-              <label class="control-label flex items-center gap-2">
-                <span>Algorithm</span>
-                <button type="button" class="info-btn" data-info="global.algorithm" aria-label="Toggle About">i</button>
-              </label>
-              <select id="generator-module"
-                class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent mb-4"></select>
-              <div id="algo-about" class="bg-vectura-bg border border-vectura-border p-3">
-                <div class="flex items-center justify-between mb-2">
-                  <div class="flex items-center gap-2">
-                    <div class="w-1 h-3 bg-vectura-muted"></div>
-                    <span class="text-[10px] uppercase text-vectura-muted tracking-widest">About</span>
+          </div>
+
+          <div class="pane-body flex-1 overflow-y-auto" id="left-panel-content">
+            <div class="p-4 left-panel-sections">
+              <div id="left-section-algorithm" class="left-panel-section">
+                <button id="left-section-algorithm-header" class="left-panel-section-header" type="button">
+                  <span class="left-panel-section-title">Algorithm</span>
+                  <span class="left-panel-section-toggle" aria-hidden="true"></span>
+                </button>
+                <div id="left-section-algorithm-body" class="left-panel-section-body">
+                  <label class="control-label flex items-center gap-2">
+                    <span>Algorithm</span>
+                    <button type="button" class="info-btn" data-info="global.algorithm"
+                      aria-label="Toggle About">i</button>
+                  </label>
+                  <select id="generator-module"
+                    class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent mb-4"></select>
+                  <div id="algo-about" class="bg-vectura-bg border border-vectura-border p-3">
+                    <div class="flex items-center justify-between mb-2">
+                      <div class="flex items-center gap-2">
+                        <div class="w-1 h-3 bg-vectura-muted"></div>
+                        <span class="text-[10px] uppercase text-vectura-muted tracking-widest">About</span>
+                      </div>
+                      <button id="algo-about-close" type="button" class="info-btn" aria-label="Close About">x</button>
+                    </div>
+                    <p id="algo-desc" class="text-xs text-vectura-muted leading-relaxed">...</p>
                   </div>
-                  <button id="algo-about-close" type="button" class="info-btn" aria-label="Close About">x</button>
                 </div>
-                <p id="algo-desc" class="text-xs text-vectura-muted leading-relaxed">...</p>
               </div>
+
+              <div id="left-section-transform-seed" class="left-panel-section">
+                <button id="left-section-transform-seed-header" class="left-panel-section-header" type="button">
+                  <span class="left-panel-section-title" id="transform-label">Transform &amp; Seed</span>
+                  <span class="left-panel-section-toggle" aria-hidden="true"></span>
+                </button>
+                <div id="left-section-transform-seed-body" class="left-panel-section-body">
+                  <div class="control-group border-none p-0 m-0">
+                    <div class="grid grid-cols-2 gap-2 mb-2" id="seed-controls">
+                      <div>
+                        <label class="text-[10px] text-vectura-muted">Seed</label>
+                        <input type="number" id="inp-seed"
+                          class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
+                      </div>
+                      <div>
+                        <button id="btn-rand-seed"
+                          class="w-full h-full bg-vectura-border text-[10px] hover:text-white mt-[1px] hover:bg-vectura-border/80 transition-colors"
+                          type="button">
+                          RANDOMIZE
+                        </button>
+                      </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 mb-2">
+                      <div>
+                        <label class="text-[10px] text-vectura-muted">Pos X (mm)</label>
+                        <input type="number" id="inp-pos-x"
+                          class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
+                      </div>
+                      <div>
+                        <label class="text-[10px] text-vectura-muted">Pos Y (mm)</label>
+                        <input type="number" id="inp-pos-y"
+                          class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
+                      </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                      <div>
+                        <label class="text-[10px] text-vectura-muted">Scale X</label>
+                        <input type="number" step="0.1" id="inp-scale-x"
+                          class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
+                      </div>
+                      <div>
+                        <label class="text-[10px] text-vectura-muted">Scale Y</label>
+                        <input type="number" step="0.1" id="inp-scale-y"
+                          class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
+                      </div>
+                    </div>
+                    <div class="mt-2">
+                      <label class="text-[10px] text-vectura-muted">Rotation (deg)</label>
+                      <input type="number" step="1" id="inp-rotation"
+                        class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div id="left-section-algorithm-configuration" class="left-panel-section">
+                <button id="left-section-algorithm-configuration-header" class="left-panel-section-header"
+                  type="button">
+                  <span class="left-panel-section-title">Algorithm Configuration</span>
+                  <span class="left-panel-section-toggle" aria-hidden="true"></span>
+                </button>
+                <div id="left-section-algorithm-configuration-body" class="left-panel-section-body">
+                  <div id="dynamic-controls"></div>
+                </div>
+              </div>
+
+              <div id="left-section-optimization" class="left-panel-section">
+                <button id="left-section-optimization-header" class="left-panel-section-header" type="button">
+                  <span class="left-panel-section-title">Optimization</span>
+                  <span class="left-panel-section-toggle" aria-hidden="true"></span>
+                </button>
+                <div id="left-section-optimization-body" class="left-panel-section-body">
+                  <div id="optimization-controls"></div>
+                </div>
+              </div>
+            </div>
+=======
+    <main class="flex-1 flex overflow-hidden relative">
+      <aside id="left-pane" class="pane pane-left bg-vectura-panel border-r border-vectura-border flex flex-col z-10 shadow-xl">
+        <div class="pane-header pane-header-left p-4 border-b border-vectura-border flex justify-between items-center">
+          <span class="pane-title font-bold text-vectura-accent">GENERATOR</span>
+<<<<<<< ours
+          <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.70</span>
+=======
+<<<<<<< ours
+<<<<<<< ours
+          <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.71</span>
+=======
+          <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.70</span>
+>>>>>>> theirs
+=======
+          <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.70</span>
+>>>>>>> theirs
+>>>>>>> theirs
+          <button id="btn-pane-toggle-left" class="pane-toggle pane-toggle-left" type="button" aria-label="Toggle left pane">
+            ◀
+          </button>
+        </div>
+
+        <div class="pane-body flex-1 overflow-y-auto" id="left-panel-content">
+          <div class="p-4 left-panel-sections">
+            <div id="left-section-algorithm" class="left-panel-section">
+              <button id="left-section-algorithm-header" class="left-panel-section-header" type="button">
+                <span class="left-panel-section-title">Algorithm</span>
+                <span class="left-panel-section-toggle" aria-hidden="true"></span>
+              </button>
+              <div id="left-section-algorithm-body" class="left-panel-section-body">
+                <label class="control-label flex items-center gap-2">
+                  <span>Algorithm</span>
+                  <button type="button" class="info-btn" data-info="global.algorithm" aria-label="Toggle About">i</button>
+                </label>
+                <select
+                  id="generator-module"
+                  class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent mb-4"
+                ></select>
+                <div id="algo-about" class="bg-vectura-bg border border-vectura-border p-3">
+                  <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-2">
+                      <div class="w-1 h-3 bg-vectura-muted"></div>
+                      <span class="text-[10px] uppercase text-vectura-muted tracking-widest">About</span>
+                    </div>
+                    <button id="algo-about-close" type="button" class="info-btn" aria-label="Close About">x</button>
+                  </div>
+                  <p id="algo-desc" class="text-xs text-vectura-muted leading-relaxed">...</p>
+                </div>
+              </div>
+            </div>
+
+            <div id="left-section-transform-seed" class="left-panel-section">
+              <button id="left-section-transform-seed-header" class="left-panel-section-header" type="button">
+                <span class="left-panel-section-title" id="transform-label">Transform &amp; Seed</span>
+                <span class="left-panel-section-toggle" aria-hidden="true"></span>
+              </button>
+              <div id="left-section-transform-seed-body" class="left-panel-section-body">
+                <div class="control-group border-none p-0 m-0">
+                  <div class="grid grid-cols-2 gap-2 mb-2" id="seed-controls">
+                    <div>
+                      <label class="text-[10px] text-vectura-muted">Seed</label>
+                      <input
+                        type="number"
+                        id="inp-seed"
+                        class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <button
+                        id="btn-rand-seed"
+                        class="w-full h-full bg-vectura-border text-[10px] hover:text-white mt-[1px] hover:bg-vectura-border/80 transition-colors"
+                        type="button"
+                      >
+                        RANDOMIZE
+                      </button>
+                    </div>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2 mb-2">
+                    <div>
+                      <label class="text-[10px] text-vectura-muted">Pos X (mm)</label>
+                      <input
+                        type="number"
+                        id="inp-pos-x"
+                        class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label class="text-[10px] text-vectura-muted">Pos Y (mm)</label>
+                      <input
+                        type="number"
+                        id="inp-pos-y"
+                        class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2">
+                    <div>
+                      <label class="text-[10px] text-vectura-muted">Scale X</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        id="inp-scale-x"
+                        class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label class="text-[10px] text-vectura-muted">Scale Y</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        id="inp-scale-y"
+                        class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div class="mt-2">
+                    <label class="text-[10px] text-vectura-muted">Rotation (deg)</label>
+                    <input
+                      type="number"
+                      step="1"
+                      id="inp-rotation"
+                      class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div id="left-section-algorithm-configuration" class="left-panel-section">
+              <button id="left-section-algorithm-configuration-header" class="left-panel-section-header" type="button">
+                <span class="left-panel-section-title">Algorithm Configuration</span>
+                <span class="left-panel-section-toggle" aria-hidden="true"></span>
+              </button>
+              <div id="left-section-algorithm-configuration-body" class="left-panel-section-body">
+                <div id="dynamic-controls"></div>
+              </div>
+            </div>
+
+            <div id="left-section-optimization" class="left-panel-section">
+              <button id="left-section-optimization-header" class="left-panel-section-header" type="button">
+                <span class="left-panel-section-title">Optimization</span>
+                <span class="left-panel-section-toggle" aria-hidden="true"></span>
+              </button>
+              <div id="left-section-optimization-body" class="left-panel-section-body">
+                <div id="optimization-controls"></div>
+              </div>
+            </div>
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+          </div>
+        </aside>
+
+        <div id="left-resizer" class="pane-resizer" aria-hidden="true"></div>
+
+        <section class="flex-1 flex flex-col bg-[#121214] relative overflow-hidden">
+          <div id="tool-bar" class="tool-bar" aria-label="Tools">
+            <div class="tool-group">
+              <button class="tool-btn" data-tool="select" type="button" aria-label="Selection Tool (V)"
+                title="Selection (V)">
+                <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="4" y="5" width="16" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"
+                    stroke-dasharray="3 3" />
+                </svg>
+              </button>
+              <div class="tool-submenu" data-menu="select" aria-label="Selection subtools">
+                <button class="tool-sub-btn" data-select="rect" type="button" title="Rectangle Selection">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="4" y="6" width="16" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-dasharray="3 3" />
+                  </svg>
+                </button>
+                <button class="tool-sub-btn" data-select="oval" type="button" title="Oval Selection">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <ellipse cx="12" cy="12" rx="7" ry="5.5" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-dasharray="3 3" />
+                  </svg>
+                </button>
+                <button class="tool-sub-btn" data-select="pen" type="button" title="Pen Selection">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M4 18C7 9 14 6 20 8" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-dasharray="2 2" />
+                    <path d="M16.8 6.2l2.6 2.6-3.2 3.2-2.6-2.6z" fill="none" stroke="currentColor" stroke-width="1.4" />
+                  </svg>
+                </button>
+                <button class="tool-sub-btn" data-select="lasso" type="button" title="Lasso Selection">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M6 14c1.5-4.5 6.5-6 10-3 2.5 2 2 6-1.5 7.2-3.4 1.2-6.8-0.6-6.8-3.3" fill="none"
+                      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="2 2" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <button class="tool-btn" data-tool="direct" type="button" aria-label="Direct Selection Tool (A)"
+              title="Direct Selection (A)">
+              <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 2L14 12H9.5L12.5 21L9.5 22L6.5 13L3 16Z" fill="none" stroke="currentColor"
+                  stroke-width="1.6" />
+                <rect x="15.5" y="3.5" width="4.5" height="4.5" rx="0.6" fill="currentColor" />
+              </svg>
+            </button>
+            <button class="tool-btn" data-tool="hand" type="button" aria-label="Hand Tool (Space)" title="Hand (Space)">
+              <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M7 12V6.5c0-.8.6-1.5 1.4-1.5.7 0 1.3.6 1.3 1.4V12m0-5.3V5c0-.8.6-1.4 1.4-1.4s1.4.6 1.4 1.4v6.9m0-5.1V5.3c0-.8.6-1.4 1.4-1.4s1.4.6 1.4 1.4V13m0-3.6V8.5c0-.8.6-1.4 1.4-1.4s1.4.6 1.4 1.4v6.8c0 2.5-1.6 4.7-4 5.5l-2.1.7c-2.5.9-5.3-.4-6.2-2.9L5 12.5"
+                  fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+            <div class="tool-group">
+              <button class="tool-btn" data-tool="pen" type="button" aria-label="Pen Tool (P)" title="Pen (P)">
+                <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 2.2L20.2 10.2L14.8 21.8H9.2L3.8 10.2Z" fill="none" stroke="currentColor"
+                    stroke-width="1.6" stroke-linejoin="round" />
+                  <circle cx="12" cy="11.6" r="1.7" fill="currentColor" />
+                  <path d="M9.5 16.2L12 18.3L14.5 16.2" stroke="currentColor" stroke-width="1.4"
+                    stroke-linecap="round" />
+                  <line x1="5" y1="20.5" x2="19" y2="20.5" stroke="currentColor" stroke-width="1.2"
+                    stroke-linecap="round" />
+                  <circle cx="5" cy="20.5" r="1.3" fill="currentColor" />
+                  <circle cx="19" cy="20.5" r="1.3" fill="currentColor" />
+                </svg>
+              </button>
+              <div class="tool-submenu" data-menu="pen" aria-label="Pen subtools">
+                <button class="tool-sub-btn" data-pen="draw" type="button" title="Pen Tool (P)">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 2.2L20.2 10.2L14.8 21.8H9.2L3.8 10.2Z" fill="none" stroke="currentColor"
+                      stroke-width="1.6" stroke-linejoin="round" />
+                    <circle cx="12" cy="11.6" r="1.6" fill="currentColor" />
+                  </svg>
+                </button>
+                <button class="tool-sub-btn" data-pen="add" type="button" title="Add Anchor Point (+)">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M5 12h14M12 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.4" />
+                  </svg>
+                </button>
+                <button class="tool-sub-btn" data-pen="delete" type="button" title="Delete Anchor Point (-)">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M6 12h12" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.4" />
+                  </svg>
+                </button>
+                <button class="tool-sub-btn" data-pen="anchor" type="button" title="Anchor Point Tool (Shift + C)">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="2" fill="currentColor" />
+                    <path d="M3.5 12h5M15.5 12h5M12 3.5v5M12 15.5v5" stroke="currentColor" stroke-width="1.6"
+                      stroke-linecap="round" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="tool-divider"></div>
+            <div class="tool-group">
+              <button class="tool-btn" data-tool="scissor" type="button" aria-label="Scissor Tool (C)"
+                title="Scissor (C)">
+                <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="6.5" cy="7.5" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6" />
+                  <circle cx="6.5" cy="16.5" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6" />
+                  <path d="M8.6 9.2L20 4.5M8.6 14.8L20 19.5" stroke="currentColor" stroke-width="1.6"
+                    stroke-linecap="round" />
+                  <path d="M11.5 12L15 10.5M11.5 12L15 13.5" stroke="currentColor" stroke-width="1.2"
+                    stroke-linecap="round" />
+                </svg>
+              </button>
+              <div class="tool-submenu" aria-label="Scissor subtools">
+                <button class="tool-sub-btn" data-scissor="line" type="button" title="Scissor Line">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <line x1="4" y1="20" x2="20" y2="4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                  </svg>
+                </button>
+                <button class="tool-sub-btn" data-scissor="rect" type="button" title="Scissor Rectangle">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="4" y="6" width="16" height="12" rx="2" fill="none" stroke="currentColor"
+                      stroke-width="2" />
+                  </svg>
+                </button>
+                <button class="tool-sub-btn" data-scissor="circle" type="button" title="Scissor Circle">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="tool-divider"></div>
+            <button class="tool-btn tool-light hidden" id="btn-light-source" type="button" aria-label="Set Light Source"
+              title="Set Light Source">
+              <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="4.4" fill="currentColor" />
+                <path
+                  d="M12 2V5M12 19V22M2 12H5M19 12H22M4.5 4.5L6.6 6.6M17.4 17.4L19.5 19.5M4.5 19.5L6.6 17.4M17.4 6.6L19.5 4.5"
+                  stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+              </svg>
+            </button>
+          </div>
+          <div id="touch-modifier-bar" class="touch-modifier-bar hidden" aria-label="Touch Modifiers">
+            <button type="button" class="touch-mod-btn" data-touch-mod="shift" title="Shift">Shift</button>
+            <button type="button" class="touch-mod-btn" data-touch-mod="alt" title="Alt/Option">Alt</button>
+            <button type="button" class="touch-mod-btn" data-touch-mod="meta" title="Cmd/Ctrl">Cmd</button>
+            <button type="button" class="touch-mod-btn" data-touch-mod="pan" title="Pan">Pan</button>
+          </div>
+          <div class="flex-1 relative cursor-crosshair" id="viewport-container">
+            <canvas id="main-canvas" class="block absolute top-0 left-0 outline-none" role="img"
+              aria-label="Vector preview"></canvas>
+            <div class="absolute inset-0 paper-texture opacity-30 pointer-events-none mix-blend-overlay"></div>
+            <div id="notification-area" class="absolute top-4 right-4 flex flex-col gap-2 pointer-events-none z-50">
+            </div>
+          </div>
+<<<<<<< ours
+=======
+          <div class="tool-divider"></div>
+          <button
+            class="tool-btn tool-light hidden"
+            id="btn-light-source"
+            type="button"
+            aria-label="Set Light Source"
+            title="Set Light Source"
+          >
+            <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="4.4" fill="currentColor" />
+              <path
+                d="M12 2V5M12 19V22M2 12H5M19 12H22M4.5 4.5L6.6 6.6M17.4 17.4L19.5 19.5M4.5 19.5L6.6 17.4M17.4 6.6L19.5 4.5"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+              />
+            </svg>
+          </button>
+        </div>
+        <div id="touch-modifier-bar" class="touch-modifier-bar hidden" aria-label="Touch Modifiers">
+          <button type="button" class="touch-mod-btn" data-touch-mod="shift" title="Shift">Shift</button>
+          <button type="button" class="touch-mod-btn" data-touch-mod="alt" title="Alt/Option">Alt</button>
+          <button type="button" class="touch-mod-btn" data-touch-mod="meta" title="Cmd/Ctrl">Cmd</button>
+          <button type="button" class="touch-mod-btn" data-touch-mod="pan" title="Pan">Pan</button>
+        </div>
+        <div class="flex-1 relative cursor-crosshair" id="viewport-container">
+          <canvas id="main-canvas" class="block absolute top-0 left-0 outline-none" role="img" aria-label="Vector preview"></canvas>
+          <div class="absolute inset-0 paper-texture opacity-30 pointer-events-none mix-blend-overlay"></div>
+          <div id="notification-area" class="absolute top-4 right-4 flex flex-col gap-2 pointer-events-none z-50"></div>
+        </div>
+>>>>>>> theirs
+
+          <div id="bottom-resizer" class="bottom-resizer" aria-hidden="true"></div>
+
+          <div id="bottom-pane" class="bottom-pane bg-vectura-panel border-t border-vectura-border z-20 flex flex-col">
+            <div class="bottom-pane-header flex justify-between items-start p-4">
+              <span class="text-[10px] text-vectura-muted uppercase tracking-widest">Mathematical Model</span>
+              <button id="btn-pane-toggle-bottom" class="pane-toggle pane-toggle-bottom" type="button"
+                aria-label="Toggle formula panel">
+                ▼
+              </button>
+            </div>
+            <div class="bottom-pane-body px-4 pb-2 flex-1 overflow-y-auto">
+              <div id="formula-display"
+                class="text-xs text-vectura-text font-mono formula-text opacity-90 leading-relaxed">
+                ...</div>
+            </div>
+            <div class="bottom-pane-footer px-4 pb-4 flex justify-end">
+              <span class="text-[10px] text-vectura-accent" id="formula-seed-display">Seed: ---</span>
             </div>
           </div>
 
-          <div id="left-section-transform-seed" class="left-panel-section">
-            <button id="left-section-transform-seed-header" class="left-panel-section-header" type="button">
-              <span class="left-panel-section-title" id="transform-label">Transform &amp; Seed</span>
-              <span class="left-panel-section-toggle" aria-hidden="true"></span>
+          <div id="canvas-help" class="canvas-help text-[10px] text-vectura-muted pointer-events-none">
+            <p>PAN: Shift + Drag</p>
+            <p>ZOOM: Mouse Wheel</p>
+            <p>TOOLS: V Select • A Direct • P Pen • + Add Anchor • - Delete Anchor • Shift+C Anchor • C Scissor • Space
+              Hand
+            </p>
+            <p>GROUP: Cmd/Ctrl + G</p>
+            <p>EXPAND: Cmd/Ctrl + E</p>
+            <p>DUPLICATE: Cmd/Ctrl + D (Alt/Option + D fallback)</p>
+            <p>HARMONOGRAPH: Virtual plotter playhead + loop-stop snaps in controls</p>
+            <p>PETAL DESIGNER: [PETAL DESIGNER] (Petalis/Petalis Designer layers)</p>
+            <p>?: Keyboard Shortcuts</p>
+          </div>
+        </section>
+
+        <div id="right-resizer" class="pane-resizer" aria-hidden="true"></div>
+
+        <aside id="right-pane"
+          class="pane pane-right bg-vectura-panel border-l border-vectura-border flex flex-col z-10 relative overflow-hidden">
+          <div
+            class="pane-header pane-header-right p-4 border-b border-vectura-border flex justify-between items-center bg-vectura-panel z-20">
+            <span class="pane-title font-bold text-vectura-accent">LAYERS</span>
+            <button id="btn-pane-toggle-right" class="pane-toggle pane-toggle-right" type="button"
+              aria-label="Toggle right pane" title="Toggle layers panel">
+              ▶
             </button>
-            <div id="left-section-transform-seed-body" class="left-panel-section-body">
-              <div class="control-group border-none p-0 m-0">
-                <div class="grid grid-cols-2 gap-2 mb-2" id="seed-controls">
-                  <div>
-                    <label class="text-[10px] text-vectura-muted">Seed</label>
-                    <input type="number" id="inp-seed"
-                      class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
-                  </div>
-                  <div>
-                    <button id="btn-rand-seed"
-                      class="w-full h-full bg-vectura-border text-[10px] hover:text-white mt-[1px] hover:bg-vectura-border/80 transition-colors"
-                      type="button">
-                      RANDOMIZE
+            <button id="btn-add-layer"
+              class="text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors"
+              type="button" title="Add layer">
+              + ADD
+            </button>
+          </div>
+
+          <div class="pane-body flex-1 flex flex-col relative overflow-hidden">
+            <div class="flex-1 overflow-y-auto p-4 relative" id="layer-list"></div>
+            <div class="p-4 border-t border-vectura-border bg-vectura-panel">
+              <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center gap-2">
+                  <span class="pane-title font-bold text-vectura-accent text-xs">PENS</span>
+                  <div class="palette-select relative">
+                    <button id="palette-toggle" class="palette-toggle" type="button" aria-label="Select palette"
+                      title="Select palette">
+                      Blues-01
                     </button>
+                    <div id="palette-menu" class="palette-menu hidden">
+                      <input id="palette-search" class="palette-search" type="text" placeholder="Search palettes..." />
+                      <div id="palette-options" class="palette-options"></div>
+                    </div>
                   </div>
                 </div>
-                <div class="grid grid-cols-2 gap-2 mb-2">
-                  <div>
-                    <label class="text-[10px] text-vectura-muted">Pos X (mm)</label>
-                    <input type="number" id="inp-pos-x"
-                      class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
-                  </div>
-                  <div>
-                    <label class="text-[10px] text-vectura-muted">Pos Y (mm)</label>
-                    <input type="number" id="inp-pos-y"
-                      class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
+                <button id="btn-add-pen"
+                  class="text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors"
+                  type="button" title="Add pen">
+                  + ADD
+                </button>
+              </div>
+              <div id="pen-list" class="pen-list"></div>
+            </div>
+
+            <div class="p-4 border-t border-vectura-border bg-vectura-panel">
+              <div id="auto-colorization-section" class="global-section collapsed">
+                <button id="auto-colorization-header" class="global-section-header" type="button">
+                  <span class="global-section-title">Auto-Colorization</span>
+                  <span class="global-section-toggle" aria-hidden="true"></span>
+                </button>
+                <div id="auto-colorization-body" class="global-section-body" style="display: none;">
+                  <div class="control-group border-none pb-0 mb-0">
+                    <div class="flex items-center justify-between mb-3">
+                      <label class="control-label mb-0">Continuously Apply Changes</label>
+                      <input id="auto-colorization-enabled" type="checkbox" class="cursor-pointer" />
+                    </div>
+                    <label class="control-label">Scope</label>
+                    <select id="auto-colorization-scope"
+                      class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent">
+                      <option value="active">Active Layer</option>
+                      <option value="selected">Selected Layers</option>
+                      <option value="all">All Layers</option>
+                    </select>
+                    <label class="control-label mt-3">Mode</label>
+                    <select id="auto-colorization-mode"
+                      class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent"></select>
+                    <div class="mt-3 flex items-center justify-end">
+                      <button id="auto-colorization-apply" type="button"
+                        class="text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">
+                        Apply
+                      </button>
+                    </div>
+                    <div id="auto-colorization-params" class="mt-3"></div>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <div class="p-4 border-t border-vectura-border bg-vectura-bg z-20 relative">
+              <div class="flex items-center justify-between mb-2">
+                <label id="label-bg-color" class="text-xs text-vectura-muted" for="inp-bg-color">Background</label>
+                <div
+                  class="relative w-4 h-4 overflow-hidden rounded border border-vectura-border cursor-pointer hover:border-vectura-accent">
+                  <input type="color" id="inp-bg-color" aria-label="Background color" />
+                </div>
+              </div>
+            </div>
+
+            <div class="p-4 border-t border-vectura-border bg-vectura-bg z-20 relative">
+              <label class="control-label">Estimation</label>
+              <div class="grid grid-cols-2 gap-2 text-xs">
+                <div class="text-vectura-muted">Distance:</div>
+                <div class="text-right text-vectura-accent" id="stat-dist">0m</div>
+                <div class="text-vectura-muted">Lines:</div>
+                <div class="text-right text-vectura-accent" id="stat-lines">0</div>
+                <div class="text-vectura-muted">Est. Time:</div>
+                <div class="text-right text-vectura-accent" id="stat-time">0:00</div>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <div id="settings-panel" class="settings-panel bg-vectura-panel border-l border-vectura-border">
+          <div class="p-4 border-b border-vectura-border flex justify-between items-center bg-vectura-panel">
+            <span class="font-bold text-vectura-accent">SETTINGS</span>
+            <button id="btn-close-settings" class="text-vectura-muted hover:text-white" aria-label="Close settings"
+              type="button">
+              ✕
+            </button>
+          </div>
+          <div class="flex-1 overflow-y-auto p-4">
+            <div class="control-group">
+              <label class="control-label">Paper Size</label>
+              <select id="machine-profile"
+                class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent mb-2"></select>
+              <div id="custom-size-fields" class="mt-3 hidden">
                 <div class="grid grid-cols-2 gap-2">
                   <div>
-                    <label class="text-[10px] text-vectura-muted">Scale X</label>
-                    <input type="number" step="0.1" id="inp-scale-x"
-                      class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
+                    <label class="text-[10px] text-vectura-muted">Width (mm)</label>
+                    <input type="number" id="set-paper-width"
+                      class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
                   </div>
                   <div>
-                    <label class="text-[10px] text-vectura-muted">Scale Y</label>
-                    <input type="number" step="0.1" id="inp-scale-y"
-                      class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
+                    <label class="text-[10px] text-vectura-muted">Height (mm)</label>
+                    <input type="number" id="set-paper-height"
+                      class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
+                  </div>
+                </div>
+              </div>
+              <div class="mt-3">
+                <div class="flex items-center justify-between mb-2">
+                  <label class="text-xs text-vectura-muted">Orientation</label>
+                  <div class="flex items-center gap-2">
+                    <span id="orientation-label" class="text-[10px] text-vectura-muted">Landscape</span>
+                    <input type="checkbox" id="set-orientation" class="cursor-pointer" />
+                  </div>
+                </div>
+              </div>
+              <div class="flex gap-2">
+                <div class="flex-1">
+                  <label class="control-label">Margin (mm)</label>
+                  <input type="number" id="set-margin"
+                    class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
+                </div>
+              </div>
+              <div class="mt-4">
+                <div class="flex items-center justify-between mb-2">
+                  <label class="text-xs text-vectura-muted">Truncate</label>
+                  <input type="checkbox" id="set-truncate" class="cursor-pointer" />
+                </div>
+                <div class="flex items-center justify-between mb-2">
+                  <label class="text-xs text-vectura-muted">Outside Opacity</label>
+                  <input type="number" id="set-outside-opacity" min="0" max="1" step="0.05"
+                    class="w-16 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
+                </div>
+                <div class="flex items-center justify-between mb-2">
+                  <label class="text-xs text-vectura-muted">Visible Line</label>
+                  <input type="checkbox" id="set-margin-line" class="cursor-pointer" />
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                  <div>
+                    <label class="text-[10px] text-vectura-muted">Line Weight</label>
+                    <input type="number" id="set-margin-line-weight" min="0.05" step="0.05"
+                      class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
+                  </div>
+                  <div>
+                    <label class="text-[10px] text-vectura-muted">Line Color</label>
+                    <div class="relative w-full h-7 overflow-hidden rounded border border-vectura-border">
+                      <input type="color" id="set-margin-line-color" class="w-full h-full cursor-pointer" />
+                    </div>
+                  </div>
+                  <div>
+                    <label class="text-[10px] text-vectura-muted">Dotting</label>
+                    <input type="number" id="set-margin-line-dotting" min="0" step="0.5"
+                      class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
+                  </div>
+                </div>
+                <div class="mt-4">
+                  <div class="flex items-center justify-between mb-2">
+                    <label class="text-xs text-vectura-muted">Show Guides</label>
+                    <input type="checkbox" id="set-show-guides" class="cursor-pointer" />
+                  </div>
+                  <div class="flex items-center justify-between">
+                    <label class="text-xs text-vectura-muted">Snap Guides</label>
+                    <input type="checkbox" id="set-snap-guides" class="cursor-pointer" />
+                  </div>
+                  <div class="flex items-center justify-between mt-2">
+                    <label class="text-xs text-vectura-muted">Grid Overlay (10mm)</label>
+                    <input type="checkbox" id="set-grid-overlay" class="cursor-pointer" />
+                  </div>
+                </div>
+                <div class="mt-4">
+                  <div class="flex items-center justify-between">
+                    <label class="text-xs text-vectura-muted">Canvas Help</label>
+                    <input type="checkbox" id="set-canvas-help" class="cursor-pointer" />
                   </div>
                 </div>
                 <div class="mt-2">
-                  <label class="text-[10px] text-vectura-muted">Rotation (deg)</label>
-                  <input type="number" step="1" id="inp-rotation"
+                  <div class="flex items-center justify-between">
+                    <label class="text-xs text-vectura-muted">Save Preferences in Cookie</label>
+                    <input type="checkbox" id="set-cookie-preferences" class="cursor-pointer" />
+                  </div>
+                </div>
+                <div class="mt-4">
+                  <div class="flex items-center justify-between mb-2">
+                    <label class="text-xs text-vectura-muted">Selection Outline</label>
+                    <input type="checkbox" id="set-selection-outline" class="cursor-pointer" />
+                  </div>
+                  <div>
+                    <label class="text-[10px] text-vectura-muted">Outline Color</label>
+                    <div class="relative w-full h-7 overflow-hidden rounded border border-vectura-border">
+                      <input type="color" id="set-selection-outline-color" class="w-full h-full cursor-pointer" />
+                    </div>
+                  </div>
+                  <div class="mt-2">
+                    <label class="text-[10px] text-vectura-muted">Outline Width</label>
+                    <input type="number" id="set-selection-outline-width" step="0.1"
+                      class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="control-group">
+              <label class="control-label">Plotter Physics</label>
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="text-[10px] text-vectura-muted">Draw Speed (mm/s)</label>
+                  <input type="number" id="set-speed-down"
+                    class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
+                </div>
+                <div>
+                  <label class="text-[10px] text-vectura-muted">Travel Speed (mm/s)</label>
+                  <input type="number" id="set-speed-up"
                     class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
                 </div>
               </div>
             </div>
-          </div>
-
-          <div id="left-section-algorithm-configuration" class="left-panel-section">
-            <button id="left-section-algorithm-configuration-header" class="left-panel-section-header" type="button">
-              <span class="left-panel-section-title">Algorithm Configuration</span>
-              <span class="left-panel-section-toggle" aria-hidden="true"></span>
-            </button>
-            <div id="left-section-algorithm-configuration-body" class="left-panel-section-body">
-              <div id="dynamic-controls"></div>
-            </div>
-          </div>
-
-          <div id="left-section-optimization" class="left-panel-section">
-            <button id="left-section-optimization-header" class="left-panel-section-header" type="button">
-              <span class="left-panel-section-title">Optimization</span>
-              <span class="left-panel-section-toggle" aria-hidden="true"></span>
-            </button>
-            <div id="left-section-optimization-body" class="left-panel-section-body">
-              <div id="optimization-controls"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </aside>
-
-    <div id="left-resizer" class="pane-resizer" aria-hidden="true"></div>
-
-    <section class="flex-1 flex flex-col bg-[#121214] relative overflow-hidden">
-      <div id="tool-bar" class="tool-bar" aria-label="Tools">
-        <div class="tool-group">
-          <button class="tool-btn" data-tool="select" type="button" aria-label="Selection Tool (V)"
-            title="Selection (V)">
-            <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <rect x="4" y="5" width="16" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"
-                stroke-dasharray="3 3" />
-            </svg>
-          </button>
-          <div class="tool-submenu" data-menu="select" aria-label="Selection subtools">
-            <button class="tool-sub-btn" data-select="rect" type="button" title="Rectangle Selection">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="4" y="6" width="16" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"
-                  stroke-dasharray="3 3" />
-              </svg>
-            </button>
-            <button class="tool-sub-btn" data-select="oval" type="button" title="Oval Selection">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <ellipse cx="12" cy="12" rx="7" ry="5.5" fill="none" stroke="currentColor" stroke-width="2"
-                  stroke-dasharray="3 3" />
-              </svg>
-            </button>
-            <button class="tool-sub-btn" data-select="pen" type="button" title="Pen Selection">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M4 18C7 9 14 6 20 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                  stroke-dasharray="2 2" />
-                <path d="M16.8 6.2l2.6 2.6-3.2 3.2-2.6-2.6z" fill="none" stroke="currentColor" stroke-width="1.4" />
-              </svg>
-            </button>
-            <button class="tool-sub-btn" data-select="lasso" type="button" title="Lasso Selection">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M6 14c1.5-4.5 6.5-6 10-3 2.5 2 2 6-1.5 7.2-3.4 1.2-6.8-0.6-6.8-3.3" fill="none"
-                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="2 2" />
-              </svg>
-            </button>
-          </div>
-        </div>
-        <button class="tool-btn" data-tool="direct" type="button" aria-label="Direct Selection Tool (A)"
-          title="Direct Selection (A)">
-          <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 2L14 12H9.5L12.5 21L9.5 22L6.5 13L3 16Z" fill="none" stroke="currentColor" stroke-width="1.6" />
-            <rect x="15.5" y="3.5" width="4.5" height="4.5" rx="0.6" fill="currentColor" />
-          </svg>
-        </button>
-        <button class="tool-btn" data-tool="hand" type="button" aria-label="Hand Tool (Space)" title="Hand (Space)">
-          <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M7 12V6.5c0-.8.6-1.5 1.4-1.5.7 0 1.3.6 1.3 1.4V12m0-5.3V5c0-.8.6-1.4 1.4-1.4s1.4.6 1.4 1.4v6.9m0-5.1V5.3c0-.8.6-1.4 1.4-1.4s1.4.6 1.4 1.4V13m0-3.6V8.5c0-.8.6-1.4 1.4-1.4s1.4.6 1.4 1.4v6.8c0 2.5-1.6 4.7-4 5.5l-2.1.7c-2.5.9-5.3-.4-6.2-2.9L5 12.5"
-              fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </button>
-        <div class="tool-group">
-          <button class="tool-btn" data-tool="pen" type="button" aria-label="Pen Tool (P)" title="Pen (P)">
-            <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 2.2L20.2 10.2L14.8 21.8H9.2L3.8 10.2Z" fill="none" stroke="currentColor" stroke-width="1.6"
-                stroke-linejoin="round" />
-              <circle cx="12" cy="11.6" r="1.7" fill="currentColor" />
-              <path d="M9.5 16.2L12 18.3L14.5 16.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-              <line x1="5" y1="20.5" x2="19" y2="20.5" stroke="currentColor" stroke-width="1.2"
-                stroke-linecap="round" />
-              <circle cx="5" cy="20.5" r="1.3" fill="currentColor" />
-              <circle cx="19" cy="20.5" r="1.3" fill="currentColor" />
-            </svg>
-          </button>
-          <div class="tool-submenu" data-menu="pen" aria-label="Pen subtools">
-            <button class="tool-sub-btn" data-pen="draw" type="button" title="Pen Tool (P)">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 2.2L20.2 10.2L14.8 21.8H9.2L3.8 10.2Z" fill="none" stroke="currentColor" stroke-width="1.6"
-                  stroke-linejoin="round" />
-                <circle cx="12" cy="11.6" r="1.6" fill="currentColor" />
-              </svg>
-            </button>
-            <button class="tool-sub-btn" data-pen="add" type="button" title="Add Anchor Point (+)">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M5 12h14M12 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.4" />
-              </svg>
-            </button>
-            <button class="tool-sub-btn" data-pen="delete" type="button" title="Delete Anchor Point (-)">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M6 12h12" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.4" />
-              </svg>
-            </button>
-            <button class="tool-sub-btn" data-pen="anchor" type="button" title="Anchor Point Tool (Shift + C)">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <circle cx="12" cy="12" r="2" fill="currentColor" />
-                <path d="M3.5 12h5M15.5 12h5M12 3.5v5M12 15.5v5" stroke="currentColor" stroke-width="1.6"
-                  stroke-linecap="round" />
-              </svg>
-            </button>
-          </div>
-        </div>
-        <div class="tool-divider"></div>
-        <div class="tool-group">
-          <button class="tool-btn" data-tool="scissor" type="button" aria-label="Scissor Tool (C)" title="Scissor (C)">
-            <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="6.5" cy="7.5" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6" />
-              <circle cx="6.5" cy="16.5" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6" />
-              <path d="M8.6 9.2L20 4.5M8.6 14.8L20 19.5" stroke="currentColor" stroke-width="1.6"
-                stroke-linecap="round" />
-              <path d="M11.5 12L15 10.5M11.5 12L15 13.5" stroke="currentColor" stroke-width="1.2"
-                stroke-linecap="round" />
-            </svg>
-          </button>
-          <div class="tool-submenu" aria-label="Scissor subtools">
-            <button class="tool-sub-btn" data-scissor="line" type="button" title="Scissor Line">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <line x1="4" y1="20" x2="20" y2="4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-              </svg>
-            </button>
-            <button class="tool-sub-btn" data-scissor="rect" type="button" title="Scissor Rectangle">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="4" y="6" width="16" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2" />
-              </svg>
-            </button>
-            <button class="tool-sub-btn" data-scissor="circle" type="button" title="Scissor Circle">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2" />
-              </svg>
-            </button>
-          </div>
-        </div>
-        <div class="tool-divider"></div>
-        <button class="tool-btn tool-light hidden" id="btn-light-source" type="button" aria-label="Set Light Source"
-          title="Set Light Source">
-          <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="12" cy="12" r="4.4" fill="currentColor" />
-            <path
-              d="M12 2V5M12 19V22M2 12H5M19 12H22M4.5 4.5L6.6 6.6M17.4 17.4L19.5 19.5M4.5 19.5L6.6 17.4M17.4 6.6L19.5 4.5"
-              stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-          </svg>
-        </button>
-      </div>
-      <div id="touch-modifier-bar" class="touch-modifier-bar hidden" aria-label="Touch Modifiers">
-        <button type="button" class="touch-mod-btn" data-touch-mod="shift" title="Shift">Shift</button>
-        <button type="button" class="touch-mod-btn" data-touch-mod="alt" title="Alt/Option">Alt</button>
-        <button type="button" class="touch-mod-btn" data-touch-mod="meta" title="Cmd/Ctrl">Cmd</button>
-        <button type="button" class="touch-mod-btn" data-touch-mod="pan" title="Pan">Pan</button>
-      </div>
-      <div class="flex-1 relative cursor-crosshair" id="viewport-container">
-        <canvas id="main-canvas" class="block absolute top-0 left-0 outline-none" role="img"
-          aria-label="Vector preview"></canvas>
-        <div class="absolute inset-0 paper-texture opacity-30 pointer-events-none mix-blend-overlay"></div>
-        <div id="notification-area" class="absolute top-4 right-4 flex flex-col gap-2 pointer-events-none z-50"></div>
-      </div>
-
-      <div id="bottom-resizer" class="bottom-resizer" aria-hidden="true"></div>
-
-      <div id="bottom-pane" class="bottom-pane bg-vectura-panel border-t border-vectura-border z-20 flex flex-col">
-        <div class="bottom-pane-header flex justify-between items-start p-4">
-          <span class="text-[10px] text-vectura-muted uppercase tracking-widest">Mathematical Model</span>
-          <button id="btn-pane-toggle-bottom" class="pane-toggle pane-toggle-bottom" type="button"
-            aria-label="Toggle formula panel">
-            ▼
-          </button>
-        </div>
-        <div class="bottom-pane-body px-4 pb-2 flex-1 overflow-y-auto">
-          <div id="formula-display" class="text-xs text-vectura-text font-mono formula-text opacity-90 leading-relaxed">
-            ...</div>
-        </div>
-        <div class="bottom-pane-footer px-4 pb-4 flex justify-end">
-          <span class="text-[10px] text-vectura-accent" id="formula-seed-display">Seed: ---</span>
-        </div>
-      </div>
-
-      <div id="canvas-help" class="canvas-help text-[10px] text-vectura-muted pointer-events-none">
-        <p>PAN: Shift + Drag</p>
-        <p>ZOOM: Mouse Wheel</p>
-        <p>TOOLS: V Select • A Direct • P Pen • + Add Anchor • - Delete Anchor • Shift+C Anchor • C Scissor • Space Hand
-        </p>
-        <p>GROUP: Cmd/Ctrl + G</p>
-        <p>EXPAND: Cmd/Ctrl + E</p>
-        <p>DUPLICATE: Cmd/Ctrl + D (Alt/Option + D fallback)</p>
-        <p>HARMONOGRAPH: Virtual plotter playhead + loop-stop snaps in controls</p>
-        <p>PETAL DESIGNER: [PETAL DESIGNER] (Petalis/Petalis Designer layers)</p>
-        <p>?: Keyboard Shortcuts</p>
-      </div>
-    </section>
-
-    <div id="right-resizer" class="pane-resizer" aria-hidden="true"></div>
-
-    <aside id="right-pane"
-      class="pane pane-right bg-vectura-panel border-l border-vectura-border flex flex-col z-10 relative overflow-hidden">
-      <div
-        class="pane-header pane-header-right p-4 border-b border-vectura-border flex justify-between items-center bg-vectura-panel z-20">
-        <span class="pane-title font-bold text-vectura-accent">LAYERS</span>
-        <button id="btn-pane-toggle-right" class="pane-toggle pane-toggle-right" type="button"
-          aria-label="Toggle right pane" title="Toggle layers panel">
-          ▶
-        </button>
-        <button id="btn-add-layer"
-          class="text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors"
-          type="button" title="Add layer">
-          + ADD
-        </button>
-      </div>
-
-      <div class="pane-body flex-1 flex flex-col relative overflow-hidden">
-        <div class="flex-1 overflow-y-auto p-4 relative" id="layer-list"></div>
-        <div class="p-4 border-t border-vectura-border bg-vectura-panel">
-          <div class="flex items-center justify-between mb-2">
-            <div class="flex items-center gap-2">
-              <span class="pane-title font-bold text-vectura-accent text-xs">PENS</span>
-              <div class="palette-select relative">
-                <button id="palette-toggle" class="palette-toggle" type="button" aria-label="Select palette"
-                  title="Select palette">
-                  Blues-01
-                </button>
-                <div id="palette-menu" class="palette-menu hidden">
-                  <input id="palette-search" class="palette-search" type="text" placeholder="Search palettes..." />
-                  <div id="palette-options" class="palette-options"></div>
-                </div>
-              </div>
-            </div>
-            <button id="btn-add-pen"
-              class="text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors"
-              type="button" title="Add pen">
-              + ADD
-            </button>
-          </div>
-          <div id="pen-list" class="pen-list"></div>
-        </div>
-
-        <div class="p-4 border-t border-vectura-border bg-vectura-panel">
-          <div id="auto-colorization-section" class="global-section collapsed">
-            <button id="auto-colorization-header" class="global-section-header" type="button">
-              <span class="global-section-title">Auto-Colorization</span>
-              <span class="global-section-toggle" aria-hidden="true"></span>
-            </button>
-            <div id="auto-colorization-body" class="global-section-body" style="display: none;">
-              <div class="control-group border-none pb-0 mb-0">
-                <div class="flex items-center justify-between mb-3">
-                  <label class="control-label mb-0">Continuously Apply Changes</label>
-                  <input id="auto-colorization-enabled" type="checkbox" class="cursor-pointer" />
-                </div>
-                <label class="control-label">Scope</label>
-                <select id="auto-colorization-scope"
-                  class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent">
-                  <option value="active">Active Layer</option>
-                  <option value="selected">Selected Layers</option>
-                  <option value="all">All Layers</option>
-                </select>
-                <label class="control-label mt-3">Mode</label>
-                <select id="auto-colorization-mode"
-                  class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent"></select>
-                <div class="mt-3 flex items-center justify-end">
-                  <button id="auto-colorization-apply" type="button"
-                    class="text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">
-                    Apply
-                  </button>
-                </div>
-                <div id="auto-colorization-params" class="mt-3"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="p-4 border-t border-vectura-border bg-vectura-bg z-20 relative">
-          <div class="flex items-center justify-between mb-2">
-            <label id="label-bg-color" class="text-xs text-vectura-muted" for="inp-bg-color">Background</label>
-            <div
-              class="relative w-4 h-4 overflow-hidden rounded border border-vectura-border cursor-pointer hover:border-vectura-accent">
-              <input type="color" id="inp-bg-color" aria-label="Background color" />
-            </div>
-          </div>
-        </div>
-
-        <div class="p-4 border-t border-vectura-border bg-vectura-bg z-20 relative">
-          <label class="control-label">Estimation</label>
-          <div class="grid grid-cols-2 gap-2 text-xs">
-            <div class="text-vectura-muted">Distance:</div>
-            <div class="text-right text-vectura-accent" id="stat-dist">0m</div>
-            <div class="text-vectura-muted">Lines:</div>
-            <div class="text-right text-vectura-accent" id="stat-lines">0</div>
-            <div class="text-vectura-muted">Est. Time:</div>
-            <div class="text-right text-vectura-accent" id="stat-time">0:00</div>
-          </div>
-        </div>
-      </div>
-    </aside>
-
-    <div id="settings-panel" class="settings-panel bg-vectura-panel border-l border-vectura-border">
-      <div class="p-4 border-b border-vectura-border flex justify-between items-center bg-vectura-panel">
-        <span class="font-bold text-vectura-accent">SETTINGS</span>
-        <button id="btn-close-settings" class="text-vectura-muted hover:text-white" aria-label="Close settings"
-          type="button">
-          ✕
-        </button>
-      </div>
-      <div class="flex-1 overflow-y-auto p-4">
-        <div class="control-group">
-          <label class="control-label">Paper Size</label>
-          <select id="machine-profile"
-            class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent mb-2"></select>
-          <div id="custom-size-fields" class="mt-3 hidden">
-            <div class="grid grid-cols-2 gap-2">
-              <div>
-                <label class="text-[10px] text-vectura-muted">Width (mm)</label>
-                <input type="number" id="set-paper-width"
-                  class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
-              </div>
-              <div>
-                <label class="text-[10px] text-vectura-muted">Height (mm)</label>
-                <input type="number" id="set-paper-height"
-                  class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
-              </div>
-            </div>
-          </div>
-          <div class="mt-3">
-            <div class="flex items-center justify-between mb-2">
-              <label class="text-xs text-vectura-muted">Orientation</label>
-              <div class="flex items-center gap-2">
-                <span id="orientation-label" class="text-[10px] text-vectura-muted">Landscape</span>
-                <input type="checkbox" id="set-orientation" class="cursor-pointer" />
-              </div>
-            </div>
-          </div>
-          <div class="flex gap-2">
-            <div class="flex-1">
-              <label class="control-label">Margin (mm)</label>
-              <input type="number" id="set-margin"
-                class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
-            </div>
-          </div>
-          <div class="mt-4">
-            <div class="flex items-center justify-between mb-2">
-              <label class="text-xs text-vectura-muted">Truncate</label>
-              <input type="checkbox" id="set-truncate" class="cursor-pointer" />
-            </div>
-            <div class="flex items-center justify-between mb-2">
-              <label class="text-xs text-vectura-muted">Outside Opacity</label>
-              <input type="number" id="set-outside-opacity" min="0" max="1" step="0.05"
-                class="w-16 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
-            </div>
-            <div class="flex items-center justify-between mb-2">
-              <label class="text-xs text-vectura-muted">Visible Line</label>
-              <input type="checkbox" id="set-margin-line" class="cursor-pointer" />
-            </div>
-            <div class="grid grid-cols-3 gap-2">
-              <div>
-                <label class="text-[10px] text-vectura-muted">Line Weight</label>
-                <input type="number" id="set-margin-line-weight" min="0.05" step="0.05"
-                  class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
-              </div>
-              <div>
-                <label class="text-[10px] text-vectura-muted">Line Color</label>
-                <div class="relative w-full h-7 overflow-hidden rounded border border-vectura-border">
-                  <input type="color" id="set-margin-line-color" class="w-full h-full cursor-pointer" />
-                </div>
-              </div>
-              <div>
-                <label class="text-[10px] text-vectura-muted">Dotting</label>
-                <input type="number" id="set-margin-line-dotting" min="0" step="0.5"
-                  class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
-              </div>
-            </div>
-            <div class="mt-4">
+            <div class="control-group border-none">
+              <label class="control-label">Export &amp; Preview</label>
               <div class="flex items-center justify-between mb-2">
-                <label class="text-xs text-vectura-muted">Show Guides</label>
-                <input type="checkbox" id="set-show-guides" class="cursor-pointer" />
+                <label class="text-xs text-vectura-muted">Precision</label>
+                <input type="number" id="set-precision"
+                  class="w-12 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
               </div>
               <div class="flex items-center justify-between">
-                <label class="text-xs text-vectura-muted">Snap Guides</label>
-                <input type="checkbox" id="set-snap-guides" class="cursor-pointer" />
+                <label class="text-xs text-vectura-muted">Stroke (mm)</label>
+                <input type="number" id="set-stroke" step="0.1"
+                  class="w-12 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
               </div>
-              <div class="flex items-center justify-between mt-2">
-                <label class="text-xs text-vectura-muted">Grid Overlay (10mm)</label>
-                <input type="checkbox" id="set-grid-overlay" class="cursor-pointer" />
+              <div class="flex items-center justify-between mt-3">
+                <label class="text-xs text-vectura-muted">Plotter Optimization</label>
+                <input type="range" id="set-plotter-opt" min="0" max="1" step="0.05" class="w-24" />
               </div>
             </div>
-            <div class="mt-4">
+            <div class="control-group border-none">
+              <label class="control-label">History</label>
               <div class="flex items-center justify-between">
-                <label class="text-xs text-vectura-muted">Canvas Help</label>
-                <input type="checkbox" id="set-canvas-help" class="cursor-pointer" />
-              </div>
-            </div>
-            <div class="mt-2">
-              <div class="flex items-center justify-between">
-                <label class="text-xs text-vectura-muted">Save Preferences in Cookie</label>
-                <input type="checkbox" id="set-cookie-preferences" class="cursor-pointer" />
-              </div>
-            </div>
-            <div class="mt-4">
-              <div class="flex items-center justify-between mb-2">
-                <label class="text-xs text-vectura-muted">Selection Outline</label>
-                <input type="checkbox" id="set-selection-outline" class="cursor-pointer" />
-              </div>
-              <div>
-                <label class="text-[10px] text-vectura-muted">Outline Color</label>
-                <div class="relative w-full h-7 overflow-hidden rounded border border-vectura-border">
-                  <input type="color" id="set-selection-outline-color" class="w-full h-full cursor-pointer" />
-                </div>
-              </div>
-              <div class="mt-2">
-                <label class="text-[10px] text-vectura-muted">Outline Width</label>
-                <input type="number" id="set-selection-outline-width" step="0.1"
-                  class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
+                <label class="text-xs text-vectura-muted">Undo Steps</label>
+                <input type="number" id="set-undo" min="1" max="200"
+                  class="w-12 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
               </div>
             </div>
           </div>
         </div>
-        <div class="control-group">
-          <label class="control-label">Plotter Physics</label>
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="text-[10px] text-vectura-muted">Draw Speed (mm/s)</label>
-              <input type="number" id="set-speed-down"
-                class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
-            </div>
-            <div>
-              <label class="text-[10px] text-vectura-muted">Travel Speed (mm/s)</label>
-              <input type="number" id="set-speed-up"
-                class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
-            </div>
-          </div>
-        </div>
-        <div class="control-group border-none">
-          <label class="control-label">Export &amp; Preview</label>
-          <div class="flex items-center justify-between mb-2">
-            <label class="text-xs text-vectura-muted">Precision</label>
-            <input type="number" id="set-precision"
-              class="w-12 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
-          </div>
-          <div class="flex items-center justify-between">
-            <label class="text-xs text-vectura-muted">Stroke (mm)</label>
-            <input type="number" id="set-stroke" step="0.1"
-              class="w-12 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
-          </div>
-          <div class="flex items-center justify-between mt-3">
-            <label class="text-xs text-vectura-muted">Plotter Optimization</label>
-            <input type="range" id="set-plotter-opt" min="0" max="1" step="0.05" class="w-24" />
-          </div>
-        </div>
-        <div class="control-group border-none">
-          <label class="control-label">History</label>
-          <div class="flex items-center justify-between">
-            <label class="text-xs text-vectura-muted">Undo Steps</label>
-            <input type="number" id="set-undo" min="1" max="200"
-              class="w-12 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
-          </div>
-        </div>
-      </div>
-    </div>
-  </main>
+      </main>
 
-  <script src="./src/config/machines.js" defer></script>
-  <script src="./src/config/defaults.js" defer></script>
-  <script src="./src/config/palettes.js" defer></script>
-  <script src="./src/config/presets.js" defer></script>
-  <script src="./src/config/descriptions.js" defer></script>
-  <script src="./src/core/rng.js" defer></script>
-  <script src="./src/core/noise.js" defer></script>
-  <script src="./src/core/algorithms/petalis.js" defer></script>
-  <script src="./src/core/algorithms/flowfield.js" defer></script>
-  <script src="./src/core/algorithms/boids.js" defer></script>
-  <script src="./src/core/algorithms/attractor.js" defer></script>
-  <script src="./src/core/algorithms/hyphae.js" defer></script>
-  <script src="./src/core/algorithms/shapepack.js" defer></script>
-  <script src="./src/core/algorithms/lissajous.js" defer></script>
-  <script src="./src/core/algorithms/harmonograph.js" defer></script>
-  <script src="./src/core/algorithms/wavetable.js" defer></script>
-  <script src="./src/core/algorithms/rings.js" defer></script>
-  <script src="./src/core/algorithms/topo.js" defer></script>
-  <script src="./src/core/algorithms/rainfall.js" defer></script>
-  <script src="./src/core/algorithms/spiral.js" defer></script>
-  <script src="./src/core/algorithms/grid.js" defer></script>
-  <script src="./src/core/algorithms/phylla.js" defer></script>
-  <script src="./src/core/algorithms/petalisdesigner.js" defer></script>
-  <script src="./src/core/algorithms/index.js" defer></script>
-  <script src="./src/core/layer.js" defer></script>
-  <script src="./src/core/engine.js" defer></script>
-  <script src="./src/render/renderer.js" defer></script>
-  <script src="./src/ui/ui.js" defer></script>
-  <script src="./src/app/app.js" defer></script>
-  <script src="./src/main.js" defer></script>
+      <script src="./src/config/machines.js" defer></script>
+      <script src="./src/config/defaults.js" defer></script>
+      <script src="./src/config/palettes.js" defer></script>
+      <script src="./src/config/presets.js" defer></script>
+      <script src="./src/config/descriptions.js" defer></script>
+      <script src="./src/core/rng.js" defer></script>
+      <script src="./src/core/noise.js" defer></script>
+      <script src="./src/core/geometry-utils.js" defer></script>
+      <script src="./src/core/optimization-utils.js" defer></script>
+      <script src="./src/core/algorithms/petalis.js" defer></script>
+      <script src="./src/core/algorithms/flowfield.js" defer></script>
+      <script src="./src/core/algorithms/boids.js" defer></script>
+      <script src="./src/core/algorithms/attractor.js" defer></script>
+      <script src="./src/core/algorithms/hyphae.js" defer></script>
+      <script src="./src/core/algorithms/shapepack.js" defer></script>
+      <script src="./src/core/algorithms/lissajous.js" defer></script>
+      <script src="./src/core/algorithms/harmonograph.js" defer></script>
+      <script src="./src/core/algorithms/wavetable.js" defer></script>
+      <script src="./src/core/algorithms/rings.js" defer></script>
+      <script src="./src/core/algorithms/topo.js" defer></script>
+      <script src="./src/core/algorithms/rainfall.js" defer></script>
+      <script src="./src/core/algorithms/spiral.js" defer></script>
+      <script src="./src/core/algorithms/grid.js" defer></script>
+      <script src="./src/core/algorithms/phylla.js" defer></script>
+      <script src="./src/core/algorithms/petalisdesigner.js" defer></script>
+      <script src="./src/core/algorithms/index.js" defer></script>
+      <script src="./src/core/layer.js" defer></script>
+      <script src="./src/core/engine.js" defer></script>
+      <script src="./src/render/renderer.js" defer></script>
+      <script src="./src/ui/randomization-utils.js" defer></script>
+      <script src="./src/ui/ui.js" defer></script>
+      <script src="./src/app/app.js" defer></script>
+      <script src="./src/main.js" defer></script>
 </body>
 
 </html>

@@ -1,0 +1,32 @@
+{
+  "name": "vectura-studio",
+  "version": "0.5.70",
+  "private": true,
+  "description": "Vectura Studio - physics-inspired vector generator",
+  "scripts": {
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:e2e": "playwright test tests/e2e/smoke.spec.js",
+    "test:visual": "vitest run tests/visual",
+    "test:visual:screenshots": "ENABLE_SCREENSHOT_VISUALS=1 playwright test tests/e2e/visual.spec.js",
+    "test:perf": "vitest run tests/perf",
+    "test:ci": "npm run test:unit && npm run test:integration && npm run test:e2e",
+    "test:update": "VECTURA_UPDATE_BASELINES=1 npm run test:visual"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.1",
+    "autoprefixer": "^10.4.19",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "jsdom": "^24.1.1",
+    "postcss": "^8.4.38",
+    "prettier": "^3.2.5",
+    "tailwindcss": "^3.4.10",
+    "vite": "^5.4.8",
+    "vitest": "^2.1.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -59,6 +59,25 @@ python -m http.server
 ```
 Then visit `http://localhost:8000`.
 
+For automated tests:
+```bash
+npm install
+```
+
+## Testing
+- `npm run test:unit` - deterministic unit coverage for RNG/noise, algorithms, and shared utility helpers.
+- `npm run test:integration` - engine workflow integration coverage (layer lifecycle, optimization pipeline, state roundtrip, deterministic export).
+- `npm run test:e2e` - Playwright smoke tests on desktop + tablet-touch Chromium.
+- `npm run test:visual` - SVG baseline regression checks (`tests/baselines/svg`).
+- `npm run test:visual:screenshots` - optional Playwright screenshot snapshot checks for high-risk UI shells.
+- `npm run test:perf` - stress/performance checks for generation and optimization.
+- `npm run test:ci` - PR-gating suite (`unit + integration + e2e`).
+- `npm run test:update` - updates visual SVG baselines (requires review before commit).
+
+CI lives in `.github/workflows/test.yml`:
+- Pull requests: unit, integration, and e2e smoke.
+- `main` + nightly: visual regression and perf stress lanes.
+
 ## How to Use
 1. Pick an algorithm in the left panel and adjust its parameters.
 2. Use the transform controls (seed, position, scale, rotation) to nudge the layer.
@@ -119,10 +138,15 @@ flowchart LR
 - `styles.css` - custom UI styling and texture effects.
 - `src/app/` - application orchestration and lifecycle.
 - `src/core/` - vector engine, layers, RNG/noise, and algorithms.
+- `src/core/geometry-utils.js` - shared path smoothing/simplification and cloning helpers.
+- `src/core/optimization-utils.js` - shared path length/sort/offset helpers used by optimization flow.
 - `src/core/algorithms/*.js` - one file per algorithm, with `src/core/algorithms/index.js` assembling the registry exposed to the engine.
 - `src/render/` - canvas rendering and view transforms.
 - `src/ui/` - panels, controls, settings, and SVG export.
+- `src/ui/randomization-utils.js` - shared parameter randomization engine with algorithm-specific bias profiles.
 - `src/config/` - machine profiles, defaults, UI descriptions, palette library, and cross-system preset registry.
+- `tests/` - unit, integration, e2e smoke, visual baseline, and performance suites.
+- `docs/testing.md` - testing workflow details, baseline policy, and CI behavior.
 - `dist/` - optional prebuilt output (not required for local dev).
 
 ## Customization Tips
