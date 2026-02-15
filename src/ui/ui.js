@@ -1379,6 +1379,25 @@
         infoKey: 'harmonograph.thickeningMode',
       },
       {
+        id: 'loopDrift',
+        label: 'Anti-Loop Drift',
+        type: 'range',
+        min: 0,
+        max: 0.08,
+        step: 0.0005,
+        infoKey: 'harmonograph.loopDrift',
+      },
+      {
+        id: 'settleThreshold',
+        label: 'Settle Cutoff',
+        type: 'range',
+        min: 0,
+        max: 40,
+        step: 0.5,
+        displayUnit: 'mm',
+        infoKey: 'harmonograph.settleThreshold',
+      },
+      {
         id: 'dashLength',
         label: 'Dash Length (mm)',
         type: 'range',
@@ -1471,6 +1490,7 @@
         showIf: (p) => ['dashed', 'points', 'segments'].includes(p.renderMode),
       },
       { type: 'pendulumList' },
+      { type: 'harmonographPlotter' },
       { type: 'section', label: 'Pendulum Guides' },
       {
         id: 'showPendulumGuides',
@@ -2711,6 +2731,14 @@
     'harmonograph.thickeningMode': {
       title: 'Thickening Mode',
       description: 'Controls how the thickness strokes are arranged (parallel, snake, sinusoidal).',
+    },
+    'harmonograph.loopDrift': {
+      title: 'Anti-Loop Drift',
+      description: 'Adds a gradual frequency drift over time to break repeated loop closure.',
+    },
+    'harmonograph.settleThreshold': {
+      title: 'Settle Cutoff',
+      description: 'Stops sampling once motion stays below this amplitude near the center (0 disables).',
     },
     'harmonograph.showPendulumGuides': {
       title: 'Pendulum Guides',
@@ -4532,6 +4560,7 @@
       this.penMode = SETTINGS.penMode || 'draw';
       this.spacePanActive = false;
       this.previousTool = this.activeTool;
+      this.harmonographPlotterState = null;
 
       this.initModuleDropdown();
       this.initMachineDropdown();
@@ -5632,6 +5661,10 @@
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Toggle pendulums on/off, add new ones, and enable Pendulum Guides to visualize each contribution.
+            Use Anti-Loop Drift and Settle Cutoff to curb repeated loop paths.
+          </div>
+          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
+            Harmonograph includes a Virtual Plotter panel with playback speed, scrubbable playhead, and snappable loop stops.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Post-Processing Lab holds smoothing, curves, and simplify for the active layer.
@@ -9615,9 +9648,261 @@
       }
     }
 
+    computeHarmonographPlotterData(layer) {
+      const params = layer?.params || {};
+      const samples = Math.max(200, Math.floor(params.samples ?? 4000));
+      const duration = Math.max(1, params.duration ?? 30);
+      const scale = params.scale ?? 1;
+      const rotSpeed = (params.paperRotation ?? 0) * Math.PI * 2;
+      const loopDrift = params.loopDrift ?? 0;
+      const settleThreshold = Math.max(0, params.settleThreshold ?? 0);
+      const settleWindow = Math.max(1, Math.floor(params.settleWindow ?? 24));
+      const pendulums = (Array.isArray(params.pendulums) ? params.pendulums : [])
+        .filter((pend) => pend?.enabled !== false)
+        .map((pend) => ({
+          ax: pend.ampX ?? 0,
+          ay: pend.ampY ?? 0,
+          phaseX: ((pend.phaseX ?? 0) * Math.PI) / 180,
+          phaseY: ((pend.phaseY ?? 0) * Math.PI) / 180,
+          freq: pend.freq ?? 1,
+          micro: pend.micro ?? 0,
+          damp: Math.max(0, pend.damp ?? 0),
+        }));
+      if (!pendulums.length) return { path: [], stops: [] };
+      const dt = duration / samples;
+      const path = [];
+      let settleCount = 0;
+      for (let i = 0; i <= samples; i += 1) {
+        const t = i * dt;
+        let x = 0;
+        let y = 0;
+        pendulums.forEach((pend) => {
+          const freq = (pend.freq + pend.micro + loopDrift * t) * Math.PI * 2;
+          const decay = Math.exp(-pend.damp * t);
+          x += pend.ax * Math.sin(freq * t + pend.phaseX) * decay;
+          y += pend.ay * Math.sin(freq * t + pend.phaseY) * decay;
+        });
+        x *= scale;
+        y *= scale;
+        if (rotSpeed) {
+          const ang = rotSpeed * t;
+          const rx = x * Math.cos(ang) - y * Math.sin(ang);
+          const ry = x * Math.sin(ang) + y * Math.cos(ang);
+          x = rx;
+          y = ry;
+        }
+        path.push({ x, y, t });
+        if (settleThreshold > 0) {
+          const mag = Math.hypot(x, y);
+          settleCount = mag <= settleThreshold ? settleCount + 1 : 0;
+          if (settleCount >= settleWindow) break;
+        }
+      }
+
+      if (path.length < 3) return { path, stops: [] };
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minY = Infinity;
+      let maxY = -Infinity;
+      path.forEach((pt) => {
+        if (pt.x < minX) minX = pt.x;
+        if (pt.x > maxX) maxX = pt.x;
+        if (pt.y < minY) minY = pt.y;
+        if (pt.y > maxY) maxY = pt.y;
+      });
+      const span = Math.max(maxX - minX, maxY - minY, 1);
+      const loopThreshold = Math.max(1.2, span * 0.02);
+      const minGap = Math.max(18, Math.floor(path.length * 0.02));
+      const maxChecks = 120;
+      const stops = [0];
+      const stopSet = new Set(stops);
+      for (let i = minGap; i < path.length; i += 1) {
+        const pt = path[i];
+        let checks = 0;
+        for (let j = 0; j <= i - minGap; j += 1) {
+          const prev = path[j];
+          if (Math.hypot(pt.x - prev.x, pt.y - prev.y) <= loopThreshold) {
+            if (!stopSet.has(j)) {
+              stops.push(j);
+              stopSet.add(j);
+            }
+            break;
+          }
+          checks += 1;
+          if (checks >= maxChecks) break;
+        }
+      }
+      if (!stopSet.has(path.length - 1)) stops.push(path.length - 1);
+      stops.sort((a, b) => a - b);
+      return { path, stops };
+    }
+
+    mountHarmonographPlotter(layer, target) {
+      if (!target) return;
+      const data = this.computeHarmonographPlotterData(layer);
+      const speeds = [0.25, 0.5, 1, 2, 4];
+      const initialPlayhead = this.harmonographPlotterState?.playhead ?? 0;
+      const initialSpeed = this.harmonographPlotterState?.speed ?? 1;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'harmonograph-plotter mb-4';
+      wrapper.innerHTML = `
+        <div class="harmonograph-plotter-head">
+          <span class="text-[10px] uppercase tracking-widest text-vectura-muted">Virtual Plotter</span>
+          <button type="button" class="harmonograph-plotter-play text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">Play</button>
+        </div>
+        <canvas class="harmonograph-plotter-canvas" width="240" height="240"></canvas>
+        <div class="harmonograph-plotter-meta text-[10px] text-vectura-muted">Scrub the playhead or snap to detected loop starts.</div>
+        <div class="harmonograph-plotter-row">
+          <label class="text-[10px] uppercase tracking-widest text-vectura-muted">Playhead</label>
+          <input class="harmonograph-plotter-range" type="range" min="0" max="${Math.max(1, data.path.length - 1)}" step="1" value="${clamp(
+            initialPlayhead,
+            0,
+            Math.max(1, data.path.length - 1)
+          )}">
+        </div>
+        <div class="harmonograph-plotter-row">
+          <label class="text-[10px] uppercase tracking-widest text-vectura-muted">Speed</label>
+          <select class="harmonograph-plotter-speed bg-vectura-bg border border-vectura-border p-1 text-[10px] focus:outline-none focus:border-vectura-accent">
+            ${speeds
+              .map((speed) => `<option value="${speed}" ${speed === initialSpeed ? 'selected' : ''}>${speed}x</option>`)
+              .join('')}
+          </select>
+        </div>
+        <div class="harmonograph-plotter-stops"></div>
+      `;
+      target.appendChild(wrapper);
+      const canvas = wrapper.querySelector('.harmonograph-plotter-canvas');
+      const playBtn = wrapper.querySelector('.harmonograph-plotter-play');
+      const range = wrapper.querySelector('.harmonograph-plotter-range');
+      const speedSelect = wrapper.querySelector('.harmonograph-plotter-speed');
+      const stopsRow = wrapper.querySelector('.harmonograph-plotter-stops');
+      if (!canvas || !range || !speedSelect || !playBtn || !stopsRow) return;
+
+      const stopMarkup = data.stops
+        .slice(0, 12)
+        .map((stop, idx) => `<button type="button" class="harmonograph-stop-btn" data-stop="${stop}">Loop ${idx + 1}</button>`)
+        .join('');
+      stopsRow.innerHTML = stopMarkup || '<span class="text-[10px] text-vectura-muted">No loop stops detected</span>';
+      const stopButtons = Array.from(stopsRow.querySelectorAll('.harmonograph-stop-btn'));
+
+      const state = {
+        rafId: null,
+        playing: false,
+        playhead: clamp(parseInt(range.value, 10) || 0, 0, Math.max(1, data.path.length - 1)),
+        speed: parseFloat(speedSelect.value) || 1,
+        lastTs: 0,
+      };
+      this.harmonographPlotterState = state;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      const draw = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#101115';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        if (!data.path.length) return;
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minY = Infinity;
+        let maxY = -Infinity;
+        data.path.forEach((pt) => {
+          if (pt.x < minX) minX = pt.x;
+          if (pt.x > maxX) maxX = pt.x;
+          if (pt.y < minY) minY = pt.y;
+          if (pt.y > maxY) maxY = pt.y;
+        });
+        const spanX = maxX - minX;
+        const spanY = maxY - minY;
+        const span = Math.max(spanX, spanY, 1);
+        const pad = 16;
+        const scale = (Math.min(canvas.width, canvas.height) - pad * 2) / span;
+        const toCanvas = (pt) => ({
+          x: (pt.x - (minX + maxX) / 2) * scale + canvas.width / 2,
+          y: (pt.y - (minY + maxY) / 2) * scale + canvas.height / 2,
+        });
+
+        ctx.strokeStyle = 'rgba(113,113,122,0.35)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        data.path.forEach((pt, idx) => {
+          const c = toCanvas(pt);
+          if (idx === 0) ctx.moveTo(c.x, c.y);
+          else ctx.lineTo(c.x, c.y);
+        });
+        ctx.stroke();
+
+        const limit = clamp(state.playhead, 0, data.path.length - 1);
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        for (let i = 0; i <= limit; i += 1) {
+          const c = toCanvas(data.path[i]);
+          if (i === 0) ctx.moveTo(c.x, c.y);
+          else ctx.lineTo(c.x, c.y);
+        }
+        ctx.stroke();
+
+        const head = toCanvas(data.path[limit]);
+        ctx.fillStyle = '#fafafa';
+        ctx.beginPath();
+        ctx.arc(head.x, head.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      };
+
+      const tick = (ts) => {
+        if (!state.playing) return;
+        const last = state.lastTs || ts;
+        const delta = Math.max(0, ts - last);
+        state.lastTs = ts;
+        const step = (data.path.length / 6000) * delta * state.speed;
+        state.playhead += step;
+        if (state.playhead >= data.path.length - 1) {
+          state.playhead = data.path.length - 1;
+          state.playing = false;
+          playBtn.textContent = 'Play';
+        }
+        range.value = `${Math.round(state.playhead)}`;
+        draw();
+        if (state.playing) state.rafId = window.requestAnimationFrame(tick);
+      };
+
+      playBtn.onclick = () => {
+        state.playing = !state.playing;
+        playBtn.textContent = state.playing ? 'Pause' : 'Play';
+        if (state.playing) {
+          state.lastTs = 0;
+          state.rafId = window.requestAnimationFrame(tick);
+        } else if (state.rafId) {
+          window.cancelAnimationFrame(state.rafId);
+          state.rafId = null;
+        }
+      };
+      range.oninput = (e) => {
+        state.playhead = parseInt(e.target.value, 10) || 0;
+        draw();
+      };
+      speedSelect.onchange = (e) => {
+        state.speed = parseFloat(e.target.value) || 1;
+      };
+      stopButtons.forEach((btn) => {
+        btn.onclick = () => {
+          const stop = parseInt(btn.dataset.stop || '0', 10) || 0;
+          state.playhead = clamp(stop, 0, data.path.length - 1);
+          range.value = `${state.playhead}`;
+          draw();
+        };
+      });
+
+      draw();
+    }
+
     buildControls() {
       const container = getEl('dynamic-controls');
       if (!container) return;
+      if (this.harmonographPlotterState?.rafId) {
+        window.cancelAnimationFrame(this.harmonographPlotterState.rafId);
+      }
+      this.harmonographPlotterState = null;
       this.destroyInlinePetalisDesigner();
       container.innerHTML = '';
       const layer = this.app.engine.getActiveLayer();
@@ -10401,6 +10686,11 @@
           });
 
           target.appendChild(list);
+          return;
+        }
+        if (def.type === 'harmonographPlotter') {
+          if (layer.type !== 'harmonograph') return;
+          this.mountHarmonographPlotter(layer, target);
           return;
         }
         if (def.type === 'modifierList') {

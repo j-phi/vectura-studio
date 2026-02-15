@@ -18,6 +18,9 @@
         const gapRandomness = Math.max(0, Math.min(1, p.gapRandomness ?? 0));
         const widthMultiplier = Math.max(1, Math.round(p.widthMultiplier ?? 1));
         const thickeningMode = p.thickeningMode || 'parallel';
+        const loopDrift = p.loopDrift ?? 0;
+        const settleThreshold = Math.max(0, p.settleThreshold ?? 0);
+        const settleWindow = Math.max(1, Math.floor(p.settleWindow ?? 24));
 
         const normalizePendulums = () => {
           if (Array.isArray(p.pendulums) && p.pendulums.length) {
@@ -72,12 +75,13 @@
         const buildPath = (set, count) => {
           const path = [];
           const localDt = duration / count;
+          let settleCount = 0;
           for (let i = 0; i <= count; i++) {
             const t = i * localDt;
             let x = 0;
             let y = 0;
             set.forEach((pend) => {
-              const freq = (pend.freq + pend.micro) * Math.PI * 2;
+              const freq = (pend.freq + pend.micro + loopDrift * t) * Math.PI * 2;
               const decay = Math.exp(-pend.damp * t);
               x += pend.ax * Math.sin(freq * t + pend.phaseX) * decay;
               y += pend.ay * Math.sin(freq * t + pend.phaseY) * decay;
@@ -92,6 +96,11 @@
               y = ry;
             }
             path.push({ x: cx + x, y: cy + y });
+            if (settleThreshold > 0) {
+              const mag = Math.hypot(x, y);
+              settleCount = mag <= settleThreshold ? settleCount + 1 : 0;
+              if (settleCount >= settleWindow) break;
+            }
           }
           return path;
         };
