@@ -6736,6 +6736,7 @@
             <div>Petal Designer: middle-click drag pans and wheel zooms at cursor.</div>
             <div>Touch: one-finger tool input, two-finger pan/pinch zoom.</div>
             <div>On tablets, use Shift/Alt/Meta/Pan touch modifier buttons near the toolbar.</div>
+            <div>On phones, header actions scroll horizontally and side panels open as slide-over drawers using the left/right pane toggles.</div>
             <div>Drag selection box to multi-select</div>
             <div>Drag to move selection; handles resize; top-right handle rotates (Shift snaps)</div>
           </div>
@@ -8303,8 +8304,14 @@
       };
 
       const applyAutoCollapse = () => {
-        const shouldAuto = window.innerWidth < 1200;
+        const viewportWidth = window.innerWidth;
+        const shouldAuto = viewportWidth < 1200;
+        const isMobileLayout = viewportWidth < 900;
         document.body.classList.toggle('auto-collapsed', shouldAuto);
+        document.body.classList.toggle('mobile-layout', isMobileLayout);
+        if (isMobileLayout && bottomPane) {
+          bottomPane.classList.add('bottom-pane-collapsed');
+        }
       };
 
       const togglePane = (pane) => {
@@ -8324,7 +8331,7 @@
       this.expandPanes = () => {
         leftPane.classList.remove('pane-collapsed', 'pane-force-open');
         rightPane.classList.remove('pane-collapsed', 'pane-force-open');
-        document.body.classList.remove('auto-collapsed');
+        document.body.classList.remove('auto-collapsed', 'mobile-layout');
         document.documentElement.style.setProperty('--pane-left-width', '519px');
         document.documentElement.style.setProperty('--pane-right-width', '336px');
         document.documentElement.style.setProperty('--bottom-pane-height', '180px');

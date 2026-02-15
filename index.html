@@ -39,15 +39,17 @@
 </head>
 
 <body class="font-mono text-sm antialiased h-screen flex flex-col bg-vectura-bg text-vectura-text overflow-hidden">
-  <header class="h-12 border-b border-vectura-border bg-vectura-panel flex items-center justify-between px-4 z-20">
-    <div class="flex items-center gap-3">
-      <div class="w-4 h-4 bg-vectura-accent"></div>
-      <h1 class="font-bold tracking-widest text-vectura-accent">
-        VECTURA<span class="font-light text-vectura-muted">.STUDIO</span>
-      </h1>
+  <header id="app-header" class="border-b border-vectura-border bg-vectura-panel px-4 py-2 z-20">
+    <div class="flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-4 h-4 bg-vectura-accent"></div>
+        <h1 class="font-bold tracking-widest text-vectura-accent">
+          VECTURA<span class="font-light text-vectura-muted">.STUDIO</span>
+        </h1>
+      </div>
+      <div class="text-xs text-vectura-muted" id="status-bar" role="status" aria-live="polite">READY</div>
     </div>
-    <div class="text-xs text-vectura-muted" id="status-bar" role="status" aria-live="polite">READY</div>
-    <div class="flex gap-4">
+    <div id="top-actions" class="flex gap-4 pt-2">
       <button id="btn-help" class="hover:text-vectura-accent transition-colors text-xs" type="button">
         [HELP]
       </button>
@@ -83,7 +85,7 @@
       <div class="pane-header pane-header-left p-4 border-b border-vectura-border flex justify-between items-center">
         <span class="pane-title font-bold text-vectura-accent">GENERATOR</span>
 
-        <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.92</span>
+        <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.93</span>
 
         <button id="btn-pane-toggle-left" class="pane-toggle pane-toggle-left" type="button"
           aria-label="Toggle left pane">
