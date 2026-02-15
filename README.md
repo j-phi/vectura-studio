@@ -45,6 +45,8 @@ Sample outputs included in `assets/gallery/`.
 | ![Flowfield sample](assets/gallery/flowfield-sample.svg) | ![Boids sample](assets/gallery/boids-sample.svg) | ![Attractor sample](assets/gallery/attractor-sample.svg) |
 
 ## Quick Start
+Requires Node.js 20+ for Vite tooling.
+
 Option A - Vite dev server:
 ```bash
 npm install
