@@ -69,6 +69,7 @@ npm install
 - `npm run test:integration` - engine workflow integration coverage (layer lifecycle, optimization pipeline, state roundtrip, deterministic export).
 - `npm run test:e2e` - Playwright smoke tests on desktop + tablet-touch Chromium.
 - `npm run test:visual` - SVG baseline regression checks (`tests/baselines/svg`).
+- `npm run test:visual:screenshots` - optional Playwright screenshot snapshot checks for high-risk UI shells.
 - `npm run test:perf` - stress/performance checks for generation and optimization.
 - `npm run test:ci` - PR-gating suite (`unit + integration + e2e`).
 - `npm run test:update` - updates visual SVG baselines (requires review before commit).

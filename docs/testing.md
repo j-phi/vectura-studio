@@ -11,6 +11,7 @@
 - `npm run test:integration` runs engine integration tests.
 - `npm run test:e2e` runs Playwright smoke tests.
 - `npm run test:visual` runs SVG baseline regression checks.
+- `npm run test:visual:screenshots` runs optional Playwright screenshot snapshots.
 - `npm run test:perf` runs stress/performance checks.
 - `npm run test:ci` runs the PR-gating test suite.
 

@@ -9,6 +9,7 @@
     "test:integration": "vitest run tests/integration",
     "test:e2e": "playwright test tests/e2e/smoke.spec.js",
     "test:visual": "vitest run tests/visual",
+    "test:visual:screenshots": "ENABLE_SCREENSHOT_VISUALS=1 playwright test tests/e2e/visual.spec.js",
     "test:perf": "vitest run tests/perf",
     "test:ci": "npm run test:unit && npm run test:integration && npm run test:e2e",
     "test:update": "VECTURA_UPDATE_BASELINES=1 npm run test:visual"
