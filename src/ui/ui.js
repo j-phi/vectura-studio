@@ -14,6 +14,7 @@
     PALETTES,
     PRESETS,
     PETALIS_PRESETS,
+    RandomizationUtils,
   } = window.Vectura || {};
 
   const PETALIS_PRESET_LIBRARY = (Array.isArray(PRESETS) ? PRESETS : Array.isArray(PETALIS_PRESETS) ? PETALIS_PRESETS : [])
@@ -6642,105 +6643,14 @@
     }
 
     randomizeLayerParams(layer) {
-      if (!layer) return;
-      const defs = [...(this.controls[layer.type] || []), ...COMMON_CONTROLS];
-      const rng = (min, max) => min + Math.random() * (max - min);
-      const safeRange = (min, max) => {
-        const span = max - min;
-        if (span <= 0) return { min, max };
-        const pad = span * 0.1;
-        const minSafe = min + pad;
-        const maxSafe = max - pad;
-        if (maxSafe <= minSafe) return { min, max };
-        return { min: minSafe, max: maxSafe };
-      };
-      const roundStep = (value, step, min, max) => {
-        const snapped = roundToStep(value, step);
-        return clamp(snapped, min, max);
-      };
-      const randomizeNoise = (noise) => {
-        if (!noise || typeof noise !== 'object') return;
-        WAVE_NOISE_DEFS.forEach((nDef) => {
-          if (nDef.showIf && !nDef.showIf(noise)) return;
-          if (nDef.type === 'select') {
-            const opts = nDef.options || [];
-            const available = nDef.randomExclude ? opts.filter((opt) => !nDef.randomExclude.includes(opt.value)) : opts;
-            if (!available.length) return;
-            const pick = available[Math.floor(Math.random() * available.length)];
-            noise[nDef.key] = pick.value;
-            return;
-          }
-          if (nDef.type === 'angle') {
-            const randMin = Number.isFinite(nDef.randomMin) ? nDef.randomMin : nDef.min;
-            const randMax = Number.isFinite(nDef.randomMax) ? nDef.randomMax : nDef.max;
-            const { min, max } = safeRange(randMin, randMax);
-            const step = nDef.step ?? 1;
-            noise[nDef.key] = roundStep(rng(min, max), step, nDef.min, nDef.max);
-            return;
-          }
-          if (nDef.type === 'range') {
-            const randMin = Number.isFinite(nDef.randomMin) ? nDef.randomMin : nDef.min;
-            const randMax = Number.isFinite(nDef.randomMax) ? nDef.randomMax : nDef.max;
-            const { min, max } = safeRange(randMin, randMax);
-            const step = nDef.step ?? 1;
-            noise[nDef.key] = roundStep(rng(min, max), step, nDef.min, nDef.max);
-          }
-        });
-      };
-
-      defs.forEach((def) => {
-        if (def.showIf && !def.showIf(layer.params)) return;
-        if (layer.type === 'harmonograph' && def.id === 'showPendulumGuides') return;
-        if (def.type === 'section' || def.type === 'file' || def.type === 'image') return;
-        if (def.type === 'noiseList') {
-          if (layer.type === 'wavetable') {
-            const noises = this.ensureWavetableNoises(layer);
-            noises.forEach((noise) => randomizeNoise(noise));
-          } else if (layer.type === 'spiral') {
-            const noises = this.ensureSpiralNoises(layer);
-            noises.forEach((noise) => randomizeNoise(noise));
-          }
-          return;
-        }
-        if (def.type === 'angle') {
-          const randMin = Number.isFinite(def.randomMin) ? def.randomMin : def.min;
-          const randMax = Number.isFinite(def.randomMax) ? def.randomMax : def.max;
-          const { min, max } = safeRange(randMin, randMax);
-          const step = def.step ?? 1;
-          layer.params[def.id] = roundStep(rng(min, max), step, def.min, def.max);
-          return;
-        } else if (def.type === 'checkbox') {
-          layer.params[def.id] = Math.random() > 0.5;
-          return;
-        }
-        if (def.type === 'select') {
-          const opts = def.options || [];
-          const available = def.randomExclude ? opts.filter((opt) => !def.randomExclude.includes(opt.value)) : opts;
-          if (!available.length) return;
-          const pick = available[Math.floor(Math.random() * available.length)];
-          layer.params[def.id] = pick.value;
-          return;
-        }
-        if (def.type === 'rangeDual') {
-          const randMin = Number.isFinite(def.randomMin) ? def.randomMin : def.min;
-          const randMax = Number.isFinite(def.randomMax) ? def.randomMax : def.max;
-          const { min, max } = safeRange(randMin, randMax);
-          const step = def.step ?? 1;
-          let a = rng(min, max);
-          let b = rng(min, max);
-          if (a > b) [a, b] = [b, a];
-          if (b - a < step) b = Math.min(max, a + step);
-          layer.params[def.minKey] = roundStep(a, step, def.min, def.max);
-          layer.params[def.maxKey] = roundStep(b, step, def.min, def.max);
-          return;
-        }
-        if (def.type === 'range') {
-          const randMin = Number.isFinite(def.randomMin) ? def.randomMin : def.min;
-          const randMax = Number.isFinite(def.randomMax) ? def.randomMax : def.max;
-          const { min, max } = safeRange(randMin, randMax);
-          const step = def.step ?? 1;
-          layer.params[def.id] = roundStep(rng(min, max), step, def.min, def.max);
-        }
+      if (!layer || !RandomizationUtils?.randomizeLayerParams) return;
+      RandomizationUtils.randomizeLayerParams({
+        layer,
+        controls: this.controls,
+        commonControls: COMMON_CONTROLS,
+        waveNoiseDefs: WAVE_NOISE_DEFS,
+        ensureWavetableNoises: () => this.ensureWavetableNoises(layer),
+        ensureSpiralNoises: () => this.ensureSpiralNoises(layer),
       });
       this.applyRandomizationBias(layer);
     }

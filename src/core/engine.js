@@ -2,226 +2,41 @@
  * Core vector generation engine.
  */
 (() => {
-  const { MACHINES, SETTINGS, ALGO_DEFAULTS, Algorithms, SeededRNG, SimpleNoise, Layer } = window.Vectura || {};
+  const {
+    MACHINES,
+    SETTINGS,
+    ALGO_DEFAULTS,
+    Algorithms,
+    SeededRNG,
+    SimpleNoise,
+    Layer,
+    GeometryUtils = {},
+    OptimizationUtils = {},
+  } = window.Vectura || {};
 
-  const smoothPath = (path, amount) => {
-    if (!amount || amount <= 0 || path.length < 3) return path;
-    const smoothed = [path[0]];
-    for (let i = 1; i < path.length - 1; i++) {
-      const prev = path[i - 1];
-      const curr = path[i];
-      const next = path[i + 1];
-      const avgX = (prev.x + next.x) / 2;
-      const avgY = (prev.y + next.y) / 2;
-      smoothed.push({
-        x: curr.x * (1 - amount) + avgX * amount,
-        y: curr.y * (1 - amount) + avgY * amount,
-      });
-    }
-    smoothed.push(path[path.length - 1]);
-    if (path.meta) smoothed.meta = path.meta;
-    return smoothed;
-  };
+  const smoothPath = GeometryUtils.smoothPath || ((path) => path);
+  const simplifyPath = GeometryUtils.simplifyPath || ((path) => path);
+  const simplifyPathVisvalingam = GeometryUtils.simplifyPathVisvalingam || ((path) => path);
+  const countPathPoints = GeometryUtils.countPathPoints || (() => ({ lines: 0, points: 0 }));
+  const clonePaths =
+    GeometryUtils.clonePaths ||
+    ((paths) =>
+      (paths || []).map((path) => {
+        if (!Array.isArray(path)) return path;
+        const next = path.map((pt) => ({ ...pt }));
+        if (path.meta) next.meta = JSON.parse(JSON.stringify(path.meta));
+        return next;
+      }));
 
-  const simplifyPath = (path, tolerance) => {
-    if (!tolerance || tolerance <= 0 || path.length < 3) return path;
-    const sq = (n) => n * n;
-    const distToSegmentSq = (p, a, b) => {
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      if (dx === 0 && dy === 0) return sq(p.x - a.x) + sq(p.y - a.y);
-      const t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy);
-      if (t <= 0) return sq(p.x - a.x) + sq(p.y - a.y);
-      if (t >= 1) return sq(p.x - b.x) + sq(p.y - b.y);
-      const projX = a.x + t * dx;
-      const projY = a.y + t * dy;
-      return sq(p.x - projX) + sq(p.y - projY);
-    };
-    const keep = new Array(path.length).fill(false);
-    keep[0] = true;
-    keep[path.length - 1] = true;
-    const stack = [[0, path.length - 1]];
-    const tolSq = tolerance * tolerance;
-    while (stack.length) {
-      const [start, end] = stack.pop();
-      let maxDist = 0;
-      let index = -1;
-      for (let i = start + 1; i < end; i++) {
-        const dist = distToSegmentSq(path[i], path[start], path[end]);
-        if (dist > maxDist) {
-          maxDist = dist;
-          index = i;
-        }
-      }
-      if (maxDist > tolSq && index !== -1) {
-        keep[index] = true;
-        stack.push([start, index]);
-        stack.push([index, end]);
-      }
-    }
-    const simplified = path.filter((_, i) => keep[i]);
-    if (path.meta) simplified.meta = path.meta;
-    return simplified.length >= 2 ? simplified : path;
-  };
-
-  const simplifyPathVisvalingam = (path, tolerance) => {
-    if (!tolerance || tolerance <= 0 || path.length < 3) return path;
-    const areaThreshold = tolerance * tolerance;
-    const pts = path.map((pt) => ({ x: pt.x, y: pt.y }));
-    const keep = new Array(pts.length).fill(true);
-    const area = new Array(pts.length).fill(Infinity);
-    const triArea = (a, b, c) =>
-      Math.abs(
-        (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y)) / 2
-      );
-
-    for (let i = 1; i < pts.length - 1; i++) {
-      area[i] = triArea(pts[i - 1], pts[i], pts[i + 1]);
-    }
-
-    const findNext = (idx, dir) => {
-      let i = idx + dir;
-      while (i > 0 && i < pts.length - 1 && !keep[i]) i += dir;
-      return i;
-    };
-
-    while (true) {
-      let minArea = Infinity;
-      let minIndex = -1;
-      for (let i = 1; i < pts.length - 1; i++) {
-        if (!keep[i]) continue;
-        if (area[i] < minArea) {
-          minArea = area[i];
-          minIndex = i;
-        }
-      }
-      if (minIndex === -1 || minArea >= areaThreshold) break;
-      keep[minIndex] = false;
-      const prev = findNext(minIndex, -1);
-      const next = findNext(minIndex, 1);
-      if (prev > 0 && next < pts.length) {
-        area[prev] = triArea(pts[findNext(prev, -1)], pts[prev], pts[next]);
-      }
-      if (next < pts.length - 1 && prev >= 0) {
-        area[next] = triArea(pts[prev], pts[next], pts[findNext(next, 1)]);
-      }
-    }
-
-    const simplified = pts.filter((_, i) => keep[i]);
-    if (path.meta) simplified.meta = path.meta;
-    return simplified.length >= 2 ? simplified : path;
-  };
-
-  const countPathPoints = (paths) => {
-    let lines = 0;
-    let points = 0;
-    paths.forEach((path) => {
-      if (!Array.isArray(path)) return;
-      lines += 1;
-      points += path.length;
-    });
-    return { lines, points };
-  };
-
-  const clonePaths = (paths) =>
-    (paths || []).map((path) => {
-      if (!Array.isArray(path)) return path;
-      const next = path.map((pt) => ({ ...pt }));
-      if (path.meta) next.meta = JSON.parse(JSON.stringify(path.meta));
-      return next;
-    });
+  const pathLength = OptimizationUtils.pathLength || (() => 0);
+  const pathEndpoints = OptimizationUtils.pathEndpoints || (() => ({ start: { x: 0, y: 0 }, end: { x: 0, y: 0 } }));
+  const pathCentroid = OptimizationUtils.pathCentroid || (() => ({ x: 0, y: 0 }));
+  const isClosedPath = OptimizationUtils.isClosedPath || (() => false);
+  const closePathIfNeeded = OptimizationUtils.closePathIfNeeded || ((path) => path);
+  const reversePath = OptimizationUtils.reversePath || ((path) => path);
+  const offsetPath = OptimizationUtils.offsetPath || ((path) => path);
 
   const clone = (obj) => JSON.parse(JSON.stringify(obj));
-
-  const pathLength = (path) => {
-    if (path && path.meta && path.meta.kind === 'circle') {
-      const r = path.meta.r ?? path.meta.rx ?? 0;
-      return Math.max(0, 2 * Math.PI * r);
-    }
-    if (!Array.isArray(path)) return 0;
-    let len = 0;
-    for (let i = 1; i < path.length; i++) {
-      const dx = path[i].x - path[i - 1].x;
-      const dy = path[i].y - path[i - 1].y;
-      len += Math.sqrt(dx * dx + dy * dy);
-    }
-    return len;
-  };
-
-  const pathEndpoints = (path) => {
-    if (path && path.meta && path.meta.kind === 'circle') {
-      const cx = path.meta.cx ?? path.meta.x ?? 0;
-      const cy = path.meta.cy ?? path.meta.y ?? 0;
-      return { start: { x: cx, y: cy }, end: { x: cx, y: cy } };
-    }
-    if (!Array.isArray(path) || !path.length) return { start: { x: 0, y: 0 }, end: { x: 0, y: 0 } };
-    return { start: path[0], end: path[path.length - 1] };
-  };
-
-  const pathCentroid = (path) => {
-    if (path && path.meta && path.meta.kind === 'circle') {
-      const cx = path.meta.cx ?? path.meta.x ?? 0;
-      const cy = path.meta.cy ?? path.meta.y ?? 0;
-      return { x: cx, y: cy };
-    }
-    if (!Array.isArray(path) || !path.length) return { x: 0, y: 0 };
-    let sx = 0;
-    let sy = 0;
-    path.forEach((pt) => {
-      sx += pt.x;
-      sy += pt.y;
-    });
-    const denom = path.length || 1;
-    return { x: sx / denom, y: sy / denom };
-  };
-
-  const isClosedPath = (path) => {
-    if (!Array.isArray(path) || path.length < 3) return false;
-    const start = path[0];
-    const end = path[path.length - 1];
-    const dx = start.x - end.x;
-    const dy = start.y - end.y;
-    return dx * dx + dy * dy < 1e-6;
-  };
-
-  const closePathIfNeeded = (path, closed) => {
-    if (!closed || !Array.isArray(path) || path.length < 2) return path;
-    const start = path[0];
-    const end = path[path.length - 1];
-    const dx = start.x - end.x;
-    const dy = start.y - end.y;
-    if (dx * dx + dy * dy > 1e-6) {
-      const next = path.slice();
-      next.push({ x: start.x, y: start.y });
-      if (path.meta) next.meta = path.meta;
-      return next;
-    }
-    return path;
-  };
-
-  const reversePath = (path) => {
-    if (!Array.isArray(path)) return path;
-    const next = path.slice().reverse();
-    if (path.meta) next.meta = path.meta;
-    return next;
-  };
-
-  const offsetPath = (path, dx, dy) => {
-    if (path && path.meta && path.meta.kind === 'circle') {
-      const meta = { ...path.meta };
-      const cx = meta.cx ?? meta.x ?? 0;
-      const cy = meta.cy ?? meta.y ?? 0;
-      meta.cx = cx + dx;
-      meta.cy = cy + dy;
-      const next = [];
-      next.meta = meta;
-      return next;
-    }
-    if (!Array.isArray(path)) return path;
-    const next = path.map((pt) => ({ x: pt.x + dx, y: pt.y + dy }));
-    if (path.meta) next.meta = path.meta;
-    return next;
-  };
 
   class VectorEngine {
     constructor() {
