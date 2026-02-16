@@ -6736,7 +6736,7 @@
             <div>Petal Designer: middle-click drag pans and wheel zooms at cursor.</div>
             <div>Touch: one-finger tool input, two-finger pan/pinch zoom.</div>
             <div>On tablets, use Shift/Alt/Meta/Pan touch modifier buttons near the toolbar.</div>
-            <div>On phones, header actions scroll horizontally and side panels open as slide-over drawers using the left/right pane toggles.</div>
+            <div>On phones, header actions scroll horizontally; use either pane toggles or edge tabs to open Generator/Layers, and use the floating Model toggle to expand/collapse the formula panel.</div>
             <div>Drag selection box to multi-select</div>
             <div>Drag to move selection; handles resize; top-right handle rotates (Shift snaps)</div>
           </div>
@@ -8296,7 +8296,11 @@
       const bottomPane = getEl('bottom-pane');
       const leftBtn = getEl('btn-pane-toggle-left');
       const rightBtn = getEl('btn-pane-toggle-right');
+      const mobileLeftBtn = getEl('btn-mobile-pane-left');
+      const mobileRightBtn = getEl('btn-mobile-pane-right');
       if (!leftPane || !rightPane || !leftBtn || !rightBtn) return;
+
+      const isMobileViewport = () => window.innerWidth < 900;
 
       const isCollapsed = (pane) => {
         const auto = document.body.classList.contains('auto-collapsed') && !pane.classList.contains('pane-force-open');
@@ -8309,14 +8313,21 @@
         const isMobileLayout = viewportWidth < 900;
         document.body.classList.toggle('auto-collapsed', shouldAuto);
         document.body.classList.toggle('mobile-layout', isMobileLayout);
-        if (isMobileLayout && bottomPane) {
-          bottomPane.classList.add('bottom-pane-collapsed');
+        if (bottomPane) {
+          bottomPane.classList.toggle('bottom-pane-collapsed', isMobileLayout);
         }
       };
 
       const togglePane = (pane) => {
         const auto = document.body.classList.contains('auto-collapsed');
+        const willOpen = auto ? !pane.classList.contains('pane-force-open') : pane.classList.contains('pane-collapsed');
+        if (willOpen && isMobileViewport()) {
+          const sibling = pane === leftPane ? rightPane : leftPane;
+          sibling.classList.remove('pane-force-open');
+          sibling.classList.add('pane-collapsed');
+        }
         if (auto) {
+          pane.classList.remove('pane-collapsed');
           pane.classList.toggle('pane-force-open');
         } else {
           pane.classList.toggle('pane-collapsed');
@@ -8325,6 +8336,8 @@
 
       leftBtn.addEventListener('click', () => togglePane(leftPane));
       rightBtn.addEventListener('click', () => togglePane(rightPane));
+      if (mobileLeftBtn) mobileLeftBtn.addEventListener('click', () => togglePane(leftPane));
+      if (mobileRightBtn) mobileRightBtn.addEventListener('click', () => togglePane(rightPane));
       window.addEventListener('resize', applyAutoCollapse);
       applyAutoCollapse();
 
@@ -8342,10 +8355,13 @@
     initBottomPaneToggle() {
       const bottomPane = getEl('bottom-pane');
       const btn = getEl('btn-pane-toggle-bottom');
+      const mobileBtn = getEl('btn-mobile-pane-bottom');
       if (!bottomPane || !btn) return;
-      btn.addEventListener('click', () => {
+      const toggleBottomPane = () => {
         bottomPane.classList.toggle('bottom-pane-collapsed');
-      });
+      };
+      btn.addEventListener('click', toggleBottomPane);
+      if (mobileBtn) mobileBtn.addEventListener('click', toggleBottomPane);
     }
 
     initBottomPaneResizer() {
