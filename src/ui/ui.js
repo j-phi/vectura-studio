@@ -4617,7 +4617,6 @@
       this.renderPens();
       this.initPaletteControls();
       this.initAutoColorizationPanel();
-      this.initPetalDesignerButton();
       this.buildControls();
       this.updateFormula();
       this.initSettingsValues();
@@ -4968,12 +4967,6 @@
       document.addEventListener('pointercancel', endBridge, { capture: true });
     }
 
-    initPetalDesignerButton() {
-      const btn = getEl('btn-petal-designer');
-      if (!btn) return;
-      btn.onclick = () => this.openPetalDesigner();
-    }
-
     getPetalDesignerLayer() {
       const active = this.app.engine.getActiveLayer?.();
       if (isPetalisLayerType(active?.type)) return active;
@@ -5129,6 +5122,8 @@
     createPetalDesignerMarkup(options = {}) {
       const {
         showClose = true,
+        showPopOut = false,
+        showPopIn = false,
         canvasWidth = 260,
         canvasHeight = 220,
       } = options;
@@ -5168,6 +5163,8 @@
                 <path d="M3.5 12h5M15.5 12h5M12 3.5v5M12 15.5v5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
               </svg>
             </button>
+            ${showPopOut ? '<button type="button" class="petal-popout" aria-label="Pop Out Petal Designer" title="Pop Out">⧉</button>' : ''}
+            ${showPopIn ? '<button type="button" class="petal-popin" aria-label="Pop In Petal Designer" title="Pop In">↩</button>' : ''}
             ${showClose ? '<button type="button" class="petal-close" aria-label="Close Petal Designer">✕</button>' : ''}
           </div>
         </div>
@@ -5638,13 +5635,18 @@
       });
       const closeBtn = pd.root.querySelector('.petal-close');
       if (closeBtn) closeBtn.onclick = () => this.closePetalDesigner();
+      const popOutBtn = pd.root.querySelector('.petal-popout');
+      if (popOutBtn) popOutBtn.onclick = () => this.popOutInlinePetalDesigner();
+      const popInBtn = pd.root.querySelector('.petal-popin');
+      if (popInBtn) popInBtn.onclick = () => this.popInPetalDesigner();
       this.renderPetalDesignerShadingStack(pd, applyChanges);
       setTool('direct');
       this.syncPetalDesignerControls(pd);
     }
 
-    openPetalDesigner() {
-      const layer = this.getPetalDesignerLayer();
+    openPetalDesigner(options = {}) {
+      const { layer: requestedLayer = null, fromInline = false } = options;
+      const layer = requestedLayer || this.getPetalDesignerLayer();
       if (!layer) {
         this.openModal({
           title: 'Petal Designer',
@@ -5653,7 +5655,7 @@
         });
         return;
       }
-      if (this.inlinePetalDesigner && this.inlinePetalDesigner.state?.layerId === layer.id) {
+      if (!fromInline && this.inlinePetalDesigner && this.inlinePetalDesigner.state?.layerId === layer.id) {
         this.inlinePetalDesigner.focused = true;
         this.inlinePetalDesigner.root?.classList.add('focused');
         return;
@@ -5664,7 +5666,11 @@
       const root = document.createElement('div');
       root.id = 'petal-designer-window';
       root.className = 'petal-designer-window';
-      root.innerHTML = this.createPetalDesignerMarkup();
+      root.innerHTML = this.createPetalDesignerMarkup({
+        showPopIn: true,
+        canvasWidth: 220,
+        canvasHeight: 180,
+      });
       document.body.appendChild(root);
 
       this.petalDesigner = {
@@ -5681,6 +5687,28 @@
       this.bindPetalDesignerShortcuts(this.petalDesigner);
       this.applyPetalDesignerToLayer(state);
       this.renderPetalDesigner(this.petalDesigner);
+    }
+
+    popOutInlinePetalDesigner() {
+      const inline = this.inlinePetalDesigner;
+      if (!inline?.state?.layerId) return;
+      const layer = (this.app.engine.layers || []).find((entry) => entry?.id === inline.state.layerId);
+      if (!layer) return;
+      this.destroyInlinePetalisDesigner();
+      this.openPetalDesigner({ layer, fromInline: true });
+    }
+
+    popInPetalDesigner() {
+      const modalState = this.petalDesigner?.state;
+      this.closePetalDesigner();
+      if (!modalState?.layerId) return;
+      const layer = (this.app.engine.layers || []).find((entry) => entry?.id === modalState.layerId);
+      if (!layer) return;
+      this.buildControls();
+      if (this.inlinePetalDesigner?.state?.layerId === layer.id) {
+        this.inlinePetalDesigner.focused = true;
+        this.inlinePetalDesigner.root?.classList.add('focused');
+      }
     }
 
     closePetalDesigner() {
@@ -5713,6 +5741,7 @@
       root.className = 'petal-designer-window petal-designer-inline';
       root.innerHTML = this.createPetalDesignerMarkup({
         showClose: false,
+        showPopOut: true,
         canvasWidth: 220,
         canvasHeight: 180,
       });
@@ -6688,8 +6717,8 @@
             Petalis provides flower presets, radial petal controls, inner/outer profile transitions, and a shading stack with in-place hatch-angle rotation (angle rotates internal strokes, not shading placement) plus an in-development light source tool.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Use [PETAL DESIGNER] for the single-panel petal editor, or choose Petalis Designer for the embedded inline panel.
-            Petalis Designer shape comes from its editable inner/outer curves, live ring/split controls, in-panel shading stack, and symmetry mode; legacy petal profile and hidden tip/base modifiers are not applied there.
+            Petalis Designer includes an embedded panel; use its pop-out icon (⧉) to open the same panel in a floating window and pop-in (↩) to dock it back.
+            Shape comes from editable inner/outer curves, live ring/split controls, in-panel shading stack, and symmetry mode; legacy petal profile and hidden tip/base modifiers are not applied there.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Left panel sections are collapsible; Transform &amp; Seed lives inside Algorithm in its own collapsible sub-panel (collapsed by default), and ABOUT visibility is remembered.
