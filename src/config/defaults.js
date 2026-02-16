@@ -203,6 +203,8 @@
       ringSplit: 0.45,
       innerOuterLock: false,
       designerSymmetry: 'none',
+      designerInnerSymmetry: 'none',
+      designerOuterSymmetry: 'none',
       petalVisualizerViewStyle: 'overlay',
       profileTransitionPosition: 50,
       profileTransitionFeather: 0,

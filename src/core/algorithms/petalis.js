@@ -17,6 +17,8 @@
     if (value === 'horizontal' || value === 'vertical' || value === 'both') return value;
     return 'none';
   };
+  const normalizeDesignerTarget = (value) =>
+    value === 'inner' || value === 'outer' || value === 'both' ? value : 'both';
   const profileBlendWeight = (progress, positionPct, featherPct) => {
     const pos = clamp((positionPct ?? 50) / 100, 0, 1);
     const feather = clamp((featherPct ?? 0) / 100, 0, 1);
@@ -1051,6 +1053,31 @@
     return inside;
   };
 
+  const pointOnSegment = (pt, a, b, eps = 1e-5) => {
+    const abx = b.x - a.x;
+    const aby = b.y - a.y;
+    const apx = pt.x - a.x;
+    const apy = pt.y - a.y;
+    const cross = abx * apy - aby * apx;
+    if (Math.abs(cross) > eps) return false;
+    const dot = apx * abx + apy * aby;
+    if (dot < -eps) return false;
+    const lenSq = abx * abx + aby * aby;
+    if (dot - lenSq > eps) return false;
+    return true;
+  };
+
+  const pointInOrOnPoly = (pt, poly) => {
+    if (!Array.isArray(poly) || poly.length < 3) return false;
+    if (pointInPoly(pt, poly)) return true;
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i];
+      const b = poly[(i + 1) % poly.length];
+      if (pointOnSegment(pt, a, b)) return true;
+    }
+    return false;
+  };
+
   const segmentIntersection = (a, b, c, d) => {
     const r = { x: b.x - a.x, y: b.y - a.y };
     const s = { x: d.x - c.x, y: d.y - c.y };
@@ -1206,6 +1233,100 @@
     return output;
   };
 
+  const clipSegmentInsidePolygon = (a, b, polygon) => {
+    if (!Array.isArray(polygon) || polygon.length < 3) return [[a, b]];
+    const segBox = bboxFromPoints([a, b]);
+    const polyBox = bboxFromPoints(polygon);
+    if (!bboxIntersects(segBox, polyBox)) return [];
+    const intersections = [];
+    for (let i = 0; i < polygon.length; i++) {
+      const p1 = polygon[i];
+      const p2 = polygon[(i + 1) % polygon.length];
+      const hit = segmentIntersection(a, b, p1, p2);
+      if (hit && hit.t > 1e-6 && hit.t < 1 - 1e-6) intersections.push(hit.t);
+    }
+    const ts = [0, 1, ...intersections].sort((x, y) => x - y);
+    const uniq = [];
+    ts.forEach((t) => {
+      if (!uniq.length || Math.abs(t - uniq[uniq.length - 1]) > 1e-5) uniq.push(t);
+    });
+    const segments = [];
+    for (let i = 0; i < uniq.length - 1; i++) {
+      const t0 = uniq[i];
+      const t1 = uniq[i + 1];
+      if (t1 - t0 < 1e-5) continue;
+      const mid = (t0 + t1) / 2;
+      const midPt = { x: lerp(a.x, b.x, mid), y: lerp(a.y, b.y, mid) };
+      if (!pointInOrOnPoly(midPt, polygon)) continue;
+      segments.push([
+        { x: lerp(a.x, b.x, t0), y: lerp(a.y, b.y, t0) },
+        { x: lerp(a.x, b.x, t1), y: lerp(a.y, b.y, t1) },
+      ]);
+    }
+    return segments;
+  };
+
+  const clipPathInsidePolygon = (path, polygon) => {
+    if (!Array.isArray(path) || path.length < 2) return [];
+    if (!Array.isArray(polygon) || polygon.length < 3) return [path];
+    const output = [];
+    let current = [];
+    const eps = 1e-4;
+    const appendPoint = (pt) => {
+      if (!current.length) {
+        current.push(pt);
+        return;
+      }
+      const last = current[current.length - 1];
+      if (Math.hypot(last.x - pt.x, last.y - pt.y) < eps) return;
+      current.push(pt);
+    };
+    for (let i = 0; i < path.length - 1; i++) {
+      const a = path[i];
+      const b = path[i + 1];
+      const pieces = clipSegmentInsidePolygon(a, b, polygon);
+      if (!pieces.length) {
+        if (current.length > 1) output.push(current);
+        current = [];
+        continue;
+      }
+      pieces.forEach((seg, idx) => {
+        const [s0, s1] = seg;
+        if (!current.length) {
+          current = [s0, s1];
+        } else {
+          const last = current[current.length - 1];
+          if (Math.hypot(last.x - s0.x, last.y - s0.y) > eps) {
+            output.push(current);
+            current = [s0, s1];
+          } else {
+            appendPoint(s1);
+          }
+        }
+        if (idx < pieces.length - 1) {
+          output.push(current);
+          current = [];
+        }
+      });
+    }
+    if (current.length > 1) output.push(current);
+    return output;
+  };
+
+  const clipPathsInsidePolygon = (paths, polygon) => {
+    if (!Array.isArray(paths) || !paths.length) return [];
+    const output = [];
+    paths.forEach((path) => {
+      const clipped = clipPathInsidePolygon(path, polygon);
+      clipped.forEach((seg) => {
+        if (seg.length < 2) return;
+        if (path.meta) seg.meta = { ...path.meta };
+        output.push(seg);
+      });
+    });
+    return output;
+  };
+
   const generate = (p, rng, noise, bounds) => {
     const { m, width, height } = bounds;
     const center = { x: width / 2, y: height / 2 };
@@ -1215,9 +1336,8 @@
     const occluders = [];
     const layering = p.layering !== false;
     const designerShapeOnly = Boolean(p.useDesignerShapeOnly || p.label === 'Petalis Designer');
-    const normalizeShadingTarget = (value) =>
-      value === 'inner' || value === 'outer' || value === 'both' ? value : 'both';
     const shadings = Array.isArray(p.shadings) ? p.shadings : [];
+    const modifiers = Array.isArray(p.petalModifiers) ? p.petalModifiers : [];
     const legacyShadings = [];
     if (!shadings.length && !designerShapeOnly && (p.innerShading || p.outerShading)) {
       if (p.innerShading) {
@@ -1259,7 +1379,11 @@
     }
     const baseShadingStack = (shadings.length ? shadings : legacyShadings).map((shade) => ({
       ...(shade || {}),
-      target: normalizeShadingTarget(shade?.target),
+      target: normalizeDesignerTarget(shade?.target),
+    }));
+    const baseModifierStack = modifiers.map((modifier) => ({
+      ...(modifier || {}),
+      target: normalizeDesignerTarget(modifier?.target),
     }));
     const ringMode = designerShapeOnly ? 'dual' : p.ringMode || 'single';
     const singleRingTarget = 'outer';
@@ -1267,7 +1391,15 @@
       if (!designerShapeOnly) return baseShadingStack;
       const resolved = ringTarget === 'inner' || ringTarget === 'outer' ? ringTarget : 'both';
       return baseShadingStack.filter((shade) => {
-        const target = normalizeShadingTarget(shade?.target);
+        const target = normalizeDesignerTarget(shade?.target);
+        return target === 'both' || target === resolved;
+      });
+    };
+    const getRingModifierStack = (ringTarget) => {
+      if (!designerShapeOnly) return baseModifierStack;
+      const resolved = ringTarget === 'inner' || ringTarget === 'outer' ? ringTarget : 'both';
+      return baseModifierStack.filter((modifier) => {
+        const target = normalizeDesignerTarget(modifier?.target);
         return target === 'both' || target === resolved;
       });
     };
@@ -1328,7 +1460,10 @@
       ? clamp(designerCountSplit * 100, 0, 100)
       : clamp(p.profileTransitionPosition ?? 50, 0, 100);
     const transitionFeather = clamp(p.profileTransitionFeather ?? 0, 0, 100);
-    const designerSymmetry = normalizeDesignerSymmetry(p.designerSymmetry);
+    const designerInnerSymmetry = normalizeDesignerSymmetry(p.designerInnerSymmetry ?? p.designerSymmetry);
+    const designerOuterSymmetry = normalizeDesignerSymmetry(p.designerOuterSymmetry ?? p.designerSymmetry);
+    const getRingSymmetry = (ringTarget) =>
+      ringTarget === 'inner' ? designerInnerSymmetry : designerOuterSymmetry;
 
     const ringDefs =
       ringMode === 'dual'
@@ -1365,7 +1500,9 @@
     ringDefs.forEach((ring, ringIndex) => {
       const { count, minR, maxR, offset } = ring;
       const ringTarget = ringMode === 'dual' ? (ringIndex === 0 ? 'inner' : 'outer') : singleRingTarget;
+      const ringSymmetry = getRingSymmetry(ringTarget);
       const ringShadingStack = getRingShadingStack(ringTarget);
+      const ringModifierStack = getRingModifierStack(ringTarget);
       const ringDesigner =
         ringMode === 'dual'
           ? ringIndex === 0
@@ -1463,7 +1600,7 @@
           profilePoints = buildDesignerProfile(ringDesigner, effectiveLength, widthRatio, petalSteps);
         }
         if (!profilePoints) profilePoints = fallbackProfile();
-        profilePoints = applyDesignerProfileSymmetry(profilePoints, effectiveLength, designerSymmetry);
+        profilePoints = applyDesignerProfileSymmetry(profilePoints, effectiveLength, ringSymmetry);
         let outline = buildPetal({
           length,
           widthRatio,
@@ -1515,8 +1652,9 @@
           profilePoints,
         });
         const modifierBase = { x: baseX, y: baseY };
-        outline = applyPetalModifiers([outline], p.petalModifiers || [], modifierBase, angle, length, noise)[0] || outline;
-        shadingLines = applyPetalModifiers(shadingLines, p.petalModifiers || [], modifierBase, angle, length, noise);
+        outline = applyPetalModifiers([outline], ringModifierStack, modifierBase, angle, length, noise)[0] || outline;
+        shadingLines = applyPetalModifiers(shadingLines, ringModifierStack, modifierBase, angle, length, noise);
+        shadingLines = clipPathsInsidePolygon(shadingLines, outline);
         const petalIndex = petals.length + 1;
         const groupLabel = `Petal ${String(petalIndex).padStart(2, '0')}`;
         outline.meta = { ...(outline.meta || {}), group: groupLabel, label: 'Outline' };

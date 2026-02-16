@@ -1,0 +1,8 @@
+{
+  "type": "vectura-petal-profile",
+  "version": 1,
+  "id": "camellia-dual",
+  "name": "Camellia Dual",
+  "innerProfile": "lanceolate",
+  "outerProfile": "heart"
+}

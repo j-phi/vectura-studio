@@ -1609,6 +1609,45 @@ input[type='color']::-webkit-color-swatch {
   touch-action: none;
 }
 
+.petal-designer-profile-editor {
+  padding: 12px;
+  border-top: 1px solid #334155;
+  background: rgba(8, 13, 21, 0.62);
+}
+
+.petal-profile-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.petal-profile-editor-card {
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(2, 6, 23, 0.72);
+  display: grid;
+  gap: 8px;
+}
+
+.petal-profile-editor-card.is-active {
+  border-color: #22d3ee;
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.3);
+}
+
+.petal-profile-editor-card-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #7dd3fc;
+}
+
+.petal-profile-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .petal-designer-shading {
   padding: 12px;
   border-top: 1px solid #334155;
@@ -1732,6 +1771,10 @@ input[type='color']::-webkit-color-swatch {
   }
 
   .petal-shade-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .petal-profile-editor-grid {
     grid-template-columns: 1fr;
   }
 }
