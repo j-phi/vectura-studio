@@ -1263,6 +1263,7 @@
   const PETAL_DESIGNER_PROFILE_IMPORT_ACCEPT = '.json,application/json';
   const PETAL_DESIGNER_PROFILE_TYPE = 'vectura-petal-profile';
   const PETAL_DESIGNER_PROFILE_VERSION = 1;
+  const PETAL_DESIGNER_PROFILE_BUNDLE_KEY = 'PETAL_PROFILE_LIBRARY';
 
   const PETALIS_DESIGNER_DEFAULT_INNER_COUNT = Math.round(
     clamp(ALGO_DEFAULTS?.petalisDesigner?.innerCount ?? 20, 5, 400)
@@ -5217,12 +5218,15 @@
       return safe || fallback;
     }
 
-    normalizePetalDesignerProfileShape(shape, side = 'outer') {
+    normalizePetalDesignerProfileShape(shape, side = 'outer', options = {}) {
+      const allowPresetFallback = options.allowPresetFallback !== false;
       if (!shape) return null;
       if (typeof shape === 'string') {
+        if (!allowPresetFallback) return null;
         return this.buildProfileDesignerShape(shape, side);
       }
       if (typeof shape === 'object' && typeof shape.profile === 'string' && !Array.isArray(shape.anchors)) {
+        if (!allowPresetFallback) return null;
         return this.buildProfileDesignerShape(shape.profile, side);
       }
       if (!Array.isArray(shape.anchors) || shape.anchors.length < 2) return null;
@@ -5239,25 +5243,38 @@
       const name = this.normalizePetalDesignerProfileName(raw.name, id);
       const source = options.source || 'project';
       const sourcePath = options.sourcePath || '';
+      const allowPresetFallback = options.allowPresetFallback !== false;
       const shapes = raw.shapes && typeof raw.shapes === 'object' ? raw.shapes : {};
       const target = this.normalizePetalDesignerRingTarget(raw.target, 'both');
-      let inner = this.normalizePetalDesignerProfileShape(raw.inner || shapes.inner, 'inner');
-      let outer = this.normalizePetalDesignerProfileShape(raw.outer || shapes.outer, 'outer');
-      if (!inner && typeof raw.innerProfile === 'string') {
+      let inner = this.normalizePetalDesignerProfileShape(raw.inner || shapes.inner, 'inner', {
+        allowPresetFallback,
+      });
+      let outer = this.normalizePetalDesignerProfileShape(raw.outer || shapes.outer, 'outer', {
+        allowPresetFallback,
+      });
+      if (allowPresetFallback && !inner && typeof raw.innerProfile === 'string') {
         inner = this.buildProfileDesignerShape(raw.innerProfile, 'inner');
       }
-      if (!outer && typeof raw.outerProfile === 'string') {
+      if (allowPresetFallback && !outer && typeof raw.outerProfile === 'string') {
         outer = this.buildProfileDesignerShape(raw.outerProfile, 'outer');
       }
       const sharedShape =
-        this.normalizePetalDesignerProfileShape(raw.shape || shapes.both, 'outer') ||
-        (typeof raw.profile === 'string' ? this.buildProfileDesignerShape(raw.profile, 'outer') : null);
+        this.normalizePetalDesignerProfileShape(raw.shape || shapes.both, 'outer', {
+          allowPresetFallback,
+        }) ||
+        (allowPresetFallback && typeof raw.profile === 'string'
+          ? this.buildProfileDesignerShape(raw.profile, 'outer')
+          : null);
       if (sharedShape) {
         if (!inner && target !== 'outer') {
-          inner = this.normalizePetalDesignerProfileShape(sharedShape, 'inner');
+          inner = this.normalizePetalDesignerProfileShape(sharedShape, 'inner', {
+            allowPresetFallback,
+          });
         }
         if (!outer && target !== 'inner') {
-          outer = this.normalizePetalDesignerProfileShape(sharedShape, 'outer');
+          outer = this.normalizePetalDesignerProfileShape(sharedShape, 'outer', {
+            allowPresetFallback,
+          });
         }
       }
       if (!inner && !outer) return null;
@@ -5310,49 +5327,76 @@
       return [];
     }
 
+    getBundledPetalDesignerProfileDefinitions() {
+      const bundle = window?.Vectura?.[PETAL_DESIGNER_PROFILE_BUNDLE_KEY];
+      if (Array.isArray(bundle)) return bundle;
+      if (bundle && Array.isArray(bundle.profiles)) return bundle.profiles;
+      return [];
+    }
+
     async loadPetalDesignerProfiles(options = {}) {
       const { force = false } = options;
       if (!force && this.petalDesignerProfilesLoaded) return this.getPetalDesignerProfileLibrary();
       if (!force && this.petalDesignerProfilesLoading) return this.petalDesignerProfilesLoading;
       this.petalDesignerProfilesLoading = (async () => {
-        const profileFiles = new Set();
-        try {
-          const indexRes = await fetch(`${PETAL_DESIGNER_PROFILE_DIRECTORY}index.json`, { cache: 'no-store' });
-          if (indexRes.ok) {
-            const indexPayload = await indexRes.json();
-            this.extractPetalDesignerProfileFileNamesFromIndex(indexPayload).forEach((file) => profileFiles.add(file));
-          }
-        } catch (err) {
-          // Folder index is optional.
-        }
-        try {
-          const dirRes = await fetch(PETAL_DESIGNER_PROFILE_DIRECTORY, { cache: 'no-store' });
-          if (dirRes.ok) {
-            const listing = await dirRes.text();
-            this.extractPetalDesignerProfileFileNames(listing).forEach((file) => profileFiles.add(file));
-          }
-        } catch (err) {
-          // Directory listing support depends on the static host.
-        }
-        const externalProfiles = [];
-        for (const filename of profileFiles) {
-          const fallbackId = filename.replace(/\.json$/i, '');
+        const loadedProfiles = [];
+        const addProjectProfile = (payload, sourcePath, fallbackId = '') => {
+          const normalized = this.normalizePetalDesignerProfileDefinition(payload, {
+            fallbackId,
+            source: 'project',
+            sourcePath,
+            allowPresetFallback: false,
+          });
+          if (normalized) loadedProfiles.push(normalized);
+        };
+        const bundled = this.getBundledPetalDesignerProfileDefinitions();
+        bundled.forEach((payload, index) => {
+          if (!payload || typeof payload !== 'object') return;
+          const sourcePath =
+            typeof payload.sourcePath === 'string' && payload.sourcePath.trim()
+              ? payload.sourcePath.trim()
+              : `bundle-${index + 1}.json`;
+          const fallbackId =
+            typeof payload.id === 'string' && payload.id.trim()
+              ? payload.id.trim()
+              : sourcePath.replace(/\.json$/i, '');
+          addProjectProfile(payload, sourcePath, fallbackId);
+        });
+        const isFileProtocol = window?.location?.protocol === 'file:';
+        if (!isFileProtocol) {
+          const profileFiles = new Set();
           try {
-            const res = await fetch(`${PETAL_DESIGNER_PROFILE_DIRECTORY}${filename}`, { cache: 'no-store' });
-            if (!res.ok) continue;
-            const payload = await res.json();
-            const normalized = this.normalizePetalDesignerProfileDefinition(payload, {
-              fallbackId,
-              source: 'project',
-              sourcePath: filename,
-            });
-            if (normalized) externalProfiles.push(normalized);
+            const indexRes = await fetch(`${PETAL_DESIGNER_PROFILE_DIRECTORY}index.json`, { cache: 'no-store' });
+            if (indexRes.ok) {
+              const indexPayload = await indexRes.json();
+              this.extractPetalDesignerProfileFileNamesFromIndex(indexPayload).forEach((file) => profileFiles.add(file));
+            }
           } catch (err) {
-            // Ignore malformed files and continue loading valid profiles.
+            // Folder index is optional.
+          }
+          try {
+            const dirRes = await fetch(PETAL_DESIGNER_PROFILE_DIRECTORY, { cache: 'no-store' });
+            if (dirRes.ok) {
+              const listing = await dirRes.text();
+              this.extractPetalDesignerProfileFileNames(listing).forEach((file) => profileFiles.add(file));
+            }
+          } catch (err) {
+            // Directory listing support depends on the static host.
+          }
+          for (const filename of profileFiles) {
+            const fallbackId = filename.replace(/\.json$/i, '');
+            try {
+              const res = await fetch(`${PETAL_DESIGNER_PROFILE_DIRECTORY}${filename}`, { cache: 'no-store' });
+              if (!res.ok) continue;
+              const payload = await res.json();
+              addProjectProfile(payload, filename, fallbackId);
+            } catch (err) {
+              // Ignore malformed files and continue loading valid profiles.
+            }
           }
         }
         const merged = new Map();
-        externalProfiles.forEach((profile) => merged.set(profile.id, profile));
+        loadedProfiles.forEach((profile) => merged.set(profile.id, profile));
         this.petalDesignerProfiles = Array.from(merged.values()).sort((a, b) =>
           `${a.name || ''}`.localeCompare(`${b.name || ''}`)
         );
@@ -8448,6 +8492,9 @@
             Petalis includes an embedded panel; use its pop-out icon (⧉) to open the same panel in a floating window and pop-in (↩) to dock it back.
             It includes flower presets, radial petal controls, a PETAL VISUALIZER pane (Overlay or Side by Side), a PROFILE EDITOR for inner/outer profile import/export, an Export Pair button below both profile cards, a shading stack with in-place hatch-angle rotation, and a matching modifier stack.
             Shape comes from editable inner/outer curves, each stack item has its own Petal Shape target (Inner/Outer/Both), and the designer keeps symmetry per side with a collapsible Randomness &amp; Seed section at the bottom.
+          </div>
+          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
+            PROFILE dropdown entries come from <code>src/config/petal-profiles</code> and remain available when opening <code>index.html</code> directly (no local server required).
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Left panel sections are collapsible; Transform &amp; Seed lives inside Algorithm in its own collapsible sub-panel (collapsed by default), and ABOUT visibility is remembered.

@@ -1516,10 +1516,10 @@
             : p.designerOuter || p.designerInner
           : p.designerOuter || p.designerInner;
       const fallbackRingProfile =
-        ringDesigner?.profile || designerInner?.profile || designerOuter?.profile || p.centerProfile || 'teardrop';
-      const legacyRingProfile = designerShapeOnly ? fallbackRingProfile : ringDesigner?.profile || p.petalProfile || fallbackRingProfile;
-      const innerProfileName = designerInner?.profile || p.centerProfile || legacyRingProfile;
-      const outerProfileName = designerOuter?.profile || (designerShapeOnly ? innerProfileName : p.petalProfile || innerProfileName);
+        ringDesigner?.profile || designerInner?.profile || designerOuter?.profile || p.petalProfile || 'teardrop';
+      const legacyRingProfile = ringDesigner?.profile || p.petalProfile || fallbackRingProfile;
+      const innerProfileName = designerInner?.profile || legacyRingProfile;
+      const outerProfileName = designerOuter?.profile || legacyRingProfile;
       for (let i = 0; i < count; i++) {
         const t = count <= 1 ? 0.5 : i / (count - 1);
         const spiralT = lerp(spiralMin, spiralMax, Math.pow(t, spiralTightness));

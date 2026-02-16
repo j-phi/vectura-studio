@@ -42,6 +42,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Petalis algorithm with an embedded full Petal Designer panel in the parameter stack (shape comes from visible designer curves, without hidden legacy tip/base modifiers).
 - Petal Designer inline editor and pop-out window use high-DPI rendering with immediate canvas updates, always-on dual-ring controls (`Inner Petal Count`/`Outer Petal Count` plus `Split Feathering`), a `PETAL VISUALIZER` pane with `Overlay` / `Side by Side`, a `PROFILE EDITOR` (`Inner Shape`/`Outer Shape`) with per-side profile import/export and a shared `Export Pair` action below both cards, and matching `Shading Stack` + `Modifier Stack` controls where each card has its own `Petal Shape` target (`Inner`/`Outer`/`Both`). The inline panel can pop out (⧉) and pop back in (↩) while keeping the exact same controls and layout.
 - Petalis profile transitions: `Inner = Outer` lock plus count-driven ring boundary and split feathering to morph from innermost to outermost petal profiles.
+- Petalis profile library loads from `src/config/petal-profiles` in both hosted and direct `file://` runs (via a preloaded `library.js` bundle to avoid local CORS fetch errors).
 - Petal Designer interactions include direct/pen anchor editing with modifier support (`Shift` constrain, `Alt/Option` convert, break, or remove handles, `Cmd/Ctrl` temporary direct), plus middle-drag pan and wheel zoom (when both petals are visible, wheel zoom updates both equally).
 - Petalis layering now clips petals across both rings when `Layering` is enabled, preventing see-through overlaps.
 - Petal Designer shading preview now reflects the full shading parameters (coverage, gaps, line style, jitter, angle, per-card targets, and stack enable/disable) without legacy radial fallback in designer mode.
@@ -160,7 +161,7 @@ flowchart LR
 - `src/ui/` - panels, controls, settings, and SVG export.
 - `src/ui/randomization-utils.js` - shared parameter randomization engine with algorithm-specific bias profiles.
 - `src/config/` - machine profiles, defaults, UI descriptions, palette library, and cross-system preset registry.
-- `src/config/petal-profiles/` - project profile JSON library ingested by Petalis (`index.json` + `.json` profile files), including the default profile shapes used to populate Petal Designer PROFILE dropdowns.
+- `src/config/petal-profiles/` - project profile library ingested by Petalis (`index.json` + `.json` profile files with explicit anchors, plus `library.js` for `file://` local loading).
 - `tests/` - unit, integration, e2e smoke, visual baseline, and performance suites.
 - `docs/testing.md` - testing workflow details, baseline policy, and CI behavior.
 - `dist/` - optional prebuilt output (not required for local dev).
@@ -170,7 +171,8 @@ flowchart LR
 - Machine sizes live in `src/config/machines.js` and are used for bounds and export dimensions.
 - Pen palettes live in `src/config/palettes.js` and can be edited or extended.
 - Presets live in `src/config/presets.js` as a shared registry; each entry requires `preset_system`, `id`, `name`, and `params`.
-- Petalis profile files are loaded from `src/config/petal-profiles/*.json` (listed in `src/config/petal-profiles/index.json`) to populate Petal Designer PROFILE dropdowns.
+- Petalis project profile files are loaded from `src/config/petal-profiles/*.json` (listed in `src/config/petal-profiles/index.json`) and mirrored in `src/config/petal-profiles/library.js` for `file://` runs.
+- Keep project profile definitions anchor-based (`inner`/`outer` shape payloads) so runtime loading does not depend on built-in shape aliases.
 - Post-Processing Lab includes smoothing/curves/simplify plus the optimization pipeline (linesimplify, linesort, filter, multipass).
 - Keep script order intact in `index.html`; `src/main.js` expects globals to be registered on `window.Vectura`.
 
