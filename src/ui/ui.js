@@ -5200,7 +5200,7 @@
     syncInnerOuterLock(state) {
       if (!state || !state.innerOuterLock) return;
       state.outer = this.cloneDesignerShape(state.inner);
-      state.target = 'inner';
+      state.activeTarget = 'inner';
     }
 
     normalizeDesignerShape(shape) {
@@ -5258,7 +5258,10 @@
       if (!layer) return null;
       const params = layer.params || {};
       const shadings = Array.isArray(params.shadings) ? params.shadings : [];
-      const ringMode = params.ringMode === 'single' ? 'single' : 'dual';
+      const ringTarget = this.normalizePetalDesignerRingTarget(
+        params.petalRing,
+        params.ringMode === 'single' ? 'inner' : 'both'
+      );
       const innerCount = Math.round(
         clamp(params.innerCount ?? params.count ?? PETALIS_DESIGNER_DEFAULT_INNER_COUNT, 5, 400)
       );
@@ -5267,23 +5270,25 @@
       );
       const countSplit = innerCount / Math.max(1, innerCount + outerCount);
       const transitionPosition =
-        ringMode === 'dual'
+        ringTarget === 'both'
           ? clamp(countSplit * 100, 0, 100)
           : clamp(params.profileTransitionPosition ?? 50, 0, 100);
       const state = {
         layerId: layer.id,
         outer: this.makeDefaultDesignerShape(layer, 'outer'),
         inner: this.makeDefaultDesignerShape(layer, 'inner'),
-        shadings: shadings.map((shade, index) => this.normalizePetalDesignerShading(shade, index)),
+        shadings: shadings.map((shade, index) =>
+          this.normalizePetalDesignerShading(shade, index, { defaultTarget: ringTarget })
+        ),
         innerOuterLock: Boolean(params.innerOuterLock),
         designerSymmetry: this.normalizeDesignerSymmetryMode(params.designerSymmetry),
         count: Math.round(clamp(params.count ?? innerCount, 5, 800)),
-        ringMode,
         innerCount,
         outerCount,
         profileTransitionPosition: transitionPosition,
         profileTransitionFeather: clamp(params.profileTransitionFeather ?? 0, 0, 100),
-        target: 'inner',
+        target: ringTarget,
+        activeTarget: ringTarget === 'outer' ? 'outer' : 'inner',
         views: {
           outer: { zoom: 1, panX: 0, panY: 0 },
           inner: { zoom: 1, panX: 0, panY: 0 },
@@ -5345,10 +5350,11 @@
           </div>
         </div>
         <div class="petal-designer-controls">
-          <label>Edit Target
+          <label>Petal Ring
             <select data-petal-target>
               <option value="inner">Inner</option>
               <option value="outer">Outer</option>
+              <option value="both">Both</option>
             </select>
           </label>
           <label>Profile
@@ -5359,12 +5365,6 @@
           </label>
         </div>
         <div class="petal-designer-structure">
-          <label>Ring Mode
-            <select data-petal-ring-mode>
-              <option value="dual">Dual</option>
-              <option value="single">Single</option>
-            </select>
-          </label>
           <label class="petal-slider-label" data-petal-inner-count-wrap>
             <span>Inner Petal Count</span>
             <span class="petal-slider-value" data-petal-slider-value="inner-count" data-petal-slider-precision="0"></span>
@@ -5375,7 +5375,7 @@
             <span class="petal-slider-value" data-petal-slider-value="outer-count" data-petal-slider-precision="0"></span>
             <input type="range" min="5" max="600" step="1" data-petal-outer-count>
           </label>
-          <label class="petal-slider-label">
+          <label class="petal-slider-label" data-petal-split-feather-wrap>
             <span>Split Feathering</span>
             <span class="petal-slider-value" data-petal-slider-value="split-feather" data-petal-slider-precision="0" data-petal-slider-unit="%"></span>
             <input type="range" min="0" max="100" step="1" data-petal-split-feather>
@@ -5403,9 +5403,75 @@
       `;
     }
 
+    normalizePetalDesignerRingTarget(value, fallback = 'both') {
+      if (value === 'inner' || value === 'outer' || value === 'both') return value;
+      return fallback === 'inner' || fallback === 'outer' || fallback === 'both' ? fallback : 'both';
+    }
+
+    normalizePetalDesignerShadingTarget(value, fallback = 'both') {
+      return this.normalizePetalDesignerRingTarget(value, fallback);
+    }
+
     getPetalDesignerTarget(state) {
-      if (state?.innerOuterLock) return 'inner';
-      return state?.target === 'outer' ? 'outer' : 'inner';
+      if (!state) return 'inner';
+      state.target = this.normalizePetalDesignerRingTarget(state.target, 'both');
+      if (state.target === 'inner' || state.target === 'outer') {
+        state.activeTarget = state.target;
+      } else if (state.activeTarget !== 'inner' && state.activeTarget !== 'outer') {
+        state.activeTarget = 'inner';
+      }
+      if (state.innerOuterLock) {
+        state.activeTarget = 'inner';
+      }
+      return state.activeTarget === 'outer' ? 'outer' : 'inner';
+    }
+
+    getPetalDesignerShadingTarget(state) {
+      if (!state) return 'both';
+      return this.normalizePetalDesignerRingTarget(state.target, 'both');
+    }
+
+    normalizePetalDesignerShadings(state, options = {}) {
+      const { defaultTarget = 'both' } = options;
+      const fallbackTarget = this.normalizePetalDesignerShadingTarget(defaultTarget, 'both');
+      const shadings = Array.isArray(state?.shadings) ? state.shadings : [];
+      const normalized = shadings.map((shade, index) =>
+        this.normalizePetalDesignerShading(shade, index, { defaultTarget: fallbackTarget })
+      );
+      if (state) state.shadings = normalized;
+      return normalized;
+    }
+
+    getPetalDesignerShadingsForTarget(state, target, options = {}) {
+      const safeTarget = this.normalizePetalDesignerShadingTarget(target, 'both');
+      const all = this.normalizePetalDesignerShadings(state, options);
+      return all
+        .filter(
+          (shade) => this.normalizePetalDesignerShadingTarget(shade?.target, options.defaultTarget || 'both') === safeTarget
+        )
+        .map((shade, index) => this.normalizePetalDesignerShading(shade, index, { defaultTarget: safeTarget }));
+    }
+
+    setPetalDesignerShadingsForTarget(state, target, stack, options = {}) {
+      if (!state) return;
+      const safeTarget = this.normalizePetalDesignerShadingTarget(target, 'both');
+      const fallbackTarget = this.normalizePetalDesignerShadingTarget(options.defaultTarget, 'both');
+      const all = this.normalizePetalDesignerShadings(state, { defaultTarget: fallbackTarget });
+      const preserved = all.filter(
+        (shade) => this.normalizePetalDesignerShadingTarget(shade?.target, fallbackTarget) !== safeTarget
+      );
+      const incoming = Array.isArray(stack) ? stack : [];
+      const normalizedIncoming = incoming.map((shade, index) =>
+        this.normalizePetalDesignerShading(
+          {
+            ...(shade || {}),
+            target: safeTarget,
+          },
+          index,
+          { defaultTarget: safeTarget }
+        )
+      );
+      state.shadings = preserved.concat(normalizedIncoming);
     }
 
     getPetalDesignerCountSplit(state) {
@@ -5425,7 +5491,8 @@
 
     syncPetalDesignerTransitionFromCounts(state) {
       if (!state) return 0.5;
-      if (state.ringMode !== 'dual') {
+      const ringTarget = this.normalizePetalDesignerRingTarget(state.target, 'both');
+      if (ringTarget !== 'both') {
         state.profileTransitionPosition = clamp(state.profileTransitionPosition ?? 50, 0, 100);
         return clamp(state.profileTransitionPosition / 100, 0, 1);
       }
@@ -5456,13 +5523,16 @@
       return this.getPetalDesignerTarget(state) === 'inner' ? state.inner : state.outer;
     }
 
-    normalizePetalDesignerShading(shade = {}, index = 0) {
+    normalizePetalDesignerShading(shade = {}, index = 0, options = {}) {
+      const { defaultTarget = 'both' } = options;
       const base = createPetalisShading('radial');
+      const target = this.normalizePetalDesignerShadingTarget(shade?.target, defaultTarget);
       return {
         ...base,
         ...(shade || {}),
         id: shade?.id || `designer-shade-${index + 1}`,
         enabled: shade?.enabled !== false,
+        target,
         type: shade?.type || base.type,
         lineType: shade?.lineType || base.lineType,
         widthX: clamp(shade?.widthX ?? base.widthX, 0, 100),
@@ -5509,11 +5579,20 @@
           });
           this.renderPetalDesigner(pd);
         });
-      if (!Array.isArray(pd.state.shadings)) pd.state.shadings = [];
-      pd.state.shadings = pd.state.shadings.map((shade, index) => this.normalizePetalDesignerShading(shade, index));
+      const ringTarget = this.getPetalDesignerShadingTarget(pd.state);
+      const shadingTitle = pd.root.querySelector('.petal-designer-shading-title');
+      if (shadingTitle) shadingTitle.textContent = `Shading Stack (${ringTarget.charAt(0).toUpperCase()}${ringTarget.slice(1)})`;
+      let targetShadings = this.getPetalDesignerShadingsForTarget(pd.state, ringTarget, { defaultTarget: 'both' });
 
       addBtn.onclick = () => {
-        pd.state.shadings.push(this.normalizePetalDesignerShading(createPetalisShading('radial'), pd.state.shadings.length));
+        targetShadings = targetShadings.concat([
+          this.normalizePetalDesignerShading(createPetalisShading('radial'), targetShadings.length, {
+            defaultTarget: ringTarget,
+          }),
+        ]);
+        this.setPetalDesignerShadingsForTarget(pd.state, ringTarget, targetShadings, {
+          defaultTarget: 'both',
+        });
         this.renderPetalDesignerShadingStack(pd, onApply);
         onApply();
       };
@@ -5541,7 +5620,7 @@
       };
 
       list.innerHTML = '';
-      pd.state.shadings.forEach((shade, idx) => {
+      targetShadings.forEach((shade, idx) => {
         const card = document.createElement('div');
         card.className = `noise-card${shade.enabled ? '' : ' noise-disabled'}`;
         card.innerHTML = `
@@ -5579,6 +5658,10 @@
             input.disabled = !shade.enabled;
             input.onchange = () => {
               shade[key] = input.value;
+              targetShadings[idx] = shade;
+              this.setPetalDesignerShadingsForTarget(pd.state, ringTarget, targetShadings, {
+                defaultTarget: 'both',
+              });
               valueLabel.textContent = options.find((opt) => opt.value === shade[key])?.label || shade[key];
               onApply();
             };
@@ -5604,6 +5687,10 @@
               const next = Number.parseFloat(input.value);
               if (!Number.isFinite(next)) return;
               shade[def.key] = clamp(next, def.min, def.max);
+              targetShadings[idx] = shade;
+              this.setPetalDesignerShadingsForTarget(pd.state, ringTarget, targetShadings, {
+                defaultTarget: 'both',
+              });
               valueLabel.textContent = formatValue(shade[def.key], def.precision, def.unit || '');
               onApply({ live });
             };
@@ -5626,20 +5713,24 @@
           upBtn.disabled = idx === 0;
           upBtn.onclick = () => {
             if (idx <= 0) return;
-            const next = pd.state.shadings.slice();
+            const next = targetShadings.slice();
             [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
-            pd.state.shadings = next;
+            this.setPetalDesignerShadingsForTarget(pd.state, ringTarget, next, {
+              defaultTarget: 'both',
+            });
             this.renderPetalDesignerShadingStack(pd, onApply);
             onApply();
           };
         }
         if (downBtn) {
-          downBtn.disabled = idx >= pd.state.shadings.length - 1;
+          downBtn.disabled = idx >= targetShadings.length - 1;
           downBtn.onclick = () => {
-            if (idx >= pd.state.shadings.length - 1) return;
-            const next = pd.state.shadings.slice();
+            if (idx >= targetShadings.length - 1) return;
+            const next = targetShadings.slice();
             [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
-            pd.state.shadings = next;
+            this.setPetalDesignerShadingsForTarget(pd.state, ringTarget, next, {
+              defaultTarget: 'both',
+            });
             this.renderPetalDesignerShadingStack(pd, onApply);
             onApply();
           };
@@ -5647,13 +5738,20 @@
         if (enabledInput) {
           enabledInput.onchange = () => {
             shade.enabled = Boolean(enabledInput.checked);
+            targetShadings[idx] = shade;
+            this.setPetalDesignerShadingsForTarget(pd.state, ringTarget, targetShadings, {
+              defaultTarget: 'both',
+            });
             this.renderPetalDesignerShadingStack(pd, onApply);
             onApply();
           };
         }
         if (deleteBtn) {
           deleteBtn.onclick = () => {
-            pd.state.shadings.splice(idx, 1);
+            targetShadings.splice(idx, 1);
+            this.setPetalDesignerShadingsForTarget(pd.state, ringTarget, targetShadings, {
+              defaultTarget: 'both',
+            });
             this.renderPetalDesignerShadingStack(pd, onApply);
             onApply();
           };
@@ -5670,17 +5768,17 @@
       const targetSelect = pd.root.querySelector('select[data-petal-target]');
       const profileSelect = pd.root.querySelector('select[data-petal-profile-current]');
       const symmetrySelect = pd.root.querySelector('select[data-petal-symmetry]');
-      const ringModeSelect = pd.root.querySelector('select[data-petal-ring-mode]');
       const innerCountInput = pd.root.querySelector('input[data-petal-inner-count]');
       const outerCountInput = pd.root.querySelector('input[data-petal-outer-count]');
       const splitFeatherInput = pd.root.querySelector('input[data-petal-split-feather]');
       const innerCountWrap = pd.root.querySelector('[data-petal-inner-count-wrap]');
       const outerCountWrap = pd.root.querySelector('[data-petal-outer-count-wrap]');
+      const splitFeatherWrap = pd.root.querySelector('[data-petal-split-feather-wrap]');
       const lockToggle = pd.root.querySelector('input[data-petal-inner-outer-lock]');
       const title = pd.root.querySelector('[data-petal-canvas-title]');
       pd.state.designerSymmetry = this.normalizeDesignerSymmetryMode(pd.state.designerSymmetry);
+      pd.state.target = this.normalizePetalDesignerRingTarget(pd.state.target, 'both');
       pd.state.count = Math.round(clamp(pd.state.count ?? PETALIS_DESIGNER_DEFAULT_COUNT, 5, 800));
-      pd.state.ringMode = pd.state.ringMode === 'single' ? 'single' : 'dual';
       pd.state.innerCount = Math.round(
         clamp(pd.state.innerCount ?? pd.state.count ?? PETALIS_DESIGNER_DEFAULT_INNER_COUNT, 5, 400)
       );
@@ -5691,19 +5789,16 @@
       pd.state.profileTransitionFeather = clamp(pd.state.profileTransitionFeather ?? 0, 0, 100);
       if (title) title.textContent = side === 'inner' ? 'Inner Shape' : 'Outer Shape';
       if (targetSelect) {
-        const outerOpt = targetSelect.querySelector('option[value="outer"]');
-        if (outerOpt) outerOpt.disabled = Boolean(pd.state.innerOuterLock);
-        targetSelect.value = pd.state.innerOuterLock ? 'inner' : side;
+        targetSelect.value = pd.state.target;
       }
       if (profileSelect) profileSelect.value = shape?.profile || 'teardrop';
       if (symmetrySelect) symmetrySelect.value = pd.state.designerSymmetry;
-      if (ringModeSelect) ringModeSelect.value = pd.state.ringMode;
       if (innerCountInput) innerCountInput.value = pd.state.innerCount;
       if (outerCountInput) outerCountInput.value = pd.state.outerCount;
       if (splitFeatherInput) splitFeatherInput.value = pd.state.profileTransitionFeather;
-      const isDualRing = pd.state.ringMode === 'dual';
-      if (innerCountWrap) innerCountWrap.classList.remove('hidden');
-      if (outerCountWrap) outerCountWrap.classList.toggle('hidden', !isDualRing);
+      if (innerCountWrap) innerCountWrap.classList.toggle('hidden', pd.state.target === 'outer');
+      if (outerCountWrap) outerCountWrap.classList.toggle('hidden', pd.state.target === 'inner');
+      if (splitFeatherWrap) splitFeatherWrap.classList.toggle('hidden', pd.state.target !== 'both');
       if (lockToggle) lockToggle.checked = Boolean(pd.state.innerOuterLock);
       this.setPetalDesignerSliderValue(pd, 'inner-count', pd.state.innerCount);
       this.setPetalDesignerSliderValue(pd, 'outer-count', pd.state.outerCount);
@@ -5731,21 +5826,19 @@
       const targetSelect = pd.root.querySelector('select[data-petal-target]');
       const profileSelect = pd.root.querySelector('select[data-petal-profile-current]');
       const symmetrySelect = pd.root.querySelector('select[data-petal-symmetry]');
-      const ringModeSelect = pd.root.querySelector('select[data-petal-ring-mode]');
       const innerCountInput = pd.root.querySelector('input[data-petal-inner-count]');
       const outerCountInput = pd.root.querySelector('input[data-petal-outer-count]');
       const splitFeatherInput = pd.root.querySelector('input[data-petal-split-feather]');
       const lockToggle = pd.root.querySelector('input[data-petal-inner-outer-lock]');
       if (targetSelect) {
         targetSelect.onchange = () => {
-          if (pd.state.innerOuterLock && targetSelect.value === 'outer') {
-            pd.state.target = 'inner';
-            targetSelect.value = 'inner';
-          } else {
-            pd.state.target = targetSelect.value === 'inner' ? 'inner' : 'outer';
+          pd.state.target = this.normalizePetalDesignerRingTarget(targetSelect.value, 'both');
+          if (pd.state.target === 'inner' || pd.state.target === 'outer') {
+            pd.state.activeTarget = pd.state.target;
           }
           this.syncPetalDesignerControls(pd);
-          this.renderPetalDesigner(pd);
+          this.renderPetalDesignerShadingStack(pd, applyChanges);
+          applyChanges();
         };
       }
       if (profileSelect) {
@@ -5765,19 +5858,11 @@
           applyChanges();
         };
       }
-      if (ringModeSelect) {
-        ringModeSelect.onchange = () => {
-          pd.state.ringMode = ringModeSelect.value === 'single' ? 'single' : 'dual';
-          this.syncPetalDesignerControls(pd);
-          applyChanges();
-        };
-      }
       if (innerCountInput) {
         const onInnerCount = (live = false) => {
           const next = Number.parseFloat(innerCountInput.value);
           if (!Number.isFinite(next)) return;
           pd.state.innerCount = Math.round(clamp(next, 5, 400));
-          if (pd.state.ringMode !== 'dual') pd.state.count = pd.state.innerCount;
           this.syncPetalDesignerControls(pd);
           applyChanges({ live });
         };
@@ -6991,9 +7076,17 @@
       const side = this.getPetalDesignerTarget(pd.state);
       const shape = side === 'inner' ? pd.state.inner : pd.state.outer;
       const view = this.getPetalDesignerView(pd.state, side);
+      const previewShadings = this
+        .normalizePetalDesignerShadings(pd.state, { defaultTarget: 'both' })
+        .filter((shade) => {
+          const target = this.normalizePetalDesignerShadingTarget(shade?.target, 'both');
+          const ringTarget = this.normalizePetalDesignerRingTarget(pd.state?.target, 'both');
+          if (ringTarget === 'both') return target === 'both' || target === side;
+          return target === side;
+        });
       this.syncPetalDesignerControls(pd);
       this.drawDesignerShape(canvas, shape, {
-        shadings: Array.isArray(pd.state.shadings) ? pd.state.shadings : [],
+        shadings: previewShadings,
         showControls: true,
         view,
         symmetry: this.normalizeDesignerSymmetryMode(pd.state?.designerSymmetry),
@@ -7005,12 +7098,17 @@
       if (!state) return;
       const layer = this.getLayerById(state.layerId);
       if (!layer || !isPetalisLayerType(layer.type)) return;
+      state.target = this.normalizePetalDesignerRingTarget(state.target, 'both');
+      if (state.target === 'inner' || state.target === 'outer') {
+        state.activeTarget = state.target;
+      } else if (state.activeTarget !== 'inner' && state.activeTarget !== 'outer') {
+        state.activeTarget = 'inner';
+      }
       this.syncInnerOuterLock(state);
       this.normalizeDesignerShape(state.outer);
       this.normalizeDesignerShape(state.inner);
       const params = layer.params || {};
       state.designerSymmetry = this.normalizeDesignerSymmetryMode(state.designerSymmetry);
-      state.ringMode = state.ringMode === 'single' ? 'single' : 'dual';
       state.innerCount = Math.round(
         clamp(
           state.innerCount ?? params.innerCount ?? PETALIS_DESIGNER_DEFAULT_INNER_COUNT,
@@ -7027,9 +7125,14 @@
       );
       const countSplit = this.syncPetalDesignerTransitionFromCounts(state);
       state.profileTransitionFeather = clamp(state.profileTransitionFeather ?? params.profileTransitionFeather ?? 0, 0, 100);
+      const ringTarget = this.normalizePetalDesignerRingTarget(state.target, 'both');
       state.count = Math.round(
         clamp(
-          state.ringMode === 'dual' ? state.innerCount + state.outerCount : state.innerCount,
+          ringTarget === 'both'
+            ? state.innerCount + state.outerCount
+            : ringTarget === 'outer'
+            ? state.outerCount
+            : state.innerCount,
           5,
           800
         )
@@ -7038,7 +7141,8 @@
       params.designerInner = JSON.parse(JSON.stringify(state.inner));
       params.designerSymmetry = state.designerSymmetry;
       params.count = state.count;
-      params.ringMode = state.ringMode;
+      params.petalRing = ringTarget;
+      params.ringMode = ringTarget === 'both' ? 'dual' : 'single';
       params.innerCount = state.innerCount;
       params.outerCount = state.outerCount;
       params.ringSplit = countSplit;
@@ -7058,8 +7162,12 @@
       params.leafSidePos = clamp(outerCore.t ?? params.leafSidePos ?? 0.45, 0.1, 0.9);
       params.leafSideWidth = clamp((outerCore.w ?? 0.55) / 0.55, 0.2, 2);
       const shadings = Array.isArray(state.shadings) ? state.shadings : [];
-      state.shadings = shadings.map((shade, index) => this.normalizePetalDesignerShading(shade, index));
-      params.shadings = state.shadings.map((shade, index) => this.normalizePetalDesignerShading(shade, index));
+      state.shadings = shadings.map((shade, index) =>
+        this.normalizePetalDesignerShading(shade, index, { defaultTarget: ringTarget })
+      );
+      params.shadings = state.shadings.map((shade, index) =>
+        this.normalizePetalDesignerShading(shade, index, { defaultTarget: ringTarget })
+      );
       if (persistState) this.storeLayerParams(layer);
       this.app.engine.generate(layer.id);
       if (this.app.engine.activeLayerId === layer.id) {
@@ -7136,7 +7244,7 @@
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Petalis Designer includes an embedded panel; use its pop-out icon (⧉) to open the same panel in a floating window and pop-in (↩) to dock it back.
-            Shape comes from editable inner/outer curves, count-driven inner/outer transitions with split feathering, in-panel shading stack, and symmetry mode; legacy petal profile and hidden tip/base modifiers are not applied there.
+            Shape comes from editable inner/outer curves, a Petal Ring selector (Inner/Outer/Both) that controls active ring generation and count visibility, per-ring shading stacks (plus optional shared Both stack), and symmetry mode; legacy petal profile and hidden tip/base modifiers are not applied there.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Left panel sections are collapsible; Transform &amp; Seed lives inside Algorithm in its own collapsible sub-panel (collapsed by default), and ABOUT visibility is remembered.
@@ -7628,7 +7736,8 @@
       params.radialGrowth = clamp(params.radialGrowth ?? 1, 0.25, 3.2);
       params.centerDensity = Math.round(clamp(params.centerDensity ?? 40, 6, 85));
       params.connectorCount = Math.round(clamp(params.connectorCount ?? 20, 4, 70));
-      if (params.ringMode === 'dual') {
+      const dualRings = params.petalRing ? params.petalRing === 'both' : params.ringMode === 'dual';
+      if (dualRings) {
         const sum = (params.innerCount || 0) + (params.outerCount || 0);
         const maxDual = 420;
         if (sum > maxDual) {

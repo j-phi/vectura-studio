@@ -1215,6 +1215,15 @@
     const occluders = [];
     const layering = p.layering !== false;
     const designerShapeOnly = Boolean(p.useDesignerShapeOnly || p.label === 'Petalis Designer');
+    const normalizeShadingTarget = (value) =>
+      value === 'inner' || value === 'outer' || value === 'both' ? value : 'both';
+    const designerRingTarget = designerShapeOnly
+      ? p.petalRing === 'inner' || p.petalRing === 'outer' || p.petalRing === 'both'
+        ? p.petalRing
+        : p.ringMode === 'single'
+        ? 'inner'
+        : 'both'
+      : 'both';
     const shadings = Array.isArray(p.shadings) ? p.shadings : [];
     const legacyShadings = [];
     if (!shadings.length && !designerShapeOnly && (p.innerShading || p.outerShading)) {
@@ -1255,8 +1264,22 @@
         });
       }
     }
-    const shadingStack = shadings.length ? shadings : legacyShadings;
-    const ringMode = p.ringMode || 'single';
+    const baseShadingStack = (shadings.length ? shadings : legacyShadings).map((shade) => ({
+      ...(shade || {}),
+      target: normalizeShadingTarget(shade?.target),
+    }));
+    const ringMode = designerShapeOnly ? (designerRingTarget === 'both' ? 'dual' : 'single') : p.ringMode || 'single';
+    const singleRingTarget =
+      designerShapeOnly && designerRingTarget !== 'both' ? designerRingTarget : 'outer';
+    const getRingShadingStack = (ringTarget) => {
+      if (!designerShapeOnly) return baseShadingStack;
+      const resolved = ringTarget === 'inner' || ringTarget === 'outer' ? ringTarget : 'both';
+      return baseShadingStack.filter((shade) => {
+        const target = normalizeShadingTarget(shade?.target);
+        if (designerRingTarget === 'both') return target === 'both' || target === resolved;
+        return target === resolved;
+      });
+    };
     const normalizeTipRotate = (value) => (value > 10 ? value / 10 : value);
     const tipTwist = designerShapeOnly ? 0 : p.tipTwist ?? 0;
     const tipRotate = normalizeTipRotate(tipTwist);
@@ -1334,7 +1357,16 @@
           ]
         : [
             {
-              count: Math.max(1, Math.round((p.count ?? 120) * (1 + rng.nextRange(-countJitter, countJitter)))),
+              count: Math.max(
+                1,
+                Math.round(
+                  (designerShapeOnly
+                    ? singleRingTarget === 'inner'
+                      ? p.innerCount ?? p.count ?? 120
+                      : p.outerCount ?? p.count ?? 120
+                    : p.count ?? 120) * (1 + rng.nextRange(-countJitter, countJitter))
+                )
+              ),
               minR: 0,
               maxR: visibleMaxR,
               offset: 0,
@@ -1345,11 +1377,17 @@
     let ringProgressOffset = 0;
     ringDefs.forEach((ring, ringIndex) => {
       const { count, minR, maxR, offset } = ring;
+      const ringTarget = ringMode === 'dual' ? (ringIndex === 0 ? 'inner' : 'outer') : singleRingTarget;
+      const ringShadingStack = getRingShadingStack(ringTarget);
       const ringDesigner =
         ringMode === 'dual'
           ? ringIndex === 0
             ? p.designerInner
             : p.designerOuter
+          : designerShapeOnly
+          ? ringTarget === 'inner'
+            ? p.designerInner || p.designerOuter
+            : p.designerOuter || p.designerInner
           : p.designerOuter || p.designerInner;
       const fallbackRingProfile =
         ringDesigner?.profile || designerInner?.profile || designerOuter?.profile || p.centerProfile || 'teardrop';
@@ -1481,7 +1519,7 @@
           angle,
           baseX,
           baseY,
-          shadings: shadingStack,
+          shadings: ringShadingStack,
           tipTwist: tipRotate,
           tipCurl,
           curlBoost,
