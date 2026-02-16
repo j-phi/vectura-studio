@@ -601,7 +601,9 @@
   };
   window.Vectura.ALGO_DEFAULTS.petalisDesigner = JSON.parse(JSON.stringify(window.Vectura.ALGO_DEFAULTS.petalis || {}));
   window.Vectura.ALGO_DEFAULTS.petalisDesigner.label = 'Petalis Designer';
-  window.Vectura.ALGO_DEFAULTS.petalisDesigner.count = 50;
+  window.Vectura.ALGO_DEFAULTS.petalisDesigner.count = 40;
+  window.Vectura.ALGO_DEFAULTS.petalisDesigner.innerCount = 20;
+  window.Vectura.ALGO_DEFAULTS.petalisDesigner.outerCount = 20;
   window.Vectura.ALGO_DEFAULTS.petalisDesigner.radialGrowth = 0.05;
   window.Vectura.ALGO_DEFAULTS.petalisDesigner.shadings = [];
   window.Vectura.ALGO_DEFAULTS.petalisDesigner.useDesignerShapeOnly = true;

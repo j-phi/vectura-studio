@@ -39,53 +39,74 @@
 </head>
 
 <body class="font-mono text-sm antialiased h-screen flex flex-col bg-vectura-bg text-vectura-text overflow-hidden">
-  <header id="app-header" class="border-b border-vectura-border bg-vectura-panel px-4 py-2 z-20">
-    <div class="flex items-center justify-between gap-3">
-      <div class="flex items-center gap-3">
+  <header id="app-header" class="border-b border-vectura-border bg-vectura-panel px-4 py-2 relative overflow-visible z-50">
+    <div class="header-main flex items-center justify-between gap-3">
+      <div class="header-brand-menu flex items-center gap-3 min-w-0">
         <div class="w-4 h-4 bg-vectura-accent"></div>
-        <h1 class="font-bold tracking-widest text-vectura-accent">
+        <h1 class="font-bold tracking-widest text-vectura-accent whitespace-nowrap">
           VECTURA<span class="font-light text-vectura-muted">.STUDIO</span>
         </h1>
+        <nav id="top-menubar" class="top-menubar" role="menubar" aria-label="Main menu">
+          <div class="top-menu" data-top-menu>
+            <button class="top-menu-trigger" type="button" data-top-menu-trigger aria-haspopup="true" aria-expanded="false">
+              File
+            </button>
+            <div class="top-menu-panel" data-top-menu-panel role="menu" aria-label="File menu">
+              <button id="btn-open-vectura" class="top-menu-item" type="button" role="menuitem">
+                <span>Open Project…</span>
+                <span class="top-menu-shortcut" data-shortcut-mac="Cmd+O" data-shortcut-win="Ctrl+O"></span>
+              </button>
+              <button id="btn-save-vectura" class="top-menu-item" type="button" role="menuitem">
+                <span>Save Project…</span>
+                <span class="top-menu-shortcut" data-shortcut-mac="Cmd+S" data-shortcut-win="Ctrl+S"></span>
+              </button>
+              <button id="btn-import-svg" class="top-menu-item" type="button" role="menuitem">
+                <span>Import SVG…</span>
+                <span class="top-menu-shortcut" data-shortcut-mac="Shift+Cmd+P" data-shortcut-win="Shift+Ctrl+P"></span>
+              </button>
+              <button id="btn-export" class="top-menu-item top-menu-item-primary" type="button" role="menuitem">
+                <span>Export SVG…</span>
+                <span class="top-menu-shortcut" data-shortcut-mac="Shift+Cmd+E" data-shortcut-win="Shift+Ctrl+E"></span>
+              </button>
+            </div>
+          </div>
+          <div class="top-menu" data-top-menu>
+            <button class="top-menu-trigger" type="button" data-top-menu-trigger aria-haspopup="true" aria-expanded="false">
+              Edit
+            </button>
+            <div class="top-menu-panel" data-top-menu-panel role="menu" aria-label="Edit menu">
+              <button id="btn-settings" class="top-menu-item" type="button" role="menuitem">
+                <span>Settings</span>
+                <span class="top-menu-shortcut" data-shortcut-mac="Cmd+K" data-shortcut-win="Ctrl+K"></span>
+              </button>
+            </div>
+          </div>
+          <div class="top-menu" data-top-menu>
+            <button class="top-menu-trigger" type="button" data-top-menu-trigger aria-haspopup="true" aria-expanded="false">
+              View
+            </button>
+            <div class="top-menu-panel" data-top-menu-panel role="menu" aria-label="View menu">
+              <button id="btn-reset-view" class="top-menu-item" type="button" role="menuitem">
+                <span>Reset View</span>
+                <span class="top-menu-shortcut" data-shortcut-mac="Cmd+0" data-shortcut-win="Ctrl+0"></span>
+              </button>
+            </div>
+          </div>
+          <div class="top-menu" data-top-menu>
+            <button class="top-menu-trigger" type="button" data-top-menu-trigger aria-haspopup="true" aria-expanded="false">
+              Help
+            </button>
+            <div class="top-menu-panel" data-top-menu-panel role="menu" aria-label="Help menu">
+              <button id="btn-help" class="top-menu-item" type="button" role="menuitem">
+                <span>Help Guide</span>
+                <span class="top-menu-shortcut" data-shortcut-mac="F1" data-shortcut-win="F1"></span>
+              </button>
+            </div>
+          </div>
+        </nav>
       </div>
       <div class="text-xs text-vectura-muted" id="status-bar" role="status" aria-live="polite">READY</div>
     </div>
-    <nav id="top-menubar" class="top-menubar pt-2" role="menubar" aria-label="Main menu">
-      <div class="top-menu" data-top-menu>
-        <button class="top-menu-trigger" type="button" data-top-menu-trigger aria-haspopup="true" aria-expanded="false">
-          File
-        </button>
-        <div class="top-menu-panel" data-top-menu-panel role="menu" aria-label="File menu">
-          <button id="btn-open-vectura" class="top-menu-item" type="button" role="menuitem">Open Project…</button>
-          <button id="btn-save-vectura" class="top-menu-item" type="button" role="menuitem">Save Project…</button>
-          <button id="btn-import-svg" class="top-menu-item" type="button" role="menuitem">Import SVG…</button>
-          <button id="btn-export" class="top-menu-item top-menu-item-primary" type="button" role="menuitem">Export SVG…</button>
-        </div>
-      </div>
-      <div class="top-menu" data-top-menu>
-        <button class="top-menu-trigger" type="button" data-top-menu-trigger aria-haspopup="true" aria-expanded="false">
-          Edit
-        </button>
-        <div class="top-menu-panel" data-top-menu-panel role="menu" aria-label="Edit menu">
-          <button id="btn-settings" class="top-menu-item" type="button" role="menuitem">Settings</button>
-        </div>
-      </div>
-      <div class="top-menu" data-top-menu>
-        <button class="top-menu-trigger" type="button" data-top-menu-trigger aria-haspopup="true" aria-expanded="false">
-          View
-        </button>
-        <div class="top-menu-panel" data-top-menu-panel role="menu" aria-label="View menu">
-          <button id="btn-reset-view" class="top-menu-item" type="button" role="menuitem">Reset View</button>
-        </div>
-      </div>
-      <div class="top-menu" data-top-menu>
-        <button class="top-menu-trigger" type="button" data-top-menu-trigger aria-haspopup="true" aria-expanded="false">
-          Help
-        </button>
-        <div class="top-menu-panel" data-top-menu-panel role="menu" aria-label="Help menu">
-          <button id="btn-help" class="top-menu-item" type="button" role="menuitem">Help Guide</button>
-        </div>
-      </div>
-    </nav>
   </header>
   <input id="file-open-vectura" type="file" accept=".vectura,application/json" class="hidden" />
   <input id="file-import-svg" type="file" accept=".svg,image/svg+xml" class="hidden" />
@@ -96,7 +117,7 @@
       <div class="pane-header pane-header-left p-4 border-b border-vectura-border flex justify-between items-center">
         <span class="pane-title font-bold text-vectura-accent">GENERATOR</span>
 
-        <span class="pane-meta text-[10px] text-vectura-muted">V.0.6.01</span>
+        <span class="pane-meta text-[10px] text-vectura-muted">V.0.6.02</span>
 
         <button id="btn-pane-toggle-left" class="pane-toggle pane-toggle-left" type="button"
           aria-label="Toggle left pane">

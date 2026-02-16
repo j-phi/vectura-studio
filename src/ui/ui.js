@@ -1249,6 +1249,21 @@
     angle: 0,
   });
 
+  const PETALIS_DESIGNER_DEFAULT_INNER_COUNT = Math.round(
+    clamp(ALGO_DEFAULTS?.petalisDesigner?.innerCount ?? 20, 5, 400)
+  );
+  const PETALIS_DESIGNER_DEFAULT_OUTER_COUNT = Math.round(
+    clamp(ALGO_DEFAULTS?.petalisDesigner?.outerCount ?? 20, 5, 600)
+  );
+  const PETALIS_DESIGNER_DEFAULT_COUNT = Math.round(
+    clamp(
+      ALGO_DEFAULTS?.petalisDesigner?.count ??
+        PETALIS_DESIGNER_DEFAULT_INNER_COUNT + PETALIS_DESIGNER_DEFAULT_OUTER_COUNT,
+      5,
+      800
+    )
+  );
+
   const CONTROL_DEFS = {
     expanded: [],
     flowfield: [
@@ -1596,7 +1611,7 @@
       },
       {
         id: 'innerCount',
-        label: 'Inner Ring Count',
+        label: 'Inner Petal Count',
         type: 'range',
         min: 5,
         max: 400,
@@ -1606,7 +1621,7 @@
       },
       {
         id: 'outerCount',
-        label: 'Outer Ring Count',
+        label: 'Outer Petal Count',
         type: 'range',
         min: 5,
         max: 600,
@@ -3715,11 +3730,11 @@
       description: 'Chooses between a single ring or dual inner/outer rings.',
     },
     'petalis.innerCount': {
-      title: 'Inner Ring Count',
+      title: 'Inner Petal Count',
       description: 'Number of petals in the inner ring when dual mode is enabled.',
     },
     'petalis.outerCount': {
-      title: 'Outer Ring Count',
+      title: 'Outer Petal Count',
       description: 'Number of petals in the outer ring when dual mode is enabled.',
     },
     'petalis.ringSplit': {
@@ -4653,6 +4668,13 @@
       if (!menubar) return;
       const triggers = Array.from(menubar.querySelectorAll('[data-top-menu-trigger]'));
       if (!triggers.length) return;
+      const platform = `${navigator.platform || ''} ${navigator.userAgent || ''}`.toLowerCase();
+      const useMacNotation = /mac|iphone|ipad|ipod/.test(platform);
+      menubar.querySelectorAll('.top-menu-shortcut[data-shortcut-mac]').forEach((el) => {
+        const macLabel = el.dataset.shortcutMac || '';
+        const winLabel = el.dataset.shortcutWin || macLabel;
+        el.textContent = useMacNotation ? macLabel : winLabel;
+      });
       this.topMenuTriggers = triggers;
       const getPanel = (trigger) => trigger?.parentElement?.querySelector('[data-top-menu-panel]') || null;
       const getItems = (panel) =>
@@ -5237,8 +5259,12 @@
       const params = layer.params || {};
       const shadings = Array.isArray(params.shadings) ? params.shadings : [];
       const ringMode = params.ringMode === 'single' ? 'single' : 'dual';
-      const innerCount = Math.round(clamp(params.innerCount ?? params.count ?? 120, 5, 400));
-      const outerCount = Math.round(clamp(params.outerCount ?? 180, 5, 600));
+      const innerCount = Math.round(
+        clamp(params.innerCount ?? params.count ?? PETALIS_DESIGNER_DEFAULT_INNER_COUNT, 5, 400)
+      );
+      const outerCount = Math.round(
+        clamp(params.outerCount ?? PETALIS_DESIGNER_DEFAULT_OUTER_COUNT, 5, 600)
+      );
       const countSplit = innerCount / Math.max(1, innerCount + outerCount);
       const transitionPosition =
         ringMode === 'dual'
@@ -5340,12 +5366,12 @@
             </select>
           </label>
           <label class="petal-slider-label" data-petal-inner-count-wrap>
-            <span>Inner Ring Count</span>
+            <span>Inner Petal Count</span>
             <span class="petal-slider-value" data-petal-slider-value="inner-count" data-petal-slider-precision="0"></span>
             <input type="range" min="5" max="400" step="1" data-petal-inner-count>
           </label>
           <label class="petal-slider-label" data-petal-outer-count-wrap>
-            <span>Outer Ring Count</span>
+            <span>Outer Petal Count</span>
             <span class="petal-slider-value" data-petal-slider-value="outer-count" data-petal-slider-precision="0"></span>
             <input type="range" min="5" max="600" step="1" data-petal-outer-count>
           </label>
@@ -5384,8 +5410,14 @@
 
     getPetalDesignerCountSplit(state) {
       if (!state) return 0.5;
-      const inner = Math.max(0, Math.round(clamp(state.innerCount ?? state.count ?? 120, 5, 400)));
-      const outer = Math.max(0, Math.round(clamp(state.outerCount ?? 180, 5, 600)));
+      const inner = Math.max(
+        0,
+        Math.round(clamp(state.innerCount ?? state.count ?? PETALIS_DESIGNER_DEFAULT_INNER_COUNT, 5, 400))
+      );
+      const outer = Math.max(
+        0,
+        Math.round(clamp(state.outerCount ?? PETALIS_DESIGNER_DEFAULT_OUTER_COUNT, 5, 600))
+      );
       const total = inner + outer;
       if (total <= 0) return 0.5;
       return clamp(inner / total, 0, 1);
@@ -5647,10 +5679,14 @@
       const lockToggle = pd.root.querySelector('input[data-petal-inner-outer-lock]');
       const title = pd.root.querySelector('[data-petal-canvas-title]');
       pd.state.designerSymmetry = this.normalizeDesignerSymmetryMode(pd.state.designerSymmetry);
-      pd.state.count = Math.round(clamp(pd.state.count ?? 120, 5, 800));
+      pd.state.count = Math.round(clamp(pd.state.count ?? PETALIS_DESIGNER_DEFAULT_COUNT, 5, 800));
       pd.state.ringMode = pd.state.ringMode === 'single' ? 'single' : 'dual';
-      pd.state.innerCount = Math.round(clamp(pd.state.innerCount ?? pd.state.count ?? 120, 5, 400));
-      pd.state.outerCount = Math.round(clamp(pd.state.outerCount ?? 180, 5, 600));
+      pd.state.innerCount = Math.round(
+        clamp(pd.state.innerCount ?? pd.state.count ?? PETALIS_DESIGNER_DEFAULT_INNER_COUNT, 5, 400)
+      );
+      pd.state.outerCount = Math.round(
+        clamp(pd.state.outerCount ?? PETALIS_DESIGNER_DEFAULT_OUTER_COUNT, 5, 600)
+      );
       this.syncPetalDesignerTransitionFromCounts(pd.state);
       pd.state.profileTransitionFeather = clamp(pd.state.profileTransitionFeather ?? 0, 0, 100);
       if (title) title.textContent = side === 'inner' ? 'Inner Shape' : 'Outer Shape';
@@ -6484,7 +6520,6 @@
       if (activeShadings.length) {
         ctx.save();
         ctx.clip();
-        const { width, height } = this.getDesignerCanvasMetrics(canvas);
         const center = points.reduce(
           (acc, point) => {
             acc.x += point.x;
@@ -6495,55 +6530,272 @@
         );
         center.x /= Math.max(1, points.length);
         center.y /= Math.max(1, points.length);
-        const span = Math.hypot(width, height) * 1.5;
-        const drawParallel = (shade, extraAngle = 0) => {
-          const spacing = Math.max(4, (shade.lineSpacing ?? 1) * 10);
-          const density = Math.max(0.2, shade.density ?? 1);
-          const angle = (((shade.angle ?? 0) + extraAngle) * Math.PI) / 180;
-          const dir = { x: Math.sin(angle), y: -Math.cos(angle) };
-          const normal = { x: -dir.y, y: dir.x };
-          const step = spacing / density;
-          const count = Math.round((span * 2) / Math.max(1e-6, step));
-          for (let i = -count; i <= count; i++) {
-            const offset = i * step;
-            const cx = center.x + normal.x * offset;
-            const cy = center.y + normal.y * offset;
-            ctx.beginPath();
-            ctx.moveTo(cx - dir.x * span, cy - dir.y * span);
-            ctx.lineTo(cx + dir.x * span, cy + dir.y * span);
-            ctx.stroke();
-          }
+        const edge = this.sampleDesignerEdge(shape, 96, symmetry);
+        const seededUnit = (seed) => {
+          const raw = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
+          return raw - Math.floor(raw);
         };
+        const sampleWidthAt = (t) => {
+          const safeT = clamp(t, 0, 1);
+          if (!edge.length) return 0;
+          if (edge.length === 1) return Math.max(0, edge[0].w || 0);
+          for (let i = 1; i < edge.length; i++) {
+            const a = edge[i - 1];
+            const b = edge[i];
+            if (safeT > b.t && i < edge.length - 1) continue;
+            const span = Math.max(1e-6, b.t - a.t);
+            const mix = clamp((safeT - a.t) / span, 0, 1);
+            return Math.max(0, lerp(a.w, b.w, mix));
+          }
+          return Math.max(0, edge[edge.length - 1].w || 0);
+        };
+        const pointAt = (t, offset) => {
+          const w = sampleWidthAt(t);
+          return this.designerToCanvas(canvas, { t: clamp(t, 0, 1), w: clamp(offset, -1, 1) * w }, view);
+        };
+        const rotatePath = (path, deg = 0) => {
+          if (!Array.isArray(path) || path.length < 2) return path;
+          const rad = (deg * Math.PI) / 180;
+          if (Math.abs(rad) < 1e-5) return path;
+          const pivot = path.reduce(
+            (acc, pt) => {
+              acc.x += pt.x;
+              acc.y += pt.y;
+              return acc;
+            },
+            { x: 0, y: 0 }
+          );
+          pivot.x /= Math.max(1, path.length);
+          pivot.y /= Math.max(1, path.length);
+          const cos = Math.cos(rad);
+          const sin = Math.sin(rad);
+          return path.map((pt) => {
+            const dx = pt.x - pivot.x;
+            const dy = pt.y - pivot.y;
+            return {
+              x: pivot.x + dx * cos - dy * sin,
+              y: pivot.y + dx * sin + dy * cos,
+            };
+          });
+        };
+        const strokePath = (path) => {
+          if (!Array.isArray(path) || path.length < 2) return;
+          ctx.beginPath();
+          ctx.moveTo(path[0].x, path[0].y);
+          for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
+          ctx.stroke();
+        };
+        const slicePathByPattern = (path, dash, gap) => {
+          if (!Array.isArray(path) || path.length < 2) return [];
+          const segments = [];
+          let draw = true;
+          let remaining = dash;
+          let current = [];
+          for (let i = 0; i < path.length - 1; i++) {
+            let a = path[i];
+            let b = path[i + 1];
+            let segLen = Math.hypot(b.x - a.x, b.y - a.y);
+            if (segLen < 1e-6) continue;
+            while (segLen > 1e-6) {
+              const step = Math.min(segLen, remaining);
+              const t = step / segLen;
+              const pt = { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) };
+              if (draw) {
+                if (!current.length) current.push(a);
+                current.push(pt);
+              }
+              segLen -= step;
+              a = pt;
+              if (Math.abs(step - remaining) < 1e-6) {
+                if (draw && current.length > 1) segments.push(current);
+                current = [];
+                draw = !draw;
+                remaining = draw ? dash : gap;
+              } else {
+                remaining -= step;
+              }
+            }
+          }
+          if (draw && current.length > 1) segments.push(current);
+          return segments;
+        };
+        const applyLineType = (path, lineType, spacingPx) => {
+          const safeSpacing = Math.max(2, spacingPx || 4);
+          if (lineType === 'dashed') {
+            return slicePathByPattern(path, safeSpacing * 2, safeSpacing * 1.2);
+          }
+          if (lineType === 'dotted') {
+            return slicePathByPattern(path, safeSpacing * 0.4, safeSpacing * 1.4);
+          }
+          if (lineType === 'stitch') {
+            return slicePathByPattern(path, safeSpacing * 1.2, safeSpacing * 0.8);
+          }
+          return [path];
+        };
+        const buildRanges = (shade) => {
+          const widthX = clamp(shade.widthX ?? 100, 0, 100) / 100;
+          const posX = clamp(shade.posX ?? 50, 0, 100) / 100;
+          const half = widthX * 0.5;
+          const tStart = clamp(posX - half, 0, 1);
+          const tEnd = clamp(posX + half, 0, 1);
+          const gapX = clamp(shade.gapX ?? 0, 0, 100) / 100;
+          const gapPosX = clamp(shade.gapPosX ?? 50, 0, 100) / 100;
+          const gapHalf = gapX * 0.5;
+          const gapStart = gapPosX - gapHalf;
+          const gapEnd = gapPosX + gapHalf;
+          const ranges = [];
+          if (gapX > 0 && gapStart < tEnd && gapEnd > tStart) {
+            if (tStart < gapStart) ranges.push([tStart, clamp(gapStart, 0, 1)]);
+            if (gapEnd < tEnd) ranges.push([clamp(gapEnd, 0, 1), tEnd]);
+          } else {
+            ranges.push([tStart, tEnd]);
+          }
+          return ranges;
+        };
+        const buildOffsets = (shade, spacingPx) => {
+          const widthY = clamp(shade.widthY ?? 100, 0, 100) / 100;
+          const posY = clamp(shade.posY ?? 50, 0, 100) / 100;
+          const offsetCenter = (posY - 0.5) * 2;
+          const halfRange = widthY;
+          const offsetStart = clamp(offsetCenter - halfRange, -1, 1);
+          const offsetEnd = clamp(offsetCenter + halfRange, -1, 1);
+          const gapY = clamp(shade.gapY ?? 0, 0, 100) / 100;
+          const gapPosY = clamp(shade.gapPosY ?? 50, 0, 100) / 100;
+          const gapCenter = (gapPosY - 0.5) * 2;
+          const gapHalf = gapY;
+          const gapStart = gapCenter - gapHalf;
+          const gapEnd = gapCenter + gapHalf;
+          const density = Math.max(0.2, shade.density ?? 1);
+          const widthPx = Math.max(8, sampleWidthAt(clamp(posY, 0, 1)) * 2);
+          const span = Math.abs(offsetEnd - offsetStart) * widthPx;
+          const count = Math.max(1, Math.round((span / Math.max(1, spacingPx)) * density));
+          return { offsetStart, offsetEnd, gapStart, gapEnd, count };
+        };
+        const buildLinePath = (shade, offset, tStart, tEnd, seedBase, options = {}) => {
+          const { angleOffset = 0, gradient = false, spiral = false } = options;
+          const span = Math.max(1e-4, tEnd - tStart);
+          const steps = Math.max(10, Math.round(70 * span));
+          const jitter = clamp(shade.jitter ?? 0, 0, 1);
+          const pts = [];
+          for (let i = 0; i <= steps; i++) {
+            const mix = i / steps;
+            const t = lerp(tStart, tEnd, mix);
+            let localOffset = offset;
+            if (spiral) localOffset += (mix - 0.5) * 0.6;
+            if (gradient) localOffset = lerp(localOffset, localOffset * 0.45, mix);
+            if (jitter > 0) {
+              const unit = seededUnit(seedBase + i * 17.37);
+              localOffset += (unit - 0.5) * jitter * 0.35;
+            }
+            pts.push(pointAt(t, localOffset));
+          }
+          return rotatePath(pts, (shade.angle ?? 0) + angleOffset);
+        };
+        const strokePolygon = (scale = 1) => {
+          const path = points.map((pt) => ({
+            x: center.x + (pt.x - center.x) * scale,
+            y: center.y + (pt.y - center.y) * scale,
+          }));
+          if (!path.length) return;
+          ctx.beginPath();
+          ctx.moveTo(path[0].x, path[0].y);
+          for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
+          ctx.closePath();
+          ctx.stroke();
+        };
+
         activeShadings.forEach((shade, idx) => {
           const alpha = 0.22 + Math.min(idx, 4) * 0.08;
           ctx.strokeStyle = `rgba(125, 211, 252, ${Math.min(0.6, alpha).toFixed(2)})`;
           ctx.fillStyle = ctx.strokeStyle;
           ctx.lineWidth = 1;
-          if (shade.type === 'stipple') {
-            const dotStep = Math.max(6, (shade.lineSpacing ?? 1) * 12) / Math.max(0.2, shade.density ?? 1);
-            for (let y = -span; y <= span; y += dotStep) {
-              for (let x = -span; x <= span; x += dotStep) {
-                ctx.beginPath();
-                ctx.arc(center.x + x, center.y + y, 0.8, 0, Math.PI * 2);
-                ctx.fill();
+          const type = shade.type || 'radial';
+          const spacingPx = Math.max(2, (shade.lineSpacing ?? 1) * 8);
+          const lineType = shade.lineType || 'solid';
+          const ranges = buildRanges(shade);
+          const { offsetStart, offsetEnd, gapStart, gapEnd, count } = buildOffsets(shade, spacingPx);
+
+          if (type === 'outline' || type === 'rim' || type === 'contour') {
+            strokePolygon(1);
+            if (type === 'rim') {
+              strokePolygon(0.93);
+            }
+            if (type === 'contour') {
+              const levels = clamp(Math.round(2 + (shade.density ?? 1) * 3), 2, 8);
+              for (let i = 1; i <= levels; i++) {
+                const scale = 1 - (i / (levels + 1)) * 0.36;
+                strokePolygon(scale);
               }
             }
             return;
           }
-          if (shade.type === 'crosshatch') {
-            drawParallel(shade, 0);
-            drawParallel(shade, 90);
-            return;
+
+          for (let i = 0; i < count; i++) {
+            const frac = count === 1 ? 0.5 : i / (count - 1);
+            let offset = lerp(offsetStart, offsetEnd, frac);
+            if (offset >= gapStart && offset <= gapEnd) continue;
+            if (type === 'chiaroscuro') {
+              offset = lerp(offsetStart, offsetEnd, Math.pow(frac, 1.6));
+            }
+            if (type === 'edge') {
+              const edgeMix = frac < 0.5 ? frac * 2 : (frac - 0.5) * 2;
+              offset =
+                frac < 0.5
+                  ? lerp(offsetStart, -0.75, edgeMix)
+                  : lerp(0.75, offsetEnd, edgeMix);
+            }
+            ranges.forEach(([tStart, tEnd], rangeIndex) => {
+              if (tEnd <= tStart) return;
+              let localStart = tStart;
+              let localEnd = tEnd;
+              const lengthJitter = clamp(shade.lengthJitter ?? 0, 0, 1);
+              if (lengthJitter > 0) {
+                const span = Math.max(0.001, tEnd - tStart);
+                const jitterAmt = span * lengthJitter * 0.5;
+                const startJitter = seededUnit(idx * 500 + i * 67 + rangeIndex * 11 + 1) - 0.5;
+                const endJitter = seededUnit(idx * 500 + i * 67 + rangeIndex * 11 + 2) - 0.5;
+                localStart = clamp(tStart + startJitter * jitterAmt, 0, 1);
+                localEnd = clamp(tEnd + endJitter * jitterAmt, 0, 1);
+                if (localEnd < localStart) [localStart, localEnd] = [localEnd, localStart];
+                if (localEnd - localStart < 0.01) return;
+              }
+              const seedBase = idx * 1000 + i * 37 + rangeIndex * 101;
+              if (type === 'stipple') {
+                const dots = Math.max(
+                  6,
+                  Math.round((localEnd - localStart) * 42 * Math.max(0.2, shade.density ?? 1))
+                );
+                const jitter = clamp(shade.jitter ?? 0, 0, 1);
+                for (let d = 0; d < dots; d++) {
+                  const t = lerp(localStart, localEnd, (d + 1) / (dots + 1));
+                  const jitterUnit = seededUnit(seedBase + d * 7) - 0.5;
+                  const dotPt = pointAt(t, offset + jitterUnit * jitter * 0.35);
+                  ctx.beginPath();
+                  ctx.arc(dotPt.x, dotPt.y, 0.8, 0, Math.PI * 2);
+                  ctx.fill();
+                }
+                return;
+              }
+              const drawPath = (linePath) => {
+                const typed = applyLineType(linePath, lineType, spacingPx);
+                typed.forEach((segment) => strokePath(segment));
+              };
+              if (type === 'crosshatch') {
+                drawPath(buildLinePath(shade, offset, localStart, localEnd, seedBase, { angleOffset: 0 }));
+                drawPath(buildLinePath(shade, offset, localStart, localEnd, seedBase + 13, { angleOffset: 90 }));
+                return;
+              }
+              if (type === 'spiral') {
+                drawPath(buildLinePath(shade, offset, localStart, localEnd, seedBase, { spiral: true }));
+                return;
+              }
+              if (type === 'gradient') {
+                drawPath(buildLinePath(shade, offset, localStart, localEnd, seedBase, { gradient: true }));
+                return;
+              }
+              drawPath(buildLinePath(shade, offset, localStart, localEnd, seedBase));
+            });
           }
-          if (shade.type === 'rim' || shade.type === 'outline') {
-            ctx.beginPath();
-            ctx.moveTo(points[0].x, points[0].y);
-            for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
-            ctx.closePath();
-            ctx.stroke();
-            return;
-          }
-          drawParallel(shade, 0);
         });
         ctx.restore();
       }
@@ -6759,8 +7011,20 @@
       const params = layer.params || {};
       state.designerSymmetry = this.normalizeDesignerSymmetryMode(state.designerSymmetry);
       state.ringMode = state.ringMode === 'single' ? 'single' : 'dual';
-      state.innerCount = Math.round(clamp(state.innerCount ?? params.innerCount ?? 120, 5, 400));
-      state.outerCount = Math.round(clamp(state.outerCount ?? params.outerCount ?? 180, 5, 600));
+      state.innerCount = Math.round(
+        clamp(
+          state.innerCount ?? params.innerCount ?? PETALIS_DESIGNER_DEFAULT_INNER_COUNT,
+          5,
+          400
+        )
+      );
+      state.outerCount = Math.round(
+        clamp(
+          state.outerCount ?? params.outerCount ?? PETALIS_DESIGNER_DEFAULT_OUTER_COUNT,
+          5,
+          600
+        )
+      );
       const countSplit = this.syncPetalDesignerTransitionFromCounts(state);
       state.profileTransitionFeather = clamp(state.profileTransitionFeather ?? params.profileTransitionFeather ?? 0, 0, 100);
       state.count = Math.round(
@@ -6812,6 +7076,13 @@
           <div class="modal-ill-label">Keyboard Shortcuts</div>
           <div class="text-xs text-vectura-muted leading-relaxed space-y-1">
             <div><span class="text-vectura-accent">?</span> Open shortcuts</div>
+            <div><span class="text-vectura-accent">F1</span> Help guide</div>
+            <div><span class="text-vectura-accent">Cmd/Ctrl + O</span> Open Project</div>
+            <div><span class="text-vectura-accent">Cmd/Ctrl + S</span> Save Project</div>
+            <div><span class="text-vectura-accent">Cmd/Ctrl + Shift + P</span> Import SVG</div>
+            <div><span class="text-vectura-accent">Cmd/Ctrl + Shift + E</span> Export SVG</div>
+            <div><span class="text-vectura-accent">Cmd/Ctrl + K</span> Settings</div>
+            <div><span class="text-vectura-accent">Cmd/Ctrl + 0</span> Reset View</div>
             <div><span class="text-vectura-accent">V</span> Selection tool (press again to cycle modes)</div>
             <div><span class="text-vectura-accent">A</span> Direct selection tool</div>
             <div><span class="text-vectura-accent">P</span> Pen tool (press again to cycle subtools)</div>
@@ -9345,6 +9616,43 @@
       }
     }
 
+    triggerTopMenuAction(buttonId) {
+      const button = getEl(buttonId);
+      if (!button) return false;
+      button.click();
+      this.setTopMenuOpen(null, false);
+      return true;
+    }
+
+    handleTopMenuShortcut(e) {
+      const primary = e.metaKey || e.ctrlKey;
+      const key = (e.key || '').toLowerCase();
+      if (primary && !e.shiftKey && !e.altKey && key === 'o') {
+        return this.triggerTopMenuAction('btn-open-vectura');
+      }
+      if (primary && !e.shiftKey && !e.altKey && key === 's') {
+        return this.triggerTopMenuAction('btn-save-vectura');
+      }
+      if (primary && e.shiftKey && !e.altKey && key === 'p') {
+        return this.triggerTopMenuAction('btn-import-svg');
+      }
+      if (primary && e.shiftKey && !e.altKey && key === 'e') {
+        return this.triggerTopMenuAction('btn-export');
+      }
+      if (primary && !e.shiftKey && !e.altKey && key === 'k') {
+        return this.triggerTopMenuAction('btn-settings');
+      }
+      if (primary && !e.shiftKey && !e.altKey && key === '0') {
+        return this.triggerTopMenuAction('btn-reset-view');
+      }
+      if (!primary && !e.shiftKey && !e.altKey && e.key === 'F1') {
+        this.openHelp(false);
+        this.setTopMenuOpen(null, false);
+        return true;
+      }
+      return false;
+    }
+
     bindShortcuts() {
       window.addEventListener('keydown', (e) => {
         const target = e.target;
@@ -9355,6 +9663,11 @@
             target.tagName === 'SELECT' ||
             target.isContentEditable);
         if (isInput) return;
+        if (this.handleTopMenuShortcut(e)) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
 
         if (this.petalDesigner) {
           if (e.key === 'Escape') {

@@ -1214,9 +1214,10 @@
     const petals = [];
     const occluders = [];
     const layering = p.layering !== false;
+    const designerShapeOnly = Boolean(p.useDesignerShapeOnly || p.label === 'Petalis Designer');
     const shadings = Array.isArray(p.shadings) ? p.shadings : [];
     const legacyShadings = [];
-    if (!shadings.length && (p.innerShading || p.outerShading)) {
+    if (!shadings.length && !designerShapeOnly && (p.innerShading || p.outerShading)) {
       if (p.innerShading) {
         legacyShadings.push({
           id: 'legacy-inner',
@@ -1256,7 +1257,6 @@
     }
     const shadingStack = shadings.length ? shadings : legacyShadings;
     const ringMode = p.ringMode || 'single';
-    const designerShapeOnly = Boolean(p.useDesignerShapeOnly || p.label === 'Petalis Designer');
     const normalizeTipRotate = (value) => (value > 10 ? value / 10 : value);
     const tipTwist = designerShapeOnly ? 0 : p.tipTwist ?? 0;
     const tipRotate = normalizeTipRotate(tipTwist);
@@ -1530,10 +1530,7 @@
           });
           shadingLines = shadowed;
         }
-        const clipOccluders =
-          designerDualRing && ringMode === 'dual'
-            ? occluders.filter((entry) => entry.ringIndex === petal.ringIndex)
-            : occluders;
+        const clipOccluders = occluders;
         if (layering && clipOccluders.length) {
           const clippedOutline = clipPathOutside(petal.outline, clipOccluders);
           clippedOutline.forEach((seg) => pushSegment(seg, petal.outline.meta));
