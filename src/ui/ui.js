@@ -6736,7 +6736,7 @@
             <div>Petal Designer: middle-click drag pans and wheel zooms at cursor.</div>
             <div>Touch: one-finger tool input, two-finger pan/pinch zoom.</div>
             <div>On tablets, use Shift/Alt/Meta/Pan touch modifier buttons near the toolbar.</div>
-            <div>On phones, header actions scroll horizontally, Generator/Layers open from edge tabs, and Model can be expanded from its floating mobile toggle.</div>
+            <div>On phones, header actions scroll horizontally; use either pane toggles or edge tabs to open Generator/Layers, and use the floating Model toggle to expand/collapse the formula panel.</div>
             <div>Drag selection box to multi-select</div>
             <div>Drag to move selection; handles resize; top-right handle rotates (Shift snaps)</div>
           </div>
