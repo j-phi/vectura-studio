@@ -1726,11 +1726,22 @@ input[type='color']::-webkit-color-swatch {
 
 .header-main {
   min-height: 30px;
+  overflow: visible;
 }
 
 .header-brand-menu {
   flex: 1 1 auto;
   min-width: 0;
+  overflow: visible;
+}
+
+.header-menu-divider {
+  width: 1px;
+  height: 20px;
+  margin-left: 8px;
+  margin-right: 6px;
+  background: #27272a;
+  flex: 0 0 auto;
 }
 
 .top-menubar {
@@ -1739,10 +1750,9 @@ input[type='color']::-webkit-color-swatch {
   flex: 1 1 auto;
   min-width: 0;
   gap: 8px;
-  overflow-x: auto;
-  overflow-y: visible;
+  overflow: visible;
   white-space: nowrap;
-  scrollbar-width: thin;
+  margin-left: 2px;
   position: relative;
   z-index: 260;
 }
@@ -1961,6 +1971,11 @@ input[type='color']::-webkit-color-swatch {
 }
 
 @media (max-width: 640px) {
+  .header-menu-divider {
+    margin-left: 4px;
+    margin-right: 2px;
+  }
+
   #status-bar {
     display: none;
   }

@@ -14,6 +14,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Cmd/Ctrl+A selects all drawable layers from anywhere in the app (outside text inputs).
 - Layer grouping/ungrouping via Cmd/Ctrl+G and Cmd/Ctrl+Shift+G.
 - Desktop menu bar is anchored beside `VECTURA.STUDIO` with Illustrator-style shortcuts for Open/Save/Import/Export/Settings/Reset View/Help.
+- Top menu dropdowns render as overlays above the canvas/panes so File/Edit/View/Help menus are never clipped by the header.
 - Illustrator-style tool bar with selection, direct selection, hand, pen (bezier), and scissor tools (V/A/Space/P/C). Press V/P/C again to cycle subtools.
 - Pen long-press subtool menu with Illustrator-style modes and shortcuts (P, +, -, Shift+C).
 - Direct path editing for individual line endpoints and bezier handles.
