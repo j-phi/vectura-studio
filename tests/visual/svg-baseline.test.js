@@ -22,7 +22,7 @@ const SCENARIOS = [
   },
   {
     id: 'petalis-canonical',
-    type: 'petalis',
+    type: 'petalisDesigner',
     seed: 303,
     overrides: {
       count: 95,

@@ -7,7 +7,7 @@
       {
         id: "camellia-japonica-pink-perfection",
         name: "Camellia Japonica Pink Perfection",
-        preset_system: "petalis",
+        preset_system: "petalisDesigner",
         params: {
           petalProfile: "oval",
           petalScale: 28,
@@ -26,7 +26,7 @@
       {
         id: "fenestraria-aurantiaca",
         name: "Fenestraria Aurantiaca",
-        preset_system: "petalis",
+        preset_system: "petalisDesigner",
         params: {
           petalProfile: "spoon",
           petalScale: 22,
@@ -42,7 +42,7 @@
       {
         id: "pachyphytum-compactum",
         name: "Pachyphytum Compactum",
-        preset_system: "petalis",
+        preset_system: "petalisDesigner",
         params: {
           petalProfile: "lanceolate",
           petalScale: 24,
@@ -57,7 +57,7 @@
       {
         id: "echeveria-agavoides",
         name: "Echeveria Agavoides",
-        preset_system: "petalis",
+        preset_system: "petalisDesigner",
         params: {
           petalProfile: "lanceolate",
           petalScale: 26,
@@ -72,7 +72,7 @@
       {
         id: "dahlia-cornel",
         name: "Dahlia Cornel",
-        preset_system: "petalis",
+        preset_system: "petalisDesigner",
         params: {
           petalProfile: "teardrop",
           petalScale: 30,
@@ -91,7 +91,7 @@
       {
         id: "dahlia-ivanetti",
         name: "Dahlia Ivanetti",
-        preset_system: "petalis",
+        preset_system: "petalisDesigner",
         params: {
           petalProfile: "teardrop",
           petalScale: 32,
@@ -106,7 +106,7 @@
       {
         id: "rosa-chinensis-mutabilis",
         name: "Rosa Chinensis Mutabilis",
-        preset_system: "petalis",
+        preset_system: "petalisDesigner",
         params: {
           petalProfile: "heart",
           petalScale: 34,
@@ -123,7 +123,7 @@
       {
         id: "chrysanthemum-morifolium",
         name: "Chrysanthemum Morifolium",
-        preset_system: "petalis",
+        preset_system: "petalisDesigner",
         params: {
           petalProfile: "lanceolate",
           petalScale: 26,
@@ -137,7 +137,7 @@
       {
         id: "ranunculus-asiaticus",
         name: "Ranunculus Asiaticus",
-        preset_system: "petalis",
+        preset_system: "petalisDesigner",
         params: {
           petalProfile: "oval",
           petalScale: 26,
@@ -153,7 +153,7 @@
       {
         id: "anemone-coronaria",
         name: "Anemone Coronaria",
-        preset_system: "petalis",
+        preset_system: "petalisDesigner",
         params: {
           petalProfile: "oval",
           petalScale: 36,
@@ -170,7 +170,7 @@
       {
         id: "zinnia-elegans",
         name: "Zinnia Elegans",
-        preset_system: "petalis",
+        preset_system: "petalisDesigner",
         params: {
           petalProfile: "oval",
           petalScale: 30,
@@ -185,7 +185,7 @@
       {
         id: "lotus-nelumbo-nucifera",
         name: "Lotus Nelumbo Nucifera",
-        preset_system: "petalis",
+        preset_system: "petalisDesigner",
         params: {
           petalProfile: "spoon",
           petalScale: 42,
@@ -205,7 +205,7 @@
       {
         id: "hellebore-niger",
         name: "Helleborus Niger",
-        preset_system: "petalis",
+        preset_system: "petalisDesigner",
         params: {
           petalProfile: "heart",
           petalScale: 38,
@@ -220,7 +220,7 @@
       {
         id: "gerbera-jamesonii",
         name: "Gerbera Jamesonii",
-        preset_system: "petalis",
+        preset_system: "petalisDesigner",
         params: {
           petalProfile: "lanceolate",
           petalScale: 34,
@@ -234,7 +234,7 @@
       {
         id: "tulipa-gesneriana",
         name: "Tulipa Gesneriana",
-        preset_system: "petalis",
+        preset_system: "petalisDesigner",
         params: {
           petalProfile: "spoon",
           petalScale: 44,
@@ -249,7 +249,7 @@
       {
         id: "iris-germanica",
         name: "Iris Germanica",
-        preset_system: "petalis",
+        preset_system: "petalisDesigner",
         params: {
           petalProfile: "lanceolate",
           petalScale: 40,
@@ -264,7 +264,7 @@
       {
         id: "gardenia-jasminoides",
         name: "Gardenia Jasminoides",
-        preset_system: "petalis",
+        preset_system: "petalisDesigner",
         params: {
           petalProfile: "oval",
           petalScale: 32,
@@ -280,7 +280,7 @@
       {
         id: "plumeria-rubra",
         name: "Plumeria Rubra",
-        preset_system: "petalis",
+        preset_system: "petalisDesigner",
         params: {
           petalProfile: "oval",
           petalScale: 46,
@@ -297,7 +297,7 @@
       {
         id: "cosmos-bipinnatus",
         name: "Cosmos Bipinnatus",
-        preset_system: "petalis",
+        preset_system: "petalisDesigner",
         params: {
           petalProfile: "lanceolate",
           petalScale: 38,
@@ -312,7 +312,7 @@
       {
         id: "protea-cynaroides",
         name: "Protea Cynaroides",
-        preset_system: "petalis",
+        preset_system: "petalisDesigner",
         params: {
           petalProfile: "lanceolate",
           petalScale: 36,
@@ -327,5 +327,8 @@
       }
     
   ];
-  window.Vectura.PETALIS_PRESETS = window.Vectura.PRESETS.filter((preset) => preset.preset_system === 'petalis');
+  window.Vectura.PETALIS_PRESETS = window.Vectura.PRESETS.filter((preset) => {
+    const system = preset?.preset_system || 'petalisDesigner';
+    return system === 'petalisDesigner';
+  });
 })();

@@ -228,7 +228,7 @@
       const dW = width - m * 2;
       const dH = height - m * 2;
       const p =
-        (layer.type === 'petalis' || layer.type === 'petalisDesigner')
+        layer.type === 'petalisDesigner'
           ? { ...layer.params, lightSource: SETTINGS.lightSource }
           : layer.params;
 

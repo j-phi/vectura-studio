@@ -5,16 +5,15 @@
   window.Vectura = window.Vectura || {};
   const registry = window.Vectura.AlgorithmRegistry || {};
   const PetalisAlgorithm = window.Vectura?.PetalisAlgorithm;
-  const petalisFallback =
+  const petalisDesignerFallback =
     PetalisAlgorithm ||
     {
       generate: () => [],
-      formula: () => 'Petalis algorithm not loaded.',
+      formula: () => 'Petalis Designer algorithm not loaded.',
     };
 
   window.Vectura.Algorithms = {
     ...registry,
-    petalis: registry.petalis || petalisFallback,
-    petalisDesigner: registry.petalisDesigner || registry.petalis || petalisFallback,
+    petalisDesigner: registry.petalisDesigner || petalisDesignerFallback,
   };
 })();

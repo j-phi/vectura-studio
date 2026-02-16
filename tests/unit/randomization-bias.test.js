@@ -43,14 +43,14 @@ describe('Randomization bias profiles', () => {
     expect(average(attempts)).toBeGreaterThan(2500);
   });
 
-  test('Petalis bias caps complexity to avoid runaway line counts', () => {
+  test('Petalis Designer bias caps complexity to avoid runaway line counts', () => {
     const rng = makeRandom(202);
     const counts = [];
     const centerDensity = [];
 
     for (let i = 0; i < 300; i++) {
       const layer = {
-        type: 'petalis',
+        type: 'petalisDesigner',
         params: {
           count: 260,
           ringMode: 'single',

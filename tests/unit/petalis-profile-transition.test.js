@@ -62,9 +62,10 @@ describe('Petalis profile transitions', () => {
   test('feather=0 keeps a hard step while feather=100 blends most petals', () => {
     const { Algorithms, ALGO_DEFAULTS, SeededRNG, SimpleNoise } = runtime.window.Vectura;
     const base = {
-      ...clone(ALGO_DEFAULTS.petalis || {}),
-      ringMode: 'single',
+      ...clone(ALGO_DEFAULTS.petalisDesigner || {}),
       count: 20,
+      innerCount: 10,
+      outerCount: 10,
       countJitter: 0,
       layering: false,
       shadings: [],
@@ -97,7 +98,7 @@ describe('Petalis profile transitions', () => {
       truncate: true,
     };
     const render = (params, seed = 7612) =>
-      Algorithms.petalis.generate(params, new SeededRNG(seed), new SimpleNoise(seed), bounds) || [];
+      Algorithms.petalisDesigner.generate(params, new SeededRNG(seed), new SimpleNoise(seed), bounds) || [];
     const renderOutlines = (params) => extractOutlines(render(params));
 
     const outlinesStep = renderOutlines({
@@ -142,10 +143,10 @@ describe('Petalis profile transitions', () => {
     expect(outlineSignature(outlinesWide, middle)).not.toBe(outerMid);
   });
 
-  test('transition position remains active in dual-ring mode', () => {
+  test('transition position is ignored in dual-ring mode', () => {
     const { Algorithms, ALGO_DEFAULTS, SeededRNG, SimpleNoise } = runtime.window.Vectura;
     const base = {
-      ...clone(ALGO_DEFAULTS.petalis || {}),
+      ...clone(ALGO_DEFAULTS.petalisDesigner || {}),
       ringMode: 'dual',
       innerCount: 16,
       outerCount: 20,
@@ -180,19 +181,20 @@ describe('Petalis profile transitions', () => {
       truncate: true,
     };
     const render = (params, seed = 5521) =>
-      Algorithms.petalis.generate(params, new SeededRNG(seed), new SimpleNoise(seed), bounds) || [];
+      Algorithms.petalisDesigner.generate(params, new SeededRNG(seed), new SimpleNoise(seed), bounds) || [];
 
     const early = render({ ...clone(base), profileTransitionPosition: 25 });
     const late = render({ ...clone(base), profileTransitionPosition: 75 });
-    expect(pathSignature(early)).not.toBe(pathSignature(late));
+    expect(pathSignature(early)).toBe(pathSignature(late));
   });
 
   test('petalis designer ignores hidden legacy shape params', () => {
     const { Algorithms, ALGO_DEFAULTS, SeededRNG, SimpleNoise } = runtime.window.Vectura;
     const base = {
-      ...clone(ALGO_DEFAULTS.petalisDesigner || ALGO_DEFAULTS.petalis || {}),
-      ringMode: 'single',
+      ...clone(ALGO_DEFAULTS.petalisDesigner || {}),
       count: 24,
+      innerCount: 12,
+      outerCount: 12,
       countJitter: 0,
       layering: false,
       shadings: [],
@@ -222,7 +224,7 @@ describe('Petalis profile transitions', () => {
       truncate: true,
     };
     const render = (params, seed = 2209) =>
-      Algorithms.petalis.generate(params, new SeededRNG(seed), new SimpleNoise(seed), bounds) || [];
+      Algorithms.petalisDesigner.generate(params, new SeededRNG(seed), new SimpleNoise(seed), bounds) || [];
     const baseline = pathSignature(render(clone(base)));
 
     const legacyOverride = clone(base);
@@ -246,7 +248,7 @@ describe('Petalis profile transitions', () => {
   test('petalis designer dual-ring boundary is unchanged by radialGrowth', () => {
     const { Algorithms, ALGO_DEFAULTS, SeededRNG, SimpleNoise } = runtime.window.Vectura;
     const base = {
-      ...clone(ALGO_DEFAULTS.petalisDesigner || ALGO_DEFAULTS.petalis || {}),
+      ...clone(ALGO_DEFAULTS.petalisDesigner || {}),
       ringMode: 'dual',
       innerCount: 10,
       outerCount: 14,
@@ -278,7 +280,7 @@ describe('Petalis profile transitions', () => {
       truncate: true,
     };
     const render = (params, seed = 9942) =>
-      Algorithms.petalis.generate(params, new SeededRNG(seed), new SimpleNoise(seed), bounds) || [];
+      Algorithms.petalisDesigner.generate(params, new SeededRNG(seed), new SimpleNoise(seed), bounds) || [];
     const classify = (params) => {
       const mixedOutlines = extractOutlines(render(clone(params)));
       const innerOnlyOutlines = extractOutlines(
@@ -309,7 +311,7 @@ describe('Petalis profile transitions', () => {
   test('petalis designer ignores ringSplit for dual-ring transitions', () => {
     const { Algorithms, ALGO_DEFAULTS, SeededRNG, SimpleNoise } = runtime.window.Vectura;
     const base = {
-      ...clone(ALGO_DEFAULTS.petalisDesigner || ALGO_DEFAULTS.petalis || {}),
+      ...clone(ALGO_DEFAULTS.petalisDesigner || {}),
       ringMode: 'dual',
       innerCount: 12,
       outerCount: 16,
@@ -342,7 +344,7 @@ describe('Petalis profile transitions', () => {
       truncate: true,
     };
     const render = (params, seed = 7771) =>
-      Algorithms.petalis.generate(params, new SeededRNG(seed), new SimpleNoise(seed), bounds) || [];
+      Algorithms.petalisDesigner.generate(params, new SeededRNG(seed), new SimpleNoise(seed), bounds) || [];
     const lowSplit = render({ ...clone(base), ringSplit: 0.2 });
     const highSplit = render({ ...clone(base), ringSplit: 0.8 });
 

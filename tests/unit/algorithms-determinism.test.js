@@ -11,34 +11,6 @@ const OVERRIDES = {
   rings: { rings: 22 },
   topo: { resolution: 80, levels: 16 },
   rainfall: { count: 120, traceLength: 80, traceStep: 4, noises: [] },
-  petalis: {
-    count: 110,
-    innerCount: 60,
-    outerCount: 85,
-    centerDensity: 16,
-    centerRingDensity: 20,
-    connectorCount: 20,
-    shadings: [],
-    innerOuterLock: false,
-    profileTransitionPosition: 48,
-    profileTransitionFeather: 35,
-    designerInner: {
-      profile: 'teardrop',
-      anchors: [
-        { t: 0, w: 0, in: null, out: { t: 0.18, w: 0 } },
-        { t: 0.44, w: 0.78, in: { t: 0.3, w: 0.78 }, out: { t: 0.58, w: 0.78 } },
-        { t: 1, w: 0, in: { t: 0.82, w: 0 }, out: null },
-      ],
-    },
-    designerOuter: {
-      profile: 'spatulate',
-      anchors: [
-        { t: 0, w: 0, in: null, out: { t: 0.24, w: 0 } },
-        { t: 0.62, w: 1.12, in: { t: 0.46, w: 1.12 }, out: { t: 0.76, w: 1.12 } },
-        { t: 1, w: 0, in: { t: 0.86, w: 0 }, out: null },
-      ],
-    },
-  },
   petalisDesigner: {
     count: 95,
     innerCount: 48,

@@ -163,7 +163,6 @@
       case 'shapePack':
         applyShapePackBias(layer.params, random);
         break;
-      case 'petalis':
       case 'petalisDesigner':
         applyPetalisBias(layer.params, random);
         break;

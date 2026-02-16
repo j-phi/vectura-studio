@@ -165,8 +165,8 @@
       simplify: 0,
       curves: true,
     },
-    petalis: {
-      label: 'Petalis',
+    petalisDesigner: {
+      label: 'Petalis Designer',
       preset: 'custom',
       petalProfile: 'teardrop',
       petalScale: 32,
@@ -184,22 +184,22 @@
       layering: true,
       anchorToCenter: 'central',
       anchorRadiusRatio: 1,
-      tipSharpness: 0.6,
-      tipTwist: 2,
-      tipCurl: 0.15,
-      baseFlare: 0.25,
-      basePinch: 0.1,
+      tipSharpness: 1,
+      tipTwist: 0,
+      tipCurl: 0,
+      baseFlare: 0,
+      basePinch: 0,
       edgeWaveAmp: 0.05,
       edgeWaveFreq: 3,
       radiusScale: 0.2,
       radiusScaleCurve: 1.2,
       sizeJitter: 0.12,
       rotationJitter: 6,
-      count: 260,
+      count: 40,
       countJitter: 0.1,
       ringMode: 'dual',
-      innerCount: 120,
-      outerCount: 180,
+      innerCount: 20,
+      outerCount: 20,
       ringSplit: 0.45,
       innerOuterLock: false,
       designerSymmetry: 'none',
@@ -209,7 +209,7 @@
       spiralMode: 'golden',
       customAngle: 137.5,
       spiralTightness: 1.1,
-      radialGrowth: 1.0,
+      radialGrowth: 0.05,
       spiralStart: 0,
       spiralEnd: 1,
       angularDrift: 0,
@@ -219,7 +219,7 @@
       centerSizeCurve: 1.2,
       centerShapeMorph: 0.2,
       centerProfile: 'oval',
-      centerCurlBoost: 0.2,
+      centerCurlBoost: 0,
       centerWaveBoost: 0.2,
       budMode: false,
       budRadius: 0.15,
@@ -236,6 +236,7 @@
       connectorLength: 10,
       connectorJitter: 0.3,
       shadings: [],
+      useDesignerShapeOnly: true,
       petalModifiers: [],
       centerModifiers: [
         {
@@ -599,21 +600,6 @@
       curves: false,
     },
   };
-  window.Vectura.ALGO_DEFAULTS.petalisDesigner = JSON.parse(JSON.stringify(window.Vectura.ALGO_DEFAULTS.petalis || {}));
-  window.Vectura.ALGO_DEFAULTS.petalisDesigner.label = 'Petalis Designer';
-  window.Vectura.ALGO_DEFAULTS.petalisDesigner.count = 40;
-  window.Vectura.ALGO_DEFAULTS.petalisDesigner.innerCount = 20;
-  window.Vectura.ALGO_DEFAULTS.petalisDesigner.outerCount = 20;
-  window.Vectura.ALGO_DEFAULTS.petalisDesigner.radialGrowth = 0.05;
-  window.Vectura.ALGO_DEFAULTS.petalisDesigner.shadings = [];
-  window.Vectura.ALGO_DEFAULTS.petalisDesigner.useDesignerShapeOnly = true;
-  window.Vectura.ALGO_DEFAULTS.petalisDesigner.tipSharpness = 1;
-  window.Vectura.ALGO_DEFAULTS.petalisDesigner.tipTwist = 0;
-  window.Vectura.ALGO_DEFAULTS.petalisDesigner.centerCurlBoost = 0;
-  window.Vectura.ALGO_DEFAULTS.petalisDesigner.tipCurl = 0;
-  window.Vectura.ALGO_DEFAULTS.petalisDesigner.baseFlare = 0;
-  window.Vectura.ALGO_DEFAULTS.petalisDesigner.basePinch = 0;
-
   window.Vectura.SETTINGS = {
     margin: 20,
     speedDown: 250,

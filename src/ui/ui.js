@@ -18,8 +18,11 @@
   } = window.Vectura || {};
 
   const PETALIS_PRESET_LIBRARY = (Array.isArray(PRESETS) ? PRESETS : Array.isArray(PETALIS_PRESETS) ? PETALIS_PRESETS : [])
-    .filter((preset) => (preset?.preset_system || 'petalis') === 'petalis');
-  const PETALIS_LAYER_TYPES = new Set(['petalis', 'petalisDesigner']);
+    .filter((preset) => {
+      const system = preset?.preset_system || 'petalisDesigner';
+      return system === 'petalisDesigner';
+    });
+  const PETALIS_LAYER_TYPES = new Set(['petalisDesigner']);
   const isPetalisLayerType = (type) => PETALIS_LAYER_TYPES.has(type);
 
   const getEl = (id) => {
@@ -3639,7 +3642,7 @@
     },
     'petalis.preset': {
       title: 'Preset',
-      description: 'Loads a curated Petalis recipe. Presets overwrite petal, distribution, center, and shading parameters.',
+      description: 'Loads a curated Petalis Designer recipe. Presets overwrite petal, distribution, center, and shading parameters.',
     },
     'petalis.petalProfile': {
       title: 'Petal Profile',
@@ -5153,19 +5156,47 @@
 
     buildProfileDesignerShape(profile = 'teardrop', side = 'outer') {
       const widthScale = side === 'inner' ? 0.86 : 1;
-      const makeOrthogonalShape = (sidePos, sideWidth) => {
-        const sideT = clamp(sidePos, 0.18, 0.86);
-        const sideW = Math.max(0.05, sideWidth);
-        const handleDt = clamp((1 - sideT) * 0.35, 0.07, 0.22);
+      const makeFourPointShape = ({
+        upperT,
+        upperW,
+        lowerT,
+        lowerW,
+        topOutT = null,
+        topOutW = 0,
+        upperInT = null,
+        upperOutT = null,
+        lowerInT = null,
+        lowerOutT = null,
+        bottomInT = null,
+        bottomInW = 0,
+      }) => {
+        const uT = clamp(upperT, 0.14, 0.45);
+        const lT = clamp(Math.max(uT + 0.16, lowerT), 0.5, 0.9);
+        const uW = Math.max(0.05, upperW);
+        const lW = Math.max(0.05, lowerW);
+        const oTop = clamp(topOutT ?? uT * 0.42, 0.04, uT - 0.02);
+        const iUpper = clamp(upperInT ?? uT * 0.72, oTop + 0.01, uT - 0.02);
+        const oUpper = clamp(upperOutT ?? lerp(uT, lT, 0.34), uT + 0.02, lT - 0.04);
+        const iLower = clamp(lowerInT ?? lerp(uT, lT, 0.68), oUpper + 0.02, lT - 0.02);
+        const oLower = clamp(lowerOutT ?? lerp(lT, 1, 0.38), lT + 0.02, 0.96);
+        const iBottom = clamp(bottomInT ?? lerp(lT, 1, 0.62), oLower + 0.02, 0.98);
+        const iTop = clamp(-oTop * 0.7, -0.35, -0.02);
+        const oBottom = clamp(1 + (1 - iBottom) * 0.7, 1.02, 1.35);
         return [
-          { t: 0, w: 0, in: null, out: { t: clamp(sideT * 0.45, 0.05, 0.3), w: 0 } },
+          { t: 0, w: 0, in: { t: iTop, w: 0 }, out: { t: oTop, w: topOutW } },
           {
-            t: sideT,
-            w: sideW,
-            in: { t: clamp(sideT - handleDt, 0.02, sideT - 0.02), w: sideW },
-            out: { t: clamp(sideT + handleDt, sideT + 0.02, 0.98), w: sideW },
+            t: uT,
+            w: uW,
+            in: { t: iUpper, w: uW },
+            out: { t: oUpper, w: uW },
           },
-          { t: 1, w: 0, in: { t: clamp(1 - (1 - sideT) * 0.45, 0.7, 0.98), w: 0 }, out: null },
+          {
+            t: lT,
+            w: lW,
+            in: { t: iLower, w: lW },
+            out: { t: oLower, w: lW },
+          },
+          { t: 1, w: 0, in: { t: iBottom, w: bottomInW }, out: { t: oBottom, w: 0 } },
         ];
       };
       const scaleAnchor = (anchor) => ({
@@ -5175,16 +5206,92 @@
         out: anchor.out ? { ...anchor.out, w: Math.max(0, (anchor.out.w || 0) * widthScale) } : null,
       });
       const templates = {
-        oval: makeOrthogonalShape(0.5, 1.04),
-        teardrop: makeOrthogonalShape(0.44, 0.92),
-        lanceolate: makeOrthogonalShape(0.52, 0.7),
-        heart: makeOrthogonalShape(0.38, 0.98),
-        spoon: makeOrthogonalShape(0.62, 1.1),
-        rounded: makeOrthogonalShape(0.5, 1.06),
-        notched: makeOrthogonalShape(0.46, 0.86),
-        spatulate: makeOrthogonalShape(0.68, 1.02),
-        marquise: makeOrthogonalShape(0.5, 0.84),
-        dagger: makeOrthogonalShape(0.47, 0.58),
+        oval: makeFourPointShape({
+          upperT: 0.27,
+          upperW: 0.74,
+          lowerT: 0.73,
+          lowerW: 0.74,
+          topOutW: 0.08,
+          bottomInW: 0.08,
+        }),
+        teardrop: makeFourPointShape({
+          upperT: 0.24,
+          upperW: 0.36,
+          lowerT: 0.71,
+          lowerW: 0.86,
+          topOutW: 0.01,
+          topOutT: 0.095,
+          upperInT: 0.165,
+          upperOutT: 0.44,
+          lowerInT: 0.64,
+          lowerOutT: 0.86,
+          bottomInT: 0.95,
+          bottomInW: 0.04,
+        }),
+        lanceolate: makeFourPointShape({
+          upperT: 0.29,
+          upperW: 0.4,
+          lowerT: 0.68,
+          lowerW: 0.62,
+          topOutW: 0.01,
+          bottomInW: 0.04,
+        }),
+        heart: makeFourPointShape({
+          upperT: 0.24,
+          upperW: 0.72,
+          lowerT: 0.66,
+          lowerW: 0.9,
+          topOutW: 0.18,
+          bottomInW: 0.14,
+        }),
+        spoon: makeFourPointShape({
+          upperT: 0.32,
+          upperW: 0.36,
+          lowerT: 0.76,
+          lowerW: 1.08,
+          topOutW: 0.02,
+          bottomInW: 0.2,
+        }),
+        rounded: makeFourPointShape({
+          upperT: 0.31,
+          upperW: 0.84,
+          lowerT: 0.69,
+          lowerW: 0.84,
+          topOutW: 0.12,
+          bottomInW: 0.12,
+        }),
+        notched: makeFourPointShape({
+          upperT: 0.25,
+          upperW: 0.56,
+          lowerT: 0.69,
+          lowerW: 0.82,
+          topOutW: 0.2,
+          bottomInW: 0.1,
+        }),
+        spatulate: makeFourPointShape({
+          upperT: 0.36,
+          upperW: 0.42,
+          lowerT: 0.74,
+          lowerW: 1.02,
+          topOutW: 0.03,
+          bottomInW: 0.18,
+        }),
+        marquise: makeFourPointShape({
+          upperT: 0.3,
+          upperW: 0.64,
+          lowerT: 0.7,
+          lowerW: 0.64,
+          topOutW: 0.01,
+          bottomInW: 0.01,
+        }),
+        dagger: makeFourPointShape({
+          upperT: 0.27,
+          upperW: 0.28,
+          lowerT: 0.67,
+          lowerW: 0.4,
+          topOutW: 0,
+          bottomInW: 0,
+        }),
       };
       const template = templates[profile] || templates.teardrop;
       return {
@@ -5227,16 +5334,22 @@
         .sort((a, b) => a.t - b.t);
       if (shape.anchors.length < 2) {
         shape.anchors = [
-          { t: 0, w: 0, in: null, out: null },
-          { t: 1, w: 0, in: null, out: null },
+          { t: 0, w: 0, in: { t: -0.1, w: 0 }, out: { t: 0.12, w: 0.06 } },
+          { t: 0.28, w: 0.5, in: { t: 0.18, w: 0.5 }, out: { t: 0.44, w: 0.5 } },
+          { t: 0.72, w: 0.88, in: { t: 0.56, w: 0.88 }, out: { t: 0.84, w: 0.88 } },
+          { t: 1, w: 0, in: { t: 0.88, w: 0.12 }, out: { t: 1.1, w: 0 } },
         ];
       }
       shape.anchors[0].t = 0;
       shape.anchors[0].w = 0;
-      shape.anchors[0].in = null;
       shape.anchors[shape.anchors.length - 1].t = 1;
       shape.anchors[shape.anchors.length - 1].w = 0;
-      shape.anchors[shape.anchors.length - 1].out = null;
+      if (!shape.anchors[0].in) {
+        shape.anchors[0].in = { t: -0.1, w: 0 };
+      }
+      if (!shape.anchors[shape.anchors.length - 1].out) {
+        shape.anchors[shape.anchors.length - 1].out = { t: 1.1, w: 0 };
+      }
 
       for (let i = 0; i < shape.anchors.length; i++) {
         const anchor = shape.anchors[i];
@@ -5921,7 +6034,7 @@
         this.openModal({
           title: 'Petal Designer',
           body:
-            '<p class="modal-text">Add or select a <strong>Petalis</strong> or <strong>Petalis Designer</strong> layer first to open the Petal Designer.</p>',
+            '<p class="modal-text">Add or select a <strong>Petalis Designer</strong> layer first to open the Petal Designer.</p>',
         });
         return;
       }
@@ -7250,10 +7363,8 @@
             Image noise includes an Image Effects stack plus optional style shaping.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Petalis provides flower presets, radial petal controls, inner/outer profile transitions, and a shading stack with in-place hatch-angle rotation (angle rotates internal strokes, not shading placement) plus an in-development light source tool.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Petalis Designer includes an embedded panel; use its pop-out icon (⧉) to open the same panel in a floating window and pop-in (↩) to dock it back.
+            It includes flower presets, radial petal controls, inner/outer profile transitions, and a shading stack with in-place hatch-angle rotation (angle rotates internal strokes, not shading placement), plus an in-development light source tool.
             Shape comes from editable inner/outer curves, a Petal Shape selector (Inner/Outer/Both) for shape editing, always-on inner/outer ring counts with split feathering, per-ring shading stacks (plus optional shared Both stack), and symmetry mode; legacy petal profile and hidden tip/base modifiers are not applied there.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
@@ -7713,7 +7824,7 @@
       if (!layer || !layer.params) return;
       if (layer.type === 'shapePack') {
         this.applyShapePackRandomBias(layer.params);
-      } else if (layer.type === 'petalis' || layer.type === 'petalisDesigner') {
+      } else if (layer.type === 'petalisDesigner') {
         this.applyPetalisRandomBias(layer.params);
       } else if (layer.type === 'rainfall') {
         this.applyRainfallRandomBias(layer.params);
@@ -8210,22 +8321,7 @@
       if (!select) return;
       select.innerHTML = '';
       const keys = Object.keys(ALGO_DEFAULTS || {}).filter((key) => !(ALGO_DEFAULTS[key] && ALGO_DEFAULTS[key].hidden));
-      const ordered = [];
-      const used = new Set();
       keys.forEach((key) => {
-        if (key === 'petalisDesigner') return;
-        ordered.push(key);
-        used.add(key);
-        if (key === 'petalis' && keys.includes('petalisDesigner')) {
-          ordered.push('petalisDesigner');
-          used.add('petalisDesigner');
-        }
-      });
-      keys.forEach((key) => {
-        if (!used.has(key)) ordered.push(key);
-      });
-
-      ordered.forEach((key) => {
         const def = ALGO_DEFAULTS[key];
         const opt = document.createElement('option');
         opt.value = key;
@@ -14462,7 +14558,7 @@
               }
               if (isPetalisLayerType(layer.type) && def.id === 'preset' && next !== 'custom') {
                 const preset = (PETALIS_PRESET_LIBRARY || []).find((item) => item.id === next);
-                const presetBase = layer.type === 'petalisDesigner' ? 'petalisDesigner' : 'petalis';
+                const presetBase = 'petalisDesigner';
                 const base = ALGO_DEFAULTS?.[presetBase] ? clone(ALGO_DEFAULTS[presetBase]) : {};
                 const preserved = new Set([...TRANSFORM_KEYS, 'smoothing', 'simplify', 'curves']);
                 const nextParams = { ...base, ...(preset?.params || {}) };
