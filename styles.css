@@ -1063,6 +1063,25 @@ input[type='color']::-webkit-color-swatch {
   overflow: hidden;
 }
 
+#pens-global-section {
+  margin: 0;
+  padding-top: 0;
+  border-top: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+#pens-global-section.collapsed {
+  flex: 0 0 auto;
+}
+
+#pens-section-body {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 #pen-list {
   min-height: 0;
   overflow-y: auto;
