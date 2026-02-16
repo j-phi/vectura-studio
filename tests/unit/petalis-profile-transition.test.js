@@ -23,6 +23,30 @@ const OUTER_PROFILE = {
 
 const outlineSignature = (outlines, index) => pathSignature([outlines[index]]);
 const extractOutlines = (paths) => (paths || []).filter((path) => Array.isArray(path) && path.meta?.label === 'Outline');
+const petalOrderValue = (group = '') => {
+  const match = `${group}`.match(/(\d+)/);
+  return match ? Number(match[1]) : 0;
+};
+const outlineMapByGroup = (outlines) => {
+  const map = new Map();
+  (outlines || []).forEach((outline, index) => {
+    const group = outline?.meta?.group || `petal-${index + 1}`;
+    map.set(group, pathSignature([outline]));
+  });
+  return map;
+};
+const classifyDesignerAssignments = ({ mixedOutlines, innerOnlyOutlines, outerOnlyOutlines }) => {
+  const mixed = outlineMapByGroup(mixedOutlines);
+  const inner = outlineMapByGroup(innerOnlyOutlines);
+  const outer = outlineMapByGroup(outerOnlyOutlines);
+  const orderedGroups = Array.from(mixed.keys()).sort((a, b) => petalOrderValue(a) - petalOrderValue(b));
+  return orderedGroups.map((group) => {
+    const sig = mixed.get(group);
+    if (sig === inner.get(group)) return 'inner';
+    if (sig === outer.get(group)) return 'outer';
+    return 'blend';
+  });
+};
 
 describe('Petalis profile transitions', () => {
   let runtime;
@@ -217,5 +241,111 @@ describe('Petalis profile transitions', () => {
     );
 
     expect(noisyLegacy).toBe(baseline);
+  });
+
+  test('petalis designer dual-ring boundary is unchanged by radialGrowth', () => {
+    const { Algorithms, ALGO_DEFAULTS, SeededRNG, SimpleNoise } = runtime.window.Vectura;
+    const base = {
+      ...clone(ALGO_DEFAULTS.petalisDesigner || ALGO_DEFAULTS.petalis || {}),
+      ringMode: 'dual',
+      innerCount: 10,
+      outerCount: 14,
+      countJitter: 0,
+      layering: false,
+      shadings: [],
+      petalModifiers: [],
+      centerModifiers: [],
+      centerRing: false,
+      centerConnectors: false,
+      centerType: 'disk',
+      centerRadius: 0,
+      centerDensity: 1,
+      anchorToCenter: 'off',
+      sizeJitter: 0,
+      rotationJitter: 0,
+      edgeWaveAmp: 0,
+      edgeWaveFreq: 1,
+      profileTransitionFeather: 0,
+      designerInner: clone(INNER_PROFILE),
+      designerOuter: clone(OUTER_PROFILE),
+    };
+    const bounds = {
+      width: 320,
+      height: 220,
+      m: 20,
+      dW: 280,
+      dH: 180,
+      truncate: true,
+    };
+    const render = (params, seed = 9942) =>
+      Algorithms.petalis.generate(params, new SeededRNG(seed), new SimpleNoise(seed), bounds) || [];
+    const classify = (params) => {
+      const mixedOutlines = extractOutlines(render(clone(params)));
+      const innerOnlyOutlines = extractOutlines(
+        render({
+          ...clone(params),
+          profileTransitionFeather: 0,
+          designerOuter: clone(INNER_PROFILE),
+        })
+      );
+      const outerOnlyOutlines = extractOutlines(
+        render({
+          ...clone(params),
+          profileTransitionFeather: 0,
+          designerInner: clone(OUTER_PROFILE),
+        })
+      );
+      return classifyDesignerAssignments({ mixedOutlines, innerOnlyOutlines, outerOnlyOutlines });
+    };
+
+    const lowGrowthAssignments = classify({ ...clone(base), radialGrowth: 0.05 });
+    const highGrowthAssignments = classify({ ...clone(base), radialGrowth: 2.2 });
+
+    expect(highGrowthAssignments).toEqual(lowGrowthAssignments);
+    expect(lowGrowthAssignments.filter((entry) => entry === 'inner')).toHaveLength(base.innerCount);
+    expect(lowGrowthAssignments.filter((entry) => entry === 'outer')).toHaveLength(base.outerCount);
+  });
+
+  test('petalis designer ignores ringSplit for dual-ring transitions', () => {
+    const { Algorithms, ALGO_DEFAULTS, SeededRNG, SimpleNoise } = runtime.window.Vectura;
+    const base = {
+      ...clone(ALGO_DEFAULTS.petalisDesigner || ALGO_DEFAULTS.petalis || {}),
+      ringMode: 'dual',
+      innerCount: 12,
+      outerCount: 16,
+      countJitter: 0,
+      layering: false,
+      shadings: [],
+      petalModifiers: [],
+      centerModifiers: [],
+      centerRing: false,
+      centerConnectors: false,
+      centerType: 'disk',
+      centerRadius: 0,
+      centerDensity: 1,
+      anchorToCenter: 'off',
+      sizeJitter: 0,
+      rotationJitter: 0,
+      edgeWaveAmp: 0,
+      edgeWaveFreq: 1,
+      profileTransitionFeather: 0,
+      radialGrowth: 0.2,
+      designerInner: clone(INNER_PROFILE),
+      designerOuter: clone(OUTER_PROFILE),
+    };
+    const bounds = {
+      width: 320,
+      height: 220,
+      m: 20,
+      dW: 280,
+      dH: 180,
+      truncate: true,
+    };
+    const render = (params, seed = 7771) =>
+      Algorithms.petalis.generate(params, new SeededRNG(seed), new SimpleNoise(seed), bounds) || [];
+    const lowSplit = render({ ...clone(base), ringSplit: 0.2 });
+    const highSplit = render({ ...clone(base), ringSplit: 0.8 });
+
+    expect(pathSignature(lowSplit)).toBe(pathSignature(highSplit));
   });
 });

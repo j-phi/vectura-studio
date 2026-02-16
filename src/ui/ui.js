@@ -4590,6 +4590,8 @@
       this.isApplyingAutoColorization = false;
       this.pendingAutoColorizationOptions = null;
       this.autoColorizationStatusEl = null;
+      this.topMenuTriggers = [];
+      this.openTopMenuTrigger = null;
 
       this.initModuleDropdown();
       this.initMachineDropdown();
@@ -4601,6 +4603,7 @@
       this.initAlgorithmTransformSection();
       this.initTouchModifierBar();
       this.initTouchMouseBridge();
+      this.initTopMenuBar();
       document.addEventListener('click', () => {
         if (this.openPenMenu) {
           this.openPenMenu.classList.add('hidden');
@@ -4610,6 +4613,7 @@
           this.openPaletteMenu.classList.add('hidden');
           this.openPaletteMenu = null;
         }
+        this.setTopMenuOpen(null, false);
       });
       this.initPaneToggles();
       this.initBottomPaneToggle();
@@ -4628,12 +4632,147 @@
 
     }
 
+    setTopMenuOpen(trigger = null, open = true) {
+      const triggers = Array.isArray(this.topMenuTriggers) ? this.topMenuTriggers : [];
+      const nextTrigger = open ? trigger : null;
+      triggers.forEach((btn) => {
+        const panel = btn.parentElement?.querySelector('[data-top-menu-panel]');
+        const isActive = Boolean(nextTrigger) && btn === nextTrigger;
+        btn.classList.toggle('open', isActive);
+        btn.setAttribute('aria-expanded', isActive ? 'true' : 'false');
+        if (panel) {
+          panel.classList.toggle('open', isActive);
+          panel.hidden = !isActive;
+        }
+      });
+      this.openTopMenuTrigger = nextTrigger || null;
+    }
+
+    initTopMenuBar() {
+      const menubar = getEl('top-menubar');
+      if (!menubar) return;
+      const triggers = Array.from(menubar.querySelectorAll('[data-top-menu-trigger]'));
+      if (!triggers.length) return;
+      this.topMenuTriggers = triggers;
+      const getPanel = (trigger) => trigger?.parentElement?.querySelector('[data-top-menu-panel]') || null;
+      const getItems = (panel) =>
+        Array.from(panel?.querySelectorAll('.top-menu-item:not([disabled])') || []);
+      const focusTriggerByDelta = (current, delta) => {
+        const index = triggers.indexOf(current);
+        if (index < 0) return current;
+        const nextIndex = (index + delta + triggers.length) % triggers.length;
+        const next = triggers[nextIndex];
+        next?.focus();
+        return next;
+      };
+
+      triggers.forEach((trigger) => {
+        const panel = getPanel(trigger);
+        trigger.setAttribute('aria-expanded', 'false');
+        if (panel) panel.hidden = true;
+        trigger.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const shouldOpen = this.openTopMenuTrigger !== trigger;
+          this.setTopMenuOpen(trigger, shouldOpen);
+        });
+        trigger.addEventListener('keydown', (e) => {
+          if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            const next = focusTriggerByDelta(trigger, 1);
+            if (this.openTopMenuTrigger) this.setTopMenuOpen(next, true);
+            return;
+          }
+          if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            const prev = focusTriggerByDelta(trigger, -1);
+            if (this.openTopMenuTrigger) this.setTopMenuOpen(prev, true);
+            return;
+          }
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            this.setTopMenuOpen(trigger, true);
+            const first = getItems(panel)[0];
+            if (first) first.focus();
+            return;
+          }
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            const shouldOpen = this.openTopMenuTrigger !== trigger;
+            this.setTopMenuOpen(trigger, shouldOpen);
+            return;
+          }
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            this.setTopMenuOpen(null, false);
+          }
+        });
+        if (!panel) return;
+        panel.addEventListener('click', (e) => e.stopPropagation());
+        panel.addEventListener('keydown', (e) => {
+          const items = getItems(panel);
+          if (!items.length) return;
+          const focused = document.activeElement;
+          const idx = items.indexOf(focused);
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            const next = idx < 0 ? items[0] : items[(idx + 1) % items.length];
+            next?.focus();
+            return;
+          }
+          if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            const prev = idx < 0 ? items[items.length - 1] : items[(idx - 1 + items.length) % items.length];
+            prev?.focus();
+            return;
+          }
+          if (e.key === 'Home') {
+            e.preventDefault();
+            items[0]?.focus();
+            return;
+          }
+          if (e.key === 'End') {
+            e.preventDefault();
+            items[items.length - 1]?.focus();
+            return;
+          }
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            this.setTopMenuOpen(null, false);
+            trigger.focus();
+          }
+        });
+        getItems(panel).forEach((item) => {
+          item.addEventListener('click', () => {
+            this.setTopMenuOpen(null, false);
+          });
+        });
+      });
+
+      window.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape' || !this.openTopMenuTrigger) return;
+        this.setTopMenuOpen(null, false);
+      });
+    }
+
     scrollLayerToTop(layerId) {
       const container = getEl('layer-list');
       if (!container || !layerId) return;
       const el = container.querySelector(`[data-layer-id="${layerId}"]`);
       if (!el) return;
       container.scrollTop = Math.max(0, el.offsetTop);
+    }
+
+    captureLeftPanelScrollPosition() {
+      const pane = document.getElementById('left-panel-content');
+      if (!pane) return () => {};
+      const prevScrollTop = pane.scrollTop;
+      return () => {
+        window.requestAnimationFrame(() => {
+          const maxScroll = Math.max(0, pane.scrollHeight - pane.clientHeight);
+          pane.scrollTop = Math.min(prevScrollTop, maxScroll);
+        });
+      };
     }
 
     createModal() {
@@ -5097,6 +5236,14 @@
       if (!layer) return null;
       const params = layer.params || {};
       const shadings = Array.isArray(params.shadings) ? params.shadings : [];
+      const ringMode = params.ringMode === 'single' ? 'single' : 'dual';
+      const innerCount = Math.round(clamp(params.innerCount ?? params.count ?? 120, 5, 400));
+      const outerCount = Math.round(clamp(params.outerCount ?? 180, 5, 600));
+      const countSplit = innerCount / Math.max(1, innerCount + outerCount);
+      const transitionPosition =
+        ringMode === 'dual'
+          ? clamp(countSplit * 100, 0, 100)
+          : clamp(params.profileTransitionPosition ?? 50, 0, 100);
       const state = {
         layerId: layer.id,
         outer: this.makeDefaultDesignerShape(layer, 'outer'),
@@ -5104,14 +5251,13 @@
         shadings: shadings.map((shade, index) => this.normalizePetalDesignerShading(shade, index)),
         innerOuterLock: Boolean(params.innerOuterLock),
         designerSymmetry: this.normalizeDesignerSymmetryMode(params.designerSymmetry),
-        count: Math.round(clamp(params.count ?? params.innerCount ?? 120, 5, 800)),
-        ringMode: params.ringMode === 'single' ? 'single' : 'dual',
-        innerCount: Math.round(clamp(params.innerCount ?? params.count ?? 120, 5, 400)),
-        outerCount: Math.round(clamp(params.outerCount ?? 180, 5, 600)),
-        ringSplit: clamp(params.ringSplit ?? 0.45, 0.15, 0.85),
-        profileTransitionPosition: clamp(params.profileTransitionPosition ?? (params.ringSplit ?? 0.45) * 100, 0, 100),
+        count: Math.round(clamp(params.count ?? innerCount, 5, 800)),
+        ringMode,
+        innerCount,
+        outerCount,
+        profileTransitionPosition: transitionPosition,
         profileTransitionFeather: clamp(params.profileTransitionFeather ?? 0, 0, 100),
-        target: 'outer',
+        target: 'inner',
         views: {
           outer: { zoom: 1, panX: 0, panY: 0 },
           inner: { zoom: 1, panX: 0, panY: 0 },
@@ -5175,8 +5321,8 @@
         <div class="petal-designer-controls">
           <label>Edit Target
             <select data-petal-target>
-              <option value="outer">Outer</option>
               <option value="inner">Inner</option>
+              <option value="outer">Outer</option>
             </select>
           </label>
           <label>Profile
@@ -5202,11 +5348,6 @@
             <span>Outer Ring Count</span>
             <span class="petal-slider-value" data-petal-slider-value="outer-count" data-petal-slider-precision="0"></span>
             <input type="range" min="5" max="600" step="1" data-petal-outer-count>
-          </label>
-          <label class="petal-slider-label" data-petal-ring-split-wrap>
-            <span>Ring Split</span>
-            <span class="petal-slider-value" data-petal-slider-value="ring-split" data-petal-slider-precision="2"></span>
-            <input type="range" min="0.15" max="0.85" step="0.01" data-petal-ring-split>
           </label>
           <label class="petal-slider-label">
             <span>Split Feathering</span>
@@ -5238,7 +5379,27 @@
 
     getPetalDesignerTarget(state) {
       if (state?.innerOuterLock) return 'inner';
-      return state?.target === 'inner' ? 'inner' : 'outer';
+      return state?.target === 'outer' ? 'outer' : 'inner';
+    }
+
+    getPetalDesignerCountSplit(state) {
+      if (!state) return 0.5;
+      const inner = Math.max(0, Math.round(clamp(state.innerCount ?? state.count ?? 120, 5, 400)));
+      const outer = Math.max(0, Math.round(clamp(state.outerCount ?? 180, 5, 600)));
+      const total = inner + outer;
+      if (total <= 0) return 0.5;
+      return clamp(inner / total, 0, 1);
+    }
+
+    syncPetalDesignerTransitionFromCounts(state) {
+      if (!state) return 0.5;
+      if (state.ringMode !== 'dual') {
+        state.profileTransitionPosition = clamp(state.profileTransitionPosition ?? 50, 0, 100);
+        return clamp(state.profileTransitionPosition / 100, 0, 1);
+      }
+      const split = this.getPetalDesignerCountSplit(state);
+      state.profileTransitionPosition = clamp(split * 100, 0, 100);
+      return split;
     }
 
     getPetalDesignerView(state, side = null) {
@@ -5480,7 +5641,6 @@
       const ringModeSelect = pd.root.querySelector('select[data-petal-ring-mode]');
       const innerCountInput = pd.root.querySelector('input[data-petal-inner-count]');
       const outerCountInput = pd.root.querySelector('input[data-petal-outer-count]');
-      const ringSplitInput = pd.root.querySelector('input[data-petal-ring-split]');
       const splitFeatherInput = pd.root.querySelector('input[data-petal-split-feather]');
       const innerCountWrap = pd.root.querySelector('[data-petal-inner-count-wrap]');
       const outerCountWrap = pd.root.querySelector('[data-petal-outer-count-wrap]');
@@ -5491,8 +5651,7 @@
       pd.state.ringMode = pd.state.ringMode === 'single' ? 'single' : 'dual';
       pd.state.innerCount = Math.round(clamp(pd.state.innerCount ?? pd.state.count ?? 120, 5, 400));
       pd.state.outerCount = Math.round(clamp(pd.state.outerCount ?? 180, 5, 600));
-      pd.state.ringSplit = clamp(pd.state.ringSplit ?? 0.45, 0.15, 0.85);
-      pd.state.profileTransitionPosition = clamp(pd.state.ringSplit * 100, 0, 100);
+      this.syncPetalDesignerTransitionFromCounts(pd.state);
       pd.state.profileTransitionFeather = clamp(pd.state.profileTransitionFeather ?? 0, 0, 100);
       if (title) title.textContent = side === 'inner' ? 'Inner Shape' : 'Outer Shape';
       if (targetSelect) {
@@ -5505,7 +5664,6 @@
       if (ringModeSelect) ringModeSelect.value = pd.state.ringMode;
       if (innerCountInput) innerCountInput.value = pd.state.innerCount;
       if (outerCountInput) outerCountInput.value = pd.state.outerCount;
-      if (ringSplitInput) ringSplitInput.value = pd.state.ringSplit;
       if (splitFeatherInput) splitFeatherInput.value = pd.state.profileTransitionFeather;
       const isDualRing = pd.state.ringMode === 'dual';
       if (innerCountWrap) innerCountWrap.classList.remove('hidden');
@@ -5513,7 +5671,6 @@
       if (lockToggle) lockToggle.checked = Boolean(pd.state.innerOuterLock);
       this.setPetalDesignerSliderValue(pd, 'inner-count', pd.state.innerCount);
       this.setPetalDesignerSliderValue(pd, 'outer-count', pd.state.outerCount);
-      this.setPetalDesignerSliderValue(pd, 'ring-split', pd.state.ringSplit);
       this.setPetalDesignerSliderValue(pd, 'split-feather', pd.state.profileTransitionFeather);
     }
 
@@ -5541,7 +5698,6 @@
       const ringModeSelect = pd.root.querySelector('select[data-petal-ring-mode]');
       const innerCountInput = pd.root.querySelector('input[data-petal-inner-count]');
       const outerCountInput = pd.root.querySelector('input[data-petal-outer-count]');
-      const ringSplitInput = pd.root.querySelector('input[data-petal-ring-split]');
       const splitFeatherInput = pd.root.querySelector('input[data-petal-split-feather]');
       const lockToggle = pd.root.querySelector('input[data-petal-inner-outer-lock]');
       if (targetSelect) {
@@ -5602,18 +5758,6 @@
         };
         outerCountInput.oninput = () => onOuterCount(true);
         outerCountInput.onchange = () => onOuterCount(false);
-      }
-      if (ringSplitInput) {
-        const onRingSplit = (live = false) => {
-          const next = Number.parseFloat(ringSplitInput.value);
-          if (!Number.isFinite(next)) return;
-          pd.state.ringSplit = clamp(next, 0.15, 0.85);
-          pd.state.profileTransitionPosition = clamp(pd.state.ringSplit * 100, 0, 100);
-          this.syncPetalDesignerControls(pd);
-          applyChanges({ live });
-        };
-        ringSplitInput.oninput = () => onRingSplit(true);
-        ringSplitInput.onchange = () => onRingSplit(false);
       }
       if (lockToggle) {
         lockToggle.onchange = () => {
@@ -6617,8 +6761,7 @@
       state.ringMode = state.ringMode === 'single' ? 'single' : 'dual';
       state.innerCount = Math.round(clamp(state.innerCount ?? params.innerCount ?? 120, 5, 400));
       state.outerCount = Math.round(clamp(state.outerCount ?? params.outerCount ?? 180, 5, 600));
-      state.ringSplit = clamp(state.ringSplit ?? params.ringSplit ?? 0.45, 0.15, 0.85);
-      state.profileTransitionPosition = clamp(state.ringSplit * 100, 0, 100);
+      const countSplit = this.syncPetalDesignerTransitionFromCounts(state);
       state.profileTransitionFeather = clamp(state.profileTransitionFeather ?? params.profileTransitionFeather ?? 0, 0, 100);
       state.count = Math.round(
         clamp(
@@ -6634,9 +6777,9 @@
       params.ringMode = state.ringMode;
       params.innerCount = state.innerCount;
       params.outerCount = state.outerCount;
-      params.ringSplit = state.ringSplit;
+      params.ringSplit = countSplit;
       params.innerOuterLock = Boolean(state.innerOuterLock);
-      params.profileTransitionPosition = clamp(state.profileTransitionPosition ?? state.ringSplit * 100, 0, 100);
+      params.profileTransitionPosition = clamp(state.profileTransitionPosition ?? countSplit * 100, 0, 100);
       params.profileTransitionFeather = clamp(state.profileTransitionFeather ?? 0, 0, 100);
       params.petalSteps = Math.max(64, Math.round(params.petalSteps ?? 64));
       params.petalProfile = state.outer.profile || params.petalProfile || 'teardrop';
@@ -6722,7 +6865,7 @@
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Petalis Designer includes an embedded panel; use its pop-out icon (⧉) to open the same panel in a floating window and pop-in (↩) to dock it back.
-            Shape comes from editable inner/outer curves, live ring/split controls, in-panel shading stack, and symmetry mode; legacy petal profile and hidden tip/base modifiers are not applied there.
+            Shape comes from editable inner/outer curves, count-driven inner/outer transitions with split feathering, in-panel shading stack, and symmetry mode; legacy petal profile and hidden tip/base modifiers are not applied there.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Left panel sections are collapsible; Transform &amp; Seed lives inside Algorithm in its own collapsible sub-panel (collapsed by default), and ABOUT visibility is remembered.
@@ -6748,7 +6891,7 @@
             optionally included on export.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Use Save/Open to store full .vectura projects, and Import SVG to bring external vector paths in as layers.
+            Use the File menu to Save/Open full .vectura projects, Import SVG, and Export SVG.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Angle controls use circular dials—drag the marker to set direction.
@@ -6769,7 +6912,7 @@
             <div>Petal Designer: middle-click drag pans and wheel zooms at cursor.</div>
             <div>Touch: one-finger tool input, two-finger pan/pinch zoom.</div>
             <div>On tablets, use Shift/Alt/Meta/Pan touch modifier buttons near the toolbar.</div>
-            <div>On phones, header actions scroll horizontally; use either pane toggles or edge tabs to open Generator/Layers, and use the floating Model toggle to expand/collapse the formula panel.</div>
+            <div>On phones, use the top File/Edit/View/Help menu bar plus pane toggles or edge tabs to open Generator/Layers, and use the floating Model toggle to expand/collapse the formula panel.</div>
             <div>Drag selection box to multi-select</div>
             <div>Drag to move selection; handles resize; top-right handle rotates (Shift snaps)</div>
           </div>
@@ -6791,7 +6934,7 @@
             <div>Touch fallback: tap a pen icon to arm it, then tap layers/groups to apply.</div>
             <div>The Pens panel can be collapsed from its section header; use the palette dropdown to recolor pens, then add/remove/reorder pens as needed.</div>
             <div>Auto-Colorization includes None mode, one-shot Apply, and Continuous Apply Changes.</div>
-            <div>If Continuous Apply Changes is off, mode/parameter/palette updates are staged until you press Apply (including chaining one method and then another).</div>
+            <div>If Continuous Apply Changes is off, mode/parameter/palette updates are staged until you press Apply (including repeatedly applying different modes in sequence).</div>
             <div>Plotter Optimization in Settings removes fully overlapping paths per pen.</div>
             <div>Toggle Export Optimized to include optimization passes in the exported SVG.</div>
             <div>SVG export preserves pen groupings for plotter workflows.</div>
@@ -7917,13 +8060,18 @@
           randomSeed: 1,
         },
       };
-      if (!SETTINGS.autoColorization) SETTINGS.autoColorization = clone(fallback);
-      SETTINGS.autoColorization = { ...fallback, ...(SETTINGS.autoColorization || {}) };
-      SETTINGS.autoColorization.params = {
-        ...fallback.params,
-        ...(SETTINGS.autoColorization.params || {}),
-      };
-      return SETTINGS.autoColorization;
+      if (!SETTINGS.autoColorization || typeof SETTINGS.autoColorization !== 'object') {
+        SETTINGS.autoColorization = {};
+      }
+      const config = SETTINGS.autoColorization;
+      if (typeof config.enabled !== 'boolean') config.enabled = fallback.enabled;
+      if (typeof config.scope !== 'string') config.scope = fallback.scope;
+      if (typeof config.mode !== 'string') config.mode = fallback.mode;
+      if (!config.params || typeof config.params !== 'object') config.params = {};
+      Object.entries(fallback.params).forEach(([key, value]) => {
+        if (config.params[key] === undefined) config.params[key] = value;
+      });
+      return config;
     }
 
     initAutoColorizationPanel() {
@@ -8906,7 +9054,7 @@
       }
 
       if (btnSettings && settingsPanel) {
-        btnSettings.onclick = () => settingsPanel.classList.toggle('open');
+        btnSettings.onclick = () => settingsPanel.classList.add('open');
       }
       if (btnCloseSettings && settingsPanel) {
         btnCloseSettings.onclick = () => settingsPanel.classList.remove('open');
@@ -11063,8 +11211,12 @@
     }
 
     buildControls() {
+      const restoreLeftPanelScroll = this.captureLeftPanelScrollPosition();
       const container = getEl('dynamic-controls');
-      if (!container) return;
+      if (!container) {
+        restoreLeftPanelScroll();
+        return;
+      }
       if (this.harmonographPlotterState?.rafId) {
         window.cancelAnimationFrame(this.harmonographPlotterState.rafId);
       }
@@ -11072,7 +11224,10 @@
       this.destroyInlinePetalisDesigner();
       container.innerHTML = '';
       const layer = this.app.engine.getActiveLayer();
-      if (!layer) return;
+      if (!layer) {
+        restoreLeftPanelScroll();
+        return;
+      }
 
       const moduleSelect = getEl('generator-module');
       const seed = getEl('inp-seed');
@@ -11120,7 +11275,10 @@
       const commonDefs = COMMON_CONTROLS;
       const hasConditionalDefs = algoDefs.some((def) => typeof def.showIf === 'function');
       const hasNoiseConditional = WAVE_NOISE_DEFS.some((def) => typeof def.showIf === 'function');
-      if (!algoDefs.length && !commonDefs.length) return;
+      if (!algoDefs.length && !commonDefs.length) {
+        restoreLeftPanelScroll();
+        return;
+      }
 
       if (isGroup) {
         const msg = document.createElement('p');
@@ -14724,6 +14882,7 @@
         optimizationTarget.innerHTML = '';
         renderOptimizationPanel(optimizationTarget);
       }
+      restoreLeftPanelScroll();
     }
 
     updateFormula() {

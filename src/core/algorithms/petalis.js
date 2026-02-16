@@ -1287,7 +1287,15 @@
     const spiralEnd = clamp(p.spiralEnd ?? 1, 0, 1);
     const spiralMin = Math.min(spiralStart, spiralEnd);
     const spiralMax = Math.max(spiralStart, spiralEnd);
-    const ringSplit = clamp(p.ringSplit ?? 0.5, 0.1, 0.9);
+    const designerDualRing = designerShapeOnly && ringMode === 'dual';
+    const designerInnerCount = Math.max(1, Math.round(p.innerCount ?? 120));
+    const designerOuterCount = Math.max(1, Math.round(p.outerCount ?? 180));
+    const designerCountSplit = clamp(
+      designerInnerCount / Math.max(1, designerInnerCount + designerOuterCount),
+      0.1,
+      0.9
+    );
+    const ringSplit = designerDualRing ? designerCountSplit : clamp(p.ringSplit ?? 0.5, 0.1, 0.9);
     const ringOffset = toRad(p.ringOffset ?? 0);
     const driftStrength = clamp(p.driftStrength ?? 0, 0, 1);
     const driftNoise = Math.max(0.01, p.driftNoise ?? 0.2);
@@ -1302,7 +1310,9 @@
       }
     }
     const canBlendDesignerProfiles = Boolean(designerInner && designerOuter);
-    const transitionPosition = clamp(p.profileTransitionPosition ?? 50, 0, 100);
+    const transitionPosition = designerDualRing
+      ? clamp(designerCountSplit * 100, 0, 100)
+      : clamp(p.profileTransitionPosition ?? 50, 0, 100);
     const transitionFeather = clamp(p.profileTransitionFeather ?? 0, 0, 100);
     const designerSymmetry = normalizeDesignerSymmetry(p.designerSymmetry);
 
@@ -1331,6 +1341,8 @@
             },
           ];
 
+    const totalRingCount = ringDefs.reduce((sum, ring) => sum + Math.max(0, ring.count || 0), 0);
+    let ringProgressOffset = 0;
     ringDefs.forEach((ring, ringIndex) => {
       const { count, minR, maxR, offset } = ring;
       const ringDesigner =
@@ -1349,8 +1361,10 @@
         const spiralT = lerp(spiralMin, spiralMax, Math.pow(t, spiralTightness));
         const radial = lerp(minR, maxR, spiralT) * radialGrowth;
         const radialProgress = clamp(radial / Math.max(1e-6, visibleMaxR), 0, 1);
+        const countProgress = totalRingCount <= 1 ? 0.5 : (ringProgressOffset + i) / Math.max(1, totalRingCount - 1);
+        const transitionBasis = designerDualRing ? countProgress : radialProgress;
         const transitionMix = canBlendDesignerProfiles
-          ? profileBlendWeight(radialProgress, transitionPosition, transitionFeather)
+          ? profileBlendWeight(transitionBasis, transitionPosition, transitionFeather)
           : 0;
         const ringProfile = canBlendDesignerProfiles
           ? transitionMix < 0.5
@@ -1491,8 +1505,10 @@
           outline,
           shading: shadingLines,
           bbox: bboxFromPoints(outline),
+          ringIndex,
         });
       }
+      ringProgressOffset += count;
     });
 
     if (petals.length) {
@@ -1514,11 +1530,15 @@
           });
           shadingLines = shadowed;
         }
-        if (layering && occluders.length) {
-          const clippedOutline = clipPathOutside(petal.outline, occluders);
+        const clipOccluders =
+          designerDualRing && ringMode === 'dual'
+            ? occluders.filter((entry) => entry.ringIndex === petal.ringIndex)
+            : occluders;
+        if (layering && clipOccluders.length) {
+          const clippedOutline = clipPathOutside(petal.outline, clipOccluders);
           clippedOutline.forEach((seg) => pushSegment(seg, petal.outline.meta));
           shadingLines.forEach((line) => {
-            const clipped = clipPathOutside(line, occluders);
+            const clipped = clipPathOutside(line, clipOccluders);
             clipped.forEach((seg) => pushSegment(seg, line.meta));
           });
         } else {
@@ -1527,7 +1547,7 @@
             if (line.length > 1) paths.push(line);
           });
         }
-        occluders.push({ points: petal.outline, bbox: petal.bbox });
+        occluders.push({ points: petal.outline, bbox: petal.bbox, ringIndex: petal.ringIndex });
       });
     }
 
