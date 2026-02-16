@@ -4587,6 +4587,9 @@
       this.spacePanActive = false;
       this.previousTool = this.activeTool;
       this.harmonographPlotterState = null;
+      this.isApplyingAutoColorization = false;
+      this.pendingAutoColorizationOptions = null;
+      this.autoColorizationStatusEl = null;
 
       this.initModuleDropdown();
       this.initMachineDropdown();
@@ -6787,7 +6790,7 @@
             <div>Touch fallback: tap a pen icon to arm it, then tap layers/groups to apply.</div>
             <div>Use the palette dropdown to recolor pens; add or remove pens from the panel.</div>
             <div>Auto-Colorization includes None mode, one-shot Apply, and Continuous Apply Changes.</div>
-            <div>If Continuous Apply Changes is off, mode/parameter/palette updates are staged until you press Apply.</div>
+            <div>If Continuous Apply Changes is off, mode/parameter/palette updates are staged until you press Apply (including fast back-to-back mode changes).</div>
             <div>Plotter Optimization in Settings removes fully overlapping paths per pen.</div>
             <div>Toggle Export Optimized to include optimization passes in the exported SVG.</div>
             <div>SVG export preserves pen groupings for plotter workflows.</div>
@@ -7914,6 +7917,8 @@
       const modeSelect = getEl('auto-colorization-mode');
       const applyBtn = getEl('auto-colorization-apply');
       const paramsTarget = getEl('auto-colorization-params');
+      const statusEl = getEl('auto-colorization-status');
+      this.autoColorizationStatusEl = statusEl || null;
       if (!section || !header || !body || !enabledToggle || !scopeSelect || !modeSelect || !paramsTarget) return;
 
       const config = this.getAutoColorizationConfig();
@@ -7937,7 +7942,7 @@
 
       const applyIfContinuous = (options = {}) => {
         if (!config.enabled) return;
-        this.applyAutoColorization(options);
+        this.applyAutoColorization({ ...options, source: 'continuous' });
       };
 
       const renderParams = () => {
@@ -8013,7 +8018,7 @@
       };
       if (applyBtn) {
         applyBtn.onclick = () => {
-          this.applyAutoColorization({ commit: true, force: true });
+          this.applyAutoColorization({ commit: true, force: true, source: 'manual' });
         };
       }
 
@@ -8066,8 +8071,29 @@
     }
 
     applyAutoColorization(options = {}) {
-      const { commit = false, force = false, skipLayerRender = false, skipAppRender = false } = options;
-      if (this.isApplyingAutoColorization) return;
+      const {
+        commit = false,
+        force = false,
+        skipLayerRender = false,
+        skipAppRender = false,
+        source = 'auto',
+      } = options;
+      if (this.isApplyingAutoColorization) {
+        this.pendingAutoColorizationOptions = {
+          ...(this.pendingAutoColorizationOptions || {}),
+          ...options,
+          commit: Boolean(options.commit || this.pendingAutoColorizationOptions?.commit),
+          force: Boolean(options.force || this.pendingAutoColorizationOptions?.force),
+          skipLayerRender: Boolean(
+            (this.pendingAutoColorizationOptions?.skipLayerRender ?? true) && (options.skipLayerRender ?? true)
+          ),
+          skipAppRender: Boolean((this.pendingAutoColorizationOptions?.skipAppRender ?? true) && (options.skipAppRender ?? true)),
+        };
+        if (this.autoColorizationStatusEl) {
+          this.autoColorizationStatusEl.textContent = source === 'manual' ? 'Applying…' : 'Auto updating…';
+        }
+        return;
+      }
       const config = this.getAutoColorizationConfig();
       if (!config.enabled && !force) return;
       const pens = SETTINGS.pens || [];
@@ -8164,6 +8190,16 @@
 
       if (commit && this.app.pushHistory) this.app.pushHistory();
 
+      if (this.autoColorizationStatusEl) {
+        if (source === 'manual') {
+          this.autoColorizationStatusEl.textContent = 'Applied';
+        } else if (config.enabled) {
+          this.autoColorizationStatusEl.textContent = 'Auto updating…';
+        } else {
+          this.autoColorizationStatusEl.textContent = '';
+        }
+      }
+
       this.isApplyingAutoColorization = true;
       try {
         let changed = false;
@@ -8256,6 +8292,12 @@
         }
       } finally {
         this.isApplyingAutoColorization = false;
+      }
+
+      if (this.pendingAutoColorizationOptions) {
+        const nextOptions = this.pendingAutoColorizationOptions;
+        this.pendingAutoColorizationOptions = null;
+        this.applyAutoColorization(nextOptions);
       }
     }
 

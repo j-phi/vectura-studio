@@ -82,7 +82,7 @@
       <div class="pane-header pane-header-left p-4 border-b border-vectura-border flex justify-between items-center">
         <span class="pane-title font-bold text-vectura-accent">GENERATOR</span>
 
-        <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.98</span>
+        <span class="pane-meta text-[10px] text-vectura-muted">V.0.5.99</span>
 
         <button id="btn-pane-toggle-left" class="pane-toggle pane-toggle-left" type="button"
           aria-label="Toggle left pane">
@@ -398,7 +398,7 @@
       <div class="pane-body flex-1 flex flex-col relative overflow-hidden">
         <div class="right-panel-section right-panel-section-primary right-panel-section-scroll flex-1 overflow-y-auto p-4 relative"
           id="layer-list"></div>
-        <div class="right-panel-section right-panel-section-scroll p-4 border-t border-vectura-border bg-vectura-panel">
+        <div id="pens-section" class="right-panel-section right-panel-section-scroll p-4 border-t border-vectura-border bg-vectura-panel">
           <div class="flex items-center justify-between mb-2">
             <div class="flex items-center gap-2">
               <span class="pane-title font-bold text-vectura-accent text-xs">PENS</span>
@@ -444,7 +444,8 @@
                 <label class="control-label mt-3">Mode</label>
                 <select id="auto-colorization-mode"
                   class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent"></select>
-                <div class="mt-3 flex items-center justify-end">
+                <div class="mt-3 flex items-center justify-end gap-2">
+                  <span id="auto-colorization-status" class="text-[10px] text-vectura-muted" aria-live="polite"></span>
                   <button id="auto-colorization-apply" type="button"
                     class="text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">
                     Apply
