@@ -1547,11 +1547,39 @@ input[type='color']::-webkit-color-swatch {
   width: 100%;
 }
 
+.petal-designer-visualizer {
+  padding: 12px;
+  border-top: 1px solid #334155;
+  background: rgba(8, 13, 21, 0.62);
+}
+
+.petal-visualizer-mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #94a3b8;
+}
+
+.petal-visualizer-mode select {
+  border: 1px solid #334155;
+  background: #020617;
+  color: #e2e8f0;
+  padding: 6px 8px;
+  font-size: 11px;
+}
+
 .petal-designer-grid {
   padding: 12px;
   display: grid;
   grid-template-columns: 1fr;
   gap: 12px;
+}
+
+.petal-designer-grid.is-side-by-side {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .petal-cell {
@@ -1604,6 +1632,33 @@ input[type='color']::-webkit-color-swatch {
 .petal-designer-shading-stack {
   display: grid;
   grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.petal-designer-randomness {
+  margin: 0 12px 12px;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: rgba(8, 13, 21, 0.62);
+}
+
+.petal-designer-randomness summary {
+  padding: 10px 12px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #7dd3fc;
+  cursor: pointer;
+  list-style: none;
+}
+
+.petal-designer-randomness summary::-webkit-details-marker {
+  display: none;
+}
+
+.petal-designer-randomness-stack {
+  padding: 0 12px 12px;
+  display: grid;
   gap: 8px;
 }
 
@@ -1669,6 +1724,10 @@ input[type='color']::-webkit-color-swatch {
   }
 
   .petal-designer-transition {
+    grid-template-columns: 1fr;
+  }
+
+  .petal-designer-grid.is-side-by-side {
     grid-template-columns: 1fr;
   }
 

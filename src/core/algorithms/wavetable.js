@@ -702,24 +702,35 @@
             const shiftY = (noiseLayer.shiftY ?? 0) * innerH * 0.5;
             const tileMode = noiseLayer.tileMode || 'grid';
             const tilePadding = noiseLayer.tilePadding ?? 0;
+            const imageWidth = Math.max(0.05, noiseLayer.imageWidth ?? freq ?? 1);
+            const imageWidthScale = 1 / imageWidth;
+            const imageHeightScale = Math.max(0.05, noiseLayer.imageHeight ?? 1);
+            const store = window.Vectura?.NOISE_IMAGES || {};
+            const imageSource = noiseLayer?.imageId ? store[noiseLayer.imageId] : null;
+            const imageAspect =
+              imageSource && imageSource.width > 0 && imageSource.height > 0
+                ? imageSource.width / imageSource.height
+                : 1;
+            const canvasAspect = Math.max(1e-6, innerW / Math.max(1e-6, innerH));
+            // Keep image sampling proportional at Noise Width=1 (no aspect stretch).
+            const aspectScaleX = canvasAspect >= imageAspect ? 1 : canvasAspect / Math.max(1e-6, imageAspect);
+            const aspectScaleY = canvasAspect >= imageAspect ? imageAspect / canvasAspect : 1;
             return {
               blend: noiseLayer.blend || 'add',
               amplitude,
               sample: (x, y) => {
                 if (noiseLayer.type === 'image' && tileMode === 'off') {
                   const imageZoom = Math.max(0.1, zoom * 50);
-                  const widthScale = noiseLayer.imageWidth ?? freq ?? 1;
-                  const heightScale = noiseLayer.imageHeight ?? 1;
                   const u = (x - inset) / innerW - 0.5 + (noiseLayer.shiftX ?? 0);
                   const v = (y - inset) / innerH - 0.5 + (noiseLayer.shiftY ?? 0);
-                  const ix = u * imageZoom * widthScale;
-                  const iy = v * imageZoom * heightScale;
+                  const ix = u * imageZoom * aspectScaleX * imageWidthScale;
+                  const iy = v * imageZoom * aspectScaleY * imageHeightScale;
                   const rx = ix * cosA - iy * sinA;
                   const ry = ix * sinA + iy * cosA;
                   return noiseValue(rx, ry, noiseLayer, { worldX: x, worldY: y });
                 }
-                const widthScale = noiseLayer.type === 'image' ? (noiseLayer.imageWidth ?? freq ?? 1) : freq;
-                const heightScale = noiseLayer.type === 'image' ? (noiseLayer.imageHeight ?? 1) : 1;
+                const widthScale = noiseLayer.type === 'image' ? imageWidthScale / Math.max(1e-6, imageAspect) : freq;
+                const heightScale = noiseLayer.type === 'image' ? imageHeightScale : 1;
                 const nx = (x + shiftX) * zoom * widthScale;
                 const ny = (y + shiftY) * zoom * heightScale;
                 const rx = nx * cosA - ny * sinA;

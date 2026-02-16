@@ -710,6 +710,7 @@
     { value: 'triangle', label: 'Triangle' },
     { value: 'wave', label: 'Wave' },
   ];
+  const IMAGE_NOISE_DEFAULT_AMPLITUDE = 1.7;
 
   const WAVE_NOISE_DEFS = [
     {
@@ -1266,6 +1267,21 @@
       800
     )
   );
+  const PETALIS_DESIGNER_VIEW_STYLE_OPTIONS = [
+    { value: 'overlay', label: 'Overlay' },
+    { value: 'side-by-side', label: 'Side by Side' },
+  ];
+  const PETALIS_DESIGNER_RANDOMNESS_DEFS = [
+    { key: 'seed', label: 'Seed', min: 0, max: 9999, step: 1, precision: 0 },
+    { key: 'countJitter', label: 'Count Jitter', min: 0, max: 0.5, step: 0.01, precision: 2 },
+    { key: 'sizeJitter', label: 'Size Jitter', min: 0, max: 0.5, step: 0.01, precision: 2 },
+    { key: 'rotationJitter', label: 'Rotation Jitter', min: 0, max: 45, step: 1, precision: 0, unit: '°' },
+    { key: 'angularDrift', label: 'Angular Drift', min: 0, max: 45, step: 1, precision: 0, unit: '°' },
+    { key: 'driftStrength', label: 'Drift Strength', min: 0, max: 1, step: 0.05, precision: 2 },
+    { key: 'driftNoise', label: 'Drift Noise', min: 0.05, max: 1, step: 0.05, precision: 2 },
+    { key: 'radiusScale', label: 'Radius Scale', min: -1, max: 1, step: 0.05, precision: 2 },
+    { key: 'radiusScaleCurve', label: 'Radius Scale Curve', min: 0.5, max: 2.5, step: 0.05, precision: 2 },
+  ];
 
   const CONTROL_DEFS = {
     expanded: [],
@@ -2513,13 +2529,44 @@
     'innerOuterLock',
     'profileTransitionPosition',
     'profileTransitionFeather',
+    'petalLengthRatio',
+    'petalSizeRatio',
+    'leafSidePos',
+    'leafSideWidth',
+    'edgeWaveAmp',
+    'edgeWaveFreq',
+    'centerWaveBoost',
+    'centerSizeMorph',
+    'centerSizeCurve',
+    'centerShapeMorph',
+    'centerProfile',
+    'countJitter',
+    'sizeJitter',
+    'rotationJitter',
+    'angularDrift',
+    'driftStrength',
+    'driftNoise',
+    'radiusScale',
+    'radiusScaleCurve',
   ]);
+  const PETALIS_DESIGNER_REMOVED_SECTION_LABELS = new Set([
+    'Petal Modifiers',
+    'Center Morphing',
+    'Randomness & Seed',
+  ]);
+  const PETALIS_DESIGNER_REMOVED_CONTROL_TYPES = new Set(['petalModifierList']);
   const petalisDesignerControls = [
     { type: 'section', label: 'Petal Designer' },
     { type: 'petalDesignerInline' },
     ...(CONTROL_DEFS.petalis || [])
       .map((def) => (def && typeof def === 'object' ? { ...def } : def))
-      .filter((def) => !def?.id || !PETALIS_DESIGNER_REMOVED_CONTROL_IDS.has(def.id)),
+      .filter((def) => {
+        if (!def || typeof def !== 'object') return true;
+        if (def.id && PETALIS_DESIGNER_REMOVED_CONTROL_IDS.has(def.id)) return false;
+        if (PETALIS_DESIGNER_REMOVED_CONTROL_TYPES.has(def.type)) return false;
+        if (def.type === 'section' && PETALIS_DESIGNER_REMOVED_SECTION_LABELS.has(def.label)) return false;
+        return true;
+      }),
   ];
   CONTROL_DEFS.petalisDesigner = petalisDesignerControls;
 
@@ -2894,7 +2941,7 @@
     },
     'wavetable.imageWidth': {
       title: 'Noise Width',
-      description: 'Scales image sampling horizontally.',
+      description: 'Scales image sampling horizontally. 1 keeps native aspect; higher widens, lower narrows.',
     },
     'wavetable.imageHeight': {
       title: 'Noise Height',
@@ -5146,11 +5193,11 @@
       const source = side === 'inner' && p.designerInner ? p.designerInner : side === 'outer' && p.designerOuter ? p.designerOuter : null;
       if (source?.anchors && source.anchors.length >= 2) {
         return {
-          profile: source.profile || (side === 'inner' ? p.centerProfile : p.petalProfile) || 'teardrop',
+          profile: source.profile || p.petalProfile || 'teardrop',
           anchors: JSON.parse(JSON.stringify(source.anchors)),
         };
       }
-      const profile = side === 'inner' ? p.centerProfile || 'teardrop' : p.petalProfile || 'teardrop';
+      const profile = p.petalProfile || 'teardrop';
       return this.buildProfileDesignerShape(profile, side);
     }
 
@@ -5304,10 +5351,20 @@
       return shape ? JSON.parse(JSON.stringify(shape)) : null;
     }
 
-    syncInnerOuterLock(state) {
+    syncInnerOuterLock(state, sourceSide = null) {
       if (!state) return;
       const lockShapes = Boolean(state.innerOuterLock || state.target === 'both');
       if (!lockShapes) return;
+      const source = sourceSide === 'inner' || sourceSide === 'outer'
+        ? sourceSide
+        : state.activeTarget === 'outer'
+        ? 'outer'
+        : 'inner';
+      if (source === 'outer') {
+        state.inner = this.cloneDesignerShape(state.outer);
+        state.activeTarget = 'outer';
+        return;
+      }
       state.outer = this.cloneDesignerShape(state.inner);
       state.activeTarget = 'inner';
     }
@@ -5369,6 +5426,10 @@
       return 'none';
     }
 
+    normalizePetalDesignerViewStyle(value) {
+      return value === 'side-by-side' ? 'side-by-side' : 'overlay';
+    }
+
     ensurePetalDesignerState(layer) {
       if (!layer) return null;
       const params = layer.params || {};
@@ -5389,6 +5450,9 @@
         shadings: shadings.map((shade, index) =>
           this.normalizePetalDesignerShading(shade, index, { defaultTarget: 'both' })
         ),
+        petalModifiers: (Array.isArray(params.petalModifiers) ? params.petalModifiers : []).map((modifier, index) =>
+          this.normalizePetalDesignerModifier(modifier, index)
+        ),
         innerOuterLock: Boolean(params.innerOuterLock),
         designerSymmetry: this.normalizeDesignerSymmetryMode(params.designerSymmetry),
         count: Math.round(clamp(params.count ?? innerCount, 5, 800)),
@@ -5398,6 +5462,19 @@
         profileTransitionFeather: clamp(params.profileTransitionFeather ?? 0, 0, 100),
         target: shapeTarget,
         activeTarget: shapeTarget === 'outer' ? 'outer' : 'inner',
+        viewStyle: this.normalizePetalDesignerViewStyle(
+          params.petalVisualizerViewStyle ?? params.petalViewStyle ?? 'overlay'
+        ),
+        seed: Math.round(clamp(params.seed ?? 1, 0, 9999)),
+        countJitter: clamp(params.countJitter ?? 0.1, 0, 0.5),
+        sizeJitter: clamp(params.sizeJitter ?? 0.12, 0, 0.5),
+        rotationJitter: clamp(params.rotationJitter ?? 6, 0, 45),
+        angularDrift: clamp(params.angularDrift ?? 0, 0, 45),
+        driftStrength: clamp(params.driftStrength ?? 0.1, 0, 1),
+        driftNoise: clamp(params.driftNoise ?? 0.2, 0.05, 1),
+        radiusScale: clamp(params.radiusScale ?? 0.2, -1, 1),
+        radiusScaleCurve: clamp(params.radiusScaleCurve ?? 1.2, 0.5, 2.5),
+        randomnessOpen: false,
         views: {
           outer: { zoom: 1, panX: 0, panY: 0 },
           inner: { zoom: 1, panX: 0, panY: 0 },
@@ -5424,6 +5501,9 @@
         { value: 'vertical', label: 'Vertical' },
         { value: 'both', label: 'Horizontal and Vertical' },
       ]
+        .map((opt) => `<option value="${opt.value}">${opt.label}</option>`)
+        .join('');
+      const viewStyleOptions = PETALIS_DESIGNER_VIEW_STYLE_OPTIONS
         .map((opt) => `<option value="${opt.value}">${opt.label}</option>`)
         .join('');
       return `
@@ -5496,10 +5576,27 @@
             <span>Inner = Outer</span>
           </label>
         </div>
-        <div class="petal-designer-grid">
-          <div class="petal-cell">
-            <div class="petal-cell-title" data-petal-canvas-title>Outer Shape</div>
-            <canvas width="${canvasWidth}" height="${canvasHeight}" data-petal-canvas="shape"></canvas>
+        <div class="petal-designer-visualizer">
+          <div class="petal-designer-shading-header">
+            <div class="petal-designer-shading-title">PETAL VISUALIZER</div>
+            <label class="petal-visualizer-mode">
+              <span>View Style</span>
+              <select data-petal-view-style>${viewStyleOptions}</select>
+            </label>
+          </div>
+          <div class="petal-designer-grid" data-petal-visualizer-grid>
+            <div class="petal-cell" data-petal-cell="overlay">
+              <div class="petal-cell-title" data-petal-canvas-title="overlay">Overlay</div>
+              <canvas width="${canvasWidth}" height="${canvasHeight}" data-petal-canvas="overlay"></canvas>
+            </div>
+            <div class="petal-cell hidden" data-petal-cell="inner">
+              <div class="petal-cell-title" data-petal-canvas-title="inner">Inner Shape</div>
+              <canvas width="${canvasWidth}" height="${canvasHeight}" data-petal-canvas="inner"></canvas>
+            </div>
+            <div class="petal-cell hidden" data-petal-cell="outer">
+              <div class="petal-cell-title" data-petal-canvas-title="outer">Outer Shape</div>
+              <canvas width="${canvasWidth}" height="${canvasHeight}" data-petal-canvas="outer"></canvas>
+            </div>
           </div>
         </div>
         <div class="petal-designer-shading">
@@ -5509,6 +5606,17 @@
           </div>
           <div class="petal-designer-shading-stack" data-petal-shading-stack></div>
         </div>
+        <div class="petal-designer-shading">
+          <div class="petal-designer-shading-header">
+            <div class="petal-designer-shading-title">Modifier Stack</div>
+            <button type="button" class="petal-copy-btn" data-petal-modifier-add>+ Add Modifier</button>
+          </div>
+          <div class="petal-designer-shading-stack" data-petal-modifier-stack></div>
+        </div>
+        <details class="petal-designer-randomness" data-petal-randomness-panel>
+          <summary>Randomness &amp; Seed</summary>
+          <div class="petal-designer-randomness-stack" data-petal-randomness-stack></div>
+        </details>
       `;
     }
 
@@ -5524,12 +5632,8 @@
     getPetalDesignerTarget(state) {
       if (!state) return 'inner';
       state.target = this.normalizePetalDesignerRingTarget(state.target, 'inner');
-      if (state.target === 'both') state.activeTarget = 'inner';
-      else if (state.target === 'inner' || state.target === 'outer') state.activeTarget = state.target;
+      if (state.target === 'inner' || state.target === 'outer') state.activeTarget = state.target;
       else if (state.activeTarget !== 'inner' && state.activeTarget !== 'outer') state.activeTarget = 'inner';
-      if (state.innerOuterLock) {
-        state.activeTarget = 'inner';
-      }
       return state.activeTarget === 'outer' ? 'outer' : 'inner';
     }
 
@@ -5651,6 +5755,36 @@
         lengthJitter: clamp(shade?.lengthJitter ?? base.lengthJitter, 0, 1),
         angle: clamp(shade?.angle ?? base.angle, -90, 90),
       };
+    }
+
+    getPetalDesignerModifierType(type) {
+      return PETALIS_PETAL_MODIFIER_TYPES.find((opt) => opt.value === type) || PETALIS_PETAL_MODIFIER_TYPES[0];
+    }
+
+    normalizePetalDesignerModifier(modifier = {}, index = 0) {
+      const typeDef = this.getPetalDesignerModifierType(modifier?.type);
+      const base = createPetalModifier(typeDef.value);
+      const next = {
+        ...base,
+        ...(modifier || {}),
+        id: modifier?.id || `designer-mod-${index + 1}`,
+        enabled: modifier?.enabled !== false,
+        type: typeDef.value,
+      };
+      typeDef.controls.forEach((def) => {
+        const fallback = base[def.key] ?? def.min ?? 0;
+        const raw = Number(next[def.key]);
+        const safe = Number.isFinite(raw) ? raw : fallback;
+        next[def.key] = clamp(safe, def.min, def.max);
+      });
+      return next;
+    }
+
+    normalizePetalDesignerModifiers(state) {
+      const modifiers = Array.isArray(state?.petalModifiers) ? state.petalModifiers : [];
+      const normalized = modifiers.map((modifier, index) => this.normalizePetalDesignerModifier(modifier, index));
+      if (state && typeof state === 'object') state.petalModifiers = normalized;
+      return normalized;
     }
 
     setPetalDesignerSliderValue(pd, key, value) {
@@ -5862,6 +5996,224 @@
       });
     }
 
+    renderPetalDesignerModifierStack(pd, applyChanges = null) {
+      if (!pd?.root || !pd?.state) return;
+      const list = pd.root.querySelector('[data-petal-modifier-stack]');
+      const addBtn = pd.root.querySelector('[data-petal-modifier-add]');
+      if (!list || !addBtn) return;
+      const onApply =
+        applyChanges ||
+        pd.applyChanges ||
+        ((opts = {}) => {
+          const live = Boolean(opts.live);
+          this.applyPetalDesignerToLayer(pd.state, {
+            refreshControls: !live,
+            persistState: !live,
+          });
+          this.renderPetalDesigner(pd);
+        });
+      let modifiers = this.normalizePetalDesignerModifiers(pd.state);
+      addBtn.onclick = () => {
+        modifiers = modifiers.concat([this.normalizePetalDesignerModifier(createPetalModifier('ripple'), modifiers.length)]);
+        pd.state.petalModifiers = modifiers;
+        this.renderPetalDesignerModifierStack(pd, onApply);
+        onApply();
+      };
+      const stepToPrecision = (step) => {
+        const text = `${step ?? 1}`;
+        if (!text.includes('.')) return 0;
+        return text.split('.')[1].length;
+      };
+      const formatValue = (value, precision = 0, unit = '') => {
+        const factor = Math.pow(10, precision);
+        const rounded = Math.round((Number(value) || 0) * factor) / factor;
+        return `${rounded}${unit}`;
+      };
+      list.innerHTML = '';
+      modifiers.forEach((modifier, idx) => {
+        const typeDef = this.getPetalDesignerModifierType(modifier.type);
+        const card = document.createElement('div');
+        card.className = `noise-card${modifier.enabled ? '' : ' noise-disabled'}`;
+        card.innerHTML = `
+          <div class="noise-header">
+            <div class="flex items-center gap-2">
+              <span class="noise-title">Modifier ${String(idx + 1).padStart(2, '0')}</span>
+            </div>
+            <div class="noise-actions">
+              <button type="button" class="petal-copy-btn" data-mod-up title="Move up">↑</button>
+              <button type="button" class="petal-copy-btn" data-mod-down title="Move down">↓</button>
+              <label class="noise-toggle">
+                <input type="checkbox" ${modifier.enabled ? 'checked' : ''} data-mod-enabled>
+              </label>
+              <button type="button" class="noise-delete" aria-label="Delete modifier" data-mod-delete>🗑</button>
+            </div>
+          </div>
+        `;
+        const controls = document.createElement('div');
+        controls.className = 'noise-controls';
+        const makeSelect = () => {
+          const wrap = document.createElement('label');
+          wrap.className = 'petal-slider-label';
+          const optionsHtml = PETALIS_PETAL_MODIFIER_TYPES
+            .map((opt) => `<option value="${opt.value}" ${modifier.type === opt.value ? 'selected' : ''}>${opt.label}</option>`)
+            .join('');
+          wrap.innerHTML = `
+            <span>Modifier Type</span>
+            <span class="petal-slider-value">${typeDef.label}</span>
+            <select data-mod-type>${optionsHtml}</select>
+          `;
+          const input = wrap.querySelector('select');
+          const valueLabel = wrap.querySelector('.petal-slider-value');
+          if (input && valueLabel) {
+            input.disabled = !modifier.enabled;
+            input.onchange = () => {
+              modifiers[idx] = this.normalizePetalDesignerModifier(
+                {
+                  ...modifier,
+                  type: input.value,
+                },
+                idx
+              );
+              pd.state.petalModifiers = modifiers;
+              this.renderPetalDesignerModifierStack(pd, onApply);
+              onApply();
+            };
+          }
+          return wrap;
+        };
+        const makeRange = (def) => {
+          const wrap = document.createElement('label');
+          wrap.className = 'petal-slider-label';
+          const precision = stepToPrecision(def.step);
+          const unit = def.displayUnit || '';
+          const value = clamp(modifier[def.key] ?? def.min ?? 0, def.min, def.max);
+          modifier[def.key] = value;
+          wrap.innerHTML = `
+            <span>${def.label}</span>
+            <span class="petal-slider-value">${formatValue(value, precision, unit)}</span>
+            <input type="range" min="${def.min}" max="${def.max}" step="${def.step}" value="${value}">
+          `;
+          const input = wrap.querySelector('input');
+          const valueLabel = wrap.querySelector('.petal-slider-value');
+          if (input && valueLabel) {
+            input.disabled = !modifier.enabled;
+            const onRange = (live = false) => {
+              const next = Number.parseFloat(input.value);
+              if (!Number.isFinite(next)) return;
+              modifier[def.key] = clamp(next, def.min, def.max);
+              modifiers[idx] = modifier;
+              pd.state.petalModifiers = modifiers;
+              valueLabel.textContent = formatValue(modifier[def.key], precision, unit);
+              onApply({ live });
+            };
+            input.oninput = () => onRange(true);
+            input.onchange = () => onRange(false);
+          }
+          return wrap;
+        };
+        controls.appendChild(makeSelect());
+        typeDef.controls.forEach((def) => controls.appendChild(makeRange(def)));
+        card.appendChild(controls);
+        const upBtn = card.querySelector('[data-mod-up]');
+        const downBtn = card.querySelector('[data-mod-down]');
+        const enabledInput = card.querySelector('[data-mod-enabled]');
+        const deleteBtn = card.querySelector('[data-mod-delete]');
+        if (upBtn) {
+          upBtn.disabled = idx === 0;
+          upBtn.onclick = () => {
+            if (idx <= 0) return;
+            const next = modifiers.slice();
+            [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
+            pd.state.petalModifiers = next;
+            this.renderPetalDesignerModifierStack(pd, onApply);
+            onApply();
+          };
+        }
+        if (downBtn) {
+          downBtn.disabled = idx >= modifiers.length - 1;
+          downBtn.onclick = () => {
+            if (idx >= modifiers.length - 1) return;
+            const next = modifiers.slice();
+            [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
+            pd.state.petalModifiers = next;
+            this.renderPetalDesignerModifierStack(pd, onApply);
+            onApply();
+          };
+        }
+        if (enabledInput) {
+          enabledInput.onchange = () => {
+            modifier.enabled = Boolean(enabledInput.checked);
+            modifiers[idx] = modifier;
+            pd.state.petalModifiers = modifiers;
+            this.renderPetalDesignerModifierStack(pd, onApply);
+            onApply();
+          };
+        }
+        if (deleteBtn) {
+          deleteBtn.onclick = () => {
+            modifiers.splice(idx, 1);
+            pd.state.petalModifiers = modifiers;
+            this.renderPetalDesignerModifierStack(pd, onApply);
+            onApply();
+          };
+        }
+        list.appendChild(card);
+      });
+    }
+
+    renderPetalDesignerRandomnessPanel(pd, applyChanges = null) {
+      if (!pd?.root || !pd?.state) return;
+      const panel = pd.root.querySelector('[data-petal-randomness-panel]');
+      const stack = pd.root.querySelector('[data-petal-randomness-stack]');
+      if (!panel || !stack) return;
+      const onApply =
+        applyChanges ||
+        pd.applyChanges ||
+        ((opts = {}) => {
+          const live = Boolean(opts.live);
+          this.applyPetalDesignerToLayer(pd.state, {
+            refreshControls: !live,
+            persistState: !live,
+          });
+          this.renderPetalDesigner(pd);
+        });
+      panel.open = Boolean(pd.state.randomnessOpen);
+      panel.ontoggle = () => {
+        pd.state.randomnessOpen = panel.open;
+      };
+      const formatValue = (value, precision = 0, unit = '') => {
+        const factor = Math.pow(10, precision);
+        const rounded = Math.round((Number(value) || 0) * factor) / factor;
+        return `${rounded}${unit}`;
+      };
+      stack.innerHTML = '';
+      PETALIS_DESIGNER_RANDOMNESS_DEFS.forEach((def) => {
+        const wrap = document.createElement('label');
+        wrap.className = 'petal-slider-label';
+        const value = clamp(pd.state[def.key] ?? def.min ?? 0, def.min, def.max);
+        pd.state[def.key] = value;
+        wrap.innerHTML = `
+          <span>${def.label}</span>
+          <span class="petal-slider-value">${formatValue(value, def.precision || 0, def.unit || '')}</span>
+          <input type="range" min="${def.min}" max="${def.max}" step="${def.step}" value="${value}">
+        `;
+        const input = wrap.querySelector('input');
+        const valueLabel = wrap.querySelector('.petal-slider-value');
+        if (input && valueLabel) {
+          const onRange = (live = false) => {
+            const next = Number.parseFloat(input.value);
+            if (!Number.isFinite(next)) return;
+            pd.state[def.key] = clamp(next, def.min, def.max);
+            valueLabel.textContent = formatValue(pd.state[def.key], def.precision || 0, def.unit || '');
+            onApply({ live });
+          };
+          input.oninput = () => onRange(true);
+          input.onchange = () => onRange(false);
+        }
+        stack.appendChild(wrap);
+      });
+    }
+
     syncPetalDesignerControls(pd) {
       if (!pd?.root || !pd?.state) return;
       this.syncInnerOuterLock(pd.state);
@@ -5870,6 +6222,7 @@
       const targetSelect = pd.root.querySelector('select[data-petal-target]');
       const profileSelect = pd.root.querySelector('select[data-petal-profile-current]');
       const symmetrySelect = pd.root.querySelector('select[data-petal-symmetry]');
+      const viewStyleSelect = pd.root.querySelector('select[data-petal-view-style]');
       const innerCountInput = pd.root.querySelector('input[data-petal-inner-count]');
       const outerCountInput = pd.root.querySelector('input[data-petal-outer-count]');
       const splitFeatherInput = pd.root.querySelector('input[data-petal-split-feather]');
@@ -5877,9 +6230,16 @@
       const outerCountWrap = pd.root.querySelector('[data-petal-outer-count-wrap]');
       const splitFeatherWrap = pd.root.querySelector('[data-petal-split-feather-wrap]');
       const lockToggle = pd.root.querySelector('input[data-petal-inner-outer-lock]');
-      const title = pd.root.querySelector('[data-petal-canvas-title]');
+      const visualizerGrid = pd.root.querySelector('[data-petal-visualizer-grid]');
+      const overlayCell = pd.root.querySelector('[data-petal-cell="overlay"]');
+      const innerCell = pd.root.querySelector('[data-petal-cell="inner"]');
+      const outerCell = pd.root.querySelector('[data-petal-cell="outer"]');
+      const overlayTitle = pd.root.querySelector('[data-petal-canvas-title="overlay"]');
+      const innerTitle = pd.root.querySelector('[data-petal-canvas-title="inner"]');
+      const outerTitle = pd.root.querySelector('[data-petal-canvas-title="outer"]');
       pd.state.designerSymmetry = this.normalizeDesignerSymmetryMode(pd.state.designerSymmetry);
       pd.state.target = this.normalizePetalDesignerRingTarget(pd.state.target, 'inner');
+      pd.state.viewStyle = this.normalizePetalDesignerViewStyle(pd.state.viewStyle);
       pd.state.count = Math.round(clamp(pd.state.count ?? PETALIS_DESIGNER_DEFAULT_COUNT, 5, 800));
       pd.state.innerCount = Math.round(
         clamp(pd.state.innerCount ?? pd.state.count ?? PETALIS_DESIGNER_DEFAULT_INNER_COUNT, 5, 400)
@@ -5889,14 +6249,34 @@
       );
       this.syncPetalDesignerTransitionFromCounts(pd.state);
       pd.state.profileTransitionFeather = clamp(pd.state.profileTransitionFeather ?? 0, 0, 100);
-      if (title) {
-        title.textContent = pd.state.target === 'both' ? 'Inner + Outer Shape' : side === 'inner' ? 'Inner Shape' : 'Outer Shape';
+      pd.state.seed = Math.round(clamp(pd.state.seed ?? 1, 0, 9999));
+      pd.state.countJitter = clamp(pd.state.countJitter ?? 0.1, 0, 0.5);
+      pd.state.sizeJitter = clamp(pd.state.sizeJitter ?? 0.12, 0, 0.5);
+      pd.state.rotationJitter = clamp(pd.state.rotationJitter ?? 6, 0, 45);
+      pd.state.angularDrift = clamp(pd.state.angularDrift ?? 0, 0, 45);
+      pd.state.driftStrength = clamp(pd.state.driftStrength ?? 0.1, 0, 1);
+      pd.state.driftNoise = clamp(pd.state.driftNoise ?? 0.2, 0.05, 1);
+      pd.state.radiusScale = clamp(pd.state.radiusScale ?? 0.2, -1, 1);
+      pd.state.radiusScaleCurve = clamp(pd.state.radiusScaleCurve ?? 1.2, 0.5, 2.5);
+      this.normalizePetalDesignerModifiers(pd.state);
+      if (visualizerGrid) {
+        visualizerGrid.classList.toggle('is-side-by-side', pd.state.viewStyle === 'side-by-side');
       }
+      if (overlayCell) overlayCell.classList.toggle('hidden', pd.state.viewStyle === 'side-by-side');
+      if (innerCell) innerCell.classList.toggle('hidden', pd.state.viewStyle !== 'side-by-side');
+      if (outerCell) outerCell.classList.toggle('hidden', pd.state.viewStyle !== 'side-by-side');
+      if (overlayTitle) {
+        const activeLabel = side === 'inner' ? 'Inner Active' : 'Outer Active';
+        overlayTitle.textContent = pd.state.target === 'both' ? 'Overlay (Both Linked)' : `Overlay (${activeLabel})`;
+      }
+      if (innerTitle) innerTitle.textContent = side === 'inner' ? 'Inner Shape (Active)' : 'Inner Shape';
+      if (outerTitle) outerTitle.textContent = side === 'outer' ? 'Outer Shape (Active)' : 'Outer Shape';
       if (targetSelect) {
         targetSelect.value = pd.state.target;
       }
       if (profileSelect) profileSelect.value = shape?.profile || 'teardrop';
       if (symmetrySelect) symmetrySelect.value = pd.state.designerSymmetry;
+      if (viewStyleSelect) viewStyleSelect.value = pd.state.viewStyle;
       if (innerCountInput) innerCountInput.value = pd.state.innerCount;
       if (outerCountInput) outerCountInput.value = pd.state.outerCount;
       if (splitFeatherInput) splitFeatherInput.value = pd.state.profileTransitionFeather;
@@ -5930,6 +6310,7 @@
       const targetSelect = pd.root.querySelector('select[data-petal-target]');
       const profileSelect = pd.root.querySelector('select[data-petal-profile-current]');
       const symmetrySelect = pd.root.querySelector('select[data-petal-symmetry]');
+      const viewStyleSelect = pd.root.querySelector('select[data-petal-view-style]');
       const innerCountInput = pd.root.querySelector('input[data-petal-inner-count]');
       const outerCountInput = pd.root.querySelector('input[data-petal-outer-count]');
       const splitFeatherInput = pd.root.querySelector('input[data-petal-split-feather]');
@@ -5952,6 +6333,8 @@
           this.syncInnerOuterLock(pd.state);
           this.syncPetalDesignerControls(pd);
           this.renderPetalDesignerShadingStack(pd, applyChanges);
+          this.renderPetalDesignerModifierStack(pd, applyChanges);
+          this.renderPetalDesignerRandomnessPanel(pd, applyChanges);
           applyChanges();
         };
       }
@@ -5960,7 +6343,7 @@
           const side = this.getPetalDesignerTarget(pd.state);
           pd.state[side] = this.buildProfileDesignerShape(profileSelect.value, side);
           this.normalizeDesignerShape(pd.state[side]);
-          this.syncInnerOuterLock(pd.state);
+          this.syncInnerOuterLock(pd.state, side);
           this.syncPetalDesignerControls(pd);
           applyChanges();
         };
@@ -5970,6 +6353,13 @@
           pd.state.designerSymmetry = this.normalizeDesignerSymmetryMode(symmetrySelect.value);
           this.syncPetalDesignerControls(pd);
           applyChanges();
+        };
+      }
+      if (viewStyleSelect) {
+        viewStyleSelect.onchange = () => {
+          pd.state.viewStyle = this.normalizePetalDesignerViewStyle(viewStyleSelect.value);
+          this.syncPetalDesignerControls(pd);
+          this.renderPetalDesigner(pd);
         };
       }
       if (innerCountInput) {
@@ -5997,7 +6387,7 @@
       if (lockToggle) {
         lockToggle.onchange = () => {
           pd.state.innerOuterLock = Boolean(lockToggle.checked);
-          this.syncInnerOuterLock(pd.state);
+          this.syncInnerOuterLock(pd.state, this.getPetalDesignerTarget(pd.state));
           this.syncPetalDesignerControls(pd);
           applyChanges();
         };
@@ -6023,6 +6413,8 @@
       const popInBtn = pd.root.querySelector('.petal-popin');
       if (popInBtn) popInBtn.onclick = () => this.popInPetalDesigner();
       this.renderPetalDesignerShadingStack(pd, applyChanges);
+      this.renderPetalDesignerModifierStack(pd, applyChanges);
+      this.renderPetalDesignerRandomnessPanel(pd, applyChanges);
       setTool('direct');
       this.syncPetalDesignerControls(pd);
     }
@@ -6253,8 +6645,66 @@
         });
         this.renderPetalDesigner(pd);
       };
-      const canvas = pd.root.querySelector('canvas[data-petal-canvas="shape"]');
-      if (!canvas) return;
+      const canvases = Array.from(pd.root.querySelectorAll('canvas[data-petal-canvas]'));
+      if (!canvases.length) return;
+      const canvasByRole = new Map();
+      const getCanvasRole = (canvas) => {
+        const role = canvas?.dataset?.petalCanvas;
+        if (role === 'inner' || role === 'outer') return role;
+        return 'overlay';
+      };
+      const getCanvasForSide = (side) => canvasByRole.get(side) || canvasByRole.get('overlay') || canvases[0];
+      const getSideForCanvas = (canvas) => {
+        const role = getCanvasRole(canvas);
+        return role === 'inner' || role === 'outer' ? role : this.getPetalDesignerTarget(pd.state);
+      };
+      const getViewForCanvas = (canvas, side = null) => {
+        const role = getCanvasRole(canvas);
+        if (role === 'inner' || role === 'outer') return this.getPetalDesignerView(pd.state, role);
+        return this.getPetalDesignerView(pd.state, side || this.getPetalDesignerTarget(pd.state));
+      };
+      const activateCanvasSide = (canvas) => {
+        const role = getCanvasRole(canvas);
+        if (role !== 'inner' && role !== 'outer') return this.getPetalDesignerTarget(pd.state);
+        if (pd.state.target === 'both') {
+          pd.state.activeTarget = role;
+          this.syncInnerOuterLock(pd.state, role);
+        } else {
+          pd.state.target = role;
+          pd.state.activeTarget = role;
+        }
+        this.syncPetalDesignerControls(pd);
+        this.renderPetalDesignerShadingStack(pd, applyChanges);
+        this.renderPetalDesigner(pd);
+        return role;
+      };
+      const normalizePointForCanvas = (fromCanvas, toCanvas, point) => {
+        const sourceMetrics = this.getDesignerCanvasMetrics(fromCanvas);
+        const targetMetrics = this.getDesignerCanvasMetrics(toCanvas);
+        const nx = clamp(point.x / Math.max(1e-6, sourceMetrics.width), 0, 1);
+        const ny = clamp(point.y / Math.max(1e-6, sourceMetrics.height), 0, 1);
+        return {
+          x: nx * targetMetrics.width,
+          y: ny * targetMetrics.height,
+        };
+      };
+      const zoomViewAtPoint = (side, canvas, point, factor) => {
+        if (!canvas) return;
+        const view = this.getPetalDesignerView(pd.state, side);
+        const prevZoom = view.zoom;
+        view.zoom = clamp(view.zoom * factor, 0.35, 4.5);
+        const scale = view.zoom / Math.max(1e-6, prevZoom);
+        view.panX = point.x - (point.x - view.panX) * scale;
+        view.panY = point.y - (point.y - view.panY) * scale;
+      };
+      const zoomBothSides = (sourceCanvas, sourcePoint, factor) => {
+        ['inner', 'outer'].forEach((side) => {
+          const targetCanvas = getCanvasForSide(side);
+          const targetPoint = normalizePointForCanvas(sourceCanvas, targetCanvas, sourcePoint);
+          zoomViewAtPoint(side, targetCanvas, targetPoint, factor);
+        });
+      };
+      if (!pd.canvasHover || typeof pd.canvasHover !== 'object') pd.canvasHover = {};
       const readModifiers = (e) => {
         const mods = SETTINGS.touchModifiers || {};
         const isTouch = e?.pointerType === 'touch';
@@ -6264,20 +6714,22 @@
           meta: Boolean(e?.metaKey || e?.ctrlKey || (isTouch && mods.meta)),
         };
       };
-      const setCursor = (e = null) => {
+      const setCursor = (canvas, e = null) => {
         if (!canvas) return;
-        if (pd.canvasPan) {
+        const role = getCanvasRole(canvas);
+        const hoverKey = role;
+        if (pd.canvasPan && pd.canvasPan.canvas === canvas) {
           canvas.style.cursor = 'grabbing';
           return;
         }
-        const side = this.getPetalDesignerTarget(pd.state);
+        const side = getSideForCanvas(canvas);
         const shape = pd.state?.[side];
-        const view = this.getPetalDesignerView(pd.state, side);
-        let hit = pd.canvasHover || null;
+        const view = getViewForCanvas(canvas, side);
+        let hit = pd.canvasHover?.[hoverKey] || null;
         if (shape && e && Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
           const pos = this.getDesignerCanvasPoint(canvas, e);
           hit = this.hitDesignerShapeControl(shape, canvas, pos, view);
-          pd.canvasHover = hit;
+          pd.canvasHover[hoverKey] = hit;
         }
         const modifiers = readModifiers(e || {});
         if (pd.tool === 'direct' || (pd.tool === 'pen' && modifiers.meta)) {
@@ -6306,233 +6758,243 @@
         }
         canvas.style.cursor = 'crosshair';
       };
-
-      const touchPoints = new Map();
-      let pinch = null;
-      const readPair = () => {
-        if (touchPoints.size < 2) return null;
-        const values = Array.from(touchPoints.values());
-        return [values[0], values[1]];
-      };
-      const onDown = (e) => {
-        if (e.pointerType === 'touch') {
-          touchPoints.set(e.pointerId, { x: e.clientX, y: e.clientY });
-          if (touchPoints.size >= 2) {
-            const pair = readPair();
-            if (pair) {
-              const [a, b] = pair;
-              const side = this.getPetalDesignerTarget(pd.state);
-              const view = this.getPetalDesignerView(pd.state, side);
-              pinch = {
-                side,
-                startZoom: view.zoom,
-                startPanX: view.panX,
-                startPanY: view.panY,
-                startCenter: { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 },
-                startDistance: Math.max(8, Math.hypot(b.x - a.x, b.y - a.y)),
-              };
-              pd.drag = null;
-            }
-            if (canvas.setPointerCapture) {
-              try {
-                canvas.setPointerCapture(e.pointerId);
-              } catch (err) {
-                // Ignore capture failures.
+      const cleanupFns = [];
+      canvases.forEach((canvas) => {
+        const role = getCanvasRole(canvas);
+        canvasByRole.set(role, canvas);
+      });
+      canvases.forEach((canvas) => {
+        const role = getCanvasRole(canvas);
+        const hoverKey = role;
+        const touchPoints = new Map();
+        let pinch = null;
+        const readPair = () => {
+          if (touchPoints.size < 2) return null;
+          const values = Array.from(touchPoints.values());
+          return [values[0], values[1]];
+        };
+        const onDown = (e) => {
+          if (role === 'inner' || role === 'outer') activateCanvasSide(canvas);
+          if (e.pointerType === 'touch') {
+            touchPoints.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            if (touchPoints.size >= 2) {
+              const pair = readPair();
+              if (pair) {
+                const [a, b] = pair;
+                const side = getSideForCanvas(canvas);
+                const view = getViewForCanvas(canvas, side);
+                pinch = {
+                  side,
+                  startZoom: view.zoom,
+                  startPanX: view.panX,
+                  startPanY: view.panY,
+                  startCenter: { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 },
+                  startDistance: Math.max(8, Math.hypot(b.x - a.x, b.y - a.y)),
+                };
+                pd.drag = null;
               }
+              if (canvas.setPointerCapture) {
+                try {
+                  canvas.setPointerCapture(e.pointerId);
+                } catch (err) {
+                  // Ignore capture failures.
+                }
+              }
+              e.preventDefault();
+              setCursor(canvas, e);
+              return;
             }
+          }
+          if (pinch) return;
+          if (e.button === 1) {
             e.preventDefault();
-            setCursor(e);
+            const side = getSideForCanvas(canvas);
+            pd.canvasPan = { pointerId: e.pointerId, canvas, side, x: e.clientX, y: e.clientY };
+            setCursor(canvas, e);
             return;
           }
-        }
-        if (pinch) return;
-        if (e.button === 1) {
+          if (e.button !== undefined && e.button !== 0) return;
           e.preventDefault();
-          const side = this.getPetalDesignerTarget(pd.state);
-          pd.canvasPan = { pointerId: e.pointerId, side, x: e.clientX, y: e.clientY };
-          setCursor(e);
-          return;
-        }
-        if (e.button !== undefined && e.button !== 0) return;
-        e.preventDefault();
-        const side = this.getPetalDesignerTarget(pd.state);
-        const shape = pd.state[side];
-        const view = this.getPetalDesignerView(pd.state, side);
-        const pos = this.getDesignerCanvasPoint(canvas, e);
-        const hit = this.hitDesignerShapeControl(shape, canvas, pos, view);
-        const modifiers = readModifiers(e);
-        if (pd.tool === 'direct' || (pd.tool === 'pen' && modifiers.meta)) {
-          if (hit) {
-            pd.drag = { mode: 'control', side, canvas, hit, pointerId: e.pointerId };
-            setCursor(e);
-            return;
-          }
-        } else if (pd.tool === 'pen') {
-          if (modifiers.alt && hit && (hit.kind === 'anchor' || hit.kind === 'handle')) {
-            this.toggleDesignerAnchor(shape, hit.index, hit.kind === 'handle' ? hit.which : null);
-            this.normalizeDesignerShape(shape);
-            this.syncInnerOuterLock(pd.state);
-            applyChanges();
-            setCursor(e);
-            return;
-          }
-          if (hit) {
-            pd.drag = { mode: 'control', side, canvas, hit, pointerId: e.pointerId };
-            setCursor(e);
-            return;
-          }
-          const index = this.insertDesignerAnchor(shape, canvas, pos, view);
-          if (Number.isFinite(index)) {
-            pd.drag = {
-              mode: 'pen-new',
-              side,
-              canvas,
-              pointerId: e.pointerId,
-              index,
-            };
-          }
-          applyChanges();
-          setCursor(e);
-          return;
-        } else if (pd.tool === 'delete') {
-          if (hit && hit.kind === 'anchor' && hit.index > 0 && hit.index < shape.anchors.length - 1 && shape.anchors.length > 3) {
-            shape.anchors.splice(hit.index, 1);
-            this.normalizeDesignerShape(shape);
-            this.syncInnerOuterLock(pd.state);
-            applyChanges();
-          }
-          setCursor(e);
-          return;
-        } else if (pd.tool === 'anchor') {
-          if (hit && hit.kind === 'anchor') {
-            this.toggleDesignerAnchor(shape, hit.index);
-            this.normalizeDesignerShape(shape);
-            this.syncInnerOuterLock(pd.state);
-            applyChanges();
-          }
-          setCursor(e);
-        }
-      };
-      const onMove = (e) => {
-        if (e.pointerType === 'touch' && touchPoints.has(e.pointerId)) {
-          touchPoints.set(e.pointerId, { x: e.clientX, y: e.clientY });
-        }
-        if (pinch) {
-          const pair = readPair();
-          if (!pair) return;
-          const [a, b] = pair;
-          const center = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
-          const dist = Math.max(8, Math.hypot(b.x - a.x, b.y - a.y));
-          const view = this.getPetalDesignerView(pd.state, pinch.side);
-          const ratio = dist / Math.max(1e-6, pinch.startDistance);
-          view.zoom = clamp(pinch.startZoom * ratio, 0.35, 4.5);
-          view.panX = pinch.startPanX + (center.x - pinch.startCenter.x);
-          view.panY = pinch.startPanY + (center.y - pinch.startCenter.y);
-          this.renderPetalDesigner(pd);
-          if (e.cancelable) e.preventDefault();
-          setCursor(e);
-          return;
-        }
-        if (pd.canvasPan) {
-          if (pd.canvasPan.pointerId !== undefined && e.pointerId !== undefined && pd.canvasPan.pointerId !== e.pointerId) return;
-          const view = this.getPetalDesignerView(pd.state, pd.canvasPan.side);
-          view.panX += e.clientX - pd.canvasPan.x;
-          view.panY += e.clientY - pd.canvasPan.y;
-          pd.canvasPan.x = e.clientX;
-          pd.canvasPan.y = e.clientY;
-          this.renderPetalDesigner(pd);
-          setCursor(e);
-          return;
-        }
-        if (!pd.drag) {
-          if (e.pointerType !== 'touch') {
-            const side = this.getPetalDesignerTarget(pd.state);
-            const shape = pd.state?.[side];
-            const view = this.getPetalDesignerView(pd.state, side);
-            if (shape) {
-              const pos = this.getDesignerCanvasPoint(canvas, e);
-              pd.canvasHover = this.hitDesignerShapeControl(shape, canvas, pos, view);
-            } else {
-              pd.canvasHover = null;
+          const side = getSideForCanvas(canvas);
+          const shape = pd.state[side];
+          const view = getViewForCanvas(canvas, side);
+          const pos = this.getDesignerCanvasPoint(canvas, e);
+          const hit = this.hitDesignerShapeControl(shape, canvas, pos, view);
+          const modifiers = readModifiers(e);
+          if (pd.tool === 'direct' || (pd.tool === 'pen' && modifiers.meta)) {
+            if (hit) {
+              pd.drag = { mode: 'control', side, canvas, hit, pointerId: e.pointerId };
+              setCursor(canvas, e);
+              return;
             }
-            setCursor(e);
+          } else if (pd.tool === 'pen') {
+            if (modifiers.alt && hit && (hit.kind === 'anchor' || hit.kind === 'handle')) {
+              this.toggleDesignerAnchor(shape, hit.index, hit.kind === 'handle' ? hit.which : null);
+              this.normalizeDesignerShape(shape);
+              this.syncInnerOuterLock(pd.state, side);
+              applyChanges();
+              setCursor(canvas, e);
+              return;
+            }
+            if (hit) {
+              pd.drag = { mode: 'control', side, canvas, hit, pointerId: e.pointerId };
+              setCursor(canvas, e);
+              return;
+            }
+            const index = this.insertDesignerAnchor(shape, canvas, pos, view);
+            if (Number.isFinite(index)) {
+              pd.drag = {
+                mode: 'pen-new',
+                side,
+                canvas,
+                pointerId: e.pointerId,
+                index,
+              };
+            }
+            applyChanges();
+            setCursor(canvas, e);
+            return;
+          } else if (pd.tool === 'delete') {
+            if (hit && hit.kind === 'anchor' && hit.index > 0 && hit.index < shape.anchors.length - 1 && shape.anchors.length > 3) {
+              shape.anchors.splice(hit.index, 1);
+              this.normalizeDesignerShape(shape);
+              this.syncInnerOuterLock(pd.state, side);
+              applyChanges();
+            }
+            setCursor(canvas, e);
+            return;
+          } else if (pd.tool === 'anchor') {
+            if (hit && hit.kind === 'anchor') {
+              this.toggleDesignerAnchor(shape, hit.index);
+              this.normalizeDesignerShape(shape);
+              this.syncInnerOuterLock(pd.state, side);
+              applyChanges();
+            }
+            setCursor(canvas, e);
           }
-          return;
-        }
-        if (pd.drag.pointerId !== undefined && e.pointerId !== undefined && pd.drag.pointerId !== e.pointerId) return;
-        const { side, canvas: dragCanvas, hit } = pd.drag;
-        const shape = pd.state[side];
-        if (!shape) return;
-        const view = this.getPetalDesignerView(pd.state, side);
-        const pos = this.getDesignerCanvasPoint(dragCanvas, e);
-        if (pd.drag.mode === 'pen-new') {
-          this.updateDesignerPenHandleDrag(shape, pd.drag.index, dragCanvas, pos, e, view);
-        } else {
-          this.updateDesignerDrag(shape, dragCanvas, hit, pos, e, view);
-        }
-        this.normalizeDesignerShape(shape);
-        this.syncInnerOuterLock(pd.state);
-        applyChanges({ live: true });
-        setCursor(e);
-      };
-      const onUp = (e) => {
-        const hadDrag = Boolean(pd.drag);
-        if (e.pointerType === 'touch') {
-          touchPoints.delete(e.pointerId);
-          if (touchPoints.size < 2) pinch = null;
-        }
-        if (pd.canvasPan && pd.canvasPan.pointerId !== undefined && e.pointerId !== undefined && pd.canvasPan.pointerId === e.pointerId) {
-          pd.canvasPan = null;
-          setCursor(e);
-        }
-        if (pd.drag && pd.drag.pointerId !== undefined && e.pointerId !== undefined && pd.drag.pointerId !== e.pointerId) return;
-        pd.drag = null;
-        if (hadDrag) applyChanges();
-        setCursor(e);
-      };
-      const onWheel = (e) => {
-        e.preventDefault();
-        const side = this.getPetalDesignerTarget(pd.state);
-        const view = this.getPetalDesignerView(pd.state, side);
-        const pos = this.getDesignerCanvasPoint(canvas, e);
-        const prevZoom = view.zoom;
-        const factor = e.deltaY > 0 ? 0.9 : 1.1;
-        view.zoom = clamp(view.zoom * factor, 0.35, 4.5);
-        const scale = view.zoom / Math.max(1e-6, prevZoom);
-        view.panX = pos.x - (pos.x - view.panX) * scale;
-        view.panY = pos.y - (pos.y - view.panY) * scale;
-        this.renderPetalDesigner(pd);
-        setCursor(e);
-      };
-      const onLeave = () => {
-        pd.canvasHover = null;
-        setCursor();
-      };
-      const onResize = () => this.renderPetalDesigner(pd);
-      const resizeObserver =
-        typeof ResizeObserver === 'function'
-          ? new ResizeObserver(() => this.renderPetalDesigner(pd))
-          : null;
-      if (resizeObserver) resizeObserver.observe(canvas);
-      canvas.addEventListener('pointerdown', onDown);
-      canvas.addEventListener('pointerleave', onLeave);
-      canvas.addEventListener('wheel', onWheel, { passive: false });
-      window.addEventListener('pointermove', onMove);
-      window.addEventListener('pointerup', onUp);
-      window.addEventListener('pointercancel', onUp);
-      window.addEventListener('resize', onResize);
+        };
+        const onMove = (e) => {
+          if (e.pointerType === 'touch' && touchPoints.has(e.pointerId)) {
+            touchPoints.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          }
+          if (pinch) {
+            const pair = readPair();
+            if (!pair) return;
+            const [a, b] = pair;
+            const center = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
+            const dist = Math.max(8, Math.hypot(b.x - a.x, b.y - a.y));
+            const view = this.getPetalDesignerView(pd.state, pinch.side);
+            const ratio = dist / Math.max(1e-6, pinch.startDistance);
+            view.zoom = clamp(pinch.startZoom * ratio, 0.35, 4.5);
+            view.panX = pinch.startPanX + (center.x - pinch.startCenter.x);
+            view.panY = pinch.startPanY + (center.y - pinch.startCenter.y);
+            this.renderPetalDesigner(pd);
+            if (e.cancelable) e.preventDefault();
+            setCursor(canvas, e);
+            return;
+          }
+          if (pd.canvasPan && pd.canvasPan.canvas === canvas) {
+            if (pd.canvasPan.pointerId !== undefined && e.pointerId !== undefined && pd.canvasPan.pointerId !== e.pointerId) return;
+            const view = getViewForCanvas(canvas, pd.canvasPan.side);
+            view.panX += e.clientX - pd.canvasPan.x;
+            view.panY += e.clientY - pd.canvasPan.y;
+            pd.canvasPan.x = e.clientX;
+            pd.canvasPan.y = e.clientY;
+            this.renderPetalDesigner(pd);
+            setCursor(canvas, e);
+            return;
+          }
+          if (!pd.drag) {
+            if (e.pointerType !== 'touch') {
+              const side = getSideForCanvas(canvas);
+              const shape = pd.state?.[side];
+              const view = getViewForCanvas(canvas, side);
+              if (shape) {
+                const pos = this.getDesignerCanvasPoint(canvas, e);
+                pd.canvasHover[hoverKey] = this.hitDesignerShapeControl(shape, canvas, pos, view);
+              } else {
+                pd.canvasHover[hoverKey] = null;
+              }
+              setCursor(canvas, e);
+            }
+            return;
+          }
+          if (pd.drag.canvas !== canvas) return;
+          if (pd.drag.pointerId !== undefined && e.pointerId !== undefined && pd.drag.pointerId !== e.pointerId) return;
+          const { side, canvas: dragCanvas, hit } = pd.drag;
+          const shape = pd.state[side];
+          if (!shape) return;
+          const view = getViewForCanvas(dragCanvas, side);
+          const pos = this.getDesignerCanvasPoint(dragCanvas, e);
+          if (pd.drag.mode === 'pen-new') {
+            this.updateDesignerPenHandleDrag(shape, pd.drag.index, dragCanvas, pos, e, view);
+          } else {
+            this.updateDesignerDrag(shape, dragCanvas, hit, pos, e, view);
+          }
+          this.normalizeDesignerShape(shape);
+          this.syncInnerOuterLock(pd.state, side);
+          applyChanges({ live: true });
+          setCursor(canvas, e);
+        };
+        const onUp = (e) => {
+          const hadDrag = Boolean(pd.drag && pd.drag.canvas === canvas);
+          if (e.pointerType === 'touch') {
+            touchPoints.delete(e.pointerId);
+            if (touchPoints.size < 2) pinch = null;
+          }
+          if (pd.canvasPan && pd.canvasPan.canvas === canvas && pd.canvasPan.pointerId !== undefined && e.pointerId !== undefined && pd.canvasPan.pointerId === e.pointerId) {
+            pd.canvasPan = null;
+            setCursor(canvas, e);
+          }
+          if (pd.drag && pd.drag.canvas === canvas) {
+            if (pd.drag.pointerId !== undefined && e.pointerId !== undefined && pd.drag.pointerId !== e.pointerId) return;
+            pd.drag = null;
+            if (hadDrag) applyChanges();
+          }
+          setCursor(canvas, e);
+        };
+        const onWheel = (e) => {
+          e.preventDefault();
+          if (role === 'inner' || role === 'outer') activateCanvasSide(canvas);
+          const pos = this.getDesignerCanvasPoint(canvas, e);
+          const factor = e.deltaY > 0 ? 0.9 : 1.1;
+          zoomBothSides(canvas, pos, factor);
+          this.renderPetalDesigner(pd);
+          canvases.forEach((entry) => setCursor(entry, e));
+        };
+        const onLeave = () => {
+          pd.canvasHover[hoverKey] = null;
+          setCursor(canvas);
+        };
+        const onResize = () => this.renderPetalDesigner(pd);
+        const resizeObserver =
+          typeof ResizeObserver === 'function'
+            ? new ResizeObserver(() => this.renderPetalDesigner(pd))
+            : null;
+        if (resizeObserver) resizeObserver.observe(canvas);
+        canvas.addEventListener('pointerdown', onDown);
+        canvas.addEventListener('pointerleave', onLeave);
+        canvas.addEventListener('wheel', onWheel, { passive: false });
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointercancel', onUp);
+        window.addEventListener('resize', onResize);
+        cleanupFns.push(() => {
+          canvas.removeEventListener('pointerdown', onDown);
+          canvas.removeEventListener('pointerleave', onLeave);
+          canvas.removeEventListener('wheel', onWheel);
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
+          window.removeEventListener('pointercancel', onUp);
+          window.removeEventListener('resize', onResize);
+          if (resizeObserver) resizeObserver.disconnect();
+        });
+        this.syncDesignerCanvasResolution(canvas);
+        setCursor(canvas);
+      });
       pd.cleanupCanvas = () => {
-        canvas.removeEventListener('pointerdown', onDown);
-        canvas.removeEventListener('pointerleave', onLeave);
-        canvas.removeEventListener('wheel', onWheel);
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', onUp);
-        window.removeEventListener('pointercancel', onUp);
-        window.removeEventListener('resize', onResize);
-        if (resizeObserver) resizeObserver.disconnect();
+        cleanupFns.forEach((cleanup) => cleanup());
       };
-      this.syncDesignerCanvasResolution(canvas);
-      setCursor();
     }
 
     getDesignerCanvasMetrics(canvas) {
@@ -7194,28 +7656,50 @@
 
     renderPetalDesigner(pd = this.petalDesigner) {
       if (!pd?.root) return;
-      const canvas = pd.root.querySelector('canvas[data-petal-canvas="shape"]');
-      if (!canvas) return;
+      const overlayCanvas = pd.root.querySelector('canvas[data-petal-canvas="overlay"]');
+      const innerCanvas = pd.root.querySelector('canvas[data-petal-canvas="inner"]');
+      const outerCanvas = pd.root.querySelector('canvas[data-petal-canvas="outer"]');
+      if (!overlayCanvas && !innerCanvas && !outerCanvas) return;
       this.syncPetalDesignerControls(pd);
       const activeSide = this.getPetalDesignerTarget(pd.state);
+      const viewStyle = this.normalizePetalDesignerViewStyle(pd.state?.viewStyle);
       const allShadings = this.normalizePetalDesignerShadings(pd.state, { defaultTarget: 'both' });
       const shadingForSide = (side) =>
         allShadings.filter((shade) => {
           const target = this.normalizePetalDesignerShadingTarget(shade?.target, 'both');
           return target === 'both' || target === side;
         });
-      const drawOrder = activeSide === 'inner' ? ['outer', 'inner'] : ['inner', 'outer'];
-      drawOrder.forEach((side, index) => {
+      const drawSide = (canvas, side, options = {}) => {
+        if (!canvas) return;
         const isActive = side === activeSide;
+        const showControls = options.showControls !== undefined ? options.showControls : isActive;
         const shape = side === 'inner' ? pd.state.inner : pd.state.outer;
+        const clearCanvas = options.clearCanvas !== false;
         this.drawDesignerShape(canvas, shape, {
           shadings: shadingForSide(side),
-          showControls: isActive,
+          showControls,
           view: this.getPetalDesignerView(pd.state, side),
           symmetry: this.normalizeDesignerSymmetryMode(pd.state?.designerSymmetry),
-          clearCanvas: index === 0,
+          clearCanvas,
           fillStyle: isActive ? 'rgba(56, 189, 248, 0.1)' : 'rgba(34, 211, 238, 0.05)',
           strokeStyle: isActive ? '#67e8f9' : 'rgba(103, 232, 249, 0.55)',
+        });
+      };
+      if (viewStyle === 'side-by-side') {
+        drawSide(innerCanvas, 'inner', {
+          showControls: pd.state.target === 'both' || activeSide === 'inner',
+        });
+        drawSide(outerCanvas, 'outer', {
+          showControls: pd.state.target === 'both' || activeSide === 'outer',
+        });
+        return;
+      }
+      const canvas = overlayCanvas || innerCanvas || outerCanvas;
+      const drawOrder = activeSide === 'inner' ? ['outer', 'inner'] : ['inner', 'outer'];
+      drawOrder.forEach((side, index) => {
+        drawSide(canvas, side, {
+          showControls: pd.state.target === 'both' ? true : side === activeSide,
+          clearCanvas: index === 0,
         });
       });
     }
@@ -7226,12 +7710,13 @@
       const layer = this.getLayerById(state.layerId);
       if (!layer || !isPetalisLayerType(layer.type)) return;
       state.target = this.normalizePetalDesignerRingTarget(state.target, 'inner');
+      state.viewStyle = this.normalizePetalDesignerViewStyle(state.viewStyle);
       if (state.target === 'inner' || state.target === 'outer') {
         state.activeTarget = state.target;
       } else if (state.activeTarget !== 'inner' && state.activeTarget !== 'outer') {
         state.activeTarget = 'inner';
       }
-      this.syncInnerOuterLock(state);
+      this.syncInnerOuterLock(state, state.activeTarget);
       this.normalizeDesignerShape(state.outer);
       this.normalizeDesignerShape(state.inner);
       const params = layer.params || {};
@@ -7259,9 +7744,19 @@
           800
         )
       );
+      state.seed = Math.round(clamp(state.seed ?? params.seed ?? 1, 0, 9999));
+      state.countJitter = clamp(state.countJitter ?? params.countJitter ?? 0.1, 0, 0.5);
+      state.sizeJitter = clamp(state.sizeJitter ?? params.sizeJitter ?? 0.12, 0, 0.5);
+      state.rotationJitter = clamp(state.rotationJitter ?? params.rotationJitter ?? 6, 0, 45);
+      state.angularDrift = clamp(state.angularDrift ?? params.angularDrift ?? 0, 0, 45);
+      state.driftStrength = clamp(state.driftStrength ?? params.driftStrength ?? 0.1, 0, 1);
+      state.driftNoise = clamp(state.driftNoise ?? params.driftNoise ?? 0.2, 0.05, 1);
+      state.radiusScale = clamp(state.radiusScale ?? params.radiusScale ?? 0.2, -1, 1);
+      state.radiusScaleCurve = clamp(state.radiusScaleCurve ?? params.radiusScaleCurve ?? 1.2, 0.5, 2.5);
       params.designerOuter = JSON.parse(JSON.stringify(state.outer));
       params.designerInner = JSON.parse(JSON.stringify(state.inner));
       params.designerSymmetry = state.designerSymmetry;
+      params.petalVisualizerViewStyle = state.viewStyle;
       params.count = state.count;
       params.petalShape = state.target;
       params.petalRing = state.target;
@@ -7274,22 +7769,37 @@
       params.profileTransitionFeather = clamp(state.profileTransitionFeather ?? 0, 0, 100);
       params.petalSteps = Math.max(64, Math.round(params.petalSteps ?? 64));
       params.petalProfile = state.outer.profile || params.petalProfile || 'teardrop';
-      params.centerProfile = state.inner.profile || params.centerProfile || params.petalProfile || 'teardrop';
-      const outerCore = state.outer.anchors.reduce(
-        (best, anchor, idx, arr) => {
-          if (idx === 0 || idx === arr.length - 1) return best;
-          return anchor.w > best.w ? anchor : best;
-        },
-        { t: params.leafSidePos ?? 0.45, w: (params.leafSideWidth ?? 1) * 0.55 }
-      );
-      params.leafSidePos = clamp(outerCore.t ?? params.leafSidePos ?? 0.45, 0.1, 0.9);
-      params.leafSideWidth = clamp((outerCore.w ?? 0.55) / 0.55, 0.2, 2);
+      params.petalWidthRatio = Number.isFinite(params.petalWidthRatio) ? params.petalWidthRatio : 1;
+      params.petalLengthRatio = 1;
+      params.petalSizeRatio = 1;
+      params.leafSidePos = 0.45;
+      params.leafSideWidth = 1;
+      params.centerProfile = null;
+      params.centerSizeMorph = 0;
+      params.centerSizeCurve = 1;
+      params.centerShapeMorph = 0;
+      params.centerWaveBoost = 0;
+      params.edgeWaveAmp = 0;
+      params.edgeWaveFreq = 0;
+      params.seed = state.seed;
+      params.countJitter = state.countJitter;
+      params.sizeJitter = state.sizeJitter;
+      params.rotationJitter = state.rotationJitter;
+      params.angularDrift = state.angularDrift;
+      params.driftStrength = state.driftStrength;
+      params.driftNoise = state.driftNoise;
+      params.radiusScale = state.radiusScale;
+      params.radiusScaleCurve = state.radiusScaleCurve;
       const shadings = Array.isArray(state.shadings) ? state.shadings : [];
       state.shadings = shadings.map((shade, index) =>
         this.normalizePetalDesignerShading(shade, index, { defaultTarget: 'both' })
       );
       params.shadings = state.shadings.map((shade, index) =>
         this.normalizePetalDesignerShading(shade, index, { defaultTarget: 'both' })
+      );
+      const modifiers = this.normalizePetalDesignerModifiers(state);
+      params.petalModifiers = modifiers.map((modifier, index) =>
+        this.normalizePetalDesignerModifier(modifier, index)
       );
       if (persistState) this.storeLayerParams(layer);
       this.app.engine.generate(layer.id);
@@ -7323,7 +7833,7 @@
             <div><span class="text-vectura-accent">C</span> Scissor tool (press again to cycle modes)</div>
             <div><span class="text-vectura-accent">Space</span> Hand tool (temporary)</div>
             <div><span class="text-vectura-accent">Petal Designer</span> A/P/+/-/Shift+C, Shift-constrain, Alt convert/break/remove handle, Cmd/Ctrl temporary direct</div>
-            <div><span class="text-vectura-accent">Petal Designer</span> Middle-click drag pans, mouse wheel zooms to cursor</div>
+            <div><span class="text-vectura-accent">Petal Designer</span> Middle-click drag pans, mouse wheel zooms both petals together when both are visible</div>
             <div><span class="text-vectura-accent">Enter</span> Commit pen path</div>
             <div><span class="text-vectura-accent">Double-click</span> Close pen path near start</div>
             <div><span class="text-vectura-accent">Backspace</span> Remove last pen point</div>
@@ -7364,8 +7874,8 @@
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Petalis Designer includes an embedded panel; use its pop-out icon (⧉) to open the same panel in a floating window and pop-in (↩) to dock it back.
-            It includes flower presets, radial petal controls, inner/outer profile transitions, and a shading stack with in-place hatch-angle rotation (angle rotates internal strokes, not shading placement), plus an in-development light source tool.
-            Shape comes from editable inner/outer curves, a Petal Shape selector (Inner/Outer/Both) for shape editing, always-on inner/outer ring counts with split feathering, per-ring shading stacks (plus optional shared Both stack), and symmetry mode; legacy petal profile and hidden tip/base modifiers are not applied there.
+            It includes flower presets, radial petal controls, a PETAL VISUALIZER pane (Overlay or Side by Side), a shading stack with in-place hatch-angle rotation (angle rotates internal strokes, not shading placement), and a matching modifier stack.
+            Shape comes from editable inner/outer curves, a Petal Shape selector (Inner/Outer/Both), always-on inner/outer ring counts with split feathering, symmetry controls, and a collapsible Randomness &amp; Seed section at the bottom.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Left panel sections are collapsible; Transform &amp; Seed lives inside Algorithm in its own collapsible sub-panel (collapsed by default), and ABOUT visibility is remembered.
@@ -7409,7 +7919,7 @@
           <div class="text-xs text-vectura-muted leading-relaxed space-y-1">
             <div>Shift + Drag to pan</div>
             <div>Mouse wheel to zoom</div>
-            <div>Petal Designer: middle-click drag pans and wheel zooms at cursor.</div>
+            <div>Petal Designer: middle-click drag pans and wheel zooms both visible petals equally.</div>
             <div>Touch: one-finger tool input, two-finger pan/pinch zoom.</div>
             <div>On tablets, use Shift/Alt/Meta/Pan touch modifier buttons near the toolbar.</div>
             <div>On phones, use the top File/Edit/View/Help menu bar plus pane toggles or edge tabs to open Generator/Layers, and use the floating Model toggle to expand/collapse the formula panel.</div>
@@ -7629,7 +8139,10 @@
           enabled: true,
           type: layer.params.noiseType || base.type,
           blend: base.blend,
-          amplitude: layer.params.amplitude ?? base.amplitude,
+          amplitude:
+            (layer.params.noiseType || base.type) === 'image' && layer.params.amplitude === undefined
+              ? IMAGE_NOISE_DEFAULT_AMPLITUDE
+              : layer.params.amplitude ?? base.amplitude,
           zoom: layer.params.zoom ?? base.zoom,
           freq: layer.params.freq ?? base.freq,
           angle: layer.params.noiseAngle ?? base.angle,
@@ -7687,6 +8200,9 @@
         if (next.tileMode === 'off') next.tilePadding = 0;
         if (next.type === 'image' && next.imageWidth === undefined && next.freq !== undefined) {
           next.imageWidth = next.freq;
+        }
+        if (next.type === 'image' && (noise?.amplitude === undefined || noise?.amplitude === null)) {
+          next.amplitude = IMAGE_NOISE_DEFAULT_AMPLITUDE;
         }
         if (!next.noiseStyle) next.noiseStyle = base.noiseStyle || 'linear';
         if (next.noiseThreshold === undefined) next.noiseThreshold = base.noiseThreshold ?? 0;
@@ -7771,6 +8287,9 @@
         if (!next.applyMode) next.applyMode = base.applyMode || 'topdown';
         if (next.type === 'image' && next.imageWidth === undefined && next.freq !== undefined) {
           next.imageWidth = next.freq;
+        }
+        if (next.type === 'image' && (noise?.amplitude === undefined || noise?.amplitude === null)) {
+          next.amplitude = IMAGE_NOISE_DEFAULT_AMPLITUDE;
         }
         if (!next.noiseStyle) next.noiseStyle = base.noiseStyle || 'linear';
         if (next.noiseThreshold === undefined) next.noiseThreshold = base.noiseThreshold ?? 0;
@@ -13363,6 +13882,10 @@
             layer.type === 'spiral' ? this.ensureSpiralNoises(layer) : this.ensureWavetableNoises(layer);
           const { base: noiseBase, templates: noiseTemplates } = this.getWavetableNoiseTemplates(noiseSource);
           const getNoiseDefault = (index, key) => {
+            if (key === 'amplitude') {
+              const current = noises[index];
+              if (current?.type === 'image') return IMAGE_NOISE_DEFAULT_AMPLITUDE;
+            }
             const template = noiseTemplates[index] || noiseTemplates[noiseTemplates.length - 1] || noiseBase;
             if (template && Object.prototype.hasOwnProperty.call(template, key)) return template[key];
             return noiseBase[key];
@@ -13381,6 +13904,7 @@
             if (noise.type === 'image') {
               noise.tileMode = 'off';
               noise.tilePadding = 0;
+              noise.amplitude = IMAGE_NOISE_DEFAULT_AMPLITUDE;
             } else if (!noise.tileMode) {
               noise.tileMode = noiseBase.tileMode || 'off';
             }
@@ -13543,12 +14067,20 @@
               input.onchange = (e) => {
                 if (this.app.pushHistory) this.app.pushHistory();
                 const next = e.target.value;
+                const prev = noise[def.key];
                 noise[def.key] = next;
                 if (def.key === 'type') {
                   const fallbackTileMode = getNoiseDefault(idx, 'tileMode') || 'off';
                   if (next === 'image') {
                     noise.tileMode = 'off';
                     noise.tilePadding = 0;
+                    const baseAmplitude = noiseBase.amplitude;
+                    if (
+                      prev !== 'image' &&
+                      (!Number.isFinite(noise.amplitude) || Math.abs((noise.amplitude ?? 0) - baseAmplitude) < 1e-6)
+                    ) {
+                      noise.amplitude = IMAGE_NOISE_DEFAULT_AMPLITUDE;
+                    }
                   } else if (!noise.tileMode) {
                     noise.tileMode = fallbackTileMode;
                   }
@@ -13567,12 +14099,16 @@
                 const next = defaultVal !== undefined ? defaultVal : fallback;
                 if (next === undefined) return;
                 if (this.app.pushHistory) this.app.pushHistory();
+                const prev = noise[def.key];
                 noise[def.key] = next;
                 if (def.key === 'type') {
                   const fallbackTileMode = getNoiseDefault(idx, 'tileMode') || 'off';
                   if (next === 'image') {
                     noise.tileMode = 'off';
                     noise.tilePadding = 0;
+                    if (prev !== 'image') {
+                      noise.amplitude = IMAGE_NOISE_DEFAULT_AMPLITUDE;
+                    }
                   } else if (!noise.tileMode) {
                     noise.tileMode = fallbackTileMode;
                   }
