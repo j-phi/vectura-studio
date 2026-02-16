@@ -1055,6 +1055,20 @@ input[type='color']::-webkit-color-swatch {
   min-height: 0;
 }
 
+#pens-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: min(34vh, 300px);
+  overflow: hidden;
+}
+
+#pen-list {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
 .pane-collapsed {
   width: var(--pane-collapsed-width);
 }
@@ -1788,6 +1802,10 @@ input[type='color']::-webkit-color-swatch {
 
   .mobile-layout .right-panel-section-primary {
     max-height: min(42vh, 320px);
+  }
+
+  .mobile-layout #pens-section {
+    max-height: min(26vh, 220px);
   }
 
   .mobile-layout .auto-collapsed .pane:not(.pane-force-open),

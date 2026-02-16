@@ -21,10 +21,10 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Alignment guides for canvas center and size matching while dragging.
 - Guide visibility and snapping toggles in Settings (Cmd while dragging overrides snapping).
 - Optional 10mm grid overlay toggle in Settings for layout alignment.
-- Auto-colorization for active/selected/all layer scopes with `None` reset mode, one-shot Apply, and Continuous Apply Changes (when continuous is off, mode/parameter/palette edits are staged until Apply).
+- Auto-colorization for active/selected/all layer scopes with `None` reset mode, one-shot Apply, and Continuous Apply Changes (manual Apply now queues correctly for back-to-back mode changes; when continuous is off, mode/parameter/palette edits are staged until Apply).
 - Optional cookie-backed UI preference persistence from Settings.
 - In-app help guide and shortcut menu (press `?`).
-- Mobile-first responsive shell for small phones (including iPhone mini): horizontal-scrolling action bar, bottom-docked tool rail, and slide-over side drawers for Generator/Layers panels; right-panel sections now scroll independently on short screens, and collapsed side panes keep a visible edge tab on very small phones.
+- Mobile-first responsive shell for small phones (including iPhone mini): horizontal-scrolling action bar, bottom-docked tool rail, and slide-over side drawers for Generator/Layers panels; right-panel sections now scroll independently on short screens (including the Pens section), and collapsed side panes keep a visible edge tab on very small phones.
 - Parameter randomization and simplification controls with live line/point counts.
 - Algorithm-aware randomization bias for Shape Pack, Petalis, Rainfall, and Lissajous (strong defaults with occasional outliers).
 - Reset to Defaults now restores full algorithm defaults, including transform values (seed, position, scale, rotation).
