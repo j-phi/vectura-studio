@@ -1217,13 +1217,6 @@
     const designerShapeOnly = Boolean(p.useDesignerShapeOnly || p.label === 'Petalis Designer');
     const normalizeShadingTarget = (value) =>
       value === 'inner' || value === 'outer' || value === 'both' ? value : 'both';
-    const designerRingTarget = designerShapeOnly
-      ? p.petalRing === 'inner' || p.petalRing === 'outer' || p.petalRing === 'both'
-        ? p.petalRing
-        : p.ringMode === 'single'
-        ? 'inner'
-        : 'both'
-      : 'both';
     const shadings = Array.isArray(p.shadings) ? p.shadings : [];
     const legacyShadings = [];
     if (!shadings.length && !designerShapeOnly && (p.innerShading || p.outerShading)) {
@@ -1268,16 +1261,14 @@
       ...(shade || {}),
       target: normalizeShadingTarget(shade?.target),
     }));
-    const ringMode = designerShapeOnly ? (designerRingTarget === 'both' ? 'dual' : 'single') : p.ringMode || 'single';
-    const singleRingTarget =
-      designerShapeOnly && designerRingTarget !== 'both' ? designerRingTarget : 'outer';
+    const ringMode = designerShapeOnly ? 'dual' : p.ringMode || 'single';
+    const singleRingTarget = 'outer';
     const getRingShadingStack = (ringTarget) => {
       if (!designerShapeOnly) return baseShadingStack;
       const resolved = ringTarget === 'inner' || ringTarget === 'outer' ? ringTarget : 'both';
       return baseShadingStack.filter((shade) => {
         const target = normalizeShadingTarget(shade?.target);
-        if (designerRingTarget === 'both') return target === 'both' || target === resolved;
-        return target === resolved;
+        return target === 'both' || target === resolved;
       });
     };
     const normalizeTipRotate = (value) => (value > 10 ? value / 10 : value);
@@ -1360,11 +1351,7 @@
               count: Math.max(
                 1,
                 Math.round(
-                  (designerShapeOnly
-                    ? singleRingTarget === 'inner'
-                      ? p.innerCount ?? p.count ?? 120
-                      : p.outerCount ?? p.count ?? 120
-                    : p.count ?? 120) * (1 + rng.nextRange(-countJitter, countJitter))
+                  (p.count ?? 120) * (1 + rng.nextRange(-countJitter, countJitter))
                 )
               ),
               minR: 0,
