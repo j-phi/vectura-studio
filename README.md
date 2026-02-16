@@ -21,7 +21,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Alignment guides for canvas center and size matching while dragging.
 - Guide visibility and snapping toggles in Settings (Cmd while dragging overrides snapping).
 - Optional 10mm grid overlay toggle in Settings for layout alignment.
-- Auto-colorization for active/selected/all layer scopes with `None` reset mode, one-shot Apply, and Continuous Apply Changes (manual Apply now queues correctly for back-to-back mode changes; when continuous is off, mode/parameter/palette edits are staged until Apply).
+- Auto-colorization for active/selected/all layer scopes with `None` reset mode, one-shot Apply, and Continuous Apply Changes (continuous updates now re-run correctly while editing pens/palettes, and manual Apply supports chaining one method and then another when continuous is off).
 - Optional cookie-backed UI preference persistence from Settings.
 - In-app help guide and shortcut menu (press `?`).
 - Mobile-first responsive shell for small phones (including iPhone mini): horizontal-scrolling action bar, bottom-docked tool rail, and slide-over side drawers for Generator/Layers panels; right-panel sections now scroll independently on short screens (including the Pens section), and collapsed side panes keep a visible edge tab on very small phones.
@@ -42,7 +42,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Petalis profile transitions: `Inner = Outer` lock plus split/feather controls to morph from innermost to outermost petal profiles.
 - Petal Designer interactions include direct/pen anchor editing with modifier support (`Shift` constrain, `Alt/Option` convert, break, or remove handles, `Cmd/Ctrl` temporary direct), plus middle-drag pan and wheel zoom.
 - Custom Petalis preset reset now clears shading (`shadings=[]`) instead of re-enabling legacy shading toggles.
-- Pen palette with assignable colors/widths, reorderable list, drag-to-assign per layer or selection, double-click-to-apply on selected layers, plus palette selection and add/remove controls.
+- Pen palette with assignable colors/widths, reorderable list, drag-to-assign per layer or selection, double-click-to-apply on selected layers, plus palette selection, collapsible panel controls, and add/remove actions.
 - Plotter optimization slider to remove fully overlapping paths per pen before export.
 - Optimization pipeline (linesimplify, linesort, filter, multipass) with scope selection, preview overlays, and export toggle.
 - One-click SVG export with configurable precision and grouping by pen assignment.

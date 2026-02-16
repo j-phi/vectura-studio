@@ -4616,6 +4616,7 @@
       this.initBottomPaneResizer();
       this.initPaneResizers();
       this.initToolBar();
+      this.initPensSection();
       this.renderLayers();
       this.renderPens();
       this.initPaletteControls();
@@ -6788,9 +6789,9 @@
             <div>Assign pens per layer or selection by dragging a pen onto layers.</div>
             <div>Double-click a pen icon to apply that pen to the selected layers instantly.</div>
             <div>Touch fallback: tap a pen icon to arm it, then tap layers/groups to apply.</div>
-            <div>Use the palette dropdown to recolor pens; add or remove pens from the panel.</div>
+            <div>The Pens panel can be collapsed from its section header; use the palette dropdown to recolor pens, then add/remove/reorder pens as needed.</div>
             <div>Auto-Colorization includes None mode, one-shot Apply, and Continuous Apply Changes.</div>
-            <div>If Continuous Apply Changes is off, mode/parameter/palette updates are staged until you press Apply (including fast back-to-back mode changes).</div>
+            <div>If Continuous Apply Changes is off, mode/parameter/palette updates are staged until you press Apply (including chaining one method and then another).</div>
             <div>Plotter Optimization in Settings removes fully overlapping paths per pen.</div>
             <div>Toggle Export Optimized to include optimization passes in the exported SVG.</div>
             <div>SVG export preserves pen groupings for plotter workflows.</div>
@@ -7737,6 +7738,7 @@
           const pen = pens.find((p) => p.id === layer.penId);
           if (pen) layer.color = pen.color;
         });
+        this.applyAutoColorization({ commit: false, skipLayerRender: true, source: 'continuous' });
       }
       if (!options.skipRender) {
         this.renderPens();
@@ -7788,6 +7790,22 @@
       this.renderPens();
       this.renderLayers();
       this.app.render();
+    }
+
+    initPensSection() {
+      const section = getEl('pens-global-section');
+      const header = getEl('pens-section-header');
+      const body = getEl('pens-section-body');
+      if (!section || !header || !body) return;
+
+      const setCollapsed = (next) => {
+        SETTINGS.pensCollapsed = Boolean(next);
+        section.classList.toggle('collapsed', Boolean(next));
+        body.style.display = next ? 'none' : '';
+      };
+
+      setCollapsed(SETTINGS.pensCollapsed === true);
+      header.onclick = () => setCollapsed(!section.classList.contains('collapsed'));
     }
 
     initPaletteControls() {
@@ -7941,7 +7959,10 @@
       modeSelect.value = config.mode || AUTO_COLOR_MODES[0].value;
 
       const applyIfContinuous = (options = {}) => {
-        if (!config.enabled) return;
+        if (!config.enabled) {
+          if (this.autoColorizationStatusEl) this.autoColorizationStatusEl.textContent = 'Staged';
+          return;
+        }
         this.applyAutoColorization({ ...options, source: 'continuous' });
       };
 
@@ -8005,6 +8026,8 @@
         config.enabled = Boolean(enabledToggle.checked);
         if (config.enabled) {
           this.applyAutoColorization({ commit: true });
+        } else if (this.autoColorizationStatusEl) {
+          this.autoColorizationStatusEl.textContent = 'Staged';
         }
       };
       scopeSelect.onchange = () => {
@@ -8025,6 +8048,8 @@
       renderParams();
       if (config.enabled) {
         this.applyAutoColorization({ commit: false });
+      } else if (this.autoColorizationStatusEl) {
+        this.autoColorizationStatusEl.textContent = 'Staged';
       }
     }
 
@@ -10223,6 +10248,9 @@
                 layer.color = pen.color;
               }
             });
+            if (SETTINGS.autoColorization?.enabled) {
+              this.applyAutoColorization({ commit: false, skipLayerRender: true, source: 'continuous' });
+            }
             this.app.render();
           };
         }
@@ -10237,6 +10265,9 @@
                 layer.strokeWidth = pen.width;
               }
             });
+            if (SETTINGS.autoColorization?.enabled) {
+              this.applyAutoColorization({ commit: false, skipLayerRender: true, source: 'continuous' });
+            }
             this.app.render();
           };
         }
