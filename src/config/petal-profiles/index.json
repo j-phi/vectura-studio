@@ -1,5 +1,15 @@
 {
   "files": [
+    "oval.json",
+    "teardrop.json",
+    "lanceolate.json",
+    "heart.json",
+    "spoon.json",
+    "rounded.json",
+    "notched.json",
+    "spatulate.json",
+    "marquise.json",
+    "dagger.json",
     "teardrop-pair.json",
     "camellia-dual.json",
     "inner-spoon.json"

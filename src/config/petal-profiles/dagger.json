@@ -1,0 +1,8 @@
+{
+  "type": "vectura-petal-profile",
+  "version": 1,
+  "id": "dagger",
+  "name": "Dagger",
+  "innerProfile": "dagger",
+  "outerProfile": "dagger"
+}

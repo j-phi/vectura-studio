@@ -322,7 +322,7 @@
   const applyDesignerProfileSymmetry = (points, length, symmetry) => {
     if (!Array.isArray(points) || points.length < 2) return points;
     const mode = normalizeDesignerSymmetry(symmetry);
-    if (mode !== 'horizontal' && mode !== 'both') {
+    if (mode !== 'horizontal' && mode !== 'vertical' && mode !== 'both') {
       return points.map((pt) => ({ x: pt.x, y: Math.max(0, pt.y) }));
     }
     const safeLength = Math.max(1e-6, length ?? points[points.length - 1]?.x ?? 1);
@@ -1335,7 +1335,9 @@
     const petals = [];
     const occluders = [];
     const layering = p.layering !== false;
-    const designerShapeOnly = Boolean(p.useDesignerShapeOnly || p.label === 'Petalis Designer');
+    const designerShapeOnly = Boolean(
+      p.useDesignerShapeOnly || p.label === 'Petalis' || p.label === 'Petalis Designer'
+    );
     const shadings = Array.isArray(p.shadings) ? p.shadings : [];
     const modifiers = Array.isArray(p.petalModifiers) ? p.petalModifiers : [];
     const legacyShadings = [];
@@ -1718,7 +1720,9 @@
   };
 
   const formula = (p) => {
-    const designerShapeOnly = Boolean(p.useDesignerShapeOnly || p.label === 'Petalis Designer');
+    const designerShapeOnly = Boolean(
+      p.useDesignerShapeOnly || p.label === 'Petalis' || p.label === 'Petalis Designer'
+    );
     const profileExpr = designerShapeOnly ? 'designer(inner->outer)' : `profile(${p.petalProfile || 'teardrop'})`;
     return (
       `θ = i * ${p.spiralMode === 'custom' ? p.customAngle ?? GOLDEN_ANGLE : GOLDEN_ANGLE}°\n` +

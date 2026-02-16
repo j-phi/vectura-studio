@@ -1,0 +1,8 @@
+{
+  "type": "vectura-petal-profile",
+  "version": 1,
+  "id": "teardrop",
+  "name": "Teardrop",
+  "innerProfile": "teardrop",
+  "outerProfile": "teardrop"
+}

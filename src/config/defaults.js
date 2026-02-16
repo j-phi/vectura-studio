@@ -166,7 +166,7 @@
       curves: true,
     },
     petalisDesigner: {
-      label: 'Petalis Designer',
+      label: 'Petalis',
       preset: 'custom',
       petalProfile: 'teardrop',
       petalScale: 32,

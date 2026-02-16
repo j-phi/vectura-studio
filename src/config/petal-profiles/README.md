@@ -1,6 +1,6 @@
 # Petal Profile Library
 
-Place Petalis Designer profile JSON files in this folder.
+Place Petalis profile JSON files in this folder.
 
 Supported profile format:
 
@@ -21,3 +21,4 @@ Valid shape fields:
 - `shape` + `target` (`inner`, `outer`, or `both`) for one-shape profiles
 
 `index.json` can list files explicitly, and directory listing ingestion is also supported when the static host exposes folder listings.
+Petalis now populates PROFILE dropdowns from this directory only.

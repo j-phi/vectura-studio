@@ -1,0 +1,8 @@
+{
+  "type": "vectura-petal-profile",
+  "version": 1,
+  "id": "notched",
+  "name": "Notched",
+  "innerProfile": "notched",
+  "outerProfile": "notched"
+}

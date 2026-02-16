@@ -28,7 +28,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - In-app help guide and shortcut menu (press `?`).
 - Mobile-first responsive shell for small phones (including iPhone mini): touch-friendly `File/Edit/View/Help` top menus, bottom-docked tool rail, and slide-over side drawers for Generator/Layers panels; right-panel sections now scroll independently on short screens (including the Pens section), and collapsed side panes keep a visible edge tab on very small phones.
 - Parameter randomization and simplification controls with live line/point counts.
-- Algorithm-aware randomization bias for Shape Pack, Petalis Designer, Rainfall, and Lissajous (strong defaults with occasional outliers).
+- Algorithm-aware randomization bias for Shape Pack, Petalis, Rainfall, and Lissajous (strong defaults with occasional outliers).
 - Reset to Defaults now restores full algorithm defaults, including transform values (seed, position, scale, rotation).
 - Double-click any value to edit it inline, and double-click a control to reset to defaults.
 - Fast duplication and nudging: Cmd/Ctrl+D duplicates selection, Alt-drag (Option-drag) to duplicate, arrow keys to nudge (Shift for larger steps).
@@ -38,14 +38,14 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Harmonograph anti-loop controls (frequency drift + settle cutoff) and a Virtual Plotter preview with playhead scrubbing and speed presets.
 - Rainfall generator with wind, droplet styling, and optional silhouette masking.
 - Wavetable noise stack with per-noise blend modes, tile patterns, image effects, polygon noise, and drag-to-reorder layers.
-- Petalis Designer generator with radial petals, editable inner/outer designer curves, shading, modifier stacks, and 20 named presets (plus an in-dev light source marker). Hatch Angle rotates shading strokes in place inside petals rather than shifting shading placement on the canvas.
-- Petalis Designer algorithm with an embedded full Petal Designer panel in the parameter stack (shape comes from visible designer curves, without hidden legacy tip/base modifiers).
-- Petal Designer inline editor and pop-out window use high-DPI rendering with immediate canvas updates, always-on dual-ring controls (`Inner Petal Count`/`Outer Petal Count` plus `Split Feathering`), a `PETAL VISUALIZER` pane with `Overlay` / `Side by Side`, a `PROFILE EDITOR` (`Inner Shape`/`Outer Shape`) with per-side profile import/export, and matching `Shading Stack` + `Modifier Stack` controls where each card has its own `Petal Shape` target (`Inner`/`Outer`/`Both`). The inline panel can pop out (⧉) and pop back in (↩) while keeping the exact same controls and layout.
-- Petalis Designer profile transitions: `Inner = Outer` lock plus count-driven ring boundary and split feathering to morph from innermost to outermost petal profiles.
+- Petalis generator with radial petals, editable inner/outer designer curves, shading, modifier stacks, and 20 named presets (plus an in-dev light source marker). Hatch Angle rotates shading strokes in place inside petals rather than shifting shading placement on the canvas.
+- Petalis algorithm with an embedded full Petal Designer panel in the parameter stack (shape comes from visible designer curves, without hidden legacy tip/base modifiers).
+- Petal Designer inline editor and pop-out window use high-DPI rendering with immediate canvas updates, always-on dual-ring controls (`Inner Petal Count`/`Outer Petal Count` plus `Split Feathering`), a `PETAL VISUALIZER` pane with `Overlay` / `Side by Side`, a `PROFILE EDITOR` (`Inner Shape`/`Outer Shape`) with per-side profile import/export and a shared `Export Pair` action below both cards, and matching `Shading Stack` + `Modifier Stack` controls where each card has its own `Petal Shape` target (`Inner`/`Outer`/`Both`). The inline panel can pop out (⧉) and pop back in (↩) while keeping the exact same controls and layout.
+- Petalis profile transitions: `Inner = Outer` lock plus count-driven ring boundary and split feathering to morph from innermost to outermost petal profiles.
 - Petal Designer interactions include direct/pen anchor editing with modifier support (`Shift` constrain, `Alt/Option` convert, break, or remove handles, `Cmd/Ctrl` temporary direct), plus middle-drag pan and wheel zoom (when both petals are visible, wheel zoom updates both equally).
-- Petalis Designer layering now clips petals across both rings when `Layering` is enabled, preventing see-through overlaps.
+- Petalis layering now clips petals across both rings when `Layering` is enabled, preventing see-through overlaps.
 - Petal Designer shading preview now reflects the full shading parameters (coverage, gaps, line style, jitter, angle, per-card targets, and stack enable/disable) without legacy radial fallback in designer mode.
-- Custom Petalis Designer preset reset now clears shading (`shadings=[]`) instead of re-enabling legacy shading toggles.
+- Custom Petalis preset reset now clears shading (`shadings=[]`) instead of re-enabling legacy shading toggles.
 - Pen palette with assignable colors/widths, reorderable list, drag-to-assign per layer or selection, double-click-to-apply on selected layers, plus palette selection, collapsible panel controls, and add/remove actions.
 - Plotter optimization slider to remove fully overlapping paths per pen before export.
 - Optimization pipeline (linesimplify, linesort, filter, multipass) with scope selection, preview overlays, and export toggle.
@@ -101,7 +101,7 @@ CI lives in `.github/workflows/test.yml`:
 4. Manage layers on the right: add, reorder (drag the grip), duplicate, hide, rename (double-click), expand into sublayers, and assign pens (drag a pen onto a layer to apply to the selection).
 5. Use Settings for machine size, margin, truncation, margin guides, stroke, background, SVG precision, auto-colorization, and optional cookie preference saving.
 6. Save/Open full projects via .vectura files, or import SVGs as new layers.
-7. Switch to the Petalis Designer algorithm to use the embedded inline designer panel, then use ⧉ to pop it out into a floating window or ↩ to dock it back in. In Petalis Designer, petal shape is driven by visible inner/outer designer curves, always-on inner/outer count + split controls, a `PETAL VISUALIZER` (`Overlay` / `Side by Side`), a `PROFILE EDITOR` with per-side profile import/export controls, and `Shading Stack` + `Modifier Stack` cards where each entry has its own `Petal Shape` target (`Inner`/`Outer`/`Both`) plus symmetry controls.
+7. Switch to the Petalis algorithm to use the embedded inline designer panel, then use ⧉ to pop it out into a floating window or ↩ to dock it back in. In Petalis, petal shape is driven by visible inner/outer designer curves, always-on inner/outer count + split controls, a `PETAL VISUALIZER` (`Overlay` / `Side by Side`), a `PROFILE EDITOR` with per-side profile import/export controls plus a shared `Export Pair` button below both profile cards, and `Shading Stack` + `Modifier Stack` cards where each entry has its own `Petal Shape` target (`Inner`/`Outer`/`Both`) plus symmetry controls.
 8. Export from `File > Export SVG`.
 
 Pan: Shift + Drag. Zoom: Mouse Wheel. Touch: one-finger tool input, two-finger pan/pinch zoom. On phones, use the top `File/Edit/View/Help` menu bar, then open Generator/Layers with pane toggles (including edge tabs) and expand/collapse the Model panel with the floating Model button. Move layer: Drag. Resize layer: Drag corner handles. Rotate: Drag the upper-right handle (Shift snaps). Duplicate: Alt-drag. Expand: Cmd/Ctrl + E. Pen tool: click to add points, click-drag for bezier curves (Shift constrains, Alt breaks handles), double-click near the first point to close, Enter commits, Esc cancels. Pen subtools: `+` add anchor, `-` delete anchor, `Shift+C` convert anchor. Direct tool (`A`) edits endpoints and handles on individual line paths. Scissor tool: drag a line/rect/circle to split intersecting paths. Petal Designer adds middle-drag panning, wheel zoom-to-cursor (both visible petals zoom together), and Illustrator-style `Shift`/`Alt`/`Cmd/Ctrl` editing modifiers.
@@ -118,7 +118,7 @@ Each layer is powered by an algorithm with its own parameters and formula previe
 - Rings: concentric rings with noise-modulated radii.
 - Topo: contours extracted from a noise-based height field, with mapping modes preserving closed contour loops to avoid seam gaps.
 - Rainfall: rain traces with droplet shaping, wind, and silhouette/ground controls.
-- Petalis Designer: radial petal structures with presets and embedded inner/outer curve editing, always-on dual inner/outer rings, a `PETAL VISUALIZER` (`Overlay` / `Side by Side`), a per-side `PROFILE EDITOR` with import/export support, matching shading/modifier stacks with per-card `Petal Shape` targeting (`Inner`/`Outer`/`Both`), count-driven transition/split-feather controls, and a collapsible randomness/seed panel (defaults: `radialGrowth` 0.05), with shape controlled by visible designer curves instead of hidden legacy tip/base modifiers.
+- Petalis: radial petal structures with presets and embedded inner/outer curve editing, always-on dual inner/outer rings, a `PETAL VISUALIZER` (`Overlay` / `Side by Side`), a per-side `PROFILE EDITOR` with import/export support plus a shared `Export Pair` action below both cards, matching shading/modifier stacks with per-card `Petal Shape` targeting (`Inner`/`Outer`/`Both`), count-driven transition/split-feather controls, and a collapsible randomness/seed panel (defaults: `radialGrowth` 0.05), with shape controlled by visible designer curves instead of hidden legacy tip/base modifiers.
 - Spiral: includes optional closure for looping the outer end back into the spiral.
 - Shape Pack: circle/polygon packing with perspective controls.
 
@@ -160,7 +160,7 @@ flowchart LR
 - `src/ui/` - panels, controls, settings, and SVG export.
 - `src/ui/randomization-utils.js` - shared parameter randomization engine with algorithm-specific bias profiles.
 - `src/config/` - machine profiles, defaults, UI descriptions, palette library, and cross-system preset registry.
-- `src/config/petal-profiles/` - project profile JSON library ingested by Petalis Designer (`index.json` + `.json` profile files).
+- `src/config/petal-profiles/` - project profile JSON library ingested by Petalis (`index.json` + `.json` profile files), including the default profile shapes used to populate Petal Designer PROFILE dropdowns.
 - `tests/` - unit, integration, e2e smoke, visual baseline, and performance suites.
 - `docs/testing.md` - testing workflow details, baseline policy, and CI behavior.
 - `dist/` - optional prebuilt output (not required for local dev).
@@ -170,7 +170,7 @@ flowchart LR
 - Machine sizes live in `src/config/machines.js` and are used for bounds and export dimensions.
 - Pen palettes live in `src/config/palettes.js` and can be edited or extended.
 - Presets live in `src/config/presets.js` as a shared registry; each entry requires `preset_system`, `id`, `name`, and `params`.
-- Petalis Designer profile files can be stored in `src/config/petal-profiles/*.json` and listed in `src/config/petal-profiles/index.json`.
+- Petalis profile files are loaded from `src/config/petal-profiles/*.json` (listed in `src/config/petal-profiles/index.json`) to populate Petal Designer PROFILE dropdowns.
 - Post-Processing Lab includes smoothing/curves/simplify plus the optimization pipeline (linesimplify, linesort, filter, multipass).
 - Keep script order intact in `index.html`; `src/main.js` expects globals to be registered on `window.Vectura`.
 

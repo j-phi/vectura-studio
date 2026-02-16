@@ -1648,6 +1648,12 @@ input[type='color']::-webkit-color-swatch {
   gap: 6px;
 }
 
+.petal-profile-editor-footer {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .petal-designer-shading {
   padding: 12px;
   border-top: 1px solid #334155;

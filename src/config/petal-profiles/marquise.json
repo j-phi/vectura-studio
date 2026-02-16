@@ -1,0 +1,8 @@
+{
+  "type": "vectura-petal-profile",
+  "version": 1,
+  "id": "marquise",
+  "name": "Marquise",
+  "innerProfile": "marquise",
+  "outerProfile": "marquise"
+}

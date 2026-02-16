@@ -1,5 +1,5 @@
 /**
- * Petalis Designer algorithm definition.
+ * Petalis algorithm definition.
  */
 (() => {
   window.Vectura = window.Vectura || {};
@@ -10,7 +10,7 @@
     const widthRatio = Number.isFinite(source.petalWidthRatio) ? source.petalWidthRatio : 1;
     return {
       ...source,
-      label: 'Petalis Designer',
+      label: 'Petalis',
       ringMode: 'dual',
       useDesignerShapeOnly: true,
       petalWidthRatio: widthRatio,
@@ -38,6 +38,6 @@
     }
     : {
       generate: () => [],
-      formula: () => 'Petalis Designer algorithm not loaded.',
+      formula: () => 'Petalis algorithm not loaded.',
     };
 })();

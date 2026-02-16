@@ -1,0 +1,8 @@
+{
+  "type": "vectura-petal-profile",
+  "version": 1,
+  "id": "spoon",
+  "name": "Spoon",
+  "innerProfile": "spoon",
+  "outerProfile": "spoon"
+}

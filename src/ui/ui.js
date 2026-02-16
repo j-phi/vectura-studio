@@ -3700,7 +3700,7 @@
     },
     'petalis.preset': {
       title: 'Preset',
-      description: 'Loads a curated Petalis Designer recipe. Presets overwrite petal, distribution, center, and shading parameters.',
+      description: 'Loads a curated Petalis recipe. Presets overwrite petal, distribution, center, and shading parameters.',
     },
     'petalis.petalProfile': {
       title: 'Petal Profile',
@@ -5264,23 +5264,6 @@
       return { id, name, inner, outer, source, sourcePath };
     }
 
-    getPetalDesignerBuiltinProfiles() {
-      return PETAL_PROFILE_OPTIONS.map((opt) =>
-        this.normalizePetalDesignerProfileDefinition(
-          {
-            id: `builtin-${opt.value}`,
-            name: `Builtin: ${opt.label}`,
-            innerProfile: opt.value,
-            outerProfile: opt.value,
-          },
-          {
-            fallbackId: `builtin-${opt.value}`,
-            source: 'builtin',
-          }
-        )
-      ).filter(Boolean);
-    }
-
     extractPetalDesignerProfileFileNames(listingText) {
       if (typeof listingText !== 'string' || !listingText.trim()) return [];
       const files = [];
@@ -5324,7 +5307,7 @@
       if (Array.isArray(this.petalDesignerProfiles) && this.petalDesignerProfiles.length) {
         return this.petalDesignerProfiles;
       }
-      return this.getPetalDesignerBuiltinProfiles();
+      return [];
     }
 
     async loadPetalDesignerProfiles(options = {}) {
@@ -5332,7 +5315,6 @@
       if (!force && this.petalDesignerProfilesLoaded) return this.getPetalDesignerProfileLibrary();
       if (!force && this.petalDesignerProfilesLoading) return this.petalDesignerProfilesLoading;
       this.petalDesignerProfilesLoading = (async () => {
-        const builtin = this.getPetalDesignerBuiltinProfiles();
         const profileFiles = new Set();
         try {
           const indexRes = await fetch(`${PETAL_DESIGNER_PROFILE_DIRECTORY}index.json`, { cache: 'no-store' });
@@ -5370,7 +5352,6 @@
           }
         }
         const merged = new Map();
-        builtin.forEach((profile) => merged.set(profile.id, profile));
         externalProfiles.forEach((profile) => merged.set(profile.id, profile));
         this.petalDesignerProfiles = Array.from(merged.values()).sort((a, b) =>
           `${a.name || ''}`.localeCompare(`${b.name || ''}`)
@@ -5890,7 +5871,6 @@
           <div class="petal-profile-editor-actions">
             <button type="button" class="petal-copy-btn" data-petal-profile-import="${side}">Import</button>
             <button type="button" class="petal-copy-btn" data-petal-profile-export="${side}">Export ${title}</button>
-            <button type="button" class="petal-copy-btn" data-petal-profile-export-pair="${side}">Export Pair</button>
           </div>
           <input type="file" class="hidden" accept="${PETAL_DESIGNER_PROFILE_IMPORT_ACCEPT}" data-petal-profile-file="${side}" />
         </div>
@@ -5980,6 +5960,9 @@
           <div class="petal-profile-editor-grid">
             ${buildProfileEditorCard('inner', 'Inner Shape')}
             ${buildProfileEditorCard('outer', 'Outer Shape')}
+          </div>
+          <div class="petal-profile-editor-footer">
+            <button type="button" class="petal-copy-btn" data-petal-profile-export-pair>Export Pair</button>
           </div>
         </div>
         <div class="petal-designer-shading">
@@ -6680,7 +6663,6 @@
         const symmetryLabel = card.querySelector(`[data-petal-symmetry-label="${side}"]`);
         const importBtn = card.querySelector(`[data-petal-profile-import="${side}"]`);
         const exportBtn = card.querySelector(`[data-petal-profile-export="${side}"]`);
-        const exportPairBtn = card.querySelector(`[data-petal-profile-export-pair="${side}"]`);
         const fileInput = card.querySelector(`input[data-petal-profile-file="${side}"]`);
         const profiles = this.getPetalDesignerProfilesForSide(side);
         if (profileSelect) {
@@ -6782,19 +6764,20 @@
             this.downloadJsonPayload(payload, `${payload.id}.json`);
           };
         }
-        if (exportPairBtn) {
-          exportPairBtn.onclick = () => {
-            const requested = window.prompt('Profile pair name', 'petal-profile-pair');
-            if (requested === null) return;
-            const payload = this.buildPetalDesignerProfileExportPayload(pd.state, {
-              scope: 'both',
-              name: requested,
-            });
-            if (!payload) return;
-            this.downloadJsonPayload(payload, `${payload.id}.json`);
-          };
-        }
       });
+      const exportPairBtn = pd.root.querySelector('[data-petal-profile-export-pair]');
+      if (exportPairBtn) {
+        exportPairBtn.onclick = () => {
+          const requested = window.prompt('Profile pair name', 'petal-profile-pair');
+          if (requested === null) return;
+          const payload = this.buildPetalDesignerProfileExportPayload(pd.state, {
+            scope: 'both',
+            name: requested,
+          });
+          if (!payload) return;
+          this.downloadJsonPayload(payload, `${payload.id}.json`);
+        };
+      }
     }
 
     syncPetalDesignerControls(pd) {
@@ -6962,7 +6945,7 @@
           this.renderPetalDesigner(pd);
         })
         .catch(() => {
-          // Keep built-in profile options when folder ingestion is unavailable.
+          // Profile ingestion can fail when static hosting blocks directory reads.
         });
       setTool('direct');
       this.syncPetalDesignerControls(pd);
@@ -6975,7 +6958,7 @@
         this.openModal({
           title: 'Petal Designer',
           body:
-            '<p class="modal-text">Add or select a <strong>Petalis Designer</strong> layer first to open the Petal Designer.</p>',
+            '<p class="modal-text">Add or select a <strong>Petalis</strong> layer first to open the Petal Designer.</p>',
         });
         return;
       }
@@ -7621,7 +7604,7 @@
     applyDesignerEdgeSymmetry(edge, symmetry = 'none') {
       if (!Array.isArray(edge) || edge.length < 2) return edge || [];
       const mode = this.normalizeDesignerSymmetryMode(symmetry);
-      if (mode !== 'horizontal' && mode !== 'both') {
+      if (mode !== 'horizontal' && mode !== 'vertical' && mode !== 'both') {
         return edge.map((pt) => ({ t: clamp(pt.t, 0, 1), w: Math.max(0, pt.w) }));
       }
       return edge.map((pt) => {
@@ -8018,7 +8001,8 @@
         const controls = this.sampleDesignerControls(shape, canvas, view);
         controls.forEach((control) => {
           if (control.kind === 'handle') {
-            const anchor = this.designerToCanvas(canvas, { t: control.anchor.t, w: control.anchor.w }, view);
+            const anchorW = control.mirror ? -control.anchor.w : control.anchor.w;
+            const anchor = this.designerToCanvas(canvas, { t: control.anchor.t, w: anchorW }, view);
             ctx.strokeStyle = 'rgba(34, 211, 238, 0.55)';
             ctx.beginPath();
             ctx.moveTo(anchor.x, anchor.y);
@@ -8040,6 +8024,7 @@
 
     sampleDesignerControls(shape, canvas, view = null) {
       const out = [];
+      const mirrorEpsilon = 1e-6;
       this.normalizeDesignerShape(shape);
       (shape.anchors || []).forEach((anchor, index) => {
         const base = this.designerToCanvas(canvas, anchor, view);
@@ -8048,8 +8033,46 @@
           const mirror = this.designerToCanvas(canvas, { t: anchor.t, w: -anchor.w }, view);
           out.push({ kind: 'anchor', point: mirror, index, mirror: true, anchor });
         }
-        if (anchor.in) out.push({ kind: 'handle', which: 'in', point: this.designerToCanvas(canvas, anchor.in, view), index, mirror: false, anchor });
-        if (anchor.out) out.push({ kind: 'handle', which: 'out', point: this.designerToCanvas(canvas, anchor.out, view), index, mirror: false, anchor });
+        if (anchor.in) {
+          out.push({
+            kind: 'handle',
+            which: 'in',
+            point: this.designerToCanvas(canvas, anchor.in, view),
+            index,
+            mirror: false,
+            anchor,
+          });
+          if (Math.abs(anchor.in.w) > mirrorEpsilon) {
+            out.push({
+              kind: 'handle',
+              which: 'in',
+              point: this.designerToCanvas(canvas, { t: anchor.in.t, w: -anchor.in.w }, view),
+              index,
+              mirror: true,
+              anchor,
+            });
+          }
+        }
+        if (anchor.out) {
+          out.push({
+            kind: 'handle',
+            which: 'out',
+            point: this.designerToCanvas(canvas, anchor.out, view),
+            index,
+            mirror: false,
+            anchor,
+          });
+          if (Math.abs(anchor.out.w) > mirrorEpsilon) {
+            out.push({
+              kind: 'handle',
+              which: 'out',
+              point: this.designerToCanvas(canvas, { t: anchor.out.t, w: -anchor.out.w }, view),
+              index,
+              mirror: true,
+              anchor,
+            });
+          }
+        }
       });
       return out;
     }
@@ -8161,6 +8184,7 @@
       if (!anchor) return;
       const pRaw = this.canvasToDesigner(canvas, pos, view, { clampT: hit.kind === 'anchor' });
       const p = e?.shiftKey && hit.kind === 'handle' ? this.snapDesignerHandle(anchor, pRaw) : pRaw;
+      const controlPoint = hit.kind === 'handle' && hit.mirror ? { t: p.t, w: -p.w } : p;
       if (hit.kind === 'anchor') {
         if (hit.index === 0 || hit.index === shape.anchors.length - 1) return;
         const prev = shape.anchors[hit.index - 1];
@@ -8182,8 +8206,8 @@
       } else if (hit.kind === 'handle') {
         const which = hit.which;
         anchor[which] = {
-          t: p.t,
-          w: p.w,
+          t: controlPoint.t,
+          w: controlPoint.w,
         };
         const breakHandle = Boolean(e.altKey || SETTINGS.touchModifiers?.alt);
         if (!breakHandle) {
@@ -8421,8 +8445,8 @@
             Image noise includes an Image Effects stack plus optional style shaping.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Petalis Designer includes an embedded panel; use its pop-out icon (⧉) to open the same panel in a floating window and pop-in (↩) to dock it back.
-            It includes flower presets, radial petal controls, a PETAL VISUALIZER pane (Overlay or Side by Side), a PROFILE EDITOR for inner/outer profile import/export, a shading stack with in-place hatch-angle rotation, and a matching modifier stack.
+            Petalis includes an embedded panel; use its pop-out icon (⧉) to open the same panel in a floating window and pop-in (↩) to dock it back.
+            It includes flower presets, radial petal controls, a PETAL VISUALIZER pane (Overlay or Side by Side), a PROFILE EDITOR for inner/outer profile import/export, an Export Pair button below both profile cards, a shading stack with in-place hatch-angle rotation, and a matching modifier stack.
             Shape comes from editable inner/outer curves, each stack item has its own Petal Shape target (Inner/Outer/Both), and the designer keeps symmetry per side with a collapsible Randomness &amp; Seed section at the bottom.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
@@ -8924,7 +8948,9 @@
       params.radialGrowth = clamp(params.radialGrowth ?? 1, 0.25, 3.2);
       params.centerDensity = Math.round(clamp(params.centerDensity ?? 40, 6, 85));
       params.connectorCount = Math.round(clamp(params.connectorCount ?? 20, 4, 70));
-      const designerDual = Boolean(params.useDesignerShapeOnly || params.label === 'Petalis Designer');
+      const designerDual = Boolean(
+        params.useDesignerShapeOnly || params.label === 'Petalis' || params.label === 'Petalis Designer'
+      );
       const dualRings = designerDual ? true : params.ringMode === 'dual';
       if (dualRings) {
         const sum = (params.innerCount || 0) + (params.outerCount || 0);

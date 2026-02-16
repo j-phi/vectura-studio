@@ -9,7 +9,7 @@
     PetalisAlgorithm ||
     {
       generate: () => [],
-      formula: () => 'Petalis Designer algorithm not loaded.',
+      formula: () => 'Petalis algorithm not loaded.',
     };
 
   window.Vectura.Algorithms = {
