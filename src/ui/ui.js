@@ -8309,7 +8309,7 @@
 
       const applyAutoCollapse = () => {
         const viewportWidth = window.innerWidth;
-        const shouldAuto = viewportWidth < 1200;
+        const shouldAuto = viewportWidth < 640;
         const isMobileLayout = viewportWidth < 900;
         document.body.classList.toggle('auto-collapsed', shouldAuto);
         document.body.classList.toggle('mobile-layout', isMobileLayout);
