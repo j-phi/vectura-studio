@@ -25,3 +25,4 @@ Petalis now populates PROFILE dropdowns from this directory only.
 Notes:
 - Project profiles in this folder should use explicit `inner`/`outer` anchor payloads (no built-in alias fallback).
 - `library.js` is the preloaded profile bundle used for `file://` local runs where JSON `fetch()` is blocked by browser CORS rules.
+- Run `npm run profiles:bundle` after editing JSON files so `library.js` stays synchronized.

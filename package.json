@@ -5,6 +5,7 @@
   "description": "Vectura Studio - physics-inspired vector generator",
   "scripts": {
     "patch:test-runtime": "node scripts/patch-vitest-unicode.js",
+    "profiles:bundle": "node scripts/build-petal-profile-library.js",
     "postinstall": "npm run patch:test-runtime",
     "test": "npm run test:unit && npm run test:integration",
     "test:unit": "npm run patch:test-runtime && vitest run tests/unit",

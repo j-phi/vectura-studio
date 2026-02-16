@@ -256,7 +256,7 @@
       ],
       smoothing: 0,
       simplify: 0,
-      curves: false,
+      curves: true,
     },
     rainfall: {
       label: 'Rainfall',

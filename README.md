@@ -40,6 +40,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Wavetable noise stack with per-noise blend modes, tile patterns, image effects, polygon noise, and drag-to-reorder layers.
 - Petalis generator with radial petals, editable inner/outer designer curves, shading, modifier stacks, and 20 named presets (plus an in-dev light source marker). Hatch Angle rotates shading strokes in place inside petals rather than shifting shading placement on the canvas.
 - Petalis algorithm with an embedded full Petal Designer panel in the parameter stack (shape comes from visible designer curves, without hidden legacy tip/base modifiers).
+- Petalis layers now enable `Curves` by default, matching the designer silhouette out of the box.
 - Petal Designer inline editor and pop-out window use high-DPI rendering with immediate canvas updates, always-on dual-ring controls (`Inner Petal Count`/`Outer Petal Count` plus `Split Feathering`), a `PETAL VISUALIZER` pane with `Overlay` / `Side by Side`, a `PROFILE EDITOR` (`Inner Shape`/`Outer Shape`) with per-side profile import/export and a shared `Export Pair` action below both cards, and matching `Shading Stack` + `Modifier Stack` controls where each card has its own `Petal Shape` target (`Inner`/`Outer`/`Both`). The inline panel can pop out (⧉) and pop back in (↩) while keeping the exact same controls and layout.
 - Petalis profile transitions: `Inner = Outer` lock plus count-driven ring boundary and split feathering to morph from innermost to outermost petal profiles.
 - Petalis profile library loads from `src/config/petal-profiles` in both hosted and direct `file://` runs (via a preloaded `library.js` bundle to avoid local CORS fetch errors).
@@ -88,6 +89,7 @@ npm run patch:test-runtime
 - `npm run test:perf` - stress/performance checks for generation and optimization.
 - `npm run test:ci` - PR-gating suite (`unit + integration + e2e`).
 - `npm run test:update` - updates visual SVG baselines (requires review before commit).
+- `npm run profiles:bundle` - rebuilds `src/config/petal-profiles/library.js` from `index.json` + profile JSON files for `file://` local runs.
 - Vitest config is in `vitest.config.mjs`; Playwright config is in `playwright.config.js`.
 
 CI lives in `.github/workflows/test.yml`:
@@ -172,6 +174,7 @@ flowchart LR
 - Pen palettes live in `src/config/palettes.js` and can be edited or extended.
 - Presets live in `src/config/presets.js` as a shared registry; each entry requires `preset_system`, `id`, `name`, and `params`.
 - Petalis project profile files are loaded from `src/config/petal-profiles/*.json` (listed in `src/config/petal-profiles/index.json`) and mirrored in `src/config/petal-profiles/library.js` for `file://` runs.
+- After editing profile JSON files, run `npm run profiles:bundle` so `library.js` stays in sync for direct `index.html` usage.
 - Keep project profile definitions anchor-based (`inner`/`outer` shape payloads) so runtime loading does not depend on built-in shape aliases.
 - Post-Processing Lab includes smoothing/curves/simplify plus the optimization pipeline (linesimplify, linesort, filter, multipass).
 - Keep script order intact in `index.html`; `src/main.js` expects globals to be registered on `window.Vectura`.

@@ -1264,6 +1264,7 @@
   const PETAL_DESIGNER_PROFILE_TYPE = 'vectura-petal-profile';
   const PETAL_DESIGNER_PROFILE_VERSION = 1;
   const PETAL_DESIGNER_PROFILE_BUNDLE_KEY = 'PETAL_PROFILE_LIBRARY';
+  const PETAL_DESIGNER_WIDTH_MATCH_BASELINE = 0.85;
 
   const PETALIS_DESIGNER_DEFAULT_INNER_COUNT = Math.round(
     clamp(ALGO_DEFAULTS?.petalisDesigner?.innerCount ?? 20, 5, 400)
@@ -5336,18 +5337,20 @@
 
     async loadPetalDesignerProfiles(options = {}) {
       const { force = false } = options;
-      if (!force && this.petalDesignerProfilesLoaded) return this.getPetalDesignerProfileLibrary();
+      const isFileProtocol = window?.location?.protocol === 'file:';
+      if (!force && isFileProtocol && this.petalDesignerProfilesLoaded) return this.getPetalDesignerProfileLibrary();
       if (!force && this.petalDesignerProfilesLoading) return this.petalDesignerProfilesLoading;
       this.petalDesignerProfilesLoading = (async () => {
-        const loadedProfiles = [];
-        const addProjectProfile = (payload, sourcePath, fallbackId = '') => {
+        const bundledProfiles = [];
+        const fetchedProfiles = [];
+        const addProjectProfile = (target, payload, sourcePath, fallbackId = '') => {
           const normalized = this.normalizePetalDesignerProfileDefinition(payload, {
             fallbackId,
             source: 'project',
             sourcePath,
             allowPresetFallback: false,
           });
-          if (normalized) loadedProfiles.push(normalized);
+          if (normalized) target.push(normalized);
         };
         const bundled = this.getBundledPetalDesignerProfileDefinitions();
         bundled.forEach((payload, index) => {
@@ -5360,9 +5363,8 @@
             typeof payload.id === 'string' && payload.id.trim()
               ? payload.id.trim()
               : sourcePath.replace(/\.json$/i, '');
-          addProjectProfile(payload, sourcePath, fallbackId);
+          addProjectProfile(bundledProfiles, payload, sourcePath, fallbackId);
         });
-        const isFileProtocol = window?.location?.protocol === 'file:';
         if (!isFileProtocol) {
           const profileFiles = new Set();
           try {
@@ -5389,14 +5391,19 @@
               const res = await fetch(`${PETAL_DESIGNER_PROFILE_DIRECTORY}${filename}`, { cache: 'no-store' });
               if (!res.ok) continue;
               const payload = await res.json();
-              addProjectProfile(payload, filename, fallbackId);
+              addProjectProfile(fetchedProfiles, payload, filename, fallbackId);
             } catch (err) {
               // Ignore malformed files and continue loading valid profiles.
             }
           }
         }
+        const sourceProfiles = isFileProtocol
+          ? bundledProfiles
+          : fetchedProfiles.length
+          ? fetchedProfiles
+          : bundledProfiles;
         const merged = new Map();
-        loadedProfiles.forEach((profile) => merged.set(profile.id, profile));
+        sourceProfiles.forEach((profile) => merged.set(profile.id, profile));
         this.petalDesignerProfiles = Array.from(merged.values()).sort((a, b) =>
           `${a.name || ''}`.localeCompare(`${b.name || ''}`)
         );
@@ -5790,6 +5797,16 @@
       return 'none';
     }
 
+    designerSymmetryHasHorizontalAxis(value) {
+      const mode = this.normalizeDesignerSymmetryMode(value);
+      return mode === 'horizontal' || mode === 'both';
+    }
+
+    designerSymmetryHasVerticalAxis(value) {
+      const mode = this.normalizeDesignerSymmetryMode(value);
+      return mode === 'vertical' || mode === 'both';
+    }
+
     getPetalDesignerSymmetryForSide(state, side = 'outer') {
       if (!state || typeof state !== 'object') return 'none';
       const safeSide = side === 'inner' ? 'inner' : 'outer';
@@ -5847,6 +5864,7 @@
         outerCount,
         profileTransitionPosition: transitionPosition,
         profileTransitionFeather: clamp(params.profileTransitionFeather ?? 0, 0, 100),
+        widthRatio: this.normalizePetalDesignerWidthRatio(params.petalWidthRatio ?? 1, 1),
         target: activeTarget,
         activeTarget,
         profileSelections: {
@@ -7296,10 +7314,11 @@
         const side = getSideForCanvas(canvas);
         const shape = pd.state?.[side];
         const view = getViewForCanvas(canvas, side);
+        const symmetry = this.getPetalDesignerSymmetryForSide(pd.state, side);
         let hit = pd.canvasHover?.[hoverKey] || null;
         if (shape && e && Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
           const pos = this.getDesignerCanvasPoint(canvas, e);
-          hit = this.hitDesignerShapeControl(shape, canvas, pos, view);
+          hit = this.hitDesignerShapeControl(shape, canvas, pos, view, symmetry);
           pd.canvasHover[hoverKey] = hit;
         }
         const modifiers = readModifiers(e || {});
@@ -7389,8 +7408,9 @@
           const side = getSideForCanvas(canvas);
           const shape = pd.state[side];
           const view = getViewForCanvas(canvas, side);
+          const symmetry = this.getPetalDesignerSymmetryForSide(pd.state, side);
           const pos = this.getDesignerCanvasPoint(canvas, e);
-          const hit = this.hitDesignerShapeControl(shape, canvas, pos, view);
+          const hit = this.hitDesignerShapeControl(shape, canvas, pos, view, symmetry);
           const modifiers = readModifiers(e);
           if (pd.tool === 'direct' || (pd.tool === 'pen' && modifiers.meta)) {
             if (hit) {
@@ -7480,9 +7500,10 @@
               const side = getSideForCanvas(canvas);
               const shape = pd.state?.[side];
               const view = getViewForCanvas(canvas, side);
+              const symmetry = this.getPetalDesignerSymmetryForSide(pd.state, side);
               if (shape) {
                 const pos = this.getDesignerCanvasPoint(canvas, e);
-                pd.canvasHover[hoverKey] = this.hitDesignerShapeControl(shape, canvas, pos, view);
+                pd.canvasHover[hoverKey] = this.hitDesignerShapeControl(shape, canvas, pos, view, symmetry);
               } else {
                 pd.canvasHover[hoverKey] = null;
               }
@@ -7593,12 +7614,34 @@
       return { x: e.clientX - rect.left, y: e.clientY - rect.top };
     }
 
+    normalizePetalDesignerWidthRatio(value, fallback = 1) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) return clamp(fallback, 0.01, 2);
+      return clamp(numeric, 0.01, 2);
+    }
+
+    getPetalDesignerWidthRatioForCanvas(canvas, fallback = 1) {
+      const resolveFromDesigner = (designerState) => {
+        if (!designerState?.root || !designerState?.state || !canvas || !designerState.root.contains(canvas)) {
+          return null;
+        }
+        const layer = this.getLayerById(designerState.state.layerId);
+        const value = layer?.params?.petalWidthRatio ?? designerState.state?.widthRatio;
+        return this.normalizePetalDesignerWidthRatio(value, fallback);
+      };
+      return resolveFromDesigner(this.petalDesigner)
+        ?? resolveFromDesigner(this.inlinePetalDesigner)
+        ?? this.normalizePetalDesignerWidthRatio(fallback, 1);
+    }
+
     designerToCanvas(canvas, point, view = null) {
       const { width: w, height: h } = this.getDesignerCanvasMetrics(canvas);
       const cx = w * 0.5;
       const baseY = h * 0.88;
       const tSpan = h * 0.74;
-      const wSpan = w * 0.28;
+      const widthRatio = this.getPetalDesignerWidthRatioForCanvas(canvas, 1);
+      const widthScale = widthRatio / PETAL_DESIGNER_WIDTH_MATCH_BASELINE;
+      const wSpan = w * 0.28 * widthScale;
       const zoom = Math.max(0.35, view?.zoom ?? 1);
       const panX = view?.panX ?? 0;
       const panY = view?.panY ?? 0;
@@ -7615,7 +7658,9 @@
       const cx = w * 0.5;
       const baseY = h * 0.88;
       const tSpan = h * 0.74;
-      const wSpan = w * 0.28;
+      const widthRatio = this.getPetalDesignerWidthRatioForCanvas(canvas, 1);
+      const widthScale = widthRatio / PETAL_DESIGNER_WIDTH_MATCH_BASELINE;
+      const wSpan = w * 0.28 * widthScale;
       const zoom = Math.max(0.35, view?.zoom ?? 1);
       const panX = view?.panX ?? 0;
       const panY = view?.panY ?? 0;
@@ -7648,7 +7693,7 @@
     applyDesignerEdgeSymmetry(edge, symmetry = 'none') {
       if (!Array.isArray(edge) || edge.length < 2) return edge || [];
       const mode = this.normalizeDesignerSymmetryMode(symmetry);
-      if (mode !== 'horizontal' && mode !== 'vertical' && mode !== 'both') {
+      if (!this.designerSymmetryHasVerticalAxis(mode)) {
         return edge.map((pt) => ({ t: clamp(pt.t, 0, 1), w: Math.max(0, pt.w) }));
       }
       return edge.map((pt) => {
@@ -8042,7 +8087,7 @@
       }
 
       if (showControls) {
-        const controls = this.sampleDesignerControls(shape, canvas, view);
+        const controls = this.sampleDesignerControls(shape, canvas, view, symmetry);
         controls.forEach((control) => {
           if (control.kind === 'handle') {
             const anchorW = control.mirror ? -control.anchor.w : control.anchor.w;
@@ -8066,14 +8111,15 @@
       ctx.restore();
     }
 
-    sampleDesignerControls(shape, canvas, view = null) {
+    sampleDesignerControls(shape, canvas, view = null, symmetry = 'none') {
       const out = [];
       const mirrorEpsilon = 1e-6;
+      const showMirroredControls = this.designerSymmetryHasHorizontalAxis(symmetry);
       this.normalizeDesignerShape(shape);
       (shape.anchors || []).forEach((anchor, index) => {
         const base = this.designerToCanvas(canvas, anchor, view);
         out.push({ kind: 'anchor', point: base, index, mirror: false, anchor });
-        if (index > 0 && index < shape.anchors.length - 1) {
+        if (showMirroredControls && index > 0 && index < shape.anchors.length - 1) {
           const mirror = this.designerToCanvas(canvas, { t: anchor.t, w: -anchor.w }, view);
           out.push({ kind: 'anchor', point: mirror, index, mirror: true, anchor });
         }
@@ -8086,7 +8132,7 @@
             mirror: false,
             anchor,
           });
-          if (Math.abs(anchor.in.w) > mirrorEpsilon) {
+          if (showMirroredControls && Math.abs(anchor.in.w) > mirrorEpsilon) {
             out.push({
               kind: 'handle',
               which: 'in',
@@ -8106,7 +8152,7 @@
             mirror: false,
             anchor,
           });
-          if (Math.abs(anchor.out.w) > mirrorEpsilon) {
+          if (showMirroredControls && Math.abs(anchor.out.w) > mirrorEpsilon) {
             out.push({
               kind: 'handle',
               which: 'out',
@@ -8121,8 +8167,8 @@
       return out;
     }
 
-    hitDesignerShapeControl(shape, canvas, pos, view = null) {
-      const controls = this.sampleDesignerControls(shape, canvas, view);
+    hitDesignerShapeControl(shape, canvas, pos, view = null, symmetry = 'none') {
+      const controls = this.sampleDesignerControls(shape, canvas, view, symmetry);
       let best = null;
       let bestDist = Infinity;
       controls.forEach((control) => {
@@ -8386,6 +8432,7 @@
       params.petalSteps = Math.max(64, Math.round(params.petalSteps ?? 64));
       params.petalProfile = state.outer.profile || params.petalProfile || 'teardrop';
       params.petalWidthRatio = Number.isFinite(params.petalWidthRatio) ? params.petalWidthRatio : 1;
+      state.widthRatio = this.normalizePetalDesignerWidthRatio(params.petalWidthRatio, 1);
       params.petalLengthRatio = 1;
       params.petalSizeRatio = 1;
       params.leafSidePos = 0.45;
@@ -8495,6 +8542,7 @@
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             PROFILE dropdown entries come from <code>src/config/petal-profiles</code> and remain available when opening <code>index.html</code> directly (no local server required).
+            If you edit profile JSON files, run <code>npm run profiles:bundle</code> so the <code>library.js</code> file:// fallback stays in sync.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Left panel sections are collapsible; Transform &amp; Seed lives inside Algorithm in its own collapsible sub-panel (collapsed by default), and ABOUT visibility is remembered.
