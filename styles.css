@@ -1383,6 +1383,8 @@ input[type='color']::-webkit-color-swatch {
 
 .petal-tool-btn,
 .petal-close,
+.petal-popout,
+.petal-popin,
 .petal-copy-btn {
   border: 1px solid #334155;
   background: #0f172a;
@@ -1397,6 +1399,8 @@ input[type='color']::-webkit-color-swatch {
 
 .petal-tool-btn:hover,
 .petal-close:hover,
+.petal-popout:hover,
+.petal-popin:hover,
 .petal-copy-btn:hover {
   border-color: #67e8f9;
   color: #cffafe;
