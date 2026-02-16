@@ -8327,6 +8327,7 @@
           sibling.classList.add('pane-collapsed');
         }
         if (auto) {
+          pane.classList.remove('pane-collapsed');
           pane.classList.toggle('pane-force-open');
         } else {
           pane.classList.toggle('pane-collapsed');
