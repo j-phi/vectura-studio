@@ -1713,6 +1713,10 @@ input[type='color']::-webkit-color-swatch {
   pointer-events: none;
 }
 
+.mobile-layout .settings-panel {
+  z-index: 90;
+}
+
 .settings-panel.open {
   transform: translateX(0);
   pointer-events: auto;
