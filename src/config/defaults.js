@@ -612,6 +612,7 @@
     bgColor: '#121214',
     undoSteps: 20,
     truncate: true,
+    cropExports: true,
     outsideOpacity: 0.5,
     marginLineVisible: false,
     marginLineWeight: 0.2,
