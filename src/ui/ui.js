@@ -98,6 +98,47 @@
     return [t1, t2].filter((t) => t >= 0 && t <= 1);
   };
 
+  const pointsEqual = (a, b, epsilon = 1e-6) => {
+    if (!a || !b) return false;
+    return Math.abs(a.x - b.x) <= epsilon && Math.abs(a.y - b.y) <= epsilon;
+  };
+
+  const clampPointToRect = (pt, rect) => ({
+    x: clamp(pt.x, rect.x, rect.x + rect.w),
+    y: clamp(pt.y, rect.y, rect.y + rect.h),
+  });
+
+  const clipSegmentToRect = (a, b, rect) => {
+    const epsilon = 1e-9;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    let t0 = 0;
+    let t1 = 1;
+    const p = [-dx, dx, -dy, dy];
+    const q = [a.x - rect.x, rect.x + rect.w - a.x, a.y - rect.y, rect.y + rect.h - a.y];
+
+    for (let i = 0; i < 4; i++) {
+      if (Math.abs(p[i]) < epsilon) {
+        if (q[i] < 0) return null;
+        continue;
+      }
+      const r = q[i] / p[i];
+      if (p[i] < 0) {
+        if (r > t1) return null;
+        if (r > t0) t0 = r;
+      } else {
+        if (r < t0) return null;
+        if (r < t1) t1 = r;
+      }
+    }
+
+    if (t0 > t1) return null;
+    const start = clampPointToRect({ x: lerp(a.x, b.x, t0), y: lerp(a.y, b.y, t0) }, rect);
+    const end = clampPointToRect({ x: lerp(a.x, b.x, t1), y: lerp(a.y, b.y, t1) }, rect);
+    if (pointsEqual(start, end)) return null;
+    return [start, end];
+  };
+
   const splitPathByShape = (path, shape) => {
     if (!Array.isArray(path) || path.length < 2) return null;
     const output = [];
@@ -211,26 +252,26 @@
   const clipPathToRect = (path, rect) => {
     if (!Array.isArray(path) || path.length < 2) return [];
     if (!rect || !Number.isFinite(rect.w) || !Number.isFinite(rect.h) || rect.w <= 0 || rect.h <= 0) return [];
-    const segments = splitPathByShape(path, { mode: 'rect', rect });
-    if (!segments) {
-      const pt = path[0];
-      if (pt && pt.x >= rect.x && pt.x <= rect.x + rect.w && pt.y >= rect.y && pt.y <= rect.y + rect.h) {
-        return [path];
+    const output = [];
+    let current = null;
+    for (let i = 0; i < path.length - 1; i++) {
+      const clipped = clipSegmentToRect(path[i], path[i + 1], rect);
+      if (!clipped) {
+        if (current && current.length > 1) output.push(current);
+        current = null;
+        continue;
       }
-      return [];
+
+      const [start, end] = clipped;
+      if (!current || !pointsEqual(current[current.length - 1], start, 1e-4)) {
+        if (current && current.length > 1) output.push(current);
+        current = [start, end];
+        continue;
+      }
+      if (!pointsEqual(current[current.length - 1], end, 1e-4)) current.push(end);
     }
-    return segments.filter((seg) => {
-      if (!seg.length) return false;
-      const first = seg[0];
-      const last = seg[seg.length - 1];
-      const mid = { x: (first.x + last.x) / 2, y: (first.y + last.y) / 2 };
-      return (
-        mid.x >= rect.x - 1e-4 &&
-        mid.x <= rect.x + rect.w + 1e-4 &&
-        mid.y >= rect.y - 1e-4 &&
-        mid.y <= rect.y + rect.h + 1e-4
-      );
-    });
+    if (current && current.length > 1) output.push(current);
+    return output;
   };
 
   const stepPrecision = (step) => {
@@ -17161,7 +17202,7 @@
         }
         group.layers.forEach((l) => {
           const strokeWidth = (l.strokeWidth ?? pen.width ?? SETTINGS.strokeWidth).toFixed(3);
-          const lineCap = l.lineCap || 'round';
+          const lineCap = hardCrop ? 'butt' : l.lineCap || 'round';
           const useCurves = Boolean(l.params && l.params.curves);
           const layerGroupId = escapeXmlAttr(normalizeSvgId(l.name || l.id || 'Layer', 'layer'));
           svg += `<g id="${layerGroupId}" stroke-width="${strokeWidth}" stroke-linecap="${lineCap}" stroke-linejoin="round">`;
