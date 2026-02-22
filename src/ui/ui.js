@@ -14916,7 +14916,7 @@
                     ${preview}
                     <button type="button" class="noise-image-clear text-[10px] text-vectura-muted hover:text-vectura-accent${hasImage ? '' : ' hidden'}">Clear</button>
                   </div>
-                  <div class="text-[10px] text-vectura-muted mt-2 noise-image-name${hasImage ? '' : ' hidden'}">${name}</div>
+                  <div class="text-[10px] text-vectura-muted mt-2 noise-image-name${hasImage ? '' : ' hidden'}"></div>
                 </div>
               </div>
               <input type="file" accept="image/*" class="noise-image-input hidden">
@@ -14925,6 +14925,7 @@
             const selectBtn = wrap.querySelector('.noise-image-btn');
             const clearBtn = wrap.querySelector('.noise-image-clear');
             const nameEl = wrap.querySelector('.noise-image-name');
+            if (nameEl) nameEl.textContent = name;
             const previewEl = wrap.querySelector('.noise-image-preview');
             const fileInput = wrap.querySelector('.noise-image-input');
 
