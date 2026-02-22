@@ -143,6 +143,56 @@
     return pts;
   };
 
+  const sampleQuadratic = (p0, c, p1, segments = 10) => {
+    const pts = [];
+    for (let i = 1; i <= segments; i++) {
+      const t = i / segments;
+      const u = 1 - t;
+      pts.push({
+        x: u * u * p0.x + 2 * u * t * c.x + t * t * p1.x,
+        y: u * u * p0.y + 2 * u * t * c.y + t * t * p1.y,
+      });
+    }
+    return pts;
+  };
+
+  const resampleCurvedPath = (path) => {
+    if (!Array.isArray(path) || path.length < 3) return path;
+    const newPath = [path[0]];
+    let current = path[0];
+    for (let i = 1; i < path.length - 1; i++) {
+      const ctrl = path[i];
+      const next = path[i + 1];
+      const end = { x: (ctrl.x + next.x) / 2, y: (ctrl.y + next.y) / 2 };
+      const pts = sampleQuadratic(current, ctrl, end, 8);
+      pts.forEach((p) => newPath.push(p));
+      current = end;
+    }
+    newPath.push(path[path.length - 1]);
+    if (path.meta) newPath.meta = path.meta;
+    return newPath;
+  };
+
+  const clipPathToRect = (path, rect) => {
+    const segments = splitPathByShape(path, { mode: 'rect', rect });
+    if (!segments) {
+      const pt = path[0];
+      if (pt && pt.x >= rect.x && pt.x <= rect.x + rect.w && pt.y >= rect.y && pt.y <= rect.y + rect.h) {
+        return [path];
+      }
+      return [];
+    }
+    return segments.filter((seg) => {
+      const mid = seg[Math.floor(seg.length / 2)];
+      return (
+        mid.x >= rect.x - 1e-4 &&
+        mid.x <= rect.x + rect.w + 1e-4 &&
+        mid.y >= rect.y - 1e-4 &&
+        mid.y <= rect.y + rect.h + 1e-4
+      );
+    });
+  };
+
   const stepPrecision = (step) => {
     const s = step?.toString?.() || '';
     if (!s.includes('.')) return 0;
@@ -2621,8 +2671,12 @@
       description: 'Keeps a safety border around the drawing area in millimeters.',
     },
     'global.truncate': {
-      title: 'Truncate',
+      title: 'Crop Art to Margins',
       description: 'Clips strokes to stay inside the margin boundary.',
+    },
+    'global.cropExports': {
+      title: 'Crop Exports to Margin',
+      description: 'Physically clips paths at the margin boundary during SVG export (recommended for plotters).',
     },
     'global.outsideOpacity': {
       title: 'Outside Opacity',
@@ -10158,6 +10212,7 @@
       const plotterOpt = getEl('set-plotter-opt');
       const undoSteps = getEl('set-undo');
       const truncate = getEl('set-truncate');
+      const cropExports = getEl('set-crop-exports');
       const outsideOpacity = getEl('set-outside-opacity');
       const marginLine = getEl('set-margin-line');
       const marginLineWeight = getEl('set-margin-line-weight');
@@ -10184,6 +10239,7 @@
       if (plotterOpt) plotterOpt.value = SETTINGS.plotterOptimize ?? 0;
       if (undoSteps) undoSteps.value = SETTINGS.undoSteps;
       if (truncate) truncate.checked = SETTINGS.truncate !== false;
+      if (cropExports) cropExports.checked = SETTINGS.cropExports !== false;
       if (outsideOpacity) outsideOpacity.value = SETTINGS.outsideOpacity ?? 0.5;
       if (marginLine) marginLine.checked = Boolean(SETTINGS.marginLineVisible);
       if (marginLineWeight) marginLineWeight.value = SETTINGS.marginLineWeight ?? 0.2;
@@ -10653,6 +10709,7 @@
       const machineProfile = getEl('machine-profile');
       const setMargin = getEl('set-margin');
       const setTruncate = getEl('set-truncate');
+      const setCropExports = getEl('set-crop-exports');
       const setOutsideOpacity = getEl('set-outside-opacity');
       const setMarginLine = getEl('set-margin-line');
       const setMarginLineWeight = getEl('set-margin-line-weight');
@@ -10692,6 +10749,11 @@
           if (this.app.renderer) this.app.renderer.setSelection([id], id);
           this.renderLayers();
           this.app.render();
+        };
+      }
+      if (setCropExports) {
+        setCropExports.onchange = (e) => {
+          SETTINGS.cropExports = e.target.checked;
         };
       }
 
@@ -17040,14 +17102,32 @@
           const lineCap = l.lineCap || 'round';
           const useCurves = Boolean(l.params && l.params.curves);
           svg += `<g id="${l.name.replace(/\s/g, '_')}" stroke-width="${strokeWidth}" stroke-linecap="${lineCap}" stroke-linejoin="round">`;
-          const paths = useOptimized && l.optimizedPaths ? l.optimizedPaths : l.paths;
+          let paths = useOptimized && l.optimizedPaths ? l.optimizedPaths : l.paths;
+          if (SETTINGS.cropExports) {
+            const marginRect = {
+              x: SETTINGS.margin,
+              y: SETTINGS.margin,
+              w: prof.width - SETTINGS.margin * 2,
+              h: prof.height - SETTINGS.margin * 2,
+            };
+            paths = (paths || []).flatMap((p) => {
+              if (p && p.meta && p.meta.kind === 'circle') {
+                const expanded = expandCirclePath(p.meta, 72);
+                return clipPathToRect(expanded, marginRect);
+              }
+              let geom = p;
+              if (useCurves) geom = resampleCurvedPath(p);
+              return clipPathToRect(geom, marginRect);
+            });
+          }
           (paths || []).forEach((p) => {
             if (seen) {
               const key = pathKey(p);
               if (key && seen.has(key)) return;
               if (key) seen.add(key);
             }
-            const markup = shapeToSvg(p, precision, useCurves);
+            const forceLinear = SETTINGS.cropExports;
+            const markup = shapeToSvg(p, precision, forceLinear ? false : useCurves);
             if (markup) svg += markup;
           });
           svg += `</g>`;
