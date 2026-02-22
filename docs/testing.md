@@ -1,5 +1,7 @@
 # Testing Guide
 
+Workflow governance and documentation synchronization rules live in `docs/agentic-harness-strategy.md`.
+
 ## Toolchain
 - Unit/Integration/Visual/Perf: Vitest (`vitest.config.mjs`)
 - E2E smoke: Playwright (`playwright.config.js`)

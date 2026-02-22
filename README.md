@@ -93,6 +93,12 @@ npm run patch:test-runtime
 - Vitest config is in `vitest.config.mjs`; Playwright config is in `playwright.config.js`.
 - Beta-only deferred hardening ideas are tracked in `docs/pre-release-hardening-log.md`.
 
+## Workflow Docs
+- `AGENTS.md` - repository guardrails and mandatory contributor/agent instructions.
+- `docs/agentic-harness-strategy.md` - source-of-truth harness for task intake, evidence standards, testing matrix, and documentation synchronization policy.
+- `docs/testing.md` - test command guidance and CI policy details.
+- `docs/pre-release-hardening-log.md` - deferred hardening items intentionally tracked for final-release prep.
+
 CI lives in `.github/workflows/test.yml`:
 - Pull requests: unit, integration, and e2e smoke.
 - `main` + nightly: visual regression and perf stress lanes.
@@ -166,6 +172,7 @@ flowchart LR
 - `src/config/` - machine profiles, defaults, UI descriptions, palette library, and cross-system preset registry.
 - `src/config/petal-profiles/` - project profile library ingested by Petalis (`index.json` + `.json` profile files with explicit anchors, plus `library.js` for `file://` local loading).
 - `tests/` - unit, integration, e2e smoke, visual baseline, and performance suites.
+- `docs/agentic-harness-strategy.md` - agentic workflow source of truth, including test/doc synchronization contracts.
 - `docs/testing.md` - testing workflow details, baseline policy, and CI behavior.
 - `docs/pre-release-hardening-log.md` - deferred beta hardening ideas to complete before final public release.
 - `dist/` - optional prebuilt output (not required for local dev).
