@@ -25,7 +25,8 @@ describe('Security: Noise Image Filename XSS', () => {
     nameEl.textContent = name;
 
     // Verify it's escaped in innerHTML
-    expect(nameEl.innerHTML).toContain('&lt;img src=x onerror=alert(1)&gt;.jpg');
+    // Truncated: '<img src=x…' -> Escaped: '&lt;img src=x…'
+    expect(nameEl.innerHTML).toContain('&lt;img src=x');
     expect(nameEl.innerHTML).not.toContain('<img');
     expect(nameEl.textContent).toBe(name);
   });
@@ -40,11 +41,11 @@ describe('Security: Noise Image Filename XSS', () => {
     // This is what the fix does
     img.src = noise.imagePreview;
 
-    // In JSDOM, setting .src will escape it for innerHTML attribute
     const wrap = document.createElement('div');
     wrap.appendChild(img);
 
-    expect(wrap.innerHTML).not.toContain('onerror=alert(1)>');
-    // It should be something like <img src="\&quot;&gt;&lt;img src=x onerror=alert(1)&gt;">
+    // Ensure it's treated as one image tag and the malicious payload didn't break out
+    expect(wrap.querySelectorAll('img').length).toBe(1);
+    expect(img.getAttribute('onerror')).toBeNull();
   });
 });
