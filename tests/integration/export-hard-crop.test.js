@@ -72,35 +72,39 @@ describe('SVG export hard crop', () => {
       return el;
     };
 
-    UI.prototype.exportSVG.call({ app });
+    try {
+      UI.prototype.exportSVG.call({ app });
 
-    expect(capturedBlob).toBeTruthy();
-    const svg = await capturedBlob.text();
+      expect(capturedBlob).toBeTruthy();
+      const svg = await capturedBlob.text();
 
-    expect(svg).not.toContain('<clipPath');
-    expect(svg).not.toContain(' clip-path=');
-    expect(svg).not.toContain(' Q ');
+      expect(svg).not.toContain('<clipPath');
+      expect(svg).not.toContain(' clip-path=');
+      expect(svg).not.toContain(' Q ');
 
-    const marginRect = {
-      minX: SETTINGS.margin,
-      maxX: engine.currentProfile.width - SETTINGS.margin,
-      minY: SETTINGS.margin,
-      maxY: engine.currentProfile.height - SETTINGS.margin,
-    };
+      const marginRect = {
+        minX: SETTINGS.margin,
+        maxX: engine.currentProfile.width - SETTINGS.margin,
+        minY: SETTINGS.margin,
+        maxY: engine.currentProfile.height - SETTINGS.margin,
+      };
 
-    const dValues = [...svg.matchAll(/ d="([^"]+)"/g)].map((match) => match[1]);
-    expect(dValues.length).toBeGreaterThan(0);
+      const dValues = [...svg.matchAll(/ d="([^"]+)"/g)].map((match) => match[1]);
+      expect(dValues.length).toBeGreaterThan(0);
 
-    dValues.forEach((d) => {
-      const nums = (d.match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
-      for (let i = 0; i + 1 < nums.length; i += 2) {
-        const x = nums[i];
-        const y = nums[i + 1];
-        expect(x).toBeGreaterThanOrEqual(marginRect.minX - 1e-3);
-        expect(x).toBeLessThanOrEqual(marginRect.maxX + 1e-3);
-        expect(y).toBeGreaterThanOrEqual(marginRect.minY - 1e-3);
-        expect(y).toBeLessThanOrEqual(marginRect.maxY + 1e-3);
-      }
-    });
+      dValues.forEach((d) => {
+        const nums = (d.match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+        for (let i = 0; i + 1 < nums.length; i += 2) {
+          const x = nums[i];
+          const y = nums[i + 1];
+          expect(x).toBeGreaterThanOrEqual(marginRect.minX - 1e-3);
+          expect(x).toBeLessThanOrEqual(marginRect.maxX + 1e-3);
+          expect(y).toBeGreaterThanOrEqual(marginRect.minY - 1e-3);
+          expect(y).toBeLessThanOrEqual(marginRect.maxY + 1e-3);
+        }
+      });
+    } finally {
+      runtime.document.createElement = originalCreateElement;
+    }
   });
 });
