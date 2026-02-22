@@ -13,6 +13,39 @@ describe('Geometry helpers', () => {
     expect(out.meta).toEqual(path.meta);
   });
 
+  test('simplifyPath simplifies using Douglas-Peucker algorithm', () => {
+    const path = [
+      { x: 0, y: 0 },
+      { x: 5, y: 0.5 },
+      { x: 10, y: 0 },
+    ];
+    path.meta = { id: 'test' };
+
+    // Tolerance 1.0 > 0.5 -> simplify
+    const simplified = geometry.simplifyPath(path, 1.0);
+    expect(simplified.length).toBe(2);
+    expect(simplified[0]).toEqual(path[0]);
+    expect(simplified[1]).toEqual(path[2]);
+    expect(simplified.meta).toEqual(path.meta);
+
+    // Tolerance 0.1 < 0.5 -> keep
+    const original = geometry.simplifyPath(path, 0.1);
+    expect(original.length).toBe(3);
+  });
+
+  test('simplifyPath handles edge cases', () => {
+    const path = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }];
+
+    // Invalid tolerance
+    expect(geometry.simplifyPath(path, 0)).toBe(path);
+    expect(geometry.simplifyPath(path, -1)).toBe(path);
+    expect(geometry.simplifyPath(path, undefined)).toBe(path);
+
+    // Short path
+    const shortPath = [{ x: 0, y: 0 }, { x: 10, y: 10 }];
+    expect(geometry.simplifyPath(shortPath, 5)).toBe(shortPath);
+  });
+
   test('simplifyPathVisvalingam preserves at least two points', () => {
     const path = [
       { x: 0, y: 0 },
