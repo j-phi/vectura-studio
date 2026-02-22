@@ -73,6 +73,7 @@
         strokeWidth: SETTINGS.strokeWidth,
         bgColor: SETTINGS.bgColor,
         truncate: SETTINGS.truncate,
+        cropExports: SETTINGS.cropExports,
         outsideOpacity: SETTINGS.outsideOpacity,
         marginLineVisible: SETTINGS.marginLineVisible,
         marginLineWeight: SETTINGS.marginLineWeight,
@@ -118,6 +119,7 @@
       SETTINGS.strokeWidth = snapshot.strokeWidth ?? SETTINGS.strokeWidth;
       SETTINGS.bgColor = snapshot.bgColor ?? SETTINGS.bgColor;
       SETTINGS.truncate = snapshot.truncate ?? SETTINGS.truncate;
+      SETTINGS.cropExports = snapshot.cropExports ?? SETTINGS.cropExports;
       SETTINGS.outsideOpacity = snapshot.outsideOpacity ?? SETTINGS.outsideOpacity;
       SETTINGS.marginLineVisible = snapshot.marginLineVisible ?? SETTINGS.marginLineVisible;
       SETTINGS.marginLineWeight = snapshot.marginLineWeight ?? SETTINGS.marginLineWeight;
@@ -214,6 +216,7 @@
           bgColor: SETTINGS.bgColor,
           undoSteps: SETTINGS.undoSteps,
           truncate: SETTINGS.truncate,
+          cropExports: SETTINGS.cropExports,
           outsideOpacity: SETTINGS.outsideOpacity,
           marginLineVisible: SETTINGS.marginLineVisible,
           marginLineWeight: SETTINGS.marginLineWeight,
@@ -268,6 +271,7 @@
       SETTINGS.bgColor = s.bgColor ?? SETTINGS.bgColor;
       SETTINGS.undoSteps = s.undoSteps ?? SETTINGS.undoSteps;
       SETTINGS.truncate = s.truncate ?? SETTINGS.truncate;
+      SETTINGS.cropExports = s.cropExports ?? SETTINGS.cropExports;
       SETTINGS.outsideOpacity = s.outsideOpacity ?? SETTINGS.outsideOpacity;
       SETTINGS.marginLineVisible = s.marginLineVisible ?? SETTINGS.marginLineVisible;
       SETTINGS.marginLineWeight = s.marginLineWeight ?? SETTINGS.marginLineWeight;
