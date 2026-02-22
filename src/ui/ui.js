@@ -45,7 +45,8 @@
   const roundToStep = (value, step) => (step ? Math.round(value / step) * step : value);
   const DISPLAY_PRECISION = 2;
   const TRANSFORM_KEYS = ['seed', 'posX', 'posY', 'scaleX', 'scaleY', 'rotation'];
-  const clone = (obj) => JSON.parse(JSON.stringify(obj));
+  const clone =
+    typeof structuredClone === 'function' ? (obj) => structuredClone(obj) : (obj) => JSON.parse(JSON.stringify(obj));
   const SEEDLESS_ALGOS = new Set(['lissajous', 'harmonograph', 'expanded', 'group']);
   const usesSeed = (type) => !SEEDLESS_ALGOS.has(type);
   const mapRange = (value, inMin, inMax, outMin, outMax) => {
