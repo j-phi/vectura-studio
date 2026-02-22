@@ -205,8 +205,13 @@
               return fbmNoise(x, y);
             case 'swirl':
               return Math.sin(px * 2 + n * 2) * Math.cos(py * 2 + n);
-            case 'radial':
-              return Math.sin(Math.hypot(px, py) * 3 + n * 2);
+            case 'radial': {
+              // Concentric radial bands with subtle wobble, not simplex-like drift.
+              const r = Math.hypot(px, py);
+              const bands = Math.sin(r * Math.PI * 6);
+              const wobble = baseNoise(px * 0.7 + seed * 0.13, py * 0.7 - seed * 0.17) * 0.2;
+              return Math.max(-1, Math.min(1, bands + wobble));
+            }
             case 'checker': {
               const cx = Math.floor(px * 4);
               const cy = Math.floor(py * 4);
@@ -216,8 +221,11 @@
               const t = Math.abs((px * 2) % 2 - 1);
               return (1 - t) * 2 - 1;
             }
-            case 'ripple':
-              return Math.sin((px + py) * 3 + n * 2);
+            case 'ripple': {
+              const r = Math.hypot(px, py);
+              const ang = Math.atan2(py, px);
+              return Math.sin(r * Math.PI * 8 + Math.sin(ang * 6) * 0.5 + n * 0.35);
+            }
             case 'spiral': {
               const ang = Math.atan2(py, px);
               const rad = Math.hypot(px, py);
@@ -718,6 +726,7 @@
             return {
               blend: noiseLayer.blend || 'add',
               amplitude,
+              type: noiseLayer.type || 'simplex',
               sample: (x, y) => {
                 if (noiseLayer.type === 'image' && tileMode === 'off') {
                   const imageZoom = Math.max(0.1, zoom * 50);
@@ -760,11 +769,20 @@
           ? p.lineStructure
           : 'horizontal';
         const resolvedLineStructure = lineStructure === 'horizontal-vanishing-point' ? 'horizon' : lineStructure;
-        const sampleCombinedNoise = (baseX, baseY, sampleX = baseX, sampleY = baseY) => {
+        const sampleCombinedNoise = (
+          baseX,
+          baseY,
+          sampleX = baseX,
+          sampleY = baseY,
+          imageSampleX = sampleX,
+          imageSampleY = sampleY
+        ) => {
           let combined = 0;
           let hasNoise = false;
           noiseSamplers.forEach((sampler) => {
-            const value = sampler.sample(sampleX, sampleY) * sampler.amplitude;
+            const sx = sampler.type === 'image' ? imageSampleX : sampleX;
+            const sy = sampler.type === 'image' ? imageSampleY : sampleY;
+            const value = sampler.sample(sx, sy) * sampler.amplitude;
             if (!hasNoise) {
               combined = value;
               hasNoise = true;
@@ -852,10 +870,18 @@
           const eased = clamp01(t);
           return Math.max(0, (1 - verticalFadeStrength) + eased * verticalFadeStrength);
         };
-        const displacePoint = (baseX, baseY, strengthScale = 1, sampleX = baseX, sampleY = baseY) => {
+        const displacePoint = (
+          baseX,
+          baseY,
+          strengthScale = 1,
+          sampleX = baseX,
+          sampleY = baseY,
+          imageSampleX = sampleX,
+          imageSampleY = sampleY
+        ) => {
           const xNorm = clamp01((baseX - inset) / Math.max(1e-6, innerW));
           const yNorm = clamp01((baseY - inset) / Math.max(1e-6, innerH));
-          const off = sampleCombinedNoise(baseX, baseY, sampleX, sampleY);
+          const off = sampleCombinedNoise(baseX, baseY, sampleX, sampleY, imageSampleX, imageSampleY);
           const amp = off * getEdgeTaper(xNorm) * getVerticalTaper(yNorm) * strengthScale;
           const dx = amp * lineOffsetX;
           const dy = amp * lineOffsetY;
@@ -884,7 +910,11 @@
             const strength = typeof strengthFn === 'function' ? strengthFn(t) : 1;
             const samplePoint =
               typeof samplePointFn === 'function' ? samplePointFn(baseX, baseY, t) : { x: baseX, y: baseY };
-            path.push(displacePoint(baseX, baseY, strength, samplePoint.x, samplePoint.y));
+            const sampleX = samplePoint?.x ?? baseX;
+            const sampleY = samplePoint?.y ?? baseY;
+            const imageSampleX = samplePoint?.imageX ?? sampleX;
+            const imageSampleY = samplePoint?.imageY ?? sampleY;
+            path.push(displacePoint(baseX, baseY, strength, sampleX, sampleY, imageSampleX, imageSampleY));
           }
           if (path.length > 1) paths.push(path);
         };
@@ -1141,18 +1171,50 @@
           const getDepthState = (y) => {
             const depthNorm = clamp01((y - horizonY) / Math.max(1e-6, nearOffscreenY - horizonY)); // 0=far,1=near
             const farFactor = 1 - depthNorm;
-            const freqBoost = 1 + farFactor * depthPerspective * 4.5;
-            const zShift = farFactor * depthPerspective * innerH * 1.8;
-            const viewerDampen = 0.18 + 0.82 * farFactor; // damp near viewer, restore amplitude near horizon
-            const ampScale = (1 - depthPerspective) + depthPerspective * viewerDampen;
+            const freqBoost = 1 + farFactor * depthPerspective * 3.2;
+            const zShift = farFactor * depthPerspective * innerH * 1.25;
+            // Dampen toward viewer, keep finer/smaller displacement near horizon.
+            const ampScale = (1 - depthPerspective) + depthPerspective * (0.12 + 0.88 * farFactor);
             return { depthNorm, farFactor, freqBoost, zShift, ampScale };
           };
           const samplePointForDepth = (baseX, baseY) => {
-            const d = getDepthState(baseY);
+            const sampleBaseX = Math.max(inset, Math.min(width - inset, baseX));
+            const sampleBaseY = Math.max(horizonY, Math.min(baseY, nearOffscreenY));
+            const d = getDepthState(sampleBaseY);
+            const procX = horizonCenterX + (sampleBaseX - horizonCenterX) * d.freqBoost;
+            const procY = horizonY + (sampleBaseY - horizonY) * d.freqBoost + d.zShift;
+            const centerScale = Math.max(0.12, 1 - d.farFactor * depthPerspective * 0.78);
+            const imgX = horizonCenterX + (sampleBaseX - horizonCenterX) * centerScale;
+            const imgDepth = Math.max(0, Math.min(1, (sampleBaseY - horizonY) / Math.max(1e-6, safeDelta)));
+            const imgY = horizonY + Math.pow(imgDepth, 1 + d.farFactor * depthPerspective * 1.4) * safeDelta;
             return {
-              x: horizonCenterX + (baseX - horizonCenterX) * d.freqBoost + d.zShift * 0.17,
-              y: horizonY + (baseY - horizonY) * d.freqBoost + d.zShift,
+              x: procX,
+              y: procY,
+              imageX: Math.max(inset, Math.min(width - inset, imgX)),
+              imageY: Math.max(inset, Math.min(height - inset, imgY)),
             };
+          };
+          const pushHorizonPath = (x0, y0, x1, y1, strengthFn = null) => {
+            const length = Math.hypot(x1 - x0, y1 - y0);
+            const samples = Math.max(2, Math.floor(length / 2));
+            const path = [];
+            for (let i = 0; i <= samples; i++) {
+              const t = i / samples;
+              const baseX = x0 + (x1 - x0) * t;
+              const baseY = y0 + (y1 - y0) * t;
+              const d = getDepthState(baseY);
+              const sample = samplePointForDepth(baseX, baseY);
+              const xNorm = clamp01((baseX - inset) / Math.max(1e-6, innerW));
+              const clampedY = Math.max(inset, Math.min(height - inset, baseY));
+              const yNorm = clamp01((clampedY - inset) / Math.max(1e-6, innerH));
+              const strength = typeof strengthFn === 'function' ? strengthFn(t, baseX, baseY, d) : 1;
+              const noiseVal = sampleCombinedNoise(baseX, baseY, sample.x, sample.y);
+              // Heightfield uplift from beneath the plane: vertical-only displacement.
+              const amp = noiseVal * getEdgeTaper(xNorm) * getVerticalTaper(yNorm) * d.ampScale * strength;
+              const displacedY = Math.max(horizonY, Math.min(baseY, baseY - amp));
+              path.push({ x: baseX, y: displacedY });
+            }
+            if (path.length > 1) paths.push(path);
           };
           const [horizontalCount, verticalCount] = splitLineBudget(lines, 2);
           for (let i = 0; i < horizontalCount; i++) {
@@ -1160,14 +1222,12 @@
             const depth = Math.pow(t, 2.45) * offscreenDepth;
             const y = horizonY + safeDelta * depth;
             if (y < inset - safeDelta * 0.1) continue;
-            const d = getDepthState(y);
-            pushSegmentPath(
+            pushHorizonPath(
               inset,
               y,
               width - inset,
               y,
-              () => Math.max(0.05, d.depthNorm * 0.34) * d.ampScale,
-              (baseX, baseY) => samplePointForDepth(baseX, baseY)
+              (_s, _x, _y, d) => Math.max(0.04, d.depthNorm * 0.28)
             );
           }
           const nearMinX = xMin;
@@ -1179,20 +1239,12 @@
             const endX = inset + innerW * t; // force fan to reach full top width (both corners)
             const spreadFromCenter = (nearX - horizonCenterX) / Math.max(1e-6, nearSpan * 0.5);
             const startX = nearX + spreadFromCenter * innerW * 0.2;
-            pushSegmentPath(
+            pushHorizonPath(
               startX,
               nearOffscreenY,
               endX,
               horizonY,
-              (s) => {
-                const yAtS = nearOffscreenY + (horizonY - nearOffscreenY) * s;
-                const d = getDepthState(yAtS);
-                return Math.max(0.05, Math.pow(1 - s, 1.25) * 0.34) * d.ampScale;
-              },
-              (baseX, _baseY, s) => {
-                const sampleY = nearOffscreenY + (horizonY - nearOffscreenY) * s;
-                return samplePointForDepth(baseX, sampleY);
-              }
+              (s, _x, _y, d) => Math.max(0.04, Math.pow(1 - s, 1.2) * 0.3 * (0.55 + d.farFactor * 0.45))
             );
           }
           return paths;
