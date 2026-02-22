@@ -7,26 +7,26 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Layered generation with visibility toggles, ordering, and per-layer stroke/line-cap settings.
 - Seeded, repeatable results with live transform controls (position, scale, rotation).
 - Switching algorithms restores transform defaults for the selected algorithm (position/scale/rotation do not carry over).
-- Collapsible left-panel sections with persisted state: `Algorithm` (including a nested `Transform & Seed` sub-panel, collapsed by default), `Algorithm Configuration`, and `Optimization`.
+- Collapsible left-panel sections with persisted state: `Algorithm` (including a nested `Transform & Seed` sub-panel, collapsed by default) and `Algorithm Configuration`.
 - ABOUT card is visible by default, toggled by the Algorithm info button, and remembered in saved UI preferences.
 - Direct canvas manipulation: drag to move the selected layer, drag corner handles to resize, rotate via the upper-right handle, and double-click to rename layers.
 - Multi-selection: shift-click ranges in the layer list, Cmd/Ctrl-click to toggle, or drag a marquee, then move/rotate the group together.
 - Cmd/Ctrl+A selects all drawable layers from anywhere in the app (outside text inputs).
 - Layer grouping/ungrouping via Cmd/Ctrl+G and Cmd/Ctrl+Shift+G.
-- Desktop menu bar is anchored beside `VECTURA.STUDIO` with Illustrator-style shortcuts for Open/Save/Import/Export/Settings/Reset View/Help.
-- Top menu dropdowns render as overlays above the canvas/panes so File/Edit/View/Help menus are never clipped by the header.
+- Desktop menu bar is anchored beside `VECTURA.STUDIO` with Illustrator-style shortcuts for Open/Save/Import/Export/Document Setup/Reset View/Help.
+- Top menu dropdowns render as overlays above the canvas/panes so File/View/Help menus are never clipped by the header.
 - Illustrator-style tool bar with selection, direct selection, hand, pen (bezier), and scissor tools (V/A/Space/P/C). Press V/P/C again to cycle subtools.
 - Pen long-press subtool menu with Illustrator-style modes and shortcuts (P, +, -, Shift+C).
 - Direct path editing for individual line endpoints and bezier handles.
 - Expand any layer into per-line sublayers for fine-grained selection and pen assignment.
 - Tablet/touch parity: pointer-native canvas interactions, one-finger tool input, two-finger pan/pinch zoom, and touch modifier buttons (`Shift`, `Alt`, `Meta`, `Pan`).
 - Alignment guides for canvas center and size matching while dragging.
-- Guide visibility and snapping toggles in Settings (Cmd while dragging overrides snapping).
-- Optional 10mm grid overlay toggle in Settings for layout alignment.
+- Guide visibility and snapping toggles in Document Setup (Cmd while dragging overrides snapping).
+- Optional 10mm grid overlay toggle in Document Setup for layout alignment.
 - Auto-colorization for active/selected/all layer scopes with `None` reset mode, one-shot Apply, and Continuous Apply Changes (continuous updates now re-run correctly while editing pens/palettes, and manual Apply supports chaining one method and then another when continuous is off).
-- Optional cookie-backed UI preference persistence from Settings.
+- Optional cookie-backed UI preference persistence from Document Setup.
 - In-app help guide and shortcut menu (press `?`).
-- Mobile-first responsive shell for small phones (including iPhone mini): touch-friendly `File/Edit/View/Help` top menus, bottom-docked tool rail, and slide-over side drawers for Generator/Layers panels; right-panel sections now scroll independently on short screens (including the Pens section), and collapsed side panes keep a visible edge tab on very small phones.
+- Mobile-first responsive shell for small phones (including iPhone mini): touch-friendly `File/View/Help` top menus, bottom-docked tool rail, and slide-over side drawers for Generator/Layers panels; right-panel sections now scroll independently on short screens (including the Pens section), and collapsed side panes keep a visible edge tab on very small phones.
 - Parameter randomization and simplification controls with live line/point counts.
 - Algorithm-aware randomization bias for Shape Pack, Petalis, Rainfall, and Lissajous (strong defaults with occasional outliers).
 - Reset to Defaults now restores full algorithm defaults, including transform values (seed, position, scale, rotation).
@@ -49,8 +49,10 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Petal Designer shading preview now reflects the full shading parameters (coverage, gaps, line style, jitter, angle, per-card targets, and stack enable/disable) without legacy radial fallback in designer mode.
 - Custom Petalis preset reset now clears shading (`shadings=[]`) instead of re-enabling legacy shading toggles.
 - Pen palette with assignable colors/widths, reorderable list, drag-to-assign per layer or selection, double-click-to-apply on selected layers, plus palette selection, collapsible panel controls, and add/remove actions.
-- Plotter optimization slider to remove fully overlapping paths per pen before export.
-- Optimization pipeline (linesimplify, linesort, filter, multipass) with scope selection, preview overlays, and export toggle.
+- Plotter optimization toggle with adjustable tolerance (mm) to remove fully overlapping paths per pen before export.
+- `EXPORT & OPTIMIZATION` section in Document Setup combines export precision/stroke settings with the optimization pipeline (linesimplify, linesort, filter, multipass), scope selection, preview overlays, and export toggle.
+- `Export Settings` now appears as the first optimization card (above `Line Simplify`) and includes Precision, Stroke, Plotter Optimization, and Optimization Tolerance controls.
+- Optimization defaults target `All Layers`, and `Export Optimized` is enabled by default.
 - One-click SVG export with configurable precision and grouping by pen assignment.
 - Live formula display and estimated pen distance/time.
 
@@ -109,12 +111,12 @@ CI lives in `.github/workflows/test.yml`:
 2. Expand `Transform & Seed` inside the Algorithm panel, then use transform controls (seed, position, scale, rotation) to nudge the layer.
 3. Use Post-Processing Lab for smoothing/curves/simplify plus optional optimization passes and preview.
 4. Manage layers on the right: add, reorder (drag the grip), duplicate, hide, rename (double-click), expand into sublayers, and assign pens (drag a pen onto a layer to apply to the selection).
-5. Use Settings for machine size, margin, on-canvas crop, hard export crop (`Crop Exports to Margin`, which trims path geometry to the margin rectangle and exports with flat caps), margin guides, stroke, background, SVG precision, auto-colorization, and optional cookie preference saving.
+5. Use `File > Document Setup` for machine size, margin, on-canvas crop, hard export crop (`Crop Exports to Margin`, which trims path geometry to the margin rectangle and exports with flat caps), margin guides, stroke, SVG precision, optimization scope/preview/export settings, and optional cookie preference saving.
 6. Save/Open full projects via .vectura files, or import SVGs as new layers.
 7. Switch to the Petalis algorithm to use the embedded inline designer panel, then use ⧉ to pop it out into a floating window or ↩ to dock it back in. In Petalis, petal shape is driven by visible inner/outer designer curves, always-on inner/outer count + split controls, a `PETAL VISUALIZER` (`Overlay` / `Side by Side`), a `PROFILE EDITOR` with per-side profile import/export controls plus a shared `Export Pair` button below both profile cards, and `Shading Stack` + `Modifier Stack` cards where each entry has its own `Petal Shape` target (`Inner`/`Outer`/`Both`) plus symmetry controls.
 8. Export from `File > Export SVG`.
 
-Pan: Shift + Drag. Zoom: Mouse Wheel. Touch: one-finger tool input, two-finger pan/pinch zoom. On phones, use the top `File/Edit/View/Help` menu bar, then open Generator/Layers with pane toggles (including edge tabs) and expand/collapse the Model panel with the floating Model button. Move layer: Drag. Resize layer: Drag corner handles. Rotate: Drag the upper-right handle (Shift snaps). Duplicate: Alt-drag. Expand: Cmd/Ctrl + E. Pen tool: click to add points, click-drag for bezier curves (Shift constrains, Alt breaks handles), double-click near the first point to close, Enter commits, Esc cancels. Pen subtools: `+` add anchor, `-` delete anchor, `Shift+C` convert anchor. Direct tool (`A`) edits endpoints and handles on individual line paths. Scissor tool: drag a line/rect/circle to split intersecting paths. Petal Designer adds middle-drag panning, wheel zoom-to-cursor (both visible petals zoom together), and Illustrator-style `Shift`/`Alt`/`Cmd/Ctrl` editing modifiers.
+Pan: Shift + Drag. Zoom: Mouse Wheel. Touch: one-finger tool input, two-finger pan/pinch zoom. On phones, use the top `File/View/Help` menu bar, then open Generator/Layers with pane toggles (including edge tabs) and expand/collapse the Model panel with the floating Model button. Move layer: Drag. Resize layer: Drag corner handles. Rotate: Drag the upper-right handle (Shift snaps). Duplicate: Alt-drag. Expand: Cmd/Ctrl + E. Pen tool: click to add points, click-drag for bezier curves (Shift constrains, Alt breaks handles), double-click near the first point to close, Enter commits, Esc cancels. Pen subtools: `+` add anchor, `-` delete anchor, `Shift+C` convert anchor. Direct tool (`A`) edits endpoints and handles on individual line paths. Scissor tool: drag a line/rect/circle to split intersecting paths. Petal Designer adds middle-drag panning, wheel zoom-to-cursor (both visible petals zoom together), and Illustrator-style `Shift`/`Alt`/`Cmd/Ctrl` editing modifiers.
 
 ## Algorithm Library
 Each layer is powered by an algorithm with its own parameters and formula preview:

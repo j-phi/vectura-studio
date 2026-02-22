@@ -409,8 +409,8 @@
       id: 'filter',
       label: 'Filter',
       controls: [
-        { key: 'minLength', label: 'Min Length (mm)', type: 'range', min: 0, max: 20, step: 0.2 },
-        { key: 'maxLength', label: 'Max Length (mm)', type: 'range', min: 0, max: 80, step: 0.5 },
+        { key: 'minLength', label: 'Min Length (mm)', type: 'range', min: 0, max: 800, step: 0.2 },
+        { key: 'maxLength', label: 'Max Length (mm)', type: 'range', min: 0, max: 800, step: 0.5 },
         { key: 'removeTiny', label: 'Remove Tiny', type: 'checkbox' },
       ],
     },
@@ -2813,7 +2813,7 @@
     },
     'global.plotterOptimize': {
       title: 'Plotter Optimization',
-      description: 'Removes fully overlapping paths for the same pen to reduce redundant plotting.',
+      description: 'Enable overlap removal and set a tolerance in millimeters for deduplicating same-pen paths.',
     },
     'common.smoothing': {
       title: 'Smoothing',
@@ -5107,7 +5107,6 @@
         algorithm: false,
         algorithmTransform: true,
         algorithmConfiguration: false,
-        optimization: true,
       };
     }
 
@@ -5115,7 +5114,6 @@
       return {
         algorithm: getEl('left-section-algorithm'),
         algorithmConfiguration: getEl('left-section-algorithm-configuration'),
-        optimization: getEl('left-section-optimization'),
       };
     }
 
@@ -8620,7 +8618,7 @@
             <div><span class="text-vectura-accent">Cmd/Ctrl + S</span> Save Project</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + Shift + P</span> Import SVG</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + Shift + E</span> Export SVG</div>
-            <div><span class="text-vectura-accent">Cmd/Ctrl + K</span> Settings</div>
+            <div><span class="text-vectura-accent">Cmd/Ctrl + K</span> Document Setup</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + 0</span> Reset View</div>
             <div><span class="text-vectura-accent">V</span> Selection tool (press again to cycle modes)</div>
             <div><span class="text-vectura-accent">A</span> Direct selection tool</div>
@@ -8703,7 +8701,7 @@
             optionally included on export.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Use the File menu to Save/Open full .vectura projects, Import SVG, and Export SVG.
+            Use the File menu to Save/Open full .vectura projects, Import SVG, open Document Setup, and Export SVG.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Angle controls use circular dials—drag the marker to set direction.
@@ -8724,7 +8722,7 @@
             <div>Petal Designer: middle-click drag pans and wheel zooms both visible petals equally.</div>
             <div>Touch: one-finger tool input, two-finger pan/pinch zoom.</div>
             <div>On tablets, use Shift/Alt/Meta/Pan touch modifier buttons near the toolbar.</div>
-            <div>On phones, use the top File/Edit/View/Help menu bar plus pane toggles or edge tabs to open Generator/Layers, and use the floating Model toggle to expand/collapse the formula panel.</div>
+            <div>On phones, use the top File/View/Help menu bar plus pane toggles or edge tabs to open Generator/Layers, and use the floating Model toggle to expand/collapse the formula panel.</div>
             <div>Drag selection box to multi-select</div>
             <div>Drag to move selection; handles resize; top-right handle rotates (Shift snaps)</div>
           </div>
@@ -8735,7 +8733,7 @@
             <div>Click to select, Shift-click for ranges, Cmd/Ctrl-click to toggle.</div>
             <div>Drag the grip to reorder; groups can be collapsed with the caret.</div>
             <div>Expand a layer into sublayers for line-by-line control.</div>
-            <div>Selection outline visibility, color, and thickness can be adjusted in Settings.</div>
+            <div>Selection outline visibility, color, and thickness can be adjusted in Document Setup.</div>
           </div>
         </div>
         <div class="modal-section">
@@ -8747,7 +8745,7 @@
             <div>The Pens panel can be collapsed from its section header; use the palette dropdown to recolor pens, then add/remove/reorder pens as needed.</div>
             <div>Auto-Colorization includes None mode, one-shot Apply, and Continuous Apply Changes.</div>
             <div>If Continuous Apply Changes is off, mode/parameter/palette updates are staged until you press Apply (including repeatedly applying different modes in sequence).</div>
-            <div>Plotter Optimization in Settings removes fully overlapping paths per pen.</div>
+            <div>Plotter Optimization in Document Setup removes fully overlapping paths per pen with an adjustable tolerance.</div>
             <div>Toggle Export Optimized to include optimization passes in the exported SVG.</div>
             <div>Enable Crop Exports to Margin for hard geometry clipping at the configured margin.</div>
             <div>SVG export preserves pen groupings for plotter workflows.</div>
@@ -9613,7 +9611,7 @@
         { inputId: 'set-speed-up', infoKey: 'global.speedUp' },
         { inputId: 'set-precision', infoKey: 'global.precision' },
         { inputId: 'set-stroke', infoKey: 'global.stroke' },
-        { inputId: 'set-plotter-opt', infoKey: 'global.plotterOptimize' },
+        { inputId: 'set-plotter-opt-enabled', infoKey: 'global.plotterOptimize' },
       ];
 
       entries.forEach(({ inputId, infoKey }) => {
@@ -10292,7 +10290,9 @@
       const speedUp = getEl('set-speed-up');
       const stroke = getEl('set-stroke');
       const precision = getEl('set-precision');
+      const plotterOptEnabled = getEl('set-plotter-opt-enabled');
       const plotterOpt = getEl('set-plotter-opt');
+      const plotterOptValue = getEl('set-plotter-opt-value');
       const undoSteps = getEl('set-undo');
       const truncate = getEl('set-truncate');
       const cropExports = getEl('set-crop-exports');
@@ -10319,7 +10319,18 @@
       if (speedUp) speedUp.value = SETTINGS.speedUp;
       if (stroke) stroke.value = SETTINGS.strokeWidth;
       if (precision) precision.value = SETTINGS.precision;
-      if (plotterOpt) plotterOpt.value = SETTINGS.plotterOptimize ?? 0;
+      const plotterOptimizeRaw = Number.isFinite(SETTINGS.plotterOptimize) ? SETTINGS.plotterOptimize : 0;
+      const plotterOptimizeEnabled = plotterOptimizeRaw > 0;
+      const plotterOptimizeTolerance = Math.max(0.01, Math.min(1, plotterOptimizeRaw || 0.1));
+      if (plotterOptEnabled) plotterOptEnabled.checked = plotterOptimizeEnabled;
+      if (plotterOpt) {
+        plotterOpt.value = plotterOptimizeTolerance;
+        plotterOpt.disabled = !plotterOptimizeEnabled;
+      }
+      if (plotterOptValue) {
+        plotterOptValue.value = plotterOptimizeTolerance.toFixed(2);
+        plotterOptValue.disabled = !plotterOptimizeEnabled;
+      }
       if (undoSteps) undoSteps.value = SETTINGS.undoSteps;
       if (truncate) truncate.checked = SETTINGS.truncate !== false;
       if (cropExports) cropExports.checked = SETTINGS.cropExports !== false;
@@ -10809,7 +10820,9 @@
       const setSpeedUp = getEl('set-speed-up');
       const setStroke = getEl('set-stroke');
       const setPrecision = getEl('set-precision');
+      const setPlotterOptEnabled = getEl('set-plotter-opt-enabled');
       const setPlotterOpt = getEl('set-plotter-opt');
+      const setPlotterOptValue = getEl('set-plotter-opt-value');
       const setUndo = getEl('set-undo');
       const setPaperWidth = getEl('set-paper-width');
       const setPaperHeight = getEl('set-paper-height');
@@ -11083,11 +11096,53 @@
         };
       }
       if (setPlotterOpt) {
-        setPlotterOpt.oninput = (e) => {
-          const next = Math.max(0, Math.min(1, parseFloat(e.target.value)));
-          SETTINGS.plotterOptimize = Number.isFinite(next) ? next : 0;
-          this.app.render();
+        const clampPlotterOptValue = (raw) => {
+          const next = parseFloat(raw);
+          if (!Number.isFinite(next)) return 0.1;
+          return Math.max(0.01, Math.min(1, next));
         };
+        const applyPlotterOptValue = (raw, options = {}) => {
+          const { render = true } = options;
+          const enabled = setPlotterOptEnabled ? Boolean(setPlotterOptEnabled.checked) : true;
+          const next = clampPlotterOptValue(raw);
+          if (setPlotterOpt) setPlotterOpt.value = `${next}`;
+          if (setPlotterOptValue) setPlotterOptValue.value = next.toFixed(2);
+          SETTINGS.plotterOptimize = enabled ? next : 0;
+          if (render) this.app.render();
+        };
+        const syncPlotterOptEnabledState = (enabled) => {
+          if (setPlotterOpt) setPlotterOpt.disabled = !enabled;
+          if (setPlotterOptValue) setPlotterOptValue.disabled = !enabled;
+        };
+        if (setPlotterOptEnabled) {
+          setPlotterOptEnabled.onchange = (e) => {
+            if (this.app.pushHistory) this.app.pushHistory();
+            const enabled = Boolean(e.target.checked);
+            syncPlotterOptEnabledState(enabled);
+            applyPlotterOptValue(setPlotterOptValue?.value || setPlotterOpt?.value || 0.1);
+          };
+          syncPlotterOptEnabledState(Boolean(setPlotterOptEnabled.checked));
+        }
+        setPlotterOpt.oninput = (e) => {
+          applyPlotterOptValue(e.target.value);
+        };
+        setPlotterOpt.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          applyPlotterOptValue(e.target.value);
+        };
+        if (setPlotterOptValue) {
+          setPlotterOptValue.oninput = (e) => {
+            const next = clampPlotterOptValue(e.target.value);
+            if (setPlotterOpt) setPlotterOpt.value = `${next}`;
+            e.target.value = next.toFixed(2);
+            SETTINGS.plotterOptimize = setPlotterOptEnabled?.checked === false ? 0 : next;
+            this.app.render();
+          };
+          setPlotterOptValue.onchange = (e) => {
+            if (this.app.pushHistory) this.app.pushHistory();
+            applyPlotterOptValue(e.target.value);
+          };
+        }
       }
       if (setUndo) {
         setUndo.onchange = (e) => {
@@ -16277,10 +16332,10 @@
         if (!target) return;
         const panel = document.createElement('div');
         panel.className = 'optimization-panel';
-        panel.innerHTML = `<div class="control-section-title">Optimization</div>`;
+        panel.innerHTML = '';
 
         const getTargets = () => {
-          const scope = SETTINGS.optimizationScope || 'active';
+          const scope = SETTINGS.optimizationScope || 'all';
           let targets = [];
           if (scope === 'selected') {
             targets = this.app.renderer?.getSelectedLayers?.() || [];
@@ -16327,9 +16382,9 @@
         const updateStats = () => {
           const scopedTargets = getTargets();
           if (!config || !scopedTargets.length) return;
-          this.app.engine.optimizeLayers(scopedTargets);
-          const before = this.app.engine.computeStats(scopedTargets, { useOptimized: false });
-          const after = this.app.engine.computeStats(scopedTargets, { useOptimized: true });
+          this.app.engine.optimizeLayers(scopedTargets, { includePlotterOptimize: true });
+          const before = this.app.engine.computeStats(scopedTargets, { useOptimized: false, includePlotterOptimize: false });
+          const after = this.app.engine.computeStats(scopedTargets, { useOptimized: true, includePlotterOptimize: true });
           const beforeEl = panel.querySelector('[data-opt-stat="before"]');
           const afterEl = panel.querySelector('[data-opt-stat="after"]');
           const formatStats = (stats) =>
@@ -16338,10 +16393,18 @@
           if (afterEl) afterEl.textContent = formatStats(after);
         };
 
+        const rerenderOptimizationPreview = () => {
+          const scopedTargets = getTargets();
+          if (!scopedTargets.length) return;
+          this.app.engine.optimizeLayers(scopedTargets, { includePlotterOptimize: true });
+          this.app.render();
+          updateStats();
+        };
+
         const applyOptimization = (mutator) => {
           const scopedTargets = getTargets();
           if (!scopedTargets.length) return;
-          const scope = SETTINGS.optimizationScope || 'active';
+          const scope = SETTINGS.optimizationScope || 'all';
           const baseConfig = normalizeConfig(this.app.engine.ensureLayerOptimization(scopedTargets[0]));
           if (mutator) mutator(baseConfig);
           if (scope !== 'active') {
@@ -16350,9 +16413,9 @@
               if (idx === 0) return;
               layer.optimization = clone(snapshot);
             });
-            this.app.engine.optimizeLayers(scopedTargets, { config: snapshot });
+            this.app.engine.optimizeLayers(scopedTargets, { config: snapshot, includePlotterOptimize: true });
           } else {
-            this.app.engine.optimizeLayers(scopedTargets, { config: baseConfig });
+            this.app.engine.optimizeLayers(scopedTargets, { config: baseConfig, includePlotterOptimize: true });
           }
           this.app.render();
           updateStats();
@@ -16376,7 +16439,7 @@
           <option value="selected">Selected Layers</option>
           <option value="all">All Layers</option>
         `;
-        scopeSelect.value = SETTINGS.optimizationScope || 'active';
+        scopeSelect.value = SETTINGS.optimizationScope || 'all';
         scopeSelect.onchange = (e) => {
           SETTINGS.optimizationScope = e.target.value;
           this.buildControls();
@@ -16404,6 +16467,7 @@
         exportToggle.checked = Boolean(SETTINGS.optimizationExport);
         exportToggle.onchange = (e) => {
           SETTINGS.optimizationExport = Boolean(e.target.checked);
+          rerenderOptimizationPreview();
         };
         panel.appendChild(buildRow('Export Optimized', exportToggle));
 
@@ -16412,9 +16476,12 @@
         bypassToggle.checked = Boolean(config?.bypassAll);
         bypassToggle.onchange = (e) => {
           if (!config) return;
+          const next = Boolean(e.target.checked);
           applyOptimization((cfg) => {
-            cfg.bypassAll = Boolean(e.target.checked);
+            cfg.bypassAll = next;
+            cfg.steps = (cfg.steps || []).map((step) => ({ ...step, bypass: next }));
           });
+          this.buildControls();
         };
         panel.appendChild(buildRow('Bypass All', bypassToggle));
 
@@ -16487,6 +16554,147 @@
 
         const list = document.createElement('div');
         list.className = 'optimization-list';
+
+        const buildExportSettingsCard = () => {
+          const card = document.createElement('div');
+          card.className = 'optimization-card';
+          card.innerHTML = `
+            <div class="optimization-card-header">
+              <div class="optimization-card-title">
+                <span>Export Settings</span>
+              </div>
+            </div>
+          `;
+          const controlsWrap = document.createElement('div');
+          controlsWrap.className = 'optimization-controls';
+
+          const buildInlineControl = (label, controlMarkup) => {
+            const control = document.createElement('div');
+            control.className = 'optimization-control';
+            control.innerHTML = `
+              <div class="flex justify-between mb-1">
+                <label class="control-label mb-0">${label}</label>
+              </div>
+              ${controlMarkup}
+            `;
+            return control;
+          };
+
+          const precisionInput = document.createElement('input');
+          precisionInput.type = 'number';
+          precisionInput.min = '0';
+          precisionInput.max = '6';
+          precisionInput.step = '1';
+          precisionInput.value = `${Math.max(0, Math.min(6, parseInt(SETTINGS.precision, 10) || 3))}`;
+          precisionInput.className =
+            'w-16 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none';
+          precisionInput.onchange = (e) => {
+            if (this.app.pushHistory) this.app.pushHistory();
+            const next = Math.max(0, Math.min(6, parseInt(e.target.value, 10) || 3));
+            SETTINGS.precision = next;
+            e.target.value = `${next}`;
+            updateStats();
+          };
+          const precisionControl = buildInlineControl('Precision', '');
+          precisionControl.appendChild(precisionInput);
+          controlsWrap.appendChild(precisionControl);
+
+          const strokeInput = document.createElement('input');
+          strokeInput.type = 'number';
+          strokeInput.min = '0';
+          strokeInput.step = '0.1';
+          strokeInput.value = `${SETTINGS.strokeWidth ?? 0.3}`;
+          strokeInput.className =
+            'w-16 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none';
+          strokeInput.onchange = (e) => {
+            if (this.app.pushHistory) this.app.pushHistory();
+            const next = Math.max(0, parseFloat(e.target.value));
+            SETTINGS.strokeWidth = Number.isFinite(next) ? next : 0.3;
+            this.app.engine.layers.forEach((layer) => {
+              layer.strokeWidth = SETTINGS.strokeWidth;
+            });
+            e.target.value = `${SETTINGS.strokeWidth}`;
+            this.app.render();
+            updateStats();
+          };
+          const strokeControl = buildInlineControl('Stroke (mm)', '');
+          strokeControl.appendChild(strokeInput);
+          controlsWrap.appendChild(strokeControl);
+
+          const toggleControl = document.createElement('div');
+          toggleControl.className = 'optimization-control';
+          toggleControl.innerHTML = `
+            <div class="flex justify-between mb-1">
+              <label class="control-label mb-0">Plotter Optimization</label>
+              <span class="text-xs text-vectura-accent font-mono">${SETTINGS.plotterOptimize > 0 ? 'ON' : 'OFF'}</span>
+            </div>
+            <input type="checkbox" class="w-4 h-4">
+          `;
+          const plotterToggle = toggleControl.querySelector('input');
+          const toggleState = toggleControl.querySelector('span');
+          const toleranceControl = document.createElement('div');
+          toleranceControl.className = 'optimization-control';
+          const currentTolerance = Math.max(0.01, Math.min(1, SETTINGS.plotterOptimize || 0.1));
+          toleranceControl.innerHTML = `
+            <div class="flex justify-between mb-1">
+              <label class="control-label mb-0">Optimization Tolerance (mm)</label>
+              <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${currentTolerance.toFixed(2)}mm</button>
+            </div>
+            <input type="range" min="0.01" max="1" step="0.01" value="${currentTolerance}" class="w-full">
+            <input type="number" min="0.01" max="1" step="0.01" value="${currentTolerance.toFixed(
+              2
+            )}" class="w-16 mt-2 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none">
+          `;
+          const tolRange = toleranceControl.querySelector('input[type="range"]');
+          const tolNumber = toleranceControl.querySelector('input[type="number"]');
+          const tolValue = toleranceControl.querySelector('.value-chip');
+          const setToleranceDisabled = (disabled) => {
+            if (tolRange) tolRange.disabled = disabled;
+            if (tolNumber) tolNumber.disabled = disabled;
+            toleranceControl.classList.toggle('is-disabled', disabled);
+          };
+          const clampTolerance = (raw) => {
+            const next = parseFloat(raw);
+            if (!Number.isFinite(next)) return 0.1;
+            return Math.max(0.01, Math.min(1, next));
+          };
+          const applyTolerance = (raw, options = {}) => {
+            const { commit = false } = options;
+            if (commit && this.app.pushHistory) this.app.pushHistory();
+            const next = clampTolerance(raw);
+            if (tolRange) tolRange.value = `${next}`;
+            if (tolNumber) tolNumber.value = next.toFixed(2);
+            if (tolValue) tolValue.textContent = `${next.toFixed(2)}mm`;
+            SETTINGS.plotterOptimize = plotterToggle?.checked ? next : 0;
+            if (toggleState) toggleState.textContent = SETTINGS.plotterOptimize > 0 ? 'ON' : 'OFF';
+            rerenderOptimizationPreview();
+          };
+          if (plotterToggle) {
+            plotterToggle.checked = SETTINGS.plotterOptimize > 0;
+            setToleranceDisabled(!plotterToggle.checked);
+            plotterToggle.onchange = (e) => {
+              if (this.app.pushHistory) this.app.pushHistory();
+              const enabled = Boolean(e.target.checked);
+              setToleranceDisabled(!enabled);
+              SETTINGS.plotterOptimize = enabled ? clampTolerance(tolNumber?.value || tolRange?.value || 0.1) : 0;
+              if (toggleState) toggleState.textContent = enabled ? 'ON' : 'OFF';
+              rerenderOptimizationPreview();
+            };
+          }
+          if (tolRange) {
+            tolRange.oninput = (e) => applyTolerance(e.target.value);
+            tolRange.onchange = (e) => applyTolerance(e.target.value, { commit: true });
+          }
+          if (tolNumber) {
+            tolNumber.oninput = (e) => applyTolerance(e.target.value);
+            tolNumber.onchange = (e) => applyTolerance(e.target.value, { commit: true });
+          }
+          controlsWrap.appendChild(toggleControl);
+          controlsWrap.appendChild(toleranceControl);
+
+          card.appendChild(controlsWrap);
+          return card;
+        };
 
         const formatOptValue = (def, value) => {
           const { precision, unit } = getDisplayConfig(def);
@@ -16690,6 +16898,8 @@
           };
         };
 
+        list.appendChild(buildExportSettingsCard());
+
         OPTIMIZATION_STEPS.forEach((def) => {
           const stepConfig = config.steps.find((step) => step.id === def.id) || { id: def.id, enabled: false, bypass: false };
           if (!config.steps.find((step) => step.id === def.id)) config.steps.push(stepConfig);
@@ -16731,6 +16941,7 @@
               applyOptimization((cfg) => {
                 const step = cfg.steps.find((s) => s.id === def.id);
                 if (step) step.bypass = next;
+                cfg.bypassAll = (cfg.steps || []).every((s) => Boolean(s.bypass));
               });
               this.buildControls();
             };

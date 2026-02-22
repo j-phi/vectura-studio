@@ -450,6 +450,7 @@
     optimizeLayers(layers, options = {}) {
       const targetLayers = (layers || this.layers).filter((layer) => layer && !layer.isGroup);
       if (!targetLayers.length) return new Map();
+      const includePlotterOptimize = Boolean(options.includePlotterOptimize);
       const runPipeline = (layersToProcess, config) => {
         if (!config) return new Map();
         const steps = Array.isArray(config.steps) ? config.steps : [];
@@ -681,6 +682,40 @@
         }
       });
 
+      if (includePlotterOptimize) {
+        const optimize = Math.max(0, SETTINGS.plotterOptimize ?? 0);
+        const tol = optimize > 0 ? Math.max(0.001, optimize) : 0;
+        if (tol > 0) {
+          const quant = (v) => Math.round(v / tol) * tol;
+          const pathKey = (path) => {
+            if (path && path.meta && path.meta.kind === 'circle') {
+              const cx = path.meta.cx ?? path.meta.x ?? 0;
+              const cy = path.meta.cy ?? path.meta.y ?? 0;
+              const r = path.meta.r ?? path.meta.rx ?? 0;
+              return `c:${quant(cx)},${quant(cy)},${quant(r)}`;
+            }
+            if (!Array.isArray(path)) return '';
+            return path
+              .map((pt) => `${quant(pt.x)},${quant(pt.y)}`)
+              .join('|');
+          };
+          const seenByPen = new Map();
+          layersToProcess.forEach((layer) => {
+            const penId = layer.penId || 'default';
+            if (!seenByPen.has(penId)) seenByPen.set(penId, new Set());
+            const seen = seenByPen.get(penId);
+            const deduped = [];
+            (current.get(layer.id) || []).forEach((path) => {
+              const key = pathKey(path);
+              if (key && seen.has(key)) return;
+              if (key) seen.add(key);
+              deduped.push(path);
+            });
+            current.set(layer.id, deduped);
+          });
+        }
+      }
+
       layersToProcess.forEach((layer) => {
         const next = current.get(layer.id) || [];
         layer.optimizedPaths = next;
@@ -741,18 +776,20 @@
           if (!dedupe.has(penId)) dedupe.set(penId, new Set());
           seen = dedupe.get(penId);
         }
-        const paths = useOptimized && l.optimizedPaths ? l.optimizedPaths : l.paths;
-        const count = countPathPoints(paths || []);
-        lines += count.lines;
-        points += count.points;
-        (paths || []).forEach((p) => {
+        const sourcePaths = useOptimized && l.optimizedPaths ? l.optimizedPaths : l.paths;
+        const visiblePaths = [];
+        (sourcePaths || []).forEach((p) => {
           if (seen) {
             const key = pathKey(p);
             if (key && seen.has(key)) return;
             if (key) seen.add(key);
           }
+          visiblePaths.push(p);
           dist += pathLength(p);
         });
+        const count = countPathPoints(visiblePaths);
+        lines += count.lines;
+        points += count.points;
       });
       const timeSec = dist / 1000 / (SETTINGS.speedDown / 1000);
       const m = Math.floor(timeSec / 60);

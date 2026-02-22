@@ -65,19 +65,12 @@
                 <span>Import SVG…</span>
                 <span class="top-menu-shortcut" data-shortcut-mac="Shift+Cmd+P" data-shortcut-win="Shift+Ctrl+P"></span>
               </button>
-              <button id="btn-export" class="top-menu-item top-menu-item-primary" type="button" role="menuitem">
+              <button id="btn-export" class="top-menu-item" type="button" role="menuitem">
                 <span>Export SVG…</span>
                 <span class="top-menu-shortcut" data-shortcut-mac="Shift+Cmd+E" data-shortcut-win="Shift+Ctrl+E"></span>
               </button>
-            </div>
-          </div>
-          <div class="top-menu" data-top-menu>
-            <button class="top-menu-trigger" type="button" data-top-menu-trigger aria-haspopup="true" aria-expanded="false">
-              Edit
-            </button>
-            <div class="top-menu-panel" data-top-menu-panel role="menu" aria-label="Edit menu">
               <button id="btn-settings" class="top-menu-item" type="button" role="menuitem">
-                <span>Settings</span>
+                <span>Document Setup</span>
                 <span class="top-menu-shortcut" data-shortcut-mac="Cmd+K" data-shortcut-win="Ctrl+K"></span>
               </button>
             </div>
@@ -118,7 +111,7 @@
       <div class="pane-header pane-header-left p-4 border-b border-vectura-border flex justify-between items-center">
         <span class="pane-title font-bold text-vectura-accent">GENERATOR</span>
 
-        <span class="pane-meta text-[10px] text-vectura-muted">V.0.6.18</span>
+        <span class="pane-meta text-[10px] text-vectura-muted">V.0.6.21</span>
 
         <button id="btn-pane-toggle-left" class="pane-toggle pane-toggle-left" type="button"
           aria-label="Toggle left pane">
@@ -214,15 +207,6 @@
             </div>
           </div>
 
-          <div id="left-section-optimization" class="left-panel-section">
-            <button id="left-section-optimization-header" class="left-panel-section-header" type="button">
-              <span class="left-panel-section-title">Optimization</span>
-              <span class="left-panel-section-toggle" aria-hidden="true"></span>
-            </button>
-            <div id="left-section-optimization-body" class="left-panel-section-body">
-              <div id="optimization-controls"></div>
-            </div>
-          </div>
         </div>
       </div>
     </aside>
@@ -524,9 +508,9 @@
       </div>
     </aside>
 
-    <div id="settings-panel" class="settings-panel bg-vectura-panel border-l border-vectura-border">
+    <div id="settings-panel" class="settings-panel bg-vectura-panel border-r border-vectura-border">
       <div class="p-4 border-b border-vectura-border flex justify-between items-center bg-vectura-panel">
-        <span class="font-bold text-vectura-accent">SETTINGS</span>
+        <span class="font-bold text-vectura-accent">DOCUMENT SETUP</span>
         <button id="btn-close-settings" class="text-vectura-muted hover:text-white" aria-label="Close settings"
           type="button">
           ✕
@@ -658,21 +642,8 @@
           </div>
         </div>
         <div class="control-group border-none">
-          <label class="control-label">Export &amp; Preview</label>
-          <div class="flex items-center justify-between mb-2">
-            <label class="text-xs text-vectura-muted">Precision</label>
-            <input type="number" id="set-precision"
-              class="w-12 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
-          </div>
-          <div class="flex items-center justify-between">
-            <label class="text-xs text-vectura-muted">Stroke (mm)</label>
-            <input type="number" id="set-stroke" step="0.1"
-              class="w-12 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
-          </div>
-          <div class="flex items-center justify-between mt-3">
-            <label class="text-xs text-vectura-muted">Plotter Optimization</label>
-            <input type="range" id="set-plotter-opt" min="0" max="1" step="0.05" class="w-24" />
-          </div>
+          <label class="control-label">EXPORT &amp; OPTIMIZATION</label>
+          <div id="optimization-controls" class="mt-4"></div>
         </div>
         <div class="control-group border-none">
           <label class="control-label">History</label>
