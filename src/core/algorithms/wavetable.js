@@ -1208,7 +1208,14 @@
               const clampedY = Math.max(inset, Math.min(height - inset, baseY));
               const yNorm = clamp01((clampedY - inset) / Math.max(1e-6, innerH));
               const strength = typeof strengthFn === 'function' ? strengthFn(t, baseX, baseY, d) : 1;
-              const noiseVal = sampleCombinedNoise(baseX, baseY, sample.x, sample.y);
+              const noiseVal = sampleCombinedNoise(
+                baseX,
+                baseY,
+                sample.x,
+                sample.y,
+                sample.imageX ?? sample.x,
+                sample.imageY ?? sample.y
+              );
               // Heightfield uplift from beneath the plane: vertical-only displacement.
               const amp = noiseVal * getEdgeTaper(xNorm) * getVerticalTaper(yNorm) * d.ampScale * strength;
               const displacedY = Math.max(horizonY, Math.min(baseY, baseY - amp));
