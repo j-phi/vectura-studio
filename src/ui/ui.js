@@ -41,6 +41,21 @@
       .replace(/'/g, '&#39;');
   };
 
+  const escapeXmlAttr = (value) =>
+    `${value ?? ''}`
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+
+  const normalizeSvgId = (value, prefix = 'id') => {
+    const fallback = `${prefix || 'id'}`;
+    const base = `${value ?? ''}`.trim() || fallback;
+    const sanitized = base.replace(/[^A-Za-z0-9_.-]/g, '_') || fallback;
+    return /^[A-Za-z_]/.test(sanitized) ? sanitized : `${fallback}_${sanitized}`;
+  };
+
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
   const roundToStep = (value, step) => (step ? Math.round(value / step) * step : value);
   const DISPLAY_PRECISION = 2;
@@ -145,11 +160,20 @@
   const expandCirclePath = (meta, segments = 80) => {
     const cx = meta.cx ?? meta.x ?? 0;
     const cy = meta.cy ?? meta.y ?? 0;
-    const r = meta.r ?? meta.rx ?? 0;
+    const rx = meta.rx ?? meta.r ?? 0;
+    const ry = meta.ry ?? meta.r ?? rx;
+    const rotation = meta.rotation ?? 0;
+    const cosR = Math.cos(rotation);
+    const sinR = Math.sin(rotation);
     const pts = [];
     for (let i = 0; i <= segments; i++) {
       const t = (i / segments) * Math.PI * 2;
-      pts.push({ x: cx + Math.cos(t) * r, y: cy + Math.sin(t) * r });
+      const localX = Math.cos(t) * rx;
+      const localY = Math.sin(t) * ry;
+      pts.push({
+        x: cx + localX * cosR - localY * sinR,
+        y: cy + localX * sinR + localY * cosR,
+      });
     }
     return pts;
   };
@@ -185,6 +209,8 @@
   };
 
   const clipPathToRect = (path, rect) => {
+    if (!Array.isArray(path) || path.length < 2) return [];
+    if (!rect || !Number.isFinite(rect.w) || !Number.isFinite(rect.h) || rect.w <= 0 || rect.h <= 0) return [];
     const segments = splitPathByShape(path, { mode: 'rect', rect });
     if (!segments) {
       const pt = path[0];
@@ -8682,6 +8708,7 @@
             <div>If Continuous Apply Changes is off, mode/parameter/palette updates are staged until you press Apply (including repeatedly applying different modes in sequence).</div>
             <div>Plotter Optimization in Settings removes fully overlapping paths per pen.</div>
             <div>Toggle Export Optimized to include optimization passes in the exported SVG.</div>
+            <div>Enable Crop Exports to Margin for hard geometry clipping at the configured margin.</div>
             <div>SVG export preserves pen groupings for plotter workflows.</div>
           </div>
         </div>
@@ -10768,7 +10795,9 @@
       }
       if (setCropExports) {
         setCropExports.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
           SETTINGS.cropExports = e.target.checked;
+          this.app.persistPreferencesDebounced?.();
         };
       }
 
@@ -15002,7 +15031,6 @@
             if (nameEl) nameEl.textContent = name;
             const previewEl = wrap.querySelector('.noise-image-preview');
 
-            if (nameEl) nameEl.textContent = name;
             const previewContent = wrap.querySelector('.noise-image-preview-content');
             if (previewContent) {
               if (hasImage) {
@@ -17061,6 +17089,16 @@
       const prof = this.app.engine.currentProfile;
       const precision = Math.max(0, Math.min(6, SETTINGS.precision ?? 3));
       const useOptimized = Boolean(SETTINGS.optimizationExport);
+      const hardCrop = SETTINGS.cropExports !== false;
+      const marginRect = hardCrop
+        ? {
+            x: SETTINGS.margin,
+            y: SETTINGS.margin,
+            w: Math.max(0, prof.width - SETTINGS.margin * 2),
+            h: Math.max(0, prof.height - SETTINGS.margin * 2),
+          }
+        : null;
+      const useSvgMarginClip = SETTINGS.truncate && !hardCrop;
       const optimize = Math.max(0, SETTINGS.plotterOptimize ?? 0);
       const tol = optimize > 0 ? Math.max(0.001, optimize) : 0;
       const quant = (v) => (tol ? Math.round(v / tol) * tol : v);
@@ -17081,7 +17119,7 @@
         this.app.engine.optimizeLayers(this.app.engine.layers);
       }
       let svg = `<?xml version="1.0" standalone="no"?><svg width="${prof.width}mm" height="${prof.height}mm" viewBox="0 0 ${prof.width} ${prof.height}" xmlns="http://www.w3.org/2000/svg">`;
-      if (SETTINGS.truncate) {
+      if (useSvgMarginClip) {
         const m = SETTINGS.margin;
         const w = prof.width - m * 2;
         const h = prof.height - m * 2;
@@ -17112,8 +17150,10 @@
         const group = groups.get(key);
         if (!group) return;
         const pen = group.pen || fallbackPen;
-        const penName = (pen.name || pen.id || 'Pen').replace(/\s/g, '_');
-        svg += `<g id="pen_${penName}" stroke="${pen.color || 'black'}" fill="none">`;
+        const penName = normalizeSvgId(pen.name || pen.id || 'Pen', 'pen');
+        const penGroupId = escapeXmlAttr(`pen_${penName}`);
+        const penStroke = escapeXmlAttr(pen.color || 'black');
+        svg += `<g id="${penGroupId}" stroke="${penStroke}" fill="none">`;
         let seen = null;
         if (dedupe) {
           if (!dedupe.has(key)) dedupe.set(key, new Set());
@@ -17123,16 +17163,12 @@
           const strokeWidth = (l.strokeWidth ?? pen.width ?? SETTINGS.strokeWidth).toFixed(3);
           const lineCap = l.lineCap || 'round';
           const useCurves = Boolean(l.params && l.params.curves);
-          svg += `<g id="${l.name.replace(/\s/g, '_')}" stroke-width="${strokeWidth}" stroke-linecap="${lineCap}" stroke-linejoin="round">`;
+          const layerGroupId = escapeXmlAttr(normalizeSvgId(l.name || l.id || 'Layer', 'layer'));
+          svg += `<g id="${layerGroupId}" stroke-width="${strokeWidth}" stroke-linecap="${lineCap}" stroke-linejoin="round">`;
           let paths = useOptimized && l.optimizedPaths ? l.optimizedPaths : l.paths;
-          if (SETTINGS.cropExports) {
-            const marginRect = {
-              x: SETTINGS.margin,
-              y: SETTINGS.margin,
-              w: prof.width - SETTINGS.margin * 2,
-              h: prof.height - SETTINGS.margin * 2,
-            };
+          if (hardCrop) {
             paths = (paths || []).flatMap((p) => {
+              if (!Array.isArray(p) || p.length < 2) return [];
               if (p && p.meta && p.meta.kind === 'circle') {
                 const expanded = expandCirclePath(p.meta, 72);
                 return clipPathToRect(expanded, marginRect);
@@ -17148,7 +17184,7 @@
               if (key && seen.has(key)) return;
               if (key) seen.add(key);
             }
-            const forceLinear = SETTINGS.cropExports;
+            const forceLinear = hardCrop;
             const markup = shapeToSvg(p, precision, forceLinear ? false : useCurves);
             if (markup) svg += markup;
           });
@@ -17156,7 +17192,7 @@
         });
         svg += `</g>`;
       });
-      if (SETTINGS.truncate) {
+      if (useSvgMarginClip) {
         svg += `</g>`;
       }
       svg += `</svg>`;

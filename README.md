@@ -91,6 +91,7 @@ npm run patch:test-runtime
 - `npm run test:update` - updates visual SVG baselines (requires review before commit).
 - `npm run profiles:bundle` - rebuilds `src/config/petal-profiles/library.js` from `index.json` + profile JSON files for `file://` local runs.
 - Vitest config is in `vitest.config.mjs`; Playwright config is in `playwright.config.js`.
+- Beta-only deferred hardening ideas are tracked in `docs/pre-release-hardening-log.md`.
 
 CI lives in `.github/workflows/test.yml`:
 - Pull requests: unit, integration, and e2e smoke.
@@ -102,7 +103,7 @@ CI lives in `.github/workflows/test.yml`:
 2. Expand `Transform & Seed` inside the Algorithm panel, then use transform controls (seed, position, scale, rotation) to nudge the layer.
 3. Use Post-Processing Lab for smoothing/curves/simplify plus optional optimization passes and preview.
 4. Manage layers on the right: add, reorder (drag the grip), duplicate, hide, rename (double-click), expand into sublayers, and assign pens (drag a pen onto a layer to apply to the selection).
-5. Use Settings for machine size, margin, truncation, margin guides, stroke, background, SVG precision, auto-colorization, and optional cookie preference saving.
+5. Use Settings for machine size, margin, on-canvas crop, hard export crop (`Crop Exports to Margin`), margin guides, stroke, background, SVG precision, auto-colorization, and optional cookie preference saving.
 6. Save/Open full projects via .vectura files, or import SVGs as new layers.
 7. Switch to the Petalis algorithm to use the embedded inline designer panel, then use ⧉ to pop it out into a floating window or ↩ to dock it back in. In Petalis, petal shape is driven by visible inner/outer designer curves, always-on inner/outer count + split controls, a `PETAL VISUALIZER` (`Overlay` / `Side by Side`), a `PROFILE EDITOR` with per-side profile import/export controls plus a shared `Export Pair` button below both profile cards, and `Shading Stack` + `Modifier Stack` cards where each entry has its own `Petal Shape` target (`Inner`/`Outer`/`Both`) plus symmetry controls.
 8. Export from `File > Export SVG`.
@@ -166,6 +167,7 @@ flowchart LR
 - `src/config/petal-profiles/` - project profile library ingested by Petalis (`index.json` + `.json` profile files with explicit anchors, plus `library.js` for `file://` local loading).
 - `tests/` - unit, integration, e2e smoke, visual baseline, and performance suites.
 - `docs/testing.md` - testing workflow details, baseline policy, and CI behavior.
+- `docs/pre-release-hardening-log.md` - deferred beta hardening ideas to complete before final public release.
 - `dist/` - optional prebuilt output (not required for local dev).
 
 ## Customization Tips

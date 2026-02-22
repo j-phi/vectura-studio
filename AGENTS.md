@@ -32,3 +32,9 @@
 - Asset paths are relative so the site works on GitHub Pages subpaths.
 - Update defaults and machine presets in `src/config/*.js` instead of hardcoding values in UI or engine code.
 - Keep cross-system presets in `src/config/presets.js`; use `preset_system` filtering in UI/engine code instead of creating separate per-system preset files.
+
+## Pre-Release Hardening Log Policy
+- If an idea is hardening-oriented and not needed for beta testing or development, do not auto-implement it.
+- Log it in `docs/pre-release-hardening-log.md` as a new `PRH-###` entry.
+- Mention the new or updated `PRH-###` entry in your response.
+- Only implement logged hardening items when explicitly requested, or when the team enters final-release hardening mode.
