@@ -194,7 +194,10 @@
       return [];
     }
     return segments.filter((seg) => {
-      const mid = seg[Math.floor(seg.length / 2)];
+      if (!seg.length) return false;
+      const first = seg[0];
+      const last = seg[seg.length - 1];
+      const mid = { x: (first.x + last.x) / 2, y: (first.y + last.y) / 2 };
       return (
         mid.x >= rect.x - 1e-4 &&
         mid.x <= rect.x + rect.w + 1e-4 &&
@@ -9528,6 +9531,7 @@
         { inputId: 'machine-profile', infoKey: 'global.paperSize' },
         { inputId: 'set-margin', infoKey: 'global.margin' },
         { inputId: 'set-truncate', infoKey: 'global.truncate' },
+        { inputId: 'set-crop-exports', infoKey: 'global.cropExports' },
         { inputId: 'set-outside-opacity', infoKey: 'global.outsideOpacity' },
         { inputId: 'set-margin-line', infoKey: 'global.marginLineVisible' },
         { inputId: 'set-margin-line-weight', infoKey: 'global.marginLineWeight' },
