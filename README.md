@@ -37,7 +37,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Harmonograph pendulum list with add/delete/toggle controls and optional guide overlay.
 - Harmonograph anti-loop controls (frequency drift + settle cutoff) and a Virtual Plotter preview with playhead scrubbing and speed presets.
 - Rainfall generator with wind, droplet styling, and optional silhouette masking.
-- Wavetable noise stack with per-noise blend modes, tile patterns, image effects, polygon noise, and drag-to-reorder layers.
+- Wavetable noise stack with selectable line structures (horizontal, vertical, grid, isometric, lattice, horizon perspective), plus Horizon depth perspective that raises distant noise frequency and damps near-view displacement; includes per-noise blend modes, tile patterns, image effects, polygon noise, and drag-to-reorder layers.
 - Petalis generator with radial petals, editable inner/outer designer curves, shading, modifier stacks, and 20 named presets (plus an in-dev light source marker). Hatch Angle rotates shading strokes in place inside petals rather than shifting shading placement on the canvas.
 - Petalis algorithm with an embedded full Petal Designer panel in the parameter stack (shape comes from visible designer curves, without hidden legacy tip/base modifiers).
 - Petalis layers now enable `Curves` by default, matching the designer silhouette out of the box.
@@ -53,6 +53,10 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - `EXPORT & OPTIMIZATION` section in Document Setup combines export precision/stroke settings with the optimization pipeline (linesimplify, linesort, filter, multipass), scope selection, preview overlays, and export toggle.
 - `Export Settings` now appears as the first optimization card (above `Line Simplify`) and includes Precision, Stroke, Plotter Optimization, and Optimization Tolerance controls.
 - Optimization defaults target `All Layers`, and `Export Optimized` is enabled by default.
+- `Line Simplify` is applied by default for new layers, with Mode set to `Curve`.
+- `Line Sort` is not applied by default for new layers.
+- When preview mode is `Overlay` and `Line Sort` is active, the overlay gradient runs from `Overlay Color` to its complement by default, with a per-Line Sort secondary-color override and an on-canvas print-order legend.
+- Color controls use horizontal pills that open native color pickers; thickness controls use slider + editable mm value with reset buttons where applicable.
 - One-click SVG export with configurable precision and grouping by pen assignment.
 - Live formula display and estimated pen distance/time.
 
@@ -84,7 +88,7 @@ npm run patch:test-runtime
 
 ## Testing
 - `npm run test:unit` - deterministic unit coverage for RNG/noise, algorithms, and shared utility helpers.
-- `npm run test:integration` - engine workflow integration coverage (layer lifecycle, optimization pipeline, state roundtrip, deterministic export).
+- `npm run test:integration` - engine workflow integration coverage (layer lifecycle, optimization pipeline, state roundtrip, deterministic export) plus UI bootstrap integrity checks for non-empty Layers, Mathematical Model, and About panels.
 - `npm run test:e2e` - Playwright smoke tests on desktop + tablet-touch Chromium.
 - `npm run test:visual` - SVG baseline regression checks (`tests/baselines/svg`).
 - `npm run test:visual:screenshots` - optional Playwright screenshot snapshot checks for high-risk UI shells.
@@ -126,7 +130,7 @@ Each layer is powered by an algorithm with its own parameters and formula previe
 - Hyphae: branching, growth-like structures.
 - Lissajous: harmonic parametric curves.
 - Harmonograph: multi-pendulum curves with damping, anti-loop drift, settle cutoff, and an interactive plotter preview.
-- Wavetable: layered noise wave stacks with multiple noise types, image effects, and polygon shaping.
+- Wavetable: layered noise wave stacks with multiple line structures, noise types, image effects, and polygon shaping.
 - Rings: concentric rings with noise-modulated radii.
 - Topo: contours extracted from a noise-based height field, with mapping modes preserving closed contour loops to avoid seam gaps.
 - Rainfall: rain traces with droplet shaping, wind, and silhouette/ground controls.

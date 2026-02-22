@@ -46,6 +46,7 @@ const create2DContextStub = () => ({
   clearRect() {},
   fillRect() {},
   strokeRect() {},
+  rect() {},
   setLineDash() {},
   quadraticCurveTo() {},
   bezierCurveTo() {},
@@ -84,8 +85,11 @@ const loadVecturaRuntime = async (options = {}) => {
   const indexPath = path.join(rootDir, 'index.html');
   const indexHtml = fs.readFileSync(indexPath, 'utf8');
   const scriptSources = parseLocalScripts(indexHtml).filter((src) => !shouldSkipScript(src, options));
+  const html = options.useIndexHtml
+    ? indexHtml
+    : '<!doctype html><html><body><canvas id="main-canvas"></canvas></body></html>';
 
-  const dom = new JSDOM('<!doctype html><html><body><canvas id="main-canvas"></canvas></body></html>', {
+  const dom = new JSDOM(html, {
     url: 'http://localhost/',
     pretendToBeVisual: true,
     runScripts: 'outside-only',
@@ -109,7 +113,7 @@ const loadVecturaRuntime = async (options = {}) => {
     }));
 
   if (window.HTMLCanvasElement && window.HTMLCanvasElement.prototype) {
-    window.HTMLCanvasElement.prototype.getContext = window.HTMLCanvasElement.prototype.getContext || (() => create2DContextStub());
+    window.HTMLCanvasElement.prototype.getContext = () => create2DContextStub();
   }
 
   if (!window.ResizeObserver) {

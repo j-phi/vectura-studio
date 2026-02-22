@@ -1973,6 +1973,91 @@ input[type='color']::-webkit-color-swatch {
   color: #fafafa;
 }
 
+.optimization-overlay-legend {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  width: 220px;
+  border: 1px solid #27272a;
+  background: rgba(9, 9, 11, 0.94);
+  padding: 8px 10px;
+  z-index: 60;
+  pointer-events: none;
+}
+
+.optimization-overlay-legend-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #a1a1aa;
+  margin-bottom: 6px;
+}
+
+.optimization-overlay-legend-gradient {
+  height: 8px;
+  border: 1px solid #3f3f46;
+  margin-bottom: 4px;
+}
+
+.optimization-overlay-legend-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: #a1a1aa;
+}
+
+.color-thickness-control {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(130px, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.color-thickness-pill {
+  min-height: 24px;
+  color: #09090b;
+  width: 100%;
+  text-align: center;
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.color-thickness-size {
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) auto auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.line-style-control {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(150px, 1fr) minmax(86px, auto) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.style-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.style-field-label {
+  font-size: 9px;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #71717a;
+}
+
+.style-field > .color-thickness-pill,
+.style-field > input[type='number'],
+.style-field > button,
+.style-field > .color-thickness-size {
+  min-height: 24px;
+}
+
 @media (max-width: 1024px) {
   .tool-bar {
     top: 12px;

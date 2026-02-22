@@ -747,205 +747,459 @@
             };
           });
         const maxAmp = noiseSamplers.reduce((sum, sampler) => sum + Math.abs(sampler.amplitude || 0), 0) || 1;
-        let prevY = null;
-        let prevOffset = 0;
-        const rowOrder = overlapPadding > 0 ? [...Array(lines).keys()].reverse() : [...Array(lines).keys()];
-        const rowPaths = new Array(lines);
-        rowOrder.forEach((i) => {
+        const clamp01 = (v) => Math.max(0, Math.min(1, v));
+        const lineStructure = [
+          'horizontal',
+          'vertical',
+          'horizontal-vertical',
+          'isometric',
+          'lattice',
+          'horizon',
+          'horizontal-vanishing-point',
+        ].includes(p.lineStructure)
+          ? p.lineStructure
+          : 'horizontal';
+        const resolvedLineStructure = lineStructure === 'horizontal-vanishing-point' ? 'horizon' : lineStructure;
+        const sampleCombinedNoise = (baseX, baseY, sampleX = baseX, sampleY = baseY) => {
+          let combined = 0;
+          let hasNoise = false;
+          noiseSamplers.forEach((sampler) => {
+            const value = sampler.sample(sampleX, sampleY) * sampler.amplitude;
+            if (!hasNoise) {
+              combined = value;
+              hasNoise = true;
+              return;
+            }
+            switch (sampler.blend) {
+              case 'subtract':
+                combined -= value;
+                break;
+              case 'multiply':
+                combined *= value;
+                break;
+              case 'max':
+                combined = Math.max(combined, value);
+                break;
+              case 'min':
+                combined = Math.min(combined, value);
+                break;
+              case 'hatch-dark':
+              case 'hatch-light': {
+                const baseTone = hasNoise ? clamp01((combined / maxAmp + 1) / 2) : 0.5;
+                const weight = sampler.blend === 'hatch-dark' ? 1 - baseTone : baseTone;
+                const dirBias =
+                  value >= 0
+                    ? sampler.blend === 'hatch-dark'
+                      ? 0.6
+                      : 1.2
+                    : sampler.blend === 'hatch-dark'
+                      ? 1.2
+                      : 0.6;
+                combined += value * weight * dirBias;
+                break;
+              }
+              case 'add':
+              default:
+                combined += value;
+                break;
+            }
+          });
+          return hasNoise ? combined : 0;
+        };
+        const getEdgeTaper = (xNorm) => {
+          if (edgeFadeStrength <= 0 || edgeFadeThresholdStrength <= 0 || edgeFadeMode === 'none') return 1;
+          const t = clamp01(xNorm);
+          let hDist = 0;
+          let zone = 0;
+          if (edgeFadeMode === 'left') {
+            hDist = t;
+            zone = edgeFadeThresholdStrength;
+          } else if (edgeFadeMode === 'right') {
+            hDist = 1 - t;
+            zone = edgeFadeThresholdStrength;
+          } else {
+            hDist = Math.min(t, 1 - t);
+            zone = edgeFadeThresholdStrength / 2;
+          }
+          if (hDist <= zone) return Math.max(0, 1 - edgeFadeStrength);
+          if (edgeFadeFeatherStrength <= 0) return 1;
+          const featherZone = Math.max(0.0001, edgeFadeFeatherStrength / (edgeFadeMode === 'both' ? 2 : 1));
+          if (hDist > zone + featherZone) return 1;
+          const tFeather = (hDist - zone) / featherZone;
+          const eased = clamp01(tFeather);
+          return Math.max(0, (1 - edgeFadeStrength) + eased * edgeFadeStrength);
+        };
+        const getVerticalTaper = (yNorm) => {
+          if (verticalFadeStrength <= 0 || verticalFadeThresholdStrength <= 0 || verticalFadeMode === 'none') return 1;
+          const tRow = clamp01(yNorm);
+          let vDist = 0;
+          let zone = 0;
+          if (verticalFadeMode === 'top') {
+            vDist = tRow;
+            zone = verticalFadeThresholdStrength;
+          } else if (verticalFadeMode === 'bottom') {
+            vDist = 1 - tRow;
+            zone = verticalFadeThresholdStrength;
+          } else {
+            vDist = Math.min(tRow, 1 - tRow);
+            zone = verticalFadeThresholdStrength / 2;
+          }
+          if (vDist <= zone) return Math.max(0, 1 - verticalFadeStrength);
+          if (verticalFadeFeatherStrength <= 0) return 1;
+          const featherZone = Math.max(0.0001, verticalFadeFeatherStrength / (verticalFadeMode === 'both' ? 2 : 1));
+          if (vDist > zone + featherZone) return 1;
+          const t = (vDist - zone) / featherZone;
+          const eased = clamp01(t);
+          return Math.max(0, (1 - verticalFadeStrength) + eased * verticalFadeStrength);
+        };
+        const displacePoint = (baseX, baseY, strengthScale = 1, sampleX = baseX, sampleY = baseY) => {
+          const xNorm = clamp01((baseX - inset) / Math.max(1e-6, innerW));
+          const yNorm = clamp01((baseY - inset) / Math.max(1e-6, innerH));
+          const off = sampleCombinedNoise(baseX, baseY, sampleX, sampleY);
+          const amp = off * getEdgeTaper(xNorm) * getVerticalTaper(yNorm) * strengthScale;
+          const dx = amp * lineOffsetX;
+          const dy = amp * lineOffsetY;
+          let x = baseX + dx;
+          let y = baseY + dy;
+          if (dampenExtremes) {
+            const minY = inset;
+            const maxY = height - inset;
+            if (y < minY || y > maxY) {
+              const limit = Math.max(0, y < minY ? baseY - minY : maxY - baseY);
+              const denom = Math.max(0.001, Math.abs(amp));
+              const scale = Math.min(1, limit / denom);
+              y = baseY + amp * scale;
+            }
+          }
+          return { x, y };
+        };
+        const pushSegmentPath = (x0, y0, x1, y1, strengthFn = null, samplePointFn = null) => {
+          const length = Math.hypot(x1 - x0, y1 - y0);
+          const samples = Math.max(2, Math.floor(length / 2));
           const path = [];
-          const by = startY + i * lSpace;
-          const tRow = lines <= 1 ? 0.5 : i / (lines - 1);
-          let vTaper = 1;
-          if (verticalFadeStrength > 0 && verticalFadeThresholdStrength > 0 && verticalFadeMode !== 'none') {
-            let vDist = 0;
-            let zone = 0;
-            if (verticalFadeMode === 'top') {
-              vDist = tRow;
-              zone = verticalFadeThresholdStrength;
-            } else if (verticalFadeMode === 'bottom') {
-              vDist = 1 - tRow;
-              zone = verticalFadeThresholdStrength;
-            } else {
-              vDist = Math.min(tRow, 1 - tRow);
-              zone = verticalFadeThresholdStrength / 2;
-            }
-            if (vDist <= zone) {
-              vTaper = Math.max(0, 1 - verticalFadeStrength);
-            } else if (verticalFadeFeatherStrength > 0) {
-              const featherZone = Math.max(0.0001, verticalFadeFeatherStrength / (verticalFadeMode === 'both' ? 2 : 1));
-              if (vDist <= zone + featherZone) {
-                const t = (vDist - zone) / featherZone;
-                const eased = Math.max(0, Math.min(1, t));
-                const damp = (1 - verticalFadeStrength) + eased * verticalFadeStrength;
-                vTaper = Math.max(0, damp);
-              }
-            }
+          for (let i = 0; i <= samples; i++) {
+            const t = i / samples;
+            const baseX = x0 + (x1 - x0) * t;
+            const baseY = y0 + (y1 - y0) * t;
+            const strength = typeof strengthFn === 'function' ? strengthFn(t) : 1;
+            const samplePoint =
+              typeof samplePointFn === 'function' ? samplePointFn(baseX, baseY, t) : { x: baseX, y: baseY };
+            path.push(displacePoint(baseX, baseY, strength, samplePoint.x, samplePoint.y));
           }
-          const xOffset = p.tilt * i;
-          const currY = overlapPadding > 0 ? new Array(pts + 1) : null;
-          for (let j = 0; j <= pts; j++) {
-            const baseX = inset + j * xStep + xOffset;
-            let combined = 0;
-            let hasNoise = false;
-            noiseSamplers.forEach((sampler) => {
-              const value = sampler.sample(baseX, by) * sampler.amplitude;
-              if (!hasNoise) {
-                combined = value;
-                hasNoise = true;
-                return;
-              }
-              switch (sampler.blend) {
-                case 'subtract':
-                  combined -= value;
-                  break;
-                case 'multiply':
-                  combined *= value;
-                  break;
-                case 'max':
-                  combined = Math.max(combined, value);
-                  break;
-                case 'min':
-                  combined = Math.min(combined, value);
-                  break;
-                case 'hatch-dark':
-                case 'hatch-light': {
-                  const baseTone = hasNoise ? Math.max(0, Math.min(1, (combined / maxAmp + 1) / 2)) : 0.5;
-                  const weight = sampler.blend === 'hatch-dark' ? 1 - baseTone : baseTone;
-                  const dirBias =
-                    value >= 0
-                      ? sampler.blend === 'hatch-dark'
-                        ? 0.6
-                        : 1.2
-                      : sampler.blend === 'hatch-dark'
-                        ? 1.2
-                        : 0.6;
-                  combined += value * weight * dirBias;
-                  break;
+          if (path.length > 1) paths.push(path);
+        };
+        const clipInfiniteLineToBounds = (point, dir) => {
+          const xMin = inset;
+          const xMax = width - inset;
+          const yMin = inset;
+          const yMax = height - inset;
+          const dx = dir.x;
+          const dy = dir.y;
+          const eps = 1e-6;
+          const hits = [];
+          const pushHit = (t) => {
+            if (!Number.isFinite(t)) return;
+            const x = point.x + dx * t;
+            const y = point.y + dy * t;
+            if (x < xMin - eps || x > xMax + eps || y < yMin - eps || y > yMax + eps) return;
+            if (hits.some((h) => Math.abs(h.x - x) < 0.001 && Math.abs(h.y - y) < 0.001)) return;
+            hits.push({ x: Math.max(xMin, Math.min(xMax, x)), y: Math.max(yMin, Math.min(yMax, y)), t });
+          };
+          if (Math.abs(dx) > eps) {
+            pushHit((xMin - point.x) / dx);
+            pushHit((xMax - point.x) / dx);
+          }
+          if (Math.abs(dy) > eps) {
+            pushHit((yMin - point.y) / dy);
+            pushHit((yMax - point.y) / dy);
+          }
+          if (hits.length < 2) return null;
+          hits.sort((a, b) => a.t - b.t);
+          return { a: hits[0], b: hits[hits.length - 1] };
+        };
+        const splitLineBudget = (total, parts) => {
+          const safeParts = Math.max(1, Math.floor(parts));
+          const safeTotal = Math.max(safeParts, Math.floor(total));
+          const base = Math.floor(safeTotal / safeParts);
+          const rem = safeTotal - base * safeParts;
+          return Array.from({ length: safeParts }, (_, i) => base + (i < rem ? 1 : 0));
+        };
+        const buildParallelLinesAtAngle = (angleDeg, countScale = 1, countOverride = null) => {
+          const count =
+            Number.isFinite(countOverride) && countOverride !== null
+              ? Math.max(2, Math.floor(countOverride))
+              : Math.max(2, Math.round(lines * Math.max(0.1, countScale)));
+          const rad = (angleDeg * Math.PI) / 180;
+          const dir = { x: Math.cos(rad), y: Math.sin(rad) };
+          const normal = { x: -dir.y, y: dir.x };
+          const corners = [
+            { x: inset, y: inset },
+            { x: width - inset, y: inset },
+            { x: inset, y: height - inset },
+            { x: width - inset, y: height - inset },
+          ];
+          const projections = corners.map((pt) => pt.x * normal.x + pt.y * normal.y);
+          const minProj = Math.min(...projections);
+          const maxProj = Math.max(...projections);
+          const center = { x: inset + innerW / 2, y: inset + innerH / 2 };
+          const centerProj = center.x * normal.x + center.y * normal.y;
+          for (let i = 0; i < count; i++) {
+            const t = count <= 1 ? 0.5 : i / (count - 1);
+            const proj = minProj + (maxProj - minProj) * t;
+            const point = {
+              x: center.x + normal.x * (proj - centerProj),
+              y: center.y + normal.y * (proj - centerProj),
+            };
+            const seg = clipInfiniteLineToBounds(point, dir);
+            if (!seg) continue;
+            pushSegmentPath(seg.a.x, seg.a.y, seg.b.x, seg.b.y);
+          }
+        };
+        const buildHorizontalPaths = (lineCount = lines) => {
+          const localRowSpan = Math.max(1, lineCount - 1);
+          const localBaseSpace = innerH / localRowSpan;
+          let localSpace = localBaseSpace * gap;
+          let localTotalHeight = lineCount > 1 ? localSpace * (lineCount - 1) : 0;
+          if (lineCount > 1 && localTotalHeight > innerH) {
+            localSpace = innerH / (lineCount - 1);
+            localTotalHeight = localSpace * (lineCount - 1);
+          }
+          const localStartY = inset + (innerH - localTotalHeight) / 2;
+          let prevY = null;
+          let prevOffset = 0;
+          const rowOrder = overlapPadding > 0 ? [...Array(lineCount).keys()].reverse() : [...Array(lineCount).keys()];
+          const rowPaths = new Array(lineCount);
+          rowOrder.forEach((i) => {
+            const path = [];
+            const by = localStartY + i * localSpace;
+            const tRow = lineCount <= 1 ? 0.5 : i / (lineCount - 1);
+            const vTaper = getVerticalTaper(tRow);
+            const xOffset = p.tilt * i;
+            const currY = overlapPadding > 0 ? new Array(pts + 1) : null;
+            for (let j = 0; j <= pts; j++) {
+              const baseX = inset + j * xStep + xOffset;
+              const off = sampleCombinedNoise(baseX, by);
+              const amp = off * getEdgeTaper(j / pts) * vTaper;
+              const dx = amp * lineOffsetX;
+              const dy = amp * lineOffsetY;
+              let x = baseX + dx;
+              let y = by + dy;
+              if (dampenExtremes) {
+                const minY = inset;
+                const maxY = height - inset;
+                if (y < minY || y > maxY) {
+                  const limit = Math.max(0, y < minY ? by - minY : maxY - by);
+                  const denom = Math.max(0.001, Math.abs(amp));
+                  const scale = Math.min(1, limit / denom);
+                  y = by + amp * scale;
                 }
-                case 'add':
-                default:
-                  combined += value;
-                  break;
               }
+              if (overlapPadding > 0 && prevY) {
+                const minGap = overlapPadding * 0.5;
+                const prevIndex = (baseX - (inset + prevOffset)) / xStep;
+                if (prevIndex >= 0 && prevIndex <= pts) {
+                  const i0 = Math.floor(prevIndex);
+                  const i1 = Math.min(pts, i0 + 1);
+                  const t = prevIndex - i0;
+                  const prevVal = prevY[i0] + (prevY[i1] - prevY[i0]) * t;
+                  const ceiling = prevVal - minGap;
+                  if (y > ceiling) y = ceiling;
+                }
+              }
+              path.push({ x, y });
+              if (currY) currY[j] = y;
+            }
+            rowPaths[i] = path.length > 1 ? path : null;
+            if (currY) {
+              prevY = currY;
+              prevOffset = xOffset;
+            }
+          });
+          const continuity = ['none', 'single', 'double'].includes(p.continuity) ? p.continuity : 'none';
+          if (continuity === 'single') {
+            const snake = [];
+            rowPaths.forEach((path, idx) => {
+              if (!path || path.length < 2) return;
+              const segment = idx % 2 === 0 ? path : path.slice().reverse();
+              if (snake.length) {
+                const last = snake[snake.length - 1];
+                const start = segment[0];
+                if (last.x !== start.x || last.y !== start.y) snake.push({ x: start.x, y: start.y });
+              }
+              snake.push(...segment);
             });
-            const off = hasNoise ? combined : 0;
-            let taper = 1.0;
-            if (edgeFadeStrength > 0 && edgeFadeThresholdStrength > 0 && edgeFadeMode !== 'none') {
-              const t = j / pts;
-              let hDist = 0;
-              let zone = 0;
-              if (edgeFadeMode === 'left') {
-                hDist = t;
-                zone = edgeFadeThresholdStrength;
-              } else if (edgeFadeMode === 'right') {
-                hDist = 1 - t;
-                zone = edgeFadeThresholdStrength;
-              } else {
-                hDist = Math.min(t, 1 - t);
-                zone = edgeFadeThresholdStrength / 2;
+            if (snake.length) paths.push(snake);
+          } else {
+            rowPaths.forEach((path) => {
+              if (path) paths.push(path);
+            });
+            if (continuity === 'double') {
+              for (let i = 0; i < rowPaths.length - 1; i++) {
+                const a = rowPaths[i];
+                const b = rowPaths[i + 1];
+                if (!a || !b) continue;
+                const leftA = a[0];
+                const rightA = a[a.length - 1];
+                const leftB = b[0];
+                const rightB = b[b.length - 1];
+                if (leftA && leftB) paths.push([leftA, leftB]);
+                if (rightA && rightB) paths.push([rightA, rightB]);
               }
-              if (hDist <= zone) {
-                taper = Math.max(0, 1 - edgeFadeStrength);
-              } else if (edgeFadeFeatherStrength > 0) {
-                const featherZone = Math.max(0.0001, edgeFadeFeatherStrength / (edgeFadeMode === 'both' ? 2 : 1));
-                if (hDist <= zone + featherZone) {
-                  const tFeather = (hDist - zone) / featherZone;
-                  const eased = Math.max(0, Math.min(1, tFeather));
-                  const damp = (1 - edgeFadeStrength) + eased * edgeFadeStrength;
-                  taper = Math.max(0, damp);
-                }
-              }
-            }
-            const amp = off * taper * vTaper;
-            const dx = amp * lineOffsetX;
-            const dy = amp * lineOffsetY;
-            let x = baseX + dx;
-            let y = by + dy;
-            if (dampenExtremes) {
-              const minY = inset;
-              const maxY = height - inset;
-              if (y < minY || y > maxY) {
-                const limit = Math.max(0, y < minY ? by - minY : maxY - by);
-                const denom = Math.max(0.001, Math.abs(amp));
-                const scale = Math.min(1, limit / denom);
-                y = by + amp * scale;
-              }
-            }
-            if (overlapPadding > 0 && prevY) {
-              const minGap = overlapPadding * 0.5;
-              const prevIndex = (baseX - (inset + prevOffset)) / xStep;
-              if (prevIndex >= 0 && prevIndex <= pts) {
-                const i0 = Math.floor(prevIndex);
-                const i1 = Math.min(pts, i0 + 1);
-                const t = prevIndex - i0;
-                const prevVal = prevY[i0] + (prevY[i1] - prevY[i0]) * t;
-                const ceiling = prevVal - minGap;
-                if (y > ceiling) {
-                  y = ceiling;
-                }
-              }
-            }
-            path.push({ x, y });
-            if (currY) currY[j] = y;
-          }
-          rowPaths[i] = path.length > 1 ? path : null;
-          if (currY) {
-            prevY = currY;
-            prevOffset = xOffset;
-          }
-        });
-
-        const continuity = ['none', 'single', 'double'].includes(p.continuity) ? p.continuity : 'none';
-        if (continuity === 'single') {
-          const snake = [];
-          rowPaths.forEach((path, idx) => {
-            if (!path || path.length < 2) return;
-            const segment = idx % 2 === 0 ? path : path.slice().reverse();
-            if (snake.length) {
-              const last = snake[snake.length - 1];
-              const start = segment[0];
-              if (last.x !== start.x || last.y !== start.y) snake.push({ x: start.x, y: start.y });
-            }
-            snake.push(...segment);
-          });
-          if (snake.length) paths.push(snake);
-        } else {
-          rowPaths.forEach((path) => {
-            if (path) paths.push(path);
-          });
-          if (continuity === 'double') {
-            for (let i = 0; i < rowPaths.length - 1; i++) {
-              const a = rowPaths[i];
-              const b = rowPaths[i + 1];
-              if (!a || !b) continue;
-              const leftA = a[0];
-              const rightA = a[a.length - 1];
-              const leftB = b[0];
-              const rightB = b[b.length - 1];
-              if (leftA && leftB) paths.push([leftA, leftB]);
-              if (rightA && rightB) paths.push([rightA, rightB]);
             }
           }
+          if (flatCaps) {
+            const top = [];
+            const bottom = [];
+            const bottomOffset = p.tilt * (lineCount - 1);
+            const topY = localStartY;
+            const bottomY = localStartY + localSpace * (lineCount - 1);
+            for (let j = 0; j <= pts; j++) {
+              top.push({ x: inset + j * xStep, y: topY });
+              bottom.push({ x: inset + j * xStep + bottomOffset, y: bottomY });
+            }
+            paths.push(top, bottom);
+          }
+        };
+        if (resolvedLineStructure === 'horizontal') {
+          buildHorizontalPaths();
+          return paths;
         }
-
-        if (flatCaps) {
-          const top = [];
-          const bottom = [];
-          const bottomOffset = p.tilt * (lines - 1);
-          const topY = startY;
-          const bottomY = startY + lSpace * (lines - 1);
-          for (let j = 0; j <= pts; j++) {
-            const xTop = inset + j * xStep;
-            const xBottom = inset + j * xStep + bottomOffset;
-            top.push({ x: xTop, y: topY });
-            bottom.push({ x: xBottom, y: bottomY });
-          }
-          paths.push(top, bottom);
+        if (resolvedLineStructure === 'horizontal-vertical') {
+          const [hCount, vCount] = splitLineBudget(lines, 2);
+          buildHorizontalPaths(hCount);
+          buildParallelLinesAtAngle(90, 1, vCount);
+          return paths;
         }
-
+        if (resolvedLineStructure === 'vertical') {
+          buildParallelLinesAtAngle(90);
+          return paths;
+        }
+        if (resolvedLineStructure === 'isometric') {
+          const xMin = inset;
+          const xMax = width - inset;
+          const yMin = inset;
+          const yMax = height - inset;
+          const rowCount = Math.max(2, lines);
+          const rowSpacing = Math.max(0.25, lSpace);
+          const isoTotalH = rowSpacing * (rowCount - 1);
+          const isoStartY = yMin + (innerH - isoTotalH) / 2;
+          const corners = [
+            { x: xMin, y: yMin },
+            { x: xMax, y: yMin },
+            { x: xMin, y: yMax },
+            { x: xMax, y: yMax },
+          ];
+          const slope60 = Math.sqrt(3);
+          const bStep = rowSpacing * 2; // equilateral triangular lattice spacing
+          const bPhase = ((isoStartY % bStep) + bStep) % bStep; // phase-lock diagonals to horizontal rows
+          const buildSlopeFamily = (slopeSign = 1) => {
+            const m = slope60 * slopeSign;
+            const bVals = corners.map((pt) => pt.y - m * pt.x);
+            const minB = Math.min(...bVals);
+            const maxB = Math.max(...bVals);
+            const bStart = Math.floor((minB - bPhase) / bStep) - 2;
+            const bEnd = Math.ceil((maxB - bPhase) / bStep) + 2;
+            const dirAngle = slopeSign > 0 ? 60 : -60;
+            const rad = (dirAngle * Math.PI) / 180;
+            const dir = { x: Math.cos(rad), y: Math.sin(rad) };
+            for (let i = bStart; i <= bEnd; i++) {
+              const b = bPhase + i * bStep;
+              const point = { x: xMin, y: m * xMin + b };
+              const seg = clipInfiniteLineToBounds(point, dir);
+              if (!seg) continue;
+              pushSegmentPath(seg.a.x, seg.a.y, seg.b.x, seg.b.y);
+            }
+          };
+          for (let i = 0; i < rowCount; i++) {
+            const y = isoStartY + i * rowSpacing;
+            pushSegmentPath(xMin, y, xMax, y);
+          }
+          buildSlopeFamily(1);
+          buildSlopeFamily(-1);
+          return paths;
+        }
+        if (resolvedLineStructure === 'lattice') {
+          const [aCount, bCount] = splitLineBudget(lines, 2);
+          buildParallelLinesAtAngle(45, 1, aCount);
+          buildParallelLinesAtAngle(-45, 1, bCount);
+          return paths;
+        }
+        if (resolvedLineStructure === 'horizon') {
+          const legacyHeight = p.vanishingPointY !== undefined ? Math.round(clamp01(p.vanishingPointY) * 100) : 50;
+          const horizonHeight = Math.max(1, Math.min(100, Math.round(p.horizonHeight ?? legacyHeight)));
+          const depthPerspective = clamp01((p.horizonDepthPerspective ?? 70) / 100);
+          const horizonT = (horizonHeight - 1) / 99;
+          const horizonCenterX = inset + innerW * 0.5;
+          const horizonY = inset + innerH * horizonT;
+          const baseY = inset + innerH;
+          const safeDelta = Math.max(1, baseY - horizonY);
+          const offscreenDepth = 1.35;
+          const nearOffscreenY = horizonY + safeDelta * offscreenDepth;
+          const xOverscan = innerW * 0.2;
+          const xMin = inset - xOverscan;
+          const xMax = width - inset + xOverscan;
+          const getDepthState = (y) => {
+            const depthNorm = clamp01((y - horizonY) / Math.max(1e-6, nearOffscreenY - horizonY)); // 0=far,1=near
+            const farFactor = 1 - depthNorm;
+            const freqBoost = 1 + farFactor * depthPerspective * 4.5;
+            const zShift = farFactor * depthPerspective * innerH * 1.8;
+            const viewerDampen = 0.18 + 0.82 * farFactor; // damp near viewer, restore amplitude near horizon
+            const ampScale = (1 - depthPerspective) + depthPerspective * viewerDampen;
+            return { depthNorm, farFactor, freqBoost, zShift, ampScale };
+          };
+          const samplePointForDepth = (baseX, baseY) => {
+            const d = getDepthState(baseY);
+            return {
+              x: horizonCenterX + (baseX - horizonCenterX) * d.freqBoost + d.zShift * 0.17,
+              y: horizonY + (baseY - horizonY) * d.freqBoost + d.zShift,
+            };
+          };
+          const [horizontalCount, verticalCount] = splitLineBudget(lines, 2);
+          for (let i = 0; i < horizontalCount; i++) {
+            const t = horizontalCount <= 1 ? 0.5 : i / (horizontalCount - 1);
+            const depth = Math.pow(t, 2.45) * offscreenDepth;
+            const y = horizonY + safeDelta * depth;
+            if (y < inset - safeDelta * 0.1) continue;
+            const d = getDepthState(y);
+            pushSegmentPath(
+              inset,
+              y,
+              width - inset,
+              y,
+              () => Math.max(0.05, d.depthNorm * 0.34) * d.ampScale,
+              (baseX, baseY) => samplePointForDepth(baseX, baseY)
+            );
+          }
+          const nearMinX = xMin;
+          const nearMaxX = xMax;
+          const nearSpan = Math.max(1e-6, nearMaxX - nearMinX);
+          for (let i = 0; i < verticalCount; i++) {
+            const t = verticalCount <= 1 ? 0.5 : i / (verticalCount - 1);
+            const nearX = nearMinX + nearSpan * t;
+            const endX = inset + innerW * t; // force fan to reach full top width (both corners)
+            const spreadFromCenter = (nearX - horizonCenterX) / Math.max(1e-6, nearSpan * 0.5);
+            const startX = nearX + spreadFromCenter * innerW * 0.2;
+            pushSegmentPath(
+              startX,
+              nearOffscreenY,
+              endX,
+              horizonY,
+              (s) => {
+                const yAtS = nearOffscreenY + (horizonY - nearOffscreenY) * s;
+                const d = getDepthState(yAtS);
+                return Math.max(0.05, Math.pow(1 - s, 1.25) * 0.34) * d.ampScale;
+              },
+              (baseX, _baseY, s) => {
+                const sampleY = nearOffscreenY + (horizonY - nearOffscreenY) * s;
+                return samplePointForDepth(baseX, sampleY);
+              }
+            );
+          }
+          return paths;
+        }
         return paths;
       },
       formula: (p) =>
-        `y = yBase + Σ noiseᵢ(rotate(x*zoomᵢ*freqᵢ, y*zoomᵢ)) * ampᵢ\nedge/vertical dampening scales noise`,
+        `structure = ${(p.lineStructure === 'horizontal-vanishing-point' ? 'horizon' : p.lineStructure) || 'horizontal'}\ny = yBase + Σ noiseᵢ(rotate(x*zoomᵢ*freqᵢ, y*zoomᵢ)) * ampᵢ\nedge/vertical dampening scales noise`,
     };
 })();

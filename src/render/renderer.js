@@ -189,6 +189,65 @@
       this.canvas.style.cursor = 'crosshair';
     }
 
+    hexToRgb(hex) {
+      if (typeof hex !== 'string') return { r: 56, g: 189, b: 248 };
+      const raw = hex.trim().replace('#', '');
+      const value =
+        raw.length === 3
+          ? raw
+              .split('')
+              .map((c) => `${c}${c}`)
+              .join('')
+          : raw;
+      if (!/^[0-9a-fA-F]{6}$/.test(value)) return { r: 56, g: 189, b: 248 };
+      return {
+        r: parseInt(value.slice(0, 2), 16),
+        g: parseInt(value.slice(2, 4), 16),
+        b: parseInt(value.slice(4, 6), 16),
+      };
+    }
+
+    mixRgb(a, b, t) {
+      const clampT = Math.max(0, Math.min(1, t));
+      return {
+        r: Math.round(a.r + (b.r - a.r) * clampT),
+        g: Math.round(a.g + (b.g - a.g) * clampT),
+        b: Math.round(a.b + (b.b - a.b) * clampT),
+      };
+    }
+
+    rgbToCss(rgb, alpha = 1) {
+      return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+    }
+
+    getComplementRgb(rgb) {
+      return {
+        r: 255 - rgb.r,
+        g: 255 - rgb.g,
+        b: 255 - rgb.b,
+      };
+    }
+
+    getLineSortStep(layer) {
+      if (!layer || !layer.optimization || layer.optimization.bypassAll) return null;
+      const steps = Array.isArray(layer.optimization.steps) ? layer.optimization.steps : [];
+      return steps.find((step) => step && step.id === 'linesort') || null;
+    }
+
+    isLineSortApplied(layer) {
+      const lineSort = this.getLineSortStep(layer);
+      return Boolean(lineSort && lineSort.enabled && !lineSort.bypass);
+    }
+
+    updateOptimizationOverlayLegend(show, startColor = '', endColor = '') {
+      const legend = document.getElementById('optimization-overlay-legend');
+      if (!legend) return;
+      legend.classList.toggle('hidden', !show);
+      if (!show) return;
+      const gradientEl = document.getElementById('optimization-overlay-legend-gradient');
+      if (gradientEl) gradientEl.style.background = `linear-gradient(90deg, ${startColor} 0%, ${endColor} 100%)`;
+    }
+
     getModifierState(e = {}) {
       const mods = SETTINGS.touchModifiers || {};
       const isTouchPointer = e.pointerType && e.pointerType !== 'mouse';
@@ -1063,6 +1122,57 @@
         if (!showOptimizedOverlay) return;
         const overlayColor = SETTINGS.optimizationOverlayColor || '#38bdf8';
         const overlayWidth = Math.max(0.05, SETTINGS.optimizationOverlayWidth ?? 0.2);
+        const overlayItems = [];
+        let hasLineSort = false;
+        let lineSortSecondary = '';
+        this.engine.layers.forEach((l) => {
+          if (!l.visible || !l.optimizedPaths || !l.optimizedPaths.length) return;
+          const useCurves = Boolean(l.params && l.params.curves);
+          if (this.isLineSortApplied(l)) {
+            hasLineSort = true;
+            const step = this.getLineSortStep(l);
+            if (!lineSortSecondary && step && typeof step.overlaySecondaryColor === 'string') {
+              lineSortSecondary = step.overlaySecondaryColor.trim();
+            }
+          }
+          l.optimizedPaths.forEach((path) => overlayItems.push({ layer: l, path, useCurves }));
+        });
+        const shouldUseGradient = hasLineSort && overlayItems.length > 1;
+        const base = this.hexToRgb(overlayColor);
+        const startRgb = base;
+        const endRgb = lineSortSecondary ? this.hexToRgb(lineSortSecondary) : this.getComplementRgb(base);
+        if (shouldUseGradient) {
+          const total = Math.max(1, overlayItems.length - 1);
+          overlayItems.forEach((item, index) => {
+            const l = item.layer;
+            const t = index / total;
+            const color = this.mixRgb(startRgb, endRgb, t);
+            this.ctx.save();
+            this.ctx.lineWidth = overlayWidth;
+            this.ctx.lineCap = l.lineCap || 'round';
+            this.ctx.lineJoin = 'round';
+            this.ctx.strokeStyle = this.rgbToCss(color, 0.9);
+            this.ctx.beginPath();
+            if (item.path && item.path.meta && item.path.meta.kind === 'circle') {
+              const meta =
+                this.selectedLayerIds?.has(l.id) && this.tempTransform
+                  ? this.transformCircleMeta(item.path.meta, this.tempTransform)
+                  : item.path.meta;
+              this.traceCircle(meta);
+            } else {
+              const next =
+                this.selectedLayerIds?.has(l.id) && this.tempTransform
+                  ? this.transformPath(item.path, this.tempTransform)
+                  : item.path;
+              this.tracePath(next, item.useCurves);
+            }
+            this.ctx.stroke();
+            this.ctx.restore();
+          });
+          this.updateOptimizationOverlayLegend(true, this.rgbToCss(startRgb, 1), this.rgbToCss(endRgb, 1));
+          return;
+        }
+        this.updateOptimizationOverlayLegend(false);
         this.engine.layers.forEach((l) => {
           if (!l.visible || !l.optimizedPaths || !l.optimizedPaths.length) return;
           const useCurves = Boolean(l.params && l.params.curves);
@@ -1230,8 +1340,8 @@
         this.ctx.rect(m, m, innerW, innerH);
         this.ctx.clip();
         drawSelectionOutline();
-      drawLayers();
-      drawOptimizedOverlay();
+        drawLayers();
+        drawOptimizedOverlay();
         drawHelperOverlays();
         this.ctx.restore();
       } else {
@@ -1241,6 +1351,7 @@
         this.ctx.clip();
         drawSelectionOutline();
         drawLayers();
+        drawOptimizedOverlay();
         drawHelperOverlays();
         this.ctx.restore();
 
@@ -1281,6 +1392,7 @@
       if (this.isScissor && this.scissorStart && this.scissorEnd) this.drawScissorPreview();
       if (this.lightSource) this.drawLightSource();
       this.ctx.restore();
+      if (!showOptimizedOverlay) this.updateOptimizationOverlayLegend(false);
     }
 
     drawGridOverlay(profile) {

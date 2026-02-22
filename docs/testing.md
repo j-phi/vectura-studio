@@ -11,7 +11,7 @@ Workflow governance and documentation synchronization rules live in `docs/agenti
 ## Local Commands
 - `npm run test` runs `test:unit` and `test:integration`.
 - `npm run test:unit` runs deterministic unit tests.
-- `npm run test:integration` runs engine integration tests.
+- `npm run test:integration` runs engine integration tests, including app bootstrap integrity assertions for Layers/Mathematical Model/About population.
 - `npm run test:e2e` runs Playwright smoke tests.
 - `npm run test:visual` runs SVG baseline regression checks.
 - `npm run test:visual:screenshots` runs optional Playwright screenshot snapshots.

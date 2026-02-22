@@ -111,7 +111,7 @@
       <div class="pane-header pane-header-left p-4 border-b border-vectura-border flex justify-between items-center">
         <span class="pane-title font-bold text-vectura-accent">GENERATOR</span>
 
-        <span class="pane-meta text-[10px] text-vectura-muted">V.0.6.21</span>
+        <span class="pane-meta text-[10px] text-vectura-muted">V.0.6.45</span>
 
         <button id="btn-pane-toggle-left" class="pane-toggle pane-toggle-left" type="button"
           aria-label="Toggle left pane">
@@ -374,6 +374,14 @@
           aria-label="Vector preview"></canvas>
         <div class="absolute inset-0 paper-texture opacity-30 pointer-events-none mix-blend-overlay"></div>
         <div id="notification-area" class="absolute top-4 right-4 flex flex-col gap-2 pointer-events-none z-50"></div>
+        <div id="optimization-overlay-legend" class="optimization-overlay-legend hidden" aria-live="polite">
+          <div class="optimization-overlay-legend-title">Line Sort Overlay Order</div>
+          <div id="optimization-overlay-legend-gradient" class="optimization-overlay-legend-gradient"></div>
+          <div class="optimization-overlay-legend-labels">
+            <span>Start Print Order</span>
+            <span>End Print Order</span>
+          </div>
+        </div>
       </div>
 
       <div id="bottom-resizer" class="bottom-resizer" aria-hidden="true"></div>
@@ -566,25 +574,38 @@
                 class="w-16 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
             </div>
             <div class="flex items-center justify-between mb-2">
-              <label class="text-xs text-vectura-muted">Visible Line</label>
+              <label class="text-xs text-vectura-muted">Margin Outline</label>
               <input type="checkbox" id="set-margin-line" class="cursor-pointer" />
             </div>
-            <div class="grid grid-cols-3 gap-2">
-              <div>
-                <label class="text-[10px] text-vectura-muted">Line Weight</label>
-                <input type="number" id="set-margin-line-weight" min="0.05" step="0.05"
-                  class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
-              </div>
-              <div>
-                <label class="text-[10px] text-vectura-muted">Line Color</label>
-                <div class="relative w-full h-7 overflow-hidden rounded border border-vectura-border">
-                  <input type="color" id="set-margin-line-color" class="w-full h-full cursor-pointer" />
+            <div class="mt-2">
+              <label class="text-[10px] text-vectura-muted">Margin Outline Style</label>
+              <div class="line-style-control">
+                <div class="style-field">
+                  <span class="style-field-label">Line Color</span>
+                  <button id="set-margin-line-color-pill" type="button"
+                    class="value-chip text-xs text-vectura-accent font-mono color-thickness-pill">#52525B</button>
+                  <input type="color" id="set-margin-line-color" class="hidden" />
                 </div>
-              </div>
-              <div>
-                <label class="text-[10px] text-vectura-muted">Dotting</label>
-                <input type="number" id="set-margin-line-dotting" min="0" step="0.5"
-                  class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
+                <div class="style-field">
+                  <span class="style-field-label">Line Thickness</span>
+                  <div class="color-thickness-size">
+                    <input type="range" id="set-margin-line-weight-slider" min="0.05" max="2" step="0.05" value="0.2"
+                      class="w-full">
+                    <input type="number" id="set-margin-line-weight" min="0.05" max="2" step="0.05" value="0.2"
+                      class="w-14 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
+                    <span class="text-[10px] text-vectura-muted">mm</span>
+                  </div>
+                </div>
+                <div class="style-field">
+                  <span class="style-field-label">Separation</span>
+                  <input type="number" id="set-margin-line-dotting" min="0" step="0.5"
+                    class="w-14 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
+                </div>
+                <div class="style-field">
+                  <span class="style-field-label">Reset</span>
+                  <button id="set-margin-line-style-reset" type="button"
+                    class="text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted">Reset</button>
+                </div>
               </div>
             </div>
             <div class="mt-4">
@@ -612,16 +633,31 @@
                 <label class="text-xs text-vectura-muted">Selection Outline</label>
                 <input type="checkbox" id="set-selection-outline" class="cursor-pointer" />
               </div>
-              <div>
-                <label class="text-[10px] text-vectura-muted">Outline Color</label>
-                <div class="relative w-full h-7 overflow-hidden rounded border border-vectura-border">
-                  <input type="color" id="set-selection-outline-color" class="w-full h-full cursor-pointer" />
-                </div>
-              </div>
               <div class="mt-2">
-                <label class="text-[10px] text-vectura-muted">Outline Width</label>
-                <input type="number" id="set-selection-outline-width" step="0.1"
-                  class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
+                <label class="text-[10px] text-vectura-muted">Selection Outline Style</label>
+                <div class="color-thickness-control">
+                  <div class="style-field">
+                    <span class="style-field-label">Line Color</span>
+                    <button id="set-selection-outline-color-pill" type="button"
+                      class="value-chip text-xs text-vectura-accent font-mono color-thickness-pill">#EF4444</button>
+                    <input type="color" id="set-selection-outline-color" class="hidden" />
+                  </div>
+                  <div class="style-field">
+                    <span class="style-field-label">Line Thickness</span>
+                    <div class="color-thickness-size">
+                      <input type="range" id="set-selection-outline-width-slider" min="0.1" max="2" step="0.05" value="0.4"
+                        class="w-full">
+                      <input type="number" id="set-selection-outline-width" min="0.1" max="2" step="0.05" value="0.4"
+                        class="w-14 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
+                      <span class="text-[10px] text-vectura-muted">mm</span>
+                    </div>
+                  </div>
+                  <div class="style-field">
+                    <span class="style-field-label">Reset</span>
+                    <button id="set-selection-outline-style-reset" type="button"
+                      class="text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted">Reset</button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

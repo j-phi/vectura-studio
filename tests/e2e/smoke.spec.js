@@ -9,6 +9,13 @@ test.describe('Vectura smoke interactions', () => {
 
     await expect(page.locator('#status-bar')).toBeVisible();
     await expect(page.locator('#generator-module')).toBeVisible();
+    await expect(page.locator('#layer-list .layer-item').first()).toBeVisible();
+    await expect
+      .poll(async () => (await page.locator('#formula-display').innerText()).trim().length)
+      .toBeGreaterThan(0);
+    await expect
+      .poll(async () => (await page.locator('#algo-desc').innerText()).trim().length)
+      .toBeGreaterThan(0);
 
     const initialLayers = await page.locator('#layer-list .layer-item').count();
     await page.click('#btn-add-layer');
@@ -121,7 +128,7 @@ test.describe('Vectura smoke interactions', () => {
 
     await page.goto('/');
 
-    await page.getByRole('button', { name: 'Edit' }).click();
+    await page.getByRole('button', { name: 'File' }).click();
     await page.click('#btn-settings');
     await expect(page.locator('#settings-panel')).toHaveClass(/open/);
 

@@ -25,10 +25,94 @@
   const PETALIS_LAYER_TYPES = new Set(['petalisDesigner']);
   const isPetalisLayerType = (type) => PETALIS_LAYER_TYPES.has(type);
 
-  const getEl = (id) => {
+  const getEl = (id, options = {}) => {
+    const { silent = false } = options;
     const el = document.getElementById(id);
-    if (!el) console.warn(`[UI] Missing element #${id}`);
+    if (!el && !silent) console.warn(`[UI] Missing element #${id}`);
     return el;
+  };
+
+  const getAnchoredColorProxyInput = () => {
+    const existing = document.getElementById('anchored-color-proxy-input');
+    if (existing) return existing;
+    const proxy = document.createElement('input');
+    proxy.id = 'anchored-color-proxy-input';
+    proxy.type = 'color';
+    proxy.setAttribute('aria-hidden', 'true');
+    proxy.tabIndex = -1;
+    proxy.style.position = 'fixed';
+    proxy.style.left = '-9999px';
+    proxy.style.top = '-9999px';
+    proxy.style.width = '24px';
+    proxy.style.height = '24px';
+    proxy.style.opacity = '0.01';
+    proxy.style.pointerEvents = 'none';
+    proxy.style.border = '0';
+    proxy.style.padding = '0';
+    proxy.style.background = 'transparent';
+    proxy.style.zIndex = '2147483647';
+    document.body.appendChild(proxy);
+    return proxy;
+  };
+
+  const openColorPickerAnchoredTo = (colorInput, triggerEl) => {
+    if (!colorInput || !triggerEl) return;
+    const rect = triggerEl.getBoundingClientRect();
+    const proxyInput = getAnchoredColorProxyInput();
+    const sourceColor = colorInput.value || '#000000';
+    proxyInput.value = sourceColor;
+
+    const desiredLeft = Math.round(rect.left + rect.width / 2);
+    const spaceAbove = rect.top;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const placeAbove = spaceAbove >= 220 || spaceAbove >= spaceBelow;
+    const top = placeAbove ? Math.round(rect.top - 2) : Math.round(rect.bottom + 2);
+    const left = Math.max(12, Math.min(window.innerWidth - 12, desiredLeft));
+    proxyInput.style.left = `${left}px`;
+    proxyInput.style.top = `${top}px`;
+    proxyInput.style.transform = `translate(-50%, ${placeAbove ? '-100%' : '0'})`;
+
+    let done = false;
+    let frame = null;
+
+    const syncToSource = (evtName) => {
+      colorInput.value = proxyInput.value;
+      colorInput.dispatchEvent(new Event(evtName, { bubbles: true }));
+    };
+
+    const cleanup = () => {
+      if (done) return;
+      done = true;
+      proxyInput.removeEventListener('input', handleInput);
+      proxyInput.removeEventListener('change', handleChange);
+      proxyInput.removeEventListener('blur', cleanup);
+      window.removeEventListener('focus', cleanup);
+      proxyInput.style.left = '-9999px';
+      proxyInput.style.top = '-9999px';
+      proxyInput.style.transform = 'none';
+      if (frame !== null) window.cancelAnimationFrame(frame);
+    };
+
+    const handleInput = () => syncToSource('input');
+    const handleChange = () => {
+      syncToSource('change');
+      cleanup();
+    };
+
+    proxyInput.addEventListener('input', handleInput);
+    proxyInput.addEventListener('change', handleChange);
+    proxyInput.addEventListener('blur', cleanup, { once: true });
+    window.addEventListener('focus', cleanup, { once: true });
+
+    frame = window.requestAnimationFrame(() => {
+      try {
+        if (typeof proxyInput.showPicker === 'function') proxyInput.showPicker();
+        else proxyInput.click();
+      } catch (_err) {
+        proxyInput.click();
+      }
+      setTimeout(cleanup, 3000);
+    });
   };
 
   const escapeHtml = (str) => {
@@ -1932,9 +2016,43 @@
       { id: 'radiusScaleCurve', label: 'Radius Scale Curve', type: 'range', min: 0.5, max: 2.5, step: 0.05, infoKey: 'petalis.radiusScaleCurve' },
     ],
     wavetable: [
-      { id: 'lines', label: 'Lines', type: 'range', min: 5, max: 160, step: 1, infoKey: 'wavetable.lines' },
+      {
+        id: 'lineStructure',
+        label: 'Line Structure',
+        type: 'select',
+        options: [
+          { value: 'horizontal', label: 'Horizontal' },
+          { value: 'vertical', label: 'Vertical' },
+          { value: 'horizontal-vertical', label: 'Horizontal & Vertical' },
+          { value: 'isometric', label: 'Isometric' },
+          { value: 'lattice', label: 'Lattice' },
+          { value: 'horizon', label: 'Horizon' },
+        ],
+        infoKey: 'wavetable.lineStructure',
+      },
+      { id: 'lines', label: 'Lines', type: 'range', min: 5, max: 500, step: 1, infoKey: 'wavetable.lines' },
       { id: 'gap', label: 'Line Gap', type: 'range', min: 0.5, max: 3.0, step: 0.1, infoKey: 'wavetable.gap' },
       { id: 'tilt', label: 'Row Shift', type: 'range', min: -12, max: 12, step: 1, infoKey: 'wavetable.tilt' },
+      {
+        id: 'horizonHeight',
+        label: 'Horizon Height (%)',
+        type: 'range',
+        min: 1,
+        max: 100,
+        step: 1,
+        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        infoKey: 'wavetable.horizonHeight',
+      },
+      {
+        id: 'horizonDepthPerspective',
+        label: 'Depth Perspective',
+        type: 'range',
+        min: 0,
+        max: 100,
+        step: 1,
+        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        infoKey: 'wavetable.horizonDepthPerspective',
+      },
       {
         id: 'lineOffset',
         label: 'Line Offset Angle',
@@ -2764,7 +2882,7 @@
       description: 'Opacity for strokes drawn outside the margin when truncation is disabled.',
     },
     'global.marginLineVisible': {
-      title: 'Visible Line',
+      title: 'Margin Outline',
       description: 'Shows a non-exported margin boundary on the canvas.',
     },
     'global.marginLineWeight': {
@@ -3021,7 +3139,21 @@
     },
     'wavetable.lines': {
       title: 'Lines',
-      description: 'Number of horizontal rows in the wavetable.',
+      description: 'Number of lines used by the selected wavetable line structure.',
+    },
+    'wavetable.lineStructure': {
+      title: 'Line Structure',
+      description:
+        'Sets the base line layout before noise displacement: horizontal rows, vertical stacks, grid combos, isometric sets, lattice diagonals, or a perspective horizon grid.',
+    },
+    'wavetable.horizonHeight': {
+      title: 'Horizon Height (%)',
+      description: 'Sets the horizon line height as a percentage of the drawable area (1 = top, 100 = bottom).',
+    },
+    'wavetable.horizonDepthPerspective': {
+      title: 'Depth Perspective',
+      description:
+        'In Horizon mode, increases noise frequency toward the horizon and dampens displacement toward the viewer for layered distant ridges.',
     },
     'wavetable.noiseType': {
       title: 'Noise Type',
@@ -8669,6 +8801,12 @@
             Image noise includes an Image Effects stack plus optional style shaping.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
+            Wavetable Line Structure supports Horizontal, Vertical, Horizontal &amp; Vertical, Isometric, Lattice, and Horizon layouts.
+          </div>
+          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
+            Horizon mode includes Depth Perspective to scale noise by distance, giving larger near ridges and compressed far terrain.
+          </div>
+          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Petalis includes an embedded panel; use its pop-out icon (⧉) to open the same panel in a floating window and pop-in (↩) to dock it back.
             It includes flower presets, radial petal controls, a PETAL VISUALIZER pane (Overlay or Side by Side), a PROFILE EDITOR for inner/outer profile import/export, an Export Pair button below both profile cards, a shading stack with in-place hatch-angle rotation, and a matching modifier stack.
             Shape comes from editable inner/outer curves, each stack item has its own Petal Shape target (Inner/Outer/Both), and the designer keeps symmetry per side with a collapsible Randomness &amp; Seed section at the bottom.
@@ -8699,6 +8837,9 @@
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Optimization tools (linesimplify, linesort, filter, multipass) can be previewed with replace/overlay and
             optionally included on export.
+          </div>
+          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
+            In Overlay preview, active Line Sort shows a gradient from Overlay Color to its complement (or Line Sort Secondary Color) with a legend for print order progression.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Use the File menu to Save/Open full .vectura projects, Import SVG, open Document Setup, and Export SVG.
@@ -9601,17 +9742,14 @@
         { inputId: 'set-outside-opacity', infoKey: 'global.outsideOpacity' },
         { inputId: 'set-margin-line', infoKey: 'global.marginLineVisible' },
         { inputId: 'set-margin-line-weight', infoKey: 'global.marginLineWeight' },
-        { inputId: 'set-margin-line-color', infoKey: 'global.marginLineColor' },
+        { inputId: 'set-margin-line-color-pill', infoKey: 'global.marginLineColor' },
         { inputId: 'set-margin-line-dotting', infoKey: 'global.marginLineDotting' },
         { inputId: 'set-selection-outline', infoKey: 'global.selectionOutline' },
-        { inputId: 'set-selection-outline-color', infoKey: 'global.selectionOutlineColor' },
+        { inputId: 'set-selection-outline-color-pill', infoKey: 'global.selectionOutlineColor' },
         { inputId: 'set-selection-outline-width', infoKey: 'global.selectionOutlineWidth' },
         { inputId: 'set-cookie-preferences', infoKey: 'global.cookiePreferences' },
         { inputId: 'set-speed-down', infoKey: 'global.speedDown' },
         { inputId: 'set-speed-up', infoKey: 'global.speedUp' },
-        { inputId: 'set-precision', infoKey: 'global.precision' },
-        { inputId: 'set-stroke', infoKey: 'global.stroke' },
-        { inputId: 'set-plotter-opt-enabled', infoKey: 'global.plotterOptimize' },
       ];
 
       entries.forEach(({ inputId, infoKey }) => {
@@ -10288,25 +10426,30 @@
       const margin = getEl('set-margin');
       const speedDown = getEl('set-speed-down');
       const speedUp = getEl('set-speed-up');
-      const stroke = getEl('set-stroke');
-      const precision = getEl('set-precision');
-      const plotterOptEnabled = getEl('set-plotter-opt-enabled');
-      const plotterOpt = getEl('set-plotter-opt');
-      const plotterOptValue = getEl('set-plotter-opt-value');
+      const stroke = getEl('set-stroke', { silent: true });
+      const precision = getEl('set-precision', { silent: true });
+      const plotterOptEnabled = getEl('set-plotter-opt-enabled', { silent: true });
+      const plotterOpt = getEl('set-plotter-opt', { silent: true });
+      const plotterOptValue = getEl('set-plotter-opt-value', { silent: true });
       const undoSteps = getEl('set-undo');
       const truncate = getEl('set-truncate');
       const cropExports = getEl('set-crop-exports');
       const outsideOpacity = getEl('set-outside-opacity');
       const marginLine = getEl('set-margin-line');
+      const marginLineColorPill = getEl('set-margin-line-color-pill');
       const marginLineWeight = getEl('set-margin-line-weight');
+      const marginLineWeightSlider = getEl('set-margin-line-weight-slider');
       const marginLineColor = getEl('set-margin-line-color');
       const marginLineDotting = getEl('set-margin-line-dotting');
+      const marginLineStyleReset = getEl('set-margin-line-style-reset');
       const showGuides = getEl('set-show-guides');
       const snapGuides = getEl('set-snap-guides');
       const gridOverlay = getEl('set-grid-overlay');
       const selectionOutline = getEl('set-selection-outline');
-      const selectionOutlineColor = getEl('set-selection-outline-color');
+      const selectionOutlineColorPill = getEl('set-selection-outline-color-pill');
+      const selectionOutlineWidthSlider = getEl('set-selection-outline-width-slider');
       const selectionOutlineWidth = getEl('set-selection-outline-width');
+      const selectionOutlineStyleReset = getEl('set-selection-outline-style-reset');
       const cookiePreferences = getEl('set-cookie-preferences');
       const paperWidth = getEl('set-paper-width');
       const paperHeight = getEl('set-paper-height');
@@ -10336,15 +10479,28 @@
       if (cropExports) cropExports.checked = SETTINGS.cropExports !== false;
       if (outsideOpacity) outsideOpacity.value = SETTINGS.outsideOpacity ?? 0.5;
       if (marginLine) marginLine.checked = Boolean(SETTINGS.marginLineVisible);
+      if (marginLineColorPill) {
+        const color = SETTINGS.marginLineColor ?? '#52525b';
+        marginLineColorPill.textContent = color.toUpperCase();
+        marginLineColorPill.style.background = color;
+      }
+      if (marginLineWeightSlider) marginLineWeightSlider.value = SETTINGS.marginLineWeight ?? 0.2;
       if (marginLineWeight) marginLineWeight.value = SETTINGS.marginLineWeight ?? 0.2;
       if (marginLineColor) marginLineColor.value = SETTINGS.marginLineColor ?? '#52525b';
       if (marginLineDotting) marginLineDotting.value = SETTINGS.marginLineDotting ?? 0;
+      if (marginLineStyleReset) marginLineStyleReset.disabled = false;
       if (showGuides) showGuides.checked = SETTINGS.showGuides !== false;
       if (snapGuides) snapGuides.checked = SETTINGS.snapGuides !== false;
       if (gridOverlay) gridOverlay.checked = SETTINGS.gridOverlay === true;
       if (selectionOutline) selectionOutline.checked = SETTINGS.selectionOutline !== false;
-      if (selectionOutlineColor) selectionOutlineColor.value = SETTINGS.selectionOutlineColor || '#ef4444';
+      if (selectionOutlineColorPill) {
+        const color = SETTINGS.selectionOutlineColor || '#ef4444';
+        selectionOutlineColorPill.textContent = color.toUpperCase();
+        selectionOutlineColorPill.style.background = color;
+      }
+      if (selectionOutlineWidthSlider) selectionOutlineWidthSlider.value = SETTINGS.selectionOutlineWidth ?? 0.4;
       if (selectionOutlineWidth) selectionOutlineWidth.value = SETTINGS.selectionOutlineWidth ?? 0.4;
+      if (selectionOutlineStyleReset) selectionOutlineStyleReset.disabled = false;
       if (cookiePreferences) cookiePreferences.checked = SETTINGS.cookiePreferencesEnabled === true;
       if (bgColor) bgColor.value = SETTINGS.bgColor;
       if (paperWidth) paperWidth.value = SETTINGS.paperWidth ?? 210;
@@ -10806,23 +10962,29 @@
       const setCropExports = getEl('set-crop-exports');
       const setOutsideOpacity = getEl('set-outside-opacity');
       const setMarginLine = getEl('set-margin-line');
+      const setMarginLineColorPill = getEl('set-margin-line-color-pill');
       const setMarginLineWeight = getEl('set-margin-line-weight');
+      const setMarginLineWeightSlider = getEl('set-margin-line-weight-slider');
       const setMarginLineColor = getEl('set-margin-line-color');
       const setMarginLineDotting = getEl('set-margin-line-dotting');
+      const setMarginLineStyleReset = getEl('set-margin-line-style-reset');
       const setShowGuides = getEl('set-show-guides');
       const setSnapGuides = getEl('set-snap-guides');
       const setGridOverlay = getEl('set-grid-overlay');
       const setSelectionOutline = getEl('set-selection-outline');
+      const setSelectionOutlineColorPill = getEl('set-selection-outline-color-pill');
       const setSelectionOutlineColor = getEl('set-selection-outline-color');
+      const setSelectionOutlineWidthSlider = getEl('set-selection-outline-width-slider');
       const setSelectionOutlineWidth = getEl('set-selection-outline-width');
+      const setSelectionOutlineStyleReset = getEl('set-selection-outline-style-reset');
       const setCookiePreferences = getEl('set-cookie-preferences');
       const setSpeedDown = getEl('set-speed-down');
       const setSpeedUp = getEl('set-speed-up');
-      const setStroke = getEl('set-stroke');
-      const setPrecision = getEl('set-precision');
-      const setPlotterOptEnabled = getEl('set-plotter-opt-enabled');
-      const setPlotterOpt = getEl('set-plotter-opt');
-      const setPlotterOptValue = getEl('set-plotter-opt-value');
+      const setStroke = getEl('set-stroke', { silent: true });
+      const setPrecision = getEl('set-precision', { silent: true });
+      const setPlotterOptEnabled = getEl('set-plotter-opt-enabled', { silent: true });
+      const setPlotterOpt = getEl('set-plotter-opt', { silent: true });
+      const setPlotterOptValue = getEl('set-plotter-opt-value', { silent: true });
       const setUndo = getEl('set-undo');
       const setPaperWidth = getEl('set-paper-width');
       const setPaperHeight = getEl('set-paper-height');
@@ -10946,18 +11108,37 @@
         };
       }
       if (setMarginLineWeight) {
-        setMarginLineWeight.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          const next = Math.max(0.05, parseFloat(e.target.value));
+        const applyMarginLineWeight = (raw, options = {}) => {
+          const { commit = false } = options;
+          if (commit && this.app.pushHistory) this.app.pushHistory();
+          const next = Math.max(0.05, Math.min(2, parseFloat(raw)));
           SETTINGS.marginLineWeight = Number.isFinite(next) ? next : 0.2;
-          e.target.value = SETTINGS.marginLineWeight;
+          if (setMarginLineWeightSlider) setMarginLineWeightSlider.value = `${SETTINGS.marginLineWeight}`;
+          setMarginLineWeight.value = SETTINGS.marginLineWeight.toFixed(2);
           this.app.render();
         };
+        setMarginLineWeight.oninput = (e) => applyMarginLineWeight(e.target.value);
+        setMarginLineWeight.onchange = (e) => applyMarginLineWeight(e.target.value, { commit: true });
+        if (setMarginLineWeightSlider) {
+          setMarginLineWeightSlider.oninput = (e) => applyMarginLineWeight(e.target.value);
+          setMarginLineWeightSlider.onchange = (e) => applyMarginLineWeight(e.target.value, { commit: true });
+        }
       }
-      if (setMarginLineColor) {
+      if (setMarginLineColor && setMarginLineColorPill) {
+        setMarginLineColorPill.onclick = () => openColorPickerAnchoredTo(setMarginLineColor, setMarginLineColorPill);
+        setMarginLineColor.oninput = (e) => {
+          const next = e.target.value || SETTINGS.marginLineColor || '#52525b';
+          SETTINGS.marginLineColor = next;
+          setMarginLineColorPill.textContent = next.toUpperCase();
+          setMarginLineColorPill.style.background = next;
+          this.app.render();
+        };
         setMarginLineColor.onchange = (e) => {
           if (this.app.pushHistory) this.app.pushHistory();
-          SETTINGS.marginLineColor = e.target.value || SETTINGS.marginLineColor;
+          const next = e.target.value || SETTINGS.marginLineColor || '#52525b';
+          SETTINGS.marginLineColor = next;
+          setMarginLineColorPill.textContent = next.toUpperCase();
+          setMarginLineColorPill.style.background = next;
           this.app.render();
         };
       }
@@ -10967,6 +11148,23 @@
           const next = Math.max(0, parseFloat(e.target.value));
           SETTINGS.marginLineDotting = Number.isFinite(next) ? next : 0;
           e.target.value = SETTINGS.marginLineDotting;
+          this.app.render();
+        };
+      }
+      if (setMarginLineStyleReset) {
+        setMarginLineStyleReset.onclick = () => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          SETTINGS.marginLineColor = '#52525b';
+          SETTINGS.marginLineWeight = 0.2;
+          SETTINGS.marginLineDotting = 0;
+          if (setMarginLineColor) setMarginLineColor.value = '#52525b';
+          if (setMarginLineColorPill) {
+            setMarginLineColorPill.textContent = '#52525B';
+            setMarginLineColorPill.style.background = '#52525b';
+          }
+          if (setMarginLineWeightSlider) setMarginLineWeightSlider.value = '0.2';
+          if (setMarginLineWeight) setMarginLineWeight.value = '0.20';
+          if (setMarginLineDotting) setMarginLineDotting.value = '0';
           this.app.render();
         };
       }
@@ -10997,19 +11195,53 @@
           this.app.render();
         };
       }
-      if (setSelectionOutlineColor) {
+      if (setSelectionOutlineColorPill && setSelectionOutlineColor) {
+        setSelectionOutlineColorPill.onclick = () =>
+          openColorPickerAnchoredTo(setSelectionOutlineColor, setSelectionOutlineColorPill);
+        setSelectionOutlineColor.oninput = (e) => {
+          const nextColor = e.target.value || SETTINGS.selectionOutlineColor || '#ef4444';
+          SETTINGS.selectionOutlineColor = nextColor;
+          setSelectionOutlineColorPill.textContent = nextColor.toUpperCase();
+          setSelectionOutlineColorPill.style.background = nextColor;
+          this.app.render();
+        };
         setSelectionOutlineColor.onchange = (e) => {
           if (this.app.pushHistory) this.app.pushHistory();
-          SETTINGS.selectionOutlineColor = e.target.value || SETTINGS.selectionOutlineColor;
+          const nextColor = e.target.value || SETTINGS.selectionOutlineColor || '#ef4444';
+          SETTINGS.selectionOutlineColor = nextColor;
+          setSelectionOutlineColorPill.textContent = nextColor.toUpperCase();
+          setSelectionOutlineColorPill.style.background = nextColor;
           this.app.render();
         };
       }
+      const applySelectionOutlineWidth = (raw, options = {}) => {
+        const { commit = false } = options;
+        if (commit && this.app.pushHistory) this.app.pushHistory();
+        const next = Math.max(0.1, Math.min(2, parseFloat(raw)));
+        SETTINGS.selectionOutlineWidth = Number.isFinite(next) ? next : 0.4;
+        if (setSelectionOutlineWidthSlider) setSelectionOutlineWidthSlider.value = `${SETTINGS.selectionOutlineWidth}`;
+        if (setSelectionOutlineWidth) setSelectionOutlineWidth.value = SETTINGS.selectionOutlineWidth.toFixed(2);
+        this.app.render();
+      };
+      if (setSelectionOutlineWidthSlider) {
+        setSelectionOutlineWidthSlider.oninput = (e) => applySelectionOutlineWidth(e.target.value);
+        setSelectionOutlineWidthSlider.onchange = (e) => applySelectionOutlineWidth(e.target.value, { commit: true });
+      }
       if (setSelectionOutlineWidth) {
-        setSelectionOutlineWidth.onchange = (e) => {
+        setSelectionOutlineWidth.oninput = (e) => applySelectionOutlineWidth(e.target.value);
+        setSelectionOutlineWidth.onchange = (e) => applySelectionOutlineWidth(e.target.value, { commit: true });
+      }
+      if (setSelectionOutlineStyleReset) {
+        setSelectionOutlineStyleReset.onclick = () => {
           if (this.app.pushHistory) this.app.pushHistory();
-          const next = Math.max(0.1, parseFloat(e.target.value));
-          SETTINGS.selectionOutlineWidth = Number.isFinite(next) ? next : 0.4;
-          e.target.value = SETTINGS.selectionOutlineWidth;
+          SETTINGS.selectionOutlineColor = '#ef4444';
+          SETTINGS.selectionOutlineWidth = 0.4;
+          if (setSelectionOutlineColorPill) {
+            setSelectionOutlineColorPill.textContent = '#EF4444';
+            setSelectionOutlineColorPill.style.background = '#ef4444';
+          }
+          if (setSelectionOutlineWidthSlider) setSelectionOutlineWidthSlider.value = '0.4';
+          if (setSelectionOutlineWidth) setSelectionOutlineWidth.value = '0.40';
           this.app.render();
         };
       }
@@ -15931,6 +16163,10 @@
             });
           }
         } else if (def.type === 'select') {
+          if (layer.type === 'wavetable' && def.id === 'lineStructure' && val === 'horizontal-vanishing-point') {
+            val = 'horizon';
+            layer.params[def.id] = val;
+          }
           if ((val === undefined || val === null) && def.options && def.options.length) {
             val = def.options[0].value;
             layer.params[def.id] = val;
@@ -15995,6 +16231,9 @@
                 return;
               }
               layer.params[def.id] = next;
+              if (layer.type === 'wavetable' && def.id === 'lineStructure' && next === 'vertical') {
+                layer.params.lineOffset = 135;
+              }
               this.storeLayerParams(layer);
               span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
               this.app.regen();
@@ -16485,36 +16724,123 @@
         };
         panel.appendChild(buildRow('Bypass All', bypassToggle));
 
-        const overlayControls = document.createElement('div');
-        overlayControls.className = 'optimization-overlay';
-        const overlayColor = document.createElement('input');
-        overlayColor.type = 'color';
-        overlayColor.value = SETTINGS.optimizationOverlayColor || '#38bdf8';
-        overlayColor.oninput = (e) => {
-          SETTINGS.optimizationOverlayColor = e.target.value;
-          this.app.render();
+        const getHexComplement = (hex) => {
+          const raw = `${hex || ''}`.trim().replace('#', '');
+          const normalized =
+            raw.length === 3
+              ? raw
+                  .split('')
+                  .map((c) => `${c}${c}`)
+                  .join('')
+              : raw;
+          if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return '#c74307';
+          const r = 255 - parseInt(normalized.slice(0, 2), 16);
+          const g = 255 - parseInt(normalized.slice(2, 4), 16);
+          const b = 255 - parseInt(normalized.slice(4, 6), 16);
+          const toHex = (v) => v.toString(16).padStart(2, '0');
+          return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
         };
+
+        const overlayStyleControls = document.createElement('div');
+        overlayStyleControls.className = 'color-thickness-control';
+        const overlayColorPreview = document.createElement('button');
+        overlayColorPreview.type = 'button';
+        overlayColorPreview.className = 'value-chip text-xs text-vectura-accent font-mono color-thickness-pill';
+        overlayColorPreview.textContent = `${(SETTINGS.optimizationOverlayColor || '#38bdf8').toUpperCase()}`;
+        overlayColorPreview.style.background = SETTINGS.optimizationOverlayColor || '#38bdf8';
+        overlayColorPreview.style.color = '#09090b';
+        const overlayColorInput = document.createElement('input');
+        overlayColorInput.type = 'color';
+        overlayColorInput.value = SETTINGS.optimizationOverlayColor || '#38bdf8';
+        overlayColorInput.className = 'hidden';
+
+        const overlaySizeControls = document.createElement('div');
+        overlaySizeControls.className = 'color-thickness-size';
         const overlayWidth = document.createElement('input');
         overlayWidth.type = 'range';
         overlayWidth.min = '0.05';
         overlayWidth.max = '1';
         overlayWidth.step = '0.05';
-        overlayWidth.value = SETTINGS.optimizationOverlayWidth ?? 0.2;
-        overlayWidth.oninput = (e) => {
-          const next = parseFloat(e.target.value);
-          SETTINGS.optimizationOverlayWidth = next;
-          overlayWidthLabel.textContent = `${next.toFixed(2)}mm`;
-          this.app.render();
+        overlayWidth.value = `${SETTINGS.optimizationOverlayWidth ?? 0.2}`;
+        const overlayWidthInput = document.createElement('input');
+        overlayWidthInput.type = 'number';
+        overlayWidthInput.min = '0.05';
+        overlayWidthInput.max = '1';
+        overlayWidthInput.step = '0.05';
+        overlayWidthInput.value = `${SETTINGS.optimizationOverlayWidth ?? 0.2}`;
+        overlayWidthInput.className =
+          'w-14 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none';
+        const overlayMm = document.createElement('span');
+        overlayMm.className = 'text-[10px] text-vectura-muted';
+        overlayMm.textContent = 'mm';
+        overlaySizeControls.appendChild(overlayWidth);
+        overlaySizeControls.appendChild(overlayWidthInput);
+        overlaySizeControls.appendChild(overlayMm);
+
+        const overlayResetBtn = document.createElement('button');
+        overlayResetBtn.type = 'button';
+        overlayResetBtn.className = 'text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted';
+        overlayResetBtn.textContent = 'Reset';
+
+        const applyOverlayStyle = (opts = {}) => {
+          const { color, width, commit = false } = opts;
+          if (commit && this.app.pushHistory) this.app.pushHistory();
+          if (typeof color === 'string' && color) {
+            SETTINGS.optimizationOverlayColor = color;
+            overlayColorPreview.textContent = color.toUpperCase();
+            overlayColorPreview.style.background = color;
+          }
+          if (width !== undefined) {
+            const next = Math.max(0.05, Math.min(1, parseFloat(width)));
+            SETTINGS.optimizationOverlayWidth = Number.isFinite(next) ? next : 0.2;
+            overlayWidth.value = `${SETTINGS.optimizationOverlayWidth}`;
+            overlayWidthInput.value = SETTINGS.optimizationOverlayWidth.toFixed(2);
+          }
+          rerenderOptimizationPreview();
         };
-        const overlayWidthLabel = document.createElement('span');
-        overlayWidthLabel.className = 'text-[10px] text-vectura-muted';
-        overlayWidthLabel.textContent = `${SETTINGS.optimizationOverlayWidth ?? 0.2}mm`;
-        overlayControls.appendChild(overlayColor);
-        overlayControls.appendChild(overlayWidth);
-        overlayControls.appendChild(overlayWidthLabel);
-        const overlayRow = buildRow('Overlay Style', overlayControls);
-        if ((SETTINGS.optimizationPreview || 'off') !== 'overlay') overlayRow.classList.add('hidden');
-        panel.appendChild(overlayRow);
+
+        overlayColorPreview.onclick = () => openColorPickerAnchoredTo(overlayColorInput, overlayColorPreview);
+        overlayColorInput.oninput = (e) => applyOverlayStyle({ color: e.target.value });
+        overlayColorInput.onchange = (e) => applyOverlayStyle({ color: e.target.value, commit: true });
+        overlayWidth.oninput = (e) => applyOverlayStyle({ width: e.target.value });
+        overlayWidth.onchange = (e) => applyOverlayStyle({ width: e.target.value, commit: true });
+        overlayWidthInput.oninput = (e) => applyOverlayStyle({ width: e.target.value });
+        overlayWidthInput.onchange = (e) => applyOverlayStyle({ width: e.target.value, commit: true });
+        overlayResetBtn.onclick = () => {
+          applyOverlayStyle({ color: '#38bdf8', width: 0.2, commit: true });
+        };
+
+        const overlayColorField = document.createElement('div');
+        overlayColorField.className = 'style-field';
+        const overlayColorLabel = document.createElement('span');
+        overlayColorLabel.className = 'style-field-label';
+        overlayColorLabel.textContent = 'Line Color';
+        overlayColorField.appendChild(overlayColorLabel);
+        overlayColorField.appendChild(overlayColorPreview);
+        overlayColorField.appendChild(overlayColorInput);
+
+        const overlayThicknessField = document.createElement('div');
+        overlayThicknessField.className = 'style-field';
+        const overlayThicknessLabel = document.createElement('span');
+        overlayThicknessLabel.className = 'style-field-label';
+        overlayThicknessLabel.textContent = 'Line Thickness';
+        overlayThicknessField.appendChild(overlayThicknessLabel);
+        overlayThicknessField.appendChild(overlaySizeControls);
+
+        const overlayResetField = document.createElement('div');
+        overlayResetField.className = 'style-field';
+        const overlayResetLabel = document.createElement('span');
+        overlayResetLabel.className = 'style-field-label';
+        overlayResetLabel.textContent = 'Reset';
+        overlayResetField.appendChild(overlayResetLabel);
+        overlayResetField.appendChild(overlayResetBtn);
+
+        overlayStyleControls.appendChild(overlayColorField);
+        overlayStyleControls.appendChild(overlayThicknessField);
+        overlayStyleControls.appendChild(overlayResetField);
+        const overlayStyleRow = buildRow('Overlay Style', overlayStyleControls);
+        if ((SETTINGS.optimizationPreview || 'off') !== 'overlay') overlayStyleRow.classList.add('hidden');
+        panel.appendChild(overlayStyleRow);
 
         const resetBtn = document.createElement('button');
         resetBtn.type = 'button';
@@ -16966,6 +17292,55 @@
               controlsWrap.appendChild(control);
             }
           });
+          if (def.id === 'linesort') {
+            const secondaryControl = document.createElement('div');
+            secondaryControl.className = 'optimization-control';
+            const autoColor = getHexComplement(SETTINGS.optimizationOverlayColor || '#38bdf8');
+            const currentColor = stepConfig.overlaySecondaryColor || autoColor;
+            secondaryControl.innerHTML = `
+              <div class="flex justify-between mb-1">
+                <label class="control-label mb-0">Secondary Color</label>
+                <span class="text-xs text-vectura-muted font-mono">${stepConfig.overlaySecondaryColor ? 'Custom' : 'Auto (Complement)'}</span>
+              </div>
+              <button type="button" class="value-chip text-xs text-vectura-accent font-mono color-thickness-pill">${currentColor.toUpperCase()}</button>
+            `;
+            const secondaryInput = secondaryControl.querySelector('.value-chip');
+            const status = secondaryControl.querySelector('span');
+            const secondaryColorInput = document.createElement('input');
+            secondaryColorInput.type = 'color';
+            secondaryColorInput.value = currentColor;
+            secondaryColorInput.className = 'hidden';
+            const applySecondary = (color, options = {}) => {
+              const { commit = false } = options;
+              if (commit && this.app.pushHistory) this.app.pushHistory();
+              applyOptimization((cfg) => {
+                const step = cfg.steps.find((s) => s.id === def.id);
+                if (!step) return;
+                step.overlaySecondaryColor = color || '';
+              });
+              if (status) status.textContent = color ? 'Custom' : 'Auto (Complement)';
+              if (secondaryInput) {
+                const nextColor = color || getHexComplement(SETTINGS.optimizationOverlayColor || '#38bdf8');
+                secondaryInput.textContent = nextColor.toUpperCase();
+                secondaryInput.style.background = nextColor;
+                secondaryInput.style.color = '#09090b';
+              }
+            };
+            if (secondaryInput) {
+              secondaryInput.style.background = currentColor;
+              secondaryInput.style.color = '#09090b';
+              secondaryInput.onclick = () => openColorPickerAnchoredTo(secondaryColorInput, secondaryInput);
+            }
+            secondaryColorInput.oninput = (e) => applySecondary(e.target.value);
+            secondaryColorInput.onchange = (e) => applySecondary(e.target.value, { commit: true });
+            const secondaryInputs = secondaryControl.querySelectorAll('button');
+            secondaryInputs.forEach((input) => {
+              input.disabled = isDisabled;
+            });
+            secondaryColorInput.disabled = isDisabled;
+            secondaryControl.appendChild(secondaryColorInput);
+            controlsWrap.appendChild(secondaryControl);
+          }
           card.appendChild(controlsWrap);
           list.appendChild(card);
         });
