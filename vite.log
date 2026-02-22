@@ -1,0 +1,8 @@
+npm warn exec The following package was not found and will be installed: vite@7.3.1
+
+  VITE v7.3.1  ready in 340 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+12:59:45 AM [vite] (client) page reload index.html
+12:59:45 AM [vite] (client) page reload index.html

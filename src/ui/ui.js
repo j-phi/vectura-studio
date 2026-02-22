@@ -31,6 +31,16 @@
     return el;
   };
 
+  const escapeHtml = (str) => {
+    if (typeof str !== 'string') return str;
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  };
+
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
   const roundToStep = (value, step) => (step ? Math.round(value / step) * step : value);
   const DISPLAY_PRECISION = 2;
@@ -11818,11 +11828,11 @@
               aria-label="Toggle layer visibility"
               title="Toggle visibility"
             >
-            <span class="layer-name text-sm truncate ${isActive ? 'text-white font-bold' : 'text-vectura-muted'}">${l.name}</span>
+            <span class="layer-name text-sm truncate ${isActive ? 'text-white font-bold' : 'text-vectura-muted'}">${escapeHtml(l.name)}</span>
             <input
               class="layer-name-input hidden w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:outline-none"
               type="text"
-              value="${l.name}"
+              value="${escapeHtml(l.name)}"
             />
           </div>
           <div class="flex items-center gap-1">
@@ -16687,13 +16697,6 @@
       const formula = getEl('formula-display');
       const seedDisplay = getEl('formula-seed-display');
       if (formula) {
-        const escapeHtml = (str) =>
-          `${str}`
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
         const fmt = (val) => {
           if (typeof val === 'number') return Number.isFinite(val) ? val.toFixed(3) : `${val}`;
           if (typeof val === 'boolean') return val ? 'true' : 'false';
