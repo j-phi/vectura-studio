@@ -14977,9 +14977,6 @@
               return `${shortBase}.${ext}`;
             };
             const name = truncateFilename(noise.imageName || '');
-            const preview = hasImage
-              ? `<img src="${noise.imagePreview}" alt="Noise preview">`
-              : `<div class="noise-image-empty text-[10px] text-vectura-muted">Drop image</div>`;
             wrap.innerHTML = `
               <div class="noise-image-row">
                 <div class="noise-image-left">
@@ -14990,7 +14987,7 @@
                 </div>
                 <div class="noise-image-right">
                   <div class="noise-image-preview ${hasImage ? 'active' : 'hidden'}">
-                    ${preview}
+                    <div class="noise-image-preview-content"></div>
                     <button type="button" class="noise-image-clear text-[10px] text-vectura-muted hover:text-vectura-accent${hasImage ? '' : ' hidden'}">Clear</button>
                   </div>
                   <div class="text-[10px] text-vectura-muted mt-2 noise-image-name${hasImage ? '' : ' hidden'}"></div>
@@ -15004,6 +15001,22 @@
             const nameEl = wrap.querySelector('.noise-image-name');
             if (nameEl) nameEl.textContent = name;
             const previewEl = wrap.querySelector('.noise-image-preview');
+
+            if (nameEl) nameEl.textContent = name;
+            const previewContent = wrap.querySelector('.noise-image-preview-content');
+            if (previewContent) {
+              if (hasImage) {
+                const img = document.createElement('img');
+                img.src = noise.imagePreview;
+                img.alt = 'Noise preview';
+                previewContent.appendChild(img);
+              } else {
+                const empty = document.createElement('div');
+                empty.className = 'noise-image-empty text-[10px] text-vectura-muted';
+                empty.textContent = 'Drop image';
+                previewContent.appendChild(empty);
+              }
+            }
             const fileInput = wrap.querySelector('.noise-image-input');
 
             const applyFile = (file) => {
