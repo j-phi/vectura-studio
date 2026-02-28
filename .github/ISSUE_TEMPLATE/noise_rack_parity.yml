@@ -1,0 +1,55 @@
+name: Noise Rack Parity
+description: Track universal noise-stack parity work across algorithms.
+title: "[Noise Rack]: "
+labels:
+  - noise-rack
+  - algorithm
+body:
+  - type: dropdown
+    id: algorithm
+    attributes:
+      label: Algorithm
+      options:
+        - rings
+        - topo
+        - wavetable
+        - spiral
+        - rainfall
+        - flowfield
+        - grid
+        - phylla
+        - petalis
+        - other
+    validations:
+      required: true
+  - type: textarea
+    id: current_state
+    attributes:
+      label: Current State
+      description: Describe the algorithm's present noise behavior and limitations.
+    validations:
+      required: true
+  - type: textarea
+    id: desired_state
+    attributes:
+      label: Desired Noise Rack Behavior
+      description: Describe how this algorithm should participate in the universal noise stack.
+    validations:
+      required: true
+  - type: checkboxes
+    id: parity
+    attributes:
+      label: Expected Parity
+      options:
+        - label: Multi-noise layering
+        - label: Shared noise engine catalog
+        - label: Shared blend modes
+        - label: Shared image-noise features
+        - label: Shared fractal controls
+        - label: Shared serialization/import-export behavior
+        - label: Shared randomization behavior
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Mention migration blockers, compatibility constraints, or algorithm-specific needs.

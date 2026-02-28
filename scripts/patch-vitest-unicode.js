@@ -2,10 +2,10 @@
 
 /**
  * Compatibility patch for Node builds that do not support Unicode property
- * escapes in regular expressions (e.g. \p{L}).
+ * escapes in regular expressions (e.g. \p{L}, \p{P}, \p{S}).
  *
- * Vitest/Vite bundles include a few parse-time regex literals with \p{...}.
- * On unsupported Node builds, Vitest fails before tests start.
+ * Vitest/Vite and some Playwright bundles include parse-time regex literals
+ * with \p{...}. On unsupported Node builds, tests fail before they start.
  */
 
 const fs = require('fs');
@@ -14,7 +14,7 @@ const path = require('path');
 const supportsUnicodePropertyEscapes = (() => {
   try {
     // eslint-disable-next-line no-new
-    new RegExp('\\p{L}', 'u');
+    new RegExp('\\p{L}\\p{P}\\p{S}', 'u');
     return true;
   } catch (error) {
     return false;
@@ -39,6 +39,7 @@ const files = [
   path.join(cwd, 'node_modules/@vitest/utils/dist/index.js'),
   ...listFiles(path.join(cwd, 'node_modules/vitest/dist/chunks'), /^cli-api\..+\.js$/),
   ...listFiles(path.join(cwd, 'node_modules/vite/dist/node/chunks'), /^dep-.+\.js$/),
+  path.join(cwd, 'node_modules/playwright/lib/utilsBundleImpl.js'),
 ];
 
 const replacements = [
@@ -47,6 +48,7 @@ const replacements = [
   [/\\p\{Zs\}/g, '\\x20'],
   [/\/\\p\{Surrogate\}\/u/g, '/[\\uD800-\\uDFFF]/'],
   [/\\p\{L\}\\p\{M\}/g, 'A-Za-z'],
+  [/\/\\p\{P\}\|\\p\{S\}\/u/g, "/[!-/:-@[-`{-~]/"],
 ];
 
 let patchedFiles = 0;

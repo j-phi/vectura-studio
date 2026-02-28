@@ -698,10 +698,10 @@
                 blend: noiseLayer.blend || 'add',
                 amplitude,
                 sample: (x, y) => {
-                  if (noiseLayer.type === 'image' && tileMode === 'off') {
-                    const imageZoom = Math.max(0.1, zoom * 50);
-                    const widthScale = noiseLayer.imageWidth ?? freq ?? 1;
-                    const heightScale = noiseLayer.imageHeight ?? 1;
+                if (noiseLayer.type === 'image' && tileMode === 'off') {
+                  const imageZoom = Math.max(0.1, zoom * 50);
+                    const widthScale = 1 / Math.max(0.05, noiseLayer.imageWidth ?? freq ?? 1);
+                    const heightScale = 1 / Math.max(0.05, noiseLayer.imageHeight ?? 1);
                     const u = (x - inset) / innerW - 0.5 + (noiseLayer.shiftX ?? 0);
                     const v = (y - inset) / innerH - 0.5 + (noiseLayer.shiftY ?? 0);
                     const ix = u * imageZoom * widthScale;
@@ -710,10 +710,14 @@
                     const ry = ix * sinA + iy * cosA;
                     return noiseValue(rx, ry, noiseLayer, { worldX: x, worldY: y });
                   }
-                  const widthScale = noiseLayer.type === 'image' ? (noiseLayer.imageWidth ?? freq ?? 1) : freq;
-                  const heightScale = noiseLayer.type === 'image' ? (noiseLayer.imageHeight ?? 1) : 1;
-                  const nx = (x + shiftX) * zoom * widthScale;
-                  const ny = (y + shiftY) * zoom * heightScale;
+                  const widthScale =
+                    noiseLayer.type === 'image' ? 1 / Math.max(0.05, noiseLayer.imageWidth ?? freq ?? 1) : freq;
+                  const heightScale =
+                    noiseLayer.type === 'image' ? 1 / Math.max(0.05, noiseLayer.imageHeight ?? 1) : 1;
+                  const centeredX = noiseLayer.type === 'polygon' ? x - (inset + innerW * 0.5) : x;
+                  const centeredY = noiseLayer.type === 'polygon' ? y - (inset + innerH * 0.5) : y;
+                  const nx = (centeredX + shiftX) * zoom * widthScale;
+                  const ny = (centeredY + shiftY) * zoom * heightScale;
                   const rx = nx * cosA - ny * sinA;
                   const ry = nx * sinA + ny * cosA;
                   let tx = rx;
@@ -735,50 +739,17 @@
         const hasNoiseStack = noiseSamplers.length > 0;
         const sampleNoise = (x, y) => {
           if (!hasNoiseStack) return 0;
-          let combined = 0;
-          let hasNoise = false;
+          let combined;
           noiseSamplers.forEach((sampler) => {
             const value = sampler.sample(x, y) * sampler.amplitude;
-            if (!hasNoise) {
-              combined = value;
-              hasNoise = true;
-              return;
-            }
-            switch (sampler.blend) {
-              case 'subtract':
-                combined -= value;
-                break;
-              case 'multiply':
-                combined *= value;
-                break;
-              case 'max':
-                combined = Math.max(combined, value);
-                break;
-              case 'min':
-                combined = Math.min(combined, value);
-                break;
-              case 'hatch-dark':
-              case 'hatch-light': {
-                const baseTone = hasNoise ? Math.max(0, Math.min(1, (combined / maxAmp + 1) / 2)) : 0.5;
-                const weight = sampler.blend === 'hatch-dark' ? 1 - baseTone : baseTone;
-                const dirBias =
-                  value >= 0
-                    ? sampler.blend === 'hatch-dark'
-                      ? 0.6
-                      : 1.2
-                    : sampler.blend === 'hatch-dark'
-                      ? 1.2
-                      : 0.6;
-                combined += value * weight * dirBias;
-                break;
-              }
-              case 'add':
-              default:
-                combined += value;
-                break;
-            }
+            combined = window.Vectura.NoiseRack.combineBlend({
+              combined,
+              value,
+              blend: sampler.blend,
+              maxAmplitude: maxAmp,
+            });
           });
-          return hasNoise ? combined : 0;
+          return combined ?? 0;
         };
         const applyNoiseOffset = (pt, dirX, dirY) => {
           if (!hasNoiseStack) return pt;

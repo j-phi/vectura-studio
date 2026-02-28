@@ -1,43 +1,42 @@
 # Plans
 
-## UI
-- Add responsive pane behavior: auto-collapse left/right panes into narrow columns at smaller widths, plus manual toggle to hide/show (Illustrator-style).
-- Pin the algorithm dropdown + description block to the top of the left pane (sticky) while parameters scroll.
-- Add a **Smoothing** parameter to every algorithm (document behavior and default).
-- Add a **Curves vs. Line Segments** toggle for every algorithm; convert polylines to curves when enabled.
-- Update mouse wheel zoom to zoom into the cursor (reticule) position.
-- Replace every modal illustration with real algorithm-specific imagery at low/high values; no placeholders.
-- Remove the Background color info modal.
+This file is the active repository punchlist. Update it whenever meaningful work starts, changes scope, or completes.
 
-## Flowfield
-- Fix density so it visibly affects the number of paths.
-- Replace unrelated info modal graphics (Step Length, Max Steps, Distortion Force, Chaos, Octaves) with accurate visuals.
+## Operating Rules
+- Keep `Inbox`, `In Progress`, `Done`, and `Decisions` current in the same PR as the implementation.
+- Move items instead of duplicating them when status changes.
+- Record architecture-level decisions in `Decisions` so future work has a stable reference.
 
-## Lissajous
-- Replace all transform info modal illustrations with relevant visuals.
-- Verify and fix **Resolution** so it actually increases smoothness/point density.
+## In Progress
+- Establish the repository operating model: canonical version sync, `CHANGELOG.md`, README release notes, expanded architecture diagrams, and Codex doc-maintenance rules.
+- Add GitHub governance scaffolding: structured issue forms, Dependabot, CODEOWNERS, release-note categorization, and documented GitHub Project / ruleset expectations.
+- Design the universal multi-engine noise system, named `Noise Rack`, so all noise-capable algorithms converge on one stack model.
+- Continue extracting shared Noise Rack runtime primitives; stack blend-combination logic is now centralized, with deeper sampler extraction still pending.
+- Extend Noise Rack to the remaining direct consumers, now mainly Petalis per-modifier stack UI parity and any leftover bespoke samplers.
 
-## Wavetable
-- Truncate should add both top and bottom truncated lines (not just top).
-- Row Tilt: either fix to actually tilt the stack or rename + update description to match the current effect.
-- Allow higher noise frequency and add additional controls (e.g., angle/rotation for noise direction).
+## Inbox
+- Extract more shared Noise Rack runtime primitives from the duplicated `wavetable` / `spiral` / `rainfall` implementations into `src/core/noise-rack.js`.
+- Extend explicit per-modifier Noise Rack UI stacking to Petalis center and petal modifier cards so modifier noise layers can be layered interactively instead of only via runtime-compatible stack data.
+- Add tests for Noise Rack determinism, serialization, UI normalization, and algorithm parity across migrated systems.
+- Add GitHub-side rulesets / branch protection, merge queue, and Project fields once the repository settings are available to configure.
+- Decide whether to gate PRs on lint after introducing a repo-wide ESLint config that is compatible with the current browser-IIFE codebase.
 
-## Boids
-- Research and improve flocking realism (separation, alignment, cohesion, steering weights).
-- Add a fish schooling behavior mode.
+## Done
+- Added an agentic harness source-of-truth document and synchronized PR-template expectations.
+- Added baseline automated test coverage for unit, integration, e2e smoke, visual, and perf workflows.
+- Established existing Mermaid-based architecture documentation in the README.
+- Built an advanced stacked-noise foundation in `wavetable`, with related layered-noise behavior already present in `spiral` and `rainfall`.
+- Added the first shared Noise Rack runtime primitive in `src/core/noise-rack.js` and wired shared blend-combination behavior into `wavetable`, `spiral`, and `rainfall`.
+- Migrated `rings` to Noise Rack with stacked noise layers, preserved ring-local drift/sample-radius controls, and per-noise `Orbit Field` / `Concentric` / `Top Down` projection.
+- Migrated `topo` to Noise Rack with stacked field layers while preserving the existing contour mapping modes and moving fractal controls into per-noise-layer settings.
+- Migrated `flowfield`, `grid`, and `phylla` onto Noise Rack stacks while preserving their algorithm-specific master controls.
+- Routed Petalis drift and the existing noise-driven Petalis modifier samplers through Noise Rack-compatible stack evaluation, and restored local Playwright smoke runs with a system-Chrome fallback plus local video suppression.
+- Fixed shared image-noise control behavior by rendering `Invert Color` as a checkbox, correcting `Noise Width` direction in the affected samplers, and centering default polygon noise in the remaining off-center algorithms.
+- Reworked `Rings` `Concentric` mode into a seam-corrected ring-path sampler, improved the apply-mode help text, and added a `Center Diameter` control for widening the innermost ring.
 
-## Attractor
-- Seed currently has no impact: decide whether to remove or apply it to parameters; update randomize accordingly.
-- Update all attractor info modal imagery to reflect actual behavior.
-
-## Circles
-- Max Count is ineffective; fix to limit circle count.
-- Padding at 0 should allow close packing (touching).
-- Replace Min/Max Radius with a single double-headed **Radius Range** slider with a larger range.
-- Replace inefficient attempt loop with a smarter solver (shrink/shift/relax) to reduce wasted attempts.
-
-## Cityscape
-- Remove algorithm entirely.
-
-## Phylla
-- Seed currently has no impact: decide whether to remove or apply it to parameters; update randomize accordingly.
+## Decisions
+- `Noise Rack` is the product and architecture name for the universal multi-engine noise stack.
+- `Universal` means every current noise-capable algorithm, not only new features and not only `wavetable`.
+- `package.json` is the canonical app version source. Sync derived version surfaces with `npm run version:sync`.
+- `README.md`, `plans.md`, `CHANGELOG.md`, the visible app version, and any affected in-app help/shortcut text are part of the required documentation surface for meaningful feature work.
+- In `Rings`, `Top Down` means a universal world-space XY field beneath the artwork; `Concentric` means seam-corrected path-space sampling around each full ring loop; `Orbit Field` preserves the legacy ring-local orbital sampler.

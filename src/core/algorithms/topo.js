@@ -4,6 +4,54 @@
 (() => {
   window.Vectura = window.Vectura || {};
   window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
+  const fallbackNoiseRack = {
+    combineBlend({ combined, value, blend = 'add' }) {
+      if (combined === undefined) return value;
+      switch (blend) {
+        case 'subtract':
+          return combined - value;
+        case 'multiply':
+          return combined * value;
+        case 'max':
+          return Math.max(combined, value);
+        case 'min':
+          return Math.min(combined, value);
+        case 'add':
+        default:
+          return combined + value;
+      }
+    },
+    createEvaluator({ noise }) {
+      const baseNoise = (x, y) => noise.noise2D(x, y);
+      const fbmNoise = (x, y, octaves = 4, gain = 0.5, lacunarity = 2) => {
+        let total = 0;
+        let amp = 1;
+        let freq = 1;
+        let norm = 0;
+        for (let i = 0; i < octaves; i++) {
+          total += baseNoise(x * freq, y * freq) * amp;
+          norm += amp;
+          amp *= gain;
+          freq *= lacunarity;
+        }
+        return norm ? total / norm : total;
+      };
+      return {
+        evaluate(x, y, noiseDef = {}) {
+          if ((noiseDef.type || 'simplex') === 'fbm') {
+            return fbmNoise(
+              x,
+              y,
+              Math.max(1, Math.floor(noiseDef.octaves ?? 4)),
+              Math.max(0.05, Math.min(1, noiseDef.gain ?? 0.5)),
+              Math.max(1.05, noiseDef.lacunarity ?? 2)
+            );
+          }
+          return baseNoise(x, y);
+        },
+      };
+    },
+  };
   window.Vectura.AlgorithmRegistry.topo = {
       generate: (p, rng, noise, bounds) => {
         const { m, width, height } = bounds;
@@ -17,113 +65,99 @@
         const rows = res;
         const cellW = w / cols;
         const cellH = h / rows;
-        const noiseScale = p.noiseScale ?? 0.001;
-        const noiseOffsetX = p.noiseOffsetX ?? 0;
-        const noiseOffsetY = p.noiseOffsetY ?? 0;
-        const octaves = Math.max(1, Math.floor(p.octaves ?? 1));
-        const lacunarity = p.lacunarity ?? 2.0;
-        const gain = p.gain ?? 0.5;
         const sensitivity = Math.max(0.01, p.sensitivity ?? 1);
         const thresholdOffset = p.thresholdOffset ?? 0;
-        const noiseType = p.noiseType || 'simplex';
         const levels = Math.max(1, Math.floor(p.levels ?? 10));
+        const rackApi = window.Vectura.NoiseRack || fallbackNoiseRack;
+        const rack = rackApi.createEvaluator({ noise, seed: p.seed ?? 0 });
 
-        const baseNoise = (x, y) => noise.noise2D(x, y);
-        const hash2D = (x, y) => {
-          const n = Math.sin(x * 127.1 + y * 311.7 + (p.seed ?? 0) * 0.1) * 43758.5453;
-          return n - Math.floor(n);
+        const legacyNoise = {
+          type: p.noiseType || 'simplex',
+          blend: 'add',
+          amplitude: 1,
+          zoom: p.noiseScale ?? 0.003,
+          freq: 1,
+          angle: 0,
+          shiftX: p.noiseOffsetX ?? 0,
+          shiftY: p.noiseOffsetY ?? 0,
+          tileMode: 'off',
+          tilePadding: 0,
+          patternScale: 1,
+          warpStrength: 1,
+          cellularScale: 1,
+          cellularJitter: 1,
+          stepsCount: 5,
+          seed: 0,
+          octaves: p.octaves ?? 3,
+          lacunarity: p.lacunarity ?? 2.0,
+          gain: p.gain ?? 0.5,
+          noiseStyle: 'linear',
+          noiseThreshold: 0,
+          imageWidth: 1,
+          imageHeight: 1,
+          microFreq: 0,
+          imageInvertColor: false,
+          imageInvertOpacity: false,
+          imageId: p.noiseImageId || '',
+          imageName: p.noiseImageName || '',
+          imagePreview: '',
+          imageAlgo: p.imageAlgo || 'luma',
+          imageEffects: [],
+          polygonRadius: 2,
+          polygonSides: 6,
+          polygonRotation: 0,
+          polygonOutline: 0,
+          polygonEdgeRadius: 0,
         };
-        const cellularNoise = (x, y) => {
-          const xi = Math.floor(x);
-          const yi = Math.floor(y);
-          let minDist = Infinity;
-          for (let dx = -1; dx <= 1; dx++) {
-            for (let dy = -1; dy <= 1; dy++) {
-              const cx = xi + dx + hash2D(xi + dx, yi + dy);
-              const cy = yi + dy + hash2D(xi + dx + 7.21, yi + dy + 3.17);
-              const dist = Math.hypot(x - cx, y - cy);
-              if (dist < minDist) minDist = dist;
+
+        const noiseLayers = (Array.isArray(p.noises) && p.noises.length ? p.noises : [legacyNoise])
+          .map((noiseLayer) => ({
+            ...legacyNoise,
+            ...(noiseLayer || {}),
+            enabled: noiseLayer?.enabled !== false,
+          }))
+          .filter((noiseLayer) => noiseLayer.enabled !== false);
+
+        const maxAmp = noiseLayers.reduce((sum, noiseLayer) => sum + Math.abs(noiseLayer.amplitude ?? 0), 0) || 1;
+
+        const sampleFieldNoise = (worldX, worldY) => {
+          let combined;
+          noiseLayers.forEach((noiseLayer) => {
+            const zoom = Math.max(0.0001, noiseLayer.zoom ?? 0.003);
+            const freq = Math.max(0.05, noiseLayer.freq ?? 1);
+            const angle = ((noiseLayer.angle ?? 0) * Math.PI) / 180;
+            const cosA = Math.cos(angle);
+            const sinA = Math.sin(angle);
+            const shiftX = noiseLayer.shiftX ?? 0;
+            const shiftY = noiseLayer.shiftY ?? 0;
+            const dx = worldX - width / 2 + shiftX;
+            const dy = worldY - height / 2 + shiftY;
+            const rx = dx * cosA - dy * sinA;
+            const ry = dx * sinA + dy * cosA;
+            let sampleX;
+            let sampleY;
+            if (noiseLayer.type === 'image' && (noiseLayer.tileMode || 'off') === 'off') {
+              const u = (worldX - inset + shiftX) / Math.max(1, w) - 0.5;
+              const v = (worldY - inset + shiftY) / Math.max(1, h) - 0.5;
+              sampleX = u / Math.max(0.05, noiseLayer.imageWidth ?? freq ?? 1);
+              sampleY = v / Math.max(0.05, noiseLayer.imageHeight ?? 1);
+            } else {
+              const widthScale =
+                noiseLayer.type === 'image' ? 1 / Math.max(0.05, noiseLayer.imageWidth ?? freq ?? 1) : freq;
+              const heightScale =
+                noiseLayer.type === 'image' ? 1 / Math.max(0.05, noiseLayer.imageHeight ?? 1) : 1;
+              sampleX = rx * zoom * widthScale;
+              sampleY = ry * zoom * heightScale;
             }
-          }
-          const v = Math.max(0, Math.min(1, 1 - minDist));
-          return v * 2 - 1;
-        };
-        const fbmNoise = (x, y) => {
-          let totalNoise = 0;
-          let ampNoise = 1;
-          let freq = 1;
-          let norm = 0;
-          for (let i = 0; i < octaves; i++) {
-            totalNoise += baseNoise(x * freq, y * freq) * ampNoise;
-            norm += ampNoise;
-            ampNoise *= gain;
-            freq *= lacunarity;
-          }
-          return norm ? totalNoise / norm : totalNoise;
-        };
-        const noiseValue = (x, y) => {
-          const n = baseNoise(x, y);
-          switch (noiseType) {
-            case 'ridged':
-              return (1 - Math.abs(n)) * 2 - 1;
-            case 'billow':
-              return Math.abs(n) * 2 - 1;
-            case 'turbulence': {
-              const n2 = baseNoise(x * 2, y * 2);
-              const n3 = baseNoise(x * 4, y * 4);
-              const t = (Math.abs(n) + Math.abs(n2) * 0.5 + Math.abs(n3) * 0.25) / 1.75;
-              return t * 2 - 1;
-            }
-            case 'stripes':
-              return Math.sin(x * 2 + n * 1.5);
-            case 'marble':
-              return Math.sin((x + y) * 1.5 + n * 2);
-            case 'steps': {
-              const t = Math.round(((n + 1) / 2) * 5) / 5;
-              return t * 2 - 1;
-            }
-            case 'triangle': {
-              const t = (n + 1) / 2;
-              const tri = 1 - Math.abs((t % 1) * 2 - 1);
-              return tri * 2 - 1;
-            }
-            case 'warp':
-              return baseNoise(x + n * 1.5, y + n * 1.5);
-            case 'cellular':
-              return cellularNoise(x, y);
-            case 'fbm':
-              return fbmNoise(x, y);
-            case 'swirl':
-              return Math.sin(x * 2 + n * 2) * Math.cos(y * 2 + n);
-            case 'radial':
-              return Math.sin(Math.hypot(x, y) * 3 + n * 2);
-            case 'checker': {
-              const cx = Math.floor(x * 4);
-              const cy = Math.floor(y * 4);
-              return (cx + cy) % 2 === 0 ? 1 : -1;
-            }
-            case 'zigzag': {
-              const t = Math.abs((x * 2) % 2 - 1);
-              return (1 - t) * 2 - 1;
-            }
-            case 'ripple':
-              return Math.sin((x + y) * 3 + n * 2);
-            case 'spiral': {
-              const ang = Math.atan2(y, x);
-              const rad = Math.hypot(x, y);
-              return Math.sin(ang * 4 + rad * 2 + n);
-            }
-            case 'grain':
-              return hash2D(x * 10, y * 10) * 2 - 1;
-            case 'crosshatch':
-              return (Math.sin(x * 3) + Math.sin(y * 3)) * 0.5;
-            case 'pulse': {
-              const t = Math.abs(Math.sin(x * 2 + n) * Math.cos(y * 2 + n));
-              return t * 2 - 1;
-            }
-            default:
-              return n;
-          }
+            const value = rack.evaluate(sampleX, sampleY, noiseLayer, { worldX, worldY }) * (noiseLayer.amplitude ?? 1);
+            combined = rackApi.combineBlend({
+              combined,
+              value,
+              blend: noiseLayer.blend || 'add',
+              maxAmplitude: maxAmp,
+            });
+          });
+          return combined ?? 0;
         };
 
         const field = Array.from({ length: rows + 1 }, () => new Array(cols + 1).fill(0));
@@ -133,9 +167,7 @@
           for (let x = 0; x <= cols; x++) {
             const wx = left + x * cellW;
             const wy = top + y * cellH;
-            const nx = (wx + noiseOffsetX) * noiseScale;
-            const ny = (wy + noiseOffsetY) * noiseScale;
-            let v = noiseValue(nx, ny);
+            let v = sampleFieldNoise(wx, wy);
             v = Math.sign(v) * Math.pow(Math.abs(v), 1 / sensitivity);
             field[y][x] = v;
             minVal = Math.min(minVal, v);
@@ -360,6 +392,6 @@
         return paths;
       },
       formula: (p) =>
-        `field = noise(x*${p.noiseScale}, y*${p.noiseScale})\ncontours = marchingSquares(field, ${p.levels})`,
+        `field = Σ Noise Rack layers over x,y\ncontours = marchingSquares(field, ${p.levels})\nmapping = ${p.mappingMode || 'marching'}`,
     };
 })();

@@ -712,7 +712,7 @@
             const tilePadding = noiseLayer.tilePadding ?? 0;
             const imageWidth = Math.max(0.05, noiseLayer.imageWidth ?? freq ?? 1);
             const imageWidthScale = 1 / imageWidth;
-            const imageHeightScale = Math.max(0.05, noiseLayer.imageHeight ?? 1);
+            const imageHeightScale = 1 / Math.max(0.05, noiseLayer.imageHeight ?? 1);
             const store = window.Vectura?.NOISE_IMAGES || {};
             const imageSource = noiseLayer?.imageId ? store[noiseLayer.imageId] : null;
             const imageAspect =
@@ -740,8 +740,10 @@
                 }
                 const widthScale = noiseLayer.type === 'image' ? imageWidthScale / Math.max(1e-6, imageAspect) : freq;
                 const heightScale = noiseLayer.type === 'image' ? imageHeightScale : 1;
-                const nx = (x + shiftX) * zoom * widthScale;
-                const ny = (y + shiftY) * zoom * heightScale;
+                const centeredX = noiseLayer.type === 'polygon' ? x - (inset + innerW * 0.5) : x;
+                const centeredY = noiseLayer.type === 'polygon' ? y - (inset + innerH * 0.5) : y;
+                const nx = (centeredX + shiftX) * zoom * widthScale;
+                const ny = (centeredY + shiftY) * zoom * heightScale;
                 const rx = nx * cosA - ny * sinA;
                 const ry = nx * sinA + ny * cosA;
                 let tx = rx;
@@ -777,52 +779,19 @@
           imageSampleX = sampleX,
           imageSampleY = sampleY
         ) => {
-          let combined = 0;
-          let hasNoise = false;
+          let combined;
           noiseSamplers.forEach((sampler) => {
             const sx = sampler.type === 'image' ? imageSampleX : sampleX;
             const sy = sampler.type === 'image' ? imageSampleY : sampleY;
             const value = sampler.sample(sx, sy) * sampler.amplitude;
-            if (!hasNoise) {
-              combined = value;
-              hasNoise = true;
-              return;
-            }
-            switch (sampler.blend) {
-              case 'subtract':
-                combined -= value;
-                break;
-              case 'multiply':
-                combined *= value;
-                break;
-              case 'max':
-                combined = Math.max(combined, value);
-                break;
-              case 'min':
-                combined = Math.min(combined, value);
-                break;
-              case 'hatch-dark':
-              case 'hatch-light': {
-                const baseTone = hasNoise ? clamp01((combined / maxAmp + 1) / 2) : 0.5;
-                const weight = sampler.blend === 'hatch-dark' ? 1 - baseTone : baseTone;
-                const dirBias =
-                  value >= 0
-                    ? sampler.blend === 'hatch-dark'
-                      ? 0.6
-                      : 1.2
-                    : sampler.blend === 'hatch-dark'
-                      ? 1.2
-                      : 0.6;
-                combined += value * weight * dirBias;
-                break;
-              }
-              case 'add':
-              default:
-                combined += value;
-                break;
-            }
+            combined = window.Vectura.NoiseRack.combineBlend({
+              combined,
+              value,
+              blend: sampler.blend,
+              maxAmplitude: maxAmp,
+            });
           });
-          return hasNoise ? combined : 0;
+          return combined ?? 0;
         };
         const getEdgeTaper = (xNorm) => {
           if (edgeFadeStrength <= 0 || edgeFadeThresholdStrength <= 0 || edgeFadeMode === 'none') return 1;

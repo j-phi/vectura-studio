@@ -1,0 +1,51 @@
+name: Feature Request
+description: Propose a new feature or enhancement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: dropdown
+    id: type
+    attributes:
+      label: Change Type
+      options:
+        - Feature
+        - Workflow / Tooling
+        - Documentation
+        - Performance
+        - Testing
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or Opportunity
+      description: Describe the user or developer problem this feature would solve.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: List concrete, testable outcomes.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks or Tradeoffs
+  - type: checkboxes
+    id: docs
+    attributes:
+      label: Documentation Impact
+      options:
+        - label: This should update the README.
+        - label: This should update `plans.md`.
+        - label: This should update `CHANGELOG.md`.

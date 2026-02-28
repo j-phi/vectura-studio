@@ -7,9 +7,11 @@ Workflow governance and documentation synchronization rules live in `docs/agenti
 - E2E smoke: Playwright (`playwright.config.js`)
 - Runtime loader for browser IIFE modules: `tests/helpers/load-vectura-runtime.js`
 - E2E smoke projects run on Chromium for both desktop and touch-tablet coverage (tablet uses touch/mobile emulation).
+- Local Playwright runs patch unsupported Unicode-regex bundles first; when managed Chromium assets are missing locally, the config falls back to installed Chrome and disables local failure-video capture. CI remains the authoritative environment for uploaded video artifacts.
 
 ## Local Commands
 - `npm run test` runs `test:unit` and `test:integration`.
+- `npm run version:sync` syncs the runtime/app badge version from `package.json`.
 - `npm run test:unit` runs deterministic unit tests.
 - `npm run test:integration` runs engine integration tests, including app bootstrap integrity assertions for Layers/Mathematical Model/About population.
 - `npm run test:e2e` runs Playwright smoke tests.
@@ -28,6 +30,8 @@ Workflow governance and documentation synchronization rules live in `docs/agenti
 - `.github/workflows/test.yml` enforces:
   - Pull requests: `test:unit`, `test:integration`, `test:e2e`
   - `main` + nightly schedule: `test:visual`, `test:perf`
+- `.github/workflows/dependency-review.yml` reviews dependency diffs on pull requests.
+- `.github/workflows/codeql.yml` runs GitHub code scanning on `main`, pull requests to `main`, and a weekly schedule.
 - Playwright artifacts are uploaded from CI on every `e2e-smoke` run.
 
 ## Writing New Tests

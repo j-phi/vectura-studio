@@ -42,6 +42,11 @@
         return;
       }
 
+      if (def.type === 'checkbox') {
+        noise[def.key] = random() > 0.5;
+        return;
+      }
+
       if (def.type === 'angle' || def.type === 'range') {
         const randMin = Number.isFinite(def.randomMin) ? def.randomMin : def.min;
         const randMax = Number.isFinite(def.randomMax) ? def.randomMax : def.max;
@@ -182,8 +187,20 @@
     controls,
     commonControls,
     waveNoiseDefs,
+    ringsNoiseDefs,
+    topoNoiseDefs,
+    flowfieldNoiseDefs,
+    gridNoiseDefs,
+    phyllaNoiseDefs,
+    petalisDriftNoiseDefs,
     ensureWavetableNoises,
     ensureSpiralNoises,
+    ensureRingsNoises,
+    ensureTopoNoises,
+    ensureFlowfieldNoises,
+    ensureGridNoises,
+    ensurePhyllaNoises,
+    ensurePetalisDriftNoises,
     random = Math.random,
   } = {}) => {
     if (!layer || !controls) return;
@@ -196,12 +213,30 @@
       if (def.type === 'section' || def.type === 'file' || def.type === 'image') return;
 
       if (def.type === 'noiseList') {
-        if (layer.type === 'wavetable' && typeof ensureWavetableNoises === 'function') {
+        if (def.source === 'petalisDrift' && typeof ensurePetalisDriftNoises === 'function') {
+          const noises = ensurePetalisDriftNoises();
+          noises.forEach((noise) => randomizeNoise({ noise, waveNoiseDefs: petalisDriftNoiseDefs || waveNoiseDefs, random }));
+        } else if (layer.type === 'wavetable' && typeof ensureWavetableNoises === 'function') {
           const noises = ensureWavetableNoises();
           noises.forEach((noise) => randomizeNoise({ noise, waveNoiseDefs, random }));
         } else if (layer.type === 'spiral' && typeof ensureSpiralNoises === 'function') {
           const noises = ensureSpiralNoises();
           noises.forEach((noise) => randomizeNoise({ noise, waveNoiseDefs, random }));
+        } else if (layer.type === 'rings' && typeof ensureRingsNoises === 'function') {
+          const noises = ensureRingsNoises();
+          noises.forEach((noise) => randomizeNoise({ noise, waveNoiseDefs: ringsNoiseDefs || waveNoiseDefs, random }));
+        } else if (layer.type === 'topo' && typeof ensureTopoNoises === 'function') {
+          const noises = ensureTopoNoises();
+          noises.forEach((noise) => randomizeNoise({ noise, waveNoiseDefs: topoNoiseDefs || waveNoiseDefs, random }));
+        } else if (layer.type === 'flowfield' && typeof ensureFlowfieldNoises === 'function') {
+          const noises = ensureFlowfieldNoises();
+          noises.forEach((noise) => randomizeNoise({ noise, waveNoiseDefs: flowfieldNoiseDefs || waveNoiseDefs, random }));
+        } else if (layer.type === 'grid' && typeof ensureGridNoises === 'function') {
+          const noises = ensureGridNoises();
+          noises.forEach((noise) => randomizeNoise({ noise, waveNoiseDefs: gridNoiseDefs || waveNoiseDefs, random }));
+        } else if (layer.type === 'phylla' && typeof ensurePhyllaNoises === 'function') {
+          const noises = ensurePhyllaNoises();
+          noises.forEach((noise) => randomizeNoise({ noise, waveNoiseDefs: phyllaNoiseDefs || waveNoiseDefs, random }));
         }
         return;
       }

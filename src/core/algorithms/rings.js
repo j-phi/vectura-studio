@@ -7,7 +7,10 @@
   window.Vectura.AlgorithmRegistry.rings = {
       generate: (p, rng, noise, bounds) => {
         const { m, width, height } = bounds;
+        const TAU = Math.PI * 2;
         const inset = bounds.truncate ? m : 0;
+        const innerW = width - inset * 2;
+        const innerH = height - inset * 2;
         const cx = width / 2 + (p.offsetX ?? 0);
         const cy = height / 2 + (p.offsetY ?? 0);
         const maxR = Math.max(1, Math.min(width, height) / 2 - inset);
@@ -15,132 +18,192 @@
         const baseGap = rings > 1 ? maxR / (rings - 1) : maxR;
         const gap = baseGap * (p.gap ?? 1);
         const total = gap * (rings - 1);
-        const startR = Math.max(0, maxR - total);
-        const amp = p.amplitude ?? 0;
-        const noiseScale = p.noiseScale ?? 0.001;
-        const noiseOffsetX = p.noiseOffsetX ?? 0;
-        const noiseOffsetY = p.noiseOffsetY ?? 0;
-        const noiseLayer = p.noiseLayer ?? 0;
-        const noiseRadius = p.noiseRadius ?? 100;
-        const noiseType = p.noiseType || 'simplex';
-        const paths = [];
-        const baseNoise = (x, y) => noise.noise2D(x, y);
-        const hash2D = (x, y) => {
-          const n = Math.sin(x * 127.1 + y * 311.7 + (p.seed ?? 0) * 0.1) * 43758.5453;
-          return n - Math.floor(n);
-        };
-        const cellularNoise = (x, y) => {
-          const xi = Math.floor(x);
-          const yi = Math.floor(y);
-          let minDist = Infinity;
-          for (let dx = -1; dx <= 1; dx++) {
-            for (let dy = -1; dy <= 1; dy++) {
-              const cx = xi + dx + hash2D(xi + dx, yi + dy);
-              const cy = yi + dy + hash2D(xi + dx + 7.21, yi + dy + 3.17);
-              const dist = Math.hypot(x - cx, y - cy);
-              if (dist < minDist) minDist = dist;
-            }
-          }
-          const v = Math.max(0, Math.min(1, 1 - minDist));
-          return v * 2 - 1;
-        };
-        const fbmNoise = (x, y) => {
-          let totalNoise = 0;
-          let ampNoise = 1;
-          let freq = 1;
-          let norm = 0;
-          for (let i = 0; i < 4; i++) {
-            totalNoise += baseNoise(x * freq, y * freq) * ampNoise;
-            norm += ampNoise;
-            ampNoise *= 0.5;
-            freq *= 2;
-          }
-          return norm ? totalNoise / norm : totalNoise;
-        };
-        const noiseValue = (x, y) => {
-          const n = baseNoise(x, y);
-          switch (noiseType) {
-            case 'ridged':
-              return (1 - Math.abs(n)) * 2 - 1;
-            case 'billow':
-              return Math.abs(n) * 2 - 1;
-            case 'turbulence': {
-              const n2 = baseNoise(x * 2, y * 2);
-              const n3 = baseNoise(x * 4, y * 4);
-              const t = (Math.abs(n) + Math.abs(n2) * 0.5 + Math.abs(n3) * 0.25) / 1.75;
-              return t * 2 - 1;
-            }
-            case 'stripes':
-              return Math.sin(x * 2 + n * 1.5);
-            case 'marble':
-              return Math.sin((x + y) * 1.5 + n * 2);
-            case 'steps': {
-              const t = Math.round(((n + 1) / 2) * 5) / 5;
-              return t * 2 - 1;
-            }
-            case 'triangle': {
-              const t = (n + 1) / 2;
-              const tri = 1 - Math.abs((t % 1) * 2 - 1);
-              return tri * 2 - 1;
-            }
-            case 'warp':
-              return baseNoise(x + n * 1.5, y + n * 1.5);
-            case 'cellular':
-              return cellularNoise(x, y);
-            case 'fbm':
-              return fbmNoise(x, y);
-            case 'swirl':
-              return Math.sin(x * 2 + n * 2) * Math.cos(y * 2 + n);
-            case 'radial':
-              return Math.sin(Math.hypot(x, y) * 3 + n * 2);
-            case 'checker': {
-              const cx = Math.floor(x * 4);
-              const cy = Math.floor(y * 4);
-              return (cx + cy) % 2 === 0 ? 1 : -1;
-            }
-            case 'zigzag': {
-              const t = Math.abs((x * 2) % 2 - 1);
-              return (1 - t) * 2 - 1;
-            }
-            case 'ripple':
-              return Math.sin((x + y) * 3 + n * 2);
-            case 'spiral': {
-              const ang = Math.atan2(y, x);
-              const rad = Math.hypot(x, y);
-              return Math.sin(ang * 4 + rad * 2 + n);
-            }
-            case 'grain':
-              return hash2D(x * 10, y * 10) * 2 - 1;
-            case 'crosshatch':
-              return (Math.sin(x * 3) + Math.sin(y * 3)) * 0.5;
-            case 'pulse': {
-              const t = Math.abs(Math.sin(x * 2 + n) * Math.cos(y * 2 + n));
-              return t * 2 - 1;
-            }
-            default:
-              return n;
-          }
+        const centerRadiusBoost = Math.max(0, (p.centerDiameter ?? 0) / 2);
+        const startR = Math.max(0, maxR - total) + centerRadiusBoost;
+        const rack = window.Vectura.NoiseRack.createEvaluator({ noise, seed: p.seed ?? 0 });
+
+        const legacyNoise = {
+          type: p.noiseType || 'simplex',
+          blend: 'add',
+          amplitude: p.amplitude ?? 8,
+          zoom: p.noiseScale ?? 0.001,
+          freq: 1,
+          angle: 0,
+          shiftX: p.noiseOffsetX ?? 0,
+          shiftY: p.noiseOffsetY ?? 0,
+          tileMode: 'off',
+          tilePadding: 0,
+          patternScale: 1,
+          warpStrength: 1,
+          cellularScale: 1,
+          cellularJitter: 1,
+          stepsCount: 5,
+          seed: 0,
+          applyMode: 'orbit',
+          ringDrift: p.noiseLayer ?? 0.5,
+          ringRadius: p.noiseRadius ?? 100,
+          noiseStyle: 'linear',
+          noiseThreshold: 0,
+          imageWidth: 1,
+          imageHeight: 1,
+          microFreq: 0,
+          imageInvertColor: false,
+          imageInvertOpacity: false,
+          imageId: p.noiseImageId || '',
+          imageName: p.noiseImageName || '',
+          imagePreview: '',
+          imageAlgo: p.imageAlgo || 'luma',
+          imageEffects: [],
+          polygonRadius: 2,
+          polygonSides: 6,
+          polygonRotation: 0,
+          polygonOutline: 0,
+          polygonEdgeRadius: 0,
         };
 
+        const noiseLayers = (Array.isArray(p.noises) && p.noises.length ? p.noises : [legacyNoise])
+          .map((noiseLayer) => ({
+            ...legacyNoise,
+            ...(noiseLayer || {}),
+            enabled: noiseLayer?.enabled !== false,
+          }))
+          .filter((noiseLayer) => noiseLayer.enabled !== false);
+
+        const maxAmp = noiseLayers.reduce((sum, noiseLayer) => sum + Math.abs(noiseLayer.amplitude ?? 0), 0) || 1;
+
+        const sampleNoise = ({ theta, ringIndex, ringRadiusBase, worldX, worldY }) => {
+          let combined;
+          noiseLayers.forEach((noiseLayer) => {
+            const amplitude = noiseLayer.amplitude ?? 0;
+            const zoom = Math.max(0.0001, noiseLayer.zoom ?? 0.001);
+            const freq = Math.max(0.05, noiseLayer.freq ?? 1);
+            const angle = ((noiseLayer.angle ?? 0) * Math.PI) / 180;
+            const cosA = Math.cos(angle);
+            const sinA = Math.sin(angle);
+            const shiftX = noiseLayer.shiftX ?? 0;
+            const shiftY = noiseLayer.shiftY ?? 0;
+            const applyMode = noiseLayer.applyMode || 'orbit';
+            const ringDrift = noiseLayer.ringDrift ?? 0;
+            const ringScale = Math.max(1e-6, noiseLayer.ringRadius ?? 100);
+
+            let sampleX = 0;
+            let sampleY = 0;
+            let closureBlend = 0;
+            let seamStartX = 0;
+            let seamStartY = 0;
+            let seamEndX = 0;
+            let seamEndY = 0;
+
+            if (applyMode === 'topdown') {
+              const dx = worldX - cx + shiftX;
+              const dy = worldY - cy + shiftY;
+              const rx = dx * cosA - dy * sinA;
+              const ry = dx * sinA + dy * cosA;
+
+              if (noiseLayer.type === 'image' && (noiseLayer.tileMode || 'off') === 'off') {
+                const u = (worldX - inset + shiftX) / Math.max(1, innerW) - 0.5;
+                const v = (worldY - inset + shiftY) / Math.max(1, innerH) - 0.5;
+                sampleX = u / Math.max(0.05, noiseLayer.imageWidth ?? freq ?? 1);
+                sampleY = v / Math.max(0.05, noiseLayer.imageHeight ?? 1);
+              } else {
+                const widthScale =
+                  noiseLayer.type === 'image' ? 1 / Math.max(0.05, noiseLayer.imageWidth ?? freq ?? 1) : freq;
+                const heightScale =
+                  noiseLayer.type === 'image' ? 1 / Math.max(0.05, noiseLayer.imageHeight ?? 1) : 1;
+                sampleX = rx * zoom * widthScale;
+                sampleY = ry * zoom * heightScale;
+              }
+            } else if (applyMode === 'concentric') {
+              const pathT = Math.max(0, Math.min(1, theta / TAU));
+              const localX = (pathT - 0.5) * ringScale + shiftX;
+              const localY = ringIndex * ringDrift + shiftY;
+              const rx = localX * cosA - localY * sinA;
+              const ry = localX * sinA + localY * cosA;
+              const seamLocalY = localY;
+              const seamRawStartX = -0.5 * ringScale + shiftX;
+              const seamRawEndX = 0.5 * ringScale + shiftX;
+              const seamRxStart = seamRawStartX * cosA - seamLocalY * sinA;
+              const seamRyStart = seamRawStartX * sinA + seamLocalY * cosA;
+              const seamRxEnd = seamRawEndX * cosA - seamLocalY * sinA;
+              const seamRyEnd = seamRawEndX * sinA + seamLocalY * cosA;
+              closureBlend = pathT;
+
+              const widthScale =
+                noiseLayer.type === 'image' ? 1 / Math.max(0.05, noiseLayer.imageWidth ?? freq ?? 1) : freq;
+              const heightScale =
+                noiseLayer.type === 'image' ? 1 / Math.max(0.05, noiseLayer.imageHeight ?? 1) : 1;
+              sampleX = rx * zoom * widthScale;
+              sampleY = ry * zoom * heightScale;
+              seamStartX = seamRxStart * zoom * widthScale;
+              seamStartY = seamRyStart * zoom * heightScale;
+              seamEndX = seamRxEnd * zoom * widthScale;
+              seamEndY = seamRyEnd * zoom * heightScale;
+            } else {
+              const orbitX = shiftX + Math.cos(theta) * ringScale;
+              const orbitY = shiftY + Math.sin(theta) * ringScale;
+              const rx = orbitX * cosA - orbitY * sinA;
+              const ry = orbitX * sinA + orbitY * cosA;
+              const drift = ringIndex * ringDrift;
+
+              if (noiseLayer.type === 'image' && (noiseLayer.tileMode || 'off') === 'off') {
+                const radiusNorm = maxR > 0 ? ringRadiusBase / maxR : 0;
+                const polarX = Math.cos(theta) * radiusNorm * 0.5;
+                const polarY = Math.sin(theta) * radiusNorm * 0.5;
+                sampleX = polarX / Math.max(0.05, noiseLayer.imageWidth ?? 1) + drift;
+                sampleY = polarY / Math.max(0.05, noiseLayer.imageHeight ?? 1) + drift;
+              } else {
+                const widthScale =
+                  noiseLayer.type === 'image' ? 1 / Math.max(0.05, noiseLayer.imageWidth ?? freq ?? 1) : freq;
+                const heightScale =
+                  noiseLayer.type === 'image' ? 1 / Math.max(0.05, noiseLayer.imageHeight ?? 1) : 1;
+                sampleX = rx * zoom * widthScale + drift;
+                sampleY = ry * zoom * heightScale + drift;
+              }
+            }
+
+            let value = rack.evaluate(sampleX, sampleY, noiseLayer, { worldX, worldY });
+            if (applyMode === 'concentric' && closureBlend > 0) {
+              const seamStartValue = rack.evaluate(seamStartX, seamStartY, noiseLayer, { worldX, worldY });
+              const seamEndValue = rack.evaluate(seamEndX, seamEndY, noiseLayer, { worldX, worldY });
+              value -= (seamEndValue - seamStartValue) * closureBlend;
+            }
+            value *= amplitude;
+            combined = window.Vectura.NoiseRack.combineBlend({
+              combined,
+              value,
+              blend: noiseLayer.blend || 'add',
+              maxAmplitude: maxAmp,
+            });
+          });
+          return combined ?? 0;
+        };
+
+        const paths = [];
         for (let i = 0; i < rings; i++) {
-          const layerOffset = i * noiseLayer;
           const rBase = Math.max(0.1, startR + i * gap);
           const steps = Math.max(64, Math.floor(rBase * 2));
           const path = [];
-          for (let k = 0; k <= steps; k++) {
-            const t = (k / steps) * Math.PI * 2;
-            const nX = noiseOffsetX + Math.cos(t) * noiseRadius;
-            const nY = noiseOffsetY + Math.sin(t) * noiseRadius;
-            const n = noiseValue(nX * noiseScale + layerOffset, nY * noiseScale + layerOffset);
-            const r = Math.max(0.1, rBase + n * amp);
-            path.push({ x: cx + Math.cos(t) * r, y: cy + Math.sin(t) * r });
+          for (let k = 0; k < steps; k++) {
+            const theta = (k / steps) * TAU;
+            const baseX = cx + Math.cos(theta) * rBase;
+            const baseY = cy + Math.sin(theta) * rBase;
+            const n = sampleNoise({
+              theta,
+              ringIndex: i,
+              ringRadiusBase: rBase,
+              worldX: baseX,
+              worldY: baseY,
+            });
+            const r = Math.max(0.1, rBase + n);
+            path.push({ x: cx + Math.cos(theta) * r, y: cy + Math.sin(theta) * r });
           }
+          if (path.length) path.push({ ...path[0] });
           paths.push(path);
         }
 
         return paths;
       },
       formula: (p) =>
-        `n_x = cosθ * ${p.noiseRadius}, n_y = sinθ * ${p.noiseRadius}\nnoise = noise((n_x+${p.noiseOffsetX})*${p.noiseScale}, (n_y+${p.noiseOffsetY})*${p.noiseScale} + i*${p.noiseLayer})\nr = r0 + ${p.amplitude} * noise`,
+        `Noise Rack stack on concentric rings\nTop Down = world-space XY field\nConcentric = seam-corrected ring-path field + ring drift\nOrbit Field = legacy ring-local orbital field\nr = r0 + Σ noise_i * amp_i`,
     };
 })();

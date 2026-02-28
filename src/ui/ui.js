@@ -1186,6 +1186,441 @@
     },
   ];
 
+  const cloneNoiseDef = (def, overrides = {}) => ({
+    ...def,
+    ...overrides,
+    options: overrides.options || (Array.isArray(def.options) ? def.options.map((opt) => ({ ...opt })) : def.options),
+  });
+
+  const RINGS_NOISE_DEFS = [
+    ...WAVE_NOISE_DEFS.map((def) => {
+      if (def.key === 'applyMode') {
+        return cloneNoiseDef(def, {
+          options: [
+            { value: 'orbit', label: 'Orbit Field' },
+            { value: 'concentric', label: 'Concentric' },
+            { value: 'topdown', label: 'Top Down' },
+          ],
+          infoKey: 'rings.noiseProjection',
+        });
+      }
+      if (def.key === 'amplitude') {
+        return cloneNoiseDef(def, {
+          min: -80,
+          max: 80,
+          step: 0.5,
+          infoKey: 'rings.amplitude',
+        });
+      }
+      if (def.key === 'zoom') {
+        return cloneNoiseDef(def, {
+          label: 'Noise Scale',
+          min: 0.0001,
+          max: 0.02,
+          step: 0.0001,
+          infoKey: 'rings.noiseScale',
+        });
+      }
+      if (def.key === 'shiftX') {
+        return cloneNoiseDef(def, {
+          label: 'Noise Offset X',
+          min: -200,
+          max: 200,
+          step: 1,
+          infoKey: 'rings.noiseOffsetX',
+        });
+      }
+      if (def.key === 'shiftY') {
+        return cloneNoiseDef(def, {
+          label: 'Noise Offset Y',
+          min: -200,
+          max: 200,
+          step: 1,
+          infoKey: 'rings.noiseOffsetY',
+        });
+      }
+      return cloneNoiseDef(def);
+    }),
+    {
+      key: 'ringDrift',
+      label: 'Ring Drift',
+      type: 'range',
+      min: 0,
+      max: 5,
+      step: 0.1,
+      infoKey: 'rings.noiseLayer',
+      showIf: (n) => ['orbit', 'concentric'].includes(n.applyMode || 'orbit'),
+    },
+    {
+      key: 'ringRadius',
+      label: 'Path Span',
+      type: 'range',
+      min: 10,
+      max: 240,
+      step: 1,
+      infoKey: 'rings.noisePathSpan',
+      showIf: (n) => (n.applyMode || 'orbit') === 'concentric',
+    },
+    {
+      key: 'ringRadius',
+      label: 'Orbit Radius',
+      type: 'range',
+      min: 10,
+      max: 240,
+      step: 1,
+      infoKey: 'rings.noiseOrbitRadius',
+      showIf: (n) => (n.applyMode || 'orbit') === 'orbit',
+    },
+  ];
+
+  const TOPO_NOISE_DEFS = [
+    ...WAVE_NOISE_DEFS.filter((def) => def.key !== 'applyMode').map((def) => {
+      if (def.key === 'amplitude') {
+        return cloneNoiseDef(def, {
+          label: 'Field Weight',
+          min: -2,
+          max: 2,
+          step: 0.05,
+          infoKey: 'topo.fieldWeight',
+        });
+      }
+      if (def.key === 'zoom') {
+        return cloneNoiseDef(def, {
+          label: 'Noise Scale',
+          min: 0.0001,
+          max: 0.02,
+          step: 0.0001,
+          infoKey: 'topo.noiseScale',
+        });
+      }
+      if (def.key === 'shiftX') {
+        return cloneNoiseDef(def, {
+          label: 'Noise Offset X',
+          min: -200,
+          max: 200,
+          step: 1,
+          infoKey: 'topo.noiseOffsetX',
+        });
+      }
+      if (def.key === 'shiftY') {
+        return cloneNoiseDef(def, {
+          label: 'Noise Offset Y',
+          min: -200,
+          max: 200,
+          step: 1,
+          infoKey: 'topo.noiseOffsetY',
+        });
+      }
+      return cloneNoiseDef(def);
+    }),
+    {
+      key: 'octaves',
+      label: 'Octaves',
+      type: 'range',
+      min: 1,
+      max: 6,
+      step: 1,
+      infoKey: 'topo.octaves',
+      showIf: (n) => n.type === 'fbm',
+    },
+    {
+      key: 'lacunarity',
+      label: 'Lacunarity',
+      type: 'range',
+      min: 1.2,
+      max: 4.0,
+      step: 0.1,
+      infoKey: 'topo.lacunarity',
+      showIf: (n) => n.type === 'fbm',
+    },
+    {
+      key: 'gain',
+      label: 'Gain',
+      type: 'range',
+      min: 0.2,
+      max: 0.9,
+      step: 0.05,
+      infoKey: 'topo.gain',
+      showIf: (n) => n.type === 'fbm',
+    },
+  ];
+
+  const FLOWFIELD_NOISE_DEFS = [
+    ...WAVE_NOISE_DEFS.filter((def) => def.key !== 'applyMode').map((def) => {
+      if (def.key === 'amplitude') {
+        return cloneNoiseDef(def, {
+          label: 'Field Weight',
+          min: -2,
+          max: 2,
+          step: 0.05,
+          infoKey: 'flowfield.fieldWeight',
+        });
+      }
+      if (def.key === 'zoom') {
+        return cloneNoiseDef(def, {
+          label: 'Noise Scale',
+          min: 0.001,
+          max: 0.2,
+          step: 0.001,
+          infoKey: 'flowfield.noiseScale',
+        });
+      }
+      if (def.key === 'shiftX') {
+        return cloneNoiseDef(def, {
+          label: 'Noise Offset X',
+          min: -200,
+          max: 200,
+          step: 1,
+          infoKey: 'flowfield.noiseOffsetX',
+        });
+      }
+      if (def.key === 'shiftY') {
+        return cloneNoiseDef(def, {
+          label: 'Noise Offset Y',
+          min: -200,
+          max: 200,
+          step: 1,
+          infoKey: 'flowfield.noiseOffsetY',
+        });
+      }
+      return cloneNoiseDef(def);
+    }),
+    {
+      key: 'octaves',
+      label: 'Octaves',
+      type: 'range',
+      min: 1,
+      max: 6,
+      step: 1,
+      infoKey: 'flowfield.octaves',
+    },
+    {
+      key: 'lacunarity',
+      label: 'Lacunarity',
+      type: 'range',
+      min: 1.2,
+      max: 4.0,
+      step: 0.1,
+      infoKey: 'flowfield.lacunarity',
+    },
+    {
+      key: 'gain',
+      label: 'Gain',
+      type: 'range',
+      min: 0.2,
+      max: 0.9,
+      step: 0.05,
+      infoKey: 'flowfield.gain',
+    },
+  ];
+
+  const GRID_NOISE_DEFS = [
+    ...WAVE_NOISE_DEFS.filter((def) => def.key !== 'applyMode').map((def) => {
+      if (def.key === 'amplitude') {
+        return cloneNoiseDef(def, {
+          label: 'Field Weight',
+          min: -2,
+          max: 2,
+          step: 0.05,
+          infoKey: 'grid.fieldWeight',
+        });
+      }
+      if (def.key === 'zoom') {
+        return cloneNoiseDef(def, {
+          label: 'Noise Scale',
+          min: 0.001,
+          max: 0.2,
+          step: 0.001,
+          infoKey: 'grid.noiseScale',
+        });
+      }
+      if (def.key === 'shiftX') {
+        return cloneNoiseDef(def, {
+          label: 'Noise Offset X',
+          min: -200,
+          max: 200,
+          step: 1,
+          infoKey: 'grid.noiseOffsetX',
+        });
+      }
+      if (def.key === 'shiftY') {
+        return cloneNoiseDef(def, {
+          label: 'Noise Offset Y',
+          min: -200,
+          max: 200,
+          step: 1,
+          infoKey: 'grid.noiseOffsetY',
+        });
+      }
+      return cloneNoiseDef(def);
+    }),
+    {
+      key: 'octaves',
+      label: 'Octaves',
+      type: 'range',
+      min: 1,
+      max: 6,
+      step: 1,
+      infoKey: 'grid.octaves',
+    },
+    {
+      key: 'lacunarity',
+      label: 'Lacunarity',
+      type: 'range',
+      min: 1.2,
+      max: 4.0,
+      step: 0.1,
+      infoKey: 'grid.lacunarity',
+    },
+    {
+      key: 'gain',
+      label: 'Gain',
+      type: 'range',
+      min: 0.2,
+      max: 0.9,
+      step: 0.05,
+      infoKey: 'grid.gain',
+    },
+  ];
+
+  const PHYLLA_NOISE_DEFS = [
+    ...WAVE_NOISE_DEFS.filter((def) => def.key !== 'applyMode').map((def) => {
+      if (def.key === 'amplitude') {
+        return cloneNoiseDef(def, {
+          label: 'Field Weight',
+          min: -2,
+          max: 2,
+          step: 0.05,
+          infoKey: 'phylla.fieldWeight',
+        });
+      }
+      if (def.key === 'zoom') {
+        return cloneNoiseDef(def, {
+          label: 'Noise Scale',
+          min: 0.001,
+          max: 0.2,
+          step: 0.001,
+          infoKey: 'phylla.noiseScale',
+        });
+      }
+      if (def.key === 'shiftX') {
+        return cloneNoiseDef(def, {
+          label: 'Noise Offset X',
+          min: -200,
+          max: 200,
+          step: 1,
+          infoKey: 'phylla.noiseOffsetX',
+        });
+      }
+      if (def.key === 'shiftY') {
+        return cloneNoiseDef(def, {
+          label: 'Noise Offset Y',
+          min: -200,
+          max: 200,
+          step: 1,
+          infoKey: 'phylla.noiseOffsetY',
+        });
+      }
+      return cloneNoiseDef(def);
+    }),
+    {
+      key: 'octaves',
+      label: 'Octaves',
+      type: 'range',
+      min: 1,
+      max: 6,
+      step: 1,
+      infoKey: 'phylla.octaves',
+    },
+    {
+      key: 'lacunarity',
+      label: 'Lacunarity',
+      type: 'range',
+      min: 1.2,
+      max: 4.0,
+      step: 0.1,
+      infoKey: 'phylla.lacunarity',
+    },
+    {
+      key: 'gain',
+      label: 'Gain',
+      type: 'range',
+      min: 0.2,
+      max: 0.9,
+      step: 0.05,
+      infoKey: 'phylla.gain',
+    },
+  ];
+
+  const PETALIS_DRIFT_NOISE_DEFS = [
+    ...WAVE_NOISE_DEFS.filter((def) => def.key !== 'applyMode').map((def) => {
+      if (def.key === 'amplitude') {
+        return cloneNoiseDef(def, {
+          label: 'Drift Weight',
+          min: -2,
+          max: 2,
+          step: 0.05,
+          infoKey: 'petalis.driftNoise',
+        });
+      }
+      if (def.key === 'zoom') {
+        return cloneNoiseDef(def, {
+          label: 'Noise Scale',
+          min: 0.001,
+          max: 1,
+          step: 0.001,
+          infoKey: 'petalis.driftNoise',
+        });
+      }
+      if (def.key === 'shiftX') {
+        return cloneNoiseDef(def, {
+          label: 'Noise Offset X',
+          min: -200,
+          max: 200,
+          step: 1,
+          infoKey: 'petalis.driftNoise',
+        });
+      }
+      if (def.key === 'shiftY') {
+        return cloneNoiseDef(def, {
+          label: 'Noise Offset Y',
+          min: -200,
+          max: 200,
+          step: 1,
+          infoKey: 'petalis.driftNoise',
+        });
+      }
+      return cloneNoiseDef(def);
+    }),
+    {
+      key: 'octaves',
+      label: 'Octaves',
+      type: 'range',
+      min: 1,
+      max: 6,
+      step: 1,
+      infoKey: 'petalis.driftNoise',
+    },
+    {
+      key: 'lacunarity',
+      label: 'Lacunarity',
+      type: 'range',
+      min: 1.2,
+      max: 4.0,
+      step: 0.1,
+      infoKey: 'petalis.driftNoise',
+    },
+    {
+      key: 'gain',
+      label: 'Gain',
+      type: 'range',
+      min: 0.2,
+      max: 0.9,
+      step: 0.05,
+      infoKey: 'petalis.driftNoise',
+    },
+  ];
+
   const PETALIS_PRESET_OPTIONS = [
     { value: 'custom', label: 'Custom' },
     ...(Array.isArray(PETALIS_PRESET_LIBRARY)
@@ -1515,25 +1950,16 @@
     expanded: [],
     flowfield: [
       {
-        id: 'noiseType',
-        label: 'Noise Type',
+        id: 'flowMode',
+        label: 'Flow Mode',
         type: 'select',
-        randomExclude: ['image'],
         options: [
-          { value: 'simplex', label: 'Simplex' },
-          { value: 'ridged', label: 'Ridged' },
-          { value: 'billow', label: 'Billow' },
-          { value: 'turbulence', label: 'Turbulence' },
-          { value: 'swirl', label: 'Swirl' },
-          { value: 'radial', label: 'Radial' },
-          { value: 'checker', label: 'Checker' },
+          { value: 'angle', label: 'Angle' },
           { value: 'curl', label: 'Curl' },
         ],
-        infoKey: 'flowfield.noiseType',
+        infoKey: 'flowfield.flowMode',
       },
-      { id: 'noiseScale', label: 'Noise Scale', type: 'range', min: 0.001, max: 0.2, step: 0.001, infoKey: 'flowfield.noiseScale' },
-      { id: 'lacunarity', label: 'Lacunarity', type: 'range', min: 1.2, max: 4.0, step: 0.1, infoKey: 'flowfield.lacunarity' },
-      { id: 'gain', label: 'Gain', type: 'range', min: 0.2, max: 0.9, step: 0.05, infoKey: 'flowfield.gain' },
+      { type: 'noiseList' },
       {
         id: 'density',
         label: 'Density',
@@ -1571,18 +1997,6 @@
         infoKey: 'flowfield.angleOffset',
       },
       { id: 'chaos', label: 'Chaos', type: 'range', min: 0, max: 3.0, step: 0.05, infoKey: 'flowfield.chaos' },
-      {
-        id: 'octaves',
-        label: 'Octaves',
-        type: 'range',
-        min: 1,
-        max: 6,
-        step: 1,
-        confirmAbove: 4,
-        confirmMessage: 'Higher octaves are slower. Continue?',
-        randomMax: 4,
-        infoKey: 'flowfield.octaves',
-      },
       { id: 'minSteps', label: 'Minimum Steps', type: 'range', min: 2, max: 200, step: 2, infoKey: 'flowfield.minSteps' },
       { id: 'minLength', label: 'Minimum Length', type: 'range', min: 0, max: 200, step: 2, infoKey: 'flowfield.minLength' },
     ],
@@ -2011,7 +2425,7 @@
         infoKey: 'petalis.angularDrift',
       },
       { id: 'driftStrength', label: 'Drift Strength', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'petalis.driftStrength' },
-      { id: 'driftNoise', label: 'Drift Noise', type: 'range', min: 0.05, max: 1, step: 0.05, infoKey: 'petalis.driftNoise' },
+      { type: 'noiseList', source: 'petalisDrift', label: 'Drift Noise Rack' },
       { id: 'radiusScale', label: 'Radius Scale', type: 'range', min: -1, max: 1, step: 0.05, infoKey: 'petalis.radiusScale' },
       { id: 'radiusScaleCurve', label: 'Radius Scale Curve', type: 'range', min: 0.5, max: 2.5, step: 0.05, infoKey: 'petalis.radiusScaleCurve' },
     ],
@@ -2169,40 +2583,8 @@
     ],
     rings: [
       { id: 'rings', label: 'Rings', type: 'range', min: 3, max: 120, step: 1, infoKey: 'rings.rings' },
-      {
-        id: 'noiseType',
-        label: 'Noise Type',
-        type: 'select',
-        options: [
-          { value: 'simplex', label: 'Simplex' },
-          { value: 'ridged', label: 'Ridged' },
-          { value: 'billow', label: 'Billow' },
-          { value: 'turbulence', label: 'Turbulence' },
-          { value: 'stripes', label: 'Stripes' },
-          { value: 'marble', label: 'Marble' },
-          { value: 'steps', label: 'Steps' },
-          { value: 'triangle', label: 'Triangle' },
-          { value: 'warp', label: 'Warp' },
-          { value: 'cellular', label: 'Cellular' },
-          { value: 'fbm', label: 'Fractal' },
-          { value: 'swirl', label: 'Swirl' },
-          { value: 'radial', label: 'Radial' },
-          { value: 'checker', label: 'Checker' },
-          { value: 'zigzag', label: 'Zigzag' },
-          { value: 'ripple', label: 'Ripple' },
-          { value: 'spiral', label: 'Spiral' },
-          { value: 'grain', label: 'Grain' },
-          { value: 'crosshatch', label: 'Crosshatch' },
-          { value: 'pulse', label: 'Pulse' },
-        ],
-        infoKey: 'rings.noiseType',
-      },
-      { id: 'amplitude', label: 'Noise Amplitude', type: 'range', min: 0, max: 40, step: 1, infoKey: 'rings.amplitude' },
-      { id: 'noiseScale', label: 'Noise Scale', type: 'range', min: 0.0001, max: 0.01, step: 0.0001, infoKey: 'rings.noiseScale' },
-      { id: 'noiseOffsetX', label: 'Noise Offset X', type: 'range', min: -200, max: 200, step: 1, infoKey: 'rings.noiseOffsetX' },
-      { id: 'noiseOffsetY', label: 'Noise Offset Y', type: 'range', min: -200, max: 200, step: 1, infoKey: 'rings.noiseOffsetY' },
-      { id: 'noiseLayer', label: 'Noise Layer', type: 'range', min: 0, max: 5, step: 0.1, infoKey: 'rings.noiseLayer' },
-      { id: 'noiseRadius', label: 'Noise Radius', type: 'range', min: 10, max: 200, step: 1, infoKey: 'rings.noiseRadius' },
+      { id: 'centerDiameter', label: 'Center Diameter', type: 'range', min: 0, max: 220, step: 1, infoKey: 'rings.centerDiameter' },
+      { type: 'noiseList' },
       { id: 'gap', label: 'Ring Gap', type: 'range', min: 0.4, max: 3.0, step: 0.1, infoKey: 'rings.gap' },
       { id: 'offsetX', label: 'Ring Offset X', type: 'range', min: -100, max: 100, step: 1, infoKey: 'rings.offsetX' },
       { id: 'offsetY', label: 'Ring Offset Y', type: 'range', min: -100, max: 100, step: 1, infoKey: 'rings.offsetY' },
@@ -2210,40 +2592,7 @@
     topo: [
       { id: 'resolution', label: 'Resolution', type: 'range', min: 40, max: 240, step: 5, infoKey: 'topo.resolution' },
       { id: 'levels', label: 'Contour Levels', type: 'range', min: 4, max: 60, step: 1, infoKey: 'topo.levels' },
-      {
-        id: 'noiseType',
-        label: 'Noise Type',
-        type: 'select',
-        options: [
-          { value: 'simplex', label: 'Simplex' },
-          { value: 'ridged', label: 'Ridged' },
-          { value: 'billow', label: 'Billow' },
-          { value: 'turbulence', label: 'Turbulence' },
-          { value: 'stripes', label: 'Stripes' },
-          { value: 'marble', label: 'Marble' },
-          { value: 'steps', label: 'Steps' },
-          { value: 'triangle', label: 'Triangle' },
-          { value: 'warp', label: 'Warp' },
-          { value: 'cellular', label: 'Cellular' },
-          { value: 'fbm', label: 'Fractal' },
-          { value: 'swirl', label: 'Swirl' },
-          { value: 'radial', label: 'Radial' },
-          { value: 'checker', label: 'Checker' },
-          { value: 'zigzag', label: 'Zigzag' },
-          { value: 'ripple', label: 'Ripple' },
-          { value: 'spiral', label: 'Spiral' },
-          { value: 'grain', label: 'Grain' },
-          { value: 'crosshatch', label: 'Crosshatch' },
-          { value: 'pulse', label: 'Pulse' },
-        ],
-        infoKey: 'topo.noiseType',
-      },
-      { id: 'noiseScale', label: 'Noise Scale', type: 'range', min: 0.0001, max: 0.02, step: 0.0001, infoKey: 'topo.noiseScale' },
-      { id: 'noiseOffsetX', label: 'Noise Offset X', type: 'range', min: -200, max: 200, step: 1, infoKey: 'topo.noiseOffsetX' },
-      { id: 'noiseOffsetY', label: 'Noise Offset Y', type: 'range', min: -200, max: 200, step: 1, infoKey: 'topo.noiseOffsetY' },
-      { id: 'octaves', label: 'Octaves', type: 'range', min: 1, max: 6, step: 1, infoKey: 'topo.octaves' },
-      { id: 'lacunarity', label: 'Lacunarity', type: 'range', min: 1.2, max: 4.0, step: 0.1, infoKey: 'topo.lacunarity' },
-      { id: 'gain', label: 'Gain', type: 'range', min: 0.2, max: 0.9, step: 0.05, infoKey: 'topo.gain' },
+      { type: 'noiseList' },
       { id: 'sensitivity', label: 'Sensitivity', type: 'range', min: 0.3, max: 2.5, step: 0.05, infoKey: 'topo.sensitivity' },
       { id: 'thresholdOffset', label: 'Threshold Offset', type: 'range', min: -1, max: 1, step: 0.05, infoKey: 'topo.thresholdOffset' },
       {
@@ -2621,7 +2970,7 @@
       { id: 'rows', label: 'Rows', type: 'range', min: 2, max: 60, step: 1, infoKey: 'grid.rows' },
       { id: 'cols', label: 'Cols', type: 'range', min: 2, max: 60, step: 1, infoKey: 'grid.cols' },
       { id: 'distortion', label: 'Distortion', type: 'range', min: 0, max: 40, step: 1, infoKey: 'grid.distortion' },
-      { id: 'noiseScale', label: 'Noise Scale', type: 'range', min: 0.01, max: 0.2, step: 0.01, infoKey: 'grid.noiseScale' },
+      { type: 'noiseList' },
       { id: 'chaos', label: 'Chaos', type: 'range', min: 0, max: 10, step: 0.1, infoKey: 'grid.chaos' },
       {
         id: 'type',
@@ -2659,6 +3008,7 @@
       },
       { id: 'divergence', label: 'Divergence', type: 'range', min: 0.5, max: 2.5, step: 0.1, infoKey: 'phylla.divergence' },
       { id: 'noiseInf', label: 'Noise Infl.', type: 'range', min: 0, max: 20, step: 1, infoKey: 'phylla.noiseInf' },
+      { type: 'noiseList' },
       { id: 'dotSize', label: 'Dot Size', type: 'range', min: 0.5, max: 3, step: 0.1, infoKey: 'phylla.dotSize' },
       {
         id: 'sides',
@@ -2947,19 +3297,35 @@
     },
     'flowfield.noiseScale': {
       title: 'Noise Scale',
-      description: 'Controls the size of the flow field. Lower values create broad, smooth flow; higher values add detail.',
+      description: 'Controls the scale of this Noise Rack layer inside the flow field.',
+    },
+    'flowfield.noiseOffsetX': {
+      title: 'Noise Offset X',
+      description: 'Shifts a flow-field noise layer on the X axis before sampling.',
+    },
+    'flowfield.noiseOffsetY': {
+      title: 'Noise Offset Y',
+      description: 'Shifts a flow-field noise layer on the Y axis before sampling.',
+    },
+    'flowfield.flowMode': {
+      title: 'Flow Mode',
+      description: 'Angle mode maps the stacked Noise Rack field directly to direction. Curl mode derives flow direction from the field gradient.',
+    },
+    'flowfield.fieldWeight': {
+      title: 'Field Weight',
+      description: 'Controls how strongly this noise layer contributes to the combined flow field.',
     },
     'flowfield.noiseType': {
       title: 'Noise Type',
-      description: 'Chooses the flavor of noise used to steer direction.',
+      description: 'Chooses the engine used by a Noise Rack layer in the flow field.',
     },
     'flowfield.lacunarity': {
       title: 'Lacunarity',
-      description: 'Controls how quickly noise frequency increases across octaves.',
+      description: 'Controls how quickly layer frequency increases across stacked octaves.',
     },
     'flowfield.gain': {
       title: 'Gain',
-      description: 'Controls how much each octave contributes to the field.',
+      description: 'Controls how much each octave contributes to the layer field.',
     },
     'flowfield.density': {
       title: 'Density',
@@ -2987,7 +3353,7 @@
     },
     'flowfield.octaves': {
       title: 'Octaves',
-      description: 'Number of noise layers blended together. More octaves add complexity.',
+      description: 'Number of octave samples inside this Noise Rack layer. More octaves add structure.',
     },
     'flowfield.minSteps': {
       title: 'Minimum Steps',
@@ -3491,6 +3857,18 @@
       title: 'Rings',
       description: 'Number of concentric rings to generate.',
     },
+    'rings.centerDiameter': {
+      title: 'Center Diameter',
+      description: 'Adds an inner opening before the first ring begins, widening the innermost ring diameter without changing the active Noise Rack stack.',
+    },
+    'rings.noiseProjection': {
+      title: 'Noise Projection',
+      body: `
+        <p class="modal-text"><strong>Top Down</strong> treats the noise as one global XY plane under the full artwork, so every ring passes through the same field.</p>
+        <p class="modal-text"><strong>Concentric</strong> unwraps each ring into path space, runs noise from one end of the loop to the other, then seam-corrects the result so the ring still closes cleanly.</p>
+        <p class="modal-text"><strong>Orbit Field</strong> preserves the legacy ring-local sampler, orbiting noise around each ring instead of reading from a shared world field.</p>
+      `,
+    },
     'rings.noiseType': {
       title: 'Noise Type',
       description: 'Chooses the noise field used to perturb ring radii.',
@@ -3501,23 +3879,29 @@
     },
     'rings.noiseScale': {
       title: 'Noise Scale',
-      description: 'Controls the frequency of noise sampling around each ring.',
+      description: 'Controls the frequency of the selected Rings noise field.',
     },
     'rings.noiseOffsetX': {
       title: 'Noise Offset X',
-      description: 'Shifts the noise sampling circle on the X axis.',
+      description: 'Shifts the Rings noise field on the X axis before sampling.',
     },
     'rings.noiseOffsetY': {
       title: 'Noise Offset Y',
-      description: 'Shifts the noise sampling circle on the Y axis.',
+      description: 'Shifts the Rings noise field on the Y axis before sampling.',
     },
     'rings.noiseLayer': {
-      title: 'Noise Layer',
-      description: 'Offsets each ring to a different slice of noise space.',
+      title: 'Ring Drift',
+      description:
+        'Offsets each ring to a different slice of the current Rings sampler. In Concentric it moves stacked rings onto neighboring path bands; in Orbit Field it shifts the legacy ring-local orbit.',
     },
-    'rings.noiseRadius': {
-      title: 'Noise Radius',
-      description: 'Radius of the sampling circle in noise space.',
+    'rings.noisePathSpan': {
+      title: 'Path Span',
+      description:
+        'Controls how much path-space is traversed over one full revolution in Concentric mode. Larger values reveal more of the noise field around each ring; smaller values stretch the same field across the loop.',
+    },
+    'rings.noiseOrbitRadius': {
+      title: 'Orbit Radius',
+      description: 'Sets the radius of the orbital sampling path used by Orbit Field mode.',
     },
     'rings.gap': {
       title: 'Ring Gap',
@@ -3538,6 +3922,10 @@
     'topo.levels': {
       title: 'Contour Levels',
       description: 'Number of contour bands extracted from the scalar field.',
+    },
+    'topo.fieldWeight': {
+      title: 'Field Weight',
+      description: 'Controls how strongly this noise layer contributes to the combined height field.',
     },
     'topo.noiseType': {
       title: 'Noise Type',
@@ -3781,7 +4169,31 @@
     },
     'grid.noiseScale': {
       title: 'Noise Scale',
-      description: 'Scale of noise used to distort the grid.',
+      description: 'Controls the scale of this Noise Rack layer inside the grid field.',
+    },
+    'grid.noiseOffsetX': {
+      title: 'Noise Offset X',
+      description: 'Shifts a grid noise layer on the X axis before sampling.',
+    },
+    'grid.noiseOffsetY': {
+      title: 'Noise Offset Y',
+      description: 'Shifts a grid noise layer on the Y axis before sampling.',
+    },
+    'grid.fieldWeight': {
+      title: 'Field Weight',
+      description: 'Controls how strongly this noise layer contributes to the combined grid field.',
+    },
+    'grid.octaves': {
+      title: 'Octaves',
+      description: 'Number of octave samples inside this grid noise layer.',
+    },
+    'grid.lacunarity': {
+      title: 'Lacunarity',
+      description: 'Controls how quickly frequency increases across grid-layer octaves.',
+    },
+    'grid.gain': {
+      title: 'Gain',
+      description: 'Controls how much each octave contributes to the grid-layer field.',
     },
     'grid.chaos': {
       title: 'Chaos',
@@ -3814,6 +4226,34 @@
     'phylla.noiseInf': {
       title: 'Noise Influence',
       description: 'Adds organic wobble to point positions.',
+    },
+    'phylla.noiseScale': {
+      title: 'Noise Scale',
+      description: 'Controls the scale of this Noise Rack layer inside the phyllotaxis field.',
+    },
+    'phylla.noiseOffsetX': {
+      title: 'Noise Offset X',
+      description: 'Shifts a phyllotaxis noise layer on the X axis before sampling.',
+    },
+    'phylla.noiseOffsetY': {
+      title: 'Noise Offset Y',
+      description: 'Shifts a phyllotaxis noise layer on the Y axis before sampling.',
+    },
+    'phylla.fieldWeight': {
+      title: 'Field Weight',
+      description: 'Controls how strongly this noise layer contributes to the combined phyllotaxis field.',
+    },
+    'phylla.octaves': {
+      title: 'Octaves',
+      description: 'Number of octave samples inside this phyllotaxis noise layer.',
+    },
+    'phylla.lacunarity': {
+      title: 'Lacunarity',
+      description: 'Controls how quickly frequency increases across phyllotaxis-layer octaves.',
+    },
+    'phylla.gain': {
+      title: 'Gain',
+      description: 'Controls how much each octave contributes to the phyllotaxis-layer field.',
     },
     'phylla.dotSize': {
       title: 'Dot Size',
@@ -4205,7 +4645,7 @@
     },
     'petalis.driftNoise': {
       title: 'Drift Noise',
-      description: 'Noise scale used to modulate angular drift.',
+      description: 'Controls each Noise Rack layer used to modulate Petalis angular drift.',
     },
     'petalis.radiusScale': {
       title: 'Radius Scale',
@@ -8938,8 +9378,19 @@
         enabled: true,
         type: 'simplex',
         blend: 'add',
-        amplitude: 9,
-        zoom: 0.02,
+        amplitude: source === 'rings' ? 8 : source === 'wavetable' ? 9 : 1,
+        zoom:
+          source === 'rings'
+            ? 0.001
+            : source === 'topo'
+              ? 0.003
+              : source === 'flowfield'
+                ? 0.01
+                : source === 'petalisDrift'
+                  ? 0.2
+                : source === 'grid' || source === 'phylla'
+                  ? 0.05
+                  : 0.02,
         freq: 1.0,
         angle: 0,
         shiftX: 0,
@@ -8952,7 +9403,26 @@
         cellularJitter: 1,
         stepsCount: 5,
         seed: 0,
-        applyMode: source === 'spiral' ? 'topdown' : undefined,
+        applyMode: source === 'spiral' ? 'topdown' : source === 'rings' ? 'orbit' : undefined,
+        ringDrift: source === 'rings' ? 0.5 : undefined,
+        ringRadius: source === 'rings' ? 100 : undefined,
+        octaves:
+          source === 'topo'
+            ? 3
+            : source === 'flowfield' || source === 'petalisDrift'
+              ? 2
+              : source === 'grid' || source === 'phylla'
+                ? 1
+                : undefined,
+        lacunarity:
+          source === 'topo' || source === 'flowfield' || source === 'grid' || source === 'phylla' || source === 'petalisDrift'
+            ? 2.0
+            : undefined,
+        gain:
+          source === 'topo' || source === 'flowfield' || source === 'grid' || source === 'phylla' || source === 'petalisDrift'
+            ? 0.5
+            : undefined,
+        fieldMode: source === 'flowfield' ? 'angle' : undefined,
         noiseStyle: 'linear',
         noiseThreshold: 0,
         imageWidth: 1,
@@ -9247,6 +9717,562 @@
       return noises;
     }
 
+    ensureRingsNoises(layer) {
+      if (!layer || layer.type !== 'rings') return [];
+      const { base, templates } = this.getWavetableNoiseTemplates('rings');
+      let noises = layer.params.noises;
+      if (!Array.isArray(noises) || !noises.length) {
+        const legacy = {
+          id: 'noise-1',
+          enabled: true,
+          type: layer.params.noiseType || base.type,
+          blend: base.blend,
+          amplitude: layer.params.amplitude ?? base.amplitude,
+          zoom: layer.params.noiseScale ?? base.zoom,
+          freq: base.freq,
+          angle: base.angle,
+          shiftX: layer.params.noiseOffsetX ?? base.shiftX,
+          shiftY: layer.params.noiseOffsetY ?? base.shiftY,
+          tileMode: base.tileMode,
+          tilePadding: base.tilePadding,
+          patternScale: base.patternScale,
+          warpStrength: base.warpStrength,
+          cellularScale: base.cellularScale,
+          cellularJitter: base.cellularJitter,
+          stepsCount: base.stepsCount,
+          seed: base.seed,
+          applyMode: base.applyMode,
+          ringDrift: layer.params.noiseLayer ?? base.ringDrift,
+          ringRadius: layer.params.noiseRadius ?? base.ringRadius,
+          imageId: layer.params.noiseImageId || base.imageId,
+          imageName: layer.params.noiseImageName || base.imageName,
+          imagePreview: base.imagePreview,
+          imageAlgo: layer.params.imageAlgo || base.imageAlgo,
+          imageThreshold: layer.params.imageThreshold ?? base.imageThreshold,
+          imagePosterize: layer.params.imagePosterize ?? base.imagePosterize,
+          imageBlur: layer.params.imageBlur ?? base.imageBlur,
+          imageBlurRadius: base.imageBlurRadius,
+          imageBlurStrength: base.imageBlurStrength,
+          imageBrightness: base.imageBrightness,
+          imageLevelsLow: base.imageLevelsLow,
+          imageLevelsHigh: base.imageLevelsHigh,
+          imageEmbossStrength: base.imageEmbossStrength,
+          imageSharpenAmount: base.imageSharpenAmount,
+          imageSharpenRadius: base.imageSharpenRadius,
+          imageMedianRadius: base.imageMedianRadius,
+          imageGamma: base.imageGamma,
+          imageContrast: base.imageContrast,
+          imageSolarize: base.imageSolarize,
+          imagePixelate: base.imagePixelate,
+          imageDither: base.imageDither,
+          noiseStyle: base.noiseStyle,
+          noiseThreshold: base.noiseThreshold,
+          imageWidth: base.imageWidth,
+          imageHeight: base.imageHeight,
+          microFreq: base.microFreq,
+        };
+        this.normalizeImageEffects(legacy, base.imageEffects?.[0]);
+        noises = [legacy];
+        layer.params.noises = noises;
+      }
+      noises = noises.map((noise, idx) => {
+        const template = templates[idx] || templates[templates.length - 1] || base;
+        const next = {
+          ...base,
+          ...clone(template),
+          ...(noise || {}),
+          id: noise?.id || template.id || `noise-${idx + 1}`,
+          enabled: noise?.enabled !== false,
+        };
+        if (!next.tileMode) next.tileMode = next.type === 'image' ? 'off' : base.tileMode;
+        if (next.tileMode === 'off') next.tilePadding = 0;
+        if (!next.applyMode) next.applyMode = base.applyMode || 'orbit';
+        if (next.ringDrift === undefined) next.ringDrift = base.ringDrift ?? 0.5;
+        if (next.ringRadius === undefined) next.ringRadius = base.ringRadius ?? 100;
+        if (next.type === 'image' && next.imageWidth === undefined && next.freq !== undefined) {
+          next.imageWidth = next.freq;
+        }
+        if (next.type === 'image' && (noise?.amplitude === undefined || noise?.amplitude === null)) {
+          next.amplitude = IMAGE_NOISE_DEFAULT_AMPLITUDE;
+        }
+        if (!next.noiseStyle) next.noiseStyle = base.noiseStyle || 'linear';
+        if (next.noiseThreshold === undefined) next.noiseThreshold = base.noiseThreshold ?? 0;
+        if (next.imageWidth === undefined) next.imageWidth = base.imageWidth ?? 1;
+        if (next.imageHeight === undefined) next.imageHeight = base.imageHeight ?? 1;
+        if (next.microFreq === undefined) next.microFreq = base.microFreq ?? 0;
+        if (next.imageInvertColor === undefined) next.imageInvertColor = base.imageInvertColor || false;
+        if (next.imageInvertOpacity === undefined) next.imageInvertOpacity = base.imageInvertOpacity || false;
+        this.normalizeImageEffects(next, base.imageEffects?.[0]);
+        return next;
+      });
+      layer.params.noises = noises;
+      return noises;
+    }
+
+    ensureTopoNoises(layer) {
+      if (!layer || layer.type !== 'topo') return [];
+      const { base, templates } = this.getWavetableNoiseTemplates('topo');
+      let noises = layer.params.noises;
+      if (!Array.isArray(noises) || !noises.length) {
+        const legacy = {
+          id: 'noise-1',
+          enabled: true,
+          type: layer.params.noiseType || base.type,
+          blend: base.blend,
+          amplitude: 1,
+          zoom: layer.params.noiseScale ?? base.zoom,
+          freq: base.freq,
+          angle: base.angle,
+          shiftX: layer.params.noiseOffsetX ?? base.shiftX,
+          shiftY: layer.params.noiseOffsetY ?? base.shiftY,
+          tileMode: base.tileMode,
+          tilePadding: base.tilePadding,
+          patternScale: base.patternScale,
+          warpStrength: base.warpStrength,
+          cellularScale: base.cellularScale,
+          cellularJitter: base.cellularJitter,
+          stepsCount: base.stepsCount,
+          seed: base.seed,
+          octaves: layer.params.octaves ?? base.octaves,
+          lacunarity: layer.params.lacunarity ?? base.lacunarity,
+          gain: layer.params.gain ?? base.gain,
+          imageId: layer.params.noiseImageId || base.imageId,
+          imageName: layer.params.noiseImageName || base.imageName,
+          imagePreview: base.imagePreview,
+          imageAlgo: layer.params.imageAlgo || base.imageAlgo,
+          imageThreshold: layer.params.imageThreshold ?? base.imageThreshold,
+          imagePosterize: layer.params.imagePosterize ?? base.imagePosterize,
+          imageBlur: layer.params.imageBlur ?? base.imageBlur,
+          imageBlurRadius: base.imageBlurRadius,
+          imageBlurStrength: base.imageBlurStrength,
+          imageBrightness: base.imageBrightness,
+          imageLevelsLow: base.imageLevelsLow,
+          imageLevelsHigh: base.imageLevelsHigh,
+          imageEmbossStrength: base.imageEmbossStrength,
+          imageSharpenAmount: base.imageSharpenAmount,
+          imageSharpenRadius: base.imageSharpenRadius,
+          imageMedianRadius: base.imageMedianRadius,
+          imageGamma: base.imageGamma,
+          imageContrast: base.imageContrast,
+          imageSolarize: base.imageSolarize,
+          imagePixelate: base.imagePixelate,
+          imageDither: base.imageDither,
+          noiseStyle: base.noiseStyle,
+          noiseThreshold: base.noiseThreshold,
+          imageWidth: base.imageWidth,
+          imageHeight: base.imageHeight,
+          microFreq: base.microFreq,
+        };
+        this.normalizeImageEffects(legacy, base.imageEffects?.[0]);
+        noises = [legacy];
+        layer.params.noises = noises;
+      }
+      noises = noises.map((noise, idx) => {
+        const template = templates[idx] || templates[templates.length - 1] || base;
+        const next = {
+          ...base,
+          ...clone(template),
+          ...(noise || {}),
+          id: noise?.id || template.id || `noise-${idx + 1}`,
+          enabled: noise?.enabled !== false,
+        };
+        if (!next.tileMode) next.tileMode = next.type === 'image' ? 'off' : base.tileMode;
+        if (next.tileMode === 'off') next.tilePadding = 0;
+        if (next.octaves === undefined) next.octaves = base.octaves ?? 3;
+        if (next.lacunarity === undefined) next.lacunarity = base.lacunarity ?? 2.0;
+        if (next.gain === undefined) next.gain = base.gain ?? 0.5;
+        if (next.type === 'image' && next.imageWidth === undefined && next.freq !== undefined) {
+          next.imageWidth = next.freq;
+        }
+        if (next.type === 'image' && (noise?.amplitude === undefined || noise?.amplitude === null)) {
+          next.amplitude = IMAGE_NOISE_DEFAULT_AMPLITUDE;
+        }
+        if (!next.noiseStyle) next.noiseStyle = base.noiseStyle || 'linear';
+        if (next.noiseThreshold === undefined) next.noiseThreshold = base.noiseThreshold ?? 0;
+        if (next.imageWidth === undefined) next.imageWidth = base.imageWidth ?? 1;
+        if (next.imageHeight === undefined) next.imageHeight = base.imageHeight ?? 1;
+        if (next.microFreq === undefined) next.microFreq = base.microFreq ?? 0;
+        if (next.imageInvertColor === undefined) next.imageInvertColor = base.imageInvertColor || false;
+        if (next.imageInvertOpacity === undefined) next.imageInvertOpacity = base.imageInvertOpacity || false;
+        this.normalizeImageEffects(next, base.imageEffects?.[0]);
+        return next;
+      });
+      layer.params.noises = noises;
+      return noises;
+    }
+
+    ensureFlowfieldNoises(layer) {
+      if (!layer || layer.type !== 'flowfield') return [];
+      const { base, templates } = this.getWavetableNoiseTemplates('flowfield');
+      let noises = layer.params.noises;
+      if (!Array.isArray(noises) || !noises.length) {
+        const flowMode = layer.params.flowMode || (layer.params.noiseType === 'curl' ? 'curl' : base.fieldMode || 'angle');
+        if (!layer.params.flowMode) layer.params.flowMode = flowMode;
+        const legacy = {
+          id: 'noise-1',
+          enabled: true,
+          type: layer.params.noiseType === 'curl' ? base.type : layer.params.noiseType || base.type,
+          blend: base.blend,
+          amplitude: 1,
+          zoom: layer.params.noiseScale ?? base.zoom,
+          freq: base.freq,
+          angle: base.angle,
+          shiftX: layer.params.noiseOffsetX ?? base.shiftX,
+          shiftY: layer.params.noiseOffsetY ?? base.shiftY,
+          tileMode: base.tileMode,
+          tilePadding: base.tilePadding,
+          patternScale: base.patternScale,
+          warpStrength: base.warpStrength,
+          cellularScale: base.cellularScale,
+          cellularJitter: base.cellularJitter,
+          stepsCount: base.stepsCount,
+          seed: base.seed,
+          octaves: layer.params.octaves ?? base.octaves,
+          lacunarity: layer.params.lacunarity ?? base.lacunarity,
+          gain: layer.params.gain ?? base.gain,
+          fieldMode: flowMode,
+          imageId: layer.params.noiseImageId || base.imageId,
+          imageName: layer.params.noiseImageName || base.imageName,
+          imagePreview: base.imagePreview,
+          imageAlgo: layer.params.imageAlgo || base.imageAlgo,
+          imageThreshold: layer.params.imageThreshold ?? base.imageThreshold,
+          imagePosterize: layer.params.imagePosterize ?? base.imagePosterize,
+          imageBlur: layer.params.imageBlur ?? base.imageBlur,
+          imageBlurRadius: base.imageBlurRadius,
+          imageBlurStrength: base.imageBlurStrength,
+          imageBrightness: base.imageBrightness,
+          imageLevelsLow: base.imageLevelsLow,
+          imageLevelsHigh: base.imageLevelsHigh,
+          imageEmbossStrength: base.imageEmbossStrength,
+          imageSharpenAmount: base.imageSharpenAmount,
+          imageSharpenRadius: base.imageSharpenRadius,
+          imageMedianRadius: base.imageMedianRadius,
+          imageGamma: base.imageGamma,
+          imageContrast: base.imageContrast,
+          imageSolarize: base.imageSolarize,
+          imagePixelate: base.imagePixelate,
+          imageDither: base.imageDither,
+          noiseStyle: base.noiseStyle,
+          noiseThreshold: base.noiseThreshold,
+          imageWidth: base.imageWidth,
+          imageHeight: base.imageHeight,
+          microFreq: base.microFreq,
+        };
+        this.normalizeImageEffects(legacy, base.imageEffects?.[0]);
+        noises = [legacy];
+        layer.params.noises = noises;
+      }
+      noises = noises.map((noise, idx) => {
+        const template = templates[idx] || templates[templates.length - 1] || base;
+        const next = {
+          ...base,
+          ...clone(template),
+          ...(noise || {}),
+          id: noise?.id || template.id || `noise-${idx + 1}`,
+          enabled: noise?.enabled !== false,
+        };
+        if (!next.tileMode) next.tileMode = next.type === 'image' ? 'off' : base.tileMode;
+        if (next.tileMode === 'off') next.tilePadding = 0;
+        if (next.fieldMode === undefined) next.fieldMode = base.fieldMode || 'angle';
+        if (next.octaves === undefined) next.octaves = base.octaves ?? 2;
+        if (next.lacunarity === undefined) next.lacunarity = base.lacunarity ?? 2.0;
+        if (next.gain === undefined) next.gain = base.gain ?? 0.5;
+        if (next.type === 'image' && next.imageWidth === undefined && next.freq !== undefined) {
+          next.imageWidth = next.freq;
+        }
+        if (next.type === 'image' && (noise?.amplitude === undefined || noise?.amplitude === null)) {
+          next.amplitude = IMAGE_NOISE_DEFAULT_AMPLITUDE;
+        }
+        if (!next.noiseStyle) next.noiseStyle = base.noiseStyle || 'linear';
+        if (next.noiseThreshold === undefined) next.noiseThreshold = base.noiseThreshold ?? 0;
+        if (next.imageWidth === undefined) next.imageWidth = base.imageWidth ?? 1;
+        if (next.imageHeight === undefined) next.imageHeight = base.imageHeight ?? 1;
+        if (next.microFreq === undefined) next.microFreq = base.microFreq ?? 0;
+        if (next.imageInvertColor === undefined) next.imageInvertColor = base.imageInvertColor || false;
+        if (next.imageInvertOpacity === undefined) next.imageInvertOpacity = base.imageInvertOpacity || false;
+        this.normalizeImageEffects(next, base.imageEffects?.[0]);
+        return next;
+      });
+      layer.params.noises = noises;
+      return noises;
+    }
+
+    ensureGridNoises(layer) {
+      if (!layer || layer.type !== 'grid') return [];
+      const { base, templates } = this.getWavetableNoiseTemplates('grid');
+      let noises = layer.params.noises;
+      if (!Array.isArray(noises) || !noises.length) {
+        const legacy = {
+          id: 'noise-1',
+          enabled: true,
+          type: layer.params.noiseType || base.type,
+          blend: base.blend,
+          amplitude: 1,
+          zoom: layer.params.noiseScale ?? base.zoom,
+          freq: base.freq,
+          angle: base.angle,
+          shiftX: layer.params.noiseOffsetX ?? base.shiftX,
+          shiftY: layer.params.noiseOffsetY ?? base.shiftY,
+          tileMode: base.tileMode,
+          tilePadding: base.tilePadding,
+          patternScale: base.patternScale,
+          warpStrength: base.warpStrength,
+          cellularScale: base.cellularScale,
+          cellularJitter: base.cellularJitter,
+          stepsCount: base.stepsCount,
+          seed: base.seed,
+          octaves: layer.params.octaves ?? base.octaves,
+          lacunarity: layer.params.lacunarity ?? base.lacunarity,
+          gain: layer.params.gain ?? base.gain,
+          imageId: layer.params.noiseImageId || base.imageId,
+          imageName: layer.params.noiseImageName || base.imageName,
+          imagePreview: base.imagePreview,
+          imageAlgo: layer.params.imageAlgo || base.imageAlgo,
+          imageThreshold: layer.params.imageThreshold ?? base.imageThreshold,
+          imagePosterize: layer.params.imagePosterize ?? base.imagePosterize,
+          imageBlur: layer.params.imageBlur ?? base.imageBlur,
+          imageBlurRadius: base.imageBlurRadius,
+          imageBlurStrength: base.imageBlurStrength,
+          imageBrightness: base.imageBrightness,
+          imageLevelsLow: base.imageLevelsLow,
+          imageLevelsHigh: base.imageLevelsHigh,
+          imageEmbossStrength: base.imageEmbossStrength,
+          imageSharpenAmount: base.imageSharpenAmount,
+          imageSharpenRadius: base.imageSharpenRadius,
+          imageMedianRadius: base.imageMedianRadius,
+          imageGamma: base.imageGamma,
+          imageContrast: base.imageContrast,
+          imageSolarize: base.imageSolarize,
+          imagePixelate: base.imagePixelate,
+          imageDither: base.imageDither,
+          noiseStyle: base.noiseStyle,
+          noiseThreshold: base.noiseThreshold,
+          imageWidth: base.imageWidth,
+          imageHeight: base.imageHeight,
+          microFreq: base.microFreq,
+        };
+        this.normalizeImageEffects(legacy, base.imageEffects?.[0]);
+        noises = [legacy];
+        layer.params.noises = noises;
+      }
+      noises = noises.map((noise, idx) => {
+        const template = templates[idx] || templates[templates.length - 1] || base;
+        const next = {
+          ...base,
+          ...clone(template),
+          ...(noise || {}),
+          id: noise?.id || template.id || `noise-${idx + 1}`,
+          enabled: noise?.enabled !== false,
+        };
+        if (!next.tileMode) next.tileMode = next.type === 'image' ? 'off' : base.tileMode;
+        if (next.tileMode === 'off') next.tilePadding = 0;
+        if (next.octaves === undefined) next.octaves = base.octaves ?? 1;
+        if (next.lacunarity === undefined) next.lacunarity = base.lacunarity ?? 2.0;
+        if (next.gain === undefined) next.gain = base.gain ?? 0.5;
+        if (next.type === 'image' && next.imageWidth === undefined && next.freq !== undefined) {
+          next.imageWidth = next.freq;
+        }
+        if (next.type === 'image' && (noise?.amplitude === undefined || noise?.amplitude === null)) {
+          next.amplitude = IMAGE_NOISE_DEFAULT_AMPLITUDE;
+        }
+        if (!next.noiseStyle) next.noiseStyle = base.noiseStyle || 'linear';
+        if (next.noiseThreshold === undefined) next.noiseThreshold = base.noiseThreshold ?? 0;
+        if (next.imageWidth === undefined) next.imageWidth = base.imageWidth ?? 1;
+        if (next.imageHeight === undefined) next.imageHeight = base.imageHeight ?? 1;
+        if (next.microFreq === undefined) next.microFreq = base.microFreq ?? 0;
+        if (next.imageInvertColor === undefined) next.imageInvertColor = base.imageInvertColor || false;
+        if (next.imageInvertOpacity === undefined) next.imageInvertOpacity = base.imageInvertOpacity || false;
+        this.normalizeImageEffects(next, base.imageEffects?.[0]);
+        return next;
+      });
+      layer.params.noises = noises;
+      return noises;
+    }
+
+    ensurePhyllaNoises(layer) {
+      if (!layer || layer.type !== 'phylla') return [];
+      const { base, templates } = this.getWavetableNoiseTemplates('phylla');
+      let noises = layer.params.noises;
+      if (!Array.isArray(noises) || !noises.length) {
+        const legacy = {
+          id: 'noise-1',
+          enabled: true,
+          type: layer.params.noiseType || base.type,
+          blend: base.blend,
+          amplitude: 1,
+          zoom: layer.params.noiseScale ?? base.zoom,
+          freq: base.freq,
+          angle: base.angle,
+          shiftX: layer.params.noiseOffsetX ?? base.shiftX,
+          shiftY: layer.params.noiseOffsetY ?? base.shiftY,
+          tileMode: base.tileMode,
+          tilePadding: base.tilePadding,
+          patternScale: base.patternScale,
+          warpStrength: base.warpStrength,
+          cellularScale: base.cellularScale,
+          cellularJitter: base.cellularJitter,
+          stepsCount: base.stepsCount,
+          seed: base.seed,
+          octaves: layer.params.octaves ?? base.octaves,
+          lacunarity: layer.params.lacunarity ?? base.lacunarity,
+          gain: layer.params.gain ?? base.gain,
+          imageId: layer.params.noiseImageId || base.imageId,
+          imageName: layer.params.noiseImageName || base.imageName,
+          imagePreview: base.imagePreview,
+          imageAlgo: layer.params.imageAlgo || base.imageAlgo,
+          imageThreshold: layer.params.imageThreshold ?? base.imageThreshold,
+          imagePosterize: layer.params.imagePosterize ?? base.imagePosterize,
+          imageBlur: layer.params.imageBlur ?? base.imageBlur,
+          imageBlurRadius: base.imageBlurRadius,
+          imageBlurStrength: base.imageBlurStrength,
+          imageBrightness: base.imageBrightness,
+          imageLevelsLow: base.imageLevelsLow,
+          imageLevelsHigh: base.imageLevelsHigh,
+          imageEmbossStrength: base.imageEmbossStrength,
+          imageSharpenAmount: base.imageSharpenAmount,
+          imageSharpenRadius: base.imageSharpenRadius,
+          imageMedianRadius: base.imageMedianRadius,
+          imageGamma: base.imageGamma,
+          imageContrast: base.imageContrast,
+          imageSolarize: base.imageSolarize,
+          imagePixelate: base.imagePixelate,
+          imageDither: base.imageDither,
+          noiseStyle: base.noiseStyle,
+          noiseThreshold: base.noiseThreshold,
+          imageWidth: base.imageWidth,
+          imageHeight: base.imageHeight,
+          microFreq: base.microFreq,
+        };
+        this.normalizeImageEffects(legacy, base.imageEffects?.[0]);
+        noises = [legacy];
+        layer.params.noises = noises;
+      }
+      noises = noises.map((noise, idx) => {
+        const template = templates[idx] || templates[templates.length - 1] || base;
+        const next = {
+          ...base,
+          ...clone(template),
+          ...(noise || {}),
+          id: noise?.id || template.id || `noise-${idx + 1}`,
+          enabled: noise?.enabled !== false,
+        };
+        if (!next.tileMode) next.tileMode = next.type === 'image' ? 'off' : base.tileMode;
+        if (next.tileMode === 'off') next.tilePadding = 0;
+        if (next.octaves === undefined) next.octaves = base.octaves ?? 1;
+        if (next.lacunarity === undefined) next.lacunarity = base.lacunarity ?? 2.0;
+        if (next.gain === undefined) next.gain = base.gain ?? 0.5;
+        if (next.type === 'image' && next.imageWidth === undefined && next.freq !== undefined) {
+          next.imageWidth = next.freq;
+        }
+        if (next.type === 'image' && (noise?.amplitude === undefined || noise?.amplitude === null)) {
+          next.amplitude = IMAGE_NOISE_DEFAULT_AMPLITUDE;
+        }
+        if (!next.noiseStyle) next.noiseStyle = base.noiseStyle || 'linear';
+        if (next.noiseThreshold === undefined) next.noiseThreshold = base.noiseThreshold ?? 0;
+        if (next.imageWidth === undefined) next.imageWidth = base.imageWidth ?? 1;
+        if (next.imageHeight === undefined) next.imageHeight = base.imageHeight ?? 1;
+        if (next.microFreq === undefined) next.microFreq = base.microFreq ?? 0;
+        if (next.imageInvertColor === undefined) next.imageInvertColor = base.imageInvertColor || false;
+        if (next.imageInvertOpacity === undefined) next.imageInvertOpacity = base.imageInvertOpacity || false;
+        this.normalizeImageEffects(next, base.imageEffects?.[0]);
+        return next;
+      });
+      layer.params.noises = noises;
+      return noises;
+    }
+
+    ensurePetalisDriftNoises(layer) {
+      if (!layer || !isPetalisLayerType(layer.type)) return [];
+      const { base, templates } = this.getWavetableNoiseTemplates('petalisDrift');
+      let noises = layer.params.driftNoises;
+      if (!Array.isArray(noises) || !noises.length) {
+        const legacy = {
+          id: 'noise-1',
+          enabled: true,
+          type: base.type,
+          blend: base.blend,
+          amplitude: 1,
+          zoom: layer.params.driftNoise ?? base.zoom,
+          freq: base.freq,
+          angle: base.angle,
+          shiftX: base.shiftX,
+          shiftY: base.shiftY,
+          tileMode: base.tileMode,
+          tilePadding: base.tilePadding,
+          patternScale: base.patternScale,
+          warpStrength: base.warpStrength,
+          cellularScale: base.cellularScale,
+          cellularJitter: base.cellularJitter,
+          stepsCount: base.stepsCount,
+          seed: base.seed,
+          octaves: base.octaves,
+          lacunarity: base.lacunarity,
+          gain: base.gain,
+          imageId: base.imageId,
+          imageName: base.imageName,
+          imagePreview: base.imagePreview,
+          imageAlgo: base.imageAlgo,
+          imageThreshold: base.imageThreshold,
+          imagePosterize: base.imagePosterize,
+          imageBlur: base.imageBlur,
+          imageBlurRadius: base.imageBlurRadius,
+          imageBlurStrength: base.imageBlurStrength,
+          imageBrightness: base.imageBrightness,
+          imageLevelsLow: base.imageLevelsLow,
+          imageLevelsHigh: base.imageLevelsHigh,
+          imageEmbossStrength: base.imageEmbossStrength,
+          imageSharpenAmount: base.imageSharpenAmount,
+          imageSharpenRadius: base.imageSharpenRadius,
+          imageMedianRadius: base.imageMedianRadius,
+          imageGamma: base.imageGamma,
+          imageContrast: base.imageContrast,
+          imageSolarize: base.imageSolarize,
+          imagePixelate: base.imagePixelate,
+          imageDither: base.imageDither,
+          noiseStyle: base.noiseStyle,
+          noiseThreshold: base.noiseThreshold,
+          imageWidth: base.imageWidth,
+          imageHeight: base.imageHeight,
+          microFreq: base.microFreq,
+        };
+        this.normalizeImageEffects(legacy, base.imageEffects?.[0]);
+        noises = [legacy];
+        layer.params.driftNoises = noises;
+      }
+      noises = noises.map((noise, idx) => {
+        const template = templates[idx] || templates[templates.length - 1] || base;
+        const next = {
+          ...base,
+          ...clone(template),
+          ...(noise || {}),
+          id: noise?.id || template.id || `noise-${idx + 1}`,
+          enabled: noise?.enabled !== false,
+        };
+        if (!next.tileMode) next.tileMode = next.type === 'image' ? 'off' : base.tileMode;
+        if (next.tileMode === 'off') next.tilePadding = 0;
+        if (next.octaves === undefined) next.octaves = base.octaves ?? 2;
+        if (next.lacunarity === undefined) next.lacunarity = base.lacunarity ?? 2.0;
+        if (next.gain === undefined) next.gain = base.gain ?? 0.5;
+        if (next.type === 'image' && next.imageWidth === undefined && next.freq !== undefined) {
+          next.imageWidth = next.freq;
+        }
+        if (next.type === 'image' && (noise?.amplitude === undefined || noise?.amplitude === null)) {
+          next.amplitude = IMAGE_NOISE_DEFAULT_AMPLITUDE;
+        }
+        if (!next.noiseStyle) next.noiseStyle = base.noiseStyle || 'linear';
+        if (next.noiseThreshold === undefined) next.noiseThreshold = base.noiseThreshold ?? 0;
+        if (next.imageWidth === undefined) next.imageWidth = base.imageWidth ?? 1;
+        if (next.imageHeight === undefined) next.imageHeight = base.imageHeight ?? 1;
+        if (next.microFreq === undefined) next.microFreq = base.microFreq ?? 0;
+        if (next.imageInvertColor === undefined) next.imageInvertColor = base.imageInvertColor || false;
+        if (next.imageInvertOpacity === undefined) next.imageInvertOpacity = base.imageInvertOpacity || false;
+        this.normalizeImageEffects(next, base.imageEffects?.[0]);
+        return next;
+      });
+      layer.params.driftNoises = noises;
+      return noises;
+    }
+
     createWavetableNoise(index = 0) {
       const { base, templates } = this.getWavetableNoiseTemplates('wavetable');
       const template = templates[index] || templates[templates.length - 1] || base;
@@ -9268,6 +10294,68 @@
       };
     }
 
+    createRingsNoise(index = 0) {
+      const { base, templates } = this.getWavetableNoiseTemplates('rings');
+      const template = templates[index] || templates[templates.length - 1] || base;
+      return {
+        ...clone(template),
+        id: `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        enabled: true,
+        applyMode: template.applyMode ?? 'orbit',
+      };
+    }
+
+    createTopoNoise(index = 0) {
+      const { base, templates } = this.getWavetableNoiseTemplates('topo');
+      const template = templates[index] || templates[templates.length - 1] || base;
+      return {
+        ...clone(template),
+        id: `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        enabled: true,
+      };
+    }
+
+    createFlowfieldNoise(index = 0) {
+      const { base, templates } = this.getWavetableNoiseTemplates('flowfield');
+      const template = templates[index] || templates[templates.length - 1] || base;
+      return {
+        ...clone(template),
+        id: `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        enabled: true,
+        fieldMode: template.fieldMode ?? 'angle',
+      };
+    }
+
+    createGridNoise(index = 0) {
+      const { base, templates } = this.getWavetableNoiseTemplates('grid');
+      const template = templates[index] || templates[templates.length - 1] || base;
+      return {
+        ...clone(template),
+        id: `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        enabled: true,
+      };
+    }
+
+    createPhyllaNoise(index = 0) {
+      const { base, templates } = this.getWavetableNoiseTemplates('phylla');
+      const template = templates[index] || templates[templates.length - 1] || base;
+      return {
+        ...clone(template),
+        id: `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        enabled: true,
+      };
+    }
+
+    createPetalisDriftNoise(index = 0) {
+      const { base, templates } = this.getWavetableNoiseTemplates('petalisDrift');
+      const template = templates[index] || templates[templates.length - 1] || base;
+      return {
+        ...clone(template),
+        id: `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        enabled: true,
+      };
+    }
+
     randomizeLayerParams(layer) {
       if (!layer || !RandomizationUtils?.randomizeLayerParams) return;
       RandomizationUtils.randomizeLayerParams({
@@ -9275,8 +10363,20 @@
         controls: this.controls,
         commonControls: COMMON_CONTROLS,
         waveNoiseDefs: WAVE_NOISE_DEFS,
+        ringsNoiseDefs: RINGS_NOISE_DEFS,
+        topoNoiseDefs: TOPO_NOISE_DEFS,
+        flowfieldNoiseDefs: FLOWFIELD_NOISE_DEFS,
+        gridNoiseDefs: GRID_NOISE_DEFS,
+        phyllaNoiseDefs: PHYLLA_NOISE_DEFS,
+        petalisDriftNoiseDefs: PETALIS_DRIFT_NOISE_DEFS,
         ensureWavetableNoises: () => this.ensureWavetableNoises(layer),
         ensureSpiralNoises: () => this.ensureSpiralNoises(layer),
+        ensureRingsNoises: () => this.ensureRingsNoises(layer),
+        ensureTopoNoises: () => this.ensureTopoNoises(layer),
+        ensureFlowfieldNoises: () => this.ensureFlowfieldNoises(layer),
+        ensureGridNoises: () => this.ensureGridNoises(layer),
+        ensurePhyllaNoises: () => this.ensurePhyllaNoises(layer),
+        ensurePetalisDriftNoises: () => this.ensurePetalisDriftNoises(layer),
       });
       this.applyRandomizationBias(layer);
     }
@@ -14980,9 +16080,55 @@
           return;
         }
         if (def.type === 'noiseList') {
-          const noiseSource = layer.type === 'spiral' ? 'spiral' : 'wavetable';
+          const noiseSource =
+            def.source ||
+            (layer.type === 'spiral'
+              ? 'spiral'
+              : layer.type === 'rings'
+                ? 'rings'
+                : layer.type === 'topo'
+                  ? 'topo'
+                  : layer.type === 'flowfield'
+                    ? 'flowfield'
+                    : layer.type === 'grid'
+                      ? 'grid'
+                      : layer.type === 'phylla'
+                        ? 'phylla'
+                        : 'wavetable');
+          const noiseDefs =
+            noiseSource === 'rings'
+              ? RINGS_NOISE_DEFS
+              : noiseSource === 'topo'
+                ? TOPO_NOISE_DEFS
+                : noiseSource === 'flowfield'
+                  ? FLOWFIELD_NOISE_DEFS
+                  : noiseSource === 'grid'
+                    ? GRID_NOISE_DEFS
+                    : noiseSource === 'phylla'
+                      ? PHYLLA_NOISE_DEFS
+                      : noiseSource === 'petalisDrift'
+                        ? PETALIS_DRIFT_NOISE_DEFS
+                      : WAVE_NOISE_DEFS;
           const noises =
-            layer.type === 'spiral' ? this.ensureSpiralNoises(layer) : this.ensureWavetableNoises(layer);
+            noiseSource === 'spiral'
+              ? this.ensureSpiralNoises(layer)
+              : noiseSource === 'rings'
+                ? this.ensureRingsNoises(layer)
+                : noiseSource === 'topo'
+                  ? this.ensureTopoNoises(layer)
+                  : noiseSource === 'flowfield'
+                    ? this.ensureFlowfieldNoises(layer)
+                    : noiseSource === 'grid'
+                      ? this.ensureGridNoises(layer)
+                      : noiseSource === 'phylla'
+                        ? this.ensurePhyllaNoises(layer)
+                        : noiseSource === 'petalisDrift'
+                          ? this.ensurePetalisDriftNoises(layer)
+                          : this.ensureWavetableNoises(layer);
+          const assignNoiseStack = (nextNoises) => {
+            if (noiseSource === 'petalisDrift') layer.params.driftNoises = nextNoises;
+            else layer.params.noises = nextNoises;
+          };
           const { base: noiseBase, templates: noiseTemplates } = this.getWavetableNoiseTemplates(noiseSource);
           const getNoiseDefault = (index, key) => {
             if (key === 'amplitude') {
@@ -15027,7 +16173,7 @@
           const header = document.createElement('div');
           header.className = 'noise-list-header';
           header.innerHTML = `
-            <span class="text-[10px] uppercase tracking-widest text-vectura-muted">Noise Stack</span>
+            <span class="text-[10px] uppercase tracking-widest text-vectura-muted">${def.label || 'Noise Stack'}</span>
             <button type="button" class="noise-add text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">
               + Add Noise
             </button>
@@ -15037,9 +16183,23 @@
             addBtn.onclick = () => {
               if (this.app.pushHistory) this.app.pushHistory();
               const nextNoise =
-                layer.type === 'spiral' ? this.createSpiralNoise(noises.length) : this.createWavetableNoise(noises.length);
+                noiseSource === 'spiral'
+                  ? this.createSpiralNoise(noises.length)
+                  : noiseSource === 'rings'
+                    ? this.createRingsNoise(noises.length)
+                    : noiseSource === 'topo'
+                      ? this.createTopoNoise(noises.length)
+                      : noiseSource === 'flowfield'
+                        ? this.createFlowfieldNoise(noises.length)
+                        : noiseSource === 'grid'
+                          ? this.createGridNoise(noises.length)
+                          : noiseSource === 'phylla'
+                            ? this.createPhyllaNoise(noises.length)
+                            : noiseSource === 'petalisDrift'
+                              ? this.createPetalisDriftNoise(noises.length)
+                            : this.createWavetableNoise(noises.length);
               noises.push(nextNoise);
-              layer.params.noises = noises;
+              assignNoiseStack(noises);
               this.storeLayerParams(layer);
               this.app.regen();
               this.buildControls();
@@ -15317,6 +16477,54 @@
                 setAngle(displayVal, commit, live);
               },
             });
+            return control;
+          };
+
+          const buildCheckboxControl = (noise, def, idx) => {
+            const control = document.createElement('div');
+            control.className = 'noise-control';
+            const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
+            const rawValue = noise[def.key];
+            const checked =
+              rawValue === undefined
+                ? Boolean(getNoiseDefault(idx, def.key))
+                : rawValue === true || rawValue === 'true' || rawValue === 1;
+            noise[def.key] = checked;
+            control.innerHTML = `
+              <div class="flex justify-between mb-1">
+                <div class="flex items-center gap-2">
+                  <label class="control-label mb-0">${def.label}</label>
+                  ${infoBtn}
+                </div>
+                <span class="text-xs text-vectura-accent font-mono">${checked ? 'ON' : 'OFF'}</span>
+              </div>
+              <input type="checkbox" ${checked ? 'checked' : ''} class="w-4 h-4">
+            `;
+            const input = control.querySelector('input');
+            const span = control.querySelector('span');
+            if (input && span) {
+              input.disabled = !noise.enabled;
+              input.onchange = (e) => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                const next = Boolean(e.target.checked);
+                noise[def.key] = next;
+                span.innerText = next ? 'ON' : 'OFF';
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.updateFormula();
+              };
+              input.addEventListener('dblclick', (e) => {
+                e.preventDefault();
+                const next = Boolean(getNoiseDefault(idx, def.key));
+                if (this.app.pushHistory) this.app.pushHistory();
+                noise[def.key] = next;
+                input.checked = next;
+                span.innerText = next ? 'ON' : 'OFF';
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.updateFormula();
+              });
+            }
             return control;
           };
 
@@ -15777,7 +16985,7 @@
                   const nextOrder = currentOrder.filter((id) => id !== noise.id);
                   nextOrder.splice(newIndex, 0, noise.id);
                   const map = new Map(noises.map((n) => [n.id, n]));
-                  layer.params.noises = nextOrder.map((id) => map.get(id)).filter(Boolean);
+                  assignNoiseStack(nextOrder.map((id) => map.get(id)).filter(Boolean));
                   this.storeLayerParams(layer);
                   this.app.regen();
                   this.buildControls();
@@ -15828,14 +17036,14 @@
                 if (noises.length <= 1) {
                   this.openModal({
                     title: 'Keep one noise',
-                    body: `<p class="modal-text">At least one noise layer is required for wavetable generation.</p>`,
+                    body: `<p class="modal-text">At least one noise layer is required for this noise stack.</p>`,
                   });
                   return;
                 }
                 if (this.app.pushHistory) this.app.pushHistory();
                 const index = noises.findIndex((item) => item.id === noise.id);
                 if (index >= 0) noises.splice(index, 1);
-                layer.params.noises = noises;
+                assignNoiseStack(noises);
                 this.storeLayerParams(layer);
                 this.app.regen();
                 this.buildControls();
@@ -15871,7 +17079,7 @@
               randBtn.disabled = !noise.enabled;
               randBtn.onclick = () => {
                 if (this.app.pushHistory) this.app.pushHistory();
-                WAVE_NOISE_DEFS.forEach((nDef) => {
+                noiseDefs.forEach((nDef) => {
                   if (nDef.showIf && !nDef.showIf(noise)) return;
                   if (nDef.key === 'type' || nDef.key === 'blend') return;
                   if (nDef.type === 'select') {
@@ -15880,6 +17088,10 @@
                     if (!available.length) return;
                     const pick = available[Math.floor(Math.random() * available.length)];
                     noise[nDef.key] = pick.value;
+                    return;
+                  }
+                  if (nDef.type === 'checkbox') {
+                    noise[nDef.key] = Math.random() > 0.5;
                     return;
                   }
                   if (nDef.type === 'angle') {
@@ -15904,12 +17116,14 @@
             const controls = document.createElement('div');
             controls.className = 'pendulum-controls';
             let toolsInserted = false;
-            WAVE_NOISE_DEFS.forEach((nDef) => {
+            noiseDefs.forEach((nDef) => {
               if (nDef.showIf && !nDef.showIf(noise)) return;
               if (nDef.type === 'angle') {
                 controls.appendChild(buildAngleControl(noise, nDef, idx));
               } else if (nDef.type === 'select') {
                 controls.appendChild(buildSelectControl(noise, nDef, idx));
+              } else if (nDef.type === 'checkbox') {
+                controls.appendChild(buildCheckboxControl(noise, nDef, idx));
               } else {
                 controls.appendChild(buildRangeControl(noise, nDef, idx));
               }
@@ -17443,6 +18657,8 @@
     }
 
     getAppVersion() {
+      const runtimeVersion = window.Vectura?.APP_VERSION;
+      if (runtimeVersion) return `${runtimeVersion}`;
       const meta = document.querySelector('.pane-meta');
       if (!meta) return '';
       return `${meta.textContent || ''}`.replace('V.', '').trim();

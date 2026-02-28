@@ -1,0 +1,40 @@
+name: Docs / Governance
+description: Track repository workflow, planning, release, and documentation changes.
+title: "[Docs/Governance]: "
+labels:
+  - documentation
+  - governance
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - README
+        - CHANGELOG
+        - plans.md
+        - AGENTS / harness
+        - GitHub templates / workflows
+        - Release process
+        - Branch protection / rulesets
+        - GitHub Project
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Requested Change
+    validations:
+      required: true
+  - type: textarea
+    id: rationale
+    attributes:
+      label: Rationale
+      description: Explain what drift, risk, or opportunity this change addresses.
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      placeholder: |
+        - [ ] ...
+        - [ ] ...

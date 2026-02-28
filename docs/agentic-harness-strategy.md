@@ -103,17 +103,18 @@ Artifact reporting standard:
 
 Reference:
 - Test policies and command details live in `docs/testing.md`.
+- Local Playwright compatibility notes also live in `docs/testing.md`; local browser fallbacks must stay documented there and in `AGENTS.md` whenever the e2e runtime contract changes.
 
 ## 6) Documentation Synchronization Matrix
 
 | Change category | Required documentation updates |
 | --- | --- |
-| Workflow/tooling/test policy changes | `docs/agentic-harness-strategy.md`, `AGENTS.md`, and any impacted sections of `README.md`/`docs/testing.md` |
+| Workflow/tooling/test policy changes | `docs/agentic-harness-strategy.md`, `AGENTS.md`, `plans.md`, `CHANGELOG.md`, and any impacted sections of `README.md`/`docs/testing.md` |
 | PR governance/process changes | `.github/pull_request_template.md` plus harness doc if policy changed |
 | UI behavior / shortcuts / help changes | `README.md`, in-app help guide, in-app shortcut list, and `index.html` version increment |
-| Feature capability changes | `README.md` relevant sections and any feature-specific docs |
+| Feature capability changes | `README.md` relevant sections, `plans.md`, `CHANGELOG.md`, and any feature-specific docs |
 | Deferred release-hardening ideas | Add/update entry in `docs/pre-release-hardening-log.md` |
-| Any repository change | Ensure `index.html` version string is incremented (`V.x.y.z`) per `AGENTS.md` |
+| Any repository change | Assess whether `plans.md`, `CHANGELOG.md`, README release notes, and the canonical package version need updates; when the version changes run `npm run version:sync` |
 
 No-silent-drift rule:
 - If a workflow-affecting change lands without corresponding doc updates, treat it as incomplete.
@@ -150,8 +151,11 @@ Current classification:
 | Document | Status | Owner expectation | Review cadence |
 | --- | --- | --- | --- |
 | `README.md` | `authoritative` | Feature owners + PR authors | Every feature/change PR |
+| `CHANGELOG.md` | `authoritative` | Release owners + PR authors | Every user-visible or workflow-significant PR |
 | `docs/testing.md` | `operational` | Test/tooling maintainers + PR authors | Any test/CI workflow change |
-| `plans.md` | `backlog` | Product/feature planning owner | Monthly or milestone planning |
+| `docs/github-governance.md` | `operational` | Repo administrators + PR authors | Any repo-governance change |
+| `docs/noise-rack-architecture.md` | `authoritative` | Architecture owners + PR authors | Any universal-noise architecture change |
+| `plans.md` | `operational` | Product/feature planning owner + PR authors | Every feature/change PR |
 | `requirements.md` | `backlog` | Product/architecture owner | Monthly or when revived |
 | `docs/pre-release-hardening-log.md` | `operational` | Release/hardening owner + PR authors | On each deferred hardening item |
 

@@ -38,6 +38,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Harmonograph anti-loop controls (frequency drift + settle cutoff) and a Virtual Plotter preview with playhead scrubbing and speed presets.
 - Rainfall generator with wind, droplet styling, and optional silhouette masking.
 - Wavetable noise stack with selectable line structures (horizontal, vertical, grid, isometric, lattice, horizon perspective), plus Horizon depth perspective that raises distant noise frequency and damps near-view displacement; includes per-noise blend modes, tile patterns, image effects, polygon noise, and drag-to-reorder layers.
+- Repository operating model with a maintained `plans.md` punchlist, human-curated `CHANGELOG.md`, Mermaid architecture diagrams, and synchronized app-version metadata.
 - Petalis generator with radial petals, editable inner/outer designer curves, shading, modifier stacks, and 20 named presets (plus an in-dev light source marker). Hatch Angle rotates shading strokes in place inside petals rather than shifting shading placement on the canvas.
 - Petalis algorithm with an embedded full Petal Designer panel in the parameter stack (shape comes from visible designer curves, without hidden legacy tip/base modifiers).
 - Petalis layers now enable `Curves` by default, matching the designer silhouette out of the box.
@@ -85,6 +86,10 @@ If your Node runtime does not support Unicode regex property escapes (for exampl
 ```bash
 npm run patch:test-runtime
 ```
+To synchronize the runtime/app badge version after updating `package.json`, run:
+```bash
+npm run version:sync
+```
 
 ## Testing
 - `npm run test:unit` - deterministic unit coverage for RNG/noise, algorithms, and shared utility helpers.
@@ -101,14 +106,66 @@ npm run patch:test-runtime
 
 ## Workflow Docs
 - `AGENTS.md` - repository guardrails and mandatory contributor/agent instructions.
+- `CHANGELOG.md` - human-curated release history with an `Unreleased` section.
 - `docs/agentic-harness-strategy.md` - source-of-truth harness for task intake, evidence standards, testing matrix, and documentation synchronization policy.
+- `docs/github-governance.md` - GitHub-side setup targets for Projects, rulesets, release notes, and review policy.
+- `docs/noise-rack-architecture.md` - migration plan and target architecture for the universal Noise Rack system.
 - `docs/testing.md` - test command guidance and CI policy details.
+- `plans.md` - active repo punchlist for in-progress, upcoming, completed, and decided work.
 - `docs/pre-release-hardening-log.md` - deferred hardening items intentionally tracked for final-release prep.
 
 CI lives in `.github/workflows/test.yml`:
 - Pull requests: unit, integration, and e2e smoke.
 - `main` + nightly: visual regression and perf stress lanes.
+- Pull requests also run dependency review; `main` and weekly schedules run CodeQL analysis.
 - CI install steps run with `--no-audit --no-fund --loglevel=error` to keep test logs focused on failures.
+
+## Development Operations
+- `package.json` is the canonical version source; run `npm run version:sync` after changing it so the UI badge and runtime metadata stay aligned.
+- `plans.md` is the active punchlist. Keep `Inbox`, `In Progress`, `Done`, and `Decisions` current in the same PR as the implementation.
+- `CHANGELOG.md` is intentionally human-curated. Keep `Unreleased` current during development and cut versioned entries when shipping.
+- Architecture documentation uses Mermaid diagrams-as-code. Update diagrams whenever the system structure materially changes.
+- The universal multi-engine noise direction is called `Noise Rack`; all future noise-capable algorithms should converge on that shared model.
+
+## Current Release Notes
+### 0.6.58
+- Reworked `Rings` `Concentric` sampling into a true seam-corrected ring-path field so it produces visible along-the-ring modulation without breaking loop closure.
+- Added a `Center Diameter` control for `Rings` to widen the innermost ring before the stack expands outward.
+- Improved the Rings apply-mode help text so `Top Down`, `Concentric`, and `Orbit Field` explain the underlying sampling models more clearly.
+
+### 0.6.57
+- Fixed shared image-noise controls so `Invert Color` is rendered as a real checkbox across Noise Rack stacks instead of a slider-like control.
+- Corrected `Noise Width` sampling so increasing it widens image-based noise fields and decreasing it narrows them across the affected samplers, including `Rings`.
+- Centered polygon noise by default in `Wavetable` and other remaining top-left-biased samplers so the polygon field starts in the canvas center instead of clipping from the corner.
+
+### 0.6.56
+- Moved Petalis angular drift onto a Noise Rack stack and routed the existing noise-driven Petalis modifier samplers through Noise Rack-compatible stack evaluation.
+- Restored local Playwright smoke reliability on this machine by patching the runtime compatibility script, falling back to installed Chrome locally, and disabling local failure-video capture while keeping CI artifacts enabled.
+
+### 0.6.55
+- Migrated `flowfield`, `grid`, and `phylla` onto Noise Rack stacks with per-layer engine selection, blends, offsets, and octave shaping.
+- Preserved each algorithm’s native high-level behavior by keeping `flowfield` force/curl mapping, `grid` distortion modes, and `phylla` noise influence as master controls above the shared stack.
+
+### 0.6.54
+- Clarified `Rings` apply-mode semantics so `Top Down` samples a universal XY field, `Concentric` samples noise along each ring’s unwrapped path length, and `Orbit Field` preserves the legacy ring-local field.
+- Restored the orbit-style ring-local sampler as an explicit Rings apply mode instead of overloading the newer path-space mode.
+
+### 0.6.53
+- Updated Rings control language to describe `Top Down` and `Concentric` as distinct sampling models before restoring the legacy orbit-local mode as its own option.
+
+### 0.6.52
+- Migrated `Topo` onto the Noise Rack stack while preserving `Marching`, `Smooth`, `Quadratic Bezier`, and `Gradient Trace` contour mapping modes.
+- Moved Topo’s meaningful fractal controls into per-noise-layer behavior so octave/lacunarity/gain settings apply where they actually matter.
+
+### 0.6.51
+- Migrated `Rings` onto the Noise Rack stack with multi-noise layering and per-noise `Concentric` / `Top Down` projection.
+- Preserved ring-specific sampling behavior through per-noise drift and sample-radius controls instead of flattening the old model.
+
+### 0.6.50
+- Added canonical app-version plumbing through `src/config/version.js` and `npm run version:sync`.
+- Added a maintained repository punchlist in `plans.md` and a human-curated `CHANGELOG.md`.
+- Expanded the development harness so README, plans, changelog, version sync, and Mermaid diagrams are treated as first-class deliverables.
+- Started the Noise Rack extraction with a shared core blend-combination module used by `wavetable`, `spiral`, and `rainfall`.
 
 ## How to Use
 1. Pick an algorithm in the left panel and adjust its parameters.
@@ -124,17 +181,19 @@ Pan: Shift + Drag. Zoom: Mouse Wheel. Touch: one-finger tool input, two-finger p
 
 ## Algorithm Library
 Each layer is powered by an algorithm with its own parameters and formula preview:
-- Flowfield: noise-driven vector fields with selectable noise types, octaves, and minimum-length filtering.
+- Flowfield: Noise Rack-driven vector fields with stacked layers feeding angle or curl flow, plus density, step, and length controls.
 - Boids: emergent flocking paths.
 - Attractors: Lorenz-like and chaotic systems.
 - Hyphae: branching, growth-like structures.
 - Lissajous: harmonic parametric curves.
 - Harmonograph: multi-pendulum curves with damping, anti-loop drift, settle cutoff, and an interactive plotter preview.
 - Wavetable: layered noise wave stacks with multiple line structures, noise types, image effects, and polygon shaping.
-- Rings: concentric rings with noise-modulated radii.
-- Topo: contours extracted from a noise-based height field, with mapping modes preserving closed contour loops to avoid seam gaps.
+- Rings: concentric rings with Noise Rack layering, per-noise `Orbit Field`, `Concentric`, or `Top Down` sampling, and a controllable center diameter for the innermost ring.
+- Topo: contours extracted from a Noise Rack height field, with stacked layers and mapping modes preserving closed contour loops to avoid seam gaps.
+- Grid: a rectilinear mesh deformed by a stacked Noise Rack field while preserving `Warp` and `Shift` distortion modes.
 - Rainfall: rain traces with droplet shaping, wind, and silhouette/ground controls.
-- Petalis: radial petal structures with presets and embedded inner/outer curve editing, always-on dual inner/outer rings, a `PETAL VISUALIZER` (`Overlay` / `Side by Side`), a per-side `PROFILE EDITOR` with import/export support plus a shared `Export Pair` action below both cards, matching shading/modifier stacks with per-card `Petal Shape` targeting (`Inner`/`Outer`/`Both`), count-driven transition/split-feather controls, and a collapsible randomness/seed panel (defaults: `radialGrowth` 0.05), with shape controlled by visible designer curves instead of hidden legacy tip/base modifiers.
+- Phylla: phyllotaxis point spirals with Noise Rack-driven organic drift layered over the golden-angle layout.
+- Petalis: radial petal structures with presets and embedded inner/outer curve editing, always-on dual inner/outer rings, a per-side `PROFILE EDITOR` with import/export support plus a shared `Export Pair` action below both cards, matching shading/modifier stacks with per-card `Petal Shape` targeting (`Inner`/`Outer`/`Both`), count-driven transition/split-feather controls, and a collapsible randomness/seed panel where angular drift now uses a Noise Rack stack while the existing noise-driven modifier paths sample through the shared rack runtime.
 - Spiral: includes optional closure for looping the outer end back into the spiral.
 - Shape Pack: circle/polygon packing with perspective controls.
 
@@ -162,6 +221,18 @@ flowchart LR
   Config[src/config/*.js] --> UI
   Config --> Engine
   Styles[styles.css] --> HTML
+```
+
+```mermaid
+flowchart TD
+  Package["package.json (Canonical Version)"] --> Sync["npm run version:sync"]
+  Sync --> Version["src/config/version.js"]
+  Sync --> Badge["index.html app badge"]
+  Work["Feature / Fix Work"] --> Plans["plans.md"]
+  Work --> Changelog["CHANGELOG.md"]
+  Work --> Readme["README.md"]
+  Work --> Harness["docs/agentic-harness-strategy.md"]
+  Harness --> PR[".github/pull_request_template.md"]
 ```
 
 ## Project Structure

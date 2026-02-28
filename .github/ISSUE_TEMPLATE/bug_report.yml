@@ -1,0 +1,64 @@
+name: Bug Report
+description: Report a defect or regression in the application or workflow.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - UI
+        - Rendering
+        - Algorithm
+        - Noise Rack / Noise System
+        - Export
+        - Documentation
+        - CI / Tooling
+    validations:
+      required: true
+  - type: input
+    id: algorithm
+    attributes:
+      label: Algorithm
+      description: If relevant, name the affected algorithm.
+      placeholder: wavetable / rings / topo / spiral / rainfall
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Describe the observed bug and why it is incorrect.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction Steps
+      placeholder: |
+        1. Open...
+        2. Select...
+        3. Change...
+        4. Observe...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation or Evidence
+      description: Include screenshots, exported SVGs, failing tests, or other evidence.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I checked whether this is already tracked in `plans.md` or an open issue.
+          required: true
+        - label: I included enough detail to reproduce the issue deterministically.
+          required: true

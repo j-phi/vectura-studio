@@ -48,6 +48,98 @@
     }
     return len;
   };
+  const fallbackNoiseRack = {
+    combineBlend({ combined, value, blend = 'add' }) {
+      if (combined === undefined) return value;
+      switch (blend) {
+        case 'subtract':
+          return combined - value;
+        case 'multiply':
+          return combined * value;
+        case 'max':
+          return Math.max(combined, value);
+        case 'min':
+          return Math.min(combined, value);
+        case 'add':
+        default:
+          return combined + value;
+      }
+    },
+    createEvaluator({ noise }) {
+      return {
+        sampleScalar(x, y) {
+          return noise.noise2D(x, y);
+        },
+      };
+    },
+  };
+  const getNoiseRackApi = () => window.Vectura?.NoiseRack || fallbackNoiseRack;
+  const createLegacyNoiseLayer = (overrides = {}) => ({
+    enabled: true,
+    type: 'simplex',
+    blend: 'add',
+    amplitude: 1,
+    zoom: 0.2,
+    freq: 1,
+    angle: 0,
+    shiftX: 0,
+    shiftY: 0,
+    tileMode: 'off',
+    tilePadding: 0,
+    patternScale: 1,
+    warpStrength: 1,
+    cellularScale: 1,
+    cellularJitter: 1,
+    stepsCount: 5,
+    seed: 0,
+    octaves: 1,
+    lacunarity: 2,
+    gain: 0.5,
+    noiseStyle: 'linear',
+    noiseThreshold: 0,
+    imageWidth: 1,
+    imageHeight: 1,
+    microFreq: 0,
+    imageInvertColor: false,
+    imageInvertOpacity: false,
+    imageId: '',
+    imageName: '',
+    imagePreview: '',
+    imageAlgo: 'luma',
+    imageEffects: [],
+    polygonRadius: 2,
+    polygonSides: 6,
+    polygonRotation: 0,
+    polygonOutline: 0,
+    polygonEdgeRadius: 0,
+    ...overrides,
+  });
+  const createNoiseStackSampler = ({ noise, seed = 0, layers = [], fallbackLayer }) => {
+    const rackApi = getNoiseRackApi();
+    const rack = rackApi.createEvaluator({ noise, seed });
+    const baseLayer = createLegacyNoiseLayer(fallbackLayer || {});
+    const activeLayers = (Array.isArray(layers) && layers.length ? layers : [baseLayer])
+      .map((layer) => ({
+        ...baseLayer,
+        ...(layer || {}),
+        enabled: layer?.enabled !== false,
+      }))
+      .filter((layer) => layer.enabled !== false);
+    const maxAmp = activeLayers.reduce((sum, layer) => sum + Math.abs(layer.amplitude ?? 0), 0) || 1;
+    return (x, y, meta = {}) => {
+      let combined;
+      activeLayers.forEach((layer) => {
+        const value = rack.sampleScalar(x, y, layer, meta) * (layer.amplitude ?? 1);
+        combined = rackApi.combineBlend({
+          combined,
+          value,
+          blend: layer.blend || 'add',
+          maxAmplitude: maxAmp,
+        });
+      });
+      return combined ?? 0;
+    };
+  };
 
   const slicePathByPattern = (path, dash, gap) => {
     if (!Array.isArray(path) || path.length < 2) return [];
@@ -769,7 +861,39 @@
 
   const applyModifiers = (paths, modifiers, center, maxRadius, noise) => {
     if (!Array.isArray(modifiers) || !modifiers.length) return paths;
-    const active = modifiers.filter((mod) => mod && mod.enabled !== false);
+    const active = modifiers
+      .filter((mod) => mod && mod.enabled !== false)
+      .map((mod, index) => {
+        if (mod.type === 'radialNoise') {
+          return {
+            ...mod,
+            rackSample: createNoiseStackSampler({
+              noise,
+              seed: (mod.seed ?? 0) + index,
+              layers: mod.noises,
+              fallbackLayer: createLegacyNoiseLayer({
+                zoom: Math.max(0.0001, mod.scale ?? 0.2),
+                seed: mod.seed ?? 0,
+              }),
+            }),
+          };
+        }
+        if (mod.type === 'circularOffset') {
+          return {
+            ...mod,
+            rackSample: createNoiseStackSampler({
+              noise,
+              seed: (mod.seed ?? 0) + index,
+              layers: mod.noises,
+              fallbackLayer: createLegacyNoiseLayer({
+                zoom: 1,
+                seed: mod.seed ?? 0,
+              }),
+            }),
+          };
+        }
+        return mod;
+      });
     if (!active.length) return paths;
     return paths.map((path) => {
       const closed =
@@ -797,8 +921,10 @@
             }
             case 'radialNoise': {
               const amp = mod.amount ?? 0;
-              const scale = mod.scale ?? 0.2;
-              r += noise.noise2D(x * scale, y * scale) * amp;
+              const n = mod.rackSample
+                ? mod.rackSample(x, y, { worldX: center.x + x, worldY: center.y + y })
+                : 0;
+              r += n * amp;
               break;
             }
             case 'falloff': {
@@ -823,7 +949,12 @@
               const randomness = clamp(mod.randomness ?? 0, 0, 1);
               const dir = clamp(mod.direction ?? 0, -1, 1);
               const amp = mod.amount ?? 2;
-              const n = noise.noise2D(x * 0.02 + seed, y * 0.02 - seed);
+              const n = mod.rackSample
+                ? mod.rackSample(x * 0.02 + seed, y * 0.02 - seed, {
+                    worldX: center.x + x,
+                    worldY: center.y + y,
+                  })
+                : 0;
               const sign = dir === 0 ? Math.sign(n || 1) : Math.sign(dir);
               r += sign * Math.abs(n) * amp * randomness;
               break;
@@ -844,7 +975,25 @@
 
   const applyPetalModifiers = (paths, modifiers, base, angle, length, noise) => {
     if (!Array.isArray(modifiers) || !modifiers.length) return paths;
-    const active = modifiers.filter((mod) => mod && mod.enabled !== false);
+    const active = modifiers
+      .filter((mod) => mod && mod.enabled !== false)
+      .map((mod, index) => {
+        if (mod.type === 'noise') {
+          return {
+            ...mod,
+            rackSample: createNoiseStackSampler({
+              noise,
+              seed: (mod.seed ?? 0) + index,
+              layers: mod.noises,
+              fallbackLayer: createLegacyNoiseLayer({
+                zoom: Math.max(0.0001, mod.scale ?? 0.2),
+                seed: mod.seed ?? 0,
+              }),
+            }),
+          };
+        }
+        return mod;
+      });
     if (!active.length) return paths;
     const cosA = Math.cos(-angle);
     const sinA = Math.sin(-angle);
@@ -876,8 +1025,9 @@
             }
             case 'noise': {
               const amp = mod.amount ?? 0;
-              const scale = mod.scale ?? 0.2;
-              const n = noise.noise2D(lx * scale, ly * scale);
+              const n = mod.rackSample
+                ? mod.rackSample(lx, ly, { worldX: base.x + lx, worldY: base.y + ly })
+                : 0;
               ly += n * amp;
               break;
             }
@@ -922,6 +1072,15 @@
       filament: 'Filaments',
     };
     const groupLabel = `Center: ${labelMap[type] || 'Elements'}`;
+    const filamentNoiseSample = createNoiseStackSampler({
+      noise,
+      seed: (p.seed ?? 0) + 401,
+      layers: p.centerFilamentNoises,
+      fallbackLayer: createLegacyNoiseLayer({
+        zoom: 1,
+        seed: p.seed ?? 0,
+      }),
+    });
 
     if (type === 'disk') {
       const circle = [];
@@ -976,7 +1135,7 @@
         const steps = 8;
         for (let s = 0; s <= steps; s++) {
           const t = s / steps;
-          const curveAng = ang + noise.noise2D(t * 2, i * 0.2) * falloff;
+          const curveAng = ang + filamentNoiseSample(t * 2, i * 0.2, { worldX: center.x, worldY: center.y }) * falloff;
           const rr = len * t;
           curve.push({ x: center.x + Math.cos(curveAng) * rr, y: center.y + Math.sin(curveAng) * rr });
         }
@@ -1520,6 +1679,15 @@
       const legacyRingProfile = ringDesigner?.profile || p.petalProfile || fallbackRingProfile;
       const innerProfileName = designerInner?.profile || legacyRingProfile;
       const outerProfileName = designerOuter?.profile || legacyRingProfile;
+      const driftNoiseSample = createNoiseStackSampler({
+        noise,
+        seed: (p.seed ?? 0) + ringIndex * 97,
+        layers: p.driftNoises,
+        fallbackLayer: createLegacyNoiseLayer({
+          zoom: 1,
+          seed: p.seed ?? 0,
+        }),
+      });
       for (let i = 0; i < count; i++) {
         const t = count <= 1 ? 0.5 : i / (count - 1);
         const spiralT = lerp(spiralMin, spiralMax, Math.pow(t, spiralTightness));
@@ -1538,7 +1706,13 @@
         const ringCenterProfile = p.centerProfile || ringProfile;
         let radialBase = anchorRadius + radial;
         if (anchorMode === 'all') radialBase = anchorRadius;
-        const drift = angularDrift * driftStrength * noise.noise2D(i * driftNoise, ringIndex * 2.1);
+        const drift =
+          angularDrift *
+          driftStrength *
+          driftNoiseSample(i * driftNoise, ringIndex * 2.1, {
+            worldX: center.x,
+            worldY: center.y,
+          });
         let angle = baseAngle * i + offset + drift;
         angle += (rng.nextFloat() - 0.5) * rotationJitter;
         const centerFactor = clamp(1 - radialBase / Math.max(1, visibleMaxR), 0, 1);

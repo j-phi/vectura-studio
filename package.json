@@ -1,18 +1,19 @@
 {
   "name": "vectura-studio",
-  "version": "0.5.70",
+  "version": "0.6.58",
   "private": true,
   "description": "Vectura Studio - physics-inspired vector generator",
   "scripts": {
+    "version:sync": "node scripts/sync-version.js",
     "patch:test-runtime": "node scripts/patch-vitest-unicode.js",
     "profiles:bundle": "node scripts/build-petal-profile-library.js",
     "postinstall": "npm run patch:test-runtime",
     "test": "npm run test:unit && npm run test:integration",
     "test:unit": "npm run patch:test-runtime && vitest run tests/unit",
     "test:integration": "npm run patch:test-runtime && vitest run tests/integration",
-    "test:e2e": "playwright test tests/e2e/smoke.spec.js",
+    "test:e2e": "npm run patch:test-runtime && playwright test tests/e2e/smoke.spec.js",
     "test:visual": "npm run patch:test-runtime && vitest run tests/visual",
-    "test:visual:screenshots": "ENABLE_SCREENSHOT_VISUALS=1 playwright test tests/e2e/visual.spec.js",
+    "test:visual:screenshots": "npm run patch:test-runtime && ENABLE_SCREENSHOT_VISUALS=1 playwright test tests/e2e/visual.spec.js",
     "test:perf": "npm run patch:test-runtime && vitest run tests/perf",
     "test:ci": "npm run test:unit && npm run test:integration && npm run test:e2e",
     "test:update": "npm run patch:test-runtime && VECTURA_UPDATE_BASELINES=1 npm run test:visual"

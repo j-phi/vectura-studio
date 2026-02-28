@@ -1,4 +1,8 @@
+const fs = require('fs');
 const { defineConfig, devices } = require('@playwright/test');
+
+const systemChromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const useSystemChrome = !process.env.CI && fs.existsSync(systemChromePath);
 
 module.exports = defineConfig({
   testDir: './tests/e2e',
@@ -14,7 +18,7 @@ module.exports = defineConfig({
     baseURL: 'http://127.0.0.1:4173',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    video: process.env.CI ? 'retain-on-failure' : 'off',
   },
   webServer: {
     command: 'python3 -m http.server 4173',
@@ -27,6 +31,7 @@ module.exports = defineConfig({
       name: 'desktop-chromium',
       use: {
         ...devices['Desktop Chrome'],
+        ...(useSystemChrome ? { channel: 'chrome' } : {}),
         viewport: { width: 1600, height: 1000 },
       },
       testMatch: /smoke\.spec\.js$/,
@@ -36,6 +41,7 @@ module.exports = defineConfig({
       use: {
         // Keep touch-tablet interaction coverage while staying on Chromium in CI.
         ...devices['Desktop Chrome'],
+        ...(useSystemChrome ? { channel: 'chrome' } : {}),
         viewport: { width: 834, height: 1194 },
         hasTouch: true,
         isMobile: true,
