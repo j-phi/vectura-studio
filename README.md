@@ -128,6 +128,11 @@ CI lives in `.github/workflows/test.yml`:
 - The universal multi-engine noise direction is called `Noise Rack`; all future noise-capable algorithms should converge on that shared model.
 
 ## Current Release Notes
+### 0.6.59
+- Replaced the remaining Petalis one-off modifier noise sliders with nested Noise Rack stacks in both the main Petalis controls and the Petal Designer modifier cards.
+- Preserved backward compatibility for older Petalis documents by treating legacy modifier `scale` values as fallback zoom when no explicit modifier noise stack is present.
+- Added deterministic test coverage for Petalis modifier Noise Rack stacks.
+
 ### 0.6.58
 - Reworked `Rings` `Concentric` sampling into a true seam-corrected ring-path field so it produces visible along-the-ring modulation without breaking loop closure.
 - Added a `Center Diameter` control for `Rings` to widen the innermost ring before the stack expands outward.
@@ -193,7 +198,7 @@ Each layer is powered by an algorithm with its own parameters and formula previe
 - Grid: a rectilinear mesh deformed by a stacked Noise Rack field while preserving `Warp` and `Shift` distortion modes.
 - Rainfall: rain traces with droplet shaping, wind, and silhouette/ground controls.
 - Phylla: phyllotaxis point spirals with Noise Rack-driven organic drift layered over the golden-angle layout.
-- Petalis: radial petal structures with presets and embedded inner/outer curve editing, always-on dual inner/outer rings, a per-side `PROFILE EDITOR` with import/export support plus a shared `Export Pair` action below both cards, matching shading/modifier stacks with per-card `Petal Shape` targeting (`Inner`/`Outer`/`Both`), count-driven transition/split-feather controls, and a collapsible randomness/seed panel where angular drift now uses a Noise Rack stack while the existing noise-driven modifier paths sample through the shared rack runtime.
+- Petalis: radial petal structures with presets and embedded inner/outer curve editing, always-on dual inner/outer rings, a per-side `PROFILE EDITOR` with import/export support plus a shared `Export Pair` action below both cards, matching shading/modifier stacks with per-card `Petal Shape` targeting (`Inner`/`Outer`/`Both`), count-driven transition/split-feather controls, and a collapsible randomness/seed panel where angular drift and noise-driven modifiers now use nested Noise Rack stacks.
 - Spiral: includes optional closure for looping the outer end back into the spiral.
 - Shape Pack: circle/polygon packing with perspective controls.
 

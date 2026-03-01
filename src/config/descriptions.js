@@ -17,7 +17,7 @@
     topo:
       'Builds contour lines from a Noise Rack height field, with stacked layers driving the contour extraction and mapping modes.',
     petalisDesigner:
-      'Generates layered radial petals with an embedded Petal Designer panel for direct outer/inner profile drawing, live shading iteration, and Noise Rack-backed drift/modifier sampling.',
+      'Generates layered radial petals with an embedded Petal Designer panel for direct outer/inner profile drawing, live shading iteration, and per-modifier Noise Rack stacks for drift and geometry modulation.',
     rainfall:
       'Simulates falling rain traces with optional droplet shapes, wind influence, and silhouette masking.',
     spiral:

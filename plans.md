@@ -12,11 +12,10 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add GitHub governance scaffolding: structured issue forms, Dependabot, CODEOWNERS, release-note categorization, and documented GitHub Project / ruleset expectations.
 - Design the universal multi-engine noise system, named `Noise Rack`, so all noise-capable algorithms converge on one stack model.
 - Continue extracting shared Noise Rack runtime primitives; stack blend-combination logic is now centralized, with deeper sampler extraction still pending.
-- Extend Noise Rack to the remaining direct consumers, now mainly Petalis per-modifier stack UI parity and any leftover bespoke samplers.
+- Extend Noise Rack to the remaining direct consumers, now mainly any leftover bespoke samplers after Petalis per-modifier stack UI parity.
 
 ## Inbox
 - Extract more shared Noise Rack runtime primitives from the duplicated `wavetable` / `spiral` / `rainfall` implementations into `src/core/noise-rack.js`.
-- Extend explicit per-modifier Noise Rack UI stacking to Petalis center and petal modifier cards so modifier noise layers can be layered interactively instead of only via runtime-compatible stack data.
 - Add tests for Noise Rack determinism, serialization, UI normalization, and algorithm parity across migrated systems.
 - Add GitHub-side rulesets / branch protection, merge queue, and Project fields once the repository settings are available to configure.
 - Decide whether to gate PRs on lint after introducing a repo-wide ESLint config that is compatible with the current browser-IIFE codebase.
@@ -33,6 +32,7 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Routed Petalis drift and the existing noise-driven Petalis modifier samplers through Noise Rack-compatible stack evaluation, and restored local Playwright smoke runs with a system-Chrome fallback plus local video suppression.
 - Fixed shared image-noise control behavior by rendering `Invert Color` as a checkbox, correcting `Noise Width` direction in the affected samplers, and centering default polygon noise in the remaining off-center algorithms.
 - Reworked `Rings` `Concentric` mode into a seam-corrected ring-path sampler, improved the apply-mode help text, and added a `Center Diameter` control for widening the innermost ring.
+- Replaced the remaining one-off Petalis modifier noise sliders with nested Noise Rack stacks in the main controls and Petal Designer modifier cards, while preserving legacy modifier-scale fallback behavior.
 
 ## Decisions
 - `Noise Rack` is the product and architecture name for the universal multi-engine noise stack.

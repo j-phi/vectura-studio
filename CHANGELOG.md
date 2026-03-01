@@ -20,6 +20,15 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 - `Rings` now uses a Noise Rack stack instead of a single bespoke noise panel.
 - `Topo` now uses a Noise Rack stack instead of single global noise controls, with fractal settings living on applicable noise layers.
 
+## 0.6.59 - 2026-02-28
+
+### Changed
+- Replaced the remaining one-off Petalis modifier noise sliders with nested Noise Rack stacks in the main Petalis controls and the Petal Designer modifier cards.
+- Kept legacy `scale` values as fallback zoom for older Petalis documents while routing new modifier edits through shared Noise Rack layer controls.
+
+### Added
+- Added deterministic unit coverage for Petalis modifier Noise Rack stacks.
+
 ## 0.6.58 - 2026-02-28
 
 ### Added
