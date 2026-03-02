@@ -25,12 +25,29 @@
       this.visible = true;
       this.origin = { x: 0, y: 0 };
       this.paths = [];
+      this.displayPaths = [];
+      this.displayStats = null;
+      this.maskPolygons = null;
       this.sourcePaths = null;
+      this.helperPaths = null;
+      this.displayHelperPaths = null;
       this.parentId = null;
       this.isGroup = false;
       this.groupType = null;
       this.groupParams = null;
       this.groupCollapsed = false;
+      this.mask = {
+        enabled: false,
+        sourceIds: [],
+        mode: 'silhouette',
+        invert: false,
+        materialized: false,
+      };
+      this.maskCapabilities = {
+        canSource: false,
+        reason: '',
+        sourceType: null,
+      };
       const optDefaults = SETTINGS?.optimizationDefaults;
       this.optimization = optDefaults ? JSON.parse(JSON.stringify(optDefaults)) : null;
       this.optimizedPaths = null;

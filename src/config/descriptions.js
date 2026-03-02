@@ -11,7 +11,7 @@
     harmonograph:
       'Generates damped, multi-pendulum curves by combining decaying sine waves along the X and Y axes.',
     wavetable:
-      'Generates terrain-like elevations by modulating selectable line structures with one or more stacked noise sources. Inspired by the visualization of pulsar radio waves.',
+      'Generates terrain-like elevations by modulating selectable line structures with one or more stacked noise sources, including a horizon perspective mode with independent horizontal/vertical line counts, linked fan-density control, configurable skyline relief, and compressed distant terrain.',
     rings:
       'Creates concentric rings with Noise Rack radius modulation, including stacked noise sampled from a world-space XY field, seam-corrected path sampling along each ring, or the legacy ring-local orbit field.',
     topo:

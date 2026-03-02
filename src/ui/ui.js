@@ -15,6 +15,8 @@
     PRESETS,
     PETALIS_PRESETS,
     RandomizationUtils,
+    GeometryUtils,
+    OptimizationUtils,
   } = window.Vectura || {};
 
   const PETALIS_PRESET_LIBRARY = (Array.isArray(PRESETS) ? PRESETS : Array.isArray(PETALIS_PRESETS) ? PETALIS_PRESETS : [])
@@ -154,6 +156,8 @@
     return outMin + (outMax - outMin) * t;
   };
   const lerp = (a, b, t) => a + (b - a) * t;
+  const simplifyPath = GeometryUtils?.simplifyPath || ((path) => path);
+  const joinNearbyPaths = OptimizationUtils?.joinNearbyPaths || ((paths) => paths);
 
   const segmentIntersection = (a, b, c, d) => {
     const r = { x: b.x - a.x, y: b.y - a.y };
@@ -2447,9 +2451,48 @@
         ],
         infoKey: 'wavetable.lineStructure',
       },
-      { id: 'lines', label: 'Lines', type: 'range', min: 5, max: 500, step: 1, infoKey: 'wavetable.lines' },
+      {
+        id: 'lines',
+        label: 'Lines',
+        type: 'range',
+        min: 5,
+        max: 500,
+        step: 1,
+        infoKey: 'wavetable.lines',
+        showIf: (p) => p.lineStructure !== 'horizon' && p.lineStructure !== 'horizontal-vanishing-point',
+      },
       { id: 'gap', label: 'Line Gap', type: 'range', min: 0.5, max: 3.0, step: 0.1, infoKey: 'wavetable.gap' },
       { id: 'tilt', label: 'Row Shift', type: 'range', min: -12, max: 12, step: 1, infoKey: 'wavetable.tilt' },
+      {
+        id: 'horizonHorizontalLines',
+        label: 'Horizontal Lines',
+        type: 'range',
+        min: 5,
+        max: 500,
+        step: 1,
+        inlineGroup: 'wavetableHorizonLineCounts',
+        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        infoKey: 'wavetable.horizonHorizontalLines',
+      },
+      {
+        id: 'horizonVerticalLines',
+        label: 'Vertical Lines',
+        type: 'range',
+        min: 5,
+        max: 500,
+        step: 1,
+        inlineGroup: 'wavetableHorizonLineCounts',
+        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        infoKey: 'wavetable.horizonVerticalLines',
+      },
+      {
+        id: 'horizonLineLink',
+        label: 'Link',
+        type: 'checkbox',
+        inlineGroup: 'wavetableHorizonLineCounts',
+        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        infoKey: 'wavetable.horizonLineLink',
+      },
       {
         id: 'horizonHeight',
         label: 'Horizon Height (%)',
@@ -2469,6 +2512,106 @@
         step: 1,
         showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
         infoKey: 'wavetable.horizonDepthPerspective',
+      },
+      {
+        id: 'horizonVanishingX',
+        label: 'Vanishing Point X',
+        type: 'range',
+        min: 0,
+        max: 100,
+        step: 1,
+        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        infoKey: 'wavetable.horizonVanishingX',
+      },
+      {
+        id: 'horizonVanishingPower',
+        label: 'Vanishing Pull',
+        type: 'range',
+        min: 0,
+        max: 100,
+        step: 1,
+        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        infoKey: 'wavetable.horizonVanishingPower',
+      },
+      {
+        id: 'horizonFanReach',
+        label: 'Fan Reach',
+        type: 'range',
+        min: 0,
+        max: 100,
+        step: 1,
+        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        infoKey: 'wavetable.horizonFanReach',
+      },
+      {
+        id: 'horizonRelief',
+        label: 'Horizon Relief',
+        type: 'range',
+        min: 0,
+        max: 100,
+        step: 1,
+        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        infoKey: 'wavetable.horizonRelief',
+      },
+      {
+        id: 'horizonCenterDampening',
+        label: 'Center Dampening',
+        type: 'range',
+        min: 0,
+        max: 100,
+        step: 1,
+        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        infoKey: 'wavetable.horizonCenterDampening',
+      },
+      {
+        id: 'horizonCenterWidth',
+        label: 'Center Width',
+        type: 'range',
+        min: 5,
+        max: 80,
+        step: 1,
+        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        infoKey: 'wavetable.horizonCenterWidth',
+      },
+      {
+        id: 'horizonCenterBasin',
+        label: 'Center Basin',
+        type: 'range',
+        min: 0,
+        max: 100,
+        step: 1,
+        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        infoKey: 'wavetable.horizonCenterBasin',
+      },
+      {
+        id: 'horizonShoulderLift',
+        label: 'Shoulder Lift',
+        type: 'range',
+        min: 0,
+        max: 100,
+        step: 1,
+        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        infoKey: 'wavetable.horizonShoulderLift',
+      },
+      {
+        id: 'horizonMirrorBlend',
+        label: 'Mirror Blend',
+        type: 'range',
+        min: 0,
+        max: 100,
+        step: 1,
+        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        infoKey: 'wavetable.horizonMirrorBlend',
+      },
+      {
+        id: 'horizonValleyProfile',
+        label: 'Valley Profile',
+        type: 'range',
+        min: 0,
+        max: 100,
+        step: 1,
+        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        infoKey: 'wavetable.horizonValleyProfile',
       },
       {
         id: 'lineOffset',
@@ -3510,6 +3653,21 @@
       title: 'Lines',
       description: 'Number of lines used by the selected wavetable line structure.',
     },
+    'wavetable.horizonHorizontalLines': {
+      title: 'Horizontal Lines',
+      description:
+        'Sets how many horizontal terrain rows Horizon draws from the skyline toward the viewer.',
+    },
+    'wavetable.horizonVerticalLines': {
+      title: 'Vertical Lines',
+      description:
+        'Sets how many vertical fan lines Horizon draws from the vanishing line toward the viewer.',
+    },
+    'wavetable.horizonLineLink': {
+      title: 'Link',
+      description:
+        'Locks the current ratio between Horizon horizontal and vertical line counts so changing one count scales the other proportionally.',
+    },
     'wavetable.lineStructure': {
       title: 'Line Structure',
       description:
@@ -3522,7 +3680,57 @@
     'wavetable.horizonDepthPerspective': {
       title: 'Depth Perspective',
       description:
-        'In Horizon mode, increases noise frequency toward the horizon and dampens displacement toward the viewer for layered distant ridges.',
+        'In Horizon mode, compresses distant terrain toward the horizon while preserving stronger foreground displacement so the wavetable reads like a landscape.',
+    },
+    'wavetable.horizonVanishingX': {
+      title: 'Vanishing Point X',
+      description:
+        'Sets the horizontal vanishing-point position for Horizon. It controls where the vertical fan collapses at the skyline while the mesh still spans the full width at the bottom.',
+    },
+    'wavetable.horizonVanishingPower': {
+      title: 'Vanishing Pull',
+      description:
+        'Controls how aggressively the Horizon vertical fan pulls toward the vanishing point. Higher values converge faster near the skyline while keeping full-width coverage at the bottom.',
+    },
+    'wavetable.horizonFanReach': {
+      title: 'Fan Reach',
+      description:
+        'Controls how far the Horizon vertical fan spreads at the bottom. Increase it to push the outer rays toward or beyond the side edges while the top still converges at the vanishing point.',
+    },
+    'wavetable.horizonRelief': {
+      title: 'Horizon Relief',
+      description:
+        'Sets the minimum amount of noise relief preserved at the horizon itself. Increase it for a more broken skyline and decrease it for a cleaner vanishing line.',
+    },
+    'wavetable.horizonCenterDampening': {
+      title: 'Center Dampening',
+      description:
+        'Reduces terrain noise in a center corridor so Horizon mode can form a smoother road or valley leading toward the vanishing point.',
+    },
+    'wavetable.horizonCenterWidth': {
+      title: 'Center Width',
+      description:
+        'Controls how wide the damped center corridor is in Horizon mode. Smaller values pinch the valley; larger values broaden it.',
+    },
+    'wavetable.horizonCenterBasin': {
+      title: 'Center Basin',
+      description:
+        'Adds a downward pull in the center corridor so Horizon mode can create a visible basin or road through the terrain.',
+    },
+    'wavetable.horizonShoulderLift': {
+      title: 'Shoulder Lift',
+      description:
+        'Raises the outer terrain shoulders around the center corridor so Horizon mode can read more like a valley between mountain walls.',
+    },
+    'wavetable.horizonMirrorBlend': {
+      title: 'Mirror Blend',
+      description:
+        'Blends the horizon terrain against a mirrored sample across the center line. Increase it for a more centered synthwave valley and decrease it for a more asymmetric landscape.',
+    },
+    'wavetable.horizonValleyProfile': {
+      title: 'Valley Profile',
+      description:
+        'Adds a deterministic center-valley cross section beneath the noise so Horizon can read like a formed landscape instead of a purely random mesh.',
     },
     'wavetable.noiseType': {
       title: 'Noise Type',
@@ -3802,11 +4010,11 @@
     },
     'wavetable.noiseAngle': {
       title: 'Noise Angle',
-      description: 'Rotates this noise field direction used to displace the wave.',
+      description: 'Rotates the sampled noise field itself. Use `Line Offset Angle` to set the direction the sampled noise pushes the lines.',
     },
     'wavetable.lineOffset': {
       title: 'Line Offset Angle',
-      description: 'Direction for noise displacement (0° = north, 180° = south).',
+      description: 'Direction for noise displacement (0° = north, 180° = south). Horizon now respects this angle too.',
     },
     'wavetable.continuity': {
       title: 'Continuity',
@@ -5376,6 +5584,7 @@
       this.lastLayerClickId = null;
       this.globalSectionCollapsed = false;
       this.armedPenId = null;
+      this.openMaskLayerId = null;
       this.activeTool = SETTINGS.activeTool || 'select';
       this.scissorMode = SETTINGS.scissorMode || 'line';
       this.selectionMode = SETTINGS.selectionMode || 'rect';
@@ -5408,11 +5617,14 @@
           this.openPenMenu.classList.add('hidden');
           this.openPenMenu = null;
         }
+        const hadOpenMask = this.openMaskLayerId !== null;
+        this.openMaskLayerId = null;
         if (this.openPaletteMenu) {
           this.openPaletteMenu.classList.add('hidden');
           this.openPaletteMenu = null;
         }
         this.setTopMenuOpen(null, false);
+        if (hadOpenMask) this.renderLayers();
       });
       this.initPaneToggles();
       this.initBottomPaneToggle();
@@ -7445,7 +7657,26 @@
       ['inner', 'outer'].forEach((side) => {
         const card = pd.root.querySelector(`[data-petal-profile-editor="${side}"]`);
         if (!card) return;
+        const activateSide = (options = {}) => {
+          const { rerender = false } = options;
+          pd.state.activeTarget = side;
+          pd.state.target = side;
+          this.syncPetalDesignerControls(pd);
+          if (rerender) this.renderPetalDesigner(pd);
+        };
         card.classList.toggle('is-active', side === activeSide);
+        card.tabIndex = 0;
+        card.setAttribute('role', 'button');
+        card.setAttribute('aria-pressed', side === activeSide ? 'true' : 'false');
+        card.onclick = (e) => {
+          if (e.target.closest('button, select, input, label')) return;
+          activateSide({ rerender: true });
+        };
+        card.onkeydown = (e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          e.preventDefault();
+          activateSide({ rerender: true });
+        };
         const profileSelect = card.querySelector(`select[data-petal-profile-select="${side}"]`);
         const profileLabel = card.querySelector(`[data-petal-profile-label="${side}"]`);
         const symmetrySelect = card.querySelector(`select[data-petal-symmetry-side="${side}"]`);
@@ -7470,16 +7701,12 @@
             profileLabel.textContent = profiles.find((profile) => profile.id === nextId)?.name || 'None';
           }
           profileSelect.onfocus = () => {
-            pd.state.activeTarget = side;
-            pd.state.target = side;
-            this.syncPetalDesignerControls(pd);
-            this.renderPetalDesigner(pd);
+            activateSide({ rerender: true });
           };
           profileSelect.onchange = () => {
             const selectedId = profileSelect.value;
             if (!selectedId) return;
-            pd.state.activeTarget = side;
-            pd.state.target = side;
+            activateSide();
             const applied = this.applyPetalDesignerProfileSelection(pd.state, side, selectedId, {
               applyBoth: false,
               syncLock: true,
@@ -7497,14 +7724,10 @@
           symmetrySelect.value = symmetry;
           if (symmetryLabel) symmetryLabel.textContent = symmetryLabelFromValue(symmetry);
           symmetrySelect.onfocus = () => {
-            pd.state.activeTarget = side;
-            pd.state.target = side;
-            this.syncPetalDesignerControls(pd);
-            this.renderPetalDesigner(pd);
+            activateSide({ rerender: true });
           };
           symmetrySelect.onchange = () => {
-            pd.state.activeTarget = side;
-            pd.state.target = side;
+            activateSide();
             this.setPetalDesignerSymmetryForSide(pd.state, side, symmetrySelect.value);
             if (symmetryLabel) symmetryLabel.textContent = symmetryLabelFromValue(symmetrySelect.value);
             this.syncPetalDesignerControls(pd);
@@ -7513,9 +7736,7 @@
         }
         if (importBtn && fileInput) {
           importBtn.onclick = () => {
-            pd.state.activeTarget = side;
-            pd.state.target = side;
-            this.syncPetalDesignerControls(pd);
+            activateSide();
             fileInput.value = '';
             fileInput.click();
           };
@@ -8043,15 +8264,26 @@
         const view = getViewForCanvas(canvas, side);
         const symmetry = this.getPetalDesignerSymmetryForSide(pd.state, side);
         let hit = pd.canvasHover?.[hoverKey] || null;
+        let bodySide = null;
         if (shape && e && Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
           const pos = this.getDesignerCanvasPoint(canvas, e);
           hit = this.hitDesignerShapeControl(shape, canvas, pos, view, symmetry);
+          bodySide =
+            role === 'overlay'
+              ? this.pickPetalDesignerShapeAtPoint(pd, canvas, pos)
+              : this.hitDesignerShapeBody(shape, canvas, pos, view, symmetry)
+              ? side
+              : null;
           pd.canvasHover[hoverKey] = hit;
         }
         const modifiers = readModifiers(e || {});
         if (pd.tool === 'direct' || (pd.tool === 'pen' && modifiers.meta)) {
           if (hit) {
             canvas.style.cursor = hit.kind === 'anchor' ? 'move' : 'pointer';
+            return;
+          }
+          if (bodySide) {
+            canvas.style.cursor = 'pointer';
             return;
           }
           canvas.style.cursor = 'crosshair';
@@ -8133,15 +8365,26 @@
           if (e.button !== undefined && e.button !== 0) return;
           e.preventDefault();
           const side = getSideForCanvas(canvas);
-          const shape = pd.state[side];
-          const view = getViewForCanvas(canvas, side);
-          const symmetry = this.getPetalDesignerSymmetryForSide(pd.state, side);
           const pos = this.getDesignerCanvasPoint(canvas, e);
+          const selectedSide = role === 'overlay' ? this.pickPetalDesignerShapeAtPoint(pd, canvas, pos) : side;
+          if (selectedSide && selectedSide !== side) {
+            pd.state.target = selectedSide;
+            pd.state.activeTarget = selectedSide;
+            this.syncPetalDesignerControls(pd);
+            this.renderPetalDesignerShadingStack(pd, applyChanges);
+            this.renderPetalDesigner(pd);
+            setCursor(canvas, e);
+            return;
+          }
+          const activeSide = selectedSide || side;
+          const shape = pd.state[activeSide];
+          const view = getViewForCanvas(canvas, activeSide);
+          const symmetry = this.getPetalDesignerSymmetryForSide(pd.state, activeSide);
           const hit = this.hitDesignerShapeControl(shape, canvas, pos, view, symmetry);
           const modifiers = readModifiers(e);
           if (pd.tool === 'direct' || (pd.tool === 'pen' && modifiers.meta)) {
             if (hit) {
-              pd.drag = { mode: 'control', side, canvas, hit, pointerId: e.pointerId };
+              pd.drag = { mode: 'control', side: activeSide, canvas, hit, pointerId: e.pointerId };
               setCursor(canvas, e);
               return;
             }
@@ -8149,13 +8392,13 @@
             if (modifiers.alt && hit && (hit.kind === 'anchor' || hit.kind === 'handle')) {
               this.toggleDesignerAnchor(shape, hit.index, hit.kind === 'handle' ? hit.which : null);
               this.normalizeDesignerShape(shape);
-              this.syncInnerOuterLock(pd.state, side);
+              this.syncInnerOuterLock(pd.state, activeSide);
               applyChanges();
               setCursor(canvas, e);
               return;
             }
             if (hit) {
-              pd.drag = { mode: 'control', side, canvas, hit, pointerId: e.pointerId };
+              pd.drag = { mode: 'control', side: activeSide, canvas, hit, pointerId: e.pointerId };
               setCursor(canvas, e);
               return;
             }
@@ -8163,7 +8406,7 @@
             if (Number.isFinite(index)) {
               pd.drag = {
                 mode: 'pen-new',
-                side,
+                side: activeSide,
                 canvas,
                 pointerId: e.pointerId,
                 index,
@@ -8176,7 +8419,7 @@
             if (hit && hit.kind === 'anchor' && hit.index > 0 && hit.index < shape.anchors.length - 1 && shape.anchors.length > 3) {
               shape.anchors.splice(hit.index, 1);
               this.normalizeDesignerShape(shape);
-              this.syncInnerOuterLock(pd.state, side);
+              this.syncInnerOuterLock(pd.state, activeSide);
               applyChanges();
             }
             setCursor(canvas, e);
@@ -8185,7 +8428,7 @@
             if (hit && hit.kind === 'anchor') {
               this.toggleDesignerAnchor(shape, hit.index);
               this.normalizeDesignerShape(shape);
-              this.syncInnerOuterLock(pd.state, side);
+              this.syncInnerOuterLock(pd.state, activeSide);
               applyChanges();
             }
             setCursor(canvas, e);
@@ -8468,6 +8711,74 @@
         .reverse()
         .map((pt) => ({ t: pt.t, w: -pt.w }));
       return right.concat(left);
+    }
+
+    pointInDesignerPolygon(points, pos) {
+      if (!Array.isArray(points) || points.length < 3 || !pos) return false;
+      let inside = false;
+      for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+        const a = points[i];
+        const b = points[j];
+        const dy = b.y - a.y;
+        const safeDy = Math.abs(dy) < 1e-6 ? (dy < 0 ? -1e-6 : 1e-6) : dy;
+        const intersects =
+          (a.y > pos.y) !== (b.y > pos.y)
+          && pos.x < ((b.x - a.x) * (pos.y - a.y)) / safeDy + a.x;
+        if (intersects) inside = !inside;
+      }
+      return inside;
+    }
+
+    distanceToDesignerPolygon(points, pos) {
+      if (!Array.isArray(points) || points.length < 2 || !pos) return Infinity;
+      const distanceToSegment = (point, a, b) => {
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const lenSq = dx * dx + dy * dy;
+        if (lenSq <= 1e-6) return Math.hypot(point.x - a.x, point.y - a.y);
+        const t = clamp(((point.x - a.x) * dx + (point.y - a.y) * dy) / lenSq, 0, 1);
+        const projX = a.x + dx * t;
+        const projY = a.y + dy * t;
+        return Math.hypot(point.x - projX, point.y - projY);
+      };
+      let best = Infinity;
+      for (let i = 0; i < points.length; i++) {
+        const a = points[i];
+        const b = points[(i + 1) % points.length];
+        best = Math.min(best, distanceToSegment(pos, a, b));
+      }
+      return best;
+    }
+
+    hitDesignerShapeBody(shape, canvas, pos, view = null, symmetry = 'none', tolerance = 6) {
+      const polygon = this.buildDesignerPolygon(shape, symmetry);
+      if (!polygon.length) return false;
+      const points = polygon.map((pt) => this.designerToCanvas(canvas, pt, view));
+      return this.pointInDesignerPolygon(points, pos) || this.distanceToDesignerPolygon(points, pos) <= tolerance;
+    }
+
+    pickPetalDesignerShapeAtPoint(pd, canvas, pos) {
+      if (!pd?.state || !canvas || !pos) return null;
+      const activeSide = this.getPetalDesignerTarget(pd.state);
+      const inactiveSide = activeSide === 'inner' ? 'outer' : 'inner';
+      const activeHit = this.hitDesignerShapeBody(
+        pd.state[activeSide],
+        canvas,
+        pos,
+        this.getPetalDesignerView(pd.state, activeSide),
+        this.getPetalDesignerSymmetryForSide(pd.state, activeSide)
+      );
+      const inactiveHit = this.hitDesignerShapeBody(
+        pd.state[inactiveSide],
+        canvas,
+        pos,
+        this.getPetalDesignerView(pd.state, inactiveSide),
+        this.getPetalDesignerSymmetryForSide(pd.state, inactiveSide)
+      );
+      if (inactiveHit && !activeHit) return inactiveSide;
+      if (activeHit) return activeSide;
+      if (inactiveHit) return inactiveSide;
+      return null;
     }
 
     drawDesignerGrid(ctx, canvas) {
@@ -9269,9 +9580,12 @@
             Horizon mode includes Depth Perspective to scale noise by distance, giving larger near ridges and compressed far terrain.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
+            Horizon vertical fans now sample by screen-space X against the visible terrain rows, so the vertical rays follow the same ridge and valley contours as the horizontal terrain mesh.
+          </div>
+          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Petalis includes an embedded panel; use its pop-out icon (⧉) to open the same panel in a floating window and pop-in (↩) to dock it back.
             It includes flower presets, radial petal controls, a PETAL VISUALIZER pane (Overlay or Side by Side), a PROFILE EDITOR for inner/outer profile import/export, an Export Pair button below both profile cards, a shading stack with in-place hatch-angle rotation, and a matching modifier stack.
-            Shape comes from editable inner/outer curves, each stack item has its own Petal Shape target (Inner/Outer/Both), and the designer keeps symmetry per side with a collapsible Randomness &amp; Seed section at the bottom.
+            Shape comes from editable inner/outer curves, each stack item has its own Petal Shape target (Inner/Outer/Both), the inactive overlay silhouette can be clicked to switch targets, and the designer keeps symmetry per side with a collapsible Randomness &amp; Seed section at the bottom.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             PROFILE dropdown entries come from <code>src/config/petal-profiles</code> and remain available when opening <code>index.html</code> directly (no local server required).
@@ -9335,6 +9649,8 @@
           <div class="text-xs text-vectura-muted leading-relaxed space-y-1">
             <div>Click to select, Shift-click for ranges, Cmd/Ctrl-click to toggle.</div>
             <div>Drag the grip to reorder; groups can be collapsed with the caret.</div>
+            <div>Use the Mask button on a layer row to hide that layer anywhere selected source silhouettes overlap it.</div>
+            <div>Masking is managed from the Layers panel; the popover can also expand the current live mask result into geometry.</div>
             <div>Expand a layer into sublayers for line-by-line control.</div>
             <div>Selection outline visibility, color, and thickness can be adjusted in Document Setup.</div>
           </div>
@@ -9520,6 +9836,150 @@
         enabled: noise?.enabled !== false,
       }));
       return { base, templates };
+    }
+
+    buildWavetableHorizonCompanionDefaults(layer) {
+      const { base } = this.getWavetableNoiseTemplates('wavetable');
+      const broadNoise = {
+        ...clone(base),
+        id: 'noise-1',
+        enabled: true,
+        type: 'billow',
+        blend: 'add',
+        amplitude: 13.8,
+        zoom: 0.0048,
+        freq: 1,
+        angle: 0,
+        shiftX: 0,
+        shiftY: 0,
+        seed: 11,
+      };
+      const ridgeNoise = {
+        ...clone(base),
+        id: 'noise-2',
+        enabled: true,
+        type: 'ridged',
+        blend: 'add',
+        amplitude: 3.8,
+        zoom: 0.0076,
+        freq: 1,
+        angle: 0,
+        shiftX: 0,
+        shiftY: 0,
+        seed: 53,
+      };
+      const detailNoise = {
+        ...clone(base),
+        id: 'noise-3',
+        enabled: true,
+        type: 'simplex',
+        blend: 'add',
+        amplitude: 0.7,
+        zoom: 0.0132,
+        freq: 1,
+        angle: 0,
+        shiftX: 0,
+        shiftY: 0,
+        seed: 101,
+      };
+      const current = layer?.params || {};
+      return {
+        lines: 116,
+        horizonHorizontalLines: 58,
+        horizonVerticalLines: 58,
+        horizonLineLink: true,
+        gap: 0.86,
+        tilt: 0,
+        horizonHeight: 29,
+        horizonDepthPerspective: 97,
+        horizonVanishingX: 50,
+        horizonVanishingPower: 72,
+        horizonFanReach: 42,
+        horizonRelief: 38,
+        horizonCenterDampening: 94,
+        horizonCenterWidth: 44,
+        horizonCenterBasin: 62,
+        horizonShoulderLift: 48,
+        horizonMirrorBlend: 48,
+        horizonValleyProfile: 34,
+        edgeFade: 0,
+        edgeFadeThreshold: 0,
+        edgeFadeFeather: 0,
+        verticalFade: 0,
+        verticalFadeThreshold: 0,
+        verticalFadeFeather: 0,
+        noises: [broadNoise, ridgeNoise, detailNoise],
+        noiseType: 'simplex',
+        amplitude: broadNoise.amplitude,
+        zoom: broadNoise.zoom,
+        freq: broadNoise.freq,
+        noiseAngle: broadNoise.angle,
+        noiseImageId: '',
+        noiseImageName: '',
+        imageAlgo: current.imageAlgo || 'luma',
+      };
+    }
+
+    applyWavetableHorizonCompanionDefaults(layer) {
+      if (!layer || layer.type !== 'wavetable') return;
+      const next = this.buildWavetableHorizonCompanionDefaults(layer);
+      layer.params = {
+        ...layer.params,
+        lineStructure: 'horizon',
+        ...next,
+      };
+      this.ensureWavetableNoises(layer);
+    }
+
+    isWavetableHorizonStructure(params) {
+      const lineStructure = params?.lineStructure;
+      return lineStructure === 'horizon' || lineStructure === 'horizontal-vanishing-point';
+    }
+
+    applyWavetableHorizonLineCountChange(layer, changedId, nextVal) {
+      if (!layer || layer.type !== 'wavetable' || !this.isWavetableHorizonStructure(layer.params)) {
+        layer.params[changedId] = nextVal;
+        return;
+      }
+
+      const defs = CONTROL_DEFS?.wavetable || [];
+      const changedDef = defs.find((def) => def.id === changedId);
+      const horizontalDef = defs.find((def) => def.id === 'horizonHorizontalLines');
+      const verticalDef = defs.find((def) => def.id === 'horizonVerticalLines');
+      const clampForDef = (def, value) => {
+        const min = Number.isFinite(def?.min) ? def.min : Number.NEGATIVE_INFINITY;
+        const max = Number.isFinite(def?.max) ? def.max : Number.POSITIVE_INFINITY;
+        return clamp(Math.round(value), min, max);
+      };
+
+      const horizontalCurrent = clampForDef(
+        horizontalDef,
+        layer.params.horizonHorizontalLines ?? Math.max(5, Math.round((layer.params.lines ?? 130) / 2))
+      );
+      const verticalCurrent = clampForDef(
+        verticalDef,
+        layer.params.horizonVerticalLines ?? Math.max(5, Math.round((layer.params.lines ?? 130) / 2))
+      );
+      const changedNext = clampForDef(changedDef, nextVal);
+
+      if (!layer.params.horizonLineLink) {
+        layer.params[changedId] = changedNext;
+        return;
+      }
+
+      if (changedId === 'horizonVerticalLines') {
+        const ratio = horizontalCurrent / Math.max(1, verticalCurrent);
+        layer.params.horizonVerticalLines = changedNext;
+        layer.params.horizonHorizontalLines = clampForDef(horizontalDef, changedNext * ratio);
+        return;
+      }
+      if (changedId === 'horizonHorizontalLines') {
+        const ratio = verticalCurrent / Math.max(1, horizontalCurrent);
+        layer.params.horizonHorizontalLines = changedNext;
+        layer.params.horizonVerticalLines = clampForDef(verticalDef, changedNext * ratio);
+        return;
+      }
+      layer.params[changedId] = changedNext;
     }
 
     normalizeImageEffects(noise, baseEffect) {
@@ -11868,6 +12328,278 @@
       return duplicates;
     }
 
+    getMaskUsageCounts() {
+      const counts = new Map();
+      this.app.engine.layers.forEach((layer) => {
+        if (!layer || layer.isGroup || !layer.mask?.enabled || !Array.isArray(layer.mask.sourceIds)) return;
+        layer.mask.sourceIds.forEach((sourceId) => {
+          counts.set(sourceId, (counts.get(sourceId) || 0) + 1);
+        });
+      });
+      return counts;
+    }
+
+    isMaskSourceBelowTarget(targetLayer, sourceId) {
+      const layers = this.app.engine.layers || [];
+      const targetIndex = layers.findIndex((layer) => layer.id === targetLayer?.id);
+      const sourceIndex = layers.findIndex((layer) => layer.id === sourceId);
+      if (targetIndex === -1 || sourceIndex === -1) return false;
+      return sourceIndex < targetIndex;
+    }
+
+    getSelectedMaskSourceIds(targetLayer) {
+      const eligible = new Set(this.app.engine.getMaskEligibleLayers(targetLayer.id).map((layer) => layer.id));
+      return (this.app.renderer?.getSelectedLayers?.() || [])
+        .filter((layer) => layer && layer.id !== targetLayer.id && eligible.has(layer.id))
+        .map((layer) => layer.id);
+    }
+
+    refreshMaskingViews(options = {}) {
+      const { preserveOpen = true } = options;
+      if (!preserveOpen) this.openMaskLayerId = null;
+      this.app.engine.computeAllDisplayGeometry();
+      this.renderLayers();
+      this.buildControls();
+      this.updateFormula();
+      this.app.render();
+      this.app.updateStats();
+    }
+
+    ensureLayerMaskState(layer) {
+      if (!layer.mask) {
+        layer.mask = {
+          enabled: false,
+          sourceIds: [],
+          mode: 'silhouette',
+          invert: false,
+          materialized: false,
+        };
+      }
+      if (!Array.isArray(layer.mask.sourceIds)) layer.mask.sourceIds = [];
+      return layer.mask;
+    }
+
+    setLayerMaskEnabled(layer, enabled) {
+      if (!layer || layer.isGroup) return;
+      const mask = this.ensureLayerMaskState(layer);
+      mask.enabled = Boolean(enabled) && mask.sourceIds.length > 0;
+      this.refreshMaskingViews();
+    }
+
+    toggleLayerMaskSource(layer, sourceId, enabled) {
+      if (!layer || layer.isGroup || !sourceId) return;
+      const mask = this.ensureLayerMaskState(layer);
+      const next = new Set(mask.sourceIds || []);
+      if (enabled) next.add(sourceId);
+      else next.delete(sourceId);
+      mask.sourceIds = Array.from(next);
+      mask.enabled = mask.sourceIds.length > 0 && (mask.enabled || enabled);
+      if (!mask.sourceIds.length) mask.enabled = false;
+      this.refreshMaskingViews();
+    }
+
+    applySelectedLayersAsMasks(layer) {
+      if (!layer || layer.isGroup) return;
+      const selected = this.getSelectedMaskSourceIds(layer);
+      if (!selected.length) return;
+      const mask = this.ensureLayerMaskState(layer);
+      const next = new Set(mask.sourceIds || []);
+      selected.forEach((id) => next.add(id));
+      mask.sourceIds = Array.from(next);
+      mask.enabled = mask.sourceIds.length > 0;
+      this.refreshMaskingViews();
+    }
+
+    clearLayerMask(layer) {
+      if (!layer || layer.isGroup) return;
+      const mask = this.ensureLayerMaskState(layer);
+      mask.sourceIds = [];
+      mask.enabled = false;
+      this.refreshMaskingViews();
+    }
+
+    convertMaskResultToGeometry(layer) {
+      if (!Layer || !layer || layer.isGroup) return;
+      const sourcePaths = clonePaths(layer.displayPaths || []);
+      const drawablePaths = sourcePaths.filter((path) => Array.isArray(path) && path.length >= 2);
+      if (!drawablePaths.length) return;
+      if (this.app.pushHistory) this.app.pushHistory();
+      const joined = joinNearbyPaths(drawablePaths, {
+        gapTolerance: 1.2,
+        angleTolerance: Math.PI / 18,
+        collinearBias: 0.85,
+      });
+      const simplified = joined.map((path) => simplifyPath(path, 0.15));
+      const insertIndex = this.app.engine.layers.findIndex((entry) => entry.id === layer.id);
+      const baseName = `${layer.name} Masked`;
+      const pad = String(simplified.length).length;
+      const created = [];
+      let group = null;
+
+      if (simplified.length > 1) {
+        const groupId = Math.random().toString(36).substr(2, 9);
+        group = new Layer(groupId, 'group', this.getUniqueLayerName(baseName));
+        group.isGroup = true;
+        group.groupType = 'group';
+        group.groupCollapsed = false;
+        group.visible = false;
+        group.penId = layer.penId;
+        group.color = layer.color;
+        group.strokeWidth = layer.strokeWidth;
+        group.lineCap = layer.lineCap;
+      }
+
+      simplified.forEach((path, index) => {
+        SETTINGS.globalLayerCount += 1;
+        const childId = Math.random().toString(36).substr(2, 9);
+        const child = new Layer(
+          childId,
+          'expanded',
+          simplified.length > 1
+            ? `${baseName} ${String(index + 1).padStart(pad, '0')}`
+            : this.getUniqueLayerName(baseName)
+        );
+        child.parentId = group ? group.id : null;
+        child.params.seed = 0;
+        child.params.posX = 0;
+        child.params.posY = 0;
+        child.params.scaleX = 1;
+        child.params.scaleY = 1;
+        child.params.rotation = 0;
+        child.params.curves = Boolean(layer.params.curves);
+        child.params.smoothing = 0;
+        child.params.simplify = 0;
+        child.sourcePaths = [clonePath(path)];
+        child.penId = layer.penId;
+        child.color = layer.color;
+        child.strokeWidth = layer.strokeWidth;
+        child.lineCap = layer.lineCap;
+        child.visible = layer.visible;
+        child.mask.materialized = true;
+        created.push(child);
+      });
+
+      const nodes = [];
+      if (group) nodes.push(group);
+      nodes.push(...created.slice().reverse());
+      this.app.engine.layers.splice(insertIndex + 1, 0, ...nodes);
+      created.forEach((child) => this.app.engine.generate(child.id));
+      this.normalizeGroupOrder();
+      const primary = created[0];
+      if (primary && this.app.renderer) {
+        const ids = created.map((entry) => entry.id);
+        this.app.renderer.setSelection(ids, primary.id);
+        this.app.engine.activeLayerId = primary.id;
+      }
+      this.refreshMaskingViews({ preserveOpen: false });
+    }
+
+    buildMaskEditor(layer, options = {}) {
+      const { compact = false } = options;
+      const wrapper = document.createElement('div');
+      wrapper.className = compact ? 'layer-mask-editor layer-mask-editor--compact' : 'layer-mask-editor';
+      wrapper.addEventListener('click', (e) => e.stopPropagation());
+      const mask = this.ensureLayerMaskState(layer);
+      const eligible = this.app.engine.getMaskEligibleLayers(layer.id);
+      const selectedMaskIds = this.getSelectedMaskSourceIds(layer);
+      const warnings = (mask.sourceIds || []).filter((sourceId) => this.isMaskSourceBelowTarget(layer, sourceId));
+      const enableId = `layer-mask-enable-${layer.id}`;
+
+      const header = document.createElement('div');
+      header.className = 'layer-mask-editor__header';
+      header.innerHTML = `
+        <div class="layer-mask-editor__header-copy">
+          <span class="layer-mask-editor__title">Clipping Mask</span>
+          <span class="layer-mask-editor__subtitle">Hide this layer where source silhouettes overlap it.</span>
+        </div>
+        <label class="layer-mask-editor__toggle" for="${enableId}">
+          <input id="${enableId}" name="${enableId}" type="checkbox" ${mask.enabled ? 'checked' : ''} ${mask.sourceIds.length ? '' : 'disabled'}>
+          <span>Enable</span>
+        </label>
+      `;
+      const enableInput = header.querySelector('input[type="checkbox"]');
+      if (enableInput) {
+        enableInput.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          this.setLayerMaskEnabled(layer, e.target.checked);
+        };
+      }
+      wrapper.appendChild(header);
+
+      const list = document.createElement('div');
+      list.className = 'layer-mask-editor__list';
+      if (!eligible.length) {
+        const empty = document.createElement('div');
+        empty.className = 'layer-mask-editor__empty';
+        empty.textContent = 'No eligible mask sources';
+        list.appendChild(empty);
+      } else {
+        eligible.forEach((source) => {
+          const sourceInputId = `layer-mask-source-${layer.id}-${source.id}`;
+          const row = document.createElement('label');
+          row.className = 'layer-mask-editor__source';
+          row.setAttribute('for', sourceInputId);
+          const sourceType = source.maskCapabilities?.sourceType || 'source';
+          const usage = (this.getMaskUsageCounts().get(source.id) || 0) > 0 ? `SRC ${this.getMaskUsageCounts().get(source.id)}` : '';
+          row.innerHTML = `
+            <span class="layer-mask-editor__source-main">
+              <input id="${sourceInputId}" name="${sourceInputId}" type="checkbox" ${mask.sourceIds.includes(source.id) ? 'checked' : ''}>
+              <span class="layer-mask-editor__source-name">${escapeHtml(source.name)}</span>
+            </span>
+            <span class="layer-mask-editor__source-meta">
+              <span class="layer-mask-editor__badge">${escapeHtml(sourceType.replace('-', ' '))}</span>
+              ${usage ? `<span class="layer-mask-editor__badge">${usage}</span>` : ''}
+            </span>
+          `;
+          const input = row.querySelector('input[type="checkbox"]');
+          if (input) {
+            input.onchange = (e) => {
+              if (this.app.pushHistory) this.app.pushHistory();
+              this.toggleLayerMaskSource(layer, source.id, e.target.checked);
+            };
+          }
+          list.appendChild(row);
+        });
+      }
+      wrapper.appendChild(list);
+
+      const actions = document.createElement('div');
+      actions.className = 'layer-mask-editor__actions';
+      actions.innerHTML = `
+        <button type="button" class="layer-mask-editor__btn use-selected" ${selectedMaskIds.length ? '' : 'disabled'}>Use Selected</button>
+        <button type="button" class="layer-mask-editor__btn clear-mask" ${(mask.sourceIds || []).length ? '' : 'disabled'}>Clear</button>
+        <button type="button" class="layer-mask-editor__btn convert-mask" ${(layer.displayPaths || []).length ? '' : 'disabled'}>Expand Result</button>
+      `;
+      const useSelectedBtn = actions.querySelector('.use-selected');
+      const clearBtn = actions.querySelector('.clear-mask');
+      const convertBtn = actions.querySelector('.convert-mask');
+      if (useSelectedBtn) {
+        useSelectedBtn.onclick = () => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          this.applySelectedLayersAsMasks(layer);
+        };
+      }
+      if (clearBtn) {
+        clearBtn.onclick = () => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          this.clearLayerMask(layer);
+        };
+      }
+      if (convertBtn) {
+        convertBtn.onclick = () => this.convertMaskResultToGeometry(layer);
+      }
+      wrapper.appendChild(actions);
+
+      if (warnings.length) {
+        const warning = document.createElement('div');
+        warning.className = 'layer-mask-editor__warning';
+        warning.textContent = 'Mask source is below this layer in stack order.';
+        wrapper.appendChild(warning);
+      }
+
+      return wrapper;
+    }
+
     getUniqueLayerName(base, excludeId) {
       const clean = base.trim() || 'Layer';
       if (!this.isDuplicateLayerName(clean, excludeId)) return clean;
@@ -13965,6 +14697,7 @@
       const container = getEl('layer-list');
       if (!container) return;
       container.innerHTML = '';
+      const usageCounts = this.getMaskUsageCounts();
       const layers = this.app.engine.layers.slice().reverse();
       const groupIds = new Set(layers.filter((layer) => layer.isGroup).map((layer) => layer.id));
       const groupMap = new Map();
@@ -14125,6 +14858,7 @@
       };
 
       const renderGroupRow = (group, depth = 0) => {
+        const sourceUsage = usageCounts.get(group.id) || 0;
         const el = document.createElement('div');
         const typeLabel = ALGO_DEFAULTS?.[group.groupType]?.label || group.groupType || 'Group';
         el.className =
@@ -14146,6 +14880,7 @@
               type="text"
               value="${group.name}"
             />
+            ${sourceUsage ? `<span class="layer-mini-badge">SRC ${sourceUsage}</span>` : ''}
             <span class="layer-badge text-[10px] text-vectura-muted uppercase tracking-widest">${typeLabel}</span>
           </div>
           <div class="flex items-center gap-1">
@@ -14356,8 +15091,14 @@
         const depth = opts.depth ?? 0;
         const isActive = l.id === this.app.engine.activeLayerId;
         const isSelected = this.app.renderer?.selectedLayerIds?.has(l.id);
+        const maskCount = l.mask?.enabled ? (l.mask.sourceIds || []).length : 0;
+        const sourceUsage = usageCounts.get(l.id) || 0;
         const hidePen = false;
         const showExpand = !isChild && !l.isGroup;
+        const maskMarkup =
+          !l.isGroup
+            ? `<button type="button" class="layer-mask-trigger ${maskCount ? 'layer-mask-trigger--active' : ''}" aria-label="${maskCount ? 'Edit clipping mask' : 'Add clipping mask'}" title="${maskCount ? 'Edit clipping mask' : 'Add clipping mask'}">Clip</button>`
+            : '';
         const expandMarkup = showExpand
           ? '<button class="text-sm text-vectura-muted hover:text-white px-1 btn-expand" aria-label="Expand layer" title="Expand layer">⇲</button>'
           : '';
@@ -14391,6 +15132,8 @@
               type="text"
               value="${escapeHtml(l.name)}"
             />
+            ${maskCount ? `<span class="layer-mini-badge layer-mini-badge--mask">CLIP ${maskCount}</span>` : ''}
+            ${sourceUsage ? `<span class="layer-mini-badge">SRC ${sourceUsage}</span>` : ''}
           </div>
           <div class="flex items-center gap-1">
             ${hidePen ? '' : `
@@ -14401,6 +15144,7 @@
                 <div class="pen-menu hidden"></div>
               </div>
             `}
+            ${maskMarkup}
             ${expandMarkup}
             ${moveMarkup}
             <button class="text-sm text-vectura-muted hover:text-white px-1 btn-dup" aria-label="Duplicate layer" title="Duplicate layer">⧉</button>
@@ -14415,6 +15159,7 @@
         const downBtn = el.querySelector('.btn-down');
         const dupBtn = el.querySelector('.btn-dup');
         const expandBtn = el.querySelector('.btn-expand');
+        const maskBtn = el.querySelector('.layer-mask-trigger');
         const grip = el.querySelector('.layer-grip');
         const penMenu = el.querySelector('.pen-menu');
         const penPill = el.querySelector('.pen-pill');
@@ -14517,8 +15262,18 @@
           visibilityEl.onchange = (e) => {
             if (this.app.pushHistory) this.app.pushHistory();
             l.visible = e.target.checked;
+            this.app.engine.computeAllDisplayGeometry();
+            this.renderLayers();
+            this.buildControls();
             this.app.render();
             this.app.updateStats();
+          };
+        }
+        if (maskBtn) {
+          maskBtn.onclick = (e) => {
+            e.stopPropagation();
+            this.openMaskLayerId = this.openMaskLayerId === l.id ? null : l.id;
+            this.renderLayers();
           };
         }
         if (delBtn) {
@@ -14648,6 +15403,16 @@
           });
         }
         container.appendChild(el);
+        if (this.openMaskLayerId === l.id) {
+          const panelWrap = document.createElement('div');
+          panelWrap.className = 'layer-mask-popover-wrap';
+          if (indent) {
+            panelWrap.style.marginLeft = `${indent + 8}px`;
+            panelWrap.style.width = `calc(100% - ${indent + 8}px)`;
+          }
+          panelWrap.appendChild(this.buildMaskEditor(l, { compact: true }));
+          container.appendChild(panelWrap);
+        }
         selectableIds.push(l.id);
       };
 
@@ -15896,15 +16661,15 @@
       globalSection.appendChild(globalHeader);
       globalSection.appendChild(globalBody);
 
-      const angleGroups = new Map();
-      const getAngleGroup = (key) => {
-        if (!angleGroups.has(key)) {
+      const inlineGroups = new Map();
+      const getInlineGroup = (key) => {
+        if (!inlineGroups.has(key)) {
           const row = document.createElement('div');
-          row.className = 'angle-row';
+          row.className = 'control-inline-row';
           container.appendChild(row);
-          angleGroups.set(key, row);
+          inlineGroups.set(key, row);
         }
-        return angleGroups.get(key);
+        return inlineGroups.get(key);
       };
 
       const basePendulumTemplate = {
@@ -18421,8 +19186,8 @@
               setAngle(displayVal, commit, live);
             },
           });
-          const target = def.inlineGroup ? getAngleGroup(def.inlineGroup) : container;
-          if (def.inlineGroup) div.classList.add('angle-item');
+          const target = def.inlineGroup ? getInlineGroup(def.inlineGroup) : container;
+          if (def.inlineGroup) div.classList.add('control-inline-item', 'angle-item');
           target.appendChild(div);
           return;
         }
@@ -18477,6 +19242,10 @@
               maybeRebuildControls();
             });
           }
+          const target = def.inlineGroup ? getInlineGroup(def.inlineGroup) : container;
+          if (def.inlineGroup) div.classList.add('control-inline-item');
+          target.appendChild(div);
+          return;
         } else if (def.type === 'select') {
           if (layer.type === 'wavetable' && def.id === 'lineStructure' && val === 'horizontal-vanishing-point') {
             val = 'horizon';
@@ -18549,6 +19318,9 @@
               if (layer.type === 'wavetable' && def.id === 'lineStructure' && next === 'vertical') {
                 layer.params.lineOffset = 135;
               }
+              if (layer.type === 'wavetable' && def.id === 'lineStructure' && next === 'horizon') {
+                this.applyWavetableHorizonCompanionDefaults(layer);
+              }
               this.storeLayerParams(layer);
               span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
               this.app.regen();
@@ -18563,6 +19335,9 @@
               if (next === undefined) return;
               if (this.app.pushHistory) this.app.pushHistory();
               layer.params[def.id] = next;
+              if (layer.type === 'wavetable' && def.id === 'lineStructure' && next === 'horizon') {
+                this.applyWavetableHorizonCompanionDefaults(layer);
+              }
               this.storeLayerParams(layer);
               input.value = next;
               span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
@@ -18810,6 +19585,8 @@
           const valueBtn = div.querySelector('.value-chip');
           const valueInput = div.querySelector('.value-input');
           if (input && valueBtn && valueInput) {
+            const isHorizonLineCountControl =
+              layer.type === 'wavetable' && (def.id === 'horizonHorizontalLines' || def.id === 'horizonVerticalLines');
             const confirmHeavy = (displayVal) => {
               const nextVal = fromDisplayValue(def, displayVal);
               if (Number.isFinite(def.confirmAbove) && nextVal >= def.confirmAbove) {
@@ -18827,12 +19604,17 @@
               const defaultVal = getDefaultValue(def);
               if (defaultVal === null || defaultVal === undefined) return;
               if (this.app.pushHistory) this.app.pushHistory();
-              layer.params[def.id] = defaultVal;
+              if (isHorizonLineCountControl) {
+                this.applyWavetableHorizonLineCountChange(layer, def.id, defaultVal);
+              } else {
+                layer.params[def.id] = defaultVal;
+              }
               this.storeLayerParams(layer);
               input.value = toDisplayValue(def, defaultVal);
               valueBtn.innerText = formatDisplayValue(def, defaultVal);
               this.app.regen();
               this.updateFormula();
+              if (isHorizonLineCountControl) maybeRebuildControls();
             };
             input.oninput = (e) => {
               const nextDisplay = parseFloat(e.target.value);
@@ -18843,18 +19625,28 @@
               const nextVal = confirmHeavy(nextDisplay);
               if (nextVal === null) return;
               if (this.app.pushHistory) this.app.pushHistory();
-              layer.params[def.id] = nextVal;
+              if (layer.type === 'wavetable' && (def.id === 'horizonHorizontalLines' || def.id === 'horizonVerticalLines')) {
+                this.applyWavetableHorizonLineCountChange(layer, def.id, nextVal);
+              } else {
+                layer.params[def.id] = nextVal;
+              }
               this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
+              if (isHorizonLineCountControl) maybeRebuildControls();
             };
             attachKeyboardRangeNudge(input, (nextDisplay) => {
               const nextVal = confirmHeavy(nextDisplay);
               if (nextVal === null) return;
-              layer.params[def.id] = nextVal;
+              if (layer.type === 'wavetable' && (def.id === 'horizonHorizontalLines' || def.id === 'horizonVerticalLines')) {
+                this.applyWavetableHorizonLineCountChange(layer, def.id, nextVal);
+              } else {
+                layer.params[def.id] = nextVal;
+              }
               this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
+              if (isHorizonLineCountControl) maybeRebuildControls();
             });
             input.addEventListener('dblclick', (e) => {
               e.preventDefault();
@@ -18870,16 +19662,23 @@
                 if (nextVal === null) return;
                 const commit = opts?.commit !== false;
                 if (commit && this.app.pushHistory) this.app.pushHistory();
-                layer.params[def.id] = nextVal;
+                if (layer.type === 'wavetable' && (def.id === 'horizonHorizontalLines' || def.id === 'horizonVerticalLines')) {
+                  this.applyWavetableHorizonLineCountChange(layer, def.id, nextVal);
+                } else {
+                  layer.params[def.id] = nextVal;
+                }
                 this.storeLayerParams(layer);
                 this.app.regen();
                 valueBtn.innerText = formatDisplayValue(def, layer.params[def.id]);
                 this.updateFormula();
+                if (isHorizonLineCountControl) maybeRebuildControls();
               },
             });
           }
         }
-        target.appendChild(div);
+        const inlineTarget = def.inlineGroup ? getInlineGroup(def.inlineGroup) : target;
+        if (def.inlineGroup) div.classList.add('control-inline-item');
+        inlineTarget.appendChild(div);
       };
 
       const renderOptimizationPanel = (target) => {
@@ -20109,7 +20908,12 @@
           const useCurves = Boolean(l.params && l.params.curves);
           const layerGroupId = escapeXmlAttr(normalizeSvgId(l.name || l.id || 'Layer', 'layer'));
           svg += `<g id="${layerGroupId}" stroke-width="${strokeWidth}" stroke-linecap="${lineCap}" stroke-linejoin="round">`;
-          let paths = useOptimized && l.optimizedPaths ? l.optimizedPaths : l.paths;
+          let paths =
+            l.mask?.enabled && Array.isArray(l.displayPaths)
+              ? l.displayPaths
+              : useOptimized && l.optimizedPaths
+              ? l.optimizedPaths
+              : l.paths;
           if (hardCrop) {
             paths = (paths || []).flatMap((p) => {
               if (!Array.isArray(p) || p.length < 2) return [];

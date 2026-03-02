@@ -37,6 +37,15 @@ module.exports = defineConfig({
       testMatch: /smoke\.spec\.js$/,
     },
     {
+      name: 'desktop-visual-chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+        ...(useSystemChrome ? { channel: 'chrome' } : {}),
+        viewport: { width: 1600, height: 1000 },
+      },
+      testMatch: /visual\.spec\.js$/,
+    },
+    {
       name: 'tablet-touch-chromium',
       use: {
         // Keep touch-tablet interaction coverage while staying on Chromium in CI.

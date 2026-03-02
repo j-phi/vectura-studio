@@ -12,6 +12,7 @@
     Layer,
     GeometryUtils = {},
     OptimizationUtils = {},
+    Masking = {},
   } = window.Vectura || {};
 
   const smoothPath = GeometryUtils.smoothPath || ((path) => path);
@@ -35,6 +36,9 @@
   const closePathIfNeeded = OptimizationUtils.closePathIfNeeded || ((path) => path);
   const reversePath = OptimizationUtils.reversePath || ((path) => path);
   const offsetPath = OptimizationUtils.offsetPath || ((path) => path);
+  const getLayerMaskCapabilities = Masking.getLayerMaskCapabilities || (() => ({ canSource: false, reason: '', sourceType: null }));
+  const buildMaskUnion = Masking.buildMaskUnion || (() => []);
+  const applyMaskToPaths = Masking.applyMaskToPaths || ((paths) => clonePaths(paths || []));
 
   const clone = (obj) => JSON.parse(JSON.stringify(obj));
 
@@ -76,6 +80,7 @@
           groupParams: layer.groupParams ? JSON.parse(JSON.stringify(layer.groupParams)) : null,
           groupCollapsed: layer.groupCollapsed,
           sourcePaths: layer.sourcePaths ? JSON.parse(JSON.stringify(layer.sourcePaths)) : null,
+          mask: layer.mask ? JSON.parse(JSON.stringify(layer.mask)) : null,
           penId: layer.penId,
           color: layer.color,
           strokeWidth: layer.strokeWidth,
@@ -97,16 +102,29 @@
         layer.groupParams = data.groupParams ? JSON.parse(JSON.stringify(data.groupParams)) : null;
         layer.groupCollapsed = Boolean(data.groupCollapsed);
         layer.sourcePaths = data.sourcePaths ? JSON.parse(JSON.stringify(data.sourcePaths)) : null;
+        layer.mask = {
+          enabled: false,
+          sourceIds: [],
+          mode: 'silhouette',
+          invert: false,
+          materialized: false,
+          ...(data.mask ? JSON.parse(JSON.stringify(data.mask)) : {}),
+        };
         layer.penId = data.penId ?? layer.penId;
         layer.color = data.color || layer.color;
         layer.strokeWidth = Number.isFinite(data.strokeWidth) ? data.strokeWidth : layer.strokeWidth;
         layer.lineCap = data.lineCap || layer.lineCap;
         layer.visible = data.visible !== false;
         layer.paths = [];
+        layer.displayPaths = [];
+        layer.helperPaths = null;
+        layer.displayHelperPaths = null;
+        layer.maskPolygons = null;
         return layer;
       });
       this.activeLayerId = state.activeLayerId || (this.layers[0] ? this.layers[0].id : null);
       this.layers.forEach((l) => this.generate(l.id));
+      this.computeAllDisplayGeometry();
     }
 
     duplicateLayer(id) {
@@ -133,6 +151,9 @@
       layer.lineCap = source.lineCap;
       layer.visible = source.visible;
       layer.paths = clonePaths(source.paths);
+      layer.displayPaths = clonePaths(source.displayPaths || source.paths || []);
+      layer.maskPolygons = clonePaths(source.maskPolygons || []);
+      layer.mask = source.mask ? JSON.parse(JSON.stringify(source.mask)) : layer.mask;
       const idx = this.layers.findIndex((l) => l.id === id);
       if (idx >= 0) {
         this.layers.splice(idx + 1, 0, layer);
@@ -140,6 +161,7 @@
         this.layers.push(layer);
       }
       this.activeLayerId = newId;
+      this.computeAllDisplayGeometry();
       return layer;
     }
 
@@ -173,6 +195,7 @@
       if (removeIds.has(this.activeLayerId)) {
         this.activeLayerId = this.layers.length ? this.layers[this.layers.length - 1].id : null;
       }
+      this.computeAllDisplayGeometry();
     }
 
     moveLayer(id, direction) {
@@ -181,11 +204,62 @@
       const newIdx = idx + direction;
       if (newIdx >= 0 && newIdx < this.layers.length) {
         [this.layers[idx], this.layers[newIdx]] = [this.layers[newIdx], this.layers[idx]];
+        this.computeAllDisplayGeometry();
       }
     }
 
     getActiveLayer() {
       return this.layers.find((l) => l.id === this.activeLayerId);
+    }
+
+    getBounds() {
+      const { width, height } = this.currentProfile;
+      const m = SETTINGS.margin;
+      return {
+        width,
+        height,
+        m,
+        dW: width - m * 2,
+        dH: height - m * 2,
+        truncate: SETTINGS.truncate,
+      };
+    }
+
+    refreshMaskCapabilities() {
+      const bounds = this.getBounds();
+      this.layers.forEach((layer) => {
+        layer.maskCapabilities = getLayerMaskCapabilities(layer, this, bounds);
+      });
+    }
+
+    getMaskEligibleLayers(targetLayerId) {
+      return this.layers.filter((layer) => {
+        if (!layer || layer.id === targetLayerId) return false;
+        return Boolean(layer.maskCapabilities?.canSource);
+      });
+    }
+
+    computeLayerDisplayGeometry(layerId) {
+      const layer = this.layers.find((entry) => entry.id === layerId);
+      if (!layer || layer.isGroup) return;
+      const sourcePaths = clonePaths(layer.paths || []);
+      layer.displayHelperPaths = clonePaths(layer.helperPaths || []);
+      if (!layer.visible || !layer.mask?.enabled || !Array.isArray(layer.mask.sourceIds) || !layer.mask.sourceIds.length) {
+        layer.displayPaths = sourcePaths;
+        layer.displayStats = countPathPoints(sourcePaths);
+        return;
+      }
+      const maskPolygons = buildMaskUnion(layer.mask.sourceIds, this, this.getBounds());
+      layer.displayPaths = applyMaskToPaths(sourcePaths, maskPolygons, { invert: Boolean(layer.mask.invert) });
+      layer.displayStats = countPathPoints(layer.displayPaths);
+    }
+
+    computeAllDisplayGeometry() {
+      this.refreshMaskCapabilities();
+      this.layers.forEach((layer) => {
+        if (!layer || layer.isGroup) return;
+        this.computeLayerDisplayGeometry(layer.id);
+      });
     }
 
     resolveProfile() {
@@ -237,6 +311,7 @@
       const algo = Algorithms[layer.type] || Algorithms.flowfield;
       const rawPaths = layer.sourcePaths ? clonePaths(layer.sourcePaths) : algo.generate(p, rng, noise, bounds) || [];
       const helperPaths = rawPaths.helpers ? clonePaths(rawPaths.helpers) : null;
+      const maskPolygons = rawPaths.maskPolygons ? clonePaths(rawPaths.maskPolygons) : null;
       const smooth = Math.max(0, Math.min(1, p.smoothing ?? 0));
       const simplify = Math.max(0, Math.min(1, p.simplify ?? 0));
 
@@ -400,6 +475,14 @@
             return smoothPath(transformed, smooth);
           })
         : [];
+      const transformedMaskPolygons = maskPolygons
+        ? maskPolygons.map((polygon) => {
+            if (!Array.isArray(polygon)) return polygon;
+            const transformedPolygon = polygon.map((pt) => transform(pt));
+            if (polygon.meta) transformedPolygon.meta = JSON.parse(JSON.stringify(polygon.meta));
+            return transformedPolygon;
+          })
+        : [];
       const rawCounts = countPathPoints(transformed);
       let finalPaths = transformed;
       if (simplify > 0) {
@@ -420,7 +503,9 @@
       };
       layer.paths = finalPaths;
       layer.helperPaths = helperTransformed;
+      layer.maskPolygons = transformedMaskPolygons;
       this.optimizeLayers([layer]);
+      this.computeAllDisplayGeometry();
     }
 
     ensureLayerOptimization(layer) {
@@ -776,7 +861,12 @@
           if (!dedupe.has(penId)) dedupe.set(penId, new Set());
           seen = dedupe.get(penId);
         }
-        const sourcePaths = useOptimized && l.optimizedPaths ? l.optimizedPaths : l.paths;
+        const sourcePaths =
+          l.mask?.enabled && Array.isArray(l.displayPaths)
+            ? l.displayPaths
+            : useOptimized && l.optimizedPaths
+            ? l.optimizedPaths
+            : l.paths;
         const visiblePaths = [];
         (sourcePaths || []).forEach((p) => {
           if (seen) {

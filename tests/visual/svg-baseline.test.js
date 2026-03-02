@@ -56,6 +56,69 @@ const SCENARIOS = [
   },
 ];
 
+const buildMaskedSceneSvg = (runtime) => {
+  const { VectorEngine, Layer } = runtime.window.Vectura;
+  const engine = new VectorEngine();
+  engine.layers = [];
+
+  const rings = new Layer('rings-target', 'expanded', 'Rings Target');
+  rings.paths = [];
+  const centerX = 160;
+  const centerY = 138;
+  const radii = [18, 32, 48, 66, 86];
+  radii.forEach((radius) => {
+    const ring = [];
+    for (let step = 0; step <= 96; step++) {
+      const theta = (step / 96) * Math.PI * 2;
+      ring.push({
+        x: centerX + Math.cos(theta) * radius,
+        y: centerY + Math.sin(theta) * radius,
+      });
+    }
+    rings.paths.push(ring);
+  });
+  rings.mask = {
+    enabled: true,
+    sourceIds: ['terrain-mask'],
+    mode: 'silhouette',
+    invert: false,
+    materialized: false,
+  };
+
+  const terrain = new Layer('terrain-mask', 'wavetable', 'Terrain Mask');
+  terrain.params.lineStructure = 'horizon';
+  terrain.paths = [
+    [
+      { x: 32, y: 132 },
+      { x: 86, y: 120 },
+      { x: 132, y: 126 },
+      { x: 160, y: 146 },
+      { x: 188, y: 126 },
+      { x: 234, y: 120 },
+      { x: 288, y: 132 },
+    ],
+    [
+      { x: 32, y: 156 },
+      { x: 72, y: 146 },
+      { x: 120, y: 154 },
+      { x: 160, y: 176 },
+      { x: 200, y: 154 },
+      { x: 248, y: 146 },
+      { x: 288, y: 156 },
+    ],
+  ];
+
+  engine.layers.push(rings, terrain);
+  engine.computeAllDisplayGeometry();
+
+  return pathsToSvg({
+    width: 320,
+    height: 220,
+    paths: [...(rings.displayPaths || []), ...(terrain.paths || [])],
+    precision: 3,
+  });
+};
+
 describe('SVG visual baselines', () => {
   let runtime;
 
@@ -96,6 +159,23 @@ describe('SVG visual baselines', () => {
 
     const paths = Algorithms[type].generate(params, new SeededRNG(seed), new SimpleNoise(seed), bounds) || [];
     const actual = pathsToSvg({ width: bounds.width, height: bounds.height, paths, precision: 3 });
+
+    if (UPDATE_BASELINES) {
+      fs.mkdirSync(baselineDir, { recursive: true });
+      fs.writeFileSync(baselinePath, actual, 'utf8');
+      expect(fs.existsSync(baselinePath)).toBe(true);
+      return;
+    }
+
+    expect(fs.existsSync(baselinePath)).toBe(true);
+    const expected = fs.readFileSync(baselinePath, 'utf8');
+    expect(actual).toBe(expected);
+  });
+
+  test('matches baseline: masking-horizon-rings', () => {
+    const baselineDir = path.resolve(__dirname, '../baselines/svg');
+    const baselinePath = path.join(baselineDir, 'masking-horizon-rings.svg');
+    const actual = buildMaskedSceneSvg(runtime);
 
     if (UPDATE_BASELINES) {
       fs.mkdirSync(baselineDir, { recursive: true });

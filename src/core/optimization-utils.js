@@ -92,6 +92,57 @@
     return next;
   };
 
+  const joinNearbyPaths = (paths, options = {}) => {
+    const gapTolerance = Number.isFinite(options.gapTolerance) ? options.gapTolerance : 1;
+    const angleTolerance = Number.isFinite(options.angleTolerance) ? options.angleTolerance : Math.PI / 12;
+    const collinearBias = Number.isFinite(options.collinearBias) ? options.collinearBias : 0.85;
+    const source = (paths || [])
+      .filter((path) => Array.isArray(path) && path.length >= 2 && !isClosedPath(path))
+      .map((path) => {
+        const next = path.map((pt) => ({ x: pt.x, y: pt.y }));
+        if (path.meta) next.meta = JSON.parse(JSON.stringify(path.meta));
+        return next;
+      });
+
+    const normalizedDirection = (a, b) => {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const len = Math.hypot(dx, dy) || 1;
+      return { x: dx / len, y: dy / len };
+    };
+    const dot = (a, b) => a.x * b.x + a.y * b.y;
+
+    let changed = true;
+    while (changed) {
+      changed = false;
+      outer: for (let i = 0; i < source.length; i += 1) {
+        const a = source[i];
+        if (!a || a.length < 2) continue;
+        const aEnd = a[a.length - 1];
+        const aDir = normalizedDirection(a[a.length - 2], aEnd);
+        for (let j = i + 1; j < source.length; j += 1) {
+          const b = source[j];
+          if (!b || b.length < 2) continue;
+          const bStart = b[0];
+          const gap = Math.hypot(aEnd.x - bStart.x, aEnd.y - bStart.y);
+          if (gap > gapTolerance) continue;
+          const bDir = normalizedDirection(bStart, b[1]);
+          const alignment = dot(aDir, bDir);
+          const angle = Math.acos(Math.max(-1, Math.min(1, alignment)));
+          if (angle > angleTolerance && alignment < collinearBias) continue;
+          const merged = a.concat(b.slice(1));
+          if (a.meta) merged.meta = a.meta;
+          source.splice(j, 1);
+          source.splice(i, 1, merged);
+          changed = true;
+          break outer;
+        }
+      }
+    }
+
+    return source;
+  };
+
   const api = {
     pathLength,
     pathEndpoints,
@@ -100,6 +151,7 @@
     closePathIfNeeded,
     reversePath,
     offsetPath,
+    joinNearbyPaths,
   };
 
   if (typeof window !== 'undefined') {

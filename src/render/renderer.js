@@ -1091,7 +1091,12 @@
           this.ctx.beginPath();
           this.ctx.strokeStyle = pen?.color || l.color;
           const useCurves = Boolean(l.params && l.params.curves);
-          const paths = useOptimized && l.optimizedPaths ? l.optimizedPaths : l.paths;
+          const paths =
+            l.mask?.enabled && Array.isArray(l.displayPaths)
+              ? l.displayPaths
+              : useOptimized && l.optimizedPaths
+              ? l.optimizedPaths
+              : l.paths;
           (paths || []).forEach((path) => {
             if (path && path.meta && path.meta.kind === 'circle') {
               const meta =
@@ -1203,11 +1208,12 @@
       const drawHelperOverlays = () => {
         this.engine.layers.forEach((l) => {
           if (!l.visible || !l.params?.showPendulumGuides) return;
-          if (!l.helperPaths || !l.helperPaths.length) return;
+          const helperPaths = l.displayHelperPaths?.length ? l.displayHelperPaths : l.helperPaths;
+          if (!helperPaths || !helperPaths.length) return;
           const color = l.params.pendulumGuideColor || '#f59e0b';
           const width = l.params.pendulumGuideWidth ?? 0.25;
           const useCurves = Boolean(l.params && l.params.curves);
-          l.helperPaths.forEach((path, index) => {
+          helperPaths.forEach((path, index) => {
             if (!Array.isArray(path) || path.length < 2) return;
             const next =
               this.selectedLayerIds?.has(l.id) && this.tempTransform ? this.transformPath(path, this.tempTransform) : path;

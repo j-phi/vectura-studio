@@ -4,7 +4,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 
 ## Highlights
 - Plotter-first output in millimeters with machine profiles (A3, A4, AxiDraw V3).
-- Layered generation with visibility toggles, ordering, and per-layer stroke/line-cap settings.
+- Layered generation with visibility toggles, ordering, per-layer stroke/line-cap settings, and live non-destructive clipping masks managed directly from the Layers panel against silhouette-capable source layers.
 - Seeded, repeatable results with live transform controls (position, scale, rotation).
 - Switching algorithms restores transform defaults for the selected algorithm (position/scale/rotation do not carry over).
 - Collapsible left-panel sections with persisted state: `Algorithm` (including a nested `Transform & Seed` sub-panel, collapsed by default) and `Algorithm Configuration`.
@@ -37,12 +37,12 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Harmonograph pendulum list with add/delete/toggle controls and optional guide overlay.
 - Harmonograph anti-loop controls (frequency drift + settle cutoff) and a Virtual Plotter preview with playhead scrubbing and speed presets.
 - Rainfall generator with wind, droplet styling, and optional silhouette masking.
-- Wavetable noise stack with selectable line structures (horizontal, vertical, grid, isometric, lattice, horizon perspective), plus Horizon depth perspective that raises distant noise frequency and damps near-view displacement; includes per-noise blend modes, tile patterns, image effects, polygon noise, and drag-to-reorder layers.
+- Wavetable noise stack with selectable line structures (horizontal, vertical, grid, isometric, lattice, horizon perspective), plus Horizon depth perspective that compresses distant terrain while preserving stronger foreground relief for synthwave-style landscapes; Horizon vertical fans now sample the same visible terrain contours as the horizontal rows instead of drifting by row parameterization, and Horizon masking now follows the final visible terrain surface instead of a coarse top-row silhouette. Includes per-noise blend modes, tile patterns, image effects, polygon noise, and drag-to-reorder layers.
 - Repository operating model with a maintained `plans.md` punchlist, human-curated `CHANGELOG.md`, Mermaid architecture diagrams, and synchronized app-version metadata.
 - Petalis generator with radial petals, editable inner/outer designer curves, shading, modifier stacks, and 20 named presets (plus an in-dev light source marker). Hatch Angle rotates shading strokes in place inside petals rather than shifting shading placement on the canvas.
 - Petalis algorithm with an embedded full Petal Designer panel in the parameter stack (shape comes from visible designer curves, without hidden legacy tip/base modifiers).
 - Petalis layers now enable `Curves` by default, matching the designer silhouette out of the box.
-- Petal Designer inline editor and pop-out window use high-DPI rendering with immediate canvas updates, always-on dual-ring controls (`Inner Petal Count`/`Outer Petal Count` plus `Split Feathering`), a `PETAL VISUALIZER` pane with `Overlay` / `Side by Side`, a `PROFILE EDITOR` (`Inner Shape`/`Outer Shape`) with per-side profile import/export and a shared `Export Pair` action below both cards, and matching `Shading Stack` + `Modifier Stack` controls where each card has its own `Petal Shape` target (`Inner`/`Outer`/`Both`). The inline panel can pop out (⧉) and pop back in (↩) while keeping the exact same controls and layout.
+- Petal Designer inline editor and pop-out window use high-DPI rendering with immediate canvas updates, always-on dual-ring controls (`Inner Petal Count`/`Outer Petal Count` plus `Split Feathering`), a `PETAL VISUALIZER` pane with `Overlay` / `Side by Side`, a `PROFILE EDITOR` (`Inner Shape`/`Outer Shape`) with per-side profile import/export and a shared `Export Pair` action below both cards, and matching `Shading Stack` + `Modifier Stack` controls where each card has its own `Petal Shape` target (`Inner`/`Outer`/`Both`). In overlay view, clicking the visible inactive silhouette now selects that shape directly, and clicking either profile card also switches the active target. The inline panel can pop out (⧉) and pop back in (↩) while keeping the exact same controls and layout.
 - Petalis profile transitions: `Inner = Outer` lock plus count-driven ring boundary and split feathering to morph from innermost to outermost petal profiles.
 - Petalis profile library loads from `src/config/petal-profiles` in both hosted and direct `file://` runs (via a preloaded `library.js` bundle to avoid local CORS fetch errors).
 - Petal Designer interactions include direct/pen anchor editing with modifier support (`Shift` constrain, `Alt/Option` convert, break, or remove handles, `Cmd/Ctrl` temporary direct), plus middle-drag pan and wheel zoom (when both petals are visible, wheel zoom updates both equally).
@@ -128,6 +128,86 @@ CI lives in `.github/workflows/test.yml`:
 - The universal multi-engine noise direction is called `Noise Rack`; all future noise-capable algorithms should converge on that shared model.
 
 ## Current Release Notes
+### 0.6.79
+- Reduced remaining Horizon hidden-line clutter by pruning short shoulder column fragments that survived occlusion but did not carry enough visible surface to read as true contour lines.
+
+### 0.6.78
+- Fixed the Layers-panel `Clip` trigger so the clipping-mask popover opens reliably in the saved masking workflow.
+- Changed Horizon masking to follow the first visible terrain row, which restores the intended sky bowl instead of filling the whole skyline basin.
+- Tightened Horizon column visibility so only skyline-connected fan segments survive, reducing additional hidden backface lines on steep shoulders.
+
+### 0.6.77
+- Fixed the saved Horizon-plus-Rings masking case by clipping against the visible terrain-strip polygons, which makes the rings hug the rendered landscape contour more closely.
+- Reduced detached/backface Horizon column fragments on the shoulders, tightened the Layers-panel `Clip` affordance, and added a screenshot regression for the checked-in `broken-masking.vectura` fixture.
+
+### 0.6.76
+- Changed Horizon masking to follow the topmost visible Horizon row so masked circles meet the terrain edge without a gap.
+- Tightened Horizon shoulder visibility by deriving the full vertical fan from the same culled visible-row set, which removes additional backface lines on steep ridges.
+
+### 0.6.75
+- Removed Horizon's extra edge-anchor rays so the terrain mesh no longer emits off-pattern diagonal lines, and re-verified the saved broken masking scene against a fresh browser render.
+
+### 0.6.74
+- Fixed Horizon masking so hidden geometry is clipped against the final visible terrain surface strips, which makes saved landscape masks hug the projected contour instead of floating above it.
+- Kept masking workflow in the Layers panel only, tightened the clipping-mask popover styling, and added a screenshot-based Playwright regression for the Horizon-plus-Rings composition.
+
+### 0.6.73
+- Fixed Horizon masking so terrain silhouettes follow the highest visible landscape envelope instead of only the top horizon row, which makes foreground landscape masks hide overlapping background structure correctly.
+- Added a masking-specific SVG visual baseline for a `Wavetable` Horizon masking `Rings`, and gave the new masking checkboxes explicit `id`/`name` wiring.
+
+### 0.6.72
+- Added live non-destructive layer masking for silhouette-capable layers, including layer-row `Mask` controls, mirrored left-panel masking controls, and `Convert To Geometry` materialization into expanded lines.
+- Added the masking/display-geometry engine stage with silhouette providers for closed shapes, groups, and `Wavetable` Horizon terrain envelopes.
+- Reworked Horizon vertical sampling so the fan follows the same visible terrain contours as the horizontal rows, and added edge anchor rays so the fan can keep full side coverage under strong vanishing pull.
+
+### 0.6.71
+- Increased the effective top end of Horizon `Fan Reach` so full reach still covers or overshoots the side boundaries even when `Vanishing Pull` is high.
+- Put Horizon `Horizontal Lines`, `Vertical Lines`, and `Link` on one shared control row so the split line-density controls read as a single linked cluster.
+
+### 0.6.70
+- Replaced Horizon’s single `Lines` slider with `Horizontal Lines`, `Vertical Lines`, and a ratio-preserving `Link` toggle.
+- Kept Horizon’s perspective fan controls compatible with the split line counts so `Vanishing Point X`, `Vanishing Pull`, and `Fan Reach` still govern the vertical fan while row density stays independently tunable.
+
+### 0.6.69
+- Updated Horizon fan validation so full pull/full reach is treated correctly: the outer rays must cover the side boundaries or overshoot them, not remain artificially confined inside the canvas bottom span.
+
+### 0.6.68
+- Added `Fan Reach` to Horizon so the vertical fan can fully cover or overshoot the side edges independently of `Vanishing Pull`.
+- Full `Vanishing Pull` now converges the fan toward the horizon point while `Fan Reach` controls how far the bottom rays spread toward the viewer and beyond the canvas sides.
+
+### 0.6.67
+- Renamed the Horizon perspective controls to `Vanishing Point X` and `Vanishing Pull`, and kept them responsible for pulling the vertical fan toward a chosen horizon position while preserving broad bottom coverage.
+- Rebalanced Horizon visibility so horizontal terrain rows stay readable while verticals are still derived from an occluded visible surface.
+
+### 0.6.66
+- Reworked `Wavetable` Horizon visibility toward a sampled mesh model so the horizon grid clips against the skyline and derives verticals from the visible surface instead of free-running fan curves.
+- Iterated the Horizon occlusion pass against repeated stress-case screenshots to reduce shoulder backface leakage while preserving more terrain structure.
+
+### 0.6.65
+- Fixed `Wavetable` Horizon so noise displacement is no longer forced to vertical-only motion; Horizon now respects `Line Offset Angle` like the other wavetable structures.
+- Clarified the control help text so `Noise Angle` means field rotation and `Line Offset Angle` means displacement direction.
+
+### 0.6.64
+- Added Horizon terrain-shaping controls for `Shoulder Lift`, `Mirror Blend`, and `Valley Profile`, then tuned the shipped `Horizon` companion defaults against repeated rendered screenshot review to better match the centered synthwave valley reference.
+- The default `Horizon` terrain now uses a quieter layered noise stack and a formed center-valley profile so it reads more like terrain generation and less like generic mesh noise.
+
+### 0.6.63
+- Added Horizon-specific companion defaults for `Wavetable`, including a broader center valley / road profile plus layered terrain noise tuned to resemble the synthwave landscape reference when `Line Structure = Horizon` is selected.
+- Added Horizon-only shaping controls (`Center Dampening`, `Center Width`, `Center Basin`) and tuned them through repeated rendered screenshot review rather than one-pass code guesses.
+
+### 0.6.62
+- Removed the remaining hard skyline clamp from `Wavetable` Horizon mode and raised far-horizon sampling energy so the terrain can actually break the horizon line instead of collapsing into a flat ribbon.
+- Verified the Horizon change against rendered screenshots after the code update, not just unit tests.
+
+### 0.6.61
+- Added `Horizon Relief` to `Wavetable` Horizon mode so the skyline itself can keep visible noise/displacement instead of collapsing into a flat vanishing line.
+- Adjusted the Horizon row placement so increasing `Horizon Relief` affects the first horizon rows directly rather than only the terrain below them.
+
+### 0.6.60
+- Reworked `Wavetable` Horizon depth perspective so foreground ridges keep stronger displacement while distant terrain compresses toward the horizon, producing a more usable synthwave landscape profile.
+- Added Petal Designer silhouette picking in overlay mode, so clicking the visible inactive inner/outer shape selects it directly.
+- Made the `Inner Shape` / `Outer Shape` profile editor cards explicitly clickable selection targets, with matching regression tests for Horizon depth behavior and Petalis overlay selection.
+
 ### 0.6.59
 - Replaced the remaining Petalis one-off modifier noise sliders with nested Noise Rack stacks in both the main Petalis controls and the Petal Designer modifier cards.
 - Preserved backward compatibility for older Petalis documents by treating legacy modifier `scale` values as fallback zoom when no explicit modifier noise stack is present.
@@ -176,7 +256,7 @@ CI lives in `.github/workflows/test.yml`:
 1. Pick an algorithm in the left panel and adjust its parameters.
 2. Expand `Transform & Seed` inside the Algorithm panel, then use transform controls (seed, position, scale, rotation) to nudge the layer.
 3. Use Post-Processing Lab for smoothing/curves/simplify plus optional optimization passes and preview.
-4. Manage layers on the right: add, reorder (drag the grip), duplicate, hide, rename (double-click), expand into sublayers, and assign pens (drag a pen onto a layer to apply to the selection).
+4. Manage layers on the right: add, reorder (drag the grip), duplicate, hide, rename (double-click), expand into sublayers, assign pens (drag a pen onto a layer to apply to the selection), and use `Mask` on a target layer row to create or edit a clipping mask against selected silhouette-capable source layers.
 5. Use `File > Document Setup` for machine size, margin, on-canvas crop, hard export crop (`Crop Exports to Margin`, which trims path geometry to the margin rectangle and exports with flat caps), margin guides, stroke, SVG precision, optimization scope/preview/export settings, and optional cookie preference saving.
 6. Save/Open full projects via .vectura files, or import SVGs as new layers.
 7. Switch to the Petalis algorithm to use the embedded inline designer panel, then use ⧉ to pop it out into a floating window or ↩ to dock it back in. In Petalis, petal shape is driven by visible inner/outer designer curves, always-on inner/outer count + split controls, a `PETAL VISUALIZER` (`Overlay` / `Side by Side`), a `PROFILE EDITOR` with per-side profile import/export controls plus a shared `Export Pair` button below both profile cards, and `Shading Stack` + `Modifier Stack` cards where each entry has its own `Petal Shape` target (`Inner`/`Outer`/`Both`) plus symmetry controls.
@@ -222,6 +302,11 @@ flowchart LR
   Engine --> Algorithms[src/core/algorithms/index.js]
   Engine --> RNG[src/core/rng.js]
   Engine --> Noise[src/core/noise.js]
+  Engine --> Display["Display Geometry / Masking"]
+  Display --> Renderer
+  Display --> Export
+  Display --> Masking["src/core/masking.js"]
+  Masking --> Boolean["src/core/path-boolean.js"]
 
   Config[src/config/*.js] --> UI
   Config --> Engine
@@ -247,6 +332,8 @@ flowchart TD
 - `src/core/` - vector engine, layers, RNG/noise, and algorithms.
 - `src/core/geometry-utils.js` - shared path smoothing/simplification and cloning helpers.
 - `src/core/optimization-utils.js` - shared path length/sort/offset helpers used by optimization flow.
+- `src/core/masking.js` - silhouette capability detection, mask unions, and live display-geometry masking.
+- `src/core/path-boolean.js` - polygon normalization and path segmentation helpers used by masking.
 - `src/core/algorithms/*.js` - one file per algorithm, with `src/core/algorithms/index.js` assembling the registry exposed to the engine.
 - `src/render/` - canvas rendering and view transforms.
 - `src/ui/` - panels, controls, settings, and SVG export.
