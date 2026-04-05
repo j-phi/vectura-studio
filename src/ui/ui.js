@@ -460,7 +460,7 @@
   const getVisibleExportPaths = (layer, options = {}) => {
     if (!layer) return [];
     if (isMaskLayerGeometryHidden(layer)) return [];
-    if (layer.mask?.enabled && Array.isArray(layer.displayPaths)) return clonePathsWithMeta(layer.displayPaths);
+    if (layer.displayMaskActive && Array.isArray(layer.displayPaths) && layer.displayPaths.length) return clonePathsWithMeta(layer.displayPaths);
     return getRawExportPaths(layer, options);
   };
 
