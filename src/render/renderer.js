@@ -300,6 +300,7 @@
 
     setTool(tool) {
       if (!tool) return;
+      this.clearMaskPreview();
       if (tool !== 'pen') {
         this.penDraft = null;
         this.penPreview = null;
@@ -2244,6 +2245,11 @@
             this.activeHandle = handle;
             this.dragStart = world;
             this.startBounds = selectionBounds;
+            if (selectedLayers.length === 1 && this.activeTool === 'select') {
+              this.startMaskPreview(selectedLayers[0]);
+            } else {
+              this.clearMaskPreview();
+            }
             if (handle === 'rotate') {
               this.dragMode = 'rotate';
               this.rotateOrigin = this.getBoundsCenter(selectionBounds);
@@ -2273,6 +2279,11 @@
           this.dragMode = 'move';
           this.dragStart = world;
           this.startBounds = bounds;
+          if (updatedSelected.length === 1 && this.activeTool === 'select') {
+            this.startMaskPreview(updatedSelected[0]);
+          } else {
+            this.clearMaskPreview();
+          }
           this.setCanvasCursor(updatedSelected.length > 1 ? 'grabbing' : 'move');
           if (modifiers.alt && updatedSelected.length === 1) {
             if (this.onDuplicateLayer) this.onDuplicateLayer();
@@ -2287,6 +2298,7 @@
         } else if (topLayer) {
           // no-op
         } else {
+          this.clearMaskPreview();
           this.isSelecting = true;
           this.selectionStart = world;
           this.selectionRect = { x: world.x, y: world.y, w: 0, h: 0 };
@@ -2666,6 +2678,7 @@
           const primary = this.getSelectedLayer();
           if (primary) this.updateTransformInputs(primary);
         }
+        this.clearMaskPreview();
         this.tempTransform = null;
         this.rotateOrigin = null;
         this.snap = null;
@@ -3019,6 +3032,7 @@
       this.selectedLayerId = null;
       this.directSelection = null;
       this.directDrag = null;
+      this.clearMaskPreview();
       if (this.onSelectLayer) this.onSelectLayer(null);
       this.draw();
     }
@@ -3895,15 +3909,19 @@
       if (!this.canvas) return;
       const modifiers = this.getModifierState(e);
       if (this.activeTool === 'hand') {
-        this.canvas.style.cursor = this.isPan ? 'grabbing' : 'grab';
+        this.setCanvasCursor(this.isPan ? 'grabbing' : 'grab');
         return;
       }
       if (this.activeTool === 'pen' && !modifiers.meta && this.penMode === 'draw') {
-        this.canvas.style.cursor = 'crosshair';
+        this.setCanvasCursor('crosshair');
+        return;
+      }
+      if (`${this.activeTool}`.startsWith('shape-')) {
+        this.setCanvasCursor(SHAPE_RETICLE_CURSOR, 'shape-reticle');
         return;
       }
       if (this.activeTool === 'scissor' || (this.activeTool === 'select' && (this.selectionMode === 'pen' || this.selectionMode === 'lasso'))) {
-        this.canvas.style.cursor = 'crosshair';
+        this.setCanvasCursor('crosshair');
         return;
       }
       const rect = this.canvas.getBoundingClientRect();
@@ -3913,54 +3931,55 @@
       if (this.activeTool === 'direct') {
         const selectedShape = this.getSelectedShapeLayer();
         if (selectedShape && this.hitShapeCornerHandle(world, selectedShape, 0)) {
-          this.canvas.style.cursor = 'pointer';
+          this.setCanvasCursor('pointer');
           return;
         }
         const control = this.hitDirectControl(world);
         if (control) {
-          this.canvas.style.cursor = control.type === 'anchor' ? 'move' : 'pointer';
+          this.setCanvasCursor(control.type === 'anchor' ? 'move' : 'pointer');
           return;
         }
         const hit = this.findPathHitAtPoint(world);
-        this.canvas.style.cursor = hit ? 'move' : 'crosshair';
+        this.setCanvasCursor(hit ? 'move' : 'crosshair');
         return;
       }
       if (this.activeTool === 'pen' && this.penMode !== 'draw' && !modifiers.meta) {
         const control = this.hitDirectControl(world);
         if (control) {
-          this.canvas.style.cursor = this.penMode === 'delete' ? 'not-allowed' : 'pointer';
+          this.setCanvasCursor(this.penMode === 'delete' ? 'not-allowed' : 'pointer');
           return;
         }
-        const hit = this.findPathHitAtPoint(world, {
+        this.findPathHitAtPoint(world, {
           restrictToLayerId: this.directSelection?.layerId || null,
         });
-        this.canvas.style.cursor = hit ? 'crosshair' : 'crosshair';
+        this.setCanvasCursor('crosshair');
         return;
       }
       if (this.hitLightSource(world)) {
-        this.canvas.style.cursor = this.isLightDrag ? 'grabbing' : 'move';
+        this.setCanvasCursor(this.isLightDrag ? 'grabbing' : 'move');
         return;
       }
       if (this.activeTool === 'select' && this.getActiveModifierLayer()) {
         const hitGuide = this.hitModifierGuide(world);
         if (hitGuide) {
           if (hitGuide.type === 'rotate') {
-            this.canvas.style.cursor = 'grab';
+            this.setCanvasCursor('grab');
             return;
           }
-          this.canvas.style.cursor = hitGuide.guide.locked ? 'not-allowed' : hitGuide.type === 'flip' ? 'pointer' : 'move';
+          this.setCanvasCursor(hitGuide.guide.locked ? 'not-allowed' : hitGuide.type === 'flip' ? 'pointer' : 'move');
           return;
         }
       }
       const activeLayers = this.getSelectedLayers();
       if (!activeLayers.length) {
-        this.canvas.style.cursor = 'crosshair';
+        this.setCanvasCursor('crosshair');
         return;
       }
+      const selectedPrimitiveShape = this.activeTool === 'select' ? this.getSelectedPrimitiveShapeLayer() : null;
       if (this.activeTool === 'select' && activeLayers.length === 1) {
         const shapeLayer = this.getSelectedShapeLayer();
         if (shapeLayer && this.hitShapeCornerHandle(world, shapeLayer, 0)) {
-          this.canvas.style.cursor = 'pointer';
+          this.setCanvasCursor('pointer');
           return;
         }
       }
@@ -3968,14 +3987,18 @@
       if (!bounds) return;
       const handle = this.hitHandle(sx, sy, bounds);
       if (handle) {
-        this.canvas.style.cursor = this.handleCursor(handle);
+        this.setCanvasCursor(this.handleCursor(handle));
+        return;
+      }
+      if (selectedPrimitiveShape) {
+        this.setCanvasCursor(SHAPE_RETICLE_CURSOR, 'shape-reticle');
         return;
       }
       if (this.pointInBounds(world, bounds)) {
-        this.canvas.style.cursor = activeLayers.length > 1 ? 'grab' : 'move';
-      } else {
-        this.canvas.style.cursor = 'crosshair';
+        this.setCanvasCursor(activeLayers.length > 1 ? 'grab' : 'move');
+        return;
       }
+      this.setCanvasCursor('crosshair');
     }
 
     updateTransformInputs(layer) {

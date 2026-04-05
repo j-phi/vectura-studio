@@ -9690,6 +9690,8 @@
             <div><span class="text-vectura-accent">Shift</span> Constrain pen angle / handles, square/circle shapes, snap polygon angle, Scissor line snaps 15°</div>
             <div><span class="text-vectura-accent">Alt/Option</span> Break pen handles or draw shapes from center</div>
             <div><span class="text-vectura-accent">Arrow Up / Down</span> Change polygon side count while dragging</div>
+            <div><span class="text-vectura-accent">Mask Parent Drag</span> While moving/resizing/rotating a mask parent, masked descendants ghost-preview outside the silhouette until mouse release</div>
+            <div><span class="text-vectura-accent">Shape Reticle</span> Rectangle/Oval/Polygon tools and a single selected primitive shape in Selection use an Illustrator-style reticle cursor</div>
             <div><span class="text-vectura-accent">Selection Tool</span> Drag a shape corner widget to round all corners together</div>
             <div><span class="text-vectura-accent">Direct Tool</span> Drag endpoints/handles on individual line paths, or drag a shape corner widget to round one corner</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl</span> Temporary selection while using Pen</div>

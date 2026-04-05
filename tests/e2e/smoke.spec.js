@@ -329,6 +329,190 @@ test.describe('Vectura smoke interactions', () => {
     expect(pageErrors).toEqual([]);
   });
 
+  test('mask-parent drags preview dimmed descendants until mouse release', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name.includes('tablet-touch'), 'Tablet emulation does not reliably synthesize transform drags.');
+    const pageErrors = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+
+    await page.goto('/');
+
+    await page.evaluate(() => {
+      const app = window.app;
+      const { Layer, SETTINGS } = window.Vectura;
+      SETTINGS.aboutVisible = false;
+      SETTINGS.globalLayerCount = 0;
+
+      const engine = app.engine;
+      engine.layers = [];
+
+      const circlePath = [];
+      const cx = 120;
+      const cy = 110;
+      const r = 50;
+      for (let i = 0; i <= 96; i += 1) {
+        const theta = (i / 96) * Math.PI * 2;
+        circlePath.push({
+          x: cx + Math.cos(theta) * r,
+          y: cy + Math.sin(theta) * r,
+        });
+      }
+      circlePath.meta = {
+        kind: 'circle',
+        cx,
+        cy,
+        r,
+        shape: {
+          type: 'oval',
+          cx,
+          cy,
+          rx: r,
+          ry: r,
+          cornerRadii: [],
+        },
+      };
+
+      const maskParent = new Layer('drag-preview-mask-parent', 'expanded', 'Preview Mask');
+      maskParent.sourcePaths = [circlePath];
+      maskParent.mask.enabled = true;
+
+      const child = new Layer('drag-preview-mask-child', 'expanded', 'Preview Child');
+      child.parentId = maskParent.id;
+      child.sourcePaths = [[
+        { x: 20, y: 110 },
+        { x: 220, y: 110 },
+      ]];
+      child.strokeWidth = 2.2;
+
+      engine.layers.push(maskParent, child);
+      engine.activeLayerId = maskParent.id;
+      engine.generate(maskParent.id);
+      engine.generate(child.id);
+      app.renderer.setSelection([maskParent.id], maskParent.id);
+      app.ui.renderLayers();
+      app.ui.buildControls();
+      app.render();
+    });
+
+    const dragPoints = await page.evaluate(() => {
+      const canvas = document.getElementById('main-canvas');
+      const rect = canvas.getBoundingClientRect();
+      const renderer = window.app.renderer;
+      const start = renderer.worldToScreen(120, 110);
+      const end = renderer.worldToScreen(160, 110);
+      return {
+        start: { x: rect.left + start.x, y: rect.top + start.y },
+        end: { x: rect.left + end.x, y: rect.top + end.y },
+      };
+    });
+
+    const readBrightness = (world) =>
+      page.evaluate(({ x, y }) => {
+        const canvas = document.getElementById('main-canvas');
+        const ctx = canvas.getContext('2d');
+        const renderer = window.app.renderer;
+        const pt = renderer.worldToScreen(x, y);
+        const dpr = window.devicePixelRatio || 1;
+        const pixel = ctx.getImageData(Math.round(pt.x * dpr), Math.round(pt.y * dpr), 1, 1).data;
+        return (pixel[0] + pixel[1] + pixel[2]) / 3;
+      }, world);
+
+    const outsideBefore = await readBrightness({ x: 40, y: 110 });
+
+    await page.mouse.move(dragPoints.start.x, dragPoints.start.y);
+    await page.mouse.down();
+    await page.mouse.move(dragPoints.end.x, dragPoints.end.y);
+
+    await expect
+      .poll(async () => page.evaluate(() => window.app.renderer.maskPreview?.maskLayerId || null))
+      .toBe('drag-preview-mask-parent');
+
+    const previewState = await page.evaluate(() => ({
+      active: Boolean(window.app.renderer.maskPreview),
+      descendants: Array.from(window.app.renderer.maskPreview?.descendantIds || []),
+    }));
+    const outsideDuring = await readBrightness({ x: 40, y: 110 });
+    const insideDuring = await readBrightness({ x: 160, y: 110 });
+
+    expect(previewState.active).toBe(true);
+    expect(previewState.descendants).toContain('drag-preview-mask-child');
+    expect(outsideDuring).toBeGreaterThan(outsideBefore + 8);
+    expect(insideDuring).toBeGreaterThan(outsideDuring);
+
+    await page.mouse.up();
+
+    await expect
+      .poll(async () => page.evaluate(() => window.app.renderer.maskPreview === null))
+      .toBe(true);
+
+    const outsideAfter = await readBrightness({ x: 40, y: 110 });
+    expect(outsideAfter).toBeLessThan(outsideDuring - 8);
+    expect(pageErrors).toEqual([]);
+  });
+
+  test('shape reticle cursor appears for shape tools and selected primitive shapes', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name.includes('tablet-touch'), 'Tablet emulation does not reliably synthesize cursor hover states.');
+    const pageErrors = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+
+    await page.goto('/');
+
+    for (const tool of ['shape-rect', 'shape-oval', 'shape-polygon']) {
+      await page.evaluate((nextTool) => window.app.ui.setActiveTool(nextTool), tool);
+      await expect
+        .poll(async () => page.locator('#main-canvas').evaluate((canvas) => canvas.dataset.cursorMode || ''))
+        .toBe('shape-reticle');
+    }
+
+    const canvas = page.locator('#main-canvas');
+    const box = await canvas.boundingBox();
+    expect(box).toBeTruthy();
+    const start = { x: box.x + box.width * 0.28, y: box.y + box.height * 0.34 };
+    const end = { x: box.x + box.width * 0.38, y: box.y + box.height * 0.47 };
+    const worldStart = await page.evaluate(({ x, y }) => {
+      const rect = document.getElementById('main-canvas').getBoundingClientRect();
+      return window.app.renderer.screenToWorld(x - rect.left, y - rect.top);
+    }, start);
+
+    await page.evaluate(() => window.app.ui.setActiveTool('shape-rect'));
+    await page.keyboard.down('Alt');
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(end.x, end.y);
+    await page.mouse.up();
+    await page.keyboard.up('Alt');
+
+    const rectMeta = await page.evaluate(() => window.app.engine.getActiveLayer()?.sourcePaths?.[0]?.meta?.shape || null);
+    expect(rectMeta?.type).toBe('rect');
+    expect(((rectMeta?.x1 || 0) + (rectMeta?.x2 || 0)) / 2).toBeCloseTo(worldStart.x, 1);
+    expect(((rectMeta?.y1 || 0) + (rectMeta?.y2 || 0)) / 2).toBeCloseTo(worldStart.y, 1);
+
+    await page.evaluate(() => window.app.ui.setActiveTool('select'));
+    await page.mouse.move(box.x + box.width * 0.1, box.y + box.height * 0.1);
+    await expect
+      .poll(async () => page.locator('#main-canvas').evaluate((canvasEl) => canvasEl.dataset.cursorMode || ''))
+      .toBe('shape-reticle');
+
+    const rotatePoint = await page.evaluate(() => {
+      const renderer = window.app.renderer;
+      const layer = window.app.engine.getActiveLayer();
+      const bounds = renderer.getSelectionBounds([layer]);
+      const rotate = renderer.getRotateHandlePoint(bounds);
+      const screen = renderer.worldToScreen(rotate.x, rotate.y);
+      const rect = document.getElementById('main-canvas').getBoundingClientRect();
+      return {
+        x: rect.left + screen.x,
+        y: rect.top + screen.y,
+      };
+    });
+
+    await page.mouse.move(rotatePoint.x, rotatePoint.y);
+    await expect
+      .poll(async () => page.locator('#main-canvas').evaluate((canvasEl) => canvasEl.dataset.cursorMode || ''))
+      .toBe('grab');
+
+    expect(pageErrors).toEqual([]);
+  });
+
   test('circular mask parents clip descendant geometry to the visible silhouette', async ({ page }) => {
     const pageErrors = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));

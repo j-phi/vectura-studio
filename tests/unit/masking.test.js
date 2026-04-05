@@ -204,6 +204,55 @@ describe('Masking runtime', () => {
     expect(child.displayPaths[0][child.displayPaths[0].length - 1].x).toBeLessThanOrEqual(180.01);
   });
 
+  test('buildLayerMaskedPaths can exclude the active mask parent while preserving other ancestors', () => {
+    const { VectorEngine, Layer, Masking } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    engine.layers = [];
+
+    const outer = new Layer('outer-mask', 'expanded', 'Outer');
+    outer.paths = [[
+      { x: 40, y: 60 },
+      { x: 200, y: 60 },
+      { x: 200, y: 140 },
+      { x: 40, y: 140 },
+      { x: 40, y: 60 },
+    ]];
+    outer.mask.enabled = true;
+
+    const active = new Layer('active-mask', 'expanded', 'Active');
+    active.parentId = outer.id;
+    active.paths = [[
+      { x: 100, y: 80 },
+      { x: 180, y: 80 },
+      { x: 180, y: 120 },
+      { x: 100, y: 120 },
+      { x: 100, y: 80 },
+    ]];
+    active.mask.enabled = true;
+
+    const child = new Layer('child-line', 'expanded', 'Child');
+    child.parentId = active.id;
+    child.paths = [[
+      { x: 20, y: 100 },
+      { x: 220, y: 100 },
+    ]];
+
+    engine.layers.push(outer, active, child);
+    engine.computeAllDisplayGeometry();
+
+    const fullChain = Masking.buildLayerMaskedPaths(child, engine, bounds);
+    const withoutActive = Masking.buildLayerMaskedPaths(child, engine, bounds, {
+      excludeMaskLayerId: active.id,
+    });
+
+    expect(fullChain).toHaveLength(1);
+    expect(fullChain[0][0].x).toBeGreaterThanOrEqual(99.99);
+    expect(fullChain[0][fullChain[0].length - 1].x).toBeLessThanOrEqual(180.01);
+    expect(withoutActive).toHaveLength(1);
+    expect(withoutActive[0][0].x).toBeGreaterThanOrEqual(39.99);
+    expect(withoutActive[0][withoutActive[0].length - 1].x).toBeLessThanOrEqual(200.01);
+  });
+
   test('legacy source masks are cleared on import', () => {
     const { VectorEngine } = runtime.window.Vectura;
     const engine = new VectorEngine();
