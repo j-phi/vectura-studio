@@ -75,6 +75,51 @@ describe('Engine integration workflows', () => {
     expect(layer.optimizedPaths).toBeNull();
   });
 
+  test('masked layers optimize raw geometry without changing masked render paths', () => {
+    const { VectorEngine, Layer } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    engine.layers = [];
+
+    const maskParent = new Layer('opt-mask-parent', 'expanded', 'Mask Parent');
+    maskParent.paths = [[
+      { x: 80, y: 60 },
+      { x: 160, y: 60 },
+      { x: 160, y: 140 },
+      { x: 80, y: 140 },
+      { x: 80, y: 60 },
+    ]];
+    maskParent.mask.enabled = true;
+
+    const child = new Layer('opt-mask-child', 'expanded', 'Masked Child');
+    child.parentId = maskParent.id;
+    child.paths = [[
+      { x: 20, y: 100 },
+      { x: 220, y: 100 },
+    ]];
+
+    engine.layers.push(maskParent, child);
+    engine.computeAllDisplayGeometry();
+    engine.optimizeLayers([child], {
+      config: {
+        bypassAll: false,
+        steps: [{ id: 'linesimplify', enabled: true, bypass: false, tolerance: 0.5, mode: 'polyline' }],
+      },
+    });
+
+    expect(child.displayMaskActive).toBe(true);
+    expect(child.displayPaths).toHaveLength(1);
+    expect(child.displayPaths[0][0].x).toBeCloseTo(80, 4);
+    expect(child.displayPaths[0][child.displayPaths[0].length - 1].x).toBeCloseTo(160, 4);
+
+    expect(child.optimizedPaths).toHaveLength(1);
+    expect(child.optimizedPaths[0][0].x).toBeCloseTo(20, 4);
+    expect(child.optimizedPaths[0][child.optimizedPaths[0].length - 1].x).toBeCloseTo(220, 4);
+
+    const renderable = engine.getRenderablePaths(child, { useOptimized: true });
+    expect(renderable[0][0].x).toBeCloseTo(80, 4);
+    expect(renderable[0][renderable[0].length - 1].x).toBeCloseTo(160, 4);
+  });
+
   test('export/import roundtrip restores full engine state deterministically', () => {
     const { VectorEngine } = runtime.window.Vectura;
     const engine = new VectorEngine();

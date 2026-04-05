@@ -25,6 +25,7 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
+- Fixed optimized SVG export so `Export Optimized` no longer reuses masked display geometry as its raw source when `Remove Hidden Geometry` is off, with engine/integration/Playwright regressions.
 - Removed the duplicate top-level `Remove Hidden Geometry` checkbox from Document Setup so Export Settings remains the sole default-on control for that export-only behavior, with integration and Playwright regressions.
 - Added live mask-parent transform preview so moving/resizing/rotating a mask parent ghost-renders its masked descendants against the transformed silhouette until release, with unit/integration/Playwright coverage.
 - Added an Illustrator-style reticle cursor for Rectangle/Oval/Polygon tools and single selected primitive shapes in Selection, while preserving center-out `Alt/Option` drawing and existing handle cursors.

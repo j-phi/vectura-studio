@@ -734,11 +734,7 @@
 
         const working = new Map();
         layersToProcess.forEach((layer) => {
-          const sourcePaths = layer.displayMaskActive
-            ? Array.isArray(layer.displayPaths)
-              ? layer.displayPaths
-              : []
-            : this.getAncestorModifiers(layer).length
+          const sourcePaths = this.getAncestorModifiers(layer).length
             ? Array.isArray(layer.effectivePaths) && layer.effectivePaths.length
               ? layer.effectivePaths
               : layer.paths || []

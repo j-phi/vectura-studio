@@ -156,4 +156,31 @@ describe('SVG export hidden geometry toggle', () => {
     expect(svg).not.toContain('stroke="#222222"');
     expect(svg).not.toContain('pen_Mask_Pen');
   });
+
+  test('optimized export still preserves hidden geometry when remove hidden geometry is off', async () => {
+    const { UI, SETTINGS } = runtime.window.Vectura;
+    SETTINGS.margin = 10;
+    SETTINGS.cropExports = false;
+    SETTINGS.truncate = false;
+    SETTINGS.removeHiddenGeometry = false;
+    SETTINGS.optimizationExport = true;
+    SETTINGS.plotterOptimize = 0;
+    SETTINGS.pens = [{ id: 'p1', name: 'P1', color: '#111111', width: 0.4 }];
+
+    const app = { engine: createMaskedEngine() };
+    app.engine.layers.forEach((layer) => {
+      layer.optimization = {
+        bypassAll: false,
+        steps: [{ id: 'linesimplify', enabled: true, bypass: false, tolerance: 0.5, mode: 'polyline' }],
+      };
+    });
+
+    const svg = await captureSvgExport(() => UI.prototype.exportSVG.call({ app }));
+
+    expect(svg).toContain('<clipPath');
+    expect(svg).toContain('clip-path="url(#');
+    expect(svg).toContain('<circle ');
+    expect(svg).toContain('stroke-linecap="round"');
+    expect(svg).not.toContain('stroke-linecap="butt"');
+  });
 });

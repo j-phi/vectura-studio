@@ -236,6 +236,96 @@ test.describe('Vectura smoke interactions', () => {
     expect(pageErrors).toEqual([]);
   });
 
+  test('optimized export preserves hidden geometry when remove hidden geometry is off', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name.includes('tablet-touch'), 'Desktop export assertion only.');
+    const pageErrors = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+
+    await page.goto('/');
+
+    const svg = await page.evaluate(async () => {
+      const { app, Vectura } = window;
+      const { Layer, SETTINGS } = Vectura;
+
+      const createCirclePath = (cx, cy, r, segments = 48) => {
+        const points = [];
+        for (let i = 0; i <= segments; i += 1) {
+          const t = (i / segments) * Math.PI * 2;
+          points.push({
+            x: cx + Math.cos(t) * r,
+            y: cy + Math.sin(t) * r,
+          });
+        }
+        points.meta = { kind: 'circle', cx, cy, r };
+        return points;
+      };
+
+      const maskParent = new Layer('smoke-export-mask-parent', 'expanded', 'Mask Parent');
+      maskParent.paths = [[
+        { x: 70, y: 50 },
+        { x: 130, y: 50 },
+        { x: 130, y: 130 },
+        { x: 70, y: 130 },
+        { x: 70, y: 50 },
+      ]];
+      maskParent.mask.enabled = true;
+      maskParent.penId = 'p1';
+      maskParent.strokeWidth = 0.4;
+      maskParent.lineCap = 'round';
+
+      const child = new Layer('smoke-export-mask-child', 'expanded', 'Child Circle');
+      child.parentId = maskParent.id;
+      child.paths = [createCirclePath(100, 90, 48)];
+      child.penId = 'p1';
+      child.strokeWidth = 0.4;
+      child.lineCap = 'round';
+      child.optimization = {
+        bypassAll: false,
+        steps: [{ id: 'linesimplify', enabled: true, bypass: false, tolerance: 0.5, mode: 'polyline' }],
+      };
+
+      app.engine.layers = [maskParent, child];
+      app.engine.computeAllDisplayGeometry();
+
+      SETTINGS.margin = 10;
+      SETTINGS.cropExports = false;
+      SETTINGS.truncate = false;
+      SETTINGS.removeHiddenGeometry = false;
+      SETTINGS.optimizationExport = true;
+      SETTINGS.plotterOptimize = 0;
+      SETTINGS.pens = [{ id: 'p1', name: 'P1', color: '#111111', width: 0.4 }];
+
+      let capturedBlob = null;
+      const originalCreateObjectURL = window.URL.createObjectURL;
+      const originalCreateElement = document.createElement.bind(document);
+
+      window.URL.createObjectURL = (blob) => {
+        capturedBlob = blob;
+        return 'blob:playwright-export-test';
+      };
+      document.createElement = (tagName, options) => {
+        const el = originalCreateElement(tagName, options);
+        if (`${tagName}`.toLowerCase() === 'a') el.click = () => {};
+        return el;
+      };
+
+      try {
+        app.ui.exportSVG();
+        return capturedBlob ? await capturedBlob.text() : '';
+      } finally {
+        window.URL.createObjectURL = originalCreateObjectURL;
+        document.createElement = originalCreateElement;
+      }
+    });
+
+    expect(svg).toContain('<clipPath');
+    expect(svg).toContain('clip-path="url(#');
+    expect(svg).toContain('<circle ');
+    expect(svg).toContain('stroke-linecap="round"');
+    expect(svg).not.toContain('stroke-linecap="butt"');
+    expect(pageErrors).toEqual([]);
+  });
+
   test('insert menu creates a mirror modifier, reparents the current selection, and opens modifier controls', async ({ page }) => {
     const pageErrors = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
