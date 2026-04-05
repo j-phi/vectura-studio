@@ -43,6 +43,8 @@
   const getLayerMaskCapabilities = Masking.getLayerMaskCapabilities || (() => ({ canSource: false, reason: '', sourceType: null }));
   const getLayerSilhouette = Masking.getLayerSilhouette || (() => []);
   const buildMaskUnion = Masking.buildMaskUnion || (() => []);
+  const getMaskingAncestors = Masking.getMaskingAncestors || (() => []);
+  const buildLayerMaskedPaths = Masking.buildLayerMaskedPaths || ((layer) => clonePaths(layer?.effectivePaths || layer?.paths || []));
   const applyMaskToPaths = Masking.applyMaskToPaths || ((paths) => clonePaths(paths || []));
   const createModifierState = Modifiers.createModifierState || ((type) => ({ type, enabled: true, mirrors: [] }));
   const createMirrorLine = Modifiers.createMirrorLine || ((index) => ({ id: `mirror-${index + 1}`, enabled: true }));
@@ -363,6 +365,22 @@
       return this.getLayerAncestors(layer).length;
     }
 
+    getLayerChildren(layerId) {
+      return this.layers.filter((layer) => layer?.parentId === layerId);
+    }
+
+    getLayerDescendants(layerId) {
+      const out = [];
+      const visit = (parentId) => {
+        this.getLayerChildren(parentId).forEach((child) => {
+          out.push(child);
+          visit(child.id);
+        });
+      };
+      visit(layerId);
+      return out;
+    }
+
     computeLayerEffectiveGeometry(layerId) {
       const layer = this.layers.find((entry) => entry.id === layerId);
       if (!layer || layer.isGroup) return;
@@ -386,19 +404,14 @@
         layer.displayStats = countPathPoints(sourcePaths);
         return;
       }
-      const ancestorMasks = this.getAncestorMaskLayers(layer);
+      const ancestorMasks = getMaskingAncestors(layer, this, {});
       if (!ancestorMasks.length) {
         layer.displayPaths = sourcePaths;
         layer.displayStats = countPathPoints(sourcePaths);
         return;
       }
       const bounds = this.getBounds();
-      let currentPaths = clonePaths(sourcePaths);
-      ancestorMasks.forEach((maskLayer) => {
-        const maskPolygons = getLayerSilhouette(maskLayer, this, bounds);
-        if (!maskPolygons.length) return;
-        currentPaths = applyMaskToPaths(currentPaths, maskPolygons, { invert: true });
-      });
+      const currentPaths = buildLayerMaskedPaths(layer, this, bounds, { sourcePaths });
       layer.displayMaskActive = true;
       layer.displayPaths = currentPaths;
       layer.displayStats = countPathPoints(currentPaths);

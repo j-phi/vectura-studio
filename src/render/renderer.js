@@ -2,14 +2,28 @@
  * Canvas renderer for vector paths.
  */
 (() => {
-  const { SETTINGS, Modifiers = {} } = window.Vectura || {};
+  const { SETTINGS, Modifiers = {}, Masking = {} } = window.Vectura || {};
   const isModifierLayer = Modifiers.isModifierLayer || (() => false);
   const getMirrorAxis = Modifiers.getMirrorAxis || (() => null);
   const clipInfiniteAxisToBounds = Modifiers.clipInfiniteAxisToBounds || (() => null);
   const reflectPointAcrossAxis = Modifiers.reflectPointAcrossAxis || ((pt) => pt);
+  const getLayerSilhouette = Masking.getLayerSilhouette || (() => []);
+  const buildLayerMaskedPaths = Masking.buildLayerMaskedPaths || ((layer) => layer?.effectivePaths || layer?.paths || []);
+  const applyMaskToPaths = Masking.applyMaskToPaths || ((paths) => paths || []);
   const TAU = Math.PI * 2;
   const ELLIPSE_KAPPA = 0.5522847498307936;
   const SHAPE_CORNER_HANDLE_MIN = 8;
+  const MASK_PREVIEW_ALPHA = 0.2;
+  const SHAPE_RETICLE_CURSOR = (() => {
+    const svg =
+      `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">`
+      + `<g fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round">`
+      + `<path d="M16 4.5v4M16 23.5v4M4.5 16h4M23.5 16h4"/>`
+      + `</g>`
+      + `<circle cx="16" cy="16" r="1.75" fill="white"/>`
+      + `</svg>`;
+    return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 16 16, crosshair`;
+  })();
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const distance = (a, b) => Math.hypot((b?.x ?? 0) - (a?.x ?? 0), (b?.y ?? 0) - (a?.y ?? 0));
   const clonePoint = (pt) => ({ x: pt.x, y: pt.y });
@@ -234,6 +248,7 @@
       this.shapeCornerDrag = null;
       this.directSelection = null;
       this.directDrag = null;
+      this.maskPreview = null;
       this.scissorStart = null;
       this.scissorEnd = null;
       this.isScissor = false;
@@ -368,25 +383,45 @@
       return dx * dx + dy * dy <= r * r;
     }
 
+    setCanvasCursor(cursor = 'crosshair', mode = '') {
+      if (!this.canvas) return;
+      this.canvas.style.cursor = cursor;
+      this.canvas.dataset.cursorMode = mode || cursor || 'default';
+    }
+
+    isPrimitiveShapeType(type) {
+      return type === 'rect' || type === 'oval' || type === 'polygon';
+    }
+
+    getSelectedPrimitiveShapeLayer() {
+      const layer = this.getSelectedShapeLayer();
+      const shapeType = this.getShapeMetaForLayer(layer, 0)?.shape?.type;
+      return this.isPrimitiveShapeType(shapeType) ? layer : null;
+    }
+
     updateCursor() {
       if (!this.canvas) return;
       if (this.activeTool === 'hand') {
-        this.canvas.style.cursor = this.isPan ? 'grabbing' : 'grab';
+        this.setCanvasCursor(this.isPan ? 'grabbing' : 'grab');
         return;
       }
       if (this.activeTool === 'pen') {
-        this.canvas.style.cursor = 'crosshair';
+        this.setCanvasCursor('crosshair');
         return;
       }
       if (`${this.activeTool}`.startsWith('shape-')) {
-        this.canvas.style.cursor = 'crosshair';
+        this.setCanvasCursor(SHAPE_RETICLE_CURSOR, 'shape-reticle');
         return;
       }
       if (this.activeTool === 'scissor') {
-        this.canvas.style.cursor = 'crosshair';
+        this.setCanvasCursor('crosshair');
         return;
       }
-      this.canvas.style.cursor = 'crosshair';
+      if (this.activeTool === 'select' && this.getSelectedPrimitiveShapeLayer()) {
+        this.setCanvasCursor(SHAPE_RETICLE_CURSOR, 'shape-reticle');
+        return;
+      }
+      this.setCanvasCursor('crosshair');
     }
 
     hexToRgb(hex) {
@@ -1267,6 +1302,43 @@
       this.draw();
     }
 
+    buildMaskPreviewState(layer) {
+      if (!layer || !layer.mask?.enabled || !this.engine?.getLayerDescendants) return null;
+      const descendants = this.engine.getLayerDescendants(layer.id).filter((entry) => entry && !entry.isGroup);
+      if (!descendants.length) return null;
+      const bounds = this.engine.getBounds ? this.engine.getBounds() : this.engine.currentProfile;
+      const entries = descendants
+        .filter((entry) => entry.visible && !(entry.mask?.enabled && entry.mask?.hideLayer))
+        .map((entry) => ({
+          layerId: entry.id,
+          paths: buildLayerMaskedPaths(entry, this.engine, bounds, { excludeMaskLayerId: layer.id }),
+        }))
+        .filter((entry) => Array.isArray(entry.paths) && entry.paths.length);
+      return {
+        maskLayerId: layer.id,
+        descendantIds: new Set(descendants.map((entry) => entry.id)),
+        entries,
+      };
+    }
+
+    startMaskPreview(layer) {
+      this.maskPreview = this.buildMaskPreviewState(layer);
+      return this.maskPreview;
+    }
+
+    clearMaskPreview() {
+      this.maskPreview = null;
+    }
+
+    shouldSkipLayerForMaskPreview(layer) {
+      return Boolean(layer && this.maskPreview?.descendantIds?.has(layer.id));
+    }
+
+    getMaskPreviewLayer() {
+      if (!this.maskPreview?.maskLayerId) return null;
+      return this.engine?.layers?.find((layer) => layer.id === this.maskPreview.maskLayerId) || null;
+    }
+
     getDirectSelectionWorldAnchors() {
       const layer = this.getDirectSelectionLayer();
       if (!layer || !this.directSelection?.anchors?.length) return null;
@@ -1563,6 +1635,7 @@
       const drawLayers = () => {
         this.engine.layers.forEach((l) => {
           if (!l.visible) return;
+          if (this.shouldSkipLayerForMaskPreview(l)) return;
           const pen = SETTINGS.pens?.find((p) => p.id === l.penId) || null;
           const penId = l.penId || pen?.id || 'default';
           let seen = null;
@@ -1579,28 +1652,17 @@
           const paths = this.engine.getRenderablePaths
             ? this.engine.getRenderablePaths(l, { useOptimized })
             : l.paths;
+          const temp = this.selectedLayerIds?.has(l.id) && this.tempTransform ? this.tempTransform : null;
           (paths || []).forEach((path) => {
-            if (path && path.meta && path.meta.kind === 'circle') {
-              const meta =
-                this.selectedLayerIds?.has(l.id) && this.tempTransform
-                  ? this.transformCircleMeta(path.meta, this.tempTransform)
-                  : path.meta;
-              if (seen) {
-                const key = pathKey({ meta });
-                if (key && seen.has(key)) return;
-                if (key) seen.add(key);
-              }
-              this.traceCircle(meta);
-            } else {
-              const next =
-                this.selectedLayerIds?.has(l.id) && this.tempTransform ? this.transformPath(path, this.tempTransform) : path;
-              if (seen) {
-                const key = pathKey(next);
-                if (key && seen.has(key)) return;
-                if (key) seen.add(key);
-              }
-              this.tracePath(next, useCurves);
+            const next = path && path.meta && path.meta.kind === 'circle'
+              ? { meta: temp ? this.transformCircleMeta(path.meta, temp) : path.meta }
+              : temp ? this.transformPath(path, temp) : path;
+            if (seen) {
+              const key = pathKey(next);
+              if (key && seen.has(key)) return;
+              if (key) seen.add(key);
             }
+            this.traceLayerPath(path, l, temp, useCurves);
           });
           this.ctx.stroke();
         });
@@ -1613,6 +1675,7 @@
         let hasLineSort = false;
         let lineSortSecondary = '';
         this.engine.layers.forEach((l) => {
+          if (this.shouldSkipLayerForMaskPreview(l)) return;
           if (!l.visible || (l.mask?.enabled && l.mask?.hideLayer) || !l.optimizedPaths || !l.optimizedPaths.length) return;
           const useCurves = Boolean(l.params && l.params.curves);
           if (this.isLineSortApplied(l)) {
@@ -1640,19 +1703,8 @@
             this.ctx.lineJoin = 'round';
             this.ctx.strokeStyle = this.rgbToCss(color, 0.9);
             this.ctx.beginPath();
-            if (item.path && item.path.meta && item.path.meta.kind === 'circle') {
-              const meta =
-                this.selectedLayerIds?.has(l.id) && this.tempTransform
-                  ? this.transformCircleMeta(item.path.meta, this.tempTransform)
-                  : item.path.meta;
-              this.traceCircle(meta);
-            } else {
-              const next =
-                this.selectedLayerIds?.has(l.id) && this.tempTransform
-                  ? this.transformPath(item.path, this.tempTransform)
-                  : item.path;
-              this.tracePath(next, item.useCurves);
-            }
+            const temp = this.selectedLayerIds?.has(l.id) && this.tempTransform ? this.tempTransform : null;
+            this.traceLayerPath(item.path, l, temp, item.useCurves);
             this.ctx.stroke();
             this.ctx.restore();
           });
@@ -1661,6 +1713,7 @@
         }
         this.updateOptimizationOverlayLegend(false);
         this.engine.layers.forEach((l) => {
+          if (this.shouldSkipLayerForMaskPreview(l)) return;
           if (!l.visible || (l.mask?.enabled && l.mask?.hideLayer) || !l.optimizedPaths || !l.optimizedPaths.length) return;
           const useCurves = Boolean(l.params && l.params.curves);
           this.ctx.save();
@@ -1670,18 +1723,9 @@
           this.ctx.strokeStyle = overlayColor;
           this.ctx.globalAlpha = 0.8;
           this.ctx.beginPath();
+          const temp = this.selectedLayerIds?.has(l.id) && this.tempTransform ? this.tempTransform : null;
           l.optimizedPaths.forEach((path) => {
-            if (path && path.meta && path.meta.kind === 'circle') {
-              const meta =
-                this.selectedLayerIds?.has(l.id) && this.tempTransform
-                  ? this.transformCircleMeta(path.meta, this.tempTransform)
-                  : path.meta;
-              this.traceCircle(meta);
-            } else {
-              const next =
-                this.selectedLayerIds?.has(l.id) && this.tempTransform ? this.transformPath(path, this.tempTransform) : path;
-              this.tracePath(next, useCurves);
-            }
+            this.traceLayerPath(path, l, temp, useCurves);
           });
           this.ctx.stroke();
           this.ctx.restore();
@@ -1689,6 +1733,7 @@
       };
       const drawHelperOverlays = () => {
         this.engine.layers.forEach((l) => {
+          if (this.shouldSkipLayerForMaskPreview(l)) return;
           if (!l.visible || !l.params?.showPendulumGuides) return;
           const helperPaths = l.displayHelperPaths?.length ? l.displayHelperPaths : l.helperPaths;
           if (!helperPaths || !helperPaths.length) return;
@@ -1915,6 +1960,7 @@
         drawOptimizedOverlay();
         drawHelperOverlays();
         drawModifierGuides();
+        this.drawMaskPreviewOverlay();
         this.ctx.restore();
       } else {
         this.ctx.save();
@@ -1926,6 +1972,7 @@
         drawOptimizedOverlay();
         drawHelperOverlays();
         drawModifierGuides();
+        this.drawMaskPreviewOverlay();
         this.ctx.restore();
 
         const outsideAlpha = SETTINGS.outsideOpacity ?? 0.5;
@@ -2040,7 +2087,7 @@
       if (this.wantsPan(e, modifiers)) {
         this.isPan = true;
         this.lastM = { x: e.clientX, y: e.clientY };
-        this.canvas.style.cursor = 'grabbing';
+        this.setCanvasCursor('grabbing');
         if (e.cancelable) e.preventDefault();
         return;
       }
@@ -2062,7 +2109,7 @@
         this.isLightDrag = true;
         this.lightDragOffset = { x: world.x - this.lightSource.x, y: world.y - this.lightSource.y };
         this.clearSelection();
-        this.canvas.style.cursor = 'grabbing';
+        this.setCanvasCursor('grabbing');
         return;
       }
 
@@ -2093,7 +2140,7 @@
             startShiftY: hitGuide.guide.mirror.yShift ?? 0,
             axisPoint: { ...hitGuide.guide.axis.point },
           };
-          this.canvas.style.cursor = hitGuide.type === 'rotate' ? 'grabbing' : 'move';
+          this.setCanvasCursor(hitGuide.type === 'rotate' ? 'grabbing' : 'move');
           e.preventDefault();
           return;
         }
@@ -2203,10 +2250,10 @@
               this.rotateStart = this.selectedLayerId ? this.getSelectedLayer()?.params.rotation ?? 0 : 0;
               this.rotateStartAngle = Math.atan2(world.y - this.rotateOrigin.y, world.x - this.rotateOrigin.x);
               this.tempTransform = { dx: 0, dy: 0, scaleX: 1, scaleY: 1, origin: this.rotateOrigin, rotation: 0 };
-              this.canvas.style.cursor = 'grabbing';
+              this.setCanvasCursor('grabbing');
             } else {
               this.dragMode = 'resize';
-              this.canvas.style.cursor = this.handleCursor(handle);
+              this.setCanvasCursor(this.handleCursor(handle));
             }
             e.preventDefault();
             return;
@@ -2226,7 +2273,7 @@
           this.dragMode = 'move';
           this.dragStart = world;
           this.startBounds = bounds;
-          this.canvas.style.cursor = updatedSelected.length > 1 ? 'grabbing' : 'move';
+          this.setCanvasCursor(updatedSelected.length > 1 ? 'grabbing' : 'move');
           if (modifiers.alt && updatedSelected.length === 1) {
             if (this.onDuplicateLayer) this.onDuplicateLayer();
             const dup = this.engine.duplicateLayer ? this.engine.duplicateLayer(updatedSelected[0].id) : null;
@@ -2496,7 +2543,7 @@
       }
       if (this.isLightDrag) {
         this.isLightDrag = false;
-        this.canvas.style.cursor = 'crosshair';
+        this.updateCursor();
       }
       if (this.isPenDragging) {
         this.isPenDragging = false;
@@ -3138,6 +3185,86 @@
       const ry = Math.abs(baseR * temp.scaleY);
       const rot = ((temp.rotation ?? 0) * Math.PI) / 180;
       return { ...meta, cx: center.x, cy: center.y, rx, ry, rotation: (meta.rotation ?? 0) + rot };
+    }
+
+    traceLayerPath(path, layer, temp = null, useCurves = Boolean(layer?.params?.curves)) {
+      if (path && path.meta && path.meta.kind === 'circle') {
+        const meta = temp ? this.transformCircleMeta(path.meta, temp) : path.meta;
+        this.traceCircle(meta);
+        return;
+      }
+      const next = temp ? this.transformPath(path, temp) : path;
+      this.tracePath(next, useCurves);
+    }
+
+    tracePolygonPath(path, temp = null) {
+      if (!Array.isArray(path) || path.length < 2) return;
+      const next = temp ? this.transformPath(path, temp) : path;
+      this.ctx.moveTo(next[0].x, next[0].y);
+      for (let i = 1; i < next.length; i++) this.ctx.lineTo(next[i].x, next[i].y);
+      this.ctx.closePath();
+    }
+
+    getMaskPreviewClipPolygons(layer = this.getMaskPreviewLayer(), temp = this.tempTransform) {
+      if (!layer) return [];
+      const bounds = this.engine.getBounds ? this.engine.getBounds() : this.engine.currentProfile;
+      const polygons = getLayerSilhouette(layer, this.engine, bounds);
+      return (polygons || [])
+        .filter((polygon) => Array.isArray(polygon) && polygon.length >= 3)
+        .map((polygon) => (temp ? this.transformPath(polygon, temp) : polygon));
+    }
+
+    drawMaskPreviewOverlay() {
+      if (!this.maskPreview?.entries?.length || !this.tempTransform) return;
+      const maskLayer = this.getMaskPreviewLayer();
+      if (!maskLayer) return;
+      const clipPolygons = this.getMaskPreviewClipPolygons(maskLayer, this.tempTransform);
+      if (!clipPolygons.length) return;
+
+      this.maskPreview.entries.forEach((entry) => {
+        const layer = this.engine.layers.find((candidate) => candidate.id === entry.layerId);
+        if (!layer || !layer.visible) return;
+        const pen = SETTINGS.pens?.find((candidate) => candidate.id === layer.penId) || null;
+        const strokeWidth = pen?.width ?? layer.strokeWidth ?? SETTINGS.strokeWidth;
+        const useCurves = Boolean(layer.params && layer.params.curves);
+        const strokeStyle = pen?.color || layer.color;
+
+        this.ctx.save();
+        this.ctx.globalAlpha = MASK_PREVIEW_ALPHA;
+        this.ctx.lineWidth = strokeWidth;
+        this.ctx.lineCap = layer.lineCap || 'round';
+        this.ctx.lineJoin = 'round';
+        this.ctx.strokeStyle = strokeStyle;
+        this.ctx.beginPath();
+        (entry.paths || []).forEach((path) => this.traceLayerPath(path, layer, null, useCurves));
+        this.ctx.stroke();
+        this.ctx.restore();
+
+        this.ctx.save();
+        this.ctx.beginPath();
+        clipPolygons.forEach((polygon) => this.tracePolygonPath(polygon));
+        this.ctx.clip();
+        this.ctx.lineWidth = strokeWidth;
+        this.ctx.lineCap = layer.lineCap || 'round';
+        this.ctx.lineJoin = 'round';
+        this.ctx.strokeStyle = strokeStyle;
+        this.ctx.beginPath();
+        (entry.paths || []).forEach((path) => this.traceLayerPath(path, layer, null, useCurves));
+        this.ctx.stroke();
+        this.ctx.restore();
+      });
+
+      if (maskLayer.mask?.hideLayer) {
+        this.ctx.save();
+        this.ctx.lineWidth = 1 / this.scale;
+        this.ctx.strokeStyle = 'rgba(248, 250, 252, 0.75)';
+        this.ctx.setLineDash([4 / this.scale, 3 / this.scale]);
+        this.ctx.beginPath();
+        clipPolygons.forEach((polygon) => this.tracePolygonPath(polygon));
+        this.ctx.stroke();
+        this.ctx.setLineDash([]);
+        this.ctx.restore();
+      }
     }
 
     getLayerBounds(layer, temp) {

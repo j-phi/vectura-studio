@@ -220,6 +220,43 @@
     return unionPolygons(polygons);
   };
 
+  const getMaskingAncestors = (layer, engine, options = {}) => {
+    if (!layer || !engine?.layers) return [];
+    const excludedMaskLayerId = options.excludeMaskLayerId || null;
+    const out = [];
+    let current = layer;
+    while (current?.parentId) {
+      const parent = engine.layers.find((entry) => entry.id === current.parentId);
+      if (!parent) break;
+      if (
+        parent.id !== excludedMaskLayerId
+        && parent?.mask?.enabled
+        && parent.maskCapabilities?.canSource
+      ) {
+        out.push(parent);
+      }
+      current = parent;
+    }
+    return out.reverse();
+  };
+
+  const buildLayerMaskedPaths = (layer, engine, bounds, options = {}) => {
+    if (!layer) return [];
+    const sourcePaths = clonePaths(
+      options.sourcePaths
+      || (Array.isArray(layer.effectivePaths) && layer.effectivePaths.length ? layer.effectivePaths : layer.paths || [])
+    );
+    const ancestorMasks = getMaskingAncestors(layer, engine, options);
+    if (!ancestorMasks.length) return sourcePaths;
+    let currentPaths = clonePaths(sourcePaths);
+    ancestorMasks.forEach((maskLayer) => {
+      const maskPolygons = getLayerSilhouette(maskLayer, engine, bounds);
+      if (!maskPolygons.length) return;
+      currentPaths = applyMaskToPaths(currentPaths, maskPolygons, { invert: true });
+    });
+    return currentPaths;
+  };
+
   const applyMaskToPaths = (paths, maskPolygons, options = {}) => {
     const polygons = normalizePolygons(maskPolygons);
     if (!polygons.length) return clonePaths(paths || []);
@@ -241,6 +278,8 @@
     getLayerSilhouette,
     getGroupSilhouette,
     buildMaskUnion,
+    getMaskingAncestors,
+    buildLayerMaskedPaths,
     applyMaskToPaths,
   };
 
