@@ -9779,6 +9779,9 @@
             When a modifier is selected, the main + Add button creates a normal drawable child under that modifier using the last active algorithm.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
+            Child layers nested under a Mirror Modifier stay fully editable when selected: click the child row or its artwork to switch back to normal Algorithm controls and edit its generator, settings, or transform directly.
+          </div>
+          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Angle controls use circular dials—drag the marker to set direction.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
@@ -9808,6 +9811,7 @@
             <div>Click to select, Shift-click for ranges, Cmd/Ctrl-click to toggle.</div>
             <div>Drag the grip to reorder; groups can be collapsed with the caret.</div>
             <div>Mirror Modifiers behave like group containers: drag layers onto them to indent the children, drag them back out to unparent, and deleting the modifier preserves the children by dissolving only the wrapper.</div>
+            <div>Selecting a child inside a Mirror Modifier edits that child normally; selecting the modifier row switches back to mirror controls.</div>
             <div>When a Mirror Modifier is selected, drag the guide line to move it, drag the outer rotate handles to rotate it, and click the centered triangle to flip the reflection side.</div>
             <div>Use the Mask button on a silhouette-capable parent layer to clip every indented descendant beneath it, Illustrator-style.</div>
             <div>Masking is managed from the Layers panel; enable it on the parent, then drag child layers onto that row to bring them inside the masked subtree.</div>
@@ -16842,8 +16846,8 @@
       const scaleY = getEl('inp-scale-y');
       const rotation = getEl('inp-rotation');
       const isGroup = Boolean(layer.isGroup);
-      const isStatic = Boolean(layer.parentId || layer.isGroup);
       const isModifier = this.isModifierLayer(layer);
+      const isStatic = Boolean(isGroup || isModifier);
       this.updatePrimaryPanelMode(layer);
       this.syncPrimaryModuleDropdown(layer);
       if (moduleSelect) {

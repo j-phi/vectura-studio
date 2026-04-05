@@ -1,4 +1,5 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { pathSignature } = require('../helpers/path-signature');
 
 describe('Modifier workflow integration', () => {
   let runtime;
@@ -124,5 +125,63 @@ describe('Modifier workflow UI integration', () => {
     expect(baseLayer.parentId).toBeNull();
     expect(baseLayer.effectivePaths.length).toBe(baseLayer.paths.length);
     expect(app.engine.layers[app.engine.layers.length - 1].id).toBe(baseLayer.id);
+  });
+
+  test('selecting a modifier child restores normal algorithm controls and edits the child in place', async () => {
+    runtime = await loadVecturaRuntime({
+      includeRenderer: true,
+      includeUi: true,
+      includeApp: true,
+      useIndexHtml: true,
+    });
+
+    const { window, document } = runtime;
+    window.app = new window.Vectura.App();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    const app = window.app;
+    const baseLayer = app.engine.getActiveLayer();
+    const originalType = baseLayer.type;
+    const nextType = originalType === 'topo' ? 'rings' : 'topo';
+
+    app.ui.insertMirrorModifier();
+    const modifier = app.engine.getActiveLayer();
+    const child = app.engine.layers.find((layer) => !layer.isGroup && layer.parentId === modifier.id);
+
+    app.renderer.setSelection([child.id], child.id);
+    app.engine.activeLayerId = child.id;
+    app.ui.renderLayers();
+    app.ui.buildControls();
+
+    const moduleSelect = document.getElementById('generator-module');
+    const posX = document.getElementById('inp-pos-x');
+    const transformSection = document.getElementById('algorithm-transform-section');
+    const beforeEffectiveSignature = pathSignature(child.effectivePaths || []);
+
+    expect(document.getElementById('left-section-primary-title')?.textContent).toBe('Algorithm');
+    expect(document.getElementById('left-section-secondary-title')?.textContent).toBe('Algorithm Configuration');
+    expect(moduleSelect.disabled).toBe(false);
+    expect(moduleSelect.value).toBe(originalType);
+    expect(transformSection?.style?.display || '').toBe('');
+
+    moduleSelect.value = nextType;
+    moduleSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(child.type).toBe(nextType);
+    expect(child.parentId).toBe(modifier.id);
+    expect(document.getElementById('left-section-primary-title')?.textContent).toBe('Algorithm');
+    expect(document.getElementById('generator-module')?.value).toBe(nextType);
+
+    const afterAlgorithmSignature = pathSignature(child.effectivePaths || []);
+    expect(afterAlgorithmSignature).not.toBe(beforeEffectiveSignature);
+
+    const nextPosX = (child.params.posX || 0) + 15;
+    posX.value = String(nextPosX);
+    posX.dispatchEvent(new window.Event('change', { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(child.params.posX).toBe(nextPosX);
+    expect(pathSignature(child.effectivePaths || [])).not.toBe(afterAlgorithmSignature);
   });
 });
