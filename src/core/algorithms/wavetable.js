@@ -766,6 +766,7 @@
           'isometric',
           'lattice',
           'horizon',
+          'horizon-3d',
           'horizontal-vanishing-point',
         ].includes(p.lineStructure)
           ? p.lineStructure
@@ -1123,6 +1124,449 @@
           buildParallelLinesAtAngle(-45, 1, bCount);
           return paths;
         }
+        if (resolvedLineStructure === 'horizon-3d') {
+          const localPaths = [];
+          const maskPolygons = [];
+          const legacyHeight = p.vanishingPointY !== undefined ? Math.round(clamp01(p.vanishingPointY) * 100) : 50;
+          const horizonHeight = Math.max(1, Math.min(100, Math.round(p.horizonHeight ?? legacyHeight)));
+          const depthPerspective = clamp01((p.horizonDepthPerspective ?? 70) / 100);
+          const horizonVanishingX = clamp01((p.horizonVanishingX ?? 50) / 100);
+          const horizonVanishingPower = clamp01((p.horizonVanishingPower ?? 60) / 100);
+          const horizonFanReach = clamp01((p.horizonFanReach ?? 42) / 100);
+          const horizonRelief = clamp01((p.horizonRelief ?? 22) / 100);
+          const horizonCenterDampening = clamp01((p.horizonCenterDampening ?? 0) / 100);
+          const horizonCenterWidth = Math.max(0.06, clamp01((p.horizonCenterWidth ?? 28) / 100));
+          const horizonCenterBasin = clamp01((p.horizonCenterBasin ?? 0) / 100);
+          const horizonShoulderLift = clamp01((p.horizonShoulderLift ?? 0) / 100);
+          const horizonMirrorBlend = clamp01((p.horizonMirrorBlend ?? 0) / 100);
+          const horizonValleyProfile = clamp01((p.horizonValleyProfile ?? 0) / 100);
+          const horizonT = (horizonHeight - 1) / 99;
+          const horizonY = inset + innerH * horizonT;
+          const baseY = inset + innerH;
+          const safeDelta = Math.max(1, baseY - horizonY);
+          const horizontalCount = Math.max(2, Math.round(p.horizonHorizontalLines ?? Math.max(5, Math.round(lines / 2))));
+          const verticalCount = Math.max(2, Math.round(p.horizonVerticalLines ?? Math.max(5, Math.round(lines / 2))));
+          const horizonCenterX = inset + innerW * 0.5;
+          const planeHalfWidth = innerW * (0.72 + horizonFanReach * 0.85);
+          const planeDepth = safeDelta * (3 + horizonVanishingPower * 1.7 + depthPerspective * 0.65);
+          const cameraPullback = planeDepth * (0.34 + horizonVanishingPower * 0.28) + safeDelta * 0.18;
+          const focalX = innerW * (1.05 + horizonVanishingPower * 1.25);
+          const focalY = innerW * (0.36 + horizonVanishingPower * 0.34);
+          const groundSpan = safeDelta * (1.58 + horizonVanishingPower * 0.35);
+          const elevationScale = safeDelta * (0.018 + horizonRelief * 0.05 + horizonShoulderLift * 0.015);
+          const targetWorldX = (horizonVanishingX * 2 - 1) * planeHalfWidth * 0.6;
+          const bufferW = Math.max(360, Math.min(1200, Math.round(width * 2)));
+          const bufferH = Math.max(240, Math.round(bufferW * (height / Math.max(1, width))));
+          const depthBuffer = new Float32Array(bufferW * bufferH).fill(Number.POSITIVE_INFINITY);
+          const accumulatedCeiling = new Float32Array(bufferW).fill(Number.POSITIVE_INFINITY);
+          const depthEpsilon = Math.max(2.25, safeDelta * 0.018 + planeDepth * 0.0025);
+          const edgeFn = (ax, ay, bx, by, px, py) => (px - ax) * (by - ay) - (py - ay) * (bx - ax);
+          const toBufferX = (x) => (x / Math.max(1, width)) * (bufferW - 1);
+          const toBufferY = (y) => (y / Math.max(1, height)) * (bufferH - 1);
+          const clampBufferIndex = (value, max) => Math.max(0, Math.min(max, value));
+          const getDepthState = (depthNorm) => {
+            const farFactor = 1 - depthNorm;
+            const nearFactor = depthNorm;
+            const ampScale =
+              0.08
+              + farFactor * (0.08 + horizonRelief * 0.08)
+              + nearFactor * (0.24 + depthPerspective * 0.08);
+            return { depthNorm, farFactor, nearFactor, ampScale };
+          };
+          const getCenterProfile = (worldX, depthState) => {
+            const centerNorm = Math.abs(worldX) / Math.max(1e-6, planeHalfWidth);
+            const focus = Math.exp(-Math.pow(centerNorm / horizonCenterWidth, 2));
+            const dampening = focus * horizonCenterDampening * (0.72 + depthState.farFactor * 0.28);
+            const ridgeBoost = (1 - focus) * horizonCenterDampening * 0.28;
+            const shoulderStart = Math.min(0.88, horizonCenterWidth * 0.72 + 0.1);
+            const shoulderMask = clamp01((centerNorm - shoulderStart) / Math.max(0.08, 1 - shoulderStart));
+            const shapedShoulder = shoulderMask * shoulderMask * (3 - 2 * shoulderMask);
+            const mountainMask = Math.pow(shoulderMask, 1.35);
+            const roadMask = clamp01(centerNorm / Math.max(0.08, horizonCenterWidth));
+            const valleyMask = roadMask * roadMask * (3 - 2 * roadMask);
+            const farTerrainWeight = Math.pow(depthState.farFactor, 0.74);
+            const nearTerrainWeight = Math.pow(depthState.nearFactor, 0.92);
+            return {
+              amplitudeScale: Math.max(0.08, 1 - dampening + ridgeBoost + shapedShoulder * horizonShoulderLift * 0.42),
+              basinLift:
+                focus
+                * horizonCenterBasin
+                * elevationScale
+                * (0.42 + farTerrainWeight * 0.48 + nearTerrainWeight * 0.86),
+              shoulderLift:
+                (shapedShoulder * 0.45 + mountainMask * 0.95)
+                * horizonShoulderLift
+                * elevationScale
+                * (0.28 + farTerrainWeight * 2.05 + nearTerrainWeight * 0.1),
+              valleyLift:
+                valleyMask
+                * horizonValleyProfile
+                * elevationScale
+                * (0.18 + farTerrainWeight * 0.95 + nearTerrainWeight * 0.16),
+            };
+          };
+          const samplePlaneNoise = (sampleWorldX, depthNorm) => {
+            const planeCoordX = (sampleWorldX / Math.max(1e-6, planeHalfWidth)) * innerW;
+            const planeCoordZ = depthNorm * planeDepth;
+            const imageSampleX = inset + ((sampleWorldX / Math.max(1e-6, planeHalfWidth)) * 0.5 + 0.5) * innerW;
+            const imageSampleY = inset + depthNorm * innerH;
+            return sampleCombinedNoise(
+              planeCoordX,
+              planeCoordZ,
+              planeCoordX,
+              planeCoordZ,
+              imageSampleX,
+              imageSampleY
+            );
+          };
+          const sampleMirroredNoise = (sampleWorldX, depthNorm) => {
+            const directNoise = samplePlaneNoise(sampleWorldX, depthNorm);
+            const mirroredNoise = samplePlaneNoise(-sampleWorldX, depthNorm);
+            return directNoise * (1 - horizonMirrorBlend) + mirroredNoise * horizonMirrorBlend;
+          };
+          const sampleSurfaceHeight = (worldX, depthNorm) => {
+            const depthState = getDepthState(depthNorm);
+            let noiseVal = sampleMirroredNoise(worldX, depthNorm);
+            const smoothingStrength = Math.pow(depthState.farFactor, 1.45) * (0.38 + horizonCenterDampening * 0.34);
+            if (smoothingStrength > 0.015) {
+              const smoothingRadius = planeHalfWidth * (0.008 + smoothingStrength * 0.02);
+              const leftNoise = sampleMirroredNoise(
+                Math.max(-planeHalfWidth, Math.min(planeHalfWidth, worldX - smoothingRadius)),
+                depthNorm
+              );
+              const rightNoise = sampleMirroredNoise(
+                Math.max(-planeHalfWidth, Math.min(planeHalfWidth, worldX + smoothingRadius)),
+                depthNorm
+              );
+              const averagedNoise = (leftNoise + noiseVal + rightNoise) / 3;
+              noiseVal = lerp(noiseVal, averagedNoise, Math.min(0.82, smoothingStrength));
+            }
+            const centerProfile = getCenterProfile(worldX, depthState);
+            const elevation =
+              noiseVal
+              * elevationScale
+              * depthState.ampScale
+              * centerProfile.amplitudeScale;
+            return elevation + centerProfile.shoulderLift + centerProfile.valleyLift - centerProfile.basinLift;
+          };
+          const worldDepthAt = (rowT) => Math.pow(rowT, 1.08 + (1 - depthPerspective) * 0.7) * planeDepth;
+          const projectWorldPoint = (worldX, worldY, worldZ) => {
+            const cameraDepth = cameraPullback + worldZ;
+            const nearNorm = cameraPullback / Math.max(1e-6, cameraPullback + planeDepth);
+            const currentNorm = cameraPullback / Math.max(1e-6, cameraDepth);
+            const screenDepthNorm = clamp01((currentNorm - nearNorm) / Math.max(1e-6, 1 - nearNorm));
+            const invDepth = 1 / Math.max(1e-6, cameraDepth);
+            return {
+              worldX,
+              worldY,
+              worldZ,
+              cameraDepth,
+              x: horizonCenterX + (worldX - targetWorldX) * (focalX * invDepth),
+              y: horizonY + groundSpan * screenDepthNorm - worldY * (focalY * invDepth),
+            };
+          };
+          const mesh = Array.from({ length: horizontalCount }, (_, rowIndex) => {
+            const rowT = horizontalCount <= 1 ? 0.5 : rowIndex / (horizontalCount - 1);
+            const worldZ = worldDepthAt(rowT);
+            return Array.from({ length: verticalCount }, (_, columnIndex) => {
+              const colT = verticalCount <= 1 ? 0.5 : columnIndex / (verticalCount - 1);
+              const worldX = -planeHalfWidth + colT * planeHalfWidth * 2;
+              const worldY = sampleSurfaceHeight(worldX, rowT);
+              return projectWorldPoint(worldX, worldY, worldZ);
+            });
+          });
+          const rasterizeSurfaceTriangle = (a, b, c) => {
+            if (!a || !b || !c) return;
+            const ax = toBufferX(a.x);
+            const ay = toBufferY(a.y);
+            const bx = toBufferX(b.x);
+            const by = toBufferY(b.y);
+            const cx = toBufferX(c.x);
+            const cy = toBufferY(c.y);
+            const area = edgeFn(ax, ay, bx, by, cx, cy);
+            if (Math.abs(area) < 1e-6) return;
+            const minX = clampBufferIndex(Math.floor(Math.min(ax, bx, cx)), bufferW - 1);
+            const maxX = clampBufferIndex(Math.ceil(Math.max(ax, bx, cx)), bufferW - 1);
+            const minY = clampBufferIndex(Math.floor(Math.min(ay, by, cy)), bufferH - 1);
+            const maxY = clampBufferIndex(Math.ceil(Math.max(ay, by, cy)), bufferH - 1);
+            for (let y = minY; y <= maxY; y++) {
+              const py = y + 0.5;
+              for (let x = minX; x <= maxX; x++) {
+                const px = x + 0.5;
+                const w0 = edgeFn(bx, by, cx, cy, px, py);
+                const w1 = edgeFn(cx, cy, ax, ay, px, py);
+                const w2 = edgeFn(ax, ay, bx, by, px, py);
+                const hasPositive = w0 >= 0 && w1 >= 0 && w2 >= 0;
+                const hasNegative = w0 <= 0 && w1 <= 0 && w2 <= 0;
+                if (!hasPositive && !hasNegative) continue;
+                const alpha = w0 / area;
+                const beta = w1 / area;
+                const gamma = w2 / area;
+                const depth = a.cameraDepth * alpha + b.cameraDepth * beta + c.cameraDepth * gamma;
+                const idx = y * bufferW + x;
+                if (depth < depthBuffer[idx]) depthBuffer[idx] = depth;
+                const screenY = (py / Math.max(1, bufferH - 1)) * height;
+                if (screenY < accumulatedCeiling[x]) accumulatedCeiling[x] = screenY;
+              }
+            }
+          };
+          for (let rowIndex = 0; rowIndex < horizontalCount - 1; rowIndex++) {
+            for (let columnIndex = 0; columnIndex < verticalCount - 1; columnIndex++) {
+              const a = mesh[rowIndex][columnIndex];
+              const b = mesh[rowIndex][columnIndex + 1];
+              const c = mesh[rowIndex + 1][columnIndex];
+              const d = mesh[rowIndex + 1][columnIndex + 1];
+              rasterizeSurfaceTriangle(a, c, b);
+              rasterizeSurfaceTriangle(b, c, d);
+            }
+          }
+          const pointVisibleAgainstSurface = (point) => {
+            if (!point) return false;
+            if (point.x < inset - 1 || point.x > width - inset + 1 || point.y < inset - 1 || point.y > height - inset + 1) {
+              return false;
+            }
+            const bx = Math.round(toBufferX(point.x));
+            const by = Math.round(toBufferY(point.y));
+            if (bx < 0 || bx >= bufferW || by < 0 || by >= bufferH) return false;
+            let nearestDepth = Number.POSITIVE_INFINITY;
+            for (let yOffset = -1; yOffset <= 1; yOffset++) {
+              const sy = by + yOffset;
+              if (sy < 0 || sy >= bufferH) continue;
+              for (let xOffset = -1; xOffset <= 1; xOffset++) {
+                const sx = bx + xOffset;
+                if (sx < 0 || sx >= bufferW) continue;
+                const depth = depthBuffer[sy * bufferW + sx];
+                if (depth < nearestDepth) nearestDepth = depth;
+              }
+            }
+            if (!Number.isFinite(nearestDepth)) return false;
+            return point.cameraDepth <= nearestDepth + depthEpsilon;
+          };
+          const segmentLength = (segment = []) => {
+            let total = 0;
+            for (let index = 1; index < segment.length; index++) {
+              const a = segment[index - 1];
+              const b = segment[index];
+              if (!a || !b) continue;
+              total += Math.hypot(b.x - a.x, b.y - a.y);
+            }
+            return total;
+          };
+          const clipSegmentBelowY = (segment = [], minY) => {
+            if (!Array.isArray(segment) || segment.length < 2) return [];
+            const clipped = [];
+            let current = [];
+            const pushCurrent = () => {
+              if (current.length >= 2) clipped.push(current);
+              current = [];
+            };
+            const appendPoint = (point) => {
+              if (!point) return;
+              const prev = current[current.length - 1];
+              if (prev && Math.abs(prev.x - point.x) < 0.01 && Math.abs(prev.y - point.y) < 0.01) return;
+              current.push(point);
+            };
+            for (let index = 1; index < segment.length; index++) {
+              const a = segment[index - 1];
+              const b = segment[index];
+              const aVisible = a.y >= minY;
+              const bVisible = b.y >= minY;
+              if (aVisible && !current.length) appendPoint({ x: a.x, y: a.y });
+              if (aVisible && bVisible) {
+                appendPoint({ x: b.x, y: b.y });
+                continue;
+              }
+              if (aVisible !== bVisible) {
+                const t = clamp01((minY - a.y) / Math.max(1e-6, b.y - a.y));
+                const intersection = {
+                  x: lerp(a.x, b.x, t),
+                  y: minY,
+                };
+                appendPoint(intersection);
+                if (bVisible) {
+                  if (!current.length) appendPoint(intersection);
+                  appendPoint({ x: b.x, y: b.y });
+                } else {
+                  pushCurrent();
+                }
+                continue;
+              }
+              pushCurrent();
+            }
+            pushCurrent();
+            return clipped;
+          };
+          const buildVisiblePolylineSegments = (nodes = [], minimumVisibleLength = 3.5, options = {}) => {
+            const segments = [];
+            const maxBridgeLength = Math.max(0, options.maxBridgeLength || 0);
+            const sampled = [];
+            let current = [];
+            const pushCurrent = () => {
+              if (current.length < 2) {
+                current = [];
+                return;
+              }
+              if (segmentLength(current) >= minimumVisibleLength) {
+                segments.push(current.map((point) => ({ x: point.x, y: point.y })));
+              }
+              current = [];
+            };
+            const appendPoint = (point) => {
+              if (!point) return;
+              const prev = current[current.length - 1];
+              if (prev && Math.abs(prev.x - point.x) < 0.01 && Math.abs(prev.y - point.y) < 0.01) return;
+              current.push(point);
+            };
+            for (let nodeIndex = 1; nodeIndex < nodes.length; nodeIndex++) {
+              const start = nodes[nodeIndex - 1];
+              const end = nodes[nodeIndex];
+              if (!start || !end) continue;
+              const sampleCount = Math.max(6, Math.ceil(Math.hypot(end.x - start.x, end.y - start.y) / 4));
+              for (let step = 0; step <= sampleCount; step++) {
+                if (nodeIndex > 1 && step === 0) continue;
+                const t = step / sampleCount;
+                const sample = projectWorldPoint(
+                  lerp(start.worldX, end.worldX, t),
+                  lerp(start.worldY, end.worldY, t),
+                  lerp(start.worldZ, end.worldZ, t)
+                );
+                sampled.push({ point: { x: sample.x, y: sample.y }, visible: pointVisibleAgainstSurface(sample) });
+              }
+            }
+            if (maxBridgeLength > 0 && sampled.length >= 3) {
+              for (let startIndex = 0; startIndex < sampled.length; startIndex++) {
+                if (sampled[startIndex].visible) continue;
+                const prevIndex = startIndex - 1;
+                if (prevIndex < 0 || !sampled[prevIndex].visible) continue;
+                let endIndex = startIndex;
+                let gapLength = 0;
+                while (endIndex < sampled.length && !sampled[endIndex].visible) {
+                  const prevPoint = sampled[endIndex - 1]?.point;
+                  const nextPoint = sampled[endIndex]?.point;
+                  if (prevPoint && nextPoint) {
+                    gapLength += Math.hypot(nextPoint.x - prevPoint.x, nextPoint.y - prevPoint.y);
+                  }
+                  endIndex++;
+                }
+                if (endIndex >= sampled.length || !sampled[endIndex].visible) {
+                  startIndex = endIndex;
+                  continue;
+                }
+                if (gapLength <= maxBridgeLength) {
+                  for (let bridgeIndex = startIndex; bridgeIndex < endIndex; bridgeIndex++) {
+                    sampled[bridgeIndex].visible = true;
+                  }
+                }
+                startIndex = endIndex;
+              }
+            }
+            sampled.forEach((entry) => {
+              if (entry.visible) appendPoint(entry.point);
+              else pushCurrent();
+            });
+            pushCurrent();
+            return segments;
+          };
+          const hiddenFarRows = Math.max(2, Math.round(horizontalCount * 0.16));
+          const filterUnexpectedHorizonSegments = (segments = [], role = 'row') =>
+            segments.filter((segment) => {
+              const avgY = segment.reduce((sum, point) => sum + point.y, 0) / Math.max(1, segment.length);
+              const length = segmentLength(segment);
+              if (role === 'row') {
+                if (avgY < horizonY + safeDelta * 0.18) return false;
+                if (avgY < horizonY + safeDelta * 0.24 && length < innerW * 0.35) return false;
+                if (avgY < horizonY + safeDelta * 0.3 && length < innerW * 0.22) return false;
+                if (length >= 24) return true;
+                return avgY >= horizonY + safeDelta * 0.3;
+              }
+              if (avgY < horizonY + safeDelta * 0.12) return false;
+              if (length >= 24) return true;
+              return avgY >= horizonY + safeDelta * 0.24;
+            });
+          const horizonMetrics = {
+            mode: 'horizon-3d',
+            horizontalCount,
+            verticalCount,
+            rows: [],
+            columns: [],
+          };
+          const terrainRenderFloorY = horizonY + safeDelta * 0.16;
+          const terrainColumnFloorY = horizonY + safeDelta * 0.22;
+          for (let rowIndex = 0; rowIndex < horizontalCount; rowIndex++) {
+            const rowNodes = mesh[rowIndex];
+            const rowDepthNorm = horizontalCount <= 1 ? 0.5 : rowIndex / (horizontalCount - 1);
+            const rowSegmentsRaw =
+              rowIndex < hiddenFarRows
+                ? []
+                : filterUnexpectedHorizonSegments(
+                  buildVisiblePolylineSegments(rowNodes, 4 + (1 - rowDepthNorm) * 10, {
+                    maxBridgeLength: 2 + (1 - rowDepthNorm) * 28,
+                  }),
+                  'row'
+                );
+            const rowSegments = rowSegmentsRaw.flatMap((segment) => clipSegmentBelowY(segment, terrainRenderFloorY));
+            rowSegments.forEach((segment, segmentIndex) => {
+              segment.meta = {
+                ...(segment.meta || {}),
+                horizonRole: 'row',
+                horizonRowIndex: rowIndex,
+                horizonRowSegmentIndex: segmentIndex,
+              };
+              localPaths.push(segment);
+            });
+            horizonMetrics.rows.push({
+              rowIndex,
+              points: rowNodes.map((node) => ({ x: node.x, y: node.y })),
+              cameraDepth: rowNodes[0]?.cameraDepth ?? Number.NaN,
+              visibleSegmentCount: rowSegments.length,
+            });
+          }
+          for (let columnIndex = 0; columnIndex < verticalCount; columnIndex++) {
+            const columnNodes = mesh.map((row) => row[columnIndex]);
+            const columnSegmentsRaw = filterUnexpectedHorizonSegments(
+              buildVisiblePolylineSegments(columnNodes, 7, {
+                maxBridgeLength: 5,
+              }),
+              'column'
+            );
+            const columnSegments = columnSegmentsRaw.flatMap((segment) => clipSegmentBelowY(segment, terrainColumnFloorY));
+            columnSegments.forEach((segment, segmentIndex) => {
+              segment.meta = {
+                ...(segment.meta || {}),
+                horizonRole: 'column',
+                horizonColumnIndex: columnIndex,
+                horizonColumnSegmentIndex: segmentIndex,
+              };
+              localPaths.push(segment);
+            });
+            horizonMetrics.columns.push({
+              columnIndex,
+              points: columnNodes.map((node) => ({ x: node.x, y: node.y })),
+              visibleSegmentCount: columnSegments.length,
+            });
+          }
+          const envelope = [];
+          for (let xIndex = 0; xIndex < bufferW; xIndex++) {
+            const ceiling = accumulatedCeiling[xIndex];
+            if (!Number.isFinite(ceiling)) continue;
+            envelope.push({
+              x: (xIndex / Math.max(1, bufferW - 1)) * width,
+              y: ceiling,
+            });
+          }
+          if (envelope.length >= 2) {
+            const bottomY = height - inset;
+            maskPolygons.push([
+              ...envelope,
+              { x: envelope[envelope.length - 1].x, y: bottomY },
+              { x: envelope[0].x, y: bottomY },
+              { x: envelope[0].x, y: envelope[0].y },
+            ]);
+          }
+          localPaths.horizonMetrics = horizonMetrics;
+          localPaths.maskPolygons = maskPolygons;
+          return localPaths;
+        }
         if (resolvedLineStructure === 'horizon') {
           const maskPolygons = [];
           const legacyHeight = p.vanishingPointY !== undefined ? Math.round(clamp01(p.vanishingPointY) * 100) : 50;
@@ -1337,6 +1781,7 @@
           const horizontalCount = Math.max(2, Math.round(p.horizonHorizontalLines ?? legacySplit[0]));
           const verticalCount = Math.max(2, Math.round(p.horizonVerticalLines ?? legacySplit[1]));
           const horizonRows = [];
+          const rowLayouts = [];
           for (let i = 0; i < horizontalCount; i++) {
             const t = horizontalCount <= 1 ? 0.5 : i / (horizontalCount - 1);
             const depth = horizonDepthOffset + Math.pow(t, 1.8) * (offscreenDepth - horizonDepthOffset);
@@ -1345,7 +1790,9 @@
             const rowPath = buildHorizonRow(y, (_s, _x, _y, d) =>
               Math.max(horizonRelief * 0.6, 0.24 + horizonRelief * 0.45 + Math.pow(d.nearFactor, 1.05) * 0.86)
             );
-            if (rowPath) horizonRows.push(rowPath);
+            if (!rowPath) continue;
+            horizonRows.push(rowPath);
+            rowLayouts.push({ rowIndex: horizonRows.length - 1, baseY: y });
           }
           if (horizonRows.length < 2) return paths;
           const skylinePath = clipPathToSkyline(horizonRows[0], null);
@@ -1410,8 +1857,25 @@
             });
           }
           paths.length = 0;
+          const horizonMetrics = {
+            horizontalCount: displayRows.length,
+            verticalCount,
+            rows: rowLayouts.map((entry, rowIndex) => ({ rowIndex, baseY: entry.baseY })),
+            columns: [],
+          };
           for (let rowIndex = 0; rowIndex < visibleRows.length; rowIndex++) {
-            pushVisibleSegments(visibleRows[rowIndex], { horizonRole: 'row', horizonRowIndex: rowIndex });
+            const rowSegments = pushVisibleSegments(visibleRows[rowIndex], {
+              horizonRole: 'row',
+              horizonRowIndex: rowIndex,
+            });
+            rowSegments.forEach((segment, segmentIndex) => {
+              segment.meta = {
+                ...(segment.meta || {}),
+                horizonRole: 'row',
+                horizonRowIndex: rowIndex,
+                horizonRowSegmentIndex: segmentIndex,
+              };
+            });
           }
           const rowBands = [];
           for (let rowIndex = 0; rowIndex < visibleRows.length - 1; rowIndex++) {
@@ -1463,15 +1927,19 @@
           }
           const fanOverscan = horizonFanReach * (2.2 + horizonVanishingPower * 1.45);
           const horizonTargetX = inset + innerW * horizonVanishingX;
-          const isHiddenByNearerRows = (point, startRowIndex) => {
-            for (let rowIndex = startRowIndex + 1; rowIndex < visibleRows.length; rowIndex++) {
-              const row = visibleRows[rowIndex];
-              if (!Array.isArray(row) || !row.length) continue;
-              const nearerY = sampleRowYAtX(row, point.x);
-              if (!Number.isFinite(nearerY)) continue;
-              if (nearerY <= point.y - occlusionSlack) return true;
-            }
-            return false;
+          const getColumnBaseX = (columnIndex) => {
+            const t = verticalCount <= 1 ? 0.5 : columnIndex / (verticalCount - 1);
+            const bottomT = -fanOverscan + t * (1 + fanOverscan * 2);
+            return inset + innerW * bottomT;
+          };
+          const evaluateColumnNode = (columnIndex, rowIndex) => {
+            const rowLayout = rowLayouts[rowIndex];
+            if (!rowLayout) return null;
+            const bottomX = getColumnBaseX(columnIndex);
+            const rowNear = rowLayouts.length <= 1 ? 1 : rowIndex / (rowLayouts.length - 1);
+            const convergence = horizonVanishingPower * Math.pow(1 - rowNear, 1.1);
+            const baseX = bottomX + (horizonTargetX - bottomX) * convergence;
+            return evaluateHorizonNode(baseX, rowLayout.baseY);
           };
           const isHiddenByNearerBand = (point, startBandIndex) => {
             for (let bandIndex = startBandIndex; bandIndex < rowBands.length; bandIndex++) {
@@ -1494,17 +1962,7 @@
           };
           const skylineReconnectSlack = Math.max(3, safeDelta * 0.06);
           for (let i = 0; i < verticalCount; i++) {
-            const t = verticalCount <= 1 ? 0.5 : i / (verticalCount - 1);
-            const bottomT = -fanOverscan + t * (1 + fanOverscan * 2);
-            const bottomX = inset + innerW * bottomT;
-            const columnPoints = visibleRows.map((row, rowIndex) => {
-              if (!Array.isArray(row) || !row.length) return null;
-              const rowNear = visibleRows.length <= 1 ? 1 : rowIndex / (visibleRows.length - 1);
-              const convergence = horizonVanishingPower * Math.pow(1 - rowNear, 1.1);
-              const rowX = bottomX + (horizonTargetX - bottomX) * convergence;
-              const sampled = samplePointAtX(row, rowX);
-              return sampled;
-            });
+            const columnPoints = rowLayouts.map((_row, rowIndex) => evaluateColumnNode(i, rowIndex));
             const culledColumn = [];
             for (let rowIndex = 0; rowIndex < columnPoints.length; rowIndex++) {
               const point = columnPoints[rowIndex];
@@ -1522,7 +1980,7 @@
                   x: (prev.x + point.x) * 0.5,
                   y: (prev.y + point.y) * 0.5,
                 };
-                if (isHiddenByNearerBand(midpoint, rowIndex) || isHiddenByNearerRows(midpoint, rowIndex)) {
+                if (isHiddenByNearerBand(midpoint, rowIndex)) {
                   culledColumn.push(null);
                   continue;
                 }
@@ -1546,16 +2004,25 @@
                 if (!start) return false;
                 const skylineY = sampleRowYAtX(visibleRows[0], start.x);
                 if (!Number.isFinite(skylineY)) return false;
-                if (start.y > skylineY + skylineReconnectSlack) return false;
-                const centerDistance = Math.abs(start.x - horizonCenterX) / Math.max(1e-6, innerW * 0.5);
-                const minVisiblePoints = 2 + Math.round(centerDistance * 4);
-                return segment.length >= minVisiblePoints;
+                return start.y <= skylineY + skylineReconnectSlack || segment.length >= 6;
               })
-              .forEach((segment) => {
-                segment.meta = { ...(segment.meta || {}), horizonRole: 'column', horizonColumnIndex: i };
+              .forEach((segment, segmentIndex) => {
+                segment.meta = {
+                  ...(segment.meta || {}),
+                  horizonRole: 'column',
+                  horizonColumnIndex: i,
+                  horizonColumnSegmentIndex: segmentIndex,
+                };
                 paths.push(segment);
               });
+            horizonMetrics.columns.push({
+              columnIndex: i,
+              baseX: getColumnBaseX(i),
+              points: columnPoints.filter(Boolean).map((point) => ({ x: point.x, y: point.y })),
+              visibleSegmentCount: columnSegments.length,
+            });
           }
+          paths.horizonMetrics = horizonMetrics;
           paths.maskPolygons = maskPolygons;
           return paths;
         }

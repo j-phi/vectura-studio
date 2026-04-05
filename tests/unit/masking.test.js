@@ -186,4 +186,29 @@ describe('Masking runtime', () => {
     expect(target.displayPaths[0][0].y).toBeLessThanOrEqual(20.01);
     expect(target.displayPaths[0][target.displayPaths[0].length - 1].y).toBeLessThanOrEqual(80.01);
   });
+
+  test('Horizon 3D silhouettes prefer the emitted surface envelope polygons', () => {
+    const { Layer, Masking } = runtime.window.Vectura;
+    const layer = new Layer('terrain-3d', 'wavetable', 'Terrain 3D');
+    layer.params.lineStructure = 'horizon-3d';
+    layer.paths = [[
+      { x: 20, y: 90 },
+      { x: 120, y: 90 },
+      { x: 220, y: 90 },
+    ]];
+    layer.maskPolygons = [[
+      { x: 20, y: 120 },
+      { x: 120, y: 40 },
+      { x: 220, y: 120 },
+      { x: 220, y: 160 },
+      { x: 20, y: 160 },
+      { x: 20, y: 120 },
+    ]];
+
+    const polygons = Masking.getLayerSilhouette(layer, null, bounds);
+
+    expect(polygons).toHaveLength(1);
+    const topPoint = polygons[0].reduce((best, point) => (point.y < best.y ? point : best), polygons[0][0]);
+    expect(topPoint.y).toBe(40);
+  });
 });

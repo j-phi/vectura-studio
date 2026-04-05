@@ -2448,6 +2448,7 @@
           { value: 'isometric', label: 'Isometric' },
           { value: 'lattice', label: 'Lattice' },
           { value: 'horizon', label: 'Horizon' },
+          { value: 'horizon-3d', label: 'Horizon 3D' },
         ],
         infoKey: 'wavetable.lineStructure',
       },
@@ -2459,7 +2460,10 @@
         max: 500,
         step: 1,
         infoKey: 'wavetable.lines',
-        showIf: (p) => p.lineStructure !== 'horizon' && p.lineStructure !== 'horizontal-vanishing-point',
+        showIf: (p) =>
+          p.lineStructure !== 'horizon'
+          && p.lineStructure !== 'horizontal-vanishing-point'
+          && p.lineStructure !== 'horizon-3d',
       },
       { id: 'gap', label: 'Line Gap', type: 'range', min: 0.5, max: 3.0, step: 0.1, infoKey: 'wavetable.gap' },
       { id: 'tilt', label: 'Row Shift', type: 'range', min: -12, max: 12, step: 1, infoKey: 'wavetable.tilt' },
@@ -2471,7 +2475,8 @@
         max: 500,
         step: 1,
         inlineGroup: 'wavetableHorizonLineCounts',
-        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        showIf: (p) =>
+          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
         infoKey: 'wavetable.horizonHorizontalLines',
       },
       {
@@ -2482,7 +2487,8 @@
         max: 500,
         step: 1,
         inlineGroup: 'wavetableHorizonLineCounts',
-        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        showIf: (p) =>
+          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
         infoKey: 'wavetable.horizonVerticalLines',
       },
       {
@@ -2490,7 +2496,8 @@
         label: 'Link',
         type: 'checkbox',
         inlineGroup: 'wavetableHorizonLineCounts',
-        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        showIf: (p) =>
+          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
         infoKey: 'wavetable.horizonLineLink',
       },
       {
@@ -2500,7 +2507,8 @@
         min: 1,
         max: 100,
         step: 1,
-        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        showIf: (p) =>
+          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
         infoKey: 'wavetable.horizonHeight',
       },
       {
@@ -2510,7 +2518,8 @@
         min: 0,
         max: 100,
         step: 1,
-        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        showIf: (p) =>
+          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
         infoKey: 'wavetable.horizonDepthPerspective',
       },
       {
@@ -2520,7 +2529,8 @@
         min: 0,
         max: 100,
         step: 1,
-        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        showIf: (p) =>
+          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
         infoKey: 'wavetable.horizonVanishingX',
       },
       {
@@ -2530,7 +2540,8 @@
         min: 0,
         max: 100,
         step: 1,
-        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        showIf: (p) =>
+          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
         infoKey: 'wavetable.horizonVanishingPower',
       },
       {
@@ -2540,7 +2551,8 @@
         min: 0,
         max: 100,
         step: 1,
-        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        showIf: (p) =>
+          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
         infoKey: 'wavetable.horizonFanReach',
       },
       {
@@ -2550,7 +2562,8 @@
         min: 0,
         max: 100,
         step: 1,
-        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        showIf: (p) =>
+          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
         infoKey: 'wavetable.horizonRelief',
       },
       {
@@ -2560,7 +2573,8 @@
         min: 0,
         max: 100,
         step: 1,
-        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        showIf: (p) =>
+          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
         infoKey: 'wavetable.horizonCenterDampening',
       },
       {
@@ -2570,7 +2584,8 @@
         min: 5,
         max: 80,
         step: 1,
-        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        showIf: (p) =>
+          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
         infoKey: 'wavetable.horizonCenterWidth',
       },
       {
@@ -2580,7 +2595,8 @@
         min: 0,
         max: 100,
         step: 1,
-        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        showIf: (p) =>
+          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
         infoKey: 'wavetable.horizonCenterBasin',
       },
       {
@@ -2590,7 +2606,8 @@
         min: 0,
         max: 100,
         step: 1,
-        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        showIf: (p) =>
+          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
         infoKey: 'wavetable.horizonShoulderLift',
       },
       {
@@ -2600,7 +2617,8 @@
         min: 0,
         max: 100,
         step: 1,
-        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        showIf: (p) =>
+          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
         infoKey: 'wavetable.horizonMirrorBlend',
       },
       {
@@ -2610,7 +2628,8 @@
         min: 0,
         max: 100,
         step: 1,
-        showIf: (p) => p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point',
+        showIf: (p) =>
+          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
         infoKey: 'wavetable.horizonValleyProfile',
       },
       {
@@ -3656,12 +3675,12 @@
     'wavetable.horizonHorizontalLines': {
       title: 'Horizontal Lines',
       description:
-        'Sets how many horizontal terrain rows Horizon draws from the skyline toward the viewer.',
+        'Sets the exact number of Horizon terrain rows in the underlying perspective grid before terrain occlusion hides any segments.',
     },
     'wavetable.horizonVerticalLines': {
       title: 'Vertical Lines',
       description:
-        'Sets how many vertical fan lines Horizon draws from the vanishing line toward the viewer.',
+        'Sets the exact number of Horizon grid columns before terrain occlusion hides any segments.',
     },
     'wavetable.horizonLineLink': {
       title: 'Link',
@@ -3671,7 +3690,7 @@
     'wavetable.lineStructure': {
       title: 'Line Structure',
       description:
-        'Sets the base line layout before noise displacement: horizontal rows, vertical stacks, grid combos, isometric sets, lattice diagonals, or a perspective horizon grid.',
+        'Sets the base line layout before noise displacement: horizontal rows, vertical stacks, grid combos, isometric sets, lattice diagonals, the legacy Horizon grid, or Horizon 3D for a projected heightfield surface.',
     },
     'wavetable.horizonHeight': {
       title: 'Horizon Height (%)',
@@ -3680,22 +3699,22 @@
     'wavetable.horizonDepthPerspective': {
       title: 'Depth Perspective',
       description:
-        'In Horizon mode, compresses distant terrain toward the horizon while preserving stronger foreground displacement so the wavetable reads like a landscape.',
+        'In Horizon and Horizon 3D, compresses distant terrain toward the horizon while preserving stronger foreground displacement so the wavetable reads like a landscape.',
     },
     'wavetable.horizonVanishingX': {
       title: 'Vanishing Point X',
       description:
-        'Sets the horizontal vanishing-point position for Horizon. It controls where the vertical fan collapses at the skyline while the mesh still spans the full width at the bottom.',
+        'Sets the horizontal vanishing point for Horizon and Horizon 3D. In Horizon 3D it shifts the projected camera target across the terrain plane.',
     },
     'wavetable.horizonVanishingPower': {
       title: 'Vanishing Pull',
       description:
-        'Controls how aggressively the Horizon vertical fan pulls toward the vanishing point. Higher values converge faster near the skyline while keeping full-width coverage at the bottom.',
+        'Controls perspective strength for Horizon and Horizon 3D. In Horizon 3D it increases how aggressively the projected terrain compresses toward the horizon.',
     },
     'wavetable.horizonFanReach': {
       title: 'Fan Reach',
       description:
-        'Controls how far the Horizon vertical fan spreads at the bottom. Increase it to push the outer rays toward or beyond the side edges while the top still converges at the vanishing point.',
+        'Controls how far the Horizon or Horizon 3D foreground spreads. In Horizon 3D it widens the underlying terrain plane before projection.',
     },
     'wavetable.horizonRelief': {
       title: 'Horizon Relief',
@@ -9574,13 +9593,13 @@
             Image noise includes an Image Effects stack plus optional style shaping.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Wavetable Line Structure supports Horizontal, Vertical, Horizontal &amp; Vertical, Isometric, Lattice, and Horizon layouts.
+            Wavetable Line Structure supports Horizontal, Vertical, Horizontal &amp; Vertical, Isometric, Lattice, Horizon, and Horizon 3D layouts.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Horizon mode includes Depth Perspective to scale noise by distance, giving larger near ridges and compressed far terrain.
+            Horizon and Horizon 3D include Depth Perspective to scale terrain by distance, giving larger near ridges and compressed far terrain.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Horizon vertical fans now sample by screen-space X against the visible terrain rows, so the vertical rays follow the same ridge and valley contours as the horizontal terrain mesh.
+            Horizon is the legacy screen-space terrain grid; Horizon 3D builds a real projected heightfield plane first, then hides rows and columns using the surface itself.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Petalis includes an embedded panel; use its pop-out icon (⧉) to open the same panel in a floating window and pop-in (↩) to dock it back.
@@ -9885,23 +9904,23 @@
       const current = layer?.params || {};
       return {
         lines: 116,
-        horizonHorizontalLines: 58,
-        horizonVerticalLines: 58,
+        horizonHorizontalLines: 60,
+        horizonVerticalLines: 60,
         horizonLineLink: true,
         gap: 0.86,
         tilt: 0,
-        horizonHeight: 29,
+        horizonHeight: 30,
         horizonDepthPerspective: 97,
         horizonVanishingX: 50,
-        horizonVanishingPower: 72,
-        horizonFanReach: 42,
-        horizonRelief: 38,
-        horizonCenterDampening: 94,
-        horizonCenterWidth: 44,
-        horizonCenterBasin: 62,
-        horizonShoulderLift: 48,
-        horizonMirrorBlend: 48,
-        horizonValleyProfile: 34,
+        horizonVanishingPower: 76,
+        horizonFanReach: 50,
+        horizonRelief: 30,
+        horizonCenterDampening: 92,
+        horizonCenterWidth: 40,
+        horizonCenterBasin: 58,
+        horizonShoulderLift: 56,
+        horizonMirrorBlend: 58,
+        horizonValleyProfile: 42,
         edgeFade: 0,
         edgeFadeThreshold: 0,
         edgeFadeFeather: 0,
@@ -9920,6 +9939,41 @@
       };
     }
 
+    buildWavetableHorizon3DCompanionDefaults(layer) {
+      const next = this.buildWavetableHorizonCompanionDefaults(layer);
+      const nextNoises = Array.isArray(next.noises) ? next.noises.map((noise) => ({ ...noise })) : [];
+      if (nextNoises[0]) {
+        nextNoises[0].amplitude = 10.5;
+        nextNoises[0].zoom = 0.0044;
+      }
+      if (nextNoises[1]) {
+        nextNoises[1].amplitude = 2.4;
+        nextNoises[1].zoom = 0.0072;
+      }
+      if (nextNoises[2]) {
+        nextNoises[2].amplitude = 0.35;
+        nextNoises[2].zoom = 0.0126;
+      }
+      return {
+        ...next,
+        noises: nextNoises,
+        lines: 128,
+        horizonHorizontalLines: 30,
+        horizonVerticalLines: 36,
+        horizonHeight: 33,
+        horizonDepthPerspective: 90,
+        horizonVanishingPower: 84,
+        horizonFanReach: 66,
+        horizonRelief: 30,
+        horizonCenterDampening: 92,
+        horizonCenterWidth: 52,
+        horizonCenterBasin: 88,
+        horizonShoulderLift: 84,
+        horizonMirrorBlend: 68,
+        horizonValleyProfile: 72,
+      };
+    }
+
     applyWavetableHorizonCompanionDefaults(layer) {
       if (!layer || layer.type !== 'wavetable') return;
       const next = this.buildWavetableHorizonCompanionDefaults(layer);
@@ -9931,9 +9985,20 @@
       this.ensureWavetableNoises(layer);
     }
 
+    applyWavetableHorizon3DCompanionDefaults(layer) {
+      if (!layer || layer.type !== 'wavetable') return;
+      const next = this.buildWavetableHorizon3DCompanionDefaults(layer);
+      layer.params = {
+        ...layer.params,
+        lineStructure: 'horizon-3d',
+        ...next,
+      };
+      this.ensureWavetableNoises(layer);
+    }
+
     isWavetableHorizonStructure(params) {
       const lineStructure = params?.lineStructure;
-      return lineStructure === 'horizon' || lineStructure === 'horizontal-vanishing-point';
+      return lineStructure === 'horizon' || lineStructure === 'horizontal-vanishing-point' || lineStructure === 'horizon-3d';
     }
 
     applyWavetableHorizonLineCountChange(layer, changedId, nextVal) {
@@ -19321,6 +19386,9 @@
               if (layer.type === 'wavetable' && def.id === 'lineStructure' && next === 'horizon') {
                 this.applyWavetableHorizonCompanionDefaults(layer);
               }
+              if (layer.type === 'wavetable' && def.id === 'lineStructure' && next === 'horizon-3d') {
+                this.applyWavetableHorizon3DCompanionDefaults(layer);
+              }
               this.storeLayerParams(layer);
               span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
               this.app.regen();
@@ -19337,6 +19405,9 @@
               layer.params[def.id] = next;
               if (layer.type === 'wavetable' && def.id === 'lineStructure' && next === 'horizon') {
                 this.applyWavetableHorizonCompanionDefaults(layer);
+              }
+              if (layer.type === 'wavetable' && def.id === 'lineStructure' && next === 'horizon-3d') {
+                this.applyWavetableHorizon3DCompanionDefaults(layer);
               }
               this.storeLayerParams(layer);
               input.value = next;

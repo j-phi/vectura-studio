@@ -37,7 +37,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Harmonograph pendulum list with add/delete/toggle controls and optional guide overlay.
 - Harmonograph anti-loop controls (frequency drift + settle cutoff) and a Virtual Plotter preview with playhead scrubbing and speed presets.
 - Rainfall generator with wind, droplet styling, and optional silhouette masking.
-- Wavetable noise stack with selectable line structures (horizontal, vertical, grid, isometric, lattice, horizon perspective), plus Horizon depth perspective that compresses distant terrain while preserving stronger foreground relief for synthwave-style landscapes; Horizon vertical fans now sample the same visible terrain contours as the horizontal rows instead of drifting by row parameterization, and Horizon masking now follows the final visible terrain surface instead of a coarse top-row silhouette. Includes per-noise blend modes, tile patterns, image effects, polygon noise, and drag-to-reorder layers.
+- Wavetable noise stack with selectable line structures (horizontal, vertical, grid, isometric, lattice, horizon perspective), plus legacy Horizon depth perspective and a new `Horizon 3D` projected heightfield mode for synthwave-style landscapes. `Horizon 3D` builds a real terrain plane, applies noise in plane space, and hides rows/columns from the surface itself instead of late-stage screen-space truncation. Horizon masking also follows the final visible terrain surface instead of a coarse top-row silhouette. Includes per-noise blend modes, tile patterns, image effects, polygon noise, and drag-to-reorder layers.
 - Repository operating model with a maintained `plans.md` punchlist, human-curated `CHANGELOG.md`, Mermaid architecture diagrams, and synchronized app-version metadata.
 - Petalis generator with radial petals, editable inner/outer designer curves, shading, modifier stacks, and 20 named presets (plus an in-dev light source marker). Hatch Angle rotates shading strokes in place inside petals rather than shifting shading placement on the canvas.
 - Petalis algorithm with an embedded full Petal Designer panel in the parameter stack (shape comes from visible designer curves, without hidden legacy tip/base modifiers).
@@ -128,6 +128,10 @@ CI lives in `.github/workflows/test.yml`:
 - The universal multi-engine noise direction is called `Noise Rack`; all future noise-capable algorithms should converge on that shared model.
 
 ## Current Release Notes
+### 0.6.80
+- Restored legitimate Horizon vertical fan lines by building them from the full clipped terrain rows and hiding them only when actually occluded by nearer terrain strips.
+- Relaxed the post-occlusion reconnect rule so verticals can disappear behind a ridge and then reappear where they become visible again on the saved masking fixture.
+
 ### 0.6.79
 - Reduced remaining Horizon hidden-line clutter by pruning short shoulder column fragments that survived occlusion but did not carry enough visible surface to read as true contour lines.
 

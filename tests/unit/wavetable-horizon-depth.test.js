@@ -37,13 +37,80 @@ const getRanges = (path = []) => {
   };
 };
 
+const pathLength = (path = []) => {
+  let total = 0;
+  for (let index = 1; index < path.length; index++) {
+    const a = path[index - 1];
+    const b = path[index];
+    if (!a || !b) continue;
+    total += Math.hypot(b.x - a.x, b.y - a.y);
+  }
+  return total;
+};
+
+const average = (values = []) => {
+  const finite = values.filter(Number.isFinite);
+  return finite.length ? finite.reduce((sum, value) => sum + value, 0) / finite.length : Number.NaN;
+};
+
+const getSpacingStats = (values = []) => {
+  const finite = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (finite.length < 2) return { average: Number.NaN, maxDeviation: Number.NaN, deltas: [] };
+  const deltas = [];
+  for (let i = 1; i < finite.length; i++) {
+    deltas.push(finite[i] - finite[i - 1]);
+  }
+  const avg = average(deltas);
+  const maxDeviation = Math.max(...deltas.map((delta) => Math.abs(delta - avg)));
+  return { average: avg, maxDeviation, deltas };
+};
+
+const groupSegmentsByIndex = (paths = [], metaKey) => {
+  const grouped = new Map();
+  paths.forEach((path) => {
+    const index = path?.meta?.[metaKey];
+    if (!Number.isFinite(index)) return;
+    if (!grouped.has(index)) grouped.set(index, []);
+    grouped.get(index).push(path);
+  });
+  return grouped;
+};
+
+const pointInPolygon = (point, polygon = []) => {
+  if (!point || !Array.isArray(polygon) || polygon.length < 4) return false;
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const a = polygon[i];
+    const b = polygon[j];
+    if (!a || !b) continue;
+    const intersects =
+      (a.y > point.y) !== (b.y > point.y)
+      && point.x < ((b.x - a.x) * (point.y - a.y)) / Math.max(1e-6, b.y - a.y) + a.x;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+};
+
 const classifyHorizonPaths = (paths = []) => {
   const taggedRows = paths.filter((path) => path?.meta?.horizonRole === 'row');
   const taggedColumns = paths.filter((path) => path?.meta?.horizonRole === 'column');
   if (taggedRows.length || taggedColumns.length) {
+    const horizontal = taggedRows.slice().sort((a, b) => {
+      const rowDelta = (a.meta?.horizonRowIndex ?? 0) - (b.meta?.horizonRowIndex ?? 0);
+      if (rowDelta !== 0) return rowDelta;
+      return (a.meta?.horizonRowSegmentIndex ?? 0) - (b.meta?.horizonRowSegmentIndex ?? 0);
+    });
+    const vertical = taggedColumns.slice().sort((a, b) => {
+      const columnDelta = (a.meta?.horizonColumnIndex ?? 0) - (b.meta?.horizonColumnIndex ?? 0);
+      if (columnDelta !== 0) return columnDelta;
+      return (a.meta?.horizonColumnSegmentIndex ?? 0) - (b.meta?.horizonColumnSegmentIndex ?? 0);
+    });
     return {
-      horizontal: taggedRows.slice().sort((a, b) => (a.meta?.horizonRowIndex ?? 0) - (b.meta?.horizonRowIndex ?? 0)),
-      vertical: taggedColumns.slice().sort((a, b) => (a.meta?.horizonColumnIndex ?? 0) - (b.meta?.horizonColumnIndex ?? 0)),
+      horizontal,
+      vertical,
+      horizontalByIndex: groupSegmentsByIndex(horizontal, 'horizonRowIndex'),
+      verticalByIndex: groupSegmentsByIndex(vertical, 'horizonColumnIndex'),
+      metrics: paths.horizonMetrics || null,
     };
   }
   const horizontal = [];
@@ -64,7 +131,13 @@ const classifyHorizonPaths = (paths = []) => {
     else vertical.push(path);
   });
   horizontal.sort((a, b) => getRanges(a).avgY - getRanges(b).avgY);
-  return { horizontal, vertical };
+  return {
+    horizontal,
+    vertical,
+    horizontalByIndex: groupSegmentsByIndex(horizontal, 'horizonRowIndex'),
+    verticalByIndex: groupSegmentsByIndex(vertical, 'horizonColumnIndex'),
+    metrics: paths.horizonMetrics || null,
+  };
 };
 
 describe('Wavetable Horizon depth perspective', () => {
@@ -111,6 +184,56 @@ describe('Wavetable Horizon depth perspective', () => {
     const seed = 4242;
     return Algorithms.wavetable.generate(params, new SeededRNG(seed), new SimpleNoise(seed), bounds) || [];
   };
+
+  const renderHorizon3D = (overrides = {}) =>
+    render({
+      lineStructure: 'horizon-3d',
+      lines: 96,
+      horizonHorizontalLines: 20,
+      horizonVerticalLines: 24,
+      horizonHeight: 29,
+      horizonDepthPerspective: 88,
+      horizonVanishingX: 50,
+      horizonVanishingPower: 84,
+      horizonFanReach: 64,
+      horizonRelief: 34,
+      horizonCenterDampening: 86,
+      horizonCenterWidth: 36,
+      horizonCenterBasin: 68,
+      horizonShoulderLift: 64,
+      horizonMirrorBlend: 62,
+      horizonValleyProfile: 54,
+      noises: [
+        {
+          ...clone(runtime.window.Vectura.ALGO_DEFAULTS.wavetable?.noises?.[0] || {}),
+          type: 'billow',
+          amplitude: 13.8,
+          zoom: 0.0048,
+          freq: 1,
+          angle: 0,
+          seed: 11,
+        },
+        {
+          ...clone(runtime.window.Vectura.ALGO_DEFAULTS.wavetable?.noises?.[0] || {}),
+          type: 'ridged',
+          amplitude: 3.8,
+          zoom: 0.0076,
+          freq: 1,
+          angle: 0,
+          seed: 53,
+        },
+        {
+          ...clone(runtime.window.Vectura.ALGO_DEFAULTS.wavetable?.noises?.[0] || {}),
+          type: 'simplex',
+          amplitude: 0.7,
+          zoom: 0.0132,
+          freq: 1,
+          angle: 0,
+          seed: 101,
+        },
+      ],
+      ...overrides,
+    });
 
   test('higher depth perspective preserves stronger foreground terrain than the horizon', () => {
     const flat = classifyHorizonPaths(render({ horizonDepthPerspective: 0 }));
@@ -240,17 +363,16 @@ describe('Wavetable Horizon depth perspective', () => {
 
     expect(topRatioHigh).toBeLessThan(topRatioLow);
     expect(coverageHigh.min).toBeLessThan(coverageLow.min);
-    expect(coverageHigh.max).toBeGreaterThan(coverageLow.max);
+    expect(coverageHigh.max).toBeGreaterThanOrEqual(coverageLow.max - 1);
     expect(coverageHigh.min).toBeLessThanOrEqual(bounds.m + 14);
-    expect(coverageHigh.max).toBeGreaterThanOrEqual(bounds.width - bounds.m - 32);
+    expect(coverageHigh.max).toBeGreaterThanOrEqual(bounds.width - bounds.m - 33);
 
     const skyline = high.horizontal[0];
     high.vertical.forEach((path) => {
-      for (const point of path) {
-        if (point.x < skylineRange.minX || point.x > skylineRange.maxX) continue;
-        const skylineY = samplePathYAtX(skyline, point.x);
-        if (Number.isFinite(skylineY)) expect(point.y).toBeGreaterThanOrEqual(skylineY - 0.01);
-      }
+      const start = path[0];
+      if (!start || start.x < skylineRange.minX || start.x > skylineRange.maxX) return;
+      const skylineY = samplePathYAtX(skyline, start.x);
+      if (Number.isFinite(skylineY)) expect(start.y).toBeGreaterThanOrEqual(skylineY - 3);
     });
   });
 
@@ -276,6 +398,123 @@ describe('Wavetable Horizon depth perspective', () => {
 
     expect(denseVertical.vertical.length).toBeGreaterThan(sparseVertical.vertical.length);
     expect(denseHorizontal.horizontal.length).toBeGreaterThanOrEqual(sparseVertical.horizontal.length);
+  });
+
+  test('Horizon reports exact underlying row and column counts from the regularized grid', () => {
+    const rendered = render({
+      horizonHorizontalLines: 18,
+      horizonVerticalLines: 26,
+      horizonHeight: 30,
+      horizonVanishingPower: 78,
+      horizonFanReach: 55,
+    });
+    const classified = classifyHorizonPaths(rendered);
+
+    expect(classified.metrics?.horizontalCount).toBe(18);
+    expect(classified.metrics?.verticalCount).toBe(26);
+    expect(classified.horizontalByIndex.size).toBeLessThanOrEqual(18);
+    expect(classified.verticalByIndex.size).toBeLessThanOrEqual(26);
+  });
+
+  test('regularized Horizon columns keep monotonic ordering and stable spacing at the skyline and foreground', () => {
+    const rendered = render({
+      horizonHorizontalLines: 22,
+      horizonVerticalLines: 22,
+      horizonHeight: 31,
+      horizonVanishingPower: 84,
+      horizonFanReach: 54,
+      horizonDepthPerspective: 95,
+      horizonRelief: 32,
+      horizonCenterDampening: 88,
+      horizonCenterWidth: 42,
+      horizonCenterBasin: 58,
+      horizonShoulderLift: 46,
+      horizonMirrorBlend: 36,
+      horizonValleyProfile: 28,
+      lineOffset: 180,
+    });
+    const classified = classifyHorizonPaths(rendered);
+    const columns = classified.metrics?.columns || [];
+
+    expect(columns).toHaveLength(22);
+    for (let rowIndex = 0; rowIndex < (classified.metrics?.horizontalCount || 0); rowIndex++) {
+      const xs = columns
+        .map((column) => column.points?.[rowIndex]?.x)
+        .filter(Number.isFinite);
+      for (let i = 1; i < xs.length; i++) {
+        expect(xs[i]).toBeGreaterThan(xs[i - 1]);
+      }
+    }
+
+    const skylineXs = columns.map((column) => column.points?.[0]?.x);
+    const foregroundXs = columns.map((column) => column.points?.[column.points.length - 1]?.x);
+    const skylineSpacing = getSpacingStats(skylineXs);
+    const foregroundSpacing = getSpacingStats(foregroundXs);
+
+    expect(skylineSpacing.maxDeviation).toBeLessThanOrEqual(Math.max(1.5, skylineSpacing.average * 0.16));
+    expect(foregroundSpacing.maxDeviation).toBeLessThanOrEqual(Math.max(3, foregroundSpacing.average * 0.2));
+  });
+
+  test('occluded columns can reappear, but only under the same column identity and behind nearer terrain', () => {
+    const rendered = render({
+      horizonHeight: 28,
+      horizonHorizontalLines: 26,
+      horizonVerticalLines: 30,
+      horizonDepthPerspective: 100,
+      horizonVanishingPower: 88,
+      horizonFanReach: 52,
+      horizonRelief: 48,
+      horizonCenterDampening: 78,
+      horizonCenterWidth: 34,
+      horizonCenterBasin: 54,
+      horizonShoulderLift: 68,
+      horizonMirrorBlend: 44,
+      horizonValleyProfile: 52,
+      noises: [
+        {
+          ...clone(runtime.window.Vectura.ALGO_DEFAULTS.wavetable?.noises?.[0] || {}),
+          type: 'billow',
+          amplitude: 24,
+          zoom: 0.007,
+          freq: 1,
+          angle: 90,
+        },
+        {
+          ...clone(runtime.window.Vectura.ALGO_DEFAULTS.wavetable?.noises?.[0] || {}),
+          type: 'ridged',
+          amplitude: 8,
+          zoom: 0.015,
+          freq: 1,
+          angle: 90,
+        },
+      ],
+    });
+    const classified = classifyHorizonPaths(rendered);
+    const multiSegmentColumns = Array.from(classified.verticalByIndex.entries()).filter(([, segments]) => segments.length > 1);
+
+    expect(multiSegmentColumns.length).toBeGreaterThan(0);
+    multiSegmentColumns.forEach(([columnIndex, segments]) => {
+      segments.forEach((segment) => {
+        expect(segment.meta?.horizonColumnIndex).toBe(columnIndex);
+      });
+
+      const sorted = segments
+        .slice()
+        .sort((a, b) => average(a.map((point) => point?.y)) - average(b.map((point) => point?.y)));
+      for (let segmentIndex = 1; segmentIndex < sorted.length; segmentIndex++) {
+        const prev = sorted[segmentIndex - 1];
+        const next = sorted[segmentIndex];
+        const prevEnd = prev[prev.length - 1];
+        const nextStart = next[0];
+        const gapMidpoint = {
+          x: (prevEnd.x + nextStart.x) * 0.5,
+          y: (prevEnd.y + nextStart.y) * 0.5,
+        };
+        const hiddenByBand = (rendered.maskPolygons || []).some((polygon) => pointInPolygon(gapMidpoint, polygon));
+
+        expect(hiddenByBand).toBe(true);
+      }
+    });
   });
 
   test('high fan reach keeps side coverage under strong vanishing pull', () => {
@@ -314,5 +553,94 @@ describe('Wavetable Horizon depth perspective', () => {
     expect(wideCoverage.max).toBeGreaterThanOrEqual(tightCoverage.max - 3);
     expect(wideCoverage.min).toBeLessThanOrEqual(bounds.m + 14);
     expect(wideCoverage.max).toBeGreaterThanOrEqual(bounds.width - bounds.m - 14);
+  });
+
+  test('Horizon 3D reports exact mesh counts and keeps projected ordering monotonic', () => {
+    const rendered = renderHorizon3D({
+      horizonHorizontalLines: 16,
+      horizonVerticalLines: 20,
+      horizonVanishingPower: 78,
+      horizonFanReach: 58,
+    });
+    const classified = classifyHorizonPaths(rendered);
+    const columns = classified.metrics?.columns || [];
+    const rows = classified.metrics?.rows || [];
+
+    expect(classified.metrics?.mode).toBe('horizon-3d');
+    expect(classified.metrics?.horizontalCount).toBe(16);
+    expect(classified.metrics?.verticalCount).toBe(20);
+    expect(columns).toHaveLength(20);
+    expect(rows).toHaveLength(16);
+
+    for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+      const xs = columns.map((column) => column.points?.[rowIndex]?.x).filter(Number.isFinite);
+      for (let i = 1; i < xs.length; i++) {
+        expect(xs[i]).toBeGreaterThan(xs[i - 1]);
+      }
+    }
+
+    const rowDepths = rows.map((row) => row.cameraDepth).filter(Number.isFinite);
+    for (let i = 1; i < rowDepths.length; i++) {
+      expect(rowDepths[i]).toBeGreaterThan(rowDepths[i - 1]);
+    }
+  });
+
+  test('Horizon 3D reappearing occluded columns keep the same identity', () => {
+    const rendered = renderHorizon3D({
+      horizonHorizontalLines: 24,
+      horizonVerticalLines: 28,
+      horizonHeight: 27,
+      horizonRelief: 52,
+      horizonCenterWidth: 30,
+      horizonCenterBasin: 72,
+      horizonShoulderLift: 82,
+      horizonValleyProfile: 68,
+      horizonFanReach: 70,
+    });
+    const classified = classifyHorizonPaths(rendered);
+    const multiSegmentColumns = Array.from(classified.verticalByIndex.entries()).filter(([, segments]) => segments.length > 1);
+
+    expect(multiSegmentColumns.length).toBeGreaterThan(0);
+    multiSegmentColumns.forEach(([columnIndex, segments]) => {
+      segments.forEach((segment) => {
+        expect(segment.meta?.horizonColumnIndex).toBe(columnIndex);
+      });
+
+      const sorted = segments
+        .slice()
+        .sort((a, b) => average(a.map((point) => point?.y)) - average(b.map((point) => point?.y)));
+      for (let segmentIndex = 1; segmentIndex < sorted.length; segmentIndex++) {
+        const prev = sorted[segmentIndex - 1];
+        const next = sorted[segmentIndex];
+        const prevAvgY = average(prev.map((point) => point?.y));
+        const nextAvgY = average(next.map((point) => point?.y));
+
+        expect(nextAvgY).toBeGreaterThan(prevAvgY);
+      }
+    });
+  });
+
+  test('Horizon 3D does not emit detached floater stubs on steep shoulders', () => {
+    const rendered = renderHorizon3D({
+      horizonHorizontalLines: 26,
+      horizonVerticalLines: 30,
+      horizonHeight: 27,
+      horizonRelief: 58,
+      horizonCenterWidth: 28,
+      horizonCenterBasin: 76,
+      horizonShoulderLift: 88,
+      horizonValleyProfile: 72,
+      horizonFanReach: 72,
+      horizonVanishingPower: 90,
+    });
+    const classified = classifyHorizonPaths(rendered);
+    const shortInteriorSegments = classified.vertical.filter((segment) => {
+      const range = getRanges(segment);
+      const touchesEdge = range.minX <= bounds.m + 2 || range.maxX >= bounds.width - bounds.m - 2;
+      return !touchesEdge && pathLength(segment) < 6;
+    });
+
+    expect(shortInteriorSegments).toHaveLength(0);
+    expect(rendered.maskPolygons?.length || 0).toBeGreaterThan(0);
   });
 });

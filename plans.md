@@ -33,6 +33,9 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Fixed the checked-in broken masking scene by restoring explicit visible terrain-strip mask polygons, reducing detached Horizon backface/shoulder column fragments, and adding a fixture-backed screenshot regression for the saved document.
 - Fixed the saved masking workflow so the Layers-panel `Clip` trigger opens reliably, Horizon clipping follows the first visible terrain row, and additional lower shoulder backface fragments are culled by skyline-connected fan filtering.
 - Further reduced Horizon shoulder hidden-line clutter by pruning short edge/shoulder column fragments that survived occlusion but did not carry enough visible surface to read as real contour lines.
+- Restored legitimate Horizon vertical fan visibility by rebuilding columns from the full clipped terrain rows and allowing them to reappear after passing behind an occluding ridge.
+- Reworked Horizon around a regularized underlying perspective grid so row/column spacing stays stable before terrain occlusion, column identity survives hidden/reappearing segments, and the shipped defaults read closer to a cleaner synthwave valley.
+- Added `Horizon 3D` as a separate projected heightfield mode so synthwave terrain can be generated from a real plane/mesh with surface-derived hidden-line removal and masking, without breaking legacy Horizon scenes.
 - Removed Horizon's extra edge-anchor rays after they introduced off-pattern diagonal lines that did not align with the vertical contour fan.
 - Changed Horizon masking to follow the topmost visible Horizon row and derived the full vertical fan from the same culled visible-row set so masked background geometry meets the terrain edge without a gap and steep-ridge backfaces are reduced.
 - Migrated `rings` to Noise Rack with stacked noise layers, preserved ring-local drift/sample-radius controls, and per-noise `Orbit Field` / `Concentric` / `Top Down` projection.

@@ -6,6 +6,22 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Changed
+- Reworked `Wavetable` Horizon around a regularized underlying perspective grid so horizontal and vertical spacing stays stable by construction before terrain-aware occlusion is applied.
+- Rebuilt Horizon column sampling from fixed per-column terrain nodes, which keeps column identity consistent through occlusion and allows hidden segments to reappear without spawning uneven replacement lines.
+- Retuned the shipped Horizon defaults and help text toward a cleaner synthwave valley profile with a more disciplined skyline and more readable foreground grid.
+- Added deterministic Horizon regression coverage for exact underlying row/column counts, monotonic column ordering, spacing stability, and post-occlusion column identity, plus a canonical Horizon SVG baseline.
+- Added `Horizon 3D` as a new `Wavetable` line structure that projects a true heightfield plane instead of clipping deformed 2D rows after the fact.
+- `Horizon 3D` now applies noise and valley/shoulder shaping in plane space, hides rows and columns through a private surface depth buffer, and emits a surface-derived silhouette envelope for masking.
+- The Wavetable controls/help text now distinguish legacy `Horizon` from `Horizon 3D`, while keeping the existing Horizon control ids mapped onto the new surface model.
+- Added `Horizon 3D` unit coverage for mesh counts, projected ordering, occlusion identity, and floater suppression, plus a dedicated SVG baseline.
+
+## 0.6.80 - 2026-03-01
+
+### Changed
+- Restored legitimate `Wavetable` Horizon vertical fan lines by rebuilding column visibility from the full clipped terrain rows and hiding them only when they are actually occluded by nearer terrain strips.
+- Relaxed the post-occlusion reconnect rule so verticals can reappear after passing behind a ridge, which fixes missing visible fan lines on the saved broken masking fixture.
+
 ## 0.6.79 - 2026-03-01
 
 ### Changed

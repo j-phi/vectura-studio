@@ -136,6 +136,10 @@
   };
 
   const buildHorizonSilhouette = (layer, bounds) => {
+    if (layer?.params?.lineStructure === 'horizon-3d') {
+      const explicitPolygons = normalizePolygons(clonePaths(layer?.maskPolygons || []));
+      if (explicitPolygons.length) return unionPolygons(explicitPolygons);
+    }
     const rows = classifyHorizonRows(layer?.displayPaths?.length ? layer.displayPaths : layer?.paths);
     if (!rows.length) return [];
     const polygon = buildHorizonEnvelope(rows[0].path, bounds);
@@ -155,7 +159,14 @@
   const getLayerSilhouette = (layer, engine, bounds) => {
     if (!layer || layer.visible === false) return [];
     if (layer.isGroup) return getGroupSilhouette(layer, engine, bounds);
-    if (layer.type === 'wavetable' && (layer.params?.lineStructure === 'horizon' || layer.params?.lineStructure === 'horizontal-vanishing-point')) {
+    if (
+      layer.type === 'wavetable'
+      && (
+        layer.params?.lineStructure === 'horizon'
+        || layer.params?.lineStructure === 'horizontal-vanishing-point'
+        || layer.params?.lineStructure === 'horizon-3d'
+      )
+    ) {
       return buildHorizonSilhouette(layer, bounds);
     }
     return buildClosedPathSilhouettes(layer);
@@ -180,7 +191,14 @@
         ? { canSource: true, reason: '', sourceType: 'group-union' }
         : { canSource: false, reason: 'No visible silhouette-capable descendants', sourceType: null };
     }
-    if (layer.type === 'wavetable' && (layer.params?.lineStructure === 'horizon' || layer.params?.lineStructure === 'horizontal-vanishing-point')) {
+    if (
+      layer.type === 'wavetable'
+      && (
+        layer.params?.lineStructure === 'horizon'
+        || layer.params?.lineStructure === 'horizontal-vanishing-point'
+        || layer.params?.lineStructure === 'horizon-3d'
+      )
+    ) {
       return { canSource: true, reason: '', sourceType: 'terrain-envelope' };
     }
     const polygons = buildClosedPathSilhouettes(layer);
