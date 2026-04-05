@@ -72,4 +72,42 @@ describe('UI bootstrap integrity', () => {
     expect(checkbox.checked).toBe(true);
     expect(window.Vectura.SETTINGS.removeHiddenGeometry).toBe(true);
   });
+
+  test('theme toggle updates UI theme, document background, and Pen 1 without serializing theme into project state', async () => {
+    runtime = await loadVecturaRuntime({
+      includeRenderer: true,
+      includeUi: true,
+      includeApp: true,
+      includeMain: false,
+      useIndexHtml: true,
+    });
+
+    const { window, document } = runtime;
+    window.app = new window.Vectura.App();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    const themeToggle = document.getElementById('theme-toggle');
+    expect(themeToggle).toBeTruthy();
+    expect(window.Vectura.SETTINGS.uiTheme).toBe('dark');
+
+    themeToggle.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const pen1 = window.Vectura.SETTINGS.pens.find((pen) => pen.id === 'pen-1');
+    const activeLayer = window.app.engine.getActiveLayer();
+    const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+
+    expect(window.Vectura.SETTINGS.uiTheme).toBe('light');
+    expect(window.Vectura.SETTINGS.bgColor).toBe('#ffffff');
+    expect(pen1?.color).toBe('#000000');
+    expect(activeLayer?.penId).toBe('pen-1');
+    expect(activeLayer?.color).toBe('#000000');
+    expect(themeToggle.getAttribute('aria-label')).toContain('dark');
+    expect(themeColorMeta?.getAttribute('content')).toBe('#f5f5f5');
+
+    const state = window.app.captureState();
+    expect(state.settings.uiTheme).toBeUndefined();
+    const prefs = window.app.getPreferenceSnapshot();
+    expect(prefs.uiTheme).toBe('light');
+  });
 });

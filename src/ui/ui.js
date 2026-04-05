@@ -152,6 +152,31 @@
   const TRANSFORM_KEYS = ['seed', 'posX', 'posY', 'scaleX', 'scaleY', 'rotation'];
   const clone =
     typeof structuredClone === 'function' ? (obj) => structuredClone(obj) : (obj) => JSON.parse(JSON.stringify(obj));
+  const getThemeToken = (name, fallback = '') => {
+    if (typeof document === 'undefined' || !document.documentElement) return fallback;
+    const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return value || fallback;
+  };
+  const normalizeHexColor = (value) => {
+    if (typeof value !== 'string') return null;
+    let next = value.trim();
+    if (!next) return null;
+    if (!next.startsWith('#')) next = `#${next}`;
+    if (/^#[0-9a-fA-F]{3}$/.test(next)) {
+      next = `#${next[1]}${next[1]}${next[2]}${next[2]}${next[3]}${next[3]}`;
+    }
+    return /^#[0-9a-fA-F]{6}$/.test(next) ? next.toLowerCase() : null;
+  };
+  const getContrastTextColor = (background, options = {}) => {
+    const { dark = getThemeToken('--color-bg', '#09090b'), light = getThemeToken('--color-accent', '#fafafa') } = options;
+    const normalized = normalizeHexColor(background);
+    if (!normalized) return dark;
+    const r = parseInt(normalized.slice(1, 3), 16) / 255;
+    const g = parseInt(normalized.slice(3, 5), 16) / 255;
+    const b = parseInt(normalized.slice(5, 7), 16) / 255;
+    const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    return luminance > 0.62 ? dark : light;
+  };
   const SEEDLESS_ALGOS = new Set(['lissajous', 'harmonograph', 'expanded', 'group']);
   const usesSeed = (type) => !SEEDLESS_ALGOS.has(type);
   const mapRange = (value, inMin, inMax, outMin, outMax) => {
@@ -5384,8 +5409,9 @@
       .map((path) => shapeToSvg(path, precision, useCurves))
       .filter(Boolean)
       .join('');
+    const strokeColor = getThemeToken('--color-accent', '#fafafa');
     return `
-      <svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#fafafa" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">
+      <svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">
         ${pathsSvg}
       </svg>
     `;
@@ -5916,6 +5942,19 @@
         if (e.key !== 'Escape' || !this.openTopMenuTrigger) return;
         this.setTopMenuOpen(null, false);
       });
+    }
+
+    refreshThemeUi() {
+      const toggle = getEl('theme-toggle', { silent: true });
+      const bgColorInput = getEl('inp-bg-color', { silent: true });
+      const isLight = `${SETTINGS.uiTheme || 'dark'}`.toLowerCase() === 'light';
+      if (toggle) {
+        toggle.setAttribute('aria-pressed', isLight ? 'true' : 'false');
+        toggle.setAttribute('aria-label', isLight ? 'Switch to dark theme' : 'Switch to light theme');
+        toggle.title = isLight ? 'Switch to dark theme' : 'Switch to light theme';
+        toggle.dataset.theme = isLight ? 'light' : 'dark';
+      }
+      if (bgColorInput) bgColorInput.value = SETTINGS.bgColor || bgColorInput.value || '#ffffff';
     }
 
     scrollLayerToTop(layerId) {
@@ -8932,9 +8971,9 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.save();
-      ctx.fillStyle = '#0f1116';
+      ctx.fillStyle = getThemeToken('--designer-grid-bg', '#0f1116');
       ctx.fillRect(0, 0, width, height);
-      ctx.strokeStyle = 'rgba(148,163,184,0.14)';
+      ctx.strokeStyle = getThemeToken('--designer-grid-line', 'rgba(148,163,184,0.14)');
       ctx.lineWidth = 1;
       const gap = 20;
       for (let x = 0; x <= width; x += gap) {
@@ -8960,8 +8999,8 @@
         view = null,
         symmetry = 'none',
         clearCanvas = true,
-        fillStyle = 'rgba(56, 189, 248, 0.08)',
-        strokeStyle = '#67e8f9',
+        fillStyle = getThemeToken('--designer-fill-active', 'rgba(56, 189, 248, 0.08)'),
+        strokeStyle = getThemeToken('--designer-stroke-active', '#67e8f9'),
       } = options;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
@@ -9175,7 +9214,10 @@
 
         activeShadings.forEach((shade, idx) => {
           const alpha = 0.22 + Math.min(idx, 4) * 0.08;
-          ctx.strokeStyle = `rgba(125, 211, 252, ${Math.min(0.6, alpha).toFixed(2)})`;
+          const shadingColor = getThemeToken('--designer-shading-stroke', 'rgba(125, 211, 252, 0.6)');
+          ctx.strokeStyle = shadingColor.startsWith('rgba(')
+            ? shadingColor.replace(/rgba\(([^)]+),\s*[^,]+\)$/u, (_match, prefix) => `rgba(${prefix}, ${Math.min(0.6, alpha).toFixed(2)})`)
+            : shadingColor;
           ctx.fillStyle = ctx.strokeStyle;
           ctx.lineWidth = 1;
           const type = shade.type || 'radial';
@@ -9275,15 +9317,17 @@
           if (control.kind === 'handle') {
             const anchorW = control.mirror ? -control.anchor.w : control.anchor.w;
             const anchor = this.designerToCanvas(canvas, { t: control.anchor.t, w: anchorW }, view);
-            ctx.strokeStyle = 'rgba(34, 211, 238, 0.55)';
+            ctx.strokeStyle = getThemeToken('--designer-control-line', 'rgba(34, 211, 238, 0.55)');
             ctx.beginPath();
             ctx.moveTo(anchor.x, anchor.y);
             ctx.lineTo(control.point.x, control.point.y);
             ctx.stroke();
           }
           ctx.beginPath();
-          ctx.fillStyle = '#0f172a';
-          ctx.strokeStyle = control.kind === 'anchor' ? '#22d3ee' : '#67e8f9';
+          ctx.fillStyle = getThemeToken('--designer-control-fill', '#0f172a');
+          ctx.strokeStyle = control.kind === 'anchor'
+            ? getThemeToken('--designer-control-anchor', '#22d3ee')
+            : getThemeToken('--designer-control-handle', '#67e8f9');
           ctx.lineWidth = 1.2;
           const r = control.kind === 'anchor' ? 3.2 : 2.3;
           ctx.arc(control.point.x, control.point.y, r, 0, Math.PI * 2);
@@ -9522,8 +9566,12 @@
           view: this.getPetalDesignerView(pd.state, side),
           symmetry: this.getPetalDesignerSymmetryForSide(pd.state, side),
           clearCanvas,
-          fillStyle: isActive ? 'rgba(56, 189, 248, 0.1)' : 'rgba(34, 211, 238, 0.05)',
-          strokeStyle: isActive ? '#67e8f9' : 'rgba(103, 232, 249, 0.55)',
+          fillStyle: isActive
+            ? getThemeToken('--designer-fill-active', 'rgba(56, 189, 248, 0.1)')
+            : getThemeToken('--designer-fill-inactive', 'rgba(34, 211, 238, 0.05)'),
+          strokeStyle: isActive
+            ? getThemeToken('--designer-stroke-active', '#67e8f9')
+            : getThemeToken('--designer-stroke-inactive', 'rgba(103, 232, 249, 0.55)'),
         });
       };
       if (viewStyle === 'side-by-side') {
@@ -9691,7 +9739,7 @@
             <div><span class="text-vectura-accent">Alt/Option</span> Break pen handles or draw shapes from center</div>
             <div><span class="text-vectura-accent">Arrow Up / Down</span> Change polygon side count while dragging</div>
             <div><span class="text-vectura-accent">Mask Parent Drag</span> While moving/resizing/rotating a mask parent, masked descendants ghost-preview outside the silhouette until mouse release</div>
-            <div><span class="text-vectura-accent">Shape Reticle</span> Rectangle/Oval/Polygon tools and a single selected primitive shape in Selection use an Illustrator-style reticle cursor</div>
+            <div><span class="text-vectura-accent">Shape Reticle</span> Rectangle/Oval/Polygon tools use an Illustrator-style reticle cursor while active</div>
             <div><span class="text-vectura-accent">Selection Tool</span> Drag a shape corner widget to round all corners together</div>
             <div><span class="text-vectura-accent">Direct Tool</span> Drag endpoints/handles on individual line paths, or drag a shape corner widget to round one corner</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl</span> Temporary selection while using Pen</div>
@@ -9703,6 +9751,7 @@
             <div><span class="text-vectura-accent">Cmd/Ctrl + [</span> Move layer down</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + ]</span> Move layer up</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + Shift + [ / ]</span> Send to back / front</div>
+            <div><span class="text-vectura-accent">Theme Toggle</span> Use the sun/moon switch in the upper-right header to flip dark and light UI modes</div>
             <div><span class="text-vectura-accent">Delete</span> Remove selected layer(s)</div>
             <div><span class="text-vectura-accent">Arrow Keys</span> Nudge (Shift = bigger)</div>
             <div><span class="text-vectura-accent">Alt/Option + Drag</span> Duplicate layer</div>
@@ -9771,6 +9820,9 @@
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Use the File menu to Save/Open full .vectura projects, Import SVG, open Document Setup, and Export SVG.
+          </div>
+          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
+            Use the sun/moon toggle in the upper-right header to switch the full interface between dark and light themes; switching themes also flips the document background default and <code>Pen 1</code> between white and black.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Use the Insert menu to add a Mirror Modifier, then drag layers under it in the Layers panel so the modifier container owns and reflects that subtree.
@@ -13242,7 +13294,7 @@
       const pens = SETTINGS.pens || [];
       const palette = this.getActivePalette();
       const colors = palette?.colors || [];
-      const color = colors.length ? colors[pens.length % colors.length] : '#ffffff';
+      const color = colors.length ? colors[pens.length % colors.length] : getThemeToken('--color-accent', '#ffffff');
       const nextIndex = pens.length + 1;
       const pen = {
         id: `pen-${Math.random().toString(36).slice(2, 9)}`,
@@ -13822,6 +13874,7 @@
     }
 
     initSettingsValues() {
+      this.refreshThemeUi();
       const margin = getEl('set-margin');
       const speedDown = getEl('set-speed-down');
       const speedUp = getEl('set-speed-up');
@@ -14357,6 +14410,7 @@
       const btnSettings = getEl('btn-settings');
       const btnCloseSettings = getEl('btn-close-settings');
       const btnHelp = getEl('btn-help');
+      const themeToggle = getEl('theme-toggle', { silent: true });
       const machineProfile = getEl('machine-profile');
       const setMargin = getEl('set-margin');
       const setTruncate = getEl('set-truncate');
@@ -14489,6 +14543,12 @@
       }
       if (btnHelp) {
         btnHelp.onclick = () => this.openHelp(false);
+      }
+      if (themeToggle) {
+        this.refreshThemeUi();
+        themeToggle.onclick = () => {
+          this.app.toggleTheme?.();
+        };
       }
 
       if (machineProfile) {
@@ -15509,7 +15569,7 @@
             ${gripMarkup}
             <button class="group-toggle" type="button" aria-label="Toggle group" title="Toggle group">${group.groupCollapsed ? '▸' : '▾'}</button>
             ${isModifierContainer ? `<input type="checkbox" ${modifier?.enabled === false ? '' : 'checked'} class="group-enabled cursor-pointer" aria-label="Toggle modifier">` : ''}
-            <span class="layer-name text-sm ${isActive ? 'text-white font-bold' : 'text-vectura-accent'} truncate">${group.name}</span>
+            <span class="layer-name text-sm ${isActive ? 'text-vectura-accent font-bold' : 'text-vectura-accent'} truncate">${group.name}</span>
             <input
               class="layer-name-input hidden w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:outline-none"
               type="text"
@@ -15670,13 +15730,13 @@
             ? `<button type="button" class="layer-mask-trigger ${l.mask?.enabled ? 'layer-mask-trigger--active' : ''}" aria-label="Edit mask" title="Edit mask">Mask</button>`
             : '';
         const expandMarkup = showExpand
-          ? '<button class="text-sm text-vectura-muted hover:text-white px-1 btn-expand" aria-label="Expand layer" title="Expand layer">⇲</button>'
+          ? '<button class="text-sm text-vectura-muted hover:text-vectura-accent px-1 btn-expand" aria-label="Expand layer" title="Expand layer">⇲</button>'
           : '';
         const moveMarkup = isChild
           ? ''
           : `
-            <button class="text-sm text-vectura-muted hover:text-white px-1 btn-up" aria-label="Move layer up" title="Move layer up">▲</button>
-            <button class="text-sm text-vectura-muted hover:text-white px-1 btn-down" aria-label="Move layer down" title="Move layer down">▼</button>
+            <button class="text-sm text-vectura-muted hover:text-vectura-accent px-1 btn-up" aria-label="Move layer up" title="Move layer up">▲</button>
+            <button class="text-sm text-vectura-muted hover:text-vectura-accent px-1 btn-down" aria-label="Move layer down" title="Move layer down">▼</button>
           `;
         const el = document.createElement('div');
         el.className = `layer-item ${isChild ? 'layer-sub' : ''} flex items-center justify-between bg-vectura-bg border border-vectura-border p-2 mb-2 group cursor-pointer hover:bg-vectura-border ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}`;
@@ -15696,7 +15756,7 @@
               aria-label="Toggle layer visibility"
               title="Toggle visibility"
             >
-            <span class="layer-name text-sm truncate ${isActive ? 'text-white font-bold' : 'text-vectura-muted'}">${escapeHtml(l.name)}</span>
+            <span class="layer-name text-sm truncate ${isActive ? 'text-vectura-accent font-bold' : 'text-vectura-muted'}">${escapeHtml(l.name)}</span>
             <input
               class="layer-name-input hidden w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:outline-none"
               type="text"
@@ -15709,7 +15769,7 @@
             ${maskMarkup}
             ${expandMarkup}
             ${moveMarkup}
-            <button class="text-sm text-vectura-muted hover:text-white px-1 btn-dup" aria-label="Duplicate layer" title="Duplicate layer">⧉</button>
+            <button class="text-sm text-vectura-muted hover:text-vectura-accent px-1 btn-dup" aria-label="Duplicate layer" title="Duplicate layer">⧉</button>
             <button class="text-sm text-vectura-muted hover:text-vectura-danger px-1 ml-1 btn-del" aria-label="Delete layer" title="Delete layer">✕</button>
           </div>
         `;
@@ -16711,7 +16771,7 @@
 
       const draw = () => {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = '#101115';
+        ctx.fillStyle = getThemeToken('--plotter-bg', '#101115');
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         if (!data.path.length) return;
         let minX = Infinity;
@@ -16734,7 +16794,7 @@
           y: (pt.y - (minY + maxY) / 2) * scale + canvas.height / 2,
         });
 
-        ctx.strokeStyle = 'rgba(113,113,122,0.35)';
+        ctx.strokeStyle = getThemeToken('--plotter-path-base', 'rgba(113,113,122,0.35)');
         ctx.lineWidth = 1;
         ctx.beginPath();
         data.path.forEach((pt, idx) => {
@@ -16756,7 +16816,7 @@
         ctx.stroke();
 
         const head = toCanvas(data.path[limit]);
-        ctx.fillStyle = '#fafafa';
+        ctx.fillStyle = getThemeToken('--plotter-head', '#fafafa');
         ctx.beginPath();
         ctx.arc(head.x, head.y, 3, 0, Math.PI * 2);
         ctx.fill();
@@ -20379,7 +20439,7 @@
         overlayColorPreview.className = 'value-chip text-xs text-vectura-accent font-mono color-thickness-pill';
         overlayColorPreview.textContent = `${(SETTINGS.optimizationOverlayColor || '#38bdf8').toUpperCase()}`;
         overlayColorPreview.style.background = SETTINGS.optimizationOverlayColor || '#38bdf8';
-        overlayColorPreview.style.color = '#09090b';
+        overlayColorPreview.style.color = getContrastTextColor(SETTINGS.optimizationOverlayColor || '#38bdf8');
         const overlayColorInput = document.createElement('input');
         overlayColorInput.type = 'color';
         overlayColorInput.value = SETTINGS.optimizationOverlayColor || '#38bdf8';
@@ -20420,6 +20480,7 @@
             SETTINGS.optimizationOverlayColor = color;
             overlayColorPreview.textContent = color.toUpperCase();
             overlayColorPreview.style.background = color;
+            overlayColorPreview.style.color = getContrastTextColor(color);
           }
           if (width !== undefined) {
             const next = Math.max(0.05, Math.min(1, parseFloat(width)));
@@ -20978,12 +21039,12 @@
                 const nextColor = color || getHexComplement(SETTINGS.optimizationOverlayColor || '#38bdf8');
                 secondaryInput.textContent = nextColor.toUpperCase();
                 secondaryInput.style.background = nextColor;
-                secondaryInput.style.color = '#09090b';
+                secondaryInput.style.color = getContrastTextColor(nextColor);
               }
             };
             if (secondaryInput) {
               secondaryInput.style.background = currentColor;
-              secondaryInput.style.color = '#09090b';
+              secondaryInput.style.color = getContrastTextColor(currentColor);
               secondaryInput.onclick = () => openColorPickerAnchoredTo(secondaryColorInput, secondaryInput);
             }
             secondaryColorInput.oninput = (e) => applySecondary(e.target.value);

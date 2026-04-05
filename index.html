@@ -23,13 +23,13 @@
           fontFamily: { mono: ['"JetBrains Mono"', 'monospace'] },
           colors: {
             vectura: {
-              bg: '#09090b',
-              panel: '#18181b',
-              border: '#27272a',
-              text: '#e4e4e7',
-              muted: '#71717a',
-              accent: '#fafafa',
-              danger: '#ef4444',
+              bg: 'rgb(var(--vectura-bg-rgb) / <alpha-value>)',
+              panel: 'rgb(var(--vectura-panel-rgb) / <alpha-value>)',
+              border: 'rgb(var(--vectura-border-rgb) / <alpha-value>)',
+              text: 'rgb(var(--vectura-text-rgb) / <alpha-value>)',
+              muted: 'rgb(var(--vectura-muted-rgb) / <alpha-value>)',
+              accent: 'rgb(var(--vectura-accent-rgb) / <alpha-value>)',
+              danger: 'rgb(var(--vectura-danger-rgb) / <alpha-value>)',
             },
           },
         },
@@ -109,7 +109,54 @@
           </div>
         </nav>
       </div>
-      <div class="text-xs text-vectura-muted" id="status-bar" role="status" aria-live="polite">READY</div>
+      <div class="header-status-actions flex items-center gap-3 shrink-0">
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch to light theme" aria-pressed="false"
+          title="Switch theme">
+          <span class="theme-toggle-icon theme-toggle-icon--light" aria-hidden="true">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
+              width="1em"
+              height="1em"
+              fill="currentColor"
+              stroke-linecap="round"
+              class="theme-toggle__classic"
+              viewBox="0 0 32 32"
+            >
+              <clipPath id="theme-toggle__classic__cutout">
+                <path d="M0-5h30a1 1 0 0 0 9 13v24H0Z" />
+              </clipPath>
+              <g clip-path="url(#theme-toggle__classic__cutout)">
+                <circle cx="16" cy="16" r="9.34" />
+                <g stroke="currentColor" stroke-width="1.5">
+                  <path d="M16 5.5v-4" />
+                  <path d="M16 30.5v-4" />
+                  <path d="M1.5 16h4" />
+                  <path d="M26.5 16h4" />
+                  <path d="m23.4 8.6 2.8-2.8" />
+                  <path d="m5.7 26.3 2.9-2.9" />
+                  <path d="m5.8 5.8 2.8 2.8" />
+                  <path d="m23.4 23.4 2.9 2.9" />
+                </g>
+              </g>
+            </svg>
+          </span>
+          <span class="theme-toggle-icon theme-toggle-icon--dark" aria-hidden="true">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
+              width="1em"
+              height="1em"
+              fill="currentColor"
+              class="theme-toggle__moon"
+              viewBox="0 0 32 32"
+            >
+              <path d="M21.07 4.93a12 12 0 1 0 6 22.14A13 13 0 1 1 21.07 4.93Z" />
+            </svg>
+          </span>
+        </button>
+        <div class="text-xs text-vectura-muted" id="status-bar" role="status" aria-live="polite">READY</div>
+      </div>
     </div>
   </header>
   <input id="file-open-vectura" type="file" accept=".vectura,application/json" class="hidden" />
@@ -167,7 +214,7 @@
                     </div>
                     <div>
                       <button id="btn-rand-seed"
-                        class="w-full h-full bg-vectura-border text-[10px] hover:text-white mt-[1px] hover:bg-vectura-border/80 transition-colors"
+                        class="w-full h-full bg-vectura-border text-[10px] hover:text-vectura-accent mt-[1px] hover:bg-vectura-border/80 transition-colors"
                         type="button">
                         RANDOMIZE
                       </button>
@@ -238,7 +285,7 @@
       Model
     </button>
 
-    <section class="flex-1 flex flex-col bg-[#121214] relative overflow-hidden">
+    <section class="workspace-shell flex-1 flex flex-col relative overflow-hidden">
       <div id="tool-bar" class="tool-bar" aria-label="Tools">
         <div class="tool-group">
           <button class="tool-btn" data-tool="select" type="button" aria-label="Selection Tool (V)"
@@ -547,7 +594,7 @@
     <div id="settings-panel" class="settings-panel bg-vectura-panel border-r border-vectura-border">
       <div class="p-4 border-b border-vectura-border flex justify-between items-center bg-vectura-panel">
         <span class="font-bold text-vectura-accent">DOCUMENT SETUP</span>
-        <button id="btn-close-settings" class="text-vectura-muted hover:text-white" aria-label="Close settings"
+        <button id="btn-close-settings" class="text-vectura-muted hover:text-vectura-accent" aria-label="Close settings"
           type="button">
           ✕
         </button>

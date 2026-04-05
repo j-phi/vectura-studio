@@ -2,10 +2,16 @@
  * Application orchestrator.
  */
 (() => {
-  const { VectorEngine, Renderer, UI, SETTINGS } = window.Vectura || {};
+  const { VectorEngine, Renderer, UI, SETTINGS, THEMES = {} } = window.Vectura || {};
   const clone = (obj) => JSON.parse(JSON.stringify(obj));
   const PREFERENCE_COOKIE = 'vectura_prefs';
   const PREFERENCE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
+  const DEFAULT_THEME = 'dark';
+  const normalizeThemeName = (theme) => {
+    const key = `${theme || ''}`.trim().toLowerCase();
+    return Object.prototype.hasOwnProperty.call(THEMES, key) ? key : DEFAULT_THEME;
+  };
+  const getThemeConfig = (theme) => THEMES[normalizeThemeName(theme)] || THEMES[DEFAULT_THEME] || null;
 
   class App {
     constructor() {
@@ -14,9 +20,23 @@
       this.preferencePersistTimer = null;
       this.lastPreferenceHash = '';
       this.applyPreferencesFromCookie();
+      this.applyTheme(SETTINGS.uiTheme, {
+        persist: false,
+        syncPen1: false,
+        syncDocumentBg: false,
+        refreshUi: false,
+        render: false,
+      });
       this.engine = new VectorEngine();
       this.renderer = new Renderer('main-canvas', this.engine);
       this.ui = new UI(this);
+      this.applyTheme(SETTINGS.uiTheme, {
+        persist: false,
+        syncPen1: false,
+        syncDocumentBg: false,
+        refreshUi: true,
+        render: false,
+      });
       this.renderer.setSelection([this.engine.activeLayerId], this.engine.activeLayerId);
       this.renderer.onSelectLayer = (layer) => {
         if (layer) this.engine.activeLayerId = layer.id;
@@ -65,6 +85,7 @@
 
     getPreferenceSnapshot() {
       return {
+        uiTheme: SETTINGS.uiTheme || DEFAULT_THEME,
         cookiePreferencesEnabled: SETTINGS.cookiePreferencesEnabled === true,
         margin: SETTINGS.margin,
         speedDown: SETTINGS.speedDown,
@@ -112,6 +133,7 @@
 
     applyPreferenceSnapshot(snapshot) {
       if (!snapshot || typeof snapshot !== 'object') return;
+      SETTINGS.uiTheme = normalizeThemeName(snapshot.uiTheme ?? SETTINGS.uiTheme);
       SETTINGS.cookiePreferencesEnabled = snapshot.cookiePreferencesEnabled === true;
       SETTINGS.margin = snapshot.margin ?? SETTINGS.margin;
       SETTINGS.speedDown = snapshot.speedDown ?? SETTINGS.speedDown;
@@ -341,6 +363,13 @@
         this.renderer.lightSource = SETTINGS.lightSource;
         this.renderer.lightSourceSelected = false;
       }
+      this.applyTheme(SETTINGS.uiTheme, {
+        persist: false,
+        syncPen1: false,
+        syncDocumentBg: false,
+        refreshUi: true,
+        render: false,
+      });
       this.renderer.center();
       this.ui.renderLayers();
       this.ui.renderPens();
@@ -348,6 +377,78 @@
       this.ui.updateFormula();
       this.render();
       this.persistPreferencesDebounced();
+    }
+
+    applyTheme(nextTheme, options = {}) {
+      const {
+        persist = true,
+        syncPen1 = false,
+        syncDocumentBg = false,
+        refreshUi = true,
+        render = true,
+      } = options;
+      const themeName = normalizeThemeName(nextTheme ?? SETTINGS.uiTheme);
+      const theme = getThemeConfig(themeName);
+      if (!theme) return null;
+      SETTINGS.uiTheme = themeName;
+
+      const root = document.documentElement;
+      if (root) {
+        root.dataset.theme = themeName;
+        root.style.colorScheme = theme.colorScheme || themeName;
+        if (theme.cssVars && typeof theme.cssVars === 'object') {
+          Object.entries(theme.cssVars).forEach(([key, value]) => {
+            root.style.setProperty(key, value);
+          });
+        }
+      }
+
+      const colorSchemeMeta = document.querySelector('meta[name="color-scheme"]');
+      if (colorSchemeMeta) colorSchemeMeta.setAttribute('content', theme.colorScheme || themeName);
+      const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+      if (themeColorMeta && theme.metaThemeColor) themeColorMeta.setAttribute('content', theme.metaThemeColor);
+
+      if (syncDocumentBg && theme.documentBg) {
+        SETTINGS.bgColor = theme.documentBg;
+      }
+
+      if (syncPen1 && Array.isArray(SETTINGS.pens) && SETTINGS.pens.length) {
+        const pen1 = SETTINGS.pens.find((pen) => pen?.id === 'pen-1') || SETTINGS.pens[0];
+        if (pen1) {
+          pen1.color = theme.pen1Color || pen1.color;
+          if (this.engine?.layers?.length) {
+            this.engine.layers.forEach((layer) => {
+              if (layer.penId === pen1.id) {
+                layer.color = pen1.color;
+              }
+            });
+          }
+        }
+      }
+
+      if (refreshUi && this.ui) {
+        this.ui.refreshThemeUi?.();
+        this.ui.renderPens?.();
+        this.ui.renderLayers?.();
+      }
+
+      if (render && this.renderer) {
+        this.render();
+      } else if (persist) {
+        this.persistPreferencesDebounced();
+      }
+      return theme;
+    }
+
+    toggleTheme() {
+      const next = normalizeThemeName(SETTINGS.uiTheme) === 'light' ? 'dark' : 'light';
+      return this.applyTheme(next, {
+        persist: true,
+        syncPen1: true,
+        syncDocumentBg: true,
+        refreshUi: true,
+        render: true,
+      });
     }
 
     pushHistory() {

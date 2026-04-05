@@ -25,6 +25,11 @@
     return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 16 16, crosshair`;
   })();
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  const getThemeToken = (name, fallback = '') => {
+    if (typeof document === 'undefined' || !document.documentElement) return fallback;
+    const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return value || fallback;
+  };
   const distance = (a, b) => Math.hypot((b?.x ?? 0) - (a?.x ?? 0), (b?.y ?? 0) - (a?.y ?? 0));
   const clonePoint = (pt) => ({ x: pt.x, y: pt.y });
   const cloneHandle = (pt) => (pt ? { x: pt.x, y: pt.y } : null);
@@ -1639,19 +1644,19 @@
       const w = this.canvas.width / window.devicePixelRatio;
       const h = this.canvas.height / window.devicePixelRatio;
       this.ctx.clearRect(0, 0, w, h);
-      this.ctx.fillStyle = '#121214';
+      this.ctx.fillStyle = getThemeToken('--render-canvas', '#121214');
       this.ctx.fillRect(0, 0, w, h);
       this.ctx.save();
       this.ctx.translate(this.offsetX, this.offsetY);
       this.ctx.scale(this.scale, this.scale);
       const prof = this.engine.currentProfile;
       this.ctx.fillStyle = SETTINGS.bgColor;
-      this.ctx.shadowColor = 'rgba(0,0,0,0.5)';
+      this.ctx.shadowColor = getThemeToken('--render-shadow', 'rgba(0,0,0,0.5)');
       this.ctx.shadowBlur = 20;
       this.ctx.fillRect(0, 0, prof.width, prof.height);
       this.ctx.shadowBlur = 0;
       if (SETTINGS.gridOverlay) this.drawGridOverlay(prof);
-      this.ctx.strokeStyle = '#333';
+      this.ctx.strokeStyle = getThemeToken('--render-paper-outline', '#333');
       this.ctx.lineWidth = 1 / this.scale;
       this.ctx.strokeRect(0, 0, prof.width, prof.height);
 
@@ -1889,7 +1894,7 @@
           const color = guide.mirror.color || '#56b4e9';
           const lineWidth = 0.45;
           const dash = 2 / this.scale;
-          const underlay = 'rgba(15, 23, 42, 0.92)';
+        const underlay = getThemeToken('--render-underlay-fill', 'rgba(15, 23, 42, 0.92)');
           this.ctx.save();
           this.ctx.strokeStyle = color;
           this.ctx.fillStyle = color;
@@ -1913,7 +1918,7 @@
             this.ctx.fill();
 
             this.ctx.fillStyle = color;
-            this.ctx.strokeStyle = 'rgba(15, 23, 42, 1)';
+            this.ctx.strokeStyle = getThemeToken('--render-underlay-stroke', 'rgba(15, 23, 42, 1)');
             this.ctx.lineWidth = 0.8 / this.scale;
             this.ctx.beginPath();
             this.ctx.moveTo(tri.tip.x, tri.tip.y);
@@ -2073,7 +2078,7 @@
       if (!profile) return;
       const spacing = 10;
       this.ctx.save();
-      this.ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      this.ctx.strokeStyle = getThemeToken('--render-frame-stroke', 'rgba(255,255,255,0.08)');
       this.ctx.lineWidth = 0.15;
       this.ctx.beginPath();
       for (let x = 0; x <= profile.width; x += spacing) {
@@ -3417,7 +3422,7 @@
       if (maskLayer.mask?.hideLayer) {
         this.ctx.save();
         this.ctx.lineWidth = 1 / this.scale;
-        this.ctx.strokeStyle = 'rgba(248, 250, 252, 0.75)';
+        this.ctx.strokeStyle = getThemeToken('--render-guide-faint', 'rgba(248, 250, 252, 0.75)');
         this.ctx.setLineDash([4 / this.scale, 3 / this.scale]);
         this.ctx.beginPath();
         clipPolygons.forEach((polygon) => this.tracePolygonPath(polygon));
@@ -3514,7 +3519,7 @@
       const rotateRadius = 5 / this.scale;
       const { nw, ne, se, sw } = bounds.corners;
       this.ctx.save();
-      this.ctx.strokeStyle = '#f8fafc';
+      this.ctx.strokeStyle = getThemeToken('--render-selection-handle-stroke', '#f8fafc');
       this.ctx.lineWidth = 1 / this.scale;
       this.ctx.setLineDash([4 / this.scale, 4 / this.scale]);
       this.ctx.beginPath();
@@ -3525,8 +3530,8 @@
       this.ctx.closePath();
       this.ctx.stroke();
       this.ctx.setLineDash([]);
-      this.ctx.fillStyle = '#111827';
-      this.ctx.strokeStyle = '#f8fafc';
+      this.ctx.fillStyle = getThemeToken('--render-selection-handle-fill', '#111827');
+      this.ctx.strokeStyle = getThemeToken('--render-selection-handle-stroke', '#f8fafc');
       if (showHandles) {
         const handles = this.getHandlePoints(bounds);
         handles.forEach((pt) => {
@@ -3551,8 +3556,8 @@
     drawSelectionRect(rect) {
       if (!rect) return;
       this.ctx.save();
-      this.ctx.strokeStyle = 'rgba(148, 163, 184, 0.7)';
-      this.ctx.fillStyle = 'rgba(148, 163, 184, 0.12)';
+      this.ctx.strokeStyle = getThemeToken('--render-marquee-stroke', 'rgba(148, 163, 184, 0.7)');
+      this.ctx.fillStyle = getThemeToken('--render-marquee-fill', 'rgba(148, 163, 184, 0.12)');
       this.ctx.lineWidth = 1 / this.scale;
       this.ctx.setLineDash([4 / this.scale, 4 / this.scale]);
       this.ctx.beginPath();
@@ -3577,8 +3582,8 @@
     drawSelectionPath(path) {
       if (!Array.isArray(path) || path.length < 2) return;
       this.ctx.save();
-      this.ctx.strokeStyle = 'rgba(148, 163, 184, 0.8)';
-      this.ctx.fillStyle = 'rgba(148, 163, 184, 0.08)';
+      this.ctx.strokeStyle = getThemeToken('--render-marquee-stroke', 'rgba(148, 163, 184, 0.7)');
+      this.ctx.fillStyle = getThemeToken('--render-marquee-fill', 'rgba(148, 163, 184, 0.12)');
       this.ctx.lineWidth = 1 / this.scale;
       this.ctx.setLineDash([4 / this.scale, 4 / this.scale]);
       this.ctx.beginPath();
@@ -3597,7 +3602,7 @@
       const { anchors } = data;
       const path = this.buildPenPathFromAnchors(anchors, Boolean(this.directSelection?.closed));
       this.ctx.save();
-      this.ctx.strokeStyle = '#22d3ee';
+      this.ctx.strokeStyle = getThemeToken('--render-direct-stroke', '#22d3ee');
       this.ctx.lineWidth = 1.1 / this.scale;
       this.ctx.setLineDash([4 / this.scale, 3 / this.scale]);
       this.ctx.beginPath();
@@ -3613,34 +3618,34 @@
       const handleR = 2.2 / this.scale;
       anchors.forEach((anchor) => {
         if (anchor.in) {
-          this.ctx.strokeStyle = 'rgba(34, 211, 238, 0.65)';
+          this.ctx.strokeStyle = getThemeToken('--render-direct-handle-line', 'rgba(34, 211, 238, 0.65)');
           this.ctx.beginPath();
           this.ctx.moveTo(anchor.x, anchor.y);
           this.ctx.lineTo(anchor.in.x, anchor.in.y);
           this.ctx.stroke();
           this.ctx.beginPath();
-          this.ctx.fillStyle = '#0f172a';
-          this.ctx.strokeStyle = '#22d3ee';
+          this.ctx.fillStyle = getThemeToken('--render-direct-handle-fill', '#0f172a');
+          this.ctx.strokeStyle = getThemeToken('--render-direct-stroke', '#22d3ee');
           this.ctx.arc(anchor.in.x, anchor.in.y, handleR, 0, Math.PI * 2);
           this.ctx.fill();
           this.ctx.stroke();
         }
         if (anchor.out) {
-          this.ctx.strokeStyle = 'rgba(34, 211, 238, 0.65)';
+          this.ctx.strokeStyle = getThemeToken('--render-direct-handle-line', 'rgba(34, 211, 238, 0.65)');
           this.ctx.beginPath();
           this.ctx.moveTo(anchor.x, anchor.y);
           this.ctx.lineTo(anchor.out.x, anchor.out.y);
           this.ctx.stroke();
           this.ctx.beginPath();
-          this.ctx.fillStyle = '#0f172a';
-          this.ctx.strokeStyle = '#22d3ee';
+          this.ctx.fillStyle = getThemeToken('--render-direct-handle-fill', '#0f172a');
+          this.ctx.strokeStyle = getThemeToken('--render-direct-stroke', '#22d3ee');
           this.ctx.arc(anchor.out.x, anchor.out.y, handleR, 0, Math.PI * 2);
           this.ctx.fill();
           this.ctx.stroke();
         }
         this.ctx.beginPath();
-        this.ctx.fillStyle = '#0f172a';
-        this.ctx.strokeStyle = '#22d3ee';
+        this.ctx.fillStyle = getThemeToken('--render-direct-handle-fill', '#0f172a');
+        this.ctx.strokeStyle = getThemeToken('--render-direct-stroke', '#22d3ee');
         this.ctx.arc(anchor.x, anchor.y, anchorR, 0, Math.PI * 2);
         this.ctx.fill();
         this.ctx.stroke();
@@ -3655,8 +3660,10 @@
       if (!handles.length) return;
       this.ctx.save();
       this.ctx.lineWidth = 1 / this.scale;
-      this.ctx.strokeStyle = scope === 'all' ? '#f8fafc' : '#22d3ee';
-      this.ctx.fillStyle = '#0f172a';
+      this.ctx.strokeStyle = scope === 'all'
+        ? getThemeToken('--render-selection-handle-stroke', '#f8fafc')
+        : getThemeToken('--render-direct-stroke', '#22d3ee');
+      this.ctx.fillStyle = getThemeToken('--render-direct-handle-fill', '#0f172a');
       const r = 3.2 / this.scale;
       handles.forEach((handle) => {
         this.ctx.beginPath();
@@ -3691,7 +3698,7 @@
       }
       this.ctx.stroke();
       this.ctx.setLineDash([]);
-      this.ctx.fillStyle = '#0f172a';
+      this.ctx.fillStyle = getThemeToken('--render-direct-handle-fill', '#0f172a');
       this.ctx.strokeStyle = '#38bdf8';
       const r = 3 / this.scale;
       anchors.forEach((anchor, idx) => {

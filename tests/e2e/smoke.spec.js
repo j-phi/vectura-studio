@@ -193,6 +193,54 @@ test.describe('Vectura smoke interactions', () => {
     expect(pageErrors).toEqual([]);
   });
 
+  test('theme toggle flips UI theme, Pen 1, and document background in the live app shell', async ({ page }) => {
+    const pageErrors = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+
+    await page.goto('/');
+
+    const themeToggle = page.locator('#theme-toggle');
+    await expect(themeToggle).toBeVisible();
+
+    const initial = await page.evaluate(() => {
+      const pen1 = (window.Vectura?.SETTINGS?.pens || []).find((pen) => pen.id === 'pen-1');
+      const activeLayer = window.app?.engine?.getActiveLayer?.();
+      const root = document.documentElement;
+      const styles = getComputedStyle(root);
+      return {
+        theme: window.Vectura?.SETTINGS?.uiTheme,
+        pen1: pen1?.color || null,
+        layerColor: activeLayer?.color || null,
+        bgColor: window.Vectura?.SETTINGS?.bgColor,
+        headerBg: styles.getPropertyValue('--color-panel').trim(),
+      };
+    });
+    expect(initial.theme).toBe('dark');
+
+    await themeToggle.click();
+
+    await expect
+      .poll(async () =>
+        page.evaluate(() => ({
+          theme: window.Vectura?.SETTINGS?.uiTheme,
+          pen1: (window.Vectura?.SETTINGS?.pens || []).find((pen) => pen.id === 'pen-1')?.color || null,
+          layerColor: window.app?.engine?.getActiveLayer?.()?.color || null,
+          bgColor: window.Vectura?.SETTINGS?.bgColor,
+          themeColor: document.querySelector('meta[name=\"theme-color\"]')?.getAttribute('content') || null,
+        }))
+      )
+      .toEqual({
+        theme: 'light',
+        pen1: '#000000',
+        layerColor: '#000000',
+        bgColor: '#ffffff',
+        themeColor: '#f5f5f5',
+      });
+
+    await expect(themeToggle).toHaveAttribute('aria-label', /dark theme/i);
+    expect(pageErrors).toEqual([]);
+  });
+
   test('document setup keeps a single default-on remove hidden geometry toggle inside export settings', async ({ page }) => {
     const pageErrors = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
@@ -582,7 +630,7 @@ test.describe('Vectura smoke interactions', () => {
     expect(pageErrors).toEqual([]);
   });
 
-  test('shape reticle cursor appears for shape tools and selected primitive shapes', async ({ page }, testInfo) => {
+  test('shape reticle cursor appears for shape tools but selection restores normal cursor behavior', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name.includes('tablet-touch'), 'Tablet emulation does not reliably synthesize cursor hover states.');
     const pageErrors = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
@@ -620,10 +668,71 @@ test.describe('Vectura smoke interactions', () => {
     expect(((rectMeta?.y1 || 0) + (rectMeta?.y2 || 0)) / 2).toBeCloseTo(worldStart.y, 1);
 
     await page.evaluate(() => window.app.ui.setActiveTool('select'));
-    await page.mouse.move(box.x + box.width * 0.1, box.y + box.height * 0.1);
+    await expect
+      .poll(async () => page.locator('#main-canvas').evaluate((canvasEl) => canvasEl.dataset.cursorMode || ''))
+      .toBe('crosshair');
+
+    const rotatePoint = await page.evaluate(() => {
+      const renderer = window.app.renderer;
+      const layer = window.app.engine.getActiveLayer();
+      const bounds = renderer.getSelectionBounds([layer]);
+      const rotate = renderer.getRotateHandlePoint(bounds);
+      const screen = renderer.worldToScreen(rotate.x, rotate.y);
+      const rect = document.getElementById('main-canvas').getBoundingClientRect();
+      return {
+        x: rect.left + screen.x,
+        y: rect.top + screen.y,
+      };
+    });
+
+    await page.mouse.move(rotatePoint.x, rotatePoint.y);
+    await expect
+      .poll(async () => page.locator('#main-canvas').evaluate((canvasEl) => canvasEl.dataset.cursorMode || ''))
+      .toBe('grab');
+
+    expect(pageErrors).toEqual([]);
+  });
+
+  test('selection cursor resets after creating a circle mask parent', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name.includes('tablet-touch'), 'Tablet emulation does not reliably synthesize cursor hover states.');
+    const pageErrors = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+
+    await page.goto('/');
+
+    const canvas = page.locator('#main-canvas');
+    const box = await canvas.boundingBox();
+    expect(box).toBeTruthy();
+
+    const start = { x: box.x + box.width * 0.42, y: box.y + box.height * 0.34 };
+    const end = { x: box.x + box.width * 0.56, y: box.y + box.height * 0.50 };
+
+    await page.evaluate(() => window.app.ui.setActiveTool('shape-oval'));
     await expect
       .poll(async () => page.locator('#main-canvas').evaluate((canvasEl) => canvasEl.dataset.cursorMode || ''))
       .toBe('shape-reticle');
+
+    await page.keyboard.down('Shift');
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(end.x, end.y);
+    await page.mouse.up();
+    await page.keyboard.up('Shift');
+
+    await page.evaluate(() => {
+      const layer = window.app.engine.getActiveLayer();
+      layer.mask.enabled = true;
+      window.app.ui.renderLayers();
+      window.app.render();
+    });
+
+    await page.evaluate(() => window.app.ui.setActiveTool('select'));
+    await expect
+      .poll(async () => page.locator('#main-canvas').evaluate((canvasEl) => canvasEl.dataset.cursorMode || ''))
+      .toBe('crosshair');
+
+    await page.mouse.move(start.x, start.y);
+    await expect(page.locator('#main-canvas').evaluate((canvasEl) => canvasEl.dataset.cursorMode || '')).resolves.not.toBe('shape-reticle');
 
     const rotatePoint = await page.evaluate(() => {
       const renderer = window.app.renderer;

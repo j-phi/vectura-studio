@@ -2,7 +2,7 @@
  * Layer data model.
  */
 (() => {
-  const { ALGO_DEFAULTS, SETTINGS } = window.Vectura || {};
+  const { ALGO_DEFAULTS, SETTINGS, THEMES = {} } = window.Vectura || {};
 
   class Layer {
     constructor(id, type = 'flowfield', name) {
@@ -17,9 +17,11 @@
       this.params.scaleY = 1;
       this.params.rotation = 0;
       this.paramStates = {};
-      const defaultPen = SETTINGS?.pens?.[0];
+      const defaultPen = SETTINGS?.pens?.find?.((pen) => pen?.id === 'pen-1') || SETTINGS?.pens?.[0];
+      const themeName = `${SETTINGS?.uiTheme || 'dark'}`.toLowerCase();
+      const themePenColor = THEMES?.[themeName]?.pen1Color || THEMES?.dark?.pen1Color || '#ffffff';
       this.penId = defaultPen ? defaultPen.id : null;
-      this.color = defaultPen?.color || '#e4e4e7';
+      this.color = defaultPen?.color || themePenColor;
       this.strokeWidth = defaultPen?.width ?? SETTINGS?.strokeWidth ?? 0.3;
       this.lineCap = 'round';
       this.visible = true;
