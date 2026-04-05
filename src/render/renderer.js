@@ -2,7 +2,11 @@
  * Canvas renderer for vector paths.
  */
 (() => {
-  const { SETTINGS } = window.Vectura || {};
+  const { SETTINGS, Modifiers = {} } = window.Vectura || {};
+  const isModifierLayer = Modifiers.isModifierLayer || (() => false);
+  const getMirrorAxis = Modifiers.getMirrorAxis || (() => null);
+  const clipInfiniteAxisToBounds = Modifiers.clipInfiniteAxisToBounds || (() => null);
+  const reflectPointAcrossAxis = Modifiers.reflectPointAcrossAxis || ((pt) => pt);
 
   class Renderer {
     constructor(id, engine) {
@@ -51,6 +55,7 @@
       this.lightSourcePlacement = false;
       this.isLightDrag = false;
       this.lightDragOffset = { x: 0, y: 0 };
+      this.modifierDrag = null;
       this.onSelectLayer = null;
       this.onPenComplete = null;
       this.onScissor = null;
@@ -720,7 +725,7 @@
         const stroke = layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
         const tol = Math.max(2.5 / this.scale, stroke * 2);
         const tolSq = tol * tol;
-        (layer.paths || []).forEach((path, pathIndex) => {
+        this.getInteractionPaths(layer).forEach((path, pathIndex) => {
           if (path && path.meta && path.meta.kind === 'circle') {
             const cx = path.meta.cx ?? path.meta.x ?? 0;
             const cy = path.meta.cy ?? path.meta.y ?? 0;
@@ -1091,12 +1096,9 @@
           this.ctx.beginPath();
           this.ctx.strokeStyle = pen?.color || l.color;
           const useCurves = Boolean(l.params && l.params.curves);
-          const paths =
-            l.mask?.enabled && Array.isArray(l.displayPaths)
-              ? l.displayPaths
-              : useOptimized && l.optimizedPaths
-              ? l.optimizedPaths
-              : l.paths;
+          const paths = this.engine.getRenderablePaths
+            ? this.engine.getRenderablePaths(l, { useOptimized })
+            : l.paths;
           (paths || []).forEach((path) => {
             if (path && path.meta && path.meta.kind === 'circle') {
               const meta =
@@ -1307,6 +1309,89 @@
           });
         });
       };
+      const drawModifierGuides = () => {
+        const guides = this.getMirrorGuides().filter((guide) => guide.visible);
+        guides.forEach((guide) => {
+          const color = guide.mirror.color || '#56b4e9';
+          const lineWidth = 0.45;
+          const dash = 2 / this.scale;
+          const underlay = 'rgba(15, 23, 42, 0.92)';
+          this.ctx.save();
+          this.ctx.strokeStyle = color;
+          this.ctx.fillStyle = color;
+          this.ctx.lineWidth = lineWidth;
+          this.ctx.globalAlpha = guide.locked ? 0.45 : 0.8;
+          this.ctx.setLineDash([dash, dash]);
+          this.ctx.beginPath();
+          this.ctx.moveTo(guide.start.x, guide.start.y);
+          this.ctx.lineTo(guide.end.x, guide.end.y);
+          this.ctx.stroke();
+          this.ctx.setLineDash([]);
+
+          const drawTriangle = (tri) => {
+            this.ctx.save();
+            this.ctx.fillStyle = underlay;
+            this.ctx.beginPath();
+            this.ctx.moveTo(tri.tipUnderlay.x, tri.tipUnderlay.y);
+            this.ctx.lineTo(tri.leftUnderlay.x, tri.leftUnderlay.y);
+            this.ctx.lineTo(tri.rightUnderlay.x, tri.rightUnderlay.y);
+            this.ctx.closePath();
+            this.ctx.fill();
+
+            this.ctx.fillStyle = color;
+            this.ctx.strokeStyle = 'rgba(15, 23, 42, 1)';
+            this.ctx.lineWidth = 0.8 / this.scale;
+            this.ctx.beginPath();
+            this.ctx.moveTo(tri.tip.x, tri.tip.y);
+            this.ctx.lineTo(tri.left.x, tri.left.y);
+            this.ctx.lineTo(tri.right.x, tri.right.y);
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.stroke();
+            this.ctx.restore();
+          };
+
+          const drawRotateHandle = (center, direction = 'right') => {
+            const radius = guide.rotateRadius;
+            this.ctx.save();
+            this.ctx.fillStyle = underlay;
+            this.ctx.beginPath();
+            this.ctx.arc(center.x, center.y, radius + 3.3 / this.scale, 0, Math.PI * 2);
+            this.ctx.fill();
+
+            this.ctx.translate(center.x, center.y);
+            const scale = radius / 11.5;
+            this.ctx.scale(direction === 'left' ? -scale : scale, scale);
+            this.ctx.strokeStyle = color;
+            this.ctx.fillStyle = color;
+            this.ctx.lineWidth = 2.25;
+            this.ctx.lineCap = 'round';
+            this.ctx.lineJoin = 'round';
+
+            this.ctx.beginPath();
+            this.ctx.arc(0, 0, 7.6, Math.PI * 1.08, Math.PI * 0.18, true);
+            this.ctx.stroke();
+
+            this.ctx.beginPath();
+            this.ctx.moveTo(7.2, -7.8);
+            this.ctx.lineTo(11.6, -7.2);
+            this.ctx.lineTo(9.4, -3.2);
+            this.ctx.closePath();
+            this.ctx.fill();
+
+            this.ctx.beginPath();
+            this.ctx.arc(0, 0, 3.9, 0, Math.PI * 2);
+            this.ctx.stroke();
+            this.ctx.restore();
+          };
+
+          drawTriangle(guide.flipTriangle);
+
+          drawRotateHandle(guide.rotateStart, 'left');
+          drawRotateHandle(guide.rotateEnd, 'right');
+          this.ctx.restore();
+        });
+      };
       const outlineEnabled = SETTINGS.selectionOutline !== false;
       const outlineColor = SETTINGS.selectionOutlineColor || '#ef4444';
       const drawSelectionOutline = () => {
@@ -1323,7 +1408,7 @@
           this.ctx.lineCap = l.lineCap || 'round';
           this.ctx.strokeStyle = outlineColor;
           this.ctx.beginPath();
-          l.paths.forEach((path) => {
+          this.getInteractionPaths(l).forEach((path) => {
             if (path && path.meta && path.meta.kind === 'circle') {
               const meta =
                 this.selectedLayerIds?.has(l.id) && this.tempTransform
@@ -1349,6 +1434,7 @@
         drawLayers();
         drawOptimizedOverlay();
         drawHelperOverlays();
+        drawModifierGuides();
         this.ctx.restore();
       } else {
         this.ctx.save();
@@ -1359,6 +1445,7 @@
         drawLayers();
         drawOptimizedOverlay();
         drawHelperOverlays();
+        drawModifierGuides();
         this.ctx.restore();
 
         const outsideAlpha = SETTINGS.outsideOpacity ?? 0.5;
@@ -1495,6 +1582,37 @@
       }
 
       this.lightSourceSelected = false;
+
+      if (this.activeTool === 'select' && this.getActiveModifierLayer()) {
+        const hitGuide = this.hitModifierGuide(world);
+        if (hitGuide) {
+          if (hitGuide.guide.locked) {
+            e.preventDefault();
+            return;
+          }
+          if (this.onCommitTransform) this.onCommitTransform();
+          if (hitGuide.type === 'flip') {
+            hitGuide.guide.mirror.replacedSide =
+              hitGuide.guide.mirror.replacedSide === 'negative' ? 'positive' : 'negative';
+            this.engine.computeAllDisplayGeometry();
+            this.draw();
+            e.preventDefault();
+            return;
+          }
+          this.modifierDrag = {
+            type: hitGuide.type,
+            guide: hitGuide.guide,
+            startWorld: { x: world.x, y: world.y },
+            startAngle: hitGuide.guide.mirror.angle ?? 0,
+            startShiftX: hitGuide.guide.mirror.xShift ?? 0,
+            startShiftY: hitGuide.guide.mirror.yShift ?? 0,
+            axisPoint: { ...hitGuide.guide.axis.point },
+          };
+          this.canvas.style.cursor = hitGuide.type === 'rotate' ? 'grabbing' : 'move';
+          e.preventDefault();
+          return;
+        }
+      }
 
       const penSelectOverride = this.activeTool === 'pen' && modifiers.meta;
       const allowSelection = this.activeTool !== 'pen' || penSelectOverride;
@@ -1670,6 +1788,28 @@
         const sy = e.clientY - rect.top;
         const world = this.screenToWorld(sx, sy);
         this.updateDirectDrag(world, e);
+        return;
+      }
+
+      if (this.modifierDrag) {
+        const rect = this.canvas.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        const world = this.screenToWorld(sx, sy);
+        const drag = this.modifierDrag;
+        const mirror = drag.guide.mirror;
+        if (drag.type === 'move') {
+          mirror.xShift = drag.startShiftX + (world.x - drag.startWorld.x);
+          mirror.yShift = drag.startShiftY + (world.y - drag.startWorld.y);
+        } else if (drag.type === 'rotate') {
+          const startAngle = Math.atan2(drag.startWorld.y - drag.axisPoint.y, drag.startWorld.x - drag.axisPoint.x);
+          const nextAngle = Math.atan2(world.y - drag.axisPoint.y, world.x - drag.axisPoint.x);
+          let delta = ((nextAngle - startAngle) * 180) / Math.PI;
+          if (modifiers.shift) delta = Math.round(delta / 15) * 15;
+          mirror.angle = drag.startAngle + delta;
+        }
+        this.engine.computeAllDisplayGeometry();
+        this.draw();
         return;
       }
 
@@ -1878,6 +2018,13 @@
         }
         this.isLassoSelecting = false;
         this.lassoPath = null;
+        this.draw();
+        clearActivePointer();
+        return;
+      }
+      if (this.modifierDrag) {
+        this.modifierDrag = null;
+        this.updateCursor();
         this.draw();
         clearActivePointer();
         return;
@@ -2123,6 +2270,124 @@
       return this.engine.layers.filter((l) => this.selectedLayerIds.has(l.id));
     }
 
+    getInteractionPaths(layer) {
+      return this.engine.getRenderablePaths ? this.engine.getRenderablePaths(layer, { useOptimized: false }) : layer?.paths || [];
+    }
+
+    getActiveModifierLayer() {
+      const layer = this.engine.getActiveLayer ? this.engine.getActiveLayer() : null;
+      return isModifierLayer(layer) ? layer : null;
+    }
+
+    getMirrorGuides(layer = null) {
+      const modifierLayer = layer || this.getActiveModifierLayer();
+      if (!modifierLayer || !isModifierLayer(modifierLayer)) return [];
+      const modifier = modifierLayer.modifier || {};
+      if (modifier.enabled === false) return [];
+      const bounds = this.engine.getBounds ? this.engine.getBounds() : this.engine.currentProfile;
+      const profileBounds = {
+        width: bounds.width,
+        height: bounds.height,
+      };
+      const guideBounds = SETTINGS.cropExports !== false
+        ? {
+            x: bounds.m || 0,
+            y: bounds.m || 0,
+            width: bounds.dW ?? bounds.width,
+            height: bounds.dH ?? bounds.height,
+          }
+        : profileBounds;
+      return (modifier.mirrors || []).map((mirror, index) => {
+        const axis = getMirrorAxis(mirror, profileBounds);
+        const segment = axis ? clipInfiniteAxisToBounds(axis, guideBounds) : null;
+        if (!axis || !segment) return null;
+        const [start, end] = segment;
+        const locked = Boolean(modifier.guidesLocked || mirror.locked);
+        const visible = modifier.guidesVisible !== false && mirror.guideVisible !== false;
+        const tangent = axis.tangent;
+        const normal = axis.normal;
+        const arrowOffset = 9 / this.scale;
+        const triangleLift = 9 / this.scale;
+        const replacedSign = axis.replacedSign || 1;
+        const mid = {
+          x: (start.x + end.x) * 0.5,
+          y: (start.y + end.y) * 0.5,
+        };
+        const triangleBaseCenter = {
+          x: mid.x + normal.x * (arrowOffset + triangleLift) * replacedSign,
+          y: mid.y + normal.y * (arrowOffset + triangleLift) * replacedSign,
+        };
+        const triangleHalfWidth = 12.2 / this.scale;
+        const triangleUnderlayHalfWidth = 15.6 / this.scale;
+        const triangleTipLength = 10.8 / this.scale;
+        const triangleUnderlayTipLength = 13.8 / this.scale;
+        return {
+          layer: modifierLayer,
+          mirror,
+          index,
+          axis,
+          start,
+          end,
+          visible,
+          locked,
+          rotateRadius: 13.6 / this.scale,
+          rotateStart: {
+            x: start.x,
+            y: start.y,
+          },
+          rotateEnd: {
+            x: end.x,
+            y: end.y,
+          },
+          flipTriangle: {
+            tip: {
+              x: mid.x + normal.x * replacedSign * (arrowOffset + triangleLift + triangleTipLength),
+              y: mid.y + normal.y * replacedSign * (arrowOffset + triangleLift + triangleTipLength),
+            },
+            tipUnderlay: {
+              x: mid.x + normal.x * replacedSign * (arrowOffset + triangleLift + triangleUnderlayTipLength),
+              y: mid.y + normal.y * replacedSign * (arrowOffset + triangleLift + triangleUnderlayTipLength),
+            },
+            baseCenter: triangleBaseCenter,
+            left: {
+              x: triangleBaseCenter.x - tangent.x * triangleHalfWidth,
+              y: triangleBaseCenter.y - tangent.y * triangleHalfWidth,
+            },
+            right: {
+              x: triangleBaseCenter.x + tangent.x * triangleHalfWidth,
+              y: triangleBaseCenter.y + tangent.y * triangleHalfWidth,
+            },
+            leftUnderlay: {
+              x: triangleBaseCenter.x - tangent.x * triangleUnderlayHalfWidth,
+              y: triangleBaseCenter.y - tangent.y * triangleUnderlayHalfWidth,
+            },
+            rightUnderlay: {
+              x: triangleBaseCenter.x + tangent.x * triangleUnderlayHalfWidth,
+              y: triangleBaseCenter.y + tangent.y * triangleUnderlayHalfWidth,
+            },
+          },
+        };
+      }).filter(Boolean);
+    }
+
+    hitModifierGuide(world) {
+      const guides = this.getMirrorGuides().filter((guide) => guide.visible);
+      if (!guides.length) return null;
+      const lineTolSq = Math.pow(6 / this.scale, 2);
+      for (let i = guides.length - 1; i >= 0; i -= 1) {
+        const guide = guides[i];
+        const rotateTolSq = Math.pow(guide.rotateRadius + 5 / this.scale, 2);
+        const onStartHandle = this.distanceToPointSq(world, guide.rotateStart) <= rotateTolSq;
+        const onEndHandle = this.distanceToPointSq(world, guide.rotateEnd) <= rotateTolSq;
+        if (onStartHandle || onEndHandle) return { guide, type: 'rotate' };
+        const flipTri = this.pointInTriangle(world, guide.flipTriangle.tip, guide.flipTriangle.left, guide.flipTriangle.right)
+          || this.distanceToPointSq(world, guide.flipTriangle.baseCenter) <= Math.pow(12 / this.scale, 2);
+        if (flipTri) return { guide, type: 'flip' };
+        if (this.distanceToSegmentSq(world, guide.start, guide.end) <= lineTolSq) return { guide, type: 'move' };
+      }
+      return null;
+    }
+
     selectLayer(layer, options = {}) {
       if (!layer) return;
       const { additive = false, toggle = false } = options;
@@ -2209,16 +2474,32 @@
       return ox * ox + oy * oy;
     }
 
+    distanceToPointSq(a, b) {
+      const dx = a.x - b.x;
+      const dy = a.y - b.y;
+      return dx * dx + dy * dy;
+    }
+
+    pointInTriangle(p, a, b, c) {
+      const area = (p1, p2, p3) => (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+      const d1 = area(p, a, b);
+      const d2 = area(p, b, c);
+      const d3 = area(p, c, a);
+      const hasNeg = d1 < 0 || d2 < 0 || d3 < 0;
+      const hasPos = d1 > 0 || d2 > 0 || d3 > 0;
+      return !(hasNeg && hasPos);
+    }
+
     findLayerAtPointPrecise(world) {
       const layers = this.engine.layers.slice().reverse();
       let best = null;
       let bestDist = Infinity;
       layers.forEach((layer) => {
-        if (!layer.visible) return;
+        if (!layer.visible || layer.isGroup) return;
         const stroke = layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
         const tol = Math.max(1.5, stroke * 2);
         const tolSq = tol * tol;
-        (layer.paths || []).forEach((path) => {
+        this.getInteractionPaths(layer).forEach((path) => {
           if (path && path.meta && path.meta.kind === 'circle') {
             const cx = path.meta.cx ?? path.meta.x ?? 0;
             const cy = path.meta.cy ?? path.meta.y ?? 0;
@@ -2330,7 +2611,8 @@
     }
 
     getLayerBounds(layer, temp) {
-      if (!layer || !Array.isArray(layer.paths)) return null;
+      const basePaths = this.getInteractionPaths(layer);
+      if (!layer || !Array.isArray(basePaths)) return null;
       const prof = this.engine.currentProfile;
       const baseOrigin = {
         x: (layer.origin?.x ?? prof.width / 2) + (layer.params.posX ?? 0),
@@ -2364,7 +2646,7 @@
         maxY = Math.max(maxY, local.y);
       };
 
-      layer.paths.forEach((path) => {
+      basePaths.forEach((path) => {
         if (path && path.meta && path.meta.kind === 'circle') {
           const meta = temp ? this.transformCircleMeta(path.meta, temp) : path.meta;
           const cx = meta.cx ?? meta.x;
@@ -2850,7 +3132,7 @@
 
     layerIntersectsPoly(layer, poly) {
       if (!layer || !layer.visible) return false;
-      return layer.paths.some((path) => {
+      return this.getInteractionPaths(layer).some((path) => {
         if (path && path.meta && path.meta.kind === 'circle') {
           return this.circleIntersectsPoly(path.meta, poly);
         }
@@ -2897,7 +3179,7 @@
 
     layerIntersectsRect(layer, rect) {
       if (!layer || !layer.visible) return false;
-      return layer.paths.some((path) => {
+      return this.getInteractionPaths(layer).some((path) => {
         if (path && path.meta && path.meta.kind === 'circle') {
           return this.circleIntersectsRect(path.meta, rect);
         }
@@ -2956,6 +3238,17 @@
       if (this.hitLightSource(world)) {
         this.canvas.style.cursor = this.isLightDrag ? 'grabbing' : 'move';
         return;
+      }
+      if (this.activeTool === 'select' && this.getActiveModifierLayer()) {
+        const hitGuide = this.hitModifierGuide(world);
+        if (hitGuide) {
+          if (hitGuide.type === 'rotate') {
+            this.canvas.style.cursor = 'grab';
+            return;
+          }
+          this.canvas.style.cursor = hitGuide.guide.locked ? 'not-allowed' : hitGuide.type === 'flip' ? 'pointer' : 'move';
+          return;
+        }
       }
       const activeLayers = this.getSelectedLayers();
       if (!activeLayers.length) {

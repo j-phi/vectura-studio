@@ -6,7 +6,14 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added
+- Added `Insert > Mirror Modifier`, a new modifier-container layer type that behaves like a group in the Layers panel while applying a sequential mirror-axis stack to its child layers.
+- Added mirror-guide canvas overlays with dashed full-canvas axes, reflection-direction triangles, separate rotate handles, and per-axis/stack show-hide, lock, reorder, and delete controls.
+- Added unit, integration, and Playwright coverage for mirror modifier geometry, state roundtrip, and the new Insert-menu workflow.
+
 ### Changed
+- The engine now computes modifier-aware effective geometry before display, masking, optimization, stats, and export so mirrored child layers render and export consistently.
+- Left-panel controls now switch between `Algorithm` and `Modifier` modes, hiding `Transform & Seed` for modifier containers and exposing Mirror Stack configuration instead.
 - Reworked `Wavetable` Horizon around a regularized underlying perspective grid so horizontal and vertical spacing stays stable by construction before terrain-aware occlusion is applied.
 - Rebuilt Horizon column sampling from fixed per-column terrain nodes, which keeps column identity consistent through occlusion and allows hidden segments to reappear without spawning uneven replacement lines.
 - Retuned the shipped Horizon defaults and help text toward a cleaner synthwave valley profile with a more disciplined skyline and more readable foreground grid.

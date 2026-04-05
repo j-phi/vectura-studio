@@ -142,4 +142,39 @@ test.describe('Vectura smoke interactions', () => {
 
     expect(pageErrors).toEqual([]);
   });
+
+  test('insert menu creates a mirror modifier, reparents the current selection, and opens modifier controls', async ({ page }) => {
+    const pageErrors = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+
+    await page.goto('/');
+
+    const initialLayers = await page.locator('#layer-list .layer-item').count();
+    await page.getByRole('button', { name: 'Insert' }).click();
+    await page.click('#btn-insert-mirror-modifier');
+
+    await expect(page.locator('#layer-list .layer-item')).toHaveCount(initialLayers + 1);
+    await expect(page.locator('#left-section-primary-title')).toHaveText('Modifier');
+    await expect(page.locator('#left-section-secondary-title')).toHaveText('Modifier Configuration');
+    await expect(page.locator('#generator-module')).toHaveValue('mirror');
+    await expect(page.getByText('Mirror Stack')).toBeVisible();
+
+    const modifierState = await page.evaluate(() => {
+      const app = window.app;
+      const modifier = app.engine.getActiveLayer();
+      const child = app.engine.layers.find((layer) => !layer.isGroup && layer.parentId === modifier.id);
+      return {
+        modifierIsContainer: modifier?.containerRole === 'modifier',
+        childParentMatches: child?.parentId === modifier?.id,
+        childPathCount: child?.paths?.length || 0,
+        childEffectivePathCount: child?.effectivePaths?.length || 0,
+      };
+    });
+
+    expect(modifierState.modifierIsContainer).toBe(true);
+    expect(modifierState.childParentMatches).toBe(true);
+    expect(modifierState.childEffectivePathCount).toBeGreaterThan(modifierState.childPathCount);
+
+    expect(pageErrors).toEqual([]);
+  });
 });

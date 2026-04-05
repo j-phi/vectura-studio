@@ -88,6 +88,16 @@
           </div>
           <div class="top-menu" data-top-menu>
             <button class="top-menu-trigger" type="button" data-top-menu-trigger aria-haspopup="true" aria-expanded="false">
+              Insert
+            </button>
+            <div class="top-menu-panel" data-top-menu-panel role="menu" aria-label="Insert menu">
+              <button id="btn-insert-mirror-modifier" class="top-menu-item" type="button" role="menuitem">
+                <span>Mirror Modifier</span>
+              </button>
+            </div>
+          </div>
+          <div class="top-menu" data-top-menu>
+            <button class="top-menu-trigger" type="button" data-top-menu-trigger aria-haspopup="true" aria-expanded="false">
               Help
             </button>
             <div class="top-menu-panel" data-top-menu-panel role="menu" aria-label="Help menu">
@@ -123,12 +133,12 @@
         <div class="p-4 left-panel-sections">
           <div id="left-section-algorithm" class="left-panel-section">
             <button id="left-section-algorithm-header" class="left-panel-section-header" type="button">
-              <span class="left-panel-section-title">Algorithm</span>
+              <span id="left-section-primary-title" class="left-panel-section-title">Algorithm</span>
               <span class="left-panel-section-toggle" aria-hidden="true"></span>
             </button>
             <div id="left-section-algorithm-body" class="left-panel-section-body">
               <label class="control-label flex items-center gap-2">
-                <span>Algorithm</span>
+                <span id="primary-module-label">Algorithm</span>
                 <button type="button" class="info-btn" data-info="global.algorithm" aria-label="Toggle About">i</button>
               </label>
               <select id="generator-module"
@@ -199,7 +209,7 @@
 
           <div id="left-section-algorithm-configuration" class="left-panel-section">
             <button id="left-section-algorithm-configuration-header" class="left-panel-section-header" type="button">
-              <span class="left-panel-section-title">Algorithm Configuration</span>
+              <span id="left-section-secondary-title" class="left-panel-section-title">Algorithm Configuration</span>
               <span class="left-panel-section-toggle" aria-hidden="true"></span>
             </button>
             <div id="left-section-algorithm-configuration-body" class="left-panel-section-body">
@@ -696,6 +706,7 @@
   <script src="./src/config/version.js" defer></script>
   <script src="./src/config/machines.js" defer></script>
   <script src="./src/config/defaults.js" defer></script>
+  <script src="./src/config/modifiers.js" defer></script>
   <script src="./src/config/palettes.js" defer></script>
   <script src="./src/config/presets.js" defer></script>
   <script src="./src/config/descriptions.js" defer></script>
@@ -707,6 +718,7 @@
   <script src="./src/core/optimization-utils.js" defer></script>
   <script src="./src/core/path-boolean.js" defer></script>
   <script src="./src/core/masking.js" defer></script>
+  <script src="./src/core/modifiers.js" defer></script>
   <script src="./src/core/algorithms/petalis.js" defer></script>
   <script src="./src/core/algorithms/flowfield.js" defer></script>
   <script src="./src/core/algorithms/boids.js" defer></script>

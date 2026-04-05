@@ -140,14 +140,16 @@
       const explicitPolygons = normalizePolygons(clonePaths(layer?.maskPolygons || []));
       if (explicitPolygons.length) return unionPolygons(explicitPolygons);
     }
-    const rows = classifyHorizonRows(layer?.displayPaths?.length ? layer.displayPaths : layer?.paths);
+    const rows = classifyHorizonRows(
+      layer?.displayPaths?.length ? layer.displayPaths : layer?.effectivePaths?.length ? layer.effectivePaths : layer?.paths
+    );
     if (!rows.length) return [];
     const polygon = buildHorizonEnvelope(rows[0].path, bounds);
     return polygon.length >= 4 ? [polygon] : [];
   };
 
   const buildClosedPathSilhouettes = (layer) => {
-    const source = layer?.displayPaths?.length ? layer.displayPaths : layer?.paths;
+    const source = layer?.displayPaths?.length ? layer.displayPaths : layer?.effectivePaths?.length ? layer.effectivePaths : layer?.paths;
     const polygons = [];
     (source || []).forEach((path) => {
       const polygon = pathToPolygon(path);

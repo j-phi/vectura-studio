@@ -14,6 +14,9 @@
     PALETTES,
     PRESETS,
     PETALIS_PRESETS,
+    MODIFIER_DEFAULTS,
+    MODIFIER_DESCRIPTIONS,
+    Modifiers = {},
     RandomizationUtils,
     GeometryUtils,
     OptimizationUtils,
@@ -158,6 +161,9 @@
   const lerp = (a, b, t) => a + (b - a) * t;
   const simplifyPath = GeometryUtils?.simplifyPath || ((path) => path);
   const joinNearbyPaths = OptimizationUtils?.joinNearbyPaths || ((paths) => paths);
+  const createModifierState = Modifiers.createModifierState || ((type) => ({ type, enabled: true, guidesVisible: true, guidesLocked: false, mirrors: [] }));
+  const createMirrorLine = Modifiers.createMirrorLine || ((index) => ({ id: `mirror-${index + 1}`, enabled: true }));
+  const isModifierLayer = Modifiers.isModifierLayer || (() => false);
 
   const segmentIntersection = (a, b, c, d) => {
     const r = { x: b.x - a.x, y: b.y - a.y };
@@ -9640,6 +9646,12 @@
             Use the File menu to Save/Open full .vectura projects, Import SVG, open Document Setup, and Export SVG.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
+            Use the Insert menu to add a Mirror Modifier, then drag layers under it in the Layers panel so the modifier container owns and reflects that subtree.
+          </div>
+          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
+            Mirror Stack entries are full-canvas guide axes with per-axis show/hide, lock, delete, angle, and XY shift controls plus stack-level add/show-hide/lock/clear actions.
+          </div>
+          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Angle controls use circular dials—drag the marker to set direction.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
@@ -9668,6 +9680,8 @@
           <div class="text-xs text-vectura-muted leading-relaxed space-y-1">
             <div>Click to select, Shift-click for ranges, Cmd/Ctrl-click to toggle.</div>
             <div>Drag the grip to reorder; groups can be collapsed with the caret.</div>
+            <div>Mirror Modifiers behave like group containers: drag layers onto them to indent the children and apply the modifier to that subtree.</div>
+            <div>When a Mirror Modifier is selected, drag the guide line to move it, drag the outer rotate handles to rotate it, and click the end triangles to flip the reflection side.</div>
             <div>Use the Mask button on a layer row to hide that layer anywhere selected source silhouettes overlap it.</div>
             <div>Masking is managed from the Layers panel; the popover can also expand the current live mask result into geometry.</div>
             <div>Expand a layer into sublayers for line-by-line control.</div>
@@ -12141,6 +12155,205 @@
       }
     }
 
+    buildMirrorModifierControls(layer, container) {
+      const modifier = this.getModifierState(layer);
+      if (!modifier) return;
+      const mirrors = Array.isArray(modifier.mirrors) ? modifier.mirrors : [];
+      const stack = document.createElement('div');
+      stack.className = 'mb-4';
+      stack.innerHTML = `
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <div class="text-[10px] uppercase tracking-widest text-vectura-muted">Mirror Stack</div>
+            <div class="text-xs text-vectura-muted mt-1">Top-to-bottom full-canvas reflection axes for child layers.</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button type="button" class="mirror-stack-add text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted transition-colors">+ Add Mirror</button>
+            <button type="button" class="mirror-stack-eye text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted transition-colors">${modifier.guidesVisible === false ? 'Show All' : 'Hide All'}</button>
+            <button type="button" class="mirror-stack-lock text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted transition-colors">${modifier.guidesLocked ? 'Unlock All' : 'Lock All'}</button>
+            <button type="button" class="mirror-stack-clear text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-danger/10 text-vectura-danger transition-colors" ${mirrors.length ? '' : 'disabled'}>Clear Stack</button>
+          </div>
+        </div>
+      `;
+      const list = document.createElement('div');
+
+      const commit = (fn) => {
+        if (this.app.pushHistory) this.app.pushHistory();
+        fn();
+        this.refreshModifierLayer(layer);
+      };
+
+      const buildField = (label, input) => {
+        const wrap = document.createElement('label');
+        wrap.className = 'block mb-3';
+        const title = document.createElement('div');
+        title.className = 'text-[10px] text-vectura-muted mb-1';
+        title.textContent = label;
+        wrap.appendChild(title);
+        wrap.appendChild(input);
+        return wrap;
+      };
+
+      const bindMirrorReorderGrip = (grip, card, mirror) => {
+        if (!grip) return;
+        grip.onmousedown = (e) => {
+          e.preventDefault();
+          const dragEl = card;
+          dragEl.classList.add('dragging');
+          const indicator = document.createElement('div');
+          indicator.className = 'noise-drop-indicator';
+          list.insertBefore(indicator, dragEl.nextSibling);
+          const currentOrder = mirrors.map((entry) => entry.id);
+          const startIndex = currentOrder.indexOf(mirror.id);
+
+          const onMove = (ev) => {
+            const y = ev.clientY;
+            const items = Array.from(list.querySelectorAll('.noise-card')).filter((item) => item !== dragEl);
+            let inserted = false;
+            for (const item of items) {
+              const rect = item.getBoundingClientRect();
+              if (y < rect.top + rect.height / 2) {
+                list.insertBefore(indicator, item);
+                inserted = true;
+                break;
+              }
+            }
+            if (!inserted) list.appendChild(indicator);
+          };
+
+          const onUp = () => {
+            dragEl.classList.remove('dragging');
+            const siblings = Array.from(list.children);
+            const indicatorIndex = siblings.indexOf(indicator);
+            const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('noise-card'));
+            const newIndex = before.length;
+            indicator.remove();
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+            if (newIndex === startIndex) return;
+            commit(() => {
+              const nextOrder = currentOrder.filter((id) => id !== mirror.id);
+              nextOrder.splice(newIndex, 0, mirror.id);
+              const map = new Map(mirrors.map((entry) => [entry.id, entry]));
+              modifier.mirrors = nextOrder.map((id) => map.get(id)).filter(Boolean);
+            });
+          };
+
+          window.addEventListener('mousemove', onMove);
+          window.addEventListener('mouseup', onUp);
+        };
+      };
+
+      const gripMarkup = `
+        <button class="noise-grip" type="button" aria-label="Reorder mirror">
+          <span class="dot"></span><span class="dot"></span>
+          <span class="dot"></span><span class="dot"></span>
+          <span class="dot"></span><span class="dot"></span>
+        </button>
+      `;
+
+      mirrors.forEach((mirror, idx) => {
+        if (!mirror.id) mirror.id = `mirror-${idx + 1}`;
+        if (!mirror.color) mirror.color = createMirrorLine(idx).color;
+        const card = document.createElement('div');
+        card.className = `noise-card${mirror.enabled === false ? ' noise-disabled' : ''}`;
+        card.dataset.mirrorId = mirror.id;
+        card.innerHTML = `
+          <div class="noise-header">
+            <div class="flex items-center gap-2">
+              ${gripMarkup}
+              <span class="inline-block w-3 h-3 rounded-full border border-vectura-border" style="background:${mirror.color}"></span>
+              <span class="noise-title">Mirror ${String(idx + 1).padStart(2, '0')}</span>
+            </div>
+            <div class="noise-actions">
+              <button type="button" class="mirror-eye text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted transition-colors">${mirror.guideVisible === false ? 'Show' : 'Hide'}</button>
+              <button type="button" class="mirror-lock text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted transition-colors">${mirror.locked ? 'Unlock' : 'Lock'}</button>
+              <button type="button" class="noise-delete" aria-label="Delete mirror">🗑</button>
+            </div>
+          </div>
+        `;
+        const header = card.querySelector('.noise-header');
+        const controls = document.createElement('div');
+        controls.className = 'pendulum-controls';
+        const grip = header.querySelector('.noise-grip');
+        bindMirrorReorderGrip(grip, card, mirror);
+
+        const typeSelect = document.createElement('select');
+        typeSelect.className =
+          'w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent';
+        typeSelect.innerHTML = '<option value="line">Line</option>';
+        typeSelect.value = mirror.type || 'line';
+        typeSelect.onchange = (e) => commit(() => {
+          mirror.type = e.target.value;
+        });
+        controls.appendChild(buildField('Type', typeSelect));
+
+        const buildNumberInput = (label, key, step = '1') => {
+          const input = document.createElement('input');
+          input.type = 'number';
+          input.step = step;
+          input.value = `${mirror[key] ?? 0}`;
+          input.className =
+            'w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent';
+          input.onchange = (e) => commit(() => {
+            const next = parseFloat(e.target.value);
+            mirror[key] = Number.isFinite(next) ? next : 0;
+          });
+          controls.appendChild(buildField(label, input));
+        };
+        buildNumberInput('Angle', 'angle', '1');
+        buildNumberInput('X Shift', 'xShift', '0.1');
+        buildNumberInput('Y Shift', 'yShift', '0.1');
+
+        const eyeBtn = header.querySelector('.mirror-eye');
+        const lockBtn = header.querySelector('.mirror-lock');
+        const deleteBtn = header.querySelector('.noise-delete');
+        eyeBtn.onclick = () => commit(() => {
+          mirror.guideVisible = mirror.guideVisible === false;
+        });
+        lockBtn.onclick = () => commit(() => {
+          mirror.locked = !mirror.locked;
+        });
+        deleteBtn.onclick = () => commit(() => {
+          modifier.mirrors = mirrors.filter((entry) => entry.id !== mirror.id);
+        });
+
+        card.appendChild(controls);
+        list.appendChild(card);
+      });
+
+      if (!mirrors.length) {
+        const empty = document.createElement('div');
+        empty.className = 'text-xs text-vectura-muted border border-dashed border-vectura-border p-3';
+        empty.textContent = 'No mirrors in this stack.';
+        list.appendChild(empty);
+      }
+
+      stack.querySelector('.mirror-stack-add')?.addEventListener('click', () =>
+        commit(() => {
+          modifier.mirrors = [...mirrors, createMirrorLine(mirrors.length)];
+        })
+      );
+      stack.querySelector('.mirror-stack-eye')?.addEventListener('click', () =>
+        commit(() => {
+          modifier.guidesVisible = modifier.guidesVisible === false;
+        })
+      );
+      stack.querySelector('.mirror-stack-lock')?.addEventListener('click', () =>
+        commit(() => {
+          modifier.guidesLocked = !modifier.guidesLocked;
+        })
+      );
+      stack.querySelector('.mirror-stack-clear')?.addEventListener('click', () =>
+        commit(() => {
+          modifier.mirrors = [];
+        })
+      );
+
+      stack.appendChild(list);
+      container.appendChild(stack);
+    }
+
     toggleSeedControls(type) {
       const seedControls = getEl('seed-controls');
       const show = usesSeed(type);
@@ -12158,6 +12371,126 @@
 
     getLayerById(id) {
       return this.app.engine.layers.find((layer) => layer.id === id) || null;
+    }
+
+    isModifierLayer(layer) {
+      return isModifierLayer(layer);
+    }
+
+    getModifierState(layer) {
+      if (!this.isModifierLayer(layer)) return null;
+      if (!layer.modifier) {
+        layer.modifier = createModifierState('mirror', {
+          mirrors: [createMirrorLine(0)],
+        });
+      }
+      if (!Array.isArray(layer.modifier.mirrors)) layer.modifier.mirrors = [];
+      if (layer.modifier.guidesVisible === undefined) layer.modifier.guidesVisible = true;
+      if (layer.modifier.guidesLocked === undefined) layer.modifier.guidesLocked = false;
+      if (layer.modifier.enabled === undefined) layer.modifier.enabled = true;
+      return layer.modifier;
+    }
+
+    getModifierLayerChildren(layer) {
+      if (!layer) return [];
+      return this.app.engine.layers.filter((entry) => entry.parentId === layer.id);
+    }
+
+    refreshModifierLayer(layer, options = {}) {
+      const { rebuildControls = true } = options;
+      if (!layer) return;
+      this.app.engine.computeAllDisplayGeometry();
+      this.renderLayers();
+      if (rebuildControls) this.buildControls();
+      this.updateFormula();
+      this.app.render();
+    }
+
+    assignLayersToGroup(groupId, targetLayers, options = {}) {
+      const layers = (targetLayers || []).filter((layer) => layer && layer.id !== groupId);
+      if (!layers.length) return [];
+      const { selectAssigned = false, primaryId = null } = options;
+      const group = this.getLayerById(groupId);
+      if (!group || !group.isGroup) return [];
+      const moveIds = layers
+        .filter((layer) => !(layer.isGroup && this.isDescendant(groupId, layer.id)))
+        .map((layer) => layer.id);
+      if (!moveIds.length) return [];
+
+      group.groupCollapsed = false;
+      const moveSet = new Set(moveIds);
+      const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
+      const remaining = this.app.engine.layers.filter((layer) => !moveSet.has(layer.id));
+      moveIds.forEach((id) => {
+        const layer = map.get(id);
+        if (layer) layer.parentId = groupId;
+      });
+      const insertIndex = remaining.findIndex((layer) => layer.id === groupId);
+      const engineInsert = insertIndex === -1 ? remaining.length : insertIndex;
+      const moveEngineOrder = moveIds.slice().reverse().map((id) => map.get(id)).filter(Boolean);
+      remaining.splice(engineInsert, 0, ...moveEngineOrder);
+      this.app.engine.layers = remaining;
+      this.normalizeGroupOrder();
+      this.app.engine.computeAllDisplayGeometry();
+
+      if (selectAssigned && this.app.renderer) {
+        const ids = moveIds.slice();
+        const nextPrimary = ids.includes(primaryId) ? primaryId : ids[ids.length - 1] || groupId;
+        this.app.renderer.setSelection(ids.length ? ids : [groupId], nextPrimary);
+        this.app.engine.activeLayerId = nextPrimary || groupId;
+      }
+
+      return moveIds.map((id) => map.get(id)).filter(Boolean);
+    }
+
+    insertMirrorModifier() {
+      if (this.app.pushHistory) this.app.pushHistory();
+      const selectedLayers = (this.app.renderer?.getSelectedLayers?.() || []).filter((layer) => layer && !layer.isGroup);
+      const id = this.app.engine.addModifierLayer('mirror');
+      if (selectedLayers.length) {
+        this.assignLayersToGroup(id, selectedLayers);
+      }
+      if (this.app.renderer) this.app.renderer.setSelection([id], id);
+      this.app.engine.activeLayerId = id;
+      this.renderLayers();
+      this.buildControls();
+      this.updateFormula();
+      this.app.render();
+    }
+
+    updatePrimaryPanelMode(layer) {
+      const primaryTitle = getEl('left-section-primary-title', { silent: true });
+      const secondaryTitle = getEl('left-section-secondary-title', { silent: true });
+      const moduleLabel = getEl('primary-module-label', { silent: true });
+      const transformSection = getEl('algorithm-transform-section', { silent: true });
+      const modifierMode = this.isModifierLayer(layer);
+      if (primaryTitle) primaryTitle.textContent = modifierMode ? 'Modifier' : 'Algorithm';
+      if (secondaryTitle) secondaryTitle.textContent = modifierMode ? 'Modifier Configuration' : 'Algorithm Configuration';
+      if (moduleLabel) moduleLabel.textContent = modifierMode ? 'Modifier' : 'Algorithm';
+      if (transformSection) transformSection.style.display = modifierMode ? 'none' : '';
+    }
+
+    syncPrimaryModuleDropdown(layer) {
+      const select = getEl('generator-module', { silent: true });
+      if (!select || !layer) return;
+      if (this.isModifierLayer(layer)) {
+        const modifier = this.getModifierState(layer);
+        const type = modifier?.type || 'mirror';
+        select.innerHTML = '';
+        Object.keys(MODIFIER_DEFAULTS || { mirror: { label: 'Mirror' } }).forEach((key) => {
+          const def = MODIFIER_DEFAULTS[key] || {};
+          const opt = document.createElement('option');
+          opt.value = key;
+          opt.innerText = def.label || key.charAt(0).toUpperCase() + key.slice(1);
+          select.appendChild(opt);
+        });
+        select.value = type;
+        select.disabled = false;
+        select.classList.remove('opacity-60');
+        return;
+      }
+      this.initModuleDropdown();
+      select.value = layer.type;
     }
 
     getPenById(id) {
@@ -13942,6 +14275,7 @@
 
     bindGlobal() {
       const addLayer = getEl('btn-add-layer');
+      const insertMirrorModifier = getEl('btn-insert-mirror-modifier');
       const moduleSelect = getEl('generator-module');
       const bgColor = getEl('inp-bg-color');
       const settingsPanel = getEl('settings-panel');
@@ -14001,6 +14335,11 @@
           this.app.render();
         };
       }
+      if (insertMirrorModifier) {
+        insertMirrorModifier.onclick = () => {
+          this.insertMirrorModifier();
+        };
+      }
       if (setCropExports) {
         setCropExports.onchange = (e) => {
           if (this.app.pushHistory) this.app.pushHistory();
@@ -14014,6 +14353,15 @@
           const l = this.app.engine.getActiveLayer();
           if (l) {
             if (this.app.pushHistory) this.app.pushHistory();
+            if (this.isModifierLayer(l)) {
+              const nextType = e.target.value;
+              l.modifier = createModifierState(nextType, {
+                mirrors: [createMirrorLine(0)],
+              });
+              this.buildControls();
+              this.refreshModifierLayer(l, { rebuildControls: false });
+              return;
+            }
             this.storeLayerParams(l);
             const nextType = e.target.value;
             this.restoreLayerParams(l, nextType);
@@ -14880,7 +15228,6 @@
               const target = this.getLayerById(dropGroupId);
               if (target && target.isGroup) {
                 if (this.app.pushHistory) this.app.pushHistory();
-                target.groupCollapsed = false;
                 const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
                 const moveIds = selectedInUi.filter((id) => {
                   if (id === dropGroupId) return false;
@@ -14889,18 +15236,11 @@
                   if (layer.isGroup && this.isDescendant(dropGroupId, layer.id)) return false;
                   return true;
                 });
-                const moveSet = new Set(moveIds);
-                const remaining = this.app.engine.layers.filter((layer) => !moveSet.has(layer.id));
-                moveIds.forEach((id) => {
-                  const layer = map.get(id);
-                  if (layer) layer.parentId = dropGroupId;
+                const moveLayers = moveIds.map((id) => map.get(id)).filter(Boolean);
+                this.assignLayersToGroup(dropGroupId, moveLayers, {
+                  selectAssigned: true,
+                  primaryId: this.app.renderer?.selectedLayerId || moveIds[moveIds.length - 1] || dropGroupId,
                 });
-                const insertIndex = remaining.findIndex((layer) => layer.id === dropGroupId);
-                const engineInsert = insertIndex === -1 ? remaining.length : insertIndex;
-                const moveEngineOrder = moveIds.slice().reverse().map((id) => map.get(id)).filter(Boolean);
-                remaining.splice(engineInsert, 0, ...moveEngineOrder);
-                this.app.engine.layers = remaining;
-                this.normalizeGroupOrder();
                 this.renderLayers();
                 this.app.render();
                 return;
@@ -14925,9 +15265,15 @@
       const renderGroupRow = (group, depth = 0) => {
         const sourceUsage = usageCounts.get(group.id) || 0;
         const el = document.createElement('div');
-        const typeLabel = ALGO_DEFAULTS?.[group.groupType]?.label || group.groupType || 'Group';
+        const isModifierContainer = this.isModifierLayer(group);
+        const modifier = isModifierContainer ? this.getModifierState(group) : null;
+        const typeLabel = isModifierContainer
+          ? `${MODIFIER_DEFAULTS?.[modifier?.type || 'mirror']?.label || 'Mirror'} Modifier`
+          : ALGO_DEFAULTS?.[group.groupType]?.label || group.groupType || 'Group';
+        const isActive = group.id === this.app.engine.activeLayerId;
+        const isSelected = this.app.renderer?.selectedLayerIds?.has(group.id) || hasSelectedDescendant(group.id);
         el.className =
-          'layer-item layer-group flex items-center justify-between bg-vectura-bg border border-vectura-border p-2 mb-2';
+          `layer-item layer-group flex items-center justify-between bg-vectura-bg border border-vectura-border p-2 mb-2 ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}`;
         el.dataset.layerId = group.id;
         const indent = depth * 12;
         if (indent) {
@@ -14939,7 +15285,8 @@
           <div class="flex items-center gap-2 flex-1 overflow-hidden">
             ${gripMarkup}
             <button class="group-toggle" type="button" aria-label="Toggle group" title="Toggle group">${group.groupCollapsed ? '▸' : '▾'}</button>
-            <span class="layer-name text-sm text-vectura-accent truncate">${group.name}</span>
+            ${isModifierContainer ? `<input type="checkbox" ${modifier?.enabled === false ? '' : 'checked'} class="group-enabled cursor-pointer" aria-label="Toggle modifier">` : ''}
+            <span class="layer-name text-sm ${isActive ? 'text-white font-bold' : 'text-vectura-accent'} truncate">${group.name}</span>
             <input
               class="layer-name-input hidden w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:outline-none"
               type="text"
@@ -14968,6 +15315,7 @@
         const grip = el.querySelector('.layer-grip');
         const nameEl = el.querySelector('.layer-name');
         const nameInput = el.querySelector('.layer-name-input');
+        const modifierEnabled = el.querySelector('.group-enabled');
         if (toggle) {
           toggle.onclick = (e) => {
             e.stopPropagation();
@@ -14979,6 +15327,16 @@
           const { skipList = false } = options;
           if (e && (e.shiftKey || e.metaKey || e.ctrlKey)) {
             e.preventDefault();
+          }
+          if (isModifierContainer) {
+            if (this.app.renderer) this.app.renderer.setSelection([group.id], group.id);
+            this.app.engine.activeLayerId = group.id;
+            this.lastLayerClickId = group.id;
+            if (!skipList) this.renderLayers();
+            this.buildControls();
+            this.updateFormula();
+            this.app.render();
+            return;
           }
           const children = groupMap.get(group.id) || [];
           const ids = children.map((child) => child.id);
@@ -15005,6 +15363,13 @@
           if (e.target.closest('input')) return;
           e.preventDefault();
         };
+        if (modifierEnabled) {
+          modifierEnabled.onchange = (e) => {
+            if (this.app.pushHistory) this.app.pushHistory();
+            modifier.enabled = Boolean(e.target.checked);
+            this.refreshModifierLayer(group, { rebuildControls: group.id === this.app.engine.activeLayerId });
+          };
+        }
         if (nameEl && nameInput) {
           let nameClickTimer = null;
           nameEl.onclick = (e) => {
@@ -15149,6 +15514,7 @@
           };
         }
         container.appendChild(el);
+        selectableIds.push(group.id);
       };
 
       const renderLayerRow = (l, opts = {}) => {
@@ -16414,21 +16780,26 @@
       const rotation = getEl('inp-rotation');
       const isGroup = Boolean(layer.isGroup);
       const isStatic = Boolean(layer.parentId || layer.isGroup);
+      const isModifier = this.isModifierLayer(layer);
+      this.updatePrimaryPanelMode(layer);
+      this.syncPrimaryModuleDropdown(layer);
       if (moduleSelect) {
-        Array.from(moduleSelect.options).forEach((opt) => {
-          if (opt.dataset.temp === 'true') opt.remove();
-        });
-        const hasOption = Array.from(moduleSelect.options).some((opt) => opt.value === layer.type);
-        if (!hasOption) {
-          const opt = document.createElement('option');
-          opt.value = layer.type;
-          opt.dataset.temp = 'true';
-          opt.innerText = ALGO_DEFAULTS?.[layer.type]?.label || layer.type;
-          moduleSelect.appendChild(opt);
+        if (!isModifier) {
+          Array.from(moduleSelect.options).forEach((opt) => {
+            if (opt.dataset.temp === 'true') opt.remove();
+          });
+          const hasOption = Array.from(moduleSelect.options).some((opt) => opt.value === layer.type);
+          if (!hasOption) {
+            const opt = document.createElement('option');
+            opt.value = layer.type;
+            opt.dataset.temp = 'true';
+            opt.innerText = ALGO_DEFAULTS?.[layer.type]?.label || layer.type;
+            moduleSelect.appendChild(opt);
+          }
+          moduleSelect.value = layer.type;
+          moduleSelect.disabled = isStatic;
+          moduleSelect.classList.toggle('opacity-60', isStatic);
         }
-        moduleSelect.value = layer.type;
-        moduleSelect.disabled = isStatic;
-        moduleSelect.classList.toggle('opacity-60', isStatic);
       }
       if (seed) seed.value = layer.params.seed;
       if (posX) posX.value = layer.params.posX;
@@ -16436,10 +16807,14 @@
       if (scaleX) scaleX.value = layer.params.scaleX;
       if (scaleY) scaleY.value = layer.params.scaleY;
       if (rotation) rotation.value = layer.params.rotation;
-      this.toggleSeedControls(layer.type);
+      if (!isModifier) this.toggleSeedControls(layer.type);
 
       const desc = getEl('algo-desc');
-      if (desc) desc.innerText = DESCRIPTIONS[layer.type] || 'No description available.';
+      if (desc) {
+        desc.innerText = isModifier
+          ? MODIFIER_DESCRIPTIONS?.[this.getModifierState(layer)?.type || 'mirror'] || 'No description available.'
+          : DESCRIPTIONS[layer.type] || 'No description available.';
+      }
       if (moduleSelect) {
         const algoLabel = moduleSelect.parentElement?.querySelector('.control-label');
         if (algoLabel && !algoLabel.querySelector('.info-btn')) {
@@ -16447,11 +16822,17 @@
         }
       }
 
-      const algoDefs = this.controls[layer.type] || [];
+      const algoDefs = isModifier ? [] : this.controls[layer.type] || [];
       const commonDefs = COMMON_CONTROLS;
       const hasConditionalDefs = algoDefs.some((def) => typeof def.showIf === 'function');
       const hasNoiseConditional = WAVE_NOISE_DEFS.some((def) => typeof def.showIf === 'function');
-      if (!algoDefs.length && !commonDefs.length) {
+      if (!isModifier && !algoDefs.length && !commonDefs.length) {
+        restoreLeftPanelScroll();
+        return;
+      }
+
+      if (isModifier) {
+        this.buildMirrorModifierControls(layer, container);
         restoreLeftPanelScroll();
         return;
       }
@@ -20979,12 +21360,9 @@
           const useCurves = Boolean(l.params && l.params.curves);
           const layerGroupId = escapeXmlAttr(normalizeSvgId(l.name || l.id || 'Layer', 'layer'));
           svg += `<g id="${layerGroupId}" stroke-width="${strokeWidth}" stroke-linecap="${lineCap}" stroke-linejoin="round">`;
-          let paths =
-            l.mask?.enabled && Array.isArray(l.displayPaths)
-              ? l.displayPaths
-              : useOptimized && l.optimizedPaths
-              ? l.optimizedPaths
-              : l.paths;
+          let paths = this.app.engine.getRenderablePaths
+            ? this.app.engine.getRenderablePaths(l, { useOptimized })
+            : l.paths;
           if (hardCrop) {
             paths = (paths || []).flatMap((p) => {
               if (!Array.isArray(p) || p.length < 2) return [];

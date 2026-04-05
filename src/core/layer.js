@@ -33,9 +33,11 @@
       this.displayHelperPaths = null;
       this.parentId = null;
       this.isGroup = false;
+      this.containerRole = null;
       this.groupType = null;
       this.groupParams = null;
       this.groupCollapsed = false;
+      this.modifier = null;
       this.mask = {
         enabled: false,
         sourceIds: [],
@@ -50,6 +52,8 @@
       };
       const optDefaults = SETTINGS?.optimizationDefaults;
       this.optimization = optDefaults ? JSON.parse(JSON.stringify(optDefaults)) : null;
+      this.effectivePaths = [];
+      this.effectiveStats = null;
       this.optimizedPaths = null;
       this.optimizedStats = null;
     }

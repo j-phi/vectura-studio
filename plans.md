@@ -14,6 +14,7 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Continue extracting shared Noise Rack runtime primitives; stack blend-combination logic is now centralized, with deeper sampler extraction still pending.
 - Extend Noise Rack to the remaining direct consumers, now mainly any leftover bespoke samplers after Petalis per-modifier stack UI parity.
 - Expand universal masking beyond the first silhouette-capable layer set (`Wavetable` Horizon, closed shapes, groups) to additional algorithms with stable outer-envelope providers and surface-aware mask providers.
+- Extend Layer Modifiers beyond the initial `Mirror` implementation once the group-like modifier container model has proven out in export, masking, and nested layer workflows.
 
 ## Inbox
 - Extract more shared Noise Rack runtime primitives from the duplicated `wavetable` / `spiral` / `rainfall` implementations into `src/core/noise-rack.js`.
@@ -21,8 +22,11 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add GitHub-side rulesets / branch protection, merge queue, and Project fields once the repository settings are available to configure.
 - Decide whether to gate PRs on lint after introducing a repo-wide ESLint config that is compatible with the current browser-IIFE codebase.
 - Add drag-to-mask layer assignment and richer silhouette providers for currently open-line-only algorithms once their envelope rules are stable.
+- Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
+- Added Layer Modifiers v1 with `Insert > Mirror Modifier`, group-like modifier container rows, modifier-aware effective geometry, and full-canvas mirror-axis stacks that apply sequentially to child layers before display/export.
+- Added mirror-guide overlays and interactions: dashed non-exporting axes, reflection-direction triangles, separate rotate handles, per-axis show/hide-lock-delete controls, and stack-level add/show-hide/lock/clear actions.
 - Added an agentic harness source-of-truth document and synchronized PR-template expectations.
 - Added baseline automated test coverage for unit, integration, e2e smoke, visual, and perf workflows.
 - Established existing Mermaid-based architecture documentation in the README.
@@ -66,5 +70,8 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - `Universal` means every current noise-capable algorithm, not only new features and not only `wavetable`.
 - `package.json` is the canonical app version source. Sync derived version surfaces with `npm run version:sync`.
 - `README.md`, `plans.md`, `CHANGELOG.md`, the visible app version, and any affected in-app help/shortcut text are part of the required documentation surface for meaningful feature work.
+- Layer Modifiers use explicit modifier-container layers (`containerRole = 'modifier'`) instead of overloading ordinary generator layers, so drag/drop nesting, export, and future modifier types share one tree model.
+- Mirror Modifier axes are infinite reflection lines clipped only for guide drawing; multiple mirrors apply in stack order from top to bottom, and later mirrors operate on already-mirrored geometry.
+- Mirror guide visibility/locking is editor-only state; dashed guides, triangles, and rotate handles never export, but mirrored child geometry does.
 - In `Rings`, `Top Down` means a universal world-space XY field beneath the artwork; `Concentric` means seam-corrected path-space sampling around each full ring loop; `Orbit Field` preserves the legacy ring-local orbital sampler.
 - Live masking is non-destructive by default. Mask relationships are stored on the target layer, edited primarily from the layer panel, and may be materialized into expanded geometry as a separate action.

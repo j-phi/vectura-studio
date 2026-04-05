@@ -5,6 +5,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 ## Highlights
 - Plotter-first output in millimeters with machine profiles (A3, A4, AxiDraw V3).
 - Layered generation with visibility toggles, ordering, per-layer stroke/line-cap settings, and live non-destructive clipping masks managed directly from the Layers panel against silhouette-capable source layers.
+- Layer Modifiers via `Insert > Mirror Modifier`, with group-like container rows, drag-to-assign child layers, and full-canvas mirror-axis stacks that export reflected geometry while keeping guide lines editor-only.
 - Seeded, repeatable results with live transform controls (position, scale, rotation).
 - Switching algorithms restores transform defaults for the selected algorithm (position/scale/rotation do not carry over).
 - Collapsible left-panel sections with persisted state: `Algorithm` (including a nested `Transform & Seed` sub-panel, collapsed by default) and `Algorithm Configuration`.
@@ -13,8 +14,8 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Multi-selection: shift-click ranges in the layer list, Cmd/Ctrl-click to toggle, or drag a marquee, then move/rotate the group together.
 - Cmd/Ctrl+A selects all drawable layers from anywhere in the app (outside text inputs).
 - Layer grouping/ungrouping via Cmd/Ctrl+G and Cmd/Ctrl+Shift+G.
-- Desktop menu bar is anchored beside `VECTURA.STUDIO` with Illustrator-style shortcuts for Open/Save/Import/Export/Document Setup/Reset View/Help.
-- Top menu dropdowns render as overlays above the canvas/panes so File/View/Help menus are never clipped by the header.
+- Desktop menu bar is anchored beside `VECTURA.STUDIO` with Illustrator-style shortcuts for Open/Save/Import/Export/Document Setup/Reset View/Help plus an `Insert` menu for modifier containers.
+- Top menu dropdowns render as overlays above the canvas/panes so File/View/Insert/Help menus are never clipped by the header.
 - Illustrator-style tool bar with selection, direct selection, hand, pen (bezier), and scissor tools (V/A/Space/P/C). Press V/P/C again to cycle subtools.
 - Pen long-press subtool menu with Illustrator-style modes and shortcuts (P, +, -, Shift+C).
 - Direct path editing for individual line endpoints and bezier handles.
@@ -261,10 +262,12 @@ CI lives in `.github/workflows/test.yml`:
 2. Expand `Transform & Seed` inside the Algorithm panel, then use transform controls (seed, position, scale, rotation) to nudge the layer.
 3. Use Post-Processing Lab for smoothing/curves/simplify plus optional optimization passes and preview.
 4. Manage layers on the right: add, reorder (drag the grip), duplicate, hide, rename (double-click), expand into sublayers, assign pens (drag a pen onto a layer to apply to the selection), and use `Mask` on a target layer row to create or edit a clipping mask against selected silhouette-capable source layers.
-5. Use `File > Document Setup` for machine size, margin, on-canvas crop, hard export crop (`Crop Exports to Margin`, which trims path geometry to the margin rectangle and exports with flat caps), margin guides, stroke, SVG precision, optimization scope/preview/export settings, and optional cookie preference saving.
-6. Save/Open full projects via .vectura files, or import SVGs as new layers.
-7. Switch to the Petalis algorithm to use the embedded inline designer panel, then use ⧉ to pop it out into a floating window or ↩ to dock it back in. In Petalis, petal shape is driven by visible inner/outer designer curves, always-on inner/outer count + split controls, a `PETAL VISUALIZER` (`Overlay` / `Side by Side`), a `PROFILE EDITOR` with per-side profile import/export controls plus a shared `Export Pair` button below both profile cards, and `Shading Stack` + `Modifier Stack` cards where each entry has its own `Petal Shape` target (`Inner`/`Outer`/`Both`) plus symmetry controls.
-8. Export from `File > Export SVG`.
+5. Use `Insert > Mirror Modifier` to add a modifier container, then drag layers onto it in the Layers panel. The modifier row owns a Mirror Stack with per-axis show/hide, lock, delete, reorder, angle, and XY shift controls plus stack-level add/show-hide/lock/clear actions.
+6. Mirror guides are dashed editor overlays with end triangles that flip which half-plane gets replaced and separate end rotate handles for axis rotation; the reflected geometry itself still exports.
+7. Use `File > Document Setup` for machine size, margin, on-canvas crop, hard export crop (`Crop Exports to Margin`, which trims path geometry to the margin rectangle and exports with flat caps), margin guides, stroke, SVG precision, optimization scope/preview/export settings, and optional cookie preference saving.
+8. Save/Open full projects via .vectura files, or import SVGs as new layers.
+9. Switch to the Petalis algorithm to use the embedded inline designer panel, then use ⧉ to pop it out into a floating window or ↩ to dock it back in. In Petalis, petal shape is driven by visible inner/outer designer curves, always-on inner/outer count + split controls, a `PETAL VISUALIZER` (`Overlay` / `Side by Side`), a `PROFILE EDITOR` with per-side profile import/export controls plus a shared `Export Pair` button below both profile cards, and `Shading Stack` + `Modifier Stack` cards where each entry has its own `Petal Shape` target (`Inner`/`Outer`/`Both`) plus symmetry controls.
+10. Export from `File > Export SVG`.
 
 Pan: Shift + Drag. Zoom: Mouse Wheel. Touch: one-finger tool input, two-finger pan/pinch zoom. On phones, use the top `File/View/Help` menu bar, then open Generator/Layers with pane toggles (including edge tabs) and expand/collapse the Model panel with the floating Model button. Move layer: Drag. Resize layer: Drag corner handles. Rotate: Drag the upper-right handle (Shift snaps). Duplicate: Alt-drag. Expand: Cmd/Ctrl + E. Pen tool: click to add points, click-drag for bezier curves (Shift constrains, Alt breaks handles), double-click near the first point to close, Enter commits, Esc cancels. Pen subtools: `+` add anchor, `-` delete anchor, `Shift+C` convert anchor. Direct tool (`A`) edits endpoints and handles on individual line paths. Scissor tool: drag a line/rect/circle to split intersecting paths. Petal Designer adds middle-drag panning, wheel zoom-to-cursor (both visible petals zoom together), and Illustrator-style `Shift`/`Alt`/`Cmd/Ctrl` editing modifiers.
 
@@ -286,7 +289,7 @@ Each layer is powered by an algorithm with its own parameters and formula previe
 - Spiral: includes optional closure for looping the outer end back into the spiral.
 - Shape Pack: circle/polygon packing with perspective controls.
 
-Defaults live in `src/config/defaults.js` and descriptions in `src/config/descriptions.js`.
+Defaults live in `src/config/defaults.js`, modifier defaults/descriptions live in `src/config/modifiers.js`, and algorithm descriptions live in `src/config/descriptions.js`.
 
 ## Architecture
 ```mermaid
@@ -306,7 +309,9 @@ flowchart LR
   Engine --> Algorithms[src/core/algorithms/index.js]
   Engine --> RNG[src/core/rng.js]
   Engine --> Noise[src/core/noise.js]
+  Engine --> Modifiers["src/core/modifiers.js"]
   Engine --> Display["Display Geometry / Masking"]
+  Modifiers --> Display
   Display --> Renderer
   Display --> Export
   Display --> Masking["src/core/masking.js"]
@@ -336,13 +341,14 @@ flowchart TD
 - `src/core/` - vector engine, layers, RNG/noise, and algorithms.
 - `src/core/geometry-utils.js` - shared path smoothing/simplification and cloning helpers.
 - `src/core/optimization-utils.js` - shared path length/sort/offset helpers used by optimization flow.
+- `src/core/modifiers.js` - modifier-state helpers plus mirror-axis geometry, clipping, and reflection routines.
 - `src/core/masking.js` - silhouette capability detection, mask unions, and live display-geometry masking.
 - `src/core/path-boolean.js` - polygon normalization and path segmentation helpers used by masking.
 - `src/core/algorithms/*.js` - one file per algorithm, with `src/core/algorithms/index.js` assembling the registry exposed to the engine.
 - `src/render/` - canvas rendering and view transforms.
 - `src/ui/` - panels, controls, settings, and SVG export.
 - `src/ui/randomization-utils.js` - shared parameter randomization engine with algorithm-specific bias profiles.
-- `src/config/` - machine profiles, defaults, UI descriptions, palette library, and cross-system preset registry.
+- `src/config/` - machine profiles, algorithm defaults, modifier defaults/descriptions, palette library, and cross-system preset registry.
 - `src/config/petal-profiles/` - project profile library ingested by Petalis (`index.json` + `.json` profile files with explicit anchors, plus `library.js` for `file://` local loading).
 - `tests/` - unit, integration, e2e smoke, visual baseline, and performance suites.
 - `docs/agentic-harness-strategy.md` - agentic workflow source of truth, including test/doc synchronization contracts.
