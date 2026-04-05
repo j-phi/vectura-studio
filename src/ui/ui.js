@@ -5982,9 +5982,9 @@
       overlay.id = 'modal-overlay';
       overlay.className = 'modal-overlay';
       overlay.innerHTML = `
-        <div class="modal-card" role="dialog" aria-modal="true">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
           <div class="modal-header">
-            <div class="modal-title"></div>
+            <div class="modal-title" id="modal-title"></div>
             <button class="modal-close" type="button" aria-label="Close modal">✕</button>
           </div>
           <div class="modal-body"></div>
@@ -6005,9 +6005,15 @@
     }
 
     openModal({ title, body }) {
+      this._modalPrevFocus = document.activeElement || null;
       this.modal.titleEl.textContent = title;
       this.modal.bodyEl.innerHTML = body;
       this.modal.overlay.classList.add('open');
+      // Move focus to first focusable element in modal
+      requestAnimationFrame(() => {
+        const focusable = this.modal.overlay.querySelector('button, input, [tabindex="0"]');
+        if (focusable) focusable.focus();
+      });
     }
 
     openColorModal({ title, value, onApply }) {
@@ -6079,6 +6085,10 @@
 
     closeModal() {
       this.modal.overlay.classList.remove('open');
+      if (this._modalPrevFocus && typeof this._modalPrevFocus.focus === 'function') {
+        this._modalPrevFocus.focus();
+        this._modalPrevFocus = null;
+      }
     }
 
     getLeftSectionDefaults() {
@@ -6108,6 +6118,8 @@
       const body = section.querySelector('.left-panel-section-body');
       section.classList.toggle('collapsed', Boolean(collapsed));
       if (body) body.style.display = collapsed ? 'none' : '';
+      const sectionHeader = section.querySelector('.left-panel-section-header');
+      if (sectionHeader) sectionHeader.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
       if (!persist) return;
       this.app.persistPreferencesDebounced?.();
     }
@@ -6144,6 +6156,8 @@
       const body = getEl('algorithm-transform-body') || section.querySelector('.global-section-body');
       section.classList.toggle('collapsed', Boolean(collapsed));
       if (body) body.style.display = collapsed ? 'none' : '';
+      const transformHeader = getEl('algorithm-transform-header');
+      if (transformHeader) transformHeader.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
       if (!persist) return;
       this.app.persistPreferencesDebounced?.();
     }
@@ -11319,12 +11333,12 @@
         control.innerHTML = `
           <div class="flex justify-between mb-1">
             <div class="flex items-center gap-2">
-              <label class="control-label mb-0">${def.label}</label>
+              <label class="control-label mb-0" id="noise-label-${def.key}-${idx}">${def.label}</label>
               ${infoBtn}
             </div>
             <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(def, value)}</button>
           </div>
-          <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="w-full">
+          <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="w-full" aria-labelledby="noise-label-${def.key}-${idx}" aria-valuemin="${min}" aria-valuemax="${max}" aria-valuenow="${displayVal}">
           <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
         `;
         const input = control.querySelector('input[type="range"]');
@@ -11347,6 +11361,7 @@
           input.oninput = (e) => {
             const nextDisplay = parseFloat(e.target.value);
             valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
+            input.setAttribute('aria-valuenow', e.target.value);
           };
           input.onchange = (e) => {
             if (this.app.pushHistory) this.app.pushHistory();
@@ -13344,6 +13359,7 @@
         SETTINGS.pensCollapsed = Boolean(next);
         section.classList.toggle('collapsed', Boolean(next));
         body.style.display = next ? 'none' : '';
+        if (header) header.setAttribute('aria-expanded', next ? 'false' : 'true');
       };
 
       setCollapsed(SETTINGS.pensCollapsed === true);
@@ -13493,6 +13509,7 @@
         SETTINGS.autoColorizationCollapsed = next;
         section.classList.toggle('collapsed', next);
         body.style.display = next ? 'none' : '';
+        if (header) header.setAttribute('aria-expanded', next ? 'false' : 'true');
       };
       const initialCollapsed = SETTINGS.autoColorizationCollapsed !== false;
       setCollapsed(initialCollapsed);
@@ -14166,6 +14183,7 @@
       const syncButtons = () => {
         toolButtons.forEach((btn) => {
           btn.classList.toggle('active', btn.dataset.tool === this.activeTool);
+          btn.setAttribute('aria-pressed', btn.dataset.tool === this.activeTool ? 'true' : 'false');
         });
         scissorButtons.forEach((btn) => {
           btn.classList.toggle('active', btn.dataset.scissor === this.scissorMode);
@@ -15493,6 +15511,7 @@
           penIcon.title = pen.name;
           penMenu.querySelectorAll('.pen-option').forEach((opt) => {
             opt.classList.toggle('active', opt.dataset.penId === pen.id);
+            opt.setAttribute('aria-pressed', opt.dataset.penId === pen.id ? 'true' : 'false');
           });
           if (render) {
             this.renderLayers();
@@ -15504,7 +15523,7 @@
         penMenu.innerHTML = pens
           .map(
             (pen) => `
-              <button type="button" class="pen-option" data-pen-id="${pen.id}">
+              <button type="button" class="pen-option" data-pen-id="${pen.id}" aria-pressed="${pen.id === owner.penId ? 'true' : 'false'}">
                 <span class="pen-icon" style="background:${pen.color}; color:${pen.color}; --pen-width:${pen.width}"></span>
                 <span class="pen-option-name">${pen.name}</span>
               </button>
@@ -15557,6 +15576,7 @@
         const showMask = !isModifierContainer && Boolean(group.maskCapabilities?.canSource || childrenMap.get(group.id)?.length);
         el.className =
           `layer-item layer-group flex items-center justify-between bg-vectura-bg border border-vectura-border p-2 mb-2 ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}`;
+        if (isActive) el.setAttribute('aria-current', 'true');
         el.dataset.layerId = group.id;
         const indent = depth * 12;
         if (indent) {
@@ -15740,6 +15760,7 @@
           `;
         const el = document.createElement('div');
         el.className = `layer-item ${isChild ? 'layer-sub' : ''} flex items-center justify-between bg-vectura-bg border border-vectura-border p-2 mb-2 group cursor-pointer hover:bg-vectura-border ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}`;
+        if (isActive) el.setAttribute('aria-current', 'true');
         el.dataset.layerId = l.id;
         const indent = depth * 12;
         if (indent) {

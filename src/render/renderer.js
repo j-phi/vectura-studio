@@ -14,16 +14,16 @@
   const ELLIPSE_KAPPA = 0.5522847498307936;
   const SHAPE_CORNER_HANDLE_MIN = 8;
   const MASK_PREVIEW_ALPHA = 0.2;
-  const SHAPE_RETICLE_CURSOR = (() => {
+  const makeShapeReticleCursor = (color = 'white') => {
     const svg =
       `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">`
-      + `<g fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round">`
+      + `<g fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round">`
       + `<path d="M16 4.5v4M16 23.5v4M4.5 16h4M23.5 16h4"/>`
       + `</g>`
-      + `<circle cx="16" cy="16" r="1.75" fill="white"/>`
+      + `<circle cx="16" cy="16" r="1.75" fill="${color}"/>`
       + `</svg>`;
     return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 16 16, crosshair`;
-  })();
+  };
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const getThemeToken = (name, fallback = '') => {
     if (typeof document === 'undefined' || !document.documentElement) return fallback;
@@ -461,7 +461,7 @@
         return;
       }
       if (`${this.activeTool}`.startsWith('shape-')) {
-        this.setCanvasCursor(SHAPE_RETICLE_CURSOR, 'shape-reticle');
+        this.setCanvasCursor(makeShapeReticleCursor(getThemeToken('--render-cursor-stroke', 'white')), 'shape-reticle');
         return;
       }
       if (this.activeTool === 'scissor') {
@@ -469,7 +469,7 @@
         return;
       }
       if (this.activeTool === 'select' && this.getSelectedPrimitiveShapeLayer()) {
-        this.setCanvasCursor(SHAPE_RETICLE_CURSOR, 'shape-reticle');
+        this.setCanvasCursor(makeShapeReticleCursor(getThemeToken('--render-cursor-stroke', 'white')), 'shape-reticle');
         return;
       }
       this.setCanvasCursor('crosshair');
@@ -4103,7 +4103,7 @@
         return;
       }
       if (`${this.activeTool}`.startsWith('shape-')) {
-        this.setCanvasCursor(SHAPE_RETICLE_CURSOR, 'shape-reticle');
+        this.setCanvasCursor(makeShapeReticleCursor(getThemeToken('--render-cursor-stroke', 'white')), 'shape-reticle');
         return;
       }
       if (this.activeTool === 'scissor' || (this.activeTool === 'select' && (this.selectionMode === 'pen' || this.selectionMode === 'lasso'))) {
@@ -4177,7 +4177,7 @@
         return;
       }
       if (selectedPrimitiveShape) {
-        this.setCanvasCursor(SHAPE_RETICLE_CURSOR, 'shape-reticle');
+        this.setCanvasCursor(makeShapeReticleCursor(getThemeToken('--render-cursor-stroke', 'white')), 'shape-reticle');
         return;
       }
       if (this.pointInBounds(world, bounds)) {
