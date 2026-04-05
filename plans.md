@@ -37,6 +37,8 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Added mirror-guide overlays and interactions: dashed non-exporting axes, reflection-direction triangles, separate rotate handles, per-axis show/hide-lock-delete controls, and stack-level add/show-hide/lock/clear actions.
 - Fixed Mirror Modifier layer-tree behavior so children can be dragged back out to the root, deleting a modifier dissolves only the wrapper and preserves its children, and `+ Add` under a selected modifier creates a drawable child instead of a pseudo-`mirror` layer.
 - Fixed Mirror Modifier child editing so selecting a nested drawable child returns the left panel to normal `Algorithm` mode and keeps algorithm, parameter, and transform editing active inside the mirrored subtree.
+- Fixed mirrored closed-mask handling so a mask parent under a Mirror Modifier now contributes the mirrored closed silhouette union, masked descendants clip against both mirrored lobes, and SVG plus screenshot baselines lock the mirrored-mask scene visually.
+- Fixed Rectangle/Polygon authoring so new primitive layers no longer inherit `Curves` from the previously active generator layer, and rotated primitive selections now keep selection bounds plus corner-rounding handles aligned to the transformed shape geometry with deterministic and screenshot coverage.
 - Added an agentic harness source-of-truth document and synchronized PR-template expectations.
 - Added baseline automated test coverage for unit, integration, e2e smoke, visual, and perf workflows.
 - Established existing Mermaid-based architecture documentation in the README.

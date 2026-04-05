@@ -9784,6 +9784,9 @@
             Child layers nested under a Mirror Modifier stay fully editable when selected: click the child row or its artwork to switch back to normal Algorithm controls and edit its generator, settings, or transform directly.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
+            Closed mask parents nested under a Mirror Modifier now mirror as closed silhouettes too, so masked descendants clip against the mirrored mask union instead of only the original mask shape.
+          </div>
+          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Angle controls use circular dials—drag the marker to set direction.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
@@ -9817,8 +9820,9 @@
             <div>When a Mirror Modifier is selected, drag the guide line to move it, drag the outer rotate handles to rotate it, and click the centered triangle to flip the reflection side.</div>
             <div>Use the Mask button on a silhouette-capable parent layer to clip every indented descendant beneath it, Illustrator-style.</div>
             <div>Masking is managed from the Layers panel; enable it on the parent, then drag child layers onto that row to bring them inside the masked subtree.</div>
+            <div>Mask parents inside Mirror Modifiers mirror as closed silhouettes too, so a circular mask plus its child artwork can resolve as two mirrored masked circles instead of one clipped circle and one missing copy.</div>
             <div>Mask parents can optionally hide their own artwork while still clipping descendants, which is useful for invisible circular or custom-shape masks.</div>
-            <div>Rectangle, Oval, and Polygon tools create editable expanded layers that work with transforms, masking, scissor cuts, and export.</div>
+            <div>Rectangle, Oval, and Polygon tools create editable expanded layers that work with transforms, masking, scissor cuts, and export; fresh rectangles/polygons stay straight-edged on creation, and rotated primitive handles stay aligned to the transformed shape.</div>
             <div>Expand a layer into sublayers for line-by-line control.</div>
             <div>Selection outline visibility, color, and thickness can be adjusted in Document Setup.</div>
           </div>
