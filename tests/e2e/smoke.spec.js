@@ -883,6 +883,92 @@ test.describe('Vectura smoke interactions', () => {
     expect(pageErrors).toEqual([]);
   });
 
+  test('editing a circle mask parent updates descendant clipping to the edited outline', async ({ page }) => {
+    const pageErrors = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+
+    await page.goto('/');
+
+    const state = await page.evaluate(() => {
+      const app = window.app;
+      const { Layer, SETTINGS } = window.Vectura;
+      SETTINGS.aboutVisible = false;
+
+      const engine = app.engine;
+      engine.layers = [];
+      SETTINGS.globalLayerCount = 0;
+
+      const cx = 120;
+      const cy = 110;
+      const r = 74;
+      const circlePath = [];
+      for (let i = 0; i <= 96; i += 1) {
+        const theta = (i / 96) * Math.PI * 2;
+        circlePath.push({
+          x: cx + Math.cos(theta) * r,
+          y: cy + Math.sin(theta) * r,
+        });
+      }
+      circlePath.meta = {
+        kind: 'circle',
+        cx,
+        cy,
+        r,
+        shape: {
+          type: 'oval',
+          cx,
+          cy,
+          rx: r,
+          ry: r,
+          cornerRadii: [],
+        },
+      };
+
+      const maskParent = new Layer('mask-parent-circle-edit', 'expanded', 'Circle Mask');
+      maskParent.sourcePaths = [circlePath];
+      maskParent.mask.enabled = true;
+      maskParent.params.smoothing = 0;
+      maskParent.params.simplify = 0;
+
+      const child = new Layer('masked-child-line-edit', 'expanded', 'Masked Line');
+      child.parentId = maskParent.id;
+      child.paths = [[
+        { x: 20, y: 110 },
+        { x: 220, y: 110 },
+      ]];
+
+      engine.layers.push(maskParent, child);
+      engine.activeLayerId = maskParent.id;
+      engine.generate(maskParent.id);
+      engine.computeAllDisplayGeometry();
+      app.renderer.setSelection([maskParent.id], maskParent.id);
+      app.ui.renderLayers();
+      app.ui.buildControls();
+      app.render();
+
+      const beforeStartX = child.displayPaths?.[0]?.[0]?.x ?? null;
+      const selection = app.renderer.setDirectSelection(maskParent, 0);
+      const leftmostIndex = selection.anchors.reduce(
+        (best, anchor, index, anchors) => (anchor.x < anchors[best].x ? index : best),
+        0
+      );
+      selection.anchors[leftmostIndex].x += 25;
+      app.renderer.applyDirectPath();
+      app.ui.renderLayers();
+      app.render();
+
+      return {
+        beforeStartX,
+        afterStartX: child.displayPaths?.[0]?.[0]?.x ?? null,
+      };
+    });
+
+    expect(state.beforeStartX).not.toBeNull();
+    expect(state.afterStartX).not.toBeNull();
+    expect(state.afterStartX).toBeGreaterThan(state.beforeStartX + 10);
+    expect(pageErrors).toEqual([]);
+  });
+
   test('mask editor can hide the mask parent artwork while keeping descendant clipping active', async ({ page }) => {
     const pageErrors = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));

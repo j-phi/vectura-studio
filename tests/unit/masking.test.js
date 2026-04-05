@@ -2,13 +2,16 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
 describe('Masking runtime', () => {
   let runtime;
+  let runtimeWithRenderer;
 
   beforeAll(async () => {
     runtime = await loadVecturaRuntime();
+    runtimeWithRenderer = await loadVecturaRuntime({ includeRenderer: true });
   });
 
   afterAll(() => {
     runtime.cleanup();
+    runtimeWithRenderer.cleanup();
   });
 
   const bounds = {
@@ -129,6 +132,72 @@ describe('Masking runtime', () => {
 
     expect(child.displayPaths.length).toBeGreaterThan(0);
     expect(outsidePoints).toHaveLength(0);
+  });
+
+  test('editing a circle-backed mask source path demotes stale circle metadata and reclips descendants to the edited shape', () => {
+    const { VectorEngine, Layer, Renderer } = runtimeWithRenderer.window.Vectura;
+    const engine = new VectorEngine();
+    engine.layers = [];
+
+    const canvas = runtimeWithRenderer.document.getElementById('main-canvas');
+    const renderer = new Renderer(canvas, engine);
+
+    const cx = 120;
+    const cy = 110;
+    const r = 74;
+    const circle = [];
+    for (let i = 0; i <= 96; i += 1) {
+      const theta = (i / 96) * Math.PI * 2;
+      circle.push({
+        x: cx + Math.cos(theta) * r,
+        y: cy + Math.sin(theta) * r,
+      });
+    }
+    circle.meta = {
+      kind: 'circle',
+      cx,
+      cy,
+      r,
+      shape: {
+        type: 'oval',
+        cx,
+        cy,
+        rx: r,
+        ry: r,
+        cornerRadii: [],
+      },
+    };
+
+    const maskParent = new Layer('mask-circle-edited', 'expanded', 'Mask Circle');
+    maskParent.sourcePaths = [circle];
+    maskParent.mask.enabled = true;
+    maskParent.params.smoothing = 0;
+    maskParent.params.simplify = 0;
+
+    const child = new Layer('child-line', 'expanded', 'Child');
+    child.parentId = maskParent.id;
+    child.paths = [[
+      { x: 20, y: 110 },
+      { x: 220, y: 110 },
+    ]];
+
+    engine.layers.push(maskParent, child);
+    engine.generate(maskParent.id);
+    engine.computeAllDisplayGeometry();
+
+    const beforeStartX = child.displayPaths[0][0].x;
+    renderer.setDirectSelection(maskParent, 0);
+    const leftmostIndex = renderer.directSelection.anchors.reduce(
+      (best, anchor, index, anchors) => (anchor.x < anchors[best].x ? index : best),
+      0
+    );
+    renderer.directSelection.anchors[leftmostIndex].x += 25;
+    renderer.applyDirectPath();
+
+    expect(maskParent.sourcePaths[0].meta.kind).toBe('poly');
+    expect(maskParent.sourcePaths[0].meta.cx).toBeUndefined();
+    expect(maskParent.sourcePaths[0].meta.r).toBeUndefined();
+    expect(child.displayPaths[0][0].x).toBeGreaterThan(beforeStartX + 10);
   });
 
   test('hidden mask parents still clip descendants while suppressing their own renderable geometry', () => {

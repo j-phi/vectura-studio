@@ -26,6 +26,7 @@ This file is the active repository punchlist. Update it whenever meaningful work
 
 ## Done
 - Added a full dark/light shell theme with a header sun/moon toggle, cookie-backed personal theme preference, theme-aware renderer/helper chrome, and automatic `Pen 1` plus document-background syncing when the theme flips.
+- Fixed circle-backed mask edits so once a mask is reshaped through direct anchor editing it drops stale canonical circle metadata and reclips descendants to the edited outline, with unit and Playwright regressions.
 - Fixed optimized SVG export so `Export Optimized` no longer reuses masked display geometry as its raw source when `Remove Hidden Geometry` is off, with engine/integration/Playwright regressions.
 - Removed the duplicate top-level `Remove Hidden Geometry` checkbox from Document Setup so Export Settings remains the sole default-on control for that export-only behavior, with integration and Playwright regressions.
 - Added live mask-parent transform preview so moving/resizing/rotating a mask parent ghost-renders its masked descendants against the transformed silhouette until release, with unit/integration/Playwright coverage.

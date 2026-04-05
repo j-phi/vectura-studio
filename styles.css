@@ -782,6 +782,30 @@ input[type='color']::-webkit-color-swatch {
   background: rgba(8, 145, 178, 0.12);
 }
 
+[data-theme='light'] .layer-mini-badge--mask {
+  color: #155e75;
+  border-color: rgba(21, 94, 117, 0.35);
+  background: rgba(14, 116, 144, 0.1);
+}
+
+[data-theme='light'] .layer-mask-trigger {
+  color: #3f3f46;
+  border-color: #a1a1aa;
+  background: rgb(var(--vectura-panel-rgb) / 0.96);
+}
+
+[data-theme='light'] .layer-mask-trigger:hover {
+  color: #18181b;
+  border-color: #71717a;
+  background: rgb(var(--vectura-bg-rgb) / 0.84);
+}
+
+[data-theme='light'] .layer-mask-trigger--active {
+  color: #155e75;
+  border-color: rgba(14, 116, 144, 0.45);
+  background: rgba(14, 116, 144, 0.14);
+}
+
 .pen-option {
   display: flex;
   align-items: center;

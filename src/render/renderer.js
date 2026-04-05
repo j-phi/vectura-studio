@@ -1441,12 +1441,43 @@
       if (!layer || !selection) return;
       const sourcePaths = this.ensureLayerSourcePaths(layer);
       const path = this.buildPenPathFromAnchors(selection.anchors, selection.closed);
-      const meta = { ...(selection.meta || {}), anchors: this.cloneAnchors(selection.anchors), closed: Boolean(selection.closed) };
+      const meta = this.normalizeEditedPathMeta({
+        ...(selection.meta || {}),
+        anchors: this.cloneAnchors(selection.anchors),
+        closed: Boolean(selection.closed),
+      });
       path.meta = meta;
       sourcePaths[selection.pathIndex] = path;
       layer.sourcePaths = sourcePaths;
       this.engine.generate(layer.id);
       selection.meta = meta;
+    }
+
+    normalizeEditedPathMeta(meta) {
+      const next = { ...(meta || {}) };
+      if (next.kind === 'circle') {
+        next.kind = 'poly';
+      } else if (!next.shape && next.kind === 'shape') {
+        next.kind = 'poly';
+      } else if (next.shape) {
+        return next;
+      }
+      delete next.cx;
+      delete next.cy;
+      delete next.rx;
+      delete next.ry;
+      delete next.r;
+      delete next.rotation;
+      return next;
+    }
+
+    markDirectSelectionAsCustomPath() {
+      if (!this.directSelection) return;
+      this.directSelection.meta = this.normalizeEditedPathMeta({
+        ...(this.directSelection.meta || {}),
+        shape: undefined,
+      });
+      delete this.directSelection.meta.shape;
     }
 
     startDirectDrag(control) {
@@ -1472,8 +1503,8 @@
         this.onDirectEditStart();
         drag.historyPushed = true;
       }
-      if (drag.type !== 'corner' && this.directSelection.meta?.shape) {
-        delete this.directSelection.meta.shape;
+      if (drag.type !== 'corner') {
+        this.markDirectSelectionAsCustomPath();
       }
       if (drag.type === 'anchor') {
         const dx = next.x - anchor.x;
@@ -1539,7 +1570,7 @@
       const selection = this.setDirectSelection(baseHit.layer, baseHit.pathIndex);
       if (!selection) return false;
       if (this.onDirectEditStart) this.onDirectEditStart();
-      if (selection.meta?.shape) delete selection.meta.shape;
+      this.markDirectSelectionAsCustomPath();
       const insertIndex = Math.max(0, Math.min(selection.anchors.length, (baseHit.segmentIndex ?? 0) + 1));
       const sourcePoint = this.worldToSourcePoint(baseHit.layer, baseHit.point || world);
       selection.anchors.splice(insertIndex, 0, {
@@ -1565,7 +1596,7 @@
       if (!hit || hit.type !== 'anchor') return false;
       if (this.directSelection.anchors.length <= 2) return false;
       if (this.onDirectEditStart) this.onDirectEditStart();
-      if (this.directSelection.meta?.shape) delete this.directSelection.meta.shape;
+      this.markDirectSelectionAsCustomPath();
       this.directSelection.anchors.splice(hit.index, 1);
       if (this.directSelection.closed && this.directSelection.anchors.length < 3) {
         this.directSelection.closed = false;
@@ -1603,7 +1634,7 @@
       const anchor = this.directSelection.anchors[control.index];
       if (!anchor) return false;
       if (this.onDirectEditStart) this.onDirectEditStart();
-      if (this.directSelection.meta?.shape) delete this.directSelection.meta.shape;
+      this.markDirectSelectionAsCustomPath();
       if (anchor.in || anchor.out) {
         anchor.in = null;
         anchor.out = null;
