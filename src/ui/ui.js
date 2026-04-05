@@ -17,6 +17,7 @@
     MODIFIER_DEFAULTS,
     MODIFIER_DESCRIPTIONS,
     Modifiers = {},
+    Masking = {},
     RandomizationUtils,
     GeometryUtils,
     OptimizationUtils,
@@ -164,6 +165,7 @@
   const createModifierState = Modifiers.createModifierState || ((type) => ({ type, enabled: true, guidesVisible: true, guidesLocked: false, mirrors: [] }));
   const createMirrorLine = Modifiers.createMirrorLine || ((index) => ({ id: `mirror-${index + 1}`, enabled: true }));
   const isModifierLayer = Modifiers.isModifierLayer || (() => false);
+  const getLayerSilhouette = Masking.getLayerSilhouette || (() => []);
 
   const segmentIntersection = (a, b, c, d) => {
     const r = { x: b.x - a.x, y: b.y - a.y };
@@ -367,6 +369,117 @@
     if (current && current.length > 1) output.push(current);
     return output;
   };
+
+  const clonePathsWithMeta = (paths = []) =>
+    (paths || []).map((path) => {
+      if (!Array.isArray(path)) return path;
+      const next = path.map((pt) => ({ x: pt.x, y: pt.y }));
+      if (path.meta) next.meta = clone(path.meta);
+      return next;
+    });
+
+  const polygonToSvgPathData = (polygon, precision = 3) => {
+    if (!Array.isArray(polygon) || polygon.length < 3) return '';
+    const fmt = (n) => Number(n).toFixed(precision);
+    let d = `M ${fmt(polygon[0].x)} ${fmt(polygon[0].y)}`;
+    for (let i = 1; i < polygon.length; i++) {
+      d += ` L ${fmt(polygon[i].x)} ${fmt(polygon[i].y)}`;
+    }
+    if (!pointsEqual(polygon[0], polygon[polygon.length - 1], 1e-4)) d += ' Z';
+    return d;
+  };
+
+  const rectToSvgPathData = (rect, precision = 3) => {
+    if (!rect) return '';
+    const fmt = (n) => Number(n).toFixed(precision);
+    return `M ${fmt(rect.x)} ${fmt(rect.y)} H ${fmt(rect.x + rect.w)} V ${fmt(rect.y + rect.h)} H ${fmt(rect.x)} Z`;
+  };
+
+  const buildClipPathMarkup = (id, polygons, precision, options = {}) => {
+    const { invert = false, profile = null } = options;
+    const valid = (polygons || []).filter((polygon) => Array.isArray(polygon) && polygon.length >= 3);
+    if (!valid.length) return '';
+    let d = '';
+    if (invert && profile) {
+      d += rectToSvgPathData({ x: 0, y: 0, w: profile.width || 0, h: profile.height || 0 }, precision);
+    }
+    valid.forEach((polygon) => {
+      d += polygonToSvgPathData(polygon, precision);
+    });
+    if (!d) return '';
+    return `<clipPath id="${escapeXmlAttr(id)}"><path d="${d}" clip-rule="evenodd" /></clipPath>`;
+  };
+
+  const cloneExportPath = (path) => {
+    if (!Array.isArray(path)) return path;
+    const next = path.map((pt) => ({ x: pt.x, y: pt.y }));
+    if (path.meta) next.meta = clone(path.meta);
+    return next;
+  };
+
+  const isMaskLayerGeometryHidden = (layer) => Boolean(layer?.mask?.enabled && layer?.mask?.hideLayer);
+
+  const getRawExportPaths = (layer, options = {}) => {
+    if (!layer) return [];
+    if (isMaskLayerGeometryHidden(layer)) return [];
+    const { useOptimized = false } = options;
+    const source =
+      useOptimized && Array.isArray(layer.optimizedPaths)
+        ? layer.optimizedPaths
+        : Array.isArray(layer.effectivePaths) && layer.effectivePaths.length
+        ? layer.effectivePaths
+        : layer.paths || [];
+    return clonePathsWithMeta(source);
+  };
+
+  const getVisibleExportPaths = (layer, options = {}) => {
+    if (!layer) return [];
+    if (isMaskLayerGeometryHidden(layer)) return [];
+    if (layer.mask?.enabled && Array.isArray(layer.displayPaths)) return clonePathsWithMeta(layer.displayPaths);
+    return getRawExportPaths(layer, options);
+  };
+
+  const hardClipExportPaths = (paths, rect, options = {}) => {
+    const { useCurves = false } = options;
+    if (!rect) return clonePathsWithMeta(paths);
+    const clipped = [];
+    (paths || []).forEach((path) => {
+      if (!Array.isArray(path) || path.length < 2) return;
+      const baseMeta = path.meta ? clone(path.meta) : {};
+      const geometry =
+        path.meta?.kind === 'circle'
+          ? expandCirclePath(path.meta, 72)
+          : useCurves
+          ? resampleCurvedPath(path)
+          : cloneExportPath(path);
+      const segments = clipPathToRect(geometry, rect);
+      segments.forEach((segment) => {
+        if (!Array.isArray(segment) || segment.length < 2) return;
+        segment.meta = { ...baseMeta, exportClipped: true, closed: false };
+        clipped.push(segment);
+      });
+    });
+    return clipped;
+  };
+
+  const getMaskExportBounds = (engine, profile) => {
+    if (engine?.getBounds) return engine.getBounds();
+    const margin = Math.max(0, SETTINGS.margin || 0);
+    return {
+      width: profile.width,
+      height: profile.height,
+      m: margin,
+      dW: Math.max(0, profile.width - margin * 2),
+      dH: Math.max(0, profile.height - margin * 2),
+      truncate: SETTINGS.truncate !== false,
+    };
+  };
+
+  const svgAttrsToMarkup = (attrs = {}) =>
+    Object.entries(attrs)
+      .filter(([, value]) => value !== undefined && value !== null && value !== false && value !== '')
+      .map(([key, value]) => ` ${key}="${escapeXmlAttr(value)}"`)
+      .join('');
 
   const stepPrecision = (step) => {
     const s = step?.toString?.() || '';
@@ -3398,6 +3511,10 @@
       title: 'Crop Exports to Margin',
       description: 'Physically clips paths at the margin boundary during SVG export (recommended for plotters).',
     },
+    'global.removeHiddenGeometry': {
+      title: 'Remove Hidden Geometry',
+      description: 'Exports only the visible geometry by trimming masked or frame-hidden segments instead of preserving hidden source paths.',
+    },
     'global.outsideOpacity': {
       title: 'Outside Opacity',
       description: 'Opacity for strokes drawn outside the margin when truncation is disabled.',
@@ -5176,7 +5293,8 @@
     return d;
   };
 
-  const shapeToSvg = (path, precision, useCurves) => {
+  const shapeToSvg = (path, precision, useCurves, attrs = null) => {
+    const attrMarkup = svgAttrsToMarkup(attrs || {});
     if (path && path.meta && path.meta.kind === 'circle') {
       const fmt = (n) => Number(n).toFixed(precision);
       const cx = path.meta.cx;
@@ -5186,18 +5304,18 @@
       const rotation = path.meta.rotation ?? 0;
       if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(rx) || !Number.isFinite(ry)) return '';
       if (Math.abs(rx - ry) < 0.001) {
-        return `<circle cx="${fmt(cx)}" cy="${fmt(cy)}" r="${fmt(rx)}" />`;
+        return `<circle cx="${fmt(cx)}" cy="${fmt(cy)}" r="${fmt(rx)}"${attrMarkup} />`;
       }
       if (Math.abs(rotation) > 0.0001) {
         const deg = ((rotation * 180) / Math.PI).toFixed(3);
         return `<ellipse cx="${fmt(cx)}" cy="${fmt(cy)}" rx="${fmt(rx)}" ry="${fmt(ry)}" transform="rotate(${deg} ${fmt(
           cx
-        )} ${fmt(cy)})" />`;
+        )} ${fmt(cy)})"${attrMarkup} />`;
       }
-      return `<ellipse cx="${fmt(cx)}" cy="${fmt(cy)}" rx="${fmt(rx)}" ry="${fmt(ry)}" />`;
+      return `<ellipse cx="${fmt(cx)}" cy="${fmt(cy)}" rx="${fmt(rx)}" ry="${fmt(ry)}"${attrMarkup} />`;
     }
     const d = pathToSvg(path, precision, useCurves);
-    return d ? `<path d="${d}" />` : '';
+    return d ? `<path d="${d}"${attrMarkup} />` : '';
   };
 
   const renderPreviewSvg = (type, params, options = {}) => {
@@ -5625,8 +5743,10 @@
       this.petalDesignerProfiles = [];
       this.petalDesignerProfilesLoaded = false;
       this.petalDesignerProfilesLoading = null;
+      this.lastDrawableLayerType = null;
 
       this.initModuleDropdown();
+      this.rememberDrawableLayerType(this.app.engine?.getActiveLayer?.());
       this.initMachineDropdown();
       this.bindGlobal();
       this.bindShortcuts();
@@ -9552,6 +9672,9 @@
             <div><span class="text-vectura-accent">Cmd/Ctrl + 0</span> Reset View</div>
             <div><span class="text-vectura-accent">V</span> Selection tool (press again to cycle modes)</div>
             <div><span class="text-vectura-accent">A</span> Direct selection tool</div>
+            <div><span class="text-vectura-accent">M</span> Rectangle tool</div>
+            <div><span class="text-vectura-accent">L</span> Oval tool</div>
+            <div><span class="text-vectura-accent">Y</span> Polygon tool</div>
             <div><span class="text-vectura-accent">P</span> Pen tool (press again to cycle subtools)</div>
             <div><span class="text-vectura-accent">+</span> Add anchor point tool</div>
             <div><span class="text-vectura-accent">-</span> Delete anchor point tool</div>
@@ -9563,10 +9686,12 @@
             <div><span class="text-vectura-accent">Enter</span> Commit pen path</div>
             <div><span class="text-vectura-accent">Double-click</span> Close pen path near start</div>
             <div><span class="text-vectura-accent">Backspace</span> Remove last pen point</div>
-            <div><span class="text-vectura-accent">Esc</span> Cancel pen/scissor</div>
-            <div><span class="text-vectura-accent">Shift</span> Constrain pen angle / handles (Scissor line snaps 15°)</div>
-            <div><span class="text-vectura-accent">Alt/Option</span> Break pen handles</div>
-            <div><span class="text-vectura-accent">Direct Tool</span> Drag endpoints/handles on individual line paths</div>
+            <div><span class="text-vectura-accent">Esc</span> Cancel pen/scissor/shape drafts</div>
+            <div><span class="text-vectura-accent">Shift</span> Constrain pen angle / handles, square/circle shapes, snap polygon angle, Scissor line snaps 15°</div>
+            <div><span class="text-vectura-accent">Alt/Option</span> Break pen handles or draw shapes from center</div>
+            <div><span class="text-vectura-accent">Arrow Up / Down</span> Change polygon side count while dragging</div>
+            <div><span class="text-vectura-accent">Selection Tool</span> Drag a shape corner widget to round all corners together</div>
+            <div><span class="text-vectura-accent">Direct Tool</span> Drag endpoints/handles on individual line paths, or drag a shape corner widget to round one corner</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl</span> Temporary selection while using Pen</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + A</span> Select all layers (from anywhere)</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + G</span> Group selection</div>
@@ -9647,9 +9772,11 @@
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Use the Insert menu to add a Mirror Modifier, then drag layers under it in the Layers panel so the modifier container owns and reflects that subtree.
+            Drag a child back out of the modifier block to unparent it to the root.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Mirror Stack entries are full-canvas guide axes with per-axis show/hide, lock, delete, angle, and XY shift controls plus stack-level add/show-hide/lock/clear actions.
+            When a modifier is selected, the main + Add button creates a normal drawable child under that modifier using the last active algorithm.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Angle controls use circular dials—drag the marker to set direction.
@@ -9680,10 +9807,12 @@
           <div class="text-xs text-vectura-muted leading-relaxed space-y-1">
             <div>Click to select, Shift-click for ranges, Cmd/Ctrl-click to toggle.</div>
             <div>Drag the grip to reorder; groups can be collapsed with the caret.</div>
-            <div>Mirror Modifiers behave like group containers: drag layers onto them to indent the children and apply the modifier to that subtree.</div>
-            <div>When a Mirror Modifier is selected, drag the guide line to move it, drag the outer rotate handles to rotate it, and click the end triangles to flip the reflection side.</div>
-            <div>Use the Mask button on a layer row to hide that layer anywhere selected source silhouettes overlap it.</div>
-            <div>Masking is managed from the Layers panel; the popover can also expand the current live mask result into geometry.</div>
+            <div>Mirror Modifiers behave like group containers: drag layers onto them to indent the children, drag them back out to unparent, and deleting the modifier preserves the children by dissolving only the wrapper.</div>
+            <div>When a Mirror Modifier is selected, drag the guide line to move it, drag the outer rotate handles to rotate it, and click the centered triangle to flip the reflection side.</div>
+            <div>Use the Mask button on a silhouette-capable parent layer to clip every indented descendant beneath it, Illustrator-style.</div>
+            <div>Masking is managed from the Layers panel; enable it on the parent, then drag child layers onto that row to bring them inside the masked subtree.</div>
+            <div>Mask parents can optionally hide their own artwork while still clipping descendants, which is useful for invisible circular or custom-shape masks.</div>
+            <div>Rectangle, Oval, and Polygon tools create editable expanded layers that work with transforms, masking, scissor cuts, and export.</div>
             <div>Expand a layer into sublayers for line-by-line control.</div>
             <div>Selection outline visibility, color, and thickness can be adjusted in Document Setup.</div>
           </div>
@@ -9700,6 +9829,7 @@
             <div>Plotter Optimization in Document Setup removes fully overlapping paths per pen with an adjustable tolerance.</div>
             <div>Toggle Export Optimized to include optimization passes in the exported SVG.</div>
             <div>Enable Crop Exports to Margin for hard geometry clipping at the configured margin.</div>
+            <div>Enable Remove Hidden Geometry to destructively trim masked or frame-hidden geometry so the SVG matches the current view exactly.</div>
             <div>SVG export preserves pen groupings for plotter workflows.</div>
           </div>
         </div>
@@ -12406,26 +12536,26 @@
       this.app.render();
     }
 
-    assignLayersToGroup(groupId, targetLayers, options = {}) {
-      const layers = (targetLayers || []).filter((layer) => layer && layer.id !== groupId);
+    assignLayersToParent(parentId, targetLayers, options = {}) {
+      const layers = (targetLayers || []).filter((layer) => layer && layer.id !== parentId);
       if (!layers.length) return [];
       const { selectAssigned = false, primaryId = null } = options;
-      const group = this.getLayerById(groupId);
-      if (!group || !group.isGroup) return [];
+      const parent = this.getLayerById(parentId);
+      if (!parent || !this.canLayerAcceptChildren(parent)) return [];
       const moveIds = layers
-        .filter((layer) => !(layer.isGroup && this.isDescendant(groupId, layer.id)))
+        .filter((layer) => !(layer.isGroup && this.isDescendant(parentId, layer.id)))
         .map((layer) => layer.id);
       if (!moveIds.length) return [];
 
-      group.groupCollapsed = false;
+      if (parent.isGroup) parent.groupCollapsed = false;
       const moveSet = new Set(moveIds);
       const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
       const remaining = this.app.engine.layers.filter((layer) => !moveSet.has(layer.id));
       moveIds.forEach((id) => {
         const layer = map.get(id);
-        if (layer) layer.parentId = groupId;
+        if (layer) layer.parentId = parentId;
       });
-      const insertIndex = remaining.findIndex((layer) => layer.id === groupId);
+      const insertIndex = remaining.findIndex((layer) => layer.id === parentId);
       const engineInsert = insertIndex === -1 ? remaining.length : insertIndex;
       const moveEngineOrder = moveIds.slice().reverse().map((id) => map.get(id)).filter(Boolean);
       remaining.splice(engineInsert, 0, ...moveEngineOrder);
@@ -12435,9 +12565,39 @@
 
       if (selectAssigned && this.app.renderer) {
         const ids = moveIds.slice();
-        const nextPrimary = ids.includes(primaryId) ? primaryId : ids[ids.length - 1] || groupId;
-        this.app.renderer.setSelection(ids.length ? ids : [groupId], nextPrimary);
-        this.app.engine.activeLayerId = nextPrimary || groupId;
+        const nextPrimary = ids.includes(primaryId) ? primaryId : ids[ids.length - 1] || parentId;
+        this.app.renderer.setSelection(ids.length ? ids : [parentId], nextPrimary);
+        this.app.engine.activeLayerId = nextPrimary || parentId;
+      }
+
+      return moveIds.map((id) => map.get(id)).filter(Boolean);
+    }
+
+    assignLayersToGroup(groupId, targetLayers, options = {}) {
+      return this.assignLayersToParent(groupId, targetLayers, options);
+    }
+
+    assignLayersToRoot(targetLayers, options = {}) {
+      const layers = (targetLayers || []).filter((layer) => layer);
+      if (!layers.length) return [];
+      const { nextEngineOrder = null, selectAssigned = false, primaryId = null } = options;
+      const moveIds = layers.map((layer) => layer.id);
+      const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
+      moveIds.forEach((id) => {
+        const layer = map.get(id);
+        if (layer) layer.parentId = null;
+      });
+      if (Array.isArray(nextEngineOrder) && nextEngineOrder.length) {
+        this.app.engine.layers = nextEngineOrder.map((id) => map.get(id)).filter(Boolean);
+      }
+      this.normalizeGroupOrder();
+      this.app.engine.computeAllDisplayGeometry();
+
+      if (selectAssigned && this.app.renderer) {
+        const ids = moveIds.slice();
+        const nextPrimary = ids.includes(primaryId) ? primaryId : ids[ids.length - 1] || null;
+        this.app.renderer.setSelection(ids, nextPrimary);
+        this.app.engine.activeLayerId = nextPrimary;
       }
 
       return moveIds.map((id) => map.get(id)).filter(Boolean);
@@ -12448,7 +12608,7 @@
       const selectedLayers = (this.app.renderer?.getSelectedLayers?.() || []).filter((layer) => layer && !layer.isGroup);
       const id = this.app.engine.addModifierLayer('mirror');
       if (selectedLayers.length) {
-        this.assignLayersToGroup(id, selectedLayers);
+        this.assignLayersToParent(id, selectedLayers);
       }
       if (this.app.renderer) this.app.renderer.setSelection([id], id);
       this.app.engine.activeLayerId = id;
@@ -12490,6 +12650,7 @@
         return;
       }
       this.initModuleDropdown();
+      this.rememberDrawableLayerType(layer);
       select.value = layer.type;
     }
 
@@ -12539,6 +12700,48 @@
       return group && group.isGroup ? group : null;
     }
 
+    isModifierType(type) {
+      return Boolean(type && Object.prototype.hasOwnProperty.call(MODIFIER_DEFAULTS || {}, type));
+    }
+
+    isDrawableLayerType(type) {
+      if (!type || type === 'group' || this.isModifierType(type)) return false;
+      return Boolean((Algorithms && Algorithms[type]) || (ALGO_DEFAULTS && ALGO_DEFAULTS[type]));
+    }
+
+    rememberDrawableLayerType(typeOrLayer) {
+      const type = typeof typeOrLayer === 'string' ? typeOrLayer : typeOrLayer?.type;
+      if (!this.isDrawableLayerType(type)) return this.lastDrawableLayerType || null;
+      this.lastDrawableLayerType = type;
+      return type;
+    }
+
+    getPreferredNewLayerType() {
+      const active = this.app.engine.getActiveLayer?.();
+      if (active && !active.isGroup) {
+        const activeType = this.rememberDrawableLayerType(active);
+        if (activeType) return activeType;
+      }
+      const rememberedType = this.rememberDrawableLayerType(this.lastDrawableLayerType);
+      if (rememberedType) return rememberedType;
+      const moduleSelect = getEl('generator-module', { silent: true });
+      if (moduleSelect && this.isDrawableLayerType(moduleSelect.value)) {
+        return this.rememberDrawableLayerType(moduleSelect.value);
+      }
+      const fallbackLayer =
+        (this.app.engine.layers || []).find((layer) => layer && !layer.isGroup && this.isDrawableLayerType(layer.type)) || null;
+      return this.rememberDrawableLayerType(fallbackLayer?.type || 'wavetable') || 'wavetable';
+    }
+
+    shouldLeaveParentScope(layer, prevId, nextId, selectedIds = new Set()) {
+      if (!layer?.parentId || selectedIds.has(layer.parentId)) return false;
+      const prevLayer = prevId ? this.getLayerById(prevId) : null;
+      const nextLayer = nextId ? this.getLayerById(nextId) : null;
+      const previousMatchesParent = prevId === layer.parentId || prevLayer?.parentId === layer.parentId;
+      const nextMatchesParent = nextLayer?.parentId === layer.parentId;
+      return !(previousMatchesParent || nextMatchesParent);
+    }
+
     isDescendant(targetId, ancestorId) {
       let current = this.getLayerById(targetId);
       while (current && current.parentId) {
@@ -12550,38 +12753,38 @@
 
     normalizeGroupOrder() {
       const layers = this.app.engine.layers;
-      const groups = layers.filter((layer) => layer.isGroup);
-      const groupIds = new Set(groups.map((group) => group.id));
+      const parents = layers.filter((layer) => this.canLayerAcceptChildren(layer));
+      const parentIds = new Set(parents.map((parent) => parent.id));
       const childrenMap = new Map();
       layers.forEach((layer) => {
-        if (layer.parentId && groupIds.has(layer.parentId)) {
+        if (layer.parentId && parentIds.has(layer.parentId)) {
           if (!childrenMap.has(layer.parentId)) childrenMap.set(layer.parentId, []);
           childrenMap.get(layer.parentId).push(layer);
         }
       });
-      const getDescendants = (groupId) => {
-        const children = childrenMap.get(groupId) || [];
+      const getDescendants = (parentId) => {
+        const children = childrenMap.get(parentId) || [];
         const ids = [];
         children.forEach((child) => {
           ids.push(child.id);
-          if (child.isGroup) ids.push(...getDescendants(child.id));
+          if (parentIds.has(child.id)) ids.push(...getDescendants(child.id));
         });
         return ids;
       };
-      groups.forEach((group) => {
-        const descendantIds = getDescendants(group.id);
+      parents.forEach((parent) => {
+        const descendantIds = getDescendants(parent.id);
         if (!descendantIds.length) return;
         const childIndexes = descendantIds
           .map((id) => layers.findIndex((layer) => layer.id === id))
           .filter((idx) => idx >= 0);
         if (!childIndexes.length) return;
         const maxIndex = Math.max(...childIndexes);
-        const currentIndex = layers.findIndex((layer) => layer.id === group.id);
+        const currentIndex = layers.findIndex((layer) => layer.id === parent.id);
         if (currentIndex === -1) return;
         if (currentIndex === maxIndex + 1) return;
-        layers.splice(currentIndex, 1);
+        const [movedParent] = layers.splice(currentIndex, 1);
         const insertIndex = Math.min(maxIndex + 1, layers.length);
-        layers.splice(insertIndex, 0, group);
+        layers.splice(insertIndex, 0, movedParent || parent);
       });
     }
 
@@ -12726,30 +12929,26 @@
       return duplicates;
     }
 
-    getMaskUsageCounts() {
-      const counts = new Map();
-      this.app.engine.layers.forEach((layer) => {
-        if (!layer || layer.isGroup || !layer.mask?.enabled || !Array.isArray(layer.mask.sourceIds)) return;
-        layer.mask.sourceIds.forEach((sourceId) => {
-          counts.set(sourceId, (counts.get(sourceId) || 0) + 1);
+    getLayerChildren(layerId) {
+      return (this.app.engine.layers || []).filter((layer) => layer?.parentId === layerId);
+    }
+
+    getLayerDescendants(layerId) {
+      const out = [];
+      const visit = (parentId) => {
+        this.getLayerChildren(parentId).forEach((child) => {
+          out.push(child);
+          visit(child.id);
         });
-      });
-      return counts;
+      };
+      visit(layerId);
+      return out;
     }
 
-    isMaskSourceBelowTarget(targetLayer, sourceId) {
-      const layers = this.app.engine.layers || [];
-      const targetIndex = layers.findIndex((layer) => layer.id === targetLayer?.id);
-      const sourceIndex = layers.findIndex((layer) => layer.id === sourceId);
-      if (targetIndex === -1 || sourceIndex === -1) return false;
-      return sourceIndex < targetIndex;
-    }
-
-    getSelectedMaskSourceIds(targetLayer) {
-      const eligible = new Set(this.app.engine.getMaskEligibleLayers(targetLayer.id).map((layer) => layer.id));
-      return (this.app.renderer?.getSelectedLayers?.() || [])
-        .filter((layer) => layer && layer.id !== targetLayer.id && eligible.has(layer.id))
-        .map((layer) => layer.id);
+    canLayerAcceptChildren(layer) {
+      if (!layer) return false;
+      if (layer.isGroup) return true;
+      return Boolean(layer.maskCapabilities?.canSource);
     }
 
     refreshMaskingViews(options = {}) {
@@ -12768,128 +12967,31 @@
         layer.mask = {
           enabled: false,
           sourceIds: [],
-          mode: 'silhouette',
+          mode: 'parent',
+          hideLayer: false,
           invert: false,
           materialized: false,
         };
       }
-      if (!Array.isArray(layer.mask.sourceIds)) layer.mask.sourceIds = [];
+      layer.mask.sourceIds = [];
+      layer.mask.mode = 'parent';
+      if (layer.mask.hideLayer === undefined) layer.mask.hideLayer = false;
+      layer.mask.invert = false;
       return layer.mask;
     }
 
     setLayerMaskEnabled(layer, enabled) {
-      if (!layer || layer.isGroup) return;
+      if (!layer) return;
       const mask = this.ensureLayerMaskState(layer);
-      mask.enabled = Boolean(enabled) && mask.sourceIds.length > 0;
+      mask.enabled = Boolean(enabled) && Boolean(layer.maskCapabilities?.canSource);
       this.refreshMaskingViews();
     }
 
-    toggleLayerMaskSource(layer, sourceId, enabled) {
-      if (!layer || layer.isGroup || !sourceId) return;
+    setLayerMaskHidden(layer, hidden) {
+      if (!layer) return;
       const mask = this.ensureLayerMaskState(layer);
-      const next = new Set(mask.sourceIds || []);
-      if (enabled) next.add(sourceId);
-      else next.delete(sourceId);
-      mask.sourceIds = Array.from(next);
-      mask.enabled = mask.sourceIds.length > 0 && (mask.enabled || enabled);
-      if (!mask.sourceIds.length) mask.enabled = false;
+      mask.hideLayer = Boolean(hidden);
       this.refreshMaskingViews();
-    }
-
-    applySelectedLayersAsMasks(layer) {
-      if (!layer || layer.isGroup) return;
-      const selected = this.getSelectedMaskSourceIds(layer);
-      if (!selected.length) return;
-      const mask = this.ensureLayerMaskState(layer);
-      const next = new Set(mask.sourceIds || []);
-      selected.forEach((id) => next.add(id));
-      mask.sourceIds = Array.from(next);
-      mask.enabled = mask.sourceIds.length > 0;
-      this.refreshMaskingViews();
-    }
-
-    clearLayerMask(layer) {
-      if (!layer || layer.isGroup) return;
-      const mask = this.ensureLayerMaskState(layer);
-      mask.sourceIds = [];
-      mask.enabled = false;
-      this.refreshMaskingViews();
-    }
-
-    convertMaskResultToGeometry(layer) {
-      if (!Layer || !layer || layer.isGroup) return;
-      const sourcePaths = clonePaths(layer.displayPaths || []);
-      const drawablePaths = sourcePaths.filter((path) => Array.isArray(path) && path.length >= 2);
-      if (!drawablePaths.length) return;
-      if (this.app.pushHistory) this.app.pushHistory();
-      const joined = joinNearbyPaths(drawablePaths, {
-        gapTolerance: 1.2,
-        angleTolerance: Math.PI / 18,
-        collinearBias: 0.85,
-      });
-      const simplified = joined.map((path) => simplifyPath(path, 0.15));
-      const insertIndex = this.app.engine.layers.findIndex((entry) => entry.id === layer.id);
-      const baseName = `${layer.name} Masked`;
-      const pad = String(simplified.length).length;
-      const created = [];
-      let group = null;
-
-      if (simplified.length > 1) {
-        const groupId = Math.random().toString(36).substr(2, 9);
-        group = new Layer(groupId, 'group', this.getUniqueLayerName(baseName));
-        group.isGroup = true;
-        group.groupType = 'group';
-        group.groupCollapsed = false;
-        group.visible = false;
-        group.penId = layer.penId;
-        group.color = layer.color;
-        group.strokeWidth = layer.strokeWidth;
-        group.lineCap = layer.lineCap;
-      }
-
-      simplified.forEach((path, index) => {
-        SETTINGS.globalLayerCount += 1;
-        const childId = Math.random().toString(36).substr(2, 9);
-        const child = new Layer(
-          childId,
-          'expanded',
-          simplified.length > 1
-            ? `${baseName} ${String(index + 1).padStart(pad, '0')}`
-            : this.getUniqueLayerName(baseName)
-        );
-        child.parentId = group ? group.id : null;
-        child.params.seed = 0;
-        child.params.posX = 0;
-        child.params.posY = 0;
-        child.params.scaleX = 1;
-        child.params.scaleY = 1;
-        child.params.rotation = 0;
-        child.params.curves = Boolean(layer.params.curves);
-        child.params.smoothing = 0;
-        child.params.simplify = 0;
-        child.sourcePaths = [clonePath(path)];
-        child.penId = layer.penId;
-        child.color = layer.color;
-        child.strokeWidth = layer.strokeWidth;
-        child.lineCap = layer.lineCap;
-        child.visible = layer.visible;
-        child.mask.materialized = true;
-        created.push(child);
-      });
-
-      const nodes = [];
-      if (group) nodes.push(group);
-      nodes.push(...created.slice().reverse());
-      this.app.engine.layers.splice(insertIndex + 1, 0, ...nodes);
-      created.forEach((child) => this.app.engine.generate(child.id));
-      this.normalizeGroupOrder();
-      const primary = created[0];
-      if (primary && this.app.renderer) {
-        const ids = created.map((entry) => entry.id);
-        this.app.renderer.setSelection(ids, primary.id);
-        this.app.engine.activeLayerId = primary.id;
-      }
-      this.refreshMaskingViews({ preserveOpen: false });
     }
 
     buildMaskEditor(layer, options = {}) {
@@ -12898,20 +13000,20 @@
       wrapper.className = compact ? 'layer-mask-editor layer-mask-editor--compact' : 'layer-mask-editor';
       wrapper.addEventListener('click', (e) => e.stopPropagation());
       const mask = this.ensureLayerMaskState(layer);
-      const eligible = this.app.engine.getMaskEligibleLayers(layer.id);
-      const selectedMaskIds = this.getSelectedMaskSourceIds(layer);
-      const warnings = (mask.sourceIds || []).filter((sourceId) => this.isMaskSourceBelowTarget(layer, sourceId));
+      const descendants = this.getLayerDescendants(layer.id);
+      const canMask = Boolean(layer.maskCapabilities?.canSource);
       const enableId = `layer-mask-enable-${layer.id}`;
+      const hideId = `layer-mask-hide-${layer.id}`;
 
       const header = document.createElement('div');
       header.className = 'layer-mask-editor__header';
       header.innerHTML = `
         <div class="layer-mask-editor__header-copy">
-          <span class="layer-mask-editor__title">Clipping Mask</span>
-          <span class="layer-mask-editor__subtitle">Hide this layer where source silhouettes overlap it.</span>
+          <span class="layer-mask-editor__title">Mask Parent</span>
+          <span class="layer-mask-editor__subtitle">Mask all indented descendants to this layer's visible silhouette.</span>
         </div>
         <label class="layer-mask-editor__toggle" for="${enableId}">
-          <input id="${enableId}" name="${enableId}" type="checkbox" ${mask.enabled ? 'checked' : ''} ${mask.sourceIds.length ? '' : 'disabled'}>
+          <input id="${enableId}" name="${enableId}" type="checkbox" ${mask.enabled ? 'checked' : ''} ${canMask ? '' : 'disabled'}>
           <span>Enable</span>
         </label>
       `;
@@ -12924,76 +13026,38 @@
       }
       wrapper.appendChild(header);
 
+      const optionsRow = document.createElement('div');
+      optionsRow.className = 'layer-mask-editor__list';
+      optionsRow.innerHTML = `
+        <label class="layer-mask-editor__toggle" for="${hideId}">
+          <input id="${hideId}" name="${hideId}" type="checkbox" ${mask.hideLayer ? 'checked' : ''} ${canMask ? '' : 'disabled'}>
+          <span>Hide Mask Layer</span>
+        </label>
+      `;
+      const hideInput = optionsRow.querySelector('input[type="checkbox"]');
+      if (hideInput) {
+        hideInput.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          this.setLayerMaskHidden(layer, e.target.checked);
+        };
+      }
+      wrapper.appendChild(optionsRow);
+
       const list = document.createElement('div');
       list.className = 'layer-mask-editor__list';
-      if (!eligible.length) {
-        const empty = document.createElement('div');
-        empty.className = 'layer-mask-editor__empty';
-        empty.textContent = 'No eligible mask sources';
-        list.appendChild(empty);
+      const message = document.createElement('div');
+      message.className = 'layer-mask-editor__empty';
+      if (!canMask) {
+        message.textContent = layer.maskCapabilities?.reason || 'This layer does not currently expose a usable silhouette.';
+      } else if (!descendants.length) {
+        message.textContent = 'Drag layers onto this row to indent them beneath the mask parent. All descendants will be clipped recursively.';
+      } else if (mask.hideLayer) {
+        message.textContent = `${descendants.length} descendant${descendants.length === 1 ? '' : 's'} will be clipped recursively while the mask parent artwork itself stays hidden.`;
       } else {
-        eligible.forEach((source) => {
-          const sourceInputId = `layer-mask-source-${layer.id}-${source.id}`;
-          const row = document.createElement('label');
-          row.className = 'layer-mask-editor__source';
-          row.setAttribute('for', sourceInputId);
-          const sourceType = source.maskCapabilities?.sourceType || 'source';
-          const usage = (this.getMaskUsageCounts().get(source.id) || 0) > 0 ? `SRC ${this.getMaskUsageCounts().get(source.id)}` : '';
-          row.innerHTML = `
-            <span class="layer-mask-editor__source-main">
-              <input id="${sourceInputId}" name="${sourceInputId}" type="checkbox" ${mask.sourceIds.includes(source.id) ? 'checked' : ''}>
-              <span class="layer-mask-editor__source-name">${escapeHtml(source.name)}</span>
-            </span>
-            <span class="layer-mask-editor__source-meta">
-              <span class="layer-mask-editor__badge">${escapeHtml(sourceType.replace('-', ' '))}</span>
-              ${usage ? `<span class="layer-mask-editor__badge">${usage}</span>` : ''}
-            </span>
-          `;
-          const input = row.querySelector('input[type="checkbox"]');
-          if (input) {
-            input.onchange = (e) => {
-              if (this.app.pushHistory) this.app.pushHistory();
-              this.toggleLayerMaskSource(layer, source.id, e.target.checked);
-            };
-          }
-          list.appendChild(row);
-        });
+        message.textContent = `${descendants.length} descendant${descendants.length === 1 ? '' : 's'} will be clipped while this mask parent is enabled.`;
       }
+      list.appendChild(message);
       wrapper.appendChild(list);
-
-      const actions = document.createElement('div');
-      actions.className = 'layer-mask-editor__actions';
-      actions.innerHTML = `
-        <button type="button" class="layer-mask-editor__btn use-selected" ${selectedMaskIds.length ? '' : 'disabled'}>Use Selected</button>
-        <button type="button" class="layer-mask-editor__btn clear-mask" ${(mask.sourceIds || []).length ? '' : 'disabled'}>Clear</button>
-        <button type="button" class="layer-mask-editor__btn convert-mask" ${(layer.displayPaths || []).length ? '' : 'disabled'}>Expand Result</button>
-      `;
-      const useSelectedBtn = actions.querySelector('.use-selected');
-      const clearBtn = actions.querySelector('.clear-mask');
-      const convertBtn = actions.querySelector('.convert-mask');
-      if (useSelectedBtn) {
-        useSelectedBtn.onclick = () => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          this.applySelectedLayersAsMasks(layer);
-        };
-      }
-      if (clearBtn) {
-        clearBtn.onclick = () => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          this.clearLayerMask(layer);
-        };
-      }
-      if (convertBtn) {
-        convertBtn.onclick = () => this.convertMaskResultToGeometry(layer);
-      }
-      wrapper.appendChild(actions);
-
-      if (warnings.length) {
-        const warning = document.createElement('div');
-        warning.className = 'layer-mask-editor__warning';
-        warning.textContent = 'Mask source is below this layer in stack order.';
-        wrapper.appendChild(warning);
-      }
 
       return wrapper;
     }
@@ -13064,6 +13128,7 @@
         { inputId: 'set-margin', infoKey: 'global.margin' },
         { inputId: 'set-truncate', infoKey: 'global.truncate' },
         { inputId: 'set-crop-exports', infoKey: 'global.cropExports' },
+        { inputId: 'set-remove-hidden-geometry', infoKey: 'global.removeHiddenGeometry' },
         { inputId: 'set-outside-opacity', infoKey: 'global.outsideOpacity' },
         { inputId: 'set-margin-line', infoKey: 'global.marginLineVisible' },
         { inputId: 'set-margin-line-weight', infoKey: 'global.marginLineWeight' },
@@ -13759,6 +13824,7 @@
       const undoSteps = getEl('set-undo');
       const truncate = getEl('set-truncate');
       const cropExports = getEl('set-crop-exports');
+      const removeHiddenGeometry = getEl('set-remove-hidden-geometry');
       const outsideOpacity = getEl('set-outside-opacity');
       const marginLine = getEl('set-margin-line');
       const marginLineColorPill = getEl('set-margin-line-color-pill');
@@ -13802,6 +13868,7 @@
       if (undoSteps) undoSteps.value = SETTINGS.undoSteps;
       if (truncate) truncate.checked = SETTINGS.truncate !== false;
       if (cropExports) cropExports.checked = SETTINGS.cropExports !== false;
+      if (removeHiddenGeometry) removeHiddenGeometry.checked = SETTINGS.removeHiddenGeometry !== false;
       if (outsideOpacity) outsideOpacity.value = SETTINGS.outsideOpacity ?? 0.5;
       if (marginLine) marginLine.checked = Boolean(SETTINGS.marginLineVisible);
       if (marginLineColorPill) {
@@ -14260,6 +14327,7 @@
 
       if (this.app.renderer) {
         this.app.renderer.onPenComplete = (payload) => this.createManualLayerFromPath(payload);
+        this.app.renderer.onShapeComplete = (payload) => this.createManualLayerFromPath(payload);
         this.app.renderer.onScissor = (payload) => this.applyScissor(payload);
         this.app.renderer.onDirectEditStart = () => {
           if (this.app.pushHistory) this.app.pushHistory();
@@ -14286,6 +14354,7 @@
       const setMargin = getEl('set-margin');
       const setTruncate = getEl('set-truncate');
       const setCropExports = getEl('set-crop-exports');
+      const setRemoveHiddenGeometry = getEl('set-remove-hidden-geometry');
       const setOutsideOpacity = getEl('set-outside-opacity');
       const setMarginLine = getEl('set-margin-line');
       const setMarginLineColorPill = getEl('set-margin-line-color-pill');
@@ -14327,10 +14396,21 @@
 
       if (addLayer && moduleSelect) {
         addLayer.onclick = () => {
-          const t = moduleSelect.value;
+          const activeLayer = this.app.engine.getActiveLayer?.();
+          const selectedModifier = this.isModifierLayer(activeLayer) ? activeLayer : null;
+          const t = selectedModifier ? this.getPreferredNewLayerType() : this.getPreferredNewLayerType();
           if (this.app.pushHistory) this.app.pushHistory();
           const id = this.app.engine.addLayer(t);
-          if (this.app.renderer) this.app.renderer.setSelection([id], id);
+          const createdLayer = this.getLayerById(id);
+          this.rememberDrawableLayerType(createdLayer || t);
+          if (selectedModifier && createdLayer) {
+            this.assignLayersToParent(selectedModifier.id, [createdLayer], {
+              selectAssigned: true,
+              primaryId: id,
+            });
+          } else if (this.app.renderer) {
+            this.app.renderer.setSelection([id], id);
+          }
           this.renderLayers();
           this.app.render();
         };
@@ -14344,6 +14424,13 @@
         setCropExports.onchange = (e) => {
           if (this.app.pushHistory) this.app.pushHistory();
           SETTINGS.cropExports = e.target.checked;
+          this.app.persistPreferencesDebounced?.();
+        };
+      }
+      if (setRemoveHiddenGeometry) {
+        setRemoveHiddenGeometry.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          SETTINGS.removeHiddenGeometry = e.target.checked;
           this.app.persistPreferencesDebounced?.();
         };
       }
@@ -14364,6 +14451,7 @@
             }
             this.storeLayerParams(l);
             const nextType = e.target.value;
+            this.rememberDrawableLayerType(nextType);
             this.restoreLayerParams(l, nextType);
             const label = ALGO_DEFAULTS[l.type]?.label;
             const nextName = label || l.type.charAt(0).toUpperCase() + l.type.slice(1);
@@ -14921,6 +15009,21 @@
             this.setActiveTool?.('direct');
             return;
           }
+          if (key === 'm') {
+            e.preventDefault();
+            this.setActiveTool?.('shape-rect');
+            return;
+          }
+          if (key === 'l') {
+            e.preventDefault();
+            this.setActiveTool?.('shape-oval');
+            return;
+          }
+          if (key === 'y') {
+            e.preventDefault();
+            this.setActiveTool?.('shape-polygon');
+            return;
+          }
           if (key === 'p') {
             e.preventDefault();
             if (this.activeTool === 'pen') {
@@ -14993,6 +15096,23 @@
           if (this.penMode === 'draw' && e.key === 'Backspace') {
             e.preventDefault();
             this.app.renderer?.undoPenPoint?.();
+            return;
+          }
+        }
+
+        if (`${this.activeTool}`.startsWith('shape-')) {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            this.app.renderer?.cancelShapeDraft?.();
+            return;
+          }
+          if (
+            this.activeTool === 'shape-polygon' &&
+            this.app.renderer?.shapeDraft &&
+            (e.key === 'ArrowUp' || e.key === 'ArrowDown')
+          ) {
+            e.preventDefault();
+            this.app.renderer.adjustShapeDraftSides?.(e.key === 'ArrowUp' ? 1 : -1);
             return;
           }
         }
@@ -15110,11 +15230,13 @@
       const container = getEl('layer-list');
       if (!container) return;
       container.innerHTML = '';
-      const usageCounts = this.getMaskUsageCounts();
       const layers = this.app.engine.layers.slice().reverse();
-      const groupIds = new Set(layers.filter((layer) => layer.isGroup).map((layer) => layer.id));
-      const groupMap = new Map();
-      const orphans = [];
+      const parentIds = new Set(
+        layers
+          .filter((layer) => this.canLayerAcceptChildren(layer) || layers.some((entry) => entry.parentId === layer.id))
+          .map((layer) => layer.id)
+      );
+      const childrenMap = new Map();
       const selectableIds = [];
       const gripMarkup = `
         <button class="layer-grip" type="button" aria-label="Reorder layer" title="Reorder layer">
@@ -15125,29 +15247,27 @@
       `;
 
       layers.forEach((layer) => {
-        if (layer.parentId && groupIds.has(layer.parentId)) {
-          if (!groupMap.has(layer.parentId)) groupMap.set(layer.parentId, []);
-          groupMap.get(layer.parentId).push(layer);
-        } else if (layer.parentId) {
-          orphans.push(layer);
+        if (layer.parentId && parentIds.has(layer.parentId)) {
+          if (!childrenMap.has(layer.parentId)) childrenMap.set(layer.parentId, []);
+          childrenMap.get(layer.parentId).push(layer);
         }
       });
 
-      const collectDescendants = (groupId) => {
-        const children = groupMap.get(groupId) || [];
+      const collectDescendants = (parentId) => {
+        const children = childrenMap.get(parentId) || [];
         const ids = [];
         children.forEach((child) => {
           ids.push(child.id);
-          if (child.isGroup) ids.push(...collectDescendants(child.id));
+          if (parentIds.has(child.id)) ids.push(...collectDescendants(child.id));
         });
         return ids;
       };
 
-      const hasSelectedDescendant = (groupId) => {
-        const children = groupMap.get(groupId) || [];
+      const hasSelectedDescendant = (parentId) => {
+        const children = childrenMap.get(parentId) || [];
         return children.some((child) => {
           if (this.app.renderer?.selectedLayerIds?.has(child.id)) return true;
-          return child.isGroup ? hasSelectedDescendant(child.id) : false;
+          return parentIds.has(child.id) ? hasSelectedDescendant(child.id) : false;
         });
       };
 
@@ -15190,19 +15310,19 @@
             if (!inserted) container.appendChild(indicator);
 
             const hovered = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.layer-item');
-            let nextGroup = null;
+            let nextParent = null;
             if (hovered && hovered.dataset.layerId) {
               const hoveredLayer = this.getLayerById(hovered.dataset.layerId);
-              if (hoveredLayer && hoveredLayer.isGroup && !selectedSet.has(hoveredLayer.id)) {
-                nextGroup = hoveredLayer.id;
+              if (hoveredLayer && this.canLayerAcceptChildren(hoveredLayer) && !selectedSet.has(hoveredLayer.id)) {
+                nextParent = hoveredLayer.id;
               }
             }
             if (dropTarget && dropTarget !== hovered) {
               dropTarget.classList.remove('group-drop-target');
               dropTarget = null;
             }
-            if (nextGroup && hovered) {
-              dropGroupId = nextGroup;
+            if (nextParent && hovered) {
+              dropGroupId = nextParent;
               dropTarget = hovered;
               dropTarget.classList.add('group-drop-target');
             } else {
@@ -15226,7 +15346,7 @@
 
             if (dropGroupId) {
               const target = this.getLayerById(dropGroupId);
-              if (target && target.isGroup) {
+              if (target && this.canLayerAcceptChildren(target)) {
                 if (this.app.pushHistory) this.app.pushHistory();
                 const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
                 const moveIds = selectedInUi.filter((id) => {
@@ -15237,7 +15357,7 @@
                   return true;
                 });
                 const moveLayers = moveIds.map((id) => map.get(id)).filter(Boolean);
-                this.assignLayersToGroup(dropGroupId, moveLayers, {
+                this.assignLayersToParent(dropGroupId, moveLayers, {
                   selectAssigned: true,
                   primaryId: this.app.renderer?.selectedLayerId || moveIds[moveIds.length - 1] || dropGroupId,
                 });
@@ -15251,6 +15371,21 @@
             nextOrder.splice(newIndex, 0, ...selectedInUi);
             const nextEngineOrder = nextOrder.slice().reverse();
             const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
+            const prevId = nextOrder[newIndex - 1] || null;
+            const nextId = nextOrder[newIndex + selectedInUi.length] || null;
+            const moveToRoot = selectedInUi
+              .map((id) => map.get(id))
+              .filter((layer) => this.shouldLeaveParentScope(layer, prevId, nextId, selectedSet));
+            if (moveToRoot.length) {
+              this.assignLayersToRoot(moveToRoot, {
+                nextEngineOrder,
+                selectAssigned: true,
+                primaryId: this.app.renderer?.selectedLayerId || moveToRoot[moveToRoot.length - 1]?.id || null,
+              });
+              this.renderLayers();
+              this.app.render();
+              return;
+            }
             this.app.engine.layers = nextEngineOrder.map((id) => map.get(id)).filter(Boolean);
             this.normalizeGroupOrder();
             this.renderLayers();
@@ -15262,8 +15397,92 @@
         };
       };
 
+      const buildPenAssignment = (owner, getTargets) => `
+        <div class="pen-assign">
+          <button class="pen-pill" type="button" aria-label="Assign pen" title="Assign pen">
+            <div class="pen-icon"></div>
+          </button>
+          <div class="pen-menu hidden"></div>
+        </div>
+      `;
+
+      const wirePenAssignment = (el, owner, getTargets) => {
+        const penMenu = el.querySelector('.pen-menu');
+        const penPill = el.querySelector('.pen-pill');
+        const penIcon = el.querySelector('.pen-icon');
+        if (!penMenu || !penPill || !penIcon) return;
+        const pens = SETTINGS.pens || [];
+        const applyPen = (pen, options = {}) => {
+          if (!pen) return;
+          const { render = true, syncTargets = true } = options;
+          if (syncTargets) {
+            const targets = getTargets();
+            targets.forEach((target) => {
+              target.penId = pen.id;
+              target.color = pen.color;
+              target.strokeWidth = pen.width;
+              target.lineCap = target.lineCap || owner.lineCap || 'round';
+            });
+          }
+          penIcon.style.background = pen.color;
+          penIcon.style.color = pen.color;
+          penIcon.style.setProperty('--pen-width', pen.width);
+          penIcon.title = pen.name;
+          penMenu.querySelectorAll('.pen-option').forEach((opt) => {
+            opt.classList.toggle('active', opt.dataset.penId === pen.id);
+          });
+          if (render) {
+            this.renderLayers();
+            this.app.render();
+          }
+        };
+        const current = pens.find((pen) => pen.id === owner.penId) || pens[0];
+        if (current) applyPen(current, { render: false, syncTargets: false });
+        penMenu.innerHTML = pens
+          .map(
+            (pen) => `
+              <button type="button" class="pen-option" data-pen-id="${pen.id}">
+                <span class="pen-icon" style="background:${pen.color}; color:${pen.color}; --pen-width:${pen.width}"></span>
+                <span class="pen-option-name">${pen.name}</span>
+              </button>
+            `
+          )
+          .join('');
+        penMenu.querySelectorAll('.pen-option').forEach((opt) => {
+          opt.onclick = (e) => {
+            e.stopPropagation();
+            if (this.app.pushHistory) this.app.pushHistory();
+            applyPen(pens.find((pen) => pen.id === opt.dataset.penId));
+            penMenu.classList.add('hidden');
+          };
+        });
+        penPill.onclick = (e) => {
+          e.stopPropagation();
+          if (this.openPenMenu && this.openPenMenu !== penMenu) this.openPenMenu.classList.add('hidden');
+          penMenu.classList.toggle('hidden');
+          this.openPenMenu = penMenu.classList.contains('hidden') ? null : penMenu;
+        };
+        el.ondragover = (ev) => {
+          const types = Array.from(ev.dataTransfer?.types || []);
+          if (!types.length || types.includes('text/pen-id') || types.includes('text/plain')) {
+            ev.preventDefault();
+            el.classList.add('dragging');
+          }
+        };
+        el.ondragleave = () => el.classList.remove('dragging');
+        el.ondrop = (ev) => {
+          ev.preventDefault();
+          el.classList.remove('dragging');
+          const penId = ev.dataTransfer.getData('text/pen-id') || ev.dataTransfer.getData('text/plain');
+          const next = pens.find((pen) => pen.id === penId);
+          if (!next) return;
+          if (this.app.pushHistory) this.app.pushHistory();
+          applyPen(next);
+          penMenu.classList.add('hidden');
+        };
+      };
+
       const renderGroupRow = (group, depth = 0) => {
-        const sourceUsage = usageCounts.get(group.id) || 0;
         const el = document.createElement('div');
         const isModifierContainer = this.isModifierLayer(group);
         const modifier = isModifierContainer ? this.getModifierState(group) : null;
@@ -15272,6 +15491,7 @@
           : ALGO_DEFAULTS?.[group.groupType]?.label || group.groupType || 'Group';
         const isActive = group.id === this.app.engine.activeLayerId;
         const isSelected = this.app.renderer?.selectedLayerIds?.has(group.id) || hasSelectedDescendant(group.id);
+        const showMask = !isModifierContainer && Boolean(group.maskCapabilities?.canSource || childrenMap.get(group.id)?.length);
         el.className =
           `layer-item layer-group flex items-center justify-between bg-vectura-bg border border-vectura-border p-2 mb-2 ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}`;
         el.dataset.layerId = group.id;
@@ -15292,26 +15512,18 @@
               type="text"
               value="${group.name}"
             />
-            ${sourceUsage ? `<span class="layer-mini-badge">SRC ${sourceUsage}</span>` : ''}
+            ${group.mask?.enabled ? `<span class="layer-mini-badge layer-mini-badge--mask">${group.mask?.hideLayer ? 'MASK HIDDEN' : 'MASK'}</span>` : ''}
             <span class="layer-badge text-[10px] text-vectura-muted uppercase tracking-widest">${typeLabel}</span>
           </div>
           <div class="flex items-center gap-1">
-            ${isManualGroup
-              ? `<div class="pen-assign">
-                  <button class="pen-pill" type="button" aria-label="Assign pen" title="Assign pen">
-                    <div class="pen-icon"></div>
-                  </button>
-                  <div class="pen-menu hidden"></div>
-                </div>`
-              : ''}
+            ${isManualGroup ? buildPenAssignment(group, () => [group, ...this.getLayerDescendants(group.id)]) : ''}
+            ${showMask ? `<button type="button" class="layer-mask-trigger ${group.mask?.enabled ? 'layer-mask-trigger--active' : ''}" aria-label="Edit mask" title="Edit mask">Mask</button>` : ''}
             <button class="text-sm text-vectura-muted hover:text-vectura-danger px-1 ml-1 btn-del" aria-label="Delete group" title="Delete group">✕</button>
           </div>
         `;
         const toggle = el.querySelector('.group-toggle');
         const delBtn = el.querySelector('.btn-del');
-        const penMenu = el.querySelector('.pen-menu');
-        const penPill = el.querySelector('.pen-pill');
-        const penIcon = el.querySelector('.pen-icon');
+        const maskBtn = el.querySelector('.layer-mask-trigger');
         const grip = el.querySelector('.layer-grip');
         const nameEl = el.querySelector('.layer-name');
         const nameInput = el.querySelector('.layer-name-input');
@@ -15338,8 +15550,7 @@
             this.app.render();
             return;
           }
-          const children = groupMap.get(group.id) || [];
-          const ids = children.map((child) => child.id);
+          const ids = collectDescendants(group.id);
           if (ids.length) {
             const primary = ids[ids.length - 1];
             if (this.app.renderer) this.app.renderer.setSelection(ids, primary);
@@ -15354,8 +15565,8 @@
         el.onclick = (e) => {
           if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select')) return;
           if (this.armedPenId) {
-            const children = groupMap.get(group.id) || [];
-            if (this.applyArmedPenToLayers(children)) return;
+            const descendants = this.getLayerDescendants(group.id);
+            if (this.applyArmedPenToLayers(descendants.length ? descendants : [group])) return;
           }
           selectGroupChildren(e);
         };
@@ -15418,86 +15629,12 @@
           ensureSelection: (e) => selectGroupChildren(e, { skipList: true }),
           getSelectedIds: () => [group.id, ...collectDescendants(group.id)],
         });
-        if (penMenu && penPill && penIcon) {
-          const pens = SETTINGS.pens || [];
-          const applyPen = (pen, options = {}) => {
-            if (!pen) return;
-            const { render = true, syncTargets = true } = options;
-            if (syncTargets) {
-              group.penId = pen.id;
-              group.color = pen.color;
-              group.strokeWidth = pen.width;
-              group.lineCap = group.lineCap || 'round';
-            }
-            penIcon.style.background = pen.color;
-            penIcon.style.color = pen.color;
-            penIcon.style.setProperty('--pen-width', pen.width);
-            penIcon.title = pen.name;
-            if (syncTargets) {
-              const children = groupMap.get(group.id) || [];
-              children.forEach((child) => {
-                child.penId = pen.id;
-                child.color = pen.color;
-                child.strokeWidth = pen.width;
-                child.lineCap = group.lineCap;
-              });
-            }
-            if (penMenu) {
-              penMenu.querySelectorAll('.pen-option').forEach((opt) => {
-                opt.classList.toggle('active', opt.dataset.penId === pen.id);
-              });
-            }
-            if (render) {
-              this.renderLayers();
-              this.app.render();
-            }
-          };
-          const current = pens.find((pen) => pen.id === group.penId) || pens[0];
-          if (current) applyPen(current, { render: false, syncTargets: false });
-          penMenu.innerHTML = pens
-            .map(
-              (pen) => `
-                <button type="button" class="pen-option" data-pen-id="${pen.id}">
-                  <span class="pen-icon" style="background:${pen.color}; color:${pen.color}; --pen-width:${pen.width}"></span>
-                  <span class="pen-option-name">${pen.name}</span>
-                </button>
-              `
-            )
-            .join('');
-          penMenu.querySelectorAll('.pen-option').forEach((opt) => {
-            opt.onclick = (e) => {
-              e.stopPropagation();
-              if (this.app.pushHistory) this.app.pushHistory();
-              const next = pens.find((pen) => pen.id === opt.dataset.penId);
-              applyPen(next);
-              penMenu.classList.add('hidden');
-            };
-          });
-          penPill.onclick = (e) => {
+        if (isManualGroup) wirePenAssignment(el, group, () => [group, ...this.getLayerDescendants(group.id)]);
+        if (maskBtn) {
+          maskBtn.onclick = (e) => {
             e.stopPropagation();
-            if (this.openPenMenu && this.openPenMenu !== penMenu) {
-              this.openPenMenu.classList.add('hidden');
-            }
-            penMenu.classList.toggle('hidden');
-            this.openPenMenu = penMenu.classList.contains('hidden') ? null : penMenu;
-          };
-          el.ondragover = (ev) => {
-            const types = Array.from(ev.dataTransfer?.types || []);
-            if (!types.length || types.includes('text/pen-id') || types.includes('text/plain')) {
-              ev.preventDefault();
-              el.classList.add('dragging');
-            }
-          };
-          el.ondragleave = () => el.classList.remove('dragging');
-          el.ondrop = (ev) => {
-            ev.preventDefault();
-            el.classList.remove('dragging');
-            const penId = ev.dataTransfer.getData('text/pen-id') || ev.dataTransfer.getData('text/plain');
-            const next = pens.find((pen) => pen.id === penId);
-            if (!next) return;
-            if (this.app.pushHistory) this.app.pushHistory();
-            applyPen(next);
-            penMenu.classList.add('hidden');
+            this.openMaskLayerId = this.openMaskLayerId === group.id ? null : group.id;
+            this.renderLayers();
           };
         }
         if (delBtn) {
@@ -15522,13 +15659,12 @@
         const depth = opts.depth ?? 0;
         const isActive = l.id === this.app.engine.activeLayerId;
         const isSelected = this.app.renderer?.selectedLayerIds?.has(l.id);
-        const maskCount = l.mask?.enabled ? (l.mask.sourceIds || []).length : 0;
-        const sourceUsage = usageCounts.get(l.id) || 0;
+        const hasChildren = Boolean((childrenMap.get(l.id) || []).length);
         const hidePen = false;
         const showExpand = !isChild && !l.isGroup;
         const maskMarkup =
-          !l.isGroup
-            ? `<button type="button" class="layer-mask-trigger ${maskCount ? 'layer-mask-trigger--active' : ''}" aria-label="${maskCount ? 'Edit clipping mask' : 'Add clipping mask'}" title="${maskCount ? 'Edit clipping mask' : 'Add clipping mask'}">Clip</button>`
+          (!l.isGroup && (l.maskCapabilities?.canSource || hasChildren))
+            ? `<button type="button" class="layer-mask-trigger ${l.mask?.enabled ? 'layer-mask-trigger--active' : ''}" aria-label="Edit mask" title="Edit mask">Mask</button>`
             : '';
         const expandMarkup = showExpand
           ? '<button class="text-sm text-vectura-muted hover:text-white px-1 btn-expand" aria-label="Expand layer" title="Expand layer">⇲</button>'
@@ -15563,18 +15699,10 @@
               type="text"
               value="${escapeHtml(l.name)}"
             />
-            ${maskCount ? `<span class="layer-mini-badge layer-mini-badge--mask">CLIP ${maskCount}</span>` : ''}
-            ${sourceUsage ? `<span class="layer-mini-badge">SRC ${sourceUsage}</span>` : ''}
+            ${l.mask?.enabled ? `<span class="layer-mini-badge layer-mini-badge--mask">${l.mask?.hideLayer ? 'MASK HIDDEN' : 'MASK'}</span>` : ''}
           </div>
           <div class="flex items-center gap-1">
-            ${hidePen ? '' : `
-              <div class="pen-assign">
-                <button class="pen-pill" type="button" aria-label="Assign pen" title="Assign pen">
-                  <div class="pen-icon"></div>
-                </button>
-                <div class="pen-menu hidden"></div>
-              </div>
-            `}
+            ${hidePen ? '' : buildPenAssignment(l, () => (this.app.renderer?.selectedLayerIds?.has(l.id) ? this.app.renderer.getSelectedLayers() : [l]))}
             ${maskMarkup}
             ${expandMarkup}
             ${moveMarkup}
@@ -15592,9 +15720,6 @@
         const expandBtn = el.querySelector('.btn-expand');
         const maskBtn = el.querySelector('.layer-mask-trigger');
         const grip = el.querySelector('.layer-grip');
-        const penMenu = el.querySelector('.pen-menu');
-        const penPill = el.querySelector('.pen-pill');
-        const penIcon = el.querySelector('.pen-icon');
 
         const selectLayer = (e, options = {}) => {
           const { skipList = false } = options;
@@ -15744,86 +15869,7 @@
             this.duplicateLayers([l]);
           };
         }
-        if (penMenu && penPill && penIcon) {
-          const pens = SETTINGS.pens || [];
-          const applyPen = (pen, targets = [l], options = {}) => {
-            if (!pen) return;
-            const { render = true, syncTargets = true } = options;
-            if (syncTargets) {
-              targets.forEach((target) => {
-                target.penId = pen.id;
-                target.color = pen.color;
-                target.strokeWidth = pen.width;
-              });
-            }
-            penIcon.style.background = pen.color;
-            penIcon.style.color = pen.color;
-            penIcon.style.setProperty('--pen-width', pen.width);
-            penIcon.title = pen.name;
-            if (penMenu) {
-              penMenu.querySelectorAll('.pen-option').forEach((opt) => {
-                opt.classList.toggle('active', opt.dataset.penId === pen.id);
-              });
-            }
-            if (render) {
-              this.renderLayers();
-              this.app.render();
-            }
-          };
-          const current = pens.find((pen) => pen.id === l.penId) || pens[0];
-          if (current) applyPen(current, [l], { render: false, syncTargets: false });
-
-          penMenu.innerHTML = pens
-            .map(
-              (pen) => `
-                <button type="button" class="pen-option" data-pen-id="${pen.id}">
-                  <span class="pen-icon" style="background:${pen.color}; color:${pen.color}; --pen-width:${pen.width}"></span>
-                  <span class="pen-option-name">${pen.name}</span>
-                </button>
-              `
-            )
-            .join('');
-          penMenu.querySelectorAll('.pen-option').forEach((opt) => {
-            opt.onclick = (e) => {
-              e.stopPropagation();
-              if (this.app.pushHistory) this.app.pushHistory();
-              const next = pens.find((pen) => pen.id === opt.dataset.penId);
-              const selectedLayers = this.app.renderer?.selectedLayerIds?.has(l.id)
-                ? this.app.renderer.getSelectedLayers()
-                : [l];
-              applyPen(next, selectedLayers);
-              penMenu.classList.add('hidden');
-            };
-          });
-          penPill.onclick = (e) => {
-            e.stopPropagation();
-            if (this.openPenMenu && this.openPenMenu !== penMenu) {
-              this.openPenMenu.classList.add('hidden');
-            }
-            penMenu.classList.toggle('hidden');
-            this.openPenMenu = penMenu.classList.contains('hidden') ? null : penMenu;
-          };
-
-          el.ondragover = (ev) => {
-            const types = Array.from(ev.dataTransfer?.types || []);
-            if (!types.length || types.includes('text/pen-id') || types.includes('text/plain')) {
-              ev.preventDefault();
-              el.classList.add('dragging');
-            }
-          };
-          el.ondragleave = () => el.classList.remove('dragging');
-          el.ondrop = (ev) => {
-            ev.preventDefault();
-            el.classList.remove('dragging');
-            const penId = ev.dataTransfer.getData('text/pen-id') || ev.dataTransfer.getData('text/plain');
-            const next = pens.find((pen) => pen.id === penId);
-            if (!next) return;
-            if (this.app.pushHistory) this.app.pushHistory();
-            const selectedLayers = this.app.renderer?.getSelectedLayers?.() || [];
-            applyPen(next, selectedLayers.length ? selectedLayers : [l]);
-            penMenu.classList.add('hidden');
-          };
-        }
+        wirePenAssignment(el, l, () => (this.app.renderer?.selectedLayerIds?.has(l.id) ? this.app.renderer.getSelectedLayers() : [l]));
         if (grip) {
           bindLayerReorderGrip(grip, el, {
             ensureSelection: (e) => {
@@ -15850,22 +15896,22 @@
       const renderTree = (layer, depth = 0) => {
         if (layer.isGroup) {
           renderGroupRow(layer, depth);
-          const children = groupMap.get(layer.id) || [];
+          const children = childrenMap.get(layer.id) || [];
           const showChildren = !layer.groupCollapsed;
           if (showChildren) {
             children.forEach((child) => renderTree(child, depth + 1));
           }
         } else {
           renderLayerRow(layer, { isChild: depth > 0, depth });
+          const children = childrenMap.get(layer.id) || [];
+          children.forEach((child) => renderTree(child, depth + 1));
         }
       };
 
       layers.forEach((layer) => {
-        if (layer.parentId && groupIds.has(layer.parentId)) return;
+        if (layer.parentId && parentIds.has(layer.parentId)) return;
         renderTree(layer, 0);
       });
-
-      orphans.forEach((layer) => renderTree(layer, 0));
       this.layerListOrder = selectableIds;
       this.updateLightSourceTool();
       if (SETTINGS.autoColorization?.enabled && !this.isApplyingAutoColorization) {
@@ -16223,8 +16269,12 @@
         layer.lineCap = active.lineCap;
       }
       const cloned = path.map((pt) => ({ x: pt.x, y: pt.y }));
+      if (path.meta) {
+        cloned.meta = clone(path.meta);
+      }
       if (anchors && anchors.length >= 2) {
         cloned.meta = {
+          ...(cloned.meta || {}),
           anchors: anchors.map((anchor) => ({
             x: anchor.x,
             y: anchor.y,
@@ -16233,6 +16283,15 @@
           })),
           closed,
         };
+      }
+      if (payload?.shape?.type) {
+        const shapeLabelMap = {
+          rect: 'Rectangle',
+          oval: 'Oval',
+          polygon: 'Polygon',
+        };
+        const baseName = shapeLabelMap[payload.shape.type] || 'Shape';
+        layer.name = this.getUniqueLayerName(`${baseName} ${num}`, id);
       }
       layer.sourcePaths = [cloned];
       const idx = engine.layers.findIndex((l) => l.id === engine.activeLayerId);
@@ -20513,6 +20572,30 @@
           strokeControl.appendChild(strokeInput);
           controlsWrap.appendChild(strokeControl);
 
+          const hiddenGeometryControl = document.createElement('div');
+          hiddenGeometryControl.className = 'optimization-control';
+          hiddenGeometryControl.innerHTML = `
+            <div class="flex justify-between mb-1">
+              <label class="control-label mb-0">Remove Hidden Geometry</label>
+              <span class="text-xs text-vectura-accent font-mono">${SETTINGS.removeHiddenGeometry !== false ? 'ON' : 'OFF'}</span>
+            </div>
+            <input type="checkbox" class="w-4 h-4" ${SETTINGS.removeHiddenGeometry !== false ? 'checked' : ''}>
+            <div class="mt-2 text-[10px] leading-relaxed text-vectura-muted">
+              Trim masked and frame-hidden segments from the exported SVG so it matches the current view exactly.
+            </div>
+          `;
+          const hiddenGeometryToggle = hiddenGeometryControl.querySelector('input');
+          const hiddenGeometryState = hiddenGeometryControl.querySelector('span');
+          if (hiddenGeometryToggle && hiddenGeometryState) {
+            hiddenGeometryToggle.onchange = (e) => {
+              if (this.app.pushHistory) this.app.pushHistory();
+              SETTINGS.removeHiddenGeometry = Boolean(e.target.checked);
+              hiddenGeometryState.textContent = SETTINGS.removeHiddenGeometry ? 'ON' : 'OFF';
+              this.app.persistPreferencesDebounced?.();
+            };
+          }
+          controlsWrap.appendChild(hiddenGeometryControl);
+
           const toggleControl = document.createElement('div');
           toggleControl.className = 'optimization-control';
           toggleControl.innerHTML = `
@@ -21284,8 +21367,10 @@
       const prof = this.app.engine.currentProfile;
       const precision = Math.max(0, Math.min(6, SETTINGS.precision ?? 3));
       const useOptimized = Boolean(SETTINGS.optimizationExport);
+      const removeHiddenGeometry = SETTINGS.removeHiddenGeometry !== false;
       const hardCrop = SETTINGS.cropExports !== false;
-      const marginRect = hardCrop
+      const destructiveMarginCrop = hardCrop || (removeHiddenGeometry && SETTINGS.truncate !== false);
+      const marginRect = destructiveMarginCrop
         ? {
             x: SETTINGS.margin,
             y: SETTINGS.margin,
@@ -21293,7 +21378,7 @@
             h: Math.max(0, prof.height - SETTINGS.margin * 2),
           }
         : null;
-      const useSvgMarginClip = SETTINGS.truncate && !hardCrop;
+      const useSvgMarginClip = SETTINGS.truncate && !destructiveMarginCrop;
       const optimize = Math.max(0, SETTINGS.plotterOptimize ?? 0);
       const tol = optimize > 0 ? Math.max(0.001, optimize) : 0;
       const quant = (v) => (tol ? Math.round(v / tol) * tol : v);
@@ -21310,15 +21395,38 @@
           .join('|');
       };
       const dedupe = optimize > 0 ? new Map() : null;
+      if (this.app.engine.computeAllDisplayGeometry) {
+        this.app.engine.computeAllDisplayGeometry();
+      }
       if (useOptimized) {
         this.app.engine.optimizeLayers(this.app.engine.layers);
       }
-      let svg = `<?xml version="1.0" standalone="no"?><svg width="${prof.width}mm" height="${prof.height}mm" viewBox="0 0 ${prof.width} ${prof.height}" xmlns="http://www.w3.org/2000/svg">`;
+      const defs = [];
+      const layerClipIds = new Map();
       if (useSvgMarginClip) {
         const m = SETTINGS.margin;
         const w = prof.width - m * 2;
         const h = prof.height - m * 2;
-        svg += `<defs><clipPath id="margin-clip"><rect x="${m}" y="${m}" width="${w}" height="${h}" /></clipPath></defs>`;
+        defs.push(`<clipPath id="margin-clip"><rect x="${m}" y="${m}" width="${w}" height="${h}" /></clipPath>`);
+      }
+      if (!removeHiddenGeometry) {
+        const maskBounds = getMaskExportBounds(this.app.engine, prof);
+        (this.app.engine.layers || []).forEach((layer) => {
+          if (!layer || !layer.visible || !layer.mask?.enabled) {
+            return;
+          }
+          const polygons = getLayerSilhouette(layer, this.app.engine, maskBounds);
+          if (!polygons.length) return;
+          const clipId = normalizeSvgId(`${layer.id || layer.name || 'layer'}-mask-clip`, 'mask');
+          const clipMarkup = buildClipPathMarkup(clipId, polygons, precision, { profile: prof });
+          if (!clipMarkup) return;
+          defs.push(clipMarkup);
+          layerClipIds.set(layer.id, clipId);
+        });
+      }
+      let svg = `<?xml version="1.0" standalone="no"?><svg width="${prof.width}mm" height="${prof.height}mm" viewBox="0 0 ${prof.width} ${prof.height}" xmlns="http://www.w3.org/2000/svg">`;
+      if (defs.length) svg += `<defs>${defs.join('')}</defs>`;
+      if (useSvgMarginClip) {
         svg += `<g clip-path="url(#margin-clip)">`;
       }
       const penMap = new Map((SETTINGS.pens || []).map((pen) => [pen.id, pen]));
@@ -21331,7 +21439,7 @@
       const groups = new Map();
       const order = [];
       this.app.engine.layers.forEach((l) => {
-        if (!l.visible || l.isGroup) return;
+        if (!l.visible || l.isGroup || isMaskLayerGeometryHidden(l)) return;
         const pen = penMap.get(l.penId) || fallbackPen;
         const key = pen.id || fallbackPen.id;
         if (!groups.has(key)) {
@@ -21355,24 +21463,23 @@
           seen = dedupe.get(key);
         }
         group.layers.forEach((l) => {
+          const ancestorMasks = this.app.engine.getAncestorMaskLayers ? this.app.engine.getAncestorMaskLayers(l) : [];
           const strokeWidth = (l.strokeWidth ?? pen.width ?? SETTINGS.strokeWidth).toFixed(3);
-          const lineCap = hardCrop ? 'butt' : l.lineCap || 'round';
+          const forceLinear = destructiveMarginCrop || (removeHiddenGeometry && ancestorMasks.length);
+          const lineCap = forceLinear ? 'butt' : l.lineCap || 'round';
           const useCurves = Boolean(l.params && l.params.curves);
           const layerGroupId = escapeXmlAttr(normalizeSvgId(l.name || l.id || 'Layer', 'layer'));
+          const layerClipIdsForAncestors = removeHiddenGeometry
+            ? []
+            : ancestorMasks.map((maskLayer) => layerClipIds.get(maskLayer.id)).filter(Boolean);
+          layerClipIdsForAncestors.forEach((clipId) => {
+            svg += `<g clip-path="url(#${escapeXmlAttr(clipId)})">`;
+          });
           svg += `<g id="${layerGroupId}" stroke-width="${strokeWidth}" stroke-linecap="${lineCap}" stroke-linejoin="round">`;
-          let paths = this.app.engine.getRenderablePaths
-            ? this.app.engine.getRenderablePaths(l, { useOptimized })
-            : l.paths;
-          if (hardCrop) {
-            paths = (paths || []).flatMap((p) => {
-              if (!Array.isArray(p) || p.length < 2) return [];
-              if (p && p.meta && p.meta.kind === 'circle') {
-                const expanded = expandCirclePath(p.meta, 72);
-                return clipPathToRect(expanded, marginRect);
-              }
-              let geom = p;
-              if (useCurves) geom = resampleCurvedPath(p);
-              return clipPathToRect(geom, marginRect);
+          let paths = removeHiddenGeometry ? getVisibleExportPaths(l, { useOptimized }) : getRawExportPaths(l, { useOptimized });
+          if (destructiveMarginCrop) {
+            paths = hardClipExportPaths(paths, marginRect, {
+              useCurves: useCurves && !removeHiddenGeometry,
             });
           }
           (paths || []).forEach((p) => {
@@ -21381,11 +21488,23 @@
               if (key && seen.has(key)) return;
               if (key) seen.add(key);
             }
-            const forceLinear = hardCrop;
-            const markup = shapeToSvg(p, precision, forceLinear ? false : useCurves);
+            let exportPath = p;
+            if (forceLinear && p?.meta?.kind === 'circle') {
+              exportPath = expandCirclePath(p.meta, 72);
+              exportPath.meta = { ...(p.meta || {}), kind: 'poly', exportClipped: true, closed: false };
+            }
+            const markup = shapeToSvg(
+              exportPath,
+              precision,
+              forceLinear ? false : useCurves,
+              exportPath?.meta?.exportClipped ? { 'stroke-linecap': 'butt' } : null
+            );
             if (markup) svg += markup;
           });
           svg += `</g>`;
+          layerClipIdsForAncestors.forEach(() => {
+            svg += `</g>`;
+          });
         });
         svg += `</g>`;
       });

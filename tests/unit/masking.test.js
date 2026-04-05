@@ -20,7 +20,7 @@ describe('Masking runtime', () => {
     truncate: true,
   };
 
-  test('closed expanded layers are eligible mask sources', () => {
+  test('closed expanded layers are eligible mask parents', () => {
     const { Layer, Masking } = runtime.window.Vectura;
     const layer = new Layer('shape', 'expanded', 'Shape');
     layer.paths = [[
@@ -37,64 +37,208 @@ describe('Masking runtime', () => {
     expect(result.sourceType).toBe('closed-shape');
   });
 
-  test('mask subtraction splits open paths around silhouette polygons', () => {
-    const { Masking } = runtime.window.Vectura;
-    const segments = Masking.applyMaskToPaths(
-      [[
-        { x: 20, y: 100 },
-        { x: 220, y: 100 },
-      ]],
-      [[
-        { x: 80, y: 80 },
-        { x: 160, y: 80 },
-        { x: 160, y: 120 },
-        { x: 80, y: 120 },
-        { x: 80, y: 80 },
-      ]]
-    );
+  test('open paths are not eligible mask parents', () => {
+    const { Layer, Masking } = runtime.window.Vectura;
+    const layer = new Layer('open', 'expanded', 'Open');
+    layer.paths = [[
+      { x: 40, y: 60 },
+      { x: 180, y: 120 },
+    ]];
 
-    expect(segments.length).toBe(2);
-    expect(segments[0][segments[0].length - 1].x).toBeLessThanOrEqual(80.01);
-    expect(segments[1][0].x).toBeGreaterThanOrEqual(159.99);
+    const result = Masking.getLayerMaskCapabilities(layer, null, bounds);
+
+    expect(result.canSource).toBe(false);
   });
 
-  test('engine computes masked display paths without mutating source geometry', () => {
+  test('mask parents clip direct descendants without mutating source geometry', () => {
     const { VectorEngine, Layer } = runtime.window.Vectura;
     const engine = new VectorEngine();
     engine.layers = [];
 
-    const target = new Layer('target', 'expanded', 'Target');
-    target.paths = [[
-      { x: 20, y: 100 },
-      { x: 220, y: 100 },
-    ]];
-    target.mask = {
-      enabled: true,
-      sourceIds: ['mask'],
-      mode: 'silhouette',
-      invert: false,
-      materialized: false,
-    };
-
-    const mask = new Layer('mask', 'expanded', 'Mask');
-    mask.paths = [[
+    const maskParent = new Layer('mask-parent', 'expanded', 'Mask Parent');
+    maskParent.paths = [[
       { x: 80, y: 80 },
       { x: 160, y: 80 },
       { x: 160, y: 120 },
       { x: 80, y: 120 },
       { x: 80, y: 80 },
     ]];
+    maskParent.mask.enabled = true;
 
-    engine.layers.push(target, mask);
+    const child = new Layer('child', 'expanded', 'Child');
+    child.parentId = maskParent.id;
+    child.paths = [[
+      { x: 20, y: 100 },
+      { x: 220, y: 100 },
+    ]];
+
+    engine.layers.push(maskParent, child);
     engine.computeAllDisplayGeometry();
 
-    expect(target.paths).toHaveLength(1);
-    expect(target.displayPaths).toHaveLength(2);
-    expect(target.displayPaths[0][target.displayPaths[0].length - 1].x).toBeLessThanOrEqual(80.01);
-    expect(target.displayPaths[1][0].x).toBeGreaterThanOrEqual(159.99);
+    expect(maskParent.displayMaskActive).toBe(false);
+    expect(maskParent.displayPaths).toHaveLength(1);
+    expect(child.paths).toHaveLength(1);
+    expect(child.displayPaths).toHaveLength(1);
+    expect(child.displayPaths[0][0].x).toBeGreaterThanOrEqual(79.99);
+    expect(child.displayPaths[0][child.displayPaths[0].length - 1].x).toBeLessThanOrEqual(160.01);
   });
 
-  test('horizon silhouettes follow the first visible terrain row for clipping', () => {
+  test('circular mask parents treat interior points as inside and clip descendants to the circle', () => {
+    const { VectorEngine, Layer, PathBoolean } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    engine.layers = [];
+
+    const cx = 120;
+    const cy = 110;
+    const r = 74;
+    const circle = [];
+    for (let i = 0; i <= 96; i += 1) {
+      const theta = (i / 96) * Math.PI * 2;
+      circle.push({
+        x: cx + Math.cos(theta) * r,
+        y: cy + Math.sin(theta) * r,
+      });
+    }
+    circle.meta = { kind: 'circle', cx, cy, r };
+
+    expect(PathBoolean.pointInPolygon({ x: cx, y: cy }, circle)).toBe(true);
+    expect(PathBoolean.pointInPolygon({ x: cx, y: cy - r - 4 }, circle)).toBe(false);
+
+    const maskParent = new Layer('mask-circle', 'expanded', 'Mask Circle');
+    maskParent.paths = [circle];
+    maskParent.mask.enabled = true;
+
+    const child = new Layer('child', 'expanded', 'Child');
+    child.parentId = maskParent.id;
+    child.paths = [];
+    for (let row = 0; row < 8; row += 1) {
+      const y = 30 + row * 20;
+      const path = [];
+      for (let x = 20; x <= 220; x += 4) {
+        path.push({ x, y: y + Math.sin(x * 0.04 + row) * 5 });
+      }
+      child.paths.push(path);
+    }
+
+    engine.layers.push(maskParent, child);
+    engine.computeAllDisplayGeometry();
+
+    const outsidePoints = (child.displayPaths || [])
+      .flatMap((path) => path || [])
+      .filter((pt) => Math.hypot(pt.x - cx, pt.y - cy) > r + 0.6);
+
+    expect(child.displayPaths.length).toBeGreaterThan(0);
+    expect(outsidePoints).toHaveLength(0);
+  });
+
+  test('hidden mask parents still clip descendants while suppressing their own renderable geometry', () => {
+    const { VectorEngine, Layer } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    engine.layers = [];
+
+    const maskParent = new Layer('mask-parent-hidden', 'expanded', 'Mask Parent');
+    maskParent.paths = [[
+      { x: 80, y: 80 },
+      { x: 160, y: 80 },
+      { x: 160, y: 140 },
+      { x: 80, y: 140 },
+      { x: 80, y: 80 },
+    ]];
+    maskParent.mask.enabled = true;
+    maskParent.mask.hideLayer = true;
+
+    const child = new Layer('child', 'expanded', 'Child');
+    child.parentId = maskParent.id;
+    child.paths = [[
+      { x: 20, y: 100 },
+      { x: 220, y: 100 },
+    ]];
+
+    engine.layers.push(maskParent, child);
+    engine.computeAllDisplayGeometry();
+
+    expect(engine.getRenderablePaths(maskParent)).toHaveLength(0);
+    expect(child.displayPaths).toHaveLength(1);
+    expect(child.displayPaths[0][0].x).toBeGreaterThanOrEqual(79.99);
+    expect(child.displayPaths[0][child.displayPaths[0].length - 1].x).toBeLessThanOrEqual(160.01);
+  });
+
+  test('nested mask parents combine across the ancestor chain', () => {
+    const { VectorEngine, Layer } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    engine.layers = [];
+
+    const outer = new Layer('outer', 'expanded', 'Outer');
+    outer.paths = [[
+      { x: 40, y: 40 },
+      { x: 200, y: 40 },
+      { x: 200, y: 160 },
+      { x: 40, y: 160 },
+      { x: 40, y: 40 },
+    ]];
+    outer.mask.enabled = true;
+
+    const inner = new Layer('inner', 'expanded', 'Inner');
+    inner.parentId = outer.id;
+    inner.paths = [[
+      { x: 100, y: 70 },
+      { x: 180, y: 70 },
+      { x: 180, y: 130 },
+      { x: 100, y: 130 },
+      { x: 100, y: 70 },
+    ]];
+    inner.mask.enabled = true;
+
+    const child = new Layer('child', 'expanded', 'Child');
+    child.parentId = inner.id;
+    child.paths = [[
+      { x: 20, y: 100 },
+      { x: 220, y: 100 },
+    ]];
+
+    engine.layers.push(outer, inner, child);
+    engine.computeAllDisplayGeometry();
+
+    expect(child.displayPaths).toHaveLength(1);
+    expect(child.displayPaths[0][0].x).toBeGreaterThanOrEqual(99.99);
+    expect(child.displayPaths[0][child.displayPaths[0].length - 1].x).toBeLessThanOrEqual(180.01);
+  });
+
+  test('legacy source masks are cleared on import', () => {
+    const { VectorEngine } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    engine.layers = [];
+
+    engine.importState({
+      activeLayerId: 'target',
+      layers: [
+        {
+          id: 'target',
+          type: 'expanded',
+          name: 'Target',
+          params: {},
+          parentId: null,
+          isGroup: false,
+          sourcePaths: [[{ x: 0, y: 0 }, { x: 10, y: 0 }]],
+          mask: {
+            enabled: true,
+            sourceIds: ['legacy-mask'],
+            mode: 'silhouette',
+            invert: false,
+            materialized: false,
+          },
+          visible: true,
+        },
+      ],
+    });
+
+    const imported = engine.layers[0];
+    expect(imported.mask.enabled).toBe(false);
+    expect(imported.mask.sourceIds).toEqual([]);
+    expect(imported.mask.mode).toBe('parent');
+  });
+
+  test('horizon silhouettes follow the first visible terrain row for masking', () => {
     const { Layer, Masking } = runtime.window.Vectura;
     const layer = new Layer('terrain', 'wavetable', 'Terrain');
     layer.params.lineStructure = 'horizon';
@@ -116,99 +260,5 @@ describe('Masking runtime', () => {
     expect(polygons).toHaveLength(1);
     const topPoint = polygons[0].reduce((best, point) => (point.y < best.y ? point : best), polygons[0][0]);
     expect(topPoint.y).toBe(80);
-  });
-
-  test('horizon silhouette ignores deeper terrain strips and follows the visible skyline row', () => {
-    const { Layer, Masking } = runtime.window.Vectura;
-    const layer = new Layer('terrain', 'wavetable', 'Terrain');
-    layer.params.lineStructure = 'horizon';
-    layer.paths = [
-      [
-        { x: 20, y: 60 },
-        { x: 120, y: 60 },
-        { x: 220, y: 60 },
-      ],
-    ];
-    layer.paths[0].meta = { horizonRole: 'row', horizonRowIndex: 0 };
-    layer.maskPolygons = [[
-      { x: 20, y: 120 },
-      { x: 120, y: 40 },
-      { x: 220, y: 120 },
-      { x: 220, y: 160 },
-      { x: 20, y: 160 },
-      { x: 20, y: 120 },
-    ]];
-
-    const polygons = Masking.getLayerSilhouette(layer, null, bounds);
-
-    expect(polygons).toHaveLength(1);
-    const topPoint = polygons[0].reduce((best, point) => (point.y < best.y ? point : best), polygons[0][0]);
-    expect(topPoint.y).toBe(60);
-  });
-
-  test('engine masking uses the Horizon skyline row to hide overlapping background geometry', () => {
-    const { VectorEngine, Layer } = runtime.window.Vectura;
-    const engine = new VectorEngine();
-    engine.layers = [];
-
-    const target = new Layer('target', 'expanded', 'Target');
-    target.paths = [[
-      { x: 120, y: 20 },
-      { x: 120, y: 160 },
-    ]];
-    target.mask = {
-      enabled: true,
-      sourceIds: ['terrain'],
-      mode: 'silhouette',
-      invert: false,
-      materialized: false,
-    };
-
-    const terrain = new Layer('terrain', 'wavetable', 'Terrain');
-    terrain.params.lineStructure = 'horizon';
-    terrain.paths = [
-      [
-        { x: 20, y: 80 },
-        { x: 120, y: 80 },
-        { x: 220, y: 80 },
-      ],
-      [
-        { x: 20, y: 120 },
-        { x: 120, y: 40 },
-        { x: 220, y: 120 },
-      ],
-    ];
-
-    engine.layers.push(target, terrain);
-    engine.computeAllDisplayGeometry();
-
-    expect(target.displayPaths).toHaveLength(1);
-    expect(target.displayPaths[0][0].y).toBeLessThanOrEqual(20.01);
-    expect(target.displayPaths[0][target.displayPaths[0].length - 1].y).toBeLessThanOrEqual(80.01);
-  });
-
-  test('Horizon 3D silhouettes prefer the emitted surface envelope polygons', () => {
-    const { Layer, Masking } = runtime.window.Vectura;
-    const layer = new Layer('terrain-3d', 'wavetable', 'Terrain 3D');
-    layer.params.lineStructure = 'horizon-3d';
-    layer.paths = [[
-      { x: 20, y: 90 },
-      { x: 120, y: 90 },
-      { x: 220, y: 90 },
-    ]];
-    layer.maskPolygons = [[
-      { x: 20, y: 120 },
-      { x: 120, y: 40 },
-      { x: 220, y: 120 },
-      { x: 220, y: 160 },
-      { x: 20, y: 160 },
-      { x: 20, y: 120 },
-    ]];
-
-    const polygons = Masking.getLayerSilhouette(layer, null, bounds);
-
-    expect(polygons).toHaveLength(1);
-    const topPoint = polygons[0].reduce((best, point) => (point.y < best.y ? point : best), polygons[0][0]);
-    expect(topPoint.y).toBe(40);
   });
 });

@@ -57,4 +57,72 @@ describe('Modifier workflow integration', () => {
 
     expect(engine.layers.some((layer) => layer.id === modifierId)).toBe(true);
   });
+
+  test('removing a modifier dissolves it and preserves its children', () => {
+    const { VectorEngine, Layer } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    const modifierId = engine.addModifierLayer('mirror');
+    const child = new Layer('child-preserved', 'expanded', 'Child Preserved');
+    child.parentId = modifierId;
+    child.sourcePaths = [[
+      { x: 180, y: 20 },
+      { x: 190, y: 20 },
+    ]];
+    engine.layers.push(child);
+    engine.generate(child.id);
+    engine.activeLayerId = modifierId;
+    engine.computeAllDisplayGeometry();
+
+    engine.removeLayer(modifierId);
+
+    const preserved = engine.layers.find((layer) => layer.id === 'child-preserved');
+    expect(engine.layers.some((layer) => layer.id === modifierId)).toBe(false);
+    expect(preserved).toBeTruthy();
+    expect(preserved.parentId).toBeNull();
+    expect(engine.activeLayerId).toBe('child-preserved');
+  });
+});
+
+describe('Modifier workflow UI integration', () => {
+  let runtime;
+
+  afterEach(() => {
+    runtime?.cleanup?.();
+    runtime = null;
+  });
+
+  test('assignLayersToRoot clears modifier parentage and recomputes geometry', async () => {
+    runtime = await loadVecturaRuntime({
+      includeRenderer: true,
+      includeUi: true,
+      includeApp: true,
+      useIndexHtml: true,
+    });
+
+    const { window } = runtime;
+    window.app = new window.Vectura.App();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    const app = window.app;
+    const baseLayer = app.engine.getActiveLayer();
+    const modifierId = app.engine.addModifierLayer('mirror');
+    const modifier = app.engine.layers.find((layer) => layer.id === modifierId);
+    app.ui.assignLayersToParent(modifierId, [baseLayer], { selectAssigned: true, primaryId: baseLayer.id });
+
+    expect(baseLayer.parentId).toBe(modifierId);
+    expect(baseLayer.effectivePaths.length).toBeGreaterThan(baseLayer.paths.length);
+
+    const currentOrder = app.engine.layers.map((layer) => layer.id).reverse();
+    const rootOrder = currentOrder.filter((id) => id !== baseLayer.id);
+    rootOrder.unshift(baseLayer.id);
+    app.ui.assignLayersToRoot([baseLayer], {
+      nextEngineOrder: rootOrder.slice().reverse(),
+      selectAssigned: true,
+      primaryId: baseLayer.id,
+    });
+
+    expect(baseLayer.parentId).toBeNull();
+    expect(baseLayer.effectivePaths.length).toBe(baseLayer.paths.length);
+    expect(app.engine.layers[app.engine.layers.length - 1].id).toBe(baseLayer.id);
+  });
 });

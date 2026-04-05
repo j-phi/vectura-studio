@@ -204,15 +204,10 @@ const buildMaskedSceneSvg = (runtime) => {
     }
     rings.paths.push(ring);
   });
-  rings.mask = {
-    enabled: true,
-    sourceIds: ['terrain-mask'],
-    mode: 'silhouette',
-    invert: false,
-    materialized: false,
-  };
+  rings.mask.enabled = true;
 
   const terrain = new Layer('terrain-mask', 'wavetable', 'Terrain Mask');
+  terrain.parentId = rings.id;
   terrain.params.lineStructure = 'horizon';
   terrain.paths = [
     [
@@ -241,7 +236,7 @@ const buildMaskedSceneSvg = (runtime) => {
   return pathsToSvg({
     width: 320,
     height: 220,
-    paths: [...(rings.displayPaths || []), ...(terrain.paths || [])],
+    paths: [...(rings.paths || []), ...(terrain.displayPaths || [])],
     precision: 3,
   });
 };

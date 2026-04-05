@@ -177,4 +177,339 @@ test.describe('Vectura smoke interactions', () => {
 
     expect(pageErrors).toEqual([]);
   });
+
+  test('selected modifiers add remembered drawable children and preserve children when deleted', async ({ page }) => {
+    const pageErrors = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+
+    await page.goto('/');
+
+    await page.selectOption('#generator-module', 'rings');
+    await page.getByRole('button', { name: 'Insert' }).click();
+    await page.click('#btn-insert-mirror-modifier');
+
+    await page.click('#btn-add-layer');
+    await expect(page.locator('#left-section-primary-title')).toHaveText('Algorithm');
+    await expect(page.locator('#generator-module')).toHaveValue('rings');
+
+    const addState = await page.evaluate(() => {
+      const app = window.app;
+      const child = app.engine.getActiveLayer();
+      const parent = app.engine.layers.find((layer) => layer.id === child.parentId);
+      return {
+        childType: child?.type || null,
+        parentIsModifier: parent?.containerRole === 'modifier',
+      };
+    });
+
+    expect(addState.childType).toBe('rings');
+    expect(addState.parentIsModifier).toBe(true);
+
+    await page.evaluate(() => {
+      const app = window.app;
+      const modifier = app.engine.layers.find((layer) => layer.containerRole === 'modifier');
+      app.renderer.setSelection([modifier.id], modifier.id);
+      app.engine.activeLayerId = modifier.id;
+      app.ui.renderLayers();
+      app.ui.buildControls();
+    });
+
+    await page.keyboard.press('Delete');
+
+    const deleteState = await page.evaluate(() => {
+      const app = window.app;
+      const modifier = app.engine.layers.find((layer) => layer.containerRole === 'modifier');
+      const orphanedChild = app.engine.layers.find((layer) => !layer.isGroup && layer.parentId == null && layer.type === 'rings');
+      return {
+        modifierExists: Boolean(modifier),
+        orphanedChildExists: Boolean(orphanedChild),
+      };
+    });
+
+    expect(deleteState.modifierExists).toBe(false);
+    expect(deleteState.orphanedChildExists).toBe(true);
+    expect(pageErrors).toEqual([]);
+  });
+
+  test('shape tool shortcuts create ovals and configurable polygons', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name.includes('tablet-touch'), 'Tablet emulation does not reliably synthesize shape-drag mouse input.');
+    const pageErrors = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+
+    await page.goto('/');
+
+    const canvas = page.locator('#main-canvas');
+    const box = await canvas.boundingBox();
+    expect(box).toBeTruthy();
+
+    const initialLayers = await page.locator('#layer-list .layer-item').count();
+
+    await page.evaluate(() => window.app.ui.setActiveTool('shape-oval'));
+    await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.35);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.45, box.y + box.height * 0.52);
+    await page.mouse.up();
+
+    await expect(page.locator('#layer-list .layer-item')).toHaveCount(initialLayers + 1);
+
+    const circleMeta = await page.evaluate(() => {
+      const layer = window.app.engine.getActiveLayer();
+      return layer?.sourcePaths?.[0]?.meta?.shape || null;
+    });
+    expect(circleMeta?.type).toBe('oval');
+    expect(Math.abs((circleMeta?.rx || 0) - (circleMeta?.ry || 0))).toBeGreaterThan(0.01);
+
+    await page.evaluate(() => window.app.ui.setActiveTool('shape-polygon'));
+    await page.mouse.move(box.x + box.width * 0.58, box.y + box.height * 0.42);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.72, box.y + box.height * 0.58);
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('ArrowUp');
+    await page.mouse.up();
+
+    await expect(page.locator('#layer-list .layer-item')).toHaveCount(initialLayers + 2);
+
+    const polygonMeta = await page.evaluate(() => {
+      const layer = window.app.engine.getActiveLayer();
+      return layer?.sourcePaths?.[0]?.meta?.shape || null;
+    });
+    expect(polygonMeta?.type).toBe('polygon');
+    expect(polygonMeta?.sides).toBe(8);
+
+    expect(pageErrors).toEqual([]);
+  });
+
+  test('circular mask parents clip descendant geometry to the visible silhouette', async ({ page }) => {
+    const pageErrors = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+
+    await page.goto('/');
+
+    const maskState = await page.evaluate(() => {
+      const app = window.app;
+      const { Layer, SETTINGS } = window.Vectura;
+      SETTINGS.aboutVisible = false;
+
+      const engine = app.engine;
+      engine.layers = [];
+      SETTINGS.globalLayerCount = 0;
+
+      const circlePath = [];
+      const cx = 120;
+      const cy = 110;
+      const r = 74;
+      for (let i = 0; i <= 96; i += 1) {
+        const theta = (i / 96) * Math.PI * 2;
+        circlePath.push({
+          x: cx + Math.cos(theta) * r,
+          y: cy + Math.sin(theta) * r,
+        });
+      }
+      circlePath.meta = {
+        kind: 'circle',
+        cx,
+        cy,
+        r,
+        shape: {
+          type: 'oval',
+          cx,
+          cy,
+          rx: r,
+          ry: r,
+          cornerRadii: [],
+        },
+      };
+
+      const maskParent = new Layer('mask-parent-oval', 'expanded', 'Oval Mask');
+      maskParent.params.seed = 0;
+      maskParent.params.posX = 0;
+      maskParent.params.posY = 0;
+      maskParent.params.scaleX = 1;
+      maskParent.params.scaleY = 1;
+      maskParent.params.rotation = 0;
+      maskParent.params.curves = false;
+      maskParent.params.smoothing = 0;
+      maskParent.params.simplify = 0;
+      maskParent.sourcePaths = [circlePath];
+      maskParent.mask.enabled = true;
+
+      const child = new Layer('masked-child-wavetable', 'wavetable', 'Wavetable 01');
+      child.parentId = maskParent.id;
+      child.params.lineStructure = 'horizontal';
+      child.params.lines = 44;
+      child.params.gap = 3.2;
+      child.params.noises = [
+        {
+          ...(child.params.noises?.[0] || {}),
+          enabled: true,
+          type: 'simplex',
+          amplitude: 12,
+          zoom: 0.014,
+          freq: 1,
+          angle: 0,
+          shiftX: 0,
+          shiftY: 0,
+          seed: 17,
+        },
+      ];
+
+      engine.layers.push(maskParent, child);
+      engine.activeLayerId = child.id;
+      engine.generate(maskParent.id);
+      engine.generate(child.id);
+      engine.computeAllDisplayGeometry();
+      app.renderer.setSelection([], null);
+      app.ui.renderLayers();
+      app.ui.buildControls();
+      app.ui.updateFormula();
+      app.render();
+      app.updateStats();
+
+      const flatten = (paths) =>
+        (paths || []).flatMap((path) =>
+          Array.isArray(path)
+            ? path
+                .filter((pt) => pt && Number.isFinite(pt.x) && Number.isFinite(pt.y))
+                .map((pt) => ({ x: pt.x, y: pt.y }))
+            : []
+        );
+      const isOutsideCircle = (pt, epsilon = 0.6) => Math.hypot(pt.x - cx, pt.y - cy) > r + epsilon;
+
+      const rawPoints = flatten(child.paths);
+      const displayPoints = flatten(child.displayPaths);
+      const rawOutsideCount = rawPoints.filter((pt) => isOutsideCircle(pt, 1.2)).length;
+      const displayOutsideCount = displayPoints.filter((pt) => isOutsideCircle(pt)).length;
+      const parentRow = document.querySelector('[data-layer-id="mask-parent-oval"]');
+      const childRow = document.querySelector('[data-layer-id="masked-child-wavetable"]');
+
+      return {
+        rawPointCount: rawPoints.length,
+        displayPointCount: displayPoints.length,
+        rawOutsideCount,
+        displayOutsideCount,
+        childSegmentCount: child.displayPaths?.length || 0,
+        maskEnabled: Boolean(maskParent.mask?.enabled),
+        parentStillVisible: Boolean(maskParent.paths?.length),
+        childIndented: parentRow && childRow
+          ? parseFloat(window.getComputedStyle(childRow).marginLeft || '0') > parseFloat(window.getComputedStyle(parentRow).marginLeft || '0')
+          : false,
+      };
+    });
+
+    expect(maskState.maskEnabled).toBe(true);
+    expect(maskState.parentStillVisible).toBe(true);
+    expect(maskState.rawPointCount).toBeGreaterThan(0);
+    expect(maskState.displayPointCount).toBeGreaterThan(0);
+    expect(maskState.rawOutsideCount).toBeGreaterThan(0);
+    expect(maskState.displayOutsideCount).toBe(0);
+    expect(maskState.childSegmentCount).toBeGreaterThan(0);
+    expect(maskState.childIndented).toBe(true);
+    expect(pageErrors).toEqual([]);
+  });
+
+  test('mask editor can hide the mask parent artwork while keeping descendant clipping active', async ({ page }) => {
+    const pageErrors = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+
+    await page.goto('/');
+
+    await page.evaluate(() => {
+      const app = window.app;
+      const { Layer, SETTINGS } = window.Vectura;
+      SETTINGS.aboutVisible = false;
+
+      const engine = app.engine;
+      engine.layers = [];
+      SETTINGS.globalLayerCount = 0;
+
+      const circlePath = [];
+      const cx = 120;
+      const cy = 110;
+      const r = 74;
+      for (let i = 0; i <= 96; i += 1) {
+        const theta = (i / 96) * Math.PI * 2;
+        circlePath.push({
+          x: cx + Math.cos(theta) * r,
+          y: cy + Math.sin(theta) * r,
+        });
+      }
+      circlePath.meta = {
+        kind: 'circle',
+        cx,
+        cy,
+        r,
+        shape: {
+          type: 'oval',
+          cx,
+          cy,
+          rx: r,
+          ry: r,
+          cornerRadii: [],
+        },
+      };
+
+      const maskParent = new Layer('mask-parent-hidden-ui', 'expanded', 'Hidden Mask');
+      maskParent.sourcePaths = [circlePath];
+      maskParent.mask.enabled = true;
+
+      const child = new Layer('masked-child-hidden-ui', 'wavetable', 'Masked Child');
+      child.parentId = maskParent.id;
+      child.params.lineStructure = 'horizontal';
+      child.params.lines = 44;
+      child.params.gap = 3.2;
+      child.params.noises = [
+        {
+          ...(child.params.noises?.[0] || {}),
+          enabled: true,
+          type: 'simplex',
+          amplitude: 12,
+          zoom: 0.014,
+          freq: 1,
+          angle: 0,
+          shiftX: 0,
+          shiftY: 0,
+          seed: 17,
+        },
+      ];
+
+      engine.layers.push(maskParent, child);
+      engine.activeLayerId = child.id;
+      engine.generate(maskParent.id);
+      engine.generate(child.id);
+      engine.computeAllDisplayGeometry();
+      app.ui.renderLayers();
+      app.ui.buildControls();
+      app.ui.updateFormula();
+      app.render();
+      app.updateStats();
+    });
+
+    await page.locator('[data-layer-id="mask-parent-hidden-ui"] .layer-mask-trigger').click();
+    await page.getByLabel('Hide Mask Layer').check();
+
+    const state = await page.evaluate(() => {
+      const app = window.app;
+      const parent = app.engine.layers.find((layer) => layer.id === 'mask-parent-hidden-ui');
+      const child = app.engine.layers.find((layer) => layer.id === 'masked-child-hidden-ui');
+      const cx = 120;
+      const cy = 110;
+      const r = 74;
+      const displayPoints = (child.displayPaths || [])
+        .flatMap((path) => (Array.isArray(path) ? path : []))
+        .filter((pt) => pt && Number.isFinite(pt.x) && Number.isFinite(pt.y));
+      const outsideCount = displayPoints.filter((pt) => Math.hypot(pt.x - cx, pt.y - cy) > r + 0.6).length;
+      return {
+        hideLayer: Boolean(parent.mask?.hideLayer),
+        parentRenderableCount: app.engine.getRenderablePaths(parent).length,
+        childOutsideCount: outsideCount,
+        badgeText: document.querySelector('[data-layer-id="mask-parent-hidden-ui"] .layer-mini-badge')?.textContent?.trim() || '',
+      };
+    });
+
+    expect(state.hideLayer).toBe(true);
+    expect(state.parentRenderableCount).toBe(0);
+    expect(state.childOutsideCount).toBe(0);
+    expect(state.badgeText).toContain('MASK HIDDEN');
+    expect(pageErrors).toEqual([]);
+  });
 });

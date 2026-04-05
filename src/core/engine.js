@@ -6,6 +6,7 @@
     MACHINES,
     SETTINGS,
     ALGO_DEFAULTS,
+    MODIFIER_DEFAULTS = {},
     Algorithms,
     SeededRNG,
     SimpleNoise,
@@ -38,12 +39,25 @@
   const reversePath = OptimizationUtils.reversePath || ((path) => path);
   const offsetPath = OptimizationUtils.offsetPath || ((path) => path);
   const getLayerMaskCapabilities = Masking.getLayerMaskCapabilities || (() => ({ canSource: false, reason: '', sourceType: null }));
+  const getLayerSilhouette = Masking.getLayerSilhouette || (() => []);
   const buildMaskUnion = Masking.buildMaskUnion || (() => []);
   const applyMaskToPaths = Masking.applyMaskToPaths || ((paths) => clonePaths(paths || []));
   const createModifierState = Modifiers.createModifierState || ((type) => ({ type, enabled: true, mirrors: [] }));
   const createMirrorLine = Modifiers.createMirrorLine || ((index) => ({ id: `mirror-${index + 1}`, enabled: true }));
   const isModifierLayer = Modifiers.isModifierLayer || (() => false);
   const applyModifierToPaths = Modifiers.applyModifierToPaths || ((paths) => clonePaths(paths || []));
+  const isValidDrawableLayerType = (type) =>
+    Boolean(
+      type &&
+        type !== 'group' &&
+        !Object.prototype.hasOwnProperty.call(MODIFIER_DEFAULTS, type) &&
+        ((Algorithms && Algorithms[type]) || (ALGO_DEFAULTS && ALGO_DEFAULTS[type]))
+    );
+  const resolveDrawableLayerType = (type, fallback = 'flowfield') => {
+    if (isValidDrawableLayerType(type)) return type;
+    if (isValidDrawableLayerType(fallback)) return fallback;
+    return 'flowfield';
+  };
 
   const clone = (obj) => JSON.parse(JSON.stringify(obj));
 
@@ -57,6 +71,7 @@
     }
 
     addLayer(type = 'wavetable') {
+      type = resolveDrawableLayerType(type, 'wavetable');
       const id = Math.random().toString(36).substr(2, 9);
       SETTINGS.globalLayerCount++;
       const num = String(SETTINGS.globalLayerCount).padStart(2, '0');
@@ -131,14 +146,27 @@
         layer.groupCollapsed = Boolean(data.groupCollapsed);
         layer.modifier = data.modifier ? JSON.parse(JSON.stringify(data.modifier)) : null;
         layer.sourcePaths = data.sourcePaths ? JSON.parse(JSON.stringify(data.sourcePaths)) : null;
+        const importedMask = data.mask ? JSON.parse(JSON.stringify(data.mask)) : null;
+        const isLegacySourceMask = Array.isArray(importedMask?.sourceIds) && importedMask.sourceIds.length > 0;
         layer.mask = {
           enabled: false,
           sourceIds: [],
-          mode: 'silhouette',
+          mode: 'parent',
+          hideLayer: false,
           invert: false,
           materialized: false,
-          ...(data.mask ? JSON.parse(JSON.stringify(data.mask)) : {}),
+          ...(importedMask || {}),
         };
+        if (isLegacySourceMask) {
+          layer.mask.enabled = false;
+          layer.mask.sourceIds = [];
+          layer.mask.mode = 'parent';
+          layer.mask.invert = false;
+        } else if (layer.mask.mode !== 'parent') {
+          layer.mask.mode = 'parent';
+          layer.mask.sourceIds = [];
+          layer.mask.invert = false;
+        }
         layer.penId = data.penId ?? layer.penId;
         layer.color = data.color || layer.color;
         layer.strokeWidth = Number.isFinite(data.strokeWidth) ? data.strokeWidth : layer.strokeWidth;
@@ -146,6 +174,7 @@
         layer.visible = data.visible !== false;
         layer.paths = [];
         layer.displayPaths = [];
+        layer.displayMaskActive = false;
         layer.helperPaths = null;
         layer.displayHelperPaths = null;
         layer.maskPolygons = null;
@@ -200,10 +229,34 @@
     }
 
     removeLayer(id) {
-      const target = this.layers.find((l) => l.id === id);
+      const targetIndex = this.layers.findIndex((l) => l.id === id);
+      const target = targetIndex >= 0 ? this.layers[targetIndex] : null;
       if (!target) return;
       const drawableCount = this.layers.filter((l) => !l.isGroup).length;
       if (!target.isGroup && drawableCount <= 1) return;
+      const pickNextActiveId = (remainingLayers, removedIndex, preferredIds = []) => {
+        for (const preferredId of preferredIds) {
+          if (remainingLayers.some((layer) => layer.id === preferredId)) return preferredId;
+        }
+        if (!remainingLayers.length) return null;
+        const boundedIndex = Math.max(0, Math.min(removedIndex, remainingLayers.length - 1));
+        return remainingLayers[boundedIndex]?.id || remainingLayers[remainingLayers.length - 1]?.id || null;
+      };
+      if (target.isGroup && isModifierLayer(target)) {
+        const preservedChildren = this.layers.filter((layer) => layer.parentId === id);
+        preservedChildren.forEach((child) => {
+          child.parentId = null;
+        });
+        const remainingLayers = this.layers.filter((layer) => layer.id !== id);
+        this.layers = remainingLayers;
+        if (this.activeLayerId === id) {
+          this.activeLayerId = pickNextActiveId(remainingLayers, targetIndex, preservedChildren.map((child) => child.id));
+        } else if (!remainingLayers.some((layer) => layer.id === this.activeLayerId)) {
+          this.activeLayerId = pickNextActiveId(remainingLayers, targetIndex);
+        }
+        this.computeAllDisplayGeometry();
+        return;
+      }
       const removeIds = new Set([id]);
       if (target.isGroup) {
         const collect = (groupId) => {
@@ -224,11 +277,12 @@
         const parentId = target.parentId;
         const remaining = this.layers.filter((l) => l.parentId === parentId && l.id !== id).length;
         const parent = this.layers.find((l) => l.id === parentId);
-        if (remaining === 0 && parent && !isModifierLayer(parent)) removeIds.add(parentId);
+        if (remaining === 0 && parent && parent.isGroup && !isModifierLayer(parent)) removeIds.add(parentId);
       }
-      this.layers = this.layers.filter((l) => !removeIds.has(l.id));
+      const remainingLayers = this.layers.filter((l) => !removeIds.has(l.id));
+      this.layers = remainingLayers;
       if (removeIds.has(this.activeLayerId)) {
-        this.activeLayerId = this.layers.length ? this.layers[this.layers.length - 1].id : null;
+        this.activeLayerId = pickNextActiveId(remainingLayers, targetIndex);
       }
       this.computeAllDisplayGeometry();
     }
@@ -292,6 +346,16 @@
         .reverse();
     }
 
+    getAncestorMaskLayers(layer) {
+      return this.getLayerAncestors(layer)
+        .filter((entry) => entry?.mask?.enabled && entry.maskCapabilities?.canSource)
+        .reverse();
+    }
+
+    getLayerDepth(layer) {
+      return this.getLayerAncestors(layer).length;
+    }
+
     computeLayerEffectiveGeometry(layerId) {
       const layer = this.layers.find((entry) => entry.id === layerId);
       if (!layer || layer.isGroup) return;
@@ -309,20 +373,35 @@
       if (!layer || layer.isGroup) return;
       const sourcePaths = clonePaths(layer.effectivePaths || layer.paths || []);
       layer.displayHelperPaths = clonePaths(layer.helperPaths || []);
-      if (!layer.visible || !layer.mask?.enabled || !Array.isArray(layer.mask.sourceIds) || !layer.mask.sourceIds.length) {
+      layer.displayMaskActive = false;
+      if (!layer.visible) {
         layer.displayPaths = sourcePaths;
         layer.displayStats = countPathPoints(sourcePaths);
         return;
       }
-      const maskPolygons = buildMaskUnion(layer.mask.sourceIds, this, this.getBounds());
-      layer.displayPaths = applyMaskToPaths(sourcePaths, maskPolygons, { invert: Boolean(layer.mask.invert) });
-      layer.displayStats = countPathPoints(layer.displayPaths);
+      const ancestorMasks = this.getAncestorMaskLayers(layer);
+      if (!ancestorMasks.length) {
+        layer.displayPaths = sourcePaths;
+        layer.displayStats = countPathPoints(sourcePaths);
+        return;
+      }
+      const bounds = this.getBounds();
+      let currentPaths = clonePaths(sourcePaths);
+      ancestorMasks.forEach((maskLayer) => {
+        const maskPolygons = getLayerSilhouette(maskLayer, this, bounds);
+        if (!maskPolygons.length) return;
+        currentPaths = applyMaskToPaths(currentPaths, maskPolygons, { invert: true });
+      });
+      layer.displayMaskActive = true;
+      layer.displayPaths = currentPaths;
+      layer.displayStats = countPathPoints(currentPaths);
     }
 
     getRenderablePaths(layer, options = {}) {
       if (!layer) return [];
+      if (layer.mask?.enabled && layer.mask?.hideLayer) return [];
       const { useOptimized = false } = options;
-      if (layer.mask?.enabled && Array.isArray(layer.displayPaths)) return layer.displayPaths;
+      if (layer.displayMaskActive && Array.isArray(layer.displayPaths)) return layer.displayPaths;
       if (useOptimized && Array.isArray(layer.optimizedPaths)) return layer.optimizedPaths;
       if (Array.isArray(layer.effectivePaths) && layer.effectivePaths.length) return layer.effectivePaths;
       return layer.paths || [];
@@ -333,11 +412,15 @@
         if (!layer || layer.isGroup) return;
         this.computeLayerEffectiveGeometry(layer.id);
       });
-      this.layers.forEach((layer) => {
+      this.refreshMaskCapabilities();
+      this.layers
+        .filter((layer) => layer && !layer.isGroup)
+        .slice()
+        .sort((a, b) => this.getLayerDepth(a) - this.getLayerDepth(b))
+        .forEach((layer) => {
         if (!layer || layer.isGroup) return;
         this.computeLayerDisplayGeometry(layer.id);
       });
-      this.refreshMaskCapabilities();
       this.optimizeLayers(this.layers);
     }
 
@@ -628,7 +711,11 @@
 
         const working = new Map();
         layersToProcess.forEach((layer) => {
-          const sourcePaths = this.getAncestorModifiers(layer).length
+          const sourcePaths = layer.displayMaskActive
+            ? Array.isArray(layer.displayPaths)
+              ? layer.displayPaths
+              : []
+            : this.getAncestorModifiers(layer).length
             ? Array.isArray(layer.effectivePaths) && layer.effectivePaths.length
               ? layer.effectivePaths
               : layer.paths || []
@@ -951,14 +1038,7 @@
           if (!dedupe.has(penId)) dedupe.set(penId, new Set());
           seen = dedupe.get(penId);
         }
-        const sourcePaths =
-          l.mask?.enabled && Array.isArray(l.displayPaths)
-            ? l.displayPaths
-            : useOptimized && l.optimizedPaths
-            ? l.optimizedPaths
-            : l.effectivePaths?.length
-            ? l.effectivePaths
-            : l.paths;
+        const sourcePaths = this.getRenderablePaths(l, { useOptimized });
         const visiblePaths = [];
         (sourcePaths || []).forEach((p) => {
           if (seen) {

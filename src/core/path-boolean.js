@@ -35,9 +35,11 @@
       const a = polygon[i];
       const b = polygon[j];
       if (!a || !b) continue;
+      const dy = b.y - a.y;
+      const safeDy = Math.abs(dy) < EPS ? (dy < 0 ? -EPS : EPS) : dy;
       const intersects =
         (a.y > point.y) !== (b.y > point.y)
-        && point.x < ((b.x - a.x) * (point.y - a.y)) / Math.max(EPS, b.y - a.y) + a.x;
+        && point.x < ((b.x - a.x) * (point.y - a.y)) / safeDy + a.x;
       if (intersects) inside = !inside;
     }
     return inside;

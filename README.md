@@ -4,8 +4,8 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 
 ## Highlights
 - Plotter-first output in millimeters with machine profiles (A3, A4, AxiDraw V3).
-- Layered generation with visibility toggles, ordering, per-layer stroke/line-cap settings, and live non-destructive clipping masks managed directly from the Layers panel against silhouette-capable source layers.
-- Layer Modifiers via `Insert > Mirror Modifier`, with group-like container rows, drag-to-assign child layers, and full-canvas mirror-axis stacks that export reflected geometry while keeping guide lines editor-only.
+- Layered generation with visibility toggles, ordering, per-layer stroke/line-cap settings, and Illustrator-style parent masks managed directly from the Layers panel so a visible parent silhouette can clip all indented descendants, with an optional `Hide Mask Layer` control for invisible mask artwork.
+- Layer Modifiers via `Insert > Mirror Modifier`, with group-like container rows, drag-to-assign or drag-out child layers, `+ Add` child-layer creation from a selected modifier, and full-canvas mirror-axis stacks that export reflected geometry while keeping guide lines editor-only.
 - Seeded, repeatable results with live transform controls (position, scale, rotation).
 - Switching algorithms restores transform defaults for the selected algorithm (position/scale/rotation do not carry over).
 - Collapsible left-panel sections with persisted state: `Algorithm` (including a nested `Transform & Seed` sub-panel, collapsed by default) and `Algorithm Configuration`.
@@ -16,7 +16,8 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Layer grouping/ungrouping via Cmd/Ctrl+G and Cmd/Ctrl+Shift+G.
 - Desktop menu bar is anchored beside `VECTURA.STUDIO` with Illustrator-style shortcuts for Open/Save/Import/Export/Document Setup/Reset View/Help plus an `Insert` menu for modifier containers.
 - Top menu dropdowns render as overlays above the canvas/panes so File/View/Insert/Help menus are never clipped by the header.
-- Illustrator-style tool bar with selection, direct selection, hand, pen (bezier), and scissor tools (V/A/Space/P/C). Press V/P/C again to cycle subtools.
+- Illustrator-style tool bar with selection, direct selection, hand, pen (bezier), shape, and scissor tools (V/A/Space/P/M/L/Y/C). Press V/P/C again to cycle subtools.
+- Dedicated Rectangle (`M`), Oval (`L`), and Polygon (`Y`) shape tools that create editable expanded layers, support center-draw / square-circle constraints, polygon side-count changes while dragging, and Illustrator-style corner rounding (Selection rounds all corners, Direct rounds one corner).
 - Pen long-press subtool menu with Illustrator-style modes and shortcuts (P, +, -, Shift+C).
 - Direct path editing for individual line endpoints and bezier handles.
 - Expand any layer into per-line sublayers for fine-grained selection and pen assignment.
@@ -53,7 +54,8 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Pen palette with assignable colors/widths, reorderable list, drag-to-assign per layer or selection, double-click-to-apply on selected layers, plus palette selection, collapsible panel controls, and add/remove actions.
 - Plotter optimization toggle with adjustable tolerance (mm) to remove fully overlapping paths per pen before export.
 - `EXPORT & OPTIMIZATION` section in Document Setup combines export precision/stroke settings with the optimization pipeline (linesimplify, linesort, filter, multipass), scope selection, preview overlays, and export toggle.
-- `Export Settings` now appears as the first optimization card (above `Line Simplify`) and includes Precision, Stroke, Plotter Optimization, and Optimization Tolerance controls.
+- `Export Settings` now appears as the first optimization card (above `Line Simplify`) and includes Precision, Stroke, Remove Hidden Geometry, Plotter Optimization, and Optimization Tolerance controls.
+- `Remove Hidden Geometry` is enabled by default so exported SVGs can physically trim masked or frame-hidden geometry to match the current visible frame exactly, while turning it off preserves hidden source geometry through SVG clip paths.
 - Optimization defaults target `All Layers`, and `Export Optimized` is enabled by default.
 - `Line Simplify` is applied by default for new layers, with Mode set to `Curve`.
 - `Line Sort` is not applied by default for new layers.
@@ -161,7 +163,7 @@ CI lives in `.github/workflows/test.yml`:
 - Added a masking-specific SVG visual baseline for a `Wavetable` Horizon masking `Rings`, and gave the new masking checkboxes explicit `id`/`name` wiring.
 
 ### 0.6.72
-- Added live non-destructive layer masking for silhouette-capable layers, including layer-row `Mask` controls, mirrored left-panel masking controls, and `Convert To Geometry` materialization into expanded lines.
+- Added live non-destructive layer masking for silhouette-capable layers, including layer-row `Mask` controls, mirrored left-panel masking controls, optional hidden mask-parent artwork, and `Convert To Geometry` materialization into expanded lines.
 - Added the masking/display-geometry engine stage with silhouette providers for closed shapes, groups, and `Wavetable` Horizon terrain envelopes.
 - Reworked Horizon vertical sampling so the fan follows the same visible terrain contours as the horizontal rows, and added edge anchor rays so the fan can keep full side coverage under strong vanishing pull.
 
@@ -261,15 +263,16 @@ CI lives in `.github/workflows/test.yml`:
 1. Pick an algorithm in the left panel and adjust its parameters.
 2. Expand `Transform & Seed` inside the Algorithm panel, then use transform controls (seed, position, scale, rotation) to nudge the layer.
 3. Use Post-Processing Lab for smoothing/curves/simplify plus optional optimization passes and preview.
-4. Manage layers on the right: add, reorder (drag the grip), duplicate, hide, rename (double-click), expand into sublayers, assign pens (drag a pen onto a layer to apply to the selection), and use `Mask` on a target layer row to create or edit a clipping mask against selected silhouette-capable source layers.
-5. Use `Insert > Mirror Modifier` to add a modifier container, then drag layers onto it in the Layers panel. The modifier row owns a Mirror Stack with per-axis show/hide, lock, delete, reorder, angle, and XY shift controls plus stack-level add/show-hide/lock/clear actions.
-6. Mirror guides are dashed editor overlays with end triangles that flip which half-plane gets replaced and separate end rotate handles for axis rotation; the reflected geometry itself still exports.
-7. Use `File > Document Setup` for machine size, margin, on-canvas crop, hard export crop (`Crop Exports to Margin`, which trims path geometry to the margin rectangle and exports with flat caps), margin guides, stroke, SVG precision, optimization scope/preview/export settings, and optional cookie preference saving.
+4. Manage layers on the right: add, reorder (drag the grip), duplicate, hide, rename (double-click), expand into sublayers, assign pens (drag a pen onto a layer to apply to the selection), and use `Mask` on a silhouette-capable parent row to clip all indented descendants with that parent’s visible silhouette. Inside the mask editor, `Hide Mask Layer` keeps the parent as the clipping silhouette while removing its own artwork from the view/export.
+5. Use `Insert > Mirror Modifier` to add a modifier container, then drag layers onto it in the Layers panel. Drag a child back out to the root to unparent it, and when a modifier is selected `+ Add` creates a normal drawable child under that modifier using the last active algorithm.
+6. The modifier row owns a Mirror Stack with per-axis show/hide, lock, delete, reorder, angle, and XY shift controls plus stack-level add/show-hide/lock/clear actions; deleting the modifier dissolves only the wrapper and preserves its children.
+7. Mirror guides are dashed editor overlays with a centered reflection triangle that flips which half-plane gets replaced and separate rotate handles at the visible line ends; the reflected geometry itself still exports.
+7. Use `File > Document Setup` for machine size, margin, on-canvas crop, hard export crop (`Crop Exports to Margin`, which trims path geometry to the margin rectangle and exports with flat caps), `Remove Hidden Geometry` (destructive export trimming for masked or frame-hidden geometry), margin guides, stroke, SVG precision, optimization scope/preview/export settings, and optional cookie preference saving.
 8. Save/Open full projects via .vectura files, or import SVGs as new layers.
 9. Switch to the Petalis algorithm to use the embedded inline designer panel, then use ⧉ to pop it out into a floating window or ↩ to dock it back in. In Petalis, petal shape is driven by visible inner/outer designer curves, always-on inner/outer count + split controls, a `PETAL VISUALIZER` (`Overlay` / `Side by Side`), a `PROFILE EDITOR` with per-side profile import/export controls plus a shared `Export Pair` button below both profile cards, and `Shading Stack` + `Modifier Stack` cards where each entry has its own `Petal Shape` target (`Inner`/`Outer`/`Both`) plus symmetry controls.
 10. Export from `File > Export SVG`.
 
-Pan: Shift + Drag. Zoom: Mouse Wheel. Touch: one-finger tool input, two-finger pan/pinch zoom. On phones, use the top `File/View/Help` menu bar, then open Generator/Layers with pane toggles (including edge tabs) and expand/collapse the Model panel with the floating Model button. Move layer: Drag. Resize layer: Drag corner handles. Rotate: Drag the upper-right handle (Shift snaps). Duplicate: Alt-drag. Expand: Cmd/Ctrl + E. Pen tool: click to add points, click-drag for bezier curves (Shift constrains, Alt breaks handles), double-click near the first point to close, Enter commits, Esc cancels. Pen subtools: `+` add anchor, `-` delete anchor, `Shift+C` convert anchor. Direct tool (`A`) edits endpoints and handles on individual line paths. Scissor tool: drag a line/rect/circle to split intersecting paths. Petal Designer adds middle-drag panning, wheel zoom-to-cursor (both visible petals zoom together), and Illustrator-style `Shift`/`Alt`/`Cmd/Ctrl` editing modifiers.
+Pan: Shift + Drag. Zoom: Mouse Wheel. Touch: one-finger tool input, two-finger pan/pinch zoom. On phones, use the top `File/View/Help` menu bar, then open Generator/Layers with pane toggles (including edge tabs) and expand/collapse the Model panel with the floating Model button. Move layer: Drag. Resize layer: Drag corner handles. Rotate: Drag the upper-right handle (Shift snaps). Duplicate: Alt-drag. Expand: Cmd/Ctrl + E. Pen tool: click to add points, click-drag for bezier curves (Shift constrains, Alt breaks handles), double-click near the first point to close, Enter commits, Esc cancels. Shape tools: `M` rectangle, `L` oval, `Y` polygon; Shift constrains to squares/circles or snaps polygon angle, Alt/Option draws from center, Arrow Up/Down changes polygon sides while dragging, Selection rounds all shape corners, and Direct rounds one corner at a time. Pen subtools: `+` add anchor, `-` delete anchor, `Shift+C` convert anchor. Direct tool (`A`) edits endpoints and handles on individual line paths. Scissor tool: drag a line/rect/circle to split intersecting paths. Petal Designer adds middle-drag panning, wheel zoom-to-cursor (both visible petals zoom together), and Illustrator-style `Shift`/`Alt`/`Cmd/Ctrl` editing modifiers.
 
 ## Algorithm Library
 Each layer is powered by an algorithm with its own parameters and formula preview:

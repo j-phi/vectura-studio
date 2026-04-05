@@ -28,6 +28,18 @@ describe('Engine integration workflows', () => {
     expect(engine.layers.some((layer) => layer.id === duplicate.id)).toBe(true);
   });
 
+  test('addLayer normalizes unknown modifier types to a real drawable algorithm', () => {
+    const { VectorEngine } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+
+    const addedId = engine.addLayer('mirror');
+    const added = engine.layers.find((layer) => layer.id === addedId);
+
+    expect(added).toBeTruthy();
+    expect(added.type).toBe('wavetable');
+    expect(added.name).toMatch(/^Wavetable /);
+  });
+
   test('optimization pipeline preserves circle metadata and respects bypassAll', () => {
     const { VectorEngine } = runtime.window.Vectura;
     const engine = new VectorEngine();

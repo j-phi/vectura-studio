@@ -25,8 +25,13 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
+- Added Illustrator-style shape authoring with Rectangle/Oval/Polygon tools, editable shape metadata on `expanded` layers, and Selection/Direct corner-rounding interactions.
+- Added `Remove Hidden Geometry` to export settings so SVG export can switch between destructive visibility-trimmed output and non-destructive clip-path preservation for masked/frame-hidden geometry.
+- Replaced source-selected clipping with Illustrator-style parent masks so visible parent silhouettes clip all indented descendants recursively, legacy `sourceIds` masks are cleared on load, and export mirrors the masked subtree exactly.
+- Added `Hide Mask Layer` on parent masks so the parent can remain the active clipping silhouette while its own artwork is suppressed from canvas, stats, and SVG export.
 - Added Layer Modifiers v1 with `Insert > Mirror Modifier`, group-like modifier container rows, modifier-aware effective geometry, and full-canvas mirror-axis stacks that apply sequentially to child layers before display/export.
 - Added mirror-guide overlays and interactions: dashed non-exporting axes, reflection-direction triangles, separate rotate handles, per-axis show/hide-lock-delete controls, and stack-level add/show-hide/lock/clear actions.
+- Fixed Mirror Modifier layer-tree behavior so children can be dragged back out to the root, deleting a modifier dissolves only the wrapper and preserves its children, and `+ Add` under a selected modifier creates a drawable child instead of a pseudo-`mirror` layer.
 - Added an agentic harness source-of-truth document and synchronized PR-template expectations.
 - Added baseline automated test coverage for unit, integration, e2e smoke, visual, and perf workflows.
 - Established existing Mermaid-based architecture documentation in the README.
@@ -73,5 +78,8 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Layer Modifiers use explicit modifier-container layers (`containerRole = 'modifier'`) instead of overloading ordinary generator layers, so drag/drop nesting, export, and future modifier types share one tree model.
 - Mirror Modifier axes are infinite reflection lines clipped only for guide drawing; multiple mirrors apply in stack order from top to bottom, and later mirrors operate on already-mirrored geometry.
 - Mirror guide visibility/locking is editor-only state; dashed guides, triangles, and rotate handles never export, but mirrored child geometry does.
+- Masking now follows an Illustrator-style parent-owned model: the visible parent layer is the mask, all descendants are clipped recursively, and the legacy source-layer mask workflow is retired rather than migrated.
+- Mask parents can optionally hide their own artwork while still contributing silhouette clipping to descendants and export clip paths.
 - In `Rings`, `Top Down` means a universal world-space XY field beneath the artwork; `Concentric` means seam-corrected path-space sampling around each full ring loop; `Orbit Field` preserves the legacy ring-local orbital sampler.
-- Live masking is non-destructive by default. Mask relationships are stored on the target layer, edited primarily from the layer panel, and may be materialized into expanded geometry as a separate action.
+- Live masking is non-destructive by default. Parent masks affect only descendants at display/export time; checked `Remove Hidden Geometry` trims hidden export geometry destructively while unchecked export preserves hidden source paths with SVG clip paths.
+- `Remove Hidden Geometry` is export-only and defaults to on: checked exports physically trim hidden geometry to the current visible frame, unchecked exports preserve hidden source paths and recreate visibility with SVG clip paths.

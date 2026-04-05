@@ -45,12 +45,92 @@ test.describe('Visual snapshots', () => {
       rings.params.seed = 12739;
       rings.params.centerDiameter = 0;
       rings.mask.enabled = true;
-      rings.mask.sourceIds = [wavetable.id];
-      rings.mask.mode = 'silhouette';
-      rings.mask.invert = false;
+      wavetable.parentId = rings.id;
 
       engine.generate(wavetable.id);
       engine.generate(rings.id);
+      engine.computeAllDisplayGeometry();
+      app.renderer.setSelection([], null);
+      engine.activeLayerId = null;
+      app.ui.renderLayers();
+      app.ui.buildControls();
+      app.ui.updateFormula();
+      app.render();
+      app.updateStats();
+    });
+  };
+
+  const buildOvalMaskParentScene = async (page) => {
+    await page.evaluate(() => {
+      const app = window.app;
+      const { Layer, SETTINGS } = window.Vectura;
+      SETTINGS.aboutVisible = false;
+      const engine = app.engine;
+      engine.layers = [];
+      SETTINGS.globalLayerCount = 0;
+
+      const circlePath = [];
+      const cx = 122;
+      const cy = 112;
+      const r = 76;
+      for (let i = 0; i <= 96; i += 1) {
+        const theta = (i / 96) * Math.PI * 2;
+        circlePath.push({
+          x: cx + Math.cos(theta) * r,
+          y: cy + Math.sin(theta) * r,
+        });
+      }
+      circlePath.meta = {
+        kind: 'circle',
+        cx,
+        cy,
+        r,
+        shape: {
+          type: 'oval',
+          cx,
+          cy,
+          rx: r,
+          ry: r,
+          cornerRadii: [],
+        },
+      };
+
+      const maskParent = new Layer('oval-mask-parent', 'expanded', 'Oval 03');
+      maskParent.params.seed = 0;
+      maskParent.params.posX = 0;
+      maskParent.params.posY = 0;
+      maskParent.params.scaleX = 1;
+      maskParent.params.scaleY = 1;
+      maskParent.params.rotation = 0;
+      maskParent.params.curves = false;
+      maskParent.params.smoothing = 0;
+      maskParent.params.simplify = 0;
+      maskParent.sourcePaths = [circlePath];
+      maskParent.mask.enabled = true;
+
+      const wavetable = new Layer('masked-wavetable', 'wavetable', 'Wavetable 01');
+      wavetable.parentId = maskParent.id;
+      wavetable.params.lineStructure = 'horizontal';
+      wavetable.params.lines = 48;
+      wavetable.params.gap = 3.1;
+      wavetable.params.noises = [
+        {
+          ...(wavetable.params.noises?.[0] || {}),
+          enabled: true,
+          type: 'simplex',
+          amplitude: 13,
+          zoom: 0.013,
+          freq: 1,
+          angle: 0,
+          shiftX: 0,
+          shiftY: 0,
+          seed: 23,
+        },
+      ];
+
+      engine.layers.push(maskParent, wavetable);
+      engine.generate(maskParent.id);
+      engine.generate(wavetable.id);
       engine.computeAllDisplayGeometry();
       app.renderer.setSelection([], null);
       engine.activeLayerId = null;
@@ -92,6 +172,14 @@ test.describe('Visual snapshots', () => {
       app.updateStats();
     }, doc);
     await expect(page.locator('#main-canvas')).toHaveScreenshot('broken-masking-canvas.png', {
+      maxDiffPixelRatio: 0.03,
+    });
+  });
+
+  test('oval mask parent clips wavetable descendants inside the circle', async ({ page }) => {
+    await page.goto('/');
+    await buildOvalMaskParentScene(page);
+    await expect(page.locator('#main-canvas')).toHaveScreenshot('oval-mask-parent-wavetable-canvas.png', {
       maxDiffPixelRatio: 0.03,
     });
   });

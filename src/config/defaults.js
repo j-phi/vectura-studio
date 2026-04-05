@@ -948,6 +948,7 @@
     undoSteps: 20,
     truncate: true,
     cropExports: true,
+    removeHiddenGeometry: true,
     outsideOpacity: 0.5,
     marginLineVisible: false,
     marginLineWeight: 0.2,

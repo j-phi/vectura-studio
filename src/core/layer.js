@@ -27,6 +27,7 @@
       this.paths = [];
       this.displayPaths = [];
       this.displayStats = null;
+      this.displayMaskActive = false;
       this.maskPolygons = null;
       this.sourcePaths = null;
       this.helperPaths = null;
@@ -41,7 +42,8 @@
       this.mask = {
         enabled: false,
         sourceIds: [],
-        mode: 'silhouette',
+        mode: 'parent',
+        hideLayer: false,
         invert: false,
         materialized: false,
       };
