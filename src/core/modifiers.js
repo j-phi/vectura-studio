@@ -6,9 +6,11 @@
     MODIFIER_DEFAULTS = {},
     MODIFIER_GUIDE_COLORS = [],
   } = window.Vectura || {};
+  const OptimizationUtils = window.Vectura?.OptimizationUtils || {};
 
   const clone = (obj) => JSON.parse(JSON.stringify(obj));
   const EPSILON = 1e-6;
+  const closePathIfNeeded = OptimizationUtils.closePathIfNeeded || ((path) => path);
 
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
   const pointsEqual = (a, b, epsilon = EPSILON) =>
@@ -42,8 +44,60 @@
 
   const flattenPath = (path) => {
     if (!Array.isArray(path)) return [];
-    if (path.meta?.kind === 'circle') return flattenCirclePath(path.meta);
-    return path.map((pt) => ({ x: pt.x, y: pt.y }));
+    const points = path.meta?.kind === 'circle'
+      ? flattenCirclePath(path.meta)
+      : path.map((pt) => ({ x: pt.x, y: pt.y }));
+    if (path.meta) points.meta = clone(path.meta);
+    return points;
+  };
+
+  const clonePath = (path) => {
+    if (!Array.isArray(path)) return [];
+    const next = path.map((pt) => ({ x: pt.x, y: pt.y }));
+    if (path.meta) next.meta = clone(path.meta);
+    return next;
+  };
+
+  const isClosedSourcePath = (path) => {
+    if (!Array.isArray(path)) return false;
+    if (path.meta?.kind === 'circle' || path.meta?.kind === 'shape' || path.meta?.kind === 'polygon') return true;
+    if (path.meta?.closed) return true;
+    if (path.length < 3) return false;
+    return pointsEqual(path[0], path[path.length - 1]);
+  };
+
+  const toOpenPolygon = (path) => {
+    const points = flattenPath(path);
+    if (points.length >= 2 && pointsEqual(points[0], points[points.length - 1])) {
+      return points.slice(0, -1);
+    }
+    return points.slice();
+  };
+
+  const toClosedPolygonPath = (points, sourcePath) => {
+    const closed = closePathIfNeeded(points.map((pt) => ({ x: pt.x, y: pt.y })), true);
+    closed.meta = {
+      ...(sourcePath?.meta ? clone(sourcePath.meta) : {}),
+      kind: 'polygon',
+      closed: true,
+    };
+    if (closed.meta.anchors) delete closed.meta.anchors;
+    if (closed.meta.shape) delete closed.meta.shape;
+    if (closed.meta.r != null) delete closed.meta.r;
+    if (closed.meta.rx != null) delete closed.meta.rx;
+    if (closed.meta.ry != null) delete closed.meta.ry;
+    if (closed.meta.cx != null) delete closed.meta.cx;
+    if (closed.meta.cy != null) delete closed.meta.cy;
+    if (closed.meta.x != null) delete closed.meta.x;
+    if (closed.meta.y != null) delete closed.meta.y;
+    if (closed.meta.rotation != null) delete closed.meta.rotation;
+    return closed;
+  };
+
+  const reflectPath = (path, axis) => {
+    const next = path.map((pt) => reflectPointAcrossAxis(pt, axis));
+    if (path.meta) next.meta = clone(path.meta);
+    return next;
   };
 
   const createMirrorLine = (index = 0, overrides = {}) => ({
@@ -169,6 +223,45 @@
     return out;
   };
 
+  const clipClosedPolygonByAxis = (path, axis, keepSign) => {
+    const polygon = toOpenPolygon(path);
+    if (polygon.length < 3) return [];
+    const isInside = (pt) => signedDistanceToAxis(pt, axis) * keepSign >= -EPSILON;
+    const intersect = (a, b) => {
+      const da = signedDistanceToAxis(a, axis);
+      const db = signedDistanceToAxis(b, axis);
+      const denom = da - db;
+      if (Math.abs(denom) <= EPSILON) {
+        return { x: b.x, y: b.y };
+      }
+      const t = da / denom;
+      return {
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t,
+      };
+    };
+
+    const output = [];
+    for (let i = 0; i < polygon.length; i += 1) {
+      const current = polygon[i];
+      const next = polygon[(i + 1) % polygon.length];
+      const currentInside = isInside(current);
+      const nextInside = isInside(next);
+      if (currentInside && nextInside) {
+        if (!output.length || !pointsEqual(output[output.length - 1], next)) output.push({ x: next.x, y: next.y });
+      } else if (currentInside && !nextInside) {
+        const hit = intersect(current, next);
+        if (!output.length || !pointsEqual(output[output.length - 1], hit)) output.push(hit);
+      } else if (!currentInside && nextInside) {
+        const hit = intersect(current, next);
+        if (!output.length || !pointsEqual(output[output.length - 1], hit)) output.push(hit);
+        if (!output.length || !pointsEqual(output[output.length - 1], next)) output.push({ x: next.x, y: next.y });
+      }
+    }
+    if (output.length < 3) return [];
+    return toClosedPolygonPath(output, path);
+  };
+
   const classifyPieceSide = (piece, axis) => {
     if (!Array.isArray(piece) || !piece.length) return 0;
     const midIndex = Math.floor(piece.length / 2);
@@ -178,17 +271,26 @@
     return distance > 0 ? 1 : -1;
   };
 
-  const reflectPiece = (piece, axis) => piece.map((pt) => reflectPointAcrossAxis(pt, axis));
-
   const applyMirrorToPaths = (paths, mirror, bounds) => {
     if (!mirror?.enabled) {
-      return (paths || []).map((path) => flattenPath(path)).filter((path) => path.length >= 2);
+      return (paths || []).map((path) => clonePath(path)).filter((path) => path.length >= 2);
     }
     const axis = getMirrorAxis(mirror, bounds);
     const sourceSign = axis.replacedSign * -1;
     const output = [];
 
     (paths || []).forEach((path) => {
+      if (isClosedSourcePath(path)) {
+        const sourcePolygon = clipClosedPolygonByAxis(path, axis, sourceSign);
+        if (!sourcePolygon.length) return;
+        output.push(sourcePolygon);
+        const distances = sourcePolygon.map((pt) => Math.abs(signedDistanceToAxis(pt, axis)));
+        const liesOnAxis = distances.every((distance) => distance <= EPSILON);
+        if (!liesOnAxis) {
+          output.push(toClosedPolygonPath(reflectPath(sourcePolygon, axis), sourcePolygon));
+        }
+        return;
+      }
       splitPathByAxis(path, axis).forEach((piece) => {
         const side = classifyPieceSide(piece, axis);
         if (side === 0) {
@@ -197,15 +299,15 @@
         }
         if (side !== sourceSign) return;
         output.push(piece);
-        output.push(reflectPiece(piece, axis));
+        output.push(reflectPath(piece, axis));
       });
     });
     return output.filter((path) => Array.isArray(path) && path.length >= 2);
   };
 
   const applyModifierToPaths = (paths, modifier, bounds) => {
-    if (!modifier?.enabled) return (paths || []).map((path) => flattenPath(path)).filter((path) => path.length >= 2);
-    if (modifier.type !== 'mirror') return (paths || []).map((path) => flattenPath(path)).filter((path) => path.length >= 2);
+    if (!modifier?.enabled) return (paths || []).map((path) => clonePath(path)).filter((path) => path.length >= 2);
+    if (modifier.type !== 'mirror') return (paths || []).map((path) => clonePath(path)).filter((path) => path.length >= 2);
     return (modifier.mirrors || []).reduce((current, mirror) => applyMirrorToPaths(current, mirror, bounds), paths || []);
   };
 

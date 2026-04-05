@@ -16262,13 +16262,16 @@
       const id = Math.random().toString(36).substr(2, 9);
       const layer = new Layer(id, 'expanded', `Pen Path ${num}`);
       const active = engine.getActiveLayer ? engine.getActiveLayer() : null;
+      const shapeType = payload?.shape?.type || null;
+      const inheritsCurves = !shapeType;
+      const shapeUsesCurves = shapeType === 'oval';
       layer.params.seed = 0;
       layer.params.posX = 0;
       layer.params.posY = 0;
       layer.params.scaleX = 1;
       layer.params.scaleY = 1;
       layer.params.rotation = 0;
-      layer.params.curves = Boolean(active?.params?.curves);
+      layer.params.curves = inheritsCurves ? Boolean(active?.params?.curves) : shapeUsesCurves;
       layer.params.smoothing = 0;
       layer.params.simplify = 0;
       layer.parentId = active?.parentId ?? null;

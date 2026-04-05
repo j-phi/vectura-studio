@@ -205,6 +205,51 @@
       y: descriptor.vertex.y + descriptor.inward.y * dist,
     };
   };
+  const buildBoundsFromVertices = (vertices, origin, rotation) => {
+    if (!Array.isArray(vertices) || !vertices.length || !origin) return null;
+    const cosR = Math.cos(rotation || 0);
+    const sinR = Math.sin(rotation || 0);
+    const unrotate = (pt) => {
+      const dx = pt.x - origin.x;
+      const dy = pt.y - origin.y;
+      return {
+        x: dx * cosR + dy * sinR,
+        y: -dx * sinR + dy * cosR,
+      };
+    };
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    vertices.forEach((pt) => {
+      const local = unrotate(pt);
+      minX = Math.min(minX, local.x);
+      minY = Math.min(minY, local.y);
+      maxX = Math.max(maxX, local.x);
+      maxY = Math.max(maxY, local.y);
+    });
+    if (!Number.isFinite(minX)) return null;
+    const toWorld = (local) => ({
+      x: origin.x + local.x * cosR - local.y * sinR,
+      y: origin.y + local.x * sinR + local.y * cosR,
+    });
+    const center = toWorld({ x: (minX + maxX) * 0.5, y: (minY + maxY) * 0.5 });
+    return {
+      minX,
+      minY,
+      maxX,
+      maxY,
+      rotation: rotation || 0,
+      origin,
+      center,
+      corners: {
+        nw: toWorld({ x: minX, y: minY }),
+        ne: toWorld({ x: maxX, y: minY }),
+        se: toWorld({ x: maxX, y: maxY }),
+        sw: toWorld({ x: minX, y: maxY }),
+      },
+    };
+  };
 
   class Renderer {
     constructor(id, engine) {
@@ -988,7 +1033,9 @@
       const descriptors = getCornerDescriptors(meta.shape);
       return descriptors.map((descriptor) => ({
         ...descriptor,
-        point: getShapeCornerHandlePosition(descriptor, this.scale),
+        vertex: this.transformShapeSourcePoint(descriptor.vertex, layer),
+        inward: this.transformShapeDirection(descriptor, layer),
+        point: this.transformShapeSourcePoint(getShapeCornerHandlePosition(descriptor, this.scale), layer),
       }));
     }
 
@@ -1029,8 +1076,9 @@
       const descriptors = getCornerDescriptors(this.shapeCornerDrag.shape);
       const descriptor = descriptors[this.shapeCornerDrag.cornerIndex];
       if (!descriptor) return false;
+      const localWorld = this.inverseShapeSourcePoint(world, layer);
       const projected = Math.max(0, dot(
-        { x: world.x - descriptor.vertex.x, y: world.y - descriptor.vertex.y },
+        { x: localWorld.x - descriptor.vertex.x, y: localWorld.y - descriptor.vertex.y },
         descriptor.inward
       ));
       const nextRadius = descriptor.sinHalf > 1e-4 ? projected * descriptor.sinHalf : 0;
@@ -3201,6 +3249,104 @@
       return { ...meta, cx: center.x, cy: center.y, rx, ry, rotation: (meta.rotation ?? 0) + rot };
     }
 
+    getLayerBaseOrigin(layer) {
+      const prof = this.engine.currentProfile;
+      return {
+        x: layer.origin?.x ?? prof.width / 2,
+        y: layer.origin?.y ?? prof.height / 2,
+      };
+    }
+
+    getLayerTransformedOrigin(layer, temp = null) {
+      const baseOrigin = this.getLayerBaseOrigin(layer);
+      const translated = {
+        x: baseOrigin.x + (layer?.params?.posX ?? 0),
+        y: baseOrigin.y + (layer?.params?.posY ?? 0),
+      };
+      return temp ? this.transformPoint(translated, temp) : translated;
+    }
+
+    transformShapeSourcePoint(pt, layer, temp = null) {
+      if (!pt || !layer) return pt;
+      const origin = this.getLayerBaseOrigin(layer);
+      const scaleX = layer?.params?.scaleX ?? 1;
+      const scaleY = layer?.params?.scaleY ?? 1;
+      const rotation = ((layer?.params?.rotation ?? 0) * Math.PI) / 180;
+      const cosR = Math.cos(rotation);
+      const sinR = Math.sin(rotation);
+      const dx = (pt.x - origin.x) * scaleX;
+      const dy = (pt.y - origin.y) * scaleY;
+      const world = {
+        x: dx * cosR - dy * sinR + origin.x + (layer?.params?.posX ?? 0),
+        y: dx * sinR + dy * cosR + origin.y + (layer?.params?.posY ?? 0),
+      };
+      return temp ? this.transformPoint(world, temp) : world;
+    }
+
+    inverseTransformPoint(pt, temp = null) {
+      if (!temp) return pt;
+      const origin = temp.origin || { x: 0, y: 0 };
+      const dx = pt.x - origin.x - (temp.dx ?? 0);
+      const dy = pt.y - origin.y - (temp.dy ?? 0);
+      const rot = (((temp.rotation ?? 0) * Math.PI) / 180) * -1;
+      const cosR = Math.cos(rot);
+      const sinR = Math.sin(rot);
+      const rx = dx * cosR - dy * sinR;
+      const ry = dx * sinR + dy * cosR;
+      return {
+        x: origin.x + rx / (temp.scaleX || 1),
+        y: origin.y + ry / (temp.scaleY || 1),
+      };
+    }
+
+    inverseShapeSourcePoint(pt, layer, temp = null) {
+      if (!pt || !layer) return pt;
+      const world = temp ? this.inverseTransformPoint(pt, temp) : pt;
+      const origin = this.getLayerBaseOrigin(layer);
+      const translated = {
+        x: world.x - (layer?.params?.posX ?? 0),
+        y: world.y - (layer?.params?.posY ?? 0),
+      };
+      const rot = (((layer?.params?.rotation ?? 0) * Math.PI) / 180) * -1;
+      const cosR = Math.cos(rot);
+      const sinR = Math.sin(rot);
+      const dx = translated.x - origin.x;
+      const dy = translated.y - origin.y;
+      return {
+        x: origin.x + (dx * cosR - dy * sinR) / (layer?.params?.scaleX || 1),
+        y: origin.y + (dx * sinR + dy * cosR) / (layer?.params?.scaleY || 1),
+      };
+    }
+
+    transformShapeDirection(descriptor, layer, temp = null) {
+      if (!descriptor) return { x: 0, y: 0 };
+      const handlePoint = getShapeCornerHandlePosition(descriptor, this.scale);
+      const vertex = this.transformShapeSourcePoint(descriptor.vertex, layer, temp);
+      const point = this.transformShapeSourcePoint(handlePoint, layer, temp);
+      const dx = point.x - vertex.x;
+      const dy = point.y - vertex.y;
+      const length = Math.hypot(dx, dy) || 1;
+      return { x: dx / length, y: dy / length };
+    }
+
+    getTransformedShapeVertices(layer, pathIndex = 0, temp = null) {
+      const meta = this.getShapeMetaForLayer(layer, pathIndex);
+      if (!meta?.shape) return [];
+      return getShapeVertices(meta.shape).map((vertex) => this.transformShapeSourcePoint(vertex, layer, temp));
+    }
+
+    getPrimitiveShapeBounds(layer, temp = null) {
+      const meta = this.getShapeMetaForLayer(layer, 0);
+      if (!meta?.shape || (meta.shape.type !== 'rect' && meta.shape.type !== 'polygon')) return null;
+      const vertices = this.getTransformedShapeVertices(layer, 0, temp);
+      if (!vertices.length) return null;
+      const baseRotation = ((layer?.params?.rotation ?? 0) * Math.PI) / 180;
+      const tempRotation = (((temp?.rotation ?? 0) * Math.PI) / 180);
+      const rotation = baseRotation + tempRotation;
+      const origin = this.getLayerTransformedOrigin(layer, temp);
+      return buildBoundsFromVertices(vertices, origin, rotation);
+    }
+
     traceLayerPath(path, layer, temp = null, useCurves = Boolean(layer?.params?.curves)) {
       if (path && path.meta && path.meta.kind === 'circle') {
         const meta = temp ? this.transformCircleMeta(path.meta, temp) : path.meta;
@@ -3282,6 +3428,8 @@
     }
 
     getLayerBounds(layer, temp) {
+      const primitiveBounds = this.getPrimitiveShapeBounds(layer, temp);
+      if (primitiveBounds) return primitiveBounds;
       const basePaths = this.getInteractionPaths(layer);
       if (!layer || !Array.isArray(basePaths)) return null;
       const prof = this.engine.currentProfile;
