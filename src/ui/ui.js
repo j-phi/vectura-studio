@@ -13134,7 +13134,6 @@
         { inputId: 'set-margin', infoKey: 'global.margin' },
         { inputId: 'set-truncate', infoKey: 'global.truncate' },
         { inputId: 'set-crop-exports', infoKey: 'global.cropExports' },
-        { inputId: 'set-remove-hidden-geometry', infoKey: 'global.removeHiddenGeometry' },
         { inputId: 'set-outside-opacity', infoKey: 'global.outsideOpacity' },
         { inputId: 'set-margin-line', infoKey: 'global.marginLineVisible' },
         { inputId: 'set-margin-line-weight', infoKey: 'global.marginLineWeight' },
@@ -13830,7 +13829,6 @@
       const undoSteps = getEl('set-undo');
       const truncate = getEl('set-truncate');
       const cropExports = getEl('set-crop-exports');
-      const removeHiddenGeometry = getEl('set-remove-hidden-geometry');
       const outsideOpacity = getEl('set-outside-opacity');
       const marginLine = getEl('set-margin-line');
       const marginLineColorPill = getEl('set-margin-line-color-pill');
@@ -13874,7 +13872,6 @@
       if (undoSteps) undoSteps.value = SETTINGS.undoSteps;
       if (truncate) truncate.checked = SETTINGS.truncate !== false;
       if (cropExports) cropExports.checked = SETTINGS.cropExports !== false;
-      if (removeHiddenGeometry) removeHiddenGeometry.checked = SETTINGS.removeHiddenGeometry !== false;
       if (outsideOpacity) outsideOpacity.value = SETTINGS.outsideOpacity ?? 0.5;
       if (marginLine) marginLine.checked = Boolean(SETTINGS.marginLineVisible);
       if (marginLineColorPill) {
@@ -14360,7 +14357,6 @@
       const setMargin = getEl('set-margin');
       const setTruncate = getEl('set-truncate');
       const setCropExports = getEl('set-crop-exports');
-      const setRemoveHiddenGeometry = getEl('set-remove-hidden-geometry');
       const setOutsideOpacity = getEl('set-outside-opacity');
       const setMarginLine = getEl('set-margin-line');
       const setMarginLineColorPill = getEl('set-margin-line-color-pill');
@@ -14430,13 +14426,6 @@
         setCropExports.onchange = (e) => {
           if (this.app.pushHistory) this.app.pushHistory();
           SETTINGS.cropExports = e.target.checked;
-          this.app.persistPreferencesDebounced?.();
-        };
-      }
-      if (setRemoveHiddenGeometry) {
-        setRemoveHiddenGeometry.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          SETTINGS.removeHiddenGeometry = e.target.checked;
           this.app.persistPreferencesDebounced?.();
         };
       }

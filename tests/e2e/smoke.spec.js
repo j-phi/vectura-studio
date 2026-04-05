@@ -193,6 +193,49 @@ test.describe('Vectura smoke interactions', () => {
     expect(pageErrors).toEqual([]);
   });
 
+  test('document setup keeps a single default-on remove hidden geometry toggle inside export settings', async ({ page }) => {
+    const pageErrors = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+
+    await page.goto('/');
+
+    await page.getByRole('button', { name: 'File' }).click();
+    await page.click('#btn-settings');
+    await expect(page.locator('#settings-panel')).toHaveClass(/open/);
+
+    await expect(page.locator('#set-remove-hidden-geometry')).toHaveCount(0);
+    await expect(page.getByText('Remove Hidden Geometry', { exact: true })).toHaveCount(1);
+
+    const exportCard = page.locator('.optimization-card').filter({ hasText: 'Export Settings' });
+    await expect(exportCard).toHaveCount(1);
+
+    const hiddenGeometryControl = exportCard.locator('.optimization-control').filter({ hasText: 'Remove Hidden Geometry' });
+    await expect(hiddenGeometryControl).toHaveCount(1);
+
+    const toggle = hiddenGeometryControl.locator('input[type="checkbox"]');
+    const state = hiddenGeometryControl.locator('span').filter({ hasText: /ON|OFF/ });
+
+    await expect(toggle).toBeChecked();
+    await expect(state).toHaveText('ON');
+    await expect
+      .poll(async () => page.evaluate(() => window.Vectura.SETTINGS.removeHiddenGeometry))
+      .toBe(true);
+
+    await toggle.uncheck();
+    await expect(state).toHaveText('OFF');
+    await expect
+      .poll(async () => page.evaluate(() => window.Vectura.SETTINGS.removeHiddenGeometry))
+      .toBe(false);
+
+    await toggle.check();
+    await expect(state).toHaveText('ON');
+    await expect
+      .poll(async () => page.evaluate(() => window.Vectura.SETTINGS.removeHiddenGeometry))
+      .toBe(true);
+
+    expect(pageErrors).toEqual([]);
+  });
+
   test('insert menu creates a mirror modifier, reparents the current selection, and opens modifier controls', async ({ page }) => {
     const pageErrors = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));

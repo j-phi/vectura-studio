@@ -83,4 +83,38 @@ describe('Shape tool geometry', () => {
     expect(allCornerPath.meta.shape.cornerRadii.every((radius) => radius > 0)).toBe(true);
     expect(allCornerPath.meta.anchors.length).toBeGreaterThan(oneCornerPath.meta.anchors.length);
   });
+
+  test('rotated primitive-shape handles stay attached to transformed vertices', () => {
+    const { Layer, ShapeUtils } = runtime.window.Vectura;
+    const renderer = createRenderer();
+    const shape = {
+      type: 'polygon',
+      cx: 100,
+      cy: 110,
+      radius: 36,
+      rotation: -Math.PI / 2,
+      sides: 6,
+      cornerRadii: [0, 0, 0, 0, 0, 0],
+    };
+    const layer = new Layer('poly-shape', 'expanded', 'Polygon');
+    layer.sourcePaths = [renderer.buildShapePath(shape)];
+    layer.origin = { x: 100, y: 110 };
+    layer.params.posX = 18;
+    layer.params.posY = -12;
+    layer.params.scaleX = 1;
+    layer.params.scaleY = 1;
+    layer.params.rotation = 33;
+    renderer.engine.layers = [layer];
+
+    const handles = renderer.getShapeCornerHandles(layer);
+    const expectedVertices = ShapeUtils.getShapeVertices(shape).map((vertex) => renderer.transformShapeSourcePoint(vertex, layer));
+    const bounds = renderer.getLayerBounds(layer);
+
+    expect(handles).toHaveLength(expectedVertices.length);
+    handles.forEach((handle, index) => {
+      expect(handle.vertex.x).toBeCloseTo(expectedVertices[index].x, 3);
+      expect(handle.vertex.y).toBeCloseTo(expectedVertices[index].y, 3);
+    });
+    expect(bounds.rotation).toBeCloseTo((33 * Math.PI) / 180, 6);
+  });
 });

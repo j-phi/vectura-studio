@@ -142,6 +142,163 @@ test.describe('Visual snapshots', () => {
     });
   };
 
+  const buildMirroredMaskedCircleScene = async (page) => {
+    await page.evaluate(() => {
+      const app = window.app;
+      const { Layer, SETTINGS } = window.Vectura;
+      SETTINGS.aboutVisible = false;
+      const engine = app.engine;
+      engine.layers = [];
+      SETTINGS.globalLayerCount = 0;
+
+      const modifierId = engine.addModifierLayer('mirror');
+      const modifier = engine.layers.find((layer) => layer.id === modifierId);
+      modifier.modifier.mirrors = [
+        {
+          ...modifier.modifier.mirrors[0],
+          enabled: true,
+          angle: 90,
+          xShift: -18,
+          yShift: 0,
+          replacedSide: 'positive',
+          guideVisible: false,
+        },
+      ];
+
+      const circlePath = [];
+      circlePath.meta = { kind: 'circle', cx: 176, cy: 110, r: 30 };
+      const maskParent = new Layer('mirror-mask-parent', 'expanded', 'Mirror Mask');
+      maskParent.parentId = modifierId;
+      maskParent.params.curves = false;
+      maskParent.sourcePaths = [circlePath];
+      maskParent.mask.enabled = true;
+
+      const waveform = new Layer('mirror-masked-wave', 'expanded', 'Mirror Wave');
+      waveform.parentId = maskParent.id;
+      waveform.params.curves = false;
+      waveform.sourcePaths = [];
+      for (let row = 0; row < 9; row += 1) {
+        const y = 86 + row * 6;
+        waveform.sourcePaths.push([
+          { x: 148, y },
+          { x: 160, y: y + (row % 2 === 0 ? -4 : 4) },
+          { x: 176, y },
+          { x: 192, y: y + (row % 2 === 0 ? 4 : -4) },
+          { x: 204, y },
+        ]);
+      }
+
+      engine.layers.push(maskParent, waveform);
+      engine.generate(maskParent.id);
+      engine.generate(waveform.id);
+      engine.computeAllDisplayGeometry();
+      app.renderer.setSelection([], null);
+      engine.activeLayerId = null;
+      app.ui.renderLayers();
+      app.ui.buildControls();
+      app.ui.updateFormula();
+      app.render();
+      app.updateStats();
+    });
+  };
+
+  const buildPrimitiveShapeCreationScene = async (page) => {
+    await page.evaluate(() => {
+      const app = window.app;
+      const { SETTINGS } = window.Vectura;
+      SETTINGS.aboutVisible = false;
+      const engine = app.engine;
+      engine.layers = [];
+      SETTINGS.globalLayerCount = 0;
+
+      const baseId = engine.addLayer('wavetable');
+      const baseLayer = engine.layers.find((layer) => layer.id === baseId);
+      baseLayer.visible = false;
+      baseLayer.params.curves = true;
+      engine.activeLayerId = baseId;
+
+      const polygonShape = {
+        type: 'polygon',
+        cx: 96,
+        cy: 112,
+        radius: 36,
+        rotation: -Math.PI / 2,
+        sides: 6,
+        cornerRadii: [0, 0, 0, 0, 0, 0],
+      };
+      const polygonPath = app.renderer.buildShapePath(polygonShape);
+      app.ui.createManualLayerFromPath({ path: polygonPath, closed: true, shape: polygonShape });
+
+      engine.activeLayerId = baseId;
+      const rectShape = {
+        type: 'rect',
+        x1: 160,
+        y1: 78,
+        x2: 232,
+        y2: 146,
+        cornerRadii: [0, 0, 0, 0],
+      };
+      const rectPath = app.renderer.buildShapePath(rectShape);
+      app.ui.createManualLayerFromPath({ path: rectPath, closed: true, shape: rectShape });
+
+      app.renderer.setSelection([], null);
+      engine.activeLayerId = null;
+      app.ui.renderLayers();
+      app.ui.buildControls();
+      app.ui.updateFormula();
+      app.render();
+      app.updateStats();
+    });
+  };
+
+  const buildRotatedPrimitiveSelectionScene = async (page, kind = 'polygon') => {
+    await page.evaluate((shapeKind) => {
+      const app = window.app;
+      const { SETTINGS } = window.Vectura;
+      SETTINGS.aboutVisible = false;
+      const engine = app.engine;
+      engine.layers = [];
+      SETTINGS.globalLayerCount = 0;
+
+      const baseId = engine.addLayer('wavetable');
+      const baseLayer = engine.layers.find((layer) => layer.id === baseId);
+      baseLayer.visible = false;
+      baseLayer.params.curves = true;
+      engine.activeLayerId = baseId;
+
+      const shape = shapeKind === 'rect'
+        ? {
+            type: 'rect',
+            x1: 96,
+            y1: 74,
+            x2: 188,
+            y2: 148,
+            cornerRadii: [0, 0, 0, 0],
+          }
+        : {
+            type: 'polygon',
+            cx: 142,
+            cy: 112,
+            radius: 44,
+            rotation: -Math.PI / 2,
+            sides: 6,
+            cornerRadii: [0, 0, 0, 0, 0, 0],
+          };
+      const path = app.renderer.buildShapePath(shape);
+      app.ui.createManualLayerFromPath({ path, closed: true, shape });
+      const layer = engine.getActiveLayer();
+      layer.params.rotation = shapeKind === 'rect' ? 29 : 33;
+      engine.generate(layer.id);
+      app.renderer.setSelection([layer.id], layer.id);
+      engine.activeLayerId = layer.id;
+      app.ui.renderLayers();
+      app.ui.buildControls();
+      app.ui.updateFormula();
+      app.render();
+      app.updateStats();
+    }, kind);
+  };
+
   test('main viewport shell snapshot', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('main')).toHaveScreenshot('main-shell.png', {
@@ -180,6 +337,38 @@ test.describe('Visual snapshots', () => {
     await page.goto('/');
     await buildOvalMaskParentScene(page);
     await expect(page.locator('#main-canvas')).toHaveScreenshot('oval-mask-parent-wavetable-canvas.png', {
+      maxDiffPixelRatio: 0.03,
+    });
+  });
+
+  test('mirror modifiers keep masked circle artwork mirrored as closed masked objects', async ({ page }) => {
+    await page.goto('/');
+    await buildMirroredMaskedCircleScene(page);
+    await expect(page.locator('#main-canvas')).toHaveScreenshot('mirrored-masked-circles-canvas.png', {
+      maxDiffPixelRatio: 0.03,
+    });
+  });
+
+  test('fresh rectangle and polygon shapes render as cornered primitives', async ({ page }) => {
+    await page.goto('/');
+    await buildPrimitiveShapeCreationScene(page);
+    await expect(page.locator('#main-canvas')).toHaveScreenshot('primitive-shape-creation-canvas.png', {
+      maxDiffPixelRatio: 0.03,
+    });
+  });
+
+  test('rotated polygon selection keeps handles aligned to the transformed shape', async ({ page }) => {
+    await page.goto('/');
+    await buildRotatedPrimitiveSelectionScene(page, 'polygon');
+    await expect(page.locator('#main-canvas')).toHaveScreenshot('rotated-polygon-selection-canvas.png', {
+      maxDiffPixelRatio: 0.03,
+    });
+  });
+
+  test('rotated rectangle selection keeps handles aligned to the transformed shape', async ({ page }) => {
+    await page.goto('/');
+    await buildRotatedPrimitiveSelectionScene(page, 'rect');
+    await expect(page.locator('#main-canvas')).toHaveScreenshot('rotated-rectangle-selection-canvas.png', {
       maxDiffPixelRatio: 0.03,
     });
   });

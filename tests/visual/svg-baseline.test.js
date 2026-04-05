@@ -241,6 +241,58 @@ const buildMaskedSceneSvg = (runtime) => {
   });
 };
 
+const buildMirroredMaskedSceneSvg = (runtime) => {
+  const { VectorEngine, Layer } = runtime.window.Vectura;
+  const engine = new VectorEngine();
+  engine.layers = [];
+
+  const modifierId = engine.addModifierLayer('mirror');
+  const modifier = engine.layers.find((layer) => layer.id === modifierId);
+  modifier.modifier.mirrors = [
+    {
+        ...modifier.modifier.mirrors[0],
+        enabled: true,
+        angle: 90,
+        xShift: -18,
+        yShift: 0,
+        replacedSide: 'positive',
+      },
+    ];
+
+  const maskPath = [];
+  maskPath.meta = { kind: 'circle', cx: 176, cy: 110, r: 30 };
+  const maskParent = new Layer('mirror-mask-parent', 'expanded', 'Mirror Mask');
+  maskParent.parentId = modifierId;
+  maskParent.sourcePaths = [maskPath];
+  maskParent.mask.enabled = true;
+
+  const waveform = new Layer('mirror-masked-wave', 'expanded', 'Mirror Wave');
+  waveform.parentId = maskParent.id;
+  waveform.sourcePaths = [];
+  for (let row = 0; row < 9; row += 1) {
+    const y = 86 + row * 6;
+    waveform.sourcePaths.push([
+      { x: 148, y },
+      { x: 160, y: y + (row % 2 === 0 ? -4 : 4) },
+      { x: 176, y },
+      { x: 192, y: y + (row % 2 === 0 ? 4 : -4) },
+      { x: 204, y },
+    ]);
+  }
+
+  engine.layers.push(maskParent, waveform);
+  engine.generate(maskParent.id);
+  engine.generate(waveform.id);
+  engine.computeAllDisplayGeometry();
+
+  return pathsToSvg({
+    width: 297,
+    height: 210,
+    paths: [...(maskParent.effectivePaths || []), ...(waveform.displayPaths || [])],
+    precision: 3,
+  });
+};
+
 describe('SVG visual baselines', () => {
   let runtime;
 
@@ -298,6 +350,23 @@ describe('SVG visual baselines', () => {
     const baselineDir = path.resolve(__dirname, '../baselines/svg');
     const baselinePath = path.join(baselineDir, 'masking-horizon-rings.svg');
     const actual = buildMaskedSceneSvg(runtime);
+
+    if (UPDATE_BASELINES) {
+      fs.mkdirSync(baselineDir, { recursive: true });
+      fs.writeFileSync(baselinePath, actual, 'utf8');
+      expect(fs.existsSync(baselinePath)).toBe(true);
+      return;
+    }
+
+    expect(fs.existsSync(baselinePath)).toBe(true);
+    const expected = fs.readFileSync(baselinePath, 'utf8');
+    expect(actual).toBe(expected);
+  });
+
+  test('matches baseline: mirrored-masked-circles', () => {
+    const baselineDir = path.resolve(__dirname, '../baselines/svg');
+    const baselinePath = path.join(baselineDir, 'mirrored-masked-circles.svg');
+    const actual = buildMirroredMaskedSceneSvg(runtime);
 
     if (UPDATE_BASELINES) {
       fs.mkdirSync(baselineDir, { recursive: true });

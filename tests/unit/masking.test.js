@@ -204,6 +204,36 @@ describe('Masking runtime', () => {
     expect(child.displayPaths[0][child.displayPaths[0].length - 1].x).toBeLessThanOrEqual(180.01);
   });
 
+  test('multiple disjoint mask polygons keep interior segments from the full union', () => {
+    const { Masking } = runtime.window.Vectura;
+    const path = [[
+      { x: 20, y: 100 },
+      { x: 220, y: 100 },
+    ]];
+    const left = [
+      { x: 40, y: 70 },
+      { x: 90, y: 70 },
+      { x: 90, y: 130 },
+      { x: 40, y: 130 },
+      { x: 40, y: 70 },
+    ];
+    const right = [
+      { x: 150, y: 70 },
+      { x: 200, y: 70 },
+      { x: 200, y: 130 },
+      { x: 150, y: 130 },
+      { x: 150, y: 70 },
+    ];
+
+    const clipped = Masking.applyMaskToPaths(path, [left, right], { invert: true });
+
+    expect(clipped).toHaveLength(2);
+    expect(clipped[0][0].x).toBeGreaterThanOrEqual(39.99);
+    expect(clipped[0][clipped[0].length - 1].x).toBeLessThanOrEqual(90.01);
+    expect(clipped[1][0].x).toBeGreaterThanOrEqual(149.99);
+    expect(clipped[1][clipped[1].length - 1].x).toBeLessThanOrEqual(200.01);
+  });
+
   test('buildLayerMaskedPaths can exclude the active mask parent while preserving other ancestors', () => {
     const { VectorEngine, Layer, Masking } = runtime.window.Vectura;
     const engine = new VectorEngine();

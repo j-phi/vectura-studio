@@ -264,7 +264,14 @@
     (paths || []).forEach((path) => {
       if (!Array.isArray(path) || path.length < 2) return;
       const isLoop = Boolean(path.meta?.kind === 'circle' || isClosedPath(path));
-      const segments = segmentPathByPolygons(path, polygons, { invert: options.invert, closed: isLoop });
+      if (options.invert) {
+        polygons.forEach((polygon) => {
+          const segments = segmentPathByPolygons(path, [polygon], { invert: true, closed: isLoop });
+          segments.forEach((segment) => out.push(segment));
+        });
+        return;
+      }
+      const segments = segmentPathByPolygons(path, polygons, { invert: false, closed: isLoop });
       segments.forEach((segment) => out.push(segment));
     });
     return out;

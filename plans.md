@@ -25,6 +25,7 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
+- Removed the duplicate top-level `Remove Hidden Geometry` checkbox from Document Setup so Export Settings remains the sole default-on control for that export-only behavior, with integration and Playwright regressions.
 - Added live mask-parent transform preview so moving/resizing/rotating a mask parent ghost-renders its masked descendants against the transformed silhouette until release, with unit/integration/Playwright coverage.
 - Added an Illustrator-style reticle cursor for Rectangle/Oval/Polygon tools and single selected primitive shapes in Selection, while preserving center-out `Alt/Option` drawing and existing handle cursors.
 - Fixed generator algorithm switching so non-`expanded` layers no longer silently acquire `sourcePaths`, changing the Algorithm dropdown regenerates the artboard immediately, and CI now checks the geometry-change path in both integration and Playwright smoke coverage.

@@ -82,6 +82,61 @@ describe('Modifier workflow integration', () => {
     expect(preserved.parentId).toBeNull();
     expect(engine.activeLayerId).toBe('child-preserved');
   });
+
+  test('masked child content mirrors against a mirrored closed mask parent', () => {
+    const { VectorEngine, Layer, Masking, OptimizationUtils } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    const modifierId = engine.addModifierLayer('mirror');
+    const modifier = engine.layers.find((layer) => layer.id === modifierId);
+    modifier.modifier.mirrors = [
+      {
+        ...modifier.modifier.mirrors[0],
+        enabled: true,
+        angle: 90,
+        xShift: -18,
+        yShift: 0,
+        replacedSide: 'positive',
+      },
+    ];
+
+    const circle = [];
+    circle.meta = { kind: 'circle', cx: 176, cy: 105, r: 28 };
+    const maskParent = new Layer('mask-parent', 'expanded', 'Mask Parent');
+    maskParent.parentId = modifierId;
+    maskParent.sourcePaths = [circle];
+    maskParent.mask.enabled = true;
+
+    const waveform = new Layer('masked-wave', 'expanded', 'Masked Wave');
+    waveform.parentId = maskParent.id;
+    waveform.sourcePaths = [
+      [
+        { x: 150, y: 92 },
+        { x: 166, y: 100 },
+        { x: 182, y: 92 },
+        { x: 198, y: 100 },
+      ],
+      [
+        { x: 150, y: 116 },
+        { x: 166, y: 108 },
+        { x: 182, y: 116 },
+        { x: 198, y: 108 },
+      ],
+    ];
+
+    engine.layers.push(maskParent, waveform);
+    engine.generate(maskParent.id);
+    engine.generate(waveform.id);
+    engine.computeAllDisplayGeometry();
+
+    const silhouettes = Masking.getLayerSilhouette(maskParent, engine, engine.getBounds());
+    const xs = (waveform.displayPaths || []).flat().map((pt) => pt.x).filter(Number.isFinite);
+
+    expect(silhouettes).toHaveLength(2);
+    expect(silhouettes.every((polygon) => OptimizationUtils.isClosedPath(polygon))).toBe(true);
+    expect(Math.min(...xs)).toBeLessThan(120);
+    expect(Math.max(...xs)).toBeGreaterThan(150);
+    expect(waveform.displayMaskActive).toBe(true);
+  });
 });
 
 describe('Modifier workflow UI integration', () => {
@@ -183,5 +238,62 @@ describe('Modifier workflow UI integration', () => {
 
     expect(child.params.posX).toBe(nextPosX);
     expect(pathSignature(child.effectivePaths || [])).not.toBe(afterAlgorithmSignature);
+  });
+
+  test('shape-tool-created polygons and rectangles do not inherit curves from the active layer', async () => {
+    runtime = await loadVecturaRuntime({
+      includeRenderer: true,
+      includeUi: true,
+      includeApp: true,
+      useIndexHtml: true,
+    });
+
+    const { window } = runtime;
+    window.app = new window.Vectura.App();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    const app = window.app;
+    const active = app.engine.getActiveLayer();
+    active.params.curves = true;
+
+    const polygonShape = {
+      type: 'polygon',
+      cx: 100,
+      cy: 100,
+      radius: 28,
+      rotation: -Math.PI / 2,
+      sides: 6,
+      cornerRadii: [0, 0, 0, 0, 0, 0],
+    };
+    const polygonPath = app.renderer.buildShapePath(polygonShape);
+    app.ui.createManualLayerFromPath({ path: polygonPath, closed: true, shape: polygonShape });
+    const polygonLayer = app.engine.getActiveLayer();
+
+    const rectShape = {
+      type: 'rect',
+      x1: 50,
+      y1: 50,
+      x2: 120,
+      y2: 110,
+      cornerRadii: [0, 0, 0, 0],
+    };
+    const rectPath = app.renderer.buildShapePath(rectShape);
+    app.ui.createManualLayerFromPath({ path: rectPath, closed: true, shape: rectShape });
+    const rectLayer = app.engine.getActiveLayer();
+
+    const ovalShape = {
+      type: 'oval',
+      cx: 140,
+      cy: 120,
+      rx: 30,
+      ry: 20,
+    };
+    const ovalPath = app.renderer.buildShapePath(ovalShape);
+    app.ui.createManualLayerFromPath({ path: ovalPath, closed: true, shape: ovalShape });
+    const ovalLayer = app.engine.getActiveLayer();
+
+    expect(polygonLayer.params.curves).toBe(false);
+    expect(rectLayer.params.curves).toBe(false);
+    expect(ovalLayer.params.curves).toBe(true);
   });
 });
