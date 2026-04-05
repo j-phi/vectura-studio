@@ -31,6 +31,8 @@
         return next;
       }));
 
+  const usesManualSourceGeometry = (layer) => Boolean(layer && !layer.isGroup && layer.type === 'expanded');
+
   const pathLength = OptimizationUtils.pathLength || (() => 0);
   const pathEndpoints = OptimizationUtils.pathEndpoints || (() => ({ start: { x: 0, y: 0 }, end: { x: 0, y: 0 } }));
   const pathCentroid = OptimizationUtils.pathCentroid || (() => ({ x: 0, y: 0 }));
@@ -121,7 +123,10 @@
           groupParams: layer.groupParams ? JSON.parse(JSON.stringify(layer.groupParams)) : null,
           groupCollapsed: layer.groupCollapsed,
           modifier: layer.modifier ? JSON.parse(JSON.stringify(layer.modifier)) : null,
-          sourcePaths: layer.sourcePaths ? JSON.parse(JSON.stringify(layer.sourcePaths)) : null,
+          sourcePaths:
+            usesManualSourceGeometry(layer) && layer.sourcePaths
+              ? JSON.parse(JSON.stringify(layer.sourcePaths))
+              : null,
           mask: layer.mask ? JSON.parse(JSON.stringify(layer.mask)) : null,
           penId: layer.penId,
           color: layer.color,
@@ -145,7 +150,8 @@
         layer.groupParams = data.groupParams ? JSON.parse(JSON.stringify(data.groupParams)) : null;
         layer.groupCollapsed = Boolean(data.groupCollapsed);
         layer.modifier = data.modifier ? JSON.parse(JSON.stringify(data.modifier)) : null;
-        layer.sourcePaths = data.sourcePaths ? JSON.parse(JSON.stringify(data.sourcePaths)) : null;
+        layer.sourcePaths =
+          usesManualSourceGeometry(layer) && data.sourcePaths ? JSON.parse(JSON.stringify(data.sourcePaths)) : null;
         const importedMask = data.mask ? JSON.parse(JSON.stringify(data.mask)) : null;
         const isLegacySourceMask = Array.isArray(importedMask?.sourceIds) && importedMask.sourceIds.length > 0;
         layer.mask = {
@@ -206,7 +212,8 @@
       layer.paramStates = JSON.parse(JSON.stringify(source.paramStates || {}));
       layer.parentId = source.parentId ?? null;
       layer.containerRole = source.containerRole ?? null;
-      layer.sourcePaths = source.sourcePaths ? JSON.parse(JSON.stringify(source.sourcePaths)) : null;
+      layer.sourcePaths =
+        usesManualSourceGeometry(source) && source.sourcePaths ? JSON.parse(JSON.stringify(source.sourcePaths)) : null;
       layer.modifier = source.modifier ? JSON.parse(JSON.stringify(source.modifier)) : null;
       layer.color = source.color;
       layer.strokeWidth = source.strokeWidth;
@@ -471,7 +478,10 @@
       const bounds = { width, height, m, dW, dH, truncate: SETTINGS.truncate };
 
       const algo = Algorithms[layer.type] || Algorithms.flowfield;
-      const rawPaths = layer.sourcePaths ? clonePaths(layer.sourcePaths) : algo.generate(p, rng, noise, bounds) || [];
+      const rawPaths =
+        usesManualSourceGeometry(layer) && layer.sourcePaths
+          ? clonePaths(layer.sourcePaths)
+          : algo.generate(p, rng, noise, bounds) || [];
       const helperPaths = rawPaths.helpers ? clonePaths(rawPaths.helpers) : null;
       const maskPolygons = rawPaths.maskPolygons ? clonePaths(rawPaths.maskPolygons) : null;
       const smooth = Math.max(0, Math.min(1, p.smoothing ?? 0));

@@ -1,5 +1,43 @@
 const { test, expect } = require('@playwright/test');
 
+const captureActiveLayerGeometry = async (page) =>
+  page.evaluate(() => {
+    const round = (value, precision = 3) => {
+      const factor = Math.pow(10, precision);
+      return Math.round(Number(value) * factor) / factor;
+    };
+    const signatureForPaths = (paths = []) => {
+      let hash = 2166136261;
+      const push = (value) => {
+        const text = String(value);
+        for (let i = 0; i < text.length; i += 1) {
+          hash ^= text.charCodeAt(i);
+          hash = Math.imul(hash, 16777619);
+        }
+      };
+      (paths || []).forEach((path, pathIndex) => {
+        push(`p${pathIndex}:`);
+        if (!Array.isArray(path)) {
+          push('null;');
+          return;
+        }
+        path.forEach((pt, pointIndex) => {
+          push(`${pointIndex}:${round(pt?.x)}:${round(pt?.y)};`);
+        });
+        if (path.meta?.kind) push(`kind:${path.meta.kind};`);
+      });
+      return `${paths.length}:${hash >>> 0}`;
+    };
+    const layer = window.app?.engine?.getActiveLayer?.();
+    return {
+      type: layer?.type || null,
+      signature: signatureForPaths(layer?.paths || []),
+      sourcePathsMaterialized: layer?.sourcePaths != null,
+      formula: document.getElementById('formula-display')?.innerText?.trim() || '',
+      about: document.getElementById('algo-desc')?.innerText?.trim() || '',
+    };
+  });
+
 test.describe('Vectura smoke interactions', () => {
   test('core interactions remain functional on desktop and touch tablet', async ({ page }, testInfo) => {
     const pageErrors = [];
@@ -21,7 +59,19 @@ test.describe('Vectura smoke interactions', () => {
     await page.click('#btn-add-layer');
     await expect(page.locator('#layer-list .layer-item')).toHaveCount(initialLayers + 1);
 
-    await page.selectOption('#generator-module', 'lissajous');
+    const initialGeometry = await captureActiveLayerGeometry(page);
+    const nextType = initialGeometry.type === 'topo' ? 'lissajous' : 'topo';
+    await page.selectOption('#generator-module', nextType);
+    await expect.poll(async () => (await captureActiveLayerGeometry(page)).type).toBe(nextType);
+    await expect.poll(async () => (await captureActiveLayerGeometry(page)).signature).not.toBe(initialGeometry.signature);
+
+    const switchedGeometry = await captureActiveLayerGeometry(page);
+    expect(switchedGeometry.sourcePathsMaterialized).toBe(false);
+    expect(switchedGeometry.formula.length).toBeGreaterThan(0);
+    expect(switchedGeometry.formula).not.toBe(initialGeometry.formula);
+    expect(switchedGeometry.about.length).toBeGreaterThan(0);
+    expect(switchedGeometry.about).not.toBe(initialGeometry.about);
+
     await page.getByRole('button', { name: 'Randomize Params' }).click();
 
     const linesText = (await page.locator('#stat-lines').innerText()).trim();

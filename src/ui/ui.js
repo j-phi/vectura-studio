@@ -14453,6 +14453,10 @@
             const nextType = e.target.value;
             this.rememberDrawableLayerType(nextType);
             this.restoreLayerParams(l, nextType);
+            if (l.type !== 'expanded') l.sourcePaths = null;
+            if (this.app.renderer?.directSelection?.layerId === l.id) {
+              this.app.renderer.clearDirectSelection();
+            }
             const label = ALGO_DEFAULTS[l.type]?.label;
             const nextName = label || l.type.charAt(0).toUpperCase() + l.type.slice(1);
             l.name = this.getUniqueLayerName(nextName, l.id);

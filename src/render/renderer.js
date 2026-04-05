@@ -922,11 +922,21 @@
       this.draw();
     }
 
+    canEditSourceGeometry(layer) {
+      return Boolean(layer && !layer.isGroup && layer.type === 'expanded');
+    }
+
     getShapeMetaForLayer(layer, pathIndex = 0) {
-      const sourcePaths = this.ensureLayerSourcePaths(layer);
-      const sourcePath = sourcePaths[pathIndex];
-      if (!sourcePath?.meta?.shape) return null;
-      return sourcePath.meta;
+      if (!layer) return null;
+      const sourcePath = this.canEditSourceGeometry(layer) && Array.isArray(layer.sourcePaths)
+        ? layer.sourcePaths[pathIndex]
+        : null;
+      if (sourcePath?.meta?.shape) return sourcePath.meta;
+      const path = Array.isArray(layer.paths) ? layer.paths[pathIndex] : null;
+      if (path?.meta?.shape) return path.meta;
+      const displayPath = Array.isArray(layer.displayPaths) ? layer.displayPaths[pathIndex] : null;
+      if (displayPath?.meta?.shape) return displayPath.meta;
+      return null;
     }
 
     getSelectedShapeLayer() {
@@ -1113,6 +1123,7 @@
 
     ensureLayerSourcePaths(layer) {
       if (!layer) return [];
+      if (!this.canEditSourceGeometry(layer)) return Array.isArray(layer.sourcePaths) ? layer.sourcePaths : [];
       if (Array.isArray(layer.sourcePaths) && layer.sourcePaths.length) return layer.sourcePaths;
       const paths = (layer.paths || []).map((path) => {
         if (path && path.meta && path.meta.kind === 'circle') {
@@ -1234,6 +1245,7 @@
 
     setDirectSelection(layer, pathIndex) {
       if (!layer || !Number.isInteger(pathIndex)) return null;
+      if (!this.canEditSourceGeometry(layer)) return null;
       const sourcePaths = this.ensureLayerSourcePaths(layer);
       const sourcePath = sourcePaths[pathIndex];
       if (!Array.isArray(sourcePath) || sourcePath.length < 2) return null;
