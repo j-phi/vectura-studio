@@ -4,12 +4,7 @@ const { pathSignature } = require('../helpers/path-signature');
 describe('Algorithm switching', () => {
   let runtime;
 
-  afterEach(() => {
-    runtime?.cleanup?.();
-    runtime = null;
-  });
-
-  test('generated layers do not silently materialize source paths after app boot', async () => {
+  beforeAll(async () => {
     runtime = await loadVecturaRuntime({
       includeRenderer: true,
       includeUi: true,
@@ -17,11 +12,17 @@ describe('Algorithm switching', () => {
       includeMain: false,
       useIndexHtml: true,
     });
-
-    const { window } = runtime;
-    window.app = new window.Vectura.App();
+    runtime.window.app = new runtime.window.Vectura.App();
     await new Promise((resolve) => setTimeout(resolve, 80));
+  });
 
+  afterAll(() => {
+    runtime?.cleanup?.();
+    runtime = null;
+  });
+
+  test('generated layers do not silently materialize source paths after app boot', () => {
+    const { window } = runtime;
     const layer = window.app.engine.getActiveLayer();
     expect(layer).toBeTruthy();
     expect(layer.type).not.toBe('expanded');
@@ -30,18 +31,7 @@ describe('Algorithm switching', () => {
   });
 
   test('switching algorithms regenerates artboard geometry instead of reusing stale source paths', async () => {
-    runtime = await loadVecturaRuntime({
-      includeRenderer: true,
-      includeUi: true,
-      includeApp: true,
-      includeMain: false,
-      useIndexHtml: true,
-    });
-
     const { window, document } = runtime;
-    window.app = new window.Vectura.App();
-    await new Promise((resolve) => setTimeout(resolve, 80));
-
     const app = window.app;
     const moduleSelect = document.getElementById('generator-module');
     const beforeLayer = app.engine.getActiveLayer();

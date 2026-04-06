@@ -5997,9 +5997,9 @@
       const titleEl = overlay.querySelector('.modal-title');
       const bodyEl = overlay.querySelector('.modal-body');
 
-      overlay.addEventListener('click', () => this.closeModal());
-      card.addEventListener('click', (e) => e.stopPropagation());
-      closeBtn.addEventListener('click', () => this.closeModal());
+      overlay.onclick = () => this.closeModal();
+      card.onclick = (e) => e.stopPropagation();
+      closeBtn.onclick = () => this.closeModal();
 
       return { overlay, titleEl, bodyEl };
     }
@@ -11377,10 +11377,10 @@
             this.app.regen();
             this.updateFormula();
           });
-          input.addEventListener('dblclick', (e) => {
+          input.ondblclick = (e) => {
             e.preventDefault();
             resetValue();
-          });
+          };
           attachValueEditor({
             def,
             valueEl: valueBtn,
@@ -11456,7 +11456,7 @@
             this.updateFormula();
             this.buildControls();
           };
-          input.addEventListener('dblclick', (e) => {
+          input.ondblclick = (e) => {
             e.preventDefault();
             const defaultVal = getNoiseDefault(idx, def.key);
             const fallback = def.options?.[0]?.value;
@@ -11481,7 +11481,7 @@
             this.app.regen();
             this.updateFormula();
             this.buildControls();
-          });
+          };
         }
         return control;
       };
@@ -11555,11 +11555,11 @@
             window.addEventListener('mousemove', move);
             window.addEventListener('mouseup', up, { once: true });
           });
-          dial.addEventListener('dblclick', (e) => {
+          dial.ondblclick = (e) => {
             if (!noise.enabled) return;
             e.preventDefault();
             resetAngle();
-          });
+          };
         }
         attachValueEditor({
           def,
@@ -11608,7 +11608,7 @@
             this.app.regen();
             this.updateFormula();
           };
-          input.addEventListener('dblclick', (e) => {
+          input.ondblclick = (e) => {
             e.preventDefault();
             const next = Boolean(getNoiseDefault(idx, def.key));
             if (this.app.pushHistory) this.app.pushHistory();
@@ -11618,7 +11618,7 @@
             this.storeLayerParams(layer);
             this.app.regen();
             this.updateFormula();
-          });
+          };
         }
         return control;
       };
@@ -11823,7 +11823,7 @@
               this.app.regen();
               this.updateFormula();
             });
-            input.addEventListener('dblclick', (e) => {
+            input.ondblclick = (e) => {
               e.preventDefault();
               const nextVal = baseEffect[def.key];
               if (nextVal === undefined) return;
@@ -11834,7 +11834,7 @@
               this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
-            });
+            };
             attachValueEditor({
               def,
               valueEl: valueBtn,
@@ -15525,7 +15525,7 @@
             (pen) => `
               <button type="button" class="pen-option" data-pen-id="${pen.id}" aria-pressed="${pen.id === owner.penId ? 'true' : 'false'}">
                 <span class="pen-icon" style="background:${pen.color}; color:${pen.color}; --pen-width:${pen.width}"></span>
-                <span class="pen-option-name">${pen.name}</span>
+                <span class="pen-option-name">${escapeHtml(pen.name)}</span>
               </button>
             `
           )
@@ -16023,7 +16023,7 @@
             <div class="pen-icon"></div>
             <input
               class="pen-name-input w-full bg-transparent text-xs text-vectura-text focus:outline-none"
-              value="${pen.name}"
+              value="${escapeHtml(pen.name)}"
             />
           </div>
           <div class="flex items-center gap-2">

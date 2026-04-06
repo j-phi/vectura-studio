@@ -25,10 +25,20 @@
     return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 16 16, crosshair`;
   };
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  let _themeTokenCache = new Map();
+  let _themeTokenCacheKey = null;
   const getThemeToken = (name, fallback = '') => {
     if (typeof document === 'undefined' || !document.documentElement) return fallback;
+    const themeKey = document.documentElement.dataset.theme || '';
+    if (themeKey !== _themeTokenCacheKey) {
+      _themeTokenCache.clear();
+      _themeTokenCacheKey = themeKey;
+    }
+    if (_themeTokenCache.has(name)) return _themeTokenCache.get(name);
     const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-    return value || fallback;
+    const result = value || fallback;
+    _themeTokenCache.set(name, result);
+    return result;
   };
   const distance = (a, b) => Math.hypot((b?.x ?? 0) - (a?.x ?? 0), (b?.y ?? 0) - (a?.y ?? 0));
   const clonePoint = (pt) => ({ x: pt.x, y: pt.y });
@@ -357,8 +367,6 @@
         this.isPenDragging = false;
         this.penDragAnchor = null;
         this.penDragStart = null;
-        this.penPurpose = 'draw';
-      } else {
         this.penPurpose = 'draw';
       }
       if (!`${tool}`.startsWith('shape-')) {

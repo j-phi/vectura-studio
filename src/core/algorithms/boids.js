@@ -50,23 +50,30 @@
             let sepCount = 0;
             let alignCount = 0;
             let cohCount = 0;
+            const maxDist = Math.max(p.sepDist, p.alignDist, p.cohDist);
+            const maxDistSq = maxDist * maxDist;
+            const sepDistSq = p.sepDist * p.sepDist;
+            const alignDistSq = p.alignDist * p.alignDist;
+            const cohDistSq = p.cohDist * p.cohDist;
             boids.forEach((other) => {
               if (b === other) return;
               const dx = b.x - other.x;
               const dy = b.y - other.y;
-              const dist = Math.sqrt(dx * dx + dy * dy);
-              if (dist < p.sepDist) {
+              const distSq = dx * dx + dy * dy;
+              if (distSq > maxDistSq) return;
+              if (distSq < sepDistSq) {
+                const dist = Math.sqrt(distSq);
                 const safe = dist || 0.0001;
                 sx += dx / safe;
                 sy += dy / safe;
                 sepCount++;
               }
-              if (dist < p.alignDist) {
+              if (distSq < alignDistSq) {
                 ax += other.vx;
                 ay += other.vy;
                 alignCount++;
               }
-              if (dist < p.cohDist) {
+              if (distSq < cohDistSq) {
                 cx += other.x;
                 cy += other.y;
                 cohCount++;

@@ -262,16 +262,24 @@
     if (!polygons.length) return clonePaths(paths || []);
     const out = [];
     (paths || []).forEach((path) => {
-      if (!Array.isArray(path) || path.length < 2) return;
-      const isLoop = Boolean(path.meta?.kind === 'circle' || isClosedPath(path));
+      if (!Array.isArray(path)) return;
+      let workingPath = path;
+      if (path.meta?.kind === 'circle' && path.length < 2) {
+        const expanded = expandCircle(path.meta);
+        if (!expanded.length) return;
+        expanded.meta = path.meta;
+        workingPath = expanded;
+      }
+      if (workingPath.length < 2) return;
+      const isLoop = Boolean(workingPath.meta?.kind === 'circle' || isClosedPath(workingPath));
       if (options.invert) {
         polygons.forEach((polygon) => {
-          const segments = segmentPathByPolygons(path, [polygon], { invert: true, closed: isLoop });
+          const segments = segmentPathByPolygons(workingPath, [polygon], { invert: true, closed: isLoop });
           segments.forEach((segment) => out.push(segment));
         });
         return;
       }
-      const segments = segmentPathByPolygons(path, polygons, { invert: false, closed: isLoop });
+      const segments = segmentPathByPolygons(workingPath, polygons, { invert: false, closed: isLoop });
       segments.forEach((segment) => out.push(segment));
     });
     return out;

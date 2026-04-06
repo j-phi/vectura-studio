@@ -40,6 +40,8 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 - `Horizon 3D` now applies noise and valley/shoulder shaping in plane space, hides rows and columns through a private surface depth buffer, and emits a surface-derived silhouette envelope for masking.
 - The Wavetable controls/help text now distinguish legacy `Horizon` from `Horizon 3D`, while keeping the existing Horizon control ids mapped onto the new surface model.
 - Added `Horizon 3D` unit coverage for mesh counts, projected ordering, occlusion identity, and floater suppression, plus a dedicated SVG baseline.
+- Fixed `Remove Hidden Geometry` export to correctly clip ancestor-masked layers; the export now uses `displayMaskActive` (matching the canvas renderer) instead of `layer.mask?.enabled`, so child layers clipped by a parent mask are properly trimmed on export.
+- Improved accessibility across all UI: theme-aware canvas reticle cursor, `prefers-reduced-motion` support, `aria-live` on notification toasts, modal focus management, `aria-pressed`/`aria-current`/`aria-expanded` on interactive controls, visible focus rings, and a minimum 11 px text-size floor.
 
 ## 0.6.80 - 2026-03-01
 

@@ -667,7 +667,12 @@ test.describe('Vectura smoke interactions', () => {
     expect(((rectMeta?.x1 || 0) + (rectMeta?.x2 || 0)) / 2).toBeCloseTo(worldStart.x, 1);
     expect(((rectMeta?.y1 || 0) + (rectMeta?.y2 || 0)) / 2).toBeCloseTo(worldStart.y, 1);
 
-    await page.evaluate(() => window.app.ui.setActiveTool('select'));
+    await page.evaluate(() => {
+      window.app.ui.setActiveTool('select');
+      // Clear selection so the selected primitive shape doesn't keep the reticle cursor
+      if (window.app.renderer.clearSelection) window.app.renderer.clearSelection();
+      if (window.app.renderer.updateCursor) window.app.renderer.updateCursor();
+    });
     await expect
       .poll(async () => page.locator('#main-canvas').evaluate((canvasEl) => canvasEl.dataset.cursorMode || ''))
       .toBe('crosshair');

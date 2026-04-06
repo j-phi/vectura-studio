@@ -409,4 +409,60 @@ describe('Masking runtime', () => {
     const topPoint = polygons[0].reduce((best, point) => (point.y < best.y ? point : best), polygons[0][0]);
     expect(topPoint.y).toBe(80);
   });
+
+  test('getLayerSilhouette returns empty array for a layer with no paths', () => {
+    const { Layer, Masking } = runtime.window.Vectura;
+    const empty = new Layer('empty', 'expanded', 'Empty');
+    empty.paths = [];
+
+    const polygons = Masking.getLayerSilhouette(empty, null, bounds);
+
+    expect(Array.isArray(polygons)).toBe(true);
+    expect(polygons).toHaveLength(0);
+  });
+
+  test('applyMaskToPaths returns empty array when input paths are empty', () => {
+    const { Masking } = runtime.window.Vectura;
+    const mask = [
+      { x: 50, y: 50 },
+      { x: 150, y: 50 },
+      { x: 150, y: 150 },
+      { x: 50, y: 150 },
+      { x: 50, y: 50 },
+    ];
+
+    const result = Masking.applyMaskToPaths([], [mask], { invert: true });
+
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(0);
+  });
+
+  test('a child whose parent mask has no closed silhouette receives no clipping', () => {
+    const { VectorEngine, Layer } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    engine.layers = [];
+
+    // Open (non-closed) path — cannot form a silhouette
+    const openMask = new Layer('open-mask', 'expanded', 'Open Mask');
+    openMask.paths = [[
+      { x: 40, y: 60 },
+      { x: 200, y: 60 },
+    ]];
+    openMask.mask.enabled = true;
+
+    const child = new Layer('child', 'expanded', 'Child');
+    child.parentId = openMask.id;
+    child.paths = [[
+      { x: 20, y: 100 },
+      { x: 220, y: 100 },
+    ]];
+
+    engine.layers.push(openMask, child);
+    engine.computeAllDisplayGeometry();
+
+    // Child paths should remain unclipped since the mask parent cannot provide a silhouette
+    expect(child.displayPaths).toHaveLength(1);
+    expect(child.displayPaths[0][0].x).toBeLessThanOrEqual(21);
+    expect(child.displayPaths[0][child.displayPaths[0].length - 1].x).toBeGreaterThanOrEqual(219);
+  });
 });

@@ -37,6 +37,7 @@
 
   const createEvaluator = ({ noise, seed = 0 } = {}) => {
     const baseNoise = (x, y) => noise.noise2D(x, y);
+    // Hash constants from Inigo Quilez value-noise technique (iquilezles.org/articles/morenoise)
     const hash2D = (x, y) => {
       const n = Math.sin(x * 127.1 + y * 311.7 + seed * 0.1) * 43758.5453;
       return n - Math.floor(n);

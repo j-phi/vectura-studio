@@ -23,6 +23,7 @@
             dy = ax * (p.rho - az) - ay;
             dz = ax * ay - p.beta * az;
           } else {
+            // Dadras–Momeni attractor (Dadras & Momeni, 2009)
             dx = (az - 0.7) * ax - 3.5 * ay;
             dy = 3.5 * ax + (az - 0.7) * ay;
             dz =

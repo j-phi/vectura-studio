@@ -27,8 +27,9 @@
     const distToSegmentSq = (p, a, b) => {
       const dx = b.x - a.x;
       const dy = b.y - a.y;
-      if (dx === 0 && dy === 0) return sq(p.x - a.x) + sq(p.y - a.y);
-      const t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy);
+      const denom = dx * dx + dy * dy;
+      if (denom < 1e-10) return sq(p.x - a.x) + sq(p.y - a.y);
+      const t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / denom;
       if (t <= 0) return sq(p.x - a.x) + sq(p.y - a.y);
       if (t >= 1) return sq(p.x - b.x) + sq(p.y - b.y);
       const projX = a.x + t * dx;

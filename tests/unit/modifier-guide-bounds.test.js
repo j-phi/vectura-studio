@@ -13,13 +13,15 @@ describe('Mirror guide bounds helpers', () => {
 
   test('clipInfiniteAxisToBounds supports inset rectangles', () => {
     const { Modifiers } = runtime.window.Vectura;
-    const axis = Modifiers.getMirrorAxis({ angle: 90, xShift: 0, yShift: 0 }, { width: 200, height: 100 });
-    const segment = Modifiers.clipInfiniteAxisToBounds(axis, { x: 20, y: 10, width: 160, height: 80 });
+    const docBounds = { width: 200, height: 100 };
+    const inset = { x: 20, y: 10, width: 160, height: 80 };
+    const axis = Modifiers.getMirrorAxis({ angle: 90, xShift: 0, yShift: 0 }, docBounds);
+    const segment = Modifiers.clipInfiniteAxisToBounds(axis, inset);
 
     expect(segment).not.toBeNull();
-    expect(segment[0].x).toBeCloseTo(100, 5);
-    expect(segment[1].x).toBeCloseTo(100, 5);
-    expect(Math.min(segment[0].y, segment[1].y)).toBeCloseTo(10, 5);
-    expect(Math.max(segment[0].y, segment[1].y)).toBeCloseTo(90, 5);
+    expect(segment[0].x).toBeCloseTo(docBounds.width / 2, 5);
+    expect(segment[1].x).toBeCloseTo(docBounds.width / 2, 5);
+    expect(Math.min(segment[0].y, segment[1].y)).toBeCloseTo(inset.y, 5);
+    expect(Math.max(segment[0].y, segment[1].y)).toBeCloseTo(inset.y + inset.height, 5);
   });
 });
