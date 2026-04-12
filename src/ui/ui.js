@@ -13002,21 +13002,53 @@
 
     duplicateLayers(targetLayers, options = {}) {
       const { select = true } = options;
-      const layers = (targetLayers || []).filter((layer) => layer && !layer.isGroup);
-      if (!layers.length) return [];
+      const targets = targetLayers || [];
+      if (!targets.length) return [];
       if (this.app.pushHistory) this.app.pushHistory();
+      
+      const targetIds = new Set(targets.map(l => l.id));
+      const filteredTargets = targets.filter((layer) => {
+        let pId = layer.parentId;
+        while (pId) {
+          if (targetIds.has(pId)) return false;
+          const pLayer = this.app.engine.layers.find(l => l.id === pId);
+          pId = pLayer ? pLayer.parentId : null;
+        }
+        return true;
+      });
+
       const order = this.app.engine.layers.map((layer) => layer.id);
-      const sorted = layers
+      const sorted = filteredTargets
         .slice()
         .sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+
       const duplicates = [];
+      const duplicateDescendants = [];
       sorted.forEach((layer) => {
         const dup = this.app.engine.duplicateLayer(layer.id);
-        if (dup) duplicates.push(dup);
+        if (dup) {
+          duplicates.push(dup);
+          if (dup.isGroup) {
+            const getDesc = (pid) => {
+              const out = [];
+              this.app.engine.layers.forEach(l => {
+                if (l.parentId === pid) {
+                  out.push(l);
+                  out.push(...getDesc(l.id));
+                }
+              });
+              return out;
+            };
+            duplicateDescendants.push(...getDesc(dup.id));
+          }
+        }
       });
-      if (duplicates.length && select && this.app.renderer) {
-        const ids = duplicates.map((layer) => layer.id);
-        const primary = ids[ids.length - 1] || null;
+      
+      const allDups = [...duplicates, ...duplicateDescendants];
+      if (allDups.length && select && this.app.renderer) {
+        const ids = allDups.map((layer) => layer.id);
+        const nonGroupIds = allDups.filter(l => !l.isGroup).map(l => l.id);
+        const primary = nonGroupIds[nonGroupIds.length - 1] || ids[ids.length - 1] || null;
         this.app.renderer.setSelection(ids, primary);
       }
       this.renderLayers();
@@ -15782,16 +15814,15 @@
             return;
           }
           const ids = collectDescendants(group.id);
-          if (ids.length) {
-            const primary = ids[ids.length - 1];
-            if (this.app.renderer) this.app.renderer.setSelection(ids, primary);
-            this.app.engine.activeLayerId = primary;
-            this.lastLayerClickId = primary;
-            if (!skipList) this.renderLayers();
-            this.buildControls();
-            this.updateFormula();
-            this.app.render();
-          }
+          ids.push(group.id);
+          const primary = ids.length > 1 ? ids[ids.length - 2] : group.id;
+          if (this.app.renderer) this.app.renderer.setSelection(ids, primary);
+          this.app.engine.activeLayerId = primary;
+          this.lastLayerClickId = primary;
+          if (!skipList) this.renderLayers();
+          this.buildControls();
+          this.updateFormula();
+          this.app.render();
         };
         el.onclick = (e) => {
           if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select')) return;

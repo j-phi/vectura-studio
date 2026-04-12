@@ -195,10 +195,9 @@
       this.computeAllDisplayGeometry();
     }
 
-    duplicateLayer(id) {
+    duplicateLayer(id, state = null) {
       const source = this.layers.find((l) => l.id === id);
       if (!source) return null;
-      if (source.isGroup) return null;
       const newId = Math.random().toString(36).substr(2, 9);
       SETTINGS.globalLayerCount++;
       const baseName = `${source.name} Copy`;
@@ -212,11 +211,16 @@
       const layer = new Layer(newId, source.type, dupName);
       layer.params = JSON.parse(JSON.stringify(source.params));
       layer.paramStates = JSON.parse(JSON.stringify(source.paramStates || {}));
-      layer.parentId = source.parentId ?? null;
+      layer.parentId = state && state.parentId !== undefined ? state.parentId : (source.parentId ?? null);
+      layer.isGroup = source.isGroup;
       layer.containerRole = source.containerRole ?? null;
+      layer.groupType = source.groupType ?? null;
+      layer.groupParams = source.groupParams ? JSON.parse(JSON.stringify(source.groupParams)) : null;
+      layer.groupCollapsed = source.groupCollapsed;
       layer.sourcePaths =
         usesManualSourceGeometry(source) && source.sourcePaths ? JSON.parse(JSON.stringify(source.sourcePaths)) : null;
       layer.modifier = source.modifier ? JSON.parse(JSON.stringify(source.modifier)) : null;
+      layer.penId = source.penId;
       layer.color = source.color;
       layer.strokeWidth = source.strokeWidth;
       layer.lineCap = source.lineCap;
@@ -226,14 +230,55 @@
       layer.maskPolygons = clonePaths(source.maskPolygons || []);
       layer.effectivePaths = clonePaths(source.effectivePaths || source.paths || []);
       layer.mask = source.mask ? JSON.parse(JSON.stringify(source.mask)) : layer.mask;
-      const idx = this.layers.findIndex((l) => l.id === id);
-      if (idx >= 0) {
-        this.layers.splice(idx + 1, 0, layer);
+
+      let currentState = state;
+      if (!currentState) {
+        const getDescendantsIds = (parentId) => {
+          const out = [];
+          const visit = (pid) => {
+            this.layers.forEach((l) => {
+              if (l.parentId === pid) {
+                out.push(l.id);
+                visit(l.id);
+              }
+            });
+          };
+          visit(parentId);
+          return out;
+        };
+        const descIds = source.isGroup ? getDescendantsIds(source.id) : [];
+        const allIds = new Set([source.id, ...descIds]);
+        let maxIdx = -1;
+        this.layers.forEach((l, i) => {
+          if (allIds.has(l.id)) maxIdx = Math.max(maxIdx, i);
+        });
+        currentState = { insertIndex: maxIdx };
+      }
+
+      if (currentState.insertIndex >= 0) {
+        currentState.insertIndex++;
+        this.layers.splice(currentState.insertIndex, 0, layer);
       } else {
         this.layers.push(layer);
+        currentState.insertIndex = this.layers.length - 1;
       }
-      this.activeLayerId = newId;
-      this.computeAllDisplayGeometry();
+
+      if (source.isGroup) {
+        const children = this.layers.filter((l) => l.parentId === source.id && l.id !== newId);
+        children.forEach((child) => {
+          const childState = {
+            insertIndex: currentState.insertIndex,
+            parentId: newId
+          };
+          this.duplicateLayer(child.id, childState);
+          currentState.insertIndex = childState.insertIndex;
+        });
+      }
+
+      if (!state) {
+        this.activeLayerId = newId;
+        this.computeAllDisplayGeometry();
+      }
       return layer;
     }
 
