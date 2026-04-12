@@ -14471,6 +14471,8 @@
       const fileImportSvg = getEl('file-import-svg');
       const btnExport = getEl('btn-export');
       const btnResetView = getEl('btn-reset-view');
+      const btnUndo = getEl('btn-undo', { silent: true });
+      const btnRedo = getEl('btn-redo', { silent: true });
 
       if (addLayer && moduleSelect) {
         addLayer.onclick = () => {
@@ -14492,6 +14494,12 @@
           this.renderLayers();
           this.app.render();
         };
+      }
+      if (btnUndo) {
+        btnUndo.onclick = () => { if (this.app.undo) this.app.undo(); };
+      }
+      if (btnRedo) {
+        btnRedo.onclick = () => { if (this.app.redo) this.app.redo(); };
       }
       if (insertMirrorModifier) {
         insertMirrorModifier.onclick = () => {
@@ -14974,6 +14982,15 @@
     handleTopMenuShortcut(e) {
       const primary = e.metaKey || e.ctrlKey;
       const key = (e.key || '').toLowerCase();
+      if (primary && !e.shiftKey && !e.altKey && key === 'z') {
+        return this.triggerTopMenuAction('btn-undo');
+      }
+      if (primary && e.shiftKey && !e.altKey && key === 'z') {
+        return this.triggerTopMenuAction('btn-redo');
+      }
+      if (primary && !e.shiftKey && !e.altKey && key === 'y') {
+        return this.triggerTopMenuAction('btn-redo');
+      }
       if (primary && !e.shiftKey && !e.altKey && key === 'o') {
         return this.triggerTopMenuAction('btn-open-vectura');
       }
@@ -15040,12 +15057,6 @@
         if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
           e.preventDefault();
           this.openHelp(true);
-          return;
-        }
-
-        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
-          e.preventDefault();
-          if (this.app.undo) this.app.undo();
           return;
         }
 

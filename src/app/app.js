@@ -47,6 +47,7 @@
       this.renderer.onCommitTransform = () => this.pushHistory();
       this.renderer.onDuplicateLayer = () => this.pushHistory();
       this.history = [];
+      this.redoStack = [];
       this.maxHistory = SETTINGS.undoSteps ?? 20;
       this.isRestoring = false;
       this.pushHistory();
@@ -458,14 +459,25 @@
       if (this.history.length > this.maxHistory) {
         this.history.shift();
       }
+      this.redoStack = [];
     }
 
     undo() {
       if (this.history.length < 2) return;
       this.isRestoring = true;
-      this.history.pop();
+      const current = this.history.pop();
+      this.redoStack.push(current);
       const previous = this.history[this.history.length - 1];
       this.applyState(previous);
+      this.isRestoring = false;
+    }
+
+    redo() {
+      if (!this.redoStack.length) return;
+      this.isRestoring = true;
+      const next = this.redoStack.pop();
+      this.history.push(next);
+      this.applyState(next);
       this.isRestoring = false;
     }
 
