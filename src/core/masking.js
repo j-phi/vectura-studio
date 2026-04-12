@@ -267,8 +267,16 @@
       if (path.meta?.kind === 'circle' && path.length < 2) {
         const expanded = expandCircle(path.meta);
         if (!expanded.length) return;
-        expanded.meta = path.meta;
+        expanded.meta = { ...path.meta };
+        delete expanded.meta.kind;
         workingPath = expanded;
+      } else if (workingPath.meta?.kind === 'circle') {
+        // Multi-point circle (e.g. shapepack) — clone with kind stripped so
+        // clipped arc segments are treated as polygon paths, not full circles.
+        const pts = workingPath.map((pt) => ({ x: pt.x, y: pt.y }));
+        pts.meta = { ...workingPath.meta };
+        delete pts.meta.kind;
+        workingPath = pts;
       }
       if (workingPath.length < 2) return;
       const isLoop = Boolean(workingPath.meta?.kind === 'circle' || isClosedPath(workingPath));

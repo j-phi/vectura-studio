@@ -465,4 +465,60 @@ describe('Masking runtime', () => {
     expect(child.displayPaths[0][0].x).toBeLessThanOrEqual(21);
     expect(child.displayPaths[0][child.displayPaths[0].length - 1].x).toBeGreaterThanOrEqual(219);
   });
+
+  test('circle-typed child paths are clipped by a mask and lose circle meta on output', () => {
+    const { Masking, PathBoolean } = runtime.window.Vectura;
+
+    // Square mask: 100×100 centred at (120, 110)
+    const mask = [
+      { x: 70, y: 60 },
+      { x: 170, y: 60 },
+      { x: 170, y: 160 },
+      { x: 70, y: 160 },
+      { x: 70, y: 60 },
+    ];
+
+    // 0-length circle entirely inside mask (rainfall / phylla style)
+    const circleIn = [];
+    circleIn.meta = { kind: 'circle', cx: 120, cy: 110, r: 20 };
+
+    // 0-length circle partially outside mask
+    const circlePartial = [];
+    circlePartial.meta = { kind: 'circle', cx: 165, cy: 110, r: 30 };
+
+    // 0-length circle entirely outside mask — should produce no output
+    const circleOut = [];
+    circleOut.meta = { kind: 'circle', cx: 220, cy: 110, r: 10 };
+
+    // Multi-point circle (shapepack style) partially overlapping mask
+    const circleMulti = [];
+    for (let i = 0; i <= 36; i++) {
+      const theta = (i / 36) * Math.PI * 2;
+      circleMulti.push({ x: 90 + Math.cos(theta) * 40, y: 110 + Math.sin(theta) * 40 });
+    }
+    circleMulti.meta = { kind: 'circle', cx: 90, cy: 110, r: 40 };
+
+    const result = Masking.applyMaskToPaths(
+      [circleIn, circlePartial, circleOut, circleMulti],
+      [mask],
+      { invert: true },
+    );
+
+    // At least circleIn and circlePartial should produce output; circleOut should be dropped
+    expect(result.length).toBeGreaterThanOrEqual(2);
+
+    // No output segment should carry meta.kind = 'circle' — that would bypass renderer clipping
+    result.forEach((seg) => {
+      expect(seg.meta?.kind).not.toBe('circle');
+    });
+
+    // All output points must lie within (or on the boundary of) the mask
+    result.forEach((seg) => {
+      seg.forEach((pt) => {
+        const inside = PathBoolean.pointInPolygon(pt, mask);
+        const onEdge = pt.x >= 69.99 && pt.x <= 170.01 && pt.y >= 59.99 && pt.y <= 160.01;
+        expect(inside || onEdge).toBe(true);
+      });
+    });
+  });
 });
