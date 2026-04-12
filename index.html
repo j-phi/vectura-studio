@@ -99,6 +99,13 @@
                 <span>Reset View</span>
                 <span class="top-menu-shortcut" data-shortcut-mac="Cmd+0" data-shortcut-win="Ctrl+0"></span>
               </button>
+              <button id="btn-view-grid-toggle" class="top-menu-item" type="button" role="menuitem">
+                <span>Grid Overlay <span class="view-menu-checkmark text-vectura-accent ml-1" id="view-grid-checkmark" style="visibility: hidden;">✓</span></span>
+                <span class="top-menu-shortcut" data-shortcut-mac="Ctrl+G" data-shortcut-win="Ctrl+G"></span>
+              </button>
+              <button id="btn-view-grid-settings" class="top-menu-item" type="button" role="menuitem">
+                <span>Grid Settings...</span>
+              </button>
             </div>
           </div>
           <div class="top-menu" data-top-menu>
@@ -707,10 +714,6 @@
                 <label class="text-xs text-vectura-muted">Snap Guides</label>
                 <input type="checkbox" id="set-snap-guides" class="cursor-pointer" />
               </div>
-              <div class="flex items-center justify-between mt-2">
-                <label class="text-xs text-vectura-muted">Grid Overlay (10mm)</label>
-                <input type="checkbox" id="set-grid-overlay" class="cursor-pointer" />
-              </div>
             </div>
             <div class="mt-2">
               <div class="flex items-center justify-between">
@@ -777,6 +780,48 @@
             <label class="text-xs text-vectura-muted">Undo Steps</label>
             <input type="number" id="set-undo" min="1" max="200"
               class="w-12 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="grid-settings-panel" class="settings-panel bg-vectura-panel border-r border-vectura-border" style="z-index: 50;">
+      <div class="p-4 border-b border-vectura-border flex justify-between items-center bg-vectura-panel">
+        <span class="font-bold text-vectura-accent">GRID SETTINGS</span>
+        <button id="btn-close-grid-settings" class="text-vectura-muted hover:text-vectura-accent" aria-label="Close grid settings" type="button">✕</button>
+      </div>
+      <div class="flex-1 overflow-y-auto p-4">
+        <div class="control-group border-none">
+          <div class="flex items-center justify-between mb-4">
+            <label class="text-xs text-vectura-muted">Show Grid</label>
+            <input type="checkbox" id="set-grid-overlay-master" class="cursor-pointer" />
+          </div>
+          <div class="mb-4">
+            <label class="text-[11px] text-vectura-muted block mb-2">Opacity</label>
+            <div class="flex items-center justify-between gap-2">
+              <input type="range" id="set-grid-opacity-slider" min="0" max="1" step="0.05" class="w-full">
+              <input type="number" id="set-grid-opacity" min="0" max="1" step="0.05" class="w-16 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
+            </div>
+          </div>
+          <div class="mb-4">
+            <label class="text-[11px] text-vectura-muted block mb-2">Style</label>
+            <select id="set-grid-style" class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent">
+              <option value="cartesian">Cartesian</option>
+              <option value="isometric">Isometric</option>
+              <option value="cartesian-dot">Cartesian Dot</option>
+              <option value="isometric-dot">Isometric Dot</option>
+            </select>
+          </div>
+          <div class="flex items-center justify-between mb-4">
+            <label class="text-[11px] text-vectura-muted">Color</label>
+            <div class="w-24">
+              <button id="set-grid-color-pill" type="button" class="value-chip text-xs text-vectura-accent font-mono w-full px-2 py-1 border border-vectura-border rounded whitespace-nowrap overflow-hidden line-clamp-1">#FFFFFF</button>
+              <input type="color" id="set-grid-color" class="hidden" />
+            </div>
+          </div>
+          <div class="flex items-center justify-between mb-4">
+            <label class="text-[11px] text-vectura-muted">Size (mm)</label>
+            <input type="number" id="set-grid-size" min="1" step="0.5" class="w-16 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
           </div>
         </div>
       </div>

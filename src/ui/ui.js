@@ -13934,7 +13934,6 @@
       const marginLineStyleReset = getEl('set-margin-line-style-reset');
       const showGuides = getEl('set-show-guides');
       const snapGuides = getEl('set-snap-guides');
-      const gridOverlay = getEl('set-grid-overlay');
       const selectionOutline = getEl('set-selection-outline');
       const selectionOutlineColorPill = getEl('set-selection-outline-color-pill');
       const selectionOutlineWidthSlider = getEl('set-selection-outline-width-slider');
@@ -13981,7 +13980,29 @@
       if (marginLineStyleReset) marginLineStyleReset.disabled = false;
       if (showGuides) showGuides.checked = SETTINGS.showGuides !== false;
       if (snapGuides) snapGuides.checked = SETTINGS.snapGuides !== false;
-      if (gridOverlay) gridOverlay.checked = SETTINGS.gridOverlay === true;
+      const viewGridCheckmark = getEl('view-grid-checkmark');
+      if (viewGridCheckmark) viewGridCheckmark.style.visibility = SETTINGS.gridOverlay ? 'visible' : 'hidden';
+
+      const gridOverlayMaster = getEl('set-grid-overlay-master');
+      if (gridOverlayMaster) gridOverlayMaster.checked = SETTINGS.gridOverlay === true;
+      const gridOpacitySlider = getEl('set-grid-opacity-slider');
+      if (gridOpacitySlider) gridOpacitySlider.value = SETTINGS.gridOpacity ?? 0.2;
+      const gridOpacity = getEl('set-grid-opacity');
+      if (gridOpacity) gridOpacity.value = SETTINGS.gridOpacity ?? 0.2;
+      const gridStyle = getEl('set-grid-style');
+      if (gridStyle) gridStyle.value = SETTINGS.gridStyle ?? 'cartesian';
+      const gridColor = getEl('set-grid-color');
+      if (gridColor) gridColor.value = SETTINGS.gridColor ?? '#ffffff';
+      const gridColorPill = getEl('set-grid-color-pill');
+      if (gridColorPill) {
+        const color = SETTINGS.gridColor ?? '#ffffff';
+        gridColorPill.textContent = color.toUpperCase();
+        gridColorPill.style.background = color;
+        gridColorPill.style.color = getContrastTextColor(color);
+      }
+      const gridSize = getEl('set-grid-size');
+      if (gridSize) gridSize.value = SETTINGS.gridSize ?? 10;
+      
       if (selectionOutline) selectionOutline.checked = SETTINGS.selectionOutline !== false;
       if (selectionOutlineColorPill) {
         const color = SETTINGS.selectionOutlineColor || '#ef4444';
@@ -14464,7 +14485,6 @@
       const setMarginLineStyleReset = getEl('set-margin-line-style-reset');
       const setShowGuides = getEl('set-show-guides');
       const setSnapGuides = getEl('set-snap-guides');
-      const setGridOverlay = getEl('set-grid-overlay');
       const setSelectionOutline = getEl('set-selection-outline');
       const setSelectionOutlineColorPill = getEl('set-selection-outline-color-pill');
       const setSelectionOutlineColor = getEl('set-selection-outline-color');
@@ -14719,10 +14739,99 @@
           SETTINGS.snapGuides = e.target.checked;
         };
       }
-      if (setGridOverlay) {
-        setGridOverlay.onchange = (e) => {
+      const btnViewGridToggle = getEl('btn-view-grid-toggle');
+      if (btnViewGridToggle) {
+        btnViewGridToggle.onclick = () => {
+          SETTINGS.gridOverlay = !SETTINGS.gridOverlay;
           if (this.app.pushHistory) this.app.pushHistory();
+          this.initSettingsValues();
+          this.app.render();
+          const p = getEl('top-menubar').querySelector('[data-top-menu-panel][aria-label="View menu"]');
+          if (p) p.classList.remove('open');
+        };
+      }
+
+      const btnViewGridSettings = getEl('btn-view-grid-settings');
+      const gridSettingsPanel = getEl('grid-settings-panel');
+      const btnCloseGridSettings = getEl('btn-close-grid-settings');
+
+      if (btnViewGridSettings && gridSettingsPanel) {
+        btnViewGridSettings.onclick = () => {
+          gridSettingsPanel.classList.add('open');
+          const p = getEl('top-menubar').querySelector('[data-top-menu-panel][aria-label="View menu"]');
+          if (p) p.classList.remove('open');
+        };
+      }
+
+      if (btnCloseGridSettings && gridSettingsPanel) {
+        btnCloseGridSettings.onclick = () => {
+          gridSettingsPanel.classList.remove('open');
+        };
+      }
+
+      const setGridOverlayMaster = getEl('set-grid-overlay-master');
+      if (setGridOverlayMaster) {
+        setGridOverlayMaster.onchange = (e) => {
           SETTINGS.gridOverlay = e.target.checked;
+          if (this.app.pushHistory) this.app.pushHistory();
+          this.initSettingsValues();
+          this.app.render();
+        };
+      }
+
+      const syncGridOpacity = (val, commit) => {
+        if (commit && this.app.pushHistory) this.app.pushHistory();
+        SETTINGS.gridOpacity = parseFloat(val);
+        const gridOpacitySlider = getEl('set-grid-opacity-slider');
+        const gridOpacity = getEl('set-grid-opacity');
+        if (gridOpacitySlider) gridOpacitySlider.value = SETTINGS.gridOpacity;
+        if (gridOpacity) gridOpacity.value = SETTINGS.gridOpacity;
+        this.app.render();
+      };
+      const setGridOpacitySlider = getEl('set-grid-opacity-slider');
+      if (setGridOpacitySlider) {
+        setGridOpacitySlider.oninput = (e) => syncGridOpacity(e.target.value, false);
+        setGridOpacitySlider.onchange = (e) => syncGridOpacity(e.target.value, true);
+      }
+      const setGridOpacity = getEl('set-grid-opacity');
+      if (setGridOpacity) {
+        setGridOpacity.oninput = (e) => syncGridOpacity(e.target.value, false);
+        setGridOpacity.onchange = (e) => syncGridOpacity(e.target.value, true);
+      }
+
+      const setGridStyle = getEl('set-grid-style');
+      if (setGridStyle) {
+        setGridStyle.onchange = (e) => {
+          SETTINGS.gridStyle = e.target.value;
+          if (this.app.pushHistory) this.app.pushHistory();
+          this.initSettingsValues();
+          this.app.render();
+        };
+      }
+
+      const setGridColor = getEl('set-grid-color');
+      const setGridColorPill = getEl('set-grid-color-pill');
+      if (setGridColor && setGridColorPill) {
+        setGridColorPill.onclick = () => openColorPickerAnchoredTo(setGridColor, setGridColorPill);
+        setGridColor.oninput = (e) => {
+          SETTINGS.gridColor = e.target.value;
+          this.initSettingsValues();
+          this.app.render();
+        };
+        setGridColor.onchange = (e) => {
+          SETTINGS.gridColor = e.target.value;
+          if (this.app.pushHistory) this.app.pushHistory();
+          this.initSettingsValues();
+          this.app.render();
+        };
+      }
+
+      const setGridSize = getEl('set-grid-size');
+      if (setGridSize) {
+        setGridSize.onchange = (e) => {
+          SETTINGS.gridSize = Math.max(0.1, parseFloat(e.target.value) || 10);
+          if (this.app.pushHistory) this.app.pushHistory();
+          this.initSettingsValues();
           this.app.render();
         };
       }
@@ -15035,6 +15144,9 @@
         this.setTopMenuOpen(null, false);
         return true;
       }
+      if (e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && key === 'g') {
+        return this.triggerTopMenuAction('btn-view-grid-toggle');
+      }
       return false;
     }
 
@@ -15236,7 +15348,7 @@
           return;
         }
 
-        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'g') {
+        if (e.metaKey && e.key.toLowerCase() === 'g') {
           e.preventDefault();
           if (e.shiftKey) {
             this.ungroupSelection();

@@ -2115,20 +2115,86 @@
 
     drawGridOverlay(profile) {
       if (!profile) return;
-      const spacing = 10;
+      const spacing = SETTINGS.gridSize || 10;
+      const style = SETTINGS.gridStyle || 'cartesian';
+      const opacity = SETTINGS.gridOpacity ?? 0.2;
+      const color = SETTINGS.gridColor || '#ffffff';
+      
       this.ctx.save();
-      this.ctx.strokeStyle = getThemeToken('--render-frame-stroke', 'rgba(255,255,255,0.08)');
+      this.ctx.globalAlpha = opacity;
+      this.ctx.strokeStyle = color;
+      this.ctx.fillStyle = color;
       this.ctx.lineWidth = 0.15;
+      
+      const w = profile.width;
+      const h = profile.height;
+
       this.ctx.beginPath();
-      for (let x = 0; x <= profile.width; x += spacing) {
-        this.ctx.moveTo(x, 0);
-        this.ctx.lineTo(x, profile.height);
+      this.ctx.rect(0, 0, w, h);
+      this.ctx.clip();
+      
+      this.ctx.beginPath();
+      
+      if (style.includes('cartesian')) {
+        if (style === 'cartesian') {
+          for (let x = 0; x <= w; x += spacing) {
+            this.ctx.moveTo(x, 0);
+            this.ctx.lineTo(x, h);
+          }
+          for (let y = 0; y <= h; y += spacing) {
+            this.ctx.moveTo(0, y);
+            this.ctx.lineTo(w, y);
+          }
+          this.ctx.stroke();
+        } else if (style === 'cartesian-dot') {
+          for (let x = 0; x <= w; x += spacing) {
+            for (let y = 0; y <= h; y += spacing) {
+              this.ctx.moveTo(x, y);
+              this.ctx.arc(x, y, 0.35, 0, Math.PI * 2);
+            }
+          }
+          this.ctx.fill();
+        }
+      } else if (style.includes('isometric')) {
+        const L = spacing;
+        const dx = L * Math.cos(Math.PI / 6);
+        const dy = L * Math.sin(Math.PI / 6);
+        
+        if (style === 'isometric') {
+          const tan30 = Math.tan(Math.PI / 6);
+          
+          for (let x = 0; x <= w; x += dx) {
+            this.ctx.moveTo(x, 0);
+            this.ctx.lineTo(x, h);
+          }
+          
+          const minDnY = Math.floor((-w * tan30) / L) * L;
+          const maxDnY = Math.ceil(h / L) * L;
+          for (let yInt = minDnY; yInt <= maxDnY; yInt += L) {
+             this.ctx.moveTo(0, yInt);
+             this.ctx.lineTo(w, yInt + w * tan30);
+          }
+          
+          const minUpY = 0;
+          const maxUpY = Math.ceil((h + w * tan30) / L) * L;
+          for (let yInt = minUpY; yInt <= maxUpY; yInt += L) {
+             this.ctx.moveTo(0, yInt);
+             this.ctx.lineTo(w, yInt - w * tan30);
+          }
+          this.ctx.stroke();
+        } else if (style === 'isometric-dot') {
+           let row = 0;
+           for (let y = 0; y <= h + dy; y += dy) {
+             const offsetX = (row % 2 === 1) ? dx : 0;
+             for (let x = offsetX; x <= w + dx; x += dx * 2) {
+               this.ctx.moveTo(x, y);
+               this.ctx.arc(x, y, 0.35, 0, Math.PI * 2);
+             }
+             row++;
+           }
+           this.ctx.fill();
+        }
       }
-      for (let y = 0; y <= profile.height; y += spacing) {
-        this.ctx.moveTo(0, y);
-        this.ctx.lineTo(profile.width, y);
-      }
-      this.ctx.stroke();
       this.ctx.restore();
     }
 

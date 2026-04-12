@@ -1029,6 +1029,10 @@
     selectionOutlineColor: '#ef4444',
     selectionOutlineWidth: 0.4,
     gridOverlay: false,
+    gridOpacity: 0.2,
+    gridStyle: 'cartesian',
+    gridColor: '#ffffff',
+    gridSize: 10,
     uiSections: {
       algorithm: false,
       algorithmTransform: true,
