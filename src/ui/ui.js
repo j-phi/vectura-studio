@@ -12385,8 +12385,8 @@
       const list = document.createElement('div');
 
       const commit = (fn) => {
-        if (this.app.pushHistory) this.app.pushHistory();
         fn();
+        if (this.app.pushHistory) this.app.pushHistory();
         this.refreshModifierLayer(layer);
       };
 
@@ -12616,7 +12616,7 @@
     assignLayersToParent(parentId, targetLayers, options = {}) {
       const layers = (targetLayers || []).filter((layer) => layer && layer.id !== parentId);
       if (!layers.length) return [];
-      const { selectAssigned = false, primaryId = null } = options;
+      const { selectAssigned = false, primaryId = null, captureHistory = false } = options;
       const parent = this.getLayerById(parentId);
       if (!parent || !this.canLayerAcceptChildren(parent)) return [];
       const moveIds = layers
@@ -12646,6 +12646,7 @@
         this.app.renderer.setSelection(ids.length ? ids : [parentId], nextPrimary);
         this.app.engine.activeLayerId = nextPrimary || parentId;
       }
+      if (captureHistory && this.app.pushHistory) this.app.pushHistory();
 
       return moveIds.map((id) => map.get(id)).filter(Boolean);
     }
@@ -12657,7 +12658,7 @@
     assignLayersToRoot(targetLayers, options = {}) {
       const layers = (targetLayers || []).filter((layer) => layer);
       if (!layers.length) return [];
-      const { nextEngineOrder = null, selectAssigned = false, primaryId = null } = options;
+      const { nextEngineOrder = null, selectAssigned = false, primaryId = null, captureHistory = false } = options;
       const moveIds = layers.map((layer) => layer.id);
       const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
       moveIds.forEach((id) => {
@@ -12676,12 +12677,12 @@
         this.app.renderer.setSelection(ids, nextPrimary);
         this.app.engine.activeLayerId = nextPrimary;
       }
+      if (captureHistory && this.app.pushHistory) this.app.pushHistory();
 
       return moveIds.map((id) => map.get(id)).filter(Boolean);
     }
 
     insertMirrorModifier() {
-      if (this.app.pushHistory) this.app.pushHistory();
       const selectedLayers = (this.app.renderer?.getSelectedLayers?.() || []).filter((layer) => layer && !layer.isGroup);
       const id = this.app.engine.addModifierLayer('mirror');
       if (selectedLayers.length) {
@@ -12689,6 +12690,7 @@
       }
       if (this.app.renderer) this.app.renderer.setSelection([id], id);
       this.app.engine.activeLayerId = id;
+      if (this.app.pushHistory) this.app.pushHistory();
       this.renderLayers();
       this.buildControls();
       this.updateFormula();
@@ -12870,9 +12872,10 @@
         const layer = this.getLayerById(id);
         return layer && !layer.isGroup;
       });
-      if (!selectedIds.length) return;
+      if (!selectedIds.length) return false;
       const order = this.app.engine.layers.map((layer) => layer.id);
       const selected = new Set(selectedIds);
+      const beforeOrder = order.slice();
       if (direction === 'top' || direction === 'bottom') {
         const keep = order.filter((id) => !selected.has(id));
         const moving = order.filter((id) => selected.has(id));
@@ -12896,10 +12899,16 @@
         const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
         this.app.engine.layers = order.map((id) => map.get(id)).filter(Boolean);
       }
+      const changed = beforeOrder.some((id, index) => id !== this.app.engine.layers[index]?.id);
+      if (!changed) return false;
       this.normalizeGroupOrder();
       this.renderLayers();
       this.app.render();
-      window.requestAnimationFrame(() => this.scrollLayerToTop(groupId));
+      const scrollTargetId = this.app.renderer?.selectedLayerId || selectedIds[selectedIds.length - 1] || null;
+      if (scrollTargetId) {
+        window.requestAnimationFrame(() => this.scrollLayerToTop(scrollTargetId));
+      }
+      return true;
     }
 
     groupSelection() {
@@ -12909,7 +12918,6 @@
       });
       if (selectedIds.length < 2) return;
       if (!Layer) return;
-      if (this.app.pushHistory) this.app.pushHistory();
       const layers = this.app.engine.layers;
       const selectedSet = new Set(selectedIds);
       const selectedLayers = layers.filter((layer) => selectedSet.has(layer.id));
@@ -12953,6 +12961,7 @@
       });
 
       this.normalizeGroupOrder();
+      if (this.app.pushHistory) this.app.pushHistory();
       this.renderLayers();
       this.app.render();
     }
@@ -12960,7 +12969,6 @@
     ungroupSelection() {
       const selectedIds = Array.from(this.app.renderer?.selectedLayerIds || []);
       if (!selectedIds.length) return;
-      if (this.app.pushHistory) this.app.pushHistory();
       const layers = this.app.engine.layers;
       const groupIds = new Set();
       selectedIds.forEach((id) => {
@@ -12977,6 +12985,7 @@
         const idx = layers.findIndex((layer) => layer.id === groupId);
         if (idx >= 0) layers.splice(idx, 1);
       });
+      if (this.app.pushHistory) this.app.pushHistory();
       this.renderLayers();
       this.app.render();
     }
@@ -13057,17 +13066,21 @@
       return layer.mask;
     }
 
-    setLayerMaskEnabled(layer, enabled) {
+    setLayerMaskEnabled(layer, enabled, options = {}) {
       if (!layer) return;
+      const { captureHistory = false } = options;
       const mask = this.ensureLayerMaskState(layer);
       mask.enabled = Boolean(enabled) && Boolean(layer.maskCapabilities?.canSource);
+      if (captureHistory && this.app.pushHistory) this.app.pushHistory();
       this.refreshMaskingViews();
     }
 
-    setLayerMaskHidden(layer, hidden) {
+    setLayerMaskHidden(layer, hidden, options = {}) {
       if (!layer) return;
+      const { captureHistory = false } = options;
       const mask = this.ensureLayerMaskState(layer);
       mask.hideLayer = Boolean(hidden);
+      if (captureHistory && this.app.pushHistory) this.app.pushHistory();
       this.refreshMaskingViews();
     }
 
@@ -13097,8 +13110,7 @@
       const enableInput = header.querySelector('input[type="checkbox"]');
       if (enableInput) {
         enableInput.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          this.setLayerMaskEnabled(layer, e.target.checked);
+          this.setLayerMaskEnabled(layer, e.target.checked, { captureHistory: true });
         };
       }
       wrapper.appendChild(header);
@@ -13114,8 +13126,7 @@
       const hideInput = optionsRow.querySelector('input[type="checkbox"]');
       if (hideInput) {
         hideInput.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          this.setLayerMaskHidden(layer, e.target.checked);
+          this.setLayerMaskHidden(layer, e.target.checked, { captureHistory: true });
         };
       }
       wrapper.appendChild(optionsRow);
@@ -15237,14 +15248,15 @@
 
         if ((e.metaKey || e.ctrlKey) && (e.key === '[' || e.key === ']' || e.key === '{' || e.key === '}')) {
           e.preventDefault();
-          if (this.app.pushHistory) this.app.pushHistory();
           const isRight = e.key === ']' || e.key === '}';
           const direction = isRight ? 'up' : 'down';
+          let changed = false;
           if (e.shiftKey || e.key === '{' || e.key === '}') {
-            this.moveSelectedLayers(isRight ? 'top' : 'bottom');
+            changed = this.moveSelectedLayers(isRight ? 'top' : 'bottom');
           } else {
-            this.moveSelectedLayers(direction);
+            changed = this.moveSelectedLayers(direction);
           }
+          if (changed && this.app.pushHistory) this.app.pushHistory();
           return;
         }
 
@@ -15439,7 +15451,6 @@
             if (dropGroupId) {
               const target = this.getLayerById(dropGroupId);
               if (target && this.canLayerAcceptChildren(target)) {
-                if (this.app.pushHistory) this.app.pushHistory();
                 const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
                 const moveIds = selectedInUi.filter((id) => {
                   if (id === dropGroupId) return false;
@@ -15450,6 +15461,7 @@
                 });
                 const moveLayers = moveIds.map((id) => map.get(id)).filter(Boolean);
                 this.assignLayersToParent(dropGroupId, moveLayers, {
+                  captureHistory: true,
                   selectAssigned: true,
                   primaryId: this.app.renderer?.selectedLayerId || moveIds[moveIds.length - 1] || dropGroupId,
                 });
@@ -15470,6 +15482,7 @@
               .filter((layer) => this.shouldLeaveParentScope(layer, prevId, nextId, selectedSet));
             if (moveToRoot.length) {
               this.assignLayersToRoot(moveToRoot, {
+                captureHistory: true,
                 nextEngineOrder,
                 selectAssigned: true,
                 primaryId: this.app.renderer?.selectedLayerId || moveToRoot[moveToRoot.length - 1]?.id || null,
@@ -15478,6 +15491,8 @@
               this.app.render();
               return;
             }
+            const hasOrderChanged = nextEngineOrder.some((id, index) => id !== this.app.engine.layers[index]?.id);
+            if (hasOrderChanged && this.app.pushHistory) this.app.pushHistory();
             this.app.engine.layers = nextEngineOrder.map((id) => map.get(id)).filter(Boolean);
             this.normalizeGroupOrder();
             this.renderLayers();
@@ -15670,8 +15685,8 @@
         };
         if (modifierEnabled) {
           modifierEnabled.onchange = (e) => {
-            if (this.app.pushHistory) this.app.pushHistory();
             modifier.enabled = Boolean(e.target.checked);
+            if (this.app.pushHistory) this.app.pushHistory();
             this.refreshModifierLayer(group, { rebuildControls: group.id === this.app.engine.activeLayerId });
           };
         }
@@ -15734,8 +15749,8 @@
         if (delBtn) {
           delBtn.onclick = (e) => {
             e.stopPropagation();
-            if (this.app.pushHistory) this.app.pushHistory();
             this.app.engine.removeLayer(group.id);
+            if (this.app.pushHistory) this.app.pushHistory();
             if (this.app.renderer) {
               const nextId = this.app.engine.activeLayerId;
               this.app.renderer.setSelection(nextId ? [nextId] : [], nextId);
@@ -15930,8 +15945,8 @@
         if (delBtn) {
           delBtn.onclick = (e) => {
             e.stopPropagation();
-            if (this.app.pushHistory) this.app.pushHistory();
             this.app.engine.removeLayer(l.id);
+            if (this.app.pushHistory) this.app.pushHistory();
             if (this.app.renderer) {
               const nextId = this.app.engine.activeLayerId;
               this.app.renderer.setSelection(nextId ? [nextId] : [], nextId);
@@ -15943,8 +15958,8 @@
         if (upBtn && !isChild) {
           upBtn.onclick = (e) => {
             e.stopPropagation();
-            if (this.app.pushHistory) this.app.pushHistory();
-            this.app.engine.moveLayer(l.id, 1);
+            const changed = this.app.engine.moveLayer(l.id, 1);
+            if (changed && this.app.pushHistory) this.app.pushHistory();
             this.renderLayers();
             this.app.render();
           };
@@ -15952,8 +15967,8 @@
         if (downBtn && !isChild) {
           downBtn.onclick = (e) => {
             e.stopPropagation();
-            if (this.app.pushHistory) this.app.pushHistory();
-            this.app.engine.moveLayer(l.id, -1);
+            const changed = this.app.engine.moveLayer(l.id, -1);
+            if (changed && this.app.pushHistory) this.app.pushHistory();
             this.renderLayers();
             this.app.render();
           };

@@ -2215,11 +2215,11 @@
             e.preventDefault();
             return;
           }
-          if (this.onCommitTransform) this.onCommitTransform();
           if (hitGuide.type === 'flip') {
             hitGuide.guide.mirror.replacedSide =
               hitGuide.guide.mirror.replacedSide === 'negative' ? 'positive' : 'negative';
             this.engine.computeAllDisplayGeometry();
+            if (this.onCommitTransform) this.onCommitTransform();
             this.draw();
             e.preventDefault();
             return;

@@ -25,6 +25,7 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
+- Fixed snapshot-based Undo/Redo for document-mutating layer-structure edits by storing real post-mutation structural states, restoring multi-selection sets, and adding integration regressions for grouping, reparenting, masking, and modifier/container edits.
 - Fixed `Remove Hidden Geometry` export to correctly clip ancestor-masked layers using `displayMaskActive` instead of `layer.mask?.enabled`, so child layers clipped by a parent mask are properly trimmed on export.
 - Improved accessibility across all UI: theme-aware canvas reticle cursor, `prefers-reduced-motion` support, `aria-live` on notification toasts, modal focus management, `aria-pressed`/`aria-current`/`aria-expanded` on interactive controls, visible focus rings, and a minimum 11 px text-size floor.
 - Added a full dark/light shell theme with a header sun/moon toggle, cookie-backed personal theme preference, theme-aware renderer/helper chrome, and automatic `Pen 1` plus document-background syncing when the theme flips.

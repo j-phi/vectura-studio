@@ -230,6 +230,7 @@
     }
 
     captureState() {
+      const selectedLayerIds = Array.from(this.renderer?.selectedLayerIds || []).filter(Boolean);
       return {
         engine: this.engine.exportState(),
         settings: {
@@ -283,6 +284,7 @@
           globalLayerCount: SETTINGS.globalLayerCount,
         },
         selectedLayerId: this.renderer.selectedLayerId,
+        selectedLayerIds,
       };
     }
 
@@ -352,8 +354,15 @@
         this.engine.setProfile(SETTINGS.paperSize);
       }
       this.engine.importState(state.engine);
-      const selectedId = state.selectedLayerId || this.engine.activeLayerId;
-      this.renderer.setSelection(selectedId ? [selectedId] : [], selectedId);
+      const selectedIds = Array.isArray(state.selectedLayerIds)
+        ? state.selectedLayerIds.filter((id) => this.engine.layers.some((layer) => layer.id === id))
+        : [];
+      const selectedId = (
+        (state.selectedLayerId && selectedIds.includes(state.selectedLayerId) && state.selectedLayerId)
+        || selectedIds[0]
+        || this.engine.activeLayerId
+      );
+      this.renderer.setSelection(selectedIds.length ? selectedIds : (selectedId ? [selectedId] : []), selectedId);
       this.engine.activeLayerId = selectedId;
       this.ui.initSettingsValues();
       if (this.ui.setActiveTool) this.ui.setActiveTool(SETTINGS.activeTool || 'select');

@@ -298,12 +298,14 @@
 
     moveLayer(id, direction) {
       const idx = this.layers.findIndex((l) => l.id === id);
-      if (idx === -1) return;
+      if (idx === -1) return false;
       const newIdx = idx + direction;
       if (newIdx >= 0 && newIdx < this.layers.length) {
         [this.layers[idx], this.layers[newIdx]] = [this.layers[newIdx], this.layers[idx]];
         this.computeAllDisplayGeometry();
+        return true;
       }
+      return false;
     }
 
     getActiveLayer() {
