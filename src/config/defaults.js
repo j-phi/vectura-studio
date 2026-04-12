@@ -661,10 +661,12 @@
       phase: 1.5,
       resolution: 200,
       scale: 0.8,
+      truncateStart: 0,
+      truncateEnd: 0,
       smoothing: 0,
       simplify: 0,
       curves: true,
-      closeLines: true,
+      closeLines: false,
     },
     harmonograph: {
       label: 'Harmonograph',

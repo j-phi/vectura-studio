@@ -283,7 +283,7 @@ Each layer is powered by an algorithm with its own parameters and formula previe
 - Boids: emergent flocking paths.
 - Attractors: Lorenz-like and chaotic systems.
 - Hyphae: branching, growth-like structures.
-- Lissajous: harmonic parametric curves.
+- Lissajous: harmonic parametric curves with per-endpoint truncation sliders plus optional loose-tail trimming at self-intersection cutpoints.
 - Harmonograph: multi-pendulum curves with damping, anti-loop drift, settle cutoff, and an interactive plotter preview.
 - Wavetable: layered noise wave stacks with multiple line structures, noise types, image effects, and polygon shaping.
 - Rings: concentric rings with Noise Rack layering, per-noise `Orbit Field`, `Concentric`, or `Top Down` sampling, and a controllable center diameter for the innermost ring.

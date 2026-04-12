@@ -2158,6 +2158,8 @@
       { id: 'phase', label: 'Phase', type: 'range', min: 0, max: 6.28, step: 0.1, infoKey: 'lissajous.phase' },
       { id: 'resolution', label: 'Resolution', type: 'range', min: 50, max: 800, step: 10, infoKey: 'lissajous.resolution' },
       { id: 'scale', label: 'Scale', type: 'range', min: 0.2, max: 1.2, step: 0.05, infoKey: 'lissajous.scale' },
+      { id: 'truncateStart', label: 'Truncate Start', type: 'range', min: 0, max: 100, step: 1, infoKey: 'lissajous.truncateStart' },
+      { id: 'truncateEnd', label: 'Truncate End', type: 'range', min: 0, max: 100, step: 1, infoKey: 'lissajous.truncateEnd' },
       { id: 'closeLines', label: 'Close Lines', type: 'checkbox', infoKey: 'lissajous.closeLines' },
     ],
     harmonograph: [
@@ -3700,9 +3702,17 @@
       title: 'Scale',
       description: 'Overall size of the Lissajous curve.',
     },
+    'lissajous.truncateStart': {
+      title: 'Truncate Start',
+      description: 'Removes 0-100% of the curve length from the starting endpoint before any close-line trimming runs.',
+    },
+    'lissajous.truncateEnd': {
+      title: 'Truncate End',
+      description: 'Removes 0-100% of the curve length from the ending endpoint before any close-line trimming runs.',
+    },
     'lissajous.closeLines': {
       title: 'Close Lines',
-      description: 'Closes the curve so both ends connect cleanly.',
+      description: 'Trims loose tail ends back to self-intersection cutpoints instead of forcing the curve to loop closed.',
     },
     'harmonograph.renderMode': {
       title: 'Render Mode',
