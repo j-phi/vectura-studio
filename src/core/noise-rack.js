@@ -87,18 +87,27 @@
       const v = Math.max(0, Math.min(1, 1 - f1));
       return v * 2 - 1;
     };
-    const fbmNoise = (x, y, octaves = 4, gain = 0.5, lacunarity = 2) => {
-      let total = 0;
-      let amp = 1;
-      let freq = 1;
-      let norm = 0;
-      for (let i = 0; i < octaves; i++) {
-        total += baseNoise(x * freq, y * freq) * amp;
-        norm += amp;
-        amp *= gain;
-        freq *= lacunarity;
-      }
-      return norm ? total / norm : total;
+    const perlinNoise = (x, y, localSeed = 0) => {
+      const xi = Math.floor(x);
+      const yi = Math.floor(y);
+      const xf = x - xi;
+      const yf = y - yi;
+      const u = smoothstep(xf);
+      const v = smoothstep(yf);
+      const sx = localSeed * 0.17;
+      const sy = localSeed * 0.11;
+      const grad = (hx, hy, dx, dy) => {
+        const h = hash2D(hx, hy) * Math.PI * 2;
+        return Math.cos(h) * dx + Math.sin(h) * dy;
+      };
+      const g00 = grad(xi + sx, yi + sy, xf, yf);
+      const g10 = grad(xi + 1 + sx, yi + sy, xf - 1, yf);
+      const g01 = grad(xi + sx, yi + 1 + sy, xf, yf - 1);
+      const g11 = grad(xi + 1 + sx, yi + 1 + sy, xf - 1, yf - 1);
+      const x1 = lerp(g00, g10, u);
+      const x2 = lerp(g01, g11, u);
+      const val = lerp(x1, x2, v);
+      return Math.max(-1, Math.min(1, val * 1.414));
     };
 
     const evaluate = (x, y, noiseDef, meta = {}) => {
@@ -112,6 +121,8 @@
       const localSeed = noiseDef?.seed ?? 0;
       const px = x * patternScale;
       const py = y * patternScale;
+      const wp = n * warpStrength * 0.5;
+
       switch (noiseType) {
         case 'ridged':
           return (1 - Math.abs(n)) * 2 - 1;
@@ -119,8 +130,10 @@
           return Math.abs(n) * 2 - 1;
         case 'value':
           return valueNoise(x, y, localSeed, false);
-        case 'perlin':
+        case 'value-smooth':
           return valueNoise(x, y, localSeed, true);
+        case 'perlin':
+          return perlinNoise(x, y, localSeed);
         case 'turbulence': {
           const n2 = baseNoise(x * 2, y * 2);
           const n3 = baseNoise(x * 4, y * 4);
@@ -128,9 +141,9 @@
           return t * 2 - 1;
         }
         case 'stripes':
-          return Math.sin(px * 2 + n * 1.5);
+          return Math.sin(px * 2 + wp * 3);
         case 'marble':
-          return Math.sin((px + py) * 1.5 + n * 2);
+          return Math.sin((px + py) * 1.5 + wp * 4);
         case 'steps': {
           const shift = ((localSeed * 0.13) % 1 + 1) % 1;
           const t = ((n + 1) / 2 + shift) % 1;
@@ -143,13 +156,13 @@
           return stepped * 2 - 1;
         }
         case 'sawtooth': {
-          const t = ((px + py * 0.25) % 1 + 1) % 1;
+          const t = ((px + py * 0.25 + wp) % 1 + 1) % 1;
           return t * 2 - 1;
         }
         case 'triangle': {
-          const t = (n + 1) / 2;
-          const tri = 1 - Math.abs((t % 1) * 2 - 1);
-          return tri * 2 - 1;
+          const wx = Math.abs(((px * 1.5 + wp) % 2) - 1);
+          const wy = Math.abs(((py * 1.5 + wp) % 2) - 1);
+          return (wx + wy) - 1;
         }
         case 'polygon': {
           const sides = Math.max(3, Math.round(noiseDef?.polygonSides ?? 6));
@@ -157,12 +170,14 @@
           const rotation = ((noiseDef?.polygonRotation ?? 0) * Math.PI) / 180;
           const outline = Math.max(0, noiseDef?.polygonOutline ?? 0);
           const edge = Math.max(0, noiseDef?.polygonEdgeRadius ?? 0);
-          const ang = Math.atan2(py, px) - rotation;
+          const rx = px + wp * 0.5;
+          const ry = py + wp * 0.5;
+          const ang = Math.atan2(ry, rx) - rotation;
           const sector = (Math.PI * 2) / sides;
           const rel = ((ang % sector) + sector) % sector;
           const dist = Math.cos(Math.PI / sides) / Math.cos(rel - Math.PI / sides);
           const maxR = radius * dist;
-          const r = Math.hypot(px, py);
+          const r = Math.hypot(rx, ry);
           const sd = r - maxR;
           const blendShape = (d) => {
             if (edge <= 0) return d <= 0 ? 1 : -1;
@@ -189,47 +204,43 @@
           const edge = Math.max(0, Math.min(1, (f2 - f1) * 3));
           return (1 - edge) * 2 - 1;
         }
-        case 'fbm':
-          return fbmNoise(
-            x,
-            y,
-            Math.max(1, Math.floor(noiseDef?.octaves ?? 4)),
-            Math.max(0.05, Math.min(1, noiseDef?.gain ?? 0.5)),
-            Math.max(1.05, noiseDef?.lacunarity ?? 2)
-          );
         case 'swirl':
-          return Math.sin(px * 2 + n * 2) * Math.cos(py * 2 + n);
+          return Math.sin(px * 2 + wp * 4) * Math.cos(py * 2 + wp * 2);
         case 'radial': {
           const r = Math.hypot(px, py);
-          const bands = Math.sin(r * Math.PI * 6);
+          const bands = Math.sin(r * Math.PI * 6 + wp * 4);
           const wobble = baseNoise(px * 0.7 + localSeed * 0.13, py * 0.7 - localSeed * 0.17) * 0.2;
           return Math.max(-1, Math.min(1, bands + wobble));
         }
         case 'checker': {
-          const cx = Math.floor(px * 4);
-          const cy = Math.floor(py * 4);
+          const cx = Math.floor((px + wp * 0.5) * 4);
+          const cy = Math.floor((py + wp * 0.5) * 4);
           return (cx + cy) % 2 === 0 ? 1 : -1;
         }
         case 'zigzag': {
-          const t = Math.abs((px * 2) % 2 - 1);
+          const t = Math.abs(((px * 2 + wp * 2) % 2) - 1);
           return (1 - t) * 2 - 1;
         }
         case 'ripple': {
-          const r = Math.hypot(px, py);
-          const ang = Math.atan2(py, px);
-          return Math.sin(r * Math.PI * 8 + Math.sin(ang * 6) * 0.5 + n * 0.35);
+          const rx = px + wp * 0.5;
+          const ry = py + wp * 0.5;
+          const r = Math.hypot(rx, ry);
+          const ang = Math.atan2(ry, rx);
+          return Math.sin(r * Math.PI * 8 + Math.sin(ang * 6 + wp * 2) * 0.5 + wp * 0.7);
         }
         case 'spiral': {
-          const ang = Math.atan2(py, px);
-          const rad = Math.hypot(px, py);
-          return Math.sin(ang * 4 + rad * 2 + n);
+          const rx = px + wp * 0.5;
+          const ry = py + wp * 0.5;
+          const ang = Math.atan2(ry, rx);
+          const rad = Math.hypot(rx, ry);
+          return Math.sin(ang * 4 + rad * 2 + wp * 2);
         }
         case 'grain':
           return hash2D(x * 10, y * 10) * 2 - 1;
         case 'crosshatch':
-          return (Math.sin(px * 3) + Math.sin(py * 3)) * 0.5;
+          return (Math.sin(px * 3 + wp * 2) + Math.sin(py * 3 + wp * 2)) * 0.5;
         case 'pulse': {
-          const t = Math.abs(Math.sin(px * 2 + n) * Math.cos(py * 2 + n));
+          const t = Math.abs(Math.sin((px + wp) * 2) * Math.cos((py + wp) * 2));
           return t * 2 - 1;
         }
         case 'domain': {
@@ -238,17 +249,17 @@
           return baseNoise(x + wx, y + wy);
         }
         case 'weave': {
-          const wx = Math.sin(px * 2 + n);
-          const wy = Math.sin(py * 2 + n);
+          const wx = Math.sin((px + wp) * 2);
+          const wy = Math.sin((py + wp) * 2);
           return wx * wy;
         }
         case 'moire': {
-          const a = Math.sin(px * 2);
-          const b = Math.sin(py * 2.2);
+          const a = Math.sin(px * 2 + wp * 0.5);
+          const b = Math.sin(py * 2.2 + wp * 0.5);
           return (a + b) * 0.5;
         }
         case 'dunes':
-          return Math.sin(px * 2 + n * 1.5);
+          return (1 - Math.pow(Math.abs(Math.sin(px * 2 + wp * 3)), 0.5)) * 2 - 1;
         case 'image': {
           const store = window.Vectura?.NOISE_IMAGES || {};
           const img = noiseDef?.imageId ? store[noiseDef.imageId] : null;
@@ -509,7 +520,7 @@
       const shiftY = noiseDef?.shiftY ?? 0;
       const gain = Math.max(0.05, Math.min(1, noiseDef?.gain ?? 0.5));
       const lacunarity = Math.max(1.05, noiseDef?.lacunarity ?? 2);
-      const layeredOctaves = noiseDef?.type === 'fbm' ? 1 : Math.max(1, Math.floor(noiseDef?.octaves ?? 1));
+      const layeredOctaves = Math.max(1, Math.floor(noiseDef?.octaves ?? 1));
       let total = 0;
       let amp = 1;
       let freq = 1;

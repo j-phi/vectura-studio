@@ -2099,6 +2099,34 @@
 
   const CONTROL_DEFS = {
     expanded: [],
+    pattern: [
+      {
+        id: 'patternFilter',
+        label: 'Filter',
+        type: 'select',
+        options: [
+          { value: 'all', label: 'All Patterns' },
+          { value: 'lines', label: 'Lines Only' },
+          { value: 'fills', label: 'Patterns with Fills' }
+        ],
+      },
+      { type: 'patternSelect' },
+      { id: 'scale', label: 'Scale', type: 'range', min: 0.1, max: 10, step: 0.1 },
+      { id: 'originX', label: 'X Origin Offset', type: 'range', min: -500, max: 500, step: 1 },
+      { id: 'originY', label: 'Y Origin Offset', type: 'range', min: -500, max: 500, step: 1 },
+      {
+        id: 'tileMethod',
+        label: 'Tile Method',
+        type: 'select',
+        options: [
+          { value: 'grid', label: 'Grid' },
+          { value: 'brick', label: 'Brick (Offset)' }
+        ]
+      },
+      { id: 'tileSpacingX', label: 'Tile Spacing X', type: 'range', min: -100, max: 500, step: 1 },
+      { id: 'tileSpacingY', label: 'Tile Spacing Y', type: 'range', min: -100, max: 500, step: 1 },
+      { type: 'patternSubPens' },
+    ],
     flowfield: [
       {
         id: 'flowMode',
@@ -13301,6 +13329,11 @@
       if (!select) return;
       select.innerHTML = '';
       const keys = Object.keys(ALGO_DEFAULTS || {}).filter((key) => !(ALGO_DEFAULTS[key] && ALGO_DEFAULTS[key].hidden));
+      keys.sort((a, b) => {
+        const aLabel = ALGO_DEFAULTS[a]?.label || a;
+        const bLabel = ALGO_DEFAULTS[b]?.label || b;
+        return aLabel.localeCompare(bLabel);
+      });
       keys.forEach((key) => {
         const def = ALGO_DEFAULTS[key];
         const opt = document.createElement('option');
@@ -17587,6 +17620,112 @@
           target.appendChild(wrapper);
           return;
         }
+        if (def.type === 'patternSelect') {
+          const wrapper = document.createElement('div');
+          wrapper.className = 'mb-4';
+          let patterns = window.Vectura.PATTERNS || [];
+          const filter = layer.params.patternFilter || 'lines';
+          if (filter !== 'all') {
+             patterns = patterns.filter(p => filter === 'lines' ? p.lines : p.fills);
+          }
+          
+          let html = `<div class="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto p-1 bg-vectura-bg border border-vectura-border">`;
+          patterns.forEach(p => {
+             const isSel = layer.params.patternId === p.id;
+             const selC = isSel ? 'border-vectura-accent bg-vectura-border opacity-100' : 'border-transparent opacity-60 hover:opacity-100';
+             // SVG preview parsing implies inline SVGs! Wait, if we use images... we don't have SVGs exposed, we do! `p.svg` is the raw string
+             // We can render raw SVG if we replace currentColor and width/height!
+             html += `<div class="pattern-item cursor-pointer border rounded flex flex-col items-center justify-center pt-2 ${selC}" data-id="${p.id}" title="${p.name}">
+                <div class="w-full text-[9px] text-center truncate px-1 pb-1 pt-1 text-vectura-muted leading-tight">${p.name}</div>
+             </div>`;
+          });
+          html += `</div>`;
+          wrapper.innerHTML = html;
+          
+          wrapper.querySelectorAll('.pattern-item').forEach(item => {
+             const pId = item.dataset.id;
+             const meta = patterns.find(x => x.id === pId);
+             if (meta && meta.svg) {
+                // simple quick hack to inject icon sized view
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(meta.svg, 'image/svg+xml');
+                const svg = doc.querySelector('svg');
+                if (svg) {
+                   svg.setAttribute('width', '100%');
+                   svg.setAttribute('height', '100%');
+                   svg.style.maxHeight = '24px';
+                   // use a safe neutral text color for stroke/fill replacements
+                   svg.style.color = 'currentColor'; 
+                   svg.querySelectorAll('*').forEach(el => {
+                      if (el.hasAttribute('stroke') && el.getAttribute('stroke') !== 'none') {
+                         el.setAttribute('stroke', 'currentColor');
+                      }
+                      if (el.hasAttribute('fill') && el.getAttribute('fill') !== 'none') {
+                         el.setAttribute('fill', 'currentColor');
+                      }
+                      if (el.style.stroke && el.style.stroke !== 'none') {
+                         el.style.stroke = 'currentColor';
+                      }
+                      if (el.style.fill && el.style.fill !== 'none') {
+                         el.style.fill = 'currentColor';
+                      }
+                   });
+                   const cont = document.createElement('div');
+                   cont.className = 'w-full px-2 text-vectura-text opacity-80';
+                   cont.appendChild(svg);
+                   item.insertBefore(cont, item.firstChild);
+                }
+             }
+             item.onclick = () => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                layer.params.patternId = item.dataset.id;
+                this.storeLayerParams(layer);
+                this.app.regen();
+                this.buildControls();
+                this.updateFormula();
+             };
+          });
+          
+          target.appendChild(wrapper);
+          return;
+        }
+        if (def.type === 'patternSubPens') {
+           const patData = window.Vectura.AlgorithmRegistry?.patternGetGroups?.(layer.params.patternId);
+           if (!patData || !patData.groups || patData.groups.length === 0) return;
+           
+           const wrapper = document.createElement('div');
+           wrapper.className = 'mt-4 border-t border-vectura-border pt-4';
+           const header = document.createElement('label');
+           header.className = 'control-label mb-2 block';
+           header.textContent = 'Element Pen Mapping';
+           wrapper.appendChild(header);
+           
+           const pens = SETTINGS.pens || [];
+           patData.groups.forEach(g => {
+              const currentPenId = layer.params.penMapping?.[g.id] || 'default';
+              const row = document.createElement('div');
+              row.className = 'flex items-center justify-between mb-2';
+              row.innerHTML = `<span class="text-[11px] text-vectura-muted">${g.label}</span>
+                 <select class="w-32 bg-vectura-bg border border-vectura-border p-1 text-xs focus:outline-none focus:border-vectura-accent" data-gid="${g.id}">
+                    <option value="default">Layer Pen</option>
+                    ${pens.map(pen => `<option value="${pen.id}" ${currentPenId === pen.id ? 'selected' : ''}>${pen.name || pen.id}</option>`).join('')}
+                 </select>
+              `;
+              const sel = row.querySelector('select');
+              sel.onchange = (e) => {
+                 if (this.app.pushHistory) this.app.pushHistory();
+                 if (!layer.params.penMapping) layer.params.penMapping = {};
+                 layer.params.penMapping[e.target.dataset.gid] = e.target.value === 'default' ? null : e.target.value;
+                 this.storeLayerParams(layer);
+                 this.app.regen();
+                 this.buildControls();
+              };
+              wrapper.appendChild(row);
+           });
+           
+           target.appendChild(wrapper);
+           return;
+        }
         if (def.type === 'image') {
           const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
           const div = document.createElement('div');
@@ -21612,17 +21751,57 @@
       }
       if (tag === 'path') {
         try {
-          const total = el.getTotalLength();
-          if (!Number.isFinite(total) || total <= 0) return [];
-          const step = Math.max(1, total / 300);
-          const points = [];
-          for (let d = 0; d <= total; d += step) {
-            const pt = el.getPointAtLength(d);
-            points.push({ x: pt.x, y: pt.y });
+          const len = el.getTotalLength ? el.getTotalLength() : 0;
+          if (!Number.isFinite(len) || len <= 0) return [];
+          const steps = Math.max(10, Math.floor(len / 2));
+          const step = len / steps;
+          
+          const allSubPaths = [];
+          let currentPath = [];
+
+          for (let idx = 0; idx <= steps + 1; idx++) {
+             const actualLen = Math.min(idx * step, len);
+             const pt = el.getPointAtLength(actualLen);
+             
+             if (currentPath.length > 0) {
+                const prev = currentPath[currentPath.length - 1];
+                const prevLen = Math.max(0, (idx - 1) * step);
+                const dLen = actualLen - prevLen;
+                const maxDist = (dLen > 0 ? dLen : step) * 1.5;
+                
+                if (Math.hypot(pt.x - prev.x, pt.y - prev.y) > maxDist) {
+                    let L = prevLen;
+                    let R = actualLen;
+                    let beforeJump = L;
+                    
+                    for (let iter = 0; iter < 8; iter++) {
+                        const mid = (L + R) / 2;
+                        const midPt = el.getPointAtLength(mid);
+                        if (Math.hypot(midPt.x - prev.x, midPt.y - prev.y) > (mid - prevLen) * 1.5) {
+                            R = mid;
+                        } else {
+                            beforeJump = mid;
+                            L = mid;
+                        }
+                    }
+                    
+                    if (currentPath.length > 1) {
+                        const endPt = el.getPointAtLength(beforeJump);
+                        currentPath.push({ x: endPt.x, y: endPt.y });
+                        allSubPaths.push(normalizePoints(currentPath));
+                    }
+                    
+                    const jumpPt = el.getPointAtLength(beforeJump + 0.05);
+                    currentPath = [{ x: jumpPt.x, y: jumpPt.y }, { x: pt.x, y: pt.y }];
+                    if (actualLen === len) break;
+                    continue;
+                }
+             }
+             currentPath.push({ x: pt.x, y: pt.y });
+             if (actualLen === len) break;
           }
-          const end = el.getPointAtLength(total);
-          points.push({ x: end.x, y: end.y });
-          return [normalizePoints(points)];
+          if (currentPath.length > 0) allSubPaths.push(normalizePoints(currentPath));
+          return allSubPaths;
         } catch (err) {
           return [];
         }
@@ -21760,11 +21939,19 @@
               exportPath = expandCirclePath(p.meta, 72);
               exportPath.meta = { ...(p.meta || {}), kind: 'poly', exportClipped: true, closed: false };
             }
+            let attrs = exportPath?.meta?.exportClipped ? { 'stroke-linecap': 'butt' } : null;
+            const pathPenId = p?.meta?.penId;
+            if (pathPenId && pathPenId !== pen.id) {
+              const pPen = penMap.get(pathPenId) || fallbackPen;
+              attrs = attrs || {};
+              attrs['stroke'] = escapeXmlAttr(pPen.color || 'black');
+              attrs['stroke-width'] = (l.strokeWidth ?? pPen.width ?? SETTINGS.strokeWidth).toFixed(3);
+            }
             const markup = shapeToSvg(
               exportPath,
               precision,
               forceLinear ? false : useCurves,
-              exportPath?.meta?.exportClipped ? { 'stroke-linecap': 'butt' } : null
+              attrs
             );
             if (markup) svg += markup;
           });

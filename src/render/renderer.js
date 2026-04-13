@@ -1729,18 +1729,18 @@
         this.engine.layers.forEach((l) => {
           if (!l.visible) return;
           if (this.shouldSkipLayerForMaskPreview(l)) return;
-          const pen = SETTINGS.pens?.find((p) => p.id === l.penId) || null;
-          const penId = l.penId || pen?.id || 'default';
-          let seen = null;
-          if (dedupe) {
-            if (!dedupe.has(penId)) dedupe.set(penId, new Set());
-            seen = dedupe.get(penId);
-          }
-          const strokeWidth = pen?.width ?? l.strokeWidth ?? SETTINGS.strokeWidth;
-          this.ctx.lineWidth = strokeWidth;
+          const layerPen = SETTINGS.pens?.find((p) => p.id === l.penId) || null;
+          const defaultPenId = l.penId || layerPen?.id || 'default';
+          
+          let currentPenId = defaultPenId;
+          let currentStrokeWidth = layerPen?.width ?? l.strokeWidth ?? SETTINGS.strokeWidth;
+          let currentStrokeStyle = layerPen?.color || l.color;
+
+          this.ctx.lineWidth = currentStrokeWidth;
           this.ctx.lineCap = l.lineCap || 'round';
           this.ctx.beginPath();
-          this.ctx.strokeStyle = pen?.color || l.color;
+          this.ctx.strokeStyle = currentStrokeStyle;
+
           const useCurves = Boolean(l.params && l.params.curves);
           const paths = this.engine.getRenderablePaths
             ? this.engine.getRenderablePaths(l, { useOptimized })
@@ -1750,6 +1750,24 @@
             const next = path && path.meta && path.meta.kind === 'circle'
               ? { meta: temp ? this.transformCircleMeta(path.meta, temp) : path.meta }
               : temp ? this.transformPath(path, temp) : path;
+              
+            const pathPenId = (path.meta && path.meta.penId) || defaultPenId;
+            if (pathPenId !== currentPenId) {
+              this.ctx.stroke();
+              currentPenId = pathPenId;
+              const pPen = SETTINGS.pens?.find((p) => p.id === pathPenId) || null;
+              currentStrokeWidth = pPen?.width ?? l.strokeWidth ?? SETTINGS.strokeWidth;
+              currentStrokeStyle = pPen?.color || l.color;
+              this.ctx.lineWidth = currentStrokeWidth;
+              this.ctx.strokeStyle = currentStrokeStyle;
+              this.ctx.beginPath();
+            }
+
+            let seen = null;
+            if (dedupe) {
+              if (!dedupe.has(currentPenId)) dedupe.set(currentPenId, new Set());
+              seen = dedupe.get(currentPenId);
+            }
             if (seen) {
               const key = pathKey(next);
               if (key && seen.has(key)) return;
