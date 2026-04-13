@@ -204,8 +204,11 @@
           const edge = Math.max(0, Math.min(1, (f2 - f1) * 3));
           return (1 - edge) * 2 - 1;
         }
-        case 'swirl':
-          return Math.sin(px * 2 + wp * 4) * Math.cos(py * 2 + wp * 2);
+        case 'swirl': {
+          const rx = px + Math.sin(py * 2 + wp) * 0.5;
+          const ry = py + Math.cos(px * 2 + wp) * 0.5;
+          return Math.sin((rx + ry) * 3);
+        }
         case 'radial': {
           const r = Math.hypot(px, py);
           const bands = Math.sin(r * Math.PI * 6 + wp * 4);
@@ -218,7 +221,8 @@
           return (cx + cy) % 2 === 0 ? 1 : -1;
         }
         case 'zigzag': {
-          const t = Math.abs(((px * 2 + wp * 2) % 2) - 1);
+          const zig = Math.abs((py * 2) % 2 - 1) * 2 - 1;
+          const t = Math.abs(((px * 2 + zig + wp * 2) % 2) - 1);
           return (1 - t) * 2 - 1;
         }
         case 'ripple': {
@@ -237,8 +241,11 @@
         }
         case 'grain':
           return hash2D(x * 10, y * 10) * 2 - 1;
-        case 'crosshatch':
-          return (Math.sin(px * 3 + wp * 2) + Math.sin(py * 3 + wp * 2)) * 0.5;
+        case 'crosshatch': {
+          const lx = Math.pow(Math.abs(Math.sin(px * 3 + wp * 2)), 8);
+          const ly = Math.pow(Math.abs(Math.sin(py * 3 + wp * 2)), 8);
+          return Math.max(lx, ly) * 2 - 1;
+        }
         case 'pulse': {
           const t = Math.abs(Math.sin((px + wp) * 2) * Math.cos((py + wp) * 2));
           return t * 2 - 1;
