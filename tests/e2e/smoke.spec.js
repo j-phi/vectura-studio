@@ -193,6 +193,46 @@ test.describe('Vectura smoke interactions', () => {
     expect(pageErrors).toEqual([]);
   });
 
+  test('document setup shortcut toggles and clear saved preferences removes persisted UI state', async ({ page }) => {
+    const pageErrors = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+
+    await page.goto('/');
+
+    await page.keyboard.press('ControlOrMeta+K');
+    await expect(page.locator('#settings-panel')).toHaveClass(/open/);
+    await expect(page.locator('#set-document-units')).toBeVisible();
+    await expect(page.locator('#set-show-document-dimensions')).toBeVisible();
+
+    await page.keyboard.press('ControlOrMeta+K');
+    await expect(page.locator('#settings-panel')).not.toHaveClass(/open/);
+
+    await page.keyboard.press('ControlOrMeta+K');
+    await expect(page.locator('#settings-panel')).toHaveClass(/open/);
+
+    const cookieToggle = page.locator('#set-cookie-preferences');
+    const showGuides = page.locator('#set-show-guides');
+
+    await cookieToggle.check();
+    await showGuides.uncheck();
+
+    await expect
+      .poll(async () => page.evaluate(() => document.cookie.includes('vectura_prefs=')))
+      .toBe(true);
+
+    await page.click('#btn-clear-preferences');
+    await expect(cookieToggle).not.toBeChecked();
+    await expect(showGuides).not.toBeChecked();
+
+    await page.reload();
+    await page.keyboard.press('ControlOrMeta+K');
+    await expect(page.locator('#settings-panel')).toHaveClass(/open/);
+    await expect(page.locator('#set-cookie-preferences')).not.toBeChecked();
+    await expect(page.locator('#set-show-guides')).toBeChecked();
+
+    expect(pageErrors).toEqual([]);
+  });
+
   test('theme toggle flips UI theme, Pen 1, and document background in the live app shell', async ({ page }) => {
     const pageErrors = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
@@ -281,6 +321,62 @@ test.describe('Vectura smoke interactions', () => {
       .poll(async () => page.evaluate(() => window.Vectura.SETTINGS.removeHiddenGeometry))
       .toBe(true);
 
+    expect(pageErrors).toEqual([]);
+  });
+
+  test('line sort works across multiple selected layers', async ({ page }) => {
+    const pageErrors = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+
+    await page.goto('/');
+
+    const result = await page.evaluate(() => {
+      const { Layer, SETTINGS } = window.Vectura;
+      const app = window.app;
+      const engine = app.engine;
+      engine.layers = [];
+      SETTINGS.globalLayerCount = 0;
+
+      const buildLayer = (id, name, x1, x2) => {
+        const layer = new Layer(id, 'expanded', name);
+        layer.params.curves = false;
+        layer.sourcePaths = [[
+          { x: x1, y: 42 },
+          { x: x2, y: 42 },
+        ]];
+        layer.optimization = {
+          bypassAll: false,
+          steps: [{ id: 'linesort', enabled: true, bypass: false, method: 'greedy', direction: 'horizontal', grouping: 'combined' }],
+        };
+        return layer;
+      };
+
+      const left = buildLayer('linesort-left', 'Left', 20, 40);
+      const right = buildLayer('linesort-right', 'Right', 180, 200);
+
+      engine.layers.push(left, right);
+      engine.activeLayerId = left.id;
+      engine.generate(left.id);
+      engine.generate(right.id);
+      engine.computeAllDisplayGeometry();
+
+      app.renderer.setSelection([left.id, right.id], right.id);
+      SETTINGS.optimizationScope = 'selected';
+      SETTINGS.optimizationPreview = 'overlay';
+      app.ui.buildControls();
+      app.ui.optimizeTargetsForCurrentScope({ includePlotterOptimize: true });
+      app.render();
+
+      return {
+        orders: engine.layers.map((layer) => layer.optimizedPaths?.[0]?.meta?.lineSortOrder ?? null),
+        targetIds: Array.from(app.ui.getOptimizationTargetIds()),
+        rendererTargetIds: Array.from(app.renderer.getOptimizationTargetIds()),
+      };
+    });
+
+    expect(result.orders).toEqual([0, 1]);
+    expect(result.targetIds).toEqual(['linesort-left', 'linesort-right']);
+    expect(result.rendererTargetIds).toEqual(['linesort-left', 'linesort-right']);
     expect(pageErrors).toEqual([]);
   });
 
@@ -667,12 +763,7 @@ test.describe('Vectura smoke interactions', () => {
     expect(((rectMeta?.x1 || 0) + (rectMeta?.x2 || 0)) / 2).toBeCloseTo(worldStart.x, 1);
     expect(((rectMeta?.y1 || 0) + (rectMeta?.y2 || 0)) / 2).toBeCloseTo(worldStart.y, 1);
 
-    await page.evaluate(() => {
-      window.app.ui.setActiveTool('select');
-      // Clear selection so the selected primitive shape doesn't keep the reticle cursor
-      if (window.app.renderer.clearSelection) window.app.renderer.clearSelection();
-      if (window.app.renderer.updateCursor) window.app.renderer.updateCursor();
-    });
+    await page.evaluate(() => window.app.ui.setActiveTool('select'));
     await expect
       .poll(async () => page.locator('#main-canvas').evaluate((canvasEl) => canvasEl.dataset.cursorMode || ''))
       .toBe('crosshair');

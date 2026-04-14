@@ -2,7 +2,7 @@
  * Canvas renderer for vector paths.
  */
 (() => {
-  const { SETTINGS, Modifiers = {}, Masking = {} } = window.Vectura || {};
+  const { SETTINGS, Modifiers = {}, Masking = {}, UnitUtils = {} } = window.Vectura || {};
   const isModifierLayer = Modifiers.isModifierLayer || (() => false);
   const getMirrorAxis = Modifiers.getMirrorAxis || (() => null);
   const clipInfiniteAxisToBounds = Modifiers.clipInfiniteAxisToBounds || (() => null);
@@ -10,6 +10,16 @@
   const getLayerSilhouette = Masking.getLayerSilhouette || (() => []);
   const buildLayerMaskedPaths = Masking.buildLayerMaskedPaths || ((layer) => layer?.effectivePaths || layer?.paths || []);
   const applyMaskToPaths = Masking.applyMaskToPaths || ((paths) => paths || []);
+  const normalizeDocumentUnits = UnitUtils.normalizeDocumentUnits || ((value) => (`${value || ''}`.trim().toLowerCase() === 'imperial' ? 'imperial' : 'metric'));
+  const formatDocumentLength = UnitUtils.formatDocumentLength || ((valueMm, units, options = {}) => {
+    const resolvedUnits = normalizeDocumentUnits(units);
+    const precision = Number.isFinite(options.precision) ? options.precision : (resolvedUnits === 'imperial' ? 2 : 1);
+    const unit = resolvedUnits === 'imperial' ? 'in' : 'mm';
+    const value = resolvedUnits === 'imperial' ? Number(valueMm || 0) / 25.4 : Number(valueMm || 0);
+    let text = Number.isFinite(value) ? value.toFixed(precision) : '0';
+    if (options.trimTrailingZeros && text.includes('.')) text = text.replace(/\.?0+$/, '');
+    return `${text}${options.spaceBeforeUnit ? ' ' : ''}${unit}`;
+  });
   const TAU = Math.PI * 2;
   const ELLIPSE_KAPPA = 0.5522847498307936;
   const SHAPE_CORNER_HANDLE_MIN = 8;
@@ -358,6 +368,30 @@
       }
     }
 
+    getOptimizationTargetIds() {
+      const scope = SETTINGS.optimizationScope || 'all';
+      let ids = [];
+      if (scope === 'selected') {
+        ids = Array.from(this.selectedLayerIds || []).filter((id) =>
+          this.engine.layers.some((layer) => layer && !layer.isGroup && layer.id === id)
+        );
+      } else if (scope === 'active') {
+        const activeId = this.engine.activeLayerId;
+        if (activeId && this.engine.layers.some((layer) => layer && !layer.isGroup && layer.id === activeId)) {
+          ids = [activeId];
+        }
+      } else {
+        ids = this.engine.layers.filter((layer) => layer && !layer.isGroup).map((layer) => layer.id);
+      }
+      if (!ids.length) {
+        const activeId = this.engine.activeLayerId;
+        if (activeId && this.engine.layers.some((layer) => layer && !layer.isGroup && layer.id === activeId)) {
+          ids = [activeId];
+        }
+      }
+      return new Set(ids);
+    }
+
     setTool(tool) {
       if (!tool) return;
       this.clearMaskPreview();
@@ -454,6 +488,7 @@
 
     getSelectedPrimitiveShapeLayer() {
       const layer = this.getSelectedShapeLayer();
+      if (layer?.mask?.enabled) return null;
       const shapeType = this.getShapeMetaForLayer(layer, 0)?.shape?.type;
       return this.isPrimitiveShapeType(shapeType) ? layer : null;
     }
@@ -474,10 +509,6 @@
       }
       if (this.activeTool === 'scissor') {
         this.setCanvasCursor('crosshair');
-        return;
-      }
-      if (this.activeTool === 'select' && this.getSelectedPrimitiveShapeLayer()) {
-        this.setCanvasCursor(makeShapeReticleCursor(getThemeToken('--render-cursor-stroke', 'white')), 'shape-reticle');
         return;
       }
       this.setCanvasCursor('crosshair');
@@ -1709,6 +1740,7 @@
       const previewMode = SETTINGS.optimizationPreview || 'off';
       const useOptimized = previewMode === 'replace';
       const showOptimizedOverlay = previewMode === 'overlay';
+      const optimizationTargetIds = this.getOptimizationTargetIds();
       const optimize = Math.max(0, SETTINGS.plotterOptimize ?? 0);
       const tol = optimize > 0 ? Math.max(0.001, optimize) : 0;
       const dedupe = optimize > 0 ? new Map() : null;
@@ -1742,8 +1774,9 @@
           this.ctx.strokeStyle = currentStrokeStyle;
 
           const useCurves = Boolean(l.params && l.params.curves);
+          const useLayerOptimized = useOptimized && optimizationTargetIds.has(l.id);
           const paths = this.engine.getRenderablePaths
-            ? this.engine.getRenderablePaths(l, { useOptimized })
+            ? this.engine.getRenderablePaths(l, { useOptimized: useLayerOptimized })
             : l.paths;
           const temp = this.selectedLayerIds?.has(l.id) && this.tempTransform ? this.tempTransform : null;
           (paths || []).forEach((path) => {
@@ -1787,6 +1820,7 @@
         let lineSortSecondary = '';
         this.engine.layers.forEach((l) => {
           if (this.shouldSkipLayerForMaskPreview(l)) return;
+          if (!optimizationTargetIds.has(l.id)) return;
           if (!l.visible || (l.mask?.enabled && l.mask?.hideLayer) || !l.optimizedPaths || !l.optimizedPaths.length) return;
           const useCurves = Boolean(l.params && l.params.curves);
           if (this.isLineSortApplied(l)) {
@@ -1797,6 +1831,11 @@
             }
           }
           l.optimizedPaths.forEach((path) => overlayItems.push({ layer: l, path, useCurves }));
+        });
+        overlayItems.sort((a, b) => {
+          const aOrder = Number.isFinite(a?.path?.meta?.lineSortOrder) ? a.path.meta.lineSortOrder : Number.MAX_SAFE_INTEGER;
+          const bOrder = Number.isFinite(b?.path?.meta?.lineSortOrder) ? b.path.meta.lineSortOrder : Number.MAX_SAFE_INTEGER;
+          return aOrder - bOrder;
         });
         const shouldUseGradient = hasLineSort && overlayItems.length > 1;
         const base = this.hexToRgb(overlayColor);
@@ -1825,6 +1864,7 @@
         this.updateOptimizationOverlayLegend(false);
         this.engine.layers.forEach((l) => {
           if (this.shouldSkipLayerForMaskPreview(l)) return;
+          if (!optimizationTargetIds.has(l.id)) return;
           if (!l.visible || (l.mask?.enabled && l.mask?.hideLayer) || !l.optimizedPaths || !l.optimizedPaths.length) return;
           const useCurves = Boolean(l.params && l.params.curves);
           this.ctx.save();
@@ -2110,6 +2150,10 @@
         this.ctx.restore();
       }
 
+      if (SETTINGS.showDocumentDimensions) {
+        this.drawDocumentDimensions(prof);
+      }
+
       if (SETTINGS.showGuides && this.guides) this.drawGuides(this.guides);
       if (selectedLayers.length) {
         const bounds = this.getSelectionBounds(selectedLayers, this.tempTransform);
@@ -2213,6 +2257,72 @@
            this.ctx.fill();
         }
       }
+      this.ctx.restore();
+    }
+
+    drawDocumentDimensions(profile) {
+      if (!profile) return;
+      const units = normalizeDocumentUnits(SETTINGS.documentUnits);
+      const labelColor = getThemeToken('--render-guide-faint', 'rgba(248, 250, 252, 0.75)');
+      const lineColor = getThemeToken('--render-frame-stroke', 'rgba(255,255,255,0.08)');
+      const badgeFill = getThemeToken('--render-underlay-fill', 'rgba(15, 23, 42, 0.92)');
+      const badgeStroke = getThemeToken('--render-underlay-stroke', 'rgba(15, 23, 42, 1)');
+      const widthText = formatDocumentLength(profile.width, units, {
+        precision: units === 'imperial' ? 2 : 1,
+        trimTrailingZeros: true,
+        spaceBeforeUnit: true,
+      });
+      const heightText = formatDocumentLength(profile.height, units, {
+        precision: units === 'imperial' ? 2 : 1,
+        trimTrailingZeros: true,
+        spaceBeforeUnit: true,
+      });
+      const scale = Math.max(this.scale || 1, 0.01);
+      const fontSize = 10 / scale;
+      const offset = 16 / scale;
+      const tick = 6 / scale;
+      const badgePadX = 6 / scale;
+      const badgePadY = 3 / scale;
+      const topY = -offset;
+      const leftX = -offset;
+      const drawBadge = (text, x, y, rotation = 0) => {
+        this.ctx.save();
+        this.ctx.translate(x, y);
+        if (rotation) this.ctx.rotate(rotation);
+        this.ctx.font = `600 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        const metrics = this.ctx.measureText(text);
+        const width = metrics.width + badgePadX * 2;
+        const height = fontSize + badgePadY * 2;
+        this.ctx.fillStyle = badgeFill;
+        this.ctx.strokeStyle = badgeStroke;
+        this.ctx.lineWidth = 1 / scale;
+        this.ctx.beginPath();
+        this.ctx.rect(-width / 2, -height / 2, width, height);
+        this.ctx.fill();
+        this.ctx.stroke();
+        this.ctx.fillStyle = labelColor;
+        this.ctx.fillText(text, 0, 0);
+        this.ctx.restore();
+      };
+
+      this.ctx.save();
+      this.ctx.strokeStyle = lineColor;
+      this.ctx.lineWidth = 0.8 / scale;
+      this.ctx.beginPath();
+      this.ctx.moveTo(0, topY + tick);
+      this.ctx.lineTo(0, topY);
+      this.ctx.lineTo(profile.width, topY);
+      this.ctx.lineTo(profile.width, topY + tick);
+      this.ctx.moveTo(leftX + tick, 0);
+      this.ctx.lineTo(leftX, 0);
+      this.ctx.lineTo(leftX, profile.height);
+      this.ctx.lineTo(leftX + tick, profile.height);
+      this.ctx.stroke();
+
+      drawBadge(widthText, profile.width / 2, topY);
+      drawBadge(heightText, leftX, profile.height / 2, -Math.PI / 2);
       this.ctx.restore();
     }
 
