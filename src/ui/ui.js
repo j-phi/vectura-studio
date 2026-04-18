@@ -2143,6 +2143,7 @@
       },
       { id: 'tileSpacingX', label: 'Tile Spacing X', type: 'range', min: -100, max: 500, step: 1 },
       { id: 'tileSpacingY', label: 'Tile Spacing Y', type: 'range', min: -100, max: 500, step: 1 },
+      { id: 'removeSeams', label: 'Remove seams at join', type: 'checkbox' },
       { type: 'patternSubPens' },
     ],
     flowfield: [
@@ -17804,7 +17805,7 @@
              patterns = patterns.filter(p => filter === 'lines' ? p.lines : p.fills);
           }
           
-          let html = `<div class="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto p-1 bg-vectura-bg border border-vectura-border">`;
+          let html = `<div class="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto p-1 bg-vectura-bg border border-vectura-border" data-pattern-grid>`;
           patterns.forEach(p => {
              const isSel = layer.params.patternId === p.id;
              const selC = isSel ? 'border-vectura-accent bg-vectura-border opacity-100' : 'border-transparent opacity-60 hover:opacity-100';
@@ -17852,12 +17853,20 @@
                 }
              }
              item.onclick = () => {
+                const gridEl = wrapper.querySelector('[data-pattern-grid]');
+                const savedScroll = gridEl ? gridEl.scrollTop : 0;
                 if (this.app.pushHistory) this.app.pushHistory();
                 layer.params.patternId = item.dataset.id;
                 this.storeLayerParams(layer);
                 this.app.regen();
                 this.buildControls();
                 this.updateFormula();
+                if (savedScroll > 0) {
+                  window.requestAnimationFrame(() => {
+                    const newGrid = document.querySelector('[data-pattern-grid]');
+                    if (newGrid) newGrid.scrollTop = savedScroll;
+                  });
+                }
              };
           });
           

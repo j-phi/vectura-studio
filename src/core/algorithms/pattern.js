@@ -7,6 +7,43 @@
 
   const svgCache = new Map();
 
+  // Extract all explicit node coordinates from an SVG path d attribute.
+  // Only absolute/relative M, L, H, V, Z are used for straight-line nodes;
+  // curve commands just track the current point without emitting a node.
+  const parseSvgDNodes = (d) => {
+    if (!d) return [];
+    const nodes = [];
+    const cmdRe = /([MmLlHhVvCcSsQqTtAaZz])([^MmLlHhVvCcSsQqTtAaZz]*)/g;
+    let cx = 0, cy = 0, sx = 0, sy = 0;
+    const floats = s => s.trim().split(/[\s,]+/).map(parseFloat).filter(v => isFinite(v));
+    let m;
+    while ((m = cmdRe.exec(d)) !== null) {
+      const c = m[1], ns = floats(m[2]);
+      switch (c) {
+        case 'M': for (let i = 0; i + 1 < ns.length; i += 2) { cx = ns[i]; cy = ns[i+1]; if (i===0){sx=cx;sy=cy;} nodes.push({x:cx,y:cy}); } break;
+        case 'm': for (let i = 0; i + 1 < ns.length; i += 2) { cx+=ns[i]; cy+=ns[i+1]; if (i===0){sx=cx;sy=cy;} nodes.push({x:cx,y:cy}); } break;
+        case 'L': for (let i = 0; i + 1 < ns.length; i += 2) { cx=ns[i]; cy=ns[i+1]; nodes.push({x:cx,y:cy}); } break;
+        case 'l': for (let i = 0; i + 1 < ns.length; i += 2) { cx+=ns[i]; cy+=ns[i+1]; nodes.push({x:cx,y:cy}); } break;
+        case 'H': for (const x of ns) { cx=x; nodes.push({x:cx,y:cy}); } break;
+        case 'h': for (const x of ns) { cx+=x; nodes.push({x:cx,y:cy}); } break;
+        case 'V': for (const y of ns) { cy=y; nodes.push({x:cx,y:cy}); } break;
+        case 'v': for (const y of ns) { cy+=y; nodes.push({x:cx,y:cy}); } break;
+        case 'C': for (let i=0;i+5<ns.length;i+=6){cx=ns[i+4];cy=ns[i+5];} break;
+        case 'c': for (let i=0;i+5<ns.length;i+=6){cx+=ns[i+4];cy+=ns[i+5];} break;
+        case 'S': for (let i=0;i+3<ns.length;i+=4){cx=ns[i+2];cy=ns[i+3];} break;
+        case 's': for (let i=0;i+3<ns.length;i+=4){cx+=ns[i+2];cy+=ns[i+3];} break;
+        case 'Q': for (let i=0;i+3<ns.length;i+=4){cx=ns[i+2];cy=ns[i+3];} break;
+        case 'q': for (let i=0;i+3<ns.length;i+=4){cx+=ns[i+2];cy+=ns[i+3];} break;
+        case 'T': for (let i=0;i+1<ns.length;i+=2){cx=ns[i];cy=ns[i+1];} break;
+        case 't': for (let i=0;i+1<ns.length;i+=2){cx+=ns[i];cy+=ns[i+1];} break;
+        case 'A': for (let i=0;i+6<ns.length;i+=7){cx=ns[i+5];cy=ns[i+6];} break;
+        case 'a': for (let i=0;i+6<ns.length;i+=7){cx+=ns[i+5];cy+=ns[i+6];} break;
+        case 'Z': case 'z': nodes.push({x:sx,y:sy}); cx=sx; cy=sy; break;
+      }
+    }
+    return nodes;
+  };
+
   const parseNumber = (val, fallback = 0) => {
     if (val === undefined || val === null) return fallback;
     const cleaned = `${val}`.replace(/[^0-9.+-]/g, '');
@@ -83,25 +120,48 @@
         if (len <= 0) return [];
         const steps = Math.max(10, Math.floor(len / 2));
         const step = len / steps;
-        
+
+        // Exact node coordinates from the d attribute, transformed into the
+        // same space as normalizePoints output. Used to snap nearby samples.
+        const dNodes = parseSvgDNodes(el.getAttribute('d') || '');
+        const dNodesNorm = dNodes.length ? normalizePoints(dNodes) : [];
+        const SNAP_TOL = 1.0;
+        const snapToNodes = (pt) => {
+          for (const n of dNodesNorm) {
+            if (Math.hypot(pt.x - n.x, pt.y - n.y) < SNAP_TOL) return n;
+          }
+          return pt;
+        };
+        const pushSubPath = (rawPts) => {
+          if (rawPts.length < 2) return;
+          const norm = normalizePoints(rawPts);
+          // Snap each normalised point to the nearest exact d-attribute node.
+          const snapped = norm.map(snapToNodes);
+          // Remove consecutive duplicates introduced by snapping.
+          const deduped = snapped.filter((p, i) =>
+            i === 0 || p.x !== snapped[i-1].x || p.y !== snapped[i-1].y
+          );
+          if (deduped.length >= 2) allSubPaths.push(deduped);
+        };
+
         const allSubPaths = [];
         let currentPath = [];
 
         for (let idx = 0; idx <= steps + 1; idx++) {
            const actualLen = Math.min(idx * step, len);
            const pt = el.getPointAtLength(actualLen);
-           
+
            if (currentPath.length > 0) {
               const prev = currentPath[currentPath.length - 1];
               const prevLen = Math.max(0, (idx - 1) * step);
               const dLen = actualLen - prevLen;
               const maxDist = (dLen > 0 ? dLen : step) * 1.5;
-              
+
               if (Math.hypot(pt.x - prev.x, pt.y - prev.y) > maxDist) {
                   let L = prevLen;
                   let R = actualLen;
                   let beforeJump = L;
-                  
+
                   for (let iter = 0; iter < 8; iter++) {
                       const mid = (L + R) / 2;
                       const midPt = el.getPointAtLength(mid);
@@ -112,13 +172,13 @@
                           L = mid;
                       }
                   }
-                  
+
                   if (currentPath.length > 1) {
                       const endPt = el.getPointAtLength(beforeJump);
                       currentPath.push({ x: endPt.x, y: endPt.y });
-                      allSubPaths.push(normalizePoints(currentPath));
+                      pushSubPath(currentPath);
                   }
-                  
+
                   const jumpPt = el.getPointAtLength(beforeJump + 0.05);
                   currentPath = [{ x: jumpPt.x, y: jumpPt.y }, { x: pt.x, y: pt.y }];
                   if (actualLen === len) break;
@@ -128,7 +188,7 @@
            currentPath.push({ x: pt.x, y: pt.y });
            if (actualLen === len) break;
         }
-        if (currentPath.length > 0) allSubPaths.push(normalizePoints(currentPath));
+        if (currentPath.length > 0) pushSubPath(currentPath);
         return allSubPaths;
       } catch (err) {}
       return [];
@@ -222,6 +282,128 @@
   // expose helper for UI drop-downs
   window.Vectura.AlgorithmRegistry.patternGetGroups = getTargetSvgData;
 
+  // Remove duplicate segments that appear at tile seam boundaries, then reconnect split chains.
+  const removeSeamSegments = (inputPaths) => {
+    const snap = v => Math.round(v * 10) / 10;
+    const pk = p => `${snap(p.x)},${snap(p.y)}`;
+    const sk = (a, b) => { const ka = pk(a), kb = pk(b); return ka <= kb ? `${ka}|${kb}` : `${kb}|${ka}`; };
+    const isCl = p => p.length >= 3 && pk(p[0]) === pk(p[p.length - 1]);
+
+    // Count how many paths contribute each segment (direction-agnostic)
+    const freq = new Map();
+    for (const path of inputPaths) {
+      if (!Array.isArray(path) || path.length < 2) continue;
+      for (let i = 0; i + 1 < path.length; i++) {
+        const key = sk(path[i], path[i + 1]);
+        freq.set(key, (freq.get(key) || 0) + 1);
+      }
+    }
+    if (![...freq.values()].some(c => c > 1)) return inputPaths;
+
+    // Split each path at duplicate segments into open chains
+    const chains = [];
+    for (const path of inputPaths) {
+      if (!Array.isArray(path) || path.length < 2) continue;
+      const cl = isCl(path);
+      const pts = cl ? path.slice(0, -1) : path;
+      const n = pts.length;
+      const segCount = cl ? n : n - 1;
+
+      const isDup = i => {
+        const j = cl ? (i + 1) % n : i + 1;
+        return freq.get(sk(pts[i], pts[j])) > 1;
+      };
+
+      let anyDup = false;
+      for (let i = 0; i < segCount; i++) if (isDup(i)) { anyDup = true; break; }
+      if (!anyDup) { chains.push(path); continue; }
+
+      // For closed paths start traversal right after the first duplicate segment
+      let start = 0;
+      if (cl) {
+        for (let i = 0; i < n; i++) if (isDup(i)) { start = (i + 1) % n; break; }
+      }
+
+      let cur = null;
+      for (let step = 0; step < segCount; step++) {
+        const si = cl ? (start + step) % n : step;
+        const sj = cl ? (si + 1) % n : si + 1;
+        if (isDup(si)) {
+          if (cur && cur.length >= 2) { if (path.meta) cur.meta = path.meta; chains.push(cur); }
+          cur = null;
+        } else {
+          if (!cur) cur = [pts[si]];
+          cur.push(pts[sj]);
+        }
+      }
+      if (cur && cur.length >= 2) { if (path.meta) cur.meta = path.meta; chains.push(cur); }
+    }
+
+    // Reconnect open chains that share endpoints using hash-map for O(n) lookup.
+    // Handles end→start (direct) and end→end (reverse b) connections.
+    const active = chains.slice();
+    const byEnd = new Map();
+    const byStart = new Map();
+    for (let i = 0; i < active.length; i++) {
+      const p = active[i];
+      if (!p || p.length < 2) continue;
+      byEnd.set(pk(p[p.length - 1]), i);
+      byStart.set(pk(p[0]), i);
+    }
+
+    let anyMerge = true;
+    while (anyMerge) {
+      anyMerge = false;
+      for (let i = 0; i < active.length; i++) {
+        const a = active[i];
+        if (!a || a.length < 2) continue;
+        const aEndKey = pk(a[a.length - 1]);
+
+        // end→start: b starts where a ends
+        let j = byStart.get(aEndKey);
+        if (j !== undefined && j !== i && active[j]) {
+          const b = active[j];
+          const merged = a.concat(b.slice(1));
+          if (a.meta) merged.meta = a.meta;
+          byEnd.delete(aEndKey);
+          byStart.delete(pk(b[0]));
+          byEnd.delete(pk(b[b.length - 1]));
+          byStart.delete(pk(a[0]));
+          active[i] = merged;
+          active[j] = null;
+          byStart.set(pk(merged[0]), i);
+          byEnd.set(pk(merged[merged.length - 1]), i);
+          anyMerge = true;
+          continue;
+        }
+
+        // end→end: b ends where a ends — reverse b then append
+        j = byEnd.get(aEndKey);
+        if (j !== undefined && j !== i && active[j]) {
+          const b = active[j];
+          const bRev = b.slice().reverse();
+          const merged = a.concat(bRev.slice(1));
+          if (a.meta) merged.meta = a.meta;
+          byEnd.delete(aEndKey);
+          byEnd.delete(pk(b[b.length - 1]));
+          byStart.delete(pk(b[0]));
+          byStart.delete(pk(a[0]));
+          active[i] = merged;
+          active[j] = null;
+          byStart.set(pk(merged[0]), i);
+          byEnd.set(pk(merged[merged.length - 1]), i);
+          anyMerge = true;
+          continue;
+        }
+      }
+    }
+
+    return active.filter(p => p && p.length >= 2);
+  };
+
+  // Expose for unit testing
+  window.Vectura.AlgorithmRegistry._removeSeamSegments = removeSeamSegments;
+
   window.Vectura.AlgorithmRegistry.pattern = {
       generate: (p, rng, noise, bounds) => {
         const { m, dW, dH, width, height } = bounds;
@@ -273,6 +455,19 @@
                });
            }
            rowCount++;
+        }
+
+        if (p.removeSeams !== false) {
+          const byPen = new Map();
+          for (const path of paths) {
+            const key = path.meta?.penId ?? null;
+            if (!byPen.has(key)) byPen.set(key, []);
+            byPen.get(key).push(path);
+          }
+          paths.length = 0;
+          for (const [, group] of byPen) {
+            for (const r of removeSeamSegments(group)) paths.push(r);
+          }
         }
 
         return paths;

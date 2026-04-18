@@ -728,6 +728,7 @@
       tileSpacingY: 0,
       tileMethod: 'grid',
       penMapping: {},
+      removeSeams: true,
       smoothing: 0,
       simplify: 0,
       curves: false,
