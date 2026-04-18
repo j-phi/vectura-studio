@@ -4,6 +4,7 @@ const path = require('path');
 
 test.describe('Visual snapshots', () => {
   test.skip(!process.env.ENABLE_SCREENSHOT_VISUALS, 'Set ENABLE_SCREENSHOT_VISUALS=1 to run screenshot snapshots.');
+  const DEFAULT_VISUAL_SEED = 38225;
 
   const buildMaskedHorizonScene = async (page) => {
     await page.evaluate(() => {
@@ -301,7 +302,50 @@ test.describe('Visual snapshots', () => {
 
   test('main viewport shell snapshot', async ({ page }) => {
     await page.goto('/');
+    await page.evaluate((seed) => {
+      const app = window.app;
+      const layer = app.engine.getActiveLayer();
+      if (layer) {
+        layer.params.seed = seed;
+        app.engine.generate(layer.id);
+      }
+      app.engine.computeAllDisplayGeometry();
+      app.ui.buildControls();
+      app.ui.updateFormula();
+      app.render();
+      app.updateStats();
+    }, DEFAULT_VISUAL_SEED);
     await expect(page.locator('main')).toHaveScreenshot('main-shell.png', {
+      maxDiffPixelRatio: 0.03,
+    });
+  });
+
+  test('document dimensions render as blueprint labels outside the canvas', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate((seed) => {
+      const { SETTINGS } = window.Vectura;
+      const app = window.app;
+      SETTINGS.aboutVisible = false;
+      SETTINGS.documentUnits = 'imperial';
+      SETTINGS.showDocumentDimensions = true;
+      SETTINGS.paperSize = 'custom';
+      SETTINGS.paperWidth = 254;
+      SETTINGS.paperHeight = 203.2;
+      SETTINGS.paperOrientation = 'landscape';
+      app.engine.setProfile('custom');
+      const layer = app.engine.getActiveLayer();
+      if (layer) {
+        layer.params.seed = seed;
+        app.engine.generate(layer.id);
+      }
+      app.engine.computeAllDisplayGeometry();
+      app.renderer.center();
+      app.ui.initSettingsValues();
+      app.ui.buildControls();
+      app.render();
+      app.updateStats();
+    }, DEFAULT_VISUAL_SEED);
+    await expect(page.locator('#main-canvas')).toHaveScreenshot('document-dimensions-canvas.png', {
       maxDiffPixelRatio: 0.03,
     });
   });

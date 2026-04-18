@@ -21,6 +21,7 @@
     RandomizationUtils,
     GeometryUtils,
     OptimizationUtils,
+    UnitUtils = {},
   } = window.Vectura || {};
 
   const PETALIS_PRESET_LIBRARY = (Array.isArray(PRESETS) ? PRESETS : Array.isArray(PETALIS_PRESETS) ? PETALIS_PRESETS : [])
@@ -149,6 +150,23 @@
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
   const roundToStep = (value, step) => (step ? Math.round(value / step) * step : value);
   const DISPLAY_PRECISION = 2;
+  const normalizeDocumentUnits = UnitUtils.normalizeDocumentUnits || ((value) => (`${value || ''}`.trim().toLowerCase() === 'imperial' ? 'imperial' : 'metric'));
+  const getDocumentUnitLabel = UnitUtils.getDocumentUnitLabel || ((units) => (normalizeDocumentUnits(units) === 'imperial' ? 'in' : 'mm'));
+  const mmToDocumentUnits = UnitUtils.mmToDocumentUnits || ((value, units) => (normalizeDocumentUnits(units) === 'imperial' ? Number(value || 0) / 25.4 : Number(value || 0)));
+  const documentUnitsToMm = UnitUtils.documentUnitsToMm || ((value, units) => (normalizeDocumentUnits(units) === 'imperial' ? Number(value || 0) * 25.4 : Number(value || 0)));
+  const getDocumentUnitPrecision = UnitUtils.getDocumentUnitPrecision || ((units, fallback = null) => (Number.isFinite(fallback) ? fallback : (normalizeDocumentUnits(units) === 'imperial' ? 2 : 1)));
+  const getDocumentUnitStep = UnitUtils.getDocumentUnitStep || ((units, fallback = null) => (Number.isFinite(fallback) ? fallback : (normalizeDocumentUnits(units) === 'imperial' ? 0.01 : 0.1)));
+  const formatDocumentLength = UnitUtils.formatDocumentLength || ((valueMm, units, options = {}) => {
+    const precision = getDocumentUnitPrecision(units, options.precision);
+    const unit = getDocumentUnitLabel(units);
+    const value = mmToDocumentUnits(valueMm, units);
+    let text = Number.isFinite(value) ? value.toFixed(precision) : '0';
+    if (options.trimTrailingZeros && text.includes('.')) {
+      text = text.replace(/\.?0+$/, '');
+    }
+    if (options.includeUnit === false) return text;
+    return `${text}${options.spaceBeforeUnit ? ' ' : ''}${unit}`;
+  });
   const TRANSFORM_KEYS = ['seed', 'posX', 'posY', 'scaleX', 'scaleY', 'rotation'];
   const clone =
     typeof structuredClone === 'function' ? (obj) => structuredClone(obj) : (obj) => JSON.parse(JSON.stringify(obj));
@@ -5852,6 +5870,137 @@
 
     }
 
+    getDocumentUnits() {
+      return normalizeDocumentUnits(SETTINGS.documentUnits);
+    }
+
+    getDocumentUnitLabel() {
+      return getDocumentUnitLabel(this.getDocumentUnits());
+    }
+
+    getDocumentLengthConfig(options = {}) {
+      const units = this.getDocumentUnits();
+      const convertedStep = options.stepMm !== undefined ? mmToDocumentUnits(options.stepMm, units) : null;
+      const step = options.step !== undefined ? options.step : (convertedStep || getDocumentUnitStep(units));
+      const precision = Math.max(
+        getDocumentUnitPrecision(units, options.precision),
+        stepPrecision(step)
+      );
+      const min = options.minMm !== undefined ? mmToDocumentUnits(options.minMm, units) : null;
+      const max = options.maxMm !== undefined ? mmToDocumentUnits(options.maxMm, units) : null;
+      return { units, precision, step, min, max, unitLabel: getDocumentUnitLabel(units) };
+    }
+
+    formatDocumentNumber(valueMm, options = {}) {
+      const units = options.units || this.getDocumentUnits();
+      const precision = getDocumentUnitPrecision(units, options.precision);
+      const displayValue = mmToDocumentUnits(valueMm, units);
+      if (!Number.isFinite(displayValue)) return '0';
+      let text = displayValue.toFixed(precision);
+      if (options.trimTrailingZeros !== false && text.includes('.')) {
+        text = text.replace(/\.?0+$/, '');
+      }
+      return text;
+    }
+
+    parseDocumentNumber(raw, options = {}) {
+      const fallbackMm = options.fallbackMm ?? 0;
+      const next = parseFloat(raw);
+      if (!Number.isFinite(next)) return fallbackMm;
+      return documentUnitsToMm(next, this.getDocumentUnits());
+    }
+
+    syncDocumentLengthInput(input, valueMm, options = {}) {
+      if (!input) return;
+      const config = this.getDocumentLengthConfig(options);
+      if (config.min !== null) input.min = `${config.min}`;
+      if (config.max !== null) input.max = `${config.max}`;
+      input.step = `${config.step}`;
+      input.value = this.formatDocumentNumber(valueMm, {
+        units: config.units,
+        precision: config.precision,
+      });
+    }
+
+    refreshDocumentUnitsUi() {
+      const unitLabel = this.getDocumentUnitLabel();
+      const documentUnits = getEl('set-document-units', { silent: true });
+      const paperWidthLabel = getEl('set-paper-width-label', { silent: true });
+      const paperHeightLabel = getEl('set-paper-height-label', { silent: true });
+      const marginLabel = getEl('set-margin-label', { silent: true });
+      const marginLineWeightUnit = getEl('set-margin-line-weight-unit', { silent: true });
+      const selectionOutlineWidthUnit = getEl('set-selection-outline-width-unit', { silent: true });
+      const margin = getEl('set-margin', { silent: true });
+      const paperWidth = getEl('set-paper-width', { silent: true });
+      const paperHeight = getEl('set-paper-height', { silent: true });
+      const marginLineWeight = getEl('set-margin-line-weight', { silent: true });
+      const marginLineWeightSlider = getEl('set-margin-line-weight-slider', { silent: true });
+      const selectionOutlineWidth = getEl('set-selection-outline-width', { silent: true });
+      const selectionOutlineWidthSlider = getEl('set-selection-outline-width-slider', { silent: true });
+
+      if (documentUnits) documentUnits.value = this.getDocumentUnits();
+      if (paperWidthLabel) paperWidthLabel.textContent = `Width (${unitLabel})`;
+      if (paperHeightLabel) paperHeightLabel.textContent = `Height (${unitLabel})`;
+      if (marginLabel) marginLabel.textContent = `Margin (${unitLabel})`;
+      if (marginLineWeightUnit) marginLineWeightUnit.textContent = unitLabel;
+      if (selectionOutlineWidthUnit) selectionOutlineWidthUnit.textContent = unitLabel;
+
+      this.syncDocumentLengthInput(margin, SETTINGS.margin, { minMm: 0, stepMm: 0.5 });
+      this.syncDocumentLengthInput(paperWidth, SETTINGS.paperWidth ?? 210, { minMm: 1, stepMm: 0.5 });
+      this.syncDocumentLengthInput(paperHeight, SETTINGS.paperHeight ?? 297, { minMm: 1, stepMm: 0.5 });
+      this.syncDocumentLengthInput(marginLineWeight, SETTINGS.marginLineWeight ?? 0.2, { minMm: 0.05, maxMm: 2, stepMm: 0.05 });
+      this.syncDocumentLengthInput(marginLineWeightSlider, SETTINGS.marginLineWeight ?? 0.2, { minMm: 0.05, maxMm: 2, stepMm: 0.05 });
+      this.syncDocumentLengthInput(selectionOutlineWidth, SETTINGS.selectionOutlineWidth ?? 0.4, { minMm: 0.1, maxMm: 2, stepMm: 0.05 });
+      this.syncDocumentLengthInput(selectionOutlineWidthSlider, SETTINGS.selectionOutlineWidth ?? 0.4, { minMm: 0.1, maxMm: 2, stepMm: 0.05 });
+    }
+
+    getOptimizationTargets() {
+      const scope = SETTINGS.optimizationScope || 'all';
+      let targets = [];
+      if (scope === 'selected') {
+        targets = this.app.renderer?.getSelectedLayers?.() || [];
+      } else if (scope === 'all') {
+        targets = this.app.engine.layers.filter((layer) => !layer.isGroup);
+      } else {
+        const active = this.app.engine.getActiveLayer?.();
+        if (active) targets = [active];
+      }
+      if (!targets.length) {
+        const active = this.app.engine.getActiveLayer?.();
+        if (active) targets = [active];
+      }
+      return targets.filter((layer) => layer && !layer.isGroup);
+    }
+
+    getOptimizationTargetIds() {
+      return new Set(this.getOptimizationTargets().map((layer) => layer.id));
+    }
+
+    optimizeTargetsForCurrentScope(options = {}) {
+      const targets = this.getOptimizationTargets();
+      const targetIds = new Set(targets.map((layer) => layer.id));
+      if (!targets.length) return { targets, targetIds, config: null, map: new Map() };
+      const runOptions = { ...options };
+      if (!runOptions.config && targets.length > 1) {
+        runOptions.config = clone(this.app.engine.ensureLayerOptimization(targets[0]));
+      }
+      const map = this.app.engine.optimizeLayers(targets, runOptions);
+      return {
+        targets,
+        targetIds,
+        config: runOptions.config || null,
+        map,
+      };
+    }
+
+    toggleSettingsPanel(force) {
+      const settingsPanel = getEl('settings-panel', { silent: true });
+      if (!settingsPanel) return false;
+      const nextOpen = typeof force === 'boolean' ? force : !settingsPanel.classList.contains('open');
+      settingsPanel.classList.toggle('open', nextOpen);
+      return true;
+    }
+
     setTopMenuOpen(trigger = null, open = true) {
       const triggers = Array.isArray(this.topMenuTriggers) ? this.topMenuTriggers : [];
       const nextTrigger = open ? trigger : null;
@@ -9768,7 +9917,7 @@
             <div><span class="text-vectura-accent">Cmd/Ctrl + S</span> Save Project</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + Shift + P</span> Import SVG</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + Shift + E</span> Export SVG</div>
-            <div><span class="text-vectura-accent">Cmd/Ctrl + K</span> Document Setup</div>
+            <div><span class="text-vectura-accent">Cmd/Ctrl + K</span> Toggle Document Setup</div>
             <div><span class="text-vectura-accent">Cmd/Ctrl + 0</span> Reset View</div>
             <div><span class="text-vectura-accent">V</span> Selection tool (press again to cycle modes)</div>
             <div><span class="text-vectura-accent">A</span> Direct selection tool</div>
@@ -9866,6 +10015,9 @@
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Optimization tools (linesimplify, linesort, filter, multipass) can be previewed with replace/overlay and
             optionally included on export.
+          </div>
+          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
+            Document Setup now includes a document-level Metric/Imperial switch, a Clear Saved Preferences action, and an optional blueprint-style paper-size readout outside the canvas.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             In Overlay preview, active Line Sort shows a gradient from Overlay Color to its complement (or Line Sort Secondary Color) with a legend for print order progression.
@@ -13978,6 +14130,7 @@
 
     initSettingsValues() {
       this.refreshThemeUi();
+      const documentUnits = getEl('set-document-units', { silent: true });
       const margin = getEl('set-margin');
       const speedDown = getEl('set-speed-down');
       const speedUp = getEl('set-speed-up');
@@ -13999,6 +14152,7 @@
       const marginLineStyleReset = getEl('set-margin-line-style-reset');
       const showGuides = getEl('set-show-guides');
       const snapGuides = getEl('set-snap-guides');
+      const showDocumentDimensions = getEl('set-show-document-dimensions', { silent: true });
       const selectionOutline = getEl('set-selection-outline');
       const selectionOutlineColorPill = getEl('set-selection-outline-color-pill');
       const selectionOutlineWidthSlider = getEl('set-selection-outline-width-slider');
@@ -14011,7 +14165,7 @@
       const orientationLabel = getEl('orientation-label');
       const customFields = getEl('custom-size-fields');
       const bgColor = getEl('inp-bg-color');
-      if (margin) margin.value = SETTINGS.margin;
+      if (documentUnits) documentUnits.value = this.getDocumentUnits();
       if (speedDown) speedDown.value = SETTINGS.speedDown;
       if (speedUp) speedUp.value = SETTINGS.speedUp;
       if (stroke) stroke.value = SETTINGS.strokeWidth;
@@ -14038,13 +14192,12 @@
         marginLineColorPill.textContent = color.toUpperCase();
         marginLineColorPill.style.background = color;
       }
-      if (marginLineWeightSlider) marginLineWeightSlider.value = SETTINGS.marginLineWeight ?? 0.2;
-      if (marginLineWeight) marginLineWeight.value = SETTINGS.marginLineWeight ?? 0.2;
       if (marginLineColor) marginLineColor.value = SETTINGS.marginLineColor ?? '#52525b';
       if (marginLineDotting) marginLineDotting.value = SETTINGS.marginLineDotting ?? 0;
       if (marginLineStyleReset) marginLineStyleReset.disabled = false;
       if (showGuides) showGuides.checked = SETTINGS.showGuides !== false;
       if (snapGuides) snapGuides.checked = SETTINGS.snapGuides !== false;
+      if (showDocumentDimensions) showDocumentDimensions.checked = SETTINGS.showDocumentDimensions === true;
       const viewGridCheckmark = getEl('view-grid-checkmark');
       if (viewGridCheckmark) viewGridCheckmark.style.visibility = SETTINGS.gridOverlay ? 'visible' : 'hidden';
 
@@ -14074,13 +14227,9 @@
         selectionOutlineColorPill.textContent = color.toUpperCase();
         selectionOutlineColorPill.style.background = color;
       }
-      if (selectionOutlineWidthSlider) selectionOutlineWidthSlider.value = SETTINGS.selectionOutlineWidth ?? 0.4;
-      if (selectionOutlineWidth) selectionOutlineWidth.value = SETTINGS.selectionOutlineWidth ?? 0.4;
       if (selectionOutlineStyleReset) selectionOutlineStyleReset.disabled = false;
       if (cookiePreferences) cookiePreferences.checked = SETTINGS.cookiePreferencesEnabled === true;
       if (bgColor) bgColor.value = SETTINGS.bgColor;
-      if (paperWidth) paperWidth.value = SETTINGS.paperWidth ?? 210;
-      if (paperHeight) paperHeight.value = SETTINGS.paperHeight ?? 297;
       if (orientationToggle) orientationToggle.checked = (SETTINGS.paperOrientation || 'landscape') === 'landscape';
       if (orientationLabel) {
         orientationLabel.textContent =
@@ -14089,6 +14238,7 @@
       if (customFields) {
         customFields.classList.toggle('hidden', SETTINGS.paperSize !== 'custom');
       }
+      this.refreshDocumentUnitsUi();
     }
 
     initPaneToggles() {
@@ -14537,6 +14687,7 @@
       const btnHelp = getEl('btn-help');
       const themeToggle = getEl('theme-toggle', { silent: true });
       const machineProfile = getEl('machine-profile');
+      const setDocumentUnits = getEl('set-document-units', { silent: true });
       const setMargin = getEl('set-margin');
       const setTruncate = getEl('set-truncate');
       const setCropExports = getEl('set-crop-exports');
@@ -14550,6 +14701,7 @@
       const setMarginLineStyleReset = getEl('set-margin-line-style-reset');
       const setShowGuides = getEl('set-show-guides');
       const setSnapGuides = getEl('set-snap-guides');
+      const setShowDocumentDimensions = getEl('set-show-document-dimensions', { silent: true });
       const setSelectionOutline = getEl('set-selection-outline');
       const setSelectionOutlineColorPill = getEl('set-selection-outline-color-pill');
       const setSelectionOutlineColor = getEl('set-selection-outline-color');
@@ -14557,6 +14709,7 @@
       const setSelectionOutlineWidth = getEl('set-selection-outline-width');
       const setSelectionOutlineStyleReset = getEl('set-selection-outline-style-reset');
       const setCookiePreferences = getEl('set-cookie-preferences');
+      const btnClearPreferences = getEl('btn-clear-preferences', { silent: true });
       const setSpeedDown = getEl('set-speed-down');
       const setSpeedUp = getEl('set-speed-up');
       const setStroke = getEl('set-stroke', { silent: true });
@@ -14668,10 +14821,10 @@
       }
 
       if (btnSettings && settingsPanel) {
-        btnSettings.onclick = () => settingsPanel.classList.add('open');
+        btnSettings.onclick = () => this.toggleSettingsPanel();
       }
       if (btnCloseSettings && settingsPanel) {
-        btnCloseSettings.onclick = () => settingsPanel.classList.remove('open');
+        btnCloseSettings.onclick = () => this.toggleSettingsPanel(false);
       }
       if (btnHelp) {
         btnHelp.onclick = () => this.openHelp(false);
@@ -14680,6 +14833,16 @@
         this.refreshThemeUi();
         themeToggle.onclick = () => {
           this.app.toggleTheme?.();
+        };
+      }
+
+      if (setDocumentUnits) {
+        setDocumentUnits.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          SETTINGS.documentUnits = normalizeDocumentUnits(e.target.value);
+          this.refreshDocumentUnitsUi();
+          this.buildControls();
+          this.app.render();
         };
       }
 
@@ -14692,8 +14855,7 @@
           if (next !== 'custom' && MACHINES && MACHINES[next]) {
             SETTINGS.paperWidth = MACHINES[next].width;
             SETTINGS.paperHeight = MACHINES[next].height;
-            if (setPaperWidth) setPaperWidth.value = SETTINGS.paperWidth;
-            if (setPaperHeight) setPaperHeight.value = SETTINGS.paperHeight;
+            this.refreshDocumentUnitsUi();
           }
           this.app.engine.setProfile(next);
           this.app.renderer.center();
@@ -14703,7 +14865,9 @@
       if (setMargin) {
         setMargin.onchange = (e) => {
           if (this.app.pushHistory) this.app.pushHistory();
-          SETTINGS.margin = parseInt(e.target.value, 10);
+          const next = Math.max(0, this.parseDocumentNumber(e.target.value, { fallbackMm: SETTINGS.margin }));
+          SETTINGS.margin = Number.isFinite(next) ? next : SETTINGS.margin;
+          this.refreshDocumentUnitsUi();
           this.app.regen();
         };
       }
@@ -14734,10 +14898,9 @@
         const applyMarginLineWeight = (raw, options = {}) => {
           const { commit = false } = options;
           if (commit && this.app.pushHistory) this.app.pushHistory();
-          const next = Math.max(0.05, Math.min(2, parseFloat(raw)));
+          const next = Math.max(0.05, Math.min(2, this.parseDocumentNumber(raw, { fallbackMm: SETTINGS.marginLineWeight ?? 0.2 })));
           SETTINGS.marginLineWeight = Number.isFinite(next) ? next : 0.2;
-          if (setMarginLineWeightSlider) setMarginLineWeightSlider.value = `${SETTINGS.marginLineWeight}`;
-          setMarginLineWeight.value = SETTINGS.marginLineWeight.toFixed(2);
+          this.refreshDocumentUnitsUi();
           this.app.render();
         };
         setMarginLineWeight.oninput = (e) => applyMarginLineWeight(e.target.value);
@@ -14785,9 +14948,8 @@
             setMarginLineColorPill.textContent = '#52525B';
             setMarginLineColorPill.style.background = '#52525b';
           }
-          if (setMarginLineWeightSlider) setMarginLineWeightSlider.value = '0.2';
-          if (setMarginLineWeight) setMarginLineWeight.value = '0.20';
           if (setMarginLineDotting) setMarginLineDotting.value = '0';
+          this.refreshDocumentUnitsUi();
           this.app.render();
         };
       }
@@ -14802,6 +14964,13 @@
         setSnapGuides.onchange = (e) => {
           if (this.app.pushHistory) this.app.pushHistory();
           SETTINGS.snapGuides = e.target.checked;
+        };
+      }
+      if (setShowDocumentDimensions) {
+        setShowDocumentDimensions.onchange = (e) => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          SETTINGS.showDocumentDimensions = e.target.checked;
+          this.app.render();
         };
       }
       const btnViewGridToggle = getEl('btn-view-grid-toggle');
@@ -14929,10 +15098,9 @@
       const applySelectionOutlineWidth = (raw, options = {}) => {
         const { commit = false } = options;
         if (commit && this.app.pushHistory) this.app.pushHistory();
-        const next = Math.max(0.1, Math.min(2, parseFloat(raw)));
+        const next = Math.max(0.1, Math.min(2, this.parseDocumentNumber(raw, { fallbackMm: SETTINGS.selectionOutlineWidth ?? 0.4 })));
         SETTINGS.selectionOutlineWidth = Number.isFinite(next) ? next : 0.4;
-        if (setSelectionOutlineWidthSlider) setSelectionOutlineWidthSlider.value = `${SETTINGS.selectionOutlineWidth}`;
-        if (setSelectionOutlineWidth) setSelectionOutlineWidth.value = SETTINGS.selectionOutlineWidth.toFixed(2);
+        this.refreshDocumentUnitsUi();
         this.app.render();
       };
       if (setSelectionOutlineWidthSlider) {
@@ -14952,8 +15120,7 @@
             setSelectionOutlineColorPill.textContent = '#EF4444';
             setSelectionOutlineColorPill.style.background = '#ef4444';
           }
-          if (setSelectionOutlineWidthSlider) setSelectionOutlineWidthSlider.value = '0.4';
-          if (setSelectionOutlineWidth) setSelectionOutlineWidth.value = '0.40';
+          this.refreshDocumentUnitsUi();
           this.app.render();
         };
       }
@@ -14966,6 +15133,12 @@
           } else {
             this.app.persistPreferences?.({ force: true });
           }
+        };
+      }
+      if (btnClearPreferences) {
+        btnClearPreferences.onclick = () => {
+          this.app.clearSavedPreferences?.();
+          this.initSettingsValues();
         };
       }
       if (setSpeedDown) {
@@ -15003,9 +15176,9 @@
       if (setPaperWidth) {
         setPaperWidth.onchange = (e) => {
           if (this.app.pushHistory) this.app.pushHistory();
-          const next = Math.max(1, parseFloat(e.target.value));
+          const next = Math.max(1, this.parseDocumentNumber(e.target.value, { fallbackMm: SETTINGS.paperWidth ?? 210 }));
           if (Number.isFinite(next)) SETTINGS.paperWidth = next;
-          e.target.value = SETTINGS.paperWidth;
+          this.refreshDocumentUnitsUi();
           if (SETTINGS.paperSize === 'custom') {
             this.app.engine.setProfile('custom');
             this.app.renderer.center();
@@ -15016,9 +15189,9 @@
       if (setPaperHeight) {
         setPaperHeight.onchange = (e) => {
           if (this.app.pushHistory) this.app.pushHistory();
-          const next = Math.max(1, parseFloat(e.target.value));
+          const next = Math.max(1, this.parseDocumentNumber(e.target.value, { fallbackMm: SETTINGS.paperHeight ?? 297 }));
           if (Number.isFinite(next)) SETTINGS.paperHeight = next;
-          e.target.value = SETTINGS.paperHeight;
+          this.refreshDocumentUnitsUi();
           if (SETTINGS.paperSize === 'custom') {
             this.app.engine.setProfile('custom');
             this.app.renderer.center();
@@ -15199,7 +15372,9 @@
         return this.triggerTopMenuAction('btn-export');
       }
       if (primary && !e.shiftKey && !e.altKey && key === 'k') {
-        return this.triggerTopMenuAction('btn-settings');
+        this.toggleSettingsPanel();
+        this.setTopMenuOpen(null, false);
+        return true;
       }
       if (primary && !e.shiftKey && !e.altKey && key === '0') {
         return this.triggerTopMenuAction('btn-reset-view');
@@ -20604,21 +20779,7 @@
         panel.innerHTML = '';
 
         const getTargets = () => {
-          const scope = SETTINGS.optimizationScope || 'all';
-          let targets = [];
-          if (scope === 'selected') {
-            targets = this.app.renderer?.getSelectedLayers?.() || [];
-          } else if (scope === 'all') {
-            targets = this.app.engine.layers.filter((l) => !l.isGroup);
-          } else {
-            const active = this.app.engine.getActiveLayer();
-            if (active) targets = [active];
-          }
-          if (!targets.length) {
-            const active = this.app.engine.getActiveLayer();
-            if (active) targets = [active];
-          }
-          return targets.filter((l) => l && !l.isGroup);
+          return this.getOptimizationTargets();
         };
 
         const normalizeConfig = (config) => {
@@ -20645,13 +20806,52 @@
           return (defaults.steps || []).find((step) => step.id === id) || {};
         };
 
+        const isDocumentLengthControl = (def) => def?.displayUnit === 'mm' || /\(mm\)/.test(def?.label || '');
+        const getOptimizationLabel = (label = '') => label.replace(/\(mm\)/g, `(${this.getDocumentUnitLabel()})`);
+        const getOptimizationDisplayConfig = (def) => {
+          if (!isDocumentLengthControl(def)) return getDisplayConfig(def);
+          const config = this.getDocumentLengthConfig({
+            minMm: def.min,
+            maxMm: def.max,
+            stepMm: def.step,
+            precision: def.displayPrecision,
+          });
+          return {
+            min: config.min,
+            max: config.max,
+            step: config.step,
+            unit: config.unitLabel,
+            precision: config.precision,
+          };
+        };
+        const toOptimizationDisplayValue = (def, value) => {
+          if (isDocumentLengthControl(def)) return mmToDocumentUnits(value, this.getDocumentUnits());
+          return toDisplayValue(def, value);
+        };
+        const fromOptimizationDisplayValue = (def, value) => {
+          if (isDocumentLengthControl(def)) return documentUnitsToMm(value, this.getDocumentUnits());
+          return fromDisplayValue(def, value);
+        };
+        const toOptimizationEditorDef = (def) => {
+          if (!isDocumentLengthControl(def)) return def;
+          const display = getOptimizationDisplayConfig(def);
+          return {
+            ...def,
+            displayMin: display.min,
+            displayMax: display.max,
+            displayStep: display.step,
+            displayUnit: display.unit,
+            displayPrecision: display.precision,
+          };
+        };
+
         const targets = getTargets();
         const config = targets.length ? normalizeConfig(this.app.engine.ensureLayerOptimization(targets[0])) : null;
 
         const updateStats = () => {
           const scopedTargets = getTargets();
           if (!config || !scopedTargets.length) return;
-          this.app.engine.optimizeLayers(scopedTargets, { includePlotterOptimize: true });
+          this.optimizeTargetsForCurrentScope({ includePlotterOptimize: true });
           const before = this.app.engine.computeStats(scopedTargets, { useOptimized: false, includePlotterOptimize: false });
           const after = this.app.engine.computeStats(scopedTargets, { useOptimized: true, includePlotterOptimize: true });
           const beforeEl = panel.querySelector('[data-opt-stat="before"]');
@@ -20665,7 +20865,7 @@
         const rerenderOptimizationPreview = () => {
           const scopedTargets = getTargets();
           if (!scopedTargets.length) return;
-          this.app.engine.optimizeLayers(scopedTargets, { includePlotterOptimize: true });
+          this.optimizeTargetsForCurrentScope({ includePlotterOptimize: true });
           this.app.render();
           updateStats();
         };
@@ -20786,23 +20986,24 @@
 
         const overlaySizeControls = document.createElement('div');
         overlaySizeControls.className = 'color-thickness-size';
+        const overlayWidthConfig = this.getDocumentLengthConfig({ minMm: 0.05, maxMm: 1, stepMm: 0.05 });
         const overlayWidth = document.createElement('input');
         overlayWidth.type = 'range';
-        overlayWidth.min = '0.05';
-        overlayWidth.max = '1';
-        overlayWidth.step = '0.05';
-        overlayWidth.value = `${SETTINGS.optimizationOverlayWidth ?? 0.2}`;
+        overlayWidth.min = `${overlayWidthConfig.min}`;
+        overlayWidth.max = `${overlayWidthConfig.max}`;
+        overlayWidth.step = `${overlayWidthConfig.step}`;
+        overlayWidth.value = this.formatDocumentNumber(SETTINGS.optimizationOverlayWidth ?? 0.2, { precision: overlayWidthConfig.precision });
         const overlayWidthInput = document.createElement('input');
         overlayWidthInput.type = 'number';
-        overlayWidthInput.min = '0.05';
-        overlayWidthInput.max = '1';
-        overlayWidthInput.step = '0.05';
-        overlayWidthInput.value = `${SETTINGS.optimizationOverlayWidth ?? 0.2}`;
+        overlayWidthInput.min = `${overlayWidthConfig.min}`;
+        overlayWidthInput.max = `${overlayWidthConfig.max}`;
+        overlayWidthInput.step = `${overlayWidthConfig.step}`;
+        overlayWidthInput.value = this.formatDocumentNumber(SETTINGS.optimizationOverlayWidth ?? 0.2, { precision: overlayWidthConfig.precision });
         overlayWidthInput.className =
           'w-14 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none';
         const overlayMm = document.createElement('span');
         overlayMm.className = 'text-[10px] text-vectura-muted';
-        overlayMm.textContent = 'mm';
+        overlayMm.textContent = overlayWidthConfig.unitLabel;
         overlaySizeControls.appendChild(overlayWidth);
         overlaySizeControls.appendChild(overlayWidthInput);
         overlaySizeControls.appendChild(overlayMm);
@@ -20822,10 +21023,11 @@
             overlayColorPreview.style.color = getContrastTextColor(color);
           }
           if (width !== undefined) {
-            const next = Math.max(0.05, Math.min(1, parseFloat(width)));
+            const next = Math.max(0.05, Math.min(1, this.parseDocumentNumber(width, { fallbackMm: SETTINGS.optimizationOverlayWidth ?? 0.2 })));
             SETTINGS.optimizationOverlayWidth = Number.isFinite(next) ? next : 0.2;
-            overlayWidth.value = `${SETTINGS.optimizationOverlayWidth}`;
-            overlayWidthInput.value = SETTINGS.optimizationOverlayWidth.toFixed(2);
+            const displayWidth = this.formatDocumentNumber(SETTINGS.optimizationOverlayWidth, { precision: overlayWidthConfig.precision });
+            overlayWidth.value = displayWidth;
+            overlayWidthInput.value = displayWidth;
           }
           rerenderOptimizationPreview();
         };
@@ -20959,22 +21161,23 @@
           const strokeInput = document.createElement('input');
           strokeInput.type = 'number';
           strokeInput.min = '0';
-          strokeInput.step = '0.1';
-          strokeInput.value = `${SETTINGS.strokeWidth ?? 0.3}`;
+          const strokeConfig = this.getDocumentLengthConfig({ minMm: 0, stepMm: 0.1 });
+          strokeInput.step = `${strokeConfig.step}`;
+          strokeInput.value = this.formatDocumentNumber(SETTINGS.strokeWidth ?? 0.3, { precision: strokeConfig.precision });
           strokeInput.className =
             'w-16 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none';
           strokeInput.onchange = (e) => {
             if (this.app.pushHistory) this.app.pushHistory();
-            const next = Math.max(0, parseFloat(e.target.value));
+            const next = Math.max(0, this.parseDocumentNumber(e.target.value, { fallbackMm: SETTINGS.strokeWidth ?? 0.3 }));
             SETTINGS.strokeWidth = Number.isFinite(next) ? next : 0.3;
             this.app.engine.layers.forEach((layer) => {
               layer.strokeWidth = SETTINGS.strokeWidth;
             });
-            e.target.value = `${SETTINGS.strokeWidth}`;
+            e.target.value = this.formatDocumentNumber(SETTINGS.strokeWidth, { precision: strokeConfig.precision });
             this.app.render();
             updateStats();
           };
-          const strokeControl = buildInlineControl('Stroke (mm)', '');
+          const strokeControl = buildInlineControl(`Stroke (${strokeConfig.unitLabel})`, '');
           strokeControl.appendChild(strokeInput);
           controlsWrap.appendChild(strokeControl);
 
@@ -21016,15 +21219,15 @@
           const toleranceControl = document.createElement('div');
           toleranceControl.className = 'optimization-control';
           const currentTolerance = Math.max(0.01, Math.min(1, SETTINGS.plotterOptimize || 0.1));
+          const toleranceConfig = this.getDocumentLengthConfig({ minMm: 0.01, maxMm: 1, stepMm: 0.01 });
+          const toleranceDisplay = this.formatDocumentNumber(currentTolerance, { precision: toleranceConfig.precision });
           toleranceControl.innerHTML = `
             <div class="flex justify-between mb-1">
-              <label class="control-label mb-0">Optimization Tolerance (mm)</label>
-              <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${currentTolerance.toFixed(2)}mm</button>
+              <label class="control-label mb-0">Optimization Tolerance (${toleranceConfig.unitLabel})</label>
+              <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${toleranceDisplay}${toleranceConfig.unitLabel}</button>
             </div>
-            <input type="range" min="0.01" max="1" step="0.01" value="${currentTolerance}" class="w-full">
-            <input type="number" min="0.01" max="1" step="0.01" value="${currentTolerance.toFixed(
-              2
-            )}" class="w-16 mt-2 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none">
+            <input type="range" min="${toleranceConfig.min}" max="${toleranceConfig.max}" step="${toleranceConfig.step}" value="${toleranceDisplay}" class="w-full">
+            <input type="number" min="${toleranceConfig.min}" max="${toleranceConfig.max}" step="${toleranceConfig.step}" value="${toleranceDisplay}" class="w-16 mt-2 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none">
           `;
           const tolRange = toleranceControl.querySelector('input[type="range"]');
           const tolNumber = toleranceControl.querySelector('input[type="number"]');
@@ -21035,7 +21238,7 @@
             toleranceControl.classList.toggle('is-disabled', disabled);
           };
           const clampTolerance = (raw) => {
-            const next = parseFloat(raw);
+            const next = this.parseDocumentNumber(raw, { fallbackMm: 0.1 });
             if (!Number.isFinite(next)) return 0.1;
             return Math.max(0.01, Math.min(1, next));
           };
@@ -21043,9 +21246,10 @@
             const { commit = false } = options;
             if (commit && this.app.pushHistory) this.app.pushHistory();
             const next = clampTolerance(raw);
-            if (tolRange) tolRange.value = `${next}`;
-            if (tolNumber) tolNumber.value = next.toFixed(2);
-            if (tolValue) tolValue.textContent = `${next.toFixed(2)}mm`;
+            const displayValue = this.formatDocumentNumber(next, { precision: toleranceConfig.precision });
+            if (tolRange) tolRange.value = displayValue;
+            if (tolNumber) tolNumber.value = displayValue;
+            if (tolValue) tolValue.textContent = `${displayValue}${toleranceConfig.unitLabel}`;
             SETTINGS.plotterOptimize = plotterToggle?.checked ? next : 0;
             if (toggleState) toggleState.textContent = SETTINGS.plotterOptimize > 0 ? 'ON' : 'OFF';
             rerenderOptimizationPreview();
@@ -21078,9 +21282,10 @@
         };
 
         const formatOptValue = (def, value) => {
-          const { precision, unit } = getDisplayConfig(def);
+          const { precision, unit } = getOptimizationDisplayConfig(def);
           const factor = Math.pow(10, precision);
-          const rounded = Math.round((value ?? 0) * factor) / factor;
+          const displayValue = toOptimizationDisplayValue(def, value ?? 0);
+          const rounded = Math.round(displayValue * factor) / factor;
           return `${rounded}${unit}`;
         };
 
@@ -21089,16 +21294,18 @@
           control.className = 'optimization-control';
           const value = stepConfig[def.key] ?? getStepDefaults(stepConfig.id)[def.key] ?? def.min ?? 0;
           if (stepConfig[def.key] === undefined) stepConfig[def.key] = value;
-          const { min, max, step } = getDisplayConfig(def);
+          const { min, max, step } = getOptimizationDisplayConfig(def);
+          const displayValue = toOptimizationDisplayValue(def, value);
+          const editorDef = toOptimizationEditorDef(def);
           control.innerHTML = `
             <div class="flex justify-between mb-1">
-              <label class="control-label mb-0">${def.label}</label>
+              <label class="control-label mb-0">${getOptimizationLabel(def.label)}</label>
               <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatOptValue(
                 def,
                 value
               )}</button>
             </div>
-            <input type="range" min="${min}" max="${max}" step="${step}" value="${value}" class="w-full">
+            <input type="range" min="${min}" max="${max}" step="${step}" value="${displayValue}" class="w-full">
             <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
           `;
           const input = control.querySelector('input[type="range"]');
@@ -21107,10 +21314,10 @@
           if (input && valueBtn) {
             input.oninput = (e) => {
               const next = parseFloat(e.target.value);
-              valueBtn.textContent = formatOptValue(def, next);
+              valueBtn.textContent = formatOptValue(def, fromOptimizationDisplayValue(def, next));
             };
             input.onchange = (e) => {
-              const next = parseFloat(e.target.value);
+              const next = fromOptimizationDisplayValue(def, parseFloat(e.target.value));
               applyOptimization((cfg) => {
                 const step = cfg.steps.find((s) => s.id === stepConfig.id);
                 if (step) step[def.key] = next;
@@ -21121,7 +21328,7 @@
               const defaults = getStepDefaults(stepConfig.id);
               if (defaults[def.key] === undefined) return;
               const next = defaults[def.key];
-              input.value = next;
+              input.value = toOptimizationDisplayValue(def, next);
               valueBtn.textContent = formatOptValue(def, next);
               applyOptimization((cfg) => {
                 const step = cfg.steps.find((s) => s.id === stepConfig.id);
@@ -21129,14 +21336,14 @@
               });
             });
             attachValueEditor({
-              def,
+              def: editorDef,
               valueEl: valueBtn,
               inputEl: valueInput,
               getValue: () => stepConfig[def.key],
               setValue: (displayVal, opts) => {
                 applyOptimization((cfg) => {
                   const step = cfg.steps.find((s) => s.id === stepConfig.id);
-                  if (step) step[def.key] = displayVal;
+                  if (step) step[def.key] = fromOptimizationDisplayValue(def, displayVal);
                 });
               },
             });
@@ -21844,9 +22051,11 @@
       if (this.app.engine.computeAllDisplayGeometry) {
         this.app.engine.computeAllDisplayGeometry();
       }
-      if (useOptimized) {
-        this.app.engine.optimizeLayers(this.app.engine.layers);
-      }
+      const optimizationTargetIds = useOptimized
+        ? (this.optimizeTargetsForCurrentScope
+          ? this.optimizeTargetsForCurrentScope({ includePlotterOptimize: true }).targetIds
+          : new Set((this.app.engine.layers || []).filter((layer) => layer && !layer.isGroup).map((layer) => layer.id)))
+        : new Set();
       const defs = [];
       const layerClipIds = new Map();
       if (useSvgMarginClip) {
@@ -21908,7 +22117,8 @@
           if (!dedupe.has(key)) dedupe.set(key, new Set());
           seen = dedupe.get(key);
         }
-        group.layers.forEach((l) => {
+        const exportItems = [];
+        group.layers.forEach((l, layerIndex) => {
           const ancestorMasks = this.app.engine.getAncestorMaskLayers ? this.app.engine.getAncestorMaskLayers(l) : [];
           const strokeWidth = (l.strokeWidth ?? pen.width ?? SETTINGS.strokeWidth).toFixed(3);
           const forceLinear = destructiveMarginCrop || (removeHiddenGeometry && ancestorMasks.length);
@@ -21918,45 +22128,78 @@
           const layerClipIdsForAncestors = removeHiddenGeometry
             ? []
             : ancestorMasks.map((maskLayer) => layerClipIds.get(maskLayer.id)).filter(Boolean);
-          layerClipIdsForAncestors.forEach((clipId) => {
-            svg += `<g clip-path="url(#${escapeXmlAttr(clipId)})">`;
-          });
-          svg += `<g id="${layerGroupId}" stroke-width="${strokeWidth}" stroke-linecap="${lineCap}" stroke-linejoin="round">`;
-          let paths = removeHiddenGeometry ? getVisibleExportPaths(l, { useOptimized }) : getRawExportPaths(l, { useOptimized });
+          const useLayerOptimized = useOptimized && optimizationTargetIds.has(l.id);
+          let paths = removeHiddenGeometry
+            ? getVisibleExportPaths(l, { useOptimized: useLayerOptimized })
+            : getRawExportPaths(l, { useOptimized: useLayerOptimized });
           if (destructiveMarginCrop) {
             paths = hardClipExportPaths(paths, marginRect, {
               useCurves: useCurves && !removeHiddenGeometry,
             });
           }
-          (paths || []).forEach((p) => {
-            if (seen) {
-              const key = pathKey(p);
-              if (key && seen.has(key)) return;
-              if (key) seen.add(key);
-            }
-            let exportPath = p;
-            if (forceLinear && p?.meta?.kind === 'circle') {
-              exportPath = expandCirclePath(p.meta, 72);
-              exportPath.meta = { ...(p.meta || {}), kind: 'poly', exportClipped: true, closed: false };
-            }
-            let attrs = exportPath?.meta?.exportClipped ? { 'stroke-linecap': 'butt' } : null;
-            const pathPenId = p?.meta?.penId;
-            if (pathPenId && pathPenId !== pen.id) {
-              const pPen = penMap.get(pathPenId) || fallbackPen;
-              attrs = attrs || {};
-              attrs['stroke'] = escapeXmlAttr(pPen.color || 'black');
-              attrs['stroke-width'] = (l.strokeWidth ?? pPen.width ?? SETTINGS.strokeWidth).toFixed(3);
-            }
-            const markup = shapeToSvg(
-              exportPath,
-              precision,
-              forceLinear ? false : useCurves,
-              attrs
-            );
-            if (markup) svg += markup;
+          (paths || []).forEach((path, pathIndex) => {
+            exportItems.push({
+              layer: l,
+              layerIndex,
+              pathIndex,
+              path,
+              strokeWidth,
+              forceLinear,
+              lineCap,
+              useCurves,
+              layerGroupId,
+              layerClipIdsForAncestors,
+            });
           });
+        });
+
+        const shouldInterleave = useOptimized && exportItems.some((item) => {
+          const grouping = item?.path?.meta?.lineSortGrouping;
+          return grouping === 'pen' || grouping === 'combined';
+        });
+        if (shouldInterleave) {
+          exportItems.sort((a, b) => {
+            const aOrder = Number.isFinite(a?.path?.meta?.lineSortOrder) ? a.path.meta.lineSortOrder : Number.MAX_SAFE_INTEGER;
+            const bOrder = Number.isFinite(b?.path?.meta?.lineSortOrder) ? b.path.meta.lineSortOrder : Number.MAX_SAFE_INTEGER;
+            if (aOrder !== bOrder) return aOrder - bOrder;
+            if (a.layerIndex !== b.layerIndex) return a.layerIndex - b.layerIndex;
+            return a.pathIndex - b.pathIndex;
+          });
+        }
+
+        exportItems.forEach((item, itemIndex) => {
+          const p = item.path;
+          if (seen) {
+            const dedupeKey = pathKey(p);
+            if (dedupeKey && seen.has(dedupeKey)) return;
+            if (dedupeKey) seen.add(dedupeKey);
+          }
+          item.layerClipIdsForAncestors.forEach((clipId) => {
+            svg += `<g clip-path="url(#${escapeXmlAttr(clipId)})">`;
+          });
+          svg += `<g id="${item.layerGroupId}-${itemIndex + 1}" stroke-width="${item.strokeWidth}" stroke-linecap="${item.lineCap}" stroke-linejoin="round">`;
+          let exportPath = p;
+          if (item.forceLinear && p?.meta?.kind === 'circle') {
+            exportPath = expandCirclePath(p.meta, 72);
+            exportPath.meta = { ...(p.meta || {}), kind: 'poly', exportClipped: true, closed: false };
+          }
+          let attrs = exportPath?.meta?.exportClipped ? { 'stroke-linecap': 'butt' } : null;
+          const pathPenId = p?.meta?.penId;
+          if (pathPenId && pathPenId !== pen.id) {
+            const pPen = penMap.get(pathPenId) || fallbackPen;
+            attrs = attrs || {};
+            attrs.stroke = escapeXmlAttr(pPen.color || 'black');
+            attrs['stroke-width'] = (item.layer.strokeWidth ?? pPen.width ?? SETTINGS.strokeWidth).toFixed(3);
+          }
+          const markup = shapeToSvg(
+            exportPath,
+            precision,
+            item.forceLinear ? false : item.useCurves,
+            attrs
+          );
+          if (markup) svg += markup;
           svg += `</g>`;
-          layerClipIdsForAncestors.forEach(() => {
+          item.layerClipIdsForAncestors.forEach(() => {
             svg += `</g>`;
           });
         });

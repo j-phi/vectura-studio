@@ -3,7 +3,7 @@
 Vectura Studio is a physics-inspired vector generator for plotter-ready line art. It is deliberately no-build: open `index.html` in a browser and everything runs with modular JavaScript and Tailwind loaded via CDN.
 
 ## Highlights
-- Plotter-first output in millimeters with machine profiles (A3, A4, AxiDraw V3).
+- Plotter-first output stored in millimeters with machine profiles (A3, A4, AxiDraw V3), plus a document-level Metric/Imperial display toggle for editing and readouts.
 - Layered generation with visibility toggles, ordering, per-layer stroke/line-cap settings, and Illustrator-style parent masks managed directly from the Layers panel so a visible parent silhouette can clip all indented descendants, with an optional `Hide Mask Layer` control for invisible mask artwork plus a live dimmed descendant preview while the mask parent is being transformed.
 - Layer Modifiers via `Insert > Mirror Modifier`, with group-like container rows, drag-to-assign or drag-out child layers, `+ Add` child-layer creation from a selected modifier, fully editable selected child layers, mirrored closed-mask silhouettes for masked subtrees, and full-canvas mirror-axis stacks that export reflected geometry while keeping guide lines editor-only.
 - Seeded, repeatable results with live transform controls (position, scale, rotation).
@@ -15,7 +15,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Cmd/Ctrl+A selects all drawable layers from anywhere in the app (outside text inputs).
 - Layer grouping/ungrouping via Cmd/Ctrl+G and Cmd/Ctrl+Shift+G.
 - Undo/Redo treats document-mutating layer-structure edits as first-class history steps, including reorder, grouping, reparenting, parent-mask toggles, and modifier/container edits.
-- Desktop menu bar is anchored beside `VECTURA.STUDIO` with Illustrator-style shortcuts for Open/Save/Import/Export/Document Setup/Reset View/Help plus an `Insert` menu for modifier containers.
+- Desktop menu bar is anchored beside `VECTURA.STUDIO` with Illustrator-style shortcuts for Open/Save/Import/Export/Document Setup/Reset View/Help plus an `Insert` menu for modifier containers; `Cmd/Ctrl + K` toggles Document Setup open and closed.
 - Top menu dropdowns render as overlays above the canvas/panes so File/View/Insert/Help menus are never clipped by the header.
 - Illustrator-style tool bar with selection, direct selection, hand, pen (bezier), shape, and scissor tools (V/A/Space/P/M/L/Y/C). Press V/P/C again to cycle subtools.
 - Dedicated Rectangle (`M`), Oval (`L`), and Polygon (`Y`) shape tools that create editable expanded layers, start fresh rectangles/polygons as true straight-edge primitives, keep rotated selection/corner handles aligned to transformed primitive geometry, support center-draw / square-circle constraints, polygon side-count changes while dragging, use an Illustrator-style reticle cursor, and support Illustrator-style corner rounding (Selection rounds all corners, Direct rounds one corner).
@@ -25,9 +25,10 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Tablet/touch parity: pointer-native canvas interactions, one-finger tool input, two-finger pan/pinch zoom, and touch modifier buttons (`Shift`, `Alt`, `Meta`, `Pan`).
 - Alignment guides for canvas center and size matching while dragging.
 - Guide visibility and snapping toggles in Document Setup (Cmd while dragging overrides snapping).
+- Optional blueprint-style paper dimension labels outside the canvas in Document Setup.
 - Optional 10mm grid overlay toggle in Document Setup for layout alignment.
 - Auto-colorization for active/selected/all layer scopes with `None` reset mode, one-shot Apply, and Continuous Apply Changes (continuous updates now re-run correctly while editing pens/palettes, and manual Apply supports chaining one method and then another when continuous is off).
-- Optional cookie-backed UI preference persistence from Document Setup.
+- Optional cookie-backed UI preference persistence from Document Setup, plus a Clear Saved Preferences action that removes remembered UI settings without resetting the live document.
 - Global dark/light theming with a sun/moon toggle in the upper-right header; switching theme restyles the full shell, flips the document background default, and swaps `Pen 1` between white and black.
 - In-app help guide and shortcut menu (press `?`).
 - Mobile-first responsive shell for small phones (including iPhone mini): touch-friendly `File/View/Help` top menus, bottom-docked tool rail, and slide-over side drawers for Generator/Layers panels; right-panel sections now scroll independently on short screens (including the Pens section), and collapsed side panes keep a visible edge tab on very small phones.
@@ -56,6 +57,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Pen palette with assignable colors/widths, reorderable list, drag-to-assign per layer or selection, double-click-to-apply on selected layers, plus palette selection, collapsible panel controls, and add/remove actions.
 - Plotter optimization toggle with adjustable tolerance (mm) to remove fully overlapping paths per pen before export.
 - `EXPORT & OPTIMIZATION` section in Document Setup combines export precision/stroke settings with the optimization pipeline (linesimplify, linesort, filter, multipass), scope selection, preview overlays, and export toggle.
+- Multi-layer `Line Sort` now respects the selected optimization scope across preview, stats, overlay rendering, and optimized SVG export.
 - `Export Settings` now appears as the first optimization card (above `Line Simplify`) and includes Precision, Stroke, Remove Hidden Geometry, Plotter Optimization, and Optimization Tolerance controls.
 - `Remove Hidden Geometry` is enabled by default so exported SVGs can physically trim masked or frame-hidden geometry to match the current visible frame exactly, while turning it off preserves hidden source geometry through SVG clip paths.
 - Optimization defaults target `All Layers`, and `Export Optimized` is enabled by default.
@@ -270,7 +272,7 @@ CI lives in `.github/workflows/test.yml`:
 6. Select a child nested under a Mirror Modifier to edit it normally. The left panel switches back to `Algorithm` mode so algorithm changes, parameter edits, and transform controls apply to the selected child while the mirror effect stays inherited from the parent modifier.
 7. The modifier row owns a Mirror Stack with per-axis show/hide, lock, delete, reorder, angle, and XY shift controls plus stack-level add/show-hide/lock/clear actions; deleting the modifier dissolves only the wrapper and preserves its children.
 8. Mirror guides are dashed editor overlays with a centered reflection triangle that flips which half-plane gets replaced and separate rotate handles at the visible line ends; the reflected geometry itself still exports, and masked descendants under the modifier clip against the mirrored closed-mask result instead of only the original mask lobe.
-9. Use `File > Document Setup` for machine size, margin, on-canvas crop, hard export crop (`Crop Exports to Margin`, which trims path geometry to the margin rectangle and exports with flat caps), `Remove Hidden Geometry` (destructive export trimming for masked or frame-hidden geometry), margin guides, stroke, SVG precision, optimization scope/preview/export settings, and optional cookie preference saving. Use the sun/moon toggle in the header to switch the full UI between dark and light themes.
+9. Use `File > Document Setup` for machine size, the document-level Metric/Imperial switch, optional blueprint-style document dimension labels outside the canvas, margin, on-canvas crop, hard export crop (`Crop Exports to Margin`, which trims path geometry to the margin rectangle and exports with flat caps), `Remove Hidden Geometry` (destructive export trimming for masked or frame-hidden geometry), margin guides, stroke, SVG precision, optimization scope/preview/export settings, optional cookie preference saving, and `Clear Saved Preferences` when you want to wipe remembered UI settings. `Cmd/Ctrl + K` toggles Document Setup, and the sun/moon toggle in the header switches the full UI between dark and light themes.
 10. Save/Open full projects via .vectura files, or import SVGs as new layers.
 11. Switch to the Petalis algorithm to use the embedded inline designer panel, then use ⧉ to pop it out into a floating window or ↩ to dock it back in. In Petalis, petal shape is driven by visible inner/outer designer curves, always-on inner/outer count + split controls, a `PETAL VISUALIZER` (`Overlay` / `Side by Side`), a `PROFILE EDITOR` with per-side profile import/export controls plus a shared `Export Pair` button below both profile cards, and `Shading Stack` + `Modifier Stack` cards where each entry has its own `Petal Shape` target (`Inner`/`Outer`/`Both`) plus symmetry controls.
 12. Export from `File > Export SVG`.

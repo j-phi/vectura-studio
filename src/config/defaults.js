@@ -3,6 +3,55 @@
  */
 (() => {
   window.Vectura = window.Vectura || {};
+  const MM_PER_INCH = 25.4;
+  const normalizeDocumentUnits = (value) => (`${value || ''}`.trim().toLowerCase() === 'imperial' ? 'imperial' : 'metric');
+  const getDocumentUnitLabel = (units) => (normalizeDocumentUnits(units) === 'imperial' ? 'in' : 'mm');
+  const mmToDocumentUnits = (value, units) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return 0;
+    return normalizeDocumentUnits(units) === 'imperial' ? numeric / MM_PER_INCH : numeric;
+  };
+  const documentUnitsToMm = (value, units) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return 0;
+    return normalizeDocumentUnits(units) === 'imperial' ? numeric * MM_PER_INCH : numeric;
+  };
+  const getDocumentUnitPrecision = (units, fallback = null) => {
+    if (Number.isFinite(fallback)) return fallback;
+    return normalizeDocumentUnits(units) === 'imperial' ? 2 : 1;
+  };
+  const getDocumentUnitStep = (units, fallback = null) => {
+    if (Number.isFinite(fallback)) return fallback;
+    return normalizeDocumentUnits(units) === 'imperial' ? 0.01 : 0.1;
+  };
+  const formatDocumentLength = (valueMm, units, options = {}) => {
+    const {
+      precision = null,
+      includeUnit = true,
+      trimTrailingZeros = false,
+      spaceBeforeUnit = false,
+    } = options;
+    const resolvedUnits = normalizeDocumentUnits(units);
+    const decimals = getDocumentUnitPrecision(resolvedUnits, precision);
+    const displayValue = mmToDocumentUnits(valueMm, resolvedUnits);
+    let text = Number(displayValue).toFixed(decimals);
+    if (trimTrailingZeros && text.includes('.')) {
+      text = text.replace(/\.?0+$/, '');
+    }
+    if (!includeUnit) return text;
+    const unit = getDocumentUnitLabel(resolvedUnits);
+    return `${text}${spaceBeforeUnit ? ' ' : ''}${unit}`;
+  };
+  window.Vectura.UnitUtils = {
+    MM_PER_INCH,
+    normalizeDocumentUnits,
+    getDocumentUnitLabel,
+    mmToDocumentUnits,
+    documentUnitsToMm,
+    getDocumentUnitPrecision,
+    getDocumentUnitStep,
+    formatDocumentLength,
+  };
   window.Vectura.THEMES = {
     dark: {
       id: 'dark',
@@ -1061,10 +1110,12 @@
       pan: false,
     },
     selectionMode: 'rect',
+    documentUnits: 'metric',
     paperSize: 'letter',
     paperWidth: 216,
     paperHeight: 279,
     paperOrientation: 'landscape',
+    showDocumentDimensions: false,
     optimizationScope: 'all',
     optimizationPreview: 'off',
     optimizationExport: true,

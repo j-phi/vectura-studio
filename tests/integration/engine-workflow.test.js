@@ -120,6 +120,43 @@ describe('Engine integration workflows', () => {
     expect(renderable[0][renderable[0].length - 1].x).toBeCloseTo(160, 4);
   });
 
+  test('shared line sort preserves cross-layer order metadata for combined grouping', () => {
+    const { VectorEngine, Layer } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    engine.layers = [];
+
+    const left = new Layer('line-sort-left', 'expanded', 'Left');
+    left.params.curves = false;
+    left.sourcePaths = [[
+      { x: 20, y: 40 },
+      { x: 40, y: 40 },
+    ]];
+
+    const right = new Layer('line-sort-right', 'expanded', 'Right');
+    right.params.curves = false;
+    right.sourcePaths = [[
+      { x: 180, y: 40 },
+      { x: 200, y: 40 },
+    ]];
+
+    engine.layers.push(left, right);
+    engine.generate(left.id);
+    engine.generate(right.id);
+    engine.computeAllDisplayGeometry();
+
+    engine.optimizeLayers([left, right], {
+      config: {
+        bypassAll: false,
+        steps: [{ id: 'linesort', enabled: true, bypass: false, method: 'greedy', direction: 'horizontal', grouping: 'combined' }],
+      },
+    });
+
+    expect(left.optimizedPaths?.[0]?.meta?.lineSortGrouping).toBe('combined');
+    expect(left.optimizedPaths?.[0]?.meta?.lineSortOrder).toBe(0);
+    expect(right.optimizedPaths?.[0]?.meta?.lineSortGrouping).toBe('combined');
+    expect(right.optimizedPaths?.[0]?.meta?.lineSortOrder).toBe(1);
+  });
+
   test('export/import roundtrip restores full engine state deterministically', () => {
     const { VectorEngine } = runtime.window.Vectura;
     const engine = new VectorEngine();

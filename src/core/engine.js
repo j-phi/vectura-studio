@@ -845,6 +845,18 @@
         if (!items.length) return items;
         const method = step.method || 'nearest';
         const direction = step.direction || 'none';
+        const grouping = step.grouping || 'layer';
+        const finalizeSorted = (sortedItems) => {
+          sortedItems.forEach((item, index) => {
+            if (!Array.isArray(item.path)) return;
+            item.path.meta = {
+              ...(item.path.meta || {}),
+              lineSortOrder: index,
+              lineSortGrouping: grouping,
+            };
+          });
+          return sortedItems;
+        };
         const getKey = (item) => {
           const center = pathCentroid(item.path);
           if (direction === 'horizontal') return center.x;
@@ -855,10 +867,10 @@
           return 0;
         };
         if (method === 'angle' || direction === 'radial') {
-          return items.slice().sort((a, b) => getKey(a) - getKey(b));
+          return finalizeSorted(items.slice().sort((a, b) => getKey(a) - getKey(b)));
         }
         if (method === 'greedy' && direction !== 'none') {
-          return items.slice().sort((a, b) => getKey(a) - getKey(b));
+          return finalizeSorted(items.slice().sort((a, b) => getKey(a) - getKey(b)));
         }
         const allowReverse = method === 'nearest';
         const remaining = items.slice();
@@ -908,7 +920,7 @@
           sorted.push(nextItem);
           current = pathEndpoints(nextItem.path).end;
         }
-        return sorted;
+        return finalizeSorted(sorted);
       };
 
       const applyLineSort = (map, step) => {

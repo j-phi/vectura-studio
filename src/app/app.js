@@ -2,11 +2,12 @@
  * Application orchestrator.
  */
 (() => {
-  const { VectorEngine, Renderer, UI, SETTINGS, THEMES = {} } = window.Vectura || {};
+  const { VectorEngine, Renderer, UI, SETTINGS, THEMES = {}, UnitUtils = {} } = window.Vectura || {};
   const clone = (obj) => JSON.parse(JSON.stringify(obj));
   const PREFERENCE_COOKIE = 'vectura_prefs';
   const PREFERENCE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
   const DEFAULT_THEME = 'dark';
+  const normalizeDocumentUnits = UnitUtils.normalizeDocumentUnits || ((value) => (`${value || ''}`.trim().toLowerCase() === 'imperial' ? 'imperial' : 'metric'));
   const normalizeThemeName = (theme) => {
     const key = `${theme || ''}`.trim().toLowerCase();
     return Object.prototype.hasOwnProperty.call(THEMES, key) ? key : DEFAULT_THEME;
@@ -80,8 +81,17 @@
     }
 
     clearPreferenceCookie() {
+      if (this.preferencePersistTimer) {
+        window.clearTimeout(this.preferencePersistTimer);
+        this.preferencePersistTimer = null;
+      }
       this.writeCookie(this.preferenceCookieName, '', 0);
       this.lastPreferenceHash = '';
+    }
+
+    clearSavedPreferences() {
+      SETTINGS.cookiePreferencesEnabled = false;
+      this.clearPreferenceCookie();
     }
 
     getPreferenceSnapshot() {
@@ -111,10 +121,12 @@
         uiSections: SETTINGS.uiSections ? clone(SETTINGS.uiSections) : null,
         aboutVisible: SETTINGS.aboutVisible !== false,
         touchModifiers: SETTINGS.touchModifiers ? clone(SETTINGS.touchModifiers) : null,
+        documentUnits: normalizeDocumentUnits(SETTINGS.documentUnits),
         paperSize: SETTINGS.paperSize,
         paperWidth: SETTINGS.paperWidth,
         paperHeight: SETTINGS.paperHeight,
         paperOrientation: SETTINGS.paperOrientation,
+        showDocumentDimensions: SETTINGS.showDocumentDimensions === true,
         optimizationScope: SETTINGS.optimizationScope,
         optimizationPreview: SETTINGS.optimizationPreview,
         optimizationExport: SETTINGS.optimizationExport,
@@ -166,10 +178,12 @@
           ...snapshot.touchModifiers,
         };
       }
+      SETTINGS.documentUnits = normalizeDocumentUnits(snapshot.documentUnits ?? SETTINGS.documentUnits);
       SETTINGS.paperSize = snapshot.paperSize ?? SETTINGS.paperSize;
       SETTINGS.paperWidth = snapshot.paperWidth ?? SETTINGS.paperWidth;
       SETTINGS.paperHeight = snapshot.paperHeight ?? SETTINGS.paperHeight;
       SETTINGS.paperOrientation = snapshot.paperOrientation ?? SETTINGS.paperOrientation;
+      SETTINGS.showDocumentDimensions = snapshot.showDocumentDimensions === true;
       SETTINGS.optimizationScope = snapshot.optimizationScope ?? SETTINGS.optimizationScope;
       SETTINGS.optimizationPreview = snapshot.optimizationPreview ?? SETTINGS.optimizationPreview;
       SETTINGS.optimizationExport = snapshot.optimizationExport ?? SETTINGS.optimizationExport;
@@ -258,10 +272,12 @@
           uiSections: SETTINGS.uiSections ? clone(SETTINGS.uiSections) : null,
           aboutVisible: SETTINGS.aboutVisible !== false,
           touchModifiers: SETTINGS.touchModifiers ? clone(SETTINGS.touchModifiers) : null,
+          documentUnits: normalizeDocumentUnits(SETTINGS.documentUnits),
           paperSize: SETTINGS.paperSize,
           paperWidth: SETTINGS.paperWidth,
           paperHeight: SETTINGS.paperHeight,
           paperOrientation: SETTINGS.paperOrientation,
+          showDocumentDimensions: SETTINGS.showDocumentDimensions === true,
           optimizationScope: SETTINGS.optimizationScope,
           optimizationPreview: SETTINGS.optimizationPreview,
           optimizationExport: SETTINGS.optimizationExport,
@@ -322,10 +338,12 @@
           ...s.touchModifiers,
         };
       }
+      SETTINGS.documentUnits = normalizeDocumentUnits(s.documentUnits ?? SETTINGS.documentUnits);
       SETTINGS.paperSize = s.paperSize ?? SETTINGS.paperSize;
       SETTINGS.paperWidth = s.paperWidth ?? SETTINGS.paperWidth;
       SETTINGS.paperHeight = s.paperHeight ?? SETTINGS.paperHeight;
       SETTINGS.paperOrientation = s.paperOrientation ?? SETTINGS.paperOrientation;
+      SETTINGS.showDocumentDimensions = s.showDocumentDimensions === true;
       SETTINGS.optimizationScope = s.optimizationScope ?? SETTINGS.optimizationScope;
       SETTINGS.optimizationPreview = s.optimizationPreview ?? SETTINGS.optimizationPreview;
       SETTINGS.optimizationExport = s.optimizationExport ?? SETTINGS.optimizationExport;

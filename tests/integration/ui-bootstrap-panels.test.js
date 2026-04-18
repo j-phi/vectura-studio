@@ -110,4 +110,52 @@ describe('UI bootstrap integrity', () => {
     const prefs = window.app.getPreferenceSnapshot();
     expect(prefs.uiTheme).toBe('light');
   });
+
+  test('document setup shortcut toggles the panel and document-unit state roundtrips through app state', async () => {
+    runtime = await loadVecturaRuntime({
+      includeRenderer: true,
+      includeUi: true,
+      includeApp: true,
+      includeMain: false,
+      useIndexHtml: true,
+    });
+
+    const { window, document } = runtime;
+    window.app = new window.Vectura.App();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    const settingsPanel = document.getElementById('settings-panel');
+    expect(settingsPanel.classList.contains('open')).toBe(false);
+
+    window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }));
+    expect(settingsPanel.classList.contains('open')).toBe(true);
+
+    window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }));
+    expect(settingsPanel.classList.contains('open')).toBe(false);
+
+    window.Vectura.SETTINGS.paperSize = 'custom';
+    window.Vectura.SETTINGS.paperWidth = 254;
+    window.Vectura.SETTINGS.paperHeight = 203.2;
+    window.Vectura.SETTINGS.documentUnits = 'imperial';
+    window.Vectura.SETTINGS.showDocumentDimensions = true;
+    window.app.ui.initSettingsValues();
+
+    const state = window.app.captureState();
+
+    window.Vectura.SETTINGS.paperWidth = 210;
+    window.Vectura.SETTINGS.paperHeight = 297;
+    window.Vectura.SETTINGS.documentUnits = 'metric';
+    window.Vectura.SETTINGS.showDocumentDimensions = false;
+
+    window.app.applyState(state);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(window.Vectura.SETTINGS.documentUnits).toBe('imperial');
+    expect(window.Vectura.SETTINGS.showDocumentDimensions).toBe(true);
+    expect(document.getElementById('set-document-units')?.value).toBe('imperial');
+    expect(document.getElementById('set-paper-width-label')?.textContent).toBe('Width (in)');
+    expect(document.getElementById('set-paper-height-label')?.textContent).toBe('Height (in)');
+    expect(document.getElementById('set-paper-width')?.value).toBe('10');
+    expect(document.getElementById('set-paper-height')?.value).toBe('8');
+  });
 });

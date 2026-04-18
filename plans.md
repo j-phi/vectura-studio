@@ -25,6 +25,8 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
+- Added Document Setup project-state units (`metric` / `imperial`), unit-aware paper/margin/stroke/tolerance controls, blueprint-style paper dimensions outside the canvas, a `Clear Saved Preferences` action for cookie-backed UI state, `Cmd/Ctrl + K` toggle behavior, and regression coverage for the full workflow.
+- Fixed multi-layer `Line Sort` so shared optimization scope now carries through preview, stats, overlay rendering, and optimized SVG export instead of degrading to per-layer sorting.
 - Added `Lissajous` `Truncate Start` / `Truncate End` endpoint-length sliders, defaulted both to `0%`, and flipped `Close Lines` to default off so users can shorten each end explicitly before enabling tail trimming.
 - Refined `Lissajous` `Close Lines` so loose endpoints trim to self-intersection cutpoints instead of forcing end-to-start closure, and added focused unit coverage for trimmed-tail plus no-crossing cases.
 - Fixed snapshot-based Undo/Redo for document-mutating layer-structure edits by storing real post-mutation structural states, restoring multi-selection sets, and adding integration regressions for grouping, reparenting, masking, and modifier/container edits.
@@ -86,6 +88,8 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Reworked Horizon vertical fans to sample the visible terrain surface by X-position instead of row parameterization, then removed the extra edge-anchor rays after they proved visually inconsistent with the contour fan.
 
 ## Decisions
+- Document Setup unit choice is serialized with the project, but all internal physical geometry, paper, margin, stroke, and optimization math stays normalized in millimeters.
+- Blueprint-style document-dimension labels are editor-only canvas chrome and never export.
 - `Lissajous` exposes explicit endpoint truncation before `Close Lines`: `Truncate Start` and `Truncate End` remove 0-100% of arc length from each end, and `Close Lines` defaults to off.
 - `Lissajous` `Close Lines` is a tail-trimming affordance, not a forced path-closure toggle: it preserves open paths and only replaces loose endpoints with exact self-intersection cutpoints when valid tail crossings exist.
 - UI theme is a personal preference rather than project state: dark/light persists only through the existing cookie-preference snapshot, while `.vectura` project files continue to serialize document colors and pens without carrying a UI theme switch.

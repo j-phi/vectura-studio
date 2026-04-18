@@ -626,15 +626,25 @@
           <label class="control-label">Paper Size</label>
           <select id="machine-profile"
             class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent mb-2"></select>
+          <div class="mt-3">
+            <div class="flex items-center justify-between">
+              <label class="text-xs text-vectura-muted">Units</label>
+              <select id="set-document-units"
+                class="w-24 bg-vectura-bg border border-vectura-border p-1 text-xs focus:outline-none focus:border-vectura-accent">
+                <option value="metric">Metric</option>
+                <option value="imperial">Imperial</option>
+              </select>
+            </div>
+          </div>
           <div id="custom-size-fields" class="mt-3 hidden">
             <div class="grid grid-cols-2 gap-2">
               <div>
-                <label class="text-[11px] text-vectura-muted">Width (mm)</label>
+                <label id="set-paper-width-label" class="text-[11px] text-vectura-muted">Width (mm)</label>
                 <input type="number" id="set-paper-width"
                   class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
               </div>
               <div>
-                <label class="text-[11px] text-vectura-muted">Height (mm)</label>
+                <label id="set-paper-height-label" class="text-[11px] text-vectura-muted">Height (mm)</label>
                 <input type="number" id="set-paper-height"
                   class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
               </div>
@@ -651,7 +661,7 @@
           </div>
           <div class="flex gap-2">
             <div class="flex-1">
-              <label class="control-label">Margin (mm)</label>
+              <label id="set-margin-label" class="control-label">Margin (mm)</label>
               <input type="number" id="set-margin"
                 class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
             </div>
@@ -690,7 +700,7 @@
                       class="w-full">
                     <input type="number" id="set-margin-line-weight" min="0.05" max="2" step="0.05" value="0.2"
                       class="w-14 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
-                    <span class="text-[11px] text-vectura-muted">mm</span>
+                    <span id="set-margin-line-weight-unit" class="text-[11px] text-vectura-muted">mm</span>
                   </div>
                 </div>
                 <div class="style-field">
@@ -714,12 +724,20 @@
                 <label class="text-xs text-vectura-muted">Snap Guides</label>
                 <input type="checkbox" id="set-snap-guides" class="cursor-pointer" />
               </div>
+              <div class="flex items-center justify-between mt-2">
+                <label class="text-xs text-vectura-muted">Show Document Dimensions</label>
+                <input type="checkbox" id="set-show-document-dimensions" class="cursor-pointer" />
+              </div>
             </div>
             <div class="mt-2">
               <div class="flex items-center justify-between">
                 <label class="text-xs text-vectura-muted">Save Preferences in Cookie</label>
                 <input type="checkbox" id="set-cookie-preferences" class="cursor-pointer" />
               </div>
+              <button id="btn-clear-preferences" type="button"
+                class="mt-2 text-[11px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted">
+                Clear Saved Preferences
+              </button>
             </div>
             <div class="mt-4">
               <div class="flex items-center justify-between mb-2">
@@ -742,7 +760,7 @@
                         class="w-full">
                       <input type="number" id="set-selection-outline-width" min="0.1" max="2" step="0.05" value="0.4"
                         class="w-14 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
-                      <span class="text-[11px] text-vectura-muted">mm</span>
+                      <span id="set-selection-outline-width-unit" class="text-[11px] text-vectura-muted">mm</span>
                     </div>
                   </div>
                   <div class="style-field">
