@@ -51,7 +51,7 @@
     return Number.isFinite(num) ? num : fallback;
   };
 
-  const svgElementToPaths = (el, offsetX = 0, offsetY = 0) => {
+  const svgElementToPaths = (el, offsetX = 0, offsetY = 0, vbMinX = 0, vbMinY = 0, vbW = 0, vbH = 0) => {
     if (!el) return [];
     const tag = el.tagName.toLowerCase();
     const applyMatrix = (pt, matrix) => {
@@ -122,12 +122,21 @@
         const step = len / steps;
 
         // Exact node coordinates from the d attribute, transformed into the
-        // same space as normalizePoints output. Used to snap nearby samples.
+        // same space as normalizePoints output. Only boundary-adjacent nodes
+        // are used as snap targets so that interior subpath nodes (e.g. oval
+        // control points in cage) don't corrupt unrelated subpath samples.
         const dNodes = parseSvgDNodes(el.getAttribute('d') || '');
         const dNodesNorm = dNodes.length ? normalizePoints(dNodes) : [];
         const SNAP_TOL = 1.0;
+        const BOUNDARY_TOL = 2.0;
+        const snapNodes = dNodesNorm.filter(n =>
+          Math.abs(n.x - vbMinX) < BOUNDARY_TOL ||
+          Math.abs(n.x - vbW)    < BOUNDARY_TOL ||
+          Math.abs(n.y - vbMinY) < BOUNDARY_TOL ||
+          Math.abs(n.y - vbH)    < BOUNDARY_TOL
+        );
         const snapToNodes = (pt) => {
-          for (const n of dNodesNorm) {
+          for (const n of snapNodes) {
             if (Math.hypot(pt.x - n.x, pt.y - n.y) < SNAP_TOL) return n;
           }
           return pt;
@@ -245,7 +254,7 @@
       // Determine distinct identifier for this element based on styles to group them logically
       const identifier = `${stroke}|${fill}`;
       
-      const paths = svgElementToPaths(clone, vbMinX, vbMinY);
+      const paths = svgElementToPaths(clone, vbMinX, vbMinY, vbMinX, vbMinY, vbW, vbH);
       
       elementsData.push({
          index,
@@ -281,6 +290,191 @@
 
   // expose helper for UI drop-downs
   window.Vectura.AlgorithmRegistry.patternGetGroups = getTargetSvgData;
+
+  // ── Pattern fill helpers ──────────────────────────────────────────────────
+
+  // Clip a horizontal scan line at y against a closed polygon → [[x0,x1], ...]
+  const scanLineClip = (poly, y) => {
+    const xs = [];
+    const n = poly.length;
+    for (let i = 0; i < n; i++) {
+      const a = poly[i], b = poly[(i + 1) % n];
+      if ((a.y < y) !== (b.y < y))
+        xs.push(a.x + (y - a.y) * (b.x - a.x) / (b.y - a.y));
+    }
+    xs.sort((a, b) => a - b);
+    const pairs = [];
+    for (let i = 0; i + 1 < xs.length; i += 2) pairs.push([xs[i], xs[i + 1]]);
+    return pairs;
+  };
+
+  // Point-in-polygon (ray casting)
+  const polyContainsPoint = (poly, px, py) => {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const xi = poly[i].x, yi = poly[i].y, xj = poly[j].x, yj = poly[j].y;
+      if ((yi > py) !== (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi) + xi)
+        inside = !inside;
+    }
+    return inside;
+  };
+
+  // Signed polygon area (positive = CCW)
+  const polyArea = (poly) => {
+    let a = 0;
+    for (let i = 0; i < poly.length; i++) {
+      const j = (i + 1) % poly.length;
+      a += poly[i].x * poly[j].y - poly[j].x * poly[i].y;
+    }
+    return a / 2;
+  };
+
+  // Hatch lines at angleDeg, clipped to polygon
+  const hatchLines = (poly, density, angleDeg) => {
+    const ar = angleDeg * Math.PI / 180;
+    const ca = Math.cos(ar), sa = Math.sin(ar);
+    const rotPoly = poly.map(p => ({ x: p.x * ca + p.y * sa, y: -p.x * sa + p.y * ca }));
+    const ys = rotPoly.map(p => p.y);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const result = [];
+    for (let y = Math.ceil(minY / density) * density; y <= maxY + 1e-6; y += density) {
+      for (const [x0, x1] of scanLineClip(rotPoly, y)) {
+        if (x1 - x0 < 1e-6) continue;
+        result.push([
+          { x: x0 * ca - y * sa, y: x0 * sa + y * ca },
+          { x: x1 * ca - y * sa, y: x1 * sa + y * ca },
+        ]);
+      }
+    }
+    return result;
+  };
+
+  // Sinusoidal wave scan lines clipped by point-in-polygon
+  const waveLines = (poly, density) => {
+    const ys = poly.map(p => p.y), xs = poly.map(p => p.x);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const amplitude = density * 0.4, wavelength = density * 1.5;
+    const stepX = Math.max(0.5, (maxX - minX) / 200);
+    const result = [];
+    for (let cy = Math.ceil(minY / density) * density; cy <= maxY + 1e-6; cy += density) {
+      let seg = null;
+      for (let x = minX; x <= maxX + stepX; x += stepX) {
+        if (polyContainsPoint(poly, x, cy)) {
+          if (!seg) seg = [];
+          seg.push({ x, y: cy + amplitude * Math.sin((x / wavelength) * Math.PI * 2) });
+        } else {
+          if (seg && seg.length >= 2) result.push(seg);
+          seg = null;
+        }
+      }
+      if (seg && seg.length >= 2) result.push(seg);
+    }
+    return result;
+  };
+
+  // Triangle-wave (zigzag) scan lines clipped by point-in-polygon
+  const zigzagLines = (poly, density) => {
+    const ys = poly.map(p => p.y), xs = poly.map(p => p.x);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const amplitude = density * 0.4, halfPeriod = density * 0.75;
+    const result = [];
+    for (let cy = Math.ceil(minY / density) * density; cy <= maxY + 1e-6; cy += density) {
+      let seg = null, flip = false;
+      for (let x = minX; x <= maxX + halfPeriod; x += halfPeriod) {
+        if (polyContainsPoint(poly, x, cy)) {
+          if (!seg) seg = [];
+          seg.push({ x, y: cy + (flip ? amplitude : -amplitude) });
+        } else {
+          if (seg && seg.length >= 2) result.push(seg);
+          seg = null;
+        }
+        flip = !flip;
+      }
+      if (seg && seg.length >= 2) result.push(seg);
+    }
+    return result;
+  };
+
+  // Dot grid (short tick marks at grid intersections)
+  const stippleDots = (poly, density) => {
+    const ys = poly.map(p => p.y), xs = poly.map(p => p.x);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const dotR = Math.max(0.15, density * 0.12);
+    const result = [];
+    let rowOff = false;
+    for (let y = Math.ceil(minY / density) * density; y <= maxY + 1e-6; y += density) {
+      const x0 = minX + (rowOff ? density / 2 : 0);
+      for (let x = x0; x <= maxX + 1e-6; x += density) {
+        if (polyContainsPoint(poly, x, y))
+          result.push([{ x: x - dotR, y }, { x: x + dotR, y }]);
+      }
+      rowOff = !rowOff;
+    }
+    return result;
+  };
+
+  // Inset polygon by distance d (miter offset)
+  const insetPolygon = (poly, d) => {
+    const n = poly.length;
+    if (n < 3) return null;
+    const dir = polyArea(poly) > 0 ? 1 : -1;
+    const result = [];
+    for (let i = 0; i < n; i++) {
+      const prev = poly[(i + n - 1) % n], curr = poly[i], next = poly[(i + 1) % n];
+      const e1x = curr.x - prev.x, e1y = curr.y - prev.y;
+      const e2x = next.x - curr.x, e2y = next.y - curr.y;
+      const l1 = Math.hypot(e1x, e1y) || 1, l2 = Math.hypot(e2x, e2y) || 1;
+      const n1x = -e1y / l1 * dir, n1y = e1x / l1 * dir;
+      const n2x = -e2y / l2 * dir, n2y = e2x / l2 * dir;
+      const bx = (n1x + n2x) / 2, by = (n1y + n2y) / 2;
+      const bl = Math.hypot(bx, by) || 1;
+      result.push({ x: curr.x + bx * d / bl, y: curr.y + by * d / bl });
+    }
+    const newArea = polyArea(result);
+    if (newArea * polyArea(poly) < 0) return null;
+    return result;
+  };
+
+  // Concentric inset rings of the polygon boundary
+  const contourLines = (poly, density) => {
+    const result = [];
+    let current = poly.slice();
+    for (let iter = 0; iter < 100; iter++) {
+      current = insetPolygon(current, density);
+      if (!current || current.length < 3) break;
+      if (Math.abs(polyArea(current)) < density * density) break;
+      result.push([...current, current[0]]);
+    }
+    return result;
+  };
+
+  // Dispatch to the right fill type → array of paths in tile-local SVG coords
+  const generatePatternFillPaths = (fill) => {
+    const { region, fillType = 'hatch', density = 5 } = fill;
+    if (!region || region.length < 3) return [];
+    switch (fillType) {
+      case 'hatch':       return hatchLines(region, density, 0);
+      case 'vhatch':      return hatchLines(region, density, 90);
+      case 'dhatch45':    return hatchLines(region, density, 45);
+      case 'dhatch135':   return hatchLines(region, density, 135);
+      case 'crosshatch':  return [...hatchLines(region, density, 0), ...hatchLines(region, density, 90)];
+      case 'xcrosshatch': return [...hatchLines(region, density, 45), ...hatchLines(region, density, 135)];
+      case 'wavelines':   return waveLines(region, density);
+      case 'zigzag':      return zigzagLines(region, density);
+      case 'stipple':     return stippleDots(region, density);
+      case 'contour':     return contourLines(region, density);
+      default:            return hatchLines(region, density, 0);
+    }
+  };
+
+  // Expose for UI and testing
+  window.Vectura.AlgorithmRegistry._generatePatternFillPaths = generatePatternFillPaths;
+  window.Vectura.AlgorithmRegistry._polyContainsPoint = polyContainsPoint;
+
+  // ── Seam removal ─────────────────────────────────────────────────────────
 
   // Remove duplicate segments that appear at tile seam boundaries, then reconnect split chains.
   const removeSeamSegments = (inputPaths) => {
@@ -429,33 +623,57 @@
         const startY = m + (originY % scaledH) - scaledH;
         
         const paths = [];
+        const tilePositions = [];
 
-        let rowCount = 0;
-        for (let y = startY; y < m + dH + scaledH; y += scaledH) {
-           let xOffset = 0;
-           if (tileMethod === 'brick') {
-               xOffset = (rowCount % 2 !== 0) ? (scaledW / 2) : 0;
-           }
-           
-           for (let x = startX + xOffset - scaledW; x < m + dW + scaledW; x += scaledW) {
-               data.groups.forEach(group => {
-                   const penId = p.penMapping && p.penMapping[group.id] ? p.penMapping[group.id] : null;
-
-                   group.paths.forEach(originalPath => {
-                       const translatedPath = [];
-                       for (let pt of originalPath) {
-                           translatedPath.push({
-                               x: x + (pt.x * scale),
-                               y: y + (pt.y * scale)
-                           });
-                       }
-                       translatedPath.meta = { penId };
-                       paths.push(translatedPath);
-                   });
-               });
-           }
-           rowCount++;
+        if (tileMethod === 'off') {
+          tilePositions.push({ tx: m + originX, ty: m + originY });
+        } else if (tileMethod === 'hexagonal') {
+          const rowH = scaledH * Math.sin(Math.PI / 3);
+          let rowCount = 0;
+          for (let y = startY; y < m + dH + rowH; y += rowH) {
+            const xOff = (rowCount % 2) ? scaledW / 2 : 0;
+            for (let x = startX + xOff - scaledW; x < m + dW + scaledW; x += scaledW)
+              tilePositions.push({ tx: x, ty: y });
+            rowCount++;
+          }
+        } else {
+          let rowCount = 0;
+          for (let y = startY; y < m + dH + scaledH; y += scaledH) {
+            const xOffset = (tileMethod === 'brick' && rowCount % 2 !== 0) ? scaledW / 2 : 0;
+            for (let x = startX + xOffset - scaledW; x < m + dW + scaledW; x += scaledW)
+              tilePositions.push({ tx: x, ty: y });
+            rowCount++;
+          }
         }
+
+        for (const { tx, ty } of tilePositions) {
+          data.groups.forEach(group => {
+            const penId = p.penMapping && p.penMapping[group.id] ? p.penMapping[group.id] : null;
+            group.paths.forEach(originalPath => {
+              const tp = [];
+              for (const pt of originalPath) tp.push({ x: tx + pt.x * scale, y: ty + pt.y * scale });
+              tp.meta = { penId };
+              paths.push(tp);
+            });
+          });
+        }
+
+        // Apply pattern fills (line fills added via Pattern Designer)
+        if (p.patternFills && p.patternFills.length) {
+          for (const fill of p.patternFills) {
+            const fillPaths = generatePatternFillPaths(fill);
+            const penId = fill.penId ?? null;
+            for (const { tx, ty } of tilePositions) {
+              for (const fp of fillPaths) {
+                const tp = fp.map(pt => ({ x: tx + pt.x * scale, y: ty + pt.y * scale }));
+                tp.meta = { penId };
+                paths.push(tp);
+              }
+            }
+          }
+        }
+
+        if (tileMethod === 'off') return paths;
 
         if (p.removeSeams !== false) {
           const byPen = new Map();

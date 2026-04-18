@@ -19,6 +19,7 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 - Added unit, integration, Playwright, and screenshot coverage for document-unit conversion, clearing saved preferences, Document Setup shortcut toggling, multi-layer Line Sort scoping, and the new outside-canvas dimension labels.
 
 ### Changed
+- Fixed `Line Sort` `Nearest` so `Horizontal` and `Vertical` now behave as real directional sweeps instead of only seeding the first path; print order stays monotonic along the chosen axis while still selecting the nearest local continuation within each sweep band.
 - Added `Truncate Start` and `Truncate End` sliders to `Lissajous`, both defaulting to `0%`, and changed `Close Lines` to default off so endpoint shortening can be dialed in before any tail-closing pass.
 - Changed `Lissajous` `Close Lines` to trim loose endpoint tails back to deterministic self-intersection cutpoints instead of hard-closing the path to its first sample, with focused unit coverage for trimmed and untouched cases.
 - Fixed snapshot-based Undo/Redo for document-mutating layer-structure edits so grouping, reparenting, masking, modifier/container edits, and structural selection restore now roundtrip correctly with Redo instead of only restoring the pre-edit state.

@@ -63,6 +63,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Optimization defaults target `All Layers`, and `Export Optimized` is enabled by default.
 - `Line Simplify` is applied by default for new layers, with Mode set to `Curve`.
 - `Line Sort` is not applied by default for new layers.
+- `Line Sort` `Nearest` now treats `Horizontal` and `Vertical` as true sweep directions, preserving left-to-right or top-to-bottom print-order progression while still choosing the nearest local continuation inside each sweep band.
 - When preview mode is `Overlay` and `Line Sort` is active, the overlay gradient runs from `Overlay Color` to its complement by default, with a per-Line Sort secondary-color override and an on-canvas print-order legend.
 - Color controls use horizontal pills that open native color pickers; thickness controls use slider + editable mm value with reset buttons where applicable.
 - One-click SVG export with configurable precision and grouping by pen assignment.

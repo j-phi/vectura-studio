@@ -4,6 +4,15 @@ const { pathSignature } = require('../helpers/path-signature');
 describe('Engine integration workflows', () => {
   let runtime;
 
+  const centroidAxisOrder = (paths = [], axis) =>
+    (paths || []).map((path) => {
+      const total = (path || []).reduce((acc, point) => {
+        acc += Number(point?.[axis] ?? 0);
+        return acc;
+      }, 0);
+      return total / Math.max(1, path?.length || 0);
+    });
+
   beforeAll(async () => {
     runtime = await loadVecturaRuntime();
   });
@@ -155,6 +164,133 @@ describe('Engine integration workflows', () => {
     expect(left.optimizedPaths?.[0]?.meta?.lineSortOrder).toBe(0);
     expect(right.optimizedPaths?.[0]?.meta?.lineSortGrouping).toBe('combined');
     expect(right.optimizedPaths?.[0]?.meta?.lineSortOrder).toBe(1);
+  });
+
+  test('nearest vertical line sort follows centroid y sweep instead of global nearest-neighbor jumps', () => {
+    const { VectorEngine, Layer } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    engine.layers = [];
+
+    const layer = new Layer('line-sort-vertical', 'expanded', 'Vertical Sweep');
+    layer.params.curves = false;
+    layer.sourcePaths = [
+      [{ x: 0, y: 0 }, { x: 10, y: 0 }],
+      [{ x: 200, y: 10 }, { x: 210, y: 10 }],
+      [{ x: 12, y: 20 }, { x: 22, y: 20 }],
+      [{ x: 220, y: 30 }, { x: 230, y: 30 }],
+    ];
+
+    engine.layers.push(layer);
+    engine.generate(layer.id);
+    engine.computeAllDisplayGeometry();
+
+    engine.optimizeLayers([layer], {
+      config: {
+        bypassAll: false,
+        steps: [{ id: 'linesort', enabled: true, bypass: false, method: 'nearest', direction: 'vertical', grouping: 'layer' }],
+      },
+    });
+
+    expect(centroidAxisOrder(layer.optimizedPaths, 'y')).toEqual([0, 10, 20, 30]);
+  });
+
+  test('nearest horizontal line sort follows centroid x sweep instead of global nearest-neighbor jumps', () => {
+    const { VectorEngine, Layer } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    engine.layers = [];
+
+    const layer = new Layer('line-sort-horizontal', 'expanded', 'Horizontal Sweep');
+    layer.params.curves = false;
+    layer.sourcePaths = [
+      [{ x: 0, y: 0 }, { x: 0, y: 10 }],
+      [{ x: 10, y: 200 }, { x: 10, y: 210 }],
+      [{ x: 20, y: 12 }, { x: 20, y: 22 }],
+      [{ x: 30, y: 220 }, { x: 30, y: 230 }],
+    ];
+
+    engine.layers.push(layer);
+    engine.generate(layer.id);
+    engine.computeAllDisplayGeometry();
+
+    engine.optimizeLayers([layer], {
+      config: {
+        bypassAll: false,
+        steps: [{ id: 'linesort', enabled: true, bypass: false, method: 'nearest', direction: 'horizontal', grouping: 'layer' }],
+      },
+    });
+
+    expect(centroidAxisOrder(layer.optimizedPaths, 'x')).toEqual([0, 10, 20, 30]);
+  });
+
+  test('combined nearest vertical line sort preserves shared cross-layer sweep order', () => {
+    const { VectorEngine, Layer } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    engine.layers = [];
+
+    const top = new Layer('line-sort-combined-top', 'expanded', 'Top');
+    top.params.curves = false;
+    top.sourcePaths = [
+      [{ x: 0, y: 0 }, { x: 10, y: 0 }],
+      [{ x: 12, y: 20 }, { x: 22, y: 20 }],
+    ];
+
+    const bottom = new Layer('line-sort-combined-bottom', 'expanded', 'Bottom');
+    bottom.params.curves = false;
+    bottom.sourcePaths = [
+      [{ x: 200, y: 10 }, { x: 210, y: 10 }],
+      [{ x: 220, y: 30 }, { x: 230, y: 30 }],
+    ];
+
+    engine.layers.push(top, bottom);
+    engine.generate(top.id);
+    engine.generate(bottom.id);
+    engine.computeAllDisplayGeometry();
+
+    engine.optimizeLayers([top, bottom], {
+      config: {
+        bypassAll: false,
+        steps: [{ id: 'linesort', enabled: true, bypass: false, method: 'nearest', direction: 'vertical', grouping: 'combined' }],
+      },
+    });
+
+    expect(centroidAxisOrder([
+      top.optimizedPaths?.[0],
+      bottom.optimizedPaths?.[0],
+      top.optimizedPaths?.[1],
+      bottom.optimizedPaths?.[1],
+    ], 'y')).toEqual([0, 10, 20, 30]);
+    expect(top.optimizedPaths?.[0]?.meta?.lineSortOrder).toBe(0);
+    expect(bottom.optimizedPaths?.[0]?.meta?.lineSortOrder).toBe(1);
+    expect(top.optimizedPaths?.[1]?.meta?.lineSortOrder).toBe(2);
+    expect(bottom.optimizedPaths?.[1]?.meta?.lineSortOrder).toBe(3);
+  });
+
+  test('nearest line sort with direction none keeps unconstrained nearest-neighbor traversal', () => {
+    const { VectorEngine, Layer } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    engine.layers = [];
+
+    const layer = new Layer('line-sort-none', 'expanded', 'Nearest Freeform');
+    layer.params.curves = false;
+    layer.sourcePaths = [
+      [{ x: 0, y: 0 }, { x: 10, y: 0 }],
+      [{ x: 200, y: 10 }, { x: 210, y: 10 }],
+      [{ x: 12, y: 20 }, { x: 22, y: 20 }],
+      [{ x: 220, y: 30 }, { x: 230, y: 30 }],
+    ];
+
+    engine.layers.push(layer);
+    engine.generate(layer.id);
+    engine.computeAllDisplayGeometry();
+
+    engine.optimizeLayers([layer], {
+      config: {
+        bypassAll: false,
+        steps: [{ id: 'linesort', enabled: true, bypass: false, method: 'nearest', direction: 'none', grouping: 'layer' }],
+      },
+    });
+
+    expect(centroidAxisOrder(layer.optimizedPaths, 'y')).toEqual([0, 20, 10, 30]);
   });
 
   test('export/import roundtrip restores full engine state deterministically', () => {

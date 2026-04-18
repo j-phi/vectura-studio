@@ -564,6 +564,21 @@
       return Boolean(lineSort && lineSort.enabled && !lineSort.bypass);
     }
 
+    hasLineSortOrderMetadata(path) {
+      return Number.isFinite(path?.meta?.lineSortOrder);
+    }
+
+    getLineSortOverlaySecondaryColor(layers = []) {
+      for (const layer of layers) {
+        const step = this.getLineSortStep(layer);
+        if (!step || !step.enabled || step.bypass) continue;
+        if (typeof step.overlaySecondaryColor !== 'string') continue;
+        const color = step.overlaySecondaryColor.trim();
+        if (color) return color;
+      }
+      return '';
+    }
+
     updateOptimizationOverlayLegend(show, startColor = '', endColor = '') {
       const legend = document.getElementById('optimization-overlay-legend');
       if (!legend) return;
@@ -1816,20 +1831,13 @@
         const overlayColor = SETTINGS.optimizationOverlayColor || '#38bdf8';
         const overlayWidth = Math.max(0.05, SETTINGS.optimizationOverlayWidth ?? 0.2);
         const overlayItems = [];
-        let hasLineSort = false;
-        let lineSortSecondary = '';
+        const targetLayers = [];
         this.engine.layers.forEach((l) => {
           if (this.shouldSkipLayerForMaskPreview(l)) return;
           if (!optimizationTargetIds.has(l.id)) return;
+          targetLayers.push(l);
           if (!l.visible || (l.mask?.enabled && l.mask?.hideLayer) || !l.optimizedPaths || !l.optimizedPaths.length) return;
           const useCurves = Boolean(l.params && l.params.curves);
-          if (this.isLineSortApplied(l)) {
-            hasLineSort = true;
-            const step = this.getLineSortStep(l);
-            if (!lineSortSecondary && step && typeof step.overlaySecondaryColor === 'string') {
-              lineSortSecondary = step.overlaySecondaryColor.trim();
-            }
-          }
           l.optimizedPaths.forEach((path) => overlayItems.push({ layer: l, path, useCurves }));
         });
         overlayItems.sort((a, b) => {
@@ -1837,6 +1845,8 @@
           const bOrder = Number.isFinite(b?.path?.meta?.lineSortOrder) ? b.path.meta.lineSortOrder : Number.MAX_SAFE_INTEGER;
           return aOrder - bOrder;
         });
+        const hasLineSort = overlayItems.some((item) => this.hasLineSortOrderMetadata(item.path));
+        const lineSortSecondary = this.getLineSortOverlaySecondaryColor(targetLayers);
         const shouldUseGradient = hasLineSort && overlayItems.length > 1;
         const base = this.hexToRgb(overlayColor);
         const startRgb = base;

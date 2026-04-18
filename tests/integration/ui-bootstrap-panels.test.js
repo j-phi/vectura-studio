@@ -158,4 +158,91 @@ describe('UI bootstrap integrity', () => {
     expect(document.getElementById('set-paper-width')?.value).toBe('10');
     expect(document.getElementById('set-paper-height')?.value).toBe('8');
   });
+
+  test('line sort overlay legend stays visible for shared multi-layer order metadata', async () => {
+    runtime = await loadVecturaRuntime({
+      includeRenderer: true,
+      includeUi: true,
+      includeApp: true,
+      includeMain: false,
+      useIndexHtml: true,
+    });
+
+    const { window, document } = runtime;
+    const { Layer, SETTINGS } = window.Vectura;
+    window.app = new window.Vectura.App();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    const app = window.app;
+    const engine = app.engine;
+    engine.layers = [];
+    SETTINGS.globalLayerCount = 0;
+
+    const buildLayer = (id, name, x1, x2) => {
+      const layer = new Layer(id, 'expanded', name);
+      layer.params.curves = false;
+      layer.sourcePaths = [[
+        { x: x1, y: 42 },
+        { x: x2, y: 42 },
+      ]];
+      layer.optimization = {
+        bypassAll: false,
+        steps: [{ id: 'linesort', enabled: true, bypass: false, method: 'greedy', direction: 'horizontal', grouping: 'combined' }],
+      };
+      return layer;
+    };
+
+    const left = buildLayer('legend-left', 'Left', 20, 40);
+    const right = buildLayer('legend-right', 'Right', 180, 200);
+    engine.layers.push(left, right);
+    engine.activeLayerId = left.id;
+    engine.generate(left.id);
+    engine.generate(right.id);
+    engine.computeAllDisplayGeometry();
+
+    app.renderer.setSelection([left.id, right.id], right.id);
+    SETTINGS.optimizationScope = 'selected';
+    SETTINGS.optimizationPreview = 'overlay';
+    app.ui.buildControls();
+    app.ui.optimizeTargetsForCurrentScope({ includePlotterOptimize: true });
+    app.render();
+
+    const legend = document.getElementById('optimization-overlay-legend');
+    const gradient = document.getElementById('optimization-overlay-legend-gradient');
+
+    expect(left.optimizedPaths?.[0]?.meta?.lineSortOrder).toBe(0);
+    expect(right.optimizedPaths?.[0]?.meta?.lineSortOrder).toBe(1);
+    expect(legend?.classList.contains('hidden')).toBe(false);
+    expect(gradient?.style.background || '').toContain('linear-gradient');
+  });
+
+  test('enabling line sort from the UI promotes preview mode to overlay', async () => {
+    runtime = await loadVecturaRuntime({
+      includeRenderer: true,
+      includeUi: true,
+      includeApp: true,
+      includeMain: false,
+      useIndexHtml: true,
+    });
+
+    const { window, document } = runtime;
+    window.app = new window.Vectura.App();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    const lineSortCard = Array.from(document.querySelectorAll('.optimization-card')).find((card) =>
+      /Line Sort/i.test(card.textContent || '')
+    );
+    expect(lineSortCard).toBeTruthy();
+
+    const applyToggle = Array.from(lineSortCard.querySelectorAll('input[type="checkbox"]'))[0];
+    expect(applyToggle).toBeTruthy();
+    expect(window.Vectura.SETTINGS.optimizationPreview || 'off').toBe('off');
+
+    applyToggle.checked = true;
+    applyToggle.dispatchEvent(new window.Event('change', { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(window.Vectura.SETTINGS.optimizationPreview).toBe('overlay');
+    expect(lineSortCard.textContent).toMatch(/Secondary Color/);
+  });
 });

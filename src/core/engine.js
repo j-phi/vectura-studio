@@ -866,35 +866,18 @@
           }
           return 0;
         };
-        if (method === 'angle' || direction === 'radial') {
-          return finalizeSorted(items.slice().sort((a, b) => getKey(a) - getKey(b)));
-        }
-        if (method === 'greedy' && direction !== 'none') {
-          return finalizeSorted(items.slice().sort((a, b) => getKey(a) - getKey(b)));
-        }
-        const allowReverse = method === 'nearest';
-        const remaining = items.slice();
-        const sorted = [];
-        let startIndex = 0;
-        if (direction !== 'none') {
-          let bestVal = Infinity;
-          remaining.forEach((item, idx) => {
-            const val = getKey(item);
-            if (val < bestVal) {
-              bestVal = val;
-              startIndex = idx;
-            }
-          });
-        }
-        let currentItem = remaining.splice(startIndex, 1)[0];
-        sorted.push(currentItem);
-        let current = pathEndpoints(currentItem.path).end;
-        while (remaining.length) {
+        const getNearestCandidate = (candidates, current, allowReverse) => {
           let bestIdx = 0;
           let bestDist = Infinity;
           let bestReverse = false;
-          for (let i = 0; i < remaining.length; i++) {
-            const item = remaining[i];
+          for (let i = 0; i < candidates.length; i++) {
+            const item = candidates[i];
+            if (!current) {
+              bestIdx = i;
+              bestDist = 0;
+              bestReverse = false;
+              break;
+            }
             const { start, end } = pathEndpoints(item.path);
             const dx = start.x - current.x;
             const dy = start.y - current.y;
@@ -915,8 +898,86 @@
               bestReverse = reverse;
             }
           }
-          const nextItem = remaining.splice(bestIdx, 1)[0];
-          if (bestReverse) nextItem.path = reversePath(nextItem.path);
+          return { index: bestIdx, reverse: bestReverse };
+        };
+        const buildDirectionalBuckets = (directionalItems) => {
+          if (!directionalItems.length) return [];
+          const sortedByAxis = directionalItems
+            .map((item, index) => ({ item, index, axisKey: getKey(item) }))
+            .sort((a, b) => {
+              if (a.axisKey !== b.axisKey) return a.axisKey - b.axisKey;
+              return a.index - b.index;
+            });
+          const positiveGaps = [];
+          for (let i = 1; i < sortedByAxis.length; i++) {
+            const gap = sortedByAxis[i].axisKey - sortedByAxis[i - 1].axisKey;
+            if (gap > 1e-6) positiveGaps.push(gap);
+          }
+          const bandSize = positiveGaps.length
+            ? positiveGaps[Math.floor(positiveGaps.length / 2)] * 0.5
+            : 1e-6;
+          const buckets = [];
+          let currentBucket = [];
+          let bucketStart = sortedByAxis[0].axisKey;
+          sortedByAxis.forEach((entry) => {
+            if (!currentBucket.length) {
+              currentBucket.push(entry.item);
+              bucketStart = entry.axisKey;
+              return;
+            }
+            if (entry.axisKey - bucketStart <= bandSize) {
+              currentBucket.push(entry.item);
+              return;
+            }
+            buckets.push(currentBucket);
+            currentBucket = [entry.item];
+            bucketStart = entry.axisKey;
+          });
+          if (currentBucket.length) buckets.push(currentBucket);
+          return buckets;
+        };
+        if (method === 'angle' || direction === 'radial') {
+          return finalizeSorted(items.slice().sort((a, b) => getKey(a) - getKey(b)));
+        }
+        if (method === 'greedy' && direction !== 'none') {
+          return finalizeSorted(items.slice().sort((a, b) => getKey(a) - getKey(b)));
+        }
+        const allowReverse = method === 'nearest';
+        if (method === 'nearest' && (direction === 'horizontal' || direction === 'vertical')) {
+          const sorted = [];
+          let current = null;
+          buildDirectionalBuckets(items).forEach((bucket) => {
+            const remainingBucket = bucket.slice();
+            while (remainingBucket.length) {
+              const nextCandidate = getNearestCandidate(remainingBucket, current, allowReverse);
+              const nextItem = remainingBucket.splice(nextCandidate.index, 1)[0];
+              if (nextCandidate.reverse) nextItem.path = reversePath(nextItem.path);
+              sorted.push(nextItem);
+              current = pathEndpoints(nextItem.path).end;
+            }
+          });
+          return finalizeSorted(sorted);
+        }
+        const remaining = items.slice();
+        const sorted = [];
+        let startIndex = 0;
+        if (direction !== 'none') {
+          let bestVal = Infinity;
+          remaining.forEach((item, idx) => {
+            const val = getKey(item);
+            if (val < bestVal) {
+              bestVal = val;
+              startIndex = idx;
+            }
+          });
+        }
+        let currentItem = remaining.splice(startIndex, 1)[0];
+        sorted.push(currentItem);
+        let current = pathEndpoints(currentItem.path).end;
+        while (remaining.length) {
+          const nextCandidate = getNearestCandidate(remaining, current, allowReverse);
+          const nextItem = remaining.splice(nextCandidate.index, 1)[0];
+          if (nextCandidate.reverse) nextItem.path = reversePath(nextItem.path);
           sorted.push(nextItem);
           current = pathEndpoints(nextItem.path).end;
         }

@@ -371,12 +371,36 @@ test.describe('Vectura smoke interactions', () => {
         orders: engine.layers.map((layer) => layer.optimizedPaths?.[0]?.meta?.lineSortOrder ?? null),
         targetIds: Array.from(app.ui.getOptimizationTargetIds()),
         rendererTargetIds: Array.from(app.renderer.getOptimizationTargetIds()),
+        legendVisible: !document.getElementById('optimization-overlay-legend')?.classList.contains('hidden'),
+        legendGradient: document.getElementById('optimization-overlay-legend-gradient')?.style.background || '',
       };
     });
 
     expect(result.orders).toEqual([0, 1]);
     expect(result.targetIds).toEqual(['linesort-left', 'linesort-right']);
     expect(result.rendererTargetIds).toEqual(['linesort-left', 'linesort-right']);
+    expect(result.legendVisible).toBe(true);
+    expect(result.legendGradient).toContain('linear-gradient');
+    expect(pageErrors).toEqual([]);
+  });
+
+  test('enabling line sort in document setup auto-enables overlay preview for visible print-order colors', async ({ page }) => {
+    const pageErrors = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+
+    await page.goto('/');
+    await page.keyboard.press('ControlOrMeta+K');
+    await expect(page.locator('#settings-panel')).toHaveClass(/open/);
+
+    const previewSelect = page.locator('.optimization-row').filter({ hasText: 'Preview' }).locator('select');
+    await previewSelect.selectOption('off');
+
+    const lineSortCard = page.locator('.optimization-card').filter({ hasText: 'Line Sort' });
+    const applyToggle = lineSortCard.locator('.optimization-card-actions input[type="checkbox"]').first();
+    await applyToggle.check();
+
+    await expect(previewSelect).toHaveValue('overlay');
+    await expect(page.locator('#optimization-overlay-legend')).not.toHaveClass(/hidden/);
     expect(pageErrors).toEqual([]);
   });
 

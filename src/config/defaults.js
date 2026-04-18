@@ -732,6 +732,7 @@
       smoothing: 0,
       simplify: 0,
       curves: false,
+      patternFills: [],
     },
     harmonograph: {
       label: 'Harmonograph',
