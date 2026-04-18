@@ -5806,6 +5806,7 @@
       this.app = app;
       this.controls = CONTROL_DEFS;
       this.modal = this.createModal();
+      this._modalCleanup = null;
       this.openPenMenu = null;
       this.openPaletteMenu = null;
       this.inlinePetalDesigner = null;
@@ -5830,6 +5831,7 @@
       this.petalDesignerProfilesLoaded = false;
       this.petalDesignerProfilesLoading = null;
       this.lastDrawableLayerType = null;
+      this.exportModalState = null;
 
       this.initModuleDropdown();
       this.rememberDrawableLayerType(this.app.engine?.getActiveLayer?.());
@@ -5995,6 +5997,339 @@
         config: runOptions.config || null,
         map,
       };
+    }
+
+    buildExportPreviewPath(ctx, path, useCurves) {
+      if (path?.meta?.kind === 'circle') {
+        const meta = path.meta;
+        const cx = meta.cx ?? meta.x;
+        const cy = meta.cy ?? meta.y;
+        const rx = meta.rx ?? meta.r;
+        const ry = meta.ry ?? meta.r;
+        const rotation = meta.rotation ?? 0;
+        if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(rx) || !Number.isFinite(ry)) return;
+        ctx.moveTo(cx + rx, cy);
+        if (Math.abs(rx - ry) < 0.001) ctx.arc(cx, cy, rx, 0, Math.PI * 2);
+        else ctx.ellipse(cx, cy, rx, ry, rotation, 0, Math.PI * 2);
+        return;
+      }
+      if (!Array.isArray(path) || path.length < 2) return;
+      ctx.moveTo(path[0].x, path[0].y);
+      if (!useCurves || path.length < 3) {
+        for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
+        return;
+      }
+      for (let i = 1; i < path.length - 1; i++) {
+        const midX = (path[i].x + path[i + 1].x) / 2;
+        const midY = (path[i].y + path[i + 1].y) / 2;
+        ctx.quadraticCurveTo(path[i].x, path[i].y, midX, midY);
+      }
+      const last = path[path.length - 1];
+      ctx.lineTo(last.x, last.y);
+    }
+
+    buildExportClipPolygons(ctx, polygons) {
+      (polygons || []).forEach((polygon) => {
+        if (!Array.isArray(polygon) || polygon.length < 3) return;
+        ctx.moveTo(polygon[0].x, polygon[0].y);
+        for (let i = 1; i < polygon.length; i++) ctx.lineTo(polygon[i].x, polygon[i].y);
+        ctx.closePath();
+      });
+    }
+
+    fitExportPreview() {
+      const state = this.exportModalState;
+      if (!state?.canvas || !state?.wrap) return;
+      const rect = state.wrap.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const snapshot = this.getExportSnapshot();
+      const padding = 36;
+      const scale = Math.min(
+        (rect.width - padding * 2) / Math.max(1, snapshot.prof.width),
+        (rect.height - padding * 2) / Math.max(1, snapshot.prof.height)
+      );
+      state.view.scale = Math.max(0.1, scale);
+      state.view.offsetX = (rect.width - snapshot.prof.width * state.view.scale) / 2;
+      state.view.offsetY = (rect.height - snapshot.prof.height * state.view.scale) / 2;
+      this.renderExportPreview();
+    }
+
+    resizeExportPreviewCanvas() {
+      const state = this.exportModalState;
+      if (!state?.canvas || !state?.wrap) return;
+      const rect = state.wrap.getBoundingClientRect();
+      const width = Math.max(1, Math.round(rect.width));
+      const height = Math.max(1, Math.round(rect.height));
+      const dpr = window.devicePixelRatio || 1;
+      state.canvas.width = Math.round(width * dpr);
+      state.canvas.height = Math.round(height * dpr);
+      state.canvas.style.width = `${width}px`;
+      state.canvas.style.height = `${height}px`;
+      if (typeof state.ctx.setTransform === 'function') state.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      else if (typeof state.ctx.scale === 'function') state.ctx.scale(dpr, dpr);
+      if (!state.view.initialized) {
+        state.view.initialized = true;
+        this.fitExportPreview();
+        return;
+      }
+      this.renderExportPreview();
+    }
+
+    renderExportPreview() {
+      const state = this.exportModalState;
+      if (!state?.ctx || !state?.canvas) return;
+      const snapshot = this.getExportSnapshot();
+      const ctx = state.ctx;
+      const width = state.canvas.width / (window.devicePixelRatio || 1);
+      const height = state.canvas.height / (window.devicePixelRatio || 1);
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = getThemeToken('--color-workspace', '#121214');
+      ctx.fillRect(0, 0, width, height);
+
+      const { scale, offsetX, offsetY } = state.view;
+      ctx.save();
+      ctx.translate(offsetX, offsetY);
+      ctx.scale(scale, scale);
+      ctx.fillStyle = SETTINGS.bgColor || '#ffffff';
+      ctx.shadowColor = getThemeToken('--render-shadow', 'rgba(0,0,0,0.5)');
+      ctx.shadowBlur = 20 / Math.max(scale, 0.001);
+      ctx.fillRect(0, 0, snapshot.prof.width, snapshot.prof.height);
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = getThemeToken('--render-paper-outline', '#333333');
+      ctx.lineWidth = 1 / Math.max(scale, 0.001);
+      ctx.strokeRect(0, 0, snapshot.prof.width, snapshot.prof.height);
+
+      const items = snapshot.groups.flatMap((group) => group.items.map((item) => ({ ...item, group })));
+      const previewMode = SETTINGS.optimizationPreview || 'off';
+      const renderer = this.app.renderer;
+      const hasLineSort = items.some((item) => renderer?.hasLineSortOrderMetadata?.(item.path));
+      const lineSortLayers = Array.from(new Set(items.map((item) => item.layer))).filter(Boolean);
+      const overlayColor = SETTINGS.optimizationOverlayColor || '#38bdf8';
+      const baseRgb = renderer?.hexToRgb?.(overlayColor) || { r: 56, g: 189, b: 248 };
+      const secondary = renderer?.getLineSortOverlaySecondaryColor?.(lineSortLayers);
+      const endRgb = secondary
+        ? renderer?.hexToRgb?.(secondary)
+        : renderer?.getComplementRgb?.(baseRgb);
+      const orderedItems = items
+        .filter((item) => Number.isFinite(item?.path?.meta?.lineSortOrder))
+        .sort((a, b) => a.path.meta.lineSortOrder - b.path.meta.lineSortOrder);
+      const colorForOrder = (index) => {
+        if (!orderedItems.length || !renderer?.mixRgb || !renderer?.rgbToCss) return overlayColor;
+        const total = Math.max(1, orderedItems.length - 1);
+        const mixed = renderer.mixRgb(baseRgb, endRgb || baseRgb, index / total);
+        return renderer.rgbToCss(mixed, 0.92);
+      };
+
+      const drawItem = (item, strokeStyle, options = {}) => {
+        const alpha = options.alpha ?? 1;
+        const lineWidth = options.lineWidth ?? parseFloat(item.strokeWidth || SETTINGS.strokeWidth || 0.3);
+        const clipPolygons = (item.ancestorClipLayerIds || [])
+          .flatMap((layerId) => snapshot.clipPolygonsByLayerId.get(layerId) || []);
+        ctx.save();
+        if (clipPolygons.length) {
+          ctx.beginPath();
+          this.buildExportClipPolygons(ctx, clipPolygons);
+          ctx.clip();
+        }
+        ctx.beginPath();
+        this.buildExportPreviewPath(ctx, item.path, item.useCurves);
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = strokeStyle;
+        ctx.lineWidth = lineWidth;
+        ctx.lineCap = item.lineCap || 'round';
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+        ctx.restore();
+      };
+
+      if (previewMode !== 'replace') {
+        items.forEach((item) => drawItem(item, item.strokeColor, { alpha: previewMode === 'overlay' ? 0.9 : 1 }));
+      }
+      if (previewMode === 'replace') {
+        if (orderedItems.length) {
+          orderedItems.forEach((item, index) => drawItem(item, colorForOrder(index)));
+        } else {
+          items.forEach((item) => drawItem(item, item.strokeColor));
+        }
+      } else if (previewMode === 'overlay' && orderedItems.length) {
+        const overlayWidth = Math.max(0.05, SETTINGS.optimizationOverlayWidth ?? 0.2);
+        orderedItems.forEach((item, index) => drawItem(item, colorForOrder(index), { lineWidth: overlayWidth, alpha: 0.92 }));
+      }
+      ctx.restore();
+
+      const showLegend = Boolean(hasLineSort && orderedItems.length > 1 && previewMode !== 'off');
+      if (state.legend) state.legend.classList.toggle('hidden', !showLegend);
+      if (showLegend && state.legendGradient && renderer?.rgbToCss) {
+        state.legendGradient.style.background = `linear-gradient(90deg, ${renderer.rgbToCss(baseRgb, 1)}, ${renderer.rgbToCss(endRgb || baseRgb, 1)})`;
+      }
+      if (state.status) {
+        state.status.textContent = `${previewMode === 'off' ? 'Plain export preview' : `Preview: ${previewMode}`}`;
+      }
+    }
+
+    decorateExportControlsPanel() {
+      const panel = getEl('optimization-controls')?.querySelector('.optimization-panel');
+      if (!panel || panel.dataset.exportDecorated === 'true') return;
+      const rows = Array.from(panel.querySelectorAll(':scope > .optimization-row'));
+      const actions = panel.querySelector(':scope > .optimization-actions');
+      const stats = panel.querySelector(':scope > .optimization-stats');
+      const list = panel.querySelector(':scope > .optimization-list');
+      const listCards = Array.from(list?.children || []);
+      const exportSettingsCard = listCards.find((card) => /Export Settings/i.test(card.textContent || '')) || null;
+      const optimizationCards = listCards.filter((card) => card !== exportSettingsCard);
+      const previewRow = rows.find((row) => /Preview/i.test(row.textContent || '')) || null;
+      const overlayStyleRow = rows.find((row) => /Overlay Style/i.test(row.textContent || '')) || null;
+      const exportRows = rows.filter((row) => row !== previewRow && row !== overlayStyleRow);
+      panel.innerHTML = '';
+      const makeSection = (title, items, open = true) => {
+        const details = document.createElement('details');
+        details.className = 'export-settings-section';
+        if (open) details.open = true;
+        const summary = document.createElement('summary');
+        summary.className = 'export-settings-section-summary';
+        summary.textContent = title;
+        const body = document.createElement('div');
+        body.className = 'export-settings-section-body';
+        items.filter(Boolean).forEach((item) => body.appendChild(item));
+        details.appendChild(summary);
+        details.appendChild(body);
+        return details;
+      };
+      panel.appendChild(makeSection('Export Settings', [...exportRows, exportSettingsCard], true));
+      panel.appendChild(makeSection('Optimization', optimizationCards, true));
+      panel.appendChild(makeSection('Line Sort Preview', [previewRow, overlayStyleRow], true));
+      panel.appendChild(makeSection('Stats', [actions, stats], false));
+      panel.dataset.exportDecorated = 'true';
+    }
+
+    openExportModal() {
+      const controls = getEl('optimization-controls');
+      const stash = getEl('optimization-controls-stash');
+      if (!controls || !stash) return;
+      this.setTopMenuOpen(null, false);
+      const root = document.createElement('div');
+      root.id = 'export-modal-root';
+      root.className = 'export-modal';
+      root.innerHTML = `
+        <div class="export-modal-preview">
+          <div class="export-preview-toolbar">
+            <div class="export-preview-toolbar-actions">
+              <button type="button" id="export-preview-fit">Fit</button>
+              <button type="button" id="export-preview-reset">Reset</button>
+            </div>
+            <div id="export-preview-status" class="export-preview-toolbar-status">Export preview</div>
+          </div>
+          <div class="export-preview-stage">
+            <div id="export-preview-canvas-wrap" class="export-preview-canvas-wrap">
+              <canvas id="export-preview-canvas" class="export-preview-canvas"></canvas>
+            </div>
+            <div id="export-preview-legend" class="export-preview-legend hidden" aria-hidden="true">
+              <div class="export-preview-legend-title">Line Sort Print Order</div>
+              <div id="export-preview-legend-gradient" class="export-preview-legend-gradient"></div>
+              <div class="export-preview-legend-labels">
+                <span>Start</span>
+                <span>End</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="export-modal-settings" class="export-modal-settings">
+          <div id="export-settings-scroll" class="export-settings-scroll"></div>
+          <div class="export-modal-footer" id="export-modal-footer">
+            <button type="button" id="export-modal-cancel">Cancel</button>
+            <button type="button" id="export-modal-submit" class="export-primary">Export SVG</button>
+          </div>
+        </div>
+      `;
+      const settingsScroll = root.querySelector('#export-settings-scroll');
+      if (settingsScroll) settingsScroll.appendChild(controls);
+      this.exportModalState = {
+        isOpen: true,
+        root,
+        controls,
+        stash,
+        wrap: root.querySelector('#export-preview-canvas-wrap'),
+        canvas: root.querySelector('#export-preview-canvas'),
+        ctx: root.querySelector('#export-preview-canvas')?.getContext('2d') || null,
+        legend: root.querySelector('#export-preview-legend'),
+        legendGradient: root.querySelector('#export-preview-legend-gradient'),
+        status: root.querySelector('#export-preview-status'),
+        view: { scale: 1, offsetX: 0, offsetY: 0, initialized: false },
+        drag: null,
+      };
+
+      const onWheel = (e) => {
+        const state = this.exportModalState;
+        if (!state?.wrap) return;
+        e.preventDefault();
+        const rect = state.wrap.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        const prevScale = state.view.scale;
+        const nextScale = clamp(prevScale * (e.deltaY > 0 ? 0.92 : 1.08), 0.05, 24);
+        const worldX = (mouseX - state.view.offsetX) / prevScale;
+        const worldY = (mouseY - state.view.offsetY) / prevScale;
+        state.view.scale = nextScale;
+        state.view.offsetX = mouseX - worldX * nextScale;
+        state.view.offsetY = mouseY - worldY * nextScale;
+        this.renderExportPreview();
+      };
+      const onPointerDown = (e) => {
+        const state = this.exportModalState;
+        if (!state?.wrap) return;
+        state.drag = { x: e.clientX, y: e.clientY };
+        state.wrap.classList.add('is-dragging');
+      };
+      const onPointerMove = (e) => {
+        const state = this.exportModalState;
+        if (!state?.drag) return;
+        state.view.offsetX += e.clientX - state.drag.x;
+        state.view.offsetY += e.clientY - state.drag.y;
+        state.drag = { x: e.clientX, y: e.clientY };
+        this.renderExportPreview();
+      };
+      const onPointerUp = () => {
+        const state = this.exportModalState;
+        if (!state?.wrap) return;
+        state.drag = null;
+        state.wrap.classList.remove('is-dragging');
+      };
+      const resizeObserver =
+        typeof ResizeObserver === 'function' ? new ResizeObserver(() => this.resizeExportPreviewCanvas()) : null;
+      if (resizeObserver && this.exportModalState.wrap) resizeObserver.observe(this.exportModalState.wrap);
+      this.exportModalState.wrap?.addEventListener('wheel', onWheel, { passive: false });
+      this.exportModalState.wrap?.addEventListener('pointerdown', onPointerDown);
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('pointercancel', onPointerUp);
+      root.querySelector('#export-preview-fit')?.addEventListener('click', () => this.fitExportPreview());
+      root.querySelector('#export-preview-reset')?.addEventListener('click', () => this.fitExportPreview());
+      root.querySelector('#export-modal-cancel')?.addEventListener('click', () => this.closeModal());
+      root.querySelector('#export-modal-submit')?.addEventListener('click', () => {
+        this.exportSVG();
+        this.closeModal();
+      });
+
+      this.openModal({
+        title: 'Export SVG',
+        body: root,
+        cardClass: 'modal-card--export',
+        onClose: () => {
+          resizeObserver?.disconnect?.();
+          this.exportModalState?.wrap?.removeEventListener('wheel', onWheel);
+          this.exportModalState?.wrap?.removeEventListener('pointerdown', onPointerDown);
+          window.removeEventListener('pointermove', onPointerMove);
+          window.removeEventListener('pointerup', onPointerUp);
+          window.removeEventListener('pointercancel', onPointerUp);
+          controls.innerHTML = '';
+          stash.appendChild(controls);
+          this.exportModalState = null;
+        },
+      });
+
+      this.buildControls();
+      this.decorateExportControlsPanel();
+      this.resizeExportPreviewCanvas();
     }
 
     toggleSettingsPanel(force) {
@@ -6195,10 +6530,19 @@
       return { overlay, titleEl, bodyEl };
     }
 
-    openModal({ title, body }) {
+    openModal({ title, body, cardClass = '', onClose = null }) {
       this._modalPrevFocus = document.activeElement || null;
+      if (typeof this._modalCleanup === 'function') {
+        const cleanup = this._modalCleanup;
+        this._modalCleanup = null;
+        cleanup();
+      }
       this.modal.titleEl.textContent = title;
-      this.modal.bodyEl.innerHTML = body;
+      this.modal.overlay.querySelector('.modal-card')?.setAttribute('class', `modal-card ${cardClass}`.trim());
+      this.modal.bodyEl.innerHTML = '';
+      if (typeof body === 'string') this.modal.bodyEl.innerHTML = body;
+      else if (body instanceof Node) this.modal.bodyEl.appendChild(body);
+      this._modalCleanup = typeof onClose === 'function' ? onClose : null;
       this.modal.overlay.classList.add('open');
       // Move focus to first focusable element in modal
       requestAnimationFrame(() => {
@@ -6276,6 +6620,12 @@
 
     closeModal() {
       this.modal.overlay.classList.remove('open');
+      this.modal.overlay.querySelector('.modal-card')?.setAttribute('class', 'modal-card');
+      if (typeof this._modalCleanup === 'function') {
+        const cleanup = this._modalCleanup;
+        this._modalCleanup = null;
+        cleanup();
+      }
       if (this._modalPrevFocus && typeof this._modalPrevFocus.focus === 'function') {
         this._modalPrevFocus.focus();
         this._modalPrevFocus = null;
@@ -10017,8 +10367,7 @@
             Post-Processing Lab holds smoothing, curves, and simplify for the active layer.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Optimization tools (linesimplify, linesort, filter, multipass) can be previewed with replace/overlay and
-            optionally included on export.
+            Optimization tools (linesimplify, linesort, filter, multipass) are configured from the Export SVG modal, where the preview pane shows print order and export-visible clipping before download.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             In Line Sort, <code>Nearest</code> with <code>Horizontal</code> or <code>Vertical</code> now follows a real axis sweep, so print order progresses consistently across the chosen direction instead of only using that direction to pick the first line.
@@ -10030,7 +10379,7 @@
             In Overlay preview, active Line Sort shows a gradient from Overlay Color to its complement (or Line Sort Secondary Color) with a legend for print order progression.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Use the File menu to Save/Open full .vectura projects, Import SVG, open Document Setup, and Export SVG.
+            Use the File menu to Save/Open full .vectura projects, Import SVG, open Document Setup, and open the Export SVG preview modal.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Use the sun/moon toggle in the upper-right header to switch the full interface between dark and light themes; switching themes also flips the document background default and <code>Pen 1</code> between white and black.
@@ -10099,7 +10448,7 @@
             <div>The Pens panel can be collapsed from its section header; use the palette dropdown to recolor pens, then add/remove/reorder pens as needed.</div>
             <div>Auto-Colorization includes None mode, one-shot Apply, and Continuous Apply Changes.</div>
             <div>If Continuous Apply Changes is off, mode/parameter/palette updates are staged until you press Apply (including repeatedly applying different modes in sequence).</div>
-            <div>Plotter Optimization in Document Setup removes fully overlapping paths per pen with an adjustable tolerance.</div>
+            <div>Plotter Optimization in the Export SVG modal removes fully overlapping paths per pen with an adjustable tolerance.</div>
             <div>Toggle Export Optimized to include optimization passes in the exported SVG.</div>
             <div>Enable Crop Exports to Margin for hard geometry clipping at the configured margin.</div>
             <div>Enable Remove Hidden Geometry to destructively trim masked or frame-hidden geometry so the SVG matches the current view exactly.</div>
@@ -15279,7 +15628,7 @@
       }
 
       if (btnExport) {
-        btnExport.onclick = () => this.exportSVG();
+        btnExport.onclick = () => this.openExportModal();
       }
       if (btnResetView) {
         btnResetView.onclick = () => {
@@ -20892,6 +21241,7 @@
           this.optimizeTargetsForCurrentScope({ includePlotterOptimize: true });
           this.app.render();
           updateStats();
+          if (this.exportModalState?.isOpen) this.renderExportPreview();
         };
 
         const applyOptimization = (mutator) => {
@@ -20937,6 +21287,7 @@
           SETTINGS.optimizationScope = e.target.value;
           this.buildControls();
           this.app.render();
+          if (this.exportModalState?.isOpen) this.renderExportPreview();
         };
         panel.appendChild(buildRow('Scope', scopeSelect));
 
@@ -20952,6 +21303,7 @@
           SETTINGS.optimizationPreview = e.target.value;
           this.buildControls();
           this.app.render();
+          if (this.exportModalState?.isOpen) this.renderExportPreview();
         };
         panel.appendChild(buildRow('Preview', previewSelect));
 
@@ -21177,6 +21529,7 @@
             SETTINGS.precision = next;
             e.target.value = `${next}`;
             updateStats();
+            if (this.exportModalState?.isOpen) this.renderExportPreview();
           };
           const precisionControl = buildInlineControl('Precision', '');
           precisionControl.appendChild(precisionInput);
@@ -21200,6 +21553,7 @@
             e.target.value = this.formatDocumentNumber(SETTINGS.strokeWidth, { precision: strokeConfig.precision });
             this.app.render();
             updateStats();
+            if (this.exportModalState?.isOpen) this.renderExportPreview();
           };
           const strokeControl = buildInlineControl(`Stroke (${strokeConfig.unitLabel})`, '');
           strokeControl.appendChild(strokeInput);
@@ -21225,6 +21579,7 @@
               SETTINGS.removeHiddenGeometry = Boolean(e.target.checked);
               hiddenGeometryState.textContent = SETTINGS.removeHiddenGeometry ? 'ON' : 'OFF';
               this.app.persistPreferencesDebounced?.();
+              if (this.exportModalState?.isOpen) this.renderExportPreview();
             };
           }
           controlsWrap.appendChild(hiddenGeometryControl);
@@ -21650,11 +22005,15 @@
         commonDefs.forEach((def) => renderDef(def, globalBody));
       }
       const optimizationTarget = getEl('optimization-controls');
-      if (optimizationTarget) {
+      if (optimizationTarget && this.exportModalState?.isOpen) {
         optimizationTarget.innerHTML = '';
         renderOptimizationPanel(optimizationTarget);
       }
       restoreLeftPanelScroll();
+      if (this.exportModalState?.isOpen) {
+        this.decorateExportControlsPanel();
+        this.renderExportPreview();
+      }
     }
 
     updateFormula() {
@@ -22046,7 +22405,7 @@
       return [];
     }
 
-    exportSVG() {
+    getExportSnapshot() {
       const prof = this.app.engine.currentProfile;
       const precision = Math.max(0, Math.min(6, SETTINGS.precision ?? 3));
       const useOptimized = Boolean(SETTINGS.optimizationExport);
@@ -22073,47 +22432,19 @@
           return `c:${quant(cx)},${quant(cy)},${quant(r)}`;
         }
         if (!Array.isArray(path)) return '';
-        return path
-          .map((pt) => `${quant(pt.x)},${quant(pt.y)}`)
-          .join('|');
+        return path.map((pt) => `${quant(pt.x)},${quant(pt.y)}`).join('|');
       };
-      const dedupe = optimize > 0 ? new Map() : null;
+
       if (this.app.engine.computeAllDisplayGeometry) {
         this.app.engine.computeAllDisplayGeometry();
       }
+
       const optimizationTargetIds = useOptimized
-        ? (this.optimizeTargetsForCurrentScope
+        ? (typeof this.optimizeTargetsForCurrentScope === 'function'
           ? this.optimizeTargetsForCurrentScope({ includePlotterOptimize: true }).targetIds
           : new Set((this.app.engine.layers || []).filter((layer) => layer && !layer.isGroup).map((layer) => layer.id)))
         : new Set();
-      const defs = [];
-      const layerClipIds = new Map();
-      if (useSvgMarginClip) {
-        const m = SETTINGS.margin;
-        const w = prof.width - m * 2;
-        const h = prof.height - m * 2;
-        defs.push(`<clipPath id="margin-clip"><rect x="${m}" y="${m}" width="${w}" height="${h}" /></clipPath>`);
-      }
-      if (!removeHiddenGeometry) {
-        const maskBounds = getMaskExportBounds(this.app.engine, prof);
-        (this.app.engine.layers || []).forEach((layer) => {
-          if (!layer || !layer.visible || !layer.mask?.enabled) {
-            return;
-          }
-          const polygons = getLayerSilhouette(layer, this.app.engine, maskBounds);
-          if (!polygons.length) return;
-          const clipId = normalizeSvgId(`${layer.id || layer.name || 'layer'}-mask-clip`, 'mask');
-          const clipMarkup = buildClipPathMarkup(clipId, polygons, precision, { profile: prof });
-          if (!clipMarkup) return;
-          defs.push(clipMarkup);
-          layerClipIds.set(layer.id, clipId);
-        });
-      }
-      let svg = `<?xml version="1.0" standalone="no"?><svg width="${prof.width}mm" height="${prof.height}mm" viewBox="0 0 ${prof.width} ${prof.height}" xmlns="http://www.w3.org/2000/svg">`;
-      if (defs.length) svg += `<defs>${defs.join('')}</defs>`;
-      if (useSvgMarginClip) {
-        svg += `<g clip-path="url(#margin-clip)">`;
-      }
+
       const penMap = new Map((SETTINGS.pens || []).map((pen) => [pen.id, pen]));
       const fallbackPen = {
         id: 'default',
@@ -22121,74 +22452,78 @@
         color: '#000000',
         width: SETTINGS.strokeWidth ?? 0.3,
       };
-      const groups = new Map();
-      const order = [];
-      this.app.engine.layers.forEach((l) => {
-        if (!l.visible || l.isGroup || isMaskLayerGeometryHidden(l)) return;
-        const pen = penMap.get(l.penId) || fallbackPen;
+      const clipPolygonsByLayerId = new Map();
+      if (!removeHiddenGeometry) {
+        const maskBounds = getMaskExportBounds(this.app.engine, prof);
+        (this.app.engine.layers || []).forEach((layer) => {
+          if (!layer || !layer.visible || !layer.mask?.enabled) return;
+          const polygons = getLayerSilhouette(layer, this.app.engine, maskBounds) || [];
+          if (polygons.length) clipPolygonsByLayerId.set(layer.id, polygons);
+        });
+      }
+
+      const groups = [];
+      const dedupe = optimize > 0 ? new Map() : null;
+      const seenGroupOrder = [];
+      const groupMap = new Map();
+      (this.app.engine.layers || []).forEach((layer) => {
+        if (!layer?.visible || layer.isGroup || isMaskLayerGeometryHidden(layer)) return;
+        const pen = penMap.get(layer.penId) || fallbackPen;
         const key = pen.id || fallbackPen.id;
-        if (!groups.has(key)) {
-          groups.set(key, { pen, layers: [] });
-          order.push(key);
+        if (!groupMap.has(key)) {
+          groupMap.set(key, { key, pen, layers: [] });
+          seenGroupOrder.push(key);
         }
-        groups.get(key).layers.push(l);
+        groupMap.get(key).layers.push(layer);
       });
 
-      order.forEach((key) => {
-        const group = groups.get(key);
+      seenGroupOrder.forEach((key) => {
+        const group = groupMap.get(key);
         if (!group) return;
         const pen = group.pen || fallbackPen;
-        const penName = normalizeSvgId(pen.name || pen.id || 'Pen', 'pen');
-        const penGroupId = escapeXmlAttr(`pen_${penName}`);
-        const penStroke = escapeXmlAttr(pen.color || 'black');
-        svg += `<g id="${penGroupId}" stroke="${penStroke}" fill="none">`;
-        let seen = null;
-        if (dedupe) {
-          if (!dedupe.has(key)) dedupe.set(key, new Set());
-          seen = dedupe.get(key);
-        }
-        const exportItems = [];
-        group.layers.forEach((l, layerIndex) => {
-          const ancestorMasks = this.app.engine.getAncestorMaskLayers ? this.app.engine.getAncestorMaskLayers(l) : [];
-          const strokeWidth = (l.strokeWidth ?? pen.width ?? SETTINGS.strokeWidth).toFixed(3);
+        const items = [];
+        group.layers.forEach((layer, layerIndex) => {
+          const ancestorMasks = this.app.engine.getAncestorMaskLayers ? this.app.engine.getAncestorMaskLayers(layer) : [];
           const forceLinear = destructiveMarginCrop || (removeHiddenGeometry && ancestorMasks.length);
-          const lineCap = forceLinear ? 'butt' : l.lineCap || 'round';
-          const useCurves = Boolean(l.params && l.params.curves);
-          const layerGroupId = escapeXmlAttr(normalizeSvgId(l.name || l.id || 'Layer', 'layer'));
-          const layerClipIdsForAncestors = removeHiddenGeometry
-            ? []
-            : ancestorMasks.map((maskLayer) => layerClipIds.get(maskLayer.id)).filter(Boolean);
-          const useLayerOptimized = useOptimized && optimizationTargetIds.has(l.id);
+          const lineCap = forceLinear ? 'butt' : layer.lineCap || 'round';
+          const useCurves = Boolean(layer.params && layer.params.curves);
+          const layerGroupId = escapeXmlAttr(normalizeSvgId(layer.name || layer.id || 'Layer', 'layer'));
+          const useLayerOptimized = useOptimized && optimizationTargetIds.has(layer.id);
+          const ancestorClipLayerIds = removeHiddenGeometry ? [] : ancestorMasks.map((maskLayer) => maskLayer.id).filter(Boolean);
           let paths = removeHiddenGeometry
-            ? getVisibleExportPaths(l, { useOptimized: useLayerOptimized })
-            : getRawExportPaths(l, { useOptimized: useLayerOptimized });
+            ? getVisibleExportPaths(layer, { useOptimized: useLayerOptimized })
+            : getRawExportPaths(layer, { useOptimized: useLayerOptimized });
           if (destructiveMarginCrop) {
             paths = hardClipExportPaths(paths, marginRect, {
               useCurves: useCurves && !removeHiddenGeometry,
             });
           }
           (paths || []).forEach((path, pathIndex) => {
-            exportItems.push({
-              layer: l,
+            const pathPenId = path?.meta?.penId || pen.id;
+            const pathPen = penMap.get(pathPenId) || pen;
+            items.push({
+              layer,
               layerIndex,
               pathIndex,
               path,
-              strokeWidth,
-              forceLinear,
               lineCap,
-              useCurves,
+              useCurves: forceLinear ? false : useCurves,
               layerGroupId,
-              layerClipIdsForAncestors,
+              ancestorClipLayerIds,
+              strokeWidth: (layer.strokeWidth ?? pathPen.width ?? SETTINGS.strokeWidth).toFixed(3),
+              strokeColor: pathPen.color || pen.color || '#000000',
+              groupPenId: pen.id,
+              pathPenId,
             });
           });
         });
 
-        const shouldInterleave = useOptimized && exportItems.some((item) => {
+        const shouldInterleave = useOptimized && items.some((item) => {
           const grouping = item?.path?.meta?.lineSortGrouping;
           return grouping === 'pen' || grouping === 'combined';
         });
         if (shouldInterleave) {
-          exportItems.sort((a, b) => {
+          items.sort((a, b) => {
             const aOrder = Number.isFinite(a?.path?.meta?.lineSortOrder) ? a.path.meta.lineSortOrder : Number.MAX_SAFE_INTEGER;
             const bOrder = Number.isFinite(b?.path?.meta?.lineSortOrder) ? b.path.meta.lineSortOrder : Number.MAX_SAFE_INTEGER;
             if (aOrder !== bOrder) return aOrder - bOrder;
@@ -22197,47 +22532,89 @@
           });
         }
 
-        exportItems.forEach((item, itemIndex) => {
-          const p = item.path;
-          if (seen) {
-            const dedupeKey = pathKey(p);
-            if (dedupeKey && seen.has(dedupeKey)) return;
-            if (dedupeKey) seen.add(dedupeKey);
+        const visibleItems = [];
+        let seen = null;
+        if (dedupe) {
+          if (!dedupe.has(key)) dedupe.set(key, new Set());
+          seen = dedupe.get(key);
+        }
+        items.forEach((item) => {
+          const dedupeKey = seen ? pathKey(item.path) : '';
+          if (seen && dedupeKey) {
+            if (seen.has(dedupeKey)) return;
+            seen.add(dedupeKey);
           }
-          item.layerClipIdsForAncestors.forEach((clipId) => {
-            svg += `<g clip-path="url(#${escapeXmlAttr(clipId)})">`;
+          visibleItems.push(item);
+        });
+        groups.push({ key, pen, items: visibleItems });
+      });
+
+      return {
+        prof,
+        precision,
+        removeHiddenGeometry,
+        hardCrop,
+        useSvgMarginClip,
+        marginRect,
+        groups,
+        clipPolygonsByLayerId,
+      };
+    }
+
+    exportSVG() {
+      const snapshot =
+        typeof this.getExportSnapshot === 'function'
+          ? this.getExportSnapshot()
+          : UI.prototype.getExportSnapshot.call(this);
+      const { prof, precision, groups, clipPolygonsByLayerId, useSvgMarginClip } = snapshot;
+      const defs = [];
+      const layerClipIds = new Map();
+      if (useSvgMarginClip) {
+        const m = SETTINGS.margin;
+        const w = prof.width - m * 2;
+        const h = prof.height - m * 2;
+        defs.push(`<clipPath id="margin-clip"><rect x="${m}" y="${m}" width="${w}" height="${h}" /></clipPath>`);
+      }
+      if (!snapshot.removeHiddenGeometry) {
+        clipPolygonsByLayerId.forEach((polygons, layerId) => {
+          const clipId = normalizeSvgId(`${layerId || 'layer'}-mask-clip`, 'mask');
+          const clipMarkup = buildClipPathMarkup(clipId, polygons, precision, { profile: prof });
+          if (!clipMarkup) return;
+          defs.push(clipMarkup);
+          layerClipIds.set(layerId, clipId);
+        });
+      }
+      let svg = `<?xml version="1.0" standalone="no"?><svg width="${prof.width}mm" height="${prof.height}mm" viewBox="0 0 ${prof.width} ${prof.height}" xmlns="http://www.w3.org/2000/svg">`;
+      if (defs.length) svg += `<defs>${defs.join('')}</defs>`;
+      if (useSvgMarginClip) svg += `<g clip-path="url(#margin-clip)">`;
+
+      groups.forEach((group) => {
+        const pen = group.pen || {};
+        const penName = normalizeSvgId(pen.name || pen.id || 'Pen', 'pen');
+        svg += `<g id="${escapeXmlAttr(`pen_${penName}`)}" stroke="${escapeXmlAttr(pen.color || 'black')}" fill="none">`;
+        group.items.forEach((item, itemIndex) => {
+          item.ancestorClipLayerIds.forEach((layerId) => {
+            const clipId = layerClipIds.get(layerId);
+            if (clipId) svg += `<g clip-path="url(#${escapeXmlAttr(clipId)})">`;
           });
           svg += `<g id="${item.layerGroupId}-${itemIndex + 1}" stroke-width="${item.strokeWidth}" stroke-linecap="${item.lineCap}" stroke-linejoin="round">`;
-          let exportPath = p;
-          if (item.forceLinear && p?.meta?.kind === 'circle') {
-            exportPath = expandCirclePath(p.meta, 72);
-            exportPath.meta = { ...(p.meta || {}), kind: 'poly', exportClipped: true, closed: false };
-          }
-          let attrs = exportPath?.meta?.exportClipped ? { 'stroke-linecap': 'butt' } : null;
-          const pathPenId = p?.meta?.penId;
-          if (pathPenId && pathPenId !== pen.id) {
-            const pPen = penMap.get(pathPenId) || fallbackPen;
+          let attrs = item.path?.meta?.exportClipped ? { 'stroke-linecap': 'butt' } : null;
+          if (item.pathPenId && item.pathPenId !== item.groupPenId) {
             attrs = attrs || {};
-            attrs.stroke = escapeXmlAttr(pPen.color || 'black');
-            attrs['stroke-width'] = (item.layer.strokeWidth ?? pPen.width ?? SETTINGS.strokeWidth).toFixed(3);
+            attrs.stroke = escapeXmlAttr(item.strokeColor || 'black');
+            attrs['stroke-width'] = item.strokeWidth;
           }
-          const markup = shapeToSvg(
-            exportPath,
-            precision,
-            item.forceLinear ? false : item.useCurves,
-            attrs
-          );
+          const markup = shapeToSvg(item.path, precision, item.useCurves, attrs);
           if (markup) svg += markup;
           svg += `</g>`;
-          item.layerClipIdsForAncestors.forEach(() => {
-            svg += `</g>`;
+          item.ancestorClipLayerIds.forEach((layerId) => {
+            if (layerClipIds.get(layerId)) svg += `</g>`;
           });
         });
         svg += `</g>`;
       });
-      if (useSvgMarginClip) {
-        svg += `</g>`;
-      }
+
+      if (useSvgMarginClip) svg += `</g>`;
       svg += `</svg>`;
       const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
       const a = document.createElement('a');

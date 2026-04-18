@@ -39,7 +39,7 @@ describe('UI bootstrap integrity', () => {
     expect(aboutText.length).toBeGreaterThan(0);
   });
 
-  test('document setup exposes a single export-settings remove hidden geometry control, checked by default', async () => {
+  test('export modal owns remove hidden geometry and document setup no longer renders optimization cards', async () => {
     runtime = await loadVecturaRuntime({
       includeRenderer: true,
       includeUi: true,
@@ -53,17 +53,20 @@ describe('UI bootstrap integrity', () => {
     await new Promise((resolve) => setTimeout(resolve, 80));
 
     expect(document.getElementById('set-remove-hidden-geometry')).toBeNull();
+    expect(Array.from(document.querySelectorAll('.optimization-card'))).toHaveLength(0);
 
-    const labels = Array.from(document.querySelectorAll('label, .control-label')).filter((node) =>
-      /Remove Hidden Geometry/i.test(node.textContent || '')
-    );
-    expect(labels).toHaveLength(1);
+    window.app.ui.openExportModal();
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
-    const exportCard = Array.from(document.querySelectorAll('.optimization-card')).find((card) =>
+    const exportRoot = document.getElementById('export-modal-root');
+    expect(exportRoot).toBeTruthy();
+    expect(exportRoot.querySelector('#export-preview-canvas')).toBeTruthy();
+    expect(exportRoot.querySelector('#export-modal-settings')).toBeTruthy();
+
+    const exportCard = Array.from(exportRoot.querySelectorAll('.optimization-card')).find((card) =>
       /Export Settings/i.test(card.textContent || '')
     );
     expect(exportCard).toBeTruthy();
-    expect(exportCard.textContent).toMatch(/Remove Hidden Geometry/);
 
     const checkbox = Array.from(exportCard.querySelectorAll('input[type="checkbox"]')).find((input) =>
       input.closest('.optimization-control')?.textContent?.includes('Remove Hidden Geometry')
@@ -216,7 +219,7 @@ describe('UI bootstrap integrity', () => {
     expect(gradient?.style.background || '').toContain('linear-gradient');
   });
 
-  test('enabling line sort from the UI promotes preview mode to overlay', async () => {
+  test('enabling line sort from the export modal UI promotes preview mode to overlay', async () => {
     runtime = await loadVecturaRuntime({
       includeRenderer: true,
       includeUi: true,
@@ -229,7 +232,10 @@ describe('UI bootstrap integrity', () => {
     window.app = new window.Vectura.App();
     await new Promise((resolve) => setTimeout(resolve, 80));
 
-    const lineSortCard = Array.from(document.querySelectorAll('.optimization-card')).find((card) =>
+    window.app.ui.openExportModal();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const lineSortCard = Array.from(document.querySelectorAll('#export-modal-root .optimization-card')).find((card) =>
       /Line Sort/i.test(card.textContent || '')
     );
     expect(lineSortCard).toBeTruthy();

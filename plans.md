@@ -25,6 +25,7 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
+- Moved export and optimization controls out of Document Setup into a dedicated Illustrator-style Export SVG modal with a left-side preview, right-side settings, bottom-right actions, and zoom/pan inspection.
 - Fixed `Line Sort` `Nearest` so `Horizontal` and `Vertical` now enforce real sweep ordering instead of only picking the initial seed path, and added integration coverage for directional plus unconstrained nearest-neighbor traversal.
 - Added Document Setup project-state units (`metric` / `imperial`), unit-aware paper/margin/stroke/tolerance controls, blueprint-style paper dimensions outside the canvas, a `Clear Saved Preferences` action for cookie-backed UI state, `Cmd/Ctrl + K` toggle behavior, and regression coverage for the full workflow.
 - Fixed multi-layer `Line Sort` so shared optimization scope now carries through preview, stats, overlay rendering, and optimized SVG export instead of degrading to per-layer sorting.
@@ -89,6 +90,7 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Reworked Horizon vertical fans to sample the visible terrain surface by X-position instead of row parameterization, then removed the extra edge-anchor rays after they proved visually inconsistent with the contour fan.
 
 ## Decisions
+- Export configuration stays single-sourced through the existing `SETTINGS` object and layer optimization state; the Export SVG modal is only a preview/configuration surface and must not introduce a second export rules path.
 - Document Setup unit choice is serialized with the project, but all internal physical geometry, paper, margin, stroke, and optimization math stays normalized in millimeters.
 - Blueprint-style document-dimension labels are editor-only canvas chrome and never export.
 - `Lissajous` exposes explicit endpoint truncation before `Close Lines`: `Truncate Start` and `Truncate End` remove 0-100% of arc length from each end, and `Close Lines` defaults to off.

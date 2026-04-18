@@ -281,20 +281,21 @@ test.describe('Vectura smoke interactions', () => {
     expect(pageErrors).toEqual([]);
   });
 
-  test('document setup keeps a single default-on remove hidden geometry toggle inside export settings', async ({ page }) => {
+  test('export modal owns the default-on remove hidden geometry toggle', async ({ page }) => {
     const pageErrors = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
 
     await page.goto('/');
 
     await page.getByRole('button', { name: 'File' }).click();
-    await page.click('#btn-settings');
-    await expect(page.locator('#settings-panel')).toHaveClass(/open/);
+    await page.click('#btn-export');
+    await expect(page.locator('#modal-overlay')).toHaveClass(/open/);
+    await expect(page.locator('#export-modal-root')).toBeVisible();
 
     await expect(page.locator('#set-remove-hidden-geometry')).toHaveCount(0);
-    await expect(page.getByText('Remove Hidden Geometry', { exact: true })).toHaveCount(1);
+    await expect(page.locator('#settings-panel .optimization-card')).toHaveCount(0);
 
-    const exportCard = page.locator('.optimization-card').filter({ hasText: 'Export Settings' });
+    const exportCard = page.locator('#export-modal-root .optimization-card').filter({ hasText: 'Export Settings' });
     await expect(exportCard).toHaveCount(1);
 
     const hiddenGeometryControl = exportCard.locator('.optimization-control').filter({ hasText: 'Remove Hidden Geometry' });
@@ -384,23 +385,36 @@ test.describe('Vectura smoke interactions', () => {
     expect(pageErrors).toEqual([]);
   });
 
-  test('enabling line sort in document setup auto-enables overlay preview for visible print-order colors', async ({ page }) => {
+  test('export modal opens as a large preview-first workspace and supports line-sort preview controls', async ({ page }) => {
     const pageErrors = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
 
     await page.goto('/');
-    await page.keyboard.press('ControlOrMeta+K');
-    await expect(page.locator('#settings-panel')).toHaveClass(/open/);
+    await page.getByRole('button', { name: 'File' }).click();
+    await page.click('#btn-export');
+    await expect(page.locator('#export-modal-root')).toBeVisible();
 
-    const previewSelect = page.locator('.optimization-row').filter({ hasText: 'Preview' }).locator('select');
+    const modalBox = await page.locator('#modal-overlay .modal-card').boundingBox();
+    const viewport = page.viewportSize();
+    expect(modalBox.width).toBeGreaterThanOrEqual(viewport.width * 0.8 - 2);
+    expect(modalBox.height).toBeGreaterThanOrEqual(viewport.height * 0.8 - 2);
+
+    const previewSelect = page.locator('#export-modal-root .optimization-row').filter({ hasText: 'Preview' }).locator('select');
     await previewSelect.selectOption('off');
 
-    const lineSortCard = page.locator('.optimization-card').filter({ hasText: 'Line Sort' });
+    const lineSortCard = page.locator('#export-modal-root .optimization-card').filter({ hasText: 'Line Sort' });
     const applyToggle = lineSortCard.locator('.optimization-card-actions input[type="checkbox"]').first();
     await applyToggle.check();
 
     await expect(previewSelect).toHaveValue('overlay');
-    await expect(page.locator('#optimization-overlay-legend')).not.toHaveClass(/hidden/);
+    await expect(page.locator('#export-preview-legend')).not.toHaveClass(/hidden/);
+
+    const before = await page.evaluate(() => window.app.ui.exportModalState.view.scale);
+    await page.locator('#export-preview-canvas-wrap').hover();
+    await page.mouse.wheel(0, -400);
+    await expect
+      .poll(async () => page.evaluate(() => window.app.ui.exportModalState.view.scale))
+      .toBeGreaterThan(before);
     expect(pageErrors).toEqual([]);
   });
 

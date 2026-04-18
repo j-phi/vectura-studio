@@ -789,10 +789,6 @@
           </div>
         </div>
         <div class="control-group border-none">
-          <label class="control-label">EXPORT &amp; OPTIMIZATION</label>
-          <div id="optimization-controls" class="mt-4"></div>
-        </div>
-        <div class="control-group border-none">
           <label class="control-label">History</label>
           <div class="flex items-center justify-between">
             <label class="text-xs text-vectura-muted">Undo Steps</label>
@@ -845,6 +841,10 @@
       </div>
     </div>
   </main>
+
+  <div id="optimization-controls-stash" class="hidden" aria-hidden="true">
+    <div id="optimization-controls"></div>
+  </div>
 
   <script src="./src/config/version.js" defer></script>
   <script src="./src/config/machines.js" defer></script>
