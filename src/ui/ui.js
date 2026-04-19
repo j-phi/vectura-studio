@@ -676,6 +676,85 @@
     },
   ];
 
+  const EXPORT_INFO = {
+    removeHiddenGeometry: {
+      title: 'Remove Hidden Geometry',
+      description: 'Trims masked and frame-hidden segments from the exported SVG so the output matches the current view exactly. This reduces file size and eliminates invisible paths that plotters would otherwise draw.',
+    },
+    plotterOptimization: {
+      title: 'Plotter Optimization',
+      description: 'Enables path deduplication and overlap removal. When turned on, the engine merges duplicate or nearly-duplicate paths to reduce redundant pen travel and speed up plotting.',
+    },
+    optimizationTolerance: {
+      title: 'Optimization Tolerance',
+      description: 'Controls how aggressively duplicate paths are merged. A smaller tolerance requires near-exact overlap; a larger tolerance merges paths that are close but not identical. Increase for faster plotting, decrease for higher fidelity.',
+    },
+    linesimplify: {
+      title: 'Line Simplify',
+      description: 'Reduces point count on each path while preserving visual shape. Polyline mode uses the Ramer-Douglas-Peucker algorithm; Curve mode fits smooth Bézier curves to the simplified result.',
+    },
+    'linesimplify.tolerance': {
+      title: 'Tolerance',
+      description: 'Maximum allowed deviation from the original path. Higher values produce fewer points (faster plotting) but may lose fine detail.',
+    },
+    'linesimplify.mode': {
+      title: 'Mode',
+      description: 'Polyline keeps straight segments between simplified points. Curve fits smooth Bézier arcs for a more organic look and smaller SVG output.',
+    },
+    linesort: {
+      title: 'Line Sort',
+      description: 'Reorders lines to minimize pen-up travel between consecutive paths. This is the single most effective optimization for reducing total plot time on pen plotters.',
+    },
+    'linesort.method': {
+      title: 'Method',
+      description: 'Nearest: greedy nearest-neighbor from the current pen position (fast, good results). Greedy: tries both directions of each path for shorter hops. Angle: sorts by path start angle from center.',
+    },
+    'linesort.direction': {
+      title: 'Direction',
+      description: 'None: pure nearest-neighbor without bias. Horizontal/Vertical: sweeps across the chosen axis first, filling bands before moving on—ideal for plotters that move faster on one axis. Radial: sorts from center outward.',
+    },
+    'linesort.grouping': {
+      title: 'Grouping',
+      description: 'Per Layer: sorts within each layer independently. Per Pen: groups lines by pen assignment before sorting. Combined: merges all layers into one sorting pool for the shortest possible total travel.',
+    },
+    filter: {
+      title: 'Filter',
+      description: 'Removes paths that fall outside length bounds. Use this to eliminate tiny debris lines or excessively long paths that shouldn\'t be plotted.',
+    },
+    'filter.minLength': {
+      title: 'Min Length',
+      description: 'Paths shorter than this value will be removed. Useful for cleaning up tiny dots or micro-segments that produce pen marks without meaningful visual contribution.',
+    },
+    'filter.maxLength': {
+      title: 'Max Length',
+      description: 'Paths longer than this value will be removed. Set to 0 to disable the upper bound. Helpful when the design contains unwanted long construction lines.',
+    },
+    'filter.removeTiny': {
+      title: 'Remove Tiny',
+      description: 'Automatically removes single-point and very short paths (below 0.1mm) that are too small to produce visible marks. Recommended for cleaner plots.',
+    },
+    multipass: {
+      title: 'Multipass',
+      description: 'Duplicates each path multiple times with small offsets. Produces thicker, more opaque lines on pen plotters where a single pass may be too faint, or creates a hatched fill effect.',
+    },
+    'multipass.passes': {
+      title: 'Passes',
+      description: 'Number of times each path is drawn. 1 = no duplication. Each additional pass adds one offset copy of every line.',
+    },
+    'multipass.offset': {
+      title: 'Offset',
+      description: 'Distance between each duplicated pass. Larger values spread passes apart for a broader stroke; smaller values stack them for denser ink coverage.',
+    },
+    'multipass.jitter': {
+      title: 'Jitter',
+      description: 'Random variation added to each pass offset. Creates a hand-drawn, organic quality instead of perfectly parallel lines.',
+    },
+    'multipass.seed': {
+      title: 'Seed',
+      description: 'Random seed for jitter. Change this to get a different randomization pattern while keeping the same jitter amount.',
+    },
+  };
+
   const WAVE_NOISE_OPTIONS = [
     { value: 'billow', label: 'Billow' },
     { value: 'cellular', label: 'Cellular' },
@@ -2146,7 +2225,9 @@
       { id: 'tileSpacingX', label: 'Tile Spacing X', type: 'range', min: -100, max: 500, step: 1 },
       { id: 'tileSpacingY', label: 'Tile Spacing Y', type: 'range', min: -100, max: 500, step: 1 },
       { id: 'removeSeams', label: 'Remove seams at join', type: 'checkbox' },
-      { type: 'patternDesignerOpen' },
+      { id: 'curves', label: 'Curves', type: 'checkbox' },
+      { id: 'tileEdgeCurves', label: 'Curves at tile edges', type: 'checkbox', showIf: (p) => !!p.curves },
+      { type: 'patternDesignerInline' },
       { type: 'patternSubPens' },
     ],
     flowfield: [
@@ -5361,7 +5442,7 @@
 
   const clonePaths = (paths) => (paths || []).map((path) => clonePath(path));
 
-  const pathToSvg = (path, precision, useCurves) => {
+  const pathToSvg = (path, precision, useCurves, sharpEdges = false) => {
     if (!path || path.length < 2) return '';
     const fmt = (n) => Number(n).toFixed(precision);
     if (!useCurves || path.length < 3) {
@@ -5369,16 +5450,20 @@
     }
     let d = `M ${fmt(path[0].x)} ${fmt(path[0].y)}`;
     for (let i = 1; i < path.length - 1; i++) {
-      const midX = (path[i].x + path[i + 1].x) / 2;
-      const midY = (path[i].y + path[i + 1].y) / 2;
-      d += ` Q ${fmt(path[i].x)} ${fmt(path[i].y)} ${fmt(midX)} ${fmt(midY)}`;
+      if (sharpEdges && path[i]._tileEdge) {
+        d += ` L ${fmt(path[i].x)} ${fmt(path[i].y)}`;
+      } else {
+        const midX = (path[i].x + path[i + 1].x) / 2;
+        const midY = (path[i].y + path[i + 1].y) / 2;
+        d += ` Q ${fmt(path[i].x)} ${fmt(path[i].y)} ${fmt(midX)} ${fmt(midY)}`;
+      }
     }
     const last = path[path.length - 1];
     d += ` L ${fmt(last.x)} ${fmt(last.y)}`;
     return d;
   };
 
-  const shapeToSvg = (path, precision, useCurves, attrs = null) => {
+  const shapeToSvg = (path, precision, useCurves, attrs = null, sharpEdges = false) => {
     const attrMarkup = svgAttrsToMarkup(attrs || {});
     if (path && path.meta && path.meta.kind === 'circle') {
       const fmt = (n) => Number(n).toFixed(precision);
@@ -5399,7 +5484,7 @@
       }
       return `<ellipse cx="${fmt(cx)}" cy="${fmt(cy)}" rx="${fmt(rx)}" ry="${fmt(ry)}"${attrMarkup} />`;
     }
-    const d = pathToSvg(path, precision, useCurves);
+    const d = pathToSvg(path, precision, useCurves, sharpEdges);
     return d ? `<path d="${d}"${attrMarkup} />` : '';
   };
 
@@ -5999,7 +6084,7 @@
       };
     }
 
-    buildExportPreviewPath(ctx, path, useCurves) {
+    buildExportPreviewPath(ctx, path, useCurves, sharpEdges = false) {
       if (path?.meta?.kind === 'circle') {
         const meta = path.meta;
         const cx = meta.cx ?? meta.x;
@@ -6020,9 +6105,13 @@
         return;
       }
       for (let i = 1; i < path.length - 1; i++) {
-        const midX = (path[i].x + path[i + 1].x) / 2;
-        const midY = (path[i].y + path[i + 1].y) / 2;
-        ctx.quadraticCurveTo(path[i].x, path[i].y, midX, midY);
+        if (sharpEdges && path[i]._tileEdge) {
+          ctx.lineTo(path[i].x, path[i].y);
+        } else {
+          const midX = (path[i].x + path[i + 1].x) / 2;
+          const midY = (path[i].y + path[i + 1].y) / 2;
+          ctx.quadraticCurveTo(path[i].x, path[i].y, midX, midY);
+        }
       }
       const last = path[path.length - 1];
       ctx.lineTo(last.x, last.y);
@@ -6100,13 +6189,13 @@
       ctx.strokeRect(0, 0, snapshot.prof.width, snapshot.prof.height);
 
       const items = snapshot.groups.flatMap((group) => group.items.map((item) => ({ ...item, group })));
-      const previewMode = SETTINGS.optimizationPreview || 'off';
+      const previewMode = state.previewMode || 'overlay';
       const renderer = this.app.renderer;
       const hasLineSort = items.some((item) => renderer?.hasLineSortOrderMetadata?.(item.path));
       const lineSortLayers = Array.from(new Set(items.map((item) => item.layer))).filter(Boolean);
-      const overlayColor = SETTINGS.optimizationOverlayColor || '#38bdf8';
+      const overlayColor = state.overlayColor || SETTINGS.optimizationOverlayColor || '#38bdf8';
       const baseRgb = renderer?.hexToRgb?.(overlayColor) || { r: 56, g: 189, b: 248 };
-      const secondary = renderer?.getLineSortOverlaySecondaryColor?.(lineSortLayers);
+      const secondary = state.lineSortSecondaryColor || renderer?.getLineSortOverlaySecondaryColor?.(lineSortLayers);
       const endRgb = secondary
         ? renderer?.hexToRgb?.(secondary)
         : renderer?.getComplementRgb?.(baseRgb);
@@ -6132,7 +6221,7 @@
           ctx.clip();
         }
         ctx.beginPath();
-        this.buildExportPreviewPath(ctx, item.path, item.useCurves);
+        this.buildExportPreviewPath(ctx, item.path, item.useCurves, item.sharpEdges);
         ctx.globalAlpha = alpha;
         ctx.strokeStyle = strokeStyle;
         ctx.lineWidth = lineWidth;
@@ -6152,7 +6241,7 @@
           items.forEach((item) => drawItem(item, item.strokeColor));
         }
       } else if (previewMode === 'overlay' && orderedItems.length) {
-        const overlayWidth = Math.max(0.05, SETTINGS.optimizationOverlayWidth ?? 0.2);
+        const overlayWidth = Math.max(0.05, state.overlayWidth ?? SETTINGS.optimizationOverlayWidth ?? 0.2);
         orderedItems.forEach((item, index) => drawItem(item, colorForOrder(index), { lineWidth: overlayWidth, alpha: 0.92 }));
       }
       ctx.restore();
@@ -6197,9 +6286,134 @@
       };
       panel.appendChild(makeSection('Export Settings', [...exportRows, exportSettingsCard], true));
       panel.appendChild(makeSection('Optimization', optimizationCards, true));
-      panel.appendChild(makeSection('Line Sort Preview', [previewRow, overlayStyleRow], true));
       panel.appendChild(makeSection('Stats', [actions, stats], false));
       panel.dataset.exportDecorated = 'true';
+
+      this.attachExportInfoButtons(panel);
+    }
+
+    syncLegendSettingsControls(root) {
+      const state = this.exportModalState;
+      if (!root || !state) return;
+      const startBtn = root.querySelector('#export-legend-start-color');
+      const startInput = root.querySelector('#export-legend-start-color-input');
+      const endBtn = root.querySelector('#export-legend-end-color');
+      const endInput = root.querySelector('#export-legend-end-color-input');
+      const thicknessInput = root.querySelector('#export-legend-thickness');
+      const overlayColor = state.overlayColor || SETTINGS.optimizationOverlayColor || '#38bdf8';
+      const renderer = this.app.renderer;
+      const baseRgb = renderer?.hexToRgb?.(overlayColor) || { r: 56, g: 189, b: 248 };
+      const lineSortLayers = this.getOptimizationTargets();
+      const secondary = state.lineSortSecondaryColor || renderer?.getLineSortOverlaySecondaryColor?.(lineSortLayers);
+      const endRgb = secondary ? renderer?.hexToRgb?.(secondary) : renderer?.getComplementRgb?.(baseRgb);
+      const endColor = secondary || (renderer?.rgbToCss ? (() => {
+        const c = renderer.getComplementRgb(baseRgb);
+        const toHex = (v) => Math.round(v).toString(16).padStart(2, '0');
+        return `#${toHex(c.r)}${toHex(c.g)}${toHex(c.b)}`;
+      })() : '#c74307');
+      const syncPill = (btn, color) => {
+        if (!btn) return;
+        btn.textContent = color.toUpperCase();
+        btn.style.background = color;
+        btn.style.color = getContrastTextColor(color);
+      };
+      syncPill(startBtn, overlayColor);
+      if (startInput) startInput.value = overlayColor;
+      syncPill(endBtn, endColor);
+      if (endInput) endInput.value = endColor;
+      if (thicknessInput) thicknessInput.value = `${state.overlayWidth ?? SETTINGS.optimizationOverlayWidth ?? 0.2}`;
+    }
+
+    attachExportInfoButtons(panel) {
+      if (!panel) return;
+      const getCardTitleLabel = (card) => {
+        if (!card) return null;
+        return card.querySelector('.optimization-card-title > span');
+      };
+      const addInfoToggle = (labelEl, infoKey) => {
+        if (!labelEl || !EXPORT_INFO[infoKey]) return;
+        const existingSiblingBtn =
+          labelEl.nextElementSibling && labelEl.nextElementSibling.classList?.contains('export-info-btn')
+            ? labelEl.nextElementSibling
+            : null;
+        if (labelEl.querySelector('.export-info-btn') || existingSiblingBtn) return;
+        const info = EXPORT_INFO[infoKey];
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'export-info-btn';
+        btn.textContent = 'i';
+        btn.setAttribute('aria-label', `Info about ${info.title}`);
+        const infoPanel = document.createElement('div');
+        infoPanel.className = 'export-info-panel hidden';
+        infoPanel.textContent = info.description;
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const isOpen = !infoPanel.classList.contains('hidden');
+          infoPanel.classList.toggle('hidden', isOpen);
+          btn.textContent = isOpen ? 'i' : '×';
+          btn.classList.toggle('active', !isOpen);
+        });
+        labelEl.insertAdjacentElement('afterend', btn);
+        const cardHeader = labelEl.closest('.optimization-card-header');
+        const card = labelEl.closest('.optimization-card');
+        const control = labelEl.closest('.optimization-control');
+        if (control) {
+          control.appendChild(infoPanel);
+          return;
+        }
+        if (cardHeader && card) {
+          cardHeader.insertAdjacentElement('afterend', infoPanel);
+          return;
+        }
+        const parent = labelEl.parentElement;
+        if (parent) parent.appendChild(infoPanel);
+      };
+
+      const cards = panel.querySelectorAll('.optimization-card');
+      cards.forEach((card) => {
+        const stepId = card.dataset.stepId;
+        if (!stepId) {
+          const titleEl = getCardTitleLabel(card);
+          if (titleEl && /Remove Hidden Geometry/i.test(titleEl.textContent || '')) {
+            const label = card.querySelector('.control-label');
+            if (label) addInfoToggle(label, 'removeHiddenGeometry');
+          }
+          if (titleEl && /Plotter Optimization/i.test(titleEl.textContent || '')) {
+            const labels = card.querySelectorAll('.control-label');
+            labels.forEach((label) => {
+              if (/Plotter Optimization/i.test(label.textContent || '')) addInfoToggle(label, 'plotterOptimization');
+              if (/Optimization Tolerance/i.test(label.textContent || '')) addInfoToggle(label, 'optimizationTolerance');
+            });
+          }
+          const exportControls = card.querySelectorAll('.optimization-control');
+          exportControls.forEach((control) => {
+            const label = control.querySelector('.control-label');
+            if (!label) return;
+            const text = (label.textContent || '').trim();
+            if (/Remove Hidden Geometry/i.test(text)) addInfoToggle(label, 'removeHiddenGeometry');
+            if (/Plotter Optimization/i.test(text)) addInfoToggle(label, 'plotterOptimization');
+            if (/Optimization Tolerance/i.test(text)) addInfoToggle(label, 'optimizationTolerance');
+          });
+          return;
+        }
+        const titleSpan = getCardTitleLabel(card);
+        if (titleSpan && EXPORT_INFO[stepId]) addInfoToggle(titleSpan, stepId);
+        const controls = card.querySelectorAll('.optimization-control');
+        controls.forEach((control) => {
+          const label = control.querySelector('.control-label');
+          if (!label) return;
+          const text = (label.textContent || '').trim().toLowerCase();
+          const stepDef = OPTIMIZATION_STEPS.find((s) => s.id === stepId);
+          if (!stepDef) return;
+          (stepDef.controls || []).forEach((cDef) => {
+            const cleanDefLabel = (cDef.label || '').replace(/\(mm\)/g, '').trim().toLowerCase();
+            if (text.includes(cleanDefLabel) || cleanDefLabel.includes(text)) {
+              const key = `${stepId}.${cDef.key}`;
+              addInfoToggle(label, key);
+            }
+          });
+        });
+      });
     }
 
     openExportModal() {
@@ -6207,6 +6421,10 @@
       const stash = getEl('optimization-controls-stash');
       if (!controls || !stash) return;
       this.setTopMenuOpen(null, false);
+      if (this.app.renderer) {
+        this.app.renderer.exportModalOpen = true;
+        this.app.render();
+      }
       const root = document.createElement('div');
       root.id = 'export-modal-root';
       root.className = 'export-modal';
@@ -6217,18 +6435,44 @@
               <button type="button" id="export-preview-fit">Fit</button>
               <button type="button" id="export-preview-reset">Reset</button>
             </div>
-            <div id="export-preview-status" class="export-preview-toolbar-status">Export preview</div>
+            <div class="export-preview-toolbar-right">
+              <span class="export-preview-mode-label">Preview:</span>
+              <select id="export-preview-mode" class="export-preview-mode-select">
+                <option value="overlay">Overlay</option>
+                <option value="replace">Replace</option>
+                <option value="off">Off</option>
+              </select>
+            </div>
           </div>
           <div class="export-preview-stage">
             <div id="export-preview-canvas-wrap" class="export-preview-canvas-wrap">
               <canvas id="export-preview-canvas" class="export-preview-canvas"></canvas>
             </div>
             <div id="export-preview-legend" class="export-preview-legend hidden" aria-hidden="true">
-              <div class="export-preview-legend-title">Line Sort Print Order</div>
+              <div class="export-preview-legend-row">
+                <div class="export-preview-legend-title">Line Sort Print Order</div>
+                <button type="button" id="export-legend-gear" class="export-legend-gear-btn" aria-label="Legend settings">⚙</button>
+              </div>
               <div id="export-preview-legend-gradient" class="export-preview-legend-gradient"></div>
               <div class="export-preview-legend-labels">
                 <span>Start</span>
                 <span>End</span>
+              </div>
+              <div id="export-legend-settings" class="export-legend-settings hidden">
+                <div class="export-legend-setting">
+                  <label class="export-legend-setting-label">Start Color</label>
+                  <button type="button" id="export-legend-start-color" class="value-chip text-xs font-mono color-thickness-pill"></button>
+                  <input type="color" id="export-legend-start-color-input" class="hidden">
+                </div>
+                <div class="export-legend-setting">
+                  <label class="export-legend-setting-label">End Color</label>
+                  <button type="button" id="export-legend-end-color" class="value-chip text-xs font-mono color-thickness-pill"></button>
+                  <input type="color" id="export-legend-end-color-input" class="hidden">
+                </div>
+                <div class="export-legend-setting">
+                  <label class="export-legend-setting-label">Line Thickness</label>
+                  <input type="range" id="export-legend-thickness" min="0.05" max="1" step="0.05" class="w-full">
+                </div>
               </div>
             </div>
           </div>
@@ -6253,9 +6497,12 @@
         ctx: root.querySelector('#export-preview-canvas')?.getContext('2d') || null,
         legend: root.querySelector('#export-preview-legend'),
         legendGradient: root.querySelector('#export-preview-legend-gradient'),
-        status: root.querySelector('#export-preview-status'),
         view: { scale: 1, offsetX: 0, offsetY: 0, initialized: false },
         drag: null,
+        previewMode: SETTINGS.optimizationPreview === 'replace' ? 'replace' : 'overlay',
+        overlayColor: SETTINGS.optimizationOverlayColor || '#38bdf8',
+        overlayWidth: Math.max(0.05, SETTINGS.optimizationOverlayWidth ?? 0.2),
+        lineSortSecondaryColor: null,
       };
 
       const onWheel = (e) => {
@@ -6310,6 +6557,79 @@
         this.closeModal();
       });
 
+      const previewModeSelect = root.querySelector('#export-preview-mode');
+      if (previewModeSelect) {
+        previewModeSelect.value = this.exportModalState.previewMode || 'overlay';
+        previewModeSelect.onchange = (e) => {
+          if (!this.exportModalState) return;
+          this.exportModalState.previewMode = e.target.value;
+          if (this.exportModalState?.isOpen) this.renderExportPreview();
+        };
+      }
+
+      const gearBtn = root.querySelector('#export-legend-gear');
+      const gearPanel = root.querySelector('#export-legend-settings');
+      if (gearBtn && gearPanel) {
+        gearBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const isHidden = gearPanel.classList.contains('hidden');
+          gearPanel.classList.toggle('hidden', !isHidden);
+          if (isHidden) this.syncLegendSettingsControls(root);
+        });
+      }
+      const legendStartColorBtn = root.querySelector('#export-legend-start-color');
+      const legendStartColorInput = root.querySelector('#export-legend-start-color-input');
+      const legendEndColorBtn = root.querySelector('#export-legend-end-color');
+      const legendEndColorInput = root.querySelector('#export-legend-end-color-input');
+      const legendThicknessInput = root.querySelector('#export-legend-thickness');
+      const syncLegendPill = (btn, color) => {
+        if (!btn) return;
+        btn.textContent = color.toUpperCase();
+        btn.style.background = color;
+        btn.style.color = getContrastTextColor(color);
+      };
+      if (legendStartColorBtn && legendStartColorInput) {
+        legendStartColorBtn.onclick = () => openColorPickerAnchoredTo(legendStartColorInput, legendStartColorBtn);
+        legendStartColorInput.oninput = (e) => {
+          if (!this.exportModalState) return;
+          this.exportModalState.overlayColor = e.target.value;
+          syncLegendPill(legendStartColorBtn, e.target.value);
+          this.renderExportPreview();
+        };
+        legendStartColorInput.onchange = (e) => {
+          if (!this.exportModalState) return;
+          this.exportModalState.overlayColor = e.target.value;
+          syncLegendPill(legendStartColorBtn, e.target.value);
+          if (this.exportModalState?.isOpen) this.renderExportPreview();
+        };
+      }
+      if (legendEndColorBtn && legendEndColorInput) {
+        legendEndColorBtn.onclick = () => openColorPickerAnchoredTo(legendEndColorInput, legendEndColorBtn);
+        legendEndColorInput.oninput = (e) => {
+          if (!this.exportModalState) return;
+          this.exportModalState.lineSortSecondaryColor = e.target.value;
+          syncLegendPill(legendEndColorBtn, e.target.value);
+          this.renderExportPreview();
+        };
+        legendEndColorInput.onchange = (e) => {
+          if (!this.exportModalState) return;
+          this.exportModalState.lineSortSecondaryColor = e.target.value;
+          syncLegendPill(legendEndColorBtn, e.target.value);
+          if (this.exportModalState?.isOpen) this.renderExportPreview();
+        };
+      }
+      if (legendThicknessInput) {
+        legendThicknessInput.value = `${this.exportModalState.overlayWidth ?? SETTINGS.optimizationOverlayWidth ?? 0.2}`;
+        legendThicknessInput.oninput = (e) => {
+          if (!this.exportModalState) return;
+          this.exportModalState.overlayWidth = Math.max(0.05, Math.min(1, parseFloat(e.target.value) || 0.2));
+          this.renderExportPreview();
+        };
+        legendThicknessInput.onchange = () => {
+          if (this.exportModalState?.isOpen) this.renderExportPreview();
+        };
+      }
+
       this.openModal({
         title: 'Export SVG',
         body: root,
@@ -6324,6 +6644,10 @@
           controls.innerHTML = '';
           stash.appendChild(controls);
           this.exportModalState = null;
+          if (this.app.renderer) {
+            this.app.renderer.exportModalOpen = false;
+            this.app.render();
+          }
         },
       });
 
@@ -17653,6 +17977,7 @@
       }
       this.harmonographPlotterState = null;
       this.destroyInlinePetalisDesigner();
+      this.destroyInlinePatternDesigner();
       container.innerHTML = '';
       const layer = this.app.engine.getActiveLayer();
       if (!layer) {
@@ -18228,13 +18553,11 @@
           target.appendChild(wrapper);
           return;
         }
-        if (def.type === 'patternDesignerOpen') {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'w-full text-xs border border-vectura-border px-3 py-1.5 hover:bg-vectura-border text-vectura-accent transition-colors mb-2';
-          btn.textContent = 'Open Pattern Designer';
-          btn.onclick = () => this.openPatternDesigner(layer);
-          target.appendChild(btn);
+        if (def.type === 'patternDesignerInline') {
+          const wrapper = document.createElement('div');
+          wrapper.className = 'pattern-designer-inline-wrap mt-3';
+          target.appendChild(wrapper);
+          this.mountInlinePatternDesigner(layer, wrapper);
           return;
         }
         if (def.type === 'patternSubPens') {
@@ -21895,8 +22218,16 @@
           if (applyToggle) {
             applyToggle.onchange = (e) => {
               const next = Boolean(e.target.checked);
-              if (def.id === 'linesort' && next && (SETTINGS.optimizationPreview || 'off') === 'off') {
-                SETTINGS.optimizationPreview = 'overlay';
+              if (def.id === 'linesort' && next) {
+                if (this.exportModalState?.isOpen) {
+                  if ((this.exportModalState.previewMode || 'off') === 'off') {
+                    this.exportModalState.previewMode = 'overlay';
+                    const previewSelect = this.exportModalState.root?.querySelector('#export-preview-mode');
+                    if (previewSelect) previewSelect.value = 'overlay';
+                  }
+                } else if ((SETTINGS.optimizationPreview || 'off') === 'off') {
+                  SETTINGS.optimizationPreview = 'overlay';
+                }
               }
               applyOptimization((cfg) => {
                 const step = cfg.steps.find((s) => s.id === def.id);
@@ -21936,58 +22267,6 @@
               controlsWrap.appendChild(control);
             }
           });
-          if (def.id === 'linesort') {
-            const secondaryControl = document.createElement('div');
-            secondaryControl.className = 'optimization-control';
-            const autoColor = getHexComplement(SETTINGS.optimizationOverlayColor || '#38bdf8');
-            const currentColor = stepConfig.overlaySecondaryColor || autoColor;
-            secondaryControl.innerHTML = `
-              <div class="flex justify-between mb-1">
-                <label class="control-label mb-0">Secondary Color</label>
-                <span class="text-xs text-vectura-muted font-mono">${stepConfig.overlaySecondaryColor ? 'Custom' : 'Auto (Complement)'}</span>
-              </div>
-              <button type="button" class="value-chip text-xs text-vectura-accent font-mono color-thickness-pill">${currentColor.toUpperCase()}</button>
-            `;
-            const secondaryInput = secondaryControl.querySelector('.value-chip');
-            const status = secondaryControl.querySelector('span');
-            const secondaryColorInput = document.createElement('input');
-            secondaryColorInput.type = 'color';
-            secondaryColorInput.value = currentColor;
-            secondaryColorInput.className = 'hidden';
-            const applySecondary = (color, options = {}) => {
-              const { commit = false } = options;
-              if (commit && this.app.pushHistory) this.app.pushHistory();
-              if ((SETTINGS.optimizationPreview || 'off') === 'off') {
-                SETTINGS.optimizationPreview = 'overlay';
-              }
-              applyOptimization((cfg) => {
-                const step = cfg.steps.find((s) => s.id === def.id);
-                if (!step) return;
-                step.overlaySecondaryColor = color || '';
-              });
-              if (status) status.textContent = color ? 'Custom' : 'Auto (Complement)';
-              if (secondaryInput) {
-                const nextColor = color || getHexComplement(SETTINGS.optimizationOverlayColor || '#38bdf8');
-                secondaryInput.textContent = nextColor.toUpperCase();
-                secondaryInput.style.background = nextColor;
-                secondaryInput.style.color = getContrastTextColor(nextColor);
-              }
-            };
-            if (secondaryInput) {
-              secondaryInput.style.background = currentColor;
-              secondaryInput.style.color = getContrastTextColor(currentColor);
-              secondaryInput.onclick = () => openColorPickerAnchoredTo(secondaryColorInput, secondaryInput);
-            }
-            secondaryColorInput.oninput = (e) => applySecondary(e.target.value);
-            secondaryColorInput.onchange = (e) => applySecondary(e.target.value, { commit: true });
-            const secondaryInputs = secondaryControl.querySelectorAll('button');
-            secondaryInputs.forEach((input) => {
-              input.disabled = isDisabled;
-            });
-            secondaryColorInput.disabled = isDisabled;
-            secondaryControl.appendChild(secondaryColorInput);
-            controlsWrap.appendChild(secondaryControl);
-          }
           card.appendChild(controlsWrap);
           list.appendChild(card);
         });
@@ -22508,6 +22787,7 @@
               path,
               lineCap,
               useCurves: forceLinear ? false : useCurves,
+              sharpEdges: !forceLinear && useCurves && layer.type === 'pattern' && !layer.params?.tileEdgeCurves,
               layerGroupId,
               ancestorClipLayerIds,
               strokeWidth: (layer.strokeWidth ?? pathPen.width ?? SETTINGS.strokeWidth).toFixed(3),
@@ -22604,7 +22884,7 @@
             attrs.stroke = escapeXmlAttr(item.strokeColor || 'black');
             attrs['stroke-width'] = item.strokeWidth;
           }
-          const markup = shapeToSvg(item.path, precision, item.useCurves, attrs);
+          const markup = shapeToSvg(item.path, precision, item.useCurves, attrs, item.sharpEdges);
           if (markup) svg += markup;
           svg += `</g>`;
           item.ancestorClipLayerIds.forEach((layerId) => {
@@ -22624,6 +22904,189 @@
     }
 
     // ── Pattern Designer ──────────────────────────────────────────────────
+
+    destroyInlinePatternDesigner() {
+      if (!this.inlinePatternDesigner) return;
+      const { root, cleanupCanvas, cleanupKeys } = this.inlinePatternDesigner;
+      if (cleanupCanvas) cleanupCanvas();
+      if (cleanupKeys) cleanupKeys();
+      if (root && root.parentElement) root.remove();
+      this.inlinePatternDesigner = null;
+    }
+
+    mountInlinePatternDesigner(layer, mountTarget) {
+      if (!layer || !mountTarget) return;
+      this.destroyInlinePatternDesigner();
+
+      const root = document.createElement('div');
+      root.className = 'pattern-designer-inline';
+      mountTarget.appendChild(root);
+
+      const pd = {
+        root,
+        layer,
+        tool: 'fill',
+        fills: (layer.params.patternFills || []).map(f => ({
+          ...f,
+          region: (f.region || []).slice(),
+        })),
+        history: [],
+        view: { zoom: 1, offsetX: 0, offsetY: 0 },
+        cleanupCanvas: null,
+        cleanupKeys: null,
+        inline: true,
+      };
+
+      this.inlinePatternDesigner = pd;
+      this._buildPatternDesignerPanel(pd);
+      this._initPatternDesignerView(pd);
+      this._renderPatternDesigner(pd);
+      this._bindInlinePatternDesignerKeys(pd);
+    }
+
+    _buildPatternDesignerPanel(pd) {
+      const fillOptions = [
+        { value: 'hatch',       label: 'H. Hatch' },
+        { value: 'vhatch',      label: 'V. Hatch' },
+        { value: 'crosshatch',  label: 'Cross-hatch' },
+        { value: 'dhatch45',    label: 'Diagonal 45°' },
+        { value: 'dhatch135',   label: 'Diagonal 135°' },
+        { value: 'xcrosshatch', label: 'Diag. cross' },
+        { value: 'wavelines',   label: 'Wavy lines' },
+        { value: 'zigzag',      label: 'Zigzag' },
+        { value: 'stipple',     label: 'Stipple' },
+        { value: 'contour',     label: 'Contour' },
+      ].map(o => `<option value="${o.value}">${o.label}</option>`).join('');
+      const pens = (SETTINGS.pens || []).map(pen =>
+        `<option value="${pen.id}">${pen.name || pen.id}</option>`
+      ).join('');
+
+      pd.root.innerHTML = `
+        <div class="flex items-center justify-between mb-2 px-1">
+          <span class="text-[11px] font-medium text-vectura-accent uppercase tracking-wide">Texture Designer</span>
+          <div class="flex gap-1">
+            <button type="button" class="pd-tool-btn active" data-pd-tool="fill" title="Paint Bucket (F)">
+              <svg viewBox="0 0 24 24" width="12" height="12"><path d="M16.56 8.94L7.62 0 6.21 1.41l2.38 2.38-5.15 5.15c-.59.57-.59 1.53 0 2.12l5.5 5.5c.29.29.68.44 1.06.44s.77-.15 1.06-.44l5.5-5.5c.59-.58.59-1.53 0-2.12zM5.21 10 10 5.21 14.79 10z" fill="currentColor"/><path d="M19 11.5s-2 2.17-2 3.5c0 1.1.9 2 2 2s2-.9 2-2c0-1.33-2-3.5-2-3.5z" fill="currentColor"/></svg>
+            </button>
+            <button type="button" class="pd-tool-btn" data-pd-tool="erase" title="Erase (E)">
+              <svg viewBox="0 0 24 24" width="12" height="12"><path d="M15.14 3c-.51 0-1.02.2-1.41.59L2.59 14.73c-.78.77-.78 2.04 0 2.83L5.03 20H20v-2h-6.84l7.25-7.26c.78-.78.78-2.05 0-2.83L16.56 3.59c-.4-.39-.91-.59-1.42-.59zm0 2 1.42 1.42L5.82 17H4v-1.84z" fill="currentColor"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-2 mb-2 items-center text-[11px]">
+          <label class="flex items-center gap-1"><span class="text-vectura-muted">Fill</span>
+            <select data-pd-fill-type class="bg-vectura-bg border border-vectura-border px-1 py-0.5 text-[11px] focus:outline-none focus:border-vectura-accent">${fillOptions}</select>
+          </label>
+          <label class="flex items-center gap-1"><span class="text-vectura-muted">Density</span>
+            <input type="number" data-pd-density value="5" min="0.5" max="50" step="0.5"
+              class="w-12 bg-vectura-bg border border-vectura-border px-1 py-0.5 text-[11px] focus:outline-none focus:border-vectura-accent">
+          </label>
+          <label class="flex items-center gap-1"><span class="text-vectura-muted">Pen</span>
+            <select data-pd-pen class="bg-vectura-bg border border-vectura-border px-1 py-0.5 text-[11px] focus:outline-none focus:border-vectura-accent">
+              <option value="">Layer default</option>${pens}
+            </select>
+          </label>
+          <label class="flex items-center gap-1"><span class="text-vectura-muted">Sensitivity</span>
+            <input type="number" data-pd-sensitivity value="${pd.layer.params.fillSensitivity ?? 2}" min="0.1" max="20" step="0.1"
+              class="w-12 bg-vectura-bg border border-vectura-border px-1 py-0.5 text-[11px] focus:outline-none focus:border-vectura-accent">
+          </label>
+        </div>
+        <div class="relative border border-vectura-border mb-2" style="height:260px;overflow:hidden;background:#0e0e11;cursor:crosshair;">
+          <canvas data-pd-canvas style="position:absolute;top:0;left:0;touch-action:none;"></canvas>
+        </div>
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-[10px] text-vectura-muted" data-pd-status>Click a closed region to fill it</span>
+          <button type="button" class="text-[10px] text-vectura-muted hover:text-vectura-accent transition-colors" data-pd-clear>Clear all</button>
+        </div>
+        <div data-pd-fills-list class="space-y-1"></div>`;
+
+      this._bindPatternDesignerControls(pd);
+      this._bindPatternDesignerCanvas(pd);
+      this._renderFillsList(pd);
+      // Init canvas size after layout
+      window.requestAnimationFrame(() => {
+        this._initPatternDesignerView(pd);
+        this._renderPatternDesigner(pd);
+      });
+    }
+
+    _renderFillsList(pd) {
+      const listEl = pd.root.querySelector('[data-pd-fills-list]');
+      if (!listEl) return;
+      listEl.innerHTML = '';
+      if (!pd.fills.length) return;
+      const fillOptions = [
+        { value: 'hatch', label: 'H. Hatch' },
+        { value: 'vhatch', label: 'V. Hatch' },
+        { value: 'crosshatch', label: 'Cross-hatch' },
+        { value: 'dhatch45', label: 'Diag. 45°' },
+        { value: 'dhatch135', label: 'Diag. 135°' },
+        { value: 'xcrosshatch', label: 'Diag. cross' },
+        { value: 'wavelines', label: 'Wavy lines' },
+        { value: 'zigzag', label: 'Zigzag' },
+        { value: 'stipple', label: 'Stipple' },
+        { value: 'contour', label: 'Contour' },
+      ];
+      const pens = SETTINGS.pens || [];
+      pd.fills.forEach((fill, idx) => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center gap-1 text-[10px] border border-vectura-border px-1.5 py-1 bg-vectura-bg';
+        const fillOpts = fillOptions.map(o =>
+          `<option value="${o.value}"${fill.fillType === o.value ? ' selected' : ''}>${o.label}</option>`
+        ).join('');
+        const penOpts = `<option value=""${!fill.penId ? ' selected' : ''}>Default</option>` +
+          pens.map(p => `<option value="${p.id}"${fill.penId === p.id ? ' selected' : ''}>${p.name || p.id}</option>`).join('');
+        row.innerHTML = `
+          <span class="text-vectura-muted flex-shrink-0">#${idx + 1}</span>
+          <select class="bg-vectura-bg border border-vectura-border px-0.5 py-0 text-[10px] focus:outline-none flex-1 min-w-0" data-fl-type>${fillOpts}</select>
+          <input type="number" class="bg-vectura-bg border border-vectura-border px-0.5 py-0 text-[10px] w-10 focus:outline-none" data-fl-density value="${fill.density}" min="0.5" max="50" step="0.5">
+          <select class="bg-vectura-bg border border-vectura-border px-0.5 py-0 text-[10px] focus:outline-none w-16 min-w-0" data-fl-pen>${penOpts}</select>
+          <button type="button" class="text-vectura-muted hover:text-red-400 transition-colors flex-shrink-0 ml-0.5" data-fl-del title="Delete fill">×</button>`;
+
+        row.querySelector('[data-fl-type]').addEventListener('change', (e) => {
+          fill.fillType = e.target.value;
+          this._applyPatternDesignerChanges(pd);
+        });
+        row.querySelector('[data-fl-density]').addEventListener('change', (e) => {
+          fill.density = parseFloat(e.target.value) || 5;
+          this._applyPatternDesignerChanges(pd);
+        });
+        row.querySelector('[data-fl-pen]').addEventListener('change', (e) => {
+          fill.penId = e.target.value || null;
+          this._applyPatternDesignerChanges(pd);
+        });
+        row.querySelector('[data-fl-del]').addEventListener('click', () => {
+          pd.history.push(pd.fills.map(f => ({ ...f, region: f.region.slice() })));
+          pd.fills.splice(idx, 1);
+          this._applyPatternDesignerChanges(pd);
+        });
+        listEl.appendChild(row);
+      });
+    }
+
+    _bindInlinePatternDesignerKeys(pd) {
+      const handler = (e) => {
+        if (!pd?.root) return;
+        if (e.key === 'z' && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          if (pd.history.length) {
+            pd.fills = pd.history.pop();
+            this._applyPatternDesignerChanges(pd);
+          }
+          return;
+        }
+        if (e.key === 'f' || e.key === 'F') {
+          pd.tool = 'fill';
+          pd.root.querySelectorAll('[data-pd-tool]').forEach(b => b.classList.toggle('active', b.dataset.pdTool === 'fill'));
+        }
+        if (e.key === 'e' || e.key === 'E') {
+          pd.tool = 'erase';
+          pd.root.querySelectorAll('[data-pd-tool]').forEach(b => b.classList.toggle('active', b.dataset.pdTool === 'erase'));
+        }
+      };
+      window.addEventListener('keydown', handler);
+      pd.cleanupKeys = () => window.removeEventListener('keydown', handler);
+    }
 
     createPatternDesignerMarkup() {
       const fillOptions = [
@@ -22842,12 +23305,14 @@
         const data = window.Vectura.AlgorithmRegistry?.patternGetGroups?.(pd.layer.params.patternId);
         const pip = window.Vectura.AlgorithmRegistry?._polyContainsPoint;
         if (!data || !pip) return null;
+        const sensitivityEl = pd.root.querySelector('[data-pd-sensitivity]');
+        const sensitivity = parseFloat(sensitivityEl?.value) || (pd.layer.params.fillSensitivity ?? 2.0);
         let best = null, bestArea = Infinity;
         for (const group of data.groups) {
           for (const path of group.paths) {
             if (path.length < 3) continue;
             const f = path[0], l = path[path.length - 1];
-            if (Math.hypot(f.x - l.x, f.y - l.y) > 0.5) continue;
+            if (Math.hypot(f.x - l.x, f.y - l.y) > sensitivity) continue;
             if (!pip(path, tx, ty)) continue;
             let minX = f.x, maxX = f.x, minY = f.y, maxY = f.y;
             for (const p of path) {
@@ -22883,6 +23348,7 @@
           const fillTypeEl = pd.root.querySelector('[data-pd-fill-type]');
           const densityEl = pd.root.querySelector('[data-pd-density]');
           const penEl = pd.root.querySelector('[data-pd-pen]');
+          pd.history.push(pd.fills.map(f => ({ ...f, region: f.region.slice() })));
           pd.fills.push({
             id: `fill-${Date.now()}`,
             region: poly,
@@ -22955,9 +23421,12 @@
         density: f.density,
         penId: f.penId || null,
       }));
+      const sensitivityEl = pd.root.querySelector('[data-pd-sensitivity]');
+      if (sensitivityEl) layer.params.fillSensitivity = parseFloat(sensitivityEl.value) || 2.0;
       this.storeLayerParams(layer);
       this.app.regen();
       this._renderPatternDesigner(pd);
+      if (pd.inline && this._renderFillsList) this._renderFillsList(pd);
       const statusEl = pd.root.querySelector('[data-pd-status]');
       if (statusEl) {
         const n = pd.fills.length;

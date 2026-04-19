@@ -732,7 +732,10 @@
       smoothing: 0,
       simplify: 0,
       curves: false,
+      tileEdgeCurves: false,
       patternFills: [],
+      fillSensitivity: 2.0,
+      patternCustomPaths: [],
     },
     harmonograph: {
       label: 'Harmonograph',
@@ -1132,7 +1135,7 @@
       bypassAll: false,
       steps: [
         { id: 'linesimplify', enabled: true, bypass: false, tolerance: 0.2, mode: 'curve' },
-        { id: 'linesort', enabled: false, bypass: false, method: 'nearest', direction: 'none', grouping: 'layer' },
+        { id: 'linesort', enabled: true, bypass: false, method: 'nearest', direction: 'vertical', grouping: 'combined' },
         { id: 'filter', enabled: false, bypass: false, minLength: 0, maxLength: 0, removeTiny: true },
         { id: 'multipass', enabled: false, bypass: false, passes: 2, offset: 0.2, jitter: 0, seed: 0 },
       ],

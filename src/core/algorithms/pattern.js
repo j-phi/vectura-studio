@@ -44,6 +44,63 @@
     return nodes;
   };
 
+  // Split a path d attribute into individual subpath strings, each starting
+  // with an absolute M command. Handles relative m by converting to absolute.
+  const getSubpathStrings = (d) => {
+    if (!d) return [];
+    const cmdRe = /([MmLlHhVvCcSsQqTtAaZz])([^MmLlHhVvCcSsQqTtAaZz]*)/g;
+    const floats = s => s.trim().split(/[\s,]+/).map(parseFloat).filter(v => isFinite(v));
+    let cx = 0, cy = 0, sx = 0, sy = 0;
+    const result = [];
+    let currentParts = [];
+    let m;
+    while ((m = cmdRe.exec(d)) !== null) {
+      const c = m[1], ns = floats(m[2]);
+      if (c === 'M' || c === 'm') {
+        if (currentParts.length) result.push(currentParts.join(''));
+        const ax = c === 'M' ? (ns[0] ?? 0) : cx + (ns[0] ?? 0);
+        const ay = c === 'M' ? (ns[1] ?? 0) : cy + (ns[1] ?? 0);
+        let head = `M${ax},${ay}`;
+        if (ns.length > 2) {
+          let lx = ax, ly = ay;
+          for (let i = 2; i + 1 < ns.length; i += 2) {
+            if (c === 'M') { lx = ns[i]; ly = ns[i+1]; }
+            else { lx += ns[i]; ly += ns[i+1]; }
+            head += `L${lx},${ly}`;
+          }
+          cx = lx; cy = ly;
+        } else {
+          cx = ax; cy = ay;
+        }
+        sx = ax; sy = ay;
+        currentParts = [head];
+      } else {
+        currentParts.push(c + m[2]);
+        switch (c) {
+          case 'L': if (ns.length >= 2) { cx = ns[ns.length-2]; cy = ns[ns.length-1]; } break;
+          case 'l': for (let i=0;i+1<ns.length;i+=2){cx+=ns[i];cy+=ns[i+1];} break;
+          case 'H': if (ns.length) cx = ns[ns.length-1]; break;
+          case 'h': for (const x of ns) cx += x; break;
+          case 'V': if (ns.length) cy = ns[ns.length-1]; break;
+          case 'v': for (const y of ns) cy += y; break;
+          case 'C': if (ns.length >= 6) { cx = ns[ns.length-2]; cy = ns[ns.length-1]; } break;
+          case 'c': for (let i=0;i+5<ns.length;i+=6){cx+=ns[i+4];cy+=ns[i+5];} break;
+          case 'S': if (ns.length >= 4) { cx = ns[ns.length-2]; cy = ns[ns.length-1]; } break;
+          case 's': for (let i=0;i+3<ns.length;i+=4){cx+=ns[i+2];cy+=ns[i+3];} break;
+          case 'Q': if (ns.length >= 4) { cx = ns[ns.length-2]; cy = ns[ns.length-1]; } break;
+          case 'q': for (let i=0;i+3<ns.length;i+=4){cx+=ns[i+2];cy+=ns[i+3];} break;
+          case 'T': if (ns.length >= 2) { cx = ns[ns.length-2]; cy = ns[ns.length-1]; } break;
+          case 't': for (let i=0;i+1<ns.length;i+=2){cx+=ns[i];cy+=ns[i+1];} break;
+          case 'A': if (ns.length >= 7) { cx = ns[ns.length-2]; cy = ns[ns.length-1]; } break;
+          case 'a': for (let i=0;i+6<ns.length;i+=7){cx+=ns[i+5];cy+=ns[i+6];} break;
+          case 'Z': case 'z': cx = sx; cy = sy; break;
+        }
+      }
+    }
+    if (currentParts.length) result.push(currentParts.join(''));
+    return result;
+  };
+
   const parseNumber = (val, fallback = 0) => {
     if (val === undefined || val === null) return fallback;
     const cleaned = `${val}`.replace(/[^0-9.+-]/g, '');
@@ -115,92 +172,64 @@
       return [normalizePoints(points)];
     }
     if (tag === 'path') {
-      try {
-        const len = el.getTotalLength ? el.getTotalLength() : 0;
-        if (len <= 0) return [];
-        const steps = Math.max(10, Math.floor(len / 2));
-        const step = len / steps;
+      const d = el.getAttribute('d') || '';
+      const subpathStrs = getSubpathStrings(d);
+      if (!subpathStrs.length) return [];
+      const svgContainer = el.parentElement;
+      if (!svgContainer) return [];
 
-        // Exact node coordinates from the d attribute, transformed into the
-        // same space as normalizePoints output. Only boundary-adjacent nodes
-        // are used as snap targets so that interior subpath nodes (e.g. oval
-        // control points in cage) don't corrupt unrelated subpath samples.
-        const dNodes = parseSvgDNodes(el.getAttribute('d') || '');
-        const dNodesNorm = dNodes.length ? normalizePoints(dNodes) : [];
-        const SNAP_TOL = 1.0;
-        const BOUNDARY_TOL = 2.0;
-        const snapNodes = dNodesNorm.filter(n =>
-          Math.abs(n.x - vbMinX) < BOUNDARY_TOL ||
-          Math.abs(n.x - vbW)    < BOUNDARY_TOL ||
-          Math.abs(n.y - vbMinY) < BOUNDARY_TOL ||
-          Math.abs(n.y - vbH)    < BOUNDARY_TOL
-        );
-        const snapToNodes = (pt) => {
-          for (const n of snapNodes) {
-            if (Math.hypot(pt.x - n.x, pt.y - n.y) < SNAP_TOL) return n;
-          }
-          return pt;
-        };
-        const pushSubPath = (rawPts) => {
-          if (rawPts.length < 2) return;
-          const norm = normalizePoints(rawPts);
-          // Snap each normalised point to the nearest exact d-attribute node.
-          const snapped = norm.map(snapToNodes);
-          // Remove consecutive duplicates introduced by snapping.
-          const deduped = snapped.filter((p, i) =>
-            i === 0 || p.x !== snapped[i-1].x || p.y !== snapped[i-1].y
-          );
-          if (deduped.length >= 2) allSubPaths.push(deduped);
-        };
-
-        const allSubPaths = [];
-        let currentPath = [];
-
-        for (let idx = 0; idx <= steps + 1; idx++) {
-           const actualLen = Math.min(idx * step, len);
-           const pt = el.getPointAtLength(actualLen);
-
-           if (currentPath.length > 0) {
-              const prev = currentPath[currentPath.length - 1];
-              const prevLen = Math.max(0, (idx - 1) * step);
-              const dLen = actualLen - prevLen;
-              const maxDist = (dLen > 0 ? dLen : step) * 1.5;
-
-              if (Math.hypot(pt.x - prev.x, pt.y - prev.y) > maxDist) {
-                  let L = prevLen;
-                  let R = actualLen;
-                  let beforeJump = L;
-
-                  for (let iter = 0; iter < 8; iter++) {
-                      const mid = (L + R) / 2;
-                      const midPt = el.getPointAtLength(mid);
-                      if (Math.hypot(midPt.x - prev.x, midPt.y - prev.y) > (mid - prevLen) * 1.5) {
-                          R = mid;
-                      } else {
-                          beforeJump = mid;
-                          L = mid;
-                      }
-                  }
-
-                  if (currentPath.length > 1) {
-                      const endPt = el.getPointAtLength(beforeJump);
-                      currentPath.push({ x: endPt.x, y: endPt.y });
-                      pushSubPath(currentPath);
-                  }
-
-                  const jumpPt = el.getPointAtLength(beforeJump + 0.05);
-                  currentPath = [{ x: jumpPt.x, y: jumpPt.y }, { x: pt.x, y: pt.y }];
-                  if (actualLen === len) break;
-                  continue;
-              }
-           }
-           currentPath.push({ x: pt.x, y: pt.y });
-           if (actualLen === len) break;
+      const dNodes = parseSvgDNodes(d);
+      const dNodesNorm = dNodes.length ? normalizePoints(dNodes) : [];
+      const SNAP_TOL = 1.0;
+      const BOUNDARY_TOL = 2.0;
+      const snapNodes = dNodesNorm.filter(n =>
+        Math.abs(n.x - vbMinX) < BOUNDARY_TOL ||
+        Math.abs(n.x - vbW)    < BOUNDARY_TOL ||
+        Math.abs(n.y - vbMinY) < BOUNDARY_TOL ||
+        Math.abs(n.y - vbH)    < BOUNDARY_TOL
+      );
+      const snapToNodes = (pt) => {
+        for (const n of snapNodes) {
+          if (Math.hypot(pt.x - n.x, pt.y - n.y) < SNAP_TOL) return n;
         }
-        if (currentPath.length > 0) pushSubPath(currentPath);
-        return allSubPaths;
-      } catch (err) {}
-      return [];
+        return pt;
+      };
+
+      const allSubPaths = [];
+      for (const subStr of subpathStrs) {
+        const tmpPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        tmpPath.setAttribute('d', subStr);
+        svgContainer.appendChild(tmpPath);
+        try {
+          const len = tmpPath.getTotalLength ? tmpPath.getTotalLength() : 0;
+          if (len > 0) {
+            const steps = Math.max(10, Math.floor(len / 2));
+            const rawPts = [];
+            for (let i = 0; i <= steps; i++) {
+              const pt = tmpPath.getPointAtLength((i / steps) * len);
+              rawPts.push({ x: pt.x, y: pt.y });
+            }
+            if (rawPts.length >= 2) {
+              const norm = normalizePoints(rawPts);
+              const snapped = norm.map(snapToNodes);
+              const deduped = snapped.filter((p, i) =>
+                i === 0 || p.x !== snapped[i-1].x || p.y !== snapped[i-1].y
+              );
+              // Mark points on tile boundaries (used by tileEdgeCurves to keep sharp corners)
+              const EDGE_TOL = 0.15;
+              for (const p of deduped) {
+                if (
+                  Math.abs(p.x - vbMinX) < EDGE_TOL || Math.abs(p.x - vbW) < EDGE_TOL ||
+                  Math.abs(p.y - vbMinY) < EDGE_TOL || Math.abs(p.y - vbH) < EDGE_TOL
+                ) p._tileEdge = true;
+              }
+              if (deduped.length >= 2) allSubPaths.push(deduped);
+            }
+          }
+        } catch (err) {}
+        tmpPath.remove();
+      }
+      return allSubPaths;
     }
     return [];
   };
@@ -651,7 +680,11 @@
             const penId = p.penMapping && p.penMapping[group.id] ? p.penMapping[group.id] : null;
             group.paths.forEach(originalPath => {
               const tp = [];
-              for (const pt of originalPath) tp.push({ x: tx + pt.x * scale, y: ty + pt.y * scale });
+              for (const pt of originalPath) {
+                const tpt = { x: tx + pt.x * scale, y: ty + pt.y * scale };
+                if (pt._tileEdge) tpt._tileEdge = true;
+                tp.push(tpt);
+              }
               tp.meta = { penId };
               paths.push(tp);
             });
