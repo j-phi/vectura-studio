@@ -120,3 +120,16 @@ Every PR must assess whether these docs need updates:
 | Hardening idea (not needed for beta) | Log in `docs/pre-release-hardening-log.md` as `PRH-###`; do not implement unless explicitly requested |
 
 Architecture diagrams use Mermaid — update them when architecture meaningfully changes.
+
+## README Standards
+
+The README is the primary human-facing document. Follow these conventions so it stays readable as the project grows:
+
+- **Top-level sections are scannable.** Limit top-level prose to a short paragraph + ≤5 bullets. Move exhaustive detail into a `<details><summary>Full feature list</summary>` panel beneath.
+- **Feature groups, not flat lists.** Organize features into logical groups (Layers & Modifiers, Canvas & Tools, Algorithms, Export, UI & Workflow, Mobile). Each group gets one paragraph at the top level and an expandable detail panel for the full list.
+- **Algorithm library is a table.** Use a Markdown table (Algorithm | Description) — not a bullet list.
+- **Testing commands are a table.** Use a Markdown table (Command | Purpose) — not a bullet list. Keep the testing matrix table beside it.
+- **Keyboard shortcuts live in a `<details>` table.** Never embed shortcuts as inline run-on prose.
+- **Release notes:** 3 most recent releases inline; all prior releases in `<details><summary>Older releases (0.6.x and earlier)</summary>`.
+- **Reference-only content in `<details>` panels:** project structure, architecture diagrams, workflow docs list, extension guide.
+- **Gallery near the top.** Keep the gallery table immediately after the intro paragraph.

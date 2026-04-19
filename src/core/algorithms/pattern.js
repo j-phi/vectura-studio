@@ -108,6 +108,16 @@
     return Number.isFinite(num) ? num : fallback;
   };
 
+  const resolveInheritedSvgAttribute = (el, attr) => {
+    let node = el;
+    while (node && typeof node.getAttribute === 'function') {
+      const value = node.getAttribute(attr);
+      if (value !== null && value !== '') return value;
+      node = node.parentElement;
+    }
+    return '';
+  };
+
   const clonePath = (path = []) => {
     const next = Array.isArray(path) ? path.map((pt) => ({ ...pt })) : [];
     if (path?.meta) next.meta = { ...path.meta };
@@ -128,86 +138,109 @@
     const active = inputPaths
       .filter((path) => Array.isArray(path) && path.length >= 2)
       .map((path) => clonePath(path));
-    const byEnd = new Map();
-    const byStart = new Map();
-    const indexPath = (pathIndex) => {
-      const path = active[pathIndex];
-      if (!path || path.length < 2) return;
-      byStart.set(keyForPoint(path[0]), pathIndex);
-      byEnd.set(keyForPoint(path[path.length - 1]), pathIndex);
+    const tangentForEndpoint = (path, endpoint) => {
+      if (!Array.isArray(path) || path.length < 2) return { x: 0, y: 0 };
+      if (endpoint === 'start') {
+        return {
+          x: path[1].x - path[0].x,
+          y: path[1].y - path[0].y,
+        };
+      }
+      return {
+        x: path[path.length - 2].x - path[path.length - 1].x,
+        y: path[path.length - 2].y - path[path.length - 1].y,
+      };
     };
-    const clearIndex = (path) => {
-      if (!path || path.length < 2) return;
-      byStart.delete(keyForPoint(path[0]));
-      byEnd.delete(keyForPoint(path[path.length - 1]));
+    const normalizeVec = (vec) => {
+      const len = Math.hypot(vec.x, vec.y);
+      if (len < 1e-9) return { x: 0, y: 0 };
+      return {
+        x: vec.x / len,
+        y: vec.y / len,
+      };
     };
-    for (let i = 0; i < active.length; i += 1) indexPath(i);
+    const scoreEndpointPair = (a, b) => {
+      const ta = normalizeVec(tangentForEndpoint(active[a.pathIndex], a.endpoint));
+      const tb = normalizeVec(tangentForEndpoint(active[b.pathIndex], b.endpoint));
+      return ta.x * tb.x + ta.y * tb.y;
+    };
+    const orientForMerge = (path, endpoint, desiredEndpoint) => {
+      if (!Array.isArray(path)) return [];
+      if (endpoint === desiredEndpoint) return path;
+      return path.slice().reverse();
+    };
+    const normalizeMergedPath = (path) => {
+      if (!Array.isArray(path) || path.length < 4) return path;
+      const seen = new Map();
+      let bestRange = null;
+      path.forEach((point, index) => {
+        const key = keyForPoint(point);
+        if (!seen.has(key)) {
+          seen.set(key, index);
+          return;
+        }
+        const startIndex = seen.get(key);
+        if (index - startIndex < 3) return;
+        if (!bestRange || (index - startIndex) > (bestRange.end - bestRange.start)) {
+          bestRange = { start: startIndex, end: index };
+        }
+      });
+      if (!bestRange) return path;
+      const normalized = path.slice(bestRange.start, bestRange.end + 1);
+      if (path.meta) normalized.meta = { ...path.meta };
+      return normalized;
+    };
 
     let mergedAny = true;
     while (mergedAny) {
       mergedAny = false;
-      for (let i = 0; i < active.length; i += 1) {
-        const a = active[i];
-        if (!a || a.length < 2) continue;
-        const aStartKey = keyForPoint(a[0]);
-        const aEndKey = keyForPoint(a[a.length - 1]);
+      const buckets = new Map();
+      active.forEach((path, pathIndex) => {
+        if (!path || path.length < 2) return;
+        [
+          { endpoint: 'start', point: path[0] },
+          { endpoint: 'end', point: path[path.length - 1] },
+        ].forEach((entry) => {
+          const key = keyForPoint(entry.point);
+          if (!buckets.has(key)) buckets.set(key, []);
+          buckets.get(key).push({ pathIndex, endpoint: entry.endpoint });
+        });
+      });
 
-        let j = byStart.get(aEndKey);
-        if (j !== undefined && j !== i && active[j]) {
-          const b = active[j];
-          const merged = a.concat(b.slice(1));
-          clearIndex(a);
-          clearIndex(b);
-          active[i] = merged;
-          active[j] = null;
-          indexPath(i);
-          mergedAny = true;
-          continue;
+      for (const entries of buckets.values()) {
+        const available = entries.filter((entry) => active[entry.pathIndex]);
+        if (available.length < 2) continue;
+        let bestPair = null;
+        for (let i = 0; i < available.length; i += 1) {
+          for (let j = i + 1; j < available.length; j += 1) {
+            const left = available[i];
+            const right = available[j];
+            if (left.pathIndex === right.pathIndex) continue;
+            const score = scoreEndpointPair(left, right);
+            if (!bestPair || score < bestPair.score) {
+              bestPair = { left, right, score };
+            }
+          }
         }
+        if (!bestPair) continue;
 
-        j = byEnd.get(aEndKey);
-        if (j !== undefined && j !== i && active[j]) {
-          const b = active[j].slice().reverse();
-          const merged = a.concat(b.slice(1));
-          clearIndex(a);
-          clearIndex(active[j]);
-          active[i] = merged;
-          active[j] = null;
-          indexPath(i);
-          mergedAny = true;
-          continue;
-        }
-
-        j = byEnd.get(aStartKey);
-        if (j !== undefined && j !== i && active[j]) {
-          const b = active[j];
-          const merged = b.concat(a.slice(1));
-          clearIndex(a);
-          clearIndex(b);
-          active[i] = merged;
-          active[j] = null;
-          indexPath(i);
-          mergedAny = true;
-          continue;
-        }
-
-        j = byStart.get(aStartKey);
-        if (j !== undefined && j !== i && active[j]) {
-          const b = active[j].slice().reverse();
-          const merged = b.concat(a.slice(1));
-          clearIndex(a);
-          clearIndex(active[j]);
-          active[i] = merged;
-          active[j] = null;
-          indexPath(i);
-          mergedAny = true;
-          continue;
-        }
+        const a = active[bestPair.left.pathIndex];
+        const b = active[bestPair.right.pathIndex];
+        if (!a || !b) continue;
+        const aOriented = orientForMerge(a, bestPair.left.endpoint, 'end');
+        const bOriented = orientForMerge(b, bestPair.right.endpoint, 'start');
+        const merged = aOriented.concat(bOriented.slice(1));
+        if (a.meta) merged.meta = a.meta;
+        active[bestPair.left.pathIndex] = merged;
+        active[bestPair.right.pathIndex] = null;
+        mergedAny = true;
+        break;
       }
     }
 
     return active
       .filter((path) => Array.isArray(path) && path.length >= 2)
+      .map((path) => normalizeMergedPath(path))
       .map((path) => {
         const first = path[0];
         const last = path[path.length - 1];
@@ -249,6 +282,114 @@
       return next;
     });
     return passthrough.concat(normalized);
+  };
+
+  const traceFilledPathElementVisibleBoundaries = (el, offsetX = 0, offsetY = 0, vbMinX = 0, vbMinY = 0, vbW = 0, vbH = 0) => {
+    if (!el || el.tagName?.toLowerCase() !== 'path' || typeof el.isPointInFill !== 'function') return null;
+    const d = el.getAttribute('d') || '';
+    const subpathStrs = getSubpathStrings(d);
+    if (subpathStrs.length < 2) return null;
+
+    const svgContainer = el.parentElement;
+    if (!svgContainer) return null;
+
+    const matrix = typeof el.getCTM === 'function' ? el.getCTM() : null;
+    const applyMatrix = (pt) => {
+      if (!matrix) return pt;
+      return {
+        x: pt.x * matrix.a + pt.y * matrix.c + matrix.e,
+        y: pt.x * matrix.b + pt.y * matrix.d + matrix.f,
+      };
+    };
+    const applyOffset = (pt) => ({ x: pt.x - offsetX, y: pt.y - offsetY });
+    const normalizePoint = (pt) => applyOffset(applyMatrix(pt));
+
+    const dNodes = parseSvgDNodes(d);
+    const dNodesNorm = dNodes.length ? dNodes.map((pt) => normalizePoint(pt)) : [];
+    const SNAP_TOL = 1.0;
+    const BOUNDARY_TOL = 2.0;
+    const snapNodes = dNodesNorm.filter((n) =>
+      Math.abs(n.x - vbMinX) < BOUNDARY_TOL ||
+      Math.abs(n.x - vbW) < BOUNDARY_TOL ||
+      Math.abs(n.y - vbMinY) < BOUNDARY_TOL ||
+      Math.abs(n.y - vbH) < BOUNDARY_TOL
+    );
+    const snapToNodes = (pt) => {
+      for (const n of snapNodes) {
+        if (Math.hypot(pt.x - n.x, pt.y - n.y) < SNAP_TOL) return { ...n };
+      }
+      return pt;
+    };
+
+    const epsilon = 0.35;
+    const visibleSegments = [];
+    const pointForFill = (x, y) => {
+      if (typeof DOMPoint === 'function') return new DOMPoint(x, y);
+      return { x, y };
+    };
+
+    for (const subStr of subpathStrs) {
+      const tmpPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      tmpPath.setAttribute('d', subStr);
+      svgContainer.appendChild(tmpPath);
+      try {
+        const len = tmpPath.getTotalLength ? tmpPath.getTotalLength() : 0;
+        if (len <= 0) continue;
+        const steps = Math.max(24, Math.floor(len / 1.5));
+        const rawPts = [];
+        for (let i = 0; i <= steps; i += 1) {
+          const pt = tmpPath.getPointAtLength((i / steps) * len);
+          rawPts.push({ x: pt.x, y: pt.y });
+        }
+        for (let i = 0; i + 1 < rawPts.length; i += 1) {
+          const a = rawPts[i];
+          const b = rawPts[i + 1];
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const segLen = Math.hypot(dx, dy);
+          if (segLen < 1e-6) continue;
+          const mx = (a.x + b.x) / 2;
+          const my = (a.y + b.y) / 2;
+          const nx = -dy / segLen;
+          const ny = dx / segLen;
+          const left = pointForFill(mx + nx * epsilon, my + ny * epsilon);
+          const right = pointForFill(mx - nx * epsilon, my - ny * epsilon);
+          const leftInside = !!el.isPointInFill(left);
+          const rightInside = !!el.isPointInFill(right);
+          if (leftInside === rightInside) continue;
+
+          const aNorm = snapToNodes(normalizePoint(a));
+          const bNorm = snapToNodes(normalizePoint(b));
+          const segment = [aNorm, bNorm].filter((pt, index, arr) =>
+            index === 0 || Math.hypot(pt.x - arr[index - 1].x, pt.y - arr[index - 1].y) > 1e-6
+          );
+          if (segment.length < 2) continue;
+          const EDGE_TOL = 0.15;
+          segment.forEach((pt) => {
+            if (
+              Math.abs(pt.x - vbMinX) < EDGE_TOL || Math.abs(pt.x - vbW) < EDGE_TOL ||
+              Math.abs(pt.y - vbMinY) < EDGE_TOL || Math.abs(pt.y - vbH) < EDGE_TOL
+            ) pt._tileEdge = true;
+          });
+          visibleSegments.push(segment);
+        }
+      } catch (err) {}
+      tmpPath.remove();
+    }
+
+    if (!visibleSegments.length) return null;
+    const withoutSharedEdges = removeSeamSegments(visibleSegments);
+    const merged = mergeTouchingChains(withoutSharedEdges);
+    if (!merged.length) return null;
+    return merged.map((path) => {
+      const next = clonePath(path);
+      const first = next[0];
+      const last = next[next.length - 1];
+      if (first && last && Math.hypot(first.x - last.x, first.y - last.y) < 0.01) {
+        next[next.length - 1] = { ...first };
+      }
+      return next;
+    });
   };
 
   const svgElementToPaths = (el, offsetX = 0, offsetY = 0, vbMinX = 0, vbMinY = 0, vbW = 0, vbH = 0) => {
@@ -418,23 +559,32 @@
     const elements = svg.querySelectorAll('path, line, polyline, polygon, rect, circle, ellipse');
     elements.forEach((el, index) => {
       const clone = el.cloneNode(true);
+      ['fill', 'stroke', 'fill-rule', 'stroke-width'].forEach((attr) => {
+        if (!clone.hasAttribute(attr)) {
+          const inherited = resolveInheritedSvgAttribute(el, attr);
+          if (inherited) clone.setAttribute(attr, inherited);
+        }
+      });
       tempSvg.appendChild(clone);
       
-      const stroke = el.getAttribute('stroke') || el.style?.stroke || '';
-      const fill = el.getAttribute('fill') || el.style?.fill || '';
+      const stroke = resolveInheritedSvgAttribute(el, 'stroke') || el.style?.stroke || '';
+      const fill = resolveInheritedSvgAttribute(el, 'fill') || el.style?.fill || '';
       
       // Determine distinct identifier for this element based on styles to group them logically
       const identifier = `${stroke}|${fill}`;
       const fillVisible = fill && fill !== 'none';
       const strokeVisible = stroke && stroke !== 'none';
-      
-      const paths = svgElementToPaths(clone, vbMinX, vbMinY, vbMinX, vbMinY, vbW, vbH);
+      const compoundFillPaths = fillVisible && !strokeVisible
+        ? traceFilledPathElementVisibleBoundaries(clone, vbMinX, vbMinY, vbMinX, vbMinY, vbW, vbH)
+        : null;
+      const paths = compoundFillPaths || svgElementToPaths(clone, vbMinX, vbMinY, vbMinX, vbMinY, vbW, vbH);
       
       elementsData.push({
          index,
          identifier,
          fillVisible,
          strokeVisible,
+         pathsAlreadyVisible: !!compoundFillPaths,
          paths
       });
       clone.remove();
@@ -457,11 +607,12 @@
       const groupPaths = groups.get(key) || [];
       const sourceItems = elementsData.filter((item) => item.identifier === key);
       const isFillOnly = sourceItems.some((item) => item.fillVisible) && sourceItems.every((item) => !item.strokeVisible);
+      const pathsAlreadyVisible = sourceItems.every((item) => item.pathsAlreadyVisible);
       return {
         id: `el-${i}`,
         label: `Element ${i+1}`,
         isFillOnly,
-        paths: isFillOnly ? traceFilledGroupVisibleBoundaries(groupPaths) : groupPaths,
+        paths: isFillOnly && !pathsAlreadyVisible ? traceFilledGroupVisibleBoundaries(groupPaths) : groupPaths,
       };
     });
 
@@ -720,7 +871,9 @@
 
   // Expose for unit testing
   window.Vectura.AlgorithmRegistry._removeSeamSegments = removeSeamSegments;
+  window.Vectura.AlgorithmRegistry._mergeTouchingChains = mergeTouchingChains;
   window.Vectura.AlgorithmRegistry._traceFilledGroupVisibleBoundaries = traceFilledGroupVisibleBoundaries;
+  window.Vectura.AlgorithmRegistry._traceFilledPathElementVisibleBoundaries = traceFilledPathElementVisibleBoundaries;
 
   window.Vectura.AlgorithmRegistry.pattern = {
       generate: (p, rng, noise, bounds) => {

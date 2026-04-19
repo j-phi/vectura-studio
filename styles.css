@@ -2063,7 +2063,10 @@ input[type='color']::-webkit-color-swatch {
 }
 
 .export-settings-section-body {
-  padding: 0 12px 12px;
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .export-modal-settings .optimization-panel {
@@ -2079,6 +2082,12 @@ input[type='color']::-webkit-color-swatch {
 .export-modal-settings .optimization-row > :last-child {
   flex: 1;
   min-width: 0;
+}
+
+.export-modal-settings .optimization-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .export-modal-footer {

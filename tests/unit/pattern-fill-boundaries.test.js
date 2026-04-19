@@ -69,4 +69,27 @@ describe('Pattern fill boundary tracing', () => {
     expect(only.maxY).toBeCloseTo(20, 3);
     expect(result[0].length).toBeGreaterThanOrEqual(5);
   });
+
+  test('merges vertically adjacent filled rectangles into one seam-compatible perimeter', () => {
+    const trace = runtime.window.Vectura.AlgorithmRegistry._traceFilledGroupVisibleBoundaries;
+
+    const top = rect(0, 0, 40, 44);
+    const bottom = rect(0, 44, 40, 44);
+    const result = trace([top, bottom]);
+
+    expect(result).toHaveLength(1);
+    const only = bbox(result[0]);
+    expect(only.minX).toBeCloseTo(0, 3);
+    expect(only.maxX).toBeCloseTo(40, 3);
+    expect(only.minY).toBeCloseTo(0, 3);
+    expect(only.maxY).toBeCloseTo(88, 3);
+    const hasInternalSeamSegment = result[0].some((pt, index, path) => {
+      const next = path[index + 1];
+      if (!next) return false;
+      return Math.abs(pt.y - 44) < 0.001
+        && Math.abs(next.y - 44) < 0.001
+        && Math.abs(pt.x - next.x) > 0.001;
+    });
+    expect(hasInternalSeamSegment).toBe(false);
+  });
 });

@@ -69,6 +69,7 @@
     constructor() {
       this.layers = [];
       this.activeLayerId = null;
+      this._layerCounter = 0;
       this.profileKey = SETTINGS.paperSize || 'a4';
       this.currentProfile = this.resolveProfile();
       this.addLayer('wavetable');
@@ -77,8 +78,8 @@
     addLayer(type = 'wavetable') {
       type = resolveDrawableLayerType(type, 'wavetable');
       const id = Math.random().toString(36).substr(2, 9);
-      SETTINGS.globalLayerCount++;
-      const num = String(SETTINGS.globalLayerCount).padStart(2, '0');
+      SETTINGS.globalLayerCount = ++this._layerCounter;
+      const num = String(this._layerCounter).padStart(2, '0');
       const defaults = ALGO_DEFAULTS && ALGO_DEFAULTS[type];
       const prettyType = defaults && defaults.label ? defaults.label : type.charAt(0).toUpperCase() + type.slice(1);
       const name = `${prettyType} ${num}`;
@@ -91,8 +92,8 @@
 
     addModifierLayer(type = 'mirror') {
       const id = Math.random().toString(36).substr(2, 9);
-      SETTINGS.globalLayerCount++;
-      const num = String(SETTINGS.globalLayerCount).padStart(2, '0');
+      SETTINGS.globalLayerCount = ++this._layerCounter;
+      const num = String(this._layerCounter).padStart(2, '0');
       const prettyType = type.charAt(0).toUpperCase() + type.slice(1);
       const layer = new Layer(id, 'group', `${prettyType} Modifier ${num}`);
       layer.isGroup = true;
@@ -191,6 +192,8 @@
         return layer;
       });
       this.activeLayerId = state.activeLayerId || (this.layers[0] ? this.layers[0].id : null);
+      // Sync _layerCounter from SETTINGS after applyState has already restored globalLayerCount.
+      this._layerCounter = SETTINGS.globalLayerCount ?? this._layerCounter;
       this.layers.forEach((l) => this.generate(l.id));
       this.computeAllDisplayGeometry();
     }
@@ -199,7 +202,7 @@
       const source = this.layers.find((l) => l.id === id);
       if (!source) return null;
       const newId = Math.random().toString(36).substr(2, 9);
-      SETTINGS.globalLayerCount++;
+      SETTINGS.globalLayerCount = ++this._layerCounter;
       const baseName = `${source.name} Copy`;
       const existing = new Set(this.layers.map((l) => l.name));
       let dupName = baseName;

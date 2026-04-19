@@ -196,6 +196,7 @@
     return bestDist > EPSILON ? best : null;
   };
 
+  /** Splits an open path into sub-paths at every intersection with axis. Returns array of point arrays; segments lying exactly on the axis are included in whichever sub-path precedes them. */
   const splitPathByAxis = (path, axis) => {
     const points = flattenPath(path);
     if (points.length < 2) return [];
@@ -223,6 +224,13 @@
     return out;
   };
 
+  /**
+   * Sutherland-Hodgman clip of a closed polygon path against an infinite axis line.
+   * @param {Array} path - Closed polygon path (as returned by the engine); converted internally to open form.
+   * @param {{point,normal,tangent,replacedSign}} axis - Result of buildAxis() / getMirrorAxis().
+   * @param {number} keepSign - +1 keeps points on the positive-normal side; -1 keeps the negative side.
+   * @returns {Array} Clipped closed polygon path, or [] if the polygon is fully on the discarded side.
+   */
   const clipClosedPolygonByAxis = (path, axis, keepSign) => {
     const polygon = toOpenPolygon(path);
     if (polygon.length < 3) return [];
@@ -271,6 +279,12 @@
     return distance > 0 ? 1 : -1;
   };
 
+  /**
+   * Applies a single mirror config to a path array.
+   * Closed paths are polygon-clipped to the source half-plane, then the kept half is reflected.
+   * Open paths are split at the axis; only pieces on the source side are kept and reflected.
+   * The "source side" is the side opposite to mirror.replacedSign (i.e. the side the user draws on).
+   */
   const applyMirrorToPaths = (paths, mirror, bounds) => {
     if (!mirror?.enabled) {
       return (paths || []).map((path) => clonePath(path)).filter((path) => path.length >= 2);

@@ -1136,7 +1136,7 @@
       steps: [
         { id: 'linesimplify', enabled: true, bypass: false, tolerance: 0.2, mode: 'curve' },
         { id: 'linesort', enabled: true, bypass: false, method: 'nearest', direction: 'vertical', grouping: 'combined' },
-        { id: 'filter', enabled: false, bypass: false, minLength: 0, maxLength: 0, removeTiny: true },
+        { id: 'filter', enabled: false, bypass: false, minLength: 0, maxLength: 800, removeTiny: true },
         { id: 'multipass', enabled: false, bypass: false, passes: 2, offset: 0.2, jitter: 0, seed: 0 },
       ],
     },

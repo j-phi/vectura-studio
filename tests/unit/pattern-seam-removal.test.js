@@ -2,8 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-// Load removeSeamSegments in isolation via the registry hook exposed in pattern.js
-const loadRemoveSeamSegments = () => {
+// Load seam helpers in isolation via the registry hooks exposed in pattern.js
+const loadSeamHelpers = () => {
   const filePath = path.resolve(__dirname, '../../src/core/algorithms/pattern.js');
   const code = fs.readFileSync(filePath, 'utf8');
   const context = {
@@ -32,7 +32,10 @@ const loadRemoveSeamSegments = () => {
   };
   vm.createContext(context);
   vm.runInContext(code, context, { filename: filePath });
-  return context.window.Vectura.AlgorithmRegistry._removeSeamSegments;
+  return {
+    removeSeamSegments: context.window.Vectura.AlgorithmRegistry._removeSeamSegments,
+    mergeTouchingChains: context.window.Vectura.AlgorithmRegistry._mergeTouchingChains,
+  };
 };
 
 // Helper: build a closed {x,y} path from coordinate pairs
@@ -57,13 +60,20 @@ const hasSegment = (path, ax, ay, bx, by) => {
 
 describe('Pattern seam removal — removeSeamSegments', () => {
   let removeSeamSegments;
+  let mergeTouchingChains;
 
   beforeAll(() => {
-    removeSeamSegments = loadRemoveSeamSegments();
+    const helpers = loadSeamHelpers();
+    removeSeamSegments = helpers.removeSeamSegments;
+    mergeTouchingChains = helpers.mergeTouchingChains;
   });
 
   test('exposes _removeSeamSegments on the registry', () => {
     expect(typeof removeSeamSegments).toBe('function');
+  });
+
+  test('exposes _mergeTouchingChains on the registry', () => {
+    expect(typeof mergeTouchingChains).toBe('function');
   });
 
   /**
@@ -155,5 +165,22 @@ describe('Pattern seam removal — removeSeamSegments', () => {
     expect(hasSegment(p, 0,20, 10,20)).toBe(true);
     expect(hasSegment(p, 0,10, 0,20)).toBe(true);
     expect(hasSegment(p, 0,0, 0,10)).toBe(true);
+  });
+
+  test('junction pairing prefers collinear reconnection when multiple chains share a seam point', () => {
+    const horizontalLeft = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }];
+    const horizontalRight = [{ x: 2, y: 0 }, { x: 3, y: 0 }, { x: 4, y: 0 }];
+    const diagDownLeft = [{ x: 1, y: -1 }, { x: 1.5, y: -0.5 }, { x: 2, y: 0 }];
+    const diagDownRight = [{ x: 2, y: 0 }, { x: 2.5, y: 0.5 }, { x: 3, y: 1 }];
+
+    const result = mergeTouchingChains([horizontalLeft, horizontalRight, diagDownLeft, diagDownRight]);
+
+    expect(result).toHaveLength(2);
+    const horizontal = result.find((path) => path.some((pt) => pt.x === 0) && path.some((pt) => pt.x === 4));
+    const diagonal = result.find((path) => path.some((pt) => pt.y === -1) && path.some((pt) => pt.y === 1));
+
+    expect(horizontal).toBeDefined();
+    expect(diagonal).toBeDefined();
+    expect(horizontal.some((pt) => pt.y !== 0)).toBe(false);
   });
 });

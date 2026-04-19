@@ -22,6 +22,7 @@
     GeometryUtils,
     OptimizationUtils,
     UnitUtils = {},
+    UI_CONSTANTS = {},
   } = window.Vectura || {};
 
   const PETALIS_PRESET_LIBRARY = (Array.isArray(PRESETS) ? PRESETS : Array.isArray(PETALIS_PRESETS) ? PETALIS_PRESETS : [])
@@ -72,7 +73,7 @@
     const desiredLeft = Math.round(rect.left + rect.width / 2);
     const spaceAbove = rect.top;
     const spaceBelow = window.innerHeight - rect.bottom;
-    const placeAbove = spaceAbove >= 220 || spaceAbove >= spaceBelow;
+    const placeAbove = spaceAbove >= (UI_CONSTANTS.COLOR_PICKER_POPOVER_THRESHOLD_PX ?? 220) || spaceAbove >= spaceBelow;
     const top = placeAbove ? Math.round(rect.top - 2) : Math.round(rect.bottom + 2);
     const left = Math.max(12, Math.min(window.innerWidth - 12, desiredLeft));
     proxyInput.style.left = `${left}px`;
@@ -491,7 +492,7 @@
       const baseMeta = path.meta ? clone(path.meta) : {};
       const geometry =
         path.meta?.kind === 'circle'
-          ? expandCirclePath(path.meta, 72)
+          ? expandCirclePath(path.meta, UI_CONSTANTS.CIRCLE_EXPORT_STEPS ?? 72)
           : useCurves
           ? resampleCurvedPath(path)
           : cloneExportPath(path);
@@ -7581,14 +7582,15 @@
         const lT = clamp(Math.max(uT + 0.16, lowerT), 0.5, 0.9);
         const uW = Math.max(0.05, upperW);
         const lW = Math.max(0.05, lowerW);
-        const oTop = clamp(topOutT ?? uT * 0.42, 0.04, uT - 0.02);
-        const iUpper = clamp(upperInT ?? uT * 0.72, oTop + 0.01, uT - 0.02);
-        const oUpper = clamp(upperOutT ?? lerp(uT, lT, 0.34), uT + 0.02, lT - 0.04);
-        const iLower = clamp(lowerInT ?? lerp(uT, lT, 0.68), oUpper + 0.02, lT - 0.02);
-        const oLower = clamp(lowerOutT ?? lerp(lT, 1, 0.38), lT + 0.02, 0.96);
-        const iBottom = clamp(bottomInT ?? lerp(lT, 1, 0.62), oLower + 0.02, 0.98);
-        const iTop = clamp(-oTop * 0.7, -0.35, -0.02);
-        const oBottom = clamp(1 + (1 - iBottom) * 0.7, 1.02, 1.35);
+        const PA = UI_CONSTANTS.PETALIS_CURVE_ANCHORS ?? {};
+        const oTop = clamp(topOutT ?? uT * (PA.oTopRatio ?? 0.42), 0.04, uT - 0.02);
+        const iUpper = clamp(upperInT ?? uT * (PA.iUpperRatio ?? 0.72), oTop + 0.01, uT - 0.02);
+        const oUpper = clamp(upperOutT ?? lerp(uT, lT, PA.oUpperLerp ?? 0.34), uT + 0.02, lT - 0.04);
+        const iLower = clamp(lowerInT ?? lerp(uT, lT, PA.iLowerLerp ?? 0.68), oUpper + 0.02, lT - 0.02);
+        const oLower = clamp(lowerOutT ?? lerp(lT, 1, PA.oLowerLerp ?? 0.38), lT + 0.02, 0.96);
+        const iBottom = clamp(bottomInT ?? lerp(lT, 1, PA.iBottomLerp ?? 0.62), oLower + 0.02, 0.98);
+        const iTop = clamp(-oTop * (PA.mirrorExtent ?? 0.7), -0.35, -0.02);
+        const oBottom = clamp(1 + (1 - iBottom) * (PA.mirrorExtent ?? 0.7), 1.02, 1.35);
         return [
           { t: 0, w: 0, in: { t: iTop, w: 0 }, out: { t: oTop, w: topOutW } },
           {
@@ -18580,7 +18582,7 @@
               row.innerHTML = `<span class="text-[11px] text-vectura-muted">${g.label}</span>
                  <select class="w-32 bg-vectura-bg border border-vectura-border p-1 text-xs focus:outline-none focus:border-vectura-accent" data-gid="${g.id}">
                     <option value="default">Layer Pen</option>
-                    ${pens.map(pen => `<option value="${pen.id}" ${currentPenId === pen.id ? 'selected' : ''}>${pen.name || pen.id}</option>`).join('')}
+                    ${pens.map(pen => `<option value="${escapeHtml(pen.id)}" ${currentPenId === pen.id ? 'selected' : ''}>${escapeHtml(pen.name || pen.id)}</option>`).join('')}
                  </select>
               `;
               const sel = row.querySelector('select');
@@ -21586,6 +21588,7 @@
           }
           this.app.render();
           updateStats();
+          if (this.exportModalState?.isOpen) this.renderExportPreview();
         };
 
         const buildRow = (label, controlEl) => {
@@ -21614,6 +21617,23 @@
           if (this.exportModalState?.isOpen) this.renderExportPreview();
         };
         panel.appendChild(buildRow('Scope', scopeSelect));
+
+        if ((SETTINGS.optimizationScope || 'all') === 'selected') {
+          const selectedLayers = (this.app.renderer?.getSelectedLayers?.() || []).filter((l) => l && !l.isGroup);
+          const infoEl = document.createElement('div');
+          infoEl.className = 'text-xs px-1 pb-1';
+          if (!selectedLayers.length) {
+            infoEl.classList.add('text-amber-400');
+            infoEl.textContent = 'No layers selected — exporting all layers';
+          } else {
+            infoEl.classList.add('text-vectura-muted');
+            const names = selectedLayers.map((l) => l.name || l.id);
+            const shown = names.slice(0, 3).join(', ');
+            const extra = names.length > 3 ? ` and ${names.length - 3} more` : '';
+            infoEl.textContent = `${selectedLayers.length} selected: ${shown}${extra}`;
+          }
+          panel.appendChild(infoEl);
+        }
 
         const previewSelect = document.createElement('select');
         previewSelect.className = 'w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent';
@@ -21891,9 +21911,6 @@
               <span class="text-xs text-vectura-accent font-mono">${SETTINGS.removeHiddenGeometry !== false ? 'ON' : 'OFF'}</span>
             </div>
             <input type="checkbox" class="w-4 h-4" ${SETTINGS.removeHiddenGeometry !== false ? 'checked' : ''}>
-            <div class="mt-2 text-[10px] leading-relaxed text-vectura-muted">
-              Trim masked and frame-hidden segments from the exported SVG so it matches the current view exactly.
-            </div>
           `;
           const hiddenGeometryToggle = hiddenGeometryControl.querySelector('input');
           const hiddenGeometryState = hiddenGeometryControl.querySelector('span');
@@ -22016,11 +22033,8 @@
           const valueInput = control.querySelector('.value-input');
           if (input && valueBtn) {
             input.oninput = (e) => {
-              const next = parseFloat(e.target.value);
-              valueBtn.textContent = formatOptValue(def, fromOptimizationDisplayValue(def, next));
-            };
-            input.onchange = (e) => {
               const next = fromOptimizationDisplayValue(def, parseFloat(e.target.value));
+              valueBtn.textContent = formatOptValue(def, next);
               applyOptimization((cfg) => {
                 const step = cfg.steps.find((s) => s.id === stepConfig.id);
                 if (step) step[def.key] = next;
@@ -22536,8 +22550,15 @@
         return groups.get(key);
       };
       const elements = svg.querySelectorAll('path, line, polyline, polygon, rect, circle, ellipse');
+      const stripEventHandlers = (node) => {
+        [...node.attributes].forEach((a) => { if (/^on/i.test(a.name)) node.removeAttribute(a.name); });
+        node.querySelectorAll('*').forEach((child) => {
+          [...child.attributes].forEach((a) => { if (/^on/i.test(a.name)) child.removeAttribute(a.name); });
+        });
+      };
       elements.forEach((el) => {
         const clone = el.cloneNode(true);
+        stripEventHandlers(clone);
         tempSvg.appendChild(clone);
         const stroke = el.getAttribute('stroke') || el.style?.stroke || '';
         const strokeWidth = parseNumber(el.getAttribute('stroke-width') || el.style?.strokeWidth, NaN);
@@ -22973,7 +22994,7 @@
         { value: 'contour',     label: 'Contour' },
       ].map(o => `<option value="${o.value}">${o.label}</option>`).join('');
       const pens = (SETTINGS.pens || []).map(pen =>
-        `<option value="${pen.id}">${pen.name || pen.id}</option>`
+        `<option value="${escapeHtml(pen.id)}">${escapeHtml(pen.name || pen.id)}</option>`
       ).join('');
 
       pd.root.innerHTML = `
@@ -23117,7 +23138,7 @@
         { value: 'contour',     label: 'Contour' },
       ].map(o => `<option value="${o.value}">${o.label}</option>`).join('');
       const pens = (SETTINGS.pens || []).map(pen =>
-        `<option value="${pen.id}">${pen.name || pen.id}</option>`
+        `<option value="${escapeHtml(pen.id)}">${escapeHtml(pen.name || pen.id)}</option>`
       ).join('');
       return `
         <div class="petal-designer-header" data-pd-header>
