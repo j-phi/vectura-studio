@@ -1,7 +1,7 @@
 # Graph Report - /Users/jayphi/Documents/github/vectura-studio  (2026-04-19)
 
 ## Corpus Check
-- 90 files · ~1,560,651 words
+- 90 files · ~1,560,003 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -113,8 +113,8 @@
   tests/e2e/visual.spec.js-snapshots/masking-horizon-rings-canvas-desktop-visual-chromium-darwin.png → src/core/algorithms/topo.js
 - `round()` --calls--> `formatValue()`  [INFERRED]
   tests/helpers/path-signature.js → /Users/jayphi/Documents/github/vectura-studio/src/ui/ui.js
-- `Masking Horizon Rings Baseline SVG` --implements--> `Masking Module`  [INFERRED]
-  tests/baselines/svg/masking-horizon-rings.svg → src/core/masking.js
+- `Masking Module` --implements--> `Masking Horizon Rings Baseline SVG`  [INFERRED]
+  src/core/masking.js → tests/baselines/svg/masking-horizon-rings.svg
 
 ## Hyperedges (group relationships)
 - **Core Engine Data Pipeline** — engine_js, algorithms_index_js, masking_js, modifiers_js, optimization_utils_js, renderer_js [EXTRACTED 0.95]
@@ -567,11 +567,11 @@ _Questions this graph is uniquely positioned to answer:_
 - **What is the exact relationship between `City — Isometric aerial city of skyscrapers rendered entirely in dense vertical hatching lines with strong perspective convergence, plotter-pen aesthetic, B&W` and `Flowfield Algorithm`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
 - **Why does `UI` connect `Community 0` to `Community 1`, `Community 2`, `Community 4`, `Community 5`, `Community 8`, `Community 13`?**
-  _High betweenness centrality (0.256) - this node is a cross-community bridge._
+  _High betweenness centrality (0.282) - this node is a cross-community bridge._
 - **Why does `Renderer` connect `Community 1` to `Community 0`, `Community 9`, `Community 2`, `Community 4`?**
-  _High betweenness centrality (0.141) - this node is a cross-community bridge._
+  _High betweenness centrality (0.125) - this node is a cross-community bridge._
 - **Why does `round()` connect `Community 0` to `Community 1`, `Community 2`, `Community 4`, `Community 5`, `Community 7`, `Community 8`, `Community 9`, `Community 14`, `Community 15`?**
-  _High betweenness centrality (0.109) - this node is a cross-community bridge._
+  _High betweenness centrality (0.106) - this node is a cross-community bridge._
 - **Are the 28 inferred relationships involving `round()` (e.g. with `openColorPickerAnchoredTo()` and `roundToStep()`) actually correct?**
   _`round()` has 28 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `Mirror Modifier Module`, `Rainfall Algorithm`, `Petalis Algorithm` to the rest of the system?**

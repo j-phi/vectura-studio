@@ -68,7 +68,7 @@ describe('SVG export hard crop', () => {
       optimizeLayers() {},
     };
 
-    const app = { engine };
+    const app = { engine, computeDisplayGeometry() {} };
     let capturedBlob = null;
     runtime.window.Blob = class MockBlob {
       constructor(parts = []) {
@@ -160,7 +160,7 @@ describe('SVG export hard crop', () => {
       layers: [layer],
       optimizeLayers() {},
     };
-    const app = { engine };
+    const app = { engine, computeDisplayGeometry() {} };
     let capturedBlob = null;
     runtime.window.Blob = class MockBlob {
       constructor(parts = []) {

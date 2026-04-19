@@ -99,7 +99,7 @@ describe('SVG export hidden geometry toggle', () => {
     SETTINGS.plotterOptimize = 0;
     SETTINGS.pens = [{ id: 'p1', name: 'P1', color: '#111111', width: 0.4 }];
 
-    const app = { engine: createMaskedEngine() };
+    const app = { engine: createMaskedEngine(), computeDisplayGeometry() {} };
     const svg = await captureSvgExport(() => UI.prototype.exportSVG.call({ app }));
 
     expect(svg).not.toContain('<clipPath');
@@ -119,7 +119,7 @@ describe('SVG export hidden geometry toggle', () => {
     SETTINGS.plotterOptimize = 0;
     SETTINGS.pens = [{ id: 'p1', name: 'P1', color: '#111111', width: 0.4 }];
 
-    const app = { engine: createMaskedEngine() };
+    const app = { engine: createMaskedEngine(), computeDisplayGeometry() {} };
     const svg = await captureSvgExport(() => UI.prototype.exportSVG.call({ app }));
 
     expect(svg).toContain('<clipPath');
@@ -147,6 +147,7 @@ describe('SVG export hidden geometry toggle', () => {
         parentPenId: 'p2',
         childPenId: 'p1',
       }),
+      computeDisplayGeometry() {},
     };
     const svg = await captureSvgExport(() => UI.prototype.exportSVG.call({ app }));
 
@@ -167,7 +168,7 @@ describe('SVG export hidden geometry toggle', () => {
     SETTINGS.plotterOptimize = 0;
     SETTINGS.pens = [{ id: 'p1', name: 'P1', color: '#111111', width: 0.4 }];
 
-    const app = { engine: createMaskedEngine() };
+    const app = { engine: createMaskedEngine(), computeDisplayGeometry() {} };
     app.engine.layers.forEach((layer) => {
       layer.optimization = {
         bypassAll: false,

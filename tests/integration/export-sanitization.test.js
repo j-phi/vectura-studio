@@ -50,7 +50,7 @@ describe('SVG export sanitization', () => {
       optimizeLayers() {},
     };
 
-    const app = { engine };
+    const app = { engine, computeDisplayGeometry() {} };
     let capturedBlob = null;
     runtime.window.Blob = class MockBlob {
       constructor(parts = []) {

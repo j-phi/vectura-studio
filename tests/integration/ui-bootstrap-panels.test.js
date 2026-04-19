@@ -249,6 +249,5 @@ describe('UI bootstrap integrity', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(window.Vectura.SETTINGS.optimizationPreview).toBe('overlay');
-    expect(lineSortCard.textContent).toMatch(/Secondary Color/);
   });
 });

@@ -83,7 +83,7 @@ describe('SVG export edge cases', () => {
     ]);
 
     const svg = await captureSvgExport(() => {
-      UI.prototype.exportSVG.call({ app: { engine } });
+      UI.prototype.exportSVG.call({ app: { engine, computeDisplayGeometry() {} } });
     });
 
     expect(svg).toBeTruthy();
@@ -115,7 +115,7 @@ describe('SVG export edge cases', () => {
     ]);
 
     const svg = await captureSvgExport(() => {
-      UI.prototype.exportSVG.call({ app: { engine } });
+      UI.prototype.exportSVG.call({ app: { engine, computeDisplayGeometry() {} } });
     });
 
     expect(svg).toBeTruthy();

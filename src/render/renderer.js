@@ -2423,7 +2423,7 @@
           if (hitGuide.type === 'flip') {
             hitGuide.guide.mirror.replacedSide =
               hitGuide.guide.mirror.replacedSide === 'negative' ? 'positive' : 'negative';
-            this.engine.computeAllDisplayGeometry();
+            this.onComputeDisplayGeometry ? this.onComputeDisplayGeometry() : this.engine.computeAllDisplayGeometry();
             if (this.onCommitTransform) this.onCommitTransform();
             this.draw();
             e.preventDefault();
@@ -2675,7 +2675,7 @@
           if (modifiers.shift) delta = Math.round(delta / 15) * 15;
           mirror.angle = drag.startAngle + delta;
         }
-        this.engine.computeAllDisplayGeometry();
+        this.onComputeDisplayGeometry ? this.onComputeDisplayGeometry() : this.engine.computeAllDisplayGeometry();
         this.draw();
         return;
       }

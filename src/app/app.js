@@ -47,6 +47,7 @@
       };
       this.renderer.onCommitTransform = () => this.pushHistory();
       this.renderer.onDuplicateLayer = () => this.pushHistory();
+      this.renderer.onComputeDisplayGeometry = () => this.computeDisplayGeometry();
       this.history = [];
       this.redoStack = [];
       this.maxHistory = SETTINGS.undoSteps ?? 20;
@@ -539,6 +540,38 @@
       dist.innerText = s.distance;
       time.innerText = s.time;
       if (lines) lines.innerText = s.lines?.toString?.() || '0';
+    }
+
+    computeDisplayGeometry() {
+      this.engine.computeAllDisplayGeometry();
+    }
+
+    addModifierLayer(type) {
+      return this.engine.addModifierLayer(type);
+    }
+
+    optimizeLayers(targets, options) {
+      return this.engine.optimizeLayers(targets, options);
+    }
+
+    getSelectedLayers() {
+      return this.renderer?.getSelectedLayers?.() || [];
+    }
+
+    setSelection(ids, primaryId) {
+      this.renderer?.setSelection(ids, primaryId);
+    }
+
+    hexToRgb(hex) {
+      return this.renderer?.hexToRgb?.(hex) || { r: 56, g: 189, b: 248 };
+    }
+
+    getComplementRgb(rgb) {
+      return this.renderer?.getComplementRgb?.(rgb) || { r: 255 - rgb.r, g: 255 - rgb.g, b: 255 - rgb.b };
+    }
+
+    rgbToCss(rgb, alpha = 1) {
+      return this.renderer?.rgbToCss?.(rgb, alpha) || `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
     }
   }
 

@@ -6050,7 +6050,7 @@
       const scope = SETTINGS.optimizationScope || 'all';
       let targets = [];
       if (scope === 'selected') {
-        targets = this.app.renderer?.getSelectedLayers?.() || [];
+        targets = this.app.getSelectedLayers();
       } else if (scope === 'all') {
         targets = this.app.engine.layers.filter((layer) => !layer.isGroup);
       } else {
@@ -6076,7 +6076,7 @@
       if (!runOptions.config && targets.length > 1) {
         runOptions.config = clone(this.app.engine.ensureLayerOptimization(targets[0]));
       }
-      const map = this.app.engine.optimizeLayers(targets, runOptions);
+      const map = this.app.optimizeLayers(targets, runOptions);
       return {
         targets,
         targetIds,
@@ -6303,15 +6303,15 @@
       const thicknessInput = root.querySelector('#export-legend-thickness');
       const overlayColor = state.overlayColor || SETTINGS.optimizationOverlayColor || '#38bdf8';
       const renderer = this.app.renderer;
-      const baseRgb = renderer?.hexToRgb?.(overlayColor) || { r: 56, g: 189, b: 248 };
+      const baseRgb = this.app.hexToRgb(overlayColor);
       const lineSortLayers = this.getOptimizationTargets();
       const secondary = state.lineSortSecondaryColor || renderer?.getLineSortOverlaySecondaryColor?.(lineSortLayers);
-      const endRgb = secondary ? renderer?.hexToRgb?.(secondary) : renderer?.getComplementRgb?.(baseRgb);
-      const endColor = secondary || (renderer?.rgbToCss ? (() => {
-        const c = renderer.getComplementRgb(baseRgb);
+      const endRgb = secondary ? this.app.hexToRgb(secondary) : this.app.getComplementRgb(baseRgb);
+      const endColor = secondary || (() => {
+        const c = this.app.getComplementRgb(baseRgb);
         const toHex = (v) => Math.round(v).toString(16).padStart(2, '0');
         return `#${toHex(c.r)}${toHex(c.g)}${toHex(c.b)}`;
-      })() : '#c74307');
+      })();
       const syncPill = (btn, color) => {
         if (!btn) return;
         btn.textContent = color.toUpperCase();
@@ -13478,7 +13478,7 @@
     refreshModifierLayer(layer, options = {}) {
       const { rebuildControls = true } = options;
       if (!layer) return;
-      this.app.engine.computeAllDisplayGeometry();
+      this.app.computeDisplayGeometry();
       this.renderLayers();
       if (rebuildControls) this.buildControls();
       this.updateFormula();
@@ -13510,12 +13510,12 @@
       remaining.splice(engineInsert, 0, ...moveEngineOrder);
       this.app.engine.layers = remaining;
       this.normalizeGroupOrder();
-      this.app.engine.computeAllDisplayGeometry();
+      this.app.computeDisplayGeometry();
 
-      if (selectAssigned && this.app.renderer) {
+      if (selectAssigned) {
         const ids = moveIds.slice();
         const nextPrimary = ids.includes(primaryId) ? primaryId : ids[ids.length - 1] || parentId;
-        this.app.renderer.setSelection(ids.length ? ids : [parentId], nextPrimary);
+        this.app.setSelection(ids.length ? ids : [parentId], nextPrimary);
         this.app.engine.activeLayerId = nextPrimary || parentId;
       }
       if (captureHistory && this.app.pushHistory) this.app.pushHistory();
@@ -13541,12 +13541,12 @@
         this.app.engine.layers = nextEngineOrder.map((id) => map.get(id)).filter(Boolean);
       }
       this.normalizeGroupOrder();
-      this.app.engine.computeAllDisplayGeometry();
+      this.app.computeDisplayGeometry();
 
-      if (selectAssigned && this.app.renderer) {
+      if (selectAssigned) {
         const ids = moveIds.slice();
         const nextPrimary = ids.includes(primaryId) ? primaryId : ids[ids.length - 1] || null;
-        this.app.renderer.setSelection(ids, nextPrimary);
+        this.app.setSelection(ids, nextPrimary);
         this.app.engine.activeLayerId = nextPrimary;
       }
       if (captureHistory && this.app.pushHistory) this.app.pushHistory();
@@ -13555,12 +13555,12 @@
     }
 
     insertMirrorModifier() {
-      const selectedLayers = (this.app.renderer?.getSelectedLayers?.() || []).filter((layer) => layer && !layer.isGroup);
-      const id = this.app.engine.addModifierLayer('mirror');
+      const selectedLayers = this.app.getSelectedLayers().filter((layer) => layer && !layer.isGroup);
+      const id = this.app.addModifierLayer('mirror');
       if (selectedLayers.length) {
         this.assignLayersToParent(id, selectedLayers);
       }
-      if (this.app.renderer) this.app.renderer.setSelection([id], id);
+      this.app.setSelection([id], id);
       this.app.engine.activeLayerId = id;
       if (this.app.pushHistory) this.app.pushHistory();
       this.renderLayers();
@@ -13944,7 +13944,7 @@
     refreshMaskingViews(options = {}) {
       const { preserveOpen = true } = options;
       if (!preserveOpen) this.openMaskLayerId = null;
-      this.app.engine.computeAllDisplayGeometry();
+      this.app.computeDisplayGeometry();
       this.renderLayers();
       this.buildControls();
       this.updateFormula();
@@ -16971,7 +16971,7 @@
           visibilityEl.onchange = (e) => {
             if (this.app.pushHistory) this.app.pushHistory();
             l.visible = e.target.checked;
-            this.app.engine.computeAllDisplayGeometry();
+            this.app.computeDisplayGeometry();
             this.renderLayers();
             this.buildControls();
             this.app.render();
@@ -21582,9 +21582,9 @@
               if (idx === 0) return;
               layer.optimization = clone(snapshot);
             });
-            this.app.engine.optimizeLayers(scopedTargets, { config: snapshot, includePlotterOptimize: true });
+            this.app.optimizeLayers(scopedTargets, { config: snapshot, includePlotterOptimize: true });
           } else {
-            this.app.engine.optimizeLayers(scopedTargets, { config: baseConfig, includePlotterOptimize: true });
+            this.app.optimizeLayers(scopedTargets, { config: baseConfig, includePlotterOptimize: true });
           }
           this.app.render();
           updateStats();
@@ -22737,9 +22737,7 @@
         return path.map((pt) => `${quant(pt.x)},${quant(pt.y)}`).join('|');
       };
 
-      if (this.app.engine.computeAllDisplayGeometry) {
-        this.app.engine.computeAllDisplayGeometry();
-      }
+      this.app.computeDisplayGeometry();
 
       const optimizationTargetIds = useOptimized
         ? (typeof this.optimizeTargetsForCurrentScope === 'function'
