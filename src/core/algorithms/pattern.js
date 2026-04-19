@@ -108,6 +108,149 @@
     return Number.isFinite(num) ? num : fallback;
   };
 
+  const clonePath = (path = []) => {
+    const next = Array.isArray(path) ? path.map((pt) => ({ ...pt })) : [];
+    if (path?.meta) next.meta = { ...path.meta };
+    return next;
+  };
+
+  const isClosedPath = (path = []) => {
+    if (!Array.isArray(path) || path.length < 3) return false;
+    const first = path[0];
+    const last = path[path.length - 1];
+    if (!first || !last) return false;
+    return Math.hypot(first.x - last.x, first.y - last.y) < 0.01;
+  };
+
+  const mergeTouchingChains = (inputPaths = []) => {
+    const snap = (v) => Math.round(v * 1000) / 1000;
+    const keyForPoint = (pt) => `${snap(pt.x)},${snap(pt.y)}`;
+    const active = inputPaths
+      .filter((path) => Array.isArray(path) && path.length >= 2)
+      .map((path) => clonePath(path));
+    const byEnd = new Map();
+    const byStart = new Map();
+    const indexPath = (pathIndex) => {
+      const path = active[pathIndex];
+      if (!path || path.length < 2) return;
+      byStart.set(keyForPoint(path[0]), pathIndex);
+      byEnd.set(keyForPoint(path[path.length - 1]), pathIndex);
+    };
+    const clearIndex = (path) => {
+      if (!path || path.length < 2) return;
+      byStart.delete(keyForPoint(path[0]));
+      byEnd.delete(keyForPoint(path[path.length - 1]));
+    };
+    for (let i = 0; i < active.length; i += 1) indexPath(i);
+
+    let mergedAny = true;
+    while (mergedAny) {
+      mergedAny = false;
+      for (let i = 0; i < active.length; i += 1) {
+        const a = active[i];
+        if (!a || a.length < 2) continue;
+        const aStartKey = keyForPoint(a[0]);
+        const aEndKey = keyForPoint(a[a.length - 1]);
+
+        let j = byStart.get(aEndKey);
+        if (j !== undefined && j !== i && active[j]) {
+          const b = active[j];
+          const merged = a.concat(b.slice(1));
+          clearIndex(a);
+          clearIndex(b);
+          active[i] = merged;
+          active[j] = null;
+          indexPath(i);
+          mergedAny = true;
+          continue;
+        }
+
+        j = byEnd.get(aEndKey);
+        if (j !== undefined && j !== i && active[j]) {
+          const b = active[j].slice().reverse();
+          const merged = a.concat(b.slice(1));
+          clearIndex(a);
+          clearIndex(active[j]);
+          active[i] = merged;
+          active[j] = null;
+          indexPath(i);
+          mergedAny = true;
+          continue;
+        }
+
+        j = byEnd.get(aStartKey);
+        if (j !== undefined && j !== i && active[j]) {
+          const b = active[j];
+          const merged = b.concat(a.slice(1));
+          clearIndex(a);
+          clearIndex(b);
+          active[i] = merged;
+          active[j] = null;
+          indexPath(i);
+          mergedAny = true;
+          continue;
+        }
+
+        j = byStart.get(aStartKey);
+        if (j !== undefined && j !== i && active[j]) {
+          const b = active[j].slice().reverse();
+          const merged = b.concat(a.slice(1));
+          clearIndex(a);
+          clearIndex(active[j]);
+          active[i] = merged;
+          active[j] = null;
+          indexPath(i);
+          mergedAny = true;
+          continue;
+        }
+      }
+    }
+
+    return active
+      .filter((path) => Array.isArray(path) && path.length >= 2)
+      .map((path) => {
+        const first = path[0];
+        const last = path[path.length - 1];
+        if (first && last && keyForPoint(first) === keyForPoint(last)) return path;
+        return path;
+      });
+  };
+
+  const traceFilledGroupVisibleBoundaries = (paths = []) => {
+    const PathBoolean = window.Vectura?.PathBoolean || {};
+    const segmentPathByPolygons = PathBoolean.segmentPathByPolygons;
+    if (typeof segmentPathByPolygons !== 'function') return paths;
+
+    const closedPaths = (paths || []).filter((path) => isClosedPath(path));
+    const passthrough = (paths || []).filter((path) => !isClosedPath(path)).map((path) => clonePath(path));
+    if (closedPaths.length < 2) return paths;
+
+    const outsideChains = [];
+    closedPaths.forEach((path, index) => {
+      const others = closedPaths.filter((_, otherIndex) => otherIndex !== index);
+      const clipped = segmentPathByPolygons(path, others, { closed: false }) || [];
+      clipped.forEach((segment) => {
+        if (Array.isArray(segment) && segment.length >= 2) outsideChains.push(segment);
+      });
+    });
+    if (!outsideChains.length) return passthrough;
+
+    const withoutSharedEdges = removeSeamSegments(outsideChains);
+    const merged = mergeTouchingChains(withoutSharedEdges);
+    if (!merged.length) return passthrough;
+
+    const normalized = merged.map((path) => {
+      const next = clonePath(path);
+      const first = next[0];
+      const last = next[next.length - 1];
+      if (first && last && Math.hypot(first.x - last.x, first.y - last.y) < 0.01) {
+        next[next.length - 1] = { ...first };
+      }
+      return next;
+    });
+    return passthrough.concat(normalized);
+  };
+
   const svgElementToPaths = (el, offsetX = 0, offsetY = 0, vbMinX = 0, vbMinY = 0, vbW = 0, vbH = 0) => {
     if (!el) return [];
     const tag = el.tagName.toLowerCase();
@@ -282,12 +425,16 @@
       
       // Determine distinct identifier for this element based on styles to group them logically
       const identifier = `${stroke}|${fill}`;
+      const fillVisible = fill && fill !== 'none';
+      const strokeVisible = stroke && stroke !== 'none';
       
       const paths = svgElementToPaths(clone, vbMinX, vbMinY, vbMinX, vbMinY, vbW, vbH);
       
       elementsData.push({
          index,
          identifier,
+         fillVisible,
+         strokeVisible,
          paths
       });
       clone.remove();
@@ -306,11 +453,17 @@
         groups.get(item.identifier).push(...item.paths);
     });
     
-    const parsedGroups = orderedKeys.map((key, i) => ({
-       id: `el-${i}`,
-       label: `Element ${i+1}`,
-       paths: groups.get(key)
-    }));
+    const parsedGroups = orderedKeys.map((key, i) => {
+      const groupPaths = groups.get(key) || [];
+      const sourceItems = elementsData.filter((item) => item.identifier === key);
+      const isFillOnly = sourceItems.some((item) => item.fillVisible) && sourceItems.every((item) => !item.strokeVisible);
+      return {
+        id: `el-${i}`,
+        label: `Element ${i+1}`,
+        isFillOnly,
+        paths: isFillOnly ? traceFilledGroupVisibleBoundaries(groupPaths) : groupPaths,
+      };
+    });
 
     const result = { vbW, vbH, groups: parsedGroups };
     svgCache.set(patternId, result);
@@ -562,70 +715,12 @@
       if (cur && cur.length >= 2) { if (path.meta) cur.meta = path.meta; chains.push(cur); }
     }
 
-    // Reconnect open chains that share endpoints using hash-map for O(n) lookup.
-    // Handles end→start (direct) and end→end (reverse b) connections.
-    const active = chains.slice();
-    const byEnd = new Map();
-    const byStart = new Map();
-    for (let i = 0; i < active.length; i++) {
-      const p = active[i];
-      if (!p || p.length < 2) continue;
-      byEnd.set(pk(p[p.length - 1]), i);
-      byStart.set(pk(p[0]), i);
-    }
-
-    let anyMerge = true;
-    while (anyMerge) {
-      anyMerge = false;
-      for (let i = 0; i < active.length; i++) {
-        const a = active[i];
-        if (!a || a.length < 2) continue;
-        const aEndKey = pk(a[a.length - 1]);
-
-        // end→start: b starts where a ends
-        let j = byStart.get(aEndKey);
-        if (j !== undefined && j !== i && active[j]) {
-          const b = active[j];
-          const merged = a.concat(b.slice(1));
-          if (a.meta) merged.meta = a.meta;
-          byEnd.delete(aEndKey);
-          byStart.delete(pk(b[0]));
-          byEnd.delete(pk(b[b.length - 1]));
-          byStart.delete(pk(a[0]));
-          active[i] = merged;
-          active[j] = null;
-          byStart.set(pk(merged[0]), i);
-          byEnd.set(pk(merged[merged.length - 1]), i);
-          anyMerge = true;
-          continue;
-        }
-
-        // end→end: b ends where a ends — reverse b then append
-        j = byEnd.get(aEndKey);
-        if (j !== undefined && j !== i && active[j]) {
-          const b = active[j];
-          const bRev = b.slice().reverse();
-          const merged = a.concat(bRev.slice(1));
-          if (a.meta) merged.meta = a.meta;
-          byEnd.delete(aEndKey);
-          byEnd.delete(pk(b[b.length - 1]));
-          byStart.delete(pk(b[0]));
-          byStart.delete(pk(a[0]));
-          active[i] = merged;
-          active[j] = null;
-          byStart.set(pk(merged[0]), i);
-          byEnd.set(pk(merged[merged.length - 1]), i);
-          anyMerge = true;
-          continue;
-        }
-      }
-    }
-
-    return active.filter(p => p && p.length >= 2);
+    return mergeTouchingChains(chains).filter(p => p && p.length >= 2);
   };
 
   // Expose for unit testing
   window.Vectura.AlgorithmRegistry._removeSeamSegments = removeSeamSegments;
+  window.Vectura.AlgorithmRegistry._traceFilledGroupVisibleBoundaries = traceFilledGroupVisibleBoundaries;
 
   window.Vectura.AlgorithmRegistry.pattern = {
       generate: (p, rng, noise, bounds) => {

@@ -20,6 +20,7 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 - Added an Illustrator-style Export SVG modal with a large left-side preview, right-side export settings, bottom-right actions, and preview zoom/pan controls.
 
 ### Changed
+- Fixed fill-built Pattern SVG extraction so the renderer now traces the visible filled silhouette instead of outlining every overlapping subpath independently, which removes stray internal circles/diagonals in patterns such as `Anchors Away`, `Dominos`, `Autumn`, and `Bathroom Floor`.
 - Fixed Pattern-layer texture initialization so the inline Texture Designer now renders the effective default texture immediately, including the initial `4 Point Stars` fallback case before any manual reselection.
 - Moved the inline Pattern `Texture Designer` directly below the texture selection grid and above the `Scale` control.
 - Moved export and optimization controls out of Document Setup into the Export SVG modal, while keeping export behavior dictated strictly by the existing `SETTINGS` and layer optimization state.

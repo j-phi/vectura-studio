@@ -25,6 +25,7 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
+- Fixed fill-built Pattern extraction so overlapping SVG fill subpaths now collapse to the visible silhouette boundary instead of rendering internal overlap artifacts, and added unit plus Playwright regressions for the affected Hero patterns.
 - Fixed the Pattern-layer Texture Designer initialization so the default fallback texture now appears immediately on first open, and moved the designer directly below the texture selection grid above `Scale`.
 - Moved export and optimization controls out of Document Setup into a dedicated Illustrator-style Export SVG modal with a left-side preview, right-side settings, bottom-right actions, and zoom/pan inspection.
 - Fixed the Export SVG modal `Line Sort` overlay preview so legend colors/thickness and preview mode are modal-local only; the primary canvas no longer shows export-preview overlay state, and cancel fully clears it.

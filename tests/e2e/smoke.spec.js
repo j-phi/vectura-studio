@@ -39,6 +39,59 @@ const captureActiveLayerGeometry = async (page) =>
   });
 
 test.describe('Vectura smoke interactions', () => {
+  test('fill-built hero patterns do not retain swallowed subpaths in extracted boundaries', async ({ page }) => {
+    await page.goto('/');
+
+    const diagnostics = await page.evaluate(() => {
+      const pointInPoly = window.Vectura.AlgorithmRegistry._polyContainsPoint;
+      const centerPoint = (path = []) => {
+        const sum = path.reduce(
+          (acc, pt) => ({
+            x: acc.x + pt.x,
+            y: acc.y + pt.y,
+          }),
+          { x: 0, y: 0 }
+        );
+        const count = Math.max(1, path.length);
+        return {
+          x: sum.x / count,
+          y: sum.y / count,
+        };
+      };
+
+      const ids = ['hero_anchors-away', 'hero_dominos', 'hero_autumn', 'hero_bathroom-floor'];
+      const output = {};
+      ids.forEach((id) => {
+        const data = window.Vectura.AlgorithmRegistry.patternGetGroups(id);
+        const paths = (data?.groups || []).flatMap((group) => group.paths || []);
+        const enclosedCount = paths.filter((path, index) => {
+          const sample = centerPoint(path);
+          return paths.some((other, otherIndex) =>
+            otherIndex !== index
+            && Array.isArray(other)
+            && other.length >= 4
+            && pointInPoly(sample, other)
+          );
+        }).length;
+        output[id] = {
+          pathCount: paths.length,
+          enclosedCount,
+          shortPaths: paths.filter((path) => (path?.length || 0) < 20).length,
+        };
+      });
+      return output;
+    });
+
+    expect(diagnostics['hero_anchors-away'].enclosedCount).toBe(0);
+    expect(diagnostics['hero_autumn'].enclosedCount).toBe(0);
+    expect(diagnostics['hero_bathroom-floor'].enclosedCount).toBe(0);
+
+    expect(diagnostics['hero_anchors-away'].pathCount).toBeLessThanOrEqual(4);
+    expect(diagnostics['hero_dominos'].pathCount).toBeLessThanOrEqual(24);
+    expect(diagnostics['hero_dominos'].shortPaths).toBeLessThan(22);
+    expect(diagnostics['hero_bathroom-floor'].pathCount).toBeLessThan(22);
+  });
+
   test('core interactions remain functional on desktop and touch tablet', async ({ page }, testInfo) => {
     const pageErrors = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
