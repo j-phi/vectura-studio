@@ -25,7 +25,13 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
+- Fixed the Pattern-layer Texture Designer initialization so the default fallback texture now appears immediately on first open, and moved the designer directly below the texture selection grid above `Scale`.
 - Moved export and optimization controls out of Document Setup into a dedicated Illustrator-style Export SVG modal with a left-side preview, right-side settings, bottom-right actions, and zoom/pan inspection.
+- Fixed the Export SVG modal `Line Sort` overlay preview so legend colors/thickness and preview mode are modal-local only; the primary canvas no longer shows export-preview overlay state, and cancel fully clears it.
+- Tightened Export SVG optimization header layout so section info icons stay immediately to the right of their titles.
+- Fixed Export SVG section-header info buttons so they attach to the title label instead of the reorder grip dots.
+- Adjusted Export SVG section-header info buttons so they render immediately after the title span as sibling elements.
+- Fixed Export SVG section-header info panes so they expand below the full header bar instead of inside the header row.
 - Fixed `Line Sort` `Nearest` so `Horizontal` and `Vertical` now enforce real sweep ordering instead of only picking the initial seed path, and added integration coverage for directional plus unconstrained nearest-neighbor traversal.
 - Added Document Setup project-state units (`metric` / `imperial`), unit-aware paper/margin/stroke/tolerance controls, blueprint-style paper dimensions outside the canvas, a `Clear Saved Preferences` action for cookie-backed UI state, `Cmd/Ctrl + K` toggle behavior, and regression coverage for the full workflow.
 - Fixed multi-layer `Line Sort` so shared optimization scope now carries through preview, stats, overlay rendering, and optimized SVG export instead of degrading to per-layer sorting.

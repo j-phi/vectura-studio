@@ -2208,6 +2208,7 @@
         ],
       },
       { type: 'patternSelect' },
+      { type: 'patternDesignerInline' },
       { id: 'scale', label: 'Scale', type: 'range', min: 0.1, max: 10, step: 0.1 },
       { id: 'originX', label: 'X Origin Offset', type: 'range', min: -500, max: 500, step: 1 },
       { id: 'originY', label: 'Y Origin Offset', type: 'range', min: -500, max: 500, step: 1 },
@@ -2227,7 +2228,6 @@
       { id: 'removeSeams', label: 'Remove seams at join', type: 'checkbox' },
       { id: 'curves', label: 'Curves', type: 'checkbox' },
       { id: 'tileEdgeCurves', label: 'Curves at tile edges', type: 'checkbox', showIf: (p) => !!p.curves },
-      { type: 'patternDesignerInline' },
       { type: 'patternSubPens' },
     ],
     flowfield: [
@@ -17984,6 +17984,7 @@
         restoreLeftPanelScroll();
         return;
       }
+      this.ensurePatternLayerSelection(layer);
 
       const moduleSelect = getEl('generator-module');
       const seed = getEl('inp-seed');
@@ -22914,9 +22915,23 @@
       this.inlinePatternDesigner = null;
     }
 
+    ensurePatternLayerSelection(layer) {
+      if (!layer || layer.type !== 'pattern') return null;
+      if (!layer.params || typeof layer.params !== 'object') layer.params = {};
+      const patterns = Array.isArray(window.Vectura?.PATTERNS) ? window.Vectura.PATTERNS : [];
+      if (!patterns.length) return null;
+      const currentId = `${layer.params.patternId || ''}`;
+      const hasCurrent = patterns.some((pattern) => pattern?.id === currentId);
+      if (!hasCurrent) {
+        layer.params.patternId = patterns[0].id;
+      }
+      return layer.params.patternId;
+    }
+
     mountInlinePatternDesigner(layer, mountTarget) {
       if (!layer || !mountTarget) return;
       this.destroyInlinePatternDesigner();
+      this.ensurePatternLayerSelection(layer);
 
       const root = document.createElement('div');
       root.className = 'pattern-designer-inline';
@@ -23159,6 +23174,7 @@
         });
         return;
       }
+      this.ensurePatternLayerSelection(layer);
       this.closePatternDesigner();
       const root = document.createElement('div');
       root.id = 'pattern-designer-window';

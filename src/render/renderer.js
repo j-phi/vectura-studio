@@ -340,6 +340,7 @@
       this.activePointerId = null;
       this.touchPointers = new Map();
       this.touchGesture = null;
+      this.exportModalOpen = false;
       this.ready = Boolean(this.canvas && this.ctx);
 
       if (!this.ready) {
@@ -1827,7 +1828,7 @@
         });
       };
       const drawOptimizedOverlay = () => {
-        if (!showOptimizedOverlay) return;
+        if (!showOptimizedOverlay || this.exportModalOpen) return;
         const overlayColor = SETTINGS.optimizationOverlayColor || '#38bdf8';
         const overlayWidth = Math.max(0.05, SETTINGS.optimizationOverlayWidth ?? 0.2);
         const overlayItems = [];
@@ -2182,7 +2183,7 @@
       if (this.isScissor && this.scissorStart && this.scissorEnd) this.drawScissorPreview();
       if (this.lightSource) this.drawLightSource();
       this.ctx.restore();
-      if (!showOptimizedOverlay) this.updateOptimizationOverlayLegend(false);
+      if (!showOptimizedOverlay || this.exportModalOpen) this.updateOptimizationOverlayLegend(false);
     }
 
     drawGridOverlay(profile) {

@@ -56,6 +56,7 @@ Vectura Studio is a physics-inspired vector generator for plotter-ready line art
 - Custom Petalis preset reset now clears shading (`shadings=[]`) instead of re-enabling legacy shading toggles.
 - Pen palette with assignable colors/widths, reorderable list, drag-to-assign per layer or selection, double-click-to-apply on selected layers, plus palette selection, collapsible panel controls, and add/remove actions.
 - Illustrator-style `Export SVG` modal with a large left-side preview pane, right-side export settings, bottom-right `Cancel` / `Export SVG` actions, and direct zoom/pan preview inspection.
+- Export-preview-only `Line Sort` overlay styling stays scoped to the Export SVG modal, so legend colors/thickness and overlay/replace preview state never leak into the main canvas.
 - Plotter optimization toggle with adjustable tolerance (mm) to remove fully overlapping paths per pen before export.
 - Multi-layer `Line Sort` now respects the selected optimization scope across preview, stats, overlay rendering, and optimized SVG export.
 - The export modal owns `Export Settings`, optimization scope/preview/export toggles, and optimization step cards including `Line Sort`.
