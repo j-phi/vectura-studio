@@ -124,6 +124,11 @@
     return next;
   };
 
+  const dedupeSequentialPoints = (path = [], tolerance = 1e-6) =>
+    (path || []).filter((pt, index, arr) =>
+      index === 0 || Math.hypot(pt.x - arr[index - 1].x, pt.y - arr[index - 1].y) > tolerance
+    );
+
   const isClosedPath = (path = []) => {
     if (!Array.isArray(path) || path.length < 3) return false;
     const first = path[0];
@@ -133,7 +138,7 @@
   };
 
   const mergeTouchingChains = (inputPaths = []) => {
-    const snap = (v) => Math.round(v * 1000) / 1000;
+    const snap = (v) => Math.round(v * 20) / 20;
     const keyForPoint = (pt) => `${snap(pt.x)},${snap(pt.y)}`;
     const active = inputPaths
       .filter((path) => Array.isArray(path) && path.length >= 2)
@@ -249,6 +254,171 @@
       });
   };
 
+  const choosePatternFillResolution = (vbW = 0, vbH = 0, complexity = 1) => {
+    const aspectSafeW = Math.max(1, Number(vbW) || 1);
+    const aspectSafeH = Math.max(1, Number(vbH) || 1);
+    const baseCellSize = complexity > 24 ? 0.32 : 0.4;
+    const maxCells = complexity > 24 ? 448 : 384;
+    const minCells = 64;
+    const nx = Math.max(minCells, Math.min(maxCells, Math.round(aspectSafeW / baseCellSize)));
+    const ny = Math.max(minCells, Math.min(maxCells, Math.round(aspectSafeH / baseCellSize)));
+    return { nx, ny };
+  };
+
+  const simplifyCollinearPoints = (path = [], tolerance = 1e-6) => {
+    if (!Array.isArray(path) || path.length < 3) return path;
+    const closed = isClosedPath(path);
+    const working = closed ? path.slice(0, -1) : path.slice();
+    if (working.length < 3) return path;
+    const simplified = [];
+    for (let i = 0; i < working.length; i += 1) {
+      const prev = working[(i - 1 + working.length) % working.length];
+      const curr = working[i];
+      const next = working[(i + 1) % working.length];
+      if (!closed && (i === 0 || i === working.length - 1)) {
+        simplified.push({ ...curr });
+        continue;
+      }
+      const cross = (curr.x - prev.x) * (next.y - curr.y) - (curr.y - prev.y) * (next.x - curr.x);
+      if (Math.abs(cross) > tolerance) simplified.push({ ...curr });
+    }
+    if (closed && simplified.length) simplified.push({ ...simplified[0] });
+    return simplified.length >= 2 ? simplified : path;
+  };
+
+  const perpendicularDistanceToSegment = (point, start, end) => {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq < 1e-9) return Math.hypot(point.x - start.x, point.y - start.y);
+    const t = ((point.x - start.x) * dx + (point.y - start.y) * dy) / lenSq;
+    const clamped = Math.max(0, Math.min(1, t));
+    const projX = start.x + dx * clamped;
+    const projY = start.y + dy * clamped;
+    return Math.hypot(point.x - projX, point.y - projY);
+  };
+
+  const simplifyPathRdp = (points = [], tolerance = 0) => {
+    if (!Array.isArray(points) || points.length <= 2 || tolerance <= 0) return points;
+    let maxDistance = -1;
+    let splitIndex = -1;
+    for (let i = 1; i < points.length - 1; i += 1) {
+      const distance = perpendicularDistanceToSegment(points[i], points[0], points[points.length - 1]);
+      if (distance > maxDistance) {
+        maxDistance = distance;
+        splitIndex = i;
+      }
+    }
+    if (maxDistance <= tolerance || splitIndex === -1) return [points[0], points[points.length - 1]];
+    const left = simplifyPathRdp(points.slice(0, splitIndex + 1), tolerance);
+    const right = simplifyPathRdp(points.slice(splitIndex), tolerance);
+    return left.slice(0, -1).concat(right);
+  };
+
+  const normalizeContourPath = (path = [], vbMinX = 0, vbMinY = 0, vbW = 0, vbH = 0, cellW = 1, cellH = 1) => {
+    if (!Array.isArray(path) || path.length < 2) return path;
+    const boundaryTol = Math.max(cellW, cellH) * 0.35;
+    const snapBoundaryValue = (value, low, high) => {
+      if (Math.abs(value - low) <= boundaryTol) return low;
+      if (Math.abs(value - high) <= boundaryTol) return high;
+      return value;
+    };
+    let next = path.map((pt) => ({
+      x: snapBoundaryValue(pt.x, vbMinX, vbMinX + vbW),
+      y: snapBoundaryValue(pt.y, vbMinY, vbMinY + vbH),
+    }));
+    next = dedupeSequentialPoints(next);
+    const first = next[0];
+    const last = next[next.length - 1];
+    if (first && last && Math.hypot(first.x - last.x, first.y - last.y) < Math.max(cellW, cellH) * 0.5) {
+      next[next.length - 1] = { ...first };
+    }
+    next = simplifyCollinearPoints(next, 1e-5);
+    if (isClosedPath(next)) {
+      const open = next.slice(0, -1);
+      const simplified = simplifyPathRdp(open, Math.max(cellW, cellH) * 0.12);
+      next = dedupeSequentialPoints(simplified);
+      if (next.length >= 3) next.push({ ...next[0] });
+    } else if (next.length >= 2) {
+      next = dedupeSequentialPoints(simplifyPathRdp(next, Math.max(cellW, cellH) * 0.12));
+    }
+    return simplifyCollinearPoints(next, 1e-5);
+  };
+
+  const tracePeriodicFillBoundaries = (contains, vbW = 0, vbH = 0, options = {}) => {
+    if (typeof contains !== 'function') return [];
+    const vbMinX = Number(options.vbMinX) || 0;
+    const vbMinY = Number(options.vbMinY) || 0;
+    const complexity = Math.max(1, Number(options.complexity) || 1);
+    const periodic = options.periodic !== false;
+    const chosen = choosePatternFillResolution(vbW, vbH, complexity);
+    const nx = Math.max(2, Number(options.nx) || chosen.nx);
+    const ny = Math.max(2, Number(options.ny) || chosen.ny);
+    const cellW = vbW / nx;
+    const cellH = vbH / ny;
+    const occupancy = Array.from({ length: ny }, () => Array(nx).fill(false));
+    for (let j = 0; j < ny; j += 1) {
+      for (let i = 0; i < nx; i += 1) {
+        const x = vbMinX + ((i + 0.5) / nx) * vbW;
+        const y = vbMinY + ((j + 0.5) / ny) * vbH;
+        occupancy[j][i] = !!contains(x, y);
+      }
+    }
+
+    const segments = [];
+    const xAt = (column) => vbMinX + (column / nx) * vbW;
+    const yAt = (row) => vbMinY + (row / ny) * vbH;
+    const pushSegment = (a, b) => {
+      if (Math.hypot(a.x - b.x, a.y - b.y) < 1e-9) return;
+      segments.push([a, b]);
+    };
+
+    for (let j = 0; j < ny; j += 1) {
+      const topRow = yAt(j);
+      const bottomRow = yAt(j + 1);
+      for (let i = 0; i < nx; i += 1) {
+        if (!occupancy[j][i]) continue;
+        const leftIndex = periodic ? (i - 1 + nx) % nx : i - 1;
+        const rightIndex = periodic ? (i + 1) % nx : i + 1;
+        const aboveIndex = periodic ? (j - 1 + ny) % ny : j - 1;
+        const belowIndex = periodic ? (j + 1) % ny : j + 1;
+        const leftX = xAt(i);
+        const rightX = xAt(i + 1);
+        const leftFilled = leftIndex >= 0 && leftIndex < nx ? occupancy[j][leftIndex] : false;
+        const rightFilled = rightIndex >= 0 && rightIndex < nx ? occupancy[j][rightIndex] : false;
+        const aboveFilled = aboveIndex >= 0 && aboveIndex < ny ? occupancy[aboveIndex][i] : false;
+        const belowFilled = belowIndex >= 0 && belowIndex < ny ? occupancy[belowIndex][i] : false;
+        if (!leftFilled) pushSegment({ x: leftX, y: bottomRow }, { x: leftX, y: topRow });
+        if (!rightFilled) pushSegment({ x: rightX, y: topRow }, { x: rightX, y: bottomRow });
+        if (!aboveFilled) pushSegment({ x: leftX, y: topRow }, { x: rightX, y: topRow });
+        if (!belowFilled) pushSegment({ x: rightX, y: bottomRow }, { x: leftX, y: bottomRow });
+      }
+    }
+
+    if (!segments.length) return [];
+    const merged = mergeTouchingChains(segments);
+    return merged
+      .filter((path) => Array.isArray(path) && path.length >= 2)
+      .map((path) => normalizeContourPath(path, vbMinX, vbMinY, vbW, vbH, cellW, cellH))
+      .filter((path) => Array.isArray(path) && path.length >= 2);
+  };
+
+  const traceFilledElementsVisibleBoundaries = (elements = [], vbMinX = 0, vbMinY = 0, vbW = 0, vbH = 0) => {
+    const fillElements = (elements || []).filter((el) => typeof el?.isPointInFill === 'function');
+    if (!fillElements.length || vbW <= 0 || vbH <= 0) return [];
+    const pointForFill = (x, y) => (typeof DOMPoint === 'function' ? new DOMPoint(x, y) : { x, y });
+    const contains = (x, y) => {
+      const pt = pointForFill(x, y);
+      return fillElements.some((el) => el.isPointInFill(pt));
+    };
+    return tracePeriodicFillBoundaries(contains, vbW, vbH, {
+      vbMinX,
+      vbMinY,
+      complexity: fillElements.length * 6,
+      periodic: false,
+    });
+  };
+
   const traceFilledGroupVisibleBoundaries = (paths = []) => {
     const PathBoolean = window.Vectura?.PathBoolean || {};
     const segmentPathByPolygons = PathBoolean.segmentPathByPolygons;
@@ -282,114 +452,6 @@
       return next;
     });
     return passthrough.concat(normalized);
-  };
-
-  const traceFilledPathElementVisibleBoundaries = (el, offsetX = 0, offsetY = 0, vbMinX = 0, vbMinY = 0, vbW = 0, vbH = 0) => {
-    if (!el || el.tagName?.toLowerCase() !== 'path' || typeof el.isPointInFill !== 'function') return null;
-    const d = el.getAttribute('d') || '';
-    const subpathStrs = getSubpathStrings(d);
-    if (subpathStrs.length < 2) return null;
-
-    const svgContainer = el.parentElement;
-    if (!svgContainer) return null;
-
-    const matrix = typeof el.getCTM === 'function' ? el.getCTM() : null;
-    const applyMatrix = (pt) => {
-      if (!matrix) return pt;
-      return {
-        x: pt.x * matrix.a + pt.y * matrix.c + matrix.e,
-        y: pt.x * matrix.b + pt.y * matrix.d + matrix.f,
-      };
-    };
-    const applyOffset = (pt) => ({ x: pt.x - offsetX, y: pt.y - offsetY });
-    const normalizePoint = (pt) => applyOffset(applyMatrix(pt));
-
-    const dNodes = parseSvgDNodes(d);
-    const dNodesNorm = dNodes.length ? dNodes.map((pt) => normalizePoint(pt)) : [];
-    const SNAP_TOL = 1.0;
-    const BOUNDARY_TOL = 2.0;
-    const snapNodes = dNodesNorm.filter((n) =>
-      Math.abs(n.x - vbMinX) < BOUNDARY_TOL ||
-      Math.abs(n.x - vbW) < BOUNDARY_TOL ||
-      Math.abs(n.y - vbMinY) < BOUNDARY_TOL ||
-      Math.abs(n.y - vbH) < BOUNDARY_TOL
-    );
-    const snapToNodes = (pt) => {
-      for (const n of snapNodes) {
-        if (Math.hypot(pt.x - n.x, pt.y - n.y) < SNAP_TOL) return { ...n };
-      }
-      return pt;
-    };
-
-    const epsilon = 0.35;
-    const visibleSegments = [];
-    const pointForFill = (x, y) => {
-      if (typeof DOMPoint === 'function') return new DOMPoint(x, y);
-      return { x, y };
-    };
-
-    for (const subStr of subpathStrs) {
-      const tmpPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      tmpPath.setAttribute('d', subStr);
-      svgContainer.appendChild(tmpPath);
-      try {
-        const len = tmpPath.getTotalLength ? tmpPath.getTotalLength() : 0;
-        if (len <= 0) continue;
-        const steps = Math.max(24, Math.floor(len / 1.5));
-        const rawPts = [];
-        for (let i = 0; i <= steps; i += 1) {
-          const pt = tmpPath.getPointAtLength((i / steps) * len);
-          rawPts.push({ x: pt.x, y: pt.y });
-        }
-        for (let i = 0; i + 1 < rawPts.length; i += 1) {
-          const a = rawPts[i];
-          const b = rawPts[i + 1];
-          const dx = b.x - a.x;
-          const dy = b.y - a.y;
-          const segLen = Math.hypot(dx, dy);
-          if (segLen < 1e-6) continue;
-          const mx = (a.x + b.x) / 2;
-          const my = (a.y + b.y) / 2;
-          const nx = -dy / segLen;
-          const ny = dx / segLen;
-          const left = pointForFill(mx + nx * epsilon, my + ny * epsilon);
-          const right = pointForFill(mx - nx * epsilon, my - ny * epsilon);
-          const leftInside = !!el.isPointInFill(left);
-          const rightInside = !!el.isPointInFill(right);
-          if (leftInside === rightInside) continue;
-
-          const aNorm = snapToNodes(normalizePoint(a));
-          const bNorm = snapToNodes(normalizePoint(b));
-          const segment = [aNorm, bNorm].filter((pt, index, arr) =>
-            index === 0 || Math.hypot(pt.x - arr[index - 1].x, pt.y - arr[index - 1].y) > 1e-6
-          );
-          if (segment.length < 2) continue;
-          const EDGE_TOL = 0.15;
-          segment.forEach((pt) => {
-            if (
-              Math.abs(pt.x - vbMinX) < EDGE_TOL || Math.abs(pt.x - vbW) < EDGE_TOL ||
-              Math.abs(pt.y - vbMinY) < EDGE_TOL || Math.abs(pt.y - vbH) < EDGE_TOL
-            ) pt._tileEdge = true;
-          });
-          visibleSegments.push(segment);
-        }
-      } catch (err) {}
-      tmpPath.remove();
-    }
-
-    if (!visibleSegments.length) return null;
-    const withoutSharedEdges = removeSeamSegments(visibleSegments);
-    const merged = mergeTouchingChains(withoutSharedEdges);
-    if (!merged.length) return null;
-    return merged.map((path) => {
-      const next = clonePath(path);
-      const first = next[0];
-      const last = next[next.length - 1];
-      if (first && last && Math.hypot(first.x - last.x, first.y - last.y) < 0.01) {
-        next[next.length - 1] = { ...first };
-      }
-      return next;
-    });
   };
 
   const svgElementToPaths = (el, offsetX = 0, offsetY = 0, vbMinX = 0, vbMinY = 0, vbW = 0, vbH = 0) => {
@@ -574,47 +636,50 @@
       const identifier = `${stroke}|${fill}`;
       const fillVisible = fill && fill !== 'none';
       const strokeVisible = stroke && stroke !== 'none';
-      const compoundFillPaths = fillVisible && !strokeVisible
-        ? traceFilledPathElementVisibleBoundaries(clone, vbMinX, vbMinY, vbMinX, vbMinY, vbW, vbH)
-        : null;
-      const paths = compoundFillPaths || svgElementToPaths(clone, vbMinX, vbMinY, vbMinX, vbMinY, vbW, vbH);
+      const paths = (fillVisible && !strokeVisible)
+        ? []
+        : svgElementToPaths(clone, vbMinX, vbMinY, vbMinX, vbMinY, vbW, vbH);
       
       elementsData.push({
          index,
          identifier,
+         element: clone,
          fillVisible,
          strokeVisible,
-         pathsAlreadyVisible: !!compoundFillPaths,
          paths
       });
-      clone.remove();
     });
-    
-    tempSvg.remove();
-    
+
     // Group identical styled elements into logical pens
     const orderedKeys = [];
     const groups = new Map();
-    elementsData.forEach(item => {
+    const groupedItems = new Map();
+    elementsData.forEach((item) => {
         if (!groups.has(item.identifier)) {
             orderedKeys.push(item.identifier);
             groups.set(item.identifier, []);
+            groupedItems.set(item.identifier, []);
         }
         groups.get(item.identifier).push(...item.paths);
+        groupedItems.get(item.identifier).push(item);
     });
     
     const parsedGroups = orderedKeys.map((key, i) => {
       const groupPaths = groups.get(key) || [];
-      const sourceItems = elementsData.filter((item) => item.identifier === key);
+      const sourceItems = groupedItems.get(key) || [];
       const isFillOnly = sourceItems.some((item) => item.fillVisible) && sourceItems.every((item) => !item.strokeVisible);
-      const pathsAlreadyVisible = sourceItems.every((item) => item.pathsAlreadyVisible);
       return {
         id: `el-${i}`,
         label: `Element ${i+1}`,
         isFillOnly,
-        paths: isFillOnly && !pathsAlreadyVisible ? traceFilledGroupVisibleBoundaries(groupPaths) : groupPaths,
+        paths: isFillOnly
+          ? traceFilledElementsVisibleBoundaries(sourceItems.map((item) => item.element), vbMinX, vbMinY, vbW, vbH)
+          : groupPaths,
       };
     });
+
+    elementsData.forEach((item) => item.element?.remove?.());
+    tempSvg.remove();
 
     const result = { vbW, vbH, groups: parsedGroups };
     svgCache.set(patternId, result);
@@ -811,7 +876,7 @@
 
   // Remove duplicate segments that appear at tile seam boundaries, then reconnect split chains.
   const removeSeamSegments = (inputPaths) => {
-    const snap = v => Math.round(v * 10) / 10;
+    const snap = v => Math.round(v * 20) / 20;
     const pk = p => `${snap(p.x)},${snap(p.y)}`;
     const sk = (a, b) => { const ka = pk(a), kb = pk(b); return ka <= kb ? `${ka}|${kb}` : `${kb}|${ka}`; };
     const isCl = p => p.length >= 3 && pk(p[0]) === pk(p[p.length - 1]);
@@ -873,7 +938,8 @@
   window.Vectura.AlgorithmRegistry._removeSeamSegments = removeSeamSegments;
   window.Vectura.AlgorithmRegistry._mergeTouchingChains = mergeTouchingChains;
   window.Vectura.AlgorithmRegistry._traceFilledGroupVisibleBoundaries = traceFilledGroupVisibleBoundaries;
-  window.Vectura.AlgorithmRegistry._traceFilledPathElementVisibleBoundaries = traceFilledPathElementVisibleBoundaries;
+  window.Vectura.AlgorithmRegistry._tracePeriodicFillBoundaries = tracePeriodicFillBoundaries;
+  window.Vectura.AlgorithmRegistry._traceFilledElementsVisibleBoundaries = traceFilledElementsVisibleBoundaries;
 
   window.Vectura.AlgorithmRegistry.pattern = {
       generate: (p, rng, noise, bounds) => {

@@ -22240,6 +22240,7 @@
                     const previewSelect = this.exportModalState.root?.querySelector('#export-preview-mode');
                     if (previewSelect) previewSelect.value = 'overlay';
                   }
+                  SETTINGS.optimizationPreview = this.exportModalState.previewMode;
                 } else if ((SETTINGS.optimizationPreview || 'off') === 'off') {
                   SETTINGS.optimizationPreview = 'overlay';
                 }

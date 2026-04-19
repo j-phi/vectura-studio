@@ -92,4 +92,79 @@ describe('Pattern fill boundary tracing', () => {
     });
     expect(hasInternalSeamSegment).toBe(false);
   });
+
+  test('periodic contour tracing keeps wrapped vertical joins seam-compatible', () => {
+    const trace = runtime.window.Vectura.AlgorithmRegistry._tracePeriodicFillBoundaries;
+    expect(typeof trace).toBe('function');
+
+    const result = trace(
+      (x, y) => x >= 18 && x <= 22 && (y <= 8 || y >= 80),
+      40,
+      88,
+      { vbMinX: 0, vbMinY: 0, nx: 96, ny: 192 }
+    );
+
+    expect(result).toHaveLength(2);
+    result.forEach((path) => {
+      const only = bbox(path);
+      expect(only.minX).toBeCloseTo(17.9, 1);
+      expect(only.maxX).toBeCloseTo(22.1, 1);
+      const touchesSeam = path.some((pt) => Math.abs(pt.y) < 1e-6 || Math.abs(pt.y - 88) < 1e-6);
+      expect(touchesSeam).toBe(true);
+      const hasInteriorStemSpur = path.some((pt) => pt.y > 8.5 && pt.y < 79.5);
+      expect(hasInteriorStemSpur).toBe(false);
+    });
+  });
+
+  test('periodic contour tracing does not create short stray fragments for wrapped diagonals', () => {
+    const trace = runtime.window.Vectura.AlgorithmRegistry._tracePeriodicFillBoundaries;
+    const bandWidth = 6;
+    const result = trace(
+      (x, y) => {
+        const wrappedDx = ((((x - (y * 0.6 + 10)) % 40) + 40) % 40);
+        const distance = Math.min(wrappedDx, 40 - wrappedDx);
+        return distance <= bandWidth / 2;
+      },
+      40,
+      40,
+      { vbMinX: 0, vbMinY: 0, nx: 144, ny: 144 }
+    );
+
+    expect(result.length).toBeGreaterThan(0);
+    const shortOpenPaths = result.filter((path) => {
+      if (!Array.isArray(path) || path.length < 2) return true;
+      const first = path[0];
+      const last = path[path.length - 1];
+      const closed = Math.hypot(first.x - last.x, first.y - last.y) < 0.01;
+      if (closed) return false;
+      let length = 0;
+      for (let i = 0; i + 1 < path.length; i += 1) {
+        length += Math.hypot(path[i + 1].x - path[i].x, path[i + 1].y - path[i].y);
+      }
+      return length < 10;
+    });
+    expect(shortOpenPaths).toHaveLength(0);
+  });
+
+  test('periodic contour tracing uses union semantics across sibling fill shapes', () => {
+    const trace = runtime.window.Vectura.AlgorithmRegistry._tracePeriodicFillBoundaries;
+    expect(typeof trace).toBe('function');
+
+    const result = trace(
+      (x, y) => (
+        (x >= 4 && x <= 22 && y >= 8 && y <= 26)
+        || (x >= 18 && x <= 36 && y >= 8 && y <= 26)
+      ),
+      40,
+      40,
+      { vbMinX: 0, vbMinY: 0, nx: 120, ny: 120 }
+    );
+
+    expect(result).toHaveLength(1);
+    const only = bbox(result[0]);
+    expect(only.minX).toBeCloseTo(4, 1);
+    expect(only.maxX).toBeCloseTo(36, 1);
+    expect(only.minY).toBeCloseTo(8, 1);
+    expect(only.maxY).toBeCloseTo(26, 1);
+  });
 });

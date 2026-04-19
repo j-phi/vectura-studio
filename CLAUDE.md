@@ -107,6 +107,23 @@ All defaults, machine profiles, palettes, presets, and descriptions live in `src
 - PascalCase for classes, camelCase for methods/variables, lowercase filenames
 - Keep semicolons and formatting consistent with nearby files
 
+## Agent Delegation Rules
+
+**Spawn an Explore subagent for:**
+- Any open-ended file search where the location is unknown
+- Multi-file grep spanning more than 3 files
+- Architecture questions touching more than 2 subsystems
+- "Where is X implemented?" questions
+
+**Use direct tools (Glob/Grep/Read) for:**
+- Reading a known file path
+- Searching for a specific known symbol
+- Single-file reads or targeted lookups
+
+Always specify thoroughness when spawning Explore agents: `quick` (targeted lookup), `medium` (moderate scan), or `very thorough` (comprehensive cross-codebase analysis).
+
+**Knowledge graph:** After `graphify .` has been run, read `graphify-out/GRAPH_REPORT.md` before any broad file search — navigate by god-nodes and community clusters rather than raw grep.
+
 ## Documentation Contracts
 
 Every PR must assess whether these docs need updates:
@@ -133,3 +150,12 @@ The README is the primary human-facing document. Follow these conventions so it 
 - **Release notes:** 3 most recent releases inline; all prior releases in `<details><summary>Older releases (0.6.x and earlier)</summary>`.
 - **Reference-only content in `<details>` panels:** project structure, architecture diagrams, workflow docs list, extension guide.
 - **Gallery near the top.** Keep the gallery table immediately after the intro paragraph.
+
+## graphify
+
+This project has a graphify knowledge graph at graphify-out/.
+
+Rules:
+- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
+- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
+- After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)

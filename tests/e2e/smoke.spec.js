@@ -435,7 +435,6 @@ test.describe('Vectura smoke interactions', () => {
   });
 
   test('Autumn grid tiling stays source-faithful across the horizontal tile seam', async ({ page }) => {
-    test.fail(true, 'Known renderer regression: Autumn still breaks at the horizontal seam.');
     await page.goto('/');
 
     const diagnostics = await captureAutumnGridSourceFidelityDiagnostics(page);
@@ -459,7 +458,6 @@ test.describe('Vectura smoke interactions', () => {
   });
 
   test('representative compound fill hero patterns stay source-faithful to the original SVG tile silhouette', async ({ page }) => {
-    test.fail(true, 'Known renderer regressions remain across representative fill-built tiles.');
     await page.goto('/');
 
     const representativeIds = await captureRepresentativePatternIds(page);
@@ -828,7 +826,7 @@ test.describe('Vectura smoke interactions', () => {
     expect(modalBox.width).toBeGreaterThanOrEqual(viewport.width * 0.8 - 2);
     expect(modalBox.height).toBeGreaterThanOrEqual(viewport.height * 0.8 - 2);
 
-    const previewSelect = page.locator('#export-modal-root .optimization-row').filter({ hasText: 'Preview' }).locator('select');
+    const previewSelect = page.locator('#export-preview-mode');
     await previewSelect.selectOption('off');
 
     const lineSortCard = page.locator('#export-modal-root .optimization-card').filter({ hasText: 'Line Sort' });
