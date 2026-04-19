@@ -1,112 +1,108 @@
-# Graph Report - .  (2026-04-19)
+# Graph Report - /Users/jayphi/Documents/github/vectura-studio  (2026-04-19)
 
 ## Corpus Check
-- Large corpus: 234 files · ~1,481,568 words. Semantic extraction will be expensive (many Claude tokens). Consider running on a subfolder, or use --no-semantic to run AST-only.
+- 90 files · ~1,560,651 words
+- Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1254 nodes · 2666 edges · 86 communities detected
-- Extraction: 87% EXTRACTED · 13% INFERRED · 0% AMBIGUOUS · INFERRED: 334 edges (avg confidence: 0.81)
+- 1077 nodes · 2290 edges · 81 communities detected
+- Extraction: 87% EXTRACTED · 13% INFERRED · 0% AMBIGUOUS · INFERRED: 293 edges (avg confidence: 0.81)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
-- [[_COMMUNITY_Math & Color Utilities|Math & Color Utilities]]
-- [[_COMMUNITY_Geometry & Layer Rendering|Geometry & Layer Rendering]]
-- [[_COMMUNITY_App State & Preferences|App State & Preferences]]
-- [[_COMMUNITY_Documentation & Governance|Documentation & Governance]]
-- [[_COMMUNITY_Path Construction & Sampling|Path Construction & Sampling]]
-- [[_COMMUNITY_Layer Type System|Layer Type System]]
-- [[_COMMUNITY_SVG Export & UI|SVG Export & UI]]
-- [[_COMMUNITY_Wavetable Algorithm|Wavetable Algorithm]]
-- [[_COMMUNITY_Pattern Fill & Contours|Pattern Fill & Contours]]
-- [[_COMMUNITY_Path Geometry Operations|Path Geometry Operations]]
-- [[_COMMUNITY_Algorithm Gallery & Baselines|Algorithm Gallery & Baselines]]
-- [[_COMMUNITY_Aesthetic & Inspiration|Aesthetic & Inspiration]]
-- [[_COMMUNITY_Mirror Modifiers|Mirror Modifiers]]
-- [[_COMMUNITY_Noise System|Noise System]]
-- [[_COMMUNITY_Document Units & State|Document Units & State]]
-- [[_COMMUNITY_Layer Optimization|Layer Optimization]]
-- [[_COMMUNITY_Wavetable Horizon Tests|Wavetable Horizon Tests]]
-- [[_COMMUNITY_Path Serialization|Path Serialization]]
-- [[_COMMUNITY_Path Endpoint Processing|Path Endpoint Processing]]
-- [[_COMMUNITY_Algorithm Bias & Presets|Algorithm Bias & Presets]]
-- [[_COMMUNITY_Topographic Algorithm|Topographic Algorithm]]
-- [[_COMMUNITY_Segment Endpoint Handling|Segment Endpoint Handling]]
-- [[_COMMUNITY_Integration Test Helpers|Integration Test Helpers]]
-- [[_COMMUNITY_Pattern Diagnostics|Pattern Diagnostics]]
-- [[_COMMUNITY_Visual Regression Tests|Visual Regression Tests]]
-- [[_COMMUNITY_Seam Helpers|Seam Helpers]]
-- [[_COMMUNITY_Coordinate Validation|Coordinate Validation]]
-- [[_COMMUNITY_Test Runtime Setup|Test Runtime Setup]]
-- [[_COMMUNITY_Export Operations Pipeline|Export Operations Pipeline]]
-- [[_COMMUNITY_Topo Closure Tests|Topo Closure Tests]]
-- [[_COMMUNITY_Random & Averaging Utils|Random & Averaging Utils]]
-- [[_COMMUNITY_Profile File Management|Profile File Management]]
-- [[_COMMUNITY_Rings Noise Tests|Rings Noise Tests]]
-- [[_COMMUNITY_Petal Designer Tests|Petal Designer Tests]]
-- [[_COMMUNITY_Mask Preview Tests|Mask Preview Tests]]
-- [[_COMMUNITY_Algorithm Determinism Tests|Algorithm Determinism Tests]]
-- [[_COMMUNITY_Benchmark Suite|Benchmark Suite]]
-- [[_COMMUNITY_Layer Core|Layer Core]]
-- [[_COMMUNITY_Flowfield Algorithm|Flowfield Algorithm]]
-- [[_COMMUNITY_Boids Algorithm|Boids Algorithm]]
-- [[_COMMUNITY_Shape Pack Algorithm|Shape Pack Algorithm]]
-- [[_COMMUNITY_Petalis Noise Modifier Tests|Petalis Noise Modifier Tests]]
-- [[_COMMUNITY_Random Utility Tests|Random Utility Tests]]
-- [[_COMMUNITY_Shape Tools Tests|Shape Tools Tests]]
-- [[_COMMUNITY_UI Bootstrap Tests|UI Bootstrap Tests]]
-- [[_COMMUNITY_Engine Workflow Tests|Engine Workflow Tests]]
-- [[_COMMUNITY_Export Determinism Tests|Export Determinism Tests]]
-- [[_COMMUNITY_Test Patch Utilities|Test Patch Utilities]]
-- [[_COMMUNITY_Grid Algorithm|Grid Algorithm]]
-- [[_COMMUNITY_Phylla Algorithm|Phylla Algorithm]]
-- [[_COMMUNITY_Rings Algorithm|Rings Algorithm]]
-- [[_COMMUNITY_Petalis Designer|Petalis Designer]]
-- [[_COMMUNITY_sourcePaths Design Rationale|sourcePaths Design Rationale]]
-- [[_COMMUNITY_Playwright Config|Playwright Config]]
-- [[_COMMUNITY_Vitest Config|Vitest Config]]
-- [[_COMMUNITY_Modifiers Tests|Modifiers Tests]]
-- [[_COMMUNITY_Geometry Optimization Tests|Geometry Optimization Tests]]
-- [[_COMMUNITY_Document Units Tests|Document Units Tests]]
-- [[_COMMUNITY_RNG Noise Tests|RNG Noise Tests]]
-- [[_COMMUNITY_Modifier Guide Bounds Tests|Modifier Guide Bounds Tests]]
-- [[_COMMUNITY_Security XSS Tests|Security XSS Tests]]
-- [[_COMMUNITY_Masking Tests|Masking Tests]]
-- [[_COMMUNITY_Crop Export Tests|Crop Export Tests]]
-- [[_COMMUNITY_Mask Preview Tests (unit)|Mask Preview Tests (unit)]]
-- [[_COMMUNITY_Modifier Workflow Tests|Modifier Workflow Tests]]
-- [[_COMMUNITY_Algorithm Switching Tests|Algorithm Switching Tests]]
-- [[_COMMUNITY_Stress Tests|Stress Tests]]
-- [[_COMMUNITY_Vitest Setup|Vitest Setup]]
-- [[_COMMUNITY_Version Sync Script|Version Sync Script]]
-- [[_COMMUNITY_App Entry Point|App Entry Point]]
-- [[_COMMUNITY_Algorithm Registry|Algorithm Registry]]
-- [[_COMMUNITY_Hyphae Algorithm|Hyphae Algorithm]]
-- [[_COMMUNITY_Attractor Algorithm|Attractor Algorithm]]
-- [[_COMMUNITY_Color Palettes Config|Color Palettes Config]]
-- [[_COMMUNITY_Machine Profiles Config|Machine Profiles Config]]
-- [[_COMMUNITY_Presets Config|Presets Config]]
-- [[_COMMUNITY_UI Constants|UI Constants]]
-- [[_COMMUNITY_Pattern Fill Config|Pattern Fill Config]]
-- [[_COMMUNITY_Version Config|Version Config]]
-- [[_COMMUNITY_Modifiers Module|Modifiers Module]]
-- [[_COMMUNITY_Algorithm Descriptions|Algorithm Descriptions]]
-- [[_COMMUNITY_Petal Library|Petal Library]]
-- [[_COMMUNITY_UndoRedo History|Undo/Redo History]]
-- [[_COMMUNITY_Changelog v0.6.80|Changelog v0.6.80]]
-- [[_COMMUNITY_Examples Directory|Examples Directory]]
-- [[_COMMUNITY_Version File|Version File]]
+- [[_COMMUNITY_Community 0|Community 0]]
+- [[_COMMUNITY_Community 1|Community 1]]
+- [[_COMMUNITY_Community 2|Community 2]]
+- [[_COMMUNITY_Community 3|Community 3]]
+- [[_COMMUNITY_Community 4|Community 4]]
+- [[_COMMUNITY_Community 5|Community 5]]
+- [[_COMMUNITY_Community 6|Community 6]]
+- [[_COMMUNITY_Community 7|Community 7]]
+- [[_COMMUNITY_Community 8|Community 8]]
+- [[_COMMUNITY_Community 9|Community 9]]
+- [[_COMMUNITY_Community 10|Community 10]]
+- [[_COMMUNITY_Community 11|Community 11]]
+- [[_COMMUNITY_Community 12|Community 12]]
+- [[_COMMUNITY_Community 13|Community 13]]
+- [[_COMMUNITY_Community 14|Community 14]]
+- [[_COMMUNITY_Community 15|Community 15]]
+- [[_COMMUNITY_Community 16|Community 16]]
+- [[_COMMUNITY_Community 17|Community 17]]
+- [[_COMMUNITY_Community 18|Community 18]]
+- [[_COMMUNITY_Community 19|Community 19]]
+- [[_COMMUNITY_Community 20|Community 20]]
+- [[_COMMUNITY_Community 21|Community 21]]
+- [[_COMMUNITY_Community 22|Community 22]]
+- [[_COMMUNITY_Community 23|Community 23]]
+- [[_COMMUNITY_Community 24|Community 24]]
+- [[_COMMUNITY_Community 25|Community 25]]
+- [[_COMMUNITY_Community 26|Community 26]]
+- [[_COMMUNITY_Community 27|Community 27]]
+- [[_COMMUNITY_Community 28|Community 28]]
+- [[_COMMUNITY_Community 29|Community 29]]
+- [[_COMMUNITY_Community 30|Community 30]]
+- [[_COMMUNITY_Community 31|Community 31]]
+- [[_COMMUNITY_Community 32|Community 32]]
+- [[_COMMUNITY_Community 33|Community 33]]
+- [[_COMMUNITY_Community 34|Community 34]]
+- [[_COMMUNITY_Community 35|Community 35]]
+- [[_COMMUNITY_Community 36|Community 36]]
+- [[_COMMUNITY_Community 37|Community 37]]
+- [[_COMMUNITY_Community 38|Community 38]]
+- [[_COMMUNITY_Community 39|Community 39]]
+- [[_COMMUNITY_Community 40|Community 40]]
+- [[_COMMUNITY_Community 41|Community 41]]
+- [[_COMMUNITY_Community 42|Community 42]]
+- [[_COMMUNITY_Community 43|Community 43]]
+- [[_COMMUNITY_Community 44|Community 44]]
+- [[_COMMUNITY_Community 45|Community 45]]
+- [[_COMMUNITY_Community 46|Community 46]]
+- [[_COMMUNITY_Community 47|Community 47]]
+- [[_COMMUNITY_Community 48|Community 48]]
+- [[_COMMUNITY_Community 49|Community 49]]
+- [[_COMMUNITY_Community 50|Community 50]]
+- [[_COMMUNITY_Community 51|Community 51]]
+- [[_COMMUNITY_Community 52|Community 52]]
+- [[_COMMUNITY_Community 53|Community 53]]
+- [[_COMMUNITY_Community 54|Community 54]]
+- [[_COMMUNITY_Community 55|Community 55]]
+- [[_COMMUNITY_Community 56|Community 56]]
+- [[_COMMUNITY_Community 57|Community 57]]
+- [[_COMMUNITY_Community 58|Community 58]]
+- [[_COMMUNITY_Community 59|Community 59]]
+- [[_COMMUNITY_Community 60|Community 60]]
+- [[_COMMUNITY_Community 61|Community 61]]
+- [[_COMMUNITY_Community 62|Community 62]]
+- [[_COMMUNITY_Community 63|Community 63]]
+- [[_COMMUNITY_Community 64|Community 64]]
+- [[_COMMUNITY_Community 65|Community 65]]
+- [[_COMMUNITY_Community 66|Community 66]]
+- [[_COMMUNITY_Community 67|Community 67]]
+- [[_COMMUNITY_Community 68|Community 68]]
+- [[_COMMUNITY_Community 69|Community 69]]
+- [[_COMMUNITY_Community 70|Community 70]]
+- [[_COMMUNITY_Community 71|Community 71]]
+- [[_COMMUNITY_Community 72|Community 72]]
+- [[_COMMUNITY_Community 73|Community 73]]
+- [[_COMMUNITY_Community 74|Community 74]]
+- [[_COMMUNITY_Community 75|Community 75]]
+- [[_COMMUNITY_Community 76|Community 76]]
+- [[_COMMUNITY_Community 77|Community 77]]
+- [[_COMMUNITY_Community 78|Community 78]]
+- [[_COMMUNITY_Community 79|Community 79]]
+- [[_COMMUNITY_Community 80|Community 80]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `UI` - 281 edges
 2. `Renderer` - 176 edges
-3. `round()` - 43 edges
-4. `getEl()` - 38 edges
-5. `VectorEngine` - 31 edges
+3. `getEl()` - 38 edges
+4. `VectorEngine` - 31 edges
+5. `round()` - 29 edges
 6. `clamp()` - 25 edges
 7. `clone()` - 22 edges
 8. `App` - 22 edges
-9. `generate()` - 20 edges
-10. `CLAUDE.md Architecture Overview` - 15 edges
+9. `CLAUDE.md Architecture Overview` - 15 edges
+10. `normalizeDocumentUnits()` - 13 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `src/render/renderer.js — Renderer` --implements--> `UI: Dimension Rulers (Inch-labeled dimension callouts on canvas edges)`  [INFERRED]
@@ -115,10 +111,10 @@
   CLAUDE.md → src/render/renderer.js
 - `Visual Snapshot: Masking Horizon Rings Canvas (Rings + Topo Combined)` --references--> `Algorithm: Topo - Topographic / Terrain Line Generation`  [INFERRED]
   tests/e2e/visual.spec.js-snapshots/masking-horizon-rings-canvas-desktop-visual-chromium-darwin.png → src/core/algorithms/topo.js
-- `maskAlpha()` --calls--> `round()`  [INFERRED]
-  src/core/algorithms/rainfall.js → tests/helpers/path-signature.js
-- `Visual Snapshot: Rotated Polygon Selection (Hexagon with Rotation Transform Handles)` --references--> `src/render/renderer.js — Renderer`  [INFERRED]
-  tests/e2e/visual.spec.js-snapshots/rotated-polygon-selection-canvas-desktop-visual-chromium-darwin.png → CLAUDE.md
+- `round()` --calls--> `formatValue()`  [INFERRED]
+  tests/helpers/path-signature.js → /Users/jayphi/Documents/github/vectura-studio/src/ui/ui.js
+- `Masking Horizon Rings Baseline SVG` --implements--> `Masking Module`  [INFERRED]
+  tests/baselines/svg/masking-horizon-rings.svg → src/core/masking.js
 
 ## Hyperedges (group relationships)
 - **Core Engine Data Pipeline** — engine_js, algorithms_index_js, masking_js, modifiers_js, optimization_utils_js, renderer_js [EXTRACTED 0.95]
@@ -143,347 +139,327 @@
 
 ## Communities
 
-### Community 0 - "Math & Color Utilities"
+### Community 0 - "Community 0"
 Cohesion: 0.03
-Nodes (10): clone(), round(), clamp(), cloneExportPath(), createPetalModifier(), formatValue(), getThemeToken(), isPetalisLayerType() (+2 more)
+Nodes (7): clone(), round(), clamp(), cloneExportPath(), createPetalisShading(), createPetalModifier(), UI
 
-### Community 1 - "Geometry & Layer Rendering"
+### Community 1 - "Community 1"
 Cohesion: 0.03
-Nodes (6): isModifierLayer(), rect(), cloneShape(), getThemeToken(), makeShapeReticleCursor(), Renderer
+Nodes (5): rect(), cloneShape(), getThemeToken(), makeShapeReticleCursor(), Renderer
 
-### Community 2 - "App State & Preferences"
+### Community 2 - "Community 2"
 Cohesion: 0.04
-Nodes (9): App, getThemeConfig(), normalizeThemeName(), buildMaskedSceneSvg(), buildMirroredMaskedSceneSvg(), pathsToSvg(), getEl(), usesSeed() (+1 more)
+Nodes (7): App, getThemeConfig(), normalizeThemeName(), getEl(), isPetalisLayerType(), usesSeed(), resetHistory()
 
-### Community 3 - "Documentation & Governance"
-Cohesion: 0.03
-Nodes (110): Documentation Synchronization Matrix, Public Process Contracts, Source-of-Truth Hierarchy, Legacy Doc Status Taxonomy, Agentic Harness Strategy, Task Lifecycle Protocol, Harness Testing Matrix, Agentic Harness Governance (+102 more)
-
-### Community 4 - "Path Construction & Sampling"
+### Community 3 - "Community 3"
 Cohesion: 0.05
-Nodes (55): iterateSamples(), clamp01(), combineBlend(), createEvaluator(), applyDesignerProfileSymmetry(), applyLineType(), applyModifiers(), bboxFromPoints() (+47 more)
+Nodes (68): Coding Style Conventions, Algorithm: Grid - Regular Grid / Cross-hatch Fill, Algorithm: Rings - Concentric Ring Generation, Algorithm: Topo - Topographic / Terrain Line Generation, Algorithm: Wavetable - Flowing Wave Field Generation, src/core/algorithms/index.js — Algorithm Registry, src/app/app.js — App Orchestrator, Visual Snapshot: Broken Masking Canvas (Horizon Rings with Selection Box - Regression) (+60 more)
 
-### Community 5 - "Layer Type System"
+### Community 4 - "Community 4"
+Cohesion: 0.05
+Nodes (10): clone(), isValidDrawableLayerType(), resolveDrawableLayerType(), usesManualSourceGeometry(), VectorEngine, clonePaths(), countPathPoints(), buildMaskedSceneSvg() (+2 more)
+
+### Community 5 - "Community 5"
 Cohesion: 0.06
-Nodes (27): clone(), isValidDrawableLayerType(), resolveDrawableLayerType(), usesManualSourceGeometry(), VectorEngine, clonePaths(), countPathPoints(), applyMaskToPaths() (+19 more)
+Nodes (47): fmt(), pathsToSvg(), shapeToSvg(), buildClipPathMarkup(), buildPreviewPair(), buildRangeValue(), buildVariantsFromDef(), clampPointToRect() (+39 more)
 
-### Community 6 - "SVG Export & UI"
+### Community 6 - "Community 6"
 Cohesion: 0.06
-Nodes (44): fmt(), shapeToSvg(), buildClipPathMarkup(), buildPreviewPair(), buildRangeValue(), buildVariantsFromDef(), clampPointToRect(), clipPathToRect() (+36 more)
+Nodes (42): Documentation Synchronization Matrix, Public Process Contracts, Source-of-Truth Hierarchy, Legacy Doc Status Taxonomy, Agentic Harness Strategy, Task Lifecycle Protocol, Harness Testing Matrix, Agentic Harness Governance (+34 more)
 
-### Community 7 - "Wavetable Algorithm"
-Cohesion: 0.08
-Nodes (44): applyPad(), applyTile(), baseNoise(), buildHorizonRow(), buildParallelLinesAtAngle(), buildSlopeFamily(), buildVisiblePolylineSegments(), cellularData() (+36 more)
+### Community 7 - "Community 7"
+Cohesion: 0.09
+Nodes (17): iterateSamples(), clamp01(), combineBlend(), SimpleNoise, SeededRNG, applyPad(), applyTile(), baseNoise() (+9 more)
 
-### Community 8 - "Pattern Fill & Contours"
+### Community 8 - "Community 8"
 Cohesion: 0.12
 Nodes (27): choosePatternFillResolution(), contourLines(), dedupeSequentialPoints(), generatePatternFillPaths(), getSubpathStrings(), getTargetSvgData(), hatchLines(), insetPolygon() (+19 more)
 
-### Community 9 - "Path Geometry Operations"
+### Community 9 - "Community 9"
 Cohesion: 0.1
-Nodes (17): closePathIfNeeded(), joinNearbyPaths(), buildBoundsFromVertices(), buildEllipseAnchors(), buildPolygonVertices(), buildRectangleVertices(), buildRoundedPolygonAnchors(), buildShapeAnchors() (+9 more)
+Nodes (16): joinNearbyPaths(), buildBoundsFromVertices(), buildEllipseAnchors(), buildPolygonVertices(), buildRectangleVertices(), buildRoundedPolygonAnchors(), buildShapeAnchors(), clamp() (+8 more)
 
-### Community 10 - "Algorithm Gallery & Baselines"
+### Community 10 - "Community 10"
 Cohesion: 0.11
 Nodes (27): Attractor Algorithm, Attractor Algorithm Gallery Sample SVG, Boids Algorithm, Boids Algorithm Gallery Sample SVG, Flowfield Algorithm, Flowfield Algorithm Canonical Baseline SVG, Flowfield Algorithm Gallery Sample SVG, Gallery SVG Dark Background Style (#0b0b0d) (+19 more)
 
-### Community 11 - "Aesthetic & Inspiration"
+### Community 11 - "Community 11"
 Cohesion: 0.16
 Nodes (26): Organic Flow / Nature-Inspired Aesthetic, Plotter Art Aesthetic, Topographic Map Aesthetic, Attractor Algorithm, Flowfield Algorithm, Hyphae/Branching Algorithm, Rings/Concentric Algorithm, Spiral Algorithm (+18 more)
 
-### Community 12 - "Mirror Modifiers"
-Cohesion: 0.16
-Nodes (20): applyMirrorToPaths(), classifyPieceSide(), clipClosedPolygonByAxis(), clone(), clonePath(), createMirrorLine(), createModifierState(), flattenCirclePath() (+12 more)
-
-### Community 13 - "Noise System"
-Cohesion: 0.2
-Nodes (13): SimpleNoise, applyPad(), applyTile(), baseNoise(), cellularData(), cellularNoise(), fbmNoise(), frac() (+5 more)
-
-### Community 14 - "Document Units & State"
-Cohesion: 0.24
-Nodes (7): documentUnitsToMm(), formatDocumentLength(), getDocumentUnitLabel(), getDocumentUnitPrecision(), getDocumentUnitStep(), mmToDocumentUnits(), normalizeDocumentUnits()
-
-### Community 15 - "Layer Optimization"
-Cohesion: 0.15
-Nodes (1): getMaskExportBounds()
-
-### Community 16 - "Wavetable Horizon Tests"
+### Community 12 - "Community 12"
 Cohesion: 0.17
 Nodes (7): average(), classifyHorizonPaths(), clone(), getSpacingStats(), groupSegmentsByIndex(), render(), renderHorizon3D()
 
-### Community 17 - "Path Serialization"
+### Community 13 - "Community 13"
+Cohesion: 0.29
+Nodes (7): documentUnitsToMm(), formatDocumentLength(), getDocumentUnitLabel(), getDocumentUnitPrecision(), getDocumentUnitStep(), mmToDocumentUnits(), normalizeDocumentUnits()
+
+### Community 14 - "Community 14"
 Cohesion: 0.22
 Nodes (11): normalizePaths(), pathSignature(), serializePaths(), classify(), classifyDesignerAssignments(), clone(), extractOutlines(), outlineMapByGroup() (+3 more)
 
-### Community 18 - "Path Endpoint Processing"
-Cohesion: 0.29
-Nodes (14): applyEndpointTruncation(), buildEnvelope(), clamp(), classifyEndpoint(), findEndTailCut(), findStartTailCut(), interpolatePoint(), pathLength() (+6 more)
-
-### Community 19 - "Algorithm Bias & Presets"
+### Community 15 - "Community 15"
 Cohesion: 0.33
 Nodes (11): applyAlgorithmBias(), applyLissajousBias(), applyPetalisBias(), applyRainfallBias(), applyShapePackBias(), clamp(), pickRandom(), randomInRange() (+3 more)
 
-### Community 20 - "Topographic Algorithm"
+### Community 16 - "Community 16"
 Cohesion: 0.27
 Nodes (8): edgePoint(), ensureClosedPath(), interp(), isClosedPath(), pointKey(), refineByGradient(), sampleField(), smoothPath()
 
-### Community 21 - "Segment Endpoint Handling"
+### Community 17 - "Community 17"
 Cohesion: 0.31
 Nodes (7): buildEnvelope(), classifyEndpoint(), firstEndSegmentHits(), firstStartSegmentHits(), pointEquals(), pointInPolygon(), segmentIntersection()
 
-### Community 22 - "Integration Test Helpers"
+### Community 18 - "Community 18"
 Cohesion: 0.22
 Nodes (5): captureSvgExport(), captureSvgExport(), createCirclePath(), createMaskedEngine(), text()
 
-### Community 23 - "Pattern Diagnostics"
+### Community 19 - "Community 19"
 Cohesion: 0.25
 Nodes (0): 
 
-### Community 24 - "Visual Regression Tests"
+### Community 20 - "Community 20"
+Cohesion: 0.36
+Nodes (4): clonePath(), normalizePolygons(), segmentPathByPolygons(), unionPolygons()
+
+### Community 21 - "Community 21"
 Cohesion: 0.33
 Nodes (0): 
 
-### Community 25 - "Seam Helpers"
+### Community 22 - "Community 22"
 Cohesion: 0.5
 Nodes (2): closed(), tile()
 
-### Community 26 - "Coordinate Validation"
+### Community 23 - "Community 23"
 Cohesion: 0.4
 Nodes (0): 
 
-### Community 27 - "Test Runtime Setup"
+### Community 24 - "Community 24"
 Cohesion: 0.5
 Nodes (2): loadVecturaRuntime(), parseLocalScripts()
 
-### Community 28 - "Export Operations Pipeline"
+### Community 25 - "Community 25"
 Cohesion: 0.4
 Nodes (5): filter Operation, linesimplify Operation, linesort Operation, multipass Operation, vpype-like Optimization Integration
 
-### Community 29 - "Topo Closure Tests"
+### Community 26 - "Community 26"
 Cohesion: 0.5
 Nodes (0): 
 
-### Community 30 - "Random & Averaging Utils"
+### Community 27 - "Community 27"
 Cohesion: 0.5
 Nodes (0): 
 
-### Community 31 - "Profile File Management"
+### Community 28 - "Community 28"
 Cohesion: 0.5
 Nodes (0): 
 
-### Community 32 - "Rings Noise Tests"
+### Community 29 - "Community 29"
 Cohesion: 0.67
 Nodes (0): 
 
-### Community 33 - "Petal Designer Tests"
+### Community 30 - "Community 30"
 Cohesion: 0.67
 Nodes (0): 
 
-### Community 34 - "Mask Preview Tests"
+### Community 31 - "Community 31"
 Cohesion: 0.67
 Nodes (0): 
 
-### Community 35 - "Algorithm Determinism Tests"
+### Community 32 - "Community 32"
+Cohesion: 0.67
+Nodes (0): 
+
+### Community 33 - "Community 33"
 Cohesion: 1.0
 Nodes (2): buildParams(), clone()
 
-### Community 36 - "Benchmark Suite"
+### Community 34 - "Community 34"
 Cohesion: 0.67
 Nodes (0): 
 
-### Community 37 - "Layer Core"
+### Community 35 - "Community 35"
 Cohesion: 0.67
 Nodes (1): Layer
 
-### Community 38 - "Flowfield Algorithm"
-Cohesion: 1.0
-Nodes (2): curlAngle(), sampleField()
-
-### Community 39 - "Boids Algorithm"
-Cohesion: 0.67
-Nodes (0): 
-
-### Community 40 - "Shape Pack Algorithm"
-Cohesion: 0.67
-Nodes (0): 
-
-### Community 41 - "Petalis Noise Modifier Tests"
+### Community 36 - "Community 36"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 42 - "Random Utility Tests"
+### Community 37 - "Community 37"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 43 - "Shape Tools Tests"
+### Community 38 - "Community 38"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 44 - "UI Bootstrap Tests"
+### Community 39 - "Community 39"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 45 - "Engine Workflow Tests"
+### Community 40 - "Community 40"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 46 - "Export Determinism Tests"
+### Community 41 - "Community 41"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 47 - "Test Patch Utilities"
+### Community 42 - "Community 42"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 48 - "Grid Algorithm"
+### Community 43 - "Community 43"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 49 - "Phylla Algorithm"
+### Community 44 - "Community 44"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 50 - "Rings Algorithm"
+### Community 45 - "Community 45"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 51 - "Petalis Designer"
+### Community 46 - "Community 46"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 52 - "sourcePaths Design Rationale"
+### Community 47 - "Community 47"
 Cohesion: 1.0
 Nodes (2): sourcePaths Reserved for Expanded Geometry Decision, Rationale: sourcePaths Reserved for Expanded Geometry
 
-### Community 53 - "Playwright Config"
+### Community 48 - "Community 48"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 54 - "Vitest Config"
+### Community 49 - "Community 49"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 55 - "Modifiers Tests"
+### Community 50 - "Community 50"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 56 - "Geometry Optimization Tests"
+### Community 51 - "Community 51"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 57 - "Document Units Tests"
+### Community 52 - "Community 52"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 58 - "RNG Noise Tests"
+### Community 53 - "Community 53"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 59 - "Modifier Guide Bounds Tests"
+### Community 54 - "Community 54"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 60 - "Security XSS Tests"
+### Community 55 - "Community 55"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 61 - "Masking Tests"
+### Community 56 - "Community 56"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 62 - "Crop Export Tests"
+### Community 57 - "Community 57"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 63 - "Mask Preview Tests (unit)"
+### Community 58 - "Community 58"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 64 - "Modifier Workflow Tests"
+### Community 59 - "Community 59"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 65 - "Algorithm Switching Tests"
+### Community 60 - "Community 60"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 66 - "Stress Tests"
+### Community 61 - "Community 61"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 67 - "Vitest Setup"
+### Community 62 - "Community 62"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 68 - "Version Sync Script"
+### Community 63 - "Community 63"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 69 - "App Entry Point"
+### Community 64 - "Community 64"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 70 - "Algorithm Registry"
+### Community 65 - "Community 65"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 71 - "Hyphae Algorithm"
+### Community 66 - "Community 66"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 72 - "Attractor Algorithm"
+### Community 67 - "Community 67"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 73 - "Color Palettes Config"
+### Community 68 - "Community 68"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 74 - "Machine Profiles Config"
+### Community 69 - "Community 69"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 75 - "Presets Config"
+### Community 70 - "Community 70"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 76 - "UI Constants"
+### Community 71 - "Community 71"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 77 - "Pattern Fill Config"
+### Community 72 - "Community 72"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 78 - "Version Config"
+### Community 73 - "Community 73"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 79 - "Modifiers Module"
+### Community 74 - "Community 74"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 80 - "Algorithm Descriptions"
+### Community 75 - "Community 75"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 81 - "Petal Library"
+### Community 76 - "Community 76"
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 82 - "Undo/Redo History"
+### Community 77 - "Community 77"
 Cohesion: 1.0
 Nodes (1): Non-Destructive History Timeline
 
-### Community 83 - "Changelog v0.6.80"
+### Community 78 - "Community 78"
 Cohesion: 1.0
 Nodes (1): CHANGELOG v0.6.80
 
-### Community 84 - "Examples Directory"
+### Community 79 - "Community 79"
 Cohesion: 1.0
 Nodes (1): Examples Directory README
 
-### Community 85 - "Version File"
+### Community 80 - "Community 80"
 Cohesion: 1.0
 Nodes (1): src/config/version.js
 
@@ -492,97 +468,97 @@ Nodes (1): src/config/version.js
   src/inspiration/city.png · relation: conceptually_related_to
 
 ## Knowledge Gaps
-- **57 isolated node(s):** `Non-Destructive History Timeline`, `linesimplify Operation`, `linesort Operation`, `filter Operation`, `multipass Operation` (+52 more)
+- **57 isolated node(s):** `Mirror Modifier Module`, `Rainfall Algorithm`, `Petalis Algorithm`, `Boids Algorithm`, `Shape Pack Algorithm` (+52 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **Thin community `Petalis Noise Modifier Tests`** (2 nodes): `clone()`, `petalis-noise-rack-modifiers.test.js`
+- **Thin community `Community 36`** (2 nodes): `clone()`, `petalis-noise-rack-modifiers.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Random Utility Tests`** (2 nodes): `mockRandom()`, `random-in-range.test.js`
+- **Thin community `Community 37`** (2 nodes): `mockRandom()`, `random-in-range.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Shape Tools Tests`** (2 nodes): `createRenderer()`, `shape-tools.test.js`
+- **Thin community `Community 38`** (2 nodes): `createRenderer()`, `shape-tools.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `UI Bootstrap Tests`** (2 nodes): `ui-bootstrap-panels.test.js`, `buildLayer()`
+- **Thin community `Community 39`** (2 nodes): `ui-bootstrap-panels.test.js`, `buildLayer()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Engine Workflow Tests`** (2 nodes): `centroidAxisOrder()`, `engine-workflow.test.js`
+- **Thin community `Community 40`** (2 nodes): `centroidAxisOrder()`, `engine-workflow.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Export Determinism Tests`** (2 nodes): `clone()`, `export-determinism.test.js`
+- **Thin community `Community 41`** (2 nodes): `clone()`, `export-determinism.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Test Patch Utilities`** (2 nodes): `listFiles()`, `patch-vitest-unicode.js`
+- **Thin community `Community 42`** (2 nodes): `listFiles()`, `patch-vitest-unicode.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Grid Algorithm`** (2 nodes): `sampleField()`, `grid.js`
+- **Thin community `Community 43`** (2 nodes): `sampleField()`, `grid.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Phylla Algorithm`** (2 nodes): `sampleField()`, `phylla.js`
+- **Thin community `Community 44`** (2 nodes): `sampleField()`, `phylla.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Rings Algorithm`** (2 nodes): `sampleNoise()`, `rings.js`
+- **Thin community `Community 45`** (2 nodes): `sampleNoise()`, `rings.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Petalis Designer`** (2 nodes): `enforceDesignerParams()`, `petalisdesigner.js`
+- **Thin community `Community 46`** (2 nodes): `enforceDesignerParams()`, `petalisdesigner.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `sourcePaths Design Rationale`** (2 nodes): `sourcePaths Reserved for Expanded Geometry Decision`, `Rationale: sourcePaths Reserved for Expanded Geometry`
+- **Thin community `Community 47`** (2 nodes): `sourcePaths Reserved for Expanded Geometry Decision`, `Rationale: sourcePaths Reserved for Expanded Geometry`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Playwright Config`** (1 nodes): `playwright.config.js`
+- **Thin community `Community 48`** (1 nodes): `playwright.config.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Vitest Config`** (1 nodes): `vitest.config.mjs`
+- **Thin community `Community 49`** (1 nodes): `vitest.config.mjs`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Modifiers Tests`** (1 nodes): `modifiers.test.js`
+- **Thin community `Community 50`** (1 nodes): `modifiers.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Geometry Optimization Tests`** (1 nodes): `geometry-optimization-utils.test.js`
+- **Thin community `Community 51`** (1 nodes): `geometry-optimization-utils.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Document Units Tests`** (1 nodes): `document-units-preferences.test.js`
+- **Thin community `Community 52`** (1 nodes): `document-units-preferences.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `RNG Noise Tests`** (1 nodes): `rng-noise.test.js`
+- **Thin community `Community 53`** (1 nodes): `rng-noise.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Modifier Guide Bounds Tests`** (1 nodes): `modifier-guide-bounds.test.js`
+- **Thin community `Community 54`** (1 nodes): `modifier-guide-bounds.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Security XSS Tests`** (1 nodes): `security_xss.test.js`
+- **Thin community `Community 55`** (1 nodes): `security_xss.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Masking Tests`** (1 nodes): `masking.test.js`
+- **Thin community `Community 56`** (1 nodes): `masking.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Crop Export Tests`** (1 nodes): `crop-exports-settings.test.js`
+- **Thin community `Community 57`** (1 nodes): `crop-exports-settings.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Mask Preview Tests (unit)`** (1 nodes): `mask-preview.test.js`
+- **Thin community `Community 58`** (1 nodes): `mask-preview.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Modifier Workflow Tests`** (1 nodes): `modifier-workflow.test.js`
+- **Thin community `Community 59`** (1 nodes): `modifier-workflow.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Algorithm Switching Tests`** (1 nodes): `algorithm-switching.test.js`
+- **Thin community `Community 60`** (1 nodes): `algorithm-switching.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Stress Tests`** (1 nodes): `stress.test.js`
+- **Thin community `Community 61`** (1 nodes): `stress.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Vitest Setup`** (1 nodes): `vitest.setup.js`
+- **Thin community `Community 62`** (1 nodes): `vitest.setup.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Version Sync Script`** (1 nodes): `sync-version.js`
+- **Thin community `Community 63`** (1 nodes): `sync-version.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `App Entry Point`** (1 nodes): `main.js`
+- **Thin community `Community 64`** (1 nodes): `main.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Algorithm Registry`** (1 nodes): `index.js`
+- **Thin community `Community 65`** (1 nodes): `index.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Hyphae Algorithm`** (1 nodes): `hyphae.js`
+- **Thin community `Community 66`** (1 nodes): `hyphae.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Attractor Algorithm`** (1 nodes): `attractor.js`
+- **Thin community `Community 67`** (1 nodes): `attractor.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Color Palettes Config`** (1 nodes): `palettes.js`
+- **Thin community `Community 68`** (1 nodes): `palettes.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Machine Profiles Config`** (1 nodes): `machines.js`
+- **Thin community `Community 69`** (1 nodes): `machines.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Presets Config`** (1 nodes): `presets.js`
+- **Thin community `Community 70`** (1 nodes): `presets.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `UI Constants`** (1 nodes): `ui-constants.js`
+- **Thin community `Community 71`** (1 nodes): `ui-constants.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Pattern Fill Config`** (1 nodes): `patterns.js`
+- **Thin community `Community 72`** (1 nodes): `patterns.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Version Config`** (1 nodes): `version.js`
+- **Thin community `Community 73`** (1 nodes): `version.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Modifiers Module`** (1 nodes): `modifiers.js`
+- **Thin community `Community 74`** (1 nodes): `modifiers.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Algorithm Descriptions`** (1 nodes): `descriptions.js`
+- **Thin community `Community 75`** (1 nodes): `descriptions.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Petal Library`** (1 nodes): `library.js`
+- **Thin community `Community 76`** (1 nodes): `library.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Undo/Redo History`** (1 nodes): `Non-Destructive History Timeline`
+- **Thin community `Community 77`** (1 nodes): `Non-Destructive History Timeline`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Changelog v0.6.80`** (1 nodes): `CHANGELOG v0.6.80`
+- **Thin community `Community 78`** (1 nodes): `CHANGELOG v0.6.80`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Examples Directory`** (1 nodes): `Examples Directory README`
+- **Thin community `Community 79`** (1 nodes): `Examples Directory README`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Version File`** (1 nodes): `src/config/version.js`
+- **Thin community `Community 80`** (1 nodes): `src/config/version.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions
@@ -590,15 +566,15 @@ _Questions this graph is uniquely positioned to answer:_
 
 - **What is the exact relationship between `City — Isometric aerial city of skyscrapers rendered entirely in dense vertical hatching lines with strong perspective convergence, plotter-pen aesthetic, B&W` and `Flowfield Algorithm`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
-- **Why does `UI` connect `Math & Color Utilities` to `App State & Preferences`, `Path Construction & Sampling`, `SVG Export & UI`, `Pattern Fill & Contours`, `Document Units & State`, `Layer Optimization`?**
-  _High betweenness centrality (0.236) - this node is a cross-community bridge._
-- **Why does `round()` connect `Math & Color Utilities` to `Geometry & Layer Rendering`, `App State & Preferences`, `Path Construction & Sampling`, `Layer Type System`, `SVG Export & UI`, `Wavetable Algorithm`, `Pattern Fill & Contours`, `Path Geometry Operations`, `Noise System`, `Layer Optimization`, `Path Serialization`, `Algorithm Bias & Presets`?**
-  _High betweenness centrality (0.207) - this node is a cross-community bridge._
-- **Why does `Renderer` connect `Geometry & Layer Rendering` to `Math & Color Utilities`, `App State & Preferences`, `Layer Type System`, `Path Geometry Operations`, `Layer Optimization`?**
-  _High betweenness centrality (0.119) - this node is a cross-community bridge._
-- **Are the 42 inferred relationships involving `round()` (e.g. with `openColorPickerAnchoredTo()` and `roundToStep()`) actually correct?**
-  _`round()` has 42 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `Non-Destructive History Timeline`, `linesimplify Operation`, `linesort Operation` to the rest of the system?**
+- **Why does `UI` connect `Community 0` to `Community 1`, `Community 2`, `Community 4`, `Community 5`, `Community 8`, `Community 13`?**
+  _High betweenness centrality (0.256) - this node is a cross-community bridge._
+- **Why does `Renderer` connect `Community 1` to `Community 0`, `Community 9`, `Community 2`, `Community 4`?**
+  _High betweenness centrality (0.141) - this node is a cross-community bridge._
+- **Why does `round()` connect `Community 0` to `Community 1`, `Community 2`, `Community 4`, `Community 5`, `Community 7`, `Community 8`, `Community 9`, `Community 14`, `Community 15`?**
+  _High betweenness centrality (0.109) - this node is a cross-community bridge._
+- **Are the 28 inferred relationships involving `round()` (e.g. with `openColorPickerAnchoredTo()` and `roundToStep()`) actually correct?**
+  _`round()` has 28 INFERRED edges - model-reasoned connections that need verification._
+- **What connects `Mirror Modifier Module`, `Rainfall Algorithm`, `Petalis Algorithm` to the rest of the system?**
   _57 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `Math & Color Utilities` be split into smaller, more focused modules?**
+- **Should `Community 0` be split into smaller, more focused modules?**
   _Cohesion score 0.03 - nodes in this community are weakly interconnected._

@@ -405,18 +405,12 @@
 
   const traceFilledElementsVisibleBoundaries = (elements = [], vbMinX = 0, vbMinY = 0, vbW = 0, vbH = 0) => {
     const fillElements = (elements || []).filter((el) => typeof el?.isPointInFill === 'function');
-    if (!fillElements.length || vbW <= 0 || vbH <= 0) return [];
-    const pointForFill = (x, y) => (typeof DOMPoint === 'function' ? new DOMPoint(x, y) : { x, y });
-    const contains = (x, y) => {
-      const pt = pointForFill(x, y);
-      return fillElements.some((el) => el.isPointInFill(pt));
-    };
-    return tracePeriodicFillBoundaries(contains, vbW, vbH, {
-      vbMinX,
-      vbMinY,
-      complexity: fillElements.length * 6,
-      periodic: false,
-    });
+    if (!fillElements.length) return [];
+    const sampledPaths = fillElements.flatMap((el) =>
+      svgElementToPaths(el, vbMinX, vbMinY, vbMinX, vbMinY, vbW, vbH)
+    );
+    if (!sampledPaths.length) return [];
+    return traceFilledGroupVisibleBoundaries(sampledPaths);
   };
 
   const traceFilledGroupVisibleBoundaries = (paths = []) => {
