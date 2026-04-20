@@ -160,8 +160,9 @@
           return t * 2 - 1;
         }
         case 'triangle': {
-          const wx = Math.abs(((px * 1.5 + wp) % 2) - 1);
-          const wy = Math.abs(((py * 1.5 + wp) % 2) - 1);
+          const posmod = (a, b) => ((a % b) + b) % b;
+          const wx = Math.abs(posmod(px * 1.5 + wp, 2) - 1);
+          const wy = Math.abs(posmod(py * 1.5 + wp, 2) - 1);
           return (wx + wy) - 1;
         }
         case 'polygon': {
@@ -170,8 +171,11 @@
           const rotation = ((noiseDef?.polygonRotation ?? 0) * Math.PI) / 180;
           const outline = Math.max(0, noiseDef?.polygonOutline ?? 0);
           const edge = Math.max(0, noiseDef?.polygonEdgeRadius ?? 0);
-          const rx = px + wp * 0.5;
-          const ry = py + wp * 0.5;
+          const tileScale = Math.max(0.001, noiseDef?.polygonTileScale ?? 1);
+          const tileShiftX = noiseDef?.polygonTileShiftX ?? 0;
+          const tileShiftY = noiseDef?.polygonTileShiftY ?? 0;
+          const rx = px * tileScale + tileShiftX;
+          const ry = py * tileScale + tileShiftY;
           const ang = Math.atan2(ry, rx) - rotation;
           const sector = (Math.PI * 2) / sides;
           const rel = ((ang % sector) + sector) % sector;
@@ -221,8 +225,9 @@
           return (cx + cy) % 2 === 0 ? 1 : -1;
         }
         case 'zigzag': {
-          const zig = Math.abs((py * 2) % 2 - 1) * 2 - 1;
-          const t = Math.abs(((px * 2 + zig + wp * 2) % 2) - 1);
+          const posmod = (a, b) => ((a % b) + b) % b;
+          const zig = Math.abs(posmod(py * 2, 2) - 1) * 2 - 1;
+          const t = Math.abs(posmod(px * 2 + zig + wp * 2, 2) - 1);
           return (1 - t) * 2 - 1;
         }
         case 'ripple': {

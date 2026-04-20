@@ -4,54 +4,6 @@
 (() => {
   window.Vectura = window.Vectura || {};
   window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
-  const fallbackNoiseRack = {
-    combineBlend({ combined, value, blend = 'add' }) {
-      if (combined === undefined) return value;
-      switch (blend) {
-        case 'subtract':
-          return combined - value;
-        case 'multiply':
-          return combined * value;
-        case 'max':
-          return Math.max(combined, value);
-        case 'min':
-          return Math.min(combined, value);
-        case 'add':
-        default:
-          return combined + value;
-      }
-    },
-    createEvaluator({ noise }) {
-      const baseNoise = (x, y) => noise.noise2D(x, y);
-      const fbmNoise = (x, y, octaves = 4, gain = 0.5, lacunarity = 2) => {
-        let total = 0;
-        let amp = 1;
-        let freq = 1;
-        let norm = 0;
-        for (let i = 0; i < octaves; i++) {
-          total += baseNoise(x * freq, y * freq) * amp;
-          norm += amp;
-          amp *= gain;
-          freq *= lacunarity;
-        }
-        return norm ? total / norm : total;
-      };
-      return {
-        evaluate(x, y, noiseDef = {}) {
-          if ((noiseDef.type || 'simplex') === 'fbm') {
-            return fbmNoise(
-              x,
-              y,
-              Math.max(1, Math.floor(noiseDef.octaves ?? 4)),
-              Math.max(0.05, Math.min(1, noiseDef.gain ?? 0.5)),
-              Math.max(1.05, noiseDef.lacunarity ?? 2)
-            );
-          }
-          return baseNoise(x, y);
-        },
-      };
-    },
-  };
   window.Vectura.AlgorithmRegistry.topo = {
       generate: (p, rng, noise, bounds) => {
         const { m, width, height } = bounds;
@@ -68,8 +20,29 @@
         const sensitivity = Math.max(0.01, p.sensitivity ?? 1);
         const thresholdOffset = p.thresholdOffset ?? 0;
         const levels = Math.max(1, Math.floor(p.levels ?? 10));
-        const rackApi = window.Vectura.NoiseRack || fallbackNoiseRack;
-        const rack = rackApi.createEvaluator({ noise, seed: p.seed ?? 0 });
+        const rack = window.Vectura.NoiseRack.createEvaluator({ noise, seed: p.seed ?? 0 });
+        const frac = (v) => v - Math.floor(v);
+        const applyPad = (t, pad) => {
+          if (pad <= 0) return t;
+          const span = 1 - pad * 2;
+          if (span <= 0) return 0.5;
+          return Math.max(0, Math.min(1, (t - pad) / span));
+        };
+        const applyTile = (nx, ny, mode, padding = 0) => {
+          const pad = Math.max(0, Math.min(0.45, padding));
+          switch (mode) {
+            case 'brick': { const row = Math.floor(ny); return { x: applyPad(frac(nx + (row % 2) * 0.5), pad), y: applyPad(frac(ny), pad) }; }
+            case 'hex': { const hy = ny / 0.866; const row = Math.floor(hy); return { x: applyPad(frac(nx + (row % 2) * 0.5), pad), y: applyPad(frac(hy), pad) }; }
+            case 'diamond': { const ax = nx + ny; const ay = -nx + ny; return { x: applyPad(frac(ax), pad), y: applyPad(frac(ay), pad) }; }
+            case 'triangle': { let fx = frac(nx); let fy = frac(ny); if (fx + fy > 1) { fx = 1 - fx; fy = 1 - fy; } return { x: applyPad(fx, pad), y: applyPad(fy, pad) }; }
+            case 'offset': { const col = Math.floor(nx); return { x: applyPad(frac(nx), pad), y: applyPad(frac(ny + (col % 2) * 0.5), pad) }; }
+            case 'radial': { const r = Math.hypot(nx, ny); const a = Math.atan2(ny, nx) / (Math.PI * 2) + 0.5; return { x: applyPad(frac(r), pad) * Math.cos(applyPad(frac(a), pad) * Math.PI * 2), y: applyPad(frac(r), pad) * Math.sin(applyPad(frac(a), pad) * Math.PI * 2) }; }
+            case 'checker': { const cx = Math.floor(nx); const cy = Math.floor(ny); let fx = frac(nx); if ((cx + cy) % 2 !== 0) fx = 1 - fx; return { x: applyPad(fx, pad), y: applyPad(frac(ny), pad) }; }
+            case 'wave': { return { x: applyPad(frac(nx + Math.sin(ny * Math.PI * 2) * 0.1), pad), y: applyPad(frac(ny + Math.sin(nx * Math.PI * 2) * 0.1), pad) }; }
+            case 'grid':
+            default: return { x: applyPad(frac(nx), pad), y: applyPad(frac(ny), pad) };
+          }
+        };
 
         const legacyNoise = {
           type: p.noiseType || 'simplex',
@@ -134,23 +107,35 @@
             const dy = worldY - height / 2 + shiftY;
             const rx = dx * cosA - dy * sinA;
             const ry = dx * sinA + dy * cosA;
+            const tileMode = noiseLayer.tileMode || 'off';
+            const tilePadding = noiseLayer.tilePadding ?? 0;
             let sampleX;
             let sampleY;
-            if (noiseLayer.type === 'image' && (noiseLayer.tileMode || 'off') === 'off') {
+            if (noiseLayer.type === 'image' && tileMode === 'off') {
               const u = (worldX - inset + shiftX) / Math.max(1, w) - 0.5;
               const v = (worldY - inset + shiftY) / Math.max(1, h) - 0.5;
               sampleX = u / Math.max(0.05, noiseLayer.imageWidth ?? freq ?? 1);
               sampleY = v / Math.max(0.05, noiseLayer.imageHeight ?? 1);
             } else {
+              const centeredX = noiseLayer.type === 'polygon' ? worldX - (inset + w * 0.5) : worldX;
+              const centeredY = noiseLayer.type === 'polygon' ? worldY - (inset + h * 0.5) : worldY;
+              const dx2 = centeredX * cosA - centeredY * sinA + shiftX;
+              const dy2 = centeredX * sinA + centeredY * cosA + shiftY;
               const widthScale =
                 noiseLayer.type === 'image' ? 1 / Math.max(0.05, noiseLayer.imageWidth ?? freq ?? 1) : freq;
               const heightScale =
                 noiseLayer.type === 'image' ? 1 / Math.max(0.05, noiseLayer.imageHeight ?? 1) : 1;
-              sampleX = rx * zoom * widthScale;
-              sampleY = ry * zoom * heightScale;
+              sampleX = dx2 * zoom * widthScale;
+              sampleY = dy2 * zoom * heightScale;
+              if (tileMode !== 'off') {
+                const tiled = applyTile(sampleX, sampleY, tileMode, tilePadding);
+                sampleX = tiled.x;
+                sampleY = tiled.y;
+                if (noiseLayer.type === 'polygon') { sampleX = (tiled.x - 0.5) * 2; sampleY = (tiled.y - 0.5) * 2; }
+              }
             }
             const value = rack.evaluate(sampleX, sampleY, noiseLayer, { worldX, worldY }) * (noiseLayer.amplitude ?? 1);
-            combined = rackApi.combineBlend({
+            combined = window.Vectura.NoiseRack.combineBlend({
               combined,
               value,
               blend: noiseLayer.blend || 'add',

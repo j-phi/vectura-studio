@@ -2,11 +2,28 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
+const makeNoiseRackMock = () => ({
+  createEvaluator({ noise }) {
+    return {
+      evaluate(x, y) { return noise.noise2D(x, y); },
+      sampleScalar(x, y, def) { return noise.noise2D(x * (def?.zoom ?? 1), y * (def?.zoom ?? 1)); },
+    };
+  },
+  combineBlend({ combined, value, blend = 'add' }) {
+    if (combined === undefined) return value;
+    if (blend === 'subtract') return combined - value;
+    if (blend === 'multiply') return combined * value;
+    if (blend === 'max') return Math.max(combined, value);
+    if (blend === 'min') return Math.min(combined, value);
+    return combined + value;
+  },
+});
+
 const loadTopoAlgorithm = () => {
   const filePath = path.resolve(__dirname, '../../src/core/algorithms/topo.js');
   const code = fs.readFileSync(filePath, 'utf8');
   const context = {
-    window: { Vectura: { AlgorithmRegistry: {} } },
+    window: { Vectura: { AlgorithmRegistry: {}, NoiseRack: makeNoiseRackMock() } },
     Math,
   };
   vm.createContext(context);

@@ -129,13 +129,13 @@
       index === 0 || Math.hypot(pt.x - arr[index - 1].x, pt.y - arr[index - 1].y) > tolerance
     );
 
-  const isClosedPath = (path = []) => {
-    if (!Array.isArray(path) || path.length < 3) return false;
-    const first = path[0];
-    const last = path[path.length - 1];
-    if (!first || !last) return false;
-    return Math.hypot(first.x - last.x, first.y - last.y) < 0.01;
-  };
+  const isClosedPath = window.Vectura.OptimizationUtils?.isClosedPath
+    || ((path = []) => {
+      if (!Array.isArray(path) || path.length < 3) return false;
+      const first = path[0]; const last = path[path.length - 1];
+      if (!first || !last) return false;
+      return Math.hypot(first.x - last.x, first.y - last.y) < 0.01;
+    });
 
   const mergeTouchingChains = (inputPaths = []) => {
     const snap = (v) => Math.round(v * 20) / 20;
@@ -403,14 +403,79 @@
       .filter((path) => Array.isArray(path) && path.length >= 2);
   };
 
-  const traceFilledElementsVisibleBoundaries = (elements = [], vbMinX = 0, vbMinY = 0, vbW = 0, vbH = 0) => {
+  const traceFillOnlyPolygonUnionBoundaries = (elements = [], vbMinX = 0, vbMinY = 0, vbW = 0, vbH = 0) => {
+    const FillBoolean = window.Vectura?.FillBoolean || {};
+    const ringsToEvenOddMultiPolygon = FillBoolean.ringsToEvenOddMultiPolygon;
+    const ringsToNonZeroMultiPolygon = FillBoolean.ringsToNonZeroMultiPolygon;
+    const union = FillBoolean.union;
+    const intersection = FillBoolean.intersection;
+    const offsetMultiPolygon = FillBoolean.offsetMultiPolygon;
+    const rectToMultiPolygon = FillBoolean.rectToMultiPolygon;
+    const multiPolygonToPaths = FillBoolean.multiPolygonToPaths;
+    if (
+      typeof ringsToEvenOddMultiPolygon !== 'function'
+      || typeof ringsToNonZeroMultiPolygon !== 'function'
+      || typeof union !== 'function'
+      || typeof intersection !== 'function'
+      || typeof offsetMultiPolygon !== 'function'
+      || typeof rectToMultiPolygon !== 'function'
+      || typeof multiPolygonToPaths !== 'function'
+    ) {
+      return [];
+    }
+
     const fillElements = (elements || []).filter((el) => typeof el?.isPointInFill === 'function');
     if (!fillElements.length) return [];
-    const sampledPaths = fillElements.flatMap((el) =>
-      svgElementToPaths(el, vbMinX, vbMinY, vbMinX, vbMinY, vbW, vbH)
-    );
-    if (!sampledPaths.length) return [];
-    return traceFilledGroupVisibleBoundaries(sampledPaths);
+    const perElement = fillElements.map((el) => {
+      const rings = svgElementToPaths(el, vbMinX, vbMinY, vbMinX, vbMinY, vbW, vbH, {
+        sampleDistance: 0.4,
+        snapTolerance: 0.35,
+        boundaryTolerance: 1.0,
+      })
+        .filter((path) => isClosedPath(path))
+        .map((path) => dedupeSequentialPoints(path).map((pt) => ({ x: pt.x, y: pt.y })))
+        .filter((ring) => ring.length >= 3);
+      if (!rings.length) return [];
+      const fillRule = (resolveInheritedSvgAttribute(el, 'fill-rule') || el.getAttribute?.('fill-rule') || 'nonzero').toLowerCase();
+      return fillRule === 'evenodd'
+        ? ringsToEvenOddMultiPolygon(rings)
+        : ringsToNonZeroMultiPolygon(rings);
+    }).filter((multiPolygon) => Array.isArray(multiPolygon) && multiPolygon.length);
+
+    if (!perElement.length) return [];
+
+    const repeated = [];
+    perElement.forEach((multiPolygon) => {
+      for (let oy = -1; oy <= 1; oy += 1) {
+        for (let ox = -1; ox <= 1; ox += 1) {
+          repeated.push(offsetMultiPolygon(multiPolygon, ox * vbW, oy * vbH));
+        }
+      }
+    });
+
+    const unioned = union(...repeated);
+    const clipped = intersection(unioned, rectToMultiPolygon(vbMinX, vbMinY, vbMinX + vbW, vbMinY + vbH));
+    if (!clipped.length) return [];
+    const clippedPaths = multiPolygonToPaths(clipped, {
+      minX: vbMinX,
+      minY: vbMinY,
+      maxX: vbMinX + vbW,
+      maxY: vbMinY + vbH,
+      snapTol: Math.max(vbW, vbH) / 1000,
+    })
+      .filter((path) => Array.isArray(path) && path.length >= 4)
+      .map((path) => dedupeSequentialPoints(path))
+      .filter((path) => path.length >= 4)
+      .flatMap((path) => {
+        const normalized = path.map((pt) => ({ x: pt.x, y: pt.y }));
+        if (isClosedPath(normalized)) normalized[normalized.length - 1] = { ...normalized[0] };
+        return [normalized];
+      });
+    return clippedPaths;
+  };
+
+  const traceFilledElementsVisibleBoundaries = (elements = [], vbMinX = 0, vbMinY = 0, vbW = 0, vbH = 0) => {
+    return traceFillOnlyPolygonUnionBoundaries(elements, vbMinX, vbMinY, vbW, vbH);
   };
 
   const traceFilledGroupVisibleBoundaries = (paths = []) => {
@@ -448,7 +513,7 @@
     return passthrough.concat(normalized);
   };
 
-  const svgElementToPaths = (el, offsetX = 0, offsetY = 0, vbMinX = 0, vbMinY = 0, vbW = 0, vbH = 0) => {
+  const svgElementToPaths = (el, offsetX = 0, offsetY = 0, vbMinX = 0, vbMinY = 0, vbW = 0, vbH = 0, options = {}) => {
     if (!el) return [];
     const tag = el.tagName.toLowerCase();
     const applyMatrix = (pt, matrix) => {
@@ -520,8 +585,8 @@
 
       const dNodes = parseSvgDNodes(d);
       const dNodesNorm = dNodes.length ? normalizePoints(dNodes) : [];
-      const SNAP_TOL = 1.0;
-      const BOUNDARY_TOL = 2.0;
+      const SNAP_TOL = Number.isFinite(options.snapTolerance) ? options.snapTolerance : 1.0;
+      const BOUNDARY_TOL = Number.isFinite(options.boundaryTolerance) ? options.boundaryTolerance : 2.0;
       const snapNodes = dNodesNorm.filter(n =>
         Math.abs(n.x - vbMinX) < BOUNDARY_TOL ||
         Math.abs(n.x - vbW)    < BOUNDARY_TOL ||
@@ -543,7 +608,8 @@
         try {
           const len = tmpPath.getTotalLength ? tmpPath.getTotalLength() : 0;
           if (len > 0) {
-            const steps = Math.max(10, Math.floor(len / 2));
+            const sampleDistance = Math.max(0.2, Number(options.sampleDistance) || 2);
+            const steps = Math.max(12, Math.ceil(len / sampleDistance));
             const rawPts = [];
             for (let i = 0; i <= steps; i++) {
               const pt = tmpPath.getPointAtLength((i / steps) * len);
