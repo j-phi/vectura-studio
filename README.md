@@ -155,6 +155,7 @@ Vectura's UI is Illustrator-familiar: a desktop menu bar with `File/View/Insert/
 - Parameter simplification controls with live line/point counts
 - In-app help guide and shortcut menu (press `?`)
 - `Save/Open` full projects via `.vectura` files; import SVGs as new layers
+- Pattern layers now include a custom-tile workflow: import SVG tiles, preview a live `3x3` repeat, flag seam/fill mismatches before save, save valid custom patterns to the runtime library, and carry those custom patterns inside `.vectura` project files
 - Petalis profile library loads from `src/config/petal-profiles` in both hosted and direct `file://` runs via a preloaded `library.js` bundle
 
 </details>

@@ -466,6 +466,57 @@ test.describe('Vectura smoke interactions', () => {
     expect(diagnostics, JSON.stringify(diagnostics.slice(0, 12), null, 2)).toEqual([]);
   });
 
+  test('custom SVG tile import blocks save for unmatched seam crossings', async ({ page }) => {
+    await page.goto('/');
+
+    const diagnostics = await page.evaluate(() => {
+      window.app.engine.addLayer('pattern');
+      const layer = window.app.engine.getActiveLayer();
+      window.app.ui.openPatternTileImportReview({
+        fileName: 'invalid.svg',
+        svgText: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path fill="none" stroke="#000" d="M10 0L10 12"/></svg>',
+        layer,
+      });
+      return {
+        disabled: Boolean(window.app.ui.modal.bodyEl.querySelector('[data-pattern-import-save]')?.disabled),
+        issueCount: window.app.ui.modal.bodyEl.querySelectorAll('[data-pattern-import-issues] > div').length,
+      };
+    });
+
+    expect(diagnostics.disabled).toBe(true);
+    expect(diagnostics.issueCount).toBeGreaterThan(0);
+  });
+
+  test('custom patterns round-trip through vectura payload serialization', async ({ page }) => {
+    await page.goto('/');
+
+    const diagnostics = await page.evaluate(() => {
+      const app = window.app;
+      app.engine.addLayer('pattern');
+      const layer = app.engine.getActiveLayer();
+      const saved = window.Vectura.PatternRegistry.saveCustomPattern({
+        id: 'roundtrip-demo',
+        name: 'Roundtrip Demo',
+        svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path fill="#000" d="M0 0h10v10H0zM10 10h10v10H10z"/></svg>',
+      });
+      layer.params.patternId = saved.id;
+      app.engine.generate(layer.id);
+      const payload = app.ui._serializeVecturaPayload();
+      app.ui._applyVecturaPayload(payload);
+      const restoredPatternLayer = (app.engine.layers || []).find((entry) => entry.type === 'pattern' && entry.params?.patternId === saved.id);
+      const pattern = window.Vectura.PatternRegistry.getPatternById(saved.id);
+      return {
+        hasPattern: Boolean(pattern),
+        activePatternId: restoredPatternLayer?.params?.patternId || null,
+        exportedCount: Array.isArray(payload.customPatterns) ? payload.customPatterns.length : 0,
+      };
+    });
+
+    expect(diagnostics.hasPattern).toBe(true);
+    expect(diagnostics.activePatternId).toBe('custom-roundtrip-demo');
+    expect(diagnostics.exportedCount).toBeGreaterThan(0);
+  });
+
   test('core interactions remain functional on desktop and touch tablet', async ({ page }, testInfo) => {
     const pageErrors = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));

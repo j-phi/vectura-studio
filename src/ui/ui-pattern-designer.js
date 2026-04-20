@@ -2,6 +2,11 @@
  * Pattern Designer methods for the UI class — mixed into UI.prototype by ui.js.
  */
 (() => {
+  const getPatternRegistry = () => window.Vectura?.PatternRegistry || null;
+  const getPatternCatalog = () =>
+    (window.Vectura?.PatternRegistry?.getPatterns?.() || window.Vectura?.PATTERNS || []);
+  const clone = (value) => JSON.parse(JSON.stringify(value));
+
   const escapeHtml = (str) => {
     if (typeof str !== 'string') return String(str ?? '');
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -21,7 +26,7 @@
     ensurePatternLayerSelection(layer) {
       if (!layer || layer.type !== 'pattern') return null;
       if (!layer.params || typeof layer.params !== 'object') layer.params = {};
-      const patterns = Array.isArray(window.Vectura?.PATTERNS) ? window.Vectura.PATTERNS : [];
+      const patterns = getPatternCatalog();
       if (!patterns.length) return null;
       const currentId = `${layer.params.patternId || ''}`;
       const hasCurrent = patterns.some((pattern) => pattern?.id === currentId);
@@ -83,7 +88,16 @@
       pd.root.innerHTML = `
         <div class="flex items-center justify-between mb-2 px-1">
           <span class="text-[11px] font-medium text-vectura-accent uppercase tracking-wide">Texture Designer</span>
-          <div class="flex gap-1">
+          <div class="flex gap-1 items-center">
+            <button type="button" class="text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted transition-colors" data-pd-import-tile>
+              Import SVG Tile
+            </button>
+            <button type="button" class="text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted transition-colors" data-pd-save-custom>
+              Save Pattern
+            </button>
+            <button type="button" class="text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted transition-colors" data-pd-open-library>
+              Load Saved
+            </button>
             <button type="button" class="pd-tool-btn active" data-pd-tool="fill" title="Paint Bucket (F)">
               <svg viewBox="0 0 24 24" width="12" height="12"><path d="M16.56 8.94L7.62 0 6.21 1.41l2.38 2.38-5.15 5.15c-.59.57-.59 1.53 0 2.12l5.5 5.5c.29.29.68.44 1.06.44s.77-.15 1.06-.44l5.5-5.5c.59-.58.59-1.53 0-2.12zM5.21 10 10 5.21 14.79 10z" fill="currentColor"/><path d="M19 11.5s-2 2.17-2 3.5c0 1.1.9 2 2 2s2-.9 2-2c0-1.33-2-3.5-2-3.5z" fill="currentColor"/></svg>
             </button>
@@ -117,7 +131,17 @@
           <span class="text-[10px] text-vectura-muted" data-pd-status>Click a closed region to fill it</span>
           <button type="button" class="text-[10px] text-vectura-muted hover:text-vectura-accent transition-colors" data-pd-clear>Clear all</button>
         </div>
-        <div data-pd-fills-list class="space-y-1"></div>`;
+        <div data-pd-fills-list class="space-y-1"></div>
+        <div class="mt-3 border-t border-vectura-border pt-3">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-[10px] uppercase tracking-widest text-vectura-muted">Tile Validation</span>
+            <span class="text-[10px] text-vectura-muted" data-pd-validation-summary>Checking…</span>
+          </div>
+          <div class="relative border border-vectura-border mb-2" style="height:150px;overflow:hidden;background:#0e0e11;">
+            <canvas data-pd-preview-canvas style="position:absolute;top:0;left:0;"></canvas>
+          </div>
+          <div data-pd-validation-issues class="space-y-1"></div>
+        </div>`;
 
       this._bindPatternDesignerControls(pd);
       this._bindPatternDesignerCanvas(pd);
@@ -228,6 +252,9 @@
         <div class="petal-designer-header" data-pd-header>
           <div class="petal-designer-title">Pattern Designer</div>
           <div class="petal-designer-actions">
+            <button type="button" class="petal-copy-btn" data-pd-import-tile>Import SVG Tile</button>
+            <button type="button" class="petal-copy-btn" data-pd-save-custom>Save Pattern</button>
+            <button type="button" class="petal-copy-btn" data-pd-open-library>Load Saved</button>
             <button type="button" class="petal-tool-btn" data-pd-tool="fill" title="Paint Bucket">
               <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" style="display:block">
                 <path d="M16.56 8.94L7.62 0 6.21 1.41l2.38 2.38-5.15 5.15c-.59.57-.59 1.53 0 2.12l5.5 5.5c.29.29.68.44 1.06.44s.77-.15 1.06-.44l5.5-5.5c.59-.58.59-1.53 0-2.12zM5.21 10 10 5.21 14.79 10z" fill="currentColor"/>
@@ -267,6 +294,16 @@
           <div class="flex items-center justify-between mt-3">
             <button type="button" class="petal-copy-btn" data-pd-clear>Clear all fills</button>
             <span class="text-[11px] text-vectura-muted" data-pd-status>Click a closed region to fill it</span>
+          </div>
+          <div class="mt-4 border-t border-vectura-border pt-3">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-[10px] uppercase tracking-widest text-vectura-muted">Tile Validation</span>
+              <span class="text-[10px] text-vectura-muted" data-pd-validation-summary>Checking…</span>
+            </div>
+            <div class="relative border border-vectura-border mb-2" style="height:180px;overflow:hidden;background:#0e0e11;">
+              <canvas data-pd-preview-canvas style="position:absolute;top:0;left:0;"></canvas>
+            </div>
+            <div data-pd-validation-issues class="space-y-1"></div>
           </div>
         </div>`;
     },
@@ -413,6 +450,399 @@
           ctx.stroke();
         }
       }
+      this._refreshPatternValidation(pd);
+    },
+
+    _getPatternMetaForLayer(layer) {
+      if (!layer?.params?.patternId) return null;
+      return getPatternCatalog().find((pattern) => pattern?.id === layer.params.patternId) || null;
+    },
+
+    _refreshPatternValidation(pd) {
+      const summaryEl = pd.root.querySelector('[data-pd-validation-summary]');
+      const issuesEl = pd.root.querySelector('[data-pd-validation-issues]');
+      const previewCanvas = pd.root.querySelector('[data-pd-preview-canvas]');
+      const meta = this._getPatternMetaForLayer(pd.layer);
+      const validation = meta
+        ? window.Vectura.AlgorithmRegistry?.patternValidateMeta?.(meta, { cache: true })
+        : null;
+      pd.validation = validation || null;
+      if (summaryEl) {
+        if (!validation) summaryEl.textContent = 'No validation available';
+        else if (validation.valid) summaryEl.textContent = 'Tile seams look valid';
+        else summaryEl.textContent = `${validation.blockers} blocker${validation.blockers !== 1 ? 's' : ''}, ${validation.warnings} warning${validation.warnings !== 1 ? 's' : ''}`;
+      }
+      if (issuesEl) {
+        issuesEl.innerHTML = '';
+        const issues = validation?.issues || [];
+        if (!issues.length) {
+          issuesEl.innerHTML = '<div class="text-[10px] text-vectura-muted">No seam issues detected for the selected tile.</div>';
+        } else {
+          issues.slice(0, 6).forEach((issue) => {
+            const row = document.createElement('button');
+            row.type = 'button';
+            row.className = `w-full text-left text-[10px] border px-2 py-1 transition-colors ${issue.severity === 'blocker' ? 'border-vectura-danger text-vectura-danger hover:bg-vectura-danger/10' : 'border-vectura-border text-vectura-muted hover:text-vectura-accent'}`;
+            row.textContent = issue.message;
+            row.addEventListener('click', () => {
+              const point = Array.isArray(issue.points) && issue.points.length ? issue.points[0] : null;
+              if (point) {
+                const data = window.Vectura.AlgorithmRegistry?.patternGetGroups?.(pd.layer.params.patternId);
+                const mainCanvas = pd.root.querySelector('[data-pd-canvas]');
+                if (data && mainCanvas) {
+                  const wrap = mainCanvas.parentElement;
+                  const wrapW = wrap.clientWidth || 460;
+                  const wrapH = wrap.clientHeight || 320;
+                  pd.view = {
+                    zoom: Math.min(8, pd.view.zoom * 1.35),
+                    offsetX: wrapW / 2 - point.x * pd.view.zoom * 1.35,
+                    offsetY: wrapH / 2 - point.y * pd.view.zoom * 1.35,
+                  };
+                  this._renderPatternDesigner(pd);
+                }
+              }
+            });
+            issuesEl.appendChild(row);
+          });
+        }
+      }
+      if (previewCanvas) this._renderPatternValidationPreview(previewCanvas, meta, validation);
+    },
+
+    _renderPatternValidationPreview(canvas, meta, validation) {
+      if (!canvas || !meta) return;
+      const compiled = validation?.compiled || window.Vectura.AlgorithmRegistry?.patternCompileMeta?.(meta, { cache: true });
+      if (!compiled) return;
+      const wrap = canvas.parentElement;
+      const width = wrap.clientWidth || 320;
+      const height = wrap.clientHeight || 180;
+      canvas.width = width;
+      canvas.height = height;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = '#0e0e11';
+      ctx.fillRect(0, 0, width, height);
+      const tileW = compiled.vbW || 1;
+      const tileH = compiled.vbH || 1;
+      const scale = Math.min((width - 24) / (tileW * 3), (height - 24) / (tileH * 3));
+      const originX = (width - tileW * 3 * scale) / 2;
+      const originY = (height - tileH * 3 * scale) / 2;
+      const drawPoint = (pt, ox, oy) => ({
+        x: originX + (ox + pt.x) * scale,
+        y: originY + (oy + pt.y) * scale,
+      });
+      ctx.strokeStyle = 'rgba(230,230,230,0.68)';
+      ctx.lineWidth = 1;
+      for (let ty = 0; ty < 3; ty += 1) {
+        for (let tx = 0; tx < 3; tx += 1) {
+          const ox = tx * tileW;
+          const oy = ty * tileH;
+          ctx.strokeStyle = tx === 1 && ty === 1 ? 'rgba(120,190,255,0.45)' : 'rgba(100,100,110,0.3)';
+          ctx.strokeRect(originX + ox * scale, originY + oy * scale, tileW * scale, tileH * scale);
+          ctx.strokeStyle = 'rgba(230,230,230,0.65)';
+          (compiled.groups || []).forEach((group) => {
+            (group.paths || []).forEach((path) => {
+              if (!Array.isArray(path) || path.length < 2) return;
+              const first = drawPoint(path[0], ox, oy);
+              ctx.beginPath();
+              ctx.moveTo(first.x, first.y);
+              for (let i = 1; i < path.length; i += 1) {
+                const next = drawPoint(path[i], ox, oy);
+                ctx.lineTo(next.x, next.y);
+              }
+              ctx.stroke();
+            });
+          });
+        }
+      }
+      (validation?.issues || []).slice(0, 12).forEach((issue) => {
+        const color = issue.severity === 'blocker' ? '#ef4444' : '#f59e0b';
+        (issue.points || []).forEach((point) => {
+          if (!point) return;
+          for (let ty = 0; ty < 3; ty += 1) {
+            for (let tx = 0; tx < 3; tx += 1) {
+              const draw = drawPoint(point, tx * tileW, ty * tileH);
+              ctx.beginPath();
+              ctx.strokeStyle = color;
+              ctx.lineWidth = 1.25;
+              ctx.arc(draw.x, draw.y, 3, 0, Math.PI * 2);
+              ctx.stroke();
+            }
+          }
+        });
+      });
+    },
+
+    _serializeVecturaPayload() {
+      const version = this.getAppVersion();
+      const images = window.Vectura?.NOISE_IMAGES || {};
+      const imagePayload = Object.entries(images).reduce((acc, [id, img]) => {
+        if (!img || !img.data) return acc;
+        acc[id] = {
+          width: img.width,
+          height: img.height,
+          data: Array.from(img.data),
+        };
+        return acc;
+      }, {});
+      return {
+        type: 'vectura',
+        version,
+        created: new Date().toISOString(),
+        state: this.app.captureState(),
+        images: imagePayload,
+        customPatterns: getPatternRegistry()?.exportAllCustomPatterns?.() || [],
+      };
+    },
+
+    saveVecturaFile() {
+      const payload = this._serializeVecturaPayload();
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const date = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `vectura-${date}.vectura`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    },
+
+    _applyVecturaPayload(data) {
+      const registry = getPatternRegistry();
+      const state = data?.state || data;
+      if (!state?.engine || !state?.settings) throw new Error('Missing state payload');
+      if (registry?.replaceProjectPatterns) {
+        registry.replaceProjectPatterns(Array.isArray(data?.customPatterns) ? data.customPatterns : []);
+      }
+      if (data?.images) {
+        const store = (window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {});
+        Object.entries(data.images).forEach(([id, img]) => {
+          if (!img || !Array.isArray(img.data)) return;
+          store[id] = {
+            width: img.width,
+            height: img.height,
+            data: new Uint8ClampedArray(img.data),
+          };
+        });
+      }
+      this.app.applyState(state);
+      this.app.history = [];
+      this.app.pushHistory();
+    },
+
+    openVecturaFile(file) {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(reader.result);
+          this._applyVecturaPayload(data);
+        } catch (err) {
+          this.openModal({
+            title: 'Invalid File',
+            body: `<p class="modal-text">That file could not be loaded as a .vectura document.</p>`,
+          });
+        }
+      };
+      reader.readAsText(file);
+    },
+
+    _bindPatternTileImportInput() {
+      if (this._patternTileImportBound) return;
+      const input = document.getElementById('file-import-pattern-svg');
+      if (!input) return;
+      input.addEventListener('change', () => {
+        const file = input.files?.[0];
+        const pending = this._pendingPatternImportContext;
+        if (!file || !pending) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          this._pendingPatternImportContext = null;
+          input.value = '';
+          this.openPatternTileImportReview({
+            fileName: file.name,
+            svgText: `${reader.result || ''}`,
+            layer: pending.layer,
+            pd: pending.pd,
+          });
+        };
+        reader.readAsText(file);
+      });
+      this._patternTileImportBound = true;
+    },
+
+    triggerPatternTileImport(layer, pd = null) {
+      this._bindPatternTileImportInput();
+      const input = document.getElementById('file-import-pattern-svg');
+      if (!input) return;
+      this._pendingPatternImportContext = { layer, pd };
+      input.click();
+    },
+
+    openPatternTileImportReview({ fileName = 'custom-pattern.svg', svgText = '', layer, pd = null }) {
+      const draftName = `${fileName}`.replace(/\.svg$/i, '').replace(/[-_]+/g, ' ').trim() || 'Custom Pattern';
+      const registry = getPatternRegistry();
+      const draftId = registry?.ensureCustomId?.(draftName) || `custom-${Date.now().toString(36)}`;
+      const draftMeta = {
+        id: draftId,
+        name: draftName,
+        filename: fileName,
+        source: 'Custom Patterns',
+        svg: svgText,
+        custom: true,
+      };
+      const validation = window.Vectura.AlgorithmRegistry?.patternValidateMeta?.(draftMeta, { cache: false, cacheKey: `${draftId}-preview` });
+      const body = document.createElement('div');
+      body.className = 'space-y-3';
+      body.innerHTML = `
+        <label class="block text-xs">
+          <div class="text-vectura-muted mb-1">Pattern Name</div>
+          <input type="text" class="w-full bg-vectura-bg border border-vectura-border px-2 py-1 text-xs focus:outline-none focus:border-vectura-accent" data-pattern-import-name value="${escapeHtml(draftName)}">
+        </label>
+        <div class="text-[11px] text-vectura-muted">${escapeHtml(fileName)}</div>
+        <div class="relative border border-vectura-border" style="height:220px;background:#0e0e11;">
+          <canvas data-pattern-import-preview style="position:absolute;top:0;left:0;"></canvas>
+        </div>
+        <div data-pattern-import-issues class="space-y-1"></div>
+        <div class="flex items-center justify-end gap-2">
+          <button type="button" class="petal-copy-btn" data-pattern-import-cancel>Cancel</button>
+          <button type="button" class="petal-copy-btn" data-pattern-import-save ${validation?.valid ? '' : 'disabled'}>Save Pattern</button>
+        </div>
+      `;
+      this.openModal({
+        title: 'Import SVG Tile',
+        body,
+      });
+      this._renderPatternValidationPreview(body.querySelector('[data-pattern-import-preview]'), draftMeta, validation);
+      const issuesEl = body.querySelector('[data-pattern-import-issues]');
+      if (issuesEl) {
+        if (!validation) {
+          issuesEl.innerHTML = '<div class="text-[11px] text-vectura-danger">That SVG could not be parsed into a tile.</div>';
+        } else if (!validation.issues.length) {
+          issuesEl.innerHTML = '<div class="text-[11px] text-vectura-accent">Tile seams look valid. This pattern can be saved.</div>';
+        } else {
+          issuesEl.innerHTML = validation.issues
+            .slice(0, 8)
+            .map((issue) => `<div class="text-[11px] ${issue.severity === 'blocker' ? 'text-vectura-danger' : 'text-vectura-muted'}">${escapeHtml(issue.message)}</div>`)
+            .join('');
+        }
+      }
+      body.querySelector('[data-pattern-import-cancel]')?.addEventListener('click', () => this.closeModal());
+      body.querySelector('[data-pattern-import-save]')?.addEventListener('click', () => {
+        const nameInput = body.querySelector('[data-pattern-import-name]');
+        const nextName = `${nameInput?.value || draftName}`.trim() || draftName;
+        const saved = registry?.saveCustomPattern?.({
+          ...draftMeta,
+          id: registry.ensureCustomId(nextName),
+          name: nextName,
+          validation: {
+            blockers: validation?.blockers || 0,
+            warnings: validation?.warnings || 0,
+            valid: validation?.valid === true,
+            validatedAt: new Date().toISOString(),
+          },
+          cachedTile: validation?.compiled || null,
+        });
+        if (!saved) return;
+        if (layer?.params) layer.params.patternId = saved.id;
+        if (this.app.pushHistory) this.app.pushHistory();
+        this.storeLayerParams(layer);
+        this.app.regen();
+        this.buildControls();
+        this.updateFormula();
+        this.closeModal();
+        if (pd) this._refreshPatternValidation(pd);
+      });
+    },
+
+    saveCurrentPatternAsCustom(layer, pd = null) {
+      const registry = getPatternRegistry();
+      const meta = this._getPatternMetaForLayer(layer);
+      if (!registry || !meta) return;
+      const validation = window.Vectura.AlgorithmRegistry?.patternValidateMeta?.(meta, { cache: true });
+      const saved = registry.saveCustomPattern({
+        ...meta,
+        id: registry.ensureCustomId(meta.name),
+        name: meta.custom ? meta.name : `${meta.name} Copy`,
+        source: 'Custom Patterns',
+        validation: validation
+          ? {
+              blockers: validation.blockers,
+              warnings: validation.warnings,
+              valid: validation.valid,
+              validatedAt: new Date().toISOString(),
+            }
+          : null,
+        cachedTile: validation?.compiled || null,
+      });
+      if (!saved) return;
+      layer.params.patternId = saved.id;
+      if (this.app.pushHistory) this.app.pushHistory();
+      this.storeLayerParams(layer);
+      this.app.regen();
+      this.buildControls();
+      this.updateFormula();
+      if (pd) this._refreshPatternValidation(pd);
+    },
+
+    openCustomPatternLibrary(layer, pd = null) {
+      const registry = getPatternRegistry();
+      const patterns = registry?.getCustomPatterns?.() || [];
+      const body = document.createElement('div');
+      body.className = 'space-y-2';
+      body.innerHTML = patterns.length
+        ? patterns.map((pattern) => `
+          <div class="border border-vectura-border p-2 flex items-center justify-between gap-2" data-pattern-row="${escapeHtml(pattern.id)}">
+            <div class="min-w-0">
+              <div class="text-xs text-vectura-text truncate">${escapeHtml(pattern.name)}</div>
+              <div class="text-[10px] text-vectura-muted truncate">${escapeHtml(pattern.filename || pattern.id)}</div>
+            </div>
+            <div class="flex items-center gap-1">
+              <button type="button" class="petal-copy-btn" data-pattern-load="${escapeHtml(pattern.id)}">Load</button>
+              <button type="button" class="petal-copy-btn" data-pattern-duplicate="${escapeHtml(pattern.id)}">Duplicate</button>
+              <button type="button" class="petal-copy-btn" data-pattern-delete="${escapeHtml(pattern.id)}">Delete</button>
+            </div>
+          </div>
+        `).join('')
+        : '<div class="text-xs text-vectura-muted">No saved custom patterns yet.</div>';
+      this.openModal({
+        title: 'Saved Patterns',
+        body,
+      });
+      body.querySelectorAll('[data-pattern-load]').forEach((button) => {
+        button.addEventListener('click', () => {
+          layer.params.patternId = button.dataset.patternLoad;
+          if (this.app.pushHistory) this.app.pushHistory();
+          this.storeLayerParams(layer);
+          this.app.regen();
+          this.buildControls();
+          this.updateFormula();
+          this.closeModal();
+          if (pd) this._refreshPatternValidation(pd);
+        });
+      });
+      body.querySelectorAll('[data-pattern-duplicate]').forEach((button) => {
+        button.addEventListener('click', () => {
+          registry?.duplicatePattern?.(button.dataset.patternDuplicate, { persistToLocal: true, persistToProject: true });
+          this.openCustomPatternLibrary(layer, pd);
+        });
+      });
+      body.querySelectorAll('[data-pattern-delete]').forEach((button) => {
+        button.addEventListener('click', () => {
+          registry?.deleteCustomPattern?.(button.dataset.patternDelete);
+          if (layer?.params?.patternId === button.dataset.patternDelete) {
+            this.ensurePatternLayerSelection(layer);
+            this.storeLayerParams(layer);
+          }
+          this.app.regen();
+          this.buildControls();
+          this.updateFormula();
+          this.openCustomPatternLibrary(layer, pd);
+        });
+      });
     },
 
     _bindPatternDesignerCanvas(pd) {
@@ -530,6 +960,15 @@
         pd.fills = [];
         this._applyPatternDesignerChanges(pd);
       });
+      pd.root.querySelector('[data-pd-import-tile]')?.addEventListener('click', () => {
+        this.triggerPatternTileImport(pd.layer, pd);
+      });
+      pd.root.querySelector('[data-pd-save-custom]')?.addEventListener('click', () => {
+        this.saveCurrentPatternAsCustom(pd.layer, pd);
+      });
+      pd.root.querySelector('[data-pd-open-library]')?.addEventListener('click', () => {
+        this.openCustomPatternLibrary(pd.layer, pd);
+      });
     },
 
     _applyPatternDesignerChanges(pd) {
@@ -547,6 +986,7 @@
       this.storeLayerParams(layer);
       this.app.regen();
       this._renderPatternDesigner(pd);
+      this._refreshPatternValidation(pd);
       if (pd.inline && this._renderFillsList) this._renderFillsList(pd);
       const statusEl = pd.root.querySelector('[data-pd-status]');
       if (statusEl) {

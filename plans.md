@@ -25,6 +25,7 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
+- Added a custom Pattern tile workflow: a runtime merged registry for bundled plus saved custom patterns, local/project persistence for custom tiles, `.vectura` project round-tripping, inline Pattern Texture Designer import/save/load actions, and a live `3x3` validation preview that blocks saving seam-invalid SVG tiles.
 - Added representative Pattern source-fidelity coverage that scans the full Hero tile catalog, selects compound-fill archetypes including `Autumn`, `Bamboo`, and `Bank Note`, and records the still-broken seam/silhouette cases as expected-fail Playwright regressions so the renderer gaps stay visible without redlining CI.
 - Fixed fill-built Pattern extraction so overlapping SVG fill subpaths now collapse to the visible silhouette boundary, tightened seam-chain pairing so `Autumn` grid tiles reconnect cleanly across the horizontal seam, and added unit plus Playwright regressions for the affected Hero patterns and seam continuity.
 - Fixed the Pattern-layer Texture Designer initialization so the default fallback texture now appears immediately on first open, and moved the designer directly below the texture selection grid above `Scale`.

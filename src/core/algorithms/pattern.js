@@ -6,6 +6,20 @@
   window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
 
   const svgCache = new Map();
+  const deepClone = (value) => JSON.parse(JSON.stringify(value));
+  const getPatternRegistry = () => window.Vectura?.PatternRegistry || null;
+  const getPatternMeta = (patternOrId) => {
+    if (patternOrId && typeof patternOrId === 'object' && patternOrId.svg) return patternOrId;
+    const registry = getPatternRegistry();
+    if (registry?.getPatternById) return registry.getPatternById(patternOrId);
+    return (window.Vectura.PATTERNS || []).find((pattern) => pattern?.id === patternOrId) || null;
+  };
+  const getPatternCacheKey = (meta = {}) => {
+    if (!meta?.id) return '';
+    const version = window.Vectura?.PATTERN_REGISTRY_VERSION || 0;
+    const stamp = meta.customUpdatedAt || meta.validation?.validatedAt || meta.validation?.updatedAt || '';
+    return `${meta.id}::${stamp}::${version}`;
+  };
 
   // Extract all explicit node coordinates from an SVG path d attribute.
   // Only absolute/relative M, L, H, V, Z are used for straight-line nodes;
@@ -99,6 +113,89 @@
     }
     if (currentParts.length) result.push(currentParts.join(''));
     return result;
+  };
+
+  const extractExactLineSubpathPoints = (d) => {
+    if (!d) return null;
+    const points = [];
+    const cmdRe = /([MmLlHhVvCcSsQqTtAaZz])([^MmLlHhVvCcSsQqTtAaZz]*)/g;
+    const floats = (s) => s.trim().split(/[\s,]+/).map(parseFloat).filter((v) => Number.isFinite(v));
+    let cx = 0;
+    let cy = 0;
+    let sx = 0;
+    let sy = 0;
+    let match = cmdRe.exec(d);
+    while (match) {
+      const command = match[1];
+      const values = floats(match[2]);
+      if (!/[MmLlHhVvZz]/.test(command)) return null;
+      switch (command) {
+        case 'M':
+        case 'm': {
+          for (let i = 0; i + 1 < values.length; i += 2) {
+            if (command === 'M') {
+              cx = values[i];
+              cy = values[i + 1];
+            } else {
+              cx += values[i];
+              cy += values[i + 1];
+            }
+            if (i === 0) {
+              sx = cx;
+              sy = cy;
+            }
+            points.push({ x: cx, y: cy });
+          }
+          break;
+        }
+        case 'L':
+          for (let i = 0; i + 1 < values.length; i += 2) {
+            cx = values[i];
+            cy = values[i + 1];
+            points.push({ x: cx, y: cy });
+          }
+          break;
+        case 'l':
+          for (let i = 0; i + 1 < values.length; i += 2) {
+            cx += values[i];
+            cy += values[i + 1];
+            points.push({ x: cx, y: cy });
+          }
+          break;
+        case 'H':
+          values.forEach((value) => {
+            cx = value;
+            points.push({ x: cx, y: cy });
+          });
+          break;
+        case 'h':
+          values.forEach((value) => {
+            cx += value;
+            points.push({ x: cx, y: cy });
+          });
+          break;
+        case 'V':
+          values.forEach((value) => {
+            cy = value;
+            points.push({ x: cx, y: cy });
+          });
+          break;
+        case 'v':
+          values.forEach((value) => {
+            cy += value;
+            points.push({ x: cx, y: cy });
+          });
+          break;
+        case 'Z':
+        case 'z':
+          points.push({ x: sx, y: sy });
+          cx = sx;
+          cy = sy;
+          break;
+      }
+      match = cmdRe.exec(d);
+    }
+    return points.length >= 2 ? points : null;
   };
 
   const parseNumber = (val, fallback = 0) => {
@@ -587,11 +684,13 @@
       const dNodesNorm = dNodes.length ? normalizePoints(dNodes) : [];
       const SNAP_TOL = Number.isFinite(options.snapTolerance) ? options.snapTolerance : 1.0;
       const BOUNDARY_TOL = Number.isFinite(options.boundaryTolerance) ? options.boundaryTolerance : 2.0;
+      const maxX = vbMinX + vbW;
+      const maxY = vbMinY + vbH;
       const snapNodes = dNodesNorm.filter(n =>
         Math.abs(n.x - vbMinX) < BOUNDARY_TOL ||
-        Math.abs(n.x - vbW)    < BOUNDARY_TOL ||
+        Math.abs(n.x - maxX)   < BOUNDARY_TOL ||
         Math.abs(n.y - vbMinY) < BOUNDARY_TOL ||
-        Math.abs(n.y - vbH)    < BOUNDARY_TOL
+        Math.abs(n.y - maxY)   < BOUNDARY_TOL
       );
       const snapToNodes = (pt) => {
         for (const n of snapNodes) {
@@ -602,14 +701,25 @@
 
       const allSubPaths = [];
       for (const subStr of subpathStrs) {
+        const exactPoints = extractExactLineSubpathPoints(subStr);
+        if (exactPoints?.length >= 2) {
+          const norm = normalizePoints(exactPoints);
+          const snapped = norm.map(snapToNodes);
+          const deduped = dedupeSequentialPoints(snapped, 1e-6);
+          if (deduped.length >= 2) {
+            allSubPaths.push(deduped);
+            continue;
+          }
+        }
         const tmpPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         tmpPath.setAttribute('d', subStr);
         svgContainer.appendChild(tmpPath);
         try {
           const len = tmpPath.getTotalLength ? tmpPath.getTotalLength() : 0;
           if (len > 0) {
-            const sampleDistance = Math.max(0.2, Number(options.sampleDistance) || 2);
-            const steps = Math.max(12, Math.ceil(len / sampleDistance));
+            const requestedDistance = Number(options.sampleDistance) || 0.35;
+            const sampleDistance = Math.max(0.08, Math.min(requestedDistance, len / 24 || requestedDistance));
+            const steps = Math.max(24, Math.ceil(len / sampleDistance));
             const rawPts = [];
             for (let i = 0; i <= steps; i++) {
               const pt = tmpPath.getPointAtLength((i / steps) * len);
@@ -625,8 +735,8 @@
               const EDGE_TOL = 0.15;
               for (const p of deduped) {
                 if (
-                  Math.abs(p.x - vbMinX) < EDGE_TOL || Math.abs(p.x - vbW) < EDGE_TOL ||
-                  Math.abs(p.y - vbMinY) < EDGE_TOL || Math.abs(p.y - vbH) < EDGE_TOL
+                  Math.abs(p.x - vbMinX) < EDGE_TOL || Math.abs(p.x - maxX) < EDGE_TOL ||
+                  Math.abs(p.y - vbMinY) < EDGE_TOL || Math.abs(p.y - maxY) < EDGE_TOL
                 ) p._tileEdge = true;
               }
               if (deduped.length >= 2) allSubPaths.push(deduped);
@@ -640,11 +750,16 @@
     return [];
   };
 
-  const getTargetSvgData = (patternId) => {
-    if (svgCache.has(patternId)) return svgCache.get(patternId);
-    
-    const meta = window.Vectura.PATTERNS.find(x => x.id === patternId);
+  const compilePatternMeta = (patternOrId, options = {}) => {
+    const meta = getPatternMeta(patternOrId);
     if (!meta || !meta.svg) return null;
+    const cacheKey = options.cache === false ? '' : (options.cacheKey || getPatternCacheKey(meta));
+    if (cacheKey && svgCache.has(cacheKey)) return svgCache.get(cacheKey);
+    if (cacheKey && meta.cachedTile?.groups?.length) {
+      const cached = deepClone(meta.cachedTile);
+      svgCache.set(cacheKey, cached);
+      return cached;
+    }
 
     const parser = new DOMParser();
     const doc = parser.parseFromString(meta.svg, 'image/svg+xml');
@@ -698,7 +813,11 @@
       const strokeVisible = stroke && stroke !== 'none';
       const paths = (fillVisible && !strokeVisible)
         ? []
-        : svgElementToPaths(clone, vbMinX, vbMinY, vbMinX, vbMinY, vbW, vbH);
+        : svgElementToPaths(clone, vbMinX, vbMinY, vbMinX, vbMinY, vbW, vbH, {
+          sampleDistance: 0.22,
+          snapTolerance: 0.18,
+          boundaryTolerance: 0.6,
+        });
       
       elementsData.push({
          index,
@@ -742,12 +861,26 @@
     tempSvg.remove();
 
     const result = { vbW, vbH, groups: parsedGroups };
-    svgCache.set(patternId, result);
+    if (cacheKey) svgCache.set(cacheKey, result);
     return result;
+  };
+
+  const getTargetSvgData = (patternId) => compilePatternMeta(patternId);
+
+  const invalidatePatternCache = (patternId) => {
+    if (!patternId) {
+      svgCache.clear();
+      return;
+    }
+    Array.from(svgCache.keys()).forEach((key) => {
+      if (key === patternId || `${key}`.startsWith(`${patternId}::`)) svgCache.delete(key);
+    });
   };
 
   // expose helper for UI drop-downs
   window.Vectura.AlgorithmRegistry.patternGetGroups = getTargetSvgData;
+  window.Vectura.AlgorithmRegistry.patternCompileMeta = compilePatternMeta;
+  window.Vectura.AlgorithmRegistry.patternInvalidateCache = invalidatePatternCache;
 
   // ── Pattern fill helpers ──────────────────────────────────────────────────
 
@@ -785,6 +918,300 @@
       a += poly[i].x * poly[j].y - poly[j].x * poly[i].y;
     }
     return a / 2;
+  };
+
+  const normalizeGeneratedLoops = (paths = []) =>
+    mergeTouchingChains(paths)
+      .filter((path) => Array.isArray(path) && path.length >= 2)
+      .map((path) => {
+        const next = dedupeSequentialPoints(clonePath(path), 1e-6);
+        if (isClosedPath(next)) next[next.length - 1] = { ...next[0] };
+        return next;
+      });
+
+  const generatedContains = (paths = [], x, y) => {
+    let inside = false;
+    (paths || []).forEach((path) => {
+      if (!Array.isArray(path) || path.length < 2) return;
+      for (let i = 0; i + 1 < path.length; i += 1) {
+        const a = path[i];
+        const b = path[i + 1];
+        if ((a.y > y) === (b.y > y)) continue;
+        const xCross = a.x + ((y - a.y) * (b.x - a.x)) / ((b.y - a.y) || 1e-9);
+        if (xCross > x) inside = !inside;
+      }
+    });
+    return inside;
+  };
+
+  const buildSourceFillSampler = (meta) => {
+    if (!meta?.svg || typeof DOMParser === 'undefined') return null;
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(meta.svg, 'image/svg+xml');
+    const svg = doc.querySelector('svg');
+    if (!svg) return null;
+    const viewBox = svg.getAttribute('viewBox');
+    let dims = [
+      0,
+      0,
+      parseNumber(svg.getAttribute('width'), 100),
+      parseNumber(svg.getAttribute('height'), 100),
+    ];
+    if (viewBox) {
+      const parts = viewBox.split(/[\s,]+/).map(Number);
+      if (parts.length >= 4) dims = parts;
+    }
+    const [minX, minY, width, height] = dims;
+    const tempSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    tempSvg.setAttribute('width', width);
+    tempSvg.setAttribute('height', height);
+    tempSvg.setAttribute('viewBox', `${minX} ${minY} ${width} ${height}`);
+    tempSvg.style.position = 'absolute';
+    tempSvg.style.left = '-9999px';
+    tempSvg.style.top = '-9999px';
+    tempSvg.style.visibility = 'hidden';
+    tempSvg.innerHTML = svg.innerHTML || '';
+    document.body.appendChild(tempSvg);
+    const fillElements = [...tempSvg.querySelectorAll('path, polygon, rect, circle, ellipse')].filter((el) => {
+      const fill = resolveInheritedSvgAttribute(el, 'fill');
+      return fill && fill !== 'none';
+    });
+    return {
+      minX,
+      minY,
+      width,
+      height,
+      contains(x, y) {
+        const localX = ((((x - minX) % width) + width) % width) + minX;
+        const localY = ((((y - minY) % height) + height) % height) + minY;
+        const pt = typeof DOMPoint === 'function' ? new DOMPoint(localX, localY) : { x: localX, y: localY };
+        return fillElements.some((el) => typeof el.isPointInFill === 'function' && el.isPointInFill(pt));
+      },
+      cleanup() {
+        tempSvg.remove();
+      },
+    };
+  };
+
+  const collectBoundaryCrossings = (paths = [], vbMinX = 0, vbMinY = 0, vbW = 0, vbH = 0) => {
+    const maxX = vbMinX + vbW;
+    const maxY = vbMinY + vbH;
+    const edges = { top: [], bottom: [], left: [], right: [] };
+    const seen = new Set();
+    const pushCrossing = (side, point, tangent, pathIndex, segmentIndex) => {
+      const key = `${side}:${pathIndex}:${segmentIndex}:${Math.round(point.x * 1000) / 1000}:${Math.round(point.y * 1000) / 1000}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      edges[side].push({
+        side,
+        point,
+        tangent,
+        pathIndex,
+        segmentIndex,
+        pos: side === 'top' || side === 'bottom' ? point.x : point.y,
+      });
+    };
+    const registerIntersection = (side, a, b, pathIndex, segmentIndex, point) => {
+      pushCrossing(side, point, { x: b.x - a.x, y: b.y - a.y }, pathIndex, segmentIndex);
+    };
+
+    (paths || []).forEach((path, pathIndex) => {
+      if (!Array.isArray(path) || path.length < 2) return;
+      for (let i = 0; i + 1 < path.length; i += 1) {
+        const a = path[i];
+        const b = path[i + 1];
+        if (!a || !b) continue;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        if (Math.abs(dy) > 1e-9) {
+          const tTop = (vbMinY - a.y) / dy;
+          const tBottom = (maxY - a.y) / dy;
+          if (tTop >= 0 && tTop <= 1) {
+            const x = a.x + dx * tTop;
+            if (x >= vbMinX - 1e-6 && x <= maxX + 1e-6) registerIntersection('top', a, b, pathIndex, i, { x, y: vbMinY });
+          }
+          if (tBottom >= 0 && tBottom <= 1) {
+            const x = a.x + dx * tBottom;
+            if (x >= vbMinX - 1e-6 && x <= maxX + 1e-6) registerIntersection('bottom', a, b, pathIndex, i, { x, y: maxY });
+          }
+        }
+        if (Math.abs(dx) > 1e-9) {
+          const tLeft = (vbMinX - a.x) / dx;
+          const tRight = (maxX - a.x) / dx;
+          if (tLeft >= 0 && tLeft <= 1) {
+            const y = a.y + dy * tLeft;
+            if (y >= vbMinY - 1e-6 && y <= maxY + 1e-6) registerIntersection('left', a, b, pathIndex, i, { x: vbMinX, y });
+          }
+          if (tRight >= 0 && tRight <= 1) {
+            const y = a.y + dy * tRight;
+            if (y >= vbMinY - 1e-6 && y <= maxY + 1e-6) registerIntersection('right', a, b, pathIndex, i, { x: maxX, y });
+          }
+        }
+      }
+    });
+    return edges;
+  };
+
+  const pairBoundaryCrossings = (primary = [], secondary = [], tolerance = 0.2) => {
+    const remaining = secondary.slice();
+    const issues = [];
+    primary.forEach((entry) => {
+      let bestIndex = -1;
+      let bestDistance = Infinity;
+      remaining.forEach((candidate, candidateIndex) => {
+        const distance = Math.abs(entry.pos - candidate.pos);
+        if (distance <= tolerance && distance < bestDistance) {
+          bestDistance = distance;
+          bestIndex = candidateIndex;
+        }
+      });
+      if (bestIndex === -1) {
+        issues.push({
+          severity: 'blocker',
+          code: 'seam-unmatched',
+          side: entry.side,
+          message: `${entry.side} seam crossing has no mirrored partner.`,
+          points: [entry.point],
+        });
+        return;
+      }
+      const match = remaining.splice(bestIndex, 1)[0];
+      const magA = Math.hypot(entry.tangent.x, entry.tangent.y) || 1;
+      const magB = Math.hypot(match.tangent.x, match.tangent.y) || 1;
+      const dot = Math.abs((entry.tangent.x * match.tangent.x + entry.tangent.y * match.tangent.y) / (magA * magB));
+      if (dot < 0.95) {
+        issues.push({
+          severity: 'blocker',
+          code: 'seam-tangent-mismatch',
+          side: entry.side,
+          message: `${entry.side} seam crossing does not continue with a compatible tangent.`,
+          points: [entry.point, match.point],
+        });
+      }
+    });
+    remaining.forEach((entry) => {
+      issues.push({
+        severity: 'blocker',
+        code: 'seam-unmatched',
+        side: entry.side,
+        message: `${entry.side} seam crossing has no mirrored partner.`,
+        points: [entry.point],
+      });
+    });
+    return issues;
+  };
+
+  const validateCompiledPattern = (meta, data) => {
+    if (!meta || !data) return null;
+    const paths = normalizeGeneratedLoops((data.groups || []).flatMap((group) => group.paths || []));
+    const vbMinX = 0;
+    const vbMinY = 0;
+    const vbW = data.vbW || 0;
+    const vbH = data.vbH || 0;
+    const seamTolerance = Math.max(vbW, vbH) / 400 || 0.2;
+    const issues = [];
+
+    const edges = collectBoundaryCrossings(paths, vbMinX, vbMinY, vbW, vbH);
+    issues.push(...pairBoundaryCrossings(edges.top, edges.bottom, seamTolerance));
+    issues.push(...pairBoundaryCrossings(edges.left, edges.right, seamTolerance));
+
+    const nearEdgeWarnings = [];
+    paths.forEach((path) => {
+      path.forEach((point) => {
+        const distances = [
+          Math.abs(point.x - vbMinX),
+          Math.abs(point.x - (vbMinX + vbW)),
+          Math.abs(point.y - vbMinY),
+          Math.abs(point.y - (vbMinY + vbH)),
+        ];
+        const minDistance = Math.min(...distances);
+        if (minDistance > 1e-6 && minDistance < seamTolerance * 0.5) {
+          nearEdgeWarnings.push(point);
+        }
+      });
+    });
+    if (nearEdgeWarnings.length) {
+      issues.push({
+        severity: 'warning',
+        code: 'near-edge-geometry',
+        message: 'Geometry sits very close to a tile edge and may snap unexpectedly.',
+        points: nearEdgeWarnings.slice(0, 8),
+      });
+    }
+
+    if (meta.fills) {
+      const sampler = buildSourceFillSampler(meta);
+      if (sampler) {
+        let mismatch = 0;
+        let total = 0;
+        const mismatchPoints = [];
+        const cols = 12;
+        const rows = 12;
+        for (let iy = 0; iy < rows; iy += 1) {
+          for (let ix = 0; ix < cols; ix += 1) {
+            const x = ((ix + 0.37) / cols) * vbW;
+            const y = ((iy + 0.61) / rows) * vbH;
+            const sourceValue = sampler.contains(x, y);
+            const generatedValue = generatedContains(paths, x, y);
+            total += 1;
+            if (sourceValue !== generatedValue) {
+              mismatch += 1;
+              if (mismatchPoints.length < 12) mismatchPoints.push({ x, y });
+            }
+          }
+        }
+        [-0.6, -0.2, 0.2, 0.6].forEach((offset) => {
+          for (let ix = 0; ix < 16; ix += 1) {
+            const x = ((ix + 0.5) / 16) * vbW;
+            const topY = vbMinY + offset;
+            const leftX = vbMinX + offset;
+            total += 2;
+            if (sampler.contains(x, topY) !== generatedContains(paths, x, vbMinY + offset)) {
+              mismatch += 1;
+              if (mismatchPoints.length < 12) mismatchPoints.push({ x, y: vbMinY });
+            }
+            const y = ((ix + 0.5) / 16) * vbH;
+            if (sampler.contains(leftX, y) !== generatedContains(paths, vbMinX + offset, y)) {
+              mismatch += 1;
+              if (mismatchPoints.length < 12) mismatchPoints.push({ x: vbMinX, y });
+            }
+          }
+        });
+        if (mismatch > 0) {
+          issues.push({
+            severity: 'blocker',
+            code: 'fill-source-mismatch',
+            message: `Imported outline differs from the source SVG fill silhouette at ${mismatch} sample points.`,
+            points: mismatchPoints,
+            mismatch,
+            total,
+          });
+        }
+        sampler.cleanup();
+      }
+    }
+
+    const blockers = issues.filter((issue) => issue.severity === 'blocker');
+    const warnings = issues.filter((issue) => issue.severity !== 'blocker');
+    return {
+      valid: blockers.length === 0,
+      blockers: blockers.length,
+      warnings: warnings.length,
+      issues,
+      compiled: {
+        vbW: data.vbW,
+        vbH: data.vbH,
+        groups: deepClone(data.groups || []),
+      },
+    };
+  };
+
+  const validatePatternMeta = (patternOrId, options = {}) => {
+    const meta = getPatternMeta(patternOrId);
+    if (!meta?.svg) return null;
+    const data = compilePatternMeta(meta, { cache: options.cache !== false, cacheKey: options.cacheKey });
+    if (!data) return null;
+    return validateCompiledPattern(meta, data);
   };
 
   // Hatch lines at angleDeg, clipped to polygon
@@ -1000,6 +1427,8 @@
   window.Vectura.AlgorithmRegistry._traceFilledGroupVisibleBoundaries = traceFilledGroupVisibleBoundaries;
   window.Vectura.AlgorithmRegistry._tracePeriodicFillBoundaries = tracePeriodicFillBoundaries;
   window.Vectura.AlgorithmRegistry._traceFilledElementsVisibleBoundaries = traceFilledElementsVisibleBoundaries;
+  window.Vectura.AlgorithmRegistry.patternValidateMeta = validatePatternMeta;
+  window.Vectura.AlgorithmRegistry._validateCompiledPattern = validateCompiledPattern;
 
   window.Vectura.AlgorithmRegistry.pattern = {
       generate: (p, rng, noise, bounds) => {
