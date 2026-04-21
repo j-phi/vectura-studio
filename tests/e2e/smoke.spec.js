@@ -882,6 +882,9 @@ test.describe('Vectura smoke interactions', () => {
 
     const lineSortCard = page.locator('#export-modal-root .optimization-card').filter({ hasText: 'Line Sort' });
     const applyToggle = lineSortCard.locator('.optimization-card-actions input[type="checkbox"]').first();
+    await expect(applyToggle).toBeChecked();
+    await applyToggle.uncheck();
+    await expect(applyToggle).not.toBeChecked();
     await applyToggle.check();
 
     await expect(previewSelect).toHaveValue('overlay');

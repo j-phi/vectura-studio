@@ -70,6 +70,7 @@
         shadowTiles: false,
         pathMap: [],
         directEditState: null,
+        trimMargins: { top: 0, bottom: 0, left: 0, right: 0, locked: false },
       };
 
       this.inlinePatternDesigner = pd;
@@ -195,9 +196,19 @@
           </div>
           <button type="button" class="text-[10px] text-vectura-muted hover:text-vectura-accent transition-colors" data-pd-clear>Clear all</button>
         </div>
-        <div data-pd-path-actions class="hidden flex gap-1 mb-1 text-[10px]">
-          <button type="button" class="border border-vectura-danger text-vectura-danger px-2 py-0.5 hover:bg-vectura-danger hover:text-white transition-colors" data-pd-delete-path>Delete Path</button>
-          <button type="button" class="border border-vectura-border text-vectura-muted px-2 py-0.5 hover:bg-vectura-border transition-colors" data-pd-trim-path>Trim to Tile</button>
+        <div data-pd-path-actions class="hidden flex flex-col gap-1 mb-1 text-[10px]">
+          <div class="flex gap-1">
+            <button type="button" class="border border-vectura-danger text-vectura-danger px-2 py-0.5 hover:bg-vectura-danger hover:text-white transition-colors" data-pd-delete-path>Delete Path</button>
+            <button type="button" class="border border-vectura-border text-vectura-muted px-2 py-0.5 hover:bg-vectura-border transition-colors" data-pd-trim-path>Trim to Tile</button>
+          </div>
+          <div class="flex items-center gap-1 text-vectura-muted">
+            <span class="shrink-0">Margins:</span>
+            <label class="flex items-center gap-0.5">T<input type="number" data-pd-margin="top" min="0" max="5" step="1" value="0" class="w-8 bg-transparent border border-vectura-border text-center text-vectura-fg rounded-none px-0.5 py-px"></label>
+            <label class="flex items-center gap-0.5">B<input type="number" data-pd-margin="bottom" min="0" max="5" step="1" value="0" class="w-8 bg-transparent border border-vectura-border text-center text-vectura-fg rounded-none px-0.5 py-px"></label>
+            <label class="flex items-center gap-0.5">L<input type="number" data-pd-margin="left" min="0" max="5" step="1" value="0" class="w-8 bg-transparent border border-vectura-border text-center text-vectura-fg rounded-none px-0.5 py-px"></label>
+            <label class="flex items-center gap-0.5">R<input type="number" data-pd-margin="right" min="0" max="5" step="1" value="0" class="w-8 bg-transparent border border-vectura-border text-center text-vectura-fg rounded-none px-0.5 py-px"></label>
+            <button type="button" data-pd-margin-lock title="Lock all sides" class="px-1 py-px border border-vectura-border text-vectura-muted hover:text-vectura-accent transition-colors" aria-pressed="false">&#128275;</button>
+          </div>
         </div>
         <div data-pd-fills-list class="space-y-1"></div>
         <div class="mt-3 border-t border-vectura-border pt-3">
@@ -274,7 +285,7 @@
           this._applyPatternDesignerChanges(pd);
         });
         row.querySelector('[data-fl-del]').addEventListener('click', () => {
-          pd.history.push(this._clonePatternFills(pd.fills));
+          this._pushPdHistory(pd);
           pd.fills.splice(idx, 1);
           this._applyPatternDesignerChanges(pd);
         });
@@ -287,10 +298,22 @@
         if (!pd?.root) return;
         if (e.key === 'z' && (e.metaKey || e.ctrlKey)) {
           e.preventDefault();
-          if (pd.history.length) {
-            pd.fills = pd.history.pop();
-            this._applyPatternDesignerChanges(pd);
+          const entry = pd.history.pop();
+          if (!entry) return;
+          const fills = entry.fills ?? entry;
+          const svgState = entry.svgState ?? null;
+          pd.fills = fills;
+          if (svgState) {
+            const registry = getPatternRegistry();
+            const meta = this._getPatternMetaForLayer(pd.layer);
+            if (registry && meta) {
+              registry.saveCustomPattern({ ...meta, svg: svgState.svg, cachedTile: null, validation: null });
+              window.Vectura.AlgorithmRegistry?.patternInvalidateCache?.(svgState.patternId);
+              pd.directEditState = null;
+              this.app.regen();
+            }
           }
+          this._applyPatternDesignerChanges(pd);
           return;
         }
         if (e.key === 'f' || e.key === 'F') {
@@ -422,6 +445,7 @@
         shadowTiles: false,
         pathMap: [],
         directEditState: null,
+        trimMargins: { top: 0, bottom: 0, left: 0, right: 0, locked: false },
       };
       this.patternDesigner = pd;
       this._bindPatternDesignerDrag(pd);
@@ -1129,7 +1153,7 @@
       const ensureSessionHistory = (session) => {
         if (session.historyPushed) return;
         session.historyPushed = true;
-        pd.history.push(this._clonePatternFills(pd.fills));
+        this._pushPdHistory(pd);
         if (this.app.pushHistory) this.app.pushHistory();
       };
       const applyPourAt = (tx, ty, e, session) => {
@@ -1273,9 +1297,35 @@
       pd.root.querySelector('[data-pd-trim-path]')?.addEventListener('click', () => {
         if (pd.selectedPath !== null) {
           const data = window.Vectura.AlgorithmRegistry?.patternGetGroups?.(pd.layer.params.patternId);
-          if (data) this._trimPathToTile(pd, pd.selectedPath, data.vbW, data.vbH);
+          if (data) this._trimPathToTile(pd, pd.selectedPath, data.vbW, data.vbH, pd.trimMargins);
         }
       });
+      pd.root.querySelectorAll('[data-pd-margin]').forEach(input => {
+        input.addEventListener('input', () => {
+          const side = input.dataset.pdMargin;
+          const val = Math.max(0, Math.min(5, parseFloat(input.value) || 0));
+          if (pd.trimMargins.locked) {
+            pd.trimMargins.top = pd.trimMargins.bottom = pd.trimMargins.left = pd.trimMargins.right = val;
+            pd.root.querySelectorAll('[data-pd-margin]').forEach(inp => { inp.value = val; });
+          } else {
+            pd.trimMargins[side] = val;
+          }
+        });
+      });
+      const marginLockBtn = pd.root.querySelector('[data-pd-margin-lock]');
+      if (marginLockBtn) {
+        marginLockBtn.addEventListener('click', () => {
+          pd.trimMargins.locked = !pd.trimMargins.locked;
+          marginLockBtn.setAttribute('aria-pressed', pd.trimMargins.locked ? 'true' : 'false');
+          marginLockBtn.innerHTML = pd.trimMargins.locked ? '&#128274;' : '&#128275;';
+          if (pd.trimMargins.locked) {
+            // Sync all to top value when locking
+            const val = pd.trimMargins.top;
+            pd.trimMargins.bottom = pd.trimMargins.left = pd.trimMargins.right = val;
+            pd.root.querySelectorAll('[data-pd-margin]').forEach(inp => { inp.value = val; });
+          }
+        });
+      }
       pd.root.querySelector('[data-pd-import-tile]')?.addEventListener('click', () => {
         this.triggerPatternTileImport(pd.layer, pd);
       });
@@ -1598,10 +1648,19 @@
       return meta?.svg || null;
     },
 
+    _pushPdHistory(pd) {
+      const meta = this._getPatternMetaForLayer(pd.layer);
+      pd.history.push({
+        fills: this._clonePatternFills(pd.fills),
+        svgState: meta?.svg != null ? { svg: meta.svg, patternId: meta.id } : null,
+      });
+    },
+
     _commitSvgEdit(pd, newSvg) {
       const registry = getPatternRegistry();
       const meta = this._getPatternMetaForLayer(pd.layer);
       if (!meta || !registry) return false;
+      this._pushPdHistory(pd);
       const saved = registry.saveCustomPattern({ ...meta, svg: newSvg, cachedTile: null, validation: null });
       if (!saved) return false;
       pd.layer.params.patternId = saved.id;
@@ -1619,11 +1678,14 @@
       if (!editableMeta) return;
       const svgText = editableMeta.svg;
       if (!svgText) return;
+      const mapEntry = pd.pathMap?.find(e => e.flatIndex === flatIndex);
+      const elIdx = mapEntry?.path?._srcElementIndex;
+      if (elIdx === undefined) return;
       const parser = new DOMParser();
       const doc = parser.parseFromString(svgText, 'image/svg+xml');
       const elements = Array.from(doc.querySelectorAll('path,line,polyline,polygon,rect,ellipse,circle'));
-      if (flatIndex < 0 || flatIndex >= elements.length) return;
-      elements[flatIndex].parentNode.removeChild(elements[flatIndex]);
+      if (elIdx < 0 || elIdx >= elements.length) return;
+      elements[elIdx].parentNode.removeChild(elements[elIdx]);
       const newSvg = new XMLSerializer().serializeToString(doc.documentElement);
       pd.selectedPath = null;
       this._syncPdToolActive(pd);
@@ -1680,30 +1742,38 @@
       this._commitSvgEdit(pd, newSvg);
     },
 
-    _trimPathToTile(pd, flatIndex, vbW, vbH) {
+    _trimPathToTile(pd, flatIndex, vbW, vbH, margins = {}) {
       const editableMeta = this._ensureCustomPattern(pd);
       if (!editableMeta) return;
       const svgText = editableMeta.svg;
       if (!svgText) return;
+      const mapEntry = pd.pathMap?.find(e => e.flatIndex === flatIndex);
+      const elIdx = mapEntry?.path?._srcElementIndex;
+      if (elIdx === undefined) return;
       const parser = new DOMParser();
       const doc = parser.parseFromString(svgText, 'image/svg+xml');
       const elements = Array.from(doc.querySelectorAll('path,line,polyline,polygon,rect,ellipse,circle'));
-      if (flatIndex < 0 || flatIndex >= elements.length) return;
-      const el = elements[flatIndex];
+      if (elIdx < 0 || elIdx >= elements.length) return;
+      const el = elements[elIdx];
 
       // Get path points from pd.pathMap
-      const entry = pd.pathMap.find(e => e.flatIndex === flatIndex);
+      const entry = mapEntry;
       if (!entry) return;
       const pts = entry.path;
 
-      // Cohen-Sutherland clip segments to [0,vbW] x [0,vbH]
+      // Cohen-Sutherland clip segments to tile bounds ± margins
+      const mTop = Math.max(0, Math.min(5, margins.top || 0));
+      const mBottom = Math.max(0, Math.min(5, margins.bottom || 0));
+      const mLeft = Math.max(0, Math.min(5, margins.left || 0));
+      const mRight = Math.max(0, Math.min(5, margins.right || 0));
+      const clipX0 = mLeft, clipY0 = mTop, clipX1 = vbW - mRight, clipY1 = vbH - mBottom;
       const INSIDE = 0, LEFT = 1, RIGHT = 2, BOTTOM = 4, TOP = 8;
       const code = (x, y) => {
         let c = INSIDE;
-        if (x < 0) c |= LEFT;
-        else if (x > vbW) c |= RIGHT;
-        if (y < 0) c |= TOP;
-        else if (y > vbH) c |= BOTTOM;
+        if (x < clipX0) c |= LEFT;
+        else if (x > clipX1) c |= RIGHT;
+        if (y < clipY0) c |= TOP;
+        else if (y > clipY1) c |= BOTTOM;
         return c;
       };
       const clipSeg = (x0, y0, x1, y1) => {
@@ -1714,10 +1784,10 @@
           if (c0 & c1) return null;
           const cOut = c0 || c1;
           let x, y;
-          if (cOut & BOTTOM) { x = px0 + (px1 - px0) * (vbH - py0) / (py1 - py0); y = vbH; }
-          else if (cOut & TOP) { x = px0 + (px1 - px0) * (0 - py0) / (py1 - py0); y = 0; }
-          else if (cOut & RIGHT) { y = py0 + (py1 - py0) * (vbW - px0) / (px1 - px0); x = vbW; }
-          else { y = py0 + (py1 - py0) * (0 - px0) / (px1 - px0); x = 0; }
+          if (cOut & BOTTOM) { x = px0 + (px1 - px0) * (clipY1 - py0) / (py1 - py0); y = clipY1; }
+          else if (cOut & TOP) { x = px0 + (px1 - px0) * (clipY0 - py0) / (py1 - py0); y = clipY0; }
+          else if (cOut & RIGHT) { y = py0 + (py1 - py0) * (clipX1 - px0) / (px1 - px0); x = clipX1; }
+          else { y = py0 + (py1 - py0) * (clipX0 - px0) / (px1 - px0); x = clipX0; }
           if (cOut === c0) { px0 = x; py0 = y; c0 = code(px0, py0); }
           else { px1 = x; py1 = y; c1 = code(px1, py1); }
         }
@@ -1898,16 +1968,16 @@
           // Otherwise hit-test paths to start editing a new element
           const hitFlatIdx = hitTestPath(tx, ty);
           if (hitFlatIdx !== null) {
-            // Get the SVG element index via pathMap
             const mapEntry = pd.pathMap.find(entry => entry.flatIndex === hitFlatIdx);
-            if (mapEntry) {
+            const elIdx = mapEntry?.path?._srcElementIndex;
+            if (elIdx !== undefined) {
               const editableMeta = this._ensureCustomPattern(pd);
               if (editableMeta?.svg) {
                 const parser = new DOMParser();
                 const doc = parser.parseFromString(editableMeta.svg, 'image/svg+xml');
                 const elements = Array.from(doc.querySelectorAll('path,line,polyline,polygon,rect,ellipse,circle'));
-                if (hitFlatIdx < elements.length) {
-                  const editSet = this._svgElementToEditSet(elements[hitFlatIdx], hitFlatIdx);
+                if (elIdx < elements.length) {
+                  const editSet = this._svgElementToEditSet(elements[elIdx], elIdx);
                   if (editSet) {
                     pd.directEditState = { ...editSet, selectedIndices: new Set() };
                     startDirectDrag({ type: 'anchor', index: 0 }, tx, ty, e);
@@ -1992,6 +2062,27 @@
         if (!pd?.root) return;
         const tag = document.activeElement?.tagName?.toLowerCase();
         if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
+
+        if (e.key === 'z' && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          const entry = pd.history.pop();
+          if (!entry) return;
+          const fills = entry.fills ?? entry;
+          const svgState = entry.svgState ?? null;
+          pd.fills = fills;
+          if (svgState) {
+            const registry = getPatternRegistry();
+            const meta = this._getPatternMetaForLayer(pd.layer);
+            if (registry && meta) {
+              registry.saveCustomPattern({ ...meta, svg: svgState.svg, cachedTile: null, validation: null });
+              window.Vectura.AlgorithmRegistry?.patternInvalidateCache?.(svgState.patternId);
+              pd.directEditState = null;
+              this.app.regen();
+            }
+          }
+          this._applyPatternDesignerChanges(pd);
+          return;
+        }
 
         if (e.key === 'a' || e.key === 'A') {
           e.preventDefault();

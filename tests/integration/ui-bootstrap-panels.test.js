@@ -243,6 +243,12 @@ describe('UI bootstrap integrity', () => {
     const applyToggle = Array.from(lineSortCard.querySelectorAll('input[type="checkbox"]'))[0];
     expect(applyToggle).toBeTruthy();
     expect(window.Vectura.SETTINGS.optimizationPreview || 'off').toBe('off');
+    expect(applyToggle.checked).toBe(true);
+
+    applyToggle.checked = false;
+    applyToggle.dispatchEvent(new window.Event('change', { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(applyToggle.checked).toBe(false);
 
     applyToggle.checked = true;
     applyToggle.dispatchEvent(new window.Event('change', { bubbles: true }));

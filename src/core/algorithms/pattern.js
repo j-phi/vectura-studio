@@ -818,7 +818,8 @@
           snapTolerance: 0.18,
           boundaryTolerance: 0.6,
         });
-      
+      paths.forEach(p => { p._srcElementIndex = index; });
+
       elementsData.push({
          index,
          identifier,

@@ -1,7 +1,7 @@
 # Graph Report - /Users/jayphi/Documents/github/vectura-studio  (2026-04-20)
 
 ## Corpus Check
-- 101 files · ~1,558,164 words
+- 101 files · ~1,558,176 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -601,11 +601,11 @@ _Questions this graph is uniquely positioned to answer:_
 - **What is the exact relationship between `City — Isometric aerial city of skyscrapers rendered entirely in dense vertical hatching lines with strong perspective convergence, plotter-pen aesthetic, B&W` and `Flowfield Algorithm`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
 - **Why does `UI` connect `Community 0` to `Community 1`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`?**
-  _High betweenness centrality (0.198) - this node is a cross-community bridge._
-- **Why does `sort()` connect `Community 10` to `Community 0`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 9`, `Community 11`?**
-  _High betweenness centrality (0.133) - this node is a cross-community bridge._
+  _High betweenness centrality (0.214) - this node is a cross-community bridge._
 - **Why does `Renderer` connect `Community 1` to `Community 0`, `Community 8`, `Community 13`?**
-  _High betweenness centrality (0.088) - this node is a cross-community bridge._
+  _High betweenness centrality (0.109) - this node is a cross-community bridge._
+- **Why does `sort()` connect `Community 10` to `Community 0`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 9`, `Community 11`?**
+  _High betweenness centrality (0.093) - this node is a cross-community bridge._
 - **What connects `Mirror Modifier Module`, `Boids Algorithm`, `Shape Pack Algorithm` to the rest of the system?**
   _57 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Community 0` be split into smaller, more focused modules?**

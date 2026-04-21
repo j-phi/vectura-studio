@@ -15,6 +15,7 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Extend Noise Rack to the remaining direct consumers, now mainly any leftover bespoke samplers after Petalis per-modifier stack UI parity.
 - Expand universal masking beyond the first silhouette-capable layer set (`Wavetable` Horizon, closed shapes, groups) to additional algorithms with stable outer-envelope providers and surface-aware mask providers.
 - Extend Layer Modifiers beyond the initial `Mirror` implementation once the group-like modifier container model has proven out in export, masking, and nested layer workflows.
+- Fix the remaining strict Playwright Pattern fidelity regressions as product bugs, with `Autumn` horizontal-seam mismatch and representative `Bamboo` / `Bathroom Floor` / `Dominos` silhouette drift still failing source-faithful smoke coverage.
 
 ## Inbox
 - Extract more shared Noise Rack runtime primitives from the duplicated `wavetable` / `spiral` / `rainfall` implementations into `src/core/noise-rack.js`.
@@ -25,6 +26,7 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
+- Updated the stale Export SVG smoke/integration test flow so Line Sort preview assertions now force a real unchecked-to-checked transition under the current default-enabled setting, leaving only the known Pattern fidelity failures in the CI smoke lane.
 - Corrected Noise Rack polygon zoom direction so larger zoom values now enlarge polygon footprints consistently across shared and algorithm-local samplers, and normalized vertical line-displacement sign so positive amplitudes move grid/line-stack offsets upward while leaving radial/vector-field semantics unchanged.
 - Unified shared toolbar generation in `ui.js` so the main canvas, Petal Designer, and Pattern Texture Designer all consume one configurable tool-definition registry, and added `Fill` / `Erase Fill` to the shared tool set with shortcut/help coverage.
 - Upgraded the Pattern Texture Designer fill workflow to support nested closed regions, additive ancestor-stack fills, drag-pour fill/erase, `Alt/Option` temporary erase while filling, and a `Show Gaps` tolerance slider with yellow gap diagnostics plus auto-close actions for closable seam endpoints.

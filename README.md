@@ -339,6 +339,11 @@ Click `Export SVG` to download.
 
 Vitest config: `vitest.config.mjs` · Playwright config: `playwright.config.js`
 
+Manual CI-equivalent setup:
+- `npm install`
+- `npx playwright install --with-deps chromium`
+- `npx playwright show-trace test-results/<failing-test>/trace.zip` opens a saved Playwright trace locally after a failed smoke run
+
 | Change | Minimum test run |
 |---|---|
 | Core logic / algorithm behavior | `test:unit` + `test:integration` + `test:visual` |
