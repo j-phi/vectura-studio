@@ -107,6 +107,7 @@
     imagePreview: '',
     imageAlgo: 'luma',
     imageEffects: [],
+    polygonZoomReference: 0.01,
     polygonRadius: 2,
     polygonSides: 6,
     polygonRotation: 0,

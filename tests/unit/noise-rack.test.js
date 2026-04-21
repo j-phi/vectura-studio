@@ -142,6 +142,28 @@ describe('createEvaluator', () => {
     });
   });
 
+  test('polygon zoom enlarges the polygon footprint as it increases', () => {
+    const rack = NoiseRack.createEvaluator({ noise: makeMockNoise() });
+    const base = {
+      type: 'polygon',
+      freq: 1,
+      angle: 0,
+      shiftX: 0,
+      shiftY: 0,
+      patternScale: 1,
+      polygonSides: 6,
+      polygonRadius: 2,
+      polygonRotation: 0,
+      polygonOutline: 0,
+      polygonEdgeRadius: 0,
+      polygonZoomReference: 0.02,
+    };
+    const farPointSmall = rack.sampleScalar(150, 0, { ...base, zoom: 0.01 });
+    const farPointLarge = rack.sampleScalar(150, 0, { ...base, zoom: 0.04 });
+    expect(farPointSmall).toBeLessThan(0);
+    expect(farPointLarge).toBeGreaterThan(0);
+  });
+
   test('fbm mode via sampleScalar with multiple octaves is smooth', () => {
     const rack = NoiseRack.createEvaluator({ noise: makeMockNoise(11) });
     const def = { type: 'simplex', zoom: 0.005, freq: 1, octaves: 5, gain: 0.45, lacunarity: 2.1, angle: 30, shiftX: 0.1, shiftY: -0.1 };

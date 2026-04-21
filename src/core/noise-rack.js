@@ -2,6 +2,16 @@
   window.Vectura = window.Vectura || {};
 
   const clamp01 = (value) => Math.max(0, Math.min(1, value));
+  const DEFAULT_POLYGON_ZOOM_REFERENCE = 0.02;
+  const resolveEffectiveZoom = (noiseDef, fallbackZoom = 1) => {
+    const rawZoom = Math.max(0.0001, noiseDef?.zoom ?? fallbackZoom);
+    if ((noiseDef?.type || 'simplex') !== 'polygon') return rawZoom;
+    const referenceZoom = Math.max(
+      0.0001,
+      noiseDef?.polygonZoomReference ?? fallbackZoom ?? DEFAULT_POLYGON_ZOOM_REFERENCE
+    );
+    return (referenceZoom * referenceZoom) / rawZoom;
+  };
 
   const combineBlend = ({ combined, value, blend = 'add', maxAmplitude = 1 }) => {
     if (combined === undefined) return value;
@@ -523,7 +533,7 @@
     };
 
     const sampleScalar = (x, y, noiseDef, meta = {}) => {
-      const zoom = Math.max(0.0001, noiseDef?.zoom ?? 1);
+      const zoom = resolveEffectiveZoom(noiseDef, noiseDef?.zoom ?? 1);
       const baseFreq = Math.max(0.05, noiseDef?.freq ?? 1);
       const angle = ((noiseDef?.angle ?? 0) * Math.PI) / 180;
       const cosA = Math.cos(angle);
@@ -561,5 +571,6 @@
     version: 1,
     combineBlend,
     createEvaluator,
+    resolveEffectiveZoom,
   };
 })();

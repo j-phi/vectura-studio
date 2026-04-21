@@ -3794,7 +3794,7 @@
     },
     'flowfield.noiseScale': {
       title: 'Noise Scale',
-      description: 'Controls the scale of this Noise Rack layer inside the flow field.',
+      description: 'Controls the scale of this Noise Rack layer inside the flow field. For polygon noise, larger values produce a larger polygon footprint.',
     },
     'flowfield.noiseOffsetX': {
       title: 'Noise Offset X',
@@ -4297,11 +4297,11 @@
     },
     'wavetable.amplitude': {
       title: 'Noise Amplitude',
-      description: 'Amount of vertical displacement added by this noise layer.',
+      description: 'Amount of vertical displacement added by this noise layer. Positive values lift lines upward; negative values push them downward.',
     },
     'wavetable.zoom': {
       title: 'Noise Zoom',
-      description: 'Scale of this noise field along the wavetable.',
+      description: 'Scale of this noise field along the wavetable. For polygon noise, larger values produce a larger polygon footprint.',
     },
     'wavetable.noiseShiftX': {
       title: 'Noise X-Shift',
@@ -4449,7 +4449,7 @@
     },
     'rings.noiseScale': {
       title: 'Noise Scale',
-      description: 'Controls the frequency of the selected Rings noise field.',
+      description: 'Controls the frequency of the selected Rings noise field. For polygon noise, larger values produce a larger polygon footprint.',
     },
     'rings.noiseOffsetX': {
       title: 'Noise Offset X',
@@ -4503,7 +4503,7 @@
     },
     'topo.noiseScale': {
       title: 'Noise Scale',
-      description: 'Controls how quickly noise values change across the field.',
+      description: 'Controls how quickly noise values change across the field. For polygon noise, larger values produce a larger polygon footprint.',
     },
     'topo.noiseOffsetX': {
       title: 'Noise Offset X',
@@ -4739,7 +4739,7 @@
     },
     'grid.noiseScale': {
       title: 'Noise Scale',
-      description: 'Controls the scale of this Noise Rack layer inside the grid field.',
+      description: 'Controls the scale of this Noise Rack layer inside the grid field. For polygon noise, larger values produce a larger polygon footprint.',
     },
     'grid.noiseOffsetX': {
       title: 'Noise Offset X',
@@ -4799,7 +4799,7 @@
     },
     'phylla.noiseScale': {
       title: 'Noise Scale',
-      description: 'Controls the scale of this Noise Rack layer inside the phyllotaxis field.',
+      description: 'Controls the scale of this Noise Rack layer inside the phyllotaxis field. For polygon noise, larger values produce a larger polygon footprint.',
     },
     'phylla.noiseOffsetX': {
       title: 'Noise Offset X',
@@ -7748,6 +7748,214 @@
       return state;
     }
 
+    getSharedToolbarDefinitions() {
+      if (this._sharedToolbarDefinitions) return this._sharedToolbarDefinitions;
+      this._sharedToolbarDefinitions = {
+        select: {
+          label: 'Selection (V)',
+          ariaLabel: 'Selection Tool (V)',
+          icon: '<rect x="4" y="5" width="16" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 3" />',
+        },
+        'select-rect': {
+          label: 'Rectangle Selection',
+          submenuKind: 'select',
+          submenuValue: 'rect',
+          icon: '<rect x="4" y="6" width="16" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 3" />',
+        },
+        'select-oval': {
+          label: 'Oval Selection',
+          submenuKind: 'select',
+          submenuValue: 'oval',
+          icon: '<ellipse cx="12" cy="12" rx="7" ry="5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 3" />',
+        },
+        'select-pen': {
+          label: 'Pen Selection',
+          submenuKind: 'select',
+          submenuValue: 'pen',
+          icon: '<path d="M4 18C7 9 14 6 20 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="2 2" /><path d="M16.8 6.2l2.6 2.6-3.2 3.2-2.6-2.6z" fill="none" stroke="currentColor" stroke-width="1.4" />',
+        },
+        'select-lasso': {
+          label: 'Lasso Selection',
+          submenuKind: 'select',
+          submenuValue: 'lasso',
+          icon: '<path d="M6 14c1.5-4.5 6.5-6 10-3 2.5 2 2 6-1.5 7.2-3.4 1.2-6.8-0.6-6.8-3.3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="2 2" />',
+        },
+        direct: {
+          label: 'Direct Selection (A)',
+          ariaLabel: 'Direct Selection Tool (A)',
+          icon: '<path d="M4 2L14 12H9.5L12.5 21L9.5 22L6.5 13L3 16Z" fill="none" stroke="currentColor" stroke-width="1.6" /><rect x="15.5" y="3.5" width="4.5" height="4.5" rx="0.6" fill="currentColor" />',
+        },
+        'shape-rect': {
+          label: 'Rectangle (M)',
+          ariaLabel: 'Rectangle Tool (M)',
+          icon: '<rect x="5" y="6" width="14" height="12" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.8" />',
+        },
+        'shape-oval': {
+          label: 'Oval (L)',
+          ariaLabel: 'Oval Tool (L)',
+          icon: '<ellipse cx="12" cy="12" rx="7.2" ry="5.8" fill="none" stroke="currentColor" stroke-width="1.8" />',
+        },
+        'shape-polygon': {
+          label: 'Polygon (Y)',
+          ariaLabel: 'Polygon Tool (Y)',
+          icon: '<path d="M12 4.5L18.5 8.3L17.3 15.8L12 19.5L6.7 15.8L5.5 8.3Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />',
+        },
+        hand: {
+          label: 'Hand (Space)',
+          ariaLabel: 'Hand Tool (Space)',
+          icon: '<path d="M7 12V6.5c0-.8.6-1.5 1.4-1.5.7 0 1.3.6 1.3 1.4V12m0-5.3V5c0-.8.6-1.4 1.4-1.4s1.4.6 1.4 1.4v6.9m0-5.1V5.3c0-.8.6-1.4 1.4-1.4s1.4.6 1.4 1.4V13m0-3.6V8.5c0-.8.6-1.4 1.4-1.4s1.4.6 1.4 1.4v6.8c0 2.5-1.6 4.7-4 5.5l-2.1.7c-2.5.9-5.3-.4-6.2-2.9L5 12.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />',
+        },
+        pen: {
+          label: 'Pen (P)',
+          ariaLabel: 'Pen Tool (P)',
+          icon: '<path d="M12 2.2L20.2 10.2L14.8 21.8H9.2L3.8 10.2Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" /><circle cx="12" cy="11.6" r="1.7" fill="currentColor" /><path d="M9.5 16.2L12 18.3L14.5 16.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /><line x1="5" y1="20.5" x2="19" y2="20.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" /><circle cx="5" cy="20.5" r="1.3" fill="currentColor" /><circle cx="19" cy="20.5" r="1.3" fill="currentColor" />',
+        },
+        'pen-draw': {
+          label: 'Pen Tool (P)',
+          submenuKind: 'pen',
+          submenuValue: 'draw',
+          icon: '<path d="M12 2.2L20.2 10.2L14.8 21.8H9.2L3.8 10.2Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" /><circle cx="12" cy="11.6" r="1.6" fill="currentColor" />',
+        },
+        'pen-add': {
+          label: 'Add Anchor Point (+)',
+          submenuKind: 'pen',
+          submenuValue: 'add',
+          icon: '<path d="M5 12h14M12 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round" /><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.4" />',
+        },
+        'pen-delete': {
+          label: 'Delete Anchor Point (-)',
+          submenuKind: 'pen',
+          submenuValue: 'delete',
+          icon: '<path d="M6 12h12" stroke="currentColor" stroke-width="2" stroke-linecap="round" /><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.4" />',
+        },
+        'pen-anchor': {
+          label: 'Anchor Point Tool (Shift + C)',
+          submenuKind: 'pen',
+          submenuValue: 'anchor',
+          icon: '<circle cx="12" cy="12" r="2" fill="currentColor" /><path d="M3.5 12h5M15.5 12h5M12 3.5v5M12 15.5v5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />',
+        },
+        fill: {
+          label: 'Fill (F)',
+          ariaLabel: 'Fill Tool (F)',
+          icon: '<path d="M16.56 8.94L7.62 0 6.21 1.41l2.38 2.38-5.15 5.15c-.59.57-.59 1.53 0 2.12l5.5 5.5c.29.29.68.44 1.06.44s.77-.15 1.06-.44l5.5-5.5c.59-.58.59-1.53 0-2.12zM5.21 10 10 5.21 14.79 10z" fill="currentColor" /><path d="M19 11.5s-2 2.17-2 3.5c0 1.1.9 2 2 2s2-.9 2-2c0-1.33-2-3.5-2-3.5z" fill="currentColor" />',
+        },
+        'fill-erase': {
+          label: 'Erase Fill',
+          ariaLabel: 'Erase Fill Tool',
+          submenuKind: 'fill',
+          submenuValue: 'erase',
+          icon: '<path d="M16.56 8.94L7.62 0 6.21 1.41l2.38 2.38-5.15 5.15c-.59.57-.59 1.53 0 2.12l5.5 5.5c.29.29.68.44 1.06.44s.77-.15 1.06-.44l5.5-5.5c.59-.58.59-1.53 0-2.12zM5.21 10 10 5.21 14.79 10z" fill="currentColor" /><path d="M16.5 16.5l4.5 4.5M21 16.5l-4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />',
+        },
+        scissor: {
+          label: 'Scissor (C)',
+          ariaLabel: 'Scissor Tool (C)',
+          icon: '<circle cx="6.5" cy="7.5" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6" /><circle cx="6.5" cy="16.5" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6" /><path d="M8.6 9.2L20 4.5M8.6 14.8L20 19.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /><path d="M11.5 12L15 10.5M11.5 12L15 13.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />',
+        },
+        'scissor-line': {
+          label: 'Scissor Line',
+          submenuKind: 'scissor',
+          submenuValue: 'line',
+          icon: '<line x1="4" y1="20" x2="20" y2="4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />',
+        },
+        'scissor-rect': {
+          label: 'Scissor Rectangle',
+          submenuKind: 'scissor',
+          submenuValue: 'rect',
+          icon: '<rect x="4" y="6" width="16" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2" />',
+        },
+        'scissor-circle': {
+          label: 'Scissor Circle',
+          submenuKind: 'scissor',
+          submenuValue: 'circle',
+          icon: '<circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2" />',
+        },
+        'light-source': {
+          label: 'Set Light Source',
+          ariaLabel: 'Set Light Source',
+          id: 'btn-light-source',
+          extraClasses: 'tool-light hidden',
+          icon: '<circle cx="12" cy="12" r="4.4" fill="currentColor" /><path d="M12 2V5M12 19V22M2 12H5M19 12H22M4.5 4.5L6.6 6.6M17.4 17.4L19.5 19.5M4.5 19.5L6.6 17.4M17.4 6.6L19.5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />',
+        },
+      };
+      return this._sharedToolbarDefinitions;
+    }
+
+    buildSharedToolbarMarkup(items = [], options = {}) {
+      const defs = this.getSharedToolbarDefinitions();
+      const {
+        buttonClass = 'tool-btn',
+        subButtonClass = 'tool-sub-btn',
+        groupClass = 'tool-group',
+        submenuClass = 'tool-submenu',
+        dividerClass = 'tool-divider',
+        iconClass = 'tool-icon',
+        buttonAttr = 'data-tool',
+        includePressed = false,
+        buttonValueResolver = (id) => id,
+      } = options;
+      const renderIcon = (def) =>
+        `<svg class="${iconClass}" viewBox="0 0 24 24" aria-hidden="true">${def.icon}</svg>`;
+      const renderButton = (id, buttonOptions = {}) => {
+        const def = defs[id];
+        if (!def) return '';
+        const {
+          isSubtool = false,
+          extraClasses = '',
+          value = buttonValueResolver(id),
+          title = def.label || '',
+        } = buttonOptions;
+        const classes = [isSubtool ? subButtonClass : buttonClass, def.extraClasses || '', extraClasses].filter(Boolean).join(' ');
+        const mainAttr = !isSubtool && value !== null && value !== undefined ? ` ${buttonAttr}="${value}"` : '';
+        const subAttr = isSubtool && def.submenuKind ? ` data-${def.submenuKind}="${def.submenuValue}"` : '';
+        const ariaPressed = includePressed && !isSubtool ? ' aria-pressed="false"' : '';
+        const ariaLabel = def.ariaLabel && !isSubtool ? ` aria-label="${def.ariaLabel}"` : '';
+        const idAttr = def.id ? ` id="${def.id}"` : '';
+        return `<button class="${classes}"${idAttr}${mainAttr}${subAttr} type="button"${ariaPressed}${ariaLabel} title="${title}">${renderIcon(def)}</button>`;
+      };
+      return items.map((item) => {
+        if (item?.divider) return `<div class="${dividerClass}"></div>`;
+        if (item?.type === 'group') {
+          const submenuAttrs = item.submenuAttrs ? ` ${item.submenuAttrs}` : '';
+          const subMarkup = (item.subtools || []).map((toolId) =>
+            renderButton(toolId, { isSubtool: true, title: defs[toolId]?.label || '' })
+          ).join('');
+          return `<div class="${groupClass}">${renderButton(item.tool, { value: item.value || buttonValueResolver(item.tool), title: defs[item.tool]?.label || '' })}<div class="${submenuClass}"${submenuAttrs}>${subMarkup}</div></div>`;
+        }
+        if (typeof item === 'string') return renderButton(item, { title: defs[item]?.label || '' });
+        return renderButton(item.tool, {
+          value: item.value || buttonValueResolver(item.tool),
+          extraClasses: item.extraClasses || '',
+          title: item.title || defs[item.tool]?.label || '',
+        });
+      }).join('');
+    }
+
+    createMainToolbarMarkup() {
+      return this.buildSharedToolbarMarkup([
+        { type: 'group', tool: 'select', subtools: ['select-rect', 'select-oval', 'select-pen', 'select-lasso'], submenuAttrs: 'data-menu="select" aria-label="Selection subtools"' },
+        'direct',
+        'shape-rect',
+        'shape-oval',
+        'shape-polygon',
+        'hand',
+        { type: 'group', tool: 'pen', subtools: ['pen-draw', 'pen-add', 'pen-delete', 'pen-anchor'], submenuAttrs: 'data-menu="pen" aria-label="Pen subtools"' },
+        { type: 'group', tool: 'fill', subtools: ['fill-erase'], submenuAttrs: 'aria-label="Fill subtools"' },
+        { divider: true },
+        { type: 'group', tool: 'scissor', subtools: ['scissor-line', 'scissor-rect', 'scissor-circle'], submenuAttrs: 'aria-label="Scissor subtools"' },
+        { divider: true },
+        { tool: 'light-source', value: null, title: 'Set Light Source' },
+      ], {
+        buttonClass: 'tool-btn',
+        subButtonClass: 'tool-sub-btn',
+        groupClass: 'tool-group',
+        submenuClass: 'tool-submenu',
+        dividerClass: 'tool-divider',
+        iconClass: 'tool-icon',
+        buttonAttr: 'data-tool',
+        includePressed: true,
+      });
+    }
+
     createPetalDesignerMarkup(options = {}) {
       const {
         showClose = true,
@@ -7767,6 +7975,15 @@
       const viewStyleOptions = PETALIS_DESIGNER_VIEW_STYLE_OPTIONS
         .map((opt) => `<option value="${opt.value}">${opt.label}</option>`)
         .join('');
+      const toolMarkup = this.buildSharedToolbarMarkup([
+        { tool: 'direct', value: 'direct', title: 'Direct Selection (A)' },
+        { tool: 'pen-add', value: 'pen', title: 'Add Point (P / +)' },
+        { tool: 'pen-delete', value: 'delete', title: 'Delete Point (-)' },
+        { tool: 'pen-anchor', value: 'anchor', title: 'Anchor Point (Shift + C)' },
+      ], {
+        buttonClass: 'petal-tool-btn',
+        buttonAttr: 'data-petal-tool',
+      });
       const buildProfileEditorCard = (side, title) => `
         <div class="petal-profile-editor-card" data-petal-profile-editor="${side}">
           <div class="petal-profile-editor-card-title">${title}</div>
@@ -7793,29 +8010,7 @@
         <div class="petal-designer-header">
           <div class="petal-designer-title">Petal Designer</div>
           <div class="petal-designer-actions">
-            <button type="button" class="petal-tool-btn" data-petal-tool="direct" title="Direct Selection (A)">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M4 2L14 12H9.5L12.5 21L9.5 22L6.5 13L3 16Z" fill="none" stroke="currentColor" stroke-width="1.6" />
-              </svg>
-            </button>
-            <button type="button" class="petal-tool-btn" data-petal-tool="pen" title="Add Point (P / +)">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 2.2L20.2 10.2L14.8 21.8H9.2L3.8 10.2Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
-                <circle cx="12" cy="11.6" r="1.6" fill="currentColor" />
-              </svg>
-            </button>
-            <button type="button" class="petal-tool-btn" data-petal-tool="delete" title="Delete Point (-)">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M6 12h12" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.4" />
-              </svg>
-            </button>
-            <button type="button" class="petal-tool-btn" data-petal-tool="anchor" title="Anchor Point (Shift + C)">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <circle cx="12" cy="12" r="2" fill="currentColor" />
-                <path d="M3.5 12h5M15.5 12h5M12 3.5v5M12 15.5v5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-              </svg>
-            </button>
+            ${toolMarkup}
             ${showPopOut ? '<button type="button" class="petal-popout" aria-label="Pop Out Petal Designer" title="Pop Out">⧉</button>' : ''}
             ${showPopIn ? '<button type="button" class="petal-popin" aria-label="Pop In Petal Designer" title="Pop In">↩</button>' : ''}
             ${showClose ? '<button type="button" class="petal-close" aria-label="Close Petal Designer">✕</button>' : ''}
@@ -10464,6 +10659,8 @@
             <div><span class="text-vectura-accent">L</span> Oval tool</div>
             <div><span class="text-vectura-accent">Y</span> Polygon tool</div>
             <div><span class="text-vectura-accent">P</span> Pen tool (press again to cycle subtools)</div>
+            <div><span class="text-vectura-accent">F</span> Fill tool</div>
+            <div><span class="text-vectura-accent">Shift + F</span> Erase fill tool</div>
             <div><span class="text-vectura-accent">+</span> Add anchor point tool</div>
             <div><span class="text-vectura-accent">-</span> Delete anchor point tool</div>
             <div><span class="text-vectura-accent">Shift + C</span> Anchor point tool</div>
@@ -10476,7 +10673,7 @@
             <div><span class="text-vectura-accent">Backspace</span> Remove last pen point</div>
             <div><span class="text-vectura-accent">Esc</span> Cancel pen/scissor/shape drafts</div>
             <div><span class="text-vectura-accent">Shift</span> Constrain pen angle / handles, square/circle shapes, snap polygon angle, Scissor line snaps 15°</div>
-            <div><span class="text-vectura-accent">Alt/Option</span> Break pen handles or draw shapes from center</div>
+            <div><span class="text-vectura-accent">Alt/Option</span> Break pen handles, draw shapes from center, or temporarily erase fills while Fill is active</div>
             <div><span class="text-vectura-accent">Arrow Up / Down</span> Change polygon side count while dragging</div>
             <div><span class="text-vectura-accent">Mask Parent Drag</span> While moving/resizing/rotating a mask parent, masked descendants ghost-preview outside the silhouette until mouse release</div>
             <div><span class="text-vectura-accent">Shape Reticle</span> Rectangle/Oval/Polygon tools use an Illustrator-style reticle cursor while active</div>
@@ -10682,23 +10879,24 @@
     }
 
     getWavetableNoiseTemplates(source = 'wavetable') {
+      const baseZoom =
+        source === 'rings'
+          ? 0.001
+          : source === 'topo'
+            ? 0.003
+            : source === 'flowfield'
+              ? 0.01
+              : source === 'petalisDrift'
+                ? 0.2
+                : source === 'grid' || source === 'phylla'
+                  ? 0.05
+                  : 0.02;
       const base = {
         enabled: true,
         type: 'simplex',
         blend: 'add',
         amplitude: source === 'rings' ? 8 : source === 'wavetable' ? 9 : 1,
-        zoom:
-          source === 'rings'
-            ? 0.001
-            : source === 'topo'
-              ? 0.003
-              : source === 'flowfield'
-                ? 0.01
-                : source === 'petalisDrift'
-                  ? 0.2
-                : source === 'grid' || source === 'phylla'
-                  ? 0.05
-                  : 0.02,
+        zoom: baseZoom,
         freq: 1.0,
         angle: 0,
         shiftX: 0,
@@ -10793,6 +10991,7 @@
         imageSolarize: 0.5,
         imagePixelate: 12,
         imageDither: 0.5,
+        polygonZoomReference: baseZoom,
         polygonRadius: 2,
         polygonSides: 6,
         polygonRotation: 0,
@@ -13949,16 +14148,20 @@
     initToolBar() {
       const toolbar = getEl('tool-bar');
       if (!toolbar) return;
+      toolbar.innerHTML = this.createMainToolbarMarkup();
       const toolButtons = Array.from(toolbar.querySelectorAll('.tool-btn[data-tool]'));
       const scissorButtons = Array.from(toolbar.querySelectorAll('.tool-sub-btn[data-scissor]'));
       const selectButtons = Array.from(toolbar.querySelectorAll('.tool-sub-btn[data-select]'));
       const penButtons = Array.from(toolbar.querySelectorAll('.tool-sub-btn[data-pen]'));
+      const fillButtons = Array.from(toolbar.querySelectorAll('.tool-sub-btn[data-fill]'));
       const scissorButton = toolbar.querySelector('.tool-btn[data-tool="scissor"]');
       const scissorMenu = toolbar.querySelector('.tool-submenu[aria-label="Scissor subtools"]');
       const selectButton = toolbar.querySelector('.tool-btn[data-tool="select"]');
       const selectMenu = toolbar.querySelector('.tool-submenu[data-menu="select"]');
       const penButton = toolbar.querySelector('.tool-btn[data-tool="pen"]');
       const penMenu = toolbar.querySelector('.tool-submenu[data-menu="pen"]');
+      const fillButton = toolbar.querySelector('.tool-btn[data-tool="fill"]');
+      const fillMenu = toolbar.querySelector('.tool-submenu[aria-label="Fill subtools"]');
       const lightSourceBtn = getEl('btn-light-source');
       const selectionModes = selectButtons.map((btn) => btn.dataset.select).filter(Boolean);
       const scissorModes = scissorButtons.map((btn) => btn.dataset.scissor).filter(Boolean);
@@ -13982,9 +14185,15 @@
       };
 
       const syncButtons = () => {
+        const fillActive = this.activeTool === 'fill' || this.activeTool === 'fill-erase';
         toolButtons.forEach((btn) => {
-          btn.classList.toggle('active', btn.dataset.tool === this.activeTool);
-          btn.setAttribute('aria-pressed', btn.dataset.tool === this.activeTool ? 'true' : 'false');
+          if (btn.dataset.tool === 'fill') {
+            btn.classList.toggle('active', fillActive);
+            btn.setAttribute('aria-pressed', fillActive ? 'true' : 'false');
+          } else {
+            btn.classList.toggle('active', btn.dataset.tool === this.activeTool);
+            btn.setAttribute('aria-pressed', btn.dataset.tool === this.activeTool ? 'true' : 'false');
+          }
         });
         scissorButtons.forEach((btn) => {
           btn.classList.toggle('active', btn.dataset.scissor === this.scissorMode);
@@ -13994,6 +14203,9 @@
         });
         penButtons.forEach((btn) => {
           btn.classList.toggle('active', btn.dataset.pen === this.penMode);
+        });
+        fillButtons.forEach((btn) => {
+          btn.classList.toggle('active', btn.dataset.fill === 'erase' && this.activeTool === 'fill-erase');
         });
       };
 
@@ -14191,6 +14403,16 @@
           const mode = btn.dataset.select;
           this.setActiveTool('select');
           this.setSelectionMode(mode);
+        },
+      });
+
+      initSubtoolMenu({
+        button: fillButton,
+        menu: fillMenu,
+        buttons: fillButtons,
+        onActivate: () => this.setActiveTool('fill'),
+        onSelect: (btn) => {
+          if (btn.dataset.fill === 'erase') this.setActiveTool('fill-erase');
         },
       });
 
@@ -14971,6 +15193,14 @@
           return;
         }
 
+        if (e.key === 'Alt' && this.activeTool === 'fill' && !this.fillEraseModifierActive) {
+          e.preventDefault();
+          this.fillEraseModifierActive = true;
+          this.fillEraseRestoreTool = 'fill';
+          this.setActiveTool?.('fill-erase', { temporary: true });
+          return;
+        }
+
         if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
           e.preventDefault();
           this.openHelp(true);
@@ -15031,6 +15261,12 @@
           if (key === 'y') {
             e.preventDefault();
             this.setActiveTool?.('shape-polygon');
+            return;
+          }
+          if (key === 'f') {
+            e.preventDefault();
+            if (e.shiftKey) this.setActiveTool?.('fill-erase');
+            else this.setActiveTool?.('fill');
             return;
           }
           if (key === 'p') {
@@ -15189,7 +15425,7 @@
           this.app.render();
           return;
         }
-        const step = e.shiftKey ? 10 : 1;
+        const step = (e.metaKey || e.ctrlKey) ? 10 : 1;
         let dx = 0;
         let dy = 0;
         if (e.key === 'ArrowLeft') dx = -step;
@@ -15198,6 +15434,25 @@
         if (e.key === 'ArrowDown') dy = step;
         if (dx || dy) {
           e.preventDefault();
+          // If direct-select tool is active with a path selected, nudge anchors
+          const renderer = this.app.renderer;
+          if (renderer?.activeTool === 'direct' && renderer.directSelection?.anchors?.length) {
+            if (this.app.pushHistory) this.app.pushHistory();
+            const ds = renderer.directSelection;
+            const indicesToMove = ds.selectedIndices?.size
+              ? [...ds.selectedIndices]
+              : ds.anchors.map((_, i) => i);
+            indicesToMove.forEach(i => {
+              const a = ds.anchors[i];
+              if (!a) return;
+              a.x += dx; a.y += dy;
+              if (a.in) { a.in.x += dx; a.in.y += dy; }
+              if (a.out) { a.out.x += dx; a.out.y += dy; }
+            });
+            renderer.applyDirectPath();
+            renderer.draw();
+            return;
+          }
           if (this.app.pushHistory) this.app.pushHistory();
           const selectedLayers = this.app.renderer?.getSelectedLayers?.() || [];
           if (selectedLayers.length) {
@@ -15232,6 +15487,14 @@
           this.spacePanActive = false;
           const restore = this.spacePanTool || this.previousTool || 'select';
           this.setActiveTool?.(restore);
+          return;
+        }
+        if (e.key === 'Alt' && this.fillEraseModifierActive) {
+          e.preventDefault();
+          this.fillEraseModifierActive = false;
+          const restore = this.fillEraseRestoreTool || 'fill';
+          this.fillEraseRestoreTool = null;
+          if (this.activeTool === 'fill-erase') this.setActiveTool?.(restore, { temporary: true });
         }
       });
     }

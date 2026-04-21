@@ -6,7 +6,7 @@
   window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
   window.Vectura.AlgorithmRegistry.grid = {
       generate: (p, rng, noise, bounds) => {
-        const { m, dW, dH } = bounds;
+        const { m, dW, dH, width, height } = bounds;
         const paths = [];
         const rack = window.Vectura.NoiseRack.createEvaluator({ noise, seed: p.seed ?? 0 });
         const legacyNoise = {
@@ -42,6 +42,7 @@
           imagePreview: '',
           imageAlgo: 'luma',
           imageEffects: [],
+          polygonZoomReference: p.noiseScale ?? 0.05,
           polygonRadius: 2,
           polygonSides: 6,
           polygonRotation: 0,
@@ -84,7 +85,7 @@
               x += Math.cos(n * Math.PI) * p.distortion;
               y += Math.sin(n * Math.PI) * p.distortion;
             } else {
-              y += n * p.distortion;
+              y -= n * p.distortion;
             }
             x += (rng.nextFloat() - 0.5) * p.chaos;
             y += (rng.nextFloat() - 0.5) * p.chaos;
@@ -102,7 +103,7 @@
               x += Math.cos(n * Math.PI) * p.distortion;
               y += Math.sin(n * Math.PI) * p.distortion;
             } else {
-              y += n * p.distortion;
+              y -= n * p.distortion;
             }
             x += (rng.nextFloat() - 0.5) * p.chaos;
             y += (rng.nextFloat() - 0.5) * p.chaos;

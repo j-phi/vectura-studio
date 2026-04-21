@@ -54,6 +54,7 @@
           imagePreview: '',
           imageAlgo: p.imageAlgo || 'luma',
           imageEffects: [],
+          polygonZoomReference: p.noiseScale ?? 0.001,
           polygonRadius: 2,
           polygonSides: 6,
           polygonRotation: 0,

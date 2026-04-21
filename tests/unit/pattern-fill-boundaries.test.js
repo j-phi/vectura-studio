@@ -167,4 +167,64 @@ describe('Pattern fill boundary tracing', () => {
     expect(only.minY).toBeCloseTo(8, 1);
     expect(only.maxY).toBeCloseTo(26, 1);
   });
+
+  test('compiles nested fill targets for inner region and parent ring ancestors', () => {
+    const compileTargets = runtime.window.Vectura.AlgorithmRegistry._compilePatternFillTargets;
+    const getAtPoint = runtime.window.Vectura.AlgorithmRegistry.patternGetFillTargetsAtPoint;
+    expect(typeof compileTargets).toBe('function');
+
+    const data = {
+      vbW: 20,
+      vbH: 20,
+      groups: [{
+        paths: [
+          rect(0, 0, 20, 20),
+          circle(10, 10, 4, 20),
+        ],
+      }],
+    };
+
+    const compiled = compileTargets(data);
+    expect(compiled.targets).toHaveLength(2);
+
+    const insideCircle = getAtPoint(data, 10, 10);
+    expect(insideCircle.smallest).toBeTruthy();
+    expect(insideCircle.smallest.regions).toHaveLength(1);
+    expect(insideCircle.ancestors).toHaveLength(2);
+    expect(insideCircle.ancestors[1].regions).toHaveLength(2);
+
+    const insideOuterRing = getAtPoint(data, 3, 10);
+    expect(insideOuterRing.smallest).toBeTruthy();
+    expect(insideOuterRing.smallest.regions).toHaveLength(2);
+    expect(insideOuterRing.ancestors).toHaveLength(1);
+  });
+
+  test('reports closable seam gaps for near-miss mirrored endpoints', () => {
+    const validateCompiled = runtime.window.Vectura.AlgorithmRegistry._validateCompiledPattern;
+    expect(typeof validateCompiled).toBe('function');
+
+    const data = {
+      vbW: 20,
+      vbH: 20,
+      groups: [{
+        paths: [
+          [{ x: 10, y: 0.4 }, { x: 10, y: 5 }],
+          [{ x: 11.2, y: 19.6 }, { x: 11.2, y: 15 }],
+        ],
+      }],
+    };
+
+    const result = validateCompiled({
+      id: 'gap-demo',
+      name: 'Gap Demo',
+      lines: true,
+      fills: false,
+      svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"></svg>',
+    }, data, { gapTolerance: 2 });
+
+    const gapIssue = result.issues.find((issue) => issue.code === 'seam-gap');
+    expect(gapIssue).toBeTruthy();
+    expect(gapIssue.autoFixable).toBe(true);
+    expect(gapIssue.fix?.target).toBe('endpoint-pair');
+  });
 });

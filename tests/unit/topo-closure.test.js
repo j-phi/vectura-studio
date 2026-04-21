@@ -9,6 +9,12 @@ const makeNoiseRackMock = () => ({
       sampleScalar(x, y, def) { return noise.noise2D(x * (def?.zoom ?? 1), y * (def?.zoom ?? 1)); },
     };
   },
+  resolveEffectiveZoom(noiseDef, fallbackZoom = 1) {
+    const rawZoom = Math.max(0.0001, noiseDef?.zoom ?? fallbackZoom);
+    if ((noiseDef?.type || 'simplex') !== 'polygon') return rawZoom;
+    const referenceZoom = Math.max(0.0001, noiseDef?.polygonZoomReference ?? fallbackZoom);
+    return (referenceZoom * referenceZoom) / rawZoom;
+  },
   combineBlend({ combined, value, blend = 'add' }) {
     if (combined === undefined) return value;
     if (blend === 'subtract') return combined - value;

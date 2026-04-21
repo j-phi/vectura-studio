@@ -167,7 +167,10 @@
   const getCustomPatterns = () => mergeCustomPools().map((pattern) => clone(pattern));
 
   const saveCustomPattern = (pattern, options = {}) => {
-    const normalized = normalizePattern(pattern, { scope: 'local' });
+    const normalized = normalizePattern({
+      ...pattern,
+      customUpdatedAt: new Date().toISOString(),
+    }, { scope: 'local' });
     if (!normalized) return null;
     const persistToLocal = options.persistToLocal !== false;
     const persistToProject = options.persistToProject !== false;

@@ -129,6 +129,7 @@
                 microFreq: 0,
                 imageInvertColor: false,
                 imageInvertOpacity: false,
+                polygonZoomReference: p.noiseFreq ?? 0.1,
                 imageEffects: [],
               },
             ];
@@ -139,7 +140,7 @@
           .filter((layer) => layer && layer.enabled !== false)
           .map((noiseLayer) => {
             const amplitude = noiseLayer.amplitude ?? 0;
-            const zoom = Math.max(0.0001, noiseLayer.zoom ?? 0.02);
+            const zoom = window.Vectura.NoiseRack.resolveEffectiveZoom(noiseLayer, noiseLayer.zoom ?? 0.02);
             const freq = Math.max(0.1, noiseLayer.freq ?? 1);
             const angle = ((noiseLayer.angle ?? 0) * Math.PI) / 180;
             const shiftX = noiseLayer.shiftX ?? 0;

@@ -11,6 +11,13 @@
     if (typeof str !== 'string') return String(str ?? '');
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   };
+  const cloneRegion = (region = []) => (region || []).map((pt) => ({ ...pt }));
+  const cloneFillRecord = (fill = {}) => ({
+    ...fill,
+    regions: (fill.regions || (fill.region ? [fill.region] : [])).map((region) => cloneRegion(region)),
+    region: Array.isArray(fill.region) ? cloneRegion(fill.region) : null,
+    targetIds: Array.isArray(fill.targetIds) ? fill.targetIds.slice() : [],
+  });
 
   window.Vectura = window.Vectura || {};
   window.Vectura._UIPatternDesignerMixin = {
@@ -49,15 +56,20 @@
         root,
         layer,
         tool: 'fill',
-        fills: (layer.params.patternFills || []).map(f => ({
-          ...f,
-          region: (f.region || []).slice(),
-        })),
+        fills: (layer.params.patternFills || []).map((f) => cloneFillRecord(f)),
         history: [],
         view: { zoom: 1, offsetX: 0, offsetY: 0 },
         cleanupCanvas: null,
         cleanupKeys: null,
         inline: true,
+        gapTolerance: Math.max(0, parseFloat(layer.params.patternGapTolerance ?? 0) || 0),
+        dragFillSession: null,
+        selectedPath: null,
+        pendingAnchors: [],
+        dragShape: null,
+        shadowTiles: false,
+        pathMap: [],
+        directEditState: null,
       };
 
       this.inlinePatternDesigner = pd;
@@ -65,6 +77,46 @@
       this._initPatternDesignerView(pd);
       this._renderPatternDesigner(pd);
       this._bindInlinePatternDesignerKeys(pd);
+    },
+
+    _clonePatternFills(fills = []) {
+      return (fills || []).map((fill) => cloneFillRecord(fill));
+    },
+
+    _getPatternFillTargets(pd) {
+      return window.Vectura.AlgorithmRegistry?.patternGetFillTargets?.(pd.layer.params.patternId, {
+        cache: true,
+      }) || null;
+    },
+
+    _buildFillRecordFromTarget(pd, target, options = {}) {
+      if (!target) return null;
+      const fillTypeEl = pd.root.querySelector('[data-pd-fill-type]');
+      const densityEl = pd.root.querySelector('[data-pd-density]');
+      const penEl = pd.root.querySelector('[data-pd-pen]');
+      return {
+        id: `fill-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+        targetIds: [target.id],
+        regions: (target.regions || []).map((region) => cloneRegion(region)),
+        region: cloneRegion(target.outer || target.regions?.[0] || []),
+        fillType: fillTypeEl?.value || 'hatch',
+        density: parseFloat(densityEl?.value) || 1,
+        penId: penEl?.value || null,
+      };
+    },
+
+    _fillMatchesTarget(fill, target) {
+      if (!fill || !target) return false;
+      if (Array.isArray(fill.targetIds) && fill.targetIds.includes(target.id)) return true;
+      const regions = fill.regions || (fill.region ? [fill.region] : []);
+      if (regions.length !== (target.regions || []).length) return false;
+      return regions.every((region, index) => {
+        const ref = target.regions[index];
+        if (!Array.isArray(region) || !Array.isArray(ref) || region.length !== ref.length) return false;
+        return region.every((pt, ptIndex) =>
+          Math.hypot(pt.x - ref[ptIndex].x, pt.y - ref[ptIndex].y) < 1e-6
+        );
+      });
     },
 
     _buildPatternDesignerPanel(pd) {
@@ -84,6 +136,18 @@
       const pens = (SETTINGS.pens || []).map(pen =>
         `<option value="${escapeHtml(pen.id)}">${escapeHtml(pen.name || pen.id)}</option>`
       ).join('');
+      const toolMarkup = this.buildSharedToolbarMarkup([
+        { tool: 'select', value: 'select', title: 'Select Path (S)' },
+        { tool: 'direct', value: 'direct', title: 'Direct Select — edit points (A)' },
+        { tool: 'pen', value: 'pen', title: 'Draw Path (P)' },
+        { tool: 'shape-rect', value: 'shape-rect', title: 'Rectangle (R)' },
+        { tool: 'shape-oval', value: 'shape-oval', title: 'Oval (O)' },
+        { tool: 'fill', value: 'fill', title: 'Paint Bucket (F)' },
+        { tool: 'fill-erase', value: 'fill-erase', title: 'Erase Fill (Alt while filling)' },
+      ], {
+        buttonClass: 'pd-tool-btn',
+        buttonAttr: 'data-pd-tool',
+      });
 
       pd.root.innerHTML = `
         <div class="flex items-center justify-between mb-2 px-1">
@@ -98,12 +162,7 @@
             <button type="button" class="text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted transition-colors" data-pd-open-library>
               Load Saved
             </button>
-            <button type="button" class="pd-tool-btn active" data-pd-tool="fill" title="Paint Bucket (F)">
-              <svg viewBox="0 0 24 24" width="12" height="12"><path d="M16.56 8.94L7.62 0 6.21 1.41l2.38 2.38-5.15 5.15c-.59.57-.59 1.53 0 2.12l5.5 5.5c.29.29.68.44 1.06.44s.77-.15 1.06-.44l5.5-5.5c.59-.58.59-1.53 0-2.12zM5.21 10 10 5.21 14.79 10z" fill="currentColor"/><path d="M19 11.5s-2 2.17-2 3.5c0 1.1.9 2 2 2s2-.9 2-2c0-1.33-2-3.5-2-3.5z" fill="currentColor"/></svg>
-            </button>
-            <button type="button" class="pd-tool-btn" data-pd-tool="erase" title="Erase (E)">
-              <svg viewBox="0 0 24 24" width="12" height="12"><path d="M15.14 3c-.51 0-1.02.2-1.41.59L2.59 14.73c-.78.77-.78 2.04 0 2.83L5.03 20H20v-2h-6.84l7.25-7.26c.78-.78.78-2.05 0-2.83L16.56 3.59c-.4-.39-.91-.59-1.42-.59zm0 2 1.42 1.42L5.82 17H4v-1.84z" fill="currentColor"/></svg>
-            </button>
+            ${toolMarkup}
           </div>
         </div>
         <div class="flex flex-wrap gap-2 mb-2 items-center text-[11px]">
@@ -111,7 +170,7 @@
             <select data-pd-fill-type class="bg-vectura-bg border border-vectura-border px-1 py-0.5 text-[11px] focus:outline-none focus:border-vectura-accent">${fillOptions}</select>
           </label>
           <label class="flex items-center gap-1"><span class="text-vectura-muted">Density</span>
-            <input type="number" data-pd-density value="5" min="0.5" max="50" step="0.5"
+            <input type="number" data-pd-density value="1" min="0.5" max="50" step="0.5"
               class="w-12 bg-vectura-bg border border-vectura-border px-1 py-0.5 text-[11px] focus:outline-none focus:border-vectura-accent">
           </label>
           <label class="flex items-center gap-1"><span class="text-vectura-muted">Pen</span>
@@ -128,8 +187,17 @@
           <canvas data-pd-canvas style="position:absolute;top:0;left:0;touch-action:none;"></canvas>
         </div>
         <div class="flex items-center justify-between mb-1">
-          <span class="text-[10px] text-vectura-muted" data-pd-status>Click a closed region to fill it</span>
+          <div class="flex items-center gap-3">
+            <span class="text-[10px] text-vectura-muted" data-pd-status>Click a closed region to fill it</span>
+            <label class="flex items-center gap-1 text-[10px] text-vectura-muted cursor-pointer select-none">
+              <input type="checkbox" data-pd-shadow-tiles class="accent-vectura-accent"> Neighbors
+            </label>
+          </div>
           <button type="button" class="text-[10px] text-vectura-muted hover:text-vectura-accent transition-colors" data-pd-clear>Clear all</button>
+        </div>
+        <div data-pd-path-actions class="hidden flex gap-1 mb-1 text-[10px]">
+          <button type="button" class="border border-vectura-danger text-vectura-danger px-2 py-0.5 hover:bg-vectura-danger hover:text-white transition-colors" data-pd-delete-path>Delete Path</button>
+          <button type="button" class="border border-vectura-border text-vectura-muted px-2 py-0.5 hover:bg-vectura-border transition-colors" data-pd-trim-path>Trim to Tile</button>
         </div>
         <div data-pd-fills-list class="space-y-1"></div>
         <div class="mt-3 border-t border-vectura-border pt-3">
@@ -140,11 +208,18 @@
           <div class="relative border border-vectura-border mb-2" style="height:150px;overflow:hidden;background:#0e0e11;">
             <canvas data-pd-preview-canvas style="position:absolute;top:0;left:0;"></canvas>
           </div>
+          <label class="flex items-center gap-2 text-[11px] mb-2">
+            <span class="text-vectura-muted">Show Gaps</span>
+            <input type="range" min="0" max="24" step="0.5" value="${pd.gapTolerance ?? 0}" data-pd-gap-slider class="flex-1">
+            <span class="text-vectura-muted w-10 text-right" data-pd-gap-value>${(pd.gapTolerance ?? 0).toFixed(1)}px</span>
+          </label>
           <div data-pd-validation-issues class="space-y-1"></div>
         </div>`;
 
       this._bindPatternDesignerControls(pd);
       this._bindPatternDesignerCanvas(pd);
+      this._bindPatternDesignerEditTools(pd);
+      pd.root.querySelector(`[data-pd-tool="${pd.tool}"]`)?.classList.add('active');
       this._renderFillsList(pd);
       window.requestAnimationFrame(() => {
         this._initPatternDesignerView(pd);
@@ -191,7 +266,7 @@
           this._applyPatternDesignerChanges(pd);
         });
         row.querySelector('[data-fl-density]').addEventListener('change', (e) => {
-          fill.density = parseFloat(e.target.value) || 5;
+          fill.density = parseFloat(e.target.value) || 1;
           this._applyPatternDesignerChanges(pd);
         });
         row.querySelector('[data-fl-pen]').addEventListener('change', (e) => {
@@ -199,7 +274,7 @@
           this._applyPatternDesignerChanges(pd);
         });
         row.querySelector('[data-fl-del]').addEventListener('click', () => {
-          pd.history.push(pd.fills.map(f => ({ ...f, region: f.region.slice() })));
+          pd.history.push(this._clonePatternFills(pd.fills));
           pd.fills.splice(idx, 1);
           this._applyPatternDesignerChanges(pd);
         });
@@ -219,16 +294,23 @@
           return;
         }
         if (e.key === 'f' || e.key === 'F') {
-          pd.tool = 'fill';
-          pd.root.querySelectorAll('[data-pd-tool]').forEach(b => b.classList.toggle('active', b.dataset.pdTool === 'fill'));
+          pd.tool = e.shiftKey ? 'fill-erase' : 'fill';
+          pd.root.querySelectorAll('[data-pd-tool]').forEach((b) => b.classList.toggle('active', b.dataset.pdTool === pd.tool));
         }
-        if (e.key === 'e' || e.key === 'E') {
-          pd.tool = 'erase';
-          pd.root.querySelectorAll('[data-pd-tool]').forEach(b => b.classList.toggle('active', b.dataset.pdTool === 'erase'));
+        if (e.key === 'Alt' && pd.tool === 'fill') {
+          pd.root.querySelectorAll('[data-pd-tool]').forEach((b) => b.classList.toggle('active', b.dataset.pdTool === 'fill-erase'));
         }
       };
+      const onKeyUp = (e) => {
+        if (e.key !== 'Alt' || !pd?.root) return;
+        pd.root.querySelectorAll('[data-pd-tool]').forEach((b) => b.classList.toggle('active', b.dataset.pdTool === pd.tool));
+      };
       window.addEventListener('keydown', handler);
-      pd.cleanupKeys = () => window.removeEventListener('keydown', handler);
+      window.addEventListener('keyup', onKeyUp);
+      pd.cleanupKeys = () => {
+        window.removeEventListener('keydown', handler);
+        window.removeEventListener('keyup', onKeyUp);
+      };
     },
 
     createPatternDesignerMarkup() {
@@ -248,6 +330,13 @@
       const pens = (SETTINGS.pens || []).map(pen =>
         `<option value="${escapeHtml(pen.id)}">${escapeHtml(pen.name || pen.id)}</option>`
       ).join('');
+      const toolMarkup = this.buildSharedToolbarMarkup([
+        { tool: 'fill', value: 'fill', title: 'Paint Bucket (F)' },
+        { tool: 'fill-erase', value: 'fill-erase', title: 'Erase Fill (Alt while filling)' },
+      ], {
+        buttonClass: 'petal-tool-btn',
+        buttonAttr: 'data-pd-tool',
+      });
       return `
         <div class="petal-designer-header" data-pd-header>
           <div class="petal-designer-title">Pattern Designer</div>
@@ -255,17 +344,7 @@
             <button type="button" class="petal-copy-btn" data-pd-import-tile>Import SVG Tile</button>
             <button type="button" class="petal-copy-btn" data-pd-save-custom>Save Pattern</button>
             <button type="button" class="petal-copy-btn" data-pd-open-library>Load Saved</button>
-            <button type="button" class="petal-tool-btn" data-pd-tool="fill" title="Paint Bucket">
-              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" style="display:block">
-                <path d="M16.56 8.94L7.62 0 6.21 1.41l2.38 2.38-5.15 5.15c-.59.57-.59 1.53 0 2.12l5.5 5.5c.29.29.68.44 1.06.44s.77-.15 1.06-.44l5.5-5.5c.59-.58.59-1.53 0-2.12zM5.21 10 10 5.21 14.79 10z" fill="currentColor"/>
-                <path d="M19 11.5s-2 2.17-2 3.5c0 1.1.9 2 2 2s2-.9 2-2c0-1.33-2-3.5-2-3.5z" fill="currentColor"/>
-              </svg>
-            </button>
-            <button type="button" class="petal-tool-btn" data-pd-tool="erase" title="Erase Fill">
-              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" style="display:block">
-                <path d="M15.14 3c-.51 0-1.02.2-1.41.59L2.59 14.73c-.78.77-.78 2.04 0 2.83L5.03 20H20v-2h-6.84l7.25-7.26c.78-.78.78-2.05 0-2.83L16.56 3.59c-.4-.39-.91-.59-1.42-.59zm0 2 1.42 1.42L5.82 17H4v-1.84z" fill="currentColor"/>
-              </svg>
-            </button>
+            ${toolMarkup}
             <button type="button" class="petal-close" data-pd-close title="Close">&#215;</button>
           </div>
         </div>
@@ -277,7 +356,7 @@
             </label>
             <label class="flex items-center gap-2 text-xs">
               <span class="text-vectura-muted">Density</span>
-              <input type="number" data-pd-density value="5" min="0.5" max="50" step="0.5"
+              <input type="number" data-pd-density value="1" min="0.5" max="50" step="0.5"
                      class="w-14 bg-vectura-bg border border-vectura-border px-1 py-0.5 text-xs focus:outline-none focus:border-vectura-accent">
             </label>
             <label class="flex items-center gap-2 text-xs">
@@ -303,6 +382,11 @@
             <div class="relative border border-vectura-border mb-2" style="height:180px;overflow:hidden;background:#0e0e11;">
               <canvas data-pd-preview-canvas style="position:absolute;top:0;left:0;"></canvas>
             </div>
+            <label class="flex items-center gap-2 text-[11px] mb-2">
+              <span class="text-vectura-muted">Show Gaps</span>
+              <input type="range" min="0" max="24" step="0.5" value="0" data-pd-gap-slider class="flex-1">
+              <span class="text-vectura-muted w-10 text-right" data-pd-gap-value>0.0px</span>
+            </label>
             <div data-pd-validation-issues class="space-y-1"></div>
           </div>
         </div>`;
@@ -327,13 +411,23 @@
         root,
         layer,
         tool: 'fill',
-        fills: (layer.params.patternFills || []).map(f => ({ ...f, region: (f.region || []).slice() })),
+        fills: (layer.params.patternFills || []).map((f) => cloneFillRecord(f)),
         view: { zoom: 1, offsetX: 0, offsetY: 0 },
+        history: [],
+        gapTolerance: Math.max(0, parseFloat(layer.params.patternGapTolerance ?? 0) || 0),
+        dragFillSession: null,
+        selectedPath: null,
+        pendingAnchors: [],
+        dragShape: null,
+        shadowTiles: false,
+        pathMap: [],
+        directEditState: null,
       };
       this.patternDesigner = pd;
       this._bindPatternDesignerDrag(pd);
       this._bindPatternDesignerControls(pd);
       this._bindPatternDesignerCanvas(pd);
+      this._bindPatternDesignerEditTools(pd);
       this._initPatternDesignerView(pd);
       this._renderPatternDesigner(pd);
       root.querySelector('[data-pd-tool="fill"]')?.classList.add('active');
@@ -410,24 +504,68 @@
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       const data = window.Vectura.AlgorithmRegistry?.patternGetGroups?.(pd.layer.params.patternId);
       if (!data) return;
-      const cx = (x) => offsetX + x * zoom;
-      const cy = (y) => offsetY + y * zoom;
+      const cx = (x, dx = 0) => offsetX + (x + dx * data.vbW) * zoom;
+      const cy = (y, dy = 0) => offsetY + (y + dy * data.vbH) * zoom;
+
+      const drawGroups = (dx, dy, alpha) => {
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = alpha < 1 ? 'rgba(180,180,180,0.7)' : 'rgba(230,230,230,0.85)';
+        ctx.lineWidth = 1;
+        let flatIndex = 0;
+        pd.pathMap = [];
+        for (const group of data.groups) {
+          for (const path of group.paths) {
+            if (path.length < 2) { flatIndex++; continue; }
+            const isSelected = alpha === 1 && pd.selectedPath !== null && pd.selectedPath === flatIndex;
+            if (isSelected) {
+              ctx.strokeStyle = 'rgba(80,200,120,1)';
+              ctx.lineWidth = 2.5;
+            } else {
+              ctx.strokeStyle = alpha < 1 ? 'rgba(180,180,180,0.7)' : 'rgba(230,230,230,0.85)';
+              ctx.lineWidth = 1;
+            }
+            ctx.beginPath();
+            ctx.moveTo(cx(path[0].x, dx), cy(path[0].y, dy));
+            for (let i = 1; i < path.length; i++) ctx.lineTo(cx(path[i].x, dx), cy(path[i].y, dy));
+            ctx.stroke();
+            if (alpha === 1) pd.pathMap.push({ path, flatIndex });
+            flatIndex++;
+          }
+        }
+        ctx.globalAlpha = 1;
+      };
+
+      // Shadow tiles (neighbors)
+      if (pd.shadowTiles) {
+        const offsets = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+        offsets.forEach(([dx, dy]) => {
+          ctx.setLineDash([]);
+          drawGroups(dx, dy, 0.35);
+        });
+      }
+
+      // Primary tile boundary
       ctx.setLineDash([4, 4]);
       ctx.strokeStyle = 'rgba(100,180,255,0.25)';
       ctx.lineWidth = 1;
       ctx.strokeRect(cx(0), cy(0), data.vbW * zoom, data.vbH * zoom);
       ctx.setLineDash([]);
+
+      // Fills
       for (const fill of pd.fills) {
-        if (!fill.region || fill.region.length < 3) continue;
-        ctx.beginPath();
-        ctx.moveTo(cx(fill.region[0].x), cy(fill.region[0].y));
-        for (let i = 1; i < fill.region.length; i++) ctx.lineTo(cx(fill.region[i].x), cy(fill.region[i].y));
-        ctx.closePath();
-        ctx.fillStyle = 'rgba(68,136,255,0.12)';
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(68,136,255,0.45)';
-        ctx.lineWidth = 1;
-        ctx.stroke();
+        const regions = fill.regions || (fill.region ? [fill.region] : []);
+        regions.forEach((region, regionIndex) => {
+          if (!Array.isArray(region) || region.length < 3) return;
+          ctx.beginPath();
+          ctx.moveTo(cx(region[0].x), cy(region[0].y));
+          for (let i = 1; i < region.length; i += 1) ctx.lineTo(cx(region[i].x), cy(region[i].y));
+          ctx.closePath();
+          ctx.fillStyle = regionIndex === 0 ? 'rgba(68,136,255,0.12)' : 'rgba(14,14,17,0.95)';
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(68,136,255,0.45)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        });
         const fillPaths = window.Vectura.AlgorithmRegistry?._generatePatternFillPaths?.(fill) || [];
         ctx.strokeStyle = 'rgba(68,136,255,0.65)';
         ctx.lineWidth = 0.8;
@@ -439,17 +577,54 @@
           ctx.stroke();
         }
       }
-      ctx.strokeStyle = 'rgba(230,230,230,0.85)';
-      ctx.lineWidth = 1;
-      for (const group of data.groups) {
-        for (const path of group.paths) {
-          if (path.length < 2) continue;
-          ctx.beginPath();
-          ctx.moveTo(cx(path[0].x), cy(path[0].y));
-          for (let i = 1; i < path.length; i++) ctx.lineTo(cx(path[i].x), cy(path[i].y));
-          ctx.stroke();
+
+      // Primary tile paths (with selection highlight)
+      ctx.setLineDash([]);
+      drawGroups(0, 0, 1);
+
+      // Pen tool in-progress anchors
+      if (pd.tool === 'pen' && pd.pendingAnchors.length > 0) {
+        ctx.strokeStyle = 'rgba(255,200,80,0.9)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(cx(pd.pendingAnchors[0].x), cy(pd.pendingAnchors[0].y));
+        for (let i = 1; i < pd.pendingAnchors.length; i++) {
+          ctx.lineTo(cx(pd.pendingAnchors[i].x), cy(pd.pendingAnchors[i].y));
         }
+        ctx.stroke();
+        ctx.setLineDash([]);
+        pd.pendingAnchors.forEach((pt, i) => {
+          ctx.fillStyle = i === 0 ? 'rgba(255,100,100,0.9)' : 'rgba(255,200,80,0.9)';
+          ctx.beginPath();
+          ctx.arc(cx(pt.x), cy(pt.y), 3, 0, Math.PI * 2);
+          ctx.fill();
+        });
       }
+
+      // Shape drag preview
+      if (pd.dragShape) {
+        const { startX, startY, endX, endY, type } = pd.dragShape;
+        const x0 = Math.min(startX, endX), y0 = Math.min(startY, endY);
+        const w = Math.abs(endX - startX), h = Math.abs(endY - startY);
+        ctx.strokeStyle = 'rgba(255,200,80,0.9)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        if (type === 'shape-oval') {
+          ctx.beginPath();
+          ctx.ellipse(cx(x0 + w / 2), cy(y0 + h / 2), w * zoom / 2, h * zoom / 2, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        } else {
+          ctx.strokeRect(cx(x0), cy(y0), w * zoom, h * zoom);
+        }
+        ctx.setLineDash([]);
+      }
+
+      // Direct-select overlay
+      if (pd.tool === 'direct' && pd.directEditState) {
+        this._renderDirectSelectOverlay(ctx, pd, pd.directEditState, cx, cy, zoom);
+      }
+
       this._refreshPatternValidation(pd);
     },
 
@@ -464,7 +639,7 @@
       const previewCanvas = pd.root.querySelector('[data-pd-preview-canvas]');
       const meta = this._getPatternMetaForLayer(pd.layer);
       const validation = meta
-        ? window.Vectura.AlgorithmRegistry?.patternValidateMeta?.(meta, { cache: true })
+        ? window.Vectura.AlgorithmRegistry?.patternValidateMeta?.(meta, { cache: true, gapTolerance: pd.gapTolerance || 0 })
         : null;
       pd.validation = validation || null;
       if (summaryEl) {
@@ -479,11 +654,22 @@
           issuesEl.innerHTML = '<div class="text-[10px] text-vectura-muted">No seam issues detected for the selected tile.</div>';
         } else {
           issues.slice(0, 6).forEach((issue) => {
-            const row = document.createElement('button');
-            row.type = 'button';
-            row.className = `w-full text-left text-[10px] border px-2 py-1 transition-colors ${issue.severity === 'blocker' ? 'border-vectura-danger text-vectura-danger hover:bg-vectura-danger/10' : 'border-vectura-border text-vectura-muted hover:text-vectura-accent'}`;
-            row.textContent = issue.message;
-            row.addEventListener('click', () => {
+            const row = document.createElement('div');
+            const issueKind = issue.code === 'seam-gap' ? 'gap' : (issue.severity === 'blocker' ? 'blocker' : 'warning');
+            row.className = `w-full text-left text-[10px] border px-2 py-1 transition-colors ${
+              issueKind === 'gap'
+                ? 'border-yellow-500/70 text-yellow-300'
+                : issue.severity === 'blocker'
+                  ? 'border-vectura-danger text-vectura-danger'
+                  : 'border-vectura-border text-vectura-muted'
+            }`;
+            row.innerHTML = `
+              <div class="flex items-start justify-between gap-2">
+                <button type="button" class="flex-1 text-left hover:text-vectura-accent transition-colors" data-pd-issue-focus>${escapeHtml(issue.message)}</button>
+                ${issue.autoFixable ? '<button type="button" class="petal-copy-btn !h-6 !min-w-0 px-2" data-pd-issue-fix>Auto-Close</button>' : ''}
+              </div>
+            `;
+            row.querySelector('[data-pd-issue-focus]')?.addEventListener('click', () => {
               const point = Array.isArray(issue.points) && issue.points.length ? issue.points[0] : null;
               if (point) {
                 const data = window.Vectura.AlgorithmRegistry?.patternGetGroups?.(pd.layer.params.patternId);
@@ -500,6 +686,9 @@
                   this._renderPatternDesigner(pd);
                 }
               }
+            });
+            row.querySelector('[data-pd-issue-fix]')?.addEventListener('click', () => {
+              this._applyPatternIssueAutoFix(pd, issue);
             });
             issuesEl.appendChild(row);
           });
@@ -557,7 +746,11 @@
         }
       }
       (validation?.issues || []).slice(0, 12).forEach((issue) => {
-        const color = issue.severity === 'blocker' ? '#ef4444' : '#f59e0b';
+        const color = issue.code === 'seam-gap'
+          ? '#facc15'
+          : issue.severity === 'blocker'
+            ? '#ef4444'
+            : '#f59e0b';
         (issue.points || []).forEach((point) => {
           if (!point) return;
           for (let ty = 0; ty < 3; ty += 1) {
@@ -845,6 +1038,78 @@
       });
     },
 
+    _ensurePatternDesignerEditableMeta(pd) {
+      const registry = getPatternRegistry();
+      const meta = this._getPatternMetaForLayer(pd.layer);
+      if (!registry || !meta) return null;
+      if (meta.custom) return meta;
+      const validation = pd.validation || window.Vectura.AlgorithmRegistry?.patternValidateMeta?.(meta, { cache: true, gapTolerance: pd.gapTolerance || 0 });
+      const saved = registry.saveCustomPattern({
+        ...meta,
+        id: registry.ensureCustomId(meta.name),
+        name: `${meta.name} Copy`,
+        source: 'Custom Patterns',
+        validation: validation
+          ? {
+              blockers: validation.blockers,
+              warnings: validation.warnings,
+              valid: validation.valid,
+              validatedAt: new Date().toISOString(),
+            }
+          : null,
+        cachedTile: validation?.compiled || meta.cachedTile || null,
+      });
+      if (!saved) return null;
+      pd.layer.params.patternId = saved.id;
+      this.storeLayerParams(pd.layer);
+      return saved;
+    },
+
+    _applyPatternIssueAutoFix(pd, issue) {
+      if (!pd || !issue?.autoFixable || issue.fix?.target !== 'endpoint-pair') return;
+      const registry = getPatternRegistry();
+      const editableMeta = this._ensurePatternDesignerEditableMeta(pd);
+      if (!registry || !editableMeta) return;
+      const compiled = clone(editableMeta.cachedTile || pd.validation?.compiled || {});
+      const endpoints = issue.fix?.endpoints || [];
+      const axis = issue.fix?.axis;
+      const value = issue.fix?.value;
+      endpoints.forEach((entry) => {
+        const path = compiled.groups?.[entry.groupIndex]?.paths?.[entry.pathIndex];
+        if (!Array.isArray(path) || !path.length) return;
+        const index = entry.endpoint === 'start' ? 0 : path.length - 1;
+        const point = path[index];
+        if (!point) return;
+        if (axis === 'x') point.x = value;
+        if (axis === 'y') point.y = value;
+        if (entry.side === 'top') point.y = 0;
+        if (entry.side === 'bottom') point.y = compiled.vbH;
+        if (entry.side === 'left') point.x = 0;
+        if (entry.side === 'right') point.x = compiled.vbW;
+      });
+      const nextValidation = window.Vectura.AlgorithmRegistry?._validateCompiledPattern?.(editableMeta, compiled, {
+        gapTolerance: pd.gapTolerance || 0,
+      });
+      const saved = registry.saveCustomPattern({
+        ...editableMeta,
+        validation: nextValidation
+          ? {
+              blockers: nextValidation.blockers,
+              warnings: nextValidation.warnings,
+              valid: nextValidation.valid,
+              validatedAt: new Date().toISOString(),
+            }
+          : editableMeta.validation,
+        cachedTile: compiled,
+      });
+      if (!saved) return;
+      pd.layer.params.patternId = saved.id;
+      if (this.app.pushHistory) this.app.pushHistory();
+      this.storeLayerParams(pd.layer);
+      this.app.regen();
+      this._renderPatternDesigner(pd);
+    },
+
     _bindPatternDesignerCanvas(pd) {
       const canvas = pd.root.querySelector('[data-pd-canvas]');
       if (!canvas) return;
@@ -852,78 +1117,93 @@
         x: (ex - pd.view.offsetX) / pd.view.zoom,
         y: (ey - pd.view.offsetY) / pd.view.zoom,
       });
-      const getRegion = (tx, ty) => {
-        const data = window.Vectura.AlgorithmRegistry?.patternGetGroups?.(pd.layer.params.patternId);
-        const pip = window.Vectura.AlgorithmRegistry?._polyContainsPoint;
-        if (!data || !pip) return null;
-        const sensitivityEl = pd.root.querySelector('[data-pd-sensitivity]');
-        const sensitivity = parseFloat(sensitivityEl?.value) || (pd.layer.params.fillSensitivity ?? 2.0);
-        let best = null, bestArea = Infinity;
-        for (const group of data.groups) {
-          for (const path of group.paths) {
-            if (path.length < 3) continue;
-            const f = path[0], l = path[path.length - 1];
-            if (Math.hypot(f.x - l.x, f.y - l.y) > sensitivity) continue;
-            if (!pip(path, tx, ty)) continue;
-            let minX = f.x, maxX = f.x, minY = f.y, maxY = f.y;
-            for (const p of path) {
-              if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
-              if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
-            }
-            const area = (maxX - minX) * (maxY - minY);
-            if (area < bestArea) { bestArea = area; best = path; }
-          }
+      const getSelection = (tx, ty, additive = false) => {
+        const compiled = this._getPatternFillTargets(pd);
+        const selection = window.Vectura.AlgorithmRegistry?.patternGetFillTargetsAtPoint
+          ? window.Vectura.AlgorithmRegistry.patternGetFillTargetsAtPoint(pd.layer.params.patternId, tx, ty, { cache: true })
+          : null;
+        if (!compiled || !selection) return [];
+        if (additive) return selection.ancestors || [];
+        return selection.smallest ? [selection.smallest] : [];
+      };
+      const ensureSessionHistory = (session) => {
+        if (session.historyPushed) return;
+        session.historyPushed = true;
+        pd.history.push(this._clonePatternFills(pd.fills));
+        if (this.app.pushHistory) this.app.pushHistory();
+      };
+      const applyPourAt = (tx, ty, e, session) => {
+        const effectiveTool = pd.tool === 'fill' && (e.altKey || window.Vectura.SETTINGS?.touchModifiers?.alt)
+          ? 'fill-erase'
+          : pd.tool;
+        const targets = getSelection(tx, ty, Boolean(e.shiftKey));
+        const statusEl = pd.root.querySelector('[data-pd-status]');
+        if (!targets.length) {
+          if (statusEl) statusEl.textContent = 'No fill target at pointer';
+          return;
         }
-        return best;
+        let changed = false;
+        targets.forEach((target) => {
+          const visitKey = `${effectiveTool}:${target.id}`;
+          if (session.visited.has(visitKey)) return;
+          session.visited.add(visitKey);
+          if (effectiveTool === 'fill') {
+            if (pd.fills.some((fill) => this._fillMatchesTarget(fill, target))) return;
+            ensureSessionHistory(session);
+            const nextFill = this._buildFillRecordFromTarget(pd, target);
+            if (!nextFill) return;
+            pd.fills.push(nextFill);
+            changed = true;
+          } else if (effectiveTool === 'fill-erase') {
+            const before = pd.fills.length;
+            const nextFills = pd.fills.filter((fill) => !this._fillMatchesTarget(fill, target));
+            if (nextFills.length === before) return;
+            ensureSessionHistory(session);
+            pd.fills = nextFills;
+            changed = true;
+          }
+        });
+        if (changed) {
+          session.mutated = true;
+          this._applyPatternDesignerChanges(pd, { skipHistoryPush: true });
+        } else if (statusEl) {
+          statusEl.textContent = effectiveTool === 'fill-erase' ? 'No matching fill to erase' : 'Fill already applied';
+        }
       };
       let panState = null;
+      let dragSession = null;
+      const isFillTool = () => pd.tool === 'fill' || pd.tool === 'fill-erase';
       const onDown = (e) => {
         const rect = canvas.getBoundingClientRect();
         const ex = e.clientX - rect.left, ey = e.clientY - rect.top;
-        if (e.button === 1 || (e.button === 0 && e.altKey)) {
+        if (e.button === 1) {
           panState = { sx: ex, sy: ey, ox: pd.view.offsetX, oy: pd.view.offsetY };
           e.preventDefault();
           return;
         }
         if (e.button !== 0) return;
+        if (!isFillTool()) return;
         const { x: tx, y: ty } = toTile(ex, ey);
-        if (pd.tool === 'fill') {
-          const region = getRegion(tx, ty);
-          const statusEl = pd.root.querySelector('[data-pd-status]');
-          if (!region) {
-            if (statusEl) statusEl.textContent = 'No closed region at click point';
-            return;
-          }
-          const f = region[0], l = region[region.length - 1];
-          const poly = Math.hypot(f.x - l.x, f.y - l.y) < 0.5 ? region.slice(0, -1) : region.slice();
-          const fillTypeEl = pd.root.querySelector('[data-pd-fill-type]');
-          const densityEl = pd.root.querySelector('[data-pd-density]');
-          const penEl = pd.root.querySelector('[data-pd-pen]');
-          pd.history.push(pd.fills.map(f => ({ ...f, region: f.region.slice() })));
-          pd.fills.push({
-            id: `fill-${Date.now()}`,
-            region: poly,
-            fillType: fillTypeEl?.value || 'hatch',
-            density: parseFloat(densityEl?.value) || 5,
-            penId: penEl?.value || null,
-          });
-          this._applyPatternDesignerChanges(pd);
-        } else if (pd.tool === 'erase') {
-          const pip = window.Vectura.AlgorithmRegistry?._polyContainsPoint;
-          if (!pip) return;
-          const before = pd.fills.length;
-          pd.fills = pd.fills.filter(fill => !pip(fill.region, tx, ty));
-          if (pd.fills.length !== before) this._applyPatternDesignerChanges(pd);
-        }
+        dragSession = { visited: new Set(), historyPushed: false, mutated: false };
+        applyPourAt(tx, ty, e, dragSession);
       };
       const onMove = (e) => {
-        if (!panState) return;
         const rect = canvas.getBoundingClientRect();
-        pd.view.offsetX = panState.ox + (e.clientX - rect.left - panState.sx);
-        pd.view.offsetY = panState.oy + (e.clientY - rect.top - panState.sy);
-        this._renderPatternDesigner(pd);
+        if (panState) {
+          pd.view.offsetX = panState.ox + (e.clientX - rect.left - panState.sx);
+          pd.view.offsetY = panState.oy + (e.clientY - rect.top - panState.sy);
+          this._renderPatternDesigner(pd);
+          return;
+        }
+        if (!isFillTool()) return;
+        if (!dragSession || !(e.buttons & 1)) return;
+        const { x: tx, y: ty } = toTile(e.clientX - rect.left, e.clientY - rect.top);
+        applyPourAt(tx, ty, e, dragSession);
       };
-      const onUp = () => { panState = null; };
+      const onUp = () => {
+        panState = null;
+        dragSession = null;
+      };
       const onWheel = (e) => {
         e.preventDefault();
         const rect = canvas.getBoundingClientRect();
@@ -947,18 +1227,54 @@
       };
     },
 
+    _syncPdToolActive(pd) {
+      pd.root.querySelectorAll('[data-pd-tool]').forEach(b => b.classList.toggle('active', b.dataset.pdTool === pd.tool));
+      const pathActionsEl = pd.root.querySelector('[data-pd-path-actions]');
+      if (pathActionsEl) {
+        const showActions = pd.tool === 'select' && pd.selectedPath !== null;
+        pathActionsEl.classList.toggle('hidden', !showActions);
+      }
+      const canvas = pd.root.querySelector('[data-pd-canvas]');
+      if (canvas) {
+        if (pd.tool === 'select' || pd.tool === 'direct') canvas.style.cursor = 'default';
+        else if (pd.tool === 'pen') canvas.style.cursor = 'crosshair';
+        else if (pd.tool === 'shape-rect' || pd.tool === 'shape-oval') canvas.style.cursor = 'crosshair';
+        else canvas.style.cursor = 'crosshair';
+      }
+    },
+
     _bindPatternDesignerControls(pd) {
       pd.root.querySelectorAll('[data-pd-tool]').forEach(btn => {
         btn.addEventListener('click', () => {
           pd.tool = btn.dataset.pdTool;
-          pd.root.querySelectorAll('[data-pd-tool]').forEach(b => b.classList.remove('active'));
-          btn.classList.add('active');
+          if (pd.tool !== 'select') pd.selectedPath = null;
+          if (pd.tool !== 'direct') pd.directEditState = null;
+          pd.pendingAnchors = [];
+          pd.dragShape = null;
+          this._syncPdToolActive(pd);
+          this._renderPatternDesigner(pd);
         });
       });
       pd.root.querySelector('[data-pd-close]')?.addEventListener('click', () => this.closePatternDesigner());
       pd.root.querySelector('[data-pd-clear]')?.addEventListener('click', () => {
         pd.fills = [];
         this._applyPatternDesignerChanges(pd);
+      });
+      const shadowCb = pd.root.querySelector('[data-pd-shadow-tiles]');
+      if (shadowCb) {
+        shadowCb.addEventListener('change', () => {
+          pd.shadowTiles = shadowCb.checked;
+          this._renderPatternDesigner(pd);
+        });
+      }
+      pd.root.querySelector('[data-pd-delete-path]')?.addEventListener('click', () => {
+        if (pd.selectedPath !== null) this._deletePathFromTileSvg(pd, pd.selectedPath);
+      });
+      pd.root.querySelector('[data-pd-trim-path]')?.addEventListener('click', () => {
+        if (pd.selectedPath !== null) {
+          const data = window.Vectura.AlgorithmRegistry?.patternGetGroups?.(pd.layer.params.patternId);
+          if (data) this._trimPathToTile(pd, pd.selectedPath, data.vbW, data.vbH);
+        }
       });
       pd.root.querySelector('[data-pd-import-tile]')?.addEventListener('click', () => {
         this.triggerPatternTileImport(pd.layer, pd);
@@ -969,20 +1285,35 @@
       pd.root.querySelector('[data-pd-open-library]')?.addEventListener('click', () => {
         this.openCustomPatternLibrary(pd.layer, pd);
       });
+      const gapSlider = pd.root.querySelector('[data-pd-gap-slider]');
+      const gapValue = pd.root.querySelector('[data-pd-gap-value]');
+      if (gapSlider) {
+        const syncGap = (raw) => {
+          pd.gapTolerance = Math.max(0, parseFloat(raw) || 0);
+          pd.layer.params.patternGapTolerance = pd.gapTolerance;
+          if (gapValue) gapValue.textContent = `${pd.gapTolerance.toFixed(1)}px`;
+          this._refreshPatternValidation(pd);
+        };
+        gapSlider.addEventListener('input', (e) => syncGap(e.target.value));
+        gapSlider.addEventListener('change', (e) => syncGap(e.target.value));
+      }
     },
 
-    _applyPatternDesignerChanges(pd) {
+    _applyPatternDesignerChanges(pd, options = {}) {
       const layer = pd.layer;
-      if (this.app.pushHistory) this.app.pushHistory();
+      if (!options.skipHistoryPush && this.app.pushHistory) this.app.pushHistory();
       layer.params.patternFills = pd.fills.map(f => ({
         id: f.id,
-        region: f.region,
+        targetIds: Array.isArray(f.targetIds) ? f.targetIds.slice() : [],
+        regions: (f.regions || (f.region ? [f.region] : [])).map((region) => cloneRegion(region)),
+        region: cloneRegion(f.region || f.regions?.[0] || []),
         fillType: f.fillType,
         density: f.density,
         penId: f.penId || null,
       }));
       const sensitivityEl = pd.root.querySelector('[data-pd-sensitivity]');
       if (sensitivityEl) layer.params.fillSensitivity = parseFloat(sensitivityEl.value) || 2.0;
+      layer.params.patternGapTolerance = pd.gapTolerance || 0;
       this.storeLayerParams(layer);
       this.app.regen();
       this._renderPatternDesigner(pd);
@@ -993,6 +1324,753 @@
         const n = pd.fills.length;
         statusEl.textContent = n === 0 ? 'Click a closed region to fill it' : `${n} fill${n !== 1 ? 's' : ''} active`;
       }
+    },
+
+    // ─── Direct-select helpers ────────────────────────────────────────────────
+
+    _parseSvgDToAnchors(d) {
+      const anchors = [];
+      let closed = false;
+      let cx = 0, cy = 0, sx = 0, sy = 0;
+      const floats = s => s.trim().replace(/,/g, ' ').split(/\s+/).filter(Boolean).map(parseFloat).filter(v => !isNaN(v));
+      const cmdRe = /([MmLlHhVvCcSsQqTtZz])([^MmLlHhVvCcSsQqTtAaZz]*)/g;
+      let m;
+      while ((m = cmdRe.exec(d)) !== null) {
+        const cmd = m[1];
+        const ns = floats(m[2]);
+        switch (cmd) {
+          case 'M': for (let i = 0; i + 1 < ns.length; i += 2) { cx = ns[i]; cy = ns[i+1]; if (i===0){sx=cx;sy=cy;} anchors.push({ x: cx, y: cy, in: null, out: null }); } break;
+          case 'm': for (let i = 0; i + 1 < ns.length; i += 2) { cx += ns[i]; cy += ns[i+1]; if (i===0){sx=cx;sy=cy;} anchors.push({ x: cx, y: cy, in: null, out: null }); } break;
+          case 'L': for (let i = 0; i + 1 < ns.length; i += 2) { cx = ns[i]; cy = ns[i+1]; anchors.push({ x: cx, y: cy, in: null, out: null }); } break;
+          case 'l': for (let i = 0; i + 1 < ns.length; i += 2) { cx += ns[i]; cy += ns[i+1]; anchors.push({ x: cx, y: cy, in: null, out: null }); } break;
+          case 'H': for (const x of ns) { cx = x; anchors.push({ x: cx, y: cy, in: null, out: null }); } break;
+          case 'h': for (const x of ns) { cx += x; anchors.push({ x: cx, y: cy, in: null, out: null }); } break;
+          case 'V': for (const y of ns) { cy = y; anchors.push({ x: cx, y: cy, in: null, out: null }); } break;
+          case 'v': for (const y of ns) { cy += y; anchors.push({ x: cx, y: cy, in: null, out: null }); } break;
+          case 'C': for (let i = 0; i + 5 < ns.length; i += 6) {
+            if (anchors.length) anchors[anchors.length-1].out = { x: ns[i], y: ns[i+1] };
+            cx = ns[i+4]; cy = ns[i+5];
+            anchors.push({ x: cx, y: cy, in: { x: ns[i+2], y: ns[i+3] }, out: null });
+          } break;
+          case 'c': for (let i = 0; i + 5 < ns.length; i += 6) {
+            if (anchors.length) anchors[anchors.length-1].out = { x: cx+ns[i], y: cy+ns[i+1] };
+            const ex = cx+ns[i+4], ey = cy+ns[i+5];
+            anchors.push({ x: ex, y: ey, in: { x: cx+ns[i+2], y: cy+ns[i+3] }, out: null });
+            cx = ex; cy = ey;
+          } break;
+          case 'S': for (let i = 0; i + 3 < ns.length; i += 4) {
+            const prev = anchors.length ? anchors[anchors.length-1] : null;
+            const c1x = prev?.out ? 2*cx-prev.out.x : cx, c1y = prev?.out ? 2*cy-prev.out.y : cy;
+            if (anchors.length) anchors[anchors.length-1].out = { x: c1x, y: c1y };
+            cx = ns[i+2]; cy = ns[i+3];
+            anchors.push({ x: cx, y: cy, in: { x: ns[i], y: ns[i+1] }, out: null });
+          } break;
+          case 's': for (let i = 0; i + 3 < ns.length; i += 4) {
+            const prev = anchors.length ? anchors[anchors.length-1] : null;
+            const c1x = prev?.out ? 2*cx-prev.out.x : cx, c1y = prev?.out ? 2*cy-prev.out.y : cy;
+            if (anchors.length) anchors[anchors.length-1].out = { x: c1x, y: c1y };
+            const ex = cx+ns[i+2], ey = cy+ns[i+3];
+            anchors.push({ x: ex, y: ey, in: { x: cx+ns[i], y: cy+ns[i+1] }, out: null });
+            cx = ex; cy = ey;
+          } break;
+          case 'Q': for (let i = 0; i + 3 < ns.length; i += 4) { cx = ns[i+2]; cy = ns[i+3]; anchors.push({ x: cx, y: cy, in: null, out: null }); } break;
+          case 'q': for (let i = 0; i + 3 < ns.length; i += 4) { cx += ns[i+2]; cy += ns[i+3]; anchors.push({ x: cx, y: cy, in: null, out: null }); } break;
+          case 'Z': case 'z': closed = true; cx = sx; cy = sy; break;
+        }
+      }
+      // Deduplicate closing point if last === first
+      if (closed && anchors.length >= 2) {
+        const first = anchors[0], last = anchors[anchors.length-1];
+        if (Math.hypot(first.x - last.x, first.y - last.y) < 0.001) anchors.pop();
+      }
+      return { anchors, closed };
+    },
+
+    _anchorsToSvgD(anchors, closed) {
+      if (!anchors.length) return '';
+      const f = v => v.toFixed(4);
+      let d = `M${f(anchors[0].x)},${f(anchors[0].y)}`;
+      for (let i = 0; i < anchors.length - 1; i++) {
+        const a = anchors[i], b = anchors[i+1];
+        if (!a.out && !b.in) {
+          d += ` L${f(b.x)},${f(b.y)}`;
+        } else {
+          const c1 = a.out || { x: a.x, y: a.y };
+          const c2 = b.in || { x: b.x, y: b.y };
+          d += ` C${f(c1.x)},${f(c1.y)} ${f(c2.x)},${f(c2.y)} ${f(b.x)},${f(b.y)}`;
+        }
+      }
+      if (closed) {
+        const a = anchors[anchors.length-1], b = anchors[0];
+        if (a.out || b.in) {
+          const c1 = a.out || { x: a.x, y: a.y };
+          const c2 = b.in || { x: b.x, y: b.y };
+          d += ` C${f(c1.x)},${f(c1.y)} ${f(c2.x)},${f(c2.y)} ${f(b.x)},${f(b.y)}`;
+        }
+        d += ' Z';
+      }
+      return d;
+    },
+
+    _svgElementToEditSet(el, elIndex) {
+      const tag = el.tagName?.toLowerCase();
+      if (tag === 'path') {
+        const d = el.getAttribute('d') || '';
+        const { anchors, closed } = this._parseSvgDToAnchors(d);
+        return anchors.length >= 1 ? { elIndex, anchors, closed, srcTag: 'path' } : null;
+      }
+      if (tag === 'rect') {
+        const x = parseFloat(el.getAttribute('x') || 0);
+        const y = parseFloat(el.getAttribute('y') || 0);
+        const w = parseFloat(el.getAttribute('width') || 0);
+        const h = parseFloat(el.getAttribute('height') || 0);
+        return {
+          elIndex, closed: true, srcTag: 'rect',
+          anchors: [
+            { x, y, in: null, out: null },
+            { x: x + w, y, in: null, out: null },
+            { x: x + w, y: y + h, in: null, out: null },
+            { x, y: y + h, in: null, out: null },
+          ],
+        };
+      }
+      if (tag === 'ellipse' || tag === 'circle') {
+        const ecx = parseFloat(el.getAttribute('cx') || 0);
+        const ecy = parseFloat(el.getAttribute('cy') || 0);
+        const rx = parseFloat(el.getAttribute('rx') || el.getAttribute('r') || 0);
+        const ry = parseFloat(el.getAttribute('ry') || el.getAttribute('r') || rx);
+        const k = 0.5522847498;
+        return {
+          elIndex, closed: true, srcTag: tag,
+          anchors: [
+            { x: ecx, y: ecy - ry, in: { x: ecx - rx*k, y: ecy - ry }, out: { x: ecx + rx*k, y: ecy - ry } },
+            { x: ecx + rx, y: ecy, in: { x: ecx + rx, y: ecy - ry*k }, out: { x: ecx + rx, y: ecy + ry*k } },
+            { x: ecx, y: ecy + ry, in: { x: ecx + rx*k, y: ecy + ry }, out: { x: ecx - rx*k, y: ecy + ry } },
+            { x: ecx - rx, y: ecy, in: { x: ecx - rx, y: ecy + ry*k }, out: { x: ecx - rx, y: ecy - ry*k } },
+          ],
+        };
+      }
+      return null;
+    },
+
+    _commitDirectEditToSvg(pd) {
+      const state = pd.directEditState;
+      if (!state) return;
+      const editableMeta = this._ensureCustomPattern(pd);
+      if (!editableMeta) return;
+      const svgText = editableMeta.svg;
+      if (!svgText) return;
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(svgText, 'image/svg+xml');
+      const elements = Array.from(doc.querySelectorAll('path,line,polyline,polygon,rect,ellipse,circle'));
+      const el = elements[state.elIndex];
+      if (!el) return;
+      const d = this._anchorsToSvgD(state.anchors, state.closed);
+      if (!d) return;
+      const newEl = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
+      newEl.setAttribute('d', d);
+      newEl.setAttribute('stroke', el.getAttribute('stroke') || 'currentColor');
+      newEl.setAttribute('fill', el.getAttribute('fill') || 'none');
+      el.parentNode.replaceChild(newEl, el);
+      const newSvg = new XMLSerializer().serializeToString(doc.documentElement);
+      this._commitSvgEdit(pd, newSvg);
+      // Re-parse to get updated elIndex (element type may have changed from rect→path)
+      const newDoc = new DOMParser().parseFromString(newSvg, 'image/svg+xml');
+      const newElements = Array.from(newDoc.querySelectorAll('path,line,polyline,polygon,rect,ellipse,circle'));
+      const reparsed = this._svgElementToEditSet(newElements[state.elIndex], state.elIndex);
+      if (reparsed) {
+        state.anchors = reparsed.anchors;
+        state.closed = reparsed.closed;
+        state.srcTag = reparsed.srcTag;
+      }
+    },
+
+    _renderDirectSelectOverlay(ctx, pd, state, cxFn, cyFn, zoom) {
+      const { anchors, closed, selectedIndices } = state;
+      if (!anchors.length) return;
+      const selSet = selectedIndices || new Set();
+      const anchorR = Math.max(2, 3.5 / Math.max(0.1, zoom) * zoom);
+      const handleR = Math.max(1.5, 2.2 / Math.max(0.1, zoom) * zoom);
+
+      // Draw path outline
+      ctx.save();
+      ctx.strokeStyle = 'rgba(34,211,238,0.55)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(cxFn(anchors[0].x), cyFn(anchors[0].y));
+      for (let i = 1; i < anchors.length; i++) {
+        const a = anchors[i-1], b = anchors[i];
+        if (!a.out && !b.in) {
+          ctx.lineTo(cxFn(b.x), cyFn(b.y));
+        } else {
+          const c1 = a.out || { x: a.x, y: a.y };
+          const c2 = b.in || { x: b.x, y: b.y };
+          ctx.bezierCurveTo(cxFn(c1.x), cyFn(c1.y), cxFn(c2.x), cyFn(c2.y), cxFn(b.x), cyFn(b.y));
+        }
+      }
+      if (closed && anchors.length > 1) {
+        const a = anchors[anchors.length-1], b = anchors[0];
+        if (a.out || b.in) {
+          const c1 = a.out || { x: a.x, y: a.y };
+          const c2 = b.in || { x: b.x, y: b.y };
+          ctx.bezierCurveTo(cxFn(c1.x), cyFn(c1.y), cxFn(c2.x), cyFn(c2.y), cxFn(b.x), cyFn(b.y));
+        }
+        ctx.closePath();
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Draw handles and anchors
+      ctx.lineWidth = 1;
+      anchors.forEach((a, i) => {
+        const isSel = selSet.has(i);
+        const ax = cxFn(a.x), ay = cyFn(a.y);
+        if (a.in) {
+          ctx.strokeStyle = 'rgba(34,211,238,0.5)';
+          ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(cxFn(a.in.x), cyFn(a.in.y)); ctx.stroke();
+          ctx.beginPath(); ctx.arc(cxFn(a.in.x), cyFn(a.in.y), handleR, 0, Math.PI*2);
+          ctx.fillStyle = '#0f172a'; ctx.fill();
+          ctx.strokeStyle = '#22d3ee'; ctx.stroke();
+        }
+        if (a.out) {
+          ctx.strokeStyle = 'rgba(34,211,238,0.5)';
+          ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(cxFn(a.out.x), cyFn(a.out.y)); ctx.stroke();
+          ctx.beginPath(); ctx.arc(cxFn(a.out.x), cyFn(a.out.y), handleR, 0, Math.PI*2);
+          ctx.fillStyle = '#0f172a'; ctx.fill();
+          ctx.strokeStyle = '#22d3ee'; ctx.stroke();
+        }
+        // Anchor: square for corner nodes (no handles), circle for smooth
+        const hasHandles = a.in || a.out;
+        ctx.strokeStyle = '#22d3ee';
+        ctx.fillStyle = isSel ? '#22d3ee' : '#0f172a';
+        if (!hasHandles) {
+          // Square for corner anchors
+          const s = anchorR;
+          ctx.beginPath();
+          ctx.rect(ax - s, ay - s, s*2, s*2);
+        } else {
+          ctx.beginPath();
+          ctx.arc(ax, ay, anchorR, 0, Math.PI*2);
+        }
+        ctx.fill(); ctx.stroke();
+      });
+      ctx.restore();
+    },
+
+    _hitDirectSelectControl(pd, tx, ty) {
+      const state = pd.directEditState;
+      if (!state?.anchors?.length) return null;
+      const tol = 7 / pd.view.zoom;
+      // Check handles first
+      for (let i = 0; i < state.anchors.length; i++) {
+        const a = state.anchors[i];
+        if (a.in && Math.hypot(tx - a.in.x, ty - a.in.y) < tol) return { type: 'in', index: i };
+        if (a.out && Math.hypot(tx - a.out.x, ty - a.out.y) < tol) return { type: 'out', index: i };
+      }
+      // Check anchors
+      const ancTol = 8 / pd.view.zoom;
+      for (let i = 0; i < state.anchors.length; i++) {
+        const a = state.anchors[i];
+        if (Math.hypot(tx - a.x, ty - a.y) < ancTol) return { type: 'anchor', index: i };
+      }
+      return null;
+    },
+
+    _snapDirectAngle(from, to, stepDeg = 15) {
+      const dx = to.x - from.x, dy = to.y - from.y;
+      const dist = Math.hypot(dx, dy);
+      if (!dist) return { ...to };
+      const step = (stepDeg * Math.PI) / 180;
+      const angle = Math.atan2(dy, dx);
+      const snapped = Math.round(angle / step) * step;
+      return { x: from.x + Math.cos(snapped) * dist, y: from.y + Math.sin(snapped) * dist };
+    },
+
+    // ─── Edit-tool helpers ────────────────────────────────────────────────────
+
+    _ensureCustomPattern(pd) {
+      return this._ensurePatternDesignerEditableMeta(pd);
+    },
+
+    _getPatternSvg(pd) {
+      const meta = this._getPatternMetaForLayer(pd.layer);
+      return meta?.svg || null;
+    },
+
+    _commitSvgEdit(pd, newSvg) {
+      const registry = getPatternRegistry();
+      const meta = this._getPatternMetaForLayer(pd.layer);
+      if (!meta || !registry) return false;
+      const saved = registry.saveCustomPattern({ ...meta, svg: newSvg, cachedTile: null, validation: null });
+      if (!saved) return false;
+      pd.layer.params.patternId = saved.id;
+      this.storeLayerParams(pd.layer);
+      window.Vectura.AlgorithmRegistry?.patternInvalidateCache?.(saved.id);
+      if (this.app.pushHistory) this.app.pushHistory();
+      this.app.regen();
+      this._renderPatternDesigner(pd);
+      this._refreshPatternValidation(pd);
+      return true;
+    },
+
+    _deletePathFromTileSvg(pd, flatIndex) {
+      const editableMeta = this._ensureCustomPattern(pd);
+      if (!editableMeta) return;
+      const svgText = editableMeta.svg;
+      if (!svgText) return;
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(svgText, 'image/svg+xml');
+      const elements = Array.from(doc.querySelectorAll('path,line,polyline,polygon,rect,ellipse,circle'));
+      if (flatIndex < 0 || flatIndex >= elements.length) return;
+      elements[flatIndex].parentNode.removeChild(elements[flatIndex]);
+      const newSvg = new XMLSerializer().serializeToString(doc.documentElement);
+      pd.selectedPath = null;
+      this._syncPdToolActive(pd);
+      this._commitSvgEdit(pd, newSvg);
+    },
+
+    _addPathToTileSvg(pd, anchors) {
+      if (!anchors || anchors.length < 2) return;
+      const editableMeta = this._ensureCustomPattern(pd);
+      if (!editableMeta) return;
+      const svgText = editableMeta.svg || '<svg xmlns="http://www.w3.org/2000/svg"></svg>';
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(svgText, 'image/svg+xml');
+      const svgEl = doc.documentElement;
+      const d = anchors.map((pt, i) => `${i === 0 ? 'M' : 'L'}${pt.x.toFixed(3)},${pt.y.toFixed(3)}`).join(' ');
+      const pathEl = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
+      pathEl.setAttribute('d', d);
+      pathEl.setAttribute('stroke', 'currentColor');
+      pathEl.setAttribute('fill', 'none');
+      svgEl.appendChild(pathEl);
+      const newSvg = new XMLSerializer().serializeToString(svgEl);
+      pd.pendingAnchors = [];
+      this._commitSvgEdit(pd, newSvg);
+    },
+
+    _addShapeToTileSvg(pd, type, bounds) {
+      const { x0, y0, w, h } = bounds;
+      if (w < 1 || h < 1) return;
+      const editableMeta = this._ensureCustomPattern(pd);
+      if (!editableMeta) return;
+      const svgText = editableMeta.svg || '<svg xmlns="http://www.w3.org/2000/svg"></svg>';
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(svgText, 'image/svg+xml');
+      const svgEl = doc.documentElement;
+      let el;
+      if (type === 'shape-oval') {
+        el = doc.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+        el.setAttribute('cx', (x0 + w / 2).toFixed(3));
+        el.setAttribute('cy', (y0 + h / 2).toFixed(3));
+        el.setAttribute('rx', (w / 2).toFixed(3));
+        el.setAttribute('ry', (h / 2).toFixed(3));
+      } else {
+        el = doc.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        el.setAttribute('x', x0.toFixed(3));
+        el.setAttribute('y', y0.toFixed(3));
+        el.setAttribute('width', w.toFixed(3));
+        el.setAttribute('height', h.toFixed(3));
+      }
+      el.setAttribute('stroke', 'currentColor');
+      el.setAttribute('fill', 'none');
+      svgEl.appendChild(el);
+      const newSvg = new XMLSerializer().serializeToString(svgEl);
+      pd.dragShape = null;
+      this._commitSvgEdit(pd, newSvg);
+    },
+
+    _trimPathToTile(pd, flatIndex, vbW, vbH) {
+      const editableMeta = this._ensureCustomPattern(pd);
+      if (!editableMeta) return;
+      const svgText = editableMeta.svg;
+      if (!svgText) return;
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(svgText, 'image/svg+xml');
+      const elements = Array.from(doc.querySelectorAll('path,line,polyline,polygon,rect,ellipse,circle'));
+      if (flatIndex < 0 || flatIndex >= elements.length) return;
+      const el = elements[flatIndex];
+
+      // Get path points from pd.pathMap
+      const entry = pd.pathMap.find(e => e.flatIndex === flatIndex);
+      if (!entry) return;
+      const pts = entry.path;
+
+      // Cohen-Sutherland clip segments to [0,vbW] x [0,vbH]
+      const INSIDE = 0, LEFT = 1, RIGHT = 2, BOTTOM = 4, TOP = 8;
+      const code = (x, y) => {
+        let c = INSIDE;
+        if (x < 0) c |= LEFT;
+        else if (x > vbW) c |= RIGHT;
+        if (y < 0) c |= TOP;
+        else if (y > vbH) c |= BOTTOM;
+        return c;
+      };
+      const clipSeg = (x0, y0, x1, y1) => {
+        let c0 = code(x0, y0), c1 = code(x1, y1);
+        let px0 = x0, py0 = y0, px1 = x1, py1 = y1;
+        for (;;) {
+          if (!(c0 | c1)) return [px0, py0, px1, py1];
+          if (c0 & c1) return null;
+          const cOut = c0 || c1;
+          let x, y;
+          if (cOut & BOTTOM) { x = px0 + (px1 - px0) * (vbH - py0) / (py1 - py0); y = vbH; }
+          else if (cOut & TOP) { x = px0 + (px1 - px0) * (0 - py0) / (py1 - py0); y = 0; }
+          else if (cOut & RIGHT) { y = py0 + (py1 - py0) * (vbW - px0) / (px1 - px0); x = vbW; }
+          else { y = py0 + (py1 - py0) * (0 - px0) / (px1 - px0); x = 0; }
+          if (cOut === c0) { px0 = x; py0 = y; c0 = code(px0, py0); }
+          else { px1 = x; py1 = y; c1 = code(px1, py1); }
+        }
+      };
+
+      // Build clipped sub-paths
+      const subPaths = [];
+      let cur = null;
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const seg = clipSeg(pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y);
+        if (!seg) { if (cur) { subPaths.push(cur); cur = null; } continue; }
+        const [sx0, sy0, sx1, sy1] = seg;
+        if (!cur) cur = [{ x: sx0, y: sy0 }];
+        cur.push({ x: sx1, y: sy1 });
+      }
+      if (cur) subPaths.push(cur);
+
+      if (!subPaths.length) {
+        // Nothing inside tile — just delete
+        el.parentNode.removeChild(el);
+      } else {
+        // Replace element with trimmed path(s)
+        const parent = el.parentNode;
+        subPaths.forEach((sub, i) => {
+          const d = sub.map((pt, j) => `${j === 0 ? 'M' : 'L'}${pt.x.toFixed(3)},${pt.y.toFixed(3)}`).join(' ');
+          const newEl = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
+          newEl.setAttribute('d', d);
+          newEl.setAttribute('stroke', 'currentColor');
+          newEl.setAttribute('fill', 'none');
+          if (i === 0) parent.replaceChild(newEl, el);
+          else parent.appendChild(newEl);
+        });
+      }
+
+      const newSvg = new XMLSerializer().serializeToString(doc.documentElement);
+      pd.selectedPath = null;
+      this._syncPdToolActive(pd);
+      this._commitSvgEdit(pd, newSvg);
+    },
+
+    _bindPatternDesignerEditTools(pd) {
+      const canvas = pd.root.querySelector('[data-pd-canvas]');
+      if (!canvas) return;
+
+      const toTile = (ex, ey) => ({
+        x: (ex - pd.view.offsetX) / pd.view.zoom,
+        y: (ey - pd.view.offsetY) / pd.view.zoom,
+      });
+
+      const HIT_RADIUS = 6;
+
+      const hitTestPath = (tx, ty) => {
+        let best = null, bestDist = HIT_RADIUS / pd.view.zoom;
+        for (const { path, flatIndex } of pd.pathMap) {
+          for (let i = 0; i + 1 < path.length; i++) {
+            const ax = path[i].x, ay = path[i].y;
+            const bx = path[i + 1].x, by = path[i + 1].y;
+            const dxs = bx - ax, dys = by - ay;
+            const len2 = dxs * dxs + dys * dys;
+            let t = len2 > 0 ? ((tx - ax) * dxs + (ty - ay) * dys) / len2 : 0;
+            t = Math.max(0, Math.min(1, t));
+            const px = ax + t * dxs, py = ay + t * dys;
+            const dist = Math.hypot(tx - px, ty - py);
+            if (dist < bestDist) { bestDist = dist; best = flatIndex; }
+          }
+        }
+        return best;
+      };
+
+      // ── Direct-select drag state ───────────────────────────────────────────
+      let directDrag = null;
+
+      const startDirectDrag = (control, tx, ty, e) => {
+        const state = pd.directEditState;
+        if (!state) return;
+        if (control.type === 'anchor') {
+          if (e.shiftKey) {
+            if (state.selectedIndices.has(control.index)) state.selectedIndices.delete(control.index);
+            else state.selectedIndices.add(control.index);
+          } else if (!state.selectedIndices.has(control.index)) {
+            state.selectedIndices = new Set([control.index]);
+          }
+          if (e.altKey) {
+            // Duplicate anchor
+            const orig = state.anchors[control.index];
+            const dup = { x: orig.x, y: orig.y, in: orig.in ? { ...orig.in } : null, out: orig.out ? { ...orig.out } : null };
+            const insertIdx = control.index + 1;
+            state.anchors.splice(insertIdx, 0, dup);
+            state.selectedIndices = new Set([insertIdx]);
+            control = { type: 'anchor', index: insertIdx };
+          }
+        }
+        const anchor = state.anchors[control.index];
+        const otherStarts = control.type === 'anchor'
+          ? [...state.selectedIndices].filter(i => i !== control.index).map(i => {
+              const a = state.anchors[i];
+              return a ? { index: i, x: a.x, y: a.y } : null;
+            }).filter(Boolean)
+          : [];
+        directDrag = {
+          type: control.type,
+          index: control.index,
+          anchorStart: anchor ? { x: anchor.x, y: anchor.y } : null,
+          otherStarts,
+          moved: false,
+          commitPending: false,
+        };
+      };
+
+      const updateDirectDrag = (tx, ty, e) => {
+        if (!directDrag || !pd.directEditState) return;
+        const state = pd.directEditState;
+        const anchor = state.anchors[directDrag.index];
+        if (!anchor) return;
+
+        if (directDrag.type === 'anchor') {
+          let next = { x: tx, y: ty };
+          if (e.shiftKey && directDrag.anchorStart) {
+            next = this._snapDirectAngle(directDrag.anchorStart, next, 15);
+          }
+          const dxm = next.x - anchor.x, dym = next.y - anchor.y;
+          anchor.x = next.x; anchor.y = next.y;
+          if (anchor.in) { anchor.in.x += dxm; anchor.in.y += dym; }
+          if (anchor.out) { anchor.out.x += dxm; anchor.out.y += dym; }
+          for (const other of directDrag.otherStarts) {
+            const oa = state.anchors[other.index];
+            if (!oa) continue;
+            oa.x += dxm; oa.y += dym;
+            if (oa.in) { oa.in.x += dxm; oa.in.y += dym; }
+            if (oa.out) { oa.out.x += dxm; oa.out.y += dym; }
+          }
+        } else {
+          // Bezier handle drag
+          anchor[directDrag.type] = { x: tx, y: ty };
+          if (!e.altKey) {
+            // Mirror opposite handle for smooth editing
+            const mirror = directDrag.type === 'in' ? 'out' : 'in';
+            const dx = anchor.x - tx, dy = anchor.y - ty;
+            anchor[mirror] = { x: anchor.x + dx, y: anchor.y + dy };
+          }
+        }
+        directDrag.moved = true;
+        directDrag.commitPending = true;
+        this._renderPatternDesigner(pd);
+      };
+
+      const endDirectDrag = () => {
+        if (!directDrag) return;
+        if (directDrag.moved && directDrag.commitPending) {
+          this._commitDirectEditToSvg(pd);
+        }
+        directDrag = null;
+      };
+
+      let penDblTimer = null;
+
+      const onEditDown = (e) => {
+        if (e.button !== 0) return;
+        const rect = canvas.getBoundingClientRect();
+        const ex = e.clientX - rect.left, ey = e.clientY - rect.top;
+        const { x: tx, y: ty } = toTile(ex, ey);
+
+        if (pd.tool === 'select') {
+          const hit = hitTestPath(tx, ty);
+          pd.selectedPath = (hit !== null && hit === pd.selectedPath) ? null : hit;
+          this._syncPdToolActive(pd);
+          this._renderPatternDesigner(pd);
+          return;
+        }
+
+        if (pd.tool === 'direct') {
+          // First check if we hit a control in the current edit state
+          const ctrlHit = this._hitDirectSelectControl(pd, tx, ty);
+          if (ctrlHit) {
+            startDirectDrag(ctrlHit, tx, ty, e);
+            return;
+          }
+          // Otherwise hit-test paths to start editing a new element
+          const hitFlatIdx = hitTestPath(tx, ty);
+          if (hitFlatIdx !== null) {
+            // Get the SVG element index via pathMap
+            const mapEntry = pd.pathMap.find(entry => entry.flatIndex === hitFlatIdx);
+            if (mapEntry) {
+              const editableMeta = this._ensureCustomPattern(pd);
+              if (editableMeta?.svg) {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(editableMeta.svg, 'image/svg+xml');
+                const elements = Array.from(doc.querySelectorAll('path,line,polyline,polygon,rect,ellipse,circle'));
+                if (hitFlatIdx < elements.length) {
+                  const editSet = this._svgElementToEditSet(elements[hitFlatIdx], hitFlatIdx);
+                  if (editSet) {
+                    pd.directEditState = { ...editSet, selectedIndices: new Set() };
+                    startDirectDrag({ type: 'anchor', index: 0 }, tx, ty, e);
+                    // Find nearest anchor to the click and use that instead
+                    let nearIdx = 0, nearDist = Infinity;
+                    pd.directEditState.anchors.forEach((a, i) => {
+                      const d = Math.hypot(tx - a.x, ty - a.y);
+                      if (d < nearDist) { nearDist = d; nearIdx = i; }
+                    });
+                    directDrag = null;
+                    pd.directEditState.selectedIndices = new Set();
+                    startDirectDrag({ type: 'anchor', index: nearIdx }, tx, ty, e);
+                    this._renderPatternDesigner(pd);
+                    return;
+                  }
+                }
+              }
+            }
+          }
+          // Click on empty space — clear selection
+          if (!e.shiftKey) {
+            pd.directEditState = null;
+            this._renderPatternDesigner(pd);
+          }
+          return;
+        }
+
+        if (pd.tool === 'pen') {
+          if (pd.pendingAnchors.length >= 2) {
+            const first = pd.pendingAnchors[0];
+            const distToFirst = Math.hypot(tx - first.x, ty - first.y);
+            if (distToFirst < HIT_RADIUS / pd.view.zoom || e.detail >= 2) {
+              if (penDblTimer) { clearTimeout(penDblTimer); penDblTimer = null; }
+              this._addPathToTileSvg(pd, [...pd.pendingAnchors, { ...pd.pendingAnchors[0] }]);
+              return;
+            }
+          }
+          if (penDblTimer) { clearTimeout(penDblTimer); penDblTimer = null; }
+          penDblTimer = setTimeout(() => { penDblTimer = null; }, 300);
+          pd.pendingAnchors.push({ x: tx, y: ty });
+          this._renderPatternDesigner(pd);
+          return;
+        }
+
+        if (pd.tool === 'shape-rect' || pd.tool === 'shape-oval') {
+          pd.dragShape = { startX: tx, startY: ty, endX: tx, endY: ty, type: pd.tool };
+          return;
+        }
+      };
+
+      const onEditMove = (e) => {
+        if (!(e.buttons & 1)) return;
+        const rect = canvas.getBoundingClientRect();
+        const { x: tx, y: ty } = toTile(e.clientX - rect.left, e.clientY - rect.top);
+        if (pd.tool === 'direct' && directDrag) {
+          updateDirectDrag(tx, ty, e);
+          return;
+        }
+        if (pd.dragShape) {
+          pd.dragShape.endX = tx;
+          pd.dragShape.endY = ty;
+          this._renderPatternDesigner(pd);
+        }
+      };
+
+      const onEditUp = (e) => {
+        if (e.button !== 0) return;
+        if (pd.tool === 'direct' && directDrag) {
+          endDirectDrag();
+          return;
+        }
+        if (pd.dragShape && (pd.tool === 'shape-rect' || pd.tool === 'shape-oval')) {
+          const { startX, startY, endX, endY, type } = pd.dragShape;
+          const x0 = Math.min(startX, endX), y0 = Math.min(startY, endY);
+          const w = Math.abs(endX - startX), h = Math.abs(endY - startY);
+          pd.dragShape = null;
+          this._addShapeToTileSvg(pd, type, { x0, y0, w, h });
+        }
+      };
+
+      const onEditKey = (e) => {
+        if (!pd?.root) return;
+        const tag = document.activeElement?.tagName?.toLowerCase();
+        if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
+
+        if (e.key === 'a' || e.key === 'A') {
+          e.preventDefault();
+          pd.tool = 'direct';
+          pd.selectedPath = null; pd.pendingAnchors = []; pd.dragShape = null;
+          this._syncPdToolActive(pd); this._renderPatternDesigner(pd);
+        } else if (e.key === 's' || e.key === 'S') {
+          e.preventDefault();
+          pd.tool = 'select'; pd.directEditState = null;
+          pd.pendingAnchors = []; pd.dragShape = null;
+          this._syncPdToolActive(pd); this._renderPatternDesigner(pd);
+        } else if (e.key === 'p' || e.key === 'P') {
+          e.preventDefault();
+          pd.tool = 'pen'; pd.directEditState = null;
+          pd.pendingAnchors = []; pd.dragShape = null;
+          this._syncPdToolActive(pd); this._renderPatternDesigner(pd);
+        } else if (e.key === 'r' || e.key === 'R') {
+          e.preventDefault();
+          pd.tool = 'shape-rect'; pd.directEditState = null;
+          pd.pendingAnchors = []; pd.dragShape = null;
+          this._syncPdToolActive(pd); this._renderPatternDesigner(pd);
+        } else if (e.key === 'o' || e.key === 'O') {
+          e.preventDefault();
+          pd.tool = 'shape-oval'; pd.directEditState = null;
+          pd.pendingAnchors = []; pd.dragShape = null;
+          this._syncPdToolActive(pd); this._renderPatternDesigner(pd);
+        } else if ((e.key === 'Delete' || e.key === 'Backspace') && pd.tool === 'select' && pd.selectedPath !== null) {
+          e.preventDefault();
+          this._deletePathFromTileSvg(pd, pd.selectedPath);
+        } else if ((e.key === 'Delete' || e.key === 'Backspace') && pd.tool === 'direct' && pd.directEditState) {
+          // Delete selected anchor(s) from the direct-edit path
+          e.preventDefault();
+          const state = pd.directEditState;
+          if (state.selectedIndices.size > 0 && state.anchors.length > state.selectedIndices.size + 1) {
+            const sorted = [...state.selectedIndices].sort((a, b) => b - a);
+            sorted.forEach(i => state.anchors.splice(i, 1));
+            state.selectedIndices = new Set();
+            this._commitDirectEditToSvg(pd);
+          }
+        } else if (pd.tool === 'direct' && pd.directEditState && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+          e.preventDefault();
+          const step = (e.metaKey || e.ctrlKey) ? 10 : 1;
+          const dxk = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+          const dyk = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
+          const state = pd.directEditState;
+          const indicesToMove = state.selectedIndices.size
+            ? [...state.selectedIndices]
+            : state.anchors.map((_, i) => i);
+          indicesToMove.forEach(i => {
+            const a = state.anchors[i];
+            if (!a) return;
+            a.x += dxk; a.y += dyk;
+            if (a.in) { a.in.x += dxk; a.in.y += dyk; }
+            if (a.out) { a.out.x += dxk; a.out.y += dyk; }
+          });
+          this._commitDirectEditToSvg(pd);
+        } else if (e.key === 'Escape') {
+          pd.pendingAnchors = []; pd.dragShape = null; pd.directEditState = null;
+          directDrag = null;
+          this._renderPatternDesigner(pd);
+        }
+      };
+
+      // Register — canvas gets the pointer events, window gets keys
+      canvas.addEventListener('pointerdown', onEditDown);
+      window.addEventListener('pointermove', onEditMove);
+      window.addEventListener('pointerup', onEditUp);
+      window.addEventListener('keydown', onEditKey);
+
+      // Merge cleanup into pd.cleanupCanvas (already set by _bindPatternDesignerCanvas)
+      const prevCleanup = pd.cleanupCanvas || (() => {});
+      pd.cleanupCanvas = () => {
+        prevCleanup();
+        canvas.removeEventListener('pointerdown', onEditDown);
+        window.removeEventListener('pointermove', onEditMove);
+        window.removeEventListener('pointerup', onEditUp);
+        window.removeEventListener('keydown', onEditKey);
+        if (penDblTimer) clearTimeout(penDblTimer);
+      };
     },
   };
 })();

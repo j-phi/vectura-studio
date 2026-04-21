@@ -25,6 +25,9 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
+- Corrected Noise Rack polygon zoom direction so larger zoom values now enlarge polygon footprints consistently across shared and algorithm-local samplers, and normalized vertical line-displacement sign so positive amplitudes move grid/line-stack offsets upward while leaving radial/vector-field semantics unchanged.
+- Unified shared toolbar generation in `ui.js` so the main canvas, Petal Designer, and Pattern Texture Designer all consume one configurable tool-definition registry, and added `Fill` / `Erase Fill` to the shared tool set with shortcut/help coverage.
+- Upgraded the Pattern Texture Designer fill workflow to support nested closed regions, additive ancestor-stack fills, drag-pour fill/erase, `Alt/Option` temporary erase while filling, and a `Show Gaps` tolerance slider with yellow gap diagnostics plus auto-close actions for closable seam endpoints.
 - Added a custom Pattern tile workflow: a runtime merged registry for bundled plus saved custom patterns, local/project persistence for custom tiles, `.vectura` project round-tripping, inline Pattern Texture Designer import/save/load actions, and a live `3x3` validation preview that blocks saving seam-invalid SVG tiles.
 - Added representative Pattern source-fidelity coverage that scans the full Hero tile catalog, selects compound-fill archetypes including `Autumn`, `Bamboo`, and `Bank Note`, and records the still-broken seam/silhouette cases as expected-fail Playwright regressions so the renderer gaps stay visible without redlining CI.
 - Fixed fill-built Pattern extraction so overlapping SVG fill subpaths now collapse to the visible silhouette boundary, tightened seam-chain pairing so `Autumn` grid tiles reconnect cleanly across the horizontal seam, and added unit plus Playwright regressions for the affected Hero patterns and seam continuity.
@@ -99,6 +102,7 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Reworked Horizon vertical fans to sample the visible terrain surface by X-position instead of row parameterization, then removed the extra edge-anchor rays after they proved visually inconsistent with the contour fan.
 
 ## Decisions
+- Positive Noise Rack amplitude only implies “up” for generators that convert noise directly into screen-space vertical displacement; radial, orbit, and vector-field consumers keep their existing amplitude semantics.
 - Export configuration stays single-sourced through the existing `SETTINGS` object and layer optimization state; the Export SVG modal is only a preview/configuration surface and must not introduce a second export rules path.
 - Document Setup unit choice is serialized with the project, but all internal physical geometry, paper, margin, stroke, and optimization math stays normalized in millimeters.
 - Blueprint-style document-dimension labels are editor-only canvas chrome and never export.

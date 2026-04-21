@@ -64,17 +64,19 @@ Vectura uses an Illustrator-style layer system with full undo history for every 
 
 ### Canvas & Tools
 
-An Illustrator-style toolbar gives you selection, direct selection, hand, pen (bezier), shape, and scissor tools. Shape tools create true straight-edge primitives with corner rounding, and the pen tool supports full bezier editing with Illustrator-style subtool shortcuts.
+An Illustrator-style shared toolbar now drives the main canvas plus the embedded designer surfaces, including selection, direct selection, hand, pen (bezier), shape, scissor, and fill tools. Shape tools create true straight-edge primitives with corner rounding, the pen tool supports full bezier editing with Illustrator-style subtool shortcuts, and Pattern texture fills now support nested-region targeting with drag-pour behavior.
 
 <details>
 <summary>Full canvas & tool feature list</summary>
 
-- Illustrator-style toolbar with shortcuts: `V` selection, `A` direct selection, `Space` hand, `P` pen, `M` rectangle, `L` oval, `Y` polygon, `C` scissor; press again to cycle subtools
+- Shared Illustrator-style toolbar with shortcuts: `V` selection, `A` direct selection, `Space` hand, `P` pen, `M` rectangle, `L` oval, `Y` polygon, `C` scissor, `F` fill, `Shift+F` erase fill; press again to cycle subtools where available
 - Direct path editing for individual line endpoints and bezier handles
 - `Rectangle (M)`, `Oval (L)`, and `Polygon (Y)` shape tools create editable expanded layers; fresh shapes stay straight-edged on mouse release
 - Shape tools support center-draw / square-circle constraints (`Alt`), polygon side-count changes while dragging (`Arrow Up/Down`), and Illustrator-style corner rounding (Selection rounds all corners, Direct rounds one corner)
 - Pen long-press subtool menu with Illustrator-style modes: `+` add anchor, `-` delete anchor, `Shift+C` convert anchor
 - Scissor tool: drag a line/rect/circle to split intersecting paths
+- Fill tool supports nested closed regions in the Texture Designer: click the smallest containing region, `Shift`-click to fill the whole containing stack, drag to keep pouring across new regions, and hold `Alt/Option` to temporarily erase fills while dragging
+- The Texture Designer seam preview now includes a `Show Gaps` tolerance slider that reveals near-miss tile joins in yellow and offers auto-close fixes for closable seam endpoints
 - Direct canvas manipulation: drag to move the selected layer, drag corner handles to resize, rotate via the upper-right handle (`Shift` snaps)
 - Alignment guides for canvas center and size matching while dragging
 - Guide visibility and snapping toggles in Document Setup (`Cmd` while dragging overrides snapping)
@@ -98,6 +100,7 @@ An Illustrator-style toolbar gives you selection, direct selection, hand, pen (b
 
 - 14+ algorithm families: flowfield, boids, attractors, hyphae, lissajous, harmonograph, wavetable, rings, topo, grid, rainfall, phylla, petalis, spiral, shapepack
 - Universal **Noise Rack** with per-layer engine selection, blend modes, offsets, octave shaping — shared across flowfield, grid, phylla, rings, topo, wavetable, and petalis
+- Polygon Noise Rack layers now use intuitive zoom semantics: larger `Noise Zoom` / `Noise Scale` values create a larger polygon footprint, and vertical line-displacement systems treat positive amplitudes as upward motion
 - Seeded, repeatable generation; the `Transform & Seed` sub-panel (collapsed by default) exposes seed, position, scale, and rotation
 - Parameter randomization with algorithm-aware bias profiles for Shape Pack, Petalis, Rainfall, and Lissajous (strong defaults with occasional outliers)
 - Live formula display and estimated pen distance/time
@@ -273,6 +276,8 @@ Click `Export SVG` to download.
 | Direct selection | `A` |
 | Hand / pan | `Space` |
 | Pen tool | `P` |
+| Fill | `F` |
+| Erase fill | `Shift+F` |
 | Add anchor | `+` |
 | Delete anchor | `-` |
 | Convert anchor | `Shift+C` |

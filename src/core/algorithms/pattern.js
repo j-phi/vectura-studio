@@ -884,6 +884,130 @@
 
   // ── Pattern fill helpers ──────────────────────────────────────────────────
 
+  const getFillRegions = (fill = {}) => {
+    if (Array.isArray(fill.regions) && fill.regions.length) {
+      return fill.regions
+        .map((region) => pathToLoop(region, 0.5))
+        .filter(Boolean);
+    }
+    if (Array.isArray(fill.region) && fill.region.length) {
+      const single = pathToLoop(fill.region, 0.5);
+      return single ? [single] : [];
+    }
+    return [];
+  };
+
+  const compositeContainsPoint = (regions = [], x, y) =>
+    regions.reduce((inside, region) => (polyContainsPoint(region, x, y) ? !inside : inside), false);
+
+  const scanLineClipComposite = (regions = [], y) => {
+    const xs = [];
+    regions.forEach((poly) => {
+      const n = poly.length;
+      for (let i = 0; i < n; i += 1) {
+        const a = poly[i];
+        const b = poly[(i + 1) % n];
+        if ((a.y < y) !== (b.y < y)) xs.push(a.x + (y - a.y) * (b.x - a.x) / (b.y - a.y));
+      }
+    });
+    xs.sort((a, b) => a - b);
+    const pairs = [];
+    for (let i = 0; i + 1 < xs.length; i += 2) {
+      if (xs[i + 1] - xs[i] > 1e-6) pairs.push([xs[i], xs[i + 1]]);
+    }
+    return pairs;
+  };
+
+  const compositeBounds = (regions = []) => {
+    const points = regions.flat();
+    return {
+      minX: Math.min(...points.map((pt) => pt.x)),
+      maxX: Math.max(...points.map((pt) => pt.x)),
+      minY: Math.min(...points.map((pt) => pt.y)),
+      maxY: Math.max(...points.map((pt) => pt.y)),
+    };
+  };
+
+  const hatchLinesComposite = (regions, density, angleDeg) => {
+    const ar = angleDeg * Math.PI / 180;
+    const ca = Math.cos(ar);
+    const sa = Math.sin(ar);
+    const rotated = regions.map((poly) => poly.map((p) => ({ x: p.x * ca + p.y * sa, y: -p.x * sa + p.y * ca })));
+    const ys = rotated.flat().map((p) => p.y);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const result = [];
+    for (let y = Math.ceil(minY / density) * density; y <= maxY + 1e-6; y += density) {
+      for (const [x0, x1] of scanLineClipComposite(rotated, y)) {
+        result.push([
+          { x: x0 * ca - y * sa, y: x0 * sa + y * ca },
+          { x: x1 * ca - y * sa, y: x1 * sa + y * ca },
+        ]);
+      }
+    }
+    return result;
+  };
+
+  const waveLinesComposite = (regions, density) => {
+    const bounds = compositeBounds(regions);
+    const amplitude = density * 0.4;
+    const wavelength = density * 1.5;
+    const stepX = Math.max(0.5, (bounds.maxX - bounds.minX) / 200);
+    const result = [];
+    for (let cy = Math.ceil(bounds.minY / density) * density; cy <= bounds.maxY + 1e-6; cy += density) {
+      let seg = null;
+      for (let x = bounds.minX; x <= bounds.maxX + stepX; x += stepX) {
+        if (compositeContainsPoint(regions, x, cy)) {
+          if (!seg) seg = [];
+          seg.push({ x, y: cy + amplitude * Math.sin((x / wavelength) * Math.PI * 2) });
+        } else if (seg) {
+          if (seg.length >= 2) result.push(seg);
+          seg = null;
+        }
+      }
+      if (seg && seg.length >= 2) result.push(seg);
+    }
+    return result;
+  };
+
+  const zigzagLinesComposite = (regions, density) => {
+    const bounds = compositeBounds(regions);
+    const amplitude = density * 0.4;
+    const halfPeriod = density * 0.75;
+    const result = [];
+    for (let cy = Math.ceil(bounds.minY / density) * density; cy <= bounds.maxY + 1e-6; cy += density) {
+      let seg = null;
+      let flip = false;
+      for (let x = bounds.minX; x <= bounds.maxX + halfPeriod; x += halfPeriod) {
+        if (compositeContainsPoint(regions, x, cy)) {
+          if (!seg) seg = [];
+          seg.push({ x, y: cy + (flip ? amplitude : -amplitude) });
+        } else if (seg) {
+          if (seg.length >= 2) result.push(seg);
+          seg = null;
+        }
+        flip = !flip;
+      }
+      if (seg && seg.length >= 2) result.push(seg);
+    }
+    return result;
+  };
+
+  const stippleDotsComposite = (regions, density) => {
+    const bounds = compositeBounds(regions);
+    const dotR = Math.max(0.15, density * 0.12);
+    const result = [];
+    let rowOff = false;
+    for (let y = Math.ceil(bounds.minY / density) * density; y <= bounds.maxY + 1e-6; y += density) {
+      const x0 = bounds.minX + (rowOff ? density / 2 : 0);
+      for (let x = x0; x <= bounds.maxX + 1e-6; x += density) {
+        if (compositeContainsPoint(regions, x, y)) result.push([{ x: x - dotR, y }, { x: x + dotR, y }]);
+      }
+      rowOff = !rowOff;
+    }
+    return result;
+  };
+
   // Clip a horizontal scan line at y against a closed polygon → [[x0,x1], ...]
   const scanLineClip = (poly, y) => {
     const xs = [];
@@ -942,6 +1066,150 @@
       }
     });
     return inside;
+  };
+
+  const pathToLoop = (path = [], closeTolerance = 0.5) => {
+    if (!Array.isArray(path) || path.length < 3) return null;
+    const next = dedupeSequentialPoints(path.map((pt) => ({ x: pt.x, y: pt.y })));
+    if (next.length < 3) return null;
+    const first = next[0];
+    const last = next[next.length - 1];
+    if (Math.hypot(first.x - last.x, first.y - last.y) <= closeTolerance) next.pop();
+    return next.length >= 3 ? next : null;
+  };
+
+  const loopBounds = (loop = []) => loop.reduce((acc, pt) => ({
+    minX: Math.min(acc.minX, pt.x),
+    minY: Math.min(acc.minY, pt.y),
+    maxX: Math.max(acc.maxX, pt.x),
+    maxY: Math.max(acc.maxY, pt.y),
+  }), {
+    minX: Number.POSITIVE_INFINITY,
+    minY: Number.POSITIVE_INFINITY,
+    maxX: Number.NEGATIVE_INFINITY,
+    maxY: Number.NEGATIVE_INFINITY,
+  });
+
+  const findLoopInteriorPoint = (loop = []) => {
+    if (!Array.isArray(loop) || loop.length < 3) return null;
+    const bounds = loopBounds(loop);
+    const width = Math.max(1e-6, bounds.maxX - bounds.minX);
+    const height = Math.max(1e-6, bounds.maxY - bounds.minY);
+    const candidates = [];
+    for (let iy = 1; iy <= 5; iy += 1) {
+      for (let ix = 1; ix <= 5; ix += 1) {
+        candidates.push({
+          x: bounds.minX + (ix / 6) * width,
+          y: bounds.minY + (iy / 6) * height,
+        });
+      }
+    }
+    const centroid = loop.reduce((acc, pt) => ({ x: acc.x + pt.x, y: acc.y + pt.y }), { x: 0, y: 0 });
+    candidates.unshift({ x: centroid.x / loop.length, y: centroid.y / loop.length });
+    return candidates.find((pt) => polyContainsPoint(loop, pt.x, pt.y)) || null;
+  };
+
+  const collectCompiledPaths = (data = {}) => {
+    const paths = [];
+    (data.groups || []).forEach((group, groupIndex) => {
+      (group.paths || []).forEach((path, pathIndex) => {
+        const cloned = clonePath(path);
+        cloned.meta = { ...(cloned.meta || {}), groupIndex, pathIndex };
+        paths.push(cloned);
+      });
+    });
+    return paths;
+  };
+
+  const compilePatternFillTargetsFromData = (data = {}, options = {}) => {
+    const closeTolerance = Math.max(0.1, Number(options.closeTolerance) || 0.5);
+    const loops = collectCompiledPaths(data)
+      .map((path) => {
+        const loop = pathToLoop(path, closeTolerance);
+        if (!loop) return null;
+        const area = Math.abs(polyArea(loop));
+        if (area < 1e-3) return null;
+        const sample = findLoopInteriorPoint(loop);
+        if (!sample) return null;
+        return {
+          id: `loop-${path.meta?.groupIndex ?? 0}-${path.meta?.pathIndex ?? 0}`,
+          groupIndex: path.meta?.groupIndex ?? 0,
+          pathIndex: path.meta?.pathIndex ?? 0,
+          loop,
+          area,
+          sample,
+          bounds: loopBounds(loop),
+          parentId: null,
+          childIds: [],
+        };
+      })
+      .filter(Boolean);
+
+    loops.forEach((loop) => {
+      let parent = null;
+      loops.forEach((candidate) => {
+        if (candidate === loop) return;
+        if (candidate.area <= loop.area) return;
+        if (!polyContainsPoint(candidate.loop, loop.sample.x, loop.sample.y)) return;
+        if (!parent || candidate.area < parent.area) parent = candidate;
+      });
+      if (parent) {
+        loop.parentId = parent.id;
+        parent.childIds.push(loop.id);
+      }
+    });
+
+    const loopById = new Map(loops.map((loop) => [loop.id, loop]));
+    const targets = loops.map((loop) => ({
+      id: `target-${loop.id}`,
+      ownerLoopId: loop.id,
+      groupIndex: loop.groupIndex,
+      pathIndex: loop.pathIndex,
+      depth: (() => {
+        let depth = 0;
+        let current = loop.parentId ? loopById.get(loop.parentId) : null;
+        while (current) {
+          depth += 1;
+          current = current.parentId ? loopById.get(current.parentId) : null;
+        }
+        return depth;
+      })(),
+      area: loop.area,
+      outer: loop.loop.map((pt) => ({ ...pt })),
+      holes: loop.childIds.map((childId) => loopById.get(childId)?.loop?.map((pt) => ({ ...pt })) || []).filter(Boolean),
+      regions: [
+        loop.loop.map((pt) => ({ ...pt })),
+        ...loop.childIds.map((childId) => loopById.get(childId)?.loop?.map((pt) => ({ ...pt })) || []).filter(Boolean),
+      ],
+    }));
+    const targetByLoopId = new Map(targets.map((target) => [target.ownerLoopId, target]));
+    return {
+      loops,
+      loopById,
+      targets,
+      targetByLoopId,
+    };
+  };
+
+  const getFillTargetsAtPoint = (compiledTargets, x, y, options = {}) => {
+    if (!compiledTargets?.loops?.length) return { smallest: null, ancestors: [], containingLoops: [] };
+    const containingLoops = compiledTargets.loops
+      .filter((loop) => polyContainsPoint(loop.loop, x, y))
+      .sort((a, b) => a.area - b.area);
+    if (!containingLoops.length) return { smallest: null, ancestors: [], containingLoops: [] };
+    const smallestLoop = containingLoops[0];
+    const ancestors = [];
+    let current = smallestLoop;
+    while (current) {
+      const target = compiledTargets.targetByLoopId.get(current.id);
+      if (target) ancestors.push(target);
+      current = current.parentId ? compiledTargets.loopById.get(current.parentId) : null;
+    }
+    return {
+      smallest: compiledTargets.targetByLoopId.get(smallestLoop.id) || null,
+      ancestors,
+      containingLoops,
+    };
   };
 
   const buildSourceFillSampler = (meta) => {
@@ -1101,19 +1369,108 @@
     return issues;
   };
 
-  const validateCompiledPattern = (meta, data) => {
+  const collectBoundaryEndpointCandidates = (paths = [], vbMinX = 0, vbMinY = 0, vbW = 0, vbH = 0, tolerance = 0) => {
+    if (!(tolerance > 0)) return { top: [], bottom: [], left: [], right: [] };
+    const maxX = vbMinX + vbW;
+    const maxY = vbMinY + vbH;
+    const candidates = { top: [], bottom: [], left: [], right: [] };
+    paths.forEach((path) => {
+      if (!Array.isArray(path) || path.length < 2 || isClosedPath(path)) return;
+      ['start', 'end'].forEach((endpoint) => {
+        const point = endpoint === 'start' ? path[0] : path[path.length - 1];
+        const neighbor = endpoint === 'start' ? path[1] : path[path.length - 2];
+        if (!point || !neighbor) return;
+        const sideDistances = [
+          { side: 'top', distance: Math.abs(point.y - vbMinY), pos: point.x, snap: { x: point.x, y: vbMinY } },
+          { side: 'bottom', distance: Math.abs(point.y - maxY), pos: point.x, snap: { x: point.x, y: maxY } },
+          { side: 'left', distance: Math.abs(point.x - vbMinX), pos: point.y, snap: { x: vbMinX, y: point.y } },
+          { side: 'right', distance: Math.abs(point.x - maxX), pos: point.y, snap: { x: maxX, y: point.y } },
+        ].sort((a, b) => a.distance - b.distance);
+        const nearest = sideDistances[0];
+        if (!nearest || nearest.distance > tolerance) return;
+        candidates[nearest.side].push({
+          side: nearest.side,
+          point: { ...nearest.snap },
+          rawPoint: { ...point },
+          endpoint,
+          tangent: { x: point.x - neighbor.x, y: point.y - neighbor.y },
+          pos: nearest.pos,
+          groupIndex: path.meta?.groupIndex ?? 0,
+          pathIndex: path.meta?.pathIndex ?? 0,
+        });
+      });
+    });
+    return candidates;
+  };
+
+  const collectGapIssues = (primary = [], secondary = [], tolerance = 0.2, seamTolerance = 0.2) => {
+    if (!(tolerance > 0)) return [];
+    const remaining = secondary.slice();
+    const issues = [];
+    primary.forEach((entry) => {
+      let bestIndex = -1;
+      let bestDistance = Infinity;
+      remaining.forEach((candidate, index) => {
+        const distance = Math.abs(entry.pos - candidate.pos);
+        if (distance > seamTolerance && distance <= tolerance && distance < bestDistance) {
+          bestDistance = distance;
+          bestIndex = index;
+        }
+      });
+      if (bestIndex === -1) return;
+      const match = remaining.splice(bestIndex, 1)[0];
+      const averaged = (entry.pos + match.pos) / 2;
+      issues.push({
+        severity: 'warning',
+        code: 'seam-gap',
+        kind: 'gap',
+        gapDistance: bestDistance,
+        side: `${entry.side}-${match.side}`,
+        message: `Gap of ${bestDistance.toFixed(2)}px between ${entry.side} and ${match.side} endpoints can be auto-closed.`,
+        points: [entry.point, match.point],
+        autoFixable: true,
+        fixAction: 'auto-close-gap',
+        fix: {
+          target: 'endpoint-pair',
+          axis: entry.side === 'top' || entry.side === 'bottom' ? 'x' : 'y',
+          value: averaged,
+          endpoints: [
+            {
+              groupIndex: entry.groupIndex,
+              pathIndex: entry.pathIndex,
+              endpoint: entry.endpoint,
+              side: entry.side,
+            },
+            {
+              groupIndex: match.groupIndex,
+              pathIndex: match.pathIndex,
+              endpoint: match.endpoint,
+              side: match.side,
+            },
+          ],
+        },
+      });
+    });
+    return issues;
+  };
+
+  const validateCompiledPattern = (meta, data, options = {}) => {
     if (!meta || !data) return null;
-    const paths = normalizeGeneratedLoops((data.groups || []).flatMap((group) => group.paths || []));
+    const paths = normalizeGeneratedLoops(collectCompiledPaths(data));
     const vbMinX = 0;
     const vbMinY = 0;
     const vbW = data.vbW || 0;
     const vbH = data.vbH || 0;
     const seamTolerance = Math.max(vbW, vbH) / 400 || 0.2;
+    const gapTolerance = Math.max(0, Number(options.gapTolerance) || 0);
     const issues = [];
 
     const edges = collectBoundaryCrossings(paths, vbMinX, vbMinY, vbW, vbH);
     issues.push(...pairBoundaryCrossings(edges.top, edges.bottom, seamTolerance));
     issues.push(...pairBoundaryCrossings(edges.left, edges.right, seamTolerance));
+    const endpointCandidates = collectBoundaryEndpointCandidates(paths, vbMinX, vbMinY, vbW, vbH, gapTolerance);
+    issues.push(...collectGapIssues(endpointCandidates.top, endpointCandidates.bottom, gapTolerance, seamTolerance));
+    issues.push(...collectGapIssues(endpointCandidates.left, endpointCandidates.right, gapTolerance, seamTolerance));
 
     const nearEdgeWarnings = [];
     paths.forEach((path) => {
@@ -1211,7 +1568,7 @@
     if (!meta?.svg) return null;
     const data = compilePatternMeta(meta, { cache: options.cache !== false, cacheKey: options.cacheKey });
     if (!data) return null;
-    return validateCompiledPattern(meta, data);
+    return validateCompiledPattern(meta, data, options);
   };
 
   // Hatch lines at angleDeg, clipped to polygon
@@ -1338,26 +1695,54 @@
 
   // Dispatch to the right fill type → array of paths in tile-local SVG coords
   const generatePatternFillPaths = (fill) => {
-    const { region, fillType = 'hatch', density = 5 } = fill;
-    if (!region || region.length < 3) return [];
+    const regions = getFillRegions(fill);
+    const { fillType = 'hatch', density = 5 } = fill;
+    if (!regions.length) return [];
+    if (regions.length === 1) {
+      const region = regions[0];
+      switch (fillType) {
+        case 'hatch':       return hatchLines(region, density, 0);
+        case 'vhatch':      return hatchLines(region, density, 90);
+        case 'dhatch45':    return hatchLines(region, density, 45);
+        case 'dhatch135':   return hatchLines(region, density, 135);
+        case 'crosshatch':  return [...hatchLines(region, density, 0), ...hatchLines(region, density, 90)];
+        case 'xcrosshatch': return [...hatchLines(region, density, 45), ...hatchLines(region, density, 135)];
+        case 'wavelines':   return waveLines(region, density);
+        case 'zigzag':      return zigzagLines(region, density);
+        case 'stipple':     return stippleDots(region, density);
+        case 'contour':     return contourLines(region, density);
+        default:            return hatchLines(region, density, 0);
+      }
+    }
     switch (fillType) {
-      case 'hatch':       return hatchLines(region, density, 0);
-      case 'vhatch':      return hatchLines(region, density, 90);
-      case 'dhatch45':    return hatchLines(region, density, 45);
-      case 'dhatch135':   return hatchLines(region, density, 135);
-      case 'crosshatch':  return [...hatchLines(region, density, 0), ...hatchLines(region, density, 90)];
-      case 'xcrosshatch': return [...hatchLines(region, density, 45), ...hatchLines(region, density, 135)];
-      case 'wavelines':   return waveLines(region, density);
-      case 'zigzag':      return zigzagLines(region, density);
-      case 'stipple':     return stippleDots(region, density);
-      case 'contour':     return contourLines(region, density);
-      default:            return hatchLines(region, density, 0);
+      case 'hatch':       return hatchLinesComposite(regions, density, 0);
+      case 'vhatch':      return hatchLinesComposite(regions, density, 90);
+      case 'dhatch45':    return hatchLinesComposite(regions, density, 45);
+      case 'dhatch135':   return hatchLinesComposite(regions, density, 135);
+      case 'crosshatch':  return [...hatchLinesComposite(regions, density, 0), ...hatchLinesComposite(regions, density, 90)];
+      case 'xcrosshatch': return [...hatchLinesComposite(regions, density, 45), ...hatchLinesComposite(regions, density, 135)];
+      case 'wavelines':   return waveLinesComposite(regions, density);
+      case 'zigzag':      return zigzagLinesComposite(regions, density);
+      case 'stipple':     return stippleDotsComposite(regions, density);
+      case 'contour':     return contourLines(regions[0], density);
+      default:            return hatchLinesComposite(regions, density, 0);
     }
   };
 
   // Expose for UI and testing
   window.Vectura.AlgorithmRegistry._generatePatternFillPaths = generatePatternFillPaths;
   window.Vectura.AlgorithmRegistry._polyContainsPoint = polyContainsPoint;
+  window.Vectura.AlgorithmRegistry._compilePatternFillTargets = compilePatternFillTargetsFromData;
+  window.Vectura.AlgorithmRegistry.patternGetFillTargets = (patternOrId, options = {}) => {
+    const data = typeof patternOrId === 'object' && patternOrId?.groups ? patternOrId : compilePatternMeta(patternOrId, options);
+    if (!data) return null;
+    return compilePatternFillTargetsFromData(data, options);
+  };
+  window.Vectura.AlgorithmRegistry.patternGetFillTargetsAtPoint = (patternOrId, x, y, options = {}) => {
+    const compiled = window.Vectura.AlgorithmRegistry.patternGetFillTargets(patternOrId, options);
+    if (!compiled) return null;
+    return getFillTargetsAtPoint(compiled, x, y, options);
+  };
 
   // ── Seam removal ─────────────────────────────────────────────────────────
 

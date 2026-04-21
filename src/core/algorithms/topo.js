@@ -76,6 +76,7 @@
           imagePreview: '',
           imageAlgo: p.imageAlgo || 'luma',
           imageEffects: [],
+          polygonZoomReference: p.noiseScale ?? 0.003,
           polygonRadius: 2,
           polygonSides: 6,
           polygonRotation: 0,
@@ -96,7 +97,7 @@
         const sampleFieldNoise = (worldX, worldY) => {
           let combined;
           noiseLayers.forEach((noiseLayer) => {
-            const zoom = Math.max(0.0001, noiseLayer.zoom ?? 0.003);
+            const zoom = window.Vectura.NoiseRack.resolveEffectiveZoom(noiseLayer, 0.003);
             const freq = Math.max(0.05, noiseLayer.freq ?? 1);
             const angle = ((noiseLayer.angle ?? 0) * Math.PI) / 180;
             const cosA = Math.cos(angle);

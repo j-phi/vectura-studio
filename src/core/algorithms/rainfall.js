@@ -201,6 +201,7 @@
             imageSolarize: 0.5,
             imagePixelate: 12,
             imageDither: 0.5,
+            polygonZoomReference: p.zoom ?? 0.02,
             polygonRadius: 2,
             polygonSides: 6,
             polygonRotation: 0,
@@ -219,7 +220,7 @@
               const angle = ((noiseLayer.angle ?? 0) * Math.PI) / 180;
               const cosA = Math.cos(angle);
               const sinA = Math.sin(angle);
-              const zoom = noiseLayer.zoom ?? noiseBase.zoom;
+              const zoom = window.Vectura.NoiseRack.resolveEffectiveZoom(noiseLayer, noiseBase.zoom);
               const freq = noiseLayer.freq ?? noiseBase.freq;
               const amplitude = noiseLayer.amplitude ?? noiseBase.amplitude;
               const shiftX = (noiseLayer.shiftX ?? 0) * innerW * 0.5;

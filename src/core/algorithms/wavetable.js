@@ -210,6 +210,7 @@
           imageSolarize: 0.5,
           imagePixelate: 12,
           imageDither: 0.5,
+          polygonZoomReference: p.zoom ?? 0.02,
           polygonRadius: 2,
           polygonSides: 6,
           polygonRotation: 0,
@@ -228,7 +229,7 @@
             const angle = ((noiseLayer.angle ?? 0) * Math.PI) / 180;
             const cosA = Math.cos(angle);
             const sinA = Math.sin(angle);
-            const zoom = noiseLayer.zoom ?? noiseBase.zoom;
+            const zoom = window.Vectura.NoiseRack.resolveEffectiveZoom(noiseLayer, noiseBase.zoom);
             const freq = noiseLayer.freq ?? noiseBase.freq;
             const amplitude = noiseLayer.amplitude ?? noiseBase.amplitude;
             const shiftX = (noiseLayer.shiftX ?? 0) * innerW * 0.5;
@@ -320,6 +321,7 @@
           });
           return combined ?? 0;
         };
+        const resolveVerticalNoiseAmplitude = (noiseValue, strength = 1) => -(noiseValue * strength);
         const getEdgeTaper = (xNorm) => {
           if (edgeFadeStrength <= 0 || edgeFadeThresholdStrength <= 0 || edgeFadeMode === 'none') return 1;
           const t = clamp01(xNorm);
@@ -378,7 +380,10 @@
           const xNorm = clamp01((baseX - inset) / Math.max(1e-6, innerW));
           const yNorm = clamp01((baseY - inset) / Math.max(1e-6, innerH));
           const off = sampleCombinedNoise(baseX, baseY, sampleX, sampleY, imageSampleX, imageSampleY);
-          const amp = off * getEdgeTaper(xNorm) * getVerticalTaper(yNorm) * strengthScale;
+          const amp = resolveVerticalNoiseAmplitude(
+            off,
+            getEdgeTaper(xNorm) * getVerticalTaper(yNorm) * strengthScale
+          );
           const dx = amp * lineOffsetX;
           const dy = amp * lineOffsetY;
           let x = baseX + dx;
@@ -390,7 +395,7 @@
               const limit = Math.max(0, y < minY ? baseY - minY : maxY - baseY);
               const denom = Math.max(0.001, Math.abs(amp));
               const scale = Math.min(1, limit / denom);
-              y = baseY + amp * scale;
+              y = baseY + dy * scale;
             }
           }
           return { x, y };
@@ -505,7 +510,7 @@
             for (let j = 0; j <= pts; j++) {
               const baseX = inset + j * xStep + xOffset;
               const off = sampleCombinedNoise(baseX, by);
-              const amp = off * getEdgeTaper(j / pts) * vTaper;
+              const amp = resolveVerticalNoiseAmplitude(off, getEdgeTaper(j / pts) * vTaper);
               const dx = amp * lineOffsetX;
               const dy = amp * lineOffsetY;
               let x = baseX + dx;
@@ -517,7 +522,7 @@
                   const limit = Math.max(0, y < minY ? by - minY : maxY - by);
                   const denom = Math.max(0.001, Math.abs(amp));
                   const scale = Math.min(1, limit / denom);
-                  y = by + amp * scale;
+                  y = by + dy * scale;
                 }
               }
               if (overlapPadding > 0 && prevY) {
@@ -1209,13 +1214,14 @@
               mirroredSample.imageY ?? mirroredSample.y
             );
             const noiseVal = directNoise * (1 - horizonMirrorBlend) + mirroredNoise * horizonMirrorBlend;
-            const amp =
-              noiseVal
-              * getEdgeTaper(xNorm)
+            const amp = resolveVerticalNoiseAmplitude(
+              noiseVal,
+              getEdgeTaper(xNorm)
               * getVerticalTaper(yNorm)
               * d.ampScale
               * centerProfile.amplitudeScale
-              * strength;
+              * strength
+            );
             const noiseDx = amp * lineOffsetX;
             const noiseDy = amp * lineOffsetY;
             const skylineLift = safeDelta * horizonRelief * (0.28 + d.farFactor * 0.5);

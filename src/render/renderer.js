@@ -1401,6 +1401,7 @@
         anchors: this.cloneAnchors(parsed.anchors),
         closed: parsed.closed,
         meta: sourcePath.meta ? { ...sourcePath.meta } : {},
+        selectedIndices: new Set(),
       };
       return this.directSelection;
     }
@@ -1535,13 +1536,48 @@
       delete this.directSelection.meta.shape;
     }
 
-    startDirectDrag(control) {
+    startDirectDrag(control, e = {}) {
       if (!control || !this.directSelection) return false;
+      const modifiers = this.getModifierState ? this.getModifierState(e) : { alt: e.altKey, shift: e.shiftKey };
+      const sel = this.directSelection;
+
+      if (control.type === 'anchor') {
+        // Multi-select: shift+click toggles anchor in/out of selection
+        if (modifiers.shift) {
+          if (sel.selectedIndices.has(control.index)) sel.selectedIndices.delete(control.index);
+          else sel.selectedIndices.add(control.index);
+        } else if (!sel.selectedIndices.has(control.index)) {
+          sel.selectedIndices = new Set([control.index]);
+        }
+
+        // Alt+drag: duplicate the anchor and drag the copy
+        if (modifiers.alt) {
+          const orig = sel.anchors[control.index];
+          const dup = { x: orig.x, y: orig.y, in: orig.in ? { ...orig.in } : null, out: orig.out ? { ...orig.out } : null };
+          const insertIdx = control.index + 1;
+          sel.anchors.splice(insertIdx, 0, dup);
+          sel.selectedIndices = new Set([insertIdx]);
+          control = { type: 'anchor', index: insertIdx };
+          if (this.onDirectEditStart) { this.onDirectEditStart(); }
+        }
+      }
+
+      // Record start positions for angle-constrain and multi-move
+      const anchor = sel.anchors[control.index];
+      const otherStarts = control.type === 'anchor'
+        ? [...sel.selectedIndices].filter(i => i !== control.index).map(i => {
+            const a = sel.anchors[i];
+            return a ? { index: i, x: a.x, y: a.y, inX: a.in?.x, inY: a.in?.y, outX: a.out?.x, outY: a.out?.y } : null;
+          }).filter(Boolean)
+        : [];
+
       this.directDrag = {
         type: control.type,
         index: control.index,
         moved: false,
-        historyPushed: false,
+        historyPushed: modifiers.alt, // already pushed above for alt-dup
+        anchorStart: anchor ? { x: anchor.x, y: anchor.y } : null,
+        otherStarts,
       };
       return true;
     }
@@ -1553,7 +1589,7 @@
       const drag = this.directDrag;
       const anchor = this.directSelection.anchors[drag.index];
       if (!anchor) return false;
-      const next = this.worldToSourcePoint(layer, world);
+      let next = this.worldToSourcePoint(layer, world);
       if (!drag.historyPushed && this.onDirectEditStart) {
         this.onDirectEditStart();
         drag.historyPushed = true;
@@ -1562,17 +1598,23 @@
         this.markDirectSelectionAsCustomPath();
       }
       if (drag.type === 'anchor') {
+        // Shift: angle-constrain movement relative to drag start
+        if (e?.shiftKey && drag.anchorStart) {
+          next = this.snapScissorAngle(drag.anchorStart, next, 15);
+        }
         const dx = next.x - anchor.x;
         const dy = next.y - anchor.y;
         anchor.x = next.x;
         anchor.y = next.y;
-        if (anchor.in) {
-          anchor.in.x += dx;
-          anchor.in.y += dy;
-        }
-        if (anchor.out) {
-          anchor.out.x += dx;
-          anchor.out.y += dy;
+        if (anchor.in) { anchor.in.x += dx; anchor.in.y += dy; }
+        if (anchor.out) { anchor.out.x += dx; anchor.out.y += dy; }
+        // Move all other selected anchors by the same delta
+        for (const other of drag.otherStarts || []) {
+          const oa = this.directSelection.anchors[other.index];
+          if (!oa) continue;
+          oa.x += dx; oa.y += dy;
+          if (oa.in) { oa.in.x += dx; oa.in.y += dy; }
+          if (oa.out) { oa.out.x += dx; oa.out.y += dy; }
         }
       } else {
         anchor[drag.type] = { x: next.x, y: next.y };
@@ -2488,7 +2530,7 @@
           }
           const directControl = this.hitDirectControl(world);
           if (directControl) {
-            this.startDirectDrag(directControl);
+            this.startDirectDrag(directControl, e);
             return;
           }
           const hit = this.findPathHitAtPoint(world);
@@ -2505,7 +2547,7 @@
                 const db = Math.hypot(world.x - b.x, world.y - b.y);
                 idx = db < da ? Math.min(selection.anchors.length - 1, seg + 1) : seg;
               }
-              this.startDirectDrag({ type: 'anchor', index: idx });
+              this.startDirectDrag({ type: 'anchor', index: idx }, e);
             }
             this.draw();
             return;
@@ -3860,7 +3902,9 @@
 
       const anchorR = 3.2 / this.scale;
       const handleR = 2.2 / this.scale;
-      anchors.forEach((anchor) => {
+      const selectedSet = this.directSelection?.selectedIndices || new Set();
+      anchors.forEach((anchor, i) => {
+        const isSelected = selectedSet.has(i);
         if (anchor.in) {
           this.ctx.strokeStyle = getThemeToken('--render-direct-handle-line', 'rgba(34, 211, 238, 0.65)');
           this.ctx.beginPath();
@@ -3888,7 +3932,9 @@
           this.ctx.stroke();
         }
         this.ctx.beginPath();
-        this.ctx.fillStyle = getThemeToken('--render-direct-handle-fill', '#0f172a');
+        this.ctx.fillStyle = isSelected
+          ? getThemeToken('--render-direct-stroke', '#22d3ee')
+          : getThemeToken('--render-direct-handle-fill', '#0f172a');
         this.ctx.strokeStyle = getThemeToken('--render-direct-stroke', '#22d3ee');
         this.ctx.arc(anchor.x, anchor.y, anchorR, 0, Math.PI * 2);
         this.ctx.fill();
