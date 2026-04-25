@@ -61,4 +61,54 @@ describe('Pattern registry and tile validation', () => {
     expect(valid.valid).toBe(true);
     expect(valid.blockers).toBe(0);
   });
+
+  test('getPatternCategories returns exactly [default, user]', () => {
+    const registry = runtime.window.Vectura.PatternRegistry;
+    expect(typeof registry.getPatternCategories).toBe('function');
+    expect(registry.getPatternCategories()).toEqual(['default', 'user']);
+  });
+
+  test('exportPatternSvg returns SVG string for a saved custom pattern', () => {
+    const registry = runtime.window.Vectura.PatternRegistry;
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><line stroke="#000" x1="0" y1="0" x2="10" y2="10"/></svg>';
+    const saved = registry.saveCustomPattern({ id: 'svg-export-test', name: 'SVG Export Test', svg });
+    const result = registry.exportPatternSvg(saved.id);
+    expect(typeof result).toBe('string');
+    expect(result).toContain('<svg');
+  });
+
+  test('exportPatternSvg returns null for an unknown id', () => {
+    const registry = runtime.window.Vectura.PatternRegistry;
+    expect(registry.exportPatternSvg('nonexistent-id-xyz')).toBeNull();
+  });
+
+  test('deleteCustomPattern returns true on first delete, false on repeated call', () => {
+    const registry = runtime.window.Vectura.PatternRegistry;
+    registry.saveCustomPattern({
+      id: 'delete-twice-test',
+      name: 'Delete Twice',
+      svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>',
+    });
+    expect(registry.deleteCustomPattern('custom-delete-twice-test')).toBe(true);
+    expect(registry.deleteCustomPattern('custom-delete-twice-test')).toBe(false);
+  });
+
+  test('draft patterns do not appear in getCustomPatterns', () => {
+    const registry = runtime.window.Vectura.PatternRegistry;
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>';
+    registry.saveCustomPattern({ id: 'draft-test-item', name: 'Draft Item', svg, isDraft: true });
+    const custom = registry.getCustomPatterns();
+    expect(custom.every((p) => !p.isDraft)).toBe(true);
+    expect(custom.some((p) => p.id === 'draft-draft-test-item')).toBe(false);
+  });
+
+  test('discardDraftPattern removes draft from getPatterns and returns true', () => {
+    const registry = runtime.window.Vectura.PatternRegistry;
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>';
+    const saved = registry.saveCustomPattern({ id: 'discard-test', name: 'Discard Test', svg, isDraft: true });
+    expect(registry.getPatternById(saved.id)).not.toBeNull();
+    const result = registry.discardDraftPattern(saved.id);
+    expect(result).toBe(true);
+    expect(registry.getPatternById(saved.id)).toBeNull();
+  });
 });

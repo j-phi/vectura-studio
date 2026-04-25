@@ -400,7 +400,7 @@
           }
           return { x, y };
         };
-        const pushSegmentPath = (x0, y0, x1, y1, strengthFn = null, samplePointFn = null) => {
+        const pushSegmentPath = (x0, y0, x1, y1, strengthFn = null, samplePointFn = null, meta = null) => {
           const length = Math.hypot(x1 - x0, y1 - y0);
           const samples = Math.max(2, Math.floor(length / 2));
           const path = [];
@@ -417,7 +417,10 @@
             const imageSampleY = samplePoint?.imageY ?? sampleY;
             path.push(displacePoint(baseX, baseY, strength, sampleX, sampleY, imageSampleX, imageSampleY));
           }
-          if (path.length > 1) paths.push(path);
+          if (path.length > 1) {
+            if (meta) path.meta = meta;
+            paths.push(path);
+          }
         };
         const clipInfiniteLineToBounds = (point, dir) => {
           const xMin = inset;
@@ -614,6 +617,9 @@
           const rowSpacing = Math.max(0.25, lSpace);
           const isoTotalH = rowSpacing * (rowCount - 1);
           const isoStartY = yMin + (innerH - isoTotalH) / 2;
+          const isoCenterY = isoStartY + isoTotalH / 2;
+          const rowShift = Number.isFinite(p.tilt) ? p.tilt : 0;
+          const rowShiftShear = rowSpacing > 1e-6 ? rowShift / rowSpacing : 0;
           const corners = [
             { x: xMin, y: yMin },
             { x: xMax, y: yMin },
@@ -623,6 +629,18 @@
           const slope60 = Math.sqrt(3);
           const bStep = rowSpacing * 2; // equilateral triangular lattice spacing
           const bPhase = ((isoStartY % bStep) + bStep) % bStep; // phase-lock diagonals to horizontal rows
+          const shearPoint = (point) => ({
+            x: point.x + rowShiftShear * (point.y - isoCenterY),
+            y: point.y,
+          });
+          const shearDirection = (dir) => ({
+            x: dir.x + rowShiftShear * dir.y,
+            y: dir.y,
+          });
+          const clipShearedInfiniteLineToBounds = (point, dir) => clipInfiniteLineToBounds(
+            shearPoint(point),
+            shearDirection(dir)
+          );
           const buildSlopeFamily = (slopeSign = 1) => {
             const m = slope60 * slopeSign;
             const bVals = corners.map((pt) => pt.y - m * pt.x);
@@ -636,17 +654,56 @@
             for (let i = bStart; i <= bEnd; i++) {
               const b = bPhase + i * bStep;
               const point = { x: xMin, y: m * xMin + b };
-              const seg = clipInfiniteLineToBounds(point, dir);
+              const seg = clipShearedInfiniteLineToBounds(point, dir);
               if (!seg) continue;
-              pushSegmentPath(seg.a.x, seg.a.y, seg.b.x, seg.b.y);
+              pushSegmentPath(
+                seg.a.x,
+                seg.a.y,
+                seg.b.x,
+                seg.b.y,
+                null,
+                null,
+                {
+                  isometricRole: slopeSign > 0 ? 'positive-diagonal' : 'negative-diagonal',
+                  isometricIndex: i,
+                  isometricBaseIntercept: b,
+                  isometricRowSpacing: rowSpacing,
+                  isometricRowShift: rowShift,
+                }
+              );
             }
           };
           for (let i = 0; i < rowCount; i++) {
             const y = isoStartY + i * rowSpacing;
-            pushSegmentPath(xMin, y, xMax, y);
+            const seg = clipShearedInfiniteLineToBounds({ x: xMin, y }, { x: 1, y: 0 });
+            if (!seg) continue;
+            pushSegmentPath(
+              seg.a.x,
+              seg.a.y,
+              seg.b.x,
+              seg.b.y,
+              null,
+              null,
+              {
+                isometricRole: 'horizontal',
+                isometricIndex: i,
+                isometricBaseY: y,
+                isometricRowSpacing: rowSpacing,
+                isometricRowShift: rowShift,
+              }
+            );
           }
           buildSlopeFamily(1);
           buildSlopeFamily(-1);
+          paths.isometricMetrics = {
+            rowCount,
+            rowSpacing,
+            rowShift,
+            rowShiftShear,
+            diagonalBaseStep: bStep,
+            positiveSlope: slope60 / Math.max(1e-6, 1 + rowShiftShear * slope60),
+            negativeSlope: -slope60 / Math.max(1e-6, 1 - rowShiftShear * slope60),
+          };
           return paths;
         }
         if (resolvedLineStructure === 'lattice') {

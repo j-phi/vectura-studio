@@ -10,6 +10,7 @@
     : [];
   let localCustomPatterns = [];
   let projectCustomPatterns = [];
+  let draftPatterns = [];
   let registryVersion = 0;
 
   const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -71,7 +72,9 @@
 
   const refreshGlobalCatalog = () => {
     registryVersion += 1;
-    const catalog = bundledPatterns.concat(mergeCustomPools().map((pattern) => clone(pattern)));
+    const catalog = bundledPatterns
+      .concat(mergeCustomPools().map((pattern) => clone(pattern)))
+      .concat(draftPatterns.map((pattern) => clone(pattern)));
     window.Vectura.BUNDLED_PATTERNS = bundledPatterns.map((pattern) => clone(pattern));
     window.Vectura.LOCAL_CUSTOM_PATTERNS = localCustomPatterns.map((pattern) => clone(pattern));
     window.Vectura.PROJECT_CUSTOM_PATTERNS = projectCustomPatterns.map((pattern) => clone(pattern));
@@ -167,17 +170,54 @@
   const getCustomPatterns = () => mergeCustomPools().map((pattern) => clone(pattern));
 
   const saveCustomPattern = (pattern, options = {}) => {
+    if (pattern.isDraft) {
+      const normalized = normalizePattern({
+        ...pattern,
+        customUpdatedAt: new Date().toISOString(),
+      }, { scope: 'local' });
+      if (!normalized) return null;
+      normalized.isDraft = true;
+      const idx = draftPatterns.findIndex((p) => p.id === normalized.id);
+      if (idx >= 0) draftPatterns[idx] = normalized;
+      else draftPatterns.push(normalized);
+      invalidateCacheFor(normalized.id);
+      refreshGlobalCatalog();
+      return clone(normalized);
+    }
     const normalized = normalizePattern({
       ...pattern,
       customUpdatedAt: new Date().toISOString(),
     }, { scope: 'local' });
     if (!normalized) return null;
+    draftPatterns = draftPatterns.filter((p) => p.id !== normalized.id);
     const persistToLocal = options.persistToLocal !== false;
     const persistToProject = options.persistToProject !== false;
     let saved = null;
     if (persistToLocal) saved = upsertIntoPool('local', normalized) || saved;
     if (persistToProject) saved = upsertIntoPool('project', normalized) || saved;
     return saved ? clone(saved) : null;
+  };
+
+  const discardDraftPattern = (draftId) => {
+    const had = draftPatterns.some((p) => p.id === draftId);
+    if (!had) return false;
+    draftPatterns = draftPatterns.filter((p) => p.id !== draftId);
+    invalidateCacheFor(draftId);
+    refreshGlobalCatalog();
+    return true;
+  };
+
+  const discardAllDraftPatterns = () => {
+    draftPatterns.forEach((p) => invalidateCacheFor(p.id));
+    draftPatterns = [];
+    refreshGlobalCatalog();
+  };
+
+  const getPatternCategories = () => ['default', 'user'];
+
+  const exportPatternSvg = (patternId) => {
+    const pattern = getPatternById(patternId);
+    return pattern?.svg ? `${pattern.svg}` : null;
   };
 
   const duplicatePattern = (patternId, options = {}) => {
@@ -204,11 +244,15 @@
     saveCustomPattern,
     duplicatePattern,
     deleteCustomPattern: deleteFromPools,
+    discardDraftPattern,
+    discardAllDraftPatterns,
     replaceProjectPatterns: (patterns = []) => replacePool('project', patterns),
     replaceLocalPatterns: (patterns = []) => replacePool('local', patterns),
     exportProjectPatterns: () => projectCustomPatterns.map((pattern) => clone(pattern)),
     exportLocalPatterns: () => localCustomPatterns.map((pattern) => clone(pattern)),
     exportAllCustomPatterns: () => getCustomPatterns(),
+    getPatternCategories,
+    exportPatternSvg,
     ensureCustomId,
     normalizePattern,
   };

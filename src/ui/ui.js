@@ -4357,11 +4357,11 @@
     },
     'wavetable.tilt': {
       title: 'Row Shift',
-      description: 'Offsets each row horizontally to create a slanted stack.',
+      description: 'Offsets each row horizontally to shear the stack. In Isometric mode, the full lattice shears together so the cells stay coherent.',
     },
     'wavetable.gap': {
       title: 'Line Gap',
-      description: 'Spacing multiplier between rows.',
+      description: 'Spacing multiplier between rows. In Isometric mode, this sets the visible interior spacing of the cells before row shift shears the lattice.',
     },
     'wavetable.freq': {
       title: 'Frequency',
@@ -10713,6 +10713,9 @@
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Wavetable Line Structure supports Horizontal, Vertical, Horizontal &amp; Vertical, Isometric, Lattice, Horizon, and Horizon 3D layouts.
+          </div>
+          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
+            In Wavetable Isometric mode, Line Gap controls the visible cell spacing and Row Shift shears the full lattice together instead of only offsetting one family.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Horizon and Horizon 3D include Depth Perspective to scale terrain by distance, giving larger near ridges and compressed far terrain.
@@ -18549,77 +18552,85 @@
         if (def.type === 'patternSelect') {
           const wrapper = document.createElement('div');
           wrapper.className = 'mb-4';
-          let patterns = window.Vectura.PATTERNS || [];
-          const filter = layer.params.patternFilter || 'lines';
-          if (filter !== 'all') {
-             patterns = patterns.filter(p => filter === 'lines' ? p.lines : p.fills);
-          }
-          
-          let html = `<div class="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto p-1 bg-vectura-bg border border-vectura-border" data-pattern-grid>`;
-          patterns.forEach(p => {
-             const isSel = layer.params.patternId === p.id;
-             const selC = isSel ? 'border-vectura-accent bg-vectura-border opacity-100' : 'border-transparent opacity-60 hover:opacity-100';
-             // SVG preview parsing implies inline SVGs! Wait, if we use images... we don't have SVGs exposed, we do! `p.svg` is the raw string
-             // We can render raw SVG if we replace currentColor and width/height!
-             html += `<div class="pattern-item cursor-pointer border rounded flex flex-col items-center justify-center pt-2 ${selC}" data-id="${p.id}" title="${p.name}">
-                <div class="w-full text-[9px] text-center truncate px-1 pb-1 pt-1 text-vectura-muted leading-tight">${p.name}</div>
-             </div>`;
-          });
-          html += `</div>`;
-          wrapper.innerHTML = html;
-          
-          wrapper.querySelectorAll('.pattern-item').forEach(item => {
-             const pId = item.dataset.id;
-             const meta = patterns.find(x => x.id === pId);
-             if (meta && meta.svg) {
-                // simple quick hack to inject icon sized view
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(meta.svg, 'image/svg+xml');
-                const svg = doc.querySelector('svg');
-                if (svg) {
-                   svg.setAttribute('width', '100%');
-                   svg.setAttribute('height', '100%');
-                   svg.style.maxHeight = '24px';
-                   // use a safe neutral text color for stroke/fill replacements
-                   svg.style.color = 'currentColor'; 
-                   svg.querySelectorAll('*').forEach(el => {
-                      if (el.hasAttribute('stroke') && el.getAttribute('stroke') !== 'none') {
-                         el.setAttribute('stroke', 'currentColor');
-                      }
-                      if (el.hasAttribute('fill') && el.getAttribute('fill') !== 'none') {
-                         el.setAttribute('fill', 'currentColor');
-                      }
-                      if (el.style.stroke && el.style.stroke !== 'none') {
-                         el.style.stroke = 'currentColor';
-                      }
-                      if (el.style.fill && el.style.fill !== 'none') {
-                         el.style.fill = 'currentColor';
-                      }
-                   });
-                   const cont = document.createElement('div');
-                   cont.className = 'w-full px-2 text-vectura-text opacity-80';
-                   cont.appendChild(svg);
-                   item.insertBefore(cont, item.firstChild);
-                }
-             }
-             item.onclick = () => {
-                const gridEl = wrapper.querySelector('[data-pattern-grid]');
-                const savedScroll = gridEl ? gridEl.scrollTop : 0;
+          const registry = window.Vectura?.PatternRegistry;
+          const allBundled = (window.Vectura?.BUNDLED_PATTERNS || window.Vectura?.PATTERNS || []).filter((p) => !p.custom);
+          const userPatterns = registry?.getCustomPatterns?.() || [];
+          const currentId = layer.params.patternId || '';
+          let activeTab = userPatterns.some((p) => p.id === currentId) ? 'user' : 'default';
+
+          const injectSvgPreview = (item, meta) => {
+            if (!meta?.svg) return;
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(meta.svg, 'image/svg+xml');
+            const svg = doc.querySelector('svg');
+            if (!svg) return;
+            svg.setAttribute('width', '100%');
+            svg.setAttribute('height', '100%');
+            svg.style.maxHeight = '24px';
+            svg.querySelectorAll('*').forEach((el) => {
+              if (el.hasAttribute('stroke') && el.getAttribute('stroke') !== 'none') el.setAttribute('stroke', 'currentColor');
+              if (el.hasAttribute('fill') && el.getAttribute('fill') !== 'none') el.setAttribute('fill', 'currentColor');
+              if (el.style.stroke && el.style.stroke !== 'none') el.style.stroke = 'currentColor';
+              if (el.style.fill && el.style.fill !== 'none') el.style.fill = 'currentColor';
+            });
+            const cont = document.createElement('div');
+            cont.className = 'w-full px-2 text-vectura-text opacity-80';
+            cont.appendChild(svg);
+            item.insertBefore(cont, item.firstChild);
+          };
+
+          const renderPicker = () => {
+            const patterns = activeTab === 'user' ? userPatterns : allBundled;
+            const tabBar = `
+              <div class="flex gap-0 mb-2 border-b border-vectura-border">
+                <button type="button" data-ps-tab="default"
+                  class="text-[10px] px-2 py-1 border-b-2 transition-colors ${activeTab === 'default' ? 'border-vectura-accent text-vectura-accent' : 'border-transparent text-vectura-muted hover:text-vectura-text'}">
+                  Default
+                </button>
+                <button type="button" data-ps-tab="user"
+                  class="text-[10px] px-2 py-1 border-b-2 transition-colors ${activeTab === 'user' ? 'border-vectura-accent text-vectura-accent' : 'border-transparent text-vectura-muted hover:text-vectura-text'}">
+                  User Patterns${userPatterns.length ? ` (${userPatterns.length})` : ''}
+                </button>
+              </div>`;
+            let gridHtml = `<div class="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto p-1 bg-vectura-bg border border-vectura-border" data-pattern-grid>`;
+            if (patterns.length) {
+              patterns.forEach((p) => {
+                const isSel = layer.params.patternId === p.id;
+                const selC = isSel ? 'border-vectura-accent bg-vectura-border opacity-100' : 'border-transparent opacity-60 hover:opacity-100';
+                const dotHtml = p.custom ? `<span class="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-orange-400" title="Stored in browser localStorage"></span>` : '';
+                gridHtml += `<div class="pattern-item relative cursor-pointer border rounded flex flex-col items-center justify-center pt-2 ${selC}" data-id="${p.id}" title="${p.name}">${dotHtml}
+                  <div class="w-full text-[9px] text-center truncate px-1 pb-1 pt-1 text-vectura-muted leading-tight">${p.name}</div>
+                </div>`;
+              });
+            } else {
+              gridHtml += `<div class="col-span-4 text-[10px] text-vectura-muted py-2 text-center">No patterns yet. Use Save Pattern to add one.</div>`;
+            }
+            gridHtml += `</div>`;
+            wrapper.innerHTML = tabBar + gridHtml;
+
+            wrapper.querySelectorAll('[data-ps-tab]').forEach((btn) => {
+              btn.addEventListener('click', () => {
+                activeTab = btn.dataset.psTab;
+                renderPicker();
+              });
+            });
+
+            wrapper.querySelectorAll('.pattern-item[data-id]').forEach((item) => {
+              const pId = item.dataset.id;
+              const meta = patterns.find((x) => x.id === pId);
+              injectSvgPreview(item, meta);
+              item.onclick = () => {
                 if (this.app.pushHistory) this.app.pushHistory();
                 layer.params.patternId = item.dataset.id;
                 this.storeLayerParams(layer);
                 this.app.regen();
                 this.buildControls();
                 this.updateFormula();
-                if (savedScroll > 0) {
-                  window.requestAnimationFrame(() => {
-                    const newGrid = document.querySelector('[data-pattern-grid]');
-                    if (newGrid) newGrid.scrollTop = savedScroll;
-                  });
-                }
-             };
-          });
-          
+              };
+            });
+          };
+
+          renderPicker();
           target.appendChild(wrapper);
           return;
         }

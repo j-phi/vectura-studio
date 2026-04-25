@@ -71,6 +71,7 @@
         pathMap: [],
         directEditState: null,
         trimMargins: { top: 0, bottom: 0, left: 0, right: 0, locked: false },
+        draftEdit: null,
       };
 
       this.inlinePatternDesigner = pd;
@@ -152,7 +153,10 @@
 
       pd.root.innerHTML = `
         <div class="flex items-center justify-between mb-2 px-1">
-          <span class="text-[11px] font-medium text-vectura-accent uppercase tracking-wide">Texture Designer</span>
+          <div class="flex items-center gap-1.5">
+            <span class="text-[11px] font-medium text-vectura-accent uppercase tracking-wide">Pattern Designer</span>
+            <span data-pd-draft-badge class="hidden text-[9px] bg-vectura-accent text-black px-1 py-px rounded leading-tight">Unsaved</span>
+          </div>
           <div class="flex gap-1 items-center">
             <button type="button" class="text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted transition-colors" data-pd-import-tile>
               Import SVG Tile
@@ -166,7 +170,7 @@
             ${toolMarkup}
           </div>
         </div>
-        <div class="flex flex-wrap gap-2 mb-2 items-center text-[11px]">
+        <div data-pd-fill-settings class="hidden flex flex-wrap gap-2 mb-2 items-center text-[11px]">
           <label class="flex items-center gap-1"><span class="text-vectura-muted">Fill</span>
             <select data-pd-fill-type class="bg-vectura-bg border border-vectura-border px-1 py-0.5 text-[11px] focus:outline-none focus:border-vectura-accent">${fillOptions}</select>
           </label>
@@ -211,6 +215,10 @@
           </div>
         </div>
         <div data-pd-fills-list class="space-y-1"></div>
+        <details class="text-[10px] text-vectura-muted mt-2 border border-vectura-border px-2 py-1">
+          <summary class="cursor-pointer select-none">&#8505; User Patterns &amp; Storage</summary>
+          <p class="mt-1 leading-snug">User Patterns are saved in your browser&rsquo;s localStorage. They persist across sessions on this device but may be cleared if you clear browser data. Use <strong>Export</strong> on any User Pattern to save a permanent copy to disk.</p>
+        </details>
         <div class="mt-3 border-t border-vectura-border pt-3">
           <div class="flex items-center justify-between mb-2">
             <span class="text-[10px] uppercase tracking-widest text-vectura-muted">Tile Validation</span>
@@ -446,6 +454,7 @@
         pathMap: [],
         directEditState: null,
         trimMargins: { top: 0, bottom: 0, left: 0, right: 0, locked: false },
+        draftEdit: null,
       };
       this.patternDesigner = pd;
       this._bindPatternDesignerDrag(pd);
@@ -977,116 +986,218 @@
 
     saveCurrentPatternAsCustom(layer, pd = null) {
       const registry = getPatternRegistry();
-      const meta = this._getPatternMetaForLayer(layer);
+      const meta = pd ? this._getPatternMetaForLayer(pd.layer) : this._getPatternMetaForLayer(layer);
       if (!registry || !meta) return;
-      const validation = window.Vectura.AlgorithmRegistry?.patternValidateMeta?.(meta, { cache: true });
-      const saved = registry.saveCustomPattern({
-        ...meta,
-        id: registry.ensureCustomId(meta.name),
-        name: meta.custom ? meta.name : `${meta.name} Copy`,
-        source: 'Custom Patterns',
-        validation: validation
-          ? {
-              blockers: validation.blockers,
-              warnings: validation.warnings,
-              valid: validation.valid,
-              validatedAt: new Date().toISOString(),
-            }
-          : null,
-        cachedTile: validation?.compiled || null,
-      });
-      if (!saved) return;
-      layer.params.patternId = saved.id;
-      if (this.app.pushHistory) this.app.pushHistory();
-      this.storeLayerParams(layer);
-      this.app.regen();
-      this.buildControls();
-      this.updateFormula();
-      if (pd) this._refreshPatternValidation(pd);
-    },
-
-    openCustomPatternLibrary(layer, pd = null) {
-      const registry = getPatternRegistry();
-      const patterns = registry?.getCustomPatterns?.() || [];
+      const defaultName = meta.custom && !meta.isDraft ? meta.name : meta.name.replace(/ Copy$/, '');
       const body = document.createElement('div');
-      body.className = 'space-y-2';
-      body.innerHTML = patterns.length
-        ? patterns.map((pattern) => `
-          <div class="border border-vectura-border p-2 flex items-center justify-between gap-2" data-pattern-row="${escapeHtml(pattern.id)}">
-            <div class="min-w-0">
-              <div class="text-xs text-vectura-text truncate">${escapeHtml(pattern.name)}</div>
-              <div class="text-[10px] text-vectura-muted truncate">${escapeHtml(pattern.filename || pattern.id)}</div>
-            </div>
-            <div class="flex items-center gap-1">
-              <button type="button" class="petal-copy-btn" data-pattern-load="${escapeHtml(pattern.id)}">Load</button>
-              <button type="button" class="petal-copy-btn" data-pattern-duplicate="${escapeHtml(pattern.id)}">Duplicate</button>
-              <button type="button" class="petal-copy-btn" data-pattern-delete="${escapeHtml(pattern.id)}">Delete</button>
-            </div>
-          </div>
-        `).join('')
-        : '<div class="text-xs text-vectura-muted">No saved custom patterns yet.</div>';
-      this.openModal({
-        title: 'Saved Patterns',
-        body,
-      });
-      body.querySelectorAll('[data-pattern-load]').forEach((button) => {
-        button.addEventListener('click', () => {
-          layer.params.patternId = button.dataset.patternLoad;
+      body.className = 'space-y-3';
+      body.innerHTML = `
+        <label class="flex flex-col gap-1 text-[11px]">
+          <span class="text-vectura-muted">Pattern name</span>
+          <input type="text" data-pd-save-name value="${escapeHtml(defaultName)}"
+            class="bg-vectura-bg border border-vectura-border px-2 py-1 text-[11px] focus:outline-none focus:border-vectura-accent w-full"
+            placeholder="My Pattern">
+        </label>
+        <p class="text-[10px] text-vectura-muted">Saves to User Patterns (browser localStorage) and downloads an SVG copy.</p>
+        <div class="flex justify-end gap-2">
+          <button type="button" data-pd-save-cancel class="text-[11px] border border-vectura-border px-3 py-1 hover:bg-vectura-border text-vectura-muted transition-colors">Cancel</button>
+          <button type="button" data-pd-save-confirm class="text-[11px] border border-vectura-accent px-3 py-1 bg-vectura-accent text-black hover:opacity-90 transition-opacity">Save &amp; Export</button>
+        </div>`;
+      const doSave = () => {
+        const nameInput = body.querySelector('[data-pd-save-name]');
+        const name = `${nameInput?.value || ''}`.trim() || defaultName;
+        if (pd) {
+          this._commitDraftAsUserPattern(pd, name);
+        } else {
+          const validation = window.Vectura.AlgorithmRegistry?.patternValidateMeta?.(meta, { cache: true });
+          const saved = registry.saveCustomPattern({
+            ...meta,
+            id: registry.ensureCustomId(name),
+            name,
+            isDraft: false,
+            source: 'Custom Patterns',
+            validation: validation ? { blockers: validation.blockers, warnings: validation.warnings, valid: validation.valid, validatedAt: new Date().toISOString() } : null,
+            cachedTile: validation?.compiled || null,
+          });
+          if (!saved) return;
+          layer.params.patternId = saved.id;
           if (this.app.pushHistory) this.app.pushHistory();
           this.storeLayerParams(layer);
           this.app.regen();
           this.buildControls();
           this.updateFormula();
-          this.closeModal();
-          if (pd) this._refreshPatternValidation(pd);
-        });
+          this._downloadPatternSvg(name, meta.svg);
+        }
+        this.closeModal();
+      };
+      body.querySelector('[data-pd-save-confirm]')?.addEventListener('click', doSave);
+      body.querySelector('[data-pd-save-cancel]')?.addEventListener('click', () => this.closeModal());
+      body.querySelector('[data-pd-save-name]')?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') doSave();
+        if (e.key === 'Escape') this.closeModal();
       });
-      body.querySelectorAll('[data-pattern-duplicate]').forEach((button) => {
-        button.addEventListener('click', () => {
-          registry?.duplicatePattern?.(button.dataset.patternDuplicate, { persistToLocal: true, persistToProject: true });
-          this.openCustomPatternLibrary(layer, pd);
-        });
+      this.openModal({ title: 'Save Pattern', body });
+      window.requestAnimationFrame(() => {
+        const input = body.querySelector('[data-pd-save-name]');
+        if (input) { input.focus(); input.select(); }
       });
-      body.querySelectorAll('[data-pattern-delete]').forEach((button) => {
-        button.addEventListener('click', () => {
-          registry?.deleteCustomPattern?.(button.dataset.patternDelete);
-          if (layer?.params?.patternId === button.dataset.patternDelete) {
-            this.ensurePatternLayerSelection(layer);
-            this.storeLayerParams(layer);
-          }
-          this.app.regen();
-          this.buildControls();
-          this.updateFormula();
-          this.openCustomPatternLibrary(layer, pd);
+    },
+
+    openCustomPatternLibrary(layer, pd = null, initialTab = 'default') {
+      const registry = getPatternRegistry();
+      const body = document.createElement('div');
+      body.className = 'flex flex-col gap-2';
+      let activeTab = initialTab;
+
+      const STORAGE_TIP = 'Stored in browser localStorage — export for guaranteed persistence';
+
+      const renderBody = () => {
+        const allPatterns = registry?.getPatterns?.() || [];
+        const defaultPatterns = allPatterns.filter((p) => !p.custom);
+        const userPatterns = registry?.getCustomPatterns?.() || [];
+
+        body.innerHTML = `
+          <div class="flex gap-0 mb-2 border-b border-vectura-border">
+            <button type="button" data-lib-tab="default"
+              class="text-[11px] px-3 py-1.5 border-b-2 transition-colors ${activeTab === 'default' ? 'border-vectura-accent text-vectura-accent' : 'border-transparent text-vectura-muted hover:text-vectura-text'}">
+              Default
+            </button>
+            <button type="button" data-lib-tab="user"
+              class="text-[11px] px-3 py-1.5 border-b-2 transition-colors ${activeTab === 'user' ? 'border-vectura-accent text-vectura-accent' : 'border-transparent text-vectura-muted hover:text-vectura-text'}">
+              User Patterns${userPatterns.length ? ` <span class="text-[9px]">(${userPatterns.length})</span>` : ''}
+            </button>
+          </div>
+          <div data-lib-content class="overflow-y-auto max-h-80 space-y-1">
+            ${activeTab === 'default'
+              ? defaultPatterns.map((p) => `
+                  <div class="border border-vectura-border px-2 py-1.5 flex items-center justify-between gap-2">
+                    <div class="min-w-0">
+                      <div class="text-[11px] text-vectura-text truncate">${escapeHtml(p.name)}</div>
+                      <div class="text-[9px] text-vectura-muted truncate">${escapeHtml(p.source || 'Default')}</div>
+                    </div>
+                    <button type="button" class="petal-copy-btn shrink-0" data-pattern-load="${escapeHtml(p.id)}">Load</button>
+                  </div>`).join('') || '<div class="text-[11px] text-vectura-muted py-2">No default patterns found.</div>'
+              : userPatterns.map((p) => `
+                  <div class="border border-vectura-border px-2 py-1.5 flex items-center justify-between gap-2" data-pattern-row="${escapeHtml(p.id)}">
+                    <div class="min-w-0 flex items-center gap-1.5">
+                      <span class="shrink-0 w-2 h-2 rounded-full bg-orange-400 cursor-default"
+                        data-storage-tip title="${escapeHtml(STORAGE_TIP)}"></span>
+                      <div>
+                        <div class="text-[11px] text-vectura-text truncate">${escapeHtml(p.name)}</div>
+                        <div class="text-[9px] text-vectura-muted truncate">${escapeHtml(p.filename || p.id)}</div>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-1 shrink-0">
+                      <button type="button" class="petal-copy-btn" data-pattern-load="${escapeHtml(p.id)}">Load</button>
+                      <button type="button" class="petal-copy-btn" title="Export SVG" data-pattern-export="${escapeHtml(p.id)}">&#8595;</button>
+                      <button type="button" class="petal-copy-btn text-vectura-danger border-vectura-danger hover:bg-vectura-danger hover:text-white" data-pattern-delete="${escapeHtml(p.id)}">&#10005;</button>
+                    </div>
+                  </div>`).join('') || '<div class="text-[11px] text-vectura-muted py-2">No saved patterns yet. Use <strong>Save Pattern</strong> to add one.</div>'
+            }
+          </div>`;
+
+        body.querySelectorAll('[data-lib-tab]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            activeTab = btn.dataset.libTab;
+            renderBody();
+          });
         });
-      });
+
+        body.querySelectorAll('[data-pattern-load]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const targetId = btn.dataset.patternLoad;
+            const switchPattern = () => {
+              layer.params.patternId = targetId;
+              if (this.app.pushHistory) this.app.pushHistory();
+              this.storeLayerParams(layer);
+              this.app.regen();
+              this.buildControls();
+              this.updateFormula();
+              this.closeModal();
+              if (pd) {
+                pd.draftEdit = null;
+                this._refreshPatternValidation(pd);
+              }
+            };
+            if (pd?.draftEdit?.isDirty) {
+              this._confirmDiscardDraft(pd, switchPattern);
+            } else {
+              if (pd) pd.draftEdit = null;
+              switchPattern();
+            }
+          });
+        });
+
+        body.querySelectorAll('[data-pattern-export]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const pattern = registry?.getPatternById?.(btn.dataset.patternExport);
+            if (pattern) this._downloadPatternSvg(pattern.name, pattern.svg);
+          });
+        });
+
+        body.querySelectorAll('[data-pattern-delete]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const delId = btn.dataset.patternDelete;
+            registry?.deleteCustomPattern?.(delId);
+            if (layer?.params?.patternId === delId) {
+              this.ensurePatternLayerSelection(layer);
+              this.storeLayerParams(layer);
+            }
+            if (pd?.draftEdit?.draftId === delId) pd.draftEdit = null;
+            this.app.regen();
+            this.buildControls();
+            this.updateFormula();
+            renderBody();
+          });
+        });
+
+        // Storage tooltip with 500ms hover delay
+        let tipTimer = null;
+        body.querySelectorAll('[data-storage-tip]').forEach((dot) => {
+          dot.addEventListener('mouseenter', () => {
+            tipTimer = setTimeout(() => {
+              dot.setAttribute('title', STORAGE_TIP);
+            }, 500);
+          });
+          dot.addEventListener('mouseleave', () => clearTimeout(tipTimer));
+        });
+      };
+
+      this.openModal({ title: 'Load Pattern', body });
+      renderBody();
     },
 
     _ensurePatternDesignerEditableMeta(pd) {
       const registry = getPatternRegistry();
       const meta = this._getPatternMetaForLayer(pd.layer);
       if (!registry || !meta) return null;
-      if (meta.custom) return meta;
-      const validation = pd.validation || window.Vectura.AlgorithmRegistry?.patternValidateMeta?.(meta, { cache: true, gapTolerance: pd.gapTolerance || 0 });
-      const saved = registry.saveCustomPattern({
+
+      // User pattern — edit in place, no draft needed
+      if (meta.custom && !meta.isDraft) return meta;
+
+      // Already in draft mode for this pattern — reuse the existing draft
+      if (pd.draftEdit) {
+        const existing = registry.getPatternById(pd.draftEdit.draftId);
+        if (existing) return existing;
+      }
+
+      // Built-in (or stale draft) — create a volatile draft without persisting to localStorage
+      const originalId = meta.isDraft ? (pd.draftEdit?.originalId || meta.id) : meta.id;
+      const rawDraftId = `draft-${registry.ensureCustomId(meta.name)}-edit`;
+      const draftSaved = registry.saveCustomPattern({
         ...meta,
-        id: registry.ensureCustomId(meta.name),
-        name: `${meta.name} Copy`,
-        source: 'Custom Patterns',
-        validation: validation
-          ? {
-              blockers: validation.blockers,
-              warnings: validation.warnings,
-              valid: validation.valid,
-              validatedAt: new Date().toISOString(),
-            }
-          : null,
-        cachedTile: validation?.compiled || meta.cachedTile || null,
+        id: rawDraftId,
+        isDraft: true,
+        name: meta.name,
+        source: 'Draft',
+        validation: null,
+        cachedTile: null,
       });
-      if (!saved) return null;
-      pd.layer.params.patternId = saved.id;
+      if (!draftSaved) return null;
+      pd.draftEdit = { originalId, draftId: draftSaved.id, isDirty: false };
+      pd.layer.params.patternId = draftSaved.id;
       this.storeLayerParams(pd.layer);
-      return saved;
+      return draftSaved;
     },
 
     _applyPatternIssueAutoFix(pd, issue) {
@@ -1232,8 +1343,8 @@
         e.preventDefault();
         const rect = canvas.getBoundingClientRect();
         const ex = e.clientX - rect.left, ey = e.clientY - rect.top;
-        const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-        const newZoom = Math.max(0.1, Math.min(40, pd.view.zoom * factor));
+        const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+        const newZoom = Math.max(0.1, Math.min(200, pd.view.zoom * factor));
         pd.view.offsetX = ex - (ex - pd.view.offsetX) * (newZoom / pd.view.zoom);
         pd.view.offsetY = ey - (ey - pd.view.offsetY) * (newZoom / pd.view.zoom);
         pd.view.zoom = newZoom;
@@ -1258,6 +1369,15 @@
         const showActions = pd.tool === 'select' && pd.selectedPath !== null;
         pathActionsEl.classList.toggle('hidden', !showActions);
       }
+      const fillSettingsEl = pd.root.querySelector('[data-pd-fill-settings]');
+      if (fillSettingsEl) {
+        fillSettingsEl.classList.toggle('hidden', pd.tool !== 'fill' && pd.tool !== 'fill-erase');
+      }
+      const isDirtyDraft = !!(pd.draftEdit?.isDirty);
+      const draftBadge = pd.root.querySelector('[data-pd-draft-badge]');
+      if (draftBadge) draftBadge.classList.toggle('hidden', !isDirtyDraft);
+      const saveBtn = pd.root.querySelector('[data-pd-save-custom]');
+      if (saveBtn) saveBtn.classList.toggle('border-vectura-accent', isDirtyDraft);
       const canvas = pd.root.querySelector('[data-pd-canvas]');
       if (canvas) {
         if (pd.tool === 'select' || pd.tool === 'direct') canvas.style.cursor = 'default';
@@ -1637,6 +1757,25 @@
       return { x: from.x + Math.cos(snapped) * dist, y: from.y + Math.sin(snapped) * dist };
     },
 
+    _confirmDiscardDraft(pd, onConfirm) {
+      const originalName = pd.draftEdit?.originalId || 'this pattern';
+      const body = document.createElement('div');
+      body.className = 'space-y-3';
+      body.innerHTML = `
+        <p class="text-[11px] text-vectura-text">Discard unsaved edits to <strong>${escapeHtml(originalName)}</strong>?</p>
+        <div class="flex justify-end gap-2">
+          <button type="button" data-discard-cancel class="text-[11px] border border-vectura-border px-3 py-1 hover:bg-vectura-border text-vectura-muted transition-colors">Keep Editing</button>
+          <button type="button" data-discard-confirm class="text-[11px] border border-vectura-danger px-3 py-1 text-vectura-danger hover:bg-vectura-danger hover:text-white transition-colors">Discard</button>
+        </div>`;
+      body.querySelector('[data-discard-confirm]')?.addEventListener('click', () => {
+        this._discardDraft(pd);
+        this.closeModal();
+        if (typeof onConfirm === 'function') onConfirm();
+      });
+      body.querySelector('[data-discard-cancel]')?.addEventListener('click', () => this.closeModal());
+      this.openModal({ title: 'Discard changes?', body });
+    },
+
     // ─── Edit-tool helpers ────────────────────────────────────────────────────
 
     _ensureCustomPattern(pd) {
@@ -1663,6 +1802,7 @@
       this._pushPdHistory(pd);
       const saved = registry.saveCustomPattern({ ...meta, svg: newSvg, cachedTile: null, validation: null });
       if (!saved) return false;
+      if (pd.draftEdit) pd.draftEdit.isDirty = true;
       pd.layer.params.patternId = saved.id;
       this.storeLayerParams(pd.layer);
       window.Vectura.AlgorithmRegistry?.patternInvalidateCache?.(saved.id);
@@ -1671,6 +1811,68 @@
       this._renderPatternDesigner(pd);
       this._refreshPatternValidation(pd);
       return true;
+    },
+
+    _discardDraft(pd) {
+      const registry = getPatternRegistry();
+      if (!pd.draftEdit) return;
+      const { originalId, draftId } = pd.draftEdit;
+      registry.discardDraftPattern?.(draftId);
+      pd.draftEdit = null;
+      pd.layer.params.patternId = originalId;
+      this.storeLayerParams(pd.layer);
+      window.Vectura.AlgorithmRegistry?.patternInvalidateCache?.(draftId);
+      this._syncPdToolActive(pd);
+      this._renderPatternDesigner(pd);
+      this._refreshPatternValidation(pd);
+    },
+
+    _commitDraftAsUserPattern(pd, name) {
+      const registry = getPatternRegistry();
+      if (!registry) return null;
+      const draftMeta = pd.draftEdit?.draftId
+        ? registry.getPatternById(pd.draftEdit.draftId)
+        : this._getPatternMetaForLayer(pd.layer);
+      if (!draftMeta) return null;
+      const saved = registry.saveCustomPattern({
+        ...draftMeta,
+        id: registry.ensureCustomId(name),
+        name: `${name}`.trim() || draftMeta.name,
+        isDraft: false,
+        source: 'Custom Patterns',
+        validation: null,
+        cachedTile: null,
+      });
+      if (!saved) return null;
+      if (pd.draftEdit?.draftId) registry.discardDraftPattern?.(pd.draftEdit.draftId);
+      pd.draftEdit = null;
+      pd.layer.params.patternId = saved.id;
+      this.storeLayerParams(pd.layer);
+      this._downloadPatternSvg(saved.name, draftMeta.svg);
+      if (this.app.pushHistory) this.app.pushHistory();
+      this.app.regen();
+      this.buildControls();
+      this.updateFormula();
+      this._syncPdToolActive(pd);
+      this._refreshPatternValidation(pd);
+      return saved;
+    },
+
+    _downloadPatternSvg(name, svg) {
+      if (!svg) return;
+      try {
+        const blob = new Blob([svg], { type: 'image/svg+xml' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${name || 'pattern'}.svg`.replace(/[^a-z0-9_\-. ]/gi, '_');
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        // Download is best-effort.
+      }
     },
 
     _deletePathFromTileSvg(pd, flatIndex) {
