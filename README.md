@@ -356,6 +356,22 @@ Manual CI-equivalent setup:
 | Docs-only | Link/path sanity review only |
 | CI-gating confidence | `test:ci` |
 
+### Knowledge Graph (graphify)
+
+This repository uses [graphify](https://graphify.net) to build an AST-based code map for efficient codebase navigation. After each commit and branch switch, git hooks automatically rebuild the graph—no API cost, just local parsing.
+
+**Setup:**
+```bash
+pip install graphify
+```
+
+The knowledge graph lives in `graphify-out/`. Consult `GRAPH_REPORT.md` to navigate by community clusters and god-nodes before raw file searches.
+
+To update manually:
+```bash
+graphify update .
+```
+
 ### Operations
 
 - `package.json` is the canonical version source. Run `npm run version:sync` after changing it so the UI badge and `src/config/version.js` stay aligned.
