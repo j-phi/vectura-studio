@@ -25,6 +25,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 - Added nested-region Texture Designer fill targeting, drag-pour fill/erase behavior, `Alt/Option` temporary erase while filling, and a `Show Gaps` slider with yellow preview markers plus auto-close actions for closable seam-endpoint gaps.
 
 ### Changed
+- Collapsed `Wavetable` `Horizon` and legacy `Horizon 3D` into one canonical projected Horizon terrain mode, while normalizing legacy saved `horizon-3d` scenes into `horizon` on import.
+- Renamed the Horizon terrain controls toward one projected-model vocabulary: `Depth Compression`, `Perspective Strength`, `Foreground Spread`, `Center Depth`, `Symmetry Blend`, and `Link Densities`.
+- Updated Horizon regression coverage so canonical Horizon now owns the projected mesh behavior and legacy `horizon-3d` inputs are verified through migration-focused unit and SVG baseline coverage.
 - Corrected polygon Noise Rack zoom semantics so larger values now produce a larger polygon footprint across shared and algorithm-local samplers, and normalized vertical-displacement sign so positive amplitudes lift line stacks upward while negative amplitudes push them downward.
 - Fixed Wavetable `Isometric` so `Line Gap` now scales the visible cell spacing from one shared lattice model, `Row Shift` shears the full lattice instead of leaving diagonal families behind, and added deterministic plus SVG-baseline regressions for the corrected behavior.
 - Fixed the stale Export SVG smoke test path so CI now forces a real Line Sort off-to-on transition before asserting preview promotion, matching the current default-enabled Line Sort setting instead of relying on a no-op checkbox `check()`.

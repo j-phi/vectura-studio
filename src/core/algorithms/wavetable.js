@@ -298,7 +298,10 @@
         ].includes(p.lineStructure)
           ? p.lineStructure
           : 'horizontal';
-        const resolvedLineStructure = lineStructure === 'horizontal-vanishing-point' ? 'horizon' : lineStructure;
+        const resolvedLineStructure =
+          lineStructure === 'horizontal-vanishing-point' || lineStructure === 'horizon-3d'
+            ? 'horizon'
+            : lineStructure;
         const sampleCombinedNoise = (
           baseX,
           baseY,
@@ -712,7 +715,7 @@
           buildParallelLinesAtAngle(-45, 1, bCount);
           return paths;
         }
-        if (resolvedLineStructure === 'horizon-3d') {
+        if (resolvedLineStructure === 'horizon') {
           const localPaths = [];
           const maskPolygons = [];
           const legacyHeight = p.vanishingPointY !== undefined ? Math.round(clamp01(p.vanishingPointY) * 100) : 50;
@@ -1055,6 +1058,92 @@
             pushCurrent();
             return segments;
           };
+          const buildVisibleClippedSegments = (nodes = [], minimumVisibleLength = 3.5, options = {}) => {
+            const segments = [];
+            const sampleSpacing = Math.max(1.5, options.sampleSpacing || 2.5);
+            const transitionSteps = Math.max(6, Math.min(18, options.transitionSteps || 12));
+            let current = [];
+            const pushCurrent = () => {
+              if (current.length < 2) {
+                current = [];
+                return;
+              }
+              if (segmentLength(current) >= minimumVisibleLength) {
+                segments.push(current.map((point) => ({ x: point.x, y: point.y })));
+              }
+              current = [];
+            };
+            const appendPoint = (point) => {
+              if (!point) return;
+              const prev = current[current.length - 1];
+              if (prev && Math.abs(prev.x - point.x) < 0.01 && Math.abs(prev.y - point.y) < 0.01) return;
+              current.push({ x: point.x, y: point.y });
+            };
+            const sampleEdgePoint = (start, end, t) =>
+              projectWorldPoint(
+                lerp(start.worldX, end.worldX, t),
+                lerp(start.worldY, end.worldY, t),
+                lerp(start.worldZ, end.worldZ, t)
+              );
+            const refineTransitionPoint = (start, end, startT, endT, visibleAtStart) => {
+              let lowT = startT;
+              let highT = endT;
+              let lowPoint = sampleEdgePoint(start, end, lowT);
+              let highPoint = sampleEdgePoint(start, end, highT);
+              for (let step = 0; step < transitionSteps; step++) {
+                const midT = (lowT + highT) * 0.5;
+                const midPoint = sampleEdgePoint(start, end, midT);
+                const midVisible = pointVisibleAgainstSurface(midPoint);
+                if (midVisible === visibleAtStart) {
+                  lowT = midT;
+                  lowPoint = midPoint;
+                } else {
+                  highT = midT;
+                  highPoint = midPoint;
+                }
+              }
+              const boundaryT = (lowT + highT) * 0.5;
+              return sampleEdgePoint(start, end, boundaryT);
+            };
+            for (let nodeIndex = 1; nodeIndex < nodes.length; nodeIndex++) {
+              const start = nodes[nodeIndex - 1];
+              const end = nodes[nodeIndex];
+              if (!start || !end) continue;
+              const edgeLength = Math.hypot(end.x - start.x, end.y - start.y);
+              const sampleCount = Math.max(8, Math.ceil(edgeLength / sampleSpacing));
+              let previousT = 0;
+              let previousPoint = sampleEdgePoint(start, end, previousT);
+              let previousVisible = pointVisibleAgainstSurface(previousPoint);
+              if (previousVisible && !current.length) appendPoint(previousPoint);
+              for (let step = 1; step <= sampleCount; step++) {
+                const t = step / sampleCount;
+                const point = sampleEdgePoint(start, end, t);
+                const visible = pointVisibleAgainstSurface(point);
+                if (visible === previousVisible) {
+                  if (visible) appendPoint(point);
+                  previousT = t;
+                  previousPoint = point;
+                  continue;
+                }
+                const boundaryPoint = refineTransitionPoint(start, end, previousT, t, previousVisible);
+                if (previousVisible) {
+                  appendPoint(boundaryPoint);
+                  pushCurrent();
+                } else {
+                  appendPoint(boundaryPoint);
+                }
+                if (visible) {
+                  appendPoint(point);
+                }
+                previousT = t;
+                previousPoint = point;
+                previousVisible = visible;
+              }
+              if (!previousVisible) pushCurrent();
+            }
+            pushCurrent();
+            return segments;
+          };
           const hiddenFarRows = Math.max(2, Math.round(horizontalCount * 0.16));
           const filterUnexpectedHorizonSegments = (segments = [], role = 'row') =>
             segments.filter((segment) => {
@@ -1072,7 +1161,7 @@
               return avgY >= horizonY + safeDelta * 0.24;
             });
           const horizonMetrics = {
-            mode: 'horizon-3d',
+            mode: 'horizon',
             horizontalCount,
             verticalCount,
             rows: [],
@@ -1087,8 +1176,8 @@
               rowIndex < hiddenFarRows
                 ? []
                 : filterUnexpectedHorizonSegments(
-                  buildVisiblePolylineSegments(rowNodes, 4 + (1 - rowDepthNorm) * 10, {
-                    maxBridgeLength: 2 + (1 - rowDepthNorm) * 28,
+                  buildVisibleClippedSegments(rowNodes, 4 + (1 - rowDepthNorm) * 10, {
+                    sampleSpacing: 2.25 + rowDepthNorm * 1.5,
                   }),
                   'row'
                 );
@@ -1112,8 +1201,8 @@
           for (let columnIndex = 0; columnIndex < verticalCount; columnIndex++) {
             const columnNodes = mesh.map((row) => row[columnIndex]);
             const columnSegmentsRaw = filterUnexpectedHorizonSegments(
-              buildVisiblePolylineSegments(columnNodes, 7, {
-                maxBridgeLength: 5,
+              buildVisibleClippedSegments(columnNodes, 7, {
+                sampleSpacing: 2.5,
               }),
               'column'
             );
@@ -1620,6 +1709,10 @@
         return paths;
       },
       formula: (p) =>
-        `structure = ${(p.lineStructure === 'horizontal-vanishing-point' ? 'horizon' : p.lineStructure) || 'horizontal'}\ny = yBase + Σ noiseᵢ(rotate(x*zoomᵢ*freqᵢ, y*zoomᵢ)) * ampᵢ\nedge/vertical dampening scales noise`,
+        `structure = ${
+          (p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d'
+            ? 'horizon'
+            : p.lineStructure) || 'horizontal'
+        }\ny = yBase + Σ noiseᵢ(rotate(x*zoomᵢ*freqᵢ, y*zoomᵢ)) * ampᵢ\nedge/vertical dampening scales noise`,
     };
 })();

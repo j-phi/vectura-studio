@@ -136,10 +136,8 @@
   };
 
   const buildHorizonSilhouette = (layer, bounds) => {
-    if (layer?.params?.lineStructure === 'horizon-3d') {
-      const explicitPolygons = normalizePolygons(clonePaths(layer?.maskPolygons || []));
-      if (explicitPolygons.length) return unionPolygons(explicitPolygons);
-    }
+    const explicitPolygons = normalizePolygons(clonePaths(layer?.maskPolygons || []));
+    if (explicitPolygons.length) return unionPolygons(explicitPolygons);
     const rows = classifyHorizonRows(
       layer?.displayPaths?.length ? layer.displayPaths : layer?.effectivePaths?.length ? layer.effectivePaths : layer?.paths
     );

@@ -107,7 +107,7 @@ An Illustrator-style shared toolbar now drives the main canvas plus the embedded
 - `Reset to Defaults` restores full algorithm defaults including transform values
 - Collapsible left-panel sections with persisted state: `Algorithm` and `Algorithm Configuration`
 - Petalis has an embedded inline **Petal Designer** panel with a pop-out window (`⧉`) and pop-back-in (`↩`) action; shape comes from visible inner/outer designer curves with always-on dual-ring controls, a `PETAL VISUALIZER` (`Overlay` / `Side by Side`), a `PROFILE EDITOR` with per-side profile import/export plus shared `Export Pair`, and matching Shading Stack + Modifier Stack cards where each card has its own `Petal Shape` target (`Inner`/`Outer`/`Both`)
-- Wavetable supports line structures: horizontal, vertical, grid, isometric, lattice, horizon perspective, plus a `Horizon 3D` projected heightfield mode for synthwave-style landscapes that builds a real terrain plane and hides rows/columns from the surface itself
+- Wavetable supports line structures: horizontal, vertical, grid, isometric, lattice, and a canonical projected `Horizon` terrain mode for synthwave-style landscapes with surface-aware row/column occlusion
 - In Wavetable `Isometric`, `Line Gap` controls the visible cell spacing and `Row Shift` shears the whole lattice so the isometric cells stay locked together
 - Harmonograph multi-pendulum list with add/delete/toggle controls, anti-loop drift + settle cutoff, and a Virtual Plotter preview with playhead scrubbing and speed presets
 - Lissajous with per-endpoint truncation sliders and optional loose-tail trimming at self-intersection cutpoints
@@ -193,7 +193,7 @@ Vectura runs on phones. A touch-friendly shell with slide-over drawers, a bottom
 | **Hyphae** | Branching, growth-like structures |
 | **Lissajous** | Harmonic parametric curves with per-endpoint truncation and self-intersection trim |
 | **Harmonograph** | Multi-pendulum curves with damping, anti-loop drift, settle cutoff, and a Virtual Plotter preview |
-| **Wavetable** | Layered noise wave stacks with multiple line structures (horizontal, vertical, grid, isometric, lattice, Horizon perspective, Horizon 3D) |
+| **Wavetable** | Layered noise wave stacks with multiple line structures (horizontal, vertical, grid, isometric, lattice, Horizon projected terrain) |
 | **Rings** | Concentric rings with Noise Rack layering, per-noise `Orbit Field` / `Concentric` / `Top Down` sampling, and a controllable center diameter |
 | **Topo** | Contours extracted from a Noise Rack height field with stacked layers and closed-contour mapping modes |
 | **Grid** | Rectilinear mesh deformed by a stacked Noise Rack field with `Warp` and `Shift` distortion modes |

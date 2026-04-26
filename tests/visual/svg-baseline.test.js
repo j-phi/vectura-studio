@@ -164,7 +164,7 @@ const SCENARIOS = [
     },
   },
   {
-    id: 'wavetable-horizon-3d-canonical',
+    id: 'wavetable-horizon-legacy-3d-migrated',
     type: 'wavetable',
     seed: 455,
     overrides: {

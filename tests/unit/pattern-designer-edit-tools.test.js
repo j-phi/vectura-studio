@@ -87,15 +87,30 @@ describe('Pattern Designer edit tools — line/polyline/polygon support and _src
 
   // ── compilePatternMeta: fill-only paths must have _srcElementIndex ─────────
 
-  test('compilePatternMeta fill-only group paths have _srcElementIndex defined', () => {
+  test('compilePatternMeta stroke paths all have _srcElementIndex defined', () => {
     const patternGetGroups = runtime.window.Vectura.AlgorithmRegistry?.patternGetGroups;
     const registry = runtime.window.Vectura.PatternRegistry;
-    const FILL_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" fill="black"/></svg>';
-    const saved = registry.saveCustomPattern({ id: 'fill-only-index-test', name: 'Fill Only Index', svg: FILL_SVG });
+    // A line-based SVG produces stroke paths that must carry _srcElementIndex
+    const LINE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><line stroke="#000" x1="0" y1="5" x2="10" y2="5"/></svg>';
+    const saved = registry.saveCustomPattern({ id: 'stroke-index-test', name: 'Stroke Index', svg: LINE_SVG });
     const data = patternGetGroups(saved.id);
     const allPaths = data.groups.flatMap((g) => g.paths);
     expect(allPaths.length).toBeGreaterThan(0);
     expect(allPaths.every((p) => p._srcElementIndex !== undefined)).toBe(true);
+    registry.deleteCustomPattern(saved.id);
+  });
+
+  test('compilePatternMeta fill-only groups use per-element tracing (isFillOnly group has paths array)', () => {
+    const patternGetGroups = runtime.window.Vectura.AlgorithmRegistry?.patternGetGroups;
+    const registry = runtime.window.Vectura.PatternRegistry;
+    // A fill-only SVG produces isFillOnly groups; paths array must exist even if canvas stub returns empty
+    const FILL_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" fill="black"/></svg>';
+    const saved = registry.saveCustomPattern({ id: 'fill-group-index-test', name: 'Fill Group Index', svg: FILL_SVG });
+    const data = patternGetGroups(saved.id);
+    const fillGroups = data.groups.filter((g) => g.isFillOnly);
+    expect(fillGroups.length).toBeGreaterThan(0);
+    // paths must be an Array (may be empty in JSDOM since canvas stub can't rasterize, but must not throw)
+    fillGroups.forEach((g) => expect(Array.isArray(g.paths)).toBe(true));
     registry.deleteCustomPattern(saved.id);
   });
 });

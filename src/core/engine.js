@@ -62,6 +62,13 @@
     if (isValidDrawableLayerType(fallback)) return fallback;
     return 'flowfield';
   };
+  const normalizeWavetableLineStructure = (params) => {
+    if (!params || typeof params !== 'object') return params;
+    if (params.lineStructure === 'horizontal-vanishing-point' || params.lineStructure === 'horizon-3d') {
+      params.lineStructure = 'horizon';
+    }
+    return params;
+  };
 
   const clone = (obj) => JSON.parse(JSON.stringify(obj));
 
@@ -144,7 +151,7 @@
       if (!state) return;
       this.layers = (state.layers || []).map((data) => {
         const layer = new Layer(data.id, data.type, data.name);
-        layer.params = JSON.parse(JSON.stringify(data.params || {}));
+        layer.params = normalizeWavetableLineStructure(JSON.parse(JSON.stringify(data.params || {})));
         layer.paramStates = JSON.parse(JSON.stringify(data.paramStates || {}));
         layer.parentId = data.parentId ?? null;
         layer.isGroup = Boolean(data.isGroup);
@@ -212,7 +219,7 @@
         count += 1;
       }
       const layer = new Layer(newId, source.type, dupName);
-      layer.params = JSON.parse(JSON.stringify(source.params));
+      layer.params = normalizeWavetableLineStructure(JSON.parse(JSON.stringify(source.params)));
       layer.paramStates = JSON.parse(JSON.stringify(source.paramStates || {}));
       layer.parentId = state && state.parentId !== undefined ? state.parentId : (source.parentId ?? null);
       layer.isGroup = source.isGroup;

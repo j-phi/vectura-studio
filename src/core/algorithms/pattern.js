@@ -853,7 +853,11 @@
         label: `Element ${i+1}`,
         isFillOnly,
         paths: isFillOnly
-          ? traceFilledElementsVisibleBoundaries(sourceItems.map((item) => item.element), vbMinX, vbMinY, vbW, vbH)
+          ? sourceItems.flatMap((item) => {
+              const ps = traceFilledElementsVisibleBoundaries([item.element], vbMinX, vbMinY, vbW, vbH);
+              ps.forEach((p) => { p._srcElementIndex = item.index; });
+              return ps;
+            })
           : groupPaths,
       };
     });

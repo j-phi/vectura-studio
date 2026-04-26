@@ -1620,6 +1620,29 @@
           ],
         };
       }
+      if (tag === 'line') {
+        const x1 = parseFloat(el.getAttribute('x1') || 0);
+        const y1 = parseFloat(el.getAttribute('y1') || 0);
+        const x2 = parseFloat(el.getAttribute('x2') || 0);
+        const y2 = parseFloat(el.getAttribute('y2') || 0);
+        return {
+          elIndex, closed: false, srcTag: 'line',
+          anchors: [
+            { x: x1, y: y1, in: null, out: null },
+            { x: x2, y: y2, in: null, out: null },
+          ],
+        };
+      }
+      if (tag === 'polyline' || tag === 'polygon') {
+        const pts = (el.getAttribute('points') || '').trim().split(/[\s,]+/).filter(Boolean);
+        const anchors = [];
+        for (let i = 0; i + 1 < pts.length; i += 2) {
+          anchors.push({ x: parseFloat(pts[i]) || 0, y: parseFloat(pts[i + 1]) || 0, in: null, out: null });
+        }
+        return anchors.length >= 2
+          ? { elIndex, closed: tag === 'polygon', srcTag: tag, anchors }
+          : null;
+      }
       return null;
     },
 
