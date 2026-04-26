@@ -2764,6 +2764,79 @@
       { id: 'radiusScale', label: 'Radius Scale', type: 'range', min: -1, max: 1, step: 0.05, infoKey: 'petalis.radiusScale' },
       { id: 'radiusScaleCurve', label: 'Radius Scale Curve', type: 'range', min: 0.5, max: 2.5, step: 0.05, infoKey: 'petalis.radiusScaleCurve' },
     ],
+    horizon: [
+      { type: 'section', label: 'Camera & Horizon' },
+      { id: 'horizonY', label: 'Horizon Height (%)', type: 'range', min: 1, max: 99, step: 1, infoKey: 'horizon.horizonY' },
+      { id: 'vanishingX', label: 'Vanishing Point X (%)', type: 'range', min: 0, max: 100, step: 1, infoKey: 'horizon.vanishingX' },
+      { id: 'cameraPitch', label: 'Camera Pitch (°)', type: 'range', min: 0, max: 45, step: 1, infoKey: 'horizon.cameraPitch' },
+      { id: 'cameraHeight', label: 'Camera Height', type: 'range', min: 0, max: 100, step: 1, infoKey: 'horizon.cameraHeight' },
+      { id: 'fov', label: 'Field of View (°)', type: 'range', min: 30, max: 120, step: 1, infoKey: 'horizon.fov' },
+      { type: 'section', label: 'Grid' },
+      { id: 'horizontalLines', label: 'Horizontal Lines', type: 'range', min: 0, max: 200, step: 1, infoKey: 'horizon.horizontalLines' },
+      { id: 'verticalLines', label: 'Vertical Lines', type: 'range', min: 0, max: 200, step: 1, infoKey: 'horizon.verticalLines' },
+      {
+        id: 'gridSpacing',
+        label: 'Grid Spacing',
+        type: 'select',
+        options: [
+          { value: 'linear', label: 'Linear' },
+          { value: 'perspective', label: 'Perspective' },
+          { value: 'logarithmic', label: 'Logarithmic' },
+        ],
+        infoKey: 'horizon.gridSpacing',
+      },
+      { id: 'gridFloorWidth', label: 'Floor Width (%)', type: 'range', min: 10, max: 400, step: 1, infoKey: 'horizon.gridFloorWidth' },
+      { id: 'gridDepth', label: 'Floor Depth (%)', type: 'range', min: 10, max: 500, step: 1, infoKey: 'horizon.gridDepth' },
+      {
+        id: 'verticalLineExtent',
+        label: 'Vertical Line Extent',
+        type: 'select',
+        options: [
+          { value: 'corridor', label: 'Corridor only' },
+          { value: 'mountains', label: 'Mountains only' },
+          { value: 'full', label: 'Full plane' },
+        ],
+        showIf: (p) => p.gridProjection !== 'fan',
+        infoKey: 'horizon.verticalLineExtent',
+      },
+      {
+        id: 'gridProjection',
+        label: 'Vertical Line Mode',
+        type: 'select',
+        options: [
+          { value: 'pinhole', label: 'Pinhole (world rays)' },
+          { value: 'fan', label: 'Fan (from vanishing point)' },
+        ],
+        infoKey: 'horizon.gridProjection',
+      },
+      {
+        id: 'fanSpread',
+        label: 'Fan Spread (°)',
+        type: 'range',
+        min: 10,
+        max: 180,
+        step: 1,
+        showIf: (p) => p.gridProjection === 'fan',
+        infoKey: 'horizon.fanSpread',
+      },
+      { type: 'section', label: 'Terrain' },
+      { id: 'terrainHeight', label: 'Terrain Height (%)', type: 'range', min: 0, max: 100, step: 1, infoKey: 'horizon.terrainHeight' },
+      { id: 'corridorWidth', label: 'Corridor Width (%)', type: 'range', min: 0, max: 100, step: 1, infoKey: 'horizon.corridorWidth' },
+      { id: 'corridorSoftness', label: 'Corridor Softness', type: 'range', min: 0, max: 100, step: 1, infoKey: 'horizon.corridorSoftness' },
+      { id: 'shoulderLift', label: 'Shoulder Lift', type: 'range', min: 0, max: 100, step: 1, infoKey: 'horizon.shoulderLift' },
+      { id: 'shoulderCurve', label: 'Shoulder Curve', type: 'range', min: 0, max: 100, step: 1, infoKey: 'horizon.shoulderCurve' },
+      { id: 'ridgeSharpness', label: 'Ridge Sharpness', type: 'range', min: 0, max: 100, step: 1, infoKey: 'horizon.ridgeSharpness' },
+      { id: 'distantCompression', label: 'Distant Compression', type: 'range', min: 0, max: 100, step: 1, infoKey: 'horizon.distantCompression' },
+      { id: 'symmetry', label: 'Symmetry', type: 'range', min: 0, max: 100, step: 1, infoKey: 'horizon.symmetry' },
+      { id: 'floorHeight', label: 'Floor Height', type: 'range', min: -50, max: 50, step: 1, infoKey: 'horizon.floorHeight' },
+      { type: 'noiseList' },
+      { type: 'section', label: 'Mesh & Quality' },
+      { id: 'meshRows', label: 'Mesh Rows', type: 'range', min: 8, max: 400, step: 1, infoKey: 'horizon.meshRows' },
+      { id: 'meshCols', label: 'Mesh Columns', type: 'range', min: 8, max: 400, step: 1, infoKey: 'horizon.meshCols' },
+      { id: 'occlusionEnabled', label: 'Occlusion', type: 'checkbox', infoKey: 'horizon.occlusionEnabled' },
+      { id: 'occlusionFeather', label: 'Occlusion Feather', type: 'range', min: 0, max: 10, step: 0.1, infoKey: 'horizon.occlusionFeather' },
+      { id: 'skylineEnabled', label: 'Skyline Polyline', type: 'checkbox', infoKey: 'horizon.skylineEnabled' },
+    ],
     wavetable: [
       {
         id: 'lineStructure',
@@ -2775,7 +2848,6 @@
           { value: 'horizontal-vertical', label: 'Horizontal & Vertical' },
           { value: 'isometric', label: 'Isometric' },
           { value: 'lattice', label: 'Lattice' },
-          { value: 'horizon', label: 'Horizon' },
         ],
         infoKey: 'wavetable.lineStructure',
       },
@@ -2794,171 +2866,6 @@
       },
       { id: 'gap', label: 'Line Gap', type: 'range', min: 0.5, max: 3.0, step: 0.1, infoKey: 'wavetable.gap' },
       { id: 'tilt', label: 'Row Shift', type: 'range', min: -12, max: 12, step: 1, infoKey: 'wavetable.tilt' },
-      {
-        id: 'horizonHorizontalLines',
-        label: 'Horizontal Lines',
-        type: 'range',
-        min: 5,
-        max: 500,
-        step: 1,
-        inlineGroup: 'wavetableHorizonLineCounts',
-        showIf: (p) =>
-          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
-        infoKey: 'wavetable.horizonHorizontalLines',
-      },
-      {
-        id: 'horizonVerticalLines',
-        label: 'Vertical Lines',
-        type: 'range',
-        min: 5,
-        max: 500,
-        step: 1,
-        inlineGroup: 'wavetableHorizonLineCounts',
-        showIf: (p) =>
-          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
-        infoKey: 'wavetable.horizonVerticalLines',
-      },
-      {
-        id: 'horizonLineLink',
-        label: 'Link Densities',
-        type: 'checkbox',
-        inlineGroup: 'wavetableHorizonLineCounts',
-        showIf: (p) =>
-          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
-        infoKey: 'wavetable.horizonLineLink',
-      },
-      {
-        id: 'horizonHeight',
-        label: 'Horizon Height (%)',
-        type: 'range',
-        min: 1,
-        max: 100,
-        step: 1,
-        showIf: (p) =>
-          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
-        infoKey: 'wavetable.horizonHeight',
-      },
-      {
-        id: 'horizonDepthPerspective',
-        label: 'Depth Compression',
-        type: 'range',
-        min: 0,
-        max: 100,
-        step: 1,
-        showIf: (p) =>
-          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
-        infoKey: 'wavetable.horizonDepthPerspective',
-      },
-      {
-        id: 'horizonVanishingX',
-        label: 'Vanishing Point X',
-        type: 'range',
-        min: 0,
-        max: 100,
-        step: 1,
-        showIf: (p) =>
-          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
-        infoKey: 'wavetable.horizonVanishingX',
-      },
-      {
-        id: 'horizonVanishingPower',
-        label: 'Perspective Strength',
-        type: 'range',
-        min: 0,
-        max: 100,
-        step: 1,
-        showIf: (p) =>
-          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
-        infoKey: 'wavetable.horizonVanishingPower',
-      },
-      {
-        id: 'horizonFanReach',
-        label: 'Foreground Spread',
-        type: 'range',
-        min: 0,
-        max: 100,
-        step: 1,
-        showIf: (p) =>
-          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
-        infoKey: 'wavetable.horizonFanReach',
-      },
-      {
-        id: 'horizonRelief',
-        label: 'Horizon Relief',
-        type: 'range',
-        min: 0,
-        max: 100,
-        step: 1,
-        showIf: (p) =>
-          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
-        infoKey: 'wavetable.horizonRelief',
-      },
-      {
-        id: 'horizonCenterDampening',
-        label: 'Center Dampening',
-        type: 'range',
-        min: 0,
-        max: 100,
-        step: 1,
-        showIf: (p) =>
-          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
-        infoKey: 'wavetable.horizonCenterDampening',
-      },
-      {
-        id: 'horizonCenterWidth',
-        label: 'Center Width',
-        type: 'range',
-        min: 5,
-        max: 80,
-        step: 1,
-        showIf: (p) =>
-          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
-        infoKey: 'wavetable.horizonCenterWidth',
-      },
-      {
-        id: 'horizonCenterBasin',
-        label: 'Center Depth',
-        type: 'range',
-        min: 0,
-        max: 100,
-        step: 1,
-        showIf: (p) =>
-          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
-        infoKey: 'wavetable.horizonCenterBasin',
-      },
-      {
-        id: 'horizonShoulderLift',
-        label: 'Shoulder Lift',
-        type: 'range',
-        min: 0,
-        max: 100,
-        step: 1,
-        showIf: (p) =>
-          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
-        infoKey: 'wavetable.horizonShoulderLift',
-      },
-      {
-        id: 'horizonMirrorBlend',
-        label: 'Symmetry Blend',
-        type: 'range',
-        min: 0,
-        max: 100,
-        step: 1,
-        showIf: (p) =>
-          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
-        infoKey: 'wavetable.horizonMirrorBlend',
-      },
-      {
-        id: 'horizonValleyProfile',
-        label: 'Valley Profile',
-        type: 'range',
-        min: 0,
-        max: 100,
-        step: 1,
-        showIf: (p) =>
-          p.lineStructure === 'horizon' || p.lineStructure === 'horizontal-vanishing-point' || p.lineStructure === 'horizon-3d',
-        infoKey: 'wavetable.horizonValleyProfile',
-      },
       {
         id: 'lineOffset',
         label: 'Line Offset Angle',
@@ -4011,84 +3918,122 @@
       title: 'Lines',
       description: 'Number of lines used by the selected wavetable line structure.',
     },
-    'wavetable.horizonHorizontalLines': {
+    'horizon.horizonY': {
+      title: 'Horizon Height (%)',
+      description: 'Vertical screen position of the horizon line, where the vanishing point sits.',
+    },
+    'horizon.vanishingX': {
+      title: 'Vanishing Point X (%)',
+      description: 'Horizontal position of the vanishing point on the horizon line.',
+    },
+    'horizon.cameraPitch': {
+      title: 'Camera Pitch',
+      description: 'How much the camera tilts downward. Higher values reveal more of the ground plane.',
+    },
+    'horizon.cameraHeight': {
+      title: 'Camera Height',
+      description: 'Eye height above the ground plane. Affects how foreground terrain reads at close range.',
+    },
+    'horizon.fov': {
+      title: 'Field of View',
+      description: 'Camera vertical FOV in degrees. Lower values produce telephoto compression; higher values widen the view.',
+    },
+    'horizon.horizontalLines': {
       title: 'Horizontal Lines',
-      description:
-        'Sets the exact number of Horizon terrain rows in the underlying perspective grid before terrain occlusion hides any segments.',
+      description: 'Number of lines that travel side-to-side across the grid floor at varying depths. 0 disables.',
     },
-    'wavetable.horizonVerticalLines': {
+    'horizon.verticalLines': {
       title: 'Vertical Lines',
-      description:
-        'Sets the exact number of Horizon grid columns before terrain occlusion hides any segments.',
+      description: 'Number of lines converging toward the vanishing point. 0 disables.',
     },
-    'wavetable.horizonLineLink': {
-      title: 'Link Densities',
+    'horizon.gridSpacing': {
+      title: 'Grid Spacing',
       description:
-        'Locks the current ratio between Horizon horizontal and vertical line counts so changing one count scales the other proportionally.',
+        'How horizontal lines distribute in depth: linear (even), perspective (bunched toward horizon), or logarithmic.',
+    },
+    'horizon.gridFloorWidth': {
+      title: 'Floor Width',
+      description: 'World-space width of the grid floor relative to canvas width.',
+    },
+    'horizon.gridDepth': {
+      title: 'Floor Depth',
+      description: 'World-space depth of the grid floor from camera to horizon.',
+    },
+    'horizon.verticalLineExtent': {
+      title: 'Vertical Line Extent',
+      description:
+        'Where vertical lines exist: only inside the flat corridor, only over mountain terrain, or across the full plane.',
+    },
+    'horizon.gridProjection': {
+      title: 'Vertical Line Mode',
+      description:
+        'Pinhole draws vertical lines as rays at constant world X projected through the camera. Fan draws them as a symmetrical fan emanating downward directly from the vanishing point on the horizon line — the cleanest synthwave converging-line look.',
+    },
+    'horizon.fanSpread': {
+      title: 'Fan Spread',
+      description:
+        'In Fan mode, total angular width of the fan around straight-down. 0 = a single line straight down; 180 = full half-circle from horizon to horizon.',
+    },
+    'horizon.terrainHeight': {
+      title: 'Terrain Height',
+      description: 'Master amplitude of mountain ridges. 0 produces a flat synthwave road.',
+    },
+    'horizon.corridorWidth': {
+      title: 'Corridor Width',
+      description: 'Width of the central flat road. 0 = no flat zone (full mountains).',
+    },
+    'horizon.corridorSoftness': {
+      title: 'Corridor Softness',
+      description: 'Smooth blend distance at the corridor edge.',
+    },
+    'horizon.shoulderLift': {
+      title: 'Shoulder Lift',
+      description: 'How much terrain rises at the corridor shoulders into ridges.',
+    },
+    'horizon.shoulderCurve': {
+      title: 'Shoulder Curve',
+      description: 'Linear (low) to exponential (high) ramp from corridor edge outward.',
+    },
+    'horizon.ridgeSharpness': {
+      title: 'Ridge Sharpness',
+      description: '0 = rolling hills, 100 = sharp synthwave spikes.',
+    },
+    'horizon.distantCompression': {
+      title: 'Distant Compression',
+      description: '0 = mountains stay tall to horizon, 100 = flatten into the distance for a cleaner skyline.',
+    },
+    'horizon.symmetry': {
+      title: 'Symmetry',
+      description: '0 = full noise asymmetry, 100 = perfect mirror across the vanishing-X axis.',
+    },
+    'horizon.floorHeight': {
+      title: 'Floor Height',
+      description: 'Vertical offset of the corridor floor (negative = sunken road, positive = elevated plain).',
+    },
+    'horizon.meshRows': {
+      title: 'Mesh Rows',
+      description: 'Heightfield z-resolution. Higher values yield smoother ridges and occlusion.',
+    },
+    'horizon.meshCols': {
+      title: 'Mesh Columns',
+      description: 'Heightfield x-resolution. Higher values yield smoother lateral terrain.',
+    },
+    'horizon.occlusionEnabled': {
+      title: 'Occlusion',
+      description: 'Hide grid lines that pass behind closer mountain ridges.',
+    },
+    'horizon.occlusionFeather': {
+      title: 'Occlusion Feather',
+      description: 'Soft pixel tolerance to reduce aliased clipping at the silhouette.',
+    },
+    'horizon.skylineEnabled': {
+      title: 'Skyline Polyline',
+      description: 'Emit the silhouette polyline as a separate stroked path.',
     },
     'wavetable.lineStructure': {
       title: 'Line Structure',
       description:
-        'Sets the base line layout before noise displacement: horizontal rows, vertical stacks, grid combos, isometric sets, lattice diagonals, or Horizon for a projected terrain surface with terrain-aware occlusion.',
-    },
-    'wavetable.horizonHeight': {
-      title: 'Horizon Height (%)',
-      description: 'Sets the horizon line height as a percentage of the drawable area (1 = top, 100 = bottom).',
-    },
-    'wavetable.horizonDepthPerspective': {
-      title: 'Depth Compression',
-      description:
-        'Compresses distant terrain toward the horizon while preserving stronger foreground displacement so Horizon reads like a landscape.',
-    },
-    'wavetable.horizonVanishingX': {
-      title: 'Vanishing Point X',
-      description:
-        'Sets the horizontal vanishing point for Horizon, shifting the projected camera target across the terrain plane.',
-    },
-    'wavetable.horizonVanishingPower': {
-      title: 'Perspective Strength',
-      description:
-        'Controls perspective strength for Horizon, increasing how aggressively the projected terrain compresses toward the horizon.',
-    },
-    'wavetable.horizonFanReach': {
-      title: 'Foreground Spread',
-      description:
-        'Controls how far the Horizon foreground spreads by widening the underlying terrain plane before projection.',
-    },
-    'wavetable.horizonRelief': {
-      title: 'Horizon Relief',
-      description:
-        'Sets the minimum amount of noise relief preserved at the horizon itself. Increase it for a more broken skyline and decrease it for a cleaner vanishing line.',
-    },
-    'wavetable.horizonCenterDampening': {
-      title: 'Center Dampening',
-      description:
-        'Reduces terrain noise in a center corridor so Horizon mode can form a smoother road or valley leading toward the vanishing point.',
-    },
-    'wavetable.horizonCenterWidth': {
-      title: 'Center Width',
-      description:
-        'Controls how wide the damped center corridor is in Horizon mode. Smaller values pinch the valley; larger values broaden it.',
-    },
-    'wavetable.horizonCenterBasin': {
-      title: 'Center Depth',
-      description:
-        'Adds a downward pull in the center corridor so Horizon mode can create a visible basin or road through the terrain.',
-    },
-    'wavetable.horizonShoulderLift': {
-      title: 'Shoulder Lift',
-      description:
-        'Raises the outer terrain shoulders around the center corridor so Horizon mode can read more like a valley between mountain walls.',
-    },
-    'wavetable.horizonMirrorBlend': {
-      title: 'Symmetry Blend',
-      description:
-        'Blends the horizon terrain against a mirrored sample across the center line. Increase it for a more centered synthwave valley and decrease it for a more asymmetric landscape.',
-    },
-    'wavetable.horizonValleyProfile': {
-      title: 'Valley Profile',
-      description:
-        'Adds a deterministic center-valley cross section beneath the noise so Horizon can read like a formed landscape instead of a purely random mesh.',
+        'Sets the base line layout before noise displacement: horizontal rows, vertical stacks, grid combos, isometric sets, or lattice diagonals. (For synthwave receding-grid scenes, use the Horizon algorithm.)',
     },
     'wavetable.noiseType': {
       title: 'Noise Type',

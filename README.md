@@ -98,8 +98,8 @@ An Illustrator-style shared toolbar now drives the main canvas plus the embedded
 <details>
 <summary>Full algorithm feature list</summary>
 
-- 14+ algorithm families: flowfield, boids, attractors, hyphae, lissajous, harmonograph, wavetable, rings, topo, grid, rainfall, phylla, petalis, spiral, shapepack
-- Universal **Noise Rack** with per-layer engine selection, blend modes, offsets, octave shaping — shared across flowfield, grid, phylla, rings, topo, wavetable, and petalis
+- 15+ algorithm families: flowfield, boids, attractors, hyphae, lissajous, harmonograph, wavetable, horizon, rings, topo, grid, rainfall, phylla, petalis, spiral, shapepack
+- Universal **Noise Rack** with per-layer engine selection, blend modes, offsets, octave shaping — shared across flowfield, grid, phylla, rings, topo, wavetable, horizon, and petalis
 - Polygon Noise Rack layers now use intuitive zoom semantics: larger `Noise Zoom` / `Noise Scale` values create a larger polygon footprint, and vertical line-displacement systems treat positive amplitudes as upward motion
 - Seeded, repeatable generation; the `Transform & Seed` sub-panel (collapsed by default) exposes seed, position, scale, and rotation
 - Parameter randomization with algorithm-aware bias profiles for Shape Pack, Petalis, Rainfall, and Lissajous (strong defaults with occasional outliers)
@@ -107,7 +107,8 @@ An Illustrator-style shared toolbar now drives the main canvas plus the embedded
 - `Reset to Defaults` restores full algorithm defaults including transform values
 - Collapsible left-panel sections with persisted state: `Algorithm` and `Algorithm Configuration`
 - Petalis has an embedded inline **Petal Designer** panel with a pop-out window (`⧉`) and pop-back-in (`↩`) action; shape comes from visible inner/outer designer curves with always-on dual-ring controls, a `PETAL VISUALIZER` (`Overlay` / `Side by Side`), a `PROFILE EDITOR` with per-side profile import/export plus shared `Export Pair`, and matching Shading Stack + Modifier Stack cards where each card has its own `Petal Shape` target (`Inner`/`Outer`/`Both`)
-- Wavetable supports line structures: horizontal, vertical, grid, isometric, lattice, and a canonical projected `Horizon` terrain mode for synthwave-style landscapes with surface-aware row/column occlusion
+- Wavetable supports line structures: horizontal, vertical, grid, isometric, and lattice
+- Dedicated **Horizon** algorithm for synthwave-style receding-grid scenes — noise-driven 3D heightfield projected through a pinhole camera, with horizontal floor lines, vertical lines that converge at a single vanishing point, optional flat road corridor with mountain ridges flanking it, terrain-aware hidden-line removal, and a `Vertical Line Mode` selector (Pinhole / Fan) where Fan draws lines as a symmetric fan emanating downward from the vanishing point
 - In Wavetable `Isometric`, `Line Gap` controls the visible cell spacing and `Row Shift` shears the whole lattice so the isometric cells stay locked together
 - Harmonograph multi-pendulum list with add/delete/toggle controls, anti-loop drift + settle cutoff, and a Virtual Plotter preview with playhead scrubbing and speed presets
 - Lissajous with per-endpoint truncation sliders and optional loose-tail trimming at self-intersection cutpoints
@@ -193,7 +194,8 @@ Vectura runs on phones. A touch-friendly shell with slide-over drawers, a bottom
 | **Hyphae** | Branching, growth-like structures |
 | **Lissajous** | Harmonic parametric curves with per-endpoint truncation and self-intersection trim |
 | **Harmonograph** | Multi-pendulum curves with damping, anti-loop drift, settle cutoff, and a Virtual Plotter preview |
-| **Wavetable** | Layered noise wave stacks with multiple line structures (horizontal, vertical, grid, isometric, lattice, Horizon projected terrain) |
+| **Wavetable** | Layered noise wave stacks with multiple line structures (horizontal, vertical, grid, isometric, lattice) |
+| **Horizon** | Synthwave-style receding-grid scenes built on a noise-driven 3D heightfield with a pinhole camera, single-point perspective vertical lines (Pinhole or Fan modes), optional flat road corridor with flanking mountain ridges, and terrain-aware hidden-line removal |
 | **Rings** | Concentric rings with Noise Rack layering, per-noise `Orbit Field` / `Concentric` / `Top Down` sampling, and a controllable center diameter |
 | **Topo** | Contours extracted from a Noise Rack height field with stacked layers and closed-contour mapping modes |
 | **Grid** | Rectilinear mesh deformed by a stacked Noise Rack field with `Warp` and `Shift` distortion modes |

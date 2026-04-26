@@ -7,6 +7,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- Added a dedicated **Horizon** algorithm — a synthwave-style receding grid built on a noise-driven 3D heightfield projected through a pinhole camera. Horizontal lines run side-to-side, vertical lines converge toward a single vanishing point, and ridges rise on either side of an optional flat road corridor. Includes a `Vertical Line Mode` selector (Pinhole / Fan), where Fan draws lines symmetrically downward from the vanishing point on the horizon line for the cleanest synthwave converging-line look. All terrain noise flows through the universal Noise Rack stack.
+- Added Horizon parameter surface across Camera & Horizon, Grid, Terrain, and Mesh & Quality groups (~25 params total), replacing the legacy 14-param Horizon shaping controls with a clearer envelope (corridor / shoulders / ridge sharpness / distant compression / symmetry).
+- Added automatic `.vectura` migration from legacy `wavetable + lineStructure='horizon'/'horizon-3d'/'horizontal-vanishing-point'` projects to the new Horizon algorithm on import, with a console notice and a translation table mapping legacy keys (`horizonHeight`, `horizonVanishingX`, `horizonHorizontalLines`, `horizonRelief`, etc.) onto the new param surface.
+- Added unit-test coverage for Horizon — projection, heightfield envelope, grid synthesis, occlusion segmentation, determinism, defensive clamping, fan-projection mode, and migration (~40 RGR tests traced to EARS requirement IDs).
+- Added Horizon SVG visual baselines: canonical scene, flat synthwave road, fan-projection demo, and pure mountain range.
+### Changed
+- Retired the legacy wavetable Horizon line-structure modes (`horizon`, `horizon-3d`, `horizontal-vanishing-point`) from the algorithm picker, defaults, UI controls, and per-param info text. Saved projects auto-migrate on load.
 - Added a global dark/light theme toggle in the header, with full-shell CSS-variable theming across panes, menus, modals, tool chrome, helper widgets, and canvas surround.
 - Added `Insert > Mirror Modifier`, a new modifier-container layer type that behaves like a group in the Layers panel while applying a sequential mirror-axis stack to its child layers.
 - Added mirror-guide canvas overlays with dashed full-canvas axes, reflection-direction triangles, separate rotate handles, and per-axis/stack show-hide, lock, reorder, and delete controls.
