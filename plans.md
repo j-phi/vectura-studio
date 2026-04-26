@@ -13,7 +13,6 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Design the universal multi-engine noise system, named `Noise Rack`, so all noise-capable algorithms converge on one stack model.
 - Continue extracting shared Noise Rack runtime primitives; stack blend-combination logic is now centralized, with deeper sampler extraction still pending.
 - Extend Noise Rack to the remaining direct consumers, now mainly any leftover bespoke samplers after Petalis per-modifier stack UI parity.
-- Expand universal masking beyond the first silhouette-capable layer set (`Wavetable` Horizon, closed shapes, groups) to additional algorithms with stable outer-envelope providers and surface-aware mask providers.
 - Extend Layer Modifiers beyond the initial `Mirror` implementation once the group-like modifier container model has proven out in export, masking, and nested layer workflows.
 - Fix the remaining strict Playwright Pattern fidelity regressions as product bugs, with `Autumn` horizontal-seam mismatch and representative `Bamboo` / `Bathroom Floor` / `Dominos` silhouette drift still failing source-faithful smoke coverage.
 
@@ -26,7 +25,6 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
-- Collapsed `Wavetable` `Horizon` and `Horizon 3D` into one canonical projected terrain mode, normalized legacy `horizon-3d` imports to `horizon`, updated the Horizon control vocabulary, and refreshed deterministic plus visual regression coverage around the canonical surface-aware mesh.
 - Fixed Wavetable `Isometric` so `Line Gap` now controls the visible cell spacing from a single shared lattice model, `Row Shift` shears the entire lattice coherently, and deterministic plus SVG-baseline regressions now lock the behavior in through the repo's RGR workflow.
 - Updated the stale Export SVG smoke/integration test flow so Line Sort preview assertions now force a real unchecked-to-checked transition under the current default-enabled setting, leaving only the known Pattern fidelity failures in the CI smoke lane.
 - Corrected Noise Rack polygon zoom direction so larger zoom values now enlarge polygon footprints consistently across shared and algorithm-local samplers, and normalized vertical line-displacement sign so positive amplitudes move grid/line-stack offsets upward while leaving radial/vector-field semantics unchanged.
@@ -42,7 +40,6 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Fixed Export SVG section-header info buttons so they attach to the title label instead of the reorder grip dots.
 - Adjusted Export SVG section-header info buttons so they render immediately after the title span as sibling elements.
 - Fixed Export SVG section-header info panes so they expand below the full header bar instead of inside the header row.
-- Fixed `Line Sort` `Nearest` so `Horizontal` and `Vertical` now enforce real sweep ordering instead of only picking the initial seed path, and added integration coverage for directional plus unconstrained nearest-neighbor traversal.
 - Added Document Setup project-state units (`metric` / `imperial`), unit-aware paper/margin/stroke/tolerance controls, blueprint-style paper dimensions outside the canvas, a `Clear Saved Preferences` action for cookie-backed UI state, `Cmd/Ctrl + K` toggle behavior, and regression coverage for the full workflow.
 - Fixed multi-layer `Line Sort` so shared optimization scope now carries through preview, stats, overlay rendering, and optimized SVG export instead of degrading to per-layer sorting.
 - Added `Lissajous` `Truncate Start` / `Truncate End` endpoint-length sliders, defaulted both to `0%`, and flipped `Close Lines` to default off so users can shorten each end explicitly before enabling tail trimming.
@@ -72,16 +69,6 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Established existing Mermaid-based architecture documentation in the README.
 - Built an advanced stacked-noise foundation in `wavetable`, with related layered-noise behavior already present in `spiral` and `rainfall`.
 - Added the first shared Noise Rack runtime primitive in `src/core/noise-rack.js` and wired shared blend-combination behavior into `wavetable`, `spiral`, and `rainfall`.
-- Fixed Horizon masking to follow the highest visible terrain envelope instead of only the top row, and added a dedicated masking SVG baseline to keep the landscape-overlap behavior stable.
-- Reworked Horizon masking to use visible surface strips so hidden geometry hugs the final terrain contours, moved masking workflow fully into the Layers panel, and added a screenshot-based Playwright masking regression.
-- Fixed the checked-in broken masking scene by restoring explicit visible terrain-strip mask polygons, reducing detached Horizon backface/shoulder column fragments, and adding a fixture-backed screenshot regression for the saved document.
-- Fixed the saved masking workflow so the Layers-panel `Clip` trigger opens reliably, Horizon clipping follows the first visible terrain row, and additional lower shoulder backface fragments are culled by skyline-connected fan filtering.
-- Further reduced Horizon shoulder hidden-line clutter by pruning short edge/shoulder column fragments that survived occlusion but did not carry enough visible surface to read as real contour lines.
-- Restored legitimate Horizon vertical fan visibility by rebuilding columns from the full clipped terrain rows and allowing them to reappear after passing behind an occluding ridge.
-- Reworked Horizon around a regularized underlying perspective grid so row/column spacing stays stable before terrain occlusion, column identity survives hidden/reappearing segments, and the shipped defaults read closer to a cleaner synthwave valley.
-- Added `Horizon 3D` as a separate projected heightfield mode so synthwave terrain can be generated from a real plane/mesh with surface-derived hidden-line removal and masking, without breaking legacy Horizon scenes.
-- Removed Horizon's extra edge-anchor rays after they introduced off-pattern diagonal lines that did not align with the vertical contour fan.
-- Changed Horizon masking to follow the topmost visible Horizon row and derived the full vertical fan from the same culled visible-row set so masked background geometry meets the terrain edge without a gap and steep-ridge backfaces are reduced.
 - Migrated `rings` to Noise Rack with stacked noise layers, preserved ring-local drift/sample-radius controls, and per-noise `Orbit Field` / `Concentric` / `Top Down` projection.
 - Migrated `topo` to Noise Rack with stacked field layers while preserving the existing contour mapping modes and moving fractal controls into per-noise-layer settings.
 - Migrated `flowfield`, `grid`, and `phylla` onto Noise Rack stacks while preserving their algorithm-specific master controls.
@@ -89,21 +76,7 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Fixed shared image-noise control behavior by rendering `Invert Color` as a checkbox, correcting `Noise Width` direction in the affected samplers, and centering default polygon noise in the remaining off-center algorithms.
 - Reworked `Rings` `Concentric` mode into a seam-corrected ring-path sampler, improved the apply-mode help text, and added a `Center Diameter` control for widening the innermost ring.
 - Replaced the remaining one-off Petalis modifier noise sliders with nested Noise Rack stacks in the main controls and Petal Designer modifier cards, while preserving legacy modifier-scale fallback behavior.
-- Reworked `Wavetable` Horizon depth perspective for stronger synthwave terrain silhouettes and improved Petal Designer target selection via overlay silhouette hits plus clickable profile cards.
-- Added a dedicated `Wavetable` Horizon relief control so skyline noise can be preserved at the vanishing line instead of being implicitly damped away.
-- Removed the remaining hard horizon clamp in `Wavetable` and validated the skyline fix against rendered screenshots so Horizon terrain now breaks the vanishing line as intended.
-- Added Horizon-specific shaping controls and companion defaults tuned against repeated screenshot review so choosing `Horizon` yields a terrain profile closer to the synthwave reference.
-- Added deeper Horizon terrain-shaping controls (`Shoulder Lift`, `Mirror Blend`, `Valley Profile`) and tuned the shipped Horizon defaults against repeated rendered screenshot review so the default profile reads more like a centered synthwave valley.
-- Fixed `Wavetable` Horizon so noise displacement now respects `Line Offset Angle` instead of being forced vertical, and clarified the angle-control help text.
-- Continued reworking `Wavetable` Horizon visibility/occlusion into a sampled mesh model so skyline clipping, vertical fan behavior, and shoulder backface hiding move closer to the synthwave terrain target.
-- Restored explicit Horizon perspective control under clearer names (`Vanishing Point X`, `Vanishing Pull`) while keeping the vertical fan full-width at the bottom and pulled inward near the skyline.
-- Split Horizon perspective coverage into separate controls so `Vanishing Pull` handles convergence and `Fan Reach` handles side/bottom spread without leaving dead zones at the edges.
-- Locked the Horizon fan expectation to edge coverage rather than on-canvas bottom confinement, so full pull/full reach can radiate beyond the side bounds while still covering the visible width.
-- Replaced Horizon’s single `Lines` control with independent horizontal/vertical counts and a ratio lock so mesh density can be tuned per direction without losing the perspective fan behavior.
-- Increased Horizon `Fan Reach` headroom at high `Vanishing Pull` values and grouped the split line-count controls into one shared row for faster perspective tuning.
 - Added a live masking/display-geometry engine stage, row-level `Mask` controls in the Layers panel, and `Convert To Geometry` materialization into expanded lines.
-- Added first-wave silhouette providers for closed shapes, groups, and `Wavetable` Horizon terrain envelopes so masking relationships can be edited directly from the layer list.
-- Reworked Horizon vertical fans to sample the visible terrain surface by X-position instead of row parameterization, then removed the extra edge-anchor rays after they proved visually inconsistent with the contour fan.
 
 ## Decisions
 - In Wavetable `Isometric`, `Line Gap` refers to visible cell spacing and `Row Shift` applies as a coherent lattice shear across all three line families rather than offsetting only the horizontal rows.

@@ -386,30 +386,6 @@ describe('Masking runtime', () => {
     expect(imported.mask.mode).toBe('parent');
   });
 
-  test('horizon silhouettes follow the first visible terrain row for masking', () => {
-    const { Layer, Masking } = runtime.window.Vectura;
-    const layer = new Layer('terrain', 'wavetable', 'Terrain');
-    layer.params.lineStructure = 'horizon';
-    layer.paths = [
-      [
-        { x: 20, y: 80 },
-        { x: 120, y: 80 },
-        { x: 220, y: 80 },
-      ],
-      [
-        { x: 20, y: 120 },
-        { x: 120, y: 40 },
-        { x: 220, y: 120 },
-      ],
-    ];
-
-    const polygons = Masking.getLayerSilhouette(layer, null, bounds);
-
-    expect(polygons).toHaveLength(1);
-    const topPoint = polygons[0].reduce((best, point) => (point.y < best.y ? point : best), polygons[0][0]);
-    expect(topPoint.y).toBe(80);
-  });
-
   test('getLayerSilhouette returns empty array for a layer with no paths', () => {
     const { Layer, Masking } = runtime.window.Vectura;
     const empty = new Layer('empty', 'expanded', 'Empty');

@@ -2764,79 +2764,6 @@
       { id: 'radiusScale', label: 'Radius Scale', type: 'range', min: -1, max: 1, step: 0.05, infoKey: 'petalis.radiusScale' },
       { id: 'radiusScaleCurve', label: 'Radius Scale Curve', type: 'range', min: 0.5, max: 2.5, step: 0.05, infoKey: 'petalis.radiusScaleCurve' },
     ],
-    horizon: [
-      { type: 'section', label: 'Camera & Horizon' },
-      { id: 'horizonY', label: 'Horizon Height (%)', type: 'range', min: 1, max: 99, step: 1, infoKey: 'horizon.horizonY' },
-      { id: 'vanishingX', label: 'Vanishing Point X (%)', type: 'range', min: 0, max: 100, step: 1, infoKey: 'horizon.vanishingX' },
-      { id: 'cameraPitch', label: 'Camera Pitch (°)', type: 'range', min: 0, max: 45, step: 1, infoKey: 'horizon.cameraPitch' },
-      { id: 'cameraHeight', label: 'Camera Height', type: 'range', min: 0, max: 100, step: 1, infoKey: 'horizon.cameraHeight' },
-      { id: 'fov', label: 'Field of View (°)', type: 'range', min: 30, max: 120, step: 1, infoKey: 'horizon.fov' },
-      { type: 'section', label: 'Grid' },
-      { id: 'horizontalLines', label: 'Horizontal Lines', type: 'range', min: 0, max: 200, step: 1, infoKey: 'horizon.horizontalLines' },
-      { id: 'verticalLines', label: 'Vertical Lines', type: 'range', min: 0, max: 200, step: 1, infoKey: 'horizon.verticalLines' },
-      {
-        id: 'gridSpacing',
-        label: 'Grid Spacing',
-        type: 'select',
-        options: [
-          { value: 'linear', label: 'Linear' },
-          { value: 'perspective', label: 'Perspective' },
-          { value: 'logarithmic', label: 'Logarithmic' },
-        ],
-        infoKey: 'horizon.gridSpacing',
-      },
-      { id: 'gridFloorWidth', label: 'Floor Width (%)', type: 'range', min: 10, max: 400, step: 1, infoKey: 'horizon.gridFloorWidth' },
-      { id: 'gridDepth', label: 'Floor Depth (%)', type: 'range', min: 10, max: 500, step: 1, infoKey: 'horizon.gridDepth' },
-      {
-        id: 'verticalLineExtent',
-        label: 'Vertical Line Extent',
-        type: 'select',
-        options: [
-          { value: 'corridor', label: 'Corridor only' },
-          { value: 'mountains', label: 'Mountains only' },
-          { value: 'full', label: 'Full plane' },
-        ],
-        showIf: (p) => p.gridProjection !== 'fan',
-        infoKey: 'horizon.verticalLineExtent',
-      },
-      {
-        id: 'gridProjection',
-        label: 'Vertical Line Mode',
-        type: 'select',
-        options: [
-          { value: 'pinhole', label: 'Pinhole (world rays)' },
-          { value: 'fan', label: 'Fan (from vanishing point)' },
-        ],
-        infoKey: 'horizon.gridProjection',
-      },
-      {
-        id: 'fanSpread',
-        label: 'Fan Spread (°)',
-        type: 'range',
-        min: 10,
-        max: 180,
-        step: 1,
-        showIf: (p) => p.gridProjection === 'fan',
-        infoKey: 'horizon.fanSpread',
-      },
-      { type: 'section', label: 'Terrain' },
-      { id: 'terrainHeight', label: 'Terrain Height (%)', type: 'range', min: 0, max: 100, step: 1, infoKey: 'horizon.terrainHeight' },
-      { id: 'corridorWidth', label: 'Corridor Width (%)', type: 'range', min: 0, max: 100, step: 1, infoKey: 'horizon.corridorWidth' },
-      { id: 'corridorSoftness', label: 'Corridor Softness', type: 'range', min: 0, max: 100, step: 1, infoKey: 'horizon.corridorSoftness' },
-      { id: 'shoulderLift', label: 'Shoulder Lift', type: 'range', min: 0, max: 100, step: 1, infoKey: 'horizon.shoulderLift' },
-      { id: 'shoulderCurve', label: 'Shoulder Curve', type: 'range', min: 0, max: 100, step: 1, infoKey: 'horizon.shoulderCurve' },
-      { id: 'ridgeSharpness', label: 'Ridge Sharpness', type: 'range', min: 0, max: 100, step: 1, infoKey: 'horizon.ridgeSharpness' },
-      { id: 'distantCompression', label: 'Distant Compression', type: 'range', min: 0, max: 100, step: 1, infoKey: 'horizon.distantCompression' },
-      { id: 'symmetry', label: 'Symmetry', type: 'range', min: 0, max: 100, step: 1, infoKey: 'horizon.symmetry' },
-      { id: 'floorHeight', label: 'Floor Height', type: 'range', min: -50, max: 50, step: 1, infoKey: 'horizon.floorHeight' },
-      { type: 'noiseList' },
-      { type: 'section', label: 'Mesh & Quality' },
-      { id: 'meshRows', label: 'Mesh Rows', type: 'range', min: 8, max: 400, step: 1, infoKey: 'horizon.meshRows' },
-      { id: 'meshCols', label: 'Mesh Columns', type: 'range', min: 8, max: 400, step: 1, infoKey: 'horizon.meshCols' },
-      { id: 'occlusionEnabled', label: 'Occlusion', type: 'checkbox', infoKey: 'horizon.occlusionEnabled' },
-      { id: 'occlusionFeather', label: 'Occlusion Feather', type: 'range', min: 0, max: 10, step: 0.1, infoKey: 'horizon.occlusionFeather' },
-      { id: 'skylineEnabled', label: 'Skyline Polyline', type: 'checkbox', infoKey: 'horizon.skylineEnabled' },
-    ],
     wavetable: [
       {
         id: 'lineStructure',
@@ -2859,10 +2786,6 @@
         max: 500,
         step: 1,
         infoKey: 'wavetable.lines',
-        showIf: (p) =>
-          p.lineStructure !== 'horizon'
-          && p.lineStructure !== 'horizontal-vanishing-point'
-          && p.lineStructure !== 'horizon-3d',
       },
       { id: 'gap', label: 'Line Gap', type: 'range', min: 0.5, max: 3.0, step: 0.1, infoKey: 'wavetable.gap' },
       { id: 'tilt', label: 'Row Shift', type: 'range', min: -12, max: 12, step: 1, infoKey: 'wavetable.tilt' },
@@ -3918,122 +3841,10 @@
       title: 'Lines',
       description: 'Number of lines used by the selected wavetable line structure.',
     },
-    'horizon.horizonY': {
-      title: 'Horizon Height (%)',
-      description: 'Vertical screen position of the horizon line, where the vanishing point sits.',
-    },
-    'horizon.vanishingX': {
-      title: 'Vanishing Point X (%)',
-      description: 'Horizontal position of the vanishing point on the horizon line.',
-    },
-    'horizon.cameraPitch': {
-      title: 'Camera Pitch',
-      description: 'How much the camera tilts downward. Higher values reveal more of the ground plane.',
-    },
-    'horizon.cameraHeight': {
-      title: 'Camera Height',
-      description: 'Eye height above the ground plane. Affects how foreground terrain reads at close range.',
-    },
-    'horizon.fov': {
-      title: 'Field of View',
-      description: 'Camera vertical FOV in degrees. Lower values produce telephoto compression; higher values widen the view.',
-    },
-    'horizon.horizontalLines': {
-      title: 'Horizontal Lines',
-      description: 'Number of lines that travel side-to-side across the grid floor at varying depths. 0 disables.',
-    },
-    'horizon.verticalLines': {
-      title: 'Vertical Lines',
-      description: 'Number of lines converging toward the vanishing point. 0 disables.',
-    },
-    'horizon.gridSpacing': {
-      title: 'Grid Spacing',
-      description:
-        'How horizontal lines distribute in depth: linear (even), perspective (bunched toward horizon), or logarithmic.',
-    },
-    'horizon.gridFloorWidth': {
-      title: 'Floor Width',
-      description: 'World-space width of the grid floor relative to canvas width.',
-    },
-    'horizon.gridDepth': {
-      title: 'Floor Depth',
-      description: 'World-space depth of the grid floor from camera to horizon.',
-    },
-    'horizon.verticalLineExtent': {
-      title: 'Vertical Line Extent',
-      description:
-        'Where vertical lines exist: only inside the flat corridor, only over mountain terrain, or across the full plane.',
-    },
-    'horizon.gridProjection': {
-      title: 'Vertical Line Mode',
-      description:
-        'Pinhole draws vertical lines as rays at constant world X projected through the camera. Fan draws them as a symmetrical fan emanating downward directly from the vanishing point on the horizon line — the cleanest synthwave converging-line look.',
-    },
-    'horizon.fanSpread': {
-      title: 'Fan Spread',
-      description:
-        'In Fan mode, total angular width of the fan around straight-down. 0 = a single line straight down; 180 = full half-circle from horizon to horizon.',
-    },
-    'horizon.terrainHeight': {
-      title: 'Terrain Height',
-      description: 'Master amplitude of mountain ridges. 0 produces a flat synthwave road.',
-    },
-    'horizon.corridorWidth': {
-      title: 'Corridor Width',
-      description: 'Width of the central flat road. 0 = no flat zone (full mountains).',
-    },
-    'horizon.corridorSoftness': {
-      title: 'Corridor Softness',
-      description: 'Smooth blend distance at the corridor edge.',
-    },
-    'horizon.shoulderLift': {
-      title: 'Shoulder Lift',
-      description: 'How much terrain rises at the corridor shoulders into ridges.',
-    },
-    'horizon.shoulderCurve': {
-      title: 'Shoulder Curve',
-      description: 'Linear (low) to exponential (high) ramp from corridor edge outward.',
-    },
-    'horizon.ridgeSharpness': {
-      title: 'Ridge Sharpness',
-      description: '0 = rolling hills, 100 = sharp synthwave spikes.',
-    },
-    'horizon.distantCompression': {
-      title: 'Distant Compression',
-      description: '0 = mountains stay tall to horizon, 100 = flatten into the distance for a cleaner skyline.',
-    },
-    'horizon.symmetry': {
-      title: 'Symmetry',
-      description: '0 = full noise asymmetry, 100 = perfect mirror across the vanishing-X axis.',
-    },
-    'horizon.floorHeight': {
-      title: 'Floor Height',
-      description: 'Vertical offset of the corridor floor (negative = sunken road, positive = elevated plain).',
-    },
-    'horizon.meshRows': {
-      title: 'Mesh Rows',
-      description: 'Heightfield z-resolution. Higher values yield smoother ridges and occlusion.',
-    },
-    'horizon.meshCols': {
-      title: 'Mesh Columns',
-      description: 'Heightfield x-resolution. Higher values yield smoother lateral terrain.',
-    },
-    'horizon.occlusionEnabled': {
-      title: 'Occlusion',
-      description: 'Hide grid lines that pass behind closer mountain ridges.',
-    },
-    'horizon.occlusionFeather': {
-      title: 'Occlusion Feather',
-      description: 'Soft pixel tolerance to reduce aliased clipping at the silhouette.',
-    },
-    'horizon.skylineEnabled': {
-      title: 'Skyline Polyline',
-      description: 'Emit the silhouette polyline as a separate stroked path.',
-    },
     'wavetable.lineStructure': {
       title: 'Line Structure',
       description:
-        'Sets the base line layout before noise displacement: horizontal rows, vertical stacks, grid combos, isometric sets, or lattice diagonals. (For synthwave receding-grid scenes, use the Horizon algorithm.)',
+        'Sets the base line layout before noise displacement: horizontal rows, vertical stacks, grid combos, isometric sets, or lattice diagonals.',
     },
     'wavetable.noiseType': {
       title: 'Noise Type',
@@ -4317,7 +4128,7 @@
     },
     'wavetable.lineOffset': {
       title: 'Line Offset Angle',
-      description: 'Direction for noise displacement (0° = north, 180° = south). Horizon now respects this angle too.',
+      description: 'Direction for noise displacement (0° = north, 180° = south).',
     },
     'wavetable.continuity': {
       title: 'Continuity',
@@ -10656,16 +10467,10 @@
             Image noise includes an Image Effects stack plus optional style shaping.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Wavetable Line Structure supports Horizontal, Vertical, Horizontal &amp; Vertical, Isometric, Lattice, and Horizon layouts.
+            Wavetable Line Structure supports Horizontal, Vertical, Horizontal &amp; Vertical, Isometric, and Lattice layouts.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             In Wavetable Isometric mode, Line Gap controls the visible cell spacing and Row Shift shears the full lattice together instead of only offsetting one family.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Horizon includes depth compression to scale terrain by distance, giving larger near ridges and compressed far terrain.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Horizon builds a projected heightfield plane and hides rows and columns against the generated surface so occluded terrain can disappear and later re-emerge.
           </div>
           <div class="text-xs text-vectura-muted leading-relaxed mt-2">
             Petalis includes an embedded panel; use its pop-out icon (⧉) to open the same panel in a floating window and pop-in (↩) to dock it back.
@@ -10954,170 +10759,6 @@
       return { base, templates };
     }
 
-    buildWavetableHorizonCompanionDefaults(layer) {
-      const { base } = this.getWavetableNoiseTemplates('wavetable');
-      const broadNoise = {
-        ...clone(base),
-        id: 'noise-1',
-        enabled: true,
-        type: 'billow',
-        blend: 'add',
-        amplitude: 13.8,
-        zoom: 0.0048,
-        freq: 1,
-        angle: 0,
-        shiftX: 0,
-        shiftY: 0,
-        seed: 11,
-      };
-      const ridgeNoise = {
-        ...clone(base),
-        id: 'noise-2',
-        enabled: true,
-        type: 'ridged',
-        blend: 'add',
-        amplitude: 3.8,
-        zoom: 0.0076,
-        freq: 1,
-        angle: 0,
-        shiftX: 0,
-        shiftY: 0,
-        seed: 53,
-      };
-      const detailNoise = {
-        ...clone(base),
-        id: 'noise-3',
-        enabled: true,
-        type: 'simplex',
-        blend: 'add',
-        amplitude: 0.7,
-        zoom: 0.0132,
-        freq: 1,
-        angle: 0,
-        shiftX: 0,
-        shiftY: 0,
-        seed: 101,
-      };
-      const current = layer?.params || {};
-      return {
-        lines: 128,
-        horizonHorizontalLines: 30,
-        horizonVerticalLines: 36,
-        horizonLineLink: true,
-        gap: 0.86,
-        tilt: 0,
-        horizonHeight: 33,
-        horizonDepthPerspective: 90,
-        horizonVanishingX: 50,
-        horizonVanishingPower: 84,
-        horizonFanReach: 66,
-        horizonRelief: 30,
-        horizonCenterDampening: 92,
-        horizonCenterWidth: 52,
-        horizonCenterBasin: 88,
-        horizonShoulderLift: 84,
-        horizonMirrorBlend: 68,
-        horizonValleyProfile: 72,
-        edgeFade: 0,
-        edgeFadeThreshold: 0,
-        edgeFadeFeather: 0,
-        verticalFade: 0,
-        verticalFadeThreshold: 0,
-        verticalFadeFeather: 0,
-        noises: [broadNoise, ridgeNoise, detailNoise],
-        noiseType: 'simplex',
-        amplitude: broadNoise.amplitude,
-        zoom: broadNoise.zoom,
-        freq: broadNoise.freq,
-        noiseAngle: broadNoise.angle,
-        noiseImageId: '',
-        noiseImageName: '',
-        imageAlgo: current.imageAlgo || 'luma',
-      };
-    }
-
-    buildWavetableHorizon3DCompanionDefaults(layer) {
-      return this.buildWavetableHorizonCompanionDefaults(layer);
-    }
-
-    applyWavetableHorizonCompanionDefaults(layer) {
-      if (!layer || layer.type !== 'wavetable') return;
-      const next = this.buildWavetableHorizonCompanionDefaults(layer);
-      layer.params = {
-        ...layer.params,
-        lineStructure: 'horizon',
-        ...next,
-      };
-      this.ensureWavetableNoises(layer);
-    }
-
-    applyWavetableHorizon3DCompanionDefaults(layer) {
-      if (!layer || layer.type !== 'wavetable') return;
-      const next = this.buildWavetableHorizon3DCompanionDefaults(layer);
-      layer.params = {
-        ...layer.params,
-        lineStructure: 'horizon',
-        ...next,
-      };
-      this.ensureWavetableNoises(layer);
-    }
-
-    normalizeWavetableLineStructure(lineStructure) {
-      return lineStructure === 'horizontal-vanishing-point' || lineStructure === 'horizon-3d'
-        ? 'horizon'
-        : lineStructure;
-    }
-
-    isWavetableHorizonStructure(params) {
-      const lineStructure = this.normalizeWavetableLineStructure(params?.lineStructure);
-      return lineStructure === 'horizon';
-    }
-
-    applyWavetableHorizonLineCountChange(layer, changedId, nextVal) {
-      if (!layer || layer.type !== 'wavetable' || !this.isWavetableHorizonStructure(layer.params)) {
-        layer.params[changedId] = nextVal;
-        return;
-      }
-
-      const defs = CONTROL_DEFS?.wavetable || [];
-      const changedDef = defs.find((def) => def.id === changedId);
-      const horizontalDef = defs.find((def) => def.id === 'horizonHorizontalLines');
-      const verticalDef = defs.find((def) => def.id === 'horizonVerticalLines');
-      const clampForDef = (def, value) => {
-        const min = Number.isFinite(def?.min) ? def.min : Number.NEGATIVE_INFINITY;
-        const max = Number.isFinite(def?.max) ? def.max : Number.POSITIVE_INFINITY;
-        return clamp(Math.round(value), min, max);
-      };
-
-      const horizontalCurrent = clampForDef(
-        horizontalDef,
-        layer.params.horizonHorizontalLines ?? Math.max(5, Math.round((layer.params.lines ?? 130) / 2))
-      );
-      const verticalCurrent = clampForDef(
-        verticalDef,
-        layer.params.horizonVerticalLines ?? Math.max(5, Math.round((layer.params.lines ?? 130) / 2))
-      );
-      const changedNext = clampForDef(changedDef, nextVal);
-
-      if (!layer.params.horizonLineLink) {
-        layer.params[changedId] = changedNext;
-        return;
-      }
-
-      if (changedId === 'horizonVerticalLines') {
-        const ratio = horizontalCurrent / Math.max(1, verticalCurrent);
-        layer.params.horizonVerticalLines = changedNext;
-        layer.params.horizonHorizontalLines = clampForDef(horizontalDef, changedNext * ratio);
-        return;
-      }
-      if (changedId === 'horizonHorizontalLines') {
-        const ratio = verticalCurrent / Math.max(1, horizontalCurrent);
-        layer.params.horizonHorizontalLines = changedNext;
-        layer.params.horizonVerticalLines = clampForDef(verticalDef, changedNext * ratio);
-        return;
-      }
-      layer.params[changedId] = changedNext;
-    }
 
     normalizeImageEffects(noise, baseEffect) {
       if (!noise) return;
@@ -20074,10 +19715,6 @@
           target.appendChild(div);
           return;
         } else if (def.type === 'select') {
-          if (layer.type === 'wavetable' && def.id === 'lineStructure') {
-            val = this.normalizeWavetableLineStructure(val);
-            layer.params[def.id] = val;
-          }
           if ((val === undefined || val === null) && def.options && def.options.length) {
             val = def.options[0].value;
             layer.params[def.id] = val;
@@ -20145,9 +19782,6 @@
               if (layer.type === 'wavetable' && def.id === 'lineStructure' && next === 'vertical') {
                 layer.params.lineOffset = 135;
               }
-              if (layer.type === 'wavetable' && def.id === 'lineStructure' && next === 'horizon') {
-                this.applyWavetableHorizonCompanionDefaults(layer);
-              }
               this.storeLayerParams(layer);
               span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
               this.app.regen();
@@ -20162,9 +19796,6 @@
               if (next === undefined) return;
               if (this.app.pushHistory) this.app.pushHistory();
               layer.params[def.id] = next;
-              if (layer.type === 'wavetable' && def.id === 'lineStructure' && next === 'horizon') {
-                this.applyWavetableHorizonCompanionDefaults(layer);
-              }
               this.storeLayerParams(layer);
               input.value = next;
               span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
@@ -20412,8 +20043,6 @@
           const valueBtn = div.querySelector('.value-chip');
           const valueInput = div.querySelector('.value-input');
           if (input && valueBtn && valueInput) {
-            const isHorizonLineCountControl =
-              layer.type === 'wavetable' && (def.id === 'horizonHorizontalLines' || def.id === 'horizonVerticalLines');
             const confirmHeavy = (displayVal) => {
               const nextVal = fromDisplayValue(def, displayVal);
               if (Number.isFinite(def.confirmAbove) && nextVal >= def.confirmAbove) {
@@ -20431,17 +20060,12 @@
               const defaultVal = getDefaultValue(def);
               if (defaultVal === null || defaultVal === undefined) return;
               if (this.app.pushHistory) this.app.pushHistory();
-              if (isHorizonLineCountControl) {
-                this.applyWavetableHorizonLineCountChange(layer, def.id, defaultVal);
-              } else {
-                layer.params[def.id] = defaultVal;
-              }
+              layer.params[def.id] = defaultVal;
               this.storeLayerParams(layer);
               input.value = toDisplayValue(def, defaultVal);
               valueBtn.innerText = formatDisplayValue(def, defaultVal);
               this.app.regen();
               this.updateFormula();
-              if (isHorizonLineCountControl) maybeRebuildControls();
             };
             input.oninput = (e) => {
               const nextDisplay = parseFloat(e.target.value);
@@ -20452,28 +20076,18 @@
               const nextVal = confirmHeavy(nextDisplay);
               if (nextVal === null) return;
               if (this.app.pushHistory) this.app.pushHistory();
-              if (layer.type === 'wavetable' && (def.id === 'horizonHorizontalLines' || def.id === 'horizonVerticalLines')) {
-                this.applyWavetableHorizonLineCountChange(layer, def.id, nextVal);
-              } else {
-                layer.params[def.id] = nextVal;
-              }
+              layer.params[def.id] = nextVal;
               this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
-              if (isHorizonLineCountControl) maybeRebuildControls();
             };
             attachKeyboardRangeNudge(input, (nextDisplay) => {
               const nextVal = confirmHeavy(nextDisplay);
               if (nextVal === null) return;
-              if (layer.type === 'wavetable' && (def.id === 'horizonHorizontalLines' || def.id === 'horizonVerticalLines')) {
-                this.applyWavetableHorizonLineCountChange(layer, def.id, nextVal);
-              } else {
-                layer.params[def.id] = nextVal;
-              }
+              layer.params[def.id] = nextVal;
               this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
-              if (isHorizonLineCountControl) maybeRebuildControls();
             });
             input.addEventListener('dblclick', (e) => {
               e.preventDefault();
@@ -20489,16 +20103,11 @@
                 if (nextVal === null) return;
                 const commit = opts?.commit !== false;
                 if (commit && this.app.pushHistory) this.app.pushHistory();
-                if (layer.type === 'wavetable' && (def.id === 'horizonHorizontalLines' || def.id === 'horizonVerticalLines')) {
-                  this.applyWavetableHorizonLineCountChange(layer, def.id, nextVal);
-                } else {
-                  layer.params[def.id] = nextVal;
-                }
+                layer.params[def.id] = nextVal;
                 this.storeLayerParams(layer);
                 this.app.regen();
                 valueBtn.innerText = formatDisplayValue(def, layer.params[def.id]);
                 this.updateFormula();
-                if (isHorizonLineCountControl) maybeRebuildControls();
               },
             });
           }

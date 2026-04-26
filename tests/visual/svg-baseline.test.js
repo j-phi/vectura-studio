@@ -49,46 +49,6 @@ const SCENARIOS = [
     },
   },
   {
-    id: 'horizon-canonical',
-    type: 'horizon',
-    seed: 454,
-    overrides: {
-      horizonY: 50,
-      horizontalLines: 16,
-      verticalLines: 20,
-      terrainHeight: 35,
-      corridorWidth: 35,
-      shoulderLift: 70,
-      ridgeSharpness: 70,
-      symmetry: 25,
-    },
-  },
-  {
-    id: 'horizon-flat-road',
-    type: 'horizon',
-    seed: 7,
-    overrides: {
-      horizonY: 55,
-      horizontalLines: 18,
-      verticalLines: 24,
-      terrainHeight: 0,
-      gridSpacing: 'perspective',
-    },
-  },
-  {
-    id: 'horizon-fan',
-    type: 'horizon',
-    seed: 42,
-    overrides: {
-      horizonY: 50,
-      horizontalLines: 12,
-      verticalLines: 17,
-      terrainHeight: 0,
-      gridProjection: 'fan',
-      fanSpread: 130,
-    },
-  },
-  {
     id: 'wavetable-isometric-canonical',
     type: 'wavetable',
     seed: 456,
@@ -141,84 +101,12 @@ const SCENARIOS = [
     },
   },
   {
-    id: 'horizon-mountains',
-    type: 'horizon',
-    seed: 88,
-    overrides: {
-      horizonY: 45,
-      horizontalLines: 14,
-      verticalLines: 16,
-      terrainHeight: 60,
-      corridorWidth: 0,
-      ridgeSharpness: 80,
-      distantCompression: 30,
-    },
-  },
-  {
     id: 'shape-pack-canonical',
     type: 'shapePack',
     seed: 505,
     overrides: { shape: 'circle', count: 120, minR: 1, maxR: 14, padding: 0.5, attempts: 1800 },
   },
 ];
-
-const buildMaskedSceneSvg = (runtime) => {
-  const { VectorEngine, Layer } = runtime.window.Vectura;
-  const engine = new VectorEngine();
-  engine.layers = [];
-
-  const rings = new Layer('rings-target', 'expanded', 'Rings Target');
-  rings.paths = [];
-  const centerX = 160;
-  const centerY = 138;
-  const radii = [18, 32, 48, 66, 86];
-  radii.forEach((radius) => {
-    const ring = [];
-    for (let step = 0; step <= 96; step++) {
-      const theta = (step / 96) * Math.PI * 2;
-      ring.push({
-        x: centerX + Math.cos(theta) * radius,
-        y: centerY + Math.sin(theta) * radius,
-      });
-    }
-    rings.paths.push(ring);
-  });
-  rings.mask.enabled = true;
-
-  const terrain = new Layer('terrain-mask', 'wavetable', 'Terrain Mask');
-  terrain.parentId = rings.id;
-  terrain.params.lineStructure = 'horizon';
-  terrain.paths = [
-    [
-      { x: 32, y: 132 },
-      { x: 86, y: 120 },
-      { x: 132, y: 126 },
-      { x: 160, y: 146 },
-      { x: 188, y: 126 },
-      { x: 234, y: 120 },
-      { x: 288, y: 132 },
-    ],
-    [
-      { x: 32, y: 156 },
-      { x: 72, y: 146 },
-      { x: 120, y: 154 },
-      { x: 160, y: 176 },
-      { x: 200, y: 154 },
-      { x: 248, y: 146 },
-      { x: 288, y: 156 },
-    ],
-  ];
-
-  engine.layers.push(rings, terrain);
-  engine.computeAllDisplayGeometry();
-
-  return pathsToSvg({
-    width: 320,
-    height: 220,
-    paths: [...(rings.paths || []), ...(terrain.displayPaths || [])],
-    precision: 3,
-  });
-};
 
 const buildMirroredMaskedSceneSvg = (runtime) => {
   const { VectorEngine, Layer } = runtime.window.Vectura;
@@ -312,23 +200,6 @@ describe('SVG visual baselines', () => {
 
     const paths = Algorithms[type].generate(params, new SeededRNG(seed), new SimpleNoise(seed), bounds) || [];
     const actual = pathsToSvg({ width: bounds.width, height: bounds.height, paths, precision: 3 });
-
-    if (UPDATE_BASELINES) {
-      fs.mkdirSync(baselineDir, { recursive: true });
-      fs.writeFileSync(baselinePath, actual, 'utf8');
-      expect(fs.existsSync(baselinePath)).toBe(true);
-      return;
-    }
-
-    expect(fs.existsSync(baselinePath)).toBe(true);
-    const expected = fs.readFileSync(baselinePath, 'utf8');
-    expect(actual).toBe(expected);
-  });
-
-  test('matches baseline: masking-horizon-rings', () => {
-    const baselineDir = path.resolve(__dirname, '../baselines/svg');
-    const baselinePath = path.join(baselineDir, 'masking-horizon-rings.svg');
-    const actual = buildMaskedSceneSvg(runtime);
 
     if (UPDATE_BASELINES) {
       fs.mkdirSync(baselineDir, { recursive: true });

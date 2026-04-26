@@ -7,13 +7,6 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
-- Added a dedicated **Horizon** algorithm — a synthwave-style receding grid built on a noise-driven 3D heightfield projected through a pinhole camera. Horizontal lines run side-to-side, vertical lines converge toward a single vanishing point, and ridges rise on either side of an optional flat road corridor. Includes a `Vertical Line Mode` selector (Pinhole / Fan), where Fan draws lines symmetrically downward from the vanishing point on the horizon line for the cleanest synthwave converging-line look. All terrain noise flows through the universal Noise Rack stack.
-- Added Horizon parameter surface across Camera & Horizon, Grid, Terrain, and Mesh & Quality groups (~25 params total), replacing the legacy 14-param Horizon shaping controls with a clearer envelope (corridor / shoulders / ridge sharpness / distant compression / symmetry).
-- Added automatic `.vectura` migration from legacy `wavetable + lineStructure='horizon'/'horizon-3d'/'horizontal-vanishing-point'` projects to the new Horizon algorithm on import, with a console notice and a translation table mapping legacy keys (`horizonHeight`, `horizonVanishingX`, `horizonHorizontalLines`, `horizonRelief`, etc.) onto the new param surface.
-- Added unit-test coverage for Horizon — projection, heightfield envelope, grid synthesis, occlusion segmentation, determinism, defensive clamping, fan-projection mode, and migration (~40 RGR tests traced to EARS requirement IDs).
-- Added Horizon SVG visual baselines: canonical scene, flat synthwave road, fan-projection demo, and pure mountain range.
-### Changed
-- Retired the legacy wavetable Horizon line-structure modes (`horizon`, `horizon-3d`, `horizontal-vanishing-point`) from the algorithm picker, defaults, UI controls, and per-param info text. Saved projects auto-migrate on load.
 - Added a global dark/light theme toggle in the header, with full-shell CSS-variable theming across panes, menus, modals, tool chrome, helper widgets, and canvas surround.
 - Added `Insert > Mirror Modifier`, a new modifier-container layer type that behaves like a group in the Layers panel while applying a sequential mirror-axis stack to its child layers.
 - Added mirror-guide canvas overlays with dashed full-canvas axes, reflection-direction triangles, separate rotate handles, and per-axis/stack show-hide, lock, reorder, and delete controls.
@@ -32,9 +25,6 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 - Added nested-region Texture Designer fill targeting, drag-pour fill/erase behavior, `Alt/Option` temporary erase while filling, and a `Show Gaps` slider with yellow preview markers plus auto-close actions for closable seam-endpoint gaps.
 
 ### Changed
-- Collapsed `Wavetable` `Horizon` and legacy `Horizon 3D` into one canonical projected Horizon terrain mode, while normalizing legacy saved `horizon-3d` scenes into `horizon` on import.
-- Renamed the Horizon terrain controls toward one projected-model vocabulary: `Depth Compression`, `Perspective Strength`, `Foreground Spread`, `Center Depth`, `Symmetry Blend`, and `Link Densities`.
-- Updated Horizon regression coverage so canonical Horizon now owns the projected mesh behavior and legacy `horizon-3d` inputs are verified through migration-focused unit and SVG baseline coverage.
 - Corrected polygon Noise Rack zoom semantics so larger values now produce a larger polygon footprint across shared and algorithm-local samplers, and normalized vertical-displacement sign so positive amplitudes lift line stacks upward while negative amplitudes push them downward.
 - Fixed Wavetable `Isometric` so `Line Gap` now scales the visible cell spacing from one shared lattice model, `Row Shift` shears the full lattice instead of leaving diagonal families behind, and added deterministic plus SVG-baseline regressions for the corrected behavior.
 - Fixed the stale Export SVG smoke test path so CI now forces a real Line Sort off-to-on transition before asserting preview promotion, matching the current default-enabled Line Sort setting instead of relying on a no-op checkbox `check()`.
@@ -48,7 +38,6 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 - Fixed Export SVG section-header info buttons to bind to the actual header label span instead of the drag-grip dot spans, so the `(i)` control now renders beside the header text.
 - Adjusted Export SVG section-header info buttons to render as siblings immediately after the title span, matching the exact `Title (i)` order instead of nesting the button inside the title span.
 - Fixed Export SVG section-header info panes to open below the full title bar instead of inside the header row, while keeping field-level info panes attached to their own controls.
-- Fixed `Line Sort` `Nearest` so `Horizontal` and `Vertical` now behave as real directional sweeps instead of only seeding the first path; print order stays monotonic along the chosen axis while still selecting the nearest local continuation within each sweep band.
 - Added `Truncate Start` and `Truncate End` sliders to `Lissajous`, both defaulting to `0%`, and changed `Close Lines` to default off so endpoint shortening can be dialed in before any tail-closing pass.
 - Changed `Lissajous` `Close Lines` to trim loose endpoint tails back to deterministic self-intersection cutpoints instead of hard-closing the path to its first sample, with focused unit coverage for trimmed and untouched cases.
 - Fixed snapshot-based Undo/Redo for document-mutating layer-structure edits so grouping, reparenting, masking, modifier/container edits, and structural selection restore now roundtrip correctly with Redo instead of only restoring the pre-edit state.
@@ -69,14 +58,6 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 - Rectangle, Oval, and Polygon creation plus single-shape Selection now use an Illustrator-style reticle cursor while keeping existing handle, drag, and center-out `Alt/Option` behaviors intact.
 - Added `Remove Hidden Geometry` to `Document Setup > Export Settings`, defaulting it on so exported SVGs can destructively trim masked and frame-hidden geometry to match the current visible frame while still allowing non-destructive clip-path export when turned off.
 - Replaced the old source-layer clipping workflow with Illustrator-style parent masks: mask state now lives on the visible parent, descendant layers are indented beneath it, legacy `sourceIds` masks are cleared on load, and export clip paths are derived from ancestor mask silhouettes instead of arbitrary source lists.
-- Reworked `Wavetable` Horizon around a regularized underlying perspective grid so horizontal and vertical spacing stays stable by construction before terrain-aware occlusion is applied.
-- Rebuilt Horizon column sampling from fixed per-column terrain nodes, which keeps column identity consistent through occlusion and allows hidden segments to reappear without spawning uneven replacement lines.
-- Retuned the shipped Horizon defaults and help text toward a cleaner synthwave valley profile with a more disciplined skyline and more readable foreground grid.
-- Added deterministic Horizon regression coverage for exact underlying row/column counts, monotonic column ordering, spacing stability, and post-occlusion column identity, plus a canonical Horizon SVG baseline.
-- Added `Horizon 3D` as a new `Wavetable` line structure that projects a true heightfield plane instead of clipping deformed 2D rows after the fact.
-- `Horizon 3D` now applies noise and valley/shoulder shaping in plane space, hides rows and columns through a private surface depth buffer, and emits a surface-derived silhouette envelope for masking.
-- The Wavetable controls/help text now distinguish legacy `Horizon` from `Horizon 3D`, while keeping the existing Horizon control ids mapped onto the new surface model.
-- Added `Horizon 3D` unit coverage for mesh counts, projected ordering, occlusion identity, and floater suppression, plus a dedicated SVG baseline.
 - Fixed `Remove Hidden Geometry` export to correctly clip ancestor-masked layers; the export now uses `displayMaskActive` (matching the canvas renderer) instead of `layer.mask?.enabled`, so child layers clipped by a parent mask are properly trimmed on export.
 - Improved accessibility across all UI: theme-aware canvas reticle cursor, `prefers-reduced-motion` support, `aria-live` on notification toasts, modal focus management, `aria-pressed`/`aria-current`/`aria-expanded` on interactive controls, visible focus rings, and a minimum 11 px text-size floor.
 - Changed Pattern-layer fill records to store normalized multi-region targets instead of only raw single-loop polygons, which lets the Texture Designer distinguish inner fills from outer-minus-hole rings and preserve those targets through save/load.
@@ -84,26 +65,20 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## 0.6.80 - 2026-03-01
 
 ### Changed
-- Restored legitimate `Wavetable` Horizon vertical fan lines by rebuilding column visibility from the full clipped terrain rows and hiding them only when they are actually occluded by nearer terrain strips.
 - Relaxed the post-occlusion reconnect rule so verticals can reappear after passing behind a ridge, which fixes missing visible fan lines on the saved broken masking fixture.
 
 ## 0.6.79 - 2026-03-01
 
 ### Changed
-- Pruned additional short Horizon shoulder columns that survived occlusion but did not carry enough visible surface to read as real contour lines, reducing remaining hidden-line clutter on the saved masking fixture.
 
 ## 0.6.78 - 2026-03-01
 
 ### Changed
 - Fixed the Layers-panel `Clip` trigger so the clipping-mask popover opens reliably from the layer rows in the saved masking-scene workflow.
-- Changed `Wavetable` Horizon masking to clip against the first visible terrain row, which restores the intended sky bowl instead of filling the entire skyline basin.
-- Tightened Horizon vertical-fan visibility so only segments that reconnect at the visible skyline survive, which removes additional hidden backface fragments on steep shoulder slopes.
 
 ## 0.6.77 - 2026-03-01
 
 ### Changed
-- Switched `Wavetable` Horizon masking back to explicit visible terrain-strip polygons so masked background layers hug the rendered landscape contour instead of clipping against a coarse inferred envelope.
-- Culled detached post-occlusion Horizon column fragments and tighter nearer-band overlaps so shoulder/backface fan artifacts are reduced in saved masking scenes without breaking the main terrain fan.
 - Tightened the Layers-panel clipping control with a more obvious `Clip` action and kept masking interactions scoped to the layer list workflow.
 
 ### Added
@@ -112,40 +87,31 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## 0.6.76 - 2026-03-01
 
 ### Changed
-- Changed Horizon masking to follow the topmost visible Horizon row so masked background geometry meets the terrain edge without an artificial gap.
-- Tightened Horizon shoulder visibility by deriving the full vertical fan from the same culled visible-row set, which removes additional backface lines on steep ridges.
 
 ## 0.6.75 - 2026-03-01
 
 ### Changed
-- Removed Horizon's extra edge-anchor rays so the terrain mesh no longer emits off-pattern diagonal landscape lines that do not align with the vertical contour fan.
 - Re-verified the saved broken masking scene against a fresh browser render so clipping masks terminate behind the visible terrain contour instead of bleeding through the landscape shoulders.
 
 ### Added
-- A screenshot-based Playwright masking regression for the Horizon-plus-Rings landscape composition.
 
 ### Changed
-- Fixed Horizon masking so subtraction uses the final visible terrain surface strips instead of a single coarse envelope, which makes hidden shapes hug the projected terrain contours in saved scenes.
 - Kept masking workflow in the Layers panel only and tightened the masking popover styling/labels around a more familiar clipping-mask interaction.
 - Added `id`/`name` wiring to the masking editor checkboxes so the masking controls no longer contribute anonymous form fields.
 
 ## 0.6.74 - 2026-03-01
 
 ### Added
-- A screenshot-based Playwright masking regression for the Horizon-plus-Rings landscape composition.
 
 ### Changed
-- Fixed Horizon masking so subtraction uses the final visible terrain surface strips instead of a single coarse envelope, which makes hidden shapes hug the projected terrain contours in saved scenes.
 - Kept masking workflow in the Layers panel only and tightened the masking popover styling/labels around a more familiar clipping-mask interaction.
 - Added `id`/`name` wiring to the masking editor checkboxes so the masking controls no longer contribute anonymous form fields.
 
 ## 0.6.73 - 2026-03-01
 
 ### Added
-- A masking-specific SVG visual baseline that locks in a `Wavetable` Horizon terrain masking `Rings` behind it.
 
 ### Changed
-- Fixed Horizon masking so silhouette subtraction uses the highest visible terrain envelope instead of only the top horizon row, which restores proper overlap hiding for landscape masks.
 - Added `id`/`name` wiring to the new masking editor checkboxes so the masking controls no longer contribute anonymous form fields.
 ## 0.6.72 - 2026-03-01
 
@@ -155,31 +121,22 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 - Unit coverage for masking silhouette eligibility, mask subtraction, and engine-level masked display geometry.
 
 ### Changed
-- `wavetable` Horizon vertical fans now sample by screen-space X against the visible terrain rows, so the vertical fan follows the same ridge and valley contours as the horizontal terrain mesh.
-- Horizon now emits explicit edge anchor rays so strong vanishing-point pulls can still keep left/right side coverage without losing the synthwave grid feel.
-- README architecture docs, help text, release notes, and punchlist now reflect the masking/display-geometry stage and the updated Horizon surface behavior.
 
 ## 0.6.71 - 2026-03-01
 
 ### Changed
-- Increased the effective high-end spread of Horizon `Fan Reach` so full reach still covers or overshoots the side bounds under stronger `Vanishing Pull` settings.
-- Rendered Horizon `Horizontal Lines`, `Vertical Lines`, and `Link` side-by-side as a single inline control row.
 
 ## 0.6.70 - 2026-03-01
 
 ### Changed
-- Replaced Horizon’s single `Lines` control with `Horizontal Lines`, `Vertical Lines`, and a `Link` checkbox that preserves the current count ratio while editing either axis.
-- Updated Horizon generation to consume explicit horizontal/vertical counts with legacy fallback so existing saved documents still render correctly.
 
 ## 0.6.69 - 2026-03-01
 
 ### Changed
-- Updated Horizon fan validation and release notes to match the intended behavior: full pull/full reach may overshoot the canvas sides as long as the vertical rays cover the side boundaries.
 
 ## 0.6.68 - 2026-03-01
 
 ### Added
-- Added `Fan Reach` for `wavetable` Horizon so vertical rays can extend to or beyond the side edges independently of the vanishing pull strength.
 
 ### Changed
 - Full `Vanishing Pull` now behaves more like a true convergence-to-point control, while `Fan Reach` handles bottom/side coverage.
@@ -187,60 +144,44 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## 0.6.67 - 2026-03-01
 
 ### Changed
-- Renamed the Horizon perspective controls to `Vanishing Point X` and `Vanishing Pull`.
-- Rebalanced Horizon visibility so the terrain rows remain readable while the vertical fan is still derived from the occluded visible surface.
 
 ## 0.6.66 - 2026-03-01
 
 ### Changed
-- Reworked `wavetable` Horizon visibility toward a sampled screen-space mesh so the skyline clips correctly and verticals are derived from the visible surface instead of independent noisy fan curves.
-- Iterated the Horizon occlusion rules against screenshot-driven stress cases to reduce shoulder backface leakage while keeping more terrain layering visible.
 
 ## 0.6.65 - 2026-03-01
 
 ### Changed
-- Fixed `wavetable` Horizon so sampled noise respects `Line Offset Angle` instead of always applying as vertical-only uplift.
 - Clarified the `Noise Angle` and `Line Offset Angle` help text to distinguish field rotation from displacement direction.
 
 ## 0.6.64 - 2026-03-01
 
 ### Added
-- Additional `wavetable` Horizon terrain-shaping controls: `Shoulder Lift`, `Mirror Blend`, and `Valley Profile`.
 
 ### Changed
-- Retuned the shipped `Horizon` companion defaults through repeated rendered screenshot review so selecting `Horizon` produces a broader centered synthwave valley with quieter side chatter and more terrain-like side walls.
 
 ## 0.6.63 - 2026-03-01
 
 ### Added
-- Horizon-only shaping controls for `wavetable`: `Center Dampening`, `Center Width`, and `Center Basin`.
-- A Horizon companion-default bundle that activates when `Line Structure` is switched to `Horizon`, using layered broad/detail noise and tuned basin defaults aimed at synthwave terrain.
 
 ### Changed
-- Tuned Horizon defaults through repeated rendered screenshot review so the shipped Horizon profile reads more like a center-road synthwave valley instead of generic wavetable noise.
 
 ## 0.6.62 - 2026-03-01
 
 ### Changed
-- Removed the remaining hard skyline clamp in `wavetable` Horizon mode and increased far-horizon sampling/lift so the skyline can visibly break above the vanishing line instead of flattening into a narrow strip.
-- Verified the Horizon fix against rendered screenshots after implementation, in addition to keeping the Horizon regression tests green.
 
 ## 0.6.61 - 2026-03-01
 
 ### Added
-- A `Horizon Relief` control for `wavetable` Horizon mode so the skyline can retain visible noise instead of flattening completely at the vanishing line.
 
 ### Changed
-- Adjusted Horizon row placement so relief at the top of the terrain stack affects the actual horizon rows instead of only the rows below them.
 
 ## 0.6.60 - 2026-03-01
 
 ### Changed
-- Reworked `wavetable` Horizon depth perspective so near rows keep stronger terrain relief while distant rows compress toward the horizon instead of flattening the foreground.
 - Petal Designer overlay picking now selects the visible inactive shape when you click its silhouette, and the `Inner Shape` / `Outer Shape` profile editor cards now act as explicit selection targets.
 
 ### Added
-- Focused regression coverage for Horizon depth behavior and Petal Designer overlay/body-hit selection.
 
 ## 0.6.59 - 2026-02-28
 
