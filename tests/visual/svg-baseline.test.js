@@ -106,6 +106,50 @@ const SCENARIOS = [
     seed: 505,
     overrides: { shape: 'circle', count: 120, minR: 1, maxR: 14, padding: 0.5, attempts: 1800 },
   },
+  {
+    id: 'horizon-flat-grid',
+    type: 'horizon',
+    seed: 601,
+    overrides: {
+      horizonHeight: 40,
+      vanishingPointX: 50,
+      horizontalLines: 10,
+      convergenceLines: 10,
+      terrainHeight: 0,
+      noises: [{ id: 'noise-1', enabled: true, type: 'simplex', blend: 'add', amplitude: 0, zoom: 0.02, freq: 1, angle: 0, shiftX: 0, shiftY: 0, tileMode: 'off', seed: 0 }],
+    },
+  },
+  {
+    id: 'horizon-valley',
+    type: 'horizon',
+    seed: 602,
+    overrides: {
+      horizonHeight: 40,
+      vanishingPointX: 50,
+      horizontalLines: 18,
+      convergenceLines: 14,
+      terrainHeight: 55,
+      centerDepth: 60,
+      centerWidth: 30,
+      skylineRelief: 15,
+    },
+  },
+  {
+    id: 'horizon-shoulders',
+    type: 'horizon',
+    seed: 603,
+    overrides: {
+      horizonHeight: 45,
+      vanishingPointX: 50,
+      horizontalLines: 16,
+      convergenceLines: 12,
+      terrainHeight: 45,
+      shoulderLift: 50,
+      shoulderCurve: 40,
+      ridgeSharpness: 30,
+      skylineRelief: 10,
+    },
+  },
 ];
 
 const buildMirroredMaskedSceneSvg = (runtime) => {

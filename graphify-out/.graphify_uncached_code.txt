@@ -1,0 +1,6 @@
+tests/unit/horizon.test.js
+tests/visual/svg-baseline.test.js
+src/ui/ui.js
+src/core/algorithms/horizon.js
+src/config/descriptions.js
+src/config/defaults.js
