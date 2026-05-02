@@ -83,7 +83,7 @@
           ? 0.001
           : source === 'topo'
             ? 0.003
-            : source === 'flowfield'
+            : source === 'flowfield' || source === 'svgDistort'
               ? 0.01
               : source === 'petalisDrift'
                 ? 0.2
@@ -114,17 +114,17 @@
         octaves:
           source === 'topo'
             ? 3
-            : source === 'flowfield' || source === 'petalisDrift'
+            : source === 'flowfield' || source === 'petalisDrift' || source === 'svgDistort'
               ? 2
               : source === 'grid' || source === 'phylla'
                 ? 1
                 : undefined,
         lacunarity:
-          source === 'topo' || source === 'flowfield' || source === 'grid' || source === 'phylla' || source === 'petalisDrift'
+          source === 'topo' || source === 'flowfield' || source === 'grid' || source === 'phylla' || source === 'petalisDrift' || source === 'svgDistort'
             ? 2.0
             : undefined,
         gain:
-          source === 'topo' || source === 'flowfield' || source === 'grid' || source === 'phylla' || source === 'petalisDrift'
+          source === 'topo' || source === 'flowfield' || source === 'grid' || source === 'phylla' || source === 'petalisDrift' || source === 'svgDistort'
             ? 0.5
             : undefined,
         fieldMode: source === 'flowfield' ? 'angle' : undefined,
@@ -704,6 +704,48 @@
       return noises;
     },
 
+    ensureSvgDistortNoises(layer) {
+      if (!layer || layer.type !== 'svgDistort') return [];
+      const { base, templates } = this.getWavetableNoiseTemplates('svgDistort');
+      let noises = layer.params.noises;
+      if (!Array.isArray(noises) || !noises.length) {
+        layer.params.noises = [];
+        return [];
+      }
+      noises = noises.map((noise, idx) => {
+        const template = templates[idx] || templates[templates.length - 1] || base;
+        const next = {
+          ...base,
+          ...clone(template),
+          ...(noise || {}),
+          id: noise?.id || template.id || `noise-${idx + 1}`,
+          enabled: noise?.enabled !== false,
+        };
+        if (!next.tileMode) next.tileMode = next.type === 'image' ? 'off' : base.tileMode;
+        if (next.tileMode === 'off') next.tilePadding = 0;
+        if (next.octaves === undefined) next.octaves = base.octaves ?? 2;
+        if (next.lacunarity === undefined) next.lacunarity = base.lacunarity ?? 2.0;
+        if (next.gain === undefined) next.gain = base.gain ?? 0.5;
+        if (next.type === 'image' && next.imageWidth === undefined && next.freq !== undefined) {
+          next.imageWidth = next.freq;
+        }
+        if (next.type === 'image' && (noise?.amplitude === undefined || noise?.amplitude === null)) {
+          next.amplitude = IMAGE_NOISE_DEFAULT_AMPLITUDE;
+        }
+        if (!next.noiseStyle) next.noiseStyle = base.noiseStyle || 'linear';
+        if (next.noiseThreshold === undefined) next.noiseThreshold = base.noiseThreshold ?? 0;
+        if (next.imageWidth === undefined) next.imageWidth = base.imageWidth ?? 1;
+        if (next.imageHeight === undefined) next.imageHeight = base.imageHeight ?? 1;
+        if (next.microFreq === undefined) next.microFreq = base.microFreq ?? 0;
+        if (next.imageInvertColor === undefined) next.imageInvertColor = base.imageInvertColor || false;
+        if (next.imageInvertOpacity === undefined) next.imageInvertOpacity = base.imageInvertOpacity || false;
+        this.normalizeImageEffects(next, base.imageEffects?.[0]);
+        return next;
+      });
+      layer.params.noises = noises;
+      return noises;
+    },
+
     ensureGridNoises(layer) {
       if (!layer || layer.type !== 'grid') return [];
       const { base, templates } = this.getWavetableNoiseTemplates('grid');
@@ -1254,6 +1296,7 @@
         ensureRingsNoises: () => this.ensureRingsNoises(layer),
         ensureTopoNoises: () => this.ensureTopoNoises(layer),
         ensureFlowfieldNoises: () => this.ensureFlowfieldNoises(layer),
+        ensureSvgDistortNoises: () => this.ensureSvgDistortNoises(layer),
         ensureGridNoises: () => this.ensureGridNoises(layer),
         ensurePhyllaNoises: () => this.ensurePhyllaNoises(layer),
         ensurePetalisDriftNoises: () => this.ensurePetalisDriftNoises(layer),

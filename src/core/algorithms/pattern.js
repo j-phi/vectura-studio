@@ -933,7 +933,7 @@
     };
   };
 
-  const hatchLinesComposite = (regions, density, angleDeg) => {
+  const hatchLinesComposite = (regions, density, angleDeg, shiftX = 0, shiftY = 0) => {
     const ar = angleDeg * Math.PI / 180;
     const ca = Math.cos(ar);
     const sa = Math.sin(ar);
@@ -941,8 +941,11 @@
     const ys = rotated.flat().map((p) => p.y);
     const minY = Math.min(...ys);
     const maxY = Math.max(...ys);
+    const rotShiftY = -shiftX * sa + shiftY * ca;
+    const yPhase = ((rotShiftY % density) + density) % density;
+    const yStart = Math.ceil((minY - yPhase) / density) * density + yPhase;
     const result = [];
-    for (let y = Math.ceil(minY / density) * density; y <= maxY + 1e-6; y += density) {
+    for (let y = yStart; y <= maxY + 1e-6; y += density) {
       for (const [x0, x1] of scanLineClipComposite(rotated, y)) {
         result.push([
           { x: x0 * ca - y * sa, y: x0 * sa + y * ca },
@@ -953,18 +956,28 @@
     return result;
   };
 
-  const waveLinesComposite = (regions, density) => {
-    const bounds = compositeBounds(regions);
-    const amplitude = density * 0.4;
+  const waveLinesComposite = (regions, density, angleDeg = 0, amplitude = 1.0, shiftX = 0, shiftY = 0) => {
+    const ar = angleDeg * Math.PI / 180;
+    const ca = Math.cos(ar), sa = Math.sin(ar);
+    const rotatePt = ar !== 0 ? (p) => ({ x: p.x * ca + p.y * sa, y: -p.x * sa + p.y * ca }) : (p) => p;
+    const unrotatePt = ar !== 0 ? (p) => ({ x: p.x * ca - p.y * sa, y: p.x * sa + p.y * ca }) : (p) => p;
+    const rotRegions = ar !== 0 ? regions.map(r => r.map(rotatePt)) : regions;
+    const bounds = compositeBounds(rotRegions);
+    const amp = density * 0.4 * amplitude;
     const wavelength = density * 1.5;
     const stepX = Math.max(0.5, (bounds.maxX - bounds.minX) / 200);
+    const rotShiftX = shiftX * ca + shiftY * sa;
+    const rotShiftY = -shiftX * sa + shiftY * ca;
+    const yPhase = ((rotShiftY % density) + density) % density;
+    const yStart = Math.ceil((bounds.minY - yPhase) / density) * density + yPhase;
     const result = [];
-    for (let cy = Math.ceil(bounds.minY / density) * density; cy <= bounds.maxY + 1e-6; cy += density) {
+    for (let cy = yStart; cy <= bounds.maxY + 1e-6; cy += density) {
       let seg = null;
       for (let x = bounds.minX; x <= bounds.maxX + stepX; x += stepX) {
-        if (compositeContainsPoint(regions, x, cy)) {
+        if (compositeContainsPoint(rotRegions, x, cy)) {
           if (!seg) seg = [];
-          seg.push({ x, y: cy + amplitude * Math.sin((x / wavelength) * Math.PI * 2) });
+          const wy = cy + amp * Math.sin(((x + rotShiftX) / wavelength) * Math.PI * 2);
+          seg.push(unrotatePt({ x, y: wy }));
         } else if (seg) {
           if (seg.length >= 2) result.push(seg);
           seg = null;
@@ -975,18 +988,28 @@
     return result;
   };
 
-  const zigzagLinesComposite = (regions, density) => {
-    const bounds = compositeBounds(regions);
-    const amplitude = density * 0.4;
+  const zigzagLinesComposite = (regions, density, angleDeg = 0, amplitude = 1.0, shiftX = 0, shiftY = 0) => {
+    const ar = angleDeg * Math.PI / 180;
+    const ca = Math.cos(ar), sa = Math.sin(ar);
+    const rotatePt = ar !== 0 ? (p) => ({ x: p.x * ca + p.y * sa, y: -p.x * sa + p.y * ca }) : (p) => p;
+    const unrotatePt = ar !== 0 ? (p) => ({ x: p.x * ca - p.y * sa, y: p.x * sa + p.y * ca }) : (p) => p;
+    const rotRegions = ar !== 0 ? regions.map(r => r.map(rotatePt)) : regions;
+    const bounds = compositeBounds(rotRegions);
+    const amp = density * 0.4 * amplitude;
     const halfPeriod = density * 0.75;
+    const rotShiftX = shiftX * ca + shiftY * sa;
+    const rotShiftY = -shiftX * sa + shiftY * ca;
+    const yPhase = ((rotShiftY % density) + density) % density;
+    const yStart = Math.ceil((bounds.minY - yPhase) / density) * density + yPhase;
     const result = [];
-    for (let cy = Math.ceil(bounds.minY / density) * density; cy <= bounds.maxY + 1e-6; cy += density) {
+    for (let cy = yStart; cy <= bounds.maxY + 1e-6; cy += density) {
       let seg = null;
-      let flip = false;
+      let flip = (((Math.floor(-rotShiftX / halfPeriod) % 2) + 2) % 2) !== 0;
       for (let x = bounds.minX; x <= bounds.maxX + halfPeriod; x += halfPeriod) {
-        if (compositeContainsPoint(regions, x, cy)) {
+        if (compositeContainsPoint(rotRegions, x, cy)) {
           if (!seg) seg = [];
-          seg.push({ x, y: cy + (flip ? amplitude : -amplitude) });
+          const wy = cy + (flip ? amp : -amp);
+          seg.push(unrotatePt({ x, y: wy }));
         } else if (seg) {
           if (seg.length >= 2) result.push(seg);
           seg = null;
@@ -998,20 +1021,172 @@
     return result;
   };
 
-  const stippleDotsComposite = (regions, density) => {
-    const bounds = compositeBounds(regions);
-    const dotR = Math.max(0.15, density * 0.12);
+  const stippleDotsComposite = (regions, density, dotSizeRatio = 1.0, shiftX = 0, shiftY = 0, angleDeg = 0, patternType = 'brick') => {
+    const ar = angleDeg * Math.PI / 180;
+    const ca = Math.cos(ar), sa = Math.sin(ar);
+    const rotatePt   = ar !== 0 ? (p) => ({ x: p.x * ca + p.y * sa,  y: -p.x * sa + p.y * ca }) : (p) => p;
+    const unrotatePt = ar !== 0 ? (p) => ({ x: p.x * ca - p.y * sa,  y:  p.x * sa + p.y * ca }) : (p) => p;
+    const rotRegions = ar !== 0 ? regions.map(r => r.map(rotatePt)) : regions;
+    const bounds = compositeBounds(rotRegions);
+    const dotR = Math.max(density * 0.005, density * 0.12 * dotSizeRatio);
+    const rotShiftX = shiftX * ca + shiftY * sa;
+    const rotShiftY = -shiftX * sa + shiftY * ca;
+    const xPhase = ((rotShiftX % density) + density) % density;
+    const yPhase  = ((rotShiftY % density) + density) % density;
+    const yStart  = Math.ceil((bounds.minY - yPhase) / density) * density + yPhase;
     const result = [];
     let rowOff = false;
-    for (let y = Math.ceil(bounds.minY / density) * density; y <= bounds.maxY + 1e-6; y += density) {
-      const x0 = bounds.minX + (rowOff ? density / 2 : 0);
-      for (let x = x0; x <= bounds.maxX + 1e-6; x += density) {
-        if (compositeContainsPoint(regions, x, y)) result.push([{ x: x - dotR, y }, { x: x + dotR, y }]);
+    for (let y = yStart; y <= bounds.maxY + 1e-6; y += density) {
+      const offset = (patternType === 'brick' && rowOff) ? density / 2 : 0;
+      const xStart = Math.ceil((bounds.minX - xPhase) / density) * density + xPhase + offset;
+      for (let x = xStart; x <= bounds.maxX + 1e-6; x += density) {
+        if (compositeContainsPoint(rotRegions, x, y)) {
+          const wp = unrotatePt({ x, y });
+          result.push([{ x: wp.x - dotR, y: wp.y }, { x: wp.x + dotR, y: wp.y }]);
+        }
       }
       rowOff = !rowOff;
     }
     return result;
   };
+
+  const spiralFillComposite = (regions, density, angleDeg = 0, shiftX = 0, shiftY = 0) => {
+    const bounds = compositeBounds(regions);
+    const cx = (bounds.minX + bounds.maxX) / 2 + shiftX;
+    const cy = (bounds.minY + bounds.maxY) / 2 + shiftY;
+    const maxR = 0.5 * Math.sqrt(
+      (bounds.maxX - bounds.minX) ** 2 + (bounds.maxY - bounds.minY) ** 2
+    ) + density;
+    const maxAngle = (maxR / density) * 2 * Math.PI + 2 * Math.PI;
+    const totalSteps = Math.min(50000, Math.ceil(maxAngle / 0.05));
+    const stepAngle = maxAngle / totalSteps;
+    const angleOffset = angleDeg * Math.PI / 180;
+    const result = [];
+    let seg = null;
+    for (let i = 0; i <= totalSteps; i++) {
+      const spiralAngle = i * stepAngle;
+      const r = (spiralAngle / (2 * Math.PI)) * density;
+      const x = cx + Math.cos(spiralAngle + angleOffset) * r;
+      const y = cy + Math.sin(spiralAngle + angleOffset) * r;
+      if (compositeContainsPoint(regions, x, y)) {
+        if (!seg) seg = [];
+        seg.push({ x, y });
+      } else {
+        if (seg && seg.length >= 2) result.push(seg);
+        seg = null;
+      }
+    }
+    if (seg && seg.length >= 2) result.push(seg);
+    return result;
+  };
+
+  const radialFillComposite = (regions, density, angleDeg = 0, shiftX = 0, shiftY = 0, centralDensity = 1.0, outerDiameter = 1.0) => {
+    const bounds = compositeBounds(regions);
+    const cx = (bounds.minX + bounds.maxX) / 2 + shiftX;
+    const cy = (bounds.minY + bounds.maxY) / 2 + shiftY;
+    const maxR = (0.5 * Math.sqrt(
+      (bounds.maxX - bounds.minX) ** 2 + (bounds.maxY - bounds.minY) ** 2
+    ) + density) * Math.max(0, outerDiameter);
+    const spokeCount = Math.max(8, Math.round(2 * Math.PI * (maxR / 2) / density * centralDensity));
+    const stepR = Math.max(0.5, density * 0.3);
+    const angleOffset = angleDeg * Math.PI / 180;
+    const result = [];
+    for (let i = 0; i < spokeCount; i++) {
+      const angle = (i / spokeCount) * 2 * Math.PI + angleOffset;
+      const cosA = Math.cos(angle), sinA = Math.sin(angle);
+      let seg = null;
+      for (let r = 0; r <= maxR; r += stepR) {
+        const x = cx + cosA * r, y2 = cy + sinA * r;
+        if (compositeContainsPoint(regions, x, y2)) {
+          if (!seg) seg = [];
+          seg.push({ x, y: y2 });
+        } else {
+          if (seg && seg.length >= 2) result.push(seg);
+          seg = null;
+        }
+      }
+      if (seg && seg.length >= 2) result.push(seg);
+    }
+    return result;
+  };
+
+  const gridDotsComposite = (regions, density, angleDeg = 0, dotSizeRatio = 1.0, shiftX = 0, shiftY = 0) => {
+    const ar = angleDeg * Math.PI / 180;
+    const ca = Math.cos(ar), sa = Math.sin(ar);
+    const rotatePt = ar !== 0 ? (p) => ({ x: p.x * ca + p.y * sa, y: -p.x * sa + p.y * ca }) : (p) => p;
+    const unrotatePt = ar !== 0 ? (p) => ({ x: p.x * ca - p.y * sa, y: p.x * sa + p.y * ca }) : (p) => p;
+    const rotRegions = ar !== 0 ? regions.map(r => r.map(rotatePt)) : regions;
+    const bounds = compositeBounds(rotRegions);
+    const dotR = Math.max(0.15, density * 0.12 * dotSizeRatio);
+    const rotShiftX = shiftX * ca + shiftY * sa;
+    const rotShiftY = -shiftX * sa + shiftY * ca;
+    const xPhase = ((rotShiftX % density) + density) % density;
+    const yPhase = ((rotShiftY % density) + density) % density;
+    const yStart = Math.ceil((bounds.minY - yPhase) / density) * density + yPhase;
+    const result = [];
+    for (let y = yStart; y <= bounds.maxY + 1e-6; y += density) {
+      const xStart = Math.ceil((bounds.minX - xPhase) / density) * density + xPhase;
+      for (let x = xStart; x <= bounds.maxX + 1e-6; x += density) {
+        if (compositeContainsPoint(rotRegions, x, y)) {
+          const wp = unrotatePt({ x, y });
+          result.push([{ x: wp.x - dotR, y: wp.y }, { x: wp.x + dotR, y: wp.y }]);
+        }
+      }
+    }
+    return result;
+  };
+
+  const meanderLinesComposite = (regions, density, angleDeg = 0, shiftX = 0, shiftY = 0) => {
+    const ar = angleDeg * Math.PI / 180;
+    const ca = Math.cos(ar), sa = Math.sin(ar);
+    const rotatePt = ar !== 0 ? (p) => ({ x: p.x * ca + p.y * sa, y: -p.x * sa + p.y * ca }) : (p) => p;
+    const unrotatePt = ar !== 0 ? (p) => ({ x: p.x * ca - p.y * sa, y: p.x * sa + p.y * ca }) : (p) => p;
+    const rotRegions = ar !== 0 ? regions.map(r => r.map(rotatePt)) : regions;
+    const bounds = compositeBounds(rotRegions);
+    const rotShiftY = -shiftX * sa + shiftY * ca;
+    const yPhase = ((rotShiftY % density) + density) % density;
+    const yStart = Math.ceil((bounds.minY - yPhase) / density) * density + yPhase;
+    const stepX = Math.max(0.5, density * 0.4);
+    const result = [];
+    let allPts = [];
+    let forward = true;
+    for (let y = yStart; y <= bounds.maxY + 1e-6; y += density) {
+      const rowClips = scanLineClipComposite(rotRegions, y);
+      if (rowClips.length === 0) {
+        if (allPts.length >= 2) result.push(allPts);
+        allPts = [];
+        continue;
+      }
+      const segs = forward ? rowClips : [...rowClips].reverse().map(([a, b]) => [b, a]);
+      for (const [x0, x1] of segs) {
+        const lo = Math.min(x0, x1), hi = Math.max(x0, x1);
+        if (x0 <= x1) {
+          for (let x = lo; x <= hi + 1e-6; x += stepX) {
+            const pt = { x: Math.min(x, hi), y };
+            allPts.push(ar !== 0 ? unrotatePt(pt) : pt);
+          }
+        } else {
+          for (let x = hi; x >= lo - 1e-6; x -= stepX) {
+            const pt = { x: Math.max(x, lo), y };
+            allPts.push(ar !== 0 ? unrotatePt(pt) : pt);
+          }
+        }
+      }
+      forward = !forward;
+    }
+    if (allPts.length >= 2) result.push(allPts);
+    return result;
+  };
+
+  const polygonalLinesComposite = (regions, density, angleOffset = 0, shiftX = 0, shiftY = 0, numAxes = 3) => {
+    const result = [];
+    for (let i = 0; i < numAxes; i++)
+      result.push(...hatchLinesComposite(regions, density, angleOffset + i * 180 / numAxes, shiftX, shiftY));
+    return result;
+  };
+
+  const triaxialLinesComposite = (regions, density, angleOffset = 0, shiftX = 0, shiftY = 0) =>
+    polygonalLinesComposite(regions, density, angleOffset, shiftX, shiftY, 3);
 
   // Clip a horizontal scan line at y against a closed polygon → [[x0,x1], ...]
   const scanLineClip = (poly, y) => {
@@ -1577,14 +1752,17 @@
   };
 
   // Hatch lines at angleDeg, clipped to polygon
-  const hatchLines = (poly, density, angleDeg) => {
+  const hatchLines = (poly, density, angleDeg, shiftX = 0, shiftY = 0) => {
     const ar = angleDeg * Math.PI / 180;
     const ca = Math.cos(ar), sa = Math.sin(ar);
     const rotPoly = poly.map(p => ({ x: p.x * ca + p.y * sa, y: -p.x * sa + p.y * ca }));
     const ys = rotPoly.map(p => p.y);
     const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const rotShiftY = -shiftX * sa + shiftY * ca;
+    const yPhase = ((rotShiftY % density) + density) % density;
+    const yStart = Math.ceil((minY - yPhase) / density) * density + yPhase;
     const result = [];
-    for (let y = Math.ceil(minY / density) * density; y <= maxY + 1e-6; y += density) {
+    for (let y = yStart; y <= maxY + 1e-6; y += density) {
       for (const [x0, x1] of scanLineClip(rotPoly, y)) {
         if (x1 - x0 < 1e-6) continue;
         result.push([
@@ -1597,19 +1775,30 @@
   };
 
   // Sinusoidal wave scan lines clipped by point-in-polygon
-  const waveLines = (poly, density) => {
-    const ys = poly.map(p => p.y), xs = poly.map(p => p.x);
+  const waveLines = (poly, density, angleDeg = 0, amplitude = 1.0, shiftX = 0, shiftY = 0) => {
+    const ar = angleDeg * Math.PI / 180;
+    const ca = Math.cos(ar), sa = Math.sin(ar);
+    const rotatePt = ar !== 0 ? (p) => ({ x: p.x * ca + p.y * sa, y: -p.x * sa + p.y * ca }) : (p) => p;
+    const unrotatePt = ar !== 0 ? (p) => ({ x: p.x * ca - p.y * sa, y: p.x * sa + p.y * ca }) : (p) => p;
+    const rotPoly = ar !== 0 ? poly.map(rotatePt) : poly;
+    const ys = rotPoly.map(p => p.y), xs = rotPoly.map(p => p.x);
     const minY = Math.min(...ys), maxY = Math.max(...ys);
     const minX = Math.min(...xs), maxX = Math.max(...xs);
-    const amplitude = density * 0.4, wavelength = density * 1.5;
+    const amp = density * 0.4 * amplitude;
+    const wavelength = density * 1.5;
     const stepX = Math.max(0.5, (maxX - minX) / 200);
+    const rotShiftX = shiftX * ca + shiftY * sa;
+    const rotShiftY = -shiftX * sa + shiftY * ca;
+    const yPhase = ((rotShiftY % density) + density) % density;
+    const yStart = Math.ceil((minY - yPhase) / density) * density + yPhase;
     const result = [];
-    for (let cy = Math.ceil(minY / density) * density; cy <= maxY + 1e-6; cy += density) {
+    for (let cy = yStart; cy <= maxY + 1e-6; cy += density) {
       let seg = null;
       for (let x = minX; x <= maxX + stepX; x += stepX) {
-        if (polyContainsPoint(poly, x, cy)) {
+        if (polyContainsPoint(rotPoly, x, cy)) {
           if (!seg) seg = [];
-          seg.push({ x, y: cy + amplitude * Math.sin((x / wavelength) * Math.PI * 2) });
+          const wy = cy + amp * Math.sin(((x + rotShiftX) / wavelength) * Math.PI * 2);
+          seg.push(unrotatePt({ x, y: wy }));
         } else {
           if (seg && seg.length >= 2) result.push(seg);
           seg = null;
@@ -1621,18 +1810,30 @@
   };
 
   // Triangle-wave (zigzag) scan lines clipped by point-in-polygon
-  const zigzagLines = (poly, density) => {
-    const ys = poly.map(p => p.y), xs = poly.map(p => p.x);
+  const zigzagLines = (poly, density, angleDeg = 0, amplitude = 1.0, shiftX = 0, shiftY = 0) => {
+    const ar = angleDeg * Math.PI / 180;
+    const ca = Math.cos(ar), sa = Math.sin(ar);
+    const rotatePt = ar !== 0 ? (p) => ({ x: p.x * ca + p.y * sa, y: -p.x * sa + p.y * ca }) : (p) => p;
+    const unrotatePt = ar !== 0 ? (p) => ({ x: p.x * ca - p.y * sa, y: p.x * sa + p.y * ca }) : (p) => p;
+    const rotPoly = ar !== 0 ? poly.map(rotatePt) : poly;
+    const ys = rotPoly.map(p => p.y), xs = rotPoly.map(p => p.x);
     const minY = Math.min(...ys), maxY = Math.max(...ys);
     const minX = Math.min(...xs), maxX = Math.max(...xs);
-    const amplitude = density * 0.4, halfPeriod = density * 0.75;
+    const amp = density * 0.4 * amplitude;
+    const halfPeriod = density * 0.75;
+    const rotShiftX = shiftX * ca + shiftY * sa;
+    const rotShiftY = -shiftX * sa + shiftY * ca;
+    const yPhase = ((rotShiftY % density) + density) % density;
+    const yStart = Math.ceil((minY - yPhase) / density) * density + yPhase;
     const result = [];
-    for (let cy = Math.ceil(minY / density) * density; cy <= maxY + 1e-6; cy += density) {
-      let seg = null, flip = false;
+    for (let cy = yStart; cy <= maxY + 1e-6; cy += density) {
+      let seg = null;
+      let flip = (((Math.floor(-rotShiftX / halfPeriod) % 2) + 2) % 2) !== 0;
       for (let x = minX; x <= maxX + halfPeriod; x += halfPeriod) {
-        if (polyContainsPoint(poly, x, cy)) {
+        if (polyContainsPoint(rotPoly, x, cy)) {
           if (!seg) seg = [];
-          seg.push({ x, y: cy + (flip ? amplitude : -amplitude) });
+          const wy = cy + (flip ? amp : -amp);
+          seg.push(unrotatePt({ x, y: wy }));
         } else {
           if (seg && seg.length >= 2) result.push(seg);
           seg = null;
@@ -1645,18 +1846,31 @@
   };
 
   // Dot grid (short tick marks at grid intersections)
-  const stippleDots = (poly, density) => {
-    const ys = poly.map(p => p.y), xs = poly.map(p => p.x);
+  const stippleDots = (poly, density, dotSizeRatio = 1.0, shiftX = 0, shiftY = 0, angleDeg = 0, patternType = 'brick') => {
+    const ar = angleDeg * Math.PI / 180;
+    const ca = Math.cos(ar), sa = Math.sin(ar);
+    const rotatePt   = ar !== 0 ? (p) => ({ x: p.x * ca + p.y * sa,  y: -p.x * sa + p.y * ca }) : (p) => p;
+    const unrotatePt = ar !== 0 ? (p) => ({ x: p.x * ca - p.y * sa,  y:  p.x * sa + p.y * ca }) : (p) => p;
+    const rotPoly = ar !== 0 ? poly.map(rotatePt) : poly;
+    const ys = rotPoly.map(p => p.y), xs = rotPoly.map(p => p.x);
     const minY = Math.min(...ys), maxY = Math.max(...ys);
     const minX = Math.min(...xs), maxX = Math.max(...xs);
-    const dotR = Math.max(0.15, density * 0.12);
+    const dotR = Math.max(density * 0.005, density * 0.12 * dotSizeRatio);
+    const rotShiftX = shiftX * ca + shiftY * sa;
+    const rotShiftY = -shiftX * sa + shiftY * ca;
+    const xPhase = ((rotShiftX % density) + density) % density;
+    const yPhase  = ((rotShiftY % density) + density) % density;
+    const yStart  = Math.ceil((minY - yPhase) / density) * density + yPhase;
     const result = [];
     let rowOff = false;
-    for (let y = Math.ceil(minY / density) * density; y <= maxY + 1e-6; y += density) {
-      const x0 = minX + (rowOff ? density / 2 : 0);
-      for (let x = x0; x <= maxX + 1e-6; x += density) {
-        if (polyContainsPoint(poly, x, y))
-          result.push([{ x: x - dotR, y }, { x: x + dotR, y }]);
+    for (let y = yStart; y <= maxY + 1e-6; y += density) {
+      const offset = (patternType === 'brick' && rowOff) ? density / 2 : 0;
+      const xStart = Math.ceil((minX - xPhase) / density) * density + xPhase + offset;
+      for (let x = xStart; x <= maxX + 1e-6; x += density) {
+        if (polyContainsPoint(rotPoly, x, y)) {
+          const wp = unrotatePt({ x, y });
+          result.push([{ x: wp.x - dotR, y: wp.y }, { x: wp.x + dotR, y: wp.y }]);
+        }
       }
       rowOff = !rowOff;
     }
@@ -1698,39 +1912,230 @@
     return result;
   };
 
+  // Contour for multi-region: insets the outer ring and segments rings around holes
+  const contourLinesComposite = (regions, density) => {
+    if (regions.length === 1) return contourLines(regions[0], density);
+    const outer = regions[0];
+    const holes = regions.slice(1);
+    const result = [];
+    let current = outer.slice();
+    for (let iter = 0; iter < 100; iter++) {
+      const next = insetPolygon(current, density);
+      if (!next || next.length < 3) break;
+      if (Math.abs(polyArea(next)) < density * density) break;
+      if (holes.length === 0) {
+        result.push([...next, next[0]]);
+      } else {
+        const closedRing = [...next, next[0]];
+        let seg = null;
+        for (const pt of closedRing) {
+          if (holes.some((h) => polyContainsPoint(h, pt.x, pt.y))) {
+            if (seg && seg.length >= 2) result.push(seg);
+            seg = null;
+          } else {
+            if (!seg) seg = [];
+            seg.push(pt);
+          }
+        }
+        if (seg && seg.length >= 2) result.push(seg);
+      }
+      current = next;
+    }
+    return result;
+  };
+
+  const spiralFill = (region, density, angleDeg = 0, shiftX = 0, shiftY = 0) => {
+    const bounds = loopBounds(region);
+    const cx = (bounds.minX + bounds.maxX) / 2 + shiftX;
+    const cy = (bounds.minY + bounds.maxY) / 2 + shiftY;
+    const maxR = 0.5 * Math.sqrt(
+      (bounds.maxX - bounds.minX) ** 2 + (bounds.maxY - bounds.minY) ** 2
+    ) + density;
+    const maxAngle = (maxR / density) * 2 * Math.PI + 2 * Math.PI;
+    const totalSteps = Math.min(50000, Math.ceil(maxAngle / 0.05));
+    const stepAngle = maxAngle / totalSteps;
+    const angleOffset = angleDeg * Math.PI / 180;
+    const result = [];
+    let seg = null;
+    for (let i = 0; i <= totalSteps; i++) {
+      const spiralAngle = i * stepAngle;
+      const r = (spiralAngle / (2 * Math.PI)) * density;
+      const x = cx + Math.cos(spiralAngle + angleOffset) * r;
+      const y = cy + Math.sin(spiralAngle + angleOffset) * r;
+      if (polyContainsPoint(region, x, y)) {
+        if (!seg) seg = [];
+        seg.push({ x, y });
+      } else {
+        if (seg && seg.length >= 2) result.push(seg);
+        seg = null;
+      }
+    }
+    if (seg && seg.length >= 2) result.push(seg);
+    return result;
+  };
+
+  const radialFill = (region, density, angleDeg = 0, shiftX = 0, shiftY = 0, centralDensity = 1.0, outerDiameter = 1.0) => {
+    const bounds = loopBounds(region);
+    const cx = (bounds.minX + bounds.maxX) / 2 + shiftX;
+    const cy = (bounds.minY + bounds.maxY) / 2 + shiftY;
+    const maxR = (0.5 * Math.sqrt(
+      (bounds.maxX - bounds.minX) ** 2 + (bounds.maxY - bounds.minY) ** 2
+    ) + density) * Math.max(0, outerDiameter);
+    const spokeCount = Math.max(8, Math.round(2 * Math.PI * (maxR / 2) / density * centralDensity));
+    const stepR = Math.max(0.5, density * 0.3);
+    const angleOffset = angleDeg * Math.PI / 180;
+    const result = [];
+    for (let i = 0; i < spokeCount; i++) {
+      const angle = (i / spokeCount) * 2 * Math.PI + angleOffset;
+      const cosA = Math.cos(angle), sinA = Math.sin(angle);
+      let seg = null;
+      for (let r = 0; r <= maxR; r += stepR) {
+        const x = cx + cosA * r, y = cy + sinA * r;
+        if (polyContainsPoint(region, x, y)) {
+          if (!seg) seg = [];
+          seg.push({ x, y });
+        } else {
+          if (seg && seg.length >= 2) result.push(seg);
+          seg = null;
+        }
+      }
+      if (seg && seg.length >= 2) result.push(seg);
+    }
+    return result;
+  };
+
+  const gridDots = (region, density, angleDeg = 0, dotSizeRatio = 1.0, shiftX = 0, shiftY = 0) => {
+    const ar = angleDeg * Math.PI / 180;
+    const ca = Math.cos(ar), sa = Math.sin(ar);
+    const rotatePt = ar !== 0 ? (p) => ({ x: p.x * ca + p.y * sa, y: -p.x * sa + p.y * ca }) : (p) => p;
+    const unrotatePt = ar !== 0 ? (p) => ({ x: p.x * ca - p.y * sa, y: p.x * sa + p.y * ca }) : (p) => p;
+    const rotRegion = ar !== 0 ? region.map(rotatePt) : region;
+    const bounds = loopBounds(rotRegion);
+    const dotR = Math.max(0.15, density * 0.12 * dotSizeRatio);
+    const rotShiftX = shiftX * ca + shiftY * sa;
+    const rotShiftY = -shiftX * sa + shiftY * ca;
+    const xPhase = ((rotShiftX % density) + density) % density;
+    const yPhase = ((rotShiftY % density) + density) % density;
+    const yStart = Math.ceil((bounds.minY - yPhase) / density) * density + yPhase;
+    const result = [];
+    for (let y = yStart; y <= bounds.maxY + 1e-6; y += density) {
+      const xStart = Math.ceil((bounds.minX - xPhase) / density) * density + xPhase;
+      for (let x = xStart; x <= bounds.maxX + 1e-6; x += density) {
+        if (polyContainsPoint(rotRegion, x, y)) {
+          const wp = unrotatePt({ x, y });
+          result.push([{ x: wp.x - dotR, y: wp.y }, { x: wp.x + dotR, y: wp.y }]);
+        }
+      }
+    }
+    return result;
+  };
+
+  const meanderLines = (region, density, angleDeg = 0, shiftX = 0, shiftY = 0) => {
+    const ar = angleDeg * Math.PI / 180;
+    const ca = Math.cos(ar), sa = Math.sin(ar);
+    const rotatePt = ar !== 0 ? (p) => ({ x: p.x * ca + p.y * sa, y: -p.x * sa + p.y * ca }) : (p) => p;
+    const unrotatePt = ar !== 0 ? (p) => ({ x: p.x * ca - p.y * sa, y: p.x * sa + p.y * ca }) : (p) => p;
+    const rotRegion = ar !== 0 ? region.map(rotatePt) : region;
+    const bounds = loopBounds(rotRegion);
+    const rotShiftY = -shiftX * sa + shiftY * ca;
+    const yPhase = ((rotShiftY % density) + density) % density;
+    const yStart = Math.ceil((bounds.minY - yPhase) / density) * density + yPhase;
+    const stepX = Math.max(0.5, density * 0.4);
+    const result = [];
+    let allPts = [];
+    let forward = true;
+    for (let y = yStart; y <= bounds.maxY + 1e-6; y += density) {
+      const rowClips = scanLineClip(rotRegion, y);
+      if (rowClips.length === 0) {
+        if (allPts.length >= 2) result.push(allPts);
+        allPts = [];
+        continue;
+      }
+      const segs = forward ? rowClips : [...rowClips].reverse().map(([a, b]) => [b, a]);
+      for (const [x0, x1] of segs) {
+        const lo = Math.min(x0, x1), hi = Math.max(x0, x1);
+        if (x0 <= x1) {
+          for (let x = lo; x <= hi + 1e-6; x += stepX) {
+            const pt = { x: Math.min(x, hi), y };
+            allPts.push(ar !== 0 ? unrotatePt(pt) : pt);
+          }
+        } else {
+          for (let x = hi; x >= lo - 1e-6; x -= stepX) {
+            const pt = { x: Math.max(x, lo), y };
+            allPts.push(ar !== 0 ? unrotatePt(pt) : pt);
+          }
+        }
+      }
+      forward = !forward;
+    }
+    if (allPts.length >= 2) result.push(allPts);
+    return result;
+  };
+
+  const polygonalLines = (region, density, angleOffset = 0, shiftX = 0, shiftY = 0, numAxes = 3) => {
+    const result = [];
+    for (let i = 0; i < numAxes; i++)
+      result.push(...hatchLines(region, density, angleOffset + i * 180 / numAxes, shiftX, shiftY));
+    return result;
+  };
+
+  const triaxialLines = (region, density, angleOffset = 0, shiftX = 0, shiftY = 0) =>
+    polygonalLines(region, density, angleOffset, shiftX, shiftY, 3);
+
   // Dispatch to the right fill type → array of paths in tile-local SVG coords
   const generatePatternFillPaths = (fill) => {
     const regions = getFillRegions(fill);
-    const { fillType = 'hatch', density = 5 } = fill;
+    const {
+      fillType = 'hatch', density = 5,
+      angle = 0, amplitude = 1.0, dotSize = 1.0,
+      padding = 0, shiftX = 0, shiftY = 0,
+      dotPattern = 'brick', centralDensity = 1.0, outerDiameter = 1.0, axes = 3,
+    } = fill;
     if (!regions.length) return [];
-    if (regions.length === 1) {
-      const region = regions[0];
+    const effectiveRegions = padding > 0
+      ? regions.map(r => insetPolygon(r, polyArea(r) > 0 ? padding : -padding)).filter(Boolean)
+      : regions;
+    if (!effectiveRegions.length) return [];
+    if (effectiveRegions.length === 1) {
+      const region = effectiveRegions[0];
       switch (fillType) {
-        case 'hatch':       return hatchLines(region, density, 0);
-        case 'vhatch':      return hatchLines(region, density, 90);
-        case 'dhatch45':    return hatchLines(region, density, 45);
-        case 'dhatch135':   return hatchLines(region, density, 135);
-        case 'crosshatch':  return [...hatchLines(region, density, 0), ...hatchLines(region, density, 90)];
-        case 'xcrosshatch': return [...hatchLines(region, density, 45), ...hatchLines(region, density, 135)];
-        case 'wavelines':   return waveLines(region, density);
-        case 'zigzag':      return zigzagLines(region, density);
-        case 'stipple':     return stippleDots(region, density);
+        case 'hatch':       return hatchLines(region, density, 0 + angle, shiftX, shiftY);
+        case 'vhatch':      return hatchLines(region, density, 90 + angle, shiftX, shiftY);
+        case 'dhatch45':    return hatchLines(region, density, 45 + angle, shiftX, shiftY);
+        case 'dhatch135':   return hatchLines(region, density, 135 + angle, shiftX, shiftY);
+        case 'crosshatch':  return [...hatchLines(region, density, 0 + angle, shiftX, shiftY), ...hatchLines(region, density, 90 + angle, shiftX, shiftY)];
+        case 'xcrosshatch': return [...hatchLines(region, density, 45 + angle, shiftX, shiftY), ...hatchLines(region, density, 135 + angle, shiftX, shiftY)];
+        case 'wavelines':   return waveLines(region, density, angle, amplitude, shiftX, shiftY);
+        case 'zigzag':      return zigzagLines(region, density, angle, amplitude, shiftX, shiftY);
+        case 'stipple':     return stippleDots(region, density, dotSize, shiftX, shiftY, angle, dotPattern);
         case 'contour':     return contourLines(region, density);
-        default:            return hatchLines(region, density, 0);
+        case 'spiral':      return spiralFill(region, density, angle, shiftX, shiftY);
+        case 'radial':      return radialFill(region, density, angle, shiftX, shiftY, centralDensity, outerDiameter);
+        case 'grid':        return gridDots(region, density, angle, dotSize, shiftX, shiftY);
+        case 'meander':     return meanderLines(region, density, angle, shiftX, shiftY);
+        case 'polygonal':   return polygonalLines(region, density, angle, shiftX, shiftY, axes);
+        case 'triaxial':    return triaxialLines(region, density, angle, shiftX, shiftY);
+        default:            return hatchLines(region, density, 0 + angle, shiftX, shiftY);
       }
     }
     switch (fillType) {
-      case 'hatch':       return hatchLinesComposite(regions, density, 0);
-      case 'vhatch':      return hatchLinesComposite(regions, density, 90);
-      case 'dhatch45':    return hatchLinesComposite(regions, density, 45);
-      case 'dhatch135':   return hatchLinesComposite(regions, density, 135);
-      case 'crosshatch':  return [...hatchLinesComposite(regions, density, 0), ...hatchLinesComposite(regions, density, 90)];
-      case 'xcrosshatch': return [...hatchLinesComposite(regions, density, 45), ...hatchLinesComposite(regions, density, 135)];
-      case 'wavelines':   return waveLinesComposite(regions, density);
-      case 'zigzag':      return zigzagLinesComposite(regions, density);
-      case 'stipple':     return stippleDotsComposite(regions, density);
-      case 'contour':     return contourLines(regions[0], density);
-      default:            return hatchLinesComposite(regions, density, 0);
+      case 'hatch':       return hatchLinesComposite(effectiveRegions, density, 0 + angle, shiftX, shiftY);
+      case 'vhatch':      return hatchLinesComposite(effectiveRegions, density, 90 + angle, shiftX, shiftY);
+      case 'dhatch45':    return hatchLinesComposite(effectiveRegions, density, 45 + angle, shiftX, shiftY);
+      case 'dhatch135':   return hatchLinesComposite(effectiveRegions, density, 135 + angle, shiftX, shiftY);
+      case 'crosshatch':  return [...hatchLinesComposite(effectiveRegions, density, 0 + angle, shiftX, shiftY), ...hatchLinesComposite(effectiveRegions, density, 90 + angle, shiftX, shiftY)];
+      case 'xcrosshatch': return [...hatchLinesComposite(effectiveRegions, density, 45 + angle, shiftX, shiftY), ...hatchLinesComposite(effectiveRegions, density, 135 + angle, shiftX, shiftY)];
+      case 'wavelines':   return waveLinesComposite(effectiveRegions, density, angle, amplitude, shiftX, shiftY);
+      case 'zigzag':      return zigzagLinesComposite(effectiveRegions, density, angle, amplitude, shiftX, shiftY);
+      case 'stipple':     return stippleDotsComposite(effectiveRegions, density, dotSize, shiftX, shiftY, angle, dotPattern);
+      case 'contour':     return contourLinesComposite(effectiveRegions, density);
+      case 'spiral':      return spiralFillComposite(effectiveRegions, density, angle, shiftX, shiftY);
+      case 'radial':      return radialFillComposite(effectiveRegions, density, angle, shiftX, shiftY, centralDensity, outerDiameter);
+      case 'grid':        return gridDotsComposite(effectiveRegions, density, angle, dotSize, shiftX, shiftY);
+      case 'meander':     return meanderLinesComposite(effectiveRegions, density, angle, shiftX, shiftY);
+      case 'polygonal':   return polygonalLinesComposite(effectiveRegions, density, angle, shiftX, shiftY, axes);
+      case 'triaxial':    return triaxialLinesComposite(effectiveRegions, density, angle, shiftX, shiftY);
+      default:            return hatchLinesComposite(effectiveRegions, density, 0 + angle, shiftX, shiftY);
     }
   };
 

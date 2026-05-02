@@ -122,7 +122,8 @@ describe('Noise direction behavior', () => {
     };
     const params = {
       rings: 1,
-      centerDiameter: 0,
+      centerDiameter: 1,
+      outerDiameter: 220, // canvas-filling for these test bounds
       gap: 1,
       noises: [{ type: 'simplex', amplitude: 8, zoom: 0.001, polygonZoomReference: 0.001 }],
     };

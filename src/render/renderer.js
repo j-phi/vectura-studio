@@ -5,6 +5,7 @@
   const { SETTINGS, Modifiers = {}, Masking = {}, UnitUtils = {} } = window.Vectura || {};
   const isModifierLayer = Modifiers.isModifierLayer || (() => false);
   const getMirrorAxis = Modifiers.getMirrorAxis || (() => null);
+  const buildAxisFromAngle = Modifiers.buildAxisFromAngle || (() => null);
   const clipInfiniteAxisToBounds = Modifiers.clipInfiniteAxisToBounds || (() => null);
   const reflectPointAcrossAxis = Modifiers.reflectPointAcrossAxis || ((pt) => pt);
   const getLayerSilhouette = Masking.getLayerSilhouette || (() => []);
@@ -2040,16 +2041,115 @@
       };
       const drawModifierGuides = () => {
         const guides = this.getMirrorGuides().filter((guide) => guide.visible);
+        const underlay = getThemeToken('--render-underlay-fill', 'rgba(15, 23, 42, 0.92)');
+        const dash = 2 / this.scale;
+
+        const drawTriangle = (tri, color) => {
+          this.ctx.save();
+          this.ctx.fillStyle = underlay;
+          this.ctx.beginPath();
+          this.ctx.moveTo(tri.tipUnderlay.x, tri.tipUnderlay.y);
+          this.ctx.lineTo(tri.leftUnderlay.x, tri.leftUnderlay.y);
+          this.ctx.lineTo(tri.rightUnderlay.x, tri.rightUnderlay.y);
+          this.ctx.closePath();
+          this.ctx.fill();
+          this.ctx.fillStyle = color;
+          this.ctx.strokeStyle = getThemeToken('--render-underlay-stroke', 'rgba(15, 23, 42, 1)');
+          this.ctx.lineWidth = 0.8 / this.scale;
+          this.ctx.beginPath();
+          this.ctx.moveTo(tri.tip.x, tri.tip.y);
+          this.ctx.lineTo(tri.left.x, tri.left.y);
+          this.ctx.lineTo(tri.right.x, tri.right.y);
+          this.ctx.closePath();
+          this.ctx.fill();
+          this.ctx.stroke();
+          this.ctx.restore();
+        };
+
+        const drawCenterHandle = (cx, cy, color) => {
+          const r = 5 / this.scale;
+          this.ctx.save();
+          this.ctx.fillStyle = underlay;
+          this.ctx.beginPath();
+          this.ctx.arc(cx, cy, r + 2 / this.scale, 0, Math.PI * 2);
+          this.ctx.fill();
+          this.ctx.strokeStyle = color;
+          this.ctx.fillStyle = color;
+          this.ctx.lineWidth = 1 / this.scale;
+          this.ctx.beginPath();
+          this.ctx.arc(cx, cy, r, 0, Math.PI * 2);
+          this.ctx.stroke();
+          const c = 2.5 / this.scale;
+          this.ctx.beginPath();
+          this.ctx.moveTo(cx - c, cy); this.ctx.lineTo(cx + c, cy);
+          this.ctx.moveTo(cx, cy - c); this.ctx.lineTo(cx, cy + c);
+          this.ctx.stroke();
+          this.ctx.restore();
+        };
+
         guides.forEach((guide) => {
           const color = guide.mirror.color || '#56b4e9';
-          const lineWidth = 0.45;
-          const dash = 2 / this.scale;
-        const underlay = getThemeToken('--render-underlay-fill', 'rgba(15, 23, 42, 0.92)');
+          const alpha = guide.locked ? 0.45 : 0.8;
           this.ctx.save();
+          this.ctx.globalAlpha = alpha;
+
+          if (guide.guideType === 'radial') {
+            const { center, wedgeLines, sourceWedge } = guide;
+            this.ctx.strokeStyle = color;
+            this.ctx.lineWidth = 0.45;
+            this.ctx.setLineDash([dash, dash]);
+            wedgeLines.forEach((ln) => {
+              this.ctx.beginPath();
+              this.ctx.moveTo(ln.x1, ln.y1);
+              this.ctx.lineTo(ln.x2, ln.y2);
+              this.ctx.stroke();
+            });
+            this.ctx.setLineDash([]);
+            this.ctx.fillStyle = color;
+            this.ctx.globalAlpha = alpha * 0.12;
+            this.ctx.beginPath();
+            this.ctx.moveTo(center.x, center.y);
+            this.ctx.arc(center.x, center.y, sourceWedge.radius, sourceWedge.startAngle, sourceWedge.endAngle);
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.globalAlpha = alpha;
+            drawCenterHandle(center.x, center.y, color);
+            this.ctx.restore();
+            return;
+          }
+
+          if (guide.guideType === 'arc') {
+            const { center, radius, arcStartRad, arcEndRad, flipTriangle: ft, radiusHandle } = guide;
+            this.ctx.strokeStyle = color;
+            this.ctx.lineWidth = 0.45;
+            this.ctx.setLineDash([dash, dash]);
+            this.ctx.beginPath();
+            this.ctx.arc(center.x, center.y, radius, arcStartRad, arcEndRad);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+            drawTriangle(ft, color);
+            drawCenterHandle(center.x, center.y, color);
+            // Radius drag handle at arc start point
+            this.ctx.save();
+            this.ctx.fillStyle = underlay;
+            this.ctx.beginPath();
+            this.ctx.arc(radiusHandle.x, radiusHandle.y, 4 / this.scale, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.strokeStyle = color;
+            this.ctx.lineWidth = 1 / this.scale;
+            this.ctx.beginPath();
+            this.ctx.arc(radiusHandle.x, radiusHandle.y, 3.5 / this.scale, 0, Math.PI * 2);
+            this.ctx.stroke();
+            this.ctx.restore();
+            this.ctx.restore();
+            return;
+          }
+
+          // line guide (existing)
+          const lineWidth = 0.45;
           this.ctx.strokeStyle = color;
           this.ctx.fillStyle = color;
           this.ctx.lineWidth = lineWidth;
-          this.ctx.globalAlpha = guide.locked ? 0.45 : 0.8;
           this.ctx.setLineDash([dash, dash]);
           this.ctx.beginPath();
           this.ctx.moveTo(guide.start.x, guide.start.y);
@@ -2057,65 +2157,37 @@
           this.ctx.stroke();
           this.ctx.setLineDash([]);
 
-          const drawTriangle = (tri) => {
-            this.ctx.save();
-            this.ctx.fillStyle = underlay;
-            this.ctx.beginPath();
-            this.ctx.moveTo(tri.tipUnderlay.x, tri.tipUnderlay.y);
-            this.ctx.lineTo(tri.leftUnderlay.x, tri.leftUnderlay.y);
-            this.ctx.lineTo(tri.rightUnderlay.x, tri.rightUnderlay.y);
-            this.ctx.closePath();
-            this.ctx.fill();
-
-            this.ctx.fillStyle = color;
-            this.ctx.strokeStyle = getThemeToken('--render-underlay-stroke', 'rgba(15, 23, 42, 1)');
-            this.ctx.lineWidth = 0.8 / this.scale;
-            this.ctx.beginPath();
-            this.ctx.moveTo(tri.tip.x, tri.tip.y);
-            this.ctx.lineTo(tri.left.x, tri.left.y);
-            this.ctx.lineTo(tri.right.x, tri.right.y);
-            this.ctx.closePath();
-            this.ctx.fill();
-            this.ctx.stroke();
-            this.ctx.restore();
-          };
-
           const drawRotateHandle = (center, direction = 'right') => {
-            const radius = guide.rotateRadius;
+            const rRadius = guide.rotateRadius;
             this.ctx.save();
             this.ctx.fillStyle = underlay;
             this.ctx.beginPath();
-            this.ctx.arc(center.x, center.y, radius + 3.3 / this.scale, 0, Math.PI * 2);
+            this.ctx.arc(center.x, center.y, rRadius + 3.3 / this.scale, 0, Math.PI * 2);
             this.ctx.fill();
-
             this.ctx.translate(center.x, center.y);
-            const scale = radius / 11.5;
-            this.ctx.scale(direction === 'left' ? -scale : scale, scale);
+            const sc = rRadius / 11.5;
+            this.ctx.scale(direction === 'left' ? -sc : sc, sc);
             this.ctx.strokeStyle = color;
             this.ctx.fillStyle = color;
             this.ctx.lineWidth = 2.25;
             this.ctx.lineCap = 'round';
             this.ctx.lineJoin = 'round';
-
             this.ctx.beginPath();
             this.ctx.arc(0, 0, 7.6, Math.PI * 1.08, Math.PI * 0.18, true);
             this.ctx.stroke();
-
             this.ctx.beginPath();
             this.ctx.moveTo(7.2, -7.8);
             this.ctx.lineTo(11.6, -7.2);
             this.ctx.lineTo(9.4, -3.2);
             this.ctx.closePath();
             this.ctx.fill();
-
             this.ctx.beginPath();
             this.ctx.arc(0, 0, 3.9, 0, Math.PI * 2);
             this.ctx.stroke();
             this.ctx.restore();
           };
 
-          drawTriangle(guide.flipTriangle);
-
+          drawTriangle(guide.flipTriangle, color);
           drawRotateHandle(guide.rotateStart, 'left');
           drawRotateHandle(guide.rotateEnd, 'right');
           this.ctx.restore();
@@ -2463,8 +2535,12 @@
             return;
           }
           if (hitGuide.type === 'flip') {
-            hitGuide.guide.mirror.replacedSide =
-              hitGuide.guide.mirror.replacedSide === 'negative' ? 'positive' : 'negative';
+            const m = hitGuide.guide.mirror;
+            if (m.type === 'arc') {
+              m.replacedSide = m.replacedSide === 'outer' ? 'inner' : 'outer';
+            } else {
+              m.replacedSide = m.replacedSide === 'negative' ? 'positive' : 'negative';
+            }
             this.onComputeDisplayGeometry ? this.onComputeDisplayGeometry() : this.engine.computeAllDisplayGeometry();
             if (this.onCommitTransform) this.onCommitTransform();
             this.draw();
@@ -2478,7 +2554,10 @@
             startAngle: hitGuide.guide.mirror.angle ?? 0,
             startShiftX: hitGuide.guide.mirror.xShift ?? 0,
             startShiftY: hitGuide.guide.mirror.yShift ?? 0,
-            axisPoint: { ...hitGuide.guide.axis.point },
+            startCenterX: hitGuide.guide.mirror.centerX ?? 0,
+            startCenterY: hitGuide.guide.mirror.centerY ?? 0,
+            startRadius: hitGuide.guide.mirror.radius ?? 100,
+            axisPoint: hitGuide.guide.axis?.point ? { ...hitGuide.guide.axis.point } : { x: world.x, y: world.y },
           };
           this.setCanvasCursor(hitGuide.type === 'rotate' ? 'grabbing' : 'move');
           e.preventDefault();
@@ -2708,14 +2787,26 @@
         const drag = this.modifierDrag;
         const mirror = drag.guide.mirror;
         if (drag.type === 'move') {
-          mirror.xShift = drag.startShiftX + (world.x - drag.startWorld.x);
-          mirror.yShift = drag.startShiftY + (world.y - drag.startWorld.y);
+          const dx = world.x - drag.startWorld.x;
+          const dy = world.y - drag.startWorld.y;
+          if (mirror.type === 'radial' || mirror.type === 'arc') {
+            mirror.centerX = drag.startCenterX + dx;
+            mirror.centerY = drag.startCenterY + dy;
+          } else {
+            mirror.xShift = drag.startShiftX + dx;
+            mirror.yShift = drag.startShiftY + dy;
+          }
         } else if (drag.type === 'rotate') {
           const startAngle = Math.atan2(drag.startWorld.y - drag.axisPoint.y, drag.startWorld.x - drag.axisPoint.x);
           const nextAngle = Math.atan2(world.y - drag.axisPoint.y, world.x - drag.axisPoint.x);
           let delta = ((nextAngle - startAngle) * 180) / Math.PI;
           if (modifiers.shift) delta = Math.round(delta / 15) * 15;
           mirror.angle = drag.startAngle + delta;
+        } else if (drag.type === 'resize') {
+          const dx = world.x - drag.startWorld.x;
+          const dy = world.y - drag.startWorld.y;
+          const delta = Math.hypot(dx, dy) * (dx >= 0 ? 1 : -1);
+          mirror.radius = Math.max(1, drag.startRadius + delta);
         }
         this.onComputeDisplayGeometry ? this.onComputeDisplayGeometry() : this.engine.computeAllDisplayGeometry();
         this.draw();
@@ -3227,12 +3318,87 @@
           }
         : profileBounds;
       return (modifier.mirrors || []).map((mirror, index) => {
+        const locked = Boolean(modifier.guidesLocked || mirror.locked);
+        const visible = modifier.guidesVisible !== false && mirror.guideVisible !== false;
+
+        if (mirror.type === 'radial') {
+          const count = Math.max(2, Math.round(mirror.count ?? 6));
+          const mode = mirror.mode ?? 'dihedral';
+          const cx = (profileBounds.width ?? 0) / 2 + (mirror.centerX ?? 0);
+          const cy = (profileBounds.height ?? 0) / 2 + (mirror.centerY ?? 0);
+          const baseAngleRad = ((mirror.angle ?? 0) * Math.PI) / 180;
+          const fullWedgeRad = (2 * Math.PI) / count;
+          const halfWedgeRad = fullWedgeRad / 2;
+          const guideR = Math.min(profileBounds.width, profileBounds.height ?? profileBounds.width) * 0.55;
+          const wedgeCount = mode === 'dihedral' ? count * 2 : count;
+          const divAngle = (2 * Math.PI) / wedgeCount;
+          const wedgeLines = [];
+          for (let k = 0; k < wedgeCount; k += 1) {
+            const a = baseAngleRad + k * divAngle;
+            wedgeLines.push({
+              x1: cx, y1: cy,
+              x2: cx + Math.cos(a) * guideR,
+              y2: cy + Math.sin(a) * guideR,
+            });
+          }
+          const srcEnd = mode === 'dihedral' ? baseAngleRad + halfWedgeRad : baseAngleRad + fullWedgeRad;
+          return {
+            guideType: 'radial',
+            layer: modifierLayer, mirror, index, visible, locked,
+            center: { x: cx, y: cy },
+            wedgeLines,
+            sourceWedge: { startAngle: baseAngleRad, endAngle: srcEnd, radius: guideR },
+          };
+        }
+
+        if (mirror.type === 'arc') {
+          const cx = (profileBounds.width ?? 0) / 2 + (mirror.centerX ?? 0);
+          const cy = (profileBounds.height ?? 0) / 2 + (mirror.centerY ?? 0);
+          const R = Math.max(1, mirror.radius ?? 100);
+          const startDeg = mirror.arcStart ?? -90;
+          const endDeg = mirror.arcEnd ?? 90;
+          const startRad = (startDeg * Math.PI) / 180;
+          const endRad = (endDeg * Math.PI) / 180;
+          const midRad = (startRad + endRad) / 2;
+          const replacedOutside = (mirror.replacedSide ?? 'outer') === 'outer';
+          const flipSign = replacedOutside ? 1 : -1;
+          const arrowOffset = 9 / this.scale;
+          const triangleLift = 9 / this.scale;
+          const triangleHalfWidth = 12.2 / this.scale;
+          const triangleUnderlayHalfWidth = 15.6 / this.scale;
+          const triangleTipLength = 10.8 / this.scale;
+          const triangleUnderlayTipLength = 13.8 / this.scale;
+          const nRad = { x: Math.cos(midRad), y: Math.sin(midRad) };
+          const tRad = { x: -Math.sin(midRad), y: Math.cos(midRad) };
+          const midArc = { x: cx + nRad.x * R, y: cy + nRad.y * R };
+          const triBase = {
+            x: midArc.x + nRad.x * (arrowOffset + triangleLift) * flipSign,
+            y: midArc.y + nRad.y * (arrowOffset + triangleLift) * flipSign,
+          };
+          return {
+            guideType: 'arc',
+            layer: modifierLayer, mirror, index, visible, locked,
+            center: { x: cx, y: cy },
+            radius: R,
+            arcStartRad: startRad,
+            arcEndRad: endRad,
+            radiusHandle: { x: cx + Math.cos(startRad) * R, y: cy + Math.sin(startRad) * R },
+            flipTriangle: {
+              tip: { x: midArc.x + nRad.x * flipSign * (arrowOffset + triangleLift + triangleTipLength), y: midArc.y + nRad.y * flipSign * (arrowOffset + triangleLift + triangleTipLength) },
+              tipUnderlay: { x: midArc.x + nRad.x * flipSign * (arrowOffset + triangleLift + triangleUnderlayTipLength), y: midArc.y + nRad.y * flipSign * (arrowOffset + triangleLift + triangleUnderlayTipLength) },
+              baseCenter: triBase,
+              left: { x: triBase.x - tRad.x * triangleHalfWidth, y: triBase.y - tRad.y * triangleHalfWidth },
+              right: { x: triBase.x + tRad.x * triangleHalfWidth, y: triBase.y + tRad.y * triangleHalfWidth },
+              leftUnderlay: { x: triBase.x - tRad.x * triangleUnderlayHalfWidth, y: triBase.y - tRad.y * triangleUnderlayHalfWidth },
+              rightUnderlay: { x: triBase.x + tRad.x * triangleUnderlayHalfWidth, y: triBase.y + tRad.y * triangleUnderlayHalfWidth },
+            },
+          };
+        }
+
         const axis = getMirrorAxis(mirror, profileBounds);
         const segment = axis ? clipInfiniteAxisToBounds(axis, guideBounds) : null;
         if (!axis || !segment) return null;
         const [start, end] = segment;
-        const locked = Boolean(modifier.guidesLocked || mirror.locked);
-        const visible = modifier.guidesVisible !== false && mirror.guideVisible !== false;
         const tangent = axis.tangent;
         const normal = axis.normal;
         const arrowOffset = 9 / this.scale;
@@ -3251,6 +3417,7 @@
         const triangleTipLength = 10.8 / this.scale;
         const triangleUnderlayTipLength = 13.8 / this.scale;
         return {
+          guideType: 'line',
           layer: modifierLayer,
           mirror,
           index,
@@ -3260,14 +3427,8 @@
           visible,
           locked,
           rotateRadius: 13.6 / this.scale,
-          rotateStart: {
-            x: start.x,
-            y: start.y,
-          },
-          rotateEnd: {
-            x: end.x,
-            y: end.y,
-          },
+          rotateStart: { x: start.x, y: start.y },
+          rotateEnd: { x: end.x, y: end.y },
           flipTriangle: {
             tip: {
               x: mid.x + normal.x * replacedSign * (arrowOffset + triangleLift + triangleTipLength),
@@ -3303,15 +3464,34 @@
       const guides = this.getMirrorGuides().filter((guide) => guide.visible);
       if (!guides.length) return null;
       const lineTolSq = Math.pow(6 / this.scale, 2);
+      const centerTolSq = Math.pow(8 / this.scale, 2);
       for (let i = guides.length - 1; i >= 0; i -= 1) {
         const guide = guides[i];
+        if (guide.guideType === 'radial') {
+          if (this.distanceToPointSq(world, guide.center) <= centerTolSq) return { guide, type: 'move' };
+          continue;
+        }
+        if (guide.guideType === 'arc') {
+          if (this.distanceToPointSq(world, guide.center) <= centerTolSq) return { guide, type: 'move' };
+          const rHandleTolSq = Math.pow(7 / this.scale, 2);
+          if (this.distanceToPointSq(world, guide.radiusHandle) <= rHandleTolSq) return { guide, type: 'resize' };
+          const flipTri = guide.flipTriangle;
+          if (this.pointInTriangle(world, flipTri.tip, flipTri.left, flipTri.right)
+              || this.distanceToPointSq(world, flipTri.baseCenter) <= Math.pow(12 / this.scale, 2)) {
+            return { guide, type: 'flip' };
+          }
+          continue;
+        }
+        // line guide
         const rotateTolSq = Math.pow(guide.rotateRadius + 5 / this.scale, 2);
         const onStartHandle = this.distanceToPointSq(world, guide.rotateStart) <= rotateTolSq;
         const onEndHandle = this.distanceToPointSq(world, guide.rotateEnd) <= rotateTolSq;
         if (onStartHandle || onEndHandle) return { guide, type: 'rotate' };
-        const flipTri = this.pointInTriangle(world, guide.flipTriangle.tip, guide.flipTriangle.left, guide.flipTriangle.right)
-          || this.distanceToPointSq(world, guide.flipTriangle.baseCenter) <= Math.pow(12 / this.scale, 2);
-        if (flipTri) return { guide, type: 'flip' };
+        const flipTri = guide.flipTriangle;
+        if (this.pointInTriangle(world, flipTri.tip, flipTri.left, flipTri.right)
+            || this.distanceToPointSq(world, flipTri.baseCenter) <= Math.pow(12 / this.scale, 2)) {
+          return { guide, type: 'flip' };
+        }
         if (this.distanceToSegmentSq(world, guide.start, guide.end) <= lineTolSq) return { guide, type: 'move' };
       }
       return null;

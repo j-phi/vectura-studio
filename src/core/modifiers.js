@@ -279,6 +279,254 @@
     return distance > 0 ? 1 : -1;
   };
 
+  const buildAxisFromAngle = (cx, cy, angleDeg) => {
+    const angle = (angleDeg * Math.PI) / 180;
+    const tangent = { x: Math.cos(angle), y: Math.sin(angle) };
+    const normal = { x: -tangent.y, y: tangent.x };
+    return { point: { x: cx, y: cy }, tangent, normal, replacedSign: 1 };
+  };
+
+  const rotatePath = (path, angleRad, cx, cy) => {
+    const cos = Math.cos(angleRad);
+    const sin = Math.sin(angleRad);
+    const next = path.map((pt) => ({
+      x: cx + (pt.x - cx) * cos - (pt.y - cy) * sin,
+      y: cy + (pt.x - cx) * sin + (pt.y - cy) * cos,
+    }));
+    if (path.meta) next.meta = clone(path.meta);
+    return next;
+  };
+
+  const clipPathsToHalfPlane = (paths, center, angleDeg, keepSign) => {
+    const axis = buildAxisFromAngle(center.x, center.y, angleDeg);
+    const output = [];
+    (paths || []).forEach((path) => {
+      if (isClosedSourcePath(path)) {
+        const clipped = clipClosedPolygonByAxis(path, axis, keepSign);
+        if (clipped.length) output.push(clipped);
+        return;
+      }
+      splitPathByAxis(path, axis).forEach((piece) => {
+        const side = classifyPieceSide(piece, axis);
+        if (side === 0 || side === keepSign) output.push(piece);
+      });
+    });
+    return output.filter((p) => Array.isArray(p) && p.length >= 2);
+  };
+
+  const splitPathByCircle = (path, cx, cy, R) => {
+    const points = flattenPath(path);
+    if (points.length < 2) return [];
+    const out = [];
+    let current = [points[0]];
+    for (let i = 0; i < points.length - 1; i += 1) {
+      const A = points[i];
+      const B = points[i + 1];
+      const rA = Math.hypot(A.x - cx, A.y - cy) - R;
+      const rB = Math.hypot(B.x - cx, B.y - cy) - R;
+      if (rA * rB < -(EPSILON * EPSILON)) {
+        const Dx = B.x - A.x;
+        const Dy = B.y - A.y;
+        const Ex = A.x - cx;
+        const Ey = A.y - cy;
+        const a = Dx * Dx + Dy * Dy;
+        const b2 = Dx * Ex + Dy * Ey;
+        const c = Ex * Ex + Ey * Ey - R * R;
+        const disc = b2 * b2 - a * c;
+        if (disc >= 0) {
+          const sqrtDisc = Math.sqrt(Math.max(0, disc));
+          const ts = [(-b2 - sqrtDisc) / a, (-b2 + sqrtDisc) / a]
+            .filter((t) => t > EPSILON && t < 1 - EPSILON)
+            .sort((p, q) => p - q);
+          ts.forEach((t) => {
+            const hit = { x: A.x + t * Dx, y: A.y + t * Dy };
+            if (!pointsEqual(current[current.length - 1], hit)) current.push(hit);
+            if (current.length > 1) out.push(current);
+            current = [hit];
+          });
+        }
+      }
+      if (!pointsEqual(current[current.length - 1], B)) current.push(B);
+    }
+    if (current.length > 1) out.push(current);
+    return out;
+  };
+
+  const reflectPointAcrossCircle = (pt, cx, cy, R) => {
+    const dx = pt.x - cx;
+    const dy = pt.y - cy;
+    const r2 = dx * dx + dy * dy;
+    if (r2 < EPSILON * EPSILON) return { x: cx + R, y: cy };
+    const scale = (R * R) / r2;
+    return { x: cx + dx * scale, y: cy + dy * scale };
+  };
+
+  const createRadialMirror = (index = 0, overrides = {}) => ({
+    id: makeId('mirror'),
+    enabled: true,
+    guideVisible: true,
+    locked: false,
+    type: 'radial',
+    count: 6,
+    mode: 'dihedral',
+    centerX: 0,
+    centerY: 0,
+    angle: 0,
+    color: getMirrorColor(index),
+    ...clone(overrides),
+  });
+
+  const createArcMirror = (index = 0, overrides = {}) => ({
+    id: makeId('mirror'),
+    enabled: true,
+    guideVisible: true,
+    locked: false,
+    type: 'arc',
+    centerX: 0,
+    centerY: 0,
+    radius: 100,
+    arcStart: -90,
+    arcEnd: 90,
+    replacedSide: 'outer',
+    strength: 100,
+    falloff: 0,
+    color: getMirrorColor(index),
+    ...clone(overrides),
+  });
+
+  const applyRadialMirrorToPaths = (paths, mirror, bounds) => {
+    if (!mirror?.enabled) return (paths || []).map(clonePath).filter((p) => p.length >= 2);
+    const count = Math.max(2, Math.round(mirror.count ?? 6));
+    const mode = mirror.mode ?? 'dihedral';
+    const cx = (bounds?.width ?? 0) / 2 + (mirror.centerX ?? 0);
+    const cy = (bounds?.height ?? 0) / 2 + (mirror.centerY ?? 0);
+    const center = { x: cx, y: cy };
+    const baseAngleDeg = mirror.angle ?? 0;
+    const fullWedgeDeg = 360 / count;
+
+    if (mode === 'edge') {
+      let current = (paths || []).map(clonePath).filter((p) => p.length >= 2);
+      for (let k = 0; k < count; k += 1) {
+        const edgeAngleDeg = baseAngleDeg + (k + 0.5) * fullWedgeDeg;
+        const fakeMirror = {
+          enabled: true,
+          type: 'line',
+          angle: edgeAngleDeg,
+          xShift: mirror.centerX ?? 0,
+          yShift: mirror.centerY ?? 0,
+          replacedSide: 'positive',
+        };
+        current = applyMirrorToPaths(current, fakeMirror, bounds);
+      }
+      return current;
+    }
+
+    const halfWedgeDeg = fullWedgeDeg / 2;
+    const clipEndDeg = mode === 'dihedral' ? baseAngleDeg + halfWedgeDeg : baseAngleDeg + fullWedgeDeg;
+    let clipped = (paths || []).map(clonePath).filter((p) => p.length >= 2);
+    clipped = clipPathsToHalfPlane(clipped, center, baseAngleDeg, +1);
+    clipped = clipPathsToHalfPlane(clipped, center, clipEndDeg, -1);
+    if (!clipped.length) return [];
+
+    const output = [];
+    const fullWedgeRad = (fullWedgeDeg * Math.PI) / 180;
+
+    if (mode === 'rotation') {
+      for (let k = 0; k < count; k += 1) {
+        clipped.forEach((path) => output.push(rotatePath(path, k * fullWedgeRad, cx, cy)));
+      }
+    } else {
+      const reflectAxisDeg = clipEndDeg;
+      const reflAxis = buildAxisFromAngle(cx, cy, reflectAxisDeg);
+      const reflected = clipped.map((path) => {
+        if (isClosedSourcePath(path)) return toClosedPolygonPath(reflectPath(path, reflAxis), path);
+        return reflectPath(path, reflAxis);
+      }).filter((p) => Array.isArray(p) && p.length >= 2);
+
+      for (let k = 0; k < count; k += 1) {
+        const rot = k * fullWedgeRad;
+        clipped.forEach((path) => output.push(rotatePath(path, rot, cx, cy)));
+        reflected.forEach((path) => output.push(rotatePath(path, rot, cx, cy)));
+      }
+    }
+    return output.filter((p) => Array.isArray(p) && p.length >= 2);
+  };
+
+  const applyArcMirrorToPaths = (paths, mirror, bounds) => {
+    if (!mirror?.enabled) return (paths || []).map(clonePath).filter((p) => p.length >= 2);
+    const cx = (bounds?.width ?? 0) / 2 + (mirror.centerX ?? 0);
+    const cy = (bounds?.height ?? 0) / 2 + (mirror.centerY ?? 0);
+    const R = Math.max(1, mirror.radius ?? 100);
+    const replacedOutside = (mirror.replacedSide ?? 'outer') === 'outer';
+    const sourceSign = replacedOutside ? -1 : +1;
+
+    const strength = Math.max(0, Math.min(100, mirror.strength ?? 100)) / 100;
+    if (strength === 0) return (paths || []).map(clonePath).filter((p) => p.length >= 2);
+    const falloff = Math.max(0, Math.min(100, mirror.falloff ?? 0)) / 100;
+    const arcStartRad = ((mirror.arcStart ?? -90) * Math.PI) / 180;
+    const arcEndRad = ((mirror.arcEnd ?? 90) * Math.PI) / 180;
+    const arcMidRad = (arcStartRad + arcEndRad) / 2;
+    const arcHalfSpan = Math.abs(arcEndRad - arcStartRad) / 2;
+
+    const pointBlend = (pt) => {
+      if (strength === 0) return 0;
+      let diff = Math.atan2(pt.y - cy, pt.x - cx) - arcMidRad;
+      while (diff > Math.PI) diff -= 2 * Math.PI;
+      while (diff < -Math.PI) diff += 2 * Math.PI;
+      const distFromEdge = arcHalfSpan - Math.abs(diff);
+      if (distFromEdge <= 0) return 0;
+      if (falloff === 0 || arcHalfSpan < 1e-6) return strength;
+      const fadeZone = arcHalfSpan * falloff;
+      const t = fadeZone > 0 ? Math.min(1, distFromEdge / fadeZone) : 1;
+      return strength * t;
+    };
+
+    const radialSide = (pt) => {
+      const d = Math.hypot(pt.x - cx, pt.y - cy) - R;
+      if (Math.abs(d) <= EPSILON) return 0;
+      return d > 0 ? +1 : -1;
+    };
+    const pieceSide = (piece) => {
+      if (!piece.length) return 0;
+      return radialSide(piece[Math.floor(piece.length / 2)] || piece[0]);
+    };
+    const reflectPt = (pt) => {
+      const blend = pointBlend(pt);
+      if (blend <= 0) return { x: pt.x, y: pt.y };
+      const full = reflectPointAcrossCircle(pt, cx, cy, R);
+      return { x: pt.x + blend * (full.x - pt.x), y: pt.y + blend * (full.y - pt.y) };
+    };
+    const reflectArcPath = (path) => {
+      const next = path.map(reflectPt);
+      if (path.meta) next.meta = clone(path.meta);
+      return next;
+    };
+
+    const output = [];
+    (paths || []).forEach((path) => {
+      if (isClosedSourcePath(path)) {
+        const flat = flattenPath(path);
+        const centroid = flat.reduce((acc, pt) => ({ x: acc.x + pt.x, y: acc.y + pt.y }), { x: 0, y: 0 });
+        centroid.x /= Math.max(1, flat.length);
+        centroid.y /= Math.max(1, flat.length);
+        const side = radialSide(centroid);
+        if (side === 0 || side === sourceSign) {
+          output.push(path);
+          output.push(toClosedPolygonPath(reflectArcPath(flattenPath(path)), path));
+        }
+        return;
+      }
+      splitPathByCircle(path, cx, cy, R).forEach((piece) => {
+        const side = pieceSide(piece);
+        if (side === 0) { output.push(piece); return; }
+        if (side !== sourceSign) return;
+        output.push(piece);
+        output.push(reflectArcPath(piece));
+      });
+    });
+    return output.filter((p) => Array.isArray(p) && p.length >= 2);
+  };
+
   /**
    * Applies a single mirror config to a path array.
    * Closed paths are polygon-clipped to the source half-plane, then the kept half is reflected.
@@ -289,6 +537,8 @@
     if (!mirror?.enabled) {
       return (paths || []).map((path) => clonePath(path)).filter((path) => path.length >= 2);
     }
+    if (mirror.type === 'radial') return applyRadialMirrorToPaths(paths, mirror, bounds);
+    if (mirror.type === 'arc') return applyArcMirrorToPaths(paths, mirror, bounds);
     const axis = getMirrorAxis(mirror, bounds);
     const sourceSign = axis.replacedSign * -1;
     const output = [];
@@ -330,13 +580,19 @@
     EPSILON,
     createModifierState,
     createMirrorLine,
+    createRadialMirror,
+    createArcMirror,
     isModifierLayer,
     flattenPath,
     getMirrorAxis,
+    buildAxisFromAngle,
     signedDistanceToAxis,
     reflectPointAcrossAxis,
+    reflectPointAcrossCircle,
     clipInfiniteAxisToBounds,
     applyMirrorToPaths,
+    applyRadialMirrorToPaths,
+    applyArcMirrorToPaths,
     applyModifierToPaths,
   };
 })();

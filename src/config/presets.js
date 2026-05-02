@@ -474,6 +474,144 @@
           riversEnabled: false,
           oceansEnabled: false
         }
+      },
+      {
+        id: "rings-old-growth-oak",
+        name: "Old Growth Oak",
+        preset_system: "rings",
+        params: {
+          rings: 32,
+          gap: 1.1,
+          gapCurveStart: 1.6,
+          gapCurveEnd: 0.7,
+          spacingVariance: 0.4,
+          barkRings: 6,
+          barkGap: 1.5,
+          breakCount: 4,
+          centerDrift: 0.4,
+          biasStrength: 0.12,
+          biasAngle: 210,
+          rayCount: 45,
+          rayLength: 2.8,
+          rayInnerFraction: 0.12,
+          knotCount: 1,
+          knotIntensity: 0.7,
+          knotSpread: 28,
+          seed: 3714
+        }
+      },
+      {
+        id: "rings-pine-cross-section",
+        name: "Pine Cross-Section",
+        preset_system: "rings",
+        params: {
+          rings: 22,
+          gap: 1.15,
+          gapCurveStart: 1.4,
+          gapCurveEnd: 0.85,
+          spacingVariance: 0.25,
+          barkRings: 4,
+          barkGap: 2,
+          breakCount: 0,
+          centerDrift: 0.2,
+          biasStrength: 0.08,
+          biasAngle: 160,
+          rayCount: 0,
+          rayLength: 2.5,
+          rayInnerFraction: 0.15,
+          knotCount: 0,
+          knotIntensity: 0.6,
+          knotSpread: 30,
+          seed: 8821
+        }
+      },
+      {
+        id: "rings-ancient-redwood",
+        name: "Ancient Redwood",
+        preset_system: "rings",
+        params: {
+          rings: 48,
+          gap: 1.05,
+          gapCurveStart: 1.8,
+          gapCurveEnd: 0.6,
+          spacingVariance: 0.5,
+          barkRings: 10,
+          barkGap: 1,
+          breakCount: 6,
+          centerDrift: 0.6,
+          biasStrength: 0.15,
+          biasAngle: 45,
+          rayCount: 80,
+          rayLength: 3.2,
+          rayInnerFraction: 0.1,
+          knotCount: 2,
+          knotIntensity: 0.8,
+          knotSpread: 35,
+          seed: 2266
+        }
+      },
+
+      {
+        id: 'svg-distort-plain',
+        name: 'SVG Plain Import',
+        preset_system: 'svgDistort',
+        params: {
+          showOutlines: true,
+          fillMode: 'none',
+          autoFit: true,
+          scale: 1.0,
+          noises: [],
+        }
+      },
+
+      {
+        id: 'svg-distort-hatched',
+        name: 'SVG Hatch Fill + Noise',
+        preset_system: 'svgDistort',
+        params: {
+          showOutlines: true,
+          fillMode: 'hatch',
+          fillDensity: 6,
+          autoFit: true,
+          scale: 1.0,
+          noises: [
+            {
+              id: 'noise-1',
+              enabled: true,
+              type: 'simplex',
+              blend: 'add',
+              amplitude: 3,
+              zoom: 0.015,
+              freq: 1.0,
+              angle: 0,
+              shiftX: 0,
+              shiftY: 0,
+              tileMode: 'off',
+              tilePadding: 0,
+              patternScale: 1,
+              warpStrength: 1,
+              cellularScale: 1,
+              cellularJitter: 1,
+              stepsCount: 5,
+              seed: 0,
+              octaves: 2,
+              lacunarity: 2.0,
+              gain: 0.5,
+              noiseStyle: 'linear',
+              noiseThreshold: 0,
+              imageWidth: 1,
+              imageHeight: 1,
+              microFreq: 0,
+              imageInvertColor: false,
+              imageInvertOpacity: false,
+              imageId: '',
+              imageName: '',
+              imagePreview: '',
+              imageAlgo: 'luma',
+              imageEffects: [],
+            }
+          ],
+        }
       }
 
   ];
@@ -482,4 +620,5 @@
     return system === 'petalisDesigner';
   });
   window.Vectura.TERRAIN_PRESETS = window.Vectura.PRESETS.filter((preset) => preset?.preset_system === 'terrain');
+  window.Vectura.RINGS_PRESETS = window.Vectura.PRESETS.filter((preset) => preset?.preset_system === 'rings');
 })();

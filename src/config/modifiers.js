@@ -17,6 +17,12 @@
   };
   window.Vectura.MODIFIER_DESCRIPTIONS = {
     mirror:
-      'Mirrors child layer geometry across one or more full-canvas axes. Each axis replaces one side with a reflected copy of the opposite side, applied top-to-bottom.',
+      'Mirrors child layer geometry across one or more axes. Supports line, radial (kaleidoscope), and arc mirror types applied top-to-bottom.',
+    mirrorLine:
+      'Reflects geometry across an infinite line axis at a given angle and position.',
+    mirrorRadial:
+      'Tiles geometry with N-fold rotational (rotation), dihedral (kaleidoscope), or edge-reflection symmetry. Wedge-clips the source before tiling for clean plotter output.',
+    mirrorArc:
+      'Reflects geometry across a circular arc. Points on the replaced side are mapped through the arc surface to the opposite side.',
   };
 })();

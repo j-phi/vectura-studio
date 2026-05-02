@@ -13,7 +13,7 @@
     wavetable:
       'Generates terrain-like elevations by modulating selectable line structures with one or more stacked noise sources.',
     rings:
-      'Creates concentric rings with Noise Rack radius modulation, including stacked noise sampled from a world-space XY field, seam-corrected path sampling along each ring, or the legacy ring-local orbit field.',
+      'Creates concentric rings with tree-ring realism: tapered ring spacing (gapCurveStart→gapCurveEnd), per-ring noise variance, bark zone (barkRings + barkGap), ink-stamp path breaks (breakThreshold), directional growth bias, drifting ring centers, medullary rays, and knot warps. Noise Rack radius modulation with world-space, seam-corrected concentric, or orbit sampling. V-markings (vMarkCount/vMarkDepth/vMarkSpread/vMarkSize): sharp inward V-chevron warps. Scars (scarCount/scarDepth/scarWidth/scarSize): asymmetric healing wounds — deep at wound ring, narrowing outward. Thick rings (thickRingCount/thickRingDensity/thickRingWidth): clustered ring compression bands. Cracks (crackCount/crackDepth/crackSpread/crackNoise): outward-to-inward V-wedge radial checking paths.',
     topo:
       'Builds contour lines from a Noise Rack height field, with stacked layers driving the contour extraction and mapping modes.',
     petalisDesigner:
@@ -39,5 +39,7 @@
     expanded:
       'Static sublayer created from an expanded generation. Use transform and common controls to refine the line.',
     group: 'Group container for expanded line sublayers.',
+    svgDistort:
+      'Imports an external SVG, converts filled shapes to plottable line fills (hatch, wavelines, contour, etc.), and applies Noise Rack point displacement.',
   };
 })();

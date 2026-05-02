@@ -104,6 +104,12 @@
         fillType: fillTypeEl?.value || 'hatch',
         density: parseFloat(densityEl?.value) || 1,
         penId: penEl?.value || null,
+        angle: 0,
+        amplitude: 1.0,
+        dotSize: 1.0,
+        padding: 0,
+        shiftX: 0,
+        shiftY: 0,
       };
     },
 
@@ -248,56 +254,130 @@
 
     _renderFillsList(pd) {
       const SETTINGS = window.Vectura.SETTINGS || {};
+      const FillPanel = window.Vectura.FillPanel;
+      const FILL_CAPS = FillPanel?.FILL_CAPS || {};
       const listEl = pd.root.querySelector('[data-pd-fills-list]');
       if (!listEl) return;
       listEl.innerHTML = '';
       if (!pd.fills.length) return;
-      const fillOptions = [
-        { value: 'hatch', label: 'H. Hatch' },
-        { value: 'vhatch', label: 'V. Hatch' },
-        { value: 'crosshatch', label: 'Cross-hatch' },
-        { value: 'dhatch45', label: 'Diag. 45°' },
-        { value: 'dhatch135', label: 'Diag. 135°' },
-        { value: 'xcrosshatch', label: 'Diag. cross' },
-        { value: 'wavelines', label: 'Wavy lines' },
-        { value: 'zigzag', label: 'Zigzag' },
-        { value: 'stipple', label: 'Stipple' },
-        { value: 'contour', label: 'Contour' },
-      ];
+
+      const fillOptions = FillPanel
+        ? FillPanel.FILL_TYPE_OPTIONS.filter((o) => o.value !== 'none')
+        : [
+            { value: 'hatch', label: 'H. Hatch' },
+            { value: 'vhatch', label: 'V. Hatch' },
+            { value: 'crosshatch', label: 'Cross-hatch' },
+            { value: 'dhatch45', label: 'Diag. 45°' },
+            { value: 'dhatch135', label: 'Diag. 135°' },
+            { value: 'xcrosshatch', label: 'Diag. cross' },
+            { value: 'wavelines', label: 'Wavy lines' },
+            { value: 'zigzag', label: 'Zigzag' },
+            { value: 'stipple', label: 'Stipple' },
+            { value: 'contour', label: 'Contour' },
+          ];
+
       const pens = SETTINGS.pens || [];
+
+      const updateParamVisibility = (paramsRow, fillType) => {
+        const caps = FILL_CAPS[fillType] || {};
+        const angleWrap = paramsRow.querySelector('[data-fl-angle-wrap]');
+        const ampWrap = paramsRow.querySelector('[data-fl-amplitude-wrap]');
+        const dotWrap = paramsRow.querySelector('[data-fl-dotsize-wrap]');
+        const shiftWrap = paramsRow.querySelector('[data-fl-shift-wrap]');
+        if (angleWrap) angleWrap.style.display = caps.angle ? '' : 'none';
+        if (ampWrap) ampWrap.style.display = caps.amplitude ? '' : 'none';
+        if (dotWrap) dotWrap.style.display = caps.dotSize ? '' : 'none';
+        if (shiftWrap) shiftWrap.style.display = caps.shift ? '' : 'none';
+      };
+
       pd.fills.forEach((fill, idx) => {
-        const row = document.createElement('div');
-        row.className = 'flex items-center gap-1 text-[10px] border border-vectura-border px-1.5 py-1 bg-vectura-bg';
-        const fillOpts = fillOptions.map(o =>
-          `<option value="${o.value}"${fill.fillType === o.value ? ' selected' : ''}>${o.label}</option>`
-        ).join('');
-        const penOpts = `<option value=""${!fill.penId ? ' selected' : ''}>Default</option>` +
-          pens.map(p => `<option value="${p.id}"${fill.penId === p.id ? ' selected' : ''}>${p.name || p.id}</option>`).join('');
-        row.innerHTML = `
+        const wrapper = document.createElement('div');
+        wrapper.className = 'border border-vectura-border bg-vectura-bg mb-0.5';
+
+        const fillOpts = fillOptions
+          .map((o) => `<option value="${o.value}"${fill.fillType === o.value ? ' selected' : ''}>${o.label}</option>`)
+          .join('');
+        const penOpts =
+          `<option value=""${!fill.penId ? ' selected' : ''}>Default</option>` +
+          pens.map((p) => `<option value="${p.id}"${fill.penId === p.id ? ' selected' : ''}>${p.name || p.id}</option>`).join('');
+
+        const row1 = document.createElement('div');
+        row1.className = 'flex items-center gap-1 text-[10px] px-1.5 py-1';
+        row1.innerHTML = `
           <span class="text-vectura-muted flex-shrink-0">#${idx + 1}</span>
           <select class="bg-vectura-bg border border-vectura-border px-0.5 py-0 text-[10px] focus:outline-none flex-1 min-w-0" data-fl-type>${fillOpts}</select>
-          <input type="number" class="bg-vectura-bg border border-vectura-border px-0.5 py-0 text-[10px] w-10 focus:outline-none" data-fl-density value="${fill.density}" min="0.5" max="50" step="0.5">
+          <input type="number" class="bg-vectura-bg border border-vectura-border px-0.5 py-0 text-[10px] w-10 focus:outline-none" data-fl-density value="${fill.density ?? 1}" min="0.5" max="50" step="0.5" title="Density">
           <select class="bg-vectura-bg border border-vectura-border px-0.5 py-0 text-[10px] focus:outline-none w-16 min-w-0" data-fl-pen>${penOpts}</select>
           <button type="button" class="text-vectura-muted hover:text-red-400 transition-colors flex-shrink-0 ml-0.5" data-fl-del title="Delete fill">×</button>`;
 
-        row.querySelector('[data-fl-type]').addEventListener('change', (e) => {
+        const row2 = document.createElement('div');
+        row2.className = 'flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9px] px-1.5 pb-1 text-vectura-muted';
+        row2.innerHTML = `
+          <span data-fl-angle-wrap class="flex items-center gap-0.5">
+            <span title="Angle">∠</span><input type="number" class="bg-vectura-bg border border-vectura-border px-0.5 py-0 text-[9px] w-9 focus:outline-none" data-fl-angle value="${fill.angle ?? 0}" min="0" max="360" step="1" title="Angle (°)">°
+          </span>
+          <span data-fl-amplitude-wrap class="flex items-center gap-0.5">
+            <span>amp</span><input type="number" class="bg-vectura-bg border border-vectura-border px-0.5 py-0 text-[9px] w-10 focus:outline-none" data-fl-amplitude value="${fill.amplitude ?? 1.0}" min="0.1" max="3.0" step="0.05" title="Amplitude">
+          </span>
+          <span data-fl-dotsize-wrap class="flex items-center gap-0.5">
+            <span>dot</span><input type="number" class="bg-vectura-bg border border-vectura-border px-0.5 py-0 text-[9px] w-10 focus:outline-none" data-fl-dotsize value="${fill.dotSize ?? 1.0}" min="0.1" max="3.0" step="0.05" title="Dot size">
+          </span>
+          <span class="flex items-center gap-0.5">
+            <span>pad</span><input type="number" class="bg-vectura-bg border border-vectura-border px-0.5 py-0 text-[9px] w-10 focus:outline-none" data-fl-padding value="${fill.padding ?? 0}" min="0" max="10" step="0.1" title="Padding (mm)">
+          </span>
+          <span data-fl-shift-wrap class="flex items-center gap-0.5">
+            <span>dx</span><input type="number" class="bg-vectura-bg border border-vectura-border px-0.5 py-0 text-[9px] w-9 focus:outline-none" data-fl-shiftx value="${fill.shiftX ?? 0}" min="-50" max="50" step="0.5" title="Shift X">
+            <span>dy</span><input type="number" class="bg-vectura-bg border border-vectura-border px-0.5 py-0 text-[9px] w-9 focus:outline-none" data-fl-shifty value="${fill.shiftY ?? 0}" min="-50" max="50" step="0.5" title="Shift Y">
+          </span>`;
+
+        updateParamVisibility(row2, fill.fillType);
+
+        row1.querySelector('[data-fl-type]').addEventListener('change', (e) => {
           fill.fillType = e.target.value;
+          updateParamVisibility(row2, fill.fillType);
           this._applyPatternDesignerChanges(pd);
         });
-        row.querySelector('[data-fl-density]').addEventListener('change', (e) => {
+        row1.querySelector('[data-fl-density]').addEventListener('change', (e) => {
           fill.density = parseFloat(e.target.value) || 1;
           this._applyPatternDesignerChanges(pd);
         });
-        row.querySelector('[data-fl-pen]').addEventListener('change', (e) => {
+        row1.querySelector('[data-fl-pen]').addEventListener('change', (e) => {
           fill.penId = e.target.value || null;
           this._applyPatternDesignerChanges(pd);
         });
-        row.querySelector('[data-fl-del]').addEventListener('click', () => {
+        row1.querySelector('[data-fl-del]').addEventListener('click', () => {
           this._pushPdHistory(pd);
           pd.fills.splice(idx, 1);
           this._applyPatternDesignerChanges(pd);
         });
-        listEl.appendChild(row);
+        row2.querySelector('[data-fl-angle]').addEventListener('change', (e) => {
+          fill.angle = parseFloat(e.target.value) || 0;
+          this._applyPatternDesignerChanges(pd);
+        });
+        row2.querySelector('[data-fl-amplitude]').addEventListener('change', (e) => {
+          fill.amplitude = parseFloat(e.target.value) || 1.0;
+          this._applyPatternDesignerChanges(pd);
+        });
+        row2.querySelector('[data-fl-dotsize]').addEventListener('change', (e) => {
+          fill.dotSize = parseFloat(e.target.value) || 1.0;
+          this._applyPatternDesignerChanges(pd);
+        });
+        row2.querySelector('[data-fl-padding]').addEventListener('change', (e) => {
+          fill.padding = parseFloat(e.target.value) ?? 0;
+          this._applyPatternDesignerChanges(pd);
+        });
+        row2.querySelector('[data-fl-shiftx]').addEventListener('change', (e) => {
+          fill.shiftX = parseFloat(e.target.value) || 0;
+          this._applyPatternDesignerChanges(pd);
+        });
+        row2.querySelector('[data-fl-shifty]').addEventListener('change', (e) => {
+          fill.shiftY = parseFloat(e.target.value) || 0;
+          this._applyPatternDesignerChanges(pd);
+        });
+
+        wrapper.appendChild(row1);
+        wrapper.appendChild(row2);
+        listEl.appendChild(wrapper);
       });
     },
 
@@ -1480,6 +1560,12 @@
         fillType: f.fillType,
         density: f.density,
         penId: f.penId || null,
+        angle: f.angle ?? 0,
+        amplitude: f.amplitude ?? 1.0,
+        dotSize: f.dotSize ?? 1.0,
+        padding: f.padding ?? 0,
+        shiftX: f.shiftX ?? 0,
+        shiftY: f.shiftY ?? 0,
       }));
       const sensitivityEl = pd.root.querySelector('[data-pd-sensitivity]');
       if (sensitivityEl) layer.params.fillSensitivity = parseFloat(sensitivityEl.value) || 2.0;

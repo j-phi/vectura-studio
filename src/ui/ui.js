@@ -15,6 +15,7 @@
     PRESETS,
     PETALIS_PRESETS,
     TERRAIN_PRESETS,
+    RINGS_PRESETS,
     MODIFIER_DEFAULTS,
     MODIFIER_DESCRIPTIONS,
     Modifiers = {},
@@ -36,6 +37,9 @@
 
   const TERRAIN_PRESET_LIBRARY = (Array.isArray(PRESETS) ? PRESETS : Array.isArray(TERRAIN_PRESETS) ? TERRAIN_PRESETS : [])
     .filter((preset) => preset?.preset_system === 'terrain');
+
+  const RINGS_PRESET_LIBRARY = (Array.isArray(PRESETS) ? PRESETS : Array.isArray(RINGS_PRESETS) ? RINGS_PRESETS : [])
+    .filter((preset) => preset?.preset_system === 'rings');
 
   const getEl = (id, options = {}) => {
     const { silent = false } = options;
@@ -212,6 +216,8 @@
   const joinNearbyPaths = OptimizationUtils?.joinNearbyPaths || ((paths) => paths);
   const createModifierState = Modifiers.createModifierState || ((type) => ({ type, enabled: true, guidesVisible: true, guidesLocked: false, mirrors: [] }));
   const createMirrorLine = Modifiers.createMirrorLine || ((index) => ({ id: `mirror-${index + 1}`, enabled: true }));
+  const createRadialMirror = Modifiers.createRadialMirror || ((index) => ({ id: `mirror-${index + 1}`, enabled: true, type: 'radial', count: 6, mode: 'dihedral', centerX: 0, centerY: 0, angle: 0 }));
+  const createArcMirror = Modifiers.createArcMirror || ((index) => ({ id: `mirror-${index + 1}`, enabled: true, type: 'arc', centerX: 0, centerY: 0, radius: 100, arcStart: -90, arcEnd: 90, replacedSide: 'outer' }));
   const isModifierLayer = Modifiers.isModifierLayer || (() => false);
   const getLayerSilhouette = Masking.getLayerSilhouette || (() => []);
 
@@ -1949,6 +1955,13 @@
       : []),
   ];
 
+  const RINGS_PRESET_OPTIONS = [
+    { value: 'custom', label: 'Custom' },
+    ...(Array.isArray(RINGS_PRESET_LIBRARY)
+      ? RINGS_PRESET_LIBRARY.map((preset) => ({ value: preset.id, label: preset.name }))
+      : []),
+  ];
+
   const PETAL_PROFILE_OPTIONS = [
     { value: 'oval', label: 'Oval' },
     { value: 'teardrop', label: 'Teardrop' },
@@ -2179,6 +2192,44 @@
 
   const CONTROL_DEFS = {
     expanded: [],
+    svgDistort: [
+      { type: 'svgImportButton' },
+      {
+        id: 'showOutlines',
+        label: 'Show Outlines',
+        type: 'checkbox',
+      },
+      ...(window.Vectura.FillPanel?.buildFillControlDefs({
+        fillTypeOptions: window.Vectura.FillPanel.FILL_TYPE_OPTIONS,
+        typeParam: 'fillMode',
+        densityParam: 'fillDensity',
+        angleParam: 'fillAngle',
+        amplitudeParam: 'fillAmplitude',
+        paddingParam: 'fillPadding',
+        dotSizeParam: 'fillDotSize',
+        shiftXParam: 'fillShiftX',
+        shiftYParam: 'fillShiftY',
+        showIfBase: (p) => (p.importedGroups || []).some((g) => g.isClosed),
+        descKeyPrefix: 'fill',
+      }) || []),
+      {
+        id: 'autoFit',
+        label: 'Auto Fit to Canvas',
+        type: 'checkbox',
+      },
+      {
+        id: 'noiseTarget',
+        label: 'Apply Noise To',
+        type: 'select',
+        options: [
+          { value: 'all', label: 'All Paths' },
+          { value: 'outlines', label: 'Outlines Only' },
+          { value: 'fills', label: 'Fills Only' },
+        ],
+        showIf: (p) => (p.noises || []).some((n) => n.enabled !== false),
+      },
+      { type: 'noiseList' },
+    ],
     pattern: [
       {
         id: 'patternFilter',
@@ -2836,12 +2887,117 @@
       { id: 'flatCaps', label: 'Flat Top/Bottom', type: 'checkbox', infoKey: 'wavetable.flatCaps' },
     ],
     rings: [
-      { id: 'rings', label: 'Rings', type: 'range', min: 3, max: 120, step: 1, infoKey: 'rings.rings' },
-      { id: 'centerDiameter', label: 'Center Diameter', type: 'range', min: 0, max: 220, step: 1, infoKey: 'rings.centerDiameter' },
       { type: 'noiseList' },
+      { id: 'rings', label: 'Rings', type: 'range', min: 1, max: 120, step: 1, infoKey: 'rings.rings' },
+      { id: 'centerDiameter', label: 'Center Diameter', type: 'range', min: 0, max: 500, step: 1, infoKey: 'rings.centerDiameter' },
+      { id: 'outerDiameter', label: 'Outer Diameter', type: 'range', min: 1, max: 500, step: 1, infoKey: 'rings.outerDiameter' },
+      { type: 'section', label: 'Ring Spacing' },
       { id: 'gap', label: 'Ring Gap', type: 'range', min: 0.4, max: 3.0, step: 0.1, infoKey: 'rings.gap' },
-      { id: 'offsetX', label: 'Ring Offset X', type: 'range', min: -100, max: 100, step: 1, infoKey: 'rings.offsetX' },
-      { id: 'offsetY', label: 'Ring Offset Y', type: 'range', min: -100, max: 100, step: 1, infoKey: 'rings.offsetY' },
+      { id: 'gapCurveStart', label: 'Inner Gap', type: 'range', min: 0.3, max: 10, step: 0.05, infoKey: 'rings.gapCurveStart' },
+      { id: 'gapCurveEnd', label: 'Outer Gap', type: 'range', min: 0.3, max: 3.0, step: 0.05, infoKey: 'rings.gapCurveEnd' },
+      { id: 'spacingVariance', label: 'Spacing Variance', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'rings.spacingVariance' },
+      { type: 'section', label: 'Bark Zone' },
+      { id: 'barkRings', label: 'Bark Rings', type: 'range', min: 0, max: 24, step: 1, infoKey: 'rings.barkRings' },
+      { id: 'barkType', label: 'Bark Style', type: 'select', options: [
+          { value: 'smooth',     label: 'Smooth' },
+          { value: 'rough',      label: 'Rough' },
+          { value: 'furrowed',   label: 'Furrowed' },
+          { value: 'plated',     label: 'Plated' },
+          { value: 'papery',     label: 'Papery' },
+          { value: 'fibrous',    label: 'Fibrous' },
+          { value: 'scaly',      label: 'Scaly' },
+          { value: 'cracked',    label: 'Cracked' },
+          { value: 'lenticular', label: 'Lenticular' },
+          { value: 'woven',      label: 'Woven' },
+        ], infoKey: 'rings.barkType', showIf: (p) => (p.barkRings ?? 0) > 0 },
+      { id: 'barkGap', label: 'Bark Gap', type: 'range', min: 0, max: 10, step: 0.1, infoKey: 'rings.barkGap', showIf: (p) => (p.barkRings ?? 0) > 0 },
+      // rough
+      { id: 'barkRoughness', label: 'Roughness', type: 'range', min: 0, max: 20, step: 0.5, infoKey: 'rings.barkRoughness', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'rough' },
+      { id: 'barkRoughnessConfinement', label: 'Confinement', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'rings.barkRoughnessConfinement', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'rough' },
+      { id: 'barkFreq', label: 'Frequency', type: 'range', min: 1, max: 20, step: 0.5, infoKey: 'rings.barkFreq', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'rough' },
+      // furrowed
+      { id: 'barkFurrowCount', label: 'Furrow Count', type: 'range', min: 3, max: 40, step: 1, infoKey: 'rings.barkFurrowCount', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'furrowed' },
+      { id: 'barkFurrowDepth', label: 'Furrow Depth', type: 'range', min: 0.5, max: 15, step: 0.5, infoKey: 'rings.barkFurrowDepth', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'furrowed' },
+      { id: 'barkFurrowWidth', label: 'Furrow Width', type: 'range', min: 0.02, max: 0.5, step: 0.02, infoKey: 'rings.barkFurrowWidth', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'furrowed' },
+      // plated
+      { id: 'barkPlateCount', label: 'Plate Count', type: 'range', min: 4, max: 32, step: 1, infoKey: 'rings.barkPlateCount', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'plated' },
+      { id: 'barkPlateRelief', label: 'Plate Relief', type: 'range', min: 0.5, max: 12, step: 0.5, infoKey: 'rings.barkPlateRelief', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'plated' },
+      { id: 'barkPlateVariance', label: 'Plate Variance', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'rings.barkPlateVariance', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'plated' },
+      // papery
+      { id: 'barkPaperStrips', label: 'Strip Count', type: 'range', min: 2, max: 20, step: 1, infoKey: 'rings.barkPaperStrips', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'papery' },
+      { id: 'barkPaperPeel', label: 'Peel Lift', type: 'range', min: 0, max: 10, step: 0.5, infoKey: 'rings.barkPaperPeel', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'papery' },
+      { id: 'barkPaperJitter', label: 'Strip Jitter', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'rings.barkPaperJitter', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'papery' },
+      // fibrous
+      { id: 'barkFiberCount', label: 'Fiber Count', type: 'range', min: 6, max: 80, step: 1, infoKey: 'rings.barkFiberCount', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'fibrous' },
+      { id: 'barkFiberAmplitude', label: 'Fiber Amplitude', type: 'range', min: 0.5, max: 10, step: 0.5, infoKey: 'rings.barkFiberAmplitude', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'fibrous' },
+      { id: 'barkFiberPhaseShift', label: 'Phase Shift', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'rings.barkFiberPhaseShift', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'fibrous' },
+      // scaly
+      { id: 'barkScaleColumns', label: 'Scale Count', type: 'range', min: 6, max: 40, step: 1, infoKey: 'rings.barkScaleColumns', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'scaly' },
+      { id: 'barkScaleRelief', label: 'Scale Relief', type: 'range', min: 0.5, max: 10, step: 0.5, infoKey: 'rings.barkScaleRelief', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'scaly' },
+      { id: 'barkScaleTaper', label: 'Scale Taper', type: 'range', min: 0.1, max: 1, step: 0.05, infoKey: 'rings.barkScaleTaper', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'scaly' },
+      // cracked
+      { id: 'barkCrackDensity', label: 'Crack Count', type: 'range', min: 2, max: 30, step: 1, infoKey: 'rings.barkCrackDensity', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'cracked' },
+      { id: 'barkCrackDepth', label: 'Crack Depth', type: 'range', min: 0.5, max: 15, step: 0.5, infoKey: 'rings.barkCrackDepth', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'cracked' },
+      { id: 'barkCrackWidth', label: 'Crack Width', type: 'range', min: 0.01, max: 0.3, step: 0.01, infoKey: 'rings.barkCrackWidth', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'cracked' },
+      // lenticular
+      { id: 'barkLenticleCount', label: 'Lenticle Count', type: 'range', min: 4, max: 40, step: 1, infoKey: 'rings.barkLenticleCount', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'lenticular' },
+      { id: 'barkLenticleDepth', label: 'Lenticle Depth', type: 'range', min: 0.5, max: 10, step: 0.5, infoKey: 'rings.barkLenticleDepth', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'lenticular' },
+      { id: 'barkLenticleWidth', label: 'Lenticle Width', type: 'range', min: 0.02, max: 0.4, step: 0.02, infoKey: 'rings.barkLenticleWidth', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'lenticular' },
+      // woven
+      { id: 'barkWeaveFreq', label: 'Weave Frequency', type: 'range', min: 2, max: 20, step: 0.5, infoKey: 'rings.barkWeaveFreq', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'woven' },
+      { id: 'barkWeaveAmplitude', label: 'Weave Amplitude', type: 'range', min: 0.5, max: 8, step: 0.5, infoKey: 'rings.barkWeaveAmplitude', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'woven' },
+      { id: 'barkWeaveAngle', label: 'Weave Angle', type: 'range', min: 0, max: 180, step: 1, infoKey: 'rings.barkWeaveAngle', showIf: (p) => (p.barkRings ?? 0) > 0 && (p.barkType ?? 'smooth') === 'woven' },
+      { type: 'section', label: 'Radial Breaks' },
+      { id: 'breakCount', label: 'Break Count', type: 'range', min: 0, max: 20, step: 1, infoKey: 'rings.breakCount' },
+      { id: 'breakRadius', label: 'Break Radius (%)', type: 'rangeDual', minKey: 'breakRadiusMin', maxKey: 'breakRadiusMax', min: 0, max: 100, step: 1, infoKey: 'rings.breakRadius', showIf: (p) => (p.breakCount ?? 0) > 0 },
+      { id: 'breakLengthVariance', label: 'Radius Variance', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'rings.breakLengthVariance', showIf: (p) => (p.breakCount ?? 0) > 0 },
+      { id: 'breakNoiseSeed', label: 'Break Seed', type: 'range', min: 0, max: 9999, step: 1, infoKey: 'rings.breakNoiseSeed', showIf: (p) => (p.breakCount ?? 0) > 0 },
+      { id: 'breakWidth', label: 'Break Width (°)', type: 'rangeDual', minKey: 'breakWidthMin', maxKey: 'breakWidthMax', min: 0.5, max: 30, step: 0.5, infoKey: 'rings.breakWidth', showIf: (p) => (p.breakCount ?? 0) > 0 },
+      { id: 'breakWidthVariance', label: 'Width Variance', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'rings.breakWidthVariance', showIf: (p) => (p.breakCount ?? 0) > 0 },
+      { type: 'section', label: 'Growth Character' },
+      { id: 'offsetX', label: 'Center Offset X', type: 'range', min: -200, max: 200, step: 1, infoKey: 'rings.offsetX' },
+      { id: 'offsetY', label: 'Center Offset Y', type: 'range', min: -200, max: 200, step: 1, infoKey: 'rings.offsetY' },
+      { id: 'centerDrift', label: 'Center Drift', type: 'range', min: 0, max: 5, step: 0.1, infoKey: 'rings.centerDrift' },
+      { id: 'biasStrength', label: 'Bias Strength', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'rings.biasStrength' },
+      { id: 'biasAngle', label: 'Bias Direction', type: 'range', min: 0, max: 360, step: 1, infoKey: 'rings.biasAngle', showIf: (p) => (p.biasStrength ?? 0) > 0 },
+      { type: 'section', label: 'Medullary Rays' },
+      { id: 'rayCount', label: 'Ray Count', type: 'range', min: 0, max: 120, step: 1, infoKey: 'rings.rayCount' },
+      { id: 'rayLength', label: 'Ray Length', type: 'rangeDual', minKey: 'rayMinLength', maxKey: 'rayMaxLength', min: 0.1, max: 10, step: 0.1, infoKey: 'rings.rayLength', showIf: (p) => (p.rayCount ?? 0) > 0 },
+      { id: 'rayLengthVariance', label: 'Length Variance', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'rings.rayLengthVariance', showIf: (p) => (p.rayCount ?? 0) > 0 },
+      { id: 'rayInnerFraction', label: 'Ray Start', type: 'range', min: 0, max: 0.7, step: 0.05, infoKey: 'rings.rayInnerFraction', showIf: (p) => (p.rayCount ?? 0) > 0 },
+      { id: 'raySeed', label: 'Ray Seed', type: 'range', min: 0, max: 9999, step: 1, infoKey: 'rings.raySeed', showIf: (p) => (p.rayCount ?? 0) > 0 },
+      { type: 'section', label: 'Knots' },
+      { id: 'knotCount', label: 'Knot Count', type: 'range', min: 0, max: 30, step: 1, infoKey: 'rings.knotCount' },
+      { id: 'knotSeed', label: 'Knot Seed', type: 'range', min: 0, max: 9999, step: 1, infoKey: 'rings.knotSeed', showIf: (p) => (p.knotCount ?? 0) > 0 },
+      { id: 'knotSize', label: 'Knot Ring Reach', type: 'rangeDual', minKey: 'knotMinSize', maxKey: 'knotMaxSize', min: 0.5, max: 20, step: 0.5, infoKey: 'rings.knotSize', showIf: (p) => (p.knotCount ?? 0) > 0 },
+      { id: 'knotSizeVariance', label: 'Knot Size Variance', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'rings.knotSizeVariance', showIf: (p) => (p.knotCount ?? 0) > 0 },
+      { id: 'knotIntensity', label: 'Knot Strength', type: 'range', min: 0, max: 2, step: 0.05, infoKey: 'rings.knotIntensity', showIf: (p) => (p.knotCount ?? 0) > 0 },
+      { id: 'knotStrengthVariance', label: 'Knot Strength Variance', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'rings.knotStrengthVariance', showIf: (p) => (p.knotCount ?? 0) > 0 },
+      { id: 'knotSpread', label: 'Knot Size', type: 'range', min: 5, max: 90, step: 1, infoKey: 'rings.knotSpread', showIf: (p) => (p.knotCount ?? 0) > 0 },
+      { id: 'knotDirection', label: 'Knot Direction', type: 'select', options: [{ value: 'outer', label: 'Outer' }, { value: 'inner', label: 'Inner' }, { value: 'both', label: 'Both' }], infoKey: 'rings.knotDirection', showIf: (p) => (p.knotCount ?? 0) > 0 },
+      { type: 'section', label: 'V-Markings' },
+      { id: 'vMarkCount', label: 'V-Mark Count', type: 'range', min: 0, max: 10, step: 1, infoKey: 'rings.vMarkCount' },
+      { id: 'vMarkDepth', label: 'V-Mark Depth', type: 'range', min: 0, max: 60, step: 1, infoKey: 'rings.vMarkDepth', showIf: (p) => (p.vMarkCount ?? 0) > 0 },
+      { id: 'vMarkSpread', label: 'V-Mark Spread', type: 'range', min: 1, max: 60, step: 1, infoKey: 'rings.vMarkSpread', showIf: (p) => (p.vMarkCount ?? 0) > 0 },
+      { id: 'vMarkSize', label: 'Ring Reach (%)', type: 'range', min: 0, max: 100, step: 1, infoKey: 'rings.vMarkSize', showIf: (p) => (p.vMarkCount ?? 0) > 0 },
+      { id: 'vMarkSeed', label: 'V-Mark Seed', type: 'range', min: 0, max: 9999, step: 1, infoKey: 'rings.vMarkSeed', showIf: (p) => (p.vMarkCount ?? 0) > 0 },
+      { type: 'section', label: 'Scars' },
+      { id: 'scarCount', label: 'Scar Count', type: 'range', min: 0, max: 6, step: 1, infoKey: 'rings.scarCount' },
+      { id: 'scarDepth', label: 'Scar Depth', type: 'range', min: 0, max: 80, step: 1, infoKey: 'rings.scarDepth', showIf: (p) => (p.scarCount ?? 0) > 0 },
+      { id: 'scarWidth', label: 'Scar Width', type: 'range', min: 0.5, max: 180, step: 0.5, infoKey: 'rings.scarWidth', showIf: (p) => (p.scarCount ?? 0) > 0 },
+      { id: 'scarSize', label: 'Healing Rate', type: 'range', min: 1, max: 30, step: 1, infoKey: 'rings.scarSize', showIf: (p) => (p.scarCount ?? 0) > 0 },
+      { id: 'scarSeed', label: 'Scar Seed', type: 'range', min: 0, max: 9999, step: 1, infoKey: 'rings.scarSeed', showIf: (p) => (p.scarCount ?? 0) > 0 },
+      { type: 'section', label: 'Thick Rings' },
+      { id: 'thickRingCount', label: 'Cluster Count', type: 'range', min: 0, max: 12, step: 1, infoKey: 'rings.thickRingCount' },
+      { id: 'thickRingDensity', label: 'Compression', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'rings.thickRingDensity', showIf: (p) => (p.thickRingCount ?? 0) > 0 },
+      { id: 'thickRingWidth', label: 'Cluster Width', type: 'range', min: 1, max: 12, step: 1, infoKey: 'rings.thickRingWidth', showIf: (p) => (p.thickRingCount ?? 0) > 0 },
+      { id: 'thickRingSeed', label: 'Cluster Seed', type: 'range', min: 0, max: 9999, step: 1, infoKey: 'rings.thickRingSeed', showIf: (p) => (p.thickRingCount ?? 0) > 0 },
+      { type: 'section', label: 'Cracks' },
+      { id: 'crackCount', label: 'Crack Count', type: 'range', min: 0, max: 12, step: 1, infoKey: 'rings.crackCount' },
+      { id: 'crackDepth', label: 'Crack Depth', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'rings.crackDepth', showIf: (p) => (p.crackCount ?? 0) > 0 },
+      { id: 'crackSpread', label: 'Crack Width (°)', type: 'range', min: 0.5, max: 20, step: 0.5, infoKey: 'rings.crackSpread', showIf: (p) => (p.crackCount ?? 0) > 0 },
+      { id: 'crackNoise', label: 'Crack Roughness', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'rings.crackNoise', showIf: (p) => (p.crackCount ?? 0) > 0 },
+      { id: 'crackSeed', label: 'Crack Seed', type: 'range', min: 0, max: 9999, step: 1, infoKey: 'rings.crackSeed', showIf: (p) => (p.crackCount ?? 0) > 0 },
     ],
     topo: [
       { id: 'resolution', label: 'Resolution', type: 'range', min: 40, max: 240, step: 5, infoKey: 'topo.resolution' },
@@ -2962,52 +3118,19 @@
         ],
         infoKey: 'rainfall.dropShape',
       },
-      {
-        id: 'dropFill',
-        label: 'Droplet Fill',
-        type: 'select',
-        options: [
-          { value: 'none', label: 'None' },
-          { value: 'spiral', label: 'Spiral' },
-          { value: 'hash', label: 'Grid' },
-          { value: 'crosshatch', label: 'Crosshatch' },
-          { value: 'snake', label: 'Snake' },
-          { value: 'sinusoidal', label: 'Sinusoidal' },
-        ],
-        infoKey: 'rainfall.dropFill',
-        showIf: (p) => p.dropShape !== 'none',
-      },
-      {
-        id: 'fillDensity',
-        label: 'Fill Density',
-        type: 'range',
-        min: 0.1,
-        max: 12.0,
-        step: 0.1,
-        infoKey: 'rainfall.fillDensity',
-        showIf: (p) => p.dropShape !== 'none' && p.dropFill !== 'none',
-      },
-      {
-        id: 'fillAngle',
-        label: 'Fill Angle',
-        type: 'angle',
-        min: 0,
-        max: 360,
-        step: 1,
-        displayUnit: '°',
-        infoKey: 'rainfall.fillAngle',
-        showIf: (p) => p.dropShape !== 'none' && p.dropFill !== 'none',
-      },
-      {
-        id: 'fillPadding',
-        label: 'Fill Padding (mm)',
-        type: 'range',
-        min: 0,
-        max: 10,
-        step: 0.1,
-        infoKey: 'rainfall.fillPadding',
-        showIf: (p) => p.dropShape !== 'none' && p.dropFill !== 'none',
-      },
+      ...(window.Vectura.FillPanel?.buildFillControlDefs({
+        fillTypeOptions: window.Vectura.FillPanel.FILL_TYPE_OPTIONS_RAINFALL,
+        typeParam: 'dropFill',
+        densityParam: 'fillDensity',
+        angleParam: 'fillAngle',
+        amplitudeParam: 'fillAmplitude',
+        paddingParam: 'fillPadding',
+        dotSizeParam: 'fillDotSize',
+        shiftXParam: 'fillShiftX',
+        shiftYParam: 'fillShiftY',
+        showIfBase: (p) => p.dropShape !== 'none',
+        descKeyPrefix: 'fill',
+      }) || []),
       {
         id: 'widthMultiplier',
         label: 'Rain Width',
@@ -3717,6 +3840,34 @@
       title: 'Plotter Optimization',
       description: 'Enable overlap removal and set a tolerance in millimeters for deduplicating same-pen paths.',
     },
+    'mirror.type': {
+      title: 'Mirror Type',
+      description: 'Line: reflects across a straight axis. Radial: N-fold rotational or dihedral symmetry. Arc: inverts geometry across a circular arc (conformal reflection).',
+    },
+    'mirror.replacedSide': {
+      title: 'Replaced Side',
+      description: 'The side that gets replaced by the reflection. For Line: positive or negative relative to the axis normal. For Arc: outer (beyond radius) or inner (within radius).',
+    },
+    'mirror.radius': {
+      title: 'Arc Radius',
+      description: 'Radius of the circular mirror in canvas units. Geometry drawn inside or outside this circle is reflected through it.',
+    },
+    'mirror.arcStart': {
+      title: 'Arc Start',
+      description: 'Starting angle (degrees) of the arc guide. Together with Arc End, this defines the visible portion of the mirror circle.',
+    },
+    'mirror.arcEnd': {
+      title: 'Arc End',
+      description: 'Ending angle (degrees) of the arc guide. The arc span from Start to End marks where the reflective boundary is drawn.',
+    },
+    'mirror.strength': {
+      title: 'Strength',
+      description: 'Blends the reflected copy between its source position (0%) and the full inversion (100%). At 50% the reflection is halfway across the arc.',
+    },
+    'mirror.falloff': {
+      title: 'Falloff',
+      description: 'Fades strength toward zero at the arc endpoints, leaving the reflection fullest at the arc midpoint. Higher values create a more pronounced edge fade.',
+    },
     'common.smoothing': {
       title: 'Smoothing',
       description: 'Softens sharp angles by averaging each point with its neighbors. 0 keeps raw lines.',
@@ -4286,13 +4437,21 @@
       title: 'Flat Top/Bottom',
       description: 'Adds flat lines at the top and bottom of the wavetable stack.',
     },
+    'rings.preset': {
+      title: 'Style Preset',
+      description: 'Load a tree-ring style preset. Applies all parameters at once. Switch to Custom to adjust parameters manually.',
+    },
     'rings.rings': {
       title: 'Rings',
       description: 'Number of concentric rings to generate.',
     },
     'rings.centerDiameter': {
       title: 'Center Diameter',
-      description: 'Adds an inner opening before the first ring begins, widening the innermost ring diameter without changing the active Noise Rack stack.',
+      description: 'Inner opening diameter in canvas units (mm). Cannot exceed Outer Diameter — clamped automatically. 0 = no center hole.',
+    },
+    'rings.outerDiameter': {
+      title: 'Outer Diameter',
+      description: 'Sets the outer boundary diameter in canvas units (mm). The outermost bark ring always anchors exactly here. 0 = no rings drawn. New layers default to the canvas short-edge diameter.',
     },
     'rings.noiseProjection': {
       title: 'Noise Projection',
@@ -4338,7 +4497,303 @@
     },
     'rings.gap': {
       title: 'Ring Gap',
-      description: 'Spacing multiplier between rings.',
+      description: 'Base spacing multiplier between rings. Combined with the inner/outer gap curve for variable spacing.',
+    },
+    'rings.gapCurveStart': {
+      title: 'Inner Gap',
+      description: 'Gap multiplier at the innermost ring. Values above 1 make inner rings wider than the base gap, simulating fast early growth.',
+    },
+    'rings.gapCurveEnd': {
+      title: 'Outer Gap',
+      description: 'Gap multiplier at the outermost non-bark ring. Values below 1 compress outer rings, simulating slower late growth.',
+    },
+    'rings.spacingVariance': {
+      title: 'Spacing Variance',
+      description: 'Adds per-ring noise perturbation to gap width, simulating boom and stress growth years. 0 = uniform spacing.',
+    },
+    'rings.barkRings': {
+      title: 'Bark Rings',
+      description: 'Number of outermost rings treated as bark and compressed to the Bark Gap fraction. 0 disables the bark zone.',
+    },
+    'rings.barkGap': {
+      title: 'Bark Gap',
+      description: 'Absolute spacing between bark rings in canvas units (mm). Independent of wood ring count, gap, or noise — only barkGap controls bark-ring spacing.',
+    },
+    'rings.barkType': {
+      title: 'Bark Style',
+      description: 'Surface texture applied to bark rings. Smooth = plain concentric circles (default). Each style has its own parameter set that appears below the selector.',
+    },
+    'rings.barkRoughness': {
+      title: 'Roughness',
+      description: 'Amplitude of high-frequency bumps added to each bark ring. Higher values create more jagged, irregular bark edges.',
+    },
+    'rings.barkRoughnessConfinement': {
+      title: 'Confinement',
+      description: 'Scales roughness displacement relative to full amplitude. Lower values tighten the bark lines closer to their nominal radius, preventing excessive spreading between rings.',
+    },
+    'rings.barkFreq': {
+      title: 'Frequency',
+      description: 'Number of bump cycles around each bark ring. Low values produce large rolling waves; high values produce fine jagged serrations.',
+    },
+    'rings.barkFurrowCount': {
+      title: 'Furrow Count',
+      description: 'Number of radial grooves running around the bark zone. Grooves are placed at random angles and shared across all bark rings.',
+    },
+    'rings.barkFurrowDepth': {
+      title: 'Furrow Depth',
+      description: 'How deeply each groove cuts into the bark ring radius.',
+    },
+    'rings.barkFurrowWidth': {
+      title: 'Furrow Width',
+      description: 'Angular half-width of each groove as a fraction of π. Larger values make wide, shallow trenches; smaller values make narrow, knife-cut slots.',
+    },
+    'rings.barkPlateCount': {
+      title: 'Plate Count',
+      description: 'Number of bark plates around the circumference. Each plate is a raised arc segment separated from its neighbors by narrow troughs.',
+    },
+    'rings.barkPlateRelief': {
+      title: 'Plate Relief',
+      description: 'Height of each plate above the base bark radius. Higher values produce more pronounced raised plateaus.',
+    },
+    'rings.barkPlateVariance': {
+      title: 'Plate Variance',
+      description: 'Per-ring randomization of plate height and angular offset, so successive bark rings do not align perfectly.',
+    },
+    'rings.barkPaperStrips': {
+      title: 'Strip Count',
+      description: 'Number of peeling strip sections per ring. Each strip lifts away from the base radius as a smooth arc, like curling paper bark.',
+    },
+    'rings.barkPaperPeel': {
+      title: 'Peel Lift',
+      description: 'How far each strip peels outward from the base bark ring. Zero = flat; high values = pronounced curling arcs.',
+    },
+    'rings.barkPaperJitter': {
+      title: 'Strip Jitter',
+      description: 'Random angular offset applied to each strip boundary per ring, so strips on adjacent rings do not align.',
+    },
+    'rings.barkFiberCount': {
+      title: 'Fiber Count',
+      description: 'Number of longitudinal fiber strands modulating each bark ring. High counts produce a fine, closely-packed fibrous texture.',
+    },
+    'rings.barkFiberAmplitude': {
+      title: 'Fiber Amplitude',
+      description: 'Radial oscillation strength of each fiber strand. Higher values make each ring visibly corrugated.',
+    },
+    'rings.barkFiberPhaseShift': {
+      title: 'Phase Shift',
+      description: 'How much the fiber pattern rotates between successive bark rings. Values near 0.5 create a woven interlocking appearance across rings.',
+    },
+    'rings.barkScaleColumns': {
+      title: 'Scale Count',
+      description: 'Number of scales around the circumference. Each scale is a one-sided raised arc, like overlapping fish scales.',
+    },
+    'rings.barkScaleRelief': {
+      title: 'Scale Relief',
+      description: 'Height of each scale arc above the base ring radius.',
+    },
+    'rings.barkScaleTaper': {
+      title: 'Scale Taper',
+      description: 'Controls the sharpness of the scale shape. Lower values produce flatter, broader scales; higher values produce more pointed tips.',
+    },
+    'rings.barkCrackDensity': {
+      title: 'Crack Count',
+      description: 'Number of V-notch cracks cut into the bark ring circumference. Cracks appear at random angles and span all bark rings.',
+    },
+    'rings.barkCrackDepth': {
+      title: 'Crack Depth',
+      description: 'How deeply each crack cuts inward from the base bark ring radius.',
+    },
+    'rings.barkCrackWidth': {
+      title: 'Crack Width',
+      description: 'Angular half-width of each crack as a fraction of π. Narrow values produce sharp fissures; wider values produce broad valleys.',
+    },
+    'rings.barkLenticleCount': {
+      title: 'Lenticle Count',
+      description: 'Number of lens-shaped pore depressions per ring. Lenticels are evenly spaced with a small per-ring angular stagger.',
+    },
+    'rings.barkLenticleDepth': {
+      title: 'Lenticle Depth',
+      description: 'How deeply each lenticle presses inward from the ring surface.',
+    },
+    'rings.barkLenticleWidth': {
+      title: 'Lenticle Width',
+      description: 'Angular width of each lenticle opening. Smaller values produce narrow slots; larger values produce wide oval indentations.',
+    },
+    'rings.barkWeaveFreq': {
+      title: 'Weave Frequency',
+      description: 'Number of oscillation cycles projected along the weave axis. Higher values tighten the weave grid.',
+    },
+    'rings.barkWeaveAmplitude': {
+      title: 'Weave Amplitude',
+      description: 'Radial oscillation strength of each ring in the woven pattern. Alternating rings go in opposite phase, producing an interlocking herringbone.',
+    },
+    'rings.barkWeaveAngle': {
+      title: 'Weave Angle',
+      description: 'Direction of the weave axis (0–180°). Rotating this changes the orientation of the diagonal pattern.',
+    },
+    'rings.breakCount': {
+      title: 'Break Count',
+      description: 'Number of radial breaks — narrow gaps cut through all rings at random angles, like axe splits in a cross-section. 0 = no breaks.',
+    },
+    'rings.breakRadius': {
+      title: 'Break Radius',
+      description: 'Radial range (as % of total radius) within which breaks can appear. Drag the min and max handles to restrict breaks to a ring zone.',
+    },
+    'rings.breakLengthVariance': {
+      title: 'Radius Variance',
+      description: 'Randomly varies how far each break extends across the radius range. 0 = all breaks span the full range; 1 = high length variation.',
+    },
+    'rings.breakNoiseSeed': {
+      title: 'Break Seed',
+      description: 'Seed for break placement, independent of the global seed. Change this to reposition breaks without affecting rings, rays, or knots.',
+    },
+    'rings.breakWidth': {
+      title: 'Break Width',
+      description: 'Angular width of each break gap in degrees. Drag min/max handles to set the range — each break draws a random width from that range.',
+    },
+    'rings.breakWidthVariance': {
+      title: 'Width Variance',
+      description: 'Randomly varies the angular width of each break within the Break Width range. 0 = all breaks are the same width.',
+    },
+    'rings.centerDrift': {
+      title: 'Center Drift',
+      description: 'Maximum pixels of random walk applied to each successive ring center, simulating eccentric off-center growth.',
+    },
+    'rings.biasStrength': {
+      title: 'Bias Strength',
+      description: 'Elliptical deformation strength (0–1). One side of the ring grows wider, like a tree on a slope or in prevailing wind.',
+    },
+    'rings.biasAngle': {
+      title: 'Bias Direction',
+      description: 'Compass direction (degrees) of the wider side of the elliptical bias.',
+    },
+    'rings.rayCount': {
+      title: 'Medullary Rays',
+      description: 'Number of short radial grain segments scattered across the cross-section, simulating medullary ray cells visible in wood.',
+    },
+    'rings.rayLength': {
+      title: 'Ray Length',
+      description: 'Length of each medullary ray expressed in ring-gap units. 2.5 means each ray spans roughly 2.5 inter-ring spacings.',
+    },
+    'rings.rayInnerFraction': {
+      title: 'Ray Start',
+      description: 'Radial fraction (0–0.7) where rays begin. 0 starts rays at the center; 0.15 starts them 15% of the way from center to edge.',
+    },
+    'rings.raySeed': {
+      title: 'Ray Seed',
+      description: 'Seed for medullary ray placement, independent of the global seed. Changing this repositions rays without affecting rings or knots.',
+    },
+    'rings.rayLengthVariance': {
+      title: 'Length Variance',
+      description: 'Random variation in individual ray lengths (0 = uniform, 1 = high variation around the base Ray Length).',
+    },
+    'rings.knotCount': {
+      title: 'Knot Count',
+      description: 'Number of knot distortions, placed randomly by seed. Knots warp rings inward or outward where a branch once attached.',
+    },
+    'rings.knotSeed': {
+      title: 'Knot Seed',
+      description: 'Seed for knot placement, independent of the global seed. Change this to reposition knots without affecting rings, rays, or breaks.',
+    },
+    'rings.knotIntensity': {
+      title: 'Knot Strength',
+      description: 'Maximum radial warp of a knot, in multiples of the average ring gap. Higher values create more dramatic bulges.',
+    },
+    'rings.knotStrengthVariance': {
+      title: 'Knot Strength Variance',
+      description: 'Random variation in strength across individual knots (0 = all equal, 1 = high variation).',
+    },
+    'rings.knotDirection': {
+      title: 'Knot Direction',
+      description: 'Outer: rings bulge outward. Inner: rings indent inward. Both: each knot randomly picks a direction.',
+    },
+    'rings.knotSpread': {
+      title: 'Knot Size',
+      description: 'Angular width (degrees) of each knot\'s influence zone. Larger values create wider, softer distortions.',
+    },
+    'rings.knotSizeVariance': {
+      title: 'Knot Size Variance',
+      description: 'Random variation in angular size across individual knots (0 = all equal, 1 = high variation).',
+    },
+    'rings.knotSize': {
+      title: 'Knot Ring Reach',
+      description: 'How many ring-gap widths each knot\'s warp extends radially. Higher values spread the distortion across more rings.',
+    },
+    'rings.vMarkCount': {
+      title: 'V-Mark Count',
+      description: 'Number of V-marking distortions. V-marks create sharp inward chevron dips where bark inclusions compressed the growth rings.',
+    },
+    'rings.vMarkDepth': {
+      title: 'V-Mark Depth',
+      description: 'Maximum inward displacement at the tip of each V-mark, in canvas units. Higher values make the V more pronounced.',
+    },
+    'rings.vMarkSpread': {
+      title: 'V-Mark Spread',
+      description: 'Angular half-width of each V-mark in degrees. Smaller values produce a sharper, more pointed V; larger values widen it.',
+    },
+    'rings.vMarkSize': {
+      title: 'V-Mark Ring Reach',
+      description: 'Radial extent of each V-mark across ring layers. Higher values spread the V across more rings.',
+    },
+    'rings.vMarkSeed': {
+      title: 'V-Mark Seed',
+      description: 'Seed for V-mark placement, independent of the global seed. Change this to reposition V-marks without affecting other features.',
+    },
+    'rings.scarCount': {
+      title: 'Scar Count',
+      description: 'Number of healed wound scars. Scars create inward depressions that narrow and shallow toward outer rings as the tree heals over time.',
+    },
+    'rings.scarDepth': {
+      title: 'Scar Depth',
+      description: 'Maximum inward depth of the scar at the wound ring, in canvas units. Depth decreases toward outer rings as healing progresses.',
+    },
+    'rings.scarWidth': {
+      title: 'Scar Width',
+      description: 'Angular width of the scar at the wound ring, in degrees. Narrows progressively toward outer rings as the tree closes over the wound.',
+    },
+    'rings.scarSize': {
+      title: 'Healing Rate',
+      description: 'Number of rings over which the scar fully heals. Lower values produce rapid closure; higher values leave a long trailing scar.',
+    },
+    'rings.scarSeed': {
+      title: 'Scar Seed',
+      description: 'Seed for scar placement, independent of the global seed. Change this to reposition scars without affecting other features.',
+    },
+    'rings.thickRingCount': {
+      title: 'Cluster Count',
+      description: 'Number of thick-ring clusters — zones where rings grow tightly together, simulating drought or stress years visible as dense banding.',
+    },
+    'rings.thickRingDensity': {
+      title: 'Compression',
+      description: 'How tightly rings are compressed within each cluster (0 = no compression, 1 = rings nearly touching). Other rings spread to compensate.',
+    },
+    'rings.thickRingWidth': {
+      title: 'Cluster Width',
+      description: 'Number of rings on each side of the cluster center that are compressed. Higher values create wider, more gradual compression bands.',
+    },
+    'rings.thickRingSeed': {
+      title: 'Cluster Seed',
+      description: 'Seed for thick-ring cluster placement, independent of the global seed. Change this to redistribute clusters without affecting other features.',
+    },
+    'rings.crackCount': {
+      title: 'Crack Count',
+      description: 'Number of radial cracks radiating inward from the outer bark — called radial shakes or heart checks in lumber science.',
+    },
+    'rings.crackDepth': {
+      title: 'Crack Depth',
+      description: 'How far each crack penetrates inward as a fraction of the outer radius (0 = surface only, 1 = nearly to center).',
+    },
+    'rings.crackSpread': {
+      title: 'Crack Width',
+      description: 'Angular width of each crack opening at the outer edge, in degrees. The crack tapers to a point as it goes inward.',
+    },
+    'rings.crackNoise': {
+      title: 'Crack Roughness',
+      description: 'Amount of lateral wobble along each crack arm, for an organic hand-split appearance. 0 = straight geometric lines.',
+    },
+    'rings.crackSeed': {
+      title: 'Crack Seed',
+      description: 'Seed for crack placement, independent of the global seed. Change this to reposition cracks without affecting other features.',
     },
     'rings.offsetX': {
       title: 'Ring Offset X',
@@ -4464,17 +4919,37 @@
       title: 'Droplet Fill',
       description: 'Adds a fill-style texture inside droplets.',
     },
-    'rainfall.fillDensity': {
+    'fill.type': {
+      title: 'Fill Type',
+      description: 'The pattern style used to fill enclosed shapes (hatch, wave, stipple, contour, etc.).',
+    },
+    'fill.density': {
       title: 'Fill Density',
-      description: 'Controls how tightly fill strokes are packed inside droplets (higher fills in more).',
+      description: 'Controls how tightly fill strokes or dots are packed inside the shape.',
     },
-    'rainfall.fillAngle': {
+    'fill.angle': {
       title: 'Fill Angle',
-      description: 'Rotates the fill pattern inside the droplet.',
+      description: 'Rotates the fill pattern. For hatch fills: rotates line direction. For spiral/radial: sets the start angle.',
     },
-    'rainfall.fillPadding': {
-      title: 'Fill Padding',
-      description: 'Adds padding between the droplet outline and its fill strokes.',
+    'fill.amplitude': {
+      title: 'Fill Amplitude',
+      description: 'Wave height or zigzag height as a multiplier (1.0 = default). Only shown for wave-based fills.',
+    },
+    'fill.dotSize': {
+      title: 'Dot Size',
+      description: 'Dot radius as a multiplier (1.0 = default). Only shown for stipple and grid fills.',
+    },
+    'fill.padding': {
+      title: 'Fill Padding (mm)',
+      description: 'Insets the fill from the shape boundary by this many mm, leaving a visible margin.',
+    },
+    'fill.shiftX': {
+      title: 'Shift X',
+      description: 'Shifts the fill pattern origin horizontally, creating a phase offset.',
+    },
+    'fill.shiftY': {
+      title: 'Shift Y',
+      description: 'Shifts the fill pattern origin vertically, creating a phase offset.',
     },
     'rainfall.widthMultiplier': {
       title: 'Rain Width',
@@ -7335,17 +7810,33 @@
       const mirrors = Array.isArray(modifier.mirrors) ? modifier.mirrors : [];
       const stack = document.createElement('div');
       stack.className = 'mb-4';
+      const stackMultiplier = mirrors.reduce((acc, m) => {
+        if (!m.enabled) return acc;
+        if (m.type === 'radial') {
+          const n = Math.max(2, Math.round(m.count ?? 6));
+          return acc * (m.mode === 'dihedral' ? 2 * n : n);
+        }
+        return acc * 2;
+      }, 1);
+      const multiplierWarning = stackMultiplier > 16
+        ? `<span class="text-[9px] border border-vectura-danger/40 text-vectura-danger px-1.5 py-0.5 ml-1">~${stackMultiplier}× paths</span>`
+        : '';
       stack.innerHTML = `
         <div class="flex items-center justify-between mb-3">
           <div>
-            <div class="text-[10px] uppercase tracking-widest text-vectura-muted">Mirror Stack</div>
-            <div class="text-xs text-vectura-muted mt-1">Top-to-bottom full-canvas reflection axes for child layers.</div>
+            <div class="text-[10px] uppercase tracking-widest text-vectura-muted">Mirror Stack${multiplierWarning}</div>
+            <div class="text-xs text-vectura-muted mt-1">Top-to-bottom reflection axes for child layers.</div>
           </div>
-          <div class="flex items-center gap-2">
-            <button type="button" class="mirror-stack-add text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted transition-colors">+ Add Mirror</button>
+          <div class="flex items-center gap-2 flex-wrap justify-end">
+            <select class="mirror-add-type text-[10px] bg-vectura-bg border border-vectura-border px-1 py-1 text-vectura-muted focus:outline-none">
+              <option value="line">+ Line</option>
+              <option value="radial">+ Radial</option>
+              <option value="arc">+ Arc</option>
+            </select>
+            <button type="button" class="mirror-stack-add text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted transition-colors">Add</button>
             <button type="button" class="mirror-stack-eye text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted transition-colors">${modifier.guidesVisible === false ? 'Show All' : 'Hide All'}</button>
             <button type="button" class="mirror-stack-lock text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted transition-colors">${modifier.guidesLocked ? 'Unlock All' : 'Lock All'}</button>
-            <button type="button" class="mirror-stack-clear text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-danger/10 text-vectura-danger transition-colors" ${mirrors.length ? '' : 'disabled'}>Clear Stack</button>
+            <button type="button" class="mirror-stack-clear text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-danger/10 text-vectura-danger transition-colors" ${mirrors.length ? '' : 'disabled'}>Clear</button>
           </div>
         </div>
       `;
@@ -7357,12 +7848,12 @@
         this.refreshModifierLayer(layer);
       };
 
-      const buildField = (label, input) => {
+      const buildField = (label, input, infoKey = null) => {
         const wrap = document.createElement('label');
         wrap.className = 'block mb-3';
         const title = document.createElement('div');
-        title.className = 'text-[10px] text-vectura-muted mb-1';
-        title.textContent = label;
+        title.className = 'text-[10px] text-vectura-muted mb-1 flex items-center gap-1';
+        title.innerHTML = `<span>${label}</span>${infoKey ? `<button type="button" class="info-btn" data-info="${infoKey}">i</button>` : ''}`;
         wrap.appendChild(title);
         wrap.appendChild(input);
         return wrap;
@@ -7455,29 +7946,83 @@
         const typeSelect = document.createElement('select');
         typeSelect.className =
           'w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent';
-        typeSelect.innerHTML = '<option value="line">Line</option>';
+        typeSelect.innerHTML = `
+          <option value="line">Line</option>
+          <option value="radial">Radial</option>
+          <option value="arc">Arc</option>
+        `;
         typeSelect.value = mirror.type || 'line';
         typeSelect.onchange = (e) => commit(() => {
           mirror.type = e.target.value;
+          if (mirror.type === 'radial' && mirror.count === undefined) {
+            mirror.count = 6;
+            mirror.mode = 'dihedral';
+            mirror.centerX = 0;
+            mirror.centerY = 0;
+            mirror.angle = 0;
+          } else if (mirror.type === 'arc' && mirror.radius === undefined) {
+            mirror.centerX = 0;
+            mirror.centerY = 0;
+            mirror.radius = 100;
+            mirror.arcStart = -90;
+            mirror.arcEnd = 90;
+            mirror.replacedSide = 'outer';
+            mirror.strength = 100;
+            mirror.falloff = 0;
+          }
         });
-        controls.appendChild(buildField('Type', typeSelect));
+        controls.appendChild(buildField('Type', typeSelect, 'mirror.type'));
 
-        const buildNumberInput = (label, key, step = '1') => {
+        const inputClass = 'w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent';
+        const buildNumberInput = (label, key, step = '1', defaultVal = 0, infoKey = null) => {
           const input = document.createElement('input');
           input.type = 'number';
           input.step = step;
-          input.value = `${mirror[key] ?? 0}`;
-          input.className =
-            'w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent';
+          input.value = `${mirror[key] ?? defaultVal}`;
+          input.className = inputClass;
           input.onchange = (e) => commit(() => {
             const next = parseFloat(e.target.value);
-            mirror[key] = Number.isFinite(next) ? next : 0;
+            mirror[key] = Number.isFinite(next) ? next : defaultVal;
           });
-          controls.appendChild(buildField(label, input));
+          controls.appendChild(buildField(label, input, infoKey));
         };
-        buildNumberInput('Angle', 'angle', '1');
-        buildNumberInput('X Shift', 'xShift', '0.1');
-        buildNumberInput('Y Shift', 'yShift', '0.1');
+        const buildSelectInput = (label, key, options, defaultVal, infoKey = null) => {
+          const sel = document.createElement('select');
+          sel.className = inputClass;
+          sel.innerHTML = options.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+          sel.value = mirror[key] ?? defaultVal;
+          sel.onchange = (e) => commit(() => { mirror[key] = e.target.value; });
+          controls.appendChild(buildField(label, sel, infoKey));
+        };
+
+        const mirrorType = mirror.type || 'line';
+        if (mirrorType === 'line') {
+          buildNumberInput('Angle', 'angle', '1');
+          buildNumberInput('X Shift', 'xShift', '0.1');
+          buildNumberInput('Y Shift', 'yShift', '0.1');
+        } else if (mirrorType === 'radial') {
+          buildSelectInput('Mode', 'mode', [
+            ['dihedral', 'Dihedral (kaleidoscope)'],
+            ['rotation', 'Rotation only'],
+            ['edge', 'Edge reflections'],
+          ], 'dihedral');
+          buildNumberInput('Count (N)', 'count', '1', 6);
+          buildNumberInput('Center X', 'centerX', '0.1');
+          buildNumberInput('Center Y', 'centerY', '0.1');
+          buildNumberInput('Start Angle', 'angle', '1');
+        } else if (mirrorType === 'arc') {
+          buildSelectInput('Replaced Side', 'replacedSide', [
+            ['outer', 'Outer → inner'],
+            ['inner', 'Inner → outer'],
+          ], 'outer', 'mirror.replacedSide');
+          buildNumberInput('Center X', 'centerX', '0.1', 0);
+          buildNumberInput('Center Y', 'centerY', '0.1', 0);
+          buildNumberInput('Radius', 'radius', '1', 100, 'mirror.radius');
+          buildNumberInput('Arc Start (°)', 'arcStart', '1', -90, 'mirror.arcStart');
+          buildNumberInput('Arc End (°)', 'arcEnd', '1', 90, 'mirror.arcEnd');
+          buildNumberInput('Strength (%)', 'strength', '1', 100, 'mirror.strength');
+          buildNumberInput('Falloff (%)', 'falloff', '1', 0, 'mirror.falloff');
+        }
 
         const eyeBtn = header.querySelector('.mirror-eye');
         const lockBtn = header.querySelector('.mirror-lock');
@@ -7503,11 +8048,17 @@
         list.appendChild(empty);
       }
 
-      stack.querySelector('.mirror-stack-add')?.addEventListener('click', () =>
+      stack.querySelector('.mirror-stack-add')?.addEventListener('click', () => {
+        const typeEl = stack.querySelector('.mirror-add-type');
+        const addType = typeEl ? typeEl.value : 'line';
         commit(() => {
-          modifier.mirrors = [...mirrors, createMirrorLine(mirrors.length)];
-        })
-      );
+          const idx = mirrors.length;
+          const newMirror = addType === 'radial' ? createRadialMirror(idx)
+            : addType === 'arc' ? createArcMirror(idx)
+            : createMirrorLine(idx);
+          modifier.mirrors = [...mirrors, newMirror];
+        });
+      });
       stack.querySelector('.mirror-stack-eye')?.addEventListener('click', () =>
         commit(() => {
           modifier.guidesVisible = modifier.guidesVisible === false;
@@ -12159,6 +12710,55 @@
           target.appendChild(section);
           return;
         }
+        if (def.type === 'svgImportButton') {
+          const wrap = document.createElement('div');
+          wrap.className = 'mb-4';
+          const nameEl = document.createElement('div');
+          nameEl.className = 'text-[11px] text-vectura-muted mb-2';
+          nameEl.textContent = layer.params.svgName
+            ? `Loaded: ${layer.params.svgName}`
+            : 'No SVG loaded';
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'w-full text-xs border border-vectura-border px-2 py-2 hover:bg-vectura-border text-vectura-accent transition-colors';
+          btn.textContent = layer.params.svgName ? 'Replace SVG…' : 'Import SVG…';
+          btn.onclick = () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.svg,image/svg+xml';
+            input.onchange = () => {
+              const file = input.files?.[0];
+              if (!file) return;
+              const reader = new FileReader();
+              reader.onload = () => {
+                const groups = this.parseSvgToLayerGroups(reader.result);
+                if (!groups.length) {
+                  this.openModal({ title: 'No Paths Found', body: '<p class="modal-text">The SVG contained no vector paths.</p>' });
+                  return;
+                }
+                if (this.app.pushHistory) this.app.pushHistory();
+                layer.params.importedGroups = groups.map((g) => ({
+                  name: g.name,
+                  paths: g.paths,
+                  isClosed: g.isClosed || false,
+                  originalFill: g.originalFill || null,
+                }));
+                layer.params.svgName = file.name;
+                this.storeLayerParams(layer);
+                this.app.engine.generate(layer.id);
+                this.buildControls();
+                this.updateFormula();
+                this.app.render();
+              };
+              reader.readAsText(file);
+            };
+            input.click();
+          };
+          wrap.appendChild(nameEl);
+          wrap.appendChild(btn);
+          target.appendChild(wrap);
+          return;
+        }
         if (def.type === 'petalDesignerInline') {
           if (!isPetalisLayerType(layer.type)) return;
           const wrapper = document.createElement('div');
@@ -13464,17 +14064,19 @@
                   ? 'topo'
                   : layer.type === 'flowfield'
                     ? 'flowfield'
-                    : layer.type === 'grid'
-                      ? 'grid'
-                      : layer.type === 'phylla'
-                        ? 'phylla'
-                        : 'wavetable');
+                    : layer.type === 'svgDistort'
+                      ? 'svgDistort'
+                      : layer.type === 'grid'
+                        ? 'grid'
+                        : layer.type === 'phylla'
+                          ? 'phylla'
+                          : 'wavetable');
           const noiseDefs =
             noiseSource === 'rings'
               ? RINGS_NOISE_DEFS
               : noiseSource === 'topo'
                 ? TOPO_NOISE_DEFS
-                : noiseSource === 'flowfield'
+                : noiseSource === 'flowfield' || noiseSource === 'svgDistort'
                   ? FLOWFIELD_NOISE_DEFS
                   : noiseSource === 'grid'
                     ? GRID_NOISE_DEFS
@@ -13492,13 +14094,15 @@
                   ? this.ensureTopoNoises(layer)
                   : noiseSource === 'flowfield'
                     ? this.ensureFlowfieldNoises(layer)
-                    : noiseSource === 'grid'
-                      ? this.ensureGridNoises(layer)
-                      : noiseSource === 'phylla'
-                        ? this.ensurePhyllaNoises(layer)
-                        : noiseSource === 'petalisDrift'
-                          ? this.ensurePetalisDriftNoises(layer)
-                          : this.ensureWavetableNoises(layer);
+                    : noiseSource === 'svgDistort'
+                      ? this.ensureSvgDistortNoises(layer)
+                      : noiseSource === 'grid'
+                        ? this.ensureGridNoises(layer)
+                        : noiseSource === 'phylla'
+                          ? this.ensurePhyllaNoises(layer)
+                          : noiseSource === 'petalisDrift'
+                            ? this.ensurePetalisDriftNoises(layer)
+                            : this.ensureWavetableNoises(layer);
           const assignNoiseStack = (nextNoises) => {
             if (noiseSource === 'petalisDrift') layer.params.driftNoises = nextNoises;
             else layer.params.noises = nextNoises;
@@ -13556,6 +14160,7 @@
               : noiseSource === 'rings' ? this.createRingsNoise(idx)
               : noiseSource === 'topo' ? this.createTopoNoise(idx)
               : noiseSource === 'flowfield' ? this.createFlowfieldNoise(idx)
+              : noiseSource === 'svgDistort' ? this.createFlowfieldNoise(idx)
               : noiseSource === 'grid' ? this.createGridNoise(idx)
               : noiseSource === 'phylla' ? this.createPhyllaNoise(idx)
               : noiseSource === 'petalisDrift' ? this.createPetalisDriftNoise(idx)
@@ -13890,6 +14495,32 @@
                 this.updateFormula();
                 return;
               }
+              if (layer.type === 'rings' && def.id === 'preset' && next === 'custom') {
+                layer.params.preset = 'custom';
+                this.storeLayerParams(layer);
+                span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
+                this.app.regen();
+                this.buildControls();
+                this.updateFormula();
+                return;
+              }
+              if (layer.type === 'rings' && def.id === 'preset' && next !== 'custom') {
+                const preset = (RINGS_PRESET_LIBRARY || []).find((item) => item.id === next);
+                const base = ALGO_DEFAULTS?.rings ? clone(ALGO_DEFAULTS.rings) : {};
+                const preserved = new Set([...TRANSFORM_KEYS, 'smoothing', 'simplify', 'curves', 'outerDiameter', 'centerDiameter']);
+                const nextParams = { ...base, ...(preset?.params || {}) };
+                preserved.forEach((key) => {
+                  if (layer.params[key] !== undefined) nextParams[key] = layer.params[key];
+                });
+                nextParams.preset = next;
+                layer.params = { ...layer.params, ...nextParams };
+                this.storeLayerParams(layer);
+                span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
+                this.app.regen();
+                this.buildControls();
+                this.updateFormula();
+                return;
+              }
               layer.params[def.id] = next;
               if (layer.type === 'wavetable' && def.id === 'lineStructure' && next === 'vertical') {
                 layer.params.lineOffset = 135;
@@ -14178,6 +14809,7 @@
               valueBtn.innerText = formatDisplayValue(def, defaultVal);
               this.app.regen();
               this.updateFormula();
+              maybeRebuildControls();
             };
             input.oninput = (e) => {
               const nextDisplay = parseFloat(e.target.value);
@@ -14192,6 +14824,7 @@
               this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
+              maybeRebuildControls();
             };
             attachKeyboardRangeNudge(input, (nextDisplay) => {
               const nextVal = confirmHeavy(nextDisplay);
@@ -14200,6 +14833,7 @@
               this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
+              maybeRebuildControls();
             });
             input.addEventListener('dblclick', (e) => {
               e.preventDefault();
@@ -14220,6 +14854,7 @@
                 this.app.regen();
                 valueBtn.innerText = formatDisplayValue(def, layer.params[def.id]);
                 this.updateFormula();
+                maybeRebuildControls();
               },
             });
           }

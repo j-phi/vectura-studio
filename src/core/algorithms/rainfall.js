@@ -19,6 +19,9 @@
         const windStrength = Math.max(0, p.windStrength ?? 0);
         const windAngle = ((p.windAngle ?? 180) * Math.PI) / 180;
         const fillAngle = ((p.fillAngle ?? 0) * Math.PI) / 180;
+        const fillAmplitude = Math.max(0.1, p.fillAmplitude ?? 1.0);
+        const fillShiftX = p.fillShiftX ?? 0;
+        const fillShiftY = p.fillShiftY ?? 0;
         const dropSize = Math.max(0, p.dropSize ?? 0);
         const dropSizeJitter = Math.max(0, Math.min(1, p.dropSizeJitter ?? 0));
         const widthMultiplier = Math.max(1, Math.round(p.widthMultiplier ?? 1));
@@ -451,6 +454,8 @@
             );
             centroid.x /= outlineAbs.length || 1;
             centroid.y /= outlineAbs.length || 1;
+            centroid.x += fillShiftX;
+            centroid.y += fillShiftY;
 
             const lineSegmentsForAngle = (lineAngle, spacing) => {
               const dir = { x: Math.cos(lineAngle), y: Math.sin(lineAngle) };
@@ -533,7 +538,7 @@
               }
             } else if (dropFill === 'sinusoidal') {
               const segments = lineSegmentsForAngle(fillRotation, densitySpacing);
-              const amp = densitySpacing * 0.45;
+              const amp = densitySpacing * 0.45 * fillAmplitude;
               segments.forEach(([p1, p2], idx) => {
                 const dx = p2.x - p1.x;
                 const dy = p2.y - p1.y;

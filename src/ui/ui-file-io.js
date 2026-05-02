@@ -178,7 +178,7 @@
       const order = [];
       const addGroup = (key, name, stroke, strokeWidth) => {
         if (!groups.has(key)) {
-          groups.set(key, { name, stroke, strokeWidth, paths: [] });
+          groups.set(key, { name, stroke, strokeWidth, paths: [], isClosed: false, originalFill: null });
           order.push(key);
         }
         return groups.get(key);
@@ -202,11 +202,30 @@
           (stroke && stroke !== 'none' ? `Stroke ${stroke}` : 'Imported SVG');
         const key = `${groupLabel}|${stroke || 'none'}`;
         const group = addGroup(key, groupLabel || 'Imported SVG', stroke && stroke !== 'none' ? stroke : null, strokeWidth);
+        const fill = el.getAttribute('fill') || el.style?.fill || '';
+        if (fill && fill !== 'none') {
+          group.isClosed = true;
+          if (!group.originalFill) group.originalFill = fill;
+        }
         const paths = this.svgElementToPaths(clone, vbMinX, vbMinY);
         paths.forEach((path) => group.paths.push(path));
         clone.remove();
       });
       tempSvg.remove();
+
+      // Geometric closure pass: mark groups closed if any path starts and ends at the same point
+      order.forEach((key) => {
+        const group = groups.get(key);
+        if (group.isClosed) return;
+        group.paths.forEach((path) => {
+          if (path.length < 3) return;
+          const first = path[0];
+          const last = path[path.length - 1];
+          if (Math.hypot(last.x - first.x, last.y - first.y) < 1.0) {
+            group.isClosed = true;
+          }
+        });
+      });
 
       return order.map((key) => groups.get(key)).filter((group) => group.paths && group.paths.length);
     },

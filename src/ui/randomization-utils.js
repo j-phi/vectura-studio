@@ -198,6 +198,7 @@
     ensureRingsNoises,
     ensureTopoNoises,
     ensureFlowfieldNoises,
+    ensureSvgDistortNoises,
     ensureGridNoises,
     ensurePhyllaNoises,
     ensurePetalisDriftNoises,
@@ -209,8 +210,9 @@
 
     defs.forEach((def) => {
       if (def.showIf && !def.showIf(layer.params)) return;
+      if (def.randomize === false) return;
       if (layer.type === 'harmonograph' && def.id === 'showPendulumGuides') return;
-      if (def.type === 'section' || def.type === 'file' || def.type === 'image') return;
+      if (def.type === 'section' || def.type === 'file' || def.type === 'image' || def.type === 'svgImportButton') return;
 
       if (def.type === 'noiseList') {
         if (def.source === 'petalisDrift' && typeof ensurePetalisDriftNoises === 'function') {
@@ -230,6 +232,9 @@
           noises.forEach((noise) => randomizeNoise({ noise, waveNoiseDefs: topoNoiseDefs || waveNoiseDefs, random }));
         } else if (layer.type === 'flowfield' && typeof ensureFlowfieldNoises === 'function') {
           const noises = ensureFlowfieldNoises();
+          noises.forEach((noise) => randomizeNoise({ noise, waveNoiseDefs: flowfieldNoiseDefs || waveNoiseDefs, random }));
+        } else if (layer.type === 'svgDistort' && typeof ensureSvgDistortNoises === 'function') {
+          const noises = ensureSvgDistortNoises();
           noises.forEach((noise) => randomizeNoise({ noise, waveNoiseDefs: flowfieldNoiseDefs || waveNoiseDefs, random }));
         } else if (layer.type === 'grid' && typeof ensureGridNoises === 'function') {
           const noises = ensureGridNoises();
