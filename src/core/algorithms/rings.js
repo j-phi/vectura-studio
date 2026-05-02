@@ -718,13 +718,14 @@
           const { cx: ringCx, cy: ringCy } = ringCenters[i];
           let currentPath = [];
           const subPaths = [];
+          let hadAnyGap = false;
 
           for (let k = 0; k < US; k++) {
             const theta = (k / US) * TAU;
             const r = rawR[i * US + k];
             const pt = { x: ringCx + Math.cos(theta) * r, y: ringCy + Math.sin(theta) * r };
 
-            const inCrack = isInCrack(theta, rBaseForRing);
+            const inCrack = isInCrack(theta, r);
 
             const gapped = inCrack || (hasBreaks && breaks.some(b =>
               rBaseForRing >= b.rMin &&
@@ -732,6 +733,7 @@
               Math.abs(wrapAngle(theta - b.angle)) < b.arcHalf
             ));
             if (gapped) {
+              hadAnyGap = true;
               if (currentPath.length >= 3) subPaths.push(currentPath);
               currentPath = [];
             } else {
@@ -751,12 +753,16 @@
                 rBaseForRing <= b.rMax &&
                 Math.abs(wrapAngle(-b.angle)) < b.arcHalf
               );
-              const seamInCrack = isInCrack(0, rBaseForRing);
+              const seamInCrack = isInCrack(0, rawR[i * US + 0]);
               if (!seamInBreak && !seamInCrack) {
                 const first = subPaths.shift();
                 const last = subPaths[subPaths.length - 1];
                 subPaths[subPaths.length - 1] = last.concat(first);
               }
+            } else if (!hadAnyGap && subPaths.length === 1) {
+              // No gap intersected this ring — close it the same way the gap-free branch does.
+              const sp = subPaths[0];
+              if (sp.length) sp.push({ ...sp[0] });
             }
 
             subPaths.forEach((sp) => paths.push(sp));

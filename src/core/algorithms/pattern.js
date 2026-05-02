@@ -610,6 +610,112 @@
     return passthrough.concat(normalized);
   };
 
+  // Trace the visible fill boundary of a compound-path SVG element using the browser's
+  // isPointInFill oracle. Samples each subpath and keeps segments where fill differs across
+  // the segment (i.e., the segment lies on the fill boundary). More accurate than the
+  // FillBoolean approach for evenodd compound paths because it uses the same oracle as the
+  // source-fidelity tests. Returns null for non-path elements or single-subpath paths
+  // (caller falls back to traceFillOnlyPolygonUnionBoundaries).
+  const traceFilledPathElementVisibleBoundaries = (el, offsetX = 0, offsetY = 0, vbMinX = 0, vbMinY = 0, vbW = 0, vbH = 0) => {
+    if (!el || el.tagName?.toLowerCase() !== 'path' || typeof el.isPointInFill !== 'function') return null;
+    const d = el.getAttribute('d') || '';
+    const subpathStrs = getSubpathStrings(d);
+    if (subpathStrs.length < 2) return null;
+
+    const svgContainer = el.parentElement;
+    if (!svgContainer) return null;
+
+    const matrix = typeof el.getCTM === 'function' ? el.getCTM() : null;
+    const applyMatrix = (pt) => {
+      if (!matrix) return pt;
+      return { x: pt.x * matrix.a + pt.y * matrix.c + matrix.e, y: pt.x * matrix.b + pt.y * matrix.d + matrix.f };
+    };
+    const applyOffset = (pt) => ({ x: pt.x - offsetX, y: pt.y - offsetY });
+    const normalizePoint = (pt) => applyOffset(applyMatrix(pt));
+
+    const dNodes = parseSvgDNodes(d);
+    const dNodesNorm = dNodes.length ? dNodes.map((pt) => normalizePoint(pt)) : [];
+    const SNAP_TOL = 1.0;
+    const BOUNDARY_TOL = 2.0;
+    const maxX = vbMinX + vbW;
+    const maxY = vbMinY + vbH;
+    const snapNodes = dNodesNorm.filter((n) =>
+      Math.abs(n.x - vbMinX) < BOUNDARY_TOL || Math.abs(n.x - maxX) < BOUNDARY_TOL ||
+      Math.abs(n.y - vbMinY) < BOUNDARY_TOL || Math.abs(n.y - maxY) < BOUNDARY_TOL
+    );
+    const snapToNodes = (pt) => {
+      for (const n of snapNodes) {
+        if (Math.hypot(pt.x - n.x, pt.y - n.y) < SNAP_TOL) return { ...n };
+      }
+      return pt;
+    };
+
+    const epsilon = 0.35;
+    const visibleSegments = [];
+    const pointForFill = (x, y) =>
+      typeof DOMPoint === 'function' ? new DOMPoint(x, y) : { x, y };
+
+    for (const subStr of subpathStrs) {
+      const tmpPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      tmpPath.setAttribute('d', subStr);
+      svgContainer.appendChild(tmpPath);
+      try {
+        const len = tmpPath.getTotalLength ? tmpPath.getTotalLength() : 0;
+        if (len <= 0) continue;
+        const steps = Math.max(24, Math.floor(len / 1.5));
+        const rawPts = [];
+        for (let i = 0; i <= steps; i += 1) {
+          const pt = tmpPath.getPointAtLength((i / steps) * len);
+          rawPts.push({ x: pt.x, y: pt.y });
+        }
+        for (let i = 0; i + 1 < rawPts.length; i += 1) {
+          const a = rawPts[i];
+          const b = rawPts[i + 1];
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const segLen = Math.hypot(dx, dy);
+          if (segLen < 1e-6) continue;
+          const mx = (a.x + b.x) / 2;
+          const my = (a.y + b.y) / 2;
+          const nx = -dy / segLen;
+          const ny = dx / segLen;
+          const leftInside = !!el.isPointInFill(pointForFill(mx + nx * epsilon, my + ny * epsilon));
+          const rightInside = !!el.isPointInFill(pointForFill(mx - nx * epsilon, my - ny * epsilon));
+          if (leftInside === rightInside) continue;
+
+          const aNorm = snapToNodes(normalizePoint(a));
+          const bNorm = snapToNodes(normalizePoint(b));
+          const segment = [aNorm, bNorm].filter((pt, si, arr) =>
+            si === 0 || Math.hypot(pt.x - arr[si - 1].x, pt.y - arr[si - 1].y) > 1e-6
+          );
+          if (segment.length < 2) continue;
+          const EDGE_TOL = 0.15;
+          segment.forEach((pt) => {
+            if (
+              Math.abs(pt.x - vbMinX) < EDGE_TOL || Math.abs(pt.x - maxX) < EDGE_TOL ||
+              Math.abs(pt.y - vbMinY) < EDGE_TOL || Math.abs(pt.y - maxY) < EDGE_TOL
+            ) pt._tileEdge = true;
+          });
+          visibleSegments.push(segment);
+        }
+      } catch (_) {}
+      tmpPath.remove();
+    }
+
+    if (!visibleSegments.length) return null;
+    const withoutSharedEdges = removeSeamSegments(visibleSegments);
+    const merged = mergeTouchingChains(withoutSharedEdges);
+    if (!merged.length) return null;
+    return merged.map((path) => {
+      const next = clonePath(path);
+      const first = next[0];
+      const last = next[next.length - 1];
+      if (first && last && Math.hypot(first.x - last.x, first.y - last.y) < 0.01)
+        next[next.length - 1] = { ...first };
+      return next;
+    });
+  };
+
   const svgElementToPaths = (el, offsetX = 0, offsetY = 0, vbMinX = 0, vbMinY = 0, vbW = 0, vbH = 0, options = {}) => {
     if (!el) return [];
     const tag = el.tagName.toLowerCase();
@@ -854,7 +960,8 @@
         isFillOnly,
         paths: isFillOnly
           ? sourceItems.flatMap((item) => {
-              const ps = traceFilledElementsVisibleBoundaries([item.element], vbMinX, vbMinY, vbW, vbH);
+              const ps = traceFilledPathElementVisibleBoundaries(item.element, vbMinX, vbMinY, vbMinX, vbMinY, vbW, vbH)
+                || traceFilledElementsVisibleBoundaries([item.element], vbMinX, vbMinY, vbW, vbH);
               ps.forEach((p) => { p._srcElementIndex = item.index; });
               return ps;
             })

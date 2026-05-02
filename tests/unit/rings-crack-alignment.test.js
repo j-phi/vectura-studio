@@ -81,7 +81,8 @@ describe('Rings crack alignment', () => {
       const r0 = radii[i], r1 = radii[i + 1];
       if (r >= Math.min(r0, r1) && r <= Math.max(r0, r1)) {
         const t = Math.abs(r1 - r0) < 0.001 ? 0 : (r - r0) / (r1 - r0);
-        return angles[i] + (angles[i + 1] - angles[i]) * t;
+        // Use wrapAngle for the delta so ±π boundary crossings interpolate correctly.
+        return angles[i] + wrapAngle(angles[i + 1] - angles[i]) * t;
       }
     }
     return angles[arm.length - 1];
