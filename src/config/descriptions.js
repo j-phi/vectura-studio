@@ -32,8 +32,8 @@
       'Plots Strange Attractors (Lorenz, Aizawa). These represent chaotic systems where trajectories orbit a fractal set of states.',
     hyphae:
       'Simulates organic growth (like fungi or roots) using a branching algorithm. Sources grow segments and fork based on probability.',
-    horizon:
-      'Generates a perspective terrain plane with a movable vanishing point, convergence fan lines, and terrain-deformed horizontal rows with occlusion-correct hidden-line removal.',
+    terrain:
+      'Realism-focused heightfield rendered as scanlines under a selectable perspective (orthographic, one-point, two-point, or isometric), with native generators for ridged mountains, V/U valleys, river traces, and an ocean coastline.',
     shapePack:
       'Packs non-overlapping shapes that can be perfect circles or regular polygons. Supports perspective warping for angular forms.',
     expanded:

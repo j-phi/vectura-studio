@@ -30,7 +30,10 @@
       const N_v = p.linkDensities ? N_h : Math.max(0, Math.floor(p.convergenceLines ?? 58));
 
       // --- Spacing ---
-      const depthExp = 0.4 + clamp01((p.depthCompression ?? 70) / 100) * 3.0;
+      // terrainDepth: 0 = rows clustered at horizon (steep perspective compression);
+      // 100 = rows pushed densely toward the viewer (gentle compression).
+      const terrainDepthN = clamp01((p.terrainDepth ?? 30) / 100);
+      const depthExp = 0.4 + (1 - terrainDepthN) * 3.0;
 
       const applyRowSpacing = (t_raw) => {
         const mode = p.horizontalSpacingMode || 'perspective';
@@ -46,29 +49,41 @@
 
       const getFanBottomX = (t_raw) => {
         const mode = p.convergenceSpacingMode || 'even';
-        const tExtend = rowSpan > EPS ? (fanBottomY - horizonY) / rowSpan : 1;
-        let groundX;
+        const cornerL = Math.atan2(vpX - inset,          Math.max(1, rowSpan));
+        const cornerR = Math.atan2(inset + innerW - vpX,  Math.max(1, rowSpan));
+
         if (mode === 'perspective') {
-          const leftA  = Math.atan2(vpX - inset,          Math.max(1, rowSpan));
-          const rightA = Math.atan2(inset + innerW - vpX, Math.max(1, rowSpan));
-          const a = lerp(-leftA, rightA, t_raw);
-          groundX = vpX + Math.tan(a) * rowSpan;
-        } else if (mode === 'bias') {
+          const a = lerp(-cornerL, cornerR, t_raw);
+          return vpX + Math.tan(a) * (fanBottomY - horizonY);
+        }
+
+        // exitFrac = fraction of rowSpan where outermost line exits the side wall.
+        // Non-linear curve: subtle effect over [0, 0.5], dramatic over [0.5, 1].
+        // f(0)=1 (corners), f(0.5)≈0.98 (just above corners), f(1)=0 (near horizon).
+        const exitFrac = 1 - Math.pow(fanReach, 6);
+        const maxL = Math.atan2(vpX - inset,          Math.max(0.5, exitFrac * rowSpan));
+        const maxR = Math.atan2(inset + innerW - vpX,  Math.max(0.5, exitFrac * rowSpan));
+
+        if (mode === 'bias') {
           const x = t_raw * 2 - 1;
           const exp = Math.max(0.1, 1 + (p.convergenceSpacingBias ?? 0) / 100);
           const mapped = x === 0 ? 0 : Math.sign(x) * Math.pow(Math.abs(x), exp);
-          groundX = vpX + mapped * (innerW / 2);
-        } else {
-          groundX = inset + t_raw * innerW;
+          const a = lerp(-maxL, maxR, (mapped + 1) / 2);
+          return vpX + Math.tan(a) * (fanBottomY - horizonY);
         }
-        return vpX + tExtend * (groundX - vpX);
+
+        const a = lerp(-maxL, maxR, t_raw);
+        return vpX + Math.tan(a) * (fanBottomY - horizonY);
       };
 
-      // --- Noise rack ---
+      // --- Terrain noise master toggle ---
+      const terrainNoiseEnabled = p.terrainNoiseEnabled === true;
+
+      // --- Noise rack (additional noises, layered on top of mountain) ---
       const rack = window.Vectura.NoiseRack.createEvaluator({ noise, seed: p.seed ?? 0 });
       const defaultLayer = {
         id: 'noise-1', enabled: true, type: 'simplex', blend: 'add',
-        amplitude: 9, zoom: 0.02, freq: 1.0, angle: 0, shiftX: 0, shiftY: 0,
+        amplitude: 0, zoom: 0.02, freq: 1.0, angle: 0, shiftX: 0, shiftY: 0,
         tileMode: 'off', tilePadding: 0, patternScale: 1, warpStrength: 1,
         cellularScale: 1, cellularJitter: 1, stepsCount: 5, seed: 0,
         noiseStyle: 'linear', noiseThreshold: 0, imageWidth: 1, imageHeight: 1,
@@ -78,7 +93,7 @@
         polygonSides: 6, polygonRotation: 0, polygonOutline: 0, polygonEdgeRadius: 0,
       };
 
-      const noiseStack = (Array.isArray(p.noises) && p.noises.length ? p.noises : [defaultLayer])
+      const noiseStack = (Array.isArray(p.noises) && p.noises.length ? p.noises : [])
         .map((layer) => ({ ...defaultLayer, ...(layer || {}), enabled: layer?.enabled !== false }))
         .filter((layer) => layer.enabled !== false);
 
@@ -103,7 +118,8 @@
         };
       });
 
-      const sampleNoise = (wx, wy) => {
+      const sampleRackNoise = (wx, wy) => {
+        if (!noiseSamplers.length) return 0;
         let combined;
         noiseSamplers.forEach((s) => {
           const value = s.sample(wx, wy) * s.amplitude;
@@ -112,37 +128,99 @@
         return combined ?? 0;
       };
 
-      // --- Terrain ---
+      // --- Built-in mountain surface noise (single-knob: amplitude only) ---
+      const mountainAmpRaw = Math.max(0, p.mountainAmplitude ?? 5);
+      const mountainAmpMm = mountainAmpRaw * 6;
+      const MOUNTAIN_ZOOM = 0.025;   // = 0.005 + 0.40 * 0.05 (legacy default)
+      const MOUNTAIN_FREQ = 1.0;
+      const mountainLayer = {
+        ...defaultLayer,
+        id: 'horizon-mountain', type: 'simplex', blend: 'add',
+        amplitude: 1, zoom: MOUNTAIN_ZOOM, freq: MOUNTAIN_FREQ,
+        seed: p.seed ?? 0,
+      };
+      // Y-coherence = 0 → every row samples the same mountain X-profile, so rows
+      // stack as a draped wireframe of one underlying surface (vertical-translation
+      // copies). Per-row amplitude still varies with `skylineRelief`.
+      const MOUNTAIN_Y_COHERENCE = 0;
+      const sampleMountain = (wx, wy) => {
+        const anchoredY = horizonY + (wy - horizonY) * MOUNTAIN_Y_COHERENCE;
+        const nx = wx * MOUNTAIN_ZOOM * MOUNTAIN_FREQ;
+        const ny = anchoredY * MOUNTAIN_ZOOM * MOUNTAIN_FREQ;
+        return rack.evaluate(nx, ny, mountainLayer, { worldX: wx, worldY: wy });
+      };
+
+      // --- Unified Center Region: shared geometry drives both the heightfield
+      //     center profile and the noise mask. One Width, one Edge Softness,
+      //     one Compress at Horizon — plus per-effect strengths.
+      const centerWidthN          = Math.max(0.05, (p.centerWidth ?? 28) / 100);
+      const centerSoftnessN       = clamp01((p.centerSoftness ?? 50) / 100);
+      const centerCompressN       = clamp01((p.centerCompress ?? 0) / 100);
+      const centerDepthN          = clamp01((p.centerDepth ?? 0) / 100);
+      const shoulderLiftN         = clamp01((p.shoulderLift ?? 0) / 100);
+      const ridgeSharpnessN       = clamp01((p.ridgeSharpness ?? 0) / 100);
+      const centerNoiseDampeningN = clamp01((p.centerNoiseDampening ?? 60) / 100);
+
+      // Single softness slider drives all the legacy curve/falloff knobs.
+      // softness=0 → hard edges, sharp valley, steep shoulder, sharp falloff.
+      // softness=100 → fully Gaussian edges, rounded valley, gentle shoulder, slow falloff.
+      const softInv          = 1 - centerSoftnessN;
+      const cornerHardness   = softInv;
+      const valleyExp        = 0.5 + softInv * 2.5;
+      const shoulderExp      = 1 + softInv * 3;
+      const dampenFalloffExp = 0.4 + softInv * 3.0;
+      const maskGaussianMix  = centerSoftnessN;
+
+      const widthAt = (depthFrac) => {
+        const widthScale = lerp(1 - centerCompressN, 1, depthFrac);
+        return Math.max(1e-4, centerWidthN * widthScale);
+      };
+
+      const centerProfile = (wx, depthFrac) => {
+        const w = widthAt(depthFrac);
+        const xAbs = Math.abs((wx - vpX) / (innerW * 0.5 + 1e-6));
+        const gauss = Math.exp(-0.5 * Math.pow(xAbs / w, 2 * valleyExp));
+        const hard = xAbs <= w ? 1 : 0;
+        const corridor = lerp(gauss, hard, cornerHardness);
+        const shoulder = Math.pow(1 - corridor, shoulderExp);
+        const ridgeW = Math.max(0.05, w * 0.3);
+        const ridgePeak = Math.exp(-0.5 * Math.pow((xAbs - w) / ridgeW, 2));
+        return centerDepthN * corridor - shoulderLiftN * shoulder - ridgeSharpnessN * ridgePeak;
+      };
+
+      const dampen = (wx, wy) => {
+        if (centerNoiseDampeningN <= 0) return 1;
+        const depthFrac = clamp01((wy - horizonY) / rowSpan);
+        const w = widthAt(depthFrac);
+        const xAbs = Math.abs((wx - vpX) / (innerW * 0.5 + 1e-6));
+        const hard = xAbs <= w ? 1 : 0;
+        const gauss = Math.exp(-0.5 * Math.pow(xAbs / w, 2));
+        const mask = lerp(hard, gauss, maskGaussianMix);
+        const shaped = xAbs <= w ? mask : Math.pow(mask, dampenFalloffExp);
+        return 1 - centerNoiseDampeningN * shaped;
+      };
+
+      const sampleNoise = (wx, wy) => {
+        const mountain = (terrainNoiseEnabled && mountainAmpMm > 0)
+          ? sampleMountain(wx, wy) * mountainAmpMm * dampen(wx, wy)
+          : 0;
+        return mountain + sampleRackNoise(wx, wy);
+      };
+
+      // --- Terrain shape ---
       const skylineRelief = clamp01((p.skylineRelief ?? 22) / 100);
       const terrainHeight = clamp01((p.terrainHeight ?? 50) / 100);
-      const floorN = clamp01((p.floorHeight ?? 0) / 100);
-      const centerWidthN = Math.max(0.05, (p.centerWidth ?? 28) / 100);
-      const centerDepthN = clamp01((p.centerDepth ?? 0) / 100);
-      const corridorSoftnessN = clamp01((p.corridorSoftness ?? 0) / 100);
-      const shoulderLiftN = clamp01((p.shoulderLift ?? 0) / 100);
-      const shoulderCurveN = clamp01((p.shoulderCurve ?? 0) / 100);
-      const ridgeSharpnessN = clamp01((p.ridgeSharpness ?? 0) / 100);
-      const valleyExp = Math.max(0.5, 1 + (p.valleyProfile ?? 0) / 50);
-      const symmetryBlendN = clamp01((p.symmetryBlend ?? 0) / 100);
-
-      const centerProfile = (wx) => {
-        const xAbs = Math.abs((wx - vpX) / (innerW * 0.5 + 1e-6));
-        const gauss = Math.exp(-0.5 * Math.pow(xAbs / centerWidthN, 2 * valleyExp));
-        const hard = xAbs <= centerWidthN ? 1 : 0;
-        const corridor = lerp(gauss, hard, corridorSoftnessN);
-        const shoulder = Math.pow(1 - corridor, 1 + shoulderCurveN * 3);
-        const ridgePeakW = Math.max(0.05, centerWidthN * 0.3);
-        const ridgePeak = Math.exp(-0.5 * Math.pow((xAbs - centerWidthN) / ridgePeakW, 2));
-        return -centerDepthN * corridor + shoulderLiftN * shoulder + ridgeSharpnessN * ridgePeak;
-      };
+      // Bidirectional floor offset: signed [-100..100], expressed as a fraction of rowSpan.
+      // Negative SVG-Y → positive floorHeight raises the terrain visually.
+      const floorOffsetPx = -Math.max(-1, Math.min(1, (p.floorHeight ?? 0) / 100)) * rowSpan;
+      const noiseMirrorN = clamp01((p.noiseMirror ?? 0) / 100);
 
       const displace = (wx, wy, depthNorm) => {
         let nv = sampleNoise(wx, wy);
-        if (symmetryBlendN > 0) nv = lerp(nv, sampleNoise(2 * vpX - wx, wy), symmetryBlendN);
-        const ampScale = lerp(skylineRelief, 1, depthNorm);
-        let dy = wy - nv * ampScale + centerProfile(wx) * terrainHeight * innerH * 0.5;
-        if (floorN > 0) dy = Math.min(dy, groundBottom - floorN * rowSpan);
-        return Math.max(dy, horizonY);
+        if (noiseMirrorN > 0) nv = lerp(nv, sampleNoise(2 * vpX - wx, wy), noiseMirrorN);
+        const reliefScale = lerp(skylineRelief, 1, depthNorm);
+        const disp = (-nv + centerProfile(wx, depthNorm) * terrainHeight * innerH * 0.5) * reliefScale;
+        return wy + disp + floorOffsetPx;
       };
 
       // --- Displaced rows (index 0 = at horizon, index N_h-1 = near) ---
@@ -150,8 +228,12 @@
       const xPos = Array.from({ length: pts }, (_, j) => inset + (j / (pts - 1)) * innerW);
       const displacedRows = [];
 
+      // Distribute rows in the half-open interval (0, 1]: nearest row sits at the
+      // ground, farthest row sits a small step in front of the horizon — never
+      // exactly on it. The horizon line itself is the vanishing line at infinity
+      // and should not be drawn.
       for (let i = 0; i < N_h; i++) {
-        const t_raw = N_h === 1 ? 0.5 : i / (N_h - 1);
+        const t_raw = (i + 1) / N_h;
         const t = applyRowSpacing(t_raw);
         const rowY = horizonY + t * rowSpan;
         displacedRows.push(xPos.map((wx) => ({ x: wx, y: displace(wx, rowY, t) })));
@@ -253,9 +335,47 @@
         return result;
       };
 
+      // Fan lines follow the displaced terrain. When terrain is inactive
+      // (no height, no noise, no floor offset) we keep each fan as a single
+      // straight segment — both for output cleanliness and to preserve
+      // baseline structure for flat-grid scenes.
+      const rackHasAmplitude = noiseSamplers.some((s) => Math.abs(s.amplitude) > 0);
+      const noiseActive = (terrainNoiseEnabled && mountainAmpMm > 0) || rackHasAmplitude;
+      const shapeActive = terrainHeight > 0 && (centerDepthN > 0 || shoulderLiftN > 0 || ridgeSharpnessN > 0);
+      const terrainActive = noiseActive || shapeActive || floorOffsetPx !== 0;
+
+      const fullLineSpan = fanBottomY - horizonY;
+      const groundU = fullLineSpan > 0 ? Math.min(1, rowSpan / fullLineSpan) : 1;
+      const fanSamples = terrainActive ? Math.max(2, Math.floor(rowSpan / 4)) : 2;
+
       for (let i = 0; i < N_v; i++) {
         const t_raw = N_v === 1 ? 0.5 : i / (N_v - 1);
-        paths.push(...clipFanLine(vpX, horizonY, getFanBottomX(t_raw), fanBottomY));
+        const botX = getFanBottomX(t_raw);
+        const xAt = (u) => vpX + (botX - vpX) * u;
+        const yAt = (u) => horizonY + fullLineSpan * u;
+
+        if (!terrainActive) {
+          // Single straight segment from VP to fanBottom — original behavior.
+          paths.push(...clipFanLine(vpX, horizonY, xAt(1), yAt(1)));
+          continue;
+        }
+
+        const polyline = [];
+        for (let k = 0; k < fanSamples; k++) {
+          const u = (k / (fanSamples - 1)) * groundU;
+          const lineX = xAt(u);
+          const lineY = yAt(u);
+          const depthNorm = clamp01((lineY - horizonY) / rowSpan);
+          polyline.push({ x: lineX, y: displace(lineX, lineY, depthNorm) });
+        }
+        if (groundU < 1) {
+          polyline.push({ x: xAt(1), y: yAt(1) });
+        }
+        for (let k = 0; k < polyline.length - 1; k++) {
+          const a = polyline[k];
+          const b = polyline[k + 1];
+          paths.push(...clipFanLine(a.x, a.y, b.x, b.y));
+        }
       }
 
       // --- Mask polygon: terrain silhouette to canvas bottom ---

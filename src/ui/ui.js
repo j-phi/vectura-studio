@@ -14,6 +14,7 @@
     PALETTES,
     PRESETS,
     PETALIS_PRESETS,
+    TERRAIN_PRESETS,
     MODIFIER_DEFAULTS,
     MODIFIER_DESCRIPTIONS,
     Modifiers = {},
@@ -32,6 +33,9 @@
     });
   const PETALIS_LAYER_TYPES = new Set(['petalisDesigner']);
   const isPetalisLayerType = (type) => PETALIS_LAYER_TYPES.has(type);
+
+  const TERRAIN_PRESET_LIBRARY = (Array.isArray(PRESETS) ? PRESETS : Array.isArray(TERRAIN_PRESETS) ? TERRAIN_PRESETS : [])
+    .filter((preset) => preset?.preset_system === 'terrain');
 
   const getEl = (id, options = {}) => {
     const { silent = false } = options;
@@ -1938,6 +1942,13 @@
       : []),
   ];
 
+  const TERRAIN_PRESET_OPTIONS = [
+    { value: 'custom', label: 'Custom' },
+    ...(Array.isArray(TERRAIN_PRESET_LIBRARY)
+      ? TERRAIN_PRESET_LIBRARY.map((preset) => ({ value: preset.id, label: preset.name }))
+      : []),
+  ];
+
   const PETAL_PROFILE_OPTIONS = [
     { value: 'oval', label: 'Oval' },
     { value: 'teardrop', label: 'Teardrop' },
@@ -3398,19 +3409,148 @@
       },
       { id: 'convergenceSpacingBias', label: 'Convergence Bias', type: 'range', min: -100, max: 100, step: 1 },
       { id: 'fanReach', label: 'Fan Reach', type: 'range', min: 0, max: 100, step: 1 },
-      { type: 'section', label: 'Terrain Form' },
-      { id: 'depthCompression', label: 'Depth Compression', type: 'range', min: 0, max: 100, step: 1 },
-      { id: 'skylineRelief', label: 'Skyline Relief', type: 'range', min: 0, max: 100, step: 1 },
+      { type: 'section', label: 'Terrain Shape' },
+      { id: 'terrainDepth', label: 'Terrain Depth', type: 'range', min: 0, max: 100, step: 1 },
       { id: 'terrainHeight', label: 'Terrain Height', type: 'range', min: 0, max: 100, step: 1 },
-      { id: 'floorHeight', label: 'Floor Height', type: 'range', min: 0, max: 100, step: 1 },
-      { id: 'centerWidth', label: 'Center Width', type: 'range', min: 0, max: 100, step: 1 },
-      { id: 'centerDepth', label: 'Center Depth', type: 'range', min: 0, max: 100, step: 1 },
-      { id: 'corridorSoftness', label: 'Corridor Softness', type: 'range', min: 0, max: 100, step: 1 },
+      { id: 'floorHeight', label: 'Floor Height', type: 'range', min: -100, max: 100, step: 1 },
+      { id: 'skylineRelief', label: 'Skyline Relief', type: 'range', min: 0, max: 100, step: 1 },
+      { type: 'section', label: 'Center Region' },
+      { id: 'centerWidth', label: 'Width', type: 'range', min: 0, max: 100, step: 1 },
+      { id: 'centerSoftness', label: 'Edge Softness', type: 'range', min: 0, max: 100, step: 1 },
+      { id: 'centerCompress', label: 'Compress at Horizon', type: 'range', min: 0, max: 100, step: 1 },
+      { id: 'centerDepth', label: 'Depth', type: 'range', min: 0, max: 100, step: 1 },
       { id: 'shoulderLift', label: 'Shoulder Lift', type: 'range', min: 0, max: 100, step: 1 },
-      { id: 'shoulderCurve', label: 'Shoulder Curve', type: 'range', min: 0, max: 100, step: 1 },
       { id: 'ridgeSharpness', label: 'Ridge Sharpness', type: 'range', min: 0, max: 100, step: 1 },
-      { id: 'valleyProfile', label: 'Valley Profile', type: 'range', min: -100, max: 100, step: 1 },
-      { id: 'symmetryBlend', label: 'Symmetry Blend', type: 'range', min: 0, max: 100, step: 1 },
+      { id: 'centerNoiseDampening', label: 'Noise Dampening', type: 'range', min: 0, max: 100, step: 1 },
+      { type: 'section', label: 'Terrain Noise' },
+      { id: 'terrainNoiseEnabled', label: 'Enable Mountain Surface', type: 'checkbox' },
+      { id: 'mountainAmplitude', label: 'Mountain Amplitude', type: 'range', min: 0, max: 100, step: 1 },
+      { id: 'noiseMirror', label: 'Noise Mirror', type: 'range', min: 0, max: 100, step: 1 },
+      { type: 'section', label: 'Additional Noises' },
+      { type: 'noiseList' },
+    ],
+    terrain: [
+      { type: 'section', label: 'Presets' },
+      {
+        id: 'preset',
+        label: 'Style Preset',
+        type: 'select',
+        options: TERRAIN_PRESET_OPTIONS,
+        infoKey: 'terrain.preset',
+      },
+      { type: 'section', label: 'Perspective' },
+      {
+        id: 'perspectiveMode',
+        label: 'Perspective Mode',
+        type: 'select',
+        options: [
+          { value: 'orthographic', label: 'Top-down (orthographic)' },
+          { value: 'one-point', label: 'One-point' },
+          { value: 'one-point-landscape', label: 'One-point with Landscape Horizon' },
+          { value: 'two-point', label: 'Two-point' },
+          { value: 'isometric', label: 'Isometric' },
+        ],
+        infoKey: 'terrain.perspectiveMode',
+      },
+      {
+        id: 'horizonHeight',
+        label: 'Horizon Height',
+        type: 'range',
+        min: 0,
+        max: 100,
+        step: 1,
+        infoKey: 'terrain.horizonHeight',
+        showIf: (p) => p.perspectiveMode === 'one-point' || p.perspectiveMode === 'one-point-landscape' || p.perspectiveMode === 'two-point',
+      },
+      {
+        id: 'vanishingPointX',
+        label: 'Vanishing Point X',
+        type: 'range',
+        min: 0,
+        max: 100,
+        step: 1,
+        infoKey: 'terrain.vanishingPointX',
+        showIf: (p) => p.perspectiveMode === 'one-point' || p.perspectiveMode === 'one-point-landscape',
+      },
+      {
+        id: 'vpLeftX',
+        label: 'Left VP X',
+        type: 'range',
+        min: 0,
+        max: 100,
+        step: 1,
+        infoKey: 'terrain.vpLeftX',
+        showIf: (p) => p.perspectiveMode === 'two-point',
+      },
+      {
+        id: 'vpRightX',
+        label: 'Right VP X',
+        type: 'range',
+        min: 0,
+        max: 100,
+        step: 1,
+        infoKey: 'terrain.vpRightX',
+        showIf: (p) => p.perspectiveMode === 'two-point',
+      },
+      {
+        id: 'isoAngle',
+        label: 'Isometric Angle',
+        type: 'range',
+        min: 15,
+        max: 60,
+        step: 1,
+        displayUnit: '°',
+        infoKey: 'terrain.isoAngle',
+        showIf: (p) => p.perspectiveMode === 'isometric',
+      },
+      {
+        id: 'depthCompression',
+        label: 'Depth Compression',
+        type: 'range',
+        min: 0,
+        max: 100,
+        step: 1,
+        infoKey: 'terrain.depthCompression',
+        showIf: (p) => p.perspectiveMode !== 'orthographic',
+      },
+      {
+        id: 'depthScale',
+        label: 'Depth Scale',
+        type: 'range',
+        min: 1,
+        max: 200,
+        step: 1,
+        infoKey: 'terrain.depthScale',
+        showIf: (p) => p.perspectiveMode === 'orthographic',
+      },
+      { type: 'section', label: 'Depth & Resolution' },
+      { id: 'depthSlices', label: 'Depth Slices', type: 'range', min: 10, max: 300, step: 1, infoKey: 'terrain.depthSlices' },
+      { id: 'xResolution', label: 'X Resolution', type: 'range', min: 40, max: 600, step: 5, infoKey: 'terrain.xResolution' },
+      { id: 'occlusion', label: 'Hidden-Line Removal', type: 'checkbox', infoKey: 'terrain.occlusion' },
+      { type: 'section', label: 'Mountains' },
+      { id: 'mountainAmplitude', label: 'Mountain Amplitude', type: 'range', min: 0, max: 100, step: 1, infoKey: 'terrain.mountainAmplitude' },
+      { id: 'mountainFrequency', label: 'Mountain Frequency', type: 'range', min: 0.001, max: 0.05, step: 0.001, infoKey: 'terrain.mountainFrequency' },
+      { id: 'mountainOctaves', label: 'Octaves', type: 'range', min: 1, max: 8, step: 1, infoKey: 'terrain.mountainOctaves' },
+      { id: 'mountainLacunarity', label: 'Lacunarity', type: 'range', min: 1.5, max: 3.0, step: 0.05, infoKey: 'terrain.mountainLacunarity' },
+      { id: 'mountainGain', label: 'Gain', type: 'range', min: 0.3, max: 0.7, step: 0.01, infoKey: 'terrain.mountainGain' },
+      { id: 'peakSharpness', label: 'Peak Sharpness', type: 'range', min: 1.0, max: 4.0, step: 0.05, infoKey: 'terrain.peakSharpness' },
+      { type: 'section', label: 'Valleys' },
+      { id: 'valleyCount', label: 'Valley Count', type: 'range', min: 0, max: 8, step: 1, infoKey: 'terrain.valleyCount' },
+      { id: 'valleyDepth', label: 'Valley Depth', type: 'range', min: 0, max: 100, step: 1, infoKey: 'terrain.valleyDepth', showIf: (p) => (p.valleyCount ?? 0) > 0 },
+      { id: 'valleyWidth', label: 'Valley Width', type: 'range', min: 5, max: 50, step: 1, infoKey: 'terrain.valleyWidth', showIf: (p) => (p.valleyCount ?? 0) > 0 },
+      { id: 'valleyShape', label: 'V → U Profile', type: 'range', min: 0, max: 1, step: 0.01, infoKey: 'terrain.valleyShape', showIf: (p) => (p.valleyCount ?? 0) > 0 },
+      { id: 'valleyMeander', label: 'Valley Meander', type: 'range', min: 0, max: 100, step: 1, infoKey: 'terrain.valleyMeander', showIf: (p) => (p.valleyCount ?? 0) > 0 },
+      { type: 'section', label: 'Rivers' },
+      { id: 'riversEnabled', label: 'Enable Rivers', type: 'checkbox', infoKey: 'terrain.riversEnabled' },
+      { id: 'riverCount', label: 'River Count', type: 'range', min: 1, max: 6, step: 1, infoKey: 'terrain.riverCount', showIf: (p) => p.riversEnabled === true },
+      { id: 'riverWidth', label: 'River Width', type: 'range', min: 1, max: 10, step: 0.5, infoKey: 'terrain.riverWidth', showIf: (p) => p.riversEnabled === true },
+      { id: 'riverDepth', label: 'River Depth', type: 'range', min: 0, max: 30, step: 1, infoKey: 'terrain.riverDepth', showIf: (p) => p.riversEnabled === true },
+      { id: 'riverMeander', label: 'River Meander', type: 'range', min: 0, max: 100, step: 1, infoKey: 'terrain.riverMeander', showIf: (p) => p.riversEnabled === true },
+      { type: 'section', label: 'Oceans' },
+      { id: 'oceansEnabled', label: 'Enable Oceans', type: 'checkbox', infoKey: 'terrain.oceansEnabled' },
+      { id: 'waterLevel', label: 'Water Level', type: 'range', min: 0, max: 100, step: 1, infoKey: 'terrain.waterLevel', showIf: (p) => p.oceansEnabled === true },
+      { id: 'drawCoastline', label: 'Draw Coastline', type: 'checkbox', infoKey: 'terrain.drawCoastline', showIf: (p) => p.oceansEnabled === true },
+      { type: 'section', label: 'Additional Noises' },
       { type: 'noiseList' },
     ],
   };
@@ -5115,6 +5255,130 @@
     'petalis.lightSource': {
       title: 'Set Light Source',
       description: 'Places a draggable light source marker on the canvas to preview lighting direction (in development).',
+    },
+    'terrain.preset': {
+      title: 'Style Preset',
+      description: 'Loads a curated set of terrain parameters (alpine, hills, canyon, archipelago, river delta, tundra) into all groups below. Switch back to Custom to keep your tweaks.',
+    },
+    'terrain.perspectiveMode': {
+      title: 'Perspective Mode',
+      description: 'Top-down draws scanlines without convergence. One-point projects rows toward a single vanishing point. One-point with Landscape Horizon adds an explicit horizontal line at the horizon to anchor the scene. Two-point converges to two distinct vanishing points along the horizon for an off-axis terrain look. Isometric uses parallel-oblique projection — no convergence but with a tilted depth axis.',
+    },
+    'terrain.horizonHeight': {
+      title: 'Horizon Height',
+      description: 'Vertical position of the horizon line where distant terrain converges (pinhole modes only).',
+    },
+    'terrain.vanishingPointX': {
+      title: 'Vanishing Point X',
+      description: 'Horizontal location of the single vanishing point on the horizon line.',
+    },
+    'terrain.vpLeftX': {
+      title: 'Left Vanishing Point X',
+      description: 'X position of the left-side vanishing point in two-point mode.',
+    },
+    'terrain.vpRightX': {
+      title: 'Right Vanishing Point X',
+      description: 'X position of the right-side vanishing point in two-point mode.',
+    },
+    'terrain.isoAngle': {
+      title: 'Isometric Angle',
+      description: 'Tilt of the depth axis in isometric mode (30° is the classic isometric look).',
+    },
+    'terrain.depthCompression': {
+      title: 'Depth Compression',
+      description: 'Strength of the perspective power-law that pulls distant rows toward the horizon. Higher values cluster scanlines at the back.',
+    },
+    'terrain.depthScale': {
+      title: 'Depth Scale',
+      description: 'Top-down only: spacing of scanlines down the canvas in pixel units.',
+    },
+    'terrain.depthSlices': {
+      title: 'Depth Slices',
+      description: 'Number of scanlines from horizon to viewer. More slices = denser linework but slower.',
+    },
+    'terrain.xResolution': {
+      title: 'X Resolution',
+      description: 'Sample points per scanline. Higher values pick up finer mountain detail.',
+    },
+    'terrain.occlusion': {
+      title: 'Hidden-Line Removal',
+      description: 'Clips occluded segments where closer terrain blocks the view of more distant rows. Disable for see-through wireframe.',
+    },
+    'terrain.mountainAmplitude': {
+      title: 'Mountain Amplitude',
+      description: 'Overall vertical scale of the mountain heightfield. 0 produces a flat plane.',
+    },
+    'terrain.mountainFrequency': {
+      title: 'Mountain Frequency',
+      description: 'Spatial frequency of the ridged base noise. Higher values make smaller, denser ridges.',
+    },
+    'terrain.mountainOctaves': {
+      title: 'Mountain Octaves',
+      description: 'Number of fractal noise octaves stacked. More octaves = rougher, more detailed terrain.',
+    },
+    'terrain.mountainLacunarity': {
+      title: 'Mountain Lacunarity',
+      description: 'Frequency multiplier between octaves. Standard fractal noise uses 2.0.',
+    },
+    'terrain.mountainGain': {
+      title: 'Mountain Gain',
+      description: 'Amplitude falloff per octave. Lower values produce smoother, less spiky terrain.',
+    },
+    'terrain.peakSharpness': {
+      title: 'Peak Sharpness',
+      description: 'Power applied to ridged noise to sharpen peaks. Low values give rounded hills, high values give jagged knife-edge ridges.',
+    },
+    'terrain.valleyCount': {
+      title: 'Valley Count',
+      description: 'Number of carved valleys layered onto the heightfield. 0 disables valleys.',
+    },
+    'terrain.valleyDepth': {
+      title: 'Valley Depth',
+      description: 'How deep each valley carves into the heightfield.',
+    },
+    'terrain.valleyWidth': {
+      title: 'Valley Width',
+      description: 'Cross-sectional width of each valley in pixel units.',
+    },
+    'terrain.valleyShape': {
+      title: 'Valley Shape (V → U)',
+      description: '0 = sharp V-shaped riverine valley. 1 = wide U-shaped glacial valley.',
+    },
+    'terrain.valleyMeander': {
+      title: 'Valley Meander',
+      description: 'Sinuosity of the valley axis. Higher values produce more curved, snaking valleys.',
+    },
+    'terrain.riversEnabled': {
+      title: 'Enable Rivers',
+      description: 'Traces steepest-descent flow from high points down to the canvas edge or water level. Each trace also carves into the heightfield.',
+    },
+    'terrain.riverCount': {
+      title: 'River Count',
+      description: 'Number of river traces to draw.',
+    },
+    'terrain.riverWidth': {
+      title: 'River Width',
+      description: 'Carving radius of each river in pixel units.',
+    },
+    'terrain.riverDepth': {
+      title: 'River Depth',
+      description: 'How much each river carves the underlying heightfield.',
+    },
+    'terrain.riverMeander': {
+      title: 'River Meander',
+      description: 'Side-to-side wiggle applied to the steepest-descent path.',
+    },
+    'terrain.oceansEnabled': {
+      title: 'Enable Oceans',
+      description: 'Clamps heights below the water level to a flat sea plane.',
+    },
+    'terrain.waterLevel': {
+      title: 'Water Level',
+      description: 'Sea-level height threshold. Anything below becomes flat water.',
+    },
+    'terrain.drawCoastline': {
+      title: 'Draw Coastline',
+      description: 'Renders the iso-contour where land meets water as an additional path.',
     },
   };
 
@@ -8332,14 +8596,42 @@
         return auto || pane.classList.contains('pane-collapsed');
       };
 
+      const modBar = getEl('touch-modifier-bar');
+      const modBarOriginParent = modBar?.parentNode || null;
+      const modBarOriginNext = modBar?.nextSibling || null;
+      let mobileLayoutDefaultApplied = false;
+
+      const applyMobileBottomPaneLayout = (isMobileLayout) => {
+        if (!bottomPane) return;
+        if (isMobileLayout) {
+          if (modBar && modBar.parentNode !== bottomPane) {
+            bottomPane.insertBefore(modBar, bottomPane.firstChild);
+          }
+          if (modBar) modBar.classList.remove('hidden');
+        } else {
+          if (modBar && modBarOriginParent && modBar.parentNode !== modBarOriginParent) {
+            modBarOriginParent.insertBefore(modBar, modBarOriginNext);
+          }
+          if (modBar && typeof this.isTouchCapable === 'function') {
+            modBar.classList.toggle('hidden', !this.isTouchCapable());
+          }
+        }
+      };
+
       const applyAutoCollapse = () => {
         const viewportWidth = window.innerWidth;
         const shouldAuto = viewportWidth < 640;
         const isMobileLayout = viewportWidth < 900;
         document.body.classList.toggle('auto-collapsed', shouldAuto);
         document.body.classList.toggle('mobile-layout', isMobileLayout);
-        if (bottomPane) {
-          bottomPane.classList.toggle('bottom-pane-collapsed', isMobileLayout);
+        applyMobileBottomPaneLayout(isMobileLayout);
+        if (bottomPane && isMobileLayout && !mobileLayoutDefaultApplied) {
+          bottomPane.classList.add('bottom-pane-collapsed');
+          mobileLayoutDefaultApplied = true;
+        }
+        if (bottomPane && !isMobileLayout) {
+          bottomPane.classList.remove('bottom-pane-collapsed');
+          mobileLayoutDefaultApplied = false;
         }
       };
 
@@ -13558,6 +13850,32 @@
                 const preset = (PETALIS_PRESET_LIBRARY || []).find((item) => item.id === next);
                 const presetBase = 'petalisDesigner';
                 const base = ALGO_DEFAULTS?.[presetBase] ? clone(ALGO_DEFAULTS[presetBase]) : {};
+                const preserved = new Set([...TRANSFORM_KEYS, 'smoothing', 'simplify', 'curves']);
+                const nextParams = { ...base, ...(preset?.params || {}) };
+                preserved.forEach((key) => {
+                  if (layer.params[key] !== undefined) nextParams[key] = layer.params[key];
+                });
+                nextParams.preset = next;
+                layer.params = { ...layer.params, ...nextParams };
+                this.storeLayerParams(layer);
+                span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
+                this.app.regen();
+                this.buildControls();
+                this.updateFormula();
+                return;
+              }
+              if (layer.type === 'terrain' && def.id === 'preset' && next === 'custom') {
+                layer.params.preset = 'custom';
+                this.storeLayerParams(layer);
+                span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
+                this.app.regen();
+                this.buildControls();
+                this.updateFormula();
+                return;
+              }
+              if (layer.type === 'terrain' && def.id === 'preset' && next !== 'custom') {
+                const preset = (TERRAIN_PRESET_LIBRARY || []).find((item) => item.id === next);
+                const base = ALGO_DEFAULTS?.terrain ? clone(ALGO_DEFAULTS.terrain) : {};
                 const preserved = new Set([...TRANSFORM_KEYS, 'smoothing', 'simplify', 'curves']);
                 const nextParams = { ...base, ...(preset?.params || {}) };
                 preserved.forEach((key) => {

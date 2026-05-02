@@ -324,11 +324,162 @@
           centerRadius: 10,
           centerDensity: 40
         }
+      },
+      {
+        id: "terrain-alpine",
+        name: "Alpine Range",
+        preset_system: "terrain",
+        params: {
+          perspectiveMode: "one-point",
+          horizonHeight: 45,
+          depthCompression: 70,
+          depthSlices: 100,
+          xResolution: 280,
+          mountainAmplitude: 65,
+          mountainFrequency: 0.012,
+          mountainOctaves: 6,
+          mountainGain: 0.55,
+          peakSharpness: 3.0,
+          valleyCount: 3,
+          valleyDepth: 45,
+          valleyWidth: 18,
+          valleyShape: 0.7,
+          valleyMeander: 55,
+          riversEnabled: false,
+          oceansEnabled: false
+        }
+      },
+      {
+        id: "terrain-rolling-hills",
+        name: "Rolling Hills",
+        preset_system: "terrain",
+        params: {
+          perspectiveMode: "one-point",
+          horizonHeight: 55,
+          depthCompression: 50,
+          depthSlices: 70,
+          xResolution: 220,
+          mountainAmplitude: 25,
+          mountainFrequency: 0.006,
+          mountainOctaves: 3,
+          mountainGain: 0.4,
+          peakSharpness: 1.2,
+          valleyCount: 1,
+          valleyDepth: 15,
+          valleyWidth: 35,
+          valleyShape: 0.9,
+          valleyMeander: 25,
+          riversEnabled: false,
+          oceansEnabled: false
+        }
+      },
+      {
+        id: "terrain-canyon-mesa",
+        name: "Canyon Mesa",
+        preset_system: "terrain",
+        params: {
+          perspectiveMode: "one-point",
+          horizonHeight: 50,
+          depthCompression: 75,
+          depthSlices: 90,
+          xResolution: 260,
+          mountainAmplitude: 50,
+          mountainFrequency: 0.005,
+          mountainOctaves: 4,
+          mountainGain: 0.65,
+          peakSharpness: 1.0,
+          valleyCount: 2,
+          valleyDepth: 60,
+          valleyWidth: 14,
+          valleyShape: 0.05,
+          valleyMeander: 30,
+          riversEnabled: true,
+          riverCount: 1,
+          riverWidth: 4,
+          riverDepth: 18,
+          riverMeander: 65,
+          oceansEnabled: false
+        }
+      },
+      {
+        id: "terrain-archipelago",
+        name: "Archipelago",
+        preset_system: "terrain",
+        params: {
+          perspectiveMode: "one-point",
+          horizonHeight: 50,
+          depthCompression: 60,
+          depthSlices: 90,
+          xResolution: 260,
+          mountainAmplitude: 35,
+          mountainFrequency: 0.011,
+          mountainOctaves: 4,
+          peakSharpness: 1.5,
+          valleyCount: 4,
+          valleyDepth: 40,
+          valleyWidth: 22,
+          valleyShape: 0.6,
+          valleyMeander: 60,
+          riversEnabled: false,
+          oceansEnabled: true,
+          waterLevel: 32,
+          drawCoastline: true
+        }
+      },
+      {
+        id: "terrain-river-delta",
+        name: "River Delta",
+        preset_system: "terrain",
+        params: {
+          perspectiveMode: "one-point",
+          horizonHeight: 55,
+          depthCompression: 55,
+          depthSlices: 80,
+          xResolution: 240,
+          mountainAmplitude: 30,
+          mountainFrequency: 0.007,
+          mountainOctaves: 4,
+          mountainGain: 0.45,
+          peakSharpness: 1.3,
+          valleyCount: 2,
+          valleyDepth: 35,
+          valleyWidth: 25,
+          valleyShape: 0.85,
+          valleyMeander: 60,
+          riversEnabled: true,
+          riverCount: 4,
+          riverWidth: 3,
+          riverDepth: 10,
+          riverMeander: 75,
+          oceansEnabled: true,
+          waterLevel: 18,
+          drawCoastline: true
+        }
+      },
+      {
+        id: "terrain-tundra-flats",
+        name: "Tundra Flats",
+        preset_system: "terrain",
+        params: {
+          perspectiveMode: "orthographic",
+          depthScale: 100,
+          depthSlices: 60,
+          xResolution: 240,
+          mountainAmplitude: 18,
+          mountainFrequency: 0.005,
+          mountainOctaves: 3,
+          mountainGain: 0.4,
+          peakSharpness: 1.4,
+          valleyCount: 0,
+          riversEnabled: false,
+          oceansEnabled: false
+        }
       }
-    
+
   ];
   window.Vectura.PETALIS_PRESETS = window.Vectura.PRESETS.filter((preset) => {
     const system = preset?.preset_system || 'petalisDesigner';
     return system === 'petalisDesigner';
   });
+  window.Vectura.TERRAIN_PRESETS = window.Vectura.PRESETS.filter((preset) => preset?.preset_system === 'terrain');
 })();

@@ -46,7 +46,8 @@
           pan: Boolean(SETTINGS.touchModifiers.pan),
         };
       }
-      bar.classList.toggle('hidden', !this.isTouchCapable());
+      const shouldShowModBar = () => this.isTouchCapable() || document.body.classList.contains('mobile-layout');
+      bar.classList.toggle('hidden', !shouldShowModBar());
       bar.querySelectorAll('.touch-mod-btn').forEach((btn) => {
         btn.onclick = () => {
           const key = btn.dataset.touchMod;
@@ -56,7 +57,7 @@
       });
       this.refreshTouchModifierButtons();
       window.addEventListener('resize', () => {
-        bar.classList.toggle('hidden', !this.isTouchCapable());
+        bar.classList.toggle('hidden', !shouldShowModBar());
       });
     },
 

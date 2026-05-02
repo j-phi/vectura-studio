@@ -249,7 +249,7 @@
     },
 
     ensureWavetableNoises(layer) {
-      if (!layer || (layer.type !== 'wavetable' && layer.type !== 'rainfall')) return [];
+      if (!layer || (layer.type !== 'wavetable' && layer.type !== 'rainfall' && layer.type !== 'terrain')) return [];
       const { base, templates } = this.getWavetableNoiseTemplates('wavetable');
       let noises = layer.params.noises;
       if (!Array.isArray(noises) || !noises.length) {

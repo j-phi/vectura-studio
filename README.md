@@ -201,6 +201,7 @@ Vectura runs on phones. A touch-friendly shell with slide-over drawers, a bottom
 | **Petalis** | Radial petal structures with presets, embedded inner/outer curve designer, dual-ring controls, shading/modifier stacks, and Noise Rack-driven angular drift |
 | **Spiral** | Archimedean spiral with optional closure that loops the outer end back in |
 | **Shape Pack** | Circle/polygon packing with perspective controls |
+| **Terrain** | Realistic terrain heightfield rendered as scanlines under selectable perspective (top-down, one-point, two-point, isometric), with native ridged mountains, V/U valleys, river carving, ocean coastlines, and dial-in style presets |
 
 Algorithm defaults live in `src/config/defaults.js`, modifier defaults/descriptions in `src/config/modifiers.js`, and algorithm descriptions in `src/config/descriptions.js`.
 
