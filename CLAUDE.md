@@ -24,7 +24,7 @@ npm run test:integration       # Vitest integration tests
 npm run test:e2e               # Playwright smoke (desktop + tablet)
 npm run test:visual            # SVG baseline regression
 npm run test:perf              # performance/stress tests
-npm run test:ci                # PR-gating suite (unit + integration + e2e)
+npm run test:ci                # full PR-gating suite (unit + integration + e2e + visual + perf)
 npm run test:update            # regenerate SVG baselines
 
 # Maintenance
@@ -43,7 +43,7 @@ Node 18+ required. `package.json` is the canonical version source — run `versi
 | UI interaction behavior | `test:integration` + `test:e2e` |
 | Rendering output or baselines | `test:visual` (+ `test:perf` for heavy paths) |
 | Docs-only | Link/path sanity review only |
-| CI-gating confidence | `test:ci` |
+| Any PR / full confidence | `test:ci` (unit + integration + e2e + visual + perf) |
 
 ## Architecture
 

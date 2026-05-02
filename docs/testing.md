@@ -28,8 +28,8 @@ Workflow governance and documentation synchronization rules live in `docs/agenti
 
 ## CI Policy
 - `.github/workflows/test.yml` enforces:
-  - Pull requests: `test:unit`, `test:integration`, `test:e2e`
-  - `main` + nightly schedule: `test:visual`, `test:perf`
+  - Pull requests and `main`: all five suites (`test:unit`, `test:integration`, `test:e2e`, `test:visual`, `test:perf`)
+  - Nightly schedule: same
 - `.github/workflows/dependency-review.yml` reviews dependency diffs on pull requests.
 - `.github/workflows/codeql.yml` runs GitHub code scanning on `main`, pull requests to `main`, and a weekly schedule.
 - Playwright artifacts are uploaded from CI on every `e2e-smoke` run.

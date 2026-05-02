@@ -17,6 +17,8 @@ Recommended required checks:
 - `unit`
 - `integration`
 - `e2e-smoke`
+- `visual`
+- `perf`
 - any future workflow checks added for docs governance, dependency review, or security scanning
 
 ## 2. CODEOWNERS

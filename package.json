@@ -15,7 +15,7 @@
     "test:visual": "npm run patch:test-runtime && vitest run tests/visual",
     "test:visual:screenshots": "npm run patch:test-runtime && ENABLE_SCREENSHOT_VISUALS=1 playwright test tests/e2e/visual.spec.js",
     "test:perf": "npm run patch:test-runtime && vitest run tests/perf",
-    "test:ci": "npm run test:unit && npm run test:integration && npm run test:e2e",
+    "test:ci": "npm run test:unit && npm run test:integration && npm run test:e2e && npm run test:visual && npm run test:perf",
     "test:update": "npm run patch:test-runtime && VECTURA_UPDATE_BASELINES=1 npm run test:visual"
   },
   "devDependencies": {
