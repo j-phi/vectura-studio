@@ -470,15 +470,11 @@
 
     const pointBlend = (pt) => {
       if (strength === 0) return 0;
-      let diff = Math.atan2(pt.y - cy, pt.x - cx) - arcMidRad;
-      while (diff > Math.PI) diff -= 2 * Math.PI;
-      while (diff < -Math.PI) diff += 2 * Math.PI;
-      const distFromEdge = arcHalfSpan - Math.abs(diff);
-      if (distFromEdge <= 0) return 0;
       if (falloff === 0 || arcHalfSpan < 1e-6) return strength;
-      const fadeZone = arcHalfSpan * falloff;
-      const t = fadeZone > 0 ? Math.min(1, distFromEdge / fadeZone) : 1;
-      return strength * t;
+      let angDist = Math.abs(Math.atan2(pt.y - cy, pt.x - cx) - arcMidRad);
+      while (angDist > Math.PI) angDist = Math.abs(angDist - 2 * Math.PI);
+      const t = Math.min(1, angDist / arcHalfSpan);
+      return strength * (1 - falloff * t);
     };
 
     const radialSide = (pt) => {

@@ -88,6 +88,7 @@
         const crackHalfSpreadRad = (Math.max(0.5, p.crackSpread ?? 4) / 2 * Math.PI) / 180;
         const crackDepthFrac     = Math.max(0, Math.min(0.99, p.crackDepth ?? 0.5));
         const crackNoise         = Math.max(0, Math.min(1, p.crackNoise ?? 0.3));
+        const crackOutline       = Boolean(p.crackOutline ?? false);
 
         // bark-type params
         const barkType = p.barkType ?? 'smooth';
@@ -645,24 +646,38 @@
         // and path output share the same positions — without this, the ring gap boundaries
         // use the clean geometric zone while the drawn arm paths are shifted by wobble noise.
         const CRACK_POINTS = 14;
+        const outerRingIdx = totalRings - 1;
         const precomputedCrackArms = [];
         if (crackCount > 0) {
           for (let c = 0; c < crackCount; c++) {
             const crackAngle = crackAngles[c];
-            const outerR_c = effectiveMaxR;
-            const innerR_c = outerR_c * (1 - crackDepthFrac);
+            const innerR_c = effectiveMaxR * (1 - crackDepthFrac);
             const armData = { anglesPerSide: [[], []], paths: [] };
             for (let sideIdx = 0; sideIdx < 2; sideIdx++) {
               const side = sideIdx === 0 ? -1 : 1;
               const arm = [];
+              let armOuterR = effectiveMaxR;
               for (let t = 0; t <= CRACK_POINTS; t++) {
                 const frac = t / CRACK_POINTS;
-                const r = outerR_c + (innerR_c - outerR_c) * frac;
                 const angularOffset = side * crackHalfSpreadRad * (1 - frac);
                 const wobble = crackNoise * (1 - frac) * (crackRng.nextFloat() - 0.5) * crackHalfSpreadRad * 2;
                 const angle = crackAngle + angularOffset + wobble;
-                arm.push({ x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r });
                 armData.anglesPerSide[sideIdx].push(angle);
+                let r;
+                if (t === 0) {
+                  // Snap outer point to the actual outermost ring radius at this angle,
+                  // after all Phase-B/C transforms (noise, bias, bark, propagation).
+                  const normA = ((angle % TAU) + TAU) % TAU;
+                  const kFloat = normA / TAU * US;
+                  const k0 = Math.floor(kFloat) % US;
+                  const k1 = (k0 + 1) % US;
+                  const tf = kFloat - Math.floor(kFloat);
+                  armOuterR = rawR[outerRingIdx * US + k0] * (1 - tf) + rawR[outerRingIdx * US + k1] * tf;
+                  r = armOuterR;
+                } else {
+                  r = armOuterR + (innerR_c - armOuterR) * frac;
+                }
+                arm.push({ x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r });
               }
               armData.paths.push(arm);
             }
@@ -778,9 +793,11 @@
           }
         }
 
-        for (const armData of precomputedCrackArms) {
-          for (const arm of armData.paths) {
-            paths.push(arm);
+        if (crackOutline) {
+          for (const armData of precomputedCrackArms) {
+            const left  = armData.paths[0];
+            const right = armData.paths[1].slice().reverse();
+            paths.push([...left, ...right]);
           }
         }
 

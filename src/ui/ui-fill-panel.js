@@ -47,7 +47,7 @@
     grid:        { angle: true,  amplitude: false, dotSize: true,  shift: true  },
     meander:     { angle: true,  amplitude: false, dotSize: false, shift: true  },
     triaxial:    { angle: true,  amplitude: false, dotSize: false, shift: true  },
-    polygonal:   { angle: true,  amplitude: false, dotSize: false, shift: true,  axes: true },
+    polygonal:   { angle: true,  amplitude: false, dotSize: false, shift: true,  axes: true, polyTile: true },
     // Rainfall-specific
     hash:        { angle: true,  amplitude: false, dotSize: false, shift: true  },
     snake:       { angle: true,  amplitude: true,  dotSize: false, shift: true  },
@@ -84,6 +84,7 @@
     radialCentralDensityParam = 'fillRadialCentralDensity',
     radialOuterDiameterParam  = 'fillRadialOuterDiameter',
     axesParam                 = 'fillAxes',
+    polyTileParam             = 'fillPolyTile',
     showIfBase = () => true,
     descKeyPrefix = 'fill',
   } = {}) => {
@@ -187,6 +188,19 @@
         step: 1,
         showIf: (p) => isActive(p) && !!caps(p).axes,
         infoKey: `${descKeyPrefix}.axes`,
+      },
+      {
+        id: polyTileParam,
+        label: 'Tile Method',
+        type: 'select',
+        options: [
+          { value: 'grid',       label: 'Grid' },
+          { value: 'brick',      label: 'Brick' },
+          { value: 'hexagonal',  label: 'Hexagonal' },
+          { value: 'off',        label: 'Off (single)' },
+        ],
+        showIf: (p) => isActive(p) && !!caps(p).polyTile,
+        infoKey: `${descKeyPrefix}.polyTile`,
       },
       {
         id: radialCentralDensityParam,

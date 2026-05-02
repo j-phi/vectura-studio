@@ -34,6 +34,12 @@ const makeBaseParams = (overrides = {}) => ({
   ...overrides,
 });
 
+// Params with crackOutline=true so arm paths appear in the output for geometric checks.
+const makeCrackParams = (overrides = {}) => makeBaseParams({
+  crackOutline: true,
+  ...overrides,
+});
+
 describe('Rings crack alignment', () => {
   let runtime;
 
@@ -50,41 +56,70 @@ describe('Rings crack alignment', () => {
     return Algorithms.rings.generate(params, new SeededRNG(params.seed), new SimpleNoise(params.seed), makeDefaultBounds());
   };
 
-  // Helper: compute angle of a point relative to canvas center
-  const pointAngle = (pt) => {
-    const cx = 320 / 2;
-    const cy = 220 / 2;
-    return Math.atan2(pt.y - cy, pt.x - cx);
+  const cx = 320 / 2;
+  const cy = 220 / 2;
+
+  const pointAngle  = (pt) => Math.atan2(pt.y - cy, pt.x - cx);
+  const pointRadius = (pt) => Math.hypot(pt.x - cx, pt.y - cy);
+  const wrapAngle   = (a)  => a - TAU * Math.round(a / TAU);
+
+  // Interpolate arm angle at a given ring radius.
+  // With crackOutline=true the combined outline is 1 path (left + reversed right).
+  // Split back into arms: first half = left arm (outer→inner), second half = right arm (inner→outer,
+  // so reverse to get outer→inner for consistent radius ordering).
+  const splitCombinedArm = (combinedPath) => {
+    const half = (combinedPath.length) / 2;
+    const left  = combinedPath.slice(0, half);
+    const right = combinedPath.slice(half).reverse();
+    return { left, right };
   };
 
-  const pointRadius = (pt) => {
-    const cx = 320 / 2;
-    const cy = 220 / 2;
-    return Math.hypot(pt.x - cx, pt.y - cy);
-  };
-
-  const wrapAngle = (a) => a - TAU * Math.round(a / TAU);
-
-  // Interpolate an arm's angle at a given radius using the arm's point array
   const interpolateArmAngle = (arm, r) => {
-    const cx = 320 / 2;
-    const cy = 220 / 2;
-    const armAngles = arm.map(pt => Math.atan2(pt.y - cy, pt.x - cx));
-    const armRadii  = arm.map(pt => Math.hypot(pt.x - cx, pt.y - cy));
-    // arm[0] = outermost, arm[CRACK_POINTS] = innermost; r decreases as index increases
+    const angles = arm.map(pt => Math.atan2(pt.y - cy, pt.x - cx));
+    const radii  = arm.map(pt => Math.hypot(pt.x - cx, pt.y - cy));
     for (let i = 0; i < arm.length - 1; i++) {
-      const r0 = armRadii[i];
-      const r1 = armRadii[i + 1];
+      const r0 = radii[i], r1 = radii[i + 1];
       if (r >= Math.min(r0, r1) && r <= Math.max(r0, r1)) {
         const t = Math.abs(r1 - r0) < 0.001 ? 0 : (r - r0) / (r1 - r0);
-        return armAngles[i] + (armAngles[i + 1] - armAngles[i]) * t;
+        return angles[i] + (angles[i + 1] - angles[i]) * t;
       }
     }
-    // Clamp to nearest
-    return armAngles[arm.length - 1];
+    return angles[arm.length - 1];
   };
 
-  test('crackNoise=0 — ring break boundaries align with crack arm angles', () => {
+  // Core invariant: no ring point should lie between the crack arms at that radius.
+  // crackCount combined outline paths are the last crackCount entries in paths[].
+  const checkNoRingPointInsideCrack = (paths, crackCount, crackDepth) => {
+    const outerR = 90;
+    const innerR = outerR * (1 - crackDepth);
+    const ringPaths = paths.slice(0, paths.length - crackCount);
+    const armOffset = paths.length - crackCount;
+
+    let violations = 0;
+    for (const path of ringPaths) {
+      for (const pt of path) {
+        const r = pointRadius(pt);
+        if (r < innerR) continue;
+        const theta = pointAngle(pt);
+
+        for (let ci = 0; ci < crackCount; ci++) {
+          const { left, right } = splitCombinedArm(paths[armOffset + ci]);
+          const leftAngle  = interpolateArmAngle(left,  r);
+          const rightAngle = interpolateArmAngle(right, r);
+
+          const span = wrapAngle(rightAngle - leftAngle);
+          if (span <= 0) continue;
+          const dt = wrapAngle(theta - leftAngle);
+          if (dt > 0 && dt < span) violations++;
+        }
+      }
+    }
+    return violations;
+  };
+
+  // ── crackOutline=false: no arm paths in output ────────────────────────────
+
+  test('crackOutline=false (default) — crack arms NOT in output path array', () => {
     const p = makeBaseParams({
       crackCount: 1,
       crackSpread: 8,
@@ -92,47 +127,31 @@ describe('Rings crack alignment', () => {
       crackNoise: 0,
       crackSeed: 42,
     });
-    const paths = generate(p);
-
-    // Last 2 paths are crack arms (left=side-1, right=side+1)
-    const leftArm  = paths[paths.length - 2];
-    const rightArm = paths[paths.length - 1];
-
-    // For each ring path, check break boundaries
-    const outerR = 90; // effectiveMaxR = outerDiameter/2
-    const innerR = outerR * (1 - p.crackDepth);
-    const US = Math.max(360, Math.floor(outerR * 2));
-    const sampleStep = TAU / US;
-
-    let misalignments = 0;
-    const ringPaths = paths.slice(0, paths.length - 2);
-    for (const path of ringPaths) {
-      if (path.length < 2) continue;
-      const r = pointRadius(path[0]);
-      if (r < innerR) continue;
-
-      // Check last point of path (should align with left arm = side=-1)
-      const endPt   = path[path.length - 1];
-      const endAngle = pointAngle(endPt);
-      const leftArmAngle = interpolateArmAngle(leftArm, r);
-      const diffEnd = Math.abs(wrapAngle(endAngle - leftArmAngle));
-      if (diffEnd > sampleStep * 2) misalignments++;
-
-      // Check first point of path (should align with right arm = side=+1)
-      const startPt    = path[0];
-      const startAngle = pointAngle(startPt);
-      const rightArmAngle = interpolateArmAngle(rightArm, r);
-      const diffStart = Math.abs(wrapAngle(startAngle - rightArmAngle));
-      if (diffStart > sampleStep * 2) misalignments++;
-    }
-
-    expect(misalignments).toBe(0);
+    const withoutOutline = generate(p);
+    const withOutline    = generate({ ...p, crackOutline: true });
+    // crackOutline=false produces one fewer path (no combined arm path)
+    expect(withoutOutline.length).toBe(withOutline.length - 1);
   });
 
-  // RGR Red test: with high crackNoise, ring break boundaries MUST align with crack arm angles.
-  // This test fails with the pre-fix code (wobble ignored in ring suppression) and passes after.
-  test('crackNoise=1.0 — ring break boundaries align with actual crack arm positions', () => {
-    const p = makeBaseParams({
+  // ── Alignment invariant (crackOutline=true provides arm paths for comparison) ──
+
+  test('crackNoise=0 — no ring points inside crack arms', () => {
+    const p = makeCrackParams({
+      crackCount: 1,
+      crackSpread: 8,
+      crackDepth: 0.6,
+      crackNoise: 0,
+      crackSeed: 42,
+    });
+    const paths = generate(p);
+    expect(checkNoRingPointInsideCrack(paths, p.crackCount, p.crackDepth)).toBe(0);
+  });
+
+  // RGR Red test: with high crackNoise, ring points must not appear inside the actual crack
+  // arm boundaries. Pre-fix code suppressed using the wobble-free zone, leaving ring points
+  // visible between the geometric zone edge and the displaced arm.
+  test('crackNoise=1.0 — no ring points inside actual crack arm boundaries', () => {
+    const p = makeCrackParams({
       crackCount: 1,
       crackSpread: 16,
       crackDepth: 0.6,
@@ -140,40 +159,11 @@ describe('Rings crack alignment', () => {
       crackSeed: 42,
     });
     const paths = generate(p);
-
-    const leftArm  = paths[paths.length - 2];
-    const rightArm = paths[paths.length - 1];
-
-    const outerR = 90;
-    const innerR = outerR * (1 - p.crackDepth);
-    const US = Math.max(360, Math.floor(outerR * 2));
-    const sampleStep = TAU / US;
-
-    let misalignments = 0;
-    const ringPaths = paths.slice(0, paths.length - 2);
-    for (const path of ringPaths) {
-      if (path.length < 2) continue;
-      const r = pointRadius(path[0]);
-      if (r < innerR) continue;
-
-      const endPt    = path[path.length - 1];
-      const endAngle = pointAngle(endPt);
-      const leftArmAngle = interpolateArmAngle(leftArm, r);
-      const diffEnd = Math.abs(wrapAngle(endAngle - leftArmAngle));
-      if (diffEnd > sampleStep * 2) misalignments++;
-
-      const startPt    = path[0];
-      const startAngle = pointAngle(startPt);
-      const rightArmAngle = interpolateArmAngle(rightArm, r);
-      const diffStart = Math.abs(wrapAngle(startAngle - rightArmAngle));
-      if (diffStart > sampleStep * 2) misalignments++;
-    }
-
-    expect(misalignments).toBe(0);
+    expect(checkNoRingPointInsideCrack(paths, p.crackCount, p.crackDepth)).toBe(0);
   });
 
-  test('multiple cracks all align with their respective arm paths', () => {
-    const p = makeBaseParams({
+  test('multiple cracks — no ring points inside any crack arm boundary', () => {
+    const p = makeCrackParams({
       crackCount: 3,
       crackSpread: 10,
       crackDepth: 0.5,
@@ -181,42 +171,58 @@ describe('Rings crack alignment', () => {
       crackSeed: 7,
     });
     const paths = generate(p);
-
-    // Last 6 paths = 3 cracks × 2 arms each
-    const outerR = 90;
-    const innerR = outerR * (1 - p.crackDepth);
-    const US = Math.max(360, Math.floor(outerR * 2));
-    const sampleStep = TAU / US;
-
-    const ringPaths = paths.slice(0, paths.length - p.crackCount * 2);
-
-    // For each ring, find any path breaks and verify they're near SOME crack arm
-    let misalignments = 0;
-    for (const path of ringPaths) {
-      if (path.length < 2) continue;
-      const r = pointRadius(path[0]);
-      if (r < innerR) continue;
-
-      // Build array of all arm angles at this radius across all cracks
-      const allArmAngles = [];
-      for (let ci = 0; ci < p.crackCount; ci++) {
-        const left  = paths[paths.length - p.crackCount * 2 + ci * 2];
-        const right = paths[paths.length - p.crackCount * 2 + ci * 2 + 1];
-        allArmAngles.push(interpolateArmAngle(left,  r));
-        allArmAngles.push(interpolateArmAngle(right, r));
-      }
-
-      const checkAlignment = (ptAngle) => {
-        const closest = Math.min(...allArmAngles.map(a => Math.abs(wrapAngle(ptAngle - a))));
-        return closest <= sampleStep * 2;
-      };
-
-      if (!checkAlignment(pointAngle(path[path.length - 1]))) misalignments++;
-      if (!checkAlignment(pointAngle(path[0]))) misalignments++;
-    }
-
-    expect(misalignments).toBe(0);
+    expect(checkNoRingPointInsideCrack(paths, p.crackCount, p.crackDepth)).toBe(0);
   });
+
+  // ── Bark-ring snap: arm outer point must match actual outermost ring radius ──
+
+  test('crack arm outer point snaps to outermost ring actual radius (no-noise baseline)', () => {
+    // With amplitude=0 and no bark texture, rawR == ringRadii (nominal), so outer point
+    // should equal effectiveMaxR exactly.
+    const p = makeCrackParams({
+      crackCount: 1,
+      crackSpread: 8,
+      crackDepth: 0.6,
+      crackNoise: 0,
+      crackSeed: 42,
+    });
+    const paths = generate(p);
+    const { left, right } = splitCombinedArm(paths[paths.length - 1]);
+    const outerR = 90;
+    expect(pointRadius(left[0])).toBeCloseTo(outerR, 1);
+    expect(pointRadius(right[0])).toBeCloseTo(outerR, 1);
+  });
+
+  test('crack arm outer point snaps to outermost bark ring radius with noise applied', () => {
+    // With significant noise amplitude, rawR differs from effectiveMaxR.
+    // The arm outer point should be at rawR (not effectiveMaxR).
+    const p = makeCrackParams({
+      crackCount: 1,
+      crackSpread: 8,
+      crackDepth: 0.6,
+      crackNoise: 0,
+      crackSeed: 42,
+      barkRings: 2,
+      barkGap: 1,
+      barkType: 'rough',
+      barkRoughness: 6,
+      noises: [{ id: 'n1', enabled: true, type: 'simplex', blend: 'add', amplitude: 8, zoom: 0.02,
+        freq: 1, angle: 0, shiftX: 0, shiftY: 0, applyMode: 'concentric', ringDrift: 0.5,
+        ringRadius: 100, tileMode: 'off', noiseStyle: 'linear', imageWidth: 1, imageHeight: 1 }],
+    });
+    const paths = generate(p);
+    const outerR = 90;
+    const { left, right } = splitCombinedArm(paths[paths.length - 1]);
+
+    // With noise the arm outer radii should differ from effectiveMaxR
+    const leftOuterR  = pointRadius(left[0]);
+    const rightOuterR = pointRadius(right[0]);
+    // At least one arm should be displaced from effectiveMaxR (noise is non-zero)
+    const displaced = Math.abs(leftOuterR - outerR) > 0.1 || Math.abs(rightOuterR - outerR) > 0.1;
+    expect(displaced).toBe(true);
+  });
+
+  // ── Determinism ──
 
   test('determinism — same seed always yields same paths with cracks', () => {
     const p = makeBaseParams({

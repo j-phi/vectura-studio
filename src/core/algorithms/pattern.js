@@ -1178,10 +1178,10 @@
     return result;
   };
 
-  const polygonalLinesComposite = (regions, density, angleOffset = 0, shiftX = 0, shiftY = 0, numAxes = 3) => {
+  const polygonalLinesComposite = (regions, density, angleOffset = 0, shiftX = 0, shiftY = 0, numAxes = 3, tileMethod = 'grid') => {
     const { minX, maxX, minY, maxY } = compositeBounds(regions);
     return tessellateEdges(
-      minX, maxX, minY, maxY, density, angleOffset, shiftX, shiftY, numAxes,
+      minX, maxX, minY, maxY, density, angleOffset, shiftX, shiftY, numAxes, tileMethod,
       (p0, p1) => clipSegmentToComposite(p0, p1, regions)
     );
   };
@@ -1878,7 +1878,51 @@
     return result;
   };
 
-  // Inset polygon by distance d (miter offset)
+  // Returns the interior intersection of two segments, or null if none.
+  const segmentIntersectPt = (a1, a2, b1, b2) => {
+    const dx1 = a2.x - a1.x, dy1 = a2.y - a1.y;
+    const dx2 = b2.x - b1.x, dy2 = b2.y - b1.y;
+    const denom = dx1 * dy2 - dy1 * dx2;
+    if (Math.abs(denom) < 1e-10) return null;
+    const t = ((b1.x - a1.x) * dy2 - (b1.y - a1.y) * dx2) / denom;
+    const u = ((b1.x - a1.x) * dy1 - (b1.y - a1.y) * dx1) / denom;
+    if (t > 1e-9 && t < 1 - 1e-9 && u > 1e-9 && u < 1 - 1e-9) {
+      return { x: a1.x + t * dx1, y: a1.y + t * dy1 };
+    }
+    return null;
+  };
+
+  // Remove self-intersecting "ears" from a polygon by shortcutting each crossing.
+  // Concave inward offsets create ears where non-adjacent edges cross; this clips
+  // them by replacing the path between the two crossing edges with the intersection
+  // point. Iterates until no crossings remain.
+  const removePolygonSelfIntersections = (poly) => {
+    let pts = poly.slice();
+    let safety = 0;
+    let changed = true;
+    while (changed && safety++ < 200) {
+      changed = false;
+      const n = pts.length;
+      if (n < 3) return null;
+      outer: for (let i = 0; i < n; i++) {
+        const a1 = pts[i], a2 = pts[(i + 1) % n];
+        for (let j = i + 2; j < n; j++) {
+          if (i === 0 && j === n - 1) continue; // share vertex 0
+          const b1 = pts[j], b2 = pts[(j + 1) % n];
+          const p = segmentIntersectPt(a1, a2, b1, b2);
+          if (p) {
+            pts = [...pts.slice(0, i + 1), p, ...pts.slice(j + 1)];
+            changed = true;
+            break outer;
+          }
+        }
+      }
+    }
+    return pts.length >= 3 ? pts : null;
+  };
+
+  // Inset polygon by distance d (miter offset), with self-intersection removal
+  // so concave vertices don't produce crossing contour rings.
   const insetPolygon = (poly, d) => {
     const n = poly.length;
     if (n < 3) return null;
@@ -1895,9 +1939,11 @@
       const bl = Math.hypot(bx, by) || 1;
       result.push({ x: curr.x + bx * d / bl, y: curr.y + by * d / bl });
     }
-    const newArea = polyArea(result);
+    const cleaned = removePolygonSelfIntersections(result);
+    if (!cleaned) return null;
+    const newArea = polyArea(cleaned);
     if (newArea * polyArea(poly) < 0) return null;
-    return result;
+    return cleaned;
   };
 
   // Concentric inset rings of the polygon boundary
@@ -2128,7 +2174,7 @@
   // Grid anchored to world origin; shiftX/shiftY translates the lattice.
   // numAxes=3 → equilateral triangles, numAxes=4 → squares, else → hexagons.
   // Each edge direction is owned by exactly one cell, so no edge is duplicated.
-  const tessellateEdges = (minX, maxX, minY, maxY, density, angleOffset, shiftX, shiftY, numAxes, clipFn) => {
+  const tessellateEdges = (minX, maxX, minY, maxY, density, angleOffset, shiftX, shiftY, numAxes, tileMethod, clipFn) => {
     const s = density;
     const ar = angleOffset * Math.PI / 180;
     const ca = Math.cos(ar), sa = Math.sin(ar);
@@ -2152,62 +2198,113 @@
     const emit = (lx0, ly0, lx1, ly1) =>
       result.push(...clipFn(toWorld(lx0, ly0), toWorld(lx1, ly1)));
 
-    if (numAxes === 4) {
-      // Square lattice: vertices at (q*s, r*s), draw +x and +y edges
-      const qMin = Math.floor(lMinX / s) - 1, qMax = Math.ceil(lMaxX / s) + 1;
-      const rMin = Math.floor(lMinY / s) - 1, rMax = Math.ceil(lMaxY / s) + 1;
-      for (let r = rMin; r <= rMax; r++) {
-        for (let q = qMin; q <= qMax; q++) {
-          const lx = q * s, ly = r * s;
-          emit(lx, ly, lx + s, ly);
-          emit(lx, ly, lx, ly + s);
+    if (!tileMethod || tileMethod === 'grid') {
+      // ── Natural tessellations (default / grid mode) ─────────────────────────
+      if (numAxes === 4) {
+        // Square lattice: vertices at (q*s, r*s), draw +x and +y edges
+        const qMin = Math.floor(lMinX / s) - 1, qMax = Math.ceil(lMaxX / s) + 1;
+        const rMin = Math.floor(lMinY / s) - 1, rMax = Math.ceil(lMaxY / s) + 1;
+        for (let r = rMin; r <= rMax; r++) {
+          for (let q = qMin; q <= qMax; q++) {
+            const lx = q * s, ly = r * s;
+            emit(lx, ly, lx + s, ly);
+            emit(lx, ly, lx, ly + s);
+          }
         }
-      }
-    } else if (numAxes === 3) {
-      // Triangular lattice B1=(s,0), B2=(s/2,s√3/2).
-      // From each vertex draw +B1, +B2, +(B1-B2) — each undirected edge drawn exactly once.
-      const sqrt3 = Math.sqrt(3);
-      const b2x = s / 2, b2y = s * sqrt3 / 2;
-      const rMin = Math.floor(lMinY / b2y) - 1, rMax = Math.ceil(lMaxY / b2y) + 1;
-      const rAbs = Math.max(Math.abs(rMin), Math.abs(rMax));
-      const qMin = Math.floor(lMinX / s) - Math.ceil(rAbs / 2) - 2;
-      const qMax = Math.ceil(lMaxX / s) + Math.ceil(rAbs / 2) + 2;
-      for (let r = rMin; r <= rMax; r++) {
-        for (let q = qMin; q <= qMax; q++) {
-          const lx = q * s + r * b2x, ly = r * b2y;
-          emit(lx, ly, lx + s, ly);
-          emit(lx, ly, lx + b2x, ly + b2y);
-          emit(lx, ly, lx + s - b2x, ly - b2y);
+      } else if (numAxes === 3) {
+        // Triangular lattice B1=(s,0), B2=(s/2,s√3/2).
+        const sqrt3 = Math.sqrt(3);
+        const b2x = s / 2, b2y = s * sqrt3 / 2;
+        const rMin = Math.floor(lMinY / b2y) - 1, rMax = Math.ceil(lMaxY / b2y) + 1;
+        const rAbs = Math.max(Math.abs(rMin), Math.abs(rMax));
+        const qMin = Math.floor(lMinX / s) - Math.ceil(rAbs / 2) - 2;
+        const qMax = Math.ceil(lMaxX / s) + Math.ceil(rAbs / 2) + 2;
+        for (let r = rMin; r <= rMax; r++) {
+          for (let q = qMin; q <= qMax; q++) {
+            const lx = q * s + r * b2x, ly = r * b2y;
+            emit(lx, ly, lx + s, ly);
+            emit(lx, ly, lx + b2x, ly + b2y);
+            emit(lx, ly, lx + s - b2x, ly - b2y);
+          }
+        }
+      } else if (numAxes === 6) {
+        // Hexagonal: pointy-top hex centers at q*hB1 + r*hB2.
+        const sqrt3 = Math.sqrt(3);
+        const hB1x = s * sqrt3, hB2x = s * sqrt3 / 2, hB2y = s * 1.5;
+        const rMinH = Math.floor(lMinY / hB2y) - 1, rMaxH = Math.ceil(lMaxY / hB2y) + 1;
+        const rAbsH = Math.max(Math.abs(rMinH), Math.abs(rMaxH));
+        const qMinH = Math.floor(lMinX / hB1x) - Math.ceil(rAbsH / 2) - 2;
+        const qMaxH = Math.ceil(lMaxX / hB1x) + Math.ceil(rAbsH / 2) + 2;
+        for (let r = rMinH; r <= rMaxH; r++) {
+          for (let q = qMinH; q <= qMaxH; q++) {
+            const cx = q * hB1x + r * hB2x, cy = r * hB2y;
+            for (let e = 2; e <= 4; e++) {
+              const t0 = (e * 60 + 90) * Math.PI / 180;
+              const t1 = ((e + 1) * 60 + 90) * Math.PI / 180;
+              emit(cx + s * Math.cos(t0), cy + s * Math.sin(t0), cx + s * Math.cos(t1), cy + s * Math.sin(t1));
+            }
+          }
+        }
+      } else {
+        // n-gon square grid — gaps exist by design for non-tessellating counts.
+        const n = Math.max(3, numAxes);
+        const step = 2 * s;
+        const qMinN = Math.floor(lMinX / step) - 1, qMaxN = Math.ceil(lMaxX / step) + 1;
+        const rMinN = Math.floor(lMinY / step) - 1, rMaxN = Math.ceil(lMaxY / step) + 1;
+        for (let r = rMinN; r <= rMaxN; r++) {
+          for (let q = qMinN; q <= qMaxN; q++) {
+            const cx = q * step, cy = r * step;
+            for (let e = 0; e < n; e++) {
+              const t0 = 2 * Math.PI * e / n - Math.PI / 2;
+              const t1 = 2 * Math.PI * (e + 1) / n - Math.PI / 2;
+              emit(cx + s * Math.cos(t0), cy + s * Math.sin(t0),
+                   cx + s * Math.cos(t1), cy + s * Math.sin(t1));
+            }
+          }
         }
       }
     } else {
-      // Hexagonal: pointy-top hex centers at q*hB1 + r*hB2.
-      // Each hex draws owned edges e=2,3,4 (lower-left, lower-right, right) — every edge drawn once.
-      const sqrt3 = Math.sqrt(3);
-      const hB1x = s * sqrt3, hB2x = s * sqrt3 / 2, hB2y = s * 1.5;
-      const rMin = Math.floor(lMinY / hB2y) - 1, rMax = Math.ceil(lMaxY / hB2y) + 1;
-      const rAbs = Math.max(Math.abs(rMin), Math.abs(rMax));
-      const qMin = Math.floor(lMinX / hB1x) - Math.ceil(rAbs / 2) - 2;
-      const qMax = Math.ceil(lMaxX / hB1x) + Math.ceil(rAbs / 2) + 2;
-      for (let r = rMin; r <= rMax; r++) {
-        for (let q = qMin; q <= qMax; q++) {
-          const cx = q * hB1x + r * hB2x, cy = r * hB2y;
-          for (let e = 2; e <= 4; e++) {
-            const t0 = (e * 60 + 90) * Math.PI / 180;
-            const t1 = ((e + 1) * 60 + 90) * Math.PI / 180;
-            emit(cx + s * Math.cos(t0), cy + s * Math.sin(t0), cx + s * Math.cos(t1), cy + s * Math.sin(t1));
-          }
+      // ── Tile-method arrangements: brick / hexagonal / off ────────────────────
+      // All polygon types use center-based placement; circumradius = s, step = 2s.
+      const n = Math.max(3, numAxes);
+      const step = 2 * s;
+      const drawNgon = (cx, cy) => {
+        for (let e = 0; e < n; e++) {
+          const t0 = 2 * Math.PI * e / n - Math.PI / 2;
+          const t1 = 2 * Math.PI * (e + 1) / n - Math.PI / 2;
+          emit(cx + s * Math.cos(t0), cy + s * Math.sin(t0),
+               cx + s * Math.cos(t1), cy + s * Math.sin(t1));
+        }
+      };
+      if (tileMethod === 'off') {
+        drawNgon((lMinX + lMaxX) / 2, (lMinY + lMaxY) / 2);
+      } else if (tileMethod === 'hexagonal') {
+        const rowH = step * Math.sin(Math.PI / 3);
+        let rowIdx = 0;
+        for (let y = lMinY - step; y <= lMaxY + step; y += rowH) {
+          const xOff = (rowIdx % 2) ? step / 2 : 0;
+          for (let x = lMinX - step + xOff; x <= lMaxX + step; x += step)
+            drawNgon(x, y);
+          rowIdx++;
+        }
+      } else { // brick
+        let rowIdx = 0;
+        for (let y = lMinY - step; y <= lMaxY + step; y += step) {
+          const xOff = (rowIdx % 2) ? step / 2 : 0;
+          for (let x = lMinX - step + xOff; x <= lMaxX + step; x += step)
+            drawNgon(x, y);
+          rowIdx++;
         }
       }
     }
     return result;
   };
 
-  const polygonalLines = (region, density, angleOffset = 0, shiftX = 0, shiftY = 0, numAxes = 3) => {
+  const polygonalLines = (region, density, angleOffset = 0, shiftX = 0, shiftY = 0, numAxes = 3, tileMethod = 'grid') => {
     const xs = region.map(p => p.x), ys = region.map(p => p.y);
     return tessellateEdges(
       Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys),
-      density, angleOffset, shiftX, shiftY, numAxes,
+      density, angleOffset, shiftX, shiftY, numAxes, tileMethod,
       (p0, p1) => clipSegmentToPoly(p0, p1, region)
     );
   };
@@ -2222,7 +2319,7 @@
       fillType = 'hatch', density = 5,
       angle = 0, amplitude = 1.0, dotSize = 1.0,
       padding = 0, shiftX = 0, shiftY = 0,
-      dotPattern = 'brick', centralDensity = 1.0, outerDiameter = 1.0, axes = 3,
+      dotPattern = 'brick', centralDensity = 1.0, outerDiameter = 1.0, axes = 3, polyTile = 'grid',
     } = fill;
     if (!regions.length) return [];
     const effectiveRegions = padding > 0
@@ -2246,7 +2343,7 @@
         case 'radial':      return radialFill(region, density, angle, shiftX, shiftY, centralDensity, outerDiameter);
         case 'grid':        return gridDots(region, density, angle, dotSize, shiftX, shiftY);
         case 'meander':     return meanderLines(region, density, angle, shiftX, shiftY);
-        case 'polygonal':   return polygonalLines(region, density, angle, shiftX, shiftY, axes);
+        case 'polygonal':   return polygonalLines(region, density, angle, shiftX, shiftY, axes, polyTile);
         case 'triaxial':    return triaxialLines(region, density, angle, shiftX, shiftY);
         default:            return hatchLines(region, density, 0 + angle, shiftX, shiftY);
       }
@@ -2266,7 +2363,7 @@
       case 'radial':      return radialFillComposite(effectiveRegions, density, angle, shiftX, shiftY, centralDensity, outerDiameter);
       case 'grid':        return gridDotsComposite(effectiveRegions, density, angle, dotSize, shiftX, shiftY);
       case 'meander':     return meanderLinesComposite(effectiveRegions, density, angle, shiftX, shiftY);
-      case 'polygonal':   return polygonalLinesComposite(effectiveRegions, density, angle, shiftX, shiftY, axes);
+      case 'polygonal':   return polygonalLinesComposite(effectiveRegions, density, angle, shiftX, shiftY, axes, polyTile);
       case 'triaxial':    return triaxialLinesComposite(effectiveRegions, density, angle, shiftX, shiftY);
       default:            return hatchLinesComposite(effectiveRegions, density, 0 + angle, shiftX, shiftY);
     }

@@ -2998,6 +2998,7 @@
       { id: 'crackSpread', label: 'Crack Width (°)', type: 'range', min: 0.5, max: 20, step: 0.5, infoKey: 'rings.crackSpread', showIf: (p) => (p.crackCount ?? 0) > 0 },
       { id: 'crackNoise', label: 'Crack Roughness', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'rings.crackNoise', showIf: (p) => (p.crackCount ?? 0) > 0 },
       { id: 'crackSeed', label: 'Crack Seed', type: 'range', min: 0, max: 9999, step: 1, infoKey: 'rings.crackSeed', showIf: (p) => (p.crackCount ?? 0) > 0 },
+      { id: 'crackOutline', label: 'Crack Outline', type: 'checkbox', infoKey: 'rings.crackOutline', showIf: (p) => (p.crackCount ?? 0) > 0 },
     ],
     topo: [
       { id: 'resolution', label: 'Resolution', type: 'range', min: 40, max: 240, step: 5, infoKey: 'topo.resolution' },
@@ -4794,6 +4795,10 @@
     'rings.crackSeed': {
       title: 'Crack Seed',
       description: 'Seed for crack placement, independent of the global seed. Change this to reposition cracks without affecting other features.',
+    },
+    'rings.crackOutline': {
+      title: 'Crack Outline',
+      description: 'When enabled, draws each crack as a single closed outline path instead of two separate arm strokes.',
     },
     'rings.offsetX': {
       title: 'Ring Offset X',

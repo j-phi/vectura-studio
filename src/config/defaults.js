@@ -440,6 +440,7 @@
       crackSpread: 4,
       crackNoise: 0.3,
       crackSeed: 0,
+      crackOutline: false,
       barkType: 'smooth',
       barkRoughness: 4,
       barkRoughnessConfinement: 0.5,

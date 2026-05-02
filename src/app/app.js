@@ -45,7 +45,7 @@
         this.ui.buildControls();
         this.ui.updateFormula();
       };
-      this.renderer.onCommitTransform = () => this.pushHistory();
+      this.renderer.onCommitTransform = () => { this.pushHistory(); this.ui.buildControls(); };
       this.renderer.onDuplicateLayer = () => this.pushHistory();
       this.renderer.onComputeDisplayGeometry = () => this.computeDisplayGeometry();
       this.history = [];

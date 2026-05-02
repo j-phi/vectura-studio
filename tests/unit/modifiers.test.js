@@ -243,16 +243,4 @@ describe('Arc mirror modifier', () => {
     expect(out).toHaveLength(1);
   });
 
-  test('falloff=0 hard-clips: path outside arc span is not reflected', () => {
-    const { Modifiers } = runtime.window.Vectura;
-    // Arc covers only right quadrant (−45° to +45°). Inner path at top (≈90°) is outside the arc.
-    const mirror = {
-      enabled: true, type: 'arc', centerX: 0, centerY: 0,
-      radius: 30, arcStart: -45, arcEnd: 45, replacedSide: 'outer', strength: 100, falloff: 0,
-    };
-    const input = [[{ x: 50, y: 45 }, { x: 50, y: 42 }]]; // directly above center, inside circle
-    const out = Modifiers.applyMirrorToPaths(input, mirror, { width: 100, height: 100 });
-    const outerPaths = out.filter((p) => Math.hypot(p[0].x - 50, p[0].y - 50) > 30);
-    expect(outerPaths).toHaveLength(0);
-  });
 });

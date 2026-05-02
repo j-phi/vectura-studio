@@ -114,6 +114,7 @@
               centralDensity: p.fillRadialCentralDensity ?? 1.0,
               outerDiameter: p.fillRadialOuterDiameter ?? 1.0,
               axes: p.fillAxes ?? 3,
+              polyTile: p.fillPolyTile ?? 'grid',
               ...fillArgs,
             });
             fills.forEach((fp) => fillPathsList.push(fp));
