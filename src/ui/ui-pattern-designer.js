@@ -72,6 +72,7 @@
         directEditState: null,
         trimMargins: { top: 0, bottom: 0, left: 0, right: 0, locked: false },
         draftEdit: null,
+        moveDrag: null,
       };
 
       this.inlinePatternDesigner = pd;
@@ -127,25 +128,42 @@
       });
     },
 
+    _refreshFillRegions(pd) {
+      const compiled = window.Vectura.AlgorithmRegistry?.patternGetFillTargets?.(
+        pd.layer.params.patternId, { cache: false }
+      );
+      if (!compiled?.targets) return;
+      pd.fills.forEach((fill) => {
+        if (!Array.isArray(fill.targetIds) || !fill.targetIds.length) return;
+        const target = compiled.targets.find((t) => fill.targetIds.includes(t.id));
+        if (!target) return;
+        fill.regions = (target.regions || []).map((region) => region.map((pt) => ({ ...pt })));
+        fill.region = (target.outer || target.regions?.[0] || []).map((pt) => ({ ...pt }));
+      });
+    },
+
     _buildPatternDesignerPanel(pd) {
       const SETTINGS = window.Vectura.SETTINGS || {};
-      const fillOptions = [
-        { value: 'hatch',       label: 'H. Hatch' },
-        { value: 'vhatch',      label: 'V. Hatch' },
-        { value: 'crosshatch',  label: 'Cross-hatch' },
-        { value: 'dhatch45',    label: 'Diagonal 45°' },
-        { value: 'dhatch135',   label: 'Diagonal 135°' },
-        { value: 'xcrosshatch', label: 'Diag. cross' },
-        { value: 'wavelines',   label: 'Wavy lines' },
-        { value: 'zigzag',      label: 'Zigzag' },
-        { value: 'stipple',     label: 'Stipple' },
-        { value: 'contour',     label: 'Contour' },
-      ].map(o => `<option value="${o.value}">${o.label}</option>`).join('');
+      const FillPanel = window.Vectura?.FillPanel;
+      const fillOptions = (FillPanel?.FILL_TYPE_OPTIONS || [
+        { value: 'hatch',      label: 'Hatch' },
+        { value: 'crosshatch', label: 'Crosshatch' },
+        { value: 'wavelines',  label: 'Wavy lines' },
+        { value: 'zigzag',     label: 'Zigzag' },
+        { value: 'stipple',    label: 'Stipple' },
+        { value: 'contour',    label: 'Contour' },
+        { value: 'spiral',     label: 'Spiral' },
+        { value: 'radial',     label: 'Radial' },
+        { value: 'grid',       label: 'Grid Dots' },
+        { value: 'polygonal',  label: 'Polygonal' },
+      ]).filter(o => o.value !== 'none')
+        .map(o => `<option value="${o.value}">${o.label}</option>`).join('');
       const pens = (SETTINGS.pens || []).map(pen =>
         `<option value="${escapeHtml(pen.id)}">${escapeHtml(pen.name || pen.id)}</option>`
       ).join('');
       const toolMarkup = this.buildSharedToolbarMarkup([
         { tool: 'select', value: 'select', title: 'Select Path (S)' },
+        { tool: 'move', value: 'move', title: 'Move Path (V)' },
         { tool: 'direct', value: 'direct', title: 'Direct Select — edit points (A)' },
         { tool: 'pen', value: 'pen', title: 'Draw Path (P)' },
         { tool: 'shape-rect', value: 'shape-rect', title: 'Rectangle (R)' },
@@ -264,16 +282,16 @@
       const fillOptions = FillPanel
         ? FillPanel.FILL_TYPE_OPTIONS.filter((o) => o.value !== 'none')
         : [
-            { value: 'hatch', label: 'H. Hatch' },
-            { value: 'vhatch', label: 'V. Hatch' },
-            { value: 'crosshatch', label: 'Cross-hatch' },
-            { value: 'dhatch45', label: 'Diag. 45°' },
-            { value: 'dhatch135', label: 'Diag. 135°' },
-            { value: 'xcrosshatch', label: 'Diag. cross' },
-            { value: 'wavelines', label: 'Wavy lines' },
-            { value: 'zigzag', label: 'Zigzag' },
-            { value: 'stipple', label: 'Stipple' },
-            { value: 'contour', label: 'Contour' },
+            { value: 'hatch',      label: 'Hatch' },
+            { value: 'crosshatch', label: 'Crosshatch' },
+            { value: 'wavelines',  label: 'Wavy lines' },
+            { value: 'zigzag',     label: 'Zigzag' },
+            { value: 'stipple',    label: 'Stipple' },
+            { value: 'contour',    label: 'Contour' },
+            { value: 'spiral',     label: 'Spiral' },
+            { value: 'radial',     label: 'Radial' },
+            { value: 'grid',       label: 'Grid Dots' },
+            { value: 'polygonal',  label: 'Polygonal' },
           ];
 
       const pens = SETTINGS.pens || [];
@@ -408,6 +426,15 @@
           pd.tool = e.shiftKey ? 'fill-erase' : 'fill';
           pd.root.querySelectorAll('[data-pd-tool]').forEach((b) => b.classList.toggle('active', b.dataset.pdTool === pd.tool));
         }
+        if (e.key === 'v' || e.key === 'V') {
+          pd.tool = 'move';
+          pd.moveDrag = null;
+          pd.directEditState = null;
+          pd.pendingAnchors = [];
+          pd.dragShape = null;
+          this._syncPdToolActive(pd);
+          this._renderPatternDesigner(pd);
+        }
         if (e.key === 'Alt' && pd.tool === 'fill') {
           pd.root.querySelectorAll('[data-pd-tool]').forEach((b) => b.classList.toggle('active', b.dataset.pdTool === 'fill-erase'));
         }
@@ -426,18 +453,20 @@
 
     createPatternDesignerMarkup() {
       const SETTINGS = window.Vectura.SETTINGS || {};
-      const fillOptions = [
-        { value: 'hatch',       label: 'Horizontal hatch' },
-        { value: 'vhatch',      label: 'Vertical hatch' },
-        { value: 'crosshatch',  label: 'Cross-hatch (H+V)' },
-        { value: 'dhatch45',    label: 'Diagonal 45°' },
-        { value: 'dhatch135',   label: 'Diagonal 135°' },
-        { value: 'xcrosshatch', label: 'Diagonal cross' },
-        { value: 'wavelines',   label: 'Wavy lines' },
-        { value: 'zigzag',      label: 'Zigzag' },
-        { value: 'stipple',     label: 'Stipple dots' },
-        { value: 'contour',     label: 'Contour' },
-      ].map(o => `<option value="${o.value}">${o.label}</option>`).join('');
+      const FillPanel2 = window.Vectura?.FillPanel;
+      const fillOptions = (FillPanel2?.FILL_TYPE_OPTIONS || [
+        { value: 'hatch',      label: 'Hatch' },
+        { value: 'crosshatch', label: 'Crosshatch' },
+        { value: 'wavelines',  label: 'Wavy lines' },
+        { value: 'zigzag',     label: 'Zigzag' },
+        { value: 'stipple',    label: 'Stipple' },
+        { value: 'contour',    label: 'Contour' },
+        { value: 'spiral',     label: 'Spiral' },
+        { value: 'radial',     label: 'Radial' },
+        { value: 'grid',       label: 'Grid Dots' },
+        { value: 'polygonal',  label: 'Polygonal' },
+      ]).filter(o => o.value !== 'none')
+        .map(o => `<option value="${o.value}">${o.label}</option>`).join('');
       const pens = (SETTINGS.pens || []).map(pen =>
         `<option value="${escapeHtml(pen.id)}">${escapeHtml(pen.name || pen.id)}</option>`
       ).join('');
@@ -535,6 +564,7 @@
         directEditState: null,
         trimMargins: { top: 0, bottom: 0, left: 0, right: 0, locked: false },
         draftEdit: null,
+        moveDrag: null,
       };
       this.patternDesigner = pd;
       this._bindPatternDesignerDrag(pd);
@@ -736,6 +766,23 @@
       // Direct-select overlay
       if (pd.tool === 'direct' && pd.directEditState) {
         this._renderDirectSelectOverlay(ctx, pd, pd.directEditState, cx, cy, zoom);
+      }
+
+      // Move-tool preview overlay
+      if (pd.tool === 'move' && pd.moveDrag?.moved) {
+        const anchors = pd.moveDrag.currentAnchors;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(251,191,36,0.7)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        anchors.forEach((a, i) => {
+          if (i === 0) ctx.moveTo(cx(a.x), cy(a.y)); else ctx.lineTo(cx(a.x), cy(a.y));
+        });
+        if (pd.moveDrag.closed) ctx.closePath();
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
       }
 
       this._refreshPatternValidation(pd);
@@ -1461,6 +1508,7 @@
       const canvas = pd.root.querySelector('[data-pd-canvas]');
       if (canvas) {
         if (pd.tool === 'select' || pd.tool === 'direct') canvas.style.cursor = 'default';
+        else if (pd.tool === 'move') canvas.style.cursor = pd.moveDrag ? 'grabbing' : 'grab';
         else if (pd.tool === 'pen') canvas.style.cursor = 'crosshair';
         else if (pd.tool === 'shape-rect' || pd.tool === 'shape-oval') canvas.style.cursor = 'crosshair';
         else canvas.style.cursor = 'crosshair';
@@ -2249,6 +2297,8 @@
         if (!directDrag) return;
         if (directDrag.moved && directDrag.commitPending) {
           this._commitDirectEditToSvg(pd);
+          this._refreshFillRegions(pd);
+          this._applyPatternDesignerChanges(pd, { skipHistoryPush: true });
         }
         directDrag = null;
       };
@@ -2266,6 +2316,37 @@
           pd.selectedPath = (hit !== null && hit === pd.selectedPath) ? null : hit;
           this._syncPdToolActive(pd);
           this._renderPatternDesigner(pd);
+          return;
+        }
+
+        if (pd.tool === 'move') {
+          const hitFlatIdx = hitTestPath(tx, ty);
+          if (hitFlatIdx !== null) {
+            const mapEntry = pd.pathMap.find(entry => entry.flatIndex === hitFlatIdx);
+            const elIdx = mapEntry?.path?._srcElementIndex;
+            if (elIdx !== undefined) {
+              const editableMeta = this._ensureCustomPattern(pd);
+              if (editableMeta?.svg) {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(editableMeta.svg, 'image/svg+xml');
+                const elements = Array.from(doc.querySelectorAll('path,line,polyline,polygon,rect,ellipse,circle'));
+                if (elIdx < elements.length) {
+                  const editSet = this._svgElementToEditSet(elements[elIdx], elIdx);
+                  if (editSet) {
+                    pd.moveDrag = {
+                      elIdx,
+                      origAnchors: editSet.anchors.map(a => ({ ...a })),
+                      currentAnchors: editSet.anchors.map(a => ({ ...a })),
+                      closed: editSet.closed,
+                      startTx: tx, startTy: ty,
+                      moved: false,
+                    };
+                    this._renderPatternDesigner(pd);
+                  }
+                }
+              }
+            }
+          }
           return;
         }
 
@@ -2347,6 +2428,14 @@
           updateDirectDrag(tx, ty, e);
           return;
         }
+        if (pd.tool === 'move' && pd.moveDrag) {
+          const dx = tx - pd.moveDrag.startTx;
+          const dy = ty - pd.moveDrag.startTy;
+          pd.moveDrag.currentAnchors = pd.moveDrag.origAnchors.map(a => ({ ...a, x: a.x + dx, y: a.y + dy }));
+          pd.moveDrag.moved = true;
+          this._renderPatternDesigner(pd);
+          return;
+        }
         if (pd.dragShape) {
           pd.dragShape.endX = tx;
           pd.dragShape.endY = ty;
@@ -2358,6 +2447,23 @@
         if (e.button !== 0) return;
         if (pd.tool === 'direct' && directDrag) {
           endDirectDrag();
+          return;
+        }
+        if (pd.tool === 'move' && pd.moveDrag) {
+          if (pd.moveDrag.moved) {
+            pd.directEditState = {
+              elIndex: pd.moveDrag.elIdx,
+              anchors: pd.moveDrag.currentAnchors,
+              closed: pd.moveDrag.closed,
+              selectedIndices: new Set(),
+            };
+            this._commitDirectEditToSvg(pd);
+            pd.directEditState = null;
+            this._refreshFillRegions(pd);
+            this._applyPatternDesignerChanges(pd, { skipHistoryPush: true });
+          }
+          pd.moveDrag = null;
+          this._renderPatternDesigner(pd);
           return;
         }
         if (pd.dragShape && (pd.tool === 'shape-rect' || pd.tool === 'shape-oval')) {
@@ -2399,6 +2505,11 @@
           e.preventDefault();
           pd.tool = 'direct';
           pd.selectedPath = null; pd.pendingAnchors = []; pd.dragShape = null;
+          this._syncPdToolActive(pd); this._renderPatternDesigner(pd);
+        } else if (e.key === 'v' || e.key === 'V') {
+          e.preventDefault();
+          pd.tool = 'move'; pd.moveDrag = null; pd.directEditState = null;
+          pd.pendingAnchors = []; pd.dragShape = null;
           this._syncPdToolActive(pd); this._renderPatternDesigner(pd);
         } else if (e.key === 's' || e.key === 'S') {
           e.preventDefault();

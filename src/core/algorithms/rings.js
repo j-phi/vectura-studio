@@ -416,11 +416,11 @@
           if (breakWidthVariance > 0) {
             arcHalf = Math.max(0.001, arcHalf * (1 + breakWidthVariance * (breakRng.nextFloat() - 0.5) * 2));
           }
-          let rMin = breakRadiusMinFrac * effectiveMaxR;
-          let rMax = breakRadiusMaxFrac * effectiveMaxR;
+          // Breaks always anchor at the bark (outer edge) and go inward.
+          let rMax = effectiveMaxR;
+          let rMin = effectiveMaxR * (1 - breakRadiusMaxFrac);
           if (breakLengthVariance > 0) {
             rMin = Math.max(0, rMin * (1 - breakRng.nextFloat() * breakLengthVariance));
-            rMax = Math.min(effectiveMaxR, rMax * (1 + breakRng.nextFloat() * breakLengthVariance));
           }
           return { angle, arcHalf, rMin, rMax };
         });
@@ -704,34 +704,26 @@
           }
         }
 
-        // medullary rays: each ray's outer bound is the actual rendered radius of the outermost
-        // ring at the ray's angle (base × biasFactor + noise + barkDisp), guaranteeing rays
-        // never exceed the bark regardless of noise amplitude, barkType, or rayInnerFraction.
+        // medullary rays: outer bound is read from Phase-C-adjusted rawR so it reflects the true
+        // rendered bark including bias, noise, knots, and ring collision propagation.
         if (rayCount > 0) {
           const rayRng = raySeed != null ? new window.Vectura.SeededRNG(raySeed) : rng;
-          const outerBarkBaseR = ringRadii[totalRings - 1];
-          const lastBarkIdx = barkRings > 0 ? barkRings - 1 : -1;
-          const lastBarkRingState = lastBarkIdx >= 0 ? barkRingStates[lastBarkIdx] : null;
+          const outerRingIdx = totalRings - 1;
           for (let r = 0; r < rayCount; r++) {
             const angle = rayRng.nextFloat() * TAU;
-            const biasFactor = biasStrength > 0
-              ? 1 + biasStrength * Math.cos(angle - biasAngleRad)
-              : 1;
-            // Sample the actual rendered outermost ring radius at this angle.
-            const barkBaseX = cx + Math.cos(angle) * outerBarkBaseR;
-            const barkBaseY = cy + Math.sin(angle) * outerBarkBaseR;
-            const barkN = sampleNoise({
-              theta: angle, ringIndex: totalRings - 1, ringRadiusBase: outerBarkBaseR,
-              worldX: barkBaseX, worldY: barkBaseY,
-            });
-            const barkDispHere = computeBarkDisp(angle, lastBarkIdx, lastBarkRingState);
-            const outerBarkR = Math.max(0.1, outerBarkBaseR * biasFactor + barkN + barkDispHere);
+            // Use the Phase-C-adjusted rawR for the true rendered bark radius at this angle.
+            const kFloat = (((angle % TAU) + TAU) % TAU) / TAU * US;
+            const k0 = Math.floor(kFloat) % US;
+            const k1 = (k0 + 1) % US;
+            const frac = kFloat - Math.floor(kFloat);
+            const outerBarkR = rawR[outerRingIdx * US + k0] * (1 - frac) + rawR[outerRingIdx * US + k1] * frac;
+            const rayBiasFactor = biasStrength > 0 ? 1 + biasStrength * Math.cos(angle - biasAngleRad) : 1;
             const rayInnerR = outerBarkR * rayInnerFraction;
             const baseLength = rayMinLength + rayRng.nextFloat() * (rayMaxLength - rayMinLength);
             const thisRayLength = rayLengthVariance > 0
               ? Math.max(0.1, baseLength * (1 + rayLengthVariance * (rayRng.nextFloat() * 2 - 1)))
               : baseLength;
-            const rayLengthPx = avgGap * thisRayLength * biasFactor;
+            const rayLengthPx = avgGap * thisRayLength * rayBiasFactor;
             const rayOuterLimit = outerBarkR - rayLengthPx;
             const availRange = Math.max(0.1, rayOuterLimit - rayInnerR);
             const innerR = rayInnerR + rayRng.nextFloat() * availRange;

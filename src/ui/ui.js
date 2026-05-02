@@ -2959,7 +2959,7 @@
       { id: 'offsetY', label: 'Center Offset Y', type: 'range', min: -200, max: 200, step: 1, infoKey: 'rings.offsetY' },
       { id: 'centerDrift', label: 'Center Drift', type: 'range', min: 0, max: 5, step: 0.1, infoKey: 'rings.centerDrift' },
       { id: 'biasStrength', label: 'Bias Strength', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'rings.biasStrength' },
-      { id: 'biasAngle', label: 'Bias Direction', type: 'range', min: 0, max: 360, step: 1, infoKey: 'rings.biasAngle', showIf: (p) => (p.biasStrength ?? 0) > 0 },
+      { id: 'biasAngle', label: 'Bias Direction', type: 'angle', min: 0, max: 360, step: 1, displayUnit: '°', infoKey: 'rings.biasAngle', showIf: (p) => (p.biasStrength ?? 0) > 0 },
       { type: 'section', label: 'Medullary Rays' },
       { id: 'rayCount', label: 'Ray Count', type: 'range', min: 0, max: 120, step: 1, infoKey: 'rings.rayCount' },
       { id: 'rayLength', label: 'Ray Length', type: 'rangeDual', minKey: 'rayMinLength', maxKey: 'rayMaxLength', min: 0.1, max: 10, step: 0.1, infoKey: 'rings.rayLength', showIf: (p) => (p.rayCount ?? 0) > 0 },
