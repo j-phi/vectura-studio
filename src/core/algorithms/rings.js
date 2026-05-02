@@ -641,6 +641,57 @@
           }
         }
 
+        // Pre-compute crack arm geometry (with wobble) before Phase D so that ring suppression
+        // and path output share the same positions — without this, the ring gap boundaries
+        // use the clean geometric zone while the drawn arm paths are shifted by wobble noise.
+        const CRACK_POINTS = 14;
+        const precomputedCrackArms = [];
+        if (crackCount > 0) {
+          for (let c = 0; c < crackCount; c++) {
+            const crackAngle = crackAngles[c];
+            const outerR_c = effectiveMaxR;
+            const innerR_c = outerR_c * (1 - crackDepthFrac);
+            const armData = { anglesPerSide: [[], []], paths: [] };
+            for (let sideIdx = 0; sideIdx < 2; sideIdx++) {
+              const side = sideIdx === 0 ? -1 : 1;
+              const arm = [];
+              for (let t = 0; t <= CRACK_POINTS; t++) {
+                const frac = t / CRACK_POINTS;
+                const r = outerR_c + (innerR_c - outerR_c) * frac;
+                const angularOffset = side * crackHalfSpreadRad * (1 - frac);
+                const wobble = crackNoise * (1 - frac) * (crackRng.nextFloat() - 0.5) * crackHalfSpreadRad * 2;
+                const angle = crackAngle + angularOffset + wobble;
+                arm.push({ x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r });
+                armData.anglesPerSide[sideIdx].push(angle);
+              }
+              armData.paths.push(arm);
+            }
+            precomputedCrackArms.push(armData);
+          }
+        }
+
+        const isInCrack = (theta, rAtPoint) => {
+          if (precomputedCrackArms.length === 0 || rAtPoint < crackInnerR) return false;
+          const outerR_c = effectiveMaxR;
+          const innerR_c = outerR_c * (1 - crackDepthFrac);
+          const frac = Math.max(0, Math.min(1, (outerR_c - rAtPoint) / Math.max(1, outerR_c - innerR_c)));
+          const tFloat = frac * CRACK_POINTS;
+          const t0 = Math.floor(tFloat);
+          const t1 = Math.min(t0 + 1, CRACK_POINTS);
+          const tf = tFloat - t0;
+          for (let c = 0; c < precomputedCrackArms.length; c++) {
+            const { anglesPerSide } = precomputedCrackArms[c];
+            const leftAngle  = anglesPerSide[0][t0] + (anglesPerSide[0][t1] - anglesPerSide[0][t0]) * tf;
+            const rightAngle = anglesPerSide[1][t0] + (anglesPerSide[1][t1] - anglesPerSide[1][t0]) * tf;
+            const ca = crackAngles[c];
+            const tRel = wrapAngle(theta - ca);
+            const lRel = wrapAngle(leftAngle  - ca);
+            const rRel = wrapAngle(rightAngle - ca);
+            if (tRel >= lRel && tRel <= rRel) return true;
+          }
+          return false;
+        };
+
         // Phase D: Build path points from the propagation-adjusted radii.
         for (let i = 0; i < totalRings; i++) {
           if (i === 0 && centerRadiusBoost === 0) continue;
@@ -654,11 +705,7 @@
             const r = rawR[i * US + k];
             const pt = { x: ringCx + Math.cos(theta) * r, y: ringCy + Math.sin(theta) * r };
 
-            const inCrack = crackAngles.length > 0 && rBaseForRing >= crackInnerR && (() => {
-              const taperFrac = (rBaseForRing - crackInnerR) / Math.max(1, effectiveMaxR - crackInnerR);
-              const hw = crackHalfSpreadRad * taperFrac;
-              return crackAngles.some(ca => Math.abs(wrapAngle(theta - ca)) < hw);
-            })();
+            const inCrack = isInCrack(theta, rBaseForRing);
 
             const gapped = inCrack || (hasBreaks && breaks.some(b =>
               rBaseForRing >= b.rMin &&
@@ -685,11 +732,7 @@
                 rBaseForRing <= b.rMax &&
                 Math.abs(wrapAngle(-b.angle)) < b.arcHalf
               );
-              const seamInCrack = crackAngles.length > 0 && rBaseForRing >= crackInnerR && (() => {
-                const taperFrac = (rBaseForRing - crackInnerR) / Math.max(1, effectiveMaxR - crackInnerR);
-                const hw = crackHalfSpreadRad * taperFrac;
-                return crackAngles.some(ca => Math.abs(wrapAngle(-ca)) < hw);
-              })();
+              const seamInCrack = isInCrack(0, rBaseForRing);
               if (!seamInBreak && !seamInCrack) {
                 const first = subPaths.shift();
                 const last = subPaths[subPaths.length - 1];
@@ -735,24 +778,9 @@
           }
         }
 
-        if (crackCount > 0) {
-          const CRACK_POINTS = 14;
-          for (let c = 0; c < crackCount; c++) {
-            const crackAngle = crackAngles[c]; // reuse pre-computed angle; crackRng continues for wobble
-            const outerR = effectiveMaxR;
-            const innerR = outerR * (1 - crackDepthFrac);
-            for (const side of [-1, 1]) {
-              const arm = [];
-              for (let t = 0; t <= CRACK_POINTS; t++) {
-                const frac = t / CRACK_POINTS;
-                const r = outerR + (innerR - outerR) * frac;
-                const angularOffset = side * crackHalfSpreadRad * (1 - frac);
-                const wobble = crackNoise * (1 - frac) * (crackRng.nextFloat() - 0.5) * crackHalfSpreadRad * 2;
-                const angle = crackAngle + angularOffset + wobble;
-                arm.push({ x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r });
-              }
-              paths.push(arm);
-            }
+        for (const armData of precomputedCrackArms) {
+          for (const arm of armData.paths) {
+            paths.push(arm);
           }
         }
 

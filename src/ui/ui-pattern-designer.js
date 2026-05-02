@@ -262,7 +262,7 @@
       this._bindPatternDesignerControls(pd);
       this._bindPatternDesignerCanvas(pd);
       this._bindPatternDesignerEditTools(pd);
-      pd.root.querySelector(`[data-pd-tool="${pd.tool}"]`)?.classList.add('active');
+      this._syncPdToolActive(pd);
       this._renderFillsList(pd);
       window.requestAnimationFrame(() => {
         this._initPatternDesignerView(pd);
@@ -573,7 +573,7 @@
       this._bindPatternDesignerEditTools(pd);
       this._initPatternDesignerView(pd);
       this._renderPatternDesigner(pd);
-      root.querySelector('[data-pd-tool="fill"]')?.classList.add('active');
+      this._syncPdToolActive(pd);
     },
 
     closePatternDesigner() {
@@ -2313,7 +2313,39 @@
 
         if (pd.tool === 'select') {
           const hit = hitTestPath(tx, ty);
-          pd.selectedPath = (hit !== null && hit === pd.selectedPath) ? null : hit;
+          if (hit === null) {
+            pd.selectedPath = null;
+            pd.moveDrag = null;
+            this._syncPdToolActive(pd);
+            this._renderPatternDesigner(pd);
+            return;
+          }
+          const wasSelected = hit === pd.selectedPath;
+          pd.selectedPath = hit;
+          const mapEntry = pd.pathMap.find(entry => entry.flatIndex === hit);
+          const elIdx = mapEntry?.path?._srcElementIndex;
+          if (elIdx !== undefined) {
+            const editableMeta = this._ensureCustomPattern(pd);
+            if (editableMeta?.svg) {
+              const parser = new DOMParser();
+              const doc = parser.parseFromString(editableMeta.svg, 'image/svg+xml');
+              const elements = Array.from(doc.querySelectorAll('path,line,polyline,polygon,rect,ellipse,circle'));
+              if (elIdx < elements.length) {
+                const editSet = this._svgElementToEditSet(elements[elIdx], elIdx);
+                if (editSet) {
+                  pd.moveDrag = {
+                    elIdx,
+                    origAnchors: editSet.anchors.map(a => ({ ...a })),
+                    currentAnchors: editSet.anchors.map(a => ({ ...a })),
+                    closed: editSet.closed,
+                    startTx: tx, startTy: ty,
+                    moved: false,
+                    wasSelected,
+                  };
+                }
+              }
+            }
+          }
           this._syncPdToolActive(pd);
           this._renderPatternDesigner(pd);
           return;
@@ -2428,7 +2460,7 @@
           updateDirectDrag(tx, ty, e);
           return;
         }
-        if (pd.tool === 'move' && pd.moveDrag) {
+        if ((pd.tool === 'move' || pd.tool === 'select') && pd.moveDrag) {
           const dx = tx - pd.moveDrag.startTx;
           const dy = ty - pd.moveDrag.startTy;
           pd.moveDrag.currentAnchors = pd.moveDrag.origAnchors.map(a => ({ ...a, x: a.x + dx, y: a.y + dy }));
@@ -2449,7 +2481,7 @@
           endDirectDrag();
           return;
         }
-        if (pd.tool === 'move' && pd.moveDrag) {
+        if ((pd.tool === 'move' || pd.tool === 'select') && pd.moveDrag) {
           if (pd.moveDrag.moved) {
             pd.directEditState = {
               elIndex: pd.moveDrag.elIdx,
@@ -2461,6 +2493,9 @@
             pd.directEditState = null;
             this._refreshFillRegions(pd);
             this._applyPatternDesignerChanges(pd, { skipHistoryPush: true });
+          } else if (pd.tool === 'select' && pd.moveDrag.wasSelected) {
+            pd.selectedPath = null;
+            this._syncPdToolActive(pd);
           }
           pd.moveDrag = null;
           this._renderPatternDesigner(pd);

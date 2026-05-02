@@ -1179,10 +1179,11 @@
   };
 
   const polygonalLinesComposite = (regions, density, angleOffset = 0, shiftX = 0, shiftY = 0, numAxes = 3) => {
-    const result = [];
-    for (let i = 0; i < numAxes; i++)
-      result.push(...hatchLinesComposite(regions, density, angleOffset + i * 180 / numAxes, shiftX, shiftY));
-    return result;
+    const { minX, maxX, minY, maxY } = compositeBounds(regions);
+    return tessellateEdges(
+      minX, maxX, minY, maxY, density, angleOffset, shiftX, shiftY, numAxes,
+      (p0, p1) => clipSegmentToComposite(p0, p1, regions)
+    );
   };
 
   const triaxialLinesComposite = (regions, density, angleOffset = 0, shiftX = 0, shiftY = 0) =>
@@ -2072,11 +2073,143 @@
     return result;
   };
 
-  const polygonalLines = (region, density, angleOffset = 0, shiftX = 0, shiftY = 0, numAxes = 3) => {
+  // Clip segment [p0,p1] against a polygon, returning sub-segments that lie inside.
+  const clipSegmentToPoly = (p0, p1, poly) => {
+    const dx = p1.x - p0.x, dy = p1.y - p0.y;
+    const ts = [0, 1];
+    const n = poly.length;
+    for (let i = 0; i < n; i++) {
+      const a = poly[i], b = poly[(i + 1) % n];
+      const ex = b.x - a.x, ey = b.y - a.y;
+      const denom = dx * ey - dy * ex;
+      if (Math.abs(denom) < 1e-10) continue;
+      const t = ((a.x - p0.x) * ey - (a.y - p0.y) * ex) / denom;
+      const u = ((a.x - p0.x) * dy - (a.y - p0.y) * dx) / denom;
+      if (t > 1e-9 && t < 1 - 1e-9 && u >= -1e-9 && u <= 1 + 1e-9) ts.push(t);
+    }
+    ts.sort((a, b) => a - b);
+    const out = [];
+    for (let i = 0; i + 1 < ts.length; i++) {
+      const t0 = ts[i], t1 = ts[i + 1];
+      if (t1 - t0 < 1e-9) continue;
+      if (polyContainsPoint(poly, p0.x + (t0 + t1) / 2 * dx, p0.y + (t0 + t1) / 2 * dy))
+        out.push([{ x: p0.x + t0 * dx, y: p0.y + t0 * dy }, { x: p0.x + t1 * dx, y: p0.y + t1 * dy }]);
+    }
+    return out;
+  };
+
+  const clipSegmentToComposite = (p0, p1, regions) => {
+    const dx = p1.x - p0.x, dy = p1.y - p0.y;
+    const ts = [0, 1];
+    for (const poly of regions) {
+      const n = poly.length;
+      for (let i = 0; i < n; i++) {
+        const a = poly[i], b = poly[(i + 1) % n];
+        const ex = b.x - a.x, ey = b.y - a.y;
+        const denom = dx * ey - dy * ex;
+        if (Math.abs(denom) < 1e-10) continue;
+        const t = ((a.x - p0.x) * ey - (a.y - p0.y) * ex) / denom;
+        const u = ((a.x - p0.x) * dy - (a.y - p0.y) * dx) / denom;
+        if (t > 1e-9 && t < 1 - 1e-9 && u >= -1e-9 && u <= 1 + 1e-9) ts.push(t);
+      }
+    }
+    ts.sort((a, b) => a - b);
+    const out = [];
+    for (let i = 0; i + 1 < ts.length; i++) {
+      const t0 = ts[i], t1 = ts[i + 1];
+      if (t1 - t0 < 1e-9) continue;
+      if (compositeContainsPoint(regions, p0.x + (t0 + t1) / 2 * dx, p0.y + (t0 + t1) / 2 * dy))
+        out.push([{ x: p0.x + t0 * dx, y: p0.y + t0 * dy }, { x: p0.x + t1 * dx, y: p0.y + t1 * dy }]);
+    }
+    return out;
+  };
+
+  // Generate tessellating polygon cell edges, clipped via clipFn.
+  // Grid anchored to world origin; shiftX/shiftY translates the lattice.
+  // numAxes=3 → equilateral triangles, numAxes=4 → squares, else → hexagons.
+  // Each edge direction is owned by exactly one cell, so no edge is duplicated.
+  const tessellateEdges = (minX, maxX, minY, maxY, density, angleOffset, shiftX, shiftY, numAxes, clipFn) => {
+    const s = density;
+    const ar = angleOffset * Math.PI / 180;
+    const ca = Math.cos(ar), sa = Math.sin(ar);
+
+    // Compute lattice-space bounding box by inverse-rotating the 4 BB corners
+    const toLattice = (wx, wy) => [
+      (wx - shiftX) * ca + (wy - shiftY) * sa,
+      -(wx - shiftX) * sa + (wy - shiftY) * ca,
+    ];
+    const c0 = toLattice(minX, minY), c1 = toLattice(maxX, minY);
+    const c2 = toLattice(minX, maxY), c3 = toLattice(maxX, maxY);
+    const lMinX = Math.min(c0[0], c1[0], c2[0], c3[0]);
+    const lMaxX = Math.max(c0[0], c1[0], c2[0], c3[0]);
+    const lMinY = Math.min(c0[1], c1[1], c2[1], c3[1]);
+    const lMaxY = Math.max(c0[1], c1[1], c2[1], c3[1]);
+
+    // Convert lattice coords to world coords
+    const toWorld = (lx, ly) => ({ x: shiftX + lx * ca - ly * sa, y: shiftY + lx * sa + ly * ca });
+
     const result = [];
-    for (let i = 0; i < numAxes; i++)
-      result.push(...hatchLines(region, density, angleOffset + i * 180 / numAxes, shiftX, shiftY));
+    const emit = (lx0, ly0, lx1, ly1) =>
+      result.push(...clipFn(toWorld(lx0, ly0), toWorld(lx1, ly1)));
+
+    if (numAxes === 4) {
+      // Square lattice: vertices at (q*s, r*s), draw +x and +y edges
+      const qMin = Math.floor(lMinX / s) - 1, qMax = Math.ceil(lMaxX / s) + 1;
+      const rMin = Math.floor(lMinY / s) - 1, rMax = Math.ceil(lMaxY / s) + 1;
+      for (let r = rMin; r <= rMax; r++) {
+        for (let q = qMin; q <= qMax; q++) {
+          const lx = q * s, ly = r * s;
+          emit(lx, ly, lx + s, ly);
+          emit(lx, ly, lx, ly + s);
+        }
+      }
+    } else if (numAxes === 3) {
+      // Triangular lattice B1=(s,0), B2=(s/2,s√3/2).
+      // From each vertex draw +B1, +B2, +(B1-B2) — each undirected edge drawn exactly once.
+      const sqrt3 = Math.sqrt(3);
+      const b2x = s / 2, b2y = s * sqrt3 / 2;
+      const rMin = Math.floor(lMinY / b2y) - 1, rMax = Math.ceil(lMaxY / b2y) + 1;
+      const rAbs = Math.max(Math.abs(rMin), Math.abs(rMax));
+      const qMin = Math.floor(lMinX / s) - Math.ceil(rAbs / 2) - 2;
+      const qMax = Math.ceil(lMaxX / s) + Math.ceil(rAbs / 2) + 2;
+      for (let r = rMin; r <= rMax; r++) {
+        for (let q = qMin; q <= qMax; q++) {
+          const lx = q * s + r * b2x, ly = r * b2y;
+          emit(lx, ly, lx + s, ly);
+          emit(lx, ly, lx + b2x, ly + b2y);
+          emit(lx, ly, lx + s - b2x, ly - b2y);
+        }
+      }
+    } else {
+      // Hexagonal: pointy-top hex centers at q*hB1 + r*hB2.
+      // Each hex draws owned edges e=2,3,4 (lower-left, lower-right, right) — every edge drawn once.
+      const sqrt3 = Math.sqrt(3);
+      const hB1x = s * sqrt3, hB2x = s * sqrt3 / 2, hB2y = s * 1.5;
+      const rMin = Math.floor(lMinY / hB2y) - 1, rMax = Math.ceil(lMaxY / hB2y) + 1;
+      const rAbs = Math.max(Math.abs(rMin), Math.abs(rMax));
+      const qMin = Math.floor(lMinX / hB1x) - Math.ceil(rAbs / 2) - 2;
+      const qMax = Math.ceil(lMaxX / hB1x) + Math.ceil(rAbs / 2) + 2;
+      for (let r = rMin; r <= rMax; r++) {
+        for (let q = qMin; q <= qMax; q++) {
+          const cx = q * hB1x + r * hB2x, cy = r * hB2y;
+          for (let e = 2; e <= 4; e++) {
+            const t0 = (e * 60 + 90) * Math.PI / 180;
+            const t1 = ((e + 1) * 60 + 90) * Math.PI / 180;
+            emit(cx + s * Math.cos(t0), cy + s * Math.sin(t0), cx + s * Math.cos(t1), cy + s * Math.sin(t1));
+          }
+        }
+      }
+    }
     return result;
+  };
+
+  const polygonalLines = (region, density, angleOffset = 0, shiftX = 0, shiftY = 0, numAxes = 3) => {
+    const xs = region.map(p => p.x), ys = region.map(p => p.y);
+    return tessellateEdges(
+      Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys),
+      density, angleOffset, shiftX, shiftY, numAxes,
+      (p0, p1) => clipSegmentToPoly(p0, p1, region)
+    );
   };
 
   const triaxialLines = (region, density, angleOffset = 0, shiftX = 0, shiftY = 0) =>
