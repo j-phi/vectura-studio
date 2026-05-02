@@ -652,7 +652,7 @@
           for (let c = 0; c < crackCount; c++) {
             const crackAngle = crackAngles[c];
             const innerR_c = effectiveMaxR * (1 - crackDepthFrac);
-            const armData = { anglesPerSide: [[], []], paths: [] };
+            const armData = { anglesPerSide: [[], []], paths: [], outerRPerSide: [] };
             for (let sideIdx = 0; sideIdx < 2; sideIdx++) {
               const side = sideIdx === 0 ? -1 : 1;
               const arm = [];
@@ -680,6 +680,7 @@
                 arm.push({ x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r });
               }
               armData.paths.push(arm);
+              armData.outerRPerSide.push(armOuterR);
             }
             precomputedCrackArms.push(armData);
           }
@@ -687,22 +688,25 @@
 
         const isInCrack = (theta, rAtPoint) => {
           if (precomputedCrackArms.length === 0 || rAtPoint < crackInnerR) return false;
-          const outerR_c = effectiveMaxR;
-          const innerR_c = outerR_c * (1 - crackDepthFrac);
-          const frac = Math.max(0, Math.min(1, (outerR_c - rAtPoint) / Math.max(1, outerR_c - innerR_c)));
-          const tFloat = frac * CRACK_POINTS;
-          const t0 = Math.floor(tFloat);
-          const t1 = Math.min(t0 + 1, CRACK_POINTS);
-          const tf = tFloat - t0;
+          const innerR_c = effectiveMaxR * (1 - crackDepthFrac);
           for (let c = 0; c < precomputedCrackArms.length; c++) {
-            const { anglesPerSide } = precomputedCrackArms[c];
-            const leftAngle  = anglesPerSide[0][t0] + (anglesPerSide[0][t1] - anglesPerSide[0][t0]) * tf;
-            const rightAngle = anglesPerSide[1][t0] + (anglesPerSide[1][t1] - anglesPerSide[1][t0]) * tf;
-            const ca = crackAngles[c];
+            const { anglesPerSide, outerRPerSide } = precomputedCrackArms[c];
+
+            const lFrac = Math.max(0, Math.min(1, (outerRPerSide[0] - rAtPoint) / Math.max(1, outerRPerSide[0] - innerR_c)));
+            const lT    = lFrac * CRACK_POINTS;
+            const lt0 = Math.floor(lT); const lt1 = Math.min(lt0 + 1, CRACK_POINTS); const ltf = lT - lt0;
+            const leftAngle = anglesPerSide[0][lt0] + (anglesPerSide[0][lt1] - anglesPerSide[0][lt0]) * ltf;
+
+            const rFrac = Math.max(0, Math.min(1, (outerRPerSide[1] - rAtPoint) / Math.max(1, outerRPerSide[1] - innerR_c)));
+            const rT    = rFrac * CRACK_POINTS;
+            const rt0 = Math.floor(rT); const rt1 = Math.min(rt0 + 1, CRACK_POINTS); const rtf = rT - rt0;
+            const rightAngle = anglesPerSide[1][rt0] + (anglesPerSide[1][rt1] - anglesPerSide[1][rt0]) * rtf;
+
+            const ca   = crackAngles[c];
             const tRel = wrapAngle(theta - ca);
             const lRel = wrapAngle(leftAngle  - ca);
             const rRel = wrapAngle(rightAngle - ca);
-            if (tRel >= lRel && tRel <= rRel) return true;
+            if (tRel >= Math.min(lRel, rRel) && tRel <= Math.max(lRel, rRel)) return true;
           }
           return false;
         };

@@ -222,6 +222,58 @@ describe('Rings crack alignment', () => {
     expect(displaced).toBe(true);
   });
 
+  // ── Bug A: frac mismatch when armOuterR < effectiveMaxR (noise pushes arm inward) ──
+
+  // RGR Red: when noise amplitude pulls armOuterR below effectiveMaxR, isInCrack uses
+  // effectiveMaxR for frac → looks at a deeper arm-segment (narrower angles) → ring points
+  // near the arm boundary escape suppression and appear inside the drawn crack zone.
+  // seed=3, crackSeed=1 produces armOuterR ≈ 88 on one side → 34 violations without fix.
+  test('noise amplitude makes armOuterR < effectiveMaxR — no ring points inside crack arms', () => {
+    const p = makeCrackParams({
+      seed: 3,
+      crackCount: 1,
+      crackSpread: 20,
+      crackDepth: 0.6,
+      crackNoise: 0,
+      crackSeed: 1,
+      rings: 12,
+      barkRings: 2,
+      barkGap: 1,
+      barkType: 'rough',
+      barkRoughness: 8,
+      noises: [{ id: 'n1', enabled: true, type: 'simplex', blend: 'add', amplitude: 15, zoom: 0.02,
+        freq: 1, angle: 0, shiftX: 0, shiftY: 0, applyMode: 'concentric', ringDrift: 0.5,
+        ringRadius: 100, tileMode: 'off', noiseStyle: 'linear', imageWidth: 1, imageHeight: 1 }],
+    });
+    const paths = generate(p);
+    expect(checkNoRingPointInsideCrack(paths, p.crackCount, p.crackDepth)).toBe(0);
+  });
+
+  // ── Seam merge regression ──
+
+  // With 8 rings (index 0 skipped, centerDiameter=0) + 1 crack outline = 8 total paths
+  // when seam merge fires correctly for each split ring. Guards against regressions where
+  // isInCrack(0, r) returns a spurious true and prevents the n+1 merge.
+  test('seam merge — path count equals rings-1 + crackCount when crack not at theta=0', () => {
+    const p = makeCrackParams({
+      crackCount: 1,
+      crackSpread: 8,
+      crackDepth: 0.6,
+      crackNoise: 1.0,
+      crackSeed: 42,
+    });
+    const paths = generate(p);
+    const crackArm = paths[paths.length - 1];
+    const { left } = splitCombinedArm(crackArm);
+    const midPt = left[Math.floor(left.length / 2)];
+    const crackAngle = pointAngle(midPt);
+    if (Math.abs(wrapAngle(crackAngle)) > 0.5) {
+      // ring i=0 skipped (centerDiameter=0) → rings-1 ring paths + crackCount outlines
+      const expectedPaths = makeBaseParams().rings - 1 + p.crackCount;
+      expect(paths.length).toBe(expectedPaths);
+    }
+  });
+
   // ── Determinism ──
 
   test('determinism — same seed always yields same paths with cracks', () => {

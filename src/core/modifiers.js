@@ -384,12 +384,15 @@
     type: 'arc',
     centerX: 0,
     centerY: 0,
-    radius: 100,
-    arcStart: -90,
-    arcEnd: 90,
+    radius: 80,
+    arcStart: -180,
+    arcEnd: 180,
     replacedSide: 'outer',
     strength: 100,
     falloff: 0,
+    clipToArc: false,
+    rotationOffset: 0,
+    copies: 1,
     color: getMirrorColor(index),
     ...clone(overrides),
   });
@@ -463,8 +466,8 @@
     const strength = Math.max(0, Math.min(100, mirror.strength ?? 100)) / 100;
     if (strength === 0) return (paths || []).map(clonePath).filter((p) => p.length >= 2);
     const falloff = Math.max(0, Math.min(100, mirror.falloff ?? 0)) / 100;
-    const arcStartRad = ((mirror.arcStart ?? -90) * Math.PI) / 180;
-    const arcEndRad = ((mirror.arcEnd ?? 90) * Math.PI) / 180;
+    const arcStartRad = ((mirror.arcStart ?? -180) * Math.PI) / 180;
+    const arcEndRad = ((mirror.arcEnd ?? 180) * Math.PI) / 180;
     const arcMidRad = (arcStartRad + arcEndRad) / 2;
     const arcHalfSpan = Math.abs(arcEndRad - arcStartRad) / 2;
 
@@ -492,10 +495,45 @@
       const full = reflectPointAcrossCircle(pt, cx, cy, R);
       return { x: pt.x + blend * (full.x - pt.x), y: pt.y + blend * (full.y - pt.y) };
     };
+    const clipToArc = !!(mirror.clipToArc);
+    const rotationOffsetRad = ((mirror.rotationOffset ?? 0) * Math.PI) / 180;
+    const copies = Math.max(1, Math.round(mirror.copies ?? 1));
+    const copyAngleStep = copies > 1 ? (2 * Math.PI) / copies : 0;
+
+    const inArcSpan = (pt) => {
+      if (arcHalfSpan <= 1e-6) return true;
+      let angDist = Math.abs(Math.atan2(pt.y - cy, pt.x - cx) - arcMidRad);
+      while (angDist > Math.PI) angDist = Math.abs(angDist - 2 * Math.PI);
+      return angDist <= arcHalfSpan;
+    };
+
     const reflectArcPath = (path) => {
       const next = path.map(reflectPt);
       if (path.meta) next.meta = clone(path.meta);
       return next;
+    };
+
+    const maxCoord = Math.max(bounds?.width ?? 1000, bounds?.height ?? 1000) * 3;
+    const clipReflectedPath = (path) => {
+      const subs = [];
+      let cur = [];
+      for (const pt of path) {
+        if (Math.abs(pt.x) > maxCoord || Math.abs(pt.y) > maxCoord) {
+          if (cur.length >= 2) subs.push(cur);
+          cur = [];
+        } else {
+          cur.push(pt);
+        }
+      }
+      if (cur.length >= 2) subs.push(cur);
+      return subs;
+    };
+
+    const addReflectedCopies = (reflected) => {
+      for (let k = 0; k < copies; k += 1) {
+        const angle = rotationOffsetRad + k * copyAngleStep;
+        clipReflectedPath(rotatePath(reflected, angle, cx, cy)).forEach((sub) => output.push(sub));
+      }
     };
 
     const output = [];
@@ -507,8 +545,12 @@
         centroid.y /= Math.max(1, flat.length);
         const side = radialSide(centroid);
         if (side === 0 || side === sourceSign) {
-          output.push(path);
-          output.push(toClosedPolygonPath(reflectArcPath(flattenPath(path)), path));
+          if (!clipToArc || inArcSpan(centroid)) {
+            output.push(path);
+            addReflectedCopies(toClosedPolygonPath(reflectArcPath(flattenPath(path)), path));
+          } else {
+            output.push(path);
+          }
         }
         return;
       }
@@ -516,8 +558,10 @@
         const side = pieceSide(piece);
         if (side === 0) { output.push(piece); return; }
         if (side !== sourceSign) return;
+        const mid = piece[Math.floor(piece.length / 2)] || piece[0];
+        if (clipToArc && !inArcSpan(mid)) { output.push(piece); return; }
         output.push(piece);
-        output.push(reflectArcPath(piece));
+        addReflectedCopies(reflectArcPath(piece));
       });
     });
     return output.filter((p) => Array.isArray(p) && p.length >= 2);

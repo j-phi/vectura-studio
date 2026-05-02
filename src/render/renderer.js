@@ -3354,9 +3354,9 @@
         if (mirror.type === 'arc') {
           const cx = (profileBounds.width ?? 0) / 2 + (mirror.centerX ?? 0);
           const cy = (profileBounds.height ?? 0) / 2 + (mirror.centerY ?? 0);
-          const R = Math.max(1, mirror.radius ?? 100);
-          const startDeg = mirror.arcStart ?? -90;
-          const endDeg = mirror.arcEnd ?? 90;
+          const R = Math.max(1, mirror.radius ?? 80);
+          const startDeg = mirror.arcStart ?? -180;
+          const endDeg = mirror.arcEnd ?? 180;
           const startRad = (startDeg * Math.PI) / 180;
           const endRad = (endDeg * Math.PI) / 180;
           const midRad = (startRad + endRad) / 2;

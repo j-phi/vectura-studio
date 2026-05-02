@@ -217,7 +217,7 @@
   const createModifierState = Modifiers.createModifierState || ((type) => ({ type, enabled: true, guidesVisible: true, guidesLocked: false, mirrors: [] }));
   const createMirrorLine = Modifiers.createMirrorLine || ((index) => ({ id: `mirror-${index + 1}`, enabled: true }));
   const createRadialMirror = Modifiers.createRadialMirror || ((index) => ({ id: `mirror-${index + 1}`, enabled: true, type: 'radial', count: 6, mode: 'dihedral', centerX: 0, centerY: 0, angle: 0 }));
-  const createArcMirror = Modifiers.createArcMirror || ((index) => ({ id: `mirror-${index + 1}`, enabled: true, type: 'arc', centerX: 0, centerY: 0, radius: 100, arcStart: -90, arcEnd: 90, replacedSide: 'outer' }));
+  const createArcMirror = Modifiers.createArcMirror || ((index) => ({ id: `mirror-${index + 1}`, enabled: true, type: 'arc', centerX: 0, centerY: 0, radius: 80, arcStart: -180, arcEnd: 180, replacedSide: 'outer' }));
   const isModifierLayer = Modifiers.isModifierLayer || (() => false);
   const getLayerSilhouette = Masking.getLayerSilhouette || (() => []);
 
@@ -3868,6 +3868,18 @@
     'mirror.falloff': {
       title: 'Falloff',
       description: 'Fades strength toward zero at the arc endpoints, leaving the reflection fullest at the arc midpoint. Higher values create a more pronounced edge fade.',
+    },
+    'mirror.clipToArc': {
+      title: 'Clip to Arc Span',
+      description: 'When on, only geometry whose midpoint falls within the Arc Start–End angular window gets reflected. Geometry outside the window is kept but not inverted.',
+    },
+    'mirror.rotationOffset': {
+      title: 'Rotation Offset',
+      description: 'Rotates each reflected copy by this many degrees around the inversion circle center after reflecting. Creates pinwheel or spiral-bloom effects.',
+    },
+    'mirror.copies': {
+      title: 'Copies',
+      description: 'Fans out N evenly-spaced rotational copies of the reflected geometry around the full circle. Combine with inner→outer for mandala-style inversions.',
     },
     'common.smoothing': {
       title: 'Smoothing',
@@ -7968,9 +7980,9 @@
           } else if (mirror.type === 'arc' && mirror.radius === undefined) {
             mirror.centerX = 0;
             mirror.centerY = 0;
-            mirror.radius = 100;
-            mirror.arcStart = -90;
-            mirror.arcEnd = 90;
+            mirror.radius = 80;
+            mirror.arcStart = -180;
+            mirror.arcEnd = 180;
             mirror.replacedSide = 'outer';
             mirror.strength = 100;
             mirror.falloff = 0;
@@ -7999,6 +8011,20 @@
           sel.onchange = (e) => commit(() => { mirror[key] = e.target.value; });
           controls.appendChild(buildField(label, sel, infoKey));
         };
+        const buildCheckboxInput = (label, key, defaultVal = false, infoKey = null) => {
+          const wrap = document.createElement('label');
+          wrap.className = 'block mb-3 flex items-center gap-2 cursor-pointer';
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.checked = !!(mirror[key] ?? defaultVal);
+          cb.onchange = (e) => commit(() => { mirror[key] = e.target.checked; });
+          const title = document.createElement('span');
+          title.className = 'text-[10px] text-vectura-muted flex items-center gap-1';
+          title.innerHTML = `<span>${label}</span>${infoKey ? `<button type="button" class="info-btn" data-info="${infoKey}">i</button>` : ''}`;
+          wrap.appendChild(cb);
+          wrap.appendChild(title);
+          controls.appendChild(wrap);
+        };
 
         const mirrorType = mirror.type || 'line';
         if (mirrorType === 'line') {
@@ -8022,11 +8048,14 @@
           ], 'outer', 'mirror.replacedSide');
           buildNumberInput('Center X', 'centerX', '0.1', 0);
           buildNumberInput('Center Y', 'centerY', '0.1', 0);
-          buildNumberInput('Radius', 'radius', '1', 100, 'mirror.radius');
-          buildNumberInput('Arc Start (°)', 'arcStart', '1', -90, 'mirror.arcStart');
-          buildNumberInput('Arc End (°)', 'arcEnd', '1', 90, 'mirror.arcEnd');
+          buildNumberInput('Radius', 'radius', '1', 80, 'mirror.radius');
+          buildNumberInput('Arc Start (°)', 'arcStart', '1', -180, 'mirror.arcStart');
+          buildNumberInput('Arc End (°)', 'arcEnd', '1', 180, 'mirror.arcEnd');
+          buildCheckboxInput('Clip to Arc Span', 'clipToArc', false, 'mirror.clipToArc');
           buildNumberInput('Strength (%)', 'strength', '1', 100, 'mirror.strength');
           buildNumberInput('Falloff (%)', 'falloff', '1', 0, 'mirror.falloff');
+          buildNumberInput('Rotation Offset (°)', 'rotationOffset', '1', 0, 'mirror.rotationOffset');
+          buildNumberInput('Copies', 'copies', '1', 1, 'mirror.copies');
         }
 
         const eyeBtn = header.querySelector('.mirror-eye');
