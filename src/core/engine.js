@@ -76,7 +76,7 @@
 
     addLayer(type = 'wavetable') {
       type = resolveDrawableLayerType(type, 'wavetable');
-      const id = Math.random().toString(36).substr(2, 9);
+      const id = Math.random().toString(36).slice(2, 11);
       SETTINGS.globalLayerCount = ++this._layerCounter;
       const num = String(this._layerCounter).padStart(2, '0');
       const defaults = ALGO_DEFAULTS && ALGO_DEFAULTS[type];
@@ -90,7 +90,7 @@
     }
 
     addModifierLayer(type = 'mirror') {
-      const id = Math.random().toString(36).substr(2, 9);
+      const id = Math.random().toString(36).slice(2, 11);
       SETTINGS.globalLayerCount = ++this._layerCounter;
       const num = String(this._layerCounter).padStart(2, '0');
       const prettyType = type.charAt(0).toUpperCase() + type.slice(1);
@@ -200,7 +200,7 @@
     duplicateLayer(id, state = null) {
       const source = this.layers.find((l) => l.id === id);
       if (!source) return null;
-      const newId = Math.random().toString(36).substr(2, 9);
+      const newId = Math.random().toString(36).slice(2, 11);
       SETTINGS.globalLayerCount = ++this._layerCounter;
       const baseName = `${source.name} Copy`;
       const existing = new Set(this.layers.map((l) => l.name));
@@ -540,10 +540,16 @@
       const bounds = { width, height, m, dW, dH, truncate: SETTINGS.truncate };
 
       const algo = Algorithms[layer.type] || Algorithms.flowfield;
-      const rawPaths =
-        usesManualSourceGeometry(layer) && layer.sourcePaths
-          ? clonePaths(layer.sourcePaths)
-          : algo.generate(p, rng, noise, bounds) || [];
+      let rawPaths;
+      try {
+        rawPaths =
+          usesManualSourceGeometry(layer) && layer.sourcePaths
+            ? clonePaths(layer.sourcePaths)
+            : algo.generate(p, rng, noise, bounds) || [];
+      } catch (err) {
+        console.error('[Engine] Algorithm generation failed for layer type:', layer.type, err);
+        rawPaths = [];
+      }
       const helperPaths = rawPaths.helpers ? clonePaths(rawPaths.helpers) : null;
       const maskPolygons = rawPaths.maskPolygons ? clonePaths(rawPaths.maskPolygons) : null;
       const smooth = Math.max(0, Math.min(1, p.smoothing ?? 0));

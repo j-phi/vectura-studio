@@ -1,4 +1,4 @@
-# Graph Report - /Users/jayphi/Documents/github/vectura-studio  (2026-05-02)
+# Graph Report - /Users/jayphi/Documents/github/vectura-studio  (2026-05-03)
 
 ## Corpus Check
 - 117 files · ~1,510,194 words
@@ -644,12 +644,12 @@ _Questions this graph is uniquely positioned to answer:_
 
 - **What is the exact relationship between `City — Isometric aerial city of skyscrapers rendered entirely in dense vertical hatching lines with strong perspective convergence, plotter-pen aesthetic, B&W` and `Flowfield Algorithm`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
-- **Why does `Renderer` connect `Community 0` to `Community 1`?**
-  _High betweenness centrality (0.130) - this node is a cross-community bridge._
 - **Why does `sort()` connect `Community 11` to `Community 1`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 9`, `Community 10`, `Community 15`, `Community 20`?**
-  _High betweenness centrality (0.124) - this node is a cross-community bridge._
+  _High betweenness centrality (0.109) - this node is a cross-community bridge._
+- **Why does `Renderer` connect `Community 0` to `Community 1`?**
+  _High betweenness centrality (0.106) - this node is a cross-community bridge._
 - **Why does `UI` connect `Community 1` to `Community 0`, `Community 7`, `Community 8`, `Community 9`, `Community 16`?**
-  _High betweenness centrality (0.102) - this node is a cross-community bridge._
+  _High betweenness centrality (0.073) - this node is a cross-community bridge._
 - **What connects `Boids Algorithm`, `Shape Pack Algorithm`, `Lissajous Algorithm` to the rest of the system?**
   _57 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Community 0` be split into smaller, more focused modules?**

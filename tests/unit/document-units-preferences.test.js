@@ -37,7 +37,7 @@ describe('Document units and saved preferences', () => {
 
     const { window } = runtime;
     window.app = new window.Vectura.App();
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await Promise.resolve();
 
     window.Vectura.SETTINGS.cookiePreferencesEnabled = true;
     window.Vectura.SETTINGS.margin = 33;

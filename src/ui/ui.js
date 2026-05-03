@@ -7339,13 +7339,14 @@
 
     openColorModal({ title, value, onApply }) {
       const safeValue = value || '#ffffff';
+      const safeCssColor = (v) => /^#[0-9a-fA-F]{3,6}$|^rgb\(|^rgba\(|^hsl\(|^hsla\(|^[a-z]+$/.test(`${v}`.trim()) ? `${v}`.trim() : '#000000';
       const body = `
         <div class="color-modal">
           <div class="color-modal-row">
             <input type="color" class="color-modal-input" value="${safeValue}">
             <input type="text" class="color-modal-hex" value="${safeValue}" aria-label="Hex color">
           </div>
-          <div class="color-modal-preview" style="background:${safeValue}"></div>
+          <div class="color-modal-preview" style="background:${safeCssColor(safeValue)}"></div>
           <div class="color-modal-actions">
             <button type="button" class="color-modal-cancel">Cancel</button>
             <button type="button" class="color-modal-apply">Apply</button>
@@ -8479,7 +8480,7 @@
       const maxIndex = Math.max(...selectedLayers.map((layer) => layers.indexOf(layer)));
       SETTINGS.globalLayerCount++;
       const groupName = `Group ${String(SETTINGS.globalLayerCount).padStart(2, '0')}`;
-      const groupId = Math.random().toString(36).substr(2, 9);
+      const groupId = Math.random().toString(36).slice(2, 11);
       const group = new Layer(groupId, 'group', groupName);
       group.isGroup = true;
       group.groupType = 'group';
@@ -11641,7 +11642,7 @@
 
       const groupNodes = new Map();
       const children = pathMeta.map((entry, index) => {
-        const newId = Math.random().toString(36).substr(2, 9);
+        const newId = Math.random().toString(36).slice(2, 11);
         const child = new Layer(newId, 'expanded', `${baseName} - Line ${String(index + 1).padStart(pad, '0')}`);
         child.parentId = groupId;
         child.params.seed = 0;
@@ -11662,7 +11663,7 @@
         if (entry.group) {
           let groupNode = groupNodes.get(entry.group);
           if (!groupNode) {
-            const groupId = Math.random().toString(36).substr(2, 9);
+            const groupId = Math.random().toString(36).slice(2, 11);
             groupNode = new Layer(groupId, 'group', entry.group);
             groupNode.isGroup = true;
             groupNode.groupType = 'group';
@@ -11738,7 +11739,7 @@
       const engine = this.app.engine;
       SETTINGS.globalLayerCount++;
       const num = String(SETTINGS.globalLayerCount).padStart(2, '0');
-      const id = Math.random().toString(36).substr(2, 9);
+      const id = Math.random().toString(36).slice(2, 11);
       const layer = new Layer(id, 'expanded', `Pen Path ${num}`);
       const active = engine.getActiveLayer ? engine.getActiveLayer() : null;
       const shapeType = payload?.shape?.type || null;
@@ -11820,7 +11821,7 @@
       const idx = engine.layers.findIndex((l) => l.id === layer.id);
       const pad = String(segments.length).length;
       const children = segments.map((seg, i) => {
-        const newId = Math.random().toString(36).substr(2, 9);
+        const newId = Math.random().toString(36).slice(2, 11);
         const child = new Layer(newId, 'expanded', `${layer.name} Cut ${String(i + 1).padStart(pad, '0')}`);
         child.parentId = layer.parentId;
         child.params.seed = 0;

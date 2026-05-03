@@ -25,7 +25,7 @@ describe('UI bootstrap integrity', () => {
     });
 
     window.app = new window.Vectura.App();
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await Promise.resolve();
 
     expect(pageErrors).toEqual([]);
 
@@ -50,13 +50,13 @@ describe('UI bootstrap integrity', () => {
 
     const { window, document } = runtime;
     window.app = new window.Vectura.App();
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await Promise.resolve();
 
     expect(document.getElementById('set-remove-hidden-geometry')).toBeNull();
     expect(Array.from(document.querySelectorAll('.optimization-card'))).toHaveLength(0);
 
     window.app.ui.openExportModal();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
 
     const exportRoot = document.getElementById('export-modal-root');
     expect(exportRoot).toBeTruthy();
@@ -87,14 +87,14 @@ describe('UI bootstrap integrity', () => {
 
     const { window, document } = runtime;
     window.app = new window.Vectura.App();
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await Promise.resolve();
 
     const themeToggle = document.getElementById('theme-toggle');
     expect(themeToggle).toBeTruthy();
     expect(window.Vectura.SETTINGS.uiTheme).toBe('dark');
 
     themeToggle.click();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
 
     const pen1 = window.Vectura.SETTINGS.pens.find((pen) => pen.id === 'pen-1');
     const activeLayer = window.app.engine.getActiveLayer();
@@ -125,7 +125,7 @@ describe('UI bootstrap integrity', () => {
 
     const { window, document } = runtime;
     window.app = new window.Vectura.App();
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await Promise.resolve();
 
     const settingsPanel = document.getElementById('settings-panel');
     expect(settingsPanel.classList.contains('open')).toBe(false);
@@ -151,7 +151,7 @@ describe('UI bootstrap integrity', () => {
     window.Vectura.SETTINGS.showDocumentDimensions = false;
 
     window.app.applyState(state);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
 
     expect(window.Vectura.SETTINGS.documentUnits).toBe('imperial');
     expect(window.Vectura.SETTINGS.showDocumentDimensions).toBe(true);
@@ -174,7 +174,7 @@ describe('UI bootstrap integrity', () => {
     const { window, document } = runtime;
     const { Layer, SETTINGS } = window.Vectura;
     window.app = new window.Vectura.App();
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await Promise.resolve();
 
     const app = window.app;
     const engine = app.engine;
@@ -230,10 +230,10 @@ describe('UI bootstrap integrity', () => {
 
     const { window, document } = runtime;
     window.app = new window.Vectura.App();
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await Promise.resolve();
 
     window.app.ui.openExportModal();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
 
     const lineSortCard = Array.from(document.querySelectorAll('#export-modal-root .optimization-card')).find((card) =>
       /Line Sort/i.test(card.textContent || '')
@@ -247,12 +247,12 @@ describe('UI bootstrap integrity', () => {
 
     applyToggle.checked = false;
     applyToggle.dispatchEvent(new window.Event('change', { bubbles: true }));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
     expect(applyToggle.checked).toBe(false);
 
     applyToggle.checked = true;
     applyToggle.dispatchEvent(new window.Event('change', { bubbles: true }));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
 
     expect(window.Vectura.SETTINGS.optimizationPreview).toBe('overlay');
   });

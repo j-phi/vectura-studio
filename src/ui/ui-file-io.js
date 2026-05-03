@@ -110,7 +110,7 @@
         if (this.app.pushHistory) this.app.pushHistory();
         const created = [];
         groups.forEach((group) => {
-          const id = Math.random().toString(36).substr(2, 9);
+          const id = Math.random().toString(36).slice(2, 11);
           const name = this.getUniqueLayerName(group.name || 'Imported SVG', id);
           const layer = new Layer(id, 'expanded', name);
           layer.params.seed = 0;

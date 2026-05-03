@@ -9,4 +9,10 @@ export default defineConfig({
     exclude: ['tests/e2e/**'],
     testTimeout: 20000,
   },
+  coverage: {
+    provider: 'v8',
+    reporter: ['text', 'lcov'],
+    include: ['src/**/*.js'],
+    exclude: ['src/vendor/**'],
+  },
 });

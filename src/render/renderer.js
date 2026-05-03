@@ -2,7 +2,7 @@
  * Canvas renderer for vector paths.
  */
 (() => {
-  const { SETTINGS, Modifiers = {}, Masking = {}, UnitUtils = {} } = window.Vectura || {};
+  const { SETTINGS, Modifiers = {}, Masking = {}, UnitUtils = {}, UI_CONSTANTS = {} } = window.Vectura || {};
   const isModifierLayer = Modifiers.isModifierLayer || (() => false);
   const getMirrorAxis = Modifiers.getMirrorAxis || (() => null);
   const buildAxisFromAngle = Modifiers.buildAxisFromAngle || (() => null);
@@ -23,8 +23,16 @@
   });
   const TAU = Math.PI * 2;
   const ELLIPSE_KAPPA = 0.5522847498307936;
-  const SHAPE_CORNER_HANDLE_MIN = 8;
-  const MASK_PREVIEW_ALPHA = 0.2;
+  const {
+    SHAPE_CORNER_HANDLE_MIN = 8,
+    MASK_PREVIEW_ALPHA = 0.2,
+    ROTATE_ARROW_OFFSET = 9,
+    ROTATE_TRIANGLE_LIFT = 9,
+    ROTATE_TRIANGLE_HALF_WIDTH = 12.2,
+    ROTATE_TRIANGLE_UNDERLAY_HALF_WIDTH = 15.6,
+    ROTATE_TRIANGLE_TIP_LENGTH = 10.8,
+    ROTATE_TRIANGLE_UNDERLAY_TIP_LENGTH = 13.8,
+  } = UI_CONSTANTS;
   const makeShapeReticleCursor = (color = 'white') => {
     const svg =
       `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">`
@@ -358,15 +366,31 @@
 
       new ResizeObserver(() => this.resize()).observe(parent);
       this.canvas.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
+      this._boundMove = (e) => this.move(e);
+      this._boundUp = (e) => this.up(e);
       if (window.PointerEvent) {
         this.canvas.addEventListener('pointerdown', (e) => this.down(e));
-        window.addEventListener('pointermove', (e) => this.move(e));
-        window.addEventListener('pointerup', (e) => this.up(e));
-        window.addEventListener('pointercancel', (e) => this.up(e));
+        window.addEventListener('pointermove', this._boundMove);
+        window.addEventListener('pointerup', this._boundUp);
+        window.addEventListener('pointercancel', this._boundUp);
       } else {
+        this._boundMouseMove = (e) => this.move(e);
+        this._boundMouseUp = (e) => this.up(e);
         this.canvas.addEventListener('mousedown', (e) => this.down(e));
-        window.addEventListener('mousemove', (e) => this.move(e));
-        window.addEventListener('mouseup', (e) => this.up(e));
+        window.addEventListener('mousemove', this._boundMouseMove);
+        window.addEventListener('mouseup', this._boundMouseUp);
+      }
+    }
+
+    destroy() {
+      if (this._boundMove) {
+        window.removeEventListener('pointermove', this._boundMove);
+        window.removeEventListener('pointerup', this._boundUp);
+        window.removeEventListener('pointercancel', this._boundUp);
+      }
+      if (this._boundMouseMove) {
+        window.removeEventListener('mousemove', this._boundMouseMove);
+        window.removeEventListener('mouseup', this._boundMouseUp);
       }
     }
 
@@ -3362,12 +3386,12 @@
           const midRad = (startRad + endRad) / 2;
           const replacedOutside = (mirror.replacedSide ?? 'outer') === 'outer';
           const flipSign = replacedOutside ? 1 : -1;
-          const arrowOffset = 9 / this.scale;
-          const triangleLift = 9 / this.scale;
-          const triangleHalfWidth = 12.2 / this.scale;
-          const triangleUnderlayHalfWidth = 15.6 / this.scale;
-          const triangleTipLength = 10.8 / this.scale;
-          const triangleUnderlayTipLength = 13.8 / this.scale;
+          const arrowOffset = ROTATE_ARROW_OFFSET / this.scale;
+          const triangleLift = ROTATE_TRIANGLE_LIFT / this.scale;
+          const triangleHalfWidth = ROTATE_TRIANGLE_HALF_WIDTH / this.scale;
+          const triangleUnderlayHalfWidth = ROTATE_TRIANGLE_UNDERLAY_HALF_WIDTH / this.scale;
+          const triangleTipLength = ROTATE_TRIANGLE_TIP_LENGTH / this.scale;
+          const triangleUnderlayTipLength = ROTATE_TRIANGLE_UNDERLAY_TIP_LENGTH / this.scale;
           const nRad = { x: Math.cos(midRad), y: Math.sin(midRad) };
           const tRad = { x: -Math.sin(midRad), y: Math.cos(midRad) };
           const midArc = { x: cx + nRad.x * R, y: cy + nRad.y * R };
@@ -3401,8 +3425,8 @@
         const [start, end] = segment;
         const tangent = axis.tangent;
         const normal = axis.normal;
-        const arrowOffset = 9 / this.scale;
-        const triangleLift = 9 / this.scale;
+        const arrowOffset = ROTATE_ARROW_OFFSET / this.scale;
+        const triangleLift = ROTATE_TRIANGLE_LIFT / this.scale;
         const replacedSign = axis.replacedSign || 1;
         const mid = {
           x: (start.x + end.x) * 0.5,
@@ -3412,10 +3436,10 @@
           x: mid.x + normal.x * (arrowOffset + triangleLift) * replacedSign,
           y: mid.y + normal.y * (arrowOffset + triangleLift) * replacedSign,
         };
-        const triangleHalfWidth = 12.2 / this.scale;
-        const triangleUnderlayHalfWidth = 15.6 / this.scale;
-        const triangleTipLength = 10.8 / this.scale;
-        const triangleUnderlayTipLength = 13.8 / this.scale;
+        const triangleHalfWidth = ROTATE_TRIANGLE_HALF_WIDTH / this.scale;
+        const triangleUnderlayHalfWidth = ROTATE_TRIANGLE_UNDERLAY_HALF_WIDTH / this.scale;
+        const triangleTipLength = ROTATE_TRIANGLE_TIP_LENGTH / this.scale;
+        const triangleUnderlayTipLength = ROTATE_TRIANGLE_UNDERLAY_TIP_LENGTH / this.scale;
         return {
           guideType: 'line',
           layer: modifierLayer,

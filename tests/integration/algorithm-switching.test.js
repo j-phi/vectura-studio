@@ -13,7 +13,7 @@ describe('Algorithm switching', () => {
       useIndexHtml: true,
     });
     runtime.window.app = new runtime.window.Vectura.App();
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await Promise.resolve();
   });
 
   afterAll(() => {
@@ -42,7 +42,7 @@ describe('Algorithm switching', () => {
 
     moduleSelect.value = nextType;
     moduleSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await Promise.resolve();
 
     const afterLayer = app.engine.getActiveLayer();
     const afterFormula = document.getElementById('formula-display')?.textContent?.trim() || '';
