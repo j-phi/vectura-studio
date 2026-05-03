@@ -8784,14 +8784,14 @@
     showDuplicateNameError(name) {
       this.openModal({
         title: 'Name Unavailable',
-        body: `<p class="modal-text">"${name}" is already in use. Layer names must be unique.</p>`,
+        body: `<p class="modal-text">"${escapeHtml(name)}" is already in use. Layer names must be unique.</p>`,
       });
     }
 
     showValueError(value) {
       this.openModal({
         title: 'Invalid Value',
-        body: `<p class="modal-text">"${value}" is outside the allowed range or format.</p>`,
+        body: `<p class="modal-text">"${escapeHtml(value)}" is outside the allowed range or format.</p>`,
       });
     }
 
