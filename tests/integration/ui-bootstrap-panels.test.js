@@ -1,33 +1,35 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
-describe('UI bootstrap integrity', () => {
-  let runtime;
+const FULL_STACK = {
+  includeRenderer: true,
+  includeUi: true,
+  includeApp: true,
+  includeMain: false,
+  useIndexHtml: true,
+};
 
-  afterEach(() => {
+describe('UI bootstrap – core panels', () => {
+  let runtime, window, document, bootErrors;
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime(FULL_STACK);
+    ({ window, document } = runtime);
+    bootErrors = [];
+    window.addEventListener('error', (event) => {
+      if (event?.error?.message) bootErrors.push(event.error.message);
+      else if (event?.message) bootErrors.push(event.message);
+    });
+    window.app = new window.Vectura.App();
+    await Promise.resolve();
+  });
+
+  afterAll(() => {
     runtime?.cleanup?.();
     runtime = null;
   });
 
-  test('app boot populates layers, mathematical model, and about content', async () => {
-    runtime = await loadVecturaRuntime({
-      includeRenderer: true,
-      includeUi: true,
-      includeApp: true,
-      includeMain: false,
-      useIndexHtml: true,
-    });
-
-    const { window, document } = runtime;
-    const pageErrors = [];
-    window.addEventListener('error', (event) => {
-      if (event?.error?.message) pageErrors.push(event.error.message);
-      else if (event?.message) pageErrors.push(event.message);
-    });
-
-    window.app = new window.Vectura.App();
-    await Promise.resolve();
-
-    expect(pageErrors).toEqual([]);
+  test('app boot populates layers, mathematical model, and about content', () => {
+    expect(bootErrors).toEqual([]);
 
     const layerItems = document.querySelectorAll('#layer-list .layer-item');
     expect(layerItems.length).toBeGreaterThan(0);
@@ -40,18 +42,6 @@ describe('UI bootstrap integrity', () => {
   });
 
   test('export modal owns remove hidden geometry and document setup no longer renders optimization cards', async () => {
-    runtime = await loadVecturaRuntime({
-      includeRenderer: true,
-      includeUi: true,
-      includeApp: true,
-      includeMain: false,
-      useIndexHtml: true,
-    });
-
-    const { window, document } = runtime;
-    window.app = new window.Vectura.App();
-    await Promise.resolve();
-
     expect(document.getElementById('set-remove-hidden-geometry')).toBeNull();
     expect(Array.from(document.querySelectorAll('.optimization-card'))).toHaveLength(0);
 
@@ -77,18 +67,6 @@ describe('UI bootstrap integrity', () => {
   });
 
   test('theme toggle updates UI theme, document background, and Pen 1 without serializing theme into project state', async () => {
-    runtime = await loadVecturaRuntime({
-      includeRenderer: true,
-      includeUi: true,
-      includeApp: true,
-      includeMain: false,
-      useIndexHtml: true,
-    });
-
-    const { window, document } = runtime;
-    window.app = new window.Vectura.App();
-    await Promise.resolve();
-
     const themeToggle = document.getElementById('theme-toggle');
     expect(themeToggle).toBeTruthy();
     expect(window.Vectura.SETTINGS.uiTheme).toBe('dark');
@@ -115,18 +93,6 @@ describe('UI bootstrap integrity', () => {
   });
 
   test('document setup shortcut toggles the panel and document-unit state roundtrips through app state', async () => {
-    runtime = await loadVecturaRuntime({
-      includeRenderer: true,
-      includeUi: true,
-      includeApp: true,
-      includeMain: false,
-      useIndexHtml: true,
-    });
-
-    const { window, document } = runtime;
-    window.app = new window.Vectura.App();
-    await Promise.resolve();
-
     const settingsPanel = document.getElementById('settings-panel');
     expect(settingsPanel.classList.contains('open')).toBe(false);
 
@@ -161,21 +127,25 @@ describe('UI bootstrap integrity', () => {
     expect(document.getElementById('set-paper-width')?.value).toBe('10');
     expect(document.getElementById('set-paper-height')?.value).toBe('8');
   });
+});
 
-  test('line sort overlay legend stays visible for shared multi-layer order metadata', async () => {
-    runtime = await loadVecturaRuntime({
-      includeRenderer: true,
-      includeUi: true,
-      includeApp: true,
-      includeMain: false,
-      useIndexHtml: true,
-    });
+describe('UI bootstrap – line sort overlay', () => {
+  let runtime;
 
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime(FULL_STACK);
+    runtime.window.app = new runtime.window.Vectura.App();
+    await Promise.resolve();
+  });
+
+  afterAll(() => {
+    runtime?.cleanup?.();
+    runtime = null;
+  });
+
+  test('line sort overlay legend stays visible for shared multi-layer order metadata', () => {
     const { window, document } = runtime;
     const { Layer, SETTINGS } = window.Vectura;
-    window.app = new window.Vectura.App();
-    await Promise.resolve();
-
     const app = window.app;
     const engine = app.engine;
     engine.layers = [];
@@ -218,19 +188,24 @@ describe('UI bootstrap integrity', () => {
     expect(legend?.classList.contains('hidden')).toBe(false);
     expect(gradient?.style.background || '').toContain('linear-gradient');
   });
+});
+
+describe('UI bootstrap – line sort export modal', () => {
+  let runtime;
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime(FULL_STACK);
+    runtime.window.app = new runtime.window.Vectura.App();
+    await Promise.resolve();
+  });
+
+  afterAll(() => {
+    runtime?.cleanup?.();
+    runtime = null;
+  });
 
   test('enabling line sort from the export modal UI promotes preview mode to overlay', async () => {
-    runtime = await loadVecturaRuntime({
-      includeRenderer: true,
-      includeUi: true,
-      includeApp: true,
-      includeMain: false,
-      useIndexHtml: true,
-    });
-
     const { window, document } = runtime;
-    window.app = new window.Vectura.App();
-    await Promise.resolve();
 
     window.app.ui.openExportModal();
     await Promise.resolve();
