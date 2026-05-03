@@ -71,19 +71,26 @@ describe('UI bootstrap – core panels', () => {
     expect(themeToggle).toBeTruthy();
     expect(window.Vectura.SETTINGS.uiTheme).toBe('dark');
 
-    themeToggle.click();
-    await Promise.resolve();
-
     const pen1 = window.Vectura.SETTINGS.pens.find((pen) => pen.id === 'pen-1');
     const activeLayer = window.app.engine.getActiveLayer();
     const themeColorMeta = document.querySelector('meta[name="theme-color"]');
 
-    expect(window.Vectura.SETTINGS.uiTheme).toBe('light');
+    // Click 1: dark → lark (dark UI + white paper)
+    themeToggle.click();
+    await Promise.resolve();
+    expect(window.Vectura.SETTINGS.uiTheme).toBe('lark');
     expect(window.Vectura.SETTINGS.bgColor).toBe('#ffffff');
     expect(pen1?.color).toBe('#000000');
     expect(activeLayer?.penId).toBe('pen-1');
     expect(activeLayer?.color).toBe('#000000');
-    expect(themeToggle.getAttribute('aria-label')).toContain('dark');
+    expect(themeToggle.getAttribute('aria-label')).toContain('Light');
+    expect(themeColorMeta?.getAttribute('content')).toBe('#09090b');
+
+    // Click 2: lark → light
+    themeToggle.click();
+    await Promise.resolve();
+    expect(window.Vectura.SETTINGS.uiTheme).toBe('light');
+    expect(themeToggle.getAttribute('aria-label')).toContain('Dark');
     expect(themeColorMeta?.getAttribute('content')).toBe('#f5f5f5');
 
     const state = window.app.captureState();

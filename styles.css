@@ -130,8 +130,15 @@ body {
   height: 1rem;
 }
 
+.theme-toggle__lark {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+}
+
 .theme-toggle[data-theme='light'] .theme-toggle-icon--light,
-.theme-toggle[data-theme='dark'] .theme-toggle-icon--dark {
+.theme-toggle[data-theme='dark'] .theme-toggle-icon--dark,
+.theme-toggle[data-theme='lark'] .theme-toggle-icon--lark {
   display: inline-flex;
 }
 

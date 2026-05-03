@@ -7262,12 +7262,18 @@
     refreshThemeUi() {
       const toggle = getEl('theme-toggle', { silent: true });
       const bgColorInput = getEl('inp-bg-color', { silent: true });
-      const isLight = `${SETTINGS.uiTheme || 'dark'}`.toLowerCase() === 'light';
+      const current = `${SETTINGS.uiTheme || 'dark'}`.toLowerCase();
       if (toggle) {
-        toggle.setAttribute('aria-pressed', isLight ? 'true' : 'false');
-        toggle.setAttribute('aria-label', isLight ? 'Switch to dark theme' : 'Switch to light theme');
-        toggle.title = isLight ? 'Switch to dark theme' : 'Switch to light theme';
-        toggle.dataset.theme = isLight ? 'light' : 'dark';
+        const NEXT_LABEL = {
+          dark: 'Switch to Lark theme',
+          lark: 'Switch to Light theme',
+          light: 'Switch to Dark theme',
+        };
+        const label = NEXT_LABEL[current] || NEXT_LABEL.dark;
+        toggle.setAttribute('aria-pressed', current === 'light' ? 'true' : 'false');
+        toggle.setAttribute('aria-label', label);
+        toggle.title = label;
+        toggle.dataset.theme = current;
       }
       if (bgColorInput) bgColorInput.value = SETTINGS.bgColor || bgColorInput.value || '#ffffff';
     }

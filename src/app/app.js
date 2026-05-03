@@ -470,7 +470,10 @@
     }
 
     toggleTheme() {
-      const next = normalizeThemeName(SETTINGS.uiTheme) === 'light' ? 'dark' : 'light';
+      const CYCLE = ['dark', 'lark', 'light'];
+      const current = normalizeThemeName(SETTINGS.uiTheme);
+      const idx = CYCLE.indexOf(current);
+      const next = CYCLE[(idx + 1) % CYCLE.length];
       return this.applyTheme(next, {
         persist: true,
         syncPen1: true,

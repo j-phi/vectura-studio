@@ -487,6 +487,7 @@ test.describe('Vectura smoke interactions', () => {
     });
     expect(initial.theme).toBe('dark');
 
+    // Click 1: dark → lark (dark UI + white paper)
     await themeToggle.click();
 
     await expect
@@ -500,10 +501,27 @@ test.describe('Vectura smoke interactions', () => {
         }))
       )
       .toEqual({
-        theme: 'light',
+        theme: 'lark',
         pen1: '#000000',
         layerColor: '#000000',
         bgColor: '#ffffff',
+        themeColor: '#09090b',
+      });
+
+    await expect(themeToggle).toHaveAttribute('aria-label', /light theme/i);
+
+    // Click 2: lark → light
+    await themeToggle.click();
+
+    await expect
+      .poll(async () =>
+        page.evaluate(() => ({
+          theme: window.Vectura?.SETTINGS?.uiTheme,
+          themeColor: document.querySelector('meta[name=\"theme-color\"]')?.getAttribute('content') || null,
+        }))
+      )
+      .toEqual({
+        theme: 'light',
         themeColor: '#f5f5f5',
       });
 
