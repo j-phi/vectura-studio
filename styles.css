@@ -3371,9 +3371,6 @@ input[type='color']::-webkit-color-swatch {
   margin: 1.5rem 0 0;
   padding-top: 0.75rem;
   border-top: none;
-  border-left: 2px solid #b45309;
-  padding-left: 0.6rem;
-  margin-left: -0.6rem;
 }
 
 .algo-param-group-header {
@@ -3383,7 +3380,8 @@ input[type='color']::-webkit-color-swatch {
   justify-content: space-between;
   background: rgba(180, 83, 9, 0.09);
   border: none;
-  padding: 0.25rem 0.4rem 0.25rem 0;
+  border-left: 2px solid #b45309;
+  padding: 0.25rem 0.4rem 0.25rem 0.5rem;
   cursor: pointer;
   text-align: left;
   border-radius: 2px;
@@ -3431,6 +3429,8 @@ input[type='color']::-webkit-color-swatch {
 
 .algo-param-group-body {
   padding-top: 0.25rem;
+  border-left: 2px solid #b45309;
+  padding-left: 0.5rem;
 }
 
 .optimization-panel {
