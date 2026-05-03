@@ -2142,6 +2142,53 @@
             return;
           }
 
+          if (guide.guideType === 'wallpaper') {
+            const { fundamentalDomain, origin, latticeA, latticeB } = guide;
+            if (fundamentalDomain && fundamentalDomain.length >= 3) {
+              this.ctx.strokeStyle = color;
+              this.ctx.lineWidth = 0.45;
+              this.ctx.setLineDash([dash, dash]);
+              this.ctx.beginPath();
+              this.ctx.moveTo(fundamentalDomain[0].x, fundamentalDomain[0].y);
+              for (let i = 1; i < fundamentalDomain.length; i++) {
+                this.ctx.lineTo(fundamentalDomain[i].x, fundamentalDomain[i].y);
+              }
+              this.ctx.closePath();
+              this.ctx.stroke();
+              this.ctx.setLineDash([]);
+              this.ctx.fillStyle = color;
+              this.ctx.globalAlpha = alpha * 0.10;
+              this.ctx.beginPath();
+              this.ctx.moveTo(fundamentalDomain[0].x, fundamentalDomain[0].y);
+              for (let i = 1; i < fundamentalDomain.length; i++) {
+                this.ctx.lineTo(fundamentalDomain[i].x, fundamentalDomain[i].y);
+              }
+              this.ctx.closePath();
+              this.ctx.fill();
+              this.ctx.globalAlpha = alpha;
+            }
+            drawCenterHandle(origin.x, origin.y, color);
+            if (latticeA && latticeB) {
+              const p10 = { x: origin.x + latticeA.x, y: origin.y + latticeA.y };
+              const p01 = { x: origin.x + latticeB.x, y: origin.y + latticeB.y };
+              [p10, p01].forEach((pt) => {
+                this.ctx.save();
+                this.ctx.fillStyle = underlay;
+                this.ctx.beginPath();
+                this.ctx.arc(pt.x, pt.y, 4 / this.scale, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.strokeStyle = color;
+                this.ctx.lineWidth = 1 / this.scale;
+                this.ctx.beginPath();
+                this.ctx.arc(pt.x, pt.y, 3.5 / this.scale, 0, Math.PI * 2);
+                this.ctx.stroke();
+                this.ctx.restore();
+              });
+            }
+            this.ctx.restore();
+            return;
+          }
+
           if (guide.guideType === 'arc') {
             const { center, radius, arcStartRad, arcEndRad, flipTriangle: ft, radiusHandle } = guide;
             this.ctx.strokeStyle = color;
@@ -2582,8 +2629,13 @@
             startCenterY: hitGuide.guide.mirror.centerY ?? 0,
             startRadius: hitGuide.guide.mirror.radius ?? 100,
             axisPoint: hitGuide.guide.axis?.point ? { ...hitGuide.guide.axis.point } : { x: world.x, y: world.y },
+            startOrigin: hitGuide.guide.origin ? { ...hitGuide.guide.origin } : null,
+            startRotation: hitGuide.guide.mirror.rotation ?? 0,
           };
-          this.setCanvasCursor(hitGuide.type === 'rotate' ? 'grabbing' : 'move');
+          this.setCanvasCursor(
+            hitGuide.type === 'rotate' ? 'grabbing' :
+            (hitGuide.type === 'latticeA' || hitGuide.type === 'latticeB') ? 'crosshair' : 'move'
+          );
           e.preventDefault();
           return;
         }
@@ -2813,7 +2865,7 @@
         if (drag.type === 'move') {
           const dx = world.x - drag.startWorld.x;
           const dy = world.y - drag.startWorld.y;
-          if (mirror.type === 'radial' || mirror.type === 'arc') {
+          if (mirror.type === 'radial' || mirror.type === 'arc' || mirror.type === 'wallpaper') {
             mirror.centerX = drag.startCenterX + dx;
             mirror.centerY = drag.startCenterY + dy;
           } else {
@@ -2831,6 +2883,27 @@
           const dy = world.y - drag.startWorld.y;
           const delta = Math.hypot(dx, dy) * (dx >= 0 ? 1 : -1);
           mirror.radius = Math.max(1, drag.startRadius + delta);
+        } else if (drag.type === 'latticeA') {
+          const origin = drag.startOrigin;
+          const vec = { x: world.x - origin.x, y: world.y - origin.y };
+          const len = Math.hypot(vec.x, vec.y);
+          if (len > 0.5) {
+            let newRot = Math.atan2(vec.y, vec.x) * 180 / Math.PI;
+            if (modifiers.shift) newRot = Math.round(newRot / 15) * 15;
+            mirror.tileWidth = Math.max(1, len);
+            mirror.rotation = newRot;
+          }
+        } else if (drag.type === 'latticeB') {
+          const origin = drag.startOrigin;
+          const vec = { x: world.x - origin.x, y: world.y - origin.y };
+          const len = Math.hypot(vec.x, vec.y);
+          if (len > 0.5) {
+            const absAngle = Math.atan2(vec.y, vec.x) * 180 / Math.PI;
+            let newTileAngle = absAngle - mirror.rotation;
+            if (modifiers.shift) newTileAngle = Math.round(newTileAngle / 15) * 15;
+            mirror.tileHeight = Math.max(1, len);
+            mirror.tileAngle = newTileAngle;
+          }
         }
         this.onComputeDisplayGeometry ? this.onComputeDisplayGeometry() : this.engine.computeAllDisplayGeometry();
         this.draw();
@@ -3375,6 +3448,27 @@
           };
         }
 
+        if (mirror.type === 'wallpaper') {
+          const WallpaperGroups = window.Vectura?.WallpaperGroups;
+          const groupDef = WallpaperGroups?.GROUPS?.[mirror.group || 'p4m'];
+          if (!groupDef) return null;
+          const W = Math.max(1, mirror.tileWidth ?? 60);
+          const H = Math.max(1, mirror.tileHeight ?? 60);
+          const tileAngle = mirror.tileAngle ?? 90;
+          const rotDeg = mirror.rotation ?? 0;
+          const cx = (profileBounds.width ?? 0) / 2 + (mirror.centerX ?? 0);
+          const cy = (profileBounds.height ?? 0) / 2 + (mirror.centerY ?? 0);
+          const { latticeA, latticeB, fundamentalDomain } = groupDef.getOps(W, H, tileAngle, cx, cy, rotDeg);
+          return {
+            guideType: 'wallpaper',
+            layer: modifierLayer, mirror, index, visible, locked,
+            fundamentalDomain,
+            latticeA,
+            latticeB,
+            origin: { x: cx, y: cy },
+          };
+        }
+
         if (mirror.type === 'arc') {
           const cx = (profileBounds.width ?? 0) / 2 + (mirror.centerX ?? 0);
           const cy = (profileBounds.height ?? 0) / 2 + (mirror.centerY ?? 0);
@@ -3504,6 +3598,14 @@
               || this.distanceToPointSq(world, flipTri.baseCenter) <= Math.pow(12 / this.scale, 2)) {
             return { guide, type: 'flip' };
           }
+          continue;
+        }
+        if (guide.guideType === 'wallpaper') {
+          if (this.distanceToPointSq(world, guide.origin) <= centerTolSq) return { guide, type: 'move' };
+          const p10 = { x: guide.origin.x + guide.latticeA.x, y: guide.origin.y + guide.latticeA.y };
+          if (this.distanceToPointSq(world, p10) <= centerTolSq) return { guide, type: 'latticeA' };
+          const p01 = { x: guide.origin.x + guide.latticeB.x, y: guide.origin.y + guide.latticeB.y };
+          if (this.distanceToPointSq(world, p01) <= centerTolSq) return { guide, type: 'latticeB' };
           continue;
         }
         // line guide
@@ -4615,7 +4717,12 @@
             this.setCanvasCursor('grab');
             return;
           }
-          this.setCanvasCursor(hitGuide.guide.locked ? 'not-allowed' : hitGuide.type === 'flip' ? 'pointer' : 'move');
+          this.setCanvasCursor(
+            hitGuide.guide.locked ? 'not-allowed' :
+            hitGuide.type === 'flip' ? 'pointer' :
+            (hitGuide.type === 'latticeA' || hitGuide.type === 'latticeB') ? 'crosshair' :
+            'move'
+          );
           return;
         }
       }
