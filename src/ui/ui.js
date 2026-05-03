@@ -2903,6 +2903,7 @@
       { id: 'centerDrift', label: 'Center Drift', type: 'range', min: 0, max: 5, step: 0.1, infoKey: 'rings.centerDrift' },
       { id: 'biasStrength', label: 'Bias Strength', type: 'range', min: 0, max: 1, step: 0.05, infoKey: 'rings.biasStrength' },
       { id: 'biasAngle', label: 'Bias Direction', type: 'angle', min: 0, max: 360, step: 1, displayUnit: '°', infoKey: 'rings.biasAngle', showIf: (p) => (p.biasStrength ?? 0) > 0 },
+      { type: 'collapsibleGroup', label: 'Tree Ring Parameters' },
       { type: 'section', label: 'Bark Zone' },
       { id: 'barkRings', label: 'Bark Rings', type: 'range', min: 0, max: 24, step: 1, infoKey: 'rings.barkRings' },
       { id: 'barkType', label: 'Bark Style', type: 'select', options: [
@@ -3000,6 +3001,7 @@
       { id: 'scarWidth', label: 'Scar Width', type: 'range', min: 0.5, max: 180, step: 0.5, infoKey: 'rings.scarWidth', showIf: (p) => (p.scarCount ?? 0) > 0 },
       { id: 'scarSize', label: 'Healing Rate', type: 'range', min: 1, max: 30, step: 1, infoKey: 'rings.scarSize', showIf: (p) => (p.scarCount ?? 0) > 0 },
       { id: 'scarSeed', label: 'Scar Seed', type: 'range', min: 0, max: 9999, step: 1, infoKey: 'rings.scarSeed', showIf: (p) => (p.scarCount ?? 0) > 0 },
+      { type: 'collapsibleGroupEnd' },
     ],
     topo: [
       { id: 'resolution', label: 'Resolution', type: 'range', min: 40, max: 240, step: 5, infoKey: 'topo.resolution' },
@@ -15721,7 +15723,36 @@
       };
 
       if (!isGroup) {
-        algoDefs.forEach((def) => renderDef(def, container));
+        let groupTarget = null;
+        for (const def of algoDefs) {
+          if (def.type === 'collapsibleGroup') {
+            if (this.treeRingParamsCollapsed === undefined) this.treeRingParamsCollapsed = true;
+            const collapsed = this.treeRingParamsCollapsed;
+            const group = document.createElement('div');
+            group.className = 'algo-param-group';
+            group.classList.toggle('collapsed', collapsed);
+            const header = document.createElement('button');
+            header.type = 'button';
+            header.className = 'algo-param-group-header';
+            header.innerHTML = `<span class="algo-param-group-title">${def.label}</span><span class="algo-param-group-toggle" aria-hidden="true"></span>`;
+            const body = document.createElement('div');
+            body.className = 'algo-param-group-body';
+            if (collapsed) body.style.display = 'none';
+            header.onclick = () => {
+              this.treeRingParamsCollapsed = !this.treeRingParamsCollapsed;
+              group.classList.toggle('collapsed', this.treeRingParamsCollapsed);
+              body.style.display = this.treeRingParamsCollapsed ? 'none' : '';
+            };
+            group.appendChild(header);
+            group.appendChild(body);
+            container.appendChild(group);
+            groupTarget = body;
+          } else if (def.type === 'collapsibleGroupEnd') {
+            groupTarget = null;
+          } else {
+            renderDef(def, groupTarget);
+          }
+        }
       }
       if (commonDefs.length) {
         container.appendChild(globalSection);

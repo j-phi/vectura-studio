@@ -954,19 +954,18 @@
       const groupPaths = groups.get(key) || [];
       const sourceItems = groupedItems.get(key) || [];
       const isFillOnly = sourceItems.some((item) => item.fillVisible) && sourceItems.every((item) => !item.strokeVisible);
-      return {
-        id: `el-${i}`,
-        label: `Element ${i+1}`,
-        isFillOnly,
-        paths: isFillOnly
-          ? sourceItems.flatMap((item) => {
-              const ps = traceFilledPathElementVisibleBoundaries(item.element, vbMinX, vbMinY, vbMinX, vbMinY, vbW, vbH)
-                || traceFilledElementsVisibleBoundaries([item.element], vbMinX, vbMinY, vbW, vbH);
-              ps.forEach((p) => { p._srcElementIndex = item.index; });
-              return ps;
-            })
-          : groupPaths,
-      };
+      if (!isFillOnly) return { id: `el-${i}`, label: `Element ${i+1}`, isFillOnly, paths: groupPaths };
+      // For fill-only elements, extract raw subpaths then trace visible fill boundaries using
+      // PathBoolean (same approach as 222d6a8 which the source-fidelity tests were written against).
+      const rawPaths = sourceItems.flatMap((item) =>
+        svgElementToPaths(item.element, vbMinX, vbMinY, vbMinX, vbMinY, vbW, vbH, {
+          sampleDistance: 0.22, snapTolerance: 0.18, boundaryTolerance: 0.6,
+        })
+      );
+      const ps = traceFilledGroupVisibleBoundaries(rawPaths);
+      const firstIndex = sourceItems[0]?.index;
+      if (firstIndex !== undefined) ps.forEach((p) => { p._srcElementIndex = firstIndex; });
+      return { id: `el-${i}`, label: `Element ${i+1}`, isFillOnly, paths: ps };
     });
 
     elementsData.forEach((item) => item.element?.remove?.());
