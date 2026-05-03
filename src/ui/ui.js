@@ -15726,7 +15726,7 @@
         let groupTarget = null;
         for (const def of algoDefs) {
           if (def.type === 'collapsibleGroup') {
-            if (this.treeRingParamsCollapsed === undefined) this.treeRingParamsCollapsed = true;
+            if (this.treeRingParamsCollapsed === undefined) this.treeRingParamsCollapsed = false;
             const collapsed = this.treeRingParamsCollapsed;
             const group = document.createElement('div');
             group.className = 'algo-param-group';
@@ -15734,7 +15734,8 @@
             const header = document.createElement('button');
             header.type = 'button';
             header.className = 'algo-param-group-header';
-            header.innerHTML = `<span class="algo-param-group-title">${def.label}</span><span class="algo-param-group-toggle" aria-hidden="true"></span>`;
+            const ringIcon = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.1" aria-hidden="true"><circle cx="6.5" cy="6.5" r="5.5"/><circle cx="6.5" cy="6.5" r="3.4"/><circle cx="6.5" cy="6.5" r="1.4"/></svg>`;
+            header.innerHTML = `<span class="algo-param-group-title">${ringIcon}${def.label}</span><span class="algo-param-group-toggle" aria-hidden="true"></span>`;
             const body = document.createElement('div');
             body.className = 'algo-param-group-body';
             if (collapsed) body.style.display = 'none';

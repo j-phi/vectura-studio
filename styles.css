@@ -3370,7 +3370,10 @@ input[type='color']::-webkit-color-swatch {
 .algo-param-group {
   margin: 1.5rem 0 0;
   padding-top: 0.75rem;
-  border-top: 1px solid var(--color-border);
+  border-top: none;
+  border-left: 2px solid #b45309;
+  padding-left: 0.6rem;
+  margin-left: -0.6rem;
 }
 
 .algo-param-group-header {
@@ -3378,18 +3381,27 @@ input[type='color']::-webkit-color-swatch {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: none;
+  background: rgba(180, 83, 9, 0.09);
   border: none;
-  padding: 0 0 0.5rem;
+  padding: 0.25rem 0.4rem 0.25rem 0;
   cursor: pointer;
   text-align: left;
+  border-radius: 2px;
 }
 
 .algo-param-group-title {
-  font-size: 0.65rem;
+  font-size: 0.72rem;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--color-text-soft);
+  letter-spacing: 0.1em;
+  color: #d97706;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.algo-param-group-title svg {
+  flex-shrink: 0;
+  opacity: 0.75;
 }
 
 .algo-param-group-toggle {
@@ -3410,7 +3422,7 @@ input[type='color']::-webkit-color-swatch {
   height: 0;
   border-style: solid;
   border-width: 4px 0 4px 6px;
-  border-color: transparent transparent transparent var(--color-text-soft);
+  border-color: transparent transparent transparent #d97706;
 }
 
 .algo-param-group.collapsed .algo-param-group-toggle {
