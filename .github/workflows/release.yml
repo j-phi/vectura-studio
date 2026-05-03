@@ -1,0 +1,41 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm install --no-audit --no-fund --loglevel=error
+
+      - name: Run tests
+        run: npm run test:unit && npm run test:integration
+
+      - name: Build distributable zip
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          zip -r "vectura-studio-${VERSION}.zip" \
+            index.html styles.css src assets patterns README.md CHANGELOG.md
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" \
+            "vectura-studio-${VERSION}.zip" \
+            --title "Vectura Studio v${VERSION}" \
+            --notes "$(node scripts/extract-changelog.js $VERSION)" \
+            --verify-tag

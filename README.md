@@ -508,16 +508,29 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 0.7.0
+- Added **Terrain** algorithm: heightfield-driven scanlines with Top-down, One-point, Two-point, and Isometric perspectives; ridged-multifractal mountains, V/U-profile valleys, steepest-descent rivers, ocean clamping, and six style presets — all with full Noise Rack integration.
+- Added global dark/light theme toggle and full-shell CSS-variable theming.
+- Added `Insert > Mirror Modifier` container with a full mirror-axis stack, dashed canvas guide overlays, per-axis show/hide/lock/reorder controls, and mirrored closed-mask silhouette support.
+- Added Illustrator-style Rectangle, Oval, and Polygon shape tools with editable expanded layers and shape-aware corner-rounding handles.
+- Added Illustrator-style parent masks: visible mask parents clip their full descendant subtree on canvas and in SVG export, with optional `Hide Mask Layer`.
+- Added redesigned Export SVG modal with large left-side preview, right-side settings panel, and preview zoom/pan controls.
+- Added custom Pattern registry: local library + project-carried tiles, `.vectura` round-trip, `Import SVG Tile`, live 3×3 seam-validation preview, and `Fill`/`Erase Fill` toolbar tools.
+- Added Document Setup unit switch (Metric/Imperial) with unit-aware paper, margin, stroke, and tolerance controls.
+- Fixed Undo/Redo for all layer-structure edits: grouping, reparenting, masking, modifier/container changes, and structural selections all round-trip correctly.
+- Improved accessibility across all UI: `prefers-reduced-motion`, `aria-live` toasts, modal focus management, visible focus rings, and a minimum 11 px text-size floor.
+
 ### 0.6.80
 - Relaxed the post-occlusion reconnect rule so verticals can disappear behind a ridge and reappear where they become visible again.
 
 ### 0.6.79
 
+<details>
+<summary>Older releases (0.6.78 and earlier)</summary>
+
 ### 0.6.78
 - Fixed the Layers-panel `Clip` trigger so the clipping-mask popover opens reliably in the saved masking workflow.
 
-<details>
-<summary>Older releases (0.6.77 and earlier)</summary>
 
 ### 0.6.77
 

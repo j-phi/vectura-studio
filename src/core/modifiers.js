@@ -5,8 +5,10 @@
   const {
     MODIFIER_DEFAULTS = {},
     MODIFIER_GUIDE_COLORS = [],
+    WallpaperGroups = {},
   } = window.Vectura || {};
   const OptimizationUtils = window.Vectura?.OptimizationUtils || {};
+  const { GROUPS: WALLPAPER_GROUPS = {}, getTileRange = () => ({ nMin: -5, nMax: 5, mMin: -5, mMax: 5 }) } = WallpaperGroups;
 
   const clone = (obj) => JSON.parse(JSON.stringify(obj));
   const EPSILON = 1e-6;
@@ -567,6 +569,74 @@
     return output.filter((p) => Array.isArray(p) && p.length >= 2);
   };
 
+  const createWallpaperMirror = (index = 0, overrides = {}) => ({
+    id: makeId('mirror'),
+    enabled: true,
+    guideVisible: true,
+    locked: false,
+    type: 'wallpaper',
+    group: 'p4m',
+    tileWidth: 60,
+    tileHeight: 60,
+    tileAngle: 90,
+    rotation: 0,
+    centerX: 0,
+    centerY: 0,
+    color: getMirrorColor(index),
+    ...clone(overrides),
+  });
+
+  const applyWallpaperMirrorToPaths = (paths, mirror, bounds) => {
+    if (!mirror?.enabled) return (paths || []).map(clonePath).filter((p) => p.length >= 2);
+    const groupDef = WALLPAPER_GROUPS[mirror.group || 'p4m'];
+    if (!groupDef) return (paths || []).map(clonePath).filter((p) => p.length >= 2);
+
+    const W = Math.max(1, mirror.tileWidth ?? 60);
+    const H = Math.max(1, mirror.tileHeight ?? 60);
+    const tileAngle = mirror.tileAngle ?? 90;
+    const rotDeg = mirror.rotation ?? 0;
+    const cx = (bounds?.width ?? 0) / 2 + (mirror.centerX ?? 0);
+    const cy = (bounds?.height ?? 0) / 2 + (mirror.centerY ?? 0);
+
+    const { latticeA, latticeB, ops, fundamentalDomain } = groupDef.getOps(W, H, tileAngle, cx, cy, rotDeg);
+
+    // Clip source paths to fundamental domain (convex polygon, sequential half-plane clips)
+    let clipped = (paths || []).map(clonePath).filter((p) => p.length >= 2);
+    for (let i = 0; i < fundamentalDomain.length; i++) {
+      const p1 = fundamentalDomain[i];
+      const p2 = fundamentalDomain[(i + 1) % fundamentalDomain.length];
+      const edgeAngle = Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI;
+      clipped = clipPathsToHalfPlane(clipped, p1, edgeAngle, +1);
+    }
+    if (!clipped.length) return [];
+
+    // Apply all point-symmetry ops → one tile's worth of paths
+    const tilePaths = [];
+    ops.forEach((op) => {
+      clipped.forEach((path) => {
+        const next = path.map(op);
+        if (path.meta) next.meta = clone(path.meta);
+        tilePaths.push(next);
+      });
+    });
+
+    // Tile canvas using lattice translation vectors
+    const { nMin, nMax, mMin, mMax } = getTileRange(bounds, latticeA, latticeB);
+    const output = [];
+    for (let n = nMin; n <= nMax; n++) {
+      for (let m = mMin; m <= mMax; m++) {
+        const tx = n * latticeA.x + m * latticeB.x;
+        const ty = n * latticeA.y + m * latticeB.y;
+        tilePaths.forEach((path) => {
+          const shifted = path.map((pt) => ({ x: pt.x + tx, y: pt.y + ty }));
+          if (path.meta) shifted.meta = clone(path.meta);
+          output.push(shifted);
+        });
+      }
+    }
+    return output.filter((p) => Array.isArray(p) && p.length >= 2);
+  };
+
   /**
    * Applies a single mirror config to a path array.
    * Closed paths are polygon-clipped to the source half-plane, then the kept half is reflected.
@@ -579,6 +649,7 @@
     }
     if (mirror.type === 'radial') return applyRadialMirrorToPaths(paths, mirror, bounds);
     if (mirror.type === 'arc') return applyArcMirrorToPaths(paths, mirror, bounds);
+    if (mirror.type === 'wallpaper') return applyWallpaperMirrorToPaths(paths, mirror, bounds);
     const axis = getMirrorAxis(mirror, bounds);
     const sourceSign = axis.replacedSign * -1;
     const output = [];
@@ -622,6 +693,7 @@
     createMirrorLine,
     createRadialMirror,
     createArcMirror,
+    createWallpaperMirror,
     isModifierLayer,
     flattenPath,
     getMirrorAxis,
@@ -633,6 +705,7 @@
     applyMirrorToPaths,
     applyRadialMirrorToPaths,
     applyArcMirrorToPaths,
+    applyWallpaperMirrorToPaths,
     applyModifierToPaths,
   };
 })();

@@ -218,6 +218,9 @@
   const createMirrorLine = Modifiers.createMirrorLine || ((index) => ({ id: `mirror-${index + 1}`, enabled: true }));
   const createRadialMirror = Modifiers.createRadialMirror || ((index) => ({ id: `mirror-${index + 1}`, enabled: true, type: 'radial', count: 6, mode: 'dihedral', centerX: 0, centerY: 0, angle: 0 }));
   const createArcMirror = Modifiers.createArcMirror || ((index) => ({ id: `mirror-${index + 1}`, enabled: true, type: 'arc', centerX: 0, centerY: 0, radius: 80, arcStart: -180, arcEnd: 180, replacedSide: 'outer' }));
+  const createWallpaperMirror = Modifiers.createWallpaperMirror || ((index) => ({ id: `mirror-${index + 1}`, enabled: true, type: 'wallpaper', group: 'p4m', tileWidth: 60, tileHeight: 60, tileAngle: 90, rotation: 0, centerX: 0, centerY: 0 }));
+  const WALLPAPER_GROUP_IDS = window.Vectura?.WallpaperGroups?.GROUP_IDS || ['p1','p2','pm','pg','cm','pmm','pmg','pgg','cmm','p4','p4m','p4g','p3','p3m1','p31m','p6','p6m'];
+  const WALLPAPER_GROUP_LABELS = window.Vectura?.WallpaperGroups?.GROUPS || {};
   const isModifierLayer = Modifiers.isModifierLayer || (() => false);
   const getLayerSilhouette = Masking.getLayerSilhouette || (() => []);
 
@@ -7853,6 +7856,7 @@
               <option value="line">+ Line</option>
               <option value="radial">+ Radial</option>
               <option value="arc">+ Arc</option>
+              <option value="wallpaper">+ Wallpaper</option>
             </select>
             <button type="button" class="mirror-stack-add text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted transition-colors">Add</button>
             <button type="button" class="mirror-stack-eye text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted transition-colors">${modifier.guidesVisible === false ? 'Show All' : 'Hide All'}</button>
@@ -7971,6 +7975,7 @@
           <option value="line">Line</option>
           <option value="radial">Radial</option>
           <option value="arc">Arc</option>
+          <option value="wallpaper">Wallpaper</option>
         `;
         typeSelect.value = mirror.type || 'line';
         typeSelect.onchange = (e) => commit(() => {
@@ -7990,6 +7995,14 @@
             mirror.replacedSide = 'outer';
             mirror.strength = 100;
             mirror.falloff = 0;
+          } else if (mirror.type === 'wallpaper' && mirror.tileWidth === undefined) {
+            mirror.group = 'p4m';
+            mirror.tileWidth = 60;
+            mirror.tileHeight = 60;
+            mirror.tileAngle = 90;
+            mirror.rotation = 0;
+            mirror.centerX = 0;
+            mirror.centerY = 0;
           }
         });
         controls.appendChild(buildField('Type', typeSelect, 'mirror.type'));
@@ -8060,6 +8073,23 @@
           buildNumberInput('Falloff (%)', 'falloff', '1', 0, 'mirror.falloff');
           buildNumberInput('Rotation Offset (°)', 'rotationOffset', '1', 0, 'mirror.rotationOffset');
           buildNumberInput('Copies', 'copies', '1', 1, 'mirror.copies');
+        } else if (mirrorType === 'wallpaper') {
+          const groupSel = document.createElement('select');
+          groupSel.className = inputClass;
+          groupSel.innerHTML = WALLPAPER_GROUP_IDS.map((id) => {
+            const def = WALLPAPER_GROUP_LABELS[id];
+            const lbl = def ? def.label : id;
+            return `<option value="${id}">${lbl}</option>`;
+          }).join('');
+          groupSel.value = mirror.group || 'p4m';
+          groupSel.onchange = (e) => commit(() => { mirror.group = e.target.value; });
+          controls.appendChild(buildField('Group', groupSel, 'mirror.wallpaperGroup'));
+          buildNumberInput('Tile Width', 'tileWidth', '1', 60);
+          buildNumberInput('Tile Height', 'tileHeight', '1', 60);
+          buildNumberInput('Tile Angle (°)', 'tileAngle', '1', 90);
+          buildNumberInput('Rotation (°)', 'rotation', '1', 0);
+          buildNumberInput('Center X', 'centerX', '0.1', 0);
+          buildNumberInput('Center Y', 'centerY', '0.1', 0);
         }
 
         const eyeBtn = header.querySelector('.mirror-eye');
@@ -8093,6 +8123,7 @@
           const idx = mirrors.length;
           const newMirror = addType === 'radial' ? createRadialMirror(idx)
             : addType === 'arc' ? createArcMirror(idx)
+            : addType === 'wallpaper' ? createWallpaperMirror(idx)
             : createMirrorLine(idx);
           modifier.mirrors = [...mirrors, newMirror];
         });

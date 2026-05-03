@@ -24,5 +24,7 @@
       'Tiles geometry with N-fold rotational (rotation), dihedral (kaleidoscope), or edge-reflection symmetry. Wedge-clips the source before tiling for clean plotter output.',
     mirrorArc:
       'Reflects geometry across a circular arc. Points on the replaced side are mapped through the arc surface to the opposite side.',
+    mirrorWallpaper:
+      'Tiles geometry using one of the 17 crystallographic wallpaper groups — the complete mathematical catalog of planar periodic symmetries. Source geometry is clipped to the fundamental domain, then tiled to fill the canvas.',
   };
 })();
