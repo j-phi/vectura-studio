@@ -17,7 +17,7 @@ const versionFile = `(() => {
 
 const indexHtml = fs
   .readFileSync(indexPath, 'utf8')
-  .replace(/(<span class="pane-meta text-\[10px\] text-vectura-muted">)V\.[^<]+(<\/span>)/, `$1V.${version}$2`);
+  .replace(/(<span class="pane-meta text-\[11px\] text-vectura-muted">)V\.[^<]+(<\/span>)/, `$1V.${version}$2`);
 
 fs.writeFileSync(versionPath, versionFile, 'utf8');
 fs.writeFileSync(indexPath, indexHtml, 'utf8');
