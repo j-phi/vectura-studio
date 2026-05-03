@@ -425,5 +425,5 @@
   };
 
   window.Vectura = window.Vectura || {};
-  window.Vectura.WallpaperGroups = { GROUPS, GROUP_IDS, getTileRange };
+  window.Vectura.WallpaperGroups = { GROUPS, GROUP_IDS, getTileRange, getCell, rotPt, reflPt };
 })();

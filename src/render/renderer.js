@@ -2263,6 +2263,7 @@
           drawRotateHandle(guide.rotateEnd, 'right');
           this.ctx.restore();
         });
+
       };
       const outlineEnabled = SETTINGS.selectionOutline !== false;
       const outlineColor = SETTINGS.selectionOutlineColor || '#ef4444';
@@ -2618,23 +2619,26 @@
             e.preventDefault();
             return;
           }
+          const hitMirror = hitGuide.guide.mirror;
+          const hitHandleId = hitGuide.handleId;
           this.modifierDrag = {
             type: hitGuide.type,
             guide: hitGuide.guide,
+            handleId: hitHandleId || null,
             startWorld: { x: world.x, y: world.y },
-            startAngle: hitGuide.guide.mirror.angle ?? 0,
-            startShiftX: hitGuide.guide.mirror.xShift ?? 0,
-            startShiftY: hitGuide.guide.mirror.yShift ?? 0,
-            startCenterX: hitGuide.guide.mirror.centerX ?? 0,
-            startCenterY: hitGuide.guide.mirror.centerY ?? 0,
-            startRadius: hitGuide.guide.mirror.radius ?? 100,
+            startAngle: hitMirror.angle ?? 0,
+            startShiftX: hitMirror.xShift ?? 0,
+            startShiftY: hitMirror.yShift ?? 0,
+            startCenterX: hitMirror.centerX ?? 0,
+            startCenterY: hitMirror.centerY ?? 0,
+            startRadius: hitMirror.radius ?? 100,
             axisPoint: hitGuide.guide.axis?.point ? { ...hitGuide.guide.axis.point } : { x: world.x, y: world.y },
             startOrigin: hitGuide.guide.origin ? { ...hitGuide.guide.origin } : null,
-            startRotation: hitGuide.guide.mirror.rotation ?? 0,
+            startRotation: hitMirror.rotation ?? 0,
           };
           this.setCanvasCursor(
             hitGuide.type === 'rotate' ? 'grabbing' :
-            (hitGuide.type === 'latticeA' || hitGuide.type === 'latticeB') ? 'crosshair' : 'move'
+            (hitGuide.type === 'latticeA' || hitGuide.type === 'latticeB' || hitGuide.type === 'mirrorAxisRotate') ? 'crosshair' : 'move'
           );
           e.preventDefault();
           return;
