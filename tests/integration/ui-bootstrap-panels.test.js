@@ -31,7 +31,7 @@ describe('UI bootstrap – core panels', () => {
   test('app boot populates layers, mathematical model, and about content', () => {
     expect(bootErrors).toEqual([]);
 
-    const layerItems = document.querySelectorAll('#layer-list .layer-item');
+    const layerItems = document.querySelectorAll('#layer-list [data-lvl-id]');
     expect(layerItems.length).toBeGreaterThan(0);
 
     const formulaText = document.getElementById('formula-display')?.textContent?.trim() || '';
@@ -159,7 +159,7 @@ describe('UI bootstrap – line sort overlay', () => {
     SETTINGS.globalLayerCount = 0;
 
     const buildLayer = (id, name, x1, x2) => {
-      const layer = new Layer(id, 'expanded', name);
+      const layer = new Layer(id, 'shape', name);
       layer.params.curves = false;
       layer.sourcePaths = [[
         { x: x1, y: 42 },

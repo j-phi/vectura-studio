@@ -17,7 +17,7 @@ describe('Modifier workflow integration', () => {
     const engine = new VectorEngine();
     const modifierId = engine.addModifierLayer('mirror');
     const modifier = engine.layers.find((layer) => layer.id === modifierId);
-    const child = new Layer('child-expanded', 'expanded', 'Child Expanded');
+    const child = new Layer('child-expanded', 'shape', 'Child Expanded');
     child.parentId = modifierId;
     child.sourcePaths = [[
       { x: 180, y: 20 },
@@ -45,7 +45,7 @@ describe('Modifier workflow integration', () => {
     const { VectorEngine, Layer } = runtime.window.Vectura;
     const engine = new VectorEngine();
     const modifierId = engine.addModifierLayer('mirror');
-    const child = new Layer('child-remove', 'expanded', 'Child Remove');
+    const child = new Layer('child-remove', 'shape', 'Child Remove');
     child.parentId = modifierId;
     child.sourcePaths = [[
       { x: 180, y: 20 },
@@ -63,7 +63,7 @@ describe('Modifier workflow integration', () => {
     const { VectorEngine, Layer } = runtime.window.Vectura;
     const engine = new VectorEngine();
     const modifierId = engine.addModifierLayer('mirror');
-    const child = new Layer('child-preserved', 'expanded', 'Child Preserved');
+    const child = new Layer('child-preserved', 'shape', 'Child Preserved');
     child.parentId = modifierId;
     child.sourcePaths = [[
       { x: 180, y: 20 },
@@ -101,12 +101,12 @@ describe('Modifier workflow integration', () => {
 
     const circle = [];
     circle.meta = { kind: 'circle', cx: 176, cy: 105, r: 28 };
-    const maskParent = new Layer('mask-parent', 'expanded', 'Mask Parent');
+    const maskParent = new Layer('mask-parent', 'shape', 'Mask Parent');
     maskParent.parentId = modifierId;
     maskParent.sourcePaths = [circle];
     maskParent.mask.enabled = true;
 
-    const waveform = new Layer('masked-wave', 'expanded', 'Masked Wave');
+    const waveform = new Layer('masked-wave', 'shape', 'Masked Wave');
     waveform.parentId = maskParent.id;
     waveform.sourcePaths = [
       [

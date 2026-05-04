@@ -112,7 +112,7 @@
         groups.forEach((group) => {
           const id = Math.random().toString(36).slice(2, 11);
           const name = this.getUniqueLayerName(group.name || 'Imported SVG', id);
-          const layer = new Layer(id, 'expanded', name);
+          const layer = new Layer(id, 'shape', name);
           layer.params.seed = 0;
           layer.params.smoothing = 0;
           layer.params.simplify = 0;

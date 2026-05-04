@@ -41,7 +41,7 @@ test.describe('Visual snapshots', () => {
         },
       };
 
-      const maskParent = new Layer('oval-mask-parent', 'expanded', 'Oval 03');
+      const maskParent = new Layer('oval-mask-parent', 'shape', 'Oval 03');
       maskParent.params.seed = 0;
       maskParent.params.posX = 0;
       maskParent.params.posY = 0;
@@ -113,13 +113,13 @@ test.describe('Visual snapshots', () => {
 
       const circlePath = [];
       circlePath.meta = { kind: 'circle', cx: 176, cy: 110, r: 30 };
-      const maskParent = new Layer('mirror-mask-parent', 'expanded', 'Mirror Mask');
+      const maskParent = new Layer('mirror-mask-parent', 'shape', 'Mirror Mask');
       maskParent.parentId = modifierId;
       maskParent.params.curves = false;
       maskParent.sourcePaths = [circlePath];
       maskParent.mask.enabled = true;
 
-      const waveform = new Layer('mirror-masked-wave', 'expanded', 'Mirror Wave');
+      const waveform = new Layer('mirror-masked-wave', 'shape', 'Mirror Wave');
       waveform.parentId = maskParent.id;
       waveform.params.curves = false;
       waveform.sourcePaths = [];

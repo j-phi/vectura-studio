@@ -96,7 +96,7 @@ describe('Shape tool geometry', () => {
       sides: 6,
       cornerRadii: [0, 0, 0, 0, 0, 0],
     };
-    const layer = new Layer('poly-shape', 'expanded', 'Polygon');
+    const layer = new Layer('poly-shape', 'shape', 'Polygon');
     layer.sourcePaths = [renderer.buildShapePath(shape)];
     layer.origin = { x: 100, y: 110 };
     layer.params.posX = 18;

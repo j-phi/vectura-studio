@@ -48,6 +48,17 @@
       this.renderer.onCommitTransform = () => { this.pushHistory(); this.ui.buildControls(); };
       this.renderer.onDuplicateLayer = () => this.pushHistory();
       this.renderer.onComputeDisplayGeometry = () => this.computeDisplayGeometry();
+      this.renderer.isLayerLocked = (layerId) => {
+        const lockedIds = this.ui.layerLockedIds;
+        if (lockedIds.has(layerId)) return true;
+        let l = this.engine.getLayerById?.(layerId);
+        while (l?.parentId) {
+          const parent = this.engine.getLayerById?.(l.parentId);
+          if (lockedIds.has(l.parentId) && !parent?.mask?.enabled) return true;
+          l = parent;
+        }
+        return false;
+      };
       this.history = [];
       this.redoStack = [];
       this.maxHistory = SETTINGS.undoSteps ?? 20;
@@ -135,6 +146,7 @@
         optimizationOverlayWidth: SETTINGS.optimizationOverlayWidth,
         plotterOptimize: SETTINGS.plotterOptimize,
         paletteId: SETTINGS.paletteId,
+        layerBarPaletteId: SETTINGS.layerBarPaletteId,
         autoColorization: SETTINGS.autoColorization ? clone(SETTINGS.autoColorization) : null,
         autoColorizationCollapsed: SETTINGS.autoColorizationCollapsed,
         activeTool: SETTINGS.activeTool,
@@ -192,6 +204,7 @@
       SETTINGS.optimizationOverlayWidth = snapshot.optimizationOverlayWidth ?? SETTINGS.optimizationOverlayWidth;
       SETTINGS.plotterOptimize = snapshot.plotterOptimize ?? SETTINGS.plotterOptimize;
       SETTINGS.paletteId = snapshot.paletteId ?? SETTINGS.paletteId;
+      SETTINGS.layerBarPaletteId = snapshot.layerBarPaletteId ?? SETTINGS.layerBarPaletteId;
       if (snapshot.autoColorization && typeof snapshot.autoColorization === 'object') {
         SETTINGS.autoColorization = clone(snapshot.autoColorization);
       }

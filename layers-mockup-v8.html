@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Vectura Layers v8</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#09090b;--panel:#18181b;--p2:#111113;--border:#27272a;--b2:#2d2d30;
+  --text:#e4e4e7;--muted:#71717a;--m2:#52525b;
+  --cyan:#67e8f9;--cyan30:rgba(103,232,249,.3);--cyan45:rgba(103,232,249,.45);
+  --acc:#fafafa;--yel:#fbbf24;--red:#f87171;
+}
+body{font-family:'JetBrains Mono',monospace;background:var(--bg);color:var(--text);
+  display:flex;justify-content:center;align-items:flex-start;min-height:100vh;padding:32px;font-size:12px;}
+
+#panel{
+  width:340px;background:var(--panel);border:1px solid var(--border);border-radius:8px;
+  display:flex;flex-direction:column;overflow:hidden;
+  max-height:calc(100vh - 64px);box-shadow:0 8px 32px rgba(0,0,0,.5);
+}
+
+/* ── Title bar ──────────────────────────── */
+#titlebar{
+  display:flex;align-items:center;padding:0 8px;height:36px;
+  border-bottom:1px solid var(--border);background:var(--p2);flex-shrink:0;
+}
+#tl-label{font-size:10px;font-weight:600;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;flex:1}
+.tb-btn{
+  height:22px;padding:0 8px;background:rgba(255,255,255,.06);border:1px solid var(--border);
+  border-radius:4px;color:var(--muted);cursor:pointer;font-family:inherit;font-size:10px;
+  display:flex;align-items:center;gap:4px;transition:color .12s,background .12s;
+}
+.tb-btn:hover{color:var(--text);background:rgba(255,255,255,.1);border-color:var(--m2)}
+/* Add button dropdown */
+#add-wrap{position:relative}
+#add-menu{
+  position:absolute;top:calc(100% + 6px);right:0;width:200px;
+  background:var(--p2);border:1px solid var(--border);border-radius:6px;
+  z-index:300;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.7);
+}
+#add-menu.hidden{display:none}
+.am-item{
+  padding:8px 12px;cursor:pointer;font-size:11px;color:var(--muted);
+  display:flex;align-items:center;justify-content:space-between;
+  transition:background .1s,color .1s;
+}
+.am-item:hover{background:rgba(255,255,255,.05);color:var(--text)}
+.am-hint{font-size:9px;color:var(--m2);letter-spacing:.04em}
+.am-sep{height:1px;background:var(--border);margin:2px 0}
+
+/* ── Toolbar ─────────────────────────────── */
+#toolbar{
+  display:flex;align-items:center;gap:4px;padding:6px 8px;
+  border-bottom:1px solid var(--border);background:var(--p2);flex-shrink:0;position:relative;
+}
+#sw{flex:1;display:flex;align-items:center;gap:6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:4px 8px}
+#sw svg{flex-shrink:0;color:var(--muted)}
+#si{flex:1;background:none;border:none;outline:none;color:var(--text);font-family:inherit;font-size:11px}
+#si::placeholder{color:var(--m2)}
+#fb{background:none;border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;padding:4px 7px;display:flex;align-items:center;font-family:inherit;transition:color .12s,border-color .12s}
+#fb:hover{color:var(--text);border-color:var(--m2)}
+#fb.active{color:var(--cyan);border-color:var(--cyan)}
+#fd{position:absolute;top:calc(100% + 4px);right:8px;width:164px;background:var(--p2);border:1px solid var(--border);border-radius:6px;z-index:200;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.6)}
+#fd.hidden{display:none}
+.fo{padding:7px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:11px;transition:background .1s}
+.fo:hover{background:rgba(255,255,255,.05)}
+.fo.sel{color:var(--cyan)}
+
+/* ── Layer list ──────────────────────────── */
+#layer-list{flex:1;overflow-y:auto;padding:4px;scrollbar-width:thin;scrollbar-color:var(--border) transparent;}
+#layer-list::-webkit-scrollbar{width:4px}
+#layer-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+/* ── Tree connectors ─────────────────────── */
+.tree-children{padding-left:16px}
+.tree-child-wrap{position:relative}
+.tree-child-wrap::before{content:'';position:absolute;left:-8px;top:0;bottom:0;width:1px;background:var(--b2);pointer-events:none;}
+.tree-child-wrap:first-child::before{top:-16px}
+.tree-child-wrap:last-child::before{bottom:calc(100% - 15px)}
+.tree-child-wrap::after{content:'';position:absolute;left:-8px;top:15px;width:8px;height:1px;background:var(--b2);pointer-events:none;}
+
+/* ── Card shell ──────────────────────────── */
+.lyr-card{position:relative;border-radius:4px;margin:1px 0;transition:background .1s;cursor:pointer;user-select:none;}
+.lyr-card:hover{background:rgba(255,255,255,.04)}
+.lyr-card.is-active{box-shadow:inset 0 0 0 1.5px var(--acc);background:rgba(255,255,255,.06)}
+.lyr-card.is-selected:not(.is-active){box-shadow:inset 0 0 0 1px rgba(250,250,250,.22);background:rgba(255,255,255,.04)}
+.lyr-card.is-hidden{opacity:.38}
+.lyr-card.is-locked .lyr-acts{opacity:.3;pointer-events:none}
+.lyr-card.dragging,.grp-hdr.dragging{opacity:.28}
+
+.card-inner{display:flex;align-items:stretch}
+.caret-zone{width:16px;flex-shrink:0;display:flex;align-items:flex-start;justify-content:center;padding-top:6px}
+.clr-bar{width:4px;flex-shrink:0;border-radius:2px;margin:3px 5px 3px 0}
+.card-body{flex:1;display:flex;flex-direction:column;min-width:0}
+
+/* Row 1 / Row 2 */
+.r1{display:flex;align-items:center;height:26px;padding-right:6px;gap:3px}
+.r2{display:flex;align-items:center;height:20px;padding-right:6px;gap:3px;border-top:1px solid rgba(39,39,42,.7)}
+.algo-label{font-size:9px;color:var(--m2);text-transform:uppercase;letter-spacing:.06em;flex:1}
+.lyr-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11.5px;color:var(--text);min-width:0}
+.lyr-card.is-hidden .lyr-name{color:var(--muted)}
+mark{background:rgba(251,191,36,.25);color:var(--text);border-radius:2px}
+.pen-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;border:1px solid rgba(255,255,255,.15)}
+.aico{width:14px;height:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--muted)}
+
+.lyr-acts{display:flex;align-items:center;gap:1px;opacity:0;transition:opacity .15s}
+.lyr-card:hover .lyr-acts,.lyr-card.is-active .lyr-acts{opacity:1}
+.ab{width:18px;height:18px;display:flex;align-items:center;justify-content:center;border-radius:3px;border:none;background:none;color:var(--muted);cursor:pointer;transition:color .12s,background .12s;flex-shrink:0}
+.ab:hover{color:var(--text);background:rgba(255,255,255,.08)}
+.ab.del:hover{color:var(--red)}
+/* Mask button: cyan when inactive (eligible), brighter cyan when active (already source) */
+.ab.mask-btn{color:rgba(103,232,249,.5)}
+.ab.mask-btn:hover{color:var(--cyan);background:rgba(103,232,249,.1)}
+.ab.mask-btn.is-src{color:var(--cyan)}
+.ab.mask-btn.is-src:hover{color:#f87171;background:rgba(248,113,113,.1)}
+
+.ib{width:20px;height:20px;display:flex;align-items:center;justify-content:center;border-radius:3px;border:none;background:none;color:var(--muted);cursor:pointer;flex-shrink:0;transition:color .12s,background .12s}
+.ib:hover{color:var(--text);background:rgba(255,255,255,.07)}
+.ib.vis-off{opacity:.4}
+.ib.lk-on{color:var(--yel)}
+.ib.lk-anc{color:var(--m2);opacity:.7}
+.ib.lk-off{color:var(--m2)}
+
+/* ── Masked card / group (V2 indent+border) ─ */
+.lyr-card.masked-v2{margin:1px 0 1px 20px;border-left:2px dashed var(--cyan45);border-radius:0 4px 4px 0;}
+.lyr-card.masked-v2 .r1{padding-left:6px}
+.lyr-card.masked-v2 .r2{padding-left:6px}
+.lyr-card.masked-v2.drop-before{box-shadow:0 -2px 0 var(--cyan) !important}
+.lyr-card.masked-v2.drop-after{box-shadow:0 2px 0 var(--cyan) !important}
+/* Group header when masked */
+.grp-hdr.masked-v2{margin-left:20px;border-left:2px dashed var(--cyan45);border-radius:0 4px 4px 0;}
+
+/* ── Group header ─────────────────────────── */
+.grp-hdr{display:flex;align-items:stretch;border-radius:4px;margin:1px 0;transition:background .1s;cursor:pointer;user-select:none;min-height:30px;}
+.grp-hdr:hover{background:rgba(255,255,255,.04)}
+.grp-hdr.is-active{box-shadow:inset 0 0 0 1.5px var(--acc);background:rgba(255,255,255,.06)}
+.grp-hdr.is-selected:not(.is-active){box-shadow:inset 0 0 0 1px rgba(250,250,250,.22);background:rgba(255,255,255,.04)}
+.grp-hdr.is-hidden{opacity:.38}
+.grp-content{flex:1;display:flex;align-items:center;gap:3px;padding-right:6px;min-width:0;height:30px}
+.grp-name{flex:1;font-size:11.5px;font-weight:500;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.grp-hdr.modifier .grp-name{color:var(--cyan)}
+/* Disabled mirror modifier name dims back */
+.grp-hdr.modifier.mod-off .grp-name{color:var(--m2)}
+.grp-acts{display:flex;align-items:center;gap:1px;opacity:0;transition:opacity .12s}
+.grp-hdr:hover .grp-acts,.grp-hdr.is-active .grp-acts{opacity:1}
+/* Multi-select: suppress hover actions + tooltips on selected items */
+.multi-sel .lyr-card.is-selected .lyr-acts,
+.multi-sel .grp-hdr.is-selected .grp-acts{opacity:0 !important;pointer-events:none}
+
+.caret{display:flex;align-items:center;justify-content:center;color:var(--m2);transition:transform .15s;width:14px;height:14px}
+.caret.open{transform:rotate(90deg)}
+
+/* Rename input */
+.ren-inp{flex:1;background:rgba(255,255,255,.09);border:1px solid var(--cyan);border-radius:3px;color:var(--text);font-family:inherit;font-size:11.5px;padding:1px 4px;outline:none;min-width:0}
+
+/* Drop indicators */
+.drop-before{box-shadow:0 -2px 0 var(--cyan) !important}
+.drop-after{box-shadow:0 2px 0 var(--cyan) !important}
+.drop-into{box-shadow:inset 0 0 0 1.5px var(--cyan) !important}
+.drop-mask{box-shadow:inset 0 0 0 2px var(--cyan) !important;background:rgba(103,232,249,.06) !important}
+
+/* ── Status bar + command bar ───────────── */
+#status-bar{
+  border-top:1px solid var(--border);font-size:10px;color:var(--m2);
+  display:flex;align-items:center;flex-shrink:0;background:var(--p2);
+  min-height:32px;padding:0 8px;gap:0;
+}
+.sb-idle{color:var(--m2);padding:0 2px}
+.sb-sel-label{color:var(--cyan);font-weight:500;white-space:nowrap;flex-shrink:0;padding:0 2px}
+.sb-sep{width:1px;height:14px;background:var(--border);flex-shrink:0;margin:0 5px}
+.sb-cmds{display:flex;align-items:center;gap:1px;flex-shrink:0}
+.sb-spacer{flex:1;min-width:4px}
+.sb-total{color:var(--m2);font-size:10px;white-space:nowrap;padding:0 2px}
+.s-hint{color:var(--cyan);font-style:italic;padding:0 2px}
+.cb{width:20px;height:20px;display:flex;align-items:center;justify-content:center;border-radius:3px;border:none;background:none;color:var(--muted);cursor:pointer;transition:color .12s,background .12s;flex-shrink:0}
+.cb:hover{color:var(--text);background:rgba(255,255,255,.08)}
+.cb.del:hover{color:var(--red)}
+.cb.mask-btn{color:rgba(103,232,249,.5)}
+.cb.mask-btn:hover{color:var(--cyan);background:rgba(103,232,249,.1)}
+.cb.mask-btn.ineligible{color:rgba(255,255,255,.18);cursor:not-allowed}
+.cb.mask-btn.ineligible:hover{background:none;color:rgba(255,255,255,.18)}
+
+/* ── Shortcut legend ─────────────────────── */
+#scl{position:fixed;bottom:20px;right:20px;z-index:300}
+#scb{width:28px;height:28px;border-radius:14px;background:var(--p2);border:1px solid var(--border);color:var(--muted);cursor:pointer;font-family:inherit;font-size:12px;display:flex;align-items:center;justify-content:center;transition:color .12s,border-color .12s}
+#scb:hover{color:var(--text);border-color:var(--m2)}
+#scp{position:absolute;bottom:36px;right:0;width:260px;background:var(--p2);border:1px solid var(--border);border-radius:8px;padding:12px;box-shadow:0 4px 20px rgba(0,0,0,.6)}
+#scp.hidden{display:none}
+.sch{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px}
+.scr{display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:10px}
+.scl-t{color:var(--muted)}.sck{display:flex;gap:3px;align-items:center}
+kbd{background:rgba(255,255,255,.08);border:1px solid var(--border);border-radius:3px;padding:1px 5px;font-family:inherit;font-size:9px;color:var(--text)}
+.sc-note{font-size:9px;color:var(--cyan);padding:3px 0}
+</style>
+</head>
+<body>
+
+<div id="panel">
+  <div id="titlebar">
+    <span id="tl-label">Layers</span>
+    <div id="add-wrap">
+      <button class="tb-btn" id="add-btn">
+        <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="4.5" y1="1" x2="4.5" y2="8"/><line x1="1" y1="4.5" x2="8" y2="4.5"/></svg>
+        Add
+        <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 3L4 5.5L6.5 3"/></svg>
+      </button>
+      <div id="add-menu" class="hidden">
+        <div class="am-item" data-add="layer">Empty Layer</div>
+        <div class="am-item" data-add="group">Empty Group</div>
+        <div class="am-sep"></div>
+        <div class="am-item" data-add="algo">Algorithm Layer <span class="am-hint">wave table</span></div>
+        <div class="am-item" data-add="mirror">Mirror Modifier Group</div>
+      </div>
+    </div>
+  </div>
+  <div id="toolbar">
+    <div id="sw">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><circle cx="5" cy="5" r="3.5"/><line x1="7.5" y1="7.5" x2="11" y2="11"/></svg>
+      <input id="si" type="text" placeholder="Search layers…" autocomplete="off" spellcheck="false">
+    </div>
+    <button id="fb" title="Filter by type">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M1 2h10M3 6h6M5 10h2"/></svg>
+    </button>
+    <div id="fd" class="hidden"></div>
+  </div>
+  <div id="layer-list"></div>
+  <div id="status-bar"></div>
+</div>
+
+<div id="scl">
+  <button id="scb">?</button>
+  <div id="scp" class="hidden">
+    <div class="sch">Keyboard Shortcuts</div>
+    <div class="scr"><span class="scl-t">Select All</span><span class="sck"><kbd>⌘</kbd><kbd>A</kbd></span></div>
+    <div class="scr"><span class="scl-t">Duplicate</span><span class="sck"><kbd>⌘</kbd><kbd>D</kbd></span></div>
+    <div class="scr"><span class="scl-t">Group</span><span class="sck"><kbd>⌘</kbd><kbd>G</kbd></span></div>
+    <div class="scr"><span class="scl-t">Ungroup</span><span class="sck"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>G</kbd></span></div>
+    <div class="scr"><span class="scl-t">Move Up/Down</span><span class="sck"><kbd>⌘</kbd><kbd>↑↓</kbd></span></div>
+    <div class="scr"><span class="scl-t">Delete</span><span class="sck"><kbd>⌫</kbd></span></div>
+    <div class="scr"><span class="scl-t">Deselect</span><span class="sck"><kbd>Esc</kbd></span></div>
+    <div class="scr"><span class="scl-t">⌘+click</span><span class="sck">multi-select</span></div>
+    <div class="scr"><span class="scl-t">⇧+click</span><span class="sck">range select</span></div>
+    <div class="scr"><span class="scl-t">Rename</span><span class="sck">dbl-click name</span></div>
+    <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+      <div class="sc-note">Shape/SVG/polygon/pen → hover for mask button</div>
+      <div class="sc-note">Group → hover for ungroup button</div>
+      <div class="sc-note">Multi-select → bottom command bar</div>
+      <div class="sc-note">Hide group → hides all children</div>
+      <div class="sc-note">Hide mirror modifier → disables it</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════ MASK ELIGIBILITY ══════════════
+const CLIP_SOURCES=new Set(['shape','svg','polygon','pen']);
+
+// ═══════════ DATA ═════════════════════════
+let LAYERS=[
+  {id:'g1',name:'Mirror Modifier',isGroup:true,modifier:true,modEnabled:true,pen:'#a78bfa',vis:true,collapsed:false,parentId:null},
+  {id:'g3',name:'Inner Style',isGroup:true,modifier:false,modEnabled:false,pen:'#a78bfa',vis:true,collapsed:false,parentId:'g1'},
+  {id:'l1',name:'Flow A',type:'flowfield',pen:'#a78bfa',vis:true,parentId:'g3'},
+  {id:'l2',name:'Tide Lines',type:'wavetable',pen:'#a78bfa',vis:true,parentId:'g3'},
+  {id:'l3',name:'Outer Lines',type:'rings',pen:'#c084fc',vis:true,parentId:'g1'},
+  // shape = CLIP_SOURCE, already a mask source
+  {id:'l9',name:'Ink Silhouette',type:'shape',pen:'#34d399',vis:true,parentId:null,isMaskSrc:true,maskGid:'m1'},
+  {id:'l4',name:'Organic Growth',type:'hyphae',pen:'#34d399',vis:true,parentId:null,isMasked:true,maskGid:'m1'},
+  {id:'l5',name:'Contour Stack',type:'topo',pen:'#60a5fa',vis:true,parentId:null,isMasked:true,maskGid:'m1'},
+  // pen = CLIP_SOURCE; Golden Spiral below can be masked by it
+  {id:'l10',name:'Pencil Border',type:'pen',pen:'#fb923c',vis:true,parentId:null},
+  {id:'l6',name:'Golden Spiral',type:'spiral',pen:'#fbbf24',vis:true,parentId:null},
+  {id:'g2',name:'Ring System',isGroup:true,modifier:false,modEnabled:false,pen:'#f87171',vis:true,collapsed:false,parentId:null},
+  {id:'l7',name:'Inner Ring',type:'rings',pen:'#f87171',vis:true,parentId:'g2'},
+  {id:'g4',name:'Details',isGroup:true,modifier:false,modEnabled:false,pen:'#f87171',vis:true,collapsed:false,parentId:'g2'},
+  {id:'l8',name:'Ring Hatch',type:'grid',pen:'#f87171',vis:true,parentId:'g4'},
+];
+
+// ═══════════ STATE ════════════════════════
+const S={
+  activeId:'l6',selectedIds:new Set(['l10','l6']),lastSelId:'l6',
+  lockedIds:new Set(),searchQ:'',filterType:'all',
+  filterOpen:false,scOpen:false,addOpen:false,groupN:0,
+};
+const DRAG={id:null};
+
+// ═══════════ ICONS ════════════════════════
+const SA=`stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"`;
+const ico=(p,s=12)=>`<svg width="${s}" height="${s}" viewBox="0 0 12 12" fill="none" stroke="currentColor" ${SA}>${p}</svg>`;
+const I={
+  eye:      ()=>ico(`<ellipse cx="6" cy="6" rx="5" ry="3.5"/><circle cx="6" cy="6" r="1.5" fill="currentColor" stroke="none"/>`),
+  eyeOff:   ()=>ico(`<path d="M1 1.5l10 9M3.5 3C2.2 3.9 1 6 1 6s2.2 3.5 5 3.5c.9 0 1.7-.2 2.4-.6"/><path d="M9 8.8C10 7.9 11 6 11 6S8.8 2.5 6 2.5c-.4 0-.7 0-1.1.1"/>`),
+  lock:     ()=>ico(`<rect x="2.5" y="5.5" width="7" height="5" rx="1"/><path d="M4 5.5V4a2 2 0 1 1 4 0v1.5"/><line x1="6" y1="7.5" x2="6" y2="8.5"/>`),
+  lockOpen: ()=>ico(`<rect x="2.5" y="5.5" width="7" height="5" rx="1"/><path d="M4 5.5V4a2 2 0 1 1 4 0" stroke-dasharray="2 1.5"/>`),
+  folder:   ()=>ico(`<path d="M1 4C1 3 1.7 2.5 2.5 2.5H5l1 1.5h3.5C10.3 4 11 4.7 11 5.5V9c0 .8-.7 1.5-1.5 1.5h-7C1.7 10.5 1 9.8 1 9V4z"/>`),
+  grpPlus:  ()=>ico(`<path d="M1 4C1 3 1.7 2.5 2.5 2.5H4.5l1 1.5h4C10.3 4 11 4.7 11 5.5V9c0 .8-.7 1.5-1.5 1.5h-7C1.7 10.5 1 9.8 1 9V4z"/><line x1="6" y1="6" x2="6" y2="9"/><line x1="4.5" y1="7.5" x2="7.5" y2="7.5"/>`),
+  caret:    ()=>ico(`<path d="M4.5 3l3 3-3 3"/>`),
+  trash:    ()=>ico(`<line x1="2" y1="3.5" x2="10" y2="3.5"/><path d="M4.5 3.5V2.5h3v1M4 5l.4 4h3.2l.4-4"/>`),
+  dup:      ()=>ico(`<rect x="4.5" y="1" width="6" height="6" rx="1"/><rect x="1.5" y="4" width="6" height="7" rx="1" fill="var(--panel)" stroke="currentColor"/>`),
+  expand:   ()=>ico(`<line x1="1.5" y1="3" x2="7.5" y2="3"/><line x1="1.5" y1="6" x2="7.5" y2="6"/><line x1="1.5" y1="9" x2="7.5" y2="9"/><line x1="10" y1="7" x2="10" y2="11" stroke-width="1.9"/><line x1="8" y1="9" x2="12" y2="9" stroke-width="1.9"/>`,12),
+  /* Mask source: solid rect (source) + dashed rect (clipped content) */
+  maskSrc:  ()=>ico(`<rect x="3.5" y="5" width="8" height="6.5" rx="1" stroke-dasharray="2 1.5"/><rect x="0.5" y="1" width="7.5" height="5.5" rx="1"/>`),
+  /* Ungroup: broken corner frame + dashed inner box */
+  ungroup:  ()=>ico(`<path d="M1 3.5V2h1.5M9.5 2H11v1.5M1 8.5V10h1.5M9.5 10H11V8.5"/><rect x="3.5" y="3.5" width="5" height="5" rx=".5" stroke-dasharray="1.5 1.2"/>`),
+  /* Algorithm icons */
+  flowfield:()=>ico(`<path d="M1 4c1.2-2 2.4-2 3 0s1.8 2 3 0 1.8-2 3 0M1 8c1.2-2 2.4-2 3 0s1.8 2 3 0 1.8-2 3 0"/>`),
+  wavetable:()=>ico(`<path d="M1 6c.6-2.5 1.2-2.5 2 0s1.4 2.5 2 0 1.4-2.5 2 0 1.4 2.5 2 0 .6-2 1-1.5"/>`),
+  hyphae:   ()=>ico(`<path d="M6 11V7M6 7L3.5 4.5M6 7L8.5 4.5M3.5 4.5L2 3M3.5 4.5L4.2 2.5M8.5 4.5L7.2 2.5M8.5 4.5L10 3"/>`),
+  topo:     ()=>ico(`<circle cx="6" cy="6" r="1.5"/><circle cx="6" cy="6" r="3.2"/><circle cx="6" cy="6" r="5"/>`),
+  spiral:   ()=>ico(`<path d="M6 6c0 0 .8 0 .8-.8s-.8-.8-1.5-.5-1.3 1-1.2 2 .8 2.3 2.4 2.3S9 8 9 6.2 7.7 3 5.5 3 2 4.5 2 6.5"/>`),
+  rings:    ()=>ico(`<circle cx="6" cy="6" r="2"/><circle cx="6" cy="6" r="4.5"/>`),
+  grid:     ()=>ico(`<line x1="1" y1="4.5" x2="11" y2="4.5"/><line x1="1" y1="7.5" x2="11" y2="7.5"/><line x1="4" y1="1.5" x2="4" y2="10.5"/><line x1="8" y1="1.5" x2="8" y2="10.5"/>`),
+  /* Geometric types — shape=hexagon (user request), polygon=pentagon, pen=nib, svg=file */
+  shape:    ()=>ico(`<path d="M6 1.5L10 3.75L10 8.25L6 10.5L2 8.25L2 3.75Z"/>`),
+  polygon:  ()=>ico(`<path d="M6 1.5L10.3 4.6L8.6 9.6H3.4L1.7 4.6Z"/>`),
+  pen:      ()=>ico(`<path d="M8.5 1.5L11 4L5 10H1.5V6.5L7.5 1.5ZM8.5 1.5L11 4M2 9.5L3.5 8"/>`),
+  svg:      ()=>ico(`<rect x="1.5" y="2" width="9" height="8" rx="1"/><path d="M3.5 7L4.5 5L6 7.5L7 6L9 8" stroke-width="1.2"/>`),
+};
+
+// ═══════════ HELPERS ══════════════════════
+const find  = id => LAYERS.find(l=>l.id===id);
+const esc   = s  => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+function isAnc(a,b){let c=find(b);while(c&&c.parentId){if(c.parentId===a)return true;c=find(c.parentId);}return false;}
+
+function isAncLocked(id){
+  let c=find(id);
+  while(c&&c.parentId){if(S.lockedIds.has(c.parentId))return true;c=find(c.parentId);}
+  return false;
+}
+function effLocked(id){return S.lockedIds.has(id)||isAncLocked(id);}
+
+function flatOrder(){
+  const r=[];
+  const w=p=>LAYERS.filter(l=>l.parentId===p).forEach(l=>{r.push(l.id);if(l.isGroup&&!l.collapsed)w(l.id);});
+  w(null);return r;
+}
+
+function passes(l){
+  const q=S.searchQ.toLowerCase(),ft=S.filterType;
+  const ok=()=>{if(q&&!l.name.toLowerCase().includes(q))return false;if(ft==='all')return true;if(ft==='groups')return l.isGroup;return l.type===ft;};
+  if(ok())return true;
+  if(l.isGroup)return LAYERS.filter(c=>c.parentId===l.id).some(c=>passes(c));
+  return false;
+}
+
+function nameEl(L,cls){
+  const sp=document.createElement('span');sp.className=cls;
+  const q=S.searchQ;
+  if(!q){sp.textContent=L.name;return sp;}
+  const lo=L.name.toLowerCase(),qi=q.toLowerCase(),idx=lo.indexOf(qi);
+  if(idx===-1){sp.textContent=L.name;return sp;}
+  sp.innerHTML=esc(L.name.slice(0,idx))+'<mark>'+esc(L.name.slice(idx,idx+q.length))+'</mark>'+esc(L.name.slice(idx+q.length));
+  return sp;
+}
+
+/* Find first gap in naming sequence: base → base 2 → base 3 → … */
+function uniqueName(base){
+  const names=new Set(LAYERS.map(l=>l.name));
+  if(!names.has(base))return base;
+  let n=2;while(names.has(base+' '+n))n++;
+  return base+' '+n;
+}
+
+/* Set visibility, cascading to all descendants for groups */
+function setVis(L,vis){
+  L.vis=vis;
+  if(L.isGroup&&!L.modifier){
+    const cascade=id=>{
+      LAYERS.filter(l=>l.parentId===id).forEach(c=>{c.vis=vis;if(c.isGroup)cascade(c.id);});
+    };
+    cascade(L.id);
+  }
+  renderAll();
+}
+
+// ═══════════ RENAME ═══════════════════════
+let _dblId=null,_dblTime=0;
+function triggerRename(el,L){
+  if(!L)return;
+  const inp=document.createElement('input');inp.className='ren-inp';inp.type='text';inp.value=L.name;
+  el.replaceWith(inp);inp.focus();inp.select();
+  let done=false;
+  const save=()=>{if(done)return;done=true;L.name=inp.value.trim()||L.name;renderAll();};
+  inp.addEventListener('blur',save);
+  inp.addEventListener('keydown',e2=>{e2.stopPropagation();if(e2.key==='Enter')inp.blur();if(e2.key==='Escape'){done=true;renderAll();}});
+  inp.addEventListener('click',e3=>e3.stopPropagation());
+  inp.addEventListener('mousedown',e4=>e4.stopPropagation());
+}
+
+// ═══════════ BUTTON FACTORIES ═════════════
+function mkEye(L){
+  const b=document.createElement('button');
+  if(L.isGroup&&L.modifier){
+    // Mirror modifier: eye toggles modEnabled, not vis
+    const on=L.modEnabled!==false;
+    b.className='ib'+(on?'':' vis-off');
+    b.innerHTML=on?I.eye():I.eyeOff();
+    b.title=on?'Disable mirror modifier':'Enable mirror modifier';
+    b.addEventListener('click',e=>{e.stopPropagation();L.modEnabled=!on;renderAll();});
+  } else {
+    b.className='ib'+(L.vis?'':' vis-off');
+    b.innerHTML=L.vis?I.eye():I.eyeOff();
+    b.title=L.vis?'Hide (cascades to children)':'Show';
+    b.addEventListener('click',e=>{e.stopPropagation();setVis(L,!L.vis);});
+  }
+  return b;
+}
+
+function mkLock(L){
+  const selfLk=S.lockedIds.has(L.id);
+  const ancLk=isAncLocked(L.id);
+  const lk=selfLk||ancLk;
+  const b=document.createElement('button');
+  if(ancLk&&!selfLk){
+    b.className='ib lk-anc';b.innerHTML=I.lock();
+    b.title='Locked by parent — unlock the parent first';
+    b.addEventListener('click',e=>{e.stopPropagation();toast('Parent is locked — unlock the parent group first');});
+  } else {
+    b.className='ib '+(lk?'lk-on':'lk-off');
+    b.innerHTML=lk?I.lock():I.lockOpen();
+    b.title=lk?'Unlock':'Lock';
+    b.addEventListener('click',e=>{
+      e.stopPropagation();
+      S.lockedIds.has(L.id)?S.lockedIds.delete(L.id):S.lockedIds.add(L.id);
+      renderAll();
+    });
+  }
+  return b;
+}
+
+function mkAb(cls,iconFn,title,fn){
+  const b=document.createElement('button');b.className='ab'+(cls?' '+cls:'');b.title=title;
+  b.innerHTML=iconFn();b.addEventListener('click',e=>{e.stopPropagation();fn();});return b;
+}
+function mkCb(cls,iconFn,title,fn){
+  const b=document.createElement('button');b.className='cb'+(cls?' '+cls:'');b.title=title;
+  b.innerHTML=iconFn();b.addEventListener('click',e=>{e.stopPropagation();fn();});return b;
+}
+
+// ═══════════ BUILD CARD ═══════════════════
+function buildCard(L){
+  const card=document.createElement('div');card.className='lyr-card';card.dataset.id=L.id;
+  if(S.activeId===L.id)card.classList.add('is-active');
+  if(S.selectedIds.has(L.id))card.classList.add('is-selected');
+  if(!L.vis)card.classList.add('is-hidden');
+  if(effLocked(L.id))card.classList.add('is-locked');
+
+  const inner=document.createElement('div');inner.className='card-inner';
+  const cz=document.createElement('div');cz.className='caret-zone';inner.appendChild(cz);
+  const bar=document.createElement('div');bar.className='clr-bar';bar.style.background=L.pen;inner.appendChild(bar);
+  const body=document.createElement('div');body.className='card-body';
+
+  // Row 1: eye | lock | name | pen-dot
+  const r1=document.createElement('div');r1.className='r1';
+  r1.appendChild(mkEye(L));r1.appendChild(mkLock(L));
+  const nm=nameEl(L,'lyr-name');r1.appendChild(nm);
+  const pd=document.createElement('span');pd.className='pen-dot';pd.style.background=L.pen;pd.title=L.pen;r1.appendChild(pd);
+  body.appendChild(r1);
+
+  // Row 2: algo-icon | algo-text | [mask-btn?] | expand | dup | delete
+  const r2=document.createElement('div');r2.className='r2';
+  const ai=document.createElement('span');ai.className='aico';ai.innerHTML=(I[L.type]||I.grid)();r2.appendChild(ai);
+  const al=document.createElement('span');al.className='algo-label';al.textContent=L.type||'';r2.appendChild(al);
+  const acts=document.createElement('div');acts.className='lyr-acts';
+
+  if(CLIP_SOURCES.has(L.type)){
+    const isSrc=!!L.isMaskSrc;
+    const mb=mkAb(
+      'mask-btn'+(isSrc?' is-src':''),I.maskSrc,
+      isSrc?'Remove clipping mask (click to deactivate)':'Make clipping mask — clips layer below',
+      ()=>isSrc?removeMaskSrc(L):convertToMaskSrc(L)
+    );
+    acts.appendChild(mb);
+  }
+  acts.appendChild(mkAb('',I.expand,'Expand',()=>toast('Expand: '+L.name)));
+  acts.appendChild(mkAb('',I.dup,'Duplicate (⌘D)',()=>dupLyr(L.id)));
+  acts.appendChild(mkAb('del',I.trash,'Delete',()=>delLyr(L.id)));
+  r2.appendChild(acts);
+  body.appendChild(r2);
+  inner.appendChild(body);
+  card.appendChild(inner);
+
+  card.addEventListener('click',e=>doSel(e,L.id));
+  if(!effLocked(L.id))bindDrag(card,L.id);
+  return card;
+}
+
+// ═══════════ BUILD MASKED CARD (V2) ═══════
+function buildMaskedCard(L){
+  const card=document.createElement('div');
+  card.className='lyr-card masked-v2';card.dataset.id=L.id;
+  if(S.activeId===L.id)card.classList.add('is-active');
+  if(S.selectedIds.has(L.id))card.classList.add('is-selected');
+  if(!L.vis)card.classList.add('is-hidden');
+  if(effLocked(L.id))card.classList.add('is-locked');
+
+  const r1=document.createElement('div');r1.className='r1';
+  r1.appendChild(mkEye(L));r1.appendChild(mkLock(L));
+  const nm=nameEl(L,'lyr-name');r1.appendChild(nm);
+  const pd=document.createElement('span');pd.className='pen-dot';pd.style.background=L.pen;pd.title=L.pen;r1.appendChild(pd);
+  card.appendChild(r1);
+
+  const r2=document.createElement('div');r2.className='r2';
+  const ai=document.createElement('span');ai.className='aico';ai.innerHTML=(I[L.type]||I.grid)();r2.appendChild(ai);
+  const al=document.createElement('span');al.className='algo-label';al.textContent=L.type||'';r2.appendChild(al);
+  const acts=document.createElement('div');acts.className='lyr-acts';
+  acts.appendChild(mkAb('',I.expand,'Expand',()=>toast('Expand: '+L.name)));
+  acts.appendChild(mkAb('',I.dup,'Duplicate',()=>dupLyr(L.id)));
+  acts.appendChild(mkAb('del',I.trash,'Delete',()=>delLyr(L.id)));
+  r2.appendChild(acts);card.appendChild(r2);
+
+  card.addEventListener('click',e=>doSel(e,L.id));
+  if(!effLocked(L.id))bindDrag(card,L.id);
+
+  card.addEventListener('dragover',e=>{
+    e.preventDefault();e.stopPropagation();
+    const r=card.getBoundingClientRect(),pct=(e.clientY-r.top)/r.height;
+    clrDrop(card);card.classList.add(pct<0.5?'drop-before':'drop-after');
+    e.dataTransfer.dropEffect='move';setHint('Drop inside clipping mask');
+  });
+  card.addEventListener('dragleave',e=>{if(!card.contains(e.relatedTarget)){clrDrop(card);setHint(null);}});
+  card.addEventListener('drop',e=>{
+    e.preventDefault();
+    const pos=card.classList.contains('drop-before')?'before':'after';
+    clrDrop(card);setHint(null);
+    if(DRAG.id&&DRAG.id!==L.id)doMove(DRAG.id,L.id,pos,true);
+  });
+  return card;
+}
+
+// ═══════════ BUILD MASKED GROUP (V2) ══════
+/* When a whole group is masked, render its header with dashed styling + children below */
+function buildMaskedGroup(L){
+  const wrap=document.createElement('div');
+
+  const hdr=buildGrpHdr(L);
+  hdr.classList.add('masked-v2');
+  wrap.appendChild(hdr);
+
+  if(!L.collapsed){
+    const cw=document.createElement('div');cw.className='tree-children';cw.style.marginLeft='20px';
+    renderChildren(L.id,cw);
+    wrap.appendChild(cw);
+  }
+  return wrap;
+}
+
+// ═══════════ BUILD GROUP HEADER ═══════════
+function buildGrpHdr(L){
+  const hdr=document.createElement('div');
+  hdr.className='grp-hdr'+(L.modifier?' modifier':'');hdr.dataset.id=L.id;
+  if(S.activeId===L.id)hdr.classList.add('is-active');
+  if(S.selectedIds.has(L.id))hdr.classList.add('is-selected');
+  if(effLocked(L.id))hdr.classList.add('is-locked');
+  if(!L.vis)hdr.classList.add('is-hidden');
+  // Mirror modifier: dim name when disabled
+  if(L.modifier&&!L.modEnabled)hdr.classList.add('mod-off');
+
+  const cz=document.createElement('div');cz.className='caret-zone';
+  const car=document.createElement('span');car.className='caret'+(L.collapsed?'':' open');car.innerHTML=I.caret();
+  car.addEventListener('click',e=>{e.stopPropagation();L.collapsed=!L.collapsed;renderAll();});
+  cz.appendChild(car);hdr.appendChild(cz);
+
+  const bar=document.createElement('div');bar.className='clr-bar';bar.style.background=L.pen||'var(--b2)';hdr.appendChild(bar);
+
+  const gc=document.createElement('div');gc.className='grp-content';
+  gc.appendChild(mkEye(L));gc.appendChild(mkLock(L));
+  const fi=document.createElement('span');fi.className='aico';fi.innerHTML=I.folder();gc.appendChild(fi);
+  const nm=nameEl(L,'grp-name');gc.appendChild(nm);
+
+  // No toggle pill — eye button handles mirror modifier enable/disable
+
+  const ga=document.createElement('div');ga.className='grp-acts';
+  ga.appendChild(mkAb('',I.ungroup,'Ungroup (⌘⇧G)',()=>{
+    S.selectedIds.clear();S.selectedIds.add(L.id);S.activeId=L.id;ungroupSel();
+  }));
+  ga.appendChild(mkAb('',I.dup,'Duplicate group',()=>dupLyr(L.id)));
+  ga.appendChild(mkAb('del',I.trash,'Delete group',()=>delLyr(L.id)));
+  gc.appendChild(ga);hdr.appendChild(gc);
+
+  hdr.addEventListener('click',e=>{if(e.target.closest('.caret,.ib,.ab'))return;doSel(e,L.id);});
+
+  hdr.addEventListener('dragover',e=>{
+    e.preventDefault();e.stopPropagation();
+    const r=hdr.getBoundingClientRect(),pct=(e.clientY-r.top)/r.height;
+    clrDrop(hdr);
+    const zone=pct<0.35?'drop-before':pct>0.65?'drop-after':'drop-into';
+    hdr.classList.add(zone);e.dataTransfer.dropEffect='move';
+    setHint(zone==='drop-into'?'Drop into group':null);
+  });
+  hdr.addEventListener('dragleave',e=>{if(!hdr.contains(e.relatedTarget)){clrDrop(hdr);setHint(null);}});
+  hdr.addEventListener('drop',e=>{
+    e.preventDefault();
+    const pos=hdr.classList.contains('drop-before')?'before':hdr.classList.contains('drop-into')?'into':'after';
+    clrDrop(hdr);setHint(null);
+    if(DRAG.id&&DRAG.id!==L.id&&!isAnc(DRAG.id,L.id))doMove(DRAG.id,L.id,pos);
+  });
+
+  if(!effLocked(L.id))bindDrag(hdr,L.id);
+  return hdr;
+}
+
+// ═══════════ BUILD GROUP ELEMENT ══════════
+function buildGroup(L){
+  const wrap=document.createElement('div');wrap.className='tree-group';wrap.dataset.id=L.id;
+  wrap.appendChild(buildGrpHdr(L));
+  if(!L.collapsed){
+    const cw=document.createElement('div');cw.className='tree-children';
+    renderChildren(L.id,cw);wrap.appendChild(cw);
+  }
+  return wrap;
+}
+
+// ═══════════ MASK SOURCE DROP ZONE ════════
+function addSrcDrop(card,srcL){
+  card.addEventListener('dragover',e=>{
+    e.preventDefault();e.stopPropagation();
+    const r=card.getBoundingClientRect(),pct=(e.clientY-r.top)/r.height;
+    clrDrop(card);
+    const zone=pct<0.2?'drop-before':pct>0.8?'drop-after':'drop-mask';
+    card.classList.add(zone);e.dataTransfer.dropEffect='move';
+    setHint(zone==='drop-mask'?'Add to clipping mask':null);
+  });
+  card.addEventListener('dragleave',e=>{if(!card.contains(e.relatedTarget)){clrDrop(card);setHint(null);}});
+  card.addEventListener('drop',e=>{
+    e.preventDefault();
+    const pos=card.classList.contains('drop-before')?'before':card.classList.contains('drop-mask')?'mask-into':'after';
+    clrDrop(card);setHint(null);
+    if(DRAG.id&&DRAG.id!==srcL.id)doMove(DRAG.id,srcL.id,pos,false);
+  });
+}
+
+// ═══════════ RENDER CHILDREN ══════════════
+function renderChildren(parentId,container){
+  const isRoot=parentId===null;
+  const children=LAYERS.filter(l=>l.parentId===parentId);
+
+  const srcByGid={},maskedByGid={};
+  children.forEach(l=>{
+    if(l.isMaskSrc)srcByGid[l.maskGid]=l;
+    if(l.isMasked)(maskedByGid[l.maskGid]=maskedByGid[l.maskGid]||[]).push(l);
+  });
+  const done=new Set();
+
+  const app=el=>{
+    if(isRoot){container.appendChild(el);}
+    else{const w=document.createElement('div');w.className='tree-child-wrap';w.appendChild(el);container.appendChild(w);}
+  };
+
+  children.forEach(l=>{
+    if(done.has(l.id))return;
+    if(!passes(l)){done.add(l.id);return;}
+
+    if(l.isMaskSrc){
+      const masked=(maskedByGid[l.maskGid]||[]).filter(m=>passes(m));
+      (maskedByGid[l.maskGid]||[]).forEach(m=>done.add(m.id));
+      done.add(l.id);
+      const srcCard=buildCard(l);addSrcDrop(srcCard,l);app(srcCard);
+      // Masked items: groups get buildMaskedGroup, leaves get buildMaskedCard
+      masked.forEach(m=>app(m.isGroup?buildMaskedGroup(m):buildMaskedCard(m)));
+    } else if(l.isMasked){
+      done.add(l.id); // handled above by its source
+    } else if(l.isGroup){
+      done.add(l.id);app(buildGroup(l));
+    } else {
+      done.add(l.id);
+      const card=buildCard(l);
+      card.addEventListener('dragover',e=>{
+        e.preventDefault();e.stopPropagation();
+        const r=card.getBoundingClientRect(),pct=(e.clientY-r.top)/r.height;
+        clrDrop(card);card.classList.add(pct<0.5?'drop-before':'drop-after');e.dataTransfer.dropEffect='move';
+      });
+      card.addEventListener('dragleave',e=>{if(!card.contains(e.relatedTarget))clrDrop(card);});
+      card.addEventListener('drop',e=>{
+        e.preventDefault();
+        const pos=card.classList.contains('drop-before')?'before':'after';
+        clrDrop(card);if(DRAG.id&&DRAG.id!==l.id)doMove(DRAG.id,l.id,pos);
+      });
+      app(card);
+    }
+  });
+}
+
+// ═══════════ DRAG ═════════════════════════
+function clrDrop(el){el.classList.remove('drop-before','drop-after','drop-into','drop-mask');}
+function bindDrag(el,id){
+  el.draggable=true;
+  el.addEventListener('dragstart',e=>{DRAG.id=id;e.dataTransfer.effectAllowed='move';requestAnimationFrame(()=>el.classList.add('dragging'));});
+  el.addEventListener('dragend',()=>{DRAG.id=null;el.classList.remove('dragging');document.querySelectorAll('[class*=drop-]').forEach(x=>clrDrop(x));setHint(null);});
+}
+
+// ═══════════ MOVE ═════════════════════════
+/*
+  Bundle rule: when a mask SOURCE is moved, its masked children travel with it
+  (parentId updates to match the new destination). This preserves mask stacks
+  when dropped into groups or reordered, satisfying:
+    "drop Ring System into mask stack → children stay"
+    "drop mask stack into group → children follow"
+*/
+function doMove(srcId,tgtId,pos,joinMask=false){
+  const src=find(srcId),tgt=find(tgtId);
+  if(!src||!tgt||src===tgt)return;
+
+  // Collect masked children that travel with src (only if src is the mask source)
+  const maskedKids=src.isMaskSrc
+    ? LAYERS.filter(l=>l.isMasked&&l.maskGid===src.maskGid)
+    : [];
+  const bundleIds=new Set([src.id,...maskedKids.map(l=>l.id)]);
+
+  // Build a clean array without the bundle
+  const arr=LAYERS.filter(l=>!bundleIds.has(l.id));
+  const ti=arr.indexOf(tgt);
+  if(ti===-1){LAYERS.length=0;LAYERS.push(...arr,...maskedKids,[src]);renderAll();return;}
+
+  if(pos==='mask-into'){
+    // Adding src alone to an existing mask; orphan its former masked kids
+    maskedKids.forEach(l=>{l.isMasked=false;delete l.maskGid;});
+    src.isMasked=true;src.isMaskSrc=false;src.maskGid=tgt.maskGid;src.parentId=tgt.parentId;
+    arr.splice(ti+1,0,src,...maskedKids); // orphaned kids return as plain layers
+    toast('✓ '+src.name+' added to clipping mask');
+
+  } else if(pos==='before'||pos==='after'){
+    const newParent=tgt.parentId;
+    src.parentId=newParent;
+    if(joinMask||tgt.isMasked){
+      // src joins the mask; orphan its former kids
+      maskedKids.forEach(l=>{l.isMasked=false;delete l.maskGid;});
+      src.isMasked=true;src.maskGid=tgt.maskGid;src.isMaskSrc=false;
+      const at=pos==='before'?ti:ti+1;
+      arr.splice(at,0,src,...maskedKids);
+    } else {
+      // Full bundle moves together; clear mask membership from src if it was masked
+      if(src.isMasked){src.isMasked=false;delete src.maskGid;}
+      maskedKids.forEach(l=>l.parentId=newParent);
+      const at=pos==='before'?ti:ti+1;
+      arr.splice(at,0,src,...maskedKids);
+    }
+
+  } else { // 'into' group — full bundle enters group
+    if(src.isMasked){src.isMasked=false;delete src.maskGid;}
+    src.parentId=tgtId;
+    maskedKids.forEach(l=>l.parentId=tgtId);
+    arr.splice(ti+1,0,src,...maskedKids);
+  }
+
+  LAYERS.length=0;LAYERS.push(...arr);
+  renderAll();
+}
+
+// ═══════════ SELECTION ════════════════════
+function doSel(e,id){
+  const now=Date.now();
+  const onName=e.target&&e.target.closest&&e.target.closest('.lyr-name,.grp-name');
+  if(onName&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&now-_dblTime<350&&_dblId===id){
+    _dblTime=0;_dblId=null;
+    const el=document.querySelector(`[data-id="${id}"] .lyr-name,[data-id="${id}"] .grp-name`);
+    if(el)triggerRename(el,find(id));
+    return;
+  }
+  _dblTime=now;_dblId=id;
+  if(e.metaKey||e.ctrlKey){S.selectedIds.has(id)?S.selectedIds.delete(id):S.selectedIds.add(id);S.activeId=id;}
+  else if(e.shiftKey&&S.lastSelId){
+    const ord=flatOrder(),a=ord.indexOf(S.lastSelId),b=ord.indexOf(id),lo=Math.min(a,b),hi=Math.max(a,b);
+    S.selectedIds.clear();for(let i=lo;i<=hi;i++)S.selectedIds.add(ord[i]);S.activeId=id;
+  } else{S.selectedIds.clear();S.selectedIds.add(id);S.activeId=id;}
+  S.lastSelId=id;renderAll();
+}
+
+// ═══════════ OPERATIONS ═══════════════════
+let _uid=100;const nid=(p='x')=>p+(++_uid);
+
+function dupLyr(id){
+  const src=find(id);if(!src)return;
+  const d=Object.assign({},src,{id:nid(src.isGroup?'g':'l'),name:src.name+' copy',isMaskSrc:false,isMasked:false});
+  delete d.maskGid;
+  LAYERS.splice(LAYERS.indexOf(src)+1,0,d);
+  S.selectedIds.clear();S.selectedIds.add(d.id);S.activeId=d.id;renderAll();
+}
+function _killCleanup(kill){
+  // Kill masked items whose source is being killed
+  LAYERS.filter(l=>l.isMasked&&!kill.has(l.id)).forEach(l=>{
+    const src=LAYERS.find(s=>s.isMaskSrc&&s.maskGid===l.maskGid);
+    if(src&&kill.has(src.id))kill.add(l.id);
+  });
+  // Clean up sources whose masked children are all killed
+  LAYERS.forEach(l=>{
+    if(l.isMaskSrc&&!kill.has(l.id)){
+      const hasMasked=LAYERS.some(m=>m.isMasked&&m.maskGid===l.maskGid&&!kill.has(m.id));
+      if(!hasMasked){l.isMaskSrc=false;delete l.maskGid;}
+    }
+  });
+}
+function delLyr(id){
+  const kill=new Set([id]);let chg=true;
+  while(chg){chg=false;LAYERS.forEach(l=>{if(l.parentId&&kill.has(l.parentId)&&!kill.has(l.id)){kill.add(l.id);chg=true;}});}
+  _killCleanup(kill);
+  LAYERS=LAYERS.filter(l=>!kill.has(l.id));
+  S.selectedIds=new Set([...S.selectedIds].filter(i=>!kill.has(i)));
+  S.lockedIds=new Set([...S.lockedIds].filter(i=>!kill.has(i)));
+  if(kill.has(S.activeId))S.activeId=LAYERS[0]?.id??null;renderAll();
+}
+function delSel(){
+  const kill=new Set([...S.selectedIds]);let chg=true;
+  while(chg){chg=false;LAYERS.forEach(l=>{if(l.parentId&&kill.has(l.parentId)&&!kill.has(l.id)){kill.add(l.id);chg=true;}});}
+  _killCleanup(kill);
+  LAYERS=LAYERS.filter(l=>!kill.has(l.id));S.selectedIds.clear();
+  S.lockedIds=new Set([...S.lockedIds].filter(i=>!kill.has(i)));
+  if(kill.has(S.activeId))S.activeId=LAYERS[0]?.id??null;renderAll();
+}
+function dupSel(){const toDup=[...S.selectedIds];S.selectedIds.clear();toDup.forEach(id=>dupLyr(id));}
+function groupSel(){
+  const ids=[...S.selectedIds];if(ids.length<1)return;
+  const parents=new Set(ids.map(id=>find(id)?.parentId));
+  if(parents.size>1){toast('Select layers from the same level to group');return;}
+  const parentId=[...parents][0]??null;
+  const selSet=new Set(ids);
+  const minIdx=Math.min(...LAYERS.filter(l=>l.parentId===parentId&&selSet.has(l.id)).map(l=>LAYERS.indexOf(l)));
+  const gid=nid('g');
+  LAYERS.splice(minIdx,0,{id:gid,name:uniqueName('Group'),isGroup:true,modifier:false,modEnabled:false,vis:true,collapsed:false,parentId,pen:'#71717a'});
+  ids.forEach(id=>{const l=find(id);if(l)l.parentId=gid;});
+  S.selectedIds.clear();S.selectedIds.add(gid);S.activeId=gid;renderAll();
+}
+function ungroupSel(){
+  [...S.selectedIds].forEach(id=>{
+    const grp=find(id);if(!grp||!grp.isGroup)return;
+    const pId=grp.parentId;const kids=LAYERS.filter(l=>l.parentId===id);
+    kids.forEach(l=>l.parentId=pId);LAYERS.splice(LAYERS.indexOf(grp),1);
+    S.selectedIds.delete(id);kids.forEach(c=>S.selectedIds.add(c.id));
+    if(S.activeId===id)S.activeId=kids[0]?.id;
+  });renderAll();
+}
+function expandSel(){
+  let any=false;
+  [...S.selectedIds].forEach(id=>{const l=find(id);if(l&&l.isGroup&&l.collapsed){l.collapsed=false;any=true;}});
+  if(!any)toast('No collapsed groups in selection');else renderAll();
+}
+function moveActive(dir){
+  const l=find(S.activeId);if(!l)return;
+  const sibs=LAYERS.filter(s=>s.parentId===l.parentId),si=sibs.indexOf(l),li=LAYERS.indexOf(l);
+  if(dir===-1&&si>0){const p=sibs[si-1],pi=LAYERS.indexOf(p);LAYERS[pi]=l;LAYERS[li]=p;}
+  else if(dir===1&&si<sibs.length-1){const n=sibs[si+1],ni=LAYERS.indexOf(n);LAYERS[ni]=l;LAYERS[li]=n;}
+  renderAll();
+}
+
+/* Convert eligible layer to mask source — clips the next sibling */
+function convertToMaskSrc(L){
+  const sibs=LAYERS.filter(l=>l.parentId===L.parentId);
+  const idx=sibs.indexOf(L);
+  if(idx>=sibs.length-1){toast('No layer below to clip — move a layer beneath '+L.name+' first');return;}
+  const nextL=sibs[idx+1];
+  if(nextL.isMaskSrc){toast('The layer below is already a mask source');return;}
+  const gid='m'+(++_uid);
+  L.isMaskSrc=true;L.maskGid=gid;
+  if(nextL.isMasked)nextL.maskGid=gid;
+  else{nextL.isMasked=true;nextL.maskGid=gid;nextL.isMaskSrc=false;}
+  toast('✓ '+L.name+' is now a clipping mask');
+  renderAll();
+}
+
+/* Remove mask source — frees all masked receivers */
+function removeMaskSrc(L){
+  const gid=L.maskGid;
+  L.isMaskSrc=false;delete L.maskGid;
+  LAYERS.forEach(l=>{if(l.isMasked&&l.maskGid===gid){l.isMasked=false;delete l.maskGid;}});
+  toast('✓ Clipping mask removed from '+L.name);
+  renderAll();
+}
+
+/* Create mask group from multi-selection — top eligible layer becomes source */
+function maskSelGroup(){
+  const sorted=[...S.selectedIds].map(id=>find(id)).filter(Boolean)
+    .sort((a,b)=>LAYERS.indexOf(a)-LAYERS.indexOf(b));
+  if(sorted.length<2){toast('Select 2+ layers to create a mask group');return;}
+  const topL=sorted[0];
+  if(!CLIP_SOURCES.has(topL.type)&&!topL.isGroup){
+    toast('Top selected layer must be a shape, SVG, polygon, or pen layer');return;
+  }
+  const gid='m'+(++_uid);
+  topL.isMaskSrc=true;topL.maskGid=gid;topL.isMasked=false;
+  sorted.slice(1).forEach(l=>{l.isMasked=true;l.maskGid=gid;l.isMaskSrc=false;});
+  S.selectedIds.clear();S.activeId=topL.id;renderAll();toast('✓ Clipping mask group created');
+}
+
+/* Add layer variants */
+function addNewLayer(base,type,pen,isGroup,modifier){
+  const name=uniqueName(base);
+  const id=nid(isGroup?'g':'l');
+  if(isGroup){
+    LAYERS.push({id,name,isGroup:true,modifier:!!modifier,modEnabled:true,vis:true,collapsed:false,parentId:null,pen:pen||'#71717a'});
+  } else {
+    LAYERS.push({id,name,type,pen:pen||'#71717a',vis:true,parentId:null});
+  }
+  S.selectedIds.clear();S.selectedIds.add(id);S.activeId=id;renderAll();
+}
+
+function toast(msg){
+  let t=document.getElementById('_toast');if(t)t.remove();
+  t=document.createElement('div');t.id='_toast';
+  t.style.cssText='position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:#27272a;border:1px solid #3f3f46;color:#e4e4e7;font-family:JetBrains Mono,monospace;font-size:11px;padding:6px 14px;border-radius:6px;z-index:999;pointer-events:none;white-space:nowrap';
+  t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2400);
+}
+
+// ═══════════ FILTER ═══════════════════════
+const FOPTS=[
+  {v:'all',l:'All Layers'},{v:'groups',l:'Groups Only'},
+  {v:'shape',l:'Shape'},{v:'svg',l:'SVG'},{v:'polygon',l:'Polygon'},{v:'pen',l:'Pen'},
+  {v:'flowfield',l:'Flowfield'},{v:'wavetable',l:'Wavetable'},{v:'hyphae',l:'Hyphae'},
+  {v:'topo',l:'Topo'},{v:'spiral',l:'Spiral'},{v:'rings',l:'Rings'},{v:'grid',l:'Grid'},
+];
+function buildFd(){
+  const d=document.getElementById('fd');d.innerHTML='';
+  FOPTS.forEach(o=>{
+    const row=document.createElement('div');row.className='fo'+(S.filterType===o.v?' sel':'');
+    row.innerHTML=`<span style="width:10px;font-size:9px">${S.filterType===o.v?'✓':''}</span><span>${o.l}</span>`;
+    row.addEventListener('click',()=>{S.filterType=o.v;S.filterOpen=false;document.getElementById('fd').classList.add('hidden');updFBtn();renderAll();});
+    d.appendChild(row);
+  });
+}
+function updFBtn(){document.getElementById('fb').classList.toggle('active',S.filterType!=='all'||!!S.searchQ);}
+
+// ═══════════ RENDER ═══════════════════════
+function setHint(msg){
+  if(!DRAG.id)return;
+  const bar=document.getElementById('status-bar');bar.innerHTML='';
+  if(msg){const h=document.createElement('span');h.className='s-hint';h.textContent='⟶ '+msg;bar.appendChild(h);}
+  else renderStatusBar();
+}
+
+function renderStatusBar(){
+  const bar=document.getElementById('status-bar');bar.innerHTML='';
+  const sel=S.selectedIds.size;
+
+  if(sel>1){
+    const lbl=document.createElement('span');lbl.className='sb-sel-label';
+    lbl.textContent=sel+' layers selected';bar.appendChild(lbl);
+    const sep=document.createElement('div');sep.className='sb-sep';bar.appendChild(sep);
+
+    const cmds=document.createElement('div');cmds.className='sb-cmds';
+    const hasGrp=[...S.selectedIds].some(id=>find(id)?.isGroup);
+    const sorted=[...S.selectedIds].map(id=>find(id)).filter(Boolean)
+      .sort((a,b)=>LAYERS.indexOf(a)-LAYERS.indexOf(b));
+    const topL=sorted[0];
+    const maskOk=topL&&(CLIP_SOURCES.has(topL.type)||topL.isGroup);
+
+    cmds.appendChild(mkCb('',I.grpPlus,'Group selected (⌘G)',groupSel));
+    if(hasGrp)cmds.appendChild(mkCb('',I.ungroup,'Ungroup selected (⌘⇧G)',ungroupSel));
+    cmds.appendChild(mkCb('mask-btn'+(maskOk?'':' ineligible'),I.maskSrc,
+      maskOk?'Create clipping mask group':'Top layer must be shape, SVG, polygon, or pen',
+      maskOk?maskSelGroup:()=>toast('Top selected layer must be a shape, SVG, polygon, or pen')));
+    cmds.appendChild(mkCb('',I.expand,'Expand selected groups',expandSel));
+    cmds.appendChild(mkCb('',I.dup,'Duplicate selected (⌘D)',dupSel));
+    cmds.appendChild(mkCb('del',I.trash,'Delete selected (⌫)',delSel));
+    bar.appendChild(cmds);
+
+    const sp=document.createElement('div');sp.className='sb-spacer';bar.appendChild(sp);
+    const tot=document.createElement('span');tot.className='sb-total';tot.textContent=LAYERS.length+' total';bar.appendChild(tot);
+  } else {
+    const s=document.createElement('span');s.className='sb-idle';s.textContent=LAYERS.length+' layers';bar.appendChild(s);
+  }
+}
+
+function renderAll(){
+  const list=document.getElementById('layer-list');list.innerHTML='';
+  renderChildren(null,list);
+  list.classList.toggle('multi-sel',S.selectedIds.size>1);
+  renderStatusBar();
+}
+
+// ═══════════ KEYBOARD ═════════════════════
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT')return;
+  const m=e.metaKey||e.ctrlKey;
+  if(m&&e.key==='a'){e.preventDefault();S.selectedIds=new Set(LAYERS.map(l=>l.id));S.activeId=LAYERS[LAYERS.length-1]?.id;renderAll();}
+  else if(m&&e.key==='d'){e.preventDefault();if(S.selectedIds.size>1)dupSel();else if(S.activeId)dupLyr(S.activeId);}
+  else if(m&&e.shiftKey&&(e.key==='G'||e.key==='g')){e.preventDefault();ungroupSel();}
+  else if(m&&e.key==='g'){e.preventDefault();groupSel();}
+  else if(m&&e.key==='ArrowUp'){e.preventDefault();moveActive(-1);}
+  else if(m&&e.key==='ArrowDown'){e.preventDefault();moveActive(1);}
+  else if((e.key==='Delete'||e.key==='Backspace')&&!m){e.preventDefault();delSel();}
+  else if(e.key==='Escape'){
+    S.selectedIds.clear();S.activeId=null;
+    S.filterOpen=false;document.getElementById('fd').classList.add('hidden');
+    S.addOpen=false;document.getElementById('add-menu').classList.add('hidden');
+    S.scOpen=false;document.getElementById('scp').classList.add('hidden');
+    renderAll();
+  }
+});
+
+// ═══════════ EVENTS ═══════════════════════
+document.getElementById('si').addEventListener('input',e=>{S.searchQ=e.target.value;updFBtn();renderAll();});
+document.getElementById('fb').addEventListener('click',e=>{
+  e.stopPropagation();S.filterOpen=!S.filterOpen;
+  const d=document.getElementById('fd');
+  if(S.filterOpen){buildFd();d.classList.remove('hidden');}else d.classList.add('hidden');
+});
+
+/* Add dropdown */
+document.getElementById('add-btn').addEventListener('click',e=>{
+  e.stopPropagation();S.addOpen=!S.addOpen;
+  document.getElementById('add-menu').classList.toggle('hidden',!S.addOpen);
+});
+document.getElementById('add-menu').addEventListener('click',e=>{
+  const item=e.target.closest('.am-item');if(!item)return;
+  S.addOpen=false;document.getElementById('add-menu').classList.add('hidden');
+  const t=item.dataset.add;
+  if(t==='layer')   addNewLayer('Empty Layer','flowfield','#71717a',false,false);
+  else if(t==='group')  addNewLayer('Empty Group',null,'#71717a',true,false);
+  else if(t==='algo')   addNewLayer('Wave Table','wavetable','#71717a',false,false);
+  else if(t==='mirror') addNewLayer('Mirror Modifier',null,'#67e8f9',true,true);
+});
+
+document.getElementById('scb').addEventListener('click',e=>{
+  e.stopPropagation();S.scOpen=!S.scOpen;
+  document.getElementById('scp').classList.toggle('hidden',!S.scOpen);
+});
+
+document.addEventListener('click',()=>{
+  if(S.filterOpen){S.filterOpen=false;document.getElementById('fd').classList.add('hidden');}
+  if(S.addOpen){S.addOpen=false;document.getElementById('add-menu').classList.add('hidden');}
+  if(S.scOpen){S.scOpen=false;document.getElementById('scp').classList.add('hidden');}
+});
+
+document.addEventListener('dragend',()=>setHint(null));
+
+// ═══════════ INIT ═════════════════════════
+renderAll();
+</script>
+</body>
+</html>

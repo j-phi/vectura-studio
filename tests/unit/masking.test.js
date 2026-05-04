@@ -25,7 +25,7 @@ describe('Masking runtime', () => {
 
   test('closed expanded layers are eligible mask parents', () => {
     const { Layer, Masking } = runtime.window.Vectura;
-    const layer = new Layer('shape', 'expanded', 'Shape');
+    const layer = new Layer('shape', 'shape', 'Shape');
     layer.paths = [[
       { x: 60, y: 60 },
       { x: 140, y: 60 },
@@ -42,7 +42,7 @@ describe('Masking runtime', () => {
 
   test('open paths are not eligible mask parents', () => {
     const { Layer, Masking } = runtime.window.Vectura;
-    const layer = new Layer('open', 'expanded', 'Open');
+    const layer = new Layer('open', 'shape', 'Open');
     layer.paths = [[
       { x: 40, y: 60 },
       { x: 180, y: 120 },
@@ -58,7 +58,7 @@ describe('Masking runtime', () => {
     const engine = new VectorEngine();
     engine.layers = [];
 
-    const maskParent = new Layer('mask-parent', 'expanded', 'Mask Parent');
+    const maskParent = new Layer('mask-parent', 'shape', 'Mask Parent');
     maskParent.paths = [[
       { x: 80, y: 80 },
       { x: 160, y: 80 },
@@ -68,7 +68,7 @@ describe('Masking runtime', () => {
     ]];
     maskParent.mask.enabled = true;
 
-    const child = new Layer('child', 'expanded', 'Child');
+    const child = new Layer('child', 'shape', 'Child');
     child.parentId = maskParent.id;
     child.paths = [[
       { x: 20, y: 100 },
@@ -107,11 +107,11 @@ describe('Masking runtime', () => {
     expect(PathBoolean.pointInPolygon({ x: cx, y: cy }, circle)).toBe(true);
     expect(PathBoolean.pointInPolygon({ x: cx, y: cy - r - 4 }, circle)).toBe(false);
 
-    const maskParent = new Layer('mask-circle', 'expanded', 'Mask Circle');
+    const maskParent = new Layer('mask-circle', 'shape', 'Mask Circle');
     maskParent.paths = [circle];
     maskParent.mask.enabled = true;
 
-    const child = new Layer('child', 'expanded', 'Child');
+    const child = new Layer('child', 'shape', 'Child');
     child.parentId = maskParent.id;
     child.paths = [];
     for (let row = 0; row < 8; row += 1) {
@@ -168,13 +168,13 @@ describe('Masking runtime', () => {
       },
     };
 
-    const maskParent = new Layer('mask-circle-edited', 'expanded', 'Mask Circle');
+    const maskParent = new Layer('mask-circle-edited', 'shape', 'Mask Circle');
     maskParent.sourcePaths = [circle];
     maskParent.mask.enabled = true;
     maskParent.params.smoothing = 0;
     maskParent.params.simplify = 0;
 
-    const child = new Layer('child-line', 'expanded', 'Child');
+    const child = new Layer('child-line', 'shape', 'Child');
     child.parentId = maskParent.id;
     child.paths = [[
       { x: 20, y: 110 },
@@ -205,7 +205,7 @@ describe('Masking runtime', () => {
     const engine = new VectorEngine();
     engine.layers = [];
 
-    const maskParent = new Layer('mask-parent-hidden', 'expanded', 'Mask Parent');
+    const maskParent = new Layer('mask-parent-hidden', 'shape', 'Mask Parent');
     maskParent.paths = [[
       { x: 80, y: 80 },
       { x: 160, y: 80 },
@@ -216,7 +216,7 @@ describe('Masking runtime', () => {
     maskParent.mask.enabled = true;
     maskParent.mask.hideLayer = true;
 
-    const child = new Layer('child', 'expanded', 'Child');
+    const child = new Layer('child', 'shape', 'Child');
     child.parentId = maskParent.id;
     child.paths = [[
       { x: 20, y: 100 },
@@ -237,7 +237,7 @@ describe('Masking runtime', () => {
     const engine = new VectorEngine();
     engine.layers = [];
 
-    const outer = new Layer('outer', 'expanded', 'Outer');
+    const outer = new Layer('outer', 'shape', 'Outer');
     outer.paths = [[
       { x: 40, y: 40 },
       { x: 200, y: 40 },
@@ -247,7 +247,7 @@ describe('Masking runtime', () => {
     ]];
     outer.mask.enabled = true;
 
-    const inner = new Layer('inner', 'expanded', 'Inner');
+    const inner = new Layer('inner', 'shape', 'Inner');
     inner.parentId = outer.id;
     inner.paths = [[
       { x: 100, y: 70 },
@@ -258,7 +258,7 @@ describe('Masking runtime', () => {
     ]];
     inner.mask.enabled = true;
 
-    const child = new Layer('child', 'expanded', 'Child');
+    const child = new Layer('child', 'shape', 'Child');
     child.parentId = inner.id;
     child.paths = [[
       { x: 20, y: 100 },
@@ -308,7 +308,7 @@ describe('Masking runtime', () => {
     const engine = new VectorEngine();
     engine.layers = [];
 
-    const outer = new Layer('outer-mask', 'expanded', 'Outer');
+    const outer = new Layer('outer-mask', 'shape', 'Outer');
     outer.paths = [[
       { x: 40, y: 60 },
       { x: 200, y: 60 },
@@ -318,7 +318,7 @@ describe('Masking runtime', () => {
     ]];
     outer.mask.enabled = true;
 
-    const active = new Layer('active-mask', 'expanded', 'Active');
+    const active = new Layer('active-mask', 'shape', 'Active');
     active.parentId = outer.id;
     active.paths = [[
       { x: 100, y: 80 },
@@ -329,7 +329,7 @@ describe('Masking runtime', () => {
     ]];
     active.mask.enabled = true;
 
-    const child = new Layer('child-line', 'expanded', 'Child');
+    const child = new Layer('child-line', 'shape', 'Child');
     child.parentId = active.id;
     child.paths = [[
       { x: 20, y: 100 },
@@ -362,7 +362,7 @@ describe('Masking runtime', () => {
       layers: [
         {
           id: 'target',
-          type: 'expanded',
+          type: 'shape',
           name: 'Target',
           params: {},
           parentId: null,
@@ -388,7 +388,7 @@ describe('Masking runtime', () => {
 
   test('getLayerSilhouette returns empty array for a layer with no paths', () => {
     const { Layer, Masking } = runtime.window.Vectura;
-    const empty = new Layer('empty', 'expanded', 'Empty');
+    const empty = new Layer('empty', 'shape', 'Empty');
     empty.paths = [];
 
     const polygons = Masking.getLayerSilhouette(empty, null, bounds);
@@ -419,14 +419,14 @@ describe('Masking runtime', () => {
     engine.layers = [];
 
     // Open (non-closed) path — cannot form a silhouette
-    const openMask = new Layer('open-mask', 'expanded', 'Open Mask');
+    const openMask = new Layer('open-mask', 'shape', 'Open Mask');
     openMask.paths = [[
       { x: 40, y: 60 },
       { x: 200, y: 60 },
     ]];
     openMask.mask.enabled = true;
 
-    const child = new Layer('child', 'expanded', 'Child');
+    const child = new Layer('child', 'shape', 'Child');
     child.parentId = openMask.id;
     child.paths = [[
       { x: 20, y: 100 },

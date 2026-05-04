@@ -21,7 +21,7 @@ describe('Mask preview renderer helpers', () => {
       },
     };
     const renderer = new Renderer('main-canvas', engine);
-    const maskLayer = new Layer('mask-preview-shape', 'expanded', 'Mask');
+    const maskLayer = new Layer('mask-preview-shape', 'shape', 'Mask');
     maskLayer.paths = [[
       { x: 80, y: 80 },
       { x: 160, y: 80 },
@@ -94,5 +94,22 @@ describe('Mask preview renderer helpers', () => {
     expect(resizedBounds.maxY - resizedBounds.minY).toBeLessThan(baseBounds.maxY - baseBounds.minY);
     expect(rotatedBounds.maxX - rotatedBounds.minX).toBeCloseTo(baseBounds.maxY - baseBounds.minY, 5);
     expect(rotatedBounds.maxY - rotatedBounds.minY).toBeCloseTo(baseBounds.maxX - baseBounds.minX, 5);
+  });
+
+  test('getMaskPreviewClipPolygons with null temp returns unmodified clip polygons (locked-mask child drag)', () => {
+    const { renderer, maskLayer } = createRenderer();
+    const withTransform = renderer.getMaskPreviewClipPolygons(maskLayer, {
+      dx: 40,
+      dy: 20,
+      scaleX: 1,
+      scaleY: 1,
+      origin: { x: 120, y: 100 },
+      rotation: 0,
+    })[0];
+    const withNull = renderer.getMaskPreviewClipPolygons(maskLayer, null)[0];
+
+    // Passing null means the mask is fixed — polygons must not be shifted
+    expect(withNull[0].x).toBeCloseTo(withTransform[0].x - 40, 5);
+    expect(withNull[0].y).toBeCloseTo(withTransform[0].y - 20, 5);
   });
 });

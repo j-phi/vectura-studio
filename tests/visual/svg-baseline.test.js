@@ -238,12 +238,12 @@ const buildMirroredMaskedSceneSvg = (runtime) => {
 
   const maskPath = [];
   maskPath.meta = { kind: 'circle', cx: 176, cy: 110, r: 30 };
-  const maskParent = new Layer('mirror-mask-parent', 'expanded', 'Mirror Mask');
+  const maskParent = new Layer('mirror-mask-parent', 'shape', 'Mirror Mask');
   maskParent.parentId = modifierId;
   maskParent.sourcePaths = [maskPath];
   maskParent.mask.enabled = true;
 
-  const waveform = new Layer('mirror-masked-wave', 'expanded', 'Mirror Wave');
+  const waveform = new Layer('mirror-masked-wave', 'shape', 'Mirror Wave');
   waveform.parentId = maskParent.id;
   waveform.sourcePaths = [];
   for (let row = 0; row < 9; row += 1) {

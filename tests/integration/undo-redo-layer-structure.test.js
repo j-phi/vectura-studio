@@ -96,13 +96,13 @@ describe('Undo/redo layer-structure integration', () => {
     await waitForUi();
 
     const app = window.app;
-    const maskParent = new Layer('undo-mask-parent', 'expanded', 'Mask Parent');
+    const maskParent = new Layer('undo-mask-parent', 'shape', 'Mask Parent');
     maskParent.sourcePaths = [createSquarePath(80, 80, 100)];
     maskParent.params.curves = false;
     maskParent.params.smoothing = 0;
     maskParent.params.simplify = 0;
 
-    const child = new Layer('undo-mask-child', 'expanded', 'Masked Child');
+    const child = new Layer('undo-mask-child', 'shape', 'Masked Child');
     child.parentId = maskParent.id;
     child.sourcePaths = [createLinePath(40, 130, 220, 130)];
     child.params.curves = false;

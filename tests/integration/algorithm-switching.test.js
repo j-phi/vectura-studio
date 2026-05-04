@@ -25,7 +25,7 @@ describe('Algorithm switching', () => {
     const { window } = runtime;
     const layer = window.app.engine.getActiveLayer();
     expect(layer).toBeTruthy();
-    expect(layer.type).not.toBe('expanded');
+    expect(layer.type).not.toBe('shape');
     expect(layer.sourcePaths).toBeNull();
     expect(layer.paths.length).toBeGreaterThan(0);
   });

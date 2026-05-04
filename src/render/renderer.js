@@ -11,6 +11,7 @@
   const getLayerSilhouette = Masking.getLayerSilhouette || (() => []);
   const buildLayerMaskedPaths = Masking.buildLayerMaskedPaths || ((layer) => layer?.effectivePaths || layer?.paths || []);
   const applyMaskToPaths = Masking.applyMaskToPaths || ((paths) => paths || []);
+  const getMaskingAncestors = Masking.getMaskingAncestors || (() => []);
   const normalizeDocumentUnits = UnitUtils.normalizeDocumentUnits || ((value) => (`${value || ''}`.trim().toLowerCase() === 'imperial' ? 'imperial' : 'metric'));
   const formatDocumentLength = UnitUtils.formatDocumentLength || ((valueMm, units, options = {}) => {
     const resolvedUnits = normalizeDocumentUnits(units);
@@ -343,6 +344,7 @@
       this.onScissor = null;
       this.onDirectEditStart = null;
       this.onDirectEditCommit = null;
+      this.isLayerLocked = null;
       this.lastM = { x: 0, y: 0 };
       this.snap = null;
       this.snapAllowed = true;
@@ -1089,7 +1091,7 @@
     }
 
     canEditSourceGeometry(layer) {
-      return Boolean(layer && !layer.isGroup && layer.type === 'expanded');
+      return Boolean(layer && !layer.isGroup && layer.type === 'shape');
     }
 
     getShapeMetaForLayer(layer, pathIndex = 0) {
@@ -1438,22 +1440,40 @@
     }
 
     buildMaskPreviewState(layer) {
-      if (!layer || !layer.mask?.enabled || !this.engine?.getLayerDescendants) return null;
-      const descendants = this.engine.getLayerDescendants(layer.id).filter((entry) => entry && !entry.isGroup);
-      if (!descendants.length) return null;
-      const bounds = this.engine.getBounds ? this.engine.getBounds() : this.engine.currentProfile;
-      const entries = descendants
-        .filter((entry) => entry.visible && !(entry.mask?.enabled && entry.mask?.hideLayer))
-        .map((entry) => ({
-          layerId: entry.id,
-          paths: buildLayerMaskedPaths(entry, this.engine, bounds, { excludeMaskLayerId: layer.id }),
-        }))
-        .filter((entry) => Array.isArray(entry.paths) && entry.paths.length);
-      return {
-        maskLayerId: layer.id,
-        descendantIds: new Set(descendants.map((entry) => entry.id)),
-        entries,
-      };
+      if (!layer) return null;
+      if (layer.mask?.enabled && this.engine?.getLayerDescendants) {
+        const descendants = this.engine.getLayerDescendants(layer.id).filter((entry) => entry && !entry.isGroup);
+        if (!descendants.length) return null;
+        const bounds = this.engine.getBounds ? this.engine.getBounds() : this.engine.currentProfile;
+        const entries = descendants
+          .filter((entry) => entry.visible && !(entry.mask?.enabled && entry.mask?.hideLayer))
+          .map((entry) => ({
+            layerId: entry.id,
+            paths: buildLayerMaskedPaths(entry, this.engine, bounds, { excludeMaskLayerId: layer.id }),
+          }))
+          .filter((entry) => Array.isArray(entry.paths) && entry.paths.length);
+        return {
+          maskLayerId: layer.id,
+          descendantIds: new Set(descendants.map((entry) => entry.id)),
+          entries,
+        };
+      }
+      if (this.isLayerLocked && this.engine) {
+        const maskingAncestors = getMaskingAncestors(layer, this.engine);
+        const lockedMask = maskingAncestors.find((a) => this.isLayerLocked?.(a.id));
+        if (lockedMask) {
+          const bounds = this.engine.getBounds ? this.engine.getBounds() : this.engine.currentProfile;
+          const paths = buildLayerMaskedPaths(layer, this.engine, bounds, { excludeMaskLayerId: lockedMask.id });
+          if (!paths.length) return null;
+          return {
+            maskLayerId: lockedMask.id,
+            descendantIds: new Set([layer.id]),
+            entries: [{ layerId: layer.id, paths }],
+            isChildDrag: true,
+          };
+        }
+      }
+      return null;
     }
 
     startMaskPreview(layer) {
@@ -2271,7 +2291,7 @@
         if (!outlineEnabled || !selectedLayers.length) return;
         selectedLayers.forEach((l) => {
           if (!l.visible || (l.mask?.enabled && l.mask?.hideLayer)) return;
-          const isLineLayer = l.parentId || l.type === 'expanded';
+          const isLineLayer = l.parentId || l.type === 'shape';
           if (!isLineLayer) return;
           const pen = SETTINGS.pens?.find((p) => p.id === l.penId) || null;
           const strokeWidth = pen?.width ?? l.strokeWidth ?? SETTINGS.strokeWidth;
@@ -2728,14 +2748,14 @@
         if (!activeLayer) return;
         const selectedLayers = this.getSelectedLayers();
         const selectionBounds = this.getSelectionBounds(selectedLayers);
-        if (this.activeTool === 'select' && selectedLayers.length === 1) {
+        if (this.activeTool === 'select' && selectedLayers.length === 1 && !this.isLayerLocked?.(selectedLayers[0].id)) {
           const shapeLayer = this.getSelectedShapeLayer();
           if (shapeLayer) {
             const shapeCorner = this.hitShapeCornerHandle(world, shapeLayer, 0);
             if (shapeCorner && this.beginShapeCornerDrag(shapeLayer, 0, shapeCorner, 'all')) return;
           }
         }
-        if (selectionBounds) {
+        if (selectionBounds && !selectedLayers.some(l => this.isLayerLocked?.(l.id))) {
           const handle = this.hitHandle(sx, sy, selectionBounds);
           if (handle) {
             this.isLayerDrag = true;
@@ -2767,11 +2787,16 @@
         const topLayer =
           this.activeTool === 'direct' ? this.findLayerAtPointPrecise(world) : this.findLayerAtPoint(world);
         if (topLayer && !this.selectedLayerIds.has(topLayer.id)) {
-          this.selectLayer(topLayer);
+          const maskGroup = this._getMaskGroupLayers(topLayer);
+          if (maskGroup && maskGroup.length > 1) {
+            this.setSelection(maskGroup.map(l => l.id), topLayer.id);
+          } else {
+            this.selectLayer(topLayer);
+          }
         }
         const updatedSelected = this.getSelectedLayers();
         const bounds = this.getSelectionBounds(updatedSelected);
-        if (bounds && this.pointInBounds(world, bounds)) {
+        if (bounds && this.pointInBounds(world, bounds) && !updatedSelected.some(l => this.isLayerLocked?.(l.id))) {
           this.isLayerDrag = true;
           this.snapAllowed = true;
           this.dragMode = 'move';
@@ -3690,11 +3715,27 @@
       const layers = this.engine.layers.slice().reverse();
       return (
         layers.find((layer) => {
-          if (!layer.visible) return false;
+          if (!layer.visible || (layer.mask?.enabled && layer.mask?.hideLayer)) return false;
+          if (this.isLayerLocked?.(layer.id)) return false;
           const bounds = this.getLayerBounds(layer);
           return bounds ? this.pointInBounds(world, bounds) : false;
         }) || null
       );
+    }
+
+    _getMaskGroupLayers(layer) {
+      if (!this.engine) return null;
+      let maskRoot = null;
+      const ancestorMasks = this.engine.getAncestorMaskLayers?.(layer);
+      if (ancestorMasks && ancestorMasks.length > 0) {
+        maskRoot = ancestorMasks[0];
+      } else if (layer.mask?.enabled && layer.maskCapabilities?.canSource) {
+        maskRoot = layer;
+      }
+      if (!maskRoot) return null;
+      const descendants = this.engine.getLayerDescendants(maskRoot.id);
+      if (!descendants || descendants.length === 0) return null;
+      return [maskRoot, ...descendants].filter(l => !this.isLayerLocked?.(l.id));
     }
 
     distanceToSegmentSq(p, a, b) {
@@ -3735,7 +3776,8 @@
       let best = null;
       let bestDist = Infinity;
       layers.forEach((layer) => {
-        if (!layer.visible || layer.isGroup) return;
+        if (!layer.visible || layer.isGroup || (layer.mask?.enabled && layer.mask?.hideLayer)) return;
+        if (this.isLayerLocked?.(layer.id)) return;
         const stroke = layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
         const tol = Math.max(1.5, stroke * 2);
         const tolSq = tol * tol;
@@ -3979,7 +4021,10 @@
       if (!this.maskPreview?.entries?.length || !this.tempTransform) return;
       const maskLayer = this.getMaskPreviewLayer();
       if (!maskLayer) return;
-      const clipPolygons = this.getMaskPreviewClipPolygons(maskLayer, this.tempTransform);
+      const isChildDrag = Boolean(this.maskPreview.isChildDrag);
+      // For child drag the mask is locked/fixed, so clip polygons don't move with tempTransform.
+      // For the normal case the mask itself is dragging, so clip polygons transform with it.
+      const clipPolygons = this.getMaskPreviewClipPolygons(maskLayer, isChildDrag ? null : this.tempTransform);
       if (!clipPolygons.length) return;
 
       this.maskPreview.entries.forEach((entry) => {
@@ -3989,6 +4034,9 @@
         const strokeWidth = pen?.width ?? layer.strokeWidth ?? SETTINGS.strokeWidth;
         const useCurves = Boolean(layer.params && layer.params.curves);
         const strokeStyle = pen?.color || layer.color;
+        // For child drag the paths are source geometry; apply tempTransform when tracing so they
+        // follow the cursor. For normal the paths are pre-computed at the destination position.
+        const pathTemp = isChildDrag ? this.tempTransform : null;
 
         this.ctx.save();
         this.ctx.globalAlpha = MASK_PREVIEW_ALPHA;
@@ -3997,7 +4045,7 @@
         this.ctx.lineJoin = 'round';
         this.ctx.strokeStyle = strokeStyle;
         this.ctx.beginPath();
-        (entry.paths || []).forEach((path) => this.traceLayerPath(path, layer, null, useCurves));
+        (entry.paths || []).forEach((path) => this.traceLayerPath(path, layer, pathTemp, useCurves));
         this.ctx.stroke();
         this.ctx.restore();
 
@@ -4005,12 +4053,13 @@
         this.ctx.beginPath();
         clipPolygons.forEach((polygon) => this.tracePolygonPath(polygon));
         this.ctx.clip();
+        this.ctx.globalAlpha = isChildDrag ? 0.5 : 1;
         this.ctx.lineWidth = strokeWidth;
         this.ctx.lineCap = layer.lineCap || 'round';
         this.ctx.lineJoin = 'round';
         this.ctx.strokeStyle = strokeStyle;
         this.ctx.beginPath();
-        (entry.paths || []).forEach((path) => this.traceLayerPath(path, layer, null, useCurves));
+        (entry.paths || []).forEach((path) => this.traceLayerPath(path, layer, pathTemp, useCurves));
         this.ctx.stroke();
         this.ctx.restore();
       });

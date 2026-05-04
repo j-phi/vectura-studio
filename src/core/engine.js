@@ -31,7 +31,7 @@
         return next;
       }));
 
-  const usesManualSourceGeometry = (layer) => Boolean(layer && !layer.isGroup && layer.type === 'expanded');
+  const usesManualSourceGeometry = (layer) => Boolean(layer && !layer.isGroup && layer.type === 'shape');
 
   const pathLength = OptimizationUtils.pathLength || (() => 0);
   const pathEndpoints = OptimizationUtils.pathEndpoints || (() => ({ start: { x: 0, y: 0 }, end: { x: 0, y: 0 } }));
@@ -106,6 +106,32 @@
       this.layers.push(layer);
       this.activeLayerId = id;
       this.computeAllDisplayGeometry();
+      return id;
+    }
+
+    addGroupLayer() {
+      const id = Math.random().toString(36).slice(2, 11);
+      SETTINGS.globalLayerCount = ++this._layerCounter;
+      const num = String(this._layerCounter).padStart(2, '0');
+      const layer = new Layer(id, 'group', `Group ${num}`);
+      layer.isGroup = true;
+      layer.groupType = 'group';
+      layer.groupCollapsed = false;
+      this.layers.push(layer);
+      this.activeLayerId = id;
+      return id;
+    }
+
+    addEmptyLayer() {
+      const id = Math.random().toString(36).slice(2, 11);
+      SETTINGS.globalLayerCount = ++this._layerCounter;
+      const num = String(this._layerCounter).padStart(2, '0');
+      const layer = new Layer(id, 'group', `Layer ${num}`);
+      layer.isGroup = true;
+      layer.groupType = 'layer';
+      layer.groupCollapsed = false;
+      this.layers.push(layer);
+      this.activeLayerId = id;
       return id;
     }
 
@@ -289,7 +315,6 @@
       const target = targetIndex >= 0 ? this.layers[targetIndex] : null;
       if (!target) return;
       const drawableCount = this.layers.filter((l) => !l.isGroup).length;
-      if (!target.isGroup && drawableCount <= 1) return;
       const pickNextActiveId = (remainingLayers, removedIndex, preferredIds = []) => {
         for (const preferredId of preferredIds) {
           if (remainingLayers.some((layer) => layer.id === preferredId)) return preferredId;
@@ -314,22 +339,16 @@
         return;
       }
       const removeIds = new Set([id]);
-      if (target.isGroup) {
-        const collect = (groupId) => {
-          this.layers.forEach((l) => {
-            if (l.parentId === groupId) {
-              removeIds.add(l.id);
-              if (l.isGroup) collect(l.id);
-            }
-          });
-        };
-        collect(id);
-        const childCount = Array.from(removeIds).filter((rid) => {
-          const layer = this.layers.find((l) => l.id === rid);
-          return layer && !layer.isGroup;
-        }).length;
-        if (drawableCount - childCount <= 0) return;
-      } else if (target.parentId) {
+      const collect = (parentId) => {
+        this.layers.forEach((l) => {
+          if (l.parentId === parentId) {
+            removeIds.add(l.id);
+            collect(l.id);
+          }
+        });
+      };
+      collect(id);
+      if (!target.isGroup && target.parentId) {
         const parentId = target.parentId;
         const remaining = this.layers.filter((l) => l.parentId === parentId && l.id !== id).length;
         const parent = this.layers.find((l) => l.id === parentId);
@@ -353,6 +372,11 @@
         return true;
       }
       return false;
+    }
+
+    getLayerById(id) {
+      if (!id) return null;
+      return this.layers.find((l) => l.id === id) || null;
     }
 
     getActiveLayer() {

@@ -89,7 +89,7 @@ describe('Engine integration workflows', () => {
     const engine = new VectorEngine();
     engine.layers = [];
 
-    const maskParent = new Layer('opt-mask-parent', 'expanded', 'Mask Parent');
+    const maskParent = new Layer('opt-mask-parent', 'shape', 'Mask Parent');
     maskParent.paths = [[
       { x: 80, y: 60 },
       { x: 160, y: 60 },
@@ -99,7 +99,7 @@ describe('Engine integration workflows', () => {
     ]];
     maskParent.mask.enabled = true;
 
-    const child = new Layer('opt-mask-child', 'expanded', 'Masked Child');
+    const child = new Layer('opt-mask-child', 'shape', 'Masked Child');
     child.parentId = maskParent.id;
     child.paths = [[
       { x: 20, y: 100 },
@@ -134,14 +134,14 @@ describe('Engine integration workflows', () => {
     const engine = new VectorEngine();
     engine.layers = [];
 
-    const left = new Layer('line-sort-left', 'expanded', 'Left');
+    const left = new Layer('line-sort-left', 'shape', 'Left');
     left.params.curves = false;
     left.sourcePaths = [[
       { x: 20, y: 40 },
       { x: 40, y: 40 },
     ]];
 
-    const right = new Layer('line-sort-right', 'expanded', 'Right');
+    const right = new Layer('line-sort-right', 'shape', 'Right');
     right.params.curves = false;
     right.sourcePaths = [[
       { x: 180, y: 40 },
@@ -171,7 +171,7 @@ describe('Engine integration workflows', () => {
     const engine = new VectorEngine();
     engine.layers = [];
 
-    const layer = new Layer('line-sort-vertical', 'expanded', 'Vertical Sweep');
+    const layer = new Layer('line-sort-vertical', 'shape', 'Vertical Sweep');
     layer.params.curves = false;
     layer.sourcePaths = [
       [{ x: 0, y: 0 }, { x: 10, y: 0 }],
@@ -199,7 +199,7 @@ describe('Engine integration workflows', () => {
     const engine = new VectorEngine();
     engine.layers = [];
 
-    const layer = new Layer('line-sort-horizontal', 'expanded', 'Horizontal Sweep');
+    const layer = new Layer('line-sort-horizontal', 'shape', 'Horizontal Sweep');
     layer.params.curves = false;
     layer.sourcePaths = [
       [{ x: 0, y: 0 }, { x: 0, y: 10 }],
@@ -227,14 +227,14 @@ describe('Engine integration workflows', () => {
     const engine = new VectorEngine();
     engine.layers = [];
 
-    const top = new Layer('line-sort-combined-top', 'expanded', 'Top');
+    const top = new Layer('line-sort-combined-top', 'shape', 'Top');
     top.params.curves = false;
     top.sourcePaths = [
       [{ x: 0, y: 0 }, { x: 10, y: 0 }],
       [{ x: 12, y: 20 }, { x: 22, y: 20 }],
     ];
 
-    const bottom = new Layer('line-sort-combined-bottom', 'expanded', 'Bottom');
+    const bottom = new Layer('line-sort-combined-bottom', 'shape', 'Bottom');
     bottom.params.curves = false;
     bottom.sourcePaths = [
       [{ x: 200, y: 10 }, { x: 210, y: 10 }],
@@ -270,7 +270,7 @@ describe('Engine integration workflows', () => {
     const engine = new VectorEngine();
     engine.layers = [];
 
-    const layer = new Layer('line-sort-none', 'expanded', 'Nearest Freeform');
+    const layer = new Layer('line-sort-none', 'shape', 'Nearest Freeform');
     layer.params.curves = false;
     layer.sourcePaths = [
       [{ x: 0, y: 0 }, { x: 10, y: 0 }],
@@ -317,5 +317,26 @@ describe('Engine integration workflows', () => {
     const afterSignature = pathSignature(engine.layers.map((item) => item.paths));
 
     expect(afterSignature).toBe(beforeSignature);
+  });
+
+  test('removing a non-group mask source also removes its parentId children', () => {
+    const { VectorEngine, Layer } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    engine.layers = [];
+
+    const src = new Layer('mask-src', 'shape', 'Mask Source');
+    src.mask = src.mask || {};
+    src.mask.enabled = true;
+
+    const childA = new Layer('mask-child-a', 'shape', 'Child A');
+    childA.parentId = src.id;
+
+    const childB = new Layer('mask-child-b', 'shape', 'Child B');
+    childB.parentId = src.id;
+
+    engine.layers.push(src, childA, childB);
+    engine.removeLayer(src.id);
+
+    expect(engine.layers).toHaveLength(0);
   });
 });

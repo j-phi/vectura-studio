@@ -1,0 +1,1685 @@
+<!DOCTYPE html>
+<!--
+  Vectura Studio — Theme Mockup: Meridian Blue
+  Single theme: Meridian structure + Standard blue palette
+  data-mode: dark | light
+-->
+<html lang="en" data-mode="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vectura Studio — Meridian Blue</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+
+/* ── STRUCTURAL CONSTANTS (mode-independent) ─────────────────── */
+:root{
+  --pane-left-width: 290px;
+  --pane-right-width: 258px;
+  --bottom-pane-height: 148px;
+  --font-ui: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-size-base: 12px;
+  --font-size-sm: 11px;
+  --font-size-xs: 10px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --row-height: 30px;
+}
+
+/* ── DARK MODE ───────────────────────────────────────────────── */
+[data-mode="dark"]{
+  --ui-bg: #1b1b1b;
+  --ui-panel: #252525;
+  --ui-panel-alt: #1e1e1e;
+  --ui-border: #363636;
+  --ui-border-hi: #484848;
+  --ui-text: #e0e0e0;
+  --ui-text-2: #a8a8a8;
+  --ui-muted: #686868;
+  --ui-accent: #4e9ee1;
+  --ui-accent-2: rgba(78,158,225,0.12);
+  --ui-danger: #e05252;
+  --ui-ctrl: #2c2c2c;
+  --ui-ctrl-hov: #343434;
+  --ui-workspace: #111111;
+  --ui-formula: #b0b0b0;
+  --slider-start: #80c4f0;
+  --shadow-sm: 0 1px 4px rgba(0,0,0,0.4);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.5);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.6);
+  --shadow-pane: 4px 0 24px rgba(0,0,0,0.35);
+}
+
+/* ── LIGHT MODE ──────────────────────────────────────────────── */
+[data-mode="light"]{
+  --ui-bg: #efefef;
+  --ui-panel: #fafafa;
+  --ui-panel-alt: #f2f2f2;
+  --ui-border: #c8c8c8;
+  --ui-border-hi: #a0a0a0;
+  --ui-text: #1a1a1a;
+  --ui-text-2: #505050;
+  --ui-muted: #888888;
+  --ui-accent: #0e6fe0;
+  --ui-accent-2: rgba(14,111,224,0.10);
+  --ui-danger: #c0392b;
+  --ui-ctrl: #ffffff;
+  --ui-ctrl-hov: #ebebeb;
+  --ui-workspace: #d5d5d5;
+  --ui-formula: #404040;
+  --slider-start: #60b0f0;
+  --shadow-sm: 0 1px 4px rgba(0,0,0,0.08);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.10);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.12);
+  --shadow-pane: 4px 0 20px rgba(0,0,0,0.07);
+}
+
+/* ── BASE ────────────────────────────────────────────────────── */
+html,body{height:100%;overflow:hidden}
+html{background:var(--ui-bg)}
+body{
+  font-family:var(--font-ui);
+  font-size:var(--font-size-base);
+  color:var(--ui-text);
+  background:var(--ui-bg);
+  height:100%;overflow:hidden;
+  transition:background 0.25s ease,color 0.2s ease;
+  -webkit-font-smoothing:antialiased;
+}
+.app-wrapper{display:flex;flex-direction:column;height:100vh;overflow:hidden;position:relative}
+
+/* ── HEADER ──────────────────────────────────────────────────── */
+.app-header{
+  display:flex;align-items:center;justify-content:space-between;
+  height:38px;padding:0 14px;
+  background:var(--ui-panel);
+  border-bottom:1px solid var(--ui-border);
+  flex-shrink:0;z-index:200;position:relative;gap:10px;
+  transition:background 0.2s,border-color 0.2s;
+}
+.brand{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.brand-sq{
+  width:11px;height:11px;
+  background:var(--ui-accent);
+  border-radius:var(--radius-sm);
+  flex-shrink:0;
+  box-shadow:0 0 8px var(--ui-accent-2);
+  transition:background 0.2s,box-shadow 0.2s;
+}
+.brand-name{
+  font-weight:700;letter-spacing:0.05em;font-size:12px;
+  color:var(--ui-accent);white-space:nowrap;
+  font-family:var(--font-mono);
+  transition:color 0.2s;
+}
+.brand-sub{font-weight:300;color:var(--ui-muted);letter-spacing:0}
+
+/* ── MENUS ───────────────────────────────────────────────────── */
+.menubar{display:flex;align-items:stretch;position:relative;gap:1px}
+.menu-item{position:relative;display:flex;align-items:stretch}
+.menu-trigger{
+  background:none;border:none;color:var(--ui-text-2);
+  font-family:var(--font-ui);font-size:var(--font-size-sm);font-weight:500;
+  padding:0 10px;cursor:pointer;letter-spacing:0;
+  transition:background 0.1s,color 0.1s;white-space:nowrap;
+  display:flex;align-items:center;border-radius:var(--radius-sm);
+}
+.menu-trigger:hover{background:var(--ui-ctrl-hov);color:var(--ui-text)}
+.menu-trigger.open{background:var(--ui-ctrl-hov);color:var(--ui-accent)}
+
+.menu-dropdown{
+  position:absolute;top:calc(100% + 5px);left:0;
+  min-width:244px;
+  background:var(--ui-panel);
+  border:1px solid var(--ui-border-hi);
+  border-top:3px solid var(--ui-accent);
+  border-radius:0 var(--radius-md) var(--radius-md) var(--radius-md);
+  box-shadow:var(--shadow-lg);
+  z-index:9999;display:none;overflow:hidden;
+}
+.menu-dropdown.open{display:block}
+
+.menu-entry{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 14px;
+  min-height:var(--row-height);
+  cursor:pointer;gap:20px;
+  font-size:var(--font-size-sm);font-weight:500;
+  font-family:var(--font-ui);
+  color:var(--ui-text);
+  transition:background 0.07s,color 0.07s;white-space:nowrap;
+}
+.menu-entry:hover{background:var(--ui-accent-2);color:var(--ui-accent)}
+.menu-entry.dim{opacity:0.35;cursor:default;pointer-events:none}
+.msc{
+  font-size:var(--font-size-xs);color:var(--ui-muted);
+  font-family:var(--font-mono);letter-spacing:0.04em;flex-shrink:0;
+}
+.menu-sep{height:1px;background:var(--ui-border);margin:3px 0}
+.menu-cat{
+  padding:5px 14px 2px;
+  font-size:9px;letter-spacing:0.1em;
+  text-transform:uppercase;color:var(--ui-muted);
+  font-family:var(--font-mono);
+}
+.menu-check{
+  width:14px;height:14px;display:flex;align-items:center;
+  justify-content:center;font-size:10px;color:var(--ui-accent);flex-shrink:0;
+  margin-right:2px;
+}
+
+.header-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.status{
+  font-size:var(--font-size-xs);letter-spacing:0.08em;
+  color:var(--ui-muted);text-transform:uppercase;font-family:var(--font-mono);
+}
+.hdr-btn{
+  height:26px;padding:0 10px;
+  background:var(--ui-ctrl);border:1px solid var(--ui-border);
+  border-radius:var(--radius-md);color:var(--ui-text-2);
+  font-family:var(--font-ui);font-size:var(--font-size-xs);font-weight:500;
+  cursor:pointer;display:flex;align-items:center;gap:4px;
+  transition:background 0.1s,border-color 0.1s,color 0.1s;
+}
+.hdr-btn:hover{background:var(--ui-ctrl-hov);border-color:var(--ui-border-hi);color:var(--ui-accent)}
+
+/* ── MAIN LAYOUT ─────────────────────────────────────────────── */
+.app-main{display:flex;flex:1;overflow:hidden}
+
+/* ── LEFT PANE ───────────────────────────────────────────────── */
+.pane-left{
+  width:var(--pane-left-width);flex-shrink:0;
+  background:var(--ui-panel);
+  border-right:none;
+  box-shadow:var(--shadow-pane);
+  display:flex;flex-direction:column;overflow:hidden;
+  transition:background 0.2s,box-shadow 0.2s;
+  z-index:10;position:relative;
+}
+.pane-hdr{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 var(--spacing-md);
+  height:36px;
+  border-bottom:1px solid var(--ui-border);flex-shrink:0;
+  background:var(--ui-panel-alt);
+}
+.pane-title{
+  font-size:13px;font-weight:700;letter-spacing:0;text-transform:none;
+  color:var(--ui-accent);font-family:var(--font-ui);transition:color 0.2s;
+}
+.pane-meta{
+  font-size:var(--font-size-xs);color:var(--ui-muted);
+  letter-spacing:0.04em;font-family:var(--font-mono);
+}
+.pane-toggle{
+  background:none;border:none;color:var(--ui-muted);
+  cursor:pointer;font-size:10px;padding:3px;border-radius:var(--radius-sm);
+  transition:color 0.1s;
+}
+.pane-toggle:hover{color:var(--ui-text)}
+.pane-body{flex:1;overflow-y:auto;overflow-x:hidden}
+.pane-body::-webkit-scrollbar{width:3px}
+.pane-body::-webkit-scrollbar-thumb{background:var(--ui-border-hi);border-radius:2px}
+
+/* ── SECTIONS ────────────────────────────────────────────────── */
+.sect{border-bottom:1px solid var(--ui-border)}
+.sect-hdr{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 var(--spacing-md);
+  min-height:var(--row-height);
+  background:var(--ui-panel-alt);border:none;width:100%;
+  cursor:pointer;color:var(--ui-text-2);
+  font-family:var(--font-ui);font-size:var(--font-size-sm);font-weight:600;
+  letter-spacing:0;text-transform:none;text-align:left;
+  transition:background 0.1s,color 0.1s;position:relative;
+}
+.sect-hdr:hover{background:var(--ui-ctrl-hov);color:var(--ui-text)}
+/* Meridian left-accent bar */
+.sect-hdr::before{
+  content:'';display:block;
+  width:3px;height:14px;
+  background:var(--ui-accent);
+  border-radius:2px;flex-shrink:0;
+  margin-right:var(--spacing-sm);
+  opacity:0.45;transition:opacity 0.15s;
+}
+.sect-hdr:hover::before{opacity:1}
+.sect-arrow{
+  width:20px;height:20px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+}
+.sect-arrow::before{
+  content:'';display:block;
+  width:7px;height:7px;
+  border-right:2px solid var(--ui-muted);
+  border-bottom:2px solid var(--ui-muted);
+  border-radius:1px;
+  transform:rotate(-45deg) translateY(1px);
+  transition:transform 0.2s cubic-bezier(0.4,0,0.2,1), border-color 0.12s;
+}
+.sect-arrow.down::before{
+  transform:rotate(45deg) translateY(-2px);
+}
+.sect-hdr:hover .sect-arrow::before,
+.right-sect-hdr:hover .sect-arrow::before{
+  border-color:var(--ui-text-2);
+}
+.sect-body{
+  padding:var(--spacing-sm) var(--spacing-md);
+  display:flex;flex-direction:column;gap:var(--spacing-sm);
+}
+
+/* ── FORM CONTROLS ───────────────────────────────────────────── */
+.ctrl-grp{display:flex;flex-direction:column;gap:var(--spacing-xs)}
+.ctrl-lbl{
+  font-size:var(--font-size-sm);font-weight:500;
+  letter-spacing:0;text-transform:none;
+  color:var(--ui-text-2);font-family:var(--font-ui);
+}
+.ctrl-sel,.ctrl-inp{
+  background:var(--ui-ctrl);border:1px solid var(--ui-border);
+  color:var(--ui-text);font-family:var(--font-ui);
+  font-size:var(--font-size-sm);font-weight:400;
+  padding:0 var(--spacing-sm);
+  height:var(--row-height);
+  border-radius:var(--radius-sm);
+  width:100%;outline:none;
+  transition:border-color 0.12s,box-shadow 0.12s;
+}
+.ctrl-sel:hover,.ctrl-inp:hover{border-color:var(--ui-border-hi)}
+.ctrl-sel{-webkit-appearance:none;-moz-appearance:none;appearance:none;padding-right:28px}
+.ctrl-sel:focus,.ctrl-inp:focus{border-color:var(--ui-accent);box-shadow:0 0 0 3px var(--ui-accent-2)}
+/* Custom select chevron wrapper */
+.ctrl-sel-wrap{position:relative;width:100%}
+.ctrl-sel-wrap .ctrl-sel{width:100%}
+.ctrl-sel-wrap::after{
+  content:'';position:absolute;right:10px;top:50%;
+  width:6px;height:6px;
+  border-right:2px solid var(--ui-muted);
+  border-bottom:2px solid var(--ui-muted);
+  border-radius:1px;
+  transform:translateY(-65%) rotate(45deg);
+  pointer-events:none;
+  transition:border-color 0.12s;
+}
+.ctrl-sel-wrap:hover::after,.ctrl-sel-wrap:focus-within::after{
+  border-color:var(--ui-accent);
+}
+.ctrl-2col{display:grid;grid-template-columns:1fr 1fr;gap:var(--spacing-sm)}
+.ctrl-sub-lbl{
+  font-size:var(--font-size-xs);color:var(--ui-muted);
+  letter-spacing:0;margin-bottom:var(--spacing-xs);
+  font-family:var(--font-ui);font-weight:500;
+}
+.ctrl-row{display:flex;align-items:center;justify-content:space-between;gap:var(--spacing-sm)}
+.info-badge{
+  font-size:9px;color:var(--ui-muted);
+  border:1px solid var(--ui-border);border-radius:50%;
+  width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;
+  cursor:default;flex-shrink:0;line-height:1;font-family:var(--font-mono);
+  transition:color 0.1s,border-color 0.1s;
+}
+.sect-hdr:hover .info-badge{color:var(--ui-accent);border-color:var(--ui-accent)}
+
+/* ── SEGMENTED CONTROL ───────────────────────────────────────── */
+.seg-ctrl{
+  display:flex;background:var(--ui-ctrl);
+  border:1px solid var(--ui-border);border-radius:var(--radius-sm);
+  overflow:hidden;
+}
+.seg-opt{
+  flex:1;padding:0 var(--spacing-xs);height:var(--row-height);
+  background:none;border:none;border-left:1px solid var(--ui-border);
+  color:var(--ui-text-2);font-family:var(--font-ui);
+  font-size:var(--font-size-xs);font-weight:500;
+  cursor:pointer;transition:background 0.1s,color 0.1s;white-space:nowrap;
+}
+.seg-opt:first-child{border-left:none}
+.seg-opt.active{background:var(--ui-accent);color:#fff;border-color:var(--ui-accent)}
+.seg-opt:not(.active):hover{background:var(--ui-ctrl-hov);color:var(--ui-text)}
+
+/* ── TOGGLE BUTTON GROUP ─────────────────────────────────────── */
+.tog-grp{display:flex;gap:var(--spacing-xs)}
+.tog-btn{
+  height:var(--row-height);padding:0 var(--spacing-sm);
+  background:var(--ui-ctrl);border:1px solid var(--ui-border);
+  color:var(--ui-text-2);font-family:var(--font-ui);
+  font-size:var(--font-size-xs);font-weight:500;
+  border-radius:var(--radius-sm);cursor:pointer;
+  transition:background 0.1s,border-color 0.1s,color 0.1s;white-space:nowrap;
+}
+.tog-btn.active{background:var(--ui-accent-2);border-color:var(--ui-accent);color:var(--ui-accent)}
+.tog-btn:not(.active):hover{border-color:var(--ui-border-hi);color:var(--ui-text)}
+
+/* ── PILL TOGGLE SWITCH ──────────────────────────────────────── */
+.sw-toggle{
+  position:relative;display:inline-flex;width:30px;height:16px;flex-shrink:0;cursor:pointer;
+}
+.sw-toggle input{opacity:0;width:0;height:0;position:absolute}
+.sw-track{
+  position:absolute;inset:0;
+  background:var(--ui-border);border-radius:9999px;
+  transition:background 0.15s;
+}
+.sw-toggle input:checked ~ .sw-track{background:var(--ui-accent)}
+.sw-thumb{
+  position:absolute;top:2px;left:2px;
+  width:12px;height:12px;
+  background:#fff;border-radius:50%;
+  box-shadow:0 1px 3px rgba(0,0,0,0.3);
+  transition:transform 0.15s cubic-bezier(0.4,0,0.2,1);
+  pointer-events:none;
+}
+.sw-toggle input:checked ~ .sw-thumb{transform:translateX(14px)}
+
+/* ── ANGLE CONTROL ───────────────────────────────────────────── */
+.angle-ctrl{display:flex;align-items:center;gap:var(--spacing-sm)}
+.angle-dial{width:38px;height:38px;flex-shrink:0;cursor:grab}
+.dial-ring{fill:none;stroke:var(--ui-border);stroke-width:1.5}
+.dial-ring-inner{fill:none;stroke:var(--ui-border);stroke-width:1;opacity:0.4}
+.dial-tick{stroke:var(--ui-border);stroke-width:1}
+.dial-needle{stroke:var(--ui-accent);stroke-width:1.5;stroke-linecap:round}
+.dial-center{fill:var(--ui-ctrl);stroke:var(--ui-accent);stroke-width:1.5}
+.dial-handle{fill:var(--ui-accent)}
+.angle-inp-wrap{
+  display:flex;align-items:center;gap:3px;
+  background:var(--ui-ctrl);border:1px solid var(--ui-border);
+  border-radius:var(--radius-sm);
+  padding:0 var(--spacing-sm);height:var(--row-height);
+  transition:border-color 0.12s,box-shadow 0.12s;
+}
+.angle-inp-wrap:focus-within{border-color:var(--ui-accent);box-shadow:0 0 0 3px var(--ui-accent-2)}
+.angle-inp{
+  background:none;border:none;outline:none;
+  color:var(--ui-text);font-family:var(--font-mono);
+  font-size:var(--font-size-sm);width:34px;text-align:right;
+  font-variant-numeric:tabular-nums;
+}
+.angle-unit{color:var(--ui-muted);font-size:var(--font-size-xs);font-family:var(--font-mono)}
+
+/* ── NUMBER STEPPER ──────────────────────────────────────────── */
+.num-step{
+  display:flex;align-items:stretch;
+  background:var(--ui-ctrl);border:1px solid var(--ui-border);
+  border-radius:var(--radius-sm);overflow:hidden;
+  height:var(--row-height);
+  transition:border-color 0.12s;
+}
+.num-step:focus-within{border-color:var(--ui-accent)}
+.num-step-inp{
+  flex:1;background:none;border:none;outline:none;
+  text-align:center;color:var(--ui-text);
+  font-family:var(--font-mono);font-size:var(--font-size-sm);
+  font-variant-numeric:tabular-nums;min-width:0;
+}
+.num-step-btn{
+  width:22px;background:none;border:none;
+  border-left:1px solid var(--ui-border);
+  color:var(--ui-muted);cursor:pointer;font-size:10px;
+  display:flex;align-items:center;justify-content:center;
+  transition:background 0.08s,color 0.08s;
+}
+.num-step-btn:first-child{border-left:none;border-right:1px solid var(--ui-border)}
+.num-step-btn:hover{background:var(--ui-ctrl-hov);color:var(--ui-accent)}
+
+/* ── SLIDERS ─────────────────────────────────────────────────── */
+.slider-row{display:flex;align-items:center;gap:var(--spacing-sm)}
+
+/* Base track: gradient fill from slider-start → accent at --fill, then border color */
+.ctrl-slider{
+  -webkit-appearance:none;
+  appearance:none;
+  flex:1;
+  height:4px;
+  border-radius:2px;
+  cursor:pointer;
+  outline:none;
+  background: linear-gradient(to right,
+    var(--slider-start) 0%,
+    var(--ui-accent)    var(--fill,0%),
+    var(--ui-border)    var(--fill,0%) 100%
+  );
+}
+
+/* WebKit thumb */
+.ctrl-slider::-webkit-slider-thumb{
+  -webkit-appearance:none;
+  width:14px;height:14px;
+  border-radius:50%;
+  background:var(--ui-accent);
+  border:2.5px solid var(--ui-panel);
+  box-shadow:0 0 0 1.5px var(--ui-accent);
+  cursor:pointer;
+  transition:transform 0.12s ease, box-shadow 0.15s ease;
+}
+.ctrl-slider:hover::-webkit-slider-thumb{
+  transform:scale(1.18);
+  box-shadow:0 0 0 4px var(--ui-accent-2);
+}
+.ctrl-slider:active::-webkit-slider-thumb{
+  transform:scale(1.02);
+  box-shadow:0 0 0 2px var(--ui-accent-2);
+}
+
+/* Firefox */
+.ctrl-slider::-moz-range-thumb{
+  width:14px;height:14px;
+  border-radius:50%;
+  background:var(--ui-accent);
+  border:2.5px solid var(--ui-panel);
+  box-shadow:0 0 0 1.5px var(--ui-accent);
+  cursor:pointer;
+}
+.ctrl-slider::-moz-range-track{
+  height:4px;border-radius:2px;background:var(--ui-border);
+}
+.ctrl-slider::-moz-range-progress{
+  height:4px;border-radius:2px 0 0 2px;
+  background:linear-gradient(to right, var(--slider-start), var(--ui-accent));
+}
+
+@keyframes thumb-release{
+  0%   { box-shadow:0 0 0 1.5px var(--ui-accent),0 0 0 7px var(--ui-accent-2); transform:scale(1.15); }
+  100% { box-shadow:0 0 0 1.5px var(--ui-accent),0 0 0 0px transparent; transform:scale(1); }
+}
+.ctrl-slider.just-released::-webkit-slider-thumb{
+  animation:thumb-release 0.35s ease-out forwards;
+}
+
+/* ── SLIDER FX — unified fill-side pulse overlay ────────── */
+.sld-fx-wrap{
+  flex:1;
+  position:relative;
+  display:flex;
+  align-items:center;
+}
+.sld-fx-wrap .ctrl-slider,
+.sld-fx-wrap .pen-sld{
+  flex:1;
+  width:100%;
+}
+
+/* Overlay sits strictly over the fill (left of thumb) */
+.sld-fx-wrap::after{
+  content:'';
+  position:absolute;
+  top:50%;
+  left:0;
+  transform:translateY(-50%);
+  height:4px;
+  width:var(--fill,0%);
+  border-radius:2px;
+  pointer-events:none;
+  z-index:2;
+  opacity:0;
+  background:linear-gradient(to right,var(--ui-accent) 0%,#fff 100%);
+}
+/* Narrower track for pen sliders */
+.sld-fx-wrap:has(.pen-sld)::after{
+  height:3px;
+}
+
+@keyframes fx-pulse-fill{
+  0%  { opacity:0;    box-shadow:0 0 0px 0px transparent }
+  12% { opacity:0.36; box-shadow:0 0 4px 1px rgba(255,255,255,0.22) }
+  100%{ opacity:0;    box-shadow:0 0 0px 0px transparent }
+}
+.sld-fx-wrap.fx-active::after{
+  animation:fx-pulse-fill 0.55s ease-out forwards;
+}
+
+/* ── BUTTON SELECTION ANIMATION ─────────────────────────── */
+@keyframes btn-press{
+  0%   { opacity:1 }
+  28%  { opacity:0.42 }
+  100% { opacity:1 }
+}
+.btn-pulse{
+  animation:btn-press 0.30s ease-out forwards !important;
+}
+
+/* Dial handle active glow */
+.angle-dial.is-dragging .dial-handle{
+  filter:drop-shadow(0 0 4px var(--ui-accent));
+}
+.angle-dial.is-dragging .dial-needle{
+  stroke:var(--ui-accent);
+  stroke-width:2;
+}
+
+.slider-val{
+  font-size:var(--font-size-xs);color:var(--ui-accent);
+  min-width:30px;max-width:46px;text-align:right;
+  font-family:var(--font-mono);font-variant-numeric:tabular-nums;
+  background:none;border:1px solid transparent;outline:none;
+  padding:1px 3px;border-radius:var(--radius-sm);
+  cursor:default;
+  transition:background 0.12s,border-color 0.12s,box-shadow 0.12s;
+}
+.slider-val:hover{
+  background:var(--ui-ctrl);border-color:var(--ui-border);cursor:text;
+}
+.slider-val:focus{
+  background:var(--ui-ctrl);
+  border-color:var(--ui-accent);
+  box-shadow:0 0 0 3px var(--ui-accent-2);
+  cursor:text;
+}
+
+/* ── WORKSPACE ───────────────────────────────────────────────── */
+.workspace-shell{
+  flex:1;display:flex;flex-direction:column;overflow:hidden;
+  background:var(--ui-workspace);position:relative;
+  transition:background 0.2s;
+}
+.workspace-area{
+  flex:1;display:flex;align-items:center;justify-content:center;
+  overflow:hidden;position:relative;
+}
+
+/* ── TOOLBAR ─────────────────────────────────────────────────── */
+.tool-bar{
+  position:absolute;left:10px;top:50%;
+  transform:translateY(-50%);z-index:5;
+  display:flex;flex-direction:column;gap:3px;
+  padding:var(--spacing-sm);
+  background:var(--ui-panel);border:1px solid var(--ui-border);
+  border-radius:var(--radius-lg);box-shadow:var(--shadow-md);
+  transition:background 0.2s,border-color 0.2s;
+}
+.tool-btn{
+  width:var(--row-height);height:var(--row-height);
+  min-width:30px;min-height:30px;
+  display:flex;align-items:center;justify-content:center;
+  background:none;border:1px solid transparent;
+  border-radius:var(--radius-sm);
+  cursor:pointer;color:var(--ui-muted);transition:all 0.12s;
+}
+.tool-btn:hover{background:var(--ui-ctrl-hov);color:var(--ui-text)}
+.tool-btn.active{
+  background:var(--ui-accent-2);border-color:var(--ui-accent);
+  color:var(--ui-accent);
+  box-shadow:0 0 0 1px var(--ui-accent-2);
+}
+.tool-divider{height:1px;background:var(--ui-border);margin:1px 0}
+
+/* ── PAPER ───────────────────────────────────────────────────── */
+.paper-doc{
+  background:#fff;border:1px solid rgba(0,0,0,0.12);
+  box-shadow:0 8px 32px rgba(0,0,0,0.28),0 2px 6px rgba(0,0,0,0.14);
+  width:300px;height:420px;
+  display:flex;align-items:center;justify-content:center;
+  color:#1a1a1a;position:relative;z-index:2;border-radius:2px;
+}
+.paper-doc svg{width:88%;height:88%}
+
+/* ── BOTTOM PANE ─────────────────────────────────────────────── */
+.bottom-pane{
+  height:var(--bottom-pane-height);border-top:1px solid var(--ui-border);
+  background:var(--ui-panel);display:flex;flex-direction:column;flex-shrink:0;
+  transition:background 0.2s,border-color 0.2s;
+}
+.bottom-hdr{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 var(--spacing-md);
+  height:30px;
+  border-bottom:1px solid var(--ui-border);background:var(--ui-panel-alt);flex-shrink:0;
+}
+.bottom-body{
+  flex:1;padding:var(--spacing-sm) var(--spacing-md);
+  display:flex;gap:var(--spacing-sm);overflow:hidden;
+}
+.formula-block{flex:1;display:flex;flex-direction:column;gap:var(--spacing-xs)}
+.formula-eq{
+  background:var(--ui-panel-alt);border:1px solid var(--ui-border);
+  border-radius:var(--radius-sm);
+  padding:6px var(--spacing-sm);
+  font-family:var(--font-mono);font-size:11px;color:var(--ui-formula);
+  display:flex;flex-direction:column;gap:2px;
+}
+.formula-accent{color:var(--ui-accent);font-weight:500}
+.formula-params{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:var(--spacing-xs)}
+.formula-param{
+  display:flex;align-items:center;justify-content:space-between;
+  background:var(--ui-panel-alt);border:1px solid var(--ui-border);
+  border-radius:var(--radius-sm);
+  padding:3px var(--spacing-sm);
+  font-family:var(--font-mono);font-size:10px;
+}
+.f-key{color:var(--ui-muted)}
+.f-val{color:var(--ui-accent);font-variant-numeric:tabular-nums}
+
+/* ── RIGHT PANE ──────────────────────────────────────────────── */
+.pane-right{
+  width:var(--pane-right-width);flex-shrink:0;
+  background:var(--ui-panel);border-left:1px solid var(--ui-border);
+  display:flex;flex-direction:column;overflow:hidden;
+  transition:background 0.2s,border-color 0.2s;
+}
+.right-sect-hdr{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 var(--spacing-md);
+  min-height:var(--row-height);
+  background:var(--ui-panel-alt);border:none;width:100%;cursor:pointer;
+  color:var(--ui-text-2);font-family:var(--font-ui);
+  font-size:var(--font-size-sm);font-weight:600;letter-spacing:0;
+  text-transform:none;text-align:left;
+  border-bottom:1px solid var(--ui-border);
+  transition:background 0.1s;
+}
+.right-sect-hdr:hover{background:var(--ui-ctrl-hov)}
+
+/* ── TABS ────────────────────────────────────────────────────── */
+.tab-bar{
+  display:flex;align-items:center;
+  border-bottom:1px solid var(--ui-border);
+  background:var(--ui-panel-alt);flex-shrink:0;
+}
+.tab-btn{
+  flex:1;height:34px;background:none;border:none;border-bottom:2px solid transparent;
+  color:var(--ui-text-2);font-family:var(--font-ui);
+  font-size:var(--font-size-sm);font-weight:600;
+  cursor:pointer;position:relative;margin-bottom:-1px;
+  transition:color 0.12s,border-color 0.12s,background 0.1s;
+}
+.tab-btn:hover{color:var(--ui-text);background:var(--ui-ctrl-hov)}
+.tab-btn.active{color:var(--ui-accent);border-bottom-color:var(--ui-accent)}
+.tab-panel{display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0}
+.tab-panel.active{display:flex}
+.tab-panel-hdr{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 var(--spacing-sm) 0 var(--spacing-md);
+  height:30px;flex-shrink:0;
+  border-bottom:1px solid var(--ui-border);
+  background:var(--ui-panel);
+}
+.tab-panel-meta{font-size:var(--font-size-xs);color:var(--ui-muted);font-family:var(--font-mono)}
+
+/* Layers */
+.layer-list{
+  display:flex;flex-direction:column;gap:var(--spacing-xs);
+  padding:var(--spacing-xs) var(--spacing-sm);
+}
+.layer-item{
+  display:flex;align-items:center;gap:var(--spacing-sm);
+  padding:var(--spacing-xs) var(--spacing-sm);
+  min-height:var(--row-height);
+  border-radius:var(--radius-md);border:1px solid transparent;
+  cursor:pointer;transition:background 0.1s;
+}
+.layer-item:hover{background:var(--ui-ctrl-hov)}
+.layer-item.active{background:var(--ui-ctrl);border-color:var(--ui-border)}
+.layer-item.dim{opacity:0.4}
+.layer-bar{width:3px;height:22px;border-radius:2px;flex-shrink:0}
+.layer-name{
+  flex:1;font-size:var(--font-size-sm);
+  color:var(--ui-text);font-family:var(--font-ui);font-weight:500;
+}
+.layer-tag{
+  font-size:9px;letter-spacing:0.06em;
+  color:var(--ui-accent);text-transform:uppercase;
+  background:var(--ui-accent-2);
+  border-radius:9999px;padding:2px 8px;font-family:var(--font-mono);
+}
+.layer-acts{display:flex;gap:2px}
+.layer-act{
+  background:none;border:none;color:var(--ui-muted);cursor:pointer;
+  font-size:11px;width:22px;height:22px;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:var(--radius-sm);transition:color 0.1s,background 0.1s;
+}
+.layer-act:hover{color:var(--ui-accent);background:var(--ui-accent-2)}
+
+/* Pens */
+.pens-bar{
+  display:flex;align-items:center;gap:var(--spacing-sm);
+  padding:var(--spacing-sm) var(--spacing-md);
+  border-bottom:1px solid var(--ui-border);
+}
+.palette-btn{
+  flex:1;background:var(--ui-ctrl);border:1px solid var(--ui-border);
+  color:var(--ui-text-2);font-family:var(--font-ui);font-weight:500;
+  font-size:var(--font-size-xs);
+  padding:0 var(--spacing-sm);height:var(--row-height);
+  border-radius:var(--radius-sm);cursor:pointer;text-align:left;
+  transition:border-color 0.1s;
+}
+.palette-btn:hover{border-color:var(--ui-border-hi)}
+.add-btn{
+  background:var(--ui-accent);color:#fff;border:none;
+  font-family:var(--font-ui);font-weight:600;
+  font-size:var(--font-size-xs);
+  padding:0 var(--spacing-sm);height:24px;
+  border-radius:var(--radius-sm);cursor:pointer;
+  transition:opacity 0.1s;white-space:nowrap;
+}
+.add-btn:hover{opacity:0.88}
+
+.pen-list{
+  display:flex;flex-direction:column;gap:1px;
+  padding:var(--spacing-xs) var(--spacing-md);
+}
+.pen-item{
+  display:flex;align-items:center;gap:var(--spacing-sm);
+  padding:2px 0;min-height:var(--row-height);
+}
+.pen-dot{width:13px;height:13px;border-radius:50%;border:1px solid rgba(0,0,0,0.2);flex-shrink:0}
+.pen-nm{
+  font-size:var(--font-size-xs);color:var(--ui-text-2);
+  width:32px;flex-shrink:0;font-family:var(--font-mono);
+}
+
+/* Pen sliders use same gradient-fill technique */
+.pen-sld{
+  flex:1;
+  -webkit-appearance:none;appearance:none;
+  height:3px;border-radius:2px;cursor:pointer;outline:none;
+  background: linear-gradient(to right,
+    var(--slider-start) 0%,
+    var(--ui-accent)    var(--fill,0%),
+    var(--ui-border)    var(--fill,0%) 100%
+  );
+}
+.pen-sld::-webkit-slider-thumb{
+  -webkit-appearance:none;
+  width:11px;height:11px;border-radius:50%;
+  background:var(--ui-accent);border:2px solid var(--ui-panel);
+  box-shadow:0 0 0 1px var(--ui-accent);
+  cursor:pointer;transition:transform 0.1s;
+}
+.pen-sld:hover::-webkit-slider-thumb{transform:scale(1.18)}
+.pen-sld::-moz-range-thumb{
+  width:11px;height:11px;border-radius:50%;
+  background:var(--ui-accent);border:2px solid var(--ui-panel);
+}
+.pen-sld::-moz-range-track{height:3px;background:var(--ui-border);border-radius:2px}
+.pen-sld::-moz-range-progress{
+  height:3px;border-radius:2px 0 0 2px;
+  background:linear-gradient(to right,var(--slider-start),var(--ui-accent));
+}
+
+.pen-w{
+  font-size:var(--font-size-xs);color:var(--ui-muted);
+  width:26px;text-align:right;font-family:var(--font-mono);
+  font-variant-numeric:tabular-nums;
+}
+
+/* Stats */
+.stats-box{padding:var(--spacing-sm) var(--spacing-md)}
+.stats-ttl{
+  font-size:var(--font-size-xs);letter-spacing:0;
+  text-transform:none;color:var(--ui-muted);
+  margin-bottom:var(--spacing-sm);font-family:var(--font-ui);font-weight:600;
+}
+.stats-grid{display:grid;grid-template-columns:auto 1fr;gap:3px var(--spacing-sm);align-items:center}
+.s-key{font-size:var(--font-size-xs);color:var(--ui-muted)}
+.s-val{
+  font-size:var(--font-size-xs);color:var(--ui-accent);
+  font-family:var(--font-mono);font-variant-numeric:tabular-nums;
+}
+.bg-row{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:var(--spacing-sm) var(--spacing-md);
+  border-bottom:1px solid var(--ui-border);min-height:var(--row-height);
+}
+.bg-lbl{
+  font-size:var(--font-size-xs);color:var(--ui-muted);
+  letter-spacing:0;text-transform:none;font-weight:500;
+}
+.bg-sw{
+  width:16px;height:16px;border-radius:var(--radius-sm);
+  border:1px solid var(--ui-border);background:#fff;
+}
+
+/* ── FLOATING SWITCHER ───────────────────────────────────────── */
+#theme-switcher{
+  position:fixed;bottom:16px;left:50%;transform:translateX(-50%);
+  z-index:99999;display:flex;align-items:center;gap:6px;
+  padding:5px 8px;
+  background:rgba(6,8,12,0.92);border:1px solid rgba(255,255,255,0.12);
+  border-radius:9999px;
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  font-family:'JetBrains Mono',monospace;font-size:10px;
+  box-shadow:0 4px 20px rgba(0,0,0,0.5);
+}
+.sw-label{
+  color:rgba(255,255,255,0.4);letter-spacing:0.08em;font-size:10px;
+  padding:0 4px;white-space:nowrap;
+}
+.sw-d{width:1px;height:14px;background:rgba(255,255,255,0.14);flex-shrink:0}
+.sw-mode{
+  background:none;border:1px solid rgba(255,255,255,0.2);
+  color:rgba(255,255,255,0.72);
+  cursor:pointer;padding:4px 11px;border-radius:9999px;
+  font-family:'JetBrains Mono',monospace;font-size:10px;
+  transition:background 0.15s;white-space:nowrap;
+}
+.sw-mode:hover{background:rgba(255,255,255,0.1)}
+</style>
+</head>
+<body>
+
+<!-- FLOATING SWITCHER: dark / light only -->
+<div id="theme-switcher">
+  <span class="sw-label">Meridian Blue</span>
+  <div class="sw-d"></div>
+  <button class="sw-mode" id="mode-btn">◑ Light</button>
+</div>
+
+<!-- APP SHELL -->
+<div class="app-wrapper">
+
+  <!-- HEADER -->
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-sq"></div>
+      <span class="brand-name">VECTURA<span class="brand-sub">.STUDIO</span></span>
+    </div>
+
+    <!-- MENUBAR — File is pre-opened to show dropdown styling -->
+    <nav class="menubar">
+
+      <div class="menu-item">
+        <button class="menu-trigger open">File</button>
+        <div class="menu-dropdown open">
+          <div class="menu-entry"><span>Open Project…</span><span class="msc">⌘O</span></div>
+          <div class="menu-entry"><span>Save Project…</span><span class="msc">⌘S</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-entry"><span>Import SVG…</span><span class="msc">⇧⌘P</span></div>
+          <div class="menu-entry"><span>Export SVG…</span><span class="msc">⇧⌘E</span></div>
+          <div class="menu-entry"><span>Export PNG…</span><span class="msc">⇧⌘I</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-entry"><span>Document Setup</span><span class="msc">⌘K</span></div>
+        </div>
+      </div>
+
+      <div class="menu-item">
+        <button class="menu-trigger">Edit</button>
+        <div class="menu-dropdown">
+          <div class="menu-entry"><span>Undo</span><span class="msc">⌘Z</span></div>
+          <div class="menu-entry"><span>Redo</span><span class="msc">⇧⌘Z</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-entry"><span>Cut</span><span class="msc">⌘X</span></div>
+          <div class="menu-entry"><span>Copy</span><span class="msc">⌘C</span></div>
+          <div class="menu-entry"><span>Paste</span><span class="msc">⌘V</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-entry"><span>Select All</span><span class="msc">⌘A</span></div>
+          <div class="menu-entry"><span>Deselect</span><span class="msc">Esc</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-entry dim"><span>Delete Layer</span></div>
+        </div>
+      </div>
+
+      <div class="menu-item">
+        <button class="menu-trigger">View</button>
+        <div class="menu-dropdown">
+          <div class="menu-entry"><span>Reset View</span><span class="msc">⌘0</span></div>
+          <div class="menu-entry"><span>Zoom In</span><span class="msc">⌘+</span></div>
+          <div class="menu-entry"><span>Zoom Out</span><span class="msc">⌘–</span></div>
+          <div class="menu-entry"><span>Fit to Page</span><span class="msc">⇧⌘0</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-cat">Overlays</div>
+          <div class="menu-entry">
+            <span style="display:flex;align-items:center;gap:2px"><span class="menu-check">✓</span>Show Grid</span>
+            <span class="msc">⌘G</span>
+          </div>
+          <div class="menu-entry"><span>Grid Settings…</span></div>
+          <div class="menu-entry"><span>Show Guides</span><span class="msc">⌘;</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-entry"><span>Fullscreen</span><span class="msc">F</span></div>
+        </div>
+      </div>
+
+      <div class="menu-item">
+        <button class="menu-trigger">Insert</button>
+        <div class="menu-dropdown">
+          <div class="menu-entry"><span>New Layer</span><span class="msc">⇧⌘N</span></div>
+          <div class="menu-entry"><span>Duplicate Layer</span><span class="msc">⌘D</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-cat">Algorithms</div>
+          <div class="menu-entry"><span>Spiral</span></div>
+          <div class="menu-entry"><span>Wavetable</span></div>
+          <div class="menu-entry"><span>Flowfield</span></div>
+          <div class="menu-entry"><span>Lissajous</span></div>
+          <div class="menu-entry"><span>More…</span></div>
+        </div>
+      </div>
+
+      <div class="menu-item">
+        <button class="menu-trigger">Help</button>
+        <div class="menu-dropdown">
+          <div class="menu-entry"><span>About Vectura Studio</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-entry"><span>Keyboard Shortcuts</span><span class="msc">?</span></div>
+          <div class="menu-entry"><span>Documentation</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-entry"><span>Report Issue</span></div>
+        </div>
+      </div>
+
+    </nav>
+
+    <div class="header-right">
+      <span class="status">Ready</span>
+      <button class="hdr-btn">⇧⌘E Export</button>
+    </div>
+  </header>
+
+  <!-- 3-COLUMN MAIN -->
+  <main class="app-main">
+
+    <!-- LEFT PANE -->
+    <aside class="pane-left">
+      <div class="pane-hdr">
+        <span class="pane-title">Generator</span>
+        <span class="pane-meta">v0.7.0</span>
+        <button class="pane-toggle">◀</button>
+      </div>
+      <div class="pane-body">
+
+        <div class="sect">
+          <button class="sect-hdr">
+            <span style="display:flex;align-items:center;gap:6px">Algorithm <span class="info-badge">i</span></span>
+            <span class="sect-arrow down"></span>
+          </button>
+          <div class="sect-body" style="display:flex;flex-direction:column;gap:var(--spacing-sm)">
+            <div class="ctrl-grp">
+              <label class="ctrl-lbl">Type</label>
+              <div class="ctrl-sel-wrap">
+                <select class="ctrl-sel">
+                  <option>Spiral</option><option>Wavetable</option>
+                  <option>Flowfield</option><option>Lissajous</option>
+                  <option>Harmonograph</option>
+                </select>
+              </div>
+            </div>
+            <div class="ctrl-grp">
+              <label class="ctrl-lbl">Seed</label>
+              <input type="text" value="42847" class="ctrl-inp">
+            </div>
+            <div class="ctrl-2col">
+              <div><div class="ctrl-sub-lbl">Scale X</div><input type="text" value="1.00" class="ctrl-inp"></div>
+              <div><div class="ctrl-sub-lbl">Scale Y</div><input type="text" value="1.00" class="ctrl-inp"></div>
+            </div>
+            <div class="ctrl-2col">
+              <div><div class="ctrl-sub-lbl">Pos X (mm)</div><input type="text" value="150.0" class="ctrl-inp"></div>
+              <div><div class="ctrl-sub-lbl">Pos Y (mm)</div><input type="text" value="105.0" class="ctrl-inp"></div>
+            </div>
+            <div class="ctrl-grp">
+              <label class="ctrl-lbl">Coordinates</label>
+              <div class="seg-ctrl">
+                <button class="seg-opt active">Cartesian</button>
+                <button class="seg-opt">Polar</button>
+                <button class="seg-opt">Radial</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sect">
+          <button class="sect-hdr">
+            <span style="display:flex;align-items:center;gap:6px">Algorithm Configuration <span class="info-badge">i</span></span>
+            <span class="sect-arrow down"></span>
+          </button>
+          <div class="sect-body">
+            <div class="ctrl-grp"><label class="ctrl-lbl">Turns</label>
+              <div class="slider-row">
+                <div class="sld-fx-wrap">
+                  <input type="range" min="1" max="20" value="8" class="ctrl-slider">
+                </div>
+                <input type="text" class="slider-val" value="8">
+              </div>
+            </div>
+            <div class="ctrl-grp"><label class="ctrl-lbl">Amplitude</label>
+              <div class="slider-row">
+                <div class="sld-fx-wrap">
+                  <input type="range" min="0" max="100" value="67" class="ctrl-slider">
+                </div>
+                <input type="text" class="slider-val" value="67">
+              </div>
+            </div>
+            <div class="ctrl-grp"><label class="ctrl-lbl">Frequency</label>
+              <div class="slider-row">
+                <div class="sld-fx-wrap">
+                  <input type="range" min="0" max="100" value="28" class="ctrl-slider">
+                </div>
+                <input type="text" class="slider-val" value="28">
+              </div>
+            </div>
+            <div class="ctrl-grp"><label class="ctrl-lbl">Density</label>
+              <div class="slider-row">
+                <div class="sld-fx-wrap">
+                  <input type="range" min="0" max="100" value="55" class="ctrl-slider">
+                </div>
+                <input type="text" class="slider-val" value="55">
+              </div>
+            </div>
+            <div class="ctrl-grp"><label class="ctrl-lbl">Decay</label>
+              <div class="slider-row">
+                <div class="sld-fx-wrap">
+                  <input type="range" min="0" max="100" value="20" class="ctrl-slider">
+                </div>
+                <input type="text" class="slider-val" value="0.20">
+              </div>
+            </div>
+            <div class="ctrl-grp"><label class="ctrl-lbl">Spread</label>
+              <div class="slider-row">
+                <div class="sld-fx-wrap">
+                  <input type="range" min="0" max="100" value="42" class="ctrl-slider">
+                </div>
+                <input type="text" class="slider-val" value="42">
+              </div>
+            </div>
+            <div class="ctrl-grp"><label class="ctrl-lbl">Jitter</label>
+              <div class="slider-row">
+                <div class="sld-fx-wrap">
+                  <input type="range" min="0" max="100" value="12" class="ctrl-slider">
+                </div>
+                <input type="text" class="slider-val" value="12">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sect">
+          <button class="sect-hdr">
+            <span style="display:flex;align-items:center;gap:6px">Noise Rack <span class="info-badge">i</span></span>
+            <span class="sect-arrow down"></span>
+          </button>
+          <div class="sect-body">
+            <div class="ctrl-row">
+              <span class="ctrl-lbl">Enable</span>
+              <label class="sw-toggle">
+                <input type="checkbox" checked>
+                <span class="sw-track"></span>
+                <span class="sw-thumb"></span>
+              </label>
+            </div>
+            <div class="ctrl-grp">
+              <label class="ctrl-lbl">Algorithm</label>
+              <div class="seg-ctrl">
+                <button class="seg-opt active">Perlin</button>
+                <button class="seg-opt">Simplex</button>
+                <button class="seg-opt">Worley</button>
+              </div>
+            </div>
+            <div class="ctrl-grp">
+              <label class="ctrl-lbl">Amplitude</label>
+              <div class="slider-row">
+                <div class="sld-fx-wrap">
+                  <input type="range" min="0" max="100" value="45" class="ctrl-slider">
+                </div>
+                <input type="text" class="slider-val" value="45">
+              </div>
+            </div>
+            <div class="ctrl-grp">
+              <label class="ctrl-lbl">Frequency</label>
+              <div class="slider-row">
+                <div class="sld-fx-wrap">
+                  <input type="range" min="0" max="100" value="30" class="ctrl-slider">
+                </div>
+                <input type="text" class="slider-val" value="30">
+              </div>
+            </div>
+            <div class="ctrl-grp">
+              <label class="ctrl-lbl">Octaves</label>
+              <div class="num-step">
+                <button class="num-step-btn">−</button>
+                <input type="text" class="num-step-inp" value="4">
+                <button class="num-step-btn">+</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sect">
+          <button class="sect-hdr">
+            <span style="display:flex;align-items:center;gap:6px">Modifiers <span class="info-badge">i</span></span>
+            <span class="sect-arrow down"></span>
+          </button>
+          <div class="sect-body">
+            <!-- Mirror modifier -->
+            <div class="ctrl-row">
+              <span class="ctrl-lbl" style="font-weight:600;color:var(--ui-text)">Mirror</span>
+              <label class="sw-toggle">
+                <input type="checkbox" checked>
+                <span class="sw-track"></span>
+                <span class="sw-thumb"></span>
+              </label>
+            </div>
+            <div class="ctrl-grp">
+              <label class="ctrl-lbl">Axis</label>
+              <div class="tog-grp">
+                <button class="tog-btn active">X</button>
+                <button class="tog-btn">Y</button>
+                <button class="tog-btn">XY</button>
+              </div>
+            </div>
+            <div class="ctrl-grp">
+              <label class="ctrl-lbl">Angle</label>
+              <div class="angle-ctrl">
+                <svg class="angle-dial" viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <defs>
+                    <clipPath id="dial-face-clip">
+                      <circle cx="19" cy="19" r="16"/>
+                    </clipPath>
+                  </defs>
+                  <circle cx="19" cy="19" r="16" class="dial-ring"/>
+                  <circle cx="19" cy="19" r="10" class="dial-ring-inner"/>
+                  <line x1="19" y1="3.5" x2="19" y2="6.5" class="dial-tick"/>
+                  <line x1="34.5" y1="19" x2="31.5" y2="19" class="dial-tick"/>
+                  <line x1="19" y1="34.5" x2="19" y2="31.5" class="dial-tick"/>
+                  <line x1="3.5" y1="19" x2="6.5" y2="19" class="dial-tick"/>
+                  <g class="dial-pointer-g">
+                    <line x1="19" y1="19" x2="19" y2="4.5" class="dial-needle"/>
+                    <circle cx="19" cy="5" r="2.5" class="dial-handle"/>
+                  </g>
+                  <circle cx="19" cy="19" r="2.5" class="dial-center"/>
+                </svg>
+                <div class="angle-inp-wrap">
+                  <input type="text" class="angle-inp" value="0">
+                  <span class="angle-unit">°</span>
+                </div>
+              </div>
+            </div>
+            <div class="ctrl-grp">
+              <label class="ctrl-lbl">Offset</label>
+              <div class="slider-row">
+                <div class="sld-fx-wrap">
+                  <input type="range" min="-100" max="100" value="0" class="ctrl-slider">
+                </div>
+                <input type="text" class="slider-val" value="0">
+              </div>
+            </div>
+            <!-- Warp modifier -->
+            <div class="ctrl-row" style="margin-top:var(--spacing-xs);border-top:1px solid var(--ui-border);padding-top:var(--spacing-sm)">
+              <span class="ctrl-lbl" style="font-weight:600;color:var(--ui-text)">Warp</span>
+              <label class="sw-toggle">
+                <input type="checkbox">
+                <span class="sw-track"></span>
+                <span class="sw-thumb"></span>
+              </label>
+            </div>
+            <div class="ctrl-grp">
+              <label class="ctrl-lbl">Mode</label>
+              <div class="seg-ctrl">
+                <button class="seg-opt active">Radial</button>
+                <button class="seg-opt">Linear</button>
+                <button class="seg-opt">Twist</button>
+              </div>
+            </div>
+            <div class="ctrl-grp">
+              <label class="ctrl-lbl">Strength</label>
+              <div class="slider-row">
+                <div class="sld-fx-wrap">
+                  <input type="range" min="0" max="100" value="0" class="ctrl-slider">
+                </div>
+                <input type="text" class="slider-val" value="0">
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </aside>
+
+    <!-- CANVAS -->
+    <section class="workspace-shell">
+      <div class="workspace-area">
+
+        <!-- Toolbar -->
+        <div class="tool-bar">
+          <button class="tool-btn active" title="Select">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2.5 1.5l8 5-3.5 1.2L5.5 12z"/>
+            </svg>
+          </button>
+          <button class="tool-btn" title="Direct Select">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2.5 1.5l8 5-3.5 1.2L5.5 12z"/>
+              <circle cx="5.5" cy="12" r="1.3" fill="currentColor" stroke="none"/>
+            </svg>
+          </button>
+          <div class="tool-divider"></div>
+          <button class="tool-btn" title="Pan">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+              <path d="M7 2v10M2 7h10M4.5 4L2.5 7l2 3M9.5 4l2 3-2 3"/>
+            </svg>
+          </button>
+          <button class="tool-btn" title="Zoom">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+              <circle cx="5.5" cy="5.5" r="3.5"/>
+              <path d="M8.5 8.5L12 12M4 5.5h3M5.5 4v3"/>
+            </svg>
+          </button>
+          <div class="tool-divider"></div>
+          <button class="tool-btn" title="Mirror">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+              <line x1="7" y1="2" x2="7" y2="12"/>
+              <path d="M4 3.5L2 7l2 3.5" stroke-dasharray="1.5 1.5"/>
+              <path d="M10 3.5L12 7l-2 3.5" stroke-dasharray="1.5 1.5"/>
+            </svg>
+          </button>
+          <button class="tool-btn" title="Measure">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+              <path d="M2 10.5L10.5 2M2 10.5l1.5-1.5M5 8L6.5 6.5M7.5 5l1.5-1.5"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Paper with SVG spiral art -->
+        <div class="paper-doc">
+          <svg id="art-svg" viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg" fill="none">
+            <path id="sp1" stroke="#1a1a1a" stroke-width="0.65" opacity="0.88"/>
+            <path id="sp2" stroke="#1a1a1a" stroke-width="0.45" opacity="0.42"/>
+            <path id="sp3" stroke="#1a1a1a" stroke-width="0.35" opacity="0.28"/>
+            <circle cx="150" cy="150" r="1.8" fill="#1a1a1a" opacity="0.25"/>
+          </svg>
+        </div>
+      </div>
+
+      <!-- BOTTOM: Mathematical Model -->
+      <div class="bottom-pane">
+        <div class="bottom-hdr">
+          <span class="pane-title" style="font-size:var(--font-size-xs);letter-spacing:0.02em;font-weight:600">Mathematical Model</span>
+          <button class="pane-toggle">▾</button>
+        </div>
+        <div class="bottom-body">
+          <div class="formula-block">
+            <div class="formula-eq">
+              <span><span class="formula-accent">r(θ)</span> = a · e<sup style="font-size:8px">b·θ</sup></span>
+              <span style="opacity:0.5;font-size:10px">x = r·cos(θ+φ),&nbsp; y = r·sin(θ+φ)</span>
+            </div>
+            <div class="formula-params">
+              <div class="formula-param"><span class="f-key">a (scale)</span><span class="f-val">0.420</span></div>
+              <div class="formula-param"><span class="f-key">b (growth)</span><span class="f-val">0.067</span></div>
+              <div class="formula-param"><span class="f-key">θ range</span><span class="f-val">0→84π</span></div>
+              <div class="formula-param"><span class="f-key">seed</span><span class="f-val">42847</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT PANE -->
+    <aside class="pane-right">
+
+      <!-- Tab bar -->
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="layers">Layers</button>
+        <button class="tab-btn" data-tab="pens">Pens</button>
+      </div>
+
+      <!-- LAYERS TAB -->
+      <div class="tab-panel active" id="tab-layers">
+        <div class="tab-panel-hdr">
+          <span class="tab-panel-meta">3 layers</span>
+          <button class="add-btn">+ Layer</button>
+        </div>
+        <div class="pane-body">
+          <div class="layer-list">
+            <div class="layer-item active">
+              <div class="layer-bar" style="background:#4e9ee1"></div>
+              <span class="layer-name">Spiral Layer</span>
+              <span class="layer-tag">SPIRAL</span>
+              <div class="layer-acts">
+                <button class="layer-act">◉</button>
+                <button class="layer-act">⊘</button>
+              </div>
+            </div>
+            <div class="layer-item">
+              <div class="layer-bar" style="background:#a78bfa"></div>
+              <span class="layer-name">Wavetable</span>
+              <span class="layer-tag">WAVE</span>
+              <div class="layer-acts">
+                <button class="layer-act">◉</button>
+                <button class="layer-act">⊘</button>
+              </div>
+            </div>
+            <div class="layer-item dim">
+              <div class="layer-bar" style="background:#f59e0b"></div>
+              <span class="layer-name">Background Ring</span>
+              <span class="layer-tag">RING</span>
+              <div class="layer-acts">
+                <button class="layer-act">◎</button>
+                <button class="layer-act">⊘</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PENS TAB -->
+      <div class="tab-panel" id="tab-pens">
+        <div class="pens-bar">
+          <button class="palette-btn">Blues-01 ▾</button>
+          <button class="add-btn">+ Pen</button>
+        </div>
+        <div class="pen-list">
+          <div class="pen-item">
+            <div class="pen-dot" style="background:#4e9ee1"></div>
+            <span class="pen-nm">Pen 1</span>
+            <div class="sld-fx-wrap">
+              <input type="range" min="1" max="20" value="3" class="pen-sld">
+            </div>
+            <span class="pen-w">0.30</span>
+          </div>
+          <div class="pen-item">
+            <div class="pen-dot" style="background:#818cf8"></div>
+            <span class="pen-nm">Pen 2</span>
+            <div class="sld-fx-wrap">
+              <input type="range" min="1" max="20" value="10" class="pen-sld">
+            </div>
+            <span class="pen-w">0.50</span>
+          </div>
+          <div class="pen-item">
+            <div class="pen-dot" style="background:#34d399"></div>
+            <span class="pen-nm">Pen 3</span>
+            <div class="sld-fx-wrap">
+              <input type="range" min="1" max="20" value="2" class="pen-sld">
+            </div>
+            <span class="pen-w">0.20</span>
+          </div>
+        </div>
+        <button class="right-sect-hdr">
+          <span style="display:flex;align-items:center;gap:6px">Auto-Colorization <span class="info-badge">i</span></span>
+          <span class="sect-arrow down"></span>
+        </button>
+        <div class="bg-row">
+          <span class="bg-lbl">Background</span>
+          <div class="bg-sw"></div>
+        </div>
+        <div class="stats-box">
+          <div class="stats-ttl">Estimation</div>
+          <div class="stats-grid">
+            <span class="s-key">Distance</span><span class="s-val">12.4m</span>
+            <span class="s-key">Lines</span><span class="s-val">847</span>
+            <span class="s-key">Est. Time</span><span class="s-val">3:42</span>
+          </div>
+        </div>
+      </div>
+
+    </aside>
+
+  </main>
+</div>
+
+<script>
+// ── Mode toggle ────────────────────────────────────────────────
+const root = document.documentElement;
+const modeBtn = document.getElementById('mode-btn');
+
+modeBtn.addEventListener('click', () => {
+  const next = root.dataset.mode === 'dark' ? 'light' : 'dark';
+  root.dataset.mode = next;
+  modeBtn.textContent = next === 'dark' ? '◑ Light' : '◐ Dark';
+  document.querySelectorAll('.ctrl-slider, .pen-sld').forEach(syncSlider);
+});
+
+// ── Right pane tabs ────────────────────────────────────────────
+document.querySelectorAll('.tab-btn[data-tab]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const pane = btn.closest('.pane-right');
+    pane.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+    pane.querySelectorAll('.tab-panel').forEach(p =>
+      p.classList.toggle('active', p.id === 'tab-' + btn.dataset.tab));
+    triggerBtnPulse(btn);
+  });
+});
+
+// ── Menu dropdowns ─────────────────────────────────────────────
+document.querySelectorAll('.menu-item').forEach(item => {
+  const trigger = item.querySelector('.menu-trigger');
+  const drop = item.querySelector('.menu-dropdown');
+  if (!drop) return;
+  trigger.addEventListener('click', e => {
+    e.stopPropagation();
+    const wasOpen = drop.classList.contains('open');
+    document.querySelectorAll('.menu-dropdown.open').forEach(d => d.classList.remove('open'));
+    document.querySelectorAll('.menu-trigger.open').forEach(t => t.classList.remove('open'));
+    if (!wasOpen) { drop.classList.add('open'); trigger.classList.add('open'); }
+  });
+  trigger.addEventListener('mouseenter', () => {
+    if (document.querySelector('.menu-dropdown.open') && !drop.classList.contains('open')) {
+      document.querySelectorAll('.menu-dropdown.open').forEach(d => d.classList.remove('open'));
+      document.querySelectorAll('.menu-trigger.open').forEach(t => t.classList.remove('open'));
+      drop.classList.add('open'); trigger.classList.add('open');
+    }
+  });
+});
+document.addEventListener('click', () => {
+  document.querySelectorAll('.menu-dropdown.open').forEach(d => d.classList.remove('open'));
+  document.querySelectorAll('.menu-trigger.open').forEach(t => t.classList.remove('open'));
+});
+
+// ── Slider fill + release animation ───────────────────────────
+function syncSlider(sl) {
+  const min = parseFloat(sl.min) || 0;
+  const max = parseFloat(sl.max) || 100;
+  const pct = ((parseFloat(sl.value) - min) / (max - min)) * 100;
+  sl.style.setProperty('--fill', pct.toFixed(1) + '%');
+  const wrap = sl.closest('.sld-fx-wrap');
+  if (wrap) wrap.style.setProperty('--fill', pct.toFixed(1) + '%');
+  const vi = sl.closest('.slider-row')?.querySelector('.slider-val');
+  if (vi && document.activeElement !== vi) vi.value = sl.value;
+}
+
+function applyValInput(sl, vi) {
+  const v = parseFloat(vi.value);
+  if (!isNaN(v)) {
+    sl.value = Math.min(parseFloat(sl.max), Math.max(parseFloat(sl.min), v));
+    syncSlider(sl);
+  } else {
+    vi.value = sl.value;
+  }
+}
+
+function initSlider(sl) {
+  syncSlider(sl);
+
+  sl.addEventListener('input', () => syncSlider(sl));
+
+  sl.addEventListener('change', () => {
+    // Thumb pulse
+    sl.classList.remove('just-released');
+    void sl.offsetWidth;
+    sl.classList.add('just-released');
+    sl.addEventListener('animationend', () => sl.classList.remove('just-released'), { once: true });
+
+    // Fill-side overlay pulse
+    const wrap = sl.closest('.sld-fx-wrap');
+    if (wrap) {
+      if (wrap._fxTimer) clearTimeout(wrap._fxTimer);
+      wrap.classList.remove('fx-active');
+      void wrap.offsetWidth;
+      wrap.classList.add('fx-active');
+      wrap._fxTimer = setTimeout(() => wrap.classList.remove('fx-active'), 800);
+    }
+  });
+
+  const vi = sl.closest('.slider-row')?.querySelector('.slider-val');
+  if (vi) {
+    vi.addEventListener('focus', () => vi.select());
+    vi.addEventListener('input', () => {
+      const v = parseFloat(vi.value);
+      if (!isNaN(v)) { sl.value = Math.min(parseFloat(sl.max), Math.max(parseFloat(sl.min), v)); syncSlider(sl); }
+    });
+    vi.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { applyValInput(sl, vi); vi.blur(); }
+      if (e.key === 'Escape') { vi.value = sl.value; vi.blur(); }
+    });
+    vi.addEventListener('blur', () => applyValInput(sl, vi));
+  }
+}
+
+document.querySelectorAll('.ctrl-slider, .pen-sld').forEach(initSlider);
+
+// ── Angle dial ─────────────────────────────────────────────────
+
+// Radial glow ring expands from the handle position across the dial on release
+function dialReleaseGlow(svg, angleDeg) {
+  const rad = angleDeg * Math.PI / 180;
+  const hx  = +(19 + 14 * Math.sin(rad)).toFixed(2);
+  const hy  = +(19 - 14 * Math.cos(rad)).toFixed(2);
+
+  const ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  ring.setAttribute('cx', hx);
+  ring.setAttribute('cy', hy);
+  ring.setAttribute('r', '1');
+  ring.setAttribute('fill', 'none');
+  ring.setAttribute('stroke', 'var(--ui-accent)');
+  ring.setAttribute('stroke-width', '1.4');
+  ring.setAttribute('opacity', '0.63');
+  ring.setAttribute('clip-path', 'url(#dial-face-clip)');
+  ring.style.pointerEvents = 'none';
+
+  // Keep center dot on top
+  const center = svg.querySelector('.dial-center');
+  if (center) svg.insertBefore(ring, center);
+  else svg.appendChild(ring);
+
+  const t0 = performance.now();
+  const dur = 520;
+  (function step(now) {
+    const p    = Math.min((now - t0) / dur, 1);
+    const ease = 1 - Math.pow(1 - p, 2.5);
+    ring.setAttribute('r',            (1  + ease * 24).toFixed(2));
+    ring.setAttribute('stroke-width', (1.4 - ease * 1.0).toFixed(2));
+    ring.setAttribute('opacity',      ((1 - p) * 0.63).toFixed(3));
+    if (p < 1) requestAnimationFrame(step);
+    else ring.remove();
+  })(t0);
+}
+
+function initDial(svg) {
+  const ctrl = svg.closest('.angle-ctrl');
+  const inp  = ctrl?.querySelector('.angle-inp');
+  if (!inp) return;
+  const CX = 19, CY = 19;
+  let dragging = false;
+  let currentAngle = 0;
+
+  function svgAngle(e) {
+    const r = svg.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width  * 38 - CX;
+    const y = (e.clientY - r.top)  / r.height * 38 - CY;
+    let deg = Math.atan2(x, -y) * 180 / Math.PI;
+    return Math.round(((deg % 360) + 360) % 360);
+  }
+
+  function applyDial(deg) {
+    currentAngle = deg;
+    svg.querySelector('.dial-pointer-g')
+       ?.setAttribute('transform', `rotate(${deg},19,19)`);
+    inp.value = deg;
+  }
+
+  svg.addEventListener('pointerdown', e => {
+    dragging = true;
+    svg.setPointerCapture(e.pointerId);
+    svg.classList.add('is-dragging');
+    applyDial(svgAngle(e));
+    e.preventDefault();
+  });
+  svg.addEventListener('pointermove', e => {
+    if (dragging) applyDial(svgAngle(e));
+  });
+  svg.addEventListener('pointerup', () => {
+    if (dragging) dialReleaseGlow(svg, currentAngle);
+    dragging = false;
+    svg.classList.remove('is-dragging');
+  });
+
+  inp.addEventListener('change', () => {
+    const v = parseInt(inp.value, 10);
+    if (!isNaN(v)) applyDial(((v % 360) + 360) % 360);
+  });
+  inp.addEventListener('keydown', e => {
+    const cur = parseInt(inp.value, 10) || 0;
+    if (e.key === 'ArrowUp')   { applyDial(((cur + 1) + 360) % 360); e.preventDefault(); }
+    if (e.key === 'ArrowDown') { applyDial(((cur - 1) + 360) % 360); e.preventDefault(); }
+    if (e.key === 'Enter')     { inp.blur(); }
+  });
+}
+document.querySelectorAll('.angle-dial').forEach(initDial);
+
+// ── Button selection pulse ─────────────────────────────────────
+function triggerBtnPulse(el) {
+  el.classList.remove('btn-pulse');
+  void el.offsetWidth;
+  el.classList.add('btn-pulse');
+  el.addEventListener('animationend', () => el.classList.remove('btn-pulse'), { once: true });
+}
+
+// Segmented controls
+document.querySelectorAll('.seg-ctrl').forEach(ctrl => {
+  ctrl.querySelectorAll('.seg-opt').forEach(opt => {
+    opt.addEventListener('click', () => {
+      ctrl.querySelectorAll('.seg-opt').forEach(o => o.classList.remove('active'));
+      opt.classList.add('active');
+      triggerBtnPulse(opt);
+    });
+  });
+});
+
+// Toggle button groups (e.g. Mirror axis)
+document.querySelectorAll('.tog-grp').forEach(grp => {
+  grp.querySelectorAll('.tog-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      grp.querySelectorAll('.tog-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      triggerBtnPulse(btn);
+    });
+  });
+});
+
+// Section collapse / expand
+document.querySelectorAll('.sect-hdr').forEach(hdr => {
+  const body  = hdr.nextElementSibling;
+  const arrow = hdr.querySelector('.sect-arrow');
+  if (!body) return;
+  hdr.addEventListener('click', () => {
+    const collapsed = body.style.display === 'none';
+    body.style.display = collapsed ? '' : 'none';
+    if (arrow) arrow.classList.toggle('down', collapsed);
+  });
+});
+
+// Toolbar tool selection
+document.querySelectorAll('.tool-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    btn.closest('.tool-bar').querySelectorAll('.tool-btn')
+       .forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    triggerBtnPulse(btn);
+  });
+});
+
+// ── Spiral art ─────────────────────────────────────────────────
+function mkSpiral(cx, cy, r0, r1, turns, n, phase) {
+  let d = '';
+  for (let i = 0; i <= n; i++) {
+    const t = (i / n) * turns * 2 * Math.PI + (phase || 0);
+    const r = r0 + (r1 - r0) * (i / n);
+    d += (i === 0 ? 'M' : 'L') +
+         (cx + r * Math.cos(t)).toFixed(2) + ',' +
+         (cy + r * Math.sin(t)).toFixed(2);
+  }
+  return d;
+}
+document.getElementById('sp1').setAttribute('d', mkSpiral(150, 150, 3, 130, 7.5, 500));
+document.getElementById('sp2').setAttribute('d', mkSpiral(150, 150, 6, 112, 6,   380, Math.PI * 0.28));
+document.getElementById('sp3').setAttribute('d', mkSpiral(150, 150, 2,  88, 5,   280, Math.PI * 0.55));
+</script>
+</body>
+</html>

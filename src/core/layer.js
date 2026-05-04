@@ -6,6 +6,7 @@
 
   class Layer {
     constructor(id, type = 'flowfield', name) {
+      if (type === 'expanded') type = 'shape';
       this.id = id;
       this.type = type;
       this.name = name;

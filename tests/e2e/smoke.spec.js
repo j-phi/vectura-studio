@@ -150,6 +150,11 @@ const captureRepresentativePatternIds = async (page) =>
   });
 
 
+const addAlgoLayer = async (page) => {
+  await page.click('#btn-add-layer');
+  await page.click('.lvl-add-item[data-add="algo"]');
+};
+
 test.describe('Vectura smoke interactions', () => {
   test('fill-built hero patterns do not retain swallowed subpaths in extracted boundaries', async ({ page }) => {
     await page.goto('/');
@@ -277,7 +282,7 @@ test.describe('Vectura smoke interactions', () => {
 
     await expect(page.locator('#status-bar')).toBeVisible();
     await expect(page.locator('#generator-module')).toBeVisible();
-    await expect(page.locator('#layer-list .layer-item').first()).toBeVisible();
+    await expect(page.locator('#layer-list [data-lvl-id]').first()).toBeVisible();
     await expect
       .poll(async () => (await page.locator('#formula-display').innerText()).trim().length)
       .toBeGreaterThan(0);
@@ -285,9 +290,9 @@ test.describe('Vectura smoke interactions', () => {
       .poll(async () => (await page.locator('#algo-desc').innerText()).trim().length)
       .toBeGreaterThan(0);
 
-    const initialLayers = await page.locator('#layer-list .layer-item').count();
-    await page.click('#btn-add-layer');
-    await expect(page.locator('#layer-list .layer-item')).toHaveCount(initialLayers + 1);
+    const initialLayers = await page.locator('#layer-list [data-lvl-id]').count();
+    await addAlgoLayer(page);
+    await expect(page.locator('#layer-list [data-lvl-id]')).toHaveCount(initialLayers + 1);
 
     const initialGeometry = await captureActiveLayerGeometry(page);
     const nextType = initialGeometry.type === 'topo' ? 'lissajous' : 'topo';
@@ -361,9 +366,9 @@ test.describe('Vectura smoke interactions', () => {
     await page.goto('/');
     await page.click('#auto-colorization-header');
 
-    const layerCount = await page.locator('#layer-list .layer-item').count();
+    const layerCount = await page.locator('#layer-list [data-lvl-id]').count();
     for (let i = layerCount; i < 4; i += 1) {
-      await page.click('#btn-add-layer');
+      await addAlgoLayer(page);
     }
 
     const readPenAssignments = () =>
@@ -587,7 +592,7 @@ test.describe('Vectura smoke interactions', () => {
       SETTINGS.globalLayerCount = 0;
 
       const buildLayer = (id, name, x1, x2) => {
-        const layer = new Layer(id, 'expanded', name);
+        const layer = new Layer(id, 'shape', name);
         layer.params.curves = false;
         layer.sourcePaths = [[
           { x: x1, y: 42 },
@@ -693,7 +698,7 @@ test.describe('Vectura smoke interactions', () => {
         return points;
       };
 
-      const maskParent = new Layer('smoke-export-mask-parent', 'expanded', 'Mask Parent');
+      const maskParent = new Layer('smoke-export-mask-parent', 'shape', 'Mask Parent');
       maskParent.paths = [[
         { x: 70, y: 50 },
         { x: 130, y: 50 },
@@ -706,7 +711,7 @@ test.describe('Vectura smoke interactions', () => {
       maskParent.strokeWidth = 0.4;
       maskParent.lineCap = 'round';
 
-      const child = new Layer('smoke-export-mask-child', 'expanded', 'Child Circle');
+      const child = new Layer('smoke-export-mask-child', 'shape', 'Child Circle');
       child.parentId = maskParent.id;
       child.paths = [createCirclePath(100, 90, 48)];
       child.penId = 'p1';
@@ -765,11 +770,11 @@ test.describe('Vectura smoke interactions', () => {
 
     await page.goto('/');
 
-    const initialLayers = await page.locator('#layer-list .layer-item').count();
+    const initialLayers = await page.locator('#layer-list [data-lvl-id]').count();
     await page.getByRole('button', { name: 'Insert' }).click();
     await page.click('#btn-insert-mirror-modifier');
 
-    await expect(page.locator('#layer-list .layer-item')).toHaveCount(initialLayers + 1);
+    await expect(page.locator('#layer-list [data-lvl-id]')).toHaveCount(initialLayers + 1);
     await expect(page.locator('#left-section-primary-title')).toHaveText('Modifier');
     await expect(page.locator('#left-section-secondary-title')).toHaveText('Modifier Configuration');
     await expect(page.locator('#generator-module')).toHaveValue('mirror');
@@ -804,7 +809,7 @@ test.describe('Vectura smoke interactions', () => {
     await page.getByRole('button', { name: 'Insert' }).click();
     await page.click('#btn-insert-mirror-modifier');
 
-    await page.click('#btn-add-layer');
+    await addAlgoLayer(page);
     await expect(page.locator('#left-section-primary-title')).toHaveText('Algorithm');
     await expect(page.locator('#generator-module')).toHaveValue('rings');
 
@@ -858,7 +863,7 @@ test.describe('Vectura smoke interactions', () => {
     const box = await canvas.boundingBox();
     expect(box).toBeTruthy();
 
-    const initialLayers = await page.locator('#layer-list .layer-item').count();
+    const initialLayers = await page.locator('#layer-list [data-lvl-id]').count();
 
     await page.evaluate(() => window.app.ui.setActiveTool('shape-oval'));
     await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.35);
@@ -866,7 +871,7 @@ test.describe('Vectura smoke interactions', () => {
     await page.mouse.move(box.x + box.width * 0.45, box.y + box.height * 0.52);
     await page.mouse.up();
 
-    await expect(page.locator('#layer-list .layer-item')).toHaveCount(initialLayers + 1);
+    await expect(page.locator('#layer-list [data-lvl-id]')).toHaveCount(initialLayers + 1);
 
     const circleMeta = await page.evaluate(() => {
       const layer = window.app.engine.getActiveLayer();
@@ -883,7 +888,7 @@ test.describe('Vectura smoke interactions', () => {
     await page.keyboard.press('ArrowUp');
     await page.mouse.up();
 
-    await expect(page.locator('#layer-list .layer-item')).toHaveCount(initialLayers + 2);
+    await expect(page.locator('#layer-list [data-lvl-id]')).toHaveCount(initialLayers + 2);
 
     const polygonMeta = await page.evaluate(() => {
       const layer = window.app.engine.getActiveLayer();
@@ -937,11 +942,11 @@ test.describe('Vectura smoke interactions', () => {
         },
       };
 
-      const maskParent = new Layer('drag-preview-mask-parent', 'expanded', 'Preview Mask');
+      const maskParent = new Layer('drag-preview-mask-parent', 'shape', 'Preview Mask');
       maskParent.sourcePaths = [circlePath];
       maskParent.mask.enabled = true;
 
-      const child = new Layer('drag-preview-mask-child', 'expanded', 'Preview Child');
+      const child = new Layer('drag-preview-mask-child', 'shape', 'Preview Child');
       child.parentId = maskParent.id;
       child.sourcePaths = [[
         { x: 20, y: 110 },
@@ -1181,7 +1186,7 @@ test.describe('Vectura smoke interactions', () => {
         },
       };
 
-      const maskParent = new Layer('mask-parent-oval', 'expanded', 'Oval Mask');
+      const maskParent = new Layer('mask-parent-oval', 'shape', 'Oval Mask');
       maskParent.params.seed = 0;
       maskParent.params.posX = 0;
       maskParent.params.posY = 0;
@@ -1309,13 +1314,13 @@ test.describe('Vectura smoke interactions', () => {
         },
       };
 
-      const maskParent = new Layer('mask-parent-circle-edit', 'expanded', 'Circle Mask');
+      const maskParent = new Layer('mask-parent-circle-edit', 'shape', 'Circle Mask');
       maskParent.sourcePaths = [circlePath];
       maskParent.mask.enabled = true;
       maskParent.params.smoothing = 0;
       maskParent.params.simplify = 0;
 
-      const child = new Layer('masked-child-line-edit', 'expanded', 'Masked Line');
+      const child = new Layer('masked-child-line-edit', 'shape', 'Masked Line');
       child.parentId = maskParent.id;
       child.paths = [[
         { x: 20, y: 110 },
@@ -1395,7 +1400,7 @@ test.describe('Vectura smoke interactions', () => {
         },
       };
 
-      const maskParent = new Layer('mask-parent-hidden-ui', 'expanded', 'Hidden Mask');
+      const maskParent = new Layer('mask-parent-hidden-ui', 'shape', 'Hidden Mask');
       maskParent.sourcePaths = [circlePath];
       maskParent.mask.enabled = true;
 

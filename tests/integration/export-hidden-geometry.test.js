@@ -61,7 +61,7 @@ describe('SVG export hidden geometry toggle', () => {
     const engine = new VectorEngine();
     engine.layers = [];
 
-    const maskParent = new Layer('mask-parent', 'expanded', 'Mask Parent');
+    const maskParent = new Layer('mask-parent', 'shape', 'Mask Parent');
     maskParent.penId = parentPenId;
     maskParent.strokeWidth = 0.4;
     maskParent.lineCap = 'round';
@@ -76,7 +76,7 @@ describe('SVG export hidden geometry toggle', () => {
     maskParent.mask.enabled = true;
     maskParent.mask.hideLayer = hideMaskLayer;
 
-    const child = new Layer('child-circle', 'expanded', 'Child Circle');
+    const child = new Layer('child-circle', 'shape', 'Child Circle');
     child.parentId = maskParent.id;
     child.penId = childPenId;
     child.strokeWidth = 0.4;

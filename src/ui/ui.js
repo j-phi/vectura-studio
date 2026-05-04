@@ -204,7 +204,7 @@
     const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
     return luminance > 0.62 ? dark : light;
   };
-  const SEEDLESS_ALGOS = new Set(['lissajous', 'harmonograph', 'expanded', 'group']);
+  const SEEDLESS_ALGOS = new Set(['lissajous', 'harmonograph', 'shape', 'group']);
   const usesSeed = (type) => !SEEDLESS_ALGOS.has(type);
   const mapRange = (value, inMin, inMax, outMin, outMax) => {
     if (inMax === inMin) return outMin;
@@ -8389,19 +8389,20 @@
     }
 
     getPreferredNewLayerType() {
+      const isHidden = (type) => ALGO_DEFAULTS?.[type]?.hidden;
       const active = this.app.engine.getActiveLayer?.();
       if (active && !active.isGroup) {
         const activeType = this.rememberDrawableLayerType(active);
-        if (activeType) return activeType;
+        if (activeType && !isHidden(activeType)) return activeType;
       }
       const rememberedType = this.rememberDrawableLayerType(this.lastDrawableLayerType);
-      if (rememberedType) return rememberedType;
+      if (rememberedType && !isHidden(rememberedType)) return rememberedType;
       const moduleSelect = getEl('generator-module', { silent: true });
-      if (moduleSelect && this.isDrawableLayerType(moduleSelect.value)) {
+      if (moduleSelect && this.isDrawableLayerType(moduleSelect.value) && !isHidden(moduleSelect.value)) {
         return this.rememberDrawableLayerType(moduleSelect.value);
       }
       const fallbackLayer =
-        (this.app.engine.layers || []).find((layer) => layer && !layer.isGroup && this.isDrawableLayerType(layer.type)) || null;
+        (this.app.engine.layers || []).find((layer) => layer && !layer.isGroup && this.isDrawableLayerType(layer.type) && !isHidden(layer.type)) || null;
       return this.rememberDrawableLayerType(fallbackLayer?.type || 'wavetable') || 'wavetable';
     }
 
@@ -8516,9 +8517,8 @@
       const selectedLayers = layers.filter((layer) => selectedSet.has(layer.id));
       const maxIndex = Math.max(...selectedLayers.map((layer) => layers.indexOf(layer)));
       SETTINGS.globalLayerCount++;
-      const groupName = `Group ${String(SETTINGS.globalLayerCount).padStart(2, '0')}`;
       const groupId = Math.random().toString(36).slice(2, 11);
-      const group = new Layer(groupId, 'group', groupName);
+      const group = new Layer(groupId, 'group', this.getUniqueLayerName('Group', groupId));
       group.isGroup = true;
       group.groupType = 'group';
       group.groupCollapsed = false;
@@ -9692,6 +9692,13 @@
     }
 
     bindGlobal() {
+      this.layerLockedIds  = new Set();
+      this.layerSearchQ    = '';
+      this.layerFilterType = 'all';
+      this.layerFilterOpen = false;
+      this.layerAddOpen    = false;
+      this._lvlDblId       = null;
+      this._lvlDblTime     = 0;
       const addLayer = getEl('btn-add-layer');
       const insertMirrorModifier = getEl('btn-insert-mirror-modifier');
       const moduleSelect = getEl('generator-module');
@@ -9806,7 +9813,7 @@
             const nextType = e.target.value;
             this.rememberDrawableLayerType(nextType);
             this.restoreLayerParams(l, nextType);
-            if (l.type !== 'expanded') l.sourcePaths = null;
+            if (l.type !== 'shape') l.sourcePaths = null;
             if (this.app.renderer?.directSelection?.layerId === l.id) {
               this.app.renderer.clearDirectSelection();
             }
@@ -10286,6 +10293,79 @@
         };
       }
 
+      // ── Layer bar color palette picker ──────────────────────────────
+      {
+        const _updateLBPTrigger = () => {
+          const pid = SETTINGS.layerBarPaletteId || 'prism';
+          const palettes = window.Vectura.LAYER_PALETTES || [];
+          const p = palettes.find(x => x.id === pid);
+          const nameEl = getEl('layer-bar-palette-name', { silent: true });
+          const previewEl = getEl('layer-bar-palette-preview', { silent: true });
+          if (nameEl) nameEl.textContent = p?.name || pid;
+          if (previewEl) {
+            previewEl.innerHTML = '';
+            (p?.preview || []).forEach(hex => {
+              const s = document.createElement('span');
+              s.className = 'palette-swatch'; s.style.background = hex;
+              previewEl.appendChild(s);
+            });
+          }
+        };
+
+        const _buildLBPMenu = () => {
+          const menu = getEl('layer-bar-palette-menu', { silent: true });
+          if (!menu) return;
+          const palettes = window.Vectura.LAYER_PALETTES || [];
+          const activePid = SETTINGS.layerBarPaletteId || 'prism';
+          menu.innerHTML = '';
+          palettes.forEach(p => {
+            const row = document.createElement('div');
+            row.className = 'palette-picker-row' + (p.id === activePid ? ' is-active' : '');
+            const lbl = document.createElement('span');
+            lbl.className = 'palette-picker-label'; lbl.textContent = p.name;
+            row.appendChild(lbl);
+            if (p.preview) {
+              const sw = document.createElement('div'); sw.className = 'palette-picker-swatches';
+              p.preview.forEach(hex => {
+                const s = document.createElement('span');
+                s.className = 'palette-swatch'; s.style.background = hex;
+                sw.appendChild(s);
+              });
+              row.appendChild(sw);
+            } else {
+              const note = document.createElement('span');
+              note.className = 'palette-picker-note'; note.textContent = 'uses pen color';
+              row.appendChild(note);
+            }
+            row.addEventListener('click', () => {
+              SETTINGS.layerBarPaletteId = p.id;
+              this.app.persistPreferencesDebounced?.();
+              _updateLBPTrigger();
+              _buildLBPMenu();
+              menu.classList.add('hidden');
+              this.renderLayers?.();
+            });
+            menu.appendChild(row);
+          });
+        };
+
+        const lbpTrigger = getEl('layer-bar-palette-trigger', { silent: true });
+        if (lbpTrigger) {
+          lbpTrigger.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const menu = getEl('layer-bar-palette-menu', { silent: true });
+            if (!menu) return;
+            const opening = menu.classList.contains('hidden');
+            menu.classList.toggle('hidden', !opening);
+            if (opening) _buildLBPMenu();
+          });
+        }
+        document.addEventListener('click', () => {
+          getEl('layer-bar-palette-menu', { silent: true })?.classList.add('hidden');
+        });
+        _updateLBPTrigger();
+      }
+
       if (btnExport) {
         btnExport.onclick = () => this.openExportModal();
       }
@@ -10630,7 +10710,7 @@
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'e') {
           e.preventDefault();
           const selectedLayers = this.app.renderer?.getSelectedLayers?.() || [];
-          const targets = selectedLayers.filter((layer) => layer && !layer.parentId && !layer.isGroup);
+          const targets = selectedLayers.filter((layer) => layer && !layer.isGroup);
           if (!targets.length) return;
           if (this.app.pushHistory) this.app.pushHistory();
           targets.forEach((layer) => this.expandLayer(layer, { skipHistory: true }));
@@ -10746,190 +10826,267 @@
           if (this.activeTool === 'fill-erase') this.setActiveTool?.(restore, { temporary: true });
         }
       });
+
+      // ── Layers V8: icon factory ──────────────────────────────────
+      const _LVL_SA = `stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"`;
+      const _lvlIco = (p, s = 12) =>
+        `<svg width="${s}" height="${s}" viewBox="0 0 12 12" fill="none" stroke="currentColor" ${_LVL_SA}>${p}</svg>`;
+      this._LVL_I = {
+        eye:      () => _lvlIco(`<ellipse cx="6" cy="6" rx="5" ry="3.5"/><circle cx="6" cy="6" r="1.5" fill="currentColor" stroke="none"/>`),
+        eyeOff:   () => _lvlIco(`<path d="M1 1.5l10 9M3.5 3C2.2 3.9 1 6 1 6s2.2 3.5 5 3.5c.9 0 1.7-.2 2.4-.6"/><path d="M9 8.8C10 7.9 11 6 11 6S8.8 2.5 6 2.5c-.4 0-.7 0-1.1.1"/>`),
+        lock:     () => _lvlIco(`<rect x="2.5" y="5.5" width="7" height="5" rx="1"/><path d="M4 5.5V4a2 2 0 1 1 4 0v1.5"/><line x1="6" y1="7.5" x2="6" y2="8.5"/>`),
+        lockOpen: () => _lvlIco(`<rect x="2.5" y="5.5" width="7" height="5" rx="1"/><path d="M4 5.5V4a2 2 0 1 1 4 0" stroke-dasharray="2 1.5"/>`),
+        folder:   () => _lvlIco(`<path d="M1 4C1 3 1.7 2.5 2.5 2.5H5l1 1.5h3.5C10.3 4 11 4.7 11 5.5V9c0 .8-.7 1.5-1.5 1.5h-7C1.7 10.5 1 9.8 1 9V4z"/>`),
+        layer:    () => _lvlIco(`<rect x="1.5" y="3" width="9" height="7.5" rx=".8"/><line x1="3.5" y1="1.5" x2="8.5" y2="1.5"/>`),
+        grpPlus:  () => _lvlIco(`<path d="M1 4C1 3 1.7 2.5 2.5 2.5H4.5l1 1.5h4C10.3 4 11 4.7 11 5.5V9c0 .8-.7 1.5-1.5 1.5h-7C1.7 10.5 1 9.8 1 9V4z"/><line x1="6" y1="6" x2="6" y2="9"/><line x1="4.5" y1="7.5" x2="7.5" y2="7.5"/>`),
+        caret:    () => _lvlIco(`<path d="M4.5 3l3 3-3 3"/>`),
+        trash:    () => _lvlIco(`<line x1="2" y1="3.5" x2="10" y2="3.5"/><path d="M4.5 3.5V2.5h3v1M4 5l.4 4h3.2l.4-4"/>`),
+        dup:      () => _lvlIco(`<rect x="4.5" y="1" width="6" height="6" rx="1"/><rect x="1.5" y="4" width="6" height="7" rx="1" fill="var(--color-panel)" stroke="currentColor"/>`),
+        expand:   () => _lvlIco(`<line x1="1.5" y1="3" x2="7.5" y2="3"/><line x1="1.5" y1="6" x2="7.5" y2="6"/><line x1="1.5" y1="9" x2="7.5" y2="9"/><line x1="10" y1="7" x2="10" y2="11" stroke-width="1.9"/><line x1="8" y1="9" x2="12" y2="9" stroke-width="1.9"/>`),
+        maskSrc:  () => _lvlIco(`<rect x="3.5" y="5" width="8" height="6.5" rx="1" stroke-dasharray="2 1.5"/><rect x="0.5" y="1" width="7.5" height="5.5" rx="1"/>`),
+        ungroup:  () => _lvlIco(`<path d="M1 3.5V2h1.5M9.5 2H11v1.5M1 8.5V10h1.5M9.5 10H11V8.5"/><rect x="3.5" y="3.5" width="5" height="5" rx=".5" stroke-dasharray="1.5 1.2"/>`),
+        flowfield:    () => _lvlIco(`<path d="M1 4c1.2-2 2.4-2 3 0s1.8 2 3 0 1.8-2 3 0M1 8c1.2-2 2.4-2 3 0s1.8 2 3 0 1.8-2 3 0"/>`),
+        wavetable:    () => _lvlIco(`<path d="M1 6c.6-2.5 1.2-2.5 2 0s1.4 2.5 2 0 1.4-2.5 2 0 1.4 2.5 2 0 .6-2 1-1.5"/>`),
+        hyphae:       () => _lvlIco(`<path d="M6 11V7M6 7L3.5 4.5M6 7L8.5 4.5M3.5 4.5L2 3M3.5 4.5L4.2 2.5M8.5 4.5L7.2 2.5M8.5 4.5L10 3"/>`),
+        topo:         () => _lvlIco(`<circle cx="6" cy="6" r="1.5"/><circle cx="6" cy="6" r="3.2"/><circle cx="6" cy="6" r="5"/>`),
+        spiral:       () => _lvlIco(`<path d="M6 6c0 0 .8 0 .8-.8s-.8-.8-1.5-.5-1.3 1-1.2 2 .8 2.3 2.4 2.3S9 8 9 6.2 7.7 3 5.5 3 2 4.5 2 6.5"/>`),
+        rings:        () => _lvlIco(`<circle cx="6" cy="6" r="2"/><circle cx="6" cy="6" r="4.5"/>`),
+        grid:         () => _lvlIco(`<line x1="1" y1="4.5" x2="11" y2="4.5"/><line x1="1" y1="7.5" x2="11" y2="7.5"/><line x1="4" y1="1.5" x2="4" y2="10.5"/><line x1="8" y1="1.5" x2="8" y2="10.5"/>`),
+        boids:        () => _lvlIco(`<path d="M6 2l1.5 3.5L11 6l-3.5 1.5L6 11l-1.5-3.5L1 6l3.5-1.5Z"/>`),
+        attractor:    () => _lvlIco(`<circle cx="6" cy="6" r="1"/><path d="M6 1v1.5M6 9.5V11M1 6h1.5M9.5 6H11"/>`),
+        lissajous:    () => _lvlIco(`<path d="M2 6c0-2 1-3 2-3s2 2 4 2 2 1 2 3-1 3-2 3-2-2-4-2-2-1-2-3z"/>`),
+        harmonograph: () => _lvlIco(`<path d="M1 6c1-3 2-4 3-3s1 3 2 3 2-2 3-3 2 1 2 3"/>`),
+        rainfall:     () => _lvlIco(`<line x1="3" y1="2" x2="2" y2="6"/><line x1="6" y1="1" x2="5" y2="7"/><line x1="9" y1="2" x2="8" y2="8"/><line x1="4" y1="8" x2="3.5" y2="11"/><line x1="8" y1="7" x2="7.5" y2="10"/>`),
+        phylla:       () => _lvlIco(`<circle cx="4" cy="4" r="1"/><circle cx="8" cy="3" r="1"/><circle cx="9" cy="7" r="1"/><circle cx="5" cy="9" r="1"/><circle cx="2" cy="7" r="1"/>`),
+        petalisDesigner: () => _lvlIco(`<path d="M6 2c1 1 2 2.5 2 4s-1 3-2 4c-1-1-2-2.5-2-4s1-3 2-4z"/>`),
+        shapepack:    () => _lvlIco(`<rect x="1.5" y="1.5" width="4" height="4" rx=".5"/><rect x="6.5" y="6.5" width="4" height="4" rx=".5"/><rect x="1.5" y="6.5" width="4" height="4" rx=".5"/>`),
+        shape:        () => _lvlIco(`<path d="M6 1.5L10 3.75L10 8.25L6 10.5L2 8.25L2 3.75Z"/>`),
+        polygon:      () => _lvlIco(`<path d="M6 1.5L10.3 4.6L8.6 9.6H3.4L1.7 4.6Z"/>`),
+        pen:          () => _lvlIco(`<path d="M8.5 1.5L11 4L5 10H1.5V6.5L7.5 1.5ZM8.5 1.5L11 4M2 9.5L3.5 8"/>`),
+        svg:          () => _lvlIco(`<rect x="1.5" y="2" width="9" height="8" rx="1"/><path d="M3.5 7L4.5 5L6 7.5L7 6L9 8" stroke-width="1.2"/>`),
+        oval:         () => _lvlIco(`<ellipse cx="6" cy="6" rx="4.5" ry="3"/>`),
+        rect:         () => _lvlIco(`<rect x="1.5" y="3" width="9" height="6" rx="1"/>`),
+      };
+
+      // ── Layers V8: add dropdown ──────────────────────────────────
+      const addMenuEl = document.getElementById('layer-add-menu');
+      const addBtn = document.getElementById('btn-add-layer');
+      if (addBtn) {
+        addBtn.onclick = (e) => {
+          e.stopPropagation();
+          this.layerAddOpen = !this.layerAddOpen;
+          addMenuEl?.classList.toggle('hidden', !this.layerAddOpen);
+        };
+      }
+      addMenuEl?.addEventListener('click', (e) => {
+        const item = e.target.closest('.lvl-add-item');
+        if (!item) return;
+        this.layerAddOpen = false;
+        addMenuEl.classList.add('hidden');
+        if (this.app.pushHistory) this.app.pushHistory();
+        const t = item.dataset.add;
+        if (t === 'layer') {
+          const id = this.app.engine.addEmptyLayer?.();
+          if (id && this.app.renderer) this.app.renderer.setSelection([id], id);
+        } else if (t === 'algo') {
+          const layerType = this.getPreferredNewLayerType?.() || 'flowfield';
+          if (this.app.pushHistory) this.app.pushHistory();
+          const activeLayer = this.app.engine.getActiveLayer?.();
+          const id = this.app.engine.addLayer(layerType);
+          const created = this.getLayerById?.(id);
+          if (created) this.rememberDrawableLayerType?.(created);
+          const selectedModifier = activeLayer && this.isModifierLayer?.(activeLayer) ? activeLayer : null;
+          if (selectedModifier && created) {
+            this.assignLayersToParent?.(selectedModifier.id, [created], { selectAssigned: true, primaryId: id });
+          } else if (this.app.renderer) {
+            this.app.renderer.setSelection([id], id);
+          }
+        } else if (t === 'group') {
+          const id = this.app.engine.addGroupLayer?.();
+          if (id && this.app.renderer) this.app.renderer.setSelection([id], id);
+        } else if (t === 'mirror') {
+          this.app.engine.addModifierLayer?.('mirror');
+        }
+        this.renderLayers();
+        this.app.render();
+      });
+
+      // ── Layers V8: search ────────────────────────────────────────
+      document.getElementById('layer-search-input')?.addEventListener('input', (e) => {
+        this.layerSearchQ = e.target.value;
+        document.getElementById('layer-filter-btn')?.classList.toggle(
+          'active', !!this.layerSearchQ || this.layerFilterType !== 'all'
+        );
+        this.renderLayers();
+      });
+
+      // ── Layers V8: filter ────────────────────────────────────────
+      const filterBtn = document.getElementById('layer-filter-btn');
+      const filterMenu = document.getElementById('layer-filter-menu');
+      const FILTER_OPTS = [
+        { v: 'all', l: 'All Layers' }, { v: 'groups', l: 'Groups Only' },
+        { v: 'shape', l: 'Shape' }, { v: 'svg', l: 'SVG' }, { v: 'polygon', l: 'Polygon' }, { v: 'pen', l: 'Pen' },
+        { v: 'flowfield', l: 'Flowfield' }, { v: 'wavetable', l: 'Wavetable' },
+        { v: 'hyphae', l: 'Hyphae' }, { v: 'topo', l: 'Topo' },
+        { v: 'spiral', l: 'Spiral' }, { v: 'rings', l: 'Rings' },
+        { v: 'grid', l: 'Grid' }, { v: 'boids', l: 'Boids' },
+        { v: 'attractor', l: 'Attractor' }, { v: 'lissajous', l: 'Lissajous' },
+        { v: 'harmonograph', l: 'Harmonograph' }, { v: 'rainfall', l: 'Rainfall' },
+        { v: 'phylla', l: 'Phylla' }, { v: 'petalisDesigner', l: 'Petalis Designer' },
+        { v: 'shapepack', l: 'Shapepack' },
+      ];
+      const buildFilterMenu = () => {
+        if (!filterMenu) return;
+        filterMenu.innerHTML = '';
+        FILTER_OPTS.forEach((o) => {
+          const row = document.createElement('div');
+          row.className = 'lvl-filter-opt' + (this.layerFilterType === o.v ? ' sel' : '');
+          row.innerHTML = `<span style="width:10px;font-size:9px">${this.layerFilterType === o.v ? '✓' : ''}</span><span>${o.l}</span>`;
+          row.addEventListener('click', () => {
+            this.layerFilterType = o.v;
+            this.layerFilterOpen = false;
+            filterMenu.classList.add('hidden');
+            filterBtn?.classList.toggle('active', o.v !== 'all' || !!this.layerSearchQ);
+            this.renderLayers();
+          });
+          filterMenu.appendChild(row);
+        });
+      };
+      filterBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.layerFilterOpen = !this.layerFilterOpen;
+        if (this.layerFilterOpen) { buildFilterMenu(); filterMenu?.classList.remove('hidden'); }
+        else filterMenu?.classList.add('hidden');
+      });
+
+      // ── Layers V8: close menus on outside click ──────────────────
+      document.addEventListener('click', () => {
+        if (this.layerAddOpen) {
+          this.layerAddOpen = false;
+          addMenuEl?.classList.add('hidden');
+        }
+        if (this.layerFilterOpen) {
+          this.layerFilterOpen = false;
+          filterMenu?.classList.add('hidden');
+        }
+      });
+    }
+
+    _lvlGroupSel() {
+      const renderer = this.app.renderer;
+      const ids = [...(renderer?.selectedLayerIds || [])];
+      if (ids.length < 2) return;
+      const allLayers = this.app.engine.layers;
+      const parents = new Set(ids.map((id) => allLayers.find((l) => l.id === id)?.parentId ?? null));
+      if (parents.size > 1) return;
+      if (this.app.pushHistory) this.app.pushHistory();
+      const parentId = [...parents][0];
+      const minIdx = Math.min(...allLayers
+        .filter((l) => (l.parentId ?? null) === parentId && ids.includes(l.id))
+        .map((l) => allLayers.indexOf(l)));
+      const gid = 'g' + Date.now();
+      allLayers.splice(minIdx, 0, {
+        id: gid, name: this.getUniqueLayerName('Group', gid), isGroup: true, groupType: null,
+        visible: true, groupCollapsed: false, parentId: parentId ?? null,
+      });
+      ids.forEach((id) => {
+        const l = allLayers.find((x) => x.id === id);
+        if (l) l.parentId = gid;
+      });
+      renderer.setSelection([gid], gid);
+      this.renderLayers();
+      this.app.render();
+    }
+
+    _lvlUngroupSel() {
+      const renderer = this.app.renderer;
+      if (this.app.pushHistory) this.app.pushHistory();
+      [...(renderer?.selectedLayerIds || [])].forEach((id) => {
+        const grp = this.app.engine.getLayerById?.(id);
+        if (!grp?.isGroup) return;
+        const kids = this.app.engine.layers.filter((l) => l.parentId === id);
+        kids.forEach((l) => { l.parentId = grp.parentId ?? null; });
+        this.app.engine.removeLayer(id);
+      });
+      this.renderLayers();
+      this.app.render();
+    }
+
+    _lvlDelSel() {
+      if (this.app.pushHistory) this.app.pushHistory();
+      const ids = [...(this.app.renderer?.selectedLayerIds || [])];
+      [...ids].reverse().forEach((id) => this.app.engine.removeLayer(id));
+      this.renderLayers();
+      this.app.render();
+    }
+
+    _lvlDupSel() {
+      if (this.app.pushHistory) this.app.pushHistory();
+      [...(this.app.renderer?.selectedLayerIds || [])].forEach((id) => this.app.engine.duplicateLayer(id));
+      this.renderLayers();
+      this.app.render();
+    }
+
+    _lvlExpandSel() {
+      let any = false;
+      [...(this.app.renderer?.selectedLayerIds || [])].forEach((id) => {
+        const l = this.app.engine.getLayerById?.(id);
+        if (l?.isGroup && l.groupCollapsed) { l.groupCollapsed = false; any = true; }
+      });
+      if (any) this.renderLayers();
+    }
+
+    _lvlToggleVisibilitySel(hide) {
+      const engine = this.app.engine;
+      if (this.app.pushHistory) this.app.pushHistory();
+      const newVis = !hide;
+      [...(this.app.renderer?.selectedLayerIds || [])].forEach((id) => {
+        const l = engine.getLayerById?.(id);
+        if (l) l.visible = newVis;
+      });
+      engine.computeAllDisplayGeometry?.();
+      this.app.render();
+      this.renderLayers();
+    }
+
+    _lvlToggleLockSel(lock) {
+      const selIds = [...(this.app.renderer?.selectedLayerIds || [])];
+      selIds.forEach((id) => lock ? this.layerLockedIds.add(id) : this.layerLockedIds.delete(id));
+      this.renderLayers();
+    }
+
+    _lvlMaskSelGroup() {
+      const engine = this.app.engine;
+      const renderer = this.app.renderer;
+      const sel = [...(renderer?.selectedLayerIds || [])];
+      const sorted = sel.map((id) => engine.getLayerById?.(id)).filter(Boolean)
+        .sort((a, b) => engine.layers.indexOf(a) - engine.layers.indexOf(b));
+      if (sorted.length < 2) return;
+      const topL = sorted[0];
+      if (!topL.maskCapabilities?.canSource && !topL.isGroup) return;
+      if (this.app.pushHistory) this.app.pushHistory();
+      // Enable mask on topL and move remaining layers to be its children
+      topL.mask = topL.mask || {};
+      topL.mask.enabled = true;
+      sorted.slice(1).forEach((l) => { l.parentId = topL.id; });
+      engine.computeAllDisplayGeometry?.();
+      renderer.setSelection([topL.id], topL.id);
+      this.renderLayers(); this.app.render?.();
     }
 
     renderLayers() {
-      const container = getEl('layer-list');
-      if (!container) return;
-      container.innerHTML = '';
-      const layers = this.app.engine.layers.slice().reverse();
-      const parentIds = new Set(
-        layers
-          .filter((layer) => this.canLayerAcceptChildren(layer) || layers.some((entry) => entry.parentId === layer.id))
-          .map((layer) => layer.id)
-      );
-      const childrenMap = new Map();
-      const selectableIds = [];
-      const gripMarkup = `
-        <button class="layer-grip" type="button" aria-label="Reorder layer" title="Reorder layer">
-          <span class="dot"></span><span class="dot"></span>
-          <span class="dot"></span><span class="dot"></span>
-          <span class="dot"></span><span class="dot"></span>
-        </button>
-      `;
+      const list = document.getElementById('layer-list');
+      if (!list) return;
+      list.innerHTML = '';
 
-      layers.forEach((layer) => {
-        if (layer.parentId && parentIds.has(layer.parentId)) {
-          if (!childrenMap.has(layer.parentId)) childrenMap.set(layer.parentId, []);
-          childrenMap.get(layer.parentId).push(layer);
-        }
-      });
+      const engine = this.app.engine;
+      const allLayers = engine.layers || [];
+      const renderer = this.app.renderer;
+      if (!engine) return;
 
-      const collectDescendants = (parentId) => {
-        const children = childrenMap.get(parentId) || [];
-        const ids = [];
-        children.forEach((child) => {
-          ids.push(child.id);
-          if (parentIds.has(child.id)) ids.push(...collectDescendants(child.id));
-        });
-        return ids;
-      };
-
-      const hasSelectedDescendant = (parentId) => {
-        const children = childrenMap.get(parentId) || [];
-        return children.some((child) => {
-          if (this.app.renderer?.selectedLayerIds?.has(child.id)) return true;
-          return parentIds.has(child.id) ? hasSelectedDescendant(child.id) : false;
-        });
-      };
-
-      const bindLayerReorderGrip = (grip, dragEl, options = {}) => {
-        const { ensureSelection, getSelectedIds } = options;
-        if (!grip || !dragEl) return;
-        grip.onmousedown = (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          if (ensureSelection) ensureSelection(e);
-          let selectedIds = getSelectedIds ? getSelectedIds() : Array.from(this.app.renderer?.selectedLayerIds || []);
-          if (!selectedIds.length) {
-            const fallbackId = dragEl.dataset.layerId;
-            if (fallbackId) selectedIds = [fallbackId];
-          }
-          if (!selectedIds.length) return;
-          dragEl.classList.add('dragging');
-          const indicator = document.createElement('div');
-          indicator.className = 'layer-drop-indicator';
-          container.insertBefore(indicator, dragEl.nextSibling);
-          const currentOrder = this.app.engine.layers.map((layer) => layer.id).reverse();
-          const selectedSet = new Set(selectedIds);
-          const selectedInUi = currentOrder.filter((id) => selectedSet.has(id));
-          if (!selectedInUi.length) return;
-          let dropGroupId = null;
-          let dropTarget = null;
-
-          const onMove = (ev) => {
-            const y = ev.clientY;
-            const items = Array.from(container.querySelectorAll('.layer-item')).filter((item) => item !== dragEl);
-            let inserted = false;
-            for (const item of items) {
-              const rect = item.getBoundingClientRect();
-              if (y < rect.top + rect.height / 2) {
-                container.insertBefore(indicator, item);
-                inserted = true;
-                break;
-              }
-            }
-            if (!inserted) container.appendChild(indicator);
-
-            const hovered = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.layer-item');
-            let nextParent = null;
-            if (hovered && hovered.dataset.layerId) {
-              const hoveredLayer = this.getLayerById(hovered.dataset.layerId);
-              if (hoveredLayer && this.canLayerAcceptChildren(hoveredLayer) && !selectedSet.has(hoveredLayer.id)) {
-                nextParent = hoveredLayer.id;
-              }
-            }
-            if (dropTarget && dropTarget !== hovered) {
-              dropTarget.classList.remove('group-drop-target');
-              dropTarget = null;
-            }
-            if (nextParent && hovered) {
-              dropGroupId = nextParent;
-              dropTarget = hovered;
-              dropTarget.classList.add('group-drop-target');
-            } else {
-              dropGroupId = null;
-            }
-          };
-
-          const onUp = () => {
-            dragEl.classList.remove('dragging');
-            const siblings = Array.from(container.children);
-            const indicatorIndex = siblings.indexOf(indicator);
-            const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('layer-item'));
-            const newIndex = before.length;
-            indicator.remove();
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
-            if (dropTarget) {
-              dropTarget.classList.remove('group-drop-target');
-              dropTarget = null;
-            }
-
-            if (dropGroupId) {
-              const target = this.getLayerById(dropGroupId);
-              if (target && this.canLayerAcceptChildren(target)) {
-                const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
-                const moveIds = selectedInUi.filter((id) => {
-                  if (id === dropGroupId) return false;
-                  const layer = map.get(id);
-                  if (!layer) return false;
-                  if (layer.isGroup && this.isDescendant(dropGroupId, layer.id)) return false;
-                  return true;
-                });
-                const moveLayers = moveIds.map((id) => map.get(id)).filter(Boolean);
-                this.assignLayersToParent(dropGroupId, moveLayers, {
-                  captureHistory: true,
-                  selectAssigned: true,
-                  primaryId: this.app.renderer?.selectedLayerId || moveIds[moveIds.length - 1] || dropGroupId,
-                });
-                this.renderLayers();
-                this.app.render();
-                return;
-              }
-            }
-
-            const nextOrder = currentOrder.filter((id) => !selectedSet.has(id));
-            nextOrder.splice(newIndex, 0, ...selectedInUi);
-            const nextEngineOrder = nextOrder.slice().reverse();
-            const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
-            const prevId = nextOrder[newIndex - 1] || null;
-            const nextId = nextOrder[newIndex + selectedInUi.length] || null;
-            const moveToRoot = selectedInUi
-              .map((id) => map.get(id))
-              .filter((layer) => this.shouldLeaveParentScope(layer, prevId, nextId, selectedSet));
-            if (moveToRoot.length) {
-              this.assignLayersToRoot(moveToRoot, {
-                captureHistory: true,
-                nextEngineOrder,
-                selectAssigned: true,
-                primaryId: this.app.renderer?.selectedLayerId || moveToRoot[moveToRoot.length - 1]?.id || null,
-              });
-              this.renderLayers();
-              this.app.render();
-              return;
-            }
-            const hasOrderChanged = nextEngineOrder.some((id, index) => id !== this.app.engine.layers[index]?.id);
-            if (hasOrderChanged && this.app.pushHistory) this.app.pushHistory();
-            this.app.engine.layers = nextEngineOrder.map((id) => map.get(id)).filter(Boolean);
-            this.normalizeGroupOrder();
-            this.renderLayers();
-            this.app.render();
-          };
-
-          window.addEventListener('mousemove', onMove);
-          window.addEventListener('mouseup', onUp);
-        };
-      };
-
-      const buildPenAssignment = (owner, getTargets) => `
-        <div class="pen-assign">
-          <button class="pen-pill" type="button" aria-label="Assign pen" title="Assign pen">
-            <div class="pen-icon"></div>
-          </button>
-          <div class="pen-menu hidden"></div>
-        </div>
-      `;
+      // ── Pen assignment (reused) ─────────────────────────────────
+      const buildPenAssignment = () =>
+        `<div class="pen-assign"><button class="pen-pill" type="button" aria-label="Assign pen" title="Assign pen"><div class="pen-icon"></div></button><div class="pen-menu hidden"></div></div>`;
 
       const wirePenAssignment = (el, owner, getTargets) => {
         const penMenu = el.querySelector('.pen-menu');
@@ -10957,23 +11114,15 @@
             opt.classList.toggle('active', opt.dataset.penId === pen.id);
             opt.setAttribute('aria-pressed', opt.dataset.penId === pen.id ? 'true' : 'false');
           });
-          if (render) {
-            this.renderLayers();
-            this.app.render();
-          }
+          if (render) { this.renderLayers(); this.app.render(); }
         };
         const current = pens.find((pen) => pen.id === owner.penId) || pens[0];
         if (current) applyPen(current, { render: false, syncTargets: false });
-        penMenu.innerHTML = pens
-          .map(
-            (pen) => `
-              <button type="button" class="pen-option" data-pen-id="${pen.id}" aria-pressed="${pen.id === owner.penId ? 'true' : 'false'}">
-                <span class="pen-icon" style="background:${pen.color}; color:${pen.color}; --pen-width:${pen.width}"></span>
-                <span class="pen-option-name">${escapeHtml(pen.name)}</span>
-              </button>
-            `
-          )
-          .join('');
+        penMenu.innerHTML = pens.map((pen) => `
+          <button type="button" class="pen-option" data-pen-id="${pen.id}" aria-pressed="${pen.id === owner.penId ? 'true' : 'false'}">
+            <span class="pen-icon" style="background:${pen.color}; color:${pen.color}; --pen-width:${pen.width}"></span>
+            <span class="pen-option-name">${escapeHtml(pen.name)}</span>
+          </button>`).join('');
         penMenu.querySelectorAll('.pen-option').forEach((opt) => {
           opt.onclick = (e) => {
             e.stopPropagation();
@@ -10991,460 +11140,770 @@
         el.ondragover = (ev) => {
           const types = Array.from(ev.dataTransfer?.types || []);
           if (!types.length || types.includes('text/pen-id') || types.includes('text/plain')) {
-            ev.preventDefault();
-            el.classList.add('dragging');
+            ev.preventDefault(); el.classList.add('dragging');
           }
         };
         el.ondragleave = () => el.classList.remove('dragging');
         el.ondrop = (ev) => {
-          ev.preventDefault();
-          el.classList.remove('dragging');
+          ev.preventDefault(); el.classList.remove('dragging');
           const penId = ev.dataTransfer.getData('text/pen-id') || ev.dataTransfer.getData('text/plain');
           const next = pens.find((pen) => pen.id === penId);
           if (!next) return;
           if (this.app.pushHistory) this.app.pushHistory();
-          applyPen(next);
-          penMenu.classList.add('hidden');
+          applyPen(next); penMenu.classList.add('hidden');
         };
       };
 
-      const renderGroupRow = (group, depth = 0) => {
-        const el = document.createElement('div');
-        const isModifierContainer = this.isModifierLayer(group);
-        const modifier = isModifierContainer ? this.getModifierState(group) : null;
-        const typeLabel = isModifierContainer
-          ? `${MODIFIER_DEFAULTS?.[modifier?.type || 'mirror']?.label || 'Mirror'} Modifier`
-          : ALGO_DEFAULTS?.[group.groupType]?.label || group.groupType || 'Group';
-        const isActive = group.id === this.app.engine.activeLayerId;
-        const isSelected = this.app.renderer?.selectedLayerIds?.has(group.id) || hasSelectedDescendant(group.id);
-        const showMask = !isModifierContainer && Boolean(group.maskCapabilities?.canSource || childrenMap.get(group.id)?.length);
-        el.className =
-          `layer-item layer-group flex items-center justify-between bg-vectura-bg border border-vectura-border p-2 mb-2 ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}`;
-        if (isActive) el.setAttribute('aria-current', 'true');
-        el.dataset.layerId = group.id;
-        const indent = depth * 12;
-        if (indent) {
-          el.style.marginLeft = `${indent}px`;
-          el.style.width = `calc(100% - ${indent}px)`;
+      // ── V8 drag (HTML5) ─────────────────────────────────────────
+      const _lvlDRAG = { id: null };
+      const _lvlClrDrop = (el) =>
+        el.classList.remove('lvl-drop-before', 'lvl-drop-after', 'lvl-drop-into', 'lvl-drop-mask');
+      const _lvlClrAllDrop = () =>
+        list.querySelectorAll('.lvl-drop-before,.lvl-drop-after,.lvl-drop-into,.lvl-drop-mask')
+          .forEach(_lvlClrDrop);
+
+      const setHint = (msg) => {
+        const bar = document.getElementById('layer-status-bar');
+        if (!bar) return;
+        bar.innerHTML = '';
+        if (msg) {
+          const h = document.createElement('span'); h.className = 'lvl-s-hint';
+          h.textContent = '⟶ ' + msg; bar.appendChild(h);
+        } else { _lvlBuildStatusBar(); }
+      };
+
+      const _lvlDoMove = (srcId, tgtId, pos) => {
+        if (!srcId || !tgtId || srcId === tgtId) return;
+        const src = engine.getLayerById?.(srcId);
+        const tgt = engine.getLayerById?.(tgtId);
+        if (!src || !tgt) return;
+        if (pos === 'into') {
+          if (!this.canLayerAcceptChildren?.(tgt)) return;
+          if (this.isDescendant?.(srcId, tgtId)) return;
+          this.assignLayersToParent(tgtId, [src], {
+            captureHistory: true, selectAssigned: true, primaryId: srcId,
+          });
+          this.renderLayers(); this.app.render(); return;
         }
-        const isManualGroup = group.groupType === 'group';
-        el.innerHTML = `
-          <div class="flex items-center gap-2 flex-1 overflow-hidden">
-            ${gripMarkup}
-            <button class="group-toggle" type="button" aria-label="Toggle group" title="Toggle group">${group.groupCollapsed ? '▸' : '▾'}</button>
-            ${isModifierContainer ? `<input type="checkbox" ${modifier?.enabled === false ? '' : 'checked'} class="group-enabled cursor-pointer" aria-label="Toggle modifier">` : ''}
-            <span class="layer-name text-sm ${isActive ? 'text-vectura-accent font-bold' : 'text-vectura-accent'} truncate">${group.name}</span>
-            <input
-              class="layer-name-input hidden w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:outline-none"
-              type="text"
-              value="${group.name}"
-            />
-            ${group.mask?.enabled ? `<span class="layer-mini-badge layer-mini-badge--mask">${group.mask?.hideLayer ? 'MASK HIDDEN' : 'MASK'}</span>` : ''}
-            <span class="layer-badge text-[10px] text-vectura-muted uppercase tracking-widest">${typeLabel}</span>
-          </div>
-          <div class="flex items-center gap-1">
-            ${isManualGroup ? buildPenAssignment(group, () => [group, ...this.getLayerDescendants(group.id)]) : ''}
-            ${showMask ? `<button type="button" class="layer-mask-trigger ${group.mask?.enabled ? 'layer-mask-trigger--active' : ''}" aria-label="Edit mask" title="Edit mask">Mask</button>` : ''}
-            <button class="text-sm text-vectura-muted hover:text-vectura-danger px-1 ml-1 btn-del" aria-label="Delete group" title="Delete group">✕</button>
-          </div>
-        `;
-        const toggle = el.querySelector('.group-toggle');
-        const delBtn = el.querySelector('.btn-del');
-        const maskBtn = el.querySelector('.layer-mask-trigger');
-        const grip = el.querySelector('.layer-grip');
-        const nameEl = el.querySelector('.layer-name');
-        const nameInput = el.querySelector('.layer-name-input');
-        const modifierEnabled = el.querySelector('.group-enabled');
-        if (toggle) {
-          toggle.onclick = (e) => {
-            e.stopPropagation();
-            group.groupCollapsed = !group.groupCollapsed;
-            this.renderLayers();
-          };
+        const selectedSet = new Set([srcId]);
+        const currentOrder = engine.layers.map((l) => l.id).reverse();
+        const nextOrder = currentOrder.filter((id) => id !== srcId);
+        const newTgtIdx = nextOrder.indexOf(tgtId);
+        if (newTgtIdx === -1) return;
+        const insertAt = pos === 'before' ? newTgtIdx + 1 : newTgtIdx;
+        nextOrder.splice(insertAt, 0, srcId);
+        const nextEngineOrder = nextOrder.slice().reverse();
+        const map = new Map(engine.layers.map((l) => [l.id, l]));
+        const prevId = nextOrder[insertAt - 1] || null;
+        const nextId2 = nextOrder[insertAt + 1] || null;
+        if (this.shouldLeaveParentScope?.(src, prevId, nextId2, selectedSet)) {
+          this.assignLayersToRoot([src], {
+            captureHistory: true, nextEngineOrder, selectAssigned: true, primaryId: srcId,
+          });
+          this.renderLayers(); this.app.render(); return;
         }
-        const selectGroupChildren = (e, options = {}) => {
-          const { skipList = false } = options;
-          if (e && (e.shiftKey || e.metaKey || e.ctrlKey)) {
-            e.preventDefault();
-          }
-          if (isModifierContainer) {
-            if (this.app.renderer) this.app.renderer.setSelection([group.id], group.id);
-            this.app.engine.activeLayerId = group.id;
-            this.lastLayerClickId = group.id;
-            if (!skipList) this.renderLayers();
-            this.buildControls();
-            this.updateFormula();
-            this.app.render();
-            return;
-          }
-          const ids = collectDescendants(group.id);
-          ids.push(group.id);
-          const primary = ids.length > 1 ? ids[ids.length - 2] : group.id;
-          if (this.app.renderer) this.app.renderer.setSelection(ids, primary);
-          this.app.engine.activeLayerId = primary;
-          this.lastLayerClickId = primary;
-          if (!skipList) this.renderLayers();
-          this.buildControls();
-          this.updateFormula();
-          this.app.render();
-        };
-        el.onclick = (e) => {
-          if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select')) return;
-          if (this.armedPenId) {
-            const descendants = this.getLayerDescendants(group.id);
-            if (this.applyArmedPenToLayers(descendants.length ? descendants : [group])) return;
-          }
-          selectGroupChildren(e);
-        };
-        el.onmousedown = (e) => {
-          if (e.target.closest('input')) return;
-          e.preventDefault();
-        };
-        if (modifierEnabled) {
-          modifierEnabled.onchange = (e) => {
-            modifier.enabled = Boolean(e.target.checked);
-            if (this.app.pushHistory) this.app.pushHistory();
-            this.refreshModifierLayer(group, { rebuildControls: group.id === this.app.engine.activeLayerId });
-          };
-        }
-        if (nameEl && nameInput) {
-          let nameClickTimer = null;
-          nameEl.onclick = (e) => {
-            e.stopPropagation();
-            if (nameClickTimer) window.clearTimeout(nameClickTimer);
-            nameClickTimer = window.setTimeout(() => {
-              selectGroupChildren(e);
-              nameClickTimer = null;
-            }, 250);
-          };
-          nameEl.ondblclick = (e) => {
-            e.stopPropagation();
-            if (nameClickTimer) window.clearTimeout(nameClickTimer);
-            nameClickTimer = null;
-            nameEl.classList.add('hidden');
-            nameInput.classList.remove('hidden');
-            nameInput.focus();
-            nameInput.select();
-          };
-          nameInput.onblur = () => {
-            const next = nameInput.value.trim();
-            if (next && next !== group.name) {
-              if (this.isDuplicateLayerName(next, group.id)) {
-                this.showDuplicateNameError(next);
-                nameInput.focus();
-                nameInput.select();
-                return;
-              }
-              if (this.app.pushHistory) this.app.pushHistory();
-              group.name = next;
-            }
-            nameInput.value = group.name;
-            nameInput.classList.add('hidden');
-            nameEl.classList.remove('hidden');
-            this.renderLayers();
-          };
-          nameInput.onkeydown = (e) => {
-            if (e.key === 'Enter') nameInput.blur();
-            if (e.key === 'Escape') {
-              nameInput.value = group.name;
-              nameInput.blur();
-            }
-          };
-        }
-        bindLayerReorderGrip(grip, el, {
-          ensureSelection: (e) => selectGroupChildren(e, { skipList: true }),
-          getSelectedIds: () => [group.id, ...collectDescendants(group.id)],
+        const hasChanged = nextEngineOrder.some((id, i) => id !== engine.layers[i]?.id);
+        if (!hasChanged) return;
+        if (this.app.pushHistory) this.app.pushHistory();
+        engine.layers = nextEngineOrder.map((id) => map.get(id)).filter(Boolean);
+        this.normalizeGroupOrder?.();
+        this.renderLayers(); this.app.render();
+      };
+
+      const bindCardDrag = (el, layer) => {
+        el.draggable = true;
+        el.addEventListener('dragstart', (e) => {
+          _lvlDRAG.id = layer.id;
+          e.dataTransfer.effectAllowed = 'move';
+          requestAnimationFrame(() => el.classList.add('dragging'));
         });
-        if (isManualGroup) wirePenAssignment(el, group, () => [group, ...this.getLayerDescendants(group.id)]);
-        if (maskBtn) {
-          maskBtn.onclick = (e) => {
-            e.stopPropagation();
-            this.openMaskLayerId = this.openMaskLayerId === group.id ? null : group.id;
-            this.renderLayers();
-          };
-        }
-        if (delBtn) {
-          delBtn.onclick = (e) => {
-            e.stopPropagation();
-            this.app.engine.removeLayer(group.id);
-            if (this.app.pushHistory) this.app.pushHistory();
-            if (this.app.renderer) {
-              const nextId = this.app.engine.activeLayerId;
-              this.app.renderer.setSelection(nextId ? [nextId] : [], nextId);
-            }
-            this.renderLayers();
-            this.app.render();
-          };
-        }
-        container.appendChild(el);
-        selectableIds.push(group.id);
+        el.addEventListener('dragend', () => {
+          _lvlDRAG.id = null;
+          el.classList.remove('dragging');
+          _lvlClrAllDrop();
+          setHint(null);
+        });
       };
 
-      const renderLayerRow = (l, opts = {}) => {
-        const isChild = Boolean(opts.isChild);
-        const depth = opts.depth ?? 0;
-        const isActive = l.id === this.app.engine.activeLayerId;
-        const isSelected = this.app.renderer?.selectedLayerIds?.has(l.id);
-        const hasChildren = Boolean((childrenMap.get(l.id) || []).length);
-        const hidePen = false;
-        const showExpand = !isChild && !l.isGroup;
-        const maskMarkup =
-          (!l.isGroup && (l.maskCapabilities?.canSource || hasChildren))
-            ? `<button type="button" class="layer-mask-trigger ${l.mask?.enabled ? 'layer-mask-trigger--active' : ''}" aria-label="Edit mask" title="Edit mask">Mask</button>`
-            : '';
-        const expandMarkup = showExpand
-          ? '<button class="text-sm text-vectura-muted hover:text-vectura-accent px-1 btn-expand" aria-label="Expand layer" title="Expand layer">⇲</button>'
-          : '';
-        const moveMarkup = isChild
-          ? ''
-          : `
-            <button class="text-sm text-vectura-muted hover:text-vectura-accent px-1 btn-up" aria-label="Move layer up" title="Move layer up">▲</button>
-            <button class="text-sm text-vectura-muted hover:text-vectura-accent px-1 btn-down" aria-label="Move layer down" title="Move layer down">▼</button>
-          `;
-        const el = document.createElement('div');
-        el.className = `layer-item ${isChild ? 'layer-sub' : ''} flex items-center justify-between bg-vectura-bg border border-vectura-border p-2 mb-2 group cursor-pointer hover:bg-vectura-border ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}`;
-        if (isActive) el.setAttribute('aria-current', 'true');
-        el.dataset.layerId = l.id;
-        const indent = depth * 12;
-        if (indent) {
-          el.style.marginLeft = `${indent}px`;
-          el.style.width = `calc(100% - ${indent}px)`;
-        }
-        el.innerHTML = `
-          <div class="flex items-center gap-2 flex-1 overflow-hidden">
-            ${gripMarkup}
-            <input
-              type="checkbox"
-              ${l.visible ? 'checked' : ''}
-              class="cursor-pointer"
-              aria-label="Toggle layer visibility"
-              title="Toggle visibility"
-            >
-            <span class="layer-name text-sm truncate ${isActive ? 'text-vectura-accent font-bold' : 'text-vectura-muted'}">${escapeHtml(l.name)}</span>
-            <input
-              class="layer-name-input hidden w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:outline-none"
-              type="text"
-              value="${escapeHtml(l.name)}"
-            />
-            ${l.mask?.enabled ? `<span class="layer-mini-badge layer-mini-badge--mask">${l.mask?.hideLayer ? 'MASK HIDDEN' : 'MASK'}</span>` : ''}
-          </div>
-          <div class="flex items-center gap-1">
-            ${hidePen ? '' : buildPenAssignment(l, () => (this.app.renderer?.selectedLayerIds?.has(l.id) ? this.app.renderer.getSelectedLayers() : [l]))}
-            ${maskMarkup}
-            ${expandMarkup}
-            ${moveMarkup}
-            <button class="text-sm text-vectura-muted hover:text-vectura-accent px-1 btn-dup" aria-label="Duplicate layer" title="Duplicate layer">⧉</button>
-            <button class="text-sm text-vectura-muted hover:text-vectura-danger px-1 ml-1 btn-del" aria-label="Delete layer" title="Delete layer">✕</button>
-          </div>
-        `;
-        const nameEl = el.querySelector('.layer-name');
-        const nameInput = el.querySelector('.layer-name-input');
-        const visibilityEl = el.querySelector('input[type=checkbox]');
-        const delBtn = el.querySelector('.btn-del');
-        const upBtn = el.querySelector('.btn-up');
-        const downBtn = el.querySelector('.btn-down');
-        const dupBtn = el.querySelector('.btn-dup');
-        const expandBtn = el.querySelector('.btn-expand');
-        const maskBtn = el.querySelector('.layer-mask-trigger');
-        const grip = el.querySelector('.layer-grip');
-
-        const selectLayer = (e, options = {}) => {
-          const { skipList = false } = options;
-          if (this.armedPenId) {
-            const targets = this.app.renderer?.selectedLayerIds?.has(l.id)
-              ? this.app.renderer.getSelectedLayers()
-              : [l];
-            if (this.applyArmedPenToLayers(targets)) return;
-          }
-          if (e && e.shiftKey && this.lastLayerClickId && this.layerListOrder.length) {
-            const list = this.layerListOrder;
-            const start = list.indexOf(this.lastLayerClickId);
-            const end = list.indexOf(l.id);
-            if (start !== -1 && end !== -1) {
-              const from = Math.min(start, end);
-              const to = Math.max(start, end);
-              const rangeIds = list.slice(from, to + 1);
-              if (this.app.renderer) this.app.renderer.setSelection(rangeIds, l.id);
-            } else {
-              this.app.renderer.selectLayer(l);
-            }
-          } else if (e && (e.metaKey || e.ctrlKey)) {
-            this.app.renderer.selectLayer(l, { toggle: true });
-          } else {
-            this.app.renderer.selectLayer(l);
-          }
-          this.app.engine.activeLayerId = this.app.renderer.selectedLayerId || l.id;
-          this.lastLayerClickId = l.id;
-          if (!skipList) this.renderLayers();
-          this.buildControls();
-          this.updateFormula();
-          this.app.render();
-        };
-
-        el.onclick = (e) => {
-          if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select')) return;
-          selectLayer(e);
-        };
-        el.onmousedown = (e) => {
-          if (e.target.closest('input')) return;
+      const addCardDropZone = (el, layer) => {
+        el.addEventListener('dragover', (e) => {
+          if (!_lvlDRAG.id || _lvlDRAG.id === layer.id) return;
+          e.preventDefault(); e.stopPropagation();
+          const r = el.getBoundingClientRect(), pct = (e.clientY - r.top) / r.height;
+          _lvlClrDrop(el);
+          el.classList.add(pct < 0.5 ? 'lvl-drop-before' : 'lvl-drop-after');
+          e.dataTransfer.dropEffect = 'move';
+        });
+        el.addEventListener('dragleave', (e) => { if (!el.contains(e.relatedTarget)) _lvlClrDrop(el); });
+        el.addEventListener('drop', (e) => {
           e.preventDefault();
+          const pos = el.classList.contains('lvl-drop-before') ? 'before' : 'after';
+          _lvlClrDrop(el); setHint(null);
+          if (_lvlDRAG.id && _lvlDRAG.id !== layer.id) _lvlDoMove(_lvlDRAG.id, layer.id, pos);
+        });
+      };
+
+      const addGrpDropZone = (el, layer) => {
+        el.addEventListener('dragover', (e) => {
+          if (!_lvlDRAG.id || _lvlDRAG.id === layer.id) return;
+          e.preventDefault(); e.stopPropagation();
+          const r = el.getBoundingClientRect(), pct = (e.clientY - r.top) / r.height;
+          _lvlClrDrop(el);
+          const zone = pct < 0.35 ? 'lvl-drop-before' : pct > 0.65 ? 'lvl-drop-after' : 'lvl-drop-into';
+          el.classList.add(zone);
+          e.dataTransfer.dropEffect = 'move';
+          setHint(zone === 'lvl-drop-into' ? 'Drop into group' : null);
+        });
+        el.addEventListener('dragleave', (e) => {
+          if (!el.contains(e.relatedTarget)) { _lvlClrDrop(el); setHint(null); }
+        });
+        el.addEventListener('drop', (e) => {
+          e.preventDefault();
+          const pos = el.classList.contains('lvl-drop-before') ? 'before'
+                    : el.classList.contains('lvl-drop-into') ? 'into' : 'after';
+          _lvlClrDrop(el); setHint(null);
+          if (_lvlDRAG.id && _lvlDRAG.id !== layer.id
+              && !this.isDescendant?.(layer.id, _lvlDRAG.id)) {
+            _lvlDoMove(_lvlDRAG.id, layer.id, pos);
+          }
+        });
+      };
+
+      const addMaskSrcDropZone = (el, srcLayer) => {
+        el.addEventListener('dragover', (e) => {
+          if (!_lvlDRAG.id || _lvlDRAG.id === srcLayer.id) return;
+          e.preventDefault(); e.stopPropagation();
+          const r = el.getBoundingClientRect(), pct = (e.clientY - r.top) / r.height;
+          _lvlClrDrop(el);
+          const zone = pct < 0.2 ? 'lvl-drop-before' : pct > 0.8 ? 'lvl-drop-after' : 'lvl-drop-mask';
+          el.classList.add(zone);
+          e.dataTransfer.dropEffect = 'move';
+          setHint(zone === 'lvl-drop-mask' ? 'Add to clipping mask' : null);
+        });
+        el.addEventListener('dragleave', (e) => {
+          if (!el.contains(e.relatedTarget)) { _lvlClrDrop(el); setHint(null); }
+        });
+        el.addEventListener('drop', (e) => {
+          e.preventDefault();
+          const isMask = el.classList.contains('lvl-drop-mask');
+          const pos = el.classList.contains('lvl-drop-before') ? 'before' : isMask ? null : 'after';
+          _lvlClrDrop(el); setHint(null);
+          if (_lvlDRAG.id && _lvlDRAG.id !== srcLayer.id) {
+            if (isMask) {
+              const draggedLayer = engine.getLayerById?.(_lvlDRAG.id);
+              if (draggedLayer) {
+                if (this.app.pushHistory) this.app.pushHistory();
+                this.assignLayersToParent(srcLayer.id, [draggedLayer], { captureHistory: false });
+                this.renderLayers(); this.app.render?.();
+              }
+            } else if (pos) _lvlDoMove(_lvlDRAG.id, srcLayer.id, pos);
+          }
+        });
+      };
+
+      const addMaskedCardDropZone = (el, layer, maskSrcId) => {
+        el.addEventListener('dragover', (e) => {
+          if (!_lvlDRAG.id || _lvlDRAG.id === layer.id) return;
+          e.preventDefault(); e.stopPropagation();
+          const r = el.getBoundingClientRect(), pct = (e.clientY - r.top) / r.height;
+          _lvlClrDrop(el);
+          el.classList.add(pct < 0.5 ? 'lvl-drop-before' : 'lvl-drop-after');
+          e.dataTransfer.dropEffect = 'move';
+          setHint('Drop inside clipping mask');
+        });
+        el.addEventListener('dragleave', (e) => { if (!el.contains(e.relatedTarget)) { _lvlClrDrop(el); setHint(null); } });
+        el.addEventListener('drop', (e) => {
+          e.preventDefault();
+          const pos = el.classList.contains('lvl-drop-before') ? 'before' : 'after';
+          _lvlClrDrop(el); setHint(null);
+          if (!_lvlDRAG.id || _lvlDRAG.id === layer.id) return;
+          const draggedLayer = engine.getLayerById?.(_lvlDRAG.id);
+          if (!draggedLayer) return;
+          if (draggedLayer.parentId === maskSrcId) {
+            _lvlDoMove(_lvlDRAG.id, layer.id, pos);
+          } else {
+            if (this.app.pushHistory) this.app.pushHistory();
+            this.assignLayersToParent(maskSrcId, [draggedLayer], { captureHistory: false });
+            this.renderLayers(); this.app.render?.();
+          }
+        });
+      };
+
+      // ── Filter / search helpers ─────────────────────────────────
+      const _lvlPenColor = (layer) => {
+        if (layer.penId) {
+          const pen = engine.getPenById?.(layer.penId)
+                   ?? (SETTINGS.pens || []).find((p) => p.id === layer.penId);
+          if (pen?.color) return pen.color;
+        }
+        return layer.color || '#71717a';
+      };
+
+      const _lvlBarColor = (layer) => {
+        const pid = SETTINGS.layerBarPaletteId || 'prism';
+        if (pid === 'pen-color') return _lvlPenColor(layer);
+        const palette = (window.Vectura.LAYER_PALETTES || []).find(p => p.id === pid);
+        if (!palette?.colors) return _lvlPenColor(layer);
+        const c = palette.colors;
+        const t = layer.type;
+        if (t === 'group') return c._group || '#6B7280';
+        if (t === 'pen' || t === 'shape' || t === 'svg' || t === 'polygon') return c._pen || '#9CA3AF';
+        return c[t] || c._default || '#A1A1AA';
+      };
+
+      const _lvlEffLocked = (id) => {
+        if (this.layerLockedIds.has(id)) return true;
+        let l = engine.getLayerById?.(id);
+        while (l?.parentId) {
+          const parent = engine.getLayerById?.(l.parentId);
+          if (this.layerLockedIds.has(l.parentId) && !parent?.mask?.enabled) return true;
+          l = parent;
+        }
+        return false;
+      };
+
+      const _lvlPasses = (layer) => {
+        const q = (this.layerSearchQ || '').toLowerCase();
+        const ft = this.layerFilterType || 'all';
+        const selfOk = () => {
+          if (q && !layer.name.toLowerCase().includes(q)) return false;
+          if (ft === 'all') return true;
+          if (ft === 'groups') return !!layer.isGroup;
+          return layer.type === ft;
         };
+        if (selfOk()) return true;
+        if (layer.isGroup)
+          return allLayers.filter((c) => c.parentId === layer.id).some((c) => _lvlPasses(c));
+        return false;
+      };
 
-        if (expandBtn) {
-          expandBtn.onclick = (e) => {
-            e.stopPropagation();
-            this.expandLayer(l);
-          };
-        }
+      const _lvlIsMaskSrc = (layerId) => {
+        const l = engine.getLayerById?.(layerId);
+        return !!(l?.mask?.enabled && l?.maskCapabilities?.canSource);
+      };
 
-        if (nameEl && nameInput) {
-          let nameClickTimer = null;
-          nameEl.onclick = (e) => {
-            e.stopPropagation();
-            if (nameClickTimer) window.clearTimeout(nameClickTimer);
-            nameClickTimer = window.setTimeout(() => {
-              selectLayer(e);
-              nameClickTimer = null;
-            }, 250);
-          };
-          nameEl.ondblclick = (e) => {
-            e.stopPropagation();
-            if (nameClickTimer) window.clearTimeout(nameClickTimer);
-            nameClickTimer = null;
-            nameEl.classList.add('hidden');
-            nameInput.classList.remove('hidden');
-            nameInput.focus();
-            nameInput.select();
-          };
-          nameInput.onblur = () => {
-            const next = nameInput.value.trim();
-            if (next && next !== l.name) {
-              if (this.isDuplicateLayerName(next, l.id)) {
-                this.showDuplicateNameError(next);
-                nameInput.focus();
-                nameInput.select();
-                return;
-              }
-              if (this.app.pushHistory) this.app.pushHistory();
-              l.name = next;
-            }
-            nameInput.value = l.name;
-            nameInput.classList.add('hidden');
-            nameEl.classList.remove('hidden');
-            this.renderLayers();
-          };
-          nameInput.onkeydown = (e) => {
-            if (e.key === 'Enter') nameInput.blur();
-            if (e.key === 'Escape') {
-              nameInput.value = l.name;
-              nameInput.blur();
-            }
-          };
+      const _lvlEsc = (s) =>
+        String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+      const _lvlNameEl = (layer, cls) => {
+        const sp = document.createElement('span'); sp.className = cls;
+        const q = this.layerSearchQ || '';
+        if (!q) { sp.textContent = layer.name; return sp; }
+        const lo = layer.name.toLowerCase(), idx = lo.indexOf(q.toLowerCase());
+        if (idx === -1) { sp.textContent = layer.name; return sp; }
+        sp.innerHTML = _lvlEsc(layer.name.slice(0, idx))
+          + `<mark style="background:rgba(251,191,36,.25);color:inherit;border-radius:2px">`
+          + _lvlEsc(layer.name.slice(idx, idx + q.length)) + `</mark>`
+          + _lvlEsc(layer.name.slice(idx + q.length));
+        return sp;
+      };
+
+      const _lvlFlatOrder = () => {
+        const r = [];
+        const walk = (pId) =>
+          allLayers.filter((l) => (l.parentId ?? null) === (pId ?? null)).forEach((l) => {
+            if (_lvlPasses(l)) { r.push(l.id); if (l.isGroup && !l.groupCollapsed) walk(l.id); }
+          });
+        walk(null); return r;
+      };
+
+      const _lvlTriggerRename = (el, layer) => {
+        if (!layer) return;
+        const inp = document.createElement('input');
+        inp.className = 'lvl-ren-inp'; inp.type = 'text'; inp.value = layer.name;
+        el.replaceWith(inp); inp.focus(); inp.select();
+        let done = false;
+        const save = () => {
+          if (done) return; done = true;
+          const v = inp.value.trim();
+          if (v && v !== layer.name) { if (this.app.pushHistory) this.app.pushHistory(); layer.name = v; }
+          this.renderLayers();
+        };
+        inp.addEventListener('blur', save);
+        inp.addEventListener('keydown', (e2) => {
+          e2.stopPropagation();
+          if (e2.key === 'Enter') inp.blur();
+          if (e2.key === 'Escape') { done = true; this.renderLayers(); }
+        });
+        inp.addEventListener('click', (e3) => e3.stopPropagation());
+        inp.addEventListener('mousedown', (e4) => e4.stopPropagation());
+      };
+
+      const _lvlDoSel = (e, id) => {
+        const now = Date.now();
+        const onName = e.target?.closest?.('.lvl-name,.lvl-grp-name');
+        if (onName && !e.metaKey && !e.ctrlKey && !e.shiftKey
+            && now - this._lvlDblTime < 350 && this._lvlDblId === id) {
+          this._lvlDblTime = 0; this._lvlDblId = null;
+          const el = document.querySelector(
+            `[data-lvl-id="${id}"] .lvl-name,[data-lvl-id="${id}"] .lvl-grp-name`);
+          if (el) _lvlTriggerRename(el, engine.getLayerById?.(id));
+          return;
         }
-        if (visibilityEl) {
-          visibilityEl.onchange = (e) => {
+        this._lvlDblTime = now; this._lvlDblId = id;
+        if (e.metaKey || e.ctrlKey) {
+          const ids = new Set(renderer?.selectedLayerIds || []);
+          ids.has(id) ? ids.delete(id) : ids.add(id);
+          renderer.setSelection([...ids], id);
+        } else if (e.shiftKey && this.lastLayerClickId) {
+          const ord = _lvlFlatOrder();
+          const a = ord.indexOf(this.lastLayerClickId), b = ord.indexOf(id);
+          const lo = Math.min(a, b), hi = Math.max(a, b);
+          renderer.setSelection(ord.slice(lo, hi + 1), id);
+        } else {
+          renderer.setSelection([id], id);
+          engine.activeLayerId = id;
+        }
+        this.lastLayerClickId = id;
+        this.buildControls?.();
+        this.updateFormula?.();
+        this.app.render?.();
+        this.renderLayers();
+      };
+
+      // ── Eye & lock buttons ──────────────────────────────────────
+      const _lvlMkEye = (layer) => {
+        const b = document.createElement('button');
+        const isMod = layer.isGroup && layer.groupType === 'modifier';
+        if (isMod) {
+          const on = layer.modifier?.enabled !== false;
+          b.className = 'lvl-ib' + (on ? '' : ' vis-off');
+          b.innerHTML = on ? this._LVL_I.eye() : this._LVL_I.eyeOff();
+          b.title = on ? 'Disable mirror modifier' : 'Enable mirror modifier';
+          b.addEventListener('click', (e) => {
+            e.stopPropagation();
             if (this.app.pushHistory) this.app.pushHistory();
-            l.visible = e.target.checked;
-            this.app.computeDisplayGeometry();
-            this.renderLayers();
-            this.buildControls();
-            this.app.render();
-            this.app.updateStats();
-          };
-        }
-        if (maskBtn) {
-          maskBtn.onclick = (e) => {
+            if (layer.modifier) layer.modifier.enabled = !on;
+            engine.computeAllDisplayGeometry?.();
+            this.app.render(); this.renderLayers();
+          });
+        } else {
+          b.className = 'lvl-ib' + (layer.visible ? '' : ' vis-off');
+          b.innerHTML = layer.visible ? this._LVL_I.eye() : this._LVL_I.eyeOff();
+          b.title = layer.visible ? 'Hide' : 'Show';
+          b.addEventListener('click', (e) => {
             e.stopPropagation();
-            this.openMaskLayerId = this.openMaskLayerId === l.id ? null : l.id;
-            this.renderLayers();
-          };
-        }
-        if (delBtn) {
-          delBtn.onclick = (e) => {
-            e.stopPropagation();
-            this.app.engine.removeLayer(l.id);
             if (this.app.pushHistory) this.app.pushHistory();
-            if (this.app.renderer) {
-              const nextId = this.app.engine.activeLayerId;
-              this.app.renderer.setSelection(nextId ? [nextId] : [], nextId);
-            }
-            this.renderLayers();
-            this.app.render();
-          };
-        }
-        if (upBtn && !isChild) {
-          upBtn.onclick = (e) => {
-            e.stopPropagation();
-            const changed = this.app.engine.moveLayer(l.id, 1);
-            if (changed && this.app.pushHistory) this.app.pushHistory();
-            this.renderLayers();
-            this.app.render();
-          };
-        }
-        if (downBtn && !isChild) {
-          downBtn.onclick = (e) => {
-            e.stopPropagation();
-            const changed = this.app.engine.moveLayer(l.id, -1);
-            if (changed && this.app.pushHistory) this.app.pushHistory();
-            this.renderLayers();
-            this.app.render();
-          };
-        }
-        if (dupBtn) {
-          dupBtn.onclick = (e) => {
-            e.stopPropagation();
-            this.duplicateLayers([l]);
-          };
-        }
-        wirePenAssignment(el, l, () => (this.app.renderer?.selectedLayerIds?.has(l.id) ? this.app.renderer.getSelectedLayers() : [l]));
-        if (grip) {
-          bindLayerReorderGrip(grip, el, {
-            ensureSelection: (e) => {
-              if (!this.app.renderer?.selectedLayerIds?.has(l.id)) {
-                selectLayer(e, { skipList: true });
-              }
-            },
+            const newVis = !layer.visible;
+            const cascade = (l) => {
+              l.visible = newVis;
+              allLayers.filter((c) => c.parentId === l.id).forEach(cascade);
+            };
+            cascade(layer);
+            engine.computeAllDisplayGeometry?.();
+            this.app.render(); this.renderLayers();
           });
         }
-        container.appendChild(el);
-        if (this.openMaskLayerId === l.id) {
-          const panelWrap = document.createElement('div');
-          panelWrap.className = 'layer-mask-popover-wrap';
-          if (indent) {
-            panelWrap.style.marginLeft = `${indent + 8}px`;
-            panelWrap.style.width = `calc(100% - ${indent + 8}px)`;
-          }
-          panelWrap.appendChild(this.buildMaskEditor(l, { compact: true }));
-          container.appendChild(panelWrap);
-        }
-        selectableIds.push(l.id);
+        return b;
       };
 
-      const renderTree = (layer, depth = 0) => {
-        if (layer.isGroup) {
-          renderGroupRow(layer, depth);
-          const children = childrenMap.get(layer.id) || [];
-          const showChildren = !layer.groupCollapsed;
-          if (showChildren) {
-            children.forEach((child) => renderTree(child, depth + 1));
-          }
+      const _lvlMkLock = (layer) => {
+        const selfLk = this.layerLockedIds.has(layer.id);
+        const ancLk = !selfLk && _lvlEffLocked(layer.id);
+        const b = document.createElement('button');
+        if (ancLk) {
+          b.className = 'lvl-ib lk-anc'; b.innerHTML = this._LVL_I.lock();
+          b.title = 'Locked by parent';
+          b.addEventListener('click', (e) => e.stopPropagation());
         } else {
-          renderLayerRow(layer, { isChild: depth > 0, depth });
-          const children = childrenMap.get(layer.id) || [];
-          children.forEach((child) => renderTree(child, depth + 1));
+          b.className = 'lvl-ib ' + (selfLk ? 'lk-on' : 'lk-off');
+          b.innerHTML = selfLk ? this._LVL_I.lock() : this._LVL_I.lockOpen();
+          b.title = selfLk ? 'Unlock' : 'Lock';
+          b.addEventListener('click', (e) => {
+            e.stopPropagation();
+            selfLk ? this.layerLockedIds.delete(layer.id) : this.layerLockedIds.add(layer.id);
+            this.renderLayers();
+          });
+        }
+        return b;
+      };
+
+      // ── Card builder ────────────────────────────────────────────
+      const _lvlBuildCard = (layer, masked = false) => {
+        const selIds = renderer?.selectedLayerIds || new Set();
+        const card = document.createElement('div');
+        card.className = 'lvl-card' + (masked ? ' masked-v2' : '');
+        card.dataset.lvlId = layer.id;
+        card.dataset.layerId = layer.id;
+        const isActive = engine.activeLayerId === layer.id;
+        if (isActive) card.classList.add('is-active');
+        else if (selIds.has(layer.id)) card.classList.add('is-selected');
+        if (!layer.visible) card.classList.add('is-hidden');
+        const locked = _lvlEffLocked(layer.id);
+        if (locked) card.classList.add('is-locked');
+
+        if (masked) {
+          // V8-style: no inner wrapper, no caret-zone, no clr-bar, no drag grip
+          const r1m = document.createElement('div'); r1m.className = 'lvl-r1';
+          r1m.appendChild(_lvlMkEye(layer));
+          r1m.appendChild(_lvlMkLock(layer));
+          r1m.appendChild(_lvlNameEl(layer, 'lvl-name'));
+          const pdm = document.createElement('span'); pdm.className = 'lvl-pen-dot';
+          pdm.style.background = _lvlPenColor(layer); pdm.title = 'Assign pen';
+          pdm.addEventListener('click', (e) => { e.stopPropagation(); card.querySelector('.pen-pill')?.click(); });
+          r1m.appendChild(pdm); card.appendChild(r1m);
+
+          const r2m = document.createElement('div'); r2m.className = 'lvl-r2';
+          const aim = document.createElement('span'); aim.className = 'lvl-aico';
+          aim.innerHTML = (this._LVL_I[layer.type] ?? this._LVL_I.grid)?.() ?? '';
+          r2m.appendChild(aim);
+          const alm = document.createElement('span'); alm.className = 'lvl-algo-label';
+          alm.textContent = layer.type || ''; r2m.appendChild(alm);
+          const actsm = document.createElement('div'); actsm.className = 'lvl-acts';
+          const mkAbM = (cls, iconFn, title, fn) => {
+            const b = document.createElement('button');
+            b.className = 'lvl-ab' + (cls ? ' ' + cls : '');
+            b.title = title; b.type = 'button'; b.innerHTML = iconFn();
+            b.addEventListener('click', (e) => { e.stopPropagation(); fn(); }); return b;
+          };
+          actsm.appendChild(mkAbM('', () => this._LVL_I.expand(), 'Expand into group', () => this.expandLayer?.(layer)));
+          actsm.appendChild(mkAbM('', () => this._LVL_I.dup(), 'Duplicate (⌘D)', () => {
+            if (this.app.pushHistory) this.app.pushHistory();
+            engine.duplicateLayer(layer.id); this.renderLayers(); this.app.render();
+          }));
+          actsm.appendChild(mkAbM('del', () => this._LVL_I.trash(), 'Delete', () => {
+            if (this.app.pushHistory) this.app.pushHistory();
+            engine.removeLayer(layer.id); this.renderLayers(); this.app.render();
+          }));
+          r2m.appendChild(actsm); card.appendChild(r2m);
+
+          card.insertAdjacentHTML('beforeend', buildPenAssignment());
+          wirePenAssignment(card, layer, () =>
+            renderer?.selectedLayerIds?.has(layer.id) ? renderer.getSelectedLayers?.() ?? [layer] : [layer]);
+          const _penDragOverM = card.ondragover;
+          if (_penDragOverM) card.ondragover = (ev) => { if (_lvlDRAG.id) return; _penDragOverM.call(card, ev); };
+          card.addEventListener('click', (e) => {
+            if (e.target.closest('.lvl-ib,.lvl-ab,.pen-assign')) return;
+            if (this.armedPenId && this.applyArmedPenToLayers?.([layer])) return;
+            _lvlDoSel(e, layer.id);
+          });
+          return card;
+        }
+
+        const inner = document.createElement('div'); inner.className = 'lvl-card-inner';
+        const cz = document.createElement('div'); cz.className = 'lvl-caret-zone';
+        inner.appendChild(cz);
+
+        const bar = document.createElement('div');
+        bar.className = 'lvl-clr-bar'; bar.style.background = _lvlBarColor(layer);
+        inner.appendChild(bar);
+
+        const body = document.createElement('div'); body.className = 'lvl-card-body';
+        const r1 = document.createElement('div'); r1.className = 'lvl-r1';
+        r1.appendChild(_lvlMkEye(layer));
+        r1.appendChild(_lvlMkLock(layer));
+        r1.appendChild(_lvlNameEl(layer, 'lvl-name'));
+        const pd = document.createElement('span');
+        pd.className = 'lvl-pen-dot'; pd.style.background = _lvlPenColor(layer);
+        pd.title = 'Assign pen';
+        pd.addEventListener('click', (e) => { e.stopPropagation(); card.querySelector('.pen-pill')?.click(); });
+        r1.appendChild(pd);
+        body.appendChild(r1);
+
+        const r2 = document.createElement('div'); r2.className = 'lvl-r2';
+        const ai = document.createElement('span'); ai.className = 'lvl-aico';
+        ai.innerHTML = (this._LVL_I[layer.type] ?? this._LVL_I.grid)?.() ?? '';
+        r2.appendChild(ai);
+        const al = document.createElement('span'); al.className = 'lvl-algo-label';
+        al.textContent = layer.type || ''; r2.appendChild(al);
+
+        const acts = document.createElement('div'); acts.className = 'lvl-acts';
+        const mkAb = (cls, iconFn, title, fn) => {
+          const b = document.createElement('button');
+          b.className = 'lvl-ab' + (cls ? ' ' + cls : '');
+          b.title = title; b.type = 'button'; b.innerHTML = iconFn();
+          b.addEventListener('click', (e) => { e.stopPropagation(); fn(); }); return b;
+        };
+        if (layer.maskCapabilities?.canSource) {
+          const isSrc = _lvlIsMaskSrc(layer.id);
+          acts.appendChild(mkAb(
+            'mask-btn' + (isSrc ? ' is-src' : ''), () => this._LVL_I.maskSrc(),
+            isSrc ? 'Remove clipping mask (click to deactivate)' : 'Make clipping mask — clips layer below',
+            () => {
+              if (this.app.pushHistory) this.app.pushHistory();
+              if (isSrc) {
+                const kids = allLayers.filter((c) => c.parentId === layer.id);
+                kids.forEach((c) => { c.parentId = layer.parentId ?? null; });
+                layer.mask.enabled = false;
+                this.openMaskLayerId = null;
+              } else {
+                const sibs = allLayers.filter((s) => (s.parentId ?? null) === (layer.parentId ?? null));
+                const idx = sibs.indexOf(layer);
+                if (idx < sibs.length - 1) {
+                  this.assignLayersToParent(layer.id, [sibs[idx + 1]], { captureHistory: false });
+                }
+                layer.mask.enabled = true;
+              }
+              engine.computeAllDisplayGeometry?.();
+              this.renderLayers(); this.app.render?.();
+            }
+          ));
+          if (isSrc) {
+            acts.appendChild(mkAb('layer-mask-trigger', () => this._LVL_I.maskSrc?.() ?? '⚙', 'Mask layer settings',
+              () => {
+                this.openMaskLayerId = (this.openMaskLayerId === layer.id ? null : layer.id);
+                this.renderLayers();
+              }
+            ));
+            if (layer.mask?.hideLayer) {
+              const badge = document.createElement('span');
+              badge.className = 'layer-mini-badge';
+              badge.textContent = 'MASK HIDDEN';
+              r1.appendChild(badge);
+            }
+          }
+        }
+        acts.appendChild(mkAb('', () => this._LVL_I.expand(), 'Expand into group', () => this.expandLayer?.(layer)));
+        acts.appendChild(mkAb('', () => this._LVL_I.dup(), 'Duplicate (⌘D)', () => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          engine.duplicateLayer(layer.id); this.renderLayers(); this.app.render();
+        }));
+        acts.appendChild(mkAb('del', () => this._LVL_I.trash(), 'Delete', () => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          engine.removeLayer(layer.id); this.renderLayers(); this.app.render();
+        }));
+        r2.appendChild(acts);
+        body.appendChild(r2);
+        inner.appendChild(body);
+        card.appendChild(inner);
+
+        card.insertAdjacentHTML('beforeend', buildPenAssignment());
+        wirePenAssignment(card, layer, () =>
+          renderer?.selectedLayerIds?.has(layer.id) ? renderer.getSelectedLayers?.() ?? [layer] : [layer]
+        );
+        const _penDragOver = card.ondragover;
+        if (_penDragOver) card.ondragover = (ev) => { if (_lvlDRAG.id) return; _penDragOver.call(card, ev); };
+
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('.lvl-ib,.lvl-ab,.pen-assign')) return;
+          if (this.armedPenId && this.applyArmedPenToLayers?.([layer])) return;
+          _lvlDoSel(e, layer.id);
+        });
+        if (!locked) bindCardDrag(card, layer);
+        return card;
+      };
+
+      // ── Group header builder ────────────────────────────────────
+      const _lvlBuildGrpHdr = (layer, masked = false) => {
+        const selIds = renderer?.selectedLayerIds || new Set();
+        const hdr = document.createElement('div');
+        hdr.className = 'lvl-grp-hdr'
+          + (layer.groupType === 'modifier' ? ' modifier' : '')
+          + (layer.groupType === 'layer' ? ' layer-grp' : '')
+          + (masked ? ' masked-v2' : '');
+        hdr.dataset.lvlId = layer.id;
+        hdr.dataset.layerId = layer.id;
+        const isActive = engine.activeLayerId === layer.id;
+        if (isActive) hdr.classList.add('is-active');
+        else if (selIds.has(layer.id)) hdr.classList.add('is-selected');
+        if (!layer.visible) hdr.classList.add('is-hidden');
+        if (layer.groupType === 'modifier' && layer.modifier?.enabled === false) hdr.classList.add('mod-off');
+
+        const cz = document.createElement('div'); cz.className = 'lvl-caret-zone';
+        const car = document.createElement('span');
+        car.className = 'lvl-caret' + (layer.groupCollapsed ? '' : ' open');
+        car.innerHTML = this._LVL_I.caret();
+        car.addEventListener('click', (e) => { e.stopPropagation(); layer.groupCollapsed = !layer.groupCollapsed; this.renderLayers(); });
+        cz.appendChild(car); hdr.appendChild(cz);
+
+        const bar = document.createElement('div'); bar.className = 'lvl-clr-bar';
+        bar.style.background = _lvlBarColor(layer) || 'var(--color-border-strong)';
+        hdr.appendChild(bar);
+
+        const gc = document.createElement('div'); gc.className = 'lvl-grp-content';
+        gc.appendChild(_lvlMkEye(layer));
+        gc.appendChild(_lvlMkLock(layer));
+        const fi = document.createElement('span'); fi.className = 'lvl-aico';
+        fi.innerHTML = layer.groupType === 'layer'
+          ? (this._LVL_I.layer?.() ?? this._LVL_I.folder())
+          : this._LVL_I.folder();
+        gc.appendChild(fi);
+        gc.appendChild(_lvlNameEl(layer, 'lvl-grp-name'));
+
+        const mkAb = (cls, iconFn, title, fn) => {
+          const b = document.createElement('button');
+          b.className = 'lvl-ab' + (cls ? ' ' + cls : '');
+          b.title = title; b.type = 'button'; b.innerHTML = iconFn();
+          b.addEventListener('click', (e) => { e.stopPropagation(); fn(); }); return b;
+        };
+        const ga = document.createElement('div'); ga.className = 'lvl-grp-acts';
+        ga.appendChild(mkAb('', () => this._LVL_I.ungroup(), 'Ungroup (⌘⇧G)', () => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          const kids = allLayers.filter((l) => l.parentId === layer.id);
+          kids.forEach((l) => { l.parentId = layer.parentId ?? null; });
+          engine.removeLayer(layer.id);
+          renderer.setSelection(kids.map((l) => l.id), kids[0]?.id);
+          this.renderLayers(); this.app.render();
+        }));
+        ga.appendChild(mkAb('', () => this._LVL_I.dup(), 'Duplicate group', () => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          engine.duplicateLayer(layer.id); this.renderLayers(); this.app.render();
+        }));
+        ga.appendChild(mkAb('del', () => this._LVL_I.trash(), 'Delete group', () => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          engine.removeLayer(layer.id); this.renderLayers(); this.app.render();
+        }));
+        gc.appendChild(ga); hdr.appendChild(gc);
+
+        hdr.addEventListener('click', (e) => {
+          if (e.target.closest('.lvl-caret,.lvl-ib,.lvl-ab')) return;
+          if (this.armedPenId && this.applyArmedPenToLayers?.([layer])) return;
+          _lvlDoSel(e, layer.id);
+        });
+        if (!_lvlEffLocked(layer.id)) { bindCardDrag(hdr, layer); addGrpDropZone(hdr, layer); }
+        return hdr;
+      };
+
+      // ── Tree builder ────────────────────────────────────────────
+      const _lvlBuildChildren = (parentId, container) => {
+        const isRoot = parentId === null;
+        const children = allLayers.filter((l) => (l.parentId ?? null) === (parentId ?? null));
+
+        // Mask sources: layers with mask.enabled + canSource. Their masked children are
+        // actual parentId-children in the engine. Build the map here.
+        const maskedBySrc = new Map();
+        children.forEach((l) => {
+          if (_lvlIsMaskSrc(l.id)) {
+            maskedBySrc.set(l.id, allLayers.filter((c) => c.parentId === l.id));
+          }
+        });
+        const done = new Set();
+
+        const appendEl = (el) => {
+          if (isRoot) {
+            container.appendChild(el);
+          } else {
+            const w = document.createElement('div'); w.className = 'lvl-tree-cwrap';
+            w.appendChild(el); container.appendChild(w);
+          }
+        };
+
+        children.forEach((l) => {
+          if (done.has(l.id)) return;
+          if (!_lvlPasses(l)) { done.add(l.id); return; }
+
+          if (_lvlIsMaskSrc(l.id)) {
+            done.add(l.id);
+            const srcCard = _lvlBuildCard(l, false);
+            addMaskSrcDropZone(srcCard, l);
+            appendEl(srcCard);
+            if (this.openMaskLayerId === l.id) {
+              const editor = this.buildMaskEditor(l, { compact: true });
+              container.appendChild(editor);
+            }
+            // Masked children (actual children via parentId)
+            (maskedBySrc.get(l.id) || []).forEach((m) => {
+              done.add(m.id);
+              if (!_lvlPasses(m)) return;
+              if (m.isGroup) {
+                const mHdr = _lvlBuildGrpHdr(m, true);
+                appendEl(mHdr);
+                if (!m.groupCollapsed) {
+                  const cw = document.createElement('div'); cw.className = 'lvl-tree-children';
+                  cw.style.marginLeft = '20px';
+                  _lvlBuildChildren(m.id, cw); container.appendChild(cw);
+                }
+              } else {
+                const mc = _lvlBuildCard(m, true);
+                addMaskedCardDropZone(mc, m, l.id);
+                if (!_lvlEffLocked(m.id)) bindCardDrag(mc, m);
+                appendEl(mc);
+              }
+            });
+
+          } else if (l.isGroup) {
+            done.add(l.id);
+            appendEl(_lvlBuildGrpHdr(l));
+            if (!l.groupCollapsed) {
+              const cw = document.createElement('div'); cw.className = 'lvl-tree-children';
+              _lvlBuildChildren(l.id, cw); container.appendChild(cw);
+            }
+
+          } else {
+            done.add(l.id);
+            const card = _lvlBuildCard(l, false);
+            addCardDropZone(card, l);
+            appendEl(card);
+          }
+        });
+
+        children.filter((l) => !done.has(l.id)).forEach((l) => {
+          if (_lvlPasses(l)) {
+            const card = _lvlBuildCard(l, false);
+            addCardDropZone(card, l);
+            appendEl(card);
+          }
+        });
+      };
+
+      // ── Status bar ──────────────────────────────────────────────
+      const _lvlBuildStatusBar = () => {
+        const bar = document.getElementById('layer-status-bar'); if (!bar) return;
+        bar.innerHTML = '';
+        const sel = renderer?.selectedLayerIds?.size ?? 0;
+        const mkCb = (cls, iconFn, title, fn) => {
+          const b = document.createElement('button');
+          b.className = 'lvl-cb' + (cls ? ' ' + cls : ''); b.title = title; b.type = 'button';
+          b.innerHTML = iconFn();
+          b.addEventListener('click', (e) => { e.stopPropagation(); fn(); }); return b;
+        };
+        if (sel > 1) {
+          const lbl = document.createElement('span'); lbl.className = 'lvl-sb-sel-label';
+          lbl.textContent = sel + ' layers selected'; bar.appendChild(lbl);
+          const sep = document.createElement('div'); sep.className = 'lvl-sb-sep'; bar.appendChild(sep);
+          const cmds = document.createElement('div'); cmds.className = 'lvl-sb-cmds';
+          const selIds = [...(renderer?.selectedLayerIds || [])];
+          const hasGrp = selIds.some((id) => engine.getLayerById?.(id)?.isGroup);
+          const sorted = selIds.map((id) => engine.getLayerById?.(id)).filter(Boolean)
+            .sort((a, b) => engine.layers.indexOf(a) - engine.layers.indexOf(b));
+          const topL = sorted[0];
+          const maskOk = topL && (topL.maskCapabilities?.canSource || topL.isGroup);
+          const selectedLayers = selIds.map((id) => engine.getLayerById?.(id)).filter(Boolean);
+          const anyVisible = selectedLayers.some((l) => l.visible);
+          const anyLocked = selIds.some((id) => this.layerLockedIds.has(id));
+          const hasCollapsedGroup = selectedLayers.some((l) => l.isGroup && l.groupCollapsed);
+          cmds.appendChild(mkCb('',
+            () => anyVisible ? this._LVL_I.eyeOff() : this._LVL_I.eye(),
+            anyVisible ? 'Hide selected' : 'Show selected',
+            () => this._lvlToggleVisibilitySel(anyVisible)));
+          cmds.appendChild(mkCb('',
+            () => anyLocked ? this._LVL_I.lockOpen() : this._LVL_I.lock(),
+            anyLocked ? 'Unlock selected' : 'Lock selected',
+            () => this._lvlToggleLockSel(!anyLocked)));
+          cmds.appendChild(mkCb('', () => this._LVL_I.grpPlus(), 'Group selected (⌘G)', () => this._lvlGroupSel()));
+          if (hasGrp) cmds.appendChild(mkCb('', () => this._LVL_I.ungroup(), 'Ungroup selected (⌘⇧G)', () => this._lvlUngroupSel()));
+          cmds.appendChild(mkCb('mask-btn' + (maskOk ? '' : ' ineligible'), () => this._LVL_I.maskSrc(),
+            maskOk ? 'Create clipping mask group' : 'Top layer must be a clip-eligible layer',
+            maskOk ? () => this._lvlMaskSelGroup() : () => {}));
+          const expBtn = mkCb('', () => this._LVL_I.expand(),
+            hasCollapsedGroup ? 'Expand selected groups' : 'No collapsed groups in selection',
+            () => this._lvlExpandSel());
+          if (!hasCollapsedGroup) expBtn.disabled = true;
+          cmds.appendChild(expBtn);
+          cmds.appendChild(mkCb('', () => this._LVL_I.dup(), 'Duplicate selected (⌘D)', () => this._lvlDupSel()));
+          cmds.appendChild(mkCb('del', () => this._LVL_I.trash(), 'Delete selected (⌫)', () => this._lvlDelSel()));
+          bar.appendChild(cmds);
+          const sp = document.createElement('div'); sp.className = 'lvl-sb-spacer'; bar.appendChild(sp);
+          const tot = document.createElement('span'); tot.className = 'lvl-sb-total';
+          tot.textContent = allLayers.length + ' total'; bar.appendChild(tot);
+        } else {
+          const idle = document.createElement('span'); idle.className = 'lvl-sb-idle';
+          idle.textContent = allLayers.length + ' layers'; bar.appendChild(idle);
         }
       };
 
-      layers.forEach((layer) => {
-        if (layer.parentId && parentIds.has(layer.parentId)) return;
-        renderTree(layer, 0);
-      });
-      this.layerListOrder = selectableIds;
+      // ── Render ──────────────────────────────────────────────────
+      _lvlBuildChildren(null, list);
+      list.classList.toggle('lvl-list-multi', (renderer.selectedLayerIds?.size ?? 0) > 1);
+      _lvlBuildStatusBar();
+
+      this.layerListOrder = _lvlFlatOrder();
       this.updateLightSourceTool();
       if (SETTINGS.autoColorization?.enabled && !this.isApplyingAutoColorization) {
         this.applyAutoColorization({ commit: false, skipLayerRender: true });
       }
     }
+
 
     renderPens() {
       const container = getEl('pen-list');
@@ -11514,6 +11973,7 @@
             if (SETTINGS.autoColorization?.enabled) {
               this.applyAutoColorization({ commit: false, skipLayerRender: true, source: 'continuous' });
             }
+            this.renderLayers();
             this.app.render();
           };
         }
@@ -11635,7 +12095,17 @@
     }
 
     expandLayer(layer, options = {}) {
-      if (!layer || layer.isGroup || layer.parentId) return;
+      if (!layer || layer.isGroup) return;
+      const isEffLocked = (id) => {
+        if (this.layerLockedIds?.has(id)) return true;
+        let l = this.app.engine.getLayerById?.(id);
+        while (l?.parentId) {
+          if (this.layerLockedIds?.has(l.parentId)) return true;
+          l = this.app.engine.getLayerById?.(l.parentId);
+        }
+        return false;
+      };
+      if (isEffLocked(layer.id)) return;
       if (!Layer) return;
       const { skipHistory = false, returnChildren = false, suppressRender = false, selectChildren = true } = options;
       if (!skipHistory && this.app.pushHistory) this.app.pushHistory();
@@ -11680,7 +12150,7 @@
       const groupNodes = new Map();
       const children = pathMeta.map((entry, index) => {
         const newId = Math.random().toString(36).slice(2, 11);
-        const child = new Layer(newId, 'expanded', `${baseName} - Line ${String(index + 1).padStart(pad, '0')}`);
+        const child = new Layer(newId, 'shape', `${baseName} - Line ${String(index + 1).padStart(pad, '0')}`);
         child.parentId = groupId;
         child.params.seed = 0;
         child.params.posX = 0;
@@ -11775,11 +12245,12 @@
       if (this.app.pushHistory) this.app.pushHistory();
       const engine = this.app.engine;
       SETTINGS.globalLayerCount++;
-      const num = String(SETTINGS.globalLayerCount).padStart(2, '0');
       const id = Math.random().toString(36).slice(2, 11);
-      const layer = new Layer(id, 'expanded', `Pen Path ${num}`);
-      const active = engine.getActiveLayer ? engine.getActiveLayer() : null;
       const shapeType = payload?.shape?.type || null;
+      const shapeTypeMap = { oval: 'shape', rect: 'shape', polygon: 'shape' };
+      const layerType = shapeTypeMap[shapeType] || 'shape';
+      const layer = new Layer(id, layerType, '');
+      const active = engine.getActiveLayer ? engine.getActiveLayer() : null;
       const inheritsCurves = !shapeType;
       const shapeUsesCurves = shapeType === 'oval';
       layer.params.seed = 0;
@@ -11791,7 +12262,9 @@
       layer.params.curves = inheritsCurves ? Boolean(active?.params?.curves) : shapeUsesCurves;
       layer.params.smoothing = 0;
       layer.params.simplify = 0;
-      layer.parentId = active?.parentId ?? null;
+      layer.parentId = (active?.isGroup && active?.groupType === 'layer')
+        ? active.id
+        : (active?.parentId ?? null);
       if (active) {
         layer.penId = active.penId;
         layer.color = active.color;
@@ -11814,14 +12287,11 @@
           closed,
         };
       }
-      if (payload?.shape?.type) {
-        const shapeLabelMap = {
-          rect: 'Rectangle',
-          oval: 'Oval',
-          polygon: 'Polygon',
-        };
-        const baseName = shapeLabelMap[payload.shape.type] || 'Shape';
-        layer.name = this.getUniqueLayerName(`${baseName} ${num}`, id);
+      if (shapeType) {
+        const shapeLabelMap = { rect: 'Rectangle', oval: 'Oval', polygon: 'Polygon' };
+        layer.name = this.getUniqueLayerName(shapeLabelMap[shapeType] || 'Shape', id);
+      } else {
+        layer.name = this.getUniqueLayerName('Pen Path', id);
       }
       layer.sourcePaths = [cloned];
       const idx = engine.layers.findIndex((l) => l.id === engine.activeLayerId);
@@ -11852,14 +12322,14 @@
       return out;
     }
 
-    splitExpandedLayer(layer, segments) {
+    splitShapeLayer(layer, segments) {
       if (!Layer || !layer || !segments || !segments.length) return [];
       const engine = this.app.engine;
       const idx = engine.layers.findIndex((l) => l.id === layer.id);
       const pad = String(segments.length).length;
       const children = segments.map((seg, i) => {
         const newId = Math.random().toString(36).slice(2, 11);
-        const child = new Layer(newId, 'expanded', `${layer.name} Cut ${String(i + 1).padStart(pad, '0')}`);
+        const child = new Layer(newId, 'shape', `${layer.name} Cut ${String(i + 1).padStart(pad, '0')}`);
         child.parentId = layer.parentId;
         child.params.seed = 0;
         child.params.posX = 0;
@@ -11908,7 +12378,7 @@
           targets.push(...this.getGroupDescendants(layer.id));
           return;
         }
-        if (layer.type !== 'expanded' && !layer.parentId) {
+        if (layer.type !== 'shape' && !layer.parentId) {
           const expanded = this.expandLayer(layer, { skipHistory: true, returnChildren: true, suppressRender: true, selectChildren: false });
           if (expanded && expanded.length) targets.push(...expanded);
           return;
@@ -11940,7 +12410,7 @@
           newSelection.push(layer.id);
           return;
         }
-        const children = this.splitExpandedLayer(layer, segments);
+        const children = this.splitShapeLayer(layer, segments);
         newSelection.push(...children.map((child) => child.id));
       });
 

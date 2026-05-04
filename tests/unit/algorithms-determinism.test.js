@@ -87,7 +87,7 @@ describe('Algorithm determinism', () => {
     };
 
     const algorithmTypes = Object.keys(ALGO_DEFAULTS)
-      .filter((type) => !['expanded', 'group'].includes(type))
+      .filter((type) => !['shape', 'group'].includes(type))
       .filter((type) => Algorithms[type] && typeof Algorithms[type].generate === 'function');
 
     expect(algorithmTypes.length).toBeGreaterThan(0);
