@@ -326,6 +326,8 @@
       this.shapeDraft = null;
       this.shapeDraftSides = 6;
       this.shapeCornerDrag = null;
+      this.algoDraft = null;
+      this.algoDraftType = 'wavetable';
       this.directSelection = null;
       this.directDrag = null;
       this.maskPreview = null;
@@ -533,6 +535,10 @@
       }
       if (`${this.activeTool}`.startsWith('shape-')) {
         this.setCanvasCursor(makeShapeReticleCursor(getThemeToken('--render-cursor-stroke', 'white')), 'shape-reticle');
+        return;
+      }
+      if (this.activeTool === 'algo-draw') {
+        this.setCanvasCursor('crosshair');
         return;
       }
       if (this.activeTool === 'scissor') {
@@ -1087,6 +1093,42 @@
 
     cancelShapeDraft() {
       this.shapeDraft = null;
+      this.draw();
+    }
+
+    isAlgoDrawTool(tool = this.activeTool) {
+      return tool === 'algo-draw';
+    }
+
+    startAlgoDraft(world) {
+      this.algoDraft = { start: { x: world.x, y: world.y }, end: { x: world.x, y: world.y } };
+      this.draw();
+      return true;
+    }
+
+    updateAlgoDraft(world) {
+      if (!this.algoDraft) return false;
+      this.algoDraft.end = { x: world.x, y: world.y };
+      this.draw();
+      return true;
+    }
+
+    commitAlgoDraft() {
+      const d = this.algoDraft;
+      if (!d) return;
+      const x = Math.min(d.start.x, d.end.x);
+      const y = Math.min(d.start.y, d.end.y);
+      const w = Math.abs(d.end.x - d.start.x);
+      const h = Math.abs(d.end.y - d.start.y);
+      this.algoDraft = null;
+      if (this.onAlgoDrawComplete && w > 5 && h > 5) {
+        this.onAlgoDrawComplete({ algoType: this.algoDraftType, rect: { x, y, w, h } });
+      }
+      this.draw();
+    }
+
+    cancelAlgoDraft() {
+      this.algoDraft = null;
       this.draw();
     }
 
@@ -2291,8 +2333,7 @@
         if (!outlineEnabled || !selectedLayers.length) return;
         selectedLayers.forEach((l) => {
           if (!l.visible || (l.mask?.enabled && l.mask?.hideLayer)) return;
-          const isLineLayer = l.parentId || l.type === 'shape';
-          if (!isLineLayer) return;
+          if (l.isGroup) return;
           const pen = SETTINGS.pens?.find((p) => p.id === l.penId) || null;
           const strokeWidth = pen?.width ?? l.strokeWidth ?? SETTINGS.strokeWidth;
           const useCurves = Boolean(l.params && l.params.curves);
@@ -2378,6 +2419,7 @@
         if (bounds) this.drawSelection(bounds, { showHandles });
       }
       if (this.selectionRect) this.drawSelectionRect(this.selectionRect);
+      if (this.algoDraft) this.drawAlgoDraftRect(this.algoDraft);
       if (this.lassoPath) this.drawSelectionPath(this.lassoPath);
       if (this.directSelection) this.drawDirectSelection();
       if (!this.directSelection) {
@@ -2670,6 +2712,11 @@
         return;
       }
 
+      if (this.isAlgoDrawTool()) {
+        this.startAlgoDraft(world);
+        return;
+      }
+
       const penSelectOverride = this.activeTool === 'pen' && modifiers.meta;
       const allowSelection = this.activeTool !== 'pen' || penSelectOverride;
 
@@ -2700,6 +2747,7 @@
         return;
       }
 
+      this._pendingSingleSelect = null;
       if (allowSelection) {
         if (this.activeTool === 'direct') {
           const selectedShape = this.getSelectedShapeLayer();
@@ -2793,6 +2841,8 @@
           } else {
             this.selectLayer(topLayer);
           }
+        } else if (topLayer && this.selectedLayerIds.size > 1 && !modifiers.shift && !modifiers.meta && !modifiers.ctrl) {
+          this._pendingSingleSelect = topLayer;
         }
         const updatedSelected = this.getSelectedLayers();
         const bounds = this.getSelectionBounds(updatedSelected);
@@ -3029,6 +3079,15 @@
         return;
       }
 
+      if (this.algoDraft) {
+        const rect = this.canvas.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        const next = this.screenToWorld(sx, sy);
+        this.updateAlgoDraft(next);
+        return;
+      }
+
       if (this.activeTool === 'scissor' && this.isScissor) {
         const rect = this.canvas.getBoundingClientRect();
         const sx = e.clientX - rect.left;
@@ -3119,6 +3178,11 @@
         this.isPenDragging = false;
         this.penDragAnchor = null;
         this.penDragStart = null;
+      }
+      if (this.algoDraft) {
+        this.commitAlgoDraft();
+        clearActivePointer();
+        return;
       }
       if (this.shapeDraft) {
         this.commitShapeDraft();
@@ -3236,11 +3300,15 @@
           const primary = this.getSelectedLayer();
           if (primary) this.updateTransformInputs(primary);
         }
+        if (!this.tempTransform && this._pendingSingleSelect) {
+          this.selectLayer(this._pendingSingleSelect);
+        }
         this.clearMaskPreview();
         this.tempTransform = null;
         this.rotateOrigin = null;
         this.snap = null;
       }
+      this._pendingSingleSelect = null;
       this.isPan = false;
       this.isLayerDrag = false;
       this.dragMode = null;
@@ -4223,6 +4291,27 @@
       }
       this.ctx.fill();
       this.ctx.stroke();
+      this.ctx.restore();
+    }
+
+    drawAlgoDraftRect(draft) {
+      if (!draft) return;
+      const x = Math.min(draft.start.x, draft.end.x);
+      const y = Math.min(draft.start.y, draft.end.y);
+      const w = Math.abs(draft.end.x - draft.start.x);
+      const h = Math.abs(draft.end.y - draft.start.y);
+      this.ctx.save();
+      const accentColor = getThemeToken('--color-accent', '#63b3ed');
+      this.ctx.strokeStyle = accentColor;
+      this.ctx.globalAlpha = 0.85;
+      this.ctx.lineWidth = 1.5 / this.scale;
+      this.ctx.setLineDash([5 / this.scale, 4 / this.scale]);
+      this.ctx.beginPath();
+      this.ctx.rect(x, y, w, h);
+      this.ctx.stroke();
+      this.ctx.globalAlpha = 0.08;
+      this.ctx.fillStyle = accentColor;
+      this.ctx.fill();
       this.ctx.restore();
     }
 

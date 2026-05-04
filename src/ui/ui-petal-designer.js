@@ -896,6 +896,11 @@
           extraClasses: 'tool-light hidden',
           icon: '<circle cx="12" cy="12" r="4.4" fill="currentColor" /><path d="M12 2V5M12 19V22M2 12H5M19 12H22M4.5 4.5L6.6 6.6M17.4 17.4L19.5 19.5M4.5 19.5L6.6 17.4M17.4 6.6L19.5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />',
         },
+        'algo-draw': {
+          label: 'Draw Algorithm',
+          ariaLabel: 'Draw Algorithm Tool',
+          icon: '<rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 3"/><path d="M7 12c.5-2 1-2.5 1.5-1.5s1 2.5 1.5 0 1-2.5 1.5 0 1 2 1.5 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/>',
+        },
       };
       return this._sharedToolbarDefinitions;
     },
@@ -957,6 +962,7 @@
         'shape-rect',
         'shape-oval',
         'shape-polygon',
+        'algo-draw',
         'hand',
         { type: 'group', tool: 'pen', subtools: ['pen-draw', 'pen-add', 'pen-delete', 'pen-anchor'], submenuAttrs: 'data-menu="pen" aria-label="Pen subtools"' },
         { type: 'group', tool: 'fill', subtools: ['fill-erase'], submenuAttrs: 'aria-label="Fill subtools"' },

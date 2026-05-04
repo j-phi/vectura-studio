@@ -6435,6 +6435,20 @@
     `;
   };
 
+  const isPrimitiveShapeLayer = (layer) => {
+    if (!layer || layer.isGroup || layer.type !== 'shape') return false;
+    const sources = layer.sourcePaths;
+    if (!Array.isArray(sources) || sources.length !== 1) return false;
+    const meta = sources[0]?.meta;
+    if (!meta) return false;
+    if (meta.kind === 'circle') return true;
+    if (meta.kind === 'shape') {
+      const t = meta.shape?.type;
+      return t === 'rect' || t === 'oval' || t === 'polygon';
+    }
+    return false;
+  };
+
   class UI {
     constructor(app) {
       this.app = app;
@@ -8522,7 +8536,7 @@
       group.isGroup = true;
       group.groupType = 'group';
       group.groupCollapsed = false;
-      group.visible = false;
+      group.visible = true;
       const primary = selectedLayers[0];
       if (primary) {
         group.penId = primary.penId;
@@ -9679,6 +9693,34 @@
         this.app.renderer.onPenComplete = (payload) => this.createManualLayerFromPath(payload);
         this.app.renderer.onShapeComplete = (payload) => this.createManualLayerFromPath(payload);
         this.app.renderer.onScissor = (payload) => this.applyScissor(payload);
+        this.app.renderer.onAlgoDrawComplete = ({ algoType, rect }) => {
+          if (this.app.pushHistory) this.app.pushHistory();
+          const id = this.app.engine.addLayer(algoType);
+          const layer = this.getLayerById?.(id);
+          if (layer && rect.w > 10 && rect.h > 10) {
+            const bounds = this.app.renderer.getLayerBounds(layer);
+            const lw = bounds ? bounds.maxX - bounds.minX : 0;
+            const lh = bounds ? bounds.maxY - bounds.minY : 0;
+            if (bounds && lw > 0 && lh > 0) {
+              const oldScaleX = layer.params.scaleX ?? 1;
+              const oldScaleY = layer.params.scaleY ?? 1;
+              const newScaleX = oldScaleX * rect.w / lw;
+              const newScaleY = oldScaleY * rect.h / lh;
+              const cLocalX = (bounds.minX + bounds.maxX) / 2;
+              const cLocalY = (bounds.minY + bounds.maxY) / 2;
+              layer.params.scaleX = newScaleX;
+              layer.params.scaleY = newScaleY;
+              layer.params.posX = (rect.x + rect.w / 2) - bounds.origin.x - cLocalX * rect.w / lw;
+              layer.params.posY = (rect.y + rect.h / 2) - bounds.origin.y - cLocalY * rect.h / lh;
+              this.app.engine.generate(id);
+            }
+          }
+          if (layer) this.rememberDrawableLayerType?.(layer);
+          if (this.app.renderer) this.app.renderer.setSelection([id], id);
+          this.renderLayers();
+          this.app.render();
+          this.setActiveTool?.('select');
+        };
         this.app.renderer.onDirectEditStart = () => {
           if (this.app.pushHistory) this.app.pushHistory();
         };
@@ -9688,6 +9730,100 @@
           this.updateFormula();
           this.app.render();
         };
+      }
+
+      // ── algo-draw press-and-hold picker ─────────────────────────
+      const algoDrawBtn = toolbar.querySelector('.tool-btn[data-tool="algo-draw"]');
+      if (algoDrawBtn) {
+        const _ALGO_PICK_LIST = [
+          { type: 'wavetable', label: 'Wavetable' },
+          { type: 'flowfield', label: 'Flowfield' },
+          { type: 'hyphae',    label: 'Hyphae' },
+          { type: 'topo',      label: 'Topo' },
+          { type: 'spiral',    label: 'Spiral' },
+          { type: 'rings',     label: 'Rings' },
+          { type: 'grid',      label: 'Grid' },
+          { type: 'boids',     label: 'Boids' },
+          { type: 'attractor', label: 'Attractor' },
+          { type: 'lissajous', label: 'Lissajous' },
+          { type: 'harmonograph', label: 'Harmonograph' },
+          { type: 'rainfall',  label: 'Rainfall' },
+          { type: 'phylla',    label: 'Phylla' },
+          { type: 'petalisDesigner', label: 'Petalis Designer' },
+          { type: 'shapepack', label: 'Shapepack' },
+        ];
+        let _algoPickerTimer = null;
+        const _buildAlgoPickerPopup = () => {
+          let el = document.getElementById('algo-draw-picker');
+          if (!el) {
+            el = document.createElement('div');
+            el.id = 'algo-draw-picker';
+            el.className = 'algo-draw-picker hidden';
+            el.innerHTML = _ALGO_PICK_LIST.map(({ type, label }) =>
+              `<div class="algo-pick-item" data-algo-type="${type}">` +
+              `<span class="lvl-algo-sub-ico">${(this._LVL_I?.[type] ?? this._LVL_I?.grid)?.() ?? ''}</span>${label}</div>`
+            ).join('');
+            el.addEventListener('click', (ev) => {
+              const picked = ev.target.closest('.algo-pick-item');
+              if (!picked) return;
+              const t = picked.dataset.algoType;
+              if (this.app.renderer) this.app.renderer.algoDraftType = t;
+              updateAlgoDrawIcon(t);
+              algoDrawBtn.title = `Draw Algorithm: ${t}`;
+              el.classList.add('hidden');
+              this.setActiveTool?.('algo-draw');
+            });
+            document.addEventListener('click', (ev) => {
+              if (!el.classList.contains('hidden') && !el.contains(ev.target) && ev.target !== algoDrawBtn) {
+                el.classList.add('hidden');
+              }
+            }, true);
+            document.body.appendChild(el);
+          }
+          return el;
+        };
+        const updateAlgoDrawIcon = (type) => {
+          const icon = algoDrawBtn.querySelector('.tool-icon');
+          if (!icon) return;
+          const srcStr = (this._LVL_I?.[type] ?? this._LVL_I?.wavetable)?.();
+          if (!srcStr) return;
+          const tmp = document.createElement('div');
+          tmp.innerHTML = srcStr;
+          const srcSvg = tmp.querySelector('svg');
+          if (!srcSvg) return;
+          icon.innerHTML = srcSvg.innerHTML;
+          for (const attr of ['viewBox', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin']) {
+            const v = srcSvg.getAttribute(attr);
+            if (v) icon.setAttribute(attr, v);
+          }
+        };
+        algoDrawBtn.addEventListener('pointerdown', () => {
+          _algoPickerTimer = setTimeout(() => {
+            const popup = _buildAlgoPickerPopup();
+            const r = algoDrawBtn.getBoundingClientRect();
+            popup.style.left = `${r.right + 6}px`;
+            popup.style.top = `${r.top}px`;
+            popup.classList.remove('hidden');
+          }, 400);
+        });
+        algoDrawBtn.addEventListener('pointerup', (e) => {
+          clearTimeout(_algoPickerTimer);
+          const popup = document.getElementById('algo-draw-picker');
+          if (popup && !popup.classList.contains('hidden')) {
+            const hit = document.elementFromPoint(e.clientX, e.clientY);
+            const picked = hit?.closest('.algo-pick-item');
+            if (picked) {
+              const t = picked.dataset.algoType;
+              if (this.app.renderer) this.app.renderer.algoDraftType = t;
+              updateAlgoDrawIcon(t);
+              algoDrawBtn.title = `Draw Algorithm: ${t}`;
+              popup.classList.add('hidden');
+              this.setActiveTool?.('algo-draw');
+            }
+          }
+        });
+        algoDrawBtn.addEventListener('pointercancel', () => clearTimeout(_algoPickerTimer));
+        updateAlgoDrawIcon('wavetable');
       }
     }
 
@@ -10674,6 +10810,12 @@
           }
         }
 
+        if (this.activeTool === 'algo-draw' && e.key === 'Escape') {
+          e.preventDefault();
+          this.app.renderer?.cancelAlgoDraft?.();
+          return;
+        }
+
         if (`${this.activeTool}`.startsWith('shape-')) {
           if (e.key === 'Escape') {
             e.preventDefault();
@@ -10710,7 +10852,7 @@
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'e') {
           e.preventDefault();
           const selectedLayers = this.app.renderer?.getSelectedLayers?.() || [];
-          const targets = selectedLayers.filter((layer) => layer && !layer.isGroup);
+          const targets = selectedLayers.filter((layer) => layer && !layer.isGroup && !isPrimitiveShapeLayer(layer));
           if (!targets.length) return;
           if (this.app.pushHistory) this.app.pushHistory();
           targets.forEach((layer) => this.expandLayer(layer, { skipHistory: true }));
@@ -10869,6 +11011,66 @@
       };
 
       // ── Layers V8: add dropdown ──────────────────────────────────
+      const _ALGO_LIST = [
+        { type: 'wavetable', label: 'Wavetable' },
+        { type: 'flowfield', label: 'Flowfield' },
+        { type: 'hyphae',    label: 'Hyphae' },
+        { type: 'topo',      label: 'Topo' },
+        { type: 'spiral',    label: 'Spiral' },
+        { type: 'rings',     label: 'Rings' },
+        { type: 'grid',      label: 'Grid' },
+        { type: 'boids',     label: 'Boids' },
+        { type: 'attractor', label: 'Attractor' },
+        { type: 'lissajous', label: 'Lissajous' },
+        { type: 'harmonograph', label: 'Harmonograph' },
+        { type: 'rainfall',  label: 'Rainfall' },
+        { type: 'phylla',    label: 'Phylla' },
+        { type: 'petalisDesigner', label: 'Petalis Designer' },
+        { type: 'shapepack', label: 'Shapepack' },
+      ];
+      // Build the algo submenu as a body-fixed element to escape pane stacking context
+      let algoSubmenuEl = document.getElementById('lvl-algo-submenu');
+      if (algoSubmenuEl) algoSubmenuEl.remove();
+      algoSubmenuEl = document.createElement('div');
+      algoSubmenuEl.id = 'lvl-algo-submenu';
+      algoSubmenuEl.className = 'lvl-algo-submenu';
+      algoSubmenuEl.innerHTML = _ALGO_LIST.map(({ type, label }) =>
+        `<div class="lvl-algo-sub-item" data-add="algo" data-algo-type="${type}">` +
+        `<span class="lvl-algo-sub-ico">${(this._LVL_I[type] ?? this._LVL_I.grid)?.() ?? ''}</span>${label}</div>`
+      ).join('');
+      document.body.appendChild(algoSubmenuEl);
+
+      // Position and show/hide the submenu on hover of the parent item
+      const algoParentItem = document.querySelector('.lvl-add-has-sub[data-add="algo-parent"]');
+      let _algoSubHideTimer = null;
+      const _ALGO_SUB_W = 180;
+      const _showAlgoSub = () => {
+        clearTimeout(_algoSubHideTimer);
+        const r = algoParentItem.getBoundingClientRect();
+        algoSubmenuEl.style.top = `${r.top}px`;
+        algoSubmenuEl.style.left = `${r.left - _ALGO_SUB_W}px`;
+        algoSubmenuEl.style.display = 'block';
+      };
+      const _hideAlgoSub = () => {
+        _algoSubHideTimer = setTimeout(() => { algoSubmenuEl.style.display = 'none'; }, 80);
+      };
+      algoParentItem?.addEventListener('mouseenter', _showAlgoSub);
+      algoParentItem?.addEventListener('mouseleave', _hideAlgoSub);
+      algoSubmenuEl.addEventListener('mouseenter', () => clearTimeout(_algoSubHideTimer));
+      algoSubmenuEl.addEventListener('mouseleave', _hideAlgoSub);
+
+      // Clicking a submenu item closes the submenu and the add menu
+      algoSubmenuEl.addEventListener('click', (e) => {
+        const item = e.target.closest('.lvl-algo-sub-item');
+        if (!item) return;
+        algoSubmenuEl.style.display = 'none';
+        _doAddAlgoLayer(item.dataset.algoType || this.getPreferredNewLayerType?.() || 'wavetable');
+        this.layerAddOpen = false;
+        addMenuEl?.classList.add('hidden');
+        this.renderLayers();
+        this.app.render();
+      });
+
       const addMenuEl = document.getElementById('layer-add-menu');
       const addBtn = document.getElementById('btn-add-layer');
       if (addBtn) {
@@ -10878,33 +11080,41 @@
           addMenuEl?.classList.toggle('hidden', !this.layerAddOpen);
         };
       }
+
+      const _doAddAlgoLayer = (layerType) => {
+        if (this.app.pushHistory) this.app.pushHistory();
+        const activeLayer = this.app.engine.getActiveLayer?.();
+        const id = this.app.engine.addLayer(layerType);
+        const created = this.getLayerById?.(id);
+        if (created) this.rememberDrawableLayerType?.(created);
+        const selectedModifier = activeLayer && this.isModifierLayer?.(activeLayer) ? activeLayer : null;
+        if (selectedModifier && created) {
+          this.assignLayersToParent?.(selectedModifier.id, [created], { selectAssigned: true, primaryId: id });
+        } else if (this.app.renderer) {
+          this.app.renderer.setSelection([id], id);
+        }
+      };
+
       addMenuEl?.addEventListener('click', (e) => {
-        const item = e.target.closest('.lvl-add-item');
+        const item = e.target.closest('.lvl-add-item, .lvl-algo-sub-item');
         if (!item) return;
         this.layerAddOpen = false;
         addMenuEl.classList.add('hidden');
-        if (this.app.pushHistory) this.app.pushHistory();
         const t = item.dataset.add;
         if (t === 'layer') {
+          if (this.app.pushHistory) this.app.pushHistory();
           const id = this.app.engine.addEmptyLayer?.();
           if (id && this.app.renderer) this.app.renderer.setSelection([id], id);
         } else if (t === 'algo') {
-          const layerType = this.getPreferredNewLayerType?.() || 'flowfield';
-          if (this.app.pushHistory) this.app.pushHistory();
-          const activeLayer = this.app.engine.getActiveLayer?.();
-          const id = this.app.engine.addLayer(layerType);
-          const created = this.getLayerById?.(id);
-          if (created) this.rememberDrawableLayerType?.(created);
-          const selectedModifier = activeLayer && this.isModifierLayer?.(activeLayer) ? activeLayer : null;
-          if (selectedModifier && created) {
-            this.assignLayersToParent?.(selectedModifier.id, [created], { selectAssigned: true, primaryId: id });
-          } else if (this.app.renderer) {
-            this.app.renderer.setSelection([id], id);
-          }
+          _doAddAlgoLayer(item.dataset.algoType || this.getPreferredNewLayerType?.() || 'wavetable');
+        } else if (t === 'algo-parent') {
+          _doAddAlgoLayer(this.getPreferredNewLayerType?.() || 'wavetable');
         } else if (t === 'group') {
+          if (this.app.pushHistory) this.app.pushHistory();
           const id = this.app.engine.addGroupLayer?.();
           if (id && this.app.renderer) this.app.renderer.setSelection([id], id);
         } else if (t === 'mirror') {
+          if (this.app.pushHistory) this.app.pushHistory();
           this.app.engine.addModifierLayer?.('mirror');
         }
         this.renderLayers();
@@ -10964,6 +11174,7 @@
         if (this.layerAddOpen) {
           this.layerAddOpen = false;
           addMenuEl?.classList.add('hidden');
+          algoSubmenuEl.style.display = 'none';
         }
         if (this.layerFilterOpen) {
           this.layerFilterOpen = false;
@@ -11329,6 +11540,101 @@
         });
       };
 
+      // ── Boundary drop zones (top/bottom of stack) ───────────────
+      // Update per-render references on list so one-time listeners stay current.
+      // _lvlDRAG/etc are recreated each render; listeners close over the first
+      // render's copies and go stale — reading via list._lvl* avoids that.
+      list._lvlDrag = _lvlDRAG;
+      list._lvlDoMoveRef = _lvlDoMove;
+      list._lvlClrRef = _lvlClrAllDrop;
+      list._lvlHintRef = setHint;
+
+      if (!list._lvlBndryDrop) {
+        list._lvlBndryDrop = true;
+
+        list.addEventListener('dragover', (e) => {
+          if (!list._lvlDrag?.id) return;
+          e.preventDefault();
+          const items = list.querySelectorAll('[data-layer-id]');
+          if (!items.length) return;
+          const first = items[0], last = items[items.length - 1];
+          list._lvlClrRef();
+          if (e.clientY < first.getBoundingClientRect().bottom) {
+            first.classList.add('lvl-drop-before');
+          } else {
+            last.classList.add('lvl-drop-after');
+          }
+          e.dataTransfer.dropEffect = 'move';
+        });
+
+        list.addEventListener('drop', (e) => {
+          if (!list._lvlDrag?.id) return;
+          e.preventDefault();
+          const before = list.querySelector('.lvl-drop-before');
+          const after  = list.querySelector('.lvl-drop-after');
+          list._lvlClrRef(); list._lvlHintRef(null);
+          if (before && before.dataset.layerId !== list._lvlDrag.id)
+            list._lvlDoMoveRef(list._lvlDrag.id, before.dataset.layerId, 'before');
+          else if (after && after.dataset.layerId !== list._lvlDrag.id)
+            list._lvlDoMoveRef(list._lvlDrag.id, after.dataset.layerId, 'after');
+        });
+      }
+
+      const searchBar = document.getElementById('layer-search-bar');
+      if (searchBar && !searchBar._lvlBndryDrop) {
+        searchBar._lvlBndryDrop = true;
+
+        searchBar.addEventListener('dragover', (e) => {
+          if (!list._lvlDrag?.id) return;
+          e.preventDefault();
+          const first = list.querySelector('[data-layer-id]');
+          if (!first) return;
+          list._lvlClrRef();
+          first.classList.add('lvl-drop-before');
+          e.dataTransfer.dropEffect = 'move';
+        });
+        searchBar.addEventListener('dragleave', (e) => {
+          if (!searchBar.contains(e.relatedTarget)) list._lvlClrRef?.();
+        });
+        searchBar.addEventListener('drop', (e) => {
+          if (!list._lvlDrag?.id) return;
+          e.preventDefault();
+          const first = list.querySelector('[data-layer-id]');
+          list._lvlClrRef(); list._lvlHintRef(null);
+          if (first && first.dataset.layerId !== list._lvlDrag.id)
+            list._lvlDoMoveRef(list._lvlDrag.id, first.dataset.layerId, 'before');
+        });
+      }
+
+      const statusBar = document.getElementById('layer-status-bar');
+      if (statusBar && !statusBar._lvlBndryDrop) {
+        statusBar._lvlBndryDrop = true;
+
+        statusBar.addEventListener('dragover', (e) => {
+          if (!list._lvlDrag?.id) return;
+          e.preventDefault();
+          const items = list.querySelectorAll('[data-layer-id]');
+          if (!items.length) return;
+          const last = items[items.length - 1];
+          list._lvlClrRef();
+          last.classList.add('lvl-drop-after');
+          e.dataTransfer.dropEffect = 'move';
+        });
+        statusBar.addEventListener('dragleave', (e) => {
+          if (!statusBar.contains(e.relatedTarget)) list._lvlClrRef?.();
+        });
+        statusBar.addEventListener('drop', (e) => {
+          if (!list._lvlDrag?.id) return;
+          e.preventDefault();
+          const items = list.querySelectorAll('[data-layer-id]');
+          list._lvlClrRef(); list._lvlHintRef(null);
+          if (!items.length) return;
+          const last = items[items.length - 1];
+          if (last.dataset.layerId !== list._lvlDrag.id)
+            list._lvlDoMoveRef(list._lvlDrag.id, last.dataset.layerId, 'after');
+        });
+      }
+
       // ── Filter / search helpers ─────────────────────────────────
       const _lvlPenColor = (layer) => {
         if (layer.penId) {
@@ -11556,7 +11862,9 @@
             b.title = title; b.type = 'button'; b.innerHTML = iconFn();
             b.addEventListener('click', (e) => { e.stopPropagation(); fn(); }); return b;
           };
-          actsm.appendChild(mkAbM('', () => this._LVL_I.expand(), 'Expand into group', () => this.expandLayer?.(layer)));
+          if (!isPrimitiveShapeLayer(layer)) {
+            actsm.appendChild(mkAbM('', () => this._LVL_I.expand(), 'Expand into group', () => this.expandLayer?.(layer)));
+          }
           actsm.appendChild(mkAbM('', () => this._LVL_I.dup(), 'Duplicate (⌘D)', () => {
             if (this.app.pushHistory) this.app.pushHistory();
             engine.duplicateLayer(layer.id); this.renderLayers(); this.app.render();
@@ -11653,7 +11961,9 @@
             }
           }
         }
-        acts.appendChild(mkAb('', () => this._LVL_I.expand(), 'Expand into group', () => this.expandLayer?.(layer)));
+        if (!isPrimitiveShapeLayer(layer)) {
+          acts.appendChild(mkAb('', () => this._LVL_I.expand(), 'Expand into group', () => this.expandLayer?.(layer)));
+        }
         acts.appendChild(mkAb('', () => this._LVL_I.dup(), 'Duplicate (⌘D)', () => {
           if (this.app.pushHistory) this.app.pushHistory();
           engine.duplicateLayer(layer.id); this.renderLayers(); this.app.render();
@@ -12096,6 +12406,7 @@
 
     expandLayer(layer, options = {}) {
       if (!layer || layer.isGroup) return;
+      if (isPrimitiveShapeLayer(layer)) return;
       const isEffLocked = (id) => {
         if (this.layerLockedIds?.has(id)) return true;
         let l = this.app.engine.getLayerById?.(id);

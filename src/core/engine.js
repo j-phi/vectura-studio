@@ -537,6 +537,10 @@
       if (layer.displayMaskActive && Array.isArray(layer.displayPaths)) return layer.displayPaths;
       if (useOptimized && Array.isArray(layer.optimizedPaths)) return layer.optimizedPaths;
       if (Array.isArray(layer.effectivePaths) && layer.effectivePaths.length) return layer.effectivePaths;
+      // Mask source layers whose effective geometry was computed as empty (e.g. a mirror clipped
+      // the shape off the source side) must not fall back to layer.paths — that would render the
+      // raw outline and produce an empty mask circle with no content inside.
+      if (layer.mask?.enabled && layer.effectiveStats !== null) return layer.effectivePaths || [];
       return layer.paths || [];
     }
 
