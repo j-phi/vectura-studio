@@ -6,6 +6,23 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+## 0.8.0 - 2026-05-04
+
+### Added
+- Added **Lark theme**: a dark UI with a white canvas, purpose-built for a plotter-on-paper workflow. Accessible via the global theme toggle introduced in 0.7.0.
+- Added **Algorithm Drawing Tool** with a dedicated submenu for quick access to algorithm-specific drawing actions.
+
+### Changed
+- Enhanced layer removal and modifier handling to correctly propagate mask state, preventing orphaned mask references when layers or modifiers are deleted.
+- Exported wallpaper-groups utilities to the `window.Vectura` namespace for downstream use.
+- Algorithm panels (module selector and configuration) are now hidden when a non-modifier group layer is selected, reducing visual clutter.
+- Fixed bottom pane collapse/expand toggle icon rotation (was 90°, now 180°).
+- Refactored engine and UI code for improved readability and maintainability.
+
+### Fixed
+- Fixed XSS vulnerability: user-controlled strings in modal error bodies are now properly escaped.
+- Fixed missing `wallpaper-groups.js` module that caused CI failures.
+
 ## 0.7.0 - 2026-05-03
 
 ### Added

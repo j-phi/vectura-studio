@@ -13227,6 +13227,12 @@
       const isGroup = Boolean(layer.isGroup);
       const isModifier = this.isModifierLayer(layer);
       const isStatic = Boolean(isGroup || isModifier);
+      const algoSection = getEl('left-section-algorithm', { silent: true });
+      const algoConfigSection = getEl('left-section-algorithm-configuration', { silent: true });
+      const hideAlgoPanels = isGroup && !isModifier;
+      if (algoSection) algoSection.style.display = hideAlgoPanels ? 'none' : '';
+      if (algoConfigSection) algoConfigSection.style.display = hideAlgoPanels ? 'none' : '';
+      if (hideAlgoPanels) { restoreLeftPanelScroll(); return; }
       this.updatePrimaryPanelMode(layer);
       this.syncPrimaryModuleDropdown(layer);
       if (moduleSelect) {

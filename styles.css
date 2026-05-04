@@ -1899,7 +1899,7 @@ input[type='color']::-webkit-color-swatch {
 }
 
 .bottom-pane-collapsed .pane-toggle-bottom {
-  transform: translate(-50%, -50%) rotate(90deg);
+  transform: translate(-50%, -50%) rotate(180deg);
 }
 
 .bottom-resizer {
