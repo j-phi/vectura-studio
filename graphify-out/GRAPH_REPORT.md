@@ -1,12 +1,12 @@
 # Graph Report - /Users/jayphi/Documents/github/vectura-studio  (2026-05-04)
 
 ## Corpus Check
-- 124 files · ~2,329,003 words
+- 124 files · ~2,330,726 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1577 nodes · 3350 edges · 120 communities detected
-- Extraction: 85% EXTRACTED · 15% INFERRED · 0% AMBIGUOUS · INFERRED: 494 edges (avg confidence: 0.8)
+- 1584 nodes · 3370 edges · 120 communities detected
+- Extraction: 85% EXTRACTED · 15% INFERRED · 0% AMBIGUOUS · INFERRED: 495 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
@@ -132,7 +132,7 @@
 - [[_COMMUNITY_Community 119|Community 119]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `Renderer` - 178 edges
+1. `Renderer` - 184 edges
 2. `UI` - 127 edges
 3. `VectorEngine` - 35 edges
 4. `getEl()` - 33 edges
@@ -180,67 +180,67 @@
 
 ### Community 0 - "Community 0"
 Cohesion: 0.03
-Nodes (67): buildMirroredMaskedSceneSvg(), generate(), applyAutoColorization(), clamp(), getAutoColorizationConfig(), getAutoColorizationTargets(), getEl(), initAutoColorizationPanel() (+59 more)
+Nodes (22): round(), rect(), buildBoundsFromVertices(), buildEllipseAnchors(), buildPolygonVertices(), buildRectangleVertices(), buildRoundedPolygonAnchors(), buildShapeAnchors() (+14 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.03
-Nodes (22): isModifierLayer(), round(), rect(), buildBoundsFromVertices(), buildEllipseAnchors(), buildPolygonVertices(), buildRectangleVertices(), buildRoundedPolygonAnchors() (+14 more)
+Nodes (65): applyAutoColorization(), clamp(), getAutoColorizationConfig(), getAutoColorizationTargets(), getEl(), initAutoColorizationPanel(), escapeHtml(), getEl() (+57 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.03
-Nodes (81): listProfileFiles(), iterateSamples(), buildEnvelope(), classifyEndpoint(), firstEndSegmentHits(), firstStartSegmentHits(), pointEquals(), pointInPolygon() (+73 more)
+Cohesion: 0.05
+Nodes (86): listProfileFiles(), xAt(), yAt(), buildEnvelope(), classifyEndpoint(), firstEndSegmentHits(), firstStartSegmentHits(), pointEquals() (+78 more)
 
 ### Community 3 - "Community 3"
 Cohesion: 0.06
 Nodes (88): createPetalModifier(), applyDesignerEdgeSymmetry(), applyPetalDesignerProfileSelection(), applyPetalDesignerToLayer(), bindPetalDesignerCanvases(), bindPetalDesignerDrag(), bindPetalDesignerShortcuts(), bindPetalDesignerUI() (+80 more)
 
 ### Community 4 - "Community 4"
-Cohesion: 0.05
-Nodes (88): xAt(), yAt(), buildSourceFillSampler(), choosePatternFillResolution(), clipSegmentToComposite(), clipSegmentToPoly(), collectBoundaryCrossings(), collectBoundaryEndpointCandidates() (+80 more)
-
-### Community 5 - "Community 5"
 Cohesion: 0.04
 Nodes (33): cmp(), compareVectorAngles(), cosineOfAngle(), crossProduct(), dotProduct(), estimate(), getBboxOverlap(), horizontalIntersection() (+25 more)
 
-### Community 6 - "Community 6"
+### Community 5 - "Community 5"
 Cohesion: 0.03
 Nodes (92): Documentation Synchronization Matrix, Public Process Contracts, Source-of-Truth Hierarchy, Legacy Doc Status Taxonomy, Agentic Harness Strategy, Task Lifecycle Protocol, Harness Testing Matrix, Agentic Harness Governance (+84 more)
 
+### Community 6 - "Community 6"
+Cohesion: 0.05
+Nodes (52): clamp01(), combineBlend(), createEvaluator(), applyDesignerProfileSymmetry(), applyLineType(), applyModifiers(), bboxFromPoints(), bboxIntersects() (+44 more)
+
 ### Community 7 - "Community 7"
 Cohesion: 0.06
-Nodes (50): fmt(), pathsToSvg(), shapeToSvg(), buildClipPathMarkup(), buildPreviewPair(), buildRangeValue(), buildVariantsFromDef(), clamp() (+42 more)
+Nodes (52): fmt(), pathsToSvg(), shapeToSvg(), buildClipPathMarkup(), buildPreviewPair(), buildRangeValue(), buildVariantsFromDef(), clamp() (+44 more)
 
 ### Community 8 - "Community 8"
 Cohesion: 0.06
-Nodes (21): isValidDrawableLayerType(), resolveDrawableLayerType(), usesManualSourceGeometry(), VectorEngine, clonePaths(), countPathPoints(), applyMaskToPaths(), buildClosedPathSilhouettes() (+13 more)
+Nodes (23): isValidDrawableLayerType(), resolveDrawableLayerType(), usesManualSourceGeometry(), VectorEngine, clonePaths(), countPathPoints(), applyMaskToPaths(), buildClosedPathSilhouettes() (+15 more)
 
 ### Community 9 - "Community 9"
-Cohesion: 0.09
-Nodes (25): App, getThemeConfig(), normalizeThemeName(), documentUnitsToMm(), formatDocumentLength(), getDocumentUnitLabel(), getDocumentUnitPrecision(), getDocumentUnitStep() (+17 more)
+Cohesion: 0.06
+Nodes (36): iterateSamples(), SimpleNoise, CoordRounder, applyNoiseOffset(), applyTrailBreaks(), buildDropShape(), buildOffsets(), buildTracePaths() (+28 more)
 
 ### Community 10 - "Community 10"
+Cohesion: 0.06
+Nodes (38): clone(), exportSVG(), getAppVersion(), getExportSnapshot(), saveVecturaFile(), getMaskExportBounds(), _buildNoiseRack(), clamp() (+30 more)
+
+### Community 11 - "Community 11"
 Cohesion: 0.07
 Nodes (34): applyArcMirrorToPaths(), applyMirrorToPaths(), applyRadialMirrorToPaths(), applyWallpaperMirrorToPaths(), buildAxisFromAngle(), classifyPieceSide(), clipClosedPolygonByAxis(), clipPathsToHalfPlane() (+26 more)
 
-### Community 11 - "Community 11"
-Cohesion: 0.12
-Nodes (36): clone(), cloneExportPath(), _buildNoiseRack(), clamp(), createFlowfieldNoise(), createGridNoise(), createPetalisDriftNoise(), createPetalisModifierNoise() (+28 more)
-
 ### Community 12 - "Community 12"
-Cohesion: 0.14
-Nodes (17): closeRing(), difference(), intersection(), multiPolygonToPaths(), normalizeMultiPolygon(), normalizeRing(), rectToMultiPolygon(), ringsToEvenOddMultiPolygon() (+9 more)
+Cohesion: 0.11
+Nodes (20): App, getThemeConfig(), normalizeThemeName(), documentUnitsToMm(), formatDocumentLength(), getDocumentUnitLabel(), getDocumentUnitPrecision(), getDocumentUnitStep() (+12 more)
 
 ### Community 13 - "Community 13"
 Cohesion: 0.2
 Nodes (19): clone(), deleteFromPools(), discardAllDraftPatterns(), discardDraftPattern(), duplicatePattern(), ensureCustomId(), exportPatternSvg(), getCustomPatterns() (+11 more)
 
 ### Community 14 - "Community 14"
-Cohesion: 0.13
-Nodes (5): exportSVG(), getAppVersion(), getExportSnapshot(), saveVecturaFile(), getMaskExportBounds()
+Cohesion: 0.19
+Nodes (16): applyPad(), applyTile(), buildParallelLinesAtAngle(), buildSlopeFamily(), clamp01(), clipInfiniteLineToBounds(), clipShearedInfiniteLineToBounds(), displacePoint() (+8 more)
 
 ### Community 15 - "Community 15"
 Cohesion: 0.19
-Nodes (16): applyPad(), applyTile(), buildParallelLinesAtAngle(), buildSlopeFamily(), clamp01(), clipInfiniteLineToBounds(), clipShearedInfiniteLineToBounds(), displacePoint() (+8 more)
+Nodes (15): closeRing(), difference(), intersection(), multiPolygonToPaths(), normalizeMultiPolygon(), normalizeRing(), rectToMultiPolygon(), ringsToEvenOddMultiPolygon() (+7 more)
 
 ### Community 16 - "Community 16"
 Cohesion: 0.18
@@ -259,8 +259,8 @@ Cohesion: 0.27
 Nodes (11): addSortIndicators(), enableUI(), getNthColumn(), getTable(), getTableBody(), getTableHeader(), loadColumns(), loadData() (+3 more)
 
 ### Community 20 - "Community 20"
-Cohesion: 0.33
-Nodes (11): applyAlgorithmBias(), applyLissajousBias(), applyPetalisBias(), applyRainfallBias(), applyShapePackBias(), clamp(), pickRandom(), randomInRange() (+3 more)
+Cohesion: 0.22
+Nodes (11): applyPad(), applyTile(), edgePoint(), ensureClosedPath(), frac(), interp(), isClosedPath(), pointKey() (+3 more)
 
 ### Community 21 - "Community 21"
 Cohesion: 0.33
@@ -295,8 +295,8 @@ Cohesion: 0.29
 Nodes (0): 
 
 ### Community 29 - "Community 29"
-Cohesion: 0.47
-Nodes (1): SimpleNoise
+Cohesion: 0.48
+Nodes (5): getEl(), initTouchModifierBar(), initTouchMouseBridge(), refreshTouchModifierButtons(), setTouchModifier()
 
 ### Community 30 - "Community 30"
 Cohesion: 0.5
@@ -432,15 +432,15 @@ Nodes (0):
 
 ### Community 63 - "Community 63"
 Cohesion: 1.0
-Nodes (2): Shape Pack Algorithm Canonical Baseline SVG, Shape Pack Algorithm
+Nodes (0): 
 
 ### Community 64 - "Community 64"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (2): sourcePaths Reserved for Expanded Geometry Decision, Rationale: sourcePaths Reserved for Expanded Geometry
 
 ### Community 65 - "Community 65"
 Cohesion: 1.0
-Nodes (2): sourcePaths Reserved for Expanded Geometry Decision, Rationale: sourcePaths Reserved for Expanded Geometry
+Nodes (2): Shape Pack Algorithm Canonical Baseline SVG, Shape Pack Algorithm
 
 ### Community 66 - "Community 66"
 Cohesion: 1.0
@@ -683,11 +683,11 @@ Nodes (1): City — Isometric aerial city of skyscrapers rendered entirely in de
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 62`** (2 nodes): `sampleField()`, `phylla.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 63`** (2 nodes): `Shape Pack Algorithm Canonical Baseline SVG`, `Shape Pack Algorithm`
+- **Thin community `Community 63`** (2 nodes): `enforceDesignerParams()`, `petalisdesigner.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 64`** (2 nodes): `enforceDesignerParams()`, `petalisdesigner.js`
+- **Thin community `Community 64`** (2 nodes): `sourcePaths Reserved for Expanded Geometry Decision`, `Rationale: sourcePaths Reserved for Expanded Geometry`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 65`** (2 nodes): `sourcePaths Reserved for Expanded Geometry Decision`, `Rationale: sourcePaths Reserved for Expanded Geometry`
+- **Thin community `Community 65`** (2 nodes): `Shape Pack Algorithm Canonical Baseline SVG`, `Shape Pack Algorithm`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 66`** (2 nodes): `Wavetable Horizon 3D Canonical Baseline SVG`, `Wavetable Horizon Canonical Baseline SVG`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
@@ -801,12 +801,12 @@ Nodes (1): City — Isometric aerial city of skyscrapers rendered entirely in de
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `sort()` connect `Community 2` to `Community 0`, `Community 3`, `Community 4`, `Community 5`, `Community 7`, `Community 10`, `Community 13`, `Community 14`, `Community 15`, `Community 17`, `Community 18`, `Community 19`?**
-  _High betweenness centrality (0.133) - this node is a cross-community bridge._
-- **Why does `Renderer` connect `Community 1` to `Community 8`, `Community 0`, `Community 14`?**
-  _High betweenness centrality (0.088) - this node is a cross-community bridge._
-- **Why does `generate()` connect `Community 2` to `Community 0`, `Community 1`, `Community 3`, `Community 7`, `Community 18`?**
-  _High betweenness centrality (0.071) - this node is a cross-community bridge._
+- **Why does `sort()` connect `Community 2` to `Community 1`, `Community 3`, `Community 4`, `Community 6`, `Community 7`, `Community 10`, `Community 11`, `Community 13`, `Community 14`, `Community 17`, `Community 18`, `Community 19`?**
+  _High betweenness centrality (0.130) - this node is a cross-community bridge._
+- **Why does `Renderer` connect `Community 0` to `Community 8`, `Community 1`, `Community 10`?**
+  _High betweenness centrality (0.102) - this node is a cross-community bridge._
+- **Why does `UI` connect `Community 1` to `Community 0`, `Community 6`, `Community 7`, `Community 8`, `Community 10`?**
+  _High betweenness centrality (0.058) - this node is a cross-community bridge._
 - **Are the 28 inferred relationships involving `sort()` (e.g. with `classifyIsometricPaths()` and `classifyDesignerAssignments()`) actually correct?**
   _`sort()` has 28 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `Boids Algorithm`, `Shape Pack Algorithm`, `Lissajous Algorithm` to the rest of the system?**

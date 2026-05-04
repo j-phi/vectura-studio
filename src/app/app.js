@@ -38,7 +38,11 @@
         refreshUi: true,
         render: false,
       });
-      this.renderer.setSelection([this.engine.activeLayerId], this.engine.activeLayerId);
+      if (this.engine.activeLayerId) {
+        this.renderer.setSelection([this.engine.activeLayerId], this.engine.activeLayerId);
+      } else {
+        this.renderer.setSelection([], null);
+      }
       this.renderer.onSelectLayer = (layer) => {
         if (layer) this.engine.activeLayerId = layer.id;
         this.ui.renderLayers();
@@ -149,11 +153,14 @@
         layerBarPaletteId: SETTINGS.layerBarPaletteId,
         autoColorization: SETTINGS.autoColorization ? clone(SETTINGS.autoColorization) : null,
         autoColorizationCollapsed: SETTINGS.autoColorizationCollapsed,
+        pensCollapsed: SETTINGS.pensCollapsed,
         activeTool: SETTINGS.activeTool,
         selectionMode: SETTINGS.selectionMode,
         scissorMode: SETTINGS.scissorMode,
         penMode: SETTINGS.penMode,
         pens: Array.isArray(SETTINGS.pens) ? clone(SETTINGS.pens) : [],
+        paneLeftWidth: SETTINGS.paneLeftWidth,
+        paneRightWidth: SETTINGS.paneRightWidth,
       };
     }
 
@@ -211,12 +218,34 @@
       if (snapshot.autoColorizationCollapsed !== undefined) {
         SETTINGS.autoColorizationCollapsed = snapshot.autoColorizationCollapsed;
       }
+      if (snapshot.pensCollapsed !== undefined) {
+        SETTINGS.pensCollapsed = snapshot.pensCollapsed;
+      }
       SETTINGS.activeTool = snapshot.activeTool ?? SETTINGS.activeTool;
       SETTINGS.selectionMode = snapshot.selectionMode ?? SETTINGS.selectionMode;
       SETTINGS.scissorMode = snapshot.scissorMode ?? SETTINGS.scissorMode;
       SETTINGS.penMode = snapshot.penMode ?? SETTINGS.penMode;
       if (Array.isArray(snapshot.pens) && snapshot.pens.length) {
         SETTINGS.pens = clone(snapshot.pens);
+      }
+      const clampPane = (v) => {
+        const n = Number(v);
+        if (!Number.isFinite(n)) return null;
+        return Math.max(200, Math.min(520, Math.round(n)));
+      };
+      const left = clampPane(snapshot.paneLeftWidth);
+      const right = clampPane(snapshot.paneRightWidth);
+      if (left != null) {
+        SETTINGS.paneLeftWidth = left;
+        if (typeof document !== 'undefined') {
+          document.documentElement.style.setProperty('--pane-left-width', `${left}px`);
+        }
+      }
+      if (right != null) {
+        SETTINGS.paneRightWidth = right;
+        if (typeof document !== 'undefined') {
+          document.documentElement.style.setProperty('--pane-right-width', `${right}px`);
+        }
       }
     }
 

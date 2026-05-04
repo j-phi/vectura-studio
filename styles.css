@@ -55,8 +55,8 @@
   --plotter-bg: #101115;
   --plotter-path-base: rgba(113, 113, 122, 0.35);
   --plotter-head: #fafafa;
-  --pane-left-width: 519px;
-  --pane-right-width: 336px;
+  --pane-left-width: 335px;
+  --pane-right-width: 335px;
   --pane-collapsed-width: 56px;
   --bottom-pane-height: 180px;
   --lvl-cyan: #67e8f9;
@@ -877,12 +877,12 @@ input[type='color']::-webkit-color-swatch {
 .lvl-filter-opt.sel { color: var(--lvl-cyan) }
 
 .lvl-add-btn {
-  height: 22px; padding: 0 8px; background: rgba(255,255,255,.06);
-  border: 1px solid var(--color-border); border-radius: 4px; color: var(--color-muted);
+  height: 22px; padding: 0 8px; background: #38bdf8; border: 1px solid #38bdf8;
+  border-radius: 4px; color: var(--color-bg);
   cursor: pointer; font-family: inherit; font-size: 10px;
-  display: flex; align-items: center; gap: 4px; transition: color .12s, background .12s;
+  display: flex; align-items: center; gap: 4px; transition: color .12s, background .12s, filter .12s;
 }
-.lvl-add-btn:hover { color: var(--color-text); background: rgba(255,255,255,.1); border-color: var(--color-border-hover) }
+.lvl-add-btn:hover { color: var(--color-bg); background: #38bdf8; filter: brightness(1.15); border-color: #38bdf8 }
 .lvl-add-menu {
   position: absolute; top: calc(100% + 6px); right: 0; width: 200px;
   background: var(--color-surface-alt); border: 1px solid var(--color-border);
@@ -893,7 +893,7 @@ input[type='color']::-webkit-color-swatch {
 .lvl-add-menu.hidden { display: none }
 .lvl-add-item {
   padding: 8px 12px; cursor: pointer; font-size: 11px; color: var(--color-muted);
-  display: flex; align-items: center; justify-content: flex-end; gap: 6px;
+  display: flex; align-items: center; justify-content: flex-start; gap: 6px;
   transition: background .1s, color .1s;
 }
 .lvl-add-item:hover { background: rgba(255,255,255,.05); color: var(--color-text) }
@@ -1122,6 +1122,81 @@ input[type='color']::-webkit-color-swatch {
 }
 
 /* ── End Layers Panel V8 ─────────────────────────────────────── */
+
+/* ── Right pane: Layers / Pens tabs (live in pane header) ────── */
+.right-pane-tabs {
+  display: flex;
+  flex: 1;
+  align-self: stretch;
+  background: transparent;
+}
+.right-pane-tab {
+  flex: 1;
+  padding: 0 10px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+.right-pane-tab:hover {
+  color: var(--color-text);
+}
+.right-pane-tab.active {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+.lvl-add-wrap {
+  position: relative;
+}
+.lvl-add-btn-icon {
+  background: #38bdf8;
+  border: 1px solid #38bdf8;
+  border-radius: 4px;
+  color: var(--color-bg);
+  cursor: pointer;
+  padding: 4px 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color .12s, border-color .12s, background .12s;
+}
+.lvl-add-btn-icon:hover {
+  background: #7dd3fc;
+  border-color: #7dd3fc;
+  color: var(--color-bg);
+}
+.right-tab-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.right-tab-panel.hidden {
+  display: none;
+}
+
+/* ── Bottom pane: 2-column grid (formula | background) ───────── */
+.bottom-pane-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+.bottom-pane-bg-slot {
+  padding: 4px 0;
+  display: flex;
+  justify-content: flex-end;
+}
 
 .pen-option {
   display: flex;
@@ -1692,7 +1767,9 @@ input[type='color']::-webkit-color-swatch {
 }
 
 .pane-toggle-bottom {
-  right: 12px;
+  left: 50%;
+  right: auto;
+  transform: translate(-50%, -50%);
 }
 
 .pane-left {
@@ -1806,7 +1883,6 @@ input[type='color']::-webkit-color-swatch {
 
 .bottom-pane-header {
   position: relative;
-  padding-right: 48px;
 }
 
 .bottom-pane-footer {
@@ -1823,7 +1899,7 @@ input[type='color']::-webkit-color-swatch {
 }
 
 .bottom-pane-collapsed .pane-toggle-bottom {
-  transform: translateY(-50%) rotate(90deg);
+  transform: translate(-50%, -50%) rotate(90deg);
 }
 
 .bottom-resizer {

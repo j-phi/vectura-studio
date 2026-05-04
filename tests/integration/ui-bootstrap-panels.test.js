@@ -20,6 +20,10 @@ describe('UI bootstrap – core panels', () => {
       else if (event?.message) bootErrors.push(event.message);
     });
     window.app = new window.Vectura.App();
+    window.app.engine.addLayer('wavetable');
+    window.app.ui.renderLayers();
+    window.app.ui.buildControls();
+    window.app.ui.updateFormula();
     await Promise.resolve();
   });
 
@@ -203,6 +207,9 @@ describe('UI bootstrap – line sort export modal', () => {
   beforeAll(async () => {
     runtime = await loadVecturaRuntime(FULL_STACK);
     runtime.window.app = new runtime.window.Vectura.App();
+    runtime.window.app.engine.addLayer('wavetable');
+    runtime.window.app.ui.renderLayers();
+    runtime.window.app.ui.buildControls();
     await Promise.resolve();
   });
 

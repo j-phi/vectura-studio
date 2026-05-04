@@ -1415,6 +1415,8 @@
     penMode: 'draw',
     scissorMode: 'line',
     cookiePreferencesEnabled: false,
+    paneLeftWidth: 335,
+    paneRightWidth: 335,
     lightSource: null,
     optimizationDefaults: {
       bypassAll: false,
@@ -1452,7 +1454,7 @@
       },
     },
     autoColorizationCollapsed: true,
-    pensCollapsed: true,
+    pensCollapsed: false,
     pens: [
       { id: 'pen-1', name: 'Pen 1', color: '#ffffff', width: 0.3 },
       { id: 'pen-2', name: 'Pen 2', color: '#dbeafe', width: 0.5 },

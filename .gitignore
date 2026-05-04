@@ -5,4 +5,7 @@ playwright-report
 test-results
 coverage
 vite.log
+archive.zip
 graphify-out/cache/
+graphify-out/.graphify_cached.json                                                                                                         
+graphify-out/.graphify_old.json      

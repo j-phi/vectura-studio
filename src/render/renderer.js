@@ -294,6 +294,7 @@
       this.scale = 1;
       this.offsetX = 0;
       this.offsetY = 0;
+      this.userHasManipulated = false;
       this.isPan = false;
       this.isLayerDrag = false;
       this.dragMode = null;
@@ -1839,12 +1840,13 @@
       this.canvas.style.width = `${p.width}px`;
       this.canvas.style.height = `${p.height}px`;
       this.ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-      if (this.scale === 1) this.center();
+      if (!this.userHasManipulated) this.center();
       this.draw();
     }
 
     center() {
       if (!this.ready || !this.canvas) return;
+      this.userHasManipulated = false;
       const p = this.engine.currentProfile;
       const r = this.canvas.getBoundingClientRect();
       const sx = (r.width - 60) / p.width;
@@ -2598,6 +2600,7 @@
       this.offsetX = mx - wx * nextScale;
       this.offsetY = my - wy * nextScale;
       this.scale = nextScale;
+      this.userHasManipulated = true;
       this.draw();
     }
 
@@ -2900,6 +2903,7 @@
         this.offsetX += e.clientX - this.lastM.x;
         this.offsetY += e.clientY - this.lastM.y;
         this.lastM = { x: e.clientX, y: e.clientY };
+        this.userHasManipulated = true;
         this.draw();
         return;
       }
@@ -3955,9 +3959,12 @@
     transformCircleMeta(meta, temp) {
       if (!temp || !meta) return meta;
       const center = this.transformPoint({ x: meta.cx ?? meta.x, y: meta.cy ?? meta.y }, temp);
-      const baseR = Number.isFinite(meta.r) ? meta.r : Math.max(meta.rx ?? 0, meta.ry ?? 0);
-      const rx = Math.abs(baseR * temp.scaleX);
-      const ry = Math.abs(baseR * temp.scaleY);
+      // Prefer rx/ry (already reflect the layer's committed scale) over r (raw, unscaled)
+      // so that previewing tempTransform multiplies the *current displayed* radius.
+      const baseRx = Number.isFinite(meta.rx) ? meta.rx : (Number.isFinite(meta.r) ? meta.r : 0);
+      const baseRy = Number.isFinite(meta.ry) ? meta.ry : (Number.isFinite(meta.r) ? meta.r : 0);
+      const rx = Math.abs(baseRx * temp.scaleX);
+      const ry = Math.abs(baseRy * temp.scaleY);
       const rot = ((temp.rotation ?? 0) * Math.PI) / 180;
       return { ...meta, cx: center.x, cy: center.y, rx, ry, rotation: (meta.rotation ?? 0) + rot };
     }

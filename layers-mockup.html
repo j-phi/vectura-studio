@@ -1,0 +1,1801 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vectura — Layers Panel Mockups</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #09090b;
+  --panel: #18181b;
+  --surface: #111113;
+  --border: #27272a;
+  --border2: #3f3f46;
+  --text: #e4e4e7;
+  --muted: #71717a;
+  --muted2: #52525b;
+  --accent: #fafafa;
+  --cyan: #67e8f9;
+  --cyan-dim: rgba(103,232,249,0.15);
+  --red: #ef4444;
+  --mono: 'JetBrains Mono', monospace;
+}
+
+body {
+  background: #060608;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  min-height: 100vh;
+  padding: 32px 24px;
+}
+
+h1 {
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.subtitle {
+  font-size: 10px;
+  color: var(--muted2);
+  margin-bottom: 32px;
+  letter-spacing: 0.05em;
+}
+
+/* ─── Tabs ─────────────────────────────────────────────── */
+.tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0;
+}
+.tab-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 8px 14px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 120ms, border-color 120ms;
+  white-space: nowrap;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.tab-dna {
+  display: block;
+  font-size: 8px;
+  letter-spacing: 0.05em;
+  color: var(--muted2);
+  margin-top: 2px;
+  text-transform: none;
+}
+
+/* ─── Panels container ─────────────────────────────────── */
+.panels {
+  display: flex;
+  gap: 40px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.panel-wrap {
+  display: none;
+  flex-direction: column;
+  gap: 0;
+}
+.panel-wrap.active { display: flex; }
+
+/* The actual panel shell */
+.v-panel {
+  width: 320px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+.v-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  height: 36px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.v-panel-title {
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.v-panel-add {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--border);
+  padding: 3px 8px;
+  cursor: pointer;
+  font-family: var(--mono);
+  transition: color 100ms, border-color 100ms;
+}
+.v-panel-add:hover { color: var(--text); border-color: var(--border2); }
+
+.v-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  min-height: 0;
+  max-height: 520px;
+}
+.v-panel-body::-webkit-scrollbar { width: 4px; }
+.v-panel-body::-webkit-scrollbar-track { background: transparent; }
+.v-panel-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+/* ─── Legend ───────────────────────────────────────────── */
+.legend {
+  margin-top: 32px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  max-width: 700px;
+}
+.legend-title {
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.legend-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px 16px;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.legend-chip {
+  font-size: 9px;
+  padding: 1px 5px;
+  background: rgba(113,113,122,0.2);
+  color: var(--muted);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ALT 1 — ILLUSTRATOR COLUMN GRID
+═══════════════════════════════════════════════════════════ */
+.a1-row {
+  display: grid;
+  grid-template-columns: 20px 20px 22px 1fr 22px 22px;
+  align-items: center;
+  height: 32px;
+  border-left: 3px solid transparent;
+  border-radius: 2px;
+  position: relative;
+  cursor: pointer;
+  transition: background 80ms, border-color 80ms;
+}
+.a1-row:hover { background: rgba(255,255,255,0.04); }
+.a1-row.a1-active {
+  border-left-color: var(--accent);
+  background: rgba(39,39,42,0.5);
+}
+.a1-row.a1-selected { background: rgba(39,39,42,0.3); }
+
+.a1-col {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+.a1-col-name {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 4px;
+  min-width: 0;
+}
+.a1-name {
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.a1-active .a1-name { color: var(--accent); font-weight: 600; }
+.a1-type {
+  font-size: 9px;
+  color: var(--muted);
+  letter-spacing: 0.05em;
+}
+.a1-hidden .a1-name { opacity: 0.4; }
+.a1-hidden .a1-type { opacity: 0.4; }
+
+/* Eye icon button */
+.a1-eye, .a1-lock, .a1-algo-icon {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+  transition: color 100ms;
+}
+.a1-eye:hover, .a1-lock:hover { color: var(--text); }
+.a1-hidden .a1-eye { color: var(--muted2); opacity: 0.5; }
+
+.a1-pen-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.15);
+}
+
+/* Hover-reveal del/dup */
+.a1-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 4px;
+  gap: 2px;
+}
+.a1-del, .a1-dup {
+  background: none;
+  border: none;
+  color: transparent;
+  cursor: pointer;
+  font-size: 11px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 100ms;
+  border-radius: 2px;
+}
+.a1-row:hover .a1-del { color: var(--muted); }
+.a1-row:hover .a1-dup { color: var(--muted); }
+.a1-del:hover { color: var(--red) !important; }
+.a1-dup:hover { color: var(--text) !important; }
+
+/* Group styling */
+.a1-group {
+  background: var(--surface);
+  border-left: 3px solid transparent;
+  border-radius: 2px;
+  margin-bottom: 2px;
+}
+.a1-group-header {
+  display: grid;
+  grid-template-columns: 20px 20px 22px 1fr 22px 22px;
+  align-items: center;
+  height: 30px;
+  cursor: pointer;
+  position: relative;
+}
+.a1-group-header:hover { background: rgba(255,255,255,0.03); }
+.a1-group-name {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.a1-group-badge {
+  font-size: 8px;
+  padding: 1px 4px;
+  color: var(--cyan);
+  border: 1px solid rgba(103,232,249,0.3);
+  border-radius: 2px;
+  margin-left: 6px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+.a1-modifier-group { border-left-color: var(--cyan) !important; }
+.a1-regular-group { border-left-color: var(--border2) !important; border-left-style: dashed !important; }
+
+.a1-collapse-arrow {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 200ms;
+}
+.a1-collapsed .a1-collapse-arrow { transform: rotate(-90deg); }
+
+.a1-children {
+  padding-left: 16px;
+  position: relative;
+}
+.a1-children::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 0; bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+.a1-children.a1-hidden-children { display: none; }
+
+/* Mask badge */
+.a1-mask-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--cyan);
+  opacity: 0;
+  transition: opacity 100ms;
+}
+.a1-masked .a1-mask-dot { opacity: 1; }
+
+/* SVG icons */
+.algo-icon { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 1.5; }
+
+/* Separator */
+.a1-sep { height: 4px; }
+
+/* ═══════════════════════════════════════════════════════════
+   ALT 2 — FIGMA COMPACT LIST
+═══════════════════════════════════════════════════════════ */
+.a2-list { padding: 2px 0; }
+
+.a2-row {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 6px;
+  gap: 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  position: relative;
+  transition: background 80ms;
+}
+.a2-row:hover { background: rgba(255,255,255,0.05); }
+.a2-row.a2-active {
+  background: rgba(39,39,42,0.7);
+}
+.a2-row.a2-active::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 25%; height: 50%;
+  width: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+}
+.a2-row.a2-hidden .a2-name { opacity: 0.4; }
+
+.a2-arrow-spacer { width: 14px; flex-shrink: 0; }
+.a2-arrow {
+  width: 14px;
+  height: 14px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  flex-shrink: 0;
+  transition: transform 200ms;
+}
+.a2-collapsed .a2-arrow { transform: rotate(-90deg); }
+
+.a2-vis {
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  flex-shrink: 0;
+}
+.a2-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted2);
+  transition: background 100ms;
+  flex-shrink: 0;
+}
+.a2-row.a2-hidden .a2-dot {
+  background: transparent;
+  box-shadow: 0 0 0 1px var(--muted2);
+}
+
+.a2-name {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.a2-active .a2-name { color: var(--accent); font-weight: 600; }
+.a2-group-name { color: var(--muted); font-size: 10px; letter-spacing: 0.04em; }
+.a2-modifier-name { color: var(--cyan); }
+
+.a2-chip {
+  font-size: 8px;
+  padding: 1px 4px;
+  background: rgba(113,113,122,0.18);
+  color: var(--muted);
+  border-radius: 2px;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+  font-weight: 500;
+}
+.a2-chip-mod { background: rgba(103,232,249,0.12); color: var(--cyan); }
+.a2-chip-grp { background: rgba(63,63,70,0.4); color: var(--muted2); }
+
+.a2-mask-glyph { color: var(--cyan); font-size: 11px; flex-shrink: 0; }
+
+/* Hover toolbar */
+.a2-toolbar {
+  display: none;
+  align-items: center;
+  gap: 1px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.a2-row:hover .a2-toolbar { display: flex; }
+.a2-row:hover .a2-chip { display: none; }
+.a2-row:hover .a2-mask-glyph { display: none; }
+
+.a2-tb-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 10px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+  transition: color 80ms, background 80ms;
+}
+.a2-tb-btn:hover { color: var(--text); background: rgba(255,255,255,0.08); }
+.a2-tb-del:hover { color: var(--red); }
+
+.a2-pen-mini {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+/* Group children indented connector */
+.a2-children {
+  position: relative;
+}
+.a2-children::before {
+  content: '';
+  position: absolute;
+  left: 17px;
+  top: 0; bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+.a2-child-row {
+  padding-left: 24px;
+}
+.a2-hidden-children { display: none; }
+
+/* ═══════════════════════════════════════════════════════════
+   ALT 3 — AFTER EFFECTS TRACK CARDS
+═══════════════════════════════════════════════════════════ */
+.a3-list { display: flex; flex-direction: column; gap: 3px; }
+
+.a3-card {
+  display: flex;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+  transition: box-shadow 120ms;
+  cursor: pointer;
+}
+.a3-card:hover { border-color: var(--border2); }
+.a3-card.a3-active {
+  box-shadow: 0 0 0 1.5px var(--accent), inset 0 0 0 1px rgba(250,250,250,0.06);
+  border-color: transparent;
+}
+.a3-card.a3-hidden { opacity: 0.45; }
+
+.a3-strip {
+  width: 4px;
+  flex-shrink: 0;
+  background: var(--muted2);
+}
+.a3-active .a3-strip { background: var(--accent); }
+.a3-masked-card .a3-strip { background: linear-gradient(to bottom, var(--muted2) 60%, var(--cyan) 100%); }
+
+.a3-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 5px 8px;
+  gap: 3px;
+  min-width: 0;
+}
+.a3-row1, .a3-row2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.a3-row1 { height: 20px; }
+.a3-row2 { height: 18px; }
+
+.a3-grip {
+  display: flex;
+  gap: 2px;
+  opacity: 0.35;
+  cursor: grab;
+  flex-shrink: 0;
+}
+.a3-card:hover .a3-grip { opacity: 0.7; }
+.a3-gdot { width: 2px; height: 2px; border-radius: 50%; background: var(--muted); }
+.a3-grip-col { display: flex; flex-direction: column; gap: 2px; }
+
+.a3-vis {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  transition: color 100ms;
+}
+.a3-vis:hover { color: var(--text); }
+.a3-hidden .a3-vis { opacity: 0.4; }
+
+.a3-name {
+  font-size: 12px;
+  color: var(--text);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.a3-active .a3-name { color: var(--accent); font-weight: 600; }
+
+.a3-mask-chip {
+  font-size: 8px;
+  padding: 1px 5px;
+  background: var(--cyan-dim);
+  border: 1px solid rgba(103,232,249,0.3);
+  color: var(--cyan);
+  border-radius: 999px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.a3-pen-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.12);
+  flex-shrink: 0;
+}
+
+.a3-algo-label {
+  font-size: 8px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.a3-acts {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  margin-left: auto;
+}
+.a3-act {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 10px;
+  width: 20px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+  opacity: 0.45;
+  transition: opacity 100ms, color 100ms;
+}
+.a3-card:hover .a3-act { opacity: 1; }
+.a3-act:hover { color: var(--text); }
+.a3-act-del:hover { color: var(--red); }
+
+/* Group band */
+.a3-group {
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  margin-bottom: 0;
+}
+.a3-group-header {
+  display: flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 8px;
+  gap: 6px;
+  background: var(--surface);
+  cursor: pointer;
+  border-bottom: 1px dashed var(--border2);
+}
+.a3-group-header:hover { background: rgba(17,17,19,0.8); }
+.a3-modifier-group .a3-group-header { border-left: 3px solid var(--cyan); }
+.a3-regular-group .a3-group-header { border-left: 3px dashed var(--border2); }
+
+.a3-collapse-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 9px;
+  transition: transform 200ms;
+}
+.a3-collapsed .a3-collapse-btn { transform: rotate(-90deg); }
+
+.a3-group-name {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  flex: 1;
+}
+.a3-group-badge {
+  font-size: 8px;
+  padding: 1px 5px;
+  border: 1px solid rgba(103,232,249,0.3);
+  color: var(--cyan);
+  border-radius: 2px;
+  letter-spacing: 0.1em;
+}
+.a3-mod-toggle {
+  accent-color: var(--cyan);
+  width: 12px;
+  height: 12px;
+  cursor: pointer;
+}
+.a3-group-del {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  opacity: 0.3;
+  transition: opacity 100ms, color 100ms;
+}
+.a3-group-header:hover .a3-group-del { opacity: 1; }
+.a3-group-del:hover { color: var(--red); }
+
+.a3-group-body { padding: 4px; display: flex; flex-direction: column; gap: 3px; }
+.a3-group-body.a3-hidden-children { display: none; }
+
+/* ═══════════════════════════════════════════════════════════
+   ALT 4 — FRAMER INSPECTOR SPLIT
+═══════════════════════════════════════════════════════════ */
+.a4-panel {
+  display: flex;
+  flex-direction: column;
+  height: 520px;
+}
+.a4-list {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 4px 6px;
+}
+.a4-list::-webkit-scrollbar { width: 3px; }
+.a4-list::-webkit-scrollbar-thumb { background: var(--border2); }
+
+.a4-row {
+  display: flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 4px;
+  gap: 4px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background 80ms;
+}
+.a4-row:hover { background: rgba(255,255,255,0.04); }
+.a4-row.a4-active { background: rgba(39,39,42,0.7); }
+.a4-row.a4-active .a4-name { color: var(--accent); font-weight: 600; }
+.a4-row.a4-hidden .a4-name { opacity: 0.4; }
+.a4-row.a4-hidden .a4-dot { background: transparent; box-shadow: 0 0 0 1px var(--muted2); }
+
+.a4-indent { flex-shrink: 0; }
+.a4-arrow-sp { width: 14px; flex-shrink: 0; }
+.a4-arrow {
+  width: 14px; height: 14px;
+  background: none; border: none;
+  color: var(--muted); cursor: pointer;
+  font-size: 8px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: transform 200ms;
+}
+.a4-collapsed .a4-arrow { transform: rotate(-90deg); }
+
+.a4-vis {
+  background: none; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  padding: 4px; flex-shrink: 0;
+}
+.a4-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted2); }
+
+.a4-name {
+  flex: 1;
+  font-size: 11px;
+  color: #a1a1aa;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  min-width: 0;
+}
+.a4-group-label {
+  font-size: 8px;
+  color: var(--muted2);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.a4-glyphs { display: flex; gap: 3px; flex-shrink: 0; }
+.a4-glyph-mask { color: var(--cyan); font-size: 11px; }
+.a4-glyph-hidden { color: var(--muted2); font-size: 10px; }
+
+.a4-children { position: relative; }
+.a4-children::before {
+  content: '';
+  position: absolute;
+  left: 17px; top: 0; bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+.a4-child-row { padding-left: 20px; }
+.a4-hidden-children { display: none; }
+
+/* Detail pane */
+.a4-detail {
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  padding: 10px 12px;
+  flex-shrink: 0;
+}
+.a4-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.a4-detail-name {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 11px;
+  font-family: var(--mono);
+  padding: 4px 7px;
+  border-radius: 3px;
+  outline: none;
+  transition: border-color 100ms;
+}
+.a4-detail-name:focus { border-color: var(--border2); }
+.a4-detail-type {
+  font-size: 8px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}
+.a4-detail-meta { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; }
+.a4-meta-row { display: flex; align-items: center; gap: 6px; font-size: 10px; }
+.a4-meta-label { color: var(--muted2); width: 34px; flex-shrink: 0; }
+.a4-pen-swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.a4-meta-val { color: var(--muted); }
+.a4-mask-active { color: var(--cyan); }
+.a4-mask-edit {
+  background: none; border: 1px solid rgba(103,232,249,0.3);
+  color: var(--cyan); font-size: 9px; font-family: var(--mono);
+  padding: 2px 6px; cursor: pointer; border-radius: 2px;
+  transition: background 100ms;
+}
+.a4-mask-edit:hover { background: var(--cyan-dim); }
+.a4-mask-na { color: var(--muted2); font-size: 10px; }
+
+.a4-detail-actions { display: flex; gap: 4px; }
+.a4-da-btn {
+  flex: 1; height: 26px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 11px; font-family: var(--mono);
+  border-radius: 3px; cursor: pointer;
+  transition: color 100ms, border-color 100ms;
+}
+.a4-da-btn:hover { color: var(--text); border-color: var(--border2); }
+.a4-da-del:hover { color: var(--red); border-color: rgba(239,68,68,0.35); }
+.a4-placeholder { color: var(--muted2); font-size: 10px; text-align: center; padding: 20px; font-style: italic; }
+
+/* ═══════════════════════════════════════════════════════════
+   ALT 5 — PHOTOSHOP THUMBNAIL
+═══════════════════════════════════════════════════════════ */
+.a5-row {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 6px;
+  gap: 8px;
+  position: relative;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(39,39,42,0.5);
+  transition: background 80ms;
+}
+.a5-row:hover { background: rgba(255,255,255,0.03); }
+.a5-row.a5-active { background: rgba(39,39,42,0.6); }
+.a5-row.a5-hidden .a5-info-name { opacity: 0.5; }
+
+.a5-grip-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  opacity: 0.3;
+  cursor: grab;
+  flex-shrink: 0;
+  transition: opacity 100ms;
+}
+.a5-row:hover .a5-grip-col { opacity: 0.7; }
+.a5-gdot-row { display: flex; gap: 3px; }
+.a5-gd { width: 2px; height: 2px; border-radius: 50%; background: var(--muted); }
+
+/* Thumbnail */
+.a5-thumb {
+  width: 28px; height: 28px;
+  border-radius: 2px;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+  transition: border-color 100ms;
+}
+.a5-row.a5-active .a5-thumb { border-color: var(--accent); }
+.a5-thumb-bg {
+  position: absolute; inset: 0;
+  opacity: 0.35;
+}
+.a5-thumb-glyph {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 8px; font-weight: 700;
+  letter-spacing: 0;
+}
+.a5-vis-overlay {
+  position: absolute;
+  top: 0; left: 0;
+  width: 13px; height: 13px;
+  background: rgba(0,0,0,0.6);
+  display: none;
+  align-items: center; justify-content: center;
+  font-size: 8px; color: var(--muted);
+  border-radius: 0 0 2px 0;
+  cursor: pointer;
+  transition: color 100ms;
+}
+.a5-vis-overlay:hover { color: var(--text); }
+.a5-row:hover .a5-vis-overlay { display: flex; }
+.a5-vis-overlay.a5-eye-off { color: var(--cyan); display: flex; }
+
+.a5-order-badge {
+  position: absolute;
+  bottom: 1px; right: 2px;
+  font-size: 7px;
+  color: rgba(250,250,250,0.4);
+  display: none;
+  line-height: 1;
+}
+.a5-row:hover .a5-order-badge { display: block; }
+
+.a5-hidden-slash {
+  display: none;
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent, transparent 3px,
+    rgba(0,0,0,0.55) 3px, rgba(0,0,0,0.55) 4px
+  );
+}
+.a5-row.a5-hidden .a5-hidden-slash { display: block; }
+
+.a5-mask-wm {
+  display: none;
+  position: absolute;
+  top: 1px; right: 2px;
+  font-size: 8px;
+  color: var(--cyan);
+  line-height: 1;
+}
+.a5-row.a5-masked .a5-mask-wm { display: block; }
+
+/* Info */
+.a5-info {
+  flex: 1;
+  display: flex; flex-direction: column; justify-content: center;
+  gap: 2px; min-width: 0;
+}
+.a5-info-name {
+  font-size: 11px; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.a5-active .a5-info-name { color: var(--accent); font-weight: 600; }
+.a5-info-meta {
+  display: flex; align-items: center; gap: 4px;
+}
+.a5-info-type {
+  font-size: 8px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.1em;
+}
+.a5-info-masked { font-size: 8px; color: var(--cyan); }
+
+/* Actions (hover) */
+.a5-actions {
+  display: none;
+  align-items: center; gap: 1px;
+  flex-shrink: 0;
+}
+.a5-row:hover .a5-actions { display: flex; }
+.a5-act {
+  background: none; border: none;
+  color: var(--muted); cursor: pointer;
+  font-size: 10px;
+  width: 20px; height: 20px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 2px;
+  transition: color 80ms, background 80ms;
+}
+.a5-act:hover { color: var(--text); background: rgba(255,255,255,0.08); }
+.a5-act-del:hover { color: var(--red); }
+
+/* Flyout */
+.a5-flyout-btn {
+  background: none; border: none;
+  color: var(--muted); cursor: pointer;
+  font-size: 13px;
+  width: 20px; height: 20px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 2px;
+  flex-shrink: 0;
+  transition: color 100ms;
+}
+.a5-flyout-btn:hover { color: var(--text); }
+.a5-flyout {
+  display: none;
+  position: absolute;
+  right: 4px; top: 42px;
+  background: var(--panel);
+  border: 1px solid var(--border2);
+  padding: 4px;
+  z-index: 50;
+  min-width: 170px;
+  flex-direction: column;
+  gap: 1px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+}
+.a5-flyout.open { display: flex; }
+.a5-flyout-item {
+  background: none; border: none;
+  color: var(--muted); font-size: 10px; font-family: var(--mono);
+  padding: 5px 8px; text-align: left; cursor: pointer;
+  border-radius: 2px;
+  transition: background 80ms, color 80ms;
+}
+.a5-flyout-item:hover { background: rgba(255,255,255,0.07); color: var(--text); }
+.a5-flyout-sep { height: 1px; background: var(--border); margin: 3px 0; }
+.a5-flyout-del { color: var(--red) !important; }
+
+/* Group row */
+.a5-row.a5-group-row {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  height: 36px;
+}
+.a5-group-thumb {
+  width: 28px; height: 28px;
+  border-radius: 2px;
+  border: 1px dashed var(--border2);
+  position: relative;
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px;
+  color: var(--muted2);
+}
+.a5-modifier-group .a5-group-thumb { border-color: var(--cyan); color: var(--cyan); }
+.a5-group-collapse {
+  position: absolute;
+  bottom: 0; right: 0;
+  font-size: 7px;
+  color: var(--muted);
+  background: none; border: none; cursor: pointer;
+  padding: 1px;
+}
+.a5-collapsed .a5-group-collapse { transform: rotate(-90deg); }
+
+.a5-group-name {
+  font-size: 10px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.05em;
+  flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.a5-modifier-group .a5-group-name { color: var(--cyan); }
+.a5-group-type {
+  font-size: 8px;
+  padding: 1px 5px;
+  border: 1px solid rgba(103,232,249,0.3);
+  color: var(--cyan); border-radius: 2px;
+  letter-spacing: 0.08em;
+}
+.a5-mod-toggle { accent-color: var(--cyan); cursor: pointer; }
+
+.a5-children { padding-left: 0; }
+.a5-children.a5-hidden-children { display: none; }
+.a5-child { border-left: 3px solid var(--border); margin-left: 8px; }
+
+/* pen dot visible in row */
+.a5-pen-dot-sm {
+  width: 8px; height: 8px; border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+.a5-row:hover .a5-pen-dot-sm { display: none; }
+</style>
+</head>
+<body>
+
+<h1>Vectura Studio</h1>
+<p class="subtitle">Layers Panel — 5 Design Alternatives · Interactive Mockup</p>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchTab(0)">
+    1 · Illustrator
+    <span class="tab-dna">Column grid · 32px · lock column</span>
+  </button>
+  <button class="tab-btn" onclick="switchTab(1)">
+    2 · Figma
+    <span class="tab-dna">Compact list · 26px · hover toolbar</span>
+  </button>
+  <button class="tab-btn" onclick="switchTab(2)">
+    3 · After Effects
+    <span class="tab-dna">Track cards · 52px · pen strip</span>
+  </button>
+  <button class="tab-btn" onclick="switchTab(3)">
+    4 · Framer
+    <span class="tab-dna">Inspector split · 24px list + detail</span>
+  </button>
+  <button class="tab-btn" onclick="switchTab(4)">
+    5 · Photoshop
+    <span class="tab-dna">Thumbnail · 40px · flyout menu</span>
+  </button>
+</div>
+
+<div class="panels">
+  <!-- ALT 1 -->
+  <div class="panel-wrap active" id="tab-0">
+    <div class="v-panel">
+      <div class="v-panel-header">
+        <span class="v-panel-title">Layers</span>
+        <button class="v-panel-add">+ ADD</button>
+      </div>
+      <div class="v-panel-body" id="a1-body"></div>
+    </div>
+  </div>
+
+  <!-- ALT 2 -->
+  <div class="panel-wrap" id="tab-1">
+    <div class="v-panel">
+      <div class="v-panel-header">
+        <span class="v-panel-title">Layers</span>
+        <button class="v-panel-add">+ ADD</button>
+      </div>
+      <div class="v-panel-body" id="a2-body"></div>
+    </div>
+  </div>
+
+  <!-- ALT 3 -->
+  <div class="panel-wrap" id="tab-2">
+    <div class="v-panel">
+      <div class="v-panel-header">
+        <span class="v-panel-title">Layers</span>
+        <button class="v-panel-add">+ ADD</button>
+      </div>
+      <div class="v-panel-body" id="a3-body"></div>
+    </div>
+  </div>
+
+  <!-- ALT 4 -->
+  <div class="panel-wrap" id="tab-3">
+    <div class="v-panel" style="height:560px;">
+      <div class="v-panel-header">
+        <span class="v-panel-title">Layers</span>
+        <button class="v-panel-add">+ ADD</button>
+      </div>
+      <div class="a4-panel" id="a4-panel-root"></div>
+    </div>
+  </div>
+
+  <!-- ALT 5 -->
+  <div class="panel-wrap" id="tab-4">
+    <div class="v-panel">
+      <div class="v-panel-header">
+        <span class="v-panel-title">Layers</span>
+        <button class="v-panel-add">+ ADD</button>
+      </div>
+      <div class="v-panel-body" id="a5-body"></div>
+    </div>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="legend-title">Algorithm reference</div>
+  <div class="legend-grid">
+    <div class="legend-item"><span class="legend-chip">FLW</span> Flowfield</div>
+    <div class="legend-item"><span class="legend-chip">WVT</span> Wavetable</div>
+    <div class="legend-item"><span class="legend-chip">HYP</span> Hyphae</div>
+    <div class="legend-item"><span class="legend-chip">TPO</span> Topo</div>
+    <div class="legend-item"><span class="legend-chip">SPR</span> Spiral</div>
+    <div class="legend-item"><span class="legend-chip">RNG</span> Rings</div>
+    <div class="legend-item"><span class="legend-chip">BOI</span> Boids</div>
+    <div class="legend-item"><span class="legend-chip">LIS</span> Lissajous</div>
+  </div>
+</div>
+
+<script>
+// ─── Shared State ────────────────────────────────────────
+const state = {
+  activeId: 'contour',
+  selectedIds: new Set(['contour']),
+  visibleIds: new Set(['mirror-mod', 'flow-a', 'tide-lines', 'organic', 'contour', 'ring-sys', 'inner-ring']),
+  collapsedGroups: new Set(),
+};
+
+const LAYERS = [
+  {
+    id: 'mirror-mod', type: 'group', isGroup: true, isMod: true,
+    name: 'Mirror Modifier', algo: null, chip: 'MIR',
+    pen: '#a78bfa', children: [
+      { id: 'flow-a', type: 'layer', name: 'Flow A', algo: 'Flowfield', chip: 'FLW', pen: '#a78bfa', mask: false },
+      { id: 'tide-lines', type: 'layer', name: 'Tide Lines', algo: 'Wavetable', chip: 'WVT', pen: '#a78bfa', mask: false },
+    ]
+  },
+  { id: 'organic', type: 'layer', name: 'Organic Growth', algo: 'Hyphae', chip: 'HYP', pen: '#34d399', mask: true },
+  { id: 'contour', type: 'layer', name: 'Contour Stack', algo: 'Topo', chip: 'TPO', pen: '#60a5fa', mask: false },
+  { id: 'golden', type: 'layer', name: 'Golden Spiral', algo: 'Spiral', chip: 'SPR', pen: '#fbbf24', mask: false },
+  {
+    id: 'ring-sys', type: 'group', isGroup: true, isMod: false,
+    name: 'Ring System', algo: null, chip: 'GRP',
+    pen: '#f87171', children: [
+      { id: 'inner-ring', type: 'layer', name: 'Inner Ring', algo: 'Rings', chip: 'RNG', pen: '#f87171', mask: false },
+    ]
+  },
+];
+
+// Algo SVG icons (inline SVG paths)
+const ALGO_ICONS = {
+  Flowfield: `<svg class="algo-icon" viewBox="0 0 12 12"><path d="M1 3 C3 2,4 4,6 3 C8 2,9 4,11 3"/><path d="M1 6 C3 5,4 7,6 6 C8 5,9 7,11 6"/><path d="M1 9 C3 8,4 10,6 9 C8 8,9 10,11 9"/></svg>`,
+  Wavetable: `<svg class="algo-icon" viewBox="0 0 12 12"><path d="M1 6 Q2.5 2,4 6 Q5.5 10,7 6 Q8.5 2,10 6 Q10.5 7,11 6"/></svg>`,
+  Hyphae: `<svg class="algo-icon" viewBox="0 0 12 12"><path d="M6 11 L6 7 M6 7 L3 4 M6 7 L9 4 M3 4 L2 2 M3 4 L4 2 M9 4 L8 2 M9 4 L10 2"/></svg>`,
+  Topo: `<svg class="algo-icon" viewBox="0 0 12 12"><ellipse cx="6" cy="6" rx="5" ry="3"/><ellipse cx="6" cy="6" rx="3" ry="1.8"/><circle cx="6" cy="6" r="0.8" fill="currentColor" stroke="none"/></svg>`,
+  Spiral: `<svg class="algo-icon" viewBox="0 0 12 12"><path d="M6 6 C6 4,8 4,8 6 C8 8,4 9,4 6 C4 3,9 2,9 6 C9 10,3 11,3 6"/></svg>`,
+  Rings: `<svg class="algo-icon" viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.5"/><circle cx="6" cy="6" r="2.5"/></svg>`,
+};
+
+function isVisible(id) { return state.visibleIds.has(id); }
+function isActive(id) { return state.activeId === id; }
+function isSelected(id) { return state.selectedIds.has(id); }
+function isCollapsed(id) { return state.collapsedGroups.has(id); }
+
+function toggleVisibility(id, e) {
+  e.stopPropagation();
+  if (state.visibleIds.has(id)) state.visibleIds.delete(id);
+  else state.visibleIds.add(id);
+  renderAll();
+}
+
+function setActive(id, e) {
+  if (e) e.stopPropagation();
+  state.activeId = id;
+  state.selectedIds = new Set([id]);
+  renderAll();
+}
+
+function toggleCollapse(id, e) {
+  e.stopPropagation();
+  if (state.collapsedGroups.has(id)) state.collapsedGroups.delete(id);
+  else state.collapsedGroups.add(id);
+  renderAll();
+}
+
+// ─── TAB SWITCHING ───────────────────────────────────────
+function switchTab(idx) {
+  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', i===idx));
+  document.querySelectorAll('.panel-wrap').forEach((p,i) => p.classList.toggle('active', i===idx));
+}
+
+// ─── ALT 1 RENDERER ─────────────────────────────────────
+function renderA1() {
+  const body = document.getElementById('a1-body');
+  body.innerHTML = '';
+  // Render in display order (top = first rendered = topmost visually)
+  // Groups first, then their children indented, then standalone layers
+  // We render the LAYERS array in order
+  const flat = [];
+  for (const L of LAYERS) {
+    flat.push({ ...L, depth: 0 });
+    if (L.children && !isCollapsed(L.id)) {
+      for (const c of L.children) flat.push({ ...c, depth: 1 });
+    }
+  }
+
+  for (const L of flat) {
+    if (L.isGroup) {
+      body.appendChild(a1Group(L));
+    } else {
+      const el = a1Row(L);
+      if (L.depth > 0) el.style.paddingLeft = '16px';
+      body.appendChild(el);
+    }
+    if (!L.isGroup) body.appendChild(Object.assign(document.createElement('div'), { className: 'a1-sep' }));
+  }
+}
+
+function a1Row(L) {
+  const vis = isVisible(L.id);
+  const active = isActive(L.id);
+  const masked = L.mask;
+
+  const row = document.createElement('div');
+  row.className = 'a1-row' + (active ? ' a1-active' : '') + (!vis ? ' a1-hidden' : '') + (masked ? ' a1-masked' : '');
+  row.onclick = (e) => setActive(L.id, e);
+
+  // Eye
+  const eye = document.createElement('button');
+  eye.className = 'a1-eye a1-col';
+  eye.innerHTML = vis ? eyeOpen() : eyeClosed();
+  eye.title = vis ? 'Hide layer' : 'Show layer';
+  eye.onclick = (e) => toggleVisibility(L.id, e);
+  row.appendChild(eye);
+
+  // Lock (new!)
+  const lock = document.createElement('button');
+  lock.className = 'a1-lock a1-col';
+  lock.innerHTML = `<svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2.5" y="5.5" width="7" height="5" rx="1"/><path d="M4 5.5V4a2 2 0 014 0v1.5"/></svg>`;
+  lock.title = 'Lock layer';
+  row.appendChild(lock);
+
+  // Algo icon
+  const iconCell = document.createElement('div');
+  iconCell.className = 'a1-algo-icon a1-col';
+  iconCell.style.color = 'var(--muted)';
+  iconCell.innerHTML = ALGO_ICONS[L.algo] || '';
+  row.appendChild(iconCell);
+
+  // Name + type
+  const nameCell = document.createElement('div');
+  nameCell.className = 'a1-col-name';
+  nameCell.innerHTML = `<span class="a1-name">${L.name}</span><span class="a1-type">${L.algo || ''}</span>`;
+  row.appendChild(nameCell);
+
+  // Pen + mask indicator
+  const penCell = document.createElement('div');
+  penCell.className = 'a1-col';
+  penCell.innerHTML = `<div class="a1-pen-dot" style="background:${L.pen}"></div>`;
+  row.appendChild(penCell);
+
+  // Actions (del/dup hover-reveal + mask dot)
+  const acts = document.createElement('div');
+  acts.className = 'a1-actions a1-col';
+  acts.innerHTML = `
+    <div class="a1-mask-dot ${masked ? 'a1-masked' : ''}"></div>
+    <button class="a1-dup" title="Duplicate">⧉</button>
+    <button class="a1-del" title="Delete">✕</button>
+  `;
+  row.appendChild(acts);
+
+  return row;
+}
+
+function a1Group(G) {
+  const collapsed = isCollapsed(G.id);
+  const wrap = document.createElement('div');
+  wrap.className = `a1-group ${G.isMod ? 'a1-modifier-group' : 'a1-regular-group'}${collapsed ? ' a1-collapsed' : ''}`;
+
+  const hdr = document.createElement('div');
+  hdr.className = 'a1-group-header';
+  hdr.onclick = (e) => toggleCollapse(G.id, e);
+
+  // Empty vis/lock columns for alignment
+  hdr.innerHTML = `
+    <div class="a1-col"></div>
+    <div class="a1-col"></div>
+    <div class="a1-col">
+      <button class="a1-collapse-arrow" style="pointer-events:none;">▾</button>
+    </div>
+    <div class="a1-col-name" style="flex-direction:row;align-items:center;gap:6px;padding:0 4px;">
+      <span class="a1-group-name">${G.name}</span>
+      ${G.isMod ? `<span class="a1-group-badge">MIRROR</span>` : ''}
+    </div>
+    <div class="a1-col"></div>
+    <div class="a1-col"><button class="a1-del" style="color:var(--muted);opacity:0.4;background:none;border:none;cursor:pointer;font-size:11px;">✕</button></div>
+  `;
+  wrap.appendChild(hdr);
+  wrap.appendChild(Object.assign(document.createElement('div'), { className: 'a1-sep' }));
+  return wrap;
+}
+
+// ─── ALT 2 RENDERER ─────────────────────────────────────
+function renderA2() {
+  const body = document.getElementById('a2-body');
+  body.innerHTML = '';
+  const list = document.createElement('div');
+  list.className = 'a2-list';
+
+  for (const L of LAYERS) {
+    if (L.isGroup) {
+      list.appendChild(a2GroupRow(L));
+      if (L.children && !isCollapsed(L.id)) {
+        const childWrap = document.createElement('div');
+        childWrap.className = 'a2-children';
+        for (const c of L.children) {
+          const cr = a2LayerRow(c);
+          cr.classList.add('a2-child-row');
+          childWrap.appendChild(cr);
+        }
+        list.appendChild(childWrap);
+      }
+    } else {
+      list.appendChild(a2LayerRow(L));
+    }
+  }
+  body.appendChild(list);
+}
+
+function a2LayerRow(L) {
+  const vis = isVisible(L.id);
+  const active = isActive(L.id);
+  const row = document.createElement('div');
+  row.className = 'a2-row' + (active ? ' a2-active' : '') + (!vis ? ' a2-hidden' : '');
+  row.onclick = (e) => setActive(L.id, e);
+
+  row.innerHTML = `
+    <span class="a2-arrow-spacer"></span>
+    <button class="a2-vis" title="${vis ? 'Hide' : 'Show'}">
+      <span class="a2-dot"></span>
+    </button>
+    <span class="a2-name">${L.name}</span>
+    <span class="a2-chip">${L.chip}</span>
+    ${L.mask ? `<span class="a2-mask-glyph">≈</span>` : ''}
+    <div class="a2-toolbar">
+      <button class="a2-tb-btn" title="Pen"><span class="a2-pen-mini" style="background:${L.pen}"></span></button>
+      ${L.mask ? `<button class="a2-tb-btn" title="Edit mask">≈</button>` : ''}
+      <button class="a2-tb-btn" title="Duplicate">⧉</button>
+      <button class="a2-tb-btn a2-tb-del" title="Delete">✕</button>
+    </div>
+  `;
+  row.querySelector('.a2-vis').onclick = (e) => toggleVisibility(L.id, e);
+  return row;
+}
+
+function a2GroupRow(G) {
+  const collapsed = isCollapsed(G.id);
+  const row = document.createElement('div');
+  row.className = 'a2-row' + (collapsed ? ' a2-collapsed' : '');
+  row.onclick = (e) => toggleCollapse(G.id, e);
+
+  row.innerHTML = `
+    <button class="a2-arrow">▾</button>
+    <button class="a2-vis"><span class="a2-dot"></span></button>
+    <span class="a2-name ${G.isMod ? 'a2-modifier-name' : 'a2-group-name'}">${G.name}</span>
+    <span class="a2-chip ${G.isMod ? 'a2-chip-mod' : 'a2-chip-grp'}">${G.isMod ? 'MIR' : 'GRP'}</span>
+    <div class="a2-toolbar">
+      <button class="a2-tb-btn" title="Duplicate">⧉</button>
+      <button class="a2-tb-btn a2-tb-del" title="Delete">✕</button>
+    </div>
+  `;
+  row.querySelector('.a2-arrow').onclick = (e) => toggleCollapse(G.id, e);
+  row.querySelector('.a2-vis').onclick = (e) => toggleVisibility(G.id, e);
+  return row;
+}
+
+// ─── ALT 3 RENDERER ─────────────────────────────────────
+function renderA3() {
+  const body = document.getElementById('a3-body');
+  body.innerHTML = '';
+  const list = document.createElement('div');
+  list.className = 'a3-list';
+
+  for (const L of LAYERS) {
+    if (L.isGroup) {
+      list.appendChild(a3Group(L));
+    } else {
+      list.appendChild(a3Card(L));
+    }
+  }
+  body.appendChild(list);
+}
+
+function a3Card(L) {
+  const vis = isVisible(L.id);
+  const active = isActive(L.id);
+  const card = document.createElement('div');
+  card.className = 'a3-card' + (active ? ' a3-active' : '') + (!vis ? ' a3-hidden' : '') + (L.mask ? ' a3-masked-card' : '');
+  card.onclick = (e) => setActive(L.id, e);
+
+  const strip = document.createElement('div');
+  strip.className = 'a3-strip';
+  strip.style.background = active ? 'var(--accent)' : L.pen;
+  card.appendChild(strip);
+
+  const body2 = document.createElement('div');
+  body2.className = 'a3-body';
+
+  // Row 1
+  const r1 = document.createElement('div');
+  r1.className = 'a3-row1';
+  r1.innerHTML = `
+    <div class="a3-grip">
+      <div class="a3-grip-col"><div class="a3-gdot"></div><div class="a3-gdot"></div><div class="a3-gdot"></div></div>
+      <div class="a3-grip-col"><div class="a3-gdot"></div><div class="a3-gdot"></div><div class="a3-gdot"></div></div>
+    </div>
+    <button class="a3-vis" title="${vis?'Hide':'Show'}">${vis ? eyeOpen() : eyeClosed()}</button>
+    <span class="a3-name">${L.name}</span>
+    <div class="a3-pen-dot" style="background:${L.pen}"></div>
+    ${L.mask ? `<span class="a3-mask-chip">MASK</span>` : ''}
+  `;
+  r1.querySelector('.a3-vis').onclick = (e) => toggleVisibility(L.id, e);
+
+  // Row 2
+  const r2 = document.createElement('div');
+  r2.className = 'a3-row2';
+  r2.innerHTML = `
+    <span class="a3-algo-label">${L.algo}</span>
+    <div class="a3-acts" style="margin-left:auto;">
+      ${L.mask ? `<button class="a3-act" title="Edit mask">≈</button>` : ''}
+      <button class="a3-act" title="Expand">⇲</button>
+      <button class="a3-act" title="Duplicate">⧉</button>
+      <button class="a3-act a3-act-del" title="Delete">✕</button>
+    </div>
+  `;
+
+  body2.appendChild(r1);
+  body2.appendChild(r2);
+  card.appendChild(body2);
+  return card;
+}
+
+function a3Group(G) {
+  const collapsed = isCollapsed(G.id);
+  const wrap = document.createElement('div');
+  wrap.className = `a3-group ${G.isMod ? 'a3-modifier-group' : 'a3-regular-group'}${collapsed ? ' a3-collapsed' : ''}`;
+
+  const hdr = document.createElement('div');
+  hdr.className = 'a3-group-header';
+  hdr.innerHTML = `
+    <button class="a3-collapse-btn">▾</button>
+    <span class="a3-group-name">${G.name}</span>
+    ${G.isMod ? `<span class="a3-group-badge">MIRROR</span><input type="checkbox" class="a3-mod-toggle" checked title="Enable modifier">` : ''}
+    <button class="a3-group-del">✕</button>
+  `;
+  hdr.querySelector('.a3-collapse-btn').onclick = (e) => toggleCollapse(G.id, e);
+  hdr.onclick = (e) => { if (e.target === hdr) toggleCollapse(G.id, e); };
+
+  const gbody = document.createElement('div');
+  gbody.className = 'a3-group-body' + (collapsed ? ' a3-hidden-children' : '');
+  if (G.children) {
+    for (const c of G.children) gbody.appendChild(a3Card(c));
+  }
+
+  wrap.appendChild(hdr);
+  wrap.appendChild(gbody);
+  return wrap;
+}
+
+// ─── ALT 4 RENDERER ─────────────────────────────────────
+function renderA4() {
+  const root = document.getElementById('a4-panel-root');
+  root.innerHTML = '';
+
+  // List
+  const list = document.createElement('div');
+  list.className = 'a4-list';
+
+  for (const L of LAYERS) {
+    if (L.isGroup) {
+      list.appendChild(a4GroupRow(L));
+      if (L.children && !isCollapsed(L.id)) {
+        const cw = document.createElement('div');
+        cw.className = 'a4-children';
+        for (const c of L.children) {
+          const cr = a4LayerRow(c);
+          cr.classList.add('a4-child-row');
+          cw.appendChild(cr);
+        }
+        list.appendChild(cw);
+      }
+    } else {
+      list.appendChild(a4LayerRow(L));
+    }
+  }
+  root.appendChild(list);
+
+  // Detail pane
+  const detail = document.createElement('div');
+  detail.className = 'a4-detail';
+
+  const active = findLayer(state.activeId);
+  if (!active) {
+    detail.innerHTML = `<div class="a4-placeholder">Select a layer to inspect</div>`;
+  } else {
+    detail.innerHTML = `
+      <div class="a4-detail-header">
+        <input class="a4-detail-name" type="text" value="${active.name}">
+        <span class="a4-detail-type">${active.algo || (active.isGroup ? (active.isMod ? 'MIRROR' : 'GROUP') : '')}</span>
+      </div>
+      <div class="a4-detail-meta">
+        <div class="a4-meta-row">
+          <span class="a4-meta-label">Pen</span>
+          <div class="a4-pen-swatch" style="background:${active.pen}"></div>
+          <span class="a4-meta-val">${active.pen} · 0.4 mm</span>
+        </div>
+        <div class="a4-meta-row">
+          <span class="a4-meta-label">Mask</span>
+          ${active.mask
+            ? `<span class="a4-mask-active">Active ≈</span><button class="a4-mask-edit">Edit…</button>`
+            : `<span class="a4-mask-na">—</span>`}
+        </div>
+      </div>
+      <div class="a4-detail-actions">
+        <button class="a4-da-btn" title="Move up">▲</button>
+        <button class="a4-da-btn" title="Move down">▼</button>
+        <button class="a4-da-btn" title="Duplicate">⧉</button>
+        <button class="a4-da-btn" title="Expand">⇲</button>
+        <button class="a4-da-btn a4-da-del" title="Delete">✕</button>
+      </div>
+    `;
+  }
+  root.appendChild(detail);
+}
+
+function a4LayerRow(L) {
+  const vis = isVisible(L.id);
+  const active = isActive(L.id);
+  const row = document.createElement('div');
+  row.className = 'a4-row' + (active ? ' a4-active' : '') + (!vis ? ' a4-hidden' : '');
+  row.onclick = (e) => setActive(L.id, e);
+  row.innerHTML = `
+    <span class="a4-arrow-sp"></span>
+    <button class="a4-vis"><span class="a4-dot"></span></button>
+    <span class="a4-name">${L.name}</span>
+    <div class="a4-glyphs">
+      ${L.mask ? `<span class="a4-glyph-mask">≈</span>` : ''}
+      ${!vis ? `<span class="a4-glyph-hidden">◌</span>` : ''}
+    </div>
+  `;
+  row.querySelector('.a4-vis').onclick = (e) => toggleVisibility(L.id, e);
+  return row;
+}
+
+function a4GroupRow(G) {
+  const collapsed = isCollapsed(G.id);
+  const row = document.createElement('div');
+  row.className = 'a4-row' + (collapsed ? ' a4-collapsed' : '');
+  row.onclick = (e) => toggleCollapse(G.id, e);
+  row.innerHTML = `
+    <button class="a4-arrow">▾</button>
+    <button class="a4-vis"><span class="a4-dot"></span></button>
+    <span class="a4-name" style="color:var(--muted);font-size:10px;letter-spacing:.04em;">${G.name}</span>
+    <span class="a4-group-label">${G.isMod ? 'MIR' : 'GRP'}</span>
+  `;
+  row.querySelector('.a4-arrow').onclick = (e) => toggleCollapse(G.id, e);
+  row.querySelector('.a4-vis').onclick = (e) => toggleVisibility(G.id, e);
+  return row;
+}
+
+function findLayer(id) {
+  for (const L of LAYERS) {
+    if (L.id === id) return L;
+    if (L.children) for (const c of L.children) if (c.id === id) return c;
+  }
+  return null;
+}
+
+// ─── ALT 5 RENDERER ─────────────────────────────────────
+let orderCounter = 0;
+
+function renderA5() {
+  const body = document.getElementById('a5-body');
+  body.innerHTML = '';
+  orderCounter = 0;
+
+  for (const L of LAYERS) {
+    if (L.isGroup) {
+      body.appendChild(a5GroupRow(L));
+      if (!isCollapsed(L.id) && L.children) {
+        const cw = document.createElement('div');
+        cw.className = 'a5-children';
+        for (const c of L.children) {
+          const cr = a5Row(c);
+          cr.classList.add('a5-child');
+          cw.appendChild(cr);
+        }
+        body.appendChild(cw);
+      }
+    } else {
+      body.appendChild(a5Row(L));
+    }
+  }
+}
+
+function a5Row(L) {
+  orderCounter++;
+  const order = orderCounter;
+  const vis = isVisible(L.id);
+  const active = isActive(L.id);
+  const masked = L.mask;
+
+  const row = document.createElement('div');
+  row.className = 'a5-row' + (active ? ' a5-active' : '') + (!vis ? ' a5-hidden' : '') + (masked ? ' a5-masked' : '');
+  row.onclick = (e) => setActive(L.id, e);
+
+  row.innerHTML = `
+    <div class="a5-grip-col">
+      <div class="a5-gdot-row"><div class="a5-gd"></div><div class="a5-gd"></div></div>
+      <div class="a5-gdot-row"><div class="a5-gd"></div><div class="a5-gd"></div></div>
+      <div class="a5-gdot-row"><div class="a5-gd"></div><div class="a5-gd"></div></div>
+    </div>
+    <div class="a5-thumb">
+      <div class="a5-thumb-bg" style="background:linear-gradient(135deg,${L.pen} 0%,transparent 100%)"></div>
+      <span class="a5-thumb-glyph" style="color:${L.pen}">${L.chip}</span>
+      <button class="a5-vis-overlay ${!vis ? 'a5-eye-off' : ''}" title="${vis?'Hide':'Show'}">${vis ? '👁' : '—'}</button>
+      <span class="a5-order-badge">${order}</span>
+      <div class="a5-hidden-slash"></div>
+      <span class="a5-mask-wm">≈</span>
+    </div>
+    <div class="a5-info">
+      <span class="a5-info-name">${L.name}</span>
+      <div class="a5-info-meta">
+        <span class="a5-info-type">${L.algo}</span>
+        ${masked ? `<span class="a5-info-masked">· masked</span>` : ''}
+      </div>
+    </div>
+    <div class="a5-pen-dot-sm" style="background:${L.pen}"></div>
+    <div class="a5-actions">
+      <button class="a5-act" title="Move up">▲</button>
+      <button class="a5-act" title="Move down">▼</button>
+      <button class="a5-act" title="Duplicate">⧉</button>
+      <button class="a5-act a5-act-del" title="Delete">✕</button>
+    </div>
+    <button class="a5-flyout-btn" title="More">⋯</button>
+    <div class="a5-flyout">
+      <button class="a5-flyout-item">Edit Mask…</button>
+      <button class="a5-flyout-item">Expand into Sublayers</button>
+      <button class="a5-flyout-item">Duplicate</button>
+      <button class="a5-flyout-item">Create Group</button>
+      <div class="a5-flyout-sep"></div>
+      <button class="a5-flyout-item a5-flyout-del">Delete</button>
+    </div>
+  `;
+
+  row.querySelector('.a5-vis-overlay').onclick = (e) => toggleVisibility(L.id, e);
+  row.querySelector('.a5-flyout-btn').onclick = (e) => {
+    e.stopPropagation();
+    const flyout = row.querySelector('.a5-flyout');
+    document.querySelectorAll('.a5-flyout.open').forEach(f => { if(f !== flyout) f.classList.remove('open'); });
+    flyout.classList.toggle('open');
+  };
+  return row;
+}
+
+function a5GroupRow(G) {
+  orderCounter++;
+  const collapsed = isCollapsed(G.id);
+  const row = document.createElement('div');
+  row.className = 'a5-row a5-group-row ' + (G.isMod ? 'a5-modifier-group' : '') + (collapsed ? ' a5-collapsed' : '');
+  row.onclick = (e) => { if (e.target === row || e.target.classList.contains('a5-group-name') || e.target.classList.contains('a5-group-type')) toggleCollapse(G.id, e); };
+
+  row.innerHTML = `
+    <div class="a5-grip-col">
+      <div class="a5-gdot-row"><div class="a5-gd"></div><div class="a5-gd"></div></div>
+      <div class="a5-gdot-row"><div class="a5-gd"></div><div class="a5-gd"></div></div>
+    </div>
+    <div class="a5-group-thumb">
+      ${G.isMod ? '⌃⌃' : '▣'}
+      <button class="a5-group-collapse">▾</button>
+    </div>
+    <div class="a5-info">
+      <span class="a5-group-name">${G.name}</span>
+      <div class="a5-info-meta">
+        ${G.isMod ? `<span class="a5-group-type">MIRROR</span><input type="checkbox" class="a5-mod-toggle" checked title="Enable">` : `<span class="a5-info-type">GROUP</span>`}
+      </div>
+    </div>
+    <div class="a5-actions" style="display:none;">
+      <button class="a5-act a5-act-del">✕</button>
+    </div>
+    <button class="a5-flyout-btn">⋯</button>
+  `;
+  row.querySelector('.a5-group-collapse').onclick = (e) => toggleCollapse(G.id, e);
+  row.querySelector('.a5-flyout-btn').onclick = (e) => {
+    e.stopPropagation();
+    const fly = row.nextElementSibling; // flyout not in this row for groups
+  };
+  return row;
+}
+
+// ─── Shared SVG helpers ──────────────────────────────────
+function eyeOpen() {
+  return `<svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1 6 C3 3,9 3,11 6 C9 9,3 9,1 6Z"/><circle cx="6" cy="6" r="1.5"/></svg>`;
+}
+function eyeClosed() {
+  return `<svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1 6 C3 3,9 3,11 6"/><line x1="2" y1="9" x2="3.5" y2="7.5"/><line x1="6" y1="9.5" x2="6" y2="8"/><line x1="10" y1="9" x2="8.5" y2="7.5"/></svg>`;
+}
+
+// ─── Render all & init ───────────────────────────────────
+function renderAll() {
+  renderA1();
+  renderA2();
+  renderA3();
+  renderA4();
+  renderA5();
+}
+
+// Close flyouts on outside click
+document.addEventListener('click', () => {
+  document.querySelectorAll('.a5-flyout.open').forEach(f => f.classList.remove('open'));
+});
+
+renderAll();
+</script>
+</body>
+</html>

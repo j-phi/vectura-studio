@@ -214,7 +214,17 @@
       </div>
 
       <div class="pane-body flex-1 overflow-y-auto" id="left-panel-content">
-        <div class="p-4 left-panel-sections">
+        <div id="left-welcome" class="p-4">
+          <p class="text-[11px] uppercase text-vectura-muted tracking-widest mb-3">Welcome</p>
+          <p class="text-xs text-vectura-fg mb-4 leading-relaxed">Vectura Studio &mdash; physics-inspired vector art for pen plotters.</p>
+          <ul class="text-xs text-vectura-muted leading-relaxed space-y-2">
+            <li>&rarr; Click <span class="text-vectura-accent">+</span> in the Layers panel to add an algorithm layer</li>
+            <li>&rarr; Use the <span class="text-vectura-accent">draw tool</span> in the toolbar to sketch an algorithm directly</li>
+            <li>&rarr; Select a layer to edit its parameters here</li>
+            <li>&rarr; Export SVG when you're ready for the plotter</li>
+          </ul>
+        </div>
+        <div class="p-4 left-panel-sections" style="display:none;">
           <div id="left-section-algorithm" class="left-panel-section">
             <button id="left-section-algorithm-header" class="left-panel-section-header" type="button" aria-expanded="false">
               <span id="left-section-primary-title" class="left-panel-section-title">Algorithm</span>
@@ -354,10 +364,23 @@
             aria-label="Toggle formula panel">
             ▼
           </button>
+          <span class="text-[11px] text-vectura-muted uppercase tracking-widest">Document Overview</span>
         </div>
         <div class="bottom-pane-body px-4 pb-2 flex-1 overflow-y-auto">
-          <div id="formula-display" class="text-xs text-vectura-text font-mono formula-text opacity-90 leading-relaxed">
-            ...</div>
+          <div class="bottom-pane-grid">
+            <div id="formula-display" class="text-xs text-vectura-text font-mono formula-text opacity-90 leading-relaxed">
+              ...</div>
+            <div id="bottom-pane-bg-slot" class="bottom-pane-bg-slot">
+              <div class="grid gap-x-3 gap-y-2 text-xs" style="grid-template-columns: auto auto">
+                <div class="text-vectura-muted">Distance:</div>
+                <div class="text-right text-vectura-accent" id="stat-dist">0m</div>
+                <div class="text-vectura-muted">Lines:</div>
+                <div class="text-right text-vectura-accent" id="stat-lines">0</div>
+                <div class="text-vectura-muted">Est. Time:</div>
+                <div class="text-right text-vectura-accent" id="stat-time">0:00</div>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="bottom-pane-footer px-4 pb-4 flex justify-end">
           <span class="text-[11px] text-vectura-accent" id="formula-seed-display">Seed: ---</span>
@@ -371,33 +394,19 @@
     <aside id="right-pane"
       class="pane pane-right bg-vectura-panel border-l border-vectura-border flex flex-col z-10 relative overflow-hidden">
       <div
-        class="pane-header pane-header-right p-4 border-b border-vectura-border flex justify-between items-center bg-vectura-panel z-20">
-        <span class="pane-title font-bold text-vectura-accent">LAYERS</span>
+        class="pane-header pane-header-right border-b border-vectura-border flex items-center bg-vectura-panel z-20">
         <button id="btn-pane-toggle-right" class="pane-toggle pane-toggle-right" type="button"
           aria-label="Toggle right pane" title="Toggle layers panel">
           ▶
         </button>
-        <div id="layer-add-wrap" style="position:relative">
-          <button id="btn-add-layer" class="lvl-add-btn" type="button">
-            <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="4.5" y1="1" x2="4.5" y2="8"/><line x1="1" y1="4.5" x2="8" y2="4.5"/></svg>
-            Add
-            <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 3L4 5.5L6.5 3"/></svg>
-          </button>
-          <div id="layer-add-menu" class="lvl-add-menu hidden">
-            <div class="lvl-add-item" data-add="layer">Empty Layer</div>
-            <div class="lvl-add-item" data-add="group">Empty Group</div>
-            <div class="lvl-add-sep"></div>
-            <div class="lvl-add-item lvl-add-has-sub" data-add="algo-parent">
-              <span class="lvl-am-arrow">‹</span>
-              Algorithm Layer
-              <div class="lvl-algo-submenu" id="lvl-algo-submenu"></div>
-            </div>
-            <div class="lvl-add-item" data-add="mirror">Mirror Modifier Group</div>
-          </div>
+        <div id="right-pane-tabs" class="right-pane-tabs" role="tablist" aria-label="Layers panel tabs">
+          <button class="right-pane-tab active" type="button" role="tab" data-tab="layers" aria-selected="true" aria-controls="right-tab-panel-layers">Layers</button>
+          <button class="right-pane-tab" type="button" role="tab" data-tab="pens" aria-selected="false" aria-controls="right-tab-panel-pens">Pens</button>
         </div>
       </div>
 
       <div class="pane-body flex-1 flex flex-col relative overflow-hidden">
+        <div id="right-tab-panel-layers" class="right-tab-panel" role="tabpanel" aria-labelledby="layers">
         <div id="layer-search-bar" class="lvl-search-bar">
           <div class="lvl-search-wrap">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><circle cx="5" cy="5" r="3.5"/><line x1="7.5" y1="7.5" x2="11" y2="11"/></svg>
@@ -407,10 +416,28 @@
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M1 2h10M3 6h6M5 10h2"/></svg>
           </button>
           <div id="layer-filter-menu" class="lvl-filter-menu hidden"></div>
+          <div id="layer-add-wrap" class="lvl-add-wrap">
+            <button id="btn-add-layer" class="lvl-add-btn" type="button" title="Add layer" aria-label="Add layer">
+              <svg width="11" height="11" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="4.5" y1="1" x2="4.5" y2="8"/><line x1="1" y1="4.5" x2="8" y2="4.5"/></svg>
+              Add Layer
+            </button>
+            <div id="layer-add-menu" class="lvl-add-menu hidden">
+              <div class="lvl-add-item lvl-add-has-sub" data-add="algo-parent">
+                <span class="lvl-am-arrow">‹</span>
+                Algorithm Layer
+                <div class="lvl-algo-submenu" id="lvl-algo-submenu"></div>
+              </div>
+              <div class="lvl-add-item" data-add="mirror">Mirror Modifier Group</div>
+              <div class="lvl-add-item" data-add="layer">Empty Layer</div>
+              <div class="lvl-add-item" data-add="group">Empty Group</div>
+            </div>
+          </div>
         </div>
         <div id="layer-list" class="lvl-layer-list"></div>
         <div id="layer-status-bar" class="lvl-status-bar"></div>
-        <div id="pens-section" class="right-panel-section right-panel-section-scroll p-4 border-t border-vectura-border bg-vectura-panel">
+        </div>
+        <div id="right-tab-panel-pens" class="right-tab-panel hidden" role="tabpanel" aria-labelledby="pens">
+        <div id="pens-section" class="right-panel-section right-panel-section-scroll p-4 bg-vectura-panel">
           <div id="pens-global-section" class="global-section">
             <button id="pens-section-header" class="global-section-header" type="button" aria-expanded="false">
               <span class="global-section-title">Pens</span>
@@ -441,7 +468,7 @@
           </div>
         </div>
 
-        <div class="right-panel-section right-panel-section-scroll p-4 border-t border-vectura-border bg-vectura-panel">
+        <div class="right-panel-section right-panel-section-scroll p-4 border-t border-vectura-border bg-vectura-panel" id="auto-colorization-wrap">
           <div id="auto-colorization-section" class="global-section collapsed">
             <button id="auto-colorization-header" class="global-section-header" type="button" aria-expanded="false">
               <span class="global-section-title">Auto-Colorization</span>
@@ -476,26 +503,6 @@
           </div>
         </div>
 
-        <div class="right-panel-section right-panel-section-scroll p-4 border-t border-vectura-border bg-vectura-bg z-20 relative">
-          <div class="flex items-center justify-between mb-2">
-            <label id="label-bg-color" class="text-xs text-vectura-muted" for="inp-bg-color">Background</label>
-            <div
-              class="relative w-4 h-4 overflow-hidden rounded border border-vectura-border cursor-pointer hover:border-vectura-accent">
-              <input type="color" id="inp-bg-color" aria-label="Background color" />
-            </div>
-          </div>
-        </div>
-
-        <div class="right-panel-section right-panel-section-scroll p-4 border-t border-vectura-border bg-vectura-bg z-20 relative">
-          <label class="control-label">Estimation</label>
-          <div class="grid grid-cols-2 gap-2 text-xs">
-            <div class="text-vectura-muted">Distance:</div>
-            <div class="text-right text-vectura-accent" id="stat-dist">0m</div>
-            <div class="text-vectura-muted">Lines:</div>
-            <div class="text-right text-vectura-accent" id="stat-lines">0</div>
-            <div class="text-vectura-muted">Est. Time:</div>
-            <div class="text-right text-vectura-accent" id="stat-time">0:00</div>
-          </div>
         </div>
       </div>
     </aside>
@@ -627,6 +634,12 @@
               </button>
             </div>
             <div class="mt-4">
+              <div class="flex items-center justify-between mb-2">
+                <label class="text-xs text-vectura-muted" for="bg-color-pill">Background</label>
+                <button id="bg-color-pill" type="button"
+                  class="value-chip text-xs text-vectura-accent font-mono color-thickness-pill">#FFFFFF</button>
+                <input type="color" id="inp-bg-color" class="hidden" aria-label="Background color" />
+              </div>
               <div class="flex items-center justify-between mb-2">
                 <label class="text-xs text-vectura-muted">Selection Outline</label>
                 <input type="checkbox" id="set-selection-outline" class="cursor-pointer" />

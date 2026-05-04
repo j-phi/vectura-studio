@@ -6512,6 +6512,7 @@
       this.initBottomPaneResizer();
       this.initPaneResizers();
       this.initToolBar();
+      this.initRightPaneTabs();
       this.initPensSection();
       this.renderLayers();
       this.renderPens();
@@ -9004,6 +9005,31 @@
       this.app.render();
     }
 
+    initRightPaneTabs() {
+      const tabs = Array.from(document.querySelectorAll('.right-pane-tab'));
+      if (!tabs.length) return;
+      const panels = {
+        layers: getEl('right-tab-panel-layers', { silent: true }),
+        pens: getEl('right-tab-panel-pens', { silent: true }),
+      };
+      const setActive = (key) => {
+        tabs.forEach((tab) => {
+          const isActive = tab.dataset.tab === key;
+          tab.classList.toggle('active', isActive);
+          tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        });
+        Object.entries(panels).forEach(([id, panel]) => {
+          if (!panel) return;
+          panel.classList.toggle('hidden', id !== key);
+        });
+      };
+      tabs.forEach((tab) => {
+        tab.addEventListener('click', () => setActive(tab.dataset.tab));
+      });
+      const initial = tabs.find((t) => t.classList.contains('active'))?.dataset.tab || 'layers';
+      setActive(initial);
+    }
+
     initPensSection() {
       const section = getEl('pens-global-section');
       const header = getEl('pens-section-header');
@@ -9208,6 +9234,13 @@
       if (selectionOutlineStyleReset) selectionOutlineStyleReset.disabled = false;
       if (cookiePreferences) cookiePreferences.checked = SETTINGS.cookiePreferencesEnabled === true;
       if (bgColor) bgColor.value = SETTINGS.bgColor;
+      const bgColorPill = getEl('bg-color-pill', { silent: true });
+      if (bgColorPill) {
+        const color = SETTINGS.bgColor || '#ffffff';
+        bgColorPill.textContent = color.toUpperCase();
+        bgColorPill.style.background = color;
+        bgColorPill.style.color = getContrastTextColor(color);
+      }
       if (orientationToggle) orientationToggle.checked = (SETTINGS.paperOrientation || 'landscape') === 'landscape';
       if (orientationLabel) {
         orientationLabel.textContent =
@@ -9302,8 +9335,8 @@
         leftPane.classList.remove('pane-collapsed', 'pane-force-open');
         rightPane.classList.remove('pane-collapsed', 'pane-force-open');
         document.body.classList.remove('auto-collapsed', 'mobile-layout');
-        document.documentElement.style.setProperty('--pane-left-width', '519px');
-        document.documentElement.style.setProperty('--pane-right-width', '336px');
+        document.documentElement.style.setProperty('--pane-left-width', '335px');
+        document.documentElement.style.setProperty('--pane-right-width', '335px');
         document.documentElement.style.setProperty('--bottom-pane-height', '180px');
         if (bottomPane) bottomPane.classList.remove('bottom-pane-collapsed');
       };
@@ -9374,15 +9407,18 @@
         document.body.classList.remove('auto-collapsed');
         leftPane.classList.remove('pane-collapsed');
         rightPane.classList.remove('pane-collapsed');
+        let lastWidth = side === 'left' ? startLeft : startRight;
 
         const onMove = (ev) => {
           const dx = ev.clientX - startX;
           if (side === 'left') {
             const next = Math.max(minLeft, Math.min(maxLeft, startLeft + dx));
             document.documentElement.style.setProperty('--pane-left-width', `${next}px`);
+            lastWidth = next;
           } else {
             const next = Math.max(minRight, Math.min(maxRight, startRight - dx));
             document.documentElement.style.setProperty('--pane-right-width', `${next}px`);
+            lastWidth = next;
           }
         };
 
@@ -9390,6 +9426,10 @@
           resizer.classList.remove('active');
           window.removeEventListener('mousemove', onMove);
           window.removeEventListener('mouseup', onUp);
+          const rounded = Math.round(lastWidth);
+          if (side === 'left') SETTINGS.paneLeftWidth = rounded;
+          else SETTINGS.paneRightWidth = rounded;
+          this.app?.persistPreferencesDebounced?.();
         };
 
         window.addEventListener('mousemove', onMove);
@@ -9750,7 +9790,7 @@
           { type: 'rainfall',  label: 'Rainfall' },
           { type: 'phylla',    label: 'Phylla' },
           { type: 'petalisDesigner', label: 'Petalis Designer' },
-          { type: 'shapepack', label: 'Shapepack' },
+          { type: 'shapePack', label: 'Shapepack' },
         ];
         let _algoPickerTimer = null;
         const _buildAlgoPickerPopup = () => {
@@ -9797,7 +9837,8 @@
             if (v) icon.setAttribute(attr, v);
           }
         };
-        algoDrawBtn.addEventListener('pointerdown', () => {
+        algoDrawBtn.addEventListener('pointerdown', (e) => {
+          algoDrawBtn.setPointerCapture?.(e.pointerId);
           _algoPickerTimer = setTimeout(() => {
             const popup = _buildAlgoPickerPopup();
             const r = algoDrawBtn.getBoundingClientRect();
@@ -9964,17 +10005,35 @@
       }
 
       if (bgColor) {
+        const bgColorPill = getEl('bg-color-pill', { silent: true });
         let armed = false;
+        const updatePill = (color) => {
+          if (!bgColorPill || !color) return;
+          bgColorPill.textContent = color.toUpperCase();
+          bgColorPill.style.background = color;
+          bgColorPill.style.color = getContrastTextColor(color);
+        };
+        if (bgColorPill) {
+          bgColorPill.onclick = () => {
+            if (!armed && this.app.pushHistory) this.app.pushHistory();
+            armed = true;
+            openColorPickerAnchoredTo(bgColor, bgColorPill);
+          };
+        }
         bgColor.onfocus = () => {
           if (!armed && this.app.pushHistory) this.app.pushHistory();
           armed = true;
         };
         bgColor.oninput = (e) => {
           SETTINGS.bgColor = e.target.value;
+          updatePill(e.target.value);
           this.app.render();
         };
-        bgColor.onchange = () => {
+        bgColor.onchange = (e) => {
+          SETTINGS.bgColor = e.target.value;
+          updatePill(e.target.value);
           armed = false;
+          this.app.render();
         };
       }
 
@@ -10770,6 +10829,11 @@
             }
             return;
           }
+          if (key === 'x') {
+            e.preventDefault();
+            this.setActiveTool?.('algo-draw');
+            return;
+          }
         }
 
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
@@ -11001,7 +11065,7 @@
         rainfall:     () => _lvlIco(`<line x1="3" y1="2" x2="2" y2="6"/><line x1="6" y1="1" x2="5" y2="7"/><line x1="9" y1="2" x2="8" y2="8"/><line x1="4" y1="8" x2="3.5" y2="11"/><line x1="8" y1="7" x2="7.5" y2="10"/>`),
         phylla:       () => _lvlIco(`<circle cx="4" cy="4" r="1"/><circle cx="8" cy="3" r="1"/><circle cx="9" cy="7" r="1"/><circle cx="5" cy="9" r="1"/><circle cx="2" cy="7" r="1"/>`),
         petalisDesigner: () => _lvlIco(`<path d="M6 2c1 1 2 2.5 2 4s-1 3-2 4c-1-1-2-2.5-2-4s1-3 2-4z"/>`),
-        shapepack:    () => _lvlIco(`<rect x="1.5" y="1.5" width="4" height="4" rx=".5"/><rect x="6.5" y="6.5" width="4" height="4" rx=".5"/><rect x="1.5" y="6.5" width="4" height="4" rx=".5"/>`),
+        shapePack:    () => _lvlIco(`<rect x="1.5" y="1.5" width="4" height="4" rx=".5"/><rect x="6.5" y="6.5" width="4" height="4" rx=".5"/><rect x="1.5" y="6.5" width="4" height="4" rx=".5"/>`),
         shape:        () => _lvlIco(`<path d="M6 1.5L10 3.75L10 8.25L6 10.5L2 8.25L2 3.75Z"/>`),
         polygon:      () => _lvlIco(`<path d="M6 1.5L10.3 4.6L8.6 9.6H3.4L1.7 4.6Z"/>`),
         pen:          () => _lvlIco(`<path d="M8.5 1.5L11 4L5 10H1.5V6.5L7.5 1.5ZM8.5 1.5L11 4M2 9.5L3.5 8"/>`),
@@ -11026,7 +11090,7 @@
         { type: 'rainfall',  label: 'Rainfall' },
         { type: 'phylla',    label: 'Phylla' },
         { type: 'petalisDesigner', label: 'Petalis Designer' },
-        { type: 'shapepack', label: 'Shapepack' },
+        { type: 'shapePack', label: 'Shapepack' },
       ];
       // Build the algo submenu as a body-fixed element to escape pane stacking context
       let algoSubmenuEl = document.getElementById('lvl-algo-submenu');
@@ -11143,7 +11207,7 @@
         { v: 'attractor', l: 'Attractor' }, { v: 'lissajous', l: 'Lissajous' },
         { v: 'harmonograph', l: 'Harmonograph' }, { v: 'rainfall', l: 'Rainfall' },
         { v: 'phylla', l: 'Phylla' }, { v: 'petalisDesigner', l: 'Petalis Designer' },
-        { v: 'shapepack', l: 'Shapepack' },
+        { v: 'shapePack', l: 'Shapepack' },
       ];
       const buildFilterMenu = () => {
         if (!filterMenu) return;
@@ -13123,6 +13187,13 @@
     }
 
 
+    _showWelcomePanel(show) {
+      const welcome = document.getElementById('left-welcome');
+      const sections = document.querySelector('.left-panel-sections');
+      if (welcome) welcome.style.display = show ? '' : 'none';
+      if (sections) sections.style.display = show ? 'none' : '';
+    }
+
     buildControls() {
       const restoreLeftPanelScroll = this.captureLeftPanelScrollPosition();
       const container = getEl('dynamic-controls');
@@ -13139,9 +13210,11 @@
       container.innerHTML = '';
       const layer = this.app.engine.getActiveLayer();
       if (!layer) {
+        this._showWelcomePanel(true);
         restoreLeftPanelScroll();
         return;
       }
+      this._showWelcomePanel(false);
       this.ensurePatternLayerSelection(layer);
 
       const moduleSelect = getEl('generator-module');

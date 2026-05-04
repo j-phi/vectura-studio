@@ -13,6 +13,10 @@ describe('Algorithm switching', () => {
       useIndexHtml: true,
     });
     runtime.window.app = new runtime.window.Vectura.App();
+    const _app = runtime.window.app;
+    _app.engine.addLayer('wavetable');
+    _app.ui.renderLayers();
+    _app.ui.buildControls();
     await Promise.resolve();
   });
 

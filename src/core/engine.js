@@ -71,7 +71,6 @@
       this._layerCounter = 0;
       this.profileKey = SETTINGS.paperSize || 'a4';
       this.currentProfile = this.resolveProfile();
-      this.addLayer('wavetable');
     }
 
     addLayer(type = 'wavetable') {
