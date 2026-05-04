@@ -2821,11 +2821,13 @@
         } else if (topLayer) {
           // no-op
         } else {
-          this.clearMaskPreview();
-          this.isSelecting = true;
-          this.selectionStart = world;
-          this.selectionRect = { x: world.x, y: world.y, w: 0, h: 0 };
-          this.clearSelection();
+          if (!this.findLayerAtPoint(world, true)) {
+            this.clearMaskPreview();
+            this.isSelecting = true;
+            this.selectionStart = world;
+            this.selectionRect = { x: world.x, y: world.y, w: 0, h: 0 };
+            this.clearSelection();
+          }
         }
       }
     }
@@ -3711,12 +3713,12 @@
       this.draw();
     }
 
-    findLayerAtPoint(world) {
+    findLayerAtPoint(world, includeLocked = false) {
       const layers = this.engine.layers.slice().reverse();
       return (
         layers.find((layer) => {
           if (!layer.visible || (layer.mask?.enabled && layer.mask?.hideLayer)) return false;
-          if (this.isLayerLocked?.(layer.id)) return false;
+          if (!includeLocked && this.isLayerLocked?.(layer.id)) return false;
           const bounds = this.getLayerBounds(layer);
           return bounds ? this.pointInBounds(world, bounds) : false;
         }) || null

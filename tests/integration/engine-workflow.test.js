@@ -319,7 +319,7 @@ describe('Engine integration workflows', () => {
     expect(afterSignature).toBe(beforeSignature);
   });
 
-  test('removing a non-group mask source also removes its parentId children', () => {
+  test('removing a mask layer preserves its children and reparents them to the mask layer\'s parent', () => {
     const { VectorEngine, Layer } = runtime.window.Vectura;
     const engine = new VectorEngine();
     engine.layers = [];
@@ -337,6 +337,10 @@ describe('Engine integration workflows', () => {
     engine.layers.push(src, childA, childB);
     engine.removeLayer(src.id);
 
-    expect(engine.layers).toHaveLength(0);
+    expect(engine.layers).toHaveLength(2);
+    expect(engine.layers.map((l) => l.id)).toEqual(
+      expect.arrayContaining(['mask-child-a', 'mask-child-b'])
+    );
+    engine.layers.forEach((l) => expect(l.parentId).toBeNull());
   });
 });

@@ -137,6 +137,83 @@ describe('Modifier workflow integration', () => {
     expect(Math.max(...xs)).toBeGreaterThan(150);
     expect(waveform.displayMaskActive).toBe(true);
   });
+
+  test('modifier outside masked group reflects the whole masked unit to the opposite side', () => {
+    const { VectorEngine, Layer } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+
+    // Modifier at the top level; mask rect is its child.
+    const modifierId = engine.addModifierLayer('mirror');
+
+    // Mask rect entirely to the right of the mirror axis.
+    const maskRect = new Layer('mod-out-mask', 'shape', 'Mask Rect');
+    maskRect.parentId = modifierId;
+    maskRect.sourcePaths = [[
+      { x: 160, y: 80 },
+      { x: 220, y: 80 },
+      { x: 220, y: 130 },
+      { x: 160, y: 130 },
+      { x: 160, y: 80 },
+    ]];
+    maskRect.mask.enabled = true;
+
+    // Content line crossing the whole canvas; masked group clips it to the rect.
+    const content = new Layer('mod-out-content', 'shape', 'Content');
+    content.parentId = maskRect.id;
+    content.sourcePaths = [[{ x: 100, y: 105 }, { x: 230, y: 105 }]];
+
+    engine.layers.push(maskRect, content);
+    engine.generate(maskRect.id);
+    engine.generate(content.id);
+    engine.computeAllDisplayGeometry();
+
+    const axisX = engine.getBounds().width / 2;
+    const xs = (content.displayPaths || []).flat().map((pt) => pt.x).filter(Number.isFinite);
+
+    expect(content.displayMaskActive).toBe(true);
+    // A reflected copy of the masked rect must appear on the opposite side of the axis.
+    expect(Math.min(...xs)).toBeLessThan(axisX);
+    // Original masked content must also be present on its own side.
+    expect(Math.max(...xs)).toBeGreaterThan(160);
+  });
+
+  test('modifier inside masked group keeps reflections clipped to the mask boundary (regression)', () => {
+    const { VectorEngine, Layer } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    engine.layers = [];
+
+    // Mask rect at root; modifier is nested inside it.
+    const maskRect = new Layer('mod-in-mask', 'shape', 'Mask Rect');
+    maskRect.sourcePaths = [[
+      { x: 160, y: 80 },
+      { x: 220, y: 80 },
+      { x: 220, y: 130 },
+      { x: 160, y: 130 },
+      { x: 160, y: 80 },
+    ]];
+    maskRect.mask.enabled = true;
+    engine.layers.push(maskRect);
+
+    const modifierId = engine.addModifierLayer('mirror');
+    const innerMod = engine.layers.find((l) => l.id === modifierId);
+    innerMod.parentId = maskRect.id;
+
+    const content = new Layer('mod-in-content', 'shape', 'Content');
+    content.parentId = modifierId;
+    content.sourcePaths = [[{ x: 100, y: 105 }, { x: 230, y: 105 }]];
+    engine.layers.push(content);
+
+    engine.generate(maskRect.id);
+    engine.generate(content.id);
+    engine.computeAllDisplayGeometry();
+
+    const xs = (content.displayPaths || []).flat().map((pt) => pt.x).filter(Number.isFinite);
+
+    expect(content.displayMaskActive).toBe(true);
+    // The modifier mirrors only inside the mask; no content should escape to the left of the mask.
+    expect(Math.min(...xs)).toBeGreaterThanOrEqual(160);
+    expect(Math.max(...xs)).toBeLessThanOrEqual(220);
+  });
 });
 
 describe('Modifier workflow UI integration', () => {

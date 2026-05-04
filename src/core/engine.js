@@ -338,6 +338,21 @@
         this.computeAllDisplayGeometry();
         return;
       }
+      if (target.mask && target.mask.enabled) {
+        const preservedChildren = this.layers.filter((layer) => layer.parentId === id);
+        preservedChildren.forEach((child) => {
+          child.parentId = target.parentId || null;
+        });
+        const remainingLayers = this.layers.filter((layer) => layer.id !== id);
+        this.layers = remainingLayers;
+        if (this.activeLayerId === id) {
+          this.activeLayerId = pickNextActiveId(remainingLayers, targetIndex, preservedChildren.map((c) => c.id));
+        } else if (!remainingLayers.some((layer) => layer.id === this.activeLayerId)) {
+          this.activeLayerId = pickNextActiveId(remainingLayers, targetIndex);
+        }
+        this.computeAllDisplayGeometry();
+        return;
+      }
       const removeIds = new Set([id]);
       const collect = (parentId) => {
         this.layers.forEach((l) => {
@@ -434,6 +449,21 @@
         .reverse();
     }
 
+    _splitModifiersByMaskBoundary(layer) {
+      const allModifiers = this.getAncestorModifiers(layer);
+      const maskAncestors = this.getAncestorMaskLayers(layer);
+      if (!maskAncestors.length) return { inside: allModifiers, outside: [] };
+      const inside = [];
+      const outside = [];
+      allModifiers.forEach((mod) => {
+        const isOutside = maskAncestors.some((maskLayer) =>
+          this.getLayerAncestors(maskLayer).some((a) => a.id === mod.id)
+        );
+        (isOutside ? outside : inside).push(mod);
+      });
+      return { inside, outside };
+    }
+
     getLayerDepth(layer) {
       return this.getLayerAncestors(layer).length;
     }
@@ -458,7 +488,8 @@
       const layer = this.layers.find((entry) => entry.id === layerId);
       if (!layer || layer.isGroup) return;
       const basePaths = clonePaths(layer.paths || []);
-      const effective = this.getAncestorModifiers(layer).reduce(
+      const { inside } = this._splitModifiersByMaskBoundary(layer);
+      const effective = inside.reduce(
         (current, modifierLayer) => applyModifierToPaths(current, modifierLayer.modifier, this.getBounds()),
         basePaths
       );
@@ -478,14 +509,23 @@
         return;
       }
       const ancestorMasks = getMaskingAncestors(layer, this, {});
-      if (!ancestorMasks.length) {
-        layer.displayPaths = sourcePaths;
-        layer.displayStats = countPathPoints(sourcePaths);
-        return;
-      }
+      const { outside } = this._splitModifiersByMaskBoundary(layer);
       const bounds = this.getBounds();
-      const currentPaths = buildLayerMaskedPaths(layer, this, bounds, { sourcePaths });
-      layer.displayMaskActive = true;
+
+      let currentPaths = sourcePaths;
+
+      if (ancestorMasks.length) {
+        currentPaths = buildLayerMaskedPaths(layer, this, bounds, { sourcePaths });
+        layer.displayMaskActive = true;
+      }
+
+      if (outside.length) {
+        currentPaths = outside.reduce(
+          (current, modifierLayer) => applyModifierToPaths(current, modifierLayer.modifier, bounds),
+          currentPaths
+        );
+      }
+
       layer.displayPaths = currentPaths;
       layer.displayStats = countPathPoints(currentPaths);
     }
