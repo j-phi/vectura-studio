@@ -16,6 +16,7 @@ describe('Performance and stress checks', () => {
     () => {
       const { VectorEngine } = runtime.window.Vectura;
       const engine = new VectorEngine();
+      engine.addLayer('wavetable');
       const layer = engine.getActiveLayer();
 
       const paths = [];

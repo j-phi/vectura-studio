@@ -237,6 +237,7 @@ describe('Modifier workflow UI integration', () => {
     await new Promise((resolve) => setTimeout(resolve, 80));
 
     const app = window.app;
+    app.engine.addLayer('wavetable');
     const baseLayer = app.engine.getActiveLayer();
     const modifierId = app.engine.addModifierLayer('mirror');
     const modifier = app.engine.layers.find((layer) => layer.id === modifierId);
@@ -272,7 +273,9 @@ describe('Modifier workflow UI integration', () => {
     await new Promise((resolve) => setTimeout(resolve, 80));
 
     const app = window.app;
+    app.engine.addLayer('wavetable');
     const baseLayer = app.engine.getActiveLayer();
+    app.renderer.setSelection([baseLayer.id], baseLayer.id);
     const originalType = baseLayer.type;
     const nextType = originalType === 'topo' ? 'rings' : 'topo';
 
@@ -330,6 +333,7 @@ describe('Modifier workflow UI integration', () => {
     await new Promise((resolve) => setTimeout(resolve, 80));
 
     const app = window.app;
+    app.engine.addLayer('wavetable');
     const active = app.engine.getActiveLayer();
     active.params.curves = true;
 

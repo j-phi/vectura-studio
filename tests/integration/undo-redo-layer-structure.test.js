@@ -42,6 +42,7 @@ describe('Undo/redo layer-structure integration', () => {
     await waitForUi();
 
     const app = window.app;
+    app.engine.addLayer('wavetable');
     const firstId = app.engine.getActiveLayer().id;
     const secondId = app.engine.addLayer('rings');
     app.renderer.setSelection([firstId, secondId], secondId);
@@ -165,6 +166,7 @@ describe('Undo/redo layer-structure integration', () => {
     await waitForUi();
 
     const app = window.app;
+    app.engine.addLayer('wavetable');
     const baseLayer = app.engine.getActiveLayer();
     app.renderer.setSelection([baseLayer.id], baseLayer.id);
     app.engine.activeLayerId = baseLayer.id;
@@ -215,6 +217,7 @@ describe('Undo/redo layer-structure integration', () => {
     await waitForUi();
 
     const app = window.app;
+    app.engine.addLayer('wavetable');
     const baseLayer = app.engine.getActiveLayer();
     const modifierId = app.engine.addModifierLayer('mirror');
     const modifier = app.engine.layers.find((layer) => layer.id === modifierId);

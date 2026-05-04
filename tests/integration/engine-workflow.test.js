@@ -52,6 +52,7 @@ describe('Engine integration workflows', () => {
   test('optimization pipeline preserves circle metadata and respects bypassAll', () => {
     const { VectorEngine } = runtime.window.Vectura;
     const engine = new VectorEngine();
+    engine.addLayer('wavetable');
     const layer = engine.getActiveLayer();
 
     const circle = [];
