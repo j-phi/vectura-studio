@@ -11145,6 +11145,14 @@
         };
       }
 
+      const welcomeAddBtn = getEl('btn-welcome-add-layer');
+      if (welcomeAddBtn && addBtn) {
+        welcomeAddBtn.onclick = (e) => {
+          e.stopPropagation();
+          addBtn.click();
+        };
+      }
+
       const _doAddAlgoLayer = (layerType) => {
         if (this.app.pushHistory) this.app.pushHistory();
         const activeLayer = this.app.engine.getActiveLayer?.();

@@ -218,7 +218,7 @@
           <p class="text-[11px] uppercase text-vectura-muted tracking-widest mb-3">Welcome</p>
           <p class="text-xs text-vectura-fg mb-4 leading-relaxed">Vectura Studio &mdash; physics-inspired vector art for pen plotters.</p>
           <ul class="text-xs text-vectura-muted leading-relaxed space-y-2">
-            <li>&rarr; Click <span class="text-vectura-accent">+</span> in the Layers panel to add an algorithm layer</li>
+            <li>&rarr; <button id="btn-welcome-add-layer" class="lvl-add-btn" type="button" title="Add layer" aria-label="Add layer"><svg width="11" height="11" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="4.5" y1="1" x2="4.5" y2="8"/><line x1="1" y1="4.5" x2="8" y2="4.5"/></svg> Add Layer</button> to add an algorithm layer</li>
             <li>&rarr; Use the <span class="text-vectura-accent">draw tool</span> in the toolbar to sketch an algorithm directly</li>
             <li>&rarr; Select a layer to edit its parameters here</li>
             <li>&rarr; Export SVG when you're ready for the plotter</li>
@@ -357,7 +357,7 @@
 
       <div id="bottom-resizer" class="bottom-resizer" aria-hidden="true"></div>
 
-      <div id="bottom-pane" class="bottom-pane bg-vectura-panel border-t border-vectura-border z-20 flex flex-col">
+      <div id="bottom-pane" class="bottom-pane bottom-pane-collapsed bg-vectura-panel border-t border-vectura-border z-20 flex flex-col">
         <div class="bottom-pane-header flex justify-between items-start p-4">
           <span class="text-[11px] text-vectura-muted uppercase tracking-widest">Mathematical Model</span>
           <button id="btn-pane-toggle-bottom" class="pane-toggle pane-toggle-bottom" type="button"

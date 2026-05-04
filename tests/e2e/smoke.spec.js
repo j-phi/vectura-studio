@@ -283,6 +283,7 @@ test.describe('Vectura smoke interactions', () => {
     await expect(page.locator('#status-bar')).toBeVisible();
     await expect(page.locator('#generator-module')).toBeVisible();
     await expect(page.locator('#layer-list [data-lvl-id]').first()).toBeVisible();
+    await page.locator('#btn-pane-toggle-bottom').click();
     await expect
       .poll(async () => (await page.locator('#formula-display').innerText()).trim().length)
       .toBeGreaterThan(0);
