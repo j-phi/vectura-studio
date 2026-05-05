@@ -11481,7 +11481,88 @@
         this.renderLayers(); this.app.render();
       };
 
+      const isCoarseTouch = typeof window !== 'undefined' &&
+        !!(window.matchMedia?.('(pointer: coarse)').matches || navigator.maxTouchPoints > 1);
+
+      const _bindCardTouchDrag = (el, layer) => {
+        let holdTimer = null;
+        let isDragging = false;
+        let startTouchId = null;
+        let startY = 0;
+        let lastTargetId = null;
+        let lastPos = null;
+
+        const cancelHold = () => { clearTimeout(holdTimer); holdTimer = null; };
+
+        const finishDrag = (commit) => {
+          cancelHold();
+          if (isDragging) {
+            if (commit && lastTargetId && lastPos) _lvlDoMove(layer.id, lastTargetId, lastPos);
+            el.classList.remove('dragging');
+            el.style.pointerEvents = '';
+            _lvlDRAG.id = null;
+            _lvlClrAllDrop();
+            setHint(null);
+          }
+          isDragging = false;
+          startTouchId = null;
+          lastTargetId = null;
+          lastPos = null;
+        };
+
+        el.addEventListener('touchstart', (e) => {
+          if (e.touches.length !== 1) { finishDrag(false); return; }
+          const t = e.touches[0];
+          startTouchId = t.identifier;
+          startY = t.clientY;
+          holdTimer = setTimeout(() => {
+            holdTimer = null;
+            isDragging = true;
+            _lvlDRAG.id = layer.id;
+            el.classList.add('dragging');
+            if (navigator.vibrate) navigator.vibrate(30);
+          }, 350);
+        }, { passive: true });
+
+        el.addEventListener('touchmove', (e) => {
+          const t = Array.from(e.touches).find((tt) => tt.identifier === startTouchId);
+          if (!t) return;
+          if (!isDragging) {
+            if (Math.abs(t.clientY - startY) > 12) cancelHold();
+            return;
+          }
+          e.preventDefault();
+          el.style.pointerEvents = 'none';
+          const below = document.elementFromPoint(t.clientX, t.clientY);
+          el.style.pointerEvents = '';
+          const targetCard = below?.closest('[data-lvl-id]');
+          const targetId = targetCard?.dataset?.lvlId;
+          _lvlClrAllDrop();
+          lastTargetId = null;
+          lastPos = null;
+          if (targetId && targetId !== layer.id && targetCard) {
+            const r = targetCard.getBoundingClientRect();
+            const pct = (t.clientY - r.top) / r.height;
+            const isGrp = targetCard.classList.contains('lvl-grp-hdr');
+            const pos = isGrp
+              ? (pct < 0.35 ? 'before' : pct > 0.65 ? 'after' : 'into')
+              : (pct < 0.5 ? 'before' : 'after');
+            const cssClass = pos === 'before' ? 'lvl-drop-before'
+                           : pos === 'into'   ? 'lvl-drop-into'
+                           : 'lvl-drop-after';
+            targetCard.classList.add(cssClass);
+            setHint(pos === 'into' ? 'Drop into group' : null);
+            lastTargetId = targetId;
+            lastPos = pos;
+          }
+        }, { passive: false });
+
+        el.addEventListener('touchend', () => finishDrag(true));
+        el.addEventListener('touchcancel', () => finishDrag(false));
+      };
+
       const bindCardDrag = (el, layer) => {
+        if (isCoarseTouch) { _bindCardTouchDrag(el, layer); return; }
         el.draggable = true;
         el.addEventListener('dragstart', (e) => {
           _lvlDRAG.id = layer.id;
