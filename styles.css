@@ -1104,6 +1104,29 @@ input[type='color']::-webkit-color-swatch {
 [data-theme='light'] .algo-pick-item:hover { background: rgba(0,0,0,.04) }
 [data-theme='light'] .lvl-pen-dot { border-color: rgba(0,0,0,.2) }
 
+/* ── 2× Layer cards on touch tablets (iPad portrait + landscape) ─── */
+@media (pointer: coarse) and (min-width: 600px) {
+  .lvl-r1 { height: 52px; padding-right: 12px; gap: 6px }
+  .lvl-r2 { height: 40px; padding-right: 12px; gap: 6px }
+  .lvl-caret-zone { width: 32px; padding-top: 12px }
+  .lvl-clr-bar { width: 8px; margin: 6px 10px 6px 0 }
+  .lvl-ib { width: 40px; height: 40px }
+  .lvl-ib svg { width: 22px; height: 22px }
+  .lvl-ab { width: 36px; height: 36px }
+  .lvl-ab svg { width: 22px; height: 22px }
+  .lvl-aico { width: 28px; height: 28px }
+  .lvl-aico svg { width: 22px; height: 22px }
+  .lvl-pen-dot { width: 20px; height: 20px }
+  .lvl-name { font-size: 18px }
+  .lvl-algo-label { font-size: 14px }
+  .lvl-grp-hdr { min-height: 60px }
+  .lvl-grp-content { height: 60px; gap: 6px; padding-right: 12px }
+  .lvl-grp-name { font-size: 18px }
+  .lvl-caret { width: 28px; height: 28px }
+  .lvl-caret svg { width: 22px; height: 22px }
+  .lvl-tree-children { padding-left: 24px }
+}
+
 /* ── Right-pane title bar: match v8 mockup compact header ─── */
 #right-pane .pane-header {
   height: 36px;
