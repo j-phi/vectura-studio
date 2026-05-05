@@ -152,8 +152,7 @@ const captureRepresentativePatternIds = async (page) =>
 
 const addAlgoLayer = async (page) => {
   await page.click('#btn-add-layer');
-  await page.hover('.lvl-add-has-sub[data-add="algo-parent"]');
-  await page.click('.lvl-algo-sub-item[data-add="algo"]');
+  await page.click('.lvl-add-item[data-add="algo-parent"]');
 };
 
 test.describe('Vectura smoke interactions', () => {
@@ -367,12 +366,14 @@ test.describe('Vectura smoke interactions', () => {
     page.on('pageerror', (error) => pageErrors.push(error.message));
 
     await page.goto('/');
-    await page.click('#auto-colorization-header');
 
     const layerCount = await page.locator('#layer-list [data-lvl-id]').count();
     for (let i = layerCount; i < 4; i += 1) {
       await addAlgoLayer(page);
     }
+
+    await page.click('.right-pane-tab[data-tab="pens"]');
+    await page.click('#auto-colorization-header');
 
     const readPenAssignments = () =>
       page.evaluate(() =>
@@ -960,6 +961,7 @@ test.describe('Vectura smoke interactions', () => {
         { x: 20, y: 110 },
         { x: 220, y: 110 },
       ]];
+      child.penId = null;
       child.strokeWidth = 2.2;
 
       engine.layers.push(maskParent, child);

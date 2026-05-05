@@ -9302,10 +9302,6 @@
           bottomPane.classList.add('bottom-pane-collapsed');
           mobileLayoutDefaultApplied = true;
         }
-        if (bottomPane && !isMobileLayout) {
-          bottomPane.classList.remove('bottom-pane-collapsed');
-          mobileLayoutDefaultApplied = false;
-        }
       };
 
       const togglePane = (pane) => {
