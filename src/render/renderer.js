@@ -354,6 +354,9 @@
       this.activePointerId = null;
       this.touchPointers = new Map();
       this.touchGesture = null;
+      this.touchHoldTimer = null;
+      this.touchHoldPending = null;
+      this.touchHoldStartClient = null;
       this.exportModalOpen = false;
       this.ready = Boolean(this.canvas && this.ctx);
 
@@ -713,7 +716,17 @@
       this.updateCursor();
     }
 
+    clearTouchHold() {
+      if (this.touchHoldTimer) {
+        clearTimeout(this.touchHoldTimer);
+        this.touchHoldTimer = null;
+      }
+      this.touchHoldPending = null;
+      this.touchHoldStartClient = null;
+    }
+
     cancelActiveInteractionsForTouchGesture() {
+      this.clearTouchHold();
       this.isPan = false;
       this.isLayerDrag = false;
       this.dragMode = null;
@@ -2850,24 +2863,50 @@
         const updatedSelected = this.getSelectedLayers();
         const bounds = this.getSelectionBounds(updatedSelected);
         if (bounds && this.pointInBounds(world, bounds) && !updatedSelected.some(l => this.isLayerLocked?.(l.id))) {
-          this.isLayerDrag = true;
-          this.snapAllowed = true;
-          this.dragMode = 'move';
-          this.dragStart = world;
-          this.startBounds = bounds;
-          if (updatedSelected.length === 1 && this.activeTool === 'select') {
-            this.startMaskPreview(updatedSelected[0]);
+          if (this.isTouchPointer(e) && !modifiers.alt) {
+            // Touch: hold to lift — defer drag until finger has been held still for 350ms
+            this._pendingSingleSelect = null;
+            this.touchHoldStartClient = { x: e.clientX, y: e.clientY };
+            this.touchHoldPending = { world, updatedSelected, bounds };
+            this.touchHoldTimer = setTimeout(() => {
+              this.touchHoldTimer = null;
+              if (!this.touchHoldPending) return;
+              const { world: w, updatedSelected: layers, bounds: b } = this.touchHoldPending;
+              this.touchHoldPending = null;
+              this.isLayerDrag = true;
+              this.snapAllowed = true;
+              this.dragMode = 'move';
+              this.dragStart = w;
+              this.startBounds = b;
+              if (layers.length === 1 && this.activeTool === 'select') {
+                this.startMaskPreview(layers[0]);
+              } else {
+                this.clearMaskPreview();
+              }
+              this.setCanvasCursor(layers.length > 1 ? 'grabbing' : 'move');
+              if (navigator.vibrate) navigator.vibrate(30);
+              this.draw();
+            }, 350);
           } else {
-            this.clearMaskPreview();
-          }
-          this.setCanvasCursor(updatedSelected.length > 1 ? 'grabbing' : 'move');
-          if (modifiers.alt && updatedSelected.length === 1) {
-            if (this.onDuplicateLayer) this.onDuplicateLayer();
-            const dup = this.engine.duplicateLayer ? this.engine.duplicateLayer(updatedSelected[0].id) : null;
-            if (dup) {
-              this.selectLayer(dup);
-              this.dragStart = world;
-              this.startBounds = this.getSelectionBounds([dup]) || bounds;
+            this.isLayerDrag = true;
+            this.snapAllowed = true;
+            this.dragMode = 'move';
+            this.dragStart = world;
+            this.startBounds = bounds;
+            if (updatedSelected.length === 1 && this.activeTool === 'select') {
+              this.startMaskPreview(updatedSelected[0]);
+            } else {
+              this.clearMaskPreview();
+            }
+            this.setCanvasCursor(updatedSelected.length > 1 ? 'grabbing' : 'move');
+            if (modifiers.alt && updatedSelected.length === 1) {
+              if (this.onDuplicateLayer) this.onDuplicateLayer();
+              const dup = this.engine.duplicateLayer ? this.engine.duplicateLayer(updatedSelected[0].id) : null;
+              if (dup) {
+                this.selectLayer(dup);
+                this.dragStart = world;
+                this.startBounds = this.getSelectionBounds([dup]) || bounds;
+              }
             }
           }
           e.preventDefault();
@@ -2899,6 +2938,18 @@
         return;
       }
       const modifiers = this.getModifierState(e);
+      if (this.touchHoldPending && this.isTouchPointer(e)) {
+        const dx = e.clientX - this.touchHoldStartClient.x;
+        const dy = e.clientY - this.touchHoldStartClient.y;
+        if (Math.hypot(dx, dy) > 12) {
+          this.clearTouchHold();
+          this.isPan = true;
+          this.lastM = { x: e.clientX, y: e.clientY };
+          this.setCanvasCursor('grabbing');
+        } else {
+          return;
+        }
+      }
       if (this.isPan) {
         this.offsetX += e.clientX - this.lastM.x;
         this.offsetY += e.clientY - this.lastM.y;
@@ -3172,6 +3223,13 @@
         }
       }
       if (this.activePointerId !== null && e.pointerId !== undefined && e.pointerId !== this.activePointerId && e.pointerType !== 'mouse') {
+        return;
+      }
+      if (this.touchHoldPending) {
+        this.clearTouchHold();
+        clearActivePointer();
+        this.updateCursor();
+        this.draw();
         return;
       }
       if (this.isLightDrag) {

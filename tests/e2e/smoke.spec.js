@@ -334,6 +334,8 @@ test.describe('Vectura smoke interactions', () => {
         clientY: startY,
         buttons: 1,
       });
+      // Hold-to-lift: wait for the 350ms hold timer to fire before dragging
+      await page.waitForTimeout(450);
       await page.dispatchEvent('#main-canvas', 'pointermove', {
         pointerType: 'touch',
         pointerId: 1,
