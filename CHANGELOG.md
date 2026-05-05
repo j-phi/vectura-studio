@@ -6,7 +6,7 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
-## 0.8.26 - 2026-05-05
+## 0.8.27 - 2026-05-05
 
 ### Added
 - **Custom canvas cursors** for the four primary tools. Selection (V) shows a filled black arrow, Direct Selection (A) an outline-only arrow, and Pen (P) a fountain-pen tip — each via SVG-as-cursor data URLs. Fill (F) hides the system cursor in favor of a DOM overlay (see below).

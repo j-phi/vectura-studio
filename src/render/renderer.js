@@ -386,6 +386,7 @@
 
       new ResizeObserver(() => this.resize()).observe(parent);
       this.canvas.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
+      this.canvas.addEventListener('dblclick', (e) => this._handleAlgoDblClick(e));
       this._boundMove = (e) => this.move(e);
       this._boundUp = (e) => this.up(e);
       if (window.PointerEvent) {
@@ -1321,6 +1322,14 @@
     cancelAlgoDraft() {
       this.algoDraft = null;
       this.draw();
+    }
+
+    _handleAlgoDblClick(e) {
+      if (!this.isAlgoDrawTool()) return;
+      e.preventDefault();
+      if (this.onAlgoDrawComplete) {
+        this.onAlgoDrawComplete({ algoType: this.algoDraftType, rect: { x: 0, y: 0, w: 0, h: 0 } });
+      }
     }
 
     canEditSourceGeometry(layer) {
