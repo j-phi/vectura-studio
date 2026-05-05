@@ -11144,46 +11144,7 @@
         }
       });
 
-      // ── Layers V8: icon factory ──────────────────────────────────
-      const _LVL_SA = `stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"`;
-      const _lvlIco = (p, s = 12) =>
-        `<svg width="${s}" height="${s}" viewBox="0 0 12 12" fill="none" stroke="currentColor" ${_LVL_SA}>${p}</svg>`;
-      this._LVL_I = {
-        eye:      () => _lvlIco(`<ellipse cx="6" cy="6" rx="5" ry="3.5"/><circle cx="6" cy="6" r="1.5" fill="currentColor" stroke="none"/>`),
-        eyeOff:   () => _lvlIco(`<path d="M1 1.5l10 9M3.5 3C2.2 3.9 1 6 1 6s2.2 3.5 5 3.5c.9 0 1.7-.2 2.4-.6"/><path d="M9 8.8C10 7.9 11 6 11 6S8.8 2.5 6 2.5c-.4 0-.7 0-1.1.1"/>`),
-        lock:     () => _lvlIco(`<rect x="2.5" y="5.5" width="7" height="5" rx="1"/><path d="M4 5.5V4a2 2 0 1 1 4 0v1.5"/><line x1="6" y1="7.5" x2="6" y2="8.5"/>`),
-        lockOpen: () => _lvlIco(`<rect x="2.5" y="5.5" width="7" height="5" rx="1"/><path d="M4 5.5V4a2 2 0 1 1 4 0" stroke-dasharray="2 1.5"/>`),
-        folder:   () => _lvlIco(`<path d="M1 4C1 3 1.7 2.5 2.5 2.5H5l1 1.5h3.5C10.3 4 11 4.7 11 5.5V9c0 .8-.7 1.5-1.5 1.5h-7C1.7 10.5 1 9.8 1 9V4z"/>`),
-        layer:    () => _lvlIco(`<rect x="1.5" y="3" width="9" height="7.5" rx=".8"/><line x1="3.5" y1="1.5" x2="8.5" y2="1.5"/>`),
-        grpPlus:  () => _lvlIco(`<path d="M1 4C1 3 1.7 2.5 2.5 2.5H4.5l1 1.5h4C10.3 4 11 4.7 11 5.5V9c0 .8-.7 1.5-1.5 1.5h-7C1.7 10.5 1 9.8 1 9V4z"/><line x1="6" y1="6" x2="6" y2="9"/><line x1="4.5" y1="7.5" x2="7.5" y2="7.5"/>`),
-        caret:    () => _lvlIco(`<path d="M4.5 3l3 3-3 3"/>`),
-        trash:    () => _lvlIco(`<line x1="2" y1="3.5" x2="10" y2="3.5"/><path d="M4.5 3.5V2.5h3v1M4 5l.4 4h3.2l.4-4"/>`),
-        dup:      () => _lvlIco(`<rect x="4.5" y="1" width="6" height="6" rx="1"/><rect x="1.5" y="4" width="6" height="7" rx="1" fill="var(--color-panel)" stroke="currentColor"/>`),
-        expand:   () => _lvlIco(`<line x1="1.5" y1="3" x2="7.5" y2="3"/><line x1="1.5" y1="6" x2="7.5" y2="6"/><line x1="1.5" y1="9" x2="7.5" y2="9"/><line x1="10" y1="7" x2="10" y2="11" stroke-width="1.9"/><line x1="8" y1="9" x2="12" y2="9" stroke-width="1.9"/>`),
-        maskSrc:  () => _lvlIco(`<rect x="3.5" y="5" width="8" height="6.5" rx="1" stroke-dasharray="2 1.5"/><rect x="0.5" y="1" width="7.5" height="5.5" rx="1"/>`),
-        ungroup:  () => _lvlIco(`<path d="M1 3.5V2h1.5M9.5 2H11v1.5M1 8.5V10h1.5M9.5 10H11V8.5"/><rect x="3.5" y="3.5" width="5" height="5" rx=".5" stroke-dasharray="1.5 1.2"/>`),
-        flowfield:    () => _lvlIco(`<path d="M1 4c1.2-2 2.4-2 3 0s1.8 2 3 0 1.8-2 3 0M1 8c1.2-2 2.4-2 3 0s1.8 2 3 0 1.8-2 3 0"/>`),
-        wavetable:    () => _lvlIco(`<path d="M1 6c.6-2.5 1.2-2.5 2 0s1.4 2.5 2 0 1.4-2.5 2 0 1.4 2.5 2 0 .6-2 1-1.5"/>`),
-        hyphae:       () => _lvlIco(`<path d="M6 11V7M6 7L3.5 4.5M6 7L8.5 4.5M3.5 4.5L2 3M3.5 4.5L4.2 2.5M8.5 4.5L7.2 2.5M8.5 4.5L10 3"/>`),
-        topo:         () => _lvlIco(`<circle cx="6" cy="6" r="1.5"/><circle cx="6" cy="6" r="3.2"/><circle cx="6" cy="6" r="5"/>`),
-        spiral:       () => _lvlIco(`<path d="M6 6c0 0 .8 0 .8-.8s-.8-.8-1.5-.5-1.3 1-1.2 2 .8 2.3 2.4 2.3S9 8 9 6.2 7.7 3 5.5 3 2 4.5 2 6.5"/>`),
-        rings:        () => _lvlIco(`<circle cx="6" cy="6" r="2"/><circle cx="6" cy="6" r="4.5"/>`),
-        grid:         () => _lvlIco(`<line x1="1" y1="4.5" x2="11" y2="4.5"/><line x1="1" y1="7.5" x2="11" y2="7.5"/><line x1="4" y1="1.5" x2="4" y2="10.5"/><line x1="8" y1="1.5" x2="8" y2="10.5"/>`),
-        boids:        () => _lvlIco(`<path d="M6 2l1.5 3.5L11 6l-3.5 1.5L6 11l-1.5-3.5L1 6l3.5-1.5Z"/>`),
-        attractor:    () => _lvlIco(`<circle cx="6" cy="6" r="1"/><path d="M6 1v1.5M6 9.5V11M1 6h1.5M9.5 6H11"/>`),
-        lissajous:    () => _lvlIco(`<path d="M2 6c0-2 1-3 2-3s2 2 4 2 2 1 2 3-1 3-2 3-2-2-4-2-2-1-2-3z"/>`),
-        harmonograph: () => _lvlIco(`<path d="M1 6c1-3 2-4 3-3s1 3 2 3 2-2 3-3 2 1 2 3"/>`),
-        rainfall:     () => _lvlIco(`<line x1="3" y1="2" x2="2" y2="6"/><line x1="6" y1="1" x2="5" y2="7"/><line x1="9" y1="2" x2="8" y2="8"/><line x1="4" y1="8" x2="3.5" y2="11"/><line x1="8" y1="7" x2="7.5" y2="10"/>`),
-        phylla:       () => _lvlIco(`<circle cx="4" cy="4" r="1"/><circle cx="8" cy="3" r="1"/><circle cx="9" cy="7" r="1"/><circle cx="5" cy="9" r="1"/><circle cx="2" cy="7" r="1"/>`),
-        petalisDesigner: () => _lvlIco(`<path d="M6 2c1 1 2 2.5 2 4s-1 3-2 4c-1-1-2-2.5-2-4s1-3 2-4z"/>`),
-        shapePack:    () => _lvlIco(`<rect x="1.5" y="1.5" width="4" height="4" rx=".5"/><rect x="6.5" y="6.5" width="4" height="4" rx=".5"/><rect x="1.5" y="6.5" width="4" height="4" rx=".5"/>`),
-        shape:        () => _lvlIco(`<path d="M6 1.5L10 3.75L10 8.25L6 10.5L2 8.25L2 3.75Z"/>`),
-        polygon:      () => _lvlIco(`<path d="M6 1.5L10.3 4.6L8.6 9.6H3.4L1.7 4.6Z"/>`),
-        pen:          () => _lvlIco(`<path d="M8.5 1.5L11 4L5 10H1.5V6.5L7.5 1.5ZM8.5 1.5L11 4M2 9.5L3.5 8"/>`),
-        svg:          () => _lvlIco(`<rect x="1.5" y="2" width="9" height="8" rx="1"/><path d="M3.5 7L4.5 5L6 7.5L7 6L9 8" stroke-width="1.2"/>`),
-        oval:         () => _lvlIco(`<ellipse cx="6" cy="6" rx="4.5" ry="3"/>`),
-        rect:         () => _lvlIco(`<rect x="1.5" y="3" width="9" height="6" rx="1"/>`),
-      };
+      this._LVL_I = window.Vectura.Icons.layer;
 
       // ── Layers V8: add dropdown ──────────────────────────────────
       const _ALGO_LIST = [
@@ -16857,7 +16818,7 @@
             const header = document.createElement('button');
             header.type = 'button';
             header.className = 'algo-param-group-header';
-            const ringIcon = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.1" aria-hidden="true"><circle cx="6.5" cy="6.5" r="5.5"/><circle cx="6.5" cy="6.5" r="3.4"/><circle cx="6.5" cy="6.5" r="1.4"/></svg>`;
+            const ringIcon = window.Vectura.Icons.misc.ring();
             header.innerHTML = `<span class="algo-param-group-title">${ringIcon}${def.label}</span><span class="algo-param-group-toggle" aria-hidden="true"></span>`;
             const body = document.createElement('div');
             body.className = 'algo-param-group-body';
