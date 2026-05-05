@@ -6,6 +6,8 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+## 0.8.20 - 2026-05-05
+
 ### Changed
 - Layer cards now render at roughly 2× scale on touch tablets (iPad portrait and landscape) for finger-friendly interaction. Row heights, icon buttons, color dot, algorithm icon, and layer/group label text all enlarge; eye and lock buttons reach 40×40, action buttons 36×36. Targeted via `(pointer: coarse) and (min-width: 600px)` so phones and desktop are unchanged.
 - Consolidated UI inline-SVG icons into a single registry at `src/ui/icons.js` exposing `Vectura.Icons.{layer,tool,misc}`. The 34-icon layer-panel set (previously inlined inside `ui.js`) and the 23-icon Petal Designer toolbar set (previously inlined inside `ui-petal-designer.js`) now live in one dedicated module, plus the formerly stray ring icon used for algorithm param-group headers. Pure refactor — no visual change, no API surface change for callers (`this._LVL_I` and the toolbar `renderIcon()` wrapper still work as before). Static `<svg>` literals in `index.html` (theme toggle, layer-search/filter/plus) were intentionally left alone since they render before JS loads.

@@ -651,7 +651,15 @@ test.describe('Vectura smoke interactions', () => {
     page.on('pageerror', (error) => pageErrors.push(error.message));
 
     await page.goto('/');
-    await addAlgoLayer(page);
+    // Flowfield generates many paths; attractor (alphabetically-first default) generates only 1,
+    // which would leave orderedItems.length ≤ 1 and keep the legend hidden.
+    await page.evaluate(() => {
+      const id = window.app.engine.addLayer('flowfield');
+      if (id) {
+        window.app.renderer?.setSelection?.([id], id);
+        window.app.render?.();
+      }
+    });
     await page.getByRole('button', { name: 'File' }).click();
     await page.click('#btn-export');
     await expect(page.locator('#export-modal-root')).toBeVisible();
