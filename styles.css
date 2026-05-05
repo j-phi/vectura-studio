@@ -4090,6 +4090,19 @@ input[type='color']::-webkit-color-swatch {
   background: rgba(34, 211, 238, 0.12);
 }
 
+/* Touch devices: suppress iOS long-press text selection and callout menu */
+@media (pointer: coarse) {
+  html, body {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  input, textarea, [contenteditable] {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}
+
 /* Accessibility: respect reduced-motion preference */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
