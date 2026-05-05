@@ -44,11 +44,12 @@
         this.renderer.setSelection([], null);
       }
       this.renderer.onSelectLayer = (layer) => {
-        if (layer) this.engine.activeLayerId = layer.id;
+        this.engine.activeLayerId = layer ? layer.id : null;
         this.ui.renderLayers();
         this.ui.buildControls();
         this.ui.updateFormula();
       };
+      this.renderer.onPatternFill = (payload) => this.ui._applyPatternFillFromCanvas(payload);
       this.renderer.onCommitTransform = () => { this.pushHistory(); this.ui.buildControls(); };
       this.renderer.onDuplicateLayer = () => this.pushHistory();
       this.renderer.onComputeDisplayGeometry = () => this.computeDisplayGeometry();

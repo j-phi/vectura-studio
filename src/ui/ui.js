@@ -8446,6 +8446,7 @@
         select.value = type;
         select.disabled = false;
         select.classList.remove('opacity-60');
+        this._syncModuleDisplay();
         return;
       }
       this.initModuleDropdown();
@@ -8956,6 +8957,75 @@
         opt.innerText = label || key.charAt(0).toUpperCase() + key.slice(1);
         select.appendChild(opt);
       });
+    }
+
+    _buildModuleMenu() {
+      let menu = document.getElementById('gm-module-menu');
+      if (menu) return menu;
+      menu = document.createElement('div');
+      menu.id = 'gm-module-menu';
+      menu.className = 'gm-module-menu hidden';
+      menu.addEventListener('click', (e) => {
+        const item = e.target.closest('[data-gm-value]');
+        if (!item) return;
+        const select = getEl('generator-module', { silent: true });
+        if (select) {
+          select.value = item.dataset.gmValue;
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        menu.classList.add('hidden');
+      });
+      document.addEventListener('pointerdown', (e) => {
+        const trigger = document.getElementById('generator-module-trigger');
+        if (!menu.classList.contains('hidden') &&
+            !menu.contains(e.target) &&
+            e.target !== trigger &&
+            !trigger?.contains(e.target)) {
+          menu.classList.add('hidden');
+        }
+      }, true);
+      document.body.appendChild(menu);
+      return menu;
+    }
+
+    _showModuleMenu() {
+      const select = getEl('generator-module', { silent: true });
+      const trigger = document.getElementById('generator-module-trigger');
+      if (!select || !trigger) return;
+      const menu = this._buildModuleMenu();
+      const currentValue = select.value;
+      menu.innerHTML = Array.from(select.options).map((opt) => {
+        const type = opt.value;
+        const ico = this._LVL_I?.[type];
+        const color = this._algoMenuColor?.(type) ?? '';
+        const iconHtml = ico
+          ? `<span class="lvl-algo-sub-ico" style="color:${color}">${ico()}</span>`
+          : '';
+        const activeClass = type === currentValue ? ' gm-item-active' : '';
+        return `<div class="lvl-algo-sub-item${activeClass}" data-gm-value="${type}">${iconHtml}${opt.innerText}</div>`;
+      }).join('');
+      const r = trigger.getBoundingClientRect();
+      menu.style.top = `${r.bottom + 2}px`;
+      menu.style.left = `${r.left}px`;
+      menu.style.width = `${r.width}px`;
+      menu.classList.remove('hidden');
+    }
+
+    _syncModuleDisplay() {
+      const select = getEl('generator-module', { silent: true });
+      const trigger = document.getElementById('generator-module-trigger');
+      if (!select || !trigger) return;
+      const currentValue = select.value;
+      const currentLabel = select.options[select.selectedIndex]?.innerText ?? currentValue;
+      const iconEl = document.getElementById('gm-current-icon');
+      const labelEl = document.getElementById('gm-current-label');
+      if (iconEl) {
+        const ico = this._LVL_I?.[currentValue];
+        iconEl.innerHTML = ico ? ico() : '';
+        iconEl.style.color = ico ? (this._algoMenuColor?.(currentValue) ?? '') : '';
+      }
+      if (labelEl) labelEl.textContent = currentLabel;
+      trigger.classList.toggle('gm-trigger-disabled', !!select.disabled);
     }
 
     initMachineDropdown() {
@@ -9534,7 +9604,7 @@
       };
 
       const syncButtons = () => {
-        const fillActive = this.activeTool === 'fill' || this.activeTool === 'fill-erase';
+        const fillActive = ['fill', 'fill-erase', 'fill-pattern', 'fill-pattern-erase'].includes(this.activeTool);
         const shapeActive = `${this.activeTool}`.startsWith('shape-');
         toolButtons.forEach((btn) => {
           if (btn.dataset.tool === 'fill') {
@@ -9558,7 +9628,12 @@
           btn.classList.toggle('active', btn.dataset.pen === this.penMode);
         });
         fillButtons.forEach((btn) => {
-          btn.classList.toggle('active', btn.dataset.fill === 'erase' && this.activeTool === 'fill-erase');
+          const v = btn.dataset.fill;
+          btn.classList.toggle('active',
+            (v === 'erase'         && this.activeTool === 'fill-erase') ||
+            (v === 'pattern'       && this.activeTool === 'fill-pattern') ||
+            (v === 'pattern-erase' && this.activeTool === 'fill-pattern-erase')
+          );
         });
         shapeButtons.forEach((btn) => {
           btn.classList.toggle('active', btn.dataset.shape === this.shapeMode && shapeActive);
@@ -9568,6 +9643,7 @@
       this.setActiveTool = (tool, options = {}) => {
         if (!tool) return;
         const { temporary = false } = options;
+        const prevTool = this.activeTool;
         this.activeTool = tool;
         if (!temporary) {
           SETTINGS.activeTool = tool;
@@ -9581,6 +9657,10 @@
         }
         if (this.app.renderer?.setTool) this.app.renderer.setTool(tool);
         syncButtons();
+        const isPatternFillTool = (t) => t === 'fill-pattern' || t === 'fill-pattern-erase';
+        if (isPatternFillTool(tool) || isPatternFillTool(prevTool)) {
+          this.buildControls?.();
+        }
       };
 
       this.setShapeMode = (mode) => {
@@ -9789,7 +9869,9 @@
         buttons: fillButtons,
         onActivate: () => this.setActiveTool('fill'),
         onSelect: (btn) => {
-          if (btn.dataset.fill === 'erase') this.setActiveTool('fill-erase');
+          if (btn.dataset.fill === 'erase')         this.setActiveTool('fill-erase');
+          else if (btn.dataset.fill === 'pattern')       this.setActiveTool('fill-pattern');
+          else if (btn.dataset.fill === 'pattern-erase') this.setActiveTool('fill-pattern-erase');
         },
       });
 
@@ -9862,21 +9944,24 @@
       const algoDrawBtn = toolbar.querySelector('.tool-btn[data-tool="algo-draw"]');
       if (algoDrawBtn) {
         const _ALGO_PICK_LIST = [
-          { type: 'wavetable', label: 'Wavetable' },
-          { type: 'flowfield', label: 'Flowfield' },
-          { type: 'hyphae',    label: 'Hyphae' },
-          { type: 'topo',      label: 'Topo' },
-          { type: 'spiral',    label: 'Spiral' },
-          { type: 'rings',     label: 'Rings' },
-          { type: 'grid',      label: 'Grid' },
-          { type: 'boids',     label: 'Boids' },
-          { type: 'attractor', label: 'Attractor' },
-          { type: 'lissajous', label: 'Lissajous' },
-          { type: 'harmonograph', label: 'Harmonograph' },
-          { type: 'rainfall',  label: 'Rainfall' },
-          { type: 'phylla',    label: 'Phylla' },
+          { type: 'attractor',       label: 'Attractor' },
+          { type: 'boids',           label: 'Boids' },
+          { type: 'flowfield',       label: 'Flowfield' },
+          { type: 'grid',            label: 'Grid' },
+          { type: 'harmonograph',    label: 'Harmonograph' },
+          { type: 'hyphae',          label: 'Hyphae' },
+          { type: 'lissajous',       label: 'Lissajous' },
+          { type: 'pattern',         label: 'Pattern' },
           { type: 'petalisDesigner', label: 'Petalis Designer' },
-          { type: 'shapePack', label: 'Shapepack' },
+          { type: 'phylla',          label: 'Phylla' },
+          { type: 'rainfall',        label: 'Rainfall' },
+          { type: 'rings',           label: 'Rings' },
+          { type: 'shapePack',       label: 'Shapepack' },
+          { type: 'spiral',          label: 'Spiral' },
+          { type: 'svgDistort',      label: 'SVG Import' },
+          { type: 'terrain',         label: 'Terrain' },
+          { type: 'topo',            label: 'Topo' },
+          { type: 'wavetable',       label: 'Wavetable' },
         ];
         let _algoPickerTimer = null;
         const _buildAlgoPickerPopup = () => {
@@ -10095,6 +10180,20 @@
             this.renderLayers();
           }
         };
+      }
+
+      const moduleTrigger = document.getElementById('generator-module-trigger');
+      if (moduleTrigger) {
+        moduleTrigger.addEventListener('click', () => {
+          const select = getEl('generator-module', { silent: true });
+          if (select?.disabled) return;
+          const menu = document.getElementById('gm-module-menu');
+          if (menu && !menu.classList.contains('hidden')) {
+            menu.classList.add('hidden');
+          } else {
+            this._showModuleMenu();
+          }
+        });
       }
 
       if (bgColor) {
@@ -10634,6 +10733,7 @@
               this.renderLayers?.();
               this._refreshAlgoSubmenuColors?.();
               this._refreshAlgoPickerColors?.();
+              this._syncModuleDisplay?.();
             });
             menu.appendChild(row);
           });
@@ -10812,11 +10912,11 @@
           return;
         }
 
-        if (e.key === 'Alt' && this.activeTool === 'fill' && !this.fillEraseModifierActive) {
+        if (e.key === 'Alt' && (this.activeTool === 'fill' || this.activeTool === 'fill-pattern') && !this.fillEraseModifierActive) {
           e.preventDefault();
           this.fillEraseModifierActive = true;
-          this.fillEraseRestoreTool = 'fill';
-          this.setActiveTool?.('fill-erase', { temporary: true });
+          this.fillEraseRestoreTool = this.activeTool;
+          this.setActiveTool?.(this.activeTool === 'fill-pattern' ? 'fill-pattern-erase' : 'fill-erase', { temporary: true });
           return;
         }
 
@@ -11129,7 +11229,7 @@
           this.fillEraseModifierActive = false;
           const restore = this.fillEraseRestoreTool || 'fill';
           this.fillEraseRestoreTool = null;
-          if (this.activeTool === 'fill-erase') this.setActiveTool?.(restore, { temporary: true });
+          if (this.activeTool === 'fill-erase' || this.activeTool === 'fill-pattern-erase') this.setActiveTool?.(restore, { temporary: true });
         }
       });
 
@@ -11137,21 +11237,24 @@
 
       // ── Layers V8: add dropdown ──────────────────────────────────
       const _ALGO_LIST = [
-        { type: 'wavetable', label: 'Wavetable' },
-        { type: 'flowfield', label: 'Flowfield' },
-        { type: 'hyphae',    label: 'Hyphae' },
-        { type: 'topo',      label: 'Topo' },
-        { type: 'spiral',    label: 'Spiral' },
-        { type: 'rings',     label: 'Rings' },
-        { type: 'grid',      label: 'Grid' },
-        { type: 'boids',     label: 'Boids' },
-        { type: 'attractor', label: 'Attractor' },
-        { type: 'lissajous', label: 'Lissajous' },
-        { type: 'harmonograph', label: 'Harmonograph' },
-        { type: 'rainfall',  label: 'Rainfall' },
-        { type: 'phylla',    label: 'Phylla' },
+        { type: 'attractor',       label: 'Attractor' },
+        { type: 'boids',           label: 'Boids' },
+        { type: 'flowfield',       label: 'Flowfield' },
+        { type: 'grid',            label: 'Grid' },
+        { type: 'harmonograph',    label: 'Harmonograph' },
+        { type: 'hyphae',          label: 'Hyphae' },
+        { type: 'lissajous',       label: 'Lissajous' },
+        { type: 'pattern',         label: 'Pattern' },
         { type: 'petalisDesigner', label: 'Petalis Designer' },
-        { type: 'shapePack', label: 'Shapepack' },
+        { type: 'phylla',          label: 'Phylla' },
+        { type: 'rainfall',        label: 'Rainfall' },
+        { type: 'rings',           label: 'Rings' },
+        { type: 'shapePack',       label: 'Shapepack' },
+        { type: 'spiral',          label: 'Spiral' },
+        { type: 'svgDistort',      label: 'SVG Import' },
+        { type: 'terrain',         label: 'Terrain' },
+        { type: 'topo',            label: 'Topo' },
+        { type: 'wavetable',       label: 'Wavetable' },
       ];
       // Build the algo submenu as a body-fixed element to escape pane stacking context
       let algoSubmenuEl = document.getElementById('lvl-algo-submenu');
@@ -13378,6 +13481,164 @@
       if (sections) sections.style.display = show ? 'none' : '';
     }
 
+    _buildPatternFillPanel(container) {
+      const isErase = this.activeTool === 'fill-pattern-erase';
+      const layer = this.app.engine?.getActiveLayer?.();
+      const PR = window.Vectura?.PatternRegistry;
+      const patterns = PR?.getPatterns?.() || PR?.getAll?.() || [];
+
+      const hdr = document.createElement('p');
+      hdr.className = 'text-[11px] uppercase text-vectura-muted tracking-widest mb-3';
+      hdr.textContent = isErase ? 'Erase Pattern Fill' : 'Pattern Fill';
+      container.appendChild(hdr);
+
+      if (patterns.length) {
+        const browserHdr = document.createElement('p');
+        browserHdr.className = 'text-[11px] uppercase text-vectura-muted tracking-widest mb-2';
+        browserHdr.textContent = 'Pattern';
+        container.appendChild(browserHdr);
+
+        const list = document.createElement('div');
+        list.className = 'flex flex-col gap-0.5 mb-4 overflow-y-auto';
+        list.style.maxHeight = '10rem';
+        const currentId = layer?.params?.patternId || '';
+        patterns.forEach((pat) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'text-xs text-left px-2 py-1 rounded hover:bg-vectura-border transition-colors truncate';
+          btn.style.color = pat.id === currentId ? 'var(--vectura-accent)' : '';
+          btn.style.background = pat.id === currentId ? 'var(--vectura-border)' : '';
+          btn.textContent = pat.name || pat.id;
+          btn.title = pat.name || pat.id;
+          btn.onclick = () => {
+            if (layer) {
+              layer.params = layer.params || {};
+              layer.params.patternId = pat.id;
+              this.storeLayerParams?.(layer);
+              this.app.regen?.();
+            }
+            this._buildPatternFillPanel(container);
+          };
+          list.appendChild(btn);
+        });
+        container.appendChild(list);
+      } else {
+        const msg = document.createElement('p');
+        msg.className = 'text-xs text-vectura-muted mb-4';
+        msg.textContent = 'No patterns registered.';
+        container.appendChild(msg);
+      }
+
+      if (!isErase) {
+        const settingsHdr = document.createElement('p');
+        settingsHdr.className = 'text-[11px] uppercase text-vectura-muted tracking-widest mb-2';
+        settingsHdr.textContent = 'Fill Settings';
+        container.appendChild(settingsHdr);
+
+        this._patternFillSettings = this._patternFillSettings || { fillType: 'hatch', density: 1 };
+
+        const fillTypes = [
+          ['hatch', 'Hatch'], ['crosshatch', 'Crosshatch'], ['wavelines', 'Wavelines'],
+          ['zigzag', 'Zigzag'], ['stipple', 'Stipple'], ['contour', 'Contour'],
+          ['spiral', 'Spiral'], ['radial', 'Radial'],
+        ];
+        const typeRow = document.createElement('div');
+        typeRow.className = 'mb-2';
+        const typeLabel = document.createElement('label');
+        typeLabel.className = 'control-label block mb-1';
+        typeLabel.textContent = 'Fill Type';
+        typeRow.appendChild(typeLabel);
+        const typeSelect = document.createElement('select');
+        typeSelect.className = 'w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:outline-none focus:border-vectura-accent';
+        fillTypes.forEach(([v, label]) => {
+          const o = document.createElement('option');
+          o.value = v; o.textContent = label;
+          typeSelect.appendChild(o);
+        });
+        typeSelect.value = this._patternFillSettings.fillType;
+        typeSelect.onchange = () => { this._patternFillSettings.fillType = typeSelect.value; };
+        typeRow.appendChild(typeSelect);
+        container.appendChild(typeRow);
+
+        const densRow = document.createElement('div');
+        densRow.className = 'mb-2';
+        const densLabel = document.createElement('label');
+        densLabel.className = 'control-label block mb-1';
+        densLabel.textContent = 'Density';
+        densRow.appendChild(densLabel);
+        const densInput = document.createElement('input');
+        densInput.type = 'number'; densInput.step = '0.1'; densInput.min = '0.1'; densInput.max = '10';
+        densInput.className = 'w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:outline-none focus:border-vectura-accent';
+        densInput.value = this._patternFillSettings.density;
+        densInput.oninput = () => { this._patternFillSettings.density = parseFloat(densInput.value) || 1; };
+        densRow.appendChild(densInput);
+        container.appendChild(densRow);
+      }
+    }
+
+    _applyPatternFillFromCanvas({ tool, worldX, worldY }) {
+      const layer = this.app.engine?.getActiveLayer?.();
+      if (!layer || layer.type !== 'pattern') return;
+      const AR = window.Vectura?.AlgorithmRegistry;
+      if (!AR) return;
+      const patternId = layer.params?.patternId;
+      if (!patternId) return;
+      const data = AR.patternGetGroups?.(patternId);
+      if (!data) return;
+      const scale = layer.params?.scale ?? 1;
+      const originX = layer.params?.originX ?? 0;
+      const originY = layer.params?.originY ?? 0;
+      const tileSpacingX = layer.params?.tileSpacingX ?? 0;
+      const tileSpacingY = layer.params?.tileSpacingY ?? 0;
+      const { vbW, vbH } = data;
+      const scaledW = (vbW + tileSpacingX) * scale;
+      const scaledH = (vbH + tileSpacingY) * scale;
+      if (scaledW <= 0 || scaledH <= 0) return;
+      const tileX = (((worldX - originX) % scaledW) + scaledW) % scaledW / scale;
+      const tileY = (((worldY - originY) % scaledH) + scaledH) % scaledH / scale;
+      const hit = AR.patternGetFillTargetsAtPoint?.(patternId, tileX, tileY, { cache: true });
+      const target = hit?.smallest;
+      if (!target) return;
+
+      this.app.pushHistory?.();
+      if (!layer.params.patternFills) layer.params.patternFills = [];
+      const isErase = tool === 'fill-pattern-erase';
+
+      if (isErase) {
+        layer.params.patternFills = layer.params.patternFills.filter(
+          (f) => !this._fillMatchesTarget?.(f, target)
+        );
+      } else {
+        const alreadyFilled = layer.params.patternFills.some(
+          (f) => this._fillMatchesTarget?.(f, target)
+        );
+        if (!alreadyFilled) {
+          const fs = this._patternFillSettings || {};
+          const cloneRegion = (r) => (Array.isArray(r) ? r.map((pt) => ({ ...pt })) : []);
+          const record = {
+            id: `fill-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+            targetIds: [target.id],
+            regions: (target.regions || []).map((r) => cloneRegion(r)),
+            region: cloneRegion(target.outer || target.regions?.[0] || []),
+            fillType: fs.fillType || 'hatch',
+            density: fs.density ?? 1,
+            penId: null,
+            angle: 0,
+            amplitude: 1.0,
+            dotSize: 1.0,
+            padding: 0,
+            shiftX: 0,
+            shiftY: 0,
+          };
+          layer.params.patternFills.push(record);
+        }
+      }
+
+      this.storeLayerParams?.(layer);
+      this.app.regen?.();
+      this.app.renderer?.draw?.();
+    }
+
     buildControls() {
       const restoreLeftPanelScroll = this.captureLeftPanelScrollPosition();
       const container = getEl('dynamic-controls');
@@ -13392,6 +13653,16 @@
       this.destroyInlinePetalisDesigner();
       this.destroyInlinePatternDesigner();
       container.innerHTML = '';
+      if (this.activeTool === 'fill-pattern' || this.activeTool === 'fill-pattern-erase') {
+        this._showWelcomePanel(false);
+        const algoSec = getEl('left-section-algorithm', { silent: true });
+        const algoConfSec = getEl('left-section-algorithm-configuration', { silent: true });
+        if (algoSec) algoSec.style.display = 'none';
+        if (algoConfSec) algoConfSec.style.display = 'none';
+        this._buildPatternFillPanel(container);
+        restoreLeftPanelScroll();
+        return;
+      }
       const layer = this.app.engine.getActiveLayer();
       if (!layer) {
         this._showWelcomePanel(true);
@@ -13435,6 +13706,7 @@
           moduleSelect.value = layer.type;
           moduleSelect.disabled = isStatic;
           moduleSelect.classList.toggle('opacity-60', isStatic);
+          this._syncModuleDisplay();
         }
       }
       if (seed) seed.value = layer.params.seed;

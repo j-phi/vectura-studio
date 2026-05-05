@@ -228,8 +228,13 @@
                 <span id="primary-module-label">Algorithm</span>
                 <button type="button" class="info-btn" data-info="global.algorithm" aria-label="Toggle About">i</button>
               </label>
-              <select id="generator-module"
-                class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent mb-4"></select>
+              <select id="generator-module" class="sr-only" aria-hidden="true" tabindex="-1"></select>
+              <button id="generator-module-trigger" type="button"
+                class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs mb-4 flex items-center gap-2 gm-trigger">
+                <span id="gm-current-icon" class="lvl-algo-sub-ico flex-shrink-0"></span>
+                <span id="gm-current-label" class="flex-1 text-left truncate"></span>
+                <svg class="flex-shrink-0 opacity-40" width="8" height="5" viewBox="0 0 8 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1l3 3 3-3"/></svg>
+              </button>
               <div id="algo-about" class="bg-vectura-bg border border-vectura-border p-3">
                 <div class="flex items-center justify-between mb-2">
                   <div class="flex items-center gap-2">

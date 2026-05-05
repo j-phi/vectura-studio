@@ -359,6 +359,8 @@
       this.onScissor = null;
       this.onDirectEditStart = null;
       this.onDirectEditCommit = null;
+      this.onPatternFill = null;
+      this.patternFillPreviewPolygon = null;
       this.isLayerLocked = null;
       this.lastM = { x: 0, y: 0 };
       this.snap = null;
@@ -385,6 +387,7 @@
       }
 
       new ResizeObserver(() => this.resize()).observe(parent);
+      this.canvas.addEventListener('pointerenter', () => this.updateCursor());
       this.canvas.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
       this.canvas.addEventListener('dblclick', (e) => this._handleAlgoDblClick(e));
       this._boundMove = (e) => this.move(e);
@@ -463,7 +466,10 @@
       }
       this.activeTool = tool;
       this.updateCursor();
-      if (tool !== 'fill' && tool !== 'fill-erase') this.hideFillLoupe?.();
+      if (!['fill', 'fill-erase', 'fill-pattern', 'fill-pattern-erase'].includes(tool)) {
+        this.hideFillLoupe?.();
+        this.patternFillPreviewPolygon = null;
+      }
       this.draw();
     }
 
@@ -544,26 +550,16 @@
     ensureFillLoupe() {
       if (this.fillLoupeEl) return this.fillLoupeEl;
       if (!this.canvas) return null;
-      const parent = this.canvas.parentElement;
-      if (!parent) return null;
       const root = document.createElement('div');
       root.className = 'fill-loupe';
       root.setAttribute('aria-hidden', 'true');
-      const bucket = document.createElement('div');
-      bucket.className = 'fill-loupe-bucket';
-      bucket.innerHTML = window.Vectura?.Icons?.cursor?.bucket?.() || '';
       const loupe = document.createElement('canvas');
       loupe.className = 'fill-loupe-magnifier';
       loupe.width = 96;
       loupe.height = 96;
-      root.appendChild(bucket);
       root.appendChild(loupe);
-      // Parent must be position: relative for absolute child; fallback to body.
-      const cs = window.getComputedStyle(parent);
-      if (cs.position === 'static') document.body.appendChild(root);
-      else parent.appendChild(root);
+      document.body.appendChild(root);
       this.fillLoupeEl = root;
-      this.fillLoupeBucketEl = bucket;
       this.fillLoupeMagEl = loupe;
       this.fillLoupeMagCtx = loupe.getContext('2d');
       return root;
@@ -574,7 +570,8 @@
     }
 
     showFillLoupe(clientX, clientY) {
-      if (this.activeTool !== 'fill' && this.activeTool !== 'fill-erase') {
+      const fillTools = ['fill', 'fill-erase', 'fill-pattern', 'fill-pattern-erase'];
+      if (!fillTools.includes(this.activeTool)) {
         this.hideFillLoupe();
         return;
       }
@@ -591,15 +588,9 @@
         return;
       }
       root.style.display = 'block';
-      // Position root at the document-relative cursor coordinate.
-      // The bucket icon's hotspot (the spout dot) sits at (23.5, 23.5) in its
-      // 28x28 viewBox, so offset the root so that point aligns with the cursor.
-      const HOT_X = 23.5;
-      const HOT_Y = 23.5;
-      const docX = clientX + window.scrollX;
-      const docY = clientY + window.scrollY;
-      root.style.left = `${docX - HOT_X}px`;
-      root.style.top = `${docY - HOT_Y}px`;
+      // position: fixed so clientX/clientY map directly — no parent-offset confusion
+      root.style.left = `${clientX}px`;
+      root.style.top = `${clientY}px`;
 
       // Render the magnifier with content sampled around the cursor.
       const ctx = this.fillLoupeMagCtx;
@@ -637,12 +628,11 @@
         ctx.restore();
       }
 
-      // Auto-position the magnifier into the canvas-side quadrant that fits
-      // best. The bucket sits at the cursor; the magnifier is placed in the
-      // quadrant relative to the bucket.
+      // Place the magnifier in the canvas quadrant with the most space.
+      // Root is at the cursor (0,0 = cursor), so offsets are from that point.
       const magW = this.fillLoupeMagEl?.width || 96;
       const magH = this.fillLoupeMagEl?.height || 96;
-      const GAP = 14;
+      const GAP = 18;
       const spaceRight = canvasRect.right - clientX;
       const spaceLeft = clientX - canvasRect.left;
       const spaceBelow = canvasRect.bottom - clientY;
@@ -651,18 +641,9 @@
       const placeBelow = spaceBelow >= magH + GAP || spaceBelow >= spaceAbove;
       const magEl = this.fillLoupeMagEl;
       if (magEl) {
-        if (placeRight) {
-          magEl.style.left = `${HOT_X + GAP}px`;
-          magEl.style.right = '';
-        } else {
-          magEl.style.left = `${HOT_X - magW - GAP}px`;
-          magEl.style.right = '';
-        }
-        if (placeBelow) {
-          magEl.style.top = `${HOT_Y + GAP}px`;
-        } else {
-          magEl.style.top = `${HOT_Y - magH - GAP}px`;
-        }
+        magEl.style.left = placeRight ? `${GAP}px` : `${-magW - GAP}px`;
+        magEl.style.right = '';
+        magEl.style.top = placeBelow ? `${GAP}px` : `${-magH - GAP}px`;
       }
     }
 
@@ -699,16 +680,19 @@
         this.setCanvasCursor('crosshair', 'scissor');
         return;
       }
-      if (this.activeTool === 'fill' || this.activeTool === 'fill-erase') {
-        this.setCanvasCursor('none', 'fill');
+      if (this.activeTool === 'fill' || this.activeTool === 'fill-erase' ||
+          this.activeTool === 'fill-pattern' || this.activeTool === 'fill-pattern-erase') {
+        this.setCanvasCursor(this.cursorDataUrl('bucket', 23, 23, 'crosshair'), 'fill');
         return;
       }
       if (this.activeTool === 'direct') {
-        this.setCanvasCursor(this.cursorDataUrl('outline', 2, 2, 'auto'), 'direct');
+        const isDarkDirect = document.documentElement.dataset.theme === 'dark';
+        this.setCanvasCursor(this.cursorDataUrl(isDarkDirect ? 'outline' : 'filled', 3, 3, 'auto'), 'direct');
         return;
       }
       if (this.activeTool === 'select') {
-        this.setCanvasCursor(this.cursorDataUrl('filled', 2, 2, 'auto'), 'select');
+        const isDark = document.documentElement.dataset.theme === 'dark';
+        this.setCanvasCursor(this.cursorDataUrl(isDark ? 'outline' : 'filled', 3, 3, 'auto'), 'select');
         return;
       }
       this.setCanvasCursor('crosshair');
@@ -2571,6 +2555,7 @@
         drawHelperOverlays();
         drawModifierGuides();
         this.drawMaskPreviewOverlay();
+        if (this.patternFillPreviewPolygon) this.drawPatternFillPreview();
         this.ctx.restore();
       } else {
         this.ctx.save();
@@ -2583,6 +2568,7 @@
         drawHelperOverlays();
         drawModifierGuides();
         this.drawMaskPreviewOverlay();
+        if (this.patternFillPreviewPolygon) this.drawPatternFillPreview();
         this.ctx.restore();
 
         const outsideAlpha = SETTINGS.outsideOpacity ?? 0.5;
@@ -2949,6 +2935,15 @@
         return;
       }
 
+      if (this.activeTool === 'fill-pattern' || this.activeTool === 'fill-pattern-erase') {
+        const poly = this._computeFillPreviewPolygon(world.x, world.y);
+        if (poly && this.onPatternFill) {
+          this.onPatternFill({ tool: this.activeTool, polygon: poly, worldX: world.x, worldY: world.y });
+        }
+        if (e.cancelable) e.preventDefault();
+        return;
+      }
+
       this._pendingSingleSelect = null;
       if (allowSelection) {
         if (this.activeTool === 'direct') {
@@ -2994,8 +2989,6 @@
           this.draw();
           return;
         }
-        const activeLayer = this.engine.getActiveLayer ? this.engine.getActiveLayer() : null;
-        if (!activeLayer) return;
         const selectedLayers = this.getSelectedLayers();
         const selectionBounds = this.getSelectionBounds(selectedLayers);
         if (this.activeTool === 'select' && selectedLayers.length === 1 && !this.isLayerLocked?.(selectedLayers[0].id)) {
@@ -3114,6 +3107,12 @@
       if (!this.ready) return;
       if (this.activeTool === 'fill' || this.activeTool === 'fill-erase') {
         this.showFillLoupe(e.clientX, e.clientY);
+      } else if (this.activeTool === 'fill-pattern' || this.activeTool === 'fill-pattern-erase') {
+        const rect = this.canvas.getBoundingClientRect();
+        const world = this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+        this.patternFillPreviewPolygon = this._computeFillPreviewPolygon(world.x, world.y);
+        this.showFillLoupe(e.clientX, e.clientY);
+        this.draw();
       }
       if (this.isTouchPointer(e)) this.updateTouchPointer(e);
       if (this.touchGesture) {
@@ -4032,16 +4031,109 @@
       this.draw();
     }
 
+    _computeFillPreviewPolygon(worldX, worldY) {
+      const layer = this.engine?.getActiveLayer?.();
+      if (!layer) return null;
+      const AR = window.Vectura?.AlgorithmRegistry;
+      if (!AR) return null;
+
+      if (layer.type === 'pattern') {
+        const patternId = layer.params?.patternId;
+        if (!patternId) return null;
+        const data = AR.patternGetGroups?.(patternId);
+        if (!data) return null;
+        const { vbW, vbH } = data;
+        const scale = layer.params?.scale ?? 1;
+        const originX = layer.params?.originX ?? 0;
+        const originY = layer.params?.originY ?? 0;
+        const tileSpacingX = layer.params?.tileSpacingX ?? 0;
+        const tileSpacingY = layer.params?.tileSpacingY ?? 0;
+        const scaledW = (vbW + tileSpacingX) * scale;
+        const scaledH = (vbH + tileSpacingY) * scale;
+        if (scaledW <= 0 || scaledH <= 0) return null;
+        const tileX = (((worldX - originX) % scaledW) + scaledW) % scaledW / scale;
+        const tileY = (((worldY - originY) % scaledH) + scaledH) % scaledH / scale;
+        const hit = AR.patternGetFillTargetsAtPoint?.(patternId, tileX, tileY, { cache: true });
+        const target = hit?.smallest;
+        if (!target) return null;
+        const tilePoly = target.outer;
+        if (!Array.isArray(tilePoly) || !tilePoly.length) return null;
+        const tileCol = Math.floor((worldX - originX) / scaledW);
+        const tileRow = Math.floor((worldY - originY) / scaledH);
+        const tileOriginX = originX + tileCol * scaledW;
+        const tileOriginY = originY + tileRow * scaledH;
+        return tilePoly.map((pt) => ({ x: tileOriginX + pt.x * scale, y: tileOriginY + pt.y * scale }));
+      }
+
+      const paths = this.engine.getDisplayPaths?.(layer) || layer.paths || [];
+      let best = null;
+      let bestArea = Infinity;
+      for (const path of paths) {
+        if (!Array.isArray(path) || path.length < 3) continue;
+        const first = path[0]; const last = path[path.length - 1];
+        if (Math.hypot(first.x - last.x, first.y - last.y) > 0.5) continue;
+        if (!AR._polyContainsPoint?.(path, worldX, worldY)) continue;
+        let area = 0;
+        for (let i = 0, j = path.length - 1; i < path.length; j = i++) {
+          area += (path[j].x + path[i].x) * (path[j].y - path[i].y);
+        }
+        area = Math.abs(area) / 2;
+        if (area < bestArea) { bestArea = area; best = path; }
+      }
+      return best;
+    }
+
+    drawPatternFillPreview() {
+      const poly = this.patternFillPreviewPolygon;
+      if (!Array.isArray(poly) || poly.length < 3) return;
+      const isErase = this.activeTool === 'fill-pattern-erase';
+      this.ctx.save();
+      this.ctx.beginPath();
+      this.tracePolygonPath(poly);
+      this.ctx.fillStyle = isErase ? 'rgba(239,68,68,0.2)' : 'rgba(59,130,246,0.2)';
+      this.ctx.fill();
+      this.ctx.strokeStyle = isErase ? 'rgba(239,68,68,0.65)' : 'rgba(59,130,246,0.65)';
+      this.ctx.lineWidth = 1.5 / this.scale;
+      this.ctx.setLineDash([3 / this.scale, 2 / this.scale]);
+      this.ctx.stroke();
+      this.ctx.setLineDash([]);
+      this.ctx.restore();
+    }
+
     findLayerAtPoint(world, includeLocked = false) {
       const layers = this.engine.layers.slice().reverse();
-      return (
-        layers.find((layer) => {
-          if (!layer.visible || (layer.mask?.enabled && layer.mask?.hideLayer)) return false;
-          if (!includeLocked && this.isLayerLocked?.(layer.id)) return false;
-          const bounds = this.getLayerBounds(layer);
-          return bounds ? this.pointInBounds(world, bounds) : false;
-        }) || null
-      );
+      let best = null;
+      let bestDist = Infinity;
+      layers.forEach((layer) => {
+        if (!layer.visible || layer.isGroup || (layer.mask?.enabled && layer.mask?.hideLayer)) return;
+        if (!includeLocked && this.isLayerLocked?.(layer.id)) return;
+        const stroke = layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
+        const tol = Math.max(5 / (this.scale || 1), stroke * 2);
+        const tolSq = tol * tol;
+        this.getInteractionPaths(layer).forEach((path) => {
+          if (path && path.meta && path.meta.kind === 'circle') {
+            const cx = path.meta.cx ?? path.meta.x ?? 0;
+            const cy = path.meta.cy ?? path.meta.y ?? 0;
+            const r = path.meta.r ?? path.meta.rx ?? 0;
+            const dist = Math.abs(Math.hypot(world.x - cx, world.y - cy) - r);
+            if (dist * dist <= tolSq && dist < bestDist) {
+              bestDist = dist;
+              best = layer;
+            }
+            return;
+          }
+          if (!Array.isArray(path) || path.length < 2) return;
+          for (let i = 0; i < path.length - 1; i++) {
+            const d = this.distanceToSegmentSq(world, path[i], path[i + 1]);
+            if (d <= tolSq && d < bestDist) {
+              bestDist = d;
+              best = layer;
+              break;
+            }
+          }
+        });
+      });
+      return best;
     }
 
     _getMaskGroupLayers(layer) {
@@ -5074,6 +5166,10 @@
         this.setCanvasCursor('crosshair');
         return;
       }
+      if (this.activeTool === 'fill' || this.activeTool === 'fill-erase' ||
+          this.activeTool === 'fill-pattern' || this.activeTool === 'fill-pattern-erase') {
+        return;
+      }
       const rect = this.canvas.getBoundingClientRect();
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
@@ -5090,7 +5186,12 @@
           return;
         }
         const hit = this.findPathHitAtPoint(world);
-        this.setCanvasCursor(hit ? 'move' : 'crosshair');
+        if (hit) {
+          this.setCanvasCursor('move');
+        } else {
+          const isDarkDirect = document.documentElement.dataset.theme === 'dark';
+          this.setCanvasCursor(this.cursorDataUrl(isDarkDirect ? 'outline' : 'filled', 3, 3, 'auto'), 'direct');
+        }
         return;
       }
       if (this.activeTool === 'pen' && this.penMode !== 'draw' && !modifiers.meta) {
@@ -5127,7 +5228,12 @@
       }
       const activeLayers = this.getSelectedLayers();
       if (!activeLayers.length) {
-        this.setCanvasCursor('crosshair');
+        if (this.activeTool === 'select') {
+          const isDark = document.documentElement.dataset.theme === 'dark';
+          this.setCanvasCursor(this.cursorDataUrl(isDark ? 'outline' : 'filled', 3, 3, 'auto'), 'select');
+        } else {
+          this.setCanvasCursor('crosshair');
+        }
         return;
       }
       const selectedPrimitiveShape = this.activeTool === 'select' ? this.getSelectedPrimitiveShapeLayer() : null;
@@ -5139,7 +5245,13 @@
         }
       }
       const bounds = this.getSelectionBounds(activeLayers, this.tempTransform);
-      if (!bounds) return;
+      if (!bounds) {
+        if (this.activeTool === 'select') {
+          const isDark = document.documentElement.dataset.theme === 'dark';
+          this.setCanvasCursor(this.cursorDataUrl(isDark ? 'outline' : 'filled', 3, 3, 'auto'), 'select');
+        }
+        return;
+      }
       const handle = this.hitHandle(sx, sy, bounds);
       if (handle) {
         this.setCanvasCursor(this.handleCursor(handle));
@@ -5153,7 +5265,12 @@
         this.setCanvasCursor(activeLayers.length > 1 ? 'grab' : 'move');
         return;
       }
-      this.setCanvasCursor('crosshair');
+      if (this.activeTool === 'select') {
+        const isDark = document.documentElement.dataset.theme === 'dark';
+        this.setCanvasCursor(this.cursorDataUrl(isDark ? 'outline' : 'filled', 3, 3, 'auto'), 'select');
+      } else {
+        this.setCanvasCursor('crosshair');
+      }
     }
 
     updateTransformInputs(layer) {
