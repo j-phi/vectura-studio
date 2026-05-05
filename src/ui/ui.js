@@ -10650,6 +10650,7 @@
               _buildLBPMenu();
               menu.classList.add('hidden');
               this.renderLayers?.();
+              this._refreshAlgoSubmenuColors?.();
             });
             menu.appendChild(row);
           });
@@ -11170,10 +11171,26 @@
       algoSubmenuEl = document.createElement('div');
       algoSubmenuEl.id = 'lvl-algo-submenu';
       algoSubmenuEl.className = 'lvl-algo-submenu';
+      const _algoMenuColor = (type) => {
+        const pid = SETTINGS.layerBarPaletteId || 'prism';
+        const palettes = window.Vectura.LAYER_PALETTES || [];
+        const pal = palettes.find((p) => p.id === pid) || palettes.find((p) => p.id === 'prism');
+        const c = pal?.colors;
+        if (!c) return 'currentColor';
+        return c[type] || c._default || 'currentColor';
+      };
       algoSubmenuEl.innerHTML = _ALGO_LIST.map(({ type, label }) =>
         `<div class="lvl-algo-sub-item" data-add="algo" data-algo-type="${type}">` +
-        `<span class="lvl-algo-sub-ico">${(this._LVL_I[type] ?? this._LVL_I.grid)?.() ?? ''}</span>${label}</div>`
+        `<span class="lvl-algo-sub-ico" style="color:${_algoMenuColor(type)}">${(this._LVL_I[type] ?? this._LVL_I.grid)?.() ?? ''}</span>${label}</div>`
       ).join('');
+      this._refreshAlgoSubmenuColors = () => {
+        if (!algoSubmenuEl) return;
+        algoSubmenuEl.querySelectorAll('.lvl-algo-sub-item').forEach((item) => {
+          const type = item.getAttribute('data-algo-type');
+          const ico = item.querySelector('.lvl-algo-sub-ico');
+          if (type && ico) ico.style.color = _algoMenuColor(type);
+        });
+      };
       document.body.appendChild(algoSubmenuEl);
 
       // Position and show/hide the submenu on hover of the parent item

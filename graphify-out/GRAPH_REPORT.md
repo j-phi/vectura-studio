@@ -1,7 +1,7 @@
 # Graph Report - /Users/jayphi/Documents/github/vectura-studio  (2026-05-05)
 
 ## Corpus Check
-- 127 files · ~2,318,565 words
+- 127 files · ~2,318,716 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -816,11 +816,11 @@ Nodes (1): City — Isometric aerial city of skyscrapers rendered entirely in de
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `sort()` connect `Community 12` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 6`, `Community 7`, `Community 10`, `Community 11`, `Community 15`, `Community 18`, `Community 19`?**
-  _High betweenness centrality (0.136) - this node is a cross-community bridge._
+  _High betweenness centrality (0.150) - this node is a cross-community bridge._
 - **Why does `Renderer` connect `Community 0` to `Community 8`, `Community 1`, `Community 2`?**
-  _High betweenness centrality (0.107) - this node is a cross-community bridge._
+  _High betweenness centrality (0.117) - this node is a cross-community bridge._
 - **Why does `UI` connect `Community 1` to `Community 8`, `Community 2`, `Community 3`, `Community 7`?**
-  _High betweenness centrality (0.085) - this node is a cross-community bridge._
+  _High betweenness centrality (0.089) - this node is a cross-community bridge._
 - **Are the 28 inferred relationships involving `sort()` (e.g. with `classifyIsometricPaths()` and `classifyDesignerAssignments()`) actually correct?**
   _`sort()` has 28 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `Boids Algorithm`, `Shape Pack Algorithm`, `Lissajous Algorithm` to the rest of the system?**
