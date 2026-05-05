@@ -173,7 +173,7 @@
     return /^[A-Za-z_]/.test(sanitized) ? sanitized : `${fallback}_${sanitized}`;
   };
 
-  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  const { clamp, lerp } = window.Vectura.AlgorithmUtils;
   const roundToStep = (value, step) => (step ? Math.round(value / step) * step : value);
   const DISPLAY_PRECISION = 2;
   const normalizeDocumentUnits = UnitUtils.normalizeDocumentUnits || ((value) => (`${value || ''}`.trim().toLowerCase() === 'imperial' ? 'imperial' : 'metric'));
@@ -228,7 +228,6 @@
     const t = (value - inMin) / (inMax - inMin);
     return outMin + (outMax - outMin) * t;
   };
-  const lerp = (a, b, t) => a + (b - a) * t;
   const simplifyPath = GeometryUtils?.simplifyPath || ((path) => path);
   const joinNearbyPaths = OptimizationUtils?.joinNearbyPaths || ((paths) => paths);
   const createModifierState = Modifiers.createModifierState || ((type) => ({ type, enabled: true, guidesVisible: true, guidesLocked: false, mirrors: [] }));
@@ -6484,6 +6483,7 @@
       this.scissorMode = SETTINGS.scissorMode || 'line';
       this.selectionMode = SETTINGS.selectionMode || 'rect';
       this.penMode = SETTINGS.penMode || 'draw';
+      this.shapeMode = SETTINGS.shapeMode || 'rect';
       this.spacePanActive = false;
       this.previousTool = this.activeTool;
       this.harmonographPlotterState = null;
@@ -8360,7 +8360,7 @@
       const engineInsert = insertIndex === -1 ? remaining.length : insertIndex;
       const moveEngineOrder = moveIds.slice().reverse().map((id) => map.get(id)).filter(Boolean);
       remaining.splice(engineInsert, 0, ...moveEngineOrder);
-      this.app.engine.layers = remaining;
+      this.app.engine.reorderLayers(remaining);
       this.normalizeGroupOrder();
       this.app.computeDisplayGeometry();
 
@@ -8368,7 +8368,7 @@
         const ids = moveIds.slice();
         const nextPrimary = ids.includes(primaryId) ? primaryId : ids[ids.length - 1] || parentId;
         this.app.setSelection(ids.length ? ids : [parentId], nextPrimary);
-        this.app.engine.activeLayerId = nextPrimary || parentId;
+        this.app.engine.setActiveLayerId(nextPrimary || parentId || null);
       }
 
       return moveIds.map((id) => map.get(id)).filter(Boolean);
@@ -8390,7 +8390,8 @@
         if (layer) layer.parentId = null;
       });
       if (Array.isArray(nextEngineOrder) && nextEngineOrder.length) {
-        this.app.engine.layers = nextEngineOrder.map((id) => map.get(id)).filter(Boolean);
+        const reordered = nextEngineOrder.map((id) => map.get(id)).filter(Boolean);
+        this.app.engine.reorderLayers(reordered);
       }
       this.normalizeGroupOrder();
       this.app.computeDisplayGeometry();
@@ -8399,7 +8400,7 @@
         const ids = moveIds.slice();
         const nextPrimary = ids.includes(primaryId) ? primaryId : ids[ids.length - 1] || null;
         this.app.setSelection(ids, nextPrimary);
-        this.app.engine.activeLayerId = nextPrimary;
+        this.app.engine.setActiveLayerId(nextPrimary || null);
       }
 
       return moveIds.map((id) => map.get(id)).filter(Boolean);
@@ -8413,7 +8414,7 @@
         this.assignLayersToParent(id, selectedLayers);
       }
       this.app.setSelection([id], id);
-      this.app.engine.activeLayerId = id;
+      this.app.engine.setActiveLayerId(id);
       this.renderLayers();
       this.buildControls();
       this.updateFormula();
@@ -9568,6 +9569,7 @@
       const selectButtons = Array.from(toolbar.querySelectorAll('.tool-sub-btn[data-select]'));
       const penButtons = Array.from(toolbar.querySelectorAll('.tool-sub-btn[data-pen]'));
       const fillButtons = Array.from(toolbar.querySelectorAll('.tool-sub-btn[data-fill]'));
+      const shapeButtons = Array.from(toolbar.querySelectorAll('.tool-sub-btn[data-shape]'));
       const scissorButton = toolbar.querySelector('.tool-btn[data-tool="scissor"]');
       const scissorMenu = toolbar.querySelector('.tool-submenu[aria-label="Scissor subtools"]');
       const selectButton = toolbar.querySelector('.tool-btn[data-tool="select"]');
@@ -9576,10 +9578,13 @@
       const penMenu = toolbar.querySelector('.tool-submenu[data-menu="pen"]');
       const fillButton = toolbar.querySelector('.tool-btn[data-tool="fill"]');
       const fillMenu = toolbar.querySelector('.tool-submenu[aria-label="Fill subtools"]');
+      const shapeButton = toolbar.querySelector('.tool-btn[data-tool="shape"]');
+      const shapeMenu = toolbar.querySelector('.tool-submenu[data-menu="shape"]');
       const lightSourceBtn = getEl('btn-light-source');
       const selectionModes = selectButtons.map((btn) => btn.dataset.select).filter(Boolean);
       const scissorModes = scissorButtons.map((btn) => btn.dataset.scissor).filter(Boolean);
       const penModes = penButtons.map((btn) => btn.dataset.pen).filter(Boolean);
+      const shapeToolFromMode = (mode) => `shape-${mode}`;
 
       const updateToolIcon = (tool, mode) => {
         const button = toolbar.querySelector(`.tool-btn[data-tool="${tool}"]`);
@@ -9591,6 +9596,8 @@
           sourceBtn = scissorButtons.find((btn) => btn.dataset.scissor === mode);
         } else if (tool === 'pen') {
           sourceBtn = penButtons.find((btn) => btn.dataset.pen === mode);
+        } else if (tool === 'shape') {
+          sourceBtn = shapeButtons.find((btn) => btn.dataset.shape === mode);
         }
         const sourceSvg = sourceBtn?.querySelector('svg');
         if (!icon || !sourceSvg) return;
@@ -9600,10 +9607,14 @@
 
       const syncButtons = () => {
         const fillActive = this.activeTool === 'fill' || this.activeTool === 'fill-erase';
+        const shapeActive = `${this.activeTool}`.startsWith('shape-');
         toolButtons.forEach((btn) => {
           if (btn.dataset.tool === 'fill') {
             btn.classList.toggle('active', fillActive);
             btn.setAttribute('aria-pressed', fillActive ? 'true' : 'false');
+          } else if (btn.dataset.tool === 'shape') {
+            btn.classList.toggle('active', shapeActive);
+            btn.setAttribute('aria-pressed', shapeActive ? 'true' : 'false');
           } else {
             btn.classList.toggle('active', btn.dataset.tool === this.activeTool);
             btn.setAttribute('aria-pressed', btn.dataset.tool === this.activeTool ? 'true' : 'false');
@@ -9621,6 +9632,9 @@
         fillButtons.forEach((btn) => {
           btn.classList.toggle('active', btn.dataset.fill === 'erase' && this.activeTool === 'fill-erase');
         });
+        shapeButtons.forEach((btn) => {
+          btn.classList.toggle('active', btn.dataset.shape === this.shapeMode && shapeActive);
+        });
       };
 
       this.setActiveTool = (tool, options = {}) => {
@@ -9631,7 +9645,21 @@
           SETTINGS.activeTool = tool;
           this.previousTool = tool;
         }
+        if (`${tool}`.startsWith('shape-')) {
+          const mode = tool.slice('shape-'.length);
+          this.shapeMode = mode;
+          if (!temporary) SETTINGS.shapeMode = mode;
+          updateToolIcon('shape', mode);
+        }
         if (this.app.renderer?.setTool) this.app.renderer.setTool(tool);
+        syncButtons();
+      };
+
+      this.setShapeMode = (mode) => {
+        if (!mode) return;
+        this.shapeMode = mode;
+        SETTINGS.shapeMode = mode;
+        updateToolIcon('shape', mode);
         syncButtons();
       };
 
@@ -9691,6 +9719,7 @@
 
       toolButtons.forEach((btn) => {
         if (btn.dataset.tool === 'scissor') return;
+        if (btn.dataset.tool === 'shape') return;
         btn.onclick = () => {
           const tool = btn.dataset.tool;
           this.setActiveTool(tool);
@@ -9715,6 +9744,12 @@
           const mode = btn.dataset.pen;
           this.setActiveTool('pen');
           this.setPenMode(mode);
+        };
+      });
+      shapeButtons.forEach((btn) => {
+        btn.onclick = () => {
+          const mode = btn.dataset.shape;
+          this.setActiveTool(shapeToolFromMode(mode));
         };
       });
 
@@ -9830,6 +9865,17 @@
         },
       });
 
+      initSubtoolMenu({
+        button: shapeButton,
+        menu: shapeMenu,
+        buttons: shapeButtons,
+        onActivate: () => this.setActiveTool(shapeToolFromMode(this.shapeMode)),
+        onSelect: (btn) => {
+          const mode = btn.dataset.shape;
+          this.setActiveTool(shapeToolFromMode(mode));
+        },
+      });
+
       if (lightSourceBtn) {
         lightSourceBtn.onclick = () => this.startLightSourcePlacement();
       }
@@ -9838,6 +9884,7 @@
       this.setScissorMode(this.scissorMode);
       this.setSelectionMode(this.selectionMode);
       this.setPenMode(this.penMode);
+      this.setShapeMode(this.shapeMode);
       syncButtons();
 
       if (this.app.renderer) {
@@ -9912,8 +9959,15 @@
             el.className = 'algo-draw-picker hidden';
             el.innerHTML = _ALGO_PICK_LIST.map(({ type, label }) =>
               `<div class="algo-pick-item" data-algo-type="${type}">` +
-              `<span class="lvl-algo-sub-ico">${(this._LVL_I?.[type] ?? this._LVL_I?.grid)?.() ?? ''}</span>${label}</div>`
+              `<span class="lvl-algo-sub-ico" style="color:${this._algoMenuColor?.(type) ?? 'currentColor'}">${(this._LVL_I?.[type] ?? this._LVL_I?.grid)?.() ?? ''}</span>${label}</div>`
             ).join('');
+            this._refreshAlgoPickerColors = () => {
+              el.querySelectorAll('.algo-pick-item').forEach((item) => {
+                const type = item.getAttribute('data-algo-type');
+                const ico = item.querySelector('.lvl-algo-sub-ico');
+                if (type && ico) ico.style.color = this._algoMenuColor?.(type) ?? 'currentColor';
+              });
+            };
             el.addEventListener('click', (ev) => {
               const picked = ev.target.closest('.algo-pick-item');
               if (!picked) return;
@@ -10651,6 +10705,7 @@
               menu.classList.add('hidden');
               this.renderLayers?.();
               this._refreshAlgoSubmenuColors?.();
+              this._refreshAlgoPickerColors?.();
             });
             menu.appendChild(row);
           });
@@ -10897,6 +10952,11 @@
           if (key === 'y') {
             e.preventDefault();
             this.setActiveTool?.('shape-polygon');
+            return;
+          }
+          if (key === 'u') {
+            e.preventDefault();
+            this.setActiveTool?.('shape-line');
             return;
           }
           if (key === 'f') {
@@ -11171,7 +11231,7 @@
       algoSubmenuEl = document.createElement('div');
       algoSubmenuEl.id = 'lvl-algo-submenu';
       algoSubmenuEl.className = 'lvl-algo-submenu';
-      const _algoMenuColor = (type) => {
+      this._algoMenuColor = (type) => {
         const pid = SETTINGS.layerBarPaletteId || 'prism';
         const palettes = window.Vectura.LAYER_PALETTES || [];
         const pal = palettes.find((p) => p.id === pid) || palettes.find((p) => p.id === 'prism');
@@ -11181,14 +11241,14 @@
       };
       algoSubmenuEl.innerHTML = _ALGO_LIST.map(({ type, label }) =>
         `<div class="lvl-algo-sub-item" data-add="algo" data-algo-type="${type}">` +
-        `<span class="lvl-algo-sub-ico" style="color:${_algoMenuColor(type)}">${(this._LVL_I[type] ?? this._LVL_I.grid)?.() ?? ''}</span>${label}</div>`
+        `<span class="lvl-algo-sub-ico" style="color:${this._algoMenuColor(type)}">${(this._LVL_I[type] ?? this._LVL_I.grid)?.() ?? ''}</span>${label}</div>`
       ).join('');
       this._refreshAlgoSubmenuColors = () => {
         if (!algoSubmenuEl) return;
         algoSubmenuEl.querySelectorAll('.lvl-algo-sub-item').forEach((item) => {
           const type = item.getAttribute('data-algo-type');
           const ico = item.querySelector('.lvl-algo-sub-ico');
-          if (type && ico) ico.style.color = _algoMenuColor(type);
+          if (type && ico) ico.style.color = this._algoMenuColor(type);
         });
       };
       document.body.appendChild(algoSubmenuEl);
