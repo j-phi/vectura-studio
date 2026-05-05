@@ -11481,9 +11481,6 @@
         this.renderLayers(); this.app.render();
       };
 
-      const isCoarseTouch = typeof window !== 'undefined' &&
-        !!(window.matchMedia?.('(pointer: coarse)').matches || navigator.maxTouchPoints > 1);
-
       const _bindCardTouchDrag = (el, layer) => {
         let holdTimer = null;
         let isDragging = false;
@@ -11496,6 +11493,7 @@
 
         const finishDrag = (commit) => {
           cancelHold();
+          el.draggable = true;
           if (isDragging) {
             if (commit && lastTargetId && lastPos) _lvlDoMove(layer.id, lastTargetId, lastPos);
             el.classList.remove('dragging');
@@ -11512,6 +11510,9 @@
 
         el.addEventListener('touchstart', (e) => {
           if (e.touches.length !== 1) { finishDrag(false); return; }
+          // Disable native drag immediately so the browser (Safari, Brave, Chrome)
+          // does not intercept the touch as an element drag gesture.
+          el.draggable = false;
           const t = e.touches[0];
           startTouchId = t.identifier;
           startY = t.clientY;
@@ -11562,7 +11563,6 @@
       };
 
       const bindCardDrag = (el, layer) => {
-        if (isCoarseTouch) { _bindCardTouchDrag(el, layer); return; }
         el.draggable = true;
         el.addEventListener('dragstart', (e) => {
           _lvlDRAG.id = layer.id;
@@ -11575,6 +11575,7 @@
           _lvlClrAllDrop();
           setHint(null);
         });
+        _bindCardTouchDrag(el, layer);
       };
 
       const addCardDropZone = (el, layer) => {

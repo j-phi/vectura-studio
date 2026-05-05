@@ -34,6 +34,8 @@ npm run profiles:bundle        # rebuild Petal profile library from JSON
 
 Node 18+ required. `package.json` is the canonical version source — run `version:sync` whenever the version changes.
 
+**Versioning:** Use plain semver patch increments — `0.8.9` → `0.8.10` → `0.8.11`. Never reset the patch digit after 9; the third number is unbounded (no rollover to a new minor).
+
 ## Testing Matrix
 
 | Change class | Minimum checks |
