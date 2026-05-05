@@ -74,13 +74,12 @@
   const openColorPickerAnchoredTo = (colorInput, triggerEl, { title = 'Color', uiInstance = null } = {}) => {
     if (!colorInput || !triggerEl) return;
 
-    // On touch-primary devices where showPicker() isn't available (pre-Safari 16.4),
-    // programmatic .click() on a hidden input won't open the OS color picker. Show
-    // the modal instead so mobile users always get a usable color-editing surface.
+    // On touch devices, programmatic showPicker() on a hidden proxy input is unreliable
+    // (iOS requires the element to be on-screen and the call inside a synchronous user
+    // gesture, and older iOS has no showPicker() at all). Always show the color modal
+    // instead — it provides a visible input[type=color] + hex field that works everywhere.
     const isTouchPrimary = 'ontouchstart' in window || navigator.maxTouchPoints > 1;
-    const probeEl = document.createElement('input');
-    probeEl.type = 'color';
-    if (isTouchPrimary && typeof probeEl.showPicker !== 'function' && uiInstance) {
+    if (isTouchPrimary && uiInstance) {
       uiInstance.openColorModal({
         title,
         value: colorInput.value || '#000000',

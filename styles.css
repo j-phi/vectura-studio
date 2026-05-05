@@ -4105,6 +4105,11 @@ input[type='color']::-webkit-color-swatch {
   .lvl-card, .lvl-card-inner, .lvl-grp-hdr {
     touch-action: manipulation;
   }
+  /* Ensure buttons reliably receive tap events even when an ancestor has user-select: none.
+     Without this, iOS may not deliver click events on buttons inside a user-select:none tree. */
+  button {
+    touch-action: manipulation;
+  }
 }
 
 /* Accessibility: respect reduced-motion preference */
