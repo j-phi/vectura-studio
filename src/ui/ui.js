@@ -11512,7 +11512,28 @@
           cancelHold();
           el.draggable = true;
           if (isDragging) {
-            if (commit && lastTargetId && lastPos) _lvlDoMove(layer.id, lastTargetId, lastPos);
+            if (commit && lastTargetId && lastPos) {
+              if (lastPos === 'mask') {
+                const draggedLayer = engine.getLayerById?.(layer.id);
+                if (draggedLayer) {
+                  if (this.app.pushHistory) this.app.pushHistory();
+                  this.assignLayersToParent(lastTargetId, [draggedLayer], { captureHistory: false });
+                  this.renderLayers(); this.app.render?.();
+                }
+              } else {
+                const tgtLayer = engine.getLayerById?.(lastTargetId);
+                const maskSrcId = tgtLayer?.parentId && _lvlIsMaskSrc(tgtLayer.parentId)
+                  ? tgtLayer.parentId : null;
+                const draggedLayer = maskSrcId ? engine.getLayerById?.(layer.id) : null;
+                if (maskSrcId && draggedLayer && draggedLayer.parentId !== maskSrcId) {
+                  if (this.app.pushHistory) this.app.pushHistory();
+                  this.assignLayersToParent(maskSrcId, [draggedLayer], { captureHistory: false });
+                  this.renderLayers(); this.app.render?.();
+                } else {
+                  _lvlDoMove(layer.id, lastTargetId, lastPos);
+                }
+              }
+            }
             el.classList.remove('dragging');
             el.style.pointerEvents = '';
             _lvlDRAG.id = null;
@@ -11562,14 +11583,25 @@
             const r = targetCard.getBoundingClientRect();
             const pct = (t.clientY - r.top) / r.height;
             const isGrp = targetCard.classList.contains('lvl-grp-hdr');
-            const pos = isGrp
-              ? (pct < 0.35 ? 'before' : pct > 0.65 ? 'after' : 'into')
-              : (pct < 0.5 ? 'before' : 'after');
-            const cssClass = pos === 'before' ? 'lvl-drop-before'
-                           : pos === 'into'   ? 'lvl-drop-into'
-                           : 'lvl-drop-after';
+            const isMaskSrc = _lvlIsMaskSrc(targetId);
+            const tgtLayer = engine.getLayerById?.(targetId);
+            const isMaskedChild = !!(tgtLayer?.parentId && _lvlIsMaskSrc(tgtLayer.parentId));
+            let pos, cssClass, hint;
+            if (isGrp) {
+              pos = pct < 0.35 ? 'before' : pct > 0.65 ? 'after' : 'into';
+              cssClass = pos === 'into' ? 'lvl-drop-into' : pos === 'before' ? 'lvl-drop-before' : 'lvl-drop-after';
+              hint = pos === 'into' ? 'Drop into group' : null;
+            } else if (isMaskSrc) {
+              pos = pct < 0.2 ? 'before' : pct > 0.8 ? 'after' : 'mask';
+              cssClass = pos === 'mask' ? 'lvl-drop-mask' : pos === 'before' ? 'lvl-drop-before' : 'lvl-drop-after';
+              hint = pos === 'mask' ? 'Add to clipping mask' : null;
+            } else {
+              pos = pct < 0.5 ? 'before' : 'after';
+              cssClass = pos === 'before' ? 'lvl-drop-before' : 'lvl-drop-after';
+              hint = isMaskedChild ? 'Drop inside clipping mask' : null;
+            }
             targetCard.classList.add(cssClass);
-            setHint(pos === 'into' ? 'Drop into group' : null);
+            setHint(hint);
             lastTargetId = targetId;
             lastPos = pos;
           }
