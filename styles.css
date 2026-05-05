@@ -4101,6 +4101,10 @@ input[type='color']::-webkit-color-swatch {
     -webkit-user-select: text;
     user-select: text;
   }
+  /* Remove iOS 300ms click delay on layer cards so double-tap rename fires within the detection window */
+  .lvl-card, .lvl-card-inner, .lvl-grp-hdr {
+    touch-action: manipulation;
+  }
 }
 
 /* Accessibility: respect reduced-motion preference */
