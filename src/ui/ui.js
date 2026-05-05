@@ -7889,8 +7889,8 @@
       const list = document.createElement('div');
 
       const commit = (fn) => {
-        fn();
         if (this.app.pushHistory) this.app.pushHistory();
+        fn();
         this.refreshModifierLayer(layer);
       };
 
@@ -8232,6 +8232,7 @@
         .map((layer) => layer.id);
       if (!moveIds.length) return [];
 
+      if (captureHistory && this.app.pushHistory) this.app.pushHistory();
       if (parent.isGroup) parent.groupCollapsed = false;
       const moveSet = new Set(moveIds);
       const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
@@ -8254,7 +8255,6 @@
         this.app.setSelection(ids.length ? ids : [parentId], nextPrimary);
         this.app.engine.activeLayerId = nextPrimary || parentId;
       }
-      if (captureHistory && this.app.pushHistory) this.app.pushHistory();
 
       return moveIds.map((id) => map.get(id)).filter(Boolean);
     }
@@ -8268,6 +8268,7 @@
       if (!layers.length) return [];
       const { nextEngineOrder = null, selectAssigned = false, primaryId = null, captureHistory = false } = options;
       const moveIds = layers.map((layer) => layer.id);
+      if (captureHistory && this.app.pushHistory) this.app.pushHistory();
       const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
       moveIds.forEach((id) => {
         const layer = map.get(id);
@@ -8285,20 +8286,19 @@
         this.app.setSelection(ids, nextPrimary);
         this.app.engine.activeLayerId = nextPrimary;
       }
-      if (captureHistory && this.app.pushHistory) this.app.pushHistory();
 
       return moveIds.map((id) => map.get(id)).filter(Boolean);
     }
 
     insertMirrorModifier() {
       const selectedLayers = this.app.getSelectedLayers().filter((layer) => layer && !layer.isGroup);
+      if (this.app.pushHistory) this.app.pushHistory();
       const id = this.app.addModifierLayer('mirror');
       if (selectedLayers.length) {
         this.assignLayersToParent(id, selectedLayers);
       }
       this.app.setSelection([id], id);
       this.app.engine.activeLayerId = id;
-      if (this.app.pushHistory) this.app.pushHistory();
       this.renderLayers();
       this.buildControls();
       this.updateFormula();
@@ -8527,6 +8527,7 @@
       });
       if (selectedIds.length < 2) return;
       if (!Layer) return;
+      if (this.app.pushHistory) this.app.pushHistory();
       const layers = this.app.engine.layers;
       const selectedSet = new Set(selectedIds);
       const selectedLayers = layers.filter((layer) => selectedSet.has(layer.id));
@@ -8569,7 +8570,6 @@
       });
 
       this.normalizeGroupOrder();
-      if (this.app.pushHistory) this.app.pushHistory();
       this.renderLayers();
       this.app.render();
     }
@@ -8584,6 +8584,7 @@
         if (layer?.parentId) groupIds.add(layer.parentId);
       });
       if (!groupIds.size) return;
+      if (this.app.pushHistory) this.app.pushHistory();
       groupIds.forEach((groupId) => {
         layers.forEach((layer) => {
           if (layer.parentId === groupId) {
@@ -8593,7 +8594,6 @@
         const idx = layers.findIndex((layer) => layer.id === groupId);
         if (idx >= 0) layers.splice(idx, 1);
       });
-      if (this.app.pushHistory) this.app.pushHistory();
       this.renderLayers();
       this.app.render();
     }
@@ -8709,18 +8709,18 @@
     setLayerMaskEnabled(layer, enabled, options = {}) {
       if (!layer) return;
       const { captureHistory = false } = options;
+      if (captureHistory && this.app.pushHistory) this.app.pushHistory();
       const mask = this.ensureLayerMaskState(layer);
       mask.enabled = Boolean(enabled) && Boolean(layer.maskCapabilities?.canSource);
-      if (captureHistory && this.app.pushHistory) this.app.pushHistory();
       this.refreshMaskingViews();
     }
 
     setLayerMaskHidden(layer, hidden, options = {}) {
       if (!layer) return;
       const { captureHistory = false } = options;
+      if (captureHistory && this.app.pushHistory) this.app.pushHistory();
       const mask = this.ensureLayerMaskState(layer);
       mask.hideLayer = Boolean(hidden);
-      if (captureHistory && this.app.pushHistory) this.app.pushHistory();
       this.refreshMaskingViews();
     }
 

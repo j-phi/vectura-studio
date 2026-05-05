@@ -538,10 +538,12 @@
     undo() {
       if (this.history.length < 2) return;
       this.isRestoring = true;
-      const current = this.history.pop();
-      this.redoStack.push(current);
-      const previous = this.history[this.history.length - 1];
-      this.applyState(previous);
+      // Save the current live state so redo can restore it exactly.
+      // pushHistory() uses "push-before-change", so the most recent
+      // history entry IS the state to restore to — apply it, don't skip it.
+      this.redoStack.push(this.captureState());
+      const checkpoint = this.history.pop();
+      this.applyState(checkpoint);
       this.isRestoring = false;
     }
 
@@ -549,7 +551,11 @@
       if (!this.redoStack.length) return;
       this.isRestoring = true;
       const next = this.redoStack.pop();
-      this.history.push(next);
+      // Push the current state as a checkpoint so undo can return here.
+      this.history.push(this.captureState());
+      if (this.history.length > this.maxHistory) {
+        this.history.shift();
+      }
       this.applyState(next);
       this.isRestoring = false;
     }
