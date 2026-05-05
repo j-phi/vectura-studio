@@ -71,8 +71,28 @@
     return proxy;
   };
 
-  const openColorPickerAnchoredTo = (colorInput, triggerEl) => {
+  const openColorPickerAnchoredTo = (colorInput, triggerEl, { title = 'Color', uiInstance = null } = {}) => {
     if (!colorInput || !triggerEl) return;
+
+    // On touch-primary devices where showPicker() isn't available (pre-Safari 16.4),
+    // programmatic .click() on a hidden input won't open the OS color picker. Show
+    // the modal instead so mobile users always get a usable color-editing surface.
+    const isTouchPrimary = 'ontouchstart' in window || navigator.maxTouchPoints > 1;
+    const probeEl = document.createElement('input');
+    probeEl.type = 'color';
+    if (isTouchPrimary && typeof probeEl.showPicker !== 'function' && uiInstance) {
+      uiInstance.openColorModal({
+        title,
+        value: colorInput.value || '#000000',
+        onApply: (next) => {
+          colorInput.value = next;
+          colorInput.dispatchEvent(new Event('input', { bubbles: true }));
+          colorInput.dispatchEvent(new Event('change', { bubbles: true }));
+        },
+      });
+      return;
+    }
+
     const rect = triggerEl.getBoundingClientRect();
     const proxyInput = getAnchoredColorProxyInput();
     const sourceColor = colorInput.value || '#000000';
@@ -89,7 +109,6 @@
     proxyInput.style.transform = `translate(-50%, ${placeAbove ? '-100%' : '0'})`;
 
     let done = false;
-    let frame = null;
 
     const syncToSource = (evtName) => {
       colorInput.value = proxyInput.value;
@@ -106,7 +125,6 @@
       proxyInput.style.left = '-9999px';
       proxyInput.style.top = '-9999px';
       proxyInput.style.transform = 'none';
-      if (frame !== null) window.cancelAnimationFrame(frame);
     };
 
     const handleInput = () => syncToSource('input');
@@ -120,15 +138,15 @@
     proxyInput.addEventListener('blur', cleanup, { once: true });
     window.addEventListener('focus', cleanup, { once: true });
 
-    frame = window.requestAnimationFrame(() => {
-      try {
-        if (typeof proxyInput.showPicker === 'function') proxyInput.showPicker();
-        else proxyInput.click();
-      } catch (_err) {
-        proxyInput.click();
-      }
-      setTimeout(cleanup, 3000);
-    });
+    // Call showPicker() synchronously — wrapping in rAF breaks the user-gesture
+    // chain that mobile browsers require to open the native color picker.
+    try {
+      if (typeof proxyInput.showPicker === 'function') proxyInput.showPicker();
+      else proxyInput.click();
+    } catch (_err) {
+      proxyInput.click();
+    }
+    setTimeout(cleanup, 3000);
   };
 
   const escapeHtml = (str) => {
@@ -7069,7 +7087,7 @@
         btn.style.color = getContrastTextColor(color);
       };
       if (legendStartColorBtn && legendStartColorInput) {
-        legendStartColorBtn.onclick = () => openColorPickerAnchoredTo(legendStartColorInput, legendStartColorBtn);
+        legendStartColorBtn.onclick = () => openColorPickerAnchoredTo(legendStartColorInput, legendStartColorBtn, { title: 'Legend Start Color', uiInstance: this });
         legendStartColorInput.oninput = (e) => {
           if (!this.exportModalState) return;
           this.exportModalState.overlayColor = e.target.value;
@@ -7084,7 +7102,7 @@
         };
       }
       if (legendEndColorBtn && legendEndColorInput) {
-        legendEndColorBtn.onclick = () => openColorPickerAnchoredTo(legendEndColorInput, legendEndColorBtn);
+        legendEndColorBtn.onclick = () => openColorPickerAnchoredTo(legendEndColorInput, legendEndColorBtn, { title: 'Legend End Color', uiInstance: this });
         legendEndColorInput.oninput = (e) => {
           if (!this.exportModalState) return;
           this.exportModalState.lineSortSecondaryColor = e.target.value;
@@ -10013,7 +10031,7 @@
           bgColorPill.onclick = () => {
             if (!armed && this.app.pushHistory) this.app.pushHistory();
             armed = true;
-            openColorPickerAnchoredTo(bgColor, bgColorPill);
+            openColorPickerAnchoredTo(bgColor, bgColorPill, { title: 'Background Color', uiInstance: this });
           };
         }
         bgColor.onfocus = () => {
@@ -10124,7 +10142,7 @@
         }
       }
       if (setMarginLineColor && setMarginLineColorPill) {
-        setMarginLineColorPill.onclick = () => openColorPickerAnchoredTo(setMarginLineColor, setMarginLineColorPill);
+        setMarginLineColorPill.onclick = () => openColorPickerAnchoredTo(setMarginLineColor, setMarginLineColorPill, { title: 'Margin Color', uiInstance: this });
         setMarginLineColor.oninput = (e) => {
           const next = e.target.value || SETTINGS.marginLineColor || '#52525b';
           SETTINGS.marginLineColor = next;
@@ -10259,7 +10277,7 @@
       const setGridColor = getEl('set-grid-color');
       const setGridColorPill = getEl('set-grid-color-pill');
       if (setGridColor && setGridColorPill) {
-        setGridColorPill.onclick = () => openColorPickerAnchoredTo(setGridColor, setGridColorPill);
+        setGridColorPill.onclick = () => openColorPickerAnchoredTo(setGridColor, setGridColorPill, { title: 'Grid Color', uiInstance: this });
         setGridColor.oninput = (e) => {
           SETTINGS.gridColor = e.target.value;
           this.initSettingsValues();
@@ -10291,7 +10309,7 @@
       }
       if (setSelectionOutlineColorPill && setSelectionOutlineColor) {
         setSelectionOutlineColorPill.onclick = () =>
-          openColorPickerAnchoredTo(setSelectionOutlineColor, setSelectionOutlineColorPill);
+          openColorPickerAnchoredTo(setSelectionOutlineColor, setSelectionOutlineColorPill, { title: 'Selection Color', uiInstance: this });
         setSelectionOutlineColor.oninput = (e) => {
           const nextColor = e.target.value || SETTINGS.selectionOutlineColor || '#ef4444';
           SETTINGS.selectionOutlineColor = nextColor;
@@ -16158,7 +16176,7 @@
           rerenderOptimizationPreview();
         };
 
-        overlayColorPreview.onclick = () => openColorPickerAnchoredTo(overlayColorInput, overlayColorPreview);
+        overlayColorPreview.onclick = () => openColorPickerAnchoredTo(overlayColorInput, overlayColorPreview, { title: 'Overlay Color', uiInstance: this });
         overlayColorInput.oninput = (e) => applyOverlayStyle({ color: e.target.value });
         overlayColorInput.onchange = (e) => applyOverlayStyle({ color: e.target.value, commit: true });
         overlayWidth.oninput = (e) => applyOverlayStyle({ width: e.target.value });
