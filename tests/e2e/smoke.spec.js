@@ -1081,7 +1081,7 @@ test.describe('Vectura smoke interactions', () => {
     await page.evaluate(() => window.app.ui.setActiveTool('select'));
     await expect
       .poll(async () => page.locator('#main-canvas').evaluate((canvasEl) => canvasEl.dataset.cursorMode || ''))
-      .toBe('crosshair');
+      .toBe('select');
 
     const rotatePoint = await page.evaluate(() => {
       const renderer = window.app.renderer;
@@ -1140,7 +1140,7 @@ test.describe('Vectura smoke interactions', () => {
     await page.evaluate(() => window.app.ui.setActiveTool('select'));
     await expect
       .poll(async () => page.locator('#main-canvas').evaluate((canvasEl) => canvasEl.dataset.cursorMode || ''))
-      .toBe('crosshair');
+      .toBe('select');
 
     await page.mouse.move(start.x, start.y);
     await expect(page.locator('#main-canvas').evaluate((canvasEl) => canvasEl.dataset.cursorMode || '')).resolves.not.toBe('shape-reticle');
@@ -1380,7 +1380,7 @@ test.describe('Vectura smoke interactions', () => {
     expect(pageErrors).toEqual([]);
   });
 
-  test('mask editor can hide the mask parent artwork while keeping descendant clipping active', async ({ page }) => {
+  test('outline-toggle button hides the mask parent artwork while keeping descendant clipping active', async ({ page }) => {
     const pageErrors = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
 
@@ -1457,8 +1457,7 @@ test.describe('Vectura smoke interactions', () => {
       app.updateStats();
     });
 
-    await page.locator('[data-layer-id="mask-parent-hidden-ui"] .layer-mask-trigger').click();
-    await page.getByLabel('Hide Mask Layer').check();
+    await page.locator('[data-layer-id="mask-parent-hidden-ui"] .mask-outline-btn').click();
 
     const state = await page.evaluate(() => {
       const app = window.app;
@@ -1475,14 +1474,14 @@ test.describe('Vectura smoke interactions', () => {
         hideLayer: Boolean(parent.mask?.hideLayer),
         parentRenderableCount: app.engine.getRenderablePaths(parent).length,
         childOutsideCount: outsideCount,
-        badgeText: document.querySelector('[data-layer-id="mask-parent-hidden-ui"] .layer-mini-badge')?.textContent?.trim() || '',
+        outlineButtonHidden: document.querySelector('[data-layer-id="mask-parent-hidden-ui"] .mask-outline-btn')?.classList.contains('is-hidden') || false,
       };
     });
 
     expect(state.hideLayer).toBe(true);
     expect(state.parentRenderableCount).toBe(0);
     expect(state.childOutsideCount).toBe(0);
-    expect(state.badgeText).toContain('MASK HIDDEN');
+    expect(state.outlineButtonHidden).toBe(true);
     expect(pageErrors).toEqual([]);
   });
 });

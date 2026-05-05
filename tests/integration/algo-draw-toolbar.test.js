@@ -43,12 +43,12 @@ describe('algo-draw toolbar', () => {
     expect(icon.querySelector('path')).toBeTruthy();
   });
 
-  test('long-press (400 ms hold) reveals the algorithm picker with all 15 algorithms', async () => {
+  test('long-press (400 ms hold) reveals the algorithm picker with all 18 algorithms', async () => {
     await openPicker();
     const picker = getPicker();
     expect(picker).toBeTruthy();
     expect(picker.classList.contains('hidden')).toBe(false);
-    expect(picker.querySelectorAll('.algo-pick-item').length).toBe(15);
+    expect(picker.querySelectorAll('.algo-pick-item').length).toBe(18);
     picker.classList.add('hidden');
   });
 

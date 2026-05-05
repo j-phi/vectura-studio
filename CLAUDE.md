@@ -47,6 +47,28 @@ Node 18+ required. `package.json` is the canonical version source — run `versi
 | Docs-only | Link/path sanity review only |
 | Any PR / full confidence | `test:ci` (unit + integration + e2e + visual + perf) |
 
+## Pre-Commit Validation (Red–Green–Refactor)
+
+**Before every commit, validate that every behavior change is covered by tests and that all tests pass.** This is non-negotiable — CI does not retroactively un-break a commit, and a green-locally-only refactor will silently regress a stale test.
+
+For every change, follow Red–Green–Refactor:
+
+1. **Red.** Identify or write a test that *currently fails* without your change and would catch a regression. For pure refactors with no behavior change, confirm the existing tests already exercise the touched paths; if they don't, add coverage first.
+2. **Green.** Make the change. The new/affected test must pass.
+3. **Refactor.** Clean up. All tests still pass.
+
+**Mandatory pre-commit checklist** — run before `git commit`:
+
+- [ ] Run the suites required by the [Testing Matrix](#testing-matrix) for your change class. For anything non-trivial, run `npm run test:ci`.
+- [ ] Every behavior change has at least one test that **fails without the change and passes with it** (RGR proof). UI-only changes get integration or e2e coverage; renderer/algorithm changes get unit coverage.
+- [ ] When a test fails after a refactor, decide deliberately:
+  - **Stale assertion** (product behavior intentionally changed) → update the test to reflect the new contract; never delete coverage to "make it pass."
+  - **Real regression** → fix the source. Do not silence the test.
+- [ ] No skipped or `.only` tests left in the diff.
+- [ ] If you removed a public API/method that tests called, update the tests to use the replacement API in the same commit. Don't leave orphaned `TypeError: app.ui.foo is not a function` failures for the next push.
+
+Do **not** rely on CI to surface failures — run the relevant suite locally first. If a CI run on a previous commit is already red, treat fixing it as a blocker for any new commit on the branch.
+
 ## Architecture
 
 ### Module Loading

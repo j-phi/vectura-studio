@@ -3184,6 +3184,12 @@ input[type='color']::-webkit-color-swatch {
   color: var(--color-accent);
 }
 
+.top-menu-sep {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 4px 0;
+}
+
 .optimization-overlay-legend {
   position: absolute;
   right: 12px;

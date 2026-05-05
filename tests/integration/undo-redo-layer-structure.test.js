@@ -118,18 +118,11 @@ describe('Undo/redo layer-structure integration', () => {
     app.renderer.setSelection([maskParent.id], maskParent.id);
     resetHistory(app);
 
-    const editor = app.ui.buildMaskEditor(maskParent, { compact: true });
-    const inputs = editor.querySelectorAll('input[type="checkbox"]');
-    const enableInput = inputs[0];
-    const hideInput = inputs[1];
-
-    enableInput.checked = true;
-    enableInput.dispatchEvent(new window.Event('change', { bubbles: true }));
+    app.ui.setLayerMaskEnabled(maskParent, true, { captureHistory: true });
     expect(maskParent.mask.enabled).toBe(true);
     expect(child.displayMaskActive).toBe(true);
 
-    hideInput.checked = true;
-    hideInput.dispatchEvent(new window.Event('change', { bubbles: true }));
+    app.ui.setLayerMaskHidden(maskParent, true, { captureHistory: true });
     expect(maskParent.mask.hideLayer).toBe(true);
 
     app.undo();

@@ -533,7 +533,8 @@
     setCanvasCursor(cursor = 'crosshair', mode = '') {
       if (!this.canvas) return;
       this.canvas.style.cursor = cursor;
-      this.canvas.dataset.cursorMode = mode || 'default';
+      const isKeyword = typeof cursor === 'string' && !cursor.includes('(');
+      this.canvas.dataset.cursorMode = mode || (isKeyword ? cursor : '') || 'default';
     }
 
     cursorDataUrl(name, hotX = 0, hotY = 0, fallback = 'auto') {
@@ -1705,6 +1706,23 @@
     startMaskPreview(layer) {
       this.maskPreview = this.buildMaskPreviewState(layer);
       return this.maskPreview;
+    }
+
+    startMaskPreviewForSelection(layers) {
+      if (this.activeTool !== 'select' || !Array.isArray(layers) || !layers.length) {
+        this.clearMaskPreview();
+        return;
+      }
+      if (layers.length === 1) {
+        this.startMaskPreview(layers[0]);
+        return;
+      }
+      const maskRoot = layers.find((l) => l?.mask?.enabled && l?.maskCapabilities?.canSource);
+      if (maskRoot) {
+        this.startMaskPreview(maskRoot);
+      } else {
+        this.clearMaskPreview();
+      }
     }
 
     clearMaskPreview() {
@@ -3006,11 +3024,7 @@
             this.activeHandle = handle;
             this.dragStart = world;
             this.startBounds = selectionBounds;
-            if (selectedLayers.length === 1 && this.activeTool === 'select') {
-              this.startMaskPreview(selectedLayers[0]);
-            } else {
-              this.clearMaskPreview();
-            }
+            this.startMaskPreviewForSelection(selectedLayers);
             if (handle === 'rotate') {
               this.dragMode = 'rotate';
               this.rotateOrigin = this.getBoundsCenter(selectionBounds);
@@ -3057,11 +3071,7 @@
               this.dragMode = 'move';
               this.dragStart = w;
               this.startBounds = b;
-              if (layers.length === 1 && this.activeTool === 'select') {
-                this.startMaskPreview(layers[0]);
-              } else {
-                this.clearMaskPreview();
-              }
+              this.startMaskPreviewForSelection(layers);
               this.setCanvasCursor(layers.length > 1 ? 'grabbing' : 'move');
               if (navigator.vibrate) navigator.vibrate(30);
               this.draw();
@@ -3072,11 +3082,7 @@
             this.dragMode = 'move';
             this.dragStart = world;
             this.startBounds = bounds;
-            if (updatedSelected.length === 1 && this.activeTool === 'select') {
-              this.startMaskPreview(updatedSelected[0]);
-            } else {
-              this.clearMaskPreview();
-            }
+            this.startMaskPreviewForSelection(updatedSelected);
             this.setCanvasCursor(updatedSelected.length > 1 ? 'grabbing' : 'move');
             if (modifiers.alt && updatedSelected.length === 1) {
               if (this.onDuplicateLayer) this.onDuplicateLayer();

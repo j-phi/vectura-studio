@@ -8694,14 +8694,21 @@
       const groupIds = new Set();
       selectedIds.forEach((id) => {
         const layer = this.getLayerById(id);
-        if (layer?.parentId) groupIds.add(layer.parentId);
+        if (!layer) return;
+        if (layer.isGroup && layer.groupType === 'group') {
+          groupIds.add(layer.id);
+        } else if (layer.parentId) {
+          groupIds.add(layer.parentId);
+        }
       });
       if (!groupIds.size) return;
       if (this.app.pushHistory) this.app.pushHistory();
       groupIds.forEach((groupId) => {
+        const group = this.getLayerById(groupId);
+        const groupParentId = group?.parentId ?? null;
         layers.forEach((layer) => {
           if (layer.parentId === groupId) {
-            layer.parentId = null;
+            layer.parentId = groupParentId;
           }
         });
         const idx = layers.findIndex((layer) => layer.id === groupId);
@@ -10869,6 +10876,12 @@
         this.setTopMenuOpen(null, false);
         return true;
       }
+      if (e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && key === 'g') {
+        return this.triggerTopMenuAction('btn-group-layers');
+      }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && key === 'g') {
+        return this.triggerTopMenuAction('btn-ungroup-layers');
+      }
       if (e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && key === 'g') {
         return this.triggerTopMenuAction('btn-view-grid-toggle');
       }
@@ -12837,7 +12850,7 @@
             groupNode.isGroup = true;
             groupNode.groupType = 'group';
             groupNode.groupCollapsed = false;
-            groupNode.visible = false;
+            groupNode.visible = layer.visible;
             groupNode.parentId = layer.id;
             groupNode.penId = layer.penId;
             groupNode.color = layer.color;
@@ -12858,7 +12871,6 @@
       layer.groupParams = clone(layer.params);
       layer.groupCollapsed = false;
       layer.type = 'group';
-      layer.visible = false;
       layer.paths = [];
       layer.sourcePaths = null;
       layer.paramStates = {};
