@@ -152,7 +152,8 @@ const captureRepresentativePatternIds = async (page) =>
 
 const addAlgoLayer = async (page) => {
   await page.click('#btn-add-layer');
-  await page.click('.lvl-add-item[data-add="algo"]');
+  await page.hover('.lvl-add-has-sub[data-add="algo-parent"]');
+  await page.click('.lvl-algo-sub-item[data-add="algo"]');
 };
 
 test.describe('Vectura smoke interactions', () => {
@@ -279,6 +280,7 @@ test.describe('Vectura smoke interactions', () => {
     page.on('pageerror', (error) => pageErrors.push(error.message));
 
     await page.goto('/');
+    await addAlgoLayer(page);
 
     await expect(page.locator('#status-bar')).toBeVisible();
     await expect(page.locator('#generator-module')).toBeVisible();
@@ -474,6 +476,7 @@ test.describe('Vectura smoke interactions', () => {
     page.on('pageerror', (error) => pageErrors.push(error.message));
 
     await page.goto('/');
+    await addAlgoLayer(page);
 
     const themeToggle = page.locator('#theme-toggle');
     await expect(themeToggle).toBeVisible();
@@ -540,6 +543,7 @@ test.describe('Vectura smoke interactions', () => {
     page.on('pageerror', (error) => pageErrors.push(error.message));
 
     await page.goto('/');
+    await addAlgoLayer(page);
 
     await page.getByRole('button', { name: 'File' }).click();
     await page.click('#btn-export');
@@ -644,6 +648,7 @@ test.describe('Vectura smoke interactions', () => {
     page.on('pageerror', (error) => pageErrors.push(error.message));
 
     await page.goto('/');
+    await addAlgoLayer(page);
     await page.getByRole('button', { name: 'File' }).click();
     await page.click('#btn-export');
     await expect(page.locator('#export-modal-root')).toBeVisible();
@@ -770,6 +775,7 @@ test.describe('Vectura smoke interactions', () => {
     page.on('pageerror', (error) => pageErrors.push(error.message));
 
     await page.goto('/');
+    await addAlgoLayer(page);
 
     const initialLayers = await page.locator('#layer-list [data-lvl-id]').count();
     await page.getByRole('button', { name: 'Insert' }).click();
@@ -805,6 +811,7 @@ test.describe('Vectura smoke interactions', () => {
     page.on('pageerror', (error) => pageErrors.push(error.message));
 
     await page.goto('/');
+    await addAlgoLayer(page);
 
     await page.selectOption('#generator-module', 'rings');
     await page.getByRole('button', { name: 'Insert' }).click();
@@ -959,6 +966,7 @@ test.describe('Vectura smoke interactions', () => {
       engine.activeLayerId = maskParent.id;
       engine.generate(maskParent.id);
       engine.generate(child.id);
+      app.engine.computeAllDisplayGeometry();
       app.renderer.setSelection([maskParent.id], maskParent.id);
       app.ui.renderLayers();
       app.ui.buildControls();
@@ -1040,12 +1048,12 @@ test.describe('Vectura smoke interactions', () => {
     expect(box).toBeTruthy();
     const start = { x: box.x + box.width * 0.28, y: box.y + box.height * 0.34 };
     const end = { x: box.x + box.width * 0.38, y: box.y + box.height * 0.47 };
+
+    await page.evaluate(() => window.app.ui.setActiveTool('shape-rect'));
     const worldStart = await page.evaluate(({ x, y }) => {
       const rect = document.getElementById('main-canvas').getBoundingClientRect();
       return window.app.renderer.screenToWorld(x - rect.left, y - rect.top);
     }, start);
-
-    await page.evaluate(() => window.app.ui.setActiveTool('shape-rect'));
     await page.keyboard.down('Alt');
     await page.mouse.move(start.x, start.y);
     await page.mouse.down();
@@ -1103,9 +1111,9 @@ test.describe('Vectura smoke interactions', () => {
       .poll(async () => page.locator('#main-canvas').evaluate((canvasEl) => canvasEl.dataset.cursorMode || ''))
       .toBe('shape-reticle');
 
-    await page.keyboard.down('Shift');
     await page.mouse.move(start.x, start.y);
     await page.mouse.down();
+    await page.keyboard.down('Shift');
     await page.mouse.move(end.x, end.y);
     await page.mouse.up();
     await page.keyboard.up('Shift');

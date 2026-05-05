@@ -1192,6 +1192,9 @@ input[type='color']::-webkit-color-swatch {
   gap: 16px;
   align-items: start;
 }
+.bottom-pane-grid > * {
+  min-width: 0;
+}
 .bottom-pane-bg-slot {
   padding: 4px 0;
   display: flex;
@@ -1320,6 +1323,7 @@ input[type='color']::-webkit-color-swatch {
 
 .formula-line {
   white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
 .formula-values-title {
