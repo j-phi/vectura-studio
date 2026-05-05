@@ -44,7 +44,7 @@
       + `</svg>`;
     return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 16 16, crosshair`;
   };
-  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  const { clamp } = window.Vectura.AlgorithmUtils;
   let _themeTokenCache = new Map();
   let _themeTokenCacheKey = null;
   const getThemeToken = (name, fallback = '') => {
@@ -223,10 +223,22 @@
     });
     return anchors;
   };
+  const buildLineAnchors = (shape) => {
+    const x1 = Number.isFinite(shape?.x1) ? shape.x1 : 0;
+    const y1 = Number.isFinite(shape?.y1) ? shape.y1 : 0;
+    const x2 = Number.isFinite(shape?.x2) ? shape.x2 : 0;
+    const y2 = Number.isFinite(shape?.y2) ? shape.y2 : 0;
+    return [
+      { x: x1, y: y1, in: null, out: null },
+      { x: x2, y: y2, in: null, out: null },
+    ];
+  };
+  const isOpenShape = (shape) => shape?.type === 'line';
   const buildShapeAnchors = (shape) => {
     if (!shape || typeof shape !== 'object') return [];
     if (shape.type === 'oval') return buildEllipseAnchors(shape);
     if (shape.type === 'rect' || shape.type === 'polygon') return buildRoundedPolygonAnchors(shape);
+    if (shape.type === 'line') return buildLineAnchors(shape);
     return [];
   };
   const cloneShape = (shape) => (shape ? JSON.parse(JSON.stringify(shape)) : null);
@@ -513,11 +525,22 @@
     setCanvasCursor(cursor = 'crosshair', mode = '') {
       if (!this.canvas) return;
       this.canvas.style.cursor = cursor;
-      this.canvas.dataset.cursorMode = mode || cursor || 'default';
+      this.canvas.dataset.cursorMode = mode || 'default';
+    }
+
+    cursorDataUrl(name, hotX = 0, hotY = 0, fallback = 'auto') {
+      const factory = window.Vectura?.Icons?.cursor?.[name];
+      if (typeof factory !== 'function') return fallback;
+      const svg = factory();
+      const encoded = encodeURIComponent(svg)
+        .replace(/'/g, '%27')
+        .replace(/\(/g, '%28')
+        .replace(/\)/g, '%29');
+      return `url("data:image/svg+xml;utf8,${encoded}") ${hotX} ${hotY}, ${fallback}`;
     }
 
     isPrimitiveShapeType(type) {
-      return type === 'rect' || type === 'oval' || type === 'polygon';
+      return type === 'rect' || type === 'oval' || type === 'polygon' || type === 'line';
     }
 
     getSelectedPrimitiveShapeLayer() {
@@ -953,13 +976,14 @@
     }
 
     isShapeTool(tool = this.activeTool) {
-      return tool === 'shape-rect' || tool === 'shape-oval' || tool === 'shape-polygon';
+      return tool === 'shape-rect' || tool === 'shape-oval' || tool === 'shape-polygon' || tool === 'shape-line';
     }
 
     getShapeKindForTool(tool = this.activeTool) {
       if (tool === 'shape-rect') return 'rect';
       if (tool === 'shape-oval') return 'oval';
       if (tool === 'shape-polygon') return 'polygon';
+      if (tool === 'shape-line') return 'line';
       return null;
     }
 
@@ -1022,6 +1046,20 @@
           cornerRadii: new Array(Math.max(3, Math.round(this.shapeDraftSides || 6))).fill(0),
         };
       }
+      if (kind === 'line') {
+        let x2 = end.x;
+        let y2 = end.y;
+        if (constrain) {
+          const dx = end.x - start.x;
+          const dy = end.y - start.y;
+          const angle = Math.atan2(dy, dx);
+          const snappedAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+          const length = Math.hypot(dx, dy);
+          x2 = start.x + Math.cos(snappedAngle) * length;
+          y2 = start.y + Math.sin(snappedAngle) * length;
+        }
+        return { type: 'line', x1: start.x, y1: start.y, x2, y2 };
+      }
       return null;
     }
 
@@ -1029,10 +1067,11 @@
       const normalizedShape = cloneShape(shape);
       const anchors = buildShapeAnchors(normalizedShape);
       if (!anchors.length) return null;
-      const path = this.buildPenPathFromAnchors(anchors, true);
+      const closed = !isOpenShape(normalizedShape);
+      const path = this.buildPenPathFromAnchors(anchors, closed);
       path.meta = {
         kind: 'shape',
-        closed: true,
+        closed,
         anchors: anchors.map((anchor) => cloneAnchor(anchor)),
         shape: normalizedShape,
       };
@@ -1044,7 +1083,7 @@
       const path = this.buildShapePath(meta.shape);
       if (!path?.meta) return false;
       this.directSelection.anchors = path.meta.anchors.map((anchor) => cloneAnchor(anchor));
-      this.directSelection.closed = true;
+      this.directSelection.closed = path.meta.closed !== false;
       this.directSelection.meta = { ...this.directSelection.meta, ...path.meta };
       this.applyDirectPath();
       return true;
@@ -1097,7 +1136,7 @@
       if (path && this.onShapeComplete) {
         this.onShapeComplete({
           path,
-          closed: true,
+          closed: path.meta?.closed !== false,
           shape,
         });
       }
@@ -1170,15 +1209,15 @@
       return this.getShapeMetaForLayer(layer, 0)?.shape ? layer : null;
     }
 
-    getShapeCornerHandles(layer, pathIndex = 0) {
+    getShapeCornerHandles(layer, pathIndex = 0, temp = null) {
       const meta = this.getShapeMetaForLayer(layer, pathIndex);
       if (!meta?.shape) return [];
       const descriptors = getCornerDescriptors(meta.shape);
       return descriptors.map((descriptor) => ({
         ...descriptor,
-        vertex: this.transformShapeSourcePoint(descriptor.vertex, layer),
-        inward: this.transformShapeDirection(descriptor, layer),
-        point: this.transformShapeSourcePoint(getShapeCornerHandlePosition(descriptor, this.scale), layer),
+        vertex: this.transformShapeSourcePoint(descriptor.vertex, layer, temp),
+        inward: this.transformShapeDirection(descriptor, layer, temp),
+        point: this.transformShapeSourcePoint(getShapeCornerHandlePosition(descriptor, this.scale), layer, temp),
       }));
     }
 
@@ -1343,8 +1382,8 @@
       const dy = point.y - origin.y;
       const ux = dx * cosR + dy * sinR;
       const uy = -dx * sinR + dy * cosR;
-      const safeX = Math.abs(scaleX) < 1e-6 ? 1 : scaleX;
-      const safeY = Math.abs(scaleY) < 1e-6 ? 1 : scaleY;
+      const safeX = Math.abs(scaleX) < 1e-6 ? (Math.sign(scaleX) || 1) * 1e-6 : scaleX;
+      const safeY = Math.abs(scaleY) < 1e-6 ? (Math.sign(scaleY) || 1) * 1e-6 : scaleY;
       return { x: ux / safeX + baseOrigin.x, y: uy / safeY + baseOrigin.y };
     }
 
@@ -2439,7 +2478,7 @@
       if (this.directSelection) this.drawDirectSelection();
       if (!this.directSelection) {
         const shapeLayer = this.getSelectedShapeLayer();
-        if (shapeLayer) this.drawShapeCornerHandles(shapeLayer, 0, 'all');
+        if (shapeLayer) this.drawShapeCornerHandles(shapeLayer, 0, 'all', this.tempTransform);
       }
       if (this.penDraft) this.drawPenPreview();
       if (this.shapeDraft) this.drawShapePreview();
@@ -4460,8 +4499,8 @@
       this.ctx.restore();
     }
 
-    drawShapeCornerHandles(layer, pathIndex = 0, scope = 'all') {
-      const handles = this.getShapeCornerHandles(layer, pathIndex);
+    drawShapeCornerHandles(layer, pathIndex = 0, scope = 'all', temp = null) {
+      const handles = this.getShapeCornerHandles(layer, pathIndex, temp);
       if (!handles.length) return;
       this.ctx.save();
       this.ctx.lineWidth = 1 / this.scale;
@@ -4552,6 +4591,7 @@
       const shape = this.getDraftShape();
       const path = shape ? this.buildShapePath(shape) : null;
       if (!path || path.length < 2) return;
+      const closed = path.meta?.closed !== false;
       this.ctx.save();
       this.ctx.strokeStyle = '#f59e0b';
       this.ctx.lineWidth = 1 / this.scale;
@@ -4559,7 +4599,7 @@
       this.ctx.beginPath();
       this.ctx.moveTo(path[0].x, path[0].y);
       for (let i = 1; i < path.length; i++) this.ctx.lineTo(path[i].x, path[i].y);
-      this.ctx.closePath();
+      if (closed) this.ctx.closePath();
       this.ctx.stroke();
       this.ctx.setLineDash([]);
       this.ctx.restore();
