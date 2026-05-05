@@ -3,9 +3,9 @@
  * randomizeLayerParams() stays in ui.js since it captures large IIFE-local noise-def arrays.
  */
 (() => {
-  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-
   window.Vectura = window.Vectura || {};
+  const { clamp } = window.Vectura.AlgorithmUtils;
+
   window.Vectura._UIRandomizationMixin = {
     applyRandomizationBias(layer) {
       if (!layer || !layer.params) return;

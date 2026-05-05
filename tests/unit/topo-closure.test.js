@@ -23,13 +23,75 @@ const makeNoiseRackMock = () => ({
     if (blend === 'min') return Math.min(combined, value);
     return combined + value;
   },
+  defaultConfigFor(algorithmId, params = {}) {
+    const p = params || {};
+    const layer = {
+      enabled: true,
+      type: p.noiseType || 'simplex',
+      blend: 'add',
+      amplitude: 1,
+      zoom: p.noiseScale ?? 0.003,
+      freq: 1,
+      angle: 0,
+      shiftX: p.noiseOffsetX ?? 0,
+      shiftY: p.noiseOffsetY ?? 0,
+      tileMode: 'off',
+      tilePadding: 0,
+      patternScale: 1,
+      warpStrength: 1,
+      cellularScale: 1,
+      cellularJitter: 1,
+      stepsCount: 5,
+      seed: 0,
+      octaves: p.octaves ?? 3,
+      lacunarity: p.lacunarity ?? 2.0,
+      gain: p.gain ?? 0.5,
+      noiseStyle: 'linear',
+      noiseThreshold: 0,
+      imageWidth: 1,
+      imageHeight: 1,
+      microFreq: 0,
+      imageInvertColor: false,
+      imageInvertOpacity: false,
+      imageId: p.noiseImageId || '',
+      imageName: p.noiseImageName || '',
+      imagePreview: '',
+      imageAlgo: p.imageAlgo || 'luma',
+      imageEffects: [],
+      polygonZoomReference: p.noiseScale ?? 0.003,
+      polygonRadius: 2,
+      polygonSides: 6,
+      polygonRotation: 0,
+      polygonOutline: 0,
+      polygonEdgeRadius: 0,
+    };
+    if (algorithmId === 'terrain') return { stack: [], layer: { ...layer, amplitude: 0, zoom: 0.01 } };
+    return { stack: [layer], layer };
+  },
 });
 
 const loadTopoAlgorithm = () => {
   const filePath = path.resolve(__dirname, '../../src/core/algorithms/topo.js');
   const code = fs.readFileSync(filePath, 'utf8');
   const context = {
-    window: { Vectura: { AlgorithmRegistry: {}, NoiseRack: makeNoiseRackMock() } },
+    window: {
+      Vectura: {
+        AlgorithmRegistry: {},
+        NoiseRack: makeNoiseRackMock(),
+        AlgorithmUtils: {
+          clamp: (v, lo, hi) => Math.min(hi, Math.max(lo, v)),
+          clamp01: (v) => Math.max(0, Math.min(1, v)),
+          lerp: (a, b, t) => a + (b - a) * t,
+          frac: (v) => v - Math.floor(v),
+          applyPad: (t, pad) => {
+            if (pad <= 0) return t;
+            const span = 1 - pad * 2;
+            if (span <= 0) return 0.5;
+            return Math.max(0, Math.min(1, (t - pad) / span));
+          },
+        },
+      },
+    },
     Math,
   };
   vm.createContext(context);

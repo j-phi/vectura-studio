@@ -4,8 +4,7 @@
 (() => {
   const TAU = Math.PI * 2;
   const GOLDEN_ANGLE = 137.507764;
-  const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
-  const lerp = (a, b, t) => a + (b - a) * t;
+  const { clamp, lerp } = window.Vectura.AlgorithmUtils;
   const smoothstep = (edge0, edge1, x) => {
     const denom = Math.max(1e-6, edge1 - edge0);
     const t = clamp((x - edge0) / denom, 0, 1);

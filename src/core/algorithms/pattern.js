@@ -698,7 +698,9 @@
           });
           visibleSegments.push(segment);
         }
-      } catch (_) {}
+      } catch (err) {
+        console.warn('[Pattern] fill boundary trace:', err);
+      }
       tmpPath.remove();
     }
 
@@ -848,7 +850,9 @@
               if (deduped.length >= 2) allSubPaths.push(deduped);
             }
           }
-        } catch (err) {}
+        } catch (err) {
+          console.warn('[Pattern] path sampling:', err);
+        }
         tmpPath.remove();
       }
       return allSubPaths;

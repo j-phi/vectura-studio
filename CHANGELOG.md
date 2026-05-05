@@ -6,6 +6,33 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+## 0.8.26 - 2026-05-05
+
+### Added
+- **Custom canvas cursors** for the four primary tools. Selection (V) shows a filled black arrow, Direct Selection (A) an outline-only arrow, and Pen (P) a fountain-pen tip — each via SVG-as-cursor data URLs. Fill (F) hides the system cursor in favor of a DOM overlay (see below).
+- **Fill loupe overlay.** When the Fill tool is active, the canvas shows a paint-bucket icon anchored to the cursor with a fill-point dot, plus a 96 px circular magnifier (~4× zoom) of the canvas pixels under the cursor. The magnifier auto-flips between quadrants relative to the cursor so it stays inside the canvas viewport when the cursor is near an edge.
+- **Line shape primitive** (`shape-line`, keyboard `U`). Drag two endpoints; Shift snaps the angle to multiples of 45°. Emitted as an open two-anchor path (`closed: false`) and routed through the existing shape draft / commit / direct-select pipeline.
+- **Algorithm-submenu hover styling now matches the toolbar's active-tool blue** (`#38bdf8` border + `rgba(56,189,248,0.12)` background), unifying the focus-cue across the two menus.
+
+### Changed
+- **Toolbar consolidation.** Rectangle, Oval, Line, and Polygon are now subtools of a single long-press group button (`data-tool="shape"`) that mirrors the Selection group's UX: single-tap activates the most-recently-used variant; long-press (280 ms) opens the variant submenu. The three previously-flat shape buttons are gone. Existing M / L / Y shortcuts still pick rect / oval / polygon; new `U` picks line. The active variant is persisted to `SETTINGS.shapeMode` and reflected as the parent button's icon.
+
+## 0.8.24 - 2026-05-05
+
+### Security
+- **Fixed XSS via imported SVG pattern tile.** The Pattern Designer's tile-import path stored raw user SVG into `draftMeta.svg` without sanitizing event handlers; later `innerHTML` use during pattern validation could execute `<image onerror=...>`, `<animate onbegin=...>`, `<script>`, and `javascript:` href payloads. New shared `Vectura.SvgSanitize.sanitize()` strips `<script>`, `<foreignObject>`, all `on*` attributes, and rewrites `javascript:` `href`/`xlink:href`. Wired into both the Pattern Designer import path and the file-open SVG path (replacing the narrower inline `stripEventHandlers` in `ui-file-io.js`). Eight new regression cases in `tests/unit/security_xss.test.js`.
+- Replaced two silent `} catch {}` blocks in `pattern.js` (boundary trace, path sampling) with `console.warn('[Pattern] …', err)` so previously-masked failures now surface.
+
+### Fixed
+- **`.vectura` save/load now preserves `layer.origin`.** Engine `exportState`/`importState` previously omitted origin; the field is read by transform math in the renderer, so scale and rotation could drift across a save/load cycle. Origin is now serialized (cloned) and restored, with a `{x:0, y:0}` default for back-compat with files saved before this version.
+- Fixed precision loss in `worldToSourcePoint` for layers with `|scaleX|` or `|scaleY|` < 1e-6: the inverse-transform fallback no longer collapses to `1` (which broke true inversion); it now uses a sign-preserving `1e-6` clamp so tiny-but-nonzero scales remain orientation-correct.
+
+### Changed
+- **Engine layer mutations are now encapsulated.** Added `VectorEngine.reorderLayers()`, `deleteLayersById()`, and `setActiveLayerId()` with input validation and warn-on-invalid behavior. UI callsites that previously assigned directly to `engine.layers` / `engine.activeLayerId` (delete-layer, group/ungroup, mirror modifier insertion) now route through these methods.
+- **`topo`, `phylla`, and `terrain` algorithms migrated off legacy noise stacks** to the shared `NoiseRack.defaultConfigFor(algorithmId, params)` helper, completing the AGENTS.md "universal noise" discipline for these algorithms (`flowfield`, `grid`, `rings`, `horizon` still pending). Visual baselines unchanged — defaults are byte-identical to the prior inline `legacyNoise` shapes.
+- **Algorithm tuning constants extracted** to a new `src/config/algorithm-tuning.js` registry exposed as `Vectura.AlgorithmTuning`. Rainfall (`noiseScale`, `gustScale`, `spiralFactor`, `paddingMax`) and Wavetable (`defaultZoom`) now read from config instead of inlined literals; rainfall's hex tile ratio is now `Math.sqrt(3)/2` (precision gain, no baseline drift in current coverage).
+- **Math utilities deduplicated.** New `src/core/algorithm-utils.js` exposes `Vectura.AlgorithmUtils.{clamp, clamp01, lerp, frac, applyPad}`; ~26 inline duplicates removed across 18 files (engine, renderer, modifiers, noise-rack, several UI mixins, and most algorithms). `applyTile` deliberately left inline per algorithm — its semantics diverge meaningfully across rainfall / wavetable / topo / spiral and a single canonical version would alter rendering.
+
 ## 0.8.20 - 2026-05-05
 
 ### Changed

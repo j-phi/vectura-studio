@@ -4,6 +4,7 @@
 (() => {
   window.Vectura = window.Vectura || {};
   window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
+  const { frac, applyPad } = window.Vectura.AlgorithmUtils;
   window.Vectura.AlgorithmRegistry.topo = {
       generate: (p, rng, noise, bounds) => {
         const { m, width, height } = bounds;
@@ -21,13 +22,6 @@
         const thresholdOffset = p.thresholdOffset ?? 0;
         const levels = Math.max(1, Math.floor(p.levels ?? 10));
         const rack = window.Vectura.NoiseRack.createEvaluator({ noise, seed: p.seed ?? 0 });
-        const frac = (v) => v - Math.floor(v);
-        const applyPad = (t, pad) => {
-          if (pad <= 0) return t;
-          const span = 1 - pad * 2;
-          if (span <= 0) return 0.5;
-          return Math.max(0, Math.min(1, (t - pad) / span));
-        };
         const applyTile = (nx, ny, mode, padding = 0) => {
           const pad = Math.max(0, Math.min(0.45, padding));
           switch (mode) {
@@ -44,49 +38,11 @@
           }
         };
 
-        const legacyNoise = {
-          type: p.noiseType || 'simplex',
-          blend: 'add',
-          amplitude: 1,
-          zoom: p.noiseScale ?? 0.003,
-          freq: 1,
-          angle: 0,
-          shiftX: p.noiseOffsetX ?? 0,
-          shiftY: p.noiseOffsetY ?? 0,
-          tileMode: 'off',
-          tilePadding: 0,
-          patternScale: 1,
-          warpStrength: 1,
-          cellularScale: 1,
-          cellularJitter: 1,
-          stepsCount: 5,
-          seed: 0,
-          octaves: p.octaves ?? 3,
-          lacunarity: p.lacunarity ?? 2.0,
-          gain: p.gain ?? 0.5,
-          noiseStyle: 'linear',
-          noiseThreshold: 0,
-          imageWidth: 1,
-          imageHeight: 1,
-          microFreq: 0,
-          imageInvertColor: false,
-          imageInvertOpacity: false,
-          imageId: p.noiseImageId || '',
-          imageName: p.noiseImageName || '',
-          imagePreview: '',
-          imageAlgo: p.imageAlgo || 'luma',
-          imageEffects: [],
-          polygonZoomReference: p.noiseScale ?? 0.003,
-          polygonRadius: 2,
-          polygonSides: 6,
-          polygonRotation: 0,
-          polygonOutline: 0,
-          polygonEdgeRadius: 0,
-        };
-
-        const noiseLayers = (Array.isArray(p.noises) && p.noises.length ? p.noises : [legacyNoise])
+        const { stack: defaultStack, layer: defaultLayer } =
+          window.Vectura.NoiseRack.defaultConfigFor('topo', p);
+        const noiseLayers = (Array.isArray(p.noises) && p.noises.length ? p.noises : defaultStack)
           .map((noiseLayer) => ({
-            ...legacyNoise,
+            ...defaultLayer,
             ...(noiseLayer || {}),
             enabled: noiseLayer?.enabled !== false,
           }))

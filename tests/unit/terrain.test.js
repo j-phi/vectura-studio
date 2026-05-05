@@ -22,13 +22,47 @@ const makeNoiseRackMock = () => ({
     if (blend === 'min') return Math.min(combined, value);
     return combined + value;
   },
+  defaultConfigFor(algorithmId) {
+    // Terrain's default stack is empty; the merge-base layer mirrors the
+    // pre-refactor inline defaultLayer.
+    const layer = {
+      id: 'noise-1', enabled: true, type: 'simplex', blend: 'add',
+      amplitude: 0, zoom: 0.01, freq: 1.0, angle: 0, shiftX: 0, shiftY: 0,
+      tileMode: 'off', tilePadding: 0, patternScale: 1, warpStrength: 1,
+      cellularScale: 1, cellularJitter: 1, stepsCount: 5, seed: 0,
+      noiseStyle: 'linear', noiseThreshold: 0, imageWidth: 1, imageHeight: 1,
+      microFreq: 0, imageInvertColor: false, imageInvertOpacity: false,
+      imageId: '', imageName: '', imagePreview: '', imageAlgo: 'luma',
+      imageEffects: [], polygonZoomReference: 0.01, polygonRadius: 2,
+      polygonSides: 6, polygonRotation: 0, polygonOutline: 0, polygonEdgeRadius: 0,
+    };
+    if (algorithmId === 'terrain') return { stack: [], layer };
+    return { stack: [layer], layer };
+  },
 });
 
 const loadTerrainAlgorithm = () => {
   const filePath = path.resolve(__dirname, '../../src/core/algorithms/terrain.js');
   const code = fs.readFileSync(filePath, 'utf8');
   const context = {
-    window: { Vectura: { AlgorithmRegistry: {}, NoiseRack: makeNoiseRackMock() } },
+    window: {
+      Vectura: {
+        AlgorithmRegistry: {},
+        NoiseRack: makeNoiseRackMock(),
+        AlgorithmUtils: {
+          clamp: (v, lo, hi) => Math.min(hi, Math.max(lo, v)),
+          clamp01: (v) => Math.max(0, Math.min(1, v)),
+          lerp: (a, b, t) => a + (b - a) * t,
+          frac: (v) => v - Math.floor(v),
+          applyPad: (t, pad) => {
+            if (pad <= 0) return t;
+            const span = 1 - pad * 2;
+            if (span <= 0) return 0.5;
+            return Math.max(0, Math.min(1, (t - pad) / span));
+          },
+        },
+      },
+    },
     Math,
   };
   vm.createContext(context);

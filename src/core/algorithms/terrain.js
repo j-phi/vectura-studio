@@ -9,6 +9,7 @@
 (() => {
   window.Vectura = window.Vectura || {};
   window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
+  const { clamp01, lerp } = window.Vectura.AlgorithmUtils;
   window.Vectura.AlgorithmRegistry.terrain = {
     generate: (p, rng, noise, bounds) => {
       const { m, width, height } = bounds;
@@ -17,8 +18,7 @@
       const innerH = height - inset * 2;
       if (innerW < 1 || innerH < 1) return [];
 
-      const clamp01 = (v) => Math.max(0, Math.min(1, v));
-      const lerp = (a, b, t) => a + (b - a) * t;
+
       // Local LCG so river seeds and valley axes are deterministic from p.seed
       // even when no SeededRNG is supplied (and independent of any shared rng state).
       let lcgState = ((p.seed ?? 0) >>> 0) || 1;
@@ -99,18 +99,9 @@
 
       // --- Noise rack for additional displacement ---
       const rack = window.Vectura.NoiseRack.createEvaluator({ noise, seed: p.seed ?? 0 });
-      const defaultLayer = {
-        id: 'noise-1', enabled: true, type: 'simplex', blend: 'add',
-        amplitude: 0, zoom: 0.01, freq: 1.0, angle: 0, shiftX: 0, shiftY: 0,
-        tileMode: 'off', tilePadding: 0, patternScale: 1, warpStrength: 1,
-        cellularScale: 1, cellularJitter: 1, stepsCount: 5, seed: 0,
-        noiseStyle: 'linear', noiseThreshold: 0, imageWidth: 1, imageHeight: 1,
-        microFreq: 0, imageInvertColor: false, imageInvertOpacity: false,
-        imageId: '', imageName: '', imagePreview: '', imageAlgo: 'luma',
-        imageEffects: [], polygonZoomReference: 0.01, polygonRadius: 2,
-        polygonSides: 6, polygonRotation: 0, polygonOutline: 0, polygonEdgeRadius: 0,
-      };
-      const noiseStack = (Array.isArray(p.noises) && p.noises.length ? p.noises : [])
+      const { stack: defaultStack, layer: defaultLayer } =
+        window.Vectura.NoiseRack.defaultConfigFor('terrain', p);
+      const noiseStack = (Array.isArray(p.noises) && p.noises.length ? p.noises : defaultStack)
         .map((layer) => ({ ...defaultLayer, ...(layer || {}), enabled: layer?.enabled !== false }))
         .filter((layer) => layer.enabled !== false);
       const maxAmp = noiseStack.reduce((s, l) => s + Math.abs(l.amplitude ?? 0), 0) || 1;

@@ -4,6 +4,7 @@
 (() => {
   window.Vectura = window.Vectura || {};
   window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
+  const { clamp01, lerp } = window.Vectura.AlgorithmUtils;
   window.Vectura.AlgorithmRegistry.horizon = {
     generate: (p, rng, noise, bounds) => {
       const { m, width, height } = bounds;
@@ -12,8 +13,6 @@
       const innerH = height - inset * 2;
       if (innerW < 1 || innerH < 1) return [];
 
-      const clamp01 = (v) => Math.max(0, Math.min(1, v));
-      const lerp = (a, b, t) => a + (b - a) * t;
       const EPS = 1e-9;
 
       // --- Geometry ---

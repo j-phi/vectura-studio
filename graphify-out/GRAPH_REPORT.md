@@ -1,12 +1,12 @@
 # Graph Report - /Users/jayphi/Documents/github/vectura-studio  (2026-05-05)
 
 ## Corpus Check
-- 127 files · ~2,318,793 words
+- 133 files · ~2,327,987 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1595 nodes · 3390 edges · 122 communities detected
-- Extraction: 85% EXTRACTED · 15% INFERRED · 0% AMBIGUOUS · INFERRED: 496 edges (avg confidence: 0.8)
+- 1609 nodes · 3427 edges · 125 communities detected
+- Extraction: 83% EXTRACTED · 17% INFERRED · 0% AMBIGUOUS · INFERRED: 578 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
@@ -132,26 +132,29 @@
 - [[_COMMUNITY_Community 119|Community 119]]
 - [[_COMMUNITY_Community 120|Community 120]]
 - [[_COMMUNITY_Community 121|Community 121]]
+- [[_COMMUNITY_Community 122|Community 122]]
+- [[_COMMUNITY_Community 123|Community 123]]
+- [[_COMMUNITY_Community 124|Community 124]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `Renderer` - 185 edges
+1. `Renderer` - 186 edges
 2. `UI` - 129 edges
-3. `VectorEngine` - 35 edges
-4. `getEl()` - 34 edges
-5. `sort()` - 31 edges
-6. `App` - 30 edges
-7. `applyPetalDesignerToLayer()` - 24 edges
-8. `generatePatternFillPaths()` - 24 edges
-9. `clone()` - 22 edges
-10. `getWavetableNoiseTemplates()` - 21 edges
+3. `clamp()` - 42 edges
+4. `VectorEngine` - 38 edges
+5. `getEl()` - 34 edges
+6. `sort()` - 33 edges
+7. `App` - 30 edges
+8. `applyPetalDesignerToLayer()` - 24 edges
+9. `generatePatternFillPaths()` - 24 edges
+10. `lerp()` - 22 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `src/render/renderer.js — Renderer` --references--> `Visual Snapshot: Rotated Polygon Selection (Hexagon with Rotation Transform Handles)`  [INFERRED]
   CLAUDE.md → tests/e2e/visual.spec.js-snapshots/rotated-polygon-selection-canvas-desktop-visual-chromium-darwin.png
 - `src/render/renderer.js — Renderer` --references--> `Visual Snapshot: Rotated Rectangle Selection (Rectangle with Rotation Transform Handles)`  [INFERRED]
   CLAUDE.md → tests/e2e/visual.spec.js-snapshots/rotated-rectangle-selection-canvas-desktop-visual-chromium-darwin.png
-- `Shape Pack Algorithm` --implements--> `Shape Pack Algorithm Canonical Baseline SVG`  [INFERRED]
-  src/core/algorithms/shapepack.js → tests/baselines/svg/shape-pack-canonical.svg
+- `listProfileFiles()` --calls--> `sort()`  [INFERRED]
+  scripts/build-petal-profile-library.js → /Users/jayphi/Documents/github/vectura-studio/src/vendor/polygon-clipping.umd.js
 - `src/core/modifiers.js — Modifiers` --references--> `Visual Snapshot: Mirrored Masked Circles (Two Mirrored Circle Layers with Grid Fill)`  [EXTRACTED]
   CLAUDE.md → tests/e2e/visual.spec.js-snapshots/mirrored-masked-circles-canvas-desktop-visual-chromium-darwin.png
 - `src/core/masking.js — Masking` --references--> `Visual Snapshot: Masking Horizon Rings Canvas (Rings + Topo Combined)`  [EXTRACTED]
@@ -182,155 +185,155 @@
 
 ### Community 0 - "Community 0"
 Cohesion: 0.03
-Nodes (22): isModifierLayer(), round(), rect(), buildBoundsFromVertices(), buildEllipseAnchors(), buildPolygonVertices(), buildRectangleVertices(), buildRoundedPolygonAnchors() (+14 more)
+Nodes (23): isModifierLayer(), rect(), buildBoundsFromVertices(), buildEllipseAnchors(), buildLineAnchors(), buildPolygonVertices(), buildRectangleVertices(), buildRoundedPolygonAnchors() (+15 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.03
-Nodes (15): App, getThemeConfig(), normalizeThemeName(), generate(), buildMirroredMaskedSceneSvg(), generate(), applyAutoColorization(), clamp() (+7 more)
+Nodes (23): App, getThemeConfig(), normalizeThemeName(), generate(), sort(), buildMirroredMaskedSceneSvg(), generate(), applyAutoColorization() (+15 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.03
-Nodes (40): cmp(), compareVectorAngles(), cosineOfAngle(), crossProduct(), dotProduct(), estimate(), getBboxOverlap(), horizontalIntersection() (+32 more)
+Cohesion: 0.06
+Nodes (88): clamp(), createPetalModifier(), createPatternDesignerMarkup(), applyDesignerEdgeSymmetry(), applyPetalDesignerProfileSelection(), applyPetalDesignerToLayer(), bindPetalDesignerCanvases(), bindPetalDesignerDrag() (+80 more)
 
 ### Community 3 - "Community 3"
-Cohesion: 0.05
-Nodes (78): clone(), deleteFromPools(), discardAllDraftPatterns(), discardDraftPattern(), duplicatePattern(), ensureCustomId(), exportPatternSvg(), getCustomPatterns() (+70 more)
+Cohesion: 0.04
+Nodes (33): cmp(), compareVectorAngles(), cosineOfAngle(), crossProduct(), dotProduct(), estimate(), getBboxOverlap(), horizontalIntersection() (+25 more)
 
 ### Community 4 - "Community 4"
-Cohesion: 0.06
-Nodes (85): createPetalModifier(), applyDesignerEdgeSymmetry(), applyPetalDesignerProfileSelection(), applyPetalDesignerToLayer(), bindPetalDesignerCanvases(), bindPetalDesignerDrag(), bindPetalDesignerShortcuts(), bindPetalDesignerUI() (+77 more)
-
-### Community 5 - "Community 5"
 Cohesion: 0.03
 Nodes (92): Documentation Synchronization Matrix, Public Process Contracts, Source-of-Truth Hierarchy, Legacy Doc Status Taxonomy, Agentic Harness Strategy, Task Lifecycle Protocol, Harness Testing Matrix, Agentic Harness Governance (+84 more)
 
-### Community 6 - "Community 6"
+### Community 5 - "Community 5"
 Cohesion: 0.06
-Nodes (74): xAt(), yAt(), buildSourceFillSampler(), choosePatternFillResolution(), clipSegmentToComposite(), collectBoundaryCrossings(), collectBoundaryEndpointCandidates(), collectCompiledPaths() (+66 more)
+Nodes (74): clone(), deleteFromPools(), discardAllDraftPatterns(), discardDraftPattern(), duplicatePattern(), ensureCustomId(), exportPatternSvg(), getCustomPatterns() (+66 more)
+
+### Community 6 - "Community 6"
+Cohesion: 0.04
+Nodes (65): lerp(), centerProfile(), clipFanLine(), dampen(), displace(), envAtX(), getFanBottomX(), sampleMountain() (+57 more)
 
 ### Community 7 - "Community 7"
-Cohesion: 0.05
-Nodes (53): fmt(), pathsToSvg(), shapeToSvg(), buildClipPathMarkup(), buildPreviewPair(), buildRangeValue(), buildVariantsFromDef(), clamp() (+45 more)
+Cohesion: 0.06
+Nodes (72): buildSourceFillSampler(), clipSegmentToComposite(), clipSegmentToPoly(), collectBoundaryCrossings(), collectBoundaryEndpointCandidates(), collectCompiledPaths(), collectGapIssues(), compilePatternFillTargetsFromData() (+64 more)
 
 ### Community 8 - "Community 8"
-Cohesion: 0.06
-Nodes (21): isValidDrawableLayerType(), resolveDrawableLayerType(), usesManualSourceGeometry(), VectorEngine, clonePaths(), countPathPoints(), applyMaskToPaths(), buildClosedPathSilhouettes() (+13 more)
+Cohesion: 0.04
+Nodes (43): iterateSamples(), baseLayerShape(), combineBlend(), createEvaluator(), defaultConfigFor(), SimpleNoise, round(), choosePatternFillResolution() (+35 more)
 
 ### Community 9 - "Community 9"
-Cohesion: 0.05
-Nodes (35): iterateSamples(), SimpleNoise, CoordRounder, applyNoiseOffset(), applyTrailBreaks(), buildDropShape(), buildOffsets(), buildTracePaths() (+27 more)
+Cohesion: 0.04
+Nodes (29): isValidDrawableLayerType(), buildEngine(), resolveDrawableLayerType(), usesManualSourceGeometry(), VectorEngine, clonePaths(), countPathPoints(), applyMaskToPaths() (+21 more)
 
 ### Community 10 - "Community 10"
-Cohesion: 0.07
-Nodes (45): clamp01(), combineBlend(), createEvaluator(), applyDesignerProfileSymmetry(), applyLineType(), applyModifiers(), bboxFromPoints(), bboxIntersects() (+37 more)
+Cohesion: 0.06
+Nodes (48): fmt(), pathsToSvg(), shapeToSvg(), buildClipPathMarkup(), buildPreviewPair(), buildRangeValue(), buildVariantsFromDef(), clampPointToRect() (+40 more)
 
 ### Community 11 - "Community 11"
-Cohesion: 0.07
-Nodes (34): applyArcMirrorToPaths(), applyMirrorToPaths(), applyRadialMirrorToPaths(), applyWallpaperMirrorToPaths(), buildAxisFromAngle(), classifyPieceSide(), clipClosedPolygonByAxis(), clipPathsToHalfPlane() (+26 more)
+Cohesion: 0.08
+Nodes (33): applyArcMirrorToPaths(), applyMirrorToPaths(), applyRadialMirrorToPaths(), applyWallpaperMirrorToPaths(), buildAxisFromAngle(), classifyPieceSide(), clipClosedPolygonByAxis(), clipPathsToHalfPlane() (+25 more)
 
 ### Community 12 - "Community 12"
-Cohesion: 0.08
-Nodes (25): listProfileFiles(), buildEnvelope(), classifyEndpoint(), firstEndSegmentHits(), firstStartSegmentHits(), pointEquals(), pointInPolygon(), segmentIntersection() (+17 more)
+Cohesion: 0.15
+Nodes (32): clone(), _buildNoiseRack(), createFlowfieldNoise(), createGridNoise(), createPetalisDriftNoise(), createPetalisModifierNoise(), createPhyllaNoise(), createRingsNoise() (+24 more)
 
 ### Community 13 - "Community 13"
-Cohesion: 0.14
-Nodes (33): clone(), _buildNoiseRack(), clamp(), createFlowfieldNoise(), createGridNoise(), createPetalisDriftNoise(), createPetalisModifierNoise(), createPhyllaNoise() (+25 more)
+Cohesion: 0.1
+Nodes (26): applyPad(), clamp01(), frac(), applyTile(), applyTile(), edgePoint(), ensureClosedPath(), interp() (+18 more)
 
 ### Community 14 - "Community 14"
 Cohesion: 0.14
 Nodes (17): closeRing(), difference(), intersection(), multiPolygonToPaths(), normalizeMultiPolygon(), normalizeRing(), rectToMultiPolygon(), ringsToEvenOddMultiPolygon() (+9 more)
 
 ### Community 15 - "Community 15"
-Cohesion: 0.19
-Nodes (16): applyPad(), applyTile(), buildParallelLinesAtAngle(), buildSlopeFamily(), clamp01(), clipInfiniteLineToBounds(), clipShearedInfiniteLineToBounds(), displacePoint() (+8 more)
-
-### Community 16 - "Community 16"
 Cohesion: 0.29
 Nodes (17): documentUnitsToMm(), formatDocumentLength(), getDocumentUnitLabel(), getDocumentUnitPrecision(), getDocumentUnitStep(), mmToDocumentUnits(), normalizeDocumentUnits(), formatDocumentNumber() (+9 more)
 
-### Community 17 - "Community 17"
-Cohesion: 0.18
-Nodes (13): carveAt(), clamp01(), clipRow(), edgePoint(), envAtX(), heightAtScreen(), interp(), lerp() (+5 more)
-
-### Community 18 - "Community 18"
-Cohesion: 0.26
-Nodes (13): centerProfile(), clamp01(), clipFanLine(), dampen(), displace(), envAtX(), getFanBottomX(), lerp() (+5 more)
-
-### Community 19 - "Community 19"
+### Community 16 - "Community 16"
 Cohesion: 0.22
 Nodes (11): normalizePaths(), pathSignature(), serializePaths(), classify(), classifyDesignerAssignments(), clone(), extractOutlines(), outlineMapByGroup() (+3 more)
 
-### Community 20 - "Community 20"
-Cohesion: 0.22
-Nodes (11): applyPad(), applyTile(), edgePoint(), ensureClosedPath(), frac(), interp(), isClosedPath(), pointKey() (+3 more)
+### Community 17 - "Community 17"
+Cohesion: 0.27
+Nodes (11): addSortIndicators(), enableUI(), getNthColumn(), getTable(), getTableBody(), getTableHeader(), loadColumns(), loadData() (+3 more)
 
-### Community 21 - "Community 21"
+### Community 18 - "Community 18"
+Cohesion: 0.3
+Nodes (13): applyEndpointTruncation(), buildEnvelope(), classifyEndpoint(), findEndTailCut(), findStartTailCut(), interpolatePoint(), pathLength(), pointEquals() (+5 more)
+
+### Community 19 - "Community 19"
 Cohesion: 0.33
-Nodes (11): applyAlgorithmBias(), applyLissajousBias(), applyPetalisBias(), applyRainfallBias(), applyShapePackBias(), clamp(), pickRandom(), randomInRange() (+3 more)
+Nodes (10): checkNoRingPointInsideCrack(), generate(), interpolateArmAngle(), makeBaseParams(), makeCrackParams(), makeDefaultBounds(), pointAngle(), pointRadius() (+2 more)
 
-### Community 22 - "Community 22"
+### Community 20 - "Community 20"
 Cohesion: 0.2
 Nodes (2): loadHorizonAlgorithm(), makeNoiseRackMock()
 
-### Community 23 - "Community 23"
+### Community 21 - "Community 21"
 Cohesion: 0.35
 Nodes (8): a(), B(), D(), g(), i(), k(), Q(), y()
 
-### Community 24 - "Community 24"
+### Community 22 - "Community 22"
 Cohesion: 0.27
 Nodes (5): distance(), generate(), makeDefaultBounds(), ringLeft(), ringRight()
 
-### Community 25 - "Community 25"
+### Community 23 - "Community 23"
+Cohesion: 0.31
+Nodes (7): buildEnvelope(), classifyEndpoint(), firstEndSegmentHits(), firstStartSegmentHits(), pointEquals(), pointInPolygon(), segmentIntersection()
+
+### Community 24 - "Community 24"
 Cohesion: 0.22
 Nodes (5): captureSvgExport(), captureSvgExport(), createCirclePath(), createMaskedEngine(), text()
 
-### Community 26 - "Community 26"
+### Community 25 - "Community 25"
 Cohesion: 0.29
 Nodes (2): loadTerrainAlgorithm(), makeNoiseRackMock()
 
-### Community 27 - "Community 27"
+### Community 26 - "Community 26"
 Cohesion: 0.25
 Nodes (8): Contour Canyon Terraces — Dense parallel contour lines forming tall bulging column/terrace shapes, repeating tessellated organic volumes like packed standing stones or pods, Contour Cellular Bulbs — Dense concentric contour lines forming packed organic bulb/cell shapes that tessellate across the canvas, topographic cross-section of biological forms, Contour Crater Depression — Intricate swirling contour lines forming a large bowl/crater depression with feathered sub-forms, fractal-like self-similar nesting, Contour Dune Ridge — Tightly spaced parallel contour lines warped over sand-dune ridge forms with a sharp ravine cutting through, high-contrast B&W topographic aesthetic, Contour Portrait Face — Flowing contour/isoline lines used to render a human face portrait, lines follow surface curvature to describe facial features like nose, eyes, mouth, Flowing Ribbon Streamlines — A sinuous bundle of fine parallel streamlines forming a ribbon-like 3D tube that twists and bends through white space, minimal and elegant, Spiral Halftone Figure — Dense Archimedean spiral lines used as halftone to render a human figure (portrait/bust), spiral tightens in dark areas, expands in light areas, Vortex Flowlines — A dark field of horizontal wavering flowfield lines pulled sharply into a bright central vortex/attractor sink, dramatic radial convergence
 
-### Community 28 - "Community 28"
+### Community 27 - "Community 27"
 Cohesion: 0.29
 Nodes (0): 
 
-### Community 29 - "Community 29"
-Cohesion: 0.48
-Nodes (5): getEl(), initTouchModifierBar(), initTouchMouseBridge(), refreshTouchModifierButtons(), setTouchModifier()
-
-### Community 30 - "Community 30"
+### Community 28 - "Community 28"
 Cohesion: 0.5
 Nodes (2): closed(), tile()
 
-### Community 31 - "Community 31"
+### Community 29 - "Community 29"
 Cohesion: 0.5
 Nodes (2): loadTopoAlgorithm(), makeNoiseRackMock()
 
-### Community 32 - "Community 32"
+### Community 30 - "Community 30"
 Cohesion: 0.6
 Nodes (3): getBtn(), getIcon(), openPicker()
+
+### Community 31 - "Community 31"
+Cohesion: 0.4
+Nodes (0): 
+
+### Community 32 - "Community 32"
+Cohesion: 0.4
+Nodes (1): resetHistory()
 
 ### Community 33 - "Community 33"
 Cohesion: 0.4
 Nodes (0): 
 
 ### Community 34 - "Community 34"
-Cohesion: 0.4
-Nodes (0): 
-
-### Community 35 - "Community 35"
 Cohesion: 0.5
 Nodes (2): loadVecturaRuntime(), parseLocalScripts()
 
-### Community 36 - "Community 36"
+### Community 35 - "Community 35"
 Cohesion: 0.7
 Nodes (4): goToNext(), goToPrevious(), makeCurrent(), toggleClass()
 
-### Community 37 - "Community 37"
+### Community 36 - "Community 36"
 Cohesion: 0.4
 Nodes (5): filter Operation, linesimplify Operation, linesort Operation, multipass Operation, vpype-like Optimization Integration
+
+### Community 37 - "Community 37"
+Cohesion: 0.5
+Nodes (0): 
 
 ### Community 38 - "Community 38"
 Cohesion: 0.5
@@ -342,11 +345,11 @@ Nodes (0):
 
 ### Community 40 - "Community 40"
 Cohesion: 0.5
-Nodes (0): 
+Nodes (1): listProfileFiles()
 
 ### Community 41 - "Community 41"
 Cohesion: 0.83
-Nodes (3): applyPad(), applyTile(), frac()
+Nodes (3): removeDangerousNodes(), sanitize(), stripDangerousAttributes()
 
 ### Community 42 - "Community 42"
 Cohesion: 1.0
@@ -438,7 +441,7 @@ Nodes (0):
 
 ### Community 64 - "Community 64"
 Cohesion: 1.0
-Nodes (2): Shape Pack Algorithm Canonical Baseline SVG, Shape Pack Algorithm
+Nodes (0): 
 
 ### Community 65 - "Community 65"
 Cohesion: 1.0
@@ -446,27 +449,27 @@ Nodes (0):
 
 ### Community 66 - "Community 66"
 Cohesion: 1.0
-Nodes (2): sourcePaths Reserved for Expanded Geometry Decision, Rationale: sourcePaths Reserved for Expanded Geometry
+Nodes (0): 
 
 ### Community 67 - "Community 67"
 Cohesion: 1.0
-Nodes (2): Flowfield Algorithm Canonical Baseline SVG, Flowfield Algorithm Gallery Sample SVG
+Nodes (0): 
 
 ### Community 68 - "Community 68"
 Cohesion: 1.0
-Nodes (2): Wavetable Horizon 3D Canonical Baseline SVG, Wavetable Horizon Canonical Baseline SVG
+Nodes (2): sourcePaths Reserved for Expanded Geometry Decision, Rationale: sourcePaths Reserved for Expanded Geometry
 
 ### Community 69 - "Community 69"
 Cohesion: 1.0
-Nodes (2): Line Warped Heightfield — Horizontal parallel lines warped upward by rectangular plateau shapes on dark background, minimal displacement-mapped heightfield rendering, Neon Scanline Totem — Neon cyan horizontal scanlines on black background, multiple stacked waveform segments that spell out a face/totem shape through local line displacement
+Nodes (2): Wavetable Horizon 3D Canonical Baseline SVG, Wavetable Horizon Canonical Baseline SVG
 
 ### Community 70 - "Community 70"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (2): Flowfield Algorithm Canonical Baseline SVG, Flowfield Algorithm Gallery Sample SVG
 
 ### Community 71 - "Community 71"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (2): Line Warped Heightfield — Horizontal parallel lines warped upward by rectangular plateau shapes on dark background, minimal displacement-mapped heightfield rendering, Neon Scanline Totem — Neon cyan horizontal scanlines on black background, multiple stacked waveform segments that spell out a face/totem shape through local line displacement
 
 ### Community 72 - "Community 72"
 Cohesion: 1.0
@@ -558,15 +561,15 @@ Nodes (0):
 
 ### Community 94 - "Community 94"
 Cohesion: 1.0
-Nodes (1): Boids Algorithm
+Nodes (0): 
 
 ### Community 95 - "Community 95"
 Cohesion: 1.0
-Nodes (1): Lissajous Algorithm
+Nodes (0): 
 
 ### Community 96 - "Community 96"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (1): Boids Algorithm
 
 ### Community 97 - "Community 97"
 Cohesion: 1.0
@@ -606,225 +609,243 @@ Nodes (0):
 
 ### Community 106 - "Community 106"
 Cohesion: 1.0
-Nodes (1): Non-Destructive History Timeline
+Nodes (0): 
 
 ### Community 107 - "Community 107"
 Cohesion: 1.0
-Nodes (1): CHANGELOG v0.6.80
+Nodes (0): 
 
 ### Community 108 - "Community 108"
 Cohesion: 1.0
-Nodes (1): Examples Directory README
+Nodes (1): Non-Destructive History Timeline
 
 ### Community 109 - "Community 109"
 Cohesion: 1.0
-Nodes (1): src/config/version.js
+Nodes (1): CHANGELOG v0.6.80
 
 ### Community 110 - "Community 110"
 Cohesion: 1.0
-Nodes (1): Rainfall Algorithm Canonical Baseline SVG
+Nodes (1): Examples Directory README
 
 ### Community 111 - "Community 111"
 Cohesion: 1.0
-Nodes (1): Masking Horizon Rings Baseline SVG
+Nodes (1): src/config/version.js
 
 ### Community 112 - "Community 112"
 Cohesion: 1.0
-Nodes (1): Mirrored Masked Circles Baseline SVG
+Nodes (1): Rainfall Algorithm Canonical Baseline SVG
 
 ### Community 113 - "Community 113"
 Cohesion: 1.0
-Nodes (1): Petalis Algorithm Canonical Baseline SVG
+Nodes (1): Masking Horizon Rings Baseline SVG
 
 ### Community 114 - "Community 114"
 Cohesion: 1.0
-Nodes (1): Lissajous Algorithm Canonical Baseline SVG
+Nodes (1): Mirrored Masked Circles Baseline SVG
 
 ### Community 115 - "Community 115"
 Cohesion: 1.0
-Nodes (1): Boids Algorithm Gallery Sample SVG
+Nodes (1): Petalis Algorithm Canonical Baseline SVG
 
 ### Community 116 - "Community 116"
 Cohesion: 1.0
-Nodes (1): Attractor Algorithm Gallery Sample SVG
+Nodes (1): Shape Pack Algorithm Canonical Baseline SVG
 
 ### Community 117 - "Community 117"
 Cohesion: 1.0
-Nodes (1): Visual Snapshot: Primitive Shape Creation (Hexagon + Rectangle)
+Nodes (1): Lissajous Algorithm Canonical Baseline SVG
 
 ### Community 118 - "Community 118"
 Cohesion: 1.0
-Nodes (1): Visual Snapshot: Main Shell Desktop (Full UI with Generator Panel)
+Nodes (1): Boids Algorithm Gallery Sample SVG
 
 ### Community 119 - "Community 119"
 Cohesion: 1.0
-Nodes (1): Visual Snapshot: Document Dimensions Canvas (Wavetable with Dimension Rulers)
+Nodes (1): Attractor Algorithm Gallery Sample SVG
 
 ### Community 120 - "Community 120"
 Cohesion: 1.0
-Nodes (1): Radial Branching Rings — Two organic radial forms with dense inward-flowing feather/flame strokes emanating from bright central voids, overlapping like a figure-eight
+Nodes (1): Visual Snapshot: Primitive Shape Creation (Hexagon + Rectangle)
 
 ### Community 121 - "Community 121"
+Cohesion: 1.0
+Nodes (1): Visual Snapshot: Main Shell Desktop (Full UI with Generator Panel)
+
+### Community 122 - "Community 122"
+Cohesion: 1.0
+Nodes (1): Visual Snapshot: Document Dimensions Canvas (Wavetable with Dimension Rulers)
+
+### Community 123 - "Community 123"
+Cohesion: 1.0
+Nodes (1): Radial Branching Rings — Two organic radial forms with dense inward-flowing feather/flame strokes emanating from bright central voids, overlapping like a figure-eight
+
+### Community 124 - "Community 124"
 Cohesion: 1.0
 Nodes (1): City — Isometric aerial city of skyscrapers rendered entirely in dense vertical hatching lines with strong perspective convergence, plotter-pen aesthetic, B&W
 
 ## Knowledge Gaps
-- **70 isolated node(s):** `Boids Algorithm`, `Shape Pack Algorithm`, `Lissajous Algorithm`, `Non-Destructive History Timeline`, `linesimplify Operation` (+65 more)
+- **68 isolated node(s):** `Boids Algorithm`, `Non-Destructive History Timeline`, `linesimplify Operation`, `linesort Operation`, `filter Operation` (+63 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **Thin community `Community 52`** (2 nodes): `makeEl()`, `pattern-designer-edit-tools.test.js`
+- **Thin community `Community 52`** (2 nodes): `createRendererAndLayer()`, `renderer-world-to-source-point.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 53`** (2 nodes): `clone()`, `petalis-noise-rack-modifiers.test.js`
+- **Thin community `Community 53`** (2 nodes): `makeEl()`, `pattern-designer-edit-tools.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 54`** (2 nodes): `mockRandom()`, `random-in-range.test.js`
+- **Thin community `Community 54`** (2 nodes): `clone()`, `petalis-noise-rack-modifiers.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 55`** (2 nodes): `createRenderer()`, `shape-tools.test.js`
+- **Thin community `Community 55`** (2 nodes): `mockRandom()`, `random-in-range.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 56`** (2 nodes): `buildLayer()`, `ui-bootstrap-panels.test.js`
+- **Thin community `Community 56`** (2 nodes): `loadSanitizerInJsdom()`, `security_xss.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 57`** (2 nodes): `centroidAxisOrder()`, `engine-workflow.test.js`
+- **Thin community `Community 57`** (2 nodes): `createRenderer()`, `shape-tools.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 58`** (2 nodes): `clone()`, `export-determinism.test.js`
+- **Thin community `Community 58`** (2 nodes): `buildLayer()`, `ui-bootstrap-panels.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 59`** (2 nodes): `listFiles()`, `patch-vitest-unicode.js`
+- **Thin community `Community 59`** (2 nodes): `centroidAxisOrder()`, `engine-workflow.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 60`** (2 nodes): `layerSvg()`, `icons.js`
+- **Thin community `Community 60`** (2 nodes): `clone()`, `export-determinism.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 61`** (2 nodes): `buildFillControlDefs()`, `ui-fill-panel.js`
+- **Thin community `Community 61`** (2 nodes): `listFiles()`, `patch-vitest-unicode.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 62`** (2 nodes): `sampleField()`, `grid.js`
+- **Thin community `Community 62`** (2 nodes): `layerSvg()`, `icons.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 63`** (2 nodes): `sampleField()`, `phylla.js`
+- **Thin community `Community 63`** (2 nodes): `buildFillControlDefs()`, `ui-fill-panel.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 64`** (2 nodes): `Shape Pack Algorithm Canonical Baseline SVG`, `Shape Pack Algorithm`
+- **Thin community `Community 64`** (2 nodes): `sampleField()`, `grid.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 65`** (2 nodes): `enforceDesignerParams()`, `petalisdesigner.js`
+- **Thin community `Community 65`** (2 nodes): `sampleField()`, `phylla.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 66`** (2 nodes): `sourcePaths Reserved for Expanded Geometry Decision`, `Rationale: sourcePaths Reserved for Expanded Geometry`
+- **Thin community `Community 66`** (2 nodes): `applyPerspective()`, `shapepack.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 67`** (2 nodes): `Flowfield Algorithm Canonical Baseline SVG`, `Flowfield Algorithm Gallery Sample SVG`
+- **Thin community `Community 67`** (2 nodes): `enforceDesignerParams()`, `petalisdesigner.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 68`** (2 nodes): `Wavetable Horizon 3D Canonical Baseline SVG`, `Wavetable Horizon Canonical Baseline SVG`
+- **Thin community `Community 68`** (2 nodes): `sourcePaths Reserved for Expanded Geometry Decision`, `Rationale: sourcePaths Reserved for Expanded Geometry`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 69`** (2 nodes): `Line Warped Heightfield — Horizontal parallel lines warped upward by rectangular plateau shapes on dark background, minimal displacement-mapped heightfield rendering`, `Neon Scanline Totem — Neon cyan horizontal scanlines on black background, multiple stacked waveform segments that spell out a face/totem shape through local line displacement`
+- **Thin community `Community 69`** (2 nodes): `Wavetable Horizon 3D Canonical Baseline SVG`, `Wavetable Horizon Canonical Baseline SVG`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 70`** (1 nodes): `playwright.config.js`
+- **Thin community `Community 70`** (2 nodes): `Flowfield Algorithm Canonical Baseline SVG`, `Flowfield Algorithm Gallery Sample SVG`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 71`** (1 nodes): `vitest.config.mjs`
+- **Thin community `Community 71`** (2 nodes): `Line Warped Heightfield — Horizontal parallel lines warped upward by rectangular plateau shapes on dark background, minimal displacement-mapped heightfield rendering`, `Neon Scanline Totem — Neon cyan horizontal scanlines on black background, multiple stacked waveform segments that spell out a face/totem shape through local line displacement`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 72`** (1 nodes): `modifiers.test.js`
+- **Thin community `Community 72`** (1 nodes): `playwright.config.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 73`** (1 nodes): `path-boolean.test.js`
+- **Thin community `Community 73`** (1 nodes): `vitest.config.mjs`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 74`** (1 nodes): `geometry-optimization-utils.test.js`
+- **Thin community `Community 74`** (1 nodes): `modifiers.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 75`** (1 nodes): `document-units-preferences.test.js`
+- **Thin community `Community 75`** (1 nodes): `path-boolean.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 76`** (1 nodes): `pattern-designer-library.test.js`
+- **Thin community `Community 76`** (1 nodes): `geometry-optimization-utils.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 77`** (1 nodes): `rng-noise.test.js`
+- **Thin community `Community 77`** (1 nodes): `document-units-preferences.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 78`** (1 nodes): `pattern-registry.test.js`
+- **Thin community `Community 78`** (1 nodes): `pattern-designer-library.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 79`** (1 nodes): `modifier-guide-bounds.test.js`
+- **Thin community `Community 79`** (1 nodes): `rng-noise.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 80`** (1 nodes): `security_xss.test.js`
+- **Thin community `Community 80`** (1 nodes): `pattern-registry.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 81`** (1 nodes): `masking.test.js`
+- **Thin community `Community 81`** (1 nodes): `modifier-guide-bounds.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 82`** (1 nodes): `crop-exports-settings.test.js`
+- **Thin community `Community 82`** (1 nodes): `masking.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 83`** (1 nodes): `right-pane-tabs.test.js`
+- **Thin community `Community 83`** (1 nodes): `crop-exports-settings.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 84`** (1 nodes): `mask-preview.test.js`
+- **Thin community `Community 84`** (1 nodes): `engine_state.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 85`** (1 nodes): `modifier-workflow.test.js`
+- **Thin community `Community 85`** (1 nodes): `right-pane-tabs.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 86`** (1 nodes): `algorithm-switching.test.js`
+- **Thin community `Community 86`** (1 nodes): `mask-preview.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 87`** (1 nodes): `stress.test.js`
+- **Thin community `Community 87`** (1 nodes): `modifier-workflow.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 88`** (1 nodes): `vitest.setup.js`
+- **Thin community `Community 88`** (1 nodes): `algorithm-switching.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 89`** (1 nodes): `extract-changelog.js`
+- **Thin community `Community 89`** (1 nodes): `stress.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 90`** (1 nodes): `sync-version.js`
+- **Thin community `Community 90`** (1 nodes): `vitest.setup.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 91`** (1 nodes): `main.js`
+- **Thin community `Community 91`** (1 nodes): `extract-changelog.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 92`** (1 nodes): `index.js`
+- **Thin community `Community 92`** (1 nodes): `sync-version.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 93`** (1 nodes): `hyphae.js`
+- **Thin community `Community 93`** (1 nodes): `main.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 94`** (1 nodes): `Boids Algorithm`
+- **Thin community `Community 94`** (1 nodes): `index.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 95`** (1 nodes): `Lissajous Algorithm`
+- **Thin community `Community 95`** (1 nodes): `hyphae.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 96`** (1 nodes): `attractor.js`
+- **Thin community `Community 96`** (1 nodes): `Boids Algorithm`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 97`** (1 nodes): `palettes.js`
+- **Thin community `Community 97`** (1 nodes): `attractor.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 98`** (1 nodes): `machines.js`
+- **Thin community `Community 98`** (1 nodes): `palettes.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 99`** (1 nodes): `presets.js`
+- **Thin community `Community 99`** (1 nodes): `machines.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 100`** (1 nodes): `ui-constants.js`
+- **Thin community `Community 100`** (1 nodes): `presets.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 101`** (1 nodes): `patterns.js`
+- **Thin community `Community 101`** (1 nodes): `ui-constants.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 102`** (1 nodes): `version.js`
+- **Thin community `Community 102`** (1 nodes): `patterns.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 103`** (1 nodes): `modifiers.js`
+- **Thin community `Community 103`** (1 nodes): `version.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 104`** (1 nodes): `descriptions.js`
+- **Thin community `Community 104`** (1 nodes): `algorithm-tuning.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 105`** (1 nodes): `library.js`
+- **Thin community `Community 105`** (1 nodes): `modifiers.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 106`** (1 nodes): `Non-Destructive History Timeline`
+- **Thin community `Community 106`** (1 nodes): `descriptions.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 107`** (1 nodes): `CHANGELOG v0.6.80`
+- **Thin community `Community 107`** (1 nodes): `library.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 108`** (1 nodes): `Examples Directory README`
+- **Thin community `Community 108`** (1 nodes): `Non-Destructive History Timeline`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 109`** (1 nodes): `src/config/version.js`
+- **Thin community `Community 109`** (1 nodes): `CHANGELOG v0.6.80`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 110`** (1 nodes): `Rainfall Algorithm Canonical Baseline SVG`
+- **Thin community `Community 110`** (1 nodes): `Examples Directory README`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 111`** (1 nodes): `Masking Horizon Rings Baseline SVG`
+- **Thin community `Community 111`** (1 nodes): `src/config/version.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 112`** (1 nodes): `Mirrored Masked Circles Baseline SVG`
+- **Thin community `Community 112`** (1 nodes): `Rainfall Algorithm Canonical Baseline SVG`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 113`** (1 nodes): `Petalis Algorithm Canonical Baseline SVG`
+- **Thin community `Community 113`** (1 nodes): `Masking Horizon Rings Baseline SVG`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 114`** (1 nodes): `Lissajous Algorithm Canonical Baseline SVG`
+- **Thin community `Community 114`** (1 nodes): `Mirrored Masked Circles Baseline SVG`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 115`** (1 nodes): `Boids Algorithm Gallery Sample SVG`
+- **Thin community `Community 115`** (1 nodes): `Petalis Algorithm Canonical Baseline SVG`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 116`** (1 nodes): `Attractor Algorithm Gallery Sample SVG`
+- **Thin community `Community 116`** (1 nodes): `Shape Pack Algorithm Canonical Baseline SVG`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 117`** (1 nodes): `Visual Snapshot: Primitive Shape Creation (Hexagon + Rectangle)`
+- **Thin community `Community 117`** (1 nodes): `Lissajous Algorithm Canonical Baseline SVG`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 118`** (1 nodes): `Visual Snapshot: Main Shell Desktop (Full UI with Generator Panel)`
+- **Thin community `Community 118`** (1 nodes): `Boids Algorithm Gallery Sample SVG`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 119`** (1 nodes): `Visual Snapshot: Document Dimensions Canvas (Wavetable with Dimension Rulers)`
+- **Thin community `Community 119`** (1 nodes): `Attractor Algorithm Gallery Sample SVG`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 120`** (1 nodes): `Radial Branching Rings — Two organic radial forms with dense inward-flowing feather/flame strokes emanating from bright central voids, overlapping like a figure-eight`
+- **Thin community `Community 120`** (1 nodes): `Visual Snapshot: Primitive Shape Creation (Hexagon + Rectangle)`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 121`** (1 nodes): `City — Isometric aerial city of skyscrapers rendered entirely in dense vertical hatching lines with strong perspective convergence, plotter-pen aesthetic, B&W`
+- **Thin community `Community 121`** (1 nodes): `Visual Snapshot: Main Shell Desktop (Full UI with Generator Panel)`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 122`** (1 nodes): `Visual Snapshot: Document Dimensions Canvas (Wavetable with Dimension Rulers)`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 123`** (1 nodes): `Radial Branching Rings — Two organic radial forms with dense inward-flowing feather/flame strokes emanating from bright central voids, overlapping like a figure-eight`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 124`** (1 nodes): `City — Isometric aerial city of skyscrapers rendered entirely in dense vertical hatching lines with strong perspective convergence, plotter-pen aesthetic, B&W`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `sort()` connect `Community 12` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 6`, `Community 7`, `Community 10`, `Community 11`, `Community 15`, `Community 18`, `Community 19`?**
-  _High betweenness centrality (0.157) - this node is a cross-community bridge._
-- **Why does `Renderer` connect `Community 0` to `Community 8`, `Community 1`, `Community 2`?**
-  _High betweenness centrality (0.112) - this node is a cross-community bridge._
-- **Why does `UI` connect `Community 1` to `Community 8`, `Community 2`, `Community 3`, `Community 7`?**
-  _High betweenness centrality (0.074) - this node is a cross-community bridge._
-- **Are the 28 inferred relationships involving `sort()` (e.g. with `classifyIsometricPaths()` and `classifyDesignerAssignments()`) actually correct?**
-  _`sort()` has 28 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `Boids Algorithm`, `Shape Pack Algorithm`, `Lissajous Algorithm` to the rest of the system?**
-  _70 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Why does `Renderer` connect `Community 0` to `Community 8`, `Community 1`, `Community 3`, `Community 9`?**
+  _High betweenness centrality (0.133) - this node is a cross-community bridge._
+- **Why does `sort()` connect `Community 1` to `Community 2`, `Community 3`, `Community 5`, `Community 6`, `Community 7`, `Community 40`, `Community 10`, `Community 11`, `Community 13`, `Community 16`, `Community 17`, `Community 18`, `Community 23`?**
+  _High betweenness centrality (0.109) - this node is a cross-community bridge._
+- **Why does `UI` connect `Community 1` to `Community 9`, `Community 10`, `Community 5`?**
+  _High betweenness centrality (0.069) - this node is a cross-community bridge._
+- **Are the 41 inferred relationships involving `clamp()` (e.g. with `applyAutoColorization()` and `clampPointToRect()`) actually correct?**
+  _`clamp()` has 41 INFERRED edges - model-reasoned connections that need verification._
+- **What connects `Boids Algorithm`, `Non-Destructive History Timeline`, `linesimplify Operation` to the rest of the system?**
+  _68 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Community 0` be split into smaller, more focused modules?**
   _Cohesion score 0.03 - nodes in this community are weakly interconnected._
 - **Should `Community 1` be split into smaller, more focused modules?**

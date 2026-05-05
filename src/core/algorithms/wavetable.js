@@ -4,8 +4,12 @@
 (() => {
   window.Vectura = window.Vectura || {};
   window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
+  const { clamp01, lerp, frac, applyPad } = window.Vectura.AlgorithmUtils;
   window.Vectura.AlgorithmRegistry.wavetable = {
       generate: (p, rng, noise, bounds) => {
+        const T = (window.Vectura.AlgorithmTuning && window.Vectura.AlgorithmTuning.wavetable) || {
+          defaultZoom: 0.02,
+        };
         const { m, height, width } = bounds;
         const paths = [];
         const inset = bounds.truncate ? m : 0;
@@ -49,14 +53,6 @@
         const lineOffsetX = Math.sin(lineOffsetAngle);
         const lineOffsetY = -Math.cos(lineOffsetAngle);
         const rack = window.Vectura.NoiseRack.createEvaluator({ noise, seed: p.seed ?? 0 });
-        const lerp = (a, b, t) => a + (b - a) * t;
-        const frac = (v) => v - Math.floor(v);
-        const applyPad = (t, pad) => {
-          if (pad <= 0) return t;
-          const span = 1 - pad * 2;
-          if (span <= 0) return 0.5;
-          return Math.max(0, Math.min(1, (t - pad) / span));
-        };
         const applyTile = (nx, ny, mode, padding = 0) => {
           const pad = Math.max(0, Math.min(0.45, padding));
           switch (mode) {
@@ -136,7 +132,7 @@
           type: p.noiseType || 'simplex',
           blend: 'add',
           amplitude: p.amplitude ?? 0,
-          zoom: p.zoom ?? 0.02,
+          zoom: p.zoom ?? T.defaultZoom,
           freq: p.freq ?? 1,
           angle: p.noiseAngle ?? 0,
           shiftX: 0,
@@ -210,7 +206,7 @@
           imageSolarize: 0.5,
           imagePixelate: 12,
           imageDither: 0.5,
-          polygonZoomReference: p.zoom ?? 0.02,
+          polygonZoomReference: p.zoom ?? T.defaultZoom,
           polygonRadius: 2,
           polygonSides: 6,
           polygonRotation: 0,
@@ -285,7 +281,6 @@
             };
           });
         const maxAmp = noiseSamplers.reduce((sum, sampler) => sum + Math.abs(sampler.amplitude || 0), 0) || 1;
-        const clamp01 = (v) => Math.max(0, Math.min(1, v));
         const lineStructure = [
           'horizontal',
           'vertical',

@@ -1039,12 +1039,14 @@
       const draftName = `${fileName}`.replace(/\.svg$/i, '').replace(/[-_]+/g, ' ').trim() || 'Custom Pattern';
       const registry = getPatternRegistry();
       const draftId = registry?.ensureCustomId?.(draftName) || `custom-${Date.now().toString(36)}`;
+      const sanitizeSvg = window.Vectura?.SvgSanitize?.sanitize;
+      const safeSvg = typeof sanitizeSvg === 'function' ? sanitizeSvg(svgText) : svgText;
       const draftMeta = {
         id: draftId,
         name: draftName,
         filename: fileName,
         source: 'Custom Patterns',
-        svg: svgText,
+        svg: safeSvg,
         custom: true,
       };
       const validation = window.Vectura.AlgorithmRegistry?.patternValidateMeta?.(draftMeta, { cache: false, cacheKey: `${draftId}-preview` });

@@ -5,7 +5,25 @@ const vm = require('vm');
 const loadNoiseRack = () => {
   const filePath = path.resolve(__dirname, '../../src/core/noise-rack.js');
   const code = fs.readFileSync(filePath, 'utf8');
-  const context = { window: { Vectura: {} }, Math };
+  const context = {
+    window: {
+      Vectura: {
+        AlgorithmUtils: {
+          clamp: (v, lo, hi) => Math.min(hi, Math.max(lo, v)),
+          clamp01: (v) => Math.max(0, Math.min(1, v)),
+          lerp: (a, b, t) => a + (b - a) * t,
+          frac: (v) => v - Math.floor(v),
+          applyPad: (t, pad) => {
+            if (pad <= 0) return t;
+            const span = 1 - pad * 2;
+            if (span <= 0) return 0.5;
+            return Math.max(0, Math.min(1, (t - pad) / span));
+          },
+        },
+      },
+    },
+    Math,
+  };
   vm.createContext(context);
   vm.runInContext(code, context, { filename: filePath });
   return context.window.Vectura.NoiseRack;

@@ -9,49 +9,11 @@
         const { m, width, height } = bounds;
         const paths = [];
         const rack = window.Vectura.NoiseRack.createEvaluator({ noise, seed: p.seed ?? 0 });
-        const legacyNoise = {
-          enabled: true,
-          type: p.noiseType || 'simplex',
-          blend: 'add',
-          amplitude: 1,
-          zoom: p.noiseScale ?? 0.05,
-          freq: 1,
-          angle: 0,
-          shiftX: 0,
-          shiftY: 0,
-          tileMode: 'off',
-          tilePadding: 0,
-          patternScale: 1,
-          warpStrength: 1,
-          cellularScale: 1,
-          cellularJitter: 1,
-          stepsCount: 5,
-          seed: 0,
-          octaves: 1,
-          lacunarity: 2,
-          gain: 0.5,
-          noiseStyle: 'linear',
-          noiseThreshold: 0,
-          imageWidth: 1,
-          imageHeight: 1,
-          microFreq: 0,
-          imageInvertColor: false,
-          imageInvertOpacity: false,
-          imageId: '',
-          imageName: '',
-          imagePreview: '',
-          imageAlgo: 'luma',
-          imageEffects: [],
-          polygonZoomReference: p.noiseScale ?? 0.05,
-          polygonRadius: 2,
-          polygonSides: 6,
-          polygonRotation: 0,
-          polygonOutline: 0,
-          polygonEdgeRadius: 0,
-        };
-        const noiseLayers = (Array.isArray(p.noises) && p.noises.length ? p.noises : [legacyNoise])
+        const { stack: defaultStack, layer: defaultLayer } =
+          window.Vectura.NoiseRack.defaultConfigFor('phylla', p);
+        const noiseLayers = (Array.isArray(p.noises) && p.noises.length ? p.noises : defaultStack)
           .map((noiseLayer) => ({
-            ...legacyNoise,
+            ...defaultLayer,
             ...(noiseLayer || {}),
             enabled: noiseLayer?.enabled !== false,
           }))

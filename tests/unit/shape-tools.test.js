@@ -49,6 +49,39 @@ describe('Shape tool geometry', () => {
     expect(ovalPath.meta.anchors).toHaveLength(4);
   });
 
+  test('line drafts produce open two-anchor paths and snap to 45° with shift', () => {
+    const renderer = createRenderer();
+
+    const free = renderer.buildShapeFromDraft(
+      { x: 10, y: 20 },
+      { x: 60, y: 80 },
+      {},
+      { kind: 'line' }
+    );
+    expect(free.type).toBe('line');
+    expect(free.x1).toBe(10);
+    expect(free.y1).toBe(20);
+    expect(free.x2).toBe(60);
+    expect(free.y2).toBe(80);
+
+    const linePath = renderer.buildShapePath(free);
+    expect(linePath.meta.shape.type).toBe('line');
+    expect(linePath.meta.closed).toBe(false);
+    expect(linePath.meta.anchors).toHaveLength(2);
+
+    // Shift snaps angle to nearest π/4. A 17° angle (slightly off horizontal)
+    // should snap to 0°, putting the endpoint on the x-axis through start.
+    const dx = 100;
+    const dy = Math.tan((17 * Math.PI) / 180) * dx;
+    const snapped = renderer.buildShapeFromDraft(
+      { x: 0, y: 0 },
+      { x: dx, y: dy },
+      { shift: true },
+      { kind: 'line' }
+    );
+    expect(Math.abs(snapped.y2)).toBeLessThan(1e-6);
+  });
+
   test('polygon drafts track side count changes during drag', () => {
     const renderer = createRenderer();
     renderer.setTool('shape-polygon');

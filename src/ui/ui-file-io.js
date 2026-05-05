@@ -139,8 +139,10 @@
 
     parseSvgToLayerGroups(svgText) {
       if (!svgText) return [];
+      const sanitizeSvg = window.Vectura?.SvgSanitize?.sanitize;
+      const safeText = typeof sanitizeSvg === 'function' ? sanitizeSvg(svgText) : svgText;
       const parser = new DOMParser();
-      const doc = parser.parseFromString(svgText, 'image/svg+xml');
+      const doc = parser.parseFromString(safeText, 'image/svg+xml');
       const svg = doc.querySelector('svg');
       if (!svg) return [];
       const parseNumber = (val, fallback = 0) => {
@@ -184,15 +186,8 @@
         return groups.get(key);
       };
       const elements = svg.querySelectorAll('path, line, polyline, polygon, rect, circle, ellipse');
-      const stripEventHandlers = (node) => {
-        [...node.attributes].forEach((a) => { if (/^on/i.test(a.name)) node.removeAttribute(a.name); });
-        node.querySelectorAll('*').forEach((child) => {
-          [...child.attributes].forEach((a) => { if (/^on/i.test(a.name)) child.removeAttribute(a.name); });
-        });
-      };
       elements.forEach((el) => {
         const clone = el.cloneNode(true);
-        stripEventHandlers(clone);
         tempSvg.appendChild(clone);
         const stroke = el.getAttribute('stroke') || el.style?.stroke || '';
         const strokeWidth = parseNumber(el.getAttribute('stroke-width') || el.style?.strokeWidth, NaN);

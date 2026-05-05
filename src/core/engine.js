@@ -160,6 +160,9 @@
           strokeWidth: layer.strokeWidth,
           lineCap: layer.lineCap,
           visible: layer.visible,
+          origin: layer.origin
+            ? { x: Number(layer.origin.x) || 0, y: Number(layer.origin.y) || 0 }
+            : { x: 0, y: 0 },
         })),
       };
     }
@@ -205,6 +208,11 @@
         layer.strokeWidth = Number.isFinite(data.strokeWidth) ? data.strokeWidth : layer.strokeWidth;
         layer.lineCap = data.lineCap || layer.lineCap;
         layer.visible = data.visible !== false;
+        if (data.origin && Number.isFinite(data.origin.x) && Number.isFinite(data.origin.y)) {
+          layer.origin = { x: data.origin.x, y: data.origin.y };
+        } else {
+          layer.origin = { x: 0, y: 0 };
+        }
         layer.paths = [];
         layer.displayPaths = [];
         layer.displayMaskActive = false;
@@ -218,7 +226,16 @@
       this.activeLayerId = state.activeLayerId || (this.layers[0] ? this.layers[0].id : null);
       // Sync _layerCounter from SETTINGS after applyState has already restored globalLayerCount.
       this._layerCounter = SETTINGS.globalLayerCount ?? this._layerCounter;
+      // Snapshot imported origins so generate() (which derives a fresh origin from path
+      // bounds) does not clobber the values restored from the saved payload.
+      const importedOrigins = new Map(
+        this.layers.map((layer) => [layer.id, { x: layer.origin?.x ?? 0, y: layer.origin?.y ?? 0 }])
+      );
       this.layers.forEach((l) => this.generate(l.id));
+      this.layers.forEach((l) => {
+        const snapshot = importedOrigins.get(l.id);
+        if (snapshot) l.origin = { x: snapshot.x, y: snapshot.y };
+      });
       this.computeAllDisplayGeometry();
     }
 
@@ -374,6 +391,75 @@
         this.activeLayerId = pickNextActiveId(remainingLayers, targetIndex);
       }
       this.computeAllDisplayGeometry();
+    }
+
+    reorderLayers(layersOrIds) {
+      if (!Array.isArray(layersOrIds)) {
+        console.warn('[Engine] reorderLayers requires an array');
+        return false;
+      }
+      if (layersOrIds.length !== this.layers.length) {
+        console.warn('[Engine] reorderLayers length mismatch with current layer set');
+        return false;
+      }
+      const first = layersOrIds[0];
+      const isIdList = typeof first === 'string';
+      const ids = isIdList
+        ? layersOrIds.map((entry) => (typeof entry === 'string' ? entry : null))
+        : layersOrIds.map((entry) => (entry && typeof entry.id === 'string' ? entry.id : null));
+      if (ids.some((id) => !id || typeof id !== 'string')) {
+        console.warn('[Engine] reorderLayers received invalid entries');
+        return false;
+      }
+      const idSet = new Set(ids);
+      if (idSet.size !== this.layers.length) {
+        console.warn('[Engine] reorderLayers ids must be unique and match current layer count');
+        return false;
+      }
+      const map = new Map(this.layers.map((layer) => [layer.id, layer]));
+      for (const id of ids) {
+        if (!map.has(id)) {
+          console.warn('[Engine] reorderLayers received unknown id');
+          return false;
+        }
+      }
+      this.layers = ids.map((id) => map.get(id));
+      return true;
+    }
+
+    deleteLayersById(idArray) {
+      if (!Array.isArray(idArray)) {
+        console.warn('[Engine] deleteLayersById requires an array');
+        return false;
+      }
+      const removeSet = new Set();
+      for (const id of idArray) {
+        if (typeof id !== 'string' || !id) continue;
+        if (this.layers.some((layer) => layer.id === id)) removeSet.add(id);
+      }
+      if (!removeSet.size) return false;
+      this.layers = this.layers.filter((layer) => !removeSet.has(layer.id));
+      if (this.activeLayerId && removeSet.has(this.activeLayerId)) {
+        this.activeLayerId = null;
+      }
+      return true;
+    }
+
+    setActiveLayerId(idOrNull) {
+      if (idOrNull === null || idOrNull === undefined) {
+        this.activeLayerId = null;
+        return true;
+      }
+      if (typeof idOrNull !== 'string') {
+        console.warn('[Engine] setActiveLayerId requires a string id or null');
+        return false;
+      }
+      if (!this.layers.some((layer) => layer.id === idOrNull)) {
+        console.warn('[Engine] setActiveLayerId received unknown id');
+        return false;
+      }
+      this.activeLayerId = idOrNull;
+      return true;
     }
 
     moveLayer(id, direction) {

@@ -462,6 +462,7 @@
       }
       this.activeTool = tool;
       this.updateCursor();
+      if (tool !== 'fill' && tool !== 'fill-erase') this.hideFillLoupe?.();
       this.draw();
     }
 
@@ -539,6 +540,131 @@
       return `url("data:image/svg+xml;utf8,${encoded}") ${hotX} ${hotY}, ${fallback}`;
     }
 
+    ensureFillLoupe() {
+      if (this.fillLoupeEl) return this.fillLoupeEl;
+      if (!this.canvas) return null;
+      const parent = this.canvas.parentElement;
+      if (!parent) return null;
+      const root = document.createElement('div');
+      root.className = 'fill-loupe';
+      root.setAttribute('aria-hidden', 'true');
+      const bucket = document.createElement('div');
+      bucket.className = 'fill-loupe-bucket';
+      bucket.innerHTML = window.Vectura?.Icons?.cursor?.bucket?.() || '';
+      const loupe = document.createElement('canvas');
+      loupe.className = 'fill-loupe-magnifier';
+      loupe.width = 96;
+      loupe.height = 96;
+      root.appendChild(bucket);
+      root.appendChild(loupe);
+      // Parent must be position: relative for absolute child; fallback to body.
+      const cs = window.getComputedStyle(parent);
+      if (cs.position === 'static') document.body.appendChild(root);
+      else parent.appendChild(root);
+      this.fillLoupeEl = root;
+      this.fillLoupeBucketEl = bucket;
+      this.fillLoupeMagEl = loupe;
+      this.fillLoupeMagCtx = loupe.getContext('2d');
+      return root;
+    }
+
+    hideFillLoupe() {
+      if (this.fillLoupeEl) this.fillLoupeEl.style.display = 'none';
+    }
+
+    showFillLoupe(clientX, clientY) {
+      if (this.activeTool !== 'fill' && this.activeTool !== 'fill-erase') {
+        this.hideFillLoupe();
+        return;
+      }
+      const root = this.ensureFillLoupe();
+      if (!root || !this.canvas) return;
+      const canvasRect = this.canvas.getBoundingClientRect();
+      const inside =
+        clientX >= canvasRect.left &&
+        clientX <= canvasRect.right &&
+        clientY >= canvasRect.top &&
+        clientY <= canvasRect.bottom;
+      if (!inside) {
+        this.hideFillLoupe();
+        return;
+      }
+      root.style.display = 'block';
+      // Position root at the document-relative cursor coordinate.
+      // The bucket icon's hotspot (the spout dot) sits at (23.5, 23.5) in its
+      // 28x28 viewBox, so offset the root so that point aligns with the cursor.
+      const HOT_X = 23.5;
+      const HOT_Y = 23.5;
+      const docX = clientX + window.scrollX;
+      const docY = clientY + window.scrollY;
+      root.style.left = `${docX - HOT_X}px`;
+      root.style.top = `${docY - HOT_Y}px`;
+
+      // Render the magnifier with content sampled around the cursor.
+      const ctx = this.fillLoupeMagCtx;
+      const mag = this.fillLoupeMagEl;
+      if (ctx && mag) {
+        const ZOOM = 4;
+        const mw = mag.width;
+        const mh = mag.height;
+        const sw = mw / ZOOM;
+        const sh = mh / ZOOM;
+        // canvas pixel coords under the cursor
+        const cssX = clientX - canvasRect.left;
+        const cssY = clientY - canvasRect.top;
+        const ratioX = this.canvas.width / Math.max(1, canvasRect.width);
+        const ratioY = this.canvas.height / Math.max(1, canvasRect.height);
+        const srcX = cssX * ratioX - sw / 2;
+        const srcY = cssY * ratioY - sh / 2;
+        ctx.imageSmoothingEnabled = false;
+        ctx.clearRect(0, 0, mw, mh);
+        try {
+          ctx.drawImage(this.canvas, srcX, srcY, sw, sh, 0, 0, mw, mh);
+        } catch (_) {
+          // Canvas not ready; ignore.
+        }
+        // Crosshair at the loupe center marking the fill point.
+        ctx.save();
+        ctx.strokeStyle = '#3b82f6';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(mw / 2 - 6, mh / 2);
+        ctx.lineTo(mw / 2 + 6, mh / 2);
+        ctx.moveTo(mw / 2, mh / 2 - 6);
+        ctx.lineTo(mw / 2, mh / 2 + 6);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Auto-position the magnifier into the canvas-side quadrant that fits
+      // best. The bucket sits at the cursor; the magnifier is placed in the
+      // quadrant relative to the bucket.
+      const magW = this.fillLoupeMagEl?.width || 96;
+      const magH = this.fillLoupeMagEl?.height || 96;
+      const GAP = 14;
+      const spaceRight = canvasRect.right - clientX;
+      const spaceLeft = clientX - canvasRect.left;
+      const spaceBelow = canvasRect.bottom - clientY;
+      const spaceAbove = clientY - canvasRect.top;
+      const placeRight = spaceRight >= magW + GAP || spaceRight >= spaceLeft;
+      const placeBelow = spaceBelow >= magH + GAP || spaceBelow >= spaceAbove;
+      const magEl = this.fillLoupeMagEl;
+      if (magEl) {
+        if (placeRight) {
+          magEl.style.left = `${HOT_X + GAP}px`;
+          magEl.style.right = '';
+        } else {
+          magEl.style.left = `${HOT_X - magW - GAP}px`;
+          magEl.style.right = '';
+        }
+        if (placeBelow) {
+          magEl.style.top = `${HOT_Y + GAP}px`;
+        } else {
+          magEl.style.top = `${HOT_Y - magH - GAP}px`;
+        }
+      }
+    }
+
     isPrimitiveShapeType(type) {
       return type === 'rect' || type === 'oval' || type === 'polygon' || type === 'line';
     }
@@ -553,11 +679,11 @@
     updateCursor() {
       if (!this.canvas) return;
       if (this.activeTool === 'hand') {
-        this.setCanvasCursor(this.isPan ? 'grabbing' : 'grab');
+        this.setCanvasCursor(this.isPan ? 'grabbing' : 'grab', 'hand');
         return;
       }
       if (this.activeTool === 'pen') {
-        this.setCanvasCursor('crosshair');
+        this.setCanvasCursor(this.cursorDataUrl('pen', 2, 19, 'crosshair'), 'pen');
         return;
       }
       if (`${this.activeTool}`.startsWith('shape-')) {
@@ -565,11 +691,23 @@
         return;
       }
       if (this.activeTool === 'algo-draw') {
-        this.setCanvasCursor('crosshair');
+        this.setCanvasCursor('crosshair', 'algo-draw');
         return;
       }
       if (this.activeTool === 'scissor') {
-        this.setCanvasCursor('crosshair');
+        this.setCanvasCursor('crosshair', 'scissor');
+        return;
+      }
+      if (this.activeTool === 'fill' || this.activeTool === 'fill-erase') {
+        this.setCanvasCursor('none', 'fill');
+        return;
+      }
+      if (this.activeTool === 'direct') {
+        this.setCanvasCursor(this.cursorDataUrl('outline', 2, 2, 'auto'), 'direct');
+        return;
+      }
+      if (this.activeTool === 'select') {
+        this.setCanvasCursor(this.cursorDataUrl('filled', 2, 2, 'auto'), 'select');
         return;
       }
       this.setCanvasCursor('crosshair');
@@ -2965,6 +3103,9 @@
 
     move(e) {
       if (!this.ready) return;
+      if (this.activeTool === 'fill' || this.activeTool === 'fill-erase') {
+        this.showFillLoupe(e.clientX, e.clientY);
+      }
       if (this.isTouchPointer(e)) this.updateTouchPointer(e);
       if (this.touchGesture) {
         if (this.touchPointers.size >= 2) {

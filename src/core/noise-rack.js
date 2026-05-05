@@ -1,7 +1,7 @@
 (() => {
   window.Vectura = window.Vectura || {};
 
-  const clamp01 = (value) => Math.max(0, Math.min(1, value));
+  const { clamp01, lerp } = window.Vectura.AlgorithmUtils;
   const DEFAULT_POLYGON_ZOOM_REFERENCE = 0.02;
   const resolveEffectiveZoom = (noiseDef, fallbackZoom = 1) => {
     const rawZoom = Math.max(0.0001, noiseDef?.zoom ?? fallbackZoom);
@@ -52,7 +52,6 @@
       const n = Math.sin(x * 127.1 + y * 311.7 + seed * 0.1) * 43758.5453;
       return n - Math.floor(n);
     };
-    const lerp = (a, b, t) => a + (b - a) * t;
     const smoothstep = (t) => t * t * (3 - 2 * t);
     const valueNoise = (x, y, localSeed = 0, smooth = true) => {
       const xi = Math.floor(x);
@@ -566,11 +565,119 @@
     };
   };
 
+  // ---------------------------------------------------------------------------
+  // defaultConfigFor(algorithmId, params)
+  //
+  // Returns a Noise Rack–shaped default config for an algorithm whose `p.noises`
+  // is empty / missing / invalid, expressed in the same schema the UI authors
+  // (so it can be passed through the rack pipeline as if a user had built it).
+  //
+  // Return shape: `{ stack: NoiseLayer[], layer: NoiseLayer }`
+  //   - `stack` is the default noise stack (may be empty for algorithms whose
+  //     out-of-the-box behavior is "no displacement").
+  //   - `layer` is the canonical default layer "shape" used as a merge base when
+  //     user-supplied layers omit fields. It's also what populates `stack` for
+  //     algorithms whose default is a single legacy layer.
+  //
+  // Each branch mirrors today's legacyNoise/defaultLayer object byte-for-byte
+  // so the refactor is behavior-preserving.
+  // ---------------------------------------------------------------------------
+  const baseLayerShape = () => ({
+    enabled: true,
+    type: 'simplex',
+    blend: 'add',
+    amplitude: 1,
+    zoom: 0.02,
+    freq: 1,
+    angle: 0,
+    shiftX: 0,
+    shiftY: 0,
+    tileMode: 'off',
+    tilePadding: 0,
+    patternScale: 1,
+    warpStrength: 1,
+    cellularScale: 1,
+    cellularJitter: 1,
+    stepsCount: 5,
+    seed: 0,
+    octaves: 1,
+    lacunarity: 2,
+    gain: 0.5,
+    noiseStyle: 'linear',
+    noiseThreshold: 0,
+    imageWidth: 1,
+    imageHeight: 1,
+    microFreq: 0,
+    imageInvertColor: false,
+    imageInvertOpacity: false,
+    imageId: '',
+    imageName: '',
+    imagePreview: '',
+    imageAlgo: 'luma',
+    imageEffects: [],
+    polygonZoomReference: 0.02,
+    polygonRadius: 2,
+    polygonSides: 6,
+    polygonRotation: 0,
+    polygonOutline: 0,
+    polygonEdgeRadius: 0,
+  });
+
+  const defaultConfigFor = (algorithmId, params = {}) => {
+    const p = params || {};
+    switch (algorithmId) {
+      case 'topo': {
+        const layer = {
+          ...baseLayerShape(),
+          type: p.noiseType || 'simplex',
+          zoom: p.noiseScale ?? 0.003,
+          shiftX: p.noiseOffsetX ?? 0,
+          shiftY: p.noiseOffsetY ?? 0,
+          octaves: p.octaves ?? 3,
+          lacunarity: p.lacunarity ?? 2.0,
+          gain: p.gain ?? 0.5,
+          imageId: p.noiseImageId || '',
+          imageName: p.noiseImageName || '',
+          imageAlgo: p.imageAlgo || 'luma',
+          polygonZoomReference: p.noiseScale ?? 0.003,
+        };
+        return { stack: [layer], layer };
+      }
+      case 'phylla': {
+        const layer = {
+          ...baseLayerShape(),
+          type: p.noiseType || 'simplex',
+          zoom: p.noiseScale ?? 0.05,
+          polygonZoomReference: p.noiseScale ?? 0.05,
+        };
+        return { stack: [layer], layer };
+      }
+      case 'terrain': {
+        // Terrain's pre-refactor default was an EMPTY rack stack — the
+        // mountain/valley pipeline drives the heightfield; rack noise is purely
+        // additive when the user explicitly authors a layer. Preserve that.
+        const layer = {
+          ...baseLayerShape(),
+          id: 'noise-1',
+          amplitude: 0,
+          zoom: 0.01,
+          polygonZoomReference: 0.01,
+        };
+        return { stack: [], layer };
+      }
+      default: {
+        const layer = baseLayerShape();
+        return { stack: [layer], layer };
+      }
+    }
+  };
+
   window.Vectura.NoiseRack = {
     name: 'Noise Rack',
     version: 1,
     combineBlend,
     createEvaluator,
     resolveEffectiveZoom,
+    defaultConfigFor,
   };
 })();

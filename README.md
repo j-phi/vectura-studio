@@ -69,9 +69,10 @@ An Illustrator-style shared toolbar now drives the main canvas plus the embedded
 <details>
 <summary>Full canvas & tool feature list</summary>
 
-- Shared Illustrator-style toolbar with shortcuts: `V` selection, `A` direct selection, `Space` hand, `P` pen, `M` rectangle, `L` oval, `Y` polygon, `C` scissor, `F` fill, `Shift+F` erase fill; press again to cycle subtools where available
+- Shared Illustrator-style toolbar with shortcuts: `V` selection, `A` direct selection, `Space` hand, `P` pen, `M` rectangle, `L` oval, `U` line, `Y` polygon, `C` scissor, `F` fill, `Shift+F` erase fill; press again to cycle subtools where available
 - Direct path editing for individual line endpoints and bezier handles
-- `Rectangle (M)`, `Oval (L)`, and `Polygon (Y)` shape tools create editable expanded layers; fresh shapes stay straight-edged on mouse release
+- Shape tools (Rectangle `M`, Oval `L`, Line `U`, Polygon `Y`) live under a single long-press group on the toolbar — single-tap activates the most-recently-used variant, long-press opens the variant submenu. All four create editable expanded layers; fresh shapes stay straight-edged on mouse release
+- Custom canvas cursors: filled arrow for Selection (`V`), outline arrow for Direct Selection (`A`), pen-tip for Pen (`P`), and a paint-bucket overlay with an auto-positioning magnifier loupe for Fill (`F`) that stays inside the canvas viewport
 - Shape tools support center-draw / square-circle constraints (`Alt`), polygon side-count changes while dragging (`Arrow Up/Down`), and Illustrator-style corner rounding (Selection rounds all corners, Direct rounds one corner)
 - Pen long-press subtool menu with Illustrator-style modes: `+` add anchor, `-` delete anchor, `Shift+C` convert anchor
 - Scissor tool: drag a line/rect/circle to split intersecting paths
@@ -284,6 +285,7 @@ Click `Export SVG` to download.
 | Convert anchor | `Shift+C` |
 | Rectangle | `M` |
 | Oval | `L` |
+| Line | `U` |
 | Polygon | `Y` |
 | Scissor | `C` |
 | **Canvas** | |

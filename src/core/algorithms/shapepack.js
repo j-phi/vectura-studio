@@ -4,6 +4,7 @@
 (() => {
   window.Vectura = window.Vectura || {};
   window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
+  const { clamp } = window.Vectura.AlgorithmUtils;
   window.Vectura.AlgorithmRegistry.shapePack = {
       generate: (p, rng, noise, bounds) => {
         const { m, dW, dH, width, height } = bounds;
@@ -24,8 +25,6 @@
         };
         const maxDist = Math.sqrt((width / 2) ** 2 + (height / 2) ** 2) || 1;
         let tries = 0;
-
-        const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 
         const applyPerspective = (pt) => {
           if (!perspective || perspectiveType === 'none') return pt;

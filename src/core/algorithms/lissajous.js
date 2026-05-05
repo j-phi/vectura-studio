@@ -5,7 +5,7 @@
   const EPSILON = 1e-6;
   const INTERSECTION_EPSILON = 1e-4;
   const ENVELOPE_BINS = 144;
-  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  const { clamp } = window.Vectura.AlgorithmUtils;
 
   const pointEquals = (a, b, epsilon = EPSILON) =>
     !!a

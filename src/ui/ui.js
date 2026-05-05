@@ -6478,7 +6478,6 @@
       this.lastLayerClickId = null;
       this.globalSectionCollapsed = false;
       this.armedPenId = null;
-      this.openMaskLayerId = null;
       this.activeTool = SETTINGS.activeTool || 'select';
       this.scissorMode = SETTINGS.scissorMode || 'line';
       this.selectionMode = SETTINGS.selectionMode || 'rect';
@@ -6515,14 +6514,11 @@
           this.openPenMenu.classList.add('hidden');
           this.openPenMenu = null;
         }
-        const hadOpenMask = this.openMaskLayerId !== null;
-        this.openMaskLayerId = null;
         if (this.openPaletteMenu) {
           this.openPaletteMenu.classList.add('hidden');
           this.openPaletteMenu = null;
         }
         this.setTopMenuOpen(null, false);
-        if (hadOpenMask) this.renderLayers();
       });
       this.initPaneToggles();
       this.initBottomPaneToggle();
@@ -8793,9 +8789,7 @@
       return Boolean(layer.maskCapabilities?.canSource);
     }
 
-    refreshMaskingViews(options = {}) {
-      const { preserveOpen = true } = options;
-      if (!preserveOpen) this.openMaskLayerId = null;
+    refreshMaskingViews() {
       this.app.computeDisplayGeometry();
       this.renderLayers();
       this.buildControls();
@@ -8838,72 +8832,6 @@
       const mask = this.ensureLayerMaskState(layer);
       mask.hideLayer = Boolean(hidden);
       this.refreshMaskingViews();
-    }
-
-    buildMaskEditor(layer, options = {}) {
-      const { compact = false } = options;
-      const wrapper = document.createElement('div');
-      wrapper.className = compact ? 'layer-mask-editor layer-mask-editor--compact' : 'layer-mask-editor';
-      wrapper.addEventListener('click', (e) => e.stopPropagation());
-      const mask = this.ensureLayerMaskState(layer);
-      const descendants = this.getLayerDescendants(layer.id);
-      const canMask = Boolean(layer.maskCapabilities?.canSource);
-      const enableId = `layer-mask-enable-${layer.id}`;
-      const hideId = `layer-mask-hide-${layer.id}`;
-
-      const header = document.createElement('div');
-      header.className = 'layer-mask-editor__header';
-      header.innerHTML = `
-        <div class="layer-mask-editor__header-copy">
-          <span class="layer-mask-editor__title">Mask Parent</span>
-          <span class="layer-mask-editor__subtitle">Mask all indented descendants to this layer's visible silhouette.</span>
-        </div>
-        <label class="layer-mask-editor__toggle" for="${enableId}">
-          <input id="${enableId}" name="${enableId}" type="checkbox" ${mask.enabled ? 'checked' : ''} ${canMask ? '' : 'disabled'}>
-          <span>Enable</span>
-        </label>
-      `;
-      const enableInput = header.querySelector('input[type="checkbox"]');
-      if (enableInput) {
-        enableInput.onchange = (e) => {
-          this.setLayerMaskEnabled(layer, e.target.checked, { captureHistory: true });
-        };
-      }
-      wrapper.appendChild(header);
-
-      const optionsRow = document.createElement('div');
-      optionsRow.className = 'layer-mask-editor__list';
-      optionsRow.innerHTML = `
-        <label class="layer-mask-editor__toggle" for="${hideId}">
-          <input id="${hideId}" name="${hideId}" type="checkbox" ${mask.hideLayer ? 'checked' : ''} ${canMask ? '' : 'disabled'}>
-          <span>Hide Mask Layer</span>
-        </label>
-      `;
-      const hideInput = optionsRow.querySelector('input[type="checkbox"]');
-      if (hideInput) {
-        hideInput.onchange = (e) => {
-          this.setLayerMaskHidden(layer, e.target.checked, { captureHistory: true });
-        };
-      }
-      wrapper.appendChild(optionsRow);
-
-      const list = document.createElement('div');
-      list.className = 'layer-mask-editor__list';
-      const message = document.createElement('div');
-      message.className = 'layer-mask-editor__empty';
-      if (!canMask) {
-        message.textContent = layer.maskCapabilities?.reason || 'This layer does not currently expose a usable silhouette.';
-      } else if (!descendants.length) {
-        message.textContent = 'Drag layers onto this row to indent them beneath the mask parent. All descendants will be clipped recursively.';
-      } else if (mask.hideLayer) {
-        message.textContent = `${descendants.length} descendant${descendants.length === 1 ? '' : 's'} will be clipped recursively while the mask parent artwork itself stays hidden.`;
-      } else {
-        message.textContent = `${descendants.length} descendant${descendants.length === 1 ? '' : 's'} will be clipped while this mask parent is enabled.`;
-      }
-      list.appendChild(message);
-      wrapper.appendChild(list);
-
-      return wrapper;
     }
 
     getUniqueLayerName(base, excludeId) {
@@ -12260,7 +12188,6 @@
                 const kids = allLayers.filter((c) => c.parentId === layer.id);
                 kids.forEach((c) => { c.parentId = layer.parentId ?? null; });
                 layer.mask.enabled = false;
-                this.openMaskLayerId = null;
               } else {
                 const sibs = allLayers.filter((s) => (s.parentId ?? null) === (layer.parentId ?? null));
                 const idx = sibs.indexOf(layer);
@@ -12274,18 +12201,16 @@
             }
           ));
           if (isSrc) {
-            acts.appendChild(mkAb('layer-mask-trigger', () => this._LVL_I.maskSrc?.() ?? '⚙', 'Mask layer settings',
+            const isHidden = Boolean(layer.mask?.hideLayer);
+            acts.appendChild(mkAb(
+              'mask-outline-btn' + (isHidden ? ' is-hidden' : ''),
+              () => isHidden ? this._LVL_I.maskOutlineHide() : this._LVL_I.maskOutlineShow(),
+              isHidden ? 'Show mask layer outline' : 'Hide mask layer outline',
               () => {
-                this.openMaskLayerId = (this.openMaskLayerId === layer.id ? null : layer.id);
-                this.renderLayers();
+                this.setLayerMaskHidden(layer, !isHidden, { captureHistory: true });
+                this.renderLayers(); this.app.render?.();
               }
             ));
-            if (layer.mask?.hideLayer) {
-              const badge = document.createElement('span');
-              badge.className = 'layer-mini-badge';
-              badge.textContent = 'MASK HIDDEN';
-              r1.appendChild(badge);
-            }
           }
         }
         if (!isPrimitiveShapeLayer(layer)) {
@@ -12424,10 +12349,6 @@
             const srcCard = _lvlBuildCard(l, false);
             addMaskSrcDropZone(srcCard, l);
             appendEl(srcCard);
-            if (this.openMaskLayerId === l.id) {
-              const editor = this.buildMaskEditor(l, { compact: true });
-              container.appendChild(editor);
-            }
             // Masked children (actual children via parentId)
             (maskedBySrc.get(l.id) || []).forEach((m) => {
               done.add(m.id);

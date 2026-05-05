@@ -5,7 +5,7 @@
 (() => {
   const { SETTINGS = {} } = window.Vectura || {};
 
-  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  const { clamp } = window.Vectura.AlgorithmUtils;
   const getEl = (id, options = {}) => {
     const { silent = false } = options;
     const el = document.getElementById(id);

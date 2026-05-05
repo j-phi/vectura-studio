@@ -4,6 +4,7 @@
 (() => {
   window.Vectura = window.Vectura || {};
   window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
+  const { frac, applyPad } = window.Vectura.AlgorithmUtils;
   window.Vectura.AlgorithmRegistry.spiral = {
       generate: (p, rng, noise, bounds) => {
         const { m, dW, dH, width, height } = bounds;
@@ -22,13 +23,6 @@
         const totalSteps = Math.max(1, Math.floor((Math.PI * 2 * loops) / dTheta));
         const dr = (maxR - p.startR) / totalSteps;
         const rack = window.Vectura.NoiseRack.createEvaluator({ noise, seed: p.seed ?? 0 });
-        const frac = (v) => v - Math.floor(v);
-        const applyPad = (t, pad) => {
-          if (pad <= 0) return t;
-          const span = 1 - pad * 2;
-          if (span <= 0) return 0.5;
-          return Math.max(0, Math.min(1, (t - pad) / span));
-        };
         const applyTile = (nx, ny, mode, padding = 0) => {
           const pad = Math.max(0, Math.min(0.45, padding));
           switch (mode) {

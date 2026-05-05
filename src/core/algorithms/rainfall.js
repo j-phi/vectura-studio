@@ -4,8 +4,16 @@
 (() => {
   window.Vectura = window.Vectura || {};
   window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
+  const { frac, applyPad } = window.Vectura.AlgorithmUtils;
   window.Vectura.AlgorithmRegistry.rainfall = {
       generate: (p, rng, noise, bounds) => {
+        const T = (window.Vectura.AlgorithmTuning && window.Vectura.AlgorithmTuning.rainfall) || {
+          noiseScale: 0.01,
+          gustScale: 0.003,
+          spiralFactor: 0.5,
+          paddingMax: 0.45,
+        };
+        const HEX_RATIO = Math.sqrt(3) / 2;
         const { m, dW, dH, width, height } = bounds;
         const count = Math.max(1, Math.floor(p.count ?? 1));
         const traceLength = Math.max(4, p.traceLength ?? 40);
@@ -35,8 +43,8 @@
         const breakLengthJitter = Math.max(0, Math.min(1, p.breakLengthJitter ?? 0));
         const breakWidthJitter = Math.max(0, Math.min(1, p.breakWidthJitter ?? 0));
         const breakRandomness = Math.max(0, Math.min(1, p.breakRandomness ?? 0));
-        const noiseScale = 0.01;
-        const gustScale = 0.003;
+        const noiseScale = T.noiseScale;
+        const gustScale = T.gustScale;
         const noiseApply = p.noiseApply || 'trails';
 
         const buildNoiseStack = () => {
@@ -44,15 +52,8 @@
           const innerW = width - inset * 2;
           const innerH = height - inset * 2;
           const rack = window.Vectura.NoiseRack.createEvaluator({ noise, seed: p.seed ?? 0 });
-          const frac = (v) => v - Math.floor(v);
-          const applyPad = (t, pad) => {
-            if (pad <= 0) return t;
-            const span = 1 - pad * 2;
-            if (span <= 0) return 0.5;
-            return Math.max(0, Math.min(1, (t - pad) / span));
-          };
           const applyTile = (nx, ny, mode, padding = 0) => {
-            const pad = Math.max(0, Math.min(0.45, padding));
+            const pad = Math.max(0, Math.min(T.paddingMax, padding));
             switch (mode) {
               case 'brick': {
                 const row = Math.floor(ny);
@@ -61,7 +62,7 @@
                 return { x: fx, y: fy };
               }
               case 'hex': {
-                const hy = ny / 0.866;
+                const hy = ny / HEX_RATIO;
                 const row = Math.floor(hy);
                 const fx = applyPad(frac(nx + (row % 2) * 0.5), pad);
                 const fy = applyPad(frac(hy), pad);
@@ -99,7 +100,7 @@
               case 'spiral': {
                 const r = Math.hypot(nx, ny);
                 const a = Math.atan2(ny, nx) / (Math.PI * 2) + 0.5;
-                const spiral = r + a * 0.5;
+                const spiral = r + a * T.spiralFactor;
                 const rr = applyPad(frac(spiral), pad);
                 const aa = applyPad(frac(a), pad) * Math.PI * 2;
                 return { x: rr * Math.cos(aa), y: rr * Math.sin(aa) };

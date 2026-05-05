@@ -14,7 +14,7 @@
   const EPSILON = 1e-6;
   const closePathIfNeeded = OptimizationUtils.closePathIfNeeded || ((path) => path);
 
-  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  const { clamp } = window.Vectura.AlgorithmUtils;
   const pointsEqual = (a, b, epsilon = EPSILON) =>
     Boolean(a && b && Math.abs(a.x - b.x) <= epsilon && Math.abs(a.y - b.y) <= epsilon);
 

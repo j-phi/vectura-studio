@@ -14,7 +14,7 @@
     RandomizationUtils,
   } = window.Vectura || {};
 
-  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  const { clamp } = window.Vectura.AlgorithmUtils;
   const clone =
     typeof structuredClone === 'function' ? (obj) => structuredClone(obj) : (obj) => JSON.parse(JSON.stringify(obj));
 

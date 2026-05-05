@@ -12,8 +12,7 @@
     PETALIS_PRESETS,
   } = window.Vectura || {};
 
-  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-  const lerp = (a, b, t) => a + (b - a) * t;
+  const { clamp, lerp } = window.Vectura.AlgorithmUtils;
   const clone =
     typeof structuredClone === 'function' ? (obj) => structuredClone(obj) : (obj) => JSON.parse(JSON.stringify(obj));
 
@@ -806,19 +805,33 @@
           ariaLabel: 'Direct Selection Tool (A)',
           icon: I.direct(),
         },
+        shape: {
+          label: 'Shape (M)',
+          ariaLabel: 'Shape Tool (M)',
+          icon: I.shape(),
+        },
         'shape-rect': {
           label: 'Rectangle (M)',
-          ariaLabel: 'Rectangle Tool (M)',
+          submenuKind: 'shape',
+          submenuValue: 'rect',
           icon: I['shape-rect'](),
         },
         'shape-oval': {
           label: 'Oval (L)',
-          ariaLabel: 'Oval Tool (L)',
+          submenuKind: 'shape',
+          submenuValue: 'oval',
           icon: I['shape-oval'](),
+        },
+        'shape-line': {
+          label: 'Line (U)',
+          submenuKind: 'shape',
+          submenuValue: 'line',
+          icon: I['shape-line'](),
         },
         'shape-polygon': {
           label: 'Polygon (Y)',
-          ariaLabel: 'Polygon Tool (Y)',
+          submenuKind: 'shape',
+          submenuValue: 'polygon',
           icon: I['shape-polygon'](),
         },
         hand: {
@@ -960,9 +973,7 @@
       return this.buildSharedToolbarMarkup([
         { type: 'group', tool: 'select', subtools: ['select-rect', 'select-oval', 'select-pen', 'select-lasso'], submenuAttrs: 'data-menu="select" aria-label="Selection subtools"' },
         'direct',
-        'shape-rect',
-        'shape-oval',
-        'shape-polygon',
+        { type: 'group', tool: 'shape', subtools: ['shape-rect', 'shape-oval', 'shape-line', 'shape-polygon'], submenuAttrs: 'data-menu="shape" aria-label="Shape subtools"' },
         'algo-draw',
         'hand',
         { type: 'group', tool: 'pen', subtools: ['pen-draw', 'pen-add', 'pen-delete', 'pen-anchor'], submenuAttrs: 'data-menu="pen" aria-label="Pen subtools"' },

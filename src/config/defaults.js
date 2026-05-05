@@ -1414,6 +1414,7 @@
     activeTool: 'select',
     penMode: 'draw',
     scissorMode: 'line',
+    shapeMode: 'rect',
     cookiePreferencesEnabled: false,
     paneLeftWidth: 335,
     paneRightWidth: 335,

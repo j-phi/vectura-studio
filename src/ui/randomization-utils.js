@@ -2,7 +2,13 @@
  * Randomization helpers for layer parameters.
  */
 (() => {
-  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  // Browser path uses the consolidated Vectura.AlgorithmUtils. Node test path
+  // (require(...) without a window global) falls back to an inline copy that
+  // matches AlgorithmUtils.clamp byte-for-byte.
+  const algorithmUtils = (typeof window !== 'undefined' && window.Vectura && window.Vectura.AlgorithmUtils) || null;
+  const clamp = algorithmUtils
+    ? algorithmUtils.clamp
+    : (value, min, max) => Math.min(max, Math.max(min, value));
   const roundToStep = (value, step) => (step ? Math.round(value / step) * step : value);
 
   const randomInRange = (min, max, random = Math.random) => min + random() * (max - min);
