@@ -10144,6 +10144,10 @@
       if (btnRedo) {
         btnRedo.onclick = () => { if (this.app.redo) this.app.redo(); };
       }
+      const btnGroupLayers = getEl('btn-group-layers');
+      const btnUngroupLayers = getEl('btn-ungroup-layers');
+      if (btnGroupLayers) btnGroupLayers.onclick = () => this.groupSelection();
+      if (btnUngroupLayers) btnUngroupLayers.onclick = () => this.ungroupSelection();
       if (insertMirrorModifier) {
         insertMirrorModifier.onclick = () => {
           this.insertMirrorModifier();
@@ -11116,15 +11120,7 @@
           return;
         }
 
-        if (e.metaKey && e.key.toLowerCase() === 'g') {
-          e.preventDefault();
-          if (e.shiftKey) {
-            this.ungroupSelection();
-          } else {
-            this.groupSelection();
-          }
-          return;
-        }
+
 
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'e') {
           e.preventDefault();
@@ -11371,8 +11367,7 @@
           const id = this.app.engine.addGroupLayer?.();
           if (id && this.app.renderer) this.app.renderer.setSelection([id], id);
         } else if (t === 'mirror') {
-          if (this.app.pushHistory) this.app.pushHistory();
-          this.app.engine.addModifierLayer?.('mirror');
+          this.insertMirrorModifier();
         }
         this.renderLayers();
         this.app.render();
@@ -11625,9 +11620,9 @@
       // ── V8 drag (HTML5) ─────────────────────────────────────────
       const _lvlDRAG = { id: null };
       const _lvlClrDrop = (el) =>
-        el.classList.remove('lvl-drop-before', 'lvl-drop-after', 'lvl-drop-into', 'lvl-drop-mask');
+        el.classList.remove('lvl-drop-before', 'lvl-drop-after', 'lvl-drop-into', 'lvl-drop-mask', 'lvl-drop-exit');
       const _lvlClrAllDrop = () =>
-        list.querySelectorAll('.lvl-drop-before,.lvl-drop-after,.lvl-drop-into,.lvl-drop-mask')
+        list.querySelectorAll('.lvl-drop-before,.lvl-drop-after,.lvl-drop-into,.lvl-drop-mask,.lvl-drop-exit')
           .forEach(_lvlClrDrop);
 
       const setHint = (msg) => {
@@ -11693,7 +11688,9 @@
           el.draggable = true;
           if (isDragging) {
             if (commit && lastTargetId && lastPos) {
-              if (lastPos === 'mask') {
+              if (lastPos?.startsWith('exit-')) {
+                _lvlDoExitGroup(layer.id, lastTargetId, lastPos.slice(5));
+              } else if (lastPos === 'mask') {
                 const draggedLayer = engine.getLayerById?.(layer.id);
                 if (draggedLayer) {
                   if (this.app.pushHistory) this.app.pushHistory();
@@ -11754,36 +11751,50 @@
           el.style.pointerEvents = 'none';
           const below = document.elementFromPoint(t.clientX, t.clientY);
           el.style.pointerEvents = '';
-          const targetCard = below?.closest('[data-lvl-id]');
-          const targetId = targetCard?.dataset?.lvlId;
           _lvlClrAllDrop();
           lastTargetId = null;
           lastPos = null;
-          if (targetId && targetId !== layer.id && targetCard) {
-            const r = targetCard.getBoundingClientRect();
-            const pct = (t.clientY - r.top) / r.height;
-            const isGrp = targetCard.classList.contains('lvl-grp-hdr');
-            const isMaskSrc = _lvlIsMaskSrc(targetId);
-            const tgtLayer = engine.getLayerById?.(targetId);
-            const isMaskedChild = !!(tgtLayer?.parentId && _lvlIsMaskSrc(tgtLayer.parentId));
-            let pos, cssClass, hint;
-            if (isGrp) {
-              pos = pct < 0.35 ? 'before' : pct > 0.65 ? 'after' : 'into';
-              cssClass = pos === 'into' ? 'lvl-drop-into' : pos === 'before' ? 'lvl-drop-before' : 'lvl-drop-after';
-              hint = pos === 'into' ? 'Drop into group' : null;
-            } else if (isMaskSrc) {
-              pos = pct < 0.2 ? 'before' : pct > 0.8 ? 'after' : 'mask';
-              cssClass = pos === 'mask' ? 'lvl-drop-mask' : pos === 'before' ? 'lvl-drop-before' : 'lvl-drop-after';
-              hint = pos === 'mask' ? 'Add to clipping mask' : null;
-            } else {
-              pos = pct < 0.5 ? 'before' : 'after';
-              cssClass = pos === 'before' ? 'lvl-drop-before' : 'lvl-drop-after';
-              hint = isMaskedChild ? 'Drop inside clipping mask' : null;
+
+          // Check for group-exit zone first
+          const exitZone = below?.closest('[data-lvl-exit-group]');
+          if (exitZone) {
+            const src = engine.getLayerById?.(_lvlDRAG.id);
+            const gid = exitZone.dataset.lvlExitGroup;
+            if (src?.parentId === gid) {
+              exitZone.classList.add('lvl-drop-exit');
+              setHint('Drop outside group');
+              lastTargetId = gid;
+              lastPos = 'exit-' + exitZone.dataset.lvlExitDir;
             }
-            targetCard.classList.add(cssClass);
-            setHint(hint);
-            lastTargetId = targetId;
-            lastPos = pos;
+          } else {
+            const targetCard = below?.closest('[data-lvl-id]');
+            const targetId = targetCard?.dataset?.lvlId;
+            if (targetId && targetId !== layer.id && targetCard) {
+              const r = targetCard.getBoundingClientRect();
+              const pct = (t.clientY - r.top) / r.height;
+              const isGrp = targetCard.classList.contains('lvl-grp-hdr');
+              const isMaskSrc = _lvlIsMaskSrc(targetId);
+              const tgtLayer = engine.getLayerById?.(targetId);
+              const isMaskedChild = !!(tgtLayer?.parentId && _lvlIsMaskSrc(tgtLayer.parentId));
+              let pos, cssClass, hint;
+              if (isGrp) {
+                pos = pct < 0.35 ? 'before' : pct > 0.65 ? 'after' : 'into';
+                cssClass = pos === 'into' ? 'lvl-drop-into' : pos === 'before' ? 'lvl-drop-before' : 'lvl-drop-after';
+                hint = pos === 'into' ? 'Drop into group' : null;
+              } else if (isMaskSrc) {
+                pos = pct < 0.2 ? 'before' : pct > 0.8 ? 'after' : 'mask';
+                cssClass = pos === 'mask' ? 'lvl-drop-mask' : pos === 'before' ? 'lvl-drop-before' : 'lvl-drop-after';
+                hint = pos === 'mask' ? 'Add to clipping mask' : null;
+              } else {
+                pos = pct < 0.5 ? 'before' : 'after';
+                cssClass = pos === 'before' ? 'lvl-drop-before' : 'lvl-drop-after';
+                hint = isMaskedChild ? 'Drop inside clipping mask' : null;
+              }
+              targetCard.classList.add(cssClass);
+              setHint(hint);
+              lastTargetId = targetId;
+              lastPos = pos;
+            }
           }
         }, { passive: false });
 
@@ -11908,6 +11919,56 @@
             this.assignLayersToParent(maskSrcId, [draggedLayer], { captureHistory: false });
             this.renderLayers(); this.app.render?.();
           }
+        });
+      };
+
+      // ── Group-exit drop logic ────────────────────────────────────
+      const _lvlDoExitGroup = (srcId, groupId, dir) => {
+        const src = engine.getLayerById?.(srcId);
+        if (!src || src.parentId !== groupId) return;
+        const engineIds = engine.layers.map((l) => l.id).filter((id) => id !== srcId);
+        const grpIdx = engineIds.indexOf(groupId);
+        let insertIdx;
+        if (dir === 'below') {
+          insertIdx = grpIdx + 1;
+        } else {
+          const childIdxs = engineIds.reduce((acc, id, i) => {
+            if (engine.getLayerById(id)?.parentId === groupId) acc.push(i);
+            return acc;
+          }, []);
+          insertIdx = childIdxs.length ? Math.min(...childIdxs) : grpIdx;
+        }
+        engineIds.splice(insertIdx, 0, srcId);
+        this.assignLayersToRoot([src], {
+          nextEngineOrder: engineIds,
+          captureHistory: true,
+          selectAssigned: true,
+          primaryId: srcId,
+        });
+        this.renderLayers();
+        this.app.render();
+      };
+
+      const addExitGroupDropZone = (el, groupLayer, dir) => {
+        el.addEventListener('dragover', (e) => {
+          if (!_lvlDRAG.id) return;
+          const src = engine.getLayerById?.(_lvlDRAG.id);
+          if (!src || src.parentId !== groupLayer.id) return;
+          e.preventDefault(); e.stopPropagation();
+          _lvlClrAllDrop();
+          el.classList.add('lvl-drop-exit');
+          e.dataTransfer.dropEffect = 'move';
+          setHint('Drop outside group');
+        });
+        el.addEventListener('dragleave', (e) => {
+          if (!el.contains(e.relatedTarget)) { el.classList.remove('lvl-drop-exit'); setHint(null); }
+        });
+        el.addEventListener('drop', (e) => {
+          e.preventDefault();
+          el.classList.remove('lvl-drop-exit');
+          setHint(null);
+          if (!_lvlDRAG.id) return;
+          _lvlDoExitGroup(_lvlDRAG.id, groupLayer.id, dir);
         });
       };
 
@@ -12490,7 +12551,18 @@
             appendEl(_lvlBuildGrpHdr(l));
             if (!l.groupCollapsed) {
               const cw = document.createElement('div'); cw.className = 'lvl-tree-children';
-              _lvlBuildChildren(l.id, cw); container.appendChild(cw);
+              const mkExitZone = (dir) => {
+                const z = document.createElement('div');
+                z.className = `lvl-grp-exit-zone lvl-grp-exit-zone--${dir}`;
+                z.dataset.lvlExitGroup = l.id;
+                z.dataset.lvlExitDir = dir;
+                addExitGroupDropZone(z, l, dir);
+                return z;
+              };
+              cw.appendChild(mkExitZone('above'));
+              _lvlBuildChildren(l.id, cw);
+              cw.appendChild(mkExitZone('below'));
+              container.appendChild(cw);
             }
 
           } else {
@@ -12936,9 +13008,10 @@
       layer.params.curves = inheritsCurves ? Boolean(active?.params?.curves) : shapeUsesCurves;
       layer.params.smoothing = 0;
       layer.params.simplify = 0;
+      const activeParent = active?.parentId ? engine.getLayerById(active.parentId) : null;
       layer.parentId = (active?.isGroup && active?.groupType === 'layer')
         ? active.id
-        : (active?.parentId ?? null);
+        : (activeParent?.groupType === 'group' ? active.parentId : null);
       if (active) {
         layer.penId = active.penId;
         layer.color = active.color;
@@ -13491,6 +13564,13 @@
       const sections = document.querySelector('.left-panel-sections');
       if (welcome) welcome.style.display = show ? '' : 'none';
       if (sections) sections.style.display = show ? 'none' : '';
+      if (show) {
+        const hasLayers = (this.app.engine?.layers?.length ?? 0) > 0;
+        const intro = document.getElementById('left-welcome-intro');
+        const select = document.getElementById('left-welcome-select');
+        if (intro) intro.style.display = hasLayers ? 'none' : '';
+        if (select) select.style.display = hasLayers ? '' : 'none';
+      }
     }
 
     _buildPatternFillPanel(container) {

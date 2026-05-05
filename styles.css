@@ -924,6 +924,19 @@ input[type='color']::-webkit-color-swatch {
 .lvl-drop-mask   { box-shadow: inset 0 0 0 2px var(--lvl-cyan) !important; background: rgba(103,232,249,.06) !important }
 .lvl-s-hint { color: var(--lvl-cyan); font-style: italic; padding: 0 2px }
 
+.lvl-grp-exit-zone {
+  height: 10px; position: relative; cursor: default;
+  margin-left: -16px; /* extend to group-header width, negating lvl-tree-children padding */
+}
+.lvl-grp-exit-zone--above { margin-bottom: 2px }
+.lvl-grp-exit-zone--below { margin-top: 2px }
+.lvl-grp-exit-zone.lvl-drop-exit { background: rgba(103,232,249,.10) }
+.lvl-grp-exit-zone.lvl-drop-exit::after {
+  content: ''; position: absolute; left: 0; right: 0; height: 2px; background: var(--lvl-cyan);
+}
+.lvl-grp-exit-zone--above.lvl-drop-exit::after { bottom: 0 }
+.lvl-grp-exit-zone--below.lvl-drop-exit::after { top: 0 }
+
 .lvl-status-bar {
   border-top: 1px solid var(--color-border); font-size: 10px;
   display: flex; align-items: center; flex-shrink: 0;
@@ -999,6 +1012,7 @@ input[type='color']::-webkit-color-swatch {
   .lvl-caret { width: 28px; height: 28px }
   .lvl-caret svg { width: 22px; height: 22px }
   .lvl-tree-children { padding-left: 24px }
+  .lvl-grp-exit-zone { margin-left: -24px }
 }
 
 /* ── Right-pane title bar: match v8 mockup compact header ─── */

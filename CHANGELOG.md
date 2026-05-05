@@ -6,6 +6,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed
+- **Add Layer ▾ → Mirror Modifier Group now wraps the current selection** by default, matching the Insert > Mirror Modifier behavior. Previously this menu route created a bare modifier group and ignored the active selection. Both entry points now route through `insertMirrorModifier()`.
+
 ## 0.8.27 - 2026-05-05
 
 ### Added

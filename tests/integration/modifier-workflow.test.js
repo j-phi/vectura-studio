@@ -377,4 +377,35 @@ describe('Modifier workflow UI integration', () => {
     expect(rectLayer.params.curves).toBe(false);
     expect(ovalLayer.params.curves).toBe(true);
   });
+
+  test('Add Layer ▾ → Mirror Modifier Group wraps the current selection', async () => {
+    runtime = await loadVecturaRuntime({
+      includeRenderer: true,
+      includeUi: true,
+      includeApp: true,
+      useIndexHtml: true,
+    });
+
+    const { window, document } = runtime;
+    window.app = new window.Vectura.App();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    const app = window.app;
+    app.engine.addLayer('wavetable');
+    const layerA = app.engine.getActiveLayer();
+    app.engine.addLayer('wavetable');
+    const layerB = app.engine.getActiveLayer();
+    app.renderer.setSelection([layerA.id, layerB.id], layerB.id);
+
+    const mirrorItem = document.querySelector('#layer-add-menu [data-add="mirror"]');
+    expect(mirrorItem).toBeTruthy();
+    mirrorItem.dispatchEvent(new window.Event('click', { bubbles: true }));
+
+    const modifier = app.engine.layers.find(
+      (layer) => layer.isGroup && layer.containerRole === 'modifier' && layer.modifier?.type === 'mirror',
+    );
+    expect(modifier).toBeTruthy();
+    expect(layerA.parentId).toBe(modifier.id);
+    expect(layerB.parentId).toBe(modifier.id);
+  });
 });

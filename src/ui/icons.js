@@ -24,7 +24,7 @@
     caret:    () => layerSvg(`<path d="M4.5 3l3 3-3 3"/>`),
     trash:    () => layerSvg(`<line x1="2" y1="3.5" x2="10" y2="3.5"/><path d="M4.5 3.5V2.5h3v1M4 5l.4 4h3.2l.4-4"/>`),
     dup:      () => layerSvg(`<rect x="4.5" y="1" width="6" height="6" rx="1"/><rect x="1.5" y="4" width="6" height="7" rx="1" fill="var(--color-panel)" stroke="currentColor"/>`),
-    expand:   () => layerSvg(`<line x1="1.5" y1="3" x2="7.5" y2="3"/><line x1="1.5" y1="6" x2="7.5" y2="6"/><line x1="1.5" y1="9" x2="7.5" y2="9"/><line x1="10" y1="7" x2="10" y2="11" stroke-width="1.9"/><line x1="8" y1="9" x2="12" y2="9" stroke-width="1.9"/>`),
+    expand:   () => layerSvg(`<path d="M2 5c-.55 0-1-.45-1-1V2c0-.55.45-1 1-1h2c.55 0 1 .45 1 1"/><path d="M5 8c-.55 0-1-.45-1-1V5c0-.55.45-1 1-1h2c.55 0 1 .45 1 1"/><rect width="4" height="4" x="7" y="7" rx="1"/>`),
     maskSrc:  () => layerSvg(`<rect x="3.5" y="5" width="8" height="6.5" rx="1" stroke-dasharray="2 1.5"/><rect x="0.5" y="1" width="7.5" height="5.5" rx="1"/>`),
     maskOutlineShow: () => layerSvg(`<path d="M9 5.5c-.75 0-1.25.25-1.5 1"/><path d="M2 3a1 1 0 0 0-1 1v2a2.5 2.5 0 0 0 2.5 2.5 4 4 0 0 1 2.5 1 4 4 0 0 1 2.5-1 2.5 2.5 0 0 0 2.5-2.5V4a1 1 0 0 0-1-1h-1.5a4 4 0 0 0-2.5 1 4 4 0 0 0-2.5-1z"/><path d="M3 5.5c.75 0 1.25.25 1.5 1"/>`),
     maskOutlineHide: () => layerSvg(`<path d="M9 5.5c-.75 0-1.25.25-1.5 1"/><path d="M2 3a1 1 0 0 0-1 1v2a2.5 2.5 0 0 0 2.5 2.5 4 4 0 0 1 2.5 1 4 4 0 0 1 2.5-1 2.5 2.5 0 0 0 2.5-2.5V4a1 1 0 0 0-1-1h-1.5a4 4 0 0 0-2.5 1 4 4 0 0 0-2.5-1z" fill="currentColor"/><path d="M3 5.5c.75 0 1.25.25 1.5 1"/>`),
