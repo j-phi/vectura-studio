@@ -3905,11 +3905,18 @@
         <div class="modal-section">
           <div class="modal-ill-label">Wallpaper</div>
           <p class="modal-text">
-            Tiles your artwork across the canvas using one of the 17 mathematically distinct repeating
-            symmetry patterns — every possible way to tile a flat surface with symmetry. Each pattern
-            (called a wallpaper group) combines some mix of translation (copying), rotation, and reflection
-            to fill the canvas. Tap the <strong>(i)</strong> button next to the Group selector for a full
-            guide to all 17 groups.
+            Treats your artwork as a small tile and stamps it across the entire canvas — like bathroom
+            floor tiles, gift wrap, or a repeating fabric. The <strong>Tile Width</strong> and
+            <strong>Tile Height</strong> controls set the size of each repeat unit.
+            <br><br>
+            The difference from just tiling a copy is <em>symmetry</em>: each group specifies how
+            copies are rotated, reflected, or shifted relative to one another, giving the repeat a
+            distinctive visual character. There are exactly 17 mathematically distinct ways to do
+            this — called wallpaper groups — ranging from a plain copy-paste grid (p1) to a full
+            kaleidoscope with 6-fold rotation and 6 mirror axes (p6m).
+            <br><br>
+            Tap the <strong>(i)</strong> button next to the Group selector for plain-English
+            descriptions of all 17 groups.
           </p>
         </div>
       `,
@@ -8172,7 +8179,7 @@
       };
 
       const buildField = (label, input, infoKey = null) => {
-        const wrap = document.createElement('label');
+        const wrap = document.createElement('div');
         wrap.className = 'block mb-3';
         const title = document.createElement('div');
         title.className = 'text-[10px] text-vectura-muted mb-1 flex items-center gap-1';
