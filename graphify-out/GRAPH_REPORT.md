@@ -1,7 +1,7 @@
 # Graph Report - /Users/jayphi/Documents/github/vectura-studio-meridian  (2026-05-06)
 
 ## Corpus Check
-- 198 files · ~1,629,085 words
+- 198 files · ~1,629,291 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -1090,11 +1090,11 @@ Nodes (1): City — Isometric aerial city of skyscrapers rendered entirely in de
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `Renderer` connect `Community 1` to `Community 0`, `Community 8`, `Community 2`?**
-  _High betweenness centrality (0.111) - this node is a cross-community bridge._
+  _High betweenness centrality (0.118) - this node is a cross-community bridge._
 - **Why does `sort()` connect `Community 4` to `Community 0`, `Community 2`, `Community 3`, `Community 5`, `Community 7`, `Community 9`, `Community 10`, `Community 11`, `Community 16`, `Community 18`?**
-  _High betweenness centrality (0.086) - this node is a cross-community bridge._
+  _High betweenness centrality (0.095) - this node is a cross-community bridge._
 - **Why does `UI` connect `Community 0` to `Community 8`, `Community 9`, `Community 7`?**
-  _High betweenness centrality (0.083) - this node is a cross-community bridge._
+  _High betweenness centrality (0.070) - this node is a cross-community bridge._
 - **Are the 56 inferred relationships involving `addEventListener()` (e.g. with `openColorPickerAnchoredTo()` and `attachKeyboardRangeNudge()`) actually correct?**
   _`addEventListener()` has 56 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 41 inferred relationships involving `clamp()` (e.g. with `applyAutoColorization()` and `clampPointToRect()`) actually correct?**

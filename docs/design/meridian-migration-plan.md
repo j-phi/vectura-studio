@@ -11,7 +11,7 @@
 | **Phase −1** — Mockup provenance | ✅ done | `7d9f426` |
 | **Phase 0** — Skin foundation | ✅ done | `7d9f426` (+ graphify rebuild `e442a4b`) |
 | **Phase 1** — Component library | ✅ done | `16ec81d` `440c84a` `d959a9b` `554ee88` `65791e5` `c7fa0db` |
-| **Phase 2** — Shell, panels, orchestrator | ⏳ next | — |
+| **Phase 2** — Shell, panels, orchestrator | ⏳ in progress (step 1/7 done) | `a16ad57` `313d427` |
 | **Phase 3** — Modals, overlays, menus | ⏳ pending | — |
 | **Phase 4** — Editors & specialized surfaces | ⏳ pending | — |
 | **Phase 5** — Polish, SDK, cleanup | ⏳ pending | — |
@@ -580,6 +580,15 @@ Plus the four §2.10-additions: `pendulum-list.js`, `pen-list.js`, `image-input.
 > - **Two minor deviations from §3:** (a) Phase 1 file count was 22 (16 base + 6 specialized + tooltip — tooltip moved to overlays/ since it's used by info-badge and modal as an underlay), not 20 + 6 as planned. (b) `info-badge.js` composes the tooltip overlay rather than re-implementing tooltip logic; consequence: `tests/unit/components/info-badge.test.js` loads `['utils', 'tooltip', 'info-badge']`. Phase 2 panels should follow the same composition pattern.
 > - **Phase 2 unblocked.** All component primitives the planned `algo-config-panel` dispatch table needs are present.
 
+> **Phase 2 step 1 actuals (`a16ad57` toolbar fix + `313d427` extraction):**
+> - **CONTROL_DEFS extracted** from `src/ui/ui.js:2212-3759` (1548 lines) to a new IIFE at `src/ui/controls-registry.js`. Exposed as `window.Vectura.UI.CONTROL_DEFS`. Loaded BEFORE `ui.js` via new `<script>` in `index.html`.
+> - **Compile gate landed first:** `tests/unit/controls-registry-compile.test.js` runs every `showIf` predicate against `ALGO_DEFAULTS` (and `{}`) in JSDOM, asserting no `ReferenceError`. It immediately caught three closure-captured locals my static grep missed — `PETALIS_PRESET_OPTIONS`, `TERRAIN_PRESET_OPTIONS`, `PETAL_PROFILE_OPTIONS` — which now live in the registry IIFE's prelude alongside the preset libraries they derive from (`PETALIS_PRESET_LIBRARY`, `TERRAIN_PRESET_LIBRARY`). Legacy `ui.js` keeps its own duplicate copies for now; later steps will dedupe.
+> - **Single function-call site** inside `CONTROL_DEFS` is `window.Vectura.FillPanel?.buildFillControlDefs(...)` — already global, works as-is.
+> - **`tests/unit/rings-ui-controls.test.js`** retargeted to parse `controls-registry.js` instead of `ui.js`.
+> - **Test totals:** 535 unit (was 530, +5 compile-gate) + 66 integration. All green.
+> - **`ui.js` shrinks** from 17,706 → 16,162 lines (–1544). Still 16K-line monolith — Phase 2 step 2 (algo-config-panel) is the next big extraction.
+> - **Toolbar visibility fix (`a16ad57`):** unrelated companion fix. Legacy `styles.css` `.tool-bar` had no `max-height` — capped at `calc(100% - 40px)` with a thin scrollbar fallback. More important: `components.css`'s meridian centering rule (`top: 50%; transform: translateY(-50%)`) bled into classic skins (`styles.css` overrode `top` but not `transform`, pulling the toolbar up by half its height and clipping the first ~5 buttons). Scoped the centering rule to `[data-ui-skin^="meridian"]` so it can't leak.
+
 ### Phase 2: Shell, Panels, Orchestrator (7 days)
 **Files created:**
 - `src/ui/shell/{shell,header,menubar,pane-left,pane-right,workspace,toolbar,bottom-pane,theme-switcher}.js` (9 files)
@@ -788,19 +797,22 @@ If all 13 steps pass and `npm run test:ci` is green, the migration is complete.
 
 ---
 
-## Appendix: Resuming from Phase 1
+## Appendix: Resuming Phase 2 mid-flight (step 1 done, step 2 next)
 
-After clearing context, the fastest way to pick up Phase 2:
+Phase 2 is split into seven sequential steps. Step 1 (compile gate + `CONTROL_DEFS` extraction) and the toolbar fix landed in `a16ad57` + `313d427`. The remaining six steps are still pending.
+
+After clearing context, the fastest way to pick up Phase 2 step 2:
 
 1. `cd /Users/jayphi/Documents/github/vectura-studio-meridian` (the worktree, on branch `meridian-blue-skin`).
-2. `git log --oneline -10` — confirm the top commit is `c7fa0db` (specialized components) preceded by `65791e5`, `554ee88`, `d959a9b`, `440c84a`, `16ec81d`. If you're somewhere else on the branch, stop and orient.
-3. Read this file (§3 Phase 2) plus §2.4 (decomposition map) and §2.9 (CONTROL_DEFS predicate globalization). The Phase 1 actuals note above the Phase 2 section captures what's already on disk.
-4. Confirm tests are green before changing anything: `npm run test:unit && npm run test:integration` (530 unit, 66 integration). `test:visual` baselines pre-date the migration; they should still pass since DOM is unchanged.
-5. The 20 components + 6 overlays from Phase 1 are at `src/ui/components/*.js` and `src/ui/overlays/*.js`. They register onto `window.Vectura.UI.<Name>` / `window.Vectura.UI.overlays.<Name>` and follow the contract in §2.5. Don't rebuild them — compose them.
-6. **Phase 2 starting moves**, in order:
-   - **Compile gate first.** Extract `CONTROL_DEFS` (legacy `ui.js:2196-3688`) into `src/ui/controls-registry.js` and add `tests/unit/controls-registry-compile.test.js` that iterates every `showIf` predicate against ALGO_DEFAULTS in JSDOM. This is the §5 risk that bites hardest if deferred — predicates that closure-captured locals will fail to resolve outside the IIFE, and the only way to find them is to run them. Fix referenced helpers by hoisting them onto `window.Vectura.UI.helpers` per §2.9.
-   - **Then `algo-config-panel.js`.** It's the largest extraction (1490 lines) and gates every algorithm rendering — get it landing before the surrounding shell so other panels have a working composition example.
-   - **Then shell/.** `pane-left`, `pane-right`, `workspace`, `header`, `bottom-pane` are mostly thin layout wrappers — they should land fast once `algo-config-panel` proves the panel pattern.
-   - **Last: the new `ui.js` orchestrator** (~600 LOC) and the index.html body rewrite. The legacy `ui.js` renames to `_ui-legacy.js` (kept on disk, not loaded) so revert is a one-line HTML edit.
-7. **Renderer token-cache update is mandatory in Phase 2** (deferred from Phase 0): `src/render/renderer.js`'s token cache currently only reads `--color-*`. Under `meridian-*` skins it works because `meridian-*.css` aliases `--color-*` to mockup values, but Phase 5 deletes those aliases — so Phase 2 must teach the cache to read `--ui-*` directly when meridian is active.
-8. Plan budget: 7 days for one engineer per §8. The components shipped in Phase 1 absorb roughly 1 day of Phase 2's original budget since the §2.10 type-catalog is fully covered.
+2. `git log --oneline -10` — confirm the top commit is `313d427` (CONTROL_DEFS extraction) preceded by `a16ad57` (toolbar fix), `82ee516`, `8fcc4ef`, `c7fa0db` (Phase 1 closeout). If you're somewhere else on the branch, stop and orient.
+3. Read this file's "Phase 2 step 1 actuals" note (immediately above the `### Phase 2:` heading) for what's already on disk. Then re-read §3 Phase 2 + §2.4 decomposition + §2.5 component API contract.
+4. Confirm tests are green before changing anything: `npm run test:unit && npm run test:integration` (535 unit, 66 integration). The 5-test compile-gate suite (`tests/unit/controls-registry-compile.test.js`) is now baseline — must stay green through the rest of Phase 2.
+5. **`window.Vectura.UI.CONTROL_DEFS` is canonical.** Don't reach back into legacy `ui.js`'s closure copy of `CONTROL_DEFS` — it's now `const CONTROL_DEFS = window.Vectura?.UI?.CONTROL_DEFS;` (a reference). The closure helpers `PETALIS_PRESET_OPTIONS`, `TERRAIN_PRESET_OPTIONS`, `PETAL_PROFILE_OPTIONS`, `PETALIS_PRESET_LIBRARY`, `TERRAIN_PRESET_LIBRARY` exist BOTH in legacy `ui.js` AND in `controls-registry.js`'s prelude. Step 5+ will dedupe; for now this is fine.
+6. **Phase 2 remaining moves**, in order:
+   - **Step 2 — `src/ui/panels/algo-config-panel.js`.** Extract `buildControls()` (legacy `ui.js:12729-16195`, ~1490 lines) — the dispatch loop on `control.type` that builds dynamic-controls. Use the §2.10 type-catalog: each branch invokes a Phase 1 component (`window.Vectura.UI.<Slider|SwToggle|...>`) or delegates to an existing satellite (`ui-noise-rack.js`, `ui-fill-panel.js`, etc.). This is the largest single extraction in the entire migration and gates every algorithm's rendering — land it before the surrounding shell so other panels have a working composition example. After it lands, the legacy ui.js still calls into it; new orchestrator (step 5) wires it directly.
+   - **Step 3 — shell/.** `pane-left`, `pane-right`, `workspace`, `header`, `menubar`, `toolbar`, `bottom-pane`, `theme-switcher`, `shell` (9 files). Mostly thin layout wrappers — should land fast once `algo-config-panel` proves the panel pattern. Preserve every id in §2.8 (Hidden DOM Stash Inventory).
+   - **Step 4 — remaining panels.** `algorithm-panel`, `noise-rack-panel`, `modifiers-panel`, `transform-panel`, `layers-panel`, `pens-panel`, `auto-colorize-panel`, `formula-panel` (8 files; `algo-config-panel` from step 2 is the 9th).
+   - **Step 5 — orchestrator + persistence + shortcuts.** New thin `src/ui/ui.js` (~600 LOC), `src/ui/persistence.js` (cookie/localStorage glue), `src/ui/shortcuts.js` (consolidated keyboard table per §2.11).
+   - **Step 6 — `index.html` body rewrite + script load order.** Rewrite body 41–725 to a thin `#app-root` + the §2.8 stash divs. Update script order per §3 Phase 2 step 6. Rename old `ui.js` → `_ui-legacy.js` (kept on disk but NOT loaded) so revert is one HTML edit.
+   - **Step 7 — renderer token cache.** `src/render/renderer.js` token cache must read `--ui-*` directly under meridian-* skins (deferred from Phase 0; mandatory before Phase 5 deletes the `--color-*` aliases).
+7. Plan budget: 7 days for one engineer per §8. Step 1 took ~½ day. Step 2 is the bulk of the remaining time. The components shipped in Phase 1 absorb roughly 1 day of Phase 2's original budget since the §2.10 type-catalog is fully covered.
