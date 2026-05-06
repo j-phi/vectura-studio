@@ -4,10 +4,10 @@
 
   const TOUR_STEPS = [
     {
-      target: '#viewport-container',
-      placement: 'center',
+      target: '.tool-btn[data-tool="algo-draw"]',
+      placement: 'right',
       title: 'Generate Your First Layer',
-      body: 'Select an algorithm from the left toolbar — then <b>double-click the canvas</b> to fill the document, or <b>drag</b> to draw any shape.',
+      body: 'Click the <b>Draw Algorithm</b> button in the toolbar — then <b>double-click the canvas</b> to fill the document, or <b>drag</b> to draw any shape.',
     },
     {
       target: '.tool-btn[data-has-submenu]',

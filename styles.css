@@ -4296,7 +4296,7 @@ input[type='color']::-webkit-color-swatch {
 .tutorial-btn--next {
   background: var(--color-accent);
   border-color: transparent;
-  color: #fff;
+  color: var(--color-bg);
   font-weight: 500;
 }
 .tutorial-btn--next:hover {
