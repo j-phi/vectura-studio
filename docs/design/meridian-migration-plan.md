@@ -20,6 +20,21 @@
 
 **Picking up the plan:** read this document, then `git log --oneline meridian-blue-skin` for done-work context. After Phase 0, all five existing skins (`dark`, `light`, `lark`, `meridian-dark`, `meridian-light`) load and swap; `dark`/`light`/`lark` are visually byte-identical to pre-migration; `meridian-*` paint correctly but the DOM still uses today's classes (Phase 2 changes that).
 
+### Phase wrap-up protocol (mandatory)
+
+Every time a phase reaches "done" — last commit landed, all required tests green per the [Testing Matrix](../../CLAUDE.md#testing-matrix) — Claude **must** run this seven-step closeout before declaring the phase complete to the user. Skipping any step strands the next session: it'll re-derive state from commit messages and likely diverge from the plan.
+
+1. **Verify the suite.** Run the change-class minimum from `CLAUDE.md`'s Testing Matrix. For Phase work, that's at least `npm run test:unit && npm run test:integration`; for phases that touch rendering or shell DOM, also `npm run test:visual` and `npm run test:perf`. Record the green totals — they go into step 4.
+2. **Update the Status table** at the top of `docs/design/meridian-migration-plan.md`: flip the just-finished phase from `⏳` to `✅`, list every phase commit SHA in the Commit column (oldest first), and mark the next phase as `⏳ next`.
+3. **Append a "Phase N actuals" note** immediately above the next phase's `### Phase N+1: ...` heading. Capture: what files actually shipped, deviations from the planned spec (component count, file moves, additions, deletions), test totals before → after, and anything the next phase must know about. Be specific — mention class names, helper function names, locked contracts.
+4. **Rewrite the "Resuming from Phase N-1" appendix** as "Resuming from Phase N". Step-by-step instructions tailored to this exact branch state: include the latest-commit SHA the next session should expect at HEAD, the specific test command to confirm green, the exact first move (e.g. "extract X into Y, write compile-gate test before extracting predicates"), and any deferred-from-prior-phase items that become mandatory now.
+5. **Update the memory file** at `/Users/jayphi/.claude/projects/-Users-jayphi-Documents-github-vectura-studio/memory/project_meridian_migration.md` so a fresh-context Claude reading the memory pointer (before opening the plan) sees current state. Keep the "Done as of <ISO date>" line accurate, the "Pending" list trimmed, and the "How to apply" line pointed at the latest resume appendix.
+6. **Commit the doc + memory update** as a single `docs(skin):` commit. Memory lives outside the repo so commit only the plan; mention the memory refresh in the commit body.
+7. **Tell the user, verbatim:**
+   > Phase N is complete and committed. You can preview the worktree at `file:///Users/jayphi/Documents/github/vectura-studio-meridian/index.html` (no server needed — just open in a browser). Recommend you `/clear` to start a fresh context window — the plan and memory are updated so the next session can pick up cleanly. To resume, type: **`continue the Meridian migration`** (or **`begin Phase N+1`**).
+
+The protocol exists because the plan is too detailed to reconstruct from commit messages — and the user has explicitly asked for this closeout after every phase. Don't skip steps "for brevity"; the next Claude won't have the context you do.
+
 **Test status as of Phase 0:** 416 unit + integration passed, 13 visual passed (0-px diff vs pre-migration baselines), 2 perf passed.
 
 ---
