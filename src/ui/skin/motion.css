@@ -1,0 +1,54 @@
+/*
+ * Vectura Studio — skin/motion.css
+ *
+ * Keyframe library for skin-driven animations. Mode-independent: every skin uses these
+ * same keyframes. Tokens (`--motion-*`) parameterize duration/ease via App.applyTheme().
+ *
+ * Sourced verbatim from docs/design/themes-mockup.html (lines 491–549). Reduced-motion
+ * fallbacks collapse all durations to ≤80 ms or skip outright.
+ */
+
+/* Slider thumb release halo — fired on input release. */
+@keyframes thumb-release {
+  0% {
+    box-shadow: 0 0 0 1.5px var(--ui-accent), 0 0 0 7px var(--ui-accent-2);
+    transform: scale(1.15);
+  }
+  100% {
+    box-shadow: 0 0 0 1.5px var(--ui-accent), 0 0 0 0 transparent;
+    transform: scale(1);
+  }
+}
+
+/* Slider fill-side pulse — applied to .sld-fx-wrap.fx-active::after. */
+@keyframes fx-pulse-fill {
+  0% {
+    opacity: 0;
+    box-shadow: 0 0 0 0 transparent;
+  }
+  12% {
+    opacity: 0.36;
+    box-shadow: 0 0 4px 1px rgba(255, 255, 255, 0.22);
+  }
+  100% {
+    opacity: 0;
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+/* Button selection blink — applied via .btn-pulse class. */
+@keyframes btn-press {
+  0%   { opacity: 1; }
+  28%  { opacity: 0.42; }
+  100% { opacity: 1; }
+}
+
+/* Reduced-motion: collapse durations and disable expensive halos. */
+@media (prefers-reduced-motion: reduce) {
+  .ctrl-slider.just-released::-webkit-slider-thumb,
+  .sld-fx-wrap.fx-active::after,
+  .btn-pulse {
+    animation-duration: 80ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

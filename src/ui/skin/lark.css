@@ -1,0 +1,30 @@
+/*
+ * Vectura Studio — skin/lark.css
+ *
+ * Legacy "Lark" palette (id unchanged), re-exposed as a skin file. See classic-dark.css
+ * for the alias rationale.
+ */
+
+[data-ui-skin="lark"] {
+  --ui-bg: var(--color-bg);
+  --ui-panel: var(--color-panel);
+  --ui-panel-alt: var(--color-surface);
+  --ui-border: var(--color-border);
+  --ui-border-hi: var(--color-border-strong);
+  --ui-text: var(--color-text);
+  --ui-text-2: var(--color-text-soft);
+  --ui-muted: var(--color-muted);
+  --ui-accent: var(--color-accent);
+  --ui-accent-2: rgba(var(--vectura-accent-rgb), 0.12);
+  --ui-danger: rgb(var(--vectura-danger-rgb));
+  --ui-ctrl: var(--color-control);
+  --ui-ctrl-hov: var(--color-control-hover);
+  --ui-workspace: var(--color-workspace);
+  --ui-formula: var(--color-formula-text);
+  --slider-start: var(--color-text-soft);
+
+  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.4);
+  --shadow-md: var(--shadow-panel);
+  --shadow-lg: var(--shadow-float);
+  --shadow-pane: var(--shadow-panel);
+}

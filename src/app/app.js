@@ -471,11 +471,25 @@
       const root = document.documentElement;
       if (root) {
         root.dataset.theme = themeName;
+        root.dataset.uiSkin = themeName;
         root.style.colorScheme = theme.colorScheme || themeName;
         if (theme.cssVars && typeof theme.cssVars === 'object') {
           Object.entries(theme.cssVars).forEach(([key, value]) => {
             root.style.setProperty(key, value);
           });
+        }
+      }
+      // Hand off skin-specific side-effects (stylesheet swap, motion vars, swap-suppression
+      // window, vectura:skin-change dispatch) to SkinManager. SkinManager is a no-op if it
+      // hasn't loaded yet (e.g. very early bootstrap), in which case the data-attrs above
+      // are still enough for legacy CSS to paint correctly.
+      const skinManager = window.Vectura && window.Vectura.SkinManager;
+      if (skinManager && typeof skinManager.activate === 'function') {
+        try {
+          skinManager.activate(themeName);
+        } catch (err) {
+          // Don't let an unknown skin id throw out of applyTheme — log and continue.
+          if (typeof console !== 'undefined') console.warn('[applyTheme] SkinManager.activate failed:', err);
         }
       }
 
@@ -517,7 +531,18 @@
     }
 
     toggleTheme() {
-      const CYCLE = ['dark', 'lark', 'light'];
+      // Legacy 3-skin cycle stays first so existing keyboard-toggle muscle memory
+      // (dark → lark → light → dark) is preserved. New skins (meridian-*) join at the
+      // tail in registration order, so the cycle visits every registered skin exactly
+      // once before looping. Unknown ids in the registry that aren't in the legacy
+      // prefix are appended in registration order; missing legacy entries are skipped.
+      const LEGACY_ORDER = ['dark', 'lark', 'light'];
+      const registered = Object.keys(THEMES || {});
+      const legacyPresent = LEGACY_ORDER.filter((id) => registered.includes(id));
+      const extras = registered.filter((id) => !LEGACY_ORDER.includes(id));
+      const CYCLE = legacyPresent.length || extras.length
+        ? [...legacyPresent, ...extras]
+        : LEGACY_ORDER;
       const current = normalizeThemeName(SETTINGS.uiTheme);
       const idx = CYCLE.indexOf(current);
       const next = CYCLE[(idx + 1) % CYCLE.length];

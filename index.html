@@ -13,6 +13,14 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@100..800&display=swap" rel="stylesheet" />
+  <!-- New "Skin SDK" stylesheets: structural tokens + motion keyframes are skin-independent;
+       components.css provides skin-agnostic component CSS that all skins share; the per-skin
+       palette file is swapped at runtime by SkinManager via the active-skin <link>. -->
+  <link rel="stylesheet" href="./src/ui/skin/tokens.css" />
+  <link rel="stylesheet" href="./src/ui/skin/motion.css" />
+  <link rel="stylesheet" href="./src/ui/skin/components.css" />
+  <link rel="stylesheet" id="active-skin" href="./src/ui/skin/classic-dark.css" />
+  <!-- Legacy stylesheet — still loaded during the migration; deleted in Phase 5. -->
   <link rel="stylesheet" href="./styles.css" />
 
   <script src="https://cdn.tailwindcss.com"></script>
@@ -832,6 +840,12 @@
   <script src="./src/core/layer.js" defer></script>
   <script src="./src/core/engine.js" defer></script>
   <script src="./src/render/renderer.js" defer></script>
+  <!-- Skin SDK: tokens.js exposes window.Vectura.UI.tokens.get for renderer/UI lookups;
+       skin-manager.js owns the active <link id="active-skin"> swap and dispatches the
+       vectura:skin-change event. Both must load before app.js (which calls applyTheme
+       in its constructor). -->
+  <script src="./src/ui/skin/tokens.js" defer></script>
+  <script src="./src/ui/skin/skin-manager.js" defer></script>
   <script src="./src/ui/icons.js" defer></script>
   <script src="./src/ui/randomization-utils.js" defer></script>
   <script src="./src/ui/ui-touch.js" defer></script>

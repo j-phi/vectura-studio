@@ -52,10 +52,38 @@
     getDocumentUnitStep,
     formatDocumentLength,
   };
+  // Shared manifest extras for the legacy "classic" skin family. Phase 0 carries the
+  // dimensions through unchanged from styles.css today, so these defaults land as
+  // no-ops visually but unlock the SkinManager pipeline (motion vars, swap-suppression).
+  const CLASSIC_MANIFEST = {
+    paneLeftWidth: 290,
+    paneRightWidth: 258,
+    bottomPaneHeight: 148,
+    rowHeight: 30,
+    motion: {
+      sliderPulse: { dur: 550, ease: 'ease-out', peak: 0.36 },
+      thumbRelease: { dur: 350, ease: 'ease-out' },
+      btnFade: { dur: 300, ease: 'ease-out', dip: 0.42 },
+      dialWave: { dur: 520, ease: 'cubic-bezier(0.23,1,0.32,1)', peak: 0.63, maxR: 24 },
+      panelSlide: { dur: 220, ease: 'cubic-bezier(0.22,1,0.36,1)' },
+      modalEnter: { dur: 220 },
+      toastIn: { dur: 260 },
+      toastOut: { dur: 200 },
+    },
+    capabilities: { dialReleaseWave: false, twoColControls: false },
+  };
+  const MERIDIAN_MANIFEST = Object.assign({}, CLASSIC_MANIFEST, {
+    fontUi: "'Space Grotesk', system-ui, sans-serif",
+    fontMono: "'JetBrains Mono', monospace",
+    capabilities: { dialReleaseWave: true, twoColControls: false },
+  });
   window.Vectura.THEMES = {
     dark: {
       id: 'dark',
       label: 'Dark',
+      family: 'classic',
+      stylesheet: './src/ui/skin/classic-dark.css',
+      manifest: CLASSIC_MANIFEST,
       colorScheme: 'dark',
       metaThemeColor: '#09090b',
       documentBg: '#121214',
@@ -122,6 +150,9 @@
     light: {
       id: 'light',
       label: 'Light',
+      family: 'classic',
+      stylesheet: './src/ui/skin/classic-light.css',
+      manifest: CLASSIC_MANIFEST,
       colorScheme: 'light',
       metaThemeColor: '#f5f5f5',
       documentBg: '#ffffff',
@@ -188,6 +219,9 @@
     lark: {
       id: 'lark',
       label: 'Lark',
+      family: 'classic',
+      stylesheet: './src/ui/skin/lark.css',
+      manifest: CLASSIC_MANIFEST,
       colorScheme: 'dark',
       metaThemeColor: '#09090b',
       documentBg: '#ffffff',
@@ -249,6 +283,49 @@
         '--plotter-bg': '#f4f5f7',
         '--plotter-path-base': 'rgba(82,82,91,0.35)',
         '--plotter-head': '#18181b',
+      },
+    },
+    'meridian-dark': {
+      id: 'meridian-dark',
+      label: 'Meridian Blue · Dark',
+      family: 'meridian',
+      stylesheet: './src/ui/skin/meridian-dark.css',
+      manifest: MERIDIAN_MANIFEST,
+      colorScheme: 'dark',
+      metaThemeColor: '#1b1b1b',
+      documentBg: '#1b1b1b',
+      pen1Color: '#e6f1ff',
+      // Tokens are loaded via the skin's stylesheet (./src/ui/skin/meridian-dark.css);
+      // we still push a small subset through cssVars so any code that reads them
+      // synchronously (before the stylesheet streams in) sees consistent values.
+      cssVars: {
+        '--vectura-bg-rgb': '27 27 27',
+        '--vectura-panel-rgb': '37 37 37',
+        '--vectura-border-rgb': '54 54 54',
+        '--vectura-text-rgb': '224 224 224',
+        '--vectura-muted-rgb': '104 104 104',
+        '--vectura-accent-rgb': '78 158 225',
+        '--vectura-danger-rgb': '224 82 82',
+      },
+    },
+    'meridian-light': {
+      id: 'meridian-light',
+      label: 'Meridian Blue · Light',
+      family: 'meridian',
+      stylesheet: './src/ui/skin/meridian-light.css',
+      manifest: MERIDIAN_MANIFEST,
+      colorScheme: 'light',
+      metaThemeColor: '#efefef',
+      documentBg: '#ffffff',
+      pen1Color: '#0a1320',
+      cssVars: {
+        '--vectura-bg-rgb': '239 239 239',
+        '--vectura-panel-rgb': '250 250 250',
+        '--vectura-border-rgb': '200 200 200',
+        '--vectura-text-rgb': '26 26 26',
+        '--vectura-muted-rgb': '136 136 136',
+        '--vectura-accent-rgb': '14 111 224',
+        '--vectura-danger-rgb': '192 57 43',
       },
     },
   };
