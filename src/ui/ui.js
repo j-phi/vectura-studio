@@ -6482,7 +6482,7 @@
       this.scissorMode = SETTINGS.scissorMode || 'line';
       this.selectionMode = SETTINGS.selectionMode || 'rect';
       this.penMode = SETTINGS.penMode || 'draw';
-      this.shapeMode = SETTINGS.shapeMode || 'rect';
+      this.shapeMode = SETTINGS.shapeMode || 'oval';
       this.spacePanActive = false;
       this.previousTool = this.activeTool;
       this.harmonographPlotterState = null;
@@ -9924,6 +9924,14 @@
         this.app.renderer.onPenComplete = (payload) => this.createManualLayerFromPath(payload);
         this.app.renderer.onShapeComplete = (payload) => this.createManualLayerFromPath(payload);
         this.app.renderer.onScissor = (payload) => this.applyScissor(payload);
+        this.app.renderer.onClearTransientModifiers = () => {
+          const mods = (window.Vectura.SETTINGS || {}).touchModifiers;
+          if (!mods) return;
+          mods.shift = false;
+          mods.alt = false;
+          mods.meta = false;
+          this.refreshTouchModifierButtons?.();
+        };
         this.app.renderer.onAlgoDrawComplete = ({ algoType, rect }) => {
           if (this.app.pushHistory) this.app.pushHistory();
           const id = this.app.engine.addLayer(algoType);

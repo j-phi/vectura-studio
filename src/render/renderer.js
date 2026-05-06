@@ -1266,11 +1266,13 @@
       }
       this.shapeDraft = null;
       this.draw();
+      if (this.onClearTransientModifiers) this.onClearTransientModifiers();
     }
 
     cancelShapeDraft() {
       this.shapeDraft = null;
       this.draw();
+      if (this.onClearTransientModifiers) this.onClearTransientModifiers();
     }
 
     isAlgoDrawTool(tool = this.activeTool) {
