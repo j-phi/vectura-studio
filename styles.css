@@ -4129,8 +4129,8 @@ input[type='color']::-webkit-color-swatch {
   width: 0;
   height: 0;
   border-style: solid;
-  border-width: 4px 0 0 4px;
-  border-color: transparent transparent transparent currentColor;
+  border-width: 4px 4px 0 0;
+  border-color: transparent currentColor transparent transparent;
   opacity: 0.45;
   pointer-events: none;
 }
