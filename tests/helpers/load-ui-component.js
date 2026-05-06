@@ -61,6 +61,29 @@ const installDomShims = (window) => {
       disconnect() {}
     };
   }
+  // JSDOM doesn't ship HTMLCanvasElement.getContext; stub a minimal 2D context
+  // so components that paint in their constructor (e.g. HarmonographPlotter)
+  // don't log "Not implemented" warnings during tests.
+  if (window.HTMLCanvasElement && window.HTMLCanvasElement.prototype) {
+    window.HTMLCanvasElement.prototype.getContext = function () {
+      return {
+        beginPath() {}, moveTo() {}, lineTo() {}, closePath() {},
+        stroke() {}, fill() {}, save() {}, restore() {},
+        translate() {}, rotate() {}, scale() {},
+        clearRect() {}, fillRect() {}, strokeRect() {}, rect() {},
+        setLineDash() {}, quadraticCurveTo() {}, bezierCurveTo() {},
+        arc() {}, ellipse() {}, drawImage() {},
+        fillText() {}, strokeText() {},
+        measureText: (text = '') => ({ width: String(text).length * 7 }),
+        createLinearGradient: () => ({ addColorStop() {} }),
+        createRadialGradient: () => ({ addColorStop() {} }),
+        createPattern: () => null,
+        clip() {}, isPointInPath: () => false, isPointInStroke: () => false,
+        getImageData: () => ({ data: new Uint8ClampedArray(4), width: 1, height: 1 }),
+        putImageData() {},
+      };
+    };
+  }
 };
 
 /**
