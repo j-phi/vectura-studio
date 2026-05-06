@@ -7832,208 +7832,222 @@
       }
     }
 
-    buildHelpContent(focusShortcuts = false) {
-      const shortcuts = `
-        <div class="modal-section">
-          <div class="modal-ill-label">Keyboard Shortcuts</div>
-          <div class="text-xs text-vectura-muted leading-relaxed space-y-1">
-            <div><span class="text-vectura-accent">?</span> Open shortcuts</div>
-            <div><span class="text-vectura-accent">F1</span> Help guide</div>
-            <div><span class="text-vectura-accent">Cmd/Ctrl + O</span> Open Project</div>
-            <div><span class="text-vectura-accent">Cmd/Ctrl + S</span> Save Project</div>
-            <div><span class="text-vectura-accent">Cmd/Ctrl + Shift + P</span> Import SVG</div>
-            <div><span class="text-vectura-accent">Cmd/Ctrl + Shift + E</span> Export SVG</div>
-            <div><span class="text-vectura-accent">Cmd/Ctrl + K</span> Toggle Document Setup</div>
-            <div><span class="text-vectura-accent">Cmd/Ctrl + 0</span> Reset View</div>
-            <div><span class="text-vectura-accent">V</span> Selection tool (press again to cycle modes)</div>
-            <div><span class="text-vectura-accent">A</span> Direct selection tool</div>
-            <div><span class="text-vectura-accent">M</span> Rectangle tool</div>
-            <div><span class="text-vectura-accent">L</span> Oval tool</div>
-            <div><span class="text-vectura-accent">Y</span> Polygon tool</div>
-            <div><span class="text-vectura-accent">P</span> Pen tool (press again to cycle subtools)</div>
-            <div><span class="text-vectura-accent">F</span> Fill tool</div>
-            <div><span class="text-vectura-accent">Shift + F</span> Erase fill tool</div>
-            <div><span class="text-vectura-accent">+</span> Add anchor point tool</div>
-            <div><span class="text-vectura-accent">-</span> Delete anchor point tool</div>
-            <div><span class="text-vectura-accent">Shift + C</span> Anchor point tool</div>
-            <div><span class="text-vectura-accent">C</span> Scissor tool (press again to cycle modes)</div>
-            <div><span class="text-vectura-accent">Space</span> Hand tool (temporary)</div>
-            <div><span class="text-vectura-accent">Petal Designer</span> A/P/+/-/Shift+C, Shift-constrain, Alt convert/break/remove handle, Cmd/Ctrl temporary direct</div>
-            <div><span class="text-vectura-accent">Petal Designer</span> Middle-click drag pans, mouse wheel zooms both petals together when both are visible</div>
-            <div><span class="text-vectura-accent">Enter</span> Commit pen path</div>
-            <div><span class="text-vectura-accent">Double-click</span> Close pen path near start</div>
-            <div><span class="text-vectura-accent">Backspace</span> Remove last pen point</div>
-            <div><span class="text-vectura-accent">Esc</span> Cancel pen/scissor/shape drafts</div>
-            <div><span class="text-vectura-accent">Shift</span> Constrain pen angle / handles, square/circle shapes, snap polygon angle, Scissor line snaps 15°</div>
-            <div><span class="text-vectura-accent">Alt/Option</span> Break pen handles, draw shapes from center, or temporarily erase fills while Fill is active</div>
-            <div><span class="text-vectura-accent">Arrow Up / Down</span> Change polygon side count while dragging</div>
-            <div><span class="text-vectura-accent">Mask Parent Drag</span> While moving/resizing/rotating a mask parent, masked descendants ghost-preview outside the silhouette until mouse release</div>
-            <div><span class="text-vectura-accent">Shape Reticle</span> Rectangle/Oval/Polygon tools use an Illustrator-style reticle cursor while active</div>
-            <div><span class="text-vectura-accent">Selection Tool</span> Drag a shape corner widget to round all corners together</div>
-            <div><span class="text-vectura-accent">Direct Tool</span> Drag endpoints/handles on individual line paths, or drag a shape corner widget to round one corner</div>
-            <div><span class="text-vectura-accent">Cmd/Ctrl</span> Temporary selection while using Pen</div>
-            <div><span class="text-vectura-accent">Cmd/Ctrl + A</span> Select all layers (from anywhere)</div>
-            <div><span class="text-vectura-accent">Cmd/Ctrl + G</span> Group selection</div>
-            <div><span class="text-vectura-accent">Cmd/Ctrl + Shift + G</span> Ungroup selection</div>
-            <div><span class="text-vectura-accent">Cmd/Ctrl + E</span> Expand selection into sublayers</div>
-            <div><span class="text-vectura-accent">Cmd/Ctrl + D</span> Duplicate selection (Alt/Option + D fallback)</div>
-            <div><span class="text-vectura-accent">Cmd/Ctrl + [</span> Move layer down</div>
-            <div><span class="text-vectura-accent">Cmd/Ctrl + ]</span> Move layer up</div>
-            <div><span class="text-vectura-accent">Cmd/Ctrl + Shift + [ / ]</span> Send to back / front</div>
-            <div><span class="text-vectura-accent">Theme Toggle</span> Use the sun/moon switch in the upper-right header to flip dark and light UI modes</div>
-            <div><span class="text-vectura-accent">Delete</span> Remove selected layer(s)</div>
-            <div><span class="text-vectura-accent">Arrow Keys</span> Nudge (Shift = bigger)</div>
-            <div><span class="text-vectura-accent">Alt/Option + Drag</span> Duplicate layer</div>
-            <div><span class="text-vectura-accent">Cmd/Ctrl + Z</span> Undo</div>
+    buildHelpContent() {
+      const row = (keys, desc, note = '') =>
+        `<div class="help-shortcut-row">
+          <div class="help-shortcut-keys">${keys}</div>
+          <div class="help-shortcut-desc">${desc}</div>
+          ${note ? `<div class="help-shortcut-note">${note}</div>` : ''}
+        </div>`;
+      const k = (...labels) => labels.map(l => `<kbd>${l}</kbd>`).join('<span style="opacity:.4;padding:0 2px">+</span>');
+      const mk = (mac, win) => `<kbd data-mac="${mac}" data-win="${win}">${mac}</kbd>`;
+      const CMD  = `<kbd data-mac="⌘" data-win="Ctrl">⌘</kbd>`;
+      const OPT  = `<kbd data-mac="⌥" data-win="Alt">⌥</kbd>`;
+      const SHF  = `<kbd data-mac="⇧" data-win="Shift">⇧</kbd>`;
+      const group = label => `<div class="help-group-label">${label}</div>`;
+
+      const quickStart = `
+        <div class="help-qs-grid">
+          <div class="help-qs-card">
+            <div class="help-qs-keys">${CMD}${k('Z')}</div>
+            <div><div class="help-qs-label">Undo</div></div>
+          </div>
+          <div class="help-qs-card">
+            <div class="help-qs-keys" style="min-width:auto"><span style="font-size:12px;opacity:.7">double-click</span></div>
+            <div><div class="help-qs-label">Generate layer</div><div class="help-qs-sublabel">on the canvas</div></div>
+          </div>
+          <div class="help-qs-card">
+            <div class="help-qs-keys">${k('Space')}</div>
+            <div><div class="help-qs-label">Pan canvas</div><div class="help-qs-sublabel">hold for hand tool</div></div>
+          </div>
+          <div class="help-qs-card">
+            <div class="help-qs-keys">${CMD}${k('0')}</div>
+            <div><div class="help-qs-label">Reset view</div></div>
+          </div>
+          <div class="help-qs-card">
+            <div class="help-qs-keys">${k('Delete')}</div>
+            <div><div class="help-qs-label">Remove layer</div></div>
+          </div>
+          <div class="help-qs-card">
+            <div class="help-qs-keys">${CMD}${SHF}${k('E')}</div>
+            <div><div class="help-qs-label">Export SVG</div></div>
+          </div>
+          <div class="help-qs-card">
+            <div class="help-qs-keys">${k('?')}</div>
+            <div><div class="help-qs-label">Shortcuts</div></div>
+          </div>
+          <div class="help-qs-card">
+            <div class="help-qs-keys">${CMD}${k('S')}</div>
+            <div><div class="help-qs-label">Save project</div></div>
           </div>
         </div>
-      `;
-      const guidance = `
-        <div class="modal-section">
-          <div class="modal-ill-label">Getting Started</div>
-          <p class="modal-text">
-            Choose an algorithm, adjust its parameters, and refine with transform controls. Use layers to stack
-            multiple generations, then export SVG for plotting.
-          </p>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            For Wavetable image noise, set Noise Type to Image and use Select Image to load a file.
-            Rainfall supports silhouette images to constrain where drops appear.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Wavetable noise stacks can be added, reordered, and blended with tile patterns and image effects.
-            Image noise includes an Image Effects stack plus optional style shaping.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Wavetable Line Structure supports Horizontal, Vertical, Horizontal &amp; Vertical, Isometric, and Lattice layouts.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            In Wavetable Isometric mode, Line Gap controls the visible cell spacing and Row Shift shears the full lattice together instead of only offsetting one family.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Petalis includes an embedded panel; use its pop-out icon (⧉) to open the same panel in a floating window and pop-in (↩) to dock it back.
-            It includes flower presets, radial petal controls, a PETAL VISUALIZER pane (Overlay or Side by Side), a PROFILE EDITOR for inner/outer profile import/export, an Export Pair button below both profile cards, a shading stack with in-place hatch-angle rotation, and a matching modifier stack.
-            Shape comes from editable inner/outer curves, each stack item has its own Petal Shape target (Inner/Outer/Both), the inactive overlay silhouette can be clicked to switch targets, and the designer keeps symmetry per side with a collapsible Randomness &amp; Seed section at the bottom.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            PROFILE dropdown entries come from <code>src/config/petal-profiles</code> and remain available when opening <code>index.html</code> directly (no local server required).
-            If you edit profile JSON files, run <code>npm run profiles:bundle</code> so the <code>library.js</code> file:// fallback stays in sync.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Left panel sections are collapsible; Transform &amp; Seed lives inside Algorithm in its own collapsible sub-panel (collapsed by default), and ABOUT visibility is remembered.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Switching algorithms restores position, scale, and rotation to the target algorithm defaults.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Harmonograph layers combine damped pendulum waves; tweak frequency, phase, and damping for intricate loops.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Toggle pendulums on/off, add new ones, and enable Pendulum Guides to visualize each contribution.
-            Use Anti-Loop Drift and Settle Cutoff to curb repeated loop paths.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Harmonograph includes a Virtual Plotter panel with playback speed controls and a scrubbable playhead preview.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Post-Processing Lab holds smoothing, curves, and simplify for the active layer.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Optimization tools (linesimplify, linesort, filter, multipass) are configured from the Export SVG modal, where the preview pane shows print order and export-visible clipping before download.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            In Line Sort, <code>Nearest</code> with <code>Horizontal</code> or <code>Vertical</code> now follows a real axis sweep, so print order progresses consistently across the chosen direction instead of only using that direction to pick the first line.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Document Setup now includes a document-level Metric/Imperial switch, a Clear Saved Preferences action, and an optional blueprint-style paper-size readout outside the canvas.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            In Overlay preview, active Line Sort shows a gradient from Overlay Color to its complement (or Line Sort Secondary Color) with a legend for print order progression.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Use the File menu to Save/Open full .vectura projects, Import SVG, open Document Setup, and open the Export SVG preview modal.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Use the sun/moon toggle in the upper-right header to switch the full interface between dark and light themes; switching themes also flips the document background default and <code>Pen 1</code> between white and black.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Use the Insert menu to add a Mirror Modifier, then drag layers under it in the Layers panel so the modifier container owns and reflects that subtree.
-            Drag a child back out of the modifier block to unparent it to the root.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Mirror Stack entries are full-canvas guide axes with per-axis show/hide, lock, delete, angle, and XY shift controls plus stack-level add/show-hide/lock/clear actions.
-            When a modifier is selected, the main + Add button creates a normal drawable child under that modifier using the last active algorithm.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Child layers nested under a Mirror Modifier stay fully editable when selected: click the child row or its artwork to switch back to normal Algorithm controls and edit its generator, settings, or transform directly.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Closed mask parents nested under a Mirror Modifier now mirror as closed silhouettes too, so masked descendants clip against the mirrored mask union instead of only the original mask shape.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Angle controls use circular dials—drag the marker to set direction.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Double-click a value to edit it inline (Tab/Shift+Tab to hop between params; arrows nudge, Shift = 10x).
-            Double-click a control to reset it to defaults.
-          </div>
-          <div class="text-xs text-vectura-muted leading-relaxed mt-2">
-            Reset to Defaults restores full algorithm defaults, including transform values (seed, position, scale, rotation).
-          </div>
+        <div class="help-tip">
+          Press and hold any toolbar button with a <b>▸</b> indicator to reveal extra algorithm and tool options.
+          Double-click a parameter value to edit it inline; double-click a control to reset it.
+        </div>`;
+
+      const tools = `
+        <div class="help-rows">
+          ${group('Tools')}
+          ${row(k('V'),             'Selection',      'press again to cycle modes')}
+          ${row(k('A'),             'Direct Select')}
+          ${row(k('M'),             'Rectangle',      'Shift = square · Alt = from center')}
+          ${row(k('L'),             'Oval',           'Shift = circle · Alt = from center')}
+          ${row(k('Y'),             'Polygon',        '↑ ↓ changes sides while dragging')}
+          ${row(k('P'),             'Pen',            'press again to cycle subtools')}
+          ${row(k('F'),             'Fill')}
+          ${row(SHF + k('F'),       'Erase Fill')}
+          ${row(k('C'),             'Scissor',        'press again to cycle modes')}
+          ${row(k('+'),             'Add anchor')}
+          ${row(k('−'),             'Delete anchor')}
+          ${row(SHF + k('C'),       'Anchor point')}
+          ${row(k('Space'),         'Hand',           'hold for temporary pan')}
+        </div>`;
+
+      const canvas = `
+        <div class="help-rows">
+          ${group('Navigation')}
+          ${row('<span style="font-size:11px;opacity:.7">Wheel</span>',     'Zoom in / out')}
+          ${row(SHF + '<span style="font-size:11px;opacity:.7;padding:0 4px">drag</span>', 'Pan canvas')}
+          ${row(CMD + k('0'),       'Reset view')}
+          ${group('Selection')}
+          ${row('<span style="font-size:11px;opacity:.7">drag</span>',      'Multi-select')}
+          ${row('<span style="font-size:11px;opacity:.7">drag corner</span>','Resize selection')}
+          ${row('<span style="font-size:11px;opacity:.7">top-right handle</span>', 'Rotate', 'Shift snaps')}
+          ${row('<span style="font-size:11px;opacity:.7">corner widget</span>', 'Round corners', 'direct tool = one corner')}
+          ${group('Touch')}
+          ${row('<span style="font-size:11px;opacity:.7">1 finger</span>',  'Tool input')}
+          ${row('<span style="font-size:11px;opacity:.7">2 fingers</span>', 'Pan / pinch zoom')}
+        </div>`;
+
+      const layers = `
+        <div class="help-rows">
+          ${group('Select')}
+          ${row(CMD + k('A'),                   'Select all')}
+          ${row('<span style="font-size:11px;opacity:.7">click</span>',     'Select layer')}
+          ${row(CMD + '<span style="font-size:11px;opacity:.7"> click</span>', 'Toggle selection')}
+          ${row(SHF + '<span style="font-size:11px;opacity:.7"> click</span>', 'Range select')}
+          ${group('Organize')}
+          ${row(CMD + k('G'),                   'Group')}
+          ${row(CMD + SHF + k('G'),             'Ungroup')}
+          ${row(CMD + k('E'),                   'Expand to sublayers')}
+          ${row(CMD + k('D'),                   'Duplicate')}
+          ${row(OPT + '<span style="font-size:11px;opacity:.7"> drag</span>', 'Duplicate layer')}
+          ${row(CMD + k('['),                   'Move layer down')}
+          ${row(CMD + k(']'),                   'Move layer up')}
+          ${row(CMD + SHF + k('['),             'Send to back')}
+          ${row(CMD + SHF + k(']'),             'Send to front')}
+          ${row(k('↑↓←→'),                     'Nudge',          'Shift = 10×')}
+          ${row(k('Delete'),                    'Remove')}
         </div>
-        <div class="modal-section">
-          <div class="modal-ill-label">Canvas</div>
-          <div class="text-xs text-vectura-muted leading-relaxed space-y-1">
-            <div>Shift + Drag to pan</div>
-            <div>Mouse wheel to zoom</div>
-            <div>Petal Designer: middle-click drag pans and wheel zooms both visible petals equally.</div>
-            <div>Touch: one-finger tool input, two-finger pan/pinch zoom.</div>
-            <div>On tablets, use Shift/Alt/Meta/Pan touch modifier buttons near the toolbar.</div>
-            <div>On phones, use the top File/View/Help menu bar plus pane toggles or edge tabs to open Generator/Layers, and use the floating Model toggle to expand/collapse the formula panel.</div>
-            <div>Drag selection box to multi-select</div>
-            <div>Drag to move selection; handles resize; top-right handle rotates (Shift snaps)</div>
-          </div>
+        <div class="help-tip">
+          Drag layers into a <b>Mirror Modifier</b> to reflect them symmetrically.
+          Enable <b>Mask</b> on a parent layer to clip all nested children inside its silhouette.
+        </div>`;
+
+      const pen = `
+        <div class="help-rows">
+          ${group('Drawing')}
+          ${row(k('Enter'),         'Commit path')}
+          ${row('<span style="font-size:11px;opacity:.7">double-click</span>', 'Close path near start')}
+          ${row(k('Backspace'),     'Remove last point')}
+          ${row(k('Esc'),           'Cancel draft')}
+          ${group('Modifiers')}
+          ${row(SHF,                'Constrain angle / handles')}
+          ${row(OPT,                'Break handles',  'also draws shape from center')}
+          ${row(CMD,                'Temporary selection while drawing')}
+          ${group('Petal Designer')}
+          ${row(k('A') + ' ' + k('P') + ' ' + k('+') + ' ' + k('−'), 'Anchor tools')}
+          ${row('<span style="font-size:11px;opacity:.7">middle-click drag</span>', 'Pan designer')}
+          ${row('<span style="font-size:11px;opacity:.7">wheel</span>', 'Zoom both petals')}
+        </div>`;
+
+      const fileExport = `
+        <div class="help-rows">
+          ${group('File')}
+          ${row(CMD + k('O'),       'Open project')}
+          ${row(CMD + k('S'),       'Save project')}
+          ${row(CMD + SHF + k('P'), 'Import SVG')}
+          ${row(CMD + SHF + k('E'), 'Export SVG')}
+          ${row(CMD + k('K'),       'Document Setup')}
+          ${group('Help')}
+          ${row(k('F1'),            'Help Guide')}
+          ${row(k('?'),             'This shortcut list')}
         </div>
-        <div class="modal-section">
-          <div class="modal-ill-label">Layers &amp; Groups</div>
-          <div class="text-xs text-vectura-muted leading-relaxed space-y-1">
-            <div>Click to select, Shift-click for ranges, Cmd/Ctrl-click to toggle.</div>
-            <div>Drag the grip to reorder; groups can be collapsed with the caret.</div>
-            <div>Mirror Modifiers behave like group containers: drag layers onto them to indent the children, drag them back out to unparent, and deleting the modifier preserves the children by dissolving only the wrapper.</div>
-            <div>Selecting a child inside a Mirror Modifier edits that child normally; selecting the modifier row switches back to mirror controls.</div>
-            <div>When a Mirror Modifier is selected, drag the guide line to move it, drag the outer rotate handles to rotate it, and click the centered triangle to flip the reflection side.</div>
-            <div>Use the Mask button on a silhouette-capable parent layer to clip every indented descendant beneath it, Illustrator-style.</div>
-            <div>Masking is managed from the Layers panel; enable it on the parent, then drag child layers onto that row to bring them inside the masked subtree.</div>
-            <div>Mask parents inside Mirror Modifiers mirror as closed silhouettes too, so a circular mask plus its child artwork can resolve as two mirrored masked circles instead of one clipped circle and one missing copy.</div>
-            <div>Mask parents can optionally hide their own artwork while still clipping descendants, which is useful for invisible circular or custom-shape masks.</div>
-            <div>Rectangle, Oval, and Polygon tools create editable expanded layers that work with transforms, masking, scissor cuts, and export; fresh rectangles/polygons stay straight-edged on creation, and rotated primitive handles stay aligned to the transformed shape.</div>
-            <div>Expand a layer into sublayers for line-by-line control.</div>
-            <div>Selection outline visibility, color, and thickness can be adjusted in Document Setup.</div>
+        <div class="help-tip">
+          The <b>Export SVG</b> modal includes line simplify, line sort, filter, and multipass optimization passes
+          with a live preview showing pen order before download. Enable <b>Crop Exports to Margin</b> or
+          <b>Remove Hidden Geometry</b> for a clean plotter file.
+        </div>`;
+
+      return `
+        <div class="help-wrap">
+          <div class="help-toolbar">
+            <div class="help-tabs">
+              <button class="help-tab-btn" data-tab="quickstart" type="button">Quick Start</button>
+              <button class="help-tab-btn" data-tab="tools"      type="button">Tools</button>
+              <button class="help-tab-btn" data-tab="canvas"     type="button">Canvas</button>
+              <button class="help-tab-btn" data-tab="layers"     type="button">Layers</button>
+              <button class="help-tab-btn" data-tab="pen"        type="button">Pen</button>
+              <button class="help-tab-btn" data-tab="fileexport" type="button">File &amp; Export</button>
+            </div>
+            <div class="help-platform-toggle">
+              <button class="help-platform-btn" data-platform="mac" type="button">⌘ Mac</button>
+              <button class="help-platform-btn" data-platform="win" type="button">Ctrl Win</button>
+            </div>
           </div>
-        </div>
-        <div class="modal-section">
-          <div class="modal-ill-label">Pens &amp; Export</div>
-          <div class="text-xs text-vectura-muted leading-relaxed space-y-1">
-            <div>Assign pens per layer or selection by dragging a pen onto layers.</div>
-            <div>Double-click a pen icon to apply that pen to the selected layers instantly.</div>
-            <div>Touch fallback: tap a pen icon to arm it, then tap layers/groups to apply.</div>
-            <div>The Pens panel can be collapsed from its section header; use the palette dropdown to recolor pens, then add/remove/reorder pens as needed.</div>
-            <div>Auto-Colorization includes None mode, one-shot Apply, and Continuous Apply Changes.</div>
-            <div>If Continuous Apply Changes is off, mode/parameter/palette updates are staged until you press Apply (including repeatedly applying different modes in sequence).</div>
-            <div>Plotter Optimization in the Export SVG modal removes fully overlapping paths per pen with an adjustable tolerance.</div>
-            <div>Toggle Export Optimized to include optimization passes in the exported SVG.</div>
-            <div>Enable Crop Exports to Margin for hard geometry clipping at the configured margin.</div>
-            <div>Enable Remove Hidden Geometry to destructively trim masked or frame-hidden geometry so the SVG matches the current view exactly.</div>
-            <div>SVG export preserves pen groupings for plotter workflows.</div>
+          <div class="help-panels">
+            <div class="help-panel" data-panel="quickstart">${quickStart}</div>
+            <div class="help-panel" data-panel="tools"     >${tools}</div>
+            <div class="help-panel" data-panel="canvas"    >${canvas}</div>
+            <div class="help-panel" data-panel="layers"    >${layers}</div>
+            <div class="help-panel" data-panel="pen"       >${pen}</div>
+            <div class="help-panel" data-panel="fileexport">${fileExport}</div>
           </div>
-        </div>
-      `;
-      return focusShortcuts ? `${shortcuts}${guidance}` : `${guidance}${shortcuts}`;
+        </div>`;
+    }
+
+    _applyHelpPlatform(root, platform) {
+      root.querySelectorAll('[data-mac]').forEach(el => {
+        el.textContent = platform === 'mac' ? el.dataset.mac : el.dataset.win;
+      });
+      root.querySelectorAll('.help-platform-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.platform === platform);
+      });
     }
 
     openHelp(focusShortcuts = false) {
-      const body = this.buildHelpContent(focusShortcuts);
-      const title = focusShortcuts ? 'Keyboard Shortcuts' : 'Help Guide';
-      this.openModal({ title, body });
+      const body = this.buildHelpContent();
+      this.openModal({ title: 'Help Guide', body, cardClass: 'modal-card--help' });
+      const wrap = this.modal.bodyEl.querySelector('.help-wrap');
+      if (!wrap) return;
+
+      const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+      if (!this._helpPlatform) this._helpPlatform = isMac ? 'mac' : 'win';
+      this._applyHelpPlatform(wrap, this._helpPlatform);
+
+      wrap.querySelectorAll('.help-platform-btn').forEach(btn => {
+        btn.onclick = () => {
+          this._helpPlatform = btn.dataset.platform;
+          this._applyHelpPlatform(wrap, this._helpPlatform);
+        };
+      });
+
+      const switchTab = (id) => {
+        wrap.querySelectorAll('.help-tab-btn').forEach(b =>
+          b.classList.toggle('active', b.dataset.tab === id));
+        wrap.querySelectorAll('.help-panel').forEach(p => {
+          p.hidden = p.dataset.panel !== id;
+        });
+        this._lastHelpTab = id;
+      };
+
+      wrap.querySelectorAll('.help-tab-btn').forEach(btn => {
+        btn.onclick = () => switchTab(btn.dataset.tab);
+      });
+
+      const initial = focusShortcuts ? 'tools' : (this._lastHelpTab || 'quickstart');
+      switchTab(initial);
     }
 
     getDefaultTransformForType(type, currentParams = {}) {
@@ -9522,6 +9536,8 @@
       }
       if (selectionOutlineStyleReset) selectionOutlineStyleReset.disabled = false;
       if (cookiePreferences) cookiePreferences.checked = SETTINGS.cookiePreferencesEnabled === true;
+      const showTourEl = getEl('set-show-tour', { silent: true });
+      if (showTourEl) showTourEl.checked = SETTINGS.showTourOnFirstLaunch === true;
       if (bgColor) bgColor.value = SETTINGS.bgColor;
       const bgColorPill = getEl('bg-color-pill', { silent: true });
       if (bgColorPill) {
@@ -10425,6 +10441,18 @@
       if (btnHelp) {
         btnHelp.onclick = () => this.openHelp(false);
       }
+      const btnTour = getEl('btn-tour', { silent: true });
+      if (btnTour) {
+        btnTour.onclick = (e) => {
+          e.stopPropagation();
+          this.setTopMenuOpen(null, false);
+          SETTINGS.tourSeen = false;
+          window.Vectura.Tutorial?.start(() => {
+            SETTINGS.tourSeen = true;
+            this.app?.persistPreferences?.();
+          });
+        };
+      }
       if (themeToggle) {
         this.refreshThemeUi();
         themeToggle.onclick = () => {
@@ -10729,6 +10757,13 @@
           } else {
             this.app.persistPreferences?.({ force: true });
           }
+        };
+      }
+      const setShowTour = getEl('set-show-tour', { silent: true });
+      if (setShowTour) {
+        setShowTour.onchange = (e) => {
+          SETTINGS.showTourOnFirstLaunch = e.target.checked;
+          this.app?.persistPreferences?.();
         };
       }
       if (btnClearPreferences) {

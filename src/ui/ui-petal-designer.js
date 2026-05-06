@@ -972,7 +972,9 @@
           const subMarkup = (item.subtools || []).map((toolId) =>
             renderButton(toolId, { isSubtool: true, title: defs[toolId]?.label || '' })
           ).join('');
-          return `<div class="${groupClass}">${renderButton(item.tool, { value: item.value || buttonValueResolver(item.tool), title: defs[item.tool]?.label || '' })}<div class="${submenuClass}"${submenuAttrs}>${subMarkup}</div></div>`;
+          const mainBtnHtml = renderButton(item.tool, { value: item.value || buttonValueResolver(item.tool), title: defs[item.tool]?.label || '' })
+            .replace('<button ', '<button data-has-submenu="true" ');
+          return `<div class="${groupClass}">${mainBtnHtml}<div class="${submenuClass}"${submenuAttrs}>${subMarkup}</div></div>`;
         }
         if (typeof item === 'string') return renderButton(item, { title: defs[item]?.label || '' });
         return renderButton(item.tool, {

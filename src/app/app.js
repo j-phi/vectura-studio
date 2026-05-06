@@ -162,6 +162,8 @@
         pens: Array.isArray(SETTINGS.pens) ? clone(SETTINGS.pens) : [],
         paneLeftWidth: SETTINGS.paneLeftWidth,
         paneRightWidth: SETTINGS.paneRightWidth,
+        showTourOnFirstLaunch: SETTINGS.showTourOnFirstLaunch === true,
+        tourSeen: SETTINGS.tourSeen === true,
       };
     }
 
@@ -248,6 +250,8 @@
           document.documentElement.style.setProperty('--pane-right-width', `${right}px`);
         }
       }
+      SETTINGS.showTourOnFirstLaunch = snapshot.showTourOnFirstLaunch === true;
+      SETTINGS.tourSeen = snapshot.tourSeen === true;
     }
 
     applyPreferencesFromCookie() {

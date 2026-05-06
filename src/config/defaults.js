@@ -1463,6 +1463,8 @@
     ],
     globalLayerCount: 0,
     layerBarPaletteId: 'prism',
+    showTourOnFirstLaunch: false,
+    tourSeen: false,
   };
   window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {};
 
