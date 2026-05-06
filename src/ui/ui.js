@@ -3865,7 +3865,159 @@
     },
     'mirror.type': {
       title: 'Mirror Type',
-      description: 'Line: reflects across a straight axis. Radial: N-fold rotational or dihedral symmetry. Arc: inverts geometry across a circular arc (conformal reflection).',
+      body: `
+        <p class="modal-text">
+          Mirrors copy and transform your layer's paths in real time. Choose a type that matches the kind of
+          symmetry you want — you can stack multiple mirrors together for compound effects.
+        </p>
+        <div class="modal-section">
+          <div class="modal-ill-label">Line</div>
+          <p class="modal-text">
+            Reflects your artwork across a straight line — like folding a piece of paper. You control the angle
+            of the fold and how far the axis is shifted from center. The result is one mirrored copy alongside
+            the original. Great for bilateral symmetry (left/right or top/bottom).
+          </p>
+        </div>
+        <div class="modal-section">
+          <div class="modal-ill-label">Radial</div>
+          <p class="modal-text">
+            Spins copies of your artwork around a center point. Three modes are available:
+            <br><br>
+            <strong>Dihedral (kaleidoscope)</strong> — combines rotation with reflection, like a true kaleidoscope.
+            N copies are arranged in a circle, alternating between original and mirrored.
+            <br><br>
+            <strong>Rotation only</strong> — repeats the original N times around the center with no mirroring.
+            Think of a spinning pinwheel or fan blade.
+            <br><br>
+            <strong>Edge reflections</strong> — reflects along each slice boundary instead of the midpoint,
+            producing a different symmetry feel with hard mirror edges between segments.
+          </p>
+        </div>
+        <div class="modal-section">
+          <div class="modal-ill-label">Arc</div>
+          <p class="modal-text">
+            Reflects geometry through a curved boundary — imagine looking at your art in a curved fun-house
+            mirror. Points inside the circle get flipped to the outside (or vice versa), creating an inversion
+            effect that stretches and compresses shapes in interesting ways. Use Strength to blend between
+            the original and reflected position, and Falloff to fade the effect at the arc's edges.
+          </p>
+        </div>
+        <div class="modal-section">
+          <div class="modal-ill-label">Wallpaper</div>
+          <p class="modal-text">
+            Tiles your artwork across the canvas using one of the 17 mathematically distinct repeating
+            symmetry patterns — every possible way to tile a flat surface with symmetry. Each pattern
+            (called a wallpaper group) combines some mix of translation (copying), rotation, and reflection
+            to fill the canvas. Tap the <strong>(i)</strong> button next to the Group selector for a full
+            guide to all 17 groups.
+          </p>
+        </div>
+      `,
+      hidePreview: true,
+    },
+    'mirror.wallpaperGroup': {
+      title: 'Wallpaper Group',
+      body: `
+        <p class="modal-text">
+          Mathematicians have proven there are exactly 17 ways to tile a flat surface with repeating symmetry.
+          Each "wallpaper group" is a recipe that says which combination of moves — sliding, rotating,
+          and reflecting — are used to fill the canvas. Your drawing is placed in one small tile, and the
+          group determines how that tile is copied to cover the whole surface.
+        </p>
+        <p class="modal-text">
+          The groups are organized by their grid shape: <strong>Oblique</strong> (any angle, most flexible),
+          <strong>Rectangular</strong> (right-angle grid), <strong>Square</strong> (equal sides, 90° grid),
+          and <strong>Hexagonal</strong> (60° grid, triangular or honeycomb base).
+        </p>
+        <div class="modal-section">
+          <div class="modal-ill-label">Oblique grid — no mirrors, free angle</div>
+          <p class="modal-text">
+            <strong>p1 — Translation only.</strong> The simplest repeat: your tile is copied side-by-side and
+            top-to-bottom with no flipping or turning. Like basic gift wrap or plain wallpaper. Every copy
+            looks exactly the same and points the same way.
+            <br><br>
+            <strong>p2 — 180° Rotation.</strong> Each tile is also copied upside down. Think of a fabric
+            where the motif alternates between right-side-up and flipped 180°. Still no mirrors — just
+            a half-turn.
+          </p>
+        </div>
+        <div class="modal-section">
+          <div class="modal-ill-label">Rectangular grid — mirrors and glides</div>
+          <p class="modal-text">
+            <strong>pm — One mirror stripe.</strong> The tile is reflected left-right across a vertical (or
+            horizontal) line, then the pair is tiled. Like a fence where every other plank is a mirror
+            image. Creates clean bilateral symmetry in stripes.
+            <br><br>
+            <strong>pg — Glide reflection.</strong> Like pm, but the reflected copy is also shifted half
+            a step before tiling. Think of alternating left and right footprints, or a brick stagger.
+            There are no straight mirror lines — only the slide-then-flip combo.
+            <br><br>
+            <strong>cm — Diagonal mirror on a centered grid.</strong> Combines a mirror with a centered
+            (offset-row) rectangular lattice. Creates patterns where diagonal stripes of mirrored pairs
+            alternate across the surface.
+            <br><br>
+            <strong>pmm — Two perpendicular mirrors.</strong> Mirrors run both horizontally and vertically.
+            Every tile is reflected in both directions, creating strong four-way symmetry. Like cross-stitch
+            or classic quilt blocks — anything placed anywhere gets mirrored to all four quadrants.
+            <br><br>
+            <strong>pmg — One mirror plus one glide.</strong> One axis has a true mirror, the other has a
+            glide reflection. More variety than pmm: some edges are reflected cleanly, others are reflected
+            and shifted. Produces patterns with a lively but organized feel.
+            <br><br>
+            <strong>pgg — Two glide reflections.</strong> Two glide axes at right angles, but no straight
+            mirrors at all. The result is an energetic, slightly pinwheel-like rectangular pattern. Commonly
+            seen in woven fabric designs.
+            <br><br>
+            <strong>cmm — Two mirrors on a centered grid.</strong> Two perpendicular mirrors on a rhombic
+            (centered) lattice. Rich rectangular symmetry — similar to pmm but the tile grid itself is
+            diagonally centered, producing a different visual rhythm.
+          </p>
+        </div>
+        <div class="modal-section">
+          <div class="modal-ill-label">Square grid — fourfold rotation</div>
+          <p class="modal-text">
+            <strong>p4 — Fourfold spin only.</strong> Your tile is rotated at 0°, 90°, 180°, and 270°
+            around each grid corner. Like a spinning pinwheel or propeller. No mirrors — just four
+            quarter-turns. Works perfectly on a square grid.
+            <br><br>
+            <strong>p4m — Fourfold rotation plus all mirrors.</strong> The richest square pattern: four
+            rotations and four mirror axes (both straight and diagonal). Every possible square symmetry
+            is present. Think Islamic geometric tiles, bathroom floor patterns, or detailed mandalas.
+            This is one of the most visually striking groups.
+            <br><br>
+            <strong>p4g — Fourfold rotation plus glide mirrors.</strong> Four rotations with glide
+            reflections rather than straight mirrors. Similar to p4m but the mirror edges are offset,
+            creating a subtly different "pinwheeling" square pattern. The tile sits at a 45° diagonal
+            relative to p4m.
+          </p>
+        </div>
+        <div class="modal-section">
+          <div class="modal-ill-label">Hexagonal grid — threefold and sixfold rotation</div>
+          <p class="modal-text">
+            <strong>p3 — Threefold spin only.</strong> Three 120° rotations on a triangular grid. Your
+            tile spins like a three-bladed fan or propeller. No mirrors — pure rotation. Honeycombs and
+            triangular tessellations use this underlying structure.
+            <br><br>
+            <strong>p3m1 — Threefold rotation plus mirrors through the center.</strong> Adds three
+            mirror axes that all pass through the rotation center. Creates highly symmetrical hexagonal
+            patterns — think detailed snowflake-like designs or Celtic knotwork.
+            <br><br>
+            <strong>p31m — Threefold rotation plus mirrors through the edges.</strong> Similar to p3m1
+            but the mirror axes run through tile edges instead of the rotation center. Slightly less
+            symmetric feel — the mirrors don't all converge at one point, giving a different visual rhythm.
+            <br><br>
+            <strong>p6 — Sixfold spin only.</strong> Six copies at 60° intervals around each vertex —
+            like a snowflake or a clock face. No mirrors, just pure 6-fold rotation. Creates elegant
+            pinwheel hexagonal patterns.
+            <br><br>
+            <strong>p6m — Sixfold rotation plus all mirrors.</strong> The most symmetric group of all 17.
+            Six rotations plus six mirror axes. Every possible hexagonal symmetry is present — like a
+            full kaleidoscope on a hex grid. Think detailed snowflakes, stained glass rosettes, or
+            intricate mandala patterns.
+          </p>
+        </div>
+      `,
+      hidePreview: true,
     },
     'mirror.replacedSide': {
       title: 'Replaced Side',
