@@ -1,7 +1,7 @@
 # Graph Report - /Users/jayphi/Documents/github/vectura-studio-meridian  (2026-05-06)
 
 ## Corpus Check
-- 137 files · ~1,584,922 words
+- 137 files · ~1,593,790 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -851,11 +851,11 @@ Nodes (1): City — Isometric aerial city of skyscrapers rendered entirely in de
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `Renderer` connect `Community 0` to `Community 8`, `Community 1`?**
-  _High betweenness centrality (0.113) - this node is a cross-community bridge._
-- **Why does `UI` connect `Community 1` to `Community 8`, `Community 10`, `Community 4`?**
-  _High betweenness centrality (0.088) - this node is a cross-community bridge._
+  _High betweenness centrality (0.121) - this node is a cross-community bridge._
 - **Why does `sort()` connect `Community 1` to `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 38`, `Community 9`, `Community 10`, `Community 11`, `Community 13`, `Community 14`, `Community 17`, `Community 21`?**
-  _High betweenness centrality (0.080) - this node is a cross-community bridge._
+  _High betweenness centrality (0.109) - this node is a cross-community bridge._
+- **Why does `UI` connect `Community 1` to `Community 8`, `Community 10`, `Community 4`?**
+  _High betweenness centrality (0.091) - this node is a cross-community bridge._
 - **Are the 41 inferred relationships involving `clamp()` (e.g. with `applyAutoColorization()` and `clampPointToRect()`) actually correct?**
   _`clamp()` has 41 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `Non-Destructive History Timeline`, `linesimplify Operation`, `linesort Operation` to the rest of the system?**
