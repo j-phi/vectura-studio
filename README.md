@@ -510,6 +510,27 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 0.9.0
+- Added **mirror modifier "Expand to Folder"**: each mirrored path becomes its own editable shape layer.
+- Added **mirror-axis path joining on expand**: source/reflection pairs that share an axis endpoint are auto-joined into one continuous path, cutting pen lifts at every axis crossing.
+- Added **layer grouping and ungrouping** via the layer panel action menu.
+- Fixed **Add Layer ▾ → Mirror Modifier Group** to wrap the current selection by default (now matches `Insert > Mirror Modifier`).
+- Redesigned scissor/cut subtool icons; updated pattern fill, terrain, trash, and mask-source icons.
+
+### 0.8.27
+- Added **custom canvas cursors** for Selection (V), Direct Selection (A), Pen (P), and Fill (F) tools.
+- Added **Fill loupe overlay**: paint-bucket cursor + 96 px circular magnifier (~4×) that flips quadrants near edges.
+- Added **Line shape primitive** (`U`): drag two endpoints, Shift-snap to 45° increments.
+- Fixed **XSS via imported SVG pattern tile**: new shared `Vectura.SvgSanitize.sanitize()` strips `<script>`, `<foreignObject>`, all `on*` attributes, and `javascript:` hrefs.
+- **Toolbar consolidation**: Rectangle, Oval, Line, and Polygon share a single long-press shape group button.
+
+### 0.8.0
+- Added **Lark theme**: dark UI with white canvas, purpose-built for a plotter-on-paper workflow.
+- Added **Algorithm Drawing Tool** with a dedicated subtool submenu.
+
+<details>
+<summary>Older releases (0.7.0 and earlier)</summary>
+
 ### 0.7.0
 - Added **Terrain** algorithm: heightfield-driven scanlines with Top-down, One-point, Two-point, and Isometric perspectives; ridged-multifractal mountains, V/U-profile valleys, steepest-descent rivers, ocean clamping, and six style presets — all with full Noise Rack integration.
 - Added global dark/light theme toggle and full-shell CSS-variable theming.
@@ -614,4 +635,5 @@ CI lives in `.github/workflows/test.yml`:
 - Added a maintained repository punchlist in `plans.md` and a human-curated `CHANGELOG.md`.
 - Started the Noise Rack extraction with a shared core blend-combination module used by `wavetable`, `spiral`, and `rainfall`.
 
+</details>
 </details>

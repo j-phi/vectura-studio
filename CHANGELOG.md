@@ -6,8 +6,18 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
-### Fixed
-- **Add Layer ▾ → Mirror Modifier Group now wraps the current selection** by default, matching the Insert > Mirror Modifier behavior. Previously this menu route created a bare modifier group and ignored the active selection. Both entry points now route through `insertMirrorModifier()`.
+## 0.9.0 - 2026-05-05
+
+### Added
+- **Mirror modifier "Expand to Folder"**: each mirrored output path becomes an individually editable shape layer inside a regular folder, preserving all source styling (pen, color, stroke width).
+- **Mirror-axis path joining on expand**: pairs of paths that share an endpoint on the mirror axis are automatically joined into a single continuous path, eliminating pen lifts at axis crossings. Handles the three topologies that arise from `splitPathByAxis` — both-end (most common), end-start, and both-start — using a 0.5-unit proximity tolerance well above floating-point error.
+- **Layer grouping and ungrouping** via the layer panel action menu: multiple selected layers group into a new folder; a selected group's children can be promoted back to the parent level.
+- **Add Layer ▾ → Mirror Modifier Group now wraps the current selection** by default, matching `Insert > Mirror Modifier`. Both entry points now route through `insertMirrorModifier()`.
+
+### Changed
+- **Scissor/cut tool icons** redesigned using Lucide `slice`, `square-scissors`, and `circle-scissors` for clearer subtool distinction.
+- **Pattern fill and terrain tool icons** updated for improved visual clarity.
+- **Trash and mask-source-active icons** refreshed for design consistency.
 
 ## 0.8.27 - 2026-05-05
 
