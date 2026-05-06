@@ -214,7 +214,13 @@ input[type='color']::-webkit-color-swatch {
   border-radius: 12px;
   z-index: 30;
   box-shadow: var(--shadow-panel);
+  max-height: calc(100% - 40px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
 }
+.tool-bar::-webkit-scrollbar { width: 4px; }
+.tool-bar::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: 2px; }
 
 .mobile-pane-handle {
   display: none;

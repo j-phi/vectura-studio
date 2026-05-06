@@ -482,7 +482,7 @@
 }
 
 /* ── TOOLBAR ─────────────────────────────────────────────────── */
-.tool-bar {
+[data-ui-skin^="meridian"] .tool-bar {
   position: absolute; left: 10px; top: 50%;
   transform: translateY(-50%); z-index: 5;
   display: flex; flex-direction: column; gap: 3px;
@@ -490,7 +490,13 @@
   background: var(--ui-panel); border: 1px solid var(--ui-border);
   border-radius: var(--radius-lg); box-shadow: var(--shadow-md);
   transition: background 0.2s, border-color 0.2s;
+  max-height: calc(100% - 20px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
 }
+[data-ui-skin^="meridian"] .tool-bar::-webkit-scrollbar { width: 4px; }
+[data-ui-skin^="meridian"] .tool-bar::-webkit-scrollbar-thumb { background: var(--ui-border); border-radius: 2px; }
 .tool-btn {
   width: var(--row-height); height: var(--row-height);
   min-width: 30px; min-height: 30px;
