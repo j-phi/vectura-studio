@@ -50,6 +50,7 @@
   const createMirrorLine = Modifiers.createMirrorLine || ((index) => ({ id: `mirror-${index + 1}`, enabled: true }));
   const isModifierLayer = Modifiers.isModifierLayer || (() => false);
   const applyModifierToPaths = Modifiers.applyModifierToPaths || ((paths) => clonePaths(paths || []));
+  const joinLayersAtMirrorAxes = Modifiers.joinLayersAtMirrorAxes || ((layers) => layers);
   const isValidDrawableLayerType = (type) =>
     Boolean(
       type &&
@@ -159,11 +160,20 @@
         return shape;
       });
 
+      // Join pairs that share a mirror-axis endpoint to reduce plotter pen lifts.
+      const joinedLayers = joinLayersAtMirrorAxes(shapeLayers, modifier, bounds);
+
+      // Renumber sequentially after joins may have reduced the count.
+      const joinedPad = String(joinedLayers.length).length;
+      joinedLayers.forEach((layer, i) => {
+        layer.name = `${modLayer.name} - Line ${String(i + 1).padStart(joinedPad, '0')}`;
+      });
+
       const descendantIds = new Set(this.getLayerDescendants(modifierId).map((l) => l.id));
       this.layers = this.layers.filter((l) => l.id !== modifierId && !descendantIds.has(l.id));
-      this.layers.splice(modIdx, 0, folder, ...shapeLayers);
+      this.layers.splice(modIdx, 0, folder, ...joinedLayers);
 
-      shapeLayers.forEach((shape) => this.generate(shape.id));
+      joinedLayers.forEach((shape) => this.generate(shape.id));
       this.activeLayerId = folderId;
       this.computeAllDisplayGeometry();
       return folderId;

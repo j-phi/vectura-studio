@@ -8683,6 +8683,8 @@
       });
 
       this.normalizeGroupOrder();
+      if (this.app.renderer) this.app.renderer.setSelection([groupId], groupId);
+      this.app.engine.activeLayerId = groupId;
       this.renderLayers();
       this.app.render();
     }
@@ -11964,6 +11966,26 @@
           ...selIds.filter((id) => id !== srcId && engine.getLayerById?.(id)?.parentId === groupId)];
         const moverSet = new Set(moverIds);
         const engineIds = engine.layers.map((l) => l.id).filter((id) => !moverSet.has(id));
+
+        // Pre-normalize: ensure the group sits just after its remaining descendants
+        // so insertion logic works regardless of initial engine.layers order
+        // (e.g. right after expandLayer the group precedes its children).
+        const grpI0 = engineIds.indexOf(groupId);
+        if (grpI0 !== -1) {
+          const c0 = engineIds.reduce((acc, id, i) => {
+            if (engine.getLayerById(id)?.parentId === groupId) acc.push(i);
+            return acc;
+          }, []);
+          if (c0.length) {
+            const maxC = Math.max(...c0);
+            if (grpI0 !== maxC + 1) {
+              engineIds.splice(grpI0, 1);
+              const adj = maxC > grpI0 ? maxC - 1 : maxC;
+              engineIds.splice(adj + 1, 0, groupId);
+            }
+          }
+        }
+
         const grpIdx = engineIds.indexOf(groupId);
         let insertIdx;
         if (dir === 'below') {
@@ -13020,10 +13042,9 @@
       }
 
       children.forEach((child) => this.app.engine.generate(child.id));
-      const primary = children[0];
-      if (primary && selectChildren) {
-        this.app.engine.activeLayerId = primary.id;
-        if (this.app.renderer) this.app.renderer.setSelection([primary.id], primary.id);
+      if (selectChildren) {
+        this.app.engine.activeLayerId = layer.id;
+        if (this.app.renderer) this.app.renderer.setSelection([layer.id], layer.id);
       }
       if (!suppressRender) {
         this.renderLayers();

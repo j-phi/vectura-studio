@@ -686,6 +686,111 @@
     return (modifier.mirrors || []).reduce((current, mirror) => applyMirrorToPaths(current, mirror, bounds), paths || []);
   };
 
+  // Tolerance for classifying a path endpoint as "on a mirror axis" when joining expanded layers.
+  // The structural invariant in splitPathByAxis produces axis intersection points with float error
+  // of ~1e-10, so 0.5 units is extremely safe without risking false positives.
+  const JOIN_AXIS_TOLERANCE = 0.5;
+  const JOIN_AXIS_TOLERANCE_SQ = JOIN_AXIS_TOLERANCE * JOIN_AXIS_TOLERANCE;
+
+  /**
+   * After expandModifierLayer creates individual shape layers, joins pairs of layers whose
+   * endpoints share the same mirror-axis point. Each (source, reflection) pair ends at the
+   * same axis point — merging them into a single continuous path eliminates a pen lift.
+   *
+   * Three join modes:
+   *   both-end  : A.last ≈ B.last on axis  → [...A, ...reversed(B).slice(1)]
+   *   end-start : A.last ≈ B.first on axis → [...A, ...B.slice(1)]
+   *   both-start: A.first ≈ B.first on axis → [...reversed(A), ...B.slice(1)]
+   */
+  const joinLayersAtMirrorAxes = (layers, modifier, bounds) => {
+    const mirrors = modifier?.mirrors ?? [];
+    if (!mirrors.length || !modifier?.enabled) return layers;
+
+    const axes = mirrors.map((m) => getMirrorAxis(m, bounds));
+
+    const ptDistSq = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
+    const onAnyAxis = (pt) => axes.findIndex((ax) => Math.abs(signedDistanceToAxis(pt, ax)) < JOIN_AXIS_TOLERANCE);
+
+    const meta = layers.map((layer, i) => {
+      const path = layer.sourcePaths?.[0];
+      if (!path || path.length < 2 || isClosedSourcePath(path)) {
+        return { i, endAxis: -1, endPt: null, startAxis: -1, startPt: null };
+      }
+      const first = path[0];
+      const last = path[path.length - 1];
+      return {
+        i,
+        endAxis: onAnyAxis(last),
+        endPt: last,
+        startAxis: onAnyAxis(first),
+        startPt: first,
+      };
+    });
+
+    const consumed = new Set();
+    const replacements = new Map(); // layer index → merged layer
+
+    const recordJoin = (ai, bi, pathA, pathB, mode) => {
+      let mergedPath;
+      if (mode === 'both-end') {
+        mergedPath = [...pathA, ...pathB.slice().reverse().slice(1)];
+      } else if (mode === 'end-start') {
+        mergedPath = [...pathA, ...pathB.slice(1)];
+      } else {
+        // both-start: reverse A then append B
+        mergedPath = [...pathA.slice().reverse(), ...pathB.slice(1)];
+      }
+      if (pathA.meta) mergedPath.meta = clone(pathA.meta);
+      replacements.set(ai, { ...layers[ai], sourcePaths: [mergedPath] });
+      consumed.add(ai);
+      consumed.add(bi);
+    };
+
+    // Case 1: both paths end at the same axis point (most common — source + its reflection)
+    for (const a of meta) {
+      if (a.endAxis < 0 || consumed.has(a.i)) continue;
+      for (const b of meta) {
+        if (b.i <= a.i || consumed.has(b.i)) continue;
+        if (b.endAxis !== a.endAxis) continue;
+        if (ptDistSq(a.endPt, b.endPt) > JOIN_AXIS_TOLERANCE_SQ) continue;
+        recordJoin(a.i, b.i, layers[a.i].sourcePaths[0], layers[b.i].sourcePaths[0], 'both-end');
+        break;
+      }
+    }
+
+    // Case 2: A ends where B starts (both on same axis)
+    for (const a of meta) {
+      if (a.endAxis < 0 || consumed.has(a.i)) continue;
+      for (const b of meta) {
+        if (b.i <= a.i || consumed.has(b.i)) continue;
+        if (b.startAxis !== a.endAxis) continue;
+        if (ptDistSq(a.endPt, b.startPt) > JOIN_AXIS_TOLERANCE_SQ) continue;
+        recordJoin(a.i, b.i, layers[a.i].sourcePaths[0], layers[b.i].sourcePaths[0], 'end-start');
+        break;
+      }
+    }
+
+    // Case 3: both paths start at the same axis point (original path began on the axis)
+    for (const a of meta) {
+      if (a.startAxis < 0 || consumed.has(a.i)) continue;
+      for (const b of meta) {
+        if (b.i <= a.i || consumed.has(b.i)) continue;
+        if (b.startAxis !== a.startAxis) continue;
+        if (ptDistSq(a.startPt, b.startPt) > JOIN_AXIS_TOLERANCE_SQ) continue;
+        recordJoin(a.i, b.i, layers[a.i].sourcePaths[0], layers[b.i].sourcePaths[0], 'both-start');
+        break;
+      }
+    }
+
+    // Rebuild layer list in original order: replace joined pairs, drop consumed partners
+    return layers
+      .map((layer, i) => {
+        if (consumed.has(i) && !replacements.has(i)) return null;
+        return replacements.get(i) ?? layer;
+      })
+      .filter(Boolean);
+  };
+
   window.Vectura = window.Vectura || {};
   window.Vectura.Modifiers = {
     EPSILON,
@@ -707,5 +812,6 @@
     applyArcMirrorToPaths,
     applyWallpaperMirrorToPaths,
     applyModifierToPaths,
+    joinLayersAtMirrorAxes,
   };
 })();
