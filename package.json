@@ -1,6 +1,6 @@
 {
   "name": "vectura-studio",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "private": true,
   "description": "Vectura Studio - physics-inspired vector generator",
   "scripts": {
@@ -21,7 +21,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.50.1",
-    "@vitest/coverage-v8": "^2.1.9",
+    "@vitest/coverage-v8": "^3.2.4",
     "autoprefixer": "^10.4.27",
     "eslint": "^8.57.0",
     "eslint-config-prettier": "^10.1.8",
@@ -30,7 +30,7 @@
     "prettier": "^3.2.5",
     "tailwindcss": "^4.2.1",
     "vite": "^8.0.1",
-    "vitest": "^2.1.1"
+    "vitest": "^3.2.4"
   },
   "engines": {
     "node": ">=18"
