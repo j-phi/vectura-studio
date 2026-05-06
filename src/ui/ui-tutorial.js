@@ -87,12 +87,13 @@
         `<span class="tutorial-dot${i === n ? ' active' : ''}"></span>`
       ).join('');
 
-      this._el.setAttribute('data-placement', step.placement);
+      const placement = window.innerWidth < 900 ? 'center' : step.placement;
+      this._el.setAttribute('data-placement', placement);
       this._el.setAttribute('aria-hidden', 'false');
 
-      this.positionAt(step.target, step.placement);
+      this.positionAt(step.target, placement);
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => this.positionAt(step.target, step.placement));
+        requestAnimationFrame(() => this.positionAt(step.target, placement));
       });
     }
 
@@ -115,11 +116,13 @@
     positionAt(selector, placement) {
       if (!this._el) return;
 
-      if (placement === 'center') {
+      const isMobile = window.innerWidth < 900;
+
+      if (placement === 'center' || isMobile) {
         const pw = this._el.offsetWidth  || 270;
         const ph = this._el.offsetHeight || 200;
-        this._el.style.left = Math.round((window.innerWidth  - pw) / 2) + 'px';
-        this._el.style.top  = Math.round((window.innerHeight - ph) / 2) + 'px';
+        this._el.style.left = Math.round(Math.max(8, (window.innerWidth  - pw) / 2)) + 'px';
+        this._el.style.top  = Math.round(Math.max(8, (window.innerHeight - ph) / 2)) + 'px';
         return;
       }
 
