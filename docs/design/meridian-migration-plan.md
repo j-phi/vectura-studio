@@ -10,8 +10,8 @@
 |---|---|---|
 | **Phase −1** — Mockup provenance | ✅ done | `7d9f426` |
 | **Phase 0** — Skin foundation | ✅ done | `7d9f426` (+ graphify rebuild `e442a4b`) |
-| **Phase 1** — Component library | ⏳ pending | — |
-| **Phase 2** — Shell, panels, orchestrator | ⏳ pending | — |
+| **Phase 1** — Component library | ✅ done | `16ec81d` `440c84a` `d959a9b` `554ee88` `65791e5` `c7fa0db` |
+| **Phase 2** — Shell, panels, orchestrator | ⏳ next | — |
 | **Phase 3** — Modals, overlays, menus | ⏳ pending | — |
 | **Phase 4** — Editors & specialized surfaces | ⏳ pending | — |
 | **Phase 5** — Polish, SDK, cleanup | ⏳ pending | — |
@@ -556,6 +556,15 @@ Plus the four §2.10-additions: `pendulum-list.js`, `pen-list.js`, `image-input.
 
 **Visual baselines:** Playwright captures `tests/visual/sandboxes/components.html` under each of `classic-dark`, `meridian-dark`, `meridian-light` (3 baselines × 22 components). Threshold: 0.1% pixel diff per baseline.
 
+> **Phase 1 actuals (`16ec81d` → `c7fa0db`, six commits):**
+> - **Scaffolding (`16ec81d`):** `src/ui/{utils,motion,focus}.js` + `tests/visual/sandboxes/components.html` shell + `tests/helpers/load-ui-component.js` (loads single component scripts into a minimal JSDOM via `vm.runInContext`, so component tests don't pay the index.html boot cost).
+> - **Components (20):** `src/ui/components/{btn-pulse, info-badge, section, sw-toggle, seg-ctrl, tog-grp, num-step, select, color-pill, slider, number-input, angle-dial, tabs, layer-item, pen-item, pendulum-list, pen-list, image-input, harmonograph-plotter}.js` (note: `info-badge` consumes overlays/tooltip; layer-item ships native HTML5 drag/drop with a custom MIME type for reorder).
+> - **Overlays (6):** `src/ui/overlays/{tooltip, modal, dialog, toast, menu, drag-drop, empty-state}.js`. Modal owns the focus-trap; Dialog composes Modal; Menu has type-ahead + arrow-key nav skipping disabled entries.
+> - **Tests:** 178 new unit tests across `tests/unit/{components,overlays}/`. Suite went from 350 unit / 66 integration → **530 unit / 66 integration**, all green. Visual baselines NOT captured — the sandbox shell is in place but the per-component renderers haven't been registered yet (deferred to Phase 2 alongside the panel-level visual baselines, since component renders depend on no panel state and can be batched).
+> - **Component API contract (locked in `c7fa0db`):** `factory(host, props) -> { el, update, destroy }` registered on `window.Vectura.UI.<Name>` (or `window.Vectura.UI.overlays.<Name>`). Plain factory, not class. Components don't reach into engine state — the parent panel is the bridge. `update(newProps)` is full-props replace; component diffs internally and never recreates `el`.
+> - **Two minor deviations from §3:** (a) Phase 1 file count was 22 (16 base + 6 specialized + tooltip — tooltip moved to overlays/ since it's used by info-badge and modal as an underlay), not 20 + 6 as planned. (b) `info-badge.js` composes the tooltip overlay rather than re-implementing tooltip logic; consequence: `tests/unit/components/info-badge.test.js` loads `['utils', 'tooltip', 'info-badge']`. Phase 2 panels should follow the same composition pattern.
+> - **Phase 2 unblocked.** All component primitives the planned `algo-config-panel` dispatch table needs are present.
+
 ### Phase 2: Shell, Panels, Orchestrator (7 days)
 **Files created:**
 - `src/ui/shell/{shell,header,menubar,pane-left,pane-right,workspace,toolbar,bottom-pane,theme-switcher}.js` (9 files)
@@ -764,15 +773,19 @@ If all 13 steps pass and `npm run test:ci` is green, the migration is complete.
 
 ---
 
-## Appendix: Resuming from Phase 0
+## Appendix: Resuming from Phase 1
 
-After clearing context, the fastest way to pick up Phase 1:
+After clearing context, the fastest way to pick up Phase 2:
 
-1. `cd /Users/jayphi/Documents/github/vectura-studio-meridian` (the worktree).
-2. `git log --oneline -5` — confirm `7d9f426` and `e442a4b` are at the top of `meridian-blue-skin`.
-3. Read this file (§3 Phase 1) and §2.5 (component API contract).
-4. Open `docs/design/themes-mockup.html` in a browser to keep the visual reference handy.
-5. Confirm tests are green: `npm run test:unit && npm run test:integration && npm run test:visual && npm run test:perf`.
-6. Begin with the simplest components first (`btn-pulse.js`, `info-badge.js`, `tooltip.js`) before tackling stateful ones (`slider.js`, `angle-dial.js`, `layer-item.js`).
-7. Create `tests/visual/sandboxes/components.html` early so each new component has a place to render under all skins.
-8. Per §2.5: each component is `factory(host, props) → {el, update, destroy}` exposed on `window.Vectura.UI.<Name>`. Plain factory, not class. No bundler.
+1. `cd /Users/jayphi/Documents/github/vectura-studio-meridian` (the worktree, on branch `meridian-blue-skin`).
+2. `git log --oneline -10` — confirm the top commit is `c7fa0db` (specialized components) preceded by `65791e5`, `554ee88`, `d959a9b`, `440c84a`, `16ec81d`. If you're somewhere else on the branch, stop and orient.
+3. Read this file (§3 Phase 2) plus §2.4 (decomposition map) and §2.9 (CONTROL_DEFS predicate globalization). The Phase 1 actuals note above the Phase 2 section captures what's already on disk.
+4. Confirm tests are green before changing anything: `npm run test:unit && npm run test:integration` (530 unit, 66 integration). `test:visual` baselines pre-date the migration; they should still pass since DOM is unchanged.
+5. The 20 components + 6 overlays from Phase 1 are at `src/ui/components/*.js` and `src/ui/overlays/*.js`. They register onto `window.Vectura.UI.<Name>` / `window.Vectura.UI.overlays.<Name>` and follow the contract in §2.5. Don't rebuild them — compose them.
+6. **Phase 2 starting moves**, in order:
+   - **Compile gate first.** Extract `CONTROL_DEFS` (legacy `ui.js:2196-3688`) into `src/ui/controls-registry.js` and add `tests/unit/controls-registry-compile.test.js` that iterates every `showIf` predicate against ALGO_DEFAULTS in JSDOM. This is the §5 risk that bites hardest if deferred — predicates that closure-captured locals will fail to resolve outside the IIFE, and the only way to find them is to run them. Fix referenced helpers by hoisting them onto `window.Vectura.UI.helpers` per §2.9.
+   - **Then `algo-config-panel.js`.** It's the largest extraction (1490 lines) and gates every algorithm rendering — get it landing before the surrounding shell so other panels have a working composition example.
+   - **Then shell/.** `pane-left`, `pane-right`, `workspace`, `header`, `bottom-pane` are mostly thin layout wrappers — they should land fast once `algo-config-panel` proves the panel pattern.
+   - **Last: the new `ui.js` orchestrator** (~600 LOC) and the index.html body rewrite. The legacy `ui.js` renames to `_ui-legacy.js` (kept on disk, not loaded) so revert is a one-line HTML edit.
+7. **Renderer token-cache update is mandatory in Phase 2** (deferred from Phase 0): `src/render/renderer.js`'s token cache currently only reads `--color-*`. Under `meridian-*` skins it works because `meridian-*.css` aliases `--color-*` to mockup values, but Phase 5 deletes those aliases — so Phase 2 must teach the cache to read `--ui-*` directly when meridian is active.
+8. Plan budget: 7 days for one engineer per §8. The components shipped in Phase 1 absorb roughly 1 day of Phase 2's original budget since the §2.10 type-catalog is fully covered.
