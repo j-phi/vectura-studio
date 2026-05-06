@@ -8691,29 +8691,43 @@
       const selectedIds = Array.from(this.app.renderer?.selectedLayerIds || []);
       if (!selectedIds.length) return;
       const layers = this.app.engine.layers;
-      const groupIds = new Set();
+      const groupsToDissolve = new Set();
+      const childrenToExtract = [];
       selectedIds.forEach((id) => {
         const layer = this.getLayerById(id);
         if (!layer) return;
         if (layer.isGroup && layer.groupType === 'group') {
-          groupIds.add(layer.id);
+          groupsToDissolve.add(layer.id);
         } else if (layer.parentId) {
-          groupIds.add(layer.parentId);
+          childrenToExtract.push(layer);
         }
       });
-      if (!groupIds.size) return;
+      if (!groupsToDissolve.size && !childrenToExtract.length) return;
       if (this.app.pushHistory) this.app.pushHistory();
-      groupIds.forEach((groupId) => {
+      groupsToDissolve.forEach((groupId) => {
         const group = this.getLayerById(groupId);
-        const groupParentId = group?.parentId ?? null;
-        layers.forEach((layer) => {
-          if (layer.parentId === groupId) {
-            layer.parentId = groupParentId;
-          }
-        });
-        const idx = layers.findIndex((layer) => layer.id === groupId);
+        const dest = group?.parentId ?? null;
+        layers.forEach((l) => { if (l.parentId === groupId) l.parentId = dest; });
+        const idx = layers.findIndex((l) => l.id === groupId);
         if (idx >= 0) layers.splice(idx, 1);
       });
+      const byGroup = new Map();
+      childrenToExtract.forEach((l) => {
+        if (groupsToDissolve.has(l.parentId)) return;
+        if (!byGroup.has(l.parentId)) byGroup.set(l.parentId, []);
+        byGroup.get(l.parentId).push(l);
+      });
+      byGroup.forEach((movers, groupId) => {
+        const group = this.getLayerById(groupId);
+        const dest = group?.parentId ?? null;
+        movers.forEach((l) => { l.parentId = dest; });
+        const remaining = layers.filter((l) => l.parentId === groupId);
+        if (!remaining.length) {
+          const idx = layers.findIndex((l) => l.id === groupId);
+          if (idx >= 0) layers.splice(idx, 1);
+        }
+      });
+      this.normalizeGroupOrder();
       this.renderLayers();
       this.app.render();
     }
@@ -11462,17 +11476,7 @@
     }
 
     _lvlUngroupSel() {
-      const renderer = this.app.renderer;
-      if (this.app.pushHistory) this.app.pushHistory();
-      [...(renderer?.selectedLayerIds || [])].forEach((id) => {
-        const grp = this.app.engine.getLayerById?.(id);
-        if (!grp?.isGroup) return;
-        const kids = this.app.engine.layers.filter((l) => l.parentId === id);
-        kids.forEach((l) => { l.parentId = grp.parentId ?? null; });
-        this.app.engine.removeLayer(id);
-      });
-      this.renderLayers();
-      this.app.render();
+      this.ungroupSelection();
     }
 
     _lvlDelSel() {
@@ -11660,9 +11664,16 @@
         const prevId = nextOrder[insertAt - 1] || null;
         const nextId2 = nextOrder[insertAt + 1] || null;
         if (this.shouldLeaveParentScope?.(src, prevId, nextId2, selectedSet)) {
-          this.assignLayersToRoot([src], {
-            captureHistory: true, nextEngineOrder, selectAssigned: true, primaryId: srcId,
-          });
+          // Unparent to the drop-target's own scope, not unconditionally to root.
+          // This preserves intermediate levels (e.g. mask → group → child).
+          const newParentId = tgt?.parentId ?? null;
+          if (this.app.pushHistory) this.app.pushHistory();
+          src.parentId = newParentId;
+          engine.layers = nextEngineOrder.map((id) => map.get(id)).filter(Boolean);
+          this.normalizeGroupOrder?.();
+          this.app.computeDisplayGeometry?.();
+          this.app.setSelection?.([srcId], srcId);
+          this.app.engine.setActiveLayerId?.(srcId);
           this.renderLayers(); this.app.render(); return;
         }
         const hasChanged = nextEngineOrder.some((id, i) => id !== engine.layers[i]?.id);
@@ -11707,7 +11718,13 @@
                   this.assignLayersToParent(maskSrcId, [draggedLayer], { captureHistory: false });
                   this.renderLayers(); this.app.render?.();
                 } else {
-                  _lvlDoMove(layer.id, lastTargetId, lastPos);
+                  const touchSrc = engine.getLayerById?.(layer.id);
+                  const touchTgt = engine.getLayerById?.(lastTargetId);
+                  if (lastPos === 'before' && touchSrc?.parentId === lastTargetId && touchTgt?.isGroup) {
+                    _lvlDoExitGroup(layer.id, lastTargetId, 'above');
+                  } else {
+                    _lvlDoMove(layer.id, lastTargetId, lastPos);
+                  }
                 }
               }
             }
@@ -11780,7 +11797,10 @@
               if (isGrp) {
                 pos = pct < 0.35 ? 'before' : pct > 0.65 ? 'after' : 'into';
                 cssClass = pos === 'into' ? 'lvl-drop-into' : pos === 'before' ? 'lvl-drop-before' : 'lvl-drop-after';
-                hint = pos === 'into' ? 'Drop into group' : null;
+                const touchDragSrc = engine.getLayerById?.(_lvlDRAG.id);
+                hint = pos === 'into' ? 'Drop into group'
+                  : (pos === 'before' && touchDragSrc?.parentId === targetId) ? 'Drop outside group'
+                  : null;
               } else if (isMaskSrc) {
                 pos = pct < 0.2 ? 'before' : pct > 0.8 ? 'after' : 'mask';
                 cssClass = pos === 'mask' ? 'lvl-drop-mask' : pos === 'before' ? 'lvl-drop-before' : 'lvl-drop-after';
@@ -11845,19 +11865,29 @@
           const zone = pct < 0.35 ? 'lvl-drop-before' : pct > 0.65 ? 'lvl-drop-after' : 'lvl-drop-into';
           el.classList.add(zone);
           e.dataTransfer.dropEffect = 'move';
-          setHint(zone === 'lvl-drop-into' ? 'Drop into group' : null);
+          const draggedSrc = engine.getLayerById?.(_lvlDRAG.id);
+          const isOwnChild = draggedSrc?.parentId === layer.id;
+          setHint(zone === 'lvl-drop-into' ? 'Drop into group'
+            : (zone === 'lvl-drop-before' && isOwnChild) ? 'Drop outside group'
+            : null);
         });
         el.addEventListener('dragleave', (e) => {
           if (!el.contains(e.relatedTarget)) { _lvlClrDrop(el); setHint(null); }
         });
         el.addEventListener('drop', (e) => {
           e.preventDefault();
-          const pos = el.classList.contains('lvl-drop-before') ? 'before'
-                    : el.classList.contains('lvl-drop-into') ? 'into' : 'after';
+          const zone = el.classList.contains('lvl-drop-before') ? 'before'
+                     : el.classList.contains('lvl-drop-into') ? 'into' : 'after';
           _lvlClrDrop(el); setHint(null);
           if (_lvlDRAG.id && _lvlDRAG.id !== layer.id
               && !this.isDescendant?.(layer.id, _lvlDRAG.id)) {
-            _lvlDoMove(_lvlDRAG.id, layer.id, pos);
+            const draggedSrc2 = engine.getLayerById?.(_lvlDRAG.id);
+            // exit-above: own child dropped on group header's top zone → exit group, land above
+            if (zone === 'before' && draggedSrc2?.parentId === layer.id) {
+              _lvlDoExitGroup(_lvlDRAG.id, layer.id, 'above');
+            } else {
+              _lvlDoMove(_lvlDRAG.id, layer.id, zone);
+            }
           }
         });
       };
@@ -11871,7 +11901,10 @@
           const zone = pct < 0.2 ? 'lvl-drop-before' : pct > 0.8 ? 'lvl-drop-after' : 'lvl-drop-mask';
           el.classList.add(zone);
           e.dataTransfer.dropEffect = 'move';
-          setHint(zone === 'lvl-drop-mask' ? 'Add to clipping mask' : null);
+          const isDraggingDescendant = _lvlDRAG.id ? this.isDescendant?.(_lvlDRAG.id, srcLayer.id) : false;
+          setHint(zone === 'lvl-drop-mask' ? 'Add to clipping mask'
+            : (zone === 'lvl-drop-before' && isDraggingDescendant) ? 'Drop outside group'
+            : null);
         });
         el.addEventListener('dragleave', (e) => {
           if (!el.contains(e.relatedTarget)) { _lvlClrDrop(el); setHint(null); }
@@ -11926,7 +11959,11 @@
       const _lvlDoExitGroup = (srcId, groupId, dir) => {
         const src = engine.getLayerById?.(srcId);
         if (!src || src.parentId !== groupId) return;
-        const engineIds = engine.layers.map((l) => l.id).filter((id) => id !== srcId);
+        const selIds = [...(renderer?.selectedLayerIds || [])];
+        const moverIds = [srcId,
+          ...selIds.filter((id) => id !== srcId && engine.getLayerById?.(id)?.parentId === groupId)];
+        const moverSet = new Set(moverIds);
+        const engineIds = engine.layers.map((l) => l.id).filter((id) => !moverSet.has(id));
         const grpIdx = engineIds.indexOf(groupId);
         let insertIdx;
         if (dir === 'below') {
@@ -11938,13 +11975,18 @@
           }, []);
           insertIdx = childIdxs.length ? Math.min(...childIdxs) : grpIdx;
         }
-        engineIds.splice(insertIdx, 0, srcId);
-        this.assignLayersToRoot([src], {
-          nextEngineOrder: engineIds,
-          captureHistory: true,
-          selectAssigned: true,
-          primaryId: srcId,
-        });
+        engineIds.splice(insertIdx, 0, ...moverIds);
+        const movers = moverIds.map((id) => engine.getLayerById?.(id)).filter(Boolean);
+        const grpLayer = engine.getLayerById?.(groupId);
+        const newParentId = grpLayer?.parentId ?? null;
+        if (this.app.pushHistory) this.app.pushHistory();
+        movers.forEach((m) => { m.parentId = newParentId; });
+        const layerMap = new Map(engine.layers.map((l) => [l.id, l]));
+        engine.layers = engineIds.map((id) => layerMap.get(id)).filter(Boolean);
+        this.normalizeGroupOrder?.();
+        this.app.computeDisplayGeometry?.();
+        this.app.setSelection?.(moverIds, srcId);
+        this.app.engine.setActiveLayerId?.(srcId);
         this.renderLayers();
         this.app.render();
       };
@@ -12294,7 +12336,7 @@
             b.title = title; b.type = 'button'; b.innerHTML = iconFn();
             b.addEventListener('click', (e) => { e.stopPropagation(); fn(); }); return b;
           };
-          if (!isPrimitiveShapeLayer(layer)) {
+          if (layer.type !== 'shape') {
             actsm.appendChild(mkAbM('', () => this._LVL_I.expand(), 'Expand into group', () => this.expandLayer?.(layer)));
           }
           actsm.appendChild(mkAbM('', () => this._LVL_I.dup(), 'Duplicate (⌘D)', () => {
@@ -12357,7 +12399,7 @@
         if (layer.maskCapabilities?.canSource) {
           const isSrc = _lvlIsMaskSrc(layer.id);
           acts.appendChild(mkAb(
-            'mask-btn' + (isSrc ? ' is-src' : ''), () => this._LVL_I.maskSrc(),
+            'mask-btn' + (isSrc ? ' is-src' : ''), () => isSrc ? this._LVL_I.maskSrcActive() : this._LVL_I.maskSrc(),
             isSrc ? 'Remove clipping mask (click to deactivate)' : 'Make clipping mask — clips layer below',
             () => {
               if (this.app.pushHistory) this.app.pushHistory();
@@ -12390,7 +12432,7 @@
             ));
           }
         }
-        if (!isPrimitiveShapeLayer(layer)) {
+        if (layer.type !== 'shape') {
           acts.appendChild(mkAb('', () => this._LVL_I.expand(), 'Expand into group', () => this.expandLayer?.(layer)));
         }
         acts.appendChild(mkAb('', () => this._LVL_I.dup(), 'Duplicate (⌘D)', () => {
@@ -12466,6 +12508,13 @@
           b.addEventListener('click', (e) => { e.stopPropagation(); fn(); }); return b;
         };
         const ga = document.createElement('div'); ga.className = 'lvl-grp-acts';
+        if (layer.groupType === 'modifier') {
+          ga.appendChild(mkAb('', () => this._LVL_I.expand(), 'Expand to folder', () => {
+            if (this.app.pushHistory) this.app.pushHistory();
+            engine.expandModifierLayer(layer.id);
+            this.renderLayers(); this.app.render();
+          }));
+        }
         ga.appendChild(mkAb('', () => this._LVL_I.ungroup(), 'Ungroup (⌘⇧G)', () => {
           if (this.app.pushHistory) this.app.pushHistory();
           const kids = allLayers.filter((l) => l.parentId === layer.id);
@@ -12551,17 +12600,13 @@
             appendEl(_lvlBuildGrpHdr(l));
             if (!l.groupCollapsed) {
               const cw = document.createElement('div'); cw.className = 'lvl-tree-children';
-              const mkExitZone = (dir) => {
-                const z = document.createElement('div');
-                z.className = `lvl-grp-exit-zone lvl-grp-exit-zone--${dir}`;
-                z.dataset.lvlExitGroup = l.id;
-                z.dataset.lvlExitDir = dir;
-                addExitGroupDropZone(z, l, dir);
-                return z;
-              };
-              cw.appendChild(mkExitZone('above'));
               _lvlBuildChildren(l.id, cw);
-              cw.appendChild(mkExitZone('below'));
+              const exitBelow = document.createElement('div');
+              exitBelow.className = 'lvl-grp-exit-zone lvl-grp-exit-zone--below';
+              exitBelow.dataset.lvlExitGroup = l.id;
+              exitBelow.dataset.lvlExitDir = 'below';
+              addExitGroupDropZone(exitBelow, l, 'below');
+              cw.appendChild(exitBelow);
               container.appendChild(cw);
             }
 
@@ -12600,6 +12645,10 @@
           const cmds = document.createElement('div'); cmds.className = 'lvl-sb-cmds';
           const selIds = [...(renderer?.selectedLayerIds || [])];
           const hasGrp = selIds.some((id) => engine.getLayerById?.(id)?.isGroup);
+          const hasGroupedChildren = selIds.some((id) => {
+            const l = engine.getLayerById?.(id);
+            return l && !l.isGroup && l.parentId;
+          });
           const sorted = selIds.map((id) => engine.getLayerById?.(id)).filter(Boolean)
             .sort((a, b) => engine.layers.indexOf(a) - engine.layers.indexOf(b));
           const topL = sorted[0];
@@ -12617,7 +12666,9 @@
             anyLocked ? 'Unlock selected' : 'Lock selected',
             () => this._lvlToggleLockSel(!anyLocked)));
           cmds.appendChild(mkCb('', () => this._LVL_I.grpPlus(), 'Group selected (⌘G)', () => this._lvlGroupSel()));
-          if (hasGrp) cmds.appendChild(mkCb('', () => this._LVL_I.ungroup(), 'Ungroup selected (⌘⇧G)', () => this._lvlUngroupSel()));
+          if (hasGrp || hasGroupedChildren) cmds.appendChild(mkCb('', () => this._LVL_I.ungroup(),
+            hasGrp ? 'Ungroup selected (⌘⇧G)' : 'Move out of group (⌘⇧G)',
+            () => this._lvlUngroupSel()));
           cmds.appendChild(mkCb('mask-btn' + (maskOk ? '' : ' ineligible'), () => this._LVL_I.maskSrc(),
             maskOk ? 'Create clipping mask group' : 'Top layer must be a clip-eligible layer',
             maskOk ? () => this._lvlMaskSelGroup() : () => {}));

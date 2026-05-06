@@ -108,6 +108,67 @@
       return id;
     }
 
+    expandModifierLayer(modifierId) {
+      const modIdx = this.layers.findIndex((l) => l.id === modifierId);
+      const modLayer = modIdx >= 0 ? this.layers[modIdx] : null;
+      if (!modLayer || !isModifierLayer(modLayer)) return null;
+
+      const bounds = this.getBounds();
+      const modifier = modLayer.modifier;
+
+      const leaves = this.getLayerDescendants(modifierId)
+        .filter((l) => !l.isGroup && l.visible !== false);
+
+      const expandedItems = [];
+      leaves.forEach((child) => {
+        const rawPaths = child.paths?.length ? child.paths : (child.sourcePaths || []);
+        const mirrored = applyModifierToPaths(rawPaths, modifier, bounds);
+        mirrored.forEach((path) => expandedItems.push({ path, child }));
+      });
+
+      const folderId = Math.random().toString(36).slice(2, 11);
+      SETTINGS.globalLayerCount = ++this._layerCounter;
+      const folder = new Layer(folderId, 'group', modLayer.name);
+      folder.isGroup = true;
+      folder.groupType = 'group';
+      folder.groupCollapsed = false;
+      folder.parentId = modLayer.parentId ?? null;
+      folder.visible = modLayer.visible;
+
+      const pad = String(expandedItems.length).length;
+      const shapeLayers = expandedItems.map(({ path, child }, i) => {
+        const shapeId = Math.random().toString(36).slice(2, 11);
+        SETTINGS.globalLayerCount = ++this._layerCounter;
+        const shape = new Layer(shapeId, 'shape', `${modLayer.name} - Line ${String(i + 1).padStart(pad, '0')}`);
+        shape.parentId = folderId;
+        shape.sourcePaths = clonePaths([path]);
+        shape.params.seed = 0;
+        shape.params.posX = 0;
+        shape.params.posY = 0;
+        shape.params.scaleX = 1;
+        shape.params.scaleY = 1;
+        shape.params.rotation = 0;
+        shape.params.curves = false;
+        shape.params.smoothing = 0;
+        shape.params.simplify = 0;
+        shape.penId = child.penId;
+        shape.color = child.color;
+        shape.strokeWidth = child.strokeWidth;
+        shape.lineCap = child.lineCap;
+        shape.visible = true;
+        return shape;
+      });
+
+      const descendantIds = new Set(this.getLayerDescendants(modifierId).map((l) => l.id));
+      this.layers = this.layers.filter((l) => l.id !== modifierId && !descendantIds.has(l.id));
+      this.layers.splice(modIdx, 0, folder, ...shapeLayers);
+
+      shapeLayers.forEach((shape) => this.generate(shape.id));
+      this.activeLayerId = folderId;
+      this.computeAllDisplayGeometry();
+      return folderId;
+    }
+
     addGroupLayer() {
       const id = Math.random().toString(36).slice(2, 11);
       SETTINGS.globalLayerCount = ++this._layerCounter;
