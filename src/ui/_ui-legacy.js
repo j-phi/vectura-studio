@@ -8028,7 +8028,11 @@
   Object.assign(UI.prototype, window.Vectura._UIRandomizationMixin || {});
   Object.assign(UI.prototype, window.Vectura._UIPatternDesignerMixin || {});
   Object.assign(UI.prototype, window.Vectura._UIPetalDesignerMixin || {});
-  Object.assign(UI.prototype, window.Vectura._UINoiseRackMixin || {});
+  // Phase 3 closure: noise-rack mixin dissolved into NoiseRackPanel.
+  // The panel installs all noise-rack methods on UI.prototype below
+  // (after bind()), replacing the old Object.assign(UI.prototype,
+  // _UINoiseRackMixin) call. The mixin file (src/ui/ui-noise-rack.js)
+  // was moved into panels/noise-rack-panel.js.
   Object.assign(UI.prototype, window.Vectura._UIFileIOMixin || {});
   // Phase 3 closure: auto-colorize mixin dissolved into AutoColorizePanel.
   // The panel installs its 4 methods directly on UI.prototype below (after
@@ -8155,11 +8159,13 @@
     }
   }
 
-  // Phase 2 step 4: register panels/noise-rack-panel.js namespace anchor.
-  // Like AutoColorizePanel — actual logic still lives in src/ui/ui-noise-rack.js
-  // mixin. Step 5 will move the closure into this DI bag.
+  // Phase 3 closure: NoiseRackPanel — mixin dissolved into the panel itself.
+  // Bind sentinel deps then install all noise-rack methods on UI.prototype.
   if (window.Vectura?.UI?.NoiseRackPanel?.bind) {
     window.Vectura.UI.NoiseRackPanel.bind({});
+    if (window.Vectura.UI.NoiseRackPanel.installOn) {
+      window.Vectura.UI.NoiseRackPanel.installOn(UI.prototype);
+    }
   }
 
   // Phase 2 step 4: hand legacy IIFE-locals to panels/transform-panel.js.
