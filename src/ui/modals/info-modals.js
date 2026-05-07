@@ -139,7 +139,7 @@
   }
 
   function bindInfoButtons() {
-    const { SETTINGS } = requireDeps('bindInfoButtons');
+    const { SETTINGS, INFO } = requireDeps('bindInfoButtons');
     document.addEventListener('click', (e) => {
       const btn = e.target.closest('.info-btn');
       if (!btn) return;
@@ -151,6 +151,40 @@
       }
       this.showInfo(key);
     });
+
+    // Phase 3 closure: hover-tooltip on .info-btn elements via UI.overlays.Tooltip.
+    // The click → modal behavior above is unchanged; the tooltip layer adds a
+    // short teaser on hover with a "Read more" hint pointing at the modal.
+    const Tooltip = window.Vectura?.UI?.overlays?.Tooltip;
+    if (Tooltip) {
+      let _sharedTip = null;
+      const ensureTip = () => {
+        if (_sharedTip) return _sharedTip;
+        _sharedTip = Tooltip(document.body, { placement: 'top', maxWidth: 260 });
+        return _sharedTip;
+      };
+      document.addEventListener('pointerenter', (e) => {
+        const btn = e.target && e.target.closest && e.target.closest('.info-btn');
+        if (!btn) return;
+        const key = btn.dataset.info;
+        const info = INFO && INFO[key];
+        if (!info) return;
+        const teaser = info.description ? `${info.title}: ${info.description}` : info.title;
+        const text = teaser.length > 140 ? `${teaser.slice(0, 137).trimEnd()}…  (Click for details)` : teaser;
+        ensureTip().show(btn, { text });
+      }, true);
+      document.addEventListener('pointerleave', (e) => {
+        const btn = e.target && e.target.closest && e.target.closest('.info-btn');
+        if (!btn) return;
+        if (_sharedTip) _sharedTip.hide();
+      }, true);
+      // Also hide on click — the modal takes over.
+      document.addEventListener('click', (e) => {
+        if (!_sharedTip) return;
+        const btn = e.target && e.target.closest && e.target.closest('.info-btn');
+        if (btn) _sharedTip.hide({ delay: 0 });
+      }, true);
+    }
   }
 
   Modals.InfoModals = {
