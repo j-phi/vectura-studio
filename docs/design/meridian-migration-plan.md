@@ -11,7 +11,7 @@
 | **Phase −1** — Mockup provenance | ✅ done | `7d9f426` |
 | **Phase 0** — Skin foundation | ✅ done | `7d9f426` (+ graphify rebuild `e442a4b`) |
 | **Phase 1** — Component library | ✅ done | `16ec81d` `440c84a` `d959a9b` `554ee88` `65791e5` `c7fa0db` |
-| **Phase 2** — Shell, panels, orchestrator | ⏳ in progress (steps 1–3 done; step 4 next) | `a16ad57` `313d427` `7ca4795` `5c2edcc` `3a8b7be` `2692993` `2de5154` `c28bb4a` `c841598` `f377edb` |
+| **Phase 2** — Shell, panels, orchestrator | ⏳ in progress (steps 1–4 done; step 5 next) | `a16ad57` `313d427` `7ca4795` `5c2edcc` `3a8b7be` `2692993` `2de5154` `c28bb4a` `c841598` `f377edb` `886499b` `ede23da` `8eddbf4` `360cbdc` `540dad5` `c98e9db` `243eccf` `56848c9` |
 | **Phase 3** — Modals, overlays, menus | ⏳ pending | — |
 | **Phase 4** — Editors & specialized surfaces | ⏳ pending | — |
 | **Phase 5** — Polish, SDK, cleanup | ⏳ pending | — |
@@ -862,28 +862,90 @@ If all 13 steps pass and `npm run test:ci` is green, the migration is complete.
 
 ---
 
-## Appendix: Resuming Phase 2 step 4 (steps 1–3 done)
+## Phase 2 step 4 actuals
 
-Phase 2 is split into seven sequential steps. Steps 1–3 are complete (CONTROL_DEFS extraction, `buildControls()` extraction, and 8 shell module extractions). **Step 4 is next:** extract 8 remaining panel modules.
+**8 panel modules extracted (all per plan):**
 
-After clearing context, the fastest way to pick up Phase 2 step 4:
+1. `src/ui/panels/formula-panel.js` (`886499b`) — `updateFormula()`. DI: `{ getEl, escapeHtml, usesSeed }`.
+2. `src/ui/panels/auto-colorize-panel.js` (`ede23da`) — namespace anchor; forwards to existing `src/ui/ui-auto-colorize.js` mixin via `window.Vectura._UIAutoColorizeMixin`. Methods: `initAutoColorizationPanel`, `getAutoColorizationConfig`, `getAutoColorizationTargets`, `applyAutoColorization`. DI: `{}` (sentinel — step 5 dissolves the mixin into this DI bag).
+3. `src/ui/panels/noise-rack-panel.js` (`8eddbf4`) — namespace anchor; forwards to existing `src/ui/ui-noise-rack.js` mixin via `window.Vectura._UINoiseRackMixin`. Methods: `_buildNoiseRack` + 7 `ensure*Noises` helpers. DI: `{}` (sentinel — step 5 dissolves the mixin into this DI bag).
+4. `src/ui/panels/transform-panel.js` (`360cbdc`) — `getDefaultTransformForType`, `storeLayerParams`, `restoreLayerParams`. DI: `{ ALGO_DEFAULTS, TRANSFORM_KEYS, clone }`.
+5. `src/ui/panels/layers-panel.js` (`540dad5`) — `renderLayers()` (1,177-line body lifted verbatim). DI: `{ SETTINGS, escapeHtml }`.
+6. `src/ui/panels/pens-panel.js` (`c98e9db`) — `setArmedPen`, `clearArmedPen`, `refreshArmedPenUI`, `getPaletteList`, `getActivePalette`, `applyPaletteToPens`, `addPen`, `removePen`, `initPaletteControls`, `renderPens`. DI: `{ getEl, escapeHtml, SETTINGS, PALETTES, getThemeToken }`. Resolves the deferred-from-step-3 `initPaletteControls`.
+7. `src/ui/panels/modifiers-panel.js` (`243eccf`) — `refreshModifierLayer`, `insertMirrorModifier`, `updatePrimaryPanelMode`, `refreshMaskingViews`, `ensureLayerMaskState`, `setLayerMaskEnabled`, `setLayerMaskHidden`. DI: `{ getEl }`.
+8. `src/ui/panels/algorithm-panel.js` (`56848c9`) — `syncPrimaryModuleDropdown`, `isModifierType`, `isDrawableLayerType`, `rememberDrawableLayerType`, `getPreferredNewLayerType`. DI: `{ getEl, ALGO_DEFAULTS, MODIFIER_DEFAULTS, Algorithms }`. Distinct from `algo-config-panel` (which renders the dynamic-controls container) and `header` (which builds the dropdown `<select>`).
+
+**Deferred-from-step-3 resolution:**
+- `initPaletteControls` ended up in `pens-panel.js` (extracted as a regular method alongside `renderPens`). DI bag absorbed it cleanly.
+- `initSettingsValues` was NOT moved in step 4 — it remains on the legacy `UI.prototype`. Reason: it deeply references `getContrastTextColor` (an IIFE-local) plus `this.refreshThemeUi()` and prototype methods from multiple satellite mixins. **Step 5 must route it into a dedicated `settings-panel.js` or fold it into `persistence.js` as `applyPersistedSettings()`** since most of its body is wiring inputs to `SETTINGS.*` fields with persistence side-effects.
+
+**Files shipped (created):**
+- `src/ui/panels/formula-panel.js`
+- `src/ui/panels/auto-colorize-panel.js`
+- `src/ui/panels/noise-rack-panel.js`
+- `src/ui/panels/transform-panel.js`
+- `src/ui/panels/layers-panel.js`
+- `src/ui/panels/pens-panel.js`
+- `src/ui/panels/modifiers-panel.js`
+- `src/ui/panels/algorithm-panel.js`
+- `tests/unit/{formula,auto-colorize,noise-rack,transform,layers,pens,modifiers,algorithm}-panel-compile.test.js` (8 compile-gate tests, 41 tests total)
+
+**Files modified:**
+- `src/ui/ui.js` — bodies replaced with 1-line delegators; 8 new bind() calls at the bottom.
+- `index.html` — 8 new `<script src="./src/ui/panels/*.js" defer></script>` tags inserted before `ui.js`.
+
+**Line reduction:** `ui.js` went from 11,777 (end of step 3) → 10,129 lines (−1,648 lines, −14%). Total panel module LOC: 5,809 (most in `algo-config-panel.js` at 3,576 from step 2; new step-4 panels add 2,233).
+
+**Test totals before → after:** 584 unit + 66 integration + 13 visual + 2 perf → 625 unit + 66 integration + 13 visual + 2 perf. Net +41 unit (8 new compile-gate test files).
+
+**Compile-gate tests added (8 files, 41 tests total):**
+- `tests/unit/formula-panel-compile.test.js` (5)
+- `tests/unit/auto-colorize-panel-compile.test.js` (4)
+- `tests/unit/noise-rack-panel-compile.test.js` (4)
+- `tests/unit/transform-panel-compile.test.js` (6)
+- `tests/unit/layers-panel-compile.test.js` (3)
+- `tests/unit/pens-panel-compile.test.js` (6)
+- `tests/unit/modifiers-panel-compile.test.js` (7)
+- `tests/unit/algorithm-panel-compile.test.js` (6)
+
+**Script load order in `index.html` (current):**
+`controls-registry.js` → `panels/algo-config-panel.js` → `shell/{theme-switcher,menubar,pane-left,pane-right,workspace,bottom-pane,toolbar,header}.js` → `panels/{formula,auto-colorize,noise-rack,transform,layers,pens,modifiers,algorithm}-panel.js` → `ui.js`
+
+**Patterns / gotchas the next step (orchestrator + persistence + shortcuts) must know:**
+
+1. **JSDoc `*/` collision:** the `noise-rack-panel.js` first draft used `ensure*/create*` in a JSDoc block, which silently closed the comment and produced "Unexpected token *" inside JSDOM-loaded scripts. If a panel description includes `*/` text, escape it. Tests catch this immediately because the runtime loader pulls scripts from `index.html` and feeds them to `vm.runInContext`.
+2. **Mixin shim panels (auto-colorize, noise-rack):** these are namespace anchors only. Their methods do NOT have prototype delegators in `ui.js` because the existing mixin (`Object.assign(UI.prototype, window.Vectura._UI*Mixin)`) already attaches them directly. Adding delegators would create cycles. Step 5 must dissolve those mixins into the panels' bind() bags and ADD prototype delegators at that time.
+3. **`this.X()` cross-method calls round-trip cleanly** through prototype delegators (e.g., `pens-panel`'s `applyPaletteToPens` calls `this.renderPens()` which is the prototype delegator that calls `PensPanel.renderPens.call(this)`). No need to inline-resolve.
+4. **Unused destructure warnings:** the panel-extraction script generates `const { getEl, escapeHtml, ... } = requireDeps(...)` at the top of every method, even when only some of those deps are used. This is intentional — keeps the dep contract uniform — and produces no runtime overhead.
+5. **`renderLayers()` is the largest single body in the codebase** (1,177 lines). It still references `this.*` for ~30 prototype methods. Step 5 should NOT try to dissolve those `this.*` calls — leave them as prototype delegations and migrate the called methods themselves into the appropriate panels over time.
+6. **Bind order matters but is purely additive:** all `*.bind({...})` calls happen at the bottom of `src/ui/ui.js`'s IIFE. Step 5 will need to add `Persistence.bind(...)` and `Shortcuts.bind(...)` in the same block.
+7. **Layer-type predicates moved to AlgorithmPanel:** if step 5 needs `isModifierType`, `isDrawableLayerType`, `rememberDrawableLayerType`, or `getPreferredNewLayerType`, they're now in `panels/algorithm-panel.js` (delegated through `UI.prototype`). The function-call surface didn't change — `this.isDrawableLayerType('foo')` still works.
+8. **`initSettingsValues` is the biggest open extraction.** It's the next sensible target for step 5 because it's the natural seam where settings-panel UI meets persistence (cookie load/save). Recommend moving it into `src/ui/persistence.js` as `applyPersistedSettings()` rather than a new `settings-panel.js` — the body is mostly wiring input event handlers that toggle `SETTINGS.*` fields and call `App.persistSettings()`-type side effects.
+
+---
+
+## Appendix: Resuming Phase 2 step 5 (steps 1–4 done)
+
+Phase 2 is split into seven sequential steps. **Steps 1–4 are complete:** CONTROL_DEFS extraction, `buildControls()` extraction, 8 shell module extractions, and 8 panel module extractions. **Step 5 is next:** orchestrator + persistence + shortcuts.
+
+After clearing context, the fastest way to pick up Phase 2 step 5:
 
 1. `cd /Users/jayphi/Documents/github/vectura-studio-meridian` (the worktree, on branch `meridian-blue-skin`).
-2. `git log --oneline -5` — confirm HEAD is `f377edb` (header.js extraction) or a later docs commit. The full step 3 commit chain: `5c2edcc` → `3a8b7be` → `2692993` → `2de5154` → `c28bb4a` → `c841598` → `f377edb`.
-3. Confirm tests are green before changing anything: `npm run test:unit && npm run test:integration` (584 unit, 66 integration).
-4. **Namespace members now on `window.Vectura.UI.*`:** `CONTROL_DEFS`, `AlgoConfigPanel`, `ThemeSwitcher`, `MenuBar`, `PaneLeft`, `PaneRight`, `Workspace`, `BottomPane`, `Toolbar`, `Header`. All are preserved through the namespace-copy patch — no additional surgery needed for new modules.
-5. **Step 4 target: 8 remaining panels.** Each panel module follows the same pattern as step 3 shell modules: IIFE → `bind(deps)` DI-bag → expose on `window.Vectura.UI.<PanelName>` → 1-line delegators on legacy prototype → compile-gate test. The 8 panels per the plan:
-   - `algorithm-panel` (distinct from `algo-config-panel` which is already done — this handles algo switching, layer type changes, formula display)
-   - `noise-rack-panel` (noise parameter UI; delegates to existing `ui-noise-rack.js`)
-   - `modifiers-panel` (mirror modifier UI and tree management)
-   - `transform-panel` (position/scale/rotation controls)
-   - `layers-panel` (layer list rendering, drag-drop reorder, selection)
-   - `pens-panel` (pen color list, palette controls, `initPaletteControls`)
-   - `auto-colorize-panel` (auto-colorize toggle and settings)
-   - `formula-panel` (formula/expression editor)
-6. **Suggested approach:** start with the smallest/cleanest panel (likely `formula-panel` or `auto-colorize-panel`), then `transform-panel`, then batch the larger ones (`layers-panel`, `pens-panel`, `modifiers-panel`). `algorithm-panel` is likely the largest after `algo-config-panel`.
-7. **Key IIFE-locals available in the DI bags** (search legacy ui.js preamble for the full list): `getEl`, `SETTINGS`, `ALGO_DEFAULTS`, `MACHINES`, `PALETTES`, `PRESETS`, `DESCRIPTIONS`, `isPetalisLayerType`, `isModifierLayer`, `getContrastTextColor`, `clone`, `clamp`, `getDocumentUnitLabel`, `mmToDocumentUnits`, `documentUnitsToMm`, `createPetalisModifier`, `createPetalModifier`, `createPetalisShading`.
-8. **Phase 2 remaining moves after step 4:**
-   - **Step 5 — orchestrator + persistence + shortcuts.** New thin `src/ui/ui.js` (~600 LOC), `src/ui/persistence.js`, `src/ui/shortcuts.js`.
+2. `git log --oneline -5` — confirm HEAD is the docs commit recording step 4 completion (the latest `docs(skin):` commit). The full step 4 implementation chain (in order): `886499b` → `ede23da` → `8eddbf4` → `360cbdc` → `540dad5` → `c98e9db` → `243eccf` → `56848c9`.
+3. Confirm tests are green before changing anything: `npm run test:unit && npm run test:integration` (625 unit, 66 integration).
+4. **Namespace members now on `window.Vectura.UI.*`:** `CONTROL_DEFS`, `AlgoConfigPanel`, `ThemeSwitcher`, `MenuBar`, `PaneLeft`, `PaneRight`, `Workspace`, `BottomPane`, `Toolbar`, `Header`, `FormulaPanel`, `AutoColorizePanel`, `NoiseRackPanel`, `TransformPanel`, `LayersPanel`, `PensPanel`, `ModifiersPanel`, `AlgorithmPanel`. All preserved through the namespace-copy patch.
+5. **Step 5 target: orchestrator + persistence + shortcuts.** Three new modules:
+   - `src/ui/persistence.js` — cookie-backed `SETTINGS.*` load/save. The biggest extraction here is **`initSettingsValues`** (deferred from steps 3 + 4): it lives at `src/ui/ui.js:7556` (was 7643 before pens-panel extraction; line numbers shifted), references `getContrastTextColor` IIFE-local + multiple prototype methods. Move it into `persistence.js` as `applyPersistedSettings()` and add a 1-line prototype delegator. DI bag will need `{ getEl, SETTINGS, getContrastTextColor }` plus access to the satellite mixins via prototype delegators.
+   - `src/ui/shortcuts.js` — keyboard handlers that currently live inside `class UI` constructor / `bindGlobal` paths. Look for `bindShortcuts`, `wireKeyboard`, or any `addEventListener('keydown'...)` blocks in `ui.js`.
+   - **New thin orchestrator** — replace the body of `class UI` with a small constructor that calls `bind()` for every panel/shell/persistence/shortcuts module, then mixes prototypes. Target ~600 LOC for the new `ui.js`.
+6. **Suggested approach:**
+   - **5a.** Extract `persistence.js` first (compile-gate test → move `initSettingsValues` into it → add delegator → green).
+   - **5b.** Extract `shortcuts.js` next (find all keydown wiring, lift into module, delegator).
+   - **5c.** Author the new thin orchestrator in `_ui-orchestrator.js` (or just rewrite `ui.js` in place after archiving the legacy as `_ui-legacy.js`). Step 6 finalizes that rename.
+7. **Key IIFE-locals available in the DI bags** (search legacy ui.js preamble for the full list): `getEl`, `SETTINGS`, `ALGO_DEFAULTS`, `MACHINES`, `PALETTES`, `PRESETS`, `DESCRIPTIONS`, `isPetalisLayerType`, `isModifierLayer`, `getContrastTextColor`, `clone`, `clamp`, `getDocumentUnitLabel`, `mmToDocumentUnits`, `documentUnitsToMm`, `createPetalisModifier`, `createPetalModifier`, `createPetalisShading`, `escapeHtml`, `usesSeed`, `getThemeToken`, `TRANSFORM_KEYS`, `MODIFIER_DEFAULTS`, `Algorithms`.
+8. **Deferred items step 5 must handle:**
+   - **`initSettingsValues`** (deferred from steps 3 + 4) — depth deps on `getContrastTextColor` + multiple prototype methods. Move to `persistence.js`.
+   - **Mixin dissolution for auto-colorize-panel and noise-rack-panel** (deferred from step 4) — both panels are currently namespace anchors that forward to legacy mixins. Step 5 should: (a) move the mixin's IIFE-locals into the panel's bind() DI bag, (b) make the panel methods stop forwarding through `window.Vectura._UI*Mixin`, (c) add prototype delegators on `UI.prototype` to call back into the panel, (d) delete the satellite `ui-auto-colorize.js` and `ui-noise-rack.js` files. (Optional — can defer to Phase 3 if step 5 gets large.)
+9. **Phase 2 remaining moves after step 5:**
    - **Step 6 — `index.html` body rewrite + script load order.** Rename old `ui.js` → `_ui-legacy.js`.
    - **Step 7 — renderer token cache.** `src/render/renderer.js` reads `--ui-*` directly.
