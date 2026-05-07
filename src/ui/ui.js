@@ -6895,29 +6895,9 @@
       return window.Vectura.UI.ModifiersPanel.updatePrimaryPanelMode.call(this, layer);
     }
 
+    // Delegated to src/ui/panels/algorithm-panel.js (Phase 2 step 4).
     syncPrimaryModuleDropdown(layer) {
-      const select = getEl('generator-module', { silent: true });
-      if (!select || !layer) return;
-      if (this.isModifierLayer(layer)) {
-        const modifier = this.getModifierState(layer);
-        const type = modifier?.type || 'mirror';
-        select.innerHTML = '';
-        Object.keys(MODIFIER_DEFAULTS || { mirror: { label: 'Mirror' } }).forEach((key) => {
-          const def = MODIFIER_DEFAULTS[key] || {};
-          const opt = document.createElement('option');
-          opt.value = key;
-          opt.innerText = def.label || key.charAt(0).toUpperCase() + key.slice(1);
-          select.appendChild(opt);
-        });
-        select.value = type;
-        select.disabled = false;
-        select.classList.remove('opacity-60');
-        this._syncModuleDisplay();
-        return;
-      }
-      this.initModuleDropdown();
-      this.rememberDrawableLayerType(layer);
-      select.value = layer.type;
+      return window.Vectura.UI.AlgorithmPanel.syncPrimaryModuleDropdown.call(this, layer);
     }
 
     getPenById(id) {
@@ -6960,38 +6940,18 @@
       return group && group.isGroup ? group : null;
     }
 
+    // Delegated to src/ui/panels/algorithm-panel.js (Phase 2 step 4).
     isModifierType(type) {
-      return Boolean(type && Object.prototype.hasOwnProperty.call(MODIFIER_DEFAULTS || {}, type));
+      return window.Vectura.UI.AlgorithmPanel.isModifierType.call(this, type);
     }
-
     isDrawableLayerType(type) {
-      if (!type || type === 'group' || this.isModifierType(type)) return false;
-      return Boolean((Algorithms && Algorithms[type]) || (ALGO_DEFAULTS && ALGO_DEFAULTS[type]));
+      return window.Vectura.UI.AlgorithmPanel.isDrawableLayerType.call(this, type);
     }
-
     rememberDrawableLayerType(typeOrLayer) {
-      const type = typeof typeOrLayer === 'string' ? typeOrLayer : typeOrLayer?.type;
-      if (!this.isDrawableLayerType(type)) return this.lastDrawableLayerType || null;
-      this.lastDrawableLayerType = type;
-      return type;
+      return window.Vectura.UI.AlgorithmPanel.rememberDrawableLayerType.call(this, typeOrLayer);
     }
-
     getPreferredNewLayerType() {
-      const isHidden = (type) => ALGO_DEFAULTS?.[type]?.hidden;
-      const active = this.app.engine.getActiveLayer?.();
-      if (active && !active.isGroup) {
-        const activeType = this.rememberDrawableLayerType(active);
-        if (activeType && !isHidden(activeType)) return activeType;
-      }
-      const rememberedType = this.rememberDrawableLayerType(this.lastDrawableLayerType);
-      if (rememberedType && !isHidden(rememberedType)) return rememberedType;
-      const moduleSelect = getEl('generator-module', { silent: true });
-      if (moduleSelect && this.isDrawableLayerType(moduleSelect.value) && !isHidden(moduleSelect.value)) {
-        return this.rememberDrawableLayerType(moduleSelect.value);
-      }
-      const fallbackLayer =
-        (this.app.engine.layers || []).find((layer) => layer && !layer.isGroup && this.isDrawableLayerType(layer.type) && !isHidden(layer.type)) || null;
-      return this.rememberDrawableLayerType(fallbackLayer?.type || 'wavetable') || 'wavetable';
+      return window.Vectura.UI.AlgorithmPanel.getPreferredNewLayerType.call(this);
     }
 
     shouldLeaveParentScope(layer, prevId, nextId, selectedIds = new Set()) {
@@ -10146,6 +10106,11 @@
   // Phase 2 step 4: hand legacy IIFE-locals to panels/modifiers-panel.js.
   if (window.Vectura?.UI?.ModifiersPanel?.bind) {
     window.Vectura.UI.ModifiersPanel.bind({ getEl });
+  }
+
+  // Phase 2 step 4: hand legacy IIFE-locals to panels/algorithm-panel.js.
+  if (window.Vectura?.UI?.AlgorithmPanel?.bind) {
+    window.Vectura.UI.AlgorithmPanel.bind({ getEl, ALGO_DEFAULTS, MODIFIER_DEFAULTS, Algorithms });
   }
 
   window.Vectura = window.Vectura || {};
