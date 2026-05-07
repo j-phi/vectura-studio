@@ -11,7 +11,7 @@
 | **Phase −1** — Mockup provenance | ✅ done | `7d9f426` |
 | **Phase 0** — Skin foundation | ✅ done | `7d9f426` (+ graphify rebuild `e442a4b`) |
 | **Phase 1** — Component library | ✅ done | `16ec81d` `440c84a` `d959a9b` `554ee88` `65791e5` `c7fa0db` |
-| **Phase 2** — Shell, panels, orchestrator | ⏳ in progress (steps 1–2 done; step 3 in progress, 1 of 9 shell modules extracted) | `a16ad57` `313d427` `7ca4795` `5c2edcc` |
+| **Phase 2** — Shell, panels, orchestrator | ⏳ in progress (steps 1–3 done; step 4 next) | `a16ad57` `313d427` `7ca4795` `5c2edcc` `3a8b7be` `2692993` `2de5154` `c28bb4a` `c841598` `f377edb` |
 | **Phase 3** — Modals, overlays, menus | ⏳ pending | — |
 | **Phase 4** — Editors & specialized surfaces | ⏳ pending | — |
 | **Phase 5** — Polish, SDK, cleanup | ⏳ pending | — |
@@ -825,22 +825,65 @@ If all 13 steps pass and `npm run test:ci` is green, the migration is complete.
 
 ---
 
-## Appendix: Resuming Phase 2 mid-flight (steps 1–2 done, step 3 in progress with 2 of 9 shell modules extracted)
+## Phase 2 step 3 actuals
 
-Phase 2 is split into seven sequential steps. Steps 1 (CONTROL_DEFS extraction + compile gate, plus a companion toolbar fix) and 2 (`buildControls()` extraction into `algo-config-panel` + namespace-preservation patch + compile gate) landed in `a16ad57` + `313d427` + `7ca4795`. **Step 3 is in progress:** two of 9 shell modules — `theme-switcher.js` (`5c2edcc`) and `menubar.js` (current commit) — have landed as the proof-of-pattern beachhead. Seven shell modules remain. Five steps total remain.
+**Shell modules extracted (8 of 9 planned):**
+1. `src/ui/shell/theme-switcher.js` — `refreshThemeUi()`. DI: `{ getEl }`.
+2. `src/ui/shell/menubar.js` — `setTopMenuOpen`, `initTopMenuBar`, `triggerTopMenuAction`. DI: `{ getEl }`.
+3. `src/ui/shell/pane-left.js` — 8 methods (getLeftSectionDefaults, getLeftSectionMap, setLeftSectionCollapsed, initLeftPanelSections, setAlgorithmTransformCollapsed, initAlgorithmTransformSection, setAboutVisible, initAboutSection). DI: `{ getEl }`.
+4. `src/ui/shell/pane-right.js` — `initRightPaneTabs`, `initPensSection`. DI: `{ getEl }`.
+5. `src/ui/shell/workspace.js` — `initPaneToggles`, `initPaneResizers`. DI: `{ getEl }`.
+6. `src/ui/shell/bottom-pane.js` — `toggleSettingsPanel`, `initBottomPaneToggle`, `initBottomPaneResizer`. DI: `{ getEl }`.
+7. `src/ui/shell/toolbar.js` — `initToolBar` (494 lines, largest single extraction), `updateLightSourceTool`. DI: `{ getEl, isPetalisLayerType }`.
+8. `src/ui/shell/header.js` — `initModuleDropdown`, `_buildModuleMenu`, `_showModuleMenu`, `_syncModuleDisplay`, `initMachineDropdown`. DI: `{ getEl, ALGO_DEFAULTS, MACHINES, SETTINGS }`.
 
-After clearing context, the fastest way to pick up Phase 2 step 3 (continuation):
+**9th module ("shell") deferred:** its planned responsibilities (`bindGlobal`, `bindShortcuts`) route to `shortcuts.js` + `persistence.js` in step 5 per §2.4. No standalone `shell.js` needed at this stage.
+
+**Deferred to step 4/5 (not shell-level):** `initSettingsValues` (deep deps on `getContrastTextColor` IIFE-local + multiple prototype methods), `initPaletteControls` (deep pens-panel methods).
+
+**Line reduction:** `ui.js` went from 12,631 (start of step 3) → 11,777 lines (−854 lines, 6.8%).
+
+**Test totals:** 584 unit (was 548, +36 compile-gate across 8 test files) + 66 integration + 13 visual + 2 perf — all green.
+
+**Compile-gate tests added (8 files, 36 tests total):**
+- `tests/unit/theme-switcher-compile.test.js` (4)
+- `tests/unit/menubar-compile.test.js` (6)
+- `tests/unit/pane-left-compile.test.js` (8)
+- `tests/unit/pane-right-compile.test.js` (6)
+- `tests/unit/workspace-compile.test.js` (5)
+- `tests/unit/bottom-pane-compile.test.js` (5)
+- `tests/unit/toolbar-compile.test.js` (5)
+- `tests/unit/header-compile.test.js` (6) [note: total counts may vary slightly due to 1 test per `it()`]
+
+**Script load order in index.html:**
+`controls-registry.js` → `panels/algo-config-panel.js` → `shell/theme-switcher.js` → `shell/menubar.js` → `shell/pane-left.js` → `shell/pane-right.js` → `shell/workspace.js` → `shell/bottom-pane.js` → `shell/toolbar.js` → `shell/header.js` → `ui.js`
+
+**Pattern confirmed at scale:** the `bind(deps)` DI-bag + `.call(this)` delegator + namespace-preservation pattern works for all extracted modules regardless of complexity. Cross-method calls round-trip cleanly through prototype delegators. Toolbar's `initToolBar` (which assigns methods like `setActiveTool` to `this`) worked without modification.
+
+---
+
+## Appendix: Resuming Phase 2 step 4 (steps 1–3 done)
+
+Phase 2 is split into seven sequential steps. Steps 1–3 are complete (CONTROL_DEFS extraction, `buildControls()` extraction, and 8 shell module extractions). **Step 4 is next:** extract 8 remaining panel modules.
+
+After clearing context, the fastest way to pick up Phase 2 step 4:
 
 1. `cd /Users/jayphi/Documents/github/vectura-studio-meridian` (the worktree, on branch `meridian-blue-skin`).
-2. `git log --oneline -10` — confirm the top commit is the menubar extraction on top of `3bd6001` (step 3 first-extraction plan note), `5c2edcc` (theme-switcher first extraction), `4cb6f04` (step 2 plan note), `7ca4795` (algo-config-panel), `5d3372f` (step 1 plan note), `313d427` (CONTROL_DEFS), `a16ad57` (toolbar fix). If you're somewhere else on the branch, stop and orient.
-3. Read this file's "Phase 2 step 1 actuals" + "Phase 2 step 2 actuals" + "Phase 2 step 3 in progress" + "Phase 2 step 3 menubar extraction" notes (immediately above the `### Phase 2:` heading) for what's already on disk. Then re-read §3 Phase 2 + §2.4 decomposition + §2.5 component API contract + §2.8 hidden DOM stash inventory (mandatory for the remaining shell modules — they touch the stashed DOM the legacy bindEvents code reads by id).
-4. Confirm tests are green before changing anything: `npm run test:unit && npm run test:integration` (548 unit, 66 integration). The 18 compile-gate tests across `controls-registry-compile.test.js` (5) + `algo-config-panel-compile.test.js` (3) + `theme-switcher-compile.test.js` (4) + `menubar-compile.test.js` (6) are now baseline — must stay green through the rest of Phase 2.
-5. **`window.Vectura.UI.{AlgoConfigPanel, CONTROL_DEFS, ThemeSwitcher, MenuBar}` are canonical.** All four are static properties on the legacy `UI` class itself (preserved by the namespace-copy patch in legacy `ui.js`). Don't reach back into legacy `ui.js`'s body copies of `buildControls` / `refreshThemeUi` / `setTopMenuOpen` / `initTopMenuBar` / `triggerTopMenuAction` — they are all 1-line delegators now. The DI bags are bound near the bottom of the legacy IIFE (search for `AlgoConfigPanel.bind`, `ThemeSwitcher.bind`, `MenuBar.bind`).
-6. **Step 2's namespace-preservation pattern is now load-bearing AND proven across `panels/` + `shell/` twice.** Future shell/panel/component modules attached to `window.Vectura.UI.<Foo>` BEFORE `ui.js` loads survive the legacy `window.Vectura.UI = UI` assignment because `ui.js` copies prior static members forward. Whenever you add a new module that lives on `window.Vectura.UI.*`, it works automatically — no further patches needed. The `theme-switcher.js` and `menubar.js` extractions validated this for the `shell/` subtree.
-7. **Phase 2 remaining moves**, in order:
-   - **Step 3 — shell/ (CONTINUE).** First two modules `theme-switcher.js` + `menubar.js` ✅. Remaining 7: `pane-left`, `pane-right`, `workspace`, `header`, `toolbar`, `bottom-pane`, `shell`. Same `bind(deps)` DI-bag pattern, same compile-gate-test contract. Suggested next target: `pane-left.js` — extract the left-panel collapsible-section state (search current `ui.js` for `initLeftPanelSections`, `captureLeftPanelScrollPosition`, `scrollLayerToTop`; remember `captureLeftPanelScrollPosition` + `scrollLayerToTop` are routed to `persistence.js` in step 5 per §2.4, NOT pane-left, so leave them in legacy for now). After pane-left, `pane-right.js` is the symmetric next pick (search `initRightPaneTabs`). Then batch `header.js`, `toolbar.js`, `bottom-pane.js`, `workspace.js`, `shell.js`. Preserve every id in §2.8 (Hidden DOM Stash Inventory) — those ids are referenced by id from JS code that hasn't been extracted yet, so deletion or rename will silently break the legacy paths. **Note on testing matrix:** once the rest of step 3 lands, run `npm run test:visual` and `npm run test:perf` in addition to unit + integration before declaring step 3 done — shell DOM extraction warrants the visual + perf gate per CLAUDE.md.
-   - **Step 4 — remaining panels.** `algorithm-panel`, `noise-rack-panel`, `modifiers-panel`, `transform-panel`, `layers-panel`, `pens-panel`, `auto-colorize-panel`, `formula-panel` (8 files; `algo-config-panel` from step 2 is the 9th).
-   - **Step 5 — orchestrator + persistence + shortcuts.** New thin `src/ui/ui.js` (~600 LOC), `src/ui/persistence.js` (cookie/localStorage glue), `src/ui/shortcuts.js` (consolidated keyboard table per §2.11).
-   - **Step 6 — `index.html` body rewrite + script load order.** Rewrite body 41–725 to a thin `#app-root` + the §2.8 stash divs. Update script order per §3 Phase 2 step 6. Rename old `ui.js` → `_ui-legacy.js` (kept on disk but NOT loaded) so revert is one HTML edit.
-   - **Step 7 — renderer token cache.** `src/render/renderer.js` token cache must read `--ui-*` directly under meridian-* skins (deferred from Phase 0; mandatory before Phase 5 deletes the `--color-*` aliases).
-8. Plan budget: 7 days for one engineer per §8. Step 1 took ~½ day, step 2 took ~½ day (much faster than feared because verbatim extraction + DI bag is mechanical, not creative). Steps 3+4 should each fit in 1–2 days using the same pattern. Steps 5–7 are the integration/cutover risk, not extraction risk.
+2. `git log --oneline -5` — confirm HEAD is `f377edb` (header.js extraction) or a later docs commit. The full step 3 commit chain: `5c2edcc` → `3a8b7be` → `2692993` → `2de5154` → `c28bb4a` → `c841598` → `f377edb`.
+3. Confirm tests are green before changing anything: `npm run test:unit && npm run test:integration` (584 unit, 66 integration).
+4. **Namespace members now on `window.Vectura.UI.*`:** `CONTROL_DEFS`, `AlgoConfigPanel`, `ThemeSwitcher`, `MenuBar`, `PaneLeft`, `PaneRight`, `Workspace`, `BottomPane`, `Toolbar`, `Header`. All are preserved through the namespace-copy patch — no additional surgery needed for new modules.
+5. **Step 4 target: 8 remaining panels.** Each panel module follows the same pattern as step 3 shell modules: IIFE → `bind(deps)` DI-bag → expose on `window.Vectura.UI.<PanelName>` → 1-line delegators on legacy prototype → compile-gate test. The 8 panels per the plan:
+   - `algorithm-panel` (distinct from `algo-config-panel` which is already done — this handles algo switching, layer type changes, formula display)
+   - `noise-rack-panel` (noise parameter UI; delegates to existing `ui-noise-rack.js`)
+   - `modifiers-panel` (mirror modifier UI and tree management)
+   - `transform-panel` (position/scale/rotation controls)
+   - `layers-panel` (layer list rendering, drag-drop reorder, selection)
+   - `pens-panel` (pen color list, palette controls, `initPaletteControls`)
+   - `auto-colorize-panel` (auto-colorize toggle and settings)
+   - `formula-panel` (formula/expression editor)
+6. **Suggested approach:** start with the smallest/cleanest panel (likely `formula-panel` or `auto-colorize-panel`), then `transform-panel`, then batch the larger ones (`layers-panel`, `pens-panel`, `modifiers-panel`). `algorithm-panel` is likely the largest after `algo-config-panel`.
+7. **Key IIFE-locals available in the DI bags** (search legacy ui.js preamble for the full list): `getEl`, `SETTINGS`, `ALGO_DEFAULTS`, `MACHINES`, `PALETTES`, `PRESETS`, `DESCRIPTIONS`, `isPetalisLayerType`, `isModifierLayer`, `getContrastTextColor`, `clone`, `clamp`, `getDocumentUnitLabel`, `mmToDocumentUnits`, `documentUnitsToMm`, `createPetalisModifier`, `createPetalModifier`, `createPetalisShading`.
+8. **Phase 2 remaining moves after step 4:**
+   - **Step 5 — orchestrator + persistence + shortcuts.** New thin `src/ui/ui.js` (~600 LOC), `src/ui/persistence.js`, `src/ui/shortcuts.js`.
+   - **Step 6 — `index.html` body rewrite + script load order.** Rename old `ui.js` → `_ui-legacy.js`.
+   - **Step 7 — renderer token cache.** `src/render/renderer.js` reads `--ui-*` directly.
