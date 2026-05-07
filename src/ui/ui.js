@@ -11694,6 +11694,13 @@
     window.Vectura.UI.FormulaPanel.bind({ getEl, escapeHtml, usesSeed });
   }
 
+  // Phase 2 step 4: register panels/auto-colorize-panel.js namespace anchor.
+  // No real deps yet — actual logic still lives in src/ui/ui-auto-colorize.js
+  // mixin attached to UI.prototype above. Step 5 will move the closure.
+  if (window.Vectura?.UI?.AutoColorizePanel?.bind) {
+    window.Vectura.UI.AutoColorizePanel.bind({});
+  }
+
   window.Vectura = window.Vectura || {};
   // Preserve namespace members other modules attach to window.Vectura.UI BEFORE
   // ui.js loads (controls-registry.js, panels/algo-config-panel.js, components/*,
