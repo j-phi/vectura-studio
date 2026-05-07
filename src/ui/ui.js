@@ -11701,6 +11701,13 @@
     window.Vectura.UI.AutoColorizePanel.bind({});
   }
 
+  // Phase 2 step 4: register panels/noise-rack-panel.js namespace anchor.
+  // Like AutoColorizePanel — actual logic still lives in src/ui/ui-noise-rack.js
+  // mixin. Step 5 will move the closure into this DI bag.
+  if (window.Vectura?.UI?.NoiseRackPanel?.bind) {
+    window.Vectura.UI.NoiseRackPanel.bind({});
+  }
+
   window.Vectura = window.Vectura || {};
   // Preserve namespace members other modules attach to window.Vectura.UI BEFORE
   // ui.js loads (controls-registry.js, panels/algo-config-panel.js, components/*,
