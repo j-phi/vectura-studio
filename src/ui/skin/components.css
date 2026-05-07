@@ -738,3 +738,212 @@
   width: 16px; height: 16px; border-radius: var(--radius-sm);
   border: 1px solid var(--ui-border); background: #fff;
 }
+
+/* ─── Phase 4: Petal Designer chrome re-skin ───────────────────────────────
+ * Scoped to [data-ui-skin^="meridian"] so classic skins keep today's styles.
+ * Pure additive — no JS changes; the petal-designer chrome class names
+ * (.petal-designer-header, .petal-designer-title, .petal-tool-btn, etc.)
+ * are unchanged in src/ui/ui-petal-designer.js.
+ */
+[data-ui-skin^="meridian"] .petal-designer-window {
+  background: var(--ui-panel);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
+  font-family: var(--font-ui);
+}
+[data-ui-skin^="meridian"] .petal-designer-inline {
+  background: var(--ui-panel);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+}
+[data-ui-skin^="meridian"] .petal-designer-header {
+  background: var(--ui-panel-2);
+  border-bottom: 1px solid var(--ui-border);
+  padding: 8px 12px;
+  font-family: var(--font-ui);
+}
+[data-ui-skin^="meridian"] .petal-designer-title {
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--ui-accent);
+  font-weight: 600;
+}
+[data-ui-skin^="meridian"] .petal-tool-btn,
+[data-ui-skin^="meridian"] .petal-close,
+[data-ui-skin^="meridian"] .petal-popout,
+[data-ui-skin^="meridian"] .petal-popin,
+[data-ui-skin^="meridian"] .petal-copy-btn {
+  border: 1px solid var(--ui-border);
+  background: var(--ui-ctrl);
+  color: var(--ui-text);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-xs);
+  height: 26px;
+  min-width: 26px;
+  padding: 0 8px;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+[data-ui-skin^="meridian"] .petal-tool-btn:hover,
+[data-ui-skin^="meridian"] .petal-close:hover,
+[data-ui-skin^="meridian"] .petal-popout:hover,
+[data-ui-skin^="meridian"] .petal-popin:hover,
+[data-ui-skin^="meridian"] .petal-copy-btn:hover {
+  background: var(--ui-ctrl-hov);
+  border-color: var(--ui-border-hi);
+  color: var(--ui-accent);
+}
+[data-ui-skin^="meridian"] .petal-tool-btn.active {
+  background: var(--ui-accent-2);
+  border-color: var(--ui-accent);
+  color: var(--ui-accent);
+}
+[data-ui-skin^="meridian"] .petal-designer-controls,
+[data-ui-skin^="meridian"] .petal-designer-structure,
+[data-ui-skin^="meridian"] .petal-designer-transition {
+  background: var(--ui-panel);
+  border-bottom: 1px solid var(--ui-border);
+}
+[data-ui-skin^="meridian"] .petal-designer-controls label,
+[data-ui-skin^="meridian"] .petal-designer-structure label,
+[data-ui-skin^="meridian"] .petal-slider-label > span:first-child {
+  color: var(--ui-muted);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.04em;
+  text-transform: none;
+  font-weight: 500;
+}
+[data-ui-skin^="meridian"] .petal-slider-value {
+  color: var(--ui-accent);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+[data-ui-skin^="meridian"] .petal-designer-controls select,
+[data-ui-skin^="meridian"] .petal-designer-structure select,
+[data-ui-skin^="meridian"] .petal-slider-label > select {
+  background: var(--ui-ctrl);
+  border: 1px solid var(--ui-border);
+  color: var(--ui-text);
+  border-radius: var(--radius-sm);
+}
+[data-ui-skin^="meridian"] .petal-designer-shading-title {
+  color: var(--ui-text);
+  font-family: var(--font-ui);
+  letter-spacing: 0.16em;
+  font-weight: 600;
+}
+[data-ui-skin^="meridian"] .petal-profile-editor-card {
+  background: var(--ui-panel-2);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+}
+[data-ui-skin^="meridian"] .petal-profile-editor-card.is-active {
+  border-color: var(--ui-accent);
+}
+[data-ui-skin^="meridian"] .petal-profile-editor-card-title {
+  color: var(--ui-accent);
+  font-family: var(--font-ui);
+  font-weight: 600;
+}
+[data-ui-skin^="meridian"] .petal-shade-toggle input {
+  accent-color: var(--ui-accent);
+}
+
+/* ─── Phase 4: Pattern Designer chrome re-skin ─────────────────────────── */
+[data-ui-skin^="meridian"] .pattern-designer-modal,
+[data-ui-skin^="meridian"] .pattern-designer-inline {
+  background: var(--ui-panel);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-ui);
+}
+[data-ui-skin^="meridian"] .pattern-designer-header,
+[data-ui-skin^="meridian"] .pd-header {
+  background: var(--ui-panel-2);
+  border-bottom: 1px solid var(--ui-border);
+  padding: 8px 12px;
+}
+[data-ui-skin^="meridian"] .pattern-designer-title,
+[data-ui-skin^="meridian"] .pd-title {
+  color: var(--ui-accent);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+[data-ui-skin^="meridian"] .pd-tool-btn,
+[data-ui-skin^="meridian"] .pd-action-btn,
+[data-ui-skin^="meridian"] .pd-fill-btn {
+  border: 1px solid var(--ui-border);
+  background: var(--ui-ctrl);
+  color: var(--ui-text);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-xs);
+  height: 26px;
+  min-width: 26px;
+  padding: 0 8px;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+[data-ui-skin^="meridian"] .pd-tool-btn:hover,
+[data-ui-skin^="meridian"] .pd-action-btn:hover,
+[data-ui-skin^="meridian"] .pd-fill-btn:hover {
+  background: var(--ui-ctrl-hov);
+  border-color: var(--ui-border-hi);
+  color: var(--ui-accent);
+}
+[data-ui-skin^="meridian"] .pd-tool-btn.active,
+[data-ui-skin^="meridian"] .pd-fill-btn.active {
+  background: var(--ui-accent-2);
+  border-color: var(--ui-accent);
+  color: var(--ui-accent);
+}
+[data-ui-skin^="meridian"] .pd-status,
+[data-ui-skin^="meridian"] .pattern-designer-status {
+  background: var(--ui-panel-2);
+  color: var(--ui-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  border-top: 1px solid var(--ui-border);
+}
+[data-ui-skin^="meridian"] .pd-validation-header,
+[data-ui-skin^="meridian"] .pattern-designer-validation-header {
+  color: var(--ui-text);
+  font-family: var(--font-ui);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+/* ─── Phase 4: Touch modifier bar chrome re-skin ──────────────────────── */
+[data-ui-skin^="meridian"] #touch-modifier-bar,
+[data-ui-skin^="meridian"] .touch-modifier-bar {
+  background: var(--ui-panel-2);
+  border-top: 1px solid var(--ui-border);
+  font-family: var(--font-ui);
+}
+[data-ui-skin^="meridian"] .touch-modifier-bar button,
+[data-ui-skin^="meridian"] #touch-modifier-bar button {
+  border: 1px solid var(--ui-border);
+  background: var(--ui-ctrl);
+  color: var(--ui-text);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-xs);
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+[data-ui-skin^="meridian"] .touch-modifier-bar button:hover,
+[data-ui-skin^="meridian"] #touch-modifier-bar button:hover {
+  background: var(--ui-ctrl-hov);
+  border-color: var(--ui-border-hi);
+  color: var(--ui-accent);
+}
+[data-ui-skin^="meridian"] .touch-modifier-bar button.active,
+[data-ui-skin^="meridian"] #touch-modifier-bar button.active {
+  background: var(--ui-accent-2);
+  border-color: var(--ui-accent);
+  color: var(--ui-accent);
+}
