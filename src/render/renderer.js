@@ -45,21 +45,56 @@
     return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 16 16, crosshair`;
   };
   const { clamp } = window.Vectura.AlgorithmUtils;
-  let _themeTokenCache = new Map();
-  let _themeTokenCacheKey = null;
+
+  // Phase 2 step 7: theme-token cache reads --ui-* directly per the Meridian
+  // skin migration plan §"Token-cache migration ordering". Legacy palette files
+  // (classic-dark/light, lark) alias --ui-* → --color-*; Meridian palettes
+  // alias --color-* → --ui-* (when defined). So a single read path that
+  // consults --ui-* first works byte-equivalently for legacy skins AND adopts
+  // the canonical Meridian tokens.
+  //
+  // Invalidation is wired to the `vectura:skin-change` event dispatched by
+  // src/ui/skin/skin-manager.js after every successful skin swap.
+  //
+  // The tokens helper from src/ui/skin/tokens.js (`window.Vectura.UI.tokens.get`)
+  // would also work but performs no caching; the renderer reads the same tokens
+  // many times per frame, so we keep the per-renderer Map<name, value> cache.
+  // The cache surface is mirrored on `Renderer.__tokenCache` so unit tests can
+  // exercise it without instantiating a full Renderer.
+  const _themeTokenCache = new Map();
+  const _UI_TOKEN_FOR_COLOR = (name) => {
+    // Map a legacy --color-* name to its --ui-* canonical sibling. Returns null
+    // when no analog exists (e.g., specialized renderer-only colors). Keep this
+    // narrow — it must mirror the aliases set by every skin file under
+    // src/ui/skin/*.css. Today only one --color-* token is consulted by the
+    // renderer (`--color-accent`), but new entries belong here.
+    if (name === '--color-accent') return '--ui-accent';
+    return null;
+  };
+  const _readVar = (name) => {
+    if (typeof document === 'undefined' || !document.documentElement) return '';
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  };
   const getThemeToken = (name, fallback = '') => {
     if (typeof document === 'undefined' || !document.documentElement) return fallback;
-    const themeKey = document.documentElement.dataset.theme || '';
-    if (themeKey !== _themeTokenCacheKey) {
-      _themeTokenCache.clear();
-      _themeTokenCacheKey = themeKey;
-    }
     if (_themeTokenCache.has(name)) return _themeTokenCache.get(name);
-    const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    let value = '';
+    const uiAlias = _UI_TOKEN_FOR_COLOR(name);
+    if (uiAlias) {
+      // Try canonical --ui-* first (Meridian); fall back to the original
+      // --color-* (legacy skins where --ui-accent itself aliases to --color-accent).
+      value = _readVar(uiAlias) || _readVar(name);
+    } else {
+      value = _readVar(name);
+    }
     const result = value || fallback;
     _themeTokenCache.set(name, result);
     return result;
   };
+  const invalidateThemeTokenCache = () => { _themeTokenCache.clear(); };
+  if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    document.addEventListener('vectura:skin-change', invalidateThemeTokenCache);
+  }
   const distance = (a, b) => Math.hypot((b?.x ?? 0) - (a?.x ?? 0), (b?.y ?? 0) - (a?.y ?? 0));
   const clonePoint = (pt) => ({ x: pt.x, y: pt.y });
   const cloneHandle = (pt) => (pt ? { x: pt.x, y: pt.y } : null);
@@ -5304,4 +5339,11 @@
     buildShapeAnchors,
   };
   window.Vectura.Renderer = Renderer;
+  // Test-only surface: lets unit tests poke the token cache without standing
+  // up a full Renderer instance. Production code should keep calling the
+  // closure-local `getThemeToken` directly.
+  Renderer.__tokenCache = {
+    get: getThemeToken,
+    invalidate: invalidateThemeTokenCache,
+  };
 })();
