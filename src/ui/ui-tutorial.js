@@ -516,7 +516,7 @@
           target: '#btn-add-layer',
           highlight: '#btn-add-layer',
           placement: 'left',
-          body: 'Open <b>+ Add Layer</b> at the bottom of the layer list.',
+          body: 'Open <b>+ Add Layer</b> at the top of the layer list.',
           hideNext: true,
           completion: When.elementVisible('#layer-add-menu'),
         },
