@@ -113,6 +113,7 @@ Reference:
 | PR governance/process changes | `.github/pull_request_template.md` plus harness doc if policy changed |
 | UI behavior / shortcuts / help changes | `README.md`, in-app help guide, in-app shortcut list, and `index.html` version increment |
 | Feature capability changes | `README.md` relevant sections, `plans.md`, `CHANGELOG.md`, and any feature-specific docs |
+| **Skin authoring / theme work** | `docs/skin-authoring.md`, `src/ui/skin/_template.css` (if token contract changes), `src/config/defaults.js` (manifest registry), `README.md` skin section, `CHANGELOG.md`, and `tests/unit/skin/` for new skin compile-gate or contract tests. Reduced-motion + a11y compliance tests must continue to pass. |
 | Deferred release-hardening ideas | Add/update entry in `docs/pre-release-hardening-log.md` |
 | Any repository change | Assess whether `plans.md`, `CHANGELOG.md`, README release notes, and the canonical package version need updates; when the version changes run `npm run version:sync` |
 
