@@ -7199,7 +7199,15 @@
 
     // Delegated to src/ui/panels/layers-panel.js (Phase 2 step 4).
     renderLayers() {
-      return window.Vectura.UI.LayersPanel.renderLayers.call(this);
+      const result = window.Vectura.UI.LayersPanel.renderLayers.call(this);
+      // Phase 3 closure: re-attach right-click context menu handler each render.
+      // Idempotent — guarded by attach()'s _attached flag.
+      try {
+        if (window.Vectura?.UI?.Menus?.LayerContext?.attach) {
+          window.Vectura.UI.Menus.LayerContext.attach(this);
+        }
+      } catch (_) { /* missing menu module is non-fatal */ }
+      return result;
     }
 
 
@@ -8201,6 +8209,12 @@
   // Phase 2 step 5b: hand legacy IIFE-locals to shortcuts.js.
   if (window.Vectura?.UI?.Shortcuts?.bind) {
     window.Vectura.UI.Shortcuts.bind({ getEl, SETTINGS, isPrimitiveShapeLayer });
+  }
+
+  // Phase 3 closure: bind layer right-click context menu (NEW surface).
+  // Composes UI.overlays.Menu; no IIFE-local deps.
+  if (window.Vectura?.UI?.Menus?.LayerContext?.bind) {
+    window.Vectura.UI.Menus.LayerContext.bind({ getEl });
   }
 
   // Phase 3: register modals/help-shortcuts.js. No IIFE-local deps; the
