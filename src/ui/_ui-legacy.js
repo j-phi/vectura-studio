@@ -7904,10 +7904,24 @@
         });
         container.appendChild(list);
       } else {
-        const msg = document.createElement('p');
-        msg.className = 'text-xs text-vectura-muted mb-4';
-        msg.textContent = 'No patterns registered.';
-        container.appendChild(msg);
+        // Phase 4: empty-state illustration for the pattern catalog.
+        const ES = window.Vectura?.UI?.EmptyStates;
+        if (ES && typeof ES.attach === 'function') {
+          const wrap = document.createElement('div');
+          wrap.className = 'pattern-empty-state-wrap';
+          wrap.style.marginBottom = '16px';
+          container.appendChild(wrap);
+          ES.attach(wrap, {
+            kind: 'patterns',
+            title: 'No patterns yet',
+            message: 'Open the Pattern Designer to create your first.',
+          });
+        } else {
+          const msg = document.createElement('p');
+          msg.className = 'text-xs text-vectura-muted mb-4';
+          msg.textContent = 'No patterns registered.';
+          container.appendChild(msg);
+        }
       }
 
       if (!isErase) {

@@ -1204,6 +1204,25 @@
       list.classList.toggle('lvl-list-multi', (renderer.selectedLayerIds?.size ?? 0) > 1);
       _lvlBuildStatusBar();
 
+      // Phase 4: empty-state illustration when there are no layers.
+      // Uses the LegacyLite EmptyState primitive composed via UI.EmptyStates.
+      if (allLayers.length === 0) {
+        const ES = UI.EmptyStates;
+        if (ES && typeof ES.attach === 'function') {
+          try {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'lvl-empty-state-wrap';
+            wrapper.style.cssText = 'padding: 8px 4px;';
+            list.appendChild(wrapper);
+            ES.attach(wrapper, {
+              kind: 'layers',
+              title: 'No layers yet',
+              message: 'Add an algorithm to begin sketching.',
+            });
+          } catch (_) { /* noop */ }
+        }
+      }
+
       this.layerListOrder = _lvlFlatOrder();
       this.updateLightSourceTool();
       if (SETTINGS.autoColorization?.enabled && !this.isApplyingAutoColorization) {
