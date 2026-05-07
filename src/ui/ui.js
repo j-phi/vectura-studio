@@ -5903,22 +5903,8 @@
     }
 
     refreshThemeUi() {
-      const toggle = getEl('theme-toggle', { silent: true });
-      const bgColorInput = getEl('inp-bg-color', { silent: true });
-      const current = `${SETTINGS.uiTheme || 'dark'}`.toLowerCase();
-      if (toggle) {
-        const NEXT_LABEL = {
-          dark: 'Switch to Lark theme',
-          lark: 'Switch to Light theme',
-          light: 'Switch to Dark theme',
-        };
-        const label = NEXT_LABEL[current] || NEXT_LABEL.dark;
-        toggle.setAttribute('aria-pressed', current === 'light' ? 'true' : 'false');
-        toggle.setAttribute('aria-label', label);
-        toggle.title = label;
-        toggle.dataset.theme = current;
-      }
-      if (bgColorInput) bgColorInput.value = SETTINGS.bgColor || bgColorInput.value || '#ffffff';
+      // Delegated to src/ui/shell/theme-switcher.js (Phase 2 step 3).
+      return window.Vectura.UI.ThemeSwitcher.refreshThemeUi.call(this);
     }
 
     scrollLayerToTop(layerId) {
@@ -12734,6 +12720,14 @@
       createPetalModifier,
       createPetalisShading,
     });
+  }
+
+  // Phase 2 step 3: hand legacy IIFE-locals to shell/theme-switcher.js so its
+  // extracted refreshThemeUi() body sees the same `getEl` helper it always has.
+  // Same load-order constraint as AlgoConfigPanel: theme-switcher.js loads
+  // BEFORE ui.js (see index.html script tags).
+  if (window.Vectura?.UI?.ThemeSwitcher?.bind) {
+    window.Vectura.UI.ThemeSwitcher.bind({ getEl });
   }
 
   window.Vectura = window.Vectura || {};
