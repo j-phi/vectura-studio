@@ -5764,12 +5764,9 @@
       this.resizeExportPreviewCanvas();
     }
 
-    toggleSettingsPanel(force) {
-      const settingsPanel = getEl('settings-panel', { silent: true });
-      if (!settingsPanel) return false;
-      const nextOpen = typeof force === 'boolean' ? force : !settingsPanel.classList.contains('open');
-      settingsPanel.classList.toggle('open', nextOpen);
-      return true;
+    // Delegated to src/ui/shell/bottom-pane.js (Phase 2 step 3).
+    toggleSettingsPanel(...args) {
+      return window.Vectura.UI.BottomPane.toggleSettingsPanel.call(this, ...args);
     }
 
     setTopMenuOpen(trigger = null, open = true) {
@@ -7870,188 +7867,20 @@
       this.refreshDocumentUnitsUi();
     }
 
+    // Delegated to src/ui/shell/workspace.js (Phase 2 step 3).
     initPaneToggles() {
-      const leftPane = getEl('left-pane');
-      const rightPane = getEl('right-pane');
-      const bottomPane = getEl('bottom-pane');
-      const leftBtn = getEl('btn-pane-toggle-left');
-      const rightBtn = getEl('btn-pane-toggle-right');
-      const mobileLeftBtn = getEl('btn-mobile-pane-left');
-      const mobileRightBtn = getEl('btn-mobile-pane-right');
-      if (!leftPane || !rightPane || !leftBtn || !rightBtn) return;
-
-      const isMobileViewport = () => window.innerWidth < 900;
-
-      const isCollapsed = (pane) => {
-        const auto = document.body.classList.contains('auto-collapsed') && !pane.classList.contains('pane-force-open');
-        return auto || pane.classList.contains('pane-collapsed');
-      };
-
-      const modBar = getEl('touch-modifier-bar');
-      const modBarOriginParent = modBar?.parentNode || null;
-      const modBarOriginNext = modBar?.nextSibling || null;
-      let mobileLayoutDefaultApplied = false;
-
-      const applyMobileBottomPaneLayout = (isMobileLayout) => {
-        if (!bottomPane) return;
-        if (isMobileLayout) {
-          if (modBar && modBar.parentNode !== bottomPane) {
-            bottomPane.insertBefore(modBar, bottomPane.firstChild);
-          }
-          if (modBar) modBar.classList.remove('hidden');
-        } else {
-          if (modBar && modBarOriginParent && modBar.parentNode !== modBarOriginParent) {
-            modBarOriginParent.insertBefore(modBar, modBarOriginNext);
-          }
-          if (modBar && typeof this.isTouchCapable === 'function') {
-            modBar.classList.toggle('hidden', !this.isTouchCapable());
-          }
-        }
-      };
-
-      const applyAutoCollapse = () => {
-        const viewportWidth = window.innerWidth;
-        const shouldAuto = viewportWidth < 640;
-        const isMobileLayout = viewportWidth < 900;
-        document.body.classList.toggle('auto-collapsed', shouldAuto);
-        document.body.classList.toggle('mobile-layout', isMobileLayout);
-        applyMobileBottomPaneLayout(isMobileLayout);
-        if (bottomPane && isMobileLayout && !mobileLayoutDefaultApplied) {
-          bottomPane.classList.add('bottom-pane-collapsed');
-          mobileLayoutDefaultApplied = true;
-        }
-      };
-
-      const togglePane = (pane) => {
-        const auto = document.body.classList.contains('auto-collapsed');
-        const willOpen = auto ? !pane.classList.contains('pane-force-open') : pane.classList.contains('pane-collapsed');
-        if (willOpen && isMobileViewport()) {
-          const sibling = pane === leftPane ? rightPane : leftPane;
-          sibling.classList.remove('pane-force-open');
-          sibling.classList.add('pane-collapsed');
-        }
-        if (auto) {
-          pane.classList.remove('pane-collapsed');
-          pane.classList.toggle('pane-force-open');
-        } else {
-          pane.classList.toggle('pane-collapsed');
-        }
-      };
-
-      leftBtn.addEventListener('click', () => togglePane(leftPane));
-      rightBtn.addEventListener('click', () => togglePane(rightPane));
-      if (mobileLeftBtn) mobileLeftBtn.addEventListener('click', () => togglePane(leftPane));
-      if (mobileRightBtn) mobileRightBtn.addEventListener('click', () => togglePane(rightPane));
-      window.addEventListener('resize', applyAutoCollapse);
-      applyAutoCollapse();
-
-      this.expandPanes = () => {
-        leftPane.classList.remove('pane-collapsed', 'pane-force-open');
-        rightPane.classList.remove('pane-collapsed', 'pane-force-open');
-        document.body.classList.remove('auto-collapsed', 'mobile-layout');
-        document.documentElement.style.setProperty('--pane-left-width', '335px');
-        document.documentElement.style.setProperty('--pane-right-width', '335px');
-        document.documentElement.style.setProperty('--bottom-pane-height', '180px');
-        if (bottomPane) bottomPane.classList.remove('bottom-pane-collapsed');
-      };
+      return window.Vectura.UI.Workspace.initPaneToggles.call(this);
     }
-
-    initBottomPaneToggle() {
-      const bottomPane = getEl('bottom-pane');
-      const btn = getEl('btn-pane-toggle-bottom');
-      const mobileBtn = getEl('btn-mobile-pane-bottom');
-      if (!bottomPane || !btn) return;
-      const toggleBottomPane = () => {
-        bottomPane.classList.toggle('bottom-pane-collapsed');
-      };
-      btn.addEventListener('click', toggleBottomPane);
-      if (mobileBtn) mobileBtn.addEventListener('click', toggleBottomPane);
-    }
-
-    initBottomPaneResizer() {
-      const resizer = getEl('bottom-resizer');
-      const bottomPane = getEl('bottom-pane');
-      if (!resizer || !bottomPane) return;
-      const minHeight = 80;
-      const maxHeight = 360;
-
-      const startDrag = (e) => {
-        e.preventDefault();
-        resizer.classList.add('active');
-        bottomPane.classList.remove('bottom-pane-collapsed');
-        const startY = e.clientY;
-        const startHeight = bottomPane.getBoundingClientRect().height;
-
-        const onMove = (ev) => {
-          const dy = ev.clientY - startY;
-          const next = Math.max(minHeight, Math.min(maxHeight, startHeight - dy));
-          document.documentElement.style.setProperty('--bottom-pane-height', `${next}px`);
-        };
-        const onUp = () => {
-          resizer.classList.remove('active');
-          window.removeEventListener('mousemove', onMove);
-          window.removeEventListener('mouseup', onUp);
-        };
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
-      };
-
-      resizer.addEventListener('mousedown', startDrag);
-    }
-
     initPaneResizers() {
-      const leftPane = getEl('left-pane');
-      const rightPane = getEl('right-pane');
-      const leftResizer = getEl('left-resizer');
-      const rightResizer = getEl('right-resizer');
-      if (!leftPane || !rightPane || !leftResizer || !rightResizer) return;
+      return window.Vectura.UI.Workspace.initPaneResizers.call(this);
+    }
 
-      const minLeft = 200;
-      const maxLeft = 520;
-      const minRight = 200;
-      const maxRight = 520;
-
-      const startDrag = (e, side) => {
-        e.preventDefault();
-        const startX = e.clientX;
-        const startLeft = leftPane.getBoundingClientRect().width;
-        const startRight = rightPane.getBoundingClientRect().width;
-        const resizer = side === 'left' ? leftResizer : rightResizer;
-        resizer.classList.add('active');
-        document.body.classList.remove('auto-collapsed');
-        leftPane.classList.remove('pane-collapsed');
-        rightPane.classList.remove('pane-collapsed');
-        let lastWidth = side === 'left' ? startLeft : startRight;
-
-        const onMove = (ev) => {
-          const dx = ev.clientX - startX;
-          if (side === 'left') {
-            const next = Math.max(minLeft, Math.min(maxLeft, startLeft + dx));
-            document.documentElement.style.setProperty('--pane-left-width', `${next}px`);
-            lastWidth = next;
-          } else {
-            const next = Math.max(minRight, Math.min(maxRight, startRight - dx));
-            document.documentElement.style.setProperty('--pane-right-width', `${next}px`);
-            lastWidth = next;
-          }
-        };
-
-        const onUp = () => {
-          resizer.classList.remove('active');
-          window.removeEventListener('mousemove', onMove);
-          window.removeEventListener('mouseup', onUp);
-          const rounded = Math.round(lastWidth);
-          if (side === 'left') SETTINGS.paneLeftWidth = rounded;
-          else SETTINGS.paneRightWidth = rounded;
-          this.app?.persistPreferencesDebounced?.();
-        };
-
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
-      };
-
-      leftResizer.addEventListener('mousedown', (e) => startDrag(e, 'left'));
-      rightResizer.addEventListener('mousedown', (e) => startDrag(e, 'right'));
+    // Delegated to src/ui/shell/bottom-pane.js (Phase 2 step 3).
+    initBottomPaneToggle() {
+      return window.Vectura.UI.BottomPane.initBottomPaneToggle.call(this);
+    }
+    initBottomPaneResizer() {
+      return window.Vectura.UI.BottomPane.initBottomPaneResizer.call(this);
     }
 
     updateLightSourceTool() {
@@ -12491,6 +12320,16 @@
   // extracted right-pane tab/section methods see the same `getEl` helper.
   if (window.Vectura?.UI?.PaneRight?.bind) {
     window.Vectura.UI.PaneRight.bind({ getEl });
+  }
+
+  // Phase 2 step 3: hand legacy IIFE-locals to shell/workspace.js.
+  if (window.Vectura?.UI?.Workspace?.bind) {
+    window.Vectura.UI.Workspace.bind({ getEl });
+  }
+
+  // Phase 2 step 3: hand legacy IIFE-locals to shell/bottom-pane.js.
+  if (window.Vectura?.UI?.BottomPane?.bind) {
+    window.Vectura.UI.BottomPane.bind({ getEl });
   }
 
   window.Vectura = window.Vectura || {};
