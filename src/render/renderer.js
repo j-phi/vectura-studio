@@ -341,6 +341,7 @@
       this.shapeCornerDrag = null;
       this.algoDraft = null;
       this.algoDraftType = 'wavetable';
+      this._lastAlgoTap = { time: 0, x: 0, y: 0 };
       this.directSelection = null;
       this.directDrag = null;
       this.maskPreview = null;
@@ -389,7 +390,6 @@
       new ResizeObserver(() => this.resize()).observe(parent);
       this.canvas.addEventListener('pointerenter', () => this.updateCursor());
       this.canvas.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
-      this.canvas.addEventListener('dblclick', (e) => this._handleAlgoDblClick(e));
       this._boundMove = (e) => this.move(e);
       this._boundUp = (e) => this.up(e);
       if (window.PointerEvent) {
@@ -1309,14 +1309,6 @@
     cancelAlgoDraft() {
       this.algoDraft = null;
       this.draw();
-    }
-
-    _handleAlgoDblClick(e) {
-      if (!this.isAlgoDrawTool()) return;
-      e.preventDefault();
-      if (this.onAlgoDrawComplete) {
-        this.onAlgoDrawComplete({ algoType: this.algoDraftType, rect: { x: 0, y: 0, w: 0, h: 0 } });
-      }
     }
 
     canEditSourceGeometry(layer) {
@@ -2921,6 +2913,17 @@
       }
 
       if (this.isAlgoDrawTool()) {
+        const now = performance.now();
+        const dt = now - this._lastAlgoTap.time;
+        const dist = Math.hypot(e.clientX - this._lastAlgoTap.x, e.clientY - this._lastAlgoTap.y);
+        this._lastAlgoTap = { time: now, x: e.clientX, y: e.clientY };
+        if (dt < 400 && dist < 30) {
+          this._lastAlgoTap.time = 0;
+          if (this.onAlgoDrawComplete) {
+            this.onAlgoDrawComplete({ algoType: this.algoDraftType, rect: { x: 0, y: 0, w: 0, h: 0 } });
+          }
+          return;
+        }
         this.startAlgoDraft(world);
         return;
       }

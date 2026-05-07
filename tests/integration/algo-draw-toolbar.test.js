@@ -120,4 +120,52 @@ describe('algo-draw toolbar', () => {
 
     expect(app.ui.activeTool).toBe('algo-draw');
   });
+
+  // Helper: create a fake pointer event with required properties (jsdom lacks PointerEvent)
+  const fakePointer = (props) => ({ button: 0, clientX: 0, clientY: 0, cancelable: true, preventDefault() {}, ...props });
+
+  test('double-tap on canvas triggers full-canvas algo draw (mobile parity)', () => {
+    app.ui.setActiveTool?.('algo-draw');
+    app.renderer.algoDraftType = 'rings';
+    app.renderer._lastAlgoTap = { time: 0, x: 0, y: 0 };
+
+    let completedWith = null;
+    const origCallback = app.renderer.onAlgoDrawComplete;
+    app.renderer.onAlgoDrawComplete = (payload) => { completedWith = payload; };
+
+    // First tap
+    app.renderer.down(fakePointer({ clientX: 100, clientY: 100 }));
+    app.renderer.up(fakePointer({ clientX: 100, clientY: 100 }));
+    expect(completedWith).toBeNull();
+
+    // Second tap within threshold
+    app.renderer.down(fakePointer({ clientX: 105, clientY: 105 }));
+
+    expect(completedWith).toBeTruthy();
+    expect(completedWith.algoType).toBe('rings');
+    expect(completedWith.rect).toEqual({ x: 0, y: 0, w: 0, h: 0 });
+
+    app.renderer.onAlgoDrawComplete = origCallback;
+  });
+
+  test('two taps far apart do NOT trigger double-tap', () => {
+    app.ui.setActiveTool?.('algo-draw');
+    app.renderer.algoDraftType = 'flowfield';
+    app.renderer._lastAlgoTap = { time: 0, x: 0, y: 0 };
+
+    let completedWith = null;
+    const origCallback = app.renderer.onAlgoDrawComplete;
+    app.renderer.onAlgoDrawComplete = (payload) => { completedWith = payload; };
+
+    // First tap
+    app.renderer.down(fakePointer({ clientX: 100, clientY: 100 }));
+    app.renderer.up(fakePointer({ clientX: 100, clientY: 100 }));
+
+    // Second tap 100px away — beyond the 30px threshold
+    app.renderer.down(fakePointer({ clientX: 200, clientY: 100 }));
+
+    expect(completedWith).toBeNull();
+
+    app.renderer.onAlgoDrawComplete = origCallback;
+  });
 });
