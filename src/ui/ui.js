@@ -8651,6 +8651,13 @@
       this.normalizeGroupOrder();
       this.app.computeDisplayGeometry();
 
+      // Auto-lock children entering a mirror modifier so they stay aligned
+      // with the axis while the user explores the mirror. They remain
+      // user-unlockable.
+      if (this.isModifierLayer(parent) && parent.modifier?.type === 'mirror') {
+        moveIds.forEach((id) => this.layerLockedIds.add(id));
+      }
+
       if (selectAssigned) {
         const ids = moveIds.slice();
         const nextPrimary = ids.includes(primaryId) ? primaryId : ids[ids.length - 1] || parentId;
@@ -10267,6 +10274,7 @@
       // ── algo-draw press-and-hold picker ─────────────────────────
       const algoDrawBtn = toolbar.querySelector('.tool-btn[data-tool="algo-draw"]');
       if (algoDrawBtn) {
+        algoDrawBtn.setAttribute('data-has-submenu', 'true');
         const _ALGO_PICK_LIST = [
           { type: 'attractor',       label: 'Attractor' },
           { type: 'boids',           label: 'Boids' },
@@ -10571,6 +10579,20 @@
         btnTour.onclick = (e) => {
           e.stopPropagation();
           this.setTopMenuOpen(null, false);
+          const hasContent = (this.app?.engine?.layers?.length ?? 0) > 0;
+          if (hasContent) {
+            const ok = window.confirm(
+              'Starting the tour will clear the current canvas. Continue?'
+            );
+            if (!ok) return;
+            if (this.app.pushHistory) this.app.pushHistory();
+            this.app.engine.layers = [];
+            this.app.engine.activeLayerId = null;
+            this.app.setSelection?.([], null);
+            this.renderLayers();
+            this.buildControls();
+            this.app.render();
+          }
           SETTINGS.tourSeen = false;
           setTimeout(() => {
             window.Vectura.Tutorial?.start(() => {
@@ -14261,6 +14283,7 @@
       };
       const randomBtn = document.createElement('button');
       randomBtn.type = 'button';
+      randomBtn.id = 'btn-randomize-params';
       randomBtn.className =
         'w-full text-xs border border-vectura-border px-2 py-2 hover:bg-vectura-border text-vectura-muted transition-colors';
       randomBtn.textContent = 'Randomize Params';
