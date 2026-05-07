@@ -328,6 +328,28 @@
         '--vectura-danger-rgb': '192 57 43',
       },
     },
+    'meridian-twilight': {
+      // Phase 5 SDK smoke-test skin — generated via `npm run skin:new -- meridian-twilight`,
+      // edited only in `src/ui/skin/meridian-twilight.css`. Zero JS edits beyond this entry.
+      id: 'meridian-twilight',
+      label: 'Meridian Blue · Twilight',
+      family: 'meridian',
+      stylesheet: './src/ui/skin/meridian-twilight.css',
+      manifest: MERIDIAN_MANIFEST,
+      colorScheme: 'dark',
+      metaThemeColor: '#1a1626',
+      documentBg: '#15111e',
+      pen1Color: '#e4dff5',
+      cssVars: {
+        '--vectura-bg-rgb': '26 22 38',
+        '--vectura-panel-rgb': '36 30 53',
+        '--vectura-border-rgb': '58 48 80',
+        '--vectura-text-rgb': '228 223 245',
+        '--vectura-muted-rgb': '122 113 147',
+        '--vectura-accent-rgb': '156 142 240',
+        '--vectura-danger-rgb': '227 102 112',
+      },
+    },
   };
   window.Vectura.ALGO_DEFAULTS = {
     wavetable: {
