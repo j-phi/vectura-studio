@@ -1,4 +1,4 @@
 (() => {
   window.Vectura = window.Vectura || {};
-  window.Vectura.APP_VERSION = '0.9.92';
+  window.Vectura.APP_VERSION = '0.9.94';
 })();
