@@ -5126,6 +5126,11 @@
       this.bindGlobal();
       this.bindShortcuts();
       this.bindInfoButtons();
+      // Phase 3 closure: activate the window-level drag-drop router.
+      // Routes .vectura → openVecturaFile, .svg → importSvgFile.
+      try {
+        window.Vectura?.UI?.Menus?.DragDropRouter?.attach?.(this);
+      } catch (_) { /* missing module is non-fatal */ }
       this.initLeftPanelSections();
       this.initAboutSection();
       this.initAlgorithmTransformSection();
@@ -8220,6 +8225,12 @@
   // Phase 3 closure: bind layer filter dropdown (composes UI.overlays.Menu).
   if (window.Vectura?.UI?.Menus?.LayerFilter?.bind) {
     window.Vectura.UI.Menus.LayerFilter.bind({ getEl });
+  }
+
+  // Phase 3 closure: bind window-level drag-drop router (composes
+  // UI.overlays.DragDropOverlay). Activated when the UI is constructed.
+  if (window.Vectura?.UI?.Menus?.DragDropRouter?.bind) {
+    window.Vectura.UI.Menus.DragDropRouter.bind({});
   }
 
   // Phase 3: register modals/help-shortcuts.js. No IIFE-local deps; the
