@@ -8217,6 +8217,11 @@
     window.Vectura.UI.Menus.LayerContext.bind({ getEl });
   }
 
+  // Phase 3 closure: bind layer filter dropdown (composes UI.overlays.Menu).
+  if (window.Vectura?.UI?.Menus?.LayerFilter?.bind) {
+    window.Vectura.UI.Menus.LayerFilter.bind({ getEl });
+  }
+
   // Phase 3: register modals/help-shortcuts.js. No IIFE-local deps; the
   // module body is fully static markup and composes the legacy this.openModal
   // primitive (which still lives on UI.prototype below).

@@ -573,54 +573,22 @@
     });
 
     // ── Layers V8: filter ────────────────────────────────────────
-    const filterBtn = document.getElementById('layer-filter-btn');
-    const filterMenu = document.getElementById('layer-filter-menu');
-    const FILTER_OPTS = [
-      { v: 'all', l: 'All Layers' }, { v: 'groups', l: 'Groups Only' },
-      { v: 'shape', l: 'Shape' }, { v: 'svg', l: 'SVG' }, { v: 'polygon', l: 'Polygon' }, { v: 'pen', l: 'Pen' },
-      { v: 'flowfield', l: 'Flowfield' }, { v: 'wavetable', l: 'Wavetable' },
-      { v: 'hyphae', l: 'Hyphae' }, { v: 'topo', l: 'Topo' },
-      { v: 'spiral', l: 'Spiral' }, { v: 'rings', l: 'Rings' },
-      { v: 'grid', l: 'Grid' }, { v: 'boids', l: 'Boids' },
-      { v: 'attractor', l: 'Attractor' }, { v: 'lissajous', l: 'Lissajous' },
-      { v: 'harmonograph', l: 'Harmonograph' }, { v: 'rainfall', l: 'Rainfall' },
-      { v: 'phylla', l: 'Phylla' }, { v: 'petalisDesigner', l: 'Petalis Designer' },
-      { v: 'shapePack', l: 'Shapepack' },
-    ];
-    const buildFilterMenu = () => {
-      if (!filterMenu) return;
-      filterMenu.innerHTML = '';
-      FILTER_OPTS.forEach((o) => {
-        const row = document.createElement('div');
-        row.className = 'lvl-filter-opt' + (this.layerFilterType === o.v ? ' sel' : '');
-        row.innerHTML = `<span style="width:10px;font-size:9px">${this.layerFilterType === o.v ? '✓' : ''}</span><span>${o.l}</span>`;
-        row.addEventListener('click', () => {
-          this.layerFilterType = o.v;
-          this.layerFilterOpen = false;
-          filterMenu.classList.add('hidden');
-          filterBtn?.classList.toggle('active', o.v !== 'all' || !!this.layerSearchQ);
-          this.renderLayers();
-        });
-        filterMenu.appendChild(row);
-      });
-    };
-    filterBtn?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.layerFilterOpen = !this.layerFilterOpen;
-      if (this.layerFilterOpen) { buildFilterMenu(); filterMenu?.classList.remove('hidden'); }
-      else filterMenu?.classList.add('hidden');
-    });
+    // Phase 3 closure: layer filter dropdown migrated to UI.Menus.LayerFilter
+    // (composes UI.overlays.Menu). The bespoke #layer-filter-menu DOM element
+    // remains in index.html as a stub; the new menu is owned by the floating
+    // Menu primitive and attaches its own click handler on #layer-filter-btn.
+    if (window.Vectura?.UI?.Menus?.LayerFilter?.attach) {
+      window.Vectura.UI.Menus.LayerFilter.attach(this);
+    }
 
     // ── Layers V8: close menus on outside click ──────────────────
+    // The new LayerFilter menu primitive handles its own outside-click guard;
+    // we still need to close the legacy add-menu + algo-submenu below.
     document.addEventListener('click', () => {
       if (this.layerAddOpen) {
         this.layerAddOpen = false;
         addMenuEl?.classList.add('hidden');
         algoSubmenuEl.style.display = 'none';
-      }
-      if (this.layerFilterOpen) {
-        this.layerFilterOpen = false;
-        filterMenu?.classList.add('hidden');
       }
     });
   }
