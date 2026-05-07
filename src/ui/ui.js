@@ -6035,130 +6035,30 @@
       }
     }
 
+    // Delegated to src/ui/shell/pane-left.js (Phase 2 step 3).
     getLeftSectionDefaults() {
-      return {
-        algorithm: false,
-        algorithmTransform: true,
-        algorithmConfiguration: false,
-      };
+      return window.Vectura.UI.PaneLeft.getLeftSectionDefaults.call(this);
     }
-
     getLeftSectionMap() {
-      return {
-        algorithm: getEl('left-section-algorithm'),
-        algorithmConfiguration: getEl('left-section-algorithm-configuration'),
-      };
+      return window.Vectura.UI.PaneLeft.getLeftSectionMap.call(this);
     }
-
-    setLeftSectionCollapsed(key, collapsed, options = {}) {
-      const { persist = true } = options;
-      if (!SETTINGS.uiSections || typeof SETTINGS.uiSections !== 'object') {
-        SETTINGS.uiSections = { ...this.getLeftSectionDefaults() };
-      }
-      SETTINGS.uiSections[key] = Boolean(collapsed);
-      const sectionMap = this.getLeftSectionMap();
-      const section = sectionMap[key];
-      if (!section) return;
-      const body = section.querySelector('.left-panel-section-body');
-      section.classList.toggle('collapsed', Boolean(collapsed));
-      if (body) body.style.display = collapsed ? 'none' : '';
-      const sectionHeader = section.querySelector('.left-panel-section-header');
-      if (sectionHeader) sectionHeader.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-      if (!persist) return;
-      this.app.persistPreferencesDebounced?.();
+    setLeftSectionCollapsed(...args) {
+      return window.Vectura.UI.PaneLeft.setLeftSectionCollapsed.call(this, ...args);
     }
-
     initLeftPanelSections() {
-      const defaults = this.getLeftSectionDefaults();
-      if (!SETTINGS.uiSections || typeof SETTINGS.uiSections !== 'object') {
-        SETTINGS.uiSections = { ...defaults };
-      } else {
-        SETTINGS.uiSections = { ...defaults, ...SETTINGS.uiSections };
-      }
-      const sectionMap = this.getLeftSectionMap();
-      Object.entries(sectionMap).forEach(([key, section]) => {
-        if (!section) return;
-        const header = section.querySelector('.left-panel-section-header');
-        const collapsed = SETTINGS.uiSections[key] === true;
-        this.setLeftSectionCollapsed(key, collapsed, { persist: false });
-        if (!header) return;
-        header.onclick = () => {
-          const next = !section.classList.contains('collapsed');
-          this.setLeftSectionCollapsed(key, next);
-        };
-      });
+      return window.Vectura.UI.PaneLeft.initLeftPanelSections.call(this);
     }
-
-    setAlgorithmTransformCollapsed(collapsed, options = {}) {
-      const { persist = true } = options;
-      if (!SETTINGS.uiSections || typeof SETTINGS.uiSections !== 'object') {
-        SETTINGS.uiSections = { ...this.getLeftSectionDefaults() };
-      }
-      SETTINGS.uiSections.algorithmTransform = Boolean(collapsed);
-      const section = getEl('algorithm-transform-section');
-      if (!section) return;
-      const body = getEl('algorithm-transform-body') || section.querySelector('.global-section-body');
-      section.classList.toggle('collapsed', Boolean(collapsed));
-      if (body) body.style.display = collapsed ? 'none' : '';
-      const transformHeader = getEl('algorithm-transform-header');
-      if (transformHeader) transformHeader.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-      if (!persist) return;
-      this.app.persistPreferencesDebounced?.();
+    setAlgorithmTransformCollapsed(...args) {
+      return window.Vectura.UI.PaneLeft.setAlgorithmTransformCollapsed.call(this, ...args);
     }
-
     initAlgorithmTransformSection() {
-      const section = getEl('algorithm-transform-section');
-      const header = getEl('algorithm-transform-header');
-      if (!section) return;
-      const defaults = this.getLeftSectionDefaults();
-      if (!SETTINGS.uiSections || typeof SETTINGS.uiSections !== 'object') {
-        SETTINGS.uiSections = { ...defaults };
-      } else {
-        SETTINGS.uiSections = { ...defaults, ...SETTINGS.uiSections };
-      }
-      const collapsed = SETTINGS.uiSections.algorithmTransform !== false;
-      this.setAlgorithmTransformCollapsed(collapsed, { persist: false });
-      if (!header) return;
-      header.onclick = () => {
-        const next = !section.classList.contains('collapsed');
-        this.setAlgorithmTransformCollapsed(next);
-      };
+      return window.Vectura.UI.PaneLeft.initAlgorithmTransformSection.call(this);
     }
-
-    setAboutVisible(visible, options = {}) {
-      const { persist = true } = options;
-      SETTINGS.aboutVisible = visible !== false;
-      if (!SETTINGS.uiSections || typeof SETTINGS.uiSections !== 'object') {
-        SETTINGS.uiSections = { ...this.getLeftSectionDefaults() };
-      }
-      SETTINGS.uiSections.algorithmAbout = SETTINGS.aboutVisible;
-      const about = getEl('algo-about');
-      if (about) about.style.display = SETTINGS.aboutVisible ? '' : 'none';
-      if (!persist) return;
-      this.app.persistPreferencesDebounced?.();
+    setAboutVisible(...args) {
+      return window.Vectura.UI.PaneLeft.setAboutVisible.call(this, ...args);
     }
-
     initAboutSection() {
-      const closeBtn = getEl('algo-about-close');
-      const remembered =
-        SETTINGS.uiSections &&
-        typeof SETTINGS.uiSections === 'object' &&
-        Object.prototype.hasOwnProperty.call(SETTINGS.uiSections, 'algorithmAbout')
-          ? SETTINGS.uiSections.algorithmAbout
-          : undefined;
-      if (remembered !== undefined) {
-        SETTINGS.aboutVisible = remembered !== false;
-      } else if (SETTINGS.aboutVisible === undefined) {
-        SETTINGS.aboutVisible = true;
-      }
-      this.setAboutVisible(SETTINGS.aboutVisible, { persist: false });
-      if (closeBtn) {
-        closeBtn.onclick = (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          this.setAboutVisible(false);
-        };
-      }
+      return window.Vectura.UI.PaneLeft.initAboutSection.call(this);
     }
 
     buildHelpContent() {
@@ -12613,6 +12513,12 @@
   // loads BEFORE ui.js (see index.html script tags).
   if (window.Vectura?.UI?.MenuBar?.bind) {
     window.Vectura.UI.MenuBar.bind({ getEl });
+  }
+
+  // Phase 2 step 3: hand legacy IIFE-locals to shell/pane-left.js so its
+  // extracted left-panel section methods see the same `getEl` helper.
+  if (window.Vectura?.UI?.PaneLeft?.bind) {
+    window.Vectura.UI.PaneLeft.bind({ getEl });
   }
 
   window.Vectura = window.Vectura || {};
