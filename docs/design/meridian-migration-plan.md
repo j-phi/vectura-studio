@@ -13,8 +13,8 @@
 | **Phase 1** — Component library | ✅ done | `16ec81d` `440c84a` `d959a9b` `554ee88` `65791e5` `c7fa0db` |
 | **Phase 2** — Shell, panels, orchestrator | ✅ done | `a16ad57` `313d427` `7ca4795` `5c2edcc` `3a8b7be` `2692993` `2de5154` `c28bb4a` `c841598` `f377edb` `886499b` `ede23da` `8eddbf4` `360cbdc` `540dad5` `c98e9db` `243eccf` `56848c9` `e0bae17` `accfd99` `5529209` `562f9b2` `9628561` |
 | **Phase 3** — Modals, overlays, menus | ✅ done | `ff783c5` `6f277ba` `af0fd16` `bb36595` `4ca409a` `5ba54f9` `45f3c8c` `5d36f0a` `8597017` `e0c0061` `4c778b3` `123a939` `c79a35f` `fc00432` |
-| **Phase 4** — Editors & specialized surfaces | ⏳ next | — |
-| **Phase 5** — Polish, SDK, cleanup | ⏳ pending | — |
+| **Phase 4** — Editors & specialized surfaces | ✅ done | `2cf0cb1` `6bcef78` `6c1d403` |
+| **Phase 5** — Polish, SDK, cleanup | ⏳ next | — |
 
 **Where work lives:** `/Users/jayphi/Documents/github/vectura-studio-meridian` (worktree on branch `meridian-blue-skin`). Main repo at `/Users/jayphi/Documents/github/vectura-studio` is untouched on `main`.
 
@@ -1375,7 +1375,138 @@ Zero `pageerror`, zero `console.error`. The lone warning was a pre-existing beni
 
 ---
 
-## Appendix: Resuming from Phase 4 (editors & specialized surfaces)
+## Phase 4 actuals (editors + specialized surfaces — DONE)
+
+Three commits on `meridian-blue-skin`: `2cf0cb1`, `6bcef78`, `6c1d403`.
+
+**Files shipped (created / modified / deleted):**
+
+- *Created:*
+  - `src/ui/components/empty-state-illustrations.js` — composes the Phase 1 `UI.overlays.EmptyState` primitive with four canned monochrome `--ui-muted` SVGs (layers / canvas / palette / patterns). Exposes `UI.EmptyStates = { ICONS, attach }`.
+  - `src/ui/overlays/progress-bar.js` — indeterminate progress bar primitive with a stack model (concurrent jobs share one physical bar). `show() / hide() / wrap() / wrapSync()`. Lazy-mount host node `#vectura-progress-bar-host`. Reduced-motion fallback (animation: none, fill 100%, opacity 0.55) lives in `motion.css`.
+  - `src/ui/menus/engine-progress-tap.js` — wraps `app.engine.generate` so calls exceeding ~200 ms surface a brief progress flash. Idempotent via `WeakSet`. Pure UI-layer observation; engine semantics untouched.
+  - `tests/unit/components/empty-state-illustrations.test.js` (5 tests).
+  - `tests/unit/overlays/progress-bar.test.js` (5 tests).
+  - `tests/unit/menus/engine-progress-tap-compile.test.js` (4 tests).
+  - `tests/integration/menus/empty-state-and-progress.test.js` (5 tests).
+  - `tests/integration/petal-designer-roundtrip.test.js` (3 tests).
+  - `tests/integration/pattern-designer-roundtrip.test.js` (3 tests).
+
+- *Modified:*
+  - `src/ui/skin/components.css` (740 → 891 lines, +151) — three new rule blocks scoped to `[data-ui-skin^="meridian"]`: petal-designer chrome (window/inline frame, header, tool buttons, profile-editor cards, slider labels), pattern-designer chrome (modal/inline frame, header, `.pd-tool-btn` / `.pd-action-btn` / `.pd-fill-btn`, status bar, validation header), touch-modifier-bar chrome (background, button states). Classic skins keep today's styles via the `data-ui-skin` scoping.
+  - `src/ui/skin/motion.css` (54 → 89 lines, +35) — `@keyframes progress-indeterminate`, `.vectura-progress-bar` + `.vectura-progress-bar-fill` component CSS, reduced-motion fallback for the progress bar.
+  - `src/ui/ui-file-io.js` — `startProgress()` helper and `try/finally` wraps around `saveVecturaFile()` and `exportSVG()` so the bar always shows during the operation and dones afterward, even on throw. Toast wiring from Phase 3 unchanged.
+  - `src/ui/_ui-legacy.js` (8,328 → 8,335 lines, +7 net) — boot-time `EngineProgressTap.attach(this)` mirrors the Phase 3 `DragDropRouter` pattern. `_buildPatternFillPanel()` empty branch swapped from a bare `<p>` to `UI.EmptyStates.attach({ kind: 'patterns', … })` (with legacy fallback if EmptyStates is missing).
+  - `src/ui/panels/layers-panel.js` — when `allLayers.length === 0`, renders `UI.EmptyStates.attach({ kind: 'layers', … })` inside `#layer-list`.
+  - `index.html` — three new `<script>` tags: `components/empty-state-illustrations.js`, `overlays/progress-bar.js`, `menus/engine-progress-tap.js`.
+
+- *Deleted:* none.
+
+**Chrome re-skin scope per file (lines touched + behavior changes):**
+
+| File | Lines touched | Behavior change |
+|---|---|---|
+| `src/ui/ui-petal-designer.js` | **0** | None. Re-skin is purely additive CSS scoped to `[data-ui-skin^="meridian"]`. Diff guardrail (§2.12) automatically satisfied. |
+| `src/ui/ui-pattern-designer.js` | **0** | None. Same approach. |
+| `src/ui/ui-touch.js` | **0** | None. Touch modifier bar styled via additive CSS only. |
+
+The plan permitted "color tokens, fonts, spacing, button styles only" in those JS files; in practice we accomplished all of that without touching them at all by leaning on the Meridian token system + the existing legacy class names that the JS emits. This is a stronger result than the plan prescribed: Phase 5 cleanup will not need a follow-up to re-touch petal/pattern/touch JS.
+
+**`_ui-legacy.js` line count over Phase 4:**
+
+| Checkpoint | Lines |
+|---|---|
+| Phase 3 final close | 8,328 |
+| **Phase 4 final close (this commit)** | **8,335** |
+
+The +7 lines are: `EngineProgressTap.attach(this)` boot block (5) + the `try/catch` around it (2). The Pattern empty-state swap inside `_buildPatternFillPanel` is a net +14 with the inline EmptyStates CTA, but the legacy fallback branch (`else { … }`) accounts for the rest. The thin-orchestrator goal is still pending; Phase 5 cleanup will tackle it.
+
+**Phase 3 deferrals — status carried into Phase 4:**
+
+| Deferred item | Status at Phase 4 close |
+|---|---|
+| Layer-add submenu menu wiring | **Still deferred to Phase 5.** Bespoke `#layer-add-menu` handler at `src/ui/shortcuts.js:517-565` works correctly. `UI.overlays.Menu` does not yet support submenus / grouping; extending it is itself a Phase 5 SDK enhancement. |
+| Pen palette dropdown menu wiring | **Still deferred to Phase 5.** Bespoke search-input + swatch-grid at `src/ui/panels/pens-panel.js:141-219`. Likely needs a new `UI.Menus.Palette` composing `overlays/Menu` for the dropdown chrome and rendering custom items. |
+| Primitive promotion (`this.openModal` → `UI.overlays.Modal`) | **Still deferred to Phase 5.** Legacy `openModal` already covers focus-trap / Esc / click-outside; the primitive's marginal gain across all 7 modals is small and the regression risk is non-trivial. Phase 5 should also evaluate whether the primitive can shim the legacy class names rather than rewriting CSS. |
+
+Phase 4 prioritized acceptance-test coverage and chrome re-skin over carry-over. None of the three carry-overs blocks Phase 5 polish work; they are clean enhancements that can be tackled alongside the SDK.
+
+**Visual baseline updates:** none. The chrome re-skin is scoped to `[data-ui-skin^="meridian"]`, so classic skin renders are byte-identical. The 13 visual baselines (which exercise classic skins) all pass at 0-px diff.
+
+**Test totals over Phase 4:**
+
+| Suite | Phase 3 final | Phase 4 step 1 (overlays) | Phase 4 step 2 (empty-state) | **Phase 4 final** |
+|---|---|---|---|---|
+| Unit | 701 | 715 | 715 | **715** |
+| Integration | 103 | 103 | 108 | **114** |
+| Visual | 13 | 13 | 13 | **13** |
+| Perf | 2 | 2 | 2 | **2** |
+
+(+14 unit and +11 integration this run; 3 unit-test files cover the new primitives + tap, 3 integration test files cover empty-state/progress wire-ups + petal-designer roundtrip + pattern-designer roundtrip.)
+
+**Browser smoke (this run, headless Chromium via Playwright against `python3 -m http.server 8766`):**
+
+```
+[smoke] modules state: { EmptyStates:✓ ProgressBar:✓ EngineProgressTap:✓ patchedGenerate:✓ skin:dark
+                         petalDesignerOpen:✓ patternDesignerOpen:✓ }
+[smoke] progress bar visible→hidden: { visible: true, hidden: true }
+[smoke] empty-state on no-layers: true
+[smoke] errs: 0
+```
+
+Zero `pageerror`, zero `console.error`. Skin cycle (`toggleTheme()` x2) completed without errors.
+
+**Patterns / gotchas Phase 5 (cleanup) must know:**
+
+1. **`getThemeToken` is referenced as a global inside `ui-petal-designer.js` IIFE.** In production it shadows the UI prototype method via `var getThemeToken = …` somewhere in the legacy chain; in JSDOM the petal-designer integration test had to install a `window.getThemeToken` shim. Phase 5 should consider promoting `getThemeToken` to a real global (`window.Vectura.UI.tokens.get` already exists from Phase 0) so the petal/pattern designer files stop closing over an implicit global.
+
+2. **JSDOM `HTMLCanvasElement.getContext('2d')` returns `null`.** Both designer integration tests stub a Proxy-based no-op 2D context. This is standard for JSDOM — Phase 5 e2e (Playwright) tests should keep using the real browser context.
+
+3. **EmptyState illustrations use `currentColor` exclusively.** The primitive's host element sets `color: var(--ui-muted)`, so each SVG inherits the muted skin token. Phase 5 must ensure the `--ui-muted` token is set in every skin file (it already is in classic + meridian; verify when adding `meridian-twilight` SDK demo).
+
+4. **Progress bar hostId is `#vectura-progress-bar-host`.** Phase 5 cleanup must NOT delete this DOM node when ripping out `_ui-legacy.js` — the lazy host is created on first `show()` and lives on `document.body`. There's no init-time mount.
+
+5. **`EngineProgressTap.attach` is idempotent on engine identity (WeakSet).** If Phase 5 ever swaps `app.engine` (e.g., on project load reset), the new engine instance gets re-tapped automatically since the WeakSet only tracks the previous engine reference.
+
+6. **Phase 4 chrome re-skin is purely additive CSS.** Phase 5 must NOT remove the `[data-ui-skin^="meridian"] .petal-* { … }` blocks in `components.css` when stripping legacy `--color-*` aliases — those blocks consume `--ui-*` tokens, not legacy aliases.
+
+7. **`_ui-legacy.js` cleanup remains the elephant.** 8,335 lines after Phase 4 (was 9,425 at Phase 2 close). Each Phase 5 cleanup PR should aim to thin it further (target: zero, then `git rm`).
+
+8. **Three chrome surfaces did not need JS edits.** The plan §"Phase 4" prescribed JS edits in petal-designer / pattern-designer / touch satellites; we accomplished the re-skin without any. Phase 5 should not re-open those files for further chrome work — additive CSS is the established lever.
+
+---
+
+## Appendix: Resuming from Phase 5 (polish, SDK, cleanup)
+
+Phase 4 is **fully complete.** Empty-state illustrations ship in two surfaces (layer list + pattern fill panel), the indeterminate progress bar wires three call sites (save / export / engine.generate>200ms), petal/pattern/touch chrome re-skin is byte-identical CSS-only with zero JS edits, and three new Phase 1 primitives (EmptyStates, ProgressBar, EngineProgressTap) ship with full unit + integration coverage. Phase 5 starts the polish + SDK + cleanup pass per §"Phase 5" earlier in this plan (line 716).
+
+After clearing context, the fastest way to pick up Phase 5:
+
+1. `cd /Users/jayphi/Documents/github/vectura-studio-meridian` (worktree on branch `meridian-blue-skin`).
+2. `git log --oneline -5` — confirm HEAD is the Phase 4 closure docs commit. The most recent implementation commits are `2cf0cb1` (overlays + tap), `6bcef78` (empty-state wire-up), `6c1d403` (chrome re-skin).
+3. Confirm tests are green before changing anything: `npm run test:unit && npm run test:integration && npm run test:visual && npm run test:perf` — should print **715 unit, 114 integration, 13 visual, 2 perf** — all green.
+4. **Phase 5 target: SDK + reduced-motion compliance + a11y + cleanup.** Read §"Phase 5" earlier in this plan (line 716). The high-level scope:
+   - **SDK (skin authoring kit):** `src/ui/skin/_template.css`, `scripts/skin-new.js`, `npm run skin:new`, `docs/skin-authoring.md`. Smoke-test by adding `meridian-twilight` (or accept-test variant) using only the SDK (zero JS edits beyond the manifest entry in `defaults.js`).
+   - **Reduced-motion compliance pass:** every keyframe respects `prefers-reduced-motion`. The Phase 4 progress bar already has a fallback; verify all other keyframes (`thumb-release`, `fx-pulse-fill`, `btn-press`) also collapse. Add the pass to the test matrix.
+   - **Keyboard a11y audit:** Tab order, focus rings, Esc paths through every modal + menu + designer surface.
+   - **Cleanup deletions** (concrete schedule per plan §"Phase 5" line 723):
+     - `src/ui/_ui-legacy.js` (8,335 lines) — confirm zero `<script src>` references, then `git rm`. **The thin-orchestrator goal:** before deletion, lift the remaining ~50 prototype methods + ~30 IIFE locals into proper panel/satellite modules. This is the largest single Phase 5 task.
+     - `styles.css` — confirm every selector has been migrated to `src/ui/skin/{tokens,components,motion,*.css}`, then `git rm`. Visual-baseline diff must be 0 px.
+     - Legacy `--color-*` aliases inside skin CSS files. Pre-delete: `rg "var\(--color-" src/ tests/` returns zero hits.
+     - Drop `data-theme` mirror attribute. Pre-drop: `rg 'data-theme[\"\\=\\]]' src/ tests/` returns zero hits in JS code AND `rg '\\[data-theme' src/ui/skin/` returns zero hits. The `data-theme` write in `app.js:applyTheme` is removed in this same PR.
+   - **Final visual sweep** with baseline updates if any meridian-skin baselines change after the cleanup.
+   - **Doc updates:** `README.md`, `CHANGELOG.md`, `plans.md`, `docs/agentic-harness-strategy.md`, `AGENTS.md`.
+5. **Carry-over deferred items (from Phase 3 → Phase 4 → Phase 5, now mandatory):**
+   - **Layer-add submenu menu wiring** (`src/ui/shortcuts.js:517-565`) — extend `UI.overlays.Menu` to support submenus + custom item renderers, then migrate the bespoke handler. The SDK work in Phase 5 is a natural touch-point for this Menu primitive enhancement.
+   - **Pen palette dropdown menu wiring** (`src/ui/panels/pens-panel.js:141-219`) — needs a new `UI.Menus.Palette` that composes `overlays/Menu` for chrome and renders custom items (search input + color swatch grid).
+   - **Primitive promotion (`this.openModal` → `UI.overlays.Modal`)** — pick an approach (CSS rewrite vs class-name shim) and apply across the 7 centered modals. Legacy already covers focus-trap / Esc / click-outside.
+6. **Compile-gate-test-first pattern (locked since Phase 2):** every cleanup or SDK extraction starts with a `tests/unit/<surface>-compile.test.js`. Per-surface integration test under `tests/integration/<surface>.test.js`.
+7. **Phase 5 does NOT touch (without explicit user request):** `src/render/renderer.js`, `src/core/`, `src/config/`. Stay in `src/ui/` (panels, satellites, menus, overlays, skin, modals) and `index.html` (script load order if a new module ships).
+8. **Phase 5 wrap-up:** when all Phase 5 commits have landed and `npm run test:ci` is green, run the Phase wrap-up protocol (§"Phase wrap-up protocol (mandatory)" at the top of this plan): flip Phase 5 from `⏳` to `✅`, write a "Phase 5 actuals" note (this is the final "actuals" — no Phase 6 to resume into), update memory, commit the closeout, and announce migration completion.
+
+---
+
+## Old appendix (superseded by "Resuming Phase 5" above): Resuming from Phase 4
 
 Phase 3 is **fully complete.** All seven modals are extracted, both mixins are dissolved, four menu wirings ship, three overlay wire-ups (toast / tooltip / drag-drop) are live, and the headless browser smoke is clean. Phase 4 starts the editor-and-specialized-surface re-skin per §"Phase 4" earlier in this plan (line 700).
 
