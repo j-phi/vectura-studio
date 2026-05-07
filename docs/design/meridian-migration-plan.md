@@ -12,7 +12,7 @@
 | **Phase 0** — Skin foundation | ✅ done | `7d9f426` (+ graphify rebuild `e442a4b`) |
 | **Phase 1** — Component library | ✅ done | `16ec81d` `440c84a` `d959a9b` `554ee88` `65791e5` `c7fa0db` |
 | **Phase 2** — Shell, panels, orchestrator | ✅ done | `a16ad57` `313d427` `7ca4795` `5c2edcc` `3a8b7be` `2692993` `2de5154` `c28bb4a` `c841598` `f377edb` `886499b` `ede23da` `8eddbf4` `360cbdc` `540dad5` `c98e9db` `243eccf` `56848c9` `e0bae17` `accfd99` `5529209` `562f9b2` `9628561` |
-| **Phase 3** — Modals, overlays, menus | ⏳ next | — |
+| **Phase 3** — Modals, overlays, menus | ⏳ in progress (1/7 modals done) | `ff783c5` |
 | **Phase 4** — Editors & specialized surfaces | ⏳ pending | — |
 | **Phase 5** — Polish, SDK, cleanup | ⏳ pending | — |
 
@@ -1045,7 +1045,71 @@ If all 13 steps pass and `npm run test:ci` is green, the migration is complete.
 
 ---
 
-## Appendix: Resuming from Phase 3
+## Phase 3 step 1 actuals (1 of 7 modals shipped)
+
+**Status: in progress.** Phase 3 is intentionally being delivered as a sequence of per-modal commits rather than a single phase-spanning push, per the user's directive ("Commit per modal so progress is durable"). Step 1 lands the smallest single-purpose modal — Help / Shortcuts — and proves the modal-extraction pattern. The remaining 6 modals + 4 menu wirings + mixin dissolution are queued as Phase 3 steps 2..N (see Resume appendix).
+
+**Commit:** `ff783c5` (`feat(skin): Phase 3 — extract modals/help-shortcuts.js`).
+
+**Files shipped:**
+
+- `src/ui/modals/help-shortcuts.js` — 394 lines. Lifts `buildHelpContent` (290-line static-markup body), `_applyHelpPlatform`, and `openHelp` from `_ui-legacy.js:6051-6385`. Registered as `window.Vectura.UI.Modals.HelpShortcuts`. Composition contract: still calls `this.openModal` / `this.closeModal` / `this.modal` (all of which remain on `UI.prototype` in legacy until a future modal-overlay primitive promotion).
+- `tests/unit/modals/help-shortcuts-compile.test.js` — 6 tests (compile gate, bind tripwire, all 7 tabs render, platform toggle).
+- `tests/integration/modals/help-shortcuts.test.js` — 5 tests (lifecycle: opens via `app.ui.openHelp`, initial-tab logic for `focusShortcuts` true/false, tab-button click switches active panel, platform toggle swaps `[data-mac]` text, `closeModal()` removes `.open` class).
+- `index.html` — added `<script src="./src/ui/modals/help-shortcuts.js" defer></script>` BEFORE `_ui-legacy.js`.
+- `src/ui/_ui-legacy.js` — `buildHelpContent` / `_applyHelpPlatform` / `openHelp` bodies replaced with 1-line delegators. New `bind()` call added to the bottom-of-IIFE bind block.
+
+**DI bag:** `{}` (no IIFE-local deps — body is fully static template-literal markup and depends only on `navigator.platform` for the auto-detect).
+
+**Line reduction:** `_ui-legacy.js` 9,425 → 9,112 (-313 lines, -3.3%).
+
+**Test totals before → after:** 642 unit + 66 integration + 13 visual + 2 perf → **648 unit + 71 integration + 13 visual + 2 perf** (+6 unit, +5 integration). All four suites green.
+
+**Browser smoke:** NOT run for this step. The same risk profile that drove the Phase 2 step-6 browser-smoke requirement (script-tag reorder + new global write) applies here: the new `<script src="./src/ui/modals/help-shortcuts.js">` tag must load BEFORE `_ui-legacy.js`. Integration tests cover the full `loadVecturaRuntime({ useIndexHtml: true })` path so the script-load order is exercised under JSDOM, but a real browser smoke (open `python -m http.server`, click Help button, exercise 7 tabs + platform toggle) should be done as part of the larger Phase-3 closeout when more modals land.
+
+**Patterns / gotchas Phase 3 step 2+ must know:**
+
+1. **`Modals` namespace anchored.** `window.Vectura.UI.Modals = { HelpShortcuts: {...} }`. Future modals attach to the same anchor (`Modals.ColorPicker`, `Modals.ExportSVG`, etc.). Compile gates assert the same shape: `expect(w.Vectura.UI.Modals).toBeTruthy()` then drill in.
+2. **Composition contract preserved, NOT replaced.** The modal still calls `this.openModal(...)` (which lives in legacy). Phase 3 has not yet promoted the modal-overlay primitive at `src/ui/overlays/modal.js` to be the open/close primitive. Each modal extraction can defer that promotion or do it incrementally. Recommended: do all 7 modal lifts first (each composing legacy `this.openModal`), THEN do a single "promote `overlays/modal.js`" commit that swaps every modal to the new primitive at once. This keeps each modal-extraction commit small and reviewable.
+3. **`this.modal.bodyEl` is a stable handle.** The legacy `createModal()` returns `{ overlay, titleEl, bodyEl }` and stashes it on `this.modal`. Every extracted modal's `openHelp`-style "open + wire" method assumes `this.modal.bodyEl.querySelector(...)` works after `openModal()`. Don't break this contract during the primitive promotion.
+4. **Test-helper `loadVecturaRuntime({ useIndexHtml: true })` parses `index.html` automatically** — adding new modal `<script>` tags between `shortcuts.js` and `_ui-legacy.js` flows through without code changes to the test helper. Verified working for `help-shortcuts.js`.
+5. **Static-markup modals are the easiest extractions.** `help-shortcuts` had no IIFE-local deps. Document Setup and Grid Settings have markup currently in `index.html:540-740` — those are the natural step-2 / step-3 targets (lift markup INTO JS-built DOM, strip from `index.html`). The harder ones — Color Picker (HSV + hex math), Export SVG (11 methods + optimization preview pipeline), Rainfall Silhouette (file I/O) — should land later.
+6. **Carry-over deferred items still pending** (per Phase 2 step 5 closure):
+   - Mixin dissolution for `auto-colorize-panel.js` / `noise-rack-panel.js` — `Object.assign(UI.prototype, ...)` lines still in `_ui-legacy.js` ~9253-9260.
+   - ~50 surviving prototype methods + ~30 IIFE locals in `_ui-legacy.js`. Step 1 deleted 325 lines of method body but the closure-locals (used by other un-extracted methods) are unchanged.
+   - `refreshDocumentUnitsUi` / `refreshThemeUi` cross-call resolution.
+
+---
+
+## Appendix: Resuming Phase 3 step 2 (6 modals + 4 menus + mixin dissolution remaining)
+
+Phase 3 is in progress. Step 1 (`ff783c5`) extracts the Help / Shortcuts modal and proves the pattern. Six modals, four menus, and the mixin-dissolution cleanup remain.
+
+After clearing context, the fastest way to pick up Phase 3 step 2:
+
+1. `cd /Users/jayphi/Documents/github/vectura-studio-meridian` (the worktree, on branch `meridian-blue-skin`).
+2. `git log --oneline -5` — confirm HEAD is the docs commit recording Phase 3 step 1 closure (the latest `docs(skin):` commit). The implementation commit is `ff783c5`.
+3. Confirm tests are green before changing anything: `npm run test:unit && npm run test:integration && npm run test:visual && npm run test:perf` (648 unit, 71 integration, 13 visual, 2 perf — all green at end of step 1).
+4. **Phase 3 step 2 target: pick the next-smallest modal.** Recommended order, smallest → largest:
+   - **Step 2: Grid Settings.** Markup lives in `index.html:747` (`#grid-settings-panel`). Lift the markup into `src/ui/modals/grid-settings.js` as JS-built DOM (compose `overlays/modal.js` if you want to also start the primitive promotion, OR keep using legacy `this.openModal` like step 1 did). Strip the `<div id="grid-settings-panel">` block from `index.html`. Single-purpose, small surface.
+   - **Step 3: Document Setup.** Same shape — markup in `index.html:540-740` (the `#settings-panel`). Larger (~200 lines of markup) but mechanically identical to Grid Settings.
+   - **Step 4: About modal.** NOTE: there is NO standalone "About" modal in `_ui-legacy.js` today — the About surface is the `#algo-about` description card in the left pane (delegated to `PaneLeft.initAboutSection`). Either re-scope step 4 to a different modal (e.g. an info-modal builder around `showInfo()` / `INFO[key]` at `_ui-legacy.js:7266`), or skip "About" and renumber.
+   - **Step 5: Color Picker.** `openColorModal({ title, value, onApply })` at `_ui-legacy.js:5845` (~155 lines). HSV + hex math — bigger, more state. Locate the supporting helpers (`getAnchoredColorProxyInput`, `openColorPickerAnchoredTo`) which are IIFE-locals.
+   - **Step 6: Export SVG.** `openExportModal()` at `_ui-legacy.js:5527` plus 10 supporting methods (optimization preview, settings panel, etc.). Largest single modal extraction. Plan to spend a full commit on this one.
+   - **Step 7: Rainfall Silhouette.** File-I/O heavy. Locate via `grep "rainfall.*[Ss]ilhouette\|silhouette" src/ui/_ui-legacy.js`.
+5. **Then menu wiring (steps 8-11):** compose `overlays/menu.js` instances for `#layer-add-menu`, `#palette-menu`, `#layer-filter-menu`, and the NEW layer right-click context menu. The trigger-handler logic for the first three lives in the legacy `bindShortcuts` body (now in `src/ui/shortcuts.js`); be careful not to lose any of that wiring.
+6. **Then mixin dissolution (step 12):** dissolve `_UIAutoColorizeMixin` and `_UINoiseRackMixin` into the panels' `bind()` bags. Mixin attachment in `_ui-legacy.js:9253-9260`. Add prototype delegators to `_ui-legacy.js` since the mixin currently provides them by direct `Object.assign`.
+7. **Then primitive promotion (step 13):** swap every modal's `this.openModal` / `this.closeModal` to use `Vectura.UI.Overlays.Modal` (the Phase 1 component-contract primitive). Single-commit refactor across all extracted modals. Validate `this.modal.bodyEl` callers continue to work via the new primitive's exposed handle.
+8. **Tooltip / DragDropOverlay / Toast wire-up (step 14):** per §3 lines 686-689 — replace every `info-btn`-triggered modal call site with `Vectura.UI.Overlays.Tooltip`; consolidate the SVG-import / `.vectura`-open / rainfall / pattern-import drag handlers into `Vectura.UI.Overlays.DragDropOverlay`; emit toasts on layer-add success, project save/load, export complete, and error states.
+9. **Compile-gate-test-first pattern:** every modal/menu extraction starts with a `tests/unit/modals/<surface>-compile.test.js` (matching the step 1 template). Add a per-modal integration test under `tests/integration/modals/<surface>.test.js` modeled on `help-shortcuts.test.js` (open via trigger, focus moves, tab cycles, Esc closes, click-outside opt-in, state preserved across open/close).
+10. **Browser smoke is now mandatory before the Phase 3 closeout commit.** Run `python -m http.server 8000`, exercise every extracted modal manually (open via menu/trigger, click around, close), every menu (layer add, palette, layer filter, right-click context), confirm toasts surface on save/load/export, drag-drop a `.vectura` and a `.svg`. Anything broken → fix BEFORE flipping Phase 3 to ✅.
+11. **Phase 3 closeout (when ALL modals + menus + mixin dissolution + primitive promotion + browser smoke are green):** flip Status table from `⏳ in progress` to `✅`, list every Phase 3 commit SHA, write a "Phase 3 actuals" note that supersedes this "Phase 3 step 1 actuals" note (or appends to it), rewrite this appendix as "Resuming from Phase 4", update memory, commit a `docs(skin):` closeout.
+
+**Phase 3 does NOT touch (without explicit user request):** `src/render/renderer.js`, `src/core/`, `src/config/`. Stay in `src/ui/` (overlays, panels, satellites, modals) and `index.html` (script load order + Document Setup / Grid Settings markup removal).
+
+---
+
+## Old appendix (superseded by "Resuming Phase 3 step 2" above): Resuming from Phase 3
 
 Phase 2 is complete (7 steps, 23 commits — including the docs commits). The Meridian skin migration's foundation, component library, shell, panels, orchestrator entry, and renderer token cache all ship. Phase 3 starts the modal/overlay/menu rewrite per §3 ("Phase 3" heading earlier in this plan).
 
