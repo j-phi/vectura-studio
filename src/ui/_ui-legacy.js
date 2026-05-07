@@ -8132,110 +8132,14 @@
       }
     }
 
-    loadNoiseImageFile(
-      file,
-      layer,
-      nameEl,
-      idKey = 'noiseImageId',
-      nameKey = 'noiseImageName',
-      target = null,
-      previewKey = ''
-    ) {
-      if (!file || !layer) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        const preview = reader.result;
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = img.naturalWidth || img.width;
-          canvas.height = img.naturalHeight || img.height;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) return;
-          ctx.drawImage(img, 0, 0);
-          const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const store = (window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {});
-          const id = `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-          store[id] = { width: data.width, height: data.height, data: data.data };
-          if (this.app.pushHistory) this.app.pushHistory();
-          const owner = target || layer.params;
-          if (!owner) return;
-          owner[idKey] = id;
-          owner[nameKey] = file.name;
-          if (target && target.type === 'image') {
-            owner.zoom = 0.02;
-            owner.imageWidth = owner.imageWidth ?? 1;
-            owner.imageHeight = owner.imageHeight ?? 1;
-            owner.shiftX = owner.shiftX ?? 0;
-            owner.shiftY = owner.shiftY ?? 0;
-          }
-          if (previewKey) owner[previewKey] = preview;
-          if (nameEl) nameEl.textContent = file.name;
-          this.storeLayerParams(layer);
-          this.app.regen();
-          this.app.render();
-          this.buildControls();
-          this.updateFormula();
-        };
-        img.src = reader.result;
-      };
-      reader.readAsDataURL(file);
+    // Delegated to src/ui/modals/image-asset.js (Phase 3 step 4).
+    loadNoiseImageFile(...args) {
+      return window.Vectura.UI.Modals.ImageAsset.loadNoiseImageFile.call(this, ...args);
     }
 
+    // Delegated to src/ui/modals/image-asset.js (Phase 3 step 4).
     openNoiseImageModal(layer, options = {}) {
-      const {
-        nameEl,
-        accept = 'image/*',
-        idKey = 'noiseImageId',
-        nameKey = 'noiseImageName',
-        title = 'Select Noise Image',
-        label = 'Noise Image',
-        description = 'Drop an image here or browse to select a PNG/JPG for noise sampling.',
-        dropLabel = 'Drop image here',
-      } = options;
-      const current = layer?.params?.[nameKey] || 'None selected';
-      const body = `
-        <div class="modal-section">
-          <div class="modal-ill-label">${label}</div>
-          <div class="modal-text text-xs text-vectura-muted mb-3">
-            ${description}
-          </div>
-          <div id="noise-dropzone" class="noise-dropzone">${dropLabel}</div>
-          <div class="flex items-center justify-between mt-3 gap-3">
-            <label class="text-xs text-vectura-muted">Browse</label>
-            <input id="noise-file-input" type="file" accept="${accept}" class="text-[10px] text-vectura-muted" />
-          </div>
-          <div class="text-[10px] text-vectura-muted mt-3">Current: ${current}</div>
-        </div>
-      `;
-      this.openModal({ title, body });
-      const bodyEl = this.modal.bodyEl;
-      const dropzone = bodyEl.querySelector('#noise-dropzone');
-      const fileInput = bodyEl.querySelector('#noise-file-input');
-      const handleFile = (file) => {
-        if (!file) return;
-        this.loadNoiseImageFile(file, layer, nameEl, idKey, nameKey);
-        this.closeModal();
-      };
-      if (dropzone) {
-        dropzone.addEventListener('dragover', (e) => {
-          e.preventDefault();
-          dropzone.classList.add('active');
-        });
-        dropzone.addEventListener('dragleave', () => dropzone.classList.remove('active'));
-        dropzone.addEventListener('drop', (e) => {
-          e.preventDefault();
-          dropzone.classList.remove('active');
-          const file = e.dataTransfer?.files?.[0];
-          handleFile(file);
-        });
-      }
-      if (fileInput) {
-        fileInput.onchange = () => {
-          const file = fileInput.files?.[0];
-          handleFile(file);
-        };
-      }
+      return window.Vectura.UI.Modals.ImageAsset.openNoiseImageModal.call(this, layer, options);
     }
 
     computeHarmonographPlotterData(layer) {
@@ -8859,6 +8763,15 @@
   // touch-primary devices, which now delegates to this module.
   if (window.Vectura?.UI?.Modals?.ColorPicker?.bind) {
     window.Vectura.UI.Modals.ColorPicker.bind({});
+  }
+
+  // Phase 3 step 4 (second modal): register modals/image-asset.js. Generic
+  // image-picker modal that powers the rainfall silhouette control AND the
+  // noise rack image source. Both legacy methods (openNoiseImageModal,
+  // loadNoiseImageFile) delegate here. Composes this.openModal /
+  // this.closeModal / this.app.pushHistory — no IIFE-local deps.
+  if (window.Vectura?.UI?.Modals?.ImageAsset?.bind) {
+    window.Vectura.UI.Modals.ImageAsset.bind({});
   }
 
   window.Vectura = window.Vectura || {};
