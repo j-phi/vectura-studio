@@ -41,6 +41,7 @@
   function refreshThemeUi() {
     const { getEl } = requireDeps();
     const SETTINGS = (G.Vectura && G.Vectura.SETTINGS) || {};
+    const THEMES = (G.Vectura && G.Vectura.THEMES) || {};
     const toggle = getEl('theme-toggle', { silent: true });
     const bgColorInput = getEl('inp-bg-color', { silent: true });
     const current = `${SETTINGS.uiTheme || 'dark'}`.toLowerCase();
@@ -57,6 +58,16 @@
       toggle.dataset.theme = current;
     }
     if (bgColorInput) bgColorInput.value = SETTINGS.bgColor || bgColorInput.value || '#ffffff';
+
+    const activeFamily = (THEMES[current] && THEMES[current].family) || 'meridian';
+    const familyModern = getEl('theme-family-modern', { silent: true });
+    const familyClassic = getEl('theme-family-classic', { silent: true });
+    [familyModern, familyClassic].forEach((btn) => {
+      if (!btn) return;
+      const isActive = btn.dataset.family === activeFamily;
+      btn.setAttribute('aria-checked', isActive ? 'true' : 'false');
+      btn.classList.toggle('is-active', isActive);
+    });
   }
 
   UI.ThemeSwitcher = {

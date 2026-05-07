@@ -88,14 +88,16 @@ describe('UI bootstrap – core panels', () => {
     expect(activeLayer?.penId).toBe('pen-1');
     expect(activeLayer?.color).toBe('#000000');
     expect(themeToggle.getAttribute('aria-label')).toContain('Light');
-    expect(themeColorMeta?.getAttribute('content')).toBe('#09090b');
+    // Lark now uses the meridian-style dark chrome (was classic #09090b → now meridian #1b1b1b).
+    expect(themeColorMeta?.getAttribute('content')).toBe('#1b1b1b');
 
     // Click 2: lark → light
     themeToggle.click();
     await Promise.resolve();
     expect(window.Vectura.SETTINGS.uiTheme).toBe('light');
     expect(themeToggle.getAttribute('aria-label')).toContain('Dark');
-    expect(themeColorMeta?.getAttribute('content')).toBe('#f5f5f5');
+    // Light is now meridian-styled (was classic #f5f5f5 → now meridian #efefef).
+    expect(themeColorMeta?.getAttribute('content')).toBe('#efefef');
 
     const state = window.app.captureState();
     expect(state.settings.uiTheme).toBeUndefined();

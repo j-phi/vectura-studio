@@ -1,11 +1,12 @@
 /*
- * Vectura Studio — skin/lark.css
+ * Vectura Studio — skin/classic-lark.css
  *
- * Legacy "Lark" palette (id unchanged), re-exposed as a skin file. See classic-dark.css
- * for the alias rationale.
+ * Legacy "Lark" palette (formerly id "lark"). Now demoted to id "classic-lark"
+ * because the primary "lark" slot is taken by the meridian-styled lark variant
+ * (./meridian-lark.css). See classic-dark.css for the alias rationale.
  */
 
-[data-ui-skin="lark"] {
+[data-ui-skin="classic-lark"] {
   --ui-bg: var(--color-bg);
   --ui-panel: var(--color-panel);
   --ui-panel-alt: var(--color-surface);

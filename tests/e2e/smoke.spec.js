@@ -517,7 +517,7 @@ test.describe('Vectura smoke interactions', () => {
         pen1: '#000000',
         layerColor: '#000000',
         bgColor: '#ffffff',
-        themeColor: '#09090b',
+        themeColor: '#1b1b1b',
       });
 
     await expect(themeToggle).toHaveAttribute('aria-label', /light theme/i);
@@ -534,7 +534,7 @@ test.describe('Vectura smoke interactions', () => {
       )
       .toEqual({
         theme: 'light',
-        themeColor: '#f5f5f5',
+        themeColor: '#efefef',
       });
 
     await expect(themeToggle).toHaveAttribute('aria-label', /dark theme/i);

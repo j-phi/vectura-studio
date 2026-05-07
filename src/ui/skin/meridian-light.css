@@ -6,6 +6,7 @@
  */
 
 :root,
+[data-ui-skin="light"],
 [data-ui-skin="meridian-light"] {
   --ui-bg: #efefef;
   --ui-panel: #fafafa;

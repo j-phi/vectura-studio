@@ -66,6 +66,15 @@
       </div>
       <div class="flex-1 overflow-y-auto p-4">
         <div class="control-group">
+          <label class="control-label">Theme</label>
+          <div id="theme-family-toggle" class="theme-family-toggle inline-flex w-full border border-vectura-border" role="radiogroup" aria-label="Theme family">
+            <button type="button" id="theme-family-modern" data-family="meridian" role="radio" aria-checked="true"
+              class="theme-family-option flex-1 text-xs py-1.5 px-2 text-vectura-muted hover:text-vectura-accent">Modern</button>
+            <button type="button" id="theme-family-classic" data-family="classic" role="radio" aria-checked="false"
+              class="theme-family-option flex-1 text-xs py-1.5 px-2 text-vectura-muted hover:text-vectura-accent border-l border-vectura-border">Classic</button>
+          </div>
+        </div>
+        <div class="control-group">
           <label class="control-label">Paper Size</label>
           <select id="machine-profile"
             class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent mb-2"></select>
@@ -315,6 +324,19 @@
     if (btnCloseSettings && settingsPanel) {
       btnCloseSettings.onclick = () => this.toggleSettingsPanel(false);
     }
+
+    const familyModern = getEl('theme-family-modern', { silent: true });
+    const familyClassic = getEl('theme-family-classic', { silent: true });
+    const ui = this;
+    [familyModern, familyClassic].forEach((btn) => {
+      if (!btn) return;
+      btn.onclick = () => {
+        const next = btn.dataset.family || 'meridian';
+        if (ui.app && typeof ui.app.setThemeFamily === 'function') {
+          ui.app.setThemeFamily(next);
+        }
+      };
+    });
   }
 
   Modals.DocumentSetup = {

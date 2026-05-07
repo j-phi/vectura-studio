@@ -698,9 +698,9 @@ input[type='color']::-webkit-color-swatch {
   flex-shrink: 0; position: relative;
 }
 .lvl-search-wrap {
-  flex: 1; display: flex; align-items: center; gap: 6px;
-  background: var(--color-bg); border: 1px solid var(--color-border);
-  border-radius: 4px; padding: 4px 8px;
+  flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0;
+  background: var(--color-surface-alt); border: 1px solid var(--color-border);
+  border-radius: 4px; padding: 4px 8px; overflow: hidden;
 }
 .lvl-search-wrap svg { flex-shrink: 0; color: var(--color-muted) }
 .lvl-search-input {
@@ -710,8 +710,9 @@ input[type='color']::-webkit-color-swatch {
 .lvl-search-input::placeholder { color: var(--color-border-hover) }
 .lvl-filter-btn {
   background: none; border: 1px solid var(--color-border); border-radius: 4px;
-  color: var(--color-muted); cursor: pointer; padding: 4px 7px;
+  color: var(--color-muted); cursor: pointer; padding: 4px 7px; flex-shrink: 0;
   display: flex; align-items: center; transition: color .12s, border-color .12s;
+  position: relative; z-index: 1;
 }
 .lvl-filter-btn:hover { color: var(--color-text); border-color: var(--color-border-hover) }
 .lvl-filter-btn.active { color: var(--lvl-cyan); border-color: var(--lvl-cyan) }
@@ -1068,7 +1069,7 @@ input[type='color']::-webkit-color-swatch {
   border-bottom-color: var(--color-accent);
 }
 .lvl-add-wrap {
-  position: relative;
+  position: relative; z-index: 1; flex-shrink: 0;
 }
 .lvl-add-btn-icon {
   background: #38bdf8;

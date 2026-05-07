@@ -5,8 +5,7 @@
  * classic-dark.css for the alias rationale.
  */
 
-[data-ui-skin="classic-light"],
-[data-ui-skin="light"] {
+[data-ui-skin="classic-light"] {
   --ui-bg: var(--color-bg);
   --ui-panel: var(--color-panel);
   --ui-panel-alt: var(--color-surface);

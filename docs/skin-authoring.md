@@ -33,7 +33,7 @@ That's it. New skins do not require JS code.
 npm run skin:new -- <skin-id>
 ```
 
-The id must be lowercase kebab-case (`a-z`, `0-9`, `-`), starting with a letter. Examples: `twilight`, `meridian-twilight`, `arctic-blue`.
+The id must be lowercase kebab-case (`a-z`, `0-9`, `-`), starting with a letter. Examples: `twilight`, `arctic-blue`, `desert-rose`.
 
 Optional flags:
 

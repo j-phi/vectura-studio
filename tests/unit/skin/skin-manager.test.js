@@ -41,9 +41,13 @@ describe('SkinManager', () => {
     expect(typeof SkinManager.get).toBe('function');
   });
 
-  test('list() includes the five Phase 0 skins', () => {
+  test('list() includes the six shipping skins', () => {
     const ids = SkinManager.list();
-    expect(ids).toEqual(expect.arrayContaining(['dark', 'light', 'lark', 'meridian-dark', 'meridian-light']));
+    expect(ids).toEqual(expect.arrayContaining([
+      'dark', 'lark', 'light',
+      'classic-dark', 'classic-lark', 'classic-light',
+    ]));
+    expect(ids).not.toContain('meridian-twilight');
   });
 
   test('register() throws when manifest is missing required fields', () => {
@@ -61,19 +65,19 @@ describe('SkinManager', () => {
   });
 
   test('activate() sets data-ui-skin on documentElement', () => {
-    SkinManager.activate('meridian-dark');
-    expect(document.documentElement.dataset.uiSkin).toBe('meridian-dark');
+    SkinManager.activate('dark');
+    expect(document.documentElement.dataset.uiSkin).toBe('dark');
   });
 
   test('activate() updates link#active-skin href when stylesheet differs', () => {
     const link = document.getElementById('active-skin');
     expect(link).toBeTruthy();
-    SkinManager.activate('meridian-light');
+    SkinManager.activate('light');
     expect(link.getAttribute('href')).toBe('./src/ui/skin/meridian-light.css');
   });
 
   test('activate() writes manifest motion specs to --motion-* CSS vars', () => {
-    SkinManager.activate('meridian-dark');
+    SkinManager.activate('dark');
     const root = document.documentElement;
     // sliderPulse → --motion-slider-pulse-{dur,ease,peak}
     expect(root.style.getPropertyValue('--motion-slider-pulse-dur').trim()).toBe('550ms');
@@ -84,7 +88,7 @@ describe('SkinManager', () => {
   });
 
   test('activate() writes structural pane vars from manifest', () => {
-    SkinManager.activate('meridian-dark');
+    SkinManager.activate('dark');
     const root = document.documentElement;
     expect(root.style.getPropertyValue('--pane-left-width').trim()).toBe('290px');
     expect(root.style.getPropertyValue('--pane-right-width').trim()).toBe('258px');
@@ -97,14 +101,14 @@ describe('SkinManager', () => {
     document.addEventListener('vectura:skin-change', handler);
     try {
       // First put the runtime into a known state so previousSkinId is deterministic.
-      SkinManager.activate('dark');
+      SkinManager.activate('classic-dark');
       await new Promise((r) => setTimeout(r, 30));
       captured = null;
-      SkinManager.activate('meridian-light');
+      SkinManager.activate('light');
       await new Promise((r) => setTimeout(r, 30));
       expect(captured).toBeTruthy();
-      expect(captured.skinId).toBe('meridian-light');
-      expect(captured.previousSkinId).toBe('dark');
+      expect(captured.skinId).toBe('light');
+      expect(captured.previousSkinId).toBe('classic-dark');
       expect(captured.colorScheme).toBe('light');
       expect(captured.family).toBe('meridian');
       expect(typeof captured.reducedMotion).toBe('boolean');
@@ -114,13 +118,13 @@ describe('SkinManager', () => {
   });
 
   test('activate() with the same id is a no-op (no event)', async () => {
-    SkinManager.activate('meridian-dark');
+    SkinManager.activate('dark');
     await new Promise((r) => setTimeout(r, 30));
     let count = 0;
     const handler = () => { count += 1; };
     document.addEventListener('vectura:skin-change', handler);
     try {
-      SkinManager.activate('meridian-dark');
+      SkinManager.activate('dark');
       await new Promise((r) => setTimeout(r, 30));
       expect(count).toBe(0);
     } finally {
@@ -131,8 +135,8 @@ describe('SkinManager', () => {
   test('getActive() returns the most recently activated id', () => {
     SkinManager.activate('lark');
     expect(SkinManager.getActive()).toBe('lark');
-    SkinManager.activate('meridian-dark');
-    expect(SkinManager.getActive()).toBe('meridian-dark');
+    SkinManager.activate('classic-dark');
+    expect(SkinManager.getActive()).toBe('classic-dark');
   });
 
   test('activate() throws on unknown skin id', () => {

@@ -11,8 +11,7 @@
  * working byte-identically); this file ONLY adds the --ui-* aliases on top.
  */
 
-[data-ui-skin="classic-dark"],
-[data-ui-skin="dark"] {
+[data-ui-skin="classic-dark"] {
   --ui-bg: var(--color-bg);
   --ui-panel: var(--color-panel);
   --ui-panel-alt: var(--color-surface);

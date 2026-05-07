@@ -4,16 +4,13 @@ const { execFileSync } = require('child_process');
 const { loadVecturaRuntime } = require('../../helpers/load-vectura-runtime');
 
 /**
- * Phase 5 — SDK smoke tests for `scripts/skin-new.js`, `src/ui/skin/_template.css`,
- * and the `meridian-twilight` SDK acceptance fixture.
+ * Phase 5 — SDK smoke tests for `scripts/skin-new.js` and `src/ui/skin/_template.css`.
  *
  * These tests verify:
  *   1. The template file exists and contains `__SKIN_ID__` placeholder.
  *   2. `scripts/skin-new.js` substitutes the placeholder, refuses overwrite without --force,
  *      validates id format, and prints the manifest snippet.
- *   3. The `meridian-twilight` skin (the SDK acceptance fixture) is registered in
- *      `window.Vectura.THEMES` and loads its stylesheet on registration.
- *   4. The template covers every required token group consumed by the skin manager,
+ *   3. The template covers every required token group consumed by the skin manager,
  *      renderer, and components.css.
  */
 describe('Skin SDK', () => {
@@ -154,57 +151,4 @@ describe('Skin SDK', () => {
     });
   });
 
-  describe('meridian-twilight (SDK acceptance fixture)', () => {
-    let runtime;
-
-    beforeAll(async () => {
-      runtime = await loadVecturaRuntime({ useIndexHtml: true });
-    });
-
-    afterAll(() => {
-      runtime.cleanup();
-    });
-
-    test('is registered in window.Vectura.THEMES', () => {
-      const theme = runtime.window.Vectura.THEMES['meridian-twilight'];
-      expect(theme).toBeDefined();
-      expect(theme.id).toBe('meridian-twilight');
-      expect(theme.family).toBe('meridian');
-      expect(theme.stylesheet).toBe('./src/ui/skin/meridian-twilight.css');
-    });
-
-    test('the stylesheet file exists and contains the matching selector', () => {
-      const filePath = path.join(skinDir, 'meridian-twilight.css');
-      expect(fs.existsSync(filePath)).toBe(true);
-      const content = fs.readFileSync(filePath, 'utf8');
-      expect(content).toContain('[data-ui-skin="meridian-twilight"]');
-      expect(content).toContain('--ui-accent: ');
-      expect(content).toContain('--ui-muted:');
-      expect(content).toContain('--render-canvas:');
-    });
-
-    test('appears in SkinManager.list()', () => {
-      const ids = runtime.window.Vectura.SkinManager.list();
-      expect(ids).toContain('meridian-twilight');
-    });
-
-    test('cssVars include all 7 Tailwind --vectura-*-rgb triples', () => {
-      const theme = runtime.window.Vectura.THEMES['meridian-twilight'];
-      const required = [
-        '--vectura-bg-rgb', '--vectura-panel-rgb', '--vectura-border-rgb',
-        '--vectura-text-rgb', '--vectura-muted-rgb', '--vectura-accent-rgb',
-        '--vectura-danger-rgb',
-      ];
-      required.forEach((key) => {
-        expect(theme.cssVars[key]).toBeTruthy();
-      });
-    });
-
-    test('shares MERIDIAN_MANIFEST capabilities with meridian-dark/light', () => {
-      const twilight = runtime.window.Vectura.THEMES['meridian-twilight'];
-      const dark = runtime.window.Vectura.THEMES['meridian-dark'];
-      expect(twilight.manifest).toBe(dark.manifest);
-      expect(twilight.manifest.capabilities.dialReleaseWave).toBe(true);
-    });
-  });
 });

@@ -21,9 +21,9 @@ describe('Skin swap integration (registry + applyTheme)', () => {
     runtime.cleanup();
   });
 
-  test('THEMES registry contains both legacy and meridian skins with the manifest fields', () => {
+  test('THEMES registry contains primary + classic skins with the manifest fields', () => {
     const { THEMES } = runtime.window.Vectura;
-    ['dark', 'light', 'lark', 'meridian-dark', 'meridian-light'].forEach((id) => {
+    ['dark', 'lark', 'light', 'classic-dark', 'classic-lark', 'classic-light'].forEach((id) => {
       const t = THEMES[id];
       expect(t).toBeTruthy();
       expect(t.id).toBe(id);
@@ -35,29 +35,86 @@ describe('Skin swap integration (registry + applyTheme)', () => {
   });
 
   test('applyTheme sets data-ui-skin and data-theme to the same id', () => {
-    app.applyTheme('meridian-dark', { persist: false, render: false });
+    app.applyTheme('classic-dark', { persist: false, render: false });
     const ds = runtime.document.documentElement.dataset;
-    expect(ds.uiSkin).toBe('meridian-dark');
-    expect(ds.theme).toBe('meridian-dark');
+    expect(ds.uiSkin).toBe('classic-dark');
+    expect(ds.theme).toBe('classic-dark');
   });
 
-  test('applyTheme cycles every Phase 0 skin without throwing', () => {
-    ['dark', 'light', 'lark', 'meridian-dark', 'meridian-light'].forEach((id) => {
+  test('applyTheme cycles every registered skin without throwing', () => {
+    ['dark', 'lark', 'light', 'classic-dark', 'classic-lark', 'classic-light'].forEach((id) => {
       expect(() => app.applyTheme(id, { persist: false, render: false })).not.toThrow();
       expect(runtime.window.Vectura.SkinManager.getActive()).toBe(id);
     });
   });
 
-  test('toggleTheme cycles through every registered skin (not just legacy three)', () => {
-    // Snapshot active skin, then toggle len(THEMES) times — should land back on the original.
-    const ids = Object.keys(runtime.window.Vectura.THEMES);
-    const start = runtime.window.Vectura.SETTINGS.uiTheme;
-    for (let i = 0; i < ids.length; i += 1) app.toggleTheme();
-    expect(runtime.window.Vectura.SETTINGS.uiTheme).toBe(start);
+  test('toggleTheme cycles within the active theme family only', () => {
+    // Modern family: dark → lark → light → dark.
+    app.applyTheme('dark', { persist: false, render: false });
+    app.toggleTheme();
+    expect(runtime.window.Vectura.SETTINGS.uiTheme).toBe('lark');
+    app.toggleTheme();
+    expect(runtime.window.Vectura.SETTINGS.uiTheme).toBe('light');
+    app.toggleTheme();
+    expect(runtime.window.Vectura.SETTINGS.uiTheme).toBe('dark');
+
+    // Classic family: classic-dark → classic-lark → classic-light → classic-dark.
+    app.applyTheme('classic-dark', { persist: false, render: false });
+    app.toggleTheme();
+    expect(runtime.window.Vectura.SETTINGS.uiTheme).toBe('classic-lark');
+    app.toggleTheme();
+    expect(runtime.window.Vectura.SETTINGS.uiTheme).toBe('classic-light');
+    app.toggleTheme();
+    expect(runtime.window.Vectura.SETTINGS.uiTheme).toBe('classic-dark');
+  });
+
+  test('toggleTheme never crosses families', () => {
+    app.applyTheme('lark', { persist: false, render: false });
+    for (let i = 0; i < 12; i += 1) {
+      app.toggleTheme();
+      const id = runtime.window.Vectura.SETTINGS.uiTheme;
+      expect(['dark', 'lark', 'light']).toContain(id);
+    }
+  });
+
+  describe('setThemeFamily', () => {
+    test('hops to the same brightness slot in the other family', () => {
+      app.applyTheme('lark', { persist: false, render: false });
+      app.setThemeFamily('classic');
+      expect(runtime.window.Vectura.SETTINGS.uiTheme).toBe('classic-lark');
+
+      app.applyTheme('classic-light', { persist: false, render: false });
+      app.setThemeFamily('meridian');
+      expect(runtime.window.Vectura.SETTINGS.uiTheme).toBe('light');
+
+      app.applyTheme('classic-dark', { persist: false, render: false });
+      app.setThemeFamily('meridian');
+      expect(runtime.window.Vectura.SETTINGS.uiTheme).toBe('dark');
+    });
+
+    test('is a no-op when the requested family already matches', () => {
+      app.applyTheme('lark', { persist: false, render: false });
+      const result = app.setThemeFamily('meridian');
+      expect(result).toBeNull();
+      expect(runtime.window.Vectura.SETTINGS.uiTheme).toBe('lark');
+    });
+
+    test('getThemeFamily reports the active theme family', () => {
+      app.applyTheme('light', { persist: false, render: false });
+      expect(app.getThemeFamily()).toBe('meridian');
+      app.applyTheme('classic-light', { persist: false, render: false });
+      expect(app.getThemeFamily()).toBe('classic');
+    });
+
+    test('unknown family argument falls back to meridian', () => {
+      app.applyTheme('classic-lark', { persist: false, render: false });
+      app.setThemeFamily('bogus');
+      expect(runtime.window.Vectura.SETTINGS.uiTheme).toBe('lark');
+    });
   });
 
   test('vectura_prefs cookie persists active skin', () => {
-    app.applyTheme('meridian-light', { persist: true, render: false });
+    app.applyTheme('light', { persist: true, render: false });
     // applyTheme schedules a debounced cookie write — flush it.
     if (typeof app.persistPreferencesNow === 'function') app.persistPreferencesNow();
     else if (app.preferencePersistTimer) {
@@ -65,6 +122,6 @@ describe('Skin swap integration (registry + applyTheme)', () => {
       app.preferencePersistTimer = null;
       if (typeof app.persistPreferences === 'function') app.persistPreferences();
     }
-    expect(runtime.window.Vectura.SETTINGS.uiTheme).toBe('meridian-light');
+    expect(runtime.window.Vectura.SETTINGS.uiTheme).toBe('light');
   });
 });

@@ -11,6 +11,7 @@
  */
 
 :root,
+[data-ui-skin="dark"],
 [data-ui-skin="meridian-dark"] {
   /* Mockup palette (--ui-*). */
   --ui-bg: #1b1b1b;

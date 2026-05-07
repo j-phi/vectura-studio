@@ -9,7 +9,7 @@
  *
  * Examples:
  *   npm run skin:new -- twilight
- *   npm run skin:new -- meridian-twilight --label "Meridian Blue · Twilight" --family meridian
+ *   npm run skin:new -- arctic-blue --label "Arctic Blue" --family meridian
  *
  * What it does:
  *   1. Reads `src/ui/skin/_template.css`.

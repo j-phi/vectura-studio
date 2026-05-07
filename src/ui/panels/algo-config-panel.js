@@ -528,6 +528,22 @@
       if (hasNoiseConditional) this.buildControls();
     };
 
+    const syncSliderFill = (slider) => {
+      const mn = parseFloat(slider.min) || 0;
+      const mx = parseFloat(slider.max) || 100;
+      const pct = ((parseFloat(slider.value) - mn) / (mx - mn)) * 100;
+      slider.style.setProperty('--fill', pct.toFixed(1) + '%');
+      const wrap = slider.closest('.sld-fx-wrap');
+      if (wrap) wrap.style.setProperty('--fill', pct.toFixed(1) + '%');
+    };
+    const triggerSliderMotion = (slider) => {
+      const m = window.Vectura?.UI?.motion;
+      if (!m) return;
+      const wrap = slider.closest('.sld-fx-wrap');
+      if (wrap && m.triggerSliderPulse) m.triggerSliderPulse(wrap);
+      if (m.triggerThumbRelease) m.triggerThumbRelease(slider);
+    };
+
     const renderDef = (def, targetEl) => {
       const target = targetEl || container;
       if (def.showIf && !def.showIf(layer.params)) return;
@@ -838,20 +854,20 @@
           const { min, max, step } = getDisplayConfig(def);
           const displayVal = toDisplayValue(def, value);
           control.innerHTML = `
-            <div class="flex justify-between mb-1">
-              <div class="flex items-center gap-2">
-                <label class="control-label mb-0">${def.label}</label>
-                ${infoBtn}
-              </div>
-              <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(
-                def,
-                value
-              )}</button>
+            <div class="flex items-center gap-2 mb-1">
+              <label class="control-label mb-0">${def.label}</label>
+              ${infoBtn}
             </div>
-            <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="w-full">
+            <div class="slider-row">
+              <div class="sld-fx-wrap">
+                <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="ctrl-slider">
+              </div>
+              <button type="button" class="value-chip">${formatDisplayValue(def, value)}</button>
+            </div>
           `;
-          const input = control.querySelector('input');
+          const input = control.querySelector('input[type="range"]');
           const valueBtn = control.querySelector('.value-chip');
+          if (input) syncSliderFill(input);
           const resetValue = () => {
             const nextVal = getPendulumDefault(idx, def.key);
             if (nextVal === undefined) return;
@@ -866,10 +882,12 @@
           if (input && valueBtn) {
             input.disabled = !pendulum.enabled;
             input.oninput = (e) => {
+              syncSliderFill(e.target);
               const nextDisplay = parseFloat(e.target.value);
               valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
             };
             input.onchange = (e) => {
+              triggerSliderMotion(e.target);
               if (this.app.pushHistory) this.app.pushHistory();
               const nextDisplay = parseFloat(e.target.value);
               pendulum[def.key] = fromDisplayValue(def, nextDisplay);
@@ -879,6 +897,7 @@
             };
             attachKeyboardRangeNudge(input, (nextDisplay) => {
               pendulum[def.key] = fromDisplayValue(def, nextDisplay);
+              syncSliderFill(input);
               this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
@@ -1110,30 +1129,32 @@
           const displayVal = toDisplayValue(def, value);
           const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
           control.innerHTML = `
-            <div class="flex justify-between mb-1">
-              <div class="flex items-center gap-2">
-                <label class="control-label mb-0">${def.label}</label>
-                ${infoBtn}
-              </div>
-              <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(
-                def,
-                value
-              )}</button>
+            <div class="flex items-center gap-2 mb-1">
+              <label class="control-label mb-0">${def.label}</label>
+              ${infoBtn}
             </div>
-            <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="w-full">
+            <div class="slider-row">
+              <div class="sld-fx-wrap">
+                <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="ctrl-slider">
+              </div>
+              <button type="button" class="value-chip">${formatDisplayValue(def, value)}</button>
+            </div>
             <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
           `;
           const input = control.querySelector('input[type="range"]');
           const valueBtn = control.querySelector('.value-chip');
           const valueInput = control.querySelector('.value-input');
+          if (input) syncSliderFill(input);
           if (input && valueBtn) {
             input.disabled = !modifier.enabled;
             valueBtn.classList.toggle('opacity-60', !modifier.enabled);
             input.oninput = (e) => {
+              syncSliderFill(e.target);
               const nextDisplay = parseFloat(e.target.value);
               valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
             };
             input.onchange = (e) => {
+              triggerSliderMotion(e.target);
               if (this.app.pushHistory) this.app.pushHistory();
               const nextDisplay = parseFloat(e.target.value);
               modifier[def.key] = fromDisplayValue(def, nextDisplay);
@@ -1143,6 +1164,7 @@
             };
             attachKeyboardRangeNudge(input, (nextDisplay) => {
               modifier[def.key] = fromDisplayValue(def, nextDisplay);
+              syncSliderFill(input);
               this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
@@ -1151,6 +1173,7 @@
               e.preventDefault();
               modifier[def.key] = def.min ?? 0;
               input.value = toDisplayValue(def, modifier[def.key]);
+              syncSliderFill(input);
               valueBtn.innerText = formatDisplayValue(def, modifier[def.key]);
               this.storeLayerParams(layer);
               this.app.regen();
@@ -1375,30 +1398,32 @@
           const displayVal = toDisplayValue(def, value);
           const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
           control.innerHTML = `
-            <div class="flex justify-between mb-1">
-              <div class="flex items-center gap-2">
-                <label class="control-label mb-0">${def.label}</label>
-                ${infoBtn}
-              </div>
-              <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(
-                def,
-                value
-              )}</button>
+            <div class="flex items-center gap-2 mb-1">
+              <label class="control-label mb-0">${def.label}</label>
+              ${infoBtn}
             </div>
-            <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="w-full">
+            <div class="slider-row">
+              <div class="sld-fx-wrap">
+                <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="ctrl-slider">
+              </div>
+              <button type="button" class="value-chip">${formatDisplayValue(def, value)}</button>
+            </div>
             <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
           `;
           const input = control.querySelector('input[type="range"]');
           const valueBtn = control.querySelector('.value-chip');
           const valueInput = control.querySelector('.value-input');
+          if (input) syncSliderFill(input);
           if (input && valueBtn) {
             input.disabled = !modifier.enabled;
             valueBtn.classList.toggle('opacity-60', !modifier.enabled);
             input.oninput = (e) => {
+              syncSliderFill(e.target);
               const nextDisplay = parseFloat(e.target.value);
               valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
             };
             input.onchange = (e) => {
+              triggerSliderMotion(e.target);
               if (this.app.pushHistory) this.app.pushHistory();
               const nextDisplay = parseFloat(e.target.value);
               modifier[def.key] = fromDisplayValue(def, nextDisplay);
@@ -1408,6 +1433,7 @@
             };
             attachKeyboardRangeNudge(input, (nextDisplay) => {
               modifier[def.key] = fromDisplayValue(def, nextDisplay);
+              syncSliderFill(input);
               this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
@@ -1416,6 +1442,7 @@
               e.preventDefault();
               modifier[def.key] = def.min ?? 0;
               input.value = toDisplayValue(def, modifier[def.key]);
+              syncSliderFill(input);
               valueBtn.innerText = formatDisplayValue(def, modifier[def.key]);
               this.storeLayerParams(layer);
               this.app.regen();
@@ -1640,30 +1667,32 @@
           const displayVal = toDisplayValue(def, value);
           const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
           control.innerHTML = `
-            <div class="flex justify-between mb-1">
-              <div class="flex items-center gap-2">
-                <label class="control-label mb-0">${def.label}</label>
-                ${infoBtn}
-              </div>
-              <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(
-                def,
-                value
-              )}</button>
+            <div class="flex items-center gap-2 mb-1">
+              <label class="control-label mb-0">${def.label}</label>
+              ${infoBtn}
             </div>
-            <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="w-full">
+            <div class="slider-row">
+              <div class="sld-fx-wrap">
+                <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="ctrl-slider">
+              </div>
+              <button type="button" class="value-chip">${formatDisplayValue(def, value)}</button>
+            </div>
             <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
           `;
           const input = control.querySelector('input[type="range"]');
           const valueBtn = control.querySelector('.value-chip');
           const valueInput = control.querySelector('.value-input');
+          if (input) syncSliderFill(input);
           if (input && valueBtn) {
             input.disabled = !shade.enabled;
             valueBtn.classList.toggle('opacity-60', !shade.enabled);
             input.oninput = (e) => {
+              syncSliderFill(e.target);
               const nextDisplay = parseFloat(e.target.value);
               valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
             };
             input.onchange = (e) => {
+              triggerSliderMotion(e.target);
               if (this.app.pushHistory) this.app.pushHistory();
               const nextDisplay = parseFloat(e.target.value);
               shade[def.key] = fromDisplayValue(def, nextDisplay);
@@ -1673,6 +1702,7 @@
             };
             attachKeyboardRangeNudge(input, (nextDisplay) => {
               shade[def.key] = fromDisplayValue(def, nextDisplay);
+              syncSliderFill(input);
               this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
@@ -1681,6 +1711,7 @@
               e.preventDefault();
               shade[def.key] = def.min ?? 0;
               input.value = toDisplayValue(def, shade[def.key]);
+              syncSliderFill(input);
               valueBtn.innerText = formatDisplayValue(def, shade[def.key]);
               this.storeLayerParams(layer);
               this.app.regen();
@@ -2016,21 +2047,24 @@
         const { min, max, step } = getDisplayConfig(def);
         const displayVal = toDisplayValue(def, val);
         div.innerHTML = `
-          <div class="flex justify-between mb-1">
-            <div class="flex items-center gap-2">
-              <label class="control-label mb-0">${def.label}</label>
-              ${infoBtn}
-            </div>
-            <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(def, val)}</button>
+          <div class="flex items-center gap-2 mb-1">
+            <label class="control-label mb-0">${def.label}</label>
+            ${infoBtn}
           </div>
-          <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="w-full mb-2">
+          <div class="slider-row mb-2">
+            <div class="sld-fx-wrap">
+              <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="ctrl-slider">
+            </div>
+            <button type="button" class="value-chip">${formatDisplayValue(def, val)}</button>
+          </div>
           <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
           <div class="text-[10px] text-vectura-muted simplify-stats">${statsText()}</div>
         `;
-        const input = div.querySelector('input');
+        const input = div.querySelector('input[type="range"]');
         const valueBtn = div.querySelector('.value-chip');
         const valueInput = div.querySelector('.value-input');
         const statsEl = div.querySelector('.simplify-stats');
+        if (input) syncSliderFill(input);
         if (input && valueBtn && valueInput && statsEl) {
           const resetToDefault = () => {
             const defaultVal = getDefaultValue(def);
@@ -2039,16 +2073,19 @@
             layer.params[def.id] = defaultVal;
             this.storeLayerParams(layer);
             input.value = toDisplayValue(def, defaultVal);
+            syncSliderFill(input);
             valueBtn.innerText = formatDisplayValue(def, defaultVal);
             this.app.regen();
             statsEl.textContent = statsText();
             this.updateFormula();
           };
           input.oninput = (e) => {
+            syncSliderFill(e.target);
             const nextDisplay = parseFloat(e.target.value);
             valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
           };
           input.onchange = (e) => {
+            triggerSliderMotion(e.target);
             if (this.app.pushHistory) this.app.pushHistory();
             const nextDisplay = parseFloat(e.target.value);
             layer.params[def.id] = fromDisplayValue(def, nextDisplay);
@@ -2059,6 +2096,7 @@
           };
           attachKeyboardRangeNudge(input, (nextDisplay) => {
             layer.params[def.id] = fromDisplayValue(def, nextDisplay);
+            syncSliderFill(input);
             this.storeLayerParams(layer);
             this.app.regen();
             statsEl.textContent = statsText();
@@ -2600,19 +2638,22 @@
         const { min, max, step } = getDisplayConfig(def);
         const displayVal = toDisplayValue(def, val);
         div.innerHTML = `
-          <div class="flex justify-between mb-1">
-            <div class="flex items-center gap-2">
-              <label class="control-label mb-0">${def.label}</label>
-              ${infoBtn}
-            </div>
-            <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(def, val)}</button>
+          <div class="flex items-center gap-2 mb-1">
+            <label class="control-label mb-0">${def.label}</label>
+            ${infoBtn}
           </div>
-          <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="w-full">
+          <div class="slider-row">
+            <div class="sld-fx-wrap">
+              <input type="range" min="${min}" max="${max}" step="${step}" value="${displayVal}" class="ctrl-slider">
+            </div>
+            <button type="button" class="value-chip">${formatDisplayValue(def, val)}</button>
+          </div>
           <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
         `;
-        const input = div.querySelector('input');
+        const input = div.querySelector('input[type="range"]');
         const valueBtn = div.querySelector('.value-chip');
         const valueInput = div.querySelector('.value-input');
+        if (input) syncSliderFill(input);
         if (input && valueBtn && valueInput) {
           const confirmHeavy = (displayVal) => {
             const nextVal = fromDisplayValue(def, displayVal);
@@ -2621,6 +2662,7 @@
               if (!window.confirm(message)) {
                 const resetVal = toDisplayValue(def, layer.params[def.id]);
                 input.value = resetVal;
+                syncSliderFill(input);
                 valueBtn.innerText = formatDisplayValue(def, layer.params[def.id]);
                 return null;
               }
@@ -2634,16 +2676,19 @@
             layer.params[def.id] = defaultVal;
             this.storeLayerParams(layer);
             input.value = toDisplayValue(def, defaultVal);
+            syncSliderFill(input);
             valueBtn.innerText = formatDisplayValue(def, defaultVal);
             this.app.regen();
             this.updateFormula();
             maybeRebuildControls();
           };
           input.oninput = (e) => {
+            syncSliderFill(e.target);
             const nextDisplay = parseFloat(e.target.value);
             valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
           };
           input.onchange = (e) => {
+            triggerSliderMotion(e.target);
             const nextDisplay = parseFloat(e.target.value);
             const nextVal = confirmHeavy(nextDisplay);
             if (nextVal === null) return;
@@ -2658,6 +2703,7 @@
             const nextVal = confirmHeavy(nextDisplay);
             if (nextVal === null) return;
             layer.params[def.id] = nextVal;
+            syncSliderFill(input);
             this.storeLayerParams(layer);
             this.app.regen();
             this.updateFormula();
@@ -2678,6 +2724,8 @@
               const commit = opts?.commit !== false;
               if (commit && this.app.pushHistory) this.app.pushHistory();
               layer.params[def.id] = nextVal;
+              input.value = toDisplayValue(def, nextVal);
+              syncSliderFill(input);
               this.storeLayerParams(layer);
               this.app.regen();
               valueBtn.innerText = formatDisplayValue(def, layer.params[def.id]);
@@ -3163,14 +3211,19 @@
         const toleranceConfig = this.getDocumentLengthConfig({ minMm: 0.01, maxMm: 1, stepMm: 0.01 });
         const toleranceDisplay = this.formatDocumentNumber(currentTolerance, { precision: toleranceConfig.precision });
         toleranceControl.innerHTML = `
-          <div class="flex justify-between mb-1">
+          <div class="flex items-center gap-2 mb-1">
             <label class="control-label mb-0">Optimization Tolerance (${toleranceConfig.unitLabel})</label>
-            <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${toleranceDisplay}${toleranceConfig.unitLabel}</button>
           </div>
-          <input type="range" min="${toleranceConfig.min}" max="${toleranceConfig.max}" step="${toleranceConfig.step}" value="${toleranceDisplay}" class="w-full">
+          <div class="slider-row">
+            <div class="sld-fx-wrap">
+              <input type="range" min="${toleranceConfig.min}" max="${toleranceConfig.max}" step="${toleranceConfig.step}" value="${toleranceDisplay}" class="ctrl-slider">
+            </div>
+            <button type="button" class="value-chip">${toleranceDisplay}${toleranceConfig.unitLabel}</button>
+          </div>
           <input type="number" min="${toleranceConfig.min}" max="${toleranceConfig.max}" step="${toleranceConfig.step}" value="${toleranceDisplay}" class="w-16 mt-2 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none">
         `;
         const tolRange = toleranceControl.querySelector('input[type="range"]');
+        if (tolRange) syncSliderFill(tolRange);
         const tolNumber = toleranceControl.querySelector('input[type="number"]');
         const tolValue = toleranceControl.querySelector('.value-chip');
         const setToleranceDisabled = (disabled) => {
@@ -3239,21 +3292,24 @@
         const displayValue = toOptimizationDisplayValue(def, value);
         const editorDef = toOptimizationEditorDef(def);
         control.innerHTML = `
-          <div class="flex justify-between mb-1">
+          <div class="flex items-center gap-2 mb-1">
             <label class="control-label mb-0">${getOptimizationLabel(def.label)}</label>
-            <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatOptValue(
-              def,
-              value
-            )}</button>
           </div>
-          <input type="range" min="${min}" max="${max}" step="${step}" value="${displayValue}" class="w-full">
+          <div class="slider-row">
+            <div class="sld-fx-wrap">
+              <input type="range" min="${min}" max="${max}" step="${step}" value="${displayValue}" class="ctrl-slider">
+            </div>
+            <button type="button" class="value-chip">${formatOptValue(def, value)}</button>
+          </div>
           <input type="text" class="value-input hidden bg-vectura-bg border border-vectura-border p-1 text-xs text-right w-20">
         `;
         const input = control.querySelector('input[type="range"]');
         const valueBtn = control.querySelector('.value-chip');
         const valueInput = control.querySelector('.value-input');
+        if (input) syncSliderFill(input);
         if (input && valueBtn) {
           input.oninput = (e) => {
+            syncSliderFill(e.target);
             const next = fromOptimizationDisplayValue(def, parseFloat(e.target.value));
             valueBtn.textContent = formatOptValue(def, next);
             applyOptimization((cfg) => {
@@ -3261,12 +3317,14 @@
               if (step) step[def.key] = next;
             });
           };
+          input.onchange = (e) => { triggerSliderMotion(e.target); };
           input.addEventListener('dblclick', (e) => {
             e.preventDefault();
             const defaults = getStepDefaults(stepConfig.id);
             if (defaults[def.key] === undefined) return;
             const next = defaults[def.key];
             input.value = toOptimizationDisplayValue(def, next);
+            syncSliderFill(input);
             valueBtn.textContent = formatOptValue(def, next);
             applyOptimization((cfg) => {
               const step = cfg.steps.find((s) => s.id === stepConfig.id);
@@ -3279,6 +3337,8 @@
             inputEl: valueInput,
             getValue: () => stepConfig[def.key],
             setValue: (displayVal, opts) => {
+              input.value = displayVal;
+              syncSliderFill(input);
               applyOptimization((cfg) => {
                 const step = cfg.steps.find((s) => s.id === stepConfig.id);
                 if (step) step[def.key] = fromOptimizationDisplayValue(def, displayVal);

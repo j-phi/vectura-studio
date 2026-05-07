@@ -14,6 +14,32 @@
     return Object.prototype.hasOwnProperty.call(THEMES, key) ? key : DEFAULT_THEME;
   };
   const getThemeConfig = (theme) => THEMES[normalizeThemeName(theme)] || THEMES[DEFAULT_THEME] || null;
+  // Two theme families ship: 'meridian' (Modern) and 'classic'. Each owns the same
+  // three brightness slots; the family toggle in Document Setup hops between
+  // counterparts at the matching slot.
+  const THEME_FAMILIES = ['meridian', 'classic'];
+  const BRIGHTNESS_ORDER = ['dark', 'lark', 'light'];
+  const normalizeThemeFamily = (family) => {
+    const key = `${family || ''}`.trim().toLowerCase();
+    return THEME_FAMILIES.includes(key) ? key : 'meridian';
+  };
+  const getThemeFamily = (themeId) => {
+    const t = THEMES[normalizeThemeName(themeId)];
+    return normalizeThemeFamily(t && t.family);
+  };
+  const getThemeBrightness = (themeId) => {
+    const id = normalizeThemeName(themeId);
+    for (let i = 0; i < BRIGHTNESS_ORDER.length; i += 1) {
+      const slot = BRIGHTNESS_ORDER[i];
+      if (id === slot || id === `classic-${slot}`) return slot;
+    }
+    return BRIGHTNESS_ORDER[0];
+  };
+  const getThemeIdForFamilySlot = (family, slot) => {
+    const fam = normalizeThemeFamily(family);
+    const candidate = fam === 'classic' ? `classic-${slot}` : slot;
+    return Object.prototype.hasOwnProperty.call(THEMES, candidate) ? candidate : null;
+  };
 
   class App {
     constructor() {
@@ -531,21 +557,15 @@
     }
 
     toggleTheme() {
-      // Legacy 3-skin cycle stays first so existing keyboard-toggle muscle memory
-      // (dark → lark → light → dark) is preserved. New skins (meridian-*) join at the
-      // tail in registration order, so the cycle visits every registered skin exactly
-      // once before looping. Unknown ids in the registry that aren't in the legacy
-      // prefix are appended in registration order; missing legacy entries are skipped.
-      const LEGACY_ORDER = ['dark', 'lark', 'light'];
-      const registered = Object.keys(THEMES || {});
-      const legacyPresent = LEGACY_ORDER.filter((id) => registered.includes(id));
-      const extras = registered.filter((id) => !LEGACY_ORDER.includes(id));
-      const CYCLE = legacyPresent.length || extras.length
-        ? [...legacyPresent, ...extras]
-        : LEGACY_ORDER;
+      // Cycle within the active theme family only: dark → lark → light → dark
+      // (or the classic-* counterparts when the Classic family is active).
+      // Family is switched by the Modern/Classic toggle in Document Setup.
       const current = normalizeThemeName(SETTINGS.uiTheme);
-      const idx = CYCLE.indexOf(current);
-      const next = CYCLE[(idx + 1) % CYCLE.length];
+      const family = getThemeFamily(current);
+      const slot = getThemeBrightness(current);
+      const idx = BRIGHTNESS_ORDER.indexOf(slot);
+      const nextSlot = BRIGHTNESS_ORDER[(idx + 1) % BRIGHTNESS_ORDER.length];
+      const next = getThemeIdForFamilySlot(family, nextSlot) || current;
       return this.applyTheme(next, {
         persist: true,
         syncPen1: true,
@@ -553,6 +573,27 @@
         refreshUi: true,
         render: true,
       });
+    }
+
+    setThemeFamily(nextFamily) {
+      const family = normalizeThemeFamily(nextFamily);
+      const current = normalizeThemeName(SETTINGS.uiTheme);
+      if (getThemeFamily(current) === family) return null;
+      const slot = getThemeBrightness(current);
+      const next = getThemeIdForFamilySlot(family, slot)
+        || getThemeIdForFamilySlot(family, BRIGHTNESS_ORDER[0]);
+      if (!next || next === current) return null;
+      return this.applyTheme(next, {
+        persist: true,
+        syncPen1: true,
+        syncDocumentBg: true,
+        refreshUi: true,
+        render: true,
+      });
+    }
+
+    getThemeFamily() {
+      return getThemeFamily(SETTINGS.uiTheme);
     }
 
     pushHistory() {

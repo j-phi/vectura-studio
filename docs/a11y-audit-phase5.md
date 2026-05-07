@@ -47,7 +47,7 @@ Focus rings are styled at the CSS layer:
 - **Skin CSS (`components.css`):** components use `outline: none` to disable the default focus ring and rely on the legacy `styles.css` rules above (or render a custom ring via box-shadow on the parent element). The migration intentionally preserved these to avoid double-ringing.
 - **Inline style:** drag handles and grip elements use `box-shadow` on focus to inset a 2px ring. Tested visually.
 
-Because all focus colors trace back to `--ui-accent`, every skin (classic-dark/light, lark, meridian-dark/light/twilight) gets a visible focus ring with adequate contrast against the surface beneath.
+Because all focus colors trace back to `--ui-accent`, every skin (classic-dark/lark/light, meridian-dark/lark/light) gets a visible focus ring with adequate contrast against the surface beneath.
 
 ### Escape paths
 
@@ -83,7 +83,7 @@ Focus trap correctness (focus does not leak out of modals):
 
 3. **Skip-to-content link.** Not present. The app has no static page header chrome that would benefit from one; skip links are a convention for content-heavy pages. Not added.
 
-4. **Color contrast.** All `--ui-text` / `--ui-bg` pairs across the 5 shipping skins meet WCAG AA (≥4.5:1) per the mockup spec. The new `meridian-twilight` skin (`#e4dff5` on `#1a1626`) measures ~12.8:1 — well above AA.
+4. **Color contrast.** All `--ui-text` / `--ui-bg` pairs across the 6 shipping skins meet WCAG AA (≥4.5:1) per the mockup spec.
 
 ## Test coverage
 
