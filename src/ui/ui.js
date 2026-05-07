@@ -7655,46 +7655,12 @@
       this.app.render();
     }
 
+    // Delegated to src/ui/shell/pane-right.js (Phase 2 step 3).
     initRightPaneTabs() {
-      const tabs = Array.from(document.querySelectorAll('.right-pane-tab'));
-      if (!tabs.length) return;
-      const panels = {
-        layers: getEl('right-tab-panel-layers', { silent: true }),
-        pens: getEl('right-tab-panel-pens', { silent: true }),
-      };
-      const setActive = (key) => {
-        tabs.forEach((tab) => {
-          const isActive = tab.dataset.tab === key;
-          tab.classList.toggle('active', isActive);
-          tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
-        });
-        Object.entries(panels).forEach(([id, panel]) => {
-          if (!panel) return;
-          panel.classList.toggle('hidden', id !== key);
-        });
-      };
-      tabs.forEach((tab) => {
-        tab.addEventListener('click', () => setActive(tab.dataset.tab));
-      });
-      const initial = tabs.find((t) => t.classList.contains('active'))?.dataset.tab || 'layers';
-      setActive(initial);
+      return window.Vectura.UI.PaneRight.initRightPaneTabs.call(this);
     }
-
     initPensSection() {
-      const section = getEl('pens-global-section');
-      const header = getEl('pens-section-header');
-      const body = getEl('pens-section-body');
-      if (!section || !header || !body) return;
-
-      const setCollapsed = (next) => {
-        SETTINGS.pensCollapsed = Boolean(next);
-        section.classList.toggle('collapsed', Boolean(next));
-        body.style.display = next ? 'none' : '';
-        if (header) header.setAttribute('aria-expanded', next ? 'false' : 'true');
-      };
-
-      setCollapsed(SETTINGS.pensCollapsed === true);
-      header.onclick = () => setCollapsed(!section.classList.contains('collapsed'));
+      return window.Vectura.UI.PaneRight.initPensSection.call(this);
     }
 
     initPaletteControls() {
@@ -12519,6 +12485,12 @@
   // extracted left-panel section methods see the same `getEl` helper.
   if (window.Vectura?.UI?.PaneLeft?.bind) {
     window.Vectura.UI.PaneLeft.bind({ getEl });
+  }
+
+  // Phase 2 step 3: hand legacy IIFE-locals to shell/pane-right.js so its
+  // extracted right-pane tab/section methods see the same `getEl` helper.
+  if (window.Vectura?.UI?.PaneRight?.bind) {
+    window.Vectura.UI.PaneRight.bind({ getEl });
   }
 
   window.Vectura = window.Vectura || {};
