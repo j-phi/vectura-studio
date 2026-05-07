@@ -5114,6 +5114,11 @@
 
       this.initModuleDropdown();
       this.rememberDrawableLayerType(this.app.engine?.getActiveLayer?.());
+      // Phase 3 step 3: mount Document Setup panel BEFORE initMachineDropdown
+      // so #machine-profile (the paper-size <select>) is in the DOM when the
+      // dropdown population logic runs. Markup formerly lived in
+      // index.html:540-745.
+      this._mountDocumentSetupPanel();
       this.initMachineDropdown();
       // Phase 3 step 2: mount Grid Settings panel into <main> before bindGlobal()
       // wires the panel's controls. Markup formerly lived in index.html:747-787.
@@ -6069,6 +6074,15 @@
     }
     _bindGridSettingsHandlers() {
       return window.Vectura.UI.Modals.GridSettings.bindHandlers.call(this);
+    }
+
+    // Delegated to src/ui/modals/document-setup.js (Phase 3 step 3).
+    _mountDocumentSetupPanel() {
+      const host = document.querySelector('main');
+      return window.Vectura.UI.Modals.DocumentSetup.mount(host);
+    }
+    _bindDocumentSetupHandlers() {
+      return window.Vectura.UI.Modals.DocumentSetup.bindHandlers.call(this);
     }
 
     // Delegated to src/ui/panels/transform-panel.js (Phase 2 step 4).
@@ -7117,9 +7131,9 @@
       const insertMirrorModifier = getEl('btn-insert-mirror-modifier');
       const moduleSelect = getEl('generator-module');
       const bgColor = getEl('inp-bg-color');
-      const settingsPanel = getEl('settings-panel');
-      const btnSettings = getEl('btn-settings');
-      const btnCloseSettings = getEl('btn-close-settings');
+      // Phase 3 step 3: settings-panel + btn-settings + btn-close-settings
+      // wiring moved to modals/document-setup.js (invoked via
+      // _bindDocumentSetupHandlers below). No locals needed here.
       const btnHelp = getEl('btn-help');
       const themeToggle = getEl('theme-toggle', { silent: true });
       const machineProfile = getEl('machine-profile');
@@ -7292,11 +7306,12 @@
         };
       }
 
-      if (btnSettings && settingsPanel) {
-        btnSettings.onclick = () => this.toggleSettingsPanel();
-      }
-      if (btnCloseSettings && settingsPanel) {
-        btnCloseSettings.onclick = () => this.toggleSettingsPanel(false);
+      // Phase 3 step 3: open/close lifecycle moved to modals/document-setup.js.
+      // Both onclick handlers forward to this.toggleSettingsPanel(). Guarded so
+      // that bindGlobal() invoked through a stub `this` (used by some unit
+      // tests) keeps working without mocking the delegator.
+      if (typeof this._bindDocumentSetupHandlers === 'function') {
+        this._bindDocumentSetupHandlers();
       }
       if (btnHelp) {
         btnHelp.onclick = () => this.openHelp(false);
@@ -9044,6 +9059,15 @@
       SETTINGS,
       openColorPickerAnchoredTo,
     });
+  }
+
+  // Phase 3 step 3: register modals/document-setup.js. Slide-out side panel
+  // (CSS class .open) — owns its own markup (mount()) and the open/close
+  // lifecycle. The ~30 input handlers stay in legacy bindGlobal() because
+  // they're interleaved with shared selection-outline / margin-line / cookie
+  // / paper handlers.
+  if (window.Vectura?.UI?.Modals?.DocumentSetup?.bind) {
+    window.Vectura.UI.Modals.DocumentSetup.bind({ getEl });
   }
 
   window.Vectura = window.Vectura || {};
