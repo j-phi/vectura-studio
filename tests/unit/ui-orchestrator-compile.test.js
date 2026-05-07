@@ -1,10 +1,18 @@
 /*
- * Compile gate for src/ui/_ui-orchestrator.js (Phase 2 step 5c blueprint).
+ * Compile gate for src/ui/ui.js (Phase 2 step 6 runtime entry).
  *
- * The orchestrator is intentionally NOT loaded by index.html during step
- * 5; this test only confirms the blueprint parses cleanly in JSDOM,
- * registers window.Vectura.UI.Orchestrator, and refuses to construct
- * (so step 6 has a clear runtime signal that the swap-in is incomplete).
+ * Step 6 chose option (b): `_ui-legacy.js` carries the UI class + bind()
+ * block + IIFE locals, and `ui.js` is a thin entry that aliases
+ * `window.Vectura.UI` as `window.Vectura.UI.Orchestrator`. This test
+ * confirms two things:
+ *
+ *   1. Loaded standalone (without `_ui-legacy.js`): the Orchestrator is
+ *      a placeholder class that throws a clear "you forgot to load the
+ *      legacy satellite" error on construction. This is the trip-wire
+ *      that protects against accidental load-order regressions.
+ *   2. Loaded after `_ui-legacy.js`: `Orchestrator` aliases the legacy
+ *      class itself (so callers preferring the explicit name reach the
+ *      same constructor as `new UI(app)`).
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -29,13 +37,15 @@ const loadInJSDOM = (scriptPaths) => {
   return dom;
 };
 
-describe('ui-orchestrator blueprint compile gate', () => {
+describe('ui.js orchestrator entry (option-b satellite shape)', () => {
   let dom;
   let Orchestrator;
 
   beforeAll(() => {
+    // Standalone load — `_ui-legacy.js` deliberately NOT loaded so we
+    // exercise the trip-wire path.
     dom = loadInJSDOM([
-      'src/ui/_ui-orchestrator.js',
+      'src/ui/ui.js',
     ]);
     const w = dom.window;
     expect(w.Vectura).toBeTruthy();
@@ -50,8 +60,8 @@ describe('ui-orchestrator blueprint compile gate', () => {
     expect(typeof Orchestrator).toBe('function');
   });
 
-  it('refuses to construct with a clear "blueprint" error', () => {
+  it('refuses to construct standalone with a clear "load order" error', () => {
     expect(() => new Orchestrator({}))
-      .toThrow(/blueprint and not yet wired up/);
+      .toThrow(/_ui-legacy\.js|legacy carries the runtime UI class/);
   });
 });
