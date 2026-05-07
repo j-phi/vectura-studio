@@ -7472,106 +7472,21 @@
       });
     }
 
+    // Delegated to src/ui/shell/header.js (Phase 2 step 3).
     initModuleDropdown() {
-      const select = getEl('generator-module');
-      if (!select) return;
-      select.innerHTML = '';
-      const keys = Object.keys(ALGO_DEFAULTS || {}).filter((key) => !(ALGO_DEFAULTS[key] && ALGO_DEFAULTS[key].hidden));
-      keys.sort((a, b) => {
-        const aLabel = ALGO_DEFAULTS[a]?.label || a;
-        const bLabel = ALGO_DEFAULTS[b]?.label || b;
-        return aLabel.localeCompare(bLabel);
-      });
-      keys.forEach((key) => {
-        const def = ALGO_DEFAULTS[key];
-        const opt = document.createElement('option');
-        opt.value = key;
-        const label = def?.label;
-        opt.innerText = label || key.charAt(0).toUpperCase() + key.slice(1);
-        select.appendChild(opt);
-      });
+      return window.Vectura.UI.Header.initModuleDropdown.call(this);
     }
-
     _buildModuleMenu() {
-      let menu = document.getElementById('gm-module-menu');
-      if (menu) return menu;
-      menu = document.createElement('div');
-      menu.id = 'gm-module-menu';
-      menu.className = 'gm-module-menu hidden';
-      menu.addEventListener('click', (e) => {
-        const item = e.target.closest('[data-gm-value]');
-        if (!item) return;
-        const select = getEl('generator-module', { silent: true });
-        if (select) {
-          select.value = item.dataset.gmValue;
-          select.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-        menu.classList.add('hidden');
-      });
-      document.addEventListener('pointerdown', (e) => {
-        const trigger = document.getElementById('generator-module-trigger');
-        if (!menu.classList.contains('hidden') &&
-            !menu.contains(e.target) &&
-            e.target !== trigger &&
-            !trigger?.contains(e.target)) {
-          menu.classList.add('hidden');
-        }
-      }, true);
-      document.body.appendChild(menu);
-      return menu;
+      return window.Vectura.UI.Header._buildModuleMenu.call(this);
     }
-
     _showModuleMenu() {
-      const select = getEl('generator-module', { silent: true });
-      const trigger = document.getElementById('generator-module-trigger');
-      if (!select || !trigger) return;
-      const menu = this._buildModuleMenu();
-      const currentValue = select.value;
-      menu.innerHTML = Array.from(select.options).map((opt) => {
-        const type = opt.value;
-        const ico = this._LVL_I?.[type];
-        const color = this._algoMenuColor?.(type) ?? '';
-        const iconHtml = ico
-          ? `<span class="lvl-algo-sub-ico" style="color:${color}">${ico()}</span>`
-          : '';
-        const activeClass = type === currentValue ? ' gm-item-active' : '';
-        return `<div class="lvl-algo-sub-item${activeClass}" data-gm-value="${type}">${iconHtml}${opt.innerText}</div>`;
-      }).join('');
-      const r = trigger.getBoundingClientRect();
-      menu.style.top = `${r.bottom + 2}px`;
-      menu.style.left = `${r.left}px`;
-      menu.style.width = `${r.width}px`;
-      menu.classList.remove('hidden');
+      return window.Vectura.UI.Header._showModuleMenu.call(this);
     }
-
     _syncModuleDisplay() {
-      const select = getEl('generator-module', { silent: true });
-      const trigger = document.getElementById('generator-module-trigger');
-      if (!select || !trigger) return;
-      const currentValue = select.value;
-      const currentLabel = select.options[select.selectedIndex]?.innerText ?? currentValue;
-      const iconEl = document.getElementById('gm-current-icon');
-      const labelEl = document.getElementById('gm-current-label');
-      if (iconEl) {
-        const ico = this._LVL_I?.[currentValue];
-        iconEl.innerHTML = ico ? ico() : '';
-        iconEl.style.color = ico ? (this._algoMenuColor?.(currentValue) ?? '') : '';
-      }
-      if (labelEl) labelEl.textContent = currentLabel;
-      trigger.classList.toggle('gm-trigger-disabled', !!select.disabled);
+      return window.Vectura.UI.Header._syncModuleDisplay.call(this);
     }
-
     initMachineDropdown() {
-      const select = getEl('machine-profile');
-      if (!select || !MACHINES) return;
-      select.innerHTML = '';
-      Object.entries(MACHINES).forEach(([key, profile]) => {
-        const opt = document.createElement('option');
-        opt.value = key;
-        opt.innerText = profile.name;
-        select.appendChild(opt);
-      });
-      select.value = SETTINGS.paperSize && MACHINES[SETTINGS.paperSize] ? SETTINGS.paperSize : Object.keys(MACHINES)[0] || '';
+      return window.Vectura.UI.Header.initMachineDropdown.call(this);
     }
 
     getPaletteList() {
@@ -11839,6 +11754,11 @@
   // Phase 2 step 3: hand legacy IIFE-locals to shell/toolbar.js.
   if (window.Vectura?.UI?.Toolbar?.bind) {
     window.Vectura.UI.Toolbar.bind({ getEl, isPetalisLayerType });
+  }
+
+  // Phase 2 step 3: hand legacy IIFE-locals to shell/header.js.
+  if (window.Vectura?.UI?.Header?.bind) {
+    window.Vectura.UI.Header.bind({ getEl, ALGO_DEFAULTS, MACHINES, SETTINGS });
   }
 
   window.Vectura = window.Vectura || {};
