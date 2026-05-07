@@ -12,7 +12,7 @@
 | **Phase 0** — Skin foundation | ✅ done | `7d9f426` (+ graphify rebuild `e442a4b`) |
 | **Phase 1** — Component library | ✅ done | `16ec81d` `440c84a` `d959a9b` `554ee88` `65791e5` `c7fa0db` |
 | **Phase 2** — Shell, panels, orchestrator | ✅ done | `a16ad57` `313d427` `7ca4795` `5c2edcc` `3a8b7be` `2692993` `2de5154` `c28bb4a` `c841598` `f377edb` `886499b` `ede23da` `8eddbf4` `360cbdc` `540dad5` `c98e9db` `243eccf` `56848c9` `e0bae17` `accfd99` `5529209` `562f9b2` `9628561` |
-| **Phase 3** — Modals, overlays, menus | ⏳ in progress (7/7 modals done; menus + mixin dissolution + browser smoke remain) | `ff783c5` `6f277ba` `af0fd16` `bb36595` `4ca409a` `5ba54f9` `45f3c8c` |
+| **Phase 3** — Modals, overlays, menus | ⏳ in progress (7/7 modals done; both mixins dissolved; menus + tooltip/toast/dragdrop wire-ups remain) | `ff783c5` `6f277ba` `af0fd16` `bb36595` `4ca409a` `5ba54f9` `45f3c8c` `5d36f0a` `8597017` |
 | **Phase 4** — Editors & specialized surfaces | ⏳ pending | — |
 | **Phase 5** — Polish, SDK, cleanup | ⏳ pending | — |
 
@@ -1247,27 +1247,93 @@ If all 13 steps pass and `npm run test:ci` is green, the migration is complete.
 
 ---
 
-## Appendix: Resuming Phase 3 step 6 (closure — menus, mixin dissolution, primitive promotion, browser smoke)
+## Phase 3 step 6 partial actuals (mixin dissolution complete; menus + tooltip/toast/dragdrop deferred)
 
-Phase 3 is in progress. Steps 1-5 (`ff783c5`, `6f277ba`, `af0fd16`, `bb36595`, `4ca409a`, `5ba54f9`, `45f3c8c`) extract all 7 modals. The phase still needs: 4 menu wirings, mixin dissolution, primitive promotion, tooltip + drag-drop overlay + toast wire-ups, browser smoke, and the closeout commit.
+Step 6 (closure) was started under a single agent run. Both mixin dissolutions landed cleanly with full test coverage; the remaining surfaces (4 menu wirings, toast wire-ups, tooltip wire-ups, drag-drop consolidation, primitive promotion, full browser smoke + closeout) are deferred to a follow-up agent run for context-budget reasons.
 
-After clearing context, the fastest way to pick up Phase 3 step 6:
+**Files shipped (this run):**
 
-1. `cd /Users/jayphi/Documents/github/vectura-studio-meridian` (the worktree, on branch `meridian-blue-skin`).
-2. `git log --oneline -5` — confirm HEAD is the docs commit recording Phase 3 step 5 (the latest `docs(skin):` commit). The step 5 implementation commit is `45f3c8c`.
-3. Confirm tests are green before changing anything: `npm run test:unit && npm run test:integration && npm run test:visual && npm run test:perf` (681 unit, 95 integration, 13 visual, 2 perf — all green at end of step 5).
-4. **Phase 3 step 6 target: closure.** All 7 modals are extracted; the remaining work is the `overlays/` integrations + cleanup. Suggested ordering (small → large, lowest-risk first):
-   - **(a) Menu wirings (4 menus).** Compose `Vectura.UI.Overlays.Menu` (Phase 1 primitive in `src/ui/overlays/menu.js`) for `#layer-add-menu`, `#palette-menu`, `#layer-filter-menu`, and the NEW layer right-click context menu. Trigger-handler logic for the first three lives in legacy `bindShortcuts` (now in `src/ui/shortcuts.js`); the right-click context menu trigger lives in legacy `bindLayerContextMenu` (still in `_ui-legacy.js` — grep `contextmenu`). Each menu gets its own module under `src/ui/menus/<name>.js` matching the modal-extraction pattern; compile-gate test first; integration test for trigger → open → option-click → close.
-   - **(b) Mixin dissolution.** Dissolve `_UIAutoColorizeMixin` and `_UINoiseRackMixin` into the panels' `bind()` bags. Mixin attachment in `_ui-legacy.js` at the `Object.assign(UI.prototype, …)` lines (re-grep for current line numbers — they shift). The auto-colorize panel + noise-rack panel `bind()` block already exists with empty bags; load the mixin closures (`autoColorizeAlgorithmically`, `applyAutoColorizationOptions`, etc.) into those bags and remove the mixin attachment. NoiseRack mixin is the larger of the two (~1,500 lines in `src/ui/ui-noise-rack.js`); AutoColorize is smaller (~600 lines in `src/ui/ui-auto-colorize.js`).
-   - **(c) Toast wire-ups.** Replace `console.log`/`alert` call sites with `Vectura.UI.Overlays.Toast` (Phase 1 primitive in `src/ui/overlays/toast.js`) for: layer-add success, project save/load success, export complete, and error states (file-load failure, image decode failure, etc.). Grep for current alert/console.error sites in `src/ui/`.
-   - **(d) Tooltip wire-ups.** Replace every `info-btn`-triggered modal call site with `Vectura.UI.Overlays.Tooltip` (Phase 1 primitive in `src/ui/overlays/tooltip.js`). The info-modals.js module (`showInfo`) is the centered-overlay path; the tooltip path is for inline hover/click on `i` buttons. Grep `info-btn` to find call sites in panels + algo-config-panel.
-   - **(e) Drag-drop overlay consolidation.** Consolidate the SVG-import / `.vectura`-open / rainfall-image / pattern-import drag handlers into `Vectura.UI.Overlays.DragDropOverlay` (Phase 1 primitive). Currently each surface has its own `dragenter`/`drop` handlers; the consolidation surfaces a single drop overlay with type-discriminated routing.
-   - **(f) Primitive promotion (single-commit refactor).** Swap `this.openModal` / `this.closeModal` to `Vectura.UI.Overlays.Modal` across the 5 centered modals (color-picker, image-asset, info-modals, help-shortcuts, export-svg). Grid Settings + Document Setup stay slide-outs (per step 2's recommendation). Validate the `this.modal.bodyEl` API contract via the new primitive's exposed handle.
-   - **(g) Browser smoke (mandatory).** Run `python -m http.server 8000`, exercise every extracted modal manually (open via menu/trigger, click around, close), every menu (layer add, palette, layer filter, right-click context), confirm toasts surface on save/load/export, drag-drop a `.vectura` and a `.svg`. Anything broken → fix BEFORE the closeout.
-   - **(h) Phase 3 closeout commit.** Flip Status table from `⏳ in progress` to `✅`, list every Phase 3 commit SHA, write a "Phase 3 actuals" note that supersedes the per-step actuals, rewrite this appendix as "Resuming from Phase 4", update memory, commit `docs(skin): Phase 3 closeout`.
-5. **Compile-gate-test-first pattern:** every menu extraction starts with `tests/unit/menus/<name>-compile.test.js` (mirror of the modal pattern). Add per-menu integration test under `tests/integration/menus/<name>.test.js`.
+- *Created:*
+  - `tests/integration/auto-colorize.test.js` — Phase 4 acceptance test (per plan §4 line 712); 3 tests asserting prototype installation, default config persistence, deterministic pen assignment.
+- *Modified:*
+  - `src/ui/panels/auto-colorize-panel.js` — was a forwarding shell (~88 lines), now the source of truth (~628 lines) with the dissolved mixin body inline. Adds `installOn(proto)` that wires the 4 methods directly onto UI.prototype. `bind({SETTINGS, clamp, getEl})` plumbs the legacy IIFE-locals as DI.
+  - `src/ui/_ui-legacy.js` — 8,282 → 8,298 lines (+16 net). Removed `Object.assign(UI.prototype, _UIAutoColorizeMixin || {})` and `Object.assign(UI.prototype, _UINoiseRackMixin || {})`; replaced both bind blocks to also call `installOn(UI.prototype)`.
+  - `index.html` — removed two `<script>` tags for the satellite mixin files; added inline comments documenting the dissolution.
+  - `tests/unit/auto-colorize-panel-compile.test.js` — rewritten for the new contract; asserts 4 methods + bind + installOn + prototype delegators forward `this`.
+  - `tests/unit/noise-rack-panel-compile.test.js` — rewritten for the new contract; preloads `defaults.js + algorithm-utils.js + randomization-utils.js` so the panel's module-init destructure (`window.Vectura.AlgorithmUtils.clamp`) resolves; asserts installOn + 14-method surface.
+- *Renamed (git mv):*
+  - `src/ui/ui-noise-rack.js` → `src/ui/panels/noise-rack-panel.js` (97% similarity). The whole 2200-line mixin body was rehoused inside the panel's IIFE; only the head (added namespace anchor + sentinel `bind()`) and tail (added `UI.NoiseRackPanel = { bind, installOn, ...NOISE_RACK_METHODS }`) changed.
+- *Deleted:*
+  - `src/ui/ui-auto-colorize.js` (was 551 lines).
+  - The old `src/ui/panels/noise-rack-panel.js` shell (was 119 lines) — overwritten by the renamed satellite.
+
+**Mixin dissolution state (both done):**
+
+| Mixin | File-of-record now | Removed satellite | Method count | Prototype install |
+|---|---|---|---|---|
+| `_UIAutoColorizeMixin` | `src/ui/panels/auto-colorize-panel.js` | `src/ui/ui-auto-colorize.js` (deleted) | 4 | `AutoColorizePanel.installOn(UI.prototype)` |
+| `_UINoiseRackMixin` | `src/ui/panels/noise-rack-panel.js` | `src/ui/ui-noise-rack.js` (renamed/dissolved) | 30+ | `NoiseRackPanel.installOn(UI.prototype)` |
+
+`window.Vectura._UIAutoColorizeMixin` and `window.Vectura._UINoiseRackMixin` are no longer set anywhere in production code. The legacy bind block lines that referenced them are commented inline pointing to the dissolution.
+
+**Commits this run:**
+- `5d36f0a` feat(skin): Phase 3 — dissolve auto-colorize mixin into panel
+- `8597017` feat(skin): Phase 3 — dissolve noise-rack mixin into panel
+
+**Test totals (verified green at end of run):**
+- Unit: 681 → **683** (+2 new for AutoColorizePanel installOn + delegator forward)
+- Integration: 95 → **98** (+3 new in tests/integration/auto-colorize.test.js per plan line 712)
+- Visual: **13** (unchanged)
+- Perf: **2** (unchanged)
+
+**Browser smoke (this run, partial — Playwright headless):** booted index.html, asserted (a) `window.app` constructed cleanly with engine + ui, (b) `UI.prototype` carries all 10 expected critical methods (4 auto-colorize + 5 noise-rack representative + renderLayers + exportSVG), (c) Help modal openable, (d) zero pageerror or console.error events. **Manual click-through across all menus / drag-drop / toast surfaces NOT performed this run** — deferred along with the wire-ups themselves.
+
+**Patterns / gotchas the next agent must know:**
+
+1. **Pattern for mixin dissolution (locked).** Both panels follow the same shape:
+   - The panel's IIFE owns ALL methods + helper closures.
+   - `bind(deps)` stores any DI-needed legacy locals (auto-colorize needs `SETTINGS, clamp, getEl`; noise-rack reads from `window.Vectura.*` directly so its bind is a sentinel).
+   - `installOn(proto)` attaches every method to `UI.prototype` as `function(...args) { return impl.apply(this, args); }` (auto-colorize) or `Object.assign(proto, methodBag)` (noise-rack — methods don't reference DEPS so no wrapping needed).
+   - Legacy bind block calls `Panel.bind(deps)` then `Panel.installOn(UI.prototype)` immediately after. The old `Object.assign(UI.prototype, _UI*Mixin)` line is replaced with a comment pointing to the dissolution.
+   - Compile gate must preload any `window.Vectura.*` consumers the panel destructures at module init. For noise-rack: `defaults.js + algorithm-utils.js + randomization-utils.js`. The auto-colorize panel reads its three deps from the bind bag (no module-init coupling), so its compile gate only needs `defaults.js + the panel itself`.
+
+2. **`requireDeps('methodName')` is the load-order tripwire.** Both panels call it on first use. If `bind()` was never called, the throw message points the next agent at the broken script load order in index.html.
+
+3. **`exportSVG` still lives in `ui-file-io.js`** (carry-over from step 5). Phase 3 closure must NOT touch it.
+
+4. **Layer right-click context menu does not yet exist.** Per the menu (a) work item, this is NEW functionality to add, not a refactor of existing code. The 3 existing menus (layer add, palette, filter) are bespoke DOM in `index.html:444-490` with handlers in `src/ui/shortcuts.js:517-625`.
+
+5. **The 3 existing menus are NOT trivial to swap to `overlays/Menu`.** They have features the generic `Menu` primitive doesn't cover: layer-add has algorithm submenus + grouping; palette-menu has color swatches; filter-menu has search-input integration. A direct swap WILL lose features unless the primitive is extended or each menu uses Menu only for its core dropdown shell. Plan a careful study of each existing menu's DOM/handlers before refactoring.
+
+6. **Unused `requireDeps` in noise-rack-panel** (line 30) is currently dead code — the noise-rack methods read from `window.Vectura.*` directly rather than from DEPS. Kept as a sentinel for future migrations. Remove or keep at agent discretion.
+
+---
+
+## Appendix: Resuming Phase 3 step 6 continuation (menus + wire-ups + closeout)
+
+Phase 3 is **still in progress** — both mixin dissolutions landed (commits `5d36f0a`, `8597017`); menus + tooltip/toast/dragdrop wire-ups + closeout still remain.
+
+After clearing context, the fastest way to pick up Phase 3 step 6 continuation:
+
+1. `cd /Users/jayphi/Documents/github/vectura-studio-meridian` (worktree, branch `meridian-blue-skin`).
+2. `git log --oneline -5` — confirm HEAD is the docs commit recording Phase 3 step 6 partial closure (the latest `docs(skin):` commit). The step 6 implementation commits are `5d36f0a` (auto-colorize) and `8597017` (noise-rack).
+3. Confirm tests are green before changing anything: `npm run test:unit && npm run test:integration && npm run test:visual && npm run test:perf` — should print 683 unit, 98 integration, 13 visual, 2 perf — all green.
+4. **Phase 3 step 6 continuation target: menus + wire-ups + closeout.** Mixin dissolution is **DONE** — do not redo it. Remaining work, suggested ordering (small → large, lowest-risk first):
+   - **(a) Layer right-click context menu (NEW work, easiest start).** Uses `Vectura.UI.overlays.Menu(host, props)` cleanly with no existing code to refactor. Hook `contextmenu` event delegation on the layer list via `src/ui/panels/layers-panel.js` after `renderLayers()` mounts (or globally on `#layer-list`). Items: Rename, Duplicate, Delete, Group, Toggle Lock, Toggle Visibility. Each maps to existing UI methods (e.g. `this.app.engine.duplicateLayer(id)`). Compile gate at `tests/unit/menus/layer-context-compile.test.js`; integration at `tests/integration/menus/layer-context.test.js`.
+   - **(b) Layer add menu (`#layer-add-menu`).** Bespoke handler at `src/ui/shortcuts.js:517-565` with algorithm submenu + grouping. The `overlays/Menu` primitive does not support submenus or category grouping out of the box — either extend Menu or compose two Menu instances (parent + submenu). Suggested: keep the existing DOM-based palette/algorithm submenu (it's one of the more polished UX pieces in the app); use `Menu` only for the simple top-level menu items (Add Empty Layer, Add Group, Add Mirror Modifier).
+   - **(c) Palette menu (`#palette-menu`).** Bespoke pen-color UI at `src/ui/_ui-legacy.js:6969-7020`. Has color swatch grid; not a fit for the generic `Menu` primitive without extension. Likely needs a new `PaletteMenu` module that composes `overlays/Menu` only for its top-level chrome.
+   - **(d) Layer filter menu (`#layer-filter-menu`).** Bespoke list at `src/ui/shortcuts.js:577-612` with 22 algorithm types + check-mark indicator. Cleanest swap to `overlays/Menu` of the four — items already have a flat `{ value, label }` shape that maps directly to Menu's `{ key, label }`. Start here if you want a true Menu-primitive demonstration.
+   - **(e) Toast wire-ups.** Compose `Vectura.UI.overlays.Toast` (Phase 1 primitive in `src/ui/overlays/toast.js`). Important: the Toast primitive is `UI.overlays.Toast` (lowercase `overlays`), NOT `UI.Overlays.Toast` — see `src/ui/overlays/toast.js:25-26`. Grep `console.log\|alert(` in `src/ui/` for sites: layer-add, project save/load, export complete, file-load failure. Each call becomes `window.Vectura.UI.overlays.Toast.show({ message, variant: 'success'|'danger', duration: 4000 })`.
+   - **(f) Tooltip wire-ups.** Compose `Vectura.UI.overlays.Tooltip` for `info-btn` triggers. The Tooltip primitive is per-instance: `const tip = UI.overlays.Tooltip(host, { text, placement }); tip.show(target);` Grep `info-btn` in `src/ui/panels/` + `algo-config-panel.js`. Long content gets a "Read more" affordance that calls into `info-modals.js` — wiring lives in `src/ui/components/info-badge.js` (Phase 1 primitive — wire it now if not already in use).
+   - **(g) Drag-drop overlay consolidation.** Compose `Vectura.UI.overlays.DragDropOverlay`. Currently each surface (SVG import, `.vectura` open, rainfall, pattern import) has its own `dragenter`/`dragover`/`drop` handlers. Consolidate into one `DragDropOverlay` with file-type-discriminated routing.
+   - **(h) Primitive promotion (single-commit refactor).** Swap `this.openModal` / `this.closeModal` to `Vectura.UI.overlays.Modal` across the 5 centered modals (color-picker, image-asset, info-modals, help-shortcuts, export-svg). Grid Settings + Document Setup stay slide-outs.
+   - **(i) Full browser smoke (MANDATORY before closeout).** Run `python -m http.server 8000`, exercise every modal (Help, Grid Settings, Document Setup, Color Picker, Rainfall Silhouette, Export SVG, info-modals), every menu (layer add, palette, layer filter, right-click context), trigger toasts on save/load/export, drag-drop a `.vectura` and a `.svg`. The current run only did Playwright headless smoke (boot + prototype check + Help modal open + zero error events) — that is NOT sufficient.
+   - **(j) Phase 3 closeout commit.** Flip Status table from `⏳ in progress` to `✅ done`, append all closure commit SHAs, write a "Phase 3 final actuals" note that supersedes the partial actuals above, rewrite this appendix as "Resuming from Phase 4", update memory, commit `docs(skin): record Phase 3 closure and set up Phase 4 resume`.
+5. **Compile-gate-test-first pattern:** every menu extraction starts with `tests/unit/menus/<name>-compile.test.js`. Per-menu integration test under `tests/integration/menus/<name>.test.js`. (Both directories do not yet exist; create them.)
 6. **Phase 3 does NOT touch (without explicit user request):** `src/render/renderer.js`, `src/core/`, `src/config/`. Stay in `src/ui/` (overlays, panels, satellites, modals, menus) and `index.html` (script load order + markup removal where applicable).
-7. **Test totals to track:** start of step 6 is 681 unit + 95 integration + 13 visual + 2 perf. Each menu adds ~10 tests (compile gate + integration). Mixin dissolution does not add tests (refactor-only, RGR via existing panel coverage). Primitive promotion does not add tests (refactor — existing modal coverage exercises every code path).
+7. **Test totals to track:** continuation start is 683 unit + 98 integration + 13 visual + 2 perf. Each menu adds ~6-10 tests. Wire-ups (toast/tooltip/dragdrop) typically don't add new tests — RGR via existing modal/integration coverage.
+8. **Carry-over deferred items still pending** (per Phase 2 step 5 closure):
+   - ~50 surviving prototype methods + ~30 IIFE locals in `_ui-legacy.js`. Mixin dissolution this run reduced satellite count by 2; the in-legacy methods are still surviving. Phase 4 should attack these incrementally.
 
 ---
 
