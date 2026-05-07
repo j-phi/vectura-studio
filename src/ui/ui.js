@@ -6812,14 +6812,9 @@
       return this.app.engine.layers.filter((entry) => entry.parentId === layer.id);
     }
 
+    // Delegated to src/ui/panels/modifiers-panel.js (Phase 2 step 4).
     refreshModifierLayer(layer, options = {}) {
-      const { rebuildControls = true } = options;
-      if (!layer) return;
-      this.app.computeDisplayGeometry();
-      this.renderLayers();
-      if (rebuildControls) this.buildControls();
-      this.updateFormula();
-      this.app.render();
+      return window.Vectura.UI.ModifiersPanel.refreshModifierLayer.call(this, layer, options);
     }
 
     assignLayersToParent(parentId, targetLayers, options = {}) {
@@ -6893,30 +6888,11 @@
     }
 
     insertMirrorModifier() {
-      const selectedLayers = this.app.getSelectedLayers().filter((layer) => layer && !layer.isGroup);
-      if (this.app.pushHistory) this.app.pushHistory();
-      const id = this.app.addModifierLayer('mirror');
-      if (selectedLayers.length) {
-        this.assignLayersToParent(id, selectedLayers);
-      }
-      this.app.setSelection([id], id);
-      this.app.engine.setActiveLayerId(id);
-      this.renderLayers();
-      this.buildControls();
-      this.updateFormula();
-      this.app.render();
+      return window.Vectura.UI.ModifiersPanel.insertMirrorModifier.call(this);
     }
 
     updatePrimaryPanelMode(layer) {
-      const primaryTitle = getEl('left-section-primary-title', { silent: true });
-      const secondaryTitle = getEl('left-section-secondary-title', { silent: true });
-      const moduleLabel = getEl('primary-module-label', { silent: true });
-      const transformSection = getEl('algorithm-transform-section', { silent: true });
-      const modifierMode = this.isModifierLayer(layer);
-      if (primaryTitle) primaryTitle.textContent = modifierMode ? 'Modifier' : 'Algorithm';
-      if (secondaryTitle) secondaryTitle.textContent = modifierMode ? 'Modifier Configuration' : 'Algorithm Configuration';
-      if (moduleLabel) moduleLabel.textContent = modifierMode ? 'Modifier' : 'Algorithm';
-      if (transformSection) transformSection.style.display = modifierMode ? 'none' : '';
+      return window.Vectura.UI.ModifiersPanel.updatePrimaryPanelMode.call(this, layer);
     }
 
     syncPrimaryModuleDropdown(layer) {
@@ -7297,49 +7273,18 @@
       return Boolean(layer.maskCapabilities?.canSource);
     }
 
+    // Delegated to src/ui/panels/modifiers-panel.js (Phase 2 step 4).
     refreshMaskingViews() {
-      this.app.computeDisplayGeometry();
-      this.renderLayers();
-      this.buildControls();
-      this.updateFormula();
-      this.app.render();
-      this.app.updateStats();
+      return window.Vectura.UI.ModifiersPanel.refreshMaskingViews.call(this);
     }
-
     ensureLayerMaskState(layer) {
-      if (!layer.mask) {
-        layer.mask = {
-          enabled: false,
-          sourceIds: [],
-          mode: 'parent',
-          hideLayer: false,
-          invert: false,
-          materialized: false,
-        };
-      }
-      layer.mask.sourceIds = [];
-      layer.mask.mode = 'parent';
-      if (layer.mask.hideLayer === undefined) layer.mask.hideLayer = false;
-      layer.mask.invert = false;
-      return layer.mask;
+      return window.Vectura.UI.ModifiersPanel.ensureLayerMaskState.call(this, layer);
     }
-
     setLayerMaskEnabled(layer, enabled, options = {}) {
-      if (!layer) return;
-      const { captureHistory = false } = options;
-      if (captureHistory && this.app.pushHistory) this.app.pushHistory();
-      const mask = this.ensureLayerMaskState(layer);
-      mask.enabled = Boolean(enabled) && Boolean(layer.maskCapabilities?.canSource);
-      this.refreshMaskingViews();
+      return window.Vectura.UI.ModifiersPanel.setLayerMaskEnabled.call(this, layer, enabled, options);
     }
-
     setLayerMaskHidden(layer, hidden, options = {}) {
-      if (!layer) return;
-      const { captureHistory = false } = options;
-      if (captureHistory && this.app.pushHistory) this.app.pushHistory();
-      const mask = this.ensureLayerMaskState(layer);
-      mask.hideLayer = Boolean(hidden);
-      this.refreshMaskingViews();
+      return window.Vectura.UI.ModifiersPanel.setLayerMaskHidden.call(this, layer, hidden, options);
     }
 
     getUniqueLayerName(base, excludeId) {
@@ -10196,6 +10141,11 @@
   // Phase 2 step 4: hand legacy IIFE-locals to panels/pens-panel.js.
   if (window.Vectura?.UI?.PensPanel?.bind) {
     window.Vectura.UI.PensPanel.bind({ getEl, escapeHtml, SETTINGS, PALETTES, getThemeToken });
+  }
+
+  // Phase 2 step 4: hand legacy IIFE-locals to panels/modifiers-panel.js.
+  if (window.Vectura?.UI?.ModifiersPanel?.bind) {
+    window.Vectura.UI.ModifiersPanel.bind({ getEl });
   }
 
   window.Vectura = window.Vectura || {};
