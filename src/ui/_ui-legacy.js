@@ -6950,96 +6950,24 @@
       return next;
     }
 
+    // Delegated to src/ui/modals/info-modals.js (Phase 3 step 3).
     showDuplicateNameError(name) {
-      this.openModal({
-        title: 'Name Unavailable',
-        body: `<p class="modal-text">"${escapeHtml(name)}" is already in use. Layer names must be unique.</p>`,
-      });
+      return window.Vectura.UI.Modals.InfoModals.showDuplicateNameError.call(this, name);
     }
-
     showValueError(value) {
-      this.openModal({
-        title: 'Invalid Value',
-        body: `<p class="modal-text">"${escapeHtml(value)}" is outside the allowed range or format.</p>`,
-      });
+      return window.Vectura.UI.Modals.InfoModals.showValueError.call(this, value);
     }
-
     showInfo(key) {
-      const info = INFO[key];
-      if (!info) return;
-      const illustration = info.hidePreview ? '' : buildPreviewPair(key, this);
-      const bodyContent = info.body
-        ? typeof info.body === 'function'
-          ? info.body(this)
-          : info.body
-        : `<p class="modal-text">${info.description}</p>`;
-      const body = `
-        ${bodyContent}
-        ${illustration}
-      `;
-      this.openModal({ title: info.title, body });
+      return window.Vectura.UI.Modals.InfoModals.showInfo.call(this, key);
     }
-
     attachInfoButton(labelEl, key) {
-      if (!labelEl || labelEl.querySelector('.info-btn')) return;
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'info-btn';
-      btn.dataset.info = key;
-      btn.setAttribute('aria-label', `Info about ${labelEl.textContent}`);
-      btn.textContent = 'i';
-      labelEl.appendChild(btn);
+      return window.Vectura.UI.Modals.InfoModals.attachInfoButton.call(this, labelEl, key);
     }
-
     attachStaticInfoButtons() {
-      const entries = [
-        { inputId: 'generator-module', infoKey: 'global.algorithm' },
-        { inputId: 'inp-seed', infoKey: 'global.seed' },
-        { inputId: 'inp-pos-x', infoKey: 'global.posX' },
-        { inputId: 'inp-pos-y', infoKey: 'global.posY' },
-        { inputId: 'inp-scale-x', infoKey: 'global.scaleX' },
-        { inputId: 'inp-scale-y', infoKey: 'global.scaleY' },
-        { inputId: 'inp-rotation', infoKey: 'global.rotation' },
-        { inputId: 'machine-profile', infoKey: 'global.paperSize' },
-        { inputId: 'set-margin', infoKey: 'global.margin' },
-        { inputId: 'set-truncate', infoKey: 'global.truncate' },
-        { inputId: 'set-crop-exports', infoKey: 'global.cropExports' },
-        { inputId: 'set-outside-opacity', infoKey: 'global.outsideOpacity' },
-        { inputId: 'set-margin-line', infoKey: 'global.marginLineVisible' },
-        { inputId: 'set-margin-line-weight', infoKey: 'global.marginLineWeight' },
-        { inputId: 'set-margin-line-color-pill', infoKey: 'global.marginLineColor' },
-        { inputId: 'set-margin-line-dotting', infoKey: 'global.marginLineDotting' },
-        { inputId: 'set-selection-outline', infoKey: 'global.selectionOutline' },
-        { inputId: 'set-selection-outline-color-pill', infoKey: 'global.selectionOutlineColor' },
-        { inputId: 'set-selection-outline-width', infoKey: 'global.selectionOutlineWidth' },
-        { inputId: 'set-cookie-preferences', infoKey: 'global.cookiePreferences' },
-        { inputId: 'set-speed-down', infoKey: 'global.speedDown' },
-        { inputId: 'set-speed-up', infoKey: 'global.speedUp' },
-      ];
-
-      entries.forEach(({ inputId, infoKey }) => {
-        const input = getEl(inputId);
-        if (!input) return;
-        const label =
-          input.parentElement?.querySelector('label') ||
-          input.parentElement?.parentElement?.querySelector('label') ||
-          input.closest('.control-group')?.querySelector('.control-label');
-        this.attachInfoButton(label, infoKey);
-      });
+      return window.Vectura.UI.Modals.InfoModals.attachStaticInfoButtons.call(this);
     }
-
     bindInfoButtons() {
-      document.addEventListener('click', (e) => {
-        const btn = e.target.closest('.info-btn');
-        if (!btn) return;
-        const key = btn.dataset.info;
-        if (key === 'global.algorithm') {
-          e.preventDefault();
-          this.setAboutVisible(!(SETTINGS.aboutVisible !== false));
-          return;
-        }
-        this.showInfo(key);
-      });
+      return window.Vectura.UI.Modals.InfoModals.bindInfoButtons.call(this);
     }
 
     // Delegated to src/ui/shell/header.js (Phase 2 step 3).
@@ -9068,6 +8996,22 @@
   // / paper handlers.
   if (window.Vectura?.UI?.Modals?.DocumentSetup?.bind) {
     window.Vectura.UI.Modals.DocumentSetup.bind({ getEl });
+  }
+
+  // Phase 3 step 3 (second modal): register modals/info-modals.js. The
+  // info-button micro-system — showInfo, showDuplicateNameError,
+  // showValueError, attachInfoButton, attachStaticInfoButtons, bindInfoButtons.
+  // Pulls INFO + buildPreviewPair from the IIFE-locals so the preview pipeline
+  // (resolvePreviewConfig → buildVariantsFromDef → renderPreviewSvg) keeps
+  // working unchanged.
+  if (window.Vectura?.UI?.Modals?.InfoModals?.bind) {
+    window.Vectura.UI.Modals.InfoModals.bind({
+      INFO,
+      buildPreviewPair,
+      escapeHtml,
+      getEl,
+      SETTINGS,
+    });
   }
 
   window.Vectura = window.Vectura || {};
