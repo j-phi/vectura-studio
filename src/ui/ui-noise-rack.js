@@ -1280,6 +1280,15 @@
 
         randomizeLayerParams(layer) {
       if (!layer || !RandomizationUtils?.randomizeLayerParams) return;
+      if (layer.type === 'pattern') {
+        this.applyRandomizationBias(layer);
+        const tileMethodDef = (this.controls?.pattern || []).find((d) => d.id === 'tileMethod');
+        const options = (tileMethodDef?.options || []).filter((o) => o.value !== 'off');
+        if (options.length) {
+          layer.params.tileMethod = options[Math.floor(Math.random() * options.length)].value;
+        }
+        return;
+      }
       RandomizationUtils.randomizeLayerParams({
         layer,
         controls: this.controls,

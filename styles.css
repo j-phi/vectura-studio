@@ -4196,7 +4196,7 @@ input[type='color']::-webkit-color-swatch {
 .tutorial-popover[data-placement="bottom"] .tutorial-arrow {
   top: -10px;
   left: 50%;
-  transform: translateX(-50%) rotate(90deg);
+  transform: translateX(-50%);
   width: 18px;
   height: 10px;
 }
@@ -4208,12 +4208,12 @@ input[type='color']::-webkit-color-swatch {
 .tutorial-popover[data-placement="top"] .tutorial-arrow {
   bottom: -10px;
   left: 50%;
-  transform: translateX(-50%) rotate(-90deg);
+  transform: translateX(-50%);
   width: 18px;
   height: 10px;
 }
 .tutorial-popover[data-placement="top"] .tutorial-arrow::before {
-  top: 5px;
+  bottom: 5px;
   left: 3px;
 }
 

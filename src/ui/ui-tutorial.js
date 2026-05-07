@@ -341,7 +341,7 @@
       wait.textContent = text;
     }
 
-    positionAt(targetSel, placement) {
+    positionAt(targetSel, placement, offsetX = 0, offsetY = 0) {
       if (!this._el) return;
       if (this._userMoved) return;
       const isMobile = window.innerWidth < 900;
@@ -374,6 +374,9 @@
       if (placement === 'top')    { left = r.left  + r.width / 2 - pw/2; top = r.top - ph - GAP; }
       if (placement === 'over')   { left = r.left  + r.width / 2 - pw/2; top = r.top  + r.height / 2 - ph / 2; }
 
+      left += offsetX;
+      top  += offsetY;
+
       left = Math.max(8, Math.min(vw - pw - 8, left));
       top  = Math.max(8, Math.min(vh - ph - 8, top));
 
@@ -391,7 +394,9 @@
   // Schema (per phase):
   //   target           CSS selector (popover anchor + default highlight)
   //   highlight?       string | string[] — override highlight target(s)
-  //   placement        'left'|'right'|'top'|'bottom'|'center'
+  //   placement        'left'|'right'|'top'|'bottom'|'center'|'over'
+  //   offsetX?         number — px shift applied after placement
+  //   offsetY?         number — px shift applied after placement
   //   body             HTML string
   //   circleAll?       CSS selector — dashed circles around matches
   //   gate?            { check(app), waitMessage } — wait before activating
@@ -536,6 +541,7 @@
           target: '#left-pane',
           highlight: [],
           placement: 'over',
+          offsetY: -260,
           body:
             'A mirror axis now lives on the canvas. <b>Drag the line</b> to slide the axis, or grab the <b>rotation handle</b> at its end to spin it to any angle. ' +
             'In the Modifier Configuration pane you can stack more axes (Line, Radial, Arc, Wallpaper).',
@@ -628,7 +634,7 @@
       if (phase.gate && !phase.gate.check?.()) {
         this.popover.setNextVisible(false);
         this.popover.setWaitMessage(phase.gate.waitMessage || 'Complete the previous step to continue…');
-        this.popover.positionAt(phase.target, placement);
+        this.popover.positionAt(phase.target, placement, phase.offsetX || 0, phase.offsetY || 0);
         this._gateInterval = setInterval(() => {
           if (phase.gate.check?.()) {
             clearInterval(this._gateInterval);
@@ -657,10 +663,10 @@
         if (typeof teardown === 'function') this._cleanup = teardown;
       }
 
-      this.popover.positionAt(phase.target, placement);
+      this.popover.positionAt(phase.target, placement, phase.offsetX || 0, phase.offsetY || 0);
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          this.popover.positionAt(phase.target, placement);
+          this.popover.positionAt(phase.target, placement, phase.offsetX || 0, phase.offsetY || 0);
           this._renderEffects(phase);
         });
       });
@@ -728,7 +734,7 @@
         const phase = step?.phases?.[this._phaseIndex];
         if (!phase) return;
         const placement = window.innerWidth < 900 ? 'center' : (phase.placement || 'right');
-        this.popover.positionAt(phase.target, placement);
+        this.popover.positionAt(phase.target, placement, phase.offsetX || 0, phase.offsetY || 0);
         this.highlight.reflow();
         this.circles.reflow();
       });

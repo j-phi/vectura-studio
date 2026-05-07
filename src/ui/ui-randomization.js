@@ -17,6 +17,8 @@
         this.applyRainfallRandomBias(layer.params);
       } else if (layer.type === 'lissajous') {
         this.applyLissajousRandomBias(layer.params);
+      } else if (layer.type === 'pattern') {
+        this.applyPatternRandomBias(layer.params);
       }
     },
 
@@ -75,6 +77,20 @@
       if (Math.random() < 0.18) {
         params.count = Math.round(clamp(params.count * 1.2, 60, 1200));
         params.traceLength = Math.round(clamp(params.traceLength * 1.15, 30, 240));
+      }
+    },
+
+    applyPatternRandomBias(params) {
+      const bundled = window.Vectura?.BUNDLED_PATTERNS || window.Vectura?.PATTERNS || [];
+      const userPatterns = window.Vectura?.PatternRegistry?.getCustomPatterns?.() || [];
+      const pool = [...bundled, ...userPatterns];
+      const filter = params.patternFilter || 'all';
+      const candidates = filter === 'lines' ? pool.filter((p) => p.lines) :
+                         filter === 'fills' ? pool.filter((p) => p.fills) :
+                         pool;
+      const available = candidates.length ? candidates : pool;
+      if (available.length) {
+        params.patternId = available[Math.floor(Math.random() * available.length)].id;
       }
     },
 

@@ -10580,26 +10580,37 @@
           e.stopPropagation();
           this.setTopMenuOpen(null, false);
           const hasContent = (this.app?.engine?.layers?.length ?? 0) > 0;
+          const startTour = () => {
+            SETTINGS.tourSeen = false;
+            setTimeout(() => {
+              window.Vectura.Tutorial?.start(() => {
+                SETTINGS.tourSeen = true;
+                this.app?.persistPreferences?.();
+              });
+            }, 0);
+          };
           if (hasContent) {
-            const ok = window.confirm(
-              'Starting the tour will clear the current canvas. Continue?'
-            );
-            if (!ok) return;
-            if (this.app.pushHistory) this.app.pushHistory();
-            this.app.engine.layers = [];
-            this.app.engine.activeLayerId = null;
-            this.app.setSelection?.([], null);
-            this.renderLayers();
-            this.buildControls();
-            this.app.render();
+            const body = '<p class="modal-text">Starting the tour will clear the current canvas. Continue?</p>'
+              + '<div class="color-modal-actions" style="margin-top:16px;">'
+              + '<button type="button" class="tour-cancel-btn">Cancel</button>'
+              + '<button type="button" class="tour-continue-btn color-modal-apply">Continue</button>'
+              + '</div>';
+            this.openModal({ title: 'Clear Canvas?', body });
+            this.modal.bodyEl.querySelector('.tour-cancel-btn').onclick = () => this.closeModal();
+            this.modal.bodyEl.querySelector('.tour-continue-btn').onclick = () => {
+              this.closeModal();
+              if (this.app.pushHistory) this.app.pushHistory();
+              this.app.engine.layers = [];
+              this.app.engine.activeLayerId = null;
+              this.app.setSelection?.([], null);
+              this.renderLayers();
+              this.buildControls();
+              this.app.render();
+              startTour();
+            };
+            return;
           }
-          SETTINGS.tourSeen = false;
-          setTimeout(() => {
-            window.Vectura.Tutorial?.start(() => {
-              SETTINGS.tourSeen = true;
-              this.app?.persistPreferences?.();
-            });
-          }, 0);
+          startTour();
         };
       }
       if (themeToggle) {
