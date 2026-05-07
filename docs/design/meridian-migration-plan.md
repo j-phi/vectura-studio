@@ -11,8 +11,8 @@
 | **Phase −1** — Mockup provenance | ✅ done | `7d9f426` |
 | **Phase 0** — Skin foundation | ✅ done | `7d9f426` (+ graphify rebuild `e442a4b`) |
 | **Phase 1** — Component library | ✅ done | `16ec81d` `440c84a` `d959a9b` `554ee88` `65791e5` `c7fa0db` |
-| **Phase 2** — Shell, panels, orchestrator | ⏳ in progress (steps 1–6 done; step 7 next) | `a16ad57` `313d427` `7ca4795` `5c2edcc` `3a8b7be` `2692993` `2de5154` `c28bb4a` `c841598` `f377edb` `886499b` `ede23da` `8eddbf4` `360cbdc` `540dad5` `c98e9db` `243eccf` `56848c9` `e0bae17` `accfd99` `5529209` `562f9b2` |
-| **Phase 3** — Modals, overlays, menus | ⏳ pending | — |
+| **Phase 2** — Shell, panels, orchestrator | ✅ done | `a16ad57` `313d427` `7ca4795` `5c2edcc` `3a8b7be` `2692993` `2de5154` `c28bb4a` `c841598` `f377edb` `886499b` `ede23da` `8eddbf4` `360cbdc` `540dad5` `c98e9db` `243eccf` `56848c9` `e0bae17` `accfd99` `5529209` `562f9b2` `9628561` |
+| **Phase 3** — Modals, overlays, menus | ⏳ next | — |
 | **Phase 4** — Editors & specialized surfaces | ⏳ pending | — |
 | **Phase 5** — Polish, SDK, cleanup | ⏳ pending | — |
 
@@ -1013,21 +1013,57 @@ If all 13 steps pass and `npm run test:ci` is green, the migration is complete.
 
 ---
 
-## Appendix: Resuming Phase 2 step 7
+## Phase 2 step 7 actuals
 
-Phase 2 is split into seven sequential steps. **Steps 1–6 are complete:** CONTROL_DEFS extraction, `buildControls()` extraction, 8 shell module extractions, 8 panel module extractions, persistence/shortcuts/orchestrator-blueprint extractions, and the orchestrator-entry rename + wire-up. **Step 7 is next:** `src/render/renderer.js` token cache reads `--ui-*` directly.
+**One-commit step.** Implementation: `9628561` (`feat(skin): Phase 2 step 7 — renderer token cache reads --ui-* directly`).
 
-After clearing context, the fastest way to pick up Phase 2 step 7:
+**Files shipped:**
+
+- `src/render/renderer.js` — modified. The closure-local `getThemeToken(name, fallback)` helper at lines 47–61 was rewritten to:
+  - Consult canonical `--ui-*` tokens first when the requested name is a known legacy `--color-*` alias (today only `--color-accent` → `--ui-accent`; the `_UI_TOKEN_FOR_COLOR` mapper is the single seam where new aliases get added).
+  - Fall back to the original name if the `--ui-*` value is unset.
+  - Cache by name (`Map<string, string>`) — no longer keyed by `dataset.theme`. Invalidation is event-driven instead of dataset-derived.
+  - Listen to `document.addEventListener('vectura:skin-change', invalidate)` so any skin swap drops the cache. The event is dispatched by `src/ui/skin/skin-manager.js` (line 141) inside a `requestAnimationFrame` after the `data-ui-skin` attribute and stylesheet swap commit.
+  - Surface the cache as `Renderer.__tokenCache = { get, invalidate }` for unit tests (test-only hook; production code keeps calling the closure-local `getThemeToken`).
+- `tests/unit/render/token-cache.test.js` — new (7 tests). RGR red-then-green proof. Asserts: API surface, direct `--ui-*` read, fallback on undefined, in-cache reads, `vectura:skin-change` invalidates, `--color-accent` request honors `--ui-accent` first, `--color-accent` falls back to direct read when no `--ui-*` is set.
+- `tests/unit/render/` directory — new. First test under `tests/unit/render/`; existing renderer tests live at `tests/unit/renderer-*.test.js` (kept untouched).
+
+**Cache invalidation event:** `vectura:skin-change`, dispatched on `document` by `src/ui/skin/skin-manager.js:141` inside the `activate()` flow (one rAF after `data-ui-skin` and `link#active-skin` are written). Renderer subscribes once at IIFE init time.
+
+**Read path choice:** the renderer continues to call `getComputedStyle` directly via the closure-local helper rather than going through `window.Vectura.UI.tokens.get` — the tokens.js helper does no caching, and the renderer reads tokens many times per frame (~30 calls in the draw paths inventoried). The cache lives in the renderer's IIFE so no extra global hop on the hot path.
+
+**Aliasing audit (legacy skins):** all 16 unique tokens read by the renderer are either `--render-*` (which every skin file defines directly — no alias chain involved) or `--color-accent`. The legacy palette files (`classic-dark.css`, `classic-light.css`, `lark.css`) set `--ui-accent: var(--color-accent)`; meridian palettes set `--color-accent: var(--ui-accent)`. So reading `--ui-accent` first then falling back to `--color-accent` resolves byte-identically under all 5 skins. **Visual baselines passed without updates** (13/13 SVG baselines, 0-pixel diff).
+
+**Test totals before → after:** 635 unit + 66 integration + 13 visual + 2 perf → **642 unit + 66 integration + 13 visual + 2 perf**. Net +7 unit tests (the new `tests/unit/render/token-cache.test.js`).
+
+**Patterns / gotchas Phase 3 must know:**
+
+1. **The `_UI_TOKEN_FOR_COLOR` mapper is the only place renderer code maps legacy `--color-*` names to canonical `--ui-*`.** Today it has one entry. Adding a new `getThemeToken('--color-foo', ...)` call site requires adding a mapper entry — otherwise the canonical Meridian `--ui-foo` token won't be consulted. Future Phase 3 work that wires renderer-bound modal/menu surfaces should prefer reading `--ui-*` names directly (skipping the mapper), keeping the mapper a back-compat artifact.
+2. **Cache lifetime is process-wide, not per-Renderer.** The Map lives in the renderer.js IIFE closure, not on the Renderer instance. Multiple Renderer instances share it, which is fine because tokens are document-element scoped. Tests can clear it via `Renderer.__tokenCache.invalidate()`.
+3. **The `vectura:skin-change` event fires inside `requestAnimationFrame`.** Tests that synchronously read tokens immediately after `SkinManager.activate(...)` will see stale cached values until the rAF fires. The new test simulates the event directly (no rAF needed) — production code is correct because the renderer redraws after the event.
+4. **`Renderer.__tokenCache` is a test-only hook.** The double-underscore prefix marks it as private. Phase 3 code should NOT depend on it; if a Phase 3 module needs cached token reads, expose a real API on `Vectura.UI.tokens` (which still has no cache today).
+
+---
+
+## Appendix: Resuming from Phase 3
+
+Phase 2 is complete (7 steps, 23 commits — including the docs commits). The Meridian skin migration's foundation, component library, shell, panels, orchestrator entry, and renderer token cache all ship. Phase 3 starts the modal/overlay/menu rewrite per §3 ("Phase 3" heading earlier in this plan).
+
+After clearing context, the fastest way to pick up Phase 3:
 
 1. `cd /Users/jayphi/Documents/github/vectura-studio-meridian` (the worktree, on branch `meridian-blue-skin`).
-2. `git log --oneline -5` — confirm HEAD is the docs commit recording step 6 completion (the latest `docs(skin):` commit). The step 6 implementation chain: `562f9b2` (rename + orchestrator entry wire-up). Step 6 chose option (b) — `_ui-legacy.js` carries the legacy UI class, mixins, bind() block, and namespace shim; the new thin `ui.js` aliases `window.Vectura.UI` as `Orchestrator`.
-3. Confirm tests are green before changing anything: `npm run test:unit && npm run test:integration && npm run test:visual && npm run test:perf` (635 unit, 66 integration, 13 visual, 2 perf — all green at end of step 6).
-4. **Step 7 target: renderer token cache.** `src/render/renderer.js` reads `--ui-*` tokens directly via `getComputedStyle(document.documentElement).getPropertyValue('--ui-color-...')` on every frame (or close to it). Step 7 caches those reads behind a `getRendererToken()` helper that listens to the `vectura:skin-change` event (already dispatched by `App.applyTheme()` per §2.7) and invalidates the cache. The helper should mirror the existing `getThemeToken()` cache shape in `src/ui/_ui-legacy.js` (roughly: `Map<string, string>` keyed by token name, cleared on skin change).
-5. **First move:** read `src/render/renderer.js` and grep for `--ui-` and `getComputedStyle` to find every read site. There are likely 5–15 distinct token reads scattered through draw paths (selection outline, grid color, margin line color, layer outlines, etc.). Catalog them, then introduce the cache module (suggested location: `src/render/token-cache.js` or inline within renderer.js if it's small enough). Bind to the `vectura:skin-change` event for invalidation.
-6. **Test plan:** `test:visual` is the canary — token-cache regressions show up as one-px color shifts. Add a unit test that exercises cache invalidation on skin change. RGR: write a failing test that asserts `getRendererToken('--ui-accent')` returns the freshly applied skin's accent color after a `vectura:skin-change` dispatch; without the cache invalidation, the stale value would be returned. **Test command:** `npm run test:unit && npm run test:integration && npm run test:visual && npm run test:perf`.
-7. **Step 7 does NOT touch:** `src/ui/_ui-legacy.js`, `src/ui/ui.js`, `src/app/app.js`, `index.html`. Stay in `src/render/`.
-8. **Deferred items step 7 may need to coordinate with (or leave to Phase 3):**
-   - **Mixin dissolution for auto-colorize-panel and noise-rack-panel** (deferred since step 4). Untouched by step 7.
-   - **`refreshDocumentUnitsUi`, `refreshThemeUi` cross-call resolution.** Both still round-trip through prototype delegators on legacy UI. Step 7 doesn't change this.
-   - **Option (a) completion** (truly thin orchestrator). The plan's eventual goal is to drain the IIFE-locals + prototype methods out of `_ui-legacy.js` so the new `ui.js` owns the bind() block and init dispatch. Each Phase 3 modal/overlay extraction is a step toward this; track in the Phase 3 actuals.
-9. **Phase 2 remaining moves after step 7:** Phase 2 closes with step 7. After step 7, run the Phase 2 wrap-up protocol (§"Phase wrap-up protocol (mandatory)" near the top of this plan): flip Phase 2 from `⏳` to `✅` in the Status table, write a "Phase 2 actuals" note, rewrite this appendix as "Resuming from Phase 3," update memory, and commit a `docs(skin):` closeout.
+2. `git log --oneline -5` — confirm HEAD is the docs commit recording Phase 2 closure (latest `docs(skin):` commit). The step 7 implementation commit is `9628561`. Phase 2 is fully done.
+3. Confirm tests are green before changing anything: `npm run test:unit && npm run test:integration && npm run test:visual && npm run test:perf` (642 unit, 66 integration, 13 visual, 2 perf — all green at end of step 7).
+4. **Phase 3 target: modals, overlays, menus.** Read §3 ("Phase 3") earlier in this plan. The Phase 3 plan inventories every modal/overlay surface (export modal, document-units modal, file-io modals, layer settings modal, info modals, tooltips, menus, drag-drop overlay, toasts) and lays out the per-surface extraction sequence.
+5. **First move (smallest modal first, lowest-risk):** start with the simplest single-purpose modal in `_ui-legacy.js`. Recommended candidates (read each body to pick the smallest):
+   - **Toast / notification surface** if it exists as a single helper — usually 50–80 LOC and has zero state of its own.
+   - **Confirm dialog** (`window.confirm` analog) — also small, easy compile-gate test.
+   - **Layer settings modal** — much larger; defer until 1–2 small ones land first.
+   The Phase 1 component library already ships `src/ui/overlays/{modal, dialog, toast, menu, drag-drop, empty-state}.js` (locked component contract: `factory(host, props) → { el, update, destroy }`). Phase 3 panels compose those overlays — no new primitives needed.
+6. **Compile-gate-test-first pattern (locked since Phase 2):** every panel/overlay extraction starts with a `tests/unit/<surface>-compile.test.js` that loads the new module under JSDOM and asserts (a) it registers on `window.Vectura.UI.<Name>`, (b) all `showIf` predicates and DOM lookups work against `ALGO_DEFAULTS` + a stub UI, (c) no `ReferenceError` from missing closure-captured locals. Phase 2's compile gates caught 3 such locals on day one — same will apply to Phase 3 modals.
+7. **Carry-over deferred items (now mandatory for Phase 3):**
+   - **Mixin dissolution for `auto-colorize-panel` and `noise-rack-panel`** (deferred from step 5). Both still forward to `window.Vectura._UIAutoColorizeMixin` and `window.Vectura._UINoiseRackMixin`. The mixin attachment lines (`Object.assign(UI.prototype, …)`) live in `src/ui/_ui-legacy.js` lines ~9253–9260. Phase 3's modal seam is the natural touch point — when the auto-colorize panel's modal lifts into `src/ui/overlays/`, the mixin can dissolve into the panel's `bind()` bag.
+   - **Satellite cleanup for ~50 prototype methods + ~30 IIFE locals in `_ui-legacy.js`** (deferred from step 6 option-(b) decision). Each Phase 3 modal/menu extraction reduces this surface incrementally. The eventual goal is option (a) — a truly thin `ui.js` orchestrator with `_ui-legacy.js` deletable. No need to land it in one phase; just track the line count drop in each Phase 3 actuals.
+   - **`refreshDocumentUnitsUi`, `refreshThemeUi` cross-call resolution.** Both still round-trip through prototype delegators on legacy UI. Phase 3 may extract these alongside their owning panels (theme-switcher.js already has the wiring; document-units may need a new shell/satellite module).
+8. **Phase 3 does NOT touch (without explicit user request):** `src/render/renderer.js`, `src/core/`, `src/config/`. Stay in `src/ui/` (overlays, panels, satellites) and `index.html` (script load order if a new module ships).
+9. **Phase 3 wrap-up:** when all Phase 3 commits have landed and `npm run test:ci` is green, run the Phase wrap-up protocol (§"Phase wrap-up protocol (mandatory)" at the top of this plan): flip Phase 3 from `⏳` to `✅`, write a "Phase 3 actuals" note, rewrite this appendix as "Resuming from Phase 4," update memory, and commit a `docs(skin):` closeout.
