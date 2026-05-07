@@ -11,7 +11,7 @@
 | **Phase −1** — Mockup provenance | ✅ done | `7d9f426` |
 | **Phase 0** — Skin foundation | ✅ done | `7d9f426` (+ graphify rebuild `e442a4b`) |
 | **Phase 1** — Component library | ✅ done | `16ec81d` `440c84a` `d959a9b` `554ee88` `65791e5` `c7fa0db` |
-| **Phase 2** — Shell, panels, orchestrator | ⏳ in progress (steps 1–5 done; step 6 next) | `a16ad57` `313d427` `7ca4795` `5c2edcc` `3a8b7be` `2692993` `2de5154` `c28bb4a` `c841598` `f377edb` `886499b` `ede23da` `8eddbf4` `360cbdc` `540dad5` `c98e9db` `243eccf` `56848c9` `e0bae17` `accfd99` `5529209` |
+| **Phase 2** — Shell, panels, orchestrator | ⏳ in progress (steps 1–6 done; step 7 next) | `a16ad57` `313d427` `7ca4795` `5c2edcc` `3a8b7be` `2692993` `2de5154` `c28bb4a` `c841598` `f377edb` `886499b` `ede23da` `8eddbf4` `360cbdc` `540dad5` `c98e9db` `243eccf` `56848c9` `e0bae17` `accfd99` `5529209` `562f9b2` |
 | **Phase 3** — Modals, overlays, menus | ⏳ pending | — |
 | **Phase 4** — Editors & specialized surfaces | ⏳ pending | — |
 | **Phase 5** — Polish, SDK, cleanup | ⏳ pending | — |
@@ -972,27 +972,62 @@ If all 13 steps pass and `npm run test:ci` is green, the migration is complete.
 
 ---
 
-## Appendix: Resuming Phase 2 step 6
+## Phase 2 step 6 actuals
 
-Phase 2 is split into seven sequential steps. **Steps 1–5 are complete:** CONTROL_DEFS extraction, `buildControls()` extraction, 8 shell module extractions, 8 panel module extractions, and persistence/shortcuts/orchestrator-blueprint extractions. **Step 6 is next:** `index.html` body rewrite + rename `ui.js` → `_ui-legacy.js`.
+**Migration shape chosen: option (b) — legacy carried as satellite.** Per the plan's Resume-step-6 appendix, option (a) (fully draining the ~50 surviving prototype methods + ~30 IIFE locals from legacy `ui.js` into satellite modules) was out of budget for this step. Option (b) keeps `_ui-legacy.js` loaded as a satellite that owns the `class UI` declaration, mixin assignment, the 19-call `bind()` block, and the namespace-preservation shim. The new thin `ui.js` is the runtime entry script `index.html` loads, and aliases `window.Vectura.UI` as `window.Vectura.UI.Orchestrator` so callers preferring the explicit name reach the same constructor as `new UI(app)`. The init-method dispatch (28 calls in the constructor) lives in legacy, untouched. This is the explicit "pragmatic fallback" the plan permits — option (a) can be completed incrementally over Phase 3+ as each prototype method extracts to a satellite.
 
-After clearing context, the fastest way to pick up Phase 2 step 6:
+**Files actually shipped** (commit `562f9b2`):
+
+- `src/ui/_ui-legacy.js` (renamed from `src/ui/ui.js` via `git mv`, 9,430 lines, byte-identical to pre-rename `ui.js`). All `bind()` calls, mixin attachment, init-method dispatch, and namespace shim still here.
+- `src/ui/ui.js` (renamed from `src/ui/_ui-orchestrator.js` via `git mv`, ~130 lines after step-6 edits). Replaces the step-5c blueprint that threw on construction. Now is a thin entry script that aliases the orchestrator and provides a tripwire when loaded standalone.
+- `src/ui/_ui-orchestrator.js` — deleted (renamed away).
+- `index.html` — added `<script src="./src/ui/_ui-legacy.js" defer></script>` BEFORE `<script src="./src/ui/ui.js" defer></script>`. The new `ui.js` MUST load AFTER `_ui-legacy.js` so `window.Vectura.UI = UI` (the class) is in place when the orchestrator entry runs. Body markup unchanged — none of the IDs in §2.8 ("Hidden DOM Stash Inventory") were touched.
+- `tests/helpers/load-vectura-runtime.js` — added `_ui-legacy.js` to the `includeUi=false` skip list.
+- `tests/unit/ui-orchestrator-compile.test.js` — rewritten to assert the new standalone shape: when `ui.js` loads without `_ui-legacy.js`, the `Orchestrator` placeholder throws a clear "load order" error trip-wire.
+
+**Index.html body changes:** none. Shell modules already query existing IDs, so no DOM rewrite was needed for option (b). Step 6's index.html change is purely the script-load-order edit (one extra `<script>` tag for `_ui-legacy.js`).
+
+**Browser smoke test results** (programmatic via Playwright on local `python3 -m http.server`):
+
+- Page loads with **zero pageerrors** (only the pre-existing Tailwind CDN production warning on console).
+- `typeof window.Vectura.UI === 'function'` (legacy class registered).
+- `window.Vectura.UI.Orchestrator === window.Vectura.UI` (alias confirmed).
+- `app.ui.constructor.name === 'UI'`, `app.ui.controls` populated, theme is `'dark'` initially.
+- Theme switch (dark → lark) works via `app.toggleTheme()`.
+- Top menu (`[data-top-menu-trigger]`) opens on click — `aria-expanded` flips to `'true'`.
+- Layer add via `engine.addLayer({ algorithm: 'flowfield' })` works (`layers.length: 0 → 1`).
+- `ui.buildControls()` and `ui.refreshThemeUi()` round-trip cleanly with no exception.
+- `ui.openExportModal()` runs without throwing.
+
+**Test totals before → after:** 635 unit + 66 integration + 13 visual + 2 perf → 635 unit + 66 integration + 13 visual + 2 perf. No new tests added; the existing `ui-orchestrator-compile.test.js` was rewritten in place (still 2 tests). e2e was sampled — the one pre-existing flake (`shape reticle cursor` Alt-drag test, 1.13 px positioning discrepancy) reproduces on baseline `1f32b72` without step-6 changes, so it's not a step-6 regression.
+
+**Patterns / gotchas the next step (step 7: renderer token cache) and Phase 3 must know:**
+
+1. **`ui.js` is the runtime entry; `_ui-legacy.js` is the implementation.** Anything that writes `window.Vectura.UI = X` from a third script that loads AFTER `_ui-legacy.js` but BEFORE `ui.js` will clobber the class. Step-6's new `ui.js` does NOT re-run the namespace-preservation shim — the shim only exists in `_ui-legacy.js`'s IIFE. If a future module ever needs to attach to `window.Vectura.UI`, it must do so via static-property assignment (`Vectura.UI.Foo = ...`), not by reassigning `Vectura.UI` itself.
+2. **The `App` IIFE in `src/app/app.js` destructures `UI` from `window.Vectura` at script-load time.** That destructure runs AFTER `app.js` loads (which is AFTER `ui.js`, which is AFTER `_ui-legacy.js`), so by then `window.Vectura.UI` is the legacy class. `new App()` later calls `new UI(this)` — that picks up the captured reference. Do NOT reorder `app.js` to load before `ui.js` or `_ui-legacy.js`.
+3. **Compile-gate test now exercises a different shape.** `tests/unit/ui-orchestrator-compile.test.js` loads ONLY `src/ui/ui.js` in JSDOM (no legacy, no panels) and asserts the standalone trip-wire. Future Phase 3 work that promotes more stuff into `ui.js` must keep this trip-wire shape OR rewrite the test.
+4. **The 19-call `bind()` block stays in `_ui-legacy.js`.** Each individual `bind()` call uses IIFE-local helpers that aren't exposed (`getEl`, `SETTINGS`, `ALGO_DEFAULTS`, `escapeHtml`, etc.). To move a `bind()` call into the new `ui.js`, those helpers must first be exposed as `window.Vectura.UI.helpers.<name>` (or moved into a shared `src/ui/helpers/*.js` module). That is Phase 3+ work.
+5. **Step 7 (renderer token cache) does NOT touch `_ui-legacy.js` or `ui.js`.** It edits `src/render/renderer.js` to cache `--ui-*` token reads. The UI-orchestrator change in step 6 is independent and should not interact with the renderer change.
+6. **Mixin dissolution remains deferred.** `auto-colorize-panel.js` and `noise-rack-panel.js` are still namespace anchors that forward to `window.Vectura._UIAutoColorizeMixin` / `window.Vectura._UINoiseRackMixin`. The mixin attachment lines (`Object.assign(UI.prototype, ...)`) are in `_ui-legacy.js` lines 9253–9260. Phase 3 modal/overlay extraction is a more natural seam.
+7. **Browser smoke is required for step-6-class changes.** Automated unit/integration/visual/perf tests do NOT exercise the actual page-load runtime (they all use JSDOM stubs or skip UI scripts). For changes that reorder index.html script tags or rename UI files, run a quick programmatic Playwright smoke (or open `file:///.../index.html` in a real browser) and assert: page-error count is zero, `window.app.ui.constructor.name === 'UI'`, `app.engine.layers` is queryable.
+
+---
+
+## Appendix: Resuming Phase 2 step 7
+
+Phase 2 is split into seven sequential steps. **Steps 1–6 are complete:** CONTROL_DEFS extraction, `buildControls()` extraction, 8 shell module extractions, 8 panel module extractions, persistence/shortcuts/orchestrator-blueprint extractions, and the orchestrator-entry rename + wire-up. **Step 7 is next:** `src/render/renderer.js` token cache reads `--ui-*` directly.
+
+After clearing context, the fastest way to pick up Phase 2 step 7:
 
 1. `cd /Users/jayphi/Documents/github/vectura-studio-meridian` (the worktree, on branch `meridian-blue-skin`).
-2. `git log --oneline -5` — confirm HEAD is the docs commit recording step 5 completion (the latest `docs(skin):` commit). The full step 5 implementation chain (in order): `e0bae17` (5a persistence) → `accfd99` (5b shortcuts) → `5529209` (5c orchestrator blueprint).
-3. Confirm tests are green before changing anything: `npm run test:unit && npm run test:integration` (635 unit, 66 integration).
-4. **Namespace members now on `window.Vectura.UI.*`:** `CONTROL_DEFS`, `AlgoConfigPanel`, `ThemeSwitcher`, `MenuBar`, `PaneLeft`, `PaneRight`, `Workspace`, `BottomPane`, `Toolbar`, `Header`, `FormulaPanel`, `AutoColorizePanel`, `NoiseRackPanel`, `TransformPanel`, `LayersPanel`, `PensPanel`, `ModifiersPanel`, `AlgorithmPanel`, `Persistence`, `Shortcuts`, `Orchestrator`. All preserved through the namespace-copy patch.
-5. **Step 6 target: `index.html` body rewrite + rename old `ui.js` → `_ui-legacy.js`.** Two coupled moves, plus parity verification:
-   - **Read `src/ui/_ui-orchestrator.js` first** — it documents the exact constructor init-method order (28 calls), the bind() block ordering for every satellite module (19 binds), and the namespace-preservation shim that must be kept byte-identical.
-   - **Decide the migration shape:** either (a) finish moving the ~50 surviving prototype methods + ~30 IIFE locals out of legacy ui.js into satellite modules so the new `ui.js` is truly ~600 LOC, OR (b) accept that `_ui-legacy.js` continues to load as a satellite carrying the un-extracted bodies (slimmer scope, faster step 6, more incremental). The plan's intent is (a), but (b) is a pragmatic fallback if the residual extraction is bigger than budget.
-   - **Replace the body of legacy `ui.js`** with the orchestrator (move `_ui-orchestrator.js` body in place, populate the constructor with the bind() block + init dispatch documented in the blueprint).
-   - **Rename old `ui.js` → `_ui-legacy.js`** if option (b); skip if option (a) and `ui.js` is now self-contained.
-   - **Update `index.html` script load order:** the orchestrator (`ui.js`) must load LAST, AFTER all panel/shell/persistence/shortcuts modules that it binds. If `_ui-legacy.js` is in play, load it BEFORE `ui.js` so its prototype methods are attached when the orchestrator constructor runs.
-   - **Delete the throw guard** in `_ui-orchestrator.js`'s constructor — it's there as a "you forgot to wire me up" trip wire, not real behavior.
-6. **Test command to confirm green:** `npm run test:unit && npm run test:integration && npm run test:visual && npm run test:perf`. Step 6 changes the runtime load order, so it MUST also pass `npm run test:e2e` before commit.
-7. **Key IIFE-locals still in legacy `ui.js`** (search legacy ui.js preamble for the full list): `getEl`, `SETTINGS`, `ALGO_DEFAULTS`, `MACHINES`, `PALETTES`, `PRESETS`, `DESCRIPTIONS`, `isPetalisLayerType`, `isModifierLayer`, `getContrastTextColor`, `clone`, `clamp`, `getDocumentUnitLabel`, `mmToDocumentUnits`, `documentUnitsToMm`, `createPetalisModifier`, `createPetalModifier`, `createPetalisShading`, `escapeHtml`, `usesSeed`, `getThemeToken`, `TRANSFORM_KEYS`, `MODIFIER_DEFAULTS`, `Algorithms`, `isPrimitiveShapeLayer`, plus `COMMON_CONTROLS`, `OPTIMIZATION_STEPS`, `IMAGE_NOISE_DEFAULT_AMPLITUDE`, `WAVE_NOISE_DEFS`, `RINGS_NOISE_DEFS`, `TOPO_NOISE_DEFS`, `FLOWFIELD_NOISE_DEFS`, `GRID_NOISE_DEFS`, `PHYLLA_NOISE_DEFS`, `PETALIS_DRIFT_NOISE_DEFS`, `PETALIS_MODIFIER_TYPES`, `PETALIS_PETAL_MODIFIER_TYPES`, `PETALIS_SHADING_TYPES`, `PETALIS_LINE_TYPES`, `PETALIS_PRESET_LIBRARY`, `TERRAIN_PRESET_LIBRARY`, `RINGS_PRESET_LIBRARY`, `getAnchoredColorProxyInput`, `openColorPickerAnchoredTo`, `escapeXmlAttr`, `normalizeSvgId`, `roundToStep`, `formatValue`, `formatDisplayValue`, `getDisplayConfig`, `toDisplayValue`, `fromDisplayValue`, `attachKeyboardRangeNudge`. Step 6 needs to decide which of these become satellite-module DI bag entries and which become module-private.
-8. **Deferred items step 6 must handle (or defer to Phase 3):**
-   - **Mixin dissolution for auto-colorize-panel and noise-rack-panel** (deferred from steps 4 + 5). Both panels are still namespace anchors forwarding to `window.Vectura._UIAutoColorizeMixin` / `window.Vectura._UINoiseRackMixin`. Step 6 should defer to Phase 3 unless the index.html rewrite naturally touches these surfaces.
-   - **`refreshDocumentUnitsUi`, `refreshThemeUi` cross-call resolution.** `applyPersistedSettings` (in `persistence.js`) calls both. They round-trip through prototype delegators today — that's fine for now, but if the orchestrator constructor reorders init steps, the delegators must still be reachable.
-9. **Phase 2 remaining moves after step 6:**
-   - **Step 7 — renderer token cache.** `src/render/renderer.js` reads `--ui-*` tokens directly. Cache them in a `getThemeToken`-style helper to avoid per-frame `getComputedStyle` calls. Independent of the UI extraction work.
+2. `git log --oneline -5` — confirm HEAD is the docs commit recording step 6 completion (the latest `docs(skin):` commit). The step 6 implementation chain: `562f9b2` (rename + orchestrator entry wire-up). Step 6 chose option (b) — `_ui-legacy.js` carries the legacy UI class, mixins, bind() block, and namespace shim; the new thin `ui.js` aliases `window.Vectura.UI` as `Orchestrator`.
+3. Confirm tests are green before changing anything: `npm run test:unit && npm run test:integration && npm run test:visual && npm run test:perf` (635 unit, 66 integration, 13 visual, 2 perf — all green at end of step 6).
+4. **Step 7 target: renderer token cache.** `src/render/renderer.js` reads `--ui-*` tokens directly via `getComputedStyle(document.documentElement).getPropertyValue('--ui-color-...')` on every frame (or close to it). Step 7 caches those reads behind a `getRendererToken()` helper that listens to the `vectura:skin-change` event (already dispatched by `App.applyTheme()` per §2.7) and invalidates the cache. The helper should mirror the existing `getThemeToken()` cache shape in `src/ui/_ui-legacy.js` (roughly: `Map<string, string>` keyed by token name, cleared on skin change).
+5. **First move:** read `src/render/renderer.js` and grep for `--ui-` and `getComputedStyle` to find every read site. There are likely 5–15 distinct token reads scattered through draw paths (selection outline, grid color, margin line color, layer outlines, etc.). Catalog them, then introduce the cache module (suggested location: `src/render/token-cache.js` or inline within renderer.js if it's small enough). Bind to the `vectura:skin-change` event for invalidation.
+6. **Test plan:** `test:visual` is the canary — token-cache regressions show up as one-px color shifts. Add a unit test that exercises cache invalidation on skin change. RGR: write a failing test that asserts `getRendererToken('--ui-accent')` returns the freshly applied skin's accent color after a `vectura:skin-change` dispatch; without the cache invalidation, the stale value would be returned. **Test command:** `npm run test:unit && npm run test:integration && npm run test:visual && npm run test:perf`.
+7. **Step 7 does NOT touch:** `src/ui/_ui-legacy.js`, `src/ui/ui.js`, `src/app/app.js`, `index.html`. Stay in `src/render/`.
+8. **Deferred items step 7 may need to coordinate with (or leave to Phase 3):**
+   - **Mixin dissolution for auto-colorize-panel and noise-rack-panel** (deferred since step 4). Untouched by step 7.
+   - **`refreshDocumentUnitsUi`, `refreshThemeUi` cross-call resolution.** Both still round-trip through prototype delegators on legacy UI. Step 7 doesn't change this.
+   - **Option (a) completion** (truly thin orchestrator). The plan's eventual goal is to drain the IIFE-locals + prototype methods out of `_ui-legacy.js` so the new `ui.js` owns the bind() block and init dispatch. Each Phase 3 modal/overlay extraction is a step toward this; track in the Phase 3 actuals.
+9. **Phase 2 remaining moves after step 7:** Phase 2 closes with step 7. After step 7, run the Phase 2 wrap-up protocol (§"Phase wrap-up protocol (mandatory)" near the top of this plan): flip Phase 2 from `⏳` to `✅` in the Status table, write a "Phase 2 actuals" note, rewrite this appendix as "Resuming from Phase 3," update memory, and commit a `docs(skin):` closeout.
