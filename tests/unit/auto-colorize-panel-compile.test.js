@@ -1,5 +1,13 @@
 /*
- * Compile gate for src/ui/panels/auto-colorize-panel.js (Phase 2 step 4).
+ * Compile gate for src/ui/panels/auto-colorize-panel.js (Phase 3 closure:
+ * mixin dissolved into the panel module).
+ *
+ * After dissolution the panel:
+ *   - exposes 4 implementation methods (initAutoColorizationPanel,
+ *     getAutoColorizationConfig, getAutoColorizationTargets, applyAutoColorization)
+ *   - exposes installOn(proto) that wires the 4 methods onto a prototype
+ *   - reads SETTINGS / clamp / getEl from its bind() DI bag (no longer
+ *     captured in a satellite IIFE)
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -24,7 +32,7 @@ const loadInJSDOM = (scriptPaths) => {
   return dom;
 };
 
-describe('auto-colorize-panel compile gate', () => {
+describe('auto-colorize-panel compile gate (Phase 3 dissolved)', () => {
   let dom;
   let AutoColorizePanel;
 
@@ -41,50 +49,77 @@ describe('auto-colorize-panel compile gate', () => {
 
   afterAll(() => dom?.window?.close?.());
 
-  it('exposes window.Vectura.UI.AutoColorizePanel with bind + 4 methods', () => {
+  it('exposes 4 methods + bind + installOn', () => {
     expect(AutoColorizePanel).toBeTruthy();
     expect(typeof AutoColorizePanel.bind).toBe('function');
+    expect(typeof AutoColorizePanel.installOn).toBe('function');
     expect(typeof AutoColorizePanel.initAutoColorizationPanel).toBe('function');
     expect(typeof AutoColorizePanel.getAutoColorizationConfig).toBe('function');
     expect(typeof AutoColorizePanel.getAutoColorizationTargets).toBe('function');
     expect(typeof AutoColorizePanel.applyAutoColorization).toBe('function');
   });
 
-  it('initAutoColorizationPanel throws a clear error before bind()', () => {
-    expect(() => AutoColorizePanel.initAutoColorizationPanel.call({}))
-      .toThrow(/AutoColorizePanel\.initAutoColorizationPanel invoked before AutoColorizePanel\.bind/);
+  it('methods throw clear error before bind() is called', () => {
+    // Reset DEPS by passing falsy then null-binding via fresh module load
+    // not possible without reload — instead, after first init test we
+    // exercise the post-bind path. Here verify the message shape on a
+    // fresh load.
+    const dom2 = loadInJSDOM([
+      'src/config/defaults.js',
+      'src/ui/panels/auto-colorize-panel.js',
+    ]);
+    const Panel2 = dom2.window.Vectura.UI.AutoColorizePanel;
+    expect(() => Panel2.getAutoColorizationConfig.call({}))
+      .toThrow(/AutoColorizePanel\.getAutoColorizationConfig invoked before AutoColorizePanel\.bind/);
+    dom2.window.close();
   });
 
-  it('after bind(deps), methods are no-ops when mixin absent', () => {
-    AutoColorizePanel.bind({});
+  it('after bind(SETTINGS, clamp, getEl), getAutoColorizationConfig returns a defaulted config', () => {
+    const settings = {};
+    AutoColorizePanel.bind({
+      SETTINGS: settings,
+      clamp: (v, lo, hi) => Math.max(lo, Math.min(hi, v)),
+      getEl: () => null,
+    });
+    const config = AutoColorizePanel.getAutoColorizationConfig.call({});
+    expect(config).toBeTruthy();
+    expect(config.enabled).toBe(false);
+    expect(config.scope).toBe('all');
+    expect(config.mode).toBe('none');
+    expect(config.params.penStride).toBe(1);
+    expect(settings.autoColorization).toBe(config);
+  });
+
+  it('initAutoColorizationPanel returns early when DOM missing (no throw)', () => {
+    AutoColorizePanel.bind({
+      SETTINGS: {},
+      clamp: (v, lo, hi) => Math.max(lo, Math.min(hi, v)),
+      getEl: () => null,
+    });
     expect(() => AutoColorizePanel.initAutoColorizationPanel.call({})).not.toThrow();
-    expect(AutoColorizePanel.getAutoColorizationConfig.call({})).toBe(null);
-    expect(AutoColorizePanel.getAutoColorizationTargets.call({}, 'selected')).toEqual([]);
-    expect(() => AutoColorizePanel.applyAutoColorization.call({}, {})).not.toThrow();
   });
 
-  it('after bind(deps), methods delegate to mixin when present', () => {
-    const w = dom.window;
-    let initCalls = 0;
-    let configCalls = 0;
-    let targetsArg;
-    let applyArg;
-    w.Vectura._UIAutoColorizeMixin = {
-      initAutoColorizationPanel() { initCalls += 1; },
-      getAutoColorizationConfig() { configCalls += 1; return { enabled: true }; },
-      getAutoColorizationTargets(scope) { targetsArg = scope; return ['a', 'b']; },
-      applyAutoColorization(opts) { applyArg = opts; },
-    };
+  it('installOn(proto) attaches 4 delegating methods', () => {
+    const proto = {};
+    AutoColorizePanel.installOn(proto);
+    expect(typeof proto.initAutoColorizationPanel).toBe('function');
+    expect(typeof proto.getAutoColorizationConfig).toBe('function');
+    expect(typeof proto.getAutoColorizationTargets).toBe('function');
+    expect(typeof proto.applyAutoColorization).toBe('function');
+  });
 
-    AutoColorizePanel.bind({});
-    AutoColorizePanel.initAutoColorizationPanel.call({});
-    expect(initCalls).toBe(1);
-    expect(AutoColorizePanel.getAutoColorizationConfig.call({})).toEqual({ enabled: true });
-    expect(AutoColorizePanel.getAutoColorizationTargets.call({}, 'all')).toEqual(['a', 'b']);
-    expect(targetsArg).toBe('all');
-    AutoColorizePanel.applyAutoColorization.call({}, { commit: true });
-    expect(applyArg).toEqual({ commit: true });
-
-    delete w.Vectura._UIAutoColorizeMixin;
+  it('prototype delegators forward `this` to the panel impl', () => {
+    const settings = {};
+    AutoColorizePanel.bind({
+      SETTINGS: settings,
+      clamp: (v, lo, hi) => Math.max(lo, Math.min(hi, v)),
+      getEl: () => null,
+    });
+    const proto = {};
+    AutoColorizePanel.installOn(proto);
+    const inst = Object.create(proto);
+    const config = inst.getAutoColorizationConfig();
+    expect(config).toBeTruthy();
+    expect(settings.autoColorization).toBe(config);
   });
 });

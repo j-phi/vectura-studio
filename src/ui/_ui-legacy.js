@@ -8030,7 +8030,10 @@
   Object.assign(UI.prototype, window.Vectura._UIPetalDesignerMixin || {});
   Object.assign(UI.prototype, window.Vectura._UINoiseRackMixin || {});
   Object.assign(UI.prototype, window.Vectura._UIFileIOMixin || {});
-  Object.assign(UI.prototype, window.Vectura._UIAutoColorizeMixin || {});
+  // Phase 3 closure: auto-colorize mixin dissolved into AutoColorizePanel.
+  // The panel installs its 4 methods directly on UI.prototype below (after
+  // bind()), replacing the old Object.assign(UI.prototype, _UIAutoColorizeMixin)
+  // call. The mixin file (src/ui/ui-auto-colorize.js) was deleted.
 
   // Phase 2 step 2: hand legacy IIFE-locals to algo-config-panel.js so its
   // extracted buildControls() body sees the same closure-captured constants
@@ -8138,11 +8141,18 @@
     window.Vectura.UI.FormulaPanel.bind({ getEl, escapeHtml, usesSeed });
   }
 
-  // Phase 2 step 4: register panels/auto-colorize-panel.js namespace anchor.
-  // No real deps yet — actual logic still lives in src/ui/ui-auto-colorize.js
-  // mixin attached to UI.prototype above. Step 5 will move the closure.
+  // Phase 3 closure: AutoColorizePanel — mixin dissolved. Bind the legacy
+  // IIFE locals (SETTINGS, clamp, getEl) so the panel can read them, then
+  // install the 4 methods directly on UI.prototype.
   if (window.Vectura?.UI?.AutoColorizePanel?.bind) {
-    window.Vectura.UI.AutoColorizePanel.bind({});
+    window.Vectura.UI.AutoColorizePanel.bind({
+      SETTINGS,
+      clamp,
+      getEl,
+    });
+    if (window.Vectura.UI.AutoColorizePanel.installOn) {
+      window.Vectura.UI.AutoColorizePanel.installOn(UI.prototype);
+    }
   }
 
   // Phase 2 step 4: register panels/noise-rack-panel.js namespace anchor.
