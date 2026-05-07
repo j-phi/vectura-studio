@@ -21,6 +21,18 @@
     }
   };
 
+  // Phase 4: indeterminate progress helper. Returns a handle with .done().
+  // Falls back to a no-op handle when the primitive is missing (legacy load
+  // path / JSDOM tests without overlay scripts).
+  const NOOP_HANDLE = { done() {}, update() {} };
+  const startProgress = (label) => {
+    const PB = window.Vectura?.UI?.overlays?.ProgressBar;
+    if (PB && typeof PB.show === 'function') {
+      try { return PB.show({ label }); } catch (_) { /* noop */ }
+    }
+    return NOOP_HANDLE;
+  };
+
   const normalizeSvgId = (value, prefix = 'id') => {
     const fallback = `${prefix || 'id'}`;
     const base = `${value ?? ''}`.trim() || fallback;
@@ -40,35 +52,40 @@
     },
 
     saveVecturaFile() {
-      const version = this.getAppVersion();
-      const images = window.Vectura?.NOISE_IMAGES || {};
-      const imagePayload = Object.entries(images).reduce((acc, [id, img]) => {
-        if (!img || !img.data) return acc;
-        acc[id] = {
-          width: img.width,
-          height: img.height,
-          data: Array.from(img.data),
+      const progress = startProgress('Saving project…');
+      try {
+        const version = this.getAppVersion();
+        const images = window.Vectura?.NOISE_IMAGES || {};
+        const imagePayload = Object.entries(images).reduce((acc, [id, img]) => {
+          if (!img || !img.data) return acc;
+          acc[id] = {
+            width: img.width,
+            height: img.height,
+            data: Array.from(img.data),
+          };
+          return acc;
+        }, {});
+        const payload = {
+          type: 'vectura',
+          version,
+          created: new Date().toISOString(),
+          state: this.app.captureState(),
+          images: imagePayload,
         };
-        return acc;
-      }, {});
-      const payload = {
-        type: 'vectura',
-        version,
-        created: new Date().toISOString(),
-        state: this.app.captureState(),
-        images: imagePayload,
-      };
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      const date = new Date().toISOString().slice(0, 10);
-      a.href = url;
-      a.download = `vectura-${date}.vectura`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      toast('Project saved', 'success');
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const date = new Date().toISOString().slice(0, 10);
+        a.href = url;
+        a.download = `vectura-${date}.vectura`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        toast('Project saved', 'success');
+      } finally {
+        progress.done();
+      }
     },
 
     openVecturaFile(file) {
@@ -525,6 +542,8 @@
     },
 
     exportSVG() {
+      const progress = startProgress('Exporting SVG…');
+      try {
       const snapshot =
         typeof this.getExportSnapshot === 'function'
           ? this.getExportSnapshot()
@@ -585,6 +604,9 @@
       a.download = 'vectura.svg';
       a.click();
       toast('SVG exported', 'success');
+      } finally {
+        progress.done();
+      }
     },
   };
 })();

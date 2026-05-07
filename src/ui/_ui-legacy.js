@@ -5131,6 +5131,11 @@
       try {
         window.Vectura?.UI?.Menus?.DragDropRouter?.attach?.(this);
       } catch (_) { /* missing module is non-fatal */ }
+      // Phase 4: surface indeterminate progress bar for engine.generate calls
+      // that exceed ~200 ms (large algorithm regenerations).
+      try {
+        window.Vectura?.UI?.Menus?.EngineProgressTap?.attach?.(this);
+      } catch (_) { /* missing module is non-fatal */ }
       this.initLeftPanelSections();
       this.initAboutSection();
       this.initAlgorithmTransformSection();
