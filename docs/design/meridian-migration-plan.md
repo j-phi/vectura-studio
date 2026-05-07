@@ -12,7 +12,7 @@
 | **Phase 0** — Skin foundation | ✅ done | `7d9f426` (+ graphify rebuild `e442a4b`) |
 | **Phase 1** — Component library | ✅ done | `16ec81d` `440c84a` `d959a9b` `554ee88` `65791e5` `c7fa0db` |
 | **Phase 2** — Shell, panels, orchestrator | ✅ done | `a16ad57` `313d427` `7ca4795` `5c2edcc` `3a8b7be` `2692993` `2de5154` `c28bb4a` `c841598` `f377edb` `886499b` `ede23da` `8eddbf4` `360cbdc` `540dad5` `c98e9db` `243eccf` `56848c9` `e0bae17` `accfd99` `5529209` `562f9b2` `9628561` |
-| **Phase 3** — Modals, overlays, menus | ⏳ in progress (2/7 modals done) | `ff783c5` `6f277ba` |
+| **Phase 3** — Modals, overlays, menus | ⏳ in progress (4/7 modals done) | `ff783c5` `6f277ba` `af0fd16` `bb36595` |
 | **Phase 4** — Editors & specialized surfaces | ⏳ pending | — |
 | **Phase 5** — Polish, SDK, cleanup | ⏳ pending | — |
 
@@ -1116,21 +1116,65 @@ If all 13 steps pass and `npm run test:ci` is green, the migration is complete.
 
 ---
 
-## Appendix: Resuming Phase 3 step 3 (5 modals + 4 menus + mixin dissolution remaining)
+## Phase 3 step 3 actuals (4 of 7 modals shipped)
 
-Phase 3 is in progress. Steps 1-2 (`ff783c5`, `6f277ba`) extract Help / Shortcuts and Grid Settings. Five modals, four menus, and the mixin-dissolution cleanup remain.
+**Status: in progress.** Step 3 lands TWO modals in a single batch — Document Setup (the largest markup move so far, ~206 lines) and the info-modals micro-system (six prototype methods). The user-issued task spec recommended Document Setup as primary and the info-modals bundle as secondary; both shipped green.
 
-After clearing context, the fastest way to pick up Phase 3 step 3:
+**Commits:**
+
+- `af0fd16` (`feat(skin): Phase 3 — extract modals/document-setup.js + remove markup from index.html`)
+- `bb36595` (`feat(skin): Phase 3 — extract modals/info-modals.js`)
+
+**Files shipped:**
+
+- `src/ui/modals/document-setup.js` — 333 lines. Owns `PANEL_HTML` (the 206-line markup formerly at `index.html:540-745`), a `mount(host)` injecting `#settings-panel` (idempotent), and `bindHandlers()` wiring the open trigger (`#btn-settings`) and close button (`#btn-close-settings`) — both forward to `this.toggleSettingsPanel()`. Registered as `window.Vectura.UI.Modals.DocumentSetup`. The ~30 input handlers stay in legacy `bindGlobal()` because they're interleaved with shared selection-outline / margin-line / cookie / paper logic invoked from elsewhere.
+- `src/ui/modals/info-modals.js` — 171 lines. Owns six methods: `showInfo`, `showDuplicateNameError`, `showValueError`, `attachInfoButton`, `attachStaticInfoButtons`, `bindInfoButtons`. Registered as `window.Vectura.UI.Modals.InfoModals`. DI bag pulls five IIFE-locals: `{ INFO, buildPreviewPair, escapeHtml, getEl, SETTINGS }`. `showInfo` still passes `this` into `buildPreviewPair` so its downstream chain (`resolvePreviewConfig` → `buildVariantsFromDef` → `renderPreviewSvg`, all IIFE-locals) keeps working unchanged — no preview-pipeline lift was needed for this batch.
+- `tests/unit/modals/document-setup-compile.test.js` — 6 tests (compile gate, bind tripwire on mount + bindHandlers, mount injects all expected control IDs, mount idempotency, PANEL_HTML preserves headline labels + units options).
+- `tests/integration/modals/document-setup.test.js` — 3 tests (panel mounted into `<main>`; ~34 expected control IDs all present; open/close lifecycle; `#set-margin` input still mutates `SETTINGS.margin` proving the legacy `bindGlobal()` handlers continue to wire).
+- `tests/unit/modals/info-modals-compile.test.js` — 5 tests (compile gate, bind tripwire on showInfo + showDuplicateNameError, sentinel-marker escapeHtml proves the module routes through the injected escaper, `attachInfoButton` idempotency).
+- `tests/integration/modals/info-modals.test.js` — 4 tests (`showDuplicateNameError` opens "Name Unavailable" modal with HTML-escaped name, `showValueError` opens "Invalid Value", `attachInfoButton` idempotent, `.info-btn` click dispatches through `bindInfoButtons` → `showInfo`).
+- `index.html` — script tags for both new modules added in the modal-extraction block (after `document-setup.js`, before `_ui-legacy.js`); the entire `<div id="settings-panel">…</div>` block (206 lines) stripped from `<main>` and replaced with a 2-line comment pointer.
+- `src/ui/_ui-legacy.js` — added two prototype delegators for Document Setup (`_mountDocumentSetupPanel`, `_bindDocumentSetupHandlers`), invoked `_mountDocumentSetupPanel()` once in the UI constructor BEFORE `initMachineDropdown()` (so `#machine-profile` is in the DOM when the dropdown population logic runs), replaced 5 lines of inline open/close handlers in `bindGlobal()` with a guarded `_bindDocumentSetupHandlers()` call, removed three now-unused locals (`settingsPanel`, `btnSettings`, `btnCloseSettings`), and added the bind() registration line at the bottom of the IIFE. For info-modals, replaced six prototype method bodies (~94 lines) with six 1-line delegators (~18 lines) and added the bind() registration line.
+
+**DI bags:**
+
+- DocumentSetup: `{ getEl }` — minimal, since the open/close handlers forward to `this.toggleSettingsPanel()` (already extracted to BottomPane in Phase 2 step 3).
+- InfoModals: `{ INFO, buildPreviewPair, escapeHtml, getEl, SETTINGS }` — five IIFE-locals.
+
+**Composition contract:** Document Setup is the same slide-out CSS-`.open` shape as Grid Settings — NOT a centered overlay. Info-modals compose `this.openModal` (centered overlay) — same primitive Help/Shortcuts uses. Future Phase 3 step ~13 will swap every modal's `this.openModal` to `Vectura.UI.Overlays.Modal` in a single commit.
+
+**Constructor mount-order subtlety (carry-forward):** Document Setup mount MUST run before `initMachineDropdown()` because that init populates the `#machine-profile` `<select>` which lives inside the panel. Step 3 placed the mount call as `_mountDocumentSetupPanel(); initMachineDropdown(); _mountGridSettingsPanel(); bindGlobal();`. Without this ordering, JSDOM emits `[UI] Missing element #machine-profile` and the paper-size dropdown is empty in the integration test — caught immediately by the integration test once the warning showed up.
+
+**Line reduction:** `_ui-legacy.js` 9,062 → 9,030 (–32 lines net). `index.html` 873 → 671 (–202 lines, primarily the Document Setup markup). Document Setup adds +24 lines to legacy (delegators + guarded bindHandlers call + bind() block) but info-modals removes –56 lines (six method bodies replaced by six 1-line delegators), net –32.
+
+**Test totals before → after:** 654 unit + 77 integration + 13 visual + 2 perf → **665 unit + 84 integration + 13 visual + 2 perf** (+11 unit, +7 integration). All four suites green.
+
+**Browser smoke:** NOT run for this step. Same risk profile as steps 1-2 — script-tag reorder + new global writes + dynamic DOM mount. Integration tests cover the full `loadVecturaRuntime({ useIndexHtml: true })` path so the script-load order + mount call is exercised under JSDOM. Real browser smoke (open `python -m http.server`, click File > Document Setup, click every input + verify mutation, hit every "i" info button across the UI, confirm About-pane toggle on the algorithm i-button) should be done as part of the Phase 3 closeout.
+
+**Patterns / gotchas Phase 3 step 4+ must know:**
+
+1. **Markup-removal modals follow the same load-order rule as Grid Settings (step 2).** If the panel hosts ANY input that another init method populates (`#machine-profile` for `initMachineDropdown`, `#layer-bar-palette-trigger` for the palette picker, etc.), the mount call must precede that init method. If you see a `[UI] Missing element #...` warning in the integration test stderr, that's the symptom — reorder the constructor calls.
+2. **Sentinel-marker test pattern works for proving DI routing.** The info-modals compile gate ran into a JSDOM/vm regex-character-class oddity when testing real escapeHtml output (`"My Layer"` came through unescaped despite a textbook regex). Workaround: inject a sentinel escaper like `(s) => `[E:${s}]`` and assert the body contains `[E:My Layer]`. This proves the DI bag wiring without depending on any character-class regex behavior. Use this pattern when integration tests are blocked.
+3. **Six-method extractions still fit one module.** The info-modals lift was the first multi-method extraction in Phase 3 — six prototype methods, ~94 lines of bodies, replaced by six 1-line delegators (~18 lines). All six belong together because they share INFO + buildPreviewPair + escapeHtml. Future similar bundles (e.g., Color Picker has openColorModal + several anchored-picker helpers) can follow the same shape.
+4. **InfoModals.attachStaticInfoButtons is called from elsewhere.** Note `this.attachStaticInfoButtons()` (or its delegator) is invoked from `initLeftPanelSections` and several panel renderers. The 1-line delegator on UI.prototype is what those call sites still hit — do NOT remove it.
+5. **Carry-over from steps 1-2 unchanged.** Mixin dissolution, ~50 (now ~44) surviving prototype methods, ~30 IIFE locals (still ~30 — info-modals didn't reduce the count, it just rerouted method bodies to a satellite while preserving the IIFE-locals as DI inputs), `refreshDocumentUnitsUi` / `refreshThemeUi` cross-call resolution.
+6. **JSDOM `vm` context regex gotcha.** A regex character class `/[&<>"']/g` inside a test escapeHtml stub may not match the `"` character correctly when the stub is constructed inside a `beforeAll` and called from a `vm.runInContext`-loaded module. Cause unconfirmed; workaround is to use chained `.replace()` calls or a sentinel escaper. Files: see `tests/unit/modals/info-modals-compile.test.js` for the working sentinel pattern.
+
+---
+
+## Appendix: Resuming Phase 3 step 4 (3 modals + 4 menus + mixin dissolution remaining)
+
+Phase 3 is in progress. Steps 1-3 (`ff783c5`, `6f277ba`, `af0fd16`, `bb36595`) extract Help/Shortcuts, Grid Settings, Document Setup, and the info-modals micro-system (4 of 7 modals shipped). Three modals, four menus, and the mixin-dissolution cleanup remain.
+
+After clearing context, the fastest way to pick up Phase 3 step 4:
 
 1. `cd /Users/jayphi/Documents/github/vectura-studio-meridian` (the worktree, on branch `meridian-blue-skin`).
-2. `git log --oneline -5` — confirm HEAD is the docs commit recording Phase 3 step 2 closure (the latest `docs(skin):` commit). The step 2 implementation commit is `6f277ba`.
-3. Confirm tests are green before changing anything: `npm run test:unit && npm run test:integration && npm run test:visual && npm run test:perf` (654 unit, 77 integration, 13 visual, 2 perf — all green at end of step 2).
-4. **Phase 3 step 3 target: pick the next 1-2 small extractions.** Recommended order, smallest → largest:
-   - **Step 3 (recommended primary): Document Setup.** Same shape as Grid Settings — `<div id="settings-panel">` markup at `index.html:540-745` (~206 lines), plus the open trigger (`btn-view-settings`) and close button (`btn-close-settings`). The handlers in `bindGlobal()` are interleaved with shared selection-outline / margin-line / cookie / paper / undo handlers — be careful: many of these are NOT specific to Document Setup. The clean split: pull only the open/close lifecycle + the inputs that are ONLY visible inside the Document Setup panel (paper width/height/orientation, undo limit, units, margin, truncate, crop-exports, outside opacity, margin-line family, speed-down/up, stroke, precision, plotter-opt). Selection-outline + cookie + show-guides handlers stay in `bindGlobal()` because they're invoked from elsewhere too. Use `mount(host)` + `bindHandlers()` exactly like Grid Settings.
-   - **Step 3 (secondary if time permits): info-modals.** `showInfo(key)` at `_ui-legacy.js:6941` + the related `attachInfoButton` / `bindInfoButtons` / `showDuplicateNameError` / `showValueError` form a coherent micro-system. Catch: `showInfo` calls `buildPreviewPair` (an IIFE-local at `_ui-legacy.js:5039`) which itself chains to `resolvePreviewConfig`, `buildVariantsFromDef`, `renderPreviewSvg` — all IIFE-locals. The DI bag would need to include all of these. Either pass them as a bundle, or defer the preview pipeline lift to a later commit and have the module call back through `this._buildPreviewPair()` until that's untangled.
-   - **Step 4: Color Picker.** `openColorModal({ title, value, onApply })` at `_ui-legacy.js:5845` (~155 lines). HSV + hex math — bigger, more state. Locate the supporting helpers (`getAnchoredColorProxyInput`, `openColorPickerAnchoredTo`) which are IIFE-locals. The Grid Settings extraction already passes `openColorPickerAnchoredTo` through DI bags — that pattern carries forward.
-   - **Step 5: Export SVG.** `openExportModal()` at `_ui-legacy.js:5527` plus 10 supporting methods (optimization preview, settings panel, etc.). Largest single modal extraction. Plan to spend a full commit on this one.
-   - **Step 6: Rainfall Silhouette.** File-I/O heavy. Locate via `grep "rainfall.*[Ss]ilhouette\|silhouette" src/ui/_ui-legacy.js`.
+2. `git log --oneline -5` — confirm HEAD is the docs commit recording Phase 3 step 3 closure (the latest `docs(skin):` commit). The step 3 implementation commits are `af0fd16` (Document Setup) and `bb36595` (info-modals).
+3. Confirm tests are green before changing anything: `npm run test:unit && npm run test:integration && npm run test:visual && npm run test:perf` (665 unit, 84 integration, 13 visual, 2 perf — all green at end of step 3).
+4. **Phase 3 step 4 target: pick the next 2 modals.** Recommended order, smallest → largest:
+   - **Step 4 (recommended primary): Color Picker.** `openColorModal({ title, value, onApply })` at `_ui-legacy.js` (~155 lines, search for `openColorModal(`). HSV + hex math, more state than the modals already shipped. Locate supporting helpers — `getAnchoredColorProxyInput` and `openColorPickerAnchoredTo` are IIFE-locals; the Grid Settings DI bag already passes `openColorPickerAnchoredTo` through, so that pattern carries forward. Compile gate template: see `info-modals-compile.test.js` for the multi-method shape.
+   - **Step 4 (recommended secondary): Rainfall Silhouette.** File-I/O heavy. Locate via `grep "rainfall.*[Ss]ilhouette\|silhouette" src/ui/_ui-legacy.js`. Smaller than Export SVG and a good test of file-input wiring through DI before tackling Export. If Color Picker eats the budget, defer Rainfall Silhouette to step 5.
+   - **Step 5 (defer to its own commit): Export SVG.** `openExportModal()` plus 10 supporting methods. Largest single modal extraction — this is the one Phase 3 step 2's actuals warned would deserve its own commit. Don't bundle it.
    - **NOTE on "About modal":** does NOT exist. The About surface is `#algo-about` in the left pane (already delegated to `PaneLeft.initAboutSection`). Do not look for `openAbout` / `_buildAboutContent` — they are not in the file.
 5. **Then menu wiring (steps 8-11):** compose `overlays/menu.js` instances for `#layer-add-menu`, `#palette-menu`, `#layer-filter-menu`, and the NEW layer right-click context menu. The trigger-handler logic for the first three lives in the legacy `bindShortcuts` body (now in `src/ui/shortcuts.js`); be careful not to lose any of that wiring.
 6. **Then mixin dissolution (step 12):** dissolve `_UIAutoColorizeMixin` and `_UINoiseRackMixin` into the panels' `bind()` bags. Mixin attachment in `_ui-legacy.js:9253-9260`. Add prototype delegators to `_ui-legacy.js` since the mixin currently provides them by direct `Object.assign`.
