@@ -5115,6 +5115,9 @@
       this.initModuleDropdown();
       this.rememberDrawableLayerType(this.app.engine?.getActiveLayer?.());
       this.initMachineDropdown();
+      // Phase 3 step 2: mount Grid Settings panel into <main> before bindGlobal()
+      // wires the panel's controls. Markup formerly lived in index.html:747-787.
+      this._mountGridSettingsPanel();
       this.bindGlobal();
       this.bindShortcuts();
       this.bindInfoButtons();
@@ -6057,6 +6060,15 @@
     }
     openHelp(focusShortcuts = false) {
       return window.Vectura.UI.Modals.HelpShortcuts.openHelp.call(this, focusShortcuts);
+    }
+
+    // Delegated to src/ui/modals/grid-settings.js (Phase 3 step 2).
+    _mountGridSettingsPanel() {
+      const host = document.querySelector('main');
+      return window.Vectura.UI.Modals.GridSettings.mount(host);
+    }
+    _bindGridSettingsHandlers() {
+      return window.Vectura.UI.Modals.GridSettings.bindHandlers.call(this);
     }
 
     // Delegated to src/ui/panels/transform-panel.js (Phase 2 step 4).
@@ -7459,90 +7471,17 @@
         };
       }
 
-      const btnViewGridSettings = getEl('btn-view-grid-settings');
-      const gridSettingsPanel = getEl('grid-settings-panel');
-      const btnCloseGridSettings = getEl('btn-close-grid-settings');
-
-      if (btnViewGridSettings && gridSettingsPanel) {
-        btnViewGridSettings.onclick = () => {
-          gridSettingsPanel.classList.add('open');
-          const p = getEl('top-menubar').querySelector('[data-top-menu-panel][aria-label="View menu"]');
-          if (p) p.classList.remove('open');
-        };
+      // Phase 3 step 2: grid-settings panel handlers delegated to
+      // src/ui/modals/grid-settings.js. The module owns the panel markup
+      // (mounted earlier via _mountGridSettingsPanel) and wires the open
+      // trigger, close button, and six grid control inputs. Guarded so
+      // unit-test stubs of `this` that don't materialize the prototype
+      // method (e.g. crop-exports-settings.test.js) still proceed past
+      // this line — the controls those tests exercise live further below.
+      if (typeof this._bindGridSettingsHandlers === 'function') {
+        this._bindGridSettingsHandlers();
       }
 
-      if (btnCloseGridSettings && gridSettingsPanel) {
-        btnCloseGridSettings.onclick = () => {
-          gridSettingsPanel.classList.remove('open');
-        };
-      }
-
-      const setGridOverlayMaster = getEl('set-grid-overlay-master');
-      if (setGridOverlayMaster) {
-        setGridOverlayMaster.onchange = (e) => {
-          SETTINGS.gridOverlay = e.target.checked;
-          if (this.app.pushHistory) this.app.pushHistory();
-          this.initSettingsValues();
-          this.app.render();
-        };
-      }
-
-      const syncGridOpacity = (val, commit) => {
-        if (commit && this.app.pushHistory) this.app.pushHistory();
-        SETTINGS.gridOpacity = parseFloat(val);
-        const gridOpacitySlider = getEl('set-grid-opacity-slider');
-        const gridOpacity = getEl('set-grid-opacity');
-        if (gridOpacitySlider) gridOpacitySlider.value = SETTINGS.gridOpacity;
-        if (gridOpacity) gridOpacity.value = SETTINGS.gridOpacity;
-        this.app.render();
-      };
-      const setGridOpacitySlider = getEl('set-grid-opacity-slider');
-      if (setGridOpacitySlider) {
-        setGridOpacitySlider.oninput = (e) => syncGridOpacity(e.target.value, false);
-        setGridOpacitySlider.onchange = (e) => syncGridOpacity(e.target.value, true);
-      }
-      const setGridOpacity = getEl('set-grid-opacity');
-      if (setGridOpacity) {
-        setGridOpacity.oninput = (e) => syncGridOpacity(e.target.value, false);
-        setGridOpacity.onchange = (e) => syncGridOpacity(e.target.value, true);
-      }
-
-      const setGridStyle = getEl('set-grid-style');
-      if (setGridStyle) {
-        setGridStyle.onchange = (e) => {
-          SETTINGS.gridStyle = e.target.value;
-          if (this.app.pushHistory) this.app.pushHistory();
-          this.initSettingsValues();
-          this.app.render();
-        };
-      }
-
-      const setGridColor = getEl('set-grid-color');
-      const setGridColorPill = getEl('set-grid-color-pill');
-      if (setGridColor && setGridColorPill) {
-        setGridColorPill.onclick = () => openColorPickerAnchoredTo(setGridColor, setGridColorPill, { title: 'Grid Color', uiInstance: this });
-        setGridColor.oninput = (e) => {
-          SETTINGS.gridColor = e.target.value;
-          this.initSettingsValues();
-          this.app.render();
-        };
-        setGridColor.onchange = (e) => {
-          SETTINGS.gridColor = e.target.value;
-          if (this.app.pushHistory) this.app.pushHistory();
-          this.initSettingsValues();
-          this.app.render();
-        };
-      }
-
-      const setGridSize = getEl('set-grid-size');
-      if (setGridSize) {
-        setGridSize.onchange = (e) => {
-          SETTINGS.gridSize = Math.max(0.1, parseFloat(e.target.value) || 10);
-          if (this.app.pushHistory) this.app.pushHistory();
-          this.initSettingsValues();
-          this.app.render();
-        };
-      }
       if (setSelectionOutline) {
         setSelectionOutline.onchange = (e) => {
           if (this.app.pushHistory) this.app.pushHistory();
@@ -9094,6 +9033,17 @@
   // primitive (which still lives on UI.prototype below).
   if (window.Vectura?.UI?.Modals?.HelpShortcuts?.bind) {
     window.Vectura.UI.Modals.HelpShortcuts.bind({});
+  }
+
+  // Phase 3 step 2: register modals/grid-settings.js. Slide-out side panel
+  // (CSS class .open) — owns its own markup (mount()) and the six grid
+  // control handlers previously inlined in bindGlobal().
+  if (window.Vectura?.UI?.Modals?.GridSettings?.bind) {
+    window.Vectura.UI.Modals.GridSettings.bind({
+      getEl,
+      SETTINGS,
+      openColorPickerAnchoredTo,
+    });
   }
 
   window.Vectura = window.Vectura || {};
