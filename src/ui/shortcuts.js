@@ -524,6 +524,13 @@
       };
     }
 
+    const _toast = (message, variant = 'success') => {
+      const T = window.Vectura?.UI?.overlays?.Toast;
+      if (T && typeof T.show === 'function') {
+        try { T.show({ message, variant, duration: 2200 }); } catch (_) { /* noop */ }
+      }
+    };
+
     const _doAddAlgoLayer = (layerType) => {
       if (this.app.pushHistory) this.app.pushHistory();
       const activeLayer = this.app.engine.getActiveLayer?.();
@@ -536,6 +543,7 @@
       } else if (this.app.renderer) {
         this.app.renderer.setSelection([id], id);
       }
+      _toast(`Added ${layerType} layer`);
     };
 
     addMenuEl?.addEventListener('click', (e) => {
@@ -548,6 +556,7 @@
         if (this.app.pushHistory) this.app.pushHistory();
         const id = this.app.engine.addEmptyLayer?.();
         if (id && this.app.renderer) this.app.renderer.setSelection([id], id);
+        _toast('Added empty layer');
       } else if (t === 'algo') {
         _doAddAlgoLayer(item.dataset.algoType || this.getPreferredNewLayerType?.() || 'wavetable');
       } else if (t === 'algo-parent') {
@@ -556,8 +565,10 @@
         if (this.app.pushHistory) this.app.pushHistory();
         const id = this.app.engine.addGroupLayer?.();
         if (id && this.app.renderer) this.app.renderer.setSelection([id], id);
+        _toast('Added group');
       } else if (t === 'mirror') {
         this.insertMirrorModifier();
+        _toast('Added mirror modifier');
       }
       this.renderLayers();
       this.app.render();

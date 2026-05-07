@@ -634,6 +634,21 @@
   <script src="./src/ui/panels/algorithm-panel.js" defer></script>
   <script src="./src/ui/persistence.js" defer></script>
   <script src="./src/ui/shortcuts.js" defer></script>
+  <!-- Phase 1 utilities + overlays + components. Composed by menus, modals,
+       and panel chrome from Phase 3 onward. utils.js + focus.js are no-op
+       safe if absent, but overlays' best behavior (focus trap, on/off
+       cleanup) needs them loaded. -->
+  <script src="./src/ui/utils.js" defer></script>
+  <script src="./src/ui/focus.js" defer></script>
+  <script src="./src/ui/motion.js" defer></script>
+  <script src="./src/ui/overlays/modal.js" defer></script>
+  <script src="./src/ui/overlays/dialog.js" defer></script>
+  <script src="./src/ui/overlays/menu.js" defer></script>
+  <script src="./src/ui/overlays/toast.js" defer></script>
+  <script src="./src/ui/overlays/tooltip.js" defer></script>
+  <script src="./src/ui/overlays/drag-drop.js" defer></script>
+  <script src="./src/ui/overlays/empty-state.js" defer></script>
+  <script src="./src/ui/components/info-badge.js" defer></script>
   <!-- Phase 3 closure: composed menus (UI.Menus.*). -->
   <script src="./src/ui/menus/layer-context-menu.js" defer></script>
   <script src="./src/ui/menus/layer-filter-menu.js" defer></script>

@@ -11,6 +11,16 @@
   const clone =
     typeof structuredClone === 'function' ? (obj) => structuredClone(obj) : (obj) => JSON.parse(JSON.stringify(obj));
 
+  // Phase 3 closure: toast helper. UI.overlays.Toast is a Phase 1 primitive
+  // composed throughout the file-I/O surface for save/open/import/export
+  // success and failure feedback.
+  const toast = (message, variant = 'info', duration = 3500) => {
+    const T = window.Vectura?.UI?.overlays?.Toast;
+    if (T && typeof T.show === 'function') {
+      try { T.show({ message, variant, duration }); } catch (_) { /* noop */ }
+    }
+  };
+
   const normalizeSvgId = (value, prefix = 'id') => {
     const fallback = `${prefix || 'id'}`;
     const base = `${value ?? ''}`.trim() || fallback;
@@ -58,6 +68,7 @@
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
+      toast('Project saved', 'success');
     },
 
     openVecturaFile(file) {
@@ -84,7 +95,9 @@
           this.app.applyState(state);
           this.app.history = [];
           this.app.pushHistory();
+          toast('Project loaded', 'success');
         } catch (err) {
+          toast('Invalid .vectura file', 'danger');
           this.openModal({
             title: 'Invalid File',
             body: `<p class="modal-text">That file could not be loaded as a .vectura document.</p>`,
@@ -101,6 +114,7 @@
         const text = reader.result;
         const groups = this.parseSvgToLayerGroups(text);
         if (!groups.length) {
+          toast('SVG had no importable paths', 'warning');
           this.openModal({
             title: 'No Paths Found',
             body: `<p class="modal-text">The SVG did not contain any vector paths to import.</p>`,
@@ -133,6 +147,7 @@
         this.buildControls();
         this.updateFormula();
         this.app.render();
+        toast(`Imported ${created.length} layer${created.length === 1 ? '' : 's'}`, 'success');
       };
       reader.readAsText(file);
     },
@@ -569,6 +584,7 @@
       a.href = url;
       a.download = 'vectura.svg';
       a.click();
+      toast('SVG exported', 'success');
     },
   };
 })();
