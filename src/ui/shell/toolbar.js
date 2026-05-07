@@ -434,6 +434,7 @@
     // ── algo-draw press-and-hold picker ─────────────────────────
     const algoDrawBtn = toolbar.querySelector('.tool-btn[data-tool="algo-draw"]');
     if (algoDrawBtn) {
+      algoDrawBtn.setAttribute('data-has-submenu', 'true');
       const _ALGO_PICK_LIST = [
         { type: 'attractor',       label: 'Attractor' },
         { type: 'boids',           label: 'Boids' },

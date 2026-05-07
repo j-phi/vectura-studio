@@ -260,6 +260,48 @@ describe('Modifier workflow UI integration', () => {
     expect(app.engine.layers[app.engine.layers.length - 1].id).toBe(baseLayer.id);
   });
 
+  test('children entering a mirror modifier are auto-locked', async () => {
+    runtime = await loadVecturaRuntime({
+      includeRenderer: true,
+      includeUi: true,
+      includeApp: true,
+      useIndexHtml: true,
+    });
+
+    const { window } = runtime;
+    window.app = new window.Vectura.App();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    const app = window.app;
+
+    // Wrapping a selection auto-locks the wrapped layer.
+    app.engine.addLayer('wavetable');
+    const wrapped = app.engine.getActiveLayer();
+    app.renderer.setSelection([wrapped.id], wrapped.id);
+    expect(app.ui.layerLockedIds.has(wrapped.id)).toBe(false);
+    app.ui.insertMirrorModifier();
+    expect(app.ui.layerLockedIds.has(wrapped.id)).toBe(true);
+
+    // Reparenting another layer into an existing mirror also locks it.
+    const modifierId = app.engine.getActiveLayer().id;
+    app.engine.addLayer('wavetable');
+    const dropped = app.engine.getActiveLayer();
+    expect(app.ui.layerLockedIds.has(dropped.id)).toBe(false);
+    app.ui.assignLayersToParent(modifierId, [dropped]);
+    expect(app.ui.layerLockedIds.has(dropped.id)).toBe(true);
+
+    // Lock is user-removable.
+    app.ui.layerLockedIds.delete(dropped.id);
+    expect(app.ui.layerLockedIds.has(dropped.id)).toBe(false);
+
+    // Reparenting into a plain group (non-mirror) does not auto-lock.
+    const groupId = app.engine.addEmptyLayer();
+    app.engine.addLayer('wavetable');
+    const grouped = app.engine.getActiveLayer();
+    app.ui.assignLayersToParent(groupId, [grouped]);
+    expect(app.ui.layerLockedIds.has(grouped.id)).toBe(false);
+  });
+
   test('selecting a modifier child restores normal algorithm controls and edits the child in place', async () => {
     runtime = await loadVecturaRuntime({
       includeRenderer: true,

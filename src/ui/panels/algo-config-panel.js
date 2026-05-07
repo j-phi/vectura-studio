@@ -212,6 +212,7 @@
     };
     const randomBtn = document.createElement('button');
     randomBtn.type = 'button';
+    randomBtn.id = 'btn-randomize-params';
     randomBtn.className =
       'w-full text-xs border border-vectura-border px-2 py-2 hover:bg-vectura-border text-vectura-muted transition-colors';
     randomBtn.textContent = 'Randomize Params';
