@@ -6394,35 +6394,15 @@
       switchTab(initial);
     }
 
+    // Delegated to src/ui/panels/transform-panel.js (Phase 2 step 4).
     getDefaultTransformForType(type, currentParams = {}) {
-      const base = ALGO_DEFAULTS[type] || {};
-      const fallbackSeed = Number.isFinite(currentParams.seed) ? currentParams.seed : 1;
-      return {
-        seed: Number.isFinite(base.seed) ? base.seed : fallbackSeed,
-        posX: Number.isFinite(base.posX) ? base.posX : 0,
-        posY: Number.isFinite(base.posY) ? base.posY : 0,
-        scaleX: Number.isFinite(base.scaleX) ? base.scaleX : 1,
-        scaleY: Number.isFinite(base.scaleY) ? base.scaleY : 1,
-        rotation: Number.isFinite(base.rotation) ? base.rotation : 0,
-      };
+      return window.Vectura.UI.TransformPanel.getDefaultTransformForType.call(this, type, currentParams);
     }
-
     storeLayerParams(layer) {
-      if (!layer) return;
-      if (!layer.paramStates) layer.paramStates = {};
-      const next = { ...layer.params };
-      TRANSFORM_KEYS.forEach((key) => delete next[key]);
-      layer.paramStates[layer.type] = clone(next);
+      return window.Vectura.UI.TransformPanel.storeLayerParams.call(this, layer);
     }
-
     restoreLayerParams(layer, nextType) {
-      if (!layer) return;
-      const base = ALGO_DEFAULTS[nextType] ? clone(ALGO_DEFAULTS[nextType]) : {};
-      const stored = layer.paramStates?.[nextType] ? clone(layer.paramStates[nextType]) : null;
-      const transform = this.getDefaultTransformForType(nextType, layer.params);
-      layer.type = nextType;
-      layer.params = { ...base, ...(stored || {}), ...transform };
-      this.storeLayerParams(layer);
+      return window.Vectura.UI.TransformPanel.restoreLayerParams.call(this, layer, nextType);
     }
 
 
@@ -11706,6 +11686,11 @@
   // mixin. Step 5 will move the closure into this DI bag.
   if (window.Vectura?.UI?.NoiseRackPanel?.bind) {
     window.Vectura.UI.NoiseRackPanel.bind({});
+  }
+
+  // Phase 2 step 4: hand legacy IIFE-locals to panels/transform-panel.js.
+  if (window.Vectura?.UI?.TransformPanel?.bind) {
+    window.Vectura.UI.TransformPanel.bind({ ALGO_DEFAULTS, TRANSFORM_KEYS, clone });
   }
 
   window.Vectura = window.Vectura || {};
