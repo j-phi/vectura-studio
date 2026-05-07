@@ -12,7 +12,7 @@
 | **Phase 0** — Skin foundation | ✅ done | `7d9f426` (+ graphify rebuild `e442a4b`) |
 | **Phase 1** — Component library | ✅ done | `16ec81d` `440c84a` `d959a9b` `554ee88` `65791e5` `c7fa0db` |
 | **Phase 2** — Shell, panels, orchestrator | ✅ done | `a16ad57` `313d427` `7ca4795` `5c2edcc` `3a8b7be` `2692993` `2de5154` `c28bb4a` `c841598` `f377edb` `886499b` `ede23da` `8eddbf4` `360cbdc` `540dad5` `c98e9db` `243eccf` `56848c9` `e0bae17` `accfd99` `5529209` `562f9b2` `9628561` |
-| **Phase 3** — Modals, overlays, menus | ⏳ in progress (1/7 modals done) | `ff783c5` |
+| **Phase 3** — Modals, overlays, menus | ⏳ in progress (2/7 modals done) | `ff783c5` `6f277ba` |
 | **Phase 4** — Editors & specialized surfaces | ⏳ pending | — |
 | **Phase 5** — Polish, SDK, cleanup | ⏳ pending | — |
 
@@ -1081,22 +1081,57 @@ If all 13 steps pass and `npm run test:ci` is green, the migration is complete.
 
 ---
 
-## Appendix: Resuming Phase 3 step 2 (6 modals + 4 menus + mixin dissolution remaining)
+## Phase 3 step 2 actuals (2 of 7 modals shipped)
 
-Phase 3 is in progress. Step 1 (`ff783c5`) extracts the Help / Shortcuts modal and proves the pattern. Six modals, four menus, and the mixin-dissolution cleanup remain.
+**Status: in progress.** Step 2 lands the Grid Settings slide-out side panel (`6f277ba`). The user-issued task message asked for "About modal" + "Grid Settings" — but per the step 1 actuals (and confirmed by re-grepping), there is **no standalone About modal** in `_ui-legacy.js`. The About surface is `#algo-about` in the left pane, already delegated to `PaneLeft.initAboutSection`. Step 2 therefore landed only Grid Settings; the would-be "About" slot is rolled forward to step 3 with re-scoped recommendations below.
 
-After clearing context, the fastest way to pick up Phase 3 step 2:
+**Commit:** `6f277ba` (`feat(skin): Phase 3 — extract modals/grid-settings.js + remove markup from index.html`).
+
+**Files shipped:**
+
+- `src/ui/modals/grid-settings.js` — 213 lines. Owns `PANEL_HTML` (the 38-line markup formerly at `index.html:747-787`), a `mount(host)` that injects the panel into a host element (idempotent — safe to call twice), and `bindHandlers()` that wires the open trigger, close ✕ button, and six grid controls (overlay master, opacity slider+number, style select, color pill+picker, size). Registered as `window.Vectura.UI.Modals.GridSettings`.
+- `tests/unit/modals/grid-settings-compile.test.js` — 6 tests (compile gate, bind-tripwire on both `mount` and `bindHandlers`, mount injects all six expected control IDs, mount idempotency, PANEL_HTML preserves all four `<option>` values).
+- `tests/integration/modals/grid-settings.test.js` — 6 tests (panel mounted into `<main>`, View > Grid Settings open/close lifecycle, overlay master toggle, opacity slider mutates SETTINGS, style select mutates SETTINGS, size input clamps to 0.1 minimum).
+- `index.html` — `<script src="./src/ui/modals/grid-settings.js" defer></script>` added in the modal-extraction block (after `help-shortcuts.js`, before `_ui-legacy.js`); the entire `<div id="grid-settings-panel">…</div>` block stripped from `<main>` (replaced with a 2-line comment pointer).
+- `src/ui/_ui-legacy.js` — added two prototype delegators (`_mountGridSettingsPanel`, `_bindGridSettingsHandlers`), invoked `_mountGridSettingsPanel()` once in the UI constructor (immediately before `bindGlobal()`), replaced 84 lines of inline grid handlers in `bindGlobal()` with a single guarded `_bindGridSettingsHandlers()` call, added the `bind()` registration line in the bottom-of-IIFE block.
+
+**DI bag:** `{ getEl, SETTINGS, openColorPickerAnchoredTo }` — three IIFE-locals. `openColorPickerAnchoredTo` is the live wire for the color-pill anchored picker; passing it into the bag rather than rebuilding it inside the module preserves byte-identical behavior with no new module dependencies.
+
+**Composition contract:** the Grid Settings panel is a CSS-class `.open` slide-out side panel, NOT a centered overlay. It does NOT use `this.openModal` / `this.modal`. The "modal" naming is by Phase 3's classification (any open/close-lifecycle surface goes under `modals/`) — but the implementation just toggles a class. Future primitive promotion at Phase 3 step ~13 will need to decide whether to keep the slide-out behavior or unify under `Vectura.UI.Overlays.Modal`. **Recommendation: keep the slide-out** — it's a UX choice (settings stays beside the canvas while you tweak), not a mechanical leftover.
+
+**Line reduction:** `_ui-legacy.js` 9,112 → 9,062 (–50 lines). `index.html` 911 → 873 (–38 lines).
+
+**Test totals before → after:** 648 unit + 71 integration + 13 visual + 2 perf → **654 unit + 77 integration + 13 visual + 2 perf** (+6 unit, +6 integration). All four suites green.
+
+**Browser smoke:** NOT run for this step. Same risk profile as step 1 — script-tag reorder + new global write + dynamic DOM mount. Integration tests cover the full `loadVecturaRuntime({ useIndexHtml: true })` path so the script-load order + mount call is exercised under JSDOM. Real browser smoke (open `python -m http.server`, click View > Grid Settings, toggle each control, confirm canvas updates) should be done as part of the Phase 3 closeout.
+
+**Patterns / gotchas Phase 3 step 3+ must know:**
+
+1. **About modal does not exist.** Confirmed by `grep -n "openAbout\|_buildAboutContent" src/ui/_ui-legacy.js` (no hits beyond `setAboutVisible` / `initAboutSection` which are pane-left controls, not a modal). If a future task message names "About modal" again, push back and re-scope.
+2. **Slide-out panels follow the mount + bindHandlers split.** Grid Settings is the template: a `mount(host)` that injects markup once at boot, plus a `bindHandlers()` called from inside `bindGlobal()` (wraps the prior inline handlers). Document Setup will follow the exact same shape — `_mountSettingsPanel()` + `_bindSettingsHandlers()`. Compile gate asserts mount idempotency; integration test asserts `parentElement.tagName === 'MAIN'`.
+3. **Guard prototype delegators that bindGlobal() calls.** A unit test (`tests/unit/crop-exports-settings.test.js`) invokes `UI.prototype.bindGlobal.call({ app: {...} })` — a stub `this` that does NOT inherit prototype methods. New `this._foo()` calls inside `bindGlobal()` must guard with `typeof this._foo === 'function'` so that test continues to pass without mocking everything. Step 2 hit this; the fix is a 1-line guard.
+4. **Mount-then-bind ordering is load-bearing.** The mount call MUST run before `bindGlobal()` so `getEl('grid-settings-panel')` resolves. Step 2 placed it as `this._mountGridSettingsPanel(); this.bindGlobal();` in the UI constructor. Step 3 should match this pattern: mount before bind.
+5. **`openColorPickerAnchoredTo` is reachable from any modal that needs an anchored color pill.** The DI-bag pattern for handing it into a modal is now established. Document Setup, Color Picker, Export SVG will all need it.
+6. **Carry-over deferred items unchanged from step 1.** Mixin dissolution, ~50 surviving prototype methods, ~30 IIFE locals, `refreshDocumentUnitsUi` / `refreshThemeUi` cross-call resolution.
+
+---
+
+## Appendix: Resuming Phase 3 step 3 (5 modals + 4 menus + mixin dissolution remaining)
+
+Phase 3 is in progress. Steps 1-2 (`ff783c5`, `6f277ba`) extract Help / Shortcuts and Grid Settings. Five modals, four menus, and the mixin-dissolution cleanup remain.
+
+After clearing context, the fastest way to pick up Phase 3 step 3:
 
 1. `cd /Users/jayphi/Documents/github/vectura-studio-meridian` (the worktree, on branch `meridian-blue-skin`).
-2. `git log --oneline -5` — confirm HEAD is the docs commit recording Phase 3 step 1 closure (the latest `docs(skin):` commit). The implementation commit is `ff783c5`.
-3. Confirm tests are green before changing anything: `npm run test:unit && npm run test:integration && npm run test:visual && npm run test:perf` (648 unit, 71 integration, 13 visual, 2 perf — all green at end of step 1).
-4. **Phase 3 step 2 target: pick the next-smallest modal.** Recommended order, smallest → largest:
-   - **Step 2: Grid Settings.** Markup lives in `index.html:747` (`#grid-settings-panel`). Lift the markup into `src/ui/modals/grid-settings.js` as JS-built DOM (compose `overlays/modal.js` if you want to also start the primitive promotion, OR keep using legacy `this.openModal` like step 1 did). Strip the `<div id="grid-settings-panel">` block from `index.html`. Single-purpose, small surface.
-   - **Step 3: Document Setup.** Same shape — markup in `index.html:540-740` (the `#settings-panel`). Larger (~200 lines of markup) but mechanically identical to Grid Settings.
-   - **Step 4: About modal.** NOTE: there is NO standalone "About" modal in `_ui-legacy.js` today — the About surface is the `#algo-about` description card in the left pane (delegated to `PaneLeft.initAboutSection`). Either re-scope step 4 to a different modal (e.g. an info-modal builder around `showInfo()` / `INFO[key]` at `_ui-legacy.js:7266`), or skip "About" and renumber.
-   - **Step 5: Color Picker.** `openColorModal({ title, value, onApply })` at `_ui-legacy.js:5845` (~155 lines). HSV + hex math — bigger, more state. Locate the supporting helpers (`getAnchoredColorProxyInput`, `openColorPickerAnchoredTo`) which are IIFE-locals.
-   - **Step 6: Export SVG.** `openExportModal()` at `_ui-legacy.js:5527` plus 10 supporting methods (optimization preview, settings panel, etc.). Largest single modal extraction. Plan to spend a full commit on this one.
-   - **Step 7: Rainfall Silhouette.** File-I/O heavy. Locate via `grep "rainfall.*[Ss]ilhouette\|silhouette" src/ui/_ui-legacy.js`.
+2. `git log --oneline -5` — confirm HEAD is the docs commit recording Phase 3 step 2 closure (the latest `docs(skin):` commit). The step 2 implementation commit is `6f277ba`.
+3. Confirm tests are green before changing anything: `npm run test:unit && npm run test:integration && npm run test:visual && npm run test:perf` (654 unit, 77 integration, 13 visual, 2 perf — all green at end of step 2).
+4. **Phase 3 step 3 target: pick the next 1-2 small extractions.** Recommended order, smallest → largest:
+   - **Step 3 (recommended primary): Document Setup.** Same shape as Grid Settings — `<div id="settings-panel">` markup at `index.html:540-745` (~206 lines), plus the open trigger (`btn-view-settings`) and close button (`btn-close-settings`). The handlers in `bindGlobal()` are interleaved with shared selection-outline / margin-line / cookie / paper / undo handlers — be careful: many of these are NOT specific to Document Setup. The clean split: pull only the open/close lifecycle + the inputs that are ONLY visible inside the Document Setup panel (paper width/height/orientation, undo limit, units, margin, truncate, crop-exports, outside opacity, margin-line family, speed-down/up, stroke, precision, plotter-opt). Selection-outline + cookie + show-guides handlers stay in `bindGlobal()` because they're invoked from elsewhere too. Use `mount(host)` + `bindHandlers()` exactly like Grid Settings.
+   - **Step 3 (secondary if time permits): info-modals.** `showInfo(key)` at `_ui-legacy.js:6941` + the related `attachInfoButton` / `bindInfoButtons` / `showDuplicateNameError` / `showValueError` form a coherent micro-system. Catch: `showInfo` calls `buildPreviewPair` (an IIFE-local at `_ui-legacy.js:5039`) which itself chains to `resolvePreviewConfig`, `buildVariantsFromDef`, `renderPreviewSvg` — all IIFE-locals. The DI bag would need to include all of these. Either pass them as a bundle, or defer the preview pipeline lift to a later commit and have the module call back through `this._buildPreviewPair()` until that's untangled.
+   - **Step 4: Color Picker.** `openColorModal({ title, value, onApply })` at `_ui-legacy.js:5845` (~155 lines). HSV + hex math — bigger, more state. Locate the supporting helpers (`getAnchoredColorProxyInput`, `openColorPickerAnchoredTo`) which are IIFE-locals. The Grid Settings extraction already passes `openColorPickerAnchoredTo` through DI bags — that pattern carries forward.
+   - **Step 5: Export SVG.** `openExportModal()` at `_ui-legacy.js:5527` plus 10 supporting methods (optimization preview, settings panel, etc.). Largest single modal extraction. Plan to spend a full commit on this one.
+   - **Step 6: Rainfall Silhouette.** File-I/O heavy. Locate via `grep "rainfall.*[Ss]ilhouette\|silhouette" src/ui/_ui-legacy.js`.
+   - **NOTE on "About modal":** does NOT exist. The About surface is `#algo-about` in the left pane (already delegated to `PaneLeft.initAboutSection`). Do not look for `openAbout` / `_buildAboutContent` — they are not in the file.
 5. **Then menu wiring (steps 8-11):** compose `overlays/menu.js` instances for `#layer-add-menu`, `#palette-menu`, `#layer-filter-menu`, and the NEW layer right-click context menu. The trigger-handler logic for the first three lives in the legacy `bindShortcuts` body (now in `src/ui/shortcuts.js`); be careful not to lose any of that wiring.
 6. **Then mixin dissolution (step 12):** dissolve `_UIAutoColorizeMixin` and `_UINoiseRackMixin` into the panels' `bind()` bags. Mixin attachment in `_ui-legacy.js:9253-9260`. Add prototype delegators to `_ui-legacy.js` since the mixin currently provides them by direct `Object.assign`.
 7. **Then primitive promotion (step 13):** swap every modal's `this.openModal` / `this.closeModal` to use `Vectura.UI.Overlays.Modal` (the Phase 1 component-contract primitive). Single-commit refactor across all extracted modals. Validate `this.modal.bodyEl` callers continue to work via the new primitive's exposed handle.
