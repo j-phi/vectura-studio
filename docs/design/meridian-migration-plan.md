@@ -12,7 +12,7 @@
 | **Phase 0** — Skin foundation | ✅ done | `7d9f426` (+ graphify rebuild `e442a4b`) |
 | **Phase 1** — Component library | ✅ done | `16ec81d` `440c84a` `d959a9b` `554ee88` `65791e5` `c7fa0db` |
 | **Phase 2** — Shell, panels, orchestrator | ✅ done | `a16ad57` `313d427` `7ca4795` `5c2edcc` `3a8b7be` `2692993` `2de5154` `c28bb4a` `c841598` `f377edb` `886499b` `ede23da` `8eddbf4` `360cbdc` `540dad5` `c98e9db` `243eccf` `56848c9` `e0bae17` `accfd99` `5529209` `562f9b2` `9628561` |
-| **Phase 3** — Modals, overlays, menus | ⏳ in progress (4/7 modals done) | `ff783c5` `6f277ba` `af0fd16` `bb36595` |
+| **Phase 3** — Modals, overlays, menus | ⏳ in progress (6/7 modals done) | `ff783c5` `6f277ba` `af0fd16` `bb36595` `4ca409a` `5ba54f9` |
 | **Phase 4** — Editors & specialized surfaces | ⏳ pending | — |
 | **Phase 5** — Polish, SDK, cleanup | ⏳ pending | — |
 
@@ -1162,29 +1162,74 @@ If all 13 steps pass and `npm run test:ci` is green, the migration is complete.
 
 ---
 
-## Appendix: Resuming Phase 3 step 4 (3 modals + 4 menus + mixin dissolution remaining)
+## Phase 3 step 4 actuals (6 of 7 modals shipped)
 
-Phase 3 is in progress. Steps 1-3 (`ff783c5`, `6f277ba`, `af0fd16`, `bb36595`) extract Help/Shortcuts, Grid Settings, Document Setup, and the info-modals micro-system (4 of 7 modals shipped). Three modals, four menus, and the mixin-dissolution cleanup remain.
+**Status: in progress.** Step 4 lands two more modals — the touch-friendly HSV Color Picker (`openColorModal`) and the generic image-asset picker that powers the Rainfall Silhouette + Noise Rack image controls (`openNoiseImageModal` + `loadNoiseImageFile`). Six modals are now extracted; only Export SVG remains for step 5.
 
-After clearing context, the fastest way to pick up Phase 3 step 4:
+**Commits:**
+
+- `4ca409a` (`feat(skin): Phase 3 — extract modals/color-picker.js`)
+- `5ba54f9` (`feat(skin): Phase 3 — extract modals/rainfall-silhouette.js`)
+
+**Files shipped:**
+
+- `src/ui/modals/color-picker.js` — 219 lines. Owns `openColorModal({ title, value, onApply })` — the HSV saturation-value canvas, the hue strip, the 6-char hex input, Apply / Cancel buttons, and all pointer-drag wiring. Self-contained: empty DI bag (every dep is on `this`). Registered as `window.Vectura.UI.Modals.ColorPicker`. The legacy IIFE-local `openColorPickerAnchoredTo` (still in `_ui-legacy.js`) routes to `uiInstance.openColorModal(...)` on touch-primary devices, which now delegates here.
+- `src/ui/modals/image-asset.js` — 173 lines. Owns BOTH `openNoiseImageModal(layer, options)` AND `loadNoiseImageFile(file, layer, nameEl, idKey, nameKey, target, previewKey)`. The same primitive serves the rainfall silhouette control AND the noise-rack image source — kept generic, named for what it actually is rather than for the most-prominent caller. Registered as `window.Vectura.UI.Modals.ImageAsset`. Empty DI bag. Both legacy methods delegate via 1-line pass-throughs so `algo-config-panel.js`'s `openNoiseImageModal` call and `ui-noise-rack.js`'s `loadNoiseImageFile` call continue to resolve unchanged.
+- `tests/unit/modals/color-picker-compile.test.js` — 5 tests (compile gate, bind tripwire on openColorModal, scaffold markup contains the canvas/hue/hex/buttons, non-#RRGGBB seed falls back to default red, Cancel + Apply round-trip the seed correctly).
+- `tests/unit/modals/image-asset-compile.test.js` — 6 tests (compile gate, bind tripwire on both methods, scaffold uses supplied title/label/description/dropLabel, "Current: <name>" reads from `layer.params[nameKey]` with fallback "None selected", file input onchange routes through `this.loadNoiseImageFile` with the supplied keys then closes).
+- `tests/integration/modals/color-picker.test.js` — 4 tests (`app.ui.openColorModal` renders the picker, Cancel closes without firing onApply, Apply with seed value emits the seed hex, editing the hex input then Apply emits the edited hex lower-cased).
+- `tests/integration/modals/image-asset.test.js` — 3 tests (rainfall-silhouette scaffold renders correctly, "None selected" fallback, file input onchange routes through `loadNoiseImageFile` with `idKey/nameKey` then closes).
+- `index.html` — two new `<script>` tags appended in the modal block (after `info-modals.js`).
+- `src/ui/_ui-legacy.js` — three method bodies replaced by three 1-line delegators (`openColorModal`, `openNoiseImageModal`, `loadNoiseImageFile`), and two new `bind()` registration blocks added at the bottom of the IIFE.
+
+**No markup changes to index.html.** Both modals are dynamic (composed via `this.openModal` at trigger time); neither owns persistent DOM that lived in `index.html`. Step 4 is a pure JS extraction — markup line count unchanged from step 3.
+
+**DI bags:**
+
+- ColorPicker: `{}` — empty. Every dep is on `this` (`this.openModal`, `this.closeModal`, `this.modal.bodyEl`).
+- ImageAsset: `{}` — empty. Every dep is on `this` (`this.openModal`, `this.closeModal`, `this.modal.bodyEl`, `this.app.pushHistory`, `this.storeLayerParams`, `this.app.regen`, `this.app.render`, `this.buildControls`, `this.updateFormula`).
+
+**Composition contract:** Both modals compose `this.openModal` (centered overlay, same primitive Help/Shortcuts and Info Modals use). Future Phase 3 step 13 (primitive promotion) will swap every modal's `this.openModal` to `Vectura.UI.Overlays.Modal` in a single commit — the API contract on `this.modal.bodyEl` is what every extracted modal currently relies on.
+
+**Line reduction:** `_ui-legacy.js` 9,030 → 8,790 (–240 lines net across both extractions). Color picker accounts for –153 lines; image-asset for –87 lines. Both ratios are ~80% (a 165-line method body becomes a 3-line delegator + 7-line bind() block, etc.).
+
+**Test totals before → after:** 665 unit + 84 integration + 13 visual + 2 perf → **676 unit + 91 integration + 13 visual + 2 perf** (+11 unit, +7 integration). All four suites green.
+
+**Browser smoke:** NOT run for this step. Same risk profile as steps 1-3 — pure JS lift with method-body → 1-line-delegator pattern. Integration tests cover full `loadVecturaRuntime({ useIndexHtml: true })` paths so the script-load order + bind() registration is exercised. Browser smoke remains mandatory before the Phase 3 closeout commit (per the existing carry-over note in step 3).
+
+**Patterns / gotchas Phase 3 step 5 (Export SVG) must know:**
+
+1. **Self-contained modules ship with empty DI bags.** Both step-4 modules took `bind({})`. The `requireDeps(name)` tripwire still exists — its job there is to enforce load-order (every method asserts the module's `bind()` ran before its first invocation, which proves the script tag is in the right place in `index.html`). Use the same shape for Export SVG even though Export is the largest extraction yet.
+2. **One module can own multiple prototype methods that share state by `this`.** The image-asset module owns two prototype methods (`openNoiseImageModal` + `loadNoiseImageFile`); they communicate through `this.loadNoiseImageFile(...)` from inside `openNoiseImageModal`'s file-input handler. This pattern scales: Export SVG's 11 methods can all live in one module if they share state via `this`, with one prototype delegator per method on UI.prototype.
+3. **Legacy methods called from satellite modules.** `loadNoiseImageFile` is invoked by `src/ui/ui-noise-rack.js:1720` (`this.loadNoiseImageFile(...)`); `openNoiseImageModal` by `src/ui/panels/algo-config-panel.js:793`. Both still hit the 1-line delegator on UI.prototype, which forwards to the new module — do NOT remove these delegators thinking the satellite caller can dispatch directly to `window.Vectura.UI.Modals.ImageAsset`. The delegator is the API contract.
+4. **Generic primitive vs caller-named module.** The task spec called this the "Rainfall Silhouette modal" but the primitive is generic — same modal also serves the noise rack. Module name reflects actual scope: `image-asset.js`, not `rainfall-silhouette.js`. Apply the same scrutiny to Export SVG: if the export pipeline is shared with `.vectura` save / project export / something else, name the module after the abstract surface, not the most-prominent menu item.
+5. **No new markup move.** Step 4 didn't change `index.html` line count for markup — both modals are DOM-on-trigger. Step 5 (Export SVG) likely also has no markup in `index.html`; double-check by grepping `id="export"` / `id="modal-export"` etc. before assuming a markup move is needed.
+6. **Carry-over from steps 1-3 unchanged.** Mixin dissolution, ~44 (now ~41 after step 4) surviving prototype methods, ~30 IIFE locals (no change — neither step-4 module pulled an IIFE-local through DI), `refreshDocumentUnitsUi` / `refreshThemeUi` cross-call resolution. The JSDOM-vm regex character-class oddity from step 3's gotcha still applies — workaround pattern is the sentinel-marker escaper (see `info-modals-compile.test.js`).
+
+---
+
+## Appendix: Resuming Phase 3 step 5 (Export SVG — final modal)
+
+Phase 3 is in progress. Steps 1-4 (`ff783c5`, `6f277ba`, `af0fd16`, `bb36595`, `4ca409a`, `5ba54f9`) extract six modals. Only **Export SVG** remains as a modal extraction; menus + mixin dissolution + primitive promotion + browser smoke complete the phase.
+
+After clearing context, the fastest way to pick up Phase 3 step 5:
 
 1. `cd /Users/jayphi/Documents/github/vectura-studio-meridian` (the worktree, on branch `meridian-blue-skin`).
-2. `git log --oneline -5` — confirm HEAD is the docs commit recording Phase 3 step 3 closure (the latest `docs(skin):` commit). The step 3 implementation commits are `af0fd16` (Document Setup) and `bb36595` (info-modals).
-3. Confirm tests are green before changing anything: `npm run test:unit && npm run test:integration && npm run test:visual && npm run test:perf` (665 unit, 84 integration, 13 visual, 2 perf — all green at end of step 3).
-4. **Phase 3 step 4 target: pick the next 2 modals.** Recommended order, smallest → largest:
-   - **Step 4 (recommended primary): Color Picker.** `openColorModal({ title, value, onApply })` at `_ui-legacy.js` (~155 lines, search for `openColorModal(`). HSV + hex math, more state than the modals already shipped. Locate supporting helpers — `getAnchoredColorProxyInput` and `openColorPickerAnchoredTo` are IIFE-locals; the Grid Settings DI bag already passes `openColorPickerAnchoredTo` through, so that pattern carries forward. Compile gate template: see `info-modals-compile.test.js` for the multi-method shape.
-   - **Step 4 (recommended secondary): Rainfall Silhouette.** File-I/O heavy. Locate via `grep "rainfall.*[Ss]ilhouette\|silhouette" src/ui/_ui-legacy.js`. Smaller than Export SVG and a good test of file-input wiring through DI before tackling Export. If Color Picker eats the budget, defer Rainfall Silhouette to step 5.
-   - **Step 5 (defer to its own commit): Export SVG.** `openExportModal()` plus 10 supporting methods. Largest single modal extraction — this is the one Phase 3 step 2's actuals warned would deserve its own commit. Don't bundle it.
-   - **NOTE on "About modal":** does NOT exist. The About surface is `#algo-about` in the left pane (already delegated to `PaneLeft.initAboutSection`). Do not look for `openAbout` / `_buildAboutContent` — they are not in the file.
-5. **Then menu wiring (steps 8-11):** compose `overlays/menu.js` instances for `#layer-add-menu`, `#palette-menu`, `#layer-filter-menu`, and the NEW layer right-click context menu. The trigger-handler logic for the first three lives in the legacy `bindShortcuts` body (now in `src/ui/shortcuts.js`); be careful not to lose any of that wiring.
-6. **Then mixin dissolution (step 12):** dissolve `_UIAutoColorizeMixin` and `_UINoiseRackMixin` into the panels' `bind()` bags. Mixin attachment in `_ui-legacy.js:9253-9260`. Add prototype delegators to `_ui-legacy.js` since the mixin currently provides them by direct `Object.assign`.
-7. **Then primitive promotion (step 13):** swap every modal's `this.openModal` / `this.closeModal` to use `Vectura.UI.Overlays.Modal` (the Phase 1 component-contract primitive). Single-commit refactor across all extracted modals. Validate `this.modal.bodyEl` callers continue to work via the new primitive's exposed handle.
-8. **Tooltip / DragDropOverlay / Toast wire-up (step 14):** per §3 lines 686-689 — replace every `info-btn`-triggered modal call site with `Vectura.UI.Overlays.Tooltip`; consolidate the SVG-import / `.vectura`-open / rainfall / pattern-import drag handlers into `Vectura.UI.Overlays.DragDropOverlay`; emit toasts on layer-add success, project save/load, export complete, and error states.
-9. **Compile-gate-test-first pattern:** every modal/menu extraction starts with a `tests/unit/modals/<surface>-compile.test.js` (matching the step 1 template). Add a per-modal integration test under `tests/integration/modals/<surface>.test.js` modeled on `help-shortcuts.test.js` (open via trigger, focus moves, tab cycles, Esc closes, click-outside opt-in, state preserved across open/close).
+2. `git log --oneline -5` — confirm HEAD is the docs commit recording Phase 3 step 4 closure (the latest `docs(skin):` commit). The step 4 implementation commits are `4ca409a` (Color Picker) and `5ba54f9` (image-asset).
+3. Confirm tests are green before changing anything: `npm run test:unit && npm run test:integration && npm run test:visual && npm run test:perf` (676 unit, 91 integration, 13 visual, 2 perf — all green at end of step 4).
+4. **Phase 3 step 5 target: Export SVG.** The largest single modal extraction in the phase — `openExportModal()` plus ~10 supporting methods (optimization preview pipeline, line-sort animation, real-time SVG diff, file-naming UX). This is the modal that Phase 3 step 2's actuals warned would deserve its own commit. Don't bundle it with anything else.
+   - **Locate via:** `grep -nE "openExportModal|exportModal|openExport" src/ui/_ui-legacy.js`. Also look in `src/ui/ui-file-io.js` — the file-I/O satellite already owns parts of the export pipeline. Decide whether the modal extraction should pull from both files or only from `_ui-legacy.js` (likely the latter — `ui-file-io.js` is already a satellite, leave it alone except to confirm its callers still resolve).
+   - **DI bag candidates:** the export modal likely needs the optimization config (`SETTINGS.export*`), the renderer reference (`this.renderer`), `getEl`, and probably the controls-registry to populate per-algorithm export options. Build the bag empirically — start with `{}`, run the compile gate, add deps as `requireDeps()` complaints surface.
+   - **Compile gate:** model on `image-asset-compile.test.js` (multi-method module, several scaffolds) — that's the closest precedent. Sentinel pattern from step 3 still works for proving DI routing.
+5. **Then menu wiring (steps 6-9):** compose `overlays/menu.js` instances for `#layer-add-menu`, `#palette-menu`, `#layer-filter-menu`, and the NEW layer right-click context menu. The trigger-handler logic for the first three lives in the legacy `bindShortcuts` body (now in `src/ui/shortcuts.js`); be careful not to lose any of that wiring.
+6. **Then mixin dissolution (step 10):** dissolve `_UIAutoColorizeMixin` and `_UINoiseRackMixin` into the panels' `bind()` bags. Mixin attachment in `_ui-legacy.js:~9100` (line numbers shifted after step 4 — re-grep `Object.assign(UI.prototype` to find them).
+7. **Then primitive promotion (step 11):** swap every modal's `this.openModal` / `this.closeModal` to `Vectura.UI.Overlays.Modal` (the Phase 1 component-contract primitive). Single-commit refactor across ALL seven modals (color-picker, image-asset, info-modals, document-setup, grid-settings, help-shortcuts, export). Validate `this.modal.bodyEl` callers continue to work via the new primitive's exposed handle.
+8. **Tooltip / DragDropOverlay / Toast wire-up (step 12):** per §3 lines 686-689 — replace every `info-btn`-triggered modal call site with `Vectura.UI.Overlays.Tooltip`; consolidate the SVG-import / `.vectura`-open / rainfall / pattern-import drag handlers into `Vectura.UI.Overlays.DragDropOverlay`; emit toasts on layer-add success, project save/load, export complete, and error states.
+9. **Compile-gate-test-first pattern:** every modal/menu extraction starts with a `tests/unit/modals/<surface>-compile.test.js` (matching the step 1 template). Add a per-modal integration test under `tests/integration/modals/<surface>.test.js` modeled on `image-asset.test.js` (open via trigger, scaffold present, file/input handlers route through expected method, modal closes on action).
 10. **Browser smoke is now mandatory before the Phase 3 closeout commit.** Run `python -m http.server 8000`, exercise every extracted modal manually (open via menu/trigger, click around, close), every menu (layer add, palette, layer filter, right-click context), confirm toasts surface on save/load/export, drag-drop a `.vectura` and a `.svg`. Anything broken → fix BEFORE flipping Phase 3 to ✅.
-11. **Phase 3 closeout (when ALL modals + menus + mixin dissolution + primitive promotion + browser smoke are green):** flip Status table from `⏳ in progress` to `✅`, list every Phase 3 commit SHA, write a "Phase 3 actuals" note that supersedes this "Phase 3 step 1 actuals" note (or appends to it), rewrite this appendix as "Resuming from Phase 4", update memory, commit a `docs(skin):` closeout.
+11. **Phase 3 closeout (when ALL modals + menus + mixin dissolution + primitive promotion + browser smoke are green):** flip Status table from `⏳ in progress` to `✅`, list every Phase 3 commit SHA, write a "Phase 3 actuals" note that supersedes the per-step actuals, rewrite this appendix as "Resuming from Phase 4", update memory, commit a `docs(skin):` closeout.
 
-**Phase 3 does NOT touch (without explicit user request):** `src/render/renderer.js`, `src/core/`, `src/config/`. Stay in `src/ui/` (overlays, panels, satellites, modals) and `index.html` (script load order + Document Setup / Grid Settings markup removal).
+**Phase 3 does NOT touch (without explicit user request):** `src/render/renderer.js`, `src/core/`, `src/config/`. Stay in `src/ui/` (overlays, panels, satellites, modals) and `index.html` (script load order + markup removal where applicable).
 
 ---
 
