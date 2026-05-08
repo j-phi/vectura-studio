@@ -541,6 +541,52 @@ test.describe('Vectura smoke interactions', () => {
     expect(pageErrors).toEqual([]);
   });
 
+  test('canvas workspace pixel matches after dark → lark → light → dark cycle', async ({ page }) => {
+    const pageErrors = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+
+    await page.goto('/');
+    await expect
+      .poll(() => page.evaluate(() => !!(window.app && window.app.renderer && window.app.renderer.ready)), { timeout: 10000 })
+      .toBe(true);
+
+    // Sample a pixel in the top-left corner of the canvas — always workspace background,
+    // never inside the paper rect regardless of pan/zoom.
+    const sampleWorkspacePixel = () =>
+      page.evaluate(() => {
+        const canvas = document.getElementById('main-canvas');
+        const ctx = canvas.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        const pixel = ctx.getImageData(Math.round(10 * dpr), Math.round(10 * dpr), 1, 1).data;
+        return [pixel[0], pixel[1], pixel[2]];
+      });
+
+    const initialPixel = await sampleWorkspacePixel();
+
+    const themeToggle = page.locator('#theme-toggle');
+    await expect(themeToggle).toBeVisible();
+
+    // Click 1: dark → lark
+    await themeToggle.click();
+    await expect.poll(() => page.evaluate(() => window.Vectura?.SETTINGS?.uiTheme), { timeout: 5000 }).toBe('lark');
+
+    // Click 2: lark → light
+    await themeToggle.click();
+    await expect.poll(() => page.evaluate(() => window.Vectura?.SETTINGS?.uiTheme), { timeout: 5000 }).toBe('light');
+
+    // Click 3: light → dark
+    await themeToggle.click();
+    await expect.poll(() => page.evaluate(() => window.Vectura?.SETTINGS?.uiTheme), { timeout: 5000 }).toBe('dark');
+
+    // Allow the post-skin-swap re-render (vectura:skin-change) to settle
+    await page.waitForTimeout(300);
+
+    const cycledPixel = await sampleWorkspacePixel();
+
+    expect(cycledPixel).toEqual(initialPixel);
+    expect(pageErrors).toEqual([]);
+  });
+
   test('export modal owns the default-on remove hidden geometry toggle', async ({ page }) => {
     const pageErrors = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));

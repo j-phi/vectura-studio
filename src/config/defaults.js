@@ -90,7 +90,7 @@
       manifest: MERIDIAN_MANIFEST,
       colorScheme: 'dark',
       metaThemeColor: '#1b1b1b',
-      documentBg: '#1b1b1b',
+      documentBg: '#121214',
       pen1Color: '#e6f1ff',
       // The renderer reads --render-canvas / --color-workspace via getComputedStyle.
       // Pushing them inline here guarantees they overwrite any stale values left by
