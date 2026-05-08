@@ -187,5 +187,12 @@
     applyPersistedSettings,
     scrollLayerToTop,
     captureLeftPanelScrollPosition,
+    installOn(proto) {
+      // Legacy name `initSettingsValues` retained as an alias on the prototype
+      // — call sites still use this.initSettingsValues().
+      proto.initSettingsValues = function() { return applyPersistedSettings.call(this); };
+      proto.scrollLayerToTop = function(layerId) { return scrollLayerToTop.call(this, layerId); };
+      proto.captureLeftPanelScrollPosition = function() { return captureLeftPanelScrollPosition.call(this); };
+    },
   };
 })();

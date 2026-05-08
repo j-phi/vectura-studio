@@ -138,6 +138,15 @@
     ensureLayerMaskState,
     setLayerMaskEnabled,
     setLayerMaskHidden,
+    installOn(proto) {
+      proto.refreshModifierLayer = function(layer, options = {}) { return refreshModifierLayer.call(this, layer, options); };
+      proto.insertMirrorModifier = function() { return insertMirrorModifier.call(this); };
+      proto.updatePrimaryPanelMode = function(layer) { return updatePrimaryPanelMode.call(this, layer); };
+      proto.refreshMaskingViews = function() { return refreshMaskingViews.call(this); };
+      proto.ensureLayerMaskState = function(layer) { return ensureLayerMaskState.call(this, layer); };
+      proto.setLayerMaskEnabled = function(layer, enabled, options = {}) { return setLayerMaskEnabled.call(this, layer, enabled, options); };
+      proto.setLayerMaskHidden = function(layer, hidden, options = {}) { return setLayerMaskHidden.call(this, layer, hidden, options); };
+    },
   };
 })();
 

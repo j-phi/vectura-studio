@@ -83,5 +83,10 @@
     getDefaultTransformForType,
     storeLayerParams,
     restoreLayerParams,
+    installOn(proto) {
+      proto.getDefaultTransformForType = function(type, currentParams = {}) { return getDefaultTransformForType.call(this, type, currentParams); };
+      proto.storeLayerParams = function(layer) { return storeLayerParams.call(this, layer); };
+      proto.restoreLayerParams = function(layer, nextType) { return restoreLayerParams.call(this, layer, nextType); };
+    },
   };
 })();

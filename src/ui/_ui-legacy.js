@@ -5215,15 +5215,9 @@
     // installed onto UI.prototype by their satellites' installOn() calls
     // at IIFE bottom.
 
-    // Delegated to src/ui/persistence.js (Phase 2 step 5a).
-    scrollLayerToTop(layerId) {
-      return window.Vectura.UI.Persistence.scrollLayerToTop.call(this, layerId);
-    }
-
-    // Delegated to src/ui/persistence.js (Phase 2 step 5a).
-    captureLeftPanelScrollPosition() {
-      return window.Vectura.UI.Persistence.captureLeftPanelScrollPosition.call(this);
-    }
+    // persistence methods (scrollLayerToTop, captureLeftPanelScrollPosition,
+    // initSettingsValues→applyPersistedSettings) are installed onto
+    // UI.prototype by Persistence.installOn() at IIFE bottom.
 
     createModal() {
       const overlay = document.createElement('div');
@@ -5327,16 +5321,9 @@
       return window.Vectura.UI.Modals.DocumentSetup.bindHandlers.call(this);
     }
 
-    // Delegated to src/ui/panels/transform-panel.js (Phase 2 step 4).
-    getDefaultTransformForType(type, currentParams = {}) {
-      return window.Vectura.UI.TransformPanel.getDefaultTransformForType.call(this, type, currentParams);
-    }
-    storeLayerParams(layer) {
-      return window.Vectura.UI.TransformPanel.storeLayerParams.call(this, layer);
-    }
-    restoreLayerParams(layer, nextType) {
-      return window.Vectura.UI.TransformPanel.restoreLayerParams.call(this, layer, nextType);
-    }
+    // transform-panel methods (getDefaultTransformForType, storeLayerParams,
+    // restoreLayerParams) are installed onto UI.prototype by
+    // TransformPanel.installOn() at IIFE bottom.
 
     recenterLayerIfNeeded(layer) {
       if (!layer || !this.app.renderer) return;
@@ -5739,11 +5726,6 @@
       return layer.modifier;
     }
 
-    // Delegated to src/ui/panels/modifiers-panel.js (Phase 2 step 4).
-    refreshModifierLayer(layer, options = {}) {
-      return window.Vectura.UI.ModifiersPanel.refreshModifierLayer.call(this, layer, options);
-    }
-
     assignLayersToParent(parentId, targetLayers, options = {}) {
       const layers = (targetLayers || []).filter((layer) => layer && layer.id !== parentId);
       if (!layers.length) return [];
@@ -5787,18 +5769,12 @@
     }
 
     // Delegated to src/ui/panels/layers-panel.js (assignLayersToRoot, groupSelection, ungroupSelection).
-    insertMirrorModifier() {
-      return window.Vectura.UI.ModifiersPanel.insertMirrorModifier.call(this);
-    }
-
-    updatePrimaryPanelMode(layer) {
-      return window.Vectura.UI.ModifiersPanel.updatePrimaryPanelMode.call(this, layer);
-    }
-
-    // Delegated to src/ui/panels/algorithm-panel.js (Phase 2 step 4).
-    syncPrimaryModuleDropdown(layer) {
-      return window.Vectura.UI.AlgorithmPanel.syncPrimaryModuleDropdown.call(this, layer);
-    }
+    // modifiers-panel methods (refreshModifierLayer, insertMirrorModifier,
+    // updatePrimaryPanelMode, refreshMaskingViews, ensureLayerMaskState,
+    // setLayerMaskEnabled, setLayerMaskHidden) and algorithm-panel methods
+    // (syncPrimaryModuleDropdown, isModifierType, isDrawableLayerType,
+    // rememberDrawableLayerType, getPreferredNewLayerType) are installed onto
+    // UI.prototype by their satellites' installOn() calls at IIFE bottom.
 
     getPenById(id) {
       return (SETTINGS.pens || []).find((pen) => pen.id === id) || null;
@@ -5826,20 +5802,6 @@
       this.renderLayers();
       this.app.render();
       return true;
-    }
-
-    // Delegated to src/ui/panels/algorithm-panel.js (Phase 2 step 4).
-    isModifierType(type) {
-      return window.Vectura.UI.AlgorithmPanel.isModifierType.call(this, type);
-    }
-    isDrawableLayerType(type) {
-      return window.Vectura.UI.AlgorithmPanel.isDrawableLayerType.call(this, type);
-    }
-    rememberDrawableLayerType(typeOrLayer) {
-      return window.Vectura.UI.AlgorithmPanel.rememberDrawableLayerType.call(this, typeOrLayer);
-    }
-    getPreferredNewLayerType() {
-      return window.Vectura.UI.AlgorithmPanel.getPreferredNewLayerType.call(this);
     }
 
     shouldLeaveParentScope(layer, prevId, nextId, selectedIds = new Set()) {
@@ -6020,20 +5982,6 @@
       return Boolean(layer.maskCapabilities?.canSource);
     }
 
-    // Delegated to src/ui/panels/modifiers-panel.js (Phase 2 step 4).
-    refreshMaskingViews() {
-      return window.Vectura.UI.ModifiersPanel.refreshMaskingViews.call(this);
-    }
-    ensureLayerMaskState(layer) {
-      return window.Vectura.UI.ModifiersPanel.ensureLayerMaskState.call(this, layer);
-    }
-    setLayerMaskEnabled(layer, enabled, options = {}) {
-      return window.Vectura.UI.ModifiersPanel.setLayerMaskEnabled.call(this, layer, enabled, options);
-    }
-    setLayerMaskHidden(layer, hidden, options = {}) {
-      return window.Vectura.UI.ModifiersPanel.setLayerMaskHidden.call(this, layer, hidden, options);
-    }
-
     getUniqueLayerName(base, excludeId) {
       const clean = base.trim() || 'Layer';
       if (!this.isDuplicateLayerName(clean, excludeId)) return clean;
@@ -6072,11 +6020,6 @@
     // bottom-pane (initBottomPaneToggle, initBottomPaneResizer), and toolbar
     // (updateLightSourceTool, initToolBar) are installed onto UI.prototype by
     // their satellites' installOn() calls at IIFE bottom.
-
-    // Delegated to src/ui/persistence.js as applyPersistedSettings (Phase 2 step 5a).
-    initSettingsValues() {
-      return window.Vectura.UI.Persistence.applyPersistedSettings.call(this);
-    }
 
     bindGlobal() {
       this.layerLockedIds  = new Set();
@@ -7891,6 +7834,9 @@
   if (window.Vectura?.UI?.TransformPanel?.bind) {
     window.Vectura.UI.TransformPanel.bind({ ALGO_DEFAULTS, TRANSFORM_KEYS, clone });
   }
+  if (window.Vectura?.UI?.TransformPanel?.installOn) {
+    window.Vectura.UI.TransformPanel.installOn(UI.prototype);
+  }
 
   // Phase 2 step 4: hand legacy IIFE-locals to panels/layers-panel.js.
   if (window.Vectura?.UI?.LayersPanel?.bind) {
@@ -7912,15 +7858,24 @@
   if (window.Vectura?.UI?.ModifiersPanel?.bind) {
     window.Vectura.UI.ModifiersPanel.bind({ getEl });
   }
+  if (window.Vectura?.UI?.ModifiersPanel?.installOn) {
+    window.Vectura.UI.ModifiersPanel.installOn(UI.prototype);
+  }
 
   // Phase 2 step 4: hand legacy IIFE-locals to panels/algorithm-panel.js.
   if (window.Vectura?.UI?.AlgorithmPanel?.bind) {
     window.Vectura.UI.AlgorithmPanel.bind({ getEl, ALGO_DEFAULTS, MODIFIER_DEFAULTS, Algorithms });
   }
+  if (window.Vectura?.UI?.AlgorithmPanel?.installOn) {
+    window.Vectura.UI.AlgorithmPanel.installOn(UI.prototype);
+  }
 
   // Phase 2 step 5a: hand legacy IIFE-locals to persistence.js.
   if (window.Vectura?.UI?.Persistence?.bind) {
     window.Vectura.UI.Persistence.bind({ getEl, SETTINGS, getContrastTextColor });
+  }
+  if (window.Vectura?.UI?.Persistence?.installOn) {
+    window.Vectura.UI.Persistence.installOn(UI.prototype);
   }
 
   // Phase 2 step 5b: hand legacy IIFE-locals to shortcuts.js.

@@ -111,6 +111,13 @@
     isDrawableLayerType,
     rememberDrawableLayerType,
     getPreferredNewLayerType,
+    installOn(proto) {
+      proto.syncPrimaryModuleDropdown = function(layer) { return syncPrimaryModuleDropdown.call(this, layer); };
+      proto.isModifierType = function(type) { return isModifierType.call(this, type); };
+      proto.isDrawableLayerType = function(type) { return isDrawableLayerType.call(this, type); };
+      proto.rememberDrawableLayerType = function(typeOrLayer) { return rememberDrawableLayerType.call(this, typeOrLayer); };
+      proto.getPreferredNewLayerType = function() { return getPreferredNewLayerType.call(this); };
+    },
   };
 })();
 
