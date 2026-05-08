@@ -95,5 +95,10 @@
     toggleSettingsPanel,
     initBottomPaneToggle,
     initBottomPaneResizer,
+    installOn(proto) {
+      proto.toggleSettingsPanel = function(...args) { return toggleSettingsPanel.apply(this, args); };
+      proto.initBottomPaneToggle = function() { return initBottomPaneToggle.call(this); };
+      proto.initBottomPaneResizer = function() { return initBottomPaneResizer.call(this); };
+    },
   };
 })();

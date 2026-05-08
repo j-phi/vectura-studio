@@ -5209,25 +5209,11 @@
     // attachExportInfoButtons, openExportModal) are installed onto
     // UI.prototype by Modals.ExportSvg.installOn() at IIFE bottom.
 
-    // Delegated to src/ui/shell/bottom-pane.js (Phase 2 step 3).
-    toggleSettingsPanel(...args) {
-      return window.Vectura.UI.BottomPane.toggleSettingsPanel.call(this, ...args);
-    }
-
-    setTopMenuOpen(trigger = null, open = true) {
-      // Delegated to src/ui/shell/menubar.js (Phase 2 step 3).
-      return window.Vectura.UI.MenuBar.setTopMenuOpen.call(this, trigger, open);
-    }
-
-    initTopMenuBar() {
-      // Delegated to src/ui/shell/menubar.js (Phase 2 step 3).
-      return window.Vectura.UI.MenuBar.initTopMenuBar.call(this);
-    }
-
-    refreshThemeUi() {
-      // Delegated to src/ui/shell/theme-switcher.js (Phase 2 step 3).
-      return window.Vectura.UI.ThemeSwitcher.refreshThemeUi.call(this);
-    }
+    // bottom-pane methods (toggleSettingsPanel, initBottomPaneToggle,
+    // initBottomPaneResizer), menubar (setTopMenuOpen, initTopMenuBar,
+    // triggerTopMenuAction), and theme-switcher (refreshThemeUi) are
+    // installed onto UI.prototype by their satellites' installOn() calls
+    // at IIFE bottom.
 
     // Delegated to src/ui/persistence.js (Phase 2 step 5a).
     scrollLayerToTop(layerId) {
@@ -6080,60 +6066,18 @@
       return window.Vectura.UI.Modals.InfoModals.bindInfoButtons.call(this);
     }
 
-    // Delegated to src/ui/shell/header.js (Phase 2 step 3).
-    initModuleDropdown() {
-      return window.Vectura.UI.Header.initModuleDropdown.call(this);
-    }
-    _buildModuleMenu() {
-      return window.Vectura.UI.Header._buildModuleMenu.call(this);
-    }
-    _showModuleMenu() {
-      return window.Vectura.UI.Header._showModuleMenu.call(this);
-    }
-    _syncModuleDisplay() {
-      return window.Vectura.UI.Header._syncModuleDisplay.call(this);
-    }
-    initMachineDropdown() {
-      return window.Vectura.UI.Header.initMachineDropdown.call(this);
-    }
-
-    // Delegated to src/ui/shell/pane-right.js (Phase 2 step 3).
-    initRightPaneTabs() {
-      return window.Vectura.UI.PaneRight.initRightPaneTabs.call(this);
-    }
-    initPensSection() {
-      return window.Vectura.UI.PaneRight.initPensSection.call(this);
-    }
+    // header methods (initModuleDropdown, _buildModuleMenu, _showModuleMenu,
+    // _syncModuleDisplay, initMachineDropdown), pane-right (initRightPaneTabs,
+    // initPensSection), workspace (initPaneToggles, initPaneResizers),
+    // bottom-pane (initBottomPaneToggle, initBottomPaneResizer), and toolbar
+    // (updateLightSourceTool, initToolBar) are installed onto UI.prototype by
+    // their satellites' installOn() calls at IIFE bottom.
 
     // Delegated to src/ui/persistence.js as applyPersistedSettings (Phase 2 step 5a).
     initSettingsValues() {
       return window.Vectura.UI.Persistence.applyPersistedSettings.call(this);
     }
 
-    // Delegated to src/ui/shell/workspace.js (Phase 2 step 3).
-    initPaneToggles() {
-      return window.Vectura.UI.Workspace.initPaneToggles.call(this);
-    }
-    initPaneResizers() {
-      return window.Vectura.UI.Workspace.initPaneResizers.call(this);
-    }
-
-    // Delegated to src/ui/shell/bottom-pane.js (Phase 2 step 3).
-    initBottomPaneToggle() {
-      return window.Vectura.UI.BottomPane.initBottomPaneToggle.call(this);
-    }
-    initBottomPaneResizer() {
-      return window.Vectura.UI.BottomPane.initBottomPaneResizer.call(this);
-    }
-
-    // Delegated to src/ui/shell/toolbar.js (Phase 2 step 3).
-    updateLightSourceTool() {
-      return window.Vectura.UI.Toolbar.updateLightSourceTool.call(this);
-    }
-
-    initToolBar() {
-      return window.Vectura.UI.Toolbar.initToolBar.call(this);
-    }
     bindGlobal() {
       this.layerLockedIds  = new Set();
       this.layerSearchQ    = '';
@@ -6890,10 +6834,8 @@
       }
     }
 
-    triggerTopMenuAction(buttonId) {
-      // Delegated to src/ui/shell/menubar.js (Phase 2 step 3).
-      return window.Vectura.UI.MenuBar.triggerTopMenuAction.call(this, buttonId);
-    }
+    // triggerTopMenuAction is installed onto UI.prototype by
+    // MenuBar.installOn() at IIFE bottom.
 
     // Delegated to src/ui/shortcuts.js (Phase 2 step 5b).
     handleTopMenuShortcut(e) {
@@ -7852,6 +7794,9 @@
   if (window.Vectura?.UI?.ThemeSwitcher?.bind) {
     window.Vectura.UI.ThemeSwitcher.bind({ getEl });
   }
+  if (window.Vectura?.UI?.ThemeSwitcher?.installOn) {
+    window.Vectura.UI.ThemeSwitcher.installOn(UI.prototype);
+  }
 
   // Phase 2 step 3: hand legacy IIFE-locals to shell/menubar.js so its
   // extracted setTopMenuOpen/initTopMenuBar/triggerTopMenuAction bodies see the
@@ -7859,6 +7804,9 @@
   // loads BEFORE ui.js (see index.html script tags).
   if (window.Vectura?.UI?.MenuBar?.bind) {
     window.Vectura.UI.MenuBar.bind({ getEl });
+  }
+  if (window.Vectura?.UI?.MenuBar?.installOn) {
+    window.Vectura.UI.MenuBar.installOn(UI.prototype);
   }
 
   // Phase 2 step 3: hand legacy IIFE-locals to shell/pane-left.js so its
@@ -7875,25 +7823,40 @@
   if (window.Vectura?.UI?.PaneRight?.bind) {
     window.Vectura.UI.PaneRight.bind({ getEl });
   }
+  if (window.Vectura?.UI?.PaneRight?.installOn) {
+    window.Vectura.UI.PaneRight.installOn(UI.prototype);
+  }
 
   // Phase 2 step 3: hand legacy IIFE-locals to shell/workspace.js.
   if (window.Vectura?.UI?.Workspace?.bind) {
     window.Vectura.UI.Workspace.bind({ getEl });
+  }
+  if (window.Vectura?.UI?.Workspace?.installOn) {
+    window.Vectura.UI.Workspace.installOn(UI.prototype);
   }
 
   // Phase 2 step 3: hand legacy IIFE-locals to shell/bottom-pane.js.
   if (window.Vectura?.UI?.BottomPane?.bind) {
     window.Vectura.UI.BottomPane.bind({ getEl });
   }
+  if (window.Vectura?.UI?.BottomPane?.installOn) {
+    window.Vectura.UI.BottomPane.installOn(UI.prototype);
+  }
 
   // Phase 2 step 3: hand legacy IIFE-locals to shell/toolbar.js.
   if (window.Vectura?.UI?.Toolbar?.bind) {
     window.Vectura.UI.Toolbar.bind({ getEl, isPetalisLayerType });
   }
+  if (window.Vectura?.UI?.Toolbar?.installOn) {
+    window.Vectura.UI.Toolbar.installOn(UI.prototype);
+  }
 
   // Phase 2 step 3: hand legacy IIFE-locals to shell/header.js.
   if (window.Vectura?.UI?.Header?.bind) {
     window.Vectura.UI.Header.bind({ getEl, ALGO_DEFAULTS, MACHINES, SETTINGS });
+  }
+  if (window.Vectura?.UI?.Header?.installOn) {
+    window.Vectura.UI.Header.installOn(UI.prototype);
   }
 
   // Phase 2 step 4: hand legacy IIFE-locals to panels/formula-panel.js.

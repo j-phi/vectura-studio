@@ -148,5 +148,12 @@
     _showModuleMenu,
     _syncModuleDisplay,
     initMachineDropdown,
+    installOn(proto) {
+      proto.initModuleDropdown = function() { return initModuleDropdown.call(this); };
+      proto._buildModuleMenu = function() { return _buildModuleMenu.call(this); };
+      proto._showModuleMenu = function() { return _showModuleMenu.call(this); };
+      proto._syncModuleDisplay = function() { return _syncModuleDisplay.call(this); };
+      proto.initMachineDropdown = function() { return initMachineDropdown.call(this); };
+    },
   };
 })();

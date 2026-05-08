@@ -187,5 +187,10 @@
     setTopMenuOpen,
     initTopMenuBar,
     triggerTopMenuAction,
+    installOn(proto) {
+      proto.setTopMenuOpen = function(trigger = null, open = true) { return setTopMenuOpen.call(this, trigger, open); };
+      proto.initTopMenuBar = function() { return initTopMenuBar.call(this); };
+      proto.triggerTopMenuAction = function(buttonId) { return triggerTopMenuAction.call(this, buttonId); };
+    },
   };
 })();

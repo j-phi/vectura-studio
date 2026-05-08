@@ -181,5 +181,9 @@
     },
     initPaneToggles,
     initPaneResizers,
+    installOn(proto) {
+      proto.initPaneToggles = function() { return initPaneToggles.call(this); };
+      proto.initPaneResizers = function() { return initPaneResizers.call(this); };
+    },
   };
 })();

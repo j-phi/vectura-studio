@@ -549,5 +549,9 @@
     },
     updateLightSourceTool,
     initToolBar,
+    installOn(proto) {
+      proto.updateLightSourceTool = function() { return updateLightSourceTool.call(this); };
+      proto.initToolBar = function() { return initToolBar.call(this); };
+    },
   };
 })();

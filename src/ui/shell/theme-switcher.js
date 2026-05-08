@@ -80,5 +80,8 @@
       DEPS = deps;
     },
     refreshThemeUi,
+    installOn(proto) {
+      proto.refreshThemeUi = function() { return refreshThemeUi.call(this); };
+    },
   };
 })();

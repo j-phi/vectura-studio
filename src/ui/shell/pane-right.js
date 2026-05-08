@@ -87,5 +87,9 @@
     },
     initRightPaneTabs,
     initPensSection,
+    installOn(proto) {
+      proto.initRightPaneTabs = function() { return initRightPaneTabs.call(this); };
+      proto.initPensSection = function() { return initPensSection.call(this); };
+    },
   };
 })();
