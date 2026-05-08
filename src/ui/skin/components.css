@@ -1993,3 +1993,45 @@
   font-family: var(--font-mono);
   letter-spacing: 0.1em;
 }
+
+/* ─── Welcome pane "Take the tour" CTA ───────────────────────────────── */
+[data-ui-skin] .welcome-tour-cta {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ui-border);
+}
+
+[data-ui-skin] .welcome-tour-btn-wrap {
+  display: inline-block;
+  background: linear-gradient(90deg, var(--ui-accent) 0%, #22d3ee 100%);
+  border-radius: 999px;
+  padding: 1px;
+  cursor: pointer;
+  transition: box-shadow 0.35s ease;
+}
+
+[data-ui-skin] .welcome-tour-btn-wrap:hover {
+  box-shadow: 0 0 0 3px rgba(78, 158, 225, 0.16), 0 0 20px rgba(78, 158, 225, 0.32);
+}
+
+[data-ui-skin] .welcome-tour-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--ui-panel);
+  border-radius: 999px;
+  padding: 5px 15px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ui-text-2);
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  transition: background 0.38s ease, color 0.28s ease;
+}
+
+[data-ui-skin] .welcome-tour-btn-wrap:hover .welcome-tour-btn {
+  background: transparent;
+  color: #fff;
+}

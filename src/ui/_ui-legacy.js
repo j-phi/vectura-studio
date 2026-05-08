@@ -6202,8 +6202,8 @@
         btnHelp.onclick = () => this.openHelp(false);
       }
       const btnTour = getEl('btn-tour', { silent: true });
-      if (btnTour) {
-        btnTour.onclick = (e) => {
+      const btnTourWelcome = getEl('btn-tour-welcome', { silent: true });
+      const tourHandler = (e) => {
           e.stopPropagation();
           this.setTopMenuOpen(null, false);
           const hasContent = (this.app?.engine?.layers?.length ?? 0) > 0;
@@ -6238,8 +6238,9 @@
             return;
           }
           startTour();
-        };
-      }
+      };
+      if (btnTour) btnTour.onclick = tourHandler;
+      if (btnTourWelcome) btnTourWelcome.onclick = tourHandler;
       if (themeToggle) {
         this.refreshThemeUi();
         themeToggle.onclick = () => {
