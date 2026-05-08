@@ -510,6 +510,18 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.0.0
+- **First stable release.** From here on, breaking changes follow semver.
+- Added **welcome-screen "take the tour" CTA** — gradient ghost button kicks off onboarding from a cold start.
+- Added **toolbar dock-and-drag anchoring**: grabbing a docked toolbar's drag handle places the handle directly under the cursor (no snap-to-corner, no jump from float-vs-docked size differences, no clamp at viewport edges).
+- Fixed **mirror children unlock when parent is deleted** — children that auto-locked on entry are restored to an editable state on parent deletion.
+- Fixed **manual version bumps no longer get double-stomped** by the auto-patch hook when `package.json` is already staged.
+- Fixed **left/right pane flicker and snap on page load** and **toolbar flicker on initial paint**.
+- Fixed **GitHub Pages deploy** — added `.nojekyll` so Jekyll stops stripping `_ui-legacy.js`.
+- Changed **onboarding tour rebuilt** around an extensible step engine with `When.*` completion factories, multi-phase steps, and a draggable popover (`movable: true`); content rewritten across all 7 steps.
+- Changed **disclosure chevrons unified** on the Lucide `chevron-down` glyph with directional rotation.
+- Internal: drained ~100 delegator stubs from `_ui-legacy.js` across panels, persistence, shell satellites, pens, pane-left, export-svg, modals, shortcuts, and grouping methods (continuation of the Meridian Blue UI architecture refactor).
+
 ### 0.9.10
 - Added **Meridian Blue** skin family (Dark / Light / Twilight) — fourth, fifth, and sixth shipping skins, sourced from `themes-mockup.html`. Space Grotesk + JetBrains Mono typography, tighter pane geometry, slider/dial release halos, indeterminate progress bar, and family-scoped petal/pattern designer chrome.
 - Added **skin-authoring SDK**: `npm run skin:new -- <id>` scaffolds a new skin from `src/ui/skin/_template.css`. Full guide at `docs/skin-authoring.md`. New skins ship with one CSS file + one manifest entry — no JavaScript edits.

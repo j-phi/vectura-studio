@@ -6,15 +6,33 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+## 1.0.0 - 2026-05-08
+
+First stable release. The 0.x series shipped 13+ generative algorithms, the Petalis editor, mirror modifiers, layer nesting + masking, plotter-grade SVG export, and a Noise Rack. The 1.0 line draws a stake around a polished, accessible, themable Studio: six skins across two families, a rebuilt onboarding tour, an extensible UI architecture, and reduced-motion + keyboard-a11y compliance. From here on, breaking changes follow semver.
+
+### Added
+- **Welcome screen "take the tour" CTA.** Gradient ghost button on the welcome panel kicks off the onboarding tour from a cold start.
+- **Toolbar dock-and-drag restore.** Grabbing a docked toolbar's drag handle now anchors the handle directly under the cursor — no snap-to-default-corner, no jump from float-vs-docked dimension shifts, no clamp at viewport edges. New regression test pins this behavior.
+
 ### Fixed
-- **GitHub Pages deploy was missing `_ui-legacy.js`** — Jekyll silently strips files prefixed with `_`, so the bare GH Pages serve returned 404 for `src/ui/_ui-legacy.js` and the script load chain halted, leaving the toolbar collapsed and menus dead. Added `.nojekyll` at the repo root to disable Jekyll processing.
+- **Mirror children unlock when their parent is deleted.** Auto-locked children that survive a mirror-modifier deletion are now restored to an editable state instead of remaining locked with no visible parent.
+- **Manual version bumps no longer get double-stomped.** The PreToolUse Bash hook that auto-patches the version on commit now skips if `package.json` is already staged or if the commit only touches docs/hooks.
+- **Theme toggle no longer leaves canvas on the wrong dark color** after cycling dark → lark → light → dark.
+- **GitHub Pages deploy was missing `_ui-legacy.js`** — Jekyll silently strips files prefixed with `_`, so the bare GH Pages serve returned 404 and the script load chain halted, leaving the toolbar collapsed and menus dead. Added `.nojekyll` at the repo root to disable Jekyll processing.
 - **Toolbar flicker on initial paint.** The empty `#tool-bar` div briefly rendered as a small rounded shape before JS populated it. Hidden via `.tool-bar:empty { visibility: hidden; }` so it only appears once children are mounted.
+- **Left/right pane flicker and snap on page load** eliminated.
+- **Toolbar subtool submenus** were getting clipped by an `overflow: hidden` ancestor; now portaled out so they render above the workspace.
 
 ### Changed
 - **Onboarding tour rebuilt around an extensible step engine.** Visual primitives (highlight, dashed circles, popover positioning), action helpers (open menus, expand sections), and completion factories (`When.layerOfType`, `When.clickMatches`, `When.elementVisible`, …) are now cleanly separated, and steps may declare multiple in-place `phases` so a single visible step can guide the user through a multi-stage interaction. Adding a new step is data-only.
-- **Tour content revamped.** Step 1 teaches press-and-hold algorithm selection (Rings) and waits for the user to draw — its final "double-click the canvas" phase anchors the popover above the viewport pointing down. Step 2 introduces the Algorithm-panel dropdown for swapping generators on an existing layer. Step 3 correctly notes that **Randomize Params** lives at the **top** of the Algorithm Configuration pane (highlight points at the button itself). Step 4 covers layer nesting + Mask. Step 5 first highlights **+ Add Layer**, then the **Mirror Modifier Group** entry. Step 6 parks the popover over the Modifier panel so the canvas is free for the user to drag/rotate the mirror axis. Step 7 highlights **Save Project** and **Export SVG** within the auto-opened File menu.
+- **Tour content revamped.** Step 1 teaches press-and-hold algorithm selection (Rings) and waits for the user to draw — its final "double-click the canvas" phase anchors the popover above the viewport pointing down. Step 2 introduces the Algorithm-panel dropdown for swapping generators on an existing layer. Step 3 notes that **Randomize Params** lives at the **top** of the Algorithm Configuration pane. Step 4 covers layer nesting + Mask. Step 5 first highlights **+ Add Layer**, then the **Mirror Modifier Group** entry. Step 6 parks the popover over the Modifier panel so the canvas is free for the user to drag/rotate the mirror axis. Step 7 highlights **Save Project** and **Export SVG** within the auto-opened File menu.
 - **Tutorial popover is draggable on play-around steps** (`movable: true`). Pull it from the title bar to move it out of the way without dismissing the tour. User-positioned coordinates persist across phases of the same step and reset on the next step.
 - **Mirror modifier auto-locks its children on entry.** Layers that are wrapped by a mirror, dropped into a mirror group, or added under a selected mirror are now automatically marked locked so they cannot be nudged off-axis. The lock can still be removed individually from the layer list.
+- **Disclosure chevrons unified** on the Lucide `chevron-down` glyph with directional rotation, replacing a mix of triangles and ad-hoc SVGs.
+- **Internal `_ui-legacy.js` drained of ~100 delegator stubs** across panels, persistence, shell satellites, pens panel, pane-left, export-svg, modals, shortcuts, and grouping methods (now home in `layers-panel.js`). Continues the Meridian Blue UI architecture refactor toward eventual deletion of `_ui-legacy.js`.
+
+### Inherited from 0.9.10 (rolled forward into 1.0.0 highlights)
+- **Meridian Blue skin family** — three new skins (`meridian-dark`, `meridian-lark`, `meridian-light`) with Space Grotesk + JetBrains Mono typography, tighter pane geometry, slider/dial release halos, and family-scoped petal/pattern designer chrome. Plus indeterminate progress bar, empty-state SVG illustrations, the skin-authoring SDK (`npm run skin:new -- <id>`), and the reduced-motion + keyboard-a11y compliance audits.
 
 ## 0.9.10 - 2026-05-07
 

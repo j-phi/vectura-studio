@@ -3375,7 +3375,7 @@ input[type='color']::-webkit-color-swatch {
     justify-content: center;
   }
 
-  .bottom-pane {
+  .bottom-pane:not(.bottom-pane-collapsed) {
     height: min(40vh, 260px);
   }
 }
@@ -4173,7 +4173,7 @@ input[type='color']::-webkit-color-swatch {
   }
 }
 
-/* ── Submenu chevron badge ────────────────────────────────────────────── */
+/* ── Submenu chevron badge — direction-aware ──────────────────────────── */
 .tool-btn[data-has-submenu] {
   position: relative;
 }
@@ -4187,10 +4187,20 @@ input[type='color']::-webkit-color-swatch {
   background-color: currentColor;
   -webkit-mask: var(--chevron-svg) center / contain no-repeat;
   mask: var(--chevron-svg) center / contain no-repeat;
-  transform: rotate(-45deg);
+  /* default: pointing right (chevron-down rotated -90°); transitions on dock change */
+  transform: rotate(-90deg);
   opacity: 0.55;
   pointer-events: none;
+  transition: transform 0.2s ease;
 }
+/* pointing right — menu opens to the right */
+.tool-btn[data-has-submenu][data-submenu-dir="right"]::after  { transform: rotate(-90deg); }
+/* pointing down — menu opens below */
+.tool-btn[data-has-submenu][data-submenu-dir="below"]::after  { transform: rotate(0deg); }
+/* pointing up — menu opens above (e.g. bottom-docked toolbar) */
+.tool-btn[data-has-submenu][data-submenu-dir="above"]::after  { transform: rotate(180deg); }
+/* pointing left — menu opens to the left (e.g. right-docked toolbar) */
+.tool-btn[data-has-submenu][data-submenu-dir="left"]::after   { transform: rotate(90deg); }
 
 /* ── Welcome tour popover ─────────────────────────────────────────────── */
 .tutorial-popover {
@@ -4391,6 +4401,41 @@ input[type='color']::-webkit-color-swatch {
 }
 .tutorial-btn--skip:hover {
   opacity: 0.75;
+}
+.tutorial-cta-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.tutorial-cta-btn {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  color: inherit;
+  white-space: nowrap;
+  transition: opacity 0.15s, background 0.15s, border-color 0.15s;
+}
+.tutorial-cta-primary {
+  background: var(--color-accent);
+  border-color: transparent;
+  color: var(--color-bg);
+  font-weight: 600;
+}
+.tutorial-cta-primary:hover {
+  opacity: 0.85;
+}
+.tutorial-cta-secondary {
+  opacity: 0.7;
+}
+.tutorial-cta-secondary:hover {
+  opacity: 1;
+  border-color: var(--color-accent);
 }
 
 /* ── Tutorial highlight + focus indicators ───────────────────────────── */

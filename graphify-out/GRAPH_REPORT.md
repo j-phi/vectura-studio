@@ -1,11 +1,11 @@
 # Graph Report - /Users/jayphi/Documents/github/vectura-studio  (2026-05-08)
 
 ## Corpus Check
-- 289 files · ~2,668,021 words
+- 290 files · ~2,668,292 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 3374 nodes · 8066 edges · 196 communities detected
+- 3375 nodes · 8066 edges · 197 communities detected
 - Extraction: 80% EXTRACTED · 20% INFERRED · 0% AMBIGUOUS · INFERRED: 1601 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
@@ -206,6 +206,7 @@
 - [[_COMMUNITY_Community 193|Community 193]]
 - [[_COMMUNITY_Community 194|Community 194]]
 - [[_COMMUNITY_Community 195|Community 195]]
+- [[_COMMUNITY_Community 196|Community 196]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `Renderer` - 192 edges
@@ -924,11 +925,11 @@ Nodes (0):
 
 ### Community 167 - "Community 167"
 Cohesion: 1.0
-Nodes (1): Boids Algorithm
+Nodes (0): 
 
 ### Community 168 - "Community 168"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (1): Boids Algorithm
 
 ### Community 169 - "Community 169"
 Cohesion: 1.0
@@ -972,69 +973,73 @@ Nodes (0):
 
 ### Community 179 - "Community 179"
 Cohesion: 1.0
-Nodes (1): Non-Destructive History Timeline
+Nodes (0): 
 
 ### Community 180 - "Community 180"
 Cohesion: 1.0
-Nodes (1): CHANGELOG v0.6.80
+Nodes (1): Non-Destructive History Timeline
 
 ### Community 181 - "Community 181"
 Cohesion: 1.0
-Nodes (1): Examples Directory README
+Nodes (1): CHANGELOG v0.6.80
 
 ### Community 182 - "Community 182"
 Cohesion: 1.0
-Nodes (1): src/config/version.js
+Nodes (1): Examples Directory README
 
 ### Community 183 - "Community 183"
 Cohesion: 1.0
-Nodes (1): Rainfall Algorithm Canonical Baseline SVG
+Nodes (1): src/config/version.js
 
 ### Community 184 - "Community 184"
 Cohesion: 1.0
-Nodes (1): Masking Horizon Rings Baseline SVG
+Nodes (1): Rainfall Algorithm Canonical Baseline SVG
 
 ### Community 185 - "Community 185"
 Cohesion: 1.0
-Nodes (1): Mirrored Masked Circles Baseline SVG
+Nodes (1): Masking Horizon Rings Baseline SVG
 
 ### Community 186 - "Community 186"
 Cohesion: 1.0
-Nodes (1): Petalis Algorithm Canonical Baseline SVG
+Nodes (1): Mirrored Masked Circles Baseline SVG
 
 ### Community 187 - "Community 187"
 Cohesion: 1.0
-Nodes (1): Shape Pack Algorithm Canonical Baseline SVG
+Nodes (1): Petalis Algorithm Canonical Baseline SVG
 
 ### Community 188 - "Community 188"
 Cohesion: 1.0
-Nodes (1): Lissajous Algorithm Canonical Baseline SVG
+Nodes (1): Shape Pack Algorithm Canonical Baseline SVG
 
 ### Community 189 - "Community 189"
 Cohesion: 1.0
-Nodes (1): Boids Algorithm Gallery Sample SVG
+Nodes (1): Lissajous Algorithm Canonical Baseline SVG
 
 ### Community 190 - "Community 190"
 Cohesion: 1.0
-Nodes (1): Attractor Algorithm Gallery Sample SVG
+Nodes (1): Boids Algorithm Gallery Sample SVG
 
 ### Community 191 - "Community 191"
 Cohesion: 1.0
-Nodes (1): Visual Snapshot: Primitive Shape Creation (Hexagon + Rectangle)
+Nodes (1): Attractor Algorithm Gallery Sample SVG
 
 ### Community 192 - "Community 192"
 Cohesion: 1.0
-Nodes (1): Visual Snapshot: Main Shell Desktop (Full UI with Generator Panel)
+Nodes (1): Visual Snapshot: Primitive Shape Creation (Hexagon + Rectangle)
 
 ### Community 193 - "Community 193"
 Cohesion: 1.0
-Nodes (1): Visual Snapshot: Document Dimensions Canvas (Wavetable with Dimension Rulers)
+Nodes (1): Visual Snapshot: Main Shell Desktop (Full UI with Generator Panel)
 
 ### Community 194 - "Community 194"
 Cohesion: 1.0
-Nodes (1): Radial Branching Rings — Two organic radial forms with dense inward-flowing feather/flame strokes emanating from bright central voids, overlapping like a figure-eight
+Nodes (1): Visual Snapshot: Document Dimensions Canvas (Wavetable with Dimension Rulers)
 
 ### Community 195 - "Community 195"
+Cohesion: 1.0
+Nodes (1): Radial Branching Rings — Two organic radial forms with dense inward-flowing feather/flame strokes emanating from bright central voids, overlapping like a figure-eight
+
+### Community 196 - "Community 196"
 Cohesion: 1.0
 Nodes (1): City — Isometric aerial city of skyscrapers rendered entirely in dense vertical hatching lines with strong perspective convergence, plotter-pen aesthetic, B&W
 
@@ -1241,108 +1246,110 @@ Nodes (1): City — Isometric aerial city of skyscrapers rendered entirely in de
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 149`** (1 nodes): `skin-swap.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 150`** (1 nodes): `auto-colorize.test.js`
+- **Thin community `Community 150`** (1 nodes): `toolbar-dock-undock.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 151`** (1 nodes): `mask-preview.test.js`
+- **Thin community `Community 151`** (1 nodes): `auto-colorize.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 152`** (1 nodes): `modifier-workflow.test.js`
+- **Thin community `Community 152`** (1 nodes): `mask-preview.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 153`** (1 nodes): `algorithm-switching.test.js`
+- **Thin community `Community 153`** (1 nodes): `modifier-workflow.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 154`** (1 nodes): `help-shortcuts.test.js`
+- **Thin community `Community 154`** (1 nodes): `algorithm-switching.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 155`** (1 nodes): `document-setup.test.js`
+- **Thin community `Community 155`** (1 nodes): `help-shortcuts.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 156`** (1 nodes): `grid-settings.test.js`
+- **Thin community `Community 156`** (1 nodes): `document-setup.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 157`** (1 nodes): `info-tooltip-wireup.test.js`
+- **Thin community `Community 157`** (1 nodes): `grid-settings.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 158`** (1 nodes): `empty-state-and-progress.test.js`
+- **Thin community `Community 158`** (1 nodes): `info-tooltip-wireup.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 159`** (1 nodes): `stress.test.js`
+- **Thin community `Community 159`** (1 nodes): `empty-state-and-progress.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 160`** (1 nodes): `vitest.setup.js`
+- **Thin community `Community 160`** (1 nodes): `stress.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 161`** (1 nodes): `extract-changelog.js`
+- **Thin community `Community 161`** (1 nodes): `vitest.setup.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 162`** (1 nodes): `sync-version.js`
+- **Thin community `Community 162`** (1 nodes): `extract-changelog.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 163`** (1 nodes): `main.js`
+- **Thin community `Community 163`** (1 nodes): `sync-version.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 164`** (1 nodes): `controls-registry.js`
+- **Thin community `Community 164`** (1 nodes): `main.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 165`** (1 nodes): `index.js`
+- **Thin community `Community 165`** (1 nodes): `controls-registry.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 166`** (1 nodes): `hyphae.js`
+- **Thin community `Community 166`** (1 nodes): `index.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 167`** (1 nodes): `Boids Algorithm`
+- **Thin community `Community 167`** (1 nodes): `hyphae.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 168`** (1 nodes): `attractor.js`
+- **Thin community `Community 168`** (1 nodes): `Boids Algorithm`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 169`** (1 nodes): `palettes.js`
+- **Thin community `Community 169`** (1 nodes): `attractor.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 170`** (1 nodes): `machines.js`
+- **Thin community `Community 170`** (1 nodes): `palettes.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 171`** (1 nodes): `presets.js`
+- **Thin community `Community 171`** (1 nodes): `machines.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 172`** (1 nodes): `ui-constants.js`
+- **Thin community `Community 172`** (1 nodes): `presets.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 173`** (1 nodes): `patterns.js`
+- **Thin community `Community 173`** (1 nodes): `ui-constants.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 174`** (1 nodes): `version.js`
+- **Thin community `Community 174`** (1 nodes): `patterns.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 175`** (1 nodes): `algorithm-tuning.js`
+- **Thin community `Community 175`** (1 nodes): `version.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 176`** (1 nodes): `modifiers.js`
+- **Thin community `Community 176`** (1 nodes): `algorithm-tuning.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 177`** (1 nodes): `descriptions.js`
+- **Thin community `Community 177`** (1 nodes): `modifiers.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 178`** (1 nodes): `library.js`
+- **Thin community `Community 178`** (1 nodes): `descriptions.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 179`** (1 nodes): `Non-Destructive History Timeline`
+- **Thin community `Community 179`** (1 nodes): `library.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 180`** (1 nodes): `CHANGELOG v0.6.80`
+- **Thin community `Community 180`** (1 nodes): `Non-Destructive History Timeline`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 181`** (1 nodes): `Examples Directory README`
+- **Thin community `Community 181`** (1 nodes): `CHANGELOG v0.6.80`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 182`** (1 nodes): `src/config/version.js`
+- **Thin community `Community 182`** (1 nodes): `Examples Directory README`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 183`** (1 nodes): `Rainfall Algorithm Canonical Baseline SVG`
+- **Thin community `Community 183`** (1 nodes): `src/config/version.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 184`** (1 nodes): `Masking Horizon Rings Baseline SVG`
+- **Thin community `Community 184`** (1 nodes): `Rainfall Algorithm Canonical Baseline SVG`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 185`** (1 nodes): `Mirrored Masked Circles Baseline SVG`
+- **Thin community `Community 185`** (1 nodes): `Masking Horizon Rings Baseline SVG`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 186`** (1 nodes): `Petalis Algorithm Canonical Baseline SVG`
+- **Thin community `Community 186`** (1 nodes): `Mirrored Masked Circles Baseline SVG`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 187`** (1 nodes): `Shape Pack Algorithm Canonical Baseline SVG`
+- **Thin community `Community 187`** (1 nodes): `Petalis Algorithm Canonical Baseline SVG`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 188`** (1 nodes): `Lissajous Algorithm Canonical Baseline SVG`
+- **Thin community `Community 188`** (1 nodes): `Shape Pack Algorithm Canonical Baseline SVG`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 189`** (1 nodes): `Boids Algorithm Gallery Sample SVG`
+- **Thin community `Community 189`** (1 nodes): `Lissajous Algorithm Canonical Baseline SVG`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 190`** (1 nodes): `Attractor Algorithm Gallery Sample SVG`
+- **Thin community `Community 190`** (1 nodes): `Boids Algorithm Gallery Sample SVG`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 191`** (1 nodes): `Visual Snapshot: Primitive Shape Creation (Hexagon + Rectangle)`
+- **Thin community `Community 191`** (1 nodes): `Attractor Algorithm Gallery Sample SVG`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 192`** (1 nodes): `Visual Snapshot: Main Shell Desktop (Full UI with Generator Panel)`
+- **Thin community `Community 192`** (1 nodes): `Visual Snapshot: Primitive Shape Creation (Hexagon + Rectangle)`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 193`** (1 nodes): `Visual Snapshot: Document Dimensions Canvas (Wavetable with Dimension Rulers)`
+- **Thin community `Community 193`** (1 nodes): `Visual Snapshot: Main Shell Desktop (Full UI with Generator Panel)`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 194`** (1 nodes): `Radial Branching Rings — Two organic radial forms with dense inward-flowing feather/flame strokes emanating from bright central voids, overlapping like a figure-eight`
+- **Thin community `Community 194`** (1 nodes): `Visual Snapshot: Document Dimensions Canvas (Wavetable with Dimension Rulers)`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 195`** (1 nodes): `City — Isometric aerial city of skyscrapers rendered entirely in dense vertical hatching lines with strong perspective convergence, plotter-pen aesthetic, B&W`
+- **Thin community `Community 195`** (1 nodes): `Radial Branching Rings — Two organic radial forms with dense inward-flowing feather/flame strokes emanating from bright central voids, overlapping like a figure-eight`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 196`** (1 nodes): `City — Isometric aerial city of skyscrapers rendered entirely in dense vertical hatching lines with strong perspective convergence, plotter-pen aesthetic, B&W`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Renderer` connect `Community 3` to `Community 16`, `Community 1`, `Community 20`, `Community 4`?**
-  _High betweenness centrality (0.070) - this node is a cross-community bridge._
 - **Why does `sort()` connect `Community 8` to `Community 0`, `Community 1`, `Community 2`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 9`, `Community 10`, `Community 13`, `Community 15`, `Community 17`, `Community 21`?**
   _High betweenness centrality (0.070) - this node is a cross-community bridge._
 - **Why does `mt()` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 6`, `Community 7`, `Community 8`, `Community 10`, `Community 12`, `Community 13`, `Community 19`?**
-  _High betweenness centrality (0.063) - this node is a cross-community bridge._
+  _High betweenness centrality (0.062) - this node is a cross-community bridge._
+- **Why does `Renderer` connect `Community 3` to `Community 16`, `Community 1`, `Community 20`, `Community 4`?**
+  _High betweenness centrality (0.051) - this node is a cross-community bridge._
 - **Are the 95 inferred relationships involving `mt()` (e.g. with `_e()` and `ye()`) actually correct?**
   _`mt()` has 95 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 77 inferred relationships involving `addEventListener()` (e.g. with `ki` and `LC()`) actually correct?**

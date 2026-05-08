@@ -563,6 +563,76 @@
         },
       ],
     },
+
+    {
+      title: "You're All Set",
+      phases: [
+        {
+          target: null,
+          highlight: [],
+          placement: 'center',
+          body:
+            '<p>That’s the whirlwind tour. From here you can keep tinkering with what you’ve built, or wipe the canvas and start clean.</p>' +
+            '<div class="tutorial-cta-row">' +
+            '<button type="button" class="tutorial-cta-btn tutorial-cta-secondary" data-tour-clear>Clear canvas</button>' +
+            '<button type="button" class="tutorial-cta-btn tutorial-cta-primary" data-tour-keep>Keep designing →</button>' +
+            '</div>',
+          hideSkip: true,
+          hideNext: true,
+          onEnter: (ctx) => {
+            const popoverEl = qs('#tutorial-popover');
+            const keepBtn   = qs('[data-tour-keep]',  popoverEl);
+            const clearBtn  = qs('[data-tour-clear]', popoverEl);
+
+            const onKeep = (ev) => {
+              ev.stopPropagation();
+              ctx.tour.dismiss();
+            };
+
+            const onClear = (ev) => {
+              ev.stopPropagation();
+              const ui  = ctx.ui;
+              const app = ctx.app;
+              const modalBody =
+                '<p class="modal-text">This will remove every layer from the canvas. Your current document settings stay put.</p>' +
+                '<div class="color-modal-actions" style="margin-top:16px;">' +
+                '<button type="button" class="tour-clear-cancel">Cancel</button>' +
+                '<button type="button" class="tour-clear-confirm color-modal-apply">Clear canvas</button>' +
+                '</div>';
+              // Popover sits above #modal-overlay (z-index 10001 vs 100), so hide
+              // it while the confirmation modal is up; restore on cancel.
+              ctx.tour.popover.setVisible(false);
+              let cleared = false;
+              ui.openModal({
+                title: 'Clear canvas?',
+                body: modalBody,
+                onClose: () => { if (!cleared) ctx.tour.popover.setVisible(true); },
+              });
+              ui.modal.bodyEl.querySelector('.tour-clear-cancel').onclick = () => ui.closeModal();
+              ui.modal.bodyEl.querySelector('.tour-clear-confirm').onclick = () => {
+                cleared = true;
+                ui.closeModal();
+                if (typeof app.pushHistory === 'function') app.pushHistory();
+                app.engine.layers = [];
+                app.engine.activeLayerId = null;
+                if (typeof app.setSelection === 'function') app.setSelection([], null);
+                if (typeof ui.renderLayers === 'function') ui.renderLayers();
+                if (typeof ui.buildControls === 'function') ui.buildControls();
+                if (typeof app.render === 'function') app.render();
+                ctx.tour.dismiss();
+              };
+            };
+
+            keepBtn.addEventListener('click', onKeep);
+            clearBtn.addEventListener('click', onClear);
+            return () => {
+              keepBtn.removeEventListener('click', onKeep);
+              clearBtn.removeEventListener('click', onClear);
+            };
+          },
+        },
+      ],
+    },
   ];
 
   // ─── TutorialManager ─────────────────────────────────────────────

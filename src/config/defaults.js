@@ -1580,6 +1580,10 @@
     layerBarPaletteId: 'prism',
     showTourOnFirstLaunch: false,
     tourSeen: false,
+    toolbarDock: null,
+    toolbarX: null,
+    toolbarY: null,
+    toolbarLocked: false,
   };
   window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {};
 

@@ -252,6 +252,49 @@
       };
     });
 
+    // Returns which side of the button the submenu should open toward,
+    // based on toolbar dock state or floating position.
+    const computeMenuDir = (button) => {
+      const tb = button.closest('#tool-bar');
+      if (!tb) return 'right';
+      if (tb.classList.contains('toolbar-docked-bottom')) return 'above';
+      if (tb.classList.contains('toolbar-docked-top'))    return 'below';
+      if (tb.classList.contains('toolbar-docked-right'))  return 'left';
+      if (tb.classList.contains('toolbar-docked-left'))   return 'right';
+      // Floating: open toward whichever axis has more space.
+      const tr = tb.getBoundingClientRect();
+      const isHoriz = tr.width > tr.height;
+      if (isHoriz) return tr.top > window.innerHeight / 2 ? 'above' : 'below';
+      return tr.left > window.innerWidth / 2 ? 'left' : 'right';
+    };
+
+    // Positions a portal menu next to its button, clamped to the viewport.
+    const positionMenu = (menu, button, dir) => {
+      const r = button.getBoundingClientRect();
+      const GAP = 6, PAD = 8;
+      const vw = window.innerWidth, vh = window.innerHeight;
+      menu.style.visibility = 'hidden';
+      menu.classList.add('open');
+      const mw = menu.offsetWidth, mh = menu.offsetHeight;
+      menu.classList.remove('open');
+      menu.style.visibility = '';
+      let left, top;
+      if (dir === 'right')  { left = r.right + GAP;      top = r.top; }
+      if (dir === 'left')   { left = r.left - GAP - mw;  top = r.top; }
+      if (dir === 'below')  { left = r.left;              top = r.bottom + GAP; }
+      if (dir === 'above')  { left = r.left;              top = r.top - GAP - mh; }
+      menu.style.left = `${Math.max(PAD, Math.min(vw - mw - PAD, left))}px`;
+      menu.style.top  = `${Math.max(PAD, Math.min(vh - mh - PAD, top))}px`;
+    };
+
+    // Syncs the data-submenu-dir attribute on every submenu button in the
+    // toolbar so the directional chevron arrow always points toward the menu.
+    const updateAllSubmenuDirs = (tb) => {
+      tb.querySelectorAll('.tool-btn[data-has-submenu]').forEach((btn) => {
+        btn.dataset.submenuDir = computeMenuDir(btn);
+      });
+    };
+
     const initSubtoolMenu = (config) => {
       const { button, menu, buttons, onActivate, onSelect } = config;
       if (!button || !menu) return;
@@ -271,17 +314,9 @@
       };
       const openMenu = (e) => {
         menuOpen = true;
-        const r = button.getBoundingClientRect();
-        const toolbarEl = button.closest('#tool-bar');
-        const tr = toolbarEl ? toolbarEl.getBoundingClientRect() : null;
-        const isHoriz = tr && tr.width > tr.height;
-        if (isHoriz) {
-          menu.style.left = `${r.left}px`;
-          menu.style.top = `${r.bottom + 6}px`;
-        } else {
-          menu.style.left = `${r.right + 6}px`;
-          menu.style.top = `${r.top}px`;
-        }
+        const dir = computeMenuDir(button);
+        button.dataset.submenuDir = dir;
+        positionMenu(menu, button, dir);
         menu.classList.add('open');
         setHover(null);
         if (e) {
@@ -535,10 +570,23 @@
         algoDrawBtn.setPointerCapture?.(e.pointerId);
         _algoPickerTimer = setTimeout(() => {
           const popup = _buildAlgoPickerPopup();
-          const r = algoDrawBtn.getBoundingClientRect();
-          popup.style.left = `${r.right + 6}px`;
-          popup.style.top = `${r.top}px`;
+          const dir = computeMenuDir(algoDrawBtn);
+          algoDrawBtn.dataset.submenuDir = dir;
+          // Measure while hidden, then position, then reveal.
+          popup.style.visibility = 'hidden';
           popup.classList.remove('hidden');
+          const mw = popup.offsetWidth, mh = popup.offsetHeight;
+          const r = algoDrawBtn.getBoundingClientRect();
+          const GAP = 6, PAD = 8;
+          const vw = window.innerWidth, vh = window.innerHeight;
+          let left, top;
+          if (dir === 'right')  { left = r.right + GAP;      top = r.top; }
+          if (dir === 'left')   { left = r.left - GAP - mw;  top = r.top; }
+          if (dir === 'below')  { left = r.left;              top = r.bottom + GAP; }
+          if (dir === 'above')  { left = r.left;              top = r.top - GAP - mh; }
+          popup.style.left = `${Math.max(PAD, Math.min(vw - mw - PAD, left))}px`;
+          popup.style.top  = `${Math.max(PAD, Math.min(vh - mh - PAD, top))}px`;
+          popup.style.visibility = '';
         }, 400);
       });
       algoDrawBtn.addEventListener('pointerup', (e) => {
@@ -560,6 +608,285 @@
       algoDrawBtn.addEventListener('pointercancel', () => clearTimeout(_algoPickerTimer));
       updateAlgoDrawIcon('wavetable');
     }
+
+    this._updateAllSubmenuDirs = () => updateAllSubmenuDirs(toolbar);
+    initToolBarDock.call(this, toolbar);
+    requestAnimationFrame(() => this._updateAllSubmenuDirs?.());
+  }
+
+  const DOCK_CLASSES = ['toolbar-docked-left', 'toolbar-docked-right', 'toolbar-docked-top', 'toolbar-docked-bottom'];
+
+  function initToolBarDock(toolbar) {
+    const SETTINGS = (G.Vectura && G.Vectura.SETTINGS) || {};
+    const shell = toolbar.closest('.workspace-shell') || toolbar.parentElement;
+    const viewport = document.getElementById('viewport-container');
+    if (!shell || !viewport) return;
+
+    // ── Inject drag handle ──────────────────────────────────────
+    const handle = document.createElement('div');
+    handle.className = 'toolbar-drag-handle';
+    handle.setAttribute('aria-label', 'Drag toolbar');
+    handle.title = 'Drag to move';
+    handle.innerHTML = '<svg class="handle-horiz" width="14" height="8" viewBox="0 0 14 8" fill="currentColor" aria-hidden="true">'
+      + '<circle cx="2.5" cy="2" r="1.2"/><circle cx="7" cy="2" r="1.2"/><circle cx="11.5" cy="2" r="1.2"/>'
+      + '<circle cx="2.5" cy="6" r="1.2"/><circle cx="7" cy="6" r="1.2"/><circle cx="11.5" cy="6" r="1.2"/>'
+      + '</svg>'
+      + '<svg class="handle-vert" width="8" height="14" viewBox="0 0 8 14" fill="currentColor" aria-hidden="true">'
+      + '<circle cx="2" cy="2.5" r="1.2"/><circle cx="6" cy="2.5" r="1.2"/>'
+      + '<circle cx="2" cy="7" r="1.2"/><circle cx="6" cy="7" r="1.2"/>'
+      + '<circle cx="2" cy="11.5" r="1.2"/><circle cx="6" cy="11.5" r="1.2"/>'
+      + '</svg>';
+    toolbar.prepend(handle);
+
+    // ── Inject footer (pin + pop-out) at bottom of toolbar ──────
+    const footer = document.createElement('div');
+    footer.className = 'toolbar-footer';
+    footer.innerHTML =
+      '<button class="toolbar-pin-btn" type="button" title="Lock toolbar position" aria-label="Lock toolbar position" aria-pressed="false">'
+      + '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+      + '<line x1="12" y1="17" x2="12" y2="22"/>'
+      + '<path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>'
+      + '</svg></button>'
+      + '<button class="toolbar-popout-btn" type="button" title="Pop out toolbar" aria-label="Restore floating toolbar">'
+      + '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+      + '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>'
+      + '<line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>'
+      + '</svg></button>'
+      + '</svg></button>';
+    toolbar.appendChild(footer); // appended last so it sits at the bottom
+
+    // ── Inject snap zones into viewport-container ───────────────
+    ['left', 'right', 'top', 'bottom'].forEach((side) => {
+      const zone = document.createElement('div');
+      zone.className = `toolbar-snap-zone toolbar-snap-zone-${side}`;
+      zone.dataset.dock = side;
+      viewport.appendChild(zone);
+    });
+
+    const pinBtn    = footer.querySelector('.toolbar-pin-btn');
+    const popoutBtn = footer.querySelector('.toolbar-popout-btn');
+
+    // anchor used to restore toolbar to its original position in shell after bottom-dock
+    const toolbarAnchor = toolbar.nextSibling;
+
+    // ── Helpers ─────────────────────────────────────────────────
+    const getCurrentDock = () => {
+      for (const cls of DOCK_CLASSES) {
+        if (toolbar.classList.contains(cls)) return cls.replace('toolbar-docked-', '');
+      }
+      return null;
+    };
+
+    const clearDockPadding = () => {
+      ['Left', 'Right', 'Top', 'Bottom'].forEach((s) => { viewport.style['padding' + s] = ''; });
+    };
+
+    const applyDockPadding = (side) => {
+      const r = toolbar.getBoundingClientRect();
+      clearDockPadding();
+      if (side === 'left')   viewport.style.paddingLeft   = r.width  + 'px';
+      if (side === 'right')  viewport.style.paddingRight  = r.width  + 'px';
+      if (side === 'top')    viewport.style.paddingTop    = r.height + 'px';
+      if (side === 'bottom') viewport.style.paddingBottom = r.height + 'px';
+    };
+
+    const clampFloat = (x, y) => {
+      const tw = toolbar.offsetWidth  || 46;
+      const th = toolbar.offsetHeight || 100;
+      const sr = shell.getBoundingClientRect();
+      return {
+        x: Math.max(0, Math.min(sr.width  - tw, x)),
+        y: Math.max(0, Math.min(sr.height - th, y)),
+      };
+    };
+
+    const restoreToShell = () => {
+      if (toolbar.parentElement !== shell) {
+        shell.insertBefore(toolbar, toolbarAnchor);
+      }
+    };
+
+    const setFloat = (rawX, rawY) => {
+      restoreToShell();
+      // Strip dock classes and reset inline dimensions before measuring offsetHeight
+      // so defaultY is computed against the toolbar's natural floating size, not the
+      // docked 100%-height value.
+      toolbar.classList.remove(...DOCK_CLASSES);
+      ['position', 'transform', 'left', 'top', 'right', 'bottom', 'width', 'height']
+        .forEach((p) => { toolbar.style[p] = ''; });
+      const sr = shell.getBoundingClientRect();
+      const defaultX = 10;
+      const defaultY = Math.round(sr.height / 2 - (toolbar.offsetHeight || 150) / 2);
+      const { x, y } = clampFloat(rawX ?? defaultX, rawY ?? defaultY);
+      toolbar.style.position  = 'absolute';
+      toolbar.style.transform = 'none';
+      toolbar.style.left   = x + 'px';
+      toolbar.style.top    = y + 'px';
+      clearDockPadding();
+    };
+
+    const dockToolbar = (side) => {
+      // For bottom-dock: move toolbar inside viewport-container so
+      // position:absolute bottom:0 sits above the bottom pane, not over it.
+      // All other sides stay in the shell.
+      if (side !== 'bottom') restoreToShell();
+      toolbar.classList.remove(...DOCK_CLASSES);
+      ['position', 'transform', 'left', 'top', 'right', 'bottom', 'width', 'height']
+        .forEach((p) => { toolbar.style[p] = ''; });
+      toolbar.classList.add('toolbar-docked-' + side);
+      if (side === 'bottom') viewport.appendChild(toolbar);
+      requestAnimationFrame(() => {
+        applyDockPadding(side);
+        window.dispatchEvent(new Event('resize')); // trigger tutorial highlight reflow
+      });
+      SETTINGS.toolbarDock = side;
+      this.app?.persistPreferencesDebounced?.();
+      requestAnimationFrame(() => this._updateAllSubmenuDirs?.());
+    };
+
+    const undockToFloat = () => {
+      setFloat(null, null); // restoreToShell() called inside setFloat
+      SETTINGS.toolbarDock = null;
+      this.app?.persistPreferencesDebounced?.();
+      window.dispatchEvent(new Event('resize')); // trigger tutorial highlight reflow
+      requestAnimationFrame(() => this._updateAllSubmenuDirs?.());
+    };
+
+    const updateSnapPreview = (snap) => {
+      viewport.querySelectorAll('.toolbar-snap-zone').forEach((z) => {
+        z.classList.toggle('snap-active', z.dataset.dock === snap);
+      });
+    };
+
+    // ── Restore saved state ──────────────────────────────────────
+    if (SETTINGS.toolbarDock) {
+      dockToolbar(SETTINGS.toolbarDock);
+    } else {
+      setFloat(SETTINGS.toolbarX, SETTINGS.toolbarY);
+    }
+    if (SETTINGS.toolbarLocked) {
+      toolbar.classList.add('toolbar-locked');
+      pinBtn.classList.add('active');
+      pinBtn.setAttribute('aria-pressed', 'true');
+    }
+
+    // ── Drag ─────────────────────────────────────────────────────
+    const SNAP_THRESHOLD = 48;
+    let isDragging = false;
+    let startClientX, startClientY, startLeft, startTop, currentSnap;
+
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      if (toolbar.classList.contains('toolbar-locked')) return;
+      if (getCurrentDock()) {
+        // Float-mode dimensions differ from the docked ones (esp. top/bottom
+        // dock, where the bar is horizontal and the handle sits on its left
+        // edge). Switch to float, then anchor the handle directly under the
+        // cursor — un-clamped, so undocking near a viewport edge can't yank
+        // the bar away from the user's grip.
+        restoreToShell();
+        toolbar.classList.remove(...DOCK_CLASSES);
+        ['position', 'transform', 'left', 'top', 'right', 'bottom', 'width', 'height']
+          .forEach((p) => { toolbar.style[p] = ''; });
+        toolbar.style.position = 'absolute';
+        toolbar.style.transform = 'none';
+        clearDockPadding();
+        const sr = shell.getBoundingClientRect();
+        const tw = toolbar.offsetWidth || 46;
+        const handleH = handle.offsetHeight || 14;
+        toolbar.style.left = (e.clientX - sr.left - tw / 2) + 'px';
+        toolbar.style.top  = (e.clientY - sr.top  - handleH / 2) + 'px';
+        SETTINGS.toolbarDock = null;
+        this.app?.persistPreferencesDebounced?.();
+        // Note: no `window.resize` dispatch here. The resize handler below
+        // re-clamps the floating toolbar, which would yank the freshly
+        // cursor-anchored position back inside the viewport (visible esp.
+        // when undocking from the bottom edge). Tutorial-highlight reflow
+        // happens at pointerup when the drag settles.
+        requestAnimationFrame(() => this._updateAllSubmenuDirs?.());
+      }
+      isDragging    = true;
+      handle.setPointerCapture(e.pointerId);
+      startClientX  = e.clientX;
+      startClientY  = e.clientY;
+      startLeft     = parseFloat(toolbar.style.left) || 0;
+      startTop      = parseFloat(toolbar.style.top)  || 0;
+      currentSnap   = null;
+      e.preventDefault();
+    });
+
+    handle.addEventListener('pointermove', (e) => {
+      if (!isDragging) return;
+      const dx = e.clientX - startClientX;
+      const dy = e.clientY - startClientY;
+      toolbar.style.left = (startLeft + dx) + 'px';
+      toolbar.style.top  = (startTop  + dy) + 'px';
+
+      // Snap detection: closest toolbar edge vs. viewport-container edges
+      const vp = viewport.getBoundingClientRect();
+      const tb = toolbar.getBoundingClientRect();
+      let snap = null;
+      if (tb.left   - vp.left   < SNAP_THRESHOLD) snap = 'left';
+      else if (vp.right  - tb.right  < SNAP_THRESHOLD) snap = 'right';
+      else if (tb.top    - vp.top    < SNAP_THRESHOLD) snap = 'top';
+      else if (vp.bottom - tb.bottom < SNAP_THRESHOLD) snap = 'bottom';
+      updateSnapPreview(snap);
+      currentSnap = snap;
+    });
+
+    handle.addEventListener('pointerup', () => {
+      if (!isDragging) return;
+      isDragging = false;
+      if (currentSnap) {
+        dockToolbar(currentSnap);
+      } else {
+        SETTINGS.toolbarX = parseFloat(toolbar.style.left) || 0;
+        SETTINGS.toolbarY = parseFloat(toolbar.style.top)  || 0;
+        this.app?.persistPreferencesDebounced?.();
+        this._updateAllSubmenuDirs?.();
+      }
+      updateSnapPreview(null);
+      currentSnap = null;
+    });
+
+    handle.addEventListener('pointercancel', () => {
+      isDragging = false;
+      updateSnapPreview(null);
+      currentSnap = null;
+    });
+
+    // ── Lock / pop-out ───────────────────────────────────────────
+    pinBtn.addEventListener('click', () => {
+      const locked = toolbar.classList.toggle('toolbar-locked');
+      SETTINGS.toolbarLocked = locked;
+      pinBtn.classList.toggle('active', locked);
+      pinBtn.setAttribute('aria-pressed', String(locked));
+      this.app?.persistPreferencesDebounced?.();
+    });
+
+    popoutBtn.addEventListener('click', () => {
+      SETTINGS.toolbarX = null;
+      SETTINGS.toolbarY = null;
+      SETTINGS.toolbarDock = null;
+      setFloat(null, null);
+      window.dispatchEvent(new Event('resize'));
+      this.app?.persistPreferencesDebounced?.();
+      requestAnimationFrame(() => this._updateAllSubmenuDirs?.());
+    });
+
+    // ── Resize: re-clamp float or re-apply dock padding ─────────
+    window.addEventListener('resize', () => {
+      const dock = getCurrentDock();
+      if (dock) {
+        requestAnimationFrame(() => applyDockPadding(dock));
+      } else {
+        const x = parseFloat(toolbar.style.left) || 0;
+        const y = parseFloat(toolbar.style.top)  || 0;
+        const { x: cx, y: cy } = clampFloat(x, y);
+        toolbar.style.left = cx + 'px';
+        toolbar.style.top  = cy + 'px';
+      }
+    });
   }
 
   UI.Toolbar = {
