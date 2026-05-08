@@ -3395,7 +3395,10 @@ input[type='color']::-webkit-color-swatch {
     position: absolute;
     top: 0;
     bottom: 0;
-    z-index: 45;
+    /* Must sit above #bottom-pane (z-index 50 in mobile-layout) so the
+     * bottom-pane drawer does not intercept clicks on right-pane content
+     * (Pens tab, auto-colorization header, etc.) at tablet-touch widths. */
+    z-index: 55;
     max-width: calc(100vw - 18px);
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
   }
