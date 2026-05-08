@@ -98,6 +98,11 @@
 
       this.render();
       this.persistPreferencesDebounced(0);
+      // Re-render one rAF after each skin swap so canvas picks up CSS tokens
+      // that weren't yet in getComputedStyle when the synchronous render ran.
+      document.addEventListener('vectura:skin-change', () => {
+        if (this.renderer && this.renderer.ready) this.render();
+      });
     }
 
     readCookie(name) {

@@ -218,9 +218,14 @@
         <div class="flex items-center justify-between mb-1">
           <div class="flex items-center gap-3">
             <span class="text-[10px] text-vectura-muted" data-pd-status>Click a closed region to fill it</span>
-            <label class="flex items-center gap-1 text-[10px] text-vectura-muted cursor-pointer select-none">
-              <input type="checkbox" data-pd-shadow-tiles class="accent-vectura-accent"> Neighbors
-            </label>
+            <span class="flex items-center gap-1 text-[10px] text-vectura-muted cursor-pointer select-none">
+              <label class="sw-toggle" role="switch" aria-checked="false">
+                <input type="checkbox" data-pd-shadow-tiles />
+                <span class="sw-track"></span>
+                <span class="sw-thumb"></span>
+              </label>
+              Neighbors
+            </span>
           </div>
           <button type="button" class="text-[10px] text-vectura-muted hover:text-vectura-accent transition-colors" data-pd-clear>Clear all</button>
         </div>

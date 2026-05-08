@@ -1665,7 +1665,11 @@
             </div>
             <span class="text-xs text-vectura-accent font-mono">${checked ? 'ON' : 'OFF'}</span>
           </div>
-          <input type="checkbox" ${checked ? 'checked' : ''} class="w-4 h-4">
+          <label class="sw-toggle" role="switch" aria-checked="${checked ? 'true' : 'false'}">
+            <input type="checkbox" ${checked ? 'checked' : ''} />
+            <span class="sw-track"></span>
+            <span class="sw-thumb"></span>
+          </label>
         `;
         const input = control.querySelector('input');
         const span = control.querySelector('span');
@@ -2056,13 +2060,15 @@
               <span class="image-effect-title">Effect ${String(idx + 1).padStart(2, '0')}</span>
             </div>
             <div class="noise-actions">
-              <label class="noise-toggle">
-                <input type="checkbox" ${effect.enabled ? 'checked' : ''}>
+              <label class="sw-toggle" role="switch" aria-checked="${effect.enabled ? 'true' : 'false'}">
+                <input type="checkbox" ${effect.enabled ? 'checked' : ''} />
+                <span class="sw-track"></span>
+                <span class="sw-thumb"></span>
               </label>
               <button type="button" class="noise-delete" aria-label="Delete effect">🗑</button>
             </div>
           `;
-          const toggle = headerRow.querySelector('.noise-toggle input');
+          const toggle = headerRow.querySelector('input[type="checkbox"]');
           const deleteBtn = headerRow.querySelector('.noise-delete');
           const grip = headerRow.querySelector('.noise-grip');
           bindEffectReorderGrip(grip, card, effect);
@@ -2178,13 +2184,15 @@
             <span class="noise-title">Noise ${String(idx + 1).padStart(2, '0')}</span>
           </div>
           <div class="noise-actions">
-            <label class="noise-toggle">
-              <input type="checkbox" ${noise.enabled ? 'checked' : ''}>
+            <label class="sw-toggle" role="switch" aria-checked="${noise.enabled ? 'true' : 'false'}">
+              <input type="checkbox" ${noise.enabled ? 'checked' : ''} />
+              <span class="sw-track"></span>
+              <span class="sw-thumb"></span>
             </label>
             <button type="button" class="noise-delete" aria-label="Delete noise">🗑</button>
           </div>
         `;
-        const toggle = headerRow.querySelector('.noise-toggle input');
+        const toggle = headerRow.querySelector('input[type="checkbox"]');
         const deleteBtn = headerRow.querySelector('.noise-delete');
         const grip = headerRow.querySelector('.noise-grip');
         bindNoiseReorderGrip(grip, card, noise);

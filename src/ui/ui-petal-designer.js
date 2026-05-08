@@ -1088,10 +1088,14 @@
           </label>
         </div>
         <div class="petal-designer-transition">
-          <label class="petal-transition-lock">
-            <input type="checkbox" data-petal-inner-outer-lock>
+          <div class="petal-transition-lock">
+            <label class="sw-toggle" role="switch" aria-checked="false">
+              <input type="checkbox" data-petal-inner-outer-lock />
+              <span class="sw-track"></span>
+              <span class="sw-thumb"></span>
+            </label>
             <span>Inner = Outer</span>
-          </label>
+          </div>
         </div>
         <div class="petal-designer-visualizer">
           <div class="petal-designer-shading-header">
@@ -1410,8 +1414,10 @@
             <div class="noise-actions">
               <button type="button" class="petal-copy-btn" data-shade-up title="Move up">↑</button>
               <button type="button" class="petal-copy-btn" data-shade-down title="Move down">↓</button>
-              <label class="noise-toggle">
-                <input type="checkbox" ${shade.enabled ? 'checked' : ''} data-shade-enabled>
+              <label class="sw-toggle" role="switch" aria-checked="${shade.enabled ? 'true' : 'false'}">
+                <input type="checkbox" ${shade.enabled ? 'checked' : ''} data-shade-enabled />
+                <span class="sw-track"></span>
+                <span class="sw-thumb"></span>
               </label>
               <button type="button" class="noise-delete" aria-label="Delete shading" data-shade-delete>🗑</button>
             </div>
@@ -1596,8 +1602,10 @@
             <div class="noise-actions">
               <button type="button" class="petal-copy-btn" data-mod-up title="Move up">↑</button>
               <button type="button" class="petal-copy-btn" data-mod-down title="Move down">↓</button>
-              <label class="noise-toggle">
-                <input type="checkbox" ${modifier.enabled ? 'checked' : ''} data-mod-enabled>
+              <label class="sw-toggle" role="switch" aria-checked="${modifier.enabled ? 'true' : 'false'}">
+                <input type="checkbox" ${modifier.enabled ? 'checked' : ''} data-mod-enabled />
+                <span class="sw-track"></span>
+                <span class="sw-thumb"></span>
               </label>
               <button type="button" class="noise-delete" aria-label="Delete modifier" data-mod-delete>🗑</button>
             </div>

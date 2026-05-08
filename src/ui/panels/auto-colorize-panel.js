@@ -236,7 +236,11 @@
           wrapper.innerHTML = `
             <div class="flex items-center justify-between">
               <label class="control-label mb-0">${param.label}</label>
-              <input type="checkbox" class="cursor-pointer" ${config.params[param.id] ? 'checked' : ''} />
+              <label class="sw-toggle" role="switch" aria-checked="${config.params[param.id] ? 'true' : 'false'}">
+                <input type="checkbox" ${config.params[param.id] ? 'checked' : ''} />
+                <span class="sw-track"></span>
+                <span class="sw-thumb"></span>
+              </label>
             </div>
           `;
           const input = wrapper.querySelector('input');

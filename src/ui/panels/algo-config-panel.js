@@ -1023,7 +1023,11 @@
             <label class="pendulum-title">Pendulum ${idx + 1}</label>
             <div class="pendulum-actions">
               <label class="pendulum-toggle">
-                <input type="checkbox" ${pendulum.enabled ? 'checked' : ''}>
+                <label class="sw-toggle" role="switch" aria-checked="${pendulum.enabled ? 'true' : 'false'}">
+                  <input type="checkbox" ${pendulum.enabled ? 'checked' : ''} />
+                  <span class="sw-track"></span>
+                  <span class="sw-thumb"></span>
+                </label>
                 <span>Active</span>
               </label>
               <button type="button" class="pendulum-delete" aria-label="Delete pendulum">🗑</button>
@@ -1266,13 +1270,15 @@
               <span class="noise-title">Modifier ${String(idx + 1).padStart(2, '0')}</span>
             </div>
             <div class="noise-actions">
-              <label class="noise-toggle">
-                <input type="checkbox" ${modifier.enabled ? 'checked' : ''}>
+              <label class="sw-toggle" role="switch" aria-checked="${modifier.enabled ? 'true' : 'false'}">
+                <input type="checkbox" ${modifier.enabled ? 'checked' : ''} />
+                <span class="sw-track"></span>
+                <span class="sw-thumb"></span>
               </label>
               <button type="button" class="noise-delete" aria-label="Delete modifier">🗑</button>
             </div>
           `;
-          const toggle = headerRow.querySelector('.noise-toggle input');
+          const toggle = headerRow.querySelector('input[type="checkbox"]');
           const deleteBtn = headerRow.querySelector('.noise-delete');
           const grip = headerRow.querySelector('.noise-grip');
           bindModifierReorderGrip(grip, card, modifier);
@@ -1535,13 +1541,15 @@
               <span class="noise-title">Modifier ${String(idx + 1).padStart(2, '0')}</span>
             </div>
             <div class="noise-actions">
-              <label class="noise-toggle">
-                <input type="checkbox" ${modifier.enabled ? 'checked' : ''}>
+              <label class="sw-toggle" role="switch" aria-checked="${modifier.enabled ? 'true' : 'false'}">
+                <input type="checkbox" ${modifier.enabled ? 'checked' : ''} />
+                <span class="sw-track"></span>
+                <span class="sw-thumb"></span>
               </label>
               <button type="button" class="noise-delete" aria-label="Delete modifier">🗑</button>
             </div>
           `;
-          const toggle = headerRow.querySelector('.noise-toggle input');
+          const toggle = headerRow.querySelector('input[type="checkbox"]');
           const deleteBtn = headerRow.querySelector('.noise-delete');
           const grip = headerRow.querySelector('.noise-grip');
           bindModifierReorderGrip(grip, card, modifier);
@@ -1863,13 +1871,15 @@
               <span class="noise-title">Shading ${String(idx + 1).padStart(2, '0')}</span>
             </div>
             <div class="noise-actions">
-              <label class="noise-toggle">
-                <input type="checkbox" ${shade.enabled ? 'checked' : ''}>
+              <label class="sw-toggle" role="switch" aria-checked="${shade.enabled ? 'true' : 'false'}">
+                <input type="checkbox" ${shade.enabled ? 'checked' : ''} />
+                <span class="sw-track"></span>
+                <span class="sw-thumb"></span>
               </label>
               <button type="button" class="noise-delete" aria-label="Delete shading">🗑</button>
             </div>
           `;
-          const toggle = headerRow.querySelector('.noise-toggle input');
+          const toggle = headerRow.querySelector('input[type="checkbox"]');
           const deleteBtn = headerRow.querySelector('.noise-delete');
           const grip = headerRow.querySelector('.noise-grip');
           bindShadingReorderGrip(grip, card, shade);
@@ -2228,7 +2238,11 @@
             </div>
             <span class="text-xs text-vectura-accent font-mono">${checked ? 'ON' : 'OFF'}</span>
           </div>
-          <input type="checkbox" ${checked ? 'checked' : ''} class="w-4 h-4">
+          <label class="sw-toggle" role="switch" aria-checked="${checked ? 'true' : 'false'}">
+            <input type="checkbox" ${checked ? 'checked' : ''} />
+            <span class="sw-track"></span>
+            <span class="sw-thumb"></span>
+          </label>
         `;
         const input = div.querySelector('input');
         const span = div.querySelector('span');
@@ -3180,7 +3194,11 @@
             <label class="control-label mb-0">Remove Hidden Geometry</label>
             <span class="text-xs text-vectura-accent font-mono">${SETTINGS.removeHiddenGeometry !== false ? 'ON' : 'OFF'}</span>
           </div>
-          <input type="checkbox" class="w-4 h-4" ${SETTINGS.removeHiddenGeometry !== false ? 'checked' : ''}>
+          <label class="sw-toggle" role="switch" aria-checked="${SETTINGS.removeHiddenGeometry !== false ? 'true' : 'false'}">
+            <input type="checkbox" ${SETTINGS.removeHiddenGeometry !== false ? 'checked' : ''} />
+            <span class="sw-track"></span>
+            <span class="sw-thumb"></span>
+          </label>
         `;
         const hiddenGeometryToggle = hiddenGeometryControl.querySelector('input');
         const hiddenGeometryState = hiddenGeometryControl.querySelector('span');
@@ -3202,7 +3220,11 @@
             <label class="control-label mb-0">Plotter Optimization</label>
             <span class="text-xs text-vectura-accent font-mono">${SETTINGS.plotterOptimize > 0 ? 'ON' : 'OFF'}</span>
           </div>
-          <input type="checkbox" class="w-4 h-4">
+          <label class="sw-toggle" role="switch" aria-checked="${SETTINGS.plotterOptimize > 0 ? 'true' : 'false'}">
+            <input type="checkbox" />
+            <span class="sw-track"></span>
+            <span class="sw-thumb"></span>
+          </label>
         `;
         const plotterToggle = toggleControl.querySelector('input');
         const toggleState = toggleControl.querySelector('span');
@@ -3407,7 +3429,11 @@
             <label class="control-label mb-0">${def.label}</label>
             <span class="text-xs text-vectura-accent font-mono">${checked ? 'ON' : 'OFF'}</span>
           </div>
-          <input type="checkbox" ${checked ? 'checked' : ''} class="w-4 h-4">
+          <label class="sw-toggle" role="switch" aria-checked="${checked ? 'true' : 'false'}">
+            <input type="checkbox" ${checked ? 'checked' : ''} />
+            <span class="sw-track"></span>
+            <span class="sw-thumb"></span>
+          </label>
         `;
         const input = control.querySelector('input');
         const span = control.querySelector('span');
@@ -3505,8 +3531,22 @@
             <span>${def.label}</span>
           </div>
           <div class="optimization-card-actions">
-            <label class="opt-toggle"><input type="checkbox" ${stepConfig.enabled ? 'checked' : ''}>Apply</label>
-            <label class="opt-toggle"><input type="checkbox" ${stepConfig.bypass ? 'checked' : ''}>Bypass</label>
+            <label class="opt-toggle">
+              <label class="sw-toggle" role="switch" aria-checked="${stepConfig.enabled ? 'true' : 'false'}">
+                <input type="checkbox" ${stepConfig.enabled ? 'checked' : ''} />
+                <span class="sw-track"></span>
+                <span class="sw-thumb"></span>
+              </label>
+              Apply
+            </label>
+            <label class="opt-toggle">
+              <label class="sw-toggle" role="switch" aria-checked="${stepConfig.bypass ? 'true' : 'false'}">
+                <input type="checkbox" ${stepConfig.bypass ? 'checked' : ''} />
+                <span class="sw-track"></span>
+                <span class="sw-thumb"></span>
+              </label>
+              Bypass
+            </label>
           </div>
         `;
         const grip = header.querySelector('.optimization-grip');

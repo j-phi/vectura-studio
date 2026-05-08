@@ -107,7 +107,11 @@
               <label class="text-xs text-vectura-muted">Orientation</label>
               <div class="flex items-center gap-2">
                 <span id="orientation-label" class="text-[11px] text-vectura-muted">Landscape</span>
-                <input type="checkbox" id="set-orientation" class="cursor-pointer" />
+                <label class="sw-toggle" role="switch" aria-checked="false">
+                  <input type="checkbox" id="set-orientation" />
+                  <span class="sw-track"></span>
+                  <span class="sw-thumb"></span>
+                </label>
               </div>
             </div>
           </div>
@@ -121,11 +125,19 @@
           <div class="mt-4">
             <div class="flex items-center justify-between mb-2">
               <label class="text-xs text-vectura-muted">Crop Art to Margins</label>
-              <input type="checkbox" id="set-truncate" class="cursor-pointer" />
+              <label class="sw-toggle" role="switch" aria-checked="false">
+                <input type="checkbox" id="set-truncate" />
+                <span class="sw-track"></span>
+                <span class="sw-thumb"></span>
+              </label>
             </div>
             <div class="flex items-center justify-between mb-2">
               <label class="text-xs text-vectura-muted">Crop Exports to Margin</label>
-              <input type="checkbox" id="set-crop-exports" class="cursor-pointer" />
+              <label class="sw-toggle" role="switch" aria-checked="false">
+                <input type="checkbox" id="set-crop-exports" />
+                <span class="sw-track"></span>
+                <span class="sw-thumb"></span>
+              </label>
             </div>
             <div class="flex items-center justify-between mb-2">
               <label class="text-xs text-vectura-muted">Outside Opacity</label>
@@ -134,7 +146,11 @@
             </div>
             <div class="flex items-center justify-between mb-2">
               <label class="text-xs text-vectura-muted">Margin Outline</label>
-              <input type="checkbox" id="set-margin-line" class="cursor-pointer" />
+              <label class="sw-toggle" role="switch" aria-checked="false">
+                <input type="checkbox" id="set-margin-line" />
+                <span class="sw-track"></span>
+                <span class="sw-thumb"></span>
+              </label>
             </div>
             <div class="mt-2">
               <label class="text-[11px] text-vectura-muted">Margin Outline Style</label>
@@ -170,21 +186,37 @@
             <div class="mt-4">
               <div class="flex items-center justify-between mb-2">
                 <label class="text-xs text-vectura-muted">Show Guides</label>
-                <input type="checkbox" id="set-show-guides" class="cursor-pointer" />
+                <label class="sw-toggle" role="switch" aria-checked="false">
+                  <input type="checkbox" id="set-show-guides" />
+                  <span class="sw-track"></span>
+                  <span class="sw-thumb"></span>
+                </label>
               </div>
               <div class="flex items-center justify-between">
                 <label class="text-xs text-vectura-muted">Snap Guides</label>
-                <input type="checkbox" id="set-snap-guides" class="cursor-pointer" />
+                <label class="sw-toggle" role="switch" aria-checked="false">
+                  <input type="checkbox" id="set-snap-guides" />
+                  <span class="sw-track"></span>
+                  <span class="sw-thumb"></span>
+                </label>
               </div>
               <div class="flex items-center justify-between mt-2">
                 <label class="text-xs text-vectura-muted">Show Document Dimensions</label>
-                <input type="checkbox" id="set-show-document-dimensions" class="cursor-pointer" />
+                <label class="sw-toggle" role="switch" aria-checked="false">
+                  <input type="checkbox" id="set-show-document-dimensions" />
+                  <span class="sw-track"></span>
+                  <span class="sw-thumb"></span>
+                </label>
               </div>
             </div>
             <div class="mt-2">
               <div class="flex items-center justify-between">
                 <label class="text-xs text-vectura-muted">Save Preferences in Cookie</label>
-                <input type="checkbox" id="set-cookie-preferences" class="cursor-pointer" />
+                <label class="sw-toggle" role="switch" aria-checked="false">
+                  <input type="checkbox" id="set-cookie-preferences" />
+                  <span class="sw-track"></span>
+                  <span class="sw-thumb"></span>
+                </label>
               </div>
               <button id="btn-clear-preferences" type="button"
                 class="mt-2 text-[11px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted">
@@ -192,7 +224,11 @@
               </button>
               <div class="flex items-center justify-between mt-2">
                 <label class="text-xs text-vectura-muted" for="set-show-tour">Show tour on first launch</label>
-                <input type="checkbox" id="set-show-tour" class="cursor-pointer" />
+                <label class="sw-toggle" role="switch" aria-checked="false">
+                  <input type="checkbox" id="set-show-tour" />
+                  <span class="sw-track"></span>
+                  <span class="sw-thumb"></span>
+                </label>
               </div>
             </div>
             <div class="mt-4">
@@ -204,7 +240,11 @@
               </div>
               <div class="flex items-center justify-between mb-2">
                 <label class="text-xs text-vectura-muted">Selection Outline</label>
-                <input type="checkbox" id="set-selection-outline" class="cursor-pointer" />
+                <label class="sw-toggle" role="switch" aria-checked="false">
+                  <input type="checkbox" id="set-selection-outline" />
+                  <span class="sw-track"></span>
+                  <span class="sw-thumb"></span>
+                </label>
               </div>
               <div class="mt-2">
                 <label class="text-[11px] text-vectura-muted">Selection Outline Style</label>
@@ -256,7 +296,7 @@
             <div id="layer-bar-palette-trigger" class="palette-picker-trigger" role="button" tabindex="0">
               <span id="layer-bar-palette-name">Prism</span>
               <div id="layer-bar-palette-preview" class="palette-picker-swatches"></div>
-              <span class="palette-picker-arrow">▾</span>
+              <span class="palette-picker-arrow" aria-hidden="true"></span>
             </div>
             <div id="layer-bar-palette-menu" class="palette-picker-menu hidden"></div>
           </div>
@@ -337,6 +377,17 @@
         }
       };
     });
+
+    const settingsPanelEl = getEl('settings-panel');
+    if (settingsPanelEl) {
+      settingsPanelEl.querySelectorAll('.sw-toggle').forEach((toggle) => {
+        const cb = toggle.querySelector('input[type="checkbox"]');
+        if (!cb) return;
+        const sync = () => toggle.setAttribute('aria-checked', String(cb.checked));
+        sync();
+        cb.addEventListener('change', sync);
+      });
+    }
   }
 
   Modals.DocumentSetup = {

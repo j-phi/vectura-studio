@@ -124,4 +124,52 @@ describe('Skin swap integration (registry + applyTheme)', () => {
     }
     expect(runtime.window.Vectura.SETTINGS.uiTheme).toBe('light');
   });
+
+  describe('canvas color after theme cycling', () => {
+    test('dark theme --render-canvas inline style is correct after dark→lark→light→dark', () => {
+      app.applyTheme('dark', { persist: false, render: false });
+      app.applyTheme('lark', { persist: false, render: false });
+      app.applyTheme('light', { persist: false, render: false });
+      app.applyTheme('dark', { persist: false, render: false });
+
+      const root = runtime.document.documentElement;
+      expect(root.style.getPropertyValue('--render-canvas')).toBe('#121214');
+    });
+
+    test('dark theme --ui-workspace inline style is correct after cycling', () => {
+      app.applyTheme('dark', { persist: false, render: false });
+      app.applyTheme('lark', { persist: false, render: false });
+      app.applyTheme('light', { persist: false, render: false });
+      app.applyTheme('dark', { persist: false, render: false });
+
+      const root = runtime.document.documentElement;
+      expect(root.style.getPropertyValue('--ui-workspace')).toBe('#111111');
+    });
+
+    test('toggleTheme 3× cycle leaves --render-canvas at dark value', () => {
+      app.applyTheme('dark', { persist: false, render: false });
+      app.toggleTheme(); // dark → lark
+      app.toggleTheme(); // lark → light
+      app.toggleTheme(); // light → dark
+
+      const root = runtime.document.documentElement;
+      expect(root.style.getPropertyValue('--render-canvas')).toBe('#121214');
+      expect(root.style.getPropertyValue('--ui-workspace')).toBe('#111111');
+    });
+
+    test('light theme --render-canvas and --ui-workspace are set inline', () => {
+      app.applyTheme('light', { persist: false, render: false });
+
+      const root = runtime.document.documentElement;
+      expect(root.style.getPropertyValue('--render-canvas')).toBe('#d5d5d5');
+      expect(root.style.getPropertyValue('--ui-workspace')).toBe('#d5d5d5');
+    });
+
+    test('lark theme --ui-workspace is set inline', () => {
+      app.applyTheme('lark', { persist: false, render: false });
+
+      const root = runtime.document.documentElement;
+      expect(root.style.getPropertyValue('--ui-workspace')).toBe('#d5d5d5');
+    });
+  });
 });

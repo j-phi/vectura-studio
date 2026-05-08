@@ -1,0 +1,264 @@
+/*
+ * Integration tests for the 5 standard toolbar subtool submenus:
+ * select, shape, pen, fill, scissor — all powered by initSubtoolMenu().
+ *
+ * Each submenu has a 280 ms hold-to-reveal gesture. Tests cover:
+ *   1. Quick tap  → onActivate fires, menu stays closed
+ *   2. Hold       → menu gets .open class
+ *   3. Direct click on sub-button → correct mode/tool set
+ *   4. Drag-select (hold + pointerup over sub-item) → mode set, menu closes
+ *   5. Outside pointerdown while open → menu closes
+ *
+ * Also includes a suite that verifies every top-menu-bar button ID exists
+ * in the bootstrapped DOM (regression guard for HTML deletions).
+ *
+ * Pattern mirrors tests/integration/algo-draw-toolbar.test.js.
+ */
+const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+
+const FULL_STACK = {
+  includeRenderer: true,
+  includeUi: true,
+  includeApp: true,
+  includeMain: false,
+  useIndexHtml: true,
+};
+
+describe('toolbar subtool submenus', () => {
+  let runtime, window, document, app;
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime(FULL_STACK);
+    ({ window, document } = runtime);
+    // JSDOM doesn't implement elementFromPoint; stub it so openMenu(e) doesn't
+    // throw when the hold timer fires.
+    if (typeof document.elementFromPoint !== 'function') {
+      document.elementFromPoint = () => null;
+    }
+    window.app = new window.Vectura.App();
+    app = window.app;
+    await Promise.resolve();
+  });
+
+  afterAll(() => {
+    runtime?.cleanup?.();
+    runtime = null;
+  });
+
+  // ── event helpers ────────────────────────────────────────────────────────
+
+  // Fires a pointerdown(button=0) then waits ms for the hold timer to fire.
+  const hold = (btn, ms = 310) => {
+    btn.dispatchEvent(new window.MouseEvent('pointerdown', { button: 0, bubbles: true }));
+    return new Promise((r) => setTimeout(r, ms));
+  };
+
+  // Fires pointerdown(button=0) then an immediate document-level pointerup so
+  // the hold timer is cleared and onActivate() is called (quick tap path).
+  const quickTap = (btn) => {
+    btn.dispatchEvent(new window.MouseEvent('pointerdown', { button: 0, bubbles: true }));
+    document.dispatchEvent(new window.Event('pointerup'));
+  };
+
+  // Hold, then mock elementFromPoint to return targetBtn, then dispatch pointerup.
+  const dragSelect = async (triggerBtn, targetBtn) => {
+    await hold(triggerBtn);
+    const orig = document.elementFromPoint;
+    document.elementFromPoint = () => targetBtn;
+    document.dispatchEvent(new window.Event('pointerup'));
+    document.elementFromPoint = orig;
+  };
+
+  // Reset activeTool and close any open submenus before each test.
+  beforeEach(() => {
+    app.ui.setActiveTool?.('select');
+    document.body.dispatchEvent(new window.MouseEvent('pointerdown', { button: 0, bubbles: true }));
+  });
+
+  // ── scissor ──────────────────────────────────────────────────────────────
+
+  describe('scissor subtool menu', () => {
+    const getBtn  = () => document.querySelector('.tool-btn[data-tool="scissor"]');
+    const getMenu = () => document.querySelector('.tool-submenu[aria-label="Scissor subtools"]');
+
+    test('quick tap activates scissor without opening the menu', () => {
+      quickTap(getBtn());
+      expect(app.ui.activeTool).toBe('scissor');
+      expect(getMenu().classList.contains('open')).toBe(false);
+    });
+
+    test('hold (>280ms) opens the scissor submenu', async () => {
+      await hold(getBtn());
+      expect(getMenu().classList.contains('open')).toBe(true);
+    });
+
+    test('direct click on sub-button sets scissorMode and activeTool', () => {
+      document.querySelector('.tool-sub-btn[data-scissor="rect"]').click();
+      expect(app.ui.activeTool).toBe('scissor');
+      expect(app.ui.scissorMode).toBe('rect');
+    });
+
+    test('drag-select to circle sub-button sets mode and closes menu', async () => {
+      const circleBtn = document.querySelector('.tool-sub-btn[data-scissor="circle"]');
+      await dragSelect(getBtn(), circleBtn);
+      expect(app.ui.scissorMode).toBe('circle');
+      expect(app.ui.activeTool).toBe('scissor');
+      expect(getMenu().classList.contains('open')).toBe(false);
+    });
+
+    test('pointerdown outside the open menu closes it', async () => {
+      await hold(getBtn());
+      expect(getMenu().classList.contains('open')).toBe(true);
+      document.body.dispatchEvent(new window.MouseEvent('pointerdown', { button: 0, bubbles: true }));
+      expect(getMenu().classList.contains('open')).toBe(false);
+    });
+  });
+
+  // ── select ───────────────────────────────────────────────────────────────
+
+  describe('select subtool menu', () => {
+    const getBtn  = () => document.querySelector('.tool-btn[data-tool="select"]');
+    const getMenu = () => document.querySelector('.tool-submenu[data-menu="select"]');
+
+    test('quick tap activates select without opening the menu', () => {
+      app.ui.setActiveTool?.('scissor');
+      quickTap(getBtn());
+      expect(app.ui.activeTool).toBe('select');
+      expect(getMenu().classList.contains('open')).toBe(false);
+    });
+
+    test('hold (>280ms) opens the select submenu', async () => {
+      await hold(getBtn());
+      expect(getMenu().classList.contains('open')).toBe(true);
+    });
+
+    test('direct click on oval sub-button sets selectionMode', () => {
+      document.querySelector('.tool-sub-btn[data-select="oval"]').click();
+      expect(app.ui.activeTool).toBe('select');
+      expect(app.ui.selectionMode).toBe('oval');
+    });
+
+    test('drag-select to lasso sub-button sets mode and closes menu', async () => {
+      const lassoBtn = document.querySelector('.tool-sub-btn[data-select="lasso"]');
+      await dragSelect(getBtn(), lassoBtn);
+      expect(app.ui.selectionMode).toBe('lasso');
+      expect(app.ui.activeTool).toBe('select');
+      expect(getMenu().classList.contains('open')).toBe(false);
+    });
+  });
+
+  // ── pen ──────────────────────────────────────────────────────────────────
+
+  describe('pen subtool menu', () => {
+    const getBtn  = () => document.querySelector('.tool-btn[data-tool="pen"]');
+    const getMenu = () => document.querySelector('.tool-submenu[data-menu="pen"]');
+
+    test('quick tap activates pen without opening the menu', () => {
+      quickTap(getBtn());
+      expect(app.ui.activeTool).toBe('pen');
+      expect(getMenu().classList.contains('open')).toBe(false);
+    });
+
+    test('hold (>280ms) opens the pen submenu', async () => {
+      await hold(getBtn());
+      expect(getMenu().classList.contains('open')).toBe(true);
+    });
+
+    test('direct click on add sub-button sets penMode', () => {
+      document.querySelector('.tool-sub-btn[data-pen="add"]').click();
+      expect(app.ui.activeTool).toBe('pen');
+      expect(app.ui.penMode).toBe('add');
+    });
+
+    test('drag-select to anchor sub-button sets mode and closes menu', async () => {
+      const anchorBtn = document.querySelector('.tool-sub-btn[data-pen="anchor"]');
+      await dragSelect(getBtn(), anchorBtn);
+      expect(app.ui.penMode).toBe('anchor');
+      expect(app.ui.activeTool).toBe('pen');
+      expect(getMenu().classList.contains('open')).toBe(false);
+    });
+  });
+
+  // ── fill ─────────────────────────────────────────────────────────────────
+
+  describe('fill subtool menu', () => {
+    const getBtn  = () => document.querySelector('.tool-btn[data-tool="fill"]');
+    const getMenu = () => document.querySelector('.tool-submenu[aria-label="Fill subtools"]');
+
+    test('quick tap activates fill without opening the menu', () => {
+      quickTap(getBtn());
+      expect(app.ui.activeTool).toBe('fill');
+      expect(getMenu().classList.contains('open')).toBe(false);
+    });
+
+    test('hold (>280ms) opens the fill submenu', async () => {
+      await hold(getBtn());
+      expect(getMenu().classList.contains('open')).toBe(true);
+    });
+
+    test('direct click on pattern sub-button sets fill-pattern activeTool', () => {
+      document.querySelector('.tool-sub-btn[data-fill="pattern"]').click();
+      expect(app.ui.activeTool).toBe('fill-pattern');
+    });
+
+    test('drag-select to erase sub-button sets fill-erase activeTool and closes menu', async () => {
+      const eraseBtn = document.querySelector('.tool-sub-btn[data-fill="erase"]');
+      await dragSelect(getBtn(), eraseBtn);
+      expect(app.ui.activeTool).toBe('fill-erase');
+      expect(getMenu().classList.contains('open')).toBe(false);
+    });
+  });
+
+  // ── shape ─────────────────────────────────────────────────────────────────
+
+  describe('shape subtool menu', () => {
+    const getBtn  = () => document.querySelector('.tool-btn[data-tool="shape"]');
+    const getMenu = () => document.querySelector('.tool-submenu[data-menu="shape"]');
+
+    test('quick tap activates current shape mode without opening the menu', () => {
+      quickTap(getBtn());
+      expect(app.ui.activeTool).toMatch(/^shape-/);
+      expect(getMenu().classList.contains('open')).toBe(false);
+    });
+
+    test('hold (>280ms) opens the shape submenu', async () => {
+      await hold(getBtn());
+      expect(getMenu().classList.contains('open')).toBe(true);
+    });
+
+    test('direct click on line sub-button sets shape-line activeTool', () => {
+      document.querySelector('.tool-sub-btn[data-shape="line"]').click();
+      expect(app.ui.activeTool).toBe('shape-line');
+    });
+
+    test('drag-select to polygon sub-button sets shape-polygon and closes menu', async () => {
+      const polygonBtn = document.querySelector('.tool-sub-btn[data-shape="polygon"]');
+      await dragSelect(getBtn(), polygonBtn);
+      expect(app.ui.activeTool).toBe('shape-polygon');
+      expect(getMenu().classList.contains('open')).toBe(false);
+    });
+  });
+
+  // ── top menu bar DOM completeness ─────────────────────────────────────────
+
+  describe('top menu bar — all expected button IDs exist in the bootstrapped DOM', () => {
+    const expected = [
+      // File menu
+      'btn-open-vectura', 'btn-save-vectura', 'btn-import-svg', 'btn-export', 'btn-settings',
+      // Edit menu
+      'btn-undo', 'btn-redo', 'btn-group-layers', 'btn-ungroup-layers',
+      // View menu
+      'btn-reset-view', 'btn-view-grid-toggle', 'btn-view-grid-settings',
+      // Insert menu
+      'btn-insert-mirror-modifier',
+      // Help menu
+      'btn-help', 'btn-tour',
+    ];
+
+    expected.forEach((id) => {
+      test(`#${id} is present`, () => {
+        expect(document.getElementById(id)).toBeTruthy();
+      });
+    });
+  });
+});

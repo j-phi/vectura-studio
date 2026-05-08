@@ -243,6 +243,14 @@
         this.setActiveTool(shapeToolFromMode(mode));
       };
     });
+    fillButtons.forEach((btn) => {
+      btn.onclick = () => {
+        const mode = btn.dataset.fill;
+        if (mode === 'erase')           this.setActiveTool('fill-erase');
+        else if (mode === 'pattern')    this.setActiveTool('fill-pattern');
+        else if (mode === 'pattern-erase') this.setActiveTool('fill-pattern-erase');
+      };
+    });
 
     const initSubtoolMenu = (config) => {
       const { button, menu, buttons, onActivate, onSelect } = config;
@@ -251,6 +259,11 @@
       let menuOpen = false;
       let hoverBtn = null;
 
+      // Portal the submenu into document.body so .tool-bar's overflow:hidden
+      // cannot clip it. Inline position:fixed + computed coords on open.
+      menu.style.position = 'fixed';
+      document.body.appendChild(menu);
+
       const setHover = (btn) => {
         if (hoverBtn === btn) return;
         hoverBtn = btn || null;
@@ -258,6 +271,17 @@
       };
       const openMenu = (e) => {
         menuOpen = true;
+        const r = button.getBoundingClientRect();
+        const toolbarEl = button.closest('#tool-bar');
+        const tr = toolbarEl ? toolbarEl.getBoundingClientRect() : null;
+        const isHoriz = tr && tr.width > tr.height;
+        if (isHoriz) {
+          menu.style.left = `${r.left}px`;
+          menu.style.top = `${r.bottom + 6}px`;
+        } else {
+          menu.style.left = `${r.right + 6}px`;
+          menu.style.top = `${r.top}px`;
+        }
         menu.classList.add('open');
         setHover(null);
         if (e) {
