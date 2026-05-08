@@ -302,6 +302,61 @@ describe('Modifier workflow UI integration', () => {
     expect(app.ui.layerLockedIds.has(grouped.id)).toBe(false);
   });
 
+  test('deleting a mirror modifier unlocks its restored children', async () => {
+    runtime = await loadVecturaRuntime({
+      includeRenderer: true,
+      includeUi: true,
+      includeApp: true,
+      useIndexHtml: true,
+    });
+
+    const { window } = runtime;
+    window.app = new window.Vectura.App();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    const app = window.app;
+
+    app.engine.addLayer('wavetable');
+    const wrapped = app.engine.getActiveLayer();
+    app.renderer.setSelection([wrapped.id], wrapped.id);
+    app.ui.insertMirrorModifier();
+    expect(app.ui.layerLockedIds.has(wrapped.id)).toBe(true);
+
+    const modifierId = app.engine.getActiveLayer().id;
+    app.ui.unlockMirrorChildrenOnDelete(modifierId);
+    app.engine.removeLayer(modifierId);
+
+    const restored = app.engine.layers.find((l) => l.id === wrapped.id);
+    expect(restored).toBeTruthy();
+    expect(restored.parentId).toBeNull();
+    expect(app.ui.layerLockedIds.has(wrapped.id)).toBe(false);
+  });
+
+  test('deleting a non-mirror group leaves child lock state untouched', async () => {
+    runtime = await loadVecturaRuntime({
+      includeRenderer: true,
+      includeUi: true,
+      includeApp: true,
+      useIndexHtml: true,
+    });
+
+    const { window } = runtime;
+    window.app = new window.Vectura.App();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    const app = window.app;
+
+    const groupId = app.engine.addEmptyLayer();
+    app.engine.addLayer('wavetable');
+    const child = app.engine.getActiveLayer();
+    app.ui.assignLayersToParent(groupId, [child]);
+    app.ui.layerLockedIds.add(child.id); // user-set lock
+    expect(app.ui.layerLockedIds.has(child.id)).toBe(true);
+
+    app.ui.unlockMirrorChildrenOnDelete(groupId);
+    expect(app.ui.layerLockedIds.has(child.id)).toBe(true);
+  });
+
   test('selecting a modifier child restores normal algorithm controls and edits the child in place', async () => {
     runtime = await loadVecturaRuntime({
       includeRenderer: true,

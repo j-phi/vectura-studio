@@ -95,6 +95,7 @@
     }
     if (key === 'delete') {
       if (ui.app.pushHistory) ui.app.pushHistory();
+      ui.unlockMirrorChildrenOnDelete?.(layer.id);
       engine.removeLayer(layer.id);
       ui.renderLayers && ui.renderLayers();
       ui.app.render && ui.app.render();

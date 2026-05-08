@@ -350,7 +350,10 @@
         e.preventDefault();
         if (this.app.pushHistory) this.app.pushHistory();
         const ids = Array.from(this.app.renderer?.selectedLayerIds || []);
-        ids.forEach((id) => this.app.engine.removeLayer(id));
+        ids.forEach((id) => {
+          this.unlockMirrorChildrenOnDelete?.(id);
+          this.app.engine.removeLayer(id);
+        });
         if (this.app.renderer) {
           const nextId = this.app.engine.activeLayerId;
           this.app.renderer.setSelection(nextId ? [nextId] : [], nextId);

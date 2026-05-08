@@ -5753,6 +5753,20 @@
       return moveIds.map((id) => map.get(id)).filter(Boolean);
     }
 
+    unlockMirrorChildrenOnDelete(layerId) {
+      const engine = this.app?.engine;
+      if (!engine || !this.layerLockedIds) return;
+      const layer = engine.layers.find((l) => l.id === layerId);
+      if (!layer || !this.isModifierLayer(layer) || layer.modifier?.type !== 'mirror') return;
+      const cascade = (pid) => {
+        engine.layers.filter((l) => l.parentId === pid).forEach((c) => {
+          this.layerLockedIds.delete(c.id);
+          cascade(c.id);
+        });
+      };
+      cascade(layerId);
+    }
+
     // Delegated to src/ui/panels/layers-panel.js (assignLayersToRoot, groupSelection, ungroupSelection).
     // modifiers-panel methods (refreshModifierLayer, insertMirrorModifier,
     // updatePrimaryPanelMode, refreshMaskingViews, ensureLayerMaskState,
@@ -6785,7 +6799,10 @@
     _lvlDelSel() {
       if (this.app.pushHistory) this.app.pushHistory();
       const ids = [...(this.app.renderer?.selectedLayerIds || [])];
-      [...ids].reverse().forEach((id) => this.app.engine.removeLayer(id));
+      [...ids].reverse().forEach((id) => {
+        this.unlockMirrorChildrenOnDelete(id);
+        this.app.engine.removeLayer(id);
+      });
       this.renderLayers();
       this.app.render();
     }

@@ -855,6 +855,7 @@
           }));
           actsm.appendChild(mkAbM('del', () => this._LVL_I.trash(), 'Delete', () => {
             if (this.app.pushHistory) this.app.pushHistory();
+            this.unlockMirrorChildrenOnDelete?.(layer.id);
             engine.removeLayer(layer.id); this.renderLayers(); this.app.render();
           }));
           r2m.appendChild(actsm); card.appendChild(r2m);
@@ -951,6 +952,7 @@
         }));
         acts.appendChild(mkAb('del', () => this._LVL_I.trash(), 'Delete', () => {
           if (this.app.pushHistory) this.app.pushHistory();
+          this.unlockMirrorChildrenOnDelete?.(layer.id);
           engine.removeLayer(layer.id); this.renderLayers(); this.app.render();
         }));
         r2.appendChild(acts);
@@ -1027,6 +1029,7 @@
         }
         ga.appendChild(mkAb('', () => this._LVL_I.ungroup(), 'Ungroup (⌘⇧G)', () => {
           if (this.app.pushHistory) this.app.pushHistory();
+          this.unlockMirrorChildrenOnDelete?.(layer.id);
           const kids = allLayers.filter((l) => l.parentId === layer.id);
           kids.forEach((l) => { l.parentId = layer.parentId ?? null; });
           engine.removeLayer(layer.id);
@@ -1039,6 +1042,7 @@
         }));
         ga.appendChild(mkAb('del', () => this._LVL_I.trash(), 'Delete group', () => {
           if (this.app.pushHistory) this.app.pushHistory();
+          this.unlockMirrorChildrenOnDelete?.(layer.id);
           engine.removeLayer(layer.id); this.renderLayers(); this.app.render();
         }));
         gc.appendChild(ga); hdr.appendChild(gc);
