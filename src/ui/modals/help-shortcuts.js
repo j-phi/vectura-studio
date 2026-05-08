@@ -390,5 +390,10 @@
     buildHelpContent,
     _applyHelpPlatform,
     openHelp,
+    installOn(proto) {
+      proto.buildHelpContent = function() { return buildHelpContent.call(this); };
+      proto._applyHelpPlatform = function(root, platform) { return _applyHelpPlatform.call(this, root, platform); };
+      proto.openHelp = function(focusShortcuts = false) { return openHelp.call(this, focusShortcuts); };
+    },
   };
 })();

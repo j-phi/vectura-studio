@@ -3633,5 +3633,8 @@
       DEPS = deps;
     },
     buildControls,
+    installOn(proto) {
+      proto.buildControls = function() { return buildControls.call(this); };
+    },
   };
 })();

@@ -201,5 +201,13 @@
     attachInfoButton,
     attachStaticInfoButtons,
     bindInfoButtons,
+    installOn(proto) {
+      proto.showInfo = function(key) { return showInfo.call(this, key); };
+      proto.showDuplicateNameError = function(name) { return showDuplicateNameError.call(this, name); };
+      proto.showValueError = function(value) { return showValueError.call(this, value); };
+      proto.attachInfoButton = function(labelEl, key) { return attachInfoButton.call(this, labelEl, key); };
+      proto.attachStaticInfoButtons = function() { return attachStaticInfoButtons.call(this); };
+      proto.bindInfoButtons = function() { return bindInfoButtons.call(this); };
+    },
   };
 })();

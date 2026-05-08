@@ -115,5 +115,8 @@
       DEPS = deps;
     },
     updateFormula,
+    installOn(proto) {
+      proto.updateFormula = function() { return updateFormula.call(this); };
+    },
   };
 })();

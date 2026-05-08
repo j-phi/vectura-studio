@@ -351,5 +351,9 @@
     bindHandlers,
     PANEL_HTML,
     PANEL_ID,
+    installOn(proto) {
+      // Legacy alias preserved on the prototype.
+      proto._bindDocumentSetupHandlers = function() { return bindHandlers.call(this); };
+    },
   };
 })();

@@ -58,7 +58,11 @@
         <div class="control-group border-none">
           <div class="flex items-center justify-between mb-4">
             <label class="text-xs text-vectura-muted">Show Grid</label>
-            <input type="checkbox" id="set-grid-overlay-master" class="cursor-pointer" />
+            <label class="sw-toggle" role="switch" aria-checked="false">
+              <input type="checkbox" id="set-grid-overlay-master" />
+              <span class="sw-track"></span>
+              <span class="sw-thumb"></span>
+            </label>
           </div>
           <div class="mb-4">
             <label class="text-[11px] text-vectura-muted block mb-2">Opacity</label>
@@ -224,5 +228,9 @@
     bindHandlers,
     PANEL_HTML,
     PANEL_ID,
+    installOn(proto) {
+      // Legacy alias preserved on the prototype.
+      proto._bindGridSettingsHandlers = function() { return bindHandlers.call(this); };
+    },
   };
 })();

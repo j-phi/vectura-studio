@@ -222,5 +222,8 @@
       DEPS = deps || {};
     },
     openColorModal,
+    installOn(proto) {
+      proto.openColorModal = function(opts) { return openColorModal.call(this, opts); };
+    },
   };
 })();

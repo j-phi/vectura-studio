@@ -5267,10 +5267,7 @@
       });
     }
 
-    // Delegated to src/ui/modals/color-picker.js (Phase 3 step 4).
-    openColorModal(opts) {
-      return window.Vectura.UI.Modals.ColorPicker.openColorModal.call(this, opts);
-    }
+    // openColorModal is installed onto UI.prototype by ColorPicker.installOn().
 
     closeModal() {
       this.modal.overlay.classList.remove('open');
@@ -5292,33 +5289,21 @@
     // setAboutVisible, initAboutSection) are installed onto UI.prototype
     // by PaneLeft.installOn() at IIFE bottom.
 
-    // Delegated to src/ui/modals/help-shortcuts.js (Phase 3).
-    buildHelpContent() {
-      return window.Vectura.UI.Modals.HelpShortcuts.buildHelpContent.call(this);
-    }
-    _applyHelpPlatform(root, platform) {
-      return window.Vectura.UI.Modals.HelpShortcuts._applyHelpPlatform.call(this, root, platform);
-    }
-    openHelp(focusShortcuts = false) {
-      return window.Vectura.UI.Modals.HelpShortcuts.openHelp.call(this, focusShortcuts);
-    }
+    // help-shortcuts methods (buildHelpContent, _applyHelpPlatform, openHelp)
+    // are installed onto UI.prototype by HelpShortcuts.installOn().
+    // _bindGridSettingsHandlers and _bindDocumentSetupHandlers are installed
+    // by GridSettings.installOn() and DocumentSetup.installOn() respectively.
 
     // Delegated to src/ui/modals/grid-settings.js (Phase 3 step 2).
     _mountGridSettingsPanel() {
       const host = document.querySelector('main');
       return window.Vectura.UI.Modals.GridSettings.mount(host);
     }
-    _bindGridSettingsHandlers() {
-      return window.Vectura.UI.Modals.GridSettings.bindHandlers.call(this);
-    }
 
     // Delegated to src/ui/modals/document-setup.js (Phase 3 step 3).
     _mountDocumentSetupPanel() {
       const host = document.querySelector('main');
       return window.Vectura.UI.Modals.DocumentSetup.mount(host);
-    }
-    _bindDocumentSetupHandlers() {
-      return window.Vectura.UI.Modals.DocumentSetup.bindHandlers.call(this);
     }
 
     // transform-panel methods (getDefaultTransformForType, storeLayerParams,
@@ -5994,25 +5979,9 @@
       return next;
     }
 
-    // Delegated to src/ui/modals/info-modals.js (Phase 3 step 3).
-    showDuplicateNameError(name) {
-      return window.Vectura.UI.Modals.InfoModals.showDuplicateNameError.call(this, name);
-    }
-    showValueError(value) {
-      return window.Vectura.UI.Modals.InfoModals.showValueError.call(this, value);
-    }
-    showInfo(key) {
-      return window.Vectura.UI.Modals.InfoModals.showInfo.call(this, key);
-    }
-    attachInfoButton(labelEl, key) {
-      return window.Vectura.UI.Modals.InfoModals.attachInfoButton.call(this, labelEl, key);
-    }
-    attachStaticInfoButtons() {
-      return window.Vectura.UI.Modals.InfoModals.attachStaticInfoButtons.call(this);
-    }
-    bindInfoButtons() {
-      return window.Vectura.UI.Modals.InfoModals.bindInfoButtons.call(this);
-    }
+    // info-modals methods (showDuplicateNameError, showValueError, showInfo,
+    // attachInfoButton, attachStaticInfoButtons, bindInfoButtons) are installed
+    // onto UI.prototype by InfoModals.installOn().
 
     // header methods (initModuleDropdown, _buildModuleMenu, _showModuleMenu,
     // _syncModuleDisplay, initMachineDropdown), pane-right (initRightPaneTabs,
@@ -6780,15 +6749,8 @@
     // triggerTopMenuAction is installed onto UI.prototype by
     // MenuBar.installOn() at IIFE bottom.
 
-    // Delegated to src/ui/shortcuts.js (Phase 2 step 5b).
-    handleTopMenuShortcut(e) {
-      return window.Vectura.UI.Shortcuts.handleTopMenuShortcut.call(this, e);
-    }
-
-    // Delegated to src/ui/shortcuts.js (Phase 2 step 5b).
-    bindShortcuts() {
-      return window.Vectura.UI.Shortcuts.bindShortcuts.call(this);
-    }
+    // shortcuts methods (handleTopMenuShortcut, bindShortcuts) are installed
+    // onto UI.prototype by Shortcuts.installOn().
 
     _lvlGroupSel() {
       const renderer = this.app.renderer;
@@ -7231,15 +7193,8 @@
       this.app.renderer.setLightSourceMode?.(true);
     }
 
-    // Delegated to src/ui/modals/image-asset.js (Phase 3 step 4).
-    loadNoiseImageFile(...args) {
-      return window.Vectura.UI.Modals.ImageAsset.loadNoiseImageFile.call(this, ...args);
-    }
-
-    // Delegated to src/ui/modals/image-asset.js (Phase 3 step 4).
-    openNoiseImageModal(layer, options = {}) {
-      return window.Vectura.UI.Modals.ImageAsset.openNoiseImageModal.call(this, layer, options);
-    }
+    // image-asset methods (loadNoiseImageFile, openNoiseImageModal) are
+    // installed onto UI.prototype by ImageAsset.installOn().
 
     computeHarmonographPlotterData(layer) {
       const params = layer?.params || {};
@@ -7641,22 +7596,10 @@
       this.app.renderer?.draw?.();
     }
 
-    buildControls() {
-      // Phase 2 step 2: extracted to src/ui/panels/algo-config-panel.js.
-      // Implementation pulled into a separate IIFE module; this stub keeps the
-      // method on UI.prototype so every legacy `this.buildControls()` site,
-      // every mixin, and every test that constructs a UI instance still works.
-      // The new module reads its closure-captured deps (getEl, *_NOISE_DEFS,
-      // PETALIS_*_TYPES, *_PRESET_LIBRARY, COMMON_CONTROLS, OPTIMIZATION_STEPS,
-      // IMAGE_NOISE_DEFAULT_AMPLITUDE, TRANSFORM_KEYS) from the bind() call at
-      // the bottom of this IIFE.
-      return window.Vectura.UI.AlgoConfigPanel.buildControls.call(this);
-    }
-
-    // Delegated to src/ui/panels/formula-panel.js (Phase 2 step 4).
-    updateFormula() {
-      return window.Vectura.UI.FormulaPanel.updateFormula.call(this);
-    }
+    // buildControls (delegates to AlgoConfigPanel.buildControls) and
+    // updateFormula (delegates to FormulaPanel.updateFormula) are installed
+    // onto UI.prototype by AlgoConfigPanel.installOn() and
+    // FormulaPanel.installOn() respectively.
 
     // ── Pattern Designer ── (see ui-pattern-designer.js)
   }
@@ -7728,6 +7671,9 @@
       createPetalModifier,
       createPetalisShading,
     });
+  }
+  if (window.Vectura?.UI?.AlgoConfigPanel?.installOn) {
+    window.Vectura.UI.AlgoConfigPanel.installOn(UI.prototype);
   }
 
   // Phase 2 step 3: hand legacy IIFE-locals to shell/theme-switcher.js so its
@@ -7806,6 +7752,9 @@
   if (window.Vectura?.UI?.FormulaPanel?.bind) {
     window.Vectura.UI.FormulaPanel.bind({ getEl, escapeHtml, usesSeed });
   }
+  if (window.Vectura?.UI?.FormulaPanel?.installOn) {
+    window.Vectura.UI.FormulaPanel.installOn(UI.prototype);
+  }
 
   // Phase 3 closure: AutoColorizePanel — mixin dissolved. Bind the legacy
   // IIFE locals (SETTINGS, clamp, getEl) so the panel can read them, then
@@ -7882,6 +7831,9 @@
   if (window.Vectura?.UI?.Shortcuts?.bind) {
     window.Vectura.UI.Shortcuts.bind({ getEl, SETTINGS, isPrimitiveShapeLayer });
   }
+  if (window.Vectura?.UI?.Shortcuts?.installOn) {
+    window.Vectura.UI.Shortcuts.installOn(UI.prototype);
+  }
 
   // Phase 3 closure: bind layer right-click context menu (NEW surface).
   // Composes UI.overlays.Menu; no IIFE-local deps.
@@ -7906,6 +7858,9 @@
   if (window.Vectura?.UI?.Modals?.HelpShortcuts?.bind) {
     window.Vectura.UI.Modals.HelpShortcuts.bind({});
   }
+  if (window.Vectura?.UI?.Modals?.HelpShortcuts?.installOn) {
+    window.Vectura.UI.Modals.HelpShortcuts.installOn(UI.prototype);
+  }
 
   // Phase 3 step 2: register modals/grid-settings.js. Slide-out side panel
   // (CSS class .open) — owns its own markup (mount()) and the six grid
@@ -7917,6 +7872,9 @@
       openColorPickerAnchoredTo,
     });
   }
+  if (window.Vectura?.UI?.Modals?.GridSettings?.installOn) {
+    window.Vectura.UI.Modals.GridSettings.installOn(UI.prototype);
+  }
 
   // Phase 3 step 3: register modals/document-setup.js. Slide-out side panel
   // (CSS class .open) — owns its own markup (mount()) and the open/close
@@ -7925,6 +7883,9 @@
   // / paper handlers.
   if (window.Vectura?.UI?.Modals?.DocumentSetup?.bind) {
     window.Vectura.UI.Modals.DocumentSetup.bind({ getEl });
+  }
+  if (window.Vectura?.UI?.Modals?.DocumentSetup?.installOn) {
+    window.Vectura.UI.Modals.DocumentSetup.installOn(UI.prototype);
   }
 
   // Phase 3 step 3 (second modal): register modals/info-modals.js. The
@@ -7942,6 +7903,9 @@
       SETTINGS,
     });
   }
+  if (window.Vectura?.UI?.Modals?.InfoModals?.installOn) {
+    window.Vectura.UI.Modals.InfoModals.installOn(UI.prototype);
+  }
 
   // Phase 3 step 4: register modals/color-picker.js. Self-contained HSV
   // picker — no IIFE-local deps. The legacy `openColorPickerAnchoredTo`
@@ -7949,6 +7913,9 @@
   // touch-primary devices, which now delegates to this module.
   if (window.Vectura?.UI?.Modals?.ColorPicker?.bind) {
     window.Vectura.UI.Modals.ColorPicker.bind({});
+  }
+  if (window.Vectura?.UI?.Modals?.ColorPicker?.installOn) {
+    window.Vectura.UI.Modals.ColorPicker.installOn(UI.prototype);
   }
 
   // Phase 3 step 4 (second modal): register modals/image-asset.js. Generic
@@ -7958,6 +7925,9 @@
   // this.closeModal / this.app.pushHistory — no IIFE-local deps.
   if (window.Vectura?.UI?.Modals?.ImageAsset?.bind) {
     window.Vectura.UI.Modals.ImageAsset.bind({});
+  }
+  if (window.Vectura?.UI?.Modals?.ImageAsset?.installOn) {
+    window.Vectura.UI.Modals.ImageAsset.installOn(UI.prototype);
   }
 
   // Phase 3 step 5 (final modal): register modals/export-svg.js. The largest

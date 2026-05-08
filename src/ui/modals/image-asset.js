@@ -181,5 +181,9 @@
     },
     openNoiseImageModal,
     loadNoiseImageFile,
+    installOn(proto) {
+      proto.openNoiseImageModal = function(layer, options) { return openNoiseImageModal.call(this, layer, options); };
+      proto.loadNoiseImageFile = function(...args) { return loadNoiseImageFile.apply(this, args); };
+    },
   };
 })();
