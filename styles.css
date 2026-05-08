@@ -2611,7 +2611,8 @@ input[type='color']::-webkit-color-swatch {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px 12px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--color-border-strong);
   background: rgb(var(--vectura-bg-rgb) / 0.86);
@@ -2627,11 +2628,13 @@ input[type='color']::-webkit-color-swatch {
   text-transform: uppercase;
   letter-spacing: 0.2em;
   color: #bae6fd;
+  white-space: nowrap;
 }
 
 .petal-designer-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
@@ -2649,6 +2652,7 @@ input[type='color']::-webkit-color-swatch {
   font-size: 11px;
   line-height: 1;
   padding: 0 8px;
+  flex-shrink: 0;
 }
 
 .petal-tool-btn:hover,
@@ -2778,10 +2782,17 @@ input[type='color']::-webkit-color-swatch {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.12em;
   color: var(--color-muted);
+}
+
+.petal-visualizer-mode > span {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .petal-visualizer-mode select {
@@ -2790,6 +2801,10 @@ input[type='color']::-webkit-color-swatch {
   color: var(--color-text);
   padding: 6px 8px;
   font-size: 11px;
+  min-width: 0;
+  max-width: 100%;
+  text-overflow: ellipsis;
+  overflow: hidden;
 }
 
 .petal-designer-grid {
@@ -2886,6 +2901,8 @@ input[type='color']::-webkit-color-swatch {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 10px;
 }
 
@@ -2894,6 +2911,7 @@ input[type='color']::-webkit-color-swatch {
   text-transform: uppercase;
   letter-spacing: 0.14em;
   color: #7dd3fc;
+  white-space: nowrap;
 }
 
 .petal-designer-shading-stack {
@@ -3409,7 +3427,11 @@ input[type='color']::-webkit-color-swatch {
   .mobile-layout .pane {
     position: absolute;
     top: 0;
-    bottom: 0;
+    /* Reserve room for the pinned modifier bar at the viewport bottom
+     * (44px button + 12px padding + safe-area inset). Without this the
+     * drawer extends under the modifier bar and the bar's higher z-index
+     * intercepts clicks on the bottom of pane content. */
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
     /* Must sit above #bottom-pane (z-index 50 in mobile-layout) so the
      * bottom-pane drawer does not intercept clicks on right-pane content
      * (Pens tab, auto-colorization header, etc.) at tablet-touch widths. */

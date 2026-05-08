@@ -97,8 +97,13 @@
     };
     const syncBackdrop = () => {
       const el = ensureBackdrop();
-      const isMobile = document.body.classList.contains('mobile-layout');
-      const anyOpen = isMobile && (isPaneOpen(leftPane) || isPaneOpen(rightPane));
+      // Backdrop is for the auto-collapsed (phone) drawer pattern, where the
+      // user *explicitly* opens a side pane via pane-force-open. At tablet
+      // widths (640–900) panes are drawer-styled but visible by default —
+      // showing a backdrop there would block clicks on the canvas, the
+      // bottom-pane chevron, and other workspace UI on initial load.
+      const isAutoCollapsed = document.body.classList.contains('auto-collapsed');
+      const anyOpen = isAutoCollapsed && (isPaneOpen(leftPane) || isPaneOpen(rightPane));
       el.classList.toggle('visible', anyOpen);
     };
 
