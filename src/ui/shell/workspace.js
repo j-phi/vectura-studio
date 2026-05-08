@@ -45,38 +45,61 @@
     };
 
     const modBar = getEl('touch-modifier-bar');
-    const modBarOriginParent = modBar?.parentNode || null;
-    const modBarOriginNext = modBar?.nextSibling || null;
     let mobileLayoutDefaultApplied = false;
 
-    const applyMobileBottomPaneLayout = (isMobileLayout) => {
-      if (!bottomPane) return;
-      if (isMobileLayout) {
-        if (modBar && modBar.parentNode !== bottomPane) {
-          bottomPane.insertBefore(modBar, bottomPane.firstChild);
-        }
-        if (modBar) modBar.classList.remove('hidden');
-      } else {
-        if (modBar && modBarOriginParent && modBar.parentNode !== modBarOriginParent) {
-          modBarOriginParent.insertBefore(modBar, modBarOriginNext);
-        }
-        if (modBar && typeof this.isTouchCapable === 'function') {
-          modBar.classList.toggle('hidden', !this.isTouchCapable());
-        }
-      }
+    const applyMobBarVisibility = (isMobileLayout) => {
+      if (!modBar) return;
+      const showBar = isMobileLayout
+        || (typeof this.isTouchCapable === 'function' && this.isTouchCapable());
+      modBar.classList.toggle('hidden', !showBar);
     };
 
     const applyAutoCollapse = () => {
       const viewportWidth = window.innerWidth;
       const shouldAuto = viewportWidth < 640;
       const isMobileLayout = viewportWidth < 900;
+      const isPhoneLayout = viewportWidth < 540;
       document.body.classList.toggle('auto-collapsed', shouldAuto);
       document.body.classList.toggle('mobile-layout', isMobileLayout);
-      applyMobileBottomPaneLayout(isMobileLayout);
+      document.body.classList.toggle('phone-layout', isPhoneLayout);
+      applyMobBarVisibility(isMobileLayout);
       if (bottomPane && isMobileLayout && !mobileLayoutDefaultApplied) {
         bottomPane.classList.add('bottom-pane-collapsed');
         mobileLayoutDefaultApplied = true;
       }
+    };
+
+    const isPaneOpen = (pane) => {
+      if (document.body.classList.contains('auto-collapsed')) {
+        return pane.classList.contains('pane-force-open');
+      }
+      return !pane.classList.contains('pane-collapsed');
+    };
+
+    let backdrop = null;
+    const closeAllPanes = () => {
+      const auto = document.body.classList.contains('auto-collapsed');
+      [leftPane, rightPane].forEach((pane) => {
+        if (auto) pane.classList.remove('pane-force-open');
+        else pane.classList.add('pane-collapsed');
+      });
+      syncBackdrop();
+    };
+    const ensureBackdrop = () => {
+      if (backdrop) return backdrop;
+      backdrop = document.createElement('div');
+      backdrop.id = 'mobile-pane-backdrop';
+      backdrop.className = 'mobile-pane-backdrop';
+      backdrop.setAttribute('aria-hidden', 'true');
+      backdrop.addEventListener('click', closeAllPanes);
+      document.body.appendChild(backdrop);
+      return backdrop;
+    };
+    const syncBackdrop = () => {
+      const el = ensureBackdrop();
+      const isMobile = document.body.classList.contains('mobile-layout');
+      const anyOpen = isMobile && (isPaneOpen(leftPane) || isPaneOpen(rightPane));
+      el.classList.toggle('visible', anyOpen);
     };
 
     const togglePane = (pane) => {
@@ -93,19 +116,21 @@
       } else {
         pane.classList.toggle('pane-collapsed');
       }
+      syncBackdrop();
     };
 
     leftBtn.addEventListener('click', () => togglePane(leftPane));
     rightBtn.addEventListener('click', () => togglePane(rightPane));
     if (mobileLeftBtn) mobileLeftBtn.addEventListener('click', () => togglePane(leftPane));
     if (mobileRightBtn) mobileRightBtn.addEventListener('click', () => togglePane(rightPane));
-    window.addEventListener('resize', applyAutoCollapse);
+    window.addEventListener('resize', () => { applyAutoCollapse(); syncBackdrop(); });
     applyAutoCollapse();
+    syncBackdrop();
 
     this.expandPanes = () => {
       leftPane.classList.remove('pane-collapsed', 'pane-force-open');
       rightPane.classList.remove('pane-collapsed', 'pane-force-open');
-      document.body.classList.remove('auto-collapsed', 'mobile-layout');
+      document.body.classList.remove('auto-collapsed', 'mobile-layout', 'phone-layout');
       document.documentElement.style.setProperty('--pane-left-width', '335px');
       document.documentElement.style.setProperty('--pane-right-width', '335px');
       document.documentElement.style.setProperty('--bottom-pane-height', '180px');

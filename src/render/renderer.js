@@ -827,11 +827,13 @@
       const touchShift = isTouchPointer && Boolean(mods.shift);
       const touchAlt = isTouchPointer && Boolean(mods.alt);
       const touchMeta = isTouchPointer && Boolean(mods.meta);
+      const touchCtrl = isTouchPointer && Boolean(mods.ctrl);
       const touchPan = isTouchPointer && Boolean(mods.pan);
       return {
         shift: Boolean(e.shiftKey || touchShift),
         alt: Boolean(e.altKey || touchAlt),
-        meta: Boolean(e.metaKey || e.ctrlKey || touchMeta),
+        meta: Boolean(e.metaKey || e.ctrlKey || touchMeta || touchCtrl),
+        ctrl: Boolean(e.ctrlKey || touchCtrl),
         pan: Boolean(touchPan),
       };
     }

@@ -1512,6 +1512,7 @@
       shift: false,
       alt: false,
       meta: false,
+      ctrl: false,
       pan: false,
     },
     selectionMode: 'rect',

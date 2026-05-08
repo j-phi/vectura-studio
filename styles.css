@@ -1334,6 +1334,7 @@ input[type='color']::-webkit-color-swatch {
 .pendulum-controls {
   display: grid;
   gap: 10px;
+  grid-template-columns: 1fr;
 }
 
 .harmonograph-plotter {
@@ -1372,18 +1373,34 @@ input[type='color']::-webkit-color-swatch {
   width: 100%;
 }
 
-@media (min-width: 640px) {
+/* Container-query 2-col layout — responds to noise-card width, not viewport.
+ * Threshold sized so labels like "Blend Mode" / "Field Weight" stop wrapping
+ * and value chips don't collide with the adjacent column's content. */
+@container noise-card (min-width: 380px) {
   .pendulum-controls {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
+/* Allow flex children inside narrow controls to shrink below their content
+ * width. Without this, the right-aligned value chip can bleed into the
+ * neighboring grid cell when the column is tight. */
+.pendulum-controls .noise-control > .flex,
+.pendulum-controls .noise-control > .flex > .flex {
+  min-width: 0;
+}
+.pendulum-controls .noise-control .control-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .noise-controls {
   display: grid;
   gap: 10px;
+  grid-template-columns: 1fr;
 }
 
-@media (min-width: 640px) {
+@container noise-card (min-width: 380px) {
   .noise-controls {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1429,6 +1446,8 @@ input[type='color']::-webkit-color-swatch {
   padding: 8px;
   background: var(--color-surface);
   width: 100%;
+  container-type: inline-size;
+  container-name: noise-card;
 }
 
 .image-effect-header {
@@ -2649,7 +2668,7 @@ input[type='color']::-webkit-color-swatch {
 
 .petal-designer-controls {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 10px;
   align-items: end;
   padding: 12px;
@@ -2688,7 +2707,7 @@ input[type='color']::-webkit-color-swatch {
 
 .petal-designer-structure {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
   align-items: end;
   padding: 10px 12px;
@@ -2781,7 +2800,7 @@ input[type='color']::-webkit-color-swatch {
 }
 
 .petal-designer-grid.is-side-by-side {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .petal-cell {
@@ -2819,7 +2838,7 @@ input[type='color']::-webkit-color-swatch {
 
 .petal-profile-editor-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
 }
 
@@ -2950,7 +2969,7 @@ input[type='color']::-webkit-color-swatch {
 
 .petal-shade-controls {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 8px;
 }
 
@@ -2962,31 +2981,6 @@ input[type='color']::-webkit-color-swatch {
   color: var(--color-muted);
 }
 
-@media (max-width: 900px) {
-  .petal-designer-controls {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .petal-designer-structure {
-    grid-template-columns: 1fr;
-  }
-
-  .petal-designer-transition {
-    grid-template-columns: 1fr;
-  }
-
-  .petal-designer-grid.is-side-by-side {
-    grid-template-columns: 1fr;
-  }
-
-  .petal-shade-controls {
-    grid-template-columns: 1fr;
-  }
-
-  .petal-profile-editor-grid {
-    grid-template-columns: 1fr;
-  }
-}
 
 .info-btn {
   display: inline-flex;
@@ -3455,71 +3449,189 @@ input[type='color']::-webkit-color-swatch {
     box-shadow: none;
   }
 
-  .mobile-layout #bottom-pane > #touch-modifier-bar {
+  /* ─────────────────────────────────────────────────────────────
+     Mobile shell layout: top app bar → canvas → bottom pane → modifier bar.
+     Modifier bar is pinned to viewport bottom and always reachable;
+     bottom pane sits above it (does not cover it).
+     ───────────────────────────────────────────────────────────── */
+
+  body.mobile-layout #tool-bar {
     position: static;
-    left: auto;
     top: auto;
+    left: auto;
     right: auto;
     bottom: auto;
     transform: none;
+    order: 1;
     width: 100%;
     max-width: none;
-    height: 88px;
-    box-sizing: border-box;
-    display: flex;
+    flex-direction: row;
     flex-wrap: nowrap;
     align-items: center;
-    justify-content: stretch;
-    gap: 8px;
-    padding: 10px 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    max-height: none;
+    padding: 8px 12px;
+    padding-top: calc(8px + env(safe-area-inset-top, 0px));
+    padding-left: calc(12px + env(safe-area-inset-left, 0px));
+    padding-right: calc(12px + env(safe-area-inset-right, 0px));
     border: none;
     border-radius: 0;
     border-bottom: 1px solid var(--color-border);
     background: var(--color-panel);
-    box-shadow: none;
-    z-index: auto;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+    flex-shrink: 0;
+    z-index: 40;
+  }
+
+  body.mobile-layout #viewport-container {
+    order: 2;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  body.mobile-layout #bottom-pane {
+    order: 3;
+    position: relative;
+    z-index: 50;
+    padding-bottom: 0;
     flex-shrink: 0;
   }
 
-  .mobile-layout #bottom-pane > #touch-modifier-bar .touch-mod-btn {
-    flex: 1 1 0;
-    min-width: 0;
-    height: 64px;
-    padding: 0 6px;
-    font-size: 13px;
-  }
-
-  .mobile-layout #bottom-pane > #touch-modifier-bar.hidden {
-    display: flex;
-  }
-
-  .mobile-layout #bottom-pane .bottom-pane-header {
+  body.mobile-layout #bottom-pane .bottom-pane-header {
     height: 32px;
     min-height: 32px;
     padding: 0 12px;
     flex-shrink: 0;
   }
 
-  .mobile-layout #bottom-pane .bottom-pane-header > span {
+  body.mobile-layout #bottom-pane .bottom-pane-header > span {
     display: none;
   }
 
-  .mobile-layout #bottom-pane.bottom-pane-collapsed {
-    height: calc(120px + env(safe-area-inset-bottom, 0px));
+  body.mobile-layout #bottom-pane.bottom-pane-collapsed {
+    height: 32px;
   }
 
-  .mobile-layout #bottom-pane:not(.bottom-pane-collapsed) {
-    height: min(31vh, 235px);
+  body.mobile-layout #bottom-pane:not(.bottom-pane-collapsed) {
+    height: min(38vh, 280px);
   }
 
-  .mobile-layout #bottom-pane {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-    position: relative;
-    z-index: 50;
+  body.mobile-layout #touch-modifier-bar {
+    position: static;
+    left: auto;
+    top: auto;
+    right: auto;
+    bottom: auto;
+    transform: none;
+    order: 4;
+    width: 100%;
+    max-width: none;
+    box-sizing: border-box;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    justify-content: stretch;
+    gap: 6px;
+    padding: 6px 8px;
+    padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+    padding-left: calc(8px + env(safe-area-inset-left, 0px));
+    padding-right: calc(8px + env(safe-area-inset-right, 0px));
+    border: none;
+    border-radius: 0;
+    border-top: 1px solid var(--color-border);
+    background: var(--color-panel);
+    box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.25);
+    flex-shrink: 0;
+    z-index: 60;
   }
 
-  .mobile-layout #btn-mobile-pane-bottom {
+  body.mobile-layout #touch-modifier-bar.hidden {
+    display: flex;
+  }
+
+  body.mobile-layout #touch-modifier-bar .touch-mod-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    height: 44px;
+    padding: 0 8px;
+    font-size: 12px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  body.mobile-layout #btn-mobile-pane-bottom {
     display: none;
+  }
+
+  /* Drawer backdrop — visible only when a pane drawer is open in mobile-layout. */
+  .mobile-pane-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 54;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 180ms ease;
+  }
+
+  body.mobile-layout .mobile-pane-backdrop.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+body:not(.mobile-layout) .mobile-pane-backdrop {
+  display: none;
+}
+
+/* Phone-only: drop modifier-button labels, show platform glyphs instead. */
+@media (max-width: 540px) {
+  body.phone-layout #touch-modifier-bar .touch-mod-btn .touch-mod-label {
+    display: none;
+  }
+
+  body.phone-layout #touch-modifier-bar .touch-mod-btn::before {
+    font-size: 18px;
+    line-height: 1;
+    font-weight: 600;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Symbol', system-ui, sans-serif;
+  }
+
+  body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="shift"]::before { content: "\21E7"; }
+  body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="alt"]::before { content: "\2325"; }
+  body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="meta"]::before { content: "\2318"; }
+  body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="ctrl"]::before { content: "\2303"; }
+  body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="pan"]::before { content: "\270B"; }
+}
+
+/* Touch-device tap ergonomics — applies on any coarse pointer device. */
+@media (pointer: coarse) {
+  button,
+  .tool-btn,
+  .touch-mod-btn,
+  .mobile-pane-handle {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: manipulation;
+  }
+
+  input[type="text"],
+  input[type="number"],
+  input[type="email"],
+  input[type="search"],
+  input[type="password"],
+  select,
+  textarea {
+    font-size: max(16px, 1em);
+  }
+
+  body.mobile-layout .tool-btn {
+    width: 44px;
+    height: 44px;
   }
 }
 
@@ -3664,9 +3776,12 @@ input[type='color']::-webkit-color-swatch {
   gap: 12px;
 }
 
+/* auto-fit lets the grid respond to its own width (side panel can be
+ * narrowed independently of the viewport), so columns collapse from 3 → 2 → 1
+ * once items can no longer fit at the minmax floor. */
 .control-inline-row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 12px;
   margin-bottom: 12px;
 }
@@ -3708,11 +3823,6 @@ input[type='color']::-webkit-color-swatch {
   padding: 0 12px 12px;
 }
 
-@media (max-width: 900px) {
-  .control-inline-row {
-    grid-template-columns: 1fr;
-  }
-}
 
 .angle-label {
   display: flex;

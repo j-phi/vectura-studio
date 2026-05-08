@@ -15,7 +15,7 @@
     setTouchModifier(key, active) {
       const SETTINGS = window.Vectura.SETTINGS || {};
       if (!SETTINGS.touchModifiers || typeof SETTINGS.touchModifiers !== 'object') {
-        SETTINGS.touchModifiers = { shift: false, alt: false, meta: false, pan: false };
+        SETTINGS.touchModifiers = { shift: false, alt: false, meta: false, ctrl: false, pan: false };
       }
       SETTINGS.touchModifiers[key] = Boolean(active);
       this.refreshTouchModifierButtons();
@@ -37,12 +37,13 @@
       if (!bar) return;
       const SETTINGS = window.Vectura.SETTINGS || {};
       if (!SETTINGS.touchModifiers || typeof SETTINGS.touchModifiers !== 'object') {
-        SETTINGS.touchModifiers = { shift: false, alt: false, meta: false, pan: false };
+        SETTINGS.touchModifiers = { shift: false, alt: false, meta: false, ctrl: false, pan: false };
       } else {
         SETTINGS.touchModifiers = {
           shift: Boolean(SETTINGS.touchModifiers.shift),
           alt: Boolean(SETTINGS.touchModifiers.alt),
           meta: Boolean(SETTINGS.touchModifiers.meta),
+          ctrl: Boolean(SETTINGS.touchModifiers.ctrl),
           pan: Boolean(SETTINGS.touchModifiers.pan),
         };
       }

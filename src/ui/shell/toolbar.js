@@ -449,6 +449,7 @@
         mods.shift = false;
         mods.alt = false;
         mods.meta = false;
+        mods.ctrl = false;
         this.refreshTouchModifierButtons?.();
       };
       this.app.renderer.onAlgoDrawComplete = ({ algoType, rect }) => {

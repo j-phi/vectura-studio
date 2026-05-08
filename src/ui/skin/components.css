@@ -1994,6 +1994,8 @@
 [data-ui-skin] .noise-card {
   border: 1px solid var(--ui-border); border-radius: var(--radius-md);
   padding: var(--spacing-sm); background: var(--ui-ctrl);
+  container-type: inline-size;
+  container-name: noise-card;
 }
 [data-ui-skin] .noise-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -2080,8 +2082,6 @@
 
 /* ── Noise control rows (individual parameter rows inside a card) ─────── */
 [data-ui-skin] .noise-control { display: flex; flex-direction: column; gap: var(--spacing-xs); }
-[data-ui-skin] .noise-controls { display: grid; gap: var(--spacing-sm); }
-@media (min-width: 640px) { [data-ui-skin] .noise-controls { grid-template-columns: repeat(2, 1fr); } }
 
 /* Range inputs inside noise-control use class="w-full" (not ctrl-slider).
  * Apply full Meridian slider treatment via the type selector. */
