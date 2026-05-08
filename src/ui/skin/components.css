@@ -174,6 +174,13 @@
 .pane-body::-webkit-scrollbar { width: 3px; }
 .pane-body::-webkit-scrollbar-thumb { background: var(--ui-border-hi); border-radius: 2px; }
 
+/* Pre-Tailwind color fallbacks: [data-ui-skin] specificity (0,2,0) beats Tailwind's
+   (0,1,0), so these fire from the first paint before the CDN MutationObserver runs.
+   Colors match each skin's palette exactly — no visual difference once Tailwind loads. */
+[data-ui-skin] .text-vectura-accent { color: var(--ui-accent); }
+[data-ui-skin] .text-vectura-muted  { color: var(--ui-muted); }
+[data-ui-skin] .text-vectura-text   { color: var(--ui-text); }
+
 /* ── SECTIONS ────────────────────────────────────────────────── */
 .sect { border-bottom: 1px solid var(--ui-border); }
 .sect-hdr {
@@ -550,6 +557,121 @@
 }
 [data-ui-skin] .tool-bar::-webkit-scrollbar { width: 4px; }
 [data-ui-skin] .tool-bar::-webkit-scrollbar-thumb { background: var(--ui-border); border-radius: 2px; }
+
+/* ── TOOLBAR DOCK ─────────────────────────────────────────────── */
+.toolbar-drag-handle {
+  cursor: grab;
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; height: 14px;
+  color: var(--ui-muted); opacity: 0.45;
+  user-select: none; flex-shrink: 0; margin-bottom: 1px;
+}
+.toolbar-drag-handle:hover { opacity: 0.8; }
+.toolbar-drag-handle:active { cursor: grabbing; }
+.toolbar-locked .toolbar-drag-handle { cursor: default; opacity: 0.2; }
+
+/* Footer: pin/pop-out section, bleeds to toolbar edges with own bg */
+.toolbar-footer {
+  display: flex; justify-content: center; align-items: center;
+  gap: 3px; flex-shrink: 0;
+  margin-top: 4px;
+  margin-left: calc(-1 * var(--spacing-sm));
+  margin-right: calc(-1 * var(--spacing-sm));
+  margin-bottom: calc(-1 * var(--spacing-sm));
+  padding: 5px var(--spacing-sm);
+  border-top: 1px solid var(--ui-border);
+  background: var(--ui-ctrl-hov);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+/* Pin/pop-out: small outline icons, not full tool-btn size */
+.toolbar-pin-btn,
+.toolbar-popout-btn {
+  width: 16px; height: 16px; min-width: 16px; min-height: 16px;
+  padding: 0; background: none;
+  border: 1px solid var(--ui-border);
+  border-radius: 3px; cursor: pointer;
+  color: var(--ui-muted);
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color 0.12s, color 0.12s;
+}
+.toolbar-pin-btn:hover,
+.toolbar-popout-btn:hover { border-color: var(--ui-text); color: var(--ui-text); }
+.toolbar-pin-btn.active { border-color: var(--ui-accent); color: var(--ui-accent); }
+
+/* Visibility: pop-out hidden when floating, pin hidden when docked */
+.toolbar-footer .toolbar-popout-btn { display: none; }
+[class*="toolbar-docked"] .toolbar-drag-handle { display: none; }
+[class*="toolbar-docked"] .toolbar-footer .toolbar-pin-btn { display: none; }
+[class*="toolbar-docked"] .toolbar-footer .toolbar-popout-btn { display: flex; }
+
+/* Docked footer: drop decorative treatment, center the button */
+[class*="toolbar-docked"] .toolbar-footer {
+  margin: 4px 0 0;
+  padding: 5px 0;
+  border-radius: 0;
+  background: transparent;
+  justify-content: center;
+}
+
+/* Footer flows inline at end of horizontal docked bars */
+.toolbar-docked-top .toolbar-footer,
+.toolbar-docked-bottom .toolbar-footer {
+  flex-direction: row; align-self: stretch; align-items: center;
+  margin: 0 calc(-1 * var(--spacing-sm)) 0 4px;
+  padding: 0 var(--spacing-sm) 0 8px;
+  border-top: none; border-left: 1px solid var(--ui-border);
+  border-radius: 0; background: transparent;
+}
+
+/* Docked vertical (left / right) */
+[data-ui-skin] .toolbar-docked-left,
+[data-ui-skin] .toolbar-docked-right {
+  position: absolute !important;
+  top: 0 !important; transform: none !important;
+  height: 100% !important; max-height: 100%;
+  flex-direction: column; align-items: center; justify-content: center;
+  border-radius: 0; padding: var(--spacing-sm);
+  overflow-y: auto; overflow-x: hidden;
+}
+[data-ui-skin] .toolbar-docked-left  { left: 0 !important; right: unset !important; border-right: 1px solid var(--ui-border); }
+[data-ui-skin] .toolbar-docked-right { right: 0 !important; left: unset !important; border-left: 1px solid var(--ui-border); }
+
+/* Docked horizontal (top / bottom) */
+[data-ui-skin] .toolbar-docked-top,
+[data-ui-skin] .toolbar-docked-bottom {
+  position: absolute !important;
+  left: 0 !important; transform: none !important;
+  width: 100% !important; max-height: none !important;
+  min-height: calc(var(--row-height) + var(--spacing-sm) * 2);
+  flex-direction: row; flex-wrap: nowrap; align-items: center; justify-content: center;
+  border-radius: 0; padding: 4px var(--spacing-sm);
+  overflow-x: auto; overflow-y: hidden;
+}
+[data-ui-skin] .toolbar-docked-top    { top: 0 !important; bottom: unset !important; border-bottom: 1px solid var(--ui-border); }
+[data-ui-skin] .toolbar-docked-bottom { bottom: 0 !important; top: unset !important; border-top: 1px solid var(--ui-border); }
+
+/* Dividers flip to vertical in horizontal bars */
+[data-ui-skin] .toolbar-docked-top .tool-divider,
+[data-ui-skin] .toolbar-docked-bottom .tool-divider {
+  width: 1px; height: 22px;
+  border: none; background: var(--ui-border);
+  margin: 0 2px; align-self: center; flex-shrink: 0;
+}
+
+/* Snap zone overlays — injected by JS into #viewport-container */
+.toolbar-snap-zone {
+  position: absolute; pointer-events: none; z-index: 4;
+  background: var(--ui-accent); opacity: 0;
+  transition: opacity 0.15s;
+}
+.toolbar-snap-zone.snap-active { opacity: 0.12; }
+.toolbar-snap-zone-left   { left: 0;    top: 0;   width: 48px; height: 100%; }
+.toolbar-snap-zone-right  { right: 0;   top: 0;   width: 48px; height: 100%; }
+.toolbar-snap-zone-top    { top: 0;     left: 0;  width: 100%; height: 48px; }
+.toolbar-snap-zone-bottom { bottom: 0;  left: 0;  width: 100%; height: 48px; }
+
+#viewport-container { transition: padding 0.15s; }
+
 .tool-btn {
   width: var(--row-height); height: var(--row-height);
   min-width: 30px; min-height: 30px;

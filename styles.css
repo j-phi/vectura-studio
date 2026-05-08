@@ -55,8 +55,8 @@
   --plotter-bg: #101115;
   --plotter-path-base: rgba(113, 113, 122, 0.35);
   --plotter-head: #fafafa;
-  --pane-left-width: 335px;
-  --pane-right-width: 335px;
+  --pane-left-width: 290px;
+  --pane-right-width: 258px;
   --pane-collapsed-width: 56px;
   --bottom-pane-height: 180px;
   --lvl-cyan: #67e8f9;

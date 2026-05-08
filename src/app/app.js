@@ -43,6 +43,15 @@
 
   class App {
     constructor() {
+      // Suppress CSS transitions during boot so pane-width and color vars can
+      // be set from cookie/manifest without triggering the .pane width animation.
+      // skinManager.activate() resets this with its own timer (60–320 ms);
+      // the setTimeout below is a fallback in case activate() is a no-op.
+      const _root = document.documentElement;
+      _root.dataset.skinSwapping = 'true';
+      window.setTimeout(() => {
+        if (_root.dataset.skinSwapping === 'true') delete _root.dataset.skinSwapping;
+      }, 400);
       this.preferenceCookieName = PREFERENCE_COOKIE;
       this.preferencePersistTimer = null;
       this.lastPreferenceHash = '';
@@ -195,6 +204,10 @@
         paneRightWidth: SETTINGS.paneRightWidth,
         showTourOnFirstLaunch: SETTINGS.showTourOnFirstLaunch === true,
         tourSeen: SETTINGS.tourSeen === true,
+        toolbarDock: SETTINGS.toolbarDock ?? null,
+        toolbarX: SETTINGS.toolbarX ?? null,
+        toolbarY: SETTINGS.toolbarY ?? null,
+        toolbarLocked: SETTINGS.toolbarLocked === true,
       };
     }
 
@@ -283,6 +296,10 @@
       }
       SETTINGS.showTourOnFirstLaunch = snapshot.showTourOnFirstLaunch === true;
       SETTINGS.tourSeen = snapshot.tourSeen === true;
+      SETTINGS.toolbarDock = snapshot.toolbarDock ?? null;
+      SETTINGS.toolbarX = typeof snapshot.toolbarX === 'number' ? snapshot.toolbarX : null;
+      SETTINGS.toolbarY = typeof snapshot.toolbarY === 'number' ? snapshot.toolbarY : null;
+      SETTINGS.toolbarLocked = snapshot.toolbarLocked === true;
     }
 
     applyPreferencesFromCookie() {
