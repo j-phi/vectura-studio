@@ -1230,15 +1230,153 @@
       }
   }
 
+  function assignLayersToRoot(targetLayers, options = {}) {
+    const layers = (targetLayers || []).filter((layer) => layer);
+    if (!layers.length) return [];
+    const { nextEngineOrder = null, selectAssigned = false, primaryId = null, captureHistory = false } = options;
+    const moveIds = layers.map((layer) => layer.id);
+    if (captureHistory && this.app.pushHistory) this.app.pushHistory();
+    const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
+    moveIds.forEach((id) => {
+      const layer = map.get(id);
+      if (layer) layer.parentId = null;
+    });
+    if (Array.isArray(nextEngineOrder) && nextEngineOrder.length) {
+      const reordered = nextEngineOrder.map((id) => map.get(id)).filter(Boolean);
+      this.app.engine.reorderLayers(reordered);
+    }
+    this.normalizeGroupOrder();
+    this.app.computeDisplayGeometry();
+
+    if (selectAssigned) {
+      const ids = moveIds.slice();
+      const nextPrimary = ids.includes(primaryId) ? primaryId : ids[ids.length - 1] || null;
+      this.app.setSelection(ids, nextPrimary);
+      this.app.engine.setActiveLayerId(nextPrimary || null);
+    }
+
+    return moveIds.map((id) => map.get(id)).filter(Boolean);
+  }
+
+  function groupSelection() {
+    const { SETTINGS, Layer } = requireDeps('groupSelection');
+    const selectedIds = Array.from(this.app.renderer?.selectedLayerIds || []).filter((id) => {
+      const layer = this.getLayerById(id);
+      return layer && !layer.isGroup;
+    });
+    if (selectedIds.length < 2) return;
+    if (!Layer) return;
+    if (this.app.pushHistory) this.app.pushHistory();
+    const layers = this.app.engine.layers;
+    const selectedSet = new Set(selectedIds);
+    const selectedLayers = layers.filter((layer) => selectedSet.has(layer.id));
+    const maxIndex = Math.max(...selectedLayers.map((layer) => layers.indexOf(layer)));
+    SETTINGS.globalLayerCount++;
+    const groupId = Math.random().toString(36).slice(2, 11);
+    const group = new Layer(groupId, 'group', this.getUniqueLayerName('Group', groupId));
+    group.isGroup = true;
+    group.groupType = 'group';
+    group.groupCollapsed = false;
+    group.visible = true;
+    const primary = selectedLayers[0];
+    if (primary) {
+      group.penId = primary.penId;
+      group.color = primary.color;
+      group.strokeWidth = primary.strokeWidth;
+      group.lineCap = primary.lineCap;
+    }
+
+    const oldParents = new Set();
+    selectedLayers.forEach((layer) => {
+      if (layer.parentId) oldParents.add(layer.parentId);
+      layer.parentId = groupId;
+      if (group.penId) {
+        layer.penId = group.penId;
+        layer.color = group.color;
+        layer.strokeWidth = group.strokeWidth;
+        layer.lineCap = group.lineCap;
+      }
+    });
+
+    layers.splice(maxIndex + 1, 0, group);
+
+    oldParents.forEach((parentId) => {
+      const stillHas = layers.some((layer) => layer.parentId === parentId);
+      if (!stillHas) {
+        const idx = layers.findIndex((layer) => layer.id === parentId);
+        if (idx >= 0) layers.splice(idx, 1);
+      }
+    });
+
+    this.normalizeGroupOrder();
+    if (this.app.renderer) this.app.renderer.setSelection([groupId], groupId);
+    this.app.engine.activeLayerId = groupId;
+    this.renderLayers();
+    this.app.render();
+  }
+
+  function ungroupSelection() {
+    const selectedIds = Array.from(this.app.renderer?.selectedLayerIds || []);
+    if (!selectedIds.length) return;
+    const layers = this.app.engine.layers;
+    const groupsToDissolve = new Set();
+    const childrenToExtract = [];
+    selectedIds.forEach((id) => {
+      const layer = this.getLayerById(id);
+      if (!layer) return;
+      if (layer.isGroup && layer.groupType === 'group') {
+        groupsToDissolve.add(layer.id);
+      } else if (layer.parentId) {
+        childrenToExtract.push(layer);
+      }
+    });
+    if (!groupsToDissolve.size && !childrenToExtract.length) return;
+    if (this.app.pushHistory) this.app.pushHistory();
+    groupsToDissolve.forEach((groupId) => {
+      const group = this.getLayerById(groupId);
+      const dest = group?.parentId ?? null;
+      layers.forEach((l) => { if (l.parentId === groupId) l.parentId = dest; });
+      const idx = layers.findIndex((l) => l.id === groupId);
+      if (idx >= 0) layers.splice(idx, 1);
+    });
+    const byGroup = new Map();
+    childrenToExtract.forEach((l) => {
+      if (groupsToDissolve.has(l.parentId)) return;
+      if (!byGroup.has(l.parentId)) byGroup.set(l.parentId, []);
+      byGroup.get(l.parentId).push(l);
+    });
+    byGroup.forEach((movers, groupId) => {
+      const group = this.getLayerById(groupId);
+      const dest = group?.parentId ?? null;
+      movers.forEach((l) => { l.parentId = dest; });
+      const remaining = layers.filter((l) => l.parentId === groupId);
+      if (!remaining.length) {
+        const idx = layers.findIndex((l) => l.id === groupId);
+        if (idx >= 0) layers.splice(idx, 1);
+      }
+    });
+    this.normalizeGroupOrder();
+    this.renderLayers();
+    this.app.render();
+  }
+
   UI.LayersPanel = {
     /**
      * Inject closure-captured legacy ui.js IIFE locals.
      * Idempotent. Called once from the legacy ui.js IIFE.
-     * @param {object} deps - { SETTINGS, escapeHtml }
+     * @param {object} deps - { SETTINGS, escapeHtml, Layer }
      */
     bind(deps) {
       DEPS = deps;
     },
     renderLayers,
+    assignLayersToRoot,
+    groupSelection,
+    ungroupSelection,
+    installOn(proto) {
+      proto.assignLayersToRoot = function(...args) { return assignLayersToRoot.apply(this, args); };
+      proto.groupSelection = function(...args) { return groupSelection.apply(this, args); };
+      proto.ungroupSelection = function(...args) { return ungroupSelection.apply(this, args); };
+    },
   };
 })();
