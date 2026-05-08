@@ -443,7 +443,10 @@ test.describe('Vectura smoke interactions', () => {
     await page.keyboard.press('ControlOrMeta+K');
     await expect(page.locator('#settings-panel')).toHaveClass(/open/);
     await expect(page.locator('#set-document-units')).toBeVisible();
-    await expect(page.locator('#set-show-document-dimensions')).toBeVisible();
+    // The dimensions toggle is wrapped in `.sw-toggle`, which hides the raw
+    // checkbox on Meridian-family skins (the default). Assert presence, not
+    // visual visibility — the visible UI is the pill, not the input.
+    await expect(page.locator('#set-show-document-dimensions')).toBeAttached();
 
     await page.keyboard.press('ControlOrMeta+K');
     await expect(page.locator('#settings-panel')).not.toHaveClass(/open/);
@@ -454,8 +457,10 @@ test.describe('Vectura smoke interactions', () => {
     const cookieToggle = page.locator('#set-cookie-preferences');
     const showGuides = page.locator('#set-show-guides');
 
-    await cookieToggle.check();
-    await showGuides.uncheck();
+    // The `.sw-toggle` pill hides the underlying <input>, so toggle by clicking
+    // the input programmatically (mirrors what clicking the visible pill does).
+    await cookieToggle.evaluate((el) => el.click());
+    await showGuides.evaluate((el) => el.click());
 
     await expect
       .poll(async () => page.evaluate(() => document.cookie.includes('vectura_prefs=')))
@@ -617,13 +622,15 @@ test.describe('Vectura smoke interactions', () => {
       .poll(async () => page.evaluate(() => window.Vectura.SETTINGS.removeHiddenGeometry))
       .toBe(true);
 
-    await toggle.uncheck();
+    // The `.sw-toggle` pill hides the underlying <input>, so toggle by clicking
+    // the input programmatically (mirrors what clicking the visible pill does).
+    await toggle.evaluate((el) => el.click());
     await expect(state).toHaveText('OFF');
     await expect
       .poll(async () => page.evaluate(() => window.Vectura.SETTINGS.removeHiddenGeometry))
       .toBe(false);
 
-    await toggle.check();
+    await toggle.evaluate((el) => el.click());
     await expect(state).toHaveText('ON');
     await expect
       .poll(async () => page.evaluate(() => window.Vectura.SETTINGS.removeHiddenGeometry))
@@ -718,12 +725,18 @@ test.describe('Vectura smoke interactions', () => {
     const previewSelect = page.locator('#export-preview-mode');
     await previewSelect.selectOption('off');
 
-    const lineSortCard = page.locator('#export-modal-root .optimization-card').filter({ hasText: 'Line Sort' });
-    const applyToggle = lineSortCard.locator('.optimization-card-actions input[type="checkbox"]').first();
+    // Export modal redesign: each optimization step is now its own section
+    // accessed via the sidebar nav, and the per-step Apply toggle is lifted
+    // into the section header (`.export-section-apply`).
+    await page.locator('#export-modal-nav .export-nav-item[data-section-id="linesort"]').click();
+    const lineSortSection = page.locator('#export-modal-root .export-settings-section[data-section-id="linesort"]');
+    const applyToggle = lineSortSection.locator('.export-section-apply input[type="checkbox"]');
     await expect(applyToggle).toBeChecked();
-    await applyToggle.uncheck();
+    // The `.sw-toggle` pill hides the underlying <input>, so toggle by clicking
+    // the input programmatically (mirrors what clicking the visible pill does).
+    await applyToggle.evaluate((el) => el.click());
     await expect(applyToggle).not.toBeChecked();
-    await applyToggle.check();
+    await applyToggle.evaluate((el) => el.click());
 
     await expect(previewSelect).toHaveValue('overlay');
     await expect(page.locator('#export-preview-legend')).not.toHaveClass(/hidden/);
