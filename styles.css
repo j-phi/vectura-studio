@@ -219,6 +219,7 @@ input[type='color']::-webkit-color-swatch {
   overflow-x: hidden;
   scrollbar-width: thin;
 }
+.tool-bar:empty { visibility: hidden; }
 .tool-bar::-webkit-scrollbar { width: 4px; }
 .tool-bar::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: 2px; }
 
