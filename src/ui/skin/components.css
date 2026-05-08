@@ -23,6 +23,22 @@
   color: var(--ui-text);
   -webkit-font-smoothing: antialiased;
 }
+
+/* ── CHEVRON (unified disclosure indicator) ──────────────────────
+ * Single Lucide chevron-down (path "m6 9 6 6 6-6" in 24x24).
+ * Use --chevron-svg as a mask source; color via background-color.
+ * Rotation conveys direction: 0deg=down, -90deg=right, 180deg=up, 90deg=left. */
+:root {
+  --chevron-svg: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
+}
+.chev {
+  display: inline-block;
+  width: 12px; height: 12px;
+  background-color: currentColor;
+  -webkit-mask: var(--chevron-svg) center / contain no-repeat;
+  mask: var(--chevron-svg) center / contain no-repeat;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
 .vectura-skin-app-wrapper { display: flex; flex-direction: column; height: 100vh; overflow: hidden; position: relative; }
 
 /* ── HEADER ──────────────────────────────────────────────────── */
@@ -187,19 +203,19 @@
 }
 .sect-arrow::before {
   content: ''; display: block;
-  width: 7px; height: 7px;
-  border-right: 2px solid var(--ui-muted);
-  border-bottom: 2px solid var(--ui-muted);
-  border-radius: 1px;
-  transform: rotate(-45deg) translateY(1px);
-  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.12s;
+  width: 12px; height: 12px;
+  background-color: var(--ui-muted);
+  -webkit-mask: var(--chevron-svg) center / contain no-repeat;
+  mask: var(--chevron-svg) center / contain no-repeat;
+  transform: rotate(0deg);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.12s;
 }
 .sect-arrow.down::before {
-  transform: rotate(45deg) translateY(-2px);
+  transform: rotate(180deg);
 }
 .sect-hdr:hover .sect-arrow::before,
 .right-sect-hdr:hover .sect-arrow::before {
-  border-color: var(--ui-text-2);
+  background-color: var(--ui-text-2);
 }
 .sect-body {
   padding: var(--spacing-sm) var(--spacing-md);
@@ -229,17 +245,17 @@
 .ctrl-sel-wrap { position: relative; width: 100%; }
 .ctrl-sel-wrap .ctrl-sel { width: 100%; }
 .ctrl-sel-wrap::after {
-  content: ''; position: absolute; right: 10px; top: 50%;
-  width: 6px; height: 6px;
-  border-right: 2px solid var(--ui-muted);
-  border-bottom: 2px solid var(--ui-muted);
-  border-radius: 1px;
-  transform: translateY(-65%) rotate(45deg);
+  content: ''; position: absolute; right: 8px; top: 50%;
+  width: 12px; height: 12px;
+  background-color: var(--ui-muted);
+  -webkit-mask: var(--chevron-svg) center / contain no-repeat;
+  mask: var(--chevron-svg) center / contain no-repeat;
+  transform: translateY(-50%);
   pointer-events: none;
-  transition: border-color 0.12s;
+  transition: background-color 0.12s;
 }
 .ctrl-sel-wrap:hover::after, .ctrl-sel-wrap:focus-within::after {
-  border-color: var(--ui-accent);
+  background-color: var(--ui-accent);
 }
 .ctrl-2col { display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-sm); }
 .ctrl-sub-lbl {
@@ -307,6 +323,14 @@
   pointer-events: none;
 }
 .sw-toggle input:checked ~ .sw-thumb { transform: translateX(14px); }
+
+/* sw-toggle: on non-Meridian themes restore native checkbox, hide visual spans */
+:root:not([data-ui-skin^="meridian"]) .sw-track,
+:root:not([data-ui-skin^="meridian"]) .sw-thumb { display: none; }
+:root:not([data-ui-skin^="meridian"]) .sw-toggle { display: inline; width: auto; height: auto; }
+:root:not([data-ui-skin^="meridian"]) .sw-toggle > input[type="checkbox"] {
+  opacity: 1; width: auto; height: auto; position: static;
+}
 
 /* ── ANGLE CONTROL ───────────────────────────────────────────── */
 .angle-ctrl { display: flex; align-items: center; gap: var(--spacing-sm); }
@@ -1254,21 +1278,20 @@
 [data-ui-skin] .left-panel-section-toggle::before {
   content: '';
   display: block;
-  width: 7px;
-  height: 7px;
-  border-right: 2px solid var(--ui-muted);
-  border-bottom: 2px solid var(--ui-muted);
-  border-radius: 1px;
-  transform: rotate(-45deg) translateY(1px);
-  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.12s;
-  background: none;
+  width: 12px;
+  height: 12px;
+  background-color: var(--ui-muted);
+  -webkit-mask: var(--chevron-svg) center / contain no-repeat;
+  mask: var(--chevron-svg) center / contain no-repeat;
+  transform: rotate(0deg);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.12s;
 }
 [data-ui-skin] .left-panel-section[aria-expanded="true"] .left-panel-section-toggle::before,
 [data-ui-skin] .left-panel-section:not(.collapsed) .left-panel-section-toggle::before {
-  transform: rotate(45deg) translateY(-2px);
+  transform: rotate(180deg);
 }
 [data-ui-skin] .left-panel-section-header:hover .left-panel-section-toggle::before {
-  border-color: var(--ui-text-2);
+  background-color: var(--ui-text-2);
 }
 [data-ui-skin] .left-panel-section-body {
   padding: var(--spacing-sm) var(--spacing-md);
@@ -1324,16 +1347,16 @@
 [data-ui-skin] .global-section-toggle::before {
   content: '';
   display: block;
-  width: 7px;
-  height: 7px;
-  border-right: 2px solid var(--ui-muted);
-  border-bottom: 2px solid var(--ui-muted);
-  border-radius: 1px;
-  transform: rotate(-45deg) translateY(1px);
-  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  width: 12px;
+  height: 12px;
+  background-color: var(--ui-muted);
+  -webkit-mask: var(--chevron-svg) center / contain no-repeat;
+  mask: var(--chevron-svg) center / contain no-repeat;
+  transform: rotate(0deg);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.12s;
 }
 [data-ui-skin] .global-section:not(.collapsed) .global-section-toggle::before {
-  transform: rotate(45deg) translateY(-2px);
+  transform: rotate(180deg);
 }
 [data-ui-skin] .global-section-body {
   padding: var(--spacing-sm) 0 0;
@@ -1871,6 +1894,12 @@
   pointer-events: none; z-index: 1;
 }
 [data-ui-skin] .noise-toggle:has(input:checked)::before { transform: translateX(14px); }
+
+/* ── Opt-toggle — pill + label row ──────────────────────────────────── */
+[data-ui-skin] .opt-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 10px; color: var(--ui-muted); cursor: pointer;
+}
 
 /* ── Noise delete button ─────────────────────────────────────────────── */
 /* Legacy color: #ef4444 (red text). Override to muted with danger on hover. */
