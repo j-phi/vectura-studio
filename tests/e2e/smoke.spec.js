@@ -1530,4 +1530,32 @@ test.describe('Vectura smoke interactions', () => {
     expect(state.outlineButtonHidden).toBe(true);
     expect(pageErrors).toEqual([]);
   });
+
+  test('petalis: buildControls preserves left-pane scroll position', async ({ page }) => {
+    const pageErrors = [];
+    page.on('pageerror', (err) => pageErrors.push(err.message));
+    await page.goto('/');
+    await page.waitForFunction(() => window.app && window.app.ui && window.app.engine);
+
+    await page.evaluate(() => {
+      window.app.engine.addLayer('petalisDesigner');
+      window.app.ui.renderLayers();
+      window.app.ui.buildControls();
+    });
+
+    await page.evaluate(() => {
+      document.getElementById('left-panel-content').scrollTop = 600;
+    });
+    await page.waitForTimeout(80);
+    expect(await page.evaluate(() => document.getElementById('left-panel-content').scrollTop)).toBe(600);
+
+    // Trigger a rebuild — previously this threw a ReferenceError inside
+    // ensurePetalisDriftNoises and skipped the scroll-restore step, snapping
+    // the pane to scrollTop=0.
+    await page.evaluate(() => window.app.ui.buildControls());
+    await page.waitForTimeout(80);
+
+    expect(pageErrors).toEqual([]);
+    expect(await page.evaluate(() => document.getElementById('left-panel-content').scrollTop)).toBe(600);
+  });
 });

@@ -77,7 +77,14 @@
     } = requireDeps();
     const { ALGO_DEFAULTS, SETTINGS, DESCRIPTIONS, MODIFIER_DESCRIPTIONS } = fromVectura();
 
-    const restoreLeftPanelScroll = this.captureLeftPanelScrollPosition();
+    const restoreScrollFn = this.captureLeftPanelScrollPosition();
+    let scrollRestored = false;
+    const restoreLeftPanelScroll = () => {
+      if (scrollRestored) return;
+      scrollRestored = true;
+      restoreScrollFn();
+    };
+    try {
     const container = getEl('dynamic-controls');
     if (!container) {
       restoreLeftPanelScroll();
@@ -280,7 +287,7 @@
       parent.style.color = 'transparent';
       parent.style.textShadow = 'none';
       parent.style.flex = '0 0 auto';
-      input.focus();
+      input.focus({ preventScroll: true });
       input.select();
 
       const growToFit = () => {
@@ -3660,6 +3667,9 @@
     if (this.exportModalState?.isOpen) {
       this.decorateExportControlsPanel();
       this.renderExportPreview();
+    }
+    } finally {
+      restoreLeftPanelScroll();
     }
   }
 
