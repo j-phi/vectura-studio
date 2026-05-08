@@ -28,6 +28,13 @@
 
   const REQUIRED_FIELDS = ['id', 'label', 'cssVars'];
   const SWAP_SUPPRESS_MS = 60;
+  // Structural vars (pane widths, bottom-pane height, row height) drive `width`
+  // transitions on `.pane` (200ms) and similar — a 60 ms suppression window isn't
+  // long enough to cover them. When a structural var actually changes value we
+  // hold suppression for STRUCTURAL_SUPPRESS_MS so the new width snaps without
+  // animating, which would otherwise leave the canvas mid-transition during the
+  // first frame and drift world↔screen coordinates by ~0.5px until settled.
+  const STRUCTURAL_SUPPRESS_MS = 320;
   const LINK_ID = 'active-skin';
   let activeSkinId = null;
 
@@ -75,13 +82,22 @@
   };
 
   const writeStructuralVars = (root, manifest) => {
-    if (!manifest) return;
-    if (Number.isFinite(manifest.paneLeftWidth)) root.style.setProperty('--pane-left-width', `${manifest.paneLeftWidth}px`);
-    if (Number.isFinite(manifest.paneRightWidth)) root.style.setProperty('--pane-right-width', `${manifest.paneRightWidth}px`);
-    if (Number.isFinite(manifest.bottomPaneHeight)) root.style.setProperty('--bottom-pane-height', `${manifest.bottomPaneHeight}px`);
-    if (Number.isFinite(manifest.rowHeight)) root.style.setProperty('--row-height', `${manifest.rowHeight}px`);
-    if (typeof manifest.fontUi === 'string' && manifest.fontUi) root.style.setProperty('--font-ui', manifest.fontUi);
-    if (typeof manifest.fontMono === 'string' && manifest.fontMono) root.style.setProperty('--font-mono', manifest.fontMono);
+    if (!manifest) return false;
+    let changed = false;
+    const apply = (cssVar, value) => {
+      const current = root.style.getPropertyValue(cssVar);
+      if (current !== value) {
+        root.style.setProperty(cssVar, value);
+        changed = true;
+      }
+    };
+    if (Number.isFinite(manifest.paneLeftWidth)) apply('--pane-left-width', `${manifest.paneLeftWidth}px`);
+    if (Number.isFinite(manifest.paneRightWidth)) apply('--pane-right-width', `${manifest.paneRightWidth}px`);
+    if (Number.isFinite(manifest.bottomPaneHeight)) apply('--bottom-pane-height', `${manifest.bottomPaneHeight}px`);
+    if (Number.isFinite(manifest.rowHeight)) apply('--row-height', `${manifest.rowHeight}px`);
+    if (typeof manifest.fontUi === 'string' && manifest.fontUi) apply('--font-ui', manifest.fontUi);
+    if (typeof manifest.fontMono === 'string' && manifest.fontMono) apply('--font-mono', manifest.fontMono);
+    return changed;
   };
 
   const swapStylesheet = (theme) => {
@@ -115,17 +131,24 @@
     root.dataset.theme = id;
 
     const manifest = skinManifest(theme);
-    writeStructuralVars(root, manifest);
+    const structuralChanged = writeStructuralVars(root, manifest);
     writeMotionVars(root, manifest && manifest.motion);
 
     const stylesheetWillSwap = swapStylesheet(theme);
-    if (stylesheetWillSwap) {
+    // Suppress transitions whenever the stylesheet swaps OR a structural var
+    // (pane width / bottom-pane height / row height) actually changed value.
+    // Without this, the legacy `.pane { transition: width 0.2s }` rule animates
+    // the pane between the styles.css default and the manifest value on first
+    // boot, which leaves the main-canvas mid-resize for ~200ms and drifts the
+    // pointer→world conversion by ~0.5px in early-frame e2e flows.
+    if (stylesheetWillSwap || structuralChanged) {
       root.dataset.skinSwapping = 'true';
+      const holdMs = structuralChanged ? STRUCTURAL_SUPPRESS_MS : SWAP_SUPPRESS_MS;
       window.setTimeout(() => {
         if (root.dataset.skinSwapping === 'true' && root.dataset.uiSkin === id) {
           delete root.dataset.skinSwapping;
         }
-      }, SWAP_SUPPRESS_MS);
+      }, holdMs);
     }
 
     activeSkinId = id;
