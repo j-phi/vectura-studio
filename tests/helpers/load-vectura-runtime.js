@@ -25,7 +25,7 @@ const shouldSkipScript = (src, options) => {
   } = options;
 
   if (!includeRenderer && src.includes('/src/render/renderer.js')) return true;
-  if (!includeUi && (src.includes('/src/ui/randomization-utils.js') || src.includes('/src/ui/ui.js'))) return true;
+  if (!includeUi && (src.includes('/src/ui/randomization-utils.js') || src.includes('/src/ui/_ui-legacy.js') || src.includes('/src/ui/ui.js'))) return true;
   if (!includeApp && src.includes('/src/app/app.js')) return true;
   if (!includeMain && src.includes('/src/main.js')) return true;
   return false;

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  Phase 1 component sandbox.
+
+  Loads the skin SDK (tokens + motion + components.css + active-skin link)
+  plus every Phase 1 component module, then renders one example of each
+  component for visual regression. Playwright snapshots this page across
+  classic-dark / meridian-dark / meridian-light per the migration plan.
+
+  Add a new <section data-sandbox-id="..."> for every new component so
+  the visual baseline grid grows with the library.
+-->
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vectura UI Sandbox · Components</title>
+  <link rel="stylesheet" href="../../../src/ui/skin/tokens.css" />
+  <link rel="stylesheet" href="../../../src/ui/skin/motion.css" />
+  <link rel="stylesheet" href="../../../src/ui/skin/components.css" />
+  <link rel="stylesheet" id="active-skin" href="../../../src/ui/skin/classic-dark.css" />
+  <style>
+    body {
+      margin: 0;
+      padding: 24px;
+      background: var(--ui-bg, #1b1b1b);
+      color: var(--ui-text, #e0e0e0);
+      font-family: var(--font-ui, system-ui, sans-serif);
+      font-size: var(--font-size-base, 12px);
+    }
+    .sandbox-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    .sandbox-card {
+      background: var(--ui-panel, #252525);
+      border: 1px solid var(--ui-border, #333);
+      border-radius: var(--radius-md, 8px);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .sandbox-label {
+      font-size: var(--font-size-xs, 10px);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--ui-muted, #888);
+      font-family: var(--font-mono, monospace);
+    }
+    .sandbox-row {
+      display: flex; gap: 12px; align-items: center;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+<body data-ui-skin="classic-dark">
+  <h1 style="font-size: 14px; margin: 0 0 16px;">Vectura UI · Components Sandbox</h1>
+  <div id="sandbox-grid" class="sandbox-grid"></div>
+
+  <!-- Phase 1 component scripts. tokens.js + skin-manager.js wire CSS-var
+       lookups and the active-skin <link> swap. utils/motion/focus must load
+       before any component. Add new components below in alpha order. -->
+  <script src="../../../src/ui/skin/tokens.js"></script>
+  <script src="../../../src/ui/skin/skin-manager.js"></script>
+  <script src="../../../src/ui/utils.js"></script>
+  <script src="../../../src/ui/motion.js"></script>
+  <script src="../../../src/ui/focus.js"></script>
+  <script src="../../../src/ui/icons.js"></script>
+
+  <!-- Components (alpha) — populated as Phase 1 progresses. -->
+  <!-- INJECT:components -->
+
+  <!-- Overlays (alpha) — populated as Phase 1 progresses. -->
+  <!-- INJECT:overlays -->
+
+  <script>
+    (() => {
+      const grid = document.getElementById('sandbox-grid');
+      const card = (label, fn) => {
+        const el = document.createElement('section');
+        el.className = 'sandbox-card';
+        el.dataset.sandboxId = label;
+        const lbl = document.createElement('div');
+        lbl.className = 'sandbox-label';
+        lbl.textContent = label;
+        el.appendChild(lbl);
+        const row = document.createElement('div');
+        row.className = 'sandbox-row';
+        el.appendChild(row);
+        try { fn(row); } catch (err) {
+          row.textContent = `error: ${err && err.message ? err.message : err}`;
+        }
+        grid.appendChild(el);
+      };
+      window.__sandboxCard = card;
+      // Each component file may register a renderer onto window.__sandboxRenderers.
+      const renderers = (window.__sandboxRenderers = window.__sandboxRenderers || []);
+      renderers.forEach((entry) => card(entry.id, entry.render));
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,102 @@
+/*
+ * Vectura Studio — skin/meridian-lark.css
+ *
+ * Meridian Blue family · Lark variant. Mirrors the original "lark" concept
+ * (dark UI chrome paired with a light canvas/paper area) but with meridian
+ * palette tokens. Active when <link id="active-skin" href="./meridian-lark.css">
+ * — i.e. when the user picks the primary "lark" skin id.
+ */
+
+:root,
+[data-ui-skin="lark"],
+[data-ui-skin="meridian-lark"] {
+  /* Mockup palette (--ui-*) — same dark chrome as meridian-dark. */
+  --ui-bg: #1b1b1b;
+  --ui-panel: #252525;
+  --ui-panel-alt: #1e1e1e;
+  --ui-border: #363636;
+  --ui-border-hi: #484848;
+  --ui-text: #e0e0e0;
+  --ui-text-2: #a8a8a8;
+  --ui-muted: #686868;
+  --ui-accent: #4e9ee1;
+  --ui-accent-2: rgba(78, 158, 225, 0.12);
+  --ui-danger: #e05252;
+  --ui-ctrl: #2c2c2c;
+  --ui-ctrl-hov: #343434;
+  /* Light workspace — the "lark" tell. */
+  --ui-workspace: #d5d5d5;
+  --ui-formula: #b0b0b0;
+  --slider-start: #80c4f0;
+  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
+  --shadow-pane: 4px 0 24px rgba(0, 0, 0, 0.35);
+
+  /* Tailwind --vectura-*-rgb decomposition. */
+  --vectura-bg-rgb: 27 27 27;
+  --vectura-panel-rgb: 37 37 37;
+  --vectura-border-rgb: 54 54 54;
+  --vectura-text-rgb: 224 224 224;
+  --vectura-muted-rgb: 104 104 104;
+  --vectura-accent-rgb: 78 158 225;
+  --vectura-danger-rgb: 224 82 82;
+
+  /* Legacy --color-* aliases used by renderer.js / styles.css. */
+  --color-bg: var(--ui-bg);
+  --color-panel: var(--ui-panel);
+  --color-border: var(--ui-border);
+  --color-border-strong: var(--ui-border-hi);
+  --color-border-hover: var(--ui-border-hi);
+  --color-text: var(--ui-text);
+  --color-text-soft: var(--ui-text-2);
+  --color-muted: var(--ui-muted);
+  --color-formula-text: var(--ui-formula);
+  --color-accent: var(--ui-accent);
+  --color-surface: var(--ui-panel-alt);
+  --color-surface-alt: var(--ui-panel-alt);
+  --color-control: var(--ui-ctrl);
+  --color-control-hover: var(--ui-ctrl-hov);
+  --color-read-surface: var(--ui-panel);
+  --color-workspace: var(--ui-workspace);
+  --color-touch-border: var(--ui-border);
+  --color-mobile-handle-bg: rgba(27, 27, 27, 0.94);
+
+  --shadow-panel: var(--shadow-md);
+  --shadow-float: var(--shadow-md);
+
+  /* Render layer — light canvas, white paper. */
+  --render-canvas: #d5d5d5;
+  --render-shadow: rgba(15, 23, 42, 0.18);
+  --render-paper-outline: #a1a1aa;
+  --render-frame-stroke: rgba(24, 24, 27, 0.12);
+  --render-guide-faint: rgba(24, 24, 27, 0.45);
+  --render-selection-handle-fill: #ffffff;
+  --render-selection-handle-stroke: #1a1a1a;
+  --render-cursor-stroke: #1a1a1a;
+  --render-marquee-stroke: rgba(71, 85, 105, 0.55);
+  --render-marquee-fill: rgba(71, 85, 105, 0.10);
+  --render-direct-stroke: #0e6fe0;
+  --render-direct-handle-line: rgba(14, 111, 224, 0.55);
+  --render-direct-handle-fill: #ffffff;
+  --render-underlay-fill: rgba(255, 255, 255, 0.95);
+  --render-underlay-stroke: rgba(255, 255, 255, 1);
+
+  /* Designer surfaces — keep dark like meridian-dark since the designer pop-out
+     overlays the dark UI chrome, not the canvas. */
+  --designer-grid-bg: #1e1e1e;
+  --designer-grid-line: rgba(168, 168, 168, 0.16);
+  --designer-fill-active: rgba(78, 158, 225, 0.10);
+  --designer-fill-inactive: rgba(78, 158, 225, 0.05);
+  --designer-stroke-active: #80c4f0;
+  --designer-stroke-inactive: rgba(128, 196, 240, 0.55);
+  --designer-shading-stroke: rgba(128, 196, 240, 0.6);
+  --designer-control-line: rgba(78, 158, 225, 0.55);
+  --designer-control-fill: #1b1b1b;
+  --designer-control-anchor: #4e9ee1;
+  --designer-control-handle: #80c4f0;
+
+  --plotter-bg: #f4f5f7;
+  --plotter-path-base: rgba(82, 82, 91, 0.35);
+  --plotter-head: var(--ui-accent);
+}

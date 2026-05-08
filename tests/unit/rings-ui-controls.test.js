@@ -62,7 +62,8 @@ describe('Rings UI controls coverage', () => {
 
   beforeAll(() => {
     defaultsSource = fs.readFileSync(path.join(ROOT, 'src/config/defaults.js'), 'utf8');
-    uiSource = fs.readFileSync(path.join(ROOT, 'src/ui/ui.js'), 'utf8');
+    // CONTROL_DEFS extracted to src/ui/controls-registry.js in Phase 2.
+    uiSource = fs.readFileSync(path.join(ROOT, 'src/ui/controls-registry.js'), 'utf8');
     ringsDefaults = extractRingsDefaults(defaultsSource);
     controlIds = extractRingsControlIds(uiSource);
   });

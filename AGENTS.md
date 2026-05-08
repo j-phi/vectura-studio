@@ -8,6 +8,7 @@
 - `CHANGELOG.md` is the human-curated release history. Keep `Unreleased` current during development and add release notes for every version.
 - `plans.md` is the active repo punchlist. Keep `Inbox`, `In Progress`, `Done`, and `Decisions` current as work evolves.
 - `docs/agentic-harness-strategy.md` is the source-of-truth metadocument for agentic development workflow in this repo.
+- `src/ui/skin/` holds the multi-skin theme system: `tokens.css` + `motion.css` + `components.css` (skin-agnostic) plus per-skin palette files (`classic-dark.css`, `classic-light.css`, `lark.css`, `meridian-dark.css`, `meridian-light.css`, `meridian-twilight.css`). Adding a new skin: run `npm run skin:new -- <id>` to scaffold from `_template.css`, edit the palette, then add a manifest entry to `src/config/defaults.js` under `window.Vectura.THEMES`. Full guide at `docs/skin-authoring.md`. Skin authoring is **CSS + manifest only** — do not branch JavaScript on skin id; gate behavior on `manifest.capabilities` instead.
 - `src/config/presets.js` is a shared preset registry for all systems (not Petalis-only). New presets must include `preset_system`, `id`, `name`, and `params`.
 - Preset naming convention (required for new entries): `id` must be lowercase kebab-case and prefixed with its system as `<preset_system>-<preset-name>` (example: `petalis-camellia-pink-perfection`).
 - `package.json` is the canonical version source. Run `npm run version:sync` whenever the version changes so `src/config/version.js` and the visible app badge stay aligned.

@@ -1,0 +1,104 @@
+/*
+ * Vectura Studio — skin/meridian-dark.css
+ *
+ * Palette tokens for the Meridian Blue · Dark skin. Sourced verbatim from
+ * docs/design/themes-mockup.html [data-mode="dark"] block (lines 39–61).
+ *
+ * Active when <link id="active-skin" href="./src/ui/skin/meridian-dark.css">.
+ * Tokens are written to :root so any consumer of var(--ui-*) or var(--vectura-*-rgb)
+ * paints with this palette automatically. The legacy var(--color-*) names are
+ * aliased so renderer.js's getThemeToken cache keeps resolving them.
+ */
+
+:root,
+[data-ui-skin="dark"],
+[data-ui-skin="meridian-dark"] {
+  /* Mockup palette (--ui-*). */
+  --ui-bg: #1b1b1b;
+  --ui-panel: #252525;
+  --ui-panel-alt: #1e1e1e;
+  --ui-border: #363636;
+  --ui-border-hi: #484848;
+  --ui-text: #e0e0e0;
+  --ui-text-2: #a8a8a8;
+  --ui-muted: #686868;
+  --ui-accent: #4e9ee1;
+  --ui-accent-2: rgba(78, 158, 225, 0.12);
+  --ui-danger: #e05252;
+  --ui-ctrl: #2c2c2c;
+  --ui-ctrl-hov: #343434;
+  --ui-workspace: #111111;
+  --ui-formula: #b0b0b0;
+  --slider-start: #80c4f0;
+  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
+  --shadow-pane: 4px 0 24px rgba(0, 0, 0, 0.35);
+
+  /* Tailwind --vectura-*-rgb decomposition (so bg-vectura-* utilities paint right). */
+  --vectura-bg-rgb: 27 27 27;
+  --vectura-panel-rgb: 37 37 37;
+  --vectura-border-rgb: 54 54 54;
+  --vectura-text-rgb: 224 224 224;
+  --vectura-muted-rgb: 104 104 104;
+  --vectura-accent-rgb: 78 158 225;
+  --vectura-danger-rgb: 224 82 82;
+
+  /* Legacy --color-* aliases used by renderer.js / styles.css. */
+  --color-bg: var(--ui-bg);
+  --color-panel: var(--ui-panel);
+  --color-border: var(--ui-border);
+  --color-border-strong: var(--ui-border-hi);
+  --color-border-hover: var(--ui-border-hi);
+  --color-text: var(--ui-text);
+  --color-text-soft: var(--ui-text-2);
+  --color-muted: var(--ui-muted);
+  --color-formula-text: var(--ui-formula);
+  --color-accent: var(--ui-accent);
+  --color-surface: var(--ui-panel-alt);
+  --color-surface-alt: var(--ui-panel-alt);
+  --color-control: var(--ui-ctrl);
+  --color-control-hover: var(--ui-ctrl-hov);
+  --color-read-surface: var(--ui-panel);
+  --color-workspace: var(--ui-workspace);
+  --color-touch-border: var(--ui-border);
+  --color-mobile-handle-bg: rgba(27, 27, 27, 0.94);
+
+  /* Shadow aliases for legacy callers. */
+  --shadow-panel: var(--shadow-md);
+  --shadow-float: var(--shadow-md);
+
+  /* Render layer (used by Renderer.js — kept stable across skins for canvas semantics). */
+  --render-canvas: #121214;
+  --render-shadow: rgba(0, 0, 0, 0.5);
+  --render-paper-outline: #333333;
+  --render-frame-stroke: rgba(255, 255, 255, 0.08);
+  --render-guide-faint: rgba(248, 250, 252, 0.75);
+  --render-selection-handle-fill: #111827;
+  --render-selection-handle-stroke: #f8fafc;
+  --render-cursor-stroke: white;
+  --render-marquee-stroke: rgba(148, 163, 184, 0.7);
+  --render-marquee-fill: rgba(148, 163, 184, 0.12);
+  --render-direct-stroke: #22d3ee;
+  --render-direct-handle-line: rgba(34, 211, 238, 0.65);
+  --render-direct-handle-fill: #0f172a;
+  --render-underlay-fill: rgba(15, 23, 42, 0.92);
+  --render-underlay-stroke: rgba(15, 23, 42, 1);
+
+  /* Designer surfaces (petal/pattern designers). Untouched by Phase 0. */
+  --designer-grid-bg: #0f1116;
+  --designer-grid-line: rgba(148, 163, 184, 0.14);
+  --designer-fill-active: rgba(56, 189, 248, 0.1);
+  --designer-fill-inactive: rgba(34, 211, 238, 0.05);
+  --designer-stroke-active: #67e8f9;
+  --designer-stroke-inactive: rgba(103, 232, 249, 0.55);
+  --designer-shading-stroke: rgba(125, 211, 252, 0.6);
+  --designer-control-line: rgba(34, 211, 238, 0.55);
+  --designer-control-fill: #0f172a;
+  --designer-control-anchor: #22d3ee;
+  --designer-control-handle: #67e8f9;
+
+  --plotter-bg: #101115;
+  --plotter-path-base: rgba(113, 113, 122, 0.35);
+  --plotter-head: var(--ui-accent);
+}

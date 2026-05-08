@@ -12,6 +12,22 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 - **Tutorial popover is draggable on play-around steps** (`movable: true`). Pull it from the title bar to move it out of the way without dismissing the tour. User-positioned coordinates persist across phases of the same step and reset on the next step.
 - **Mirror modifier auto-locks its children on entry.** Layers that are wrapped by a mirror, dropped into a mirror group, or added under a selected mirror are now automatically marked locked so they cannot be nudged off-axis. The lock can still be removed individually from the layer list.
 
+## 0.9.10 - 2026-05-07
+
+### Added
+- **Meridian Blue skin family.** Three new skins (`meridian-dark`, `meridian-lark`, `meridian-light`) sourced from `themes-mockup.html`. Selected via the Modern/Classic toggle in Document Setup → Theme; the existing `dark`/`lark`/`light` cycle stays within the active family. Space Grotesk + JetBrains Mono typography, tighter pane geometry (290/258px panes, 30px row height), slider/dial release halos, family-scoped petal/pattern designer chrome, and indeterminate progress bar wired into save / SVG export / engine generations exceeding ~200 ms.
+- **Skin-authoring SDK.** `npm run skin:new -- <id>` scaffolds a new skin from `src/ui/skin/_template.css`. Generator validates id format (lowercase kebab-case), refuses overwrite without `--force`, and prints the manifest snippet ready to paste into `src/config/defaults.js`. Full guide at `docs/skin-authoring.md`. New skins ship with one CSS file + one manifest entry — zero JavaScript edits.
+- **Empty-state SVG illustrations** in the layer list and pattern fill panel via `UI.overlays.EmptyState` + `UI.EmptyStates`. Monochrome, sourced from `--ui-muted` so they re-skin automatically.
+- **Indeterminate progress bar** primitive (`UI.overlays.ProgressBar`) with a stack model so concurrent jobs share one physical bar. Reduced-motion fallback collapses the animation and renders a static 100% bar at 0.55 opacity.
+- **`vectura:skin-change` event.** Dispatched after `applyTheme` swaps the active stylesheet (one rAF later). Renderer cache + dial-wave halos refresh on this event. Payload: `{ id, family, manifest, prevId }`.
+- **Reduced-motion compliance pass** scripted in `tests/unit/skin/reduced-motion-compliance.test.js`. Every keyframe in `motion.css` has a paired `prefers-reduced-motion: reduce` fallback; styles.css ships the universal `*, *::before, *::after` guard collapsing animations + transitions to ≤0.01ms.
+- **Keyboard a11y audit** scripted in `tests/unit/skin/keyboard-a11y-audit.test.js`. Manual audit results in `docs/a11y-audit-phase5.md` covering 20 surfaces (modals, menus, designers, components). Focus-trapping primitives (Modal, Menu) handle Escape directly; keyboard-capturing components cancel via Escape.
+
+### Changed
+- **UI architecture refactor.** The 16,288-line `src/ui/ui.js` split into ~60 satellite modules under `src/ui/{shell,panels,components,overlays,modals,menus,skin}` while keeping the legacy class as a thin orchestrator. The DI-bag `bind(deps)` pattern is the locked extraction contract. `src/ui/_ui-legacy.js` (~8,300 lines) remains on disk during the transition; deletion is the final cleanup task tracked in the Phase 5 closure notes.
+- **Renderer's `getThemeToken` cache** now resolves both `--ui-*` and legacy `--color-*` aliases for cross-skin compatibility. Cache is invalidated on `vectura:skin-change`.
+- **Skin manifests** (in `window.Vectura.THEMES`) extended with `family`, `paneLeftWidth`, `paneRightWidth`, `bottomPaneHeight`, `rowHeight`, `motion`, `capabilities`, `colorScheme`, `metaThemeColor`, `documentBg`, `pen1Color`, `stylesheet` fields. Backward-compatible — classic skins inherit defaults via `CLASSIC_MANIFEST`.
+
 ## 0.9.0 - 2026-05-05
 
 ### Added

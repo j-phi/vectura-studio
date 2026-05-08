@@ -144,14 +144,14 @@ The SVG export modal offers a large preview pane with zoom/pan inspection, plott
 
 ### UI & Workflow
 
-Vectura's UI is Illustrator-familiar: a desktop menu bar with `File/View/Insert/Help` menus, a pen palette with drag-to-assign, Document Setup (`Cmd/Ctrl+K`), and full dark/light theming. Cookie-backed preference persistence keeps your settings between sessions.
+Vectura's UI is Illustrator-familiar: a desktop menu bar with `File/View/Insert/Help` menus, a pen palette with drag-to-assign, Document Setup (`Cmd/Ctrl+K`), and a multi-skin theme system (Classic Dark/Light, Lark, and the **Meridian Blue** family). Cookie-backed preference persistence keeps your settings between sessions.
 
 <details>
 <summary>Full UI & workflow feature list</summary>
 
 - Desktop menu bar beside `VECTURA.STUDIO` with Illustrator-style shortcuts for Open/Save/Import/Export/Document Setup/Reset View/Help plus an `Insert` menu for modifier containers
 - Top menu dropdowns render as overlays above the canvas/panes so they're never clipped by the header
-- Global dark/light theming with a sun/moon toggle; switching theme restyles the full shell, flips the document background default, and swaps `Pen 1` between white and black
+- Multi-skin theme system: Classic Dark, Classic Light, Lark, **Meridian Blue · Dark**, **Meridian Blue · Light**, and **Meridian Blue · Twilight**. Switching skin restyles the full shell, flips the document background default, and swaps `Pen 1` to a contrast-appropriate color. New skins can be authored without JavaScript edits — see [`docs/skin-authoring.md`](docs/skin-authoring.md) and run `npm run skin:new -- <id>` to scaffold one from the template.
 - `File > Document Setup` (`Cmd/Ctrl+K`) covers machine size, Metric/Imperial switch, optional blueprint-style dimension labels, margin, on-canvas crop, margin guides, selection-outline styling, plotter physics, optional 10mm grid overlay, and cookie preference saving with `Clear Saved Preferences`
 - Pen palette with assignable colors/widths, reorderable list, drag-to-assign per layer or selection, and double-click-to-apply on selected layers
 - Color controls use horizontal pills that open native color pickers; thickness controls use sliders with editable mm values and reset buttons
@@ -509,6 +509,14 @@ CI lives in `.github/workflows/test.yml`:
 ---
 
 ## Release Notes
+
+### 0.9.10
+- Added **Meridian Blue** skin family (Dark / Light / Twilight) — fourth, fifth, and sixth shipping skins, sourced from `themes-mockup.html`. Space Grotesk + JetBrains Mono typography, tighter pane geometry, slider/dial release halos, indeterminate progress bar, and family-scoped petal/pattern designer chrome.
+- Added **skin-authoring SDK**: `npm run skin:new -- <id>` scaffolds a new skin from `src/ui/skin/_template.css`. Full guide at `docs/skin-authoring.md`. New skins ship with one CSS file + one manifest entry — no JavaScript edits.
+- Added **empty-state illustrations** in the layer list and pattern fill panel (monochrome SVGs sourced from `--ui-muted`).
+- Added **indeterminate progress bar** wired into save / SVG export / engine generations exceeding ~200 ms.
+- Added **reduced-motion compliance pass**: every keyframe in `motion.css` has a matching `prefers-reduced-motion: reduce` fallback; `styles.css` ships the universal `*, *::before, *::after` guard.
+- Refactored UI from a single 16k-line `ui.js` into ~60 satellite modules under `src/ui/{shell,panels,components,overlays,modals,menus,skin}` while keeping the legacy class as a thin orchestrator. Renderer's `getThemeToken` cache supports both `--ui-*` and legacy `--color-*` aliases for cross-skin compatibility.
 
 ### 0.9.0
 - Added **mirror modifier "Expand to Folder"**: each mirrored path becomes its own editable shape layer.

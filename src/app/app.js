@@ -14,6 +14,32 @@
     return Object.prototype.hasOwnProperty.call(THEMES, key) ? key : DEFAULT_THEME;
   };
   const getThemeConfig = (theme) => THEMES[normalizeThemeName(theme)] || THEMES[DEFAULT_THEME] || null;
+  // Two theme families ship: 'meridian' (Modern) and 'classic'. Each owns the same
+  // three brightness slots; the family toggle in Document Setup hops between
+  // counterparts at the matching slot.
+  const THEME_FAMILIES = ['meridian', 'classic'];
+  const BRIGHTNESS_ORDER = ['dark', 'lark', 'light'];
+  const normalizeThemeFamily = (family) => {
+    const key = `${family || ''}`.trim().toLowerCase();
+    return THEME_FAMILIES.includes(key) ? key : 'meridian';
+  };
+  const getThemeFamily = (themeId) => {
+    const t = THEMES[normalizeThemeName(themeId)];
+    return normalizeThemeFamily(t && t.family);
+  };
+  const getThemeBrightness = (themeId) => {
+    const id = normalizeThemeName(themeId);
+    for (let i = 0; i < BRIGHTNESS_ORDER.length; i += 1) {
+      const slot = BRIGHTNESS_ORDER[i];
+      if (id === slot || id === `classic-${slot}`) return slot;
+    }
+    return BRIGHTNESS_ORDER[0];
+  };
+  const getThemeIdForFamilySlot = (family, slot) => {
+    const fam = normalizeThemeFamily(family);
+    const candidate = fam === 'classic' ? `classic-${slot}` : slot;
+    return Object.prototype.hasOwnProperty.call(THEMES, candidate) ? candidate : null;
+  };
 
   class App {
     constructor() {
@@ -471,11 +497,25 @@
       const root = document.documentElement;
       if (root) {
         root.dataset.theme = themeName;
+        root.dataset.uiSkin = themeName;
         root.style.colorScheme = theme.colorScheme || themeName;
         if (theme.cssVars && typeof theme.cssVars === 'object') {
           Object.entries(theme.cssVars).forEach(([key, value]) => {
             root.style.setProperty(key, value);
           });
+        }
+      }
+      // Hand off skin-specific side-effects (stylesheet swap, motion vars, swap-suppression
+      // window, vectura:skin-change dispatch) to SkinManager. SkinManager is a no-op if it
+      // hasn't loaded yet (e.g. very early bootstrap), in which case the data-attrs above
+      // are still enough for legacy CSS to paint correctly.
+      const skinManager = window.Vectura && window.Vectura.SkinManager;
+      if (skinManager && typeof skinManager.activate === 'function') {
+        try {
+          skinManager.activate(themeName);
+        } catch (err) {
+          // Don't let an unknown skin id throw out of applyTheme — log and continue.
+          if (typeof console !== 'undefined') console.warn('[applyTheme] SkinManager.activate failed:', err);
         }
       }
 
@@ -517,10 +557,15 @@
     }
 
     toggleTheme() {
-      const CYCLE = ['dark', 'lark', 'light'];
+      // Cycle within the active theme family only: dark → lark → light → dark
+      // (or the classic-* counterparts when the Classic family is active).
+      // Family is switched by the Modern/Classic toggle in Document Setup.
       const current = normalizeThemeName(SETTINGS.uiTheme);
-      const idx = CYCLE.indexOf(current);
-      const next = CYCLE[(idx + 1) % CYCLE.length];
+      const family = getThemeFamily(current);
+      const slot = getThemeBrightness(current);
+      const idx = BRIGHTNESS_ORDER.indexOf(slot);
+      const nextSlot = BRIGHTNESS_ORDER[(idx + 1) % BRIGHTNESS_ORDER.length];
+      const next = getThemeIdForFamilySlot(family, nextSlot) || current;
       return this.applyTheme(next, {
         persist: true,
         syncPen1: true,
@@ -528,6 +573,27 @@
         refreshUi: true,
         render: true,
       });
+    }
+
+    setThemeFamily(nextFamily) {
+      const family = normalizeThemeFamily(nextFamily);
+      const current = normalizeThemeName(SETTINGS.uiTheme);
+      if (getThemeFamily(current) === family) return null;
+      const slot = getThemeBrightness(current);
+      const next = getThemeIdForFamilySlot(family, slot)
+        || getThemeIdForFamilySlot(family, BRIGHTNESS_ORDER[0]);
+      if (!next || next === current) return null;
+      return this.applyTheme(next, {
+        persist: true,
+        syncPen1: true,
+        syncDocumentBg: true,
+        refreshUi: true,
+        render: true,
+      });
+    }
+
+    getThemeFamily() {
+      return getThemeFamily(SETTINGS.uiTheme);
     }
 
     pushHistory() {

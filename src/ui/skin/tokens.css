@@ -1,0 +1,62 @@
+/*
+ * Vectura Studio — skin/tokens.css
+ *
+ * Mode-independent structural tokens shared across every skin (classic-*, lark, meridian-*).
+ * Per-skin palette files (./classic-dark.css, ./meridian-dark.css, etc.) override --ui-*
+ * palette tokens; this file provides the layout / spacing / typography scale.
+ *
+ * Sourced verbatim from docs/design/themes-mockup.html :root block.
+ *
+ * Skin-swap transition suppression:
+ *   App.applyTheme() sets data-skin-swapping="true" for ~60 ms while the active <link>
+ *   stylesheet swaps. The rule below disables transitions during that window so users
+ *   never see a half-styled flash mid-swap.
+ */
+
+:root {
+  --pane-left-width: 290px;
+  --pane-right-width: 258px;
+  --bottom-pane-height: 148px;
+  --row-height: 30px;
+
+  --font-ui: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-size-base: 12px;
+  --font-size-sm: 11px;
+  --font-size-xs: 10px;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+
+  /* Motion defaults; per-skin manifests overwrite these via App.applyTheme(). */
+  --motion-slider-pulse-dur: 550ms;
+  --motion-slider-pulse-ease: ease-out;
+  --motion-slider-pulse-peak: 0.36;
+  --motion-thumb-release-dur: 350ms;
+  --motion-thumb-release-ease: ease-out;
+  --motion-btn-fade-dur: 300ms;
+  --motion-btn-fade-ease: ease-out;
+  --motion-btn-fade-dip: 0.42;
+  --motion-dial-wave-dur: 520ms;
+  --motion-dial-wave-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --motion-dial-wave-peak: 0.63;
+  --motion-dial-wave-max-r: 24;
+  --motion-panel-slide-dur: 220ms;
+  --motion-panel-slide-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-modal-enter-dur: 220ms;
+  --motion-toast-in-dur: 260ms;
+  --motion-toast-out-dur: 200ms;
+}
+
+[data-skin-swapping="true"] *,
+[data-skin-swapping="true"] *::before,
+[data-skin-swapping="true"] *::after {
+  transition: none !important;
+  animation: none !important;
+}

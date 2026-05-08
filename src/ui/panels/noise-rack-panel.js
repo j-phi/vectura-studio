@@ -1,14 +1,39 @@
 /**
- * Noise rack methods for the UI class — mixed into UI.prototype by ui.js.
+ * Vectura noise-rack panel — Phase 3 closure: mixin dissolved.
+ *
+ * Was previously split between:
+ *   - src/ui/ui-noise-rack.js        (mixin attached to UI.prototype)
+ *   - src/ui/panels/noise-rack-panel.js (forwarding namespace anchor)
+ *
+ * Phase 3 step 6 dissolved the mixin into this panel module. The mixin
+ * file is removed; the panel installs all methods on UI.prototype via
+ * installOn(proto) — called from the legacy ui.js IIFE bind block,
+ * replacing the old Object.assign(UI.prototype, _UINoiseRackMixin).
+ *
  * Owns:
  *   - ensure*Noises / create*Noise factories per algorithm type
  *   - mountPetalisModifierNoiseRack
  *   - _buildNoiseRack (generic noise UI builder)
  *   - randomizeLayerParams (noise-aware random params helper)
- * Constants (WAVE/RINGS/TOPO/.../IMAGE_EFFECT/COMMON_CONTROLS) live in ui.js
- * and are exposed via window.Vectura._UINoiseDefs.
+ *
+ * Constants (WAVE/RINGS/TOPO/.../IMAGE_EFFECT/COMMON_CONTROLS) live in
+ * legacy ui.js and are exposed via window.Vectura._UINoiseDefs.
+ *
+ * Compile gate at tests/unit/noise-rack-panel-compile.test.js.
  */
 (() => {
+  const G = (typeof window !== 'undefined' ? window : globalThis);
+  const Vectura = G.Vectura = G.Vectura || {};
+  const UI = Vectura.UI = Vectura.UI || {};
+
+  let DEPS = null;
+  const requireDeps = (name) => {
+    if (!DEPS) {
+      throw new Error(`NoiseRackPanel.${name} invoked before NoiseRackPanel.bind(deps) — load order broken`);
+    }
+    return DEPS;
+  };
+
   const {
     ALGO_DEFAULTS = {},
     RandomizationUtils,
@@ -75,8 +100,9 @@
     });
   };
 
-  window.Vectura = window.Vectura || {};
-  window.Vectura._UINoiseRackMixin = {
+  // Method bag — installed on UI.prototype by installOn(proto). Each method
+  // is invoked with `this` bound to a UI instance via the prototype delegator.
+  const NOISE_RACK_METHODS = {
     getWavetableNoiseTemplates(source = 'wavetable') {
       const baseZoom =
         source === 'rings'
@@ -2286,5 +2312,32 @@
 
       target.appendChild(list);
     },
+  };
+
+  // Public surface — namespace anchor + DI bind + prototype installer.
+  UI.NoiseRackPanel = {
+    /**
+     * Inject closure-captured legacy ui.js IIFE locals. After Phase 3
+     * dissolution, the panel reads its data primarily from window.Vectura
+     * directly (ALGO_DEFAULTS, RandomizationUtils, AlgorithmUtils.clamp);
+     * the bind bag remains as a sentinel so future migrations can plumb
+     * additional helpers without touching call sites.
+     * @param {object} deps
+     */
+    bind(deps) {
+      DEPS = deps || {};
+    },
+    /**
+     * Install every noise-rack method on the supplied prototype
+     * (UI.prototype). Replaces the old
+     * `Object.assign(UI.prototype, _UINoiseRackMixin)` call in legacy ui.js.
+     * @param {object} proto - UI.prototype
+     */
+    installOn(proto) {
+      Object.assign(proto, NOISE_RACK_METHODS);
+    },
+    // Direct method exposure for tests + back-compat consumers that probed
+    // the per-method API on the panel namespace.
+    ...NOISE_RACK_METHODS,
   };
 })();

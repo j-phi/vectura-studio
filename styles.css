@@ -214,7 +214,13 @@ input[type='color']::-webkit-color-swatch {
   border-radius: 12px;
   z-index: 30;
   box-shadow: var(--shadow-panel);
+  max-height: calc(100% - 40px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
 }
+.tool-bar::-webkit-scrollbar { width: 4px; }
+.tool-bar::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: 2px; }
 
 .mobile-pane-handle {
   display: none;
@@ -692,9 +698,9 @@ input[type='color']::-webkit-color-swatch {
   flex-shrink: 0; position: relative;
 }
 .lvl-search-wrap {
-  flex: 1; display: flex; align-items: center; gap: 6px;
-  background: var(--color-bg); border: 1px solid var(--color-border);
-  border-radius: 4px; padding: 4px 8px;
+  flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0;
+  background: var(--color-surface-alt); border: 1px solid var(--color-border);
+  border-radius: 4px; padding: 4px 8px; overflow: hidden;
 }
 .lvl-search-wrap svg { flex-shrink: 0; color: var(--color-muted) }
 .lvl-search-input {
@@ -704,8 +710,9 @@ input[type='color']::-webkit-color-swatch {
 .lvl-search-input::placeholder { color: var(--color-border-hover) }
 .lvl-filter-btn {
   background: none; border: 1px solid var(--color-border); border-radius: 4px;
-  color: var(--color-muted); cursor: pointer; padding: 4px 7px;
+  color: var(--color-muted); cursor: pointer; padding: 4px 7px; flex-shrink: 0;
   display: flex; align-items: center; transition: color .12s, border-color .12s;
+  position: relative; z-index: 1;
 }
 .lvl-filter-btn:hover { color: var(--color-text); border-color: var(--color-border-hover) }
 .lvl-filter-btn.active { color: var(--lvl-cyan); border-color: var(--lvl-cyan) }
@@ -1062,7 +1069,7 @@ input[type='color']::-webkit-color-swatch {
   border-bottom-color: var(--color-accent);
 }
 .lvl-add-wrap {
-  position: relative;
+  position: relative; z-index: 1; flex-shrink: 0;
 }
 .lvl-add-btn-icon {
   background: #38bdf8;
@@ -1785,8 +1792,12 @@ input[type='color']::-webkit-color-swatch {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  max-height: min(34vh, 300px);
+  flex: 3 1 0%;
   overflow: hidden;
+}
+
+#pens-section:has(#pens-global-section.collapsed) {
+  flex: 0 0 auto;
 }
 
 #pens-global-section {
@@ -1796,6 +1807,7 @@ input[type='color']::-webkit-color-swatch {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  flex: 1 1 0%;
 }
 
 #pens-global-section.collapsed {
@@ -1806,12 +1818,31 @@ input[type='color']::-webkit-color-swatch {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  flex: 1 1 0%;
+  overflow: hidden;
+}
+
+#pens-section-body > div:not(#pen-list) {
+  flex-shrink: 0;
 }
 
 #pen-list {
   min-height: 0;
   overflow-y: auto;
   padding-right: 2px;
+  flex: 1 1 0%;
+}
+
+#auto-colorization-wrap {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 0%;
+  overflow: hidden;
+}
+
+#auto-colorization-wrap:has(#auto-colorization-section.collapsed) {
+  flex: 0 0 auto;
 }
 
 .pane-collapsed {
@@ -3364,7 +3395,10 @@ input[type='color']::-webkit-color-swatch {
     position: absolute;
     top: 0;
     bottom: 0;
-    z-index: 45;
+    /* Must sit above #bottom-pane (z-index 50 in mobile-layout) so the
+     * bottom-pane drawer does not intercept clicks on right-pane content
+     * (Pens tab, auto-colorization header, etc.) at tablet-touch widths. */
+    z-index: 55;
     max-width: calc(100vw - 18px);
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
   }
@@ -3389,8 +3423,9 @@ input[type='color']::-webkit-color-swatch {
     max-height: min(42vh, 320px);
   }
 
-  .mobile-layout #pens-section {
-    max-height: min(26vh, 220px);
+  .mobile-layout #pens-section,
+  .mobile-layout #auto-colorization-wrap {
+    max-height: none;
   }
 
   .mobile-layout .auto-collapsed .pane:not(.pane-force-open),

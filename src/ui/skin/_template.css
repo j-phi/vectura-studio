@@ -1,0 +1,131 @@
+/*
+ * Vectura Studio — skin/_template.css
+ *
+ * SDK palette template. Copy this file to `src/ui/skin/<your-skin-id>.css`,
+ * change the [data-ui-skin="..."] selector to match the new skin id, fill in
+ * the palette tokens, and register the skin in `src/config/defaults.js` under
+ * `window.Vectura.THEMES`.
+ *
+ * The fastest path: run `npm run skin:new -- <id>` and edit the generated file.
+ *
+ * REQUIRED tokens (every skin must define ALL of these — leaving one out causes
+ * an unstyled fall-through to `tokens.css` defaults, which usually looks broken).
+ *
+ * Token reference: see `docs/skin-authoring.md` for what each token controls and
+ * how it composes with the Tailwind --vectura-*-rgb decomposition.
+ */
+
+:root,
+[data-ui-skin="__SKIN_ID__"] {
+  /* === Mockup palette (--ui-*) ============================================ */
+  /* Surface tokens. */
+  --ui-bg:        #1b1b1b; /* page background, behind all panels */
+  --ui-panel:     #252525; /* panel surface (left/right pane bodies) */
+  --ui-panel-alt: #1e1e1e; /* alt panel (slightly recessed; e.g. section group bg) */
+  --ui-border:    #363636; /* default border */
+  --ui-border-hi: #484848; /* hover/strong border */
+
+  /* Text tokens. */
+  --ui-text:    #e0e0e0; /* primary text */
+  --ui-text-2:  #a8a8a8; /* secondary text */
+  --ui-muted:   #686868; /* placeholders, helper text, empty-state SVGs */
+  --ui-formula: #b0b0b0; /* formula/value readouts */
+
+  /* Accent + semantic. */
+  --ui-accent:   #4e9ee1;                       /* primary accent (sliders, focus rings) */
+  --ui-accent-2: rgba(78, 158, 225, 0.12);     /* accent backgrounds (focus halos, hover tints) */
+  --ui-danger:   #e05252;                       /* danger / destructive */
+
+  /* Controls + workspace. */
+  --ui-ctrl:     #2c2c2c; /* control surface (button, input bg) */
+  --ui-ctrl-hov: #343434; /* control hover */
+  --ui-workspace: #111111; /* canvas workspace background */
+
+  /* Slider gradient start (paired with --ui-accent for slider fill). */
+  --slider-start: #80c4f0;
+
+  /* Shadows (4 stops). */
+  --shadow-sm:   0 1px 4px rgba(0, 0, 0, 0.4);
+  --shadow-md:   0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-lg:   0 8px 32px rgba(0, 0, 0, 0.6);
+  --shadow-pane: 4px 0 24px rgba(0, 0, 0, 0.35);
+
+  /* === Tailwind decomposition (--vectura-*-rgb) ========================== */
+  /* The Tailwind config in index.html defines `bg-vectura-*` utilities that
+   * resolve via these 7 RGB triples. Required for utility classes to paint. */
+  --vectura-bg-rgb:     27 27 27;
+  --vectura-panel-rgb:  37 37 37;
+  --vectura-border-rgb: 54 54 54;
+  --vectura-text-rgb:   224 224 224;
+  --vectura-muted-rgb:  104 104 104;
+  --vectura-accent-rgb: 78 158 225;
+  --vectura-danger-rgb: 224 82 82;
+
+  /* === Legacy --color-* aliases (DEPRECATED but required while styles.css lives) ===
+   * `styles.css` and `renderer.js`'s getThemeToken cache still resolve these
+   * legacy aliases. Do NOT remove them until styles.css is deleted in a future
+   * release. New skins must include them — the SDK template enforces this. */
+  --color-bg:               var(--ui-bg);
+  --color-panel:            var(--ui-panel);
+  --color-border:           var(--ui-border);
+  --color-border-strong:    var(--ui-border-hi);
+  --color-border-hover:     var(--ui-border-hi);
+  --color-text:             var(--ui-text);
+  --color-text-soft:        var(--ui-text-2);
+  --color-muted:            var(--ui-muted);
+  --color-formula-text:     var(--ui-formula);
+  --color-accent:           var(--ui-accent);
+  --color-surface:          var(--ui-panel-alt);
+  --color-surface-alt:      var(--ui-panel-alt);
+  --color-control:          var(--ui-ctrl);
+  --color-control-hover:    var(--ui-ctrl-hov);
+  --color-read-surface:     var(--ui-panel);
+  --color-workspace:        var(--ui-workspace);
+  --color-touch-border:     var(--ui-border);
+  --color-mobile-handle-bg: rgba(27, 27, 27, 0.94);
+
+  /* Shadow aliases (legacy callers). */
+  --shadow-panel: var(--shadow-md);
+  --shadow-float: var(--shadow-md);
+
+  /* === Renderer canvas tokens ==============================================
+   * Read by `src/render/renderer.js` via `getThemeToken('--render-*')`. Keep
+   * these consistent across skins in the same family — wild differences will
+   * cause selection handles, marquees, and guides to look broken. */
+  --render-canvas:                  #121214;
+  --render-shadow:                  rgba(0, 0, 0, 0.5);
+  --render-paper-outline:           #333333;
+  --render-frame-stroke:            rgba(255, 255, 255, 0.08);
+  --render-guide-faint:             rgba(248, 250, 252, 0.75);
+  --render-selection-handle-fill:   #111827;
+  --render-selection-handle-stroke: #f8fafc;
+  --render-cursor-stroke:           white;
+  --render-marquee-stroke:          rgba(148, 163, 184, 0.7);
+  --render-marquee-fill:            rgba(148, 163, 184, 0.12);
+  --render-direct-stroke:           #22d3ee;
+  --render-direct-handle-line:      rgba(34, 211, 238, 0.65);
+  --render-direct-handle-fill:      #0f172a;
+  --render-underlay-fill:           rgba(15, 23, 42, 0.92);
+  --render-underlay-stroke:         rgba(15, 23, 42, 1);
+
+  /* === Petal / Pattern designer tokens =====================================
+   * Read by petal-designer + pattern-designer satellite modules. Most skins
+   * can copy these wholesale from meridian-dark.css unless they want bespoke
+   * designer chrome. */
+  --designer-grid-bg:        #0f1116;
+  --designer-grid-line:      rgba(148, 163, 184, 0.14);
+  --designer-fill-active:    rgba(56, 189, 248, 0.10);
+  --designer-fill-inactive:  rgba(34, 211, 238, 0.05);
+  --designer-stroke-active:  #67e8f9;
+  --designer-stroke-inactive: rgba(103, 232, 249, 0.55);
+  --designer-shading-stroke: rgba(125, 211, 252, 0.6);
+  --designer-control-line:   rgba(34, 211, 238, 0.55);
+  --designer-control-fill:   #0f172a;
+  --designer-control-anchor: #22d3ee;
+  --designer-control-handle: #67e8f9;
+
+  /* Plotter visualizer (Pens panel preview). */
+  --plotter-bg:        #101115;
+  --plotter-path-base: rgba(113, 113, 122, 0.35);
+  --plotter-head:      var(--ui-accent);
+}

@@ -11,6 +11,28 @@
   const clone =
     typeof structuredClone === 'function' ? (obj) => structuredClone(obj) : (obj) => JSON.parse(JSON.stringify(obj));
 
+  // Phase 3 closure: toast helper. UI.overlays.Toast is a Phase 1 primitive
+  // composed throughout the file-I/O surface for save/open/import/export
+  // success and failure feedback.
+  const toast = (message, variant = 'info', duration = 3500) => {
+    const T = window.Vectura?.UI?.overlays?.Toast;
+    if (T && typeof T.show === 'function') {
+      try { T.show({ message, variant, duration }); } catch (_) { /* noop */ }
+    }
+  };
+
+  // Phase 4: indeterminate progress helper. Returns a handle with .done().
+  // Falls back to a no-op handle when the primitive is missing (legacy load
+  // path / JSDOM tests without overlay scripts).
+  const NOOP_HANDLE = { done() {}, update() {} };
+  const startProgress = (label) => {
+    const PB = window.Vectura?.UI?.overlays?.ProgressBar;
+    if (PB && typeof PB.show === 'function') {
+      try { return PB.show({ label }); } catch (_) { /* noop */ }
+    }
+    return NOOP_HANDLE;
+  };
+
   const normalizeSvgId = (value, prefix = 'id') => {
     const fallback = `${prefix || 'id'}`;
     const base = `${value ?? ''}`.trim() || fallback;
@@ -30,34 +52,40 @@
     },
 
     saveVecturaFile() {
-      const version = this.getAppVersion();
-      const images = window.Vectura?.NOISE_IMAGES || {};
-      const imagePayload = Object.entries(images).reduce((acc, [id, img]) => {
-        if (!img || !img.data) return acc;
-        acc[id] = {
-          width: img.width,
-          height: img.height,
-          data: Array.from(img.data),
+      const progress = startProgress('Saving project…');
+      try {
+        const version = this.getAppVersion();
+        const images = window.Vectura?.NOISE_IMAGES || {};
+        const imagePayload = Object.entries(images).reduce((acc, [id, img]) => {
+          if (!img || !img.data) return acc;
+          acc[id] = {
+            width: img.width,
+            height: img.height,
+            data: Array.from(img.data),
+          };
+          return acc;
+        }, {});
+        const payload = {
+          type: 'vectura',
+          version,
+          created: new Date().toISOString(),
+          state: this.app.captureState(),
+          images: imagePayload,
         };
-        return acc;
-      }, {});
-      const payload = {
-        type: 'vectura',
-        version,
-        created: new Date().toISOString(),
-        state: this.app.captureState(),
-        images: imagePayload,
-      };
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      const date = new Date().toISOString().slice(0, 10);
-      a.href = url;
-      a.download = `vectura-${date}.vectura`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const date = new Date().toISOString().slice(0, 10);
+        a.href = url;
+        a.download = `vectura-${date}.vectura`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        toast('Project saved', 'success');
+      } finally {
+        progress.done();
+      }
     },
 
     openVecturaFile(file) {
@@ -84,7 +112,9 @@
           this.app.applyState(state);
           this.app.history = [];
           this.app.pushHistory();
+          toast('Project loaded', 'success');
         } catch (err) {
+          toast('Invalid .vectura file', 'danger');
           this.openModal({
             title: 'Invalid File',
             body: `<p class="modal-text">That file could not be loaded as a .vectura document.</p>`,
@@ -101,6 +131,7 @@
         const text = reader.result;
         const groups = this.parseSvgToLayerGroups(text);
         if (!groups.length) {
+          toast('SVG had no importable paths', 'warning');
           this.openModal({
             title: 'No Paths Found',
             body: `<p class="modal-text">The SVG did not contain any vector paths to import.</p>`,
@@ -133,6 +164,7 @@
         this.buildControls();
         this.updateFormula();
         this.app.render();
+        toast(`Imported ${created.length} layer${created.length === 1 ? '' : 's'}`, 'success');
       };
       reader.readAsText(file);
     },
@@ -510,6 +542,8 @@
     },
 
     exportSVG() {
+      const progress = startProgress('Exporting SVG…');
+      try {
       const snapshot =
         typeof this.getExportSnapshot === 'function'
           ? this.getExportSnapshot()
@@ -569,6 +603,10 @@
       a.href = url;
       a.download = 'vectura.svg';
       a.click();
+      toast('SVG exported', 'success');
+      } finally {
+        progress.done();
+      }
     },
   };
 })();
