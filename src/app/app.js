@@ -55,11 +55,15 @@
       this.preferenceCookieName = PREFERENCE_COOKIE;
       this.preferencePersistTimer = null;
       this.lastPreferenceHash = '';
-      this.applyPreferencesFromCookie();
+      const hadCookiePreferences = this.applyPreferencesFromCookie();
+      // Cold boot (no cookie): sync pen-1 to the active theme's pen1Color so a
+      // fresh load on light/lark doesn't leave pen-1 white on the white artboard.
+      // Document bg is also synced so the paper color matches the theme's intent.
+      const coldBootSync = !hadCookiePreferences;
       this.applyTheme(SETTINGS.uiTheme, {
         persist: false,
-        syncPen1: false,
-        syncDocumentBg: false,
+        syncPen1: coldBootSync,
+        syncDocumentBg: coldBootSync,
         refreshUi: false,
         render: false,
       });
@@ -306,14 +310,16 @@
 
     applyPreferencesFromCookie() {
       let raw = this.readCookie(this.preferenceCookieName);
-      if (!raw) return;
+      if (!raw) return false;
       try {
         raw = decodeURIComponent(raw);
         const parsed = JSON.parse(raw);
         const data = parsed?.data && typeof parsed.data === 'object' ? parsed.data : parsed;
         this.applyPreferenceSnapshot(data);
+        return true;
       } catch (err) {
         console.warn('[Preferences] Failed to parse cookie preferences:', err);
+        return false;
       }
     }
 

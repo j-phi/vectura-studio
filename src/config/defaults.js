@@ -120,8 +120,9 @@
       // Pure black ink for plotter realism on the white paper. Matches the
       // historical "lark" contract preserved in tests/integration/ui-bootstrap-panels.
       pen1Color: '#000000',
-      // Light canvas/paper paired with dark UI chrome — push workspace+canvas tokens
-      // inline so a prior dark-skin's stale inline values can't bleed through.
+      // Light canvas/paper paired with dark UI chrome. The full --color-* alias
+      // set is pushed inline so styles.css :root defaults (which have the same
+      // specificity as [data-ui-skin] but load later) can't bleed through.
       cssVars: {
         '--vectura-bg-rgb': '27 27 27',
         '--vectura-panel-rgb': '37 37 37',
@@ -130,9 +131,30 @@
         '--vectura-muted-rgb': '104 104 104',
         '--vectura-accent-rgb': '78 158 225',
         '--vectura-danger-rgb': '224 82 82',
+        '--color-bg': '#1b1b1b',
+        '--color-panel': '#252525',
+        '--color-border': '#363636',
+        '--color-border-strong': '#484848',
+        '--color-border-hover': '#484848',
+        '--color-text': '#e0e0e0',
+        '--color-text-soft': '#a8a8a8',
+        '--color-muted': '#686868',
+        '--color-formula-text': '#b0b0b0',
+        '--color-accent': '#4e9ee1',
+        '--color-surface': '#1e1e1e',
+        '--color-surface-alt': '#1e1e1e',
+        '--color-control': '#2c2c2c',
+        '--color-control-hover': '#343434',
+        '--color-read-surface': '#252525',
+        '--color-touch-border': '#363636',
+        '--color-mobile-handle-bg': 'rgba(27, 27, 27, 0.94)',
         '--color-workspace': '#d5d5d5',
         '--ui-workspace': '#d5d5d5',
         '--render-canvas': '#d5d5d5',
+        // Medium-grey selection bounds + handle stroke so the dashed rect around
+        // a selected object stays visible on the white artboard. styles.css :root
+        // defines this token to a near-white (#f8fafc); pushing inline wins.
+        '--render-selection-handle-stroke': '#9ca3af',
       },
     },
     light: {
@@ -145,6 +167,9 @@
       metaThemeColor: '#efefef',
       documentBg: '#ffffff',
       pen1Color: '#0a1320',
+      // Full --color-* alias set pushed inline so styles.css :root dark defaults
+      // (which load after meridian-light.css and tie on specificity) don't bleed
+      // through and dark-tint .tool-btn / .pendulum-card / etc.
       cssVars: {
         '--vectura-bg-rgb': '239 239 239',
         '--vectura-panel-rgb': '250 250 250',
@@ -153,9 +178,30 @@
         '--vectura-muted-rgb': '136 136 136',
         '--vectura-accent-rgb': '14 111 224',
         '--vectura-danger-rgb': '192 57 43',
+        '--color-bg': '#efefef',
+        '--color-panel': '#fafafa',
+        '--color-border': '#c8c8c8',
+        '--color-border-strong': '#a0a0a0',
+        '--color-border-hover': '#a0a0a0',
+        '--color-text': '#1a1a1a',
+        '--color-text-soft': '#505050',
+        '--color-muted': '#888888',
+        '--color-formula-text': '#404040',
+        '--color-accent': '#0e6fe0',
+        '--color-surface': '#f2f2f2',
+        '--color-surface-alt': '#f2f2f2',
+        '--color-control': '#ffffff',
+        '--color-control-hover': '#ebebeb',
+        '--color-read-surface': '#fafafa',
+        '--color-touch-border': '#c8c8c8',
+        '--color-mobile-handle-bg': 'rgba(239, 239, 239, 0.96)',
         '--color-workspace': '#d5d5d5',
         '--ui-workspace': '#d5d5d5',
         '--render-canvas': '#d5d5d5',
+        // Medium-grey selection bounds + handle stroke so the dashed rect around
+        // a selected object stays visible on the white artboard. styles.css :root
+        // defines this token to a near-white (#f8fafc); pushing inline wins.
+        '--render-selection-handle-stroke': '#9ca3af',
       },
     },
     // Classic family — selected via Document Setup → Theme → Classic.
