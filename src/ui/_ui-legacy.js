@@ -5306,31 +5306,11 @@
       }
     }
 
-    // Delegated to src/ui/shell/pane-left.js (Phase 2 step 3).
-    getLeftSectionDefaults() {
-      return window.Vectura.UI.PaneLeft.getLeftSectionDefaults.call(this);
-    }
-    getLeftSectionMap() {
-      return window.Vectura.UI.PaneLeft.getLeftSectionMap.call(this);
-    }
-    setLeftSectionCollapsed(...args) {
-      return window.Vectura.UI.PaneLeft.setLeftSectionCollapsed.call(this, ...args);
-    }
-    initLeftPanelSections() {
-      return window.Vectura.UI.PaneLeft.initLeftPanelSections.call(this);
-    }
-    setAlgorithmTransformCollapsed(...args) {
-      return window.Vectura.UI.PaneLeft.setAlgorithmTransformCollapsed.call(this, ...args);
-    }
-    initAlgorithmTransformSection() {
-      return window.Vectura.UI.PaneLeft.initAlgorithmTransformSection.call(this);
-    }
-    setAboutVisible(...args) {
-      return window.Vectura.UI.PaneLeft.setAboutVisible.call(this, ...args);
-    }
-    initAboutSection() {
-      return window.Vectura.UI.PaneLeft.initAboutSection.call(this);
-    }
+    // pane-left methods (getLeftSectionDefaults, getLeftSectionMap,
+    // setLeftSectionCollapsed, initLeftPanelSections,
+    // setAlgorithmTransformCollapsed, initAlgorithmTransformSection,
+    // setAboutVisible, initAboutSection) are installed onto UI.prototype
+    // by PaneLeft.installOn() at IIFE bottom.
 
     // Delegated to src/ui/modals/help-shortcuts.js (Phase 3).
     buildHelpContent() {
@@ -7918,6 +7898,9 @@
   // extracted left-panel section methods see the same `getEl` helper.
   if (window.Vectura?.UI?.PaneLeft?.bind) {
     window.Vectura.UI.PaneLeft.bind({ getEl });
+  }
+  if (window.Vectura?.UI?.PaneLeft?.installOn) {
+    window.Vectura.UI.PaneLeft.installOn(UI.prototype);
   }
 
   // Phase 2 step 3: hand legacy IIFE-locals to shell/pane-right.js so its

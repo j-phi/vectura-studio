@@ -193,5 +193,15 @@
     initAlgorithmTransformSection,
     setAboutVisible,
     initAboutSection,
+    installOn(proto) {
+      proto.getLeftSectionDefaults = function() { return getLeftSectionDefaults.call(this); };
+      proto.getLeftSectionMap = function() { return getLeftSectionMap.call(this); };
+      proto.setLeftSectionCollapsed = function(...args) { return setLeftSectionCollapsed.apply(this, args); };
+      proto.initLeftPanelSections = function() { return initLeftPanelSections.call(this); };
+      proto.setAlgorithmTransformCollapsed = function(...args) { return setAlgorithmTransformCollapsed.apply(this, args); };
+      proto.initAlgorithmTransformSection = function() { return initAlgorithmTransformSection.call(this); };
+      proto.setAboutVisible = function(...args) { return setAboutVisible.apply(this, args); };
+      proto.initAboutSection = function() { return initAboutSection.call(this); };
+    },
   };
 })();
