@@ -5203,50 +5203,11 @@
       };
     }
 
-    // Delegated to src/ui/modals/export-svg.js (Phase 3 step 5).
-    buildExportPreviewPath(...args) {
-      return window.Vectura.UI.Modals.ExportSvg.buildExportPreviewPath.call(this, ...args);
-    }
-
-    // Delegated to src/ui/modals/export-svg.js (Phase 3 step 5).
-    buildExportClipPolygons(...args) {
-      return window.Vectura.UI.Modals.ExportSvg.buildExportClipPolygons.call(this, ...args);
-    }
-
-    // Delegated to src/ui/modals/export-svg.js (Phase 3 step 5).
-    fitExportPreview() {
-      return window.Vectura.UI.Modals.ExportSvg.fitExportPreview.call(this);
-    }
-
-    // Delegated to src/ui/modals/export-svg.js (Phase 3 step 5).
-    resizeExportPreviewCanvas() {
-      return window.Vectura.UI.Modals.ExportSvg.resizeExportPreviewCanvas.call(this);
-    }
-
-    // Delegated to src/ui/modals/export-svg.js (Phase 3 step 5).
-    renderExportPreview() {
-      return window.Vectura.UI.Modals.ExportSvg.renderExportPreview.call(this);
-    }
-
-    // Delegated to src/ui/modals/export-svg.js (Phase 3 step 5).
-    decorateExportControlsPanel() {
-      return window.Vectura.UI.Modals.ExportSvg.decorateExportControlsPanel.call(this);
-    }
-
-    // Delegated to src/ui/modals/export-svg.js (Phase 3 step 5).
-    syncLegendSettingsControls(root) {
-      return window.Vectura.UI.Modals.ExportSvg.syncLegendSettingsControls.call(this, root);
-    }
-
-    // Delegated to src/ui/modals/export-svg.js (Phase 3 step 5).
-    attachExportInfoButtons(panel) {
-      return window.Vectura.UI.Modals.ExportSvg.attachExportInfoButtons.call(this, panel);
-    }
-
-    // Delegated to src/ui/modals/export-svg.js (Phase 3 step 5).
-    openExportModal() {
-      return window.Vectura.UI.Modals.ExportSvg.openExportModal.call(this);
-    }
+    // export-svg methods (buildExportPreviewPath, buildExportClipPolygons,
+    // fitExportPreview, resizeExportPreviewCanvas, renderExportPreview,
+    // decorateExportControlsPanel, syncLegendSettingsControls,
+    // attachExportInfoButtons, openExportModal) are installed onto
+    // UI.prototype by Modals.ExportSvg.installOn() at IIFE bottom.
 
     // Delegated to src/ui/shell/bottom-pane.js (Phase 2 step 3).
     toggleSettingsPanel(...args) {
@@ -8145,6 +8106,9 @@
       OPTIMIZATION_STEPS,
       openColorPickerAnchoredTo,
     });
+  }
+  if (window.Vectura?.UI?.Modals?.ExportSvg?.installOn) {
+    window.Vectura.UI.Modals.ExportSvg.installOn(UI.prototype);
   }
 
   window.Vectura = window.Vectura || {};

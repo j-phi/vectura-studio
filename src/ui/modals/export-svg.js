@@ -670,5 +670,16 @@
     attachExportInfoButtons,
     buildExportPreviewPath,
     buildExportClipPolygons,
+    installOn(proto) {
+      proto.openExportModal = function() { return openExportModal.call(this); };
+      proto.fitExportPreview = function() { return fitExportPreview.call(this); };
+      proto.resizeExportPreviewCanvas = function() { return resizeExportPreviewCanvas.call(this); };
+      proto.renderExportPreview = function() { return renderExportPreview.call(this); };
+      proto.decorateExportControlsPanel = function() { return decorateExportControlsPanel.call(this); };
+      proto.syncLegendSettingsControls = function(root) { return syncLegendSettingsControls.call(this, root); };
+      proto.attachExportInfoButtons = function(panel) { return attachExportInfoButtons.call(this, panel); };
+      proto.buildExportPreviewPath = function(...args) { return buildExportPreviewPath.apply(this, args); };
+      proto.buildExportClipPolygons = function(...args) { return buildExportClipPolygons.apply(this, args); };
+    },
   };
 })();
