@@ -433,6 +433,18 @@
     removePen,
     initPaletteControls,
     renderPens,
+    installOn(proto) {
+      proto.setArmedPen = function(penId) { return setArmedPen.call(this, penId); };
+      proto.clearArmedPen = function() { return clearArmedPen.call(this); };
+      proto.refreshArmedPenUI = function() { return refreshArmedPenUI.call(this); };
+      proto.getPaletteList = function() { return getPaletteList.call(this); };
+      proto.getActivePalette = function() { return getActivePalette.call(this); };
+      proto.applyPaletteToPens = function(palette, options = {}) { return applyPaletteToPens.call(this, palette, options); };
+      proto.addPen = function() { return addPen.call(this); };
+      proto.removePen = function(penId) { return removePen.call(this, penId); };
+      proto.initPaletteControls = function() { return initPaletteControls.call(this); };
+      proto.renderPens = function() { return renderPens.call(this); };
+    },
   };
 })();
 

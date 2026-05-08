@@ -5818,16 +5818,10 @@
       return (SETTINGS.pens || []).find((pen) => pen.id === id) || null;
     }
 
-    // Delegated to src/ui/panels/pens-panel.js (Phase 2 step 4).
-    setArmedPen(penId) {
-      return window.Vectura.UI.PensPanel.setArmedPen.call(this, penId);
-    }
-    clearArmedPen() {
-      return window.Vectura.UI.PensPanel.clearArmedPen.call(this);
-    }
-    refreshArmedPenUI() {
-      return window.Vectura.UI.PensPanel.refreshArmedPenUI.call(this);
-    }
+    // pens-panel methods (setArmedPen, clearArmedPen, refreshArmedPenUI,
+    // getPaletteList, getActivePalette, applyPaletteToPens, addPen, removePen,
+    // initPaletteControls, renderPens) are installed onto UI.prototype by
+    // PensPanel.installOn() at IIFE bottom.
 
     applyArmedPenToLayers(targetLayers) {
       if (!this.armedPenId) return false;
@@ -6103,34 +6097,12 @@
       return window.Vectura.UI.Header.initMachineDropdown.call(this);
     }
 
-    getPaletteList() {
-      return window.Vectura.UI.PensPanel.getPaletteList.call(this);
-    }
-    getActivePalette() {
-      return window.Vectura.UI.PensPanel.getActivePalette.call(this);
-    }
-    applyPaletteToPens(palette, options = {}) {
-      return window.Vectura.UI.PensPanel.applyPaletteToPens.call(this, palette, options);
-    }
-
-    addPen() {
-      return window.Vectura.UI.PensPanel.addPen.call(this);
-    }
-    removePen(penId) {
-      return window.Vectura.UI.PensPanel.removePen.call(this, penId);
-    }
-
     // Delegated to src/ui/shell/pane-right.js (Phase 2 step 3).
     initRightPaneTabs() {
       return window.Vectura.UI.PaneRight.initRightPaneTabs.call(this);
     }
     initPensSection() {
       return window.Vectura.UI.PaneRight.initPensSection.call(this);
-    }
-
-    // Delegated to src/ui/panels/pens-panel.js (Phase 2 step 4).
-    initPaletteControls() {
-      return window.Vectura.UI.PensPanel.initPaletteControls.call(this);
     }
 
     // Delegated to src/ui/persistence.js as applyPersistedSettings (Phase 2 step 5a).
@@ -7036,11 +7008,6 @@
         }
       } catch (_) { /* missing menu module is non-fatal */ }
       return result;
-    }
-
-    // Delegated to src/ui/panels/pens-panel.js (Phase 2 step 4).
-    renderPens() {
-      return window.Vectura.UI.PensPanel.renderPens.call(this);
     }
 
     expandLayer(layer, options = {}) {
@@ -7973,6 +7940,9 @@
   // Phase 2 step 4: hand legacy IIFE-locals to panels/pens-panel.js.
   if (window.Vectura?.UI?.PensPanel?.bind) {
     window.Vectura.UI.PensPanel.bind({ getEl, escapeHtml, SETTINGS, PALETTES, getThemeToken });
+  }
+  if (window.Vectura?.UI?.PensPanel?.installOn) {
+    window.Vectura.UI.PensPanel.installOn(UI.prototype);
   }
 
   // Phase 2 step 4: hand legacy IIFE-locals to panels/modifiers-panel.js.
