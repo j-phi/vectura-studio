@@ -1585,6 +1585,7 @@
     toolbarX: null,
     toolbarY: null,
     toolbarLocked: false,
+    toolbarHorizontal: false,
   };
   window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {};
 

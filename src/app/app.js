@@ -208,6 +208,7 @@
         toolbarX: SETTINGS.toolbarX ?? null,
         toolbarY: SETTINGS.toolbarY ?? null,
         toolbarLocked: SETTINGS.toolbarLocked === true,
+        toolbarHorizontal: SETTINGS.toolbarHorizontal === true,
       };
     }
 
@@ -300,6 +301,7 @@
       SETTINGS.toolbarX = typeof snapshot.toolbarX === 'number' ? snapshot.toolbarX : null;
       SETTINGS.toolbarY = typeof snapshot.toolbarY === 'number' ? snapshot.toolbarY : null;
       SETTINGS.toolbarLocked = snapshot.toolbarLocked === true;
+      SETTINGS.toolbarHorizontal = snapshot.toolbarHorizontal === true;
     }
 
     applyPreferencesFromCookie() {

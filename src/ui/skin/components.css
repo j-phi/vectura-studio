@@ -588,37 +588,78 @@
   pointer-events: none;
 }
 
-/* Footer: pin/pop-out section, bleeds to toolbar edges with own bg */
+/* Footer: pin/pop-out section, bleeds to toolbar edges with own bg.
+   Sized to fit three small buttons within the tool-btn column width. */
 .toolbar-footer {
   display: flex; justify-content: center; align-items: center;
-  gap: 3px; flex-shrink: 0;
+  gap: 0; flex-shrink: 0;
   margin-top: 4px;
   margin-left: calc(-1 * var(--spacing-sm));
   margin-right: calc(-1 * var(--spacing-sm));
   margin-bottom: calc(-1 * var(--spacing-sm));
-  padding: 5px var(--spacing-sm);
+  padding: 4px 2px;
   border-top: 1px solid var(--ui-border);
   background: var(--ui-ctrl-hov);
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
-/* Pin/pop-out: small outline icons, not full tool-btn size */
+/* Inter-button spacing via margin (not flex gap) so collapsed buttons
+   contribute zero space when locked and the pin centers cleanly. */
+.toolbar-footer > button + button { margin-left: 2px; }
+
+/* Footer buttons: tight outline icons, sized so 3 fit inside the 30px column */
 .toolbar-pin-btn,
+.toolbar-home-btn,
+.toolbar-rotate-btn,
 .toolbar-popout-btn {
-  width: 16px; height: 16px; min-width: 16px; min-height: 16px;
+  box-sizing: border-box;
+  width: 13px; height: 13px; min-width: 13px; min-height: 13px;
   padding: 0; background: none;
   border: 1px solid var(--ui-border);
   border-radius: 3px; cursor: pointer;
   color: var(--ui-muted);
   display: flex; align-items: center; justify-content: center;
-  transition: border-color 0.12s, color 0.12s;
+  overflow: hidden;
+  transition:
+    width 0.32s cubic-bezier(0.34, 1.56, 0.64, 1),
+    min-width 0.32s cubic-bezier(0.34, 1.56, 0.64, 1),
+    height 0.32s cubic-bezier(0.34, 1.56, 0.64, 1),
+    min-height 0.32s cubic-bezier(0.34, 1.56, 0.64, 1),
+    margin-left 0.32s cubic-bezier(0.34, 1.56, 0.64, 1),
+    margin-top 0.32s cubic-bezier(0.34, 1.56, 0.64, 1),
+    border-width 0.24s ease,
+    transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1),
+    opacity 0.22s ease,
+    border-color 0.12s, color 0.12s;
 }
-.toolbar-pin-btn:hover,
-.toolbar-popout-btn:hover { border-color: var(--ui-text); color: var(--ui-text); }
-.toolbar-pin-btn.active { border-color: var(--ui-accent); color: var(--ui-accent); }
 
-/* Visibility: pop-out hidden when floating, pin hidden when docked */
+/* Pinned: hide home + rotate, center the pin. Buttons collapse on both
+   axes so the pin centers cleanly in either footer orientation. */
+.tool-bar.toolbar-locked:not([class*="toolbar-docked"]) .toolbar-home-btn,
+.tool-bar.toolbar-locked:not([class*="toolbar-docked"]) .toolbar-rotate-btn {
+  width: 0; min-width: 0;
+  height: 0; min-height: 0;
+  margin-left: 0; margin-top: 0;
+  border-width: 0;
+  opacity: 0;
+  transform: scale(0.4);
+  pointer-events: none;
+}
+.toolbar-pin-btn svg,
+.toolbar-home-btn svg,
+.toolbar-rotate-btn svg,
+.toolbar-popout-btn svg { width: 8px; height: 8px; }
+.toolbar-pin-btn:hover,
+.toolbar-home-btn:hover,
+.toolbar-rotate-btn:hover,
+.toolbar-popout-btn:hover { border-color: var(--ui-text); color: var(--ui-text); }
+.toolbar-pin-btn.active,
+.toolbar-rotate-btn.active { border-color: var(--ui-accent); color: var(--ui-accent); }
+
+/* Visibility: pin/home/rotate show when floating; pop-out shows when docked */
 .toolbar-footer .toolbar-popout-btn { display: none; }
-[class*="toolbar-docked"] .toolbar-footer .toolbar-pin-btn { display: none; }
+[class*="toolbar-docked"] .toolbar-footer .toolbar-pin-btn,
+[class*="toolbar-docked"] .toolbar-footer .toolbar-home-btn,
+[class*="toolbar-docked"] .toolbar-footer .toolbar-rotate-btn { display: none; }
 [class*="toolbar-docked"] .toolbar-footer .toolbar-popout-btn { display: flex; }
 
 /* Docked footer: drop decorative treatment, center the button */
@@ -687,6 +728,37 @@
 [data-ui-skin] .toolbar-docked-bottom .toolbar-drag-handle .handle-horiz { display: none; }
 [data-ui-skin] .toolbar-docked-top .toolbar-drag-handle .handle-vert,
 [data-ui-skin] .toolbar-docked-bottom .toolbar-drag-handle .handle-vert { display: block; }
+
+/* ── Floating horizontal: rotate the floating toolbar to a horizontal bar ── */
+[data-ui-skin] .tool-bar.toolbar-floating-horizontal:not([class*="toolbar-docked"]) {
+  flex-direction: row; align-items: center;
+  max-height: none; max-width: calc(100% - 20px);
+  overflow-x: auto; overflow-y: hidden;
+}
+[data-ui-skin] .tool-bar.toolbar-floating-horizontal:not([class*="toolbar-docked"]) .tool-divider {
+  width: 1px; height: 22px;
+  margin: 0 2px; align-self: center; flex-shrink: 0;
+}
+[data-ui-skin] .tool-bar.toolbar-floating-horizontal:not([class*="toolbar-docked"]) .toolbar-drag-handle {
+  width: 14px; height: auto;
+  margin: 0 4px 0 0;
+  align-self: stretch; flex-shrink: 0;
+}
+[data-ui-skin] .tool-bar.toolbar-floating-horizontal:not([class*="toolbar-docked"]) .toolbar-drag-handle .handle-horiz { display: none; }
+[data-ui-skin] .tool-bar.toolbar-floating-horizontal:not([class*="toolbar-docked"]) .toolbar-drag-handle .handle-vert  { display: block; }
+[data-ui-skin] .tool-bar.toolbar-floating-horizontal:not([class*="toolbar-docked"]) .toolbar-footer {
+  flex-direction: column; align-self: stretch;
+  align-items: center; justify-content: center;
+  margin: calc(-1 * var(--spacing-sm)) calc(-1 * var(--spacing-sm)) calc(-1 * var(--spacing-sm)) 4px;
+  padding: 2px 4px;
+  border-top: none; border-left: 1px solid var(--ui-border);
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+}
+/* Vertical-stacked footer: spacing rotates from horizontal to vertical so the
+   pin centers cleanly when home/rotate collapse out in the locked state. */
+[data-ui-skin] .tool-bar.toolbar-floating-horizontal:not([class*="toolbar-docked"]) .toolbar-footer > button + button {
+  margin-left: 0; margin-top: 2px;
+}
 
 /* Snap zone overlays — injected by JS into #viewport-container */
 .toolbar-snap-zone {

@@ -639,7 +639,7 @@
       + '</svg>';
     toolbar.prepend(handle);
 
-    // ── Inject footer (pin + pop-out) at bottom of toolbar ──────
+    // ── Inject footer (pin + home + rotate + pop-out) at bottom of toolbar ──
     const footer = document.createElement('div');
     footer.className = 'toolbar-footer';
     footer.innerHTML =
@@ -648,11 +648,18 @@
       + '<line x1="12" y1="17" x2="12" y2="22"/>'
       + '<path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>'
       + '</svg></button>'
+      + '<button class="toolbar-home-btn" type="button" title="Reset toolbar position" aria-label="Reset toolbar position">'
+      + '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+      + '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>'
+      + '</svg></button>'
+      + '<button class="toolbar-rotate-btn" type="button" title="Rotate toolbar orientation" aria-label="Rotate toolbar orientation" aria-pressed="false">'
+      + '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+      + '<path d="M21 12a9 9 0 1 1-3.5-7.1"/><polyline points="21 3 21 9 15 9"/>'
+      + '</svg></button>'
       + '<button class="toolbar-popout-btn" type="button" title="Pop out toolbar" aria-label="Restore floating toolbar">'
       + '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
       + '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>'
       + '<line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>'
-      + '</svg></button>'
       + '</svg></button>';
     toolbar.appendChild(footer); // appended last so it sits at the bottom
 
@@ -665,6 +672,8 @@
     });
 
     const pinBtn    = footer.querySelector('.toolbar-pin-btn');
+    const homeBtn   = footer.querySelector('.toolbar-home-btn');
+    const rotateBtn = footer.querySelector('.toolbar-rotate-btn');
     const popoutBtn = footer.querySelector('.toolbar-popout-btn');
 
     // anchor used to restore toolbar to its original position in shell after bottom-dock
@@ -760,6 +769,11 @@
     };
 
     // ── Restore saved state ──────────────────────────────────────
+    if (SETTINGS.toolbarHorizontal) {
+      toolbar.classList.add('toolbar-floating-horizontal');
+      rotateBtn.classList.add('active');
+      rotateBtn.setAttribute('aria-pressed', 'true');
+    }
     if (SETTINGS.toolbarDock) {
       dockToolbar(SETTINGS.toolbarDock);
     } else {
@@ -856,13 +870,35 @@
       currentSnap = null;
     });
 
-    // ── Lock / pop-out ───────────────────────────────────────────
+    // ── Lock / home / rotate / pop-out ───────────────────────────
     pinBtn.addEventListener('click', () => {
       const locked = toolbar.classList.toggle('toolbar-locked');
       SETTINGS.toolbarLocked = locked;
       pinBtn.classList.toggle('active', locked);
       pinBtn.setAttribute('aria-pressed', String(locked));
       this.app?.persistPreferencesDebounced?.();
+    });
+
+    homeBtn.addEventListener('click', () => {
+      SETTINGS.toolbarX = null;
+      SETTINGS.toolbarY = null;
+      SETTINGS.toolbarDock = null;
+      setFloat(null, null);
+      window.dispatchEvent(new Event('resize'));
+      this.app?.persistPreferencesDebounced?.();
+      requestAnimationFrame(() => this._updateAllSubmenuDirs?.());
+    });
+
+    rotateBtn.addEventListener('click', () => {
+      const horizontal = toolbar.classList.toggle('toolbar-floating-horizontal');
+      SETTINGS.toolbarHorizontal = horizontal;
+      rotateBtn.classList.toggle('active', horizontal);
+      rotateBtn.setAttribute('aria-pressed', String(horizontal));
+      // If currently floating, re-center to the new natural size; if docked,
+      // the orientation only takes effect after undock, so leave layout alone.
+      if (!getCurrentDock()) setFloat(null, null);
+      this.app?.persistPreferencesDebounced?.();
+      requestAnimationFrame(() => this._updateAllSubmenuDirs?.());
     });
 
     popoutBtn.addEventListener('click', () => {
