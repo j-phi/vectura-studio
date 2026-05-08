@@ -95,6 +95,7 @@
       const color = SETTINGS.marginLineColor ?? '#52525b';
       marginLineColorPill.textContent = color.toUpperCase();
       marginLineColorPill.style.background = color;
+      marginLineColorPill.style.color = getContrastTextColor(color);
     }
     if (marginLineColor) marginLineColor.value = SETTINGS.marginLineColor ?? '#52525b';
     if (marginLineDotting) marginLineDotting.value = SETTINGS.marginLineDotting ?? 0;
@@ -130,6 +131,7 @@
       const color = SETTINGS.selectionOutlineColor || '#ef4444';
       selectionOutlineColorPill.textContent = color.toUpperCase();
       selectionOutlineColorPill.style.background = color;
+      selectionOutlineColorPill.style.color = getContrastTextColor(color);
     }
     if (selectionOutlineStyleReset) selectionOutlineStyleReset.disabled = false;
     if (cookiePreferences) cookiePreferences.checked = SETTINGS.cookiePreferencesEnabled === true;

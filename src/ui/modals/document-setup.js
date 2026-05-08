@@ -258,9 +258,9 @@
                   <div class="style-field">
                     <span class="style-field-label">Line Thickness</span>
                     <div class="color-thickness-size">
-                      <input type="range" id="set-selection-outline-width-slider" min="0.1" max="2" step="0.05" value="0.4"
+                      <input type="range" id="set-selection-outline-width-slider" min="0.1" max="2" step="0.05" value="0.15"
                         class="w-full">
-                      <input type="number" id="set-selection-outline-width" min="0.1" max="2" step="0.05" value="0.4"
+                      <input type="number" id="set-selection-outline-width" min="0.1" max="2" step="0.05" value="0.15"
                         class="w-14 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
                       <span id="set-selection-outline-width-unit" class="text-[11px] text-vectura-muted">mm</span>
                     </div>

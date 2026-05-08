@@ -113,8 +113,8 @@
       this.syncDocumentLengthInput(paperHeight, SETTINGS.paperHeight ?? 297, { minMm: 1, stepMm: 0.5 });
       this.syncDocumentLengthInput(marginLineWeight, SETTINGS.marginLineWeight ?? 0.2, { minMm: 0.05, maxMm: 2, stepMm: 0.05 });
       this.syncDocumentLengthInput(marginLineWeightSlider, SETTINGS.marginLineWeight ?? 0.2, { minMm: 0.05, maxMm: 2, stepMm: 0.05 });
-      this.syncDocumentLengthInput(selectionOutlineWidth, SETTINGS.selectionOutlineWidth ?? 0.4, { minMm: 0.1, maxMm: 2, stepMm: 0.05 });
-      this.syncDocumentLengthInput(selectionOutlineWidthSlider, SETTINGS.selectionOutlineWidth ?? 0.4, { minMm: 0.1, maxMm: 2, stepMm: 0.05 });
+      this.syncDocumentLengthInput(selectionOutlineWidth, SETTINGS.selectionOutlineWidth ?? 0.15, { minMm: 0.1, maxMm: 2, stepMm: 0.05 });
+      this.syncDocumentLengthInput(selectionOutlineWidthSlider, SETTINGS.selectionOutlineWidth ?? 0.15, { minMm: 0.1, maxMm: 2, stepMm: 0.05 });
     },
   };
 })();

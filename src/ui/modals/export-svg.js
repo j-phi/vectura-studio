@@ -239,6 +239,48 @@
     }
   }
 
+  // Sidebar layout: nav-driven single-section-visible export settings.
+  // Section IDs that match `data-step-id` on optimization cards (linesimplify,
+  // linesort, filter, multipass) are populated automatically; `output` and
+  // `stats` are synthesized from rows / actions / stats.
+  const SIDEBAR_SECTIONS = [
+    {
+      id: 'output',
+      group: 'Output',
+      label: 'Output',
+      title: 'Output',
+      desc: 'Format, paper, stroke, hidden geometry, and overlay style.',
+    },
+    {
+      id: 'linesimplify',
+      group: 'Optimization',
+      label: 'Simplify',
+      title: 'Line Simplify',
+      desc: 'Reduce point count while preserving visual shape.',
+    },
+    {
+      id: 'linesort',
+      group: 'Optimization',
+      label: 'Sort',
+      title: 'Line Sort',
+      desc: 'Reorder paths to minimize plotter pen-up travel.',
+    },
+    {
+      id: 'filter',
+      group: 'Optimization',
+      label: 'Filter',
+      title: 'Filter',
+      desc: 'Drop paths that fall outside length bounds.',
+    },
+    {
+      id: 'multipass',
+      group: 'Optimization',
+      label: 'Multipass',
+      title: 'Multipass',
+      desc: 'Duplicate each path with offsets for thicker, denser strokes.',
+    },
+  ];
+
   function decorateExportControlsPanel() {
     const { getEl } = requireDeps('decorateExportControlsPanel');
     const panel = getEl('optimization-controls')?.querySelector('.optimization-panel');
@@ -253,27 +295,330 @@
     const previewRow = rows.find((row) => /Preview/i.test(row.textContent || '')) || null;
     const overlayStyleRow = rows.find((row) => /Overlay Style/i.test(row.textContent || '')) || null;
     const exportRows = rows.filter((row) => row !== previewRow && row !== overlayStyleRow);
+    const cardByStep = new Map();
+    optimizationCards.forEach((card) => {
+      const stepId = card.dataset.stepId;
+      if (stepId) cardByStep.set(stepId, card);
+    });
     panel.innerHTML = '';
-    const makeSection = (title, items, open = true) => {
-      const details = document.createElement('details');
-      details.className = 'export-settings-section';
-      if (open) details.open = true;
-      const summary = document.createElement('summary');
-      summary.className = 'export-settings-section-summary';
-      summary.textContent = title;
+
+    const makeSection = (meta, items) => {
+      const sec = document.createElement('section');
+      sec.className = 'export-settings-section';
+      sec.dataset.sectionId = meta.id;
+      const header = document.createElement('header');
+      header.className = 'export-settings-section-head';
+      header.innerHTML = `
+        <div class="export-settings-section-head-text">
+          <h3>${meta.title}</h3>
+          <p>${meta.desc}</p>
+        </div>
+        <div class="export-settings-section-head-actions" data-actions-slot="${meta.id}"></div>
+      `;
+      sec.appendChild(header);
       const body = document.createElement('div');
       body.className = 'export-settings-section-body';
       items.filter(Boolean).forEach((item) => body.appendChild(item));
-      details.appendChild(summary);
-      details.appendChild(body);
-      return details;
+      sec.appendChild(body);
+      return sec;
     };
-    panel.appendChild(makeSection('Export Settings', [...exportRows, exportSettingsCard], true));
-    panel.appendChild(makeSection('Optimization', optimizationCards, true));
-    panel.appendChild(makeSection('Stats', [actions, stats], false));
+
+    // The legacy Stats section is replaced by the Impact Preview pane below
+    // the settings scroll, so its `stats` element is intentionally dropped.
+    // The Reset Optimization button (`actions`) is hoisted into Output so the
+    // user-facing escape hatch is preserved.
+    const itemsForSection = (id) => {
+      if (id === 'output') return [previewRow, overlayStyleRow, ...exportRows, exportSettingsCard, actions];
+      return [cardByStep.get(id)];
+    };
+
+    const sections = [];
+    SIDEBAR_SECTIONS.forEach((meta) => {
+      const items = itemsForSection(meta.id).filter(Boolean);
+      if (!items.length) return;
+      const sec = makeSection(meta, items);
+      panel.appendChild(sec);
+      sections.push({ meta, el: sec });
+    });
+
+    // Build the sidebar nav inside the modal root and wire activation.
+    const navRoot = document.getElementById('export-modal-nav');
+    if (navRoot) {
+      navRoot.innerHTML = '';
+      let lastGroup = null;
+      sections.forEach(({ meta }, idx) => {
+        if (meta.group !== lastGroup) {
+          const heading = document.createElement('div');
+          heading.className = 'export-nav-group';
+          heading.textContent = meta.group;
+          navRoot.appendChild(heading);
+          lastGroup = meta.group;
+        }
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'export-nav-item';
+        btn.dataset.sectionId = meta.id;
+        btn.innerHTML = `<span class="export-nav-label">${meta.label}</span><span class="export-nav-dot" aria-hidden="true"></span>`;
+        if (idx === 0) btn.classList.add('is-active');
+        btn.addEventListener('click', () => this.setExportSection(meta.id));
+        navRoot.appendChild(btn);
+      });
+    }
+
+    if (sections.length) {
+      const firstId = sections[0].meta.id;
+      // Honor a previously-active section across rebuilds so toggling Apply
+      // doesn't bounce the user back to the Output tab.
+      const prevActive = this.exportModalState?.activeSection;
+      const activeId = sections.find((s) => s.meta.id === prevActive)
+        ? prevActive
+        : firstId;
+      sections.forEach(({ meta, el }) => el.classList.toggle('is-active', meta.id === activeId));
+      if (navRoot) {
+        navRoot.querySelectorAll('.export-nav-item').forEach((btn) => {
+          btn.classList.toggle('is-active', btn.dataset.sectionId === activeId);
+        });
+      }
+      if (this.exportModalState) this.exportModalState.activeSection = activeId;
+    }
+
+    // Per-tab simplification: each optimization step is now its own screen, so
+    // drop the drag grip + per-card Bypass toggle, and lift the Apply toggle
+    // up into the section header next to the title.
+    sections.forEach(({ meta, el }) => {
+      if (!cardByStep.has(meta.id)) return;
+      const card = cardByStep.get(meta.id);
+      const cardHeader = card.querySelector(':scope > .optimization-card-header');
+      if (!cardHeader) return;
+      const grip = cardHeader.querySelector('.optimization-grip');
+      grip?.remove();
+      const toggleLabels = Array.from(cardHeader.querySelectorAll('.opt-toggle'));
+      const applyLabel = toggleLabels[0] || null;
+      const bypassLabel = toggleLabels[1] || null;
+      bypassLabel?.remove();
+      const slot = el.querySelector(`.export-settings-section-head-actions[data-actions-slot="${meta.id}"]`);
+      if (slot && applyLabel) {
+        applyLabel.classList.add('export-section-apply');
+        slot.appendChild(applyLabel);
+      }
+      cardHeader.remove();
+    });
+
+    // Wrap raw <input type="checkbox"> in the Output section with .sw-toggle so
+    // it picks up the project's toggle styling (Meridian skins) while
+    // remaining a plain checkbox on classic skins — matches the convention
+    // used elsewhere in the app.
+    const outputSection = sections.find((s) => s.meta.id === 'output')?.el;
+    if (outputSection) {
+      outputSection.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+        if (cb.closest('.sw-toggle')) return;
+        const wrap = document.createElement('label');
+        wrap.className = 'sw-toggle';
+        wrap.setAttribute('role', 'switch');
+        wrap.setAttribute('aria-checked', cb.checked ? 'true' : 'false');
+        cb.parentNode.insertBefore(wrap, cb);
+        wrap.appendChild(cb);
+        const track = document.createElement('span');
+        track.className = 'sw-track';
+        const thumb = document.createElement('span');
+        thumb.className = 'sw-thumb';
+        wrap.appendChild(track);
+        wrap.appendChild(thumb);
+        cb.addEventListener('change', () => wrap.setAttribute('aria-checked', cb.checked ? 'true' : 'false'));
+      });
+    }
+
+    // Three-state dot computation — bypassed (grey) / applied (green) /
+    // modified (orange). Computed against SETTINGS.optimizationDefaults so
+    // user-edits-from-baseline are detectable across rebuilds, not just
+    // since-modal-open.
+    const refreshNavStates = () => this.refreshExportNavStates();
+    const refreshImpact = () => this.updateExportImpactPreview();
+    sections.forEach(({ el }) => {
+      el.addEventListener('input', () => { refreshNavStates(); refreshImpact(); });
+      el.addEventListener('change', () => { refreshNavStates(); refreshImpact(); });
+    });
+    this.refreshExportNavStates();
+    this.updateExportImpactPreview();
+
     panel.dataset.exportDecorated = 'true';
 
     this.attachExportInfoButtons(panel);
+  }
+
+  function refreshExportNavStates() {
+    const { SETTINGS } = requireDeps('refreshExportNavStates');
+    const navRoot = document.getElementById('export-modal-nav');
+    if (!navRoot) return;
+    const targets = (typeof this.getOptimizationTargets === 'function')
+      ? (this.getOptimizationTargets() || [])
+      : [];
+    const layerCfg = targets[0]?.optimization || null;
+    const steps = (layerCfg?.steps) || [];
+    const bypassAll = Boolean(layerCfg?.bypassAll);
+    const defaults = SETTINGS.optimizationDefaults || { steps: [] };
+    const defaultStepMap = new Map((defaults.steps || []).map((s) => [s.id, s]));
+
+    const stateForOptimizationStep = (stepId) => {
+      const step = steps.find((s) => s.id === stepId);
+      if (!step) return 'bypassed';
+      const isBypassed = !step.enabled || step.bypass || bypassAll;
+      if (isBypassed) return 'bypassed';
+      // Multipass duplicates paths, so any active configuration with passes>1
+      // pushes path count / vertices / file size / plot time up. Flag it with
+      // its own state so the nav dot can render orange instead of green.
+      if (stepId === 'multipass' && Number(step.passes) > 1) return 'increasing';
+      const def = defaultStepMap.get(stepId) || {};
+      const schema = (DEPS.OPTIMIZATION_STEPS || []).find((s) => s.id === stepId);
+      const keys = (schema?.controls || []).map((c) => c.key);
+      const modified = keys.some((k) => step[k] !== def[k]);
+      return modified ? 'modified' : 'applied';
+    };
+
+    SIDEBAR_SECTIONS.forEach((meta) => {
+      const btn = navRoot.querySelector(`.export-nav-item[data-section-id="${meta.id}"]`);
+      if (!btn) return;
+      let state = '';
+      if (meta.id === 'output' || meta.id === 'stats') {
+        state = '';
+      } else {
+        state = stateForOptimizationStep(meta.id);
+      }
+      if (state) btn.dataset.dotState = state;
+      else delete btn.dataset.dotState;
+    });
+  }
+
+  /**
+   * Refresh the Impact Preview pane (4 cells: paths / vertices / file size /
+   * plot time). Computes raw before/after stats via engine.computeStats and
+   * derives a heuristic file-size estimate from vertex count. Deltas are
+   * rendered only when before ≠ after.
+   *
+   * Called on modal open and on every input/change inside any settings
+   * section so the user sees impact live as they tune optimizations.
+   */
+  function updateExportImpactPreview() {
+    const root = document.getElementById('export-impact-preview');
+    if (!root) return;
+    const targets = (typeof this.getOptimizationTargets === 'function')
+      ? (this.getOptimizationTargets() || [])
+      : (this.app?.engine?.layers || []);
+    const engine = this.app?.engine;
+    if (!engine || !targets.length) {
+      root.querySelectorAll('[data-impact-val]').forEach((el) => { el.textContent = '—'; });
+      root.querySelectorAll('[data-impact-delta]').forEach((el) => { el.textContent = ''; el.removeAttribute('data-trend'); });
+      return;
+    }
+    const before = engine.computeStats(targets, { useOptimized: false, includePlotterOptimize: false });
+    const after = engine.computeStats(targets, { useOptimized: true, includePlotterOptimize: true });
+
+    const parseTimeSec = (t) => {
+      const m = /^(\d+):(\d+)$/.exec(`${t || ''}`);
+      if (!m) return 0;
+      return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+    };
+    const beforeTimeSec = parseTimeSec(before.time);
+    const afterTimeSec = parseTimeSec(after.time);
+
+    // Heuristic file-size estimate. Each vertex emits ~12 bytes ("L X.XX,Y.YY ")
+    // in SVG path data; per-path wrapper ~80b; plus modal/header overhead.
+    const estBytes = (s) => 12 * (s.points || 0) + 80 * (s.lines || 0) + 800;
+    const beforeBytes = estBytes(before);
+    const afterBytes = estBytes(after);
+
+    const formatPaths = (n) => Number(n || 0).toLocaleString();
+    const formatVertices = (n) => {
+      const v = Number(n || 0);
+      if (v >= 1000) return `${(v / 1000).toFixed(1)}k`;
+      return `${v}`;
+    };
+    const formatBytes = (b) => {
+      if (b >= 1024 * 1024) return `${(b / 1024 / 1024).toFixed(1)}<small>mb</small>`;
+      if (b >= 1024) return `${Math.round(b / 1024)}<small>kb</small>`;
+      return `${b}<small>b</small>`;
+    };
+    const formatTime = (sec) => {
+      if (!sec || sec < 1) return `0<small>s</small>`;
+      const m = Math.floor(sec / 60);
+      const s = Math.floor(sec % 60);
+      if (!m) return `${s}<small>s</small>`;
+      return `${m}m<small>${s.toString().padStart(2, '0')}s</small>`;
+    };
+
+    const setCell = (cellName, valHtml, deltaText, trend) => {
+      const cell = root.querySelector(`[data-impact-cell="${cellName}"]`);
+      if (!cell) return;
+      const valEl = cell.querySelector('[data-impact-val]');
+      const deltaEl = cell.querySelector('[data-impact-delta]');
+      if (valEl) valEl.innerHTML = valHtml;
+      if (deltaEl) {
+        deltaEl.textContent = deltaText || '';
+        if (trend) deltaEl.dataset.trend = trend;
+        else deltaEl.removeAttribute('data-trend');
+      }
+    };
+
+    // Main number = the *resulting* export (after optimization). Delta shows
+    // savings from the un-optimized baseline so as the user tunes settings,
+    // both the value and the delta animate together.
+    {
+      const beforeN = before.lines || 0;
+      const afterN = after.lines || 0;
+      const diff = beforeN - afterN;
+      let delta = '';
+      let trend = '';
+      if (diff !== 0) {
+        delta = `${diff > 0 ? '↓' : '↑'} ${formatPaths(Math.abs(diff))}`;
+        trend = diff > 0 ? 'down' : 'up';
+      }
+      setCell('paths', formatPaths(afterN), delta, trend);
+    }
+    const pctDelta = (b, a) => {
+      if (!b || b === a) return { text: '', trend: '' };
+      const pct = Math.round(((a - b) / b) * 100);
+      if (pct === 0) return { text: '', trend: '' };
+      return { text: `${pct < 0 ? '↓' : '↑'} ${Math.abs(pct)}%`, trend: pct < 0 ? 'down' : 'up' };
+    };
+    {
+      const d = pctDelta(before.points || 0, after.points || 0);
+      setCell('vertices', formatVertices(after.points || 0), d.text, d.trend);
+    }
+    {
+      const d = pctDelta(beforeBytes, afterBytes);
+      setCell('size', formatBytes(afterBytes), d.text, d.trend);
+    }
+    {
+      // Plot time uses an absolute delta in seconds since percentage of small
+      // numbers reads weird ("↓ 8s" is more meaningful than "↓ 9%").
+      const diffSec = beforeTimeSec - afterTimeSec;
+      let delta = '';
+      let trend = '';
+      if (diffSec !== 0 && beforeTimeSec > 0) {
+        const abs = Math.abs(diffSec);
+        const m = Math.floor(abs / 60);
+        const s = Math.floor(abs % 60);
+        const human = m ? `${m}m${s ? ` ${s}s` : ''}` : `${s}s`;
+        delta = `${diffSec > 0 ? '↓' : '↑'} ${human}`;
+        trend = diffSec > 0 ? 'down' : 'up';
+      }
+      setCell('time', formatTime(afterTimeSec), delta, trend);
+    }
+  }
+
+  function setExportSection(id) {
+    const panel = document.getElementById('optimization-controls')?.querySelector('.optimization-panel');
+    const navRoot = document.getElementById('export-modal-nav');
+    if (!panel || !navRoot) return;
+    panel.querySelectorAll(':scope > .export-settings-section').forEach((sec) => {
+      sec.classList.toggle('is-active', sec.dataset.sectionId === id);
+    });
+    navRoot.querySelectorAll('.export-nav-item').forEach((btn) => {
+      btn.classList.toggle('is-active', btn.dataset.sectionId === id);
+    });
+    if (this.exportModalState) this.exportModalState.activeSection = id;
+    const scroll = document.getElementById('export-settings-scroll');
+    if (scroll) scroll.scrollTop = 0;
   }
 
   function syncLegendSettingsControls(root) {
@@ -330,30 +675,66 @@
       btn.className = 'export-info-btn';
       btn.textContent = 'i';
       btn.setAttribute('aria-label', `Info about ${info.title}`);
-      const infoPanel = document.createElement('div');
-      infoPanel.className = 'export-info-panel hidden';
-      infoPanel.textContent = info.description;
+      labelEl.insertAdjacentElement('afterend', btn);
+
+      // Floating popover lives on document.body so it can escape any
+      // clipping/flex constraints in the section. It is rebuilt fresh each
+      // open so position math always reflects the current button location.
+      let popover = null;
+      const closePopover = () => {
+        if (!popover) return;
+        popover.remove();
+        popover = null;
+        btn.textContent = 'i';
+        btn.classList.remove('active');
+        document.removeEventListener('pointerdown', onDocPointerDown, true);
+        window.removeEventListener('resize', closePopover);
+        window.removeEventListener('scroll', closePopover, true);
+      };
+      const onDocPointerDown = (e) => {
+        if (popover && !popover.contains(e.target) && e.target !== btn) closePopover();
+      };
+      const openPopover = () => {
+        popover = document.createElement('div');
+        popover.className = 'export-info-popover';
+        popover.setAttribute('role', 'tooltip');
+        const titleEl = document.createElement('div');
+        titleEl.className = 'export-info-popover-title';
+        titleEl.textContent = info.title || '';
+        const bodyEl = document.createElement('div');
+        bodyEl.className = 'export-info-popover-body';
+        bodyEl.textContent = info.description;
+        if (info.title) popover.appendChild(titleEl);
+        popover.appendChild(bodyEl);
+        document.body.appendChild(popover);
+
+        const rect = btn.getBoundingClientRect();
+        const margin = 8;
+        const popRect = popover.getBoundingClientRect();
+        let left = rect.left + rect.width / 2 - popRect.width / 2;
+        let top = rect.bottom + margin;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        if (left + popRect.width > vw - 8) left = vw - popRect.width - 8;
+        if (left < 8) left = 8;
+        if (top + popRect.height > vh - 8) top = rect.top - margin - popRect.height;
+        popover.style.left = `${Math.round(left)}px`;
+        popover.style.top = `${Math.round(top)}px`;
+
+        btn.textContent = '×';
+        btn.classList.add('active');
+        // Defer the outside-click listener one tick so the click that opened
+        // the popover doesn't immediately close it.
+        setTimeout(() => document.addEventListener('pointerdown', onDocPointerDown, true), 0);
+        window.addEventListener('resize', closePopover);
+        window.addEventListener('scroll', closePopover, true);
+      };
+
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const isOpen = !infoPanel.classList.contains('hidden');
-        infoPanel.classList.toggle('hidden', isOpen);
-        btn.textContent = isOpen ? 'i' : '×';
-        btn.classList.toggle('active', !isOpen);
+        if (popover) closePopover();
+        else openPopover();
       });
-      labelEl.insertAdjacentElement('afterend', btn);
-      const cardHeader = labelEl.closest('.optimization-card-header');
-      const card = labelEl.closest('.optimization-card');
-      const control = labelEl.closest('.optimization-control');
-      if (control) {
-        control.appendChild(infoPanel);
-        return;
-      }
-      if (cardHeader && card) {
-        cardHeader.insertAdjacentElement('afterend', infoPanel);
-        return;
-      }
-      const parent = labelEl.parentElement;
-      if (parent) parent.appendChild(infoPanel);
     };
 
     const cards = panel.querySelectorAll('.optimization-card');
@@ -380,6 +761,8 @@
           if (/Remove Hidden Geometry/i.test(text)) addInfoToggle(label, 'removeHiddenGeometry');
           if (/Plotter Optimization/i.test(text)) addInfoToggle(label, 'plotterOptimization');
           if (/Optimization Tolerance/i.test(text)) addInfoToggle(label, 'optimizationTolerance');
+          if (/^Precision$/i.test(text)) addInfoToggle(label, 'precision');
+          if (/^Stroke\b/i.test(text)) addInfoToggle(label, 'strokeWidth');
         });
         return;
       }
@@ -418,60 +801,91 @@
     root.id = 'export-modal-root';
     root.className = 'export-modal';
     root.innerHTML = `
-      <div class="export-modal-preview">
-        <div class="export-preview-toolbar">
-          <div class="export-preview-toolbar-actions">
-            <button type="button" id="export-preview-fit">Fit</button>
-            <button type="button" id="export-preview-reset">Reset</button>
-          </div>
-          <div class="export-preview-toolbar-right">
-            <span class="export-preview-mode-label">Preview:</span>
-            <select id="export-preview-mode" class="export-preview-mode-select">
-              <option value="overlay">Overlay</option>
-              <option value="replace">Replace</option>
-              <option value="off">Off</option>
-            </select>
-          </div>
+      <div class="export-modal-body">
+        <nav id="export-modal-nav" class="export-modal-nav" aria-label="Export settings sections"></nav>
+        <div id="export-modal-settings" class="export-modal-settings">
+          <div id="export-settings-scroll" class="export-settings-scroll"></div>
+          <aside id="export-impact-preview" class="export-impact-preview" aria-label="Export impact preview">
+            <div class="export-impact-head">
+              <h4>Impact Preview</h4>
+              <div class="export-impact-actions" data-impact-actions></div>
+            </div>
+            <div class="export-impact-grid">
+              <div class="export-impact-cell" data-impact-cell="paths">
+                <span class="export-impact-label">Paths</span>
+                <span class="export-impact-val" data-impact-val>—</span>
+                <span class="export-impact-delta" data-impact-delta></span>
+              </div>
+              <div class="export-impact-cell" data-impact-cell="vertices">
+                <span class="export-impact-label">Vertices</span>
+                <span class="export-impact-val accent" data-impact-val>—</span>
+                <span class="export-impact-delta" data-impact-delta></span>
+              </div>
+              <div class="export-impact-cell" data-impact-cell="size">
+                <span class="export-impact-label">File Size</span>
+                <span class="export-impact-val" data-impact-val>—</span>
+                <span class="export-impact-delta" data-impact-delta></span>
+              </div>
+              <div class="export-impact-cell" data-impact-cell="time">
+                <span class="export-impact-label">Plot Time</span>
+                <span class="export-impact-val" data-impact-val>—</span>
+                <span class="export-impact-delta" data-impact-delta></span>
+              </div>
+            </div>
+          </aside>
         </div>
-        <div class="export-preview-stage">
-          <div id="export-preview-canvas-wrap" class="export-preview-canvas-wrap">
-            <canvas id="export-preview-canvas" class="export-preview-canvas"></canvas>
+        <div class="export-modal-preview">
+          <div class="export-preview-toolbar">
+            <div class="export-preview-toolbar-actions">
+              <button type="button" id="export-preview-fit">Fit</button>
+              <button type="button" id="export-preview-reset">Reset</button>
+            </div>
+            <div class="export-preview-toolbar-right">
+              <span class="export-preview-mode-label">Preview:</span>
+              <select id="export-preview-mode" class="export-preview-mode-select">
+                <option value="overlay">Overlay</option>
+                <option value="replace">Replace</option>
+                <option value="off">Off</option>
+              </select>
+            </div>
           </div>
-          <div id="export-preview-legend" class="export-preview-legend hidden" aria-hidden="true">
-            <div class="export-preview-legend-row">
-              <div class="export-preview-legend-title">Line Sort Print Order</div>
-              <button type="button" id="export-legend-gear" class="export-legend-gear-btn" aria-label="Legend settings">⚙</button>
+          <div class="export-preview-stage">
+            <div id="export-preview-canvas-wrap" class="export-preview-canvas-wrap">
+              <canvas id="export-preview-canvas" class="export-preview-canvas"></canvas>
             </div>
-            <div id="export-preview-legend-gradient" class="export-preview-legend-gradient"></div>
-            <div class="export-preview-legend-labels">
-              <span>Start</span>
-              <span>End</span>
-            </div>
-            <div id="export-legend-settings" class="export-legend-settings hidden">
-              <div class="export-legend-setting">
-                <label class="export-legend-setting-label">Start Color</label>
-                <button type="button" id="export-legend-start-color" class="value-chip text-xs font-mono color-thickness-pill"></button>
-                <input type="color" id="export-legend-start-color-input" class="hidden">
+            <div id="export-preview-legend" class="export-preview-legend hidden" aria-hidden="true">
+              <div class="export-preview-legend-row">
+                <div class="export-preview-legend-title">Line Sort Print Order</div>
+                <button type="button" id="export-legend-gear" class="export-legend-gear-btn" aria-label="Legend settings">⚙</button>
               </div>
-              <div class="export-legend-setting">
-                <label class="export-legend-setting-label">End Color</label>
-                <button type="button" id="export-legend-end-color" class="value-chip text-xs font-mono color-thickness-pill"></button>
-                <input type="color" id="export-legend-end-color-input" class="hidden">
+              <div id="export-preview-legend-gradient" class="export-preview-legend-gradient"></div>
+              <div class="export-preview-legend-labels">
+                <span>Start</span>
+                <span>End</span>
               </div>
-              <div class="export-legend-setting">
-                <label class="export-legend-setting-label">Line Thickness</label>
-                <input type="range" id="export-legend-thickness" min="0.05" max="1" step="0.05" class="w-full">
+              <div id="export-legend-settings" class="export-legend-settings hidden">
+                <div class="export-legend-setting">
+                  <label class="export-legend-setting-label">Start Color</label>
+                  <button type="button" id="export-legend-start-color" class="value-chip text-xs font-mono color-thickness-pill"></button>
+                  <input type="color" id="export-legend-start-color-input" class="hidden">
+                </div>
+                <div class="export-legend-setting">
+                  <label class="export-legend-setting-label">End Color</label>
+                  <button type="button" id="export-legend-end-color" class="value-chip text-xs font-mono color-thickness-pill"></button>
+                  <input type="color" id="export-legend-end-color-input" class="hidden">
+                </div>
+                <div class="export-legend-setting">
+                  <label class="export-legend-setting-label">Line Thickness</label>
+                  <input type="range" id="export-legend-thickness" min="0.05" max="1" step="0.05" class="w-full">
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
-      <div id="export-modal-settings" class="export-modal-settings">
-        <div id="export-settings-scroll" class="export-settings-scroll"></div>
-        <div class="export-modal-footer" id="export-modal-footer">
-          <button type="button" id="export-modal-cancel">Cancel</button>
-          <button type="button" id="export-modal-submit" class="export-primary">Export SVG</button>
-        </div>
+      <div class="export-modal-footer" id="export-modal-footer">
+        <button type="button" id="export-modal-cancel">Cancel</button>
+        <button type="button" id="export-modal-submit" class="export-primary">Export SVG</button>
       </div>
     `;
     const settingsScroll = root.querySelector('#export-settings-scroll');
@@ -666,6 +1080,9 @@
     resizeExportPreviewCanvas,
     renderExportPreview,
     decorateExportControlsPanel,
+    setExportSection,
+    refreshExportNavStates,
+    updateExportImpactPreview,
     syncLegendSettingsControls,
     attachExportInfoButtons,
     buildExportPreviewPath,
@@ -676,6 +1093,9 @@
       proto.resizeExportPreviewCanvas = function() { return resizeExportPreviewCanvas.call(this); };
       proto.renderExportPreview = function() { return renderExportPreview.call(this); };
       proto.decorateExportControlsPanel = function() { return decorateExportControlsPanel.call(this); };
+      proto.setExportSection = function(id) { return setExportSection.call(this, id); };
+      proto.refreshExportNavStates = function() { return refreshExportNavStates.call(this); };
+      proto.updateExportImpactPreview = function() { return updateExportImpactPreview.call(this); };
       proto.syncLegendSettingsControls = function(root) { return syncLegendSettingsControls.call(this, root); };
       proto.attachExportInfoButtons = function(panel) { return attachExportInfoButtons.call(this, panel); };
       proto.buildExportPreviewPath = function(...args) { return buildExportPreviewPath.apply(this, args); };

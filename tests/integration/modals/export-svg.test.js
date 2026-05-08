@@ -67,6 +67,37 @@ describe('Export SVG modal', () => {
     expect(app.ui.exportModalState).toBe(null);
   });
 
+  test('Impact Preview pane renders 4 cells and populates them on open', () => {
+    closeAnyOpenModal();
+    // Ensure at least one layer with paths so computeStats has something to work with.
+    if (!app.engine.layers?.some((l) => l && !l.isGroup)) {
+      app.engine.addLayer('wavetable');
+    }
+    app.ui.openExportModal();
+    const pane = document.getElementById('export-impact-preview');
+    expect(pane).toBeTruthy();
+    const cells = pane.querySelectorAll('.export-impact-cell');
+    expect(cells.length).toBe(4);
+    const cellNames = Array.from(cells).map((c) => c.dataset.impactCell);
+    expect(cellNames).toEqual(['paths', 'vertices', 'size', 'time']);
+    // Each cell's value should be populated (not the placeholder em-dash).
+    cells.forEach((cell) => {
+      const val = cell.querySelector('[data-impact-val]');
+      expect(val).toBeTruthy();
+      expect(val.innerHTML).not.toBe('—');
+    });
+    closeAnyOpenModal();
+  });
+
+  test('Sidebar nav no longer includes a Stats item', () => {
+    closeAnyOpenModal();
+    app.ui.openExportModal();
+    const nav = document.getElementById('export-modal-nav');
+    expect(nav).toBeTruthy();
+    expect(nav.querySelector('[data-section-id="stats"]')).toBeNull();
+    closeAnyOpenModal();
+  });
+
   test('changing the preview mode updates exportModalState.previewMode and redraws', () => {
     closeAnyOpenModal();
     app.ui.openExportModal();

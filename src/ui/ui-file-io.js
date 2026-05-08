@@ -405,6 +405,9 @@
       const optimize = Math.max(0, SETTINGS.plotterOptimize ?? 0);
       const tol = optimize > 0 ? Math.max(0.001, optimize) : 0;
       const quant = (v) => (tol ? Math.round(v / tol) * tol : v);
+      // Direction-agnostic — same physical path forward/reversed must collapse
+      // to a single key so duplicate layers dedup even after linesort flips
+      // some paths to minimize pen travel.
       const pathKey = (path) => {
         if (path && path.meta && path.meta.kind === 'circle') {
           const cx = path.meta.cx ?? path.meta.x ?? 0;
@@ -413,7 +416,10 @@
           return `c:${quant(cx)},${quant(cy)},${quant(r)}`;
         }
         if (!Array.isArray(path)) return '';
-        return path.map((pt) => `${quant(pt.x)},${quant(pt.y)}`).join('|');
+        const tokens = path.map((pt) => `${quant(pt.x)},${quant(pt.y)}`);
+        const fwd = tokens.join('|');
+        const rev = tokens.slice().reverse().join('|');
+        return fwd <= rev ? fwd : rev;
       };
 
       this.app.computeDisplayGeometry();

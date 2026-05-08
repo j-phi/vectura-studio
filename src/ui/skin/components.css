@@ -331,11 +331,13 @@
 }
 .sw-toggle input:checked ~ .sw-thumb { transform: translateX(14px); }
 
-/* sw-toggle: on non-Meridian themes restore native checkbox, hide visual spans */
-:root:not([data-ui-skin^="meridian"]) .sw-track,
-:root:not([data-ui-skin^="meridian"]) .sw-thumb { display: none; }
-:root:not([data-ui-skin^="meridian"]) .sw-toggle { display: inline; width: auto; height: auto; }
-:root:not([data-ui-skin^="meridian"]) .sw-toggle > input[type="checkbox"] {
+/* sw-toggle: on Classic-family themes restore native checkbox, hide visual spans.
+   Meridian-family skin ids are `dark`/`lark`/`light` (unprefixed) and
+   `meridian-*` aliases — the pill renders for all of them. */
+:root[data-ui-skin^="classic"] .sw-track,
+:root[data-ui-skin^="classic"] .sw-thumb { display: none; }
+:root[data-ui-skin^="classic"] .sw-toggle { display: inline; width: auto; height: auto; }
+:root[data-ui-skin^="classic"] .sw-toggle > input[type="checkbox"] {
   opacity: 1; width: auto; height: auto; position: static;
 }
 

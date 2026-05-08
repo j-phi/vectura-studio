@@ -171,5 +171,23 @@ describe('Skin swap integration (registry + applyTheme)', () => {
       const root = runtime.document.documentElement;
       expect(root.style.getPropertyValue('--ui-workspace')).toBe('#d5d5d5');
     });
+
+    // Regression: light/lark push a much larger inline cssVars set than dark
+    // (--color-control, --color-bg, --color-panel, etc.). Without clearing prior
+    // inline values, returning to dark left those keys stuck at the light values,
+    // painting the toolbar buttons + bottom-right pane white in dark mode.
+    test('returning to dark clears inline cssVars set only by light/lark', () => {
+      app.applyTheme('dark', { persist: false, render: false });
+      app.applyTheme('lark', { persist: false, render: false });
+      app.applyTheme('light', { persist: false, render: false });
+      app.applyTheme('dark', { persist: false, render: false });
+
+      const root = runtime.document.documentElement;
+      // dark's cssVars block does not include --color-control / --color-panel /
+      // --color-bg, so the inline value should be empty (letting :root rules win).
+      expect(root.style.getPropertyValue('--color-control')).toBe('');
+      expect(root.style.getPropertyValue('--color-panel')).toBe('');
+      expect(root.style.getPropertyValue('--color-bg')).toBe('');
+    });
   });
 });

@@ -1542,7 +1542,7 @@
     snapGuides: true,
     selectionOutline: true,
     selectionOutlineColor: '#ef4444',
-    selectionOutlineWidth: 0.4,
+    selectionOutlineWidth: 0.15,
     gridOverlay: false,
     gridOpacity: 0.2,
     gridStyle: 'cartesian',

@@ -212,7 +212,7 @@
     return /^#[0-9a-fA-F]{6}$/.test(next) ? next.toLowerCase() : null;
   };
   const getContrastTextColor = (background, options = {}) => {
-    const { dark = getThemeToken('--color-bg', '#09090b'), light = getThemeToken('--color-accent', '#fafafa') } = options;
+    const { dark = '#000000', light = '#ffffff' } = options;
     const normalized = normalizeHexColor(background);
     if (!normalized) return dark;
     const r = parseInt(normalized.slice(1, 3), 16) / 255;
@@ -730,6 +730,14 @@
   ];
 
   const EXPORT_INFO = {
+    precision: {
+      title: 'Precision',
+      description: 'Number of decimal places used for coordinates in the exported SVG. Higher values preserve fine sub-pixel detail at the cost of file size; lower values shrink the file but quantize positions. 3 (≈0.001 mm at A4) is a sensible default for plotter work.',
+    },
+    strokeWidth: {
+      title: 'Stroke (mm)',
+      description: 'Global stroke width for the SVG export and on-canvas display. Editing this overwrites every layer\'s current stroke and overrides the per-pen widths configured in the Pens panel. Use the Pens panel for fine-grained per-layer control; use this field to apply a single uniform width across the whole document.',
+    },
     removeHiddenGeometry: {
       title: 'Remove Hidden Geometry',
       description: 'Trims masked and frame-hidden segments from the exported SVG so the output matches the current view exactly. This reduces file size and eliminates invisible paths that plotters would otherwise draw.',
@@ -6329,6 +6337,7 @@
           SETTINGS.marginLineColor = next;
           setMarginLineColorPill.textContent = next.toUpperCase();
           setMarginLineColorPill.style.background = next;
+          setMarginLineColorPill.style.color = getContrastTextColor(next);
           this.app.render();
         };
         setMarginLineColor.onchange = (e) => {
@@ -6337,6 +6346,7 @@
           SETTINGS.marginLineColor = next;
           setMarginLineColorPill.textContent = next.toUpperCase();
           setMarginLineColorPill.style.background = next;
+          setMarginLineColorPill.style.color = getContrastTextColor(next);
           this.app.render();
         };
       }
@@ -6359,6 +6369,7 @@
           if (setMarginLineColorPill) {
             setMarginLineColorPill.textContent = '#52525B';
             setMarginLineColorPill.style.background = '#52525b';
+            setMarginLineColorPill.style.color = getContrastTextColor('#52525b');
           }
           if (setMarginLineDotting) setMarginLineDotting.value = '0';
           this.refreshDocumentUnitsUi();
@@ -6423,6 +6434,7 @@
           SETTINGS.selectionOutlineColor = nextColor;
           setSelectionOutlineColorPill.textContent = nextColor.toUpperCase();
           setSelectionOutlineColorPill.style.background = nextColor;
+          setSelectionOutlineColorPill.style.color = getContrastTextColor(nextColor);
           this.app.render();
         };
         setSelectionOutlineColor.onchange = (e) => {
@@ -6431,14 +6443,15 @@
           SETTINGS.selectionOutlineColor = nextColor;
           setSelectionOutlineColorPill.textContent = nextColor.toUpperCase();
           setSelectionOutlineColorPill.style.background = nextColor;
+          setSelectionOutlineColorPill.style.color = getContrastTextColor(nextColor);
           this.app.render();
         };
       }
       const applySelectionOutlineWidth = (raw, options = {}) => {
         const { commit = false } = options;
         if (commit && this.app.pushHistory) this.app.pushHistory();
-        const next = Math.max(0.1, Math.min(2, this.parseDocumentNumber(raw, { fallbackMm: SETTINGS.selectionOutlineWidth ?? 0.4 })));
-        SETTINGS.selectionOutlineWidth = Number.isFinite(next) ? next : 0.4;
+        const next = Math.max(0.1, Math.min(2, this.parseDocumentNumber(raw, { fallbackMm: SETTINGS.selectionOutlineWidth ?? 0.15 })));
+        SETTINGS.selectionOutlineWidth = Number.isFinite(next) ? next : 0.15;
         this.refreshDocumentUnitsUi();
         this.app.render();
       };
@@ -6454,10 +6467,11 @@
         setSelectionOutlineStyleReset.onclick = () => {
           if (this.app.pushHistory) this.app.pushHistory();
           SETTINGS.selectionOutlineColor = '#ef4444';
-          SETTINGS.selectionOutlineWidth = 0.4;
+          SETTINGS.selectionOutlineWidth = 0.15;
           if (setSelectionOutlineColorPill) {
             setSelectionOutlineColorPill.textContent = '#EF4444';
             setSelectionOutlineColorPill.style.background = '#ef4444';
+            setSelectionOutlineColorPill.style.color = getContrastTextColor('#ef4444');
           }
           this.refreshDocumentUnitsUi();
           this.app.render();

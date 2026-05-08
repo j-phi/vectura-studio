@@ -1316,6 +1316,11 @@
         const tol = optimize > 0 ? Math.max(0.001, optimize) : 0;
         if (tol > 0) {
           const quant = (v) => Math.round(v / tol) * tol;
+          // Direction-agnostic hash: linesort reverses paths to minimize pen
+          // travel, so the same physical line can come out of optimization
+          // forward in one layer and reversed in another. Hashing both
+          // directions and picking the lexicographically smaller string
+          // collapses those into a single key.
           const pathKey = (path) => {
             if (path && path.meta && path.meta.kind === 'circle') {
               const cx = path.meta.cx ?? path.meta.x ?? 0;
@@ -1324,9 +1329,10 @@
               return `c:${quant(cx)},${quant(cy)},${quant(r)}`;
             }
             if (!Array.isArray(path)) return '';
-            return path
-              .map((pt) => `${quant(pt.x)},${quant(pt.y)}`)
-              .join('|');
+            const tokens = path.map((pt) => `${quant(pt.x)},${quant(pt.y)}`);
+            const fwd = tokens.join('|');
+            const rev = tokens.slice().reverse().join('|');
+            return fwd <= rev ? fwd : rev;
           };
           const seenByPen = new Map();
           layersToProcess.forEach((layer) => {
@@ -1390,6 +1396,7 @@
       const tol = optimize > 0 ? Math.max(0.001, optimize) : 0;
       const dedupe = optimize > 0 ? new Map() : null;
       const quant = (v) => (tol ? Math.round(v / tol) * tol : v);
+      // Direction-agnostic hash — see runPipeline.pathKey for rationale.
       const pathKey = (path) => {
         if (path && path.meta && path.meta.kind === 'circle') {
           const cx = path.meta.cx ?? path.meta.x ?? 0;
@@ -1398,9 +1405,10 @@
           return `c:${quant(cx)},${quant(cy)},${quant(r)}`;
         }
         if (!Array.isArray(path)) return '';
-        return path
-          .map((pt) => `${quant(pt.x)},${quant(pt.y)}`)
-          .join('|');
+        const tokens = path.map((pt) => `${quant(pt.x)},${quant(pt.y)}`);
+        const fwd = tokens.join('|');
+        const rev = tokens.slice().reverse().join('|');
+        return fwd <= rev ? fwd : rev;
       };
       target.forEach((l) => {
         const penId = l.penId || 'default';

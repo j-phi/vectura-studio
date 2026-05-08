@@ -2946,24 +2946,19 @@
       exportToggle.type = 'checkbox';
       exportToggle.checked = Boolean(SETTINGS.optimizationExport);
       exportToggle.onchange = (e) => {
-        SETTINGS.optimizationExport = Boolean(e.target.checked);
-        rerenderOptimizationPreview();
-      };
-      panel.appendChild(buildRow('Export Optimized', exportToggle));
-
-      const bypassToggle = document.createElement('input');
-      bypassToggle.type = 'checkbox';
-      bypassToggle.checked = Boolean(config?.bypassAll);
-      bypassToggle.onchange = (e) => {
-        if (!config) return;
         const next = Boolean(e.target.checked);
+        SETTINGS.optimizationExport = next;
+        // Master switch: turning Export Optimized off bypasses every step so
+        // the per-step toggles in the sidebar visually deactivate too. Turning
+        // it back on lifts the bypass; per-step `enabled` flags retain their
+        // user-set values.
         applyOptimization((cfg) => {
-          cfg.bypassAll = next;
-          cfg.steps = (cfg.steps || []).map((step) => ({ ...step, bypass: next }));
+          cfg.bypassAll = !next;
+          cfg.steps = (cfg.steps || []).map((step) => ({ ...step, bypass: !next }));
         });
         this.buildControls();
       };
-      panel.appendChild(buildRow('Bypass All', bypassToggle));
+      panel.appendChild(buildRow('Export Optimized', exportToggle));
 
       const getHexComplement = (hex) => {
         const raw = `${hex || ''}`.trim().replace('#', '');
@@ -3138,60 +3133,82 @@
         const controlsWrap = document.createElement('div');
         controlsWrap.className = 'optimization-controls';
 
-        const buildInlineControl = (label, controlMarkup) => {
-          const control = document.createElement('div');
-          control.className = 'optimization-control';
-          control.innerHTML = `
-            <div class="flex justify-between mb-1">
-              <label class="control-label mb-0">${label}</label>
+        const precisionValue = Math.max(0, Math.min(6, parseInt(SETTINGS.precision, 10) || 3));
+        const precisionControl = document.createElement('div');
+        precisionControl.className = 'optimization-control';
+        precisionControl.innerHTML = `
+          <div class="flex items-center gap-2 mb-1">
+            <label class="control-label mb-0">Precision</label>
+          </div>
+          <div class="slider-row">
+            <div class="sld-fx-wrap">
+              <input type="range" min="0" max="6" step="1" value="${precisionValue}" class="ctrl-slider">
             </div>
-            ${controlMarkup}
-          `;
-          return control;
-        };
-
-        const precisionInput = document.createElement('input');
-        precisionInput.type = 'number';
-        precisionInput.min = '0';
-        precisionInput.max = '6';
-        precisionInput.step = '1';
-        precisionInput.value = `${Math.max(0, Math.min(6, parseInt(SETTINGS.precision, 10) || 3))}`;
-        precisionInput.className =
-          'w-16 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none';
-        precisionInput.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          const next = Math.max(0, Math.min(6, parseInt(e.target.value, 10) || 3));
+            <button type="button" class="value-chip">${precisionValue}</button>
+          </div>
+        `;
+        const precisionRange = precisionControl.querySelector('input[type="range"]');
+        const precisionChip = precisionControl.querySelector('.value-chip');
+        if (precisionRange) syncSliderFill(precisionRange);
+        const applyPrecision = (raw, options = {}) => {
+          const { commit = false } = options;
+          if (commit && this.app.pushHistory) this.app.pushHistory();
+          const next = Math.max(0, Math.min(6, parseInt(raw, 10) || 3));
           SETTINGS.precision = next;
-          e.target.value = `${next}`;
+          if (precisionRange) {
+            precisionRange.value = `${next}`;
+            syncSliderFill(precisionRange);
+          }
+          if (precisionChip) precisionChip.textContent = `${next}`;
           updateStats();
           if (this.exportModalState?.isOpen) this.renderExportPreview();
         };
-        const precisionControl = buildInlineControl('Precision', '');
-        precisionControl.appendChild(precisionInput);
+        if (precisionRange) {
+          precisionRange.oninput = (e) => applyPrecision(e.target.value);
+          precisionRange.onchange = (e) => applyPrecision(e.target.value, { commit: true });
+        }
         controlsWrap.appendChild(precisionControl);
 
-        const strokeInput = document.createElement('input');
-        strokeInput.type = 'number';
-        strokeInput.min = '0';
-        const strokeConfig = this.getDocumentLengthConfig({ minMm: 0, stepMm: 0.1 });
-        strokeInput.step = `${strokeConfig.step}`;
-        strokeInput.value = this.formatDocumentNumber(SETTINGS.strokeWidth ?? 0.3, { precision: strokeConfig.precision });
-        strokeInput.className =
-          'w-16 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none';
-        strokeInput.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          const next = Math.max(0, this.parseDocumentNumber(e.target.value, { fallbackMm: SETTINGS.strokeWidth ?? 0.3 }));
+        const strokeConfig = this.getDocumentLengthConfig({ minMm: 0, maxMm: 5, stepMm: 0.05 });
+        const strokeValueDisplay = this.formatDocumentNumber(SETTINGS.strokeWidth ?? 0.3, { precision: strokeConfig.precision });
+        const strokeControl = document.createElement('div');
+        strokeControl.className = 'optimization-control';
+        strokeControl.innerHTML = `
+          <div class="flex items-center gap-2 mb-1">
+            <label class="control-label mb-0">Stroke (${strokeConfig.unitLabel})</label>
+          </div>
+          <div class="slider-row">
+            <div class="sld-fx-wrap">
+              <input type="range" min="${strokeConfig.min}" max="${strokeConfig.max}" step="${strokeConfig.step}" value="${strokeValueDisplay}" class="ctrl-slider">
+            </div>
+            <button type="button" class="value-chip">${strokeValueDisplay}${strokeConfig.unitLabel}</button>
+          </div>
+        `;
+        const strokeRange = strokeControl.querySelector('input[type="range"]');
+        const strokeChip = strokeControl.querySelector('.value-chip');
+        if (strokeRange) syncSliderFill(strokeRange);
+        const applyStroke = (raw, options = {}) => {
+          const { commit = false } = options;
+          if (commit && this.app.pushHistory) this.app.pushHistory();
+          const next = Math.max(0, this.parseDocumentNumber(raw, { fallbackMm: SETTINGS.strokeWidth ?? 0.3 }));
           SETTINGS.strokeWidth = Number.isFinite(next) ? next : 0.3;
           this.app.engine.layers.forEach((layer) => {
             layer.strokeWidth = SETTINGS.strokeWidth;
           });
-          e.target.value = this.formatDocumentNumber(SETTINGS.strokeWidth, { precision: strokeConfig.precision });
+          const display = this.formatDocumentNumber(SETTINGS.strokeWidth, { precision: strokeConfig.precision });
+          if (strokeRange) {
+            strokeRange.value = display;
+            syncSliderFill(strokeRange);
+          }
+          if (strokeChip) strokeChip.textContent = `${display}${strokeConfig.unitLabel}`;
           this.app.render();
           updateStats();
           if (this.exportModalState?.isOpen) this.renderExportPreview();
         };
-        const strokeControl = buildInlineControl(`Stroke (${strokeConfig.unitLabel})`, '');
-        strokeControl.appendChild(strokeInput);
+        if (strokeRange) {
+          strokeRange.oninput = (e) => applyStroke(e.target.value);
+          strokeRange.onchange = (e) => applyStroke(e.target.value, { commit: true });
+        }
         controlsWrap.appendChild(strokeControl);
 
         const hiddenGeometryControl = document.createElement('div');
@@ -3250,16 +3267,15 @@
             </div>
             <button type="button" class="value-chip">${toleranceDisplay}${toleranceConfig.unitLabel}</button>
           </div>
-          <input type="number" min="${toleranceConfig.min}" max="${toleranceConfig.max}" step="${toleranceConfig.step}" value="${toleranceDisplay}" class="w-16 mt-2 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none">
         `;
         const tolRange = toleranceControl.querySelector('input[type="range"]');
         if (tolRange) syncSliderFill(tolRange);
         const tolNumber = toleranceControl.querySelector('input[type="number"]');
         const tolValue = toleranceControl.querySelector('.value-chip');
-        const setToleranceDisabled = (disabled) => {
-          if (tolRange) tolRange.disabled = disabled;
-          if (tolNumber) tolNumber.disabled = disabled;
-          toleranceControl.classList.toggle('is-disabled', disabled);
+        const setToleranceVisible = (visible) => {
+          toleranceControl.hidden = !visible;
+          if (tolRange) tolRange.disabled = !visible;
+          if (tolNumber) tolNumber.disabled = !visible;
         };
         const clampTolerance = (raw) => {
           const next = this.parseDocumentNumber(raw, { fallbackMm: 0.1 });
@@ -3271,7 +3287,10 @@
           if (commit && this.app.pushHistory) this.app.pushHistory();
           const next = clampTolerance(raw);
           const displayValue = this.formatDocumentNumber(next, { precision: toleranceConfig.precision });
-          if (tolRange) tolRange.value = displayValue;
+          if (tolRange) {
+            tolRange.value = displayValue;
+            syncSliderFill(tolRange);
+          }
           if (tolNumber) tolNumber.value = displayValue;
           if (tolValue) tolValue.textContent = `${displayValue}${toleranceConfig.unitLabel}`;
           SETTINGS.plotterOptimize = plotterToggle?.checked ? next : 0;
@@ -3280,12 +3299,14 @@
         };
         if (plotterToggle) {
           plotterToggle.checked = SETTINGS.plotterOptimize > 0;
-          setToleranceDisabled(!plotterToggle.checked);
+          setToleranceVisible(plotterToggle.checked);
           plotterToggle.onchange = (e) => {
             if (this.app.pushHistory) this.app.pushHistory();
             const enabled = Boolean(e.target.checked);
-            setToleranceDisabled(!enabled);
-            SETTINGS.plotterOptimize = enabled ? clampTolerance(tolNumber?.value || tolRange?.value || 0.1) : 0;
+            setToleranceVisible(enabled);
+            const rawTol = tolNumber?.value || tolRange?.value || 0.1;
+            const clamped = clampTolerance(rawTol);
+            SETTINGS.plotterOptimize = enabled ? clamped : 0;
             if (toggleState) toggleState.textContent = enabled ? 'ON' : 'OFF';
             rerenderOptimizationPreview();
           };

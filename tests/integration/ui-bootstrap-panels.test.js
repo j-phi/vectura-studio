@@ -226,12 +226,17 @@ describe('UI bootstrap – line sort export modal', () => {
     window.app.ui.openExportModal();
     await Promise.resolve();
 
-    const lineSortCard = Array.from(document.querySelectorAll('#export-modal-root .optimization-card')).find((card) =>
-      /Line Sort/i.test(card.textContent || '')
+    // The export-modal sidebar redesign hoists the Apply toggle out of the
+    // card header and into the section head; identify the section by its
+    // canonical data-section-id (which mirrors the optimization step id).
+    const lineSortSection = document.querySelector(
+      '#export-modal-root .export-settings-section[data-section-id="linesort"]'
     );
-    expect(lineSortCard).toBeTruthy();
+    expect(lineSortSection).toBeTruthy();
 
-    const applyToggle = Array.from(lineSortCard.querySelectorAll('input[type="checkbox"]'))[0];
+    const applyToggle = lineSortSection.querySelector(
+      '.export-settings-section-head .opt-toggle input[type="checkbox"]'
+    );
     expect(applyToggle).toBeTruthy();
     expect(window.Vectura.SETTINGS.optimizationPreview || 'off').toBe('off');
     expect(applyToggle.checked).toBe(true);

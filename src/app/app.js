@@ -40,6 +40,19 @@
     const candidate = fam === 'classic' ? `classic-${slot}` : slot;
     return Object.prototype.hasOwnProperty.call(THEMES, candidate) ? candidate : null;
   };
+  // Union of every cssVar key any theme pushes inline. Used by applyTheme to clear
+  // stale inline values left by a previously-active theme: themes that set a smaller
+  // alias set (e.g. dark) would otherwise inherit the prior theme's inline overrides
+  // (e.g. lark's --color-control: #ffffff) since inline styles beat :root rules.
+  const ALL_THEME_CSS_VAR_KEYS = (() => {
+    const keys = new Set();
+    Object.values(THEMES).forEach((cfg) => {
+      if (cfg && cfg.cssVars && typeof cfg.cssVars === 'object') {
+        Object.keys(cfg.cssVars).forEach((k) => keys.add(k));
+      }
+    });
+    return Array.from(keys);
+  })();
 
   class App {
     constructor() {
@@ -529,6 +542,13 @@
         root.dataset.theme = themeName;
         root.dataset.uiSkin = themeName;
         root.style.colorScheme = theme.colorScheme || themeName;
+        // Clear inline cssVars left by any previously-active theme before applying
+        // this theme's set. Without this, cycling dark → lark → light → dark leaves
+        // light's inline --color-control / --color-bg / etc. stuck on :root, since
+        // dark only pushes a small subset and inline styles beat the :root rule.
+        ALL_THEME_CSS_VAR_KEYS.forEach((key) => {
+          root.style.removeProperty(key);
+        });
         if (theme.cssVars && typeof theme.cssVars === 'object') {
           Object.entries(theme.cssVars).forEach(([key, value]) => {
             root.style.setProperty(key, value);

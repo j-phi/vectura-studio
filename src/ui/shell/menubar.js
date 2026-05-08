@@ -36,6 +36,11 @@
   };
 
   function setTopMenuOpen(trigger = null, open = true) {
+    if (open && trigger) {
+      // Refresh per-item enabled state (e.g. export greyed when canvas empty)
+      // before the panel reveals so the user sees current truth.
+      try { this.refreshTopMenuItemStates?.(); } catch { /* defensive — never block menu open */ }
+    }
     const triggers = Array.isArray(this.topMenuTriggers) ? this.topMenuTriggers : [];
     const nextTrigger = open ? trigger : null;
     triggers.forEach((btn) => {
@@ -49,6 +54,32 @@
       }
     });
     this.openTopMenuTrigger = nextTrigger || null;
+  }
+
+  /**
+   * Refresh enabled/disabled state on top-menu items whose availability
+   * depends on document state. Currently gates `#btn-export` on whether the
+   * canvas has anything to export (≥1 non-group layer).
+   *
+   * Called from setTopMenuOpen (when opening) and triggerTopMenuAction so
+   * both pointer and keyboard-shortcut paths see fresh state.
+   */
+  function refreshTopMenuItemStates() {
+    const { getEl } = requireDeps('refreshTopMenuItemStates');
+    const btnExport = getEl('btn-export', { silent: true });
+    if (btnExport) {
+      const layers = this.app?.engine?.layers || [];
+      const hasContent = layers.some((l) => l && !l.isGroup);
+      if (hasContent) {
+        btnExport.removeAttribute('disabled');
+        btnExport.removeAttribute('aria-disabled');
+        btnExport.removeAttribute('title');
+      } else {
+        btnExport.setAttribute('disabled', '');
+        btnExport.setAttribute('aria-disabled', 'true');
+        btnExport.setAttribute('title', 'Add a layer to enable export');
+      }
+    }
   }
 
   function initTopMenuBar() {
@@ -170,6 +201,11 @@
     const { getEl } = requireDeps('triggerTopMenuAction');
     const button = getEl(buttonId);
     if (!button) return false;
+    try { this.refreshTopMenuItemStates?.(); } catch { /* defensive */ }
+    if (button.disabled) {
+      this.setTopMenuOpen(null, false);
+      return false;
+    }
     button.click();
     this.setTopMenuOpen(null, false);
     return true;
@@ -187,10 +223,12 @@
     setTopMenuOpen,
     initTopMenuBar,
     triggerTopMenuAction,
+    refreshTopMenuItemStates,
     installOn(proto) {
       proto.setTopMenuOpen = function(trigger = null, open = true) { return setTopMenuOpen.call(this, trigger, open); };
       proto.initTopMenuBar = function() { return initTopMenuBar.call(this); };
       proto.triggerTopMenuAction = function(buttonId) { return triggerTopMenuAction.call(this, buttonId); };
+      proto.refreshTopMenuItemStates = function() { return refreshTopMenuItemStates.call(this); };
     },
   };
 })();
