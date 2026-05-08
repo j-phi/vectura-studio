@@ -1974,13 +1974,6 @@
       : []),
   ];
 
-  const RINGS_PRESET_OPTIONS = [
-    { value: 'custom', label: 'Custom' },
-    ...(Array.isArray(RINGS_PRESET_LIBRARY)
-      ? RINGS_PRESET_LIBRARY.map((preset) => ({ value: preset.id, label: preset.name }))
-      : []),
-  ];
-
   const PETAL_PROFILE_OPTIONS = [
     { value: 'oval', label: 'Oval' },
     { value: 'teardrop', label: 'Teardrop' },
@@ -5418,7 +5411,6 @@
       return window.Vectura.UI.TransformPanel.restoreLayerParams.call(this, layer, nextType);
     }
 
-
     recenterLayerIfNeeded(layer) {
       if (!layer || !this.app.renderer) return;
       const bounds = this.app.renderer.getLayerBounds(layer);
@@ -5820,11 +5812,6 @@
       return layer.modifier;
     }
 
-    getModifierLayerChildren(layer) {
-      if (!layer) return [];
-      return this.app.engine.layers.filter((entry) => entry.parentId === layer.id);
-    }
-
     // Delegated to src/ui/panels/modifiers-panel.js (Phase 2 step 4).
     refreshModifierLayer(layer, options = {}) {
       return window.Vectura.UI.ModifiersPanel.refreshModifierLayer.call(this, layer, options);
@@ -5870,10 +5857,6 @@
       }
 
       return moveIds.map((id) => map.get(id)).filter(Boolean);
-    }
-
-    assignLayersToGroup(groupId, targetLayers, options = {}) {
-      return this.assignLayersToParent(groupId, targetLayers, options);
     }
 
     assignLayersToRoot(targetLayers, options = {}) {
@@ -5949,12 +5932,6 @@
       this.renderLayers();
       this.app.render();
       return true;
-    }
-
-    getGroupForLayer(layer) {
-      if (!layer || !layer.parentId) return null;
-      const group = this.getLayerById(layer.parentId);
-      return group && group.isGroup ? group : null;
     }
 
     // Delegated to src/ui/panels/algorithm-panel.js (Phase 2 step 4).
@@ -6342,7 +6319,6 @@
     initPaletteControls() {
       return window.Vectura.UI.PensPanel.initPaletteControls.call(this);
     }
-
 
     // Delegated to src/ui/persistence.js as applyPersistedSettings (Phase 2 step 5a).
     initSettingsValues() {
@@ -7249,7 +7225,6 @@
       return result;
     }
 
-
     // Delegated to src/ui/panels/pens-panel.js (Phase 2 step 4).
     renderPens() {
       return window.Vectura.UI.PensPanel.renderPens.call(this);
@@ -7591,67 +7566,6 @@
       this.app.renderer.setLightSourceMode?.(true);
     }
 
-    openLayerSettings(layer) {
-      const strokeValue = layer.strokeWidth ?? SETTINGS.strokeWidth;
-      const capValue = layer.lineCap || 'round';
-      const body = `
-        <div class="modal-section">
-          <div class="flex justify-between mb-2">
-            <label class="control-label mb-0">Line Width (mm)</label>
-            <span class="text-xs text-vectura-accent font-mono" id="layer-stroke-value">${strokeValue}</span>
-          </div>
-          <input
-            type="range"
-            min="0.05"
-            max="2"
-            step="0.05"
-            value="${strokeValue}"
-            class="w-full"
-            id="layer-stroke-input"
-          />
-        </div>
-        <div class="modal-section">
-          <label class="control-label">Line Cap</label>
-          <select
-            id="layer-cap-select"
-            class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent"
-          >
-            <option value="round" ${capValue === 'round' ? 'selected' : ''}>Round</option>
-            <option value="butt" ${capValue === 'butt' ? 'selected' : ''}>Flat</option>
-            <option value="square" ${capValue === 'square' ? 'selected' : ''}>Square</option>
-          </select>
-        </div>
-      `;
-
-      this.openModal({
-        title: `${layer.name} Settings`,
-        body,
-      });
-
-      const bodyEl = this.modal.bodyEl;
-      const strokeInput = bodyEl.querySelector('#layer-stroke-input');
-      const strokeValueEl = bodyEl.querySelector('#layer-stroke-value');
-      const capSelect = bodyEl.querySelector('#layer-cap-select');
-
-      if (strokeInput && strokeValueEl) {
-        strokeInput.oninput = (e) => {
-          strokeValueEl.textContent = e.target.value;
-        };
-        strokeInput.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          layer.strokeWidth = parseFloat(e.target.value);
-          this.app.render();
-        };
-      }
-      if (capSelect) {
-        capSelect.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          layer.lineCap = e.target.value;
-          this.app.render();
-        };
-      }
-    }
-
     // Delegated to src/ui/modals/image-asset.js (Phase 3 step 4).
     loadNoiseImageFile(...args) {
       return window.Vectura.UI.Modals.ImageAsset.loadNoiseImageFile.call(this, ...args);
@@ -7876,7 +7790,6 @@
       draw();
     }
 
-
     _showWelcomePanel(show) {
       const welcome = document.getElementById('left-welcome');
       const sections = document.querySelector('.left-panel-sections');
@@ -8079,7 +7992,6 @@
     updateFormula() {
       return window.Vectura.UI.FormulaPanel.updateFormula.call(this);
     }
-
 
     // ── Pattern Designer ── (see ui-pattern-designer.js)
   }
