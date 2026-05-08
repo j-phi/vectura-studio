@@ -21,11 +21,6 @@ describe('Phase 4 — Petal Designer round-trip', () => {
   beforeAll(async () => {
     runtime = await loadVecturaRuntime(FULL_STACK);
     ({ window, document } = runtime);
-    // Provide getThemeToken as a global. In production it lives on UI.prototype
-    // but the petal-designer IIFE references it as a global; JSDOM doesn't.
-    if (typeof window.getThemeToken !== 'function') {
-      window.getThemeToken = (_token, fallback) => fallback ?? '';
-    }
     // JSDOM canvas getContext('2d') returns null; stub a no-op 2D context
     // so renderPetalDesigner() doesn't throw during open/reopen cycles.
     const noopCtx = new Proxy(

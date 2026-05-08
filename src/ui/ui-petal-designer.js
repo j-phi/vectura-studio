@@ -15,6 +15,10 @@
   const { clamp, lerp } = window.Vectura.AlgorithmUtils;
   const clone =
     typeof structuredClone === 'function' ? (obj) => structuredClone(obj) : (obj) => JSON.parse(JSON.stringify(obj));
+  const getThemeToken = (name, fallback = '') => {
+    const fn = window.Vectura?.UI?.getThemeToken || window.Vectura?.UI?.tokens?.get;
+    return fn ? fn(name, fallback) : fallback;
+  };
 
   const PETALIS_LAYER_TYPES = new Set(['petalisDesigner']);
   const isPetalisLayerType = (type) => PETALIS_LAYER_TYPES.has(type);
