@@ -274,6 +274,31 @@ test.describe('Vectura smoke interactions', () => {
     expect(diagnostics.exportedCount).toBeGreaterThan(0);
   });
 
+  test('mobile-layout toolbar does not occlude right-pane Add Layer button', async ({ page }) => {
+    // Regression: b7b5dc8 raised body.mobile-layout #tool-bar to z-index 60 to
+    // sit above auto-collapsed pane drawer slivers (z:55). At tablet-touch
+    // widths (834×1194) mobile-layout is active but auto-collapse is not, so
+    // the right pane is fully shown — and the bumped toolbar painted over its
+    // top edge, hiding #btn-add-layer behind it. The tablet-touch project
+    // exercises this path; on desktop chromium the panes are not absolute, so
+    // this test is a no-op there.
+    await page.goto('/');
+    const inMobileLayout = await page.evaluate(() => document.body.classList.contains('mobile-layout'));
+    test.skip(!inMobileLayout, 'mobile-layout regression — only meaningful at < 900px viewport');
+
+    const btn = page.locator('#btn-add-layer');
+    await expect(btn).toBeVisible();
+    const occluder = await page.evaluate(() => {
+      const target = document.getElementById('btn-add-layer');
+      if (!target) return 'missing';
+      const r = target.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      if (!top || top === target || target.contains(top)) return null;
+      return top.id || top.className || top.tagName;
+    });
+    expect(occluder, '#btn-add-layer center is the topmost element').toBeNull();
+  });
+
   test('core interactions remain functional on desktop and touch tablet', async ({ page }, testInfo) => {
     const pageErrors = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));

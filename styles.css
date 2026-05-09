@@ -3945,15 +3945,21 @@ input[type='color']::-webkit-color-swatch {
     background: var(--color-panel);
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
     flex-shrink: 0;
-    /* Sit above the collapsed-pane drawer slivers (z:55) so the leftmost /
-       rightmost tool buttons aren't occluded by the pane edges. Pane drawers
-       only need to cover the toolbar when force-opened (see rule below). */
+  }
+
+  /* Phone widths (auto-collapsed, < 640px): panes shrink to drawer slivers
+     (z:55). Bump the toolbar above the slivers so the leftmost/rightmost
+     tool buttons aren't occluded by the pane edges. At tablet widths
+     (640–900px) the panes are fully shown, not slivers, so the toolbar
+     must stay below them or it will paint over right-pane content like
+     the Add Layer button. */
+  body.mobile-layout.auto-collapsed #tool-bar {
     z-index: 60;
   }
 
   /* When a side pane is force-opened (full drawer), it should cover the
      toolbar — the user is interacting with the pane, not the bar. */
-  body.mobile-layout .pane.pane-force-open {
+  body.mobile-layout.auto-collapsed .pane.pane-force-open {
     z-index: 70;
   }
 
