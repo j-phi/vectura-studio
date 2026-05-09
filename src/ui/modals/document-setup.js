@@ -50,265 +50,258 @@
 
   const PANEL_ID = 'settings-panel';
 
-  // Markup lifted verbatim from index.html:540-745 (Phase 3 step 3). Lives
-  // here so the JS module owns its own DOM rather than relying on a static
-  // markup block in index.html. Every id is preserved so existing JS
-  // (bindGlobal handlers, persistence module, theme switcher, palette picker)
-  // continues to wire without modification.
+  // Markup rebuilt against the Meridian skin component vocabulary
+  // (`.sect`, `.sect-hdr`, `.sect-body`, `.ctrl-sel`, `.num-step`, `.seg-ctrl`,
+  // `.sw-toggle`, `.value-chip`, `.ctrl-slider`) so the drawer paints in the
+  // same visual register as every other Vectura panel. Every #id from the
+  // legacy markup is preserved verbatim so the ~30 inline `set-*` handlers
+  // still living in `_ui-legacy.js`'s bindGlobal() keep wiring without
+  // modification. `bindHandlers()` adds the section collapse + num-step ±
+  // wiring needed by the new primitives.
+  //
+  // Sections are arranged top-to-bottom in roughly descending edit-frequency
+  // order. All sections default to open (`.is-open` on `.sect-hdr`) so this
+  // change is a pure visual refactor — no controls move out of the user's
+  // sight on first open.
+  const numStep = ({ id, value, min = '', max = '', step = '', cls = '' }) => `
+    <div class="num-step ${cls}" data-num-step>
+      <button type="button" class="num-step-btn" data-num-step-dec aria-label="Decrement">−</button>
+      <input type="number" id="${id}" class="num-step-inp" value="${value}"${min !== '' ? ` min="${min}"` : ''}${max !== '' ? ` max="${max}"` : ''}${step !== '' ? ` step="${step}"` : ''} />
+      <button type="button" class="num-step-btn" data-num-step-inc aria-label="Increment">+</button>
+    </div>
+  `;
+
+  const swToggle = (id, label, ariaChecked = 'false') => `
+    <div class="ctrl-row">
+      <label class="ctrl-lbl" for="${id}">${label}</label>
+      <label class="sw-toggle" role="switch" aria-checked="${ariaChecked}">
+        <input type="checkbox" id="${id}" />
+        <span class="sw-track"></span>
+        <span class="sw-thumb"></span>
+      </label>
+    </div>
+  `;
+
   const PANEL_HTML = `
-    <div id="settings-panel" class="settings-panel bg-vectura-panel border-r border-vectura-border">
-      <div class="p-4 border-b border-vectura-border flex justify-between items-center bg-vectura-panel">
-        <span class="font-bold text-vectura-accent">DOCUMENT SETUP</span>
-        <button id="btn-close-settings" class="text-vectura-muted hover:text-vectura-accent" aria-label="Close settings"
-          type="button">
-          ✕
+    <div id="settings-panel" class="settings-panel">
+      <div class="pane-hdr">
+        <span class="pane-title">Document Setup</span>
+        <button id="btn-close-settings" class="settings-panel-close" type="button" aria-label="Close Document Setup">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
         </button>
       </div>
-      <div class="flex-1 overflow-y-auto p-4">
-        <div class="control-group">
-          <label class="control-label">Theme</label>
-          <div id="theme-family-toggle" class="theme-family-toggle inline-flex w-full border border-vectura-border" role="radiogroup" aria-label="Theme family">
-            <button type="button" id="theme-family-modern" data-family="meridian" role="radio" aria-checked="true"
-              class="theme-family-option flex-1 text-xs py-1.5 px-2 text-vectura-muted hover:text-vectura-accent">Modern</button>
-            <button type="button" id="theme-family-classic" data-family="classic" role="radio" aria-checked="false"
-              class="theme-family-option flex-1 text-xs py-1.5 px-2 text-vectura-muted hover:text-vectura-accent border-l border-vectura-border">Classic</button>
+      <div class="settings-panel-body">
+
+        <div class="sect">
+          <button type="button" class="sect-hdr is-open" data-sect-toggle aria-expanded="true">
+            Theme
+            <span class="sect-arrow down"></span>
+          </button>
+          <div class="sect-body" data-sect-body>
+            <div id="theme-family-toggle" class="seg-ctrl" role="radiogroup" aria-label="Theme family">
+              <button type="button" id="theme-family-modern" class="seg-opt active" data-family="meridian" role="radio" aria-checked="true">Modern</button>
+              <button type="button" id="theme-family-classic" class="seg-opt" data-family="classic" role="radio" aria-checked="false">Classic</button>
+            </div>
           </div>
         </div>
-        <div class="control-group">
-          <label class="control-label">Paper Size</label>
-          <select id="machine-profile"
-            class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent mb-2"></select>
-          <div class="mt-3">
-            <div class="flex items-center justify-between">
-              <label class="text-xs text-vectura-muted">Units</label>
-              <select id="set-document-units"
-                class="w-24 bg-vectura-bg border border-vectura-border p-1 text-xs focus:outline-none focus:border-vectura-accent">
-                <option value="metric">Metric</option>
-                <option value="imperial">Imperial</option>
-              </select>
-            </div>
-          </div>
-          <div id="custom-size-fields" class="mt-3 hidden">
-            <div class="grid grid-cols-2 gap-2">
-              <div>
-                <label id="set-paper-width-label" class="text-[11px] text-vectura-muted">Width (mm)</label>
-                <input type="number" id="set-paper-width"
-                  class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
-              </div>
-              <div>
-                <label id="set-paper-height-label" class="text-[11px] text-vectura-muted">Height (mm)</label>
-                <input type="number" id="set-paper-height"
-                  class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
+
+        <div class="sect">
+          <button type="button" class="sect-hdr is-open" data-sect-toggle aria-expanded="true">
+            Paper
+            <span class="sect-arrow down"></span>
+          </button>
+          <div class="sect-body" data-sect-body>
+            <div class="ctrl-grp">
+              <span class="ctrl-sub-lbl">Size</span>
+              <div class="ctrl-sel-wrap">
+                <select id="machine-profile" class="ctrl-sel"></select>
               </div>
             </div>
-          </div>
-          <div class="mt-3">
-            <div class="flex items-center justify-between mb-2">
-              <label class="text-xs text-vectura-muted">Orientation</label>
-              <div class="flex items-center gap-2">
-                <span id="orientation-label" class="text-[11px] text-vectura-muted">Landscape</span>
+            <div id="custom-size-fields" class="ctrl-2col hidden">
+              <div class="ctrl-grp">
+                <span class="ctrl-sub-lbl" id="set-paper-width-label">Width (mm)</span>
+                ${numStep({ id: 'set-paper-width', value: '' })}
+              </div>
+              <div class="ctrl-grp">
+                <span class="ctrl-sub-lbl" id="set-paper-height-label">Height (mm)</span>
+                ${numStep({ id: 'set-paper-height', value: '' })}
+              </div>
+            </div>
+            <div class="ctrl-row">
+              <label class="ctrl-lbl" for="set-document-units">Units</label>
+              <div class="ctrl-sel-wrap" style="width:120px">
+                <select id="set-document-units" class="ctrl-sel">
+                  <option value="metric">Metric</option>
+                  <option value="imperial">Imperial</option>
+                </select>
+              </div>
+            </div>
+            <div class="ctrl-row">
+              <label class="ctrl-lbl" for="set-orientation">Orientation</label>
+              <span class="ctrl-row-trail">
+                <span id="orientation-label" class="ctrl-trail-hint">Landscape</span>
                 <label class="sw-toggle" role="switch" aria-checked="false">
                   <input type="checkbox" id="set-orientation" />
                   <span class="sw-track"></span>
                   <span class="sw-thumb"></span>
                 </label>
+              </span>
+            </div>
+            <div class="ctrl-grp">
+              <span class="ctrl-sub-lbl" id="set-margin-label">Margin (mm)</span>
+              ${numStep({ id: 'set-margin', value: '' })}
+            </div>
+          </div>
+        </div>
+
+        <div class="sect">
+          <button type="button" class="sect-hdr is-open" data-sect-toggle aria-expanded="true">
+            Crop &amp; Outside
+            <span class="sect-arrow down"></span>
+          </button>
+          <div class="sect-body" data-sect-body>
+            ${swToggle('set-truncate', 'Crop art to margins')}
+            ${swToggle('set-crop-exports', 'Crop exports to margin')}
+            <div class="ctrl-row">
+              <label class="ctrl-lbl" for="set-outside-opacity">Outside opacity</label>
+              ${numStep({ id: 'set-outside-opacity', value: '', min: '0', max: '1', step: '0.05', cls: 'num-step--narrow' })}
+            </div>
+          </div>
+        </div>
+
+        <div class="sect">
+          <button type="button" class="sect-hdr is-open" data-sect-toggle aria-expanded="true">
+            Margin Outline
+            <span class="sect-arrow down"></span>
+          </button>
+          <div class="sect-body" data-sect-body>
+            ${swToggle('set-margin-line', 'Show margin outline')}
+            <div class="line-style-control">
+              <div class="style-field">
+                <span class="style-field-label">Line Color</span>
+                <button id="set-margin-line-color-pill" type="button" class="value-chip color-thickness-pill">#52525B</button>
+                <input type="color" id="set-margin-line-color" class="hidden" />
+              </div>
+              <div class="style-field">
+                <span class="style-field-label">Line Thickness</span>
+                <div class="color-thickness-size slider-row">
+                  <input type="range" id="set-margin-line-weight-slider" class="ctrl-slider" min="0.05" max="2" step="0.05" value="0.2" />
+                  <input type="number" id="set-margin-line-weight" class="num-step-inp slider-val-inp" min="0.05" max="2" step="0.05" value="0.2" />
+                  <span id="set-margin-line-weight-unit" class="ctrl-trail-hint">mm</span>
+                </div>
+              </div>
+              <div class="style-field">
+                <span class="style-field-label">Separation</span>
+                ${numStep({ id: 'set-margin-line-dotting', value: '0', min: '0', step: '0.5', cls: 'num-step--narrow' })}
+              </div>
+              <div class="style-field">
+                <span class="style-field-label">Reset</span>
+                <button id="set-margin-line-style-reset" type="button" class="hdr-btn">Reset</button>
               </div>
             </div>
           </div>
-          <div class="flex gap-2">
-            <div class="flex-1">
-              <label id="set-margin-label" class="control-label">Margin (mm)</label>
-              <input type="number" id="set-margin"
-                class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
-            </div>
+        </div>
+
+        <div class="sect">
+          <button type="button" class="sect-hdr is-open" data-sect-toggle aria-expanded="true">
+            Guides &amp; Display
+            <span class="sect-arrow down"></span>
+          </button>
+          <div class="sect-body" data-sect-body>
+            ${swToggle('set-show-guides', 'Show guides')}
+            ${swToggle('set-snap-guides', 'Snap to guides')}
+            ${swToggle('set-show-document-dimensions', 'Show document dimensions')}
           </div>
-          <div class="mt-4">
-            <div class="flex items-center justify-between mb-2">
-              <label class="text-xs text-vectura-muted">Crop Art to Margins</label>
-              <label class="sw-toggle" role="switch" aria-checked="false">
-                <input type="checkbox" id="set-truncate" />
-                <span class="sw-track"></span>
-                <span class="sw-thumb"></span>
-              </label>
-            </div>
-            <div class="flex items-center justify-between mb-2">
-              <label class="text-xs text-vectura-muted">Crop Exports to Margin</label>
-              <label class="sw-toggle" role="switch" aria-checked="false">
-                <input type="checkbox" id="set-crop-exports" />
-                <span class="sw-track"></span>
-                <span class="sw-thumb"></span>
-              </label>
-            </div>
-            <div class="flex items-center justify-between mb-2">
-              <label class="text-xs text-vectura-muted">Outside Opacity</label>
-              <input type="number" id="set-outside-opacity" min="0" max="1" step="0.05"
-                class="w-16 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
-            </div>
-            <div class="flex items-center justify-between mb-2">
-              <label class="text-xs text-vectura-muted">Margin Outline</label>
-              <label class="sw-toggle" role="switch" aria-checked="false">
-                <input type="checkbox" id="set-margin-line" />
-                <span class="sw-track"></span>
-                <span class="sw-thumb"></span>
-              </label>
-            </div>
-            <div class="mt-2">
-              <label class="text-[11px] text-vectura-muted">Margin Outline Style</label>
-              <div class="line-style-control">
-                <div class="style-field">
-                  <span class="style-field-label">Line Color</span>
-                  <button id="set-margin-line-color-pill" type="button"
-                    class="value-chip text-xs text-vectura-accent font-mono color-thickness-pill">#52525B</button>
-                  <input type="color" id="set-margin-line-color" class="hidden" />
-                </div>
-                <div class="style-field">
-                  <span class="style-field-label">Line Thickness</span>
-                  <div class="color-thickness-size">
-                    <input type="range" id="set-margin-line-weight-slider" min="0.05" max="2" step="0.05" value="0.2"
-                      class="w-full">
-                    <input type="number" id="set-margin-line-weight" min="0.05" max="2" step="0.05" value="0.2"
-                      class="w-14 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
-                    <span id="set-margin-line-weight-unit" class="text-[11px] text-vectura-muted">mm</span>
-                  </div>
-                </div>
-                <div class="style-field">
-                  <span class="style-field-label">Separation</span>
-                  <input type="number" id="set-margin-line-dotting" min="0" step="0.5"
-                    class="w-14 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
-                </div>
-                <div class="style-field">
-                  <span class="style-field-label">Reset</span>
-                  <button id="set-margin-line-style-reset" type="button"
-                    class="text-[11px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted">Reset</button>
-                </div>
-              </div>
-            </div>
-            <div class="mt-4">
-              <div class="flex items-center justify-between mb-2">
-                <label class="text-xs text-vectura-muted">Show Guides</label>
-                <label class="sw-toggle" role="switch" aria-checked="false">
-                  <input type="checkbox" id="set-show-guides" />
-                  <span class="sw-track"></span>
-                  <span class="sw-thumb"></span>
-                </label>
-              </div>
-              <div class="flex items-center justify-between">
-                <label class="text-xs text-vectura-muted">Snap Guides</label>
-                <label class="sw-toggle" role="switch" aria-checked="false">
-                  <input type="checkbox" id="set-snap-guides" />
-                  <span class="sw-track"></span>
-                  <span class="sw-thumb"></span>
-                </label>
-              </div>
-              <div class="flex items-center justify-between mt-2">
-                <label class="text-xs text-vectura-muted">Show Document Dimensions</label>
-                <label class="sw-toggle" role="switch" aria-checked="false">
-                  <input type="checkbox" id="set-show-document-dimensions" />
-                  <span class="sw-track"></span>
-                  <span class="sw-thumb"></span>
-                </label>
-              </div>
-            </div>
-            <div class="mt-2">
-              <div class="flex items-center justify-between">
-                <label class="text-xs text-vectura-muted">Save Preferences in Cookie</label>
-                <label class="sw-toggle" role="switch" aria-checked="false">
-                  <input type="checkbox" id="set-cookie-preferences" />
-                  <span class="sw-track"></span>
-                  <span class="sw-thumb"></span>
-                </label>
-              </div>
-              <button id="btn-clear-preferences" type="button"
-                class="mt-2 text-[11px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted">
-                Clear Saved Preferences
-              </button>
-              <div class="flex items-center justify-between mt-2">
-                <label class="text-xs text-vectura-muted" for="set-show-tour">Show tour on first launch</label>
-                <label class="sw-toggle" role="switch" aria-checked="false">
-                  <input type="checkbox" id="set-show-tour" />
-                  <span class="sw-track"></span>
-                  <span class="sw-thumb"></span>
-                </label>
-              </div>
-            </div>
-            <div class="mt-4">
-              <div class="flex items-center justify-between mb-2">
-                <label class="text-xs text-vectura-muted" for="bg-color-pill">Background</label>
-                <button id="bg-color-pill" type="button"
-                  class="value-chip text-xs text-vectura-accent font-mono color-thickness-pill">#FFFFFF</button>
+        </div>
+
+        <div class="sect">
+          <button type="button" class="sect-hdr is-open" data-sect-toggle aria-expanded="true">
+            Background &amp; Selection
+            <span class="sect-arrow down"></span>
+          </button>
+          <div class="sect-body" data-sect-body>
+            <div class="ctrl-row">
+              <label class="ctrl-lbl" for="bg-color-pill">Background</label>
+              <span class="ctrl-row-trail">
+                <button id="bg-color-pill" type="button" class="value-chip">#FFFFFF</button>
                 <input type="color" id="inp-bg-color" class="hidden" aria-label="Background color" />
+              </span>
+            </div>
+            ${swToggle('set-selection-outline', 'Selection outline')}
+            <div class="color-thickness-control">
+              <div class="style-field">
+                <span class="style-field-label">Line Color</span>
+                <button id="set-selection-outline-color-pill" type="button" class="value-chip color-thickness-pill">#EF4444</button>
+                <input type="color" id="set-selection-outline-color" class="hidden" />
               </div>
-              <div class="flex items-center justify-between mb-2">
-                <label class="text-xs text-vectura-muted">Selection Outline</label>
-                <label class="sw-toggle" role="switch" aria-checked="false">
-                  <input type="checkbox" id="set-selection-outline" />
-                  <span class="sw-track"></span>
-                  <span class="sw-thumb"></span>
-                </label>
-              </div>
-              <div class="mt-2">
-                <label class="text-[11px] text-vectura-muted">Selection Outline Style</label>
-                <div class="color-thickness-control">
-                  <div class="style-field">
-                    <span class="style-field-label">Line Color</span>
-                    <button id="set-selection-outline-color-pill" type="button"
-                      class="value-chip text-xs text-vectura-accent font-mono color-thickness-pill">#EF4444</button>
-                    <input type="color" id="set-selection-outline-color" class="hidden" />
-                  </div>
-                  <div class="style-field">
-                    <span class="style-field-label">Line Thickness</span>
-                    <div class="color-thickness-size">
-                      <input type="range" id="set-selection-outline-width-slider" min="0.1" max="2" step="0.05" value="0.15"
-                        class="w-full">
-                      <input type="number" id="set-selection-outline-width" min="0.1" max="2" step="0.05" value="0.15"
-                        class="w-14 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
-                      <span id="set-selection-outline-width-unit" class="text-[11px] text-vectura-muted">mm</span>
-                    </div>
-                  </div>
-                  <div class="style-field">
-                    <span class="style-field-label">Reset</span>
-                    <button id="set-selection-outline-style-reset" type="button"
-                      class="text-[11px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted">Reset</button>
-                  </div>
+              <div class="style-field">
+                <span class="style-field-label">Line Thickness</span>
+                <div class="color-thickness-size slider-row">
+                  <input type="range" id="set-selection-outline-width-slider" class="ctrl-slider" min="0.1" max="2" step="0.05" value="0.15" />
+                  <input type="number" id="set-selection-outline-width" class="num-step-inp slider-val-inp" min="0.1" max="2" step="0.05" value="0.15" />
+                  <span id="set-selection-outline-width-unit" class="ctrl-trail-hint">mm</span>
                 </div>
               </div>
+              <div class="style-field">
+                <span class="style-field-label">Reset</span>
+                <button id="set-selection-outline-style-reset" type="button" class="hdr-btn">Reset</button>
+              </div>
             </div>
           </div>
         </div>
-        <div class="control-group">
-          <label class="control-label">Plotter Physics</label>
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="text-[11px] text-vectura-muted">Draw Speed (mm/s)</label>
-              <input type="number" id="set-speed-down"
-                class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
-            </div>
-            <div>
-              <label class="text-[11px] text-vectura-muted">Travel Speed (mm/s)</label>
-              <input type="number" id="set-speed-up"
-                class="w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:border-vectura-accent focus:outline-none" />
+
+        <div class="sect">
+          <button type="button" class="sect-hdr is-open" data-sect-toggle aria-expanded="true">
+            Plotter Physics
+            <span class="sect-arrow down"></span>
+          </button>
+          <div class="sect-body" data-sect-body>
+            <div class="ctrl-2col">
+              <div class="ctrl-grp">
+                <span class="ctrl-sub-lbl">Draw mm/s</span>
+                ${numStep({ id: 'set-speed-down', value: '' })}
+              </div>
+              <div class="ctrl-grp">
+                <span class="ctrl-sub-lbl">Travel mm/s</span>
+                ${numStep({ id: 'set-speed-up', value: '' })}
+              </div>
             </div>
           </div>
         </div>
-        <div class="control-group">
-          <label class="control-label">Layer Bar Colors</label>
-          <div class="palette-picker-wrap">
-            <div id="layer-bar-palette-trigger" class="palette-picker-trigger" role="button" tabindex="0">
-              <span id="layer-bar-palette-name">Prism</span>
-              <div id="layer-bar-palette-preview" class="palette-picker-swatches"></div>
-              <span class="palette-picker-arrow" aria-hidden="true"></span>
+
+        <div class="sect">
+          <button type="button" class="sect-hdr is-open" data-sect-toggle aria-expanded="true">
+            Layer Bar Colors
+            <span class="sect-arrow down"></span>
+          </button>
+          <div class="sect-body" data-sect-body>
+            <div class="palette-picker-wrap">
+              <div id="layer-bar-palette-trigger" class="palette-picker-trigger" role="button" tabindex="0">
+                <span id="layer-bar-palette-name">Prism</span>
+                <div id="layer-bar-palette-preview" class="palette-picker-swatches"></div>
+                <span class="palette-picker-arrow" aria-hidden="true"></span>
+              </div>
+              <div id="layer-bar-palette-menu" class="palette-picker-menu hidden"></div>
             </div>
-            <div id="layer-bar-palette-menu" class="palette-picker-menu hidden"></div>
           </div>
         </div>
-        <div class="control-group border-none">
-          <label class="control-label">History</label>
-          <div class="flex items-center justify-between">
-            <label class="text-xs text-vectura-muted">Undo Steps</label>
-            <input type="number" id="set-undo" min="1" max="200"
-              class="w-12 bg-vectura-bg border border-vectura-border p-1 text-xs text-right focus:border-vectura-accent focus:outline-none" />
+
+        <div class="sect">
+          <button type="button" class="sect-hdr is-open" data-sect-toggle aria-expanded="true">
+            History &amp; Preferences
+            <span class="sect-arrow down"></span>
+          </button>
+          <div class="sect-body" data-sect-body>
+            <div class="ctrl-row">
+              <label class="ctrl-lbl" for="set-undo">Undo steps</label>
+              ${numStep({ id: 'set-undo', value: '', min: '1', max: '200', cls: 'num-step--narrow' })}
+            </div>
+            ${swToggle('set-cookie-preferences', 'Save preferences in cookie')}
+            <button id="btn-clear-preferences" type="button" class="hdr-btn">Clear saved preferences</button>
+            ${swToggle('set-show-tour', 'Show tour on first launch')}
           </div>
         </div>
+
       </div>
     </div>
   `.trim();
@@ -386,6 +379,54 @@
         const sync = () => toggle.setAttribute('aria-checked', String(cb.checked));
         sync();
         cb.addEventListener('change', sync);
+      });
+
+      // Collapsible sections — clicking the header toggles `.is-open` on the
+      // header (rotates the chevron via `.sect-arrow.down`) and shows/hides
+      // the matching `.sect-body`. Sections render open by default; this
+      // wiring just lets the user collapse the ones they don't need.
+      settingsPanelEl.querySelectorAll('[data-sect-toggle]').forEach((hdr) => {
+        hdr.addEventListener('click', () => {
+          const open = !hdr.classList.contains('is-open');
+          hdr.classList.toggle('is-open', open);
+          hdr.setAttribute('aria-expanded', String(open));
+          const arrow = hdr.querySelector('.sect-arrow');
+          if (arrow) arrow.classList.toggle('down', open);
+          const body = hdr.nextElementSibling;
+          if (body && body.matches('[data-sect-body]')) {
+            body.style.display = open ? '' : 'none';
+          }
+        });
+      });
+
+      // Number-stepper ± buttons — find the sibling <input>, bump by `step`
+      // (default 1), clamp to min/max, and dispatch `input` + `change` so
+      // the legacy bindGlobal handlers still fire. Held key repeats fall
+      // through to the native number-input arrow keys; this wiring is just
+      // for the visible ± hit targets.
+      settingsPanelEl.querySelectorAll('[data-num-step]').forEach((wrap) => {
+        const input = wrap.querySelector('.num-step-inp');
+        if (!input) return;
+        const dec = wrap.querySelector('[data-num-step-dec]');
+        const inc = wrap.querySelector('[data-num-step-inc]');
+        const bump = (dir) => {
+          const step = parseFloat(input.step) || 1;
+          const min = input.min !== '' ? parseFloat(input.min) : -Infinity;
+          const max = input.max !== '' ? parseFloat(input.max) : Infinity;
+          const cur = parseFloat(input.value);
+          const base = Number.isFinite(cur) ? cur : 0;
+          let next = base + dir * step;
+          // Tame floating-point drift on small steps (0.05 etc.)
+          const decimals = (String(step).split('.')[1] || '').length;
+          if (decimals > 0) next = parseFloat(next.toFixed(decimals));
+          if (next < min) next = min;
+          if (next > max) next = max;
+          input.value = String(next);
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        };
+        dec?.addEventListener('click', () => bump(-1));
+        inc?.addEventListener('click', () => bump(1));
       });
     }
   }

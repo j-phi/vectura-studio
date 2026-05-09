@@ -130,11 +130,92 @@ describe('document-setup panel compile gate', () => {
   });
 
   it('PANEL_HTML preserves headline labels and units options', () => {
-    expect(DocumentSetup.PANEL_HTML).toContain('DOCUMENT SETUP');
-    expect(DocumentSetup.PANEL_HTML).toContain('Paper Size');
+    // Section labels were rewritten in the Var 01 (Meridian primitives)
+    // refactor — `DOCUMENT SETUP` -> `Document Setup`, `Paper Size` -> `Paper`,
+    // `History` -> `History & Preferences`. The other section names stay.
+    expect(DocumentSetup.PANEL_HTML).toContain('Document Setup');
+    expect(DocumentSetup.PANEL_HTML).toMatch(/data-sect-toggle[^>]*>\s*Paper\s/);
     expect(DocumentSetup.PANEL_HTML).toContain('Plotter Physics');
     expect(DocumentSetup.PANEL_HTML).toContain('Layer Bar Colors');
     expect(DocumentSetup.PANEL_HTML).toContain('<option value="metric">');
     expect(DocumentSetup.PANEL_HTML).toContain('<option value="imperial">');
+  });
+
+  it('PANEL_HTML uses Meridian primitive classes (Var 01 refactor)', () => {
+    // Var 01 swapped the legacy Tailwind utility markup for the Meridian
+    // component vocabulary. These class names are the contract that the
+    // skin's components.css paints against — losing one regresses the
+    // visual treatment back to inconsistent legacy styling.
+    const html = DocumentSetup.PANEL_HTML;
+    expect(html).toContain('class="sect"');
+    expect(html).toContain('class="sect-hdr is-open"');
+    expect(html).toContain('class="sect-body"');
+    expect(html).toContain('class="seg-ctrl"');
+    expect(html).toContain('class="ctrl-sel"');
+    expect(html).toContain('class="num-step ');
+    expect(html).toContain('class="num-step-inp"');
+    expect(html).toContain('class="pane-hdr"');
+    expect(html).toContain('class="pane-title"');
+  });
+
+  it('section headers collapse when clicked (toggle .is-open + hide body)', () => {
+    // Open by default — the bindHandlers() wiring then lets users collapse
+    // sections they don't need. Without this, sect-hdr becomes a dead button.
+    const fakeUi = {};
+    DocumentSetup.bindHandlers.call(fakeUi);
+    const panel = dom.window.document.getElementById('settings-panel');
+    const hdr = panel.querySelector('[data-sect-toggle]');
+    const body = hdr.nextElementSibling;
+    expect(hdr.classList.contains('is-open')).toBe(true);
+    expect(body.style.display).not.toBe('none');
+
+    hdr.click();
+    expect(hdr.classList.contains('is-open')).toBe(false);
+    expect(hdr.getAttribute('aria-expanded')).toBe('false');
+    expect(body.style.display).toBe('none');
+
+    hdr.click();
+    expect(hdr.classList.contains('is-open')).toBe(true);
+    expect(hdr.getAttribute('aria-expanded')).toBe('true');
+    expect(body.style.display).toBe('');
+  });
+
+  it('num-step ± buttons mutate the input AND dispatch change so legacy handlers fire', () => {
+    // The 30+ #set-* handlers in _ui-legacy.js bindGlobal() listen for
+    // `change` events on the input. The new ± buttons must dispatch one,
+    // otherwise clicking ± looks visually correct but silently no-ops.
+    const panel = dom.window.document.getElementById('settings-panel');
+    const margin = panel.querySelector('#set-margin');
+    margin.value = '10';
+    const wrap = margin.closest('[data-num-step]');
+    const inc = wrap.querySelector('[data-num-step-inc]');
+    const dec = wrap.querySelector('[data-num-step-dec]');
+
+    const changes = [];
+    margin.addEventListener('change', () => changes.push(margin.value));
+
+    inc.click();
+    expect(margin.value).toBe('11');
+    dec.click();
+    dec.click();
+    expect(margin.value).toBe('9');
+    expect(changes).toEqual(['11', '10', '9']);
+  });
+
+  it('num-step ± clamps to min/max when bounded', () => {
+    // #set-undo is min=1 max=200; #set-outside-opacity is min=0 max=1 step=0.05.
+    // Clamping prevents out-of-range values from reaching the engine.
+    const panel = dom.window.document.getElementById('settings-panel');
+    const undo = panel.querySelector('#set-undo');
+    undo.value = '1';
+    const undoWrap = undo.closest('[data-num-step]');
+    undoWrap.querySelector('[data-num-step-dec]').click();
+    expect(parseFloat(undo.value)).toBe(1); // clamped at min
+
+    const opacity = panel.querySelector('#set-outside-opacity');
+    opacity.value = '1';
+    const opWrap = opacity.closest('[data-num-step]');
+    opWrap.querySelector('[data-num-step-inc]').click();
+    expect(parseFloat(opacity.value)).toBe(1); // clamped at max
   });
 });

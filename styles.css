@@ -3423,6 +3423,9 @@ input[type='color']::-webkit-color-swatch {
   width: var(--pane-left-width);
   display: flex;
   flex-direction: column;
+  background: var(--ui-panel, var(--color-panel));
+  border-right: 1px solid var(--ui-border, var(--color-border));
+  box-shadow: var(--shadow-pane, 4px 0 24px rgba(0, 0, 0, 0.35));
   transform: translateX(-100%);
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   z-index: 40;
@@ -3436,6 +3439,79 @@ input[type='color']::-webkit-color-swatch {
 .settings-panel.open {
   transform: translateX(0);
   pointer-events: auto;
+}
+
+/* Var 01 drawer — body scroll + Meridian-component glue.
+   Sections inside .settings-panel-body inherit `.sect`/`.sect-hdr`/`.sect-body`
+   from src/ui/skin/components.css; rules below only cover row/trail helpers
+   that don't have a global home yet. */
+.settings-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.settings-panel-body::-webkit-scrollbar { width: 3px; }
+.settings-panel-body::-webkit-scrollbar-thumb {
+  background: var(--ui-border-hi, var(--color-border-hover));
+  border-radius: 2px;
+}
+.settings-panel .ctrl-row-trail {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm, 8px);
+}
+.settings-panel .ctrl-trail-hint {
+  font-size: var(--font-size-xs, 10px);
+  color: var(--ui-muted, var(--color-muted));
+  font-family: var(--font-ui, inherit);
+}
+.settings-panel .num-step--narrow { width: 100px; flex: 0 0 100px; }
+.settings-panel .slider-val-inp {
+  height: var(--row-height, 30px);
+  width: 64px;
+  background: var(--ui-ctrl, var(--color-control));
+  border: 1px solid var(--ui-border, var(--color-border));
+  color: var(--ui-text, var(--color-text));
+  font-family: var(--font-mono, monospace);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--font-size-sm, 11px);
+  text-align: right;
+  border-radius: var(--radius-sm, 4px);
+  outline: none;
+  padding: 0 var(--spacing-sm, 8px);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.settings-panel .slider-val-inp:focus {
+  border-color: var(--ui-accent, var(--color-accent));
+  box-shadow: 0 0 0 3px var(--ui-accent-2, rgba(78, 158, 225, 0.12));
+}
+
+/* Close affordance — circular outline button with a left-facing chevron,
+   visually matching the .pane-toggle handles on the left/right panes but
+   anchored inside the `.pane-hdr` flex row instead of free-floating midway
+   up the panel. */
+.settings-panel-close {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--ui-border, var(--color-border));
+  border-radius: 9999px;
+  background: var(--ui-ctrl, var(--color-bg));
+  color: var(--ui-text-2, var(--color-text-soft));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.settings-panel-close:hover {
+  color: var(--ui-accent, var(--color-accent));
+  border-color: var(--ui-accent, var(--color-accent));
+}
+.settings-panel-close:focus-visible {
+  outline: 2px solid var(--ui-accent, var(--color-accent));
+  outline-offset: 2px;
 }
 
 .pane :is(select, input[type='text'], input[type='number'], input[type='search']),
