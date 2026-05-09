@@ -114,6 +114,12 @@ const loadVecturaRuntime = async (options = {}) => {
 
   if (window.HTMLCanvasElement && window.HTMLCanvasElement.prototype) {
     window.HTMLCanvasElement.prototype.getContext = () => create2DContextStub();
+    // jsdom emits a "Not implemented" warning when toDataURL is called
+    // (the real method needs the optional `canvas` npm package). The
+    // Document Setup modal preview hits this path; stub it to return a
+    // 1×1 transparent PNG so callers can `<img>.src = …` cleanly.
+    window.HTMLCanvasElement.prototype.toDataURL = () =>
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=';
   }
 
   if (!window.ResizeObserver) {

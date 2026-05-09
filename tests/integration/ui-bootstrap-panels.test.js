@@ -109,11 +109,21 @@ describe('UI bootstrap – core panels', () => {
     const settingsPanel = document.getElementById('settings-panel');
     expect(settingsPanel.classList.contains('open')).toBe(false);
 
-    window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }));
-    expect(settingsPanel.classList.contains('open')).toBe(true);
+    // Var 02 splits Cmd+K's surface by viewport (< 900 px → drawer,
+    // ≥ 900 px → modal). Pin to mobile here so the existing toggle
+    // assertion still expresses the intended behaviour. The state
+    // roundtrip below is surface-independent.
+    const origWidth = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 600 });
+    try {
+      window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }));
+      expect(settingsPanel.classList.contains('open')).toBe(true);
 
-    window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }));
-    expect(settingsPanel.classList.contains('open')).toBe(false);
+      window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }));
+      expect(settingsPanel.classList.contains('open')).toBe(false);
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: origWidth });
+    }
 
     window.Vectura.SETTINGS.paperSize = 'custom';
     window.Vectura.SETTINGS.paperWidth = 254;
