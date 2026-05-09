@@ -105,7 +105,7 @@ describe('Mask preview integration', () => {
     expect(renderer.maskPreview).toBeNull();
   });
 
-  test('buildMaskPreviewState returns null for child of unlocked mask', async () => {
+  test('buildMaskPreviewState returns isChildDrag preview for child of unlocked mask', async () => {
     runtime = await loadVecturaRuntime({ includeRenderer: true });
     const { window } = runtime;
     const { VectorEngine, Renderer, Layer } = window.Vectura;
@@ -131,7 +131,13 @@ describe('Mask preview integration', () => {
     renderer.isLayerLocked = () => false; // nothing locked
 
     const preview = renderer.startMaskPreview(child);
-    // Child is not a mask and its masking ancestor is not locked → no preview
-    expect(preview).toBeNull();
+    // Child of any masking ancestor (locked or not) should get an isChildDrag preview
+    // so that the drag shows paths clipped to the mask rather than sliding pre-clipped paths.
+    expect(preview).not.toBeNull();
+    expect(preview.isChildDrag).toBe(true);
+    expect(preview.maskLayerId).toBe(maskParent.id);
+    expect(preview.descendantIds.has(child.id)).toBe(true);
+    expect(preview.entries).toHaveLength(1);
+    expect(preview.entries[0].layerId).toBe(child.id);
   });
 });

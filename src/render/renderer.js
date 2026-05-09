@@ -1729,15 +1729,18 @@
           entries,
         };
       }
-      if (this.isLayerLocked && this.engine) {
+      if (this.engine) {
         const maskingAncestors = getMaskingAncestors(layer, this.engine);
-        const lockedMask = maskingAncestors.find((a) => this.isLayerLocked?.(a.id));
-        if (lockedMask) {
+        if (maskingAncestors.length) {
+          const lockedMask = this.isLayerLocked
+            ? maskingAncestors.find((a) => this.isLayerLocked?.(a.id))
+            : null;
+          const closestMask = lockedMask || maskingAncestors[maskingAncestors.length - 1];
           const bounds = this.engine.getBounds ? this.engine.getBounds() : this.engine.currentProfile;
-          const paths = buildLayerMaskedPaths(layer, this.engine, bounds, { excludeMaskLayerId: lockedMask.id });
+          const paths = buildLayerMaskedPaths(layer, this.engine, bounds, { excludeMaskLayerId: closestMask.id });
           if (!paths.length) return null;
           return {
-            maskLayerId: lockedMask.id,
+            maskLayerId: closestMask.id,
             descendantIds: new Set([layer.id]),
             entries: [{ layerId: layer.id, paths }],
             isChildDrag: true,
@@ -2581,6 +2584,7 @@
         selectedLayers.forEach((l) => {
           if (!l.visible || (l.mask?.enabled && l.mask?.hideLayer)) return;
           if (l.isGroup) return;
+          if (this.shouldSkipLayerForMaskPreview(l)) return;
           const pen = SETTINGS.pens?.find((p) => p.id === l.penId) || null;
           const strokeWidth = pen?.width ?? l.strokeWidth ?? SETTINGS.strokeWidth;
           const useCurves = Boolean(l.params && l.params.curves);
@@ -2662,9 +2666,16 @@
       }
 
       if (SETTINGS.showGuides && this.guides) this.drawGuides(this.guides);
-      if (selectedLayers.length) {
-        const bounds = this.getSelectionBounds(selectedLayers, this.tempTransform);
-        const showHandles = selectedLayers.length === 1;
+      const selectionLayersForBox = this.tempTransform
+        ? selectedLayers.filter((l) =>
+            !l.displayMaskActive &&
+            !(l.mask?.enabled && l.maskCapabilities?.canSource) &&
+            !this.shouldSkipLayerForMaskPreview(l)
+          )
+        : selectedLayers;
+      if (selectionLayersForBox.length) {
+        const bounds = this.getSelectionBounds(selectionLayersForBox, this.tempTransform);
+        const showHandles = selectionLayersForBox.length === 1;
         if (bounds) this.drawSelection(bounds, { showHandles });
       }
       if (this.selectionRect) this.drawSelectionRect(this.selectionRect);
@@ -3667,8 +3678,12 @@
       let widthMatch = false;
       let heightMatch = false;
       const activeIds = new Set(activeLayers.map((layer) => layer.id));
+      const ancestorIds = new Set(
+        activeLayers.flatMap((l) => getMaskingAncestors(l, this.engine).map((a) => a.id))
+      );
       this.engine.layers.forEach((layer) => {
         if (activeIds.has(layer.id) || !layer.visible) return;
+        if (ancestorIds.has(layer.id)) return;
         const otherBounds = this.getLayerBounds(layer);
         if (!otherBounds) return;
         const w = otherBounds.maxX - otherBounds.minX;
