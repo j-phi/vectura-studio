@@ -3169,6 +3169,24 @@
         }
         controlsWrap.appendChild(precisionControl);
 
+        const strokeOverrideOn = SETTINGS.strokeWidthOverride === true;
+        const strokeOverrideControl = document.createElement('div');
+        strokeOverrideControl.className = 'optimization-control';
+        strokeOverrideControl.innerHTML = `
+          <div class="flex justify-between mb-1">
+            <label class="control-label mb-0">Export Stroke Override</label>
+            <span class="text-xs text-vectura-accent font-mono">${strokeOverrideOn ? 'ON' : 'OFF'}</span>
+          </div>
+          <label class="sw-toggle" role="switch" aria-checked="${strokeOverrideOn ? 'true' : 'false'}">
+            <input type="checkbox" ${strokeOverrideOn ? 'checked' : ''} />
+            <span class="sw-track"></span>
+            <span class="sw-thumb"></span>
+          </label>
+        `;
+        const strokeOverrideToggle = strokeOverrideControl.querySelector('input');
+        const strokeOverrideState = strokeOverrideControl.querySelector('span');
+        const strokeOverrideSwitch = strokeOverrideControl.querySelector('.sw-toggle');
+
         const strokeConfig = this.getDocumentLengthConfig({ minMm: 0, maxMm: 5, stepMm: 0.05 });
         const strokeValueDisplay = this.formatDocumentNumber(SETTINGS.strokeWidth ?? 0.3, { precision: strokeConfig.precision });
         const strokeControl = document.createElement('div');
@@ -3187,6 +3205,11 @@
         const strokeRange = strokeControl.querySelector('input[type="range"]');
         const strokeChip = strokeControl.querySelector('.value-chip');
         if (strokeRange) syncSliderFill(strokeRange);
+        const setStrokeSliderVisible = (visible) => {
+          strokeControl.hidden = !visible;
+          if (strokeRange) strokeRange.disabled = !visible;
+        };
+        setStrokeSliderVisible(strokeOverrideOn);
         const applyStroke = (raw, options = {}) => {
           const { commit = false } = options;
           if (commit && this.app.pushHistory) this.app.pushHistory();
@@ -3209,6 +3232,21 @@
           strokeRange.oninput = (e) => applyStroke(e.target.value);
           strokeRange.onchange = (e) => applyStroke(e.target.value, { commit: true });
         }
+        if (strokeOverrideToggle) {
+          strokeOverrideToggle.onchange = (e) => {
+            if (this.app.pushHistory) this.app.pushHistory();
+            const enabled = Boolean(e.target.checked);
+            SETTINGS.strokeWidthOverride = enabled;
+            if (strokeOverrideState) strokeOverrideState.textContent = enabled ? 'ON' : 'OFF';
+            if (strokeOverrideSwitch) strokeOverrideSwitch.setAttribute('aria-checked', enabled ? 'true' : 'false');
+            setStrokeSliderVisible(enabled);
+            this.app.persistPreferencesDebounced?.();
+            this.app.render();
+            updateStats();
+            if (this.exportModalState?.isOpen) this.renderExportPreview();
+          };
+        }
+        controlsWrap.appendChild(strokeOverrideControl);
         controlsWrap.appendChild(strokeControl);
 
         const hiddenGeometryControl = document.createElement('div');

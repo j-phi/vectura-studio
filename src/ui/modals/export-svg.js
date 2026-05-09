@@ -762,7 +762,8 @@
           if (/Plotter Optimization/i.test(text)) addInfoToggle(label, 'plotterOptimization');
           if (/Optimization Tolerance/i.test(text)) addInfoToggle(label, 'optimizationTolerance');
           if (/^Precision$/i.test(text)) addInfoToggle(label, 'precision');
-          if (/^Stroke\b/i.test(text)) addInfoToggle(label, 'strokeWidth');
+          if (/Export Stroke Override/i.test(text)) addInfoToggle(label, 'strokeWidthOverride');
+          else if (/^Stroke\b/i.test(text)) addInfoToggle(label, 'strokeWidth');
         });
         return;
       }

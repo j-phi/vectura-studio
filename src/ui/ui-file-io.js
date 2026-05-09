@@ -496,7 +496,9 @@
               sharpEdges: !forceLinear && useCurves && layer.type === 'pattern' && !layer.params?.tileEdgeCurves,
               layerGroupId,
               ancestorClipLayerIds,
-              strokeWidth: (layer.strokeWidth ?? pathPen.width ?? SETTINGS.strokeWidth).toFixed(3),
+              strokeWidth: (SETTINGS.strokeWidthOverride === true
+                ? (layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3)
+                : (pathPen.width ?? SETTINGS.strokeWidth ?? 0.3)).toFixed(3),
               strokeColor: pathPen.color || pen.color || '#000000',
               groupPenId: pen.id,
               pathPenId,

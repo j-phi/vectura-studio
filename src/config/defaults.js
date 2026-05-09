@@ -1528,6 +1528,7 @@
     speedUp: 300,
     precision: 3,
     strokeWidth: 0.3,
+    strokeWidthOverride: false,
     bgColor: '#121214',
     undoSteps: 20,
     truncate: true,

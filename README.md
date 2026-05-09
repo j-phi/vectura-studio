@@ -262,6 +262,7 @@ Export from `File > Export SVG`, which opens a large preview modal. Zoom/pan the
 - **Line Sort** — nearest-neighbor print-order optimization with overlay preview
 - **Line Simplify** — curve simplification with adjustable tolerance
 - **Remove Hidden Geometry** — physically trims masked/frame-hidden geometry (on by default)
+- **Export Stroke Override** — off by default, so the export honors each pen's configured width; turn on to surface the global Stroke (mm) slider and apply a single uniform width across the whole document
 - **Export Optimized** — bundles the active optimization passes into the exported SVG
 
 Click `Export SVG` to download.

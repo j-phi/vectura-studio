@@ -734,9 +734,13 @@
       title: 'Precision',
       description: 'Number of decimal places used for coordinates in the exported SVG. Higher values preserve fine sub-pixel detail at the cost of file size; lower values shrink the file but quantize positions. 3 (≈0.001 mm at A4) is a sensible default for plotter work.',
     },
+    strokeWidthOverride: {
+      title: 'Export Stroke Override',
+      description: 'When OFF (default), the SVG export uses each pen\'s stroke width as configured in the Pens panel. Turn ON to surface the global Stroke slider and apply a single uniform width across the whole document, overriding the per-pen widths.',
+    },
     strokeWidth: {
       title: 'Stroke (mm)',
-      description: 'Global stroke width for the SVG export and on-canvas display. Editing this overwrites every layer\'s current stroke and overrides the per-pen widths configured in the Pens panel. Use the Pens panel for fine-grained per-layer control; use this field to apply a single uniform width across the whole document.',
+      description: 'Global stroke width applied to the SVG export and on-canvas display when Export Stroke Override is ON. Editing this overwrites every layer\'s current stroke and overrides the per-pen widths configured in the Pens panel. Use the Pens panel for fine-grained per-layer control; use this field to apply a single uniform width across the whole document.',
     },
     removeHiddenGeometry: {
       title: 'Remove Hidden Geometry',

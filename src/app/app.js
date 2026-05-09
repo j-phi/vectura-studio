@@ -177,6 +177,7 @@
         speedUp: SETTINGS.speedUp,
         precision: SETTINGS.precision,
         strokeWidth: SETTINGS.strokeWidth,
+        strokeWidthOverride: SETTINGS.strokeWidthOverride === true,
         bgColor: SETTINGS.bgColor,
         truncate: SETTINGS.truncate,
         cropExports: SETTINGS.cropExports,
@@ -238,6 +239,7 @@
       SETTINGS.speedUp = snapshot.speedUp ?? SETTINGS.speedUp;
       SETTINGS.precision = snapshot.precision ?? SETTINGS.precision;
       SETTINGS.strokeWidth = snapshot.strokeWidth ?? SETTINGS.strokeWidth;
+      SETTINGS.strokeWidthOverride = snapshot.strokeWidthOverride === true;
       SETTINGS.bgColor = snapshot.bgColor ?? SETTINGS.bgColor;
       SETTINGS.truncate = snapshot.truncate ?? SETTINGS.truncate;
       SETTINGS.cropExports = snapshot.cropExports ?? SETTINGS.cropExports;
@@ -370,6 +372,7 @@
           speedUp: SETTINGS.speedUp,
           precision: SETTINGS.precision,
           strokeWidth: SETTINGS.strokeWidth,
+          strokeWidthOverride: SETTINGS.strokeWidthOverride === true,
           bgColor: SETTINGS.bgColor,
           undoSteps: SETTINGS.undoSteps,
           truncate: SETTINGS.truncate,
@@ -429,6 +432,7 @@
       SETTINGS.speedUp = s.speedUp ?? SETTINGS.speedUp;
       SETTINGS.precision = s.precision ?? SETTINGS.precision;
       SETTINGS.strokeWidth = s.strokeWidth ?? SETTINGS.strokeWidth;
+      SETTINGS.strokeWidthOverride = s.strokeWidthOverride === true;
       SETTINGS.bgColor = s.bgColor ?? SETTINGS.bgColor;
       SETTINGS.undoSteps = s.undoSteps ?? SETTINGS.undoSteps;
       SETTINGS.truncate = s.truncate ?? SETTINGS.truncate;

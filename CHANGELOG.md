@@ -6,6 +6,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added
+- **Export Stroke Override toggle.** New switch in the Optimization panel sits above the Stroke (mm) slider and defaults to OFF. With the toggle off, the SVG export honors each pen's configured width as set in the Pens panel. Turn it on to surface the slider and apply a single uniform stroke across the whole document, overriding the per-pen widths. Persisted across sessions and `.vectura` saves.
+
 ### Changed
 - **Document Setup drawer rebuilt against the Meridian skin component vocabulary.** The slide-out File ▸ Document Setup pane now uses `.sect`/`.sect-hdr`/`.sect-body` (with the 3 px accent rail + chevron disclosure that the rest of the app uses), `.ctrl-sel`, `.num-step` (with ± hit targets), `.seg-ctrl` for orientation/units, `.value-chip` for color pills, and `.ctrl-slider` for line-weight inputs. Settings reorganised into nine collapsible sections — Theme, Paper, Crop & Outside, Margin Outline, Guides & Display, Background & Selection, Plotter Physics, Layer Bar Colors, History & Preferences — all open on first reveal so no controls move out of sight. Every `#set-*` id is preserved verbatim, so the ~30 inline handlers in `_ui-legacy.js` `bindGlobal()` keep wiring without modification.
 - **Document Setup close button** is now a circular outlined left-facing chevron in the upper-right of the drawer header (matching the visual register of the side-pane collapse handles), replacing the previous `✕` glyph which was inheriting the legacy `.pane-toggle` absolute-positioning and floating midway up the panel.
