@@ -593,34 +593,29 @@
               ev.stopPropagation();
               const ui  = ctx.ui;
               const app = ctx.app;
-              const modalBody =
-                '<p class="modal-text">This will remove every layer from the canvas. Your current document settings stay put.</p>' +
-                '<div class="color-modal-actions" style="margin-top:16px;">' +
-                '<button type="button" class="tour-clear-cancel">Cancel</button>' +
-                '<button type="button" class="tour-clear-confirm color-modal-apply">Clear canvas</button>' +
-                '</div>';
-              // Popover sits above #modal-overlay (z-index 10001 vs 100), so hide
-              // it while the confirmation modal is up; restore on cancel.
+              // Popover sits above the modal backdrop, so hide it while the
+              // confirmation is open; restore on cancel.
               ctx.tour.popover.setVisible(false);
-              let cleared = false;
-              ui.openModal({
+              const dlg = window.Vectura.UI.overlays.Dialog(document.body, {
                 title: 'Clear canvas?',
-                body: modalBody,
-                onClose: () => { if (!cleared) ctx.tour.popover.setVisible(true); },
+                message: 'This will remove every layer from the canvas. Your current document settings stay put.',
+                confirmLabel: 'Clear canvas',
+                cancelLabel: 'Cancel',
+                destructive: true,
+                onCancel: () => { ctx.tour.popover.setVisible(true); dlg.destroy(); },
+                onConfirm: () => {
+                  dlg.destroy();
+                  if (typeof app.pushHistory === 'function') app.pushHistory();
+                  app.engine.layers = [];
+                  app.engine.activeLayerId = null;
+                  if (typeof app.setSelection === 'function') app.setSelection([], null);
+                  if (typeof ui.renderLayers === 'function') ui.renderLayers();
+                  if (typeof ui.buildControls === 'function') ui.buildControls();
+                  if (typeof app.render === 'function') app.render();
+                  ctx.tour.dismiss();
+                },
               });
-              ui.modal.bodyEl.querySelector('.tour-clear-cancel').onclick = () => ui.closeModal();
-              ui.modal.bodyEl.querySelector('.tour-clear-confirm').onclick = () => {
-                cleared = true;
-                ui.closeModal();
-                if (typeof app.pushHistory === 'function') app.pushHistory();
-                app.engine.layers = [];
-                app.engine.activeLayerId = null;
-                if (typeof app.setSelection === 'function') app.setSelection([], null);
-                if (typeof ui.renderLayers === 'function') ui.renderLayers();
-                if (typeof ui.buildControls === 'function') ui.buildControls();
-                if (typeof app.render === 'function') app.render();
-                ctx.tour.dismiss();
-              };
+              dlg.open();
             };
 
             keepBtn.addEventListener('click', onKeep);
