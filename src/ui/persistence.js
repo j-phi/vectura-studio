@@ -145,10 +145,20 @@
       bgColorPill.style.background = color;
       bgColorPill.style.color = getContrastTextColor(color);
     }
-    if (orientationToggle) orientationToggle.checked = (SETTINGS.paperOrientation || 'landscape') === 'landscape';
+    const orientationIsLandscape = (SETTINGS.paperOrientation || 'landscape') === 'landscape';
+    if (orientationToggle) orientationToggle.checked = orientationIsLandscape;
     if (orientationLabel) {
-      orientationLabel.textContent =
-        (SETTINGS.paperOrientation || 'landscape') === 'landscape' ? 'Landscape' : 'Portrait';
+      orientationLabel.textContent = orientationIsLandscape ? 'Landscape' : 'Portrait';
+    }
+    const orientPortraitBtn = getEl('orientation-portrait', { silent: true });
+    const orientLandscapeBtn = getEl('orientation-landscape', { silent: true });
+    if (orientPortraitBtn) {
+      orientPortraitBtn.classList.toggle('active', !orientationIsLandscape);
+      orientPortraitBtn.setAttribute('aria-checked', String(!orientationIsLandscape));
+    }
+    if (orientLandscapeBtn) {
+      orientLandscapeBtn.classList.toggle('active', orientationIsLandscape);
+      orientLandscapeBtn.setAttribute('aria-checked', String(orientationIsLandscape));
     }
     if (customFields) {
       customFields.classList.toggle('hidden', SETTINGS.paperSize !== 'custom');

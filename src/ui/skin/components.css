@@ -296,6 +296,8 @@
 .seg-opt:first-child { border-left: none; }
 .seg-opt.active { background: var(--ui-accent); color: #fff; border-color: var(--ui-accent); }
 .seg-opt:not(.active):hover { background: var(--ui-ctrl-hov); color: var(--ui-text); }
+/* Classic accents are near-white (#fafafa) — use a dark label so text is legible. */
+:root[data-ui-skin^="classic"] .seg-opt.active { color: var(--ui-bg); }
 
 /* ── TOGGLE BUTTON GROUP ─────────────────────────────────────── */
 .tog-grp { display: flex; gap: var(--spacing-xs); }

@@ -67,6 +67,7 @@
       const isActive = btn.dataset.family === activeFamily;
       btn.setAttribute('aria-checked', isActive ? 'true' : 'false');
       btn.classList.toggle('is-active', isActive);
+      btn.classList.toggle('active', isActive);
     });
   }
 

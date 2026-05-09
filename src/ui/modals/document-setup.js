@@ -112,6 +112,15 @@
           </button>
           <div class="sect-body" data-sect-body>
             <div class="ctrl-grp">
+              <span class="ctrl-sub-lbl">Orientation</span>
+              <div id="orientation-toggle" class="seg-ctrl" role="radiogroup" aria-label="Orientation">
+                <button type="button" id="orientation-portrait" class="seg-opt" data-orientation="portrait" role="radio" aria-checked="false">Portrait</button>
+                <button type="button" id="orientation-landscape" class="seg-opt active" data-orientation="landscape" role="radio" aria-checked="true">Landscape</button>
+              </div>
+            </div>
+            <input type="checkbox" id="set-orientation" class="hidden" checked />
+            <span id="orientation-label" class="hidden">Landscape</span>
+            <div class="ctrl-grp">
               <span class="ctrl-sub-lbl">Size</span>
               <div class="ctrl-sel-wrap">
                 <select id="machine-profile" class="ctrl-sel"></select>
@@ -135,17 +144,6 @@
                   <option value="imperial">Imperial</option>
                 </select>
               </div>
-            </div>
-            <div class="ctrl-row">
-              <label class="ctrl-lbl" for="set-orientation">Orientation</label>
-              <span class="ctrl-row-trail">
-                <span id="orientation-label" class="ctrl-trail-hint">Landscape</span>
-                <label class="sw-toggle" role="switch" aria-checked="false">
-                  <input type="checkbox" id="set-orientation" />
-                  <span class="sw-track"></span>
-                  <span class="sw-thumb"></span>
-                </label>
-              </span>
             </div>
             <div class="ctrl-grp">
               <span class="ctrl-sub-lbl" id="set-margin-label">Margin (mm)</span>
@@ -428,7 +426,167 @@
         dec?.addEventListener('click', () => bump(-1));
         inc?.addEventListener('click', () => bump(1));
       });
+
+      // Orientation dual-toggle — clicking Portrait/Landscape updates the hidden
+      // #set-orientation checkbox and fires its change event so the legacy
+      // bindGlobal handler in _ui-legacy.js still runs unchanged.
+      const portraitBtn = settingsPanelEl.querySelector('#orientation-portrait');
+      const landscapeBtn = settingsPanelEl.querySelector('#orientation-landscape');
+      const orientationCb = getEl('set-orientation', { silent: true });
+      [portraitBtn, landscapeBtn].forEach((btn) => {
+        if (!btn) return;
+        btn.onclick = () => {
+          const isLandscape = btn.dataset.orientation === 'landscape';
+          if (orientationCb) {
+            orientationCb.checked = isLandscape;
+            orientationCb.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          portraitBtn?.classList.toggle('active', !isLandscape);
+          portraitBtn?.setAttribute('aria-checked', String(!isLandscape));
+          landscapeBtn?.classList.toggle('active', isLandscape);
+          landscapeBtn?.setAttribute('aria-checked', String(isLandscape));
+        };
+      });
     }
+  }
+
+  // ── Desktop modal surface (Var 02) ─────────────────────────────────
+  //
+  // On viewports ≥ 900 px the slide-out drawer is not the default surface;
+  // a centered modal is. Both surfaces share the same form body — the
+  // `.settings-panel-body` element is *moved* between the drawer and the
+  // modal rather than duplicated, so the ~30 `#set-*` ids stay unique and
+  // the legacy bindGlobal handlers keep firing wherever the form lives.
+  // That also avoids the cross-surface state-sync problem entirely.
+  //
+  // The viewport threshold matches `body.mobile-layout`'s 900 px
+  // application in `src/ui/shell/workspace.js` so the two layout signals
+  // never disagree.
+  const DESKTOP_BREAKPOINT = 900;
+  const MODAL_CARD_CLASS = 'modal-card--document-setup';
+
+  function isDesktopViewport() {
+    return typeof window !== 'undefined' && window.innerWidth >= DESKTOP_BREAKPOINT;
+  }
+
+  let modalIsOpen = false;
+  let previewRefreshHandle = 0;
+
+  function buildModalShell(formBody) {
+    const doc = formBody.ownerDocument;
+    const wrap = doc.createElement('div');
+    wrap.className = 'document-setup-modal';
+    wrap.innerHTML = `
+      <div class="document-setup-preview" data-preview-pane>
+        <div class="document-setup-preview-frame">
+          <img class="document-setup-preview-img" alt="Document preview" />
+        </div>
+        <div class="document-setup-preview-meta">
+          <span class="document-setup-preview-meta-label">Live preview</span>
+          <span class="document-setup-preview-meta-hint" data-preview-hint>—</span>
+        </div>
+      </div>
+      <div class="document-setup-modal-form" data-form-host></div>
+    `;
+    const host = wrap.querySelector('[data-form-host]');
+    host.appendChild(formBody);
+    return wrap;
+  }
+
+  function snapshotPreview(modalRoot) {
+    const img = modalRoot.querySelector('.document-setup-preview-img');
+    const hint = modalRoot.querySelector('[data-preview-hint]');
+    if (!img) return;
+    const app = (typeof window !== 'undefined' ? window.app : null);
+    // `renderer.ready` is set in renderer.js once it has both a canvas and
+    // a 2D context. jsdom (without the optional `canvas` npm package)
+    // returns null from getContext('2d'), leaving ready=false — which
+    // also means toDataURL would hit jsdom's "Not implemented" stub.
+    // The form still works without the preview; we just leave the <img> blank.
+    if (!app?.renderer?.ready) return;
+    const canvas = app.renderer.canvas;
+    if (!canvas || typeof canvas.toDataURL !== 'function') return;
+    if (!canvas.width || !canvas.height) return;
+    try {
+      img.src = canvas.toDataURL('image/png');
+    } catch {
+      // Browsers can throw SecurityError on tainted canvases.
+      img.removeAttribute('src');
+    }
+    if (hint) {
+      const SETTINGS = (window.Vectura && window.Vectura.SETTINGS) || {};
+      const w = Number.isFinite(SETTINGS.paperWidth) ? SETTINGS.paperWidth : '?';
+      const h = Number.isFinite(SETTINGS.paperHeight) ? SETTINGS.paperHeight : '?';
+      const m = Number.isFinite(SETTINGS.margin) ? SETTINGS.margin : '?';
+      hint.textContent = `${w} × ${h} mm · ${m} mm margin`;
+    }
+  }
+
+  function schedulePreviewRefresh(modalRoot) {
+    // Form-change handlers in legacy bindGlobal redraw the renderer
+    // synchronously, but the canvas paint lands on the next frame. Two
+    // animation frames after the change event guarantees we snapshot
+    // *after* that paint settles.
+    if (previewRefreshHandle) cancelAnimationFrame(previewRefreshHandle);
+    previewRefreshHandle = requestAnimationFrame(() => {
+      previewRefreshHandle = requestAnimationFrame(() => {
+        previewRefreshHandle = 0;
+        snapshotPreview(modalRoot);
+      });
+    });
+  }
+
+  function openSetupModal(ui) {
+    if (modalIsOpen) return false;
+    if (!ui || typeof ui.openModal !== 'function') return false;
+    const drawer = document.getElementById(PANEL_ID);
+    const formBody = drawer?.querySelector('.settings-panel-body');
+    if (!drawer || !formBody) return false;
+
+    // Some user might still have the drawer mid-slide-in from a prior
+    // mobile session — close it before adopting the modal surface so the
+    // two surfaces never paint simultaneously.
+    drawer.classList.remove('open');
+
+    const modalRoot = buildModalShell(formBody);
+
+    ui.openModal({
+      title: 'Document Setup',
+      body: modalRoot,
+      cardClass: MODAL_CARD_CLASS,
+      onClose: () => {
+        modalIsOpen = false;
+        if (previewRefreshHandle) {
+          cancelAnimationFrame(previewRefreshHandle);
+          previewRefreshHandle = 0;
+        }
+        // Move the form body back into the drawer so a subsequent
+        // mobile open finds it where bindGlobal expects.
+        const stillThere = modalRoot.querySelector('.settings-panel-body');
+        if (stillThere && drawer && !drawer.contains(stillThere)) {
+          drawer.appendChild(stillThere);
+        }
+      },
+    });
+    modalIsOpen = true;
+
+    // Initial paint + refresh on any control change.
+    snapshotPreview(modalRoot);
+    modalRoot.addEventListener('change', () => schedulePreviewRefresh(modalRoot), true);
+    modalRoot.addEventListener('input', () => schedulePreviewRefresh(modalRoot), true);
+    return true;
+  }
+
+  function closeSetupModal(ui) {
+    if (!modalIsOpen || !ui || typeof ui.closeModal !== 'function') return false;
+    ui.closeModal();
+    return true;
+  }
+
+  function toggleSetupModal(ui, force) {
+    const want = typeof force === 'boolean' ? force : !modalIsOpen;
+    if (want) return openSetupModal(ui);
+    return closeSetupModal(ui);
   }
 
   Modals.DocumentSetup = {
@@ -443,6 +601,12 @@
     bindHandlers,
     PANEL_HTML,
     PANEL_ID,
+    DESKTOP_BREAKPOINT,
+    isDesktopViewport,
+    isModalOpen() { return modalIsOpen; },
+    openSetupModal,
+    closeSetupModal,
+    toggleSetupModal,
     installOn(proto) {
       // Legacy alias preserved on the prototype.
       proto._bindDocumentSetupHandlers = function() { return bindHandlers.call(this); };
