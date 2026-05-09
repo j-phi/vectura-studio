@@ -139,6 +139,33 @@ describe('Export SVG modal', () => {
     app.ui.exportSVG = origExport;
   });
 
+  test('opens identically when a Mirror modifier (group) is the active layer', () => {
+    closeAnyOpenModal();
+    if (!app.engine.layers?.some((l) => l && !l.isGroup)) {
+      app.engine.addLayer('wavetable');
+    }
+    const mirrorId = app.engine.addModifierLayer('mirror');
+    expect(app.engine.activeLayerId).toBe(mirrorId);
+
+    app.ui.openExportModal();
+
+    const optPanel = document.getElementById('optimization-controls')?.querySelector('.optimization-panel');
+    expect(optPanel).toBeTruthy();
+
+    const sections = optPanel.querySelectorAll('section.export-settings-section');
+    expect(sections.length).toBeGreaterThan(0);
+
+    const nav = document.getElementById('export-modal-nav');
+    expect(nav.querySelectorAll('.export-nav-item').length).toBeGreaterThan(0);
+
+    const cells = document.querySelectorAll('#export-impact-preview .export-impact-cell [data-impact-val]');
+    expect(cells.length).toBe(4);
+    cells.forEach((val) => expect(val.innerHTML).not.toBe('—'));
+
+    closeAnyOpenModal();
+    app.engine.removeLayer(mirrorId);
+  });
+
   test('Submit invokes exportSVG (stub-anchored: builds the SVG blob without a real download)', () => {
     closeAnyOpenModal();
 

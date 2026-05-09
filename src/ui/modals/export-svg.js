@@ -1055,6 +1055,22 @@
     });
 
     this.buildControls();
+    // buildControls early-returns for group/modifier active layers (mirror,
+    // folder, fill-pattern tool, empty doc) before reaching the block that
+    // populates this modal's optimization-controls panel. Recover by
+    // temporarily promoting any non-group layer to active for one rebuild,
+    // then restoring the original active and rebuilding the LEFT panel.
+    if (controls && !controls.querySelector('.optimization-panel')) {
+      const engine = this.app.engine;
+      const originalActiveId = engine?.activeLayerId ?? null;
+      const fallback = (engine?.layers || []).find((l) => l && !l.isGroup);
+      if (fallback && fallback.id !== originalActiveId) {
+        engine.activeLayerId = fallback.id;
+        this.buildControls();
+        engine.activeLayerId = originalActiveId;
+        this.buildControls();
+      }
+    }
     this.decorateExportControlsPanel();
     this.resizeExportPreviewCanvas();
   }

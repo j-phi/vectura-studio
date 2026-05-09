@@ -210,7 +210,7 @@
                 } else {
                   const touchSrc = engine.getLayerById?.(layer.id);
                   const touchTgt = engine.getLayerById?.(lastTargetId);
-                  if (lastPos === 'before' && touchSrc?.parentId === lastTargetId && touchTgt?.isGroup) {
+                  if (lastPos === 'before' && touchSrc?.parentId === lastTargetId && (touchTgt?.isGroup || _lvlIsMaskSrc(lastTargetId))) {
                     _lvlDoExitGroup(layer.id, lastTargetId, 'above');
                   } else {
                     _lvlDoMove(layer.id, lastTargetId, lastPos);
@@ -294,7 +294,10 @@
               } else if (isMaskSrc) {
                 pos = pct < 0.2 ? 'before' : pct > 0.8 ? 'after' : 'mask';
                 cssClass = pos === 'mask' ? 'lvl-drop-mask' : pos === 'before' ? 'lvl-drop-before' : 'lvl-drop-after';
-                hint = pos === 'mask' ? 'Add to clipping mask' : null;
+                const touchDragSrc2 = engine.getLayerById?.(_lvlDRAG.id);
+                hint = pos === 'mask' ? 'Add to clipping mask'
+                  : (pos === 'before' && touchDragSrc2?.parentId === targetId) ? 'Drop outside group'
+                  : null;
               } else {
                 pos = pct < 0.5 ? 'before' : 'after';
                 cssClass = pos === 'before' ? 'lvl-drop-before' : 'lvl-drop-after';
@@ -304,6 +307,38 @@
               setHint(hint);
               lastTargetId = targetId;
               lastPos = pos;
+            }
+            // No exit zone or card found — check for over-drag beyond panel bounds
+            if (!lastTargetId) {
+              const items = list.querySelectorAll('[data-layer-id]');
+              if (items.length) {
+                const firstR = items[0].getBoundingClientRect();
+                const lastR = items[items.length - 1].getBoundingClientRect();
+                const src = engine.getLayerById?.(_lvlDRAG.id);
+                if (t.clientY < firstR.top) {
+                  if (src?.parentId) {
+                    lastTargetId = src.parentId;
+                    lastPos = 'exit-above';
+                    items[0].classList.add('lvl-drop-before');
+                    setHint('Drop outside group');
+                  } else {
+                    lastTargetId = items[0].dataset.layerId;
+                    lastPos = 'before';
+                    items[0].classList.add('lvl-drop-before');
+                  }
+                } else if (t.clientY > lastR.bottom) {
+                  if (src?.parentId) {
+                    lastTargetId = src.parentId;
+                    lastPos = 'exit-below';
+                    items[items.length - 1].classList.add('lvl-drop-after');
+                    setHint('Drop outside group');
+                  } else {
+                    lastTargetId = items[items.length - 1].dataset.layerId;
+                    lastPos = 'after';
+                    items[items.length - 1].classList.add('lvl-drop-after');
+                  }
+                }
+              }
             }
           }
         }, { passive: false });
@@ -412,7 +447,14 @@
                 this.assignLayersToParent(srcLayer.id, [draggedLayer], { captureHistory: false });
                 this.renderLayers(); this.app.render?.();
               }
-            } else if (pos) _lvlDoMove(_lvlDRAG.id, srcLayer.id, pos);
+            } else if (pos) {
+              const draggedSrc = engine.getLayerById?.(_lvlDRAG.id);
+              if (pos === 'before' && draggedSrc?.parentId === srcLayer.id) {
+                _lvlDoExitGroup(_lvlDRAG.id, srcLayer.id, 'above');
+              } else {
+                _lvlDoMove(_lvlDRAG.id, srcLayer.id, pos);
+              }
+            }
           }
         });
       };
@@ -530,6 +572,8 @@
       // render's copies and go stale — reading via list._lvl* avoids that.
       list._lvlDrag = _lvlDRAG;
       list._lvlDoMoveRef = _lvlDoMove;
+      list._lvlDoExitGroupRef = _lvlDoExitGroup;
+      list._lvlGetLayerRef = (id) => engine.getLayerById?.(id);
       list._lvlClrRef = _lvlClrAllDrop;
       list._lvlHintRef = setHint;
 
@@ -557,10 +601,21 @@
           const before = list.querySelector('.lvl-drop-before');
           const after  = list.querySelector('.lvl-drop-after');
           list._lvlClrRef(); list._lvlHintRef(null);
-          if (before && before.dataset.layerId !== list._lvlDrag.id)
-            list._lvlDoMoveRef(list._lvlDrag.id, before.dataset.layerId, 'before');
-          else if (after && after.dataset.layerId !== list._lvlDrag.id)
-            list._lvlDoMoveRef(list._lvlDrag.id, after.dataset.layerId, 'after');
+          const dragId = list._lvlDrag.id;
+          const dragSrc = list._lvlGetLayerRef?.(dragId);
+          if (before && before.dataset.layerId !== dragId) {
+            if (dragSrc?.parentId) {
+              list._lvlDoExitGroupRef?.(dragId, dragSrc.parentId, 'above');
+            } else {
+              list._lvlDoMoveRef(dragId, before.dataset.layerId, 'before');
+            }
+          } else if (after && after.dataset.layerId !== dragId) {
+            if (dragSrc?.parentId) {
+              list._lvlDoExitGroupRef?.(dragId, dragSrc.parentId, 'below');
+            } else {
+              list._lvlDoMoveRef(dragId, after.dataset.layerId, 'after');
+            }
+          }
         });
       }
 
@@ -585,8 +640,15 @@
           e.preventDefault();
           const first = list.querySelector('[data-layer-id]');
           list._lvlClrRef(); list._lvlHintRef(null);
-          if (first && first.dataset.layerId !== list._lvlDrag.id)
-            list._lvlDoMoveRef(list._lvlDrag.id, first.dataset.layerId, 'before');
+          const dragId = list._lvlDrag.id;
+          if (first && first.dataset.layerId !== dragId) {
+            const dragSrc = list._lvlGetLayerRef?.(dragId);
+            if (dragSrc?.parentId) {
+              list._lvlDoExitGroupRef?.(dragId, dragSrc.parentId, 'above');
+            } else {
+              list._lvlDoMoveRef(dragId, first.dataset.layerId, 'before');
+            }
+          }
         });
       }
 
@@ -614,8 +676,15 @@
           list._lvlClrRef(); list._lvlHintRef(null);
           if (!items.length) return;
           const last = items[items.length - 1];
-          if (last.dataset.layerId !== list._lvlDrag.id)
-            list._lvlDoMoveRef(list._lvlDrag.id, last.dataset.layerId, 'after');
+          const dragId = list._lvlDrag.id;
+          if (last.dataset.layerId !== dragId) {
+            const dragSrc = list._lvlGetLayerRef?.(dragId);
+            if (dragSrc?.parentId) {
+              list._lvlDoExitGroupRef?.(dragId, dragSrc.parentId, 'below');
+            } else {
+              list._lvlDoMoveRef(dragId, last.dataset.layerId, 'after');
+            }
+          }
         });
       }
 
@@ -692,7 +761,7 @@
         const r = [];
         const walk = (pId) =>
           allLayers.filter((l) => (l.parentId ?? null) === (pId ?? null)).forEach((l) => {
-            if (_lvlPasses(l)) { r.push(l.id); if (l.isGroup && !l.groupCollapsed) walk(l.id); }
+            if (_lvlPasses(l)) { r.push(l.id); if ((l.isGroup && !l.groupCollapsed) || _lvlIsMaskSrc(l.id)) walk(l.id); }
           });
         walk(null); return r;
       };
@@ -1090,7 +1159,8 @@
             addMaskSrcDropZone(srcCard, l);
             appendEl(srcCard);
             // Masked children (actual children via parentId)
-            (maskedBySrc.get(l.id) || []).forEach((m) => {
+            const maskedList = maskedBySrc.get(l.id) || [];
+            maskedList.forEach((m) => {
               done.add(m.id);
               if (!_lvlPasses(m)) return;
               if (m.isGroup) {
@@ -1108,6 +1178,15 @@
                 appendEl(mc);
               }
             });
+            // Exit zone below masked children (mirrors group exit zone at L1118)
+            if (maskedList.some((m) => _lvlPasses(m))) {
+              const exitBelow = document.createElement('div');
+              exitBelow.className = 'lvl-grp-exit-zone lvl-grp-exit-zone--below';
+              exitBelow.dataset.lvlExitGroup = l.id;
+              exitBelow.dataset.lvlExitDir = 'below';
+              addExitGroupDropZone(exitBelow, l, 'below');
+              appendEl(exitBelow);
+            }
 
           } else if (l.isGroup) {
             done.add(l.id);
