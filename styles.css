@@ -3925,9 +3925,14 @@ input[type='color']::-webkit-color-swatch {
     width: 100%;
     max-width: none;
     flex-direction: row;
-    flex-wrap: nowrap;
+    /* Wrap onto a second row at iPhone-mini widths instead of horizontally
+       scrolling — keeps every primary tool reachable in one tap. */
+    flex-wrap: wrap;
+    justify-content: center;
     align-items: center;
-    overflow-x: auto;
+    row-gap: 6px;
+    column-gap: 6px;
+    overflow-x: visible;
     overflow-y: hidden;
     max-height: none;
     padding: 8px 12px;
@@ -3940,7 +3945,22 @@ input[type='color']::-webkit-color-swatch {
     background: var(--color-panel);
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
     flex-shrink: 0;
-    z-index: 40;
+    /* Sit above the collapsed-pane drawer slivers (z:55) so the leftmost /
+       rightmost tool buttons aren't occluded by the pane edges. Pane drawers
+       only need to cover the toolbar when force-opened (see rule below). */
+    z-index: 60;
+  }
+
+  /* When a side pane is force-opened (full drawer), it should cover the
+     toolbar — the user is interacting with the pane, not the bar. */
+  body.mobile-layout .pane.pane-force-open {
+    z-index: 70;
+  }
+
+  /* Lock standard tool buttons to a 44×44 hit target — never shrink to fit. */
+  body.mobile-layout #tool-bar > .tool-btn,
+  body.mobile-layout #tool-bar > .tool-group > .tool-btn {
+    flex-shrink: 0;
   }
 
   body.mobile-layout #viewport-container {

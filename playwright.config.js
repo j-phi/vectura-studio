@@ -57,5 +57,22 @@ module.exports = defineConfig({
       },
       testMatch: /smoke\.spec\.js$/,
     },
+    {
+      // iPhone 13 Mini logical viewport (375×812). Anchors mobile-layout
+      // coverage at the smallest commonly-targeted phone size so toolbar /
+      // touch-target regressions there can't slip past CI. Skips the Desktop
+      // Chrome device-profile spread because its `hasTouch:false` /
+      // `isMobile:false` defaults can shadow our overrides — we want a clean
+      // touch-mobile context so `(pointer: coarse)` matches.
+      name: 'phone-iphone-mini-chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 375, height: 812 },
+        deviceScaleFactor: 3,
+        hasTouch: true,
+        isMobile: true,
+      },
+      testMatch: /iphone-mini\.spec\.js$/,
+    },
   ],
 });

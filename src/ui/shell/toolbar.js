@@ -768,21 +768,38 @@
       });
     };
 
+    // Phone/tablet mobile-layout anchors the toolbar to the top of the screen
+    // via `body.mobile-layout #tool-bar { position: static; order: 1 }` in the
+    // flex-column shell. Inline-style float/dock would override that and push
+    // the bar off-screen — defer to CSS in mobile-layout. Stay resilient to
+    // resizes across the breakpoint by re-clearing in the resize handler.
+    const isMobileLayout = () => document.body.classList.contains('mobile-layout');
+    const clearInlineLayout = () => {
+      toolbar.classList.remove(...DOCK_CLASSES);
+      ['position', 'transform', 'left', 'top', 'right', 'bottom', 'width', 'height']
+        .forEach((p) => { toolbar.style[p] = ''; });
+      clearDockPadding();
+    };
+
     // ── Restore saved state ──────────────────────────────────────
-    if (SETTINGS.toolbarHorizontal) {
-      toolbar.classList.add('toolbar-floating-horizontal');
-      rotateBtn.classList.add('active');
-      rotateBtn.setAttribute('aria-pressed', 'true');
-    }
-    if (SETTINGS.toolbarDock) {
-      dockToolbar(SETTINGS.toolbarDock);
+    if (isMobileLayout()) {
+      clearInlineLayout();
     } else {
-      setFloat(SETTINGS.toolbarX, SETTINGS.toolbarY);
-    }
-    if (SETTINGS.toolbarLocked) {
-      toolbar.classList.add('toolbar-locked');
-      pinBtn.classList.add('active');
-      pinBtn.setAttribute('aria-pressed', 'true');
+      if (SETTINGS.toolbarHorizontal) {
+        toolbar.classList.add('toolbar-floating-horizontal');
+        rotateBtn.classList.add('active');
+        rotateBtn.setAttribute('aria-pressed', 'true');
+      }
+      if (SETTINGS.toolbarDock) {
+        dockToolbar(SETTINGS.toolbarDock);
+      } else {
+        setFloat(SETTINGS.toolbarX, SETTINGS.toolbarY);
+      }
+      if (SETTINGS.toolbarLocked) {
+        toolbar.classList.add('toolbar-locked');
+        pinBtn.classList.add('active');
+        pinBtn.setAttribute('aria-pressed', 'true');
+      }
     }
 
     // ── Drag ─────────────────────────────────────────────────────
@@ -913,6 +930,12 @@
 
     // ── Resize: re-clamp float or re-apply dock padding ─────────
     window.addEventListener('resize', () => {
+      if (isMobileLayout()) {
+        // Crossing into mobile-layout (or already there): hand layout back to
+        // the CSS rule so the toolbar stays anchored to the top.
+        clearInlineLayout();
+        return;
+      }
       const dock = getCurrentDock();
       if (dock) {
         requestAnimationFrame(() => applyDockPadding(dock));
