@@ -116,4 +116,40 @@ describe('mobile layout', () => {
     expect(meta).toBeTruthy();
     expect(meta.getAttribute('content')).toMatch(/viewport-fit=cover/);
   });
+
+  test('toolbar returns to saved position after mobile→desktop resize cycle', () => {
+    // Regression: clearInlineLayout() strips toolbar.style.left/top when entering
+    // mobile-layout. Resizing back to desktop hit `parseFloat('') || 0 = 0` and
+    // planted the toolbar at (0, 0) instead of restoring the saved/home position.
+    const toolbar = document.getElementById('tool-bar');
+    const shell = document.querySelector('.workspace-shell');
+    expect(toolbar && shell).toBeTruthy();
+
+    // jsdom returns 0×0 bounding rects, which makes clampFloat collapse every
+    // x to 0. Stub the shell rect so clampFloat preserves the saved coordinates.
+    const origGetRect = shell.getBoundingClientRect.bind(shell);
+    shell.getBoundingClientRect = () => ({ x: 0, y: 0, width: 1200, height: 800, top: 0, left: 0, right: 1200, bottom: 800 });
+
+    try {
+      const SETTINGS = window.Vectura.SETTINGS;
+      SETTINGS.toolbarDock = null;
+      SETTINGS.toolbarX = 250;
+      SETTINGS.toolbarY = 180;
+
+      setViewport(window, 1200);
+      expect(document.body.classList.contains('mobile-layout')).toBe(false);
+
+      setViewport(window, 375);
+      expect(document.body.classList.contains('mobile-layout')).toBe(true);
+      expect(toolbar.style.left).toBe('');
+      expect(toolbar.style.top).toBe('');
+
+      setViewport(window, 1200);
+      expect(document.body.classList.contains('mobile-layout')).toBe(false);
+      expect(parseFloat(toolbar.style.left)).toBe(250);
+      expect(parseFloat(toolbar.style.top)).toBe(180);
+    } finally {
+      shell.getBoundingClientRect = origGetRect;
+    }
+  });
 });

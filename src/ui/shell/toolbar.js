@@ -939,6 +939,15 @@
       const dock = getCurrentDock();
       if (dock) {
         requestAnimationFrame(() => applyDockPadding(dock));
+      } else if (!toolbar.style.left && !toolbar.style.top) {
+        // Returning from mobile-layout: clearInlineLayout() stripped both inline
+        // coords and dock classes, so re-apply the saved desktop layout instead
+        // of letting parseFloat('') || 0 plant the bar at the origin.
+        if (SETTINGS.toolbarDock) {
+          dockToolbar(SETTINGS.toolbarDock);
+        } else {
+          setFloat(SETTINGS.toolbarX, SETTINGS.toolbarY);
+        }
       } else {
         const x = parseFloat(toolbar.style.left) || 0;
         const y = parseFloat(toolbar.style.top)  || 0;
