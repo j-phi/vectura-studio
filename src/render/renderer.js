@@ -393,6 +393,10 @@
       this._lastAlgoTap = { time: 0, x: 0, y: 0 };
       this.directSelection = null;
       this.directDrag = null;
+      this.directAuxSelections = [];
+      this.isDirectMarquee = false;
+      this.directMarqueeStart = null;
+      this.directMarqueeRect = null;
       this.maskPreview = null;
       this.scissorStart = null;
       this.scissorEnd = null;
@@ -507,6 +511,10 @@
       }
       if (tool !== 'direct') {
         this.directDrag = null;
+        this.directAuxSelections = [];
+        this.isDirectMarquee = false;
+        this.directMarqueeStart = null;
+        this.directMarqueeRect = null;
       }
       if (tool !== 'scissor') {
         this.isScissor = false;
@@ -866,6 +874,7 @@
         this.isScissor ||
         this.shapeCornerDrag ||
         this.directDrag ||
+        this.isDirectMarquee ||
         this.isPenDragging ||
         this.isLightDrag
       );
@@ -947,6 +956,9 @@
       this.selectionStart = null;
       this.isLassoSelecting = false;
       this.lassoPath = null;
+      this.isDirectMarquee = false;
+      this.directMarqueeStart = null;
+      this.directMarqueeRect = null;
     }
 
     snapPenAngle(from, to) {
@@ -1062,7 +1074,7 @@
       this._penLastClick = { time: now, x: screenX, y: screenY };
 
       if (!this.penDraft) {
-        this.penDraft = { anchors: [this.createAnchor(world)], closed: false };
+        this.penDraft = { anchors: [this.createAnchor(this.snapPointToGrid(world))], closed: false };
         this.isPenDragging = true;
         this.penDragAnchor = 0;
         this.penDragStart = world;
@@ -1085,7 +1097,7 @@
 
       const first = anchors[0];
       const lastAnchor = anchors[anchors.length - 1];
-      let next = { x: world.x, y: world.y };
+      let next = this.snapPointToGrid({ x: world.x, y: world.y });
       if (modifiers.shift) next = this.snapPenAngle(lastAnchor, next);
       const distToStart = Math.hypot(next.x - first.x, next.y - first.y);
 
@@ -1717,6 +1729,7 @@
       if (!Array.isArray(sourcePath) || sourcePath.length < 2) return null;
       const parsed = this.pathToAnchors(sourcePath);
       if (!parsed.anchors.length) return null;
+      this.directAuxSelections = [];
       this.directSelection = {
         layerId: layer.id,
         pathIndex,
@@ -1731,7 +1744,51 @@
     clearDirectSelection() {
       this.directSelection = null;
       this.directDrag = null;
+      this.directAuxSelections = [];
       this.draw();
+    }
+
+    _applyDirectMarquee(rect) {
+      const minX = rect.x;
+      const maxX = rect.x + rect.w;
+      const minY = rect.y;
+      const maxY = rect.y + rect.h;
+      this.directSelection = null;
+      this.directAuxSelections = [];
+      for (const layer of this.engine.layers) {
+        if (!layer || layer.isGroup || !layer.visible) continue;
+        if (this.isLayerLocked?.(layer.id)) continue;
+        if (!this.canEditSourceGeometry(layer)) continue;
+        const sourcePaths = this.ensureLayerSourcePaths(layer);
+        sourcePaths.forEach((sourcePath, pathIndex) => {
+          if (!Array.isArray(sourcePath) || sourcePath.length < 2) return;
+          const parsed = this.pathToAnchors(sourcePath);
+          if (!parsed.anchors.length) return;
+          const selectedIndices = new Set();
+          parsed.anchors.forEach((anchor, i) => {
+            const w = this.sourceToWorldPoint(layer, anchor);
+            if (w.x >= minX && w.x <= maxX && w.y >= minY && w.y <= maxY) selectedIndices.add(i);
+          });
+          if (!selectedIndices.size) return;
+          const sel = {
+            layerId: layer.id,
+            pathIndex,
+            anchors: this.cloneAnchors(parsed.anchors),
+            closed: parsed.closed,
+            meta: sourcePath.meta ? { ...sourcePath.meta } : {},
+            selectedIndices,
+          };
+          if (!this.directSelection) {
+            this.directSelection = sel;
+          } else {
+            this.directAuxSelections.push(sel);
+          }
+        });
+      }
+      if (this.directSelection) {
+        const pl = this.engine.layers.find((l) => l.id === this.directSelection.layerId);
+        if (pl && !this.selectedLayerIds.has(pl.id)) this.selectLayer(pl);
+      }
     }
 
     buildMaskPreviewState(layer) {
@@ -1810,9 +1867,14 @@
     }
 
     getDirectSelectionWorldAnchors() {
-      const layer = this.getDirectSelectionLayer();
-      if (!layer || !this.directSelection?.anchors?.length) return null;
-      const anchors = this.directSelection.anchors.map((anchor) => ({
+      return this._selectionWorldAnchors(this.directSelection);
+    }
+
+    _selectionWorldAnchors(sel) {
+      if (!sel?.anchors?.length) return null;
+      const layer = this.engine.layers.find((l) => l.id === sel.layerId);
+      if (!layer) return null;
+      const anchors = sel.anchors.map((anchor) => ({
         x: this.sourceToWorldPoint(layer, anchor).x,
         y: this.sourceToWorldPoint(layer, anchor).y,
         in: anchor.in ? this.sourceToWorldPoint(layer, anchor.in) : null,
@@ -1821,22 +1883,17 @@
       return { layer, anchors };
     }
 
-    hitDirectControl(world) {
-      const data = this.getDirectSelectionWorldAnchors();
-      if (!data) return null;
-      const { anchors } = data;
+    _hitControlInAnchors(world, anchors) {
       const handleTol = 5 / this.scale;
       const handleTolSq = handleTol * handleTol;
       for (let i = 0; i < anchors.length; i++) {
         const anchor = anchors[i];
         if (anchor.in) {
-          const dx = world.x - anchor.in.x;
-          const dy = world.y - anchor.in.y;
+          const dx = world.x - anchor.in.x; const dy = world.y - anchor.in.y;
           if (dx * dx + dy * dy <= handleTolSq) return { type: 'in', index: i };
         }
         if (anchor.out) {
-          const dx = world.x - anchor.out.x;
-          const dy = world.y - anchor.out.y;
+          const dx = world.x - anchor.out.x; const dy = world.y - anchor.out.y;
           if (dx * dx + dy * dy <= handleTolSq) return { type: 'out', index: i };
         }
       }
@@ -1844,29 +1901,49 @@
       const anchorTolSq = anchorTol * anchorTol;
       for (let i = 0; i < anchors.length; i++) {
         const anchor = anchors[i];
-        const dx = world.x - anchor.x;
-        const dy = world.y - anchor.y;
+        const dx = world.x - anchor.x; const dy = world.y - anchor.y;
         if (dx * dx + dy * dy <= anchorTolSq) return { type: 'anchor', index: i };
       }
       return null;
     }
 
-    applyDirectPath() {
-      const layer = this.getDirectSelectionLayer();
-      const selection = this.directSelection;
-      if (!layer || !selection) return;
+    hitDirectControl(world) {
+      const mainData = this.getDirectSelectionWorldAnchors();
+      if (mainData) {
+        const hit = this._hitControlInAnchors(world, mainData.anchors);
+        if (hit) return { ...hit, auxIdx: -1 };
+      }
+      const auxSels = this.directAuxSelections || [];
+      for (let ai = 0; ai < auxSels.length; ai++) {
+        const data = this._selectionWorldAnchors(auxSels[ai]);
+        if (data) {
+          const hit = this._hitControlInAnchors(world, data.anchors);
+          if (hit) return { ...hit, auxIdx: ai };
+        }
+      }
+      return null;
+    }
+
+    _applySelectionPath(sel) {
+      if (!sel) return;
+      const layer = this.engine.layers.find((l) => l.id === sel.layerId);
+      if (!layer) return;
       const sourcePaths = this.ensureLayerSourcePaths(layer);
-      const path = this.buildPenPathFromAnchors(selection.anchors, selection.closed);
+      const path = this.buildPenPathFromAnchors(sel.anchors, sel.closed);
       const meta = this.normalizeEditedPathMeta({
-        ...(selection.meta || {}),
-        anchors: this.cloneAnchors(selection.anchors),
-        closed: Boolean(selection.closed),
+        ...(sel.meta || {}),
+        anchors: this.cloneAnchors(sel.anchors),
+        closed: Boolean(sel.closed),
       });
       path.meta = meta;
-      sourcePaths[selection.pathIndex] = path;
+      sourcePaths[sel.pathIndex] = path;
       layer.sourcePaths = sourcePaths;
       this.engine.generate(layer.id);
-      selection.meta = meta;
+      sel.meta = meta;
+    }
+
+    applyDirectPath() {
+      this._applySelectionPath(this.directSelection);
     }
 
     normalizeEditedPathMeta(meta) {
@@ -1897,6 +1974,21 @@
     }
 
     startDirectDrag(control, e = {}) {
+      // If the control is in an aux selection, promote it to the primary
+      const auxIdx = control?.auxIdx ?? -1;
+      if (auxIdx >= 0) {
+        const auxSels = this.directAuxSelections || [];
+        if (auxSels[auxIdx]) {
+          const promoted = auxSels[auxIdx];
+          const newAux = [];
+          if (this.directSelection) newAux.push(this.directSelection);
+          for (let i = 0; i < auxSels.length; i++) {
+            if (i !== auxIdx) newAux.push(auxSels[i]);
+          }
+          this.directSelection = promoted;
+          this.directAuxSelections = newAux;
+        }
+      }
       if (!control || !this.directSelection) return false;
       const modifiers = this.getModifierState ? this.getModifierState(e) : { alt: e.altKey, shift: e.shiftKey };
       const sel = this.directSelection;
@@ -1958,14 +2050,20 @@
         this.markDirectSelectionAsCustomPath();
       }
       if (drag.type === 'anchor') {
-        // Shift: angle-constrain movement relative to drag start
+        // Shift: angle-constrain movement relative to drag start (adjusted for grab offset)
         if (e?.shiftKey && drag.anchorStart) {
-          next = this.snapScissorAngle(drag.anchorStart, next, 15);
+          const snapStart = drag.grabOffset
+            ? { x: drag.anchorStart.x + drag.grabOffset.x, y: drag.anchorStart.y + drag.grabOffset.y }
+            : drag.anchorStart;
+          next = this.snapScissorAngle(snapStart, next, 15);
         }
-        const dx = next.x - anchor.x;
-        const dy = next.y - anchor.y;
-        anchor.x = next.x;
-        anchor.y = next.y;
+        // grabOffset: when dragging a segment from its midpoint, offset next so the delta is relative
+        // to the grab point rather than the anchor corner, preventing a jump on the first frame
+        const effective = drag.grabOffset ? { x: next.x - drag.grabOffset.x, y: next.y - drag.grabOffset.y } : next;
+        const dx = effective.x - anchor.x;
+        const dy = effective.y - anchor.y;
+        anchor.x = effective.x;
+        anchor.y = effective.y;
         if (anchor.in) { anchor.in.x += dx; anchor.in.y += dy; }
         if (anchor.out) { anchor.out.x += dx; anchor.out.y += dy; }
         // Move all other selected anchors by the same delta
@@ -1975,6 +2073,16 @@
           oa.x += dx; oa.y += dy;
           if (oa.in) { oa.in.x += dx; oa.in.y += dy; }
           if (oa.out) { oa.out.x += dx; oa.out.y += dy; }
+        }
+        // Also move all selected anchors in aux selections by the same delta
+        for (const auxSel of this.directAuxSelections || []) {
+          for (const ai of auxSel.selectedIndices) {
+            const oa = auxSel.anchors[ai];
+            if (!oa) continue;
+            oa.x += dx; oa.y += dy;
+            if (oa.in) { oa.in.x += dx; oa.in.y += dy; }
+            if (oa.out) { oa.out.x += dx; oa.out.y += dy; }
+          }
         }
       } else {
         anchor[drag.type] = { x: next.x, y: next.y };
@@ -1988,6 +2096,9 @@
       }
       drag.moved = true;
       this.applyDirectPath();
+      for (const auxSel of this.directAuxSelections || []) {
+        this._applySelectionPath(auxSel);
+      }
       this.draw();
       return true;
     }
@@ -2697,16 +2808,18 @@
             !this.shouldSkipLayerForMaskPreview(l)
           )
         : selectedLayers;
-      if (selectionLayersForBox.length) {
+      const showBoundingBox = this.activeTool !== 'pen' && this.activeTool !== 'direct';
+      if (showBoundingBox && selectionLayersForBox.length) {
         const bounds = this.getSelectionBounds(selectionLayersForBox, this.tempTransform);
         const showHandles = selectionLayersForBox.length === 1;
         if (bounds) this.drawSelection(bounds, { showHandles });
       }
       if (this.selectionRect) this.drawSelectionRect(this.selectionRect);
+      if (this.directMarqueeRect) this.drawSelectionRect(this.directMarqueeRect);
       if (this.algoDraft) this.drawAlgoDraftRect(this.algoDraft);
       if (this.lassoPath) this.drawSelectionPath(this.lassoPath);
-      if (this.directSelection) this.drawDirectSelection();
-      if (!this.directSelection) {
+      if (this.directSelection || this.directAuxSelections?.length) this.drawDirectSelection();
+      if (!this.directSelection && showBoundingBox) {
         const shapeLayer = this.getSelectedShapeLayer();
         if (shapeLayer) this.drawShapeCornerHandles(shapeLayer, 0, 'all', this.tempTransform);
       }
@@ -2818,12 +2931,26 @@
       if (gridType === 'none') return pt;
       const sensitivity = SETTINGS.gridSnapSensitivity ?? 50;
       if (sensitivity <= 0) return pt;
-      const spacing = SETTINGS.gridSize || 10;
-      const snapRadius = (sensitivity / 100) * (spacing / 2);
-      const snappedX = Math.round(pt.x / spacing) * spacing;
-      const snappedY = Math.round(pt.y / spacing) * spacing;
-      if (Math.abs(pt.x - snappedX) <= snapRadius && Math.abs(pt.y - snappedY) <= snapRadius) {
-        return { x: snappedX, y: snappedY };
+      const majorSpacing = SETTINGS.gridSize || 10;
+      const snapRadius = (sensitivity / 100) * (majorSpacing / 2);
+      const snapMajorX = Math.round(pt.x / majorSpacing) * majorSpacing;
+      const snapMajorY = Math.round(pt.y / majorSpacing) * majorSpacing;
+      const dxMajor = Math.abs(pt.x - snapMajorX);
+      const dyMajor = Math.abs(pt.y - snapMajorY);
+      if (gridType === 'major-minor') {
+        const minorSpacing = SETTINGS.gridMinorSize || 5;
+        const snapMinorX = Math.round(pt.x / minorSpacing) * minorSpacing;
+        const snapMinorY = Math.round(pt.y / minorSpacing) * minorSpacing;
+        const dxMinor = Math.abs(pt.x - snapMinorX);
+        const dyMinor = Math.abs(pt.y - snapMinorY);
+        if (Math.hypot(dxMinor, dyMinor) <= Math.hypot(dxMajor, dyMajor)) {
+          if (dxMinor <= snapRadius && dyMinor <= snapRadius) {
+            return { x: snapMinorX, y: snapMinorY };
+          }
+        }
+      }
+      if (dxMajor <= snapRadius && dyMajor <= snapRadius) {
+        return { x: snapMajorX, y: snapMajorY };
       }
       return pt;
     }
@@ -2903,7 +3030,7 @@
       const wx = (mx - this.offsetX) / this.scale;
       const wy = (my - this.offsetY) / this.scale;
       const zoom = e.deltaY > 0 ? 0.9 : 1.1;
-      const nextScale = Math.max(0.1, Math.min(this.scale * zoom, 20));
+      const nextScale = Math.max(0.1, Math.min(this.scale * zoom, 1000));
       this.offsetX = mx - wx * nextScale;
       this.offsetY = my - wy * nextScale;
       this.scale = nextScale;
@@ -3018,7 +3145,7 @@
       }
 
       if (this.isShapeTool()) {
-        this.startShapeDraft(world, e);
+        this.startShapeDraft(this.snapPointToGrid(world), e);
         return;
       }
 
@@ -3034,7 +3161,7 @@
           }
           return;
         }
-        this.startAlgoDraft(world);
+        this.startAlgoDraft(this.snapPointToGrid(world));
         return;
       }
 
@@ -3095,20 +3222,50 @@
             if (!this.selectedLayerIds.has(hit.layer.id)) this.selectLayer(hit.layer);
             const selection = this.setDirectSelection(hit.layer, hit.pathIndex);
             if (selection && selection.anchors.length) {
-              const seg = Math.max(0, Math.min((hit.segmentIndex ?? 0), selection.anchors.length - 1));
-              let idx = seg;
-              if (Array.isArray(hit.path) && hit.path[seg + 1]) {
-                const a = hit.path[seg];
-                const b = hit.path[seg + 1];
-                const da = Math.hypot(world.x - a.x, world.y - a.y);
-                const db = Math.hypot(world.x - b.x, world.y - b.y);
-                idx = db < da ? Math.min(selection.anchors.length - 1, seg + 1) : seg;
+              const worldAnchors = this.getDirectSelectionWorldAnchors();
+              const anchorTol = 6 / this.scale;
+              const anchorTolSq = anchorTol * anchorTol;
+              let nearestIdx = -1;
+              let nearestDistSq = Infinity;
+              if (worldAnchors) {
+                worldAnchors.anchors.forEach((anchor, i) => {
+                  const dx = world.x - anchor.x;
+                  const dy = world.y - anchor.y;
+                  const dSq = dx * dx + dy * dy;
+                  if (dSq < nearestDistSq) { nearestDistSq = dSq; nearestIdx = i; }
+                });
               }
-              this.startDirectDrag({ type: 'anchor', index: idx }, e);
+              if (nearestIdx >= 0 && nearestDistSq <= anchorTolSq) {
+                // Near an endpoint — select just that anchor
+                selection.selectedIndices = new Set([nearestIdx]);
+                this.startDirectDrag({ type: 'anchor', index: nearestIdx }, e);
+              } else {
+                // On segment body — select both endpoints so dragging moves the whole segment
+                const seg = Math.max(0, Math.min((hit.segmentIndex ?? 0), selection.anchors.length - 1));
+                const nextSeg = Math.min(seg + 1, selection.anchors.length - 1);
+                selection.selectedIndices = new Set(nextSeg !== seg ? [seg, nextSeg] : [seg]);
+                this.startDirectDrag({ type: 'anchor', index: seg }, e);
+                // Store grab offset so drag tracks from where the user clicked, not from the anchor corner
+                if (this.directDrag) {
+                  const dragLayer = this.getDirectSelectionLayer();
+                  if (dragLayer) {
+                    const grabSrc = this.worldToSourcePoint(dragLayer, world);
+                    const a = selection.anchors[seg];
+                    this.directDrag.grabOffset = { x: grabSrc.x - a.x, y: grabSrc.y - a.y };
+                  }
+                }
+              }
             }
             this.draw();
             return;
           }
+          // No path or anchor hit — start marquee to select anchors
+          this.clearDirectSelection();
+          this.isDirectMarquee = true;
+          this.directMarqueeStart = world;
+          this.directMarqueeRect = { x: world.x, y: world.y, w: 0, h: 0 };
+          this.draw();
+          return;
         }
         if (this.activeTool === 'select' && this.selectionMode === 'pen') {
           this.penPurpose = 'select';
@@ -3428,7 +3585,8 @@
           }
         } else {
           const last = anchors[anchors.length - 1];
-          this.penPreview = modifiers.shift && last ? this.snapPenAngle(last, next) : next;
+          const snapped = this.snapPointToGrid(next);
+          this.penPreview = modifiers.shift && last ? this.snapPenAngle(last, snapped) : snapped;
         }
         this.draw();
         return;
@@ -3439,7 +3597,7 @@
         const sx = e.clientX - rect.left;
         const sy = e.clientY - rect.top;
         const next = this.screenToWorld(sx, sy);
-        this.updateShapeDraft(next, e);
+        this.updateShapeDraft(this.snapPointToGrid(next), e);
         return;
       }
 
@@ -3448,7 +3606,7 @@
         const sx = e.clientX - rect.left;
         const sy = e.clientY - rect.top;
         const next = this.screenToWorld(sx, sy);
-        this.updateAlgoDraft(next);
+        this.updateAlgoDraft(this.snapPointToGrid(next));
         return;
       }
 
@@ -3475,6 +3633,21 @@
         if (!last || Math.hypot(world.x - last.x, world.y - last.y) >= minDist) {
           this.lassoPath.push(world);
         }
+        this.draw();
+        return;
+      }
+
+      if (this.isDirectMarquee && this.directMarqueeStart) {
+        const rect = this.canvas.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        const world = this.screenToWorld(sx, sy);
+        this.directMarqueeRect = {
+          x: Math.min(this.directMarqueeStart.x, world.x),
+          y: Math.min(this.directMarqueeStart.y, world.y),
+          w: Math.abs(world.x - this.directMarqueeStart.x),
+          h: Math.abs(world.y - this.directMarqueeStart.y),
+        };
         this.draw();
         return;
       }
@@ -3686,6 +3859,18 @@
       this.activeHandle = null;
       this.updateCursor();
       this.guides = null;
+      if (this.isDirectMarquee) {
+        const rect = this.directMarqueeRect;
+        if (rect && (rect.w > 2 / this.scale || rect.h > 2 / this.scale)) {
+          this._applyDirectMarquee(rect);
+        }
+        this.isDirectMarquee = false;
+        this.directMarqueeStart = null;
+        this.directMarqueeRect = null;
+        this.draw();
+        clearActivePointer();
+        return;
+      }
       if (this.isSelecting) {
         const rect = this.selectionRect;
         if (rect) {
@@ -4124,6 +4309,7 @@
       if (this.directSelection && this.directSelection.layerId !== this.selectedLayerId) {
         this.directSelection = null;
         this.directDrag = null;
+        this.directAuxSelections = [];
       }
       this.draw();
     }
@@ -4138,6 +4324,7 @@
       if (this.directSelection && this.directSelection.layerId !== this.selectedLayerId) {
         this.directSelection = null;
         this.directDrag = null;
+        this.directAuxSelections = [];
       }
       if (this.onSelectLayer) {
         const layer = this.getSelectedLayer();
@@ -4151,6 +4338,7 @@
       this.selectedLayerId = null;
       this.directSelection = null;
       this.directDrag = null;
+      this.directAuxSelections = [];
       this.clearMaskPreview();
       if (this.onSelectLayer) this.onSelectLayer(null);
       this.draw();
@@ -4803,12 +4991,9 @@
       this.ctx.restore();
     }
 
-    drawDirectSelection() {
-      const data = this.getDirectSelectionWorldAnchors();
-      if (!data || !data.anchors.length) return;
-      const { anchors } = data;
-      const path = this.buildPenPathFromAnchors(anchors, Boolean(this.directSelection?.closed));
-      this.ctx.save();
+    _drawSelectionGeometry(sel, worldAnchors) {
+      if (!worldAnchors || !worldAnchors.length) return;
+      const path = this.buildPenPathFromAnchors(worldAnchors, Boolean(sel.closed));
       this.ctx.strokeStyle = getThemeToken('--render-direct-stroke', '#22d3ee');
       this.ctx.lineWidth = 1.1 / this.scale;
       this.ctx.setLineDash([4 / this.scale, 3 / this.scale]);
@@ -4816,15 +5001,15 @@
       if (path.length) {
         this.ctx.moveTo(path[0].x, path[0].y);
         for (let i = 1; i < path.length; i++) this.ctx.lineTo(path[i].x, path[i].y);
-        if (this.directSelection?.closed) this.ctx.closePath();
+        if (sel.closed) this.ctx.closePath();
       }
       this.ctx.stroke();
       this.ctx.setLineDash([]);
 
       const anchorR = 3.2 / this.scale;
       const handleR = 2.2 / this.scale;
-      const selectedSet = this.directSelection?.selectedIndices || new Set();
-      anchors.forEach((anchor, i) => {
+      const selectedSet = sel.selectedIndices || new Set();
+      worldAnchors.forEach((anchor, i) => {
         const isSelected = selectedSet.has(i);
         if (anchor.in) {
           this.ctx.strokeStyle = getThemeToken('--render-direct-handle-line', 'rgba(34, 211, 238, 0.65)');
@@ -4861,8 +5046,22 @@
         this.ctx.fill();
         this.ctx.stroke();
       });
+    }
+
+    drawDirectSelection() {
+      this.ctx.save();
+      if (this.directSelection) {
+        const data = this.getDirectSelectionWorldAnchors();
+        if (data) this._drawSelectionGeometry(this.directSelection, data.anchors);
+      }
+      for (const auxSel of this.directAuxSelections || []) {
+        const data = this._selectionWorldAnchors(auxSel);
+        if (data) this._drawSelectionGeometry(auxSel, data.anchors);
+      }
       const layer = this.getDirectSelectionLayer();
-      if (layer && this.directSelection?.meta?.shape) this.drawShapeCornerHandles(layer, this.directSelection.pathIndex, 'single');
+      if (layer && this.directSelection?.meta?.shape) {
+        this.drawShapeCornerHandles(layer, this.directSelection.pathIndex, 'single');
+      }
       this.ctx.restore();
     }
 
@@ -4895,16 +5094,19 @@
       const last = anchors[anchors.length - 1];
       const previewAnchors =
         this.penPreview && !this.isPenDragging ? anchors.concat([this.createAnchor(this.penPreview)]) : anchors.slice();
-      const path = this.buildPenPathFromAnchors(previewAnchors, false);
       this.ctx.save();
       this.ctx.strokeStyle = '#38bdf8';
       this.ctx.lineWidth = 1 / this.scale;
       this.ctx.setLineDash([4 / this.scale, 4 / this.scale]);
       this.ctx.beginPath();
-      if (path.length) {
-        this.ctx.moveTo(path[0].x, path[0].y);
-        for (let i = 1; i < path.length; i++) {
-          this.ctx.lineTo(path[i].x, path[i].y);
+      if (previewAnchors.length >= 2) {
+        this.ctx.moveTo(previewAnchors[0].x, previewAnchors[0].y);
+        for (let i = 1; i < previewAnchors.length; i++) {
+          const a = previewAnchors[i - 1];
+          const b = previewAnchors[i];
+          const c1 = a.out || a;
+          const c2 = b.in || b;
+          this.ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, b.x, b.y);
         }
       }
       this.ctx.stroke();
