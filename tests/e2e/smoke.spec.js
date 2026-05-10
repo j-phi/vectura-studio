@@ -444,24 +444,12 @@ test.describe('Vectura smoke interactions', () => {
 
     await page.goto('/');
 
-    // Var 02 splits Document Setup's surface by viewport: ≥ 900 px opens
-    // the centered modal (`#modal-overlay`), < 900 px opens the slide-out
-    // drawer (`#settings-panel`). The desktop-chromium project runs at
-    // 1600 wide and the tablet-touch project at 834 wide, so this test
-    // covers both contracts in a single spec.
-    const isDesktop = await page.evaluate(() => window.innerWidth >= 900);
-    const surface = isDesktop ? '#modal-overlay' : '#settings-panel';
-    // The modal supplies its own `.modal-close` glyph in the header; on
-    // desktop the form body's `.pane-hdr` (which holds #btn-close-settings)
-    // is hidden so the user sees one close affordance, not two.
-    const closeSelector = isDesktop ? '#modal-overlay .modal-close' : '#btn-close-settings';
-
     await page.getByRole('button', { name: 'File' }).click();
     await page.click('#btn-settings');
-    await expect(page.locator(surface)).toHaveClass(/open/);
+    await expect(page.locator('#settings-panel')).toHaveClass(/open/);
 
-    await page.click(closeSelector);
-    await expect(page.locator(surface)).not.toHaveClass(/open/);
+    await page.click('#btn-close-settings');
+    await expect(page.locator('#settings-panel')).not.toHaveClass(/open/);
 
     await page.getByRole('button', { name: 'Help' }).click();
     await page.click('#btn-help');
@@ -477,11 +465,8 @@ test.describe('Vectura smoke interactions', () => {
 
     await page.goto('/');
 
-    const isDesktop = await page.evaluate(() => window.innerWidth >= 900);
-    const surface = isDesktop ? '#modal-overlay' : '#settings-panel';
-
     await page.keyboard.press('ControlOrMeta+K');
-    await expect(page.locator(surface)).toHaveClass(/open/);
+    await expect(page.locator('#settings-panel')).toHaveClass(/open/);
     await expect(page.locator('#set-document-units')).toBeVisible();
     // The dimensions toggle is wrapped in `.sw-toggle`, which hides the raw
     // checkbox on Meridian-family skins (the default). Assert presence, not
@@ -489,10 +474,10 @@ test.describe('Vectura smoke interactions', () => {
     await expect(page.locator('#set-show-document-dimensions')).toBeAttached();
 
     await page.keyboard.press('ControlOrMeta+K');
-    await expect(page.locator(surface)).not.toHaveClass(/open/);
+    await expect(page.locator('#settings-panel')).not.toHaveClass(/open/);
 
     await page.keyboard.press('ControlOrMeta+K');
-    await expect(page.locator(surface)).toHaveClass(/open/);
+    await expect(page.locator('#settings-panel')).toHaveClass(/open/);
 
     const cookieToggle = page.locator('#set-cookie-preferences');
     const showGuides = page.locator('#set-show-guides');
@@ -512,7 +497,7 @@ test.describe('Vectura smoke interactions', () => {
 
     await page.reload();
     await page.keyboard.press('ControlOrMeta+K');
-    await expect(page.locator(surface)).toHaveClass(/open/);
+    await expect(page.locator('#settings-panel')).toHaveClass(/open/);
     await expect(page.locator('#set-cookie-preferences')).not.toBeChecked();
     await expect(page.locator('#set-show-guides')).toBeChecked();
 

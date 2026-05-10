@@ -31,14 +31,6 @@
 
   function toggleSettingsPanel(force) {
     const { getEl } = requireDeps('toggleSettingsPanel');
-    // Var 02: on desktop viewports (≥ 900 px) the centered modal is the
-    // default surface; on smaller viewports the slide-out drawer remains.
-    // The breakpoint matches `body.mobile-layout` in workspace.js so the
-    // two layout signals can never disagree.
-    const DocumentSetup = window.Vectura?.UI?.Modals?.DocumentSetup;
-    if (DocumentSetup?.isDesktopViewport?.()) {
-      return DocumentSetup.toggleSetupModal(this, force);
-    }
     const settingsPanel = getEl('settings-panel', { silent: true });
     if (!settingsPanel) return false;
     const nextOpen = typeof force === 'boolean' ? force : !settingsPanel.classList.contains('open');

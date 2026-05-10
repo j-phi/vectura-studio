@@ -83,57 +83,19 @@ describe('Document Setup panel', () => {
     }
   });
 
-  test('on mobile viewports (< 900 px) #btn-settings opens the slide-out drawer; close button removes it', () => {
-    // Var 02 split the surface by viewport: < 900 px keeps the legacy
-    // drawer experience, ≥ 900 px swaps in the modal. We pin innerWidth
-    // explicitly so the test isn't beholden to JSDOM's default viewport.
+  test('clicking File > Document Setup toggles .open; close button removes it', () => {
     const panel = document.getElementById('settings-panel');
     const openBtn = document.getElementById('btn-settings');
     const closeBtn = document.getElementById('btn-close-settings');
     expect(openBtn).toBeTruthy();
     expect(closeBtn).toBeTruthy();
 
-    const origWidth = window.innerWidth;
-    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 600 });
-    try {
-      panel.classList.remove('open');
-      openBtn.click();
-      expect(panel.classList.contains('open')).toBe(true);
+    panel.classList.remove('open');
+    openBtn.click();
+    expect(panel.classList.contains('open')).toBe(true);
 
-      closeBtn.click();
-      expect(panel.classList.contains('open')).toBe(false);
-    } finally {
-      Object.defineProperty(window, 'innerWidth', { configurable: true, value: origWidth });
-    }
-  });
-
-  test('on desktop viewports (>= 900 px) #btn-settings opens the centered modal, not the drawer', () => {
-    const panel = document.getElementById('settings-panel');
-    const overlay = document.getElementById('modal-overlay');
-    const openBtn = document.getElementById('btn-settings');
-    expect(overlay).toBeTruthy();
-
-    const origWidth = window.innerWidth;
-    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 });
-    try {
-      panel.classList.remove('open');
-      overlay.classList.remove('open');
-      openBtn.click();
-      expect(overlay.classList.contains('open')).toBe(true);
-      expect(panel.classList.contains('open')).toBe(false);
-      // Form body relocated into the modal so the legacy `#set-*` handlers
-      // keep firing wherever the form lives — verify the relocation.
-      expect(overlay.querySelector('.settings-panel-body')).toBeTruthy();
-      expect(panel.querySelector('.settings-panel-body')).toBeNull();
-
-      // Closing returns the form body to the drawer so a subsequent
-      // mobile open finds it where the integration tests / handlers expect.
-      document.getElementById('btn-close-settings').click();
-      expect(overlay.classList.contains('open')).toBe(false);
-      expect(panel.querySelector('.settings-panel-body')).toBeTruthy();
-    } finally {
-      Object.defineProperty(window, 'innerWidth', { configurable: true, value: origWidth });
-    }
+    closeBtn.click();
+    expect(panel.classList.contains('open')).toBe(false);
   });
 
   test('margin input still wires through to SETTINGS.margin (input handler preserved)', () => {
