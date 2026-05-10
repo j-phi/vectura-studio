@@ -6,6 +6,7 @@
   const clone =
     typeof structuredClone === 'function' ? (obj) => structuredClone(obj) : (obj) => JSON.parse(JSON.stringify(obj));
   const PREFERENCE_COOKIE = 'vectura_prefs';
+  const PREFERENCE_STORAGE_KEY = 'vectura_prefs';
   const PREFERENCE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
   const DEFAULT_THEME = 'dark';
   const normalizeDocumentUnits = UnitUtils.normalizeDocumentUnits || ((value) => (`${value || ''}`.trim().toLowerCase() === 'imperial' ? 'imperial' : 'metric'));
@@ -68,6 +69,9 @@
       this.preferenceCookieName = PREFERENCE_COOKIE;
       this.preferencePersistTimer = null;
       this.lastPreferenceHash = '';
+      // Snapshot pristine SETTINGS before applyPreferencesFromCookie mutates them,
+      // so clearSavedPreferences() can restore factory defaults later.
+      this.defaultSettingsSnapshot = clone(SETTINGS);
       const hadCookiePreferences = this.applyPreferencesFromCookie();
       // Cold boot (no cookie): sync pen-1 to the active theme's pen1Color so a
       // fresh load on light/lark doesn't leave pen-1 white on the white artboard.
@@ -154,18 +158,78 @@
       document.cookie = `${name}=${safe}; Max-Age=${Math.max(0, Math.floor(maxAge || 0))}; Path=/; SameSite=Lax`;
     }
 
+    readLocalStorage(key) {
+      if (typeof window === 'undefined' || !key) return null;
+      try {
+        return window.localStorage?.getItem(key) ?? null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    writeLocalStorage(key, value) {
+      if (typeof window === 'undefined' || !key) return;
+      try {
+        if (value == null) window.localStorage?.removeItem(key);
+        else window.localStorage?.setItem(key, value);
+      } catch (_) { /* quota or disabled */ }
+    }
+
     clearPreferenceCookie() {
       if (this.preferencePersistTimer) {
         window.clearTimeout(this.preferencePersistTimer);
         this.preferencePersistTimer = null;
       }
       this.writeCookie(this.preferenceCookieName, '', 0);
+      this.writeLocalStorage(PREFERENCE_STORAGE_KEY, null);
       this.lastPreferenceHash = '';
     }
 
     clearSavedPreferences() {
+      // Restore every SETTINGS key to its pristine default. Mutate in place so
+      // any module holding a reference to window.Vectura.SETTINGS sees the reset.
+      const defaults = this.defaultSettingsSnapshot ? clone(this.defaultSettingsSnapshot) : {};
+      Object.keys(SETTINGS).forEach((key) => { delete SETTINGS[key]; });
+      Object.assign(SETTINGS, defaults);
       SETTINGS.cookiePreferencesEnabled = false;
       this.clearPreferenceCookie();
+
+      // Re-apply layout-affecting settings whose UI state lives outside SETTINGS
+      // (CSS vars + class toggles). Without these the panes/toolbar would keep
+      // their last-modified positions even though SETTINGS now says default.
+      const root = typeof document !== 'undefined' ? document.documentElement : null;
+      if (root) {
+        if (typeof SETTINGS.paneLeftWidth === 'number') {
+          root.style.setProperty('--pane-left-width', `${SETTINGS.paneLeftWidth}px`);
+        }
+        if (typeof SETTINGS.paneRightWidth === 'number') {
+          root.style.setProperty('--pane-right-width', `${SETTINGS.paneRightWidth}px`);
+        }
+        if (typeof SETTINGS.bottomPaneHeight === 'number') {
+          root.style.setProperty('--bottom-pane-height', `${SETTINGS.bottomPaneHeight}px`);
+        }
+      }
+      if (typeof document !== 'undefined') {
+        const leftPane = document.getElementById('left-pane');
+        const rightPane = document.getElementById('right-pane');
+        const bottomPane = document.getElementById('bottom-pane');
+        if (leftPane) leftPane.classList.remove('pane-collapsed', 'pane-force-open');
+        if (rightPane) rightPane.classList.remove('pane-collapsed', 'pane-force-open');
+        if (bottomPane) bottomPane.classList.remove('bottom-pane-collapsed');
+      }
+      // Reset toolbar back to its default float position. resetToolbarPosition
+      // is wired by toolbar.js when present; falls back to no-op pre-init.
+      this.ui?.resetToolbarPosition?.();
+
+      this.applyTheme(SETTINGS.uiTheme, {
+        persist: false,
+        syncPen1: true,
+        syncDocumentBg: true,
+        refreshUi: true,
+        render: false,
+      });
+      this.maxHistory = SETTINGS.undoSteps ?? 20;
+      if (this.renderer) this.render();
     }
 
     getPreferenceSnapshot() {
@@ -193,6 +257,11 @@
         selectionOutlineColor: SETTINGS.selectionOutlineColor,
         selectionOutlineWidth: SETTINGS.selectionOutlineWidth,
         gridOverlay: SETTINGS.gridOverlay,
+        gridOpacity: SETTINGS.gridOpacity,
+        gridStyle: SETTINGS.gridStyle,
+        gridColor: SETTINGS.gridColor,
+        gridSize: SETTINGS.gridSize,
+        undoSteps: SETTINGS.undoSteps,
         uiSections: SETTINGS.uiSections ? clone(SETTINGS.uiSections) : null,
         aboutVisible: SETTINGS.aboutVisible !== false,
         touchModifiers: SETTINGS.touchModifiers ? clone(SETTINGS.touchModifiers) : null,
@@ -227,6 +296,10 @@
         toolbarY: SETTINGS.toolbarY ?? null,
         toolbarLocked: SETTINGS.toolbarLocked === true,
         toolbarHorizontal: SETTINGS.toolbarHorizontal === true,
+        leftPaneCollapsed: SETTINGS.leftPaneCollapsed === true,
+        rightPaneCollapsed: SETTINGS.rightPaneCollapsed === true,
+        bottomPaneCollapsed: SETTINGS.bottomPaneCollapsed === true,
+        bottomPaneHeight: typeof SETTINGS.bottomPaneHeight === 'number' ? SETTINGS.bottomPaneHeight : null,
       };
     }
 
@@ -255,6 +328,11 @@
       SETTINGS.selectionOutlineColor = snapshot.selectionOutlineColor ?? SETTINGS.selectionOutlineColor;
       SETTINGS.selectionOutlineWidth = snapshot.selectionOutlineWidth ?? SETTINGS.selectionOutlineWidth;
       SETTINGS.gridOverlay = snapshot.gridOverlay ?? SETTINGS.gridOverlay;
+      SETTINGS.gridOpacity = snapshot.gridOpacity ?? SETTINGS.gridOpacity;
+      SETTINGS.gridStyle = snapshot.gridStyle ?? SETTINGS.gridStyle;
+      SETTINGS.gridColor = snapshot.gridColor ?? SETTINGS.gridColor;
+      SETTINGS.gridSize = snapshot.gridSize ?? SETTINGS.gridSize;
+      SETTINGS.undoSteps = snapshot.undoSteps ?? SETTINGS.undoSteps;
       if (snapshot.uiSections && typeof snapshot.uiSections === 'object') {
         SETTINGS.uiSections = clone(snapshot.uiSections);
       }
@@ -321,21 +399,36 @@
       SETTINGS.toolbarY = typeof snapshot.toolbarY === 'number' ? snapshot.toolbarY : null;
       SETTINGS.toolbarLocked = snapshot.toolbarLocked === true;
       SETTINGS.toolbarHorizontal = snapshot.toolbarHorizontal === true;
+      SETTINGS.leftPaneCollapsed = snapshot.leftPaneCollapsed === true;
+      SETTINGS.rightPaneCollapsed = snapshot.rightPaneCollapsed === true;
+      SETTINGS.bottomPaneCollapsed = snapshot.bottomPaneCollapsed === true;
+      if (typeof snapshot.bottomPaneHeight === 'number') {
+        SETTINGS.bottomPaneHeight = snapshot.bottomPaneHeight;
+        if (typeof document !== 'undefined') {
+          document.documentElement.style.setProperty('--bottom-pane-height', `${snapshot.bottomPaneHeight}px`);
+        }
+      }
     }
 
     applyPreferencesFromCookie() {
-      let raw = this.readCookie(this.preferenceCookieName);
-      if (!raw) return false;
-      try {
-        raw = decodeURIComponent(raw);
-        const parsed = JSON.parse(raw);
-        const data = parsed?.data && typeof parsed.data === 'object' ? parsed.data : parsed;
-        this.applyPreferenceSnapshot(data);
-        return true;
-      } catch (err) {
-        console.warn('[Preferences] Failed to parse cookie preferences:', err);
-        return false;
+      // localStorage is primary (no Safari ITP 7-day cap, survives file:// in
+      // most browsers). Cookie is back-compat fallback for older saved state.
+      const lsRaw = this.readLocalStorage(PREFERENCE_STORAGE_KEY);
+      const cookieRaw = this.readCookie(this.preferenceCookieName);
+      const candidates = [lsRaw, cookieRaw ? decodeURIComponent(cookieRaw) : null];
+      for (const raw of candidates) {
+        if (!raw) continue;
+        try {
+          const parsed = JSON.parse(raw);
+          const data = parsed?.data && typeof parsed.data === 'object' ? parsed.data : parsed;
+          this.applyPreferenceSnapshot(data);
+          return true;
+        } catch (_) { /* try next */ }
       }
+      if (cookieRaw && !lsRaw) {
+        console.warn('[Preferences] Failed to parse saved preferences');
+      }
+      return false;
     }
 
     persistPreferences(options = {}) {
@@ -349,6 +442,7 @@
       const json = JSON.stringify({ version: 1, data: snapshot });
       if (!force && json === this.lastPreferenceHash) return;
       this.lastPreferenceHash = json;
+      this.writeLocalStorage(PREFERENCE_STORAGE_KEY, json);
       this.writeCookie(this.preferenceCookieName, encodeURIComponent(json), PREFERENCE_COOKIE_MAX_AGE);
     }
 

@@ -28,6 +28,7 @@
 
   function initPaneToggles() {
     const { getEl } = requireDeps('initPaneToggles');
+    const SETTINGS = (G.Vectura && G.Vectura.SETTINGS) || {};
     const leftPane = getEl('left-pane');
     const rightPane = getEl('right-pane');
     const bottomPane = getEl('bottom-pane');
@@ -36,6 +37,20 @@
     const mobileLeftBtn = getEl('btn-mobile-pane-left');
     const mobileRightBtn = getEl('btn-mobile-pane-right');
     if (!leftPane || !rightPane || !leftBtn || !rightBtn) return;
+
+    // Restore persisted desktop collapsed state. Only the static `pane-collapsed`
+    // class is saved — `pane-force-open` is the mobile drawer override and is
+    // always reset on boot. Phone breakpoints set `auto-collapsed` later in
+    // applyAutoCollapse(), which masks this on small viewports.
+    if (SETTINGS.leftPaneCollapsed === true) leftPane.classList.add('pane-collapsed');
+    if (SETTINGS.rightPaneCollapsed === true) rightPane.classList.add('pane-collapsed');
+    if (bottomPane && SETTINGS.bottomPaneCollapsed === true) bottomPane.classList.add('bottom-pane-collapsed');
+
+    const persistPaneCollapse = () => {
+      SETTINGS.leftPaneCollapsed = leftPane.classList.contains('pane-collapsed');
+      SETTINGS.rightPaneCollapsed = rightPane.classList.contains('pane-collapsed');
+      this.app?.persistPreferencesDebounced?.();
+    };
 
     const isMobileViewport = () => window.innerWidth < 900;
 
@@ -120,6 +135,7 @@
         pane.classList.toggle('pane-force-open');
       } else {
         pane.classList.toggle('pane-collapsed');
+        persistPaneCollapse();
       }
       syncBackdrop();
     };

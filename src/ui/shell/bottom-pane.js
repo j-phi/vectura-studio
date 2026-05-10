@@ -40,12 +40,15 @@
 
   function initBottomPaneToggle() {
     const { getEl } = requireDeps('initBottomPaneToggle');
+    const SETTINGS = (G.Vectura && G.Vectura.SETTINGS) || {};
     const bottomPane = getEl('bottom-pane');
     const btn = getEl('btn-pane-toggle-bottom');
     const mobileBtn = getEl('btn-mobile-pane-bottom');
     if (!bottomPane || !btn) return;
     const toggleBottomPane = () => {
       bottomPane.classList.toggle('bottom-pane-collapsed');
+      SETTINGS.bottomPaneCollapsed = bottomPane.classList.contains('bottom-pane-collapsed');
+      this.app?.persistPreferencesDebounced?.();
     };
     btn.addEventListener('click', toggleBottomPane);
     if (mobileBtn) mobileBtn.addEventListener('click', toggleBottomPane);
@@ -53,6 +56,7 @@
 
   function initBottomPaneResizer() {
     const { getEl } = requireDeps('initBottomPaneResizer');
+    const SETTINGS = (G.Vectura && G.Vectura.SETTINGS) || {};
     const resizer = getEl('bottom-resizer');
     const bottomPane = getEl('bottom-pane');
     if (!resizer || !bottomPane) return;
@@ -65,16 +69,21 @@
       bottomPane.classList.remove('bottom-pane-collapsed');
       const startY = e.clientY;
       const startHeight = bottomPane.getBoundingClientRect().height;
+      let lastHeight = startHeight;
 
       const onMove = (ev) => {
         const dy = ev.clientY - startY;
         const next = Math.max(minHeight, Math.min(maxHeight, startHeight - dy));
         document.documentElement.style.setProperty('--bottom-pane-height', `${next}px`);
+        lastHeight = next;
       };
       const onUp = () => {
         resizer.classList.remove('active');
         window.removeEventListener('mousemove', onMove);
         window.removeEventListener('mouseup', onUp);
+        SETTINGS.bottomPaneHeight = Math.round(lastHeight);
+        SETTINGS.bottomPaneCollapsed = false;
+        this.app?.persistPreferencesDebounced?.();
       };
       window.addEventListener('mousemove', onMove);
       window.addEventListener('mouseup', onUp);

@@ -906,6 +906,24 @@
       requestAnimationFrame(() => this._updateAllSubmenuDirs?.());
     });
 
+    // Exposed for App.clearSavedPreferences(): reset toolbar to factory layout
+    // (float position, unlocked, vertical). Skips persist — caller controls that.
+    this.resetToolbarPosition = () => {
+      SETTINGS.toolbarX = null;
+      SETTINGS.toolbarY = null;
+      SETTINGS.toolbarDock = null;
+      SETTINGS.toolbarLocked = false;
+      SETTINGS.toolbarHorizontal = false;
+      toolbar.classList.remove('toolbar-locked', 'toolbar-floating-horizontal');
+      pinBtn.classList.remove('active');
+      pinBtn.setAttribute('aria-pressed', 'false');
+      rotateBtn.classList.remove('active');
+      rotateBtn.setAttribute('aria-pressed', 'false');
+      setFloat(null, null);
+      window.dispatchEvent(new Event('resize'));
+      requestAnimationFrame(() => this._updateAllSubmenuDirs?.());
+    };
+
     rotateBtn.addEventListener('click', () => {
       const horizontal = toolbar.classList.toggle('toolbar-floating-horizontal');
       SETTINGS.toolbarHorizontal = horizontal;
