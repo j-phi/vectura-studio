@@ -384,6 +384,7 @@
       this.isPenDragging = false;
       this.penDragAnchor = null;
       this.penDragStart = null;
+      this._penLastClick = null;
       this.shapeDraft = null;
       this.shapeDraftSides = 6;
       this.shapeCornerDrag = null;
@@ -839,7 +840,8 @@
     }
 
     wantsPan(e, modifiers = this.getModifierState(e)) {
-      return this.activeTool === 'hand' || modifiers.shift || modifiers.pan || e.button === 1;
+      const shiftPan = modifiers.shift && !(this.activeTool === 'pen' && this.penMode === 'draw');
+      return this.activeTool === 'hand' || shiftPan || modifiers.pan || e.button === 1;
     }
 
     isTouchPointer(e) {
@@ -1047,7 +1049,17 @@
     handlePenDown(world, e) {
       if (!world) return;
       const modifiers = this.getModifierState(e);
-      const snapTol = 4 / this.scale;
+      const closeTol = 12 / this.scale;
+
+      // Manual double-click detection — pointerdown does not reliably carry e.detail > 1
+      const now = performance.now();
+      const prev = this._penLastClick;
+      const screenX = e.clientX ?? 0;
+      const screenY = e.clientY ?? 0;
+      const isDoubleClick = prev &&
+        (now - prev.time) < 400 &&
+        Math.hypot(screenX - prev.x, screenY - prev.y) < 8;
+      this._penLastClick = { time: now, x: screenX, y: screenY };
 
       if (!this.penDraft) {
         this.penDraft = { anchors: [this.createAnchor(world)], closed: false };
@@ -1055,6 +1067,7 @@
         this.penDragAnchor = 0;
         this.penDragStart = world;
         this.penPreview = null;
+        this.canvas?.focus();
         this.draw();
         return;
       }
@@ -1075,8 +1088,17 @@
       let next = { x: world.x, y: world.y };
       if (modifiers.shift) next = this.snapPenAngle(lastAnchor, next);
       const distToStart = Math.hypot(next.x - first.x, next.y - first.y);
-      const isDoubleClick = e.detail && e.detail > 1;
-      if (anchors.length >= 2 && distToStart <= snapTol && isDoubleClick) {
+
+      if (anchors.length >= 2 && distToStart <= closeTol && isDoubleClick) {
+        // Remove the phantom anchor added on the first click of this double-click if it
+        // landed near the origin — it was not intended as a real point.
+        if (anchors.length > 2) {
+          const phantom = anchors[anchors.length - 1];
+          if (Math.hypot(phantom.x - first.x, phantom.y - first.y) <= closeTol) {
+            anchors.pop();
+            this.penDraft.anchors = anchors;
+          }
+        }
         this.penDraft.closed = true;
         this.commitPenPath();
         return;
@@ -1129,6 +1151,7 @@
       this.isPenDragging = false;
       this.penDragAnchor = null;
       this.penDragStart = null;
+      this._penLastClick = null;
       this.draw();
     }
 
@@ -1138,6 +1161,7 @@
       this.isPenDragging = false;
       this.penDragAnchor = null;
       this.penDragStart = null;
+      this._penLastClick = null;
       this.penPurpose = 'draw';
       this.draw();
     }
@@ -2120,7 +2144,7 @@
       this.ctx.shadowBlur = 20;
       this.ctx.fillRect(0, 0, prof.width, prof.height);
       this.ctx.shadowBlur = 0;
-      if (SETTINGS.gridOverlay) this.drawGridOverlay(prof);
+      if (SETTINGS.gridType && SETTINGS.gridType !== 'none') this.drawGridOverlay(prof);
       this.ctx.strokeStyle = getThemeToken('--render-paper-outline', '#333');
       this.ctx.lineWidth = 1 / this.scale;
       this.ctx.strokeRect(0, 0, prof.width, prof.height);
@@ -2694,28 +2718,15 @@
       if (!showOptimizedOverlay || this.exportModalOpen) this.updateOptimizationOverlayLegend(false);
     }
 
-    drawGridOverlay(profile) {
-      if (!profile) return;
-      const spacing = SETTINGS.gridSize || 10;
-      const style = SETTINGS.gridStyle || 'cartesian';
-      const opacity = SETTINGS.gridOpacity ?? 0.2;
-      const color = SETTINGS.gridColor || '#ffffff';
-      
+    _drawGridLayer(w, h, spacing, style, color, opacity, lineWidth) {
+      if (spacing <= 0) return;
       this.ctx.save();
       this.ctx.globalAlpha = opacity;
       this.ctx.strokeStyle = color;
       this.ctx.fillStyle = color;
-      this.ctx.lineWidth = 0.15;
-      
-      const w = profile.width;
-      const h = profile.height;
+      this.ctx.lineWidth = lineWidth;
+      this.ctx.beginPath();
 
-      this.ctx.beginPath();
-      this.ctx.rect(0, 0, w, h);
-      this.ctx.clip();
-      
-      this.ctx.beginPath();
-      
       if (style.includes('cartesian')) {
         if (style === 'cartesian') {
           for (let x = 0; x <= w; x += spacing) {
@@ -2740,43 +2751,81 @@
         const L = spacing;
         const dx = L * Math.cos(Math.PI / 6);
         const dy = L * Math.sin(Math.PI / 6);
-        
         if (style === 'isometric') {
           const tan30 = Math.tan(Math.PI / 6);
-          
           for (let x = 0; x <= w; x += dx) {
             this.ctx.moveTo(x, 0);
             this.ctx.lineTo(x, h);
           }
-          
           const minDnY = Math.floor((-w * tan30) / L) * L;
           const maxDnY = Math.ceil(h / L) * L;
           for (let yInt = minDnY; yInt <= maxDnY; yInt += L) {
-             this.ctx.moveTo(0, yInt);
-             this.ctx.lineTo(w, yInt + w * tan30);
+            this.ctx.moveTo(0, yInt);
+            this.ctx.lineTo(w, yInt + w * tan30);
           }
-          
-          const minUpY = 0;
           const maxUpY = Math.ceil((h + w * tan30) / L) * L;
-          for (let yInt = minUpY; yInt <= maxUpY; yInt += L) {
-             this.ctx.moveTo(0, yInt);
-             this.ctx.lineTo(w, yInt - w * tan30);
+          for (let yInt = 0; yInt <= maxUpY; yInt += L) {
+            this.ctx.moveTo(0, yInt);
+            this.ctx.lineTo(w, yInt - w * tan30);
           }
           this.ctx.stroke();
         } else if (style === 'isometric-dot') {
-           let row = 0;
-           for (let y = 0; y <= h + dy; y += dy) {
-             const offsetX = (row % 2 === 1) ? dx : 0;
-             for (let x = offsetX; x <= w + dx; x += dx * 2) {
-               this.ctx.moveTo(x, y);
-               this.ctx.arc(x, y, 0.35, 0, Math.PI * 2);
-             }
-             row++;
-           }
-           this.ctx.fill();
+          let row = 0;
+          for (let y = 0; y <= h + dy; y += dy) {
+            const offsetX = (row % 2 === 1) ? dx : 0;
+            for (let x = offsetX; x <= w + dx; x += dx * 2) {
+              this.ctx.moveTo(x, y);
+              this.ctx.arc(x, y, 0.35, 0, Math.PI * 2);
+            }
+            row++;
+          }
+          this.ctx.fill();
         }
       }
       this.ctx.restore();
+    }
+
+    drawGridOverlay(profile) {
+      if (!profile) return;
+      const style = SETTINGS.gridStyle || 'cartesian';
+      const w = profile.width;
+      const h = profile.height;
+      const gridType = SETTINGS.gridType || 'none';
+
+      this.ctx.save();
+      this.ctx.beginPath();
+      this.ctx.rect(0, 0, w, h);
+      this.ctx.clip();
+
+      if (gridType === 'major-minor') {
+        const minorSpacing = SETTINGS.gridMinorSize || 5;
+        const minorOpacity = SETTINGS.gridMinorOpacity ?? 0.08;
+        const minorColor = SETTINGS.gridMinorColor || '#ffffff';
+        this._drawGridLayer(w, h, minorSpacing, style, minorColor, minorOpacity, 0.1);
+      }
+
+      const spacing = SETTINGS.gridSize || 10;
+      const opacity = SETTINGS.gridOpacity ?? 0.2;
+      const color = SETTINGS.gridColor || '#ffffff';
+      this._drawGridLayer(w, h, spacing, style, color, opacity, 0.15);
+
+      this.ctx.restore();
+    }
+
+    snapPointToGrid(pt) {
+      if (!SETTINGS.gridSnapEnabled) return pt;
+      const gridType = SETTINGS.gridType || 'none';
+      if (gridType === 'none') return pt;
+      const sensitivity = SETTINGS.gridSnapSensitivity ?? 50;
+      if (sensitivity <= 0) return pt;
+      const spacing = SETTINGS.gridSize || 10;
+      const snapRadius = (sensitivity / 100) * (spacing / 2);
+      const snappedX = Math.round(pt.x / spacing) * spacing;
+      const snappedY = Math.round(pt.y / spacing) * spacing;
+      if (Math.abs(pt.x - snappedX) <= snapRadius && Math.abs(pt.y - snappedY) <= snapRadius) {
+        return { x: snappedX, y: snappedY };
+      }
+      return pt;
     }
 
     drawDocumentDimensions(profile) {
