@@ -1,7 +1,7 @@
 # Graph Report - /Users/jayphi/Documents/github/vectura-studio  (2026-05-10)
 
 ## Corpus Check
-- 295 files · ~2,732,663 words
+- 295 files · ~2,732,723 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -1368,12 +1368,12 @@ Nodes (1): City — Isometric aerial city of skyscrapers rendered entirely in de
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Renderer` connect `Community 2` to `Community 3`, `Community 4`, `Community 21`, `Community 6`?**
-  _High betweenness centrality (0.090) - this node is a cross-community bridge._
-- **Why does `sort()` connect `Community 9` to `Community 0`, `Community 1`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 10`, `Community 11`, `Community 13`, `Community 14`, `Community 16`, `Community 18`?**
-  _High betweenness centrality (0.085) - this node is a cross-community bridge._
 - **Why does `mt()` connect `Community 0` to `Community 1`, `Community 3`, `Community 4`, `Community 6`, `Community 7`, `Community 8`, `Community 10`, `Community 11`, `Community 15`, `Community 19`?**
-  _High betweenness centrality (0.071) - this node is a cross-community bridge._
+  _High betweenness centrality (0.061) - this node is a cross-community bridge._
+- **Why does `addEventListener()` connect `Community 6` to `Community 0`, `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 7`, `Community 10`, `Community 16`, `Community 17`, `Community 21`, `Community 26`?**
+  _High betweenness centrality (0.060) - this node is a cross-community bridge._
+- **Why does `sort()` connect `Community 9` to `Community 0`, `Community 1`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 10`, `Community 11`, `Community 13`, `Community 14`, `Community 16`, `Community 18`?**
+  _High betweenness centrality (0.057) - this node is a cross-community bridge._
 - **Are the 95 inferred relationships involving `mt()` (e.g. with `_e()` and `ye()`) actually correct?**
   _`mt()` has 95 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 78 inferred relationships involving `addEventListener()` (e.g. with `ki` and `LC()`) actually correct?**
