@@ -92,7 +92,7 @@
       </div>
       <div class="settings-panel-body">
 
-        <div class="sect">
+        <div class="sect sect--color-theme">
           <button type="button" class="sect-hdr is-open" data-sect-toggle aria-expanded="true">
             Theme
             <span class="sect-arrow down"></span>
@@ -105,12 +105,12 @@
           </div>
         </div>
 
-        <div class="sect">
-          <button type="button" class="sect-hdr is-open" data-sect-toggle aria-expanded="true">
+        <div class="sect sect--color-paper">
+          <button type="button" class="sect-hdr" data-sect-toggle aria-expanded="false">
             Paper
-            <span class="sect-arrow down"></span>
+            <span class="sect-arrow"></span>
           </button>
-          <div class="sect-body" data-sect-body>
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden">
             <div class="ctrl-grp">
               <span class="ctrl-sub-lbl">Orientation</span>
               <div id="orientation-toggle" class="seg-ctrl" role="radiogroup" aria-label="Orientation">
@@ -145,34 +145,16 @@
                 </select>
               </div>
             </div>
-            <div class="ctrl-grp">
-              <span class="ctrl-sub-lbl" id="set-margin-label">Margin (mm)</span>
-              ${numStep({ id: 'set-margin', value: '' })}
-            </div>
+            ${swToggle('set-show-document-dimensions', 'Show document dimensions')}
           </div>
         </div>
 
-        <div class="sect">
-          <button type="button" class="sect-hdr is-open" data-sect-toggle aria-expanded="true">
-            Crop &amp; Outside
-            <span class="sect-arrow down"></span>
+        <div class="sect sect--color-margins">
+          <button type="button" class="sect-hdr" data-sect-toggle aria-expanded="false">
+            Margins
+            <span class="sect-arrow"></span>
           </button>
-          <div class="sect-body" data-sect-body>
-            ${swToggle('set-truncate', 'Crop art to margins')}
-            ${swToggle('set-crop-exports', 'Crop exports to margin')}
-            <div class="ctrl-row">
-              <label class="ctrl-lbl" for="set-outside-opacity">Outside opacity</label>
-              ${numStep({ id: 'set-outside-opacity', value: '', min: '0', max: '1', step: '0.05', cls: 'num-step--narrow' })}
-            </div>
-          </div>
-        </div>
-
-        <div class="sect">
-          <button type="button" class="sect-hdr is-open" data-sect-toggle aria-expanded="true">
-            Margin Outline
-            <span class="sect-arrow down"></span>
-          </button>
-          <div class="sect-body" data-sect-body>
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden">
             ${swToggle('set-margin-line', 'Show margin outline')}
             <div class="line-style-control">
               <div class="style-field">
@@ -189,35 +171,49 @@
                 </div>
               </div>
               <div class="style-field">
-                <span class="style-field-label">Separation</span>
-                ${numStep({ id: 'set-margin-line-dotting', value: '0', min: '0', step: '0.5', cls: 'num-step--narrow' })}
-              </div>
-              <div class="style-field">
-                <span class="style-field-label">Reset</span>
-                <button id="set-margin-line-style-reset" type="button" class="hdr-btn">Reset</button>
+                <span class="style-field-label">Margin Line Gap</span>
+                <div class="color-thickness-size slider-row">
+                  <input type="range" id="set-margin-line-dotting-slider" class="ctrl-slider" min="0" max="50" step="0.5" value="0" />
+                  <input type="number" id="set-margin-line-dotting" class="num-step-inp slider-val-inp" min="0" step="0.5" value="0" />
+                  <span class="ctrl-trail-hint">mm</span>
+                </div>
               </div>
             </div>
+            <div class="ctrl-grp">
+              <span class="ctrl-sub-lbl" id="set-margin-label">Margin (mm)</span>
+              <div class="slider-row">
+                <input type="range" id="set-margin-slider" class="ctrl-slider" min="0" max="50" step="0.5" value="10" />
+                <input type="number" id="set-margin" class="slider-val-inp" min="0" step="0.01" value="10" />
+                <span class="ctrl-trail-hint">mm</span>
+              </div>
+            </div>
+            ${swToggle('set-truncate', 'Crop art to margins')}
+            ${swToggle('set-crop-exports', 'Crop exports to margin')}
+            <div class="ctrl-row">
+              <label class="ctrl-lbl" for="set-outside-opacity">Outside opacity</label>
+              ${numStep({ id: 'set-outside-opacity', value: '', min: '0', max: '1', step: '0.05', cls: 'num-step--narrow' })}
+            </div>
+            <button id="set-margin-line-style-reset" type="button" class="hdr-btn">Reset margins to defaults</button>
           </div>
         </div>
 
-        <div class="sect">
-          <button type="button" class="sect-hdr is-open" data-sect-toggle aria-expanded="true">
+        <div class="sect sect--color-guides">
+          <button type="button" class="sect-hdr" data-sect-toggle aria-expanded="false">
             Guides &amp; Display
-            <span class="sect-arrow down"></span>
+            <span class="sect-arrow"></span>
           </button>
-          <div class="sect-body" data-sect-body>
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden">
             ${swToggle('set-show-guides', 'Show guides')}
             ${swToggle('set-snap-guides', 'Snap to guides')}
-            ${swToggle('set-show-document-dimensions', 'Show document dimensions')}
           </div>
         </div>
 
-        <div class="sect">
-          <button type="button" class="sect-hdr is-open" data-sect-toggle aria-expanded="true">
+        <div class="sect sect--color-bg">
+          <button type="button" class="sect-hdr" data-sect-toggle aria-expanded="false">
             Background &amp; Selection
-            <span class="sect-arrow down"></span>
+            <span class="sect-arrow"></span>
           </button>
-          <div class="sect-body" data-sect-body>
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden">
             <div class="ctrl-row">
               <label class="ctrl-lbl" for="bg-color-pill">Background</label>
               <span class="ctrl-row-trail">
@@ -248,12 +244,12 @@
           </div>
         </div>
 
-        <div class="sect">
-          <button type="button" class="sect-hdr is-open" data-sect-toggle aria-expanded="true">
+        <div class="sect sect--color-plotter">
+          <button type="button" class="sect-hdr" data-sect-toggle aria-expanded="false">
             Plotter Physics
-            <span class="sect-arrow down"></span>
+            <span class="sect-arrow"></span>
           </button>
-          <div class="sect-body" data-sect-body>
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden">
             <div class="ctrl-2col">
               <div class="ctrl-grp">
                 <span class="ctrl-sub-lbl">Draw mm/s</span>
@@ -267,12 +263,12 @@
           </div>
         </div>
 
-        <div class="sect">
-          <button type="button" class="sect-hdr is-open" data-sect-toggle aria-expanded="true">
-            Layer Bar Colors
-            <span class="sect-arrow down"></span>
+        <div class="sect sect--color-palette">
+          <button type="button" class="sect-hdr" data-sect-toggle aria-expanded="false">
+            UI Color Palette
+            <span class="sect-arrow"></span>
           </button>
-          <div class="sect-body" data-sect-body>
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden">
             <div class="palette-picker-wrap">
               <div id="layer-bar-palette-trigger" class="palette-picker-trigger" role="button" tabindex="0">
                 <span id="layer-bar-palette-name">Prism</span>
@@ -284,12 +280,12 @@
           </div>
         </div>
 
-        <div class="sect">
-          <button type="button" class="sect-hdr is-open" data-sect-toggle aria-expanded="true">
+        <div class="sect sect--color-history">
+          <button type="button" class="sect-hdr" data-sect-toggle aria-expanded="false">
             History &amp; Preferences
-            <span class="sect-arrow down"></span>
+            <span class="sect-arrow"></span>
           </button>
-          <div class="sect-body" data-sect-body>
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden">
             <div class="ctrl-row">
               <label class="ctrl-lbl" for="set-undo">Undo steps</label>
               ${numStep({ id: 'set-undo', value: '', min: '1', max: '200', cls: 'num-step--narrow' })}
@@ -380,9 +376,8 @@
       });
 
       // Collapsible sections — clicking the header toggles `.is-open` on the
-      // header (rotates the chevron via `.sect-arrow.down`) and shows/hides
-      // the matching `.sect-body`. Sections render open by default; this
-      // wiring just lets the user collapse the ones they don't need.
+      // header (rotates the chevron) and animates the matching `.sect-body`
+      // open/closed via a max-height transition.
       settingsPanelEl.querySelectorAll('[data-sect-toggle]').forEach((hdr) => {
         hdr.addEventListener('click', () => {
           const open = !hdr.classList.contains('is-open');
@@ -392,7 +387,20 @@
           if (arrow) arrow.classList.toggle('down', open);
           const body = hdr.nextElementSibling;
           if (body && body.matches('[data-sect-body]')) {
-            body.style.display = open ? '' : 'none';
+            if (open) {
+              body.style.overflow = 'hidden';
+              body.style.maxHeight = body.scrollHeight + 'px';
+              body.addEventListener('transitionend', () => {
+                body.style.maxHeight = '';
+                body.style.overflow = '';
+              }, { once: true });
+            } else {
+              body.style.maxHeight = body.scrollHeight + 'px';
+              body.style.overflow = 'hidden';
+              requestAnimationFrame(() => requestAnimationFrame(() => {
+                body.style.maxHeight = '0';
+              }));
+            }
           }
         });
       });

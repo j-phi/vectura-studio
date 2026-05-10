@@ -94,6 +94,7 @@
       const marginLineWeightUnit = getEl('set-margin-line-weight-unit', { silent: true });
       const selectionOutlineWidthUnit = getEl('set-selection-outline-width-unit', { silent: true });
       const margin = getEl('set-margin', { silent: true });
+      const marginSlider = getEl('set-margin-slider', { silent: true });
       const paperWidth = getEl('set-paper-width', { silent: true });
       const paperHeight = getEl('set-paper-height', { silent: true });
       const marginLineWeight = getEl('set-margin-line-weight', { silent: true });
@@ -108,7 +109,8 @@
       if (marginLineWeightUnit) marginLineWeightUnit.textContent = unitLabel;
       if (selectionOutlineWidthUnit) selectionOutlineWidthUnit.textContent = unitLabel;
 
-      this.syncDocumentLengthInput(margin, SETTINGS.margin, { minMm: 0, stepMm: 0.5 });
+      this.syncDocumentLengthInput(margin, SETTINGS.margin, { minMm: 0, stepMm: 0.01 });
+      this.syncDocumentLengthInput(marginSlider, SETTINGS.margin, { minMm: 0, maxMm: 50, stepMm: 0.5 });
       this.syncDocumentLengthInput(paperWidth, SETTINGS.paperWidth ?? 210, { minMm: 1, stepMm: 0.5 });
       this.syncDocumentLengthInput(paperHeight, SETTINGS.paperHeight ?? 297, { minMm: 1, stepMm: 0.5 });
       this.syncDocumentLengthInput(marginLineWeight, SETTINGS.marginLineWeight ?? 0.2, { minMm: 0.05, maxMm: 2, stepMm: 0.05 });

@@ -103,11 +103,32 @@
     if (showGuides) showGuides.checked = SETTINGS.showGuides !== false;
     if (snapGuides) snapGuides.checked = SETTINGS.snapGuides !== false;
     if (showDocumentDimensions) showDocumentDimensions.checked = SETTINGS.showDocumentDimensions === true;
+    const gridType = SETTINGS.gridType || 'none';
+    const showGrid = gridType !== 'none';
     const viewGridCheckmark = getEl('view-grid-checkmark');
-    if (viewGridCheckmark) viewGridCheckmark.style.visibility = SETTINGS.gridOverlay ? 'visible' : 'hidden';
+    if (viewGridCheckmark) viewGridCheckmark.style.visibility = showGrid ? 'visible' : 'hidden';
 
-    const gridOverlayMaster = getEl('set-grid-overlay-master');
-    if (gridOverlayMaster) gridOverlayMaster.checked = SETTINGS.gridOverlay === true;
+    // Grid type seg-ctrl active state
+    const gridTypeCtrl = getEl('grid-type-ctrl');
+    if (gridTypeCtrl) {
+      gridTypeCtrl.querySelectorAll?.('[data-grid-type]')?.forEach(btn => {
+        const isActive = btn.dataset.gridType === gridType;
+        btn.classList.toggle('active', isActive);
+        btn.setAttribute('aria-checked', String(isActive));
+      });
+    }
+
+    // Section visibility
+    const gridStyleSect = getEl('grid-style-sect');
+    if (gridStyleSect) gridStyleSect.style.display = showGrid ? '' : 'none';
+    const gridMajorSect = getEl('grid-major-sect');
+    if (gridMajorSect) gridMajorSect.style.display = showGrid ? '' : 'none';
+    const gridMinorSect = getEl('grid-minor-sect');
+    if (gridMinorSect) gridMinorSect.style.display = gridType === 'major-minor' ? '' : 'none';
+    const snapSensRow = getEl('grid-snap-sensitivity-row');
+    if (snapSensRow) snapSensRow.style.display = SETTINGS.gridSnapEnabled ? '' : 'none';
+
+    // Major grid controls
     const gridOpacitySlider = getEl('set-grid-opacity-slider');
     if (gridOpacitySlider) gridOpacitySlider.value = SETTINGS.gridOpacity ?? 0.2;
     const gridOpacity = getEl('set-grid-opacity');
@@ -123,8 +144,39 @@
       gridColorPill.style.background = color;
       gridColorPill.style.color = getContrastTextColor(color);
     }
+    const gridSizeSlider = getEl('set-grid-size-slider');
+    if (gridSizeSlider) gridSizeSlider.value = SETTINGS.gridSize ?? 10;
     const gridSize = getEl('set-grid-size');
     if (gridSize) gridSize.value = SETTINGS.gridSize ?? 10;
+
+    // Minor grid controls
+    const gridMinorOpacitySlider = getEl('set-grid-minor-opacity-slider');
+    if (gridMinorOpacitySlider) gridMinorOpacitySlider.value = SETTINGS.gridMinorOpacity ?? 0.08;
+    const gridMinorOpacity = getEl('set-grid-minor-opacity');
+    if (gridMinorOpacity) gridMinorOpacity.value = SETTINGS.gridMinorOpacity ?? 0.08;
+    const gridMinorColor = getEl('set-grid-minor-color');
+    if (gridMinorColor) gridMinorColor.value = SETTINGS.gridMinorColor ?? '#ffffff';
+    const gridMinorColorPill = getEl('set-grid-minor-color-pill');
+    if (gridMinorColorPill) {
+      const color = SETTINGS.gridMinorColor ?? '#ffffff';
+      gridMinorColorPill.textContent = color.toUpperCase();
+      gridMinorColorPill.style.background = color;
+      gridMinorColorPill.style.color = getContrastTextColor(color);
+    }
+    const gridMinorSizeSlider = getEl('set-grid-minor-size-slider');
+    if (gridMinorSizeSlider) gridMinorSizeSlider.value = SETTINGS.gridMinorSize ?? 5;
+    const gridMinorSize = getEl('set-grid-minor-size');
+    if (gridMinorSize) gridMinorSize.value = SETTINGS.gridMinorSize ?? 5;
+
+    // Snap controls
+    const gridSnapEnabled = getEl('set-grid-snap-enabled');
+    if (gridSnapEnabled) gridSnapEnabled.checked = SETTINGS.gridSnapEnabled === true;
+    const gridSnapToggle = gridSnapEnabled?.closest('[role="switch"]');
+    if (gridSnapToggle) gridSnapToggle.setAttribute('aria-checked', String(!!SETTINGS.gridSnapEnabled));
+    const gridSnapSensitivity = getEl('set-grid-snap-sensitivity');
+    if (gridSnapSensitivity) gridSnapSensitivity.value = SETTINGS.gridSnapSensitivity ?? 50;
+    const gridSnapSensitivityVal = getEl('set-grid-snap-sensitivity-val');
+    if (gridSnapSensitivityVal) gridSnapSensitivityVal.value = SETTINGS.gridSnapSensitivity ?? 50;
 
     if (selectionOutline) selectionOutline.checked = SETTINGS.selectionOutline !== false;
     if (selectionOutlineColorPill) {

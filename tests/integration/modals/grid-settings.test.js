@@ -2,12 +2,12 @@
  * Integration test for the Grid Settings panel (Phase 3 step 2 extraction).
  *
  * Boots the full Vectura runtime, then verifies:
- *   - the panel is dynamically mounted into <main> (markup no longer in
- *     index.html — see commit removing index.html:747-787)
+ *   - the panel is dynamically mounted into <main>
  *   - the View > Grid Settings button toggles the .open class
  *   - the close (✕) button removes the .open class
- *   - the six grid control inputs (overlay master, opacity slider/number,
- *     style, color, size) are wired and mutate SETTINGS / call render
+ *   - grid type seg-ctrl updates SETTINGS.gridType and controls section visibility
+ *   - opacity slider/number, style, color, and size inputs mutate SETTINGS
+ *   - snap toggle and sensitivity mutate SETTINGS
  */
 const { loadVecturaRuntime } = require('../../helpers/load-vectura-runtime');
 
@@ -37,17 +37,25 @@ describe('Grid Settings panel', () => {
     const panel = document.getElementById('grid-settings-panel');
     expect(panel).toBeTruthy();
     expect(panel.parentElement?.tagName).toBe('MAIN');
-    // Markup absent from index.html means it was injected at runtime — verify
-    // all six expected control IDs were materialized.
     for (const id of [
       'btn-close-grid-settings',
-      'set-grid-overlay-master',
+      'grid-type-ctrl',
       'set-grid-opacity-slider',
       'set-grid-opacity',
       'set-grid-style',
       'set-grid-color-pill',
       'set-grid-color',
+      'set-grid-size-slider',
       'set-grid-size',
+      'set-grid-minor-opacity-slider',
+      'set-grid-minor-opacity',
+      'set-grid-minor-color-pill',
+      'set-grid-minor-color',
+      'set-grid-minor-size-slider',
+      'set-grid-minor-size',
+      'set-grid-snap-enabled',
+      'set-grid-snap-sensitivity',
+      'set-grid-snap-sensitivity-val',
     ]) {
       expect(document.getElementById(id), `missing #${id}`).toBeTruthy();
     }
@@ -67,19 +75,17 @@ describe('Grid Settings panel', () => {
     expect(panel.classList.contains('open')).toBe(false);
   });
 
-  test('overlay master checkbox toggles SETTINGS.gridOverlay and triggers render', () => {
+  test('grid type buttons update SETTINGS.gridType', () => {
     const SETTINGS = window.Vectura.SETTINGS;
-    const master = document.getElementById('set-grid-overlay-master');
-    expect(master).toBeTruthy();
+    const standardBtn = document.querySelector('#grid-type-ctrl [data-grid-type="standard"]');
+    expect(standardBtn).toBeTruthy();
 
-    const before = !!SETTINGS.gridOverlay;
-    master.checked = !before;
-    master.dispatchEvent(new window.Event('change', { bubbles: true }));
-    expect(!!SETTINGS.gridOverlay).toBe(!before);
+    standardBtn.click();
+    expect(SETTINGS.gridType).toBe('standard');
 
-    // Restore
-    master.checked = before;
-    master.dispatchEvent(new window.Event('change', { bubbles: true }));
+    const noneBtn = document.querySelector('#grid-type-ctrl [data-grid-type="none"]');
+    noneBtn.click();
+    expect(SETTINGS.gridType).toBe('none');
   });
 
   test('grid opacity slider mutates SETTINGS.gridOpacity', () => {
@@ -98,16 +104,38 @@ describe('Grid Settings panel', () => {
     expect(SETTINGS.gridStyle).toBe('isometric-dot');
   });
 
-  test('grid size input clamps to 0.1 minimum and mutates SETTINGS.gridSize', () => {
+  test('grid size input clamps to 0.5 minimum and mutates SETTINGS.gridSize', () => {
     const SETTINGS = window.Vectura.SETTINGS;
     const sizeInput = document.getElementById('set-grid-size');
     sizeInput.value = '7.5';
     sizeInput.dispatchEvent(new window.Event('change', { bubbles: true }));
     expect(SETTINGS.gridSize).toBeCloseTo(7.5, 5);
 
-    // Clamp test: 0 is below 0.1 — handler should produce >= 0.1
+    // Clamp test: 0 is below minimum — handler should produce >= 0.5
     sizeInput.value = '0';
     sizeInput.dispatchEvent(new window.Event('change', { bubbles: true }));
-    expect(SETTINGS.gridSize).toBeGreaterThanOrEqual(0.1);
+    expect(SETTINGS.gridSize).toBeGreaterThanOrEqual(0.5);
+  });
+
+  test('snap toggle mutates SETTINGS.gridSnapEnabled', () => {
+    const SETTINGS = window.Vectura.SETTINGS;
+    const snapToggle = document.getElementById('set-grid-snap-enabled');
+    expect(snapToggle).toBeTruthy();
+
+    snapToggle.checked = true;
+    snapToggle.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(SETTINGS.gridSnapEnabled).toBe(true);
+
+    snapToggle.checked = false;
+    snapToggle.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(SETTINGS.gridSnapEnabled).toBe(false);
+  });
+
+  test('snap sensitivity slider mutates SETTINGS.gridSnapSensitivity', () => {
+    const SETTINGS = window.Vectura.SETTINGS;
+    const slider = document.getElementById('set-grid-snap-sensitivity');
+    slider.value = '75';
+    slider.dispatchEvent(new window.Event('input', { bubbles: true }));
+    expect(SETTINGS.gridSnapSensitivity).toBe(75);
   });
 });

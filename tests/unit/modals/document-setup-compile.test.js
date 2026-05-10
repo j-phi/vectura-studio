@@ -136,7 +136,7 @@ describe('document-setup panel compile gate', () => {
     expect(DocumentSetup.PANEL_HTML).toContain('Document Setup');
     expect(DocumentSetup.PANEL_HTML).toMatch(/data-sect-toggle[^>]*>\s*Paper\s/);
     expect(DocumentSetup.PANEL_HTML).toContain('Plotter Physics');
-    expect(DocumentSetup.PANEL_HTML).toContain('Layer Bar Colors');
+    expect(DocumentSetup.PANEL_HTML).toContain('UI Color Palette');
     expect(DocumentSetup.PANEL_HTML).toContain('<option value="metric">');
     expect(DocumentSetup.PANEL_HTML).toContain('<option value="imperial">');
   });
@@ -147,7 +147,7 @@ describe('document-setup panel compile gate', () => {
     // skin's components.css paints against — losing one regresses the
     // visual treatment back to inconsistent legacy styling.
     const html = DocumentSetup.PANEL_HTML;
-    expect(html).toContain('class="sect"');
+    expect(html).toContain('class="sect sect--color-');
     expect(html).toContain('class="sect-hdr is-open"');
     expect(html).toContain('class="sect-body"');
     expect(html).toContain('class="seg-ctrl"');
@@ -158,26 +158,26 @@ describe('document-setup panel compile gate', () => {
     expect(html).toContain('class="pane-title"');
   });
 
-  it('section headers collapse when clicked (toggle .is-open + hide body)', () => {
-    // Open by default — the bindHandlers() wiring then lets users collapse
-    // sections they don't need. Without this, sect-hdr becomes a dead button.
+  it('section headers collapse when clicked (toggle .is-open + aria-expanded)', () => {
+    // The .is-open class and aria-expanded are the accessibility contract.
+    // Visibility is driven by a max-height animation in JS/CSS rather than
+    // display:none, so this test checks the class/aria state only.
     const fakeUi = {};
     DocumentSetup.bindHandlers.call(fakeUi);
     const panel = dom.window.document.getElementById('settings-panel');
     const hdr = panel.querySelector('[data-sect-toggle]');
     const body = hdr.nextElementSibling;
     expect(hdr.classList.contains('is-open')).toBe(true);
-    expect(body.style.display).not.toBe('none');
+    expect(hdr.getAttribute('aria-expanded')).toBe('true');
 
     hdr.click();
     expect(hdr.classList.contains('is-open')).toBe(false);
     expect(hdr.getAttribute('aria-expanded')).toBe('false');
-    expect(body.style.display).toBe('none');
+    expect(body.style.overflow).toBe('hidden');
 
     hdr.click();
     expect(hdr.classList.contains('is-open')).toBe(true);
     expect(hdr.getAttribute('aria-expanded')).toBe('true');
-    expect(body.style.display).toBe('');
   });
 
   it('num-step ± buttons mutate the input AND dispatch change so legacy handlers fire', () => {
@@ -185,20 +185,20 @@ describe('document-setup panel compile gate', () => {
     // `change` events on the input. The new ± buttons must dispatch one,
     // otherwise clicking ± looks visually correct but silently no-ops.
     const panel = dom.window.document.getElementById('settings-panel');
-    const margin = panel.querySelector('#set-margin');
-    margin.value = '10';
-    const wrap = margin.closest('[data-num-step]');
+    const undo = panel.querySelector('#set-undo');
+    undo.value = '10';
+    const wrap = undo.closest('[data-num-step]');
     const inc = wrap.querySelector('[data-num-step-inc]');
     const dec = wrap.querySelector('[data-num-step-dec]');
 
     const changes = [];
-    margin.addEventListener('change', () => changes.push(margin.value));
+    undo.addEventListener('change', () => changes.push(undo.value));
 
     inc.click();
-    expect(margin.value).toBe('11');
+    expect(undo.value).toBe('11');
     dec.click();
     dec.click();
-    expect(margin.value).toBe('9');
+    expect(undo.value).toBe('9');
     expect(changes).toEqual(['11', '10', '9']);
   });
 

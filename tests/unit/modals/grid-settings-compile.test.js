@@ -67,7 +67,7 @@ describe('grid-settings panel compile gate', () => {
       .toThrow(/GridSettings\.bindHandlers invoked before GridSettings\.bind/);
   });
 
-  it('after bind(), mount() injects the panel with all six expected control IDs', () => {
+  it('after bind(), mount() injects the panel with all expected control IDs', () => {
     GridSettings.bind({
       getEl: (id) => dom.window.document.getElementById(id),
       SETTINGS: {},
@@ -80,13 +80,23 @@ describe('grid-settings panel compile gate', () => {
     const expectedIds = [
       'grid-settings-panel',
       'btn-close-grid-settings',
-      'set-grid-overlay-master',
+      'grid-type-ctrl',
       'set-grid-opacity-slider',
       'set-grid-opacity',
       'set-grid-style',
       'set-grid-color-pill',
       'set-grid-color',
+      'set-grid-size-slider',
       'set-grid-size',
+      'set-grid-minor-opacity-slider',
+      'set-grid-minor-opacity',
+      'set-grid-minor-color-pill',
+      'set-grid-minor-color',
+      'set-grid-minor-size-slider',
+      'set-grid-minor-size',
+      'set-grid-snap-enabled',
+      'set-grid-snap-sensitivity',
+      'set-grid-snap-sensitivity-val',
     ];
     for (const id of expectedIds) {
       expect(dom.window.document.getElementById(id), `missing #${id}`).toBeTruthy();
@@ -102,12 +112,16 @@ describe('grid-settings panel compile gate', () => {
     expect(dom.window.document.querySelectorAll('#grid-settings-panel').length).toBe(1);
   });
 
-  it('PANEL_HTML preserves the original markup (style options + color/size labels)', () => {
+  it('PANEL_HTML contains all expected style options and grid sections', () => {
     expect(GridSettings.PANEL_HTML).toContain('<option value="cartesian">');
     expect(GridSettings.PANEL_HTML).toContain('<option value="isometric">');
     expect(GridSettings.PANEL_HTML).toContain('<option value="cartesian-dot">');
     expect(GridSettings.PANEL_HTML).toContain('<option value="isometric-dot">');
-    expect(GridSettings.PANEL_HTML).toContain('Show Grid');
-    expect(GridSettings.PANEL_HTML).toContain('Size (mm)');
+    expect(GridSettings.PANEL_HTML).toContain('data-grid-type="none"');
+    expect(GridSettings.PANEL_HTML).toContain('data-grid-type="standard"');
+    expect(GridSettings.PANEL_HTML).toContain('data-grid-type="major-minor"');
+    expect(GridSettings.PANEL_HTML).toContain('Major Grid Lines');
+    expect(GridSettings.PANEL_HTML).toContain('Minor Grid Lines');
+    expect(GridSettings.PANEL_HTML).toContain('Snap to Grid');
   });
 });

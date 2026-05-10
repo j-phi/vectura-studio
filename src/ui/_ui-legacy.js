@@ -6036,6 +6036,7 @@
       const machineProfile = getEl('machine-profile');
       const setDocumentUnits = getEl('set-document-units', { silent: true });
       const setMargin = getEl('set-margin');
+      const setMarginSlider = getEl('set-margin-slider', { silent: true });
       const setTruncate = getEl('set-truncate');
       const setCropExports = getEl('set-crop-exports');
       const setOutsideOpacity = getEl('set-outside-opacity');
@@ -6045,6 +6046,7 @@
       const setMarginLineWeightSlider = getEl('set-margin-line-weight-slider');
       const setMarginLineColor = getEl('set-margin-line-color');
       const setMarginLineDotting = getEl('set-margin-line-dotting');
+      const setMarginLineDottingSlider = getEl('set-margin-line-dotting-slider', { silent: true });
       const setMarginLineStyleReset = getEl('set-margin-line-style-reset');
       const setShowGuides = getEl('set-show-guides');
       const setSnapGuides = getEl('set-snap-guides');
@@ -6287,13 +6289,20 @@
         };
       }
       if (setMargin) {
-        setMargin.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          const next = Math.max(0, this.parseDocumentNumber(e.target.value, { fallbackMm: SETTINGS.margin }));
+        const applyMargin = (raw, options = {}) => {
+          const { commit = false } = options;
+          if (commit && this.app.pushHistory) this.app.pushHistory();
+          const next = Math.max(0, this.parseDocumentNumber(raw, { fallbackMm: SETTINGS.margin }));
           SETTINGS.margin = Number.isFinite(next) ? next : SETTINGS.margin;
           this.refreshDocumentUnitsUi();
           this.app.regen();
         };
+        setMargin.oninput = (e) => applyMargin(e.target.value);
+        setMargin.onchange = (e) => applyMargin(e.target.value, { commit: true });
+        if (setMarginSlider) {
+          setMarginSlider.oninput = (e) => applyMargin(e.target.value);
+          setMarginSlider.onchange = (e) => applyMargin(e.target.value, { commit: true });
+        }
       }
       if (setTruncate) {
         setTruncate.onchange = (e) => {
@@ -6355,17 +6364,34 @@
         };
       }
       if (setMarginLineDotting) {
-        setMarginLineDotting.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          const next = Math.max(0, parseFloat(e.target.value));
+        const applyMarginLineDotting = (raw, options = {}) => {
+          const { commit = false } = options;
+          if (commit && this.app.pushHistory) this.app.pushHistory();
+          const next = Math.max(0, parseFloat(raw));
           SETTINGS.marginLineDotting = Number.isFinite(next) ? next : 0;
-          e.target.value = SETTINGS.marginLineDotting;
+          if (setMarginLineDotting) setMarginLineDotting.value = SETTINGS.marginLineDotting;
+          if (setMarginLineDottingSlider) setMarginLineDottingSlider.value = SETTINGS.marginLineDotting;
           this.app.render();
         };
+        setMarginLineDotting.oninput = (e) => applyMarginLineDotting(e.target.value);
+        setMarginLineDotting.onchange = (e) => applyMarginLineDotting(e.target.value, { commit: true });
+        if (setMarginLineDottingSlider) {
+          setMarginLineDottingSlider.oninput = (e) => applyMarginLineDotting(e.target.value);
+          setMarginLineDottingSlider.onchange = (e) => applyMarginLineDotting(e.target.value, { commit: true });
+        }
       }
       if (setMarginLineStyleReset) {
         setMarginLineStyleReset.onclick = () => {
           if (this.app.pushHistory) this.app.pushHistory();
+
+          // Margin outline visibility
+          SETTINGS.marginLineVisible = false;
+          if (setMarginLine) {
+            setMarginLine.checked = false;
+            setMarginLine.closest('[role="switch"]')?.setAttribute('aria-checked', 'false');
+          }
+
+          // Margin outline style
           SETTINGS.marginLineColor = '#52525b';
           SETTINGS.marginLineWeight = 0.2;
           SETTINGS.marginLineDotting = 0;
@@ -6376,8 +6402,29 @@
             setMarginLineColorPill.style.color = getContrastTextColor('#52525b');
           }
           if (setMarginLineDotting) setMarginLineDotting.value = '0';
+          if (setMarginLineDottingSlider) setMarginLineDottingSlider.value = '0';
+
+          // Margin value
+          SETTINGS.margin = 20;
+
+          // Crop toggles
+          SETTINGS.truncate = true;
+          if (setTruncate) {
+            setTruncate.checked = true;
+            setTruncate.closest('[role="switch"]')?.setAttribute('aria-checked', 'true');
+          }
+          SETTINGS.cropExports = true;
+          if (setCropExports) {
+            setCropExports.checked = true;
+            setCropExports.closest('[role="switch"]')?.setAttribute('aria-checked', 'true');
+          }
+
+          // Outside opacity
+          SETTINGS.outsideOpacity = 0.5;
+          if (setOutsideOpacity) setOutsideOpacity.value = '0.5';
+
           this.refreshDocumentUnitsUi();
-          this.app.render();
+          this.app.regen();
         };
       }
       if (setShowGuides) {
@@ -6403,7 +6450,7 @@
       const btnViewGridToggle = getEl('btn-view-grid-toggle');
       if (btnViewGridToggle) {
         btnViewGridToggle.onclick = () => {
-          SETTINGS.gridOverlay = !SETTINGS.gridOverlay;
+          SETTINGS.gridType = (SETTINGS.gridType && SETTINGS.gridType !== 'none') ? 'none' : 'standard';
           if (this.app.pushHistory) this.app.pushHistory();
           this.initSettingsValues();
           this.app.render();
@@ -6637,6 +6684,16 @@
 
       // ── Layer bar color palette picker ──────────────────────────────
       {
+        const _updateSectBars = (p) => {
+          const panel = document.getElementById('settings-panel');
+          if (!panel) return;
+          const preview = p?.preview || [];
+          if (!preview.length) return;
+          panel.querySelectorAll('[class*="sect--color-"]').forEach((sect, i) => {
+            sect.style.setProperty('--sect-bar', preview[i % preview.length]);
+          });
+        };
+
         const _updateLBPTrigger = () => {
           const pid = SETTINGS.layerBarPaletteId || 'prism';
           const palettes = window.Vectura.LAYER_PALETTES || [];
@@ -6652,6 +6709,7 @@
               previewEl.appendChild(s);
             });
           }
+          _updateSectBars(p);
         };
 
         const _buildLBPMenu = () => {

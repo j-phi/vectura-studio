@@ -256,11 +256,16 @@
         selectionOutline: SETTINGS.selectionOutline,
         selectionOutlineColor: SETTINGS.selectionOutlineColor,
         selectionOutlineWidth: SETTINGS.selectionOutlineWidth,
-        gridOverlay: SETTINGS.gridOverlay,
+        gridType: SETTINGS.gridType,
         gridOpacity: SETTINGS.gridOpacity,
         gridStyle: SETTINGS.gridStyle,
         gridColor: SETTINGS.gridColor,
         gridSize: SETTINGS.gridSize,
+        gridMinorOpacity: SETTINGS.gridMinorOpacity,
+        gridMinorColor: SETTINGS.gridMinorColor,
+        gridMinorSize: SETTINGS.gridMinorSize,
+        gridSnapEnabled: SETTINGS.gridSnapEnabled === true,
+        gridSnapSensitivity: SETTINGS.gridSnapSensitivity,
         undoSteps: SETTINGS.undoSteps,
         uiSections: SETTINGS.uiSections ? clone(SETTINGS.uiSections) : null,
         aboutVisible: SETTINGS.aboutVisible !== false,
@@ -327,11 +332,16 @@
       SETTINGS.selectionOutline = snapshot.selectionOutline ?? SETTINGS.selectionOutline;
       SETTINGS.selectionOutlineColor = snapshot.selectionOutlineColor ?? SETTINGS.selectionOutlineColor;
       SETTINGS.selectionOutlineWidth = snapshot.selectionOutlineWidth ?? SETTINGS.selectionOutlineWidth;
-      SETTINGS.gridOverlay = snapshot.gridOverlay ?? SETTINGS.gridOverlay;
+      SETTINGS.gridType = snapshot.gridType ?? (snapshot.gridOverlay ? 'standard' : SETTINGS.gridType);
       SETTINGS.gridOpacity = snapshot.gridOpacity ?? SETTINGS.gridOpacity;
       SETTINGS.gridStyle = snapshot.gridStyle ?? SETTINGS.gridStyle;
       SETTINGS.gridColor = snapshot.gridColor ?? SETTINGS.gridColor;
       SETTINGS.gridSize = snapshot.gridSize ?? SETTINGS.gridSize;
+      SETTINGS.gridMinorOpacity = snapshot.gridMinorOpacity ?? SETTINGS.gridMinorOpacity;
+      SETTINGS.gridMinorColor = snapshot.gridMinorColor ?? SETTINGS.gridMinorColor;
+      SETTINGS.gridMinorSize = snapshot.gridMinorSize ?? SETTINGS.gridMinorSize;
+      SETTINGS.gridSnapEnabled = snapshot.gridSnapEnabled === true;
+      SETTINGS.gridSnapSensitivity = snapshot.gridSnapSensitivity ?? SETTINGS.gridSnapSensitivity;
       SETTINGS.undoSteps = snapshot.undoSteps ?? SETTINGS.undoSteps;
       if (snapshot.uiSections && typeof snapshot.uiSections === 'object') {
         SETTINGS.uiSections = clone(snapshot.uiSections);

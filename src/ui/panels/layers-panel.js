@@ -379,15 +379,29 @@
 
       const bindCardDrag = (el, layer) => {
         el.draggable = true;
+        let _maskKeyHandler = null;
+
+        const _armMaskDrop = () => {
+          if (_lvlDRAG.maskDrop) return;
+          _lvlDRAG.maskDrop = true;
+          const maskBtn = el.querySelector('.mask-btn');
+          if (maskBtn) {
+            maskBtn.classList.remove('mask-drop-armed');
+            void maskBtn.offsetWidth;
+            maskBtn.classList.add('mask-drop-armed');
+          }
+        };
+
         el.addEventListener('dragstart', (e) => {
           const isSingleSel = renderer?.selectedLayerIds?.size === 1 && renderer.selectedLayerIds.has(layer.id);
-          const armMask = isSingleSel && Boolean(layer.maskCapabilities?.canSource) && Boolean(e.metaKey || e.ctrlKey);
+          const canArm = isSingleSel && Boolean(layer.maskCapabilities?.canSource);
+          const armMask = canArm && Boolean(e.metaKey || e.ctrlKey);
           _lvlDRAG.id = layer.id;
           _lvlDRAG.maskDrop = armMask;
-          e.dataTransfer.effectAllowed = armMask ? 'link' : 'move';
+          e.dataTransfer.effectAllowed = 'all';
           requestAnimationFrame(() => {
             el.classList.add('dragging');
-            if (armMask) {
+            if (_lvlDRAG.maskDrop) {
               const maskBtn = el.querySelector('.mask-btn');
               if (maskBtn) {
                 maskBtn.classList.remove('mask-drop-armed');
@@ -396,11 +410,21 @@
               }
             }
           });
+          if (canArm) {
+            _maskKeyHandler = (ke) => {
+              if ((ke.key === 'Meta' || ke.key === 'Control') && _lvlDRAG.id === layer.id) _armMaskDrop();
+            };
+            document.addEventListener('keydown', _maskKeyHandler);
+          }
         });
+
         el.addEventListener('dragend', () => {
           _lvlDRAG.id = null;
           _lvlDRAG.maskDrop = false;
           el.classList.remove('dragging');
+          const maskBtn = el.querySelector('.mask-btn');
+          if (maskBtn) maskBtn.classList.remove('mask-drop-armed');
+          if (_maskKeyHandler) { document.removeEventListener('keydown', _maskKeyHandler); _maskKeyHandler = null; }
           _lvlClrAllDrop();
           setHint(null);
         });
@@ -680,7 +704,7 @@
           } else {
             last.classList.add('lvl-drop-after');
           }
-          e.dataTransfer.dropEffect = 'move';
+          e.dataTransfer.dropEffect = list._lvlDrag?.maskDrop ? 'link' : 'move';
         });
 
         list.addEventListener('drop', (e) => {
@@ -718,7 +742,7 @@
           if (!first) return;
           list._lvlClrRef();
           first.classList.add('lvl-drop-before');
-          e.dataTransfer.dropEffect = 'move';
+          e.dataTransfer.dropEffect = list._lvlDrag?.maskDrop ? 'link' : 'move';
         });
         searchBar.addEventListener('dragleave', (e) => {
           if (!searchBar.contains(e.relatedTarget)) list._lvlClrRef?.();
@@ -752,7 +776,7 @@
           const last = items[items.length - 1];
           list._lvlClrRef();
           last.classList.add('lvl-drop-after');
-          e.dataTransfer.dropEffect = 'move';
+          e.dataTransfer.dropEffect = list._lvlDrag?.maskDrop ? 'link' : 'move';
         });
         statusBar.addEventListener('dragleave', (e) => {
           if (!statusBar.contains(e.relatedTarget)) list._lvlClrRef?.();

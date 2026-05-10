@@ -862,7 +862,7 @@ input[type='color']::-webkit-color-swatch {
 }
 .lvl-ab:hover { color: var(--color-text); background: rgba(255,255,255,.08) }
 .lvl-ab.del:hover { color: #f87171 }
-.lvl-ab.mask-btn { color: rgba(103,232,249,.5) }
+.lvl-ab.mask-btn { color: rgba(255,255,255,.35) }
 .lvl-ab.mask-btn:hover { color: var(--lvl-cyan); background: rgba(103,232,249,.1) }
 .lvl-ab.mask-btn.is-src { color: var(--lvl-cyan) }
 .lvl-ab.mask-btn.is-src:hover { color: rgb(var(--vectura-danger-rgb)); background: rgba(248,113,113,.1) }
@@ -3497,6 +3497,25 @@ input[type='color']::-webkit-color-swatch {
   box-shadow: 0 0 0 3px var(--ui-accent-2, rgba(78, 158, 225, 0.12));
 }
 
+/* Collapse/expand animation for Document Setup sections */
+.settings-panel [data-sect-body] {
+  transition: max-height 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Per-section accent bar colors in Document Setup.
+   JS drives --sect-bar from the active UI Color Palette via _updateLBPTrigger;
+   these are the Prism-palette fallbacks shown before JS runs. */
+.sect--color-theme   { --sect-bar: #A78BFA; }
+.sect--color-paper   { --sect-bar: #60A5FA; }
+.sect--color-margins { --sect-bar: #34D399; }
+.sect--color-guides  { --sect-bar: #F59E0B; }
+.sect--color-bg      { --sect-bar: #EC4899; }
+.sect--color-plotter { --sect-bar: #FB923C; }
+.sect--color-palette { --sect-bar: #A78BFA; }
+.sect--color-history { --sect-bar: #60A5FA; }
+.sect[class*="sect--color-"] .sect-hdr::before { background: var(--sect-bar, var(--ui-accent)); opacity: 0.8; }
+.sect[class*="sect--color-"] .sect-hdr:hover::before { opacity: 1; }
+
 /* Close affordance — circular outline button with a left-facing chevron,
    visually matching the .pane-toggle handles on the left/right panes but
    anchored inside the `.pane-hdr` flex row instead of free-floating midway
@@ -3872,6 +3891,18 @@ input[type='color']::-webkit-color-swatch {
   border-radius: var(--radius-sm, 4px);
 }
 #settings-panel .theme-family-toggle { overflow: hidden; }
+
+#grid-settings-panel input[type='number'],
+#grid-settings-panel input[type='text'],
+#grid-settings-panel select {
+  border-radius: var(--radius-sm, 4px);
+}
+#grid-settings-panel .color-thickness-pill {
+  border-radius: 9999px;
+  font-size: var(--font-size-xs, 10px);
+  font-family: var(--font-mono, monospace);
+  font-variant-numeric: tabular-nums;
+}
 
 @media (max-width: 1024px) {
   .tool-bar {
