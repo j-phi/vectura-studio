@@ -596,6 +596,9 @@
         || this.engine.activeLayerId
       );
       this.renderer.setSelection(selectedIds.length ? selectedIds : (selectedId ? [selectedId] : []), selectedId);
+      this.renderer.directSelection = null;
+      this.renderer.directDrag = null;
+      this.renderer.directAuxSelections = [];
       this.engine.activeLayerId = selectedId;
       this.ui.initSettingsValues();
       if (this.ui.setActiveTool) this.ui.setActiveTool(SETTINGS.activeTool || 'select');
@@ -613,7 +616,6 @@
         refreshUi: true,
         render: false,
       });
-      this.renderer.center();
       this.ui.renderLayers();
       this.ui.renderPens();
       this.ui.buildControls();
