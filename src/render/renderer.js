@@ -848,8 +848,7 @@
     }
 
     wantsPan(e, modifiers = this.getModifierState(e)) {
-      const shiftPan = modifiers.shift && !(this.activeTool === 'pen' && this.penMode === 'draw');
-      return this.activeTool === 'hand' || shiftPan || modifiers.pan || e.button === 1;
+      return this.activeTool === 'hand' || modifiers.pan || e.button === 1;
     }
 
     isTouchPointer(e) {
