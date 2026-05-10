@@ -3482,8 +3482,9 @@
         } else if (drag.type === 'resize') {
           const dx = world.x - drag.startWorld.x;
           const dy = world.y - drag.startWorld.y;
-          const hdx = drag.startWorld.x - drag.startCenterX;
-          const hdy = drag.startWorld.y - drag.startCenterY;
+          const center = drag.guide.center;
+          const hdx = drag.startWorld.x - center.x;
+          const hdy = drag.startWorld.y - center.y;
           const hlen = Math.hypot(hdx, hdy);
           const delta = hlen > 0 ? (dx * hdx + dy * hdy) / hlen : Math.hypot(dx, dy) * (dx >= 0 ? 1 : -1);
           mirror.radius = Math.max(1, drag.startRadius + delta);
