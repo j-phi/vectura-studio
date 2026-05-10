@@ -112,7 +112,7 @@
       };
 
       // ── V8 drag (HTML5) ─────────────────────────────────────────
-      const _lvlDRAG = { id: null };
+      const _lvlDRAG = { id: null, maskDrop: false };
       const _lvlClrDrop = (el) =>
         el.classList.remove('lvl-drop-before', 'lvl-drop-after', 'lvl-drop-into', 'lvl-drop-mask', 'lvl-drop-exit');
       const _lvlClrAllDrop = () =>
@@ -147,7 +147,22 @@
         const nextOrder = currentOrder.filter((id) => id !== srcId);
         const newTgtIdx = nextOrder.indexOf(tgtId);
         if (newTgtIdx === -1) return;
-        const insertAt = pos === 'before' ? newTgtIdx + 1 : newTgtIdx;
+        let insertAt = pos === 'before' ? newTgtIdx + 1 : newTgtIdx;
+        // When inserting 'before' a group/modifier, jump past all its descendants in
+        // the reversed order. Without this, normalizeGroupOrder moves the group back
+        // to just after its last child, which silently undoes the reorder.
+        if (pos === 'before' && (tgt.isGroup || _lvlIsMaskSrc(tgtId))) {
+          const descIds = [];
+          const q = [tgtId];
+          while (q.length) {
+            const pid = q.shift();
+            engine.layers.filter((l) => l.parentId === pid).forEach((l) => { descIds.push(l.id); q.push(l.id); });
+          }
+          if (descIds.length) {
+            const maxDescIdx = Math.max(...descIds.map((id) => nextOrder.indexOf(id)).filter((i) => i >= 0));
+            if (maxDescIdx >= insertAt) insertAt = maxDescIdx + 1;
+          }
+        }
         nextOrder.splice(insertAt, 0, srcId);
         const nextEngineOrder = nextOrder.slice().reverse();
         const map = new Map(engine.layers.map((l) => [l.id, l]));
@@ -172,6 +187,21 @@
         engine.layers = nextEngineOrder.map((id) => map.get(id)).filter(Boolean);
         this.normalizeGroupOrder?.();
         this.renderLayers(); this.app.render();
+      };
+
+      const _lvlDoMaskCreate = (draggedId, targetId) => {
+        if (!draggedId || !targetId || draggedId === targetId) return;
+        const src = engine.getLayerById?.(draggedId);
+        const tgt = engine.getLayerById?.(targetId);
+        if (!src || !tgt) return;
+        if (!src.maskCapabilities?.canSource) return;
+        if (this.app.pushHistory) this.app.pushHistory();
+        src.mask = src.mask || {};
+        src.mask.enabled = true;
+        this.assignLayersToParent(src.id, [tgt], { captureHistory: false });
+        engine.computeAllDisplayGeometry?.();
+        renderer?.setSelection?.([src.id], src.id);
+        this.renderLayers(); this.app.render?.();
       };
 
       const _bindCardTouchDrag = (el, layer) => {
@@ -350,12 +380,26 @@
       const bindCardDrag = (el, layer) => {
         el.draggable = true;
         el.addEventListener('dragstart', (e) => {
+          const isSingleSel = renderer?.selectedLayerIds?.size === 1 && renderer.selectedLayerIds.has(layer.id);
+          const armMask = isSingleSel && Boolean(layer.maskCapabilities?.canSource) && Boolean(e.metaKey || e.ctrlKey);
           _lvlDRAG.id = layer.id;
-          e.dataTransfer.effectAllowed = 'move';
-          requestAnimationFrame(() => el.classList.add('dragging'));
+          _lvlDRAG.maskDrop = armMask;
+          e.dataTransfer.effectAllowed = armMask ? 'link' : 'move';
+          requestAnimationFrame(() => {
+            el.classList.add('dragging');
+            if (armMask) {
+              const maskBtn = el.querySelector('.mask-btn');
+              if (maskBtn) {
+                maskBtn.classList.remove('mask-drop-armed');
+                void maskBtn.offsetWidth;
+                maskBtn.classList.add('mask-drop-armed');
+              }
+            }
+          });
         });
         el.addEventListener('dragend', () => {
           _lvlDRAG.id = null;
+          _lvlDRAG.maskDrop = false;
           el.classList.remove('dragging');
           _lvlClrAllDrop();
           setHint(null);
@@ -367,14 +411,25 @@
         el.addEventListener('dragover', (e) => {
           if (!_lvlDRAG.id || _lvlDRAG.id === layer.id) return;
           e.preventDefault(); e.stopPropagation();
-          const r = el.getBoundingClientRect(), pct = (e.clientY - r.top) / r.height;
           _lvlClrDrop(el);
+          if (_lvlDRAG.maskDrop) {
+            el.classList.add('lvl-drop-mask');
+            e.dataTransfer.dropEffect = 'link';
+            setHint('Make clipping mask');
+            return;
+          }
+          const r = el.getBoundingClientRect(), pct = (e.clientY - r.top) / r.height;
           el.classList.add(pct < 0.5 ? 'lvl-drop-before' : 'lvl-drop-after');
           e.dataTransfer.dropEffect = 'move';
         });
-        el.addEventListener('dragleave', (e) => { if (!el.contains(e.relatedTarget)) _lvlClrDrop(el); });
+        el.addEventListener('dragleave', (e) => { if (!el.contains(e.relatedTarget)) { _lvlClrDrop(el); if (_lvlDRAG.maskDrop) setHint(null); } });
         el.addEventListener('drop', (e) => {
           e.preventDefault();
+          if (_lvlDRAG.maskDrop && _lvlDRAG.id && _lvlDRAG.id !== layer.id) {
+            _lvlClrDrop(el); setHint(null);
+            _lvlDoMaskCreate(_lvlDRAG.id, layer.id);
+            return;
+          }
           const pos = el.classList.contains('lvl-drop-before') ? 'before' : 'after';
           _lvlClrDrop(el); setHint(null);
           if (_lvlDRAG.id && _lvlDRAG.id !== layer.id) _lvlDoMove(_lvlDRAG.id, layer.id, pos);
@@ -385,8 +440,14 @@
         el.addEventListener('dragover', (e) => {
           if (!_lvlDRAG.id || _lvlDRAG.id === layer.id) return;
           e.preventDefault(); e.stopPropagation();
-          const r = el.getBoundingClientRect(), pct = (e.clientY - r.top) / r.height;
           _lvlClrDrop(el);
+          if (_lvlDRAG.maskDrop) {
+            el.classList.add('lvl-drop-mask');
+            e.dataTransfer.dropEffect = 'link';
+            setHint('Make clipping mask');
+            return;
+          }
+          const r = el.getBoundingClientRect(), pct = (e.clientY - r.top) / r.height;
           const zone = pct < 0.35 ? 'lvl-drop-before' : pct > 0.65 ? 'lvl-drop-after' : 'lvl-drop-into';
           el.classList.add(zone);
           e.dataTransfer.dropEffect = 'move';
@@ -401,6 +462,11 @@
         });
         el.addEventListener('drop', (e) => {
           e.preventDefault();
+          if (_lvlDRAG.maskDrop && _lvlDRAG.id && _lvlDRAG.id !== layer.id) {
+            _lvlClrDrop(el); setHint(null);
+            _lvlDoMaskCreate(_lvlDRAG.id, layer.id);
+            return;
+          }
           const zone = el.classList.contains('lvl-drop-before') ? 'before'
                      : el.classList.contains('lvl-drop-into') ? 'into' : 'after';
           _lvlClrDrop(el); setHint(null);
@@ -421,8 +487,14 @@
         el.addEventListener('dragover', (e) => {
           if (!_lvlDRAG.id || _lvlDRAG.id === srcLayer.id) return;
           e.preventDefault(); e.stopPropagation();
-          const r = el.getBoundingClientRect(), pct = (e.clientY - r.top) / r.height;
           _lvlClrDrop(el);
+          if (_lvlDRAG.maskDrop) {
+            el.classList.add('lvl-drop-mask');
+            e.dataTransfer.dropEffect = 'link';
+            setHint('Make clipping mask');
+            return;
+          }
+          const r = el.getBoundingClientRect(), pct = (e.clientY - r.top) / r.height;
           const zone = pct < 0.2 ? 'lvl-drop-before' : pct > 0.8 ? 'lvl-drop-after' : 'lvl-drop-mask';
           el.classList.add(zone);
           e.dataTransfer.dropEffect = 'move';
@@ -436,6 +508,11 @@
         });
         el.addEventListener('drop', (e) => {
           e.preventDefault();
+          if (_lvlDRAG.maskDrop && _lvlDRAG.id && _lvlDRAG.id !== srcLayer.id) {
+            _lvlClrDrop(el); setHint(null);
+            _lvlDoMaskCreate(_lvlDRAG.id, srcLayer.id);
+            return;
+          }
           const isMask = el.classList.contains('lvl-drop-mask');
           const pos = el.classList.contains('lvl-drop-before') ? 'before' : isMask ? null : 'after';
           _lvlClrDrop(el); setHint(null);
@@ -463,8 +540,14 @@
         el.addEventListener('dragover', (e) => {
           if (!_lvlDRAG.id || _lvlDRAG.id === layer.id) return;
           e.preventDefault(); e.stopPropagation();
-          const r = el.getBoundingClientRect(), pct = (e.clientY - r.top) / r.height;
           _lvlClrDrop(el);
+          if (_lvlDRAG.maskDrop) {
+            el.classList.add('lvl-drop-mask');
+            e.dataTransfer.dropEffect = 'link';
+            setHint('Make clipping mask');
+            return;
+          }
+          const r = el.getBoundingClientRect(), pct = (e.clientY - r.top) / r.height;
           el.classList.add(pct < 0.5 ? 'lvl-drop-before' : 'lvl-drop-after');
           e.dataTransfer.dropEffect = 'move';
           setHint('Drop inside clipping mask');
@@ -472,6 +555,11 @@
         el.addEventListener('dragleave', (e) => { if (!el.contains(e.relatedTarget)) { _lvlClrDrop(el); setHint(null); } });
         el.addEventListener('drop', (e) => {
           e.preventDefault();
+          if (_lvlDRAG.maskDrop && _lvlDRAG.id && _lvlDRAG.id !== layer.id) {
+            _lvlClrDrop(el); setHint(null);
+            _lvlDoMaskCreate(_lvlDRAG.id, layer.id);
+            return;
+          }
           const pos = el.classList.contains('lvl-drop-before') ? 'before' : 'after';
           _lvlClrDrop(el); setHint(null);
           if (!_lvlDRAG.id || _lvlDRAG.id === layer.id) return;

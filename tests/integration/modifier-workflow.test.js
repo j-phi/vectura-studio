@@ -302,6 +302,85 @@ describe('Modifier workflow UI integration', () => {
     expect(app.ui.layerLockedIds.has(grouped.id)).toBe(false);
   });
 
+  test('dragging a root-level layer "before" a modifier group header correctly places it above the modifier', async () => {
+    runtime = await loadVecturaRuntime({
+      includeRenderer: true,
+      includeUi: true,
+      includeApp: true,
+      useIndexHtml: true,
+    });
+
+    const { window } = runtime;
+    window.app = new window.Vectura.App();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    const app = window.app;
+    const { Layer } = window.Vectura;
+
+    // Build: modifier (groupType=modifier) with one child, then a root-level oval.
+    // Engine order matches normalizeGroupOrder: [child, modifier, oval].
+    const modifier = new Layer('mod', 'group', 'Mirror Modifier');
+    modifier.isGroup = true;
+    modifier.groupType = 'modifier';
+    modifier.containerRole = 'modifier';
+    modifier.groupCollapsed = false;
+    modifier.parentId = null;
+    modifier.modifier = { type: 'mirror', enabled: true, mirrors: [] };
+
+    const child = new Layer('child', 'shape', 'Child Shape');
+    child.parentId = 'mod';
+
+    const oval = new Layer('oval', 'shape', 'Oval');
+    oval.parentId = null;
+
+    // [child(0), modifier(1), oval(2)] — modifier at maxChildIdx+1 satisfies normalizeGroupOrder.
+    app.engine.layers = [child, modifier, oval];
+
+    // Root-level order before drag: modifier(1) before oval(2) → modifier above oval in panel.
+    const rootBefore = app.engine.layers.filter((l) => l.parentId === null).map((l) => l.id);
+    expect(rootBefore.indexOf('mod')).toBeLessThan(rootBefore.indexOf('oval'));
+
+    // Render layers to wire up drag-drop handlers.
+    app.ui.renderLayers();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    const { document } = window;
+    const ovalCard = document.querySelector('[data-lvl-id="oval"]');
+    const modifierHdr = document.querySelector('[data-lvl-id="mod"]');
+    expect(ovalCard).toBeTruthy();
+    expect(modifierHdr).toBeTruthy();
+
+    const dragEvent = (type) => {
+      const e = new window.Event(type, { bubbles: true, cancelable: true });
+      e.dataTransfer = {
+        effectAllowed: 'move', dropEffect: 'move',
+        setData() {}, getData() { return ''; }, clearData() {},
+      };
+      Object.defineProperty(e, 'clientY', { value: 0 });
+      return e;
+    };
+
+    // Dragstart on oval card sets _lvlDRAG.id = oval.id.
+    ovalCard.dispatchEvent(dragEvent('dragstart'));
+
+    // Manually set the 'before' zone class (simulates dragover at top 35% of header).
+    modifierHdr.classList.add('lvl-drop-before');
+
+    // Drop — should call _lvlDoMove(oval.id, mod.id, 'before').
+    modifierHdr.dispatchEvent(dragEvent('drop'));
+
+    // oval must not have been adopted into the modifier.
+    expect(oval.parentId).toBeNull();
+
+    // Root-level order after drop: oval must now precede modifier.
+    const rootAfter = app.engine.layers.filter((l) => l.parentId === null).map((l) => l.id);
+    const ovalIdx = rootAfter.indexOf('oval');
+    const modIdx = rootAfter.indexOf('mod');
+    expect(ovalIdx).toBeGreaterThanOrEqual(0);
+    expect(modIdx).toBeGreaterThanOrEqual(0);
+    expect(ovalIdx).toBeLessThan(modIdx);
+  });
+
   test('deleting a mirror modifier unlocks its restored children', async () => {
     runtime = await loadVecturaRuntime({
       includeRenderer: true,
