@@ -307,6 +307,7 @@ Click `Export SVG` to download.
 | Group layers | `Cmd/Ctrl+G` |
 | Ungroup | `Cmd/Ctrl+Shift+G` |
 | Rename layer | Double-click layer name |
+| Make clipping mask | `Shift + Drag` layer onto another in the layers panel |
 | **Editing** | |
 | Undo | `Cmd/Ctrl+Z` |
 | Redo | `Cmd/Ctrl+Shift+Z` |

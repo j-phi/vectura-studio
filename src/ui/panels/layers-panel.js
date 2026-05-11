@@ -112,7 +112,13 @@
       };
 
       // ── V8 drag (HTML5) ─────────────────────────────────────────
-      const _lvlDRAG = { id: null, maskDrop: false };
+      // canArm: the dragged layer is eligible to become a mask source.
+      // maskDrop: Shift was held at dragover (used to arm mask-create on drop).
+      // Shift is used instead of CMD/Ctrl because macOS Chrome interprets CMD+drag
+      // as an OS-level alias gesture and silently cancels the drop event; Shift has
+      // no OS-level drag interpretation. Modifier state is read live from each
+      // DragEvent because keydown/keyup are suppressed during an HTML5 drag.
+      const _lvlDRAG = { id: null, maskDrop: false, canArm: false, maskTargetId: null };
       const _lvlClrDrop = (el) =>
         el.classList.remove('lvl-drop-before', 'lvl-drop-after', 'lvl-drop-into', 'lvl-drop-mask', 'lvl-drop-exit');
       const _lvlClrAllDrop = () =>
@@ -379,24 +385,13 @@
 
       const bindCardDrag = (el, layer) => {
         el.draggable = true;
-        let _maskKeyHandler = null;
-
-        const _armMaskDrop = () => {
-          if (_lvlDRAG.maskDrop) return;
-          _lvlDRAG.maskDrop = true;
-          const maskBtn = el.querySelector('.mask-btn');
-          if (maskBtn) {
-            maskBtn.classList.remove('mask-drop-armed');
-            void maskBtn.offsetWidth;
-            maskBtn.classList.add('mask-drop-armed');
-          }
-        };
 
         el.addEventListener('dragstart', (e) => {
           const isSingleSel = renderer?.selectedLayerIds?.size === 1 && renderer.selectedLayerIds.has(layer.id);
           const canArm = isSingleSel && Boolean(layer.maskCapabilities?.canSource);
-          const armMask = canArm && Boolean(e.metaKey || e.ctrlKey);
+          const armMask = canArm && Boolean(e.shiftKey);
           _lvlDRAG.id = layer.id;
+          _lvlDRAG.canArm = canArm;
           _lvlDRAG.maskDrop = armMask;
           e.dataTransfer.effectAllowed = 'all';
           requestAnimationFrame(() => {
@@ -410,21 +405,16 @@
               }
             }
           });
-          if (canArm) {
-            _maskKeyHandler = (ke) => {
-              if ((ke.key === 'Meta' || ke.key === 'Control') && _lvlDRAG.id === layer.id) _armMaskDrop();
-            };
-            document.addEventListener('keydown', _maskKeyHandler);
-          }
         });
 
         el.addEventListener('dragend', () => {
           _lvlDRAG.id = null;
           _lvlDRAG.maskDrop = false;
+          _lvlDRAG.canArm = false;
+          _lvlDRAG.maskTargetId = null;
           el.classList.remove('dragging');
           const maskBtn = el.querySelector('.mask-btn');
           if (maskBtn) maskBtn.classList.remove('mask-drop-armed');
-          if (_maskKeyHandler) { document.removeEventListener('keydown', _maskKeyHandler); _maskKeyHandler = null; }
           _lvlClrAllDrop();
           setHint(null);
         });
@@ -436,20 +426,23 @@
           if (!_lvlDRAG.id || _lvlDRAG.id === layer.id) return;
           e.preventDefault(); e.stopPropagation();
           _lvlClrDrop(el);
+          _lvlDRAG.maskDrop = _lvlDRAG.canArm && !!e.shiftKey;
           if (_lvlDRAG.maskDrop) {
+            _lvlDRAG.maskTargetId = layer.id;
             el.classList.add('lvl-drop-mask');
-            e.dataTransfer.dropEffect = 'link';
+            e.dataTransfer.dropEffect = 'move';
             setHint('Make clipping mask');
             return;
           }
+          _lvlDRAG.maskTargetId = null;
           const r = el.getBoundingClientRect(), pct = (e.clientY - r.top) / r.height;
           el.classList.add(pct < 0.5 ? 'lvl-drop-before' : 'lvl-drop-after');
           e.dataTransfer.dropEffect = 'move';
         });
-        el.addEventListener('dragleave', (e) => { if (!el.contains(e.relatedTarget)) { _lvlClrDrop(el); if (_lvlDRAG.maskDrop) setHint(null); } });
+        el.addEventListener('dragleave', (e) => { if (!el.contains(e.relatedTarget)) { _lvlClrDrop(el); setHint(null); } });
         el.addEventListener('drop', (e) => {
           e.preventDefault();
-          if (_lvlDRAG.maskDrop && _lvlDRAG.id && _lvlDRAG.id !== layer.id) {
+          if (_lvlDRAG.canArm && _lvlDRAG.maskDrop && _lvlDRAG.id && _lvlDRAG.id !== layer.id) {
             _lvlClrDrop(el); setHint(null);
             _lvlDoMaskCreate(_lvlDRAG.id, layer.id);
             return;
@@ -465,12 +458,15 @@
           if (!_lvlDRAG.id || _lvlDRAG.id === layer.id) return;
           e.preventDefault(); e.stopPropagation();
           _lvlClrDrop(el);
+          _lvlDRAG.maskDrop = _lvlDRAG.canArm && !!e.shiftKey;
           if (_lvlDRAG.maskDrop) {
+            _lvlDRAG.maskTargetId = layer.id;
             el.classList.add('lvl-drop-mask');
-            e.dataTransfer.dropEffect = 'link';
+            e.dataTransfer.dropEffect = 'move';
             setHint('Make clipping mask');
             return;
           }
+          _lvlDRAG.maskTargetId = null;
           const r = el.getBoundingClientRect(), pct = (e.clientY - r.top) / r.height;
           const zone = pct < 0.35 ? 'lvl-drop-before' : pct > 0.65 ? 'lvl-drop-after' : 'lvl-drop-into';
           el.classList.add(zone);
@@ -486,7 +482,7 @@
         });
         el.addEventListener('drop', (e) => {
           e.preventDefault();
-          if (_lvlDRAG.maskDrop && _lvlDRAG.id && _lvlDRAG.id !== layer.id) {
+          if (_lvlDRAG.canArm && _lvlDRAG.maskDrop && _lvlDRAG.id && _lvlDRAG.id !== layer.id) {
             _lvlClrDrop(el); setHint(null);
             _lvlDoMaskCreate(_lvlDRAG.id, layer.id);
             return;
@@ -512,12 +508,15 @@
           if (!_lvlDRAG.id || _lvlDRAG.id === srcLayer.id) return;
           e.preventDefault(); e.stopPropagation();
           _lvlClrDrop(el);
+          _lvlDRAG.maskDrop = _lvlDRAG.canArm && !!e.shiftKey;
           if (_lvlDRAG.maskDrop) {
+            _lvlDRAG.maskTargetId = srcLayer.id;
             el.classList.add('lvl-drop-mask');
-            e.dataTransfer.dropEffect = 'link';
+            e.dataTransfer.dropEffect = 'move';
             setHint('Make clipping mask');
             return;
           }
+          _lvlDRAG.maskTargetId = null;
           const r = el.getBoundingClientRect(), pct = (e.clientY - r.top) / r.height;
           const zone = pct < 0.2 ? 'lvl-drop-before' : pct > 0.8 ? 'lvl-drop-after' : 'lvl-drop-mask';
           el.classList.add(zone);
@@ -532,7 +531,7 @@
         });
         el.addEventListener('drop', (e) => {
           e.preventDefault();
-          if (_lvlDRAG.maskDrop && _lvlDRAG.id && _lvlDRAG.id !== srcLayer.id) {
+          if (_lvlDRAG.canArm && _lvlDRAG.maskDrop && _lvlDRAG.id && _lvlDRAG.id !== srcLayer.id) {
             _lvlClrDrop(el); setHint(null);
             _lvlDoMaskCreate(_lvlDRAG.id, srcLayer.id);
             return;
@@ -565,12 +564,15 @@
           if (!_lvlDRAG.id || _lvlDRAG.id === layer.id) return;
           e.preventDefault(); e.stopPropagation();
           _lvlClrDrop(el);
+          _lvlDRAG.maskDrop = _lvlDRAG.canArm && !!e.shiftKey;
           if (_lvlDRAG.maskDrop) {
+            _lvlDRAG.maskTargetId = layer.id;
             el.classList.add('lvl-drop-mask');
-            e.dataTransfer.dropEffect = 'link';
+            e.dataTransfer.dropEffect = 'move';
             setHint('Make clipping mask');
             return;
           }
+          _lvlDRAG.maskTargetId = null;
           const r = el.getBoundingClientRect(), pct = (e.clientY - r.top) / r.height;
           el.classList.add(pct < 0.5 ? 'lvl-drop-before' : 'lvl-drop-after');
           e.dataTransfer.dropEffect = 'move';
@@ -579,7 +581,7 @@
         el.addEventListener('dragleave', (e) => { if (!el.contains(e.relatedTarget)) { _lvlClrDrop(el); setHint(null); } });
         el.addEventListener('drop', (e) => {
           e.preventDefault();
-          if (_lvlDRAG.maskDrop && _lvlDRAG.id && _lvlDRAG.id !== layer.id) {
+          if (_lvlDRAG.canArm && _lvlDRAG.maskDrop && _lvlDRAG.id && _lvlDRAG.id !== layer.id) {
             _lvlClrDrop(el); setHint(null);
             _lvlDoMaskCreate(_lvlDRAG.id, layer.id);
             return;
@@ -685,6 +687,7 @@
       list._lvlDrag = _lvlDRAG;
       list._lvlDoMoveRef = _lvlDoMove;
       list._lvlDoExitGroupRef = _lvlDoExitGroup;
+      list._lvlDoMaskCreateRef = _lvlDoMaskCreate;
       list._lvlGetLayerRef = (id) => engine.getLayerById?.(id);
       list._lvlClrRef = _lvlClrAllDrop;
       list._lvlHintRef = setHint;
@@ -695,6 +698,9 @@
         list.addEventListener('dragover', (e) => {
           if (!list._lvlDrag?.id) return;
           e.preventDefault();
+          // Cursor is on list background (not a card) — clear mask target so
+          // an intentional move-off doesn't unexpectedly create a mask on drop.
+          if (list._lvlDrag.maskTargetId) list._lvlDrag.maskTargetId = null;
           const items = list.querySelectorAll('[data-layer-id]');
           if (!items.length) return;
           const first = items[0], last = items[items.length - 1];
@@ -704,12 +710,20 @@
           } else {
             last.classList.add('lvl-drop-after');
           }
-          e.dataTransfer.dropEffect = list._lvlDrag?.maskDrop ? 'link' : 'move';
+          e.dataTransfer.dropEffect = 'move';
         });
 
         list.addEventListener('drop', (e) => {
           if (!list._lvlDrag?.id) return;
           e.preventDefault();
+          // Fallback: if the drop missed the card but mask was armed, still create the mask.
+          // This covers browsers that fire dragleave+drop on the list instead of the card.
+          if (list._lvlDrag.maskDrop && list._lvlDrag.maskTargetId && list._lvlDrag.id !== list._lvlDrag.maskTargetId) {
+            const tid = list._lvlDrag.maskTargetId;
+            list._lvlClrRef(); list._lvlHintRef(null);
+            list._lvlDoMaskCreateRef?.(list._lvlDrag.id, tid);
+            return;
+          }
           const before = list.querySelector('.lvl-drop-before');
           const after  = list.querySelector('.lvl-drop-after');
           list._lvlClrRef(); list._lvlHintRef(null);
@@ -742,7 +756,7 @@
           if (!first) return;
           list._lvlClrRef();
           first.classList.add('lvl-drop-before');
-          e.dataTransfer.dropEffect = list._lvlDrag?.maskDrop ? 'link' : 'move';
+          e.dataTransfer.dropEffect = 'move';
         });
         searchBar.addEventListener('dragleave', (e) => {
           if (!searchBar.contains(e.relatedTarget)) list._lvlClrRef?.();
@@ -776,7 +790,7 @@
           const last = items[items.length - 1];
           list._lvlClrRef();
           last.classList.add('lvl-drop-after');
-          e.dataTransfer.dropEffect = list._lvlDrag?.maskDrop ? 'link' : 'move';
+          e.dataTransfer.dropEffect = 'move';
         });
         statusBar.addEventListener('dragleave', (e) => {
           if (!statusBar.contains(e.relatedTarget)) list._lvlClrRef?.();

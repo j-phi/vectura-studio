@@ -227,6 +227,7 @@
           ${row(CMD + k('E'),         'Expand to sublayers')}
           ${row(CMD + k('D'),         'Duplicate')}
           ${row(OPT + sep + mouse('drag'), 'Duplicate by dragging')}
+          ${row(SHF + sep + mouse('drag'), 'Make clipping mask (drop onto target)')}
           ${row(k('Delete'),          'Remove')}
         </tbody>
       </table>`;
