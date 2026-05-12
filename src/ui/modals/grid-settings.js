@@ -106,7 +106,7 @@
               <div class="slider-row">
                 <input type="range" id="set-grid-size-slider" class="ctrl-slider" min="0.5" max="50" step="0.5" value="10" />
                 <input type="number" id="set-grid-size" class="slider-val-inp" min="0.5" max="50" step="0.5" value="10" />
-                <span class="ctrl-trail-hint">mm</span>
+                <span id="set-grid-size-unit" class="ctrl-trail-hint">mm</span>
               </div>
             </div>
           </div>
@@ -134,7 +134,7 @@
               <div class="slider-row">
                 <input type="range" id="set-grid-minor-size-slider" class="ctrl-slider" min="0.5" max="50" step="0.5" value="5" />
                 <input type="number" id="set-grid-minor-size" class="slider-val-inp" min="0.5" max="50" step="0.5" value="5" />
-                <span class="ctrl-trail-hint">mm</span>
+                <span id="set-grid-minor-size-unit" class="ctrl-trail-hint">mm</span>
               </div>
             </div>
           </div>

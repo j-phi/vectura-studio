@@ -560,7 +560,30 @@
     return s.split('.')[1].length;
   };
 
+  // A control is a "document-length" control when its values are stored in
+  // millimetres but should be displayed/edited in whatever unit the document
+  // is currently configured for. Either `displayUnit: 'mm'` on the def or an
+  // explicit "(mm)" suffix on the label opts in.
+  const isDocumentLengthDef = (def) => def?.displayUnit === 'mm' || /\(mm\)/.test(def?.label || '');
+  const currentDocumentUnits = () => normalizeDocumentUnits(SETTINGS.documentUnits);
+
   const getDisplayConfig = (def) => {
+    const hasExplicitDisplay = def.displayMin !== undefined || def.displayMax !== undefined || def.displayStep !== undefined;
+    if (!hasExplicitDisplay && isDocumentLengthDef(def)) {
+      const units = currentDocumentUnits();
+      const min = mmToDocumentUnits(def.min ?? 0, units);
+      const max = mmToDocumentUnits(def.max ?? 0, units);
+      const rawStep = def.step ?? 1;
+      const convertedStep = mmToDocumentUnits(rawStep, units);
+      const step = convertedStep || rawStep;
+      const unit = getDocumentUnitLabel(units);
+      const precision = Math.max(
+        Number.isFinite(def.displayPrecision) ? def.displayPrecision : 0,
+        getDocumentUnitPrecision(units),
+        stepPrecision(step),
+      );
+      return { min, max, step, unit, precision };
+    }
     const min = def.displayMin ?? def.min;
     const max = def.displayMax ?? def.max;
     const step = def.displayStep ?? def.step ?? 1;
@@ -570,7 +593,11 @@
   };
 
   const toDisplayValue = (def, value) => {
-    if (def.displayMin !== undefined || def.displayMax !== undefined) {
+    const hasExplicitDisplay = def.displayMin !== undefined || def.displayMax !== undefined;
+    if (!hasExplicitDisplay && isDocumentLengthDef(def)) {
+      return mmToDocumentUnits(value, currentDocumentUnits());
+    }
+    if (hasExplicitDisplay) {
       const dMin = def.displayMin ?? def.min;
       const dMax = def.displayMax ?? def.max;
       return mapRange(value, def.min, def.max, dMin, dMax);
@@ -579,7 +606,11 @@
   };
 
   const fromDisplayValue = (def, value) => {
-    if (def.displayMin !== undefined || def.displayMax !== undefined) {
+    const hasExplicitDisplay = def.displayMin !== undefined || def.displayMax !== undefined;
+    if (!hasExplicitDisplay && isDocumentLengthDef(def)) {
+      return documentUnitsToMm(value, currentDocumentUnits());
+    }
+    if (hasExplicitDisplay) {
       const dMin = def.displayMin ?? def.min;
       const dMax = def.displayMax ?? def.max;
       return mapRange(value, dMin, dMax, def.min, def.max);
@@ -593,6 +624,15 @@
     const factor = Math.pow(10, precision);
     const rounded = Math.round(displayVal * factor) / factor;
     return `${rounded}${unit}`;
+  };
+
+  // Rewrite "(mm)" in a def's label when the document is in imperial mode so
+  // every panel that interpolates `${def.label}` automatically shows "(in)".
+  const getDisplayLabel = (def) => {
+    if (!def?.label) return def?.label || '';
+    if (!isDocumentLengthDef(def)) return def.label;
+    const unit = getDocumentUnitLabel(currentDocumentUnits());
+    return def.label.replace(/\(mm\)/g, `(${unit})`);
   };
 
   const attachKeyboardRangeNudge = (input, applyValue) => {
@@ -7751,6 +7791,7 @@
       getDisplayConfig,
       toDisplayValue,
       fromDisplayValue,
+      getDisplayLabel,
       getContrastTextColor,
       openColorPickerAnchoredTo,
       // unit helpers

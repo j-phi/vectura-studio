@@ -67,7 +67,7 @@
       // DOM / value helpers
       getEl, escapeHtml, roundToStep, clone, clamp,
       attachKeyboardRangeNudge, formatValue, formatDisplayValue,
-      getDisplayConfig, toDisplayValue, fromDisplayValue,
+      getDisplayConfig, toDisplayValue, fromDisplayValue, getDisplayLabel,
       getContrastTextColor, openColorPickerAnchoredTo,
       // unit helpers
       getDocumentUnitLabel, mmToDocumentUnits, documentUnitsToMm,
@@ -558,7 +558,7 @@
       if (def.type === 'section') {
         const section = document.createElement('div');
         section.className = 'control-section';
-        section.innerHTML = `<div class="control-section-title">${def.label}</div>`;
+        section.innerHTML = `<div class="control-section-title">${getDisplayLabel(def)}</div>`;
         target.appendChild(section);
         return;
       }
@@ -626,12 +626,12 @@
         wrapper.innerHTML = `
           <div class="flex items-center justify-between mb-2">
             <div class="flex items-center gap-2">
-              <label class="control-label mb-0">${def.label}</label>
+              <label class="control-label mb-0">${getDisplayLabel(def)}</label>
               ${infoBtn}
             </div>
           </div>
           <button type="button" class="w-full text-xs border border-vectura-border px-2 py-2 hover:bg-vectura-border text-vectura-accent transition-colors">
-            ${def.buttonLabel || def.label}
+            ${def.buttonLabel || getDisplayLabel(def)}
           </button>
         `;
         const btn = wrapper.querySelector('button');
@@ -786,7 +786,7 @@
         div.innerHTML = `
           <div class="flex items-center justify-between mb-1">
             <div class="flex items-center gap-2">
-              <label class="control-label mb-0">${def.label}</label>
+              <label class="control-label mb-0">${getDisplayLabel(def)}</label>
               ${infoBtn}
             </div>
             <button type="button" class="text-[10px] text-vectura-muted hover:text-vectura-accent file-clear">Clear</button>
@@ -863,7 +863,7 @@
           const displayVal = toDisplayValue(def, value);
           control.innerHTML = `
             <div class="flex items-center gap-2 mb-1">
-              <label class="control-label mb-0">${def.label}</label>
+              <label class="control-label mb-0">${getDisplayLabel(def)}</label>
               ${infoBtn}
             </div>
             <div class="slider-row">
@@ -942,7 +942,7 @@
           control.innerHTML = `
             <div class="angle-label">
               <div class="flex items-center gap-2">
-                <label class="control-label mb-0">${def.label}</label>
+                <label class="control-label mb-0">${getDisplayLabel(def)}</label>
                 ${infoBtn}
               </div>
               <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(
@@ -1102,7 +1102,7 @@
         const header = document.createElement('div');
         header.className = 'noise-list-header';
         header.innerHTML = `
-          <span class="text-[10px] uppercase tracking-widest text-vectura-muted">${def.label || 'Center Modifiers'}</span>
+          <span class="text-[10px] uppercase tracking-widest text-vectura-muted">${getDisplayLabel(def) || 'Center Modifiers'}</span>
           <button type="button" class="noise-add text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">
             + Add Modifier
           </button>
@@ -1142,7 +1142,7 @@
           const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
           control.innerHTML = `
             <div class="flex items-center gap-2 mb-1">
-              <label class="control-label mb-0">${def.label}</label>
+              <label class="control-label mb-0">${getDisplayLabel(def)}</label>
               ${infoBtn}
             </div>
             <div class="slider-row">
@@ -1373,7 +1373,7 @@
         const header = document.createElement('div');
         header.className = 'noise-list-header';
         header.innerHTML = `
-          <span class="text-[10px] uppercase tracking-widest text-vectura-muted">${def.label || 'Petal Modifiers'}</span>
+          <span class="text-[10px] uppercase tracking-widest text-vectura-muted">${getDisplayLabel(def) || 'Petal Modifiers'}</span>
           <button type="button" class="noise-add text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">
             + Add Modifier
           </button>
@@ -1413,7 +1413,7 @@
           const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
           control.innerHTML = `
             <div class="flex items-center gap-2 mb-1">
-              <label class="control-label mb-0">${def.label}</label>
+              <label class="control-label mb-0">${getDisplayLabel(def)}</label>
               ${infoBtn}
             </div>
             <div class="slider-row">
@@ -1644,7 +1644,7 @@
         const header = document.createElement('div');
         header.className = 'noise-list-header';
         header.innerHTML = `
-          <span class="text-[10px] uppercase tracking-widest text-vectura-muted">${def.label || 'Shading Stack'}</span>
+          <span class="text-[10px] uppercase tracking-widest text-vectura-muted">${getDisplayLabel(def) || 'Shading Stack'}</span>
           <button type="button" class="noise-add text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">
             + Add Shading
           </button>
@@ -1684,7 +1684,7 @@
           const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
           control.innerHTML = `
             <div class="flex items-center gap-2 mb-1">
-              <label class="control-label mb-0">${def.label}</label>
+              <label class="control-label mb-0">${getDisplayLabel(def)}</label>
               ${infoBtn}
             </div>
             <div class="slider-row">
@@ -1770,7 +1770,7 @@
           control.innerHTML = `
             <div class="flex justify-between mb-1">
               <div class="flex items-center gap-2">
-                <label class="control-label mb-0">${def.label}</label>
+                <label class="control-label mb-0">${getDisplayLabel(def)}</label>
                 ${infoBtn}
               </div>
               <span class="text-xs text-vectura-accent font-mono">${currentLabel}</span>
@@ -2042,7 +2042,7 @@
             : noiseSource === 'phylla' ? this.createPhyllaNoise(idx)
             : noiseSource === 'petalisDrift' ? this.createPetalisDriftNoise(idx)
             : this.createWavetableNoise(idx),
-          label: def.label || 'Noise Stack',
+          label: getDisplayLabel(def) || 'Noise Stack',
           containerClass: 'noise-list mb-4',
           attachValueEditor,
         });
@@ -2066,7 +2066,7 @@
         const displayVal = toDisplayValue(def, val);
         div.innerHTML = `
           <div class="flex items-center gap-2 mb-1">
-            <label class="control-label mb-0">${def.label}</label>
+            <label class="control-label mb-0">${getDisplayLabel(def)}</label>
             ${infoBtn}
           </div>
           <div class="slider-row mb-2">
@@ -2151,7 +2151,7 @@
         div.innerHTML = `
           <div class="angle-label">
             <div class="flex items-center gap-2">
-              <label class="control-label mb-0">${def.label}</label>
+              <label class="control-label mb-0">${getDisplayLabel(def)}</label>
               ${infoBtn}
             </div>
             <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(
@@ -2240,7 +2240,7 @@
         div.innerHTML = `
           <div class="flex justify-between mb-1">
             <div class="flex items-center gap-2">
-              <label class="control-label mb-0">${def.label}</label>
+              <label class="control-label mb-0">${getDisplayLabel(def)}</label>
               ${infoBtn}
             </div>
             <span class="text-xs text-vectura-accent font-mono">${checked ? 'ON' : 'OFF'}</span>
@@ -2312,7 +2312,7 @@
         div.innerHTML = `
           <div class="flex justify-between mb-1">
             <div class="flex items-center gap-2">
-              <label class="control-label mb-0">${def.label}</label>
+              <label class="control-label mb-0">${getDisplayLabel(def)}</label>
               ${infoBtn}
             </div>
             <span class="text-xs text-vectura-accent font-mono">${currentLabel}</span>
@@ -2440,7 +2440,7 @@
         div.innerHTML = `
           <div class="flex justify-between mb-1">
             <div class="flex items-center gap-2">
-              <label class="control-label mb-0">${def.label}</label>
+              <label class="control-label mb-0">${getDisplayLabel(def)}</label>
               ${infoBtn}
             </div>
             <button type="button" class="color-modal-trigger text-[10px] text-vectura-accent border border-vectura-border px-2 py-1 rounded">
@@ -2458,7 +2458,7 @@
         if (btn && swatch && valueEl) {
           btn.onclick = () => {
             this.openColorModal({
-              title: def.label,
+              title: getDisplayLabel(def),
               value: layer.params[def.id] || colorVal,
               onApply: (next) => {
                 if (this.app.pushHistory) this.app.pushHistory();
@@ -2477,7 +2477,7 @@
         div.innerHTML = `
           <div class="flex justify-between mb-1">
             <div class="flex items-center gap-2">
-              <label class="control-label mb-0">${def.label}</label>
+              <label class="control-label mb-0">${getDisplayLabel(def)}</label>
               ${infoBtn}
             </div>
             <span class="text-xs text-vectura-accent font-mono">${colorVal}</span>
@@ -2519,7 +2519,7 @@
         div.innerHTML = `
           <div class="flex justify-between mb-1">
             <div class="flex items-center gap-2">
-              <label class="control-label mb-0">${def.label}</label>
+              <label class="control-label mb-0">${getDisplayLabel(def)}</label>
               ${infoBtn}
             </div>
             <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(def, minVal)}-${formatDisplayValue(def, maxVal)}</button>
@@ -2661,7 +2661,7 @@
         const displayVal = toDisplayValue(def, val);
         div.innerHTML = `
           <div class="flex items-center gap-2 mb-1">
-            <label class="control-label mb-0">${def.label}</label>
+            <label class="control-label mb-0">${getDisplayLabel(def)}</label>
             ${infoBtn}
           </div>
           <div class="slider-row">
@@ -3452,7 +3452,7 @@
         const currentLabel = def.options.find((opt) => opt.value === value)?.label || value;
         control.innerHTML = `
           <div class="flex justify-between mb-1">
-            <label class="control-label mb-0">${def.label}</label>
+            <label class="control-label mb-0">${getDisplayLabel(def)}</label>
             <span class="text-xs text-vectura-accent font-mono">${currentLabel}</span>
           </div>
           <select class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs focus:outline-none focus:border-vectura-accent">
@@ -3492,7 +3492,7 @@
         const checked = Boolean(stepConfig[def.key]);
         control.innerHTML = `
           <div class="flex justify-between mb-1">
-            <label class="control-label mb-0">${def.label}</label>
+            <label class="control-label mb-0">${getDisplayLabel(def)}</label>
             <span class="text-xs text-vectura-accent font-mono">${checked ? 'ON' : 'OFF'}</span>
           </div>
           <label class="sw-toggle" role="switch" aria-checked="${checked ? 'true' : 'false'}">
@@ -3594,7 +3594,7 @@
               <span class="dot"></span><span class="dot"></span>
               <span class="dot"></span><span class="dot"></span>
             </button>
-            <span>${def.label}</span>
+            <span>${getDisplayLabel(def)}</span>
           </div>
           <div class="optimization-card-actions">
             <label class="opt-toggle">
@@ -3693,7 +3693,7 @@
           header.type = 'button';
           header.className = 'algo-param-group-header';
           const ringIcon = window.Vectura.Icons.misc.ring();
-          header.innerHTML = `<span class="algo-param-group-title">${ringIcon}${def.label}</span><span class="algo-param-group-toggle" aria-hidden="true"></span>`;
+          header.innerHTML = `<span class="algo-param-group-title">${ringIcon}${getDisplayLabel(def)}</span><span class="algo-param-group-toggle" aria-hidden="true"></span>`;
           const body = document.createElement('div');
           body.className = 'algo-param-group-body';
           if (collapsed) body.style.display = 'none';

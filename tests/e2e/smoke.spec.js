@@ -494,7 +494,7 @@ test.describe('Vectura smoke interactions', () => {
     // Clear saved preferences now restores ALL settings to factory defaults
     // (not just the cookie flag). showGuides default is true, so the toggle
     // must come back on after clearing.
-    await page.click('#btn-clear-preferences');
+    await page.locator('#btn-clear-preferences').evaluate(el => el.click());
     await expect(cookieToggle).not.toBeChecked();
     await expect(showGuides).toBeChecked();
 

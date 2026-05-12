@@ -56,7 +56,33 @@
     if (!s.includes('.')) return 0;
     return s.split('.')[1].length;
   };
+  const isDocumentLengthDef = (def) => def?.displayUnit === 'mm' || /\(mm\)/.test(def?.label || '');
+  const UnitUtils = (window.Vectura && window.Vectura.UnitUtils) || {};
+  const SETTINGS = (window.Vectura && window.Vectura.SETTINGS) || {};
+  const normalizeDocumentUnits = UnitUtils.normalizeDocumentUnits || ((v) => (`${v || ''}`.trim().toLowerCase() === 'imperial' ? 'imperial' : 'metric'));
+  const mmToDocumentUnits = UnitUtils.mmToDocumentUnits || ((v, u) => (normalizeDocumentUnits(u) === 'imperial' ? Number(v || 0) / 25.4 : Number(v || 0)));
+  const documentUnitsToMm = UnitUtils.documentUnitsToMm || ((v, u) => (normalizeDocumentUnits(u) === 'imperial' ? Number(v || 0) * 25.4 : Number(v || 0)));
+  const getDocumentUnitLabel = UnitUtils.getDocumentUnitLabel || ((u) => (normalizeDocumentUnits(u) === 'imperial' ? 'in' : 'mm'));
+  const getDocumentUnitPrecision = UnitUtils.getDocumentUnitPrecision || ((u, f = null) => (Number.isFinite(f) ? f : (normalizeDocumentUnits(u) === 'imperial' ? 2 : 1)));
+  const currentDocumentUnits = () => normalizeDocumentUnits(SETTINGS.documentUnits);
+
   const getDisplayConfig = (def) => {
+    const hasExplicitDisplay = def.displayMin !== undefined || def.displayMax !== undefined || def.displayStep !== undefined;
+    if (!hasExplicitDisplay && isDocumentLengthDef(def)) {
+      const units = currentDocumentUnits();
+      const min = mmToDocumentUnits(def.min ?? 0, units);
+      const max = mmToDocumentUnits(def.max ?? 0, units);
+      const rawStep = def.step ?? 1;
+      const convertedStep = mmToDocumentUnits(rawStep, units);
+      const step = convertedStep || rawStep;
+      const unit = getDocumentUnitLabel(units);
+      const precision = Math.max(
+        Number.isFinite(def.displayPrecision) ? def.displayPrecision : 0,
+        getDocumentUnitPrecision(units),
+        stepPrecision(step),
+      );
+      return { min, max, step, unit, precision };
+    }
     const min = def.displayMin ?? def.min;
     const max = def.displayMax ?? def.max;
     const step = def.displayStep ?? def.step ?? 1;
@@ -65,7 +91,11 @@
     return { min, max, step, unit, precision };
   };
   const toDisplayValue = (def, value) => {
-    if (def.displayMin !== undefined || def.displayMax !== undefined) {
+    const hasExplicitDisplay = def.displayMin !== undefined || def.displayMax !== undefined;
+    if (!hasExplicitDisplay && isDocumentLengthDef(def)) {
+      return mmToDocumentUnits(value, currentDocumentUnits());
+    }
+    if (hasExplicitDisplay) {
       const dMin = def.displayMin ?? def.min;
       const dMax = def.displayMax ?? def.max;
       return mapRange(value, def.min, def.max, dMin, dMax);
@@ -73,7 +103,11 @@
     return value;
   };
   const fromDisplayValue = (def, value) => {
-    if (def.displayMin !== undefined || def.displayMax !== undefined) {
+    const hasExplicitDisplay = def.displayMin !== undefined || def.displayMax !== undefined;
+    if (!hasExplicitDisplay && isDocumentLengthDef(def)) {
+      return documentUnitsToMm(value, currentDocumentUnits());
+    }
+    if (hasExplicitDisplay) {
       const dMin = def.displayMin ?? def.min;
       const dMax = def.displayMax ?? def.max;
       return mapRange(value, dMin, dMax, def.min, def.max);
@@ -86,6 +120,12 @@
     const factor = Math.pow(10, precision);
     const rounded = Math.round(displayVal * factor) / factor;
     return `${rounded}${unit}`;
+  };
+  const getDisplayLabel = (def) => {
+    if (!def?.label) return def?.label || '';
+    if (!isDocumentLengthDef(def)) return def.label;
+    const unit = getDocumentUnitLabel(currentDocumentUnits());
+    return def.label.replace(/\(mm\)/g, `(${unit})`);
   };
   const attachKeyboardRangeNudge = (input, applyValue) => {
     if (!input || !applyValue) return;
@@ -1388,7 +1428,7 @@
         control.innerHTML = `
           <div class="flex justify-between mb-1">
             <div class="flex items-center gap-2">
-              <label class="control-label mb-0">${def.label}</label>
+              <label class="control-label mb-0">${getDisplayLabel(def)}</label>
               ${infoBtn}
             </div>
             <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(
@@ -1476,7 +1516,7 @@
         control.innerHTML = `
           <div class="flex justify-between mb-1">
             <div class="flex items-center gap-2">
-              <label class="control-label mb-0">${def.label}</label>
+              <label class="control-label mb-0">${getDisplayLabel(def)}</label>
               ${infoBtn}
             </div>
             <span class="text-xs text-vectura-accent font-mono">${currentLabel}</span>
@@ -1567,7 +1607,7 @@
         control.innerHTML = `
           <div class="angle-label">
             <div class="flex items-center gap-2">
-              <label class="control-label mb-0">${def.label}</label>
+              <label class="control-label mb-0">${getDisplayLabel(def)}</label>
               ${infoBtn}
             </div>
             <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(
@@ -1662,7 +1702,7 @@
         control.innerHTML = `
           <div class="flex justify-between mb-1">
             <div class="flex items-center gap-2">
-              <label class="control-label mb-0">${def.label}</label>
+              <label class="control-label mb-0">${getDisplayLabel(def)}</label>
               ${infoBtn}
             </div>
             <span class="text-xs text-vectura-accent font-mono">${checked ? 'ON' : 'OFF'}</span>
@@ -1883,7 +1923,7 @@
           control.innerHTML = `
             <div class="flex justify-between mb-1">
               <div class="flex items-center gap-2">
-                <label class="control-label mb-0">${def.label}</label>
+                <label class="control-label mb-0">${getDisplayLabel(def)}</label>
                 ${infoBtn}
               </div>
               <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${formatDisplayValue(
@@ -1968,7 +2008,7 @@
           control.innerHTML = `
             <div class="flex justify-between mb-1">
               <div class="flex items-center gap-2">
-                <label class="control-label mb-0">${def.label}</label>
+                <label class="control-label mb-0">${getDisplayLabel(def)}</label>
                 ${infoBtn}
               </div>
               <span class="text-xs text-vectura-accent font-mono">${currentLabel}</span>
