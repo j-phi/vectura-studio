@@ -229,6 +229,45 @@
         paramsTarget.innerHTML = '<p class="text-xs text-vectura-muted">No additional parameters.</p>';
         return;
       }
+      const UU = (window.Vectura && window.Vectura.UnitUtils) || {};
+      const sett = (window.Vectura && window.Vectura.SETTINGS) || {};
+      const docUnits = UU.normalizeDocumentUnits ? UU.normalizeDocumentUnits(sett.documentUnits) : 'metric';
+      const isImperial = docUnits === 'imperial';
+      const unitLabel = UU.getDocumentUnitLabel ? UU.getDocumentUnitLabel(docUnits) : (isImperial ? 'in' : 'mm');
+      const isLength = (p) => /\(mm\)/.test(p?.label || '');
+      const lenAdapter = (p) => {
+        if (!isLength(p) || !isImperial) {
+          return {
+            label: p.label,
+            unit: p.unit || (isLength(p) ? 'mm' : ''),
+            min: p.min,
+            max: p.max,
+            step: p.step ?? 1,
+            precision: 0,
+            toDisplay: (v) => v,
+            fromDisplay: (v) => v,
+          };
+        }
+        const mmToIn = (v) => Number(v || 0) / 25.4;
+        const inToMm = (v) => Number(v || 0) * 25.4;
+        const step = mmToIn(p.step ?? 1) || 0.01;
+        return {
+          label: (p.label || '').replace(/\(mm\)/g, `(${unitLabel})`),
+          unit: unitLabel,
+          min: mmToIn(p.min),
+          max: mmToIn(p.max),
+          step,
+          precision: 2,
+          toDisplay: mmToIn,
+          fromDisplay: inToMm,
+        };
+      };
+      const fmtDisplay = (v, precision) => {
+        if (!Number.isFinite(v)) return '0';
+        if (!precision) return String(v);
+        const factor = Math.pow(10, precision);
+        return String(Math.round(v * factor) / factor);
+      };
       mode.params.forEach((param) => {
         const wrapper = document.createElement('div');
         wrapper.className = 'mb-3';
@@ -249,32 +288,36 @@
             applyIfContinuous({ commit: true });
           };
         } else {
-          const value = config.params[param.id] ?? param.min ?? 0;
+          const adapter = lenAdapter(param);
+          const stored = config.params[param.id] ?? param.min ?? 0;
+          const displayVal = adapter.toDisplay(stored);
           wrapper.innerHTML = `
             <div class="flex items-center justify-between mb-1">
-              <label class="control-label mb-0">${param.label}</label>
-              <span class="text-xs text-vectura-accent">${value}${param.unit || ''}</span>
+              <label class="control-label mb-0">${adapter.label}</label>
+              <span class="text-xs text-vectura-accent">${fmtDisplay(displayVal, adapter.precision)}${adapter.unit || ''}</span>
             </div>
             <input
               type="range"
-              min="${param.min}"
-              max="${param.max}"
-              step="${param.step ?? 1}"
-              value="${value}"
+              min="${adapter.min}"
+              max="${adapter.max}"
+              step="${adapter.step}"
+              value="${displayVal}"
               class="w-full"
             />
           `;
           const input = wrapper.querySelector('input');
           const display = wrapper.querySelector('span');
           input.oninput = () => {
-            const next = parseFloat(input.value);
-            config.params[param.id] = Number.isFinite(next) ? next : value;
-            if (display) display.textContent = `${input.value}${param.unit || ''}`;
+            const nextDisplay = parseFloat(input.value);
+            const nextStored = Number.isFinite(nextDisplay) ? adapter.fromDisplay(nextDisplay) : stored;
+            config.params[param.id] = nextStored;
+            if (display) display.textContent = `${fmtDisplay(nextDisplay, adapter.precision)}${adapter.unit || ''}`;
             applyIfContinuous({ commit: false });
           };
           input.onchange = () => {
-            const next = parseFloat(input.value);
-            config.params[param.id] = Number.isFinite(next) ? next : value;
+            const nextDisplay = parseFloat(input.value);
+            const nextStored = Number.isFinite(nextDisplay) ? adapter.fromDisplay(nextDisplay) : stored;
+            config.params[param.id] = nextStored;
             applyIfContinuous({ commit: true });
           };
         }

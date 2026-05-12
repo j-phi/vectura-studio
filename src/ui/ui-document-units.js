@@ -105,6 +105,14 @@
       const marginLineDottingSlider = getEl('set-margin-line-dotting-slider', { silent: true });
       const selectionOutlineWidth = getEl('set-selection-outline-width', { silent: true });
       const selectionOutlineWidthSlider = getEl('set-selection-outline-width-slider', { silent: true });
+      const gridSizeUnit = getEl('set-grid-size-unit', { silent: true });
+      const gridMinorSizeUnit = getEl('set-grid-minor-size-unit', { silent: true });
+      const gridSize = getEl('set-grid-size', { silent: true });
+      const gridSizeSlider = getEl('set-grid-size-slider', { silent: true });
+      const gridMinorSize = getEl('set-grid-minor-size', { silent: true });
+      const gridMinorSizeSlider = getEl('set-grid-minor-size-slider', { silent: true });
+      const posXLabel = getEl('inp-pos-x-label', { silent: true });
+      const posYLabel = getEl('inp-pos-y-label', { silent: true });
 
       if (documentUnits) documentUnits.value = this.getDocumentUnits();
       if (paperWidthLabel) paperWidthLabel.textContent = `Width (${unitLabel})`;
@@ -114,6 +122,10 @@
       if (marginLineWeightUnit) marginLineWeightUnit.textContent = unitLabel;
       if (marginLineDottingUnit) marginLineDottingUnit.textContent = unitLabel;
       if (selectionOutlineWidthUnit) selectionOutlineWidthUnit.textContent = unitLabel;
+      if (gridSizeUnit) gridSizeUnit.textContent = unitLabel;
+      if (gridMinorSizeUnit) gridMinorSizeUnit.textContent = unitLabel;
+      if (posXLabel) posXLabel.textContent = `Pos X (${unitLabel})`;
+      if (posYLabel) posYLabel.textContent = `Pos Y (${unitLabel})`;
 
       this.syncDocumentLengthInput(margin, SETTINGS.margin, { minMm: 0, stepMm: 0.01 });
       this.syncDocumentLengthInput(marginSlider, SETTINGS.margin, { minMm: 0, maxMm: 50, stepMm: 0.5 });
@@ -125,6 +137,10 @@
       this.syncDocumentLengthInput(marginLineDottingSlider, SETTINGS.marginLineDotting ?? 0, { minMm: 0, maxMm: 50, stepMm: 0.5 });
       this.syncDocumentLengthInput(selectionOutlineWidth, SETTINGS.selectionOutlineWidth ?? 0.15, { minMm: 0.1, maxMm: 2, stepMm: 0.05 });
       this.syncDocumentLengthInput(selectionOutlineWidthSlider, SETTINGS.selectionOutlineWidth ?? 0.15, { minMm: 0.1, maxMm: 2, stepMm: 0.05 });
+      this.syncDocumentLengthInput(gridSize, SETTINGS.gridSize ?? 10, { minMm: 0.5, maxMm: 50, stepMm: 0.5 });
+      this.syncDocumentLengthInput(gridSizeSlider, SETTINGS.gridSize ?? 10, { minMm: 0.5, maxMm: 50, stepMm: 0.5 });
+      this.syncDocumentLengthInput(gridMinorSize, SETTINGS.gridMinorSize ?? 5, { minMm: 0.5, maxMm: 50, stepMm: 0.5 });
+      this.syncDocumentLengthInput(gridMinorSizeSlider, SETTINGS.gridMinorSize ?? 5, { minMm: 0.5, maxMm: 50, stepMm: 0.5 });
     },
   };
 })();

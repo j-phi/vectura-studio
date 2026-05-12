@@ -22,6 +22,61 @@
 
   const PETALIS_LAYER_TYPES = new Set(['petalisDesigner']);
   const isPetalisLayerType = (type) => PETALIS_LAYER_TYPES.has(type);
+
+  // Document-units adapter for petal-designer range controls. When a def opts
+  // into millimetre semantics (via `unit: 'mm'` or `displayUnit: 'mm'`), this
+  // returns an adapter that maps stored mm values to the document's current
+  // display unit (inches in imperial mode) for slider min/max/step + value
+  // chip rendering, and back to mm when the user edits the slider.
+  const lengthAdapter = (def) => {
+    const isLen = def?.unit === 'mm' || def?.displayUnit === 'mm';
+    if (!isLen) {
+      return {
+        min: def?.min,
+        max: def?.max,
+        step: def?.step,
+        precision: def?.precision,
+        unit: def?.unit || def?.displayUnit || '',
+        toDisplay: (v) => v,
+        fromDisplay: (v) => v,
+      };
+    }
+    const U = (window.Vectura && window.Vectura.UnitUtils) || {};
+    const settings = (window.Vectura && window.Vectura.SETTINGS) || {};
+    const units = U.normalizeDocumentUnits ? U.normalizeDocumentUnits(settings.documentUnits) : 'metric';
+    if (units !== 'imperial') {
+      return {
+        min: def.min,
+        max: def.max,
+        step: def.step,
+        precision: def.precision ?? 1,
+        unit: 'mm',
+        toDisplay: (v) => v,
+        fromDisplay: (v) => v,
+      };
+    }
+    const mmToIn = (v) => (Number(v || 0) / 25.4);
+    const inToMm = (v) => (Number(v || 0) * 25.4);
+    const step = mmToIn(def.step) || def.step;
+    return {
+      min: mmToIn(def.min),
+      max: mmToIn(def.max),
+      step,
+      precision: Math.max(def.precision ?? 1, 2),
+      unit: 'in',
+      toDisplay: mmToIn,
+      fromDisplay: inToMm,
+    };
+  };
+  const decorateLabelForUnits = (label) => {
+    if (!label) return label;
+    if (!/\(mm\)/.test(label)) return label;
+    const U = (window.Vectura && window.Vectura.UnitUtils) || {};
+    const settings = (window.Vectura && window.Vectura.SETTINGS) || {};
+    const units = U.normalizeDocumentUnits ? U.normalizeDocumentUnits(settings.documentUnits) : 'metric';
+    const unit = U.getDocumentUnitLabel ? U.getDocumentUnitLabel(units) : (units === 'imperial' ? 'in' : 'mm');
+    return label.replace(/\(mm\)/g, `(${unit})`);
+  };
   const PETALIS_PRESET_LIBRARY = (Array.isArray(PRESETS) ? PRESETS : Array.isArray(PETALIS_PRESETS) ? PETALIS_PRESETS : [])
     .filter((preset) => {
       const system = preset?.preset_system || 'petalisDesigner';
@@ -1462,24 +1517,27 @@
         const makeRange = (def) => {
           const wrap = document.createElement('label');
           wrap.className = 'petal-slider-label';
-          const value = clamp(shade[def.key] ?? def.min, def.min, def.max);
-          shade[def.key] = value;
+          const adapter = lengthAdapter(def);
+          const stored = clamp(shade[def.key] ?? def.min, def.min, def.max);
+          shade[def.key] = stored;
+          const displayVal = adapter.toDisplay(stored);
           wrap.innerHTML = `
-            <span>${def.label}</span>
-            <span class="petal-slider-value">${formatValue(value, def.precision, def.unit || '')}</span>
-            <input type="range" min="${def.min}" max="${def.max}" step="${def.step}" value="${value}" data-shade-key="${def.key}">
+            <span>${decorateLabelForUnits(def.label)}</span>
+            <span class="petal-slider-value">${formatValue(displayVal, adapter.precision, adapter.unit)}</span>
+            <input type="range" min="${adapter.min}" max="${adapter.max}" step="${adapter.step}" value="${displayVal}" data-shade-key="${def.key}">
           `;
           const input = wrap.querySelector('input');
           const valueLabel = wrap.querySelector('.petal-slider-value');
           if (input && valueLabel) {
             input.disabled = !shade.enabled;
             const onRange = (live = false) => {
-              const next = Number.parseFloat(input.value);
-              if (!Number.isFinite(next)) return;
-              shade[def.key] = clamp(next, def.min, def.max);
+              const nextDisplay = Number.parseFloat(input.value);
+              if (!Number.isFinite(nextDisplay)) return;
+              const nextStored = adapter.fromDisplay(nextDisplay);
+              shade[def.key] = clamp(nextStored, def.min, def.max);
               shadings[idx] = shade;
               syncState();
-              valueLabel.textContent = formatValue(shade[def.key], def.precision, def.unit || '');
+              valueLabel.textContent = formatValue(adapter.toDisplay(shade[def.key]), adapter.precision, adapter.unit);
               onApply({ live });
             };
             input.oninput = () => onRange(true);
@@ -1678,26 +1736,28 @@
         const makeRange = (def) => {
           const wrap = document.createElement('label');
           wrap.className = 'petal-slider-label';
-          const precision = stepToPrecision(def.step);
-          const unit = def.displayUnit || '';
-          const value = clamp(modifier[def.key] ?? def.min ?? 0, def.min, def.max);
-          modifier[def.key] = value;
+          const adapter = lengthAdapter(def);
+          const precision = Number.isFinite(adapter.precision) ? adapter.precision : stepToPrecision(adapter.step);
+          const stored = clamp(modifier[def.key] ?? def.min ?? 0, def.min, def.max);
+          modifier[def.key] = stored;
+          const displayVal = adapter.toDisplay(stored);
           wrap.innerHTML = `
-            <span>${def.label}</span>
-            <span class="petal-slider-value">${formatValue(value, precision, unit)}</span>
-            <input type="range" min="${def.min}" max="${def.max}" step="${def.step}" value="${value}">
+            <span>${decorateLabelForUnits(def.label)}</span>
+            <span class="petal-slider-value">${formatValue(displayVal, precision, adapter.unit)}</span>
+            <input type="range" min="${adapter.min}" max="${adapter.max}" step="${adapter.step}" value="${displayVal}">
           `;
           const input = wrap.querySelector('input');
           const valueLabel = wrap.querySelector('.petal-slider-value');
           if (input && valueLabel) {
             input.disabled = !modifier.enabled;
             const onRange = (live = false) => {
-              const next = Number.parseFloat(input.value);
-              if (!Number.isFinite(next)) return;
-              modifier[def.key] = clamp(next, def.min, def.max);
+              const nextDisplay = Number.parseFloat(input.value);
+              if (!Number.isFinite(nextDisplay)) return;
+              const nextStored = adapter.fromDisplay(nextDisplay);
+              modifier[def.key] = clamp(nextStored, def.min, def.max);
               modifiers[idx] = modifier;
               syncState();
-              valueLabel.textContent = formatValue(modifier[def.key], precision, unit);
+              valueLabel.textContent = formatValue(adapter.toDisplay(modifier[def.key]), precision, adapter.unit);
               onApply({ live });
             };
             input.oninput = () => onRange(true);
@@ -1790,21 +1850,25 @@
       PETALIS_DESIGNER_RANDOMNESS_DEFS.forEach((def) => {
         const wrap = document.createElement('label');
         wrap.className = 'petal-slider-label';
-        const value = clamp(pd.state[def.key] ?? def.min ?? 0, def.min, def.max);
-        pd.state[def.key] = value;
+        const adapter = lengthAdapter(def);
+        const precision = Number.isFinite(adapter.precision) ? adapter.precision : (def.precision || 0);
+        const stored = clamp(pd.state[def.key] ?? def.min ?? 0, def.min, def.max);
+        pd.state[def.key] = stored;
+        const displayVal = adapter.toDisplay(stored);
         wrap.innerHTML = `
-          <span>${def.label}</span>
-          <span class="petal-slider-value">${formatValue(value, def.precision || 0, def.unit || '')}</span>
-          <input type="range" min="${def.min}" max="${def.max}" step="${def.step}" value="${value}">
+          <span>${decorateLabelForUnits(def.label)}</span>
+          <span class="petal-slider-value">${formatValue(displayVal, precision, adapter.unit)}</span>
+          <input type="range" min="${adapter.min}" max="${adapter.max}" step="${adapter.step}" value="${displayVal}">
         `;
         const input = wrap.querySelector('input');
         const valueLabel = wrap.querySelector('.petal-slider-value');
         if (input && valueLabel) {
           const onRange = (live = false) => {
-            const next = Number.parseFloat(input.value);
-            if (!Number.isFinite(next)) return;
-            pd.state[def.key] = clamp(next, def.min, def.max);
-            valueLabel.textContent = formatValue(pd.state[def.key], def.precision || 0, def.unit || '');
+            const nextDisplay = Number.parseFloat(input.value);
+            if (!Number.isFinite(nextDisplay)) return;
+            const nextStored = adapter.fromDisplay(nextDisplay);
+            pd.state[def.key] = clamp(nextStored, def.min, def.max);
+            valueLabel.textContent = formatValue(adapter.toDisplay(pd.state[def.key]), precision, adapter.unit);
             onApply({ live });
           };
           input.oninput = () => onRange(true);

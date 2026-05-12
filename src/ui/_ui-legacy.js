@@ -6838,6 +6838,7 @@
         };
       }
 
+      const TRANSLATION_KEYS = new Set(['posX', 'posY']);
       const bindTrans = (id, key) => {
         const el = getEl(id);
         if (!el) return;
@@ -6845,7 +6846,11 @@
           const l = this.app.engine.getActiveLayer();
           if (l) {
             if (this.app.pushHistory) this.app.pushHistory();
-            l.params[key] = parseFloat(e.target.value);
+            if (TRANSLATION_KEYS.has(key)) {
+              l.params[key] = this.parseDocumentNumber(e.target.value, { fallbackMm: l.params[key] ?? 0 });
+            } else {
+              l.params[key] = parseFloat(e.target.value);
+            }
             this.app.regen();
           }
         };

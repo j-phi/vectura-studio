@@ -306,11 +306,18 @@
 
     // Major size
     const syncGridSize = (val, commit) => {
-      SETTINGS.gridSize = Math.max(0.5, parseFloat(val) || 10);
-      const slider = getEl('set-grid-size-slider');
-      const num = getEl('set-grid-size');
-      if (slider) slider.value = SETTINGS.gridSize;
-      if (num) num.value = SETTINGS.gridSize;
+      const parsed = this.parseDocumentNumber
+        ? this.parseDocumentNumber(val, { fallbackMm: SETTINGS.gridSize ?? 10 })
+        : parseFloat(val);
+      SETTINGS.gridSize = Math.max(0.5, Number.isFinite(parsed) ? parsed : 10);
+      if (this.refreshDocumentUnitsUi) {
+        this.refreshDocumentUnitsUi();
+      } else {
+        const slider = getEl('set-grid-size-slider');
+        const num = getEl('set-grid-size');
+        if (slider) slider.value = SETTINGS.gridSize;
+        if (num) num.value = SETTINGS.gridSize;
+      }
       if (commit && this.app.pushHistory) this.app.pushHistory();
       this.app.render();
     };
@@ -366,11 +373,18 @@
 
     // Minor size
     const syncGridMinorSize = (val, commit) => {
-      SETTINGS.gridMinorSize = Math.max(0.5, parseFloat(val) || 5);
-      const slider = getEl('set-grid-minor-size-slider');
-      const num = getEl('set-grid-minor-size');
-      if (slider) slider.value = SETTINGS.gridMinorSize;
-      if (num) num.value = SETTINGS.gridMinorSize;
+      const parsed = this.parseDocumentNumber
+        ? this.parseDocumentNumber(val, { fallbackMm: SETTINGS.gridMinorSize ?? 5 })
+        : parseFloat(val);
+      SETTINGS.gridMinorSize = Math.max(0.5, Number.isFinite(parsed) ? parsed : 5);
+      if (this.refreshDocumentUnitsUi) {
+        this.refreshDocumentUnitsUi();
+      } else {
+        const slider = getEl('set-grid-minor-size-slider');
+        const num = getEl('set-grid-minor-size');
+        if (slider) slider.value = SETTINGS.gridMinorSize;
+        if (num) num.value = SETTINGS.gridMinorSize;
+      }
       if (commit && this.app.pushHistory) this.app.pushHistory();
       this.app.render();
     };

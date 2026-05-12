@@ -5611,8 +5611,15 @@
       const scaleX = document.getElementById('inp-scale-x');
       const scaleY = document.getElementById('inp-scale-y');
       const rotation = document.getElementById('inp-rotation');
-      if (posX) posX.value = layer.params.posX;
-      if (posY) posY.value = layer.params.posY;
+      const UU = (window.Vectura && window.Vectura.UnitUtils) || {};
+      const settings = (window.Vectura && window.Vectura.SETTINGS) || {};
+      const units = UU.normalizeDocumentUnits ? UU.normalizeDocumentUnits(settings.documentUnits) : 'metric';
+      const formatLen = (v) => {
+        if (!UU.formatDocumentLength) return v;
+        return UU.formatDocumentLength(v, units, { includeUnit: false, trimTrailingZeros: true });
+      };
+      if (posX) posX.value = formatLen(layer.params.posX);
+      if (posY) posY.value = formatLen(layer.params.posY);
       if (scaleX) scaleX.value = layer.params.scaleX;
       if (scaleY) scaleY.value = layer.params.scaleY;
       if (rotation) rotation.value = layer.params.rotation;

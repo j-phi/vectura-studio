@@ -154,8 +154,11 @@
       }
     }
     if (seed) seed.value = layer.params.seed;
-    if (posX) posX.value = layer.params.posX;
-    if (posY) posY.value = layer.params.posY;
+    const formatPos = (v) => (typeof this.formatDocumentNumber === 'function'
+      ? this.formatDocumentNumber(v, { trimTrailingZeros: true })
+      : v);
+    if (posX) posX.value = formatPos(layer.params.posX);
+    if (posY) posY.value = formatPos(layer.params.posY);
     if (scaleX) scaleX.value = layer.params.scaleX;
     if (scaleY) scaleY.value = layer.params.scaleY;
     if (rotation) rotation.value = layer.params.rotation;

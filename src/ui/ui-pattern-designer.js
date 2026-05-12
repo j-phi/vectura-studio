@@ -313,6 +313,18 @@
         if (shiftWrap) shiftWrap.style.display = caps.shift ? '' : 'none';
       };
 
+      const UU = (window.Vectura && window.Vectura.UnitUtils) || {};
+      const sett = (window.Vectura && window.Vectura.SETTINGS) || {};
+      const docUnits = UU.normalizeDocumentUnits ? UU.normalizeDocumentUnits(sett.documentUnits) : 'metric';
+      const isImperial = docUnits === 'imperial';
+      const unitLbl = UU.getDocumentUnitLabel ? UU.getDocumentUnitLabel(docUnits) : (isImperial ? 'in' : 'mm');
+      const mmToDoc = (v) => (isImperial ? Number(v || 0) / 25.4 : Number(v || 0));
+      const docToMm = (v) => (isImperial ? Number(v || 0) * 25.4 : Number(v || 0));
+      const padMax = mmToDoc(10);
+      const padStep = isImperial ? 0.01 : 0.1;
+      const padPrecision = isImperial ? 3 : 2;
+      const fmtPad = (v) => mmToDoc(v).toFixed(padPrecision).replace(/\.?0+$/, '');
+
       pd.fills.forEach((fill, idx) => {
         const wrapper = document.createElement('div');
         wrapper.className = 'border border-vectura-border bg-vectura-bg mb-0.5';
@@ -346,7 +358,7 @@
             <span>dot</span><input type="number" class="bg-vectura-bg border border-vectura-border px-0.5 py-0 text-[9px] w-10 focus:outline-none" data-fl-dotsize value="${fill.dotSize ?? 1.0}" min="0.1" max="3.0" step="0.05" title="Dot size">
           </span>
           <span class="flex items-center gap-0.5">
-            <span>pad</span><input type="number" class="bg-vectura-bg border border-vectura-border px-0.5 py-0 text-[9px] w-10 focus:outline-none" data-fl-padding value="${fill.padding ?? 0}" min="0" max="10" step="0.1" title="Padding (mm)">
+            <span>pad</span><input type="number" class="bg-vectura-bg border border-vectura-border px-0.5 py-0 text-[9px] w-10 focus:outline-none" data-fl-padding value="${fmtPad(fill.padding ?? 0)}" min="0" max="${padMax}" step="${padStep}" title="Padding (${unitLbl})">
           </span>
           <span data-fl-shift-wrap class="flex items-center gap-0.5">
             <span>dx</span><input type="number" class="bg-vectura-bg border border-vectura-border px-0.5 py-0 text-[9px] w-9 focus:outline-none" data-fl-shiftx value="${fill.shiftX ?? 0}" min="-50" max="50" step="0.5" title="Shift X">
@@ -386,7 +398,8 @@
           this._applyPatternDesignerChanges(pd);
         });
         row2.querySelector('[data-fl-padding]').addEventListener('change', (e) => {
-          fill.padding = parseFloat(e.target.value) ?? 0;
+          const next = parseFloat(e.target.value);
+          fill.padding = Number.isFinite(next) ? docToMm(next) : 0;
           this._applyPatternDesignerChanges(pd);
         });
         row2.querySelector('[data-fl-shiftx]').addEventListener('change', (e) => {
