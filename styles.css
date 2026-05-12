@@ -3499,7 +3499,9 @@ input[type='color']::-webkit-color-swatch {
 
 /* Collapse/expand animation for Document Setup sections */
 .settings-panel [data-sect-body] {
-  transition: max-height 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: max-height 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+              padding-top 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+              padding-bottom 0.28s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Per-section accent bar colors in Document Setup.

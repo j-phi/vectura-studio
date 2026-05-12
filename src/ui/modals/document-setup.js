@@ -110,7 +110,7 @@
             Paper
             <span class="sect-arrow"></span>
           </button>
-          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden">
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
             <div class="ctrl-grp">
               <span class="ctrl-sub-lbl">Orientation</span>
               <div id="orientation-toggle" class="seg-ctrl" role="radiogroup" aria-label="Orientation">
@@ -154,7 +154,7 @@
             Margins
             <span class="sect-arrow"></span>
           </button>
-          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden">
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
             ${swToggle('set-margin-line', 'Show margin outline')}
             <div class="line-style-control">
               <div class="style-field">
@@ -202,7 +202,7 @@
             Guides &amp; Display
             <span class="sect-arrow"></span>
           </button>
-          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden">
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
             ${swToggle('set-show-guides', 'Show guides')}
             ${swToggle('set-snap-guides', 'Snap to guides')}
           </div>
@@ -213,7 +213,7 @@
             Background &amp; Selection
             <span class="sect-arrow"></span>
           </button>
-          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden">
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
             <div class="ctrl-row">
               <label class="ctrl-lbl" for="bg-color-pill">Background</label>
               <span class="ctrl-row-trail">
@@ -249,7 +249,7 @@
             Plotter Physics
             <span class="sect-arrow"></span>
           </button>
-          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden">
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
             <div class="ctrl-2col">
               <div class="ctrl-grp">
                 <span class="ctrl-sub-lbl">Draw mm/s</span>
@@ -268,7 +268,7 @@
             UI Color Palette
             <span class="sect-arrow"></span>
           </button>
-          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden">
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
             <div class="palette-picker-wrap">
               <div id="layer-bar-palette-trigger" class="palette-picker-trigger" role="button" tabindex="0">
                 <span id="layer-bar-palette-name">Prism</span>
@@ -285,7 +285,7 @@
             History &amp; Preferences
             <span class="sect-arrow"></span>
           </button>
-          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden">
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
             <div class="ctrl-row">
               <label class="ctrl-lbl" for="set-undo">Undo steps</label>
               ${numStep({ id: 'set-undo', value: '', min: '1', max: '200', cls: 'num-step--narrow' })}
@@ -388,17 +388,53 @@
           const body = hdr.nextElementSibling;
           if (body && body.matches('[data-sect-body]')) {
             if (open) {
+              // Lift ALL four inline constraints before measuring so the
+              // element is in its fully natural CSS-class-only state.
+              // Crucially, overflow must also be cleared: Chrome/Blink omits
+              // padding-bottom from the offsetHeight of a flex container when
+              // overflow:hidden is set, causing the section to open ~8px too
+              // short (exactly --spacing-sm, the sect-body padding-bottom).
+              body.style.maxHeight = '';
+              body.style.overflow = '';
+              body.style.paddingTop = '';
+              body.style.paddingBottom = '';
+              const naturalHeight = body.offsetHeight;
+              // Snap back to the collapsed start state before any paint.
+              body.style.maxHeight = '0';
+              body.style.paddingTop = '0';
+              body.style.paddingBottom = '0';
               body.style.overflow = 'hidden';
-              body.style.maxHeight = body.scrollHeight + 'px';
-              body.addEventListener('transitionend', () => {
+              // Force reflow to anchor the collapsed state as the animation origin.
+              void body.offsetHeight;
+              // Animate to the measured natural height; restore padding simultaneously.
+              body.style.maxHeight = naturalHeight + 'px';
+              body.style.paddingTop = '';
+              body.style.paddingBottom = '';
+              // Filter on max-height specifically — padding-top and
+              // padding-bottom also fire transitionend and would clear
+              // maxHeight mid-flight if caught by a generic { once: true }.
+              const onOpenEnd = (e) => {
+                if (e.propertyName !== 'max-height') return;
+                body.removeEventListener('transitionend', onOpenEnd);
+                // Suppress CSS transitions before clearing maxHeight. Without
+                // this, clearing from Npx → none re-triggers the transition
+                // rule and causes a visible jump (the hitch). With it, the
+                // property snaps instantly and the transition is restored one
+                // frame later so future close/open animations still work.
+                body.style.transition = 'none';
+                void body.offsetHeight; // flush transition:none before the change
                 body.style.maxHeight = '';
                 body.style.overflow = '';
-              }, { once: true });
+                requestAnimationFrame(() => { body.style.transition = ''; });
+              };
+              body.addEventListener('transitionend', onOpenEnd);
             } else {
               body.style.maxHeight = body.scrollHeight + 'px';
               body.style.overflow = 'hidden';
               requestAnimationFrame(() => requestAnimationFrame(() => {
                 body.style.maxHeight = '0';
+                body.style.paddingTop = '0';
+                body.style.paddingBottom = '0';
               }));
             }
           }

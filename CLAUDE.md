@@ -6,6 +6,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Always read `AGENTS.md` first.** It is the repository-level contributor guideline and takes precedence over this file. `docs/agentic-harness-strategy.md` is the source-of-truth for agentic workflow, testing matrix, and documentation contracts.
 
+## Testing Discipline
+
+- Always run the full test suite before committing (target: all tests passing, e.g., 741/936/950 tests)
+- Use Red-Green-Refactor (RGR): write a failing regression test FIRST when fixing bugs, then verify it fails, fix the code, verify it passes
+- After any CSS or layout change, also run e2e/visual tests to catch z-index, media query, and specificity regressions
+
+## Commit Hygiene
+
+- Before staging, run `git status` and explicitly list files to be included; never `git add -A` if there is unrelated WIP
+- If unrelated WIP files are present, stop and ask the user before proceeding
+- Always commit AND push in the same step unless told otherwise; do not refuse to push to main if the user has confirmed it is safe
+
+## CSS & Layout Rules
+
+- Prefer container queries over viewport media queries for panel/component-level responsiveness
+- When changing CSS, audit for specificity conflicts and pre-existing rules that could override the new styles (grep for the selector first)
+- For collapse/expand animations, avoid `display:none` ↔ `max-height` swaps (causes visual gap); use `max-height + visibility` or `grid-template-rows` transitions instead
+
 ## What This Project Is
 
 Vectura Studio is a **no-build, browser-native** physics-inspired vector generator for plotter-ready line art. It uses vanilla JavaScript in an IIFE module pattern with `window.Vectura` namespace registration — there is no bundler, no transpilation, and no framework.

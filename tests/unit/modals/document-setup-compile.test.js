@@ -180,6 +180,75 @@ describe('document-setup panel compile gate', () => {
     expect(hdr.getAttribute('aria-expanded')).toBe('true');
   });
 
+  it('open animation reads offsetHeight after clearing max-height (accurate natural-height measure)', () => {
+    // REGRESSION GUARD: offsetHeight is the rendered padding-box height and
+    // is always affected by max-height constraints. We clear max-height first
+    // so the element is unconstrained when we read it, giving the true natural
+    // height including all padding. scrollHeight can undercount padding-bottom
+    // in some browsers for flex containers; offsetHeight never does.
+    //
+    // There are two offsetHeight reads: the first is the measurement (must
+    // happen with maxHeight=''), the second is a reflow-anchor after snapping
+    // back (maxHeight='0'). We assert only the first read.
+    const panel = dom.window.document.getElementById('settings-panel');
+    const collapsedHdr = panel.querySelector('[data-sect-toggle][aria-expanded="false"]');
+    expect(collapsedHdr).toBeTruthy();
+    const body = collapsedHdr.nextElementSibling;
+
+    const maxHeightLog = [];
+    const origOffsetHeight =
+      Object.getOwnPropertyDescriptor(dom.window.HTMLElement.prototype, 'offsetHeight') ||
+      Object.getOwnPropertyDescriptor(dom.window.Element.prototype, 'offsetHeight');
+    Object.defineProperty(body, 'offsetHeight', {
+      configurable: true,
+      get() {
+        maxHeightLog.push(body.style.maxHeight);
+        return origOffsetHeight ? origOffsetHeight.get.call(this) : 0;
+      },
+    });
+
+    collapsedHdr.click();
+
+    // First offsetHeight read must be the unconstrained natural-height
+    // measurement (maxHeight=''). Later reads may be reflow anchors (maxHeight='0').
+    expect(maxHeightLog.length).toBeGreaterThan(0);
+    expect(maxHeightLog[0]).toBe('');
+
+    delete body.offsetHeight;
+  });
+
+  it('transitionend on open clears maxHeight with transition suppressed (avoids hitch)', () => {
+    // REGRESSION GUARD: after the open animation the section must have no
+    // max-height constraint — leaving it at Npx clips content if the
+    // measurement was off by even a few pixels (e.g. padding-bottom).
+    //
+    // But clearing maxHeight naively re-triggers the CSS max-height transition
+    // from Npx → none, producing a visible jump (the hitch). The fix:
+    // set transition:none FIRST (suppressing any new transition), flush with a
+    // reflow, then clear maxHeight, then restore transition in a rAF.
+    const panel = dom.window.document.getElementById('settings-panel');
+    const collapsedHdr = panel.querySelector('[data-sect-toggle][aria-expanded="false"]');
+    expect(collapsedHdr).toBeTruthy();
+    const body = collapsedHdr.nextElementSibling;
+
+    collapsedHdr.click();
+    expect(body.style.overflow).toBe('hidden');
+
+    const event = Object.assign(
+      new dom.window.Event('transitionend', { bubbles: true }),
+      { propertyName: 'max-height', elapsedTime: 0.28 },
+    );
+    body.dispatchEvent(event);
+
+    // maxHeight must be fully cleared — a leftover Npx value clips content.
+    expect(body.style.maxHeight).toBe('');
+    // overflow restored so content isn't clipped by the element itself.
+    expect(body.style.overflow).toBe('');
+    // transition must be 'none' at this point: the rAF that restores it hasn't
+    // fired in JSDOM. This confirms the suppression happened before the clear.
+    expect(body.style.transition).toBe('none');
+  });
+
   it('num-step ± buttons mutate the input AND dispatch change so legacy handlers fire', () => {
     // The 30+ #set-* handlers in _ui-legacy.js bindGlobal() listen for
     // `change` events on the input. The new ± buttons must dispatch one,
