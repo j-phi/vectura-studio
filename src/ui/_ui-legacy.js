@@ -6367,10 +6367,9 @@
         const applyMarginLineDotting = (raw, options = {}) => {
           const { commit = false } = options;
           if (commit && this.app.pushHistory) this.app.pushHistory();
-          const next = Math.max(0, parseFloat(raw));
+          const next = Math.max(0, this.parseDocumentNumber(raw, { fallbackMm: SETTINGS.marginLineDotting ?? 0 }));
           SETTINGS.marginLineDotting = Number.isFinite(next) ? next : 0;
-          if (setMarginLineDotting) setMarginLineDotting.value = SETTINGS.marginLineDotting;
-          if (setMarginLineDottingSlider) setMarginLineDottingSlider.value = SETTINGS.marginLineDotting;
+          this.refreshDocumentUnitsUi();
           this.app.render();
         };
         setMarginLineDotting.oninput = (e) => applyMarginLineDotting(e.target.value);

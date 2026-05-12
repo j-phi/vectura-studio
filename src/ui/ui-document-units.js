@@ -91,7 +91,9 @@
       const paperWidthLabel = getEl('set-paper-width-label', { silent: true });
       const paperHeightLabel = getEl('set-paper-height-label', { silent: true });
       const marginLabel = getEl('set-margin-label', { silent: true });
+      const marginUnit = getEl('set-margin-unit', { silent: true });
       const marginLineWeightUnit = getEl('set-margin-line-weight-unit', { silent: true });
+      const marginLineDottingUnit = getEl('set-margin-line-dotting-unit', { silent: true });
       const selectionOutlineWidthUnit = getEl('set-selection-outline-width-unit', { silent: true });
       const margin = getEl('set-margin', { silent: true });
       const marginSlider = getEl('set-margin-slider', { silent: true });
@@ -99,6 +101,8 @@
       const paperHeight = getEl('set-paper-height', { silent: true });
       const marginLineWeight = getEl('set-margin-line-weight', { silent: true });
       const marginLineWeightSlider = getEl('set-margin-line-weight-slider', { silent: true });
+      const marginLineDotting = getEl('set-margin-line-dotting', { silent: true });
+      const marginLineDottingSlider = getEl('set-margin-line-dotting-slider', { silent: true });
       const selectionOutlineWidth = getEl('set-selection-outline-width', { silent: true });
       const selectionOutlineWidthSlider = getEl('set-selection-outline-width-slider', { silent: true });
 
@@ -106,7 +110,9 @@
       if (paperWidthLabel) paperWidthLabel.textContent = `Width (${unitLabel})`;
       if (paperHeightLabel) paperHeightLabel.textContent = `Height (${unitLabel})`;
       if (marginLabel) marginLabel.textContent = `Margin (${unitLabel})`;
+      if (marginUnit) marginUnit.textContent = unitLabel;
       if (marginLineWeightUnit) marginLineWeightUnit.textContent = unitLabel;
+      if (marginLineDottingUnit) marginLineDottingUnit.textContent = unitLabel;
       if (selectionOutlineWidthUnit) selectionOutlineWidthUnit.textContent = unitLabel;
 
       this.syncDocumentLengthInput(margin, SETTINGS.margin, { minMm: 0, stepMm: 0.01 });
@@ -115,6 +121,8 @@
       this.syncDocumentLengthInput(paperHeight, SETTINGS.paperHeight ?? 297, { minMm: 1, stepMm: 0.5 });
       this.syncDocumentLengthInput(marginLineWeight, SETTINGS.marginLineWeight ?? 0.2, { minMm: 0.05, maxMm: 2, stepMm: 0.05 });
       this.syncDocumentLengthInput(marginLineWeightSlider, SETTINGS.marginLineWeight ?? 0.2, { minMm: 0.05, maxMm: 2, stepMm: 0.05 });
+      this.syncDocumentLengthInput(marginLineDotting, SETTINGS.marginLineDotting ?? 0, { minMm: 0, stepMm: 0.5 });
+      this.syncDocumentLengthInput(marginLineDottingSlider, SETTINGS.marginLineDotting ?? 0, { minMm: 0, maxMm: 50, stepMm: 0.5 });
       this.syncDocumentLengthInput(selectionOutlineWidth, SETTINGS.selectionOutlineWidth ?? 0.15, { minMm: 0.1, maxMm: 2, stepMm: 0.05 });
       this.syncDocumentLengthInput(selectionOutlineWidthSlider, SETTINGS.selectionOutlineWidth ?? 0.15, { minMm: 0.1, maxMm: 2, stepMm: 0.05 });
     },

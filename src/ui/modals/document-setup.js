@@ -175,7 +175,7 @@
                 <div class="color-thickness-size slider-row">
                   <input type="range" id="set-margin-line-dotting-slider" class="ctrl-slider" min="0" max="50" step="0.5" value="0" />
                   <input type="number" id="set-margin-line-dotting" class="num-step-inp slider-val-inp" min="0" step="0.5" value="0" />
-                  <span class="ctrl-trail-hint">mm</span>
+                  <span id="set-margin-line-dotting-unit" class="ctrl-trail-hint">mm</span>
                 </div>
               </div>
             </div>
@@ -184,7 +184,7 @@
               <div class="slider-row">
                 <input type="range" id="set-margin-slider" class="ctrl-slider" min="0" max="50" step="0.5" value="10" />
                 <input type="number" id="set-margin" class="slider-val-inp" min="0" step="0.01" value="10" />
-                <span class="ctrl-trail-hint">mm</span>
+                <span id="set-margin-unit" class="ctrl-trail-hint">mm</span>
               </div>
             </div>
             ${swToggle('set-truncate', 'Crop art to margins')}
