@@ -577,10 +577,14 @@
       const convertedStep = mmToDocumentUnits(rawStep, units);
       const step = convertedStep || rawStep;
       const unit = getDocumentUnitLabel(units);
-      const precision = Math.max(
-        Number.isFinite(def.displayPrecision) ? def.displayPrecision : 0,
-        getDocumentUnitPrecision(units),
-        stepPrecision(step),
+      const precisionCap = units === 'imperial' ? 4 : 3;
+      const precision = Math.min(
+        precisionCap,
+        Math.max(
+          Number.isFinite(def.displayPrecision) ? def.displayPrecision : 0,
+          getDocumentUnitPrecision(units),
+          Math.min(stepPrecision(step), precisionCap),
+        ),
       );
       return { min, max, step, unit, precision };
     }

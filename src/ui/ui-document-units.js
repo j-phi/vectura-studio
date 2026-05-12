@@ -42,9 +42,16 @@
       const units = this.getDocumentUnits();
       const convertedStep = options.stepMm !== undefined ? mmToDocumentUnits(options.stepMm, units) : null;
       const step = options.step !== undefined ? options.step : (convertedStep || getDocumentUnitStep(units));
-      const precision = Math.max(
-        getDocumentUnitPrecision(units, options.precision),
-        stepPrecision(step)
+      // Cap precision so converted steps (e.g. 0.01 mm → 0.000393… in) don't
+      // bleed every float digit into the input. 4 decimals on inches resolves
+      // to ~0.025 mm — fine enough for plotter work.
+      const precisionCap = units === 'imperial' ? 4 : 3;
+      const precision = Math.min(
+        precisionCap,
+        Math.max(
+          getDocumentUnitPrecision(units, options.precision),
+          Math.min(stepPrecision(step), precisionCap),
+        ),
       );
       const min = options.minMm !== undefined ? mmToDocumentUnits(options.minMm, units) : null;
       const max = options.maxMm !== undefined ? mmToDocumentUnits(options.maxMm, units) : null;
