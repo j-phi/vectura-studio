@@ -151,6 +151,16 @@
           layer.sourcePaths = clone(group.paths);
           if (group.stroke) layer.color = group.stroke;
           if (Number.isFinite(group.strokeWidth)) layer.strokeWidth = group.strokeWidth;
+          const { width, height } = this.app.engine.currentProfile;
+          let bMinX = Infinity, bMinY = Infinity, bMaxX = -Infinity, bMaxY = -Infinity;
+          group.paths.forEach(path => path.forEach(pt => {
+            bMinX = Math.min(bMinX, pt.x); bMinY = Math.min(bMinY, pt.y);
+            bMaxX = Math.max(bMaxX, pt.x); bMaxY = Math.max(bMaxY, pt.y);
+          }));
+          if (Number.isFinite(bMinX)) {
+            layer.params.posX = width / 2 - (bMinX + bMaxX) / 2;
+            layer.params.posY = height / 2 - (bMinY + bMaxY) / 2;
+          }
           created.push(layer);
           this.app.engine.layers.push(layer);
           this.app.engine.generate(layer.id);
@@ -183,6 +193,15 @@
         const num = parseFloat(cleaned);
         return Number.isFinite(num) ? num : fallback;
       };
+      const parseLengthMm = (val) => {
+        if (!val) return null;
+        const m = String(val).trim().match(/^([+-]?[0-9]*\.?[0-9]+)\s*(px|mm|cm|in|pt|pc)?$/i);
+        if (!m) return null;
+        const num = parseFloat(m[1]);
+        const unit = (m[2] || 'px').toLowerCase();
+        const toMm = { px: 25.4 / 96, mm: 1, cm: 10, in: 25.4, pt: 25.4 / 72, pc: 25.4 / 6 };
+        return toMm[unit] != null ? num * toMm[unit] : null;
+      };
       const viewBox = svg.getAttribute('viewBox');
       let vbMinX = 0;
       let vbMinY = 0;
@@ -193,6 +212,16 @@
         if (parts.length >= 4) {
           [vbMinX, vbMinY, vbW, vbH] = parts;
         }
+      }
+      const physWMm = parseLengthMm(svg.getAttribute('width'));
+      const physHMm = parseLengthMm(svg.getAttribute('height'));
+      const isIllustrator = /Adobe Illustrator/i.test(svgText);
+      const defaultUnitMm = isIllustrator ? (25.4 / 72) : (25.4 / 96);
+      let scaleMm = defaultUnitMm;
+      if (physWMm != null && vbW > 0) {
+        scaleMm = physWMm / vbW;
+      } else if (physHMm != null && vbH > 0) {
+        scaleMm = physHMm / vbH;
       }
       const tempSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       if (viewBox) tempSvg.setAttribute('viewBox', viewBox);
@@ -253,6 +282,14 @@
           }
         });
       });
+
+      if (scaleMm !== 1) {
+        order.forEach((key) => {
+          const group = groups.get(key);
+          group.paths.forEach((path) => path.forEach((pt) => { pt.x *= scaleMm; pt.y *= scaleMm; }));
+          if (Number.isFinite(group.strokeWidth)) group.strokeWidth *= scaleMm;
+        });
+      }
 
       return order.map((key) => groups.get(key)).filter((group) => group.paths && group.paths.length);
     },

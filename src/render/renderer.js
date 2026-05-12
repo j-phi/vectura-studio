@@ -2810,7 +2810,8 @@
       const showBoundingBox = this.activeTool !== 'pen' && this.activeTool !== 'direct';
       if (showBoundingBox && selectionLayersForBox.length) {
         const bounds = this.getSelectionBounds(selectionLayersForBox, this.tempTransform);
-        const showHandles = selectionLayersForBox.length === 1;
+        const anyLocked = selectionLayersForBox.some((l) => this.isLayerLocked?.(l.id));
+        const showHandles = !anyLocked;
         if (bounds) this.drawSelection(bounds, { showHandles });
       }
       if (this.selectionRect) this.drawSelectionRect(this.selectionRect);
@@ -3799,28 +3800,29 @@
               layer.params.posY += this.tempTransform.dy + snapDy;
               this.engine.generate(layer.id);
             });
-          } else if (this.dragMode === 'resize' && selectedLayers.length === 1) {
-            const activeLayer = selectedLayers[0];
+          } else if (this.dragMode === 'resize' && selectedLayers.length) {
             let scaleX = this.tempTransform.scaleX;
             let scaleY = this.tempTransform.scaleY;
-            if (this.snapAllowed && this.snap) {
+            if (selectedLayers.length === 1 && this.snapAllowed && this.snap) {
               if (this.snap.scaleX) scaleX *= this.snap.scaleX;
               if (this.snap.scaleY) scaleY *= this.snap.scaleY;
             }
             const prof = this.engine.currentProfile;
-            const originLocal = activeLayer.origin || { x: prof.width / 2, y: prof.height / 2 };
-            const baseOrigin = {
-              x: originLocal.x + (activeLayer.params.posX ?? 0),
-              y: originLocal.y + (activeLayer.params.posY ?? 0),
-            };
-            const resizeOrigin = this.tempTransform.origin || baseOrigin;
-            activeLayer.params.scaleX *= scaleX;
-            activeLayer.params.scaleY *= scaleY;
-            activeLayer.params.posX =
-              (baseOrigin.x - resizeOrigin.x) * scaleX + resizeOrigin.x - originLocal.x;
-            activeLayer.params.posY =
-              (baseOrigin.y - resizeOrigin.y) * scaleY + resizeOrigin.y - originLocal.y;
-            this.engine.generate(activeLayer.id);
+            selectedLayers.forEach((activeLayer) => {
+              const originLocal = activeLayer.origin || { x: prof.width / 2, y: prof.height / 2 };
+              const baseOrigin = {
+                x: originLocal.x + (activeLayer.params.posX ?? 0),
+                y: originLocal.y + (activeLayer.params.posY ?? 0),
+              };
+              const resizeOrigin = this.tempTransform.origin || baseOrigin;
+              activeLayer.params.scaleX *= scaleX;
+              activeLayer.params.scaleY *= scaleY;
+              activeLayer.params.posX =
+                (baseOrigin.x - resizeOrigin.x) * scaleX + resizeOrigin.x - originLocal.x;
+              activeLayer.params.posY =
+                (baseOrigin.y - resizeOrigin.y) * scaleY + resizeOrigin.y - originLocal.y;
+              this.engine.generate(activeLayer.id);
+            });
           } else if (this.dragMode === 'rotate') {
             const delta = this.tempTransform.rotation ?? 0;
             const origin = this.rotateOrigin || (this.startBounds ? this.startBounds.origin : null);
