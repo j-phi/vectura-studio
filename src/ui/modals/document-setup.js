@@ -250,15 +250,13 @@
             <span class="sect-arrow"></span>
           </button>
           <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
-            <div class="ctrl-2col">
-              <div class="ctrl-grp">
-                <span class="ctrl-sub-lbl">Draw mm/s</span>
-                ${numStep({ id: 'set-speed-down', value: '' })}
-              </div>
-              <div class="ctrl-grp">
-                <span class="ctrl-sub-lbl">Travel mm/s</span>
-                ${numStep({ id: 'set-speed-up', value: '' })}
-              </div>
+            <div class="ctrl-grp">
+              <span class="ctrl-sub-lbl">Draw mm/s</span>
+              ${numStep({ id: 'set-speed-down', value: '' })}
+            </div>
+            <div class="ctrl-grp">
+              <span class="ctrl-sub-lbl">Travel mm/s</span>
+              ${numStep({ id: 'set-speed-up', value: '' })}
             </div>
           </div>
         </div>
@@ -388,23 +386,26 @@
           const body = hdr.nextElementSibling;
           if (body && body.matches('[data-sect-body]')) {
             if (open) {
-              // Lift ALL four inline constraints before measuring so the
-              // element is in its fully natural CSS-class-only state.
-              // Crucially, overflow must also be cleared: Chrome/Blink omits
-              // padding-bottom from the offsetHeight of a flex container when
-              // overflow:hidden is set, causing the section to open ~8px too
-              // short (exactly --spacing-sm, the sect-body padding-bottom).
+              // Suppress the CSS transition before lifting inline zeroes so
+              // that clearing paddingTop/Bottom doesn't start a 0→CSS
+              // transition mid-measurement. Without this, offsetHeight captures
+              // t=0 of the transition (padding still 0), undercounting by
+              // padding-top + padding-bottom and causing a jump at open-end.
+              body.style.transition = 'none';
               body.style.maxHeight = '';
               body.style.overflow = '';
               body.style.paddingTop = '';
               body.style.paddingBottom = '';
+              void body.offsetHeight; // flush transition:none so CSS applies fully
               const naturalHeight = body.offsetHeight;
               // Snap back to the collapsed start state before any paint.
               body.style.maxHeight = '0';
               body.style.paddingTop = '0';
               body.style.paddingBottom = '0';
               body.style.overflow = 'hidden';
-              // Force reflow to anchor the collapsed state as the animation origin.
+              // Restore CSS transition, then force reflow to anchor the
+              // collapsed state as the animation origin.
+              body.style.transition = '';
               void body.offsetHeight;
               // Animate to the measured natural height; restore padding simultaneously.
               body.style.maxHeight = naturalHeight + 'px';
