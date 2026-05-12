@@ -81,6 +81,7 @@
         persist: false,
         syncPen1: coldBootSync,
         syncDocumentBg: coldBootSync,
+        syncGridColor: coldBootSync,
         refreshUi: false,
         render: false,
       });
@@ -225,6 +226,7 @@
         persist: false,
         syncPen1: true,
         syncDocumentBg: true,
+        syncGridColor: true,
         refreshUi: true,
         render: false,
       });
@@ -639,6 +641,7 @@
         persist = true,
         syncPen1 = false,
         syncDocumentBg = false,
+        syncGridColor = false,
         refreshUi = true,
         render = true,
       } = options;
@@ -688,6 +691,11 @@
         SETTINGS.bgColor = theme.documentBg;
       }
 
+      if (syncGridColor) {
+        if (theme.gridColor) SETTINGS.gridColor = theme.gridColor;
+        if (theme.gridMinorColor) SETTINGS.gridMinorColor = theme.gridMinorColor;
+      }
+
       if (syncPen1 && Array.isArray(SETTINGS.pens) && SETTINGS.pens.length) {
         const pen1 = SETTINGS.pens.find((pen) => pen?.id === 'pen-1') || SETTINGS.pens[0];
         if (pen1) {
@@ -730,6 +738,7 @@
         persist: true,
         syncPen1: true,
         syncDocumentBg: true,
+        syncGridColor: true,
         refreshUi: true,
         render: true,
       });
@@ -747,6 +756,7 @@
         persist: true,
         syncPen1: true,
         syncDocumentBg: true,
+        syncGridColor: true,
         refreshUi: true,
         render: true,
       });

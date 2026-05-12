@@ -92,6 +92,8 @@
       metaThemeColor: '#1b1b1b',
       documentBg: '#121214',
       pen1Color: '#e6f1ff',
+      gridColor: '#ffffff',
+      gridMinorColor: '#ffffff',
       // The renderer reads --render-canvas / --color-workspace via getComputedStyle.
       // Pushing them inline here guarantees they overwrite any stale values left by
       // a previously-active classic-* skin (which pushes its own dark workspace tokens).
@@ -120,6 +122,8 @@
       // Pure black ink for plotter realism on the white paper. Matches the
       // historical "lark" contract preserved in tests/integration/ui-bootstrap-panels.
       pen1Color: '#000000',
+      gridColor: '#000000',
+      gridMinorColor: '#000000',
       // Light canvas/paper paired with dark UI chrome. The full --color-* alias
       // set is pushed inline so styles.css :root defaults (which have the same
       // specificity as [data-ui-skin] but load later) can't bleed through.
@@ -167,6 +171,8 @@
       metaThemeColor: '#efefef',
       documentBg: '#ffffff',
       pen1Color: '#0a1320',
+      gridColor: '#000000',
+      gridMinorColor: '#000000',
       // Full --color-* alias set pushed inline so styles.css :root dark defaults
       // (which load after meridian-light.css and tie on specificity) don't bleed
       // through and dark-tint .tool-btn / .pendulum-card / etc.
@@ -215,6 +221,8 @@
       metaThemeColor: '#09090b',
       documentBg: '#121214',
       pen1Color: '#ffffff',
+      gridColor: '#ffffff',
+      gridMinorColor: '#ffffff',
       cssVars: {
         '--vectura-bg-rgb': '9 9 11',
         '--vectura-panel-rgb': '24 24 27',
@@ -284,6 +292,8 @@
       metaThemeColor: '#09090b',
       documentBg: '#ffffff',
       pen1Color: '#000000',
+      gridColor: '#000000',
+      gridMinorColor: '#000000',
       cssVars: {
         '--vectura-bg-rgb': '9 9 11',
         '--vectura-panel-rgb': '24 24 27',
@@ -353,6 +363,8 @@
       metaThemeColor: '#f5f5f5',
       documentBg: '#ffffff',
       pen1Color: '#000000',
+      gridColor: '#000000',
+      gridMinorColor: '#000000',
       cssVars: {
         '--vectura-bg-rgb': '243 244 246',
         '--vectura-panel-rgb': '229 231 235',
