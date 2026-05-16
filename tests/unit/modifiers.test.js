@@ -243,4 +243,45 @@ describe('Arc mirror modifier', () => {
     expect(out).toHaveLength(1);
   });
 
+  describe('wallpaper mirror canvas coverage', () => {
+    // Canvas 800x600, tile 60x60, center at canvas center (400,300).
+    // Tiles must reach x<200 and x>600 to prove full horizontal coverage.
+    const CANVAS = { width: 800, height: 600 };
+    const MIRROR = {
+      enabled: true, type: 'wallpaper', group: 'p1',
+      tileWidth: 60, tileHeight: 60, tileAngle: 90, rotation: 0,
+      centerX: 0, centerY: 0,
+    };
+    // A horizontal segment near the center of the fundamental domain.
+    const INPUT = [[{ x: 410, y: 310 }, { x: 415, y: 310 }]];
+
+    test('tiles reach left edge of canvas (x < 200)', () => {
+      const { Modifiers } = runtime.window.Vectura;
+      const out = Modifiers.applyWallpaperMirrorToPaths(INPUT, MIRROR, CANVAS);
+      const minX = Math.min(...out.flatMap((p) => p.map((pt) => pt.x)));
+      expect(minX).toBeLessThan(200);
+    });
+
+    test('tiles reach right edge of canvas (x > 600)', () => {
+      const { Modifiers } = runtime.window.Vectura;
+      const out = Modifiers.applyWallpaperMirrorToPaths(INPUT, MIRROR, CANVAS);
+      const maxX = Math.max(...out.flatMap((p) => p.map((pt) => pt.x)));
+      expect(maxX).toBeGreaterThan(600);
+    });
+
+    test('tiles reach top edge of canvas (y < 150)', () => {
+      const { Modifiers } = runtime.window.Vectura;
+      const out = Modifiers.applyWallpaperMirrorToPaths(INPUT, MIRROR, CANVAS);
+      const minY = Math.min(...out.flatMap((p) => p.map((pt) => pt.y)));
+      expect(minY).toBeLessThan(150);
+    });
+
+    test('tiles reach bottom edge of canvas (y > 450)', () => {
+      const { Modifiers } = runtime.window.Vectura;
+      const out = Modifiers.applyWallpaperMirrorToPaths(INPUT, MIRROR, CANVAS);
+      const maxY = Math.max(...out.flatMap((p) => p.map((pt) => pt.y)));
+      expect(maxY).toBeGreaterThan(450);
+    });
+  });
+
 });

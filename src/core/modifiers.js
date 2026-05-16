@@ -621,7 +621,7 @@
     });
 
     // Tile canvas using lattice translation vectors
-    const { nMin, nMax, mMin, mMax } = getTileRange(bounds, latticeA, latticeB);
+    const { nMin, nMax, mMin, mMax } = getTileRange(bounds, latticeA, latticeB, cx, cy);
     const output = [];
     for (let n = nMin; n <= nMax; n++) {
       for (let m = mMin; m <= mMax; m++) {

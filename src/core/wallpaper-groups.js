@@ -401,12 +401,14 @@
   const GROUP_IDS = Object.keys(GROUPS);
 
   // Compute integer (n,m) range to cover canvas bounds with lattice translations.
-  const getTileRange = (bounds, a1, a2) => {
+  // cx/cy: lattice origin in canvas space (tile center point). Canvas corners must be
+  // expressed relative to this origin before solving for lattice indices.
+  const getTileRange = (bounds, a1, a2, cx = 0, cy = 0) => {
     const w = bounds.width ?? 0;
     const h = bounds.height ?? 0;
     const det = a1.x * a2.y - a1.y * a2.x;
     if (Math.abs(det) < 1e-8) return { nMin: -8, nMax: 8, mMin: -8, mMax: 8 };
-    const corners = [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: 0, y: h }, { x: w, y: h }];
+    const corners = [{ x: -cx, y: -cy }, { x: w - cx, y: -cy }, { x: -cx, y: h - cy }, { x: w - cx, y: h - cy }];
     let nMin = Infinity, nMax = -Infinity, mMin = Infinity, mMax = -Infinity;
     corners.forEach((c) => {
       const n = (c.x * a2.y - c.y * a2.x) / det;
