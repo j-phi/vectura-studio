@@ -2158,6 +2158,49 @@
 [data-ui-skin] .noise-reset:disabled,
 [data-ui-skin] .noise-rand:disabled { opacity: 0.35; cursor: not-allowed; }
 
+/* ── Randomize Params magic button ───────────────────────────────────── */
+[data-ui-skin] #btn-randomize-params {
+  border-color: rgba(217, 70, 239, 1);
+  color: #c4a8e0;
+  background: transparent;
+  position: relative;
+  overflow: visible;
+  transition: box-shadow 0.25s, color 0.25s, background 0.15s;
+  box-shadow: none;
+}
+[data-ui-skin] #btn-randomize-params::before {
+  content: '✦';
+  margin-right: 5px;
+  font-size: 10px;
+  display: inline;
+}
+[data-ui-skin] #btn-randomize-params:hover {
+  border-color: rgba(217, 70, 239, 1);
+  animation: rand-glow-pulse 2s ease-in-out infinite;
+  color: #d8b4fe;
+  background: rgba(217, 70, 239, 0.05) !important;
+}
+[data-ui-skin] #btn-randomize-params:active { transform: scale(0.97); }
+[data-ui-skin] #btn-randomize-params:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  box-shadow: none;
+  border-color: var(--ui-border);
+  color: var(--ui-muted);
+}
+
+/* Spark overlay particles — fixed-position spans appended to <body> on click. */
+.rand-spark-overlay {
+  position: fixed;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--spark-color, rgba(217, 70, 239, 0.9));
+  pointer-events: none;
+  z-index: 9999;
+  animation: rand-spark-fly 0.5s ease-out forwards;
+}
+
 /* ── Noise control rows (individual parameter rows inside a card) ─────── */
 [data-ui-skin] .noise-control { display: flex; flex-direction: column; gap: var(--spacing-xs); }
 

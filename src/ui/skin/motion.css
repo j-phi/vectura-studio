@@ -43,6 +43,21 @@
   100% { opacity: 1; }
 }
 
+/* Randomize button — hover glow pulse. */
+@keyframes rand-glow-pulse {
+  0%, 100% { box-shadow: 0 0 8px -1px rgba(217, 70, 239, 0.30); }
+  50%       { box-shadow: 0 0 16px  0px rgba(217, 70, 239, 0.55); }
+}
+
+/* Randomize button — spark particle scatter (uses --dx, --dy CSS vars per particle). */
+@keyframes rand-spark-fly {
+  0%   { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  100% {
+    transform: translate(calc(-50% + var(--dx, 0px)), calc(-50% + var(--dy, 0px))) scale(0);
+    opacity: 0;
+  }
+}
+
 /* Indeterminate progress bar — Phase 4. Slides a 30% bar from -30% → 100%. */
 @keyframes progress-indeterminate {
   0%   { transform: translateX(-100%); }
@@ -82,4 +97,6 @@
     width: 100%;
     opacity: 0.55;
   }
+  #btn-randomize-params  { animation: none !important; }
+  .rand-spark-overlay    { display: none !important; }
 }

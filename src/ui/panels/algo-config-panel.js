@@ -50,6 +50,30 @@
     };
   };
 
+  const RAND_SPARKS = [
+    { dx: '-14px', dy: '-12px', color: 'rgba(217,70,239,0.9)',  delay: '0s'    },
+    { dx: '13px',  dy: '-14px', color: 'rgba(192,132,252,0.9)', delay: '0.03s' },
+    { dx: '16px',  dy: '8px',   color: 'rgba(56,189,248,0.85)', delay: '0.06s' },
+    { dx: '-13px', dy: '9px',   color: 'rgba(217,70,239,0.8)',  delay: '0.04s' },
+    { dx: '7px',   dy: '13px',  color: 'rgba(192,132,252,0.8)', delay: '0.02s' },
+    { dx: '-6px',  dy: '-16px', color: 'rgba(56,189,248,0.9)',  delay: '0.05s' },
+  ];
+
+  function fireRandSparks(x, y) {
+    RAND_SPARKS.forEach(({ dx, dy, color, delay }) => {
+      const s = document.createElement('span');
+      s.className = 'rand-spark-overlay';
+      s.style.left = x + 'px';
+      s.style.top  = y + 'px';
+      s.style.setProperty('--dx', dx);
+      s.style.setProperty('--dy', dy);
+      s.style.setProperty('--spark-color', color);
+      s.style.animationDelay = delay;
+      document.body.appendChild(s);
+      s.addEventListener('animationend', () => s.remove(), { once: true });
+    });
+  }
+
   function buildControls() {
     // Closure-captured legacy IIFE locals — destructured fresh each call so the
     // new file matches the original body's reference set 1:1. The deps bag is
@@ -223,12 +247,15 @@
     const randomBtn = document.createElement('button');
     randomBtn.type = 'button';
     randomBtn.id = 'btn-randomize-params';
-    randomBtn.className =
-      'w-full text-xs border border-vectura-border px-2 py-2 hover:bg-vectura-border text-vectura-muted transition-colors';
-    randomBtn.textContent = 'Randomize Params';
-    randomBtn.onclick = () => {
+    randomBtn.className = 'w-full text-xs border px-2 py-2';
+    randomBtn.textContent = 'Randomize';
+    randomBtn.onclick = (e) => {
       const l = this.app.engine.getActiveLayer();
       if (!l) return;
+      const rect = randomBtn.getBoundingClientRect();
+      const x = e.clientX || (rect.left + rect.width / 2);
+      const y = e.clientY || (rect.top + rect.height / 2);
+      fireRandSparks(x, y);
       if (this.app.pushHistory) this.app.pushHistory();
       this.randomizeLayerParams(l);
       this.storeLayerParams(l);

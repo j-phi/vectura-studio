@@ -32,6 +32,8 @@ describe('Reduced-motion compliance', () => {
     'fx-pulse-fill': ['fx-active', 'reduce'],
     'btn-press': ['btn-pulse', 'reduce'],
     'progress-indeterminate': ['progress-bar', 'reduce'],
+    'rand-glow-pulse': ['btn-randomize-params', 'reduce'],
+    'rand-spark-fly':  ['rand-spark-overlay', 'reduce'],
   };
 
   test('motion.css declares a prefers-reduced-motion: reduce block', () => {
