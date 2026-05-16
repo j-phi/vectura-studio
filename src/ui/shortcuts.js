@@ -573,6 +573,7 @@
         this.insertMirrorModifier();
         _toast('Added mirror modifier');
       }
+      this.setActiveTool?.('select');
       this.renderLayers();
       this.app.render();
     });
