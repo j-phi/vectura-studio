@@ -1856,27 +1856,6 @@
       this.maskPreview = null;
     }
 
-    _computeMirrorDragPreviewPaths(layer, tempTransform) {
-      if (!tempTransform || !layer || !this.engine?.getAncestorModifiers) return null;
-      const ancestorModifiers = this.engine.getAncestorModifiers(layer);
-      if (!ancestorModifiers.length) return null;
-      const split = this.engine._splitModifiersByMaskBoundary?.(layer) ?? { inside: ancestorModifiers };
-      const { inside } = split;
-      if (!inside.length) return null;
-      const Modifiers = window.Vectura?.Modifiers;
-      if (!Modifiers?.applyModifierToPaths) return null;
-      const bounds = this.engine.getBounds?.() ?? this.engine.currentProfile;
-      const sourcePaths = (layer.paths || []).map((path) =>
-        path?.meta?.kind === 'circle'
-          ? { meta: this.transformCircleMeta(path.meta, tempTransform) }
-          : this.transformPath(path, tempTransform)
-      );
-      return inside.reduce(
-        (current, modifierLayer) => Modifiers.applyModifierToPaths(current, modifierLayer.modifier, bounds),
-        sourcePaths
-      );
-    }
-
     shouldSkipLayerForMaskPreview(layer) {
       return Boolean(layer && this.maskPreview?.descendantIds?.has(layer.id));
     }
@@ -2325,21 +2304,10 @@
 
           const useCurves = Boolean(l.params && l.params.curves);
           const useLayerOptimized = useOptimized && optimizationTargetIds.has(l.id);
-          const rawTemp = this.selectedLayerIds?.has(l.id) && this.tempTransform ? this.tempTransform : null;
-          let paths, temp;
-          if (rawTemp) {
-            const mirrorPreview = this._computeMirrorDragPreviewPaths(l, rawTemp);
-            if (mirrorPreview) {
-              paths = mirrorPreview;
-              temp = null;
-            }
-          }
-          if (!paths) {
-            paths = this.engine.getRenderablePaths
-              ? this.engine.getRenderablePaths(l, { useOptimized: useLayerOptimized })
-              : l.paths;
-            temp = rawTemp;
-          }
+          const paths = this.engine.getRenderablePaths
+            ? this.engine.getRenderablePaths(l, { useOptimized: useLayerOptimized })
+            : l.paths;
+          const temp = this.selectedLayerIds?.has(l.id) && this.tempTransform ? this.tempTransform : null;
           (paths || []).forEach((path) => {
             const next = path && path.meta && path.meta.kind === 'circle'
               ? { meta: temp ? this.transformCircleMeta(path.meta, temp) : path.meta }
