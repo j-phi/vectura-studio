@@ -7105,6 +7105,13 @@
       layer.paths = [];
       layer.sourcePaths = null;
       layer.paramStates = {};
+      // Groups are skipped by computeAllDisplayGeometry(), so cached geometry from
+      // the pre-expansion type would otherwise be returned forever by getRenderablePaths().
+      layer.effectivePaths = [];
+      layer.displayPaths = [];
+      layer.optimizedPaths = null;
+      layer.effectiveStats = null;
+      layer.displayStats = null;
 
       const idx = this.app.engine.layers.findIndex((l) => l.id === groupId);
       const orderedItems = [];
