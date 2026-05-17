@@ -3401,7 +3401,7 @@
               this.setCanvasCursor('grabbing');
             } else {
               this.dragMode = 'resize';
-              this.setCanvasCursor(this.handleCursor(handle, selectionBounds));
+              this.setCanvasCursor(this.handleCursor(handle, selectionBounds), 'resize');
             }
             e.preventDefault();
             return;
@@ -3709,9 +3709,9 @@
           scaleX = Math.max(0.05, Math.min(Math.abs(scaleX), 20));
           scaleY = Math.max(0.05, Math.min(Math.abs(scaleY), 20));
           this.tempTransform = { dx: 0, dy: 0, scaleX, scaleY, origin };
-          const _tw = Math.abs(this.startBounds.width * scaleX);
-          const _th = Math.abs(this.startBounds.height * scaleY);
-          this.showDragTooltip(`${_tw.toFixed(1)} × ${_th.toFixed(1)}`, e.clientX, e.clientY);
+          const _tw = Math.round(Math.abs((this.startBounds.maxX - this.startBounds.minX) * scaleX));
+          const _th = Math.round(Math.abs((this.startBounds.maxY - this.startBounds.minY) * scaleY));
+          this.showDragTooltip(`${_tw} × ${_th}`, e.clientX, e.clientY);
         } else if (this.dragMode === 'rotate' && this.rotateOrigin) {
           const angle = Math.atan2(world.y - this.rotateOrigin.y, world.x - this.rotateOrigin.x);
           let delta = ((angle - this.rotateStartAngle) * 180) / Math.PI;
@@ -5705,8 +5705,14 @@
     }
 
     handleCursor(handle, bounds = null) {
-      if (handle === 'nw' || handle === 'se') return 'nwse-resize';
-      if (handle === 'ne' || handle === 'sw') return 'nesw-resize';
+      if (handle === 'nw' || handle === 'ne' || handle === 'se' || handle === 'sw') {
+        const corner = bounds?.corners?.[handle];
+        const center = bounds?.center;
+        const fallback = (handle === 'nw' || handle === 'se') ? 'nwse-resize' : 'nesw-resize';
+        if (!corner || !center) return fallback;
+        const angleDeg = Math.atan2(corner.y - center.y, corner.x - center.x) * 180 / Math.PI;
+        return this.cursorDataUrl('resize', 12, 12, fallback, angleDeg);
+      }
       if (typeof handle === 'string' && handle.startsWith('rotate-')) {
         const cornerKey = handle.slice('rotate-'.length);
         const corner = bounds?.corners?.[cornerKey];
@@ -5823,7 +5829,7 @@
       }
       const handle = this.hitHandle(sx, sy, bounds);
       if (handle) {
-        const mode = handle.startsWith('rotate') ? 'rotate' : '';
+        const mode = handle.startsWith('rotate') ? 'rotate' : 'resize';
         this.setCanvasCursor(this.handleCursor(handle, bounds), mode);
         return;
       }

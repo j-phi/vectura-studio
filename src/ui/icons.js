@@ -105,6 +105,17 @@
     // face cardinal directions (N/S/E/W); which pair depends on the bulge
     // quadrant: NE→W&S, SE→N&W, SW→E&N, NW→S&E. Hotspot is (12, 12) so the
     // SVG center sits at the mouse position.
+    // Double-headed resize arrow aligned with `angleDeg` (the direction from
+    // the selection center to the corner under the cursor, in screen coords
+    // with Y pointing down). Hotspot is (12, 12) so the arrow's midpoint
+    // sits at the mouse position. Rotating the SVG keeps the arrow axis
+    // visually consistent with the actual diagonal of a rotated bounding box
+    // — so the NE corner of a 90°-rotated shape (physically at SE) shows
+    // an arrow tilted along the NW↔SE diagonal rather than the static
+    // logical-key cursor.
+    resize: (angleDeg = 0) => {
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g transform="rotate(${angleDeg.toFixed(2)} 12 12)"><line x1="4" y1="12" x2="20" y2="12" stroke="#ffffff" stroke-width="3.6" stroke-linecap="round"/><line x1="4" y1="12" x2="20" y2="12" stroke="#000000" stroke-width="1.8" stroke-linecap="round"/><polygon points="2,12 7,8.5 7,15.5" fill="#000000" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round"/><polygon points="22,12 17,8.5 17,15.5" fill="#000000" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round"/></g></svg>`;
+    },
     rotate: (angleDeg = -90) => {
       const cx = 12, cy = 12, r = 6.5;
       const side = 8;
