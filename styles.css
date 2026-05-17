@@ -413,6 +413,20 @@ input[type='color']::-webkit-color-swatch {
   display: none;
 }
 
+.drag-value-tooltip {
+  position: fixed;
+  display: none;
+  pointer-events: none;
+  z-index: 1000;
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  color: #f472b6;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
+  user-select: none;
+  letter-spacing: 0.02em;
+}
+
 .fill-loupe {
   position: fixed;
   display: none;
