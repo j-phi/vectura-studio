@@ -1860,6 +1860,15 @@
       return Boolean(layer && this.maskPreview?.descendantIds?.has(layer.id));
     }
 
+    _getMirrorDragPreviewLayerIds(selectedIds) {
+      if (!selectedIds?.size || !this.engine?.getAncestorModifiers) return null;
+      const ids = [...selectedIds].filter((id) => {
+        const layer = this.engine.layers.find((l) => l.id === id);
+        return layer && this.engine.getAncestorModifiers(layer).length > 0;
+      });
+      return ids.length ? new Set(ids) : null;
+    }
+
     getMaskPreviewLayer() {
       if (!this.maskPreview?.maskLayerId) return null;
       return this.engine?.layers?.find((layer) => layer.id === this.maskPreview.maskLayerId) || null;
@@ -2286,13 +2295,16 @@
           .map((pt) => `${quant(pt.x)},${quant(pt.y)}`)
           .join('|');
       };
+      const mirrorDragLayers = this.tempTransform
+        ? this._getMirrorDragPreviewLayerIds(this.selectedLayerIds)
+        : null;
       const drawLayers = () => {
         this.engine.layers.forEach((l) => {
           if (!l.visible) return;
           if (this.shouldSkipLayerForMaskPreview(l)) return;
           const layerPen = SETTINGS.pens?.find((p) => p.id === l.penId) || null;
           const defaultPenId = l.penId || layerPen?.id || 'default';
-          
+
           let currentPenId = defaultPenId;
           let currentStrokeWidth = layerPen?.width ?? l.strokeWidth ?? SETTINGS.strokeWidth;
           let currentStrokeStyle = layerPen?.color || l.color;
@@ -2304,9 +2316,12 @@
 
           const useCurves = Boolean(l.params && l.params.curves);
           const useLayerOptimized = useOptimized && optimizationTargetIds.has(l.id);
-          const paths = this.engine.getRenderablePaths
-            ? this.engine.getRenderablePaths(l, { useOptimized: useLayerOptimized })
-            : l.paths;
+          const isMirrorDrag = mirrorDragLayers?.has(l.id);
+          const paths = isMirrorDrag
+            ? (l.paths || [])
+            : (this.engine.getRenderablePaths
+              ? this.engine.getRenderablePaths(l, { useOptimized: useLayerOptimized })
+              : l.paths);
           const temp = this.selectedLayerIds?.has(l.id) && this.tempTransform ? this.tempTransform : null;
           (paths || []).forEach((path) => {
             const next = path && path.meta && path.meta.kind === 'circle'
@@ -2754,6 +2769,7 @@
         drawOptimizedOverlay();
         drawHelperOverlays();
         drawModifierGuides();
+        this.drawMirrorDragPreview(mirrorDragLayers);
         this.drawMaskPreviewOverlay();
         if (this.patternFillPreviewPolygon) this.drawPatternFillPreview();
         this.ctx.restore();
@@ -2767,6 +2783,7 @@
         drawOptimizedOverlay();
         drawHelperOverlays();
         drawModifierGuides();
+        this.drawMirrorDragPreview(mirrorDragLayers);
         this.drawMaskPreviewOverlay();
         if (this.patternFillPreviewPolygon) this.drawPatternFillPreview();
         this.ctx.restore();
@@ -4749,6 +4766,49 @@
       return (polygons || [])
         .filter((polygon) => Array.isArray(polygon) && polygon.length >= 3)
         .map((polygon) => (temp ? this.transformPath(polygon, temp) : polygon));
+    }
+
+    drawMirrorDragPreview(mirrorDragLayers) {
+      if (!mirrorDragLayers?.size || !this.tempTransform) return;
+      const Modifiers = window.Vectura?.Modifiers;
+      if (!Modifiers?.getMirrorAxis) return;
+      const bounds = this.engine.getBounds?.() ?? this.engine.currentProfile;
+      mirrorDragLayers.forEach((layerId) => {
+        const layer = this.engine.layers.find((l) => l.id === layerId);
+        if (!layer || !layer.visible) return;
+        const ancestorModifiers = this.engine.getAncestorModifiers(layer);
+        const { inside } = this.engine._splitModifiersByMaskBoundary?.(layer) ?? { inside: ancestorModifiers };
+        if (!inside.length) return;
+        const pen = SETTINGS.pens?.find((p) => p.id === layer.penId) || null;
+        const useCurves = Boolean(layer.params?.curves);
+        const translatedPaths = (layer.paths || [])
+          .filter((p) => Array.isArray(p) && p.length >= 2)
+          .map((path) => this.transformPath(path, this.tempTransform));
+        if (!translatedPaths.length) return;
+        this.ctx.save();
+        this.ctx.lineWidth = pen?.width ?? layer.strokeWidth ?? SETTINGS.strokeWidth;
+        this.ctx.lineCap = layer.lineCap || 'round';
+        this.ctx.lineJoin = 'round';
+        this.ctx.strokeStyle = pen?.color || layer.color;
+        inside.forEach((modifierLayer) => {
+          const modifier = modifierLayer.modifier;
+          if (!modifier?.enabled || modifier.type !== 'mirror') return;
+          (modifier.mirrors || []).forEach((mirror) => {
+            if (!mirror?.enabled) return;
+            const axis = Modifiers.getMirrorAxis(mirror, bounds);
+            this.ctx.beginPath();
+            translatedPaths.forEach((path) => {
+              const reflected = path.map((pt) => {
+                const d = (pt.x - axis.point.x) * axis.normal.x + (pt.y - axis.point.y) * axis.normal.y;
+                return { x: pt.x - 2 * d * axis.normal.x, y: pt.y - 2 * d * axis.normal.y };
+              });
+              this.tracePath(reflected, useCurves);
+            });
+            this.ctx.stroke();
+          });
+        });
+        this.ctx.restore();
+      });
     }
 
     drawMaskPreviewOverlay() {
