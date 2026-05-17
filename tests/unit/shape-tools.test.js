@@ -150,4 +150,39 @@ describe('Shape tool geometry', () => {
     });
     expect(bounds.rotation).toBeCloseTo((33 * Math.PI) / 180, 6);
   });
+
+  test('corner-radius handles draw for selected shape across select/pen/direct tools', () => {
+    const { Layer } = runtime.window.Vectura;
+    const renderer = createRenderer();
+    const shape = {
+      type: 'polygon',
+      cx: 100,
+      cy: 100,
+      radius: 40,
+      rotation: -Math.PI / 2,
+      sides: 6,
+      cornerRadii: [0, 0, 0, 0, 0, 0],
+    };
+    const layer = new Layer('poly1', 'shape', 'Polygon');
+    layer.sourcePaths = [renderer.buildShapePath(shape)];
+    layer.origin = { x: 100, y: 100 };
+    renderer.engine.layers = [layer];
+    renderer.setSelection([layer.id], layer.id);
+
+    const drawn = [];
+    const orig = renderer.drawShapeCornerHandles.bind(renderer);
+    renderer.drawShapeCornerHandles = (l, idx, scope) => {
+      drawn.push({ id: l.id, scope, tool: renderer.activeTool });
+      return orig(l, idx, scope);
+    };
+
+    ['select', 'pen', 'direct'].forEach((tool) => {
+      renderer.activeTool = tool;
+      renderer.directSelection = null;
+      renderer.draw();
+    });
+
+    const scopesAllByTool = drawn.filter((d) => d.scope === 'all').map((d) => d.tool);
+    expect(scopesAllByTool).toEqual(expect.arrayContaining(['select', 'pen', 'direct']));
+  });
 });

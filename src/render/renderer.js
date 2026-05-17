@@ -2919,7 +2919,9 @@
       if (this.algoDraft) this.drawAlgoDraftRect(this.algoDraft);
       if (this.lassoPath) this.drawSelectionPath(this.lassoPath);
       if (this.directSelection || this.directAuxSelections?.length) this.drawDirectSelection();
-      if (!this.directSelection && showBoundingBox) {
+      if (!this.directSelection) {
+        // Corner-radius handles persist across tools: drawn whenever a single shape layer is
+        // selected (independent of showBoundingBox so they stay visible in pen/direct tools too).
         const shapeLayer = this.getSelectedShapeLayer();
         if (shapeLayer) this.drawShapeCornerHandles(shapeLayer, 0, 'all', this.tempTransform);
       }
