@@ -11,8 +11,11 @@ module.exports = defineConfig({
     timeout: 10_000,
   },
   fullyParallel: false,
-  retries: process.env.CI ? 1 : 0,
-  workers: process.env.CI ? 2 : undefined,
+  // Match CI locally so `npm run test:ci` is a faithful pre-push gate.
+  // The dev server is a single-threaded `python3 -m http.server`; >2 workers
+  // saturates it and causes petalis-profile JSON requests to time out.
+  retries: 1,
+  workers: 2,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: 'http://127.0.0.1:4173',
