@@ -398,6 +398,7 @@
       this.directMarqueeStart = null;
       this.directMarqueeRect = null;
       this.maskPreview = null;
+      this.mirrorDragState = null;
       this.scissorStart = null;
       this.scissorEnd = null;
       this.isScissor = false;
@@ -1869,6 +1870,25 @@
       return ids.length ? new Set(ids) : null;
     }
 
+    _startMirrorDrag(layers) {
+      const ids = this._getMirrorDragPreviewLayerIds(new Set(layers.map((l) => l.id)));
+      if (!ids) { this.mirrorDragState = null; return; }
+      const state = new Map();
+      ids.forEach((id) => {
+        const layer = this.engine.layers.find((l) => l.id === id);
+        if (!layer) return;
+        state.set(id, {
+          basePaths: (layer.paths || []).map((path) => {
+            if (!Array.isArray(path)) return path;
+            const clone = path.map((pt) => ({ ...pt }));
+            if (path.meta) clone.meta = { ...path.meta };
+            return clone;
+          }),
+        });
+      });
+      this.mirrorDragState = state.size ? state : null;
+    }
+
     getMaskPreviewLayer() {
       if (!this.maskPreview?.maskLayerId) return null;
       return this.engine?.layers?.find((layer) => layer.id === this.maskPreview.maskLayerId) || null;
@@ -2295,9 +2315,6 @@
           .map((pt) => `${quant(pt.x)},${quant(pt.y)}`)
           .join('|');
       };
-      const mirrorDragLayers = this.tempTransform
-        ? this._getMirrorDragPreviewLayerIds(this.selectedLayerIds)
-        : null;
       const drawLayers = () => {
         this.engine.layers.forEach((l) => {
           if (!l.visible) return;
@@ -2316,13 +2333,13 @@
 
           const useCurves = Boolean(l.params && l.params.curves);
           const useLayerOptimized = useOptimized && optimizationTargetIds.has(l.id);
-          const isMirrorDrag = mirrorDragLayers?.has(l.id);
-          const paths = isMirrorDrag
-            ? (l.paths || [])
-            : (this.engine.getRenderablePaths
-              ? this.engine.getRenderablePaths(l, { useOptimized: useLayerOptimized })
-              : l.paths);
-          const temp = this.selectedLayerIds?.has(l.id) && this.tempTransform ? this.tempTransform : null;
+          const paths = this.engine.getRenderablePaths
+            ? this.engine.getRenderablePaths(l, { useOptimized: useLayerOptimized })
+            : l.paths;
+          const isMirrorDrag = this.mirrorDragState?.has(l.id);
+          const temp = !isMirrorDrag && this.selectedLayerIds?.has(l.id) && this.tempTransform
+            ? this.tempTransform
+            : null;
           (paths || []).forEach((path) => {
             const next = path && path.meta && path.meta.kind === 'circle'
               ? { meta: temp ? this.transformCircleMeta(path.meta, temp) : path.meta }
@@ -2769,7 +2786,6 @@
         drawOptimizedOverlay();
         drawHelperOverlays();
         drawModifierGuides();
-        this.drawMirrorDragPreview(mirrorDragLayers);
         this.drawMaskPreviewOverlay();
         if (this.patternFillPreviewPolygon) this.drawPatternFillPreview();
         this.ctx.restore();
@@ -2783,7 +2799,6 @@
         drawOptimizedOverlay();
         drawHelperOverlays();
         drawModifierGuides();
-        this.drawMirrorDragPreview(mirrorDragLayers);
         this.drawMaskPreviewOverlay();
         if (this.patternFillPreviewPolygon) this.drawPatternFillPreview();
         this.ctx.restore();
@@ -3361,6 +3376,7 @@
               this.dragStart = w;
               this.startBounds = b;
               this.startMaskPreviewForSelection(layers);
+              this._startMirrorDrag(layers);
               this.setCanvasCursor(layers.length > 1 ? 'grabbing' : 'move');
               if (navigator.vibrate) navigator.vibrate(30);
               this.draw();
@@ -3372,6 +3388,7 @@
             this.dragStart = world;
             this.startBounds = bounds;
             this.startMaskPreviewForSelection(updatedSelected);
+            this._startMirrorDrag(updatedSelected);
             this.setCanvasCursor(updatedSelected.length > 1 ? 'grabbing' : 'move');
             if (modifiers.alt && updatedSelected.length === 1) {
               if (this.onDuplicateLayer) this.onDuplicateLayer();
@@ -3542,6 +3559,24 @@
           const dx = world.x - this.dragStart.x;
           const dy = world.y - this.dragStart.y;
           this.tempTransform = { dx, dy, scaleX: 1, scaleY: 1, origin: { x: 0, y: 0 } };
+          if (this.mirrorDragState) {
+            this.mirrorDragState.forEach((state, layerId) => {
+              const layer = this.engine.layers.find((l) => l.id === layerId);
+              if (!layer) return;
+              layer.paths = state.basePaths.map((path) => {
+                if (!Array.isArray(path)) return path;
+                const t = path.map((pt) => ({ x: pt.x + dx, y: pt.y + dy }));
+                if (path.meta) {
+                  t.meta = { ...path.meta };
+                  if (typeof path.meta.cx === 'number') t.meta.cx = path.meta.cx + dx;
+                  if (typeof path.meta.cy === 'number') t.meta.cy = path.meta.cy + dy;
+                }
+                return t;
+              });
+              if (this.engine.computeLayerEffectiveGeometry) this.engine.computeLayerEffectiveGeometry(layer.id);
+              if (this.engine.computeLayerDisplayGeometry) this.engine.computeLayerDisplayGeometry(layer.id);
+            });
+          }
         } else if (this.dragMode === 'resize' && this.startBounds && this.activeHandle) {
           const fromCenter = modifiers.alt || modifiers.meta;
           const origin = fromCenter ? this.getBoundsCenter(this.startBounds) : this.getResizeAnchor(this.activeHandle, this.startBounds);
@@ -3870,6 +3905,7 @@
           this.selectLayer(this._pendingSingleSelect);
         }
         this.clearMaskPreview();
+        this.mirrorDragState = null;
         this.tempTransform = null;
         this.rotateOrigin = null;
         this.snap = null;
@@ -4766,49 +4802,6 @@
       return (polygons || [])
         .filter((polygon) => Array.isArray(polygon) && polygon.length >= 3)
         .map((polygon) => (temp ? this.transformPath(polygon, temp) : polygon));
-    }
-
-    drawMirrorDragPreview(mirrorDragLayers) {
-      if (!mirrorDragLayers?.size || !this.tempTransform) return;
-      const Modifiers = window.Vectura?.Modifiers;
-      if (!Modifiers?.getMirrorAxis) return;
-      const bounds = this.engine.getBounds?.() ?? this.engine.currentProfile;
-      mirrorDragLayers.forEach((layerId) => {
-        const layer = this.engine.layers.find((l) => l.id === layerId);
-        if (!layer || !layer.visible) return;
-        const ancestorModifiers = this.engine.getAncestorModifiers(layer);
-        const { inside } = this.engine._splitModifiersByMaskBoundary?.(layer) ?? { inside: ancestorModifiers };
-        if (!inside.length) return;
-        const pen = SETTINGS.pens?.find((p) => p.id === layer.penId) || null;
-        const useCurves = Boolean(layer.params?.curves);
-        const translatedPaths = (layer.paths || [])
-          .filter((p) => Array.isArray(p) && p.length >= 2)
-          .map((path) => this.transformPath(path, this.tempTransform));
-        if (!translatedPaths.length) return;
-        this.ctx.save();
-        this.ctx.lineWidth = pen?.width ?? layer.strokeWidth ?? SETTINGS.strokeWidth;
-        this.ctx.lineCap = layer.lineCap || 'round';
-        this.ctx.lineJoin = 'round';
-        this.ctx.strokeStyle = pen?.color || layer.color;
-        inside.forEach((modifierLayer) => {
-          const modifier = modifierLayer.modifier;
-          if (!modifier?.enabled || modifier.type !== 'mirror') return;
-          (modifier.mirrors || []).forEach((mirror) => {
-            if (!mirror?.enabled) return;
-            const axis = Modifiers.getMirrorAxis(mirror, bounds);
-            this.ctx.beginPath();
-            translatedPaths.forEach((path) => {
-              const reflected = path.map((pt) => {
-                const d = (pt.x - axis.point.x) * axis.normal.x + (pt.y - axis.point.y) * axis.normal.y;
-                return { x: pt.x - 2 * d * axis.normal.x, y: pt.y - 2 * d * axis.normal.y };
-              });
-              this.tracePath(reflected, useCurves);
-            });
-            this.ctx.stroke();
-          });
-        });
-        this.ctx.restore();
-      });
     }
 
     drawMaskPreviewOverlay() {
