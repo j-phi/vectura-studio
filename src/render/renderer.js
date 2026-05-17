@@ -2846,7 +2846,12 @@
         : selectedLayers;
       const showBoundingBox = this.activeTool !== 'pen' && this.activeTool !== 'direct';
       if (showBoundingBox && selectionLayersForBox.length) {
-        const bounds = this.getSelectionBounds(selectionLayersForBox, this.tempTransform);
+        let bounds;
+        if (this.dragMode === 'rotate' && this.startBounds && this.tempTransform?.rotation != null) {
+          bounds = this.applyRotationToBounds(this.startBounds, this.tempTransform.rotation);
+        } else {
+          bounds = this.getSelectionBounds(selectionLayersForBox, this.tempTransform);
+        }
         const anyLocked = selectionLayersForBox.some((l) => this.isLayerLocked?.(l.id));
         const showHandles = !anyLocked;
         if (bounds) this.drawSelection(bounds, { showHandles });
@@ -3334,7 +3339,7 @@
             this.dragStart = world;
             this.startBounds = selectionBounds;
             this.startMaskPreviewForSelection(selectedLayers);
-            if (handle === 'rotate') {
+            if (handle === 'rotate' || handle.startsWith('rotate-')) {
               this.dragMode = 'rotate';
               this.rotateOrigin = this.getBoundsCenter(selectionBounds);
               this.rotateStart = this.selectedLayerId ? this.getSelectedLayer()?.params.rotation ?? 0 : 0;
@@ -4703,6 +4708,35 @@
       };
     }
 
+    applyRotationToBounds(bounds, deltaAngleDeg) {
+      const deltaRad = (deltaAngleDeg * Math.PI) / 180;
+      const cosD = Math.cos(deltaRad);
+      const sinD = Math.sin(deltaRad);
+      const ox = bounds.origin.x;
+      const oy = bounds.origin.y;
+      const rotPt = (pt) => {
+        const dx = pt.x - ox;
+        const dy = pt.y - oy;
+        return { x: ox + dx * cosD - dy * sinD, y: oy + dx * sinD + dy * cosD };
+      };
+      const nw = rotPt(bounds.corners.nw);
+      const ne = rotPt(bounds.corners.ne);
+      const se = rotPt(bounds.corners.se);
+      const sw = rotPt(bounds.corners.sw);
+      const cx = (nw.x + ne.x + se.x + sw.x) / 4;
+      const cy = (nw.y + ne.y + se.y + sw.y) / 4;
+      const newRot = (bounds.rotation || 0) + deltaRad;
+      const hw = Math.hypot(ne.x - nw.x, ne.y - nw.y) / 2;
+      const hh = Math.hypot(sw.x - nw.x, sw.y - nw.y) / 2;
+      return {
+        minX: -hw, minY: -hh, maxX: hw, maxY: hh,
+        rotation: newRot,
+        origin: bounds.origin,
+        center: { x: cx, y: cy },
+        corners: { nw, ne, se, sw },
+      };
+    }
+
     screenToWorld(x, y) {
       return { x: (x - this.offsetX) / this.scale, y: (y - this.offsetY) / this.scale };
     }
@@ -5015,7 +5049,6 @@
     drawSelection(bounds, options = {}) {
       const { showHandles = true } = options;
       const handleSize = 6 / this.scale;
-      const rotateRadius = 5 / this.scale;
       const { nw, ne, se, sw } = bounds.corners;
       this.ctx.save();
       this.ctx.strokeStyle = getThemeToken('--render-selection-handle-stroke', '#f8fafc');
@@ -5040,15 +5073,6 @@
           this.ctx.stroke();
         });
       }
-      const rotate = this.getRotateHandlePoint(bounds);
-      this.ctx.beginPath();
-      this.ctx.moveTo(ne.x, ne.y);
-      this.ctx.lineTo(rotate.x, rotate.y);
-      this.ctx.stroke();
-      this.ctx.beginPath();
-      this.ctx.arc(rotate.x, rotate.y, rotateRadius, 0, Math.PI * 2);
-      this.ctx.fill();
-      this.ctx.stroke();
       this.ctx.restore();
     }
 
@@ -5388,28 +5412,19 @@
     }
 
     hitHandle(sx, sy, bounds) {
-      const rotate = this.getRotateHandlePoint(bounds);
-      const rotateScreen = this.worldToScreen(rotate.x, rotate.y);
-      const rSize = 8;
-      const rHalf = rSize / 2;
-      if (
-        sx >= rotateScreen.x - rHalf &&
-        sx <= rotateScreen.x + rHalf &&
-        sy >= rotateScreen.y - rHalf &&
-        sy <= rotateScreen.y + rHalf
-      ) {
-        return 'rotate';
+      const corners = [
+        { key: 'nw', ...bounds.corners.nw },
+        { key: 'ne', ...bounds.corners.ne },
+        { key: 'se', ...bounds.corners.se },
+        { key: 'sw', ...bounds.corners.sw },
+      ];
+      for (const c of corners) {
+        const sc = this.worldToScreen(c.x, c.y);
+        const dist = Math.hypot(sx - sc.x, sy - sc.y);
+        if (dist <= 8) return c.key;
+        if (dist <= 22) return `rotate-${c.key}`;
       }
-      const handles = this.getHandlePoints(bounds).map((pt) => ({
-        key: pt.key,
-        screen: this.worldToScreen(pt.x, pt.y),
-      }));
-      const size = 8;
-      const half = size / 2;
-      const hit = handles.find(
-        (h) => sx >= h.screen.x - half && sx <= h.screen.x + half && sy >= h.screen.y - half && sy <= h.screen.y + half
-      );
-      return hit ? hit.key : null;
+      return null;
     }
 
     getHandleVector(handle, bounds) {
@@ -5615,7 +5630,10 @@
     handleCursor(handle) {
       if (handle === 'nw' || handle === 'se') return 'nwse-resize';
       if (handle === 'ne' || handle === 'sw') return 'nesw-resize';
-      if (handle === 'rotate') return 'grab';
+      if (handle === 'rotate-nw') return this.cursorDataUrl('rotate-nw', 14, 14, 'crosshair');
+      if (handle === 'rotate-ne') return this.cursorDataUrl('rotate-ne', 0, 14, 'crosshair');
+      if (handle === 'rotate-se') return this.cursorDataUrl('rotate-se', 0, 0, 'crosshair');
+      if (handle === 'rotate-sw') return this.cursorDataUrl('rotate-sw', 14, 0, 'crosshair');
       return 'default';
     }
 

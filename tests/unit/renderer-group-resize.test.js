@@ -100,4 +100,63 @@ describe('Renderer — group resize handles', () => {
     expect(bounds.corners.se.x).toBeCloseTo(200);
     expect(bounds.corners.se.y).toBeCloseTo(200);
   });
+
+  test('hitHandle returns rotate-se when screen point is 14px outside the SE corner', () => {
+    const layer = makeLayer('single', [
+      { x: 50, y: 50 }, { x: 150, y: 50 }, { x: 150, y: 150 }, { x: 50, y: 150 },
+    ]);
+    const renderer = makeRenderer([layer]);
+    renderer.selectedLayerIds = new Set(['single']);
+    renderer.selectedLayerId = 'single';
+
+    const bounds = renderer.getSelectionBounds([layer]);
+    const se = bounds.corners.se; // (150,150) in world = screen at scale=1,offset=0
+    // 14px diagonally outside: distance = 14 > 8 (inner) and <= 22 (outer ring)
+    const handle = renderer.hitHandle(se.x + 10, se.y + 10, bounds);
+    expect(handle).toBe('rotate-se');
+  });
+
+  test('hitHandle returns null when screen point is 25px outside a corner', () => {
+    const layer = makeLayer('single', [
+      { x: 50, y: 50 }, { x: 150, y: 50 }, { x: 150, y: 150 }, { x: 50, y: 150 },
+    ]);
+    const renderer = makeRenderer([layer]);
+    renderer.selectedLayerIds = new Set(['single']);
+    renderer.selectedLayerId = 'single';
+
+    const bounds = renderer.getSelectionBounds([layer]);
+    const se = bounds.corners.se;
+    // 25px diagonally: distance ≈ 25*√2/√2... use straight offset: dist=25 > 22
+    const handle = renderer.hitHandle(se.x + 25, se.y, bounds);
+    expect(handle).toBeNull();
+  });
+
+  test('applyRotationToBounds rotates corners correctly: 90° on axis-aligned 100×100 box centered at origin', () => {
+    const renderer = makeRenderer([]);
+    const bounds = {
+      minX: -50, minY: -50, maxX: 50, maxY: 50,
+      rotation: 0,
+      origin: { x: 0, y: 0 },
+      center: { x: 0, y: 0 },
+      corners: {
+        nw: { x: -50, y: -50 },
+        ne: { x:  50, y: -50 },
+        se: { x:  50, y:  50 },
+        sw: { x: -50, y:  50 },
+      },
+    };
+    const rotated = renderer.applyRotationToBounds(bounds, 90);
+    // 90° CW: (x,y) → (y,-x) in standard math, but rotation in code is standard trig (CCW positive).
+    // applyRotationToBounds uses cos(90°)=0, sin(90°)=1:
+    //   new_x = ox + dx*cos - dy*sin = 0 + dx*0 - dy*1 = -dy
+    //   new_y = oy + dx*sin + dy*cos = 0 + dx*1 + dy*0 = dx
+    // NE was (50,-50): new = (-(-50), 50) = (50, 50) → becomes SE
+    expect(rotated.corners.ne.x).toBeCloseTo(50);
+    expect(rotated.corners.ne.y).toBeCloseTo(50);
+    // NW was (-50,-50): new = (50, -50) → becomes NE
+    expect(rotated.corners.nw.x).toBeCloseTo(50);
+    expect(rotated.corners.nw.y).toBeCloseTo(-50);
+    // rotation field should be π/2 radians
+    expect(rotated.rotation).toBeCloseTo(Math.PI / 2);
+  });
 });
