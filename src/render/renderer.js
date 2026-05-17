@@ -2050,6 +2050,11 @@
 
     normalizeEditedPathMeta(meta) {
       const next = { ...(meta || {}) };
+      // A user-driven edit invalidates the pre-curve baseline snapshot; the
+      // next applyShapeAnchorRebuild must re-baseline from the edited anchors,
+      // otherwise the rebuild snaps geometry back to the pre-edit shape.
+      delete next.originalAnchors;
+      delete next.originalClosed;
       if (next.kind === 'circle') {
         next.kind = 'poly';
       } else if (!next.shape && next.kind === 'shape') {
