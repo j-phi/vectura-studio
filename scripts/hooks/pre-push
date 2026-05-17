@@ -1,0 +1,76 @@
+#!/bin/sh
+# Path-aware PR-gating test gate, run before every push.
+#
+# Bypass: SKIP_PREPUSH=1 git push   (CI still gates; use sparingly)
+#
+# Always runs:        unit + integration + visual + perf  (~30s)
+# Adds e2e smoke when pushed commits touch any of:
+#   src/ui/**, src/render/**, tests/e2e/**, index.html  (~1 min total)
+#
+# Skipped automatically for branch deletions (no commits to validate).
+
+if [ "$SKIP_PREPUSH" = "1" ]; then
+  echo "[pre-push] SKIP_PREPUSH=1 — skipping local test suite. CI will gate."
+  exit 0
+fi
+
+empty_sha="0000000000000000000000000000000000000000"
+any_real=0
+changed_files=""
+
+# git supplies push refs on stdin: <local_ref> <local_sha> <remote_ref> <remote_sha>
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$empty_sha" ] && continue
+  any_real=1
+
+  if [ "$remote_sha" = "$empty_sha" ]; then
+    # New branch on the remote — compare against origin/main, or fall back to
+    # the immediate parent if origin/main is unavailable.
+    base=$(git merge-base "$local_sha" refs/remotes/origin/main 2>/dev/null)
+    [ -z "$base" ] && base=$(git rev-parse "${local_sha}^" 2>/dev/null)
+  else
+    base="$remote_sha"
+  fi
+
+  if [ -n "$base" ]; then
+    files=$(git diff --name-only "$base" "$local_sha" 2>/dev/null)
+    changed_files="${changed_files}
+${files}"
+  fi
+done
+
+if [ "$any_real" = "0" ]; then
+  echo "[pre-push] Delete-only push — skipping test suite."
+  exit 0
+fi
+
+# Decide whether e2e should run based on changed paths.
+need_e2e=0
+if printf '%s\n' "$changed_files" | grep -qE '^(src/ui/|src/render/|tests/e2e/|index\.html$|playwright\.config\.js$)'; then
+  need_e2e=1
+fi
+
+if [ "$need_e2e" = "1" ]; then
+  echo "[pre-push] UI / render / e2e paths changed — running full test:ci (~1 min)…"
+  cmd="test:ci"
+else
+  echo "[pre-push] No UI/render paths in pushed commits — running fast subset (~30s)."
+  cmd="test:fast"
+fi
+echo "[pre-push] Bypass: SKIP_PREPUSH=1 git push   (only when intentional)"
+echo
+
+if ! npm run "$cmd"; then
+  echo
+  echo "[pre-push] ❌ Tests failed. Push aborted."
+  echo "[pre-push]    Fix the failures, or rerun with SKIP_PREPUSH=1 git push if intentional."
+  exit 1
+fi
+
+echo
+if [ "$need_e2e" = "1" ]; then
+  echo "[pre-push] ✅ All suites (incl. e2e) passed."
+else
+  echo "[pre-push] ✅ Fast subset passed. (e2e skipped — no UI/render paths changed.)"
+fi
+exit 0
