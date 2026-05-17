@@ -53,8 +53,7 @@
     const p = layer.params || {};
     const simplify = Math.max(0, Math.min(1, p.simplify ?? 0));
     const smoothing = Math.max(0, Math.min(2, p.smoothing ?? 0));
-    const curves = Boolean(p.curves);
-    const active = simplify > 0 || smoothing > 0 || curves;
+    const active = simplify > 0 || smoothing > 0;
 
     layer.sourcePaths.forEach((path) => {
       if (!isFreeformShapePath(path)) return;
@@ -71,7 +70,6 @@
         const result = rebuildShapeAnchors(path.meta.originalAnchors, {
           simplify,
           smoothing,
-          curves,
           closed: path.meta.originalClosed,
           bounds,
         });
