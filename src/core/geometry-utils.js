@@ -130,12 +130,184 @@
       return next;
     });
 
+  // --- Anchor helpers (shared with renderer for shape-layer simplify/smooth) ---
+
+  const cloneAnchors = (anchors) =>
+    (anchors || []).map((a) => ({
+      x: a.x,
+      y: a.y,
+      in: a.in ? { x: a.in.x, y: a.in.y } : null,
+      out: a.out ? { x: a.out.x, y: a.out.y } : null,
+    }));
+
+  const pointsToAnchors = (points) =>
+    (points || []).map((pt) => ({ x: pt.x, y: pt.y, in: null, out: null }));
+
+  const cubicAtT = (p0, c1, c2, p1, t) => {
+    const u = 1 - t;
+    const uu = u * u;
+    const tt = t * t;
+    const a = uu * u;
+    const b = 3 * uu * t;
+    const c = 3 * u * tt;
+    const d = tt * t;
+    return {
+      x: a * p0.x + b * c1.x + c * c2.x + d * p1.x,
+      y: a * p0.y + b * c1.y + c * c2.y + d * p1.y,
+    };
+  };
+
+  const sampleCubicBezier = (p0, c1, c2, p1) => {
+    const dist = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+    const handles =
+      Math.hypot(c1.x - p0.x, c1.y - p0.y) +
+      Math.hypot(c2.x - p1.x, c2.y - p1.y);
+    const rough = Math.max(dist, handles);
+    const steps = Math.min(120, Math.max(8, Math.round(rough / 4)));
+    const pts = [];
+    for (let i = 0; i <= steps; i++) pts.push(cubicAtT(p0, c1, c2, p1, i / steps));
+    return pts;
+  };
+
+  const buildPolylineFromAnchors = (anchors, closed = false) => {
+    if (!Array.isArray(anchors) || anchors.length < 2) return [];
+    const pts = [];
+    const count = anchors.length;
+    const emit = (a, b) => {
+      let seg;
+      if (!a.out && !b.in) seg = [a, b];
+      else seg = sampleCubicBezier(a, a.out || a, b.in || b, b);
+      if (pts.length) seg.shift();
+      pts.push(...seg);
+    };
+    for (let i = 0; i < count - 1; i++) emit(anchors[i], anchors[i + 1]);
+    if (closed && count > 2) emit(anchors[count - 1], anchors[0]);
+    return pts;
+  };
+
+  const clamp01 = (n) => (n < 0 ? 0 : n > 1 ? 1 : n);
+
+  // RDP on a flat anchor list (positions only). Returns a list of indices to keep.
+  // For closed paths, set keepLast=false (the caller wraps).
+  const rdpAnchorKeepIndices = (anchors, tolerance) => {
+    const n = anchors.length;
+    const keep = new Array(n).fill(false);
+    if (n === 0) return keep;
+    keep[0] = true;
+    keep[n - 1] = true;
+    if (n < 3 || !tolerance || tolerance <= 0) {
+      for (let i = 0; i < n; i++) keep[i] = true;
+      return keep;
+    }
+    const tolSq = tolerance * tolerance;
+    const sq = (v) => v * v;
+    const distToSegmentSq = (p, a, b) => {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const denom = dx * dx + dy * dy;
+      if (denom < 1e-10) return sq(p.x - a.x) + sq(p.y - a.y);
+      const t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / denom;
+      if (t <= 0) return sq(p.x - a.x) + sq(p.y - a.y);
+      if (t >= 1) return sq(p.x - b.x) + sq(p.y - b.y);
+      const projX = a.x + t * dx;
+      const projY = a.y + t * dy;
+      return sq(p.x - projX) + sq(p.y - projY);
+    };
+    const stack = [[0, n - 1]];
+    while (stack.length) {
+      const [start, end] = stack.pop();
+      let maxDist = 0;
+      let index = -1;
+      for (let i = start + 1; i < end; i++) {
+        const d = distToSegmentSq(anchors[i], anchors[start], anchors[end]);
+        if (d > maxDist) {
+          maxDist = d;
+          index = i;
+        }
+      }
+      if (maxDist > tolSq && index !== -1) {
+        keep[index] = true;
+        stack.push([start, index]);
+        stack.push([index, end]);
+      }
+    }
+    return keep;
+  };
+
+  /**
+   * Rebuild anchors of a freeform shape path: decimate via RDP scaled by `simplify`,
+   * then auto-generate cubic bezier .in/.out handles via Catmull-Rom-to-Bezier scaled
+   * by `smoothing`. Pure — no DOM, no engine access.
+   *
+   * opts:
+   *   simplify   0..1 — RDP tolerance scale (tol = simplify * max(dW,dH) * 0.01)
+   *   smoothing  0..1 — Catmull-Rom tension; 0 keeps straight (null handles)
+   *   closed     bool
+   *   bounds     { dW, dH } — for tolerance scaling
+   */
+  const rebuildShapeAnchors = (anchors, opts = {}) => {
+    const simplify = clamp01(opts.simplify ?? 0);
+    const smoothing = clamp01(opts.smoothing ?? 0);
+    const closed = Boolean(opts.closed);
+    const dW = opts.bounds?.dW ?? 100;
+    const dH = opts.bounds?.dH ?? 100;
+
+    if (!Array.isArray(anchors) || anchors.length === 0) {
+      return { anchors: [], changed: false };
+    }
+
+    // 1. Decimate (positions only)
+    let kept = anchors;
+    if (simplify > 0 && anchors.length >= 3) {
+      const tol = simplify * Math.max(dW, dH) * 0.01;
+      const keepMask = rdpAnchorKeepIndices(anchors, tol);
+      const filtered = anchors.filter((_, i) => keepMask[i]);
+      if (filtered.length >= 2) kept = filtered;
+    }
+
+    // 2. Bezierize via Catmull-Rom-to-Bezier
+    const n = kept.length;
+    const out = kept.map((a) => ({ x: a.x, y: a.y, in: null, out: null }));
+    if (smoothing > 0 && n >= 2) {
+      const tension = smoothing;
+      for (let i = 0; i < n; i++) {
+        let prev;
+        let next;
+        if (closed) {
+          prev = kept[(i - 1 + n) % n];
+          next = kept[(i + 1) % n];
+        } else {
+          prev = i === 0 ? kept[i] : kept[i - 1];
+          next = i === n - 1 ? kept[i] : kept[i + 1];
+        }
+        const dx = ((next.x - prev.x) * tension) / 6;
+        const dy = ((next.y - prev.y) * tension) / 6;
+        out[i].out = { x: out[i].x + dx, y: out[i].y + dy };
+        out[i].in = { x: out[i].x - dx, y: out[i].y - dy };
+      }
+      if (!closed) {
+        // Endpoints get one-sided derivative — null the outward-pointing handle
+        out[0].in = null;
+        out[n - 1].out = null;
+      }
+    }
+
+    const changed = out.length !== anchors.length || smoothing > 0;
+    return { anchors: out, changed };
+  };
+
   const api = {
     smoothPath,
     simplifyPath,
     simplifyPathVisvalingam,
     countPathPoints,
     clonePaths,
+    cloneAnchors,
+    pointsToAnchors,
+    buildPolylineFromAnchors,
+    rebuildShapeAnchors,
+    cubicAtT,
+    sampleCubicBezier,
   };
 
   if (typeof window !== 'undefined') {
