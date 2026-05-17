@@ -4185,11 +4185,28 @@
 
     tracePath(path, useCurves) {
       if (!path || path.length < 2) return;
-      this.ctx.moveTo(path[0].x, path[0].y);
       if (!useCurves || path.length < 3) {
+        this.ctx.moveTo(path[0].x, path[0].y);
         for (let i = 1; i < path.length; i++) this.ctx.lineTo(path[i].x, path[i].y);
         return;
       }
+      const isClosed = window.Vectura?.OptimizationUtils?.isClosedPath?.(path);
+      if (isClosed) {
+        // Closed loop: anchor on each edge midpoint, vertex acts as control point.
+        // Without this branch the wrap-around edge is rendered as a straight line.
+        const n = path.length - 1;
+        const m0x = (path[0].x + path[1].x) / 2;
+        const m0y = (path[0].y + path[1].y) / 2;
+        this.ctx.moveTo(m0x, m0y);
+        for (let i = 1; i < n; i++) {
+          const midX = (path[i].x + path[i + 1].x) / 2;
+          const midY = (path[i].y + path[i + 1].y) / 2;
+          this.ctx.quadraticCurveTo(path[i].x, path[i].y, midX, midY);
+        }
+        this.ctx.quadraticCurveTo(path[0].x, path[0].y, m0x, m0y);
+        return;
+      }
+      this.ctx.moveTo(path[0].x, path[0].y);
       for (let i = 1; i < path.length - 1; i++) {
         const midX = (path[i].x + path[i + 1].x) / 2;
         const midY = (path[i].y + path[i + 1].y) / 2;

@@ -78,11 +78,35 @@
       return;
     }
     if (!Array.isArray(path) || path.length < 2) return;
-    ctx.moveTo(path[0].x, path[0].y);
     if (!useCurves || path.length < 3) {
+      ctx.moveTo(path[0].x, path[0].y);
       for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
       return;
     }
+    const isClosed = window.Vectura?.OptimizationUtils?.isClosedPath?.(path);
+    if (isClosed) {
+      const n = path.length - 1;
+      const m0x = (path[0].x + path[1].x) / 2;
+      const m0y = (path[0].y + path[1].y) / 2;
+      ctx.moveTo(m0x, m0y);
+      for (let i = 1; i < n; i++) {
+        if (sharpEdges && path[i]._tileEdge) {
+          ctx.lineTo(path[i].x, path[i].y);
+        } else {
+          const midX = (path[i].x + path[i + 1].x) / 2;
+          const midY = (path[i].y + path[i + 1].y) / 2;
+          ctx.quadraticCurveTo(path[i].x, path[i].y, midX, midY);
+        }
+      }
+      if (sharpEdges && path[0]._tileEdge) {
+        ctx.lineTo(path[0].x, path[0].y);
+        ctx.lineTo(m0x, m0y);
+      } else {
+        ctx.quadraticCurveTo(path[0].x, path[0].y, m0x, m0y);
+      }
+      return;
+    }
+    ctx.moveTo(path[0].x, path[0].y);
     for (let i = 1; i < path.length - 1; i++) {
       if (sharpEdges && path[i]._tileEdge) {
         ctx.lineTo(path[i].x, path[i].y);

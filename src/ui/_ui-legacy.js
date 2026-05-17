@@ -4664,6 +4664,29 @@
     if (!useCurves || path.length < 3) {
       return `M ${path.map((pt) => `${fmt(pt.x)} ${fmt(pt.y)}`).join(' L ')}`;
     }
+    const isClosed = window.Vectura?.OptimizationUtils?.isClosedPath?.(path);
+    if (isClosed) {
+      const n = path.length - 1;
+      const m0x = (path[0].x + path[1].x) / 2;
+      const m0y = (path[0].y + path[1].y) / 2;
+      let d = `M ${fmt(m0x)} ${fmt(m0y)}`;
+      for (let i = 1; i < n; i++) {
+        if (sharpEdges && path[i]._tileEdge) {
+          d += ` L ${fmt(path[i].x)} ${fmt(path[i].y)}`;
+        } else {
+          const midX = (path[i].x + path[i + 1].x) / 2;
+          const midY = (path[i].y + path[i + 1].y) / 2;
+          d += ` Q ${fmt(path[i].x)} ${fmt(path[i].y)} ${fmt(midX)} ${fmt(midY)}`;
+        }
+      }
+      if (sharpEdges && path[0]._tileEdge) {
+        d += ` L ${fmt(path[0].x)} ${fmt(path[0].y)} L ${fmt(m0x)} ${fmt(m0y)}`;
+      } else {
+        d += ` Q ${fmt(path[0].x)} ${fmt(path[0].y)} ${fmt(m0x)} ${fmt(m0y)}`;
+      }
+      d += ' Z';
+      return d;
+    }
     let d = `M ${fmt(path[0].x)} ${fmt(path[0].y)}`;
     for (let i = 1; i < path.length - 1; i++) {
       if (sharpEdges && path[i]._tileEdge) {
@@ -6847,16 +6870,24 @@
         const el = getEl(id);
         if (!el) return;
         el.onchange = (e) => {
-          const l = this.app.engine.getActiveLayer();
-          if (l) {
-            if (this.app.pushHistory) this.app.pushHistory();
-            if (TRANSLATION_KEYS.has(key)) {
-              l.params[key] = this.parseDocumentNumber(e.target.value, { fallbackMm: l.params[key] ?? 0 });
-            } else {
-              l.params[key] = parseFloat(e.target.value);
-            }
-            this.app.regen();
+          // In multi-selection mode the transform inputs apply to every selected
+          // layer; a blank value (placeholder "Multiple") means "leave unchanged".
+          const selected = this.app.renderer?.getSelectedLayers?.() || [];
+          const targets = selected.length > 1 ? selected : (this.app.engine.getActiveLayer() ? [this.app.engine.getActiveLayer()] : []);
+          if (!targets.length) return;
+          const rawValue = e.target.value;
+          if (rawValue === '' || rawValue == null) return;
+          if (this.app.pushHistory) this.app.pushHistory();
+          if (TRANSLATION_KEYS.has(key)) {
+            targets.forEach((layer) => {
+              layer.params[key] = this.parseDocumentNumber(rawValue, { fallbackMm: layer.params[key] ?? 0 });
+            });
+          } else {
+            const parsed = parseFloat(rawValue);
+            if (!Number.isFinite(parsed)) return;
+            targets.forEach((layer) => { layer.params[key] = parsed; });
           }
+          this.app.regen();
         };
       };
       bindTrans('inp-seed', 'seed');
