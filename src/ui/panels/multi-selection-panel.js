@@ -68,11 +68,44 @@
 
     const state = {
       alignTo: 'selection',
-      // spacing input is read fresh on each click; no need to mirror here.
+      // spacing value is read fresh from the slider on each click; no need to mirror here.
     };
 
     const hintEl = $('align-panel-hint');
-    const spacingInput = $('inp-align-spacing');
+    const spacingSlider = $('inp-align-spacing');
+    const spacingChip = $('align-spacing-chip');
+    const spacingWrap = spacingSlider?.closest('.sld-fx-wrap');
+
+    const syncSpacingFill = () => {
+      if (!spacingSlider) return;
+      const pct = ((Number(spacingSlider.value) - Number(spacingSlider.min)) /
+        (Number(spacingSlider.max) - Number(spacingSlider.min))) * 100;
+      const fill = pct + '%';
+      spacingSlider.style.setProperty('--fill', fill);
+      if (spacingWrap) spacingWrap.style.setProperty('--fill', fill);
+    };
+
+    if (spacingSlider) {
+      spacingSlider.addEventListener('input', () => {
+        if (spacingChip) spacingChip.value = spacingSlider.value;
+        syncSpacingFill();
+      });
+    }
+    if (spacingChip) {
+      spacingChip.addEventListener('blur', () => {
+        const v = Math.max(0, Math.min(100, Number(spacingChip.value) || 0));
+        spacingChip.value = String(v);
+        if (spacingSlider) { spacingSlider.value = String(v); syncSpacingFill(); }
+      });
+      spacingChip.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); spacingChip.blur(); }
+        else if (e.key === 'Escape') {
+          spacingChip.value = spacingSlider?.value ?? '0';
+          spacingChip.blur();
+        }
+      });
+    }
+    syncSpacingFill();
 
     const setHint = (text) => {
       if (hintEl) hintEl.textContent = text || '';
@@ -110,7 +143,8 @@
         const op = btn.dataset.alignOp;
         if (SPACING_OPS.has(op)) btn.disabled = spacingDisabled;
       });
-      if (spacingInput) spacingInput.disabled = spacingDisabled;
+      if (spacingSlider) spacingSlider.disabled = spacingDisabled;
+      if (spacingChip) spacingChip.disabled = spacingDisabled;
       if (spacingDisabled && state.alignTo !== 'key') {
         setHint('Tip: click a selected layer to set it as the key object — needed for distribute spacing.');
       } else {
@@ -183,7 +217,7 @@
             setHint('Distribute Spacing requires a key object.');
             return;
           }
-          opts.spacing = Number(spacingInput?.value) || 0;
+          opts.spacing = Number(spacingSlider?.value) || 0;
           deltas = AO.distributeSpacing(op, layers, boundsFor, opts);
         } else {
           return;

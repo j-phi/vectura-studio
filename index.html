@@ -380,22 +380,23 @@
                     <button type="button" class="align-btn" data-align-op="distributeRight" title="Horizontal Distribute Right" aria-label="Horizontal Distribute Right"></button>
                   </div>
                 </div>
-                <div class="align-panel-row align-panel-row-split">
-                  <div class="align-panel-col">
-                    <p class="align-panel-label">Distribute Spacing:</p>
-                    <div class="align-panel-spacing">
-                      <button type="button" class="align-btn" data-align-op="distributeSpacingV" title="Vertical Distribute Spacing" aria-label="Vertical Distribute Spacing"></button>
-                      <button type="button" class="align-btn" data-align-op="distributeSpacingH" title="Horizontal Distribute Spacing" aria-label="Horizontal Distribute Spacing"></button>
-                      <input type="number" id="inp-align-spacing" class="align-panel-spacing-input" value="0" step="1" title="Spacing (mm)" aria-label="Spacing in millimeters">
+                <div class="align-panel-row">
+                  <p class="align-panel-label">Distribute Spacing:</p>
+                  <div class="align-panel-spacing">
+                    <button type="button" class="align-btn" data-align-op="distributeSpacingV" title="Vertical Distribute Spacing" aria-label="Vertical Distribute Spacing"></button>
+                    <button type="button" class="align-btn" data-align-op="distributeSpacingH" title="Horizontal Distribute Spacing" aria-label="Horizontal Distribute Spacing"></button>
+                    <div class="sld-fx-wrap align-spacing-slider-wrap">
+                      <input type="range" id="inp-align-spacing" class="ctrl-slider" min="0" max="100" step="1" value="0" aria-label="Spacing in millimeters">
                     </div>
+                    <input type="text" id="align-spacing-chip" class="slider-val" value="0" inputmode="decimal" aria-label="Spacing value (mm)">
                   </div>
-                  <div class="align-panel-col">
-                    <p class="align-panel-label">Align To:</p>
-                    <div class="align-panel-target">
-                      <button type="button" class="align-target-btn" data-align-to="artboard" title="Align to Artboard" aria-label="Align to Artboard"></button>
-                      <button type="button" class="align-target-btn" data-align-to="selection" title="Align to Selection" aria-label="Align to Selection"></button>
-                      <button type="button" class="align-target-btn" data-align-to="key" title="Align to Key Object" aria-label="Align to Key Object"></button>
-                    </div>
+                </div>
+                <div class="align-panel-row">
+                  <p class="align-panel-label">Align To:</p>
+                  <div class="align-panel-target">
+                    <button type="button" class="align-target-btn" data-align-to="artboard" title="Align to Artboard" aria-label="Align to Artboard"></button>
+                    <button type="button" class="align-target-btn" data-align-to="selection" title="Align to Selection" aria-label="Align to Selection"></button>
+                    <button type="button" class="align-target-btn" data-align-to="key" title="Align to Key Object" aria-label="Align to Key Object"></button>
                   </div>
                 </div>
                 <p id="align-panel-hint" class="align-panel-hint" aria-live="polite"></p>
