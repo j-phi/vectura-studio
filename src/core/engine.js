@@ -52,8 +52,9 @@
     if (!layer || layer.type !== 'shape' || !Array.isArray(layer.sourcePaths)) return;
     const p = layer.params || {};
     const simplify = Math.max(0, Math.min(1, p.simplify ?? 0));
-    const smoothing = Math.max(0, Math.min(1, p.smoothing ?? 0));
-    const active = simplify > 0 || smoothing > 0;
+    const smoothing = Math.max(0, Math.min(2, p.smoothing ?? 0));
+    const curves = Boolean(p.curves);
+    const active = simplify > 0 || smoothing > 0 || curves;
 
     layer.sourcePaths.forEach((path) => {
       if (!isFreeformShapePath(path)) return;
@@ -70,6 +71,7 @@
         const result = rebuildShapeAnchors(path.meta.originalAnchors, {
           simplify,
           smoothing,
+          curves,
           closed: path.meta.originalClosed,
           bounds,
         });
@@ -633,6 +635,29 @@
 
     getActiveLayer() {
       return this.layers.find((l) => l.id === this.activeLayerId);
+    }
+
+    // Translate a batch of layers by {dx, dy} in world (mm) coordinates.
+    // Used by the Align/Distribute panel; one call per button click so the
+    // surrounding pushHistory() captures a single undo step.
+    //
+    // Each touched layer is regenerated so its baked paths pick up the new
+    // transform — the same pattern bindTrans uses for the multi-selection
+    // transform inputs (see _ui-legacy.js: TRANSLATION_KEYS branch).
+    applyAlignDeltas(deltaMap) {
+      if (!deltaMap) return;
+      const touchedIds = [];
+      Object.entries(deltaMap).forEach(([layerId, delta]) => {
+        if (!delta || (!delta.dx && !delta.dy)) return;
+        const layer = this.getLayerById(layerId);
+        if (!layer || !layer.params) return;
+        layer.params.posX = (layer.params.posX || 0) + (delta.dx || 0);
+        layer.params.posY = (layer.params.posY || 0) + (delta.dy || 0);
+        touchedIds.push(layerId);
+      });
+      if (!touchedIds.length) return;
+      touchedIds.forEach((id) => this.generate(id));
+      this.computeAllDisplayGeometry();
     }
 
     getBounds() {

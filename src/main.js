@@ -6,6 +6,7 @@
     }
     const app = new window.Vectura.App();
     window.app = app;
+    window.Vectura.UI?.MultiSelectionPanel?.init?.(app);
     const S = window.Vectura.SETTINGS;
     if (S && S.showTourOnFirstLaunch && !S.tourSeen) {
       setTimeout(() => {

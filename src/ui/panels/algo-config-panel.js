@@ -131,6 +131,88 @@
       restoreLeftPanelScroll();
       return;
     }
+
+    // Multi-selection: collapse the per-algorithm panel into a "Multiple Selection"
+    // notice. The transform/seed inputs stay live and apply to every selected layer
+    // (see bindTrans in _ui-legacy.js).
+    const multiSelectedLayers = (this.app.renderer?.getSelectedLayers?.() || []);
+    const isMultiSelection = multiSelectedLayers.length > 1;
+    const algoBodyEl = getEl('left-section-algorithm-body', { silent: true });
+    const moduleLabelEl = getEl('primary-module-label', { silent: true });
+    const moduleLabelWrap = moduleLabelEl?.parentElement || null;
+    const moduleTriggerEl = getEl('generator-module-trigger', { silent: true });
+    const algoAboutEl = getEl('algo-about', { silent: true });
+    const seedControlsEl = getEl('seed-controls', { silent: true });
+    const transformSectionEl = getEl('algorithm-transform-section', { silent: true });
+    const algoSectionEl = getEl('left-section-algorithm', { silent: true });
+    const algoConfigSectionEl = getEl('left-section-algorithm-configuration', { silent: true });
+    const primaryTitleEl = getEl('left-section-primary-title', { silent: true });
+    const existingMultiNotice = algoBodyEl?.querySelector('[data-multi-selection-notice]');
+    if (existingMultiNotice) existingMultiNotice.remove();
+
+    const multiSelSection = getEl('left-section-multi-selection', { silent: true });
+    if (isMultiSelection) {
+      this._showWelcomePanel(false);
+      if (algoSectionEl) algoSectionEl.style.display = '';
+      if (algoConfigSectionEl) algoConfigSectionEl.style.display = 'none';
+      if (multiSelSection) multiSelSection.style.display = '';
+      if (primaryTitleEl) primaryTitleEl.textContent = 'Multiple Selection';
+      if (moduleLabelWrap) moduleLabelWrap.style.display = 'none';
+      if (moduleTriggerEl) moduleTriggerEl.style.display = 'none';
+      if (algoAboutEl) algoAboutEl.style.display = 'none';
+      if (seedControlsEl) seedControlsEl.style.display = 'none';
+      if (transformSectionEl) transformSectionEl.style.display = '';
+
+      const notice = document.createElement('p');
+      notice.dataset.multiSelectionNotice = 'true';
+      notice.className = 'text-xs text-vectura-muted mb-3 leading-relaxed';
+      notice.textContent = `${multiSelectedLayers.length} layers selected. Select a single layer to edit its parameters. Transform changes below apply to all selected layers.`;
+      if (algoBodyEl) algoBodyEl.insertBefore(notice, transformSectionEl || algoBodyEl.firstChild);
+      this.app?.ui?.refreshAlignPanel?.();
+
+      const sharedValue = (getter) => {
+        let v = null;
+        for (let i = 0; i < multiSelectedLayers.length; i++) {
+          const cur = getter(multiSelectedLayers[i]);
+          if (i === 0) v = cur;
+          else if (cur !== v) return null;
+        }
+        return v;
+      };
+      const formatPosShared = (v) => (v == null ? '' : (typeof this.formatDocumentNumber === 'function'
+        ? this.formatDocumentNumber(v, { trimTrailingZeros: true })
+        : v));
+      const posXEl = getEl('inp-pos-x');
+      const posYEl = getEl('inp-pos-y');
+      const scaleXEl = getEl('inp-scale-x');
+      const scaleYEl = getEl('inp-scale-y');
+      const rotEl = getEl('inp-rotation');
+      const applyShared = (el, value, formatter) => {
+        if (!el) return;
+        el.value = value == null ? '' : (formatter ? formatter(value) : value);
+        el.placeholder = value == null ? 'Multiple' : '';
+      };
+      applyShared(posXEl, sharedValue((l) => l.params?.posX ?? null), formatPosShared);
+      applyShared(posYEl, sharedValue((l) => l.params?.posY ?? null), formatPosShared);
+      applyShared(scaleXEl, sharedValue((l) => l.params?.scaleX ?? null));
+      applyShared(scaleYEl, sharedValue((l) => l.params?.scaleY ?? null));
+      applyShared(rotEl, sharedValue((l) => l.params?.rotation ?? null));
+
+      restoreLeftPanelScroll();
+      return;
+    }
+
+    // Single-selection: restore any chrome a prior multi-selection pass hid.
+    if (multiSelSection) multiSelSection.style.display = 'none';
+    if (primaryTitleEl) primaryTitleEl.textContent = 'Algorithm';
+    if (moduleLabelWrap) moduleLabelWrap.style.display = '';
+    if (moduleTriggerEl) moduleTriggerEl.style.display = '';
+    if (algoAboutEl) algoAboutEl.style.display = '';
+    if (seedControlsEl) seedControlsEl.style.display = '';
+    ['inp-pos-x', 'inp-pos-y', 'inp-scale-x', 'inp-scale-y', 'inp-rotation'].forEach((id) => {
+      const el = getEl(id, { silent: true });
+      if (el && el.placeholder) el.placeholder = '';
+    });
     const layer = this.app.engine.getActiveLayer();
     if (!layer) {
       this._showWelcomePanel(true);

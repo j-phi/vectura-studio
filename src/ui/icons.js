@@ -89,6 +89,37 @@
     ring: () => `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.1" aria-hidden="true"><circle cx="6.5" cy="6.5" r="5.5"/><circle cx="6.5" cy="6.5" r="3.4"/><circle cx="6.5" cy="6.5" r="1.4"/></svg>`,
   };
 
+  // Align panel icons: 24×24 Lucide-sourced SVG. Each entry returns the inner
+  // path fragment so the panel can wrap once with consistent stroke/size.
+  const ALIGN_STROKE = `fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"`;
+  const alignSvg = (paths, size = 18) =>
+    `<svg width="${size}" height="${size}" viewBox="0 0 24 24" ${ALIGN_STROKE} aria-hidden="true">${paths}</svg>`;
+
+  const align = {
+    // Align L/C/R (vertical baseline on start/center/end)
+    alignLeft:    () => alignSvg(`<path d="M3 3v18"/><rect width="11" height="4" x="6" y="5" rx="1"/><rect width="7" height="4" x="6" y="15" rx="1"/>`),
+    alignCenterH: () => alignSvg(`<path d="M12 3v18"/><rect width="11" height="4" x="6.5" y="5" rx="1"/><rect width="7" height="4" x="8.5" y="15" rx="1"/>`),
+    alignRight:   () => alignSvg(`<path d="M21 3v18"/><rect width="11" height="4" x="7" y="5" rx="1" transform="rotate(180 12.5 7)"/><rect width="7" height="4" x="11" y="15" rx="1" transform="rotate(180 14.5 17)"/>`),
+    // Align T/M/B (horizontal baseline on start/center/end)
+    alignTop:     () => alignSvg(`<path d="M3 3h18"/><rect width="4" height="11" x="5" y="6" rx="1"/><rect width="4" height="7" x="15" y="6" rx="1"/>`),
+    alignCenterV: () => alignSvg(`<path d="M3 12h18"/><rect width="4" height="11" x="5" y="6.5" rx="1"/><rect width="4" height="7" x="15" y="8.5" rx="1"/>`),
+    alignBottom:  () => alignSvg(`<path d="M3 21h18"/><rect width="4" height="11" x="5" y="7" rx="1" transform="rotate(180 7 12.5)"/><rect width="4" height="7" x="15" y="11" rx="1" transform="rotate(180 17 14.5)"/>`),
+    // Distribute by edge (V top/bottom, H left/right) and by center
+    distributeTop:     () => alignSvg(`<rect width="14" height="6" x="5" y="14" rx="2"/><rect width="10" height="6" x="7" y="4" rx="2"/><path d="M2 14h20"/><path d="M2 4h20"/>`),
+    distributeCenterV: () => alignSvg(`<rect width="14" height="6" x="5" y="14" rx="2"/><rect width="10" height="6" x="7" y="4" rx="2"/><path d="M22 7h-5"/><path d="M7 7H1"/><path d="M22 17h-3"/><path d="M5 17H2"/>`),
+    distributeBottom:  () => alignSvg(`<rect width="14" height="6" x="5" y="4" rx="2"/><rect width="10" height="6" x="7" y="14" rx="2"/><path d="M2 20h20"/><path d="M2 10h20"/>`),
+    distributeLeft:    () => alignSvg(`<rect width="6" height="14" x="4" y="5" rx="2"/><rect width="6" height="10" x="14" y="7" rx="2"/><path d="M4 2v20"/><path d="M14 2v20"/>`),
+    distributeCenterH: () => alignSvg(`<rect width="6" height="14" x="4" y="5" rx="2"/><rect width="6" height="10" x="14" y="7" rx="2"/><path d="M17 22v-5"/><path d="M17 7V2"/><path d="M7 22v-3"/><path d="M7 5V2"/>`),
+    distributeRight:   () => alignSvg(`<rect width="6" height="14" x="14" y="5" rx="2"/><rect width="6" height="10" x="4" y="7" rx="2"/><path d="M10 2v20"/><path d="M20 2v20"/>`),
+    // Distribute spacing (equal gaps)
+    distributeSpacingV: () => alignSvg(`<rect width="14" height="6" x="5" y="15" rx="2"/><rect width="14" height="6" x="5" y="3" rx="2"/><path d="M3 10h18"/><path d="M3 14h18"/>`),
+    distributeSpacingH: () => alignSvg(`<rect width="6" height="14" x="15" y="5" rx="2"/><rect width="6" height="14" x="3" y="5" rx="2"/><path d="M10 3v18"/><path d="M14 3v18"/>`),
+    // Align To: targets
+    targetArtboard: () => alignSvg(`<rect width="16" height="20" x="4" y="2" rx="1"/><path d="M4 7h16M4 17h16"/>`),
+    targetSelection: () => alignSvg(`<rect width="18" height="18" x="3" y="3" rx="1" stroke-dasharray="3 2"/>`),
+    targetKey:       () => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="1"/><rect width="4" height="4" x="3" y="3" fill="currentColor" stroke="none"/></svg>`,
+  };
+
   // Cursor icons: full <svg> elements with absolute colors. Designed to be
   // wrapped into `cursor: url(data:image/svg+xml;utf8,...)` data URLs.
   // Browsers don't propagate page colors into cursor data URLs, so these
@@ -130,5 +161,5 @@
     },
   };
 
-  root.Icons = { layer, tool, misc, cursor };
+  root.Icons = { layer, tool, misc, cursor, align };
 })();

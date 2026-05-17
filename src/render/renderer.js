@@ -368,6 +368,10 @@
       this.guides = null;
       this.selectedLayerId = null;
       this.selectedLayerIds = new Set();
+      // Illustrator-style "key object" — the anchor that Align-To: Key Object
+      // uses as its reference rect. Cleared whenever the layer leaves the
+      // selection or selection drops below 2 layers.
+      this.keyObjectId = null;
       this.isSelecting = false;
       this.selectionStart = null;
       this.selectionRect = null;
@@ -2924,6 +2928,16 @@
         const showHandles = !anyLocked;
         if (bounds) this.drawSelection(bounds, { showHandles });
       }
+      // Key-object emphasis: when an Illustrator-style key object is set,
+      // overlay its individual bbox with a thicker, solid stroke so the
+      // anchor is visually distinguishable from sibling selection outlines.
+      if (this.keyObjectId && this.selectedLayerIds.size > 1) {
+        const keyLayer = this.engine.layers.find((l) => l.id === this.keyObjectId);
+        if (keyLayer && keyLayer.visible !== false) {
+          const keyBounds = this.getLayerBounds(keyLayer, this.tempTransform);
+          if (keyBounds) this.drawKeyObjectOutline(keyBounds);
+        }
+      }
       if (this.selectionRect) this.drawSelectionRect(this.selectionRect);
       if (this.directMarqueeRect) this.drawSelectionRect(this.directMarqueeRect);
       if (this.algoDraft) this.drawAlgoDraftRect(this.algoDraft);
@@ -4034,7 +4048,21 @@
           if (effectivePrimary) this.updateTransformInputs(effectivePrimary);
         }
         if (!this.tempTransform && this._pendingSingleSelect) {
-          this.selectLayer(this._pendingSingleSelect);
+          const pending = this._pendingSingleSelect;
+          // Illustrator semantics: when multi-selected and the user clicks
+          // (without modifiers) on a layer that's already in the selection,
+          // promote it to the Key Object instead of collapsing the selection.
+          // Click again on the same key → unset; click on a different selected
+          // layer → re-promote.
+          if (this.selectedLayerIds.size > 1 && this.selectedLayerIds.has(pending.id)) {
+            if (this.keyObjectId === pending.id) {
+              this.clearKeyObject();
+            } else {
+              this.setKeyObject(pending.id);
+            }
+          } else {
+            this.selectLayer(pending);
+          }
         }
         this.clearMaskPreview();
         this.mirrorDragState = null;
@@ -4195,6 +4223,9 @@
 
     tracePath(path, useCurves) {
       if (!path || path.length < 2) return;
+      // Paths with baked bezier anchors already carry curvature in the resampled
+      // polyline; quadratic-curve smoothing on top would double-smooth.
+      if (useCurves && Array.isArray(path.meta?.anchors)) useCurves = false;
       if (!useCurves || path.length < 3) {
         this.ctx.moveTo(path[0].x, path[0].y);
         for (let i = 1; i < path.length; i++) this.ctx.lineTo(path[i].x, path[i].y);
@@ -4511,6 +4542,9 @@
           : this.selectedLayerIds.values().next().value;
         if (this.onSelectLayer) this.onSelectLayer(this.getSelectedLayer());
       }
+      if (this.keyObjectId && (!this.selectedLayerIds.has(this.keyObjectId) || this.selectedLayerIds.size < 2)) {
+        this.keyObjectId = null;
+      }
       if (this.directSelection && this.directSelection.layerId !== this.selectedLayerId) {
         this.directSelection = null;
         this.directDrag = null;
@@ -4526,6 +4560,9 @@
       } else {
         this.selectedLayerId = this.selectedLayerIds.values().next().value || null;
       }
+      if (this.keyObjectId && (!this.selectedLayerIds.has(this.keyObjectId) || this.selectedLayerIds.size < 2)) {
+        this.keyObjectId = null;
+      }
       if (this.directSelection && this.directSelection.layerId !== this.selectedLayerId) {
         this.directSelection = null;
         this.directDrag = null;
@@ -4538,9 +4575,26 @@
       this.draw();
     }
 
+    setKeyObject(id) {
+      if (!id || !this.selectedLayerIds.has(id)) return;
+      if (this.selectedLayerIds.size < 2) return;
+      this.keyObjectId = id;
+      this.selectedLayerId = id;
+      if (this.onSelectLayer) this.onSelectLayer(this.getSelectedLayer() || null);
+      this.draw();
+    }
+
+    clearKeyObject() {
+      if (!this.keyObjectId) return;
+      this.keyObjectId = null;
+      if (this.onSelectLayer) this.onSelectLayer(this.getSelectedLayer() || null);
+      this.draw();
+    }
+
     clearSelection() {
       this.selectedLayerIds.clear();
       this.selectedLayerId = null;
+      this.keyObjectId = null;
       this.directSelection = null;
       this.directDrag = null;
       this.directAuxSelections = [];
@@ -5156,6 +5210,23 @@
         center,
         corners: { nw, ne, se, sw },
       };
+    }
+
+    drawKeyObjectOutline(bounds) {
+      if (!bounds || !bounds.corners) return;
+      const { nw, ne, se, sw } = bounds.corners;
+      this.ctx.save();
+      this.ctx.strokeStyle = getThemeToken('--render-selection-handle-stroke', '#f8fafc');
+      this.ctx.lineWidth = 2.25 / this.scale;
+      this.ctx.setLineDash([]);
+      this.ctx.beginPath();
+      this.ctx.moveTo(nw.x, nw.y);
+      this.ctx.lineTo(ne.x, ne.y);
+      this.ctx.lineTo(se.x, se.y);
+      this.ctx.lineTo(sw.x, sw.y);
+      this.ctx.closePath();
+      this.ctx.stroke();
+      this.ctx.restore();
     }
 
     drawSelection(bounds, options = {}) {

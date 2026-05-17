@@ -133,6 +133,20 @@
         return;
       }
 
+      // Shift+F7 → focus the Align panel when 2+ layers are selected
+      // (Illustrator's native shortcut). No-op otherwise.
+      if (e.key === 'F7' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        const selected = this.app.renderer?.getSelectedLayers?.() || [];
+        if (selected.length < 2) return;
+        const section = document.getElementById('left-section-multi-selection');
+        if (!section) return;
+        section.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        section.classList.add('align-panel-flash');
+        setTimeout(() => section.classList.remove('align-panel-flash'), 600);
+        return;
+      }
+
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
         e.preventDefault();
         e.stopPropagation();
