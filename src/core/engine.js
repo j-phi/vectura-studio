@@ -30,69 +30,6 @@
         if (path.meta) next.meta = JSON.parse(JSON.stringify(path.meta));
         return next;
       }));
-  const cloneAnchors = GeometryUtils.cloneAnchors || ((a) => (a || []).map((p) => ({ ...p })));
-  const pointsToAnchors =
-    GeometryUtils.pointsToAnchors ||
-    ((pts) => (pts || []).map((p) => ({ x: p.x, y: p.y, in: null, out: null })));
-  const buildPolylineFromAnchors =
-    GeometryUtils.buildPolylineFromAnchors ||
-    ((anchors) => (anchors || []).map((a) => ({ x: a.x, y: a.y })));
-  const rebuildShapeAnchors =
-    GeometryUtils.rebuildShapeAnchors || ((anchors) => ({ anchors: anchors || [], changed: false }));
-
-  const PRIMITIVE_SHAPE_KINDS = new Set(['circle', 'rect', 'oval', 'polygon', 'star']);
-  const isFreeformShapePath = (path) => {
-    if (!Array.isArray(path)) return false;
-    if (path.meta?.shape) return false;
-    if (path.meta?.kind && PRIMITIVE_SHAPE_KINDS.has(path.meta.kind)) return false;
-    return true;
-  };
-
-  const applyShapeAnchorRebuild = (layer, bounds) => {
-    if (!layer || layer.type !== 'shape' || !Array.isArray(layer.sourcePaths)) return;
-    const p = layer.params || {};
-    const simplify = Math.max(0, Math.min(1, p.simplify ?? 0));
-    const smoothing = Math.max(0, Math.min(2, p.smoothing ?? 0));
-    const curves = Boolean(p.curves);
-    const active = simplify > 0 || smoothing > 0 || curves;
-
-    layer.sourcePaths.forEach((path) => {
-      if (!isFreeformShapePath(path)) return;
-      if (!path.meta) path.meta = {};
-
-      if (active) {
-        if (!path.meta.originalAnchors) {
-          const baseline = Array.isArray(path.meta.anchors) && path.meta.anchors.length >= 2
-            ? cloneAnchors(path.meta.anchors)
-            : pointsToAnchors(path);
-          path.meta.originalAnchors = baseline;
-          path.meta.originalClosed = Boolean(path.meta.closed);
-        }
-        const result = rebuildShapeAnchors(path.meta.originalAnchors, {
-          simplify,
-          smoothing,
-          curves,
-          closed: path.meta.originalClosed,
-          bounds,
-        });
-        path.meta.anchors = result.anchors;
-        path.meta.closed = Boolean(path.meta.originalClosed);
-        const resampled = buildPolylineFromAnchors(result.anchors, path.meta.originalClosed);
-        path.length = 0;
-        for (const pt of resampled) path.push(pt);
-      } else if (path.meta.originalAnchors) {
-        const original = path.meta.originalAnchors;
-        const restoredClosed = Boolean(path.meta.originalClosed);
-        path.meta.anchors = cloneAnchors(original);
-        path.meta.closed = restoredClosed;
-        const restored = buildPolylineFromAnchors(original, restoredClosed);
-        path.length = 0;
-        for (const pt of restored) path.push(pt);
-        delete path.meta.originalAnchors;
-        delete path.meta.originalClosed;
-      }
-    });
-  };
 
   const usesManualSourceGeometry = (layer) => Boolean(layer && !layer.isGroup && layer.type === 'shape');
 
@@ -869,10 +806,6 @@
 
       const bounds = { width, height, m, dW, dH, truncate: SETTINGS.truncate };
 
-      // Shape layers: bake simplify/smoothing destructively into sourcePath anchors
-      // (reversible — originalAnchors snapshot lives on path.meta).
-      if (usesManualSourceGeometry(layer)) applyShapeAnchorRebuild(layer, bounds);
-
       const algo = Algorithms[layer.type] || Algorithms.flowfield;
       let rawPaths;
       try {
@@ -886,11 +819,8 @@
       }
       const helperPaths = rawPaths.helpers ? clonePaths(rawPaths.helpers) : null;
       const maskPolygons = rawPaths.maskPolygons ? clonePaths(rawPaths.maskPolygons) : null;
-      // For shape layers the rebuild already baked smoothing/simplify into anchors;
-      // zero the render-time pass so we don't double-apply on the resampled polyline.
-      const isShape = usesManualSourceGeometry(layer);
-      const smooth = isShape ? 0 : Math.max(0, Math.min(1, p.smoothing ?? 0));
-      const simplify = isShape ? 0 : Math.max(0, Math.min(1, p.simplify ?? 0));
+      const smooth = Math.max(0, Math.min(1, p.smoothing ?? 0));
+      const simplify = Math.max(0, Math.min(1, p.simplify ?? 0));
 
       let minX = Infinity;
       let minY = Infinity;

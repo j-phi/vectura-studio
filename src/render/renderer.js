@@ -1043,20 +1043,37 @@
     }
 
     buildPenPathFromAnchors(anchors, closed = false) {
-      const shared = window.Vectura?.GeometryUtils?.buildPolylineFromAnchors;
-      if (shared) return shared(anchors, closed);
       if (!Array.isArray(anchors) || anchors.length < 2) return [];
       const pts = [];
       const count = anchors.length;
-      const emit = (a, b) => {
+      for (let i = 0; i < count - 1; i++) {
+        const a = anchors[i];
+        const b = anchors[i + 1];
         let seg;
-        if (!a.out && !b.in) seg = [a, b];
-        else seg = this.sampleCubic(a, a.out || a, b.in || b, b);
+        if (!a.out && !b.in) {
+          seg = [a, b];
+        } else {
+          const c1 = a.out || a;
+          const c2 = b.in || b;
+          seg = this.sampleCubic(a, c1, c2, b);
+        }
         if (pts.length) seg.shift();
         pts.push(...seg);
-      };
-      for (let i = 0; i < count - 1; i++) emit(anchors[i], anchors[i + 1]);
-      if (closed && count > 2) emit(anchors[count - 1], anchors[0]);
+      }
+      if (closed && count > 2) {
+        const a = anchors[count - 1];
+        const b = anchors[0];
+        let seg;
+        if (!a.out && !b.in) {
+          seg = [a, b];
+        } else {
+          const c1 = a.out || a;
+          const c2 = b.in || b;
+          seg = this.sampleCubic(a, c1, c2, b);
+        }
+        if (pts.length) seg.shift();
+        pts.push(...seg);
+      }
       return pts;
     }
 
@@ -1753,33 +1770,6 @@
       this.directDrag = null;
       this.directAuxSelections = [];
       this.draw();
-    }
-
-    refreshDirectSelection() {
-      const sel = this.directSelection;
-      if (!sel) return;
-      if (this.directDrag) return;
-      const layer = this.engine.layers.find((l) => l.id === sel.layerId);
-      if (!layer) {
-        this.directSelection = null;
-        this.directAuxSelections = [];
-        return;
-      }
-      const sourcePath = layer.sourcePaths?.[sel.pathIndex];
-      if (!Array.isArray(sourcePath)) {
-        this.directSelection = null;
-        this.directAuxSelections = [];
-        return;
-      }
-      const parsed = this.pathToAnchors(sourcePath);
-      const next = new Set();
-      for (const i of sel.selectedIndices) {
-        if (i < parsed.anchors.length) next.add(i);
-      }
-      sel.anchors = this.cloneAnchors(parsed.anchors);
-      sel.closed = parsed.closed;
-      sel.selectedIndices = next;
-      sel.meta = sourcePath.meta ? { ...sourcePath.meta } : {};
     }
 
     _applyDirectLasso(poly) {

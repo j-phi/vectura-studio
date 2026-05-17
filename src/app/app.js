@@ -808,7 +808,6 @@
       if (SETTINGS.autoColorization?.enabled && this.ui?.applyAutoColorization && !this.ui.isApplyingAutoColorization) {
         this.ui.applyAutoColorization({ commit: false, skipLayerRender: true, skipAppRender: true });
       }
-      this.renderer?.refreshDirectSelection?.();
       this.render();
       this.ui.updateFormula();
     }
