@@ -481,7 +481,7 @@
         {
           target: '#btn-randomize-params',
           placement: 'right',
-          body: 'Adjust sliders to shape the output. When you find a tuning you like, press <b>Randomize Params</b> at the <b>top</b> of the Algorithm Configuration pane to explore variations on those settings.',
+          body: 'Adjust sliders to shape the output. When you find a tuning you like, press <b>Randomize</b> at the <b>top</b> of the Algorithm Configuration pane to explore variations on those settings.',
           highlight: '#btn-randomize-params',
           hideNext: true,
           onEnter: () => Actions.expandSection('left-section-algorithm-configuration-header', 'left-section-algorithm-configuration-body'),

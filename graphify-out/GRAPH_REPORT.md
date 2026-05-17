@@ -1,7 +1,7 @@
 # Graph Report - /Users/jayphi/Documents/github/vectura-studio/.claude/worktrees/mirror-drag-preview  (2026-05-16)
 
 ## Corpus Check
-- 291 files · ~1,697,916 words
+- 291 files · ~1,697,920 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -1448,12 +1448,12 @@ Nodes (1): City — Isometric aerial city of skyscrapers rendered entirely in de
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `addEventListener()` connect `Community 10` to `Community 1`, `Community 4`, `Community 6`, `Community 7`, `Community 8`, `Community 12`, `Community 14`, `Community 19`, `Community 21`?**
-  _High betweenness centrality (0.086) - this node is a cross-community bridge._
-- **Why does `Renderer` connect `Community 0` to `Community 1`, `Community 10`, `Community 11`, `Community 14`, `Community 21`?**
-  _High betweenness centrality (0.086) - this node is a cross-community bridge._
 - **Why does `sort()` connect `Community 3` to `Community 1`, `Community 2`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 11`, `Community 13`, `Community 14`, `Community 16`, `Community 20`, `Community 22`, `Community 26`?**
+  _High betweenness centrality (0.098) - this node is a cross-community bridge._
+- **Why does `Renderer` connect `Community 0` to `Community 1`, `Community 10`, `Community 11`, `Community 14`, `Community 21`?**
   _High betweenness centrality (0.084) - this node is a cross-community bridge._
+- **Why does `addEventListener()` connect `Community 10` to `Community 1`, `Community 4`, `Community 6`, `Community 7`, `Community 8`, `Community 12`, `Community 14`, `Community 19`, `Community 21`?**
+  _High betweenness centrality (0.078) - this node is a cross-community bridge._
 - **Are the 64 inferred relationships involving `addEventListener()` (e.g. with `mountInlinePetalisDesigner()` and `bindPetalDesignerDrag()`) actually correct?**
   _`addEventListener()` has 64 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 40 inferred relationships involving `clamp()` (e.g. with `ensurePetalDesignerState()` and `getPetalDesignerCountSplit()`) actually correct?**
