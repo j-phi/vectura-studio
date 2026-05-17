@@ -1522,7 +1522,7 @@
     });
 
     this.normalizeGroupOrder();
-    if (this.app.renderer) this.app.renderer.setSelection([groupId], groupId);
+    if (this.app.renderer) this.app.renderer.setSelection([groupId, ...selectedIds], groupId);
     this.app.engine.activeLayerId = groupId;
     this.renderLayers();
     this.app.render();

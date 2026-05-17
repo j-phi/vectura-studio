@@ -5544,13 +5544,34 @@
       });
     }
 
+    _expandGroupSelection(layers) {
+      if (this.groupEditMode) {
+        return layers.filter((l) => l.parentId === this.groupEditMode.groupId);
+      }
+      const expandedIds = new Set();
+      for (const layer of layers) {
+        if (layer.parentId) {
+          const parent = this.engine.layers.find((l) => l.id === layer.parentId);
+          if (parent?.isGroup && parent.groupType === 'group') {
+            const siblings = this.engine.getLayerChildren(layer.parentId)
+              .filter((l) => l.visible && !this.isLayerLocked?.(l.id));
+            siblings.forEach((s) => expandedIds.add(s.id));
+            continue;
+          }
+        }
+        expandedIds.add(layer.id);
+      }
+      return this.engine.layers.filter((l) => expandedIds.has(l.id));
+    }
+
     selectLayersByPolygon(poly) {
       if (!poly || poly.length < 3) return;
       const selected = this.engine.layers.filter((layer) => this.layerIntersectsPoly(layer, poly));
-      if (selected.length) {
+      const toSelect = this._expandGroupSelection(selected);
+      if (toSelect.length) {
         this.setSelection(
-          selected.map((layer) => layer.id),
-          selected[selected.length - 1].id
+          toSelect.map((layer) => layer.id),
+          toSelect[toSelect.length - 1].id
         );
       }
     }

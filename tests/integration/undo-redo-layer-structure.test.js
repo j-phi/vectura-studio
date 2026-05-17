@@ -68,7 +68,9 @@ describe('Undo/redo layer-structure integration', () => {
     expect(regrouped).toBeTruthy();
     expect(app.engine.layers.find((layer) => layer.id === firstId)?.parentId).toBe(group.id);
     expect(app.engine.layers.find((layer) => layer.id === secondId)?.parentId).toBe(group.id);
-    expect(Array.from(app.renderer.selectedLayerIds)).toEqual([group.id]);
+    expect(app.renderer.selectedLayerIds.has(group.id)).toBe(true);
+    expect(app.renderer.selectedLayerIds.has(firstId)).toBe(true);
+    expect(app.renderer.selectedLayerIds.has(secondId)).toBe(true);
 
     app.ui.ungroupSelection();
 
