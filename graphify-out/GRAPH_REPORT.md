@@ -1,11 +1,11 @@
 # Graph Report - /Users/jayphi/Documents/github/vectura-studio  (2026-05-17)
 
 ## Corpus Check
-- 302 files · ~2,658,066 words
+- 302 files · ~2,777,470 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 3457 nodes · 8289 edges · 201 communities detected
+- 3457 nodes · 8291 edges · 201 communities detected
 - Extraction: 80% EXTRACTED · 20% INFERRED · 0% AMBIGUOUS · INFERRED: 1683 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
@@ -261,147 +261,147 @@
 
 ### Community 0 - "Community 0"
 Cohesion: 0.01
-Nodes (322): mt(), $_(), _0(), a0(), AA(), ab(), ac(), Ad() (+314 more)
+Nodes (326): mt(), $_(), _0(), a0(), AA(), ab(), ac(), Ad() (+318 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.02
-Nodes (113): buildControls(), fromVectura(), requireDeps(), getPreferredNewLayerType(), isDrawableLayerType(), isModifierType(), rememberDrawableLayerType(), requireDeps() (+105 more)
+Nodes (120): buildControls(), fromVectura(), requireDeps(), getPreferredNewLayerType(), isDrawableLayerType(), isModifierType(), rememberDrawableLayerType(), requireDeps() (+112 more)
 
 ### Community 2 - "Community 2"
 Cohesion: 0.01
-Nodes (138): read(), normalizePath(), normalizePaths(), pathSignature(), serializePaths(), outlineSignature(), $(), _a (+130 more)
+Nodes (187): initBottomPaneResizer(), initBottomPaneToggle(), requireDeps(), toggleSettingsPanel(), create(), openColorModal(), requireDeps(), closeAnyOpenModal() (+179 more)
 
 ### Community 3 - "Community 3"
-Cohesion: 0.02
-Nodes (29): simplifyPath(), simplifyPathVisvalingam(), joinNearbyPaths(), round(), rect(), buildBoundsFromVertices(), buildEllipseAnchors(), buildLineAnchors() (+21 more)
+Cohesion: 0.01
+Nodes (138): read(), normalizePath(), normalizePaths(), pathSignature(), serializePaths(), outlineSignature(), $(), _a (+130 more)
 
 ### Community 4 - "Community 4"
 Cohesion: 0.02
-Nodes (181): clamp(), buildParams(), clone(), jsonClone(), runBenchmark(), clone(), Layer, removeEventListener() (+173 more)
+Nodes (30): simplifyPath(), simplifyPathVisvalingam(), create(), joinNearbyPaths(), round(), rect(), buildBoundsFromVertices(), buildEllipseAnchors() (+22 more)
 
 ### Community 5 - "Community 5"
 Cohesion: 0.02
-Nodes (160): openColorModal(), requireDeps(), closeAnyOpenModal(), bindHandlers(), buildModalShell(), closeSetupModal(), isDesktopViewport(), openSetupModal() (+152 more)
+Nodes (178): clamp(), lerp(), buildParams(), clone(), jsonClone(), runBenchmark(), clone(), centerProfile() (+170 more)
 
 ### Community 6 - "Community 6"
 Cohesion: 0.03
-Nodes (11): a_(), el(), gA(), IA, mh, Qe, qh(), Va() (+3 more)
+Nodes (12): a_(), el(), gA(), IA, mh, Qe, qh(), Va() (+4 more)
 
 ### Community 7 - "Community 7"
-Cohesion: 0.02
-Nodes (81): create(), create(), af(), ef(), ff(), Ja(), lf(), nf() (+73 more)
+Cohesion: 0.04
+Nodes (104): listProfileFiles(), readJson(), xAt(), yAt(), buildEnvelope(), classifyEndpoint(), clone(), firstEndSegmentHits() (+96 more)
 
 ### Community 8 - "Community 8"
-Cohesion: 0.04
-Nodes (93): documentUnitsToMm(), formatDocumentLength(), getDocumentUnitLabel(), getDocumentUnitPrecision(), getDocumentUnitStep(), mmToDocumentUnits(), normalizeDocumentUnits(), attachKeyboardRangeNudge() (+85 more)
+Cohesion: 0.03
+Nodes (36): attach(), requireDeps(), _reset(), _reset(), attach(), _ensureMenu(), _itemsFor(), open() (+28 more)
 
 ### Community 9 - "Community 9"
 Cohesion: 0.04
-Nodes (102): listProfileFiles(), readJson(), xAt(), yAt(), applyEndpointTruncation(), buildEnvelope(), classifyEndpoint(), buildEnvelope() (+94 more)
+Nodes (94): documentUnitsToMm(), formatDocumentLength(), getDocumentUnitLabel(), getDocumentUnitPrecision(), getDocumentUnitStep(), mmToDocumentUnits(), normalizeDocumentUnits(), attachKeyboardRangeNudge() (+86 more)
 
 ### Community 10 - "Community 10"
 Cohesion: 0.03
-Nodes (26): activate(), get(), register(), skinManifest(), swapStylesheet(), validate(), writeMotionVars(), writeStructuralVars() (+18 more)
+Nodes (29): getBtn(), getIcon(), openPicker(), create(), dx, lr, qv, attach() (+21 more)
 
 ### Community 11 - "Community 11"
 Cohesion: 0.03
-Nodes (41): Ud(), attach(), cmp(), compareVectorAngles(), cosineOfAngle(), crossProduct(), dotProduct(), estimate() (+33 more)
+Nodes (44): create(), luminance(), normalizeHex(), Ud(), attach(), cmp(), compareVectorAngles(), cosineOfAngle() (+36 more)
 
 ### Community 12 - "Community 12"
 Cohesion: 0.03
 Nodes (92): Documentation Synchronization Matrix, Public Process Contracts, Source-of-Truth Hierarchy, Legacy Doc Status Taxonomy, Agentic Harness Strategy, Task Lifecycle Protocol, Harness Testing Matrix, Agentic Harness Governance (+84 more)
 
 ### Community 13 - "Community 13"
-Cohesion: 0.04
-Nodes (15): getBtn(), getIcon(), openPicker(), dx, lr, qv, expectAllCoordsInsideMargin(), text() (+7 more)
+Cohesion: 0.07
+Nodes (39): af(), ef(), ff(), Ja(), lf(), nf(), of(), po() (+31 more)
 
 ### Community 14 - "Community 14"
 Cohesion: 0.05
-Nodes (57): applyPad(), clamp01(), frac(), lerp(), centerProfile(), clipFanLine(), dampen(), displace() (+49 more)
+Nodes (36): applyPad(), clamp01(), frac(), cb, iterateSamples(), baseLayerShape(), combineBlend(), createEvaluator() (+28 more)
 
 ### Community 15 - "Community 15"
-Cohesion: 0.06
-Nodes (20): cb, iterateSamples(), Circles, getActiveLayer(), getApp(), getEngine(), getLayers(), getUI() (+12 more)
+Cohesion: 0.07
+Nodes (18): Circles, getActiveLayer(), getApp(), getEngine(), getLayers(), getUI(), Highlight, iconHtml() (+10 more)
 
 ### Community 16 - "Community 16"
-Cohesion: 0.1
-Nodes (10): cr(), G0(), id(), jS(), LS, MN(), Qo(), Wh (+2 more)
-
-### Community 17 - "Community 17"
 Cohesion: 0.08
 Nodes (11): dt, f_, fx(), gc(), gT, h_, hT, lh() (+3 more)
 
-### Community 18 - "Community 18"
+### Community 17 - "Community 17"
 Cohesion: 0.08
 Nodes (33): applyArcMirrorToPaths(), applyMirrorToPaths(), applyRadialMirrorToPaths(), applyWallpaperMirrorToPaths(), buildAxisFromAngle(), classifyPieceSide(), clipClosedPolygonByAxis(), clipPathsToHalfPlane() (+25 more)
 
-### Community 19 - "Community 19"
+### Community 18 - "Community 18"
 Cohesion: 0.1
 Nodes (2): c_(), qC
 
+### Community 19 - "Community 19"
+Cohesion: 0.18
+Nodes (2): kA, oc
+
 ### Community 20 - "Community 20"
-Cohesion: 0.09
-Nodes (20): attach(), requireDeps(), _reset(), _route(), _ensureMenu(), _itemsFor(), _onContextMenu(), _openAt() (+12 more)
+Cohesion: 0.21
+Nodes (6): cr(), G0(), id(), jS(), Qo(), send()
 
 ### Community 21 - "Community 21"
-Cohesion: 0.12
-Nodes (21): applyMaskToPaths(), buildClosedPathSilhouettes(), buildMaskUnion(), expandCircle(), getGroupSilhouette(), getLayerMaskCapabilities(), getLayerSilhouette(), pathToPolygon() (+13 more)
-
-### Community 22 - "Community 22"
 Cohesion: 0.19
 Nodes (15): closeRing(), difference(), intersection(), multiPolygonToPaths(), normalizeMultiPolygon(), normalizeRing(), rectToMultiPolygon(), ringsToEvenOddMultiPolygon() (+7 more)
 
+### Community 22 - "Community 22"
+Cohesion: 0.21
+Nodes (13): applyMaskToPaths(), buildClosedPathSilhouettes(), buildMaskUnion(), expandCircle(), getGroupSilhouette(), getLayerMaskCapabilities(), getLayerSilhouette(), pathToPolygon() (+5 more)
+
 ### Community 23 - "Community 23"
-Cohesion: 0.32
-Nodes (3): Ib(), oc, oh()
+Cohesion: 0.23
+Nodes (10): captureActiveLayerGeometry(), captureAutumnGridSeamDiagnostics(), captureRepresentativePatternIds(), readBrightness(), readPenAssignments(), sampleWorkspacePixel(), buildMirroredMaskedCircleScene(), buildOvalMaskParentScene() (+2 more)
 
 ### Community 24 - "Community 24"
-Cohesion: 0.2
-Nodes (2): loadHorizonAlgorithm(), makeNoiseRackMock()
+Cohesion: 0.3
+Nodes (13): applyEndpointTruncation(), buildEnvelope(), classifyEndpoint(), findEndTailCut(), findStartTailCut(), interpolatePoint(), pathLength(), pointEquals() (+5 more)
 
 ### Community 25 - "Community 25"
+Cohesion: 0.35
+Nodes (10): applyAlgorithmBias(), applyLissajousBias(), applyPetalisBias(), applyRainfallBias(), applyShapePackBias(), pickRandom(), randomInRange(), randomizeLayerParams() (+2 more)
+
+### Community 26 - "Community 26"
 Cohesion: 0.33
 Nodes (10): checkNoRingPointInsideCrack(), generate(), interpolateArmAngle(), makeBaseParams(), makeCrackParams(), makeDefaultBounds(), pointAngle(), pointRadius() (+2 more)
 
-### Community 26 - "Community 26"
+### Community 27 - "Community 27"
+Cohesion: 0.2
+Nodes (2): loadHorizonAlgorithm(), makeNoiseRackMock()
+
+### Community 28 - "Community 28"
 Cohesion: 0.27
 Nodes (6): clone(), distance(), generate(), makeDefaultBounds(), ringLeft(), ringRight()
 
-### Community 27 - "Community 27"
+### Community 29 - "Community 29"
 Cohesion: 0.29
 Nodes (2): loadTerrainAlgorithm(), makeNoiseRackMock()
 
-### Community 28 - "Community 28"
+### Community 30 - "Community 30"
 Cohesion: 0.43
 Nodes (6): ensureHost(), hide(), refresh(), show(), wrap(), wrapSync()
 
-### Community 29 - "Community 29"
+### Community 31 - "Community 31"
 Cohesion: 0.25
 Nodes (8): Contour Canyon Terraces — Dense parallel contour lines forming tall bulging column/terrace shapes, repeating tessellated organic volumes like packed standing stones or pods, Contour Cellular Bulbs — Dense concentric contour lines forming packed organic bulb/cell shapes that tessellate across the canvas, topographic cross-section of biological forms, Contour Crater Depression — Intricate swirling contour lines forming a large bowl/crater depression with feathered sub-forms, fractal-like self-similar nesting, Contour Dune Ridge — Tightly spaced parallel contour lines warped over sand-dune ridge forms with a sharp ravine cutting through, high-contrast B&W topographic aesthetic, Contour Portrait Face — Flowing contour/isoline lines used to render a human face portrait, lines follow surface curvature to describe facial features like nose, eyes, mouth, Flowing Ribbon Streamlines — A sinuous bundle of fine parallel streamlines forming a ribbon-like 3D tube that twists and bends through white space, minimal and elegant, Spiral Halftone Figure — Dense Archimedean spiral lines used as halftone to render a human figure (portrait/bust), spiral tightens in dark areas, expands in light areas, Vortex Flowlines — A dark field of horizontal wavering flowfield lines pulled sharply into a bright central vortex/attractor sink, dramatic radial convergence
 
-### Community 30 - "Community 30"
-Cohesion: 0.47
-Nodes (1): SimpleNoise
-
-### Community 31 - "Community 31"
+### Community 32 - "Community 32"
 Cohesion: 0.5
 Nodes (3): closed(), loadSeamHelpers(), tile()
 
-### Community 32 - "Community 32"
+### Community 33 - "Community 33"
 Cohesion: 0.5
 Nodes (2): loadTopoAlgorithm(), makeNoiseRackMock()
 
-### Community 33 - "Community 33"
+### Community 34 - "Community 34"
 Cohesion: 0.7
 Nodes (4): goToNext(), goToPrevious(), makeCurrent(), toggleClass()
 
-### Community 34 - "Community 34"
+### Community 35 - "Community 35"
 Cohesion: 0.4
 Nodes (5): filter Operation, linesimplify Operation, linesort Operation, multipass Operation, vpype-like Optimization Integration
-
-### Community 35 - "Community 35"
-Cohesion: 0.5
-Nodes (0): 
 
 ### Community 36 - "Community 36"
 Cohesion: 0.5
@@ -420,28 +420,28 @@ Cohesion: 0.5
 Nodes (0): 
 
 ### Community 40 - "Community 40"
-Cohesion: 0.67
-Nodes (2): installDomShims(), loadUIComponent()
+Cohesion: 0.5
+Nodes (0): 
 
 ### Community 41 - "Community 41"
 Cohesion: 0.67
-Nodes (0): 
+Nodes (2): installDomShims(), loadUIComponent()
 
 ### Community 42 - "Community 42"
 Cohesion: 0.67
 Nodes (0): 
 
 ### Community 43 - "Community 43"
-Cohesion: 1.0
-Nodes (2): loadAlgorithm(), makeNoiseRackMock()
-
-### Community 44 - "Community 44"
 Cohesion: 0.67
 Nodes (0): 
 
+### Community 44 - "Community 44"
+Cohesion: 1.0
+Nodes (2): loadAlgorithm(), makeNoiseRackMock()
+
 ### Community 45 - "Community 45"
 Cohesion: 0.67
-Nodes (1): loadNoiseRack()
+Nodes (0): 
 
 ### Community 46 - "Community 46"
 Cohesion: 0.67
@@ -1368,12 +1368,12 @@ Nodes (1): City — Isometric aerial city of skyscrapers rendered entirely in de
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `mt()` connect `Community 0` to `Community 1`, `Community 2`, `Community 5`, `Community 6`, `Community 7`, `Community 10`, `Community 11`, `Community 13`, `Community 16`, `Community 17`?**
-  _High betweenness centrality (0.059) - this node is a cross-community bridge._
-- **Why does `Renderer` connect `Community 3` to `Community 1`, `Community 20`, `Community 5`?**
-  _High betweenness centrality (0.050) - this node is a cross-community bridge._
-- **Why does `sort()` connect `Community 9` to `Community 0`, `Community 1`, `Community 2`, `Community 4`, `Community 5`, `Community 8`, `Community 10`, `Community 11`, `Community 14`, `Community 17`, `Community 18`?**
-  _High betweenness centrality (0.045) - this node is a cross-community bridge._
+- **Why does `Renderer` connect `Community 4` to `Community 8`, `Community 1`, `Community 2`?**
+  _High betweenness centrality (0.082) - this node is a cross-community bridge._
+- **Why does `mt()` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 6`, `Community 8`, `Community 10`, `Community 11`, `Community 13`, `Community 16`, `Community 20`?**
+  _High betweenness centrality (0.075) - this node is a cross-community bridge._
+- **Why does `addEventListener()` connect `Community 2` to `Community 0`, `Community 1`, `Community 3`, `Community 4`, `Community 5`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 13`, `Community 15`, `Community 18`?**
+  _High betweenness centrality (0.058) - this node is a cross-community bridge._
 - **Are the 95 inferred relationships involving `mt()` (e.g. with `_e()` and `ye()`) actually correct?**
   _`mt()` has 95 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 78 inferred relationships involving `addEventListener()` (e.g. with `ki` and `LC()`) actually correct?**

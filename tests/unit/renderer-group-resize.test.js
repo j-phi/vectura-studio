@@ -101,7 +101,7 @@ describe('Renderer — group resize handles', () => {
     expect(bounds.corners.se.y).toBeCloseTo(200);
   });
 
-  test('hitHandle returns rotate-se when screen point is 14px outside the SE corner', () => {
+  test('hitHandle returns rotate-se when screen point is just outside the SE corner (past resize radius, outside box)', () => {
     const layer = makeLayer('single', [
       { x: 50, y: 50 }, { x: 150, y: 50 }, { x: 150, y: 150 }, { x: 50, y: 150 },
     ]);
@@ -111,12 +111,12 @@ describe('Renderer — group resize handles', () => {
 
     const bounds = renderer.getSelectionBounds([layer]);
     const se = bounds.corners.se; // (150,150) in world = screen at scale=1,offset=0
-    // 14px diagonally outside: distance = 14 > 8 (inner) and <= 22 (outer ring)
+    // +10,+10 → dist ≈ 14.1 px: just past RESIZE_R (10), within ROTATE_R (28), and outside the OBB
     const handle = renderer.hitHandle(se.x + 10, se.y + 10, bounds);
     expect(handle).toBe('rotate-se');
   });
 
-  test('hitHandle returns null when screen point is 25px outside a corner', () => {
+  test('hitHandle returns null when screen point is beyond the rotate band', () => {
     const layer = makeLayer('single', [
       { x: 50, y: 50 }, { x: 150, y: 50 }, { x: 150, y: 150 }, { x: 50, y: 150 },
     ]);
@@ -126,8 +126,24 @@ describe('Renderer — group resize handles', () => {
 
     const bounds = renderer.getSelectionBounds([layer]);
     const se = bounds.corners.se;
-    // 25px diagonally: distance ≈ 25*√2/√2... use straight offset: dist=25 > 22
-    const handle = renderer.hitHandle(se.x + 25, se.y, bounds);
+    // 30px straight out: dist=30 > ROTATE_R (28)
+    const handle = renderer.hitHandle(se.x + 30, se.y, bounds);
+    expect(handle).toBeNull();
+  });
+
+  test('hitHandle does NOT return rotate-* when within rotate radius but INSIDE the bounding box', () => {
+    const layer = makeLayer('single', [
+      { x: 50, y: 50 }, { x: 150, y: 50 }, { x: 150, y: 150 }, { x: 50, y: 150 },
+    ]);
+    const renderer = makeRenderer([layer]);
+    renderer.selectedLayerIds = new Set(['single']);
+    renderer.selectedLayerId = 'single';
+
+    const bounds = renderer.getSelectionBounds([layer]);
+    const se = bounds.corners.se; // (150,150)
+    // (135,135) is INSIDE the box and ~21.2px from SE corner → would be in rotate band radially,
+    // but the outside-OBB gate must suppress rotation.
+    const handle = renderer.hitHandle(se.x - 15, se.y - 15, bounds);
     expect(handle).toBeNull();
   });
 

@@ -4673,15 +4673,34 @@
       let maxX = -Infinity;
       let maxY = -Infinity;
       layers.forEach((layer) => {
-        const bounds = this.getLayerBounds(layer);
-        if (!bounds) return;
-        const corners = Object.values(bounds.corners);
-        corners.forEach((pt) => {
-          const next = temp ? this.transformPoint(pt, temp) : pt;
-          minX = Math.min(minX, next.x);
-          minY = Math.min(minY, next.y);
-          maxX = Math.max(maxX, next.x);
-          maxY = Math.max(maxY, next.y);
+        const primBounds = this.getPrimitiveShapeBounds(layer, temp);
+        if (primBounds) {
+          Object.values(primBounds.corners).forEach((pt) => {
+            minX = Math.min(minX, pt.x); minY = Math.min(minY, pt.y);
+            maxX = Math.max(maxX, pt.x); maxY = Math.max(maxY, pt.y);
+          });
+          return;
+        }
+        const basePaths = this.getInteractionPaths(layer);
+        if (!Array.isArray(basePaths)) return;
+        basePaths.forEach((path) => {
+          if (path?.meta?.kind === 'circle') {
+            const meta = temp ? this.transformCircleMeta(path.meta, temp) : path.meta;
+            const cx = meta.cx ?? meta.x;
+            const cy = meta.cy ?? meta.y;
+            const rx = meta.rx ?? meta.r;
+            const ry = meta.ry ?? meta.r;
+            if (!Number.isFinite(cx) || !Number.isFinite(cy)) return;
+            minX = Math.min(minX, cx - rx); maxX = Math.max(maxX, cx + rx);
+            minY = Math.min(minY, cy - ry); maxY = Math.max(maxY, cy + ry);
+            return;
+          }
+          if (!Array.isArray(path)) return;
+          path.forEach((pt) => {
+            const next = temp ? this.transformPoint(pt, temp) : pt;
+            minX = Math.min(minX, next.x); minY = Math.min(minY, next.y);
+            maxX = Math.max(maxX, next.x); maxY = Math.max(maxY, next.y);
+          });
         });
       });
       if (!Number.isFinite(minX)) return null;
@@ -5412,17 +5431,23 @@
     }
 
     hitHandle(sx, sy, bounds) {
+      const RESIZE_R = 10;
+      const ROTATE_R = 28;
       const corners = [
         { key: 'nw', ...bounds.corners.nw },
         { key: 'ne', ...bounds.corners.ne },
         { key: 'se', ...bounds.corners.se },
         { key: 'sw', ...bounds.corners.sw },
       ];
+      let world = null;
       for (const c of corners) {
         const sc = this.worldToScreen(c.x, c.y);
         const dist = Math.hypot(sx - sc.x, sy - sc.y);
-        if (dist <= 8) return c.key;
-        if (dist <= 22) return `rotate-${c.key}`;
+        if (dist <= RESIZE_R) return c.key;
+        if (dist <= ROTATE_R) {
+          if (!world) world = this.screenToWorld(sx, sy);
+          if (!this.pointInBounds(world, bounds)) return `rotate-${c.key}`;
+        }
       }
       return null;
     }
