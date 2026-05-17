@@ -25061,9 +25061,9 @@
       "weight": 1.0,
       "_src": "users_jayphi_documents_github_vectura_studio_claude_worktrees_mirror_drag_preview_src_ui_ui_file_io_js",
       "_tgt": "ui_file_io_parsesvgtolayergroups",
+      "confidence_score": 1.0,
       "source": "users_jayphi_documents_github_vectura_studio_claude_worktrees_mirror_drag_preview_src_ui_ui_file_io_js",
-      "target": "ui_file_io_parsesvgtolayergroups",
-      "confidence_score": 1.0
+      "target": "ui_file_io_parsesvgtolayergroups"
     },
     {
       "relation": "contains",

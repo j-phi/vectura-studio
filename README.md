@@ -28,11 +28,8 @@ python -m http.server
 **For tests:**
 ```bash
 npm install
-npm run hooks:install   # one-time: installs pre-commit + path-aware pre-push hooks
 npm run test:ci
 ```
-
-> The `pre-push` hook runs `test:fast` (~30s) by default and the full `test:ci` (~1 min, adds e2e) when UI/render paths change. Bypass with `SKIP_PREPUSH=1 git push` (CI still gates).
 
 > If your Node runtime doesn't support Unicode regex property escapes (some Node 18.16.x builds), run `npm run patch:test-runtime` first.
 

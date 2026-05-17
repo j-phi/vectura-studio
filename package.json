@@ -17,10 +17,9 @@
     "test:visual:screenshots": "npm run patch:test-runtime && ENABLE_SCREENSHOT_VISUALS=1 playwright test tests/e2e/visual.spec.js",
     "test:perf": "npm run patch:test-runtime && vitest run tests/perf",
     "test:ci": "npm run test:unit && npm run test:integration && npm run test:e2e && npm run test:visual && npm run test:perf",
-    "test:fast": "npm run test:unit && npm run test:integration && npm run test:visual && npm run test:perf",
     "test:coverage": "vitest run --coverage",
     "test:update": "npm run patch:test-runtime && VECTURA_UPDATE_BASELINES=1 npm run test:visual",
-    "hooks:install": "HOOKS_DIR=\"$(git rev-parse --git-common-dir)/hooks\" && cp scripts/hooks/pre-commit \"$HOOKS_DIR/pre-commit\" && cp scripts/hooks/pre-push \"$HOOKS_DIR/pre-push\" && chmod +x \"$HOOKS_DIR/pre-commit\" \"$HOOKS_DIR/pre-push\""
+    "hooks:install": "cp scripts/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",

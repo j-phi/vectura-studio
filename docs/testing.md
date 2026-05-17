@@ -18,11 +18,7 @@ Workflow governance and documentation synchronization rules live in `docs/agenti
 - `npm run test:visual` runs SVG baseline regression checks.
 - `npm run test:visual:screenshots` runs optional Playwright screenshot snapshots.
 - `npm run test:perf` runs stress/performance checks.
-- `npm run test:ci` runs the PR-gating test suite (unit + integration + e2e + visual + perf).
-- `npm run test:fast` runs the e2e-free subset (~30s — unit + integration + visual + perf) used by the pre-push hook when no UI/render paths changed.
-- `npm run hooks:install` installs the local git hooks. **Run this once after cloning.**
-  - `pre-commit` — refreshes the graphify knowledge graph and stages output.
-  - `pre-push` — runs `test:fast` by default; switches to full `test:ci` (adds e2e) when the pushed commits touch `src/ui/**`, `src/render/**`, `tests/e2e/**`, `index.html`, or `playwright.config.js`. Bypass with `SKIP_PREPUSH=1 git push` (CI still gates).
+- `npm run test:ci` runs the PR-gating test suite.
 
 ## Visual Baselines
 - Canonical SVG baselines are stored in `tests/baselines/svg`.
