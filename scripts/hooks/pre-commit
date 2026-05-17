@@ -59,3 +59,42 @@ except Exception as exc:
 # Stage updated graphify output into this commit
 git add graphify-out/graph.json graphify-out/GRAPH_REPORT.md graphify-out/graph.html 2>/dev/null || true
 # graphify-pre-commit-end
+
+# selector-lint-start
+# Warn (non-blocking) when staged tests/e2e/*.js files introduce role+name lookups
+# like getByRole('button', { name: 'Foo' }). These break when labels are renamed;
+# prefer id-based locators (page.locator('#btn-foo')) when the target has an id.
+E2E_FILES=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep -E '^tests/e2e/.*\.js$' || true)
+if [ -n "$E2E_FILES" ]; then
+    SELECTOR_LINT_TMP=$(mktemp 2>/dev/null || echo "/tmp/selector-lint-$$.txt")
+    : > "$SELECTOR_LINT_TMP"
+    SELECTOR_LINT_COUNT=0
+    # Iterate over each staged e2e file
+    echo "$E2E_FILES" | while IFS= read -r f; do
+        [ -z "$f" ] && continue
+        # Grab added lines (those starting with '+' but not '+++') containing the pattern.
+        # -U0 keeps context small; we only inspect additions.
+        git diff --cached -U0 -- "$f" 2>/dev/null \
+            | grep -E '^\+[^+].*getByRole\([^)]*name:' \
+            | sed 's/^\+//' \
+            | while IFS= read -r line; do
+                # Trim leading whitespace for readability
+                trimmed=$(printf '%s' "$line" | sed 's/^[[:space:]]*//')
+                printf '  %s: %s\n' "$f" "$trimmed" >> "$SELECTOR_LINT_TMP"
+            done
+    done
+    MATCH_COUNT=$(wc -l < "$SELECTOR_LINT_TMP" 2>/dev/null | tr -d ' ')
+    if [ -n "$MATCH_COUNT" ] && [ "$MATCH_COUNT" -gt 0 ]; then
+        echo ""
+        echo "[pre-commit warning] e2e selector stability: $MATCH_COUNT new \`getByRole({name:})\` lookup(s) detected"
+        cat "$SELECTOR_LINT_TMP"
+        echo "Prefer id-based locators (page.locator('#btn-foo')) when the element has an id —"
+        echo "text/role lookups break when labels are renamed. Use role/name only when the accessible"
+        echo "name itself is the assertion target. (This is a warning, not a block.)"
+        echo ""
+    fi
+    rm -f "$SELECTOR_LINT_TMP"
+fi
+# selector-lint-end
+
+exit 0

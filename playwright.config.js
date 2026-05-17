@@ -24,7 +24,7 @@ module.exports = defineConfig({
     video: process.env.CI ? 'retain-on-failure' : 'off',
   },
   webServer: {
-    command: 'python3 -m http.server 4173',
+    command: 'node scripts/dev-server.js 4173',
     port: 4173,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
