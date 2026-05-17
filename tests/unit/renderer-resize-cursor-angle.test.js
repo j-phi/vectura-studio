@@ -38,7 +38,10 @@ describe('Renderer — resize-handle cursor angle follows corner', () => {
   const decodeAngleFromDataUrl = (cursorValue) => {
     const m = /rotate\(([-\d.]+)\s+12\s+12\)/.exec(decodeURIComponent(cursorValue));
     if (!m) return null;
-    return Number(m[1]);
+    // The cursor SVG (lucide move-diagonal) is naturally oriented at -45°
+    // (NE↔SW), so the rendered rotate() is (corner-angle + 45). Subtract the
+    // offset here so assertions express the corner angle directly.
+    return Number(m[1]) - 45;
   };
 
   test('returns fallback CSS cursor when bounds is missing', () => {
