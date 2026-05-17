@@ -18,7 +18,11 @@ Workflow governance and documentation synchronization rules live in `docs/agenti
 - `npm run test:visual` runs SVG baseline regression checks.
 - `npm run test:visual:screenshots` runs optional Playwright screenshot snapshots.
 - `npm run test:perf` runs stress/performance checks.
-- `npm run test:ci` runs the PR-gating test suite.
+- `npm run test:ci` runs the PR-gating test suite (unit + integration + e2e + visual + perf).
+- `npm run test:fast` runs the e2e-free subset (~12s — unit + integration + visual + perf) used by the pre-push hook.
+- `npm run hooks:install` installs the local git hooks. **Run this once after cloning.**
+  - `pre-commit` — refreshes the graphify knowledge graph and stages output.
+  - `pre-push` — runs `test:fast` (~12s) before every push. E2E is intentionally gated only by CI to avoid local slowdowns on busy machines. Bypass with `SKIP_PREPUSH=1 git push` (CI still gates).
 
 ## Visual Baselines
 - Canonical SVG baselines are stored in `tests/baselines/svg`.

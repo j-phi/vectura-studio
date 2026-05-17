@@ -32,6 +32,7 @@
 - Use `docs/testing.md` for test command details and CI policy.
 - Local Playwright runs may fall back to an installed Chrome when managed browser assets are unavailable; CI remains the authoritative environment for Playwright artifact capture.
 - When touching rendering or UI, verify: generation runs, canvas draws, controls update, and stats refresh.
+- Pre-push hook: run `npm run hooks:install` once after cloning. It installs a `pre-push` hook that runs `npm run test:fast` (~12s — unit + integration + visual + perf) before every push. E2E is intentionally gated only by CI to avoid local slowdowns on busy machines. Bypass with `SKIP_PREPUSH=1 git push` only when intentional.
 
 ## Commit & Pull Request Guidelines
 - Use short, imperative commit subjects (e.g., “Add new layer preset”).
