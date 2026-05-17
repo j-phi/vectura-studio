@@ -6887,6 +6887,15 @@
             if (!Number.isFinite(parsed)) return;
             targets.forEach((layer) => { layer.params[key] = parsed; });
           }
+          // app.regen() only regenerates the active layer's geometry. For multi-
+          // selection the other selected layers need an explicit generate() pass
+          // so their baked paths pick up the new transform.
+          if (targets.length > 1) {
+            const activeId = this.app.engine.activeLayerId;
+            targets.forEach((layer) => {
+              if (layer.id !== activeId) this.app.engine.generate(layer.id);
+            });
+          }
           this.app.regen();
         };
       };
