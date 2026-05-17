@@ -5415,6 +5415,7 @@
       if (!modifier) return;
       const mirrors = Array.isArray(modifier.mirrors) ? modifier.mirrors : [];
       const stack = document.createElement('div');
+      stack.id = 'mirror-stack';
       stack.className = 'mb-4';
       const stackMultiplier = mirrors.reduce((acc, m) => {
         if (!m.enabled) return acc;

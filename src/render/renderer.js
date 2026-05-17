@@ -5400,7 +5400,6 @@
       ) {
         return 'rotate';
       }
-      if (this.selectedLayerIds && this.selectedLayerIds.size > 1) return null;
       const handles = this.getHandlePoints(bounds).map((pt) => ({
         key: pt.key,
         screen: this.worldToScreen(pt.x, pt.y),

@@ -444,14 +444,14 @@ test.describe('Vectura smoke interactions', () => {
 
     await page.goto('/');
 
-    await page.getByRole('button', { name: 'File' }).click();
+    await page.locator('#btn-menu-file').click();
     await page.click('#btn-settings');
     await expect(page.locator('#settings-panel')).toHaveClass(/open/);
 
     await page.click('#btn-close-settings');
     await expect(page.locator('#settings-panel')).not.toHaveClass(/open/);
 
-    await page.getByRole('button', { name: 'Help' }).click();
+    await page.locator('#btn-menu-help').click();
     await page.click('#btn-help');
     await expect(page.locator('#modal-overlay')).toHaveClass(/open/);
     await expect(page.locator('#modal-overlay .modal-title')).toHaveText(/Help Guide/);
@@ -627,7 +627,7 @@ test.describe('Vectura smoke interactions', () => {
     await page.goto('/');
     await addAlgoLayer(page);
 
-    await page.getByRole('button', { name: 'File' }).click();
+    await page.locator('#btn-menu-file').click();
     await page.click('#btn-export');
     await expect(page.locator('#modal-overlay')).toHaveClass(/open/);
     await expect(page.locator('#export-modal-root')).toBeVisible();
@@ -741,7 +741,7 @@ test.describe('Vectura smoke interactions', () => {
         window.app.render?.();
       }
     });
-    await page.getByRole('button', { name: 'File' }).click();
+    await page.locator('#btn-menu-file').click();
     await page.click('#btn-export');
     await expect(page.locator('#export-modal-root')).toBeVisible();
 
@@ -876,14 +876,14 @@ test.describe('Vectura smoke interactions', () => {
     await addAlgoLayer(page);
 
     const initialLayers = await page.locator('#layer-list [data-lvl-id]').count();
-    await page.getByRole('button', { name: 'Insert' }).click();
+    await page.locator('#btn-menu-insert').click();
     await page.click('#btn-insert-mirror-modifier');
 
     await expect(page.locator('#layer-list [data-lvl-id]')).toHaveCount(initialLayers + 1);
     await expect(page.locator('#left-section-primary-title')).toHaveText('Modifier');
     await expect(page.locator('#left-section-secondary-title')).toHaveText('Modifier Configuration');
     await expect(page.locator('#generator-module')).toHaveValue('mirror');
-    await expect(page.getByText('Mirror Stack')).toBeVisible();
+    await expect(page.locator('#mirror-stack')).toBeVisible();
 
     const modifierState = await page.evaluate(() => {
       const app = window.app;
@@ -912,7 +912,7 @@ test.describe('Vectura smoke interactions', () => {
     await addAlgoLayer(page);
 
     await page.selectOption('#generator-module', 'rings');
-    await page.getByRole('button', { name: 'Insert' }).click();
+    await page.locator('#btn-menu-insert').click();
     await page.click('#btn-insert-mirror-modifier');
 
     await addAlgoLayer(page);
