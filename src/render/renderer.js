@@ -590,15 +590,37 @@
       this.canvas.dataset.cursorMode = mode || (isKeyword ? cursor : '') || 'default';
     }
 
-    cursorDataUrl(name, hotX = 0, hotY = 0, fallback = 'auto') {
+    cursorDataUrl(name, hotX = 0, hotY = 0, fallback = 'auto', ...factoryArgs) {
       const factory = window.Vectura?.Icons?.cursor?.[name];
       if (typeof factory !== 'function') return fallback;
-      const svg = factory();
+      const svg = factory(...factoryArgs);
       const encoded = encodeURIComponent(svg)
         .replace(/'/g, '%27')
         .replace(/\(/g, '%28')
         .replace(/\)/g, '%29');
       return `url("data:image/svg+xml;utf8,${encoded}") ${hotX} ${hotY}, ${fallback}`;
+    }
+
+    ensureDragTooltip() {
+      if (this._dragTooltipEl) return this._dragTooltipEl;
+      const el = document.createElement('div');
+      el.className = 'drag-value-tooltip';
+      el.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(el);
+      this._dragTooltipEl = el;
+      return el;
+    }
+
+    showDragTooltip(text, clientX, clientY) {
+      const el = this.ensureDragTooltip();
+      el.textContent = text;
+      el.style.left = `${clientX + 14}px`;
+      el.style.top = `${clientY - 10}px`;
+      el.style.display = 'block';
+    }
+
+    hideDragTooltip() {
+      if (this._dragTooltipEl) this._dragTooltipEl.style.display = 'none';
     }
 
     ensureFillLoupe() {
@@ -1478,6 +1500,10 @@
         });
       }
       this.shapeCornerDrag.shape.cornerRadii = currentRadii;
+      if (this._dragCursorPos) {
+        const _dr = clamp(nextRadius, 0, descriptor.maxRadius);
+        this.showDragTooltip(`r ${_dr.toFixed(1)}`, this._dragCursorPos.x, this._dragCursorPos.y);
+      }
       if (!this.shapeCornerDrag.historyPushed) {
         if (this.shapeCornerDrag.scope === 'single' && this.onDirectEditStart) this.onDirectEditStart();
         if (this.shapeCornerDrag.scope === 'all' && this.onCommitTransform) this.onCommitTransform();
@@ -1507,6 +1533,7 @@
       this.shapeCornerDrag = null;
       if (scope === 'single' && this.onDirectEditCommit) this.onDirectEditCommit();
       if (scope === 'all' && this.onDirectEditCommit) this.onDirectEditCommit();
+      this.hideDragTooltip();
       this.draw();
     }
 
@@ -1739,6 +1766,46 @@
       this.directDrag = null;
       this.directAuxSelections = [];
       this.draw();
+    }
+
+    _applyDirectLasso(poly) {
+      if (!Array.isArray(poly) || poly.length < 3) return;
+      this.directSelection = null;
+      this.directAuxSelections = [];
+      for (const layer of this.engine.layers) {
+        if (!layer || layer.isGroup || !layer.visible) continue;
+        if (this.isLayerLocked?.(layer.id)) continue;
+        if (!this.canEditSourceGeometry(layer)) continue;
+        const sourcePaths = this.ensureLayerSourcePaths(layer);
+        sourcePaths.forEach((sourcePath, pathIndex) => {
+          if (!Array.isArray(sourcePath) || sourcePath.length < 2) return;
+          const parsed = this.pathToAnchors(sourcePath);
+          if (!parsed.anchors.length) return;
+          const selectedIndices = new Set();
+          parsed.anchors.forEach((anchor, i) => {
+            const w = this.sourceToWorldPoint(layer, anchor);
+            if (this.pointInPoly(w, poly)) selectedIndices.add(i);
+          });
+          if (!selectedIndices.size) return;
+          const sel = {
+            layerId: layer.id,
+            pathIndex,
+            anchors: this.cloneAnchors(parsed.anchors),
+            closed: parsed.closed,
+            meta: sourcePath.meta ? { ...sourcePath.meta } : {},
+            selectedIndices,
+          };
+          if (!this.directSelection) {
+            this.directSelection = sel;
+          } else {
+            this.directAuxSelections.push(sel);
+          }
+        });
+      }
+      if (this.directSelection) {
+        const pl = this.engine.layers.find((l) => l.id === this.directSelection.layerId);
+        if (pl && !this.selectedLayerIds.has(pl.id)) this.selectLayer(pl);
+      }
     }
 
     _applyDirectMarquee(rect) {
@@ -3334,7 +3401,7 @@
               this.setCanvasCursor('grabbing');
             } else {
               this.dragMode = 'resize';
-              this.setCanvasCursor(this.handleCursor(handle));
+              this.setCanvasCursor(this.handleCursor(handle, selectionBounds));
             }
             e.preventDefault();
             return;
@@ -3518,6 +3585,7 @@
         const sx = e.clientX - rect.left;
         const sy = e.clientY - rect.top;
         const world = this.screenToWorld(sx, sy);
+        this._dragCursorPos = { x: e.clientX, y: e.clientY };
         this.updateShapeCornerDrag(world);
         return;
       }
@@ -3563,6 +3631,7 @@
           const hlen = Math.hypot(hdx, hdy);
           const delta = hlen > 0 ? (dx * hdx + dy * hdy) / hlen : Math.hypot(dx, dy) * (dx >= 0 ? 1 : -1);
           mirror.radius = Math.max(1, drag.startRadius + delta);
+          this.showDragTooltip(`r ${mirror.radius.toFixed(1)}`, e.clientX, e.clientY);
         } else if (drag.type === 'latticeA') {
           const origin = drag.startOrigin;
           const vec = { x: world.x - origin.x, y: world.y - origin.y };
@@ -3640,6 +3709,9 @@
           scaleX = Math.max(0.05, Math.min(Math.abs(scaleX), 20));
           scaleY = Math.max(0.05, Math.min(Math.abs(scaleY), 20));
           this.tempTransform = { dx: 0, dy: 0, scaleX, scaleY, origin };
+          const _tw = Math.abs(this.startBounds.width * scaleX);
+          const _th = Math.abs(this.startBounds.height * scaleY);
+          this.showDragTooltip(`${_tw.toFixed(1)} × ${_th.toFixed(1)}`, e.clientX, e.clientY);
         } else if (this.dragMode === 'rotate' && this.rotateOrigin) {
           const angle = Math.atan2(world.y - this.rotateOrigin.y, world.x - this.rotateOrigin.x);
           let delta = ((angle - this.rotateStartAngle) * 180) / Math.PI;
@@ -3648,6 +3720,7 @@
             delta = Math.round(delta / snap) * snap;
           }
           this.tempTransform = { dx: 0, dy: 0, scaleX: 1, scaleY: 1, origin: this.rotateOrigin, rotation: delta };
+          this.showDragTooltip(`${Math.round(delta)}°`, e.clientX, e.clientY);
         }
         const activeLayers = this.getSelectedLayers();
         const bounds = activeLayers.length ? this.getSelectionBounds(activeLayers, this.tempTransform) : null;
@@ -3865,7 +3938,7 @@
       }
       if (this.isLassoSelecting) {
         if (this.lassoPath && this.lassoPath.length > 2) {
-          this.selectLayersByPolygon(this.lassoPath);
+          this._applyDirectLasso(this.lassoPath);
         }
         this.isLassoSelecting = false;
         this.lassoPath = null;
@@ -3875,6 +3948,7 @@
       }
       if (this.modifierDrag) {
         this.modifierDrag = null;
+        this.hideDragTooltip();
         this.updateCursor();
         this.draw();
         clearActivePointer();
@@ -3961,6 +4035,7 @@
       this.isLayerDrag = false;
       this.dragMode = null;
       this.activeHandle = null;
+      this.hideDragTooltip();
       this.updateCursor();
       this.guides = null;
       if (this.isDirectMarquee) {
@@ -5629,13 +5704,19 @@
       });
     }
 
-    handleCursor(handle) {
+    handleCursor(handle, bounds = null) {
       if (handle === 'nw' || handle === 'se') return 'nwse-resize';
       if (handle === 'ne' || handle === 'sw') return 'nesw-resize';
-      if (handle === 'rotate-nw') return this.cursorDataUrl('rotate-nw', 22, 22, 'crosshair');
-      if (handle === 'rotate-ne') return this.cursorDataUrl('rotate-ne', 0, 22, 'crosshair');
-      if (handle === 'rotate-se') return this.cursorDataUrl('rotate-se', 0, 0, 'crosshair');
-      if (handle === 'rotate-sw') return this.cursorDataUrl('rotate-sw', 22, 0, 'crosshair');
+      if (typeof handle === 'string' && handle.startsWith('rotate-')) {
+        const cornerKey = handle.slice('rotate-'.length);
+        const corner = bounds?.corners?.[cornerKey];
+        const center = bounds?.center;
+        let angleDeg = -90;
+        if (corner && center) {
+          angleDeg = Math.atan2(corner.y - center.y, corner.x - center.x) * 180 / Math.PI;
+        }
+        return this.cursorDataUrl('rotate', 12, 12, 'crosshair', angleDeg);
+      }
       return 'default';
     }
 
@@ -5743,7 +5824,7 @@
       const handle = this.hitHandle(sx, sy, bounds);
       if (handle) {
         const mode = handle.startsWith('rotate') ? 'rotate' : '';
-        this.setCanvasCursor(this.handleCursor(handle), mode);
+        this.setCanvasCursor(this.handleCursor(handle, bounds), mode);
         return;
       }
       if (this.pointInBounds(world, bounds)) {

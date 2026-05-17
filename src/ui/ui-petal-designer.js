@@ -836,8 +836,8 @@
           icon: I.select(),
         },
         lasso: {
-          label: 'Lasso (Q)',
-          ariaLabel: 'Lasso Tool (Q)',
+          label: 'Direct Selection Lasso (Q)',
+          ariaLabel: 'Direct Selection Lasso Tool (Q)',
           icon: I.lasso(),
         },
         direct: {

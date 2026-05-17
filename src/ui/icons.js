@@ -60,7 +60,7 @@
   // wraps them in <svg viewBox="0 0 24 24"> at render time.
   const tool = {
     select:          () => '<path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
-    lasso:           () => '<path d="M3 20C5 13 9 8 16 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M16 6L22 14.5H17L18.5 20L16 21L14 15.5L11 18.5Z" fill="currentColor"/>',
+    lasso:           () => '<path d="M7 22a5 5 0 0 1-2-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 16.93c.96.43 1.96.74 2.99.91" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.34 14A6.8 6.8 0 0 1 2 10c0-4.42 4.48-8 10-8s10 3.58 10 8a7.19 7.19 0 0 1-.33 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 18a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M14.33 22h-.09a.35.35 0 0 1-.24-.32v-10a.34.34 0 0 1 .33-.34c.08 0 .15.03.21.08l7.34 6a.33.33 0 0 1-.21.59h-4.49l-2.57 3.85a.35.35 0 0 1-.28.14z" fill="currentColor" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>',
     direct:          () => '<path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
     shape:           () => '<rect x="3" y="7" width="9" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.6" /><circle cx="16.5" cy="14" r="4.5" fill="none" stroke="currentColor" stroke-width="1.6" />',
     'shape-rect':    () => '<rect x="5" y="6" width="14" height="12" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.8" />',
@@ -98,15 +98,41 @@
     outline: () => `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" fill="#ffffff" stroke="#000000" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></svg>`,
     pen: () => `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22"><path d="M2.2 19.8L4.5 18l11-11-2.3-2.3-11 11z" fill="#ffffff" stroke="#000000" stroke-width="1.3" stroke-linejoin="round"/><path d="M13.2 4.7L17 8.5" stroke="#000000" stroke-width="1.3" stroke-linecap="round"/><path d="M2.2 19.8l1.6-.6.7-1.7-1.5-1.5-1.7.7z" fill="#000000"/></svg>`,
     bucket: () => `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28"><path d="M5 14L13 6L24 16L16 24Z" fill="#ffffff" stroke="#000000" stroke-width="1.5" stroke-linejoin="round"/><path d="M5 14C2.5 11 4 7 7 6.5" fill="none" stroke="#000000" stroke-width="1.3" stroke-linecap="round"/><path d="M21 18L23.5 23.5" stroke="#3b82f6" stroke-width="2.2" stroke-linecap="round"/><circle cx="23.5" cy="23.5" r="2.2" fill="#3b82f6" stroke="#000000" stroke-width="1"/></svg>`,
-    // Illustrator-style rotation cursors: a half-circle curve bulging toward
-    // the corner direction (45° diagonal). Arrowheads are the endpoints of
-    // the curve, tangent-aligned (pointing in the direction the curve is going
-    // at each endpoint) and connected to the line. NE is the canonical shape;
-    // SE/SW/NW are 90° clockwise rotations of it (final bulge at 135/225/315).
-    'rotate-ne': () => `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g transform="rotate(45 12 12)"><path d="M5.5 12 A 6.5 6.5 0 0 1 18.5 12" fill="none" stroke="#ffffff" stroke-width="3.6" stroke-linecap="round"/><path d="M5.5 12 A 6.5 6.5 0 0 1 18.5 12" fill="none" stroke="#000000" stroke-width="1.8" stroke-linecap="round"/><polygon points="5.5,3 3,12 8,12" fill="#000000" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round"/><polygon points="18.5,21 16,12 21,12" fill="#000000" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round"/></g></svg>`,
-    'rotate-se': () => `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g transform="rotate(135 12 12)"><path d="M5.5 12 A 6.5 6.5 0 0 1 18.5 12" fill="none" stroke="#ffffff" stroke-width="3.6" stroke-linecap="round"/><path d="M5.5 12 A 6.5 6.5 0 0 1 18.5 12" fill="none" stroke="#000000" stroke-width="1.8" stroke-linecap="round"/><polygon points="5.5,3 3,12 8,12" fill="#000000" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round"/><polygon points="18.5,21 16,12 21,12" fill="#000000" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round"/></g></svg>`,
-    'rotate-sw': () => `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g transform="rotate(225 12 12)"><path d="M5.5 12 A 6.5 6.5 0 0 1 18.5 12" fill="none" stroke="#ffffff" stroke-width="3.6" stroke-linecap="round"/><path d="M5.5 12 A 6.5 6.5 0 0 1 18.5 12" fill="none" stroke="#000000" stroke-width="1.8" stroke-linecap="round"/><polygon points="5.5,3 3,12 8,12" fill="#000000" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round"/><polygon points="18.5,21 16,12 21,12" fill="#000000" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round"/></g></svg>`,
-    'rotate-nw': () => `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g transform="rotate(315 12 12)"><path d="M5.5 12 A 6.5 6.5 0 0 1 18.5 12" fill="none" stroke="#ffffff" stroke-width="3.6" stroke-linecap="round"/><path d="M5.5 12 A 6.5 6.5 0 0 1 18.5 12" fill="none" stroke="#000000" stroke-width="1.8" stroke-linecap="round"/><polygon points="5.5,3 3,12 8,12" fill="#000000" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round"/><polygon points="18.5,21 16,12 21,12" fill="#000000" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round"/></g></svg>`,
+    // Illustrator-style rotation cursor: a half-circle curve with equilateral
+    // triangles at each endpoint. The arc bulges in the direction `angleDeg`
+    // (0=east, 90=south in screen coords) which is the direction from the
+    // selection's center to the corner under the mouse. The triangles always
+    // face cardinal directions (N/S/E/W); which pair depends on the bulge
+    // quadrant: NE→W&S, SE→N&W, SW→E&N, NW→S&E. Hotspot is (12, 12) so the
+    // SVG center sits at the mouse position.
+    rotate: (angleDeg = -90) => {
+      const cx = 12, cy = 12, r = 6.5;
+      const side = 8;
+      const h = side * Math.sqrt(3) / 2;
+      const sa = (angleDeg - 90) * Math.PI / 180;
+      const ea = (angleDeg + 90) * Math.PI / 180;
+      const sx = cx + r * Math.cos(sa), sy = cy + r * Math.sin(sa);
+      const ex = cx + r * Math.cos(ea), ey = cy + r * Math.sin(ea);
+      const c = Math.cos(angleDeg * Math.PI / 180);
+      const s = Math.sin(angleDeg * Math.PI / 180);
+      let startDir, endDir;
+      if (c >= 0 && s < 0) { startDir = 'W'; endDir = 'S'; }
+      else if (c >= 0 && s >= 0) { startDir = 'N'; endDir = 'W'; }
+      else if (c < 0 && s >= 0) { startDir = 'E'; endDir = 'N'; }
+      else { startDir = 'S'; endDir = 'E'; }
+      const f = (n) => n.toFixed(2);
+      const tri = (x0, y0, dir) => {
+        const half = side / 2;
+        let p1, p2, p3;
+        if (dir === 'N')      { p1 = [x0, y0 - h]; p2 = [x0 - half, y0]; p3 = [x0 + half, y0]; }
+        else if (dir === 'S') { p1 = [x0, y0 + h]; p2 = [x0 - half, y0]; p3 = [x0 + half, y0]; }
+        else if (dir === 'E') { p1 = [x0 + h, y0]; p2 = [x0, y0 - half]; p3 = [x0, y0 + half]; }
+        else                  { p1 = [x0 - h, y0]; p2 = [x0, y0 - half]; p3 = [x0, y0 + half]; }
+        return `<polygon points="${f(p1[0])},${f(p1[1])} ${f(p2[0])},${f(p2[1])} ${f(p3[0])},${f(p3[1])}" fill="#000000" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round"/>`;
+      };
+      const arcPath = `M${f(sx)} ${f(sy)} A 6.5 6.5 0 0 1 ${f(ex)} ${f(ey)}`;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="${arcPath}" fill="none" stroke="#ffffff" stroke-width="3.6" stroke-linecap="round"/><path d="${arcPath}" fill="none" stroke="#000000" stroke-width="1.8" stroke-linecap="round"/>${tri(sx, sy, startDir)}${tri(ex, ey, endDir)}</svg>`;
+    },
   };
 
   root.Icons = { layer, tool, misc, cursor };
