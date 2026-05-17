@@ -114,36 +114,36 @@ describe('toolbar subtool submenus', () => {
     });
   });
 
-  // ── select ───────────────────────────────────────────────────────────────
+  // ── select / lasso (flat top-level tools, no submenu) ──────────────────────
 
-  describe('select subtool menu', () => {
-    const getBtn  = () => document.querySelector('.tool-btn[data-tool="select"]');
-    const getMenu = () => document.querySelector('.tool-submenu[data-menu="select"]');
+  describe('select tool (flat, no submenu)', () => {
+    const getBtn = () => document.querySelector('.tool-btn[data-tool="select"]');
 
-    test('quick tap activates select without opening the menu', () => {
+    test('select button is flat — no submenu exists', () => {
+      expect(getBtn()).not.toBeNull();
+      expect(getBtn().hasAttribute('data-has-submenu')).toBe(false);
+      expect(document.querySelector('.tool-submenu[data-menu="select"]')).toBeNull();
+    });
+
+    test('click activates select tool', () => {
       app.ui.setActiveTool?.('scissor');
-      quickTap(getBtn());
+      getBtn().click();
       expect(app.ui.activeTool).toBe('select');
-      expect(getMenu().classList.contains('open')).toBe(false);
+    });
+  });
+
+  describe('lasso tool (flat top-level)', () => {
+    const getBtn = () => document.querySelector('.tool-btn[data-tool="lasso"]');
+
+    test('lasso button exists as a flat top-level tool', () => {
+      expect(getBtn()).not.toBeNull();
+      expect(getBtn().hasAttribute('data-has-submenu')).toBe(false);
     });
 
-    test('hold (>280ms) opens the select submenu', async () => {
-      await hold(getBtn());
-      expect(getMenu().classList.contains('open')).toBe(true);
-    });
-
-    test('direct click on oval sub-button sets selectionMode', () => {
-      document.querySelector('.tool-sub-btn[data-select="oval"]').click();
-      expect(app.ui.activeTool).toBe('select');
-      expect(app.ui.selectionMode).toBe('oval');
-    });
-
-    test('drag-select to lasso sub-button sets mode and closes menu', async () => {
-      const lassoBtn = document.querySelector('.tool-sub-btn[data-select="lasso"]');
-      await dragSelect(getBtn(), lassoBtn);
-      expect(app.ui.selectionMode).toBe('lasso');
-      expect(app.ui.activeTool).toBe('select');
-      expect(getMenu().classList.contains('open')).toBe(false);
+    test('click activates lasso tool', () => {
+      app.ui.setActiveTool?.('select');
+      getBtn().click();
+      expect(app.ui.activeTool).toBe('lasso');
     });
   });
 

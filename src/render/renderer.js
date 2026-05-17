@@ -371,7 +371,6 @@
       this.isSelecting = false;
       this.selectionStart = null;
       this.selectionRect = null;
-      this.selectionMode = SETTINGS.selectionMode || 'rect';
       this.selectionPath = null;
       this.lassoPath = null;
       this.isLassoSelecting = false;
@@ -524,6 +523,10 @@
         this.scissorStart = null;
         this.scissorEnd = null;
       }
+      if (tool !== 'lasso') {
+        this.isLassoSelecting = false;
+        this.lassoPath = null;
+      }
       this.activeTool = tool;
       this.updateCursor();
       if (!['fill', 'fill-erase', 'fill-pattern', 'fill-pattern-erase'].includes(tool)) {
@@ -544,16 +547,6 @@
     setScissorMode(mode) {
       if (!mode) return;
       this.scissorMode = mode;
-      this.draw();
-    }
-
-    setSelectionMode(mode) {
-      if (!mode) return;
-      this.selectionMode = mode;
-      this.selectionRect = null;
-      this.selectionStart = null;
-      this.lassoPath = null;
-      this.isLassoSelecting = false;
       this.draw();
     }
 
@@ -747,13 +740,11 @@
         return;
       }
       if (this.activeTool === 'direct') {
-        const isDarkDirect = document.documentElement.dataset.theme === 'dark';
-        this.setCanvasCursor(this.cursorDataUrl(isDarkDirect ? 'outline' : 'filled', 3, 3, 'auto'), 'direct');
+        this.setCanvasCursor(this.cursorDataUrl('outline', 4, 4, 'auto'), 'direct');
         return;
       }
       if (this.activeTool === 'select') {
-        const isDark = document.documentElement.dataset.theme === 'dark';
-        this.setCanvasCursor(this.cursorDataUrl(isDark ? 'outline' : 'filled', 3, 3, 'auto'), 'select');
+        this.setCanvasCursor(this.cursorDataUrl('filled', 4, 4, 'auto'), 'select');
         return;
       }
       this.setCanvasCursor('crosshair');
@@ -3309,12 +3300,7 @@
           this.draw();
           return;
         }
-        if (this.activeTool === 'select' && this.selectionMode === 'pen') {
-          this.penPurpose = 'select';
-          this.handlePenDown(world, e);
-          return;
-        }
-        if (this.activeTool === 'select' && this.selectionMode === 'lasso') {
+        if (this.activeTool === 'lasso') {
           this.isLassoSelecting = true;
           this.lassoPath = [world];
           this.clearSelection();
@@ -3902,6 +3888,7 @@
             const snapDx = this.snapAllowed && this.snap ? this.snap.dx || 0 : 0;
             const snapDy = this.snapAllowed && this.snap ? this.snap.dy || 0 : 0;
             selectedLayers.forEach((layer) => {
+              if (layer.isGroup) return;
               layer.params.posX += this.tempTransform.dx + snapDx;
               layer.params.posY += this.tempTransform.dy + snapDy;
               this.engine.generate(layer.id);
@@ -3915,6 +3902,7 @@
             }
             const prof = this.engine.currentProfile;
             selectedLayers.forEach((activeLayer) => {
+              if (activeLayer.isGroup) return;
               const originLocal = activeLayer.origin || { x: prof.width / 2, y: prof.height / 2 };
               const baseOrigin = {
                 x: originLocal.x + (activeLayer.params.posX ?? 0),
@@ -3933,6 +3921,7 @@
             const delta = this.tempTransform.rotation ?? 0;
             const origin = this.rotateOrigin || (this.startBounds ? this.startBounds.origin : null);
             selectedLayers.forEach((layer) => {
+              if (layer.isGroup) return;
               const baseOrigin = {
                 x: (layer.origin?.x ?? 0) + (layer.params.posX ?? 0),
                 y: (layer.origin?.y ?? 0) + (layer.params.posY ?? 0),
@@ -3953,7 +3942,10 @@
             });
           }
           const primary = this.getSelectedLayer();
-          if (primary) this.updateTransformInputs(primary);
+          const effectivePrimary = (primary?.isGroup)
+            ? selectedLayers.find((l) => !l.isGroup) || primary
+            : primary;
+          if (effectivePrimary) this.updateTransformInputs(effectivePrimary);
         }
         if (!this.tempTransform && this._pendingSingleSelect) {
           this.selectLayer(this._pendingSingleSelect);
@@ -3986,10 +3978,7 @@
       if (this.isSelecting) {
         const rect = this.selectionRect;
         if (rect) {
-          const selected =
-            this.selectionMode === 'oval'
-              ? this.engine.layers.filter((layer) => this.layerIntersectsPoly(layer, this.ellipseToPoly(rect)))
-              : this.engine.layers.filter((layer) => this.layerIntersectsRect(layer, rect));
+          const selected = this.engine.layers.filter((layer) => this.layerIntersectsRect(layer, rect));
           if (selected.length) {
             this.setSelection(
               selected.map((layer) => layer.id),
@@ -5103,19 +5092,7 @@
       this.ctx.lineWidth = 1 / this.scale;
       this.ctx.setLineDash([4 / this.scale, 4 / this.scale]);
       this.ctx.beginPath();
-      if (this.selectionMode === 'oval') {
-        this.ctx.ellipse(
-          rect.x + rect.w / 2,
-          rect.y + rect.h / 2,
-          Math.abs(rect.w) / 2,
-          Math.abs(rect.h) / 2,
-          0,
-          0,
-          Math.PI * 2
-        );
-      } else {
-        this.ctx.rect(rect.x, rect.y, rect.w, rect.h);
-      }
+      this.ctx.rect(rect.x, rect.y, rect.w, rect.h);
       this.ctx.fill();
       this.ctx.stroke();
       this.ctx.restore();
@@ -5655,10 +5632,10 @@
     handleCursor(handle) {
       if (handle === 'nw' || handle === 'se') return 'nwse-resize';
       if (handle === 'ne' || handle === 'sw') return 'nesw-resize';
-      if (handle === 'rotate-nw') return this.cursorDataUrl('rotate-nw', 14, 14, 'crosshair');
-      if (handle === 'rotate-ne') return this.cursorDataUrl('rotate-ne', 0, 14, 'crosshair');
+      if (handle === 'rotate-nw') return this.cursorDataUrl('rotate-nw', 22, 22, 'crosshair');
+      if (handle === 'rotate-ne') return this.cursorDataUrl('rotate-ne', 0, 22, 'crosshair');
       if (handle === 'rotate-se') return this.cursorDataUrl('rotate-se', 0, 0, 'crosshair');
-      if (handle === 'rotate-sw') return this.cursorDataUrl('rotate-sw', 14, 0, 'crosshair');
+      if (handle === 'rotate-sw') return this.cursorDataUrl('rotate-sw', 22, 0, 'crosshair');
       return 'default';
     }
 
@@ -5677,7 +5654,7 @@
         this.setCanvasCursor(makeShapeReticleCursor(getThemeToken('--render-cursor-stroke', 'white')), 'shape-reticle');
         return;
       }
-      if (this.activeTool === 'scissor' || (this.activeTool === 'select' && (this.selectionMode === 'pen' || this.selectionMode === 'lasso'))) {
+      if (this.activeTool === 'scissor' || this.activeTool === 'lasso') {
         this.setCanvasCursor('crosshair');
         return;
       }
@@ -5704,8 +5681,7 @@
         if (hit) {
           this.setCanvasCursor('move');
         } else {
-          const isDarkDirect = document.documentElement.dataset.theme === 'dark';
-          this.setCanvasCursor(this.cursorDataUrl(isDarkDirect ? 'outline' : 'filled', 3, 3, 'auto'), 'direct');
+          this.setCanvasCursor(this.cursorDataUrl('outline', 4, 4, 'auto'), 'direct');
         }
         return;
       }
@@ -5744,14 +5720,12 @@
       const activeLayers = this.getSelectedLayers();
       if (!activeLayers.length) {
         if (this.activeTool === 'select') {
-          const isDark = document.documentElement.dataset.theme === 'dark';
-          this.setCanvasCursor(this.cursorDataUrl(isDark ? 'outline' : 'filled', 3, 3, 'auto'), 'select');
+          this.setCanvasCursor(this.cursorDataUrl('filled', 4, 4, 'auto'), 'select');
         } else {
           this.setCanvasCursor('crosshair');
         }
         return;
       }
-      const selectedPrimitiveShape = this.activeTool === 'select' ? this.getSelectedPrimitiveShapeLayer() : null;
       if (this.activeTool === 'select' && activeLayers.length === 1) {
         const shapeLayer = this.getSelectedShapeLayer();
         if (shapeLayer && this.hitShapeCornerHandle(world, shapeLayer, 0)) {
@@ -5762,8 +5736,7 @@
       const bounds = this.getSelectionBounds(activeLayers, this.tempTransform);
       if (!bounds) {
         if (this.activeTool === 'select') {
-          const isDark = document.documentElement.dataset.theme === 'dark';
-          this.setCanvasCursor(this.cursorDataUrl(isDark ? 'outline' : 'filled', 3, 3, 'auto'), 'select');
+          this.setCanvasCursor(this.cursorDataUrl('filled', 4, 4, 'auto'), 'select');
         }
         return;
       }
@@ -5772,17 +5745,12 @@
         this.setCanvasCursor(this.handleCursor(handle));
         return;
       }
-      if (selectedPrimitiveShape) {
-        this.setCanvasCursor(makeShapeReticleCursor(getThemeToken('--render-cursor-stroke', 'white')), 'shape-reticle');
-        return;
-      }
       if (this.pointInBounds(world, bounds)) {
         this.setCanvasCursor(activeLayers.length > 1 ? 'grab' : 'move');
         return;
       }
       if (this.activeTool === 'select') {
-        const isDark = document.documentElement.dataset.theme === 'dark';
-        this.setCanvasCursor(this.cursorDataUrl(isDark ? 'outline' : 'filled', 3, 3, 'auto'), 'select');
+        this.setCanvasCursor(this.cursorDataUrl('filled', 4, 4, 'auto'), 'select');
       } else {
         this.setCanvasCursor('crosshair');
       }

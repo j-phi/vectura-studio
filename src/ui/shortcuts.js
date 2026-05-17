@@ -162,11 +162,12 @@
         const key = e.key.toLowerCase();
         if (key === 'v') {
           e.preventDefault();
-          if (this.activeTool === 'select') {
-            this.cycleToolSubmode?.('select');
-          } else {
-            this.setActiveTool?.('select');
-          }
+          this.setActiveTool?.('select');
+          return;
+        }
+        if (key === 'q') {
+          e.preventDefault();
+          this.setActiveTool?.('lasso');
           return;
         }
         if (key === 'a') {

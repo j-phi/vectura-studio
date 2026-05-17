@@ -290,7 +290,6 @@
         autoColorizationCollapsed: SETTINGS.autoColorizationCollapsed,
         pensCollapsed: SETTINGS.pensCollapsed,
         activeTool: SETTINGS.activeTool,
-        selectionMode: SETTINGS.selectionMode,
         scissorMode: SETTINGS.scissorMode,
         penMode: SETTINGS.penMode,
         pens: Array.isArray(SETTINGS.pens) ? clone(SETTINGS.pens) : [],
@@ -379,7 +378,6 @@
         SETTINGS.pensCollapsed = snapshot.pensCollapsed;
       }
       SETTINGS.activeTool = snapshot.activeTool ?? SETTINGS.activeTool;
-      SETTINGS.selectionMode = snapshot.selectionMode ?? SETTINGS.selectionMode;
       SETTINGS.scissorMode = snapshot.scissorMode ?? SETTINGS.scissorMode;
       SETTINGS.penMode = snapshot.penMode ?? SETTINGS.penMode;
       if (Array.isArray(snapshot.pens) && snapshot.pens.length) {
@@ -514,7 +512,6 @@
           autoColorization: SETTINGS.autoColorization ? clone(SETTINGS.autoColorization) : null,
           autoColorizationCollapsed: SETTINGS.autoColorizationCollapsed,
           activeTool: SETTINGS.activeTool,
-          selectionMode: SETTINGS.selectionMode,
           scissorMode: SETTINGS.scissorMode,
           penMode: SETTINGS.penMode,
           cookiePreferencesEnabled: SETTINGS.cookiePreferencesEnabled === true,
@@ -583,7 +580,6 @@
         SETTINGS.autoColorizationCollapsed = s.autoColorizationCollapsed;
       }
       SETTINGS.activeTool = s.activeTool ?? SETTINGS.activeTool;
-      SETTINGS.selectionMode = s.selectionMode ?? SETTINGS.selectionMode;
       SETTINGS.scissorMode = s.scissorMode ?? SETTINGS.scissorMode;
       SETTINGS.penMode = s.penMode ?? SETTINGS.penMode;
       SETTINGS.cookiePreferencesEnabled = s.cookiePreferencesEnabled ?? SETTINGS.cookiePreferencesEnabled;
@@ -614,7 +610,6 @@
       this.engine.activeLayerId = selectedId;
       this.ui.initSettingsValues();
       if (this.ui.setActiveTool) this.ui.setActiveTool(SETTINGS.activeTool || 'select');
-      if (this.ui.setSelectionMode) this.ui.setSelectionMode(SETTINGS.selectionMode || 'rect');
       if (this.ui.setScissorMode) this.ui.setScissorMode(SETTINGS.scissorMode || 'line');
       if (this.ui.setPenMode) this.ui.setPenMode(SETTINGS.penMode || 'draw');
       if (this.renderer && 'lightSource' in SETTINGS) {

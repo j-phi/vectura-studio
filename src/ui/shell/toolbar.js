@@ -47,14 +47,11 @@
     toolbar.innerHTML = this.createMainToolbarMarkup();
     const toolButtons = Array.from(toolbar.querySelectorAll('.tool-btn[data-tool]'));
     const scissorButtons = Array.from(toolbar.querySelectorAll('.tool-sub-btn[data-scissor]'));
-    const selectButtons = Array.from(toolbar.querySelectorAll('.tool-sub-btn[data-select]'));
     const penButtons = Array.from(toolbar.querySelectorAll('.tool-sub-btn[data-pen]'));
     const fillButtons = Array.from(toolbar.querySelectorAll('.tool-sub-btn[data-fill]'));
     const shapeButtons = Array.from(toolbar.querySelectorAll('.tool-sub-btn[data-shape]'));
     const scissorButton = toolbar.querySelector('.tool-btn[data-tool="scissor"]');
     const scissorMenu = toolbar.querySelector('.tool-submenu[aria-label="Scissor subtools"]');
-    const selectButton = toolbar.querySelector('.tool-btn[data-tool="select"]');
-    const selectMenu = toolbar.querySelector('.tool-submenu[data-menu="select"]');
     const penButton = toolbar.querySelector('.tool-btn[data-tool="pen"]');
     const penMenu = toolbar.querySelector('.tool-submenu[data-menu="pen"]');
     const fillButton = toolbar.querySelector('.tool-btn[data-tool="fill"]');
@@ -62,7 +59,6 @@
     const shapeButton = toolbar.querySelector('.tool-btn[data-tool="shape"]');
     const shapeMenu = toolbar.querySelector('.tool-submenu[data-menu="shape"]');
     const lightSourceBtn = getEl('btn-light-source');
-    const selectionModes = selectButtons.map((btn) => btn.dataset.select).filter(Boolean);
     const scissorModes = scissorButtons.map((btn) => btn.dataset.scissor).filter(Boolean);
     const penModes = penButtons.map((btn) => btn.dataset.pen).filter(Boolean);
     const shapeToolFromMode = (mode) => `shape-${mode}`;
@@ -71,9 +67,7 @@
       const button = toolbar.querySelector(`.tool-btn[data-tool="${tool}"]`);
       const icon = button?.querySelector('.tool-icon');
       let sourceBtn = null;
-      if (tool === 'select') {
-        sourceBtn = selectButtons.find((btn) => btn.dataset.select === mode);
-      } else if (tool === 'scissor') {
+      if (tool === 'scissor') {
         sourceBtn = scissorButtons.find((btn) => btn.dataset.scissor === mode);
       } else if (tool === 'pen') {
         sourceBtn = penButtons.find((btn) => btn.dataset.pen === mode);
@@ -103,9 +97,6 @@
       });
       scissorButtons.forEach((btn) => {
         btn.classList.toggle('active', btn.dataset.scissor === this.scissorMode);
-      });
-      selectButtons.forEach((btn) => {
-        btn.classList.toggle('active', btn.dataset.select === this.selectionMode);
       });
       penButtons.forEach((btn) => {
         btn.classList.toggle('active', btn.dataset.pen === this.penMode);
@@ -163,15 +154,6 @@
       syncButtons();
     };
 
-    this.setSelectionMode = (mode) => {
-      if (!mode) return;
-      this.selectionMode = mode;
-      SETTINGS.selectionMode = mode;
-      if (this.app.renderer?.setSelectionMode) this.app.renderer.setSelectionMode(mode);
-      updateToolIcon('select', this.selectionMode);
-      syncButtons();
-    };
-
     this.setPenMode = (mode) => {
       if (!mode) return;
       this.penMode = mode;
@@ -189,12 +171,6 @@
     };
 
     this.cycleToolSubmode = (tool) => {
-      if (tool === 'select') {
-        const next = cycleMode(this.selectionMode, selectionModes);
-        this.setSelectionMode(next);
-        this.setActiveTool('select');
-        return;
-      }
       if (tool === 'scissor') {
         const next = cycleMode(this.scissorMode, scissorModes);
         this.setScissorMode(next);
@@ -221,13 +197,6 @@
         const mode = btn.dataset.scissor;
         this.setActiveTool('scissor');
         this.setScissorMode(mode);
-      };
-    });
-    selectButtons.forEach((btn) => {
-      btn.onclick = () => {
-        const mode = btn.dataset.select;
-        this.setActiveTool('select');
-        this.setSelectionMode(mode);
       };
     });
     penButtons.forEach((btn) => {
@@ -394,18 +363,6 @@
     });
 
     initSubtoolMenu({
-      button: selectButton,
-      menu: selectMenu,
-      buttons: selectButtons,
-      onActivate: () => this.setActiveTool('select'),
-      onSelect: (btn) => {
-        const mode = btn.dataset.select;
-        this.setActiveTool('select');
-        this.setSelectionMode(mode);
-      },
-    });
-
-    initSubtoolMenu({
       button: fillButton,
       menu: fillMenu,
       buttons: fillButtons,
@@ -434,7 +391,6 @@
 
     this.setActiveTool(this.activeTool);
     this.setScissorMode(this.scissorMode);
-    this.setSelectionMode(this.selectionMode);
     this.setPenMode(this.penMode);
     this.setShapeMode(this.shapeMode);
     syncButtons();

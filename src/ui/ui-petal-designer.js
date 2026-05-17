@@ -835,29 +835,10 @@
           ariaLabel: 'Selection Tool (V)',
           icon: I.select(),
         },
-        'select-rect': {
-          label: 'Rectangle Selection',
-          submenuKind: 'select',
-          submenuValue: 'rect',
-          icon: I['select-rect'](),
-        },
-        'select-oval': {
-          label: 'Oval Selection',
-          submenuKind: 'select',
-          submenuValue: 'oval',
-          icon: I['select-oval'](),
-        },
-        'select-pen': {
-          label: 'Pen Selection',
-          submenuKind: 'select',
-          submenuValue: 'pen',
-          icon: I['select-pen'](),
-        },
-        'select-lasso': {
-          label: 'Lasso Selection',
-          submenuKind: 'select',
-          submenuValue: 'lasso',
-          icon: I['select-lasso'](),
+        lasso: {
+          label: 'Lasso (Q)',
+          ariaLabel: 'Lasso Tool (Q)',
+          icon: I.lasso(),
         },
         direct: {
           label: 'Direct Selection (A)',
@@ -1046,8 +1027,9 @@
 
     createMainToolbarMarkup() {
       return this.buildSharedToolbarMarkup([
-        { type: 'group', tool: 'select', subtools: ['select-rect', 'select-oval', 'select-pen', 'select-lasso'], submenuAttrs: 'data-menu="select" aria-label="Selection subtools"' },
+        'select',
         'direct',
+        'lasso',
         { type: 'group', tool: 'shape', subtools: ['shape-rect', 'shape-oval', 'shape-line', 'shape-polygon'], submenuAttrs: 'data-menu="shape" aria-label="Shape subtools"' },
         'algo-draw',
         'hand',

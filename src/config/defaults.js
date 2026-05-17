@@ -1579,7 +1579,6 @@
       ctrl: false,
       pan: false,
     },
-    selectionMode: 'rect',
     documentUnits: 'metric',
     paperSize: 'letter',
     paperWidth: 216,

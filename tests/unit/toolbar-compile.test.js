@@ -69,7 +69,6 @@ describe('toolbar compile gate', () => {
       createMainToolbarMarkup: () => '',
       activeTool: 'select',
       scissorMode: 'split',
-      selectionMode: 'box',
       penMode: 'draw',
       shapeMode: 'rect',
     };
@@ -95,7 +94,6 @@ describe('toolbar compile gate', () => {
       createMainToolbarMarkup: () => '<button class="tool-btn" data-tool="select"></button>',
       activeTool: 'select',
       scissorMode: 'split',
-      selectionMode: 'box',
       penMode: 'draw',
       shapeMode: 'rect',
     };
@@ -105,7 +103,6 @@ describe('toolbar compile gate', () => {
     // initToolBar should have attached setActiveTool to ctx
     expect(typeof ctx.setActiveTool).toBe('function');
     expect(typeof ctx.setScissorMode).toBe('function');
-    expect(typeof ctx.setSelectionMode).toBe('function');
     expect(typeof ctx.setPenMode).toBe('function');
     expect(typeof ctx.setShapeMode).toBe('function');
     expect(typeof ctx.cycleToolSubmode).toBe('function');

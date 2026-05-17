@@ -153,8 +153,9 @@
       <table class="help-kbd-table">
         <tbody>
           ${section('Selection &amp; Drawing',
-            row(k('V'),       'Selection tool',       'press again to cycle modes') +
+            row(k('V'),       'Selection tool') +
             row(k('A'),       'Direct Select') +
+            row(k('Q'),       'Lasso') +
             row(k('P'),       'Pen tool',             'press again to cycle subtools') +
             row(k('F'),       'Fill') +
             row(SHF + k('F'), 'Erase Fill') +

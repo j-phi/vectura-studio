@@ -5144,7 +5144,6 @@
       this.armedPenId = null;
       this.activeTool = SETTINGS.activeTool || 'select';
       this.scissorMode = SETTINGS.scissorMode || 'line';
-      this.selectionMode = SETTINGS.selectionMode || 'rect';
       this.penMode = SETTINGS.penMode || 'draw';
       this.shapeMode = SETTINGS.shapeMode || 'oval';
       this.spacePanActive = false;
