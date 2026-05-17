@@ -1186,7 +1186,7 @@ test.describe('Vectura smoke interactions', () => {
     await page.mouse.move(rotatePoint.x, rotatePoint.y);
     await expect
       .poll(async () => page.locator('#main-canvas').evaluate((canvasEl) => canvasEl.dataset.cursorMode || ''))
-      .toBe('grab');
+      .toBe('rotate');
 
     expect(pageErrors).toEqual([]);
   });
@@ -1248,7 +1248,7 @@ test.describe('Vectura smoke interactions', () => {
     await page.mouse.move(rotatePoint.x, rotatePoint.y);
     await expect
       .poll(async () => page.locator('#main-canvas').evaluate((canvasEl) => canvasEl.dataset.cursorMode || ''))
-      .toBe('grab');
+      .toBe('rotate');
 
     expect(pageErrors).toEqual([]);
   });

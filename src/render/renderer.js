@@ -5742,7 +5742,8 @@
       }
       const handle = this.hitHandle(sx, sy, bounds);
       if (handle) {
-        this.setCanvasCursor(this.handleCursor(handle));
+        const mode = handle.startsWith('rotate') ? 'rotate' : '';
+        this.setCanvasCursor(this.handleCursor(handle), mode);
         return;
       }
       if (this.pointInBounds(world, bounds)) {
