@@ -400,6 +400,7 @@
       this.directMarqueeStart = null;
       this.directMarqueeRect = null;
       this.maskPreview = null;
+      this.mirrorDragState = null;
       this.scissorStart = null;
       this.scissorEnd = null;
       this.isScissor = false;
@@ -1862,6 +1863,34 @@
       return Boolean(layer && this.maskPreview?.descendantIds?.has(layer.id));
     }
 
+    _getMirrorDragPreviewLayerIds(selectedIds) {
+      if (!selectedIds?.size || !this.engine?.getAncestorModifiers) return null;
+      const ids = [...selectedIds].filter((id) => {
+        const layer = this.engine.layers.find((l) => l.id === id);
+        return layer && this.engine.getAncestorModifiers(layer).length > 0;
+      });
+      return ids.length ? new Set(ids) : null;
+    }
+
+    _startMirrorDrag(layers) {
+      const ids = this._getMirrorDragPreviewLayerIds(new Set(layers.map((l) => l.id)));
+      if (!ids) { this.mirrorDragState = null; return; }
+      const state = new Map();
+      ids.forEach((id) => {
+        const layer = this.engine.layers.find((l) => l.id === id);
+        if (!layer) return;
+        state.set(id, {
+          basePaths: (layer.paths || []).map((path) => {
+            if (!Array.isArray(path)) return path;
+            const clone = path.map((pt) => ({ ...pt }));
+            if (path.meta) clone.meta = { ...path.meta };
+            return clone;
+          }),
+        });
+      });
+      this.mirrorDragState = state.size ? state : null;
+    }
+
     getMaskPreviewLayer() {
       if (!this.maskPreview?.maskLayerId) return null;
       return this.engine?.layers?.find((layer) => layer.id === this.maskPreview.maskLayerId) || null;
@@ -2296,7 +2325,7 @@
           if (fadeLayer) { this.ctx.save(); this.ctx.globalAlpha = 0.2; }
           const layerPen = SETTINGS.pens?.find((p) => p.id === l.penId) || null;
           const defaultPenId = l.penId || layerPen?.id || 'default';
-          
+
           let currentPenId = defaultPenId;
           let currentStrokeWidth = layerPen?.width ?? l.strokeWidth ?? SETTINGS.strokeWidth;
           let currentStrokeStyle = layerPen?.color || l.color;
@@ -2311,7 +2340,10 @@
           const paths = this.engine.getRenderablePaths
             ? this.engine.getRenderablePaths(l, { useOptimized: useLayerOptimized })
             : l.paths;
-          const temp = this.selectedLayerIds?.has(l.id) && this.tempTransform ? this.tempTransform : null;
+          const isMirrorDrag = this.mirrorDragState?.has(l.id);
+          const temp = !isMirrorDrag && this.selectedLayerIds?.has(l.id) && this.tempTransform
+            ? this.tempTransform
+            : null;
           (paths || []).forEach((path) => {
             const next = path && path.meta && path.meta.kind === 'circle'
               ? { meta: temp ? this.transformCircleMeta(path.meta, temp) : path.meta }
@@ -3393,6 +3425,7 @@
               this.dragStart = w;
               this.startBounds = b;
               this.startMaskPreviewForSelection(layers);
+              this._startMirrorDrag(layers);
               this.setCanvasCursor(layers.length > 1 ? 'grabbing' : 'move');
               if (navigator.vibrate) navigator.vibrate(30);
               this.draw();
@@ -3404,6 +3437,7 @@
             this.dragStart = world;
             this.startBounds = bounds;
             this.startMaskPreviewForSelection(updatedSelected);
+            this._startMirrorDrag(updatedSelected);
             this.setCanvasCursor(updatedSelected.length > 1 ? 'grabbing' : 'move');
             if (modifiers.alt && updatedSelected.length === 1) {
               if (this.onDuplicateLayer) this.onDuplicateLayer();
@@ -3574,6 +3608,24 @@
           const dx = world.x - this.dragStart.x;
           const dy = world.y - this.dragStart.y;
           this.tempTransform = { dx, dy, scaleX: 1, scaleY: 1, origin: { x: 0, y: 0 } };
+          if (this.mirrorDragState) {
+            this.mirrorDragState.forEach((state, layerId) => {
+              const layer = this.engine.layers.find((l) => l.id === layerId);
+              if (!layer) return;
+              layer.paths = state.basePaths.map((path) => {
+                if (!Array.isArray(path)) return path;
+                const t = path.map((pt) => ({ x: pt.x + dx, y: pt.y + dy }));
+                if (path.meta) {
+                  t.meta = { ...path.meta };
+                  if (typeof path.meta.cx === 'number') t.meta.cx = path.meta.cx + dx;
+                  if (typeof path.meta.cy === 'number') t.meta.cy = path.meta.cy + dy;
+                }
+                return t;
+              });
+              if (this.engine.computeLayerEffectiveGeometry) this.engine.computeLayerEffectiveGeometry(layer.id);
+              if (this.engine.computeLayerDisplayGeometry) this.engine.computeLayerDisplayGeometry(layer.id);
+            });
+          }
         } else if (this.dragMode === 'resize' && this.startBounds && this.activeHandle) {
           const fromCenter = modifiers.alt || modifiers.meta;
           const origin = fromCenter ? this.getBoundsCenter(this.startBounds) : this.getResizeAnchor(this.activeHandle, this.startBounds);
@@ -3902,6 +3954,7 @@
           this.selectLayer(this._pendingSingleSelect);
         }
         this.clearMaskPreview();
+        this.mirrorDragState = null;
         this.tempTransform = null;
         this.rotateOrigin = null;
         this.snap = null;

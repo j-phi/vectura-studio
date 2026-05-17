@@ -334,7 +334,7 @@ test.describe('Vectura smoke interactions', () => {
     expect(switchedGeometry.about.length).toBeGreaterThan(0);
     expect(switchedGeometry.about).not.toBe(initialGeometry.about);
 
-    await page.getByRole('button', { name: 'Randomize Params' }).click();
+    await page.locator('#btn-randomize-params').click();
 
     const linesText = (await page.locator('#stat-lines').innerText()).trim();
     const lineCount = Number(linesText.replace(/[^0-9.-]/g, ''));

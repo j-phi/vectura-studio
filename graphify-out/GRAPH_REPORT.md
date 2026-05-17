@@ -222,12 +222,12 @@
   CLAUDE.md → tests/e2e/visual.spec.js-snapshots/rotated-polygon-selection-canvas-desktop-visual-chromium-darwin.png
 - `src/render/renderer.js — Renderer` --references--> `Visual Snapshot: Rotated Rectangle Selection (Rectangle with Rotation Transform Handles)`  [INFERRED]
   CLAUDE.md → tests/e2e/visual.spec.js-snapshots/rotated-rectangle-selection-canvas-desktop-visual-chromium-darwin.png
-- `runBenchmark()` --calls--> `fN()`  [INFERRED]
-  scripts/benchmark_clone.js → /Users/jayphi/Documents/github/vectura-studio/playwright-report/trace/assets/defaultSettingsView-CJSZINFr.js
 - `src/core/modifiers.js — Modifiers` --references--> `Visual Snapshot: Mirrored Masked Circles (Two Mirrored Circle Layers with Grid Fill)`  [EXTRACTED]
   CLAUDE.md → tests/e2e/visual.spec.js-snapshots/mirrored-masked-circles-canvas-desktop-visual-chromium-darwin.png
 - `src/core/masking.js — Masking` --references--> `Visual Snapshot: Masking Horizon Rings Canvas (Rings + Topo Combined)`  [EXTRACTED]
   CLAUDE.md → tests/e2e/visual.spec.js-snapshots/masking-horizon-rings-canvas-desktop-visual-chromium-darwin.png
+- `src/core/masking.js — Masking` --references--> `Visual Snapshot: Mirrored Masked Circles (Two Mirrored Circle Layers with Grid Fill)`  [EXTRACTED]
+  CLAUDE.md → tests/e2e/visual.spec.js-snapshots/mirrored-masked-circles-canvas-desktop-visual-chromium-darwin.png
 
 ## Hyperedges (group relationships)
 - **Core Engine Data Pipeline** — engine_js, algorithms_index_js, masking_js, modifiers_js, optimization_utils_js, renderer_js [EXTRACTED 0.95]
@@ -261,8 +261,8 @@ Cohesion: 0.02
 Nodes (203): create(), openColorModal(), requireDeps(), closeAnyOpenModal(), create(), luminance(), normalizeHex(), Vy() (+195 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.01
-Nodes (133): read(), _a, Ai, ao(), as(), at, B(), be() (+125 more)
+Cohesion: 0.04
+Nodes (90): clamp(), lerp(), centerProfile(), clipFanLine(), dampen(), displace(), envAtX(), getFanBottomX() (+82 more)
 
 ### Community 3 - "Community 3"
 Cohesion: 0.02
@@ -329,12 +329,12 @@ Cohesion: 0.08
 Nodes (32): applyArcMirrorToPaths(), applyMirrorToPaths(), applyRadialMirrorToPaths(), applyWallpaperMirrorToPaths(), buildAxisFromAngle(), classifyPieceSide(), clipClosedPolygonByAxis(), clipPathsToHalfPlane() (+24 more)
 
 ### Community 19 - "Community 19"
-Cohesion: 0.09
-Nodes (2): c_(), qC
+Cohesion: 0.14
+Nodes (8): getBtn(), getIcon(), openPicker(), setViewport(), dispatchEvent(), dragSelect(), hold(), quickTap()
 
 ### Community 20 - "Community 20"
-Cohesion: 0.2
-Nodes (4): LS, MN(), Wh, oa
+Cohesion: 0.22
+Nodes (11): normalizePaths(), pathSignature(), serializePaths(), classify(), classifyDesignerAssignments(), clone(), extractOutlines(), outlineMapByGroup() (+3 more)
 
 ### Community 21 - "Community 21"
 Cohesion: 0.32
@@ -367,6 +367,10 @@ Nodes (2): loadTopoAlgorithm(), makeNoiseRackMock()
 ### Community 28 - "Community 28"
 Cohesion: 0.7
 Nodes (4): goToNext(), goToPrevious(), makeCurrent(), toggleClass()
+
+### Community 28 - "Community 28"
+Cohesion: 0.25
+Nodes (0): 
 
 ### Community 29 - "Community 29"
 Cohesion: 0.4
@@ -421,6 +425,10 @@ Cohesion: 0.67
 Nodes (0): 
 
 ### Community 42 - "Community 42"
+Cohesion: 0.5
+Nodes (0): 
+
+### Community 43 - "Community 43"
 Cohesion: 0.67
 Nodes (0): 
 
@@ -436,7 +444,7 @@ Nodes (2): curlAngle(), sampleField()
 Cohesion: 1.0
 Nodes (0): 
 
-### Community 46 - "Community 46"
+### Community 47 - "Community 47"
 Cohesion: 1.0
 Nodes (0): 
 
@@ -473,27 +481,27 @@ Cohesion: 1.0
 Nodes (0): 
 
 ### Community 55 - "Community 55"
-Cohesion: 1.0
+Cohesion: 0.67
 Nodes (0): 
 
 ### Community 56 - "Community 56"
-Cohesion: 1.0
+Cohesion: 0.67
 Nodes (0): 
 
 ### Community 57 - "Community 57"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.67
+Nodes (1): UIOrchestrator
 
 ### Community 58 - "Community 58"
-Cohesion: 1.0
-Nodes (0): 
+Cohesion: 0.67
+Nodes (1): Layer
 
 ### Community 59 - "Community 59"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (2): curlAngle(), sampleField()
 
 ### Community 60 - "Community 60"
-Cohesion: 1.0
+Cohesion: 0.67
 Nodes (0): 
 
 ### Community 61 - "Community 61"
@@ -714,19 +722,19 @@ Nodes (0):
 
 ### Community 115 - "Community 115"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (2): sourcePaths Reserved for Expanded Geometry Decision, Rationale: sourcePaths Reserved for Expanded Geometry
 
 ### Community 116 - "Community 116"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (2): Wavetable Horizon 3D Canonical Baseline SVG, Wavetable Horizon Canonical Baseline SVG
 
 ### Community 117 - "Community 117"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (2): Flowfield Algorithm Canonical Baseline SVG, Flowfield Algorithm Gallery Sample SVG
 
 ### Community 118 - "Community 118"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (2): Line Warped Heightfield — Horizontal parallel lines warped upward by rectangular plateau shapes on dark background, minimal displacement-mapped heightfield rendering, Neon Scanline Totem — Neon cyan horizontal scanlines on black background, multiple stacked waveform segments that spell out a face/totem shape through local line displacement
 
 ### Community 119 - "Community 119"
 Cohesion: 1.0
@@ -966,70 +974,114 @@ Nodes (1): Non-Destructive History Timeline
 
 ### Community 178 - "Community 178"
 Cohesion: 1.0
-Nodes (1): CHANGELOG v0.6.80
+Nodes (0): 
 
 ### Community 179 - "Community 179"
 Cohesion: 1.0
-Nodes (1): Examples Directory README
+Nodes (0): 
 
 ### Community 180 - "Community 180"
 Cohesion: 1.0
-Nodes (1): src/config/version.js
+Nodes (0): 
 
 ### Community 181 - "Community 181"
 Cohesion: 1.0
-Nodes (1): Rainfall Algorithm Canonical Baseline SVG
+Nodes (0): 
 
 ### Community 182 - "Community 182"
 Cohesion: 1.0
-Nodes (1): Masking Horizon Rings Baseline SVG
+Nodes (0): 
 
 ### Community 183 - "Community 183"
 Cohesion: 1.0
-Nodes (1): Mirrored Masked Circles Baseline SVG
+Nodes (0): 
 
 ### Community 184 - "Community 184"
 Cohesion: 1.0
-Nodes (1): Petalis Algorithm Canonical Baseline SVG
+Nodes (0): 
 
 ### Community 185 - "Community 185"
 Cohesion: 1.0
-Nodes (1): Shape Pack Algorithm Canonical Baseline SVG
+Nodes (0): 
 
 ### Community 186 - "Community 186"
 Cohesion: 1.0
-Nodes (1): Lissajous Algorithm Canonical Baseline SVG
+Nodes (0): 
 
 ### Community 187 - "Community 187"
 Cohesion: 1.0
-Nodes (1): Boids Algorithm Gallery Sample SVG
+Nodes (0): 
 
 ### Community 188 - "Community 188"
 Cohesion: 1.0
-Nodes (1): Attractor Algorithm Gallery Sample SVG
+Nodes (1): Non-Destructive History Timeline
 
 ### Community 189 - "Community 189"
 Cohesion: 1.0
-Nodes (1): Visual Snapshot: Primitive Shape Creation (Hexagon + Rectangle)
+Nodes (1): CHANGELOG v0.6.80
 
 ### Community 190 - "Community 190"
 Cohesion: 1.0
-Nodes (1): Visual Snapshot: Main Shell Desktop (Full UI with Generator Panel)
+Nodes (1): Examples Directory README
 
 ### Community 191 - "Community 191"
 Cohesion: 1.0
-Nodes (1): Visual Snapshot: Document Dimensions Canvas (Wavetable with Dimension Rulers)
+Nodes (1): src/config/version.js
 
 ### Community 192 - "Community 192"
 Cohesion: 1.0
-Nodes (1): Radial Branching Rings — Two organic radial forms with dense inward-flowing feather/flame strokes emanating from bright central voids, overlapping like a figure-eight
+Nodes (1): Rainfall Algorithm Canonical Baseline SVG
 
 ### Community 193 - "Community 193"
+Cohesion: 1.0
+Nodes (1): Masking Horizon Rings Baseline SVG
+
+### Community 204 - "Community 204"
+Cohesion: 1.0
+Nodes (1): Mirrored Masked Circles Baseline SVG
+
+### Community 205 - "Community 205"
+Cohesion: 1.0
+Nodes (1): Petalis Algorithm Canonical Baseline SVG
+
+### Community 206 - "Community 206"
+Cohesion: 1.0
+Nodes (1): Shape Pack Algorithm Canonical Baseline SVG
+
+### Community 207 - "Community 207"
+Cohesion: 1.0
+Nodes (1): Lissajous Algorithm Canonical Baseline SVG
+
+### Community 208 - "Community 208"
+Cohesion: 1.0
+Nodes (1): Boids Algorithm Gallery Sample SVG
+
+### Community 209 - "Community 209"
+Cohesion: 1.0
+Nodes (1): Attractor Algorithm Gallery Sample SVG
+
+### Community 210 - "Community 210"
+Cohesion: 1.0
+Nodes (1): Visual Snapshot: Primitive Shape Creation (Hexagon + Rectangle)
+
+### Community 211 - "Community 211"
+Cohesion: 1.0
+Nodes (1): Visual Snapshot: Main Shell Desktop (Full UI with Generator Panel)
+
+### Community 212 - "Community 212"
+Cohesion: 1.0
+Nodes (1): Visual Snapshot: Document Dimensions Canvas (Wavetable with Dimension Rulers)
+
+### Community 213 - "Community 213"
+Cohesion: 1.0
+Nodes (1): Radial Branching Rings — Two organic radial forms with dense inward-flowing feather/flame strokes emanating from bright central voids, overlapping like a figure-eight
+
+### Community 214 - "Community 214"
 Cohesion: 1.0
 Nodes (1): City — Isometric aerial city of skyscrapers rendered entirely in dense vertical hatching lines with strong perspective convergence, plotter-pen aesthetic, B&W
 
 ## Knowledge Gaps
-- **68 isolated node(s):** `Boids Algorithm`, `Non-Destructive History Timeline`, `linesimplify Operation`, `linesort Operation`, `filter Operation` (+63 more)
+- **67 isolated node(s):** `Non-Destructive History Timeline`, `linesimplify Operation`, `linesort Operation`, `filter Operation`, `multipass Operation` (+62 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **Thin community `Community 45`** (2 nodes): `createRendererAndLayer()`, `renderer-world-to-source-point.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
