@@ -89,6 +89,26 @@
       return id;
     }
 
+    addShapeLayer(name, paths) {
+      const id = Math.random().toString(36).slice(2, 11);
+      SETTINGS.globalLayerCount = ++this._layerCounter;
+      const layer = new Layer(id, 'shape', name || `Shape ${String(this._layerCounter).padStart(2, '0')}`);
+      layer.sourcePaths = clonePaths(paths || []);
+      layer.params.seed = 0;
+      layer.params.posX = 0;
+      layer.params.posY = 0;
+      layer.params.scaleX = 1;
+      layer.params.scaleY = 1;
+      layer.params.rotation = 0;
+      layer.params.curves = false;
+      layer.params.smoothing = 0;
+      layer.params.simplify = 0;
+      this.layers.push(layer);
+      this.activeLayerId = id;
+      this.generate(id);
+      return id;
+    }
+
     addModifierLayer(type = 'mirror') {
       const id = Math.random().toString(36).slice(2, 11);
       SETTINGS.globalLayerCount = ++this._layerCounter;

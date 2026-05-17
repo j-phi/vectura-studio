@@ -385,6 +385,8 @@
       this.penDragAnchor = null;
       this.penDragStart = null;
       this._penLastClick = null;
+      this.groupEditMode = null;
+      this._selectLastClick = null;
       this.shapeDraft = null;
       this.shapeDraftSides = 6;
       this.shapeCornerDrag = null;
@@ -2290,6 +2292,8 @@
         this.engine.layers.forEach((l) => {
           if (!l.visible) return;
           if (this.shouldSkipLayerForMaskPreview(l)) return;
+          const fadeLayer = this.groupEditMode && !l.isGroup && l.id !== this.groupEditMode.activeLayerId;
+          if (fadeLayer) { this.ctx.save(); this.ctx.globalAlpha = 0.2; }
           const layerPen = SETTINGS.pens?.find((p) => p.id === l.penId) || null;
           const defaultPenId = l.penId || layerPen?.id || 'default';
           
@@ -2338,6 +2342,7 @@
             this.traceLayerPath(path, l, temp, useCurves);
           });
           this.ctx.stroke();
+          if (fadeLayer) { this.ctx.restore(); }
         });
       };
       const drawOptimizedOverlay = () => {
@@ -3315,15 +3320,59 @@
 
         const topLayer =
           this.activeTool === 'direct' ? this.findLayerAtPointPrecise(world) : this.findLayerAtPoint(world);
-        if (topLayer && !this.selectedLayerIds.has(topLayer.id)) {
-          const maskGroup = this._getMaskGroupLayers(topLayer);
-          if (maskGroup && maskGroup.length > 1) {
-            this.setSelection(maskGroup.map(l => l.id), topLayer.id);
-          } else {
-            this.selectLayer(topLayer);
+
+        // Group-aware selection: group move and sublayer edit mode
+        let _groupHandled = false;
+        if (this.activeTool === 'select') {
+          const now = performance.now();
+          const prev = this._selectLastClick;
+          const sX = e.clientX ?? 0;
+          const sY = e.clientY ?? 0;
+          const isDoubleClick = prev && (now - prev.time) < 400 && Math.hypot(sX - prev.x, sY - prev.y) < 8;
+          this._selectLastClick = { time: now, x: sX, y: sY };
+
+          if (this.groupEditMode) {
+            const inGroup = topLayer?.parentId === this.groupEditMode.groupId;
+            if (!inGroup) {
+              this.exitGroupEditMode();
+            } else {
+              this.groupEditMode.activeLayerId = topLayer.id;
+              this.setSelection([topLayer.id], topLayer.id);
+              this.draw();
+              _groupHandled = true;
+            }
           }
-        } else if (topLayer && this.selectedLayerIds.size > 1 && !modifiers.shift && !modifiers.meta && !modifiers.ctrl) {
-          this._pendingSingleSelect = topLayer;
+          if (!_groupHandled && topLayer && !modifiers.shift && !modifiers.meta && !modifiers.ctrl) {
+            const parentLayer = topLayer.parentId
+              ? this.engine.layers.find(l => l.id === topLayer.parentId)
+              : null;
+            if (parentLayer?.isGroup && parentLayer.groupType === 'group') {
+              if (isDoubleClick) {
+                this.enterGroupEditMode(topLayer);
+                e.preventDefault();
+                return;
+              }
+              const siblings = this.engine.getLayerChildren(topLayer.parentId)
+                .filter(l => l.visible && !this.isLayerLocked?.(l.id));
+              if (siblings.length > 1) {
+                this.setSelection(siblings.map(l => l.id), topLayer.id);
+                _groupHandled = true;
+              }
+            }
+          }
+        }
+
+        if (!_groupHandled) {
+          if (topLayer && !this.selectedLayerIds.has(topLayer.id)) {
+            const maskGroup = this._getMaskGroupLayers(topLayer);
+            if (maskGroup && maskGroup.length > 1) {
+              this.setSelection(maskGroup.map(l => l.id), topLayer.id);
+            } else {
+              this.selectLayer(topLayer);
+            }
+          } else if (topLayer && this.selectedLayerIds.size > 1 && !modifiers.shift && !modifiers.meta && !modifiers.ctrl) {
+            this._pendingSingleSelect = topLayer;
+          }
         }
         const updatedSelected = this.getSelectedLayers();
         const bounds = this.getSelectionBounds(updatedSelected);
@@ -4452,6 +4501,24 @@
         });
       });
       return best;
+    }
+
+    enterGroupEditMode(layer) {
+      this.groupEditMode = { groupId: layer.parentId, activeLayerId: layer.id };
+      this.setSelection([layer.id], layer.id);
+      this.draw();
+    }
+
+    exitGroupEditMode() {
+      if (!this.groupEditMode) return;
+      const groupId = this.groupEditMode.groupId;
+      this.groupEditMode = null;
+      const siblings = this.engine.getLayerChildren(groupId) || [];
+      const selectable = siblings.filter(l => l.visible && !this.isLayerLocked?.(l.id));
+      if (selectable.length > 0) {
+        this.setSelection(selectable.map(l => l.id), selectable[0].id);
+      }
+      this.draw();
     }
 
     _getMaskGroupLayers(layer) {

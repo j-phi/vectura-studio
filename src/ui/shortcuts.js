@@ -310,6 +310,12 @@
         return;
       }
 
+      if (this.activeTool === 'select' && e.key === 'Escape' && this.app.renderer?.groupEditMode) {
+        e.preventDefault();
+        this.app.renderer.exitGroupEditMode();
+        return;
+      }
+
 
 
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'e') {

@@ -215,11 +215,11 @@
 
   // ─── Visuals: the popover itself (positioning + drag) ────────────
   class Popover {
-    constructor({ onSkip, onNext, onClose }) {
+    constructor({ onNext, onClose, onBack }) {
       this._el = null;
-      this._onSkip = onSkip;
       this._onNext = onNext;
       this._onClose = onClose;
+      this._onBack = onBack;
       this._userMoved = false;
       this._drag = null;
       this._movable = false;
@@ -235,7 +235,7 @@
       this._el.addEventListener('click', (ev) => ev.stopPropagation());
       const stop = (fn) => (ev) => { ev?.stopPropagation?.(); fn?.(); };
       qs('.tutorial-close', this._el).onclick = stop(() => this._onClose?.());
-      qs('.tutorial-btn--skip', this._el).onclick = stop(() => this._onSkip?.());
+      qs('.tutorial-btn--back', this._el).onclick = stop(() => this._onBack?.());
       qs('.tutorial-btn--next', this._el).onclick = stop(() => this._onNext?.());
       this._installDrag();
       return true;
@@ -281,12 +281,11 @@
 
     resetUserMoved() { this._userMoved = false; }
 
-    setContent({ stepLabel, title, body, isLast }) {
+    setContent({ stepLabel, title, body }) {
       if (!this._el) return;
       qs('.tutorial-step-num', this._el).textContent = stepLabel;
       qs('.tutorial-title',    this._el).textContent = title;
       qs('.tutorial-body',     this._el).innerHTML   = body;
-      qs('.tutorial-btn--next', this._el).textContent = isLast ? 'Done ✓' : 'Next →';
     }
 
     setDots(total, activeIndex) {
@@ -306,21 +305,14 @@
       this._el.setAttribute('aria-hidden', flag ? 'false' : 'true');
     }
 
-    setNextLabel(text, disabled = false) {
-      const btn = qs('.tutorial-btn--next', this._el);
-      if (!btn) return;
-      btn.textContent = text;
-      btn.disabled = !!disabled;
-    }
-
-    setNextVisible(flag) {
+    setForwardVisible(flag) {
       const btn = qs('.tutorial-btn--next', this._el);
       if (!btn) return;
       btn.style.display = flag ? '' : 'none';
     }
 
-    setSkipVisible(flag) {
-      const btn = qs('.tutorial-btn--skip', this._el);
+    setBackVisible(flag) {
+      const btn = qs('.tutorial-btn--back', this._el);
       if (!btn) return;
       btn.style.display = flag ? '' : 'none';
     }
@@ -402,6 +394,24 @@
   //   gate?            { check(app), waitMessage } — wait before activating
   //   onEnter?         (ctx) => teardownFn|null — side effects (menus, etc.)
   //   completion?      { type:'predicate'|'event', check, ... } — auto-advance
+
+  // ─── Side-quest canvas geometry helpers ──────────────────────────
+  function _sqCirclePath(cx, cy, r, n = 120) {
+    return Array.from({ length: n + 1 }, (_, i) => {
+      const a = (i / n) * Math.PI * 2;
+      return { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r };
+    });
+  }
+  function _sqPolygonPath(cx, cy, r, sides) {
+    return Array.from({ length: sides + 1 }, (_, i) => {
+      const a = (i / sides) * Math.PI * 2 - Math.PI / 2;
+      return { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r };
+    });
+  }
+  function _sqLinePath(x1, y1, x2, y2) {
+    return [{ x: x1, y: y1 }, { x: x2, y: y2 }];
+  }
+
   const STEPS = [
     {
       title: 'Pick the Rings Algorithm',
@@ -481,7 +491,7 @@
         {
           target: '#btn-randomize-params',
           placement: 'right',
-          body: 'Adjust sliders to shape the output. When you find a tuning you like, press <b>Randomize Params</b> at the <b>top</b> of the Algorithm Configuration pane to explore variations on those settings.',
+          body: 'Adjust any parameters you like to shape the output. When you\'re ready, press <b>Randomize Params</b> at the top of the Algorithm Configuration pane to experiment with variations and continue.',
           highlight: '#btn-randomize-params',
           hideNext: true,
           onEnter: () => Actions.expandSection('left-section-algorithm-configuration-header', 'left-section-algorithm-configuration-body'),
@@ -503,7 +513,57 @@
           body:
             'Each generation is its own layer. <b>Drag to reorder</b>, group with the ' +
             inlineIcon('grpPlus') + ' <b>group</b> icon, or use the ' +
-            inlineIcon('maskSrc') + ' <b>Mask</b> action on a parent — then nest other layers underneath it and they’ll be clipped to the parent’s shape.',
+            inlineIcon('maskSrc') + ' <b>Mask</b> action on a parent — then nest other layers underneath it and they\'ll be clipped to the parent\'s shape.' +
+            '<div class="tutorial-sq-panel">' +
+            '<div class="tutorial-sq-label">Take a detour — click any to try it:</div>' +
+            '<div class="tutorial-sq-cards">' +
+            '<button class="tutorial-sq-card" data-sq="masking" type="button">' +
+            '<span class="tutorial-sq-icon">◉</span>' +
+            '<span class="tutorial-sq-name">Masking</span>' +
+            '</button>' +
+            '<button class="tutorial-sq-card" data-sq="grouping" type="button">' +
+            '<span class="tutorial-sq-icon">⧉</span>' +
+            '<span class="tutorial-sq-name">Group Layers</span>' +
+            '</button>' +
+            '<button class="tutorial-sq-card" data-sq="expand" type="button">' +
+            '<span class="tutorial-sq-icon">⤢</span>' +
+            '<span class="tutorial-sq-name">Expand into Group</span>' +
+            '</button>' +
+            '</div>' +
+            '</div>',
+          onEnter: (ctx) => {
+            const popoverEl = qs('#tutorial-popover');
+            const refresh = () => {
+              qsa('[data-sq]', popoverEl).forEach((btn) => {
+                btn.classList.toggle('is-done', ctx.tour._completedQuests.has(btn.dataset.sq));
+              });
+            };
+            refresh();
+            const handler = (ev) => {
+              const card = ev.target.closest('[data-sq]');
+              if (card) ctx.tour.enterSideQuest(card.dataset.sq);
+            };
+            const panel = qs('.tutorial-sq-panel', popoverEl);
+            panel?.addEventListener('click', handler);
+
+            // Nudge if the user empties the canvas while on this step
+            let wasEmpty = false;
+            const emptyWatch = setInterval(() => {
+              const empty = getLayers().filter((l) => l && !l.isGroup).length === 0;
+              if (empty === wasEmpty) return;
+              wasEmpty = empty;
+              ctx.tour.popover.setWaitMessage(
+                empty
+                  ? 'Your canvas is empty — add an algorithm layer to continue experimenting.'
+                  : ''
+              );
+            }, 400);
+
+            return () => {
+              panel?.removeEventListener('click', handler);
+              clearInterval(emptyWatch);
+            };
+          },
         },
       ],
     },
@@ -571,8 +631,9 @@
           target: null,
           highlight: [],
           placement: 'center',
+          hideBack: true,
           body:
-            '<p>That’s the whirlwind tour. From here you can keep tinkering with what you’ve built, or wipe the canvas and start clean.</p>' +
+            '<p>That\'s the whirlwind tour. From here you can keep tinkering with what you\'ve built, or wipe the canvas and start clean.</p>' +
             '<div class="tutorial-cta-row">' +
             '<button type="button" class="tutorial-cta-btn tutorial-cta-secondary" data-tour-clear>Clear canvas</button>' +
             '<button type="button" class="tutorial-cta-btn tutorial-cta-primary" data-tour-keep>Keep designing →</button>' +
@@ -628,6 +689,176 @@
         },
       ],
     },
+
+    // ── Side Quest: Masking ───────────────────────────────────────────
+    {
+      title: 'Masking',
+      sideQuest: true,
+      sideQuestId: 'masking',
+      phases: [
+        {
+          title: 'Apply a Clipping Mask',
+          target: '#layer-list',
+          highlight: '#layer-list',
+          placement: 'left',
+          body:
+            'Two layers are ready: a <b>Wavetable</b> and a <b>Circle</b> shape.' +
+            '<br><br>' +
+            'In the layers panel, <b>drag the Circle on top of the Wavetable</b> layer while <b>holding Shift</b>. ' +
+            'Watch for the <b>"Make clipping mask"</b> hint to appear, then <b>release</b> to apply. ' +
+            'The circle becomes an invisible mask that clips the Wavetable to its shape.',
+          hideNext: true,
+          completion: When.predicate(() => getLayers().some((l) => l && l.mask?.enabled)),
+        },
+        {
+          title: 'Masking Complete!',
+          target: null,
+          highlight: [],
+          placement: 'center',
+          hideBack: true,
+          body:
+            '<p>The Wavetable is now clipped to the circle\'s outline. Only art inside the circle shows through.</p>' +
+            '<p>You can use any closed shape as a mask, and nest multiple layers under a masked parent.</p>' +
+            '<div class="tutorial-cta-row">' +
+            '<button type="button" class="tutorial-cta-btn tutorial-cta-primary" data-sq-continue>Finish</button>' +
+            '</div>',
+          hideSkip: true,
+          hideNext: true,
+          onEnter: (ctx) => {
+            const popoverEl = qs('#tutorial-popover');
+            const contBtn  = qs('[data-sq-continue]', popoverEl);
+            const onCont  = (ev) => { ev.stopPropagation(); ctx.tour.exitSideQuest('masking'); };
+            contBtn?.addEventListener('click', onCont);
+            return () => contBtn?.removeEventListener('click', onCont);
+          },
+        },
+      ],
+    },
+
+    // ── Side Quest: Group Layers ─────────────────────────────────────
+    {
+      title: 'Group Layers',
+      sideQuest: true,
+      sideQuestId: 'grouping',
+      phases: [
+        {
+          title: 'Select Both Layers',
+          target: '#layer-list',
+          highlight: '#layer-list',
+          placement: 'left',
+          body:
+            'Two layers are ready: a <b>Hexagon</b> and a <b>Line</b>.' +
+            '<br><br>' +
+            '<b>Click</b> the Hexagon layer to select it, then <b>Shift+click</b> the Line layer. ' +
+            'You should see <b>2 layers selected</b> in the panel footer.',
+          hideNext: true,
+          completion: When.predicate(() => (getApp()?.renderer?.selectedLayerIds?.size ?? 0) >= 2),
+        },
+        {
+          title: 'Group Them',
+          target: '#layer-list',
+          highlight: '.lvl-cb[title="Group selected (⌘G)"]',
+          placement: 'left',
+          body:
+            'Click the ' + inlineIcon('grpPlus') + ' <b>Group</b> icon that appeared in the layer toolbar, ' +
+            'or press <b>Cmd+G</b> (Mac) / <b>Ctrl+G</b> (Windows). ' +
+            'The two layers fold into a new group folder.',
+          hideNext: true,
+          completion: When.predicate(() => getLayers().some((l) => l && l.isGroup && l.groupType === 'group')),
+        },
+        {
+          title: 'Drag the Group',
+          target: '#viewport-container',
+          highlight: [],
+          placement: 'top',
+          body:
+            'Select the group folder in the layers panel or click any of its shapes on the canvas, ' +
+            'then <b>drag</b> to move it. Both layers travel together as one unit.',
+          hideNext: true,
+          onEnter: () => {
+            // Normalize viewport after Cmd+G so the shapes are visible at a comfortable zoom.
+            const app = getApp();
+            if (app?.renderer?.center) app.renderer.center();
+            app?.render?.();
+            return null;
+          },
+          completion: When.predicate(() => {
+            const g = getLayers().find((l) => l && l.isGroup && l.groupType === 'group');
+            if (!g) return false;
+            // Layer drag commits to params.posX/posY (renderer line 3799).
+            // Check both the group itself and its children to cover all drag paths.
+            if (Math.abs(g.params?.posX ?? 0) > 3 || Math.abs(g.params?.posY ?? 0) > 3) return true;
+            return getLayers().some((l) => l.parentId === g.id && (
+              Math.abs(l.params?.posX ?? 0) > 3 || Math.abs(l.params?.posY ?? 0) > 3
+            ));
+          }),
+        },
+        {
+          title: 'Grouped!',
+          target: null,
+          highlight: [],
+          placement: 'center',
+          hideBack: true,
+          body:
+            '<p>Your layers move together as a group. Click the group folder to expand or collapse it, and drag layers in or out to reorganize.</p>' +
+            '<p>Groups can also be masked, duplicated, and nested inside other groups.</p>' +
+            '<div class="tutorial-cta-row">' +
+            '<button type="button" class="tutorial-cta-btn tutorial-cta-primary" data-sq-continue>Finish</button>' +
+            '</div>',
+          hideSkip: true,
+          hideNext: true,
+          onEnter: (ctx) => {
+            const popoverEl = qs('#tutorial-popover');
+            const contBtn  = qs('[data-sq-continue]', popoverEl);
+            const onCont  = (ev) => { ev.stopPropagation(); ctx.tour.exitSideQuest('grouping'); };
+            contBtn?.addEventListener('click', onCont);
+            return () => contBtn?.removeEventListener('click', onCont);
+          },
+        },
+      ],
+    },
+
+    // ── Side Quest: Expand into Group ────────────────────────────────
+    {
+      title: 'Expand into Group',
+      sideQuest: true,
+      sideQuestId: 'expand',
+      phases: [
+        {
+          title: 'Expand the Algorithm Layer',
+          target: '.lvl-acts .lvl-ab[title="Expand into group"]',
+          highlight: '.lvl-acts .lvl-ab[title="Expand into group"]',
+          placement: 'left',
+          body:
+            'Click the ' + inlineIcon('expand') + ' <b>Expand into group</b> icon on the algorithm layer. ' +
+            'Each path in the algorithm becomes its own editable shape layer inside a new group folder.',
+          hideNext: true,
+          completion: When.clickMatches('.lvl-ab[title="Expand into group"]'),
+        },
+        {
+          title: 'Expanded!',
+          target: null,
+          highlight: [],
+          placement: 'center',
+          hideBack: true,
+          body:
+            '<p>Each individual path is now its own layer. You can delete, reorder, recolor, or animate them independently.</p>' +
+            '<p>Tip: expanding complex algorithms can produce hundreds of layers — use this on small, targeted generations.</p>' +
+            '<div class="tutorial-cta-row">' +
+            '<button type="button" class="tutorial-cta-btn tutorial-cta-primary" data-sq-continue>Finish</button>' +
+            '</div>',
+          hideSkip: true,
+          hideNext: true,
+          onEnter: (ctx) => {
+            const popoverEl = qs('#tutorial-popover');
+            const contBtn  = qs('[data-sq-continue]', popoverEl);
+            const onCont  = (ev) => { ev.stopPropagation(); ctx.tour.exitSideQuest('expand'); };
+            contBtn?.addEventListener('click', onCont);
+            return () => contBtn?.removeEventListener('click', onCont);
+          },
+        },
+      ],
+    },
   ];
 
   // ─── TutorialManager ─────────────────────────────────────────────
@@ -643,10 +874,13 @@
       this._eventListeners = [];
       this._reflowRaf = null;
       this._onResize = () => this._scheduleReflow();
+      this._returnTo = null;
+      this._completedQuests = new Set();
+      this._questSnapshot = null;
       this.popover = new Popover({
         onClose: () => this.dismiss(),
-        onSkip:  () => this.dismiss(),
         onNext:  () => this._advance(),
+        onBack:  () => this._retreat(),
       });
       this.highlight = new Highlight();
       this.circles = new Circles();
@@ -678,27 +912,46 @@
       if (phaseIndex === 0) this.popover.resetUserMoved();
       this.popover.setMovable(!!step.movable);
 
-      const totalSlides = STEPS.reduce((acc, s) => acc + (s.phases?.length || 1), 0);
-      const slideIndex = STEPS.slice(0, stepIndex)
-        .reduce((acc, s) => acc + (s.phases?.length || 1), 0) + phaseIndex;
-      const isLast = slideIndex === totalSlides - 1;
       const placement = window.innerWidth < 900 ? 'center' : (phase.placement || 'right');
 
-      this.popover.setContent({
-        stepLabel: `Step ${slideIndex + 1} of ${totalSlides}`,
-        title:     phase.title || step.title,
-        body:      phase.body,
-        isLast,
-      });
-      this.popover.setDots(totalSlides, slideIndex);
+      if (step.sideQuest) {
+        // Side quest: show "Detour: Title (phase/total)" instead of main step counter
+        const totalPhases = step.phases?.length || 1;
+        this.popover.setContent({
+          stepLabel: `Detour: ${step.title} (${phaseIndex + 1} of ${totalPhases})`,
+          title:     phase.title || step.title,
+          body:      phase.body,
+        });
+        this.popover.setDots(0, 0);
+      } else {
+        // Main flow: exclude side quest steps from the slide count
+        const mainSteps = STEPS.filter((s) => !s.sideQuest);
+        const mainStepIndex = mainSteps.indexOf(step);
+        const totalSlides = mainSteps.reduce((acc, s) => acc + (s.phases?.length || 1), 0);
+        const slideIndex = mainSteps.slice(0, mainStepIndex)
+          .reduce((acc, s) => acc + (s.phases?.length || 1), 0) + phaseIndex;
+        this.popover.setContent({
+          stepLabel: `Step ${slideIndex + 1} of ${totalSlides}`,
+          title:     phase.title || step.title,
+          body:      phase.body,
+        });
+        this.popover.setDots(totalSlides, slideIndex);
+      }
+
       this.popover.setPlacement(placement);
 
-      this.popover.setSkipVisible(!phase.hideSkip);
-
-      // Gate: hold position + show wait message + hide Next until prerequisite passes.
+      // Gate: hold position + show wait message + hide forward arrow until prerequisite passes.
       if (phase.gate && !phase.gate.check?.()) {
-        this.popover.setNextVisible(false);
+        this.popover.setForwardVisible(false);
         this.popover.setWaitMessage(phase.gate.waitMessage || 'Complete the previous step to continue…');
+        // Set back visibility during gate wait so the user can retreat
+        if (!step.sideQuest) {
+          const mainStepsForGate = STEPS.filter((s) => !s.sideQuest);
+          const mainIdxForGate = mainStepsForGate.indexOf(step);
+          const slideIdxForGate = mainStepsForGate.slice(0, mainIdxForGate)
+            .reduce((acc, s) => acc + (s.phases?.length || 1), 0) + phaseIndex;
+          this.popover.setBackVisible(!phase.hideBack && slideIdxForGate > 0);
+        }
         this.popover.positionAt(phase.target, placement, phase.offsetX || 0, phase.offsetY || 0);
         this._gateInterval = setInterval(() => {
           if (phase.gate.check?.()) {
@@ -715,13 +968,21 @@
     }
 
     _activatePhase(step, phase, placement) {
-      const lastStepIdx = STEPS.length - 1;
-      const lastPhaseIdx = (STEPS[lastStepIdx]?.phases?.length || 1) - 1;
-      const isLast = this._stepIndex === lastStepIdx && this._phaseIndex === lastPhaseIdx;
+      const mainSteps = STEPS.filter((s) => !s.sideQuest);
+
+      // Back button: visible when not at the very first main slide and phase allows it
+      const mainStepIndex = step.sideQuest ? -1 : mainSteps.indexOf(step);
+      const slideIndex = step.sideQuest
+        ? -1
+        : mainSteps.slice(0, mainStepIndex).reduce((acc, s) => acc + (s.phases?.length || 1), 0) + this._phaseIndex;
+      const showBack = !phase.hideBack && !step.sideQuest && slideIndex > 0;
+
+      // Forward arrow: visible unless both hideNext and hideSkip are set
+      const showForward = !(phase.hideNext && phase.hideSkip);
+
       this.popover.setWaitMessage('');
-      this.popover.setNextLabel(isLast ? 'Done ✓' : 'Next →', false);
-      this.popover.setNextVisible(!phase.hideNext);
-      this.popover.setSkipVisible(!phase.hideSkip);
+      this.popover.setForwardVisible(showForward);
+      this.popover.setBackVisible(showBack);
 
       if (typeof phase.onEnter === 'function') {
         const teardown = phase.onEnter({ ui: getUI(), app: getApp(), tour: this });
@@ -822,14 +1083,112 @@
     _advance() {
       const step = STEPS[this._stepIndex];
       const lastPhase = (step?.phases?.length || 1) - 1;
+
+      // Within a step, always advance to the next phase
       if (this._phaseIndex < lastPhase) {
         this.goTo(this._stepIndex, this._phaseIndex + 1);
         return;
       }
-      if (this._stepIndex >= STEPS.length - 1) {
+
+      // Last phase of a side quest — exit back to main flow
+      if (step.sideQuest) {
+        this.exitSideQuest(step.sideQuestId);
+        return;
+      }
+
+      // Last phase of the last main step — dismiss
+      const mainSteps = STEPS.filter((s) => !s.sideQuest);
+      const lastMainStep = mainSteps[mainSteps.length - 1];
+      const lastMainStepIdx = STEPS.indexOf(lastMainStep);
+      if (this._stepIndex >= lastMainStepIdx) {
         this.dismiss();
+        return;
+      }
+
+      // Advance to the next main step, skipping any side quest steps
+      let nextIdx = this._stepIndex + 1;
+      while (nextIdx < STEPS.length && STEPS[nextIdx].sideQuest) nextIdx++;
+      if (nextIdx < STEPS.length) {
+        this.goTo(nextIdx, 0);
       } else {
-        this.goTo(this._stepIndex + 1, 0);
+        this.dismiss();
+      }
+    }
+
+    _retreat() {
+      if (this._phaseIndex > 0) {
+        this.goTo(this._stepIndex, this._phaseIndex - 1);
+        return;
+      }
+      if (this._stepIndex > 0) {
+        // Walk backward, skipping side quest steps
+        let si = this._stepIndex - 1;
+        while (si > 0 && STEPS[si].sideQuest) si--;
+        const lastPhase = (STEPS[si].phases?.length || 1) - 1;
+        this.goTo(si, lastPhase);
+      }
+    }
+
+    _seedSideQuestCanvas(questId) {
+      const engine = getEngine();
+      const app = getApp();
+      if (!engine) return;
+
+      engine.layers = [];
+      engine.activeLayerId = null;
+
+      const { width = 250, height = 210 } = engine.currentProfile || {};
+      const cx = width / 2;
+      const cy = height / 2;
+
+      if (questId === 'masking') {
+        engine.addLayer('wavetable');
+        const r = Math.min(width, height) * 0.35;
+        engine.addShapeLayer('Circle', [_sqCirclePath(cx, cy, r)]);
+        engine.activeLayerId = engine.layers.find((l) => l.type !== 'shape')?.id;
+      } else if (questId === 'grouping') {
+        const r = Math.min(width, height) * 0.28;
+        engine.addShapeLayer('Hexagon', [_sqPolygonPath(cx, cy, r, 6)]);
+        engine.addShapeLayer('Line', [_sqLinePath(cx - r * 1.3, cy + r * 0.9, cx + r * 1.3, cy - r * 0.9)]);
+        engine.activeLayerId = engine.layers[0]?.id;
+      } else if (questId === 'expand') {
+        engine.addLayer('wavetable');
+      }
+
+      // Fit viewport to freshly-seeded canvas so the user sees the whole document.
+      if (app?.renderer?.center) app.renderer.center();
+      app?.render?.();
+      getUI()?.renderLayers?.();
+    }
+
+    enterSideQuest(questId) {
+      const idx = STEPS.findIndex((s) => s.sideQuest && s.sideQuestId === questId);
+      if (idx < 0) return;
+      this._returnTo = { stepIndex: this._stepIndex, phaseIndex: this._phaseIndex };
+      this._questSnapshot = getApp()?.captureState?.();
+      this._seedSideQuestCanvas(questId);
+      this.goTo(idx, 0);
+    }
+
+    exitSideQuest(questId) {
+      if (questId) this._completedQuests.add(questId);
+      const snapshot = this._questSnapshot;
+      this._questSnapshot = null;
+      const rt = this._returnTo;
+      this._returnTo = null;
+      if (snapshot) {
+        const app = getApp();
+        app?.applyState?.(snapshot);
+        app?.render?.();
+        getUI()?.renderLayers?.();
+      }
+      if (rt) {
+        this.goTo(rt.stepIndex, rt.phaseIndex);
+      } else {
+        let nextIdx = this._stepIndex + 1;
+        while (nextIdx < STEPS.length && STEPS[nextIdx].sideQuest) nextIdx++;
+        if (nextIdx < STEPS.length) this.goTo(nextIdx, 0);
+        else this.dismiss();
       }
     }
 

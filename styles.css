@@ -5095,27 +5095,87 @@ body:not(.mobile-layout) .mobile-pane-backdrop {
   background: none;
   border: 1px solid var(--color-border);
   border-radius: 4px;
-  padding: 4px 10px;
-  font-size: 11px;
+  padding: 0;
+  width: 28px;
+  height: 26px;
+  font-size: 13px;
+  line-height: 1;
   cursor: pointer;
   color: inherit;
-  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 .tutorial-btn--next {
   background: var(--color-accent);
   border-color: transparent;
   color: var(--color-bg);
-  font-weight: 500;
 }
 .tutorial-btn--next:hover {
   opacity: 0.85;
 }
-.tutorial-btn--skip {
+.tutorial-btn--back {
   opacity: 0.45;
   border-color: transparent;
 }
-.tutorial-btn--skip:hover {
+.tutorial-btn--back:hover {
   opacity: 0.75;
+}
+.tutorial-sq-panel {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+}
+.tutorial-sq-label {
+  font-size: 10px;
+  opacity: 0.55;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.tutorial-sq-cards {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.tutorial-sq-card {
+  flex: 1;
+  min-width: 70px;
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 6px 4px;
+  font-size: 10px;
+  cursor: pointer;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  opacity: 0.7;
+  transition: opacity 0.15s, border-color 0.15s;
+}
+.tutorial-sq-card:hover {
+  opacity: 1;
+  border-color: var(--color-accent);
+}
+.tutorial-sq-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+.tutorial-sq-name {
+  font-size: 10px;
+  text-align: center;
+  line-height: 1.2;
+}
+.tutorial-sq-card.is-done {
+  border-color: var(--color-accent);
+  opacity: 1;
+}
+.tutorial-sq-card.is-done .tutorial-sq-name::after {
+  content: ' ✓';
+  color: var(--color-accent);
 }
 .tutorial-cta-row {
   display: flex;

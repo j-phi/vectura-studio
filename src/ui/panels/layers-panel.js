@@ -1510,6 +1510,10 @@
     layers.splice(maxIndex + 1, 0, group);
 
     oldParents.forEach((parentId) => {
+      // Only auto-remove orphaned group containers, never regular layers that were
+      // parents via the mask relationship (those get moved into the group themselves).
+      const parentLayer = layers.find((layer) => layer.id === parentId);
+      if (!parentLayer?.isGroup) return;
       const stillHas = layers.some((layer) => layer.parentId === parentId);
       if (!stillHas) {
         const idx = layers.findIndex((layer) => layer.id === parentId);
