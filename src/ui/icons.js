@@ -117,32 +117,15 @@
       return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g transform="rotate(${angleDeg.toFixed(2)} 12 12)"><line x1="4" y1="12" x2="20" y2="12" stroke="#ffffff" stroke-width="3.6" stroke-linecap="round"/><line x1="4" y1="12" x2="20" y2="12" stroke="#000000" stroke-width="1.8" stroke-linecap="round"/><polygon points="2,12 7,8.5 7,15.5" fill="#000000" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round"/><polygon points="22,12 17,8.5 17,15.5" fill="#000000" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round"/></g></svg>`;
     },
     rotate: (angleDeg = -90) => {
-      const cx = 12, cy = 12, r = 6.5;
-      const side = 8;
-      const h = side * Math.sqrt(3) / 2;
-      const sa = (angleDeg - 90) * Math.PI / 180;
-      const ea = (angleDeg + 90) * Math.PI / 180;
-      const sx = cx + r * Math.cos(sa), sy = cy + r * Math.sin(sa);
-      const ex = cx + r * Math.cos(ea), ey = cy + r * Math.sin(ea);
-      const c = Math.cos(angleDeg * Math.PI / 180);
-      const s = Math.sin(angleDeg * Math.PI / 180);
-      let startDir, endDir;
-      if (c >= 0 && s < 0) { startDir = 'W'; endDir = 'S'; }
-      else if (c >= 0 && s >= 0) { startDir = 'N'; endDir = 'W'; }
-      else if (c < 0 && s >= 0) { startDir = 'E'; endDir = 'N'; }
-      else { startDir = 'S'; endDir = 'E'; }
-      const f = (n) => n.toFixed(2);
-      const tri = (x0, y0, dir) => {
-        const half = side / 2;
-        let p1, p2, p3;
-        if (dir === 'N')      { p1 = [x0, y0 - h]; p2 = [x0 - half, y0]; p3 = [x0 + half, y0]; }
-        else if (dir === 'S') { p1 = [x0, y0 + h]; p2 = [x0 - half, y0]; p3 = [x0 + half, y0]; }
-        else if (dir === 'E') { p1 = [x0 + h, y0]; p2 = [x0, y0 - half]; p3 = [x0, y0 + half]; }
-        else                  { p1 = [x0 - h, y0]; p2 = [x0, y0 - half]; p3 = [x0, y0 + half]; }
-        return `<polygon points="${f(p1[0])},${f(p1[1])} ${f(p2[0])},${f(p2[1])} ${f(p3[0])},${f(p3[1])}" fill="#000000" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round"/>`;
-      };
-      const arcPath = `M${f(sx)} ${f(sy)} A 6.5 6.5 0 0 1 ${f(ex)} ${f(ey)}`;
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="${arcPath}" fill="none" stroke="#ffffff" stroke-width="3.6" stroke-linecap="round"/><path d="${arcPath}" fill="none" stroke="#000000" stroke-width="1.8" stroke-linecap="round"/>${tri(sx, sy, startDir)}${tri(ex, ey, endDir)}</svg>`;
+      // L-shaped double-arrow rotation cursor. Natural orientation is the NE
+      // corner (bend at upper-right, arrows pointing W and S). The icon
+      // rotates around its geometric center (168, 136) so the bend always
+      // points in direction `angleDeg` from the cursor's center. Hotspot is
+      // (12, 12) — the SVG center maps to the path's center, so the mouse
+      // sits where the rotation pivot is.
+      const path = 'M172.59,210.85c-14.84-14.78,8.38-37.37,22.78-22.59,0,0,20.6,20.61,20.6,20.61.76-135.14,13.76-121.85-121.09-121.09,8.56,10.3,36.76,27.91,20.66,43.23-5.87,5.85-16.06,6.63-22.21.48l-48.92-48.89c-5.76-5.76-5.76-15.87,0-21.63,0,0,48.36-48.44,48.36-48.44,6.31-6.32,16.41-6.19,22.59-.15,16.33,15.24-11.71,33.17-20.46,43.39,149.97-5.02,158.08,3.35,153.05,153.1,10.21-8.68,27.82-36.55,43.16-20.74,6.25,6.12,6.53,16.41.09,22.84l-48.17,48.12c-5.99,5.98-16.19,5.97-22.17,0l-48.28-48.25Z';
+      const rot = (angleDeg + 45).toFixed(2);
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="38 6 260 260"><g transform="rotate(${rot} 168 136)"><path d="${path}" fill="none" stroke="#ffffff" stroke-width="28" stroke-linejoin="round" stroke-linecap="round"/><path d="${path}" fill="#000000"/></g></svg>`;
     },
   };
 
