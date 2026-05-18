@@ -228,7 +228,7 @@
       <div class="pane-header pane-header-left p-4 border-b border-vectura-border flex justify-between items-center">
         <span class="pane-title font-bold text-vectura-accent">GENERATOR</span>
 
-        <span class="pane-meta text-[11px] text-vectura-muted">V.1.0.33</span>
+        <span class="pane-meta text-[11px] text-vectura-muted">V.1.0.34</span>
 
         <button id="btn-pane-toggle-left" class="pane-toggle pane-toggle-left" type="button"
           aria-label="Toggle left pane">
@@ -349,6 +349,40 @@
             </div>
           </div>
 
+          <div id="left-section-paint-bucket" class="left-panel-section" style="display:none;">
+            <button id="left-section-paint-bucket-header" class="left-panel-section-header" type="button" aria-expanded="true">
+              <span class="left-panel-section-title">Paint Bucket</span>
+              <span class="left-panel-section-toggle" aria-hidden="true"></span>
+            </button>
+            <div id="left-section-paint-bucket-body" class="left-panel-section-body">
+              <div class="paint-bucket-panel" id="paint-bucket-panel">
+                <div class="paint-bucket-section">
+                  <p class="paint-bucket-section-label">Fill Type</p>
+                  <div class="paint-bucket-variant-grid" id="paint-bucket-variant-grid" role="radiogroup" aria-label="Fill type"></div>
+                </div>
+                <div class="paint-bucket-section">
+                  <p class="paint-bucket-section-label">Tool</p>
+                  <div class="paint-bucket-row">
+                    <label class="paint-bucket-label" for="paint-bucket-pen">Pen</label>
+                    <select id="paint-bucket-pen" class="paint-bucket-select"></select>
+                  </div>
+                  <div class="paint-bucket-row">
+                    <label class="paint-bucket-label" for="paint-bucket-sensitivity">Sensitivity</label>
+                    <div class="sld-fx-wrap paint-bucket-slider-wrap">
+                      <input id="paint-bucket-sensitivity" class="ctrl-slider" type="range" min="0.1" max="20" step="0.1" value="5">
+                    </div>
+                    <input type="text" id="paint-bucket-sensitivity-chip" class="slider-val" value="5" inputmode="decimal">
+                  </div>
+                </div>
+                <div class="paint-bucket-section">
+                  <p class="paint-bucket-section-label">Fill Options</p>
+                  <div id="paint-bucket-controls"></div>
+                </div>
+                <p id="paint-bucket-panel-hint" class="paint-bucket-panel-hint" aria-live="polite"></p>
+              </div>
+            </div>
+          </div>
+
           <div id="left-section-multi-selection" class="left-panel-section" style="display:none;">
             <button id="left-section-multi-selection-header" class="left-panel-section-header" type="button" aria-expanded="true">
               <span class="left-panel-section-title">Align</span>
@@ -356,50 +390,108 @@
             </button>
             <div id="left-section-multi-selection-body" class="left-panel-section-body">
               <div class="align-panel">
-                <div class="align-panel-row">
-                  <p class="align-panel-label">Align Objects:</p>
-                  <div class="align-panel-grid">
-                    <button type="button" class="align-btn" data-align-op="alignLeft" title="Horizontal Align Left" aria-label="Horizontal Align Left"></button>
-                    <button type="button" class="align-btn" data-align-op="alignCenterH" title="Horizontal Align Center" aria-label="Horizontal Align Center"></button>
-                    <button type="button" class="align-btn" data-align-op="alignRight" title="Horizontal Align Right" aria-label="Horizontal Align Right"></button>
-                    <span class="align-panel-spacer" aria-hidden="true"></span>
-                    <button type="button" class="align-btn" data-align-op="alignTop" title="Vertical Align Top" aria-label="Vertical Align Top"></button>
-                    <button type="button" class="align-btn" data-align-op="alignCenterV" title="Vertical Align Center" aria-label="Vertical Align Center"></button>
-                    <button type="button" class="align-btn" data-align-op="alignBottom" title="Vertical Align Bottom" aria-label="Vertical Align Bottom"></button>
-                  </div>
-                </div>
-                <div class="align-panel-row">
-                  <p class="align-panel-label">Distribute Objects:</p>
-                  <div class="align-panel-grid">
-                    <button type="button" class="align-btn" data-align-op="distributeTop" title="Vertical Distribute Top" aria-label="Vertical Distribute Top"></button>
-                    <button type="button" class="align-btn" data-align-op="distributeCenterV" title="Vertical Distribute Center" aria-label="Vertical Distribute Center"></button>
-                    <button type="button" class="align-btn" data-align-op="distributeBottom" title="Vertical Distribute Bottom" aria-label="Vertical Distribute Bottom"></button>
-                    <span class="align-panel-spacer" aria-hidden="true"></span>
-                    <button type="button" class="align-btn" data-align-op="distributeLeft" title="Horizontal Distribute Left" aria-label="Horizontal Distribute Left"></button>
-                    <button type="button" class="align-btn" data-align-op="distributeCenterH" title="Horizontal Distribute Center" aria-label="Horizontal Distribute Center"></button>
-                    <button type="button" class="align-btn" data-align-op="distributeRight" title="Horizontal Distribute Right" aria-label="Horizontal Distribute Right"></button>
-                  </div>
-                </div>
-                <div class="align-panel-row">
-                  <p class="align-panel-label">Distribute Spacing:</p>
-                  <div class="align-panel-spacing">
-                    <button type="button" class="align-btn" data-align-op="distributeSpacingV" title="Vertical Distribute Spacing" aria-label="Vertical Distribute Spacing"></button>
-                    <button type="button" class="align-btn" data-align-op="distributeSpacingH" title="Horizontal Distribute Spacing" aria-label="Horizontal Distribute Spacing"></button>
-                    <div class="sld-fx-wrap align-spacing-slider-wrap">
-                      <input type="range" id="inp-align-spacing" class="ctrl-slider" min="0" max="100" step="1" value="0" aria-label="Spacing in millimeters">
+                <div id="align-section-align" class="global-section align-panel-section" data-align-section="align">
+                  <button id="align-section-align-header" class="global-section-header" type="button" aria-expanded="true">
+                    <span class="global-section-title">Align Objects</span>
+                    <span class="global-section-toggle" aria-hidden="true"></span>
+                  </button>
+                  <div id="align-section-align-body" class="global-section-body">
+                    <div class="align-panel-grid">
+                      <button type="button" class="align-btn" data-align-op="alignLeft" title="Horizontal Align Left" aria-label="Horizontal Align Left"></button>
+                      <button type="button" class="align-btn" data-align-op="alignCenterH" title="Horizontal Align Center" aria-label="Horizontal Align Center"></button>
+                      <button type="button" class="align-btn" data-align-op="alignRight" title="Horizontal Align Right" aria-label="Horizontal Align Right"></button>
+                      <span class="align-panel-spacer" aria-hidden="true"></span>
+                      <button type="button" class="align-btn" data-align-op="alignTop" title="Vertical Align Top" aria-label="Vertical Align Top"></button>
+                      <button type="button" class="align-btn" data-align-op="alignCenterV" title="Vertical Align Center" aria-label="Vertical Align Center"></button>
+                      <button type="button" class="align-btn" data-align-op="alignBottom" title="Vertical Align Bottom" aria-label="Vertical Align Bottom"></button>
                     </div>
-                    <input type="text" id="align-spacing-chip" class="slider-val" value="0" inputmode="decimal" aria-label="Spacing value (mm)">
                   </div>
                 </div>
-                <div class="align-panel-row">
-                  <p class="align-panel-label">Align To:</p>
-                  <div class="align-panel-target">
-                    <button type="button" class="align-target-btn" data-align-to="artboard" title="Align to Artboard" aria-label="Align to Artboard"></button>
-                    <button type="button" class="align-target-btn" data-align-to="selection" title="Align to Selection" aria-label="Align to Selection"></button>
-                    <button type="button" class="align-target-btn" data-align-to="key" title="Align to Key Object" aria-label="Align to Key Object"></button>
+                <div id="align-section-distribute" class="global-section align-panel-section" data-align-section="distribute">
+                  <button id="align-section-distribute-header" class="global-section-header" type="button" aria-expanded="true">
+                    <span class="global-section-title">Distribute Objects</span>
+                    <span class="global-section-toggle" aria-hidden="true"></span>
+                  </button>
+                  <div id="align-section-distribute-body" class="global-section-body">
+                    <div class="align-panel-grid">
+                      <button type="button" class="align-btn" data-align-op="distributeTop" title="Vertical Distribute Top" aria-label="Vertical Distribute Top"></button>
+                      <button type="button" class="align-btn" data-align-op="distributeCenterV" title="Vertical Distribute Center" aria-label="Vertical Distribute Center"></button>
+                      <button type="button" class="align-btn" data-align-op="distributeBottom" title="Vertical Distribute Bottom" aria-label="Vertical Distribute Bottom"></button>
+                      <span class="align-panel-spacer" aria-hidden="true"></span>
+                      <button type="button" class="align-btn" data-align-op="distributeLeft" title="Horizontal Distribute Left" aria-label="Horizontal Distribute Left"></button>
+                      <button type="button" class="align-btn" data-align-op="distributeCenterH" title="Horizontal Distribute Center" aria-label="Horizontal Distribute Center"></button>
+                      <button type="button" class="align-btn" data-align-op="distributeRight" title="Horizontal Distribute Right" aria-label="Horizontal Distribute Right"></button>
+                    </div>
+                  </div>
+                </div>
+                <div id="align-section-spacing" class="global-section align-panel-section" data-align-section="spacing">
+                  <button id="align-section-spacing-header" class="global-section-header" type="button" aria-expanded="true">
+                    <span class="global-section-title">Distribute Spacing</span>
+                    <span class="global-section-toggle" aria-hidden="true"></span>
+                  </button>
+                  <div id="align-section-spacing-body" class="global-section-body">
+                    <div class="align-panel-spacing">
+                      <button type="button" class="align-btn" data-align-op="distributeSpacingV" title="Vertical Distribute Spacing" aria-label="Vertical Distribute Spacing"></button>
+                      <button type="button" class="align-btn" data-align-op="distributeSpacingH" title="Horizontal Distribute Spacing" aria-label="Horizontal Distribute Spacing"></button>
+                      <div class="sld-fx-wrap align-spacing-slider-wrap">
+                        <input type="range" id="inp-align-spacing" class="ctrl-slider" min="0" max="100" step="1" value="0" aria-label="Spacing in millimeters">
+                      </div>
+                      <input type="text" id="align-spacing-chip" class="slider-val" value="0" inputmode="decimal" aria-label="Spacing value (mm)">
+                    </div>
+                  </div>
+                </div>
+                <div id="align-section-target" class="global-section align-panel-section" data-align-section="target">
+                  <button id="align-section-target-header" class="global-section-header" type="button" aria-expanded="true">
+                    <span class="global-section-title">Align To</span>
+                    <span class="global-section-toggle" aria-hidden="true"></span>
+                  </button>
+                  <div id="align-section-target-body" class="global-section-body">
+                    <div class="align-panel-target">
+                      <button type="button" class="align-target-btn" data-align-to="artboard" title="Align to Artboard" aria-label="Align to Artboard"></button>
+                      <button type="button" class="align-target-btn" data-align-to="selection" title="Align to Selection" aria-label="Align to Selection"></button>
+                      <button type="button" class="align-target-btn" data-align-to="key" title="Align to Key Object" aria-label="Align to Key Object"></button>
+                    </div>
                   </div>
                 </div>
                 <p id="align-panel-hint" class="align-panel-hint" aria-live="polite"></p>
+              </div>
+              <div id="pf-section-root" class="global-section pathfinder-panel-section" data-pf-section="root">
+                <button id="pf-section-root-header" class="global-section-header" type="button" aria-expanded="true">
+                  <span class="global-section-title">Pathfinder</span>
+                  <span class="global-section-toggle" aria-hidden="true"></span>
+                </button>
+                <div id="pf-section-root-body" class="global-section-body">
+                  <div class="pathfinder-panel">
+                    <div class="pathfinder-panel-modes" role="radiogroup" aria-label="Pathfinder source geometry">
+                      <button type="button" class="pf-mode-btn" data-pf-mode="silhouette" aria-pressed="true" title="Use each layer's silhouette (works on all layers)">Silhouette</button>
+                      <button type="button" class="pf-mode-btn" data-pf-mode="shape-only" aria-pressed="false" title="Shape-only (closed shapes only)">Shape&#8209;Only</button>
+                    </div>
+                    <div class="pathfinder-panel-row">
+                      <p class="pathfinder-panel-label">Shape Modes:</p>
+                      <div class="pathfinder-panel-shape-modes">
+                        <div class="pathfinder-panel-grid pathfinder-panel-grid-shape-modes">
+                          <button type="button" class="pf-btn" data-pf-op="unite" title="Unite" aria-label="Unite"></button>
+                          <button type="button" class="pf-btn" data-pf-op="minusFront" title="Minus Front" aria-label="Minus Front"></button>
+                          <button type="button" class="pf-btn" data-pf-op="intersect" title="Intersect" aria-label="Intersect"></button>
+                          <button type="button" class="pf-btn" data-pf-op="exclude" title="Exclude" aria-label="Exclude"></button>
+                        </div>
+                        <button type="button" class="pf-expand-btn" data-pf-action="expand" disabled title="Expand compound shape to a flat layer">Expand</button>
+                      </div>
+                    </div>
+                    <div class="pathfinder-panel-row">
+                      <p class="pathfinder-panel-label">Pathfinders:</p>
+                      <div class="pathfinder-panel-grid pathfinder-panel-grid-pathfinders">
+                        <button type="button" class="pf-btn" data-pf-op="divide" title="Divide" aria-label="Divide"></button>
+                        <button type="button" class="pf-btn" data-pf-op="trim" title="Trim" aria-label="Trim"></button>
+                        <button type="button" class="pf-btn" data-pf-op="merge" title="Merge" aria-label="Merge"></button>
+                        <button type="button" class="pf-btn" data-pf-op="crop" title="Crop" aria-label="Crop"></button>
+                        <button type="button" class="pf-btn" data-pf-op="outline" title="Outline" aria-label="Outline"></button>
+                        <button type="button" class="pf-btn" data-pf-op="minusBack" title="Minus Back" aria-label="Minus Back"></button>
+                      </div>
+                    </div>
+                    <p id="pathfinder-panel-hint" class="pathfinder-panel-hint" aria-live="polite"></p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -635,6 +727,8 @@
   <script src="./src/vendor/polygon-clipping.umd.js" defer></script>
   <script src="./src/core/fill-boolean.js" defer></script>
   <script src="./src/core/masking.js" defer></script>
+  <script src="./src/core/pathfinder-ops.js" defer></script>
+  <script src="./src/core/paint-bucket-ops.js" defer></script>
   <script src="./src/core/wallpaper-groups.js" defer></script>
   <script src="./src/core/modifiers.js" defer></script>
   <script src="./src/core/algorithms/petalis.js" defer></script>
@@ -698,6 +792,8 @@
   <script src="./src/ui/panels/modifiers-panel.js" defer></script>
   <script src="./src/ui/panels/algorithm-panel.js" defer></script>
   <script src="./src/ui/panels/multi-selection-panel.js" defer></script>
+  <script src="./src/ui/panels/pathfinder-panel.js" defer></script>
+  <script src="./src/ui/panels/paint-bucket-panel.js" defer></script>
   <script src="./src/ui/persistence.js" defer></script>
   <script src="./src/ui/shortcuts.js" defer></script>
   <!-- Phase 1 utilities + overlays + components. Composed by menus, modals,
