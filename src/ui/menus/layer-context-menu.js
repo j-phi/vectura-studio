@@ -74,6 +74,12 @@
       items.push({ separator: true });
       items.push({ key: 'expand-fill', label: 'Expand Fill' });
     }
+    const isBakedFill = layer && !layer.isGroup && layer.sourceFillRecord
+      && Array.isArray(layer.paths) && layer.paths.length > 0;
+    if (isBakedFill) {
+      if (!hasFills) items.push({ separator: true });
+      items.push({ key: 'explode-fill', label: 'Explode Fill into paths' });
+    }
     return items;
   };
 
@@ -144,6 +150,20 @@
       ui.app.setSelection?.([result.groupId], result.groupId);
       engine.setActiveLayerId?.(result.groupId);
       ui.app.paintBucketPanel?.updateExpandButton?.();
+      ui.renderLayers && ui.renderLayers();
+      ui.app.render && ui.app.render();
+      return;
+    }
+    if (key === 'explode-fill') {
+      const PBO = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.PaintBucketOps;
+      if (!PBO?.explodeFillLayer) return;
+      if (!Array.isArray(layer.paths) || !layer.paths.length) return;
+      ui.app.renderer?.commitActiveBatch?.();
+      if (ui.app.pushHistory) ui.app.pushHistory();
+      const result = PBO.explodeFillLayer(engine, layer);
+      if (!result) return;
+      ui.app.setSelection?.([result.groupId], result.groupId);
+      engine.setActiveLayerId?.(result.groupId);
       ui.renderLayers && ui.renderLayers();
       ui.app.render && ui.app.render();
       return;

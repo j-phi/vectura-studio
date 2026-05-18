@@ -544,6 +544,114 @@ describe('PaintBucketOps.expandFill', () => {
   });
 });
 
+describe('PaintBucketOps.explodeFillLayer', () => {
+  const explodableEngine = (...layers) => ({
+    layers,
+    docW: 297,
+    docH: 210,
+    _layerCounter: 0,
+    getDisplayPaths: (layer) => layer.displayPaths || layer.paths || [],
+    getActiveLayer() { return this.layers[0]; },
+    computeAllDisplayGeometry: vi.fn(),
+    setActiveLayerId(id) { this.activeLayerId = id; },
+  });
+
+  const makeBakedFillLayer = (id, paths) => {
+    const layer = makeLayer(id, paths);
+    layer.sourceFillRecord = { id: 'src-1', fillType: 'hatch', density: 4 };
+    return layer;
+  };
+
+  it('returns null when layer has no paths', () => {
+    const layer = makeBakedFillLayer('A', []);
+    const engine = explodableEngine(layer);
+    const result = globalThis.Vectura.PaintBucketOps.explodeFillLayer(engine, layer);
+    expect(result).toBeNull();
+    expect(engine.layers.length).toBe(1);
+  });
+
+  it('produces a group with N children for N paths', () => {
+    const paths = [
+      [{ x: 0, y: 0 }, { x: 10, y: 0 }],
+      [{ x: 0, y: 5 }, { x: 10, y: 5 }],
+      [{ x: 0, y: 10 }, { x: 10, y: 10 }],
+    ];
+    const layer = makeBakedFillLayer('A', paths);
+    const engine = explodableEngine(layer);
+    const result = globalThis.Vectura.PaintBucketOps.explodeFillLayer(engine, layer);
+    expect(result).toBeTruthy();
+    expect(result.childIds.length).toBe(3);
+
+    // The original layer is replaced by [group, ...3 children] = 4 total.
+    expect(engine.layers.length).toBe(4);
+    expect(engine.layers.find((l) => l.id === 'A')).toBeUndefined();
+
+    const group = engine.layers.find((l) => l.id === result.groupId);
+    expect(group.isGroup).toBe(true);
+    expect(group.groupType).toBe('paintfill-exploded');
+
+    const children = engine.layers.filter((l) => l.parentId === group.id);
+    expect(children.length).toBe(3);
+    children.forEach((c) => {
+      expect(c.paths.length).toBe(1);
+      expect(c.isGroup).toBe(false);
+    });
+  });
+
+  it('preserves per-path geometry verbatim across children', () => {
+    const paths = [
+      [{ x: 1, y: 2 }, { x: 3, y: 4 }],
+      [{ x: 5, y: 6 }, { x: 7, y: 8 }],
+    ];
+    const layer = makeBakedFillLayer('A', paths);
+    const engine = explodableEngine(layer);
+    const result = globalThis.Vectura.PaintBucketOps.explodeFillLayer(engine, layer);
+    const ordered = result.childIds.map((id) => engine.layers.find((l) => l.id === id));
+    // Compare point-by-point — exploded children attach a `meta` tag onto the
+    // path array, so a deep-equal against the raw original would fail.
+    const stripMeta = (p) => p.map((pt) => ({ x: pt.x, y: pt.y }));
+    expect(stripMeta(ordered[0].paths[0])).toEqual(paths[0]);
+    expect(stripMeta(ordered[1].paths[0])).toEqual(paths[1]);
+    expect(ordered[0].paths[0].meta?.source).toBe('paintfill-exploded');
+    expect(ordered[0].paths[0].meta?.explodedIndex).toBe(0);
+    expect(ordered[1].paths[0].meta?.explodedIndex).toBe(1);
+  });
+
+  it('inherits pen/color/strokeWidth/parentId from the source', () => {
+    const layer = makeBakedFillLayer('A', [[{ x: 0, y: 0 }, { x: 1, y: 1 }]]);
+    layer.penId = 'pen-7';
+    layer.color = '#abcdef';
+    layer.strokeWidth = 0.42;
+    layer.parentId = 'some-group';
+    const engine = explodableEngine(layer);
+    const result = globalThis.Vectura.PaintBucketOps.explodeFillLayer(engine, layer);
+    const group = engine.layers.find((l) => l.id === result.groupId);
+    const child = engine.layers.find((l) => l.id === result.childIds[0]);
+    expect(group.parentId).toBe('some-group');
+    expect(group.penId).toBe('pen-7');
+    expect(child.penId).toBe('pen-7');
+    expect(child.color).toBe('#abcdef');
+    expect(child.strokeWidth).toBe(0.42);
+  });
+
+  it('moves the source modifier to the new group container', () => {
+    const layer = makeBakedFillLayer('A', [[{ x: 0, y: 0 }, { x: 1, y: 1 }]]);
+    const modifier = { kind: 'mirror', enabled: true };
+    layer.modifier = modifier;
+    const engine = explodableEngine(layer);
+    const result = globalThis.Vectura.PaintBucketOps.explodeFillLayer(engine, layer);
+    const group = engine.layers.find((l) => l.id === result.groupId);
+    expect(group.modifier).toBe(modifier);
+  });
+
+  it('sets the new group as the active layer', () => {
+    const layer = makeBakedFillLayer('A', [[{ x: 0, y: 0 }, { x: 1, y: 1 }]]);
+    const engine = explodableEngine(layer);
+    const result = globalThis.Vectura.PaintBucketOps.explodeFillLayer(engine, layer);
+    expect(engine.activeLayerId).toBe(result.groupId);
+  });
+});
+
 describe('PaintBucketOps.translateLayerFills', () => {
   // Regression: filling a shape and then moving it must keep the fill registered
   // with the shape. Fill regions live in absolute world coords, so move/resize/

@@ -1044,6 +1044,18 @@
           if (layer.type !== 'shape') {
             actsm.appendChild(mkAbM('', () => this._LVL_I.expand(), 'Expand into group', () => this.expandLayer?.(layer)));
           }
+          if (layer.type === 'shape' && Array.isArray(layer.fills) && layer.fills.length > 0) {
+            const n = layer.fills.length;
+            actsm.appendChild(mkAbM('', () => this._LVL_I.expand(),
+              `Expand ${n} fill${n === 1 ? '' : 's'} into a group`,
+              () => this._lvlExpandFill(layer)));
+          }
+          if (layer.type === 'shape' && layer.sourceFillRecord && Array.isArray(layer.paths) && layer.paths.length > 0) {
+            const n = layer.paths.length;
+            actsm.appendChild(mkAbM('', () => this._LVL_I.expand(),
+              `Explode fill into ${n} path${n === 1 ? '' : 's'}`,
+              () => this._lvlExplodeFill(layer)));
+          }
           actsm.appendChild(mkAbM('', () => this._LVL_I.dup(), 'Duplicate (⌘D)', () => {
             if (this.app.pushHistory) this.app.pushHistory();
             engine.duplicateLayer(layer.id); this.renderLayers(); this.app.render();
@@ -1140,6 +1152,18 @@
         }
         if (layer.type !== 'shape') {
           acts.appendChild(mkAb('', () => this._LVL_I.expand(), 'Expand into group', () => this.expandLayer?.(layer)));
+        }
+        if (layer.type === 'shape' && Array.isArray(layer.fills) && layer.fills.length > 0) {
+          const n = layer.fills.length;
+          acts.appendChild(mkAb('', () => this._LVL_I.expand(),
+            `Expand ${n} fill${n === 1 ? '' : 's'} into a group`,
+            () => this._lvlExpandFill(layer)));
+        }
+        if (layer.type === 'shape' && layer.sourceFillRecord && Array.isArray(layer.paths) && layer.paths.length > 0) {
+          const n = layer.paths.length;
+          acts.appendChild(mkAb('', () => this._LVL_I.expand(),
+            `Explode fill into ${n} path${n === 1 ? '' : 's'}`,
+            () => this._lvlExplodeFill(layer)));
         }
         acts.appendChild(mkAb('', () => this._LVL_I.dup(), 'Duplicate (⌘D)', () => {
           if (this.app.pushHistory) this.app.pushHistory();
@@ -1573,6 +1597,45 @@
     this.app.render();
   }
 
+  // Bake paint-bucket fills on `layer` into a sibling group via
+  // PaintBucketOps.expandFill. Wired to the layer-card "Expand into group"
+  // button when `layer.fills[]` is non-empty.
+  function _lvlExpandFill(layer) {
+    if (!layer || !Array.isArray(layer.fills) || !layer.fills.length) return;
+    const engine = this.app?.engine;
+    if (!engine) return;
+    const PBO = Vectura.PaintBucketOps;
+    if (!PBO?.expandFill) return;
+    this.app.renderer?.commitActiveBatch?.();
+    if (this.app.pushHistory) this.app.pushHistory();
+    const result = PBO.expandFill(engine, layer);
+    if (!result) return;
+    this.app.setSelection?.([result.groupId], result.groupId);
+    engine.setActiveLayerId?.(result.groupId);
+    this.app.paintBucketPanel?.updateExpandButton?.();
+    this.renderLayers();
+    this.app.render?.();
+  }
+
+  // Explode a baked fill layer (output of expandFill) into a group of
+  // one-path-per-layer children. Wired to the layer-card button shown on
+  // baked fill layers (those carrying `sourceFillRecord`).
+  function _lvlExplodeFill(layer) {
+    if (!layer || !Array.isArray(layer.paths) || !layer.paths.length) return;
+    const engine = this.app?.engine;
+    if (!engine) return;
+    const PBO = Vectura.PaintBucketOps;
+    if (!PBO?.explodeFillLayer) return;
+    this.app.renderer?.commitActiveBatch?.();
+    if (this.app.pushHistory) this.app.pushHistory();
+    const result = PBO.explodeFillLayer(engine, layer);
+    if (!result) return;
+    this.app.setSelection?.([result.groupId], result.groupId);
+    engine.setActiveLayerId?.(result.groupId);
+    this.renderLayers();
+    this.app.render?.();
+  }
+
   UI.LayersPanel = {
     /**
      * Inject closure-captured legacy ui.js IIFE locals.
@@ -1590,6 +1653,8 @@
       proto.assignLayersToRoot = function(...args) { return assignLayersToRoot.apply(this, args); };
       proto.groupSelection = function(...args) { return groupSelection.apply(this, args); };
       proto.ungroupSelection = function(...args) { return ungroupSelection.apply(this, args); };
+      proto._lvlExpandFill = function(...args) { return _lvlExpandFill.apply(this, args); };
+      proto._lvlExplodeFill = function(...args) { return _lvlExplodeFill.apply(this, args); };
     },
   };
 })();

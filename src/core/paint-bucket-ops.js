@@ -598,6 +598,100 @@
     transformLayerFills(layer, { dx, dy, scaleX: 1, scaleY: 1, origin: { x: 0, y: 0 } });
   };
 
+  // Mutates engine: splits a baked fill layer (output of expandFill) into a
+  // group of one-path-per-layer children — e.g. a hatch fill becomes a group
+  // containing one shape layer per hatch line. Inherits pen/color/parent from
+  // the source layer so the exploded children render identically to the source.
+  //
+  // Engine.layers layout after explode (the slot the source layer occupied):
+  //   [..., group, path1, path2, ..., pathN, ...]
+  //
+  // Returns { groupId, childIds } on success, null otherwise.
+  // Callers wrap with app.pushHistory().
+  const explodeFillLayer = (engine, layer) => {
+    if (!engine || !layer) return null;
+    if (layer.isGroup) return null;
+    const paths = Array.isArray(layer.paths) ? layer.paths : [];
+    if (paths.length < 1) return null;
+    const Layer = Vectura.Layer;
+    if (!Layer) return null;
+
+    const originalIndex = engine.layers.indexOf(layer);
+    if (originalIndex < 0) return null;
+
+    const children = paths.map((path, i) => {
+      const child = new Layer(nextLayerId(engine), 'shape', `${layer.name} — ${i + 1}`);
+      child.type = 'shape';
+      child.isGroup = false;
+      child.containerRole = null;
+      child.groupType = null;
+      child.penId = layer.penId;
+      child.color = layer.color;
+      child.strokeWidth = layer.strokeWidth;
+      child.lineCap = layer.lineCap || 'round';
+      const cloned = path.map((pt) => ({ x: pt.x, y: pt.y }));
+      cloned.meta = {
+        ...(path.meta || {}),
+        source: 'paintfill-exploded',
+        explodedFromLayerId: layer.id,
+        explodedIndex: i,
+      };
+      child.paths = [cloned];
+      child.displayPaths = [cloned];
+      child.effectivePaths = [cloned];
+      child.sourcePaths = [cloned];
+      return child;
+    });
+
+    const group = new Layer(nextLayerId(engine), 'shape', `${layer.name} (exploded)`);
+    group.type = 'shape';
+    group.isGroup = true;
+    group.containerRole = null;
+    group.groupType = 'paintfill-exploded';
+    group.groupCollapsed = false;
+    group.params = { seed: 0, posX: 0, posY: 0, scaleX: 1, scaleY: 1, rotation: 0 };
+    group.paramStates = {};
+    group.sourcePaths = null;
+    group.paths = [];
+    group.displayPaths = [];
+    group.effectivePaths = [];
+    group.parentId = layer.parentId ?? null;
+    group.penId = layer.penId;
+    group.color = layer.color;
+    group.strokeWidth = layer.strokeWidth;
+    group.lineCap = layer.lineCap;
+    // Move modifiers onto the group so transforms apply to all path-children
+    // as a unit (mirrors the expandFill convention).
+    if (layer.modifier) {
+      group.modifier = layer.modifier;
+      layer.modifier = null;
+    }
+    // Tag for serialization / future "re-bake" support.
+    if (layer.sourceFillRecord) {
+      group.sourceFillRecord = JSON.parse(JSON.stringify(layer.sourceFillRecord));
+    }
+
+    children.forEach((c) => { c.parentId = group.id; });
+
+    // Replace the source layer's slot with [group, ...children]. The source
+    // layer is discarded — its geometry now lives entirely in the children.
+    engine.layers.splice(originalIndex, 1, group, ...children);
+
+    if (typeof engine.setActiveLayerId === 'function') {
+      engine.setActiveLayerId(group.id);
+    } else {
+      engine.activeLayerId = group.id;
+    }
+    if (typeof engine.computeAllDisplayGeometry === 'function') {
+      engine.computeAllDisplayGeometry();
+    }
+
+    return {
+      groupId: group.id,
+      childIds: children.map((c) => c.id),
+    };
+  };
+
   Vectura.PaintBucketOps = {
     findFillTargetStack,
     findFillAtPoint,
@@ -606,6 +700,7 @@
     buildFillRecord,
     generateGeometryForLayer,
     expandFill,
+    explodeFillLayer,
     transformLayerFills,
     translateLayerFills,
   };
