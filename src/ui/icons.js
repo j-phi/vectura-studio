@@ -210,10 +210,21 @@
       'M11.5 10 H17.5 A1.5 1.5 0 0 1 19 11.5 V17.5 A1.5 1.5 0 0 1 17.5 19 H11.5 A1.5 1.5 0 0 1 10 17.5 V11.5 A1.5 1.5 0 0 1 11.5 10 Z' +
       `" ${PF_FILL}/>`
     ),
-    divide:     () => pfSvg(PF_BACK_RECT + PF_FRONT_RECT + '<line x1="10" y1="10" x2="14" y2="10"/><line x1="10" y1="10" x2="10" y2="14"/>'),
-    trim:       () => pfSvg(`<path d="${PF_BACK_MINUS_OVERLAP}"/>` + PF_FRONT_RECT),
-    merge:      () => pfSvg(`<path d="${PF_UNION}"/>`),
-    crop:       () => pfSvg(`<rect x="10" y="10" width="4" height="4" ${PF_FILL} stroke="none"/>` + PF_FRONT_RECT),
+    divide:     () => pfSvg(
+      `<path d="${PF_BACK_MINUS_OVERLAP}" fill="currentColor" fill-opacity="0.5" stroke="none"/>` +
+      `<rect x="10" y="10" width="4" height="4" fill="currentColor" fill-opacity="0.5" stroke="none"/>` +
+      `<path d="${PF_FRONT_MINUS_OVERLAP}" fill="currentColor" fill-opacity="0.5" stroke="none"/>` +
+      PF_BACK_RECT + PF_FRONT_RECT
+    ),
+    trim:       () => pfSvg(
+      `<path d="${PF_BACK_MINUS_OVERLAP}" fill="currentColor" fill-opacity="0.35"/>` +
+      `<rect x="10" y="10" width="9" height="9" rx="1.5" fill="currentColor" fill-opacity="0.65"/>`
+    ),
+    merge:      () => pfSvg(
+      `<path d="${PF_BACK_MINUS_OVERLAP}" fill="currentColor" fill-opacity="0.55"/>` +
+      `<rect x="10" y="10" width="9" height="9" rx="1.5" fill="currentColor" fill-opacity="0.55"/>`
+    ),
+    crop:       () => pfSvg(PF_BACK_RECT + `<rect x="10" y="10" width="4" height="4" ${PF_FILL} stroke="none"/>` + PF_FRONT_RECT),
     outline:    () => pfSvg(PF_BACK_RECT + PF_FRONT_RECT + '<circle cx="14" cy="10" r="0.9" fill="currentColor" stroke="none"/><circle cx="10" cy="14" r="0.9" fill="currentColor" stroke="none"/>'),
     minusBack:  () => pfSvg(PF_BACK_RECT + `<path d="${PF_FRONT_MINUS_OVERLAP}" ${PF_FILL}/>`),
   };
