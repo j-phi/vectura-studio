@@ -437,7 +437,7 @@
       layer.groupParams = source.groupParams ? JSON.parse(JSON.stringify(source.groupParams)) : null;
       layer.groupCollapsed = source.groupCollapsed;
       layer.sourcePaths =
-        usesManualSourceGeometry(source) && source.sourcePaths ? JSON.parse(JSON.stringify(source.sourcePaths)) : null;
+        usesManualSourceGeometry(source) && source.sourcePaths ? clonePaths(source.sourcePaths) : null;
       layer.modifier = source.modifier ? JSON.parse(JSON.stringify(source.modifier)) : null;
       layer.penId = source.penId;
       layer.color = source.color;

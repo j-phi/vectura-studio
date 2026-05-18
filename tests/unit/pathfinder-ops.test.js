@@ -917,6 +917,55 @@ describe('PathfinderOps.applyPathfinder — Outline', () => {
       c.paths.forEach((p) => expect(p.meta.closed).toBe(false));
     });
   });
+
+  // Regression: two overlapping ovals in a Venn arrangement should split into
+  // exactly 4 arcs (2 per oval). Polyline-approximated circles can produce
+  // spurious extra near-coincident crossings (vertex-on-edge or chord-weave)
+  // near each real intersection. The splitter must dedupe those so each ring
+  // is split at exactly 2 points.
+  test('6. two overlapping ovals (Venn) → exactly 4 arcs (no slivers)', () => {
+    const ELLIPSE_KAPPA = 0.5522847498;
+    const cubicAt = (p0, c1, c2, p1, t) => {
+      const omt = 1 - t;
+      return {
+        x: omt * omt * omt * p0.x + 3 * omt * omt * t * c1.x + 3 * omt * t * t * c2.x + t * t * t * p1.x,
+        y: omt * omt * omt * p0.y + 3 * omt * omt * t * c1.y + 3 * omt * t * t * c2.y + t * t * t * p1.y,
+      };
+    };
+    // Sample an oval the same way the engine does: 4 cubic-bezier quadrants
+    // produced via buildPolylineFromAnchors → ~35 samples per quarter for r=100.
+    const ovalPolyline = (id, cx, cy, r, steps = 35) => {
+      const ox = r * ELLIPSE_KAPPA;
+      const oy = r * ELLIPSE_KAPPA;
+      const anchors = [
+        { x: cx,     y: cy - r, in:  { x: cx - ox, y: cy - r }, out: { x: cx + ox, y: cy - r } },
+        { x: cx + r, y: cy,     in:  { x: cx + r,  y: cy - oy }, out: { x: cx + r,  y: cy + oy } },
+        { x: cx,     y: cy + r, in:  { x: cx + ox, y: cy + r }, out: { x: cx - ox, y: cy + r } },
+        { x: cx - r, y: cy,     in:  { x: cx - r,  y: cy + oy }, out: { x: cx - r,  y: cy - oy } },
+      ];
+      const pts = [];
+      for (let i = 0; i < 4; i += 1) {
+        const a = anchors[i];
+        const b = anchors[(i + 1) % 4];
+        for (let s = 0; s < steps; s += 1) {
+          pts.push(cubicAt(a, a.out, b.in, b, s / steps));
+        }
+      }
+      pts.push({ x: pts[0].x, y: pts[0].y });
+      const layer = new Layer(id, 'oval', `oval-${id}`);
+      pts.meta = { kind: 'circle', cx, cy, rx: r, ry: r, r };
+      layer.paths = [pts];
+      layer.displayPaths = [pts];
+      return layer;
+    };
+    const A = ovalPolyline('A', -50, 0, 100);
+    const B = ovalPolyline('B', 50, 0, 100);
+    const engine = fakeEngine(A, B);
+    const out = PO.applyPathfinder(engine, [A, B], 'outline', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    expect(children).toHaveLength(4);
+  });
 });
 
 describe('PathfinderOps.applyPathfinder — cross-cutting', () => {

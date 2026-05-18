@@ -156,4 +156,36 @@ describe('VectorEngine layer-management methods', () => {
       expect(warnSpy).toHaveBeenCalled();
     });
   });
+
+  describe('duplicateLayer (shape source path meta)', () => {
+    // Regression: shape paths carry `meta` (kind/closed/anchors/shape) as a
+    // non-enumerable-friendly property attached to the array — `JSON.stringify`
+    // drops it. If duplicateLayer round-trips sourcePaths through JSON, the
+    // copy loses its `closed` flag and downstream pathfinder ops (Outline)
+    // treat it as an open polyline, producing extra arcs.
+    test('preserves path.meta (closed/anchors/shape) on shape duplicates', () => {
+      const { VectorEngine } = runtime.window.Vectura;
+      const engine = new VectorEngine();
+      const anchors = [
+        { x: 0, y: -10, in: { x: -5, y: -10 }, out: { x: 5, y: -10 } },
+        { x: 10, y: 0, in: { x: 10, y: -5 }, out: { x: 10, y: 5 } },
+        { x: 0, y: 10, in: { x: 5, y: 10 }, out: { x: 5, y: 10 } },
+        { x: -10, y: 0, in: { x: -10, y: 5 }, out: { x: -10, y: -5 } },
+      ];
+      const path = [
+        { x: 0, y: -10 }, { x: 10, y: 0 }, { x: 0, y: 10 }, { x: -10, y: 0 }, { x: 0, y: -10 },
+      ];
+      path.meta = { kind: 'shape', closed: true, anchors, shape: { type: 'oval', cx: 0, cy: 0, rx: 10, ry: 10 } };
+      const id = engine.addShapeLayer('Oval', [path]);
+      engine.duplicateLayer(id);
+      const dup = engine.layers.find((l) => l.id !== id);
+      expect(dup).toBeTruthy();
+      const dupSource = dup.sourcePaths?.[0];
+      expect(dupSource?.meta?.closed).toBe(true);
+      expect(dupSource?.meta?.kind).toBe('shape');
+      expect(dupSource?.meta?.shape?.type).toBe('oval');
+      expect(Array.isArray(dupSource?.meta?.anchors)).toBe(true);
+      expect(dupSource.meta.anchors.length).toBe(4);
+    });
+  });
 });
