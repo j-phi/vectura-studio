@@ -1082,18 +1082,12 @@
     const yStart = Math.ceil((bounds.minY - yPhase) / density) * density + yPhase;
     const result = [];
     for (let cy = yStart; cy <= bounds.maxY + 1e-6; cy += density) {
-      let seg = null;
+      const rawPts = [];
       for (let x = bounds.minX; x <= bounds.maxX + stepX; x += stepX) {
-        if (compositeContainsPoint(rotRegions, x, cy)) {
-          if (!seg) seg = [];
-          const wy = cy + amp * Math.sin(((x + rotShiftX) / wavelength) * Math.PI * 2);
-          seg.push(unrotatePt({ x, y: wy }));
-        } else if (seg) {
-          if (seg.length >= 2) result.push(seg);
-          seg = null;
-        }
+        const xc = Math.min(x, bounds.maxX);
+        rawPts.push(unrotatePt({ x: xc, y: cy + amp * Math.sin(((xc + rotShiftX) / wavelength) * Math.PI * 2) }));
       }
-      if (seg && seg.length >= 2) result.push(seg);
+      for (const seg of clipPolylineToComposite(rawPts, regions)) result.push(seg);
     }
     return result;
   };
@@ -1113,20 +1107,13 @@
     const yStart = Math.ceil((bounds.minY - yPhase) / density) * density + yPhase;
     const result = [];
     for (let cy = yStart; cy <= bounds.maxY + 1e-6; cy += density) {
-      let seg = null;
       let flip = (((Math.floor(-rotShiftX / halfPeriod) % 2) + 2) % 2) !== 0;
+      const rawPts = [];
       for (let x = bounds.minX; x <= bounds.maxX + halfPeriod; x += halfPeriod) {
-        if (compositeContainsPoint(rotRegions, x, cy)) {
-          if (!seg) seg = [];
-          const wy = cy + (flip ? amp : -amp);
-          seg.push(unrotatePt({ x, y: wy }));
-        } else if (seg) {
-          if (seg.length >= 2) result.push(seg);
-          seg = null;
-        }
+        rawPts.push(unrotatePt({ x: Math.min(x, bounds.maxX), y: cy + (flip ? amp : -amp) }));
         flip = !flip;
       }
-      if (seg && seg.length >= 2) result.push(seg);
+      for (const seg of clipPolylineToComposite(rawPts, regions)) result.push(seg);
     }
     return result;
   };
@@ -1171,23 +1158,13 @@
     const totalSteps = Math.min(50000, Math.ceil(maxAngle / 0.05));
     const stepAngle = maxAngle / totalSteps;
     const angleOffset = angleDeg * Math.PI / 180;
-    const result = [];
-    let seg = null;
+    const spiralPts = [];
     for (let i = 0; i <= totalSteps; i++) {
       const spiralAngle = i * stepAngle;
       const r = (spiralAngle / (2 * Math.PI)) * density;
-      const x = cx + Math.cos(spiralAngle + angleOffset) * r;
-      const y = cy + Math.sin(spiralAngle + angleOffset) * r;
-      if (compositeContainsPoint(regions, x, y)) {
-        if (!seg) seg = [];
-        seg.push({ x, y });
-      } else {
-        if (seg && seg.length >= 2) result.push(seg);
-        seg = null;
-      }
+      spiralPts.push({ x: cx + Math.cos(spiralAngle + angleOffset) * r, y: cy + Math.sin(spiralAngle + angleOffset) * r });
     }
-    if (seg && seg.length >= 2) result.push(seg);
-    return result;
+    return clipPolylineToComposite(spiralPts, regions);
   };
 
   const radialFillComposite = (regions, density, angleDeg = 0, shiftX = 0, shiftY = 0, centralDensity = 1.0, outerDiameter = 1.0) => {
@@ -1198,24 +1175,14 @@
       (bounds.maxX - bounds.minX) ** 2 + (bounds.maxY - bounds.minY) ** 2
     ) + density) * Math.max(0, outerDiameter);
     const spokeCount = Math.max(8, Math.round(2 * Math.PI * (maxR / 2) / density * centralDensity));
-    const stepR = Math.max(0.5, density * 0.3);
     const angleOffset = angleDeg * Math.PI / 180;
     const result = [];
     for (let i = 0; i < spokeCount; i++) {
       const angle = (i / spokeCount) * 2 * Math.PI + angleOffset;
       const cosA = Math.cos(angle), sinA = Math.sin(angle);
-      let seg = null;
-      for (let r = 0; r <= maxR; r += stepR) {
-        const x = cx + cosA * r, y2 = cy + sinA * r;
-        if (compositeContainsPoint(regions, x, y2)) {
-          if (!seg) seg = [];
-          seg.push({ x, y: y2 });
-        } else {
-          if (seg && seg.length >= 2) result.push(seg);
-          seg = null;
-        }
-      }
-      if (seg && seg.length >= 2) result.push(seg);
+      const p0 = { x: cx, y: cy };
+      const p1 = { x: cx + cosA * maxR, y: cy + sinA * maxR };
+      for (const [a, b] of clipSegmentToComposite(p0, p1, regions)) result.push([a, b]);
     }
     return result;
   };
@@ -1885,13 +1852,14 @@
     return result;
   };
 
-  // Sinusoidal wave scan lines clipped by point-in-polygon
+  // Sinusoidal wave scan lines clipped exactly to the polygon boundary.
+  // The full wave is generated across the bounding box and then clipped so that
+  // wave peaks/troughs that poke outside a curved region are cut at the precise edge.
   const waveLines = (poly, density, angleDeg = 0, amplitude = 1.0, shiftX = 0, shiftY = 0) => {
     const ar = angleDeg * Math.PI / 180;
     const ca = Math.cos(ar), sa = Math.sin(ar);
-    const rotatePt = ar !== 0 ? (p) => ({ x: p.x * ca + p.y * sa, y: -p.x * sa + p.y * ca }) : (p) => p;
     const unrotatePt = ar !== 0 ? (p) => ({ x: p.x * ca - p.y * sa, y: p.x * sa + p.y * ca }) : (p) => p;
-    const rotPoly = ar !== 0 ? poly.map(rotatePt) : poly;
+    const rotPoly = ar !== 0 ? poly.map(p => ({ x: p.x * ca + p.y * sa, y: -p.x * sa + p.y * ca })) : poly;
     const ys = rotPoly.map(p => p.y), xs = rotPoly.map(p => p.x);
     const minY = Math.min(...ys), maxY = Math.max(...ys);
     const minX = Math.min(...xs), maxX = Math.max(...xs);
@@ -1904,29 +1872,24 @@
     const yStart = Math.ceil((minY - yPhase) / density) * density + yPhase;
     const result = [];
     for (let cy = yStart; cy <= maxY + 1e-6; cy += density) {
-      let seg = null;
+      const rawPts = [];
       for (let x = minX; x <= maxX + stepX; x += stepX) {
-        if (polyContainsPoint(rotPoly, x, cy)) {
-          if (!seg) seg = [];
-          const wy = cy + amp * Math.sin(((x + rotShiftX) / wavelength) * Math.PI * 2);
-          seg.push(unrotatePt({ x, y: wy }));
-        } else {
-          if (seg && seg.length >= 2) result.push(seg);
-          seg = null;
-        }
+        const xc = Math.min(x, maxX);
+        rawPts.push(unrotatePt({ x: xc, y: cy + amp * Math.sin(((xc + rotShiftX) / wavelength) * Math.PI * 2) }));
       }
-      if (seg && seg.length >= 2) result.push(seg);
+      for (const seg of clipPolylineToPoly(rawPts, poly)) result.push(seg);
     }
     return result;
   };
 
-  // Triangle-wave (zigzag) scan lines clipped by point-in-polygon
+  // Triangle-wave (zigzag) scan lines clipped exactly to the polygon boundary.
+  // The full zigzag is generated across the bounding box and then clipped so that
+  // peaks/troughs that poke outside a curved region are cut at the precise edge.
   const zigzagLines = (poly, density, angleDeg = 0, amplitude = 1.0, shiftX = 0, shiftY = 0) => {
     const ar = angleDeg * Math.PI / 180;
     const ca = Math.cos(ar), sa = Math.sin(ar);
-    const rotatePt = ar !== 0 ? (p) => ({ x: p.x * ca + p.y * sa, y: -p.x * sa + p.y * ca }) : (p) => p;
     const unrotatePt = ar !== 0 ? (p) => ({ x: p.x * ca - p.y * sa, y: p.x * sa + p.y * ca }) : (p) => p;
-    const rotPoly = ar !== 0 ? poly.map(rotatePt) : poly;
+    const rotPoly = ar !== 0 ? poly.map(p => ({ x: p.x * ca + p.y * sa, y: -p.x * sa + p.y * ca })) : poly;
     const ys = rotPoly.map(p => p.y), xs = rotPoly.map(p => p.x);
     const minY = Math.min(...ys), maxY = Math.max(...ys);
     const minX = Math.min(...xs), maxX = Math.max(...xs);
@@ -1938,20 +1901,13 @@
     const yStart = Math.ceil((minY - yPhase) / density) * density + yPhase;
     const result = [];
     for (let cy = yStart; cy <= maxY + 1e-6; cy += density) {
-      let seg = null;
       let flip = (((Math.floor(-rotShiftX / halfPeriod) % 2) + 2) % 2) !== 0;
+      const rawPts = [];
       for (let x = minX; x <= maxX + halfPeriod; x += halfPeriod) {
-        if (polyContainsPoint(rotPoly, x, cy)) {
-          if (!seg) seg = [];
-          const wy = cy + (flip ? amp : -amp);
-          seg.push(unrotatePt({ x, y: wy }));
-        } else {
-          if (seg && seg.length >= 2) result.push(seg);
-          seg = null;
-        }
+        rawPts.push(unrotatePt({ x: Math.min(x, maxX), y: cy + (flip ? amp : -amp) }));
         flip = !flip;
       }
-      if (seg && seg.length >= 2) result.push(seg);
+      for (const seg of clipPolylineToPoly(rawPts, poly)) result.push(seg);
     }
     return result;
   };
@@ -2112,23 +2068,13 @@
     const totalSteps = Math.min(50000, Math.ceil(maxAngle / 0.05));
     const stepAngle = maxAngle / totalSteps;
     const angleOffset = angleDeg * Math.PI / 180;
-    const result = [];
-    let seg = null;
+    const spiralPts = [];
     for (let i = 0; i <= totalSteps; i++) {
       const spiralAngle = i * stepAngle;
       const r = (spiralAngle / (2 * Math.PI)) * density;
-      const x = cx + Math.cos(spiralAngle + angleOffset) * r;
-      const y = cy + Math.sin(spiralAngle + angleOffset) * r;
-      if (polyContainsPoint(region, x, y)) {
-        if (!seg) seg = [];
-        seg.push({ x, y });
-      } else {
-        if (seg && seg.length >= 2) result.push(seg);
-        seg = null;
-      }
+      spiralPts.push({ x: cx + Math.cos(spiralAngle + angleOffset) * r, y: cy + Math.sin(spiralAngle + angleOffset) * r });
     }
-    if (seg && seg.length >= 2) result.push(seg);
-    return result;
+    return clipPolylineToPoly(spiralPts, region);
   };
 
   const radialFill = (region, density, angleDeg = 0, shiftX = 0, shiftY = 0, centralDensity = 1.0, outerDiameter = 1.0) => {
@@ -2139,24 +2085,14 @@
       (bounds.maxX - bounds.minX) ** 2 + (bounds.maxY - bounds.minY) ** 2
     ) + density) * Math.max(0, outerDiameter);
     const spokeCount = Math.max(8, Math.round(2 * Math.PI * (maxR / 2) / density * centralDensity));
-    const stepR = Math.max(0.5, density * 0.3);
     const angleOffset = angleDeg * Math.PI / 180;
     const result = [];
     for (let i = 0; i < spokeCount; i++) {
       const angle = (i / spokeCount) * 2 * Math.PI + angleOffset;
       const cosA = Math.cos(angle), sinA = Math.sin(angle);
-      let seg = null;
-      for (let r = 0; r <= maxR; r += stepR) {
-        const x = cx + cosA * r, y = cy + sinA * r;
-        if (polyContainsPoint(region, x, y)) {
-          if (!seg) seg = [];
-          seg.push({ x, y });
-        } else {
-          if (seg && seg.length >= 2) result.push(seg);
-          seg = null;
-        }
-      }
-      if (seg && seg.length >= 2) result.push(seg);
+      const p0 = { x: cx, y: cy };
+      const p1 = { x: cx + cosA * maxR, y: cy + sinA * maxR };
+      for (const [a, b] of clipSegmentToPoly(p0, p1, region)) result.push([a, b]);
     }
     return result;
   };
@@ -2278,6 +2214,65 @@
         out.push([{ x: p0.x + t0 * dx, y: p0.y + t0 * dy }, { x: p0.x + t1 * dx, y: p0.y + t1 * dy }]);
     }
     return out;
+  };
+
+  // Clip a polyline (array of {x,y}) to a polygon, returning clipped sub-polylines.
+  // Endpoints land exactly on the polygon boundary — wave/zigzag peaks that poke
+  // outside a curved region are clipped at the precise edge intersection.
+  const clipPolylineToPoly = (pts, poly) => {
+    if (pts.length < 2) return [];
+    const result = [];
+    let seg = null;
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const clipped = clipSegmentToPoly(pts[i], pts[i + 1], poly);
+      if (clipped.length === 0) {
+        if (seg && seg.length >= 2) { result.push(seg); seg = null; }
+        continue;
+      }
+      for (const [a, b] of clipped) {
+        if (!seg) {
+          seg = [a, b];
+        } else {
+          const last = seg[seg.length - 1];
+          if (Math.hypot(a.x - last.x, a.y - last.y) > 1e-4) {
+            if (seg.length >= 2) result.push(seg);
+            seg = [a, b];
+          } else {
+            seg.push(b);
+          }
+        }
+      }
+    }
+    if (seg && seg.length >= 2) result.push(seg);
+    return result;
+  };
+
+  const clipPolylineToComposite = (pts, regions) => {
+    if (pts.length < 2) return [];
+    const result = [];
+    let seg = null;
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const clipped = clipSegmentToComposite(pts[i], pts[i + 1], regions);
+      if (clipped.length === 0) {
+        if (seg && seg.length >= 2) { result.push(seg); seg = null; }
+        continue;
+      }
+      for (const [a, b] of clipped) {
+        if (!seg) {
+          seg = [a, b];
+        } else {
+          const last = seg[seg.length - 1];
+          if (Math.hypot(a.x - last.x, a.y - last.y) > 1e-4) {
+            if (seg.length >= 2) result.push(seg);
+            seg = [a, b];
+          } else {
+            seg.push(b);
+          }
+        }
+      }
+    }
+    if (seg && seg.length >= 2) result.push(seg);
+    return result;
   };
 
   // Generate tessellating polygon cell edges, clipped via clipFn.
