@@ -213,7 +213,7 @@
         <div class="paint-bucket-row paint-bucket-row-angle" data-ctrl="${ctrl.id}"${hiddenAttr}>
           <label class="paint-bucket-label">${ctrl.label}</label>
           <div class="angle-control" data-pb-angle="${ctrl.id}">
-            <div class="angle-dial" style="--angle:${display}deg;">
+            <div class="angle-dial" style="--angle:${(display + 90) % 360}deg;">
               <div class="angle-indicator"></div>
             </div>
           </div>
@@ -306,7 +306,7 @@
     const setAngle = (deg, commit) => {
       const v = wrap(deg);
       state.fillParams[ctrl.id] = v;
-      dial.style.setProperty('--angle', `${v}deg`);
+      dial.style.setProperty('--angle', `${(v + 90) % 360}deg`);
       if (chip) chip.value = `${Math.round(v)}°`;
       if (commit) persistAndRedraw(state);
     };
@@ -316,7 +316,7 @@
       const cy = rect.top + rect.height / 2;
       const dx = e.clientX - cx;
       const dy = e.clientY - cy;
-      const deg = Math.atan2(dy, dx) * 180 / Math.PI + 90;
+      const deg = Math.atan2(dy, dx) * 180 / Math.PI;
       setAngle(deg, false);
     };
     dial.addEventListener('mousedown', (e) => {
