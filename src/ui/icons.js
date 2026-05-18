@@ -128,7 +128,27 @@
     filled: () => `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" fill="#000000" stroke="#ffffff" stroke-width="1.75" stroke-linejoin="round" stroke-linecap="round"/></svg>`,
     outline: () => `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" fill="#ffffff" stroke="#000000" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></svg>`,
     pen: () => `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22"><path d="M2.2 19.8L4.5 18l11-11-2.3-2.3-11 11z" fill="#ffffff" stroke="#000000" stroke-width="1.3" stroke-linejoin="round"/><path d="M13.2 4.7L17 8.5" stroke="#000000" stroke-width="1.3" stroke-linecap="round"/><path d="M2.2 19.8l1.6-.6.7-1.7-1.5-1.5-1.7.7z" fill="#000000"/></svg>`,
-    bucket: () => `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28"><path d="M5 14L13 6L24 16L16 24Z" fill="#ffffff" stroke="#000000" stroke-width="1.5" stroke-linejoin="round"/><path d="M5 14C2.5 11 4 7 7 6.5" fill="none" stroke="#000000" stroke-width="1.3" stroke-linecap="round"/><path d="M21 18L23.5 23.5" stroke="#3b82f6" stroke-width="2.2" stroke-linecap="round"/><circle cx="23.5" cy="23.5" r="2.2" fill="#3b82f6" stroke="#000000" stroke-width="1"/></svg>`,
+    // Lucide paint-bucket. Rendered as a white halo beneath a black stroke so
+    // it stays visible on any canvas color. Hotspot at (2, 12) — the lip where
+    // paint spills onto the canvas.
+    bucket: () => {
+      const paths = `<path d="M11 7 6 2"/><path d="M18.992 12H2.041"/><path d="M21.145 18.38A3.34 3.34 0 0 1 20 16.5a3.3 3.3 0 0 1-1.145 1.88c-.575.46-.855 1.02-.855 1.595A2 2 0 0 0 20 22a2 2 0 0 0 2-2.025c0-.58-.285-1.13-.855-1.595"/><path d="m8.5 4.5 2.148-2.148a1.205 1.205 0 0 1 1.704 0l7.296 7.296a1.205 1.205 0 0 1 0 1.704l-7.592 7.592a3.615 3.615 0 0 1-5.112 0l-3.888-3.888a3.615 3.615 0 0 1 0-5.112L5.67 7.33"/>`;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">${paths}</g><g fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</g></svg>`;
+    },
+    // Lucide microscope. Shown while the user holds CMD over the paint
+    // bucket — signals "pick up the pattern under the cursor". Hotspot at
+    // (10, 14) — the slide line directly under the objective lens.
+    microscope: () => {
+      const paths = `<path d="M6 18h8"/><path d="M3 22h18"/><path d="M14 22a7 7 0 1 0 0-14h-1"/><path d="M9 14h2"/><path d="M9 12a2 2 0 0 1-2-2V6h6v4a2 2 0 0 1-2 2Z"/><path d="M12 6V3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3"/>`;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">${paths}</g><g fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</g></svg>`;
+    },
+    // Lucide copy-plus. Shown in Select mode while the user holds Alt —
+    // signals "drag to duplicate this layer". Hotspot at (4, 4) so it
+    // aligns with the regular select arrow's tip.
+    copyPlus: () => {
+      const paths = `<line x1="15" x2="15" y1="12" y2="18"/><line x1="12" x2="18" y1="15" y2="15"/><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>`;
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">${paths}</g><g fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</g></svg>`;
+    },
     // Illustrator-style rotation cursor: a half-circle curve with equilateral
     // triangles at each endpoint. The arc bulges in the direction `angleDeg`
     // (0=east, 90=south in screen coords) which is the direction from the

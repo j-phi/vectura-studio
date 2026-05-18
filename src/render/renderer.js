@@ -476,6 +476,34 @@
         window.addEventListener('mousemove', this._boundMouseMove);
         window.addEventListener('mouseup', this._boundMouseUp);
       }
+
+      // Track Alt/Meta key state at the document level so we can swap the
+      // canvas cursor (e.g. select→copy-plus on Alt, fill→microscope on CMD)
+      // even when the mouse hasn't moved.
+      this._modState = { alt: false, meta: false };
+      this._onModKeyChange = (e) => {
+        const alt = Boolean(e.altKey);
+        const meta = Boolean(e.metaKey || e.ctrlKey);
+        if (alt === this._modState.alt && meta === this._modState.meta) return;
+        this._modState.alt = alt;
+        this._modState.meta = meta;
+        // Reset to the tool-default cursor first, then refine via hover. This
+        // matters when the active branch of updateHoverCursor early-returns
+        // (e.g. fill tool relies on updateCursor to set the bucket).
+        this.updateCursor();
+        if (this._lastPointerEvent && !this.isLayerDrag && !this.isSelecting) {
+          this.updateHoverCursor(this._lastPointerEvent);
+        }
+      };
+      this._onWindowBlur = () => {
+        if (!this._modState.alt && !this._modState.meta) return;
+        this._modState.alt = false;
+        this._modState.meta = false;
+        this.updateCursor();
+      };
+      document.addEventListener('keydown', this._onModKeyChange);
+      document.addEventListener('keyup', this._onModKeyChange);
+      window.addEventListener('blur', this._onWindowBlur);
     }
 
     destroy() {
@@ -487,6 +515,13 @@
       if (this._boundMouseMove) {
         window.removeEventListener('mousemove', this._boundMouseMove);
         window.removeEventListener('mouseup', this._boundMouseUp);
+      }
+      if (this._onModKeyChange) {
+        document.removeEventListener('keydown', this._onModKeyChange);
+        document.removeEventListener('keyup', this._onModKeyChange);
+      }
+      if (this._onWindowBlur) {
+        window.removeEventListener('blur', this._onWindowBlur);
       }
     }
 
@@ -765,6 +800,7 @@
 
     updateCursor() {
       if (!this.canvas) return;
+      if (this._applyModifierCursorOverride()) return;
       if (this.activeTool === 'hand') {
         this.setCanvasCursor(this.isPan ? 'grabbing' : 'grab', 'hand');
         return;
@@ -787,7 +823,7 @@
       }
       if (this.activeTool === 'fill' || this.activeTool === 'fill-erase' ||
           this.activeTool === 'fill-pattern' || this.activeTool === 'fill-pattern-erase') {
-        this.setCanvasCursor(this.cursorDataUrl('bucket', 23, 23, 'crosshair'), 'fill');
+        this.setCanvasCursor(this.cursorDataUrl('bucket', 2, 12, 'crosshair'), 'fill');
         return;
       }
       if (this.activeTool === 'direct') {
@@ -4018,7 +4054,10 @@
         return;
       }
 
-      if (!this.isTouchPointer(e)) this.updateHoverCursor(e);
+      if (!this.isTouchPointer(e)) {
+        this._lastPointerEvent = e;
+        this.updateHoverCursor(e);
+      }
     }
 
     up(e = {}) {
@@ -6178,9 +6217,28 @@
       return 'default';
     }
 
+    // Returns true and applies the cursor if a modifier-key override is active
+    // (Alt over Select → copy-plus, CMD over fill → microscope). Callers should
+    // bail when this returns true.
+    _applyModifierCursorOverride(e = null) {
+      if (!this.canvas) return false;
+      const altHeld = e ? Boolean(e.altKey) : Boolean(this._modState?.alt);
+      const metaHeld = e ? Boolean(e.metaKey || e.ctrlKey) : Boolean(this._modState?.meta);
+      if (altHeld && this.activeTool === 'select' && !this.isLayerDrag && !this.isSelecting) {
+        this.setCanvasCursor(this.cursorDataUrl('copyPlus', 4, 4, 'copy'), 'select-copy');
+        return true;
+      }
+      if (metaHeld && this.activeTool === 'fill' && !this.isLayerDrag) {
+        this.setCanvasCursor(this.cursorDataUrl('microscope', 10, 14, 'crosshair'), 'fill-pickup');
+        return true;
+      }
+      return false;
+    }
+
     updateHoverCursor(e) {
       if (!this.canvas) return;
       const modifiers = this.getModifierState(e);
+      if (this._applyModifierCursorOverride(e)) return;
       if (this.activeTool === 'hand') {
         this.setCanvasCursor(this.isPan ? 'grabbing' : 'grab');
         return;
