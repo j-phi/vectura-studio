@@ -2422,12 +2422,59 @@
   const triaxialLines = (region, density, angleOffset = 0, shiftX = 0, shiftY = 0) =>
     polygonalLines(region, density, angleOffset, shiftX, shiftY, 3);
 
+  // Build a single continuous Archimedean spiral path centered at (cx,cy).
+  // Loop pitch = penWidth (each full revolution adds penWidth to radius), so
+  // when drawn with a stroke of width=penWidth the inner edge of each loop
+  // lays on top of the outer edge of the previous one. After reaching outer
+  // radius R = dotLength/2, the path closes with a full circle at R — the
+  // final loop is fully closed with a touch of overlap on the outer ring.
+  const dotSpiralPath = (cx, cy, dotLength, penWidth, rotationDeg = 0) => {
+    const R = Math.max(0, dotLength) / 2;
+    const pw = Number.isFinite(penWidth) && penWidth > 0 ? penWidth : 0.3;
+    if (R <= 1e-6) return null;
+    const b = pw / (2 * Math.PI);
+    const rotRad = (rotationDeg || 0) * Math.PI / 180;
+    const thetaMax = R / b;
+    const stepAngle = Math.max(0.04, Math.min(0.25, 0.6 / Math.max(R, 0.5)));
+    const pts = [];
+    for (let theta = 0; theta <= thetaMax; theta += stepAngle) {
+      const r = b * theta;
+      const a = theta + rotRad;
+      pts.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
+    }
+    const exitAngle = thetaMax + rotRad;
+    pts.push({ x: cx + R * Math.cos(exitAngle), y: cy + R * Math.sin(exitAngle) });
+    const circleSteps = Math.max(36, Math.ceil(2 * Math.PI / stepAngle));
+    for (let i = 1; i <= circleSteps; i++) {
+      const a = exitAngle + (i / circleSteps) * 2 * Math.PI;
+      pts.push({ x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) });
+    }
+    return pts;
+  };
+
+  // Replace each tiny dot segment from stippleDots/gridDots with a spiral
+  // expansion when dotLength > 0; otherwise pass through unchanged.
+  const expandDotsToSpirals = (segments, dotLength, penWidth, rotationDeg) => {
+    if (!Number.isFinite(dotLength) || dotLength <= 0) return segments;
+    const result = [];
+    for (const seg of segments) {
+      if (!Array.isArray(seg) || seg.length < 2) continue;
+      const a = seg[0], b = seg[seg.length - 1];
+      const cx = (a.x + b.x) / 2;
+      const cy = (a.y + b.y) / 2;
+      const path = dotSpiralPath(cx, cy, dotLength, penWidth, rotationDeg);
+      if (path) result.push(path);
+    }
+    return result;
+  };
+
   // Dispatch to the right fill type → array of paths in tile-local SVG coords
   const generatePatternFillPaths = (fill) => {
     const regions = getFillRegions(fill);
     const {
       fillType = 'hatch', density = 5,
       angle = 0, amplitude = 1.0, dotSize = 1.0,
+      dotLength = 0, dotRotation = 0, penWidth = 0.3,
       padding = 0, shiftX = 0, shiftY = 0,
       dotPattern = 'brick', centralDensity = 1.0, outerDiameter = 1.0, axes = 3, polyTile = 'grid',
     } = fill;
@@ -2447,11 +2494,11 @@
         case 'xcrosshatch': return [...hatchLines(region, density, 45 + angle, shiftX, shiftY), ...hatchLines(region, density, 135 + angle, shiftX, shiftY)];
         case 'wavelines':   return waveLines(region, density, angle, amplitude, shiftX, shiftY);
         case 'zigzag':      return zigzagLines(region, density, angle, amplitude, shiftX, shiftY);
-        case 'stipple':     return stippleDots(region, density, dotSize, shiftX, shiftY, angle, dotPattern);
+        case 'stipple':     return expandDotsToSpirals(stippleDots(region, density, dotSize, shiftX, shiftY, angle, dotPattern), dotLength, penWidth, dotRotation);
         case 'contour':     return contourLines(region, density);
         case 'spiral':      return spiralFill(region, density, angle, shiftX, shiftY);
         case 'radial':      return radialFill(region, density, angle, shiftX, shiftY, centralDensity, outerDiameter);
-        case 'grid':        return gridDots(region, density, angle, dotSize, shiftX, shiftY);
+        case 'grid':        return expandDotsToSpirals(gridDots(region, density, angle, dotSize, shiftX, shiftY), dotLength, penWidth, dotRotation);
         case 'meander':     return meanderLines(region, density, angle, shiftX, shiftY);
         case 'polygonal':   return polygonalLines(region, density, angle, shiftX, shiftY, axes, polyTile);
         case 'triaxial':    return triaxialLines(region, density, angle, shiftX, shiftY);
@@ -2467,11 +2514,11 @@
       case 'xcrosshatch': return [...hatchLinesComposite(effectiveRegions, density, 45 + angle, shiftX, shiftY), ...hatchLinesComposite(effectiveRegions, density, 135 + angle, shiftX, shiftY)];
       case 'wavelines':   return waveLinesComposite(effectiveRegions, density, angle, amplitude, shiftX, shiftY);
       case 'zigzag':      return zigzagLinesComposite(effectiveRegions, density, angle, amplitude, shiftX, shiftY);
-      case 'stipple':     return stippleDotsComposite(effectiveRegions, density, dotSize, shiftX, shiftY, angle, dotPattern);
+      case 'stipple':     return expandDotsToSpirals(stippleDotsComposite(effectiveRegions, density, dotSize, shiftX, shiftY, angle, dotPattern), dotLength, penWidth, dotRotation);
       case 'contour':     return contourLinesComposite(effectiveRegions, density);
       case 'spiral':      return spiralFillComposite(effectiveRegions, density, angle, shiftX, shiftY);
       case 'radial':      return radialFillComposite(effectiveRegions, density, angle, shiftX, shiftY, centralDensity, outerDiameter);
-      case 'grid':        return gridDotsComposite(effectiveRegions, density, angle, dotSize, shiftX, shiftY);
+      case 'grid':        return expandDotsToSpirals(gridDotsComposite(effectiveRegions, density, angle, dotSize, shiftX, shiftY), dotLength, penWidth, dotRotation);
       case 'meander':     return meanderLinesComposite(effectiveRegions, density, angle, shiftX, shiftY);
       case 'polygonal':   return polygonalLinesComposite(effectiveRegions, density, angle, shiftX, shiftY, axes, polyTile);
       case 'triaxial':    return triaxialLinesComposite(effectiveRegions, density, angle, shiftX, shiftY);

@@ -79,13 +79,13 @@ describe('Renderer paint-bucket: updateLastPaintedFills + hover clear', () => {
       fillMode: 'stipple',
       fillDensity: 9,
       fillAngle: 30,
-      fillDotSize: 1.2,
+      fillDotLength: 2.5,
     });
     expect(changed).toBe(true);
     expect(layer.fills[0].fillType).toBe('stipple');
     expect(layer.fills[0].density).toBe(9);
     expect(layer.fills[0].angle).toBe(30);
-    expect(layer.fills[0].dotSize).toBe(1.2);
+    expect(layer.fills[0].dotLength).toBe(2.5);
     expect(layer.fills[1].fillType).toBe('stipple');
     expect(layer.fills[1].density).toBe(9);
     expect(engine._computed).toBe(1);

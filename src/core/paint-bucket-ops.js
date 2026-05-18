@@ -164,6 +164,13 @@
     density: fillParams.fillDensity ?? 4,
     angle: fillParams.fillAngle ?? 0,
     amplitude: fillParams.fillAmplitude ?? 1.0,
+    // New semantics: dotLength is a physical length in mm (0 = single point,
+    // up to 10mm). The stipple/grid renderers expand each dot into a
+    // continuous spiral when dotLength > 0. dotSize (legacy ratio) is no
+    // longer authored from the bucket panel but kept on fill records for
+    // backward compatibility with older saves.
+    dotLength: fillParams.fillDotLength ?? 0,
+    dotRotation: fillParams.fillDotRotation ?? 0,
     dotSize: fillParams.fillDotSize ?? 0.6,
     padding: fillParams.fillPadding ?? 0,
     shiftX: fillParams.fillShiftX ?? 0,
@@ -225,6 +232,13 @@
     return { mode: 'pour', layerId: targetLayer.id, fillId: record.id, loopId: target.loopId };
   };
 
+  const resolvePenWidth = (penId) => {
+    const pens = Array.isArray(Vectura.SETTINGS?.pens) ? Vectura.SETTINGS.pens : [];
+    const pen = pens.find((p) => p && p.id === penId);
+    const w = Number(pen?.width);
+    return Number.isFinite(w) && w > 0 ? w : 0.3;
+  };
+
   const generateGeometryForLayer = (layer) => {
     if (!layer || !Array.isArray(layer.fills) || !layer.fills.length) return [];
     const gen = Vectura.AlgorithmRegistry?._generatePatternFillPaths;
@@ -240,6 +254,9 @@
         angle: rec.angle,
         amplitude: rec.amplitude,
         dotSize: rec.dotSize,
+        dotLength: rec.dotLength,
+        dotRotation: rec.dotRotation,
+        penWidth: resolvePenWidth(rec.penId),
         padding: rec.padding,
         shiftX: rec.shiftX,
         shiftY: rec.shiftY,

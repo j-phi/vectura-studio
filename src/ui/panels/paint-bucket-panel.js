@@ -8,7 +8,9 @@
  *
  * Mirrors the pattern designer's fill control surface (see
  * src/ui/ui-fill-panel.js) but writes back to its own state bag instead of
- * a layer's params.
+ * a layer's params. Distance-bearing params (dot length, padding, shifts)
+ * are stored canonically in millimetres; the UI converts to/from the active
+ * document unit (mm or in) so values are sensible regardless of doc unit.
  */
 (() => {
   const G = (typeof window !== 'undefined' ? window : globalThis);
@@ -34,10 +36,11 @@
     fillDensity: 4,
     fillAngle: 45,
     fillAmplitude: 1.0,
-    fillDotSize: 0.6,
-    fillPadding: 0,
-    fillShiftX: 0,
-    fillShiftY: 0,
+    fillDotLength: 0,         // mm; 0 = single point, up to 10mm
+    fillDotRotation: 0,       // degrees, orients elongated dot
+    fillPadding: 0,           // mm
+    fillShiftX: 0,            // mm
+    fillShiftY: 0,            // mm
     fillDotPattern: 'brick',
     fillAxes: 3,
     fillPolyTile: 'grid',
@@ -47,23 +50,58 @@
     penId: null,
   };
 
+  // Distance-bearing params persisted in mm; the panel converts to/from
+  // doc units at display time.
+  const DISTANCE_PARAMS = new Set(['fillDotLength', 'fillPadding', 'fillShiftX', 'fillShiftY']);
+
+  const getDocUnits = () => {
+    const UU = Vectura.UnitUtils || {};
+    const settings = Vectura.SETTINGS || {};
+    return UU.normalizeDocumentUnits ? UU.normalizeDocumentUnits(settings.documentUnits) : 'metric';
+  };
+  const getUnitLabel = () => {
+    const UU = Vectura.UnitUtils || {};
+    return UU.getDocumentUnitLabel ? UU.getDocumentUnitLabel(getDocUnits()) : (getDocUnits() === 'imperial' ? 'in' : 'mm');
+  };
+  const mmToDoc = (v) => {
+    const UU = Vectura.UnitUtils || {};
+    if (UU.mmToDocumentUnits) return UU.mmToDocumentUnits(v, getDocUnits());
+    return getDocUnits() === 'imperial' ? Number(v || 0) / 25.4 : Number(v || 0);
+  };
+  const docToMm = (v) => {
+    const UU = Vectura.UnitUtils || {};
+    if (UU.documentUnitsToMm) return UU.documentUnitsToMm(v, getDocUnits());
+    return getDocUnits() === 'imperial' ? Number(v || 0) * 25.4 : Number(v || 0);
+  };
+  const docPrecision = () => (getDocUnits() === 'imperial' ? 3 : 2);
+  const fmtDoc = (mm, digits = docPrecision()) => {
+    const v = mmToDoc(mm);
+    return Number.isFinite(v) ? v.toFixed(digits).replace(/\.?0+$/, '') || '0' : '0';
+  };
+
   // Control schema for the per-variant panel section. The visibility for each
   // entry is gated by Vectura.FillPanel.FILL_CAPS[fillMode]; this lets us
   // render only the controls that apply to the currently selected variant
   // exactly as the pattern designer does.
+  //
+  // Range entries with `distance: true` are interpreted as millimetre values;
+  // their min/max are also in mm and are translated to the active doc unit
+  // for display + input. Angle entries render as div-based dials matching
+  // the rest of the UI (algo-config-panel, noise-rack-panel).
   const VARIANT_CONTROLS = [
-    { id: 'fillDensity',                 label: 'Density',         type: 'range',  min: 1,    max: 50,  step: 0.5,  showAlways: true },
-    { id: 'fillAngle',                   label: 'Angle',           type: 'range',  min: 0,    max: 360, step: 1,    unit: '°', capKey: 'angle' },
-    { id: 'fillAmplitude',               label: 'Amplitude',       type: 'range',  min: 0.1,  max: 3.0, step: 0.05, capKey: 'amplitude' },
-    { id: 'fillDotSize',                 label: 'Dot Size',        type: 'range',  min: 0.1,  max: 3.0, step: 0.05, capKey: 'dotSize' },
-    { id: 'fillPadding',                 label: 'Padding (mm)',    type: 'range',  min: 0,    max: 10,  step: 0.1,  showAlways: true },
-    { id: 'fillShiftX',                  label: 'Shift X',         type: 'range',  min: -50,  max: 50,  step: 0.5,  capKey: 'shift' },
-    { id: 'fillShiftY',                  label: 'Shift Y',         type: 'range',  min: -50,  max: 50,  step: 0.5,  capKey: 'shift' },
-    { id: 'fillDotPattern',              label: 'Dot Pattern',     type: 'select', options: [{ value: 'brick', label: 'Brick' }, { value: 'grid', label: 'Grid' }], capKey: 'dotPattern' },
-    { id: 'fillAxes',                    label: 'Axes',            type: 'range',  min: 2,    max: 12,  step: 1,    capKey: 'axes' },
-    { id: 'fillPolyTile',                label: 'Tile Method',     type: 'select', options: [{ value: 'grid', label: 'Grid' }, { value: 'brick', label: 'Brick' }, { value: 'hexagonal', label: 'Hexagonal' }, { value: 'off', label: 'Off (single)' }], capKey: 'polyTile' },
-    { id: 'fillRadialCentralDensity',    label: 'Central Density', type: 'range',  min: 0.1,  max: 4.0, step: 0.1,  capKey: 'radialCentralDensity' },
-    { id: 'fillRadialOuterDiameter',     label: 'Outer Diameter',  type: 'range',  min: 0.0,  max: 2.0, step: 0.05, capKey: 'radialOuterDiameter' },
+    { id: 'fillDensity',                 label: 'Density',           type: 'range',  min: 1,    max: 50,  step: 0.5,  showAlways: true },
+    { id: 'fillAngle',                   label: 'Angle',             type: 'angle',  capKey: 'angle' },
+    { id: 'fillAmplitude',               label: 'Amplitude',         type: 'range',  min: 0.1,  max: 3.0, step: 0.05, capKey: 'amplitude' },
+    { id: 'fillDotLength',               label: 'Dot Length',        type: 'range',  min: 0,    max: 10,  step: 0.1,  distance: true, capKey: 'dotSize' },
+    { id: 'fillDotRotation',             label: 'Dot Rotation',      type: 'angle',  capKey: 'dotSize', showIfDotLen: true },
+    { id: 'fillPadding',                 label: 'Padding',           type: 'range',  min: 0,    max: 10,  step: 0.1,  distance: true, showAlways: true },
+    { id: 'fillShiftX',                  label: 'Shift X',           type: 'range',  min: -50,  max: 50,  step: 0.5,  distance: true, capKey: 'shift' },
+    { id: 'fillShiftY',                  label: 'Shift Y',           type: 'range',  min: -50,  max: 50,  step: 0.5,  distance: true, capKey: 'shift' },
+    { id: 'fillDotPattern',              label: 'Dot Pattern',       type: 'select', options: [{ value: 'brick', label: 'Brick' }, { value: 'grid', label: 'Grid' }], capKey: 'dotPattern' },
+    { id: 'fillAxes',                    label: 'Axes',              type: 'range',  min: 2,    max: 12,  step: 1,    capKey: 'axes' },
+    { id: 'fillPolyTile',                label: 'Tile Method',       type: 'select', options: [{ value: 'grid', label: 'Grid' }, { value: 'brick', label: 'Brick' }, { value: 'hexagonal', label: 'Hexagonal' }, { value: 'off', label: 'Off (single)' }], capKey: 'polyTile' },
+    { id: 'fillRadialCentralDensity',    label: 'Central Density',   type: 'range',  min: 0.1,  max: 4.0, step: 0.1,  capKey: 'radialCentralDensity' },
+    { id: 'fillRadialOuterDiameter',     label: 'Outer Diameter',    type: 'range',  min: 0.0,  max: 2.0, step: 0.05, capKey: 'radialOuterDiameter' },
   ];
 
   function paintVariantButtons(state, controlsEl, hintEl) {
@@ -129,24 +167,56 @@
       return;
     }
 
+    const dotLenActive = (state.fillParams.fillDotLength ?? 0) > 0;
     const html = VARIANT_CONTROLS
-      .filter((ctrl) => ctrl.showAlways || (ctrl.capKey && caps[ctrl.capKey]))
-      .map((ctrl) => renderControl(ctrl, state.fillParams[ctrl.id]))
+      .filter((ctrl) => {
+        if (ctrl.showAlways) return true;
+        return ctrl.capKey && caps[ctrl.capKey];
+      })
+      .map((ctrl) => {
+        const hidden = ctrl.showIfDotLen && !dotLenActive;
+        return renderControl(ctrl, state.fillParams[ctrl.id], hidden);
+      })
       .join('');
     controlsEl.innerHTML = html;
     bindControls(state, controlsEl);
   }
 
-  function renderControl(ctrl, value) {
+  function renderControl(ctrl, value, hidden = false) {
+    const hiddenAttr = hidden ? ' style="display:none"' : '';
     if (ctrl.type === 'range') {
+      const distance = !!ctrl.distance;
+      const min = distance ? mmToDoc(ctrl.min) : ctrl.min;
+      const max = distance ? mmToDoc(ctrl.max) : ctrl.max;
+      const step = distance
+        ? (getDocUnits() === 'imperial' ? Math.max(0.001, ctrl.step / 25.4) : ctrl.step)
+        : ctrl.step;
       const v = value != null ? value : 0;
+      const displayV = distance ? mmToDoc(v) : v;
+      const displayStr = distance ? fmtDoc(v) : `${displayV}`;
+      const unit = distance ? getUnitLabel() : (ctrl.unit || '');
       return `
-        <div class="paint-bucket-row" data-ctrl="${ctrl.id}">
+        <div class="paint-bucket-row" data-ctrl="${ctrl.id}"${hiddenAttr}>
           <label class="paint-bucket-label" for="pb-${ctrl.id}">${ctrl.label}</label>
           <div class="sld-fx-wrap paint-bucket-slider-wrap">
-            <input id="pb-${ctrl.id}" class="ctrl-slider" type="range" min="${ctrl.min}" max="${ctrl.max}" step="${ctrl.step}" value="${v}">
+            <input id="pb-${ctrl.id}" class="ctrl-slider" type="range" min="${min}" max="${max}" step="${step}" value="${displayV}">
           </div>
-          <input type="text" id="pb-${ctrl.id}-chip" class="slider-val" value="${v}${ctrl.unit || ''}" inputmode="decimal">
+          <input type="text" id="pb-${ctrl.id}-chip" class="slider-val" value="${displayStr}${unit ? unit : ''}" inputmode="decimal">
+        </div>
+      `;
+    }
+    if (ctrl.type === 'angle') {
+      const v = Number.isFinite(value) ? value : 0;
+      const display = ((v % 360) + 360) % 360;
+      return `
+        <div class="paint-bucket-row paint-bucket-row-angle" data-ctrl="${ctrl.id}"${hiddenAttr}>
+          <label class="paint-bucket-label">${ctrl.label}</label>
+          <div class="angle-control" data-pb-angle="${ctrl.id}">
+            <div class="angle-dial" style="--angle:${display}deg;">
+              <div class="angle-indicator"></div>
+            </div>
+          </div>
+          <input type="text" id="pb-${ctrl.id}-chip" class="slider-val" value="${Math.round(display)}°" inputmode="decimal">
         </div>
       `;
     }
@@ -155,7 +225,7 @@
         `<option value="${o.value}"${o.value === value ? ' selected' : ''}>${o.label}</option>`
       ).join('');
       return `
-        <div class="paint-bucket-row" data-ctrl="${ctrl.id}">
+        <div class="paint-bucket-row" data-ctrl="${ctrl.id}"${hiddenAttr}>
           <label class="paint-bucket-label" for="pb-${ctrl.id}">${ctrl.label}</label>
           <select id="pb-${ctrl.id}" class="paint-bucket-select">${opts}</select>
         </div>
@@ -166,36 +236,112 @@
 
   function bindControls(state, controlsEl) {
     VARIANT_CONTROLS.forEach((ctrl) => {
-      const input = controlsEl.querySelector(`#pb-${ctrl.id}`);
-      if (!input) return;
       if (ctrl.type === 'range') {
-        const chip = controlsEl.querySelector(`#pb-${ctrl.id}-chip`);
-        const updateFromInput = () => {
-          const num = Number(input.value);
-          if (!Number.isFinite(num)) return;
-          state.fillParams[ctrl.id] = num;
-          if (chip) chip.value = `${num}${ctrl.unit || ''}`;
-          updateSliderFill(input);
-          persistAndRedraw(state);
-        };
-        input.addEventListener('input', updateFromInput);
-        if (chip) {
-          chip.addEventListener('change', () => {
-            const num = Number(`${chip.value}`.replace(/[^\d.\-]/g, ''));
-            if (!Number.isFinite(num)) return;
-            const clamped = Math.min(ctrl.max, Math.max(ctrl.min, num));
-            input.value = `${clamped}`;
-            updateFromInput();
-          });
-        }
-        updateSliderFill(input);
+        bindRange(state, controlsEl, ctrl);
+      } else if (ctrl.type === 'angle') {
+        bindAngle(state, controlsEl, ctrl);
       } else if (ctrl.type === 'select') {
-        input.addEventListener('change', () => {
-          state.fillParams[ctrl.id] = input.value;
+        const sel = controlsEl.querySelector(`#pb-${ctrl.id}`);
+        if (!sel) return;
+        sel.addEventListener('change', () => {
+          state.fillParams[ctrl.id] = sel.value;
           persistAndRedraw(state);
         });
       }
     });
+  }
+
+  function bindRange(state, controlsEl, ctrl) {
+    const input = controlsEl.querySelector(`#pb-${ctrl.id}`);
+    if (!input) return;
+    const chip = controlsEl.querySelector(`#pb-${ctrl.id}-chip`);
+    const distance = !!ctrl.distance;
+    const unit = distance ? getUnitLabel() : (ctrl.unit || '');
+    const minDisplay = distance ? mmToDoc(ctrl.min) : ctrl.min;
+    const maxDisplay = distance ? mmToDoc(ctrl.max) : ctrl.max;
+    const writeChip = (displayNum) => {
+      if (!chip) return;
+      const txt = distance
+        ? `${Number(displayNum).toFixed(docPrecision()).replace(/\.?0+$/, '') || '0'}${unit}`
+        : `${displayNum}${unit}`;
+      chip.value = txt;
+    };
+    const updateFromInput = () => {
+      const numDisplay = Number(input.value);
+      if (!Number.isFinite(numDisplay)) return;
+      const stored = distance ? docToMm(numDisplay) : numDisplay;
+      state.fillParams[ctrl.id] = stored;
+      writeChip(numDisplay);
+      updateSliderFill(input);
+      persistAndRedraw(state);
+      // Dot length > 0 unhides the dot-rotation row in place (no rerender so
+      // the active drag/listeners stay attached).
+      if (ctrl.id === 'fillDotLength') {
+        const dotRotRow = controlsEl.querySelector('[data-ctrl="fillDotRotation"]');
+        if (dotRotRow) dotRotRow.style.display = stored > 0 ? '' : 'none';
+      }
+    };
+    input.addEventListener('input', updateFromInput);
+    if (chip) {
+      chip.addEventListener('change', () => {
+        const cleaned = `${chip.value}`.replace(/[^\d.\-]/g, '');
+        const num = Number(cleaned);
+        if (!Number.isFinite(num)) return;
+        const clamped = Math.min(maxDisplay, Math.max(minDisplay, num));
+        input.value = `${clamped}`;
+        updateFromInput();
+      });
+    }
+    updateSliderFill(input);
+  }
+
+  function bindAngle(state, controlsEl, ctrl) {
+    const row = controlsEl.querySelector(`[data-pb-angle="${ctrl.id}"]`);
+    if (!row) return;
+    const dial = row.querySelector('.angle-dial');
+    const chip = controlsEl.querySelector(`#pb-${ctrl.id}-chip`);
+    if (!dial) return;
+    const wrap = (deg) => ((deg % 360) + 360) % 360;
+    const setAngle = (deg, commit) => {
+      const v = wrap(deg);
+      state.fillParams[ctrl.id] = v;
+      dial.style.setProperty('--angle', `${v}deg`);
+      if (chip) chip.value = `${Math.round(v)}°`;
+      if (commit) persistAndRedraw(state);
+    };
+    const updateFromEvent = (e) => {
+      const rect = dial.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const dx = e.clientX - cx;
+      const dy = e.clientY - cy;
+      const deg = Math.atan2(dy, dx) * 180 / Math.PI + 90;
+      setAngle(deg, false);
+    };
+    dial.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      updateFromEvent(e);
+      const move = (ev) => updateFromEvent(ev);
+      const up = () => {
+        window.removeEventListener('mousemove', move);
+        const v = Number(state.fillParams[ctrl.id]);
+        setAngle(Number.isFinite(v) ? v : 0, true);
+      };
+      window.addEventListener('mousemove', move);
+      window.addEventListener('mouseup', up, { once: true });
+    });
+    dial.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      setAngle(0, true);
+    });
+    if (chip) {
+      chip.addEventListener('change', () => {
+        const cleaned = `${chip.value}`.replace(/[^\d.\-]/g, '');
+        const num = Number(cleaned);
+        if (!Number.isFinite(num)) return;
+        setAngle(num, true);
+      });
+    }
   }
 
   function updateSliderFill(input) {
@@ -271,12 +417,17 @@
   // fillParams shape. Inverse of buildFillRecord() in paint-bucket-ops.js.
   function fillRecordToParams(rec) {
     if (!rec) return null;
+    // Legacy fill records used `dotSize` as a ratio (0.1–3.0). When loading
+    // those we leave the new `fillDotLength` at 0 (single point) unless the
+    // record carries an explicit `dotLength` field.
+    const legacyDotLen = rec.dotLength != null ? rec.dotLength : 0;
     return {
       fillMode: rec.fillType ?? 'hatch',
       fillDensity: rec.density,
       fillAngle: rec.angle,
       fillAmplitude: rec.amplitude,
-      fillDotSize: rec.dotSize,
+      fillDotLength: legacyDotLen,
+      fillDotRotation: rec.dotRotation ?? 0,
       fillPadding: rec.padding,
       fillShiftX: rec.shiftX,
       fillShiftY: rec.shiftY,
@@ -349,9 +500,16 @@
 
     const SETTINGS = Vectura.SETTINGS || {};
     const persisted = SETTINGS.paintBucket || {};
+    // Migrate legacy `fillDotSize` (ratio) → keep new `fillDotLength` at 0
+    // unless the user had explicitly stored a length value.
+    const merged = { ...DEFAULTS, ...persisted };
+    if (persisted.fillDotLength == null && persisted.fillDotSize != null) {
+      merged.fillDotLength = 0; // reset; legacy ratio is no longer meaningful
+    }
+    delete merged.fillDotSize;
     const state = {
       app,
-      fillParams: { ...DEFAULTS, ...persisted },
+      fillParams: merged,
     };
 
     const controlsEl = document.getElementById('paint-bucket-controls');
@@ -366,6 +524,7 @@
 
     const refresh = () => {
       refreshVariantSelection(state);
+      renderControls(state, controlsEl, hintEl);
     };
 
     app.ui = app.ui || {};

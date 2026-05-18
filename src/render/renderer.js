@@ -2498,10 +2498,6 @@
             }
             this.traceLayerPath(path, l, temp, useCurves);
           });
-          if (l.type === 'compound') {
-            this.ctx.fillStyle = currentStrokeStyle || '#000000';
-            this.ctx.fill('evenodd');
-          }
           this.ctx.stroke();
           if (fadeLayer) { this.ctx.restore(); }
         });
@@ -4936,7 +4932,8 @@
         ['density',        'fillDensity'],
         ['angle',          'fillAngle'],
         ['amplitude',      'fillAmplitude'],
-        ['dotSize',        'fillDotSize'],
+        ['dotLength',      'fillDotLength'],
+        ['dotRotation',    'fillDotRotation'],
         ['padding',        'fillPadding'],
         ['shiftX',         'fillShiftX'],
         ['shiftY',         'fillShiftY'],
