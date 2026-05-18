@@ -4882,7 +4882,8 @@
     _isWorldInsidePaper(world) {
       const prof = this.engine?.currentProfile;
       if (!prof || !world) return false;
-      return world.x >= 0 && world.x <= prof.width && world.y >= 0 && world.y <= prof.height;
+      const m = Math.max(0, SETTINGS.margin || 0);
+      return world.x >= m && world.x <= prof.width - m && world.y >= m && world.y <= prof.height - m;
     }
 
     _paintBucketHover(world) {
