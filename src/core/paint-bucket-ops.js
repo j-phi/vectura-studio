@@ -7,6 +7,8 @@
  *   - applyFillAtPoint(engine, app, worldX, worldY, options)
  *   - buildFillRecord(targetEntry, fillParams)
  *   - generateGeometryForLayer(layer)
+ *   - expandFill(engine, layer) — bake fills[] into sibling shape layers
+ *     wrapped in a 'paintfill' group container (parent stays live).
  *
  * Hover, click, and drag-pour live in the renderer; this module is the
  * geometry-and-data layer beneath them.
@@ -141,88 +143,69 @@
     const { scope = 'all-objects', sensitivity = 5 } = options;
     const tolerance = Math.max(0.01, sensitivity * 0.1);
 
+    // Collect candidate rings with their owning layer. Single-object mode
+    // restricts candidates to the top-most hovered layer; all-objects mode
+    // uses every eligible layer.
+    const candidates = [];
     if (scope === 'single-object') {
       const hoveredLayer = findHoveredLayer(engine, worldX, worldY, tolerance);
-      const entries = [];
       if (hoveredLayer) {
-        // Collect ALL closed rings from this layer, sorted by area (innermost first).
-        const allRings = [];
-        const paths = getLayerPaths(engine, hoveredLayer);
-        for (const p of paths) {
+        for (const p of getLayerPaths(engine, hoveredLayer)) {
           if (!isClosedRing(p, tolerance)) continue;
-          allRings.push(p);
-        }
-        allRings.sort((a, b) => shoelaceArea(a) - shoelaceArea(b));
-
-        // K = index of the smallest ring that contains the cursor.
-        let K = -1;
-        for (let i = 0; i < allRings.length; i++) {
-          if (polyContainsPoint(allRings[i], worldX, worldY)) { K = i; break; }
-        }
-
-        if (K >= 0) {
-          const N = allRings.length;
-          // Build band entries centered at cursor's ring K, expanding symmetrically.
-          // Scope i: outer = rings[min(K+i, N-1)], inner = rings[K-1-i] (or null).
-          // Passing [outerPolygon, innerPolygon] to the fill generator triggers
-          // XOR compositing — innerPolygon acts as the exclusion zone (donut hole).
-          for (let i = 0; ; i++) {
-            const outIdx = Math.min(K + i, N - 1);
-            const inIdx  = K - 1 - i;
-            const outerPolygon = clonePolygon(allRings[outIdx]);
-            const innerPolygon = inIdx >= 0 ? clonePolygon(allRings[inIdx]) : null;
-            entries.push({
-              layer: hoveredLayer,
-              polygon: outerPolygon,
-              innerPolygon,
-              area: shoelaceArea(outerPolygon),
-              loopId: `band:${outIdx}:${inIdx >= 0 ? inIdx : 'x'}:${hoveredLayer.id}`,
-              isDocBounds: false,
-            });
-            if (outIdx === N - 1 && inIdx < 0) break;
-          }
+          candidates.push({ path: p, layer: hoveredLayer, area: shoelaceArea(p) });
         }
       }
-      const docPoly = docBoundsPolygon(engine);
-      const fallbackLayer = hoveredLayer || engine?.getActiveLayer?.() || engine?.layers?.[0] || null;
-      entries.push({
-        layer: fallbackLayer,
-        polygon: docPoly,
-        innerPolygon: null,
-        area: shoelaceArea(docPoly),
-        loopId: '__doc-bounds__',
-        isDocBounds: true,
-      });
-      return { stack: entries, includesDocBounds: true };
-    }
-
-    // all-objects: collect closed rings from every eligible layer
-    const entries = [];
-    if (engine?.layers) {
-      for (const layer of engine.layers) {
+    } else {
+      for (const layer of (engine?.layers || [])) {
         if (!isLayerEligible(layer)) continue;
-        const paths = getLayerPaths(engine, layer);
-        for (const p of paths) {
+        for (const p of getLayerPaths(engine, layer)) {
           if (!isClosedRing(p, tolerance)) continue;
-          if (!polyContainsPoint(p, worldX, worldY)) continue;
-          const polygon = clonePolygon(p);
-          entries.push({
-            layer,
-            polygon,
-            area: shoelaceArea(polygon),
-            loopId: loopIdFor(layer.id, polygon),
-            isDocBounds: false,
-          });
+          candidates.push({ path: p, layer, area: shoelaceArea(p) });
         }
       }
     }
-    entries.sort((a, b) => a.area - b.area);
+
+    // Sort ascending by area (smallest = innermost ring).
+    candidates.sort((a, b) => a.area - b.area);
+
+    // K = index of the smallest ring that contains the cursor.
+    // The cursor sits in the band between candidates[K-1] and candidates[K].
+    let K = -1;
+    for (let i = 0; i < candidates.length; i++) {
+      if (polyContainsPoint(candidates[i].path, worldX, worldY)) { K = i; break; }
+    }
+
+    // Build band entries centered at K, expanding symmetrically outward and
+    // inward on each scroll step.  innerPolygon (when present) is passed as
+    // the second region to the fill generator's XOR compositing so fill lines
+    // land only in the donut band, not the full disc interior.
+    const entries = [];
+    if (K >= 0) {
+      const N = candidates.length;
+      for (let i = 0; ; i++) {
+        const outIdx = Math.min(K + i, N - 1);
+        const inIdx  = K - 1 - i;
+        const outer  = candidates[outIdx];
+        const inner  = inIdx >= 0 ? candidates[inIdx] : null;
+        entries.push({
+          layer: outer.layer,
+          polygon: clonePolygon(outer.path),
+          innerPolygon: inner ? clonePolygon(inner.path) : null,
+          area: outer.area,
+          loopId: `band:${outIdx}:${inIdx >= 0 ? inIdx : 'x'}:${outer.layer.id}`,
+          isDocBounds: false,
+        });
+        if (outIdx === N - 1 && inIdx < 0) break;
+      }
+    }
 
     const docPoly = docBoundsPolygon(engine);
-    const activeLayer = engine?.getActiveLayer?.() || engine?.layers?.[0] || null;
+    const fallbackLayer = (K >= 0 ? candidates[K].layer : null)
+      || engine?.getActiveLayer?.() || engine?.layers?.[0] || null;
     entries.push({
-      layer: activeLayer,
+      layer: fallbackLayer,
       polygon: docPoly,
+      innerPolygon: null,
       area: shoelaceArea(docPoly),
       loopId: '__doc-bounds__',
       isDocBounds: true,
