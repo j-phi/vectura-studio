@@ -3155,6 +3155,18 @@
     wheel(e) {
       if (!this.ready) return;
       e.preventDefault();
+      if (e.shiftKey) {
+        this.offsetX += e.deltaX || e.deltaY;
+        this.userHasManipulated = true;
+        this.draw();
+        return;
+      }
+      if (e.metaKey) {
+        this.offsetY += e.deltaY;
+        this.userHasManipulated = true;
+        this.draw();
+        return;
+      }
       const rect = this.canvas.getBoundingClientRect();
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
