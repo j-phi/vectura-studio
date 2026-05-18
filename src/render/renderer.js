@@ -833,7 +833,7 @@
       }
       if (this.activeTool === 'fill' || this.activeTool === 'fill-erase' ||
           this.activeTool === 'fill-pattern' || this.activeTool === 'fill-pattern-erase') {
-        this.setCanvasCursor(this.cursorDataUrl('bucket', 2, 12, 'crosshair'), 'fill');
+        this.setCanvasCursor(this.cursorDataUrl('bucket', 20, 22, 'crosshair'), 'fill');
         return;
       }
       if (this.activeTool === 'direct') {

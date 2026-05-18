@@ -129,8 +129,9 @@
     outline: () => `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" fill="#ffffff" stroke="#000000" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></svg>`,
     pen: () => `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22"><path d="M2.2 19.8L4.5 18l11-11-2.3-2.3-11 11z" fill="#ffffff" stroke="#000000" stroke-width="1.3" stroke-linejoin="round"/><path d="M13.2 4.7L17 8.5" stroke="#000000" stroke-width="1.3" stroke-linecap="round"/><path d="M2.2 19.8l1.6-.6.7-1.7-1.5-1.5-1.7.7z" fill="#000000"/></svg>`,
     // Lucide paint-bucket. Rendered as a white halo beneath a black stroke so
-    // it stays visible on any canvas color. Hotspot at (2, 12) — the lip where
-    // paint spills onto the canvas.
+    // it stays visible on any canvas color. Hotspot at (20, 22) — the bottom
+    // tip of the droplet falling from the bucket, so the click point matches
+    // where paint visibly lands.
     bucket: () => {
       const paths = `<path d="M11 7 6 2"/><path d="M18.992 12H2.041"/><path d="M21.145 18.38A3.34 3.34 0 0 1 20 16.5a3.3 3.3 0 0 1-1.145 1.88c-.575.46-.855 1.02-.855 1.595A2 2 0 0 0 20 22a2 2 0 0 0 2-2.025c0-.58-.285-1.13-.855-1.595"/><path d="m8.5 4.5 2.148-2.148a1.205 1.205 0 0 1 1.704 0l7.296 7.296a1.205 1.205 0 0 1 0 1.704l-7.592 7.592a3.615 3.615 0 0 1-5.112 0l-3.888-3.888a3.615 3.615 0 0 1 0-5.112L5.67 7.33"/>`;
       return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">${paths}</g><g fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</g></svg>`;

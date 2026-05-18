@@ -228,7 +228,7 @@
       <div class="pane-header pane-header-left p-4 border-b border-vectura-border flex justify-between items-center">
         <span class="pane-title font-bold text-vectura-accent">GENERATOR</span>
 
-        <span class="pane-meta text-[11px] text-vectura-muted">V.1.0.36</span>
+        <span class="pane-meta text-[11px] text-vectura-muted">V.1.0.37</span>
 
         <button id="btn-pane-toggle-left" class="pane-toggle pane-toggle-left" type="button"
           aria-label="Toggle left pane">
@@ -356,6 +356,10 @@
             </button>
             <div id="left-section-paint-bucket-body" class="left-panel-section-body">
               <div class="paint-bucket-panel" id="paint-bucket-panel">
+                <div id="paint-bucket-sample-empty" class="paint-bucket-sample-empty" hidden>
+                  <h3 class="paint-bucket-sample-title">Paint Sampling</h3>
+                  <p class="paint-bucket-sample-hint">CMD+Click a filled object to sample its pattern.</p>
+                </div>
                 <div id="paint-bucket-status-chip" class="paint-bucket-status-chip" hidden aria-live="polite">
                   <span id="paint-bucket-status-chip-text" class="paint-bucket-status-chip-text">Editing</span>
                   <button id="paint-bucket-status-chip-done" type="button" class="paint-bucket-status-chip-done">Done</button>
@@ -388,6 +392,9 @@
                 <div class="paint-bucket-section">
                   <p class="paint-bucket-section-label">Fill Options</p>
                   <div id="paint-bucket-controls"></div>
+                </div>
+                <div class="paint-bucket-section">
+                  <button id="paint-bucket-expand-btn" class="paint-bucket-expand-btn" type="button" disabled>Expand Fill</button>
                 </div>
                 <p id="paint-bucket-panel-hint" class="paint-bucket-panel-hint" aria-live="polite"></p>
               </div>

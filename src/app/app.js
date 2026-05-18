@@ -290,7 +290,8 @@
         autoColorization: SETTINGS.autoColorization ? clone(SETTINGS.autoColorization) : null,
         autoColorizationCollapsed: SETTINGS.autoColorizationCollapsed,
         pensCollapsed: SETTINGS.pensCollapsed,
-        activeTool: SETTINGS.activeTool,
+        // activeTool intentionally NOT persisted — a page refresh should
+        // always boot into the Select tool regardless of last-used tool.
         scissorMode: SETTINGS.scissorMode,
         penMode: SETTINGS.penMode,
         pens: Array.isArray(SETTINGS.pens) ? clone(SETTINGS.pens) : [],
@@ -378,7 +379,8 @@
       if (snapshot.pensCollapsed !== undefined) {
         SETTINGS.pensCollapsed = snapshot.pensCollapsed;
       }
-      SETTINGS.activeTool = snapshot.activeTool ?? SETTINGS.activeTool;
+      // activeTool intentionally NOT restored — a page refresh always boots
+      // into the default Select tool regardless of what was persisted.
       SETTINGS.scissorMode = snapshot.scissorMode ?? SETTINGS.scissorMode;
       SETTINGS.penMode = snapshot.penMode ?? SETTINGS.penMode;
       if (Array.isArray(snapshot.pens) && snapshot.pens.length) {
