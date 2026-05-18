@@ -186,6 +186,8 @@
         Number(p.seed || 0),
         child.type,
         (child.displayPaths?.length || child.paths?.length || 0),
+        (child.effectivePaths || child.displayPaths || child.paths || [])
+          .reduce((sum, p) => sum + (p?.length || 0), 0),
         nested,
       ].join('|'));
     });
@@ -220,6 +222,38 @@
       .filter(Boolean);
   };
 
+  const clipAndWriteToCompound = (layer, childLayers, mp) => {
+    const PB = Vectura.PathBoolean;
+    const isClosedPath = Vectura.OptimizationUtils?.isClosedPath || (() => false);
+
+    // The boolean result outline is always the base — handles unfilled shapes.
+    const outlinePaths = multiPolygonToPaths(mp);
+
+    // Convert outer rings to {x,y} for clipping child fill (open) paths.
+    const clipPolygons = (mp || [])
+      .map((polygon) => (polygon[0] || []).map((pt) => ({ x: pt[0], y: pt[1] })))
+      .filter((ring) => ring.length >= 3);
+
+    const clippedFillPaths = [];
+    if (clipPolygons.length && PB?.segmentPathByPolygons) {
+      childLayers.forEach((child) => {
+        const srcPaths = child.effectivePaths?.length ? child.effectivePaths : child.paths || [];
+        srcPaths.forEach((path) => {
+          if (!Array.isArray(path) || path.length < 2) return;
+          // Skip closed/outline paths — the boolean result outline above already
+          // represents the shape boundary. Only clip open fill/hatch lines.
+          const isOutline = path.meta?.closed || path.meta?.kind === 'circle' || isClosedPath(path);
+          if (isOutline) return;
+          const segs = PB.segmentPathByPolygons(path, clipPolygons, { invert: true, closed: false });
+          segs.forEach((seg) => {
+            if (seg.length >= 2) clippedFillPaths.push(seg);
+          });
+        });
+      });
+    }
+    writePathsToCompound(layer, outlinePaths.concat(clippedFillPaths));
+  };
+
   const recomputeCompound = (layer, engine) => {
     if (!layer || layer.type !== 'compound' || !engine) return;
     layer.compound = layer.compound || { childIds: [], opType: 'unite', sourceMode: 'silhouette', cache: { signature: null, multiPolygon: null } };
@@ -227,13 +261,13 @@
     const childLayers = resolveChildren(layer, engine);
     const sig = cacheSignature(layer, engine);
     if (layer.compound.cache.signature === sig && layer.compound.cache.multiPolygon) {
-      writePathsToCompound(layer, multiPolygonToPaths(layer.compound.cache.multiPolygon));
+      clipAndWriteToCompound(layer, childLayers, layer.compound.cache.multiPolygon);
       return;
     }
     const mp = computeOp(layer.compound.opType, childLayers, layer.compound.sourceMode, engine);
     layer.compound.cache.signature = sig;
     layer.compound.cache.multiPolygon = mp;
-    writePathsToCompound(layer, multiPolygonToPaths(mp));
+    clipAndWriteToCompound(layer, childLayers, mp);
   };
 
   const multiPolygonToPaths = (mp) => {

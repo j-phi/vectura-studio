@@ -464,7 +464,7 @@
       const optimizationTargetIds = useOptimized
         ? (typeof this.optimizeTargetsForCurrentScope === 'function'
           ? this.optimizeTargetsForCurrentScope({ includePlotterOptimize: true }).targetIds
-          : new Set((this.app.engine.layers || []).filter((layer) => layer && !layer.isGroup).map((layer) => layer.id)))
+          : new Set((this.app.engine.layers || []).filter((layer) => layer && !(layer.isGroup && layer.type !== 'compound') && !this.app.engine.hasCompoundAncestor(layer)).map((layer) => layer.id)))
         : new Set();
 
       const penMap = new Map((SETTINGS.pens || []).map((pen) => [pen.id, pen]));
@@ -489,7 +489,7 @@
       const seenGroupOrder = [];
       const groupMap = new Map();
       (this.app.engine.layers || []).forEach((layer) => {
-        if (!layer?.visible || layer.isGroup || isMaskLayerGeometryHidden(layer)) return;
+        if (!layer?.visible || (layer.isGroup && layer.type !== 'compound') || isMaskLayerGeometryHidden(layer) || this.app.engine.hasCompoundAncestor(layer)) return;
         const pen = penMap.get(layer.penId) || fallbackPen;
         const key = pen.id || fallbackPen.id;
         if (!groupMap.has(key)) {
