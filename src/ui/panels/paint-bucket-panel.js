@@ -33,6 +33,7 @@
 
   const DEFAULTS = {
     fillMode: 'hatch',
+    fillScope: 'all-objects',
     fillDensity: 4,
     fillAngle: 45,
     fillAmplitude: 1.0,
@@ -378,6 +379,27 @@
     });
   }
 
+  function bindScopeToggle(state) {
+    const toggle = document.getElementById('paint-bucket-scope-toggle');
+    if (!toggle) return;
+    const buttons = Array.from(toggle.querySelectorAll('.pb-scope-btn'));
+    const current = state.fillParams.fillScope || 'all-objects';
+    buttons.forEach((btn) => {
+      btn.setAttribute('aria-pressed', btn.dataset.pbScope === current ? 'true' : 'false');
+    });
+    buttons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const scope = btn.dataset.pbScope;
+        if (state.fillParams.fillScope === scope) return;
+        state.fillParams.fillScope = scope;
+        buttons.forEach((b) => b.setAttribute('aria-pressed', b.dataset.pbScope === scope ? 'true' : 'false'));
+        persistAndRedraw(state);
+        // Clear the hover stack so the next mousemove recomputes with new scope.
+        state.app?.renderer?.clearPaintBucketHoverState?.();
+      });
+    });
+  }
+
   function bindSensitivity(state) {
     const input = document.getElementById('paint-bucket-sensitivity');
     const chip = document.getElementById('paint-bucket-sensitivity-chip');
@@ -517,6 +539,7 @@
 
     paintVariantButtons(state, controlsEl, hintEl);
     populatePens(state);
+    bindScopeToggle(state);
     bindSensitivity(state);
     renderControls(state, controlsEl, hintEl);
     bindStatusChip(state);

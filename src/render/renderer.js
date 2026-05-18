@@ -3256,7 +3256,11 @@
             if (entry.isDocBounds) {
               this.app.ui.setPaintBucketHint('Scope: document bounds — click to fill background');
             } else {
-              this.app.ui.setPaintBucketHint(`Scope ${next + 1}/${this.paintBucketStack.length} · scroll to widen`);
+              const params = this.app?.paintBucketPanel?.getFillParams?.() || {};
+              const scope = params.fillScope || 'all-objects';
+              const label = scope === 'single-object' ? 'Path' : 'Scope';
+              const scrollHint = scope === 'single-object' ? 'scroll to change path' : 'scroll to widen';
+              this.app.ui.setPaintBucketHint(`${label} ${next + 1}/${this.paintBucketStack.length - 1} · ${scrollHint}`);
             }
           }
           this.draw();
@@ -3460,11 +3464,12 @@
         // the user can tweak its params via the panel. Only meaningful in
         // pour mode; in erase mode CMD acts like a plain click.
         if (this.activeTool === 'fill' && (e.metaKey || e.ctrlKey) && !e.altKey) {
-          const adopted = this._paintBucketAdoptAtPoint(world);
-          if (adopted) {
-            if (e.cancelable) e.preventDefault();
-            return;
-          }
+          // CMD/Ctrl is a sample gesture, not a pour. If there is no fill
+          // under the cursor (empty shape or empty canvas) leave the shape
+          // empty rather than falling through to a normal pour.
+          this._paintBucketAdoptAtPoint(world);
+          if (e.cancelable) e.preventDefault();
+          return;
         }
         this._paintBucketHover(world);
         const mode = this.activeTool === 'fill-erase' ? 'erase' : 'pour';
@@ -4845,7 +4850,10 @@
     _paintBucketHover(world) {
       const PBO = window.Vectura?.PaintBucketOps;
       if (!PBO) { this.paintBucketStack = null; this.patternFillPreviewPolygon = null; return; }
-      const { stack } = PBO.findFillTargetStack(this.engine, world.x, world.y);
+      const params = this.app?.paintBucketPanel?.getFillParams?.() || {};
+      const scope = params.fillScope || 'all-objects';
+      const sensitivity = params.fillSensitivity ?? 5;
+      const { stack } = PBO.findFillTargetStack(this.engine, world.x, world.y, { scope, sensitivity });
       if (!Array.isArray(stack) || !stack.length) {
         this.paintBucketStack = null;
         this.paintBucketStackKey = null;
@@ -4866,11 +4874,21 @@
         if (entry.isDocBounds) {
           this.app.ui.setPaintBucketHint('Scope: document bounds — click to fill background');
         } else if (stack.length > 1) {
-          this.app.ui.setPaintBucketHint(`Scope ${this.paintBucketScopeIndex + 1}/${stack.length} · scroll to widen`);
+          const label = scope === 'single-object' ? 'Path' : 'Scope';
+          const scrollHint = scope === 'single-object' ? 'scroll to change path' : 'scroll to widen';
+          this.app.ui.setPaintBucketHint(`${label} ${this.paintBucketScopeIndex + 1}/${stack.length - 1} · ${scrollHint}`);
         } else {
           this.app.ui.setPaintBucketHint('Click to fill · Alt-click to remove · Shift+drag to pour multiple');
         }
       }
+    }
+
+    clearPaintBucketHoverState() {
+      this.paintBucketStack = null;
+      this.paintBucketStackKey = null;
+      this.paintBucketScopeIndex = 0;
+      this.patternFillPreviewPolygon = null;
+      this.draw();
     }
 
     _paintBucketPour(world, mode = 'pour', opts = {}) {

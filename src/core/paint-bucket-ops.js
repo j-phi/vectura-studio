@@ -33,12 +33,12 @@
     return inside;
   };
 
-  const isClosedRing = (path) => {
+  const isClosedRing = (path, tolerance = 0.5) => {
     if (!Array.isArray(path) || path.length < 3) return false;
     const first = path[0];
     const last = path[path.length - 1];
     if (!first || !last) return false;
-    return Math.hypot((first.x ?? 0) - (last.x ?? 0), (first.y ?? 0) - (last.y ?? 0)) <= 0.5;
+    return Math.hypot((first.x ?? 0) - (last.x ?? 0), (first.y ?? 0) - (last.y ?? 0)) <= tolerance;
   };
 
   const shoelaceArea = (poly) => {
@@ -121,14 +121,65 @@
     return best;
   };
 
-  const findFillTargetStack = (engine, worldX, worldY) => {
+  // Returns the top-most eligible layer (last in array = highest z) whose
+  // closed rings contain the given world point.
+  const findHoveredLayer = (engine, worldX, worldY, tolerance = 0.5) => {
+    if (!engine?.layers) return null;
+    for (let i = engine.layers.length - 1; i >= 0; i--) {
+      const layer = engine.layers[i];
+      if (!isLayerEligible(layer)) continue;
+      const paths = getLayerPaths(engine, layer);
+      for (const p of paths) {
+        if (!isClosedRing(p, tolerance)) continue;
+        if (polyContainsPoint(p, worldX, worldY)) return layer;
+      }
+    }
+    return null;
+  };
+
+  const findFillTargetStack = (engine, worldX, worldY, options = {}) => {
+    const { scope = 'all-objects', sensitivity = 5 } = options;
+    const tolerance = Math.max(0.01, sensitivity * 0.1);
+
+    if (scope === 'single-object') {
+      const hoveredLayer = findHoveredLayer(engine, worldX, worldY, tolerance);
+      const entries = [];
+      if (hoveredLayer) {
+        const paths = getLayerPaths(engine, hoveredLayer);
+        for (const p of paths) {
+          if (!isClosedRing(p, tolerance)) continue;
+          if (!polyContainsPoint(p, worldX, worldY)) continue;
+          const polygon = clonePolygon(p);
+          entries.push({
+            layer: hoveredLayer,
+            polygon,
+            area: shoelaceArea(polygon),
+            loopId: loopIdFor(hoveredLayer.id, polygon),
+            isDocBounds: false,
+          });
+        }
+        entries.sort((a, b) => a.area - b.area);
+      }
+      const docPoly = docBoundsPolygon(engine);
+      const fallbackLayer = hoveredLayer || engine?.getActiveLayer?.() || engine?.layers?.[0] || null;
+      entries.push({
+        layer: fallbackLayer,
+        polygon: docPoly,
+        area: shoelaceArea(docPoly),
+        loopId: '__doc-bounds__',
+        isDocBounds: true,
+      });
+      return { stack: entries, includesDocBounds: true };
+    }
+
+    // all-objects: collect closed rings from every eligible layer
     const entries = [];
     if (engine?.layers) {
       for (const layer of engine.layers) {
         if (!isLayerEligible(layer)) continue;
         const paths = getLayerPaths(engine, layer);
         for (const p of paths) {
-          if (!isClosedRing(p)) continue;
+          if (!isClosedRing(p, tolerance)) continue;
           if (!polyContainsPoint(p, worldX, worldY)) continue;
           const polygon = clonePolygon(p);
           entries.push({
@@ -217,7 +268,10 @@
       return { mode: 'erase', layerId: best.layer.id, fillId: best.rec.id, loopId: best.rec.loopId };
     }
 
-    const { stack } = findFillTargetStack(engine, worldX, worldY);
+    const { stack } = findFillTargetStack(engine, worldX, worldY, {
+      scope: fillParams.fillScope || 'all-objects',
+      sensitivity: fillParams.fillSensitivity ?? 5,
+    });
     if (!stack.length) return null;
     const idx = Math.max(0, Math.min(scopeIndex, stack.length - 1));
     const target = stack[idx];
@@ -287,6 +341,7 @@
   Vectura.PaintBucketOps = {
     findFillTargetStack,
     findFillAtPoint,
+    findHoveredLayer,
     applyFillAtPoint,
     buildFillRecord,
     generateGeometryForLayer,
