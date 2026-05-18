@@ -227,6 +227,9 @@ describe('Renderer paint-bucket: updateLastPaintedFills + hover clear', () => {
     const rendererLike = {
       engine,
       lastPaintedFillRefs: [],
+      // patternFillPreviewPolygon is null (no prior hover) — the pour guard
+      // must skip the pour and leave refs empty.
+      patternFillPreviewPolygon: null,
       draw() {},
       app: { paintBucketPanel: {} },
     };

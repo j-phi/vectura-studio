@@ -179,6 +179,17 @@
     // inward on each scroll step.  innerPolygon (when present) is passed as
     // the second region to the fill generator's XOR compositing so fill lines
     // land only in the donut band, not the full disc interior.
+    //
+    // Guard: only use a candidate as innerPolygon if its centroid is actually
+    // inside the outer ring. Two non-nested rings (e.g. two separate circles
+    // of different sizes) share no containment relationship — the even-odd
+    // fill rule would incorrectly highlight parts of the inner ring that fall
+    // outside the outer ring (making both appear highlighted on hover).
+    const polyCentroid = (poly) => {
+      let sx = 0, sy = 0;
+      for (const p of poly) { sx += p.x; sy += p.y; }
+      return { x: sx / poly.length, y: sy / poly.length };
+    };
     const entries = [];
     if (K >= 0) {
       const N = candidates.length;
@@ -186,7 +197,10 @@
         const outIdx = Math.min(K + i, N - 1);
         const inIdx  = K - 1 - i;
         const outer  = candidates[outIdx];
-        const inner  = inIdx >= 0 ? candidates[inIdx] : null;
+        const innerCandidate = inIdx >= 0 ? candidates[inIdx] : null;
+        const c = innerCandidate ? polyCentroid(innerCandidate.path) : null;
+        const inner = (innerCandidate && c && polyContainsPoint(outer.path, c.x, c.y))
+          ? innerCandidate : null;
         entries.push({
           layer: outer.layer,
           polygon: clonePolygon(outer.path),

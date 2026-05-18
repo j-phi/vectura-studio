@@ -610,6 +610,19 @@
       getFillParams: () => ({ ...state.fillParams }),
       setHint,
       loadParamsFromFill: (rec) => loadParamsFromFill(state, controlsEl, hintEl, rec),
+      setNoFillMode: () => {
+        state.fillParams.fillMode = 'none';
+        state._suppressRetarget = true;
+        try {
+          refreshVariantSelection(state);
+          renderControls(state, controlsEl, hintEl);
+          const SETTINGS = Vectura.SETTINGS || {};
+          SETTINGS.paintBucket = { ...state.fillParams };
+          state.app?.persistPreferencesDebounced?.();
+        } finally {
+          state._suppressRetarget = false;
+        }
+      },
       onBatchStateChange: ({ activeCount = 0 } = {}) => {
         updateStatusChip(activeCount);
         updateExpandButton(state);

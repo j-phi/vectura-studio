@@ -4995,14 +4995,24 @@
       const PBO = window.Vectura?.PaintBucketOps;
       const panel = this.app?.paintBucketPanel;
       if (!PBO?.findFillAtPoint) {
-        panel?.setSampleEmptyMode?.(true);
+        panel?.setNoFillMode?.();
         return false;
       }
       const hit = PBO.findFillAtPoint(this.engine, world.x, world.y);
       if (!hit?.rec || !hit.layer?.id) {
-        // Nothing to sample under the cursor — swap the panel to the
-        // sampling prompt until the user releases CMD.
-        panel?.setSampleEmptyMode?.(true);
+        // Nothing to sample — switch the panel to "No Fill" mode.
+        // If the user was hovering over a visible region (patternFillPreviewPolygon
+        // is set), pour a fillType:'none' placeholder there so that region
+        // becomes the active batch target. Picking a fill type will then
+        // update that record rather than retargeting any prior fill.
+        // Guard with patternFillPreviewPolygon: no hover region = no pour
+        // (protects against accidental doc-bounds pours on empty canvas).
+        panel?.setNoFillMode?.();
+        if (this.patternFillPreviewPolygon) {
+          this._paintBucketPour(world, 'pour', { startBatch: true });
+        } else {
+          this.draw();
+        }
         return false;
       }
       panel?.setSampleEmptyMode?.(false);
