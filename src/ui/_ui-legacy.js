@@ -5428,6 +5428,7 @@
       if (Math.abs(shiftX) > 0.001 || Math.abs(shiftY) > 0.001) {
         layer.params.posX += shiftX;
         layer.params.posY += shiftY;
+        window.Vectura?.PaintBucketOps?.translateLayerFills?.(layer, shiftX, shiftY);
         this.app.engine.generate(layer.id);
       }
     }
@@ -6880,7 +6881,15 @@
           if (this.app.pushHistory) this.app.pushHistory();
           if (TRANSLATION_KEYS.has(key)) {
             targets.forEach((layer) => {
-              layer.params[key] = this.parseDocumentNumber(rawValue, { fallbackMm: layer.params[key] ?? 0 });
+              const prev = layer.params[key] ?? 0;
+              const next = this.parseDocumentNumber(rawValue, { fallbackMm: prev });
+              layer.params[key] = next;
+              const delta = next - prev;
+              if (delta) {
+                const dx = key === 'posX' ? delta : 0;
+                const dy = key === 'posY' ? delta : 0;
+                window.Vectura?.PaintBucketOps?.translateLayerFills?.(layer, dx, dy);
+              }
             });
           } else {
             const parsed = parseFloat(rawValue);

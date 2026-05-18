@@ -674,6 +674,7 @@
         if (!layer || !layer.params) return;
         layer.params.posX = (layer.params.posX || 0) + (delta.dx || 0);
         layer.params.posY = (layer.params.posY || 0) + (delta.dy || 0);
+        window.Vectura?.PaintBucketOps?.translateLayerFills?.(layer, delta.dx || 0, delta.dy || 0);
         touchedIds.push(layerId);
       });
       if (!touchedIds.length) return;

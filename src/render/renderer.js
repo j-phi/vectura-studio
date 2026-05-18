@@ -4212,10 +4212,14 @@
           if (this.dragMode === 'move') {
             const snapDx = this.snapAllowed && this.snap ? this.snap.dx || 0 : 0;
             const snapDy = this.snapAllowed && this.snap ? this.snap.dy || 0 : 0;
+            const committedDx = this.tempTransform.dx + snapDx;
+            const committedDy = this.tempTransform.dy + snapDy;
+            const moveTemp = { dx: committedDx, dy: committedDy, scaleX: 1, scaleY: 1, origin: { x: 0, y: 0 } };
             selectedLayers.forEach((layer) => {
               if (layer.isGroup) return;
-              layer.params.posX += this.tempTransform.dx + snapDx;
-              layer.params.posY += this.tempTransform.dy + snapDy;
+              layer.params.posX += committedDx;
+              layer.params.posY += committedDy;
+              this.transformLayerFillsByTemp(layer, moveTemp);
               this.engine.generate(layer.id);
             });
           } else if (this.dragMode === 'resize' && selectedLayers.length) {
@@ -4240,6 +4244,7 @@
                 (baseOrigin.x - resizeOrigin.x) * scaleX + resizeOrigin.x - originLocal.x;
               activeLayer.params.posY =
                 (baseOrigin.y - resizeOrigin.y) * scaleY + resizeOrigin.y - originLocal.y;
+              this.transformLayerFillsByTemp(activeLayer, { dx: 0, dy: 0, scaleX, scaleY, origin: resizeOrigin });
               this.engine.generate(activeLayer.id);
             });
           } else if (this.dragMode === 'rotate') {
@@ -4263,6 +4268,9 @@
                 layer.params.posY = origin.y + ry - (layer.origin?.y ?? 0);
               }
               layer.params.rotation = (layer.params.rotation ?? 0) + delta;
+              if (origin) {
+                this.transformLayerFillsByTemp(layer, { dx: 0, dy: 0, scaleX: 1, scaleY: 1, origin, rotation: delta });
+              }
               this.engine.generate(layer.id);
             });
           }
@@ -5397,6 +5405,12 @@
     transformPath(path, temp) {
       if (!path) return path;
       return path.map((pt) => this.transformPoint(pt, temp));
+    }
+
+    // Delegate to PaintBucketOps so all callers (canvas drag, arrow keys,
+    // align/distribute, numeric inputs) share one transformation path.
+    transformLayerFillsByTemp(layer, temp) {
+      window.Vectura?.PaintBucketOps?.transformLayerFills?.(layer, temp);
     }
 
     transformCircleMeta(meta, temp) {

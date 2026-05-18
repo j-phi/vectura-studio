@@ -190,6 +190,38 @@ describe('PaintBucketOps.applyFillAtPoint', () => {
     expect(active.fills[0].isDocBounds).toBe(true);
   });
 
+  it('auto-creates a Background shape layer when pouring on empty document (no layers)', () => {
+    // Engine with zero layers — no existing target for the fill.
+    const engine = {
+      layers: [],
+      docW: 297,
+      docH: 210,
+      _layerCounter: 0,
+      getDisplayPaths: () => [],
+      getActiveLayer() { return null; },
+      computeAllDisplayGeometry: vi.fn(),
+    };
+    const app = fakeApp();
+    const result = globalThis.Vectura.PaintBucketOps.applyFillAtPoint(engine, app, 50, 50, {
+      scopeIndex: 0,
+      mode: 'pour',
+      fillParams: { fillMode: 'hatch', fillDensity: 4, penId: 'pen-1' },
+    });
+    expect(result).toBeTruthy();
+    expect(result.mode).toBe('pour');
+    expect(engine.layers.length).toBe(1);
+    const bg = engine.layers[0];
+    expect(bg.type).toBe('shape');
+    expect(bg.isGroup).toBe(false);
+    expect(bg.name).toBe('Background');
+    expect(bg.fills.length).toBe(1);
+    expect(bg.fills[0].isDocBounds).toBe(true);
+    expect(engine.activeLayerId).toBe(bg.id);
+    // History was pushed once for the synthetic layer creation; the fill push
+    // itself shouldn't double-push.
+    expect(app.pushHistory).toHaveBeenCalledTimes(1);
+  });
+
   it('erase mode removes the topmost fill record at point', () => {
     const layer = makeLayer('A', [closedRect(0, 0, 100, 100)]);
     layer.fills = [
@@ -509,5 +541,62 @@ describe('PaintBucketOps.expandFill', () => {
     const engine = expandableEngine(layer);
     const result = globalThis.Vectura.PaintBucketOps.expandFill(engine, layer);
     expect(engine.activeLayerId).toBe(result.groupId);
+  });
+});
+
+describe('PaintBucketOps.translateLayerFills', () => {
+  // Regression: filling a shape and then moving it must keep the fill registered
+  // with the shape. Fill regions live in absolute world coords, so move/resize/
+  // rotate of the owning layer has to transform them in lockstep — otherwise
+  // the fill stays at the original world location while the shape walks away.
+  it('translates every fill region (and innerRegion) by the same delta', () => {
+    const layer = makeLayer('A', []);
+    layer.fills = [
+      { id: 'f1', region: closedRect(10, 10, 30, 30), innerRegion: closedRect(15, 15, 25, 25) },
+      { id: 'f2', region: closedRect(40, 40, 80, 80), innerRegion: null },
+    ];
+    globalThis.Vectura.PaintBucketOps.translateLayerFills(layer, 100, -25);
+    expect(layer.fills[0].region[0]).toEqual({ x: 110, y: -15 });
+    expect(layer.fills[0].region[2]).toEqual({ x: 130, y: 5 });
+    expect(layer.fills[0].innerRegion[0]).toEqual({ x: 115, y: -10 });
+    expect(layer.fills[1].region[0]).toEqual({ x: 140, y: 15 });
+    expect(layer.fills[1].innerRegion).toBeNull();
+  });
+
+  it('is a no-op when delta is zero or layer has no fills', () => {
+    const empty = makeLayer('A', []);
+    empty.fills = [];
+    expect(() => globalThis.Vectura.PaintBucketOps.translateLayerFills(empty, 5, 5)).not.toThrow();
+
+    const layer = makeLayer('B', []);
+    layer.fills = [{ id: 'f1', region: closedRect(0, 0, 10, 10), innerRegion: null }];
+    const before = JSON.stringify(layer.fills[0].region);
+    globalThis.Vectura.PaintBucketOps.translateLayerFills(layer, 0, 0);
+    expect(JSON.stringify(layer.fills[0].region)).toBe(before);
+  });
+});
+
+describe('PaintBucketOps.transformLayerFills', () => {
+  it('scales fill regions about a world-space origin', () => {
+    const layer = makeLayer('A', []);
+    layer.fills = [{ id: 'f1', region: closedRect(10, 10, 30, 30), innerRegion: null }];
+    globalThis.Vectura.PaintBucketOps.transformLayerFills(layer, {
+      dx: 0, dy: 0, scaleX: 2, scaleY: 2, origin: { x: 20, y: 20 },
+    });
+    // (10,10) about (20,20) at 2x → (0,0); (30,30) → (40,40).
+    expect(layer.fills[0].region[0]).toEqual({ x: 0, y: 0 });
+    expect(layer.fills[0].region[2]).toEqual({ x: 40, y: 40 });
+  });
+
+  it('rotates fill regions about a world-space origin', () => {
+    const layer = makeLayer('A', []);
+    layer.fills = [{ id: 'f1', region: [{ x: 10, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 0 }], innerRegion: null }];
+    globalThis.Vectura.PaintBucketOps.transformLayerFills(layer, {
+      dx: 0, dy: 0, scaleX: 1, scaleY: 1, origin: { x: 0, y: 0 }, rotation: 90,
+    });
+    // (10,0) rotated 90° about origin → (0,10).
+    const p = layer.fills[0].region[0];
+    expect(p.x).toBeCloseTo(0, 6);
+    expect(p.y).toBeCloseTo(10, 6);
   });
 });

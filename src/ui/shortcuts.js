@@ -442,6 +442,7 @@
           selectedLayers.forEach((layer) => {
             layer.params.posX += dx;
             layer.params.posY += dy;
+            window.Vectura?.PaintBucketOps?.translateLayerFills?.(layer, dx, dy);
             this.app.engine.generate(layer.id);
           });
           this.app.render();

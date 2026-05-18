@@ -283,12 +283,40 @@
     if (!stack.length) return null;
     const idx = Math.max(0, Math.min(scopeIndex, stack.length - 1));
     const target = stack[idx];
-    const targetLayer = target.layer;
+    let targetLayer = target.layer;
+    // Empty document case: clicking on bare canvas with no eligible host layer
+    // hits the doc-bounds entry but `targetLayer` resolves to null. Create a
+    // background shape layer on the fly so "fill the canvas" works as the user
+    // expects — same shape (the document rect) the fill targets, sitting at
+    // panel-top / canvas-back so it doesn't obscure shapes added later.
+    if (!targetLayer && target.isDocBounds) {
+      const Layer = Vectura.Layer;
+      if (!Layer) return null;
+      const SETTINGS = Vectura.SETTINGS || {};
+      SETTINGS.globalLayerCount = (SETTINGS.globalLayerCount || engine._layerCounter || 0) + 1;
+      if (typeof engine._layerCounter === 'number') engine._layerCounter += 1;
+      const id = Math.random().toString(36).slice(2, 11);
+      app?.pushHistory?.();
+      targetLayer = new Layer(id, 'shape', 'Background');
+      // Empty paths: the layer hosts only the paint-bucket fill geometry. The
+      // doc-bounds polygon lives on the fill record's region; nothing should
+      // draw the boundary itself.
+      targetLayer.paths = [];
+      targetLayer.displayPaths = [];
+      targetLayer.effectivePaths = [];
+      targetLayer.sourcePaths = null;
+      // Insert at index 0 (panel-top = canvas-back) so the background renders
+      // behind any subsequently-added shapes.
+      engine.layers.unshift(targetLayer);
+      engine.activeLayerId = id;
+    }
     if (!targetLayer) return null;
 
     if (!Array.isArray(targetLayer.fills)) targetLayer.fills = [];
     const record = buildFillRecord(target, fillParams);
-    app?.pushHistory?.();
+    // For the auto-created background layer we already pushed history above;
+    // skip a second push for the same logical action.
+    if (target.layer) app?.pushHistory?.();
     targetLayer.fills.push(record);
     engine.computeAllDisplayGeometry?.();
     return { mode: 'pour', layerId: targetLayer.id, fillId: record.id, loopId: target.loopId };
@@ -525,6 +553,51 @@
     };
   };
 
+  // Apply an affine transform to a layer's fill regions in place. Fill regions
+  // are stored as absolute world polygons, so any committed change to the
+  // owning layer's position/scale/rotation must transform the regions in
+  // lockstep — otherwise the fill stays at the original world location while
+  // the shape moves.
+  //
+  // `temp` matches the renderer's tempTransform shape:
+  //   { dx, dy, scaleX, scaleY, origin: {x,y}, rotation? }  (rotation in deg)
+  // Point mapping: p' = origin + R*(p-origin)*scale + (dx,dy).
+  const transformLayerFills = (layer, temp) => {
+    if (!layer || !temp) return;
+    const fills = layer.fills;
+    if (!Array.isArray(fills) || !fills.length) return;
+    const dx = temp.dx ?? 0;
+    const dy = temp.dy ?? 0;
+    const sx = temp.scaleX ?? 1;
+    const sy = temp.scaleY ?? 1;
+    const rotDeg = temp.rotation ?? 0;
+    if (dx === 0 && dy === 0 && sx === 1 && sy === 1 && !rotDeg) return;
+    const origin = temp.origin || { x: 0, y: 0 };
+    const rot = (rotDeg * Math.PI) / 180;
+    const cosR = Math.cos(rot);
+    const sinR = Math.sin(rot);
+    const mapPt = (pt) => {
+      let x = (pt.x - origin.x) * sx;
+      let y = (pt.y - origin.y) * sy;
+      if (rotDeg) {
+        const rx = x * cosR - y * sinR;
+        const ry = x * sinR + y * cosR;
+        x = rx; y = ry;
+      }
+      return { x: x + origin.x + dx, y: y + origin.y + dy };
+    };
+    for (const rec of fills) {
+      if (!rec) continue;
+      if (Array.isArray(rec.region)) rec.region = rec.region.map(mapPt);
+      if (Array.isArray(rec.innerRegion)) rec.innerRegion = rec.innerRegion.map(mapPt);
+    }
+  };
+
+  const translateLayerFills = (layer, dx, dy) => {
+    if (!dx && !dy) return;
+    transformLayerFills(layer, { dx, dy, scaleX: 1, scaleY: 1, origin: { x: 0, y: 0 } });
+  };
+
   Vectura.PaintBucketOps = {
     findFillTargetStack,
     findFillAtPoint,
@@ -533,5 +606,7 @@
     buildFillRecord,
     generateGeometryForLayer,
     expandFill,
+    transformLayerFills,
+    translateLayerFills,
   };
 })();
