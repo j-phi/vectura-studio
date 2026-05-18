@@ -323,6 +323,7 @@
             ? { x: Number(layer.origin.x) || 0, y: Number(layer.origin.y) || 0 }
             : { x: 0, y: 0 },
           fills: Array.isArray(layer.fills) ? JSON.parse(JSON.stringify(layer.fills)) : [],
+          sourceFillRecord: layer.sourceFillRecord ? JSON.parse(JSON.stringify(layer.sourceFillRecord)) : null,
         })),
       };
     }
@@ -389,6 +390,7 @@
         }
         layer.paths = [];
         layer.fills = Array.isArray(data.fills) ? JSON.parse(JSON.stringify(data.fills)) : [];
+        layer.sourceFillRecord = data.sourceFillRecord ? JSON.parse(JSON.stringify(data.sourceFillRecord)) : null;
         layer.displayPaths = [];
         layer.displayMaskActive = false;
         layer.helperPaths = null;

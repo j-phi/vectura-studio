@@ -54,6 +54,81 @@
 
   const clonePolygon = (poly) => poly.map((pt) => ({ x: pt.x, y: pt.y }));
 
+  // Collect every open-path segment (non-closed-ring) from all eligible layers.
+  // Used in all-objects mode to treat pen strokes as fill barriers.
+  const collectBarrierSegments = (engine, tolerance) => {
+    const segs = [];
+    for (const layer of (engine?.layers || [])) {
+      if (!isLayerEligible(layer)) continue;
+      if (Array.isArray(layer.fills) && layer.fills.length > 0) continue;
+      for (const p of getLayerPaths(engine, layer)) {
+        if (isClosedRing(p, tolerance)) continue;
+        for (let i = 1; i < p.length; i++) segs.push([p[i - 1], p[i]]);
+      }
+    }
+    return segs;
+  };
+
+  // Sutherland-Hodgman half-plane clipping. For each barrier segment (a→b),
+  // clip the outer ring polygon by the infinite line through a→b, keeping
+  // the half-plane that contains the cursor. Result is cursor-position-
+  // independent within a face (stable) and follows the ring's actual polygon
+  // vertices (smooth arcs on circles, exact edges on polygons).
+  const findSubRegionByClipping = (outerRing, barrierSegs, px, py) => {
+    const cross2d = (ux, uy, vx, vy) => ux * vy - uy * vx;
+
+    // Build open-polygon list (strip duplicate closing point if present)
+    let poly = [];
+    for (let i = 0; i < outerRing.length; i++) {
+      if (i === outerRing.length - 1) {
+        const f = outerRing[0], pt = outerRing[i];
+        if (Math.abs(pt.x - f.x) < 1e-9 && Math.abs(pt.y - f.y) < 1e-9) break;
+      }
+      poly.push({ x: outerRing[i].x, y: outerRing[i].y });
+    }
+    if (poly.length < 3) return null;
+
+    for (const [sa, sb] of barrierSegs) {
+      const dx = sb.x - sa.x;
+      const dy = sb.y - sa.y;
+      if (dx * dx + dy * dy < 1e-12) continue;
+
+      const cursorSide = cross2d(dx, dy, px - sa.x, py - sa.y);
+      if (Math.abs(cursorSide) < 1e-9) continue; // cursor lies on the barrier line
+
+      const n = poly.length;
+      const out = [];
+      for (let i = 0; i < n; i++) {
+        const curr = poly[i];
+        const next = poly[(i + 1) % n];
+        const sCurr = cross2d(dx, dy, curr.x - sa.x, curr.y - sa.y);
+        const sNext = cross2d(dx, dy, next.x - sa.x, next.y - sa.y);
+        // Keep vertex when it's on the cursor's side (or exactly on the line)
+        const currIn = sCurr * cursorSide >= 0;
+        const nextIn = sNext * cursorSide >= 0;
+
+        if (currIn) out.push(curr);
+
+        // Edge crosses the clip line — insert exact intersection point
+        if (currIn !== nextIn) {
+          const denom = cross2d(dx, dy, next.x - curr.x, next.y - curr.y);
+          if (Math.abs(denom) > 1e-10) {
+            const t = Math.max(0, Math.min(1,
+              cross2d(dx, dy, sa.x - curr.x, sa.y - curr.y) / denom));
+            out.push({ x: curr.x + t * (next.x - curr.x), y: curr.y + t * (next.y - curr.y) });
+          }
+        }
+      }
+
+      if (out.length < 3) continue; // barrier clips too aggressively — skip it
+      poly = out;
+    }
+
+    if (poly.length < 3) return null;
+    poly.push({ x: poly[0].x, y: poly[0].y }); // close
+    return poly;
+  };
+
   // Stable hash for the (layer + polygon) pair so drag-pour can detect
   // "did the cursor leave this region?" without keeping references to the
   // exact path object (which may be replaced on geometry recompute).
@@ -210,6 +285,41 @@
           isDocBounds: false,
         });
         if (outIdx === N - 1 && inIdx < 0) break;
+      }
+
+      // In all-objects mode: if open pen-path strokes from other layers divide
+      // the innermost candidate ring into sub-regions, ray-cast a tighter
+      // polygon so only the enclosed face the cursor sits in is highlighted,
+      // not the whole outer ring. This entry is prepended as the default
+      // (scope 0) selection; scroll-to-widen still reaches the full ring.
+      const kLayer = candidates[K].layer;
+      if (scope !== 'single-object' && !(Array.isArray(kLayer.fills) && kLayer.fills.length > 0)) {
+        const kRing = candidates[K].path;
+        let kMinX = Infinity, kMinY = Infinity, kMaxX = -Infinity, kMaxY = -Infinity;
+        for (const pt of kRing) {
+          if (pt.x < kMinX) kMinX = pt.x; if (pt.x > kMaxX) kMaxX = pt.x;
+          if (pt.y < kMinY) kMinY = pt.y; if (pt.y > kMaxY) kMaxY = pt.y;
+        }
+        const allBarriers = collectBarrierSegments(engine, tolerance);
+        const localBarriers = allBarriers.filter(([a, b]) => {
+          if (Math.max(a.x, b.x) < kMinX || Math.min(a.x, b.x) > kMaxX) return false;
+          if (Math.max(a.y, b.y) < kMinY || Math.min(a.y, b.y) > kMaxY) return false;
+          return polyContainsPoint(kRing, a.x, a.y) || polyContainsPoint(kRing, b.x, b.y);
+        });
+        if (localBarriers.length > 0) {
+          const subPoly = findSubRegionByClipping(kRing, localBarriers, worldX, worldY);
+          const subArea = subPoly ? shoelaceArea(subPoly) : 0;
+          if (subPoly && subArea > 0 && subArea < candidates[K].area * 0.98) {
+            entries.unshift({
+              layer: candidates[K].layer,
+              polygon: subPoly,
+              innerPolygon: null,
+              area: subArea,
+              loopId: `barrier-sub:${K}:${candidates[K].layer.id}:${localBarriers.length}`,
+              isDocBounds: false,
+            });
+          }
+        }
       }
     }
 
@@ -604,6 +714,9 @@
       if (!rec) continue;
       if (Array.isArray(rec.region)) rec.region = rec.region.map(mapPt);
       if (Array.isArray(rec.innerRegion)) rec.innerRegion = rec.innerRegion.map(mapPt);
+      const s = mapPt({ x: rec.shiftX ?? 0, y: rec.shiftY ?? 0 });
+      rec.shiftX = s.x;
+      rec.shiftY = s.y;
     }
   };
 

@@ -682,6 +682,22 @@ describe('PaintBucketOps.translateLayerFills', () => {
     globalThis.Vectura.PaintBucketOps.translateLayerFills(layer, 0, 0);
     expect(JSON.stringify(layer.fills[0].region)).toBe(before);
   });
+
+  it('also translates shiftX/shiftY so the fill lattice stays anchored to the shape', () => {
+    // Regression: polygonal (and all) fills use shiftX/shiftY as the world-space
+    // lattice origin. Without updating it on move, the lattice stays at its old
+    // world position and the pattern shifts visually inside the shape.
+    const layer = makeLayer('A', []);
+    layer.fills = [
+      { id: 'f1', region: closedRect(10, 10, 30, 30), innerRegion: null, shiftX: 5, shiftY: -3 },
+      { id: 'f2', region: closedRect(40, 40, 80, 80), innerRegion: null, shiftX: 0, shiftY: 0 },
+    ];
+    globalThis.Vectura.PaintBucketOps.translateLayerFills(layer, 100, -25);
+    expect(layer.fills[0].shiftX).toBeCloseTo(105, 6);
+    expect(layer.fills[0].shiftY).toBeCloseTo(-28, 6);
+    expect(layer.fills[1].shiftX).toBeCloseTo(100, 6);
+    expect(layer.fills[1].shiftY).toBeCloseTo(-25, 6);
+  });
 });
 
 describe('PaintBucketOps.transformLayerFills', () => {
@@ -706,5 +722,27 @@ describe('PaintBucketOps.transformLayerFills', () => {
     const p = layer.fills[0].region[0];
     expect(p.x).toBeCloseTo(0, 6);
     expect(p.y).toBeCloseTo(10, 6);
+  });
+
+  it('also scales shiftX/shiftY so the lattice anchor moves with the shape', () => {
+    const layer = makeLayer('A', []);
+    layer.fills = [{ id: 'f1', region: closedRect(10, 10, 30, 30), innerRegion: null, shiftX: 20, shiftY: 20 }];
+    globalThis.Vectura.PaintBucketOps.transformLayerFills(layer, {
+      dx: 0, dy: 0, scaleX: 2, scaleY: 2, origin: { x: 20, y: 20 },
+    });
+    // (20,20) about (20,20) at 2x → (20,20) (fixed point of the scale).
+    expect(layer.fills[0].shiftX).toBeCloseTo(20, 6);
+    expect(layer.fills[0].shiftY).toBeCloseTo(20, 6);
+  });
+
+  it('also rotates shiftX/shiftY about the world-space origin', () => {
+    const layer = makeLayer('A', []);
+    layer.fills = [{ id: 'f1', region: closedRect(0, 0, 10, 10), innerRegion: null, shiftX: 10, shiftY: 0 }];
+    globalThis.Vectura.PaintBucketOps.transformLayerFills(layer, {
+      dx: 0, dy: 0, scaleX: 1, scaleY: 1, origin: { x: 0, y: 0 }, rotation: 90,
+    });
+    // (10,0) rotated 90° about origin → (0,10).
+    expect(layer.fills[0].shiftX).toBeCloseTo(0, 6);
+    expect(layer.fills[0].shiftY).toBeCloseTo(10, 6);
   });
 });

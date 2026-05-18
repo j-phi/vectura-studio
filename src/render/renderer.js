@@ -761,7 +761,8 @@
         ctx.imageSmoothingEnabled = false;
         ctx.clearRect(0, 0, mw, mh);
         try {
-          ctx.drawImage(this.canvas, srcX, srcY, sw, sh, 0, 0, mw, mh);
+          const src = this._loupeCleanCanvas || this.canvas;
+          ctx.drawImage(src, srcX, srcY, sw, sh, 0, 0, mw, mh);
         } catch (_) {
           // Canvas not ready; ignore.
         }
@@ -2951,6 +2952,50 @@
           this.ctx.stroke();
         });
       };
+
+      // Render artboard-only snapshot for fill loupe (no selection handles or UI overlays).
+      const fillToolActive = ['fill', 'fill-erase', 'fill-pattern', 'fill-pattern-erase'].includes(this.activeTool);
+      if (fillToolActive) {
+        const cw = this.canvas.width;
+        const ch = this.canvas.height;
+        const dpr = window.devicePixelRatio;
+        if (!this._loupeCleanCanvas) {
+          this._loupeCleanCanvas = document.createElement('canvas');
+          this._loupeCleanCanvas.width = cw;
+          this._loupeCleanCanvas.height = ch;
+          this._loupeCleanCtx = this._loupeCleanCanvas.getContext('2d');
+          this._loupeCleanCtx.scale(dpr, dpr);
+        } else if (this._loupeCleanCanvas.width !== cw || this._loupeCleanCanvas.height !== ch) {
+          this._loupeCleanCanvas.width = cw;
+          this._loupeCleanCanvas.height = ch;
+          this._loupeCleanCtx.scale(dpr, dpr);
+        }
+        const mainCtx = this.ctx;
+        this.ctx = this._loupeCleanCtx;
+        this.ctx.clearRect(0, 0, w, h);
+        this.ctx.fillStyle = getThemeToken('--render-canvas', '#121214');
+        this.ctx.fillRect(0, 0, w, h);
+        this.ctx.save();
+        this.ctx.translate(this.offsetX, this.offsetY);
+        this.ctx.scale(this.scale, this.scale);
+        this.ctx.fillStyle = SETTINGS.bgColor;
+        this.ctx.shadowColor = getThemeToken('--render-shadow', 'rgba(0,0,0,0.5)');
+        this.ctx.shadowBlur = 20;
+        this.ctx.fillRect(0, 0, prof.width, prof.height);
+        this.ctx.shadowBlur = 0;
+        this.ctx.strokeStyle = getThemeToken('--render-paper-outline', '#333');
+        this.ctx.lineWidth = 1 / this.scale;
+        this.ctx.strokeRect(0, 0, prof.width, prof.height);
+        this.ctx.lineJoin = 'round';
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.rect(m, m, innerW, innerH);
+        this.ctx.clip();
+        drawLayers();
+        this.ctx.restore();
+        this.ctx.restore();
+        this.ctx = mainCtx;
+      }
 
       if (SETTINGS.truncate) {
         this.ctx.save();
