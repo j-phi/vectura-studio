@@ -382,6 +382,7 @@
       this.paintBucketStack = null;
       this.paintBucketScopeIndex = 0;
       this.paintBucketStackKey = null;
+      this.patternFillPreviewInnerPolygon = null;
       this.lastPourLoopId = null;
       // Refs to the fill records in the "active batch" — the set that panel
       // slider/variant edits retarget in place. Empty means no active batch
@@ -485,8 +486,14 @@
         const alt = Boolean(e.altKey);
         const meta = Boolean(e.metaKey || e.ctrlKey);
         if (alt === this._modState.alt && meta === this._modState.meta) return;
+        const wasMeta = this._modState.meta;
         this._modState.alt = alt;
         this._modState.meta = meta;
+        // CMD released while the panel is showing the sample-empty prompt —
+        // restore the normal Paint Bucket controls.
+        if (wasMeta && !meta) {
+          this.app?.paintBucketPanel?.setSampleEmptyMode?.(false);
+        }
         // Reset to the tool-default cursor first, then refine via hover. This
         // matters when the active branch of updateHoverCursor early-returns
         // (e.g. fill tool relies on updateCursor to set the bucket).
@@ -499,6 +506,7 @@
         if (!this._modState.alt && !this._modState.meta) return;
         this._modState.alt = false;
         this._modState.meta = false;
+        this.app?.paintBucketPanel?.setSampleEmptyMode?.(false);
         this.updateCursor();
       };
       document.addEventListener('keydown', this._onModKeyChange);
@@ -584,11 +592,13 @@
       if (!['fill', 'fill-erase', 'fill-pattern', 'fill-pattern-erase'].includes(tool)) {
         this.hideFillLoupe?.();
         this.patternFillPreviewPolygon = null;
+        this.patternFillPreviewInnerPolygon = null;
       }
       if (tool !== 'fill' && tool !== 'fill-erase') {
         this.paintBucketStack = null;
         this.paintBucketScopeIndex = 0;
         this.paintBucketStackKey = null;
+        this.patternFillPreviewInnerPolygon = null;
         this.lastPourLoopId = null;
         // Commit any active batch when leaving the fill tool. This clears the
         // panel chip and outline overlay; the fill records themselves stay
@@ -3252,6 +3262,7 @@
           this.paintBucketScopeIndex = next;
           const entry = this.paintBucketStack[next];
           this.patternFillPreviewPolygon = entry?.polygon || null;
+          this.patternFillPreviewInnerPolygon = entry?.innerPolygon || null;
           if (this.app?.ui?.setPaintBucketHint && entry) {
             if (entry.isDocBounds) {
               this.app.ui.setPaintBucketHint('Scope: document bounds — click to fill background');
@@ -3451,6 +3462,10 @@
       }
 
       if (this.activeTool === 'fill-pattern' || this.activeTool === 'fill-pattern-erase') {
+        if (!this._isWorldInsidePaper(world)) {
+          if (e.cancelable) e.preventDefault();
+          return;
+        }
         const poly = this._computeFillPreviewPolygon(world.x, world.y);
         if (poly && this.onPatternFill) {
           this.onPatternFill({ tool: this.activeTool, polygon: poly, worldX: world.x, worldY: world.y });
@@ -3460,6 +3475,10 @@
       }
 
       if (this.activeTool === 'fill' || this.activeTool === 'fill-erase') {
+        if (!this._isWorldInsidePaper(world)) {
+          if (e.cancelable) e.preventDefault();
+          return;
+        }
         // CMD/Ctrl+click on an existing fill adopts it as the active batch so
         // the user can tweak its params via the panel. Only meaningful in
         // pour mode; in erase mode CMD acts like a plain click.
@@ -3714,6 +3733,13 @@
           return;
         }
         const world = this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+        // Once the cursor crosses out of the paper rectangle into the
+        // surrounding canvas margin, drop the blue fill preview and bail
+        // before any pour logic — clicks in the margin must not fill.
+        if (!this._isWorldInsidePaper(world)) {
+          this._paintBucketClearHover();
+          return;
+        }
         this._paintBucketHover(world);
         this.showFillLoupe(e.clientX, e.clientY);
         // Drag-pour: while the primary button AND Shift are held and we
@@ -3731,6 +3757,12 @@
       } else if (this.activeTool === 'fill-pattern' || this.activeTool === 'fill-pattern-erase') {
         const rect = this.canvas.getBoundingClientRect();
         const world = this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+        if (!this._isWorldInsidePaper(world)) {
+          this.patternFillPreviewPolygon = null;
+          this.hideFillLoupe?.();
+          this.draw();
+          return;
+        }
         this.patternFillPreviewPolygon = this._computeFillPreviewPolygon(world.x, world.y);
         this.showFillLoupe(e.clientX, e.clientY);
         this.draw();
@@ -4847,6 +4879,12 @@
       return best;
     }
 
+    _isWorldInsidePaper(world) {
+      const prof = this.engine?.currentProfile;
+      if (!prof || !world) return false;
+      return world.x >= 0 && world.x <= prof.width && world.y >= 0 && world.y <= prof.height;
+    }
+
     _paintBucketHover(world) {
       const PBO = window.Vectura?.PaintBucketOps;
       if (!PBO) { this.paintBucketStack = null; this.patternFillPreviewPolygon = null; return; }
@@ -4859,6 +4897,7 @@
         this.paintBucketStackKey = null;
         this.paintBucketScopeIndex = 0;
         this.patternFillPreviewPolygon = null;
+        this.patternFillPreviewInnerPolygon = null;
         return;
       }
       const stackKey = stack.map((e) => e.loopId).join('|');
@@ -4870,6 +4909,7 @@
       this.paintBucketScopeIndex = Math.min(this.paintBucketScopeIndex, stack.length - 1);
       const entry = stack[this.paintBucketScopeIndex];
       this.patternFillPreviewPolygon = entry?.polygon || null;
+      this.patternFillPreviewInnerPolygon = entry?.innerPolygon || null;
       if (entry && this.app?.ui?.setPaintBucketHint) {
         if (entry.isDocBounds) {
           this.app.ui.setPaintBucketHint('Scope: document bounds — click to fill background');
@@ -4888,6 +4928,7 @@
       this.paintBucketStackKey = null;
       this.paintBucketScopeIndex = 0;
       this.patternFillPreviewPolygon = null;
+      this.patternFillPreviewInnerPolygon = null;
       this.draw();
     }
 
@@ -4943,14 +4984,24 @@
     // The panel mirror loads the fill's params (suppressed retarget).
     _paintBucketAdoptAtPoint(world) {
       const PBO = window.Vectura?.PaintBucketOps;
-      if (!PBO?.findFillAtPoint) return false;
+      const panel = this.app?.paintBucketPanel;
+      if (!PBO?.findFillAtPoint) {
+        panel?.setSampleEmptyMode?.(true);
+        return false;
+      }
       const hit = PBO.findFillAtPoint(this.engine, world.x, world.y);
-      if (!hit?.rec || !hit.layer?.id) return false;
+      if (!hit?.rec || !hit.layer?.id) {
+        // Nothing to sample under the cursor — swap the panel to the
+        // sampling prompt until the user releases CMD.
+        panel?.setSampleEmptyMode?.(true);
+        return false;
+      }
+      panel?.setSampleEmptyMode?.(false);
       // Replace any active batch with the adopted fill. This is a silent
       // commit: there is no "unsaved" work because slider edits already
       // retarget live as they happen.
       this.lastPaintedFillRefs = [{ layerId: hit.layer.id, fillId: hit.rec.id }];
-      this.app?.paintBucketPanel?.loadParamsFromFill?.(hit.rec);
+      panel?.loadParamsFromFill?.(hit.rec);
       this._notifyBatchState();
       this.draw();
       return true;
@@ -4972,6 +5023,7 @@
       this.paintBucketStackKey = null;
       this.paintBucketScopeIndex = 0;
       this.patternFillPreviewPolygon = null;
+      this.patternFillPreviewInnerPolygon = null;
       this.lastPourLoopId = null;
       this.hideFillLoupe?.();
       if (this.app?.ui?.setPaintBucketHint) {
@@ -5055,12 +5107,16 @@
     drawPatternFillPreview() {
       const poly = this.patternFillPreviewPolygon;
       if (!Array.isArray(poly) || poly.length < 3) return;
+      const innerPoly = this.patternFillPreviewInnerPolygon;
+      const hasHole = Array.isArray(innerPoly) && innerPoly.length >= 3;
       const isErase = this.activeTool === 'fill-pattern-erase' || this.activeTool === 'fill-erase';
       this.ctx.save();
       this.ctx.beginPath();
       this.tracePolygonPath(poly);
+      if (hasHole) this.tracePolygonPath(innerPoly);
       this.ctx.fillStyle = isErase ? 'rgba(239,68,68,0.2)' : 'rgba(59,130,246,0.2)';
-      this.ctx.fill();
+      // Even-odd rule makes the inner polygon a transparent hole in the fill.
+      this.ctx.fill(hasHole ? 'evenodd' : 'nonzero');
       this.ctx.strokeStyle = isErase ? 'rgba(239,68,68,0.65)' : 'rgba(59,130,246,0.65)';
       this.ctx.lineWidth = 1.5 / this.scale;
       this.ctx.setLineDash([3 / this.scale, 2 / this.scale]);

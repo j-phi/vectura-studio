@@ -145,26 +145,50 @@
       const hoveredLayer = findHoveredLayer(engine, worldX, worldY, tolerance);
       const entries = [];
       if (hoveredLayer) {
+        // Collect ALL closed rings from this layer, sorted by area (innermost first).
+        const allRings = [];
         const paths = getLayerPaths(engine, hoveredLayer);
         for (const p of paths) {
           if (!isClosedRing(p, tolerance)) continue;
-          if (!polyContainsPoint(p, worldX, worldY)) continue;
-          const polygon = clonePolygon(p);
-          entries.push({
-            layer: hoveredLayer,
-            polygon,
-            area: shoelaceArea(polygon),
-            loopId: loopIdFor(hoveredLayer.id, polygon),
-            isDocBounds: false,
-          });
+          allRings.push(p);
         }
-        entries.sort((a, b) => a.area - b.area);
+        allRings.sort((a, b) => shoelaceArea(a) - shoelaceArea(b));
+
+        // K = index of the smallest ring that contains the cursor.
+        let K = -1;
+        for (let i = 0; i < allRings.length; i++) {
+          if (polyContainsPoint(allRings[i], worldX, worldY)) { K = i; break; }
+        }
+
+        if (K >= 0) {
+          const N = allRings.length;
+          // Build band entries centered at cursor's ring K, expanding symmetrically.
+          // Scope i: outer = rings[min(K+i, N-1)], inner = rings[K-1-i] (or null).
+          // Passing [outerPolygon, innerPolygon] to the fill generator triggers
+          // XOR compositing — innerPolygon acts as the exclusion zone (donut hole).
+          for (let i = 0; ; i++) {
+            const outIdx = Math.min(K + i, N - 1);
+            const inIdx  = K - 1 - i;
+            const outerPolygon = clonePolygon(allRings[outIdx]);
+            const innerPolygon = inIdx >= 0 ? clonePolygon(allRings[inIdx]) : null;
+            entries.push({
+              layer: hoveredLayer,
+              polygon: outerPolygon,
+              innerPolygon,
+              area: shoelaceArea(outerPolygon),
+              loopId: `band:${outIdx}:${inIdx >= 0 ? inIdx : 'x'}:${hoveredLayer.id}`,
+              isDocBounds: false,
+            });
+            if (outIdx === N - 1 && inIdx < 0) break;
+          }
+        }
       }
       const docPoly = docBoundsPolygon(engine);
       const fallbackLayer = hoveredLayer || engine?.getActiveLayer?.() || engine?.layers?.[0] || null;
       entries.push({
         layer: fallbackLayer,
         polygon: docPoly,
+        innerPolygon: null,
         area: shoelaceArea(docPoly),
         loopId: '__doc-bounds__',
         isDocBounds: true,
@@ -234,6 +258,7 @@
     sensitivity: fillParams.fillSensitivity ?? 5,
     penId: fillParams.penId ?? null,
     region: clonePolygon(targetEntry.polygon),
+    innerRegion: targetEntry.innerPolygon ? clonePolygon(targetEntry.innerPolygon) : null,
     loopId: targetEntry.loopId,
     isDocBounds: Boolean(targetEntry.isDocBounds),
     createdAt: Date.now(),
@@ -301,7 +326,9 @@
     for (const rec of layer.fills) {
       if (!rec || !rec.region || rec.fillType === 'none') continue;
       const fillArg = {
-        regions: [rec.region],
+        // When innerRegion is set (band/donut fill), include it in regions so
+        // the generator's compositeContainsPoint XOR logic excludes the hole.
+        regions: rec.innerRegion ? [rec.region, rec.innerRegion] : [rec.region],
         region: rec.region,
         fillType: rec.fillType,
         density: rec.density,
@@ -338,6 +365,183 @@
     return all;
   };
 
+  // Generate baked paths for a single fill record (mirrors the per-record
+  // loop body of generateGeometryForLayer, scoped to one record so expandFill
+  // can split records into separate output layers).
+  const generatePathsForFillRecord = (rec) => {
+    const gen = Vectura.AlgorithmRegistry?._generatePatternFillPaths;
+    if (typeof gen !== 'function') return [];
+    if (!rec || !rec.region || rec.fillType === 'none') return [];
+    let paths;
+    try {
+      paths = gen({
+        regions: rec.innerRegion ? [rec.region, rec.innerRegion] : [rec.region],
+        region: rec.region,
+        fillType: rec.fillType,
+        density: rec.density,
+        angle: rec.angle,
+        amplitude: rec.amplitude,
+        dotSize: rec.dotSize,
+        dotLength: rec.dotLength,
+        dotRotation: rec.dotRotation,
+        penWidth: resolvePenWidth(rec.penId),
+        padding: rec.padding,
+        shiftX: rec.shiftX,
+        shiftY: rec.shiftY,
+        dotPattern: rec.dotPattern,
+        axes: rec.axes,
+        polyTile: rec.polyTile,
+        centralDensity: rec.centralDensity,
+        outerDiameter: rec.outerDiameter,
+      }) || [];
+    } catch (err) {
+      if (typeof console !== 'undefined') console.warn('[PaintBucketOps] fill generator failed', err);
+      paths = [];
+    }
+    return paths.filter((p) => Array.isArray(p) && p.length >= 2);
+  };
+
+  const nextLayerId = (engine) => {
+    const SETTINGS = Vectura.SETTINGS || {};
+    SETTINGS.globalLayerCount = (SETTINGS.globalLayerCount || engine._layerCounter || 0) + 1;
+    if (typeof engine._layerCounter === 'number') engine._layerCounter += 1;
+    return Math.random().toString(36).slice(2, 11);
+  };
+
+  const generateGroupName = (engine, parentName) => {
+    const base = `${parentName || 'Layer'} + Fill`;
+    const taken = new Set((engine.layers || []).map((l) => l.name));
+    if (!taken.has(base)) return base;
+    let n = 2;
+    while (taken.has(`${base} ${n}`)) n += 1;
+    return `${base} ${n}`;
+  };
+
+  // Mutates engine: converts a layer's paint-bucket fills[] into baked sibling
+  // shape layers wrapped in a 'paintfill' group container.
+  //
+  // Engine.layers layout after expand (the slot the source layer occupied):
+  //   [..., group, parent, fill1, fill2, ..., fillN, ...]
+  // — parent stays first child (panel-top of the group, drawn first), fills
+  // follow in record order (drawn after parent → visually on top, matching the
+  // pre-expand renderer output where fill paths are concatenated after the
+  // parent's effectivePaths).
+  //
+  // The original parent keeps its id; the group gets a new id. Modifiers on the
+  // original parent move to the group container so the group transforms as a
+  // unit. Each fill child carries a defensive copy of its source fill record
+  // on `sourceFillRecord` for serialization / future "re-pour" support.
+  //
+  // Returns { groupId, layerId, fillLayerIds } on success, null otherwise.
+  // Callers wrap with app.pushHistory().
+  const expandFill = (engine, layer) => {
+    if (!engine || !layer) return null;
+    if (layer.isGroup) return null;
+    if (!Array.isArray(layer.fills) || !layer.fills.length) return null;
+    const Layer = Vectura.Layer;
+    if (!Layer) return null;
+
+    const originalIndex = engine.layers.indexOf(layer);
+    if (originalIndex < 0) return null;
+
+    const records = layer.fills.slice();
+    const fillChildren = [];
+    records.forEach((rec, i) => {
+      const paths = generatePathsForFillRecord(rec);
+      if (!paths.length) return; // Skip records that produce no geometry.
+      const child = new Layer(nextLayerId(engine), 'shape', `Fill ${i + 1} (${rec.fillType || 'hatch'})`);
+      child.type = 'shape';
+      child.isGroup = false;
+      child.containerRole = null;
+      child.groupType = null;
+      child.penId = rec.penId || layer.penId;
+      const pens = Array.isArray(Vectura.SETTINGS?.pens) ? Vectura.SETTINGS.pens : [];
+      const pen = pens.find((p) => p && p.id === child.penId) || null;
+      if (pen) {
+        child.color = pen.color || child.color;
+        child.strokeWidth = pen.width ?? child.strokeWidth;
+      } else {
+        child.color = layer.color;
+        child.strokeWidth = layer.strokeWidth;
+      }
+      child.lineCap = layer.lineCap || 'round';
+      const tagged = paths.map((p) => {
+        const next = p.map((pt) => ({ x: pt.x, y: pt.y }));
+        next.meta = {
+          ...(p.meta || {}),
+          source: 'paintfill-baked',
+          paintBucketFillId: rec.id,
+        };
+        if (child.penId) next.meta.penId = child.penId;
+        return next;
+      });
+      child.paths = tagged;
+      child.displayPaths = tagged.map((p) => p);
+      child.effectivePaths = tagged.map((p) => p);
+      child.sourcePaths = tagged.map((p) => p);
+      // Defensive copy so later edits to the original record (or its disposal)
+      // don't leak into the baked child.
+      child.sourceFillRecord = JSON.parse(JSON.stringify(rec));
+      fillChildren.push(child);
+    });
+
+    // Build the group container.
+    const group = new Layer(nextLayerId(engine), 'shape', generateGroupName(engine, layer.name));
+    group.type = 'shape';
+    group.isGroup = true;
+    group.containerRole = null;
+    group.groupType = 'paintfill';
+    group.groupCollapsed = false;
+    group.params = { seed: 0, posX: 0, posY: 0, scaleX: 1, scaleY: 1, rotation: 0 };
+    group.paramStates = {};
+    group.sourcePaths = null;
+    group.paths = [];
+    group.displayPaths = [];
+    group.effectivePaths = [];
+    // Inherit the original layer's parentId — nested expansion places the new
+    // paintfill group inside whatever container the source was already in.
+    group.parentId = layer.parentId ?? null;
+    // Inherit appearance from the parent so the group "looks like" its source
+    // in any UI surface that reads the group's pen/color (e.g. layer card).
+    group.penId = layer.penId;
+    group.color = layer.color;
+    group.strokeWidth = layer.strokeWidth;
+    group.lineCap = layer.lineCap;
+    // Move modifiers from the original parent to the group container so the
+    // mirror/etc. transforms apply to parent + fills as a unit.
+    if (layer.modifier) {
+      group.modifier = layer.modifier;
+      layer.modifier = null;
+    }
+
+    // Reparent the original layer + the new fill children under the group,
+    // and clear the original's fills (the baked children now own that geometry).
+    layer.parentId = group.id;
+    layer.fills = [];
+    fillChildren.forEach((child) => { child.parentId = group.id; });
+
+    // Splice the original layer's slot with [group, parent, ...fills]. Parent
+    // first among children = panel-top child = drawn first (canvas-back).
+    // Fills follow in record order = drawn after parent = visually on top,
+    // matching the pre-expand renderer output.
+    engine.layers.splice(originalIndex, 1, group, layer, ...fillChildren);
+
+    if (typeof engine.setActiveLayerId === 'function') {
+      engine.setActiveLayerId(group.id);
+    } else {
+      engine.activeLayerId = group.id;
+    }
+    if (typeof engine.computeAllDisplayGeometry === 'function') {
+      engine.computeAllDisplayGeometry();
+    }
+
+    return {
+      groupId: group.id,
+      layerId: layer.id,
+      fillLayerIds: fillChildren.map((c) => c.id),
+    };
+  };
+
   Vectura.PaintBucketOps = {
     findFillTargetStack,
     findFillAtPoint,
@@ -345,5 +549,6 @@
     applyFillAtPoint,
     buildFillRecord,
     generateGeometryForLayer,
+    expandFill,
   };
 })();
