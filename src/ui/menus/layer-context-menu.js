@@ -69,6 +69,11 @@
       items.push({ separator: true });
       items.push({ key: 'expand-into-group', label: 'Expand into group' });
     }
+    const hasFills = layer && !layer.isGroup && Array.isArray(layer.fills) && layer.fills.length > 0;
+    if (hasFills) {
+      items.push({ separator: true });
+      items.push({ key: 'expand-fill', label: 'Expand Fill' });
+    }
     return items;
   };
 
@@ -124,6 +129,21 @@
     }
     if (key === 'expand-into-group') {
       if (typeof ui.expandLayer === 'function') ui.expandLayer(layer);
+      ui.renderLayers && ui.renderLayers();
+      ui.app.render && ui.app.render();
+      return;
+    }
+    if (key === 'expand-fill') {
+      const PBO = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.PaintBucketOps;
+      if (!PBO?.expandFill) return;
+      if (!Array.isArray(layer.fills) || !layer.fills.length) return;
+      if (ui.app.pushHistory) ui.app.pushHistory();
+      const result = PBO.expandFill(engine, layer);
+      if (!result) return;
+      ui.app.renderer?.commitActiveBatch?.();
+      ui.app.setSelection?.([result.groupId], result.groupId);
+      engine.setActiveLayerId?.(result.groupId);
+      ui.app.paintBucketPanel?.updateExpandButton?.();
       ui.renderLayers && ui.renderLayers();
       ui.app.render && ui.app.render();
       return;

@@ -6297,8 +6297,11 @@
     // bail when this returns true.
     _applyModifierCursorOverride(e = null) {
       if (!this.canvas) return false;
-      const altHeld = e ? Boolean(e.altKey) : Boolean(this._modState?.alt);
-      const metaHeld = e ? Boolean(e.metaKey || e.ctrlKey) : Boolean(this._modState?.meta);
+      // _modState is authoritative — it's always updated by keydown/keyup before
+      // this runs. Falling back to e.metaKey would read a stale value from
+      // _lastPointerEvent when CMD is released (that event still has metaKey:true).
+      const altHeld = this._modState ? Boolean(this._modState.alt) : Boolean(e?.altKey);
+      const metaHeld = this._modState ? Boolean(this._modState.meta) : Boolean(e?.metaKey || e?.ctrlKey);
       if (altHeld && this.activeTool === 'select' && !this.isLayerDrag && !this.isSelecting) {
         this.setCanvasCursor(this.cursorDataUrl('copyPlus', 4, 4, 'copy'), 'select-copy');
         return true;

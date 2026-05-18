@@ -1,7 +1,7 @@
 # Graph Report - /Users/jayphi/Documents/github/vectura-studio  (2026-05-18)
 
 ## Corpus Check
-- 321 files · ~2,850,564 words
+- 321 files · ~2,850,620 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -1439,12 +1439,12 @@ Nodes (1): City — Isometric aerial city of skyscrapers rendered entirely in de
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `mt()` connect `Community 0` to `Community 1`, `Community 3`, `Community 5`, `Community 6`, `Community 8`, `Community 10`, `Community 12`, `Community 15`, `Community 17`, `Community 21`?**
-  _High betweenness centrality (0.075) - this node is a cross-community bridge._
-- **Why does `Renderer` connect `Community 2` to `Community 1`, `Community 22`?**
-  _High betweenness centrality (0.064) - this node is a cross-community bridge._
 - **Why does `sort()` connect `Community 4` to `Community 0`, `Community 1`, `Community 2`, `Community 3`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 13`, `Community 14`, `Community 15`, `Community 18`, `Community 23`, `Community 26`, `Community 30`?**
-  _High betweenness centrality (0.063) - this node is a cross-community bridge._
+  _High betweenness centrality (0.084) - this node is a cross-community bridge._
+- **Why does `Renderer` connect `Community 2` to `Community 1`, `Community 22`?**
+  _High betweenness centrality (0.070) - this node is a cross-community bridge._
+- **Why does `mt()` connect `Community 0` to `Community 1`, `Community 3`, `Community 5`, `Community 6`, `Community 8`, `Community 10`, `Community 12`, `Community 15`, `Community 17`, `Community 21`?**
+  _High betweenness centrality (0.066) - this node is a cross-community bridge._
 - **Are the 95 inferred relationships involving `mt()` (e.g. with `_e()` and `ye()`) actually correct?**
   _`mt()` has 95 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 87 inferred relationships involving `addEventListener()` (e.g. with `ki` and `LC()`) actually correct?**

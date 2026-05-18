@@ -851,6 +851,9 @@
 
     setSelection(ids, primaryId) {
       this.renderer?.setSelection(ids, primaryId);
+      // Selection changes can flip the Expand Fill button's eligibility
+      // (active layer with fills vs. without). Cheap to refresh.
+      this.paintBucketPanel?.updateExpandButton?.();
     }
 
     hexToRgb(hex) {

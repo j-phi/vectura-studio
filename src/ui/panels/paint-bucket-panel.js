@@ -495,6 +495,14 @@
     }
   }
 
+  function setSampleEmptyMode(active) {
+    const panel = document.getElementById('paint-bucket-panel');
+    const notice = document.getElementById('paint-bucket-sample-empty');
+    if (!panel || !notice) return;
+    panel.classList.toggle('is-sampling-empty', !!active);
+    notice.hidden = !active;
+  }
+
   function updateStatusChip(activeCount) {
     const chip = document.getElementById('paint-bucket-status-chip');
     const text = document.getElementById('paint-bucket-status-chip-text');
@@ -513,6 +521,49 @@
     btn.addEventListener('click', () => {
       state.app?.renderer?.commitActiveBatch?.();
     });
+  }
+
+  function getActiveExpandTarget(state) {
+    const engine = state.app?.engine;
+    if (!engine) return null;
+    const layer = engine.getActiveLayer?.() || null;
+    if (!layer || layer.isGroup) return null;
+    if (!Array.isArray(layer.fills) || !layer.fills.length) return null;
+    return layer;
+  }
+
+  function updateExpandButton(state) {
+    const btn = document.getElementById('paint-bucket-expand-btn');
+    if (!btn) return;
+    const target = getActiveExpandTarget(state);
+    btn.disabled = !target;
+    btn.title = target
+      ? `Expand ${target.fills.length} fill${target.fills.length === 1 ? '' : 's'} into a group`
+      : 'Select a layer with paint-bucket fills to enable';
+  }
+
+  function bindExpandButton(state) {
+    const btn = document.getElementById('paint-bucket-expand-btn');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      const target = getActiveExpandTarget(state);
+      if (!target) return;
+      const PBO = Vectura.PaintBucketOps;
+      if (!PBO?.expandFill) return;
+      // Commit any in-progress paint-bucket batch first — the original layer
+      // is now nested and its fills cleared; stale batch refs would break the
+      // status chip.
+      state.app?.renderer?.commitActiveBatch?.();
+      state.app?.pushHistory?.();
+      const result = PBO.expandFill(state.app.engine, target);
+      if (!result) return;
+      state.app?.setSelection?.([result.groupId], result.groupId);
+      state.app?.engine?.setActiveLayerId?.(result.groupId);
+      state.app?.ui?.renderLayers?.();
+      state.app?.render?.();
+      updateExpandButton(state);
+    });
+    updateExpandButton(state);
   }
 
   function init(app) {
@@ -543,11 +594,13 @@
     bindSensitivity(state);
     renderControls(state, controlsEl, hintEl);
     bindStatusChip(state);
+    bindExpandButton(state);
     updateStatusChip(0);
 
     const refresh = () => {
       refreshVariantSelection(state);
       renderControls(state, controlsEl, hintEl);
+      updateExpandButton(state);
     };
 
     app.ui = app.ui || {};
@@ -557,7 +610,12 @@
       getFillParams: () => ({ ...state.fillParams }),
       setHint,
       loadParamsFromFill: (rec) => loadParamsFromFill(state, controlsEl, hintEl, rec),
-      onBatchStateChange: ({ activeCount = 0 } = {}) => updateStatusChip(activeCount),
+      onBatchStateChange: ({ activeCount = 0 } = {}) => {
+        updateStatusChip(activeCount);
+        updateExpandButton(state);
+      },
+      setSampleEmptyMode,
+      updateExpandButton: () => updateExpandButton(state),
     };
   }
 
