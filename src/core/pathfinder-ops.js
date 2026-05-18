@@ -17,7 +17,8 @@
  * The compound layer model:
  *   layer.type === 'compound'
  *   layer.compound = { childIds, opType, sourceMode, cache }
- *     childIds:   ordered list of contributing layer ids (back → front)
+ *     childIds:   ordered list of contributing layer ids (panel top → bottom;
+ *                 i.e. the user-visible "front-to-back" of the stack)
  *     opType:     'unite' | 'minusFront' | 'intersect' | 'exclude'
  *     sourceMode: 'silhouette' | 'shape-only'
  *     cache:      { signature, multiPolygon } — runtime only, not serialized
@@ -106,13 +107,26 @@
 
   const filterEmpty = (geoms) => geoms.filter((g) => Array.isArray(g) && g.length);
 
-  // Front = last in array (paints last → on top). Order layers by their z-stack.
-  const sortBackToFront = (layers, engine) => {
+  // Pathfinder semantics treat the TOP of the layer panel as the "front" of
+  // the stack (Illustrator convention). Vectura's panel renders engine.layers
+  // in natural order — engine.layers[0] is the panel TOP, engine.layers[last]
+  // is the panel BOTTOM. So under panel-top-as-front:
+  //   ordered[0]            = panel-TOP    = front of the stack
+  //   ordered[ordered.len-1] = panel-BOTTOM = back of the stack
+  // (Note: this is the *opposite* of Vectura's canvas paint order, where the
+  // last engine entry is painted last and therefore appears on top of the
+  // canvas. Pathfinder semantics follow the user-visible panel order, not the
+  // canvas paint order.)
+  const sortFrontToBack = (layers, engine) => {
     if (!engine?.layers) return layers.slice();
     const index = new Map();
     engine.layers.forEach((l, i) => index.set(l.id, i));
     return layers.slice().sort((a, b) => (index.get(a.id) ?? 0) - (index.get(b.id) ?? 0));
   };
+  // Back-compat alias for any out-of-tree callers — the underlying ordering
+  // (engine-index ascending) is unchanged; only the naming reflects the
+  // panel-top-as-front semantics.
+  const sortBackToFront = sortFrontToBack;
 
   const opUnion = (geoms) => {
     const filtered = filterEmpty(geoms);
@@ -123,13 +137,10 @@
   const opMinusFront = (geoms) => {
     const filtered = filterEmpty(geoms);
     if (filtered.length < 2) return filtered[0] || [];
-    // Vectura's layer panel renders engine.layers in natural index order, so
-    // the TOP of the panel is engine.layers[0] (= filtered[0] after
-    // sortBackToFront) and the BOTTOM of the panel is engine.layers[last].
-    // Users read "Minus Front" the Illustrator way: the visually higher layer
-    // gets subtracted from the visually lower one, leaving the lower layer's
-    // silhouette with bites taken out. So the BOTTOM-of-panel layer survives
-    // and everything stacked above it is subtracted away.
+    // Panel-top = front: subtract the panel-top layer(s) from the panel-bottom
+    // layer. After sortFrontToBack the panel-TOP is filtered[0] and the
+    // panel-BOTTOM is filtered[last]. "Minus Front" keeps the panel-bottom
+    // (the back) and removes everything stacked above it.
     const survivor = filtered[filtered.length - 1];
     const subtractors = filtered.slice(0, -1);
     return Vectura.FillBoolean.difference(survivor, ...subtractors);
@@ -146,7 +157,7 @@
 
   const computeOp = (opType, layers, mode, engine) => {
     if (!SHAPE_MODE_OPS.has(opType)) return [];
-    const ordered = sortBackToFront(layers, engine);
+    const ordered = sortFrontToBack(layers, engine);
     const geoms = ordered.map((layer) => geometryFor(layer, mode, engine));
     return (opDispatch[opType] || (() => []))(geoms);
   };
@@ -264,7 +275,7 @@
     const newId = Math.random().toString(36).slice(2, 11);
     SETTINGS.globalLayerCount = (SETTINGS.globalLayerCount || engine._layerCounter || 0) + 1;
     if (typeof engine._layerCounter === 'number') engine._layerCounter += 1;
-    const ordered = sortBackToFront(childLayers, engine);
+    const ordered = sortFrontToBack(childLayers, engine);
     const compound = new Layer(newId, 'shape', generateCompoundName(engine, opType));
     // Override Layer ctor's defaults: this is a group container, not a shape.
     compound.type = 'compound';
@@ -281,10 +292,15 @@
       sourceMode: sourceMode === 'shape-only' ? 'shape-only' : 'silhouette',
       cache: { signature: null, multiPolygon: null },
     };
-    // Inherit appearance from the front layer (matches Illustrator for
-    // unite/intersect/exclude). For minusFront the surviving silhouette is
-    // the bottom-of-panel layer (engine-front), so we inherit from there too.
-    const inheritFrom = ordered[ordered.length - 1];
+    // Inherit appearance from the layer whose silhouette dominates the result
+    // (Illustrator convention). For unite/intersect/exclude that's the top of
+    // the panel — the "front" of the stack — which is ordered[0] under
+    // sortFrontToBack. For minusFront the survivor is the panel-BOTTOM layer
+    // (everything above it gets subtracted away), so inheritance comes from
+    // ordered[last].
+    const inheritFrom = opType === 'minusFront'
+      ? ordered[ordered.length - 1]
+      : ordered[0];
     if (inheritFrom) {
       compound.penId = inheritFrom.penId;
       compound.color = inheritFrom.color;
@@ -354,6 +370,513 @@
     return compoundLayer.id;
   };
 
+  // ── Pathfinder-row (destructive) ops ──────────────────────────────────────
+  //
+  // Unlike Shape Modes (Unite/MinusFront/Intersect/Exclude) which produce a
+  // live `type:'compound'` container, Pathfinder-row ops are destructive:
+  //   - Source layers are removed.
+  //   - Outputs are flat `type:'shape'` (or `type:'pen'` for outline-style
+  //     open paths) layers wrapped in a plain group container with
+  //     groupType = 'pathfinder'.
+  //   - Minus Back is the exception — it produces a single layer at the
+  //     front's z-index, not a group.
+  //
+  // applyPathfinder() mutates engine.layers and returns:
+  //   null                                  → empty result (no mutation)
+  //   { groupId, layerIds }                 → success
+  //   { error: 'too-many-layers' | 'front-ineligible-for-crop'
+  //          | 'front-ineligible-for-minusBack' } → known failure
+  //
+  // The function does NOT push history or trigger render — callers
+  // (the UI track) wrap with pushHistory / computeAllDisplayGeometry / render.
+
+  const DIVIDE_MAX_LAYERS = 8;
+  const PATHFINDER_OPS = new Set(['divide', 'trim', 'merge', 'crop', 'outline', 'minusBack']);
+
+  const OP_LABELS = {
+    divide: 'Divide',
+    trim: 'Trim',
+    merge: 'Merge',
+    crop: 'Crop',
+    outline: 'Outline',
+    minusBack: 'Minus Back',
+  };
+
+  const generatePathfinderName = (engine, opType) => {
+    const base = `${OP_LABELS[opType] || 'Pathfinder'} Result`;
+    const taken = new Set((engine.layers || []).map((l) => l.name));
+    if (!taken.has(base)) return base;
+    let n = 2;
+    while (taken.has(`${base} ${n}`)) n += 1;
+    return `${base} ${n}`;
+  };
+
+  const nextLayerId = (engine) => {
+    const SETTINGS = Vectura.SETTINGS || {};
+    SETTINGS.globalLayerCount = (SETTINGS.globalLayerCount || engine._layerCounter || 0) + 1;
+    if (typeof engine._layerCounter === 'number') engine._layerCounter += 1;
+    return Math.random().toString(36).slice(2, 11);
+  };
+
+  const copyAppearance = (target, source, { stripStroke = false } = {}) => {
+    if (!source) return;
+    target.penId = source.penId;
+    target.color = source.color;
+    target.strokeWidth = stripStroke ? 0 : source.strokeWidth;
+    target.lineCap = source.lineCap;
+  };
+
+  // Convert a FillBoolean multipolygon into a list of Vectura path arrays.
+  // The pathfinder-ops local helper above (`multiPolygonToPaths`) tags every
+  // ring with `source: 'pathfinder'`; here we let callers override the tag.
+  const mpToPaths = (mp, sourceTag = 'pathfinder', closed = true) => {
+    const FB = Vectura.FillBoolean;
+    if (!mp || !mp.length || !FB?.multiPolygonToPaths) return [];
+    return FB.multiPolygonToPaths(mp).map((ring) => {
+      const path = ring.map((pt) => ({ x: pt.x, y: pt.y }));
+      path.meta = { kind: closed ? 'polygon' : 'polyline', closed, source: sourceTag };
+      return path;
+    });
+  };
+
+  // Build a shape layer carrying the given paths and appearance.
+  const makeShapeLayer = (engine, name, paths, source, opts = {}) => {
+    const Layer = Vectura.Layer;
+    const id = nextLayerId(engine);
+    const layer = new Layer(id, 'shape', name);
+    copyAppearance(layer, source, { stripStroke: !!opts.stripStroke });
+    layer.paths = paths.map((p) => p);
+    layer.displayPaths = paths.map((p) => p);
+    layer.effectivePaths = paths.map((p) => p);
+    layer.sourcePaths = paths.map((p) => p);
+    return layer;
+  };
+
+  // Wrap a list of output layers in a Pathfinder group container.
+  const makePathfinderGroup = (engine, opType) => {
+    const Layer = Vectura.Layer;
+    const id = nextLayerId(engine);
+    const group = new Layer(id, 'shape', generatePathfinderName(engine, opType));
+    group.type = 'shape';
+    group.isGroup = true;
+    group.containerRole = null;
+    group.groupType = 'pathfinder';
+    group.groupCollapsed = false;
+    group.params = { seed: 0, posX: 0, posY: 0, scaleX: 1, scaleY: 1, rotation: 0 };
+    group.paramStates = {};
+    group.sourcePaths = null;
+    group.paths = [];
+    group.displayPaths = [];
+    group.effectivePaths = [];
+    return group;
+  };
+
+  // Splice source layers out and insert new layers at the frontmost source's
+  // original z-index. Returns the inserted layer ids.
+  const replaceLayers = (engine, sources, newLayers, opts = {}) => {
+    const sourceIds = new Set(sources.map((l) => l.id));
+    const indices = sources.map((l) => engine.layers.indexOf(l)).filter((i) => i >= 0);
+    const insertAt = indices.length ? Math.max(...indices) + 1 : engine.layers.length;
+    // Remove sources (also any descendants whose parent is being removed —
+    // but pathfinder sources are flat layers so this is a simple filter).
+    engine.layers = engine.layers.filter((l) => !sourceIds.has(l.id));
+    // Recompute insertion point after removal; we want the new content where
+    // the front source used to be (after removals, this is the index of the
+    // first non-removed layer that was originally just after the front source).
+    // Simpler: count surviving layers that originally sat strictly behind the
+    // frontmost source — that's the new insertion index.
+    const frontIdxOriginal = Math.max(...indices);
+    let survivorsBeforeFront = 0;
+    let original = 0;
+    // We need to recompute via the pre-removal order — but we don't have it
+    // anymore. Use the saved set of sourceIds against engine.layers' original
+    // indices: a survivor was at original index < frontIdxOriginal iff it
+    // sits before the front source's slot. We saved indices but not the full
+    // array. Reconstruct via the sources' original order:
+    //   pre-removal: insertAt = frontIdx + 1
+    //   post-removal: insertAt -= count(sources removed whose original index < insertAt)
+    let removedBefore = 0;
+    indices.forEach((idx) => { if (idx < insertAt) removedBefore += 1; });
+    const adjustedInsertAt = insertAt - removedBefore;
+    void original; void survivorsBeforeFront; // (vars retained for readability above)
+    engine.layers.splice(adjustedInsertAt, 0, ...newLayers);
+    if (opts.activateId) engine.activeLayerId = opts.activateId;
+    return newLayers.map((l) => l.id);
+  };
+
+  // ── Op: Minus Back ─────────────────────────────────────────────────────────
+  // F − union(others). Single output layer at front's z-index. Strokes preserved.
+  // Panel-top = front: the panel-TOP source survives; everything below it in
+  // the panel is subtracted away.
+  const applyMinusBack = (engine, layers, mode) => {
+    const FB = Vectura.FillBoolean;
+    const ordered = sortFrontToBack(layers, engine);
+    if (ordered.length < 2) return null;
+    const front = ordered[0];
+    const backs = ordered.slice(1);
+
+    if (mode === 'shape-only' && !shapeOnlyEligibility(front).ok) {
+      return { error: 'front-ineligible-for-minusBack' };
+    }
+
+    const frontGeom = geometryFor(front, mode, engine);
+    if (!frontGeom || !frontGeom.length) return null;
+    const backGeoms = backs.map((l) => geometryFor(l, mode, engine)).filter((g) => g && g.length);
+    const result = backGeoms.length
+      ? FB.difference(frontGeom, ...backGeoms)
+      : frontGeom;
+    if (!result || !result.length) return null;
+
+    const paths = mpToPaths(result, 'pathfinder-minusBack', true);
+    if (!paths.length) return null;
+    const layer = makeShapeLayer(engine, front.name, paths, front, { stripStroke: false });
+    const layerIds = replaceLayers(engine, ordered, [layer], { activateId: layer.id });
+    return { groupId: null, layerIds };
+  };
+
+  // ── Op: Trim ───────────────────────────────────────────────────────────────
+  // For each Pi (front→back): Pi − union(Pj for j < i in panel order). Strokes
+  // stripped. Panel-top = front: the panel-TOP layer (i = 0) has nothing above
+  // it and stays whole; each lower layer loses the regions covered by every
+  // higher-in-panel layer.
+  const applyTrim = (engine, layers, mode) => {
+    const FB = Vectura.FillBoolean;
+    const ordered = sortFrontToBack(layers, engine);
+    if (ordered.length < 2) return null;
+    const geoms = ordered.map((l) => geometryFor(l, mode, engine));
+    const outputs = [];
+    for (let i = 0; i < ordered.length; i += 1) {
+      const above = geoms.slice(0, i).filter((g) => g && g.length);
+      const myGeom = geoms[i];
+      if (!myGeom || !myGeom.length) continue;
+      const trimmed = above.length ? FB.difference(myGeom, ...above) : myGeom;
+      if (!trimmed || !trimmed.length) continue;
+      const paths = mpToPaths(trimmed, 'pathfinder-trim', true);
+      if (!paths.length) continue;
+      outputs.push({ paths, source: ordered[i] });
+    }
+    if (!outputs.length) return null;
+    return finalizeGroup(engine, ordered, outputs, 'trim', { stripStroke: true });
+  };
+
+  // ── Op: Divide ─────────────────────────────────────────────────────────────
+  // Arrangement cells: for every non-empty subset S of inputs,
+  //   cell(S) = intersection(Pi for i ∈ S) − union(Pj for j ∉ S)
+  // Cell appearance inherits from the topmost-in-panel layer in S (the
+  // smallest i under sortFrontToBack). Strokes preserved.
+  const applyDivide = (engine, layers, mode) => {
+    const FB = Vectura.FillBoolean;
+    const ordered = sortFrontToBack(layers, engine);
+    if (ordered.length < 2) return null;
+    if (ordered.length > DIVIDE_MAX_LAYERS) return { error: 'too-many-layers' };
+    const n = ordered.length;
+    const geoms = ordered.map((l) => geometryFor(l, mode, engine));
+    const outputs = [];
+    const total = 1 << n;
+    for (let mask = 1; mask < total; mask += 1) {
+      const inside = [];
+      const outside = [];
+      let topIdx = -1;  // smallest i in `inside` = panel-top-most contributor
+      for (let i = 0; i < n; i += 1) {
+        const g = geoms[i];
+        if (!g || !g.length) {
+          if (mask & (1 << i)) { inside.length = 0; break; }
+          continue;
+        }
+        if (mask & (1 << i)) {
+          inside.push(g);
+          if (topIdx === -1) topIdx = i;
+        }
+        else outside.push(g);
+      }
+      if (!inside.length) continue;
+      const inter = inside.length === 1 ? inside[0] : FB.intersection(...inside);
+      if (!inter || !inter.length) continue;
+      const cell = outside.length ? FB.difference(inter, ...outside) : inter;
+      if (!cell || !cell.length) continue;
+      const paths = mpToPaths(cell, 'pathfinder-divide', true);
+      if (!paths.length) continue;
+      outputs.push({ paths, source: ordered[topIdx], z: topIdx });
+    }
+    if (!outputs.length) return null;
+    // Stable panel order inside the group: panel-top contributors come first
+    // (smallest z) so the group's panel display matches the source's z-stack.
+    outputs.sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
+    return finalizeGroup(engine, ordered, outputs, 'divide', { stripStroke: false });
+  };
+
+  // ── Op: Crop ───────────────────────────────────────────────────────────────
+  // Front is the cookie cutter. For each back layer Lj: Lj ∩ F. Front consumed.
+  // Strokes stripped. Front must be eligible in shape-only mode. Panel-top =
+  // front: the panel-TOP source is the cookie cutter; every panel-lower
+  // source gets clipped to it.
+  const applyCrop = (engine, layers, mode) => {
+    const FB = Vectura.FillBoolean;
+    const ordered = sortFrontToBack(layers, engine);
+    if (ordered.length < 2) return null;
+    const front = ordered[0];
+    const backs = ordered.slice(1);
+
+    if (mode === 'shape-only' && !shapeOnlyEligibility(front).ok) {
+      return { error: 'front-ineligible-for-crop' };
+    }
+
+    const frontGeom = geometryFor(front, mode, engine);
+    if (!frontGeom || !frontGeom.length) return null;
+
+    const outputs = [];
+    backs.forEach((layer) => {
+      const g = geometryFor(layer, mode, engine);
+      if (!g || !g.length) return;
+      const clipped = FB.intersection(g, frontGeom);
+      if (!clipped || !clipped.length) return;
+      const paths = mpToPaths(clipped, 'pathfinder-crop', true);
+      if (paths.length) outputs.push({ paths, source: layer });
+    });
+    if (!outputs.length) return null;
+    return finalizeGroup(engine, ordered, outputs, 'crop', { stripStroke: true });
+  };
+
+  // ── Op: Merge ──────────────────────────────────────────────────────────────
+  // Trim, then union per fill identity (penId or color). Strokes stripped.
+  // Panel-top = front: the panel-TOP layer (i = 0) stays whole; each lower
+  // layer loses the regions covered by every higher-in-panel layer before
+  // same-fill fragments are unioned together.
+  const applyMerge = (engine, layers, mode) => {
+    const FB = Vectura.FillBoolean;
+    const ordered = sortFrontToBack(layers, engine);
+    if (ordered.length < 2) return null;
+    const geoms = ordered.map((l) => geometryFor(l, mode, engine));
+
+    // Build trim fragments aligned with ordered[].
+    const fragments = []; // { mp, source, key }
+    for (let i = 0; i < ordered.length; i += 1) {
+      const above = geoms.slice(0, i).filter((g) => g && g.length);
+      const myGeom = geoms[i];
+      if (!myGeom || !myGeom.length) continue;
+      const trimmed = above.length ? FB.difference(myGeom, ...above) : myGeom;
+      if (!trimmed || !trimmed.length) continue;
+      const src = ordered[i];
+      const key = src.penId ? `pen:${src.penId}` : `color:${(src.color || '').toLowerCase()}`;
+      fragments.push({ mp: trimmed, source: src, key });
+    }
+    if (!fragments.length) return null;
+
+    // Group fragments by fill identity, in first-encounter order.
+    const buckets = new Map();
+    const order = [];
+    fragments.forEach((f) => {
+      if (!buckets.has(f.key)) {
+        buckets.set(f.key, { mps: [], source: f.source });
+        order.push(f.key);
+      }
+      buckets.get(f.key).mps.push(f.mp);
+    });
+
+    const outputs = [];
+    order.forEach((key) => {
+      const bucket = buckets.get(key);
+      const merged = bucket.mps.length === 1 ? bucket.mps[0] : FB.union(...bucket.mps);
+      if (!merged || !merged.length) return;
+      const paths = mpToPaths(merged, 'pathfinder-merge', true);
+      if (paths.length) outputs.push({ paths, source: bucket.source });
+    });
+    if (!outputs.length) return null;
+    return finalizeGroup(engine, ordered, outputs, 'merge', { stripStroke: true });
+  };
+
+  // ── Op: Outline ────────────────────────────────────────────────────────────
+  // Split each input's ring(s) at intersections with every OTHER input's
+  // ring(s). Output: open polyline layers. Stroke color = source fill color;
+  // strokeWidth = source strokeWidth (Vectura divergence vs Illustrator's 0pt).
+  //
+  // Implementation note (per PRD §4.5): we take the simpler ring-by-ring
+  // approach. Each input ring is treated as a polyline; we split it at every
+  // intersection point with every other input's ring polylines using
+  // Vectura.PathBoolean.segmentIntersectSegment. Open inputs participate as
+  // their literal polyline (no chord closure).
+  const ringsForOutline = (layer, mode, engine) => {
+    if (!layer || layer.visible === false) return [];
+    const source = layer.displayPaths?.length ? layer.displayPaths : layer.paths || [];
+    const rings = [];
+    source.forEach((path) => {
+      if (!Array.isArray(path) || path.length < 2) return;
+      const pts = path.map((pt) => ({ x: pt.x, y: pt.y }));
+      const meta = path.meta || {};
+      const closed = meta.closed === true || meta.kind === 'polygon' || meta.kind === 'circle';
+      rings.push({ pts, closed });
+    });
+    return rings;
+  };
+
+  const splitPolylineAtPoints = (pts, closed, otherRings) => {
+    const PB = Vectura.PathBoolean;
+    if (!PB?.segmentIntersectSegment || pts.length < 2) return [pts.slice()];
+    const breakpoints = []; // [{ i, t, x, y }] — i is segment index in pts
+    const segCount = closed ? pts.length - (pts[0].x === pts[pts.length - 1].x && pts[0].y === pts[pts.length - 1].y ? 1 : 0) : pts.length - 1;
+    for (let i = 0; i < segCount; i += 1) {
+      const a = pts[i];
+      const b = pts[(i + 1) % pts.length];
+      otherRings.forEach((other) => {
+        const otherPts = other.pts;
+        const otherSegCount = other.closed ? otherPts.length - (otherPts[0].x === otherPts[otherPts.length - 1].x && otherPts[0].y === otherPts[otherPts.length - 1].y ? 1 : 0) : otherPts.length - 1;
+        for (let j = 0; j < otherSegCount; j += 1) {
+          const c = otherPts[j];
+          const d = otherPts[(j + 1) % otherPts.length];
+          const hit = PB.segmentIntersectSegment(a, b, c, d);
+          if (!hit) continue;
+          // Skip "intersections" that fall exactly on the segment endpoints —
+          // shared vertices between adjacent segments of the same input
+          // produce these and we don't want spurious splits.
+          if (hit.t < 1e-5 || hit.t > 1 - 1e-5) continue;
+          breakpoints.push({ i, t: hit.t, x: hit.x, y: hit.y });
+        }
+      });
+    }
+    if (!breakpoints.length) return [pts.slice()];
+
+    breakpoints.sort((a, b) => (a.i - b.i) || (a.t - b.t));
+
+    // Walk the polyline emitting segments split at every breakpoint.
+    const segments = [];
+    let current = [];
+    const pushPoint = (pt) => {
+      const last = current[current.length - 1];
+      if (last && Math.abs(last.x - pt.x) < 1e-9 && Math.abs(last.y - pt.y) < 1e-9) return;
+      current.push(pt);
+    };
+    const flush = () => {
+      if (current.length >= 2) segments.push(current);
+      current = [];
+    };
+    let bpIdx = 0;
+    for (let i = 0; i < segCount; i += 1) {
+      const a = pts[i];
+      const b = pts[(i + 1) % pts.length];
+      pushPoint({ x: a.x, y: a.y });
+      while (bpIdx < breakpoints.length && breakpoints[bpIdx].i === i) {
+        const bp = breakpoints[bpIdx];
+        pushPoint({ x: bp.x, y: bp.y });
+        flush();
+        current.push({ x: bp.x, y: bp.y });
+        bpIdx += 1;
+      }
+      // End of segment: place the endpoint only if we're at the last segment
+      // of an open polyline (otherwise the next iteration will push it as the
+      // start of its segment).
+      if (i === segCount - 1) pushPoint({ x: b.x, y: b.y });
+    }
+    // Closed-ring case: if the last accumulated piece dangles past the wrap
+    // point and the first segment was unbroken, join it back to the start of
+    // the very first piece so a fully-uncut ring stays as one polyline.
+    if (closed && segments.length === 0 && current.length >= 2) {
+      segments.push(current);
+      current = [];
+    } else if (closed && current.length >= 1 && segments.length) {
+      // Splice the dangling tail onto the front of the first segment so
+      // that walking the ring continues across the seam.
+      const first = segments[0];
+      // The tail ends with the first vertex; the first segment starts at it.
+      // Stitch: tail (minus its last point if equal to first[0]) + first.
+      const tail = current.slice();
+      if (tail.length && first.length) {
+        const tEnd = tail[tail.length - 1];
+        const fStart = first[0];
+        if (Math.abs(tEnd.x - fStart.x) < 1e-9 && Math.abs(tEnd.y - fStart.y) < 1e-9) tail.pop();
+        segments[0] = tail.concat(first);
+      }
+      current = [];
+    } else {
+      flush();
+    }
+    return segments.length ? segments : [pts.slice()];
+  };
+
+  const applyOutline = (engine, layers, mode) => {
+    const ordered = sortFrontToBack(layers, engine);
+    if (ordered.length < 2) return null;
+
+    // Collect rings per layer.
+    const allRingsByLayer = ordered.map((l) => ringsForOutline(l, mode, engine));
+
+    const outputs = [];
+    for (let i = 0; i < ordered.length; i += 1) {
+      const myRings = allRingsByLayer[i];
+      if (!myRings.length) continue;
+      // Build the set of "other" rings from all other layers.
+      const others = [];
+      for (let j = 0; j < ordered.length; j += 1) {
+        if (j === i) continue;
+        allRingsByLayer[j].forEach((r) => others.push(r));
+      }
+      myRings.forEach((ring) => {
+        const segments = others.length
+          ? splitPolylineAtPoints(ring.pts, ring.closed, others)
+          : [ring.pts.slice()];
+        segments.forEach((segPts) => {
+          if (!segPts || segPts.length < 2) return;
+          const path = segPts.map((pt) => ({ x: pt.x, y: pt.y }));
+          path.meta = { kind: 'polyline', closed: false, source: 'pathfinder-outline' };
+          const src = ordered[i];
+          const layer = makeShapeLayer(engine, src.name, [path], src, { stripStroke: false });
+          // Stroke width preserved from source (Vectura divergence vs Illustrator).
+          outputs.push({ paths: [path], source: src, prebuilt: layer });
+        });
+      });
+    }
+    if (!outputs.length) return null;
+    return finalizeGroupPrebuilt(engine, ordered, outputs, 'outline');
+  };
+
+  // Wrap outputs into a Pathfinder group, splice out sources, return ids.
+  const finalizeGroup = (engine, sources, outputs, opType, opts = {}) => {
+    if (!outputs.length) return null;
+    const group = makePathfinderGroup(engine, opType);
+    const children = outputs.map(({ paths, source }) => {
+      const layer = makeShapeLayer(engine, source.name, paths, source, { stripStroke: !!opts.stripStroke });
+      layer.parentId = group.id;
+      return layer;
+    });
+    const inserted = [group, ...children];
+    const layerIds = replaceLayers(engine, sources, inserted, { activateId: group.id });
+    return { groupId: group.id, layerIds };
+  };
+
+  // Outline path: outputs already carry prebuilt layers (one path per layer).
+  const finalizeGroupPrebuilt = (engine, sources, outputs, opType) => {
+    if (!outputs.length) return null;
+    const group = makePathfinderGroup(engine, opType);
+    const children = outputs.map(({ prebuilt }) => {
+      prebuilt.parentId = group.id;
+      return prebuilt;
+    });
+    const inserted = [group, ...children];
+    const layerIds = replaceLayers(engine, sources, inserted, { activateId: group.id });
+    return { groupId: group.id, layerIds };
+  };
+
+  /**
+   * Apply a destructive Pathfinder-row op to a selection.
+   * @param {object} engine  engine with `.layers` array and (optional) `_layerCounter`.
+   * @param {Array}  layers  selected layers (any order); will be sorted back→front.
+   * @param {string} op      one of 'divide'|'trim'|'merge'|'crop'|'outline'|'minusBack'.
+   * @param {string} mode    'silhouette' | 'shape-only'.
+   * @returns {null | {groupId, layerIds} | {error}}
+   */
+  const applyPathfinder = (engine, layers, op, mode) => {
+    if (!engine || !Array.isArray(layers) || !PATHFINDER_OPS.has(op)) return null;
+    if (layers.length < 2) return null;
+    switch (op) {
+      case 'minusBack': return applyMinusBack(engine, layers, mode);
+      case 'trim':      return applyTrim(engine, layers, mode);
+      case 'divide':    return applyDivide(engine, layers, mode);
+      case 'crop':      return applyCrop(engine, layers, mode);
+      case 'merge':     return applyMerge(engine, layers, mode);
+      case 'outline':   return applyOutline(engine, layers, mode);
+      default:          return null;
+    }
+  };
+
   // Walks engine.layers once and recomputes every compound's cache.
   // Called from engine.computeAllDisplayGeometry() after primitive geometry
   // has been generated.
@@ -374,6 +897,9 @@
     expand,
     recomputeCompound,
     refreshAllCompounds,
+    applyPathfinder,
+    PATHFINDER_OPS,
+    DIVIDE_MAX_LAYERS,
     // Internal-but-useful for tests.
     _multiPolygonToPaths: multiPolygonToPaths,
     _polygonsToMultiPolygon: polygonsToMultiPolygon,

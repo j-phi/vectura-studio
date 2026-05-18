@@ -161,5 +161,63 @@
     },
   };
 
-  root.Icons = { layer, tool, misc, cursor, align };
+  // Pathfinder panel icons: 24×24 viewBox, two overlapping rounded squares.
+  // Back square at (5,5) 9×9, front square at (10,10) 9×9, overlap 4×4.
+  // Filled regions (currentColor @ 0.45 opacity) = parts of the result that
+  // survive the operation; stroke-only = consumed/discarded regions.
+  const PF_STROKE = `fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"`;
+  const pfSvg = (paths, size = 18) =>
+    `<svg width="${size}" height="${size}" viewBox="0 0 24 24" ${PF_STROKE} aria-hidden="true">${paths}</svg>`;
+
+  const PF_UNION =
+    'M6.5 5 H12.5 A1.5 1.5 0 0 1 14 6.5 V10 H17.5 A1.5 1.5 0 0 1 19 11.5 V17.5 A1.5 1.5 0 0 1 17.5 19 H11.5 A1.5 1.5 0 0 1 10 17.5 V14 H6.5 A1.5 1.5 0 0 1 5 12.5 V6.5 A1.5 1.5 0 0 1 6.5 5 Z';
+  const PF_BACK_MINUS_OVERLAP =
+    'M6.5 5 H12.5 A1.5 1.5 0 0 1 14 6.5 V10 H10 V14 H6.5 A1.5 1.5 0 0 1 5 12.5 V6.5 A1.5 1.5 0 0 1 6.5 5 Z';
+  const PF_FRONT_MINUS_OVERLAP =
+    'M14 10 H17.5 A1.5 1.5 0 0 1 19 11.5 V17.5 A1.5 1.5 0 0 1 17.5 19 H11.5 A1.5 1.5 0 0 1 10 17.5 V14 H14 Z';
+  const PF_BACK_RECT  = '<rect x="5"  y="5"  width="9" height="9" rx="1.5"/>';
+  const PF_FRONT_RECT = '<rect x="10" y="10" width="9" height="9" rx="1.5"/>';
+  const PF_FILL = 'fill="currentColor" fill-opacity="0.45"';
+
+  const pathfinder = {
+    unite:      () => pfSvg(`<path d="${PF_UNION}" ${PF_FILL}/>`),
+    minusFront: () => pfSvg(`<path d="${PF_BACK_MINUS_OVERLAP}" ${PF_FILL}/>` + PF_FRONT_RECT),
+    intersect:  () => pfSvg(PF_BACK_RECT + PF_FRONT_RECT + `<rect x="10" y="10" width="4" height="4" ${PF_FILL} stroke="none"/>`),
+    exclude:    () => pfSvg(
+      `<path fill-rule="evenodd" d="` +
+      'M6.5 5 H12.5 A1.5 1.5 0 0 1 14 6.5 V12.5 A1.5 1.5 0 0 1 12.5 14 H6.5 A1.5 1.5 0 0 1 5 12.5 V6.5 A1.5 1.5 0 0 1 6.5 5 Z ' +
+      'M11.5 10 H17.5 A1.5 1.5 0 0 1 19 11.5 V17.5 A1.5 1.5 0 0 1 17.5 19 H11.5 A1.5 1.5 0 0 1 10 17.5 V11.5 A1.5 1.5 0 0 1 11.5 10 Z' +
+      `" ${PF_FILL}/>`
+    ),
+    divide:     () => pfSvg(PF_BACK_RECT + PF_FRONT_RECT + '<line x1="10" y1="10" x2="14" y2="10"/><line x1="10" y1="10" x2="10" y2="14"/>'),
+    trim:       () => pfSvg(`<path d="${PF_BACK_MINUS_OVERLAP}"/>` + PF_FRONT_RECT),
+    merge:      () => pfSvg(`<path d="${PF_UNION}"/>`),
+    crop:       () => pfSvg(`<rect x="10" y="10" width="4" height="4" ${PF_FILL} stroke="none"/>` + PF_FRONT_RECT),
+    outline:    () => pfSvg(PF_BACK_RECT + PF_FRONT_RECT + '<circle cx="14" cy="10" r="0.9" fill="currentColor" stroke="none"/><circle cx="10" cy="14" r="0.9" fill="currentColor" stroke="none"/>'),
+    minusBack:  () => pfSvg(PF_BACK_RECT + `<path d="${PF_FRONT_MINUS_OVERLAP}" ${PF_FILL}/>`),
+  };
+
+  // Paint bucket variant icons: 22×22 viewBox, each a small swatch showing
+  // the fill pattern. Used in the paint bucket panel's variant grid.
+  const PB_STROKE = `fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"`;
+  const pbSvg = (paths, size = 18) =>
+    `<svg width="${size}" height="${size}" viewBox="0 0 22 22" ${PB_STROKE} aria-hidden="true">${paths}</svg>`;
+  const PB_FRAME = '<rect x="2.5" y="2.5" width="17" height="17" rx="1.5" opacity="0.45"/>';
+
+  const paintBucket = {
+    none:       () => pbSvg(PB_FRAME + '<line x1="5" y1="17" x2="17" y2="5" stroke-width="1.6"/>'),
+    hatch:      () => pbSvg(PB_FRAME + '<line x1="4" y1="8"  x2="18" y2="8"/><line x1="4" y1="11" x2="18" y2="11"/><line x1="4" y1="14" x2="18" y2="14"/>'),
+    crosshatch: () => pbSvg(PB_FRAME + '<line x1="4" y1="9"  x2="18" y2="9"/><line x1="4" y1="13" x2="18" y2="13"/><line x1="9" y1="4" x2="9" y2="18"/><line x1="13" y1="4" x2="13" y2="18"/>'),
+    wavelines:  () => pbSvg(PB_FRAME + '<path d="M4 8 Q7 5 11 8 T18 8"/><path d="M4 14 Q7 11 11 14 T18 14"/>'),
+    zigzag:     () => pbSvg(PB_FRAME + '<path d="M4 8 L7 6 L10 8 L13 6 L16 8 L18 7"/><path d="M4 14 L7 12 L10 14 L13 12 L16 14 L18 13"/>'),
+    stipple:    () => pbSvg(PB_FRAME + '<circle cx="6.5" cy="7" r="0.9" fill="currentColor"/><circle cx="11" cy="7" r="0.9" fill="currentColor"/><circle cx="15.5" cy="7" r="0.9" fill="currentColor"/><circle cx="8.5" cy="11" r="0.9" fill="currentColor"/><circle cx="13" cy="11" r="0.9" fill="currentColor"/><circle cx="6.5" cy="15" r="0.9" fill="currentColor"/><circle cx="11" cy="15" r="0.9" fill="currentColor"/><circle cx="15.5" cy="15" r="0.9" fill="currentColor"/>'),
+    contour:    () => pbSvg(PB_FRAME + '<rect x="5" y="5" width="12" height="12" rx="2"/><rect x="7.5" y="7.5" width="7" height="7" rx="1.5"/><rect x="10" y="10" width="2" height="2" rx="0.5"/>'),
+    spiral:     () => pbSvg(PB_FRAME + '<path d="M11 11 m-0.5 0 a0.5 0.5 0 1 0 1 0 a1.5 1.5 0 1 0 -3 0 a2.5 2.5 0 1 0 5 0 a3.5 3.5 0 1 0 -7 0 a4.5 4.5 0 1 0 9 0"/>'),
+    radial:     () => pbSvg(PB_FRAME + '<line x1="11" y1="4"  x2="11" y2="18"/><line x1="4"  y1="11" x2="18" y2="11"/><line x1="6"  y1="6"  x2="16" y2="16"/><line x1="16" y1="6"  x2="6"  y2="16"/>'),
+    grid:       () => pbSvg(PB_FRAME + '<circle cx="7" cy="7"   r="1" fill="currentColor"/><circle cx="11" cy="7"  r="1" fill="currentColor"/><circle cx="15" cy="7"  r="1" fill="currentColor"/><circle cx="7" cy="11"  r="1" fill="currentColor"/><circle cx="11" cy="11" r="1" fill="currentColor"/><circle cx="15" cy="11" r="1" fill="currentColor"/><circle cx="7" cy="15"  r="1" fill="currentColor"/><circle cx="11" cy="15" r="1" fill="currentColor"/><circle cx="15" cy="15" r="1" fill="currentColor"/>'),
+    polygonal:  () => pbSvg(PB_FRAME + '<polygon points="11,4 17,8 15,15 7,15 5,8" fill="none"/><polygon points="11,7 14,9.5 13,13 9,13 8,9.5" fill="none"/>'),
+    bucket:     () => pbSvg('<path d="M5 10 L11 4 L19 12 L13 18 Z" fill="currentColor" fill-opacity="0.18"/><path d="M5 10 L11 4 L19 12 L13 18 Z"/><path d="M5 10 C3 7.5 4.5 5 7 4.5"/>'),
+  };
+
+  root.Icons = { layer, tool, misc, cursor, align, pathfinder, paintBucket };
 })();

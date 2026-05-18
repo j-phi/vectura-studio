@@ -306,6 +306,13 @@
             usesManualSourceGeometry(layer) && layer.sourcePaths
               ? JSON.parse(JSON.stringify(layer.sourcePaths))
               : null,
+          compound: layer.type === 'compound' && layer.compound
+            ? {
+                childIds: Array.isArray(layer.compound.childIds) ? layer.compound.childIds.slice() : [],
+                opType: layer.compound.opType || 'unite',
+                sourceMode: layer.compound.sourceMode || 'silhouette',
+              }
+            : null,
           mask: layer.mask ? JSON.parse(JSON.stringify(layer.mask)) : null,
           penId: layer.penId,
           color: layer.color,
@@ -315,6 +322,7 @@
           origin: layer.origin
             ? { x: Number(layer.origin.x) || 0, y: Number(layer.origin.y) || 0 }
             : { x: 0, y: 0 },
+          fills: Array.isArray(layer.fills) ? JSON.parse(JSON.stringify(layer.fills)) : [],
         })),
       };
     }
@@ -322,7 +330,21 @@
     importState(state) {
       if (!state) return;
       this.layers = (state.layers || []).map((data) => {
-        const layer = new Layer(data.id, data.type, data.name);
+        // 'compound' is a synthetic type — Layer constructor doesn't know it.
+        // Build it as a 'shape' then patch the type + compound bag below.
+        const ctorType = data.type === 'compound' ? 'shape' : data.type;
+        const layer = new Layer(data.id, ctorType, data.name);
+        if (data.type === 'compound') {
+          layer.type = 'compound';
+          layer.compound = data.compound
+            ? {
+                childIds: Array.isArray(data.compound.childIds) ? data.compound.childIds.slice() : [],
+                opType: data.compound.opType || 'unite',
+                sourceMode: data.compound.sourceMode || 'silhouette',
+                cache: { signature: null, multiPolygon: null },
+              }
+            : { childIds: [], opType: 'unite', sourceMode: 'silhouette', cache: { signature: null, multiPolygon: null } };
+        }
         layer.params = JSON.parse(JSON.stringify(data.params || {}));
         layer.paramStates = JSON.parse(JSON.stringify(data.paramStates || {}));
         layer.parentId = data.parentId ?? null;
@@ -366,6 +388,7 @@
           layer.origin = { x: 0, y: 0 };
         }
         layer.paths = [];
+        layer.fills = Array.isArray(data.fills) ? JSON.parse(JSON.stringify(data.fills)) : [];
         layer.displayPaths = [];
         layer.displayMaskActive = false;
         layer.helperPaths = null;
@@ -697,6 +720,20 @@
       return out;
     }
 
+    // True when `layer` lives inside a compound (Pathfinder) container — used by
+    // the renderer to suppress drawing the originals whose geometry has been
+    // consumed by their compound parent's baked silhouette.
+    hasCompoundAncestor(layer) {
+      let current = layer;
+      while (current?.parentId) {
+        const parent = this.layers.find((entry) => entry.id === current.parentId);
+        if (!parent) return false;
+        if (parent.containerRole === 'compound') return true;
+        current = parent;
+      }
+      return false;
+    }
+
     getAncestorModifiers(layer) {
       return this.getLayerAncestors(layer)
         .filter((entry) => isModifierLayer(entry) && entry.modifier)
@@ -753,7 +790,9 @@
         (current, modifierLayer) => applyModifierToPaths(current, modifierLayer.modifier, this.getBounds()),
         basePaths
       );
-      layer.effectivePaths = clonePaths(effective || []);
+      const baseEffective = clonePaths(effective || []);
+      const fillPaths = window.Vectura?.PaintBucketOps?.generateGeometryForLayer?.(layer) || [];
+      layer.effectivePaths = fillPaths.length ? baseEffective.concat(fillPaths) : baseEffective;
       layer.effectiveStats = countPathPoints(layer.effectivePaths);
     }
 
@@ -810,6 +849,11 @@
         this.computeLayerEffectiveGeometry(layer.id);
       });
       this.refreshMaskCapabilities();
+      // Compound layers depend on their children's effective geometry, so
+      // rebuild their cached multipolygons now — before display geometry.
+      if (window.Vectura?.PathfinderOps?.refreshAllCompounds) {
+        window.Vectura.PathfinderOps.refreshAllCompounds(this);
+      }
       this.layers
         .filter((layer) => layer && !layer.isGroup)
         .slice()
@@ -852,6 +896,12 @@
       const layer = this.layers.find((l) => l.id === layerId);
       if (!layer) return;
       if (layer.isGroup) return;
+      if (layer.type === 'compound') {
+        // Compound layers derive geometry from their children via PathfinderOps.
+        // computeAllDisplayGeometry() re-runs the refresh once all primitives
+        // have generated, so a no-op here keeps the per-layer pass cheap.
+        return;
+      }
 
       const rng = new SeededRNG(layer.params.seed);
       const noise = new SimpleNoise(layer.params.seed);

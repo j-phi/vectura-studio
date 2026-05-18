@@ -228,7 +228,7 @@
       <div class="pane-header pane-header-left p-4 border-b border-vectura-border flex justify-between items-center">
         <span class="pane-title font-bold text-vectura-accent">GENERATOR</span>
 
-        <span class="pane-meta text-[11px] text-vectura-muted">V.1.0.34</span>
+        <span class="pane-meta text-[11px] text-vectura-muted">V.1.0.35</span>
 
         <button id="btn-pane-toggle-left" class="pane-toggle pane-toggle-left" type="button"
           aria-label="Toggle left pane">
@@ -356,6 +356,10 @@
             </button>
             <div id="left-section-paint-bucket-body" class="left-panel-section-body">
               <div class="paint-bucket-panel" id="paint-bucket-panel">
+                <div id="paint-bucket-status-chip" class="paint-bucket-status-chip" hidden aria-live="polite">
+                  <span id="paint-bucket-status-chip-text" class="paint-bucket-status-chip-text">Editing</span>
+                  <button id="paint-bucket-status-chip-done" type="button" class="paint-bucket-status-chip-done">Done</button>
+                </div>
                 <div class="paint-bucket-section">
                   <p class="paint-bucket-section-label">Fill Type</p>
                   <div class="paint-bucket-variant-grid" id="paint-bucket-variant-grid" role="radiogroup" aria-label="Fill type"></div>
@@ -381,6 +385,22 @@
                 <p id="paint-bucket-panel-hint" class="paint-bucket-panel-hint" aria-live="polite"></p>
               </div>
             </div>
+          </div>
+
+          <div id="left-section-multi-info" class="left-panel-section" style="display:none;">
+            <button id="left-section-multi-info-header" class="left-panel-section-header" type="button" aria-expanded="true">
+              <span class="left-panel-section-title">Multiple Selection</span>
+              <span class="left-panel-section-toggle" aria-hidden="true"></span>
+            </button>
+            <div id="left-section-multi-info-body" class="left-panel-section-body"></div>
+          </div>
+
+          <div id="left-section-multi-transform" class="left-panel-section" style="display:none;">
+            <button id="left-section-multi-transform-header" class="left-panel-section-header" type="button" aria-expanded="true">
+              <span class="left-panel-section-title">Transform</span>
+              <span class="left-panel-section-toggle" aria-hidden="true"></span>
+            </button>
+            <div id="left-section-multi-transform-body" class="left-panel-section-body"></div>
           </div>
 
           <div id="left-section-multi-selection" class="left-panel-section" style="display:none;">
@@ -455,13 +475,17 @@
                 </div>
                 <p id="align-panel-hint" class="align-panel-hint" aria-live="polite"></p>
               </div>
-              <div id="pf-section-root" class="global-section pathfinder-panel-section" data-pf-section="root">
-                <button id="pf-section-root-header" class="global-section-header" type="button" aria-expanded="true">
-                  <span class="global-section-title">Pathfinder</span>
-                  <span class="global-section-toggle" aria-hidden="true"></span>
-                </button>
-                <div id="pf-section-root-body" class="global-section-body">
-                  <div class="pathfinder-panel">
+            </div>
+          </div>
+
+          <div id="left-section-multi-pathfinder" class="left-panel-section" style="display:none;">
+            <button id="left-section-multi-pathfinder-header" class="left-panel-section-header" type="button" aria-expanded="true">
+              <span class="left-panel-section-title">Pathfinder</span>
+              <span class="left-panel-section-toggle" aria-hidden="true"></span>
+            </button>
+            <div id="left-section-multi-pathfinder-body" class="left-panel-section-body">
+              <div id="pf-section-root" data-pf-section="root">
+                <div class="pathfinder-panel">
                     <div class="pathfinder-panel-modes" role="radiogroup" aria-label="Pathfinder source geometry">
                       <button type="button" class="pf-mode-btn" data-pf-mode="silhouette" aria-pressed="true" title="Use each layer's silhouette (works on all layers)">Silhouette</button>
                       <button type="button" class="pf-mode-btn" data-pf-mode="shape-only" aria-pressed="false" title="Shape-only (closed shapes only)">Shape&#8209;Only</button>
@@ -489,8 +513,7 @@
                         <button type="button" class="pf-btn" data-pf-op="minusBack" title="Minus Back" aria-label="Minus Back"></button>
                       </div>
                     </div>
-                    <p id="pathfinder-panel-hint" class="pathfinder-panel-hint" aria-live="polite"></p>
-                  </div>
+                  <p id="pathfinder-panel-hint" class="pathfinder-panel-hint" aria-live="polite"></p>
                 </div>
               </div>
             </div>

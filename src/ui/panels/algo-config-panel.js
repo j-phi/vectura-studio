@@ -121,6 +121,28 @@
     this.destroyInlinePetalisDesigner();
     this.destroyInlinePatternDesigner();
     container.innerHTML = '';
+    const paintBucketSection = getEl('left-section-paint-bucket', { silent: true });
+    const paintBucketActive = this.activeTool === 'fill' || this.activeTool === 'fill-erase';
+    if (paintBucketActive) {
+      this._showWelcomePanel(false);
+      const algoSec = getEl('left-section-algorithm', { silent: true });
+      const algoConfSec = getEl('left-section-algorithm-configuration', { silent: true });
+      const multiSel = getEl('left-section-multi-selection', { silent: true });
+      const multiInfo = getEl('left-section-multi-info', { silent: true });
+      const multiXform = getEl('left-section-multi-transform', { silent: true });
+      const multiPf = getEl('left-section-multi-pathfinder', { silent: true });
+      if (algoSec) algoSec.style.display = 'none';
+      if (algoConfSec) algoConfSec.style.display = 'none';
+      if (multiSel) multiSel.style.display = 'none';
+      if (multiInfo) multiInfo.style.display = 'none';
+      if (multiXform) multiXform.style.display = 'none';
+      if (multiPf) multiPf.style.display = 'none';
+      if (paintBucketSection) paintBucketSection.style.display = '';
+      this.app?.ui?.refreshPaintBucketPanel?.();
+      restoreLeftPanelScroll();
+      return;
+    }
+    if (paintBucketSection) paintBucketSection.style.display = 'none';
     if (this.activeTool === 'fill-pattern' || this.activeTool === 'fill-pattern-erase') {
       this._showWelcomePanel(false);
       const algoSec = getEl('left-section-algorithm', { silent: true });
@@ -132,9 +154,12 @@
       return;
     }
 
-    // Multi-selection: collapse the per-algorithm panel into a "Multiple Selection"
-    // notice. The transform/seed inputs stay live and apply to every selected layer
-    // (see bindTrans in _ui-legacy.js).
+    // Multi-selection: show four sibling subpanels (Multiple Selection / Transform
+    // / Align / Pathfinder), each rendered as a top-level .left-panel-section so
+    // each picks up the accent-bar treatment. The transform/seed inputs are
+    // relocated into the Transform subpanel; the description goes in the
+    // Multiple-Selection subpanel. Single-selection restoration moves the
+    // transform section back to its home inside #left-section-algorithm-body.
     const multiSelectedLayers = (this.app.renderer?.getSelectedLayers?.() || []);
     const isMultiSelection = multiSelectedLayers.length > 1;
     const algoBodyEl = getEl('left-section-algorithm-body', { silent: true });
@@ -147,28 +172,55 @@
     const algoSectionEl = getEl('left-section-algorithm', { silent: true });
     const algoConfigSectionEl = getEl('left-section-algorithm-configuration', { silent: true });
     const primaryTitleEl = getEl('left-section-primary-title', { silent: true });
-    const existingMultiNotice = algoBodyEl?.querySelector('[data-multi-selection-notice]');
+    const multiInfoSection = getEl('left-section-multi-info', { silent: true });
+    const multiInfoBody = getEl('left-section-multi-info-body', { silent: true });
+    const multiTransformSection = getEl('left-section-multi-transform', { silent: true });
+    const multiTransformBody = getEl('left-section-multi-transform-body', { silent: true });
+    const multiPathfinderSection = getEl('left-section-multi-pathfinder', { silent: true });
+    const existingMultiNotice = document.querySelector('[data-multi-selection-notice]');
     if (existingMultiNotice) existingMultiNotice.remove();
 
     const multiSelSection = getEl('left-section-multi-selection', { silent: true });
     if (isMultiSelection) {
       this._showWelcomePanel(false);
-      if (algoSectionEl) algoSectionEl.style.display = '';
+      if (algoSectionEl) algoSectionEl.style.display = 'none';
       if (algoConfigSectionEl) algoConfigSectionEl.style.display = 'none';
       if (multiSelSection) multiSelSection.style.display = '';
-      if (primaryTitleEl) primaryTitleEl.textContent = 'Multiple Selection';
-      if (moduleLabelWrap) moduleLabelWrap.style.display = 'none';
-      if (moduleTriggerEl) moduleTriggerEl.style.display = 'none';
-      if (algoAboutEl) algoAboutEl.style.display = 'none';
+      if (multiInfoSection) multiInfoSection.style.display = '';
+      if (multiTransformSection) multiTransformSection.style.display = '';
+      if (multiPathfinderSection) multiPathfinderSection.style.display = '';
+      if (primaryTitleEl) primaryTitleEl.textContent = 'Algorithm';
+      if (moduleLabelWrap) moduleLabelWrap.style.display = '';
+      if (moduleTriggerEl) moduleTriggerEl.style.display = '';
+      if (algoAboutEl) algoAboutEl.style.display = '';
       if (seedControlsEl) seedControlsEl.style.display = 'none';
-      if (transformSectionEl) transformSectionEl.style.display = '';
+
+      // Relocate the Transform section into the multi-Transform subpanel body
+      // (its single-selection home is back inside #left-section-algorithm-body).
+      if (transformSectionEl && multiTransformBody && transformSectionEl.parentElement !== multiTransformBody) {
+        multiTransformBody.appendChild(transformSectionEl);
+      }
+      if (transformSectionEl) {
+        transformSectionEl.style.display = '';
+        // Force the Transform's inner global-section body open — the outer
+        // .left-panel-section header now drives collapse for the whole subpanel.
+        transformSectionEl.classList.remove('collapsed');
+        const innerHeader = getEl('algorithm-transform-header', { silent: true });
+        if (innerHeader) innerHeader.style.display = 'none';
+        const innerBody = getEl('algorithm-transform-body', { silent: true });
+        if (innerBody) innerBody.style.display = '';
+      }
 
       const notice = document.createElement('p');
       notice.dataset.multiSelectionNotice = 'true';
-      notice.className = 'text-xs text-vectura-muted mb-3 leading-relaxed';
+      notice.className = 'text-xs text-vectura-muted leading-relaxed';
       notice.textContent = `${multiSelectedLayers.length} layers selected. Select a single layer to edit its parameters. Transform changes below apply to all selected layers.`;
-      if (algoBodyEl) algoBodyEl.insertBefore(notice, transformSectionEl || algoBodyEl.firstChild);
+      if (multiInfoBody) {
+        multiInfoBody.innerHTML = '';
+        multiInfoBody.appendChild(notice);
+      }
       this.app?.ui?.refreshAlignPanel?.();
+      this.app?.ui?.refreshPathfinderPanel?.();
 
       const sharedValue = (getter) => {
         let v = null;
@@ -203,12 +255,24 @@
     }
 
     // Single-selection: restore any chrome a prior multi-selection pass hid.
+    if (algoSectionEl) algoSectionEl.style.display = '';
     if (multiSelSection) multiSelSection.style.display = 'none';
+    if (multiInfoSection) multiInfoSection.style.display = 'none';
+    if (multiTransformSection) multiTransformSection.style.display = 'none';
+    if (multiPathfinderSection) multiPathfinderSection.style.display = 'none';
     if (primaryTitleEl) primaryTitleEl.textContent = 'Algorithm';
     if (moduleLabelWrap) moduleLabelWrap.style.display = '';
     if (moduleTriggerEl) moduleTriggerEl.style.display = '';
     if (algoAboutEl) algoAboutEl.style.display = '';
     if (seedControlsEl) seedControlsEl.style.display = '';
+    // Return the Transform section to its single-selection home (last child of
+    // #left-section-algorithm-body) and restore its inner header so the nested
+    // global-section collapse works again.
+    if (transformSectionEl && algoBodyEl && transformSectionEl.parentElement !== algoBodyEl) {
+      algoBodyEl.appendChild(transformSectionEl);
+    }
+    const innerXformHeader = getEl('algorithm-transform-header', { silent: true });
+    if (innerXformHeader) innerXformHeader.style.display = '';
     ['inp-pos-x', 'inp-pos-y', 'inp-scale-x', 'inp-scale-y', 'inp-rotation'].forEach((id) => {
       const el = getEl(id, { silent: true });
       if (el && el.placeholder) el.placeholder = '';
@@ -237,7 +301,18 @@
     const hideAlgoPanels = isGroup && !isModifier;
     if (algoSection) algoSection.style.display = hideAlgoPanels ? 'none' : '';
     if (algoConfigSection) algoConfigSection.style.display = hideAlgoPanels ? 'none' : '';
-    if (hideAlgoPanels) { restoreLeftPanelScroll(); return; }
+    if (hideAlgoPanels) {
+      // Pathfinder compound: reveal the Pathfinder panel (lives in the
+      // multi-selection section) so the user can change op type or expand.
+      if (layer.type === 'compound' && multiSelSection) {
+        multiSelSection.style.display = '';
+        if (primaryTitleEl) primaryTitleEl.textContent = 'Pathfinder';
+        this.app?.ui?.refreshAlignPanel?.();
+        this.app?.ui?.refreshPathfinderPanel?.();
+      }
+      restoreLeftPanelScroll();
+      return;
+    }
     this.updatePrimaryPanelMode(layer);
     this.syncPrimaryModuleDropdown(layer);
     if (moduleSelect) {

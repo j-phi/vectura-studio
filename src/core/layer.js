@@ -28,6 +28,7 @@
       this.visible = true;
       this.origin = { x: 0, y: 0 };
       this.paths = [];
+      this.fills = [];
       this.displayPaths = [];
       this.displayStats = null;
       this.displayMaskActive = false;

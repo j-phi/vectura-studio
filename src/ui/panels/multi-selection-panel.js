@@ -59,12 +59,88 @@
     });
   }
 
+  const COLLAPSIBLE_SECTIONS = [
+    { key: 'multiSelectionAlign',      sectionId: 'align-section-align' },
+    { key: 'multiSelectionDistribute', sectionId: 'align-section-distribute' },
+    { key: 'multiSelectionSpacing',    sectionId: 'align-section-spacing' },
+    { key: 'multiSelectionTarget',     sectionId: 'align-section-target' },
+  ];
+
+  // Top-level Multiple-Selection subpanels (sibling .left-panel-section blocks).
+  // Each outer chevron collapses/expands the whole body.
+  const OUTER_SUBPANELS = [
+    { key: 'multiSelectionInfoOpen',       sectionId: 'left-section-multi-info' },
+    { key: 'multiSelectionTransformOpen',  sectionId: 'left-section-multi-transform' },
+    { key: 'multiSelectionAlignPanelOpen', sectionId: 'left-section-multi-selection' },
+    { key: 'multiSelectionPathfinderOpen', sectionId: 'left-section-multi-pathfinder' },
+  ];
+
+  function setSubSectionCollapsed(app, sectionEl, key, collapsed, { persist = true } = {}) {
+    const SETTINGS = (G.Vectura && G.Vectura.SETTINGS) || {};
+    if (!SETTINGS.uiSections || typeof SETTINGS.uiSections !== 'object') SETTINGS.uiSections = {};
+    SETTINGS.uiSections[key] = Boolean(collapsed);
+    sectionEl.classList.toggle('collapsed', Boolean(collapsed));
+    const header = sectionEl.querySelector('.global-section-header');
+    const body = sectionEl.querySelector('.global-section-body');
+    if (header) header.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    if (body) body.style.display = collapsed ? 'none' : '';
+    if (persist) app?.persistPreferencesDebounced?.();
+  }
+
+  function setOuterSubpanelCollapsed(app, sectionEl, key, collapsed, { persist = true } = {}) {
+    const SETTINGS = (G.Vectura && G.Vectura.SETTINGS) || {};
+    if (!SETTINGS.uiSections || typeof SETTINGS.uiSections !== 'object') SETTINGS.uiSections = {};
+    // Stored value is "open" (default true); convert to collapsed for the DOM.
+    SETTINGS.uiSections[key] = !collapsed;
+    sectionEl.classList.toggle('collapsed', Boolean(collapsed));
+    const header = sectionEl.querySelector('.left-panel-section-header');
+    const body = sectionEl.querySelector('.left-panel-section-body');
+    if (header) header.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    if (body) body.style.display = collapsed ? 'none' : '';
+    if (persist) app?.persistPreferencesDebounced?.();
+  }
+
+  function initCollapsibleSections(app) {
+    const SETTINGS = (G.Vectura && G.Vectura.SETTINGS) || {};
+    if (!SETTINGS.uiSections || typeof SETTINGS.uiSections !== 'object') SETTINGS.uiSections = {};
+    COLLAPSIBLE_SECTIONS.forEach(({ key, sectionId }) => {
+      const sectionEl = $(sectionId);
+      if (!sectionEl) return;
+      const header = sectionEl.querySelector('.global-section-header');
+      const collapsed = SETTINGS.uiSections[key] === true;
+      setSubSectionCollapsed(app, sectionEl, key, collapsed, { persist: false });
+      if (!header) return;
+      header.onclick = (e) => {
+        e.preventDefault();
+        const next = !sectionEl.classList.contains('collapsed');
+        setSubSectionCollapsed(app, sectionEl, key, next);
+      };
+    });
+
+    OUTER_SUBPANELS.forEach(({ key, sectionId }) => {
+      const sectionEl = $(sectionId);
+      if (!sectionEl) return;
+      const header = sectionEl.querySelector('.left-panel-section-header');
+      // Default open. Stored value is "open" (true) — collapsed === !open.
+      const open = SETTINGS.uiSections[key] !== false;
+      setOuterSubpanelCollapsed(app, sectionEl, key, !open, { persist: false });
+      if (!header) return;
+      header.onclick = (e) => {
+        e.preventDefault();
+        const next = !sectionEl.classList.contains('collapsed');
+        setOuterSubpanelCollapsed(app, sectionEl, key, next);
+      };
+    });
+  }
+
   function init(app) {
     if (!app) return;
     paintIcons();
 
     const section = $('left-section-multi-selection');
     if (!section) return;
+
+    initCollapsibleSections(app);
 
     const state = {
       alignTo: 'selection',
@@ -155,15 +231,33 @@
     const paneTitleEl = document.querySelector('#left-pane .pane-title');
     const defaultPaneTitle = paneTitleEl?.textContent || 'GENERATOR';
 
+    const alignPanelEl = section.querySelector('.align-panel');
+    const multiInfoSection = $('left-section-multi-info');
+    const multiTransformSection = $('left-section-multi-transform');
+    const multiPathfinderSection = $('left-section-multi-pathfinder');
+
     const refresh = () => {
       const selected = renderer()?.getSelectedLayers?.() || [];
       const isMulti = selected.length > 1;
-      section.style.display = isMulti ? '' : 'none';
+      const isCompoundEdit = selected.length === 1 && selected[0]?.type === 'compound';
+      const showAlign = isMulti;
+      section.style.display = showAlign || isCompoundEdit ? '' : 'none';
+      // Align controls are only meaningful for 2+ layers; hide them when only
+      // a single compound is selected (Pathfinder-only context).
+      if (alignPanelEl) alignPanelEl.style.display = isMulti ? '' : 'none';
+      // Info / Transform subpanels are only relevant in true multi-selection.
+      if (multiInfoSection) multiInfoSection.style.display = isMulti ? '' : 'none';
+      if (multiTransformSection) multiTransformSection.style.display = isMulti ? '' : 'none';
+      // Pathfinder subpanel is visible for both multi-selection and the
+      // single-compound edit case.
+      if (multiPathfinderSection) multiPathfinderSection.style.display = (isMulti || isCompoundEdit) ? '' : 'none';
       if (paneTitleEl) {
-        paneTitleEl.textContent = isMulti ? 'MULTIPLE SELECTION' : defaultPaneTitle;
+        paneTitleEl.textContent = isCompoundEdit
+          ? 'PATHFINDER'
+          : isMulti ? 'MULTIPLE SELECTION' : defaultPaneTitle;
       }
-      if (!isMulti) return;
-      updateAlignToButtons();
+      if (!showAlign && !isCompoundEdit) return;
+      if (isMulti) updateAlignToButtons();
     };
 
     app.ui = app.ui || {};

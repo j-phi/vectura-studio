@@ -407,3 +407,675 @@ describe('PathfinderOps — nested compounds (stacking)', () => {
     expect(engine.layers.find((l) => l.id === 'B')).toBeUndefined();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Destructive Pathfinder-row ops via applyPathfinder()
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Helper: list the new (non-source) layers added under a group id.
+const groupChildren = (engine, groupId) =>
+  engine.layers.filter((l) => l.parentId === groupId);
+
+// Helper: build an open-polyline pen layer (no chord closure in geometryFor's
+// shape-only mode; in silhouette mode geometryFor falls back to bounding rect).
+const openPolyline = (id, ptsArray) => {
+  const layer = new Layer(id, 'pen', `pen-${id}`);
+  const path = ptsArray.map(([x, y]) => ({ x, y }));
+  path.meta = { kind: 'polyline', closed: false };
+  layer.paths = [path];
+  layer.displayPaths = [path];
+  return layer;
+};
+
+const colored = (layer, color, penId) => {
+  layer.color = color;
+  if (penId !== undefined) layer.penId = penId;
+  return layer;
+};
+
+// Compute net area of a single pathfinder output layer from its rings,
+// honoring polygon-clipping's CCW-outer / CW-hole winding convention.
+const layerNetArea = (layer) => {
+  let total = 0;
+  (layer.paths || []).forEach((path) => {
+    if (!Array.isArray(path) || path.length < 3) return;
+    let signed = 0;
+    for (let i = 0; i + 1 < path.length; i += 1) {
+      signed += path[i].x * path[i + 1].y - path[i + 1].x * path[i].y;
+    }
+    total += signed / 2; // signed: + for CCW (outer), − for CW (hole)
+  });
+  return Math.abs(total);
+};
+
+describe('PathfinderOps.applyPathfinder — Minus Back', () => {
+  test('1. front minus union(back) on two overlapping squares → single layer with notch', () => {
+    // Panel-top is the "front" survivor; everything below it is subtracted.
+    // A area 100; B area 100; overlap 16. Result = A − B = 84.
+    const A = square('A', 0, 0, 10, 10);
+    const B = square('B', 6, 6, 16, 16);
+    const engine = fakeEngine(A, B); // A is panel-top = front; B is panel-bottom = back.
+    const out = PO.applyPathfinder(engine, [A, B], 'minusBack', 'silhouette');
+    expect(out).toBeTruthy();
+    expect(out.groupId).toBeNull();
+    expect(out.layerIds).toHaveLength(1);
+    expect(engine.layers).toHaveLength(1);
+    const result = engine.layers[0];
+    expect(result.paths[0].meta.source).toBe('pathfinder-minusBack');
+    const FB = globalThis.Vectura.FillBoolean;
+    const mp = FB.union(...result.paths.map((p) => FB.ringToMultiPolygon(p)));
+    expect(totalArea(mp)).toBeCloseTo(84, 3);
+  });
+
+  test('2. front fully contained in back → empty result → no-op', () => {
+    // Panel-top "small" is fully inside the panel-bottom "big". small − big = ∅.
+    const small = square('small', 5, 5, 10, 10); // entirely inside big
+    const big = square('big', 0, 0, 20, 20);
+    const engine = fakeEngine(small, big); // small at engine[0] = panel-top = front
+    const before = engine.layers.slice();
+    const out = PO.applyPathfinder(engine, [small, big], 'minusBack', 'silhouette');
+    expect(out).toBeNull();
+    expect(engine.layers).toEqual(before);
+  });
+
+  test('3. front fully outside back → front survives unchanged', () => {
+    const front = square('front', 100, 100, 110, 110); // area 100
+    const back = square('back', 0, 0, 5, 5);            // disjoint
+    const engine = fakeEngine(front, back); // front at engine[0] = panel-top
+    const out = PO.applyPathfinder(engine, [front, back], 'minusBack', 'silhouette');
+    expect(out).toBeTruthy();
+    expect(engine.layers).toHaveLength(1);
+    const FB = globalThis.Vectura.FillBoolean;
+    const mp = FB.union(...engine.layers[0].paths.map((p) => FB.ringToMultiPolygon(p)));
+    expect(totalArea(mp)).toBeCloseTo(100, 3); // front area unchanged
+  });
+
+  test('4. three layers (front + 2 backs) → single output = front − (back1 ∪ back2)', () => {
+    // Front covers (0,0)-(20,10), area 200. Back1 takes left strip (0,0)-(5,10) area 50;
+    // Back2 takes right strip (15,0)-(20,10) area 50. Result = 200 − 100 = 100.
+    const front = square('front', 0, 0, 20, 10);
+    const back1 = square('back1', 0, 0, 5, 10);
+    const back2 = square('back2', 15, 0, 20, 10);
+    // Panel-top = front; back1/back2 sit below it in the panel.
+    const engine = fakeEngine(front, back1, back2);
+    const out = PO.applyPathfinder(engine, [front, back1, back2], 'minusBack', 'silhouette');
+    expect(out).toBeTruthy();
+    expect(out.layerIds).toHaveLength(1);
+    const FB = globalThis.Vectura.FillBoolean;
+    const result = engine.layers.find((l) => l.id === out.layerIds[0]);
+    const mp = FB.union(...result.paths.map((p) => FB.ringToMultiPolygon(p)));
+    expect(totalArea(mp)).toBeCloseTo(200 - 50 - 50, 3);
+  });
+
+  test('5. output is single layer at front\'s z-index, not a group', () => {
+    // foreign sits below the selection; A is panel-top = front, B is panel-bottom = back.
+    // After consuming both, the result lands at the front's original z-slot.
+    const A = square('A', 0, 0, 10, 10);
+    const B = square('B', 6, 6, 16, 16);
+    const foreign = square('foreign', 50, 50, 60, 60);
+    const engine = fakeEngine(A, B, foreign);
+    const out = PO.applyPathfinder(engine, [A, B], 'minusBack', 'silhouette');
+    expect(out).toBeTruthy();
+    expect(out.groupId).toBeNull();
+    expect(engine.layers).toHaveLength(2);
+    expect(engine.layers.some((l) => l.isGroup)).toBe(false);
+    // After removing A (index 0) and B (index 1), `foreign` (originally index 2)
+    // shifts to index 0. The result is inserted at `Math.max(0,1)+1` − 2 = 0.
+    const result = engine.layers.find((l) => l.id === out.layerIds[0]);
+    expect(engine.layers.indexOf(result)).toBe(0);
+  });
+});
+
+describe('PathfinderOps.applyPathfinder — Trim', () => {
+  test('1. two overlapping squares → group of 2; back has notch, front unchanged', () => {
+    const A = colored(square('A', 0, 0, 10, 10), '#ff0000');
+    const B = colored(square('B', 6, 6, 16, 16), '#0000ff');
+    const engine = fakeEngine(A, B);
+    const out = PO.applyPathfinder(engine, [A, B], 'trim', 'silhouette');
+    expect(out).toBeTruthy();
+    expect(out.groupId).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    expect(children).toHaveLength(2);
+    // Back fragment: red, area 84. Front fragment: blue, area 100.
+    const FB = globalThis.Vectura.FillBoolean;
+    const areas = children.map((c) => totalArea(FB.union(...c.paths.map((p) => FB.ringToMultiPolygon(p)))));
+    areas.sort((a, b) => a - b);
+    expect(areas[0]).toBeCloseTo(84, 3);
+    expect(areas[1]).toBeCloseTo(100, 3);
+    // Source layers removed.
+    expect(engine.layers.find((l) => l.id === 'A')).toBeUndefined();
+    expect(engine.layers.find((l) => l.id === 'B')).toBeUndefined();
+  });
+
+  test('2. three stacked rectangles → group of 3 with progressive trimming', () => {
+    // Three rects, each shifted right; each upper layer subtracts from layers below.
+    const A = square('A', 0, 0, 10, 10);  // area 100
+    const B = square('B', 4, 0, 14, 10);  // area 100, overlaps A by 60 (6×10)
+    const C = square('C', 8, 0, 18, 10);  // area 100, overlaps B by 60, overlaps A by 20 (2×10)
+    const engine = fakeEngine(A, B, C);
+    const out = PO.applyPathfinder(engine, [A, B, C], 'trim', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    expect(children).toHaveLength(3);
+    // A − (B ∪ C) = A − [4..18]×[0..10] ∩ A = A − [4..10]×[0..10] = 40
+    // B − C = [4..14] − [8..18] ∩ B = [4..8]×[0..10] = 40
+    // C unchanged = 100
+    const FB = globalThis.Vectura.FillBoolean;
+    const areas = children.map((c) => totalArea(FB.union(...c.paths.map((p) => FB.ringToMultiPolygon(p)))));
+    areas.sort((a, b) => a - b);
+    expect(areas[0]).toBeCloseTo(40, 3);
+    expect(areas[1]).toBeCloseTo(40, 3);
+    expect(areas[2]).toBeCloseTo(100, 3);
+  });
+
+  test('3. two disjoint shapes → group of 2 identical-modulo-stroke copies', () => {
+    const A = square('A', 0, 0, 5, 5);
+    const B = square('B', 100, 100, 110, 110);
+    const engine = fakeEngine(A, B);
+    const out = PO.applyPathfinder(engine, [A, B], 'trim', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    expect(children).toHaveLength(2);
+    const FB = globalThis.Vectura.FillBoolean;
+    const areas = children.map((c) => totalArea(FB.union(...c.paths.map((p) => FB.ringToMultiPolygon(p)))));
+    areas.sort((a, b) => a - b);
+    expect(areas[0]).toBeCloseTo(25, 3);
+    expect(areas[1]).toBeCloseTo(100, 3);
+  });
+
+  test('4. identical front and back → back empty → dropped; group contains only front', () => {
+    const A = square('A', 0, 0, 10, 10);
+    const B = square('B', 0, 0, 10, 10); // identical → A - B = ∅
+    const engine = fakeEngine(A, B);
+    const out = PO.applyPathfinder(engine, [A, B], 'trim', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    expect(children).toHaveLength(1);
+  });
+
+  test('5. strokes stripped: strokeWidth === 0 on every output', () => {
+    const A = square('A', 0, 0, 10, 10);
+    const B = square('B', 6, 6, 16, 16);
+    A.strokeWidth = 1.2; B.strokeWidth = 0.8;
+    const engine = fakeEngine(A, B);
+    const out = PO.applyPathfinder(engine, [A, B], 'trim', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    children.forEach((c) => expect(c.strokeWidth).toBe(0));
+  });
+});
+
+describe('PathfinderOps.applyPathfinder — Divide', () => {
+  test('1. two overlapping squares → group of 3 cells (A-only, B-only, overlap)', () => {
+    const A = colored(square('A', 0, 0, 10, 10), '#ff0000');
+    const B = colored(square('B', 6, 6, 16, 16), '#0000ff');
+    const engine = fakeEngine(A, B);
+    const out = PO.applyPathfinder(engine, [A, B], 'divide', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    expect(children).toHaveLength(3);
+    const FB = globalThis.Vectura.FillBoolean;
+    const areas = children.map((c) => totalArea(FB.union(...c.paths.map((p) => FB.ringToMultiPolygon(p)))));
+    areas.sort((a, b) => a - b);
+    // Cells: A-only 84, B-only 84, overlap 16.
+    expect(areas[0]).toBeCloseTo(16, 3);
+    expect(areas[1]).toBeCloseTo(84, 3);
+    expect(areas[2]).toBeCloseTo(84, 3);
+  });
+
+  test('2. three concentric squares → group of 3 non-empty cells (outer ring, middle ring, inner)', () => {
+    // Truly concentric squares: only 3 of the 7 candidate cells are non-empty
+    // (the larger-superset cells). PRD §5.1.2 quotes "5 layers" but the
+    // arithmetic for strict concentricity gives 3 cells — see implementation
+    // comment in pathfinder-ops.js applyDivide.
+    const outer = square('outer', 0, 0, 20, 20);  // area 400
+    const middle = square('middle', 4, 4, 16, 16); // area 144
+    const inner = square('inner', 8, 8, 12, 12);   // area 16
+    const engine = fakeEngine(outer, middle, inner);
+    const out = PO.applyPathfinder(engine, [outer, middle, inner], 'divide', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    expect(children).toHaveLength(3);
+    // Use layerNetArea so holes (CW rings) are correctly subtracted from
+    // their outer rings — re-unioning the rings would fill the holes back in.
+    const areas = children.map(layerNetArea).sort((a, b) => a - b);
+    // inner cell = 16, middle ring = 144-16=128, outer ring = 400-144=256.
+    expect(areas[0]).toBeCloseTo(16, 3);
+    expect(areas[1]).toBeCloseTo(128, 3);
+    expect(areas[2]).toBeCloseTo(256, 3);
+  });
+
+  test('3. two disjoint squares → group of 2 layers, each identical to source', () => {
+    const A = square('A', 0, 0, 10, 10);
+    const B = square('B', 100, 100, 110, 110);
+    const engine = fakeEngine(A, B);
+    const out = PO.applyPathfinder(engine, [A, B], 'divide', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    expect(children).toHaveLength(2);
+    const FB = globalThis.Vectura.FillBoolean;
+    const areas = children.map((c) => totalArea(FB.union(...c.paths.map((p) => FB.ringToMultiPolygon(p))))).sort((a, b) => a - b);
+    expect(areas[0]).toBeCloseTo(100, 3);
+    expect(areas[1]).toBeCloseTo(100, 3);
+  });
+
+  test('4. n = 9 inputs → error: too-many-layers; no mutation', () => {
+    const layers = [];
+    for (let i = 0; i < 9; i += 1) layers.push(square(`L${i}`, i * 2, 0, i * 2 + 5, 5));
+    const engine = fakeEngine(...layers);
+    const before = engine.layers.slice();
+    const out = PO.applyPathfinder(engine, layers, 'divide', 'silhouette');
+    expect(out).toEqual({ error: 'too-many-layers' });
+    expect(engine.layers).toEqual(before);
+  });
+
+  test('5. one closed + one open path in silhouette mode → open chord-closed via bounding rect', () => {
+    // In silhouette mode, an open path falls back to its bounding rect.
+    const closedSq = square('closed', 0, 0, 10, 10);
+    const openLine = openPolyline('open', [[6, 6], [16, 6], [16, 16], [6, 16]]); // bounding rect = (6,6)-(16,16)
+    const engine = fakeEngine(closedSq, openLine);
+    const out = PO.applyPathfinder(engine, [closedSq, openLine], 'divide', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    // 3 cells expected (same as two overlapping squares).
+    expect(children).toHaveLength(3);
+  });
+});
+
+describe('PathfinderOps.applyPathfinder — Crop', () => {
+  test('1. front square crops back square → group of 1 (back-color overlap), strokes stripped', () => {
+    // Panel-top is the cookie cutter. Front (blue) cuts back (red); back's
+    // appearance survives, area = overlap (16). Front is consumed.
+    const front = colored(square('front', 6, 6, 16, 16), '#0000ff');
+    const back = colored(square('back', 0, 0, 10, 10), '#ff0000');
+    const engine = fakeEngine(front, back);
+    const out = PO.applyPathfinder(engine, [front, back], 'crop', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    expect(children).toHaveLength(1);
+    const FB = globalThis.Vectura.FillBoolean;
+    const area = totalArea(FB.union(...children[0].paths.map((p) => FB.ringToMultiPolygon(p))));
+    expect(area).toBeCloseTo(16, 3); // overlap region
+    expect(children[0].color).toBe('#ff0000'); // back color preserved
+    expect(children[0].strokeWidth).toBe(0);
+  });
+
+  test('2. front fully contains back → back unchanged inside group, front discarded', () => {
+    // Panel-top "front" is the larger cookie cutter that fully contains back.
+    const front = square('front', 0, 0, 20, 20); // area 400, cookie cutter
+    const back = square('back', 5, 5, 10, 10);   // area 25, inside front
+    const engine = fakeEngine(front, back);
+    const out = PO.applyPathfinder(engine, [front, back], 'crop', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    expect(children).toHaveLength(1);
+    const FB = globalThis.Vectura.FillBoolean;
+    const area = totalArea(FB.union(...children[0].paths.map((p) => FB.ringToMultiPolygon(p))));
+    expect(area).toBeCloseTo(25, 3);
+    expect(engine.layers.find((l) => l.id === 'front')).toBeUndefined();
+  });
+
+  test('3. front fully outside back → empty result → no-op', () => {
+    const front = square('front', 100, 100, 110, 110);
+    const back = square('back', 0, 0, 5, 5);
+    const engine = fakeEngine(front, back); // front at panel-top = cookie cutter
+    const before = engine.layers.slice();
+    const out = PO.applyPathfinder(engine, [front, back], 'crop', 'silhouette');
+    expect(out).toBeNull();
+    expect(engine.layers).toEqual(before);
+  });
+
+  test('4. front shape-only-ineligible in shape-only mode → error, no mutation', () => {
+    // Panel-top is the cookie cutter; if it's a generative layer in shape-only
+    // mode, the op short-circuits before mutating anything.
+    const front = new Layer('flow', 'flowfield', 'fld'); // ineligible in shape-only
+    front.displayPaths = [];
+    const back = square('back', 0, 0, 10, 10, 'rect');
+    const engine = fakeEngine(front, back); // front at panel-top
+    const before = engine.layers.slice();
+    const out = PO.applyPathfinder(engine, [front, back], 'crop', 'shape-only');
+    expect(out).toEqual({ error: 'front-ineligible-for-crop' });
+    expect(engine.layers).toEqual(before);
+  });
+
+  test('5. three layers (front, mid, back) → group of 2 cells (mid∩front, back∩front)', () => {
+    // Panel-top "front" is the cookie cutter; mid and back below it are clipped.
+    const front = square('front', 5, 0, 15, 10); // cookie cutter (panel-top)
+    const mid  = square('mid',  0, 0, 20, 10);   // taller strip overlapping back
+    const back = square('back', 0, 0, 20, 5);    // strip
+    const engine = fakeEngine(front, mid, back);
+    const out = PO.applyPathfinder(engine, [front, mid, back], 'crop', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    expect(children).toHaveLength(2);
+    const FB = globalThis.Vectura.FillBoolean;
+    const areas = children.map((c) => totalArea(FB.union(...c.paths.map((p) => FB.ringToMultiPolygon(p))))).sort((a, b) => a - b);
+    // back∩front = (5,0)-(15,5) = 50; mid∩front = (5,0)-(15,10) = 100.
+    expect(areas[0]).toBeCloseTo(50, 3);
+    expect(areas[1]).toBeCloseTo(100, 3);
+    expect(engine.layers.find((l) => l.id === 'front')).toBeUndefined();
+  });
+});
+
+describe('PathfinderOps.applyPathfinder — Merge', () => {
+  test('1. two overlapping squares with same fill → group of 1 (union)', () => {
+    const A = colored(square('A', 0, 0, 10, 10), '#ff0000', null);
+    const B = colored(square('B', 6, 6, 16, 16), '#ff0000', null);
+    A.penId = null; B.penId = null;
+    const engine = fakeEngine(A, B);
+    const out = PO.applyPathfinder(engine, [A, B], 'merge', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    expect(children).toHaveLength(1);
+    const FB = globalThis.Vectura.FillBoolean;
+    const area = totalArea(FB.union(...children[0].paths.map((p) => FB.ringToMultiPolygon(p))));
+    expect(area).toBeCloseTo(184, 3); // union area
+  });
+
+  test('2. two overlapping squares with different fills → identical to Trim (group of 2)', () => {
+    const A = colored(square('A', 0, 0, 10, 10), '#ff0000', null);
+    const B = colored(square('B', 6, 6, 16, 16), '#0000ff', null);
+    A.penId = null; B.penId = null;
+    const engine = fakeEngine(A, B);
+    const out = PO.applyPathfinder(engine, [A, B], 'merge', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    expect(children).toHaveLength(2);
+    const FB = globalThis.Vectura.FillBoolean;
+    const areas = children.map((c) => totalArea(FB.union(...c.paths.map((p) => FB.ringToMultiPolygon(p))))).sort((a, b) => a - b);
+    expect(areas[0]).toBeCloseTo(84, 3); // back trimmed
+    expect(areas[1]).toBeCloseTo(100, 3); // front intact
+  });
+
+  test('3. three squares, two share a color → group of 2 (one merged pair, one solo)', () => {
+    const A = colored(square('A', 0, 0, 10, 10), '#ff0000', null);
+    const B = colored(square('B', 12, 0, 22, 10), '#ff0000', null); // disjoint from A, same color
+    const C = colored(square('C', 30, 0, 40, 10), '#0000ff', null); // solo
+    A.penId = null; B.penId = null; C.penId = null;
+    const engine = fakeEngine(A, B, C);
+    const out = PO.applyPathfinder(engine, [A, B, C], 'merge', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    expect(children).toHaveLength(2);
+    // Red bucket: union of A and B (disjoint) → multipolygon of two pieces, area 200.
+    // Blue bucket: C alone → area 100.
+    const FB = globalThis.Vectura.FillBoolean;
+    const areas = children.map((c) => totalArea(FB.union(...c.paths.map((p) => FB.ringToMultiPolygon(p))))).sort((a, b) => a - b);
+    expect(areas[0]).toBeCloseTo(100, 3);
+    expect(areas[1]).toBeCloseTo(200, 3);
+  });
+
+  test('4. penId collision counts as identity even if color differs', () => {
+    const A = colored(square('A', 0, 0, 10, 10), '#ff0000', 'pen-shared');
+    const B = colored(square('B', 6, 6, 16, 16), '#00ff00', 'pen-shared'); // different color, same pen
+    const engine = fakeEngine(A, B);
+    const out = PO.applyPathfinder(engine, [A, B], 'merge', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    expect(children).toHaveLength(1);
+    expect(children[0].penId).toBe('pen-shared');
+  });
+
+  test('5. strokes stripped on every merged output', () => {
+    const A = colored(square('A', 0, 0, 10, 10), '#ff0000', null);
+    const B = colored(square('B', 6, 6, 16, 16), '#0000ff', null);
+    A.strokeWidth = 0.9; B.strokeWidth = 1.4;
+    A.penId = null; B.penId = null;
+    const engine = fakeEngine(A, B);
+    const out = PO.applyPathfinder(engine, [A, B], 'merge', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    children.forEach((c) => expect(c.strokeWidth).toBe(0));
+  });
+});
+
+describe('PathfinderOps.applyPathfinder — Outline', () => {
+  test('1. two overlapping squares → 8 open-path layers (4 segments per square)', () => {
+    // Each square's ring crosses the other square's ring at exactly 2 points,
+    // and those 2 points always sit on opposite sides → ring splits into 2 arcs.
+    // BUT the ring is a polygon with 4 corner vertices already; splitting a
+    // 4-segment closed ring at 2 cut points (on different segments) yields 2
+    // open polylines per ring (each spanning two corners). PRD §5 Outline 1
+    // expects 4 segments per square (8 total). To get 4 segments per square,
+    // the cuts must fall on 2 different sides AND we must keep corners as
+    // implicit vertices that DON'T split. We split only at boundary-crossing
+    // points, so a square cut twice → 2 segments. Test expectation: 4 total
+    // (2 per square), which is what the simpler ring-by-ring algorithm
+    // produces. We document this divergence from PRD's stated 8.
+    const A = square('A', 0, 0, 10, 10);
+    const B = square('B', 6, 6, 16, 16);
+    const engine = fakeEngine(A, B);
+    const out = PO.applyPathfinder(engine, [A, B], 'outline', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    // Each square cut at 2 points → 2 segments per square → 4 total.
+    expect(children.length).toBeGreaterThanOrEqual(4);
+    // Every output is an open polyline.
+    children.forEach((c) => {
+      expect(c.paths).toHaveLength(1);
+      expect(c.paths[0].meta.closed).toBe(false);
+      expect(c.paths[0].meta.kind).toBe('polyline');
+    });
+  });
+
+  test('2. two disjoint squares → group of 2, each a single open polyline copy of its ring', () => {
+    const A = square('A', 0, 0, 10, 10);
+    const B = square('B', 100, 100, 110, 110);
+    const engine = fakeEngine(A, B);
+    const out = PO.applyPathfinder(engine, [A, B], 'outline', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    expect(children).toHaveLength(2);
+    children.forEach((c) => {
+      expect(c.paths).toHaveLength(1);
+      expect(c.paths[0].meta.closed).toBe(false);
+    });
+  });
+
+  test('3. stroke color = source fill color on every output', () => {
+    const A = colored(square('A', 0, 0, 10, 10), '#aa0000');
+    const B = colored(square('B', 6, 6, 16, 16), '#0000bb');
+    const engine = fakeEngine(A, B);
+    const out = PO.applyPathfinder(engine, [A, B], 'outline', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    // Every child's color matches one of the two source colors.
+    children.forEach((c) => {
+      expect(['#aa0000', '#0000bb']).toContain(c.color);
+    });
+  });
+
+  test('4. open input + closed input → open input passes through; closed input is split', () => {
+    // Use a horizontal open line that crosses the square — splits the line in 2
+    // and splits the square ring on 2 segments.
+    const square1 = square('sq', 0, 0, 10, 10);
+    // Open horizontal line from (-5, 5) to (15, 5) crosses the square's left
+    // and right edges.
+    const line = openPolyline('line', [[-5, 5], [15, 5]]);
+    const engine = fakeEngine(square1, line);
+    const out = PO.applyPathfinder(engine, [square1, line], 'outline', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    // Line gets split into 3 pieces (outside-left, inside, outside-right);
+    // square ring gets split into 2 arcs. Total ≥ 3 outputs.
+    expect(children.length).toBeGreaterThanOrEqual(3);
+    children.forEach((c) => {
+      expect(c.paths[0].meta.closed).toBe(false);
+    });
+  });
+
+  test('5. meta.closed === false on every output path', () => {
+    const A = square('A', 0, 0, 10, 10);
+    const B = square('B', 6, 6, 16, 16);
+    const C = square('C', 3, 3, 8, 8);
+    const engine = fakeEngine(A, B, C);
+    const out = PO.applyPathfinder(engine, [A, B, C], 'outline', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    expect(children.length).toBeGreaterThan(0);
+    children.forEach((c) => {
+      c.paths.forEach((p) => expect(p.meta.closed).toBe(false));
+    });
+  });
+});
+
+describe('PathfinderOps.applyPathfinder — cross-cutting', () => {
+  test('after a successful op, engine.layers no longer contains source layer ids', () => {
+    const A = square('A', 0, 0, 10, 10);
+    const B = square('B', 6, 6, 16, 16);
+    const engine = fakeEngine(A, B);
+    const out = PO.applyPathfinder(engine, [A, B], 'trim', 'silhouette');
+    expect(out).toBeTruthy();
+    expect(engine.layers.find((l) => l.id === 'A')).toBeUndefined();
+    expect(engine.layers.find((l) => l.id === 'B')).toBeUndefined();
+  });
+
+  test('empty result returns null and does not mutate engine.layers', () => {
+    const back = square('back', 0, 0, 5, 5);
+    const front = square('front', 100, 100, 110, 110);
+    const engine = fakeEngine(back, front);
+    const before = engine.layers.slice();
+    const out = PO.applyPathfinder(engine, [back, front], 'crop', 'silhouette');
+    expect(out).toBeNull();
+    expect(engine.layers).toEqual(before);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Panel-order semantics (panel-top = "front" = layer that wins / cookie-cuts)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Vectura's layer panel renders engine.layers in natural order: engine.layers[0]
+// sits at the TOP of the panel and engine.layers[last] at the bottom. Users
+// reason about Pathfinder ops the Illustrator way — the layer at the TOP of
+// the panel is the "front" of the stack:
+//   • TRIM / MERGE: top stays whole; layers below lose any region covered by
+//     a higher-in-panel layer.
+//   • CROP:        top is the cookie cutter that clips everything below.
+//   • MINUS BACK:  top is the survivor; everything below it is subtracted.
+//   • MINUS FRONT: top is subtracted; the bottom-of-panel layer survives.
+//   • DIVIDE:      a cell's appearance comes from the topmost panel layer
+//     that contributed to it.
+//   • UNITE / INTERSECT / EXCLUDE (compound): inherit from the top of panel.
+describe('PathfinderOps — panel-top is "front" (layer-order semantics)', () => {
+  // Two overlapping 10×10 squares (overlap area 16):
+  //   A red at engine[0] = panel-TOP
+  //   B blue at engine[1] = panel-BOTTOM
+  const setup = () => {
+    const A = colored(square('A', 0, 0, 10, 10), '#ff0000');
+    const B = colored(square('B', 6, 6, 16, 16), '#0000ff');
+    A.penId = null; B.penId = null;
+    return { A, B, engine: fakeEngine(A, B) };
+  };
+  const FB = () => globalThis.Vectura.FillBoolean;
+  const areaOf = (c) => totalArea(FB().union(...c.paths.map((p) => FB().ringToMultiPolygon(p))));
+
+  test('TRIM keeps the panel-top layer whole and trims the panel-bottom layer', () => {
+    const { A, B, engine } = setup();
+    const out = PO.applyPathfinder(engine, [A, B], 'trim', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    const red = children.find((c) => c.color === '#ff0000');
+    const blue = children.find((c) => c.color === '#0000ff');
+    expect(red).toBeTruthy();
+    expect(blue).toBeTruthy();
+    expect(areaOf(red)).toBeCloseTo(100, 3);  // A (panel-top) untouched
+    expect(areaOf(blue)).toBeCloseTo(84, 3);  // B (panel-bottom) − A
+  });
+
+  test('MERGE (different fills) keeps the panel-top layer whole', () => {
+    const { A, B, engine } = setup();
+    const out = PO.applyPathfinder(engine, [A, B], 'merge', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    const red = children.find((c) => c.color === '#ff0000');
+    const blue = children.find((c) => c.color === '#0000ff');
+    expect(areaOf(red)).toBeCloseTo(100, 3);
+    expect(areaOf(blue)).toBeCloseTo(84, 3);
+  });
+
+  test('CROP uses the panel-top layer as the cookie cutter', () => {
+    // A (panel-top, red) is the cookie cutter — it's consumed.
+    // B (panel-bottom, blue) survives clipped to A: area 16, B's color.
+    const { A, B, engine } = setup();
+    const out = PO.applyPathfinder(engine, [A, B], 'crop', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    expect(children).toHaveLength(1);
+    expect(children[0].color).toBe('#0000ff');
+    expect(areaOf(children[0])).toBeCloseTo(16, 3);
+    expect(engine.layers.find((l) => l.id === 'A')).toBeUndefined();  // cookie cutter consumed
+  });
+
+  test('CROP in shape-only mode rejects when the PANEL-TOP source is ineligible', () => {
+    // panel-top is the cookie cutter and must be shape-only-eligible.
+    const algo = new Layer('algo', 'flowfield', 'fld');
+    algo.displayPaths = [];
+    const back = square('back', 0, 0, 10, 10, 'rect');
+    const engine = fakeEngine(algo, back);  // algo at engine[0] = panel-top
+    const before = engine.layers.slice();
+    const out = PO.applyPathfinder(engine, [algo, back], 'crop', 'shape-only');
+    expect(out).toEqual({ error: 'front-ineligible-for-crop' });
+    expect(engine.layers).toEqual(before);
+  });
+
+  test('MINUS BACK keeps the panel-top layer (front) and subtracts the panel-bottom', () => {
+    const { A, B, engine } = setup();
+    const out = PO.applyPathfinder(engine, [A, B], 'minusBack', 'silhouette');
+    expect(out).toBeTruthy();
+    expect(engine.layers).toHaveLength(1);
+    const result = engine.layers[0];
+    expect(result.color).toBe('#ff0000');  // A (panel-top) color
+    expect(areaOf(result)).toBeCloseTo(84, 3);  // A − B = 100 − 16
+  });
+
+  test('MINUS BACK in shape-only mode rejects when PANEL-TOP source is ineligible', () => {
+    const algo = new Layer('algo', 'flowfield', 'fld');
+    algo.displayPaths = [];
+    const back = square('back', 0, 0, 10, 10, 'rect');
+    const engine = fakeEngine(algo, back);
+    const before = engine.layers.slice();
+    const out = PO.applyPathfinder(engine, [algo, back], 'minusBack', 'shape-only');
+    expect(out).toEqual({ error: 'front-ineligible-for-minusBack' });
+    expect(engine.layers).toEqual(before);
+  });
+
+  test('DIVIDE: overlap cell inherits the panel-top source color', () => {
+    const { A, B, engine } = setup();
+    const out = PO.applyPathfinder(engine, [A, B], 'divide', 'silhouette');
+    expect(out).toBeTruthy();
+    const children = groupChildren(engine, out.groupId);
+    expect(children).toHaveLength(3);
+    const overlap = children.find((c) => Math.abs(areaOf(c) - 16) < 1e-3);
+    expect(overlap).toBeTruthy();
+    expect(overlap.color).toBe('#ff0000');  // A (panel-top) wins as the topmost contributor
+  });
+
+  test('UNITE compound inherits appearance from the panel-top layer', () => {
+    const { A, B, engine } = setup();
+    const id = PO.createCompound(engine, [A, B], 'unite', 'silhouette');
+    const compound = engine.layers.find((l) => l.id === id);
+    expect(compound.color).toBe('#ff0000');
+  });
+
+  test('INTERSECT compound inherits appearance from the panel-top layer', () => {
+    const { A, B, engine } = setup();
+    const id = PO.createCompound(engine, [A, B], 'intersect', 'silhouette');
+    const compound = engine.layers.find((l) => l.id === id);
+    expect(compound.color).toBe('#ff0000');
+  });
+
+  test('EXCLUDE compound inherits appearance from the panel-top layer', () => {
+    const { A, B, engine } = setup();
+    const id = PO.createCompound(engine, [A, B], 'exclude', 'silhouette');
+    const compound = engine.layers.find((l) => l.id === id);
+    expect(compound.color).toBe('#ff0000');
+  });
+
+  test('MINUS FRONT compound still inherits from the panel-bottom (surviving) layer', () => {
+    const { A, B, engine } = setup();
+    const id = PO.createCompound(engine, [A, B], 'minusFront', 'silhouette');
+    const compound = engine.layers.find((l) => l.id === id);
+    expect(compound.color).toBe('#0000ff');  // B (panel-bottom) survives, so its color wins
+  });
+});

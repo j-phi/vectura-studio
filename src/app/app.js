@@ -87,6 +87,7 @@
       });
       this.engine = new VectorEngine();
       this.renderer = new Renderer('main-canvas', this.engine);
+      this.renderer.app = this;
       this.ui = new UI(this);
       this.applyTheme(SETTINGS.uiTheme, {
         persist: false,

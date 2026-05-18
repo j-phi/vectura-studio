@@ -1570,6 +1570,7 @@
       algorithm: false,
       algorithmTransform: true,
       algorithmConfiguration: false,
+      pathfinder: true,
     },
     aboutVisible: true,
     touchModifiers: {

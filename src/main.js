@@ -7,6 +7,8 @@
     const app = new window.Vectura.App();
     window.app = app;
     window.Vectura.UI?.MultiSelectionPanel?.init?.(app);
+    window.Vectura.UI?.PathfinderPanel?.init?.(app);
+    window.Vectura.UI?.PaintBucketPanel?.init?.(app);
     const S = window.Vectura.SETTINGS;
     if (S && S.showTourOnFirstLaunch && !S.tourSeen) {
       setTimeout(() => {

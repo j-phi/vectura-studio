@@ -379,6 +379,17 @@
       this.lassoPath = null;
       this.isLassoSelecting = false;
       this.activeTool = SETTINGS.activeTool || 'select';
+      this.paintBucketStack = null;
+      this.paintBucketScopeIndex = 0;
+      this.paintBucketStackKey = null;
+      this.lastPourLoopId = null;
+      // Refs to the fill records in the "active batch" — the set that panel
+      // slider/variant edits retarget in place. Empty means no active batch
+      // (panel mutations only update the template for the next pour).
+      // Lifecycle: plain click resets to a 1-fill batch; Shift+drag accumulates
+      // within one drag; CMD+click adopts an existing fill; Esc / Done /
+      // tool switch commits (clears) the batch.
+      this.lastPaintedFillRefs = [];
       this.scissorMode = SETTINGS.scissorMode || 'line';
       this.penMode = SETTINGS.penMode || 'draw';
       this.penPurpose = 'draw';
@@ -448,6 +459,8 @@
 
       new ResizeObserver(() => this.resize()).observe(parent);
       this.canvas.addEventListener('pointerenter', () => this.updateCursor());
+      this.canvas.addEventListener('pointerleave', () => this._paintBucketClearHover());
+      this.canvas.addEventListener('mouseleave', () => this._paintBucketClearHover());
       this.canvas.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
       this._boundMove = (e) => this.move(e);
       this._boundUp = (e) => this.up(e);
@@ -536,6 +549,18 @@
       if (!['fill', 'fill-erase', 'fill-pattern', 'fill-pattern-erase'].includes(tool)) {
         this.hideFillLoupe?.();
         this.patternFillPreviewPolygon = null;
+      }
+      if (tool !== 'fill' && tool !== 'fill-erase') {
+        this.paintBucketStack = null;
+        this.paintBucketScopeIndex = 0;
+        this.paintBucketStackKey = null;
+        this.lastPourLoopId = null;
+        // Commit any active batch when leaving the fill tool. This clears the
+        // panel chip and outline overlay; the fill records themselves stay
+        // on the layer.
+        if (Array.isArray(this.lastPaintedFillRefs) && this.lastPaintedFillRefs.length) {
+          this.commitActiveBatch();
+        }
       }
       this.draw();
     }
@@ -1000,6 +1025,26 @@
       const angle = Math.atan2(dy, dx);
       const snapped = Math.round(angle / step) * step;
       return { x: from.x + Math.cos(snapped) * dist, y: from.y + Math.sin(snapped) * dist };
+    }
+
+    _attachShiftDragListener() {
+      this._detachShiftDragListener();
+      this._shiftKeyUpHandler = (ev) => {
+        if (ev.key !== 'Shift') return;
+        if (!this.isLayerDrag || this.dragMode !== 'move' || !this.lastDragWorld) return;
+        const dx = this.lastDragWorld.x - this.dragStart.x;
+        const dy = this.lastDragWorld.y - this.dragStart.y;
+        this.tempTransform = { dx, dy, scaleX: 1, scaleY: 1, origin: { x: 0, y: 0 } };
+        this.draw();
+      };
+      document.addEventListener('keyup', this._shiftKeyUpHandler);
+    }
+
+    _detachShiftDragListener() {
+      if (this._shiftKeyUpHandler) {
+        document.removeEventListener('keyup', this._shiftKeyUpHandler);
+        this._shiftKeyUpHandler = null;
+      }
     }
 
     createAnchor(point) {
@@ -2398,6 +2443,9 @@
         this.engine.layers.forEach((l) => {
           if (!l.visible) return;
           if (this.shouldSkipLayerForMaskPreview(l)) return;
+          // Children nested inside a compound (Pathfinder) group are consumed
+          // by their parent's baked silhouette — don't draw them separately.
+          if (this.engine.hasCompoundAncestor?.(l)) return;
           const fadeLayer = this.groupEditMode && !l.isGroup && l.id !== this.groupEditMode.activeLayerId;
           if (fadeLayer) { this.ctx.save(); this.ctx.globalAlpha = 0.2; }
           const layerPen = SETTINGS.pens?.find((p) => p.id === l.penId) || null;
@@ -2450,6 +2498,10 @@
             }
             this.traceLayerPath(path, l, temp, useCurves);
           });
+          if (l.type === 'compound') {
+            this.ctx.fillStyle = currentStrokeStyle || '#000000';
+            this.ctx.fill('evenodd');
+          }
           this.ctx.stroke();
           if (fadeLayer) { this.ctx.restore(); }
         });
@@ -2870,6 +2922,7 @@
         drawModifierGuides();
         this.drawMaskPreviewOverlay();
         if (this.patternFillPreviewPolygon) this.drawPatternFillPreview();
+        this.drawActiveBatchOutline();
         this.ctx.restore();
       } else {
         this.ctx.save();
@@ -2883,6 +2936,7 @@
         drawModifierGuides();
         this.drawMaskPreviewOverlay();
         if (this.patternFillPreviewPolygon) this.drawPatternFillPreview();
+        this.drawActiveBatchOutline();
         this.ctx.restore();
 
         const outsideAlpha = SETTINGS.outsideOpacity ?? 0.5;
@@ -3155,6 +3209,28 @@
     wheel(e) {
       if (!this.ready) return;
       e.preventDefault();
+      // Paint bucket: wheel cycles through the ancestor stack of containing
+      // closed loops without modifier keys; held modifiers still pan/zoom.
+      if ((this.activeTool === 'fill' || this.activeTool === 'fill-erase') &&
+          !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey &&
+          Array.isArray(this.paintBucketStack) && this.paintBucketStack.length > 1) {
+        const dir = e.deltaY > 0 ? -1 : 1;
+        const next = Math.max(0, Math.min(this.paintBucketStack.length - 1, this.paintBucketScopeIndex + dir));
+        if (next !== this.paintBucketScopeIndex) {
+          this.paintBucketScopeIndex = next;
+          const entry = this.paintBucketStack[next];
+          this.patternFillPreviewPolygon = entry?.polygon || null;
+          if (this.app?.ui?.setPaintBucketHint && entry) {
+            if (entry.isDocBounds) {
+              this.app.ui.setPaintBucketHint('Scope: document bounds — click to fill background');
+            } else {
+              this.app.ui.setPaintBucketHint(`Scope ${next + 1}/${this.paintBucketStack.length} · scroll to widen`);
+            }
+          }
+          this.draw();
+        }
+        return;
+      }
       if (e.shiftKey) {
         this.offsetX += e.deltaX || e.deltaY;
         this.userHasManipulated = true;
@@ -3347,6 +3423,24 @@
         return;
       }
 
+      if (this.activeTool === 'fill' || this.activeTool === 'fill-erase') {
+        // CMD/Ctrl+click on an existing fill adopts it as the active batch so
+        // the user can tweak its params via the panel. Only meaningful in
+        // pour mode; in erase mode CMD acts like a plain click.
+        if (this.activeTool === 'fill' && (e.metaKey || e.ctrlKey) && !e.altKey) {
+          const adopted = this._paintBucketAdoptAtPoint(world);
+          if (adopted) {
+            if (e.cancelable) e.preventDefault();
+            return;
+          }
+        }
+        this._paintBucketHover(world);
+        const mode = this.activeTool === 'fill-erase' ? 'erase' : 'pour';
+        this._paintBucketPour(world, mode, { startBatch: true });
+        if (e.cancelable) e.preventDefault();
+        return;
+      }
+
       this._pendingSingleSelect = null;
       if (allowSelection) {
         if (this.activeTool === 'direct') {
@@ -3528,6 +3622,7 @@
               this.startMaskPreviewForSelection(layers);
               this._startMirrorDrag(layers);
               this.setCanvasCursor(layers.length > 1 ? 'grabbing' : 'move');
+              this._attachShiftDragListener();
               if (navigator.vibrate) navigator.vibrate(30);
               this.draw();
             }, 350);
@@ -3540,6 +3635,7 @@
             this.startMaskPreviewForSelection(updatedSelected);
             this._startMirrorDrag(updatedSelected);
             this.setCanvasCursor(updatedSelected.length > 1 ? 'grabbing' : 'move');
+            this._attachShiftDragListener();
             if (modifiers.alt && updatedSelected.length === 1) {
               if (this.onDuplicateLayer) this.onDuplicateLayer();
               const dup = this.engine.duplicateLayer ? this.engine.duplicateLayer(updatedSelected[0].id) : null;
@@ -3568,7 +3664,33 @@
     move(e) {
       if (!this.ready) return;
       if (this.activeTool === 'fill' || this.activeTool === 'fill-erase') {
+        const rect = this.canvas.getBoundingClientRect();
+        // `move` is wired to the window, so it fires even after the cursor
+        // leaves the canvas. Without this guard the hover would re-find a
+        // region under the off-canvas coordinate and re-paint the blue
+        // preview overlay we just cleared on pointerleave.
+        const inside =
+          e.clientX >= rect.left && e.clientX <= rect.right &&
+          e.clientY >= rect.top && e.clientY <= rect.bottom;
+        if (!inside) {
+          this._paintBucketClearHover();
+          return;
+        }
+        const world = this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+        this._paintBucketHover(world);
         this.showFillLoupe(e.clientX, e.clientY);
+        // Drag-pour: while the primary button AND Shift are held and we
+        // cross into a new region's loopId, pour again. lastPourLoopId is
+        // reset on up(). Shift gating keeps a plain click from accidentally
+        // filling adjacent regions when the mouse jiggles before release.
+        if ((e.buttons & 1) && e.shiftKey && this.paintBucketStack?.length) {
+          const target = this.paintBucketStack[this.paintBucketScopeIndex];
+          if (target && target.loopId !== this.lastPourLoopId) {
+            const mode = this.activeTool === 'fill-erase' ? 'erase' : 'pour';
+            this._paintBucketPour(world, mode, { startBatch: false });
+          }
+        }
+        this.draw();
       } else if (this.activeTool === 'fill-pattern' || this.activeTool === 'fill-pattern-erase') {
         const rect = this.canvas.getBoundingClientRect();
         const world = this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
@@ -3708,8 +3830,21 @@
         const sy = e.clientY - rect.top;
         const world = this.screenToWorld(sx, sy);
         if (this.dragMode === 'move') {
-          const dx = world.x - this.dragStart.x;
-          const dy = world.y - this.dragStart.y;
+          this.lastDragWorld = world;
+          let dx = world.x - this.dragStart.x;
+          let dy = world.y - this.dragStart.y;
+          if (modifiers.shift && this.startBounds) {
+            const oc = this.startBounds.center || this.startBounds.origin;
+            const mrx = world.x - oc.x;
+            const mry = world.y - oc.y;
+            const step = Math.PI / 4;
+            const snapped = Math.round(Math.atan2(mry, mrx) / step) * step;
+            const ux = Math.cos(snapped);
+            const uy = Math.sin(snapped);
+            const proj = mrx * ux + mry * uy;
+            dx = ux * proj;
+            dy = uy * proj;
+          }
           this.tempTransform = { dx, dy, scaleX: 1, scaleY: 1, origin: { x: 0, y: 0 } };
           if (this.mirrorDragState) {
             this.mirrorDragState.forEach((state, layerId) => {
@@ -3892,6 +4027,7 @@
 
     up(e = {}) {
       if (!this.ready || !this.canvas) return;
+      this.lastPourLoopId = null;
       this.removeTouchPointer(e);
       const clearActivePointer = () => {
         if (e.pointerId !== undefined && this.canvas.releasePointerCapture) {
@@ -4090,6 +4226,8 @@
       this._pendingSingleSelect = null;
       this.isPan = false;
       this.isLayerDrag = false;
+      this._detachShiftDragListener();
+      this.lastDragWorld = null;
       this.dragMode = null;
       this.activeHandle = null;
       this.hideDragTooltip();
@@ -4669,10 +4807,201 @@
       return best;
     }
 
+    _paintBucketHover(world) {
+      const PBO = window.Vectura?.PaintBucketOps;
+      if (!PBO) { this.paintBucketStack = null; this.patternFillPreviewPolygon = null; return; }
+      const { stack } = PBO.findFillTargetStack(this.engine, world.x, world.y);
+      if (!Array.isArray(stack) || !stack.length) {
+        this.paintBucketStack = null;
+        this.paintBucketStackKey = null;
+        this.paintBucketScopeIndex = 0;
+        this.patternFillPreviewPolygon = null;
+        return;
+      }
+      const stackKey = stack.map((e) => e.loopId).join('|');
+      if (stackKey !== this.paintBucketStackKey) {
+        this.paintBucketStackKey = stackKey;
+        this.paintBucketScopeIndex = 0;
+      }
+      this.paintBucketStack = stack;
+      this.paintBucketScopeIndex = Math.min(this.paintBucketScopeIndex, stack.length - 1);
+      const entry = stack[this.paintBucketScopeIndex];
+      this.patternFillPreviewPolygon = entry?.polygon || null;
+      if (entry && this.app?.ui?.setPaintBucketHint) {
+        if (entry.isDocBounds) {
+          this.app.ui.setPaintBucketHint('Scope: document bounds — click to fill background');
+        } else if (stack.length > 1) {
+          this.app.ui.setPaintBucketHint(`Scope ${this.paintBucketScopeIndex + 1}/${stack.length} · scroll to widen`);
+        } else {
+          this.app.ui.setPaintBucketHint('Click to fill · Alt-click to remove · Shift+drag to pour multiple');
+        }
+      }
+    }
+
+    _paintBucketPour(world, mode = 'pour', opts = {}) {
+      const PBO = window.Vectura?.PaintBucketOps;
+      if (!PBO) return null;
+      const { startBatch = false } = opts;
+      const params = this.app?.paintBucketPanel?.getFillParams?.() || {};
+      const result = PBO.applyFillAtPoint(this.engine, this.app, world.x, world.y, {
+        scopeIndex: this.paintBucketScopeIndex,
+        mode,
+        fillParams: params,
+      });
+      if (result) {
+        this.lastPourLoopId = result.loopId;
+        if (mode === 'pour' && result.fillId && result.layerId) {
+          if (startBatch || !Array.isArray(this.lastPaintedFillRefs)) {
+            this.lastPaintedFillRefs = [];
+          }
+          this.lastPaintedFillRefs.push({ layerId: result.layerId, fillId: result.fillId });
+          this._notifyBatchState();
+        } else if (mode === 'erase' && result.fillId) {
+          // Fine-grained: only drop the erased fill from the batch. If the
+          // batch becomes empty, that's an implicit commit.
+          if (Array.isArray(this.lastPaintedFillRefs) && this.lastPaintedFillRefs.length) {
+            const before = this.lastPaintedFillRefs.length;
+            this.lastPaintedFillRefs = this.lastPaintedFillRefs.filter(
+              (ref) => ref.fillId !== result.fillId
+            );
+            if (this.lastPaintedFillRefs.length !== before) this._notifyBatchState();
+          }
+        }
+        this.draw();
+        if (this.app?.ui?.renderLayers) this.app.ui.renderLayers();
+      }
+      return result;
+    }
+
+    // Commit the active batch: clear retarget refs and hide the panel chip
+    // and canvas outline. Fill records themselves remain on the layer.
+    commitActiveBatch() {
+      if (!Array.isArray(this.lastPaintedFillRefs) || !this.lastPaintedFillRefs.length) {
+        return false;
+      }
+      this.lastPaintedFillRefs = [];
+      this._notifyBatchState();
+      this.draw();
+      return true;
+    }
+
+    // CMD+click adoption: find the smallest fill under the cursor, commit
+    // any prior batch silently, and make this fill the new 1-element batch.
+    // The panel mirror loads the fill's params (suppressed retarget).
+    _paintBucketAdoptAtPoint(world) {
+      const PBO = window.Vectura?.PaintBucketOps;
+      if (!PBO?.findFillAtPoint) return false;
+      const hit = PBO.findFillAtPoint(this.engine, world.x, world.y);
+      if (!hit?.rec || !hit.layer?.id) return false;
+      // Replace any active batch with the adopted fill. This is a silent
+      // commit: there is no "unsaved" work because slider edits already
+      // retarget live as they happen.
+      this.lastPaintedFillRefs = [{ layerId: hit.layer.id, fillId: hit.rec.id }];
+      this.app?.paintBucketPanel?.loadParamsFromFill?.(hit.rec);
+      this._notifyBatchState();
+      this.draw();
+      return true;
+    }
+
+    _notifyBatchState() {
+      const count = Array.isArray(this.lastPaintedFillRefs)
+        ? this.lastPaintedFillRefs.length
+        : 0;
+      this.app?.paintBucketPanel?.onBatchStateChange?.({ activeCount: count });
+    }
+
+    _paintBucketClearHover() {
+      if (this.activeTool !== 'fill' && this.activeTool !== 'fill-erase') return;
+      // Clear hover preview + stack so the highlighted region under the
+      // cursor disappears once the mouse leaves the canvas. `lastPaintedFillRefs`
+      // is kept so panel edits still retarget the most recent pour(s).
+      this.paintBucketStack = null;
+      this.paintBucketStackKey = null;
+      this.paintBucketScopeIndex = 0;
+      this.patternFillPreviewPolygon = null;
+      this.lastPourLoopId = null;
+      this.hideFillLoupe?.();
+      if (this.app?.ui?.setPaintBucketHint) {
+        this.app.ui.setPaintBucketHint('Click to fill · Alt-click to remove · Shift+drag to pour multiple');
+      }
+      this.draw();
+    }
+
+    updateLastPaintedFills(fillParams) {
+      if (!Array.isArray(this.lastPaintedFillRefs) || !this.lastPaintedFillRefs.length) return false;
+      const engine = this.engine;
+      if (!engine?.layers) return false;
+      const FIELD_MAP = [
+        ['fillType',       'fillMode'],
+        ['density',        'fillDensity'],
+        ['angle',          'fillAngle'],
+        ['amplitude',      'fillAmplitude'],
+        ['dotSize',        'fillDotSize'],
+        ['padding',        'fillPadding'],
+        ['shiftX',         'fillShiftX'],
+        ['shiftY',         'fillShiftY'],
+        ['dotPattern',     'fillDotPattern'],
+        ['axes',           'fillAxes'],
+        ['polyTile',       'fillPolyTile'],
+        ['centralDensity', 'fillRadialCentralDensity'],
+        ['outerDiameter',  'fillRadialOuterDiameter'],
+        ['sensitivity',    'fillSensitivity'],
+        ['penId',          'penId'],
+      ];
+      let changed = false;
+      const surviving = [];
+      for (const ref of this.lastPaintedFillRefs) {
+        const layer = engine.layers.find((l) => l && l.id === ref.layerId);
+        if (!layer || !Array.isArray(layer.fills)) continue;
+        const rec = layer.fills.find((f) => f && f.id === ref.fillId);
+        if (!rec) continue;
+        surviving.push(ref);
+        for (const [recKey, paramKey] of FIELD_MAP) {
+          const v = fillParams[paramKey];
+          if (v !== undefined && rec[recKey] !== v) {
+            rec[recKey] = v;
+            changed = true;
+          }
+        }
+      }
+      const prevLen = this.lastPaintedFillRefs.length;
+      this.lastPaintedFillRefs = surviving;
+      if (changed) engine.computeAllDisplayGeometry?.();
+      if (surviving.length !== prevLen) this._notifyBatchState();
+      return changed;
+    }
+
+    // Stroke the region polygon of each fill in the active batch so the user
+    // sees exactly which fills will be rewritten by the next panel change.
+    // Drawn only while the fill tool is active and the batch is non-empty.
+    drawActiveBatchOutline() {
+      if (this.activeTool !== 'fill' && this.activeTool !== 'fill-erase') return;
+      const refs = this.lastPaintedFillRefs;
+      if (!Array.isArray(refs) || !refs.length) return;
+      const layers = this.engine?.layers;
+      if (!Array.isArray(layers) || !layers.length) return;
+      const ctx = this.ctx;
+      ctx.save();
+      ctx.lineWidth = 1.4 / this.scale;
+      ctx.setLineDash([4 / this.scale, 3 / this.scale]);
+      ctx.strokeStyle = 'rgba(34,197,94,0.85)';
+      for (const ref of refs) {
+        const layer = layers.find((l) => l && l.id === ref.layerId);
+        if (!layer || !Array.isArray(layer.fills)) continue;
+        const rec = layer.fills.find((f) => f && f.id === ref.fillId);
+        if (!rec?.region || rec.region.length < 3) continue;
+        ctx.beginPath();
+        this.tracePolygonPath(rec.region);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
     drawPatternFillPreview() {
       const poly = this.patternFillPreviewPolygon;
       if (!Array.isArray(poly) || poly.length < 3) return;
-      const isErase = this.activeTool === 'fill-pattern-erase';
+      const isErase = this.activeTool === 'fill-pattern-erase' || this.activeTool === 'fill-erase';
       this.ctx.save();
       this.ctx.beginPath();
       this.tracePolygonPath(poly);
@@ -4691,7 +5020,15 @@
       let best = null;
       let bestDist = Infinity;
       layers.forEach((layer) => {
-        if (!layer.visible || layer.isGroup || (layer.mask?.enabled && layer.mask?.hideLayer)) return;
+        if (!layer.visible) return;
+        // Compound (Pathfinder) groups expose baked geometry — let them be hit
+        // even though `isGroup` is true; other groups stay non-selectable.
+        const isCompound = layer.containerRole === 'compound';
+        if (!isCompound && layer.isGroup) return;
+        if (layer.mask?.enabled && layer.mask?.hideLayer) return;
+        // Children inside a compound are consumed by their parent; clicks on
+        // the unified silhouette should select the compound, not a child.
+        if (this.engine.hasCompoundAncestor?.(layer)) return;
         if (!includeLocked && this.isLayerLocked?.(layer.id)) return;
         const stroke = layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
         const tol = Math.max(5 / (this.scale || 1), stroke * 2);
@@ -4793,7 +5130,11 @@
       let best = null;
       let bestDist = Infinity;
       layers.forEach((layer) => {
-        if (!layer.visible || layer.isGroup || (layer.mask?.enabled && layer.mask?.hideLayer)) return;
+        if (!layer.visible) return;
+        const isCompound = layer.containerRole === 'compound';
+        if (!isCompound && layer.isGroup) return;
+        if (layer.mask?.enabled && layer.mask?.hideLayer) return;
+        if (this.engine.hasCompoundAncestor?.(layer)) return;
         if (this.isLayerLocked?.(layer.id)) return;
         const stroke = layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
         const tol = Math.max(1.5, stroke * 2);

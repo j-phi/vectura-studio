@@ -132,7 +132,9 @@
       if (this.app.renderer?.setTool) this.app.renderer.setTool(tool);
       syncButtons();
       const isPatternFillTool = (t) => t === 'fill-pattern' || t === 'fill-pattern-erase';
-      if (isPatternFillTool(tool) || isPatternFillTool(prevTool)) {
+      const isPaintBucketTool = (t) => t === 'fill' || t === 'fill-erase';
+      if (isPatternFillTool(tool) || isPatternFillTool(prevTool) ||
+          isPaintBucketTool(tool) || isPaintBucketTool(prevTool)) {
         this.buildControls?.();
       }
     };

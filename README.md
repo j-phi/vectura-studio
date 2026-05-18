@@ -53,6 +53,7 @@ Vectura uses an Illustrator-style layer system with full undo history for every 
 - Mirror guides are dashed editor overlays with a centered reflection triangle; reflected geometry exports while guide lines stay editor-only
 - The modifier row owns a Mirror Stack with per-axis show/hide, lock, delete, reorder, angle, and XY shift controls plus stack-level add/show-hide/lock/clear actions; deleting the modifier dissolves the wrapper and preserves children
 - Layer grouping/ungrouping via `Cmd/Ctrl+G` and `Cmd/Ctrl+Shift+G`
+- Illustrator-style **Pathfinder panel** for multi-selection: four Shape Modes (Unite, Minus Front, Intersect, Exclude) build non-destructive compound shapes (Expand to bake), and six Pathfinders (Divide, Trim, Merge, Crop, Outline, Minus Back) produce destructive baked output grouped under a `pathfinder` container. Silhouette mode chord-closes open paths; Shape-Only mode restricts to closed shapes. Outline preserves source `strokeWidth` for plotter-ready line art.
 - Undo/Redo treats document-mutating layer-structure edits as first-class history steps, including reorder, grouping, reparenting, parent-mask toggles, and modifier/container edits
 - Multi-selection: shift-click ranges, `Cmd/Ctrl`-click to toggle, or drag a marquee on the canvas; then move/rotate the group together
 - `Cmd/Ctrl+A` selects all drawable layers from anywhere outside text inputs

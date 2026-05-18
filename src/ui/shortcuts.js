@@ -260,7 +260,15 @@
 
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
         e.preventDefault();
-        const all = this.app.engine.layers.filter((layer) => !layer.isGroup).map((layer) => layer.id);
+        const engine = this.app.engine;
+        const all = engine.layers.filter((layer) => {
+          // Compound containers ARE user-facing units (they render their baked
+          // silhouette) — include them. Other groups (modifier containers, plain
+          // groups) and any layer nested inside a compound are skipped.
+          if (layer.isGroup && layer.type !== 'compound') return false;
+          if (engine.hasCompoundAncestor?.(layer)) return false;
+          return true;
+        }).map((layer) => layer.id);
         const primary = all[all.length - 1] || null;
         if (this.app.renderer) this.app.renderer.setSelection(all, primary);
         this.app.engine.activeLayerId = primary;
@@ -323,6 +331,17 @@
         e.preventDefault();
         this.app.renderer?.cancelScissor?.();
         return;
+      }
+
+      // Esc in fill mode commits the active batch (clears the chip + outline).
+      // No-op if the batch is empty so other Esc handlers downstream still run.
+      if ((this.activeTool === 'fill' || this.activeTool === 'fill-erase') && e.key === 'Escape') {
+        const refs = this.app.renderer?.lastPaintedFillRefs;
+        if (Array.isArray(refs) && refs.length) {
+          e.preventDefault();
+          this.app.renderer?.commitActiveBatch?.();
+          return;
+        }
       }
 
       if (this.activeTool === 'select' && e.key === 'Escape' && this.app.renderer?.groupEditMode) {
@@ -411,9 +430,15 @@
           renderer.draw();
           return;
         }
-        if (this.app.pushHistory) this.app.pushHistory();
-        const selectedLayers = this.app.renderer?.getSelectedLayers?.() || [];
+        // Skip locked layers so arrow-key nudging respects the lock state
+        // the same way pointer-drag does.
+        const isLocked = this.app.renderer?.isLayerLocked;
+        const allSelected = this.app.renderer?.getSelectedLayers?.() || [];
+        const selectedLayers = isLocked
+          ? allSelected.filter((l) => !isLocked.call(this.app.renderer, l.id))
+          : allSelected;
         if (selectedLayers.length) {
+          if (this.app.pushHistory) this.app.pushHistory();
           selectedLayers.forEach((layer) => {
             layer.params.posX += dx;
             layer.params.posY += dy;
