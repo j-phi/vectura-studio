@@ -96,22 +96,27 @@ describe('Renderer pen snap-to-origin', () => {
     expect(renderer.penPreview).not.toEqual({ x: 100, y: 100 });
   });
 
-  test('single click within 5px of origin closes path (snap-close)', () => {
+  test('single click within 5px of origin enters close-drag then commits on mouseup', () => {
     const renderer = makeRenderer();
     seedDraft(renderer);
 
     let committed = false;
     let closedValue = null;
-    const orig = renderer.commitPenPath.bind(renderer);
     renderer.commitPenPath = function () {
       committed = true;
-      closedValue = renderer.penDraft?.closed ?? this.penDraft?.closed;
-      // Call original to clean up state but we already captured what we need
+      closedValue = renderer.penDraft?.closed ?? null;
     };
 
     // Click at (103, 100) — 3px from origin (100,100), within 5px threshold
     renderer.handlePenDown({ x: 103, y: 100 }, makeEvent(103, 100));
 
+    // On down: enters close-drag state — draft is closed but commit is deferred to mouseup
+    expect(renderer.isPenCloseDragging).toBe(true);
+    expect(renderer.penDraft.closed).toBe(true);
+    expect(committed).toBe(false);
+
+    // Simulating mouseup: wasCloseDrag causes commitPenPath to be called
+    renderer.commitPenPath();
     expect(committed).toBe(true);
     expect(closedValue).toBe(true);
   });
