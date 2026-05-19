@@ -698,11 +698,11 @@
         <div class="mp-ctrl-lbl">Source side ${infoTrigger('source-side', 'About source side')}</div>
         <div class="mp-side-row">
           <button type="button" class="mp-side-tile ${m.replacedSide === 'positive' ? 'active' : ''}" aria-pressed="${m.replacedSide === 'positive'}" data-set="replacedSide" data-val="positive">
-            <svg><use href="#mp-side-pos"/></svg>
+            <svg><use href="#mp-side-neg"/></svg>
             <div class="mp-st-name">Positive</div>
           </button>
           <button type="button" class="mp-side-tile ${m.replacedSide === 'negative' ? 'active' : ''}" aria-pressed="${m.replacedSide === 'negative'}" data-set="replacedSide" data-val="negative">
-            <svg><use href="#mp-side-neg"/></svg>
+            <svg><use href="#mp-side-pos"/></svg>
             <div class="mp-st-name">Negative</div>
           </button>
         </div>
@@ -802,10 +802,10 @@
         <div class="mp-ctrl-lbl">Reflect side ${infoTrigger('arc-side', 'About reflect side')}</div>
         <div class="mp-side-row">
           <button type="button" class="mp-side-tile ${m.replacedSide === 'outer' ? 'active' : ''}" aria-pressed="${m.replacedSide === 'outer'}" data-set="replacedSide" data-val="outer">
-            <svg><use href="#mp-side-outer"/></svg><div class="mp-st-name">Outer</div>
+            <svg><use href="#mp-side-inner"/></svg><div class="mp-st-name">Outer</div>
           </button>
           <button type="button" class="mp-side-tile ${m.replacedSide === 'inner' ? 'active' : ''}" aria-pressed="${m.replacedSide === 'inner'}" data-set="replacedSide" data-val="inner">
-            <svg><use href="#mp-side-inner"/></svg><div class="mp-st-name">Inner</div>
+            <svg><use href="#mp-side-outer"/></svg><div class="mp-st-name">Inner</div>
           </button>
         </div>
       </div>
