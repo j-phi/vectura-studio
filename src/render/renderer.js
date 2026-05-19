@@ -400,6 +400,7 @@
       this.penDragAnchor = null;
       this.penDragStart = null;
       this._penLastClick = null;
+      this.penSnapToOrigin = false;
       this.groupEditMode = null;
       this._selectLastClick = null;
       this.shapeDraft = null;
@@ -1194,11 +1195,14 @@
       let next = this.snapPointToGrid({ x: world.x, y: world.y });
       if (modifiers.shift) next = this.snapPenAngle(lastAnchor, next);
       const distToStart = Math.hypot(next.x - first.x, next.y - first.y);
+      const snapTol = 5 / this.scale;
+      const isSnapClose = !modifiers.meta && anchors.length >= 2 &&
+        Math.hypot(world.x - first.x, world.y - first.y) <= snapTol;
 
-      if (anchors.length >= 2 && distToStart <= closeTol && isDoubleClick) {
+      if (anchors.length >= 2 && (isSnapClose || (distToStart <= closeTol && isDoubleClick))) {
         // Remove the phantom anchor added on the first click of this double-click if it
         // landed near the origin — it was not intended as a real point.
-        if (anchors.length > 2) {
+        if (isDoubleClick && anchors.length > 2) {
           const phantom = anchors[anchors.length - 1];
           if (Math.hypot(phantom.x - first.x, phantom.y - first.y) <= closeTol) {
             anchors.pop();
@@ -1258,6 +1262,7 @@
       this.penDragAnchor = null;
       this.penDragStart = null;
       this._penLastClick = null;
+      this.penSnapToOrigin = false;
       this.draw();
     }
 
@@ -1268,6 +1273,7 @@
       this.penDragAnchor = null;
       this.penDragStart = null;
       this._penLastClick = null;
+      this.penSnapToOrigin = false;
       this.penPurpose = 'draw';
       this.draw();
     }
@@ -4047,7 +4053,17 @@
         } else {
           const last = anchors[anchors.length - 1];
           const snapped = this.snapPointToGrid(next);
-          this.penPreview = modifiers.shift && last ? this.snapPenAngle(last, snapped) : snapped;
+          let preview = modifiers.shift && last ? this.snapPenAngle(last, snapped) : snapped;
+          const first = anchors[0];
+          const snapTol = 5 / this.scale;
+          if (!modifiers.meta && anchors.length >= 2 && first &&
+              Math.hypot(next.x - first.x, next.y - first.y) <= snapTol) {
+            preview = { x: first.x, y: first.y };
+            this.penSnapToOrigin = true;
+          } else {
+            this.penSnapToOrigin = false;
+          }
+          this.penPreview = preview;
         }
         this.draw();
         return;
@@ -5996,6 +6012,11 @@
           this.ctx.beginPath();
           this.ctx.arc(anchor.x, anchor.y, r * 1.5, 0, Math.PI * 2);
           this.ctx.stroke();
+          if (this.penSnapToOrigin) {
+            this.ctx.beginPath();
+            this.ctx.arc(anchor.x, anchor.y, r * 2.5, 0, Math.PI * 2);
+            this.ctx.stroke();
+          }
         }
       });
       if (last) {
