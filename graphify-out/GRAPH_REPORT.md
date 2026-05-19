@@ -1,7 +1,7 @@
 # Graph Report - /Users/jayphi/Documents/github/vectura-studio  (2026-05-19)
 
 ## Corpus Check
-- 326 files · ~2,892,449 words
+- 326 files · ~2,892,396 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -1415,11 +1415,11 @@ Nodes (1): City — Isometric aerial city of skyscrapers rendered entirely in de
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `sort()` connect `Community 7` to `Community 0`, `Community 1`, `Community 2`, `Community 4`, `Community 5`, `Community 6`, `Community 8`, `Community 9`, `Community 10`, `Community 12`, `Community 13`, `Community 18`, `Community 20`, `Community 24`?**
-  _High betweenness centrality (0.079) - this node is a cross-community bridge._
-- **Why does `mt()` connect `Community 0` to `Community 1`, `Community 2`, `Community 4`, `Community 5`, `Community 10`, `Community 11`, `Community 12`, `Community 15`, `Community 16`?**
-  _High betweenness centrality (0.063) - this node is a cross-community bridge._
+  _High betweenness centrality (0.066) - this node is a cross-community bridge._
 - **Why does `Renderer` connect `Community 3` to `Community 1`, `Community 4`, `Community 8`, `Community 10`, `Community 20`?**
-  _High betweenness centrality (0.058) - this node is a cross-community bridge._
+  _High betweenness centrality (0.063) - this node is a cross-community bridge._
+- **Why does `mt()` connect `Community 0` to `Community 1`, `Community 2`, `Community 4`, `Community 5`, `Community 10`, `Community 11`, `Community 12`, `Community 15`, `Community 16`?**
+  _High betweenness centrality (0.061) - this node is a cross-community bridge._
 - **Are the 95 inferred relationships involving `mt()` (e.g. with `_e()` and `ye()`) actually correct?**
   _`mt()` has 95 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 86 inferred relationships involving `addEventListener()` (e.g. with `ki` and `LC()`) actually correct?**

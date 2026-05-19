@@ -8,8 +8,6 @@
     ALGO_DEFAULTS = {},
     SETTINGS = {},
     UI_CONSTANTS = {},
-    PRESETS,
-    PETALIS_PRESETS,
   } = window.Vectura || {};
 
   const { clamp, lerp } = window.Vectura.AlgorithmUtils;
@@ -20,8 +18,10 @@
     return fn ? fn(name, fallback) : fallback;
   };
 
-  const PETALIS_LAYER_TYPES = new Set(['petalisDesigner']);
-  const isPetalisLayerType = (type) => PETALIS_LAYER_TYPES.has(type);
+  const {
+    PETALIS_LAYER_TYPES = new Set(['petalisDesigner']),
+    isPetalisLayerType = (type) => PETALIS_LAYER_TYPES.has(type),
+  } = (window.Vectura && window.Vectura.PresetLibraries) || {};
 
   // Document-units adapter for petal-designer range controls. When a def opts
   // into millimetre semantics (via `unit: 'mm'` or `displayUnit: 'mm'`), this
@@ -77,12 +77,6 @@
     const unit = U.getDocumentUnitLabel ? U.getDocumentUnitLabel(units) : (units === 'imperial' ? 'in' : 'mm');
     return label.replace(/\(mm\)/g, `(${unit})`);
   };
-  const PETALIS_PRESET_LIBRARY = (Array.isArray(PRESETS) ? PRESETS : Array.isArray(PETALIS_PRESETS) ? PETALIS_PRESETS : [])
-    .filter((preset) => {
-      const system = preset?.preset_system || 'petalisDesigner';
-      return system === 'petalisDesigner';
-    });
-
   const PETAL_DESIGNER_TARGET_OPTIONS = [
     { value: 'inner', label: 'Inner' },
     { value: 'outer', label: 'Outer' },

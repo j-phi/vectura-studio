@@ -14,16 +14,10 @@
  * (already global) — no other captured helpers.
  */
 (() => {
-  const { PRESETS, PETALIS_PRESETS, TERRAIN_PRESETS } = window.Vectura || {};
-
-  const PETALIS_PRESET_LIBRARY = (Array.isArray(PRESETS) ? PRESETS : Array.isArray(PETALIS_PRESETS) ? PETALIS_PRESETS : [])
-    .filter((preset) => {
-      const system = preset?.preset_system || 'petalisDesigner';
-      return system === 'petalisDesigner';
-    });
-
-  const TERRAIN_PRESET_LIBRARY = (Array.isArray(PRESETS) ? PRESETS : Array.isArray(TERRAIN_PRESETS) ? TERRAIN_PRESETS : [])
-    .filter((preset) => preset?.preset_system === 'terrain');
+  const {
+    petalis: PETALIS_PRESET_LIBRARY = [],
+    terrain: TERRAIN_PRESET_LIBRARY = [],
+  } = (window.Vectura && window.Vectura.PresetLibraries) || {};
 
   const PETALIS_PRESET_OPTIONS = [
     { value: 'custom', label: 'Custom' },

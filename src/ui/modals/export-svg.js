@@ -40,7 +40,12 @@
  *                                        builder.
  *
  * DI bag: { getEl, SETTINGS, clamp, getThemeToken, getContrastTextColor,
- *           EXPORT_INFO, OPTIMIZATION_STEPS, openColorPickerAnchoredTo }
+ *           openColorPickerAnchoredTo }
+ *   - EXPORT_INFO + OPTIMIZATION_STEPS now live as IIFE-locals in this file
+ *     (relocated from _ui-legacy.js in Meridian Unit 1.3); both are also
+ *     exposed on the public namespace as
+ *     window.Vectura.UI.Modals.ExportSvg.{EXPORT_INFO,OPTIMIZATION_STEPS} so
+ *     legacy / sibling satellites can read them.
  *
  * Compile gate at tests/unit/modals/export-svg-compile.test.js.
  * Lifecycle test at tests/integration/modals/export-svg.test.js.
@@ -52,6 +57,180 @@
   const Modals = UI.Modals = UI.Modals || {};
 
   let DEPS = null;
+
+  // ---------------------------------------------------------------------------
+  // OPTIMIZATION_STEPS + EXPORT_INFO — export pipeline schema and tooltip copy.
+  // Moved from src/ui/_ui-legacy.js (Meridian Unit 1.3, 2026-05-19). Both are
+  // exposed on window.Vectura.UI.Modals.ExportSvg so legacy / sibling
+  // satellites (notably algo-config-panel.js, which consumes
+  // OPTIMIZATION_STEPS) can pull them back through the namespace.
+  // ---------------------------------------------------------------------------
+  const OPTIMIZATION_STEPS = [
+    {
+      id: 'linesimplify',
+      label: 'Line Simplify',
+      controls: [
+        { key: 'tolerance', label: 'Tolerance (mm)', type: 'range', min: 0, max: 2, step: 0.05 },
+        {
+          key: 'mode',
+          label: 'Mode',
+          type: 'select',
+          options: [
+            { value: 'polyline', label: 'Polyline' },
+            { value: 'curve', label: 'Curve' },
+          ],
+        },
+      ],
+    },
+    {
+      id: 'linesort',
+      label: 'Line Sort',
+      controls: [
+        {
+          key: 'method',
+          label: 'Method',
+          type: 'select',
+          options: [
+            { value: 'nearest', label: 'Nearest' },
+            { value: 'greedy', label: 'Greedy' },
+            { value: 'angle', label: 'Angle' },
+          ],
+        },
+        {
+          key: 'direction',
+          label: 'Direction',
+          type: 'select',
+          options: [
+            { value: 'none', label: 'None' },
+            { value: 'horizontal', label: 'Horizontal' },
+            { value: 'vertical', label: 'Vertical' },
+            { value: 'radial', label: 'Radial' },
+          ],
+        },
+        {
+          key: 'grouping',
+          label: 'Grouping',
+          type: 'select',
+          options: [
+            { value: 'layer', label: 'Per Layer' },
+            { value: 'pen', label: 'Per Pen' },
+            { value: 'combined', label: 'Combined' },
+          ],
+        },
+      ],
+    },
+    {
+      id: 'filter',
+      label: 'Filter',
+      controls: [
+        { key: 'minLength', label: 'Min Length (mm)', type: 'range', min: 0, max: 800, step: 0.2 },
+        { key: 'maxLength', label: 'Max Length (mm)', type: 'range', min: 0, max: 800, step: 0.5 },
+        { key: 'removeTiny', label: 'Remove Tiny', type: 'checkbox' },
+      ],
+    },
+    {
+      id: 'multipass',
+      label: 'Multipass',
+      controls: [
+        { key: 'passes', label: 'Passes', type: 'range', min: 1, max: 6, step: 1 },
+        { key: 'offset', label: 'Offset (mm)', type: 'range', min: 0, max: 2, step: 0.05 },
+        { key: 'jitter', label: 'Jitter (mm)', type: 'range', min: 0, max: 1, step: 0.05 },
+        { key: 'seed', label: 'Seed', type: 'range', min: 0, max: 9999, step: 1 },
+      ],
+    },
+  ];
+
+  const EXPORT_INFO = {
+    precision: {
+      title: 'Precision',
+      description: 'Number of decimal places used for coordinates in the exported SVG. Higher values preserve fine sub-pixel detail at the cost of file size; lower values shrink the file but quantize positions. 3 (≈0.001 mm at A4) is a sensible default for plotter work.',
+    },
+    strokeWidthOverride: {
+      title: 'Export Stroke Override',
+      description: 'When OFF (default), the SVG export uses each pen\'s stroke width as configured in the Pens panel. Turn ON to surface the global Stroke slider and apply a single uniform width across the whole document, overriding the per-pen widths.',
+    },
+    strokeWidth: {
+      title: 'Stroke (mm)',
+      description: 'Global stroke width applied to the SVG export and on-canvas display when Export Stroke Override is ON. Editing this overwrites every layer\'s current stroke and overrides the per-pen widths configured in the Pens panel. Use the Pens panel for fine-grained per-layer control; use this field to apply a single uniform width across the whole document.',
+    },
+    removeHiddenGeometry: {
+      title: 'Remove Hidden Geometry',
+      description: 'Trims masked and frame-hidden segments from the exported SVG so the output matches the current view exactly. This reduces file size and eliminates invisible paths that plotters would otherwise draw.',
+    },
+    plotterOptimization: {
+      title: 'Plotter Optimization',
+      description: 'Enables path deduplication and overlap removal. When turned on, the engine merges duplicate or nearly-duplicate paths to reduce redundant pen travel and speed up plotting.',
+    },
+    optimizationTolerance: {
+      title: 'Optimization Tolerance',
+      description: 'Controls how aggressively duplicate paths are merged. A smaller tolerance requires near-exact overlap; a larger tolerance merges paths that are close but not identical. Increase for faster plotting, decrease for higher fidelity.',
+    },
+    linesimplify: {
+      title: 'Line Simplify',
+      description: 'Reduces point count on each path while preserving visual shape. Polyline mode uses the Ramer-Douglas-Peucker algorithm; Curve mode fits smooth Bézier curves to the simplified result.',
+    },
+    'linesimplify.tolerance': {
+      title: 'Tolerance',
+      description: 'Maximum allowed deviation from the original path. Higher values produce fewer points (faster plotting) but may lose fine detail.',
+    },
+    'linesimplify.mode': {
+      title: 'Mode',
+      description: 'Polyline keeps straight segments between simplified points. Curve fits smooth Bézier arcs for a more organic look and smaller SVG output.',
+    },
+    linesort: {
+      title: 'Line Sort',
+      description: 'Reorders lines to minimize pen-up travel between consecutive paths. This is the single most effective optimization for reducing total plot time on pen plotters.',
+    },
+    'linesort.method': {
+      title: 'Method',
+      description: 'Nearest: greedy nearest-neighbor from the current pen position (fast, good results). Greedy: tries both directions of each path for shorter hops. Angle: sorts by path start angle from center.',
+    },
+    'linesort.direction': {
+      title: 'Direction',
+      description: 'None: pure nearest-neighbor without bias. Horizontal/Vertical: sweeps across the chosen axis first, filling bands before moving on—ideal for plotters that move faster on one axis. Radial: sorts from center outward.',
+    },
+    'linesort.grouping': {
+      title: 'Grouping',
+      description: 'Per Layer: sorts within each layer independently. Per Pen: groups lines by pen assignment before sorting. Combined: merges all layers into one sorting pool for the shortest possible total travel.',
+    },
+    filter: {
+      title: 'Filter',
+      description: 'Removes paths that fall outside length bounds. Use this to eliminate tiny debris lines or excessively long paths that shouldn\'t be plotted.',
+    },
+    'filter.minLength': {
+      title: 'Min Length',
+      description: 'Paths shorter than this value will be removed. Useful for cleaning up tiny dots or micro-segments that produce pen marks without meaningful visual contribution.',
+    },
+    'filter.maxLength': {
+      title: 'Max Length',
+      description: 'Paths longer than this value will be removed. Set to 0 to disable the upper bound. Helpful when the design contains unwanted long construction lines.',
+    },
+    'filter.removeTiny': {
+      title: 'Remove Tiny',
+      description: 'Automatically removes single-point and very short paths (below 0.1mm) that are too small to produce visible marks. Recommended for cleaner plots.',
+    },
+    multipass: {
+      title: 'Multipass',
+      description: 'Duplicates each path multiple times with small offsets. Produces thicker, more opaque lines on pen plotters where a single pass may be too faint, or creates a hatched fill effect.',
+    },
+    'multipass.passes': {
+      title: 'Passes',
+      description: 'Number of times each path is drawn. 1 = no duplication. Each additional pass adds one offset copy of every line.',
+    },
+    'multipass.offset': {
+      title: 'Offset',
+      description: 'Distance between each duplicated pass. Larger values spread passes apart for a broader stroke; smaller values stack them for denser ink coverage.',
+    },
+    'multipass.jitter': {
+      title: 'Jitter',
+      description: 'Random variation added to each pass offset. Creates a hand-drawn, organic quality instead of perfectly parallel lines.',
+    },
+    'multipass.seed': {
+      title: 'Seed',
+      description: 'Random seed for jitter. Change this to get a different randomization pattern while keeping the same jitter amount.',
+    },
+  };
+
 
   const requireDeps = (name) => {
     if (!DEPS) {
@@ -493,7 +672,7 @@
       // its own state so the nav dot can render orange instead of green.
       if (stepId === 'multipass' && Number(step.passes) > 1) return 'increasing';
       const def = defaultStepMap.get(stepId) || {};
-      const schema = (DEPS.OPTIMIZATION_STEPS || []).find((s) => s.id === stepId);
+      const schema = OPTIMIZATION_STEPS.find((s) => s.id === stepId);
       const keys = (schema?.controls || []).map((c) => c.key);
       const modified = keys.some((k) => step[k] !== def[k]);
       return modified ? 'modified' : 'applied';
@@ -680,7 +859,7 @@
   }
 
   function attachExportInfoButtons(panel) {
-    const { EXPORT_INFO, OPTIMIZATION_STEPS } = requireDeps('attachExportInfoButtons');
+    requireDeps('attachExportInfoButtons');
     if (!panel) return;
     const getCardTitleLabel = (card) => {
       if (!card) return null;
@@ -1102,6 +1281,14 @@
 
   Modals.ExportSvg = {
     /**
+     * Relocated tables (Meridian Unit 1.3). Exposed publicly so legacy /
+     * sibling satellites (e.g. algo-config-panel.js, which still pulls
+     * OPTIMIZATION_STEPS through its own DI bag) can read the same data.
+     * Treat as read-only.
+     */
+    OPTIMIZATION_STEPS,
+    EXPORT_INFO,
+    /**
      * Inject closure-captured legacy ui.js IIFE locals.
      * @param {object} deps
      * @param {function} deps.getEl                        Module-local DOM lookup.
@@ -1109,8 +1296,6 @@
      * @param {function} deps.clamp                        Numeric clamp helper.
      * @param {function} deps.getThemeToken                CSS var resolver.
      * @param {function} deps.getContrastTextColor         Color-contrast helper for legend pills.
-     * @param {object}   deps.EXPORT_INFO                  Info-toggle copy lookup.
-     * @param {Array}    deps.OPTIMIZATION_STEPS           Step schema for info-toggle wiring.
      * @param {function} deps.openColorPickerAnchoredTo    Anchored color-picker opener.
      */
     bind(deps) {

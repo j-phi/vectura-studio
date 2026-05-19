@@ -1636,6 +1636,101 @@
     this.app.render?.();
   }
 
+  function _lvlGroupSel() {
+      const renderer = this.app.renderer;
+      const ids = [...(renderer?.selectedLayerIds || [])];
+      if (ids.length < 2) return;
+      const allLayers = this.app.engine.layers;
+      const parents = new Set(ids.map((id) => allLayers.find((l) => l.id === id)?.parentId ?? null));
+      if (parents.size > 1) return;
+      if (this.app.pushHistory) this.app.pushHistory();
+      const parentId = [...parents][0];
+      const minIdx = Math.min(...allLayers
+        .filter((l) => (l.parentId ?? null) === parentId && ids.includes(l.id))
+        .map((l) => allLayers.indexOf(l)));
+      const gid = 'g' + Date.now();
+      allLayers.splice(minIdx, 0, {
+        id: gid, name: this.getUniqueLayerName('Group', gid), isGroup: true, groupType: null,
+        visible: true, groupCollapsed: false, parentId: parentId ?? null,
+      });
+      ids.forEach((id) => {
+        const l = allLayers.find((x) => x.id === id);
+        if (l) l.parentId = gid;
+      });
+      renderer.setSelection([gid], gid);
+      this.renderLayers();
+      this.app.render();
+    }
+
+    function _lvlUngroupSel() {
+      this.ungroupSelection();
+    }
+
+    function _lvlDelSel() {
+      if (this.app.pushHistory) this.app.pushHistory();
+      const ids = [...(this.app.renderer?.selectedLayerIds || [])];
+      [...ids].reverse().forEach((id) => {
+        this.unlockMirrorChildrenOnDelete(id);
+        this.app.engine.removeLayer(id);
+      });
+      this.renderLayers();
+      this.app.render();
+    }
+
+    function _lvlDupSel() {
+      if (this.app.pushHistory) this.app.pushHistory();
+      [...(this.app.renderer?.selectedLayerIds || [])].forEach((id) => this.app.engine.duplicateLayer(id));
+      this.renderLayers();
+      this.app.render();
+    }
+
+    function _lvlExpandSel() {
+      let any = false;
+      [...(this.app.renderer?.selectedLayerIds || [])].forEach((id) => {
+        const l = this.app.engine.getLayerById?.(id);
+        if (l?.isGroup && l.groupCollapsed) { l.groupCollapsed = false; any = true; }
+      });
+      if (any) this.renderLayers();
+    }
+
+    function _lvlToggleVisibilitySel(hide) {
+      const engine = this.app.engine;
+      if (this.app.pushHistory) this.app.pushHistory();
+      const newVis = !hide;
+      [...(this.app.renderer?.selectedLayerIds || [])].forEach((id) => {
+        const l = engine.getLayerById?.(id);
+        if (l) l.visible = newVis;
+      });
+      engine.computeAllDisplayGeometry?.();
+      this.app.render();
+      this.renderLayers();
+    }
+
+    function _lvlToggleLockSel(lock) {
+      const selIds = [...(this.app.renderer?.selectedLayerIds || [])];
+      selIds.forEach((id) => lock ? this.layerLockedIds.add(id) : this.layerLockedIds.delete(id));
+      this.renderLayers();
+    }
+
+    function _lvlMaskSelGroup() {
+      const engine = this.app.engine;
+      const renderer = this.app.renderer;
+      const sel = [...(renderer?.selectedLayerIds || [])];
+      const sorted = sel.map((id) => engine.getLayerById?.(id)).filter(Boolean)
+        .sort((a, b) => engine.layers.indexOf(a) - engine.layers.indexOf(b));
+      if (sorted.length < 2) return;
+      const topL = sorted[0];
+      if (!topL.maskCapabilities?.canSource && !topL.isGroup) return;
+      if (this.app.pushHistory) this.app.pushHistory();
+      // Enable mask on topL and move remaining layers to be its children
+      topL.mask = topL.mask || {};
+      topL.mask.enabled = true;
+      sorted.slice(1).forEach((l) => { l.parentId = topL.id; });
+      engine.computeAllDisplayGeometry?.();
+      renderer.setSelection([topL.id], topL.id);
+      this.renderLayers(); this.app.render?.();
+    }
+
   UI.LayersPanel = {
     /**
      * Inject closure-captured legacy ui.js IIFE locals.
@@ -1655,6 +1750,14 @@
       proto.ungroupSelection = function(...args) { return ungroupSelection.apply(this, args); };
       proto._lvlExpandFill = function(...args) { return _lvlExpandFill.apply(this, args); };
       proto._lvlExplodeFill = function(...args) { return _lvlExplodeFill.apply(this, args); };
+      proto._lvlGroupSel = function(...args) { return _lvlGroupSel.apply(this, args); };
+      proto._lvlUngroupSel = function(...args) { return _lvlUngroupSel.apply(this, args); };
+      proto._lvlDelSel = function(...args) { return _lvlDelSel.apply(this, args); };
+      proto._lvlDupSel = function(...args) { return _lvlDupSel.apply(this, args); };
+      proto._lvlExpandSel = function(...args) { return _lvlExpandSel.apply(this, args); };
+      proto._lvlToggleVisibilitySel = function(...args) { return _lvlToggleVisibilitySel.apply(this, args); };
+      proto._lvlToggleLockSel = function(...args) { return _lvlToggleLockSel.apply(this, args); };
+      proto._lvlMaskSelGroup = function(...args) { return _lvlMaskSelGroup.apply(this, args); };
     },
   };
 })();
