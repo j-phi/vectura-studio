@@ -161,20 +161,21 @@
       defaultTileAngle: 90,
       symmetric: false,
       getOps(W, H, tileAngle, cx, cy, rotDeg) {
-        const { a1, a2, O, C, M10, M01, angleA1 } = getCell(W, H, tileAngle, cx, cy, rotDeg);
+        const { a1, a2, O, P, M10, M01, angleA1, angleA2 } = getCell(W, H, tileAngle, cx, cy, rotDeg);
         const half1 = { x: 0.5 * a1.x, y: 0.5 * a1.y };
+        const R = P(0.25, 0.5); // 2-fold rotation center at (W/4, H/2) in lattice coords
         return {
           latticeA: a1, latticeB: a2,
           ops: [
             (pt) => ({ x: pt.x, y: pt.y }),
-            (pt) => rotPt(pt, C.x, C.y, 180),
-            (pt) => reflPt(pt, M01.x, M01.y, angleA1),
+            (pt) => reflPt(pt, M10.x, M10.y, angleA2),
+            (pt) => rotPt(pt, R.x, R.y, 180),
             (pt) => {
               const r = reflPt(pt, M01.x, M01.y, angleA1);
               return { x: r.x + half1.x, y: r.y + half1.y };
             },
           ],
-          fundamentalDomain: [O, M10, C, M01],
+          fundamentalDomain: [O, M10, P(0.5, 0.5), M01],
         };
       },
     },
@@ -185,21 +186,23 @@
       defaultTileAngle: 90,
       symmetric: false,
       getOps(W, H, tileAngle, cx, cy, rotDeg) {
-        const { a1, a2, O, C, M10, M01, angleA1, angleA2 } = getCell(W, H, tileAngle, cx, cy, rotDeg);
+        const { a1, a2, O, C, M10, M01, P, angleA1, angleA2 } = getCell(W, H, tileAngle, cx, cy, rotDeg);
         const half1 = { x: 0.5 * a1.x, y: 0.5 * a1.y };
         const half2 = { x: 0.5 * a2.x, y: 0.5 * a2.y };
+        const GH = P(0, 0.25); // horizontal glide axis (angle a1) passes through (0, H/4)
+        const GV = P(0.25, 0); // vertical glide axis (angle a2) passes through (W/4, 0)
         return {
           latticeA: a1, latticeB: a2,
           ops: [
             (pt) => ({ x: pt.x, y: pt.y }),
             (pt) => rotPt(pt, C.x, C.y, 180),
             (pt) => {
-              const r = reflPt(pt, M10.x, M10.y, angleA2);
-              return { x: r.x + half2.x, y: r.y + half2.y };
+              const r = reflPt(pt, GH.x, GH.y, angleA1);
+              return { x: r.x + half1.x, y: r.y + half1.y };
             },
             (pt) => {
-              const r = reflPt(pt, M01.x, M01.y, angleA1);
-              return { x: r.x + half1.x, y: r.y + half1.y };
+              const r = reflPt(pt, GV.x, GV.y, angleA2);
+              return { x: r.x + half2.x, y: r.y + half2.y };
             },
           ],
           fundamentalDomain: [O, M10, C, M01],
@@ -214,16 +217,16 @@
       symmetric: true,
       getOps(W, H, tileAngle, cx, cy, rotDeg) {
         const sz = W;
-        const { a1, a2, O, C, M10, M01, angleA1, angleA2 } = getCell(sz, sz, tileAngle, cx, cy, rotDeg);
+        const { a1, a2, O, C, P10, angleA1, angleA2 } = getCell(sz, sz, tileAngle, cx, cy, rotDeg);
         return {
           latticeA: a1, latticeB: a2,
           ops: [
             (pt) => ({ x: pt.x, y: pt.y }),
-            (pt) => reflPt(pt, C.x, C.y, angleA1),
-            (pt) => reflPt(pt, C.x, C.y, angleA2),
+            (pt) => reflPt(pt, C.x, C.y, (angleA1 + angleA2) / 2),
+            (pt) => reflPt(pt, C.x, C.y, (angleA1 + angleA2) / 2 + 90),
             (pt) => rotPt(pt, C.x, C.y, 180),
           ],
-          fundamentalDomain: [O, M10, C, M01],
+          fundamentalDomain: [O, P10, C],
         };
       },
     },
@@ -277,8 +280,31 @@
       lattice: 'square',
       defaultTileAngle: 90,
       symmetric: true,
-      getOps(W, H, tileAngle, cx, cy, rotDeg) {
-        const { a1, a2, O, C, M10, M01, M10r, M01t, angleA1, angleA2 } = getCell(W, W, 90, cx, cy, rotDeg);
+      hasV1: true,
+      getOps(W, H, tileAngle, cx, cy, rotDeg, options = {}) {
+        const { a1, a2, O, C, M10, M01, M10r, M01t, P, angleA1, angleA2 } = getCell(W, W, 90, cx, cy, rotDeg);
+        if (options.variant === 'v1') {
+          // Pre-fix aesthetic: 4 mirrors at edge midpoints (ops 4/6 and 5/7 are
+          // lattice-equivalent duplicates, giving a 25% gap in coverage).
+          return {
+            latticeA: a1, latticeB: a2,
+            ops: [
+              (pt) => ({ x: pt.x, y: pt.y }),
+              (pt) => rotPt(pt, C.x, C.y, 90),
+              (pt) => rotPt(pt, C.x, C.y, 180),
+              (pt) => rotPt(pt, C.x, C.y, 270),
+              (pt) => reflPt(pt, M10.x, M10.y, angleA2),
+              (pt) => reflPt(pt, M01.x, M01.y, angleA1),
+              (pt) => reflPt(pt, M10r.x, M10r.y, angleA2),
+              (pt) => reflPt(pt, M01t.x, M01t.y, angleA1),
+            ],
+            fundamentalDomain: [O, M10, C],
+          };
+        }
+        // v2 (default): 4-fold at C; mirror displaced from C by W/4 so it doesn't
+        // pass through the 4-fold center — the defining feature vs. p4m.
+        const Q = P(0.25, 0);
+        const baseRefl = (pt) => reflPt(pt, Q.x, Q.y, angleA2);
         return {
           latticeA: a1, latticeB: a2,
           ops: [
@@ -286,12 +312,12 @@
             (pt) => rotPt(pt, C.x, C.y, 90),
             (pt) => rotPt(pt, C.x, C.y, 180),
             (pt) => rotPt(pt, C.x, C.y, 270),
-            (pt) => reflPt(pt, M10.x, M10.y, angleA2),
-            (pt) => reflPt(pt, M01.x, M01.y, angleA1),
-            (pt) => reflPt(pt, M10r.x, M10r.y, angleA2),
-            (pt) => reflPt(pt, M01t.x, M01t.y, angleA1),
+            baseRefl,
+            (pt) => rotPt(baseRefl(pt), C.x, C.y, 90),
+            (pt) => rotPt(baseRefl(pt), C.x, C.y, 180),
+            (pt) => rotPt(baseRefl(pt), C.x, C.y, 270),
           ],
-          fundamentalDomain: [O, M10, C],
+          fundamentalDomain: [P(0.25, 0), P(0.5, 0), P(0.5, 0.5), P(0.25, 0.5)],
         };
       },
     },
@@ -301,18 +327,22 @@
       lattice: 'hexagonal',
       defaultTileAngle: 60,
       symmetric: true,
-      getOps(W, H, tileAngle, cx, cy, rotDeg) {
-        const { a1, a2, O, P10, P } = getCell(W, W, 60, cx, cy, rotDeg);
+      hasV1: true,
+      getOps(W, H, tileAngle, cx, cy, rotDeg, options = {}) {
+        const { a1, a2, O, P10, P01, P } = getCell(W, W, 60, cx, cy, rotDeg);
         const rot3 = P(1 / 3, 1 / 3);
-        return {
-          latticeA: a1, latticeB: a2,
-          ops: [
-            (pt) => ({ x: pt.x, y: pt.y }),
-            (pt) => rotPt(pt, rot3.x, rot3.y, 120),
-            (pt) => rotPt(pt, rot3.x, rot3.y, 240),
-          ],
-          fundamentalDomain: [O, P10, rot3],
-        };
+        const ops = [
+          (pt) => ({ x: pt.x, y: pt.y }),
+          (pt) => rotPt(pt, rot3.x, rot3.y, 120),
+          (pt) => rotPt(pt, rot3.x, rot3.y, 240),
+        ];
+        if (options.variant === 'v1') {
+          // Triangular wedge fund — fills up-triangles only, leaves
+          // down-triangles empty (the canonical "alternating triangles" look).
+          return { latticeA: a1, latticeB: a2, ops, fundamentalDomain: [O, P10, rot3] };
+        }
+        // v2 (default): primitive cell of C₃ sublattice, exact tiling.
+        return { latticeA: a1, latticeB: a2, ops, fundamentalDomain: [O, rot3, P01, P(-1 / 3, 2 / 3)] };
       },
     },
 
@@ -321,20 +351,26 @@
       lattice: 'hexagonal',
       defaultTileAngle: 60,
       symmetric: true,
-      getOps(W, H, tileAngle, cx, cy, rotDeg) {
+      hasV1: true,
+      getOps(W, H, tileAngle, cx, cy, rotDeg, options = {}) {
         const { a1, a2, O, P, angleA1 } = getCell(W, W, 60, cx, cy, rotDeg);
         const rot3 = P(1 / 3, 1 / 3);
+        const ops = [
+          (pt) => ({ x: pt.x, y: pt.y }),
+          (pt) => rotPt(pt, rot3.x, rot3.y, 120),
+          (pt) => rotPt(pt, rot3.x, rot3.y, 240),
+          (pt) => reflPt(pt, rot3.x, rot3.y, angleA1),
+          (pt) => reflPt(pt, rot3.x, rot3.y, angleA1 + 60),
+          (pt) => reflPt(pt, rot3.x, rot3.y, angleA1 + 120),
+        ];
+        if (options.variant === 'v1') {
+          // Smaller triangle fund — coverage 0.5, creates open spacing.
+          return { latticeA: a1, latticeB: a2, ops, fundamentalDomain: [O, P(0.5, 0), rot3] };
+        }
+        // v2: 60° sub-wedge of the Voronoi hexagon at rot3 — exact tiling.
         return {
-          latticeA: a1, latticeB: a2,
-          ops: [
-            (pt) => ({ x: pt.x, y: pt.y }),
-            (pt) => rotPt(pt, rot3.x, rot3.y, 120),
-            (pt) => rotPt(pt, rot3.x, rot3.y, 240),
-            (pt) => reflPt(pt, rot3.x, rot3.y, angleA1),
-            (pt) => reflPt(pt, rot3.x, rot3.y, angleA1 + 60),
-            (pt) => reflPt(pt, rot3.x, rot3.y, angleA1 + 120),
-          ],
-          fundamentalDomain: [O, P(0.5, 0), rot3],
+          latticeA: a1, latticeB: a2, ops,
+          fundamentalDomain: [rot3, P(5 / 6, 1 / 3), P(2 / 3, 2 / 3), P(1 / 3, 5 / 6)],
         };
       },
     },
@@ -345,8 +381,10 @@
       defaultTileAngle: 60,
       symmetric: true,
       getOps(W, H, tileAngle, cx, cy, rotDeg) {
-        const { a1, a2, O, P, angleA1, angleA2 } = getCell(W, W, 60, cx, cy, rotDeg);
-        const rot3 = P(1 / 3, 2 / 3);
+        const { a1, a2, O, P10, P, angleA1 } = getCell(W, W, 60, cx, cy, rotDeg);
+        // Use the C₃ center at P(1/3,1/3) (a valid C₃ center for this basis;
+        // (1/3,2/3) is NOT — rotating around it doesn't preserve the lattice).
+        const rot3 = P(1 / 3, 1 / 3);
         return {
           latticeA: a1, latticeB: a2,
           ops: [
@@ -357,7 +395,9 @@
             (pt) => reflPt(pt, O.x, O.y, angleA1 + 60),
             (pt) => reflPt(pt, O.x, O.y, angleA1 + 120),
           ],
-          fundamentalDomain: [O, P(0.5, 0), rot3],
+          // 60° wedge at O with edges along the a1 mirror (0°) and the
+          // O-to-rot3 line, area 1/6 of cell.
+          fundamentalDomain: [O, P10, rot3],
         };
       },
     },
@@ -367,13 +407,16 @@
       lattice: 'hexagonal',
       defaultTileAngle: 60,
       symmetric: true,
-      getOps(W, H, tileAngle, cx, cy, rotDeg) {
+      hasV1: true,
+      getOps(W, H, tileAngle, cx, cy, rotDeg, options = {}) {
         const { a1, a2, O, P10, P } = getCell(W, W, 60, cx, cy, rotDeg);
-        return {
-          latticeA: a1, latticeB: a2,
-          ops: [0, 60, 120, 180, 240, 300].map((deg) => (pt) => rotPt(pt, O.x, O.y, deg)),
-          fundamentalDomain: [O, P10, P(1, 1)],
-        };
+        const ops = [0, 60, 120, 180, 240, 300].map((deg) => (pt) => rotPt(pt, O.x, O.y, deg));
+        if (options.variant === 'v1') {
+          // Half-cell triangle fund — gives ~3× overlap, dense woven aesthetic.
+          return { latticeA: a1, latticeB: a2, ops, fundamentalDomain: [O, P10, P(1, 1)] };
+        }
+        // v2: 60° wedge at O — exact tiling.
+        return { latticeA: a1, latticeB: a2, ops, fundamentalDomain: [O, P10, P(1 / 3, 1 / 3)] };
       },
     },
 
@@ -382,18 +425,19 @@
       lattice: 'hexagonal',
       defaultTileAngle: 60,
       symmetric: true,
-      getOps(W, H, tileAngle, cx, cy, rotDeg) {
+      hasV1: true,
+      getOps(W, H, tileAngle, cx, cy, rotDeg, options = {}) {
         const { a1, a2, O, P, angleA1 } = getCell(W, W, 60, cx, cy, rotDeg);
-        const mid1 = P(0.5, 0);
-        const innerPt = P(2 / 3, 1 / 3);
-        return {
-          latticeA: a1, latticeB: a2,
-          ops: [
-            ...[0, 60, 120, 180, 240, 300].map((deg) => (pt) => rotPt(pt, O.x, O.y, deg)),
-            ...[0, 30, 60, 90, 120, 150].map((deg) => (pt) => reflPt(pt, O.x, O.y, angleA1 + deg)),
-          ],
-          fundamentalDomain: [O, mid1, innerPt],
-        };
+        const ops = [
+          ...[0, 60, 120, 180, 240, 300].map((deg) => (pt) => rotPt(pt, O.x, O.y, deg)),
+          ...[0, 30, 60, 90, 120, 150].map((deg) => (pt) => reflPt(pt, O.x, O.y, angleA1 + deg)),
+        ];
+        if (options.variant === 'v1') {
+          // Off-axis triangle — partial overlap, subtle woven aesthetic.
+          return { latticeA: a1, latticeB: a2, ops, fundamentalDomain: [O, P(0.5, 0), P(2 / 3, 1 / 3)] };
+        }
+        // v2: 30° wedge at O — exact tiling.
+        return { latticeA: a1, latticeB: a2, ops, fundamentalDomain: [O, P(0.5, 0), P(1 / 3, 1 / 3)] };
       },
     },
   };

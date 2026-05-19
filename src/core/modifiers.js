@@ -586,6 +586,8 @@
     rotation: 0,
     centerX: 0,
     centerY: 0,
+    domainScale: 1,
+    variantV1: false,
     color: getMirrorColor(index),
     ...clone(overrides),
   });
@@ -602,13 +604,31 @@
     const cx = (bounds?.width ?? 0) / 2 + (mirror.centerX ?? 0);
     const cy = (bounds?.height ?? 0) / 2 + (mirror.centerY ?? 0);
 
-    const { latticeA, latticeB, ops, fundamentalDomain } = groupDef.getOps(W, H, tileAngle, cx, cy, rotDeg);
+    const variant = mirror.variantV1 && groupDef.hasV1 ? 'v1' : 'v2';
+    const { latticeA, latticeB, ops, fundamentalDomain } = groupDef.getOps(W, H, tileAngle, cx, cy, rotDeg, { variant });
+
+    // Optionally scale the fundamental domain about its centroid for intentional
+    // gaps (scale < 1) or overlap (scale > 1) between symmetric copies. Coverage
+    // scales as scale²: ~1.73 recovers 3× overlap; ~0.7 recovers 50% gap.
+    const rawDomainScale = Number(mirror.domainScale);
+    const domainScale = Number.isFinite(rawDomainScale) && rawDomainScale > 0 ? rawDomainScale : 1;
+    let domain = fundamentalDomain;
+    if (domainScale !== 1 && Array.isArray(fundamentalDomain) && fundamentalDomain.length) {
+      let sx = 0, sy = 0;
+      for (const v of fundamentalDomain) { sx += v.x; sy += v.y; }
+      const ccx = sx / fundamentalDomain.length;
+      const ccy = sy / fundamentalDomain.length;
+      domain = fundamentalDomain.map((v) => ({
+        x: ccx + (v.x - ccx) * domainScale,
+        y: ccy + (v.y - ccy) * domainScale,
+      }));
+    }
 
     // Clip source paths to fundamental domain (convex polygon, sequential half-plane clips)
     let clipped = (paths || []).map(clonePath).filter((p) => p.length >= 2);
-    for (let i = 0; i < fundamentalDomain.length; i++) {
-      const p1 = fundamentalDomain[i];
-      const p2 = fundamentalDomain[(i + 1) % fundamentalDomain.length];
+    for (let i = 0; i < domain.length; i++) {
+      const p1 = domain[i];
+      const p2 = domain[(i + 1) % domain.length];
       const edgeAngle = Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI;
       clipped = clipPathsToHalfPlane(clipped, p1, edgeAngle, +1);
     }

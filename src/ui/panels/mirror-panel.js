@@ -616,7 +616,7 @@
                                  replacedSide: 'outer', strength: 100, falloff: 0, minRadius: 0,
                                  clipToArc: false, rotationOffset: 0, copies: 1 };
       case 'wallpaper': return { group: 'p4m', tileWidth: 60, tileHeight: 60, tileAngle: 90,
-                                 rotation: 0, centerX: 0, centerY: 0, domainScale: 1 };
+                                 rotation: 0, centerX: 0, centerY: 0, domainScale: 1, variantV1: false };
     }
     return {};
   }
@@ -959,6 +959,9 @@
 
   function wallConfig(m) {
     const activeFam = (WALL_GROUPS.find((g) => g.id === m.group) || {}).family;
+    const groupDef = window.Vectura?.WallpaperGroups?.GROUPS?.[m.group];
+    const hasV1 = !!(groupDef && groupDef.hasV1);
+    const variantOn = hasV1 && !!m.variantV1;
     const locked = window.Vectura?.WallpaperGroups?.getLockedAxes?.(m.group) || { tileHeight: false, tileAngle: false };
     const lockedAttr = (on) => on ? 'disabled aria-disabled="true"' : '';
     const lockedCls  = (on) => on ? ' is-locked' : '';
@@ -1050,6 +1053,19 @@
                  data-param="domainScale" data-fmt="scale" style="--fill:${fillPct(m.domainScale ?? 1, 0.3, 2)}%;">
         </div>
       </div>
+      ${hasV1 ? `
+      <div class="mp-ctrl-grp">
+        <div class="mp-ctrl-lbl">Tile layout</div>
+        <div class="mp-side-row mp-side-row--text">
+          <button type="button" class="mp-side-tile mp-side-tile--text ${!variantOn ? 'active' : ''}" aria-pressed="${!variantOn}" data-set="variantV1" data-val="false">
+            <div class="mp-st-name">v2 (exact tile)</div>
+          </button>
+          <button type="button" class="mp-side-tile mp-side-tile--text ${variantOn ? 'active' : ''}" aria-pressed="${variantOn}" data-set="variantV1" data-val="true">
+            <div class="mp-st-name">v1 (classic spacing)</div>
+          </button>
+        </div>
+      </div>
+      ` : ''}
     `;
   }
 
