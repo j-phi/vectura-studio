@@ -228,32 +228,7 @@
   const isModifierLayer = Modifiers.isModifierLayer || (() => false);
   const getLayerSilhouette = Masking.getLayerSilhouette || (() => []);
 
-  const segmentIntersection = (a, b, c, d) => {
-    const r = { x: b.x - a.x, y: b.y - a.y };
-    const s = { x: d.x - c.x, y: d.y - c.y };
-    const denom = r.x * s.y - r.y * s.x;
-    if (Math.abs(denom) < 1e-9) return null;
-    const u = ((c.x - a.x) * r.y - (c.y - a.y) * r.x) / denom;
-    const t = ((c.x - a.x) * s.y - (c.y - a.y) * s.x) / denom;
-    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return t;
-    return null;
-  };
-
-  const segmentCircleIntersections = (a, b, center, radius) => {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const fx = a.x - center.x;
-    const fy = a.y - center.y;
-    const A = dx * dx + dy * dy;
-    const B = 2 * (fx * dx + fy * dy);
-    const C = fx * fx + fy * fy - radius * radius;
-    const disc = B * B - 4 * A * C;
-    if (disc < 0) return [];
-    const sqrt = Math.sqrt(disc);
-    const t1 = (-B - sqrt) / (2 * A);
-    const t2 = (-B + sqrt) / (2 * A);
-    return [t1, t2].filter((t) => t >= 0 && t <= 1);
-  };
+  const splitPathByShape = GeometryUtils?.splitPathByShape;
 
   const pointsEqual = (a, b, epsilon = 1e-6) => {
     if (!a || !b) return false;
@@ -294,65 +269,6 @@
     const end = clampPointToRect({ x: lerp(a.x, b.x, t1), y: lerp(a.y, b.y, t1) }, rect);
     if (pointsEqual(start, end)) return null;
     return [start, end];
-  };
-
-  const splitPathByShape = (path, shape) => {
-    if (!Array.isArray(path) || path.length < 2) return null;
-    const output = [];
-    let current = [path[0]];
-    let hit = false;
-    const addSegment = () => {
-      if (current.length > 1) output.push(current);
-      current = [];
-    };
-
-    for (let i = 0; i < path.length - 1; i++) {
-      const a = path[i];
-      const b = path[i + 1];
-      let ts = [];
-      if (shape.mode === 'line' && shape.line) {
-        const t = segmentIntersection(a, b, shape.line.a, shape.line.b);
-        if (t !== null) ts.push(t);
-      } else if (shape.mode === 'rect' && shape.rect) {
-        const { x, y, w, h } = shape.rect;
-        const r1 = { x, y };
-        const r2 = { x: x + w, y };
-        const r3 = { x: x + w, y: y + h };
-        const r4 = { x, y: y + h };
-        [segmentIntersection(a, b, r1, r2),
-          segmentIntersection(a, b, r2, r3),
-          segmentIntersection(a, b, r3, r4),
-          segmentIntersection(a, b, r4, r1),
-        ].forEach((t) => {
-          if (t !== null) ts.push(t);
-        });
-      } else if (shape.mode === 'circle' && shape.circle) {
-        ts = segmentCircleIntersections(a, b, shape.circle, shape.circle.r);
-      }
-
-      ts = ts.filter((t) => t > 1e-4 && t < 1 - 1e-4).sort((t1, t2) => t1 - t2);
-      if (!ts.length) {
-        if (!current.length) current.push(a);
-        current.push(b);
-        continue;
-      }
-
-      hit = true;
-      let lastPoint = a;
-      if (!current.length) current.push(lastPoint);
-      ts.forEach((t) => {
-        const pt = { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) };
-        current.push(pt);
-        addSegment();
-        current.push(pt);
-        lastPoint = pt;
-      });
-      current.push(b);
-    }
-
-    if (current.length > 1) output.push(current);
-    if (!hit) return null;
-    return output;
   };
 
   const expandCirclePath = (meta, segments = 80) => {
@@ -1522,69 +1438,13 @@
     // initSettingsValues→applyPersistedSettings) are installed onto
     // UI.prototype by Persistence.installOn() at IIFE bottom.
 
-    createModal() {
-      const overlay = document.createElement('div');
-      overlay.id = 'modal-overlay';
-      overlay.className = 'modal-overlay';
-      overlay.innerHTML = `
-        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-          <div class="modal-header">
-            <div class="modal-title" id="modal-title"></div>
-            <button class="modal-close" type="button" aria-label="Close modal">✕</button>
-          </div>
-          <div class="modal-body"></div>
-        </div>
-      `;
-      document.body.appendChild(overlay);
-
-      const card = overlay.querySelector('.modal-card');
-      const closeBtn = overlay.querySelector('.modal-close');
-      const titleEl = overlay.querySelector('.modal-title');
-      const bodyEl = overlay.querySelector('.modal-body');
-
-      overlay.onclick = () => this.closeModal();
-      card.onclick = (e) => e.stopPropagation();
-      closeBtn.onclick = () => this.closeModal();
-
-      return { overlay, titleEl, bodyEl };
-    }
-
-    openModal({ title, body, cardClass = '', onClose = null }) {
-      this._modalPrevFocus = document.activeElement || null;
-      if (typeof this._modalCleanup === 'function') {
-        const cleanup = this._modalCleanup;
-        this._modalCleanup = null;
-        cleanup();
-      }
-      this.modal.titleEl.textContent = title;
-      this.modal.overlay.querySelector('.modal-card')?.setAttribute('class', `modal-card ${cardClass}`.trim());
-      this.modal.bodyEl.innerHTML = '';
-      if (typeof body === 'string') this.modal.bodyEl.innerHTML = body;
-      else if (body instanceof Node) this.modal.bodyEl.appendChild(body);
-      this._modalCleanup = typeof onClose === 'function' ? onClose : null;
-      this.modal.overlay.classList.add('open');
-      // Move focus to first focusable element in modal
-      requestAnimationFrame(() => {
-        const focusable = this.modal.overlay.querySelector('button, input, [tabindex="0"]');
-        if (focusable) focusable.focus();
-      });
-    }
-
+    // createModal, openModal, closeModal, _mountGridSettingsPanel,
+    // _mountDocumentSetupPanel are installed onto UI.prototype by
+    // UI.overlays.Modal.installOn() at IIFE bottom (Meridian Unit 1.7 —
+    // promoted modal.js to the modal primitive that mounts all centered
+    // modals).
+    //
     // openColorModal is installed onto UI.prototype by ColorPicker.installOn().
-
-    closeModal() {
-      this.modal.overlay.classList.remove('open');
-      this.modal.overlay.querySelector('.modal-card')?.setAttribute('class', 'modal-card');
-      if (typeof this._modalCleanup === 'function') {
-        const cleanup = this._modalCleanup;
-        this._modalCleanup = null;
-        cleanup();
-      }
-      if (this._modalPrevFocus && typeof this._modalPrevFocus.focus === 'function') {
-        this._modalPrevFocus.focus();
-        this._modalPrevFocus = null;
-      }
-    }
 
     // pane-left methods (getLeftSectionDefaults, getLeftSectionMap,
     // setLeftSectionCollapsed, initLeftPanelSections,
@@ -1596,18 +1456,6 @@
     // are installed onto UI.prototype by HelpShortcuts.installOn().
     // _bindGridSettingsHandlers and _bindDocumentSetupHandlers are installed
     // by GridSettings.installOn() and DocumentSetup.installOn() respectively.
-
-    // Delegated to src/ui/modals/grid-settings.js (Phase 3 step 2).
-    _mountGridSettingsPanel() {
-      const host = document.querySelector('main');
-      return window.Vectura.UI.Modals.GridSettings.mount(host);
-    }
-
-    // Delegated to src/ui/modals/document-setup.js (Phase 3 step 3).
-    _mountDocumentSetupPanel() {
-      const host = document.querySelector('main');
-      return window.Vectura.UI.Modals.DocumentSetup.mount(host);
-    }
 
     // transform-panel methods (getDefaultTransformForType, storeLayerParams,
     // restoreLayerParams) are installed onto UI.prototype by
@@ -3852,6 +3700,20 @@
   }
   if (window.Vectura?.UI?.Modals?.HelpShortcuts?.installOn) {
     window.Vectura.UI.Modals.HelpShortcuts.installOn(UI.prototype);
+  }
+
+  // Meridian Unit 1.7: promote src/ui/overlays/modal.js into the modal
+  // primitive that owns the centered #modal-overlay scaffold. Installs
+  // createModal, openModal, closeModal, _mountGridSettingsPanel, and
+  // _mountDocumentSetupPanel onto UI.prototype. Bound BEFORE the UI ctor
+  // runs (which calls `this.createModal()` synchronously). Only IIFE-local
+  // dep is `getEl` — passed for symmetry with sibling modules even though
+  // the wrappers themselves currently reach for `document.*` directly.
+  if (window.Vectura?.UI?.overlays?.Modal?.bind) {
+    window.Vectura.UI.overlays.Modal.bind({ getEl });
+  }
+  if (window.Vectura?.UI?.overlays?.Modal?.installOn) {
+    window.Vectura.UI.overlays.Modal.installOn(UI.prototype);
   }
 
   // Phase 3 step 2: register modals/grid-settings.js. Slide-out side panel
