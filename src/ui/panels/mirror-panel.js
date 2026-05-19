@@ -14,7 +14,7 @@
  *   radial:    count, mode, centerX, centerY, angle
  *   arc:       centerX, centerY, radius, arcStart, arcEnd, replacedSide,
  *              strength, falloff, clipToArc, rotationOffset, copies
- *   wallpaper: group, tileWidth, tileHeight, tileAngle, rotation, centerX, centerY
+ *   wallpaper: group, tileWidth, tileHeight, tileAngle, rotation, centerX, centerY, domainScale
  *
  * Entry point: window.Vectura.UI.MirrorPanel.build(uiCtx, layer, container).
  * algo-config-panel.js calls this when the active layer is a mirror modifier.
@@ -616,7 +616,7 @@
                                  replacedSide: 'outer', strength: 100, falloff: 0, minRadius: 0,
                                  clipToArc: false, rotationOffset: 0, copies: 1 };
       case 'wallpaper': return { group: 'p4m', tileWidth: 60, tileHeight: 60, tileAngle: 90,
-                                 rotation: 0, centerX: 0, centerY: 0 };
+                                 rotation: 0, centerX: 0, centerY: 0, domainScale: 1 };
     }
     return {};
   }
@@ -660,6 +660,63 @@
     if (shift) deg = Math.round(deg / 15) * 15;
     else deg = Math.round(deg);
     return deg % 360;
+  }
+
+  function fireDialBlip(dial) {
+    const pin = dial.querySelector('.mp-dial-pin');
+    if (!pin) return;
+    const angle = parseFloat(pin.style.getPropertyValue('--angle')) || 0;
+    const colorRaw = getComputedStyle(dial).getPropertyValue('--mp-type-color').trim();
+    let rgb = '78, 158, 225';
+    try {
+      const n = parseInt(colorRaw.replace('#', ''), 16);
+      rgb = `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
+    } catch (_) {}
+
+    const DPR = Math.min(window.devicePixelRatio || 1, 2);
+    const SIZE = 50;
+    const cvs = document.createElement('canvas');
+    cvs.width = SIZE * DPR;
+    cvs.height = SIZE * DPR;
+    cvs.style.cssText = `position:absolute;top:0;left:0;width:${SIZE}px;height:${SIZE}px;pointer-events:none;border-radius:50%;z-index:1;`;
+    dial.appendChild(cvs);
+
+    const ctx = cvs.getContext('2d');
+    ctx.scale(DPR, DPR);
+
+    // Dial geometry in CSS px: 50×50 face, pin 20px from center
+    const CX = 25, CY = 25, DIAL_R = 25, PIN_LEN = 20;
+    const rad = angle * Math.PI / 180;
+    const tipX = CX + Math.sin(rad) * PIN_LEN;
+    const tipY = CY - Math.cos(rad) * PIN_LEN;
+    // Max ring radius needed to cover the full face from any tip position
+    const MAX_R = DIAL_R + PIN_LEN + 1;
+
+    const DURATION = 480;
+    const start = performance.now();
+
+    (function frame(now) {
+      const t = Math.min((now - start) / DURATION, 1);
+      const ringR = (1 - (1 - t) * (1 - t)) * MAX_R;
+      const alpha = (1 - t * t * t) * 0.65;
+
+      ctx.clearRect(0, 0, SIZE, SIZE);
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(CX, CY, DIAL_R - 0.5, 0, Math.PI * 2);
+      ctx.clip();
+      if (ringR > 0.5) {
+        ctx.beginPath();
+        ctx.arc(tipX, tipY, ringR, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(${rgb}, ${alpha})`;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      if (t < 1) requestAnimationFrame(frame);
+      else cvs.remove();
+    }(performance.now()));
   }
 
   function infoTrigger(topicId, label) {
@@ -709,7 +766,7 @@
       </div>
 
       <div class="mp-dial-row">
-        <div class="mp-dial" role="slider" aria-valuemin="0" aria-valuemax="360" aria-valuenow="${m.angle}" aria-label="Angle">
+        <div class="mp-dial" role="slider" aria-valuemin="0" aria-valuemax="360" aria-valuenow="${m.angle}" aria-label="Angle" data-dial-param="angle">
           <span class="mp-dial-tick"></span>
           <span class="mp-dial-tick mp-tick-90"></span>
           <span class="mp-dial-tick mp-tick-180"></span>
@@ -765,7 +822,7 @@
       </div>
 
       <div class="mp-dial-row">
-        <div class="mp-dial" role="slider" aria-valuemin="0" aria-valuemax="360" aria-valuenow="${m.angle}" aria-label="Rotation offset">
+        <div class="mp-dial" role="slider" aria-valuemin="0" aria-valuemax="360" aria-valuenow="${m.angle}" aria-label="Rotation offset" data-dial-param="angle">
           <span class="mp-dial-tick"></span>
           <span class="mp-dial-tick mp-tick-90"></span>
           <span class="mp-dial-tick mp-tick-180"></span>
@@ -858,22 +915,30 @@
         <div class="mp-ctrl-grp"></div>
       </div>
 
-      <div class="mp-ctrl-row-2">
+      <div class="mp-dial-row">
+        <div class="mp-dial" role="slider" aria-valuemin="0" aria-valuemax="360" aria-valuenow="${m.rotationOffset}" aria-label="Rotation offset" data-dial-param="rotationOffset">
+          <span class="mp-dial-tick"></span>
+          <span class="mp-dial-tick mp-tick-90"></span>
+          <span class="mp-dial-tick mp-tick-180"></span>
+          <span class="mp-dial-tick mp-tick-270"></span>
+          <div class="mp-dial-pin" style="--angle: ${m.rotationOffset}deg;"></div>
+          <div class="mp-dial-knob"></div>
+        </div>
         <div class="mp-ctrl-grp">
           <div class="mp-ctrl-lbl">Rotation offset <span class="mp-val-tag" data-tag="rotationOffset">${Math.round(m.rotationOffset)}°</span></div>
           <input type="range" class="mp-slider" min="0" max="360" value="${m.rotationOffset}"
                  data-param="rotationOffset" data-fmt="deg" style="--fill:${fillPct(m.rotationOffset, 0, 360)}%;">
         </div>
-        <div class="mp-ctrl-grp">
-          <div class="mp-ctrl-lbl">Clip output</div>
-          <div class="mp-side-row mp-side-row--text">
-            <button type="button" class="mp-side-tile mp-side-tile--text ${m.clipToArc ? 'active' : ''}" aria-pressed="${!!m.clipToArc}" data-set="clipToArc" data-val="true">
-              <div class="mp-st-name">Clip to arc</div>
-            </button>
-            <button type="button" class="mp-side-tile mp-side-tile--text ${!m.clipToArc ? 'active' : ''}" aria-pressed="${!m.clipToArc}" data-set="clipToArc" data-val="false">
-              <div class="mp-st-name">Free</div>
-            </button>
-          </div>
+      </div>
+      <div class="mp-ctrl-grp">
+        <div class="mp-ctrl-lbl">Clip output</div>
+        <div class="mp-side-row mp-side-row--text">
+          <button type="button" class="mp-side-tile mp-side-tile--text ${m.clipToArc ? 'active' : ''}" aria-pressed="${!!m.clipToArc}" data-set="clipToArc" data-val="true">
+            <div class="mp-st-name">Clip to arc</div>
+          </button>
+          <button type="button" class="mp-side-tile mp-side-tile--text ${!m.clipToArc ? 'active' : ''}" aria-pressed="${!m.clipToArc}" data-set="clipToArc" data-val="false">
+            <div class="mp-st-name">Free</div>
+          </button>
         </div>
       </div>
 
@@ -936,11 +1001,29 @@
                  data-param="tileHeight" ${lockedAttr(locked.tileHeight)} style="--fill:${fillPct(m.tileHeight, 20, 400)}%;">
         </div>
       </div>
-      <div class="mp-ctrl-row-2">
+      <div class="mp-dial-row${lockedCls(locked.tileAngle)}">
+        <div class="mp-dial" role="slider" aria-valuemin="60" aria-valuemax="120" aria-valuenow="${m.tileAngle}" aria-label="Tile angle" data-dial-param="tileAngle" ${locked.tileAngle ? 'aria-disabled="true"' : ''}>
+          <span class="mp-dial-tick"></span>
+          <span class="mp-dial-tick mp-tick-90"></span>
+          <span class="mp-dial-tick mp-tick-180"></span>
+          <span class="mp-dial-tick mp-tick-270"></span>
+          <div class="mp-dial-pin" style="--angle: ${m.tileAngle}deg;"></div>
+          <div class="mp-dial-knob"></div>
+        </div>
         <div class="mp-ctrl-grp${lockedCls(locked.tileAngle)}">
           <div class="mp-ctrl-lbl">Tile angle <span class="mp-val-tag" data-tag="tileAngle">${Math.round(m.tileAngle)}°</span>${lockHint(locked.tileAngle)}</div>
           <input type="range" class="mp-slider" min="60" max="120" value="${m.tileAngle}"
                  data-param="tileAngle" data-fmt="deg" ${lockedAttr(locked.tileAngle)} style="--fill:${fillPct(m.tileAngle, 60, 120)}%;">
+        </div>
+      </div>
+      <div class="mp-dial-row">
+        <div class="mp-dial" role="slider" aria-valuemin="0" aria-valuemax="360" aria-valuenow="${m.rotation}" aria-label="Rotation" data-dial-param="rotation">
+          <span class="mp-dial-tick"></span>
+          <span class="mp-dial-tick mp-tick-90"></span>
+          <span class="mp-dial-tick mp-tick-180"></span>
+          <span class="mp-dial-tick mp-tick-270"></span>
+          <div class="mp-dial-pin" style="--angle: ${m.rotation}deg;"></div>
+          <div class="mp-dial-knob"></div>
         </div>
         <div class="mp-ctrl-grp">
           <div class="mp-ctrl-lbl">Rotation <span class="mp-val-tag" data-tag="rotation">${Math.round(m.rotation)}°</span></div>
@@ -958,6 +1041,13 @@
           <div class="mp-ctrl-lbl">Center Y <span class="mp-val-tag" data-tag="centerY">${Math.round(m.centerY)}</span></div>
           <input type="range" class="mp-slider" min="-200" max="200" value="${m.centerY}"
                  data-param="centerY" style="--fill:${fillPct(m.centerY, -200, 200)}%;">
+        </div>
+      </div>
+      <div class="mp-ctrl-row-2">
+        <div class="mp-ctrl-grp">
+          <div class="mp-ctrl-lbl">Domain scale <span class="mp-val-tag" data-tag="domainScale">${Number(m.domainScale ?? 1).toFixed(2)}×</span></div>
+          <input type="range" class="mp-slider" min="0.3" max="2" step="0.05" value="${m.domainScale ?? 1}"
+                 data-param="domainScale" data-fmt="scale" style="--fill:${fillPct(m.domainScale ?? 1, 0.3, 2)}%;">
         </div>
       </div>
     `;
@@ -1350,14 +1440,17 @@
           const tag = body.querySelector(`[data-tag="${param}"]`);
           if (tag) {
             const fmt = el.dataset.fmt;
-            tag.textContent = fmt === 'deg' ? `${Math.round(v)}°` : fmt === 'pct' ? `${Math.round(v)}%` : `${Math.round(v)}`;
+            tag.textContent = fmt === 'deg' ? `${Math.round(v)}°`
+              : fmt === 'pct' ? `${Math.round(v)}%`
+              : fmt === 'scale' ? `${v.toFixed(2)}×`
+              : `${Math.round(v)}`;
           }
           // sync dial pin if present
-          if (param === 'angle') {
-            const pin = body.querySelector('.mp-dial-pin');
+          const dial = body.querySelector(`.mp-dial[data-dial-param="${param}"]`);
+          if (dial) {
+            const pin = dial.querySelector('.mp-dial-pin');
             if (pin) pin.style.setProperty('--angle', `${v}deg`);
-            const dial = body.querySelector('.mp-dial');
-            if (dial) dial.setAttribute('aria-valuenow', String(v));
+            dial.setAttribute('aria-valuenow', String(v));
           }
           refreshRowText();
           // Recompute mirrored geometry + redraw. Skip the panel rebuild so
@@ -1400,10 +1493,12 @@
       // Angle dial drag
       body.querySelectorAll('.mp-dial').forEach((dial) => {
         const row = dial.closest('.mp-dial-row');
-        const slider = row && row.querySelector('input[type=range][data-param="angle"]');
+        const dialParam = dial.dataset.dialParam;
+        const slider = row && dialParam && row.querySelector(`input[type=range][data-param="${dialParam}"]`);
         if (!slider) return;
         let activePointerId = null;
         const apply = (ev) => {
+          if (slider.disabled) return;
           const r = dial.getBoundingClientRect();
           const v = pointToAngleDeg(ev.clientX, ev.clientY, r, ev.shiftKey);
           if (+slider.value === v) return;
@@ -1426,15 +1521,16 @@
           dial.classList.remove('is-dragging');
           try { dial.releasePointerCapture(e.pointerId); } catch (_) {}
           slider.dispatchEvent(new Event('change', { bubbles: true }));
+          fireDialBlip(dial);
         };
         dial.addEventListener('pointerup', end);
         dial.addEventListener('pointercancel', end);
         dial.addEventListener('dblclick', (e) => {
           e.preventDefault();
-          if (!slider) return;
+          if (!slider || slider.disabled) return;
           const defaults = defaultParamsFor(mirror.type);
-          if (!('angle' in defaults)) return;
-          slider.value = defaults['angle'];
+          if (!(dialParam in defaults)) return;
+          slider.value = defaults[dialParam];
           slider.dispatchEvent(new Event('input', { bubbles: true }));
           slider.dispatchEvent(new Event('change', { bubbles: true }));
         });
