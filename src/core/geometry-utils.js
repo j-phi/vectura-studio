@@ -169,6 +169,99 @@
     return pts;
   };
 
+  const lerp = (a, b, t) => a + (b - a) * t;
+
+  const segmentIntersection = (a, b, c, d) => {
+    const r = { x: b.x - a.x, y: b.y - a.y };
+    const s = { x: d.x - c.x, y: d.y - c.y };
+    const denom = r.x * s.y - r.y * s.x;
+    if (Math.abs(denom) < 1e-9) return null;
+    const u = ((c.x - a.x) * r.y - (c.y - a.y) * r.x) / denom;
+    const t = ((c.x - a.x) * s.y - (c.y - a.y) * s.x) / denom;
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return t;
+    return null;
+  };
+
+  const segmentCircleIntersections = (a, b, center, radius) => {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const fx = a.x - center.x;
+    const fy = a.y - center.y;
+    const A = dx * dx + dy * dy;
+    const B = 2 * (fx * dx + fy * dy);
+    const C = fx * fx + fy * fy - radius * radius;
+    const disc = B * B - 4 * A * C;
+    if (disc < 0) return [];
+    const sqrt = Math.sqrt(disc);
+    const t1 = (-B - sqrt) / (2 * A);
+    const t2 = (-B + sqrt) / (2 * A);
+    return [t1, t2].filter((t) => t >= 0 && t <= 1);
+  };
+
+  const splitPathByShape = (path, shape) => {
+    if (!Array.isArray(path) || path.length < 2) return null;
+    const output = [];
+    let current = [path[0]];
+    let hit = false;
+    const addSegment = () => {
+      if (current.length > 1) output.push(current);
+      current = [];
+    };
+    for (let i = 0; i < path.length - 1; i++) {
+      const a = path[i];
+      const b = path[i + 1];
+      let ts = [];
+      if (shape.mode === 'line' && shape.line) {
+        const t = segmentIntersection(a, b, shape.line.a, shape.line.b);
+        if (t !== null) ts.push(t);
+      } else if (shape.mode === 'rect' && shape.rect) {
+        const { x, y, w, h } = shape.rect;
+        const r1 = { x, y };
+        const r2 = { x: x + w, y };
+        const r3 = { x: x + w, y: y + h };
+        const r4 = { x, y: y + h };
+        [segmentIntersection(a, b, r1, r2),
+          segmentIntersection(a, b, r2, r3),
+          segmentIntersection(a, b, r3, r4),
+          segmentIntersection(a, b, r4, r1),
+        ].forEach((t) => { if (t !== null) ts.push(t); });
+      } else if (shape.mode === 'circle' && shape.circle) {
+        ts = segmentCircleIntersections(a, b, shape.circle, shape.circle.r);
+      }
+      ts = ts.filter((t) => t > 1e-4 && t < 1 - 1e-4).sort((a, b) => a - b);
+      if (!ts.length) {
+        if (!current.length) current.push(a);
+        current.push(b);
+        continue;
+      }
+      hit = true;
+      if (!current.length) current.push(a);
+      ts.forEach((t) => {
+        const pt = { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) };
+        current.push(pt);
+        addSegment();
+        current.push(pt);
+      });
+      current.push(b);
+    }
+    if (current.length > 1) output.push(current);
+    if (!hit) return null;
+    // For closed polylines (first point == last point), the segment that started
+    // at path[0] and the final trailing segment that ends at path[0] are the
+    // same contiguous region of the closed loop. Merge them into one piece so
+    // the scissor does not emit a spurious extra segment near the start anchor.
+    const fp = path[0];
+    const lp = path[path.length - 1];
+    const isClosed = path.length > 2 &&
+      Math.abs(fp.x - lp.x) < 1e-4 && Math.abs(fp.y - lp.y) < 1e-4;
+    if (isClosed && output.length >= 2) {
+      const tail = output.pop();
+      const head = output.shift();
+      output.unshift([...tail, ...head.slice(1)]);
+    }
+    return output;
+  };
+
   const buildPolylineFromAnchors = (anchors, closed = false) => {
     if (!Array.isArray(anchors) || anchors.length < 2) return [];
     const pts = [];
@@ -308,6 +401,10 @@
     rebuildShapeAnchors,
     cubicAtT,
     sampleCubicBezier,
+    lerp,
+    segmentIntersection,
+    segmentCircleIntersections,
+    splitPathByShape,
   };
 
   if (typeof window !== 'undefined') {
