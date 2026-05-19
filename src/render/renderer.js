@@ -2245,6 +2245,7 @@
         historyPushed: modifiers.alt, // already pushed above for alt-dup
         anchorStart: anchor ? { x: anchor.x, y: anchor.y } : null,
         otherStarts,
+        mergeTarget: null,
       };
       return true;
     }
@@ -2299,6 +2300,22 @@
             if (oa.out) { oa.out.x += dx; oa.out.y += dy; }
           }
         }
+        // Merge-target detection: show snap ring if hovering over another anchor (path must have >3 nodes)
+        drag.mergeTarget = null;
+        if (this.directSelection.anchors.length > 3) {
+          const wdata = this.getDirectSelectionWorldAnchors();
+          if (wdata) {
+            const mergeTol = 5 / this.scale;
+            const mergeTolSq = mergeTol * mergeTol;
+            for (let i = 0; i < wdata.anchors.length; i++) {
+              if (i === drag.index) continue;
+              const wa = wdata.anchors[i];
+              const ddx = world.x - wa.x;
+              const ddy = world.y - wa.y;
+              if (ddx * ddx + ddy * ddy <= mergeTolSq) { drag.mergeTarget = i; break; }
+            }
+          }
+        }
       } else {
         const modifiers = this.getModifierState(e);
         if (modifiers.shift) next = this.snapPenAngle(anchor, next);
@@ -2342,6 +2359,23 @@
             this.applyDirectPath();
           }
         }
+      }
+      if (moved && drag.mergeTarget != null && this.directSelection) {
+        this.markDirectSelectionAsCustomPath();
+        const sel = this.directSelection;
+        sel.anchors.splice(drag.index, 1);
+        if (sel.closed && sel.anchors.length < 3) sel.closed = false;
+        const nextIndices = new Set();
+        for (const i of sel.selectedIndices) {
+          if (i < drag.index) nextIndices.add(i);
+          else if (i > drag.index) nextIndices.add(i - 1);
+        }
+        sel.selectedIndices = nextIndices;
+        this.applyDirectPath();
+        if (this.onDirectEditCommit) this.onDirectEditCommit();
+        this.directDrag = null;
+        this.draw();
+        return;
       }
       this.directDrag = null;
       if (moved && this.onDirectEditCommit) this.onDirectEditCommit();
@@ -6044,6 +6078,18 @@
       if (this.directSelection) {
         const data = this.getDirectSelectionWorldAnchors();
         if (data) this._drawSelectionGeometry(this.directSelection, data.anchors);
+        if (this.directDrag?.mergeTarget != null && data) {
+          const wa = data.anchors[this.directDrag.mergeTarget];
+          if (wa) {
+            const r = 3.2 / this.scale;
+            this.ctx.strokeStyle = getThemeToken('--render-direct-stroke', '#22d3ee');
+            this.ctx.lineWidth = 1.1 / this.scale;
+            this.ctx.setLineDash([]);
+            this.ctx.beginPath();
+            this.ctx.arc(wa.x, wa.y, r * 2.2, 0, Math.PI * 2);
+            this.ctx.stroke();
+          }
+        }
       }
       for (const auxSel of this.directAuxSelections || []) {
         const data = this._selectionWorldAnchors(auxSel);

@@ -304,7 +304,12 @@
           modifier: layer.modifier ? JSON.parse(JSON.stringify(layer.modifier)) : null,
           sourcePaths:
             usesManualSourceGeometry(layer) && layer.sourcePaths
-              ? JSON.parse(JSON.stringify(layer.sourcePaths))
+              ? layer.sourcePaths.map((path) =>
+                  Array.isArray(path)
+                    ? { points: path.map((pt) => ({ x: pt.x, y: pt.y })),
+                        meta: path.meta ? JSON.parse(JSON.stringify(path.meta)) : null }
+                    : path
+                )
               : null,
           compound: layer.type === 'compound' && layer.compound
             ? {
@@ -356,7 +361,17 @@
         layer.groupCollapsed = Boolean(data.groupCollapsed);
         layer.modifier = data.modifier ? JSON.parse(JSON.stringify(data.modifier)) : null;
         layer.sourcePaths =
-          usesManualSourceGeometry(layer) && data.sourcePaths ? JSON.parse(JSON.stringify(data.sourcePaths)) : null;
+          usesManualSourceGeometry(layer) && Array.isArray(data.sourcePaths)
+            ? data.sourcePaths.map((item) => {
+                if (!item) return null;
+                if (Array.isArray(item)) {
+                  return item.map((pt) => ({ x: pt.x, y: pt.y }));
+                }
+                const p = (item.points || []).map((pt) => ({ x: pt.x, y: pt.y }));
+                if (item.meta) p.meta = item.meta;
+                return p;
+              })
+            : null;
         const importedMask = data.mask ? JSON.parse(JSON.stringify(data.mask)) : null;
         const isLegacySourceMask = Array.isArray(importedMask?.sourceIds) && importedMask.sourceIds.length > 0;
         layer.mask = {
