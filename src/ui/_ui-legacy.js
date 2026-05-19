@@ -7219,7 +7219,7 @@
       layer.params.scaleX = 1;
       layer.params.scaleY = 1;
       layer.params.rotation = 0;
-      layer.params.curves = inheritsCurves ? Boolean(active?.params?.curves) : shapeUsesCurves;
+      layer.params.curves = inheritsCurves ? false : shapeUsesCurves;
       layer.params.smoothing = 0;
       layer.params.simplify = 0;
       const activeParent = active?.parentId ? engine.getLayerById(active.parentId) : null;
