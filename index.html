@@ -811,6 +811,12 @@
   <!-- Phase 3 closure: ui-noise-rack.js dissolved into panels/noise-rack-panel.js. -->
   <script src="./src/ui/ui-file-io.js" defer></script>
   <!-- Phase 3 closure: ui-auto-colorize.js dissolved into panels/auto-colorize-panel.js. -->
+  <!-- Meridian Unit 1.5: wave/noise option tables + algo NOISE_DEFS + Petalis
+       registry data (extracted from _ui-legacy.js). Must load BEFORE
+       controls-registry.js + _ui-legacy.js so window.Vectura.UI.ControlDefsData
+       and window.Vectura._UINoiseDefs are populated by the time downstream
+       satellites consume them. -->
+  <script src="./src/ui/panels/control-defs-data.js" defer></script>
   <script src="./src/ui/controls-registry.js" defer></script>
   <script src="./src/ui/panels/algo-config-panel.js" defer></script>
   <script src="./src/ui/shell/theme-switcher.js" defer></script>
