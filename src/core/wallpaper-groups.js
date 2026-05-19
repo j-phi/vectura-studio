@@ -354,8 +354,8 @@
             (pt) => rotPt(pt, rot3.x, rot3.y, 120),
             (pt) => rotPt(pt, rot3.x, rot3.y, 240),
             (pt) => reflPt(pt, O.x, O.y, angleA1),
-            (pt) => reflPt(pt, O.x, O.y, angleA2),
             (pt) => reflPt(pt, O.x, O.y, angleA1 + 60),
+            (pt) => reflPt(pt, O.x, O.y, angleA1 + 120),
           ],
           fundamentalDomain: [O, P(0.5, 0), rot3],
         };
@@ -426,6 +426,22 @@
     };
   };
 
+  // Which tile parameters does each lattice actually consume? Square and
+  // hexagonal lattices force H = W and a fixed cell angle, so the
+  // tileHeight / tileAngle sliders have no effect there. Rhombic lattices
+  // use sz = W internally (H ignored) but still honor tileAngle.
+  const LOCKED_AXES = {
+    square:      { tileHeight: true,  tileAngle: true  },
+    hexagonal:   { tileHeight: true,  tileAngle: true  },
+    rhombic:     { tileHeight: true,  tileAngle: false },
+    rectangular: { tileHeight: false, tileAngle: false },
+    oblique:     { tileHeight: false, tileAngle: false },
+  };
+  const getLockedAxes = (groupId) => {
+    const lat = GROUPS[groupId]?.lattice;
+    return LOCKED_AXES[lat] || { tileHeight: false, tileAngle: false };
+  };
+
   window.Vectura = window.Vectura || {};
-  window.Vectura.WallpaperGroups = { GROUPS, GROUP_IDS, getTileRange, getCell, rotPt, reflPt };
+  window.Vectura.WallpaperGroups = { GROUPS, GROUP_IDS, getTileRange, getCell, rotPt, reflPt, getLockedAxes };
 })();
