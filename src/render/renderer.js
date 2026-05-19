@@ -397,6 +397,7 @@
       this.penDraft = null;
       this.penPreview = null;
       this.isPenDragging = false;
+      this.isPenCloseDragging = false;
       this.penDragAnchor = null;
       this.penDragStart = null;
       this._penLastClick = null;
@@ -411,6 +412,7 @@
       this._lastAlgoTap = { time: 0, x: 0, y: 0 };
       this.directSelection = null;
       this.directDrag = null;
+      this.penAnchorDrag = null;
       this.directAuxSelections = [];
       this.isDirectMarquee = false;
       this.directMarqueeStart = null;
@@ -568,6 +570,7 @@
         this.penDragAnchor = null;
         this.penDragStart = null;
         this.penPurpose = 'draw';
+        this.penAnchorDrag = null;
       }
       if (!`${tool}`.startsWith('shape-')) {
         this.shapeDraft = null;
@@ -1210,7 +1213,12 @@
           }
         }
         this.penDraft.closed = true;
-        this.commitPenPath();
+        // Enter close-drag: user can drag to curve the closing segment before commit.
+        this.isPenDragging = true;
+        this.isPenCloseDragging = true;
+        this.penDragAnchor = 0;
+        this.penDragStart = { x: first.x, y: first.y };
+        this.draw();
         return;
       }
       const anchor = this.createAnchor(next);
@@ -1259,6 +1267,7 @@
       this.penDraft = null;
       this.penPreview = null;
       this.isPenDragging = false;
+      this.isPenCloseDragging = false;
       this.penDragAnchor = null;
       this.penDragStart = null;
       this._penLastClick = null;
@@ -1270,6 +1279,7 @@
       this.penDraft = null;
       this.penPreview = null;
       this.isPenDragging = false;
+      this.isPenCloseDragging = false;
       this.penDragAnchor = null;
       this.penDragStart = null;
       this._penLastClick = null;
@@ -2290,14 +2300,17 @@
           }
         }
       } else {
-        anchor[drag.type] = { x: next.x, y: next.y };
         const modifiers = this.getModifierState(e);
-        if (!modifiers.alt) {
+        if (modifiers.shift) next = this.snapPenAngle(anchor, next);
+        anchor[drag.type] = { x: next.x, y: next.y };
+        const mirror = drag.type === 'in' ? 'out' : 'in';
+        if (!modifiers.alt && anchor[mirror] !== null) {
           const dx = anchor.x - next.x;
           const dy = anchor.y - next.y;
-          const mirror = drag.type === 'in' ? 'out' : 'in';
           anchor[mirror] = { x: anchor.x + dx, y: anchor.y + dy };
         }
+        drag.lastWorld = world;
+        drag.mirroring = !modifiers.alt && anchor[mirror] !== null;
       }
       drag.moved = true;
       this.applyDirectPath();
@@ -2310,7 +2323,26 @@
 
     endDirectDrag() {
       if (!this.directDrag) return;
-      const moved = this.directDrag.moved;
+      const drag = this.directDrag;
+      const moved = drag.moved;
+      if (moved && (drag.type === 'in' || drag.type === 'out') && drag.lastWorld && this.directSelection) {
+        const layer = this.getDirectSelectionLayer();
+        const anchor = this.directSelection.anchors[drag.index];
+        if (layer && anchor) {
+          const anchorWorld = this.sourceToWorldPoint(layer, anchor);
+          const snapTol = 3 / this.scale;
+          if (Math.hypot(drag.lastWorld.x - anchorWorld.x, drag.lastWorld.y - anchorWorld.y) <= snapTol) {
+            if (!drag.historyPushed && this.onDirectEditStart) this.onDirectEditStart();
+            if (drag.mirroring) {
+              anchor.in = null;
+              anchor.out = null;
+            } else {
+              anchor[drag.type] = null;
+            }
+            this.applyDirectPath();
+          }
+        }
+      }
       this.directDrag = null;
       if (moved && this.onDirectEditCommit) this.onDirectEditCommit();
       this.draw();
@@ -2418,6 +2450,30 @@
       if (this.onDirectEditCommit) this.onDirectEditCommit();
       this.draw();
       return true;
+    }
+
+    _handlePenAnchorDown(world, e) {
+      if (!this.directSelection) {
+        const hit = this.findPathHitAtPoint(world);
+        if (hit) {
+          this.selectLayer(hit.layer);
+          this.setDirectSelection(hit.layer, hit.pathIndex);
+          this.draw();
+        }
+        return true;
+      }
+      const control = this.hitDirectControl(world);
+      if (control) {
+        if (control.type === 'in' || control.type === 'out') {
+          this.startDirectDrag(control, e);
+          return true;
+        }
+        if (control.type === 'anchor') {
+          this.penAnchorDrag = { index: control.index, historyPushed: false, moved: false };
+          return true;
+        }
+      }
+      return this.toggleAnchorFromWorld(world);
     }
 
     resize() {
@@ -3493,7 +3549,7 @@
         let handled = false;
         if (this.penMode === 'add') handled = this.insertAnchorFromWorld(world);
         if (this.penMode === 'delete') handled = this.removeAnchorFromWorld(world);
-        if (this.penMode === 'anchor') handled = this.toggleAnchorFromWorld(world);
+        if (this.penMode === 'anchor') handled = this._handlePenAnchorDown(world, e);
         if (!handled) {
           const hit = this.findPathHitAtPoint(world);
           if (hit) {
@@ -3875,6 +3931,44 @@
         return;
       }
 
+      if (this.penAnchorDrag && this.activeTool === 'pen' && this.penMode === 'anchor') {
+        const rect = this.canvas.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        const world = this.screenToWorld(sx, sy);
+        const drag = this.penAnchorDrag;
+        const layer = this.getDirectSelectionLayer();
+        const anchor = this.directSelection?.anchors[drag.index];
+        if (layer && anchor) {
+          if (!drag.historyPushed) {
+            if (this.onDirectEditStart) this.onDirectEditStart();
+            this.markDirectSelectionAsCustomPath();
+            drag.historyPushed = true;
+          }
+          const modifiers = this.getModifierState(e);
+          const anchorWorld = this.sourceToWorldPoint(layer, anchor);
+          const distWorld = Math.hypot(world.x - anchorWorld.x, world.y - anchorWorld.y);
+          const minDist = 2 / this.scale;
+          if (distWorld <= minDist) {
+            anchor.out = null;
+            anchor.in = null;
+          } else {
+            let next = this.worldToSourcePoint(layer, world);
+            if (modifiers.shift) next = this.snapPenAngle(anchor, next);
+            anchor.out = { x: next.x, y: next.y };
+            if (!modifiers.alt) {
+              const dx = next.x - anchor.x;
+              const dy = next.y - anchor.y;
+              anchor.in = { x: anchor.x - dx, y: anchor.y - dy };
+            }
+          }
+          drag.moved = true;
+          this.applyDirectPath();
+          this.draw();
+        }
+        return;
+      }
+
       if (this.directDrag) {
         const rect = this.canvas.getBoundingClientRect();
         const sx = e.clientX - rect.left;
@@ -4042,13 +4136,24 @@
             const target = modifiers.shift ? this.snapPenAngle(anchor, next) : next;
             const dist = Math.hypot(target.x - anchor.x, target.y - anchor.y);
             const minDist = 2 / this.scale;
-            if (dist <= minDist) {
-              anchor.in = null;
-              anchor.out = null;
+            if (this.isPenCloseDragging) {
+              // Only update anchor[0].in — controls the incoming curve of the closing segment.
+              // Do not touch anchor[0].out (set when the path was started).
+              if (dist <= minDist) {
+                anchor.in = null;
+              } else {
+                const vec = { x: target.x - anchor.x, y: target.y - anchor.y };
+                anchor.in = { x: anchor.x - vec.x, y: anchor.y - vec.y };
+              }
             } else {
-              this.setAnchorHandles(anchor, target, { breakHandle: modifiers.alt });
+              if (dist <= minDist) {
+                anchor.in = null;
+                anchor.out = null;
+              } else {
+                this.setAnchorHandles(anchor, target, { breakHandle: modifiers.alt });
+              }
+              this.penPreview = target;
             }
-            this.penPreview = target;
           }
         } else {
           const last = anchors[anchors.length - 1];
@@ -4200,9 +4305,24 @@
         this.updateCursor();
       }
       if (this.isPenDragging) {
+        const wasCloseDrag = this.isPenCloseDragging;
         this.isPenDragging = false;
+        this.isPenCloseDragging = false;
         this.penDragAnchor = null;
         this.penDragStart = null;
+        if (wasCloseDrag) {
+          this.commitPenPath();
+          clearActivePointer();
+          return;
+        }
+      }
+      if (this.penAnchorDrag) {
+        const drag = this.penAnchorDrag;
+        this.penAnchorDrag = null;
+        if (drag.moved && this.onDirectEditCommit) this.onDirectEditCommit();
+        this.draw();
+        clearActivePointer();
+        return;
       }
       if (this.algoDraft) {
         this.commitAlgoDraft();
@@ -5978,6 +6098,11 @@
           const c1 = a.out || a;
           const c2 = b.in || b;
           this.ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, b.x, b.y);
+        }
+        if (this.penDraft?.closed && previewAnchors.length > 2) {
+          const a = previewAnchors[previewAnchors.length - 1];
+          const b = previewAnchors[0];
+          this.ctx.bezierCurveTo((a.out || a).x, (a.out || a).y, (b.in || b).x, (b.in || b).y, b.x, b.y);
         }
       }
       this.ctx.stroke();
