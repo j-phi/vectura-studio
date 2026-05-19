@@ -613,8 +613,8 @@
       case 'line':      return { angle: 90, xShift: 0, yShift: 0, replacedSide: 'positive' };
       case 'radial':    return { mode: 'dihedral', count: 6, angle: 0, centerX: 0, centerY: 0 };
       case 'arc':       return { centerX: 0, centerY: 0, radius: 80, arcStart: -180, arcEnd: 180,
-                                 replacedSide: 'outer', strength: 100, falloff: 0, clipToArc: false,
-                                 rotationOffset: 0, copies: 1 };
+                                 replacedSide: 'outer', strength: 100, falloff: 0, minRadius: 0,
+                                 clipToArc: false, rotationOffset: 0, copies: 1 };
       case 'wallpaper': return { group: 'p4m', tileWidth: 60, tileHeight: 60, tileAngle: 90,
                                  rotation: 0, centerX: 0, centerY: 0 };
     }
@@ -847,6 +847,15 @@
           <input type="range" class="mp-slider" min="0" max="100" value="${m.falloff}"
                  data-param="falloff" data-fmt="pct" style="--fill:${fillPct(m.falloff, 0, 100)}%;">
         </div>
+      </div>
+
+      <div class="mp-ctrl-row-2">
+        <div class="mp-ctrl-grp">
+          <div class="mp-ctrl-lbl">Min radius <span class="mp-val-tag" data-tag="minRadius">${Math.round(m.minRadius ?? 0)}</span></div>
+          <input type="range" class="mp-slider" min="0" max="400" value="${m.minRadius ?? 0}"
+                 data-param="minRadius" style="--fill:${fillPct(m.minRadius ?? 0, 0, 400)}%;">
+        </div>
+        <div class="mp-ctrl-grp"></div>
       </div>
 
       <div class="mp-ctrl-row-2">

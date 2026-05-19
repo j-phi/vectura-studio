@@ -392,6 +392,7 @@
     replacedSide: 'outer',
     strength: 100,
     falloff: 0,
+    minRadius: 0,
     clipToArc: false,
     rotationOffset: 0,
     copies: 1,
@@ -468,6 +469,7 @@
     const strength = Math.max(0, Math.min(100, mirror.strength ?? 100)) / 100;
     if (strength === 0) return (paths || []).map(clonePath).filter((p) => p.length >= 2);
     const falloff = Math.max(0, Math.min(100, mirror.falloff ?? 0)) / 100;
+    const minR = Math.max(0, mirror.minRadius ?? 0);
     const arcStartRad = ((mirror.arcStart ?? -180) * Math.PI) / 180;
     const arcEndRad = ((mirror.arcEnd ?? 180) * Math.PI) / 180;
     const arcMidRad = (arcStartRad + arcEndRad) / 2;
@@ -520,7 +522,9 @@
       const subs = [];
       let cur = [];
       for (const pt of path) {
-        if (Math.abs(pt.x) > maxCoord || Math.abs(pt.y) > maxCoord) {
+        const tooFar = Math.abs(pt.x) > maxCoord || Math.abs(pt.y) > maxCoord;
+        const tooClose = minR > 0 && Math.hypot(pt.x - cx, pt.y - cy) < minR;
+        if (tooFar || tooClose) {
           if (cur.length >= 2) subs.push(cur);
           cur = [];
         } else {
