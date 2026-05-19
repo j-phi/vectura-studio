@@ -10,6 +10,7 @@
  *   - addPen / removePen
  *   - initPaletteControls (deferred from step 3 — large pens-panel method)
  *   - renderPens
+ *   - getPenById / applyArmedPenToLayers (Unit 1.6 — pen-workflow application)
  *
  * The legacy UI prototype delegates to this module via 1-line
  * pass-throughs. Function bodies still reference `this.*` methods that
@@ -414,6 +415,32 @@
   }
 
 
+  function getPenById(id) {
+    const { SETTINGS } = requireDeps('getPenById');
+    return (SETTINGS.pens || []).find((pen) => pen.id === id) || null;
+  }
+
+  function applyArmedPenToLayers(targetLayers) {
+    requireDeps('applyArmedPenToLayers');
+    if (!this.armedPenId) return false;
+    const pen = this.getPenById(this.armedPenId);
+    if (!pen) return false;
+    const layers = Array.isArray(targetLayers) ? targetLayers.filter(Boolean) : [];
+    if (!layers.length) return false;
+    if (this.app.pushHistory) this.app.pushHistory();
+    layers.forEach((layer) => {
+      layer.penId = pen.id;
+      layer.color = pen.color;
+      layer.strokeWidth = pen.width;
+      if (!layer.lineCap) layer.lineCap = 'round';
+    });
+    this.clearArmedPen();
+    this.renderLayers();
+    this.app.render();
+    return true;
+  }
+
+
   UI.PensPanel = {
     /**
      * Inject closure-captured legacy ui.js IIFE locals.
@@ -433,6 +460,8 @@
     removePen,
     initPaletteControls,
     renderPens,
+    getPenById,
+    applyArmedPenToLayers,
     installOn(proto) {
       proto.setArmedPen = function(penId) { return setArmedPen.call(this, penId); };
       proto.clearArmedPen = function() { return clearArmedPen.call(this); };
@@ -444,6 +473,8 @@
       proto.removePen = function(penId) { return removePen.call(this, penId); };
       proto.initPaletteControls = function() { return initPaletteControls.call(this); };
       proto.renderPens = function() { return renderPens.call(this); };
+      proto.getPenById = function(id) { return getPenById.call(this, id); };
+      proto.applyArmedPenToLayers = function(targetLayers) { return applyArmedPenToLayers.call(this, targetLayers); };
     },
   };
 })();

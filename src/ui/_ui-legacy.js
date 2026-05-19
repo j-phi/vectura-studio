@@ -1760,33 +1760,10 @@
     // rememberDrawableLayerType, getPreferredNewLayerType) are installed onto
     // UI.prototype by their satellites' installOn() calls at IIFE bottom.
 
-    getPenById(id) {
-      return (SETTINGS.pens || []).find((pen) => pen.id === id) || null;
-    }
-
     // pens-panel methods (setArmedPen, clearArmedPen, refreshArmedPenUI,
     // getPaletteList, getActivePalette, applyPaletteToPens, addPen, removePen,
-    // initPaletteControls, renderPens) are installed onto UI.prototype by
-    // PensPanel.installOn() at IIFE bottom.
-
-    applyArmedPenToLayers(targetLayers) {
-      if (!this.armedPenId) return false;
-      const pen = this.getPenById(this.armedPenId);
-      if (!pen) return false;
-      const layers = Array.isArray(targetLayers) ? targetLayers.filter(Boolean) : [];
-      if (!layers.length) return false;
-      if (this.app.pushHistory) this.app.pushHistory();
-      layers.forEach((layer) => {
-        layer.penId = pen.id;
-        layer.color = pen.color;
-        layer.strokeWidth = pen.width;
-        if (!layer.lineCap) layer.lineCap = 'round';
-      });
-      this.clearArmedPen();
-      this.renderLayers();
-      this.app.render();
-      return true;
-    }
+    // initPaletteControls, renderPens, getPenById, applyArmedPenToLayers) are
+    // installed onto UI.prototype by PensPanel.installOn() at IIFE bottom.
 
     shouldLeaveParentScope(layer, prevId, nextId, selectedIds = new Set()) {
       if (!layer?.parentId || selectedIds.has(layer.parentId)) return false;

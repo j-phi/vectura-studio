@@ -41,7 +41,7 @@ describe('pens-panel compile gate', () => {
 
   afterAll(() => dom?.window?.close?.());
 
-  it('exposes window.Vectura.UI.PensPanel with bind + 10 methods', () => {
+  it('exposes window.Vectura.UI.PensPanel with bind + 12 methods', () => {
     expect(PensPanel).toBeTruthy();
     expect(typeof PensPanel.bind).toBe('function');
     expect(typeof PensPanel.setArmedPen).toBe('function');
@@ -54,10 +54,87 @@ describe('pens-panel compile gate', () => {
     expect(typeof PensPanel.removePen).toBe('function');
     expect(typeof PensPanel.initPaletteControls).toBe('function');
     expect(typeof PensPanel.renderPens).toBe('function');
+    expect(typeof PensPanel.getPenById).toBe('function');
+    expect(typeof PensPanel.applyArmedPenToLayers).toBe('function');
   });
 
   it('renderPens throws a clear error before bind()', () => {
     expect(() => PensPanel.renderPens.call({})).toThrow(/PensPanel\.renderPens invoked before PensPanel\.bind/);
+  });
+
+  it('getPenById returns the pen matching a known id, null when absent', () => {
+    const pens = [
+      { id: 'pen-a', name: 'A', color: '#fff', width: 0.3 },
+      { id: 'pen-b', name: 'B', color: '#000', width: 0.5 },
+    ];
+    PensPanel.bind({
+      getEl: () => null,
+      escapeHtml: (s) => `${s}`,
+      SETTINGS: { pens },
+      PALETTES: [],
+      getThemeToken: () => '#000',
+    });
+    expect(PensPanel.getPenById.call({}, 'pen-b')).toEqual(pens[1]);
+    expect(PensPanel.getPenById.call({}, 'pen-missing')).toBeNull();
+  });
+
+  it('applyArmedPenToLayers assigns armed pen onto layers and clears arming', () => {
+    const pens = [{ id: 'pen-a', name: 'A', color: '#abcdef', width: 0.7 }];
+    PensPanel.bind({
+      getEl: () => null,
+      escapeHtml: (s) => `${s}`,
+      SETTINGS: { pens },
+      PALETTES: [],
+      getThemeToken: () => '#000',
+    });
+    let clearedArmed = false;
+    let renderedLayers = false;
+    let appRendered = false;
+    let pushed = 0;
+    const layer = { id: 'layer-1' };
+    const ctx = {
+      armedPenId: 'pen-a',
+      getPenById: PensPanel.getPenById,
+      clearArmedPen() { clearedArmed = true; },
+      renderLayers() { renderedLayers = true; },
+      app: {
+        pushHistory() { pushed++; },
+        render() { appRendered = true; },
+      },
+    };
+    const result = PensPanel.applyArmedPenToLayers.call(ctx, [layer]);
+    expect(result).toBe(true);
+    expect(layer.penId).toBe('pen-a');
+    expect(layer.color).toBe('#abcdef');
+    expect(layer.strokeWidth).toBe(0.7);
+    expect(layer.lineCap).toBe('round');
+    expect(clearedArmed).toBe(true);
+    expect(renderedLayers).toBe(true);
+    expect(appRendered).toBe(true);
+    expect(pushed).toBe(1);
+  });
+
+  it('applyArmedPenToLayers returns false with no armed pen / no targets / unknown id', () => {
+    PensPanel.bind({
+      getEl: () => null,
+      escapeHtml: (s) => `${s}`,
+      SETTINGS: { pens: [{ id: 'pen-a', name: 'A', color: '#fff', width: 0.3 }] },
+      PALETTES: [],
+      getThemeToken: () => '#000',
+    });
+    const noArm = PensPanel.applyArmedPenToLayers.call({ armedPenId: null }, [{}]);
+    expect(noArm).toBe(false);
+    const noPen = PensPanel.applyArmedPenToLayers.call({ armedPenId: 'pen-ghost', getPenById: PensPanel.getPenById }, [{}]);
+    expect(noPen).toBe(false);
+    const noTargets = PensPanel.applyArmedPenToLayers.call({ armedPenId: 'pen-a', getPenById: PensPanel.getPenById }, []);
+    expect(noTargets).toBe(false);
+  });
+
+  it('installOn installs getPenById and applyArmedPenToLayers on the prototype', () => {
+    class FakeUI {}
+    PensPanel.installOn(FakeUI.prototype);
+    expect(typeof FakeUI.prototype.getPenById).toBe('function');
+    expect(typeof FakeUI.prototype.applyArmedPenToLayers).toBe('function');
   });
 
   it('after bind(deps), renderPens returns silently when #pen-list is absent', () => {
