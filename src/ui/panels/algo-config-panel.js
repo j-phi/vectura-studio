@@ -368,7 +368,7 @@
     }
 
     if (isModifier) {
-      this.buildMirrorModifierControls(layer, container);
+      window.Vectura.UI.MirrorPanel.build(this, layer, container);
       restoreLeftPanelScroll();
       return;
     }

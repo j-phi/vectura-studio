@@ -183,10 +183,14 @@ describe('Undo/redo layer-structure integration', () => {
     expect(app.engine.layers.find((layer) => layer.id === baseLayer.id)?.parentId).toBe(modifier.id);
 
     const controls = window.document.createElement('div');
-    app.ui.buildMirrorModifierControls(modifier, controls);
-    const angleInput = controls.querySelector('input[type="number"]');
+    // The mirror panel was extracted to src/ui/panels/mirror-panel.js;
+    // call its build() entry point with the UI ctx instead of the removed
+    // app.ui.buildMirrorModifierControls method.
+    window.Vectura.UI.MirrorPanel.build(app.ui, modifier, controls);
+    const angleInput = controls.querySelector('input[type="range"][data-param="angle"]');
     const initialAngle = modifier.modifier.mirrors[0].angle;
     angleInput.value = '45';
+    angleInput.dispatchEvent(new window.Event('input', { bubbles: true }));
     angleInput.dispatchEvent(new window.Event('change', { bubbles: true }));
     expect(modifier.modifier.mirrors[0].angle).toBe(45);
 
