@@ -321,6 +321,65 @@ describe('PaintBucketOps.generateGeometryForLayer', () => {
   });
 });
 
+describe('PaintBucketOps — barrier sub-region gap bridging', () => {
+  // Real segment-segment intersection used for geometry correctness.
+  const segInt = (a, b, c, d) => {
+    const rx = b.x - a.x, ry = b.y - a.y;
+    const sx = d.x - c.x, sy = d.y - c.y;
+    const denom = rx * sy - ry * sx;
+    if (Math.abs(denom) < 1e-10) return null;
+    const tx = c.x - a.x, ty = c.y - a.y;
+    const t = (tx * sy - ty * sx) / denom;
+    const u = (tx * ry - ty * rx) / denom;
+    const EPS = 1e-8;
+    if (t < -EPS || t > 1 + EPS || u < -EPS || u > 1 + EPS) return null;
+    return { t: Math.max(0, Math.min(1, t)), u: Math.max(0, Math.min(1, u)), x: a.x + rx * t, y: a.y + ry * t };
+  };
+
+  beforeEach(() => {
+    globalThis.Vectura.PathBoolean = { segmentIntersectSegment: segInt };
+    // Re-register so PathBoolean is visible to the module closure.
+    delete require.cache[require.resolve(path.resolve(__dirname, '../../src/core/paint-bucket-ops.js'))];
+    require(path.resolve(__dirname, '../../src/core/paint-bucket-ops.js'));
+  });
+
+  const makeOpenPath = (...pts) => pts.map(([x, y]) => ({ x, y }));
+
+  it('floating barrier inside ring does not create a virtual closing plane', () => {
+    // 100×100 square; barrier is a horizontal line at y=50, x=20..80.
+    // Endpoints are ~20 world units from the ring boundary — far beyond any
+    // reasonable gapThreshold at sensitivity=1 (gapThreshold=5).
+    // Cursor at (50,75) is in the bottom half.
+    // Bug: SH fallback creates virtual plane and fills only the bottom half (area~5000).
+    // Fix: barrier is skipped; stack[0] is the full ring (area~10000).
+    const ring = makeLayer('A', [closedRect(0, 0, 100, 100)]);
+    const barrier = makeLayer('B', [makeOpenPath([20, 50], [80, 50])]);
+    const engine = fakeEngine(ring, barrier);
+
+    const { stack } = globalThis.Vectura.PaintBucketOps.findFillTargetStack(engine, 50, 75, { sensitivity: 1 });
+    const fullRingArea = 100 * 100;
+    // The sub-region (if created by the bug) would be ~5000; the fix leaves
+    // stack[0] as the full ring entry (~10000).
+    expect(stack[0].area).toBeGreaterThan(fullRingArea * 0.98);
+  });
+
+  it('barrier endpoints near ring boundary are bridged when within gapThreshold', () => {
+    // 100×100 square; barrier at y=50, x=0.5..99.5 — only 0.5 units from boundary.
+    // sensitivity=5 → gapThreshold=25, easily spans the 0.5-unit gap.
+    // Cursor at (50,25) is in the top half. With snapping the barrier IS applied;
+    // the sub-region should be roughly the top half (area~5000).
+    const ring = makeLayer('A', [closedRect(0, 0, 100, 100)]);
+    const barrier = makeLayer('B', [makeOpenPath([0.5, 50], [99.5, 50])]);
+    const engine = fakeEngine(ring, barrier);
+
+    const { stack } = globalThis.Vectura.PaintBucketOps.findFillTargetStack(engine, 50, 25, { sensitivity: 5 });
+    const fullRingArea = 100 * 100;
+    // Sub-region should be significantly smaller than the full ring.
+    expect(stack[0].area).toBeLessThan(fullRingArea * 0.98);
+    expect(stack[0].area).toBeGreaterThan(fullRingArea * 0.3);
+  });
+});
+
 describe('PaintBucketOps.expandFill', () => {
   const buildFillRec = (id, region, opts = {}) => ({
     id,

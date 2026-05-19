@@ -54,79 +54,172 @@
 
   const clonePolygon = (poly) => poly.map((pt) => ({ x: pt.x, y: pt.y }));
 
-  // Collect every open-path segment (non-closed-ring) from all eligible layers.
-  // Used in all-objects mode to treat pen strokes as fill barriers.
-  const collectBarrierSegments = (engine, tolerance) => {
-    const segs = [];
+  // Collect every open path (non-closed-ring) from all eligible layers.
+  // Returns whole path arrays so that findSubRegionByClipping can use the
+  // overall first→last direction (one clip plane per path, not per segment).
+  const collectBarrierPaths = (engine, tolerance) => {
+    const paths = [];
     for (const layer of (engine?.layers || [])) {
       if (!isLayerEligible(layer)) continue;
-      if (Array.isArray(layer.fills) && layer.fills.length > 0) continue;
       for (const p of getLayerPaths(engine, layer)) {
         if (isClosedRing(p, tolerance)) continue;
-        for (let i = 1; i < p.length; i++) segs.push([p[i - 1], p[i]]);
+        if (p.length >= 2) paths.push(p);
       }
     }
-    return segs;
+    return paths;
   };
 
-  // Sutherland-Hodgman half-plane clipping. For each barrier segment (a→b),
-  // clip the outer ring polygon by the infinite line through a→b, keeping
-  // the half-plane that contains the cursor. Result is cursor-position-
-  // independent within a face (stable) and follows the ring's actual polygon
-  // vertices (smooth arcs on circles, exact edges on polygons).
-  const findSubRegionByClipping = (outerRing, barrierSegs, px, py) => {
+  // Chord-bisect region detection. For each barrier path, find where it
+  // intersects the outer ring, build the two arc-bounded half-regions, and
+  // return whichever half contains the cursor. Handles curved and multi-vertex
+  // barriers correctly because it uses the actual path shape (not just the
+  // first→last endpoint direction).
+  //
+  // Fallback: if a barrier has < 2 ring intersections (e.g. a Y-branch that
+  // starts at the ring boundary and ends inside), falls back to SH half-plane
+  // clip by first→last direction, which is correct for those straight spokes.
+  const findSubRegionByClipping = (outerRing, barrierPaths, px, py, gapThreshold = 0) => {
+    const segInt = G.Vectura?.PathBoolean?.segmentIntersectSegment || null;
+    if (!segInt) return null;
     const cross2d = (ux, uy, vx, vy) => ux * vy - uy * vx;
 
-    // Build open-polygon list (strip duplicate closing point if present)
-    let poly = [];
-    for (let i = 0; i < outerRing.length; i++) {
-      if (i === outerRing.length - 1) {
-        const f = outerRing[0], pt = outerRing[i];
-        if (Math.abs(pt.x - f.x) < 1e-9 && Math.abs(pt.y - f.y) < 1e-9) break;
+    // Strips the duplicate closing point so we work with an open vertex list.
+    const toOpen = (ring) => {
+      const pts = ring.slice();
+      const f = pts[0], l = pts[pts.length - 1];
+      if (pts.length > 1 && Math.abs(f.x - l.x) < 1e-9 && Math.abs(f.y - l.y) < 1e-9) {
+        pts.pop();
       }
-      poly.push({ x: outerRing[i].x, y: outerRing[i].y });
-    }
-    if (poly.length < 3) return null;
+      return pts;
+    };
+    const close = (pts) => [...pts, { x: pts[0].x, y: pts[0].y }];
 
-    for (const [sa, sb] of barrierSegs) {
-      const dx = sb.x - sa.x;
-      const dy = sb.y - sa.y;
-      if (dx * dx + dy * dy < 1e-12) continue;
-
-      const cursorSide = cross2d(dx, dy, px - sa.x, py - sa.y);
-      if (Math.abs(cursorSide) < 1e-9) continue; // cursor lies on the barrier line
-
-      const n = poly.length;
+    // Sutherland-Hodgman half-plane fallback (for straight Y-spoke barriers).
+    const shClip = (openPoly, anchor, dx, dy, side) => {
+      const n = openPoly.length;
       const out = [];
       for (let i = 0; i < n; i++) {
-        const curr = poly[i];
-        const next = poly[(i + 1) % n];
-        const sCurr = cross2d(dx, dy, curr.x - sa.x, curr.y - sa.y);
-        const sNext = cross2d(dx, dy, next.x - sa.x, next.y - sa.y);
-        // Keep vertex when it's on the cursor's side (or exactly on the line)
-        const currIn = sCurr * cursorSide >= 0;
-        const nextIn = sNext * cursorSide >= 0;
-
-        if (currIn) out.push(curr);
-
-        // Edge crosses the clip line — insert exact intersection point
-        if (currIn !== nextIn) {
-          const denom = cross2d(dx, dy, next.x - curr.x, next.y - curr.y);
-          if (Math.abs(denom) > 1e-10) {
-            const t = Math.max(0, Math.min(1,
-              cross2d(dx, dy, sa.x - curr.x, sa.y - curr.y) / denom));
+        const curr = openPoly[i], next = openPoly[(i + 1) % n];
+        const sc = cross2d(dx, dy, curr.x - anchor.x, curr.y - anchor.y);
+        const sn = cross2d(dx, dy, next.x - anchor.x, next.y - anchor.y);
+        if (sc * side >= 0) out.push(curr);
+        if ((sc * side >= 0) !== (sn * side >= 0)) {
+          const den = cross2d(dx, dy, next.x - curr.x, next.y - curr.y);
+          if (Math.abs(den) > 1e-10) {
+            const t = Math.max(0, Math.min(1, cross2d(dx, dy, anchor.x - curr.x, anchor.y - curr.y) / den));
             out.push({ x: curr.x + t * (next.x - curr.x), y: curr.y + t * (next.y - curr.y) });
           }
         }
       }
+      return out;
+    };
 
-      if (out.length < 3) continue; // barrier clips too aggressively — skip it
-      poly = out;
+    let openPoly = toOpen(outerRing);
+    if (openPoly.length < 3) return null;
+
+    for (const barrier of barrierPaths) {
+      if (barrier.length < 2) continue;
+      const closed = close(openPoly);
+      const nSegs = closed.length - 1;
+
+      // Intersect every barrier segment against every ring segment.
+      const hits = [];
+      for (let bi = 0; bi < barrier.length - 1; bi++) {
+        for (let ri = 0; ri < nSegs; ri++) {
+          const h = segInt(barrier[bi], barrier[bi + 1], closed[ri], closed[ri + 1]);
+          if (!h) continue;
+          const pt = { x: h.x, y: h.y, barrierT: bi + h.t, ringT: ri + h.u };
+          if (!hits.some(q => Math.abs(q.x - pt.x) < 1e-6 && Math.abs(q.y - pt.y) < 1e-6)) {
+            hits.push(pt);
+          }
+        }
+      }
+
+      if (hits.length < 2) {
+        // Barrier doesn't chord the ring. Try snapping its endpoints to the
+        // nearest ring boundary point within gapThreshold. This bridges small
+        // gaps without creating a virtual closing line for barriers floating
+        // entirely inside the ring.
+        if (gapThreshold > 0) {
+          const trySnap = (ep, barrierIdx) => {
+            let best = null, bestDist = Infinity;
+            for (let ri = 0; ri < nSegs; ri++) {
+              const A = closed[ri], B = closed[ri + 1];
+              const ABx = B.x - A.x, ABy = B.y - A.y;
+              const len2 = ABx * ABx + ABy * ABy;
+              const t = len2 > 1e-12
+                ? Math.max(0, Math.min(1, ((ep.x - A.x) * ABx + (ep.y - A.y) * ABy) / len2))
+                : 0;
+              const nx = A.x + t * ABx, ny = A.y + t * ABy;
+              const d = Math.hypot(ep.x - nx, ep.y - ny);
+              if (d < bestDist) { bestDist = d; best = { x: nx, y: ny, ringT: ri + t }; }
+            }
+            if (bestDist <= gapThreshold && best) {
+              if (!hits.some(q => Math.abs(q.x - best.x) < 1e-6 && Math.abs(q.y - best.y) < 1e-6)) {
+                hits.push({ x: best.x, y: best.y, barrierT: barrierIdx, ringT: best.ringT });
+              }
+            }
+          };
+          trySnap(barrier[0], 0);
+          trySnap(barrier[barrier.length - 1], barrier.length - 1);
+        }
+        if (hits.length < 2) continue;
+      }
+
+      // Sort intersections by ring parameter; use outermost two as chord endpoints.
+      hits.sort((a, b) => a.ringT - b.ringT);
+      const E1 = hits[0], E2 = hits[hits.length - 1];
+      const ri1 = Math.floor(E1.ringT), ri2 = Math.floor(E2.ringT);
+
+      // Forward arc: ring vertices from E1 to E2 (increasing index).
+      const arcFwd = [{ x: E1.x, y: E1.y }];
+      for (let i = ri1 + 1; i <= ri2 && i < nSegs; i++) arcFwd.push({ x: closed[i].x, y: closed[i].y });
+      arcFwd.push({ x: E2.x, y: E2.y });
+
+      // Backward arc: ring vertices from E2 back to E1 (wrapping around).
+      const arcBwd = [{ x: E2.x, y: E2.y }];
+      for (let i = ri2 + 1; i < nSegs; i++) arcBwd.push({ x: closed[i].x, y: closed[i].y });
+      for (let i = 0; i <= ri1; i++) arcBwd.push({ x: closed[i].x, y: closed[i].y });
+      arcBwd.push({ x: E1.x, y: E1.y });
+
+      // Barrier slice from min-barrierT hit to max-barrierT hit.
+      const byBarrierT = hits.slice().sort((a, b) => a.barrierT - b.barrierT);
+      const bh1 = byBarrierT[0], bh2 = byBarrierT[byBarrierT.length - 1];
+      const bSlice = [{ x: bh1.x, y: bh1.y }];
+      for (let i = Math.ceil(bh1.barrierT); i <= Math.floor(bh2.barrierT); i++) {
+        if (i >= 0 && i < barrier.length) {
+          const pt = barrier[i];
+          const prev = bSlice[bSlice.length - 1];
+          if (Math.abs(pt.x - prev.x) > 1e-9 || Math.abs(pt.y - prev.y) > 1e-9) {
+            bSlice.push({ x: pt.x, y: pt.y });
+          }
+        }
+      }
+      const prevLast = bSlice[bSlice.length - 1];
+      if (Math.abs(bh2.x - prevLast.x) > 1e-9 || Math.abs(bh2.y - prevLast.y) > 1e-9) {
+        bSlice.push({ x: bh2.x, y: bh2.y });
+      }
+
+      // Orient barrier slice so bSlice[0] corresponds to E1.
+      const bh1isE1 = Math.abs(bh1.ringT - E1.ringT) < Math.abs(bh1.ringT - E2.ringT);
+      const bE1toE2 = bh1isE1 ? bSlice : [...bSlice].reverse();
+      const bE2toE1 = [...bE1toE2].reverse();
+
+      // Region A: forward ring arc (E1→E2) + barrier back (E2→E1).
+      const regionA = close([...arcFwd, ...bE2toE1.slice(1)]);
+      // Region B: backward ring arc (E2→E1) + barrier forward (E1→E2).
+      const regionB = close([...arcBwd, ...bE1toE2.slice(1)]);
+
+      if (regionA.length >= 4 && polyContainsPoint(regionA, px, py)) {
+        openPoly = toOpen(regionA);
+      } else if (regionB.length >= 4 && polyContainsPoint(regionB, px, py)) {
+        openPoly = toOpen(regionB);
+      }
+      // else: degenerate, leave openPoly unchanged
     }
 
-    if (poly.length < 3) return null;
-    poly.push({ x: poly[0].x, y: poly[0].y }); // close
-    return poly;
+    const result = close(openPoly);
+    return result.length >= 4 ? result : null;
   };
 
   // Stable hash for the (layer + polygon) pair so drag-pour can detect
@@ -300,14 +393,18 @@
           if (pt.x < kMinX) kMinX = pt.x; if (pt.x > kMaxX) kMaxX = pt.x;
           if (pt.y < kMinY) kMinY = pt.y; if (pt.y > kMaxY) kMaxY = pt.y;
         }
-        const allBarriers = collectBarrierSegments(engine, tolerance);
-        const localBarriers = allBarriers.filter(([a, b]) => {
-          if (Math.max(a.x, b.x) < kMinX || Math.min(a.x, b.x) > kMaxX) return false;
-          if (Math.max(a.y, b.y) < kMinY || Math.min(a.y, b.y) > kMaxY) return false;
-          return polyContainsPoint(kRing, a.x, a.y) || polyContainsPoint(kRing, b.x, b.y);
+        const allBarriers = collectBarrierPaths(engine, tolerance);
+        // Keep paths that have at least one point inside (or touching) kRing.
+        const localBarriers = allBarriers.filter((path) => {
+          for (const pt of path) {
+            if (pt.x < kMinX || pt.x > kMaxX || pt.y < kMinY || pt.y > kMaxY) continue;
+            if (polyContainsPoint(kRing, pt.x, pt.y)) return true;
+          }
+          return false;
         });
         if (localBarriers.length > 0) {
-          const subPoly = findSubRegionByClipping(kRing, localBarriers, worldX, worldY);
+          const gapThreshold = Math.min(50, sensitivity * 5);
+          const subPoly = findSubRegionByClipping(kRing, localBarriers, worldX, worldY, gapThreshold);
           const subArea = subPoly ? shoelaceArea(subPoly) : 0;
           if (subPoly && subArea > 0 && subArea < candidates[K].area * 0.98) {
             entries.unshift({
