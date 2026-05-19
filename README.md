@@ -516,6 +516,12 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.1.0
+- **Wallpaper groups — correctness pass.** Nine of the 17 wallpaper groups (`pmg`, `pgg`, `cmm`, `p4g`, `p3`, `p3m1`, `p31m`, `p6`, `p6m`) were producing partial coverage, double-covered regions, or asymmetric overlaps from misplaced ops or wrong fundamental-domain shapes. All 17 now tile the cell exactly once, verified numerically.
+- Added **Domain scale** slider (0.30–2.00×) on every wallpaper mirror — scales the clip polygon around its centroid for intentional gaps (`<1`) or overlap (`>1`); 1.00 keeps exact tiling. Composes with all 17 groups.
+- Added **Tile layout v1/v2 toggle** on `p3`, `p3m1`, `p4g`, `p6`, and `p6m` — keeps the corrected v2 as default but recovers the pre-1.1 v1 aesthetic on demand (canonical "alternating triangles" for p3, open spacing for p3m1/p4g, dense overlap for p6/p6m).
+- Refactored: extracted the 320-line mirror-modifier panel out of `_ui-legacy.js` into its own module at `src/ui/panels/mirror-panel.js`.
+
 ### 1.0.0
 - **First stable release.** From here on, breaking changes follow semver.
 - Added **welcome-screen "take the tour" CTA** — gradient ghost button kicks off onboarding from a cold start.
