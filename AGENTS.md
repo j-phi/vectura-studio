@@ -26,6 +26,7 @@
 - Use vanilla JavaScript, IIFE modules, and the `window.Vectura` namespace pattern seen in `src/app/app.js`.
 - Naming: PascalCase for classes (`App`, `Renderer`), camelCase for methods/variables, lowercase file names (e.g., `engine.js`).
 - Keep semicolons and existing formatting consistent with nearby files.
+- **CSS placement:** new panel/component/feature CSS lands in `src/ui/skin/components.css` (motion in `motion.css`, tokens in `tokens.css`) — NOT in the legacy `styles.css`, which is being drained as part of the Meridian cleanup and must not grow.
 
 ## Testing Guidelines
 - Automated tests are configured and required where applicable: Vitest (`test:unit`, `test:integration`, `test:visual`, `test:perf`) and Playwright (`test:e2e`).

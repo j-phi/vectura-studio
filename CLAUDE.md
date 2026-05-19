@@ -23,6 +23,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Prefer container queries over viewport media queries for panel/component-level responsiveness
 - When changing CSS, audit for specificity conflicts and pre-existing rules that could override the new styles (grep for the selector first)
 - For collapse/expand animations, avoid `display:none` ↔ `max-height` swaps (causes visual gap); use `max-height + visibility` or `grid-template-rows` transitions instead
+- **New CSS lands in the skin system, not `styles.css`.** `styles.css` is the legacy sheet being drained into `src/ui/skin/` as part of the Meridian cleanup and must not grow. New panel/component/feature rules go in `src/ui/skin/components.css`; motion/transition rules in `src/ui/skin/motion.css`; new design tokens/CSS variables in `src/ui/skin/tokens.css`. Only edit `styles.css` to fix bugs in existing rules or to migrate rules out of it.
 
 ## What This Project Is
 
