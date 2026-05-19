@@ -12,7 +12,7 @@
  * IIFE-local SETTINGS / escapeHtml — those are injected via DI bag
  * once at startup from the legacy ui.js bind() call.
  *
- * DI bag: { SETTINGS, escapeHtml }.
+ * DI bag: { SETTINGS, escapeHtml, Layer, clone }.
  *
  * Compile gate at tests/unit/layers-panel-compile.test.js.
  */
@@ -1731,11 +1731,85 @@
       this.renderLayers(); this.app.render?.();
     }
 
+  // Unit 1.8: createManualLayerFromPath — creates a shape layer from a
+  // pen-tool path or primitive-shape commit. Receives either a raw point
+  // array or a payload {path, anchors, closed, shape}.
+  function createManualLayerFromPath(payload) {
+    const { SETTINGS, Layer, clone } = requireDeps('createManualLayerFromPath');
+    const path = Array.isArray(payload) ? payload : payload?.path;
+    const anchors = Array.isArray(payload?.anchors) ? payload.anchors : null;
+    const closed = Boolean(payload?.closed);
+    if (!Layer || !Array.isArray(path) || path.length < 2) return;
+    if (this.app.pushHistory) this.app.pushHistory();
+    const engine = this.app.engine;
+    SETTINGS.globalLayerCount++;
+    const id = Math.random().toString(36).slice(2, 11);
+    const shapeType = payload?.shape?.type || null;
+    const shapeTypeMap = { oval: 'shape', rect: 'shape', polygon: 'shape' };
+    const layerType = shapeTypeMap[shapeType] || 'shape';
+    const layer = new Layer(id, layerType, '');
+    const active = engine.getActiveLayer ? engine.getActiveLayer() : null;
+    const inheritsCurves = !shapeType;
+    const shapeUsesCurves = shapeType === 'oval';
+    layer.params.seed = 0;
+    layer.params.posX = 0;
+    layer.params.posY = 0;
+    layer.params.scaleX = 1;
+    layer.params.scaleY = 1;
+    layer.params.rotation = 0;
+    layer.params.curves = inheritsCurves ? false : shapeUsesCurves;
+    layer.params.smoothing = 0;
+    layer.params.simplify = 0;
+    const activeParent = active?.parentId ? engine.getLayerById(active.parentId) : null;
+    layer.parentId = (active?.isGroup && active?.groupType === 'layer')
+      ? active.id
+      : (activeParent?.groupType === 'group' ? active.parentId : null);
+    if (active) {
+      layer.penId = active.penId;
+      layer.color = active.color;
+      layer.strokeWidth = active.strokeWidth;
+      layer.lineCap = active.lineCap;
+    }
+    const cloned = path.map((pt) => ({ x: pt.x, y: pt.y }));
+    if (path.meta) {
+      cloned.meta = clone(path.meta);
+    }
+    if (anchors && anchors.length >= 2) {
+      cloned.meta = {
+        ...(cloned.meta || {}),
+        anchors: anchors.map((anchor) => ({
+          x: anchor.x,
+          y: anchor.y,
+          in: anchor.in ? { x: anchor.in.x, y: anchor.in.y } : null,
+          out: anchor.out ? { x: anchor.out.x, y: anchor.out.y } : null,
+        })),
+        closed,
+      };
+    }
+    if (shapeType) {
+      const shapeLabelMap = { rect: 'Rectangle', oval: 'Oval', polygon: 'Polygon' };
+      layer.name = this.getUniqueLayerName(shapeLabelMap[shapeType] || 'Shape', id);
+    } else {
+      layer.name = this.getUniqueLayerName('Pen Path', id);
+    }
+    layer.sourcePaths = [cloned];
+    const idx = engine.layers.findIndex((l) => l.id === engine.activeLayerId);
+    const insertIndex = idx >= 0 ? idx + 1 : engine.layers.length;
+    engine.layers.splice(insertIndex, 0, layer);
+    engine.activeLayerId = id;
+    engine.generate(id);
+    if (this.app.renderer) this.app.renderer.setSelection([id], id);
+    this.renderLayers();
+    this.buildControls();
+    this.updateFormula();
+    this.app.render();
+  }
+
   UI.LayersPanel = {
     /**
      * Inject closure-captured legacy ui.js IIFE locals.
      * Idempotent. Called once from the legacy ui.js IIFE.
-     * @param {object} deps - { SETTINGS, escapeHtml, Layer }
+     * @param {object} deps - { SETTINGS, escapeHtml, Layer, clone }
      */
     bind(deps) {
       DEPS = deps;
@@ -1744,6 +1818,7 @@
     assignLayersToRoot,
     groupSelection,
     ungroupSelection,
+    createManualLayerFromPath,
     installOn(proto) {
       proto.assignLayersToRoot = function(...args) { return assignLayersToRoot.apply(this, args); };
       proto.groupSelection = function(...args) { return groupSelection.apply(this, args); };
@@ -1758,6 +1833,7 @@
       proto._lvlToggleVisibilitySel = function(...args) { return _lvlToggleVisibilitySel.apply(this, args); };
       proto._lvlToggleLockSel = function(...args) { return _lvlToggleLockSel.apply(this, args); };
       proto._lvlMaskSelGroup = function(...args) { return _lvlMaskSelGroup.apply(this, args); };
+      proto.createManualLayerFromPath = function(payload) { return createManualLayerFromPath.call(this, payload); };
     },
   };
 })();

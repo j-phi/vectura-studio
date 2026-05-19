@@ -2835,75 +2835,8 @@
       if (returnChildren) return children;
     }
 
-    createManualLayerFromPath(payload) {
-      const path = Array.isArray(payload) ? payload : payload?.path;
-      const anchors = Array.isArray(payload?.anchors) ? payload.anchors : null;
-      const closed = Boolean(payload?.closed);
-      if (!Layer || !Array.isArray(path) || path.length < 2) return;
-      if (this.app.pushHistory) this.app.pushHistory();
-      const engine = this.app.engine;
-      SETTINGS.globalLayerCount++;
-      const id = Math.random().toString(36).slice(2, 11);
-      const shapeType = payload?.shape?.type || null;
-      const shapeTypeMap = { oval: 'shape', rect: 'shape', polygon: 'shape' };
-      const layerType = shapeTypeMap[shapeType] || 'shape';
-      const layer = new Layer(id, layerType, '');
-      const active = engine.getActiveLayer ? engine.getActiveLayer() : null;
-      const inheritsCurves = !shapeType;
-      const shapeUsesCurves = shapeType === 'oval';
-      layer.params.seed = 0;
-      layer.params.posX = 0;
-      layer.params.posY = 0;
-      layer.params.scaleX = 1;
-      layer.params.scaleY = 1;
-      layer.params.rotation = 0;
-      layer.params.curves = inheritsCurves ? false : shapeUsesCurves;
-      layer.params.smoothing = 0;
-      layer.params.simplify = 0;
-      const activeParent = active?.parentId ? engine.getLayerById(active.parentId) : null;
-      layer.parentId = (active?.isGroup && active?.groupType === 'layer')
-        ? active.id
-        : (activeParent?.groupType === 'group' ? active.parentId : null);
-      if (active) {
-        layer.penId = active.penId;
-        layer.color = active.color;
-        layer.strokeWidth = active.strokeWidth;
-        layer.lineCap = active.lineCap;
-      }
-      const cloned = path.map((pt) => ({ x: pt.x, y: pt.y }));
-      if (path.meta) {
-        cloned.meta = clone(path.meta);
-      }
-      if (anchors && anchors.length >= 2) {
-        cloned.meta = {
-          ...(cloned.meta || {}),
-          anchors: anchors.map((anchor) => ({
-            x: anchor.x,
-            y: anchor.y,
-            in: anchor.in ? { x: anchor.in.x, y: anchor.in.y } : null,
-            out: anchor.out ? { x: anchor.out.x, y: anchor.out.y } : null,
-          })),
-          closed,
-        };
-      }
-      if (shapeType) {
-        const shapeLabelMap = { rect: 'Rectangle', oval: 'Oval', polygon: 'Polygon' };
-        layer.name = this.getUniqueLayerName(shapeLabelMap[shapeType] || 'Shape', id);
-      } else {
-        layer.name = this.getUniqueLayerName('Pen Path', id);
-      }
-      layer.sourcePaths = [cloned];
-      const idx = engine.layers.findIndex((l) => l.id === engine.activeLayerId);
-      const insertIndex = idx >= 0 ? idx + 1 : engine.layers.length;
-      engine.layers.splice(insertIndex, 0, layer);
-      engine.activeLayerId = id;
-      engine.generate(id);
-      if (this.app.renderer) this.app.renderer.setSelection([id], id);
-      this.renderLayers();
-      this.buildControls();
-      this.updateFormula();
-      this.app.render();
-    }
+    // createManualLayerFromPath is installed onto UI.prototype by
+    // LayersPanel.installOn() (Meridian Unit 1.8).
 
     getGroupDescendants(groupId) {
       const out = [];
@@ -2956,72 +2889,8 @@
       return children;
     }
 
-    applyScissor(payload) {
-      if (!payload) return;
-      const shape = {
-        mode: payload.mode,
-        line: payload.line,
-        rect: payload.rect,
-        circle: payload.circle,
-      };
-      if (!shape.mode) return;
-      if (this.app.pushHistory) this.app.pushHistory();
-
-      const renderer = this.app.renderer;
-      const engine = this.app.engine;
-      const baseTargets = engine.layers.filter((layer) => !layer.isGroup && layer.visible);
-      const targets = [];
-
-      baseTargets.forEach((layer) => {
-        if (layer.isGroup) {
-          targets.push(...this.getGroupDescendants(layer.id));
-          return;
-        }
-        if (layer.type !== 'shape' && !layer.parentId) {
-          const expanded = this.expandLayer(layer, { skipHistory: true, returnChildren: true, suppressRender: true, selectChildren: false });
-          if (expanded && expanded.length) targets.push(...expanded);
-          return;
-        }
-        targets.push(layer);
-      });
-
-      const uniqueTargets = Array.from(new Map(targets.map((layer) => [layer.id, layer])).values());
-      const newSelection = [];
-
-      uniqueTargets.forEach((layer) => {
-        const src = layer.sourcePaths || layer.paths || [];
-        let segments = [];
-        let didSplit = false;
-        src.forEach((path) => {
-          const basePath = path && path.meta && path.meta.kind === 'circle' ? expandCirclePath(path.meta, 80) : path;
-          const split = splitPathByShape(basePath, shape);
-          if (!split || !split.length) {
-            segments.push(path);
-            return;
-          }
-          segments = segments.concat(split);
-          didSplit = true;
-        });
-        if (!segments.length || !didSplit) return;
-        if (segments.length === 1) {
-          layer.sourcePaths = segments.map((seg) => seg.map((pt) => ({ x: pt.x, y: pt.y })));
-          engine.generate(layer.id);
-          newSelection.push(layer.id);
-          return;
-        }
-        const children = this.splitShapeLayer(layer, segments);
-        newSelection.push(...children.map((child) => child.id));
-      });
-
-      this.normalizeGroupOrder?.();
-      this.renderLayers();
-      this.app.render();
-      if (newSelection.length && renderer) {
-        const primary = newSelection[newSelection.length - 1];
-        renderer.setSelection(newSelection, primary);
-        engine.activeLayerId = primary;
-      }
-    }
+    // applyScissor is installed onto UI.prototype by
+    // AlgorithmPanel.installOn() (Meridian Unit 1.8).
 
     startLightSourcePlacement() {
       if (!this.app.renderer) return;
@@ -3032,219 +2901,8 @@
     // image-asset methods (loadNoiseImageFile, openNoiseImageModal) are
     // installed onto UI.prototype by ImageAsset.installOn().
 
-    computeHarmonographPlotterData(layer) {
-      const params = layer?.params || {};
-      const samples = Math.max(200, Math.floor(params.samples ?? 4000));
-      const duration = Math.max(1, params.duration ?? 30);
-      const scale = params.scale ?? 1;
-      const rotSpeed = (params.paperRotation ?? 0) * Math.PI * 2;
-      const loopDrift = params.loopDrift ?? 0;
-      const settleThreshold = Math.max(0, params.settleThreshold ?? 0);
-      const settleWindow = Math.max(1, Math.floor(params.settleWindow ?? 24));
-      const pendulums = (Array.isArray(params.pendulums) ? params.pendulums : [])
-        .filter((pend) => pend?.enabled !== false)
-        .map((pend) => ({
-          ax: pend.ampX ?? 0,
-          ay: pend.ampY ?? 0,
-          phaseX: ((pend.phaseX ?? 0) * Math.PI) / 180,
-          phaseY: ((pend.phaseY ?? 0) * Math.PI) / 180,
-          freq: pend.freq ?? 1,
-          micro: pend.micro ?? 0,
-          damp: Math.max(0, pend.damp ?? 0),
-        }));
-      if (!pendulums.length) return { path: [], durationSec: 0 };
-      const dt = duration / samples;
-      const path = [];
-      let settleCount = 0;
-      for (let i = 0; i <= samples; i += 1) {
-        const t = i * dt;
-        let x = 0;
-        let y = 0;
-        pendulums.forEach((pend) => {
-          const freq = (pend.freq + pend.micro + loopDrift * t) * Math.PI * 2;
-          const decay = Math.exp(-pend.damp * t);
-          x += pend.ax * Math.sin(freq * t + pend.phaseX) * decay;
-          y += pend.ay * Math.sin(freq * t + pend.phaseY) * decay;
-        });
-        x *= scale;
-        y *= scale;
-        if (rotSpeed) {
-          const ang = rotSpeed * t;
-          const rx = x * Math.cos(ang) - y * Math.sin(ang);
-          const ry = x * Math.sin(ang) + y * Math.cos(ang);
-          x = rx;
-          y = ry;
-        }
-        path.push({ x, y, t });
-        if (settleThreshold > 0) {
-          const mag = Math.hypot(x, y);
-          settleCount = mag <= settleThreshold ? settleCount + 1 : 0;
-          if (settleCount >= settleWindow) break;
-        }
-      }
-
-      return { path, durationSec: path[path.length - 1]?.t ?? 0 };
-    }
-
-    mountHarmonographPlotter(layer, target) {
-      if (!target) return;
-      const data = this.computeHarmonographPlotterData(layer);
-      const speeds = [0.25, 0.5, 1, 2, 4];
-      const maxPlayhead = Math.max(0, data.path.length - 1);
-      const initialPlayhead = clamp(this.harmonographPlotterState?.playhead ?? 0, 0, maxPlayhead);
-      const rememberedSpeed = this.harmonographPlotterState?.speed ?? 1;
-      const initialSpeed = speeds.includes(rememberedSpeed) ? rememberedSpeed : 1;
-      const durationSec = Math.max(0.1, data.durationSec || layer?.params?.duration || 1);
-      const progressPerMs = maxPlayhead > 0 ? maxPlayhead / (durationSec * 1000) : 0;
-      const wrapper = document.createElement('div');
-      wrapper.className = 'harmonograph-plotter mb-4';
-      wrapper.innerHTML = `
-        <div class="harmonograph-plotter-head">
-          <span class="text-[10px] uppercase tracking-widest text-vectura-muted">Virtual Plotter</span>
-          <button type="button" class="harmonograph-plotter-play text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">Play</button>
-        </div>
-        <canvas class="harmonograph-plotter-canvas" width="240" height="240"></canvas>
-        <div class="harmonograph-plotter-meta text-[10px] text-vectura-muted">Scrub the playhead to preview the drawing sequence.</div>
-        <div class="harmonograph-plotter-row">
-          <label class="text-[10px] uppercase tracking-widest text-vectura-muted">Playhead</label>
-          <input class="harmonograph-plotter-range" type="range" min="0" max="${maxPlayhead}" step="1" value="${initialPlayhead}">
-        </div>
-        <div class="harmonograph-plotter-row">
-          <label class="text-[10px] uppercase tracking-widest text-vectura-muted">Speed</label>
-          <select class="harmonograph-plotter-speed bg-vectura-bg border border-vectura-border p-1 text-[10px] focus:outline-none focus:border-vectura-accent">
-            ${speeds
-              .map((speed) => `<option value="${speed}" ${speed === initialSpeed ? 'selected' : ''}>${speed}x</option>`)
-              .join('')}
-          </select>
-        </div>
-      `;
-      target.appendChild(wrapper);
-      const canvas = wrapper.querySelector('.harmonograph-plotter-canvas');
-      const playBtn = wrapper.querySelector('.harmonograph-plotter-play');
-      const range = wrapper.querySelector('.harmonograph-plotter-range');
-      const speedSelect = wrapper.querySelector('.harmonograph-plotter-speed');
-      if (!canvas || !range || !speedSelect || !playBtn) return;
-
-      const state = {
-        rafId: null,
-        playing: false,
-        playhead: clamp(parseInt(range.value, 10) || 0, 0, maxPlayhead),
-        speed: initialSpeed,
-        lastTs: 0,
-        maxPlayhead,
-        progressPerMs,
-      };
-      this.harmonographPlotterState = state;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      const draw = () => {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = getThemeToken('--plotter-bg', '#101115');
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        if (!data.path.length) return;
-        let minX = Infinity;
-        let maxX = -Infinity;
-        let minY = Infinity;
-        let maxY = -Infinity;
-        data.path.forEach((pt) => {
-          if (pt.x < minX) minX = pt.x;
-          if (pt.x > maxX) maxX = pt.x;
-          if (pt.y < minY) minY = pt.y;
-          if (pt.y > maxY) maxY = pt.y;
-        });
-        const spanX = maxX - minX;
-        const spanY = maxY - minY;
-        const span = Math.max(spanX, spanY, 1);
-        const pad = 16;
-        const scale = (Math.min(canvas.width, canvas.height) - pad * 2) / span;
-        const toCanvas = (pt) => ({
-          x: (pt.x - (minX + maxX) / 2) * scale + canvas.width / 2,
-          y: (pt.y - (minY + maxY) / 2) * scale + canvas.height / 2,
-        });
-
-        ctx.strokeStyle = getThemeToken('--plotter-path-base', 'rgba(113,113,122,0.35)');
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        data.path.forEach((pt, idx) => {
-          const c = toCanvas(pt);
-          if (idx === 0) ctx.moveTo(c.x, c.y);
-          else ctx.lineTo(c.x, c.y);
-        });
-        ctx.stroke();
-
-        const limit = clamp(state.playhead, 0, data.path.length - 1);
-        ctx.strokeStyle = '#ef4444';
-        ctx.lineWidth = 1.4;
-        ctx.beginPath();
-        for (let i = 0; i <= limit; i += 1) {
-          const c = toCanvas(data.path[i]);
-          if (i === 0) ctx.moveTo(c.x, c.y);
-          else ctx.lineTo(c.x, c.y);
-        }
-        ctx.stroke();
-
-        const head = toCanvas(data.path[limit]);
-        ctx.fillStyle = getThemeToken('--plotter-head', '#fafafa');
-        ctx.beginPath();
-        ctx.arc(head.x, head.y, 3, 0, Math.PI * 2);
-        ctx.fill();
-      };
-
-      const tick = (ts) => {
-        if (!state.playing) return;
-        const last = state.lastTs || ts;
-        const delta = Math.max(0, ts - last);
-        state.lastTs = ts;
-        const step = delta * state.progressPerMs * state.speed;
-        state.playhead += step;
-        if (state.playhead >= state.maxPlayhead) {
-          state.playhead = state.maxPlayhead;
-          state.playing = false;
-          state.rafId = null;
-          playBtn.textContent = 'Play';
-        }
-        range.value = `${Math.round(state.playhead)}`;
-        draw();
-        if (state.playing) state.rafId = window.requestAnimationFrame(tick);
-      };
-
-      playBtn.onclick = () => {
-        if (state.maxPlayhead <= 0) return;
-        if (!state.playing && state.playhead >= state.maxPlayhead) {
-          state.playhead = 0;
-          range.value = '0';
-          draw();
-        }
-        state.playing = !state.playing;
-        playBtn.textContent = state.playing ? 'Pause' : 'Play';
-        if (state.playing) {
-          state.lastTs = 0;
-          state.rafId = window.requestAnimationFrame(tick);
-        } else if (state.rafId) {
-          window.cancelAnimationFrame(state.rafId);
-          state.rafId = null;
-        }
-      };
-      range.oninput = (e) => {
-        state.playhead = clamp(parseInt(e.target.value, 10) || 0, 0, state.maxPlayhead);
-        if (state.playing) state.lastTs = 0;
-        draw();
-      };
-      speedSelect.onchange = (e) => {
-        const nextSpeed = parseFloat(e.target.value);
-        state.speed = Number.isFinite(nextSpeed) ? nextSpeed : 1;
-        if (state.playing) state.lastTs = 0;
-      };
-      if (state.maxPlayhead <= 0) {
-        playBtn.disabled = true;
-        playBtn.classList.add('opacity-60', 'cursor-not-allowed');
-        range.disabled = true;
-        speedSelect.disabled = true;
-      }
-
-      draw();
-    }
+    // computeHarmonographPlotterData + mountHarmonographPlotter are
+    // installed onto UI.prototype by AlgorithmPanel.installOn() (Meridian Unit 1.8).
 
     _showWelcomePanel(show) {
       const welcome = document.getElementById('left-welcome');
@@ -3260,177 +2918,8 @@
       }
     }
 
-    _buildPatternFillPanel(container) {
-      const isErase = this.activeTool === 'fill-pattern-erase';
-      const layer = this.app.engine?.getActiveLayer?.();
-      const PR = window.Vectura?.PatternRegistry;
-      const patterns = PR?.getPatterns?.() || PR?.getAll?.() || [];
-
-      const hdr = document.createElement('p');
-      hdr.className = 'text-[11px] uppercase text-vectura-muted tracking-widest mb-3';
-      hdr.textContent = isErase ? 'Erase Pattern Fill' : 'Pattern Fill';
-      container.appendChild(hdr);
-
-      if (patterns.length) {
-        const browserHdr = document.createElement('p');
-        browserHdr.className = 'text-[11px] uppercase text-vectura-muted tracking-widest mb-2';
-        browserHdr.textContent = 'Pattern';
-        container.appendChild(browserHdr);
-
-        const list = document.createElement('div');
-        list.className = 'flex flex-col gap-0.5 mb-4 overflow-y-auto';
-        list.style.maxHeight = '10rem';
-        const currentId = layer?.params?.patternId || '';
-        patterns.forEach((pat) => {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'text-xs text-left px-2 py-1 rounded hover:bg-vectura-border transition-colors truncate';
-          btn.style.color = pat.id === currentId ? 'var(--vectura-accent)' : '';
-          btn.style.background = pat.id === currentId ? 'var(--vectura-border)' : '';
-          btn.textContent = pat.name || pat.id;
-          btn.title = pat.name || pat.id;
-          btn.onclick = () => {
-            if (layer) {
-              layer.params = layer.params || {};
-              layer.params.patternId = pat.id;
-              this.storeLayerParams?.(layer);
-              this.app.regen?.();
-            }
-            this._buildPatternFillPanel(container);
-          };
-          list.appendChild(btn);
-        });
-        container.appendChild(list);
-      } else {
-        // Phase 4: empty-state illustration for the pattern catalog.
-        const ES = window.Vectura?.UI?.EmptyStates;
-        if (ES && typeof ES.attach === 'function') {
-          const wrap = document.createElement('div');
-          wrap.className = 'pattern-empty-state-wrap';
-          wrap.style.marginBottom = '16px';
-          container.appendChild(wrap);
-          ES.attach(wrap, {
-            kind: 'patterns',
-            title: 'No patterns yet',
-            message: 'Open the Pattern Designer to create your first.',
-          });
-        } else {
-          const msg = document.createElement('p');
-          msg.className = 'text-xs text-vectura-muted mb-4';
-          msg.textContent = 'No patterns registered.';
-          container.appendChild(msg);
-        }
-      }
-
-      if (!isErase) {
-        const settingsHdr = document.createElement('p');
-        settingsHdr.className = 'text-[11px] uppercase text-vectura-muted tracking-widest mb-2';
-        settingsHdr.textContent = 'Fill Settings';
-        container.appendChild(settingsHdr);
-
-        this._patternFillSettings = this._patternFillSettings || { fillType: 'hatch', density: 1 };
-
-        const fillTypes = [
-          ['hatch', 'Hatch'], ['crosshatch', 'Crosshatch'], ['wavelines', 'Wavelines'],
-          ['zigzag', 'Zigzag'], ['stipple', 'Stipple'], ['contour', 'Contour'],
-          ['spiral', 'Spiral'], ['radial', 'Radial'],
-        ];
-        const typeRow = document.createElement('div');
-        typeRow.className = 'mb-2';
-        const typeLabel = document.createElement('label');
-        typeLabel.className = 'control-label block mb-1';
-        typeLabel.textContent = 'Fill Type';
-        typeRow.appendChild(typeLabel);
-        const typeSelect = document.createElement('select');
-        typeSelect.className = 'w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:outline-none focus:border-vectura-accent';
-        fillTypes.forEach(([v, label]) => {
-          const o = document.createElement('option');
-          o.value = v; o.textContent = label;
-          typeSelect.appendChild(o);
-        });
-        typeSelect.value = this._patternFillSettings.fillType;
-        typeSelect.onchange = () => { this._patternFillSettings.fillType = typeSelect.value; };
-        typeRow.appendChild(typeSelect);
-        container.appendChild(typeRow);
-
-        const densRow = document.createElement('div');
-        densRow.className = 'mb-2';
-        const densLabel = document.createElement('label');
-        densLabel.className = 'control-label block mb-1';
-        densLabel.textContent = 'Density';
-        densRow.appendChild(densLabel);
-        const densInput = document.createElement('input');
-        densInput.type = 'number'; densInput.step = '0.1'; densInput.min = '0.1'; densInput.max = '10';
-        densInput.className = 'w-full bg-vectura-bg border border-vectura-border p-1 text-xs focus:outline-none focus:border-vectura-accent';
-        densInput.value = this._patternFillSettings.density;
-        densInput.oninput = () => { this._patternFillSettings.density = parseFloat(densInput.value) || 1; };
-        densRow.appendChild(densInput);
-        container.appendChild(densRow);
-      }
-    }
-
-    _applyPatternFillFromCanvas({ tool, worldX, worldY }) {
-      const layer = this.app.engine?.getActiveLayer?.();
-      if (!layer || layer.type !== 'pattern') return;
-      const AR = window.Vectura?.AlgorithmRegistry;
-      if (!AR) return;
-      const patternId = layer.params?.patternId;
-      if (!patternId) return;
-      const data = AR.patternGetGroups?.(patternId);
-      if (!data) return;
-      const scale = layer.params?.scale ?? 1;
-      const originX = layer.params?.originX ?? 0;
-      const originY = layer.params?.originY ?? 0;
-      const tileSpacingX = layer.params?.tileSpacingX ?? 0;
-      const tileSpacingY = layer.params?.tileSpacingY ?? 0;
-      const { vbW, vbH } = data;
-      const scaledW = (vbW + tileSpacingX) * scale;
-      const scaledH = (vbH + tileSpacingY) * scale;
-      if (scaledW <= 0 || scaledH <= 0) return;
-      const tileX = (((worldX - originX) % scaledW) + scaledW) % scaledW / scale;
-      const tileY = (((worldY - originY) % scaledH) + scaledH) % scaledH / scale;
-      const hit = AR.patternGetFillTargetsAtPoint?.(patternId, tileX, tileY, { cache: true });
-      const target = hit?.smallest;
-      if (!target) return;
-
-      this.app.pushHistory?.();
-      if (!layer.params.patternFills) layer.params.patternFills = [];
-      const isErase = tool === 'fill-pattern-erase';
-
-      if (isErase) {
-        layer.params.patternFills = layer.params.patternFills.filter(
-          (f) => !this._fillMatchesTarget?.(f, target)
-        );
-      } else {
-        const alreadyFilled = layer.params.patternFills.some(
-          (f) => this._fillMatchesTarget?.(f, target)
-        );
-        if (!alreadyFilled) {
-          const fs = this._patternFillSettings || {};
-          const cloneRegion = (r) => (Array.isArray(r) ? r.map((pt) => ({ ...pt })) : []);
-          const record = {
-            id: `fill-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
-            targetIds: [target.id],
-            regions: (target.regions || []).map((r) => cloneRegion(r)),
-            region: cloneRegion(target.outer || target.regions?.[0] || []),
-            fillType: fs.fillType || 'hatch',
-            density: fs.density ?? 1,
-            penId: null,
-            angle: 0,
-            amplitude: 1.0,
-            dotSize: 1.0,
-            padding: 0,
-            shiftX: 0,
-            shiftY: 0,
-          };
-          layer.params.patternFills.push(record);
-        }
-      }
-
-      this.storeLayerParams?.(layer);
-      this.app.regen?.();
-      this.app.renderer?.draw?.();
-    }
+    // _buildPatternFillPanel + _applyPatternFillFromCanvas are installed
+    // onto UI.prototype by FillPanel.installOn() (Meridian Unit 1.8).
 
     // buildControls (delegates to AlgoConfigPanel.buildControls) and
     // updateFormula (delegates to FormulaPanel.updateFormula) are installed
@@ -3628,8 +3117,9 @@
   }
 
   // Phase 2 step 4: hand legacy IIFE-locals to panels/layers-panel.js.
+  // Meridian Unit 1.8: added `clone` for createManualLayerFromPath.
   if (window.Vectura?.UI?.LayersPanel?.bind) {
-    window.Vectura.UI.LayersPanel.bind({ SETTINGS, escapeHtml, Layer });
+    window.Vectura.UI.LayersPanel.bind({ SETTINGS, escapeHtml, Layer, clone });
   }
   if (window.Vectura?.UI?.LayersPanel?.installOn) {
     window.Vectura.UI.LayersPanel.installOn(UI.prototype);
@@ -3652,11 +3142,21 @@
   }
 
   // Phase 2 step 4: hand legacy IIFE-locals to panels/algorithm-panel.js.
+  // Meridian Unit 1.8: added `getThemeToken` for mountHarmonographPlotter.
   if (window.Vectura?.UI?.AlgorithmPanel?.bind) {
-    window.Vectura.UI.AlgorithmPanel.bind({ getEl, ALGO_DEFAULTS, MODIFIER_DEFAULTS, Algorithms });
+    window.Vectura.UI.AlgorithmPanel.bind({ getEl, ALGO_DEFAULTS, MODIFIER_DEFAULTS, Algorithms, getThemeToken });
   }
   if (window.Vectura?.UI?.AlgorithmPanel?.installOn) {
     window.Vectura.UI.AlgorithmPanel.installOn(UI.prototype);
+  }
+
+  // Meridian Unit 1.8: register ui-fill-panel.js's pattern-fill installer.
+  // The methods only touch this.* and window.Vectura.* — empty DI bag.
+  if (window.Vectura?.FillPanel?.bind) {
+    window.Vectura.FillPanel.bind({});
+  }
+  if (window.Vectura?.FillPanel?.installOn) {
+    window.Vectura.FillPanel.installOn(UI.prototype);
   }
 
   // Phase 2 step 5a: hand legacy IIFE-locals to persistence.js.

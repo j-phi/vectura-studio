@@ -41,7 +41,7 @@ describe('algorithm-panel compile gate', () => {
 
   afterAll(() => dom?.window?.close?.());
 
-  it('exposes window.Vectura.UI.AlgorithmPanel with bind + 5 methods', () => {
+  it('exposes window.Vectura.UI.AlgorithmPanel with bind + algorithm-specific methods', () => {
     expect(AlgorithmPanel).toBeTruthy();
     expect(typeof AlgorithmPanel.bind).toBe('function');
     expect(typeof AlgorithmPanel.syncPrimaryModuleDropdown).toBe('function');
@@ -49,6 +49,10 @@ describe('algorithm-panel compile gate', () => {
     expect(typeof AlgorithmPanel.isDrawableLayerType).toBe('function');
     expect(typeof AlgorithmPanel.rememberDrawableLayerType).toBe('function');
     expect(typeof AlgorithmPanel.getPreferredNewLayerType).toBe('function');
+    // Unit 1.8: algorithm-specific methods moved out of _ui-legacy.js
+    expect(typeof AlgorithmPanel.computeHarmonographPlotterData).toBe('function');
+    expect(typeof AlgorithmPanel.mountHarmonographPlotter).toBe('function');
+    expect(typeof AlgorithmPanel.applyScissor).toBe('function');
   });
 
   it('isModifierType throws a clear error before bind()', () => {
@@ -100,6 +104,53 @@ describe('algorithm-panel compile gate', () => {
     // Non-drawable falls back to cached
     const got2 = AlgorithmPanel.rememberDrawableLayerType.call(ctx, 'group');
     expect(got2).toBe('flowfield');
+  });
+
+  it('computeHarmonographPlotterData returns empty path when no pendulums are enabled', () => {
+    AlgorithmPanel.bind({
+      getEl: () => null,
+      ALGO_DEFAULTS: {},
+      MODIFIER_DEFAULTS: {},
+      Algorithms: {},
+    });
+    const layer = { params: { pendulums: [] } };
+    const result = AlgorithmPanel.computeHarmonographPlotterData.call({}, layer);
+    expect(result).toEqual({ path: [], durationSec: 0 });
+  });
+
+  it('computeHarmonographPlotterData returns a populated path for a single pendulum', () => {
+    AlgorithmPanel.bind({
+      getEl: () => null,
+      ALGO_DEFAULTS: {},
+      MODIFIER_DEFAULTS: {},
+      Algorithms: {},
+    });
+    const layer = {
+      params: {
+        samples: 200,
+        duration: 5,
+        scale: 1,
+        pendulums: [{ enabled: true, ampX: 10, ampY: 10, freq: 1, phaseX: 0, phaseY: 90, damp: 0, micro: 0 }],
+      },
+    };
+    const result = AlgorithmPanel.computeHarmonographPlotterData.call({}, layer);
+    expect(Array.isArray(result.path)).toBe(true);
+    expect(result.path.length).toBeGreaterThan(0);
+    expect(result.durationSec).toBeGreaterThan(0);
+  });
+
+  it('applyScissor returns silently when payload has no mode', () => {
+    AlgorithmPanel.bind({
+      getEl: () => null,
+      ALGO_DEFAULTS: {},
+      MODIFIER_DEFAULTS: {},
+      Algorithms: {},
+    });
+    const ctx = {
+      app: { engine: { layers: [] } },
+    };
+    expect(() => AlgorithmPanel.applyScissor.call(ctx, { mode: null })).not.toThrow();
+    expect(() => AlgorithmPanel.applyScissor.call(ctx, null)).not.toThrow();
   });
 
   it('syncPrimaryModuleDropdown returns silently when select element is missing', () => {

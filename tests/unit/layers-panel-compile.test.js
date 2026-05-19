@@ -45,6 +45,8 @@ describe('layers-panel compile gate', () => {
     expect(LayersPanel).toBeTruthy();
     expect(typeof LayersPanel.bind).toBe('function');
     expect(typeof LayersPanel.renderLayers).toBe('function');
+    // Unit 1.8: createManualLayerFromPath moved out of _ui-legacy.js
+    expect(typeof LayersPanel.createManualLayerFromPath).toBe('function');
   });
 
   it('renderLayers throws a clear error before bind()', () => {
@@ -58,5 +60,18 @@ describe('layers-panel compile gate', () => {
     });
     const ctx = { app: { engine: { layers: [] } } };
     expect(() => LayersPanel.renderLayers.call(ctx)).not.toThrow();
+  });
+
+  // Unit 1.8: createManualLayerFromPath moved from _ui-legacy.js
+  it('createManualLayerFromPath returns silently when path is too short', () => {
+    LayersPanel.bind({
+      SETTINGS: { globalLayerCount: 0, pens: [], autoColorization: { enabled: false } },
+      escapeHtml: (s) => `${s}`,
+      Layer: function () {},
+      clone: (obj) => JSON.parse(JSON.stringify(obj)),
+    });
+    const ctx = { app: { engine: { layers: [] } } };
+    expect(() => LayersPanel.createManualLayerFromPath.call(ctx, { path: [{ x: 0, y: 0 }] })).not.toThrow();
+    expect(() => LayersPanel.createManualLayerFromPath.call(ctx, null)).not.toThrow();
   });
 });
