@@ -1506,6 +1506,7 @@
           slider.dispatchEvent(new Event('input', { bubbles: true }));
         };
         dial.addEventListener('pointerdown', (e) => {
+          if (slider.disabled) return;
           e.preventDefault();
           activePointerId = e.pointerId;
           try { dial.setPointerCapture(e.pointerId); } catch (_) {}

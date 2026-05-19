@@ -2769,6 +2769,11 @@
   user-select: none;
 }
 .mp-root .mp-dial.is-dragging { cursor: grabbing; }
+.mp-root .mp-dial-row.is-locked .mp-dial {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
 .mp-root .mp-dial::after {
   content: ''; position: absolute; inset: 5px;
   border-radius: 50%;
