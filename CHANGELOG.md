@@ -6,6 +6,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed
+- **Modal hardening (audit Bugs-4).** The legacy `openModal()` no longer assigns untrusted HTML strings directly to `innerHTML`. String bodies are parsed into an inert `<template>` fragment, walked, and stripped of all `on*` event-handler attributes, `<script>`/`<style>`/`<iframe>`/`<object>`/`<embed>` subtrees, and `javascript:` URLs before insertion — preserving the formatting trusted callers (Help, Info, Color Picker, etc.) rely on while defanging the XSS sink the audit flagged. The modal now also installs an Esc-to-close listener on the document for the lifetime of the open modal (capture phase, won't fight nested overlays), a Tab/Shift+Tab focus trap on the modal card that cycles within its focusable descendants (and falls back to `tabindex="-1"` on the card itself when none are present), and a deterministic focus-restore on close that pins the activeElement back to the trigger that opened the modal. The two file-IO error toasts (`Invalid File` after a bad `.vectura` parse, `No Paths Found` after an SVG with no importable paths) were migrated to build their bodies as DOM nodes so they no longer round-trip through the sanitizer.
+
 ## 1.1.0 - 2026-05-19
 
 ### Added
