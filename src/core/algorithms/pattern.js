@@ -2823,6 +2823,847 @@
     return result;
   };
 
+  // ─── B-series fill helpers ───────────────────────────────────────────────
+  // Shared deterministic 2D hash → value noise. Lattice values are seeded from
+  // a fast integer hash so the field is reproducible from (seed, x, y).
+  const _hash2 = (ix, iy, seed) => {
+    let h = (ix | 0) * 374761393 + (iy | 0) * 668265263 + (seed | 0) * 2147483647;
+    h = (h ^ (h >>> 13)) >>> 0;
+    h = Math.imul(h, 1274126177) >>> 0;
+    return (h ^ (h >>> 16)) >>> 0;
+  };
+  const _hashUnit = (ix, iy, seed) => _hash2(ix, iy, seed) / 4294967296;
+  const _smoothstep = (t) => t * t * (3 - 2 * t);
+  const _valueNoise2 = (x, y, seed) => {
+    const ix = Math.floor(x), iy = Math.floor(y);
+    const fx = x - ix, fy = y - iy;
+    const v00 = _hashUnit(ix, iy, seed);
+    const v10 = _hashUnit(ix + 1, iy, seed);
+    const v01 = _hashUnit(ix, iy + 1, seed);
+    const v11 = _hashUnit(ix + 1, iy + 1, seed);
+    const sx = _smoothstep(fx), sy = _smoothstep(fy);
+    const a = v00 * (1 - sx) + v10 * sx;
+    const b = v01 * (1 - sx) + v11 * sx;
+    return a * (1 - sy) + b * sy;
+  };
+
+  // ── B1: Flow Field ───────────────────────────────────────────────────────
+  const _flowVectorAt = (x, y, type, scale, seed, cx, cy) => {
+    const s = Math.max(0.5, scale);
+    if (type === 'radial') {
+      const dx = x - cx, dy = y - cy;
+      const len = Math.hypot(dx, dy) || 1;
+      // tangent (perpendicular to radial) → swirls outward
+      return { dx: -dy / len, dy: dx / len };
+    }
+    if (type === 'spiral') {
+      const dx = x - cx, dy = y - cy;
+      const len = Math.hypot(dx, dy) || 1;
+      const radial = { dx: dx / len, dy: dy / len };
+      const tang = { dx: -dy / len, dy: dx / len };
+      const mix = 0.5;
+      return { dx: tang.dx * (1 - mix) + radial.dx * mix, dy: tang.dy * (1 - mix) + radial.dy * mix };
+    }
+    if (type === 'curl') {
+      const e = 0.5;
+      const n1 = _valueNoise2((x + e) / s, y / s, seed) - _valueNoise2((x - e) / s, y / s, seed);
+      const n2 = _valueNoise2(x / s, (y + e) / s, seed) - _valueNoise2(x / s, (y - e) / s, seed);
+      // curl: ∂N/∂y, -∂N/∂x
+      const dx = n2, dy = -n1;
+      const m = Math.hypot(dx, dy) || 1;
+      return { dx: dx / m, dy: dy / m };
+    }
+    // perlin (value-noise) → angle directly from noise
+    const n = _valueNoise2(x / s, y / s, seed);
+    const a = n * Math.PI * 2 * 2; // two full rotations across the range
+    return { dx: Math.cos(a), dy: Math.sin(a) };
+  };
+
+  const _flowFieldFill = (poly, density, flowFieldType, flowNoiseScale, flowSeed, flowTraceLen, flowSeparation) => {
+    const bounds = loopBounds(poly);
+    const bw = bounds.maxX - bounds.minX;
+    const bh = bounds.maxY - bounds.minY;
+    if (bw <= 0 || bh <= 0) return [];
+    const cx = (bounds.minX + bounds.maxX) / 2;
+    const cy = (bounds.minY + bounds.maxY) / 2;
+    const sep = Math.max(0.5, flowSeparation);
+    const step = Math.max(0.5, sep * 0.5);
+    const maxSteps = Math.max(5, Math.min(200, Math.round(flowTraceLen)));
+    // candidate seed lattice on rotated-bbox grid at ~sep spacing
+    const candidates = [];
+    const rng = _mulberry32(flowSeed | 0);
+    const cols = Math.max(4, Math.ceil(bw / sep));
+    const rows = Math.max(4, Math.ceil(bh / sep));
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const px = bounds.minX + (c + 0.5) * (bw / cols) + (rng() - 0.5) * sep * 0.4;
+        const py = bounds.minY + (r + 0.5) * (bh / rows) + (rng() - 0.5) * sep * 0.4;
+        if (polyContainsPoint(poly, px, py)) candidates.push({ x: px, y: py });
+      }
+    }
+    // shuffle for varied coverage
+    for (let i = candidates.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      const t = candidates[i]; candidates[i] = candidates[j]; candidates[j] = t;
+    }
+    // spatial hash for separation enforcement
+    const cellSize = sep;
+    const grid = new Map();
+    const cellKey = (gx, gy) => `${gx}:${gy}`;
+    const tooClose = (x, y) => {
+      const gx = Math.floor(x / cellSize);
+      const gy = Math.floor(y / cellSize);
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+        const arr = grid.get(cellKey(gx + dx, gy + dy));
+        if (!arr) continue;
+        for (const p of arr) {
+          if ((p.x - x) ** 2 + (p.y - y) ** 2 < sep * sep) return true;
+        }
+      }
+      return false;
+    };
+    const recordPoint = (x, y) => {
+      const gx = Math.floor(x / cellSize);
+      const gy = Math.floor(y / cellSize);
+      const k = cellKey(gx, gy);
+      let arr = grid.get(k);
+      if (!arr) { arr = []; grid.set(k, arr); }
+      arr.push({ x, y });
+    };
+    const result = [];
+    const ftype = flowFieldType || 'perlin';
+    for (const seed of candidates) {
+      if (tooClose(seed.x, seed.y)) continue;
+      // trace forward and backward; rejection only against OTHER streamlines
+      const trace = (sign) => {
+        const pts = [];
+        let x = seed.x, y = seed.y;
+        for (let i = 0; i < maxSteps; i++) {
+          if (!polyContainsPoint(poly, x, y)) break;
+          if (i > 0 && tooClose(x, y)) break;
+          pts.push({ x, y });
+          const v = _flowVectorAt(x, y, ftype, flowNoiseScale, flowSeed | 0, cx, cy);
+          x += v.dx * step * sign;
+          y += v.dy * step * sign;
+        }
+        return pts;
+      };
+      const fwd = trace(+1);
+      const bwd = trace(-1);
+      // splice: bwd reversed (minus shared seed) + fwd
+      const path = [...bwd.slice(1).reverse(), ...fwd];
+      if (path.length >= 2) {
+        // commit this stream's points to the separation grid so subsequent
+        // seeds and traces stay clear
+        for (const pt of path) recordPoint(pt.x, pt.y);
+        for (const seg of clipPolylineToPoly(path, poly)) result.push(seg);
+      }
+    }
+    return result;
+  };
+  const _flowFieldFillComposite = (regions, density, flowFieldType, flowNoiseScale, flowSeed, flowTraceLen, flowSeparation) => {
+    const out = [];
+    for (const r of regions) out.push(..._flowFieldFill(r, density, flowFieldType, flowNoiseScale, flowSeed, flowTraceLen, flowSeparation));
+    return out;
+  };
+
+  // ── B2: Voronoi ──────────────────────────────────────────────────────────
+  const _voronoiSeeds = (poly, count, mode, jitter, seedSalt) => {
+    const bounds = loopBounds(poly);
+    const bw = bounds.maxX - bounds.minX;
+    const bh = bounds.maxY - bounds.minY;
+    const rng = _mulberry32((seedSalt | 0) + 17);
+    const n = Math.max(3, Math.min(500, Math.round(count)));
+    const pts = [];
+    if (mode === 'square' || mode === 'hexgrid') {
+      const cols = Math.max(2, Math.round(Math.sqrt(n * bw / bh)));
+      const rows = Math.max(2, Math.round(n / cols));
+      const cw = bw / cols, ch = bh / rows;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const offX = (mode === 'hexgrid' && r % 2 === 1) ? cw * 0.5 : 0;
+          const px = bounds.minX + (c + 0.5) * cw + offX + (rng() - 0.5) * cw * jitter;
+          const py = bounds.minY + (r + 0.5) * ch + (rng() - 0.5) * ch * jitter;
+          if (polyContainsPoint(poly, px, py)) pts.push({ x: px, y: py });
+        }
+      }
+    } else {
+      // random with Poisson-ish bias when jitter low
+      const minDist = jitter < 0.5 ? Math.sqrt((bw * bh) / n) * (1 - jitter) : 0;
+      let tries = 0;
+      while (pts.length < n && tries < n * 30) {
+        tries++;
+        const px = bounds.minX + rng() * bw;
+        const py = bounds.minY + rng() * bh;
+        if (!polyContainsPoint(poly, px, py)) continue;
+        if (minDist > 0) {
+          let ok = true;
+          for (const p of pts) {
+            if ((p.x - px) ** 2 + (p.y - py) ** 2 < minDist * minDist) { ok = false; break; }
+          }
+          if (!ok) continue;
+        }
+        pts.push({ x: px, y: py });
+      }
+    }
+    return pts;
+  };
+
+  const _voronoiFill = (poly, density, voronoiSeeds, voronoiJitter, voronoiStroke, voronoiSeedMode) => {
+    const seeds = _voronoiSeeds(poly, voronoiSeeds || 60, voronoiSeedMode || 'random', voronoiJitter ?? 0.5, 1);
+    if (seeds.length === 0) return [];
+    const bounds = loopBounds(poly);
+    // brute-force boundary extraction at 1mm grid resolution
+    const step = Math.max(0.6, Math.min(2.0, density * 0.5));
+    const cols = Math.max(2, Math.ceil((bounds.maxX - bounds.minX) / step));
+    const rows = Math.max(2, Math.ceil((bounds.maxY - bounds.minY) / step));
+    const owner = new Int32Array(cols * rows);
+    for (let r = 0; r < rows; r++) {
+      const py = bounds.minY + (r + 0.5) * step;
+      for (let c = 0; c < cols; c++) {
+        const px = bounds.minX + (c + 0.5) * step;
+        let best = 0, bd = Infinity;
+        for (let i = 0; i < seeds.length; i++) {
+          const d = (seeds[i].x - px) ** 2 + (seeds[i].y - py) ** 2;
+          if (d < bd) { bd = d; best = i; }
+        }
+        owner[r * cols + c] = best;
+      }
+    }
+    const result = [];
+    if (voronoiStroke === 'centroid-spokes' || voronoiStroke === 'boundary+centroid') {
+      // approximate cell centroid = average of pixel centers it owns
+      const sumX = new Float64Array(seeds.length);
+      const sumY = new Float64Array(seeds.length);
+      const cnt = new Int32Array(seeds.length);
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+        const i = owner[r * cols + c];
+        sumX[i] += bounds.minX + (c + 0.5) * step;
+        sumY[i] += bounds.minY + (r + 0.5) * step;
+        cnt[i]++;
+      }
+      for (let i = 0; i < seeds.length; i++) {
+        if (cnt[i] === 0) continue;
+        const cx = sumX[i] / cnt[i], cy = sumY[i] / cnt[i];
+        for (const [a, b] of clipSegmentToPoly(seeds[i], { x: cx, y: cy }, poly)) result.push([a, b]);
+      }
+    }
+    if (voronoiStroke === 'concentric') {
+      // emit concentric polylines from each seed outward up to nearest neighbor
+      for (let i = 0; i < seeds.length; i++) {
+        let nearest = Infinity;
+        for (let j = 0; j < seeds.length; j++) {
+          if (i === j) continue;
+          const d = Math.hypot(seeds[i].x - seeds[j].x, seeds[i].y - seeds[j].y);
+          if (d < nearest) nearest = d;
+        }
+        if (!isFinite(nearest)) continue;
+        const maxR = nearest * 0.45;
+        const rings = Math.max(2, Math.round(maxR / Math.max(0.5, density)));
+        for (let k = 1; k <= rings; k++) {
+          const rr = (k / rings) * maxR;
+          const steps = Math.max(12, Math.round(rr * 4));
+          const pts = [];
+          for (let s = 0; s <= steps; s++) {
+            const a = (s / steps) * Math.PI * 2;
+            pts.push({ x: seeds[i].x + Math.cos(a) * rr, y: seeds[i].y + Math.sin(a) * rr });
+          }
+          for (const seg of clipPolylineToPoly(pts, poly)) result.push(seg);
+        }
+      }
+      return result;
+    }
+    if (voronoiStroke !== 'centroid-spokes') {
+      // boundary edges: scan cell-pair changes and emit short ticks
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols - 1; c++) {
+          if (owner[r * cols + c] !== owner[r * cols + c + 1]) {
+            const x = bounds.minX + (c + 1) * step;
+            const y0 = bounds.minY + r * step;
+            const y1 = bounds.minY + (r + 1) * step;
+            for (const [a, b] of clipSegmentToPoly({ x, y: y0 }, { x, y: y1 }, poly)) result.push([a, b]);
+          }
+        }
+      }
+      for (let r = 0; r < rows - 1; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (owner[r * cols + c] !== owner[(r + 1) * cols + c]) {
+            const y = bounds.minY + (r + 1) * step;
+            const x0 = bounds.minX + c * step;
+            const x1 = bounds.minX + (c + 1) * step;
+            for (const [a, b] of clipSegmentToPoly({ x: x0, y }, { x: x1, y }, poly)) result.push([a, b]);
+          }
+        }
+      }
+    }
+    return result;
+  };
+  const _voronoiFillComposite = (regions, density, ...args) => {
+    const out = [];
+    for (const r of regions) out.push(..._voronoiFill(r, density, ...args));
+    return out;
+  };
+
+  // ── B3: Truchet Tiles ────────────────────────────────────────────────────
+  const _truchetTilePolys = (set, size) => {
+    // returns array of polylines in local [0..size]² coords
+    const s = size;
+    const half = s / 2;
+    if (set === 'diagonals') {
+      return [[{ x: 0, y: 0 }, { x: s, y: s }]];
+    }
+    if (set === 'dots-and-lines') {
+      return [
+        [{ x: half - s * 0.1, y: half }, { x: half + s * 0.1, y: half }],
+        [{ x: half, y: 0 }, { x: half, y: s }],
+        [{ x: 0, y: half }, { x: s, y: half }],
+      ];
+    }
+    if (set === 'triangle-split') {
+      return [[{ x: 0, y: s }, { x: s, y: 0 }]];
+    }
+    if (set === 'scribble') {
+      // small squiggle from one edge to another
+      const pts = [];
+      const N = 12;
+      for (let i = 0; i <= N; i++) {
+        const t = i / N;
+        const x = t * s;
+        const y = half + Math.sin(t * Math.PI * 3) * s * 0.25;
+        pts.push({ x, y });
+      }
+      return [pts];
+    }
+    // quarter-arcs: two quarter circles connecting adjacent corners
+    const steps = 12;
+    const arc = (cx, cy, r, a0, a1) => {
+      const pts = [];
+      for (let i = 0; i <= steps; i++) {
+        const a = a0 + (a1 - a0) * (i / steps);
+        pts.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r });
+      }
+      return pts;
+    };
+    return [
+      arc(0, 0, half, 0, Math.PI / 2),
+      arc(s, s, half, Math.PI, 3 * Math.PI / 2),
+    ];
+  };
+
+  const _truchetFill = (poly, density, truchetTileSet, truchetTileSize, truchetSeed, truchetRotations) => {
+    const bounds = loopBounds(poly);
+    const size = Math.max(1, truchetTileSize || 6);
+    const rng = _mulberry32((truchetSeed | 0) + 31);
+    const rotsAllowed = Math.max(1, Math.min(4, Math.round(truchetRotations || 4)));
+    const tileLocal = _truchetTilePolys(truchetTileSet || 'quarter-arcs', size);
+    const result = [];
+    for (let y = bounds.minY; y < bounds.maxY; y += size) {
+      for (let x = bounds.minX; x < bounds.maxX; x += size) {
+        const cx = x + size / 2, cy = y + size / 2;
+        if (!polyContainsPoint(poly, cx, cy)) {
+          // edge tile — still check via corner sampling
+          if (!polyContainsPoint(poly, x + size * 0.25, y + size * 0.25)
+            && !polyContainsPoint(poly, x + size * 0.75, y + size * 0.75)) continue;
+        }
+        const rot = Math.floor(rng() * rotsAllowed) * (Math.PI / 2);
+        const ca = Math.cos(rot), sa = Math.sin(rot);
+        for (const localPath of tileLocal) {
+          // translate to tile center, rotate around center, then translate to world
+          const transformed = localPath.map((p) => {
+            const lx = p.x - size / 2, ly = p.y - size / 2;
+            return { x: cx + lx * ca - ly * sa, y: cy + lx * sa + ly * ca };
+          });
+          for (const seg of clipPolylineToPoly(transformed, poly)) result.push(seg);
+        }
+      }
+    }
+    return result;
+  };
+  const _truchetFillComposite = (regions, density, ...args) => {
+    const out = [];
+    for (const r of regions) out.push(..._truchetFill(r, density, ...args));
+    return out;
+  };
+
+  // ── B4: Maze (DFS) ───────────────────────────────────────────────────────
+  const _mazeFill = (poly, density, mazeCellSize, mazeAlgorithm, mazeBranchBias, mazeSeed, mazeWallMode) => {
+    const bounds = loopBounds(poly);
+    const cs = Math.max(1, mazeCellSize || 5);
+    const cols = Math.max(2, Math.ceil((bounds.maxX - bounds.minX) / cs));
+    const rows = Math.max(2, Math.ceil((bounds.maxY - bounds.minY) / cs));
+    // Cap cells to keep perf bounded
+    if (cols * rows > 4000) return [];
+    const inside = new Uint8Array(cols * rows);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const cx = bounds.minX + (c + 0.5) * cs;
+        const cy = bounds.minY + (r + 0.5) * cs;
+        if (polyContainsPoint(poly, cx, cy)) inside[r * cols + c] = 1;
+      }
+    }
+    // walls between neighbours: stored as set of removed walls
+    // edge index: horizontal walls h[r][c] (between r-1 and r), vertical v[r][c] (between c-1 and c)
+    const visited = new Uint8Array(cols * rows);
+    const rng = _mulberry32((mazeSeed | 0) + 53);
+    // wall presence: hWalls[(r)*cols + c] = wall between cell (r-1,c) and (r,c) [for r in 1..rows-1]
+    const hWalls = new Uint8Array(rows * cols);
+    const vWalls = new Uint8Array(rows * cols);
+    hWalls.fill(1); vWalls.fill(1);
+    // find a starting cell
+    let start = -1;
+    for (let i = 0; i < cols * rows; i++) if (inside[i]) { start = i; break; }
+    if (start < 0) return [];
+    // DFS
+    const stack = [start];
+    visited[start] = 1;
+    const branchBias = Math.max(0, Math.min(1, mazeBranchBias ?? 0.5));
+    while (stack.length) {
+      const idx = stack[stack.length - 1];
+      const r = Math.floor(idx / cols), c = idx % cols;
+      const nbrs = [];
+      // N
+      if (r > 0 && inside[(r - 1) * cols + c] && !visited[(r - 1) * cols + c]) nbrs.push({ idx: (r - 1) * cols + c, wall: 'h', wr: r, wc: c });
+      // S
+      if (r < rows - 1 && inside[(r + 1) * cols + c] && !visited[(r + 1) * cols + c]) nbrs.push({ idx: (r + 1) * cols + c, wall: 'h', wr: r + 1, wc: c });
+      // W
+      if (c > 0 && inside[r * cols + c - 1] && !visited[r * cols + c - 1]) nbrs.push({ idx: r * cols + c - 1, wall: 'v', wr: r, wc: c });
+      // E
+      if (c < cols - 1 && inside[r * cols + c + 1] && !visited[r * cols + c + 1]) nbrs.push({ idx: r * cols + c + 1, wall: 'v', wr: r, wc: c + 1 });
+      if (!nbrs.length) { stack.pop(); continue; }
+      // branch bias: lower → more likely to pick first nbr (linear corridors)
+      let pick;
+      if (rng() < branchBias) pick = nbrs[Math.floor(rng() * nbrs.length)];
+      else pick = nbrs[0];
+      if (pick.wall === 'h') hWalls[pick.wr * cols + pick.wc] = 0;
+      else vWalls[pick.wr * cols + pick.wc] = 0;
+      visited[pick.idx] = 1;
+      stack.push(pick.idx);
+    }
+    const result = [];
+    const wantWalls = mazeWallMode !== 'path';
+    const wantPath = mazeWallMode === 'path' || mazeWallMode === 'both';
+    if (wantWalls) {
+      // emit remaining walls between adjacent cells
+      for (let r = 1; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (!inside[r * cols + c] || !inside[(r - 1) * cols + c]) continue;
+          if (hWalls[r * cols + c]) {
+            const y = bounds.minY + r * cs;
+            const x0 = bounds.minX + c * cs;
+            const x1 = bounds.minX + (c + 1) * cs;
+            for (const [a, b] of clipSegmentToPoly({ x: x0, y }, { x: x1, y }, poly)) result.push([a, b]);
+          }
+        }
+      }
+      for (let r = 0; r < rows; r++) {
+        for (let c = 1; c < cols; c++) {
+          if (!inside[r * cols + c] || !inside[r * cols + c - 1]) continue;
+          if (vWalls[r * cols + c]) {
+            const x = bounds.minX + c * cs;
+            const y0 = bounds.minY + r * cs;
+            const y1 = bounds.minY + (r + 1) * cs;
+            for (const [a, b] of clipSegmentToPoly({ x, y: y0 }, { x, y: y1 }, poly)) result.push([a, b]);
+          }
+        }
+      }
+    }
+    if (wantPath) {
+      // path = connect cell centers across removed walls
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (!inside[r * cols + c]) continue;
+          const cx = bounds.minX + (c + 0.5) * cs, cy = bounds.minY + (r + 0.5) * cs;
+          if (r + 1 < rows && inside[(r + 1) * cols + c] && !hWalls[(r + 1) * cols + c]) {
+            for (const [a, b] of clipSegmentToPoly({ x: cx, y: cy }, { x: cx, y: cy + cs }, poly)) result.push([a, b]);
+          }
+          if (c + 1 < cols && inside[r * cols + c + 1] && !vWalls[r * cols + c + 1]) {
+            for (const [a, b] of clipSegmentToPoly({ x: cx, y: cy }, { x: cx + cs, y: cy }, poly)) result.push([a, b]);
+          }
+        }
+      }
+    }
+    return result;
+  };
+  const _mazeFillComposite = (regions, density, ...args) => {
+    const out = [];
+    for (const r of regions) out.push(..._mazeFill(r, density, ...args));
+    return out;
+  };
+
+  // ── B5: Scribble ─────────────────────────────────────────────────────────
+  const _scribbleFill = (poly, density, scribbleSmoothness, scribbleSeed, scribbleCoverage) => {
+    const bounds = loopBounds(poly);
+    const area = Math.abs(polyArea(poly));
+    if (area <= 0) return [];
+    const stepLen = Math.max(0.5, density);
+    const coverage = Math.max(0.1, Math.min(5, scribbleCoverage || 1));
+    const totalLen = (area / stepLen) * coverage;
+    const stepCount = Math.min(8000, Math.max(50, Math.round(totalLen / stepLen)));
+    const rng = _mulberry32((scribbleSeed | 0) + 71);
+    const smoothness = Math.max(0, Math.min(1, scribbleSmoothness ?? 0.6));
+    // momentum: higher smoothness → angle changes slowly
+    const turnLimit = (1 - smoothness) * Math.PI * 0.6 + 0.05;
+    let x = (bounds.minX + bounds.maxX) / 2;
+    let y = (bounds.minY + bounds.maxY) / 2;
+    let theta = rng() * Math.PI * 2;
+    const path = [{ x, y }];
+    // simple coarse grid memory for repulsion
+    const gridSize = Math.max(1.5, stepLen * 1.5);
+    const visited = new Map();
+    const visitKey = (px, py) => `${Math.floor(px / gridSize)}:${Math.floor(py / gridSize)}`;
+    const recordVisit = (px, py) => {
+      const k = visitKey(px, py);
+      visited.set(k, (visited.get(k) || 0) + 1);
+    };
+    const visitCount = (px, py) => visited.get(visitKey(px, py)) || 0;
+    recordVisit(x, y);
+    for (let i = 0; i < stepCount; i++) {
+      // sample 3 candidate angles, pick the one with lowest visit count nearby
+      let bestTheta = theta;
+      let bestCost = Infinity;
+      for (let k = 0; k < 5; k++) {
+        const dt = (rng() - 0.5) * 2 * turnLimit;
+        const t = theta + dt;
+        const nx = x + Math.cos(t) * stepLen;
+        const ny = y + Math.sin(t) * stepLen;
+        if (!polyContainsPoint(poly, nx, ny)) { continue; }
+        const cost = visitCount(nx, ny);
+        if (cost < bestCost) { bestCost = cost; bestTheta = t; }
+      }
+      if (bestCost === Infinity) {
+        // bounce: rotate sharply
+        theta = theta + Math.PI + (rng() - 0.5) * 0.4;
+        continue;
+      }
+      theta = bestTheta;
+      x = x + Math.cos(theta) * stepLen;
+      y = y + Math.sin(theta) * stepLen;
+      path.push({ x, y });
+      recordVisit(x, y);
+    }
+    return clipPolylineToPoly(path, poly);
+  };
+  const _scribbleFillComposite = (regions, density, ...args) => {
+    const out = [];
+    for (const r of regions) out.push(..._scribbleFill(r, density, ...args));
+    return out;
+  };
+
+  // ── B6: L-System ─────────────────────────────────────────────────────────
+  const _LSYSTEM_PRESETS = {
+    coral:     { axiom: 'F', rules: { F: 'F[+F]F[-F]F' }, angle: 25, lenFactor: 0.5 },
+    lichen:    { axiom: 'F', rules: { F: 'F[+F][-F][++F][--F]' }, angle: 35, lenFactor: 0.45 },
+    plant:     { axiom: 'X', rules: { X: 'F[+X][-X]FX', F: 'FF' }, angle: 25, lenFactor: 0.5 },
+    dendritic: { axiom: 'F', rules: { F: 'F[+F]F[-F][F]' }, angle: 22, lenFactor: 0.5 },
+    algae:     { axiom: 'A', rules: { A: 'AB', B: 'A' }, angle: 30, lenFactor: 0.6 },
+  };
+  const _lsystemFill = (poly, density, lsysPreset, lsysIterations, lsysAngleVariance, lsysSeed, lsysScale) => {
+    const preset = _LSYSTEM_PRESETS[lsysPreset] || _LSYSTEM_PRESETS.coral;
+    const iters = Math.max(1, Math.min(6, Math.round(lsysIterations || 4)));
+    // expand string
+    let s = preset.axiom;
+    for (let i = 0; i < iters; i++) {
+      let next = '';
+      for (const ch of s) next += (preset.rules[ch] != null ? preset.rules[ch] : ch);
+      s = next;
+      if (s.length > 20000) break;
+    }
+    // turtle
+    const bounds = loopBounds(poly);
+    const cx = (bounds.minX + bounds.maxX) / 2;
+    const cy = (bounds.minY + bounds.maxY) / 2;
+    const baseLen = Math.max(0.3, Math.min(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY) / Math.pow(2, iters - 1)) * (lsysScale || 1);
+    const rng = _mulberry32((lsysSeed | 0) + 97);
+    const angVarRad = (lsysAngleVariance || 0) * Math.PI / 180;
+    const baseAng = preset.angle * Math.PI / 180;
+    let x = cx, y = cy, theta = -Math.PI / 2; // pointing up
+    const stack = [];
+    const segs = [];
+    let cur = [{ x, y }];
+    for (const ch of s) {
+      if (ch === 'F' || ch === 'A' || ch === 'B') {
+        const nx = x + Math.cos(theta) * baseLen;
+        const ny = y + Math.sin(theta) * baseLen;
+        cur.push({ x: nx, y: ny });
+        x = nx; y = ny;
+      } else if (ch === '+') {
+        theta += baseAng + (rng() - 0.5) * angVarRad * 2;
+      } else if (ch === '-') {
+        theta -= baseAng + (rng() - 0.5) * angVarRad * 2;
+      } else if (ch === '[') {
+        stack.push({ x, y, theta });
+        if (cur.length >= 2) segs.push(cur);
+        cur = [{ x, y }];
+      } else if (ch === ']') {
+        if (cur.length >= 2) segs.push(cur);
+        const st = stack.pop();
+        if (st) { x = st.x; y = st.y; theta = st.theta; }
+        cur = [{ x, y }];
+      }
+    }
+    if (cur.length >= 2) segs.push(cur);
+    const result = [];
+    for (const seg of segs) {
+      for (const clipped of clipPolylineToPoly(seg, poly)) result.push(clipped);
+    }
+    return result;
+  };
+  const _lsystemFillComposite = (regions, density, ...args) => {
+    const out = [];
+    for (const r of regions) out.push(..._lsystemFill(r, density, ...args));
+    return out;
+  };
+
+  // ── B7: Halftone ─────────────────────────────────────────────────────────
+  const _halftoneFill = (poly, density, halftoneSource, halftoneMinR, halftoneMaxR, halftoneFrequency, halftoneAngle, halftoneInvert) => {
+    const bounds = loopBounds(poly);
+    const minR = Math.max(0.05, halftoneMinR ?? 0.2);
+    const maxR = Math.max(minR + 0.01, halftoneMaxR ?? 1.5);
+    const freq = Math.max(0.1, halftoneFrequency ?? 5);
+    const ang = (halftoneAngle || 0) * Math.PI / 180;
+    const cax = Math.cos(ang), sax = Math.sin(ang);
+    const invert = halftoneInvert === 'on';
+    const cx = (bounds.minX + bounds.maxX) / 2;
+    const cy = (bounds.minY + bounds.maxY) / 2;
+    const maxDim = Math.hypot(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY);
+    const sourceFn = (x, y) => {
+      let t;
+      if (halftoneSource === 'linear') {
+        const dx = x - cx, dy = y - cy;
+        const proj = dx * cax + dy * sax;
+        t = 0.5 + proj / (maxDim || 1);
+      } else if (halftoneSource === 'noise') {
+        t = _valueNoise2(x / freq, y / freq, 1);
+      } else if (halftoneSource === 'distance-to-edge') {
+        // approximate: distance to polygon edge / half-diag
+        let dmin = Infinity;
+        const n = poly.length;
+        for (let i = 0; i + 1 < n; i++) {
+          const a = poly[i], b = poly[i + 1];
+          const ex = b.x - a.x, ey = b.y - a.y;
+          const tt = Math.max(0, Math.min(1, ((x - a.x) * ex + (y - a.y) * ey) / (ex * ex + ey * ey || 1)));
+          const px = a.x + tt * ex, py = a.y + tt * ey;
+          const d = Math.hypot(x - px, y - py);
+          if (d < dmin) dmin = d;
+        }
+        t = Math.min(1, dmin / (maxDim * 0.5));
+      } else {
+        // radial: t increases outward
+        const dx = x - cx, dy = y - cy;
+        t = Math.min(1, Math.hypot(dx, dy) / (maxDim * 0.5));
+      }
+      if (invert) t = 1 - t;
+      return Math.max(0, Math.min(1, t));
+    };
+    const step = Math.max(0.5, density);
+    const result = [];
+    for (let y = bounds.minY; y < bounds.maxY; y += step) {
+      for (let x = bounds.minX; x < bounds.maxX; x += step) {
+        if (!polyContainsPoint(poly, x, y)) continue;
+        const t = sourceFn(x, y);
+        const r = minR + t * (maxR - minR);
+        if (r < 0.05) continue;
+        // emit tick mark of length 2r horizontally (rotate by halftoneAngle)
+        const dx = cax * r, dy = sax * r;
+        result.push([{ x: x - dx, y: y - dy }, { x: x + dx, y: y + dy }]);
+      }
+    }
+    return result;
+  };
+  const _halftoneFillComposite = (regions, density, ...args) => {
+    const out = [];
+    for (const r of regions) out.push(..._halftoneFill(r, density, ...args));
+    return out;
+  };
+
+  // ── B8: Stripes ──────────────────────────────────────────────────────────
+  const _stripesFill = (fill, region, regions, density) => {
+    const stripeBandWidth = Math.max(0.5, fill.stripeBandWidth ?? 4);
+    const stripeGap = Math.max(0, fill.stripeGap ?? 2);
+    const stripeAngle = fill.stripeAngle ?? 0;
+    let stripePrimary = fill.stripePrimary || 'hatch';
+    if (stripePrimary === 'stripes' || stripePrimary === 'none') stripePrimary = 'hatch';
+    let stripeSecondary = fill.stripeSecondary || 'none';
+    if (stripeSecondary === 'stripes') stripeSecondary = 'none';
+    const stripeSecondaryDensity = fill.stripeSecondaryDensity ?? 2;
+
+    const ar = stripeAngle * Math.PI / 180;
+    const ca = Math.cos(ar), sa = Math.sin(ar);
+    const rotPoly = region.map((p) => ({ x: p.x * ca + p.y * sa, y: -p.x * sa + p.y * ca }));
+    const ys = rotPoly.map((p) => p.y);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const xs = rotPoly.map((p) => p.x);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const result = [];
+    const period = stripeBandWidth + stripeGap;
+    if (period <= 0) return [];
+    // For each band slab, clip to region by intersecting with horizontal slab
+    // in rotated space and unrotating back.
+    const unrot = (p) => ({ x: p.x * ca - p.y * sa, y: p.x * sa + p.y * ca });
+    const makeSlab = (y0, y1) => [
+      unrot({ x: minX - 1, y: y0 }),
+      unrot({ x: maxX + 1, y: y0 }),
+      unrot({ x: maxX + 1, y: y1 }),
+      unrot({ x: minX - 1, y: y1 }),
+      unrot({ x: minX - 1, y: y0 }),
+    ];
+    const callSub = (subFillType, slabRegion, dens) => {
+      const sub = {
+        ...fill,
+        fillType: subFillType,
+        density: dens,
+        region: slabRegion,
+        regions: [slabRegion],
+        padding: 0,
+      };
+      // Re-enter dispatcher — guarded against recursion since stripePrimary/secondary
+      // cannot be 'stripes' (filtered above)
+      return generatePatternFillPaths(sub);
+    };
+    for (let y = minY; y < maxY; y += period) {
+      const primSlab = makeSlab(y, y + stripeBandWidth);
+      for (const seg of callSub(stripePrimary, primSlab, density)) result.push(seg);
+      if (stripeSecondary !== 'none' && stripeGap > 0) {
+        const secSlab = makeSlab(y + stripeBandWidth, y + period);
+        const secDens = density * Math.max(0.1, stripeSecondaryDensity);
+        for (const seg of callSub(stripeSecondary, secSlab, secDens)) result.push(seg);
+      }
+    }
+    return result;
+  };
+
+  // ── B9: Spirograph ───────────────────────────────────────────────────────
+  const _spirographFill = (poly, density, spiroRatioA, spiroRatioB, spiroPhase, spiroTurns, spiroDeformation) => {
+    const A = Math.max(0.5, spiroRatioA ?? 5);
+    const B = Math.max(0.5, spiroRatioB ?? 3);
+    const phase = (spiroPhase || 0) * Math.PI / 180;
+    const turns = Math.max(1, Math.min(200, Math.round(spiroTurns || 50)));
+    const def = Math.max(0, Math.min(1, spiroDeformation || 0));
+    const bounds = loopBounds(poly);
+    const cx = (bounds.minX + bounds.maxX) / 2;
+    const cy = (bounds.minY + bounds.maxY) / 2;
+    const halfSize = Math.min(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY) / 2;
+    if (halfSize <= 0) return [];
+    // Lissajous (def=0): x = sin(A*t+phase), y = sin(B*t)
+    // Hypotrochoid (def=1): x = (A-B)cos(t) + B*cos(((A-B)/B)*t + phase)
+    const sampleCount = turns * 200;
+    const pts = [];
+    const tMax = turns * Math.PI * 2;
+    let maxLissAmp = 1; // sin in [-1, 1]
+    let maxHypoAmp = A; // approx
+    for (let i = 0; i <= sampleCount; i++) {
+      const t = (i / sampleCount) * tMax;
+      // Lissajous
+      const lx = Math.sin(A * t + phase);
+      const ly = Math.sin(B * t);
+      // Hypotrochoid
+      const hx = ((A - B) * Math.cos(t) + B * Math.cos(((A - B) / B) * t + phase));
+      const hy = ((A - B) * Math.sin(t) - B * Math.sin(((A - B) / B) * t + phase));
+      const nx = lx * (1 - def) / maxLissAmp + hx * def / maxHypoAmp;
+      const ny = ly * (1 - def) / maxLissAmp + hy * def / maxHypoAmp;
+      pts.push({ x: cx + nx * halfSize * 0.95, y: cy + ny * halfSize * 0.95 });
+    }
+    return clipPolylineToPoly(pts, poly);
+  };
+  const _spirographFillComposite = (regions, density, ...args) => {
+    const out = [];
+    for (const r of regions) out.push(..._spirographFill(r, density, ...args));
+    return out;
+  };
+
+  // ── B10: Weave ───────────────────────────────────────────────────────────
+  const _weaveOverUnder = (warpIdx, weftIdx, pattern, weaveOver, weaveUnder) => {
+    // returns true if warp goes OVER at this crossing (weft goes under)
+    const over = Math.max(1, weaveOver || 1);
+    const under = Math.max(1, weaveUnder || 1);
+    if (pattern === 'plain') return (warpIdx + weftIdx) % 2 === 0;
+    if (pattern === 'twill') return ((warpIdx + weftIdx) % (over + under)) < over;
+    if (pattern === 'basket') return (Math.floor(warpIdx / over) + Math.floor(weftIdx / under)) % 2 === 0;
+    if (pattern === 'satin') return ((warpIdx + 5 * weftIdx) % (over + under)) < over;
+    return (warpIdx + weftIdx) % 2 === 0;
+  };
+  const _weaveFill = (poly, density, weavePattern, weaveStrandWidth, weaveGap, weaveAngle, weaveOver, weaveUnder) => {
+    const width = Math.max(0.3, weaveStrandWidth || 1.5);
+    const gap = Math.max(0, weaveGap || 0);
+    const ang = (weaveAngle || 0) * Math.PI / 180;
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    const rotPoly = poly.map((p) => ({ x: p.x * ca + p.y * sa, y: -p.x * sa + p.y * ca }));
+    const unrot = (p) => ({ x: p.x * ca - p.y * sa, y: p.x * sa + p.y * ca });
+    const xs = rotPoly.map((p) => p.x), ys = rotPoly.map((p) => p.y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const period = width + gap;
+    if (period <= 0) return [];
+    // collect warp (vertical) and weft (horizontal) center positions in rotated frame
+    const warpsX = [];
+    for (let x = minX; x <= maxX; x += period) warpsX.push(x);
+    const weftsY = [];
+    for (let y = minY; y <= maxY; y += period) weftsY.push(y);
+    const result = [];
+    const cutLen = width + gap;
+    // warps: vertical lines, but cut at crossings where warp is under
+    for (let i = 0; i < warpsX.length; i++) {
+      const x = warpsX[i];
+      // build sub-segments between crossings
+      let segStart = minY;
+      const stops = [];
+      for (let j = 0; j < weftsY.length; j++) {
+        const y = weftsY[j];
+        const warpOver = _weaveOverUnder(i, j, weavePattern, weaveOver, weaveUnder);
+        if (!warpOver) {
+          // cut a gap centered on y
+          stops.push([y - cutLen * 0.5, y + cutLen * 0.5]);
+        }
+      }
+      let cursor = segStart;
+      for (const [a, b] of stops) {
+        if (a > cursor) {
+          const p0 = unrot({ x, y: cursor });
+          const p1 = unrot({ x, y: a });
+          for (const seg of clipSegmentToPoly(p0, p1, poly)) result.push(seg);
+        }
+        cursor = Math.max(cursor, b);
+      }
+      if (cursor < maxY) {
+        const p0 = unrot({ x, y: cursor });
+        const p1 = unrot({ x, y: maxY });
+        for (const seg of clipSegmentToPoly(p0, p1, poly)) result.push(seg);
+      }
+    }
+    // wefts: horizontal lines, cut where weft is under
+    for (let j = 0; j < weftsY.length; j++) {
+      const y = weftsY[j];
+      let cursor = minX;
+      const stops = [];
+      for (let i = 0; i < warpsX.length; i++) {
+        const x = warpsX[i];
+        const warpOver = _weaveOverUnder(i, j, weavePattern, weaveOver, weaveUnder);
+        if (warpOver) {
+          stops.push([x - cutLen * 0.5, x + cutLen * 0.5]);
+        }
+      }
+      for (const [a, b] of stops) {
+        if (a > cursor) {
+          const p0 = unrot({ x: cursor, y });
+          const p1 = unrot({ x: a, y });
+          for (const seg of clipSegmentToPoly(p0, p1, poly)) result.push(seg);
+        }
+        cursor = Math.max(cursor, b);
+      }
+      if (cursor < maxX) {
+        const p0 = unrot({ x: cursor, y });
+        const p1 = unrot({ x: maxX, y });
+        for (const seg of clipSegmentToPoly(p0, p1, poly)) result.push(seg);
+      }
+    }
+    return result;
+  };
+  const _weaveFillComposite = (regions, density, ...args) => {
+    const out = [];
+    for (const r of regions) out.push(..._weaveFill(r, density, ...args));
+    return out;
+  };
+
   // Dispatch to the right fill type → array of paths in tile-local SVG coords
   const generatePatternFillPaths = (fill) => {
     const regions = getFillRegions(fill);
@@ -2839,6 +3680,24 @@
       spiralTurns = 0, spiralTightness = 0, spiralDirection = 'cw',
       radialSpokes = 0, radialSkip = 0,
       contourDirection = 'inset', contourStepVariance = 0, contourSimplify = 0,
+      // B1 Flow Field
+      flowFieldType = 'perlin', flowNoiseScale = 6.0, flowSeed = 1, flowTraceLen = 60, flowSeparation = 2.5,
+      // B2 Voronoi
+      voronoiSeeds = 60, voronoiJitter = 0.5, voronoiStroke = 'boundary', voronoiSeedMode = 'random',
+      // B3 Truchet
+      truchetTileSet = 'quarter-arcs', truchetTileSize = 6, truchetSeed = 1, truchetRotations = 4,
+      // B4 Maze
+      mazeCellSize = 5, mazeAlgorithm = 'dfs', mazeBranchBias = 0.5, mazeSeed = 1, mazeWallMode = 'walls',
+      // B5 Scribble
+      scribbleSmoothness = 0.6, scribbleSeed = 1, scribbleCoverage = 1.0,
+      // B6 L-System
+      lsysPreset = 'coral', lsysIterations = 4, lsysAngleVariance = 8, lsysSeed = 1, lsysScale = 1.0,
+      // B7 Halftone
+      halftoneSource = 'radial', halftoneMinR = 0.2, halftoneMaxR = 1.5, halftoneFrequency = 5, halftoneAngle = 0, halftoneInvert = 'off',
+      // B9 Spirograph
+      spiroRatioA = 5, spiroRatioB = 3, spiroPhase = 0, spiroTurns = 50, spiroDeformation = 0,
+      // B10 Weave
+      weavePattern = 'plain', weaveStrandWidth = 1.5, weaveGap = 0.3, weaveAngle = 0, weaveOver = 1, weaveUnder = 1,
     } = fill;
     // C3: hatch unified — compute the per-layer angle offsets up-front.
     // 1 layer = [0], 2 layers (crosshatch) = [0, 90], 3 layers (triaxial) = [0, 60, 120].
@@ -2879,6 +3738,16 @@
         case 'meander':     return meanderLines(region, density, angle, shiftX, shiftY);
         case 'polygonal':   return polygonalLines(region, density, angle, shiftX, shiftY, axes, polyTile, polyPadding, polyRotation, polyRotationStep, polyScaleStep);
         case 'triaxial':    return triaxialLines(region, density, angle, shiftX, shiftY);
+        case 'flowfield':   return _flowFieldFill(region, density, flowFieldType, flowNoiseScale, flowSeed, flowTraceLen, flowSeparation);
+        case 'voronoi':     return _voronoiFill(region, density, voronoiSeeds, voronoiJitter, voronoiStroke, voronoiSeedMode);
+        case 'truchet':     return _truchetFill(region, density, truchetTileSet, truchetTileSize, truchetSeed, truchetRotations);
+        case 'maze':        return _mazeFill(region, density, mazeCellSize, mazeAlgorithm, mazeBranchBias, mazeSeed, mazeWallMode);
+        case 'scribble':    return _scribbleFill(region, density, scribbleSmoothness, scribbleSeed, scribbleCoverage);
+        case 'lsystem':     return _lsystemFill(region, density, lsysPreset, lsysIterations, lsysAngleVariance, lsysSeed, lsysScale);
+        case 'halftone':    return _halftoneFill(region, density, halftoneSource, halftoneMinR, halftoneMaxR, halftoneFrequency, halftoneAngle, halftoneInvert);
+        case 'stripes':     return _stripesFill(fill, region, [region], density);
+        case 'spirograph':  return _spirographFill(region, density, spiroRatioA, spiroRatioB, spiroPhase, spiroTurns, spiroDeformation);
+        case 'weave':       return _weaveFill(region, density, weavePattern, weaveStrandWidth, weaveGap, weaveAngle, weaveOver, weaveUnder);
         default:            return hatchLines(region, density, 0 + angle, shiftX, shiftY);
       }
     }
@@ -2906,6 +3775,20 @@
       case 'meander':     return meanderLinesComposite(effectiveRegions, density, angle, shiftX, shiftY);
       case 'polygonal':   return polygonalLinesComposite(effectiveRegions, density, angle, shiftX, shiftY, axes, polyTile, polyPadding, polyRotation, polyRotationStep, polyScaleStep);
       case 'triaxial':    return triaxialLinesComposite(effectiveRegions, density, angle, shiftX, shiftY);
+      case 'flowfield':   return _flowFieldFillComposite(effectiveRegions, density, flowFieldType, flowNoiseScale, flowSeed, flowTraceLen, flowSeparation);
+      case 'voronoi':     return _voronoiFillComposite(effectiveRegions, density, voronoiSeeds, voronoiJitter, voronoiStroke, voronoiSeedMode);
+      case 'truchet':     return _truchetFillComposite(effectiveRegions, density, truchetTileSet, truchetTileSize, truchetSeed, truchetRotations);
+      case 'maze':        return _mazeFillComposite(effectiveRegions, density, mazeCellSize, mazeAlgorithm, mazeBranchBias, mazeSeed, mazeWallMode);
+      case 'scribble':    return _scribbleFillComposite(effectiveRegions, density, scribbleSmoothness, scribbleSeed, scribbleCoverage);
+      case 'lsystem':     return _lsystemFillComposite(effectiveRegions, density, lsysPreset, lsysIterations, lsysAngleVariance, lsysSeed, lsysScale);
+      case 'halftone':    return _halftoneFillComposite(effectiveRegions, density, halftoneSource, halftoneMinR, halftoneMaxR, halftoneFrequency, halftoneAngle, halftoneInvert);
+      case 'stripes': {
+        const out = [];
+        for (const r of effectiveRegions) out.push(..._stripesFill(fill, r, [r], density));
+        return out;
+      }
+      case 'spirograph':  return _spirographFillComposite(effectiveRegions, density, spiroRatioA, spiroRatioB, spiroPhase, spiroTurns, spiroDeformation);
+      case 'weave':       return _weaveFillComposite(effectiveRegions, density, weavePattern, weaveStrandWidth, weaveGap, weaveAngle, weaveOver, weaveUnder);
       default:            return hatchLinesComposite(effectiveRegions, density, 0 + angle, shiftX, shiftY);
     }
   };
