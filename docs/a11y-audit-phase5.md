@@ -1,5 +1,7 @@
 # Keyboard A11y Audit — Phase 5 Closure
 
+> **Historical snapshot.** This document was captured before the Meridian cleanup chain closed in v1.1.10. Two of the artifacts named below are no longer in the repo: `styles.css` was deleted in commit `3123da7` (refactor(meridian): unit 2.7) and `src/ui/_ui-legacy.js` was deleted in commit `7088a2f` (refactor(meridian): unit 1.10). The audit conclusions — Tab order, focus rings, and Escape paths across all 20 surfaces — still hold; the underlying CSS now lives entirely in `src/ui/skin/` and the legacy class body now lives in `src/ui/ui.js`. References to `styles.css` and `_ui-legacy.js` below have been preserved verbatim for historical accuracy.
+
 > Audit performed during the Meridian Blue skin migration's Phase 5. Focused on Tab order, focus rings, and Escape paths through every modal, menu, and overlay shipped during the migration. axe-core was not installed (avoiding a new dev dependency this late in the migration); manual + scripted audit results are documented below.
 
 ## Summary

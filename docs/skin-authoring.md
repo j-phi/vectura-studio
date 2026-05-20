@@ -16,7 +16,7 @@ This generates `src/ui/skin/twilight.css` from the SDK template and prints the m
 
 The Vectura UI is themed via CSS custom properties on `:root`. A "skin" is a stylesheet that sets those properties, plus a registry entry describing the skin to the runtime.
 
-- **Tokens** — CSS custom properties consumed by `components.css`, `styles.css`, and `renderer.js` via `getThemeToken()`.
+- **Tokens** — CSS custom properties consumed by `components.css` and `renderer.js` via `getThemeToken()`.
 - **Manifest** — registry entry in `window.Vectura.THEMES[id]`. Lives in `src/config/defaults.js`.
 - **Stylesheet swap** — `src/ui/skin/skin-manager.js` swaps `<link id="active-skin">` `href` when `App.applyTheme()` runs, and pushes `manifest.cssVars` to `:root` synchronously to avoid a flash of unstyled content while the new file streams in.
 - **Mode mirror** — `data-ui-skin="<id>"` on `<html>` lets selectors target a specific skin if needed (e.g., the petal-designer chrome lives behind `[data-ui-skin^="meridian"]`).
@@ -57,7 +57,6 @@ Token groups (full list inside the template):
 | Controls | `--ui-ctrl`, `--ui-ctrl-hov`, `--ui-workspace`, `--slider-start` | Buttons/inputs/canvas |
 | Shadow | `--shadow-sm`, `--shadow-md`, `--shadow-lg`, `--shadow-pane` | 4 elevation stops |
 | Tailwind RGB | `--vectura-{bg,panel,border,text,muted,accent,danger}-rgb` | Decomposed RGB triples for `bg-vectura-*` Tailwind utilities |
-| Legacy aliases | `--color-*` | Compatibility with `styles.css` + `renderer.js`. Keep them mapped to `--ui-*` until `styles.css` is removed in a future cleanup. |
 | Renderer | `--render-*` | Canvas rendering (selection handles, marquees, guides) |
 | Designer | `--designer-*` | Petal/pattern designer chrome |
 | Plotter | `--plotter-*` | Pens-panel preview visualization |
@@ -80,8 +79,7 @@ Reload `index.html`. The skin should appear in the skin picker (top-right). Cycl
 If something looks broken, the most common causes are:
 
 1. A typo in a token value (CSS silently falls through to defaults).
-2. Missing `--color-*` legacy alias — `styles.css` selectors break without these.
-3. Mismatched `[data-ui-skin="<id>"]` selector — the auto-generated file wires this from your id; if you renamed the file, update the selector inside it too.
+2. Mismatched `[data-ui-skin="<id>"]` selector — the auto-generated file wires this from your id; if you renamed the file, update the selector inside it too.
 
 ### 5. (Optional) Visual baselines
 
@@ -96,13 +94,13 @@ The visual regression suite (`npm run test:visual`) currently exercises `dark` /
 Specifically:
 
 - **`cssVars`** — the `--vectura-*-rgb` triples (Tailwind utilities resolve these immediately on first paint), plus any token a renderer or compute-heavy path reads at startup. Keep this list **short** — every entry is a string, written via inline style on `<html>`.
-- **Stylesheet** — everything else. `--ui-*`, `--render-*`, `--designer-*`, `--plotter-*`, `--shadow-*` and the `--color-*` aliases all live in the stylesheet. Stylesheet swap is one-frame fast in modern browsers, and `data-skin-swapping="true"` suppresses transitions during the swap to prevent visible flicker.
+- **Stylesheet** — everything else. `--ui-*`, `--render-*`, `--designer-*`, `--plotter-*`, and `--shadow-*` all live in the stylesheet. Stylesheet swap is one-frame fast in modern browsers, and `data-skin-swapping="true"` suppresses transitions during the swap to prevent visible flicker.
 
 ---
 
 ## Reduced-motion compliance
 
-The skin system honors `prefers-reduced-motion: reduce` automatically. The shared `src/ui/skin/motion.css` includes a reduced-motion fallback for every keyframe (`thumb-release`, `fx-pulse-fill`, `btn-press`, `progress-indeterminate`), and `styles.css` has a global guard collapsing all animations + transitions to ≤0.01ms.
+The skin system honors `prefers-reduced-motion: reduce` automatically. The shared `src/ui/skin/motion.css` includes a reduced-motion fallback for every keyframe (`thumb-release`, `fx-pulse-fill`, `btn-press`, `progress-indeterminate`) plus a universal `*, *::before, *::after` guard collapsing all animations + transitions to ≤0.01ms.
 
 If your skin adds new keyframes (rare — most skins don't), add them to `motion.css` (not your skin file) and pair them with a reduced-motion fallback there.
 
