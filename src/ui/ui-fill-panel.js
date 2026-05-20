@@ -37,7 +37,7 @@
   // omitting it here since the panel always shows it when fill is active.
   const FILL_CAPS = {
     none:        { angle: false, amplitude: false, dotSize: false, shift: false },
-    hatch:       { angle: true,  amplitude: false, dotSize: false, shift: true  },
+    hatch:       { angle: true,  amplitude: false, dotSize: false, shift: true,  lineCount: true },
     vhatch:      { angle: true,  amplitude: false, dotSize: false, shift: true  },
     dhatch45:    { angle: true,  amplitude: false, dotSize: false, shift: true  },
     dhatch135:   { angle: true,  amplitude: false, dotSize: false, shift: true  },
@@ -96,6 +96,7 @@
     waveHarmonicsParam        = 'fillWaveHarmonics',
     dotShapeParam             = 'fillDotShape',
     dotJitterParam            = 'fillDotJitter',
+    lineCountParam            = 'fillLineCount',
     showIfBase = () => true,
     descKeyPrefix = 'fill',
   } = {}) => {
@@ -242,6 +243,16 @@
         infoKey: `${descKeyPrefix}.polyTile`,
       },
       {
+        id: lineCountParam,
+        label: 'Line Count',
+        type: 'range',
+        min: 1,
+        max: 3,
+        step: 1,
+        showIf: (p) => isActive(p) && !!caps(p).lineCount,
+        infoKey: `${descKeyPrefix}.lineCount`,
+      },
+      {
         id: waveSmoothingParam,
         label: 'Wave Smoothing',
         type: 'range',
@@ -360,9 +371,8 @@
       this._patternFillSettings = this._patternFillSettings || { fillType: 'hatch', density: 1 };
 
       const fillTypes = [
-        ['hatch', 'Hatch'], ['crosshatch', 'Crosshatch'], ['wavelines', 'Wavelines'],
-        ['zigzag', 'Zigzag'], ['stipple', 'Stipple'], ['contour', 'Contour'],
-        ['spiral', 'Spiral'], ['radial', 'Radial'],
+        ['hatch', 'Hatch'], ['wave', 'Wave'], ['dots', 'Dots'],
+        ['contour', 'Contour'], ['spiral', 'Spiral'], ['radial', 'Radial'],
       ];
       const typeRow = document.createElement('div');
       typeRow.className = 'mb-2';

@@ -42,6 +42,7 @@
     fillDotPattern: 'brick',
     fillDotShape: 'circle',
     fillDotJitter: 0,
+    fillLineCount: 1,
     fillAxes: 3,
     fillPolyTile: 'grid',
     fillRadialCentralDensity: 1.0,
@@ -102,6 +103,7 @@
     { id: 'fillDotPattern',              label: 'Dot Pattern',       type: 'select', options: [{ value: 'brick', label: 'Brick' }, { value: 'grid', label: 'Grid' }, { value: 'hex', label: 'Hex' }, { value: 'jitter', label: 'Jitter' }], capKey: 'dotPattern' },
     { id: 'fillDotShape',                label: 'Dot Shape',         type: 'select', options: [{ value: 'circle', label: 'Circle' }, { value: 'square', label: 'Square' }, { value: 'cross', label: 'Cross' }, { value: 'tick', label: 'Tick' }], capKey: 'dotShape' },
     { id: 'fillDotJitter',               label: 'Dot Jitter',        type: 'range',  min: 0,    max: 1,   step: 0.01, capKey: 'dotJitter' },
+    { id: 'fillLineCount',               label: 'Line Count',        type: 'range',  min: 1,    max: 3,   step: 1,    capKey: 'lineCount' },
     { id: 'fillAxes',                    label: 'Axes',              type: 'range',  min: 2,    max: 12,  step: 1,    capKey: 'axes' },
     { id: 'fillPolyTile',                label: 'Tile Method',       type: 'select', options: [{ value: 'grid', label: 'Grid' }, { value: 'brick', label: 'Brick' }, { value: 'hexagonal', label: 'Hexagonal' }, { value: 'off', label: 'Off (single)' }], capKey: 'polyTile' },
     { id: 'fillRadialCentralDensity',    label: 'Central Density',   type: 'range',  min: 0.1,  max: 4.0, step: 0.1,  capKey: 'radialCentralDensity' },
@@ -455,6 +457,7 @@
     let waveHarmonics = rec.waveHarmonics;
     let dotShape = rec.dotShape;
     let dotPatternResolved = rec.dotPattern;
+    let lineCount = rec.lineCount;
     if (fillMode === 'wavelines') {
       fillMode = 'wave';
       if (waveSmoothing == null) waveSmoothing = 1.0;
@@ -470,6 +473,12 @@
       fillMode = 'dots';
       if (dotShape == null) dotShape = 'tick';
       dotPatternResolved = 'grid';
+    } else if (fillMode === 'crosshatch') {
+      fillMode = 'hatch';
+      if (lineCount == null) lineCount = 2;
+    } else if (fillMode === 'triaxial') {
+      fillMode = 'hatch';
+      if (lineCount == null) lineCount = 3;
     }
     return {
       fillMode,
@@ -477,6 +486,7 @@
       fillWaveHarmonics: waveHarmonics,
       fillDotShape: dotShape,
       fillDotJitter: rec.dotJitter,
+      fillLineCount: lineCount,
       fillDensity: rec.density,
       fillAngle: rec.angle,
       fillAmplitude: rec.amplitude,

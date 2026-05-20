@@ -2659,7 +2659,16 @@
       dotPattern = 'brick', centralDensity = 1.0, outerDiameter = 1.0, axes = 3, polyTile = 'grid',
       waveSmoothing = 1.0, waveHarmonics = 1,
       dotShape = 'circle', dotJitter = 0,
+      lineCount = 1,
     } = fill;
+    // C3: hatch unified — compute the per-layer angle offsets up-front.
+    // 1 layer = [0], 2 layers (crosshatch) = [0, 90], 3 layers (triaxial) = [0, 60, 120].
+    const _hatchAnglesForCount = (n) => {
+      const k = Math.max(1, Math.min(3, Math.round(n) || 1));
+      if (k === 1) return [0];
+      if (k === 2) return [0, 90];
+      return [0, 60, 120];
+    };
     if (!regions.length) return [];
     const effectiveRegions = padding > 0
       ? regions.map(r => insetPolygon(r, polyArea(r) > 0 ? padding : -padding)).filter(Boolean)
@@ -2668,7 +2677,12 @@
     if (effectiveRegions.length === 1) {
       const region = effectiveRegions[0];
       switch (fillType) {
-        case 'hatch':       return hatchLines(region, density, 0 + angle, shiftX, shiftY);
+        case 'hatch': {
+          const offsets = _hatchAnglesForCount(lineCount);
+          const out = [];
+          for (const o of offsets) out.push(...hatchLines(region, density, o + angle, shiftX, shiftY));
+          return out;
+        }
         case 'vhatch':      return hatchLines(region, density, 90 + angle, shiftX, shiftY);
         case 'dhatch45':    return hatchLines(region, density, 45 + angle, shiftX, shiftY);
         case 'dhatch135':   return hatchLines(region, density, 135 + angle, shiftX, shiftY);
@@ -2690,7 +2704,12 @@
       }
     }
     switch (fillType) {
-      case 'hatch':       return hatchLinesComposite(effectiveRegions, density, 0 + angle, shiftX, shiftY);
+      case 'hatch': {
+        const offsets = _hatchAnglesForCount(lineCount);
+        const out = [];
+        for (const o of offsets) out.push(...hatchLinesComposite(effectiveRegions, density, o + angle, shiftX, shiftY));
+        return out;
+      }
       case 'vhatch':      return hatchLinesComposite(effectiveRegions, density, 90 + angle, shiftX, shiftY);
       case 'dhatch45':    return hatchLinesComposite(effectiveRegions, density, 45 + angle, shiftX, shiftY);
       case 'dhatch135':   return hatchLinesComposite(effectiveRegions, density, 135 + angle, shiftX, shiftY);

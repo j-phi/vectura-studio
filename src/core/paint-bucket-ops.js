@@ -461,6 +461,17 @@
       params.fillDotPattern = 'grid';
       return 'dots';
     }
+    // C3 migration:
+    //   - 'crosshatch' → 'hatch' lineCount 2
+    //   - 'triaxial'   → 'hatch' lineCount 3
+    if (mode === 'crosshatch') {
+      if (params.fillLineCount == null) params.fillLineCount = 2;
+      return 'hatch';
+    }
+    if (mode === 'triaxial') {
+      if (params.fillLineCount == null) params.fillLineCount = 3;
+      return 'hatch';
+    }
     return mode;
   };
 
@@ -486,6 +497,7 @@
     dotPattern: fillParams.fillDotPattern ?? 'brick',
     dotShape: fillParams.fillDotShape ?? 'circle',
     dotJitter: fillParams.fillDotJitter ?? 0,
+    lineCount: fillParams.fillLineCount ?? 1,
     axes: fillParams.fillAxes ?? 3,
     polyTile: fillParams.fillPolyTile ?? 'grid',
     centralDensity: fillParams.fillRadialCentralDensity ?? 1.0,
