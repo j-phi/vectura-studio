@@ -930,7 +930,16 @@
       }
     }
 
-    regen() {
+    // Bug-12 fix (v1.1.10 audit): regen() never pushed history, which meant
+    // user-initiated re-rolls that called regen() *without* first calling
+    // pushHistory() left no undo point for the generation change. The vast
+    // majority of callers (~114 sites in panels/modals) already push history
+    // before mutating params, then call regen(); they MUST continue to work
+    // with no behavior change. So the default stays `pushHistory: false` and
+    // user-initiated callers explicitly opt in with `regen({ pushHistory: true })`.
+    regen(options = {}) {
+      const pushHistory = options && options.pushHistory === true;
+      if (pushHistory) this.pushHistory();
       this.engine.generate(this.engine.activeLayerId);
       if (SETTINGS.autoColorization?.enabled && this.ui?.applyAutoColorization && !this.ui.isApplyingAutoColorization) {
         this.ui.applyAutoColorization({ commit: false, skipLayerRender: true, skipAppRender: true });
