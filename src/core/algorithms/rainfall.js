@@ -47,11 +47,23 @@
         const gustScale = T.gustScale;
         const noiseApply = p.noiseApply || 'trails';
 
+        // Arch-7 (audit 2026-05-20): trail wobble + gust used to bypass the
+        // rack via raw `noise.noise2D(...)` calls. We now share a single
+        // rack evaluator across the main noise stack AND the wobble/gust
+        // samplers so rainfall has exactly one noise space, per
+        // docs/noise-rack-architecture.md.
+        const rack = window.Vectura.NoiseRack.createEvaluator({ noise, seed: p.seed ?? 0 });
+        // Minimal simplex layer-def used solely for the per-step trail
+        // displacement samples below. `type: 'simplex'` makes
+        // `rack.evaluate(x, y, …)` fall through to `noise.noise2D(x, y)`,
+        // so this is byte-identical to the previous bypass when the raw
+        // `(px * scale, py * scale)` coordinates are passed in directly.
+        const TRAIL_NOISE_DEF = { type: 'simplex' };
+
         const buildNoiseStack = () => {
           const inset = bounds.truncate ? m : 0;
           const innerW = width - inset * 2;
           const innerH = height - inset * 2;
-          const rack = window.Vectura.NoiseRack.createEvaluator({ noise, seed: p.seed ?? 0 });
           const applyTile = (nx, ny, mode, padding = 0) => {
             const pad = Math.max(0, Math.min(T.paddingMax, padding));
             switch (mode) {
@@ -722,9 +734,11 @@
           let px = x;
           let py = y;
           for (let s = 0; s < steps; s++) {
-            const n = noise.noise2D(px * noiseScale, py * noiseScale);
+            const n = rack.evaluate(px * noiseScale, py * noiseScale, TRAIL_NOISE_DEF);
             const wobble = n * turbulence;
-            const gust = gustStrength > 0 ? noise.noise2D(px * gustScale, py * gustScale) * gustStrength : 0;
+            const gust = gustStrength > 0
+              ? rack.evaluate(px * gustScale, py * gustScale, TRAIL_NOISE_DEF) * gustStrength
+              : 0;
             const dx = dirX + perpX * (wobble + gust);
             const dy = dirY + perpY * (wobble + gust);
             const len = Math.hypot(dx, dy) || 1;

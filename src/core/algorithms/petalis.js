@@ -47,32 +47,24 @@
     }
     return len;
   };
-  const fallbackNoiseRack = {
-    combineBlend({ combined, value, blend = 'add' }) {
-      if (combined === undefined) return value;
-      switch (blend) {
-        case 'subtract':
-          return combined - value;
-        case 'multiply':
-          return combined * value;
-        case 'max':
-          return Math.max(combined, value);
-        case 'min':
-          return Math.min(combined, value);
-        case 'add':
-        default:
-          return combined + value;
-      }
-    },
-    createEvaluator({ noise }) {
-      return {
-        sampleScalar(x, y) {
-          return noise.noise2D(x, y);
-        },
-      };
-    },
+  // Arch-7 (audit 2026-05-20): the inline `fallbackNoiseRack` (with its own
+  // `combineBlend` + `createEvaluator`) was removed. `src/core/noise-rack.js`
+  // is loaded before `src/core/algorithms/petalis.js` in index.html, so the
+  // fallback was unreachable dead code AND a maintenance hazard — a parallel
+  // implementation that maintainers could silently edit instead of NoiseRack
+  // itself. We now reference `window.Vectura.NoiseRack` directly and throw
+  // a loud, clear error if it ever goes missing (i.e. someone reorders the
+  // <script> tags in index.html).
+  const getNoiseRackApi = () => {
+    const rack = window.Vectura?.NoiseRack;
+    if (!rack) {
+      throw new Error(
+        'petalis: window.Vectura.NoiseRack is unavailable. ' +
+          'Ensure src/core/noise-rack.js is loaded before src/core/algorithms/petalis.js.'
+      );
+    }
+    return rack;
   };
-  const getNoiseRackApi = () => window.Vectura?.NoiseRack || fallbackNoiseRack;
   const createLegacyNoiseLayer = (overrides = {}) => ({
     enabled: true,
     type: 'simplex',
