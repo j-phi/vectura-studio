@@ -1118,6 +1118,89 @@
     return result;
   };
 
+  // ── C1: Unified wave renderer (composite) ─────────────────────────────────
+  // Samples a single waveform that interpolates between a triangle wave
+  // (smoothing=0) and a sinusoid (smoothing=1). harmonics ∈ {1,2,3} adds
+  // 2× and 3× sine terms (normalized so peak amplitude stays ≈1).
+  const _waveSample = (phase, smoothing, harmonics) => {
+    const TAU = Math.PI * 2;
+    // Triangle wave in [-1,1] with period 1.
+    const tri = 4 * Math.abs(phase - Math.floor(phase + 0.5)) - 1;
+    // Smoothing power-blend: 1 = sine, 0 = triangle.
+    // Build sine + optional harmonics, then normalize peak amp.
+    let sine = Math.sin(phase * TAU);
+    let normDen = 1;
+    if (harmonics >= 2) { sine += 0.5 * Math.sin(phase * TAU * 2); normDen += 0.5; }
+    if (harmonics >= 3) { sine += 0.33 * Math.sin(phase * TAU * 3); normDen += 0.33; }
+    sine /= normDen;
+    const s = Math.max(0, Math.min(1, smoothing));
+    return s * sine + (1 - s) * tri;
+  };
+
+  const waveLinesUnifiedComposite = (regions, density, angleDeg = 0, amplitude = 1.0, smoothing = 1.0, harmonics = 1, shiftX = 0, shiftY = 0) => {
+    const ar = angleDeg * Math.PI / 180;
+    const ca = Math.cos(ar), sa = Math.sin(ar);
+    const rotatePt = ar !== 0 ? (p) => ({ x: p.x * ca + p.y * sa, y: -p.x * sa + p.y * ca }) : (p) => p;
+    const unrotatePt = ar !== 0 ? (p) => ({ x: p.x * ca - p.y * sa, y: p.x * sa + p.y * ca }) : (p) => p;
+    const rotRegions = ar !== 0 ? regions.map(r => r.map(rotatePt)) : regions;
+    const bounds = compositeBounds(rotRegions);
+    const amp = density * 0.4 * amplitude;
+    const wavelength = density * 1.5;
+    const s = Math.max(0, Math.min(1, smoothing));
+    // Triangle-only path: 4 samples per period are enough (corners). Sine path
+    // needs many samples per period. Blend the sample count so smoothing≈0
+    // preserves crisp corners and smoothing≈1 stays smooth.
+    const samplesPerWavelength = Math.max(4, Math.round(4 + s * 24));
+    const stepX = Math.max(0.25, wavelength / samplesPerWavelength);
+    const rotShiftX = shiftX * ca + shiftY * sa;
+    const rotShiftY = -shiftX * sa + shiftY * ca;
+    const yPhase = ((rotShiftY % density) + density) % density;
+    const yStart = Math.ceil((bounds.minY - yPhase) / density) * density + yPhase;
+    const h = Math.max(1, Math.min(3, Math.round(harmonics) || 1));
+    const result = [];
+    for (let cy = yStart; cy <= bounds.maxY + 1e-6; cy += density) {
+      const rawPts = [];
+      for (let x = bounds.minX; x <= bounds.maxX + stepX; x += stepX) {
+        const xc = Math.min(x, bounds.maxX);
+        const phase = (xc + rotShiftX) / wavelength;
+        rawPts.push(unrotatePt({ x: xc, y: cy + amp * _waveSample(phase, s, h) }));
+      }
+      for (const seg of clipPolylineToComposite(rawPts, regions)) result.push(seg);
+    }
+    return result;
+  };
+
+  const waveLinesUnified = (poly, density, angleDeg = 0, amplitude = 1.0, smoothing = 1.0, harmonics = 1, shiftX = 0, shiftY = 0) => {
+    const ar = angleDeg * Math.PI / 180;
+    const ca = Math.cos(ar), sa = Math.sin(ar);
+    const unrotatePt = ar !== 0 ? (p) => ({ x: p.x * ca - p.y * sa, y: p.x * sa + p.y * ca }) : (p) => p;
+    const rotPoly = ar !== 0 ? poly.map(p => ({ x: p.x * ca + p.y * sa, y: -p.x * sa + p.y * ca })) : poly;
+    const ys = rotPoly.map(p => p.y), xs = rotPoly.map(p => p.x);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const amp = density * 0.4 * amplitude;
+    const wavelength = density * 1.5;
+    const s = Math.max(0, Math.min(1, smoothing));
+    const samplesPerWavelength = Math.max(4, Math.round(4 + s * 24));
+    const stepX = Math.max(0.25, wavelength / samplesPerWavelength);
+    const rotShiftX = shiftX * ca + shiftY * sa;
+    const rotShiftY = -shiftX * sa + shiftY * ca;
+    const yPhase = ((rotShiftY % density) + density) % density;
+    const yStart = Math.ceil((minY - yPhase) / density) * density + yPhase;
+    const h = Math.max(1, Math.min(3, Math.round(harmonics) || 1));
+    const result = [];
+    for (let cy = yStart; cy <= maxY + 1e-6; cy += density) {
+      const rawPts = [];
+      for (let x = minX; x <= maxX + stepX; x += stepX) {
+        const xc = Math.min(x, maxX);
+        const phase = (xc + rotShiftX) / wavelength;
+        rawPts.push(unrotatePt({ x: xc, y: cy + amp * _waveSample(phase, s, h) }));
+      }
+      for (const seg of clipPolylineToPoly(rawPts, poly)) result.push(seg);
+    }
+    return result;
+  };
+
   const stippleDotsComposite = (regions, density, dotSizeRatio = 1.0, shiftX = 0, shiftY = 0, angleDeg = 0, patternType = 'brick') => {
     const ar = angleDeg * Math.PI / 180;
     const ca = Math.cos(ar), sa = Math.sin(ar);
@@ -2472,6 +2555,7 @@
       dotLength = 0, dotRotation = 0, penWidth = 0.3,
       padding = 0, shiftX = 0, shiftY = 0,
       dotPattern = 'brick', centralDensity = 1.0, outerDiameter = 1.0, axes = 3, polyTile = 'grid',
+      waveSmoothing = 1.0, waveHarmonics = 1,
     } = fill;
     if (!regions.length) return [];
     const effectiveRegions = padding > 0
@@ -2487,8 +2571,9 @@
         case 'dhatch135':   return hatchLines(region, density, 135 + angle, shiftX, shiftY);
         case 'crosshatch':  return [...hatchLines(region, density, 0 + angle, shiftX, shiftY), ...hatchLines(region, density, 90 + angle, shiftX, shiftY)];
         case 'xcrosshatch': return [...hatchLines(region, density, 45 + angle, shiftX, shiftY), ...hatchLines(region, density, 135 + angle, shiftX, shiftY)];
-        case 'wavelines':   return waveLines(region, density, angle, amplitude, shiftX, shiftY);
-        case 'zigzag':      return zigzagLines(region, density, angle, amplitude, shiftX, shiftY);
+        case 'wave':        return waveLinesUnified(region, density, angle, amplitude, waveSmoothing, waveHarmonics, shiftX, shiftY);
+        case 'wavelines':   return waveLinesUnified(region, density, angle, amplitude, 1.0, 1, shiftX, shiftY);
+        case 'zigzag':      return waveLinesUnified(region, density, angle, amplitude, 0.0, 1, shiftX, shiftY);
         case 'stipple':     return expandDotsToSpirals(stippleDots(region, density, dotSize, shiftX, shiftY, angle, dotPattern), dotLength, penWidth, dotRotation);
         case 'contour':     return contourLines(region, density);
         case 'spiral':      return spiralFill(region, density, angle, shiftX, shiftY);
@@ -2507,8 +2592,9 @@
       case 'dhatch135':   return hatchLinesComposite(effectiveRegions, density, 135 + angle, shiftX, shiftY);
       case 'crosshatch':  return [...hatchLinesComposite(effectiveRegions, density, 0 + angle, shiftX, shiftY), ...hatchLinesComposite(effectiveRegions, density, 90 + angle, shiftX, shiftY)];
       case 'xcrosshatch': return [...hatchLinesComposite(effectiveRegions, density, 45 + angle, shiftX, shiftY), ...hatchLinesComposite(effectiveRegions, density, 135 + angle, shiftX, shiftY)];
-      case 'wavelines':   return waveLinesComposite(effectiveRegions, density, angle, amplitude, shiftX, shiftY);
-      case 'zigzag':      return zigzagLinesComposite(effectiveRegions, density, angle, amplitude, shiftX, shiftY);
+      case 'wave':        return waveLinesUnifiedComposite(effectiveRegions, density, angle, amplitude, waveSmoothing, waveHarmonics, shiftX, shiftY);
+      case 'wavelines':   return waveLinesUnifiedComposite(effectiveRegions, density, angle, amplitude, 1.0, 1, shiftX, shiftY);
+      case 'zigzag':      return waveLinesUnifiedComposite(effectiveRegions, density, angle, amplitude, 0.0, 1, shiftX, shiftY);
       case 'stipple':     return expandDotsToSpirals(stippleDotsComposite(effectiveRegions, density, dotSize, shiftX, shiftY, angle, dotPattern), dotLength, penWidth, dotRotation);
       case 'contour':     return contourLinesComposite(effectiveRegions, density);
       case 'spiral':      return spiralFillComposite(effectiveRegions, density, angle, shiftX, shiftY);

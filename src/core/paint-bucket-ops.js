@@ -437,12 +437,29 @@
 
   const newFillId = () => `fill-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
+  // C1 migration: legacy 'wavelines'/'zigzag' fillMode strings collapse onto
+  // 'wave' with smoothing 1.0 / 0.0 respectively. Keeps dispatcher input
+  // monotonic so legacy saves on disk still load through the same code path.
+  const _normalizeFillMode = (mode, params) => {
+    if (mode === 'wavelines') {
+      if (params.fillWaveSmoothing == null) params.fillWaveSmoothing = 1.0;
+      return 'wave';
+    }
+    if (mode === 'zigzag') {
+      if (params.fillWaveSmoothing == null) params.fillWaveSmoothing = 0.0;
+      return 'wave';
+    }
+    return mode;
+  };
+
   const buildFillRecord = (targetEntry, fillParams = {}) => ({
     id: newFillId(),
-    fillType: fillParams.fillMode ?? fillParams.fillType ?? 'hatch',
-    density: fillParams.fillDensity ?? 4,
+    fillType: _normalizeFillMode(fillParams.fillMode ?? fillParams.fillType ?? 'hatch', fillParams),
+    density: fillParams.fillDensity ?? 1,
     angle: fillParams.fillAngle ?? 0,
     amplitude: fillParams.fillAmplitude ?? 1.0,
+    waveSmoothing: fillParams.fillWaveSmoothing ?? 1.0,
+    waveHarmonics: fillParams.fillWaveHarmonics ?? 1,
     // New semantics: dotLength is a physical length in mm (0 = single point,
     // up to 10mm). The stipple/grid renderers expand each dot into a
     // continuous spiral when dotLength > 0. dotSize (legacy ratio) is no

@@ -20,9 +20,7 @@
   const FILL_TYPE_OPTIONS = [
     { value: 'none',       label: 'None' },
     { value: 'hatch',      label: 'Hatch' },
-    { value: 'crosshatch', label: 'Crosshatch' },
-    { value: 'wavelines',  label: 'Wavelines' },
-    { value: 'zigzag',     label: 'Zigzag' },
+    { value: 'wave',       label: 'Wave' },
     { value: 'stipple',    label: 'Stipple' },
     { value: 'contour',    label: 'Contour' },
     { value: 'spiral',     label: 'Spiral' },
@@ -34,7 +32,7 @@
   const DEFAULTS = {
     fillMode: 'hatch',
     fillScope: 'all-objects',
-    fillDensity: 4,
+    fillDensity: 1,
     fillAngle: 45,
     fillAmplitude: 1.0,
     fillDotLength: 0,         // mm; 0 = single point, up to 10mm
@@ -47,6 +45,8 @@
     fillPolyTile: 'grid',
     fillRadialCentralDensity: 1.0,
     fillRadialOuterDiameter: 1.0,
+    fillWaveSmoothing: 1.0,
+    fillWaveHarmonics: 1,
     fillSensitivity: 5,
     penId: null,
   };
@@ -90,7 +90,7 @@
   // for display + input. Angle entries render as div-based dials matching
   // the rest of the UI (algo-config-panel, noise-rack-panel).
   const VARIANT_CONTROLS = [
-    { id: 'fillDensity',                 label: 'Density',           type: 'range',  min: 1,    max: 50,  step: 0.5,  showAlways: true },
+    { id: 'fillDensity',                 label: 'Density',           type: 'range',  min: 0.1,  max: 50,  step: 0.1,  showAlways: true },
     { id: 'fillAngle',                   label: 'Angle',             type: 'angle',  capKey: 'angle' },
     { id: 'fillAmplitude',               label: 'Amplitude',         type: 'range',  min: 0.1,  max: 3.0, step: 0.05, capKey: 'amplitude' },
     { id: 'fillDotLength',               label: 'Dot Length',        type: 'range',  min: 0,    max: 10,  step: 0.1,  distance: true, capKey: 'dotSize' },
@@ -103,6 +103,8 @@
     { id: 'fillPolyTile',                label: 'Tile Method',       type: 'select', options: [{ value: 'grid', label: 'Grid' }, { value: 'brick', label: 'Brick' }, { value: 'hexagonal', label: 'Hexagonal' }, { value: 'off', label: 'Off (single)' }], capKey: 'polyTile' },
     { id: 'fillRadialCentralDensity',    label: 'Central Density',   type: 'range',  min: 0.1,  max: 4.0, step: 0.1,  capKey: 'radialCentralDensity' },
     { id: 'fillRadialOuterDiameter',     label: 'Outer Diameter',    type: 'range',  min: 0.0,  max: 2.0, step: 0.05, capKey: 'radialOuterDiameter' },
+    { id: 'fillWaveSmoothing',           label: 'Wave Smoothing',    type: 'range',  min: 0,    max: 1,   step: 0.01, capKey: 'waveSmoothing' },
+    { id: 'fillWaveHarmonics',           label: 'Wave Harmonics',    type: 'range',  min: 1,    max: 3,   step: 1,    capKey: 'waveHarmonics' },
   ];
 
   function paintVariantButtons(state, controlsEl, hintEl) {
@@ -443,8 +445,23 @@
     // those we leave the new `fillDotLength` at 0 (single point) unless the
     // record carries an explicit `dotLength` field.
     const legacyDotLen = rec.dotLength != null ? rec.dotLength : 0;
+    // C1 migration: legacy 'wavelines' / 'zigzag' map to 'wave' with smoothing.
+    let fillMode = rec.fillType ?? 'hatch';
+    let waveSmoothing = rec.waveSmoothing;
+    let waveHarmonics = rec.waveHarmonics;
+    if (fillMode === 'wavelines') {
+      fillMode = 'wave';
+      if (waveSmoothing == null) waveSmoothing = 1.0;
+      if (waveHarmonics == null) waveHarmonics = 1;
+    } else if (fillMode === 'zigzag') {
+      fillMode = 'wave';
+      if (waveSmoothing == null) waveSmoothing = 0.0;
+      if (waveHarmonics == null) waveHarmonics = 1;
+    }
     return {
-      fillMode: rec.fillType ?? 'hatch',
+      fillMode,
+      fillWaveSmoothing: waveSmoothing,
+      fillWaveHarmonics: waveHarmonics,
       fillDensity: rec.density,
       fillAngle: rec.angle,
       fillAmplitude: rec.amplitude,
