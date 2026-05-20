@@ -8576,7 +8576,8 @@ input[type='color']::-webkit-color-swatch {
 }
 
 .tutorial-popover[data-placement="center"] .tutorial-arrow,
-.tutorial-popover[data-placement="over"] .tutorial-arrow {
+.tutorial-popover[data-placement="over"] .tutorial-arrow,
+.tutorial-popover[data-placement="left-bottom"] .tutorial-arrow {
   display: none;
 }
 
