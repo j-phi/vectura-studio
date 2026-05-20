@@ -2133,45 +2133,102 @@
     return cleaned;
   };
 
-  // Concentric inset rings of the polygon boundary
-  const contourLines = (poly, density) => {
+  // ── C7: contour helpers ──────────────────────────────────────────────────
+  // Douglas-Peucker simplification — recursive iterative variant. tolerance is
+  // the perpendicular distance below which intermediate vertices are dropped.
+  const _douglasPeucker = (pts, tolerance) => {
+    if (!Array.isArray(pts) || pts.length < 3 || tolerance <= 0) return pts;
+    const keep = new Uint8Array(pts.length);
+    keep[0] = 1;
+    keep[pts.length - 1] = 1;
+    const stack = [[0, pts.length - 1]];
+    const sqTol = tolerance * tolerance;
+    while (stack.length) {
+      const [i0, i1] = stack.pop();
+      const a = pts[i0], b = pts[i1];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const len2 = dx * dx + dy * dy || 1;
+      let maxD = 0, maxI = -1;
+      for (let i = i0 + 1; i < i1; i += 1) {
+        const px = pts[i].x - a.x, py = pts[i].y - a.y;
+        const t = Math.max(0, Math.min(1, (px * dx + py * dy) / len2));
+        const nx = a.x + t * dx - pts[i].x, ny = a.y + t * dy - pts[i].y;
+        const d = nx * nx + ny * ny;
+        if (d > maxD) { maxD = d; maxI = i; }
+      }
+      if (maxD > sqTol && maxI !== -1) {
+        keep[maxI] = 1;
+        stack.push([i0, maxI]);
+        stack.push([maxI, i1]);
+      }
+    }
+    const out = [];
+    for (let i = 0; i < pts.length; i += 1) if (keep[i]) out.push(pts[i]);
+    return out;
+  };
+
+  // Mulberry-32 indexed per-step jitter so spacing variance is deterministic
+  // across calls with identical params.
+  const _contourStepNoise = (idx, density, variance) => {
+    if (variance <= 0) return density;
+    let s = ((idx + 1) * 2654435761) >>> 0;
+    s |= 0; s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    const r = ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    return density * (1 + variance * (r - 0.5));
+  };
+
+  // Concentric inset (or outset) rings of the polygon boundary
+  const contourLines = (poly, density, direction = 'inset', stepVariance = 0, simplify = 0) => {
     const result = [];
     let current = poly.slice();
+    const sign = direction === 'outset' ? -1 : 1;
     for (let iter = 0; iter < 100; iter++) {
-      current = insetPolygon(current, density);
+      const step = _contourStepNoise(iter, density, stepVariance) * sign;
+      current = insetPolygon(current, step);
       if (!current || current.length < 3) break;
-      if (Math.abs(polyArea(current)) < density * density) break;
-      result.push([...current, current[0]]);
+      if (sign > 0 && Math.abs(polyArea(current)) < density * density) break;
+      // outset has no natural inner-area termination; cap rings at 8 for outset
+      if (sign < 0 && iter >= 8) break;
+      let ring = [...current, current[0]];
+      if (simplify > 0) ring = _douglasPeucker(ring, simplify);
+      result.push(ring);
     }
     return result;
   };
 
   // Contour for multi-region: insets the outer ring and segments rings around holes
-  const contourLinesComposite = (regions, density) => {
-    if (regions.length === 1) return contourLines(regions[0], density);
+  const contourLinesComposite = (regions, density, direction = 'inset', stepVariance = 0, simplify = 0) => {
+    if (regions.length === 1) return contourLines(regions[0], density, direction, stepVariance, simplify);
     const outer = regions[0];
     const holes = regions.slice(1);
     const result = [];
     let current = outer.slice();
+    const sign = direction === 'outset' ? -1 : 1;
     for (let iter = 0; iter < 100; iter++) {
-      const next = insetPolygon(current, density);
+      const step = _contourStepNoise(iter, density, stepVariance) * sign;
+      const next = insetPolygon(current, step);
       if (!next || next.length < 3) break;
-      if (Math.abs(polyArea(next)) < density * density) break;
+      if (sign > 0 && Math.abs(polyArea(next)) < density * density) break;
+      if (sign < 0 && iter >= 8) break;
       if (holes.length === 0) {
-        result.push([...next, next[0]]);
+        let ring = [...next, next[0]];
+        if (simplify > 0) ring = _douglasPeucker(ring, simplify);
+        result.push(ring);
       } else {
         const closedRing = [...next, next[0]];
         let seg = null;
         for (const pt of closedRing) {
           if (holes.some((h) => polyContainsPoint(h, pt.x, pt.y))) {
-            if (seg && seg.length >= 2) result.push(seg);
+            if (seg && seg.length >= 2) result.push(simplify > 0 ? _douglasPeucker(seg, simplify) : seg);
             seg = null;
           } else {
             if (!seg) seg = [];
             seg.push(pt);
           }
         }
-        if (seg && seg.length >= 2) result.push(seg);
+        if (seg && seg.length >= 2) result.push(simplify > 0 ? _douglasPeucker(seg, simplify) : seg);
       }
       current = next;
     }
@@ -2781,6 +2838,7 @@
       polyPadding = 0, polyRotation = 0, polyRotationStep = 0, polyScaleStep = 0,
       spiralTurns = 0, spiralTightness = 0, spiralDirection = 'cw',
       radialSpokes = 0, radialSkip = 0,
+      contourDirection = 'inset', contourStepVariance = 0, contourSimplify = 0,
     } = fill;
     // C3: hatch unified — compute the per-layer angle offsets up-front.
     // 1 layer = [0], 2 layers (crosshatch) = [0, 90], 3 layers (triaxial) = [0, 60, 120].
@@ -2814,7 +2872,7 @@
         case 'zigzag':      return waveLinesUnified(region, density, angle, amplitude, 0.0, 1, shiftX, shiftY);
         case 'dots':        return expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, dotShape, dotJitter), dotLength, penWidth, dotRotation);
         case 'stipple':     return expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation);
-        case 'contour':     return contourLines(region, density);
+        case 'contour':     return contourLines(region, density, contourDirection, contourStepVariance, contourSimplify);
         case 'spiral':      return spiralFill(region, density, angle, shiftX, shiftY, spiralTurns, spiralTightness, spiralDirection);
         case 'radial':      return radialFill(region, density, angle, shiftX, shiftY, centralDensity, outerDiameter, radialSpokes, radialSkip);
         case 'grid':        return expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, 'grid', 'tick', dotJitter), dotLength, penWidth, dotRotation);
@@ -2841,7 +2899,7 @@
       case 'zigzag':      return waveLinesUnifiedComposite(effectiveRegions, density, angle, amplitude, 0.0, 1, shiftX, shiftY);
       case 'dots':        return expandDotsToSpirals(dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, dotPattern, dotShape, dotJitter), dotLength, penWidth, dotRotation);
       case 'stipple':     return expandDotsToSpirals(dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation);
-      case 'contour':     return contourLinesComposite(effectiveRegions, density);
+      case 'contour':     return contourLinesComposite(effectiveRegions, density, contourDirection, contourStepVariance, contourSimplify);
       case 'spiral':      return spiralFillComposite(effectiveRegions, density, angle, shiftX, shiftY, spiralTurns, spiralTightness, spiralDirection);
       case 'radial':      return radialFillComposite(effectiveRegions, density, angle, shiftX, shiftY, centralDensity, outerDiameter, radialSpokes, radialSkip);
       case 'grid':        return expandDotsToSpirals(dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, 'grid', 'tick', dotJitter), dotLength, penWidth, dotRotation);

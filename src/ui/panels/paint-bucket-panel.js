@@ -58,6 +58,9 @@
     fillSpiralDirection: 'cw',
     fillRadialSpokes: 36,
     fillRadialSkip: 0,
+    fillContourDirection: 'inset',
+    fillContourStepVariance: 0,
+    fillContourSimplify: 0.05,
     fillSensitivity: 5,
     penId: null,
   };
@@ -128,6 +131,9 @@
     { id: 'fillSpiralDirection',         label: 'Spiral Direction',  type: 'select', options: [{ value: 'cw', label: 'Clockwise' }, { value: 'ccw', label: 'Counterclockwise' }], capKey: 'spiralDirection' },
     { id: 'fillRadialSpokes',            label: 'Radial Spokes',     type: 'range',  min: 4,    max: 360, step: 1,    capKey: 'radialSpokes' },
     { id: 'fillRadialSkip',              label: 'Radial Skip',       type: 'range',  min: 0,    max: 5,   step: 1,    capKey: 'radialSkip' },
+    { id: 'fillContourDirection',        label: 'Contour Direction', type: 'select', options: [{ value: 'inset', label: 'Inset' }, { value: 'outset', label: 'Outset' }], capKey: 'contourDirection' },
+    { id: 'fillContourStepVariance',     label: 'Step Variance',     type: 'range',  min: 0,    max: 1,   step: 0.01, capKey: 'contourStepVariance' },
+    { id: 'fillContourSimplify',         label: 'Simplify',          type: 'range',  min: 0,    max: 0.5, step: 0.01, capKey: 'contourSimplify' },
   ];
 
   function paintVariantButtons(state, controlsEl, hintEl) {
@@ -525,6 +531,9 @@
       fillSpiralDirection: rec.spiralDirection,
       fillRadialSpokes: rec.radialSpokes,
       fillRadialSkip: rec.radialSkip,
+      fillContourDirection: rec.contourDirection,
+      fillContourStepVariance: rec.contourStepVariance,
+      fillContourSimplify: rec.contourSimplify,
       fillRadialCentralDensity: rec.centralDensity,
       fillRadialOuterDiameter: rec.outerDiameter,
       fillSensitivity: rec.sensitivity,
