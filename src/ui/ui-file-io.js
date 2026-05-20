@@ -92,15 +92,20 @@
       if (!file) return;
       const reader = new FileReader();
       reader.onload = () => {
+        // Snapshot BEFORE any mutation. If parse/apply throws mid-flight we
+        // roll the engine + SETTINGS back so the user is never stranded with
+        // a half-loaded project. Bugs-9.
+        const rollback = this.app.captureState();
+        let parsed = null;
         try {
-          const data = JSON.parse(reader.result);
-          const state = data?.state || data;
+          parsed = JSON.parse(reader.result);
+          const state = parsed?.state || parsed;
           if (!state?.engine || !state?.settings) {
             throw new Error('Missing state payload');
           }
-          if (data?.images) {
+          if (parsed?.images) {
             const store = (window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {});
-            Object.entries(data.images).forEach(([id, img]) => {
+            Object.entries(parsed.images).forEach(([id, img]) => {
               if (!img || !Array.isArray(img.data)) return;
               store[id] = {
                 width: img.width,
@@ -110,16 +115,23 @@
             });
           }
           this.app.applyState(state);
-          this.app.history = [];
-          this.app.pushHistory();
-          toast('Project loaded', 'success');
         } catch (err) {
+          // Restore the pre-import state. applyState is idempotent so this
+          // safely undoes any half-applied SETTINGS or engine.layers mutation.
+          try { this.app.applyState(rollback); } catch (_) { /* best-effort */ }
           toast('Invalid .vectura file', 'danger');
           this.openModal({
             title: 'Invalid File',
             body: `<p class="modal-text">That file could not be loaded as a .vectura document.</p>`,
           });
+          return;
         }
+        // Only after the import installs cleanly: clear history and
+        // baseline the fresh state. Doing this inside the try would discard
+        // the user's undo stack even when the import ultimately fails.
+        this.app.history = [];
+        this.app.pushHistory();
+        toast('Project loaded', 'success');
       };
       reader.readAsText(file);
     },

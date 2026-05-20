@@ -126,6 +126,79 @@
   };
   const clone = (obj) => JSON.parse(JSON.stringify(obj));
 
+  // Bugs-8: sanitize imported numeric params so corrupted/legacy `.vectura`
+  // files cannot inject NaN / Infinity / non-numeric strings into algorithm
+  // hot paths (e.g. p.scaleX, p.density, p.amplitude — all of which feed
+  // multiplications or divisions without their own Number.isFinite guards).
+  //
+  // Strategy: walk `data.params` recursively. For every value that *was*
+  // a number in the matching default param tree, coerce + clamp to a finite
+  // number, falling back to the default when the imported value is junk.
+  // Non-numeric keys (strings, booleans, ids, image data) pass through.
+  // Always-numeric global keys (posX, posY, scaleX, scaleY, rotation) are
+  // enforced regardless of what the defaults declare.
+  const ALWAYS_NUMERIC_GLOBALS = {
+    posX: 0,
+    posY: 0,
+    scaleX: 1,
+    scaleY: 1,
+    rotation: 0,
+    seed: 0,
+  };
+  const sanitizeFiniteNumber = (value, fallback) => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim() !== '') {
+      const coerced = Number(value);
+      if (Number.isFinite(coerced)) return coerced;
+    }
+    return Number.isFinite(fallback) ? fallback : 0;
+  };
+  const sanitizeParamTree = (value, defaults, ctx) => {
+    if (Array.isArray(value)) {
+      const defaultArray = Array.isArray(defaults) ? defaults : [];
+      const template = defaultArray[0] ?? null;
+      return value.map((item, idx) =>
+        sanitizeParamTree(item, defaultArray[idx] !== undefined ? defaultArray[idx] : template, ctx)
+      );
+    }
+    if (value && typeof value === 'object') {
+      const out = {};
+      const defaultsObj = defaults && typeof defaults === 'object' && !Array.isArray(defaults) ? defaults : {};
+      for (const key of Object.keys(value)) {
+        out[key] = sanitizeParamTree(value[key], defaultsObj[key], { ...ctx, key });
+      }
+      return out;
+    }
+    // Scalar leaf. Decide based on the default's type (if any), the
+    // always-numeric globals table, and the value's own shape — a value
+    // that is itself a non-finite number is ALWAYS unsafe to keep, even
+    // if the algorithm's defaults don't declare this key.
+    const key = ctx?.key;
+    const defaultIsNumber = typeof defaults === 'number';
+    const isAlwaysNumeric = key && Object.prototype.hasOwnProperty.call(ALWAYS_NUMERIC_GLOBALS, key);
+    const valueIsBadNumber = typeof value === 'number' && !Number.isFinite(value);
+    if (defaultIsNumber || isAlwaysNumeric || valueIsBadNumber) {
+      const fallback = defaultIsNumber
+        ? defaults
+        : (isAlwaysNumeric ? ALWAYS_NUMERIC_GLOBALS[key] : 0);
+      const sanitized = sanitizeFiniteNumber(value, fallback);
+      if (sanitized !== value && (typeof value !== 'number' || !Number.isFinite(value))) {
+        if (typeof console !== 'undefined' && typeof console.warn === 'function') {
+          console.warn(
+            `[Engine] Sanitized non-finite param '${key}' on import (received ${JSON.stringify(value)}, clamped to ${sanitized}).`
+          );
+        }
+      }
+      return sanitized;
+    }
+    return value;
+  };
+  const sanitizeImportedParams = (params, layerType) => {
+    if (!params || typeof params !== 'object') return {};
+    const defaults = (ALGO_DEFAULTS && ALGO_DEFAULTS[layerType]) || {};
+    return sanitizeParamTree(params, defaults, { key: null });
+  };
+
   class VectorEngine {
     constructor() {
       this.layers = [];
@@ -351,7 +424,11 @@
               }
             : { childIds: [], opType: 'unite', sourceMode: 'silhouette', cache: { signature: null, multiPolygon: null } };
         }
-        layer.params = JSON.parse(JSON.stringify(data.params || {}));
+        // Bugs-8: clamp imported numerics to finite values BEFORE the engine
+        // hands them to algorithm generate() functions. Without this, a
+        // corrupted/legacy file can poison p.scaleX, p.density, p.amplitude,
+        // etc. and propagate NaN through the entire render pipeline.
+        layer.params = sanitizeImportedParams(data.params || {}, data.type);
         layer.paramStates = JSON.parse(JSON.stringify(data.paramStates || {}));
         layer.parentId = data.parentId ?? null;
         layer.isGroup = Boolean(data.isGroup);
