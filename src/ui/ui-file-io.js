@@ -120,10 +120,12 @@
           // safely undoes any half-applied SETTINGS or engine.layers mutation.
           try { this.app.applyState(rollback); } catch (_) { /* best-effort */ }
           toast('Invalid .vectura file', 'danger');
-          this.openModal({
-            title: 'Invalid File',
-            body: `<p class="modal-text">That file could not be loaded as a .vectura document.</p>`,
-          });
+          // Bugs-4: build the body as a Node so we never feed an HTML string
+          // through the modal's sanitizer for this error path.
+          const errBody = document.createElement('p');
+          errBody.className = 'modal-text';
+          errBody.textContent = 'That file could not be loaded as a .vectura document.';
+          this.openModal({ title: 'Invalid File', body: errBody });
           return;
         }
         // Only after the import installs cleanly: clear history and
@@ -144,10 +146,10 @@
         const groups = this.parseSvgToLayerGroups(text);
         if (!groups.length) {
           toast('SVG had no importable paths', 'warning');
-          this.openModal({
-            title: 'No Paths Found',
-            body: `<p class="modal-text">The SVG did not contain any vector paths to import.</p>`,
-          });
+          const errBody = document.createElement('p');
+          errBody.className = 'modal-text';
+          errBody.textContent = 'The SVG did not contain any vector paths to import.';
+          this.openModal({ title: 'No Paths Found', body: errBody });
           return;
         }
         if (this.app.pushHistory) this.app.pushHistory();

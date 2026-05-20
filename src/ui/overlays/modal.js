@@ -212,6 +212,98 @@
     return { overlay, titleEl, bodyEl };
   }
 
+  // ---------------------------------------------------------------------------
+  // Bugs-4 (v1.1.10 audit) — modal hardening helpers.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Sanitize an HTML string for insertion into the modal body. Strips all
+   * inline event-handler attributes (`on*`), removes `<script>` and `<style>`
+   * subtrees, and neutralizes `javascript:` URLs. Returns a DocumentFragment
+   * so callers can `appendChild` it directly — no innerHTML assignment on the
+   * live DOM, no script execution.
+   *
+   * Trusted authored markup (everything currently passed through
+   * `openModal({ body: '<p>...</p>' })`) survives untouched; the sink that
+   * the audit flagged (an attacker-controlled string slipping in via an
+   * error message) is the case this defangs.
+   */
+  function sanitizeHtmlToFragment(html, ownerDoc) {
+    const doc = ownerDoc || document;
+    const tpl = doc.createElement('template');
+    // `template.content` is inert — parsing it does not execute scripts and
+    // does not fire image-load / iframe-src side effects.
+    tpl.innerHTML = String(html);
+    const root = tpl.content;
+    const walker = doc.createTreeWalker(root, /* NodeFilter.SHOW_ELEMENT */ 0x1);
+    const toRemove = [];
+    let node = walker.nextNode();
+    while (node) {
+      const tag = (node.tagName || '').toLowerCase();
+      if (tag === 'script' || tag === 'style' || tag === 'iframe' || tag === 'object' || tag === 'embed') {
+        toRemove.push(node);
+      } else if (node.attributes) {
+        // Iterate over a snapshot because removeAttribute mutates the live list.
+        const attrs = Array.from(node.attributes);
+        for (const attr of attrs) {
+          const name = attr.name.toLowerCase();
+          const value = attr.value || '';
+          if (name.startsWith('on')) {
+            node.removeAttribute(attr.name);
+            continue;
+          }
+          if ((name === 'href' || name === 'src' || name === 'xlink:href') &&
+              /^\s*javascript:/i.test(value)) {
+            node.removeAttribute(attr.name);
+          }
+        }
+      }
+      node = walker.nextNode();
+    }
+    for (const n of toRemove) {
+      if (n.parentNode) n.parentNode.removeChild(n);
+    }
+    return root;
+  }
+
+  /** Internal: focus-trap installer used by openModal. Walks the modal card
+   *  on each Tab so dynamically-added focusables (rendered after open) are
+   *  honored. Returns a release() that removes the listener. */
+  function installModalFocusTrap(card) {
+    if (!card) return () => {};
+    const handler = (e) => {
+      if (e.key !== 'Tab') return;
+      const sel = (window.Vectura && window.Vectura.UI && window.Vectura.UI.focus && window.Vectura.UI.focus.FOCUSABLE_SELECTOR) || [
+        'a[href]:not([tabindex="-1"])',
+        'button:not([disabled]):not([tabindex="-1"])',
+        'input:not([disabled]):not([type="hidden"]):not([tabindex="-1"])',
+        'select:not([disabled]):not([tabindex="-1"])',
+        'textarea:not([disabled]):not([tabindex="-1"])',
+        '[tabindex]:not([tabindex="-1"])',
+      ].join(',');
+      const all = Array.from(card.querySelectorAll(sel)).filter((el) => !el.hasAttribute('disabled'));
+      if (!all.length) {
+        e.preventDefault();
+        card.focus?.();
+        return;
+      }
+      const first = all[0];
+      const last = all[all.length - 1];
+      const active = card.ownerDocument.activeElement;
+      if (e.shiftKey) {
+        if (active === first || !card.contains(active)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else if (active === last || !card.contains(active)) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    card.addEventListener('keydown', handler);
+    return () => card.removeEventListener('keydown', handler);
+  }
+
   function openModal({ title, body, cardClass = '', onClose = null }) {
     requireDeps('openModal');
     this._modalPrevFocus = document.activeElement || null;
@@ -220,31 +312,104 @@
       this._modalCleanup = null;
       cleanup();
     }
+    // If a previous open left listeners around (e.g., openModal called twice
+    // without closeModal — color picker re-open from a Layer Settings flow),
+    // tear them down so we don't accumulate handlers.
+    if (typeof this._modalReleaseTrap === 'function') {
+      this._modalReleaseTrap();
+      this._modalReleaseTrap = null;
+    }
+    if (typeof this._modalReleaseKey === 'function') {
+      this._modalReleaseKey();
+      this._modalReleaseKey = null;
+    }
+
     this.modal.titleEl.textContent = title;
-    this.modal.overlay.querySelector('.modal-card')?.setAttribute('class', `modal-card ${cardClass}`.trim());
+    const card = this.modal.overlay.querySelector('.modal-card');
+    card?.setAttribute('class', `modal-card ${cardClass}`.trim());
     this.modal.bodyEl.innerHTML = '';
-    if (typeof body === 'string') this.modal.bodyEl.innerHTML = body;
-    else if (body instanceof Node) this.modal.bodyEl.appendChild(body);
+    if (body instanceof Node) {
+      this.modal.bodyEl.appendChild(body);
+    } else if (typeof body === 'string') {
+      // Bugs-4 fix: never assign untrusted HTML strings directly to
+      // innerHTML. Parse into an inert template, strip event handlers /
+      // script-bearing nodes, then append the sanitized fragment.
+      const frag = sanitizeHtmlToFragment(body, this.modal.bodyEl.ownerDocument || document);
+      this.modal.bodyEl.appendChild(frag);
+    }
     this._modalCleanup = typeof onClose === 'function' ? onClose : null;
     this.modal.overlay.classList.add('open');
-    // Move focus to first focusable element in modal
-    requestAnimationFrame(() => {
-      const focusable = this.modal.overlay.querySelector('button, input, [tabindex="0"]');
-      if (focusable) focusable.focus();
-    });
+
+    // Esc-to-close. Listen on the document so focus on body / card / button
+    // all dispatch through here. Capture phase so we win over panel-level
+    // keydown handlers that might stopPropagation on Escape.
+    const keyHandler = (e) => {
+      if (e.key !== 'Escape') return;
+      if (!this.modal.overlay.classList.contains('open')) return;
+      // Don't fight a nested overlay (e.g., a confirm popped over the modal):
+      // if focus has moved out of our overlay entirely, leave Escape alone.
+      const active = document.activeElement;
+      if (active && active !== document.body && !this.modal.overlay.contains(active)) return;
+      e.stopPropagation();
+      this.closeModal();
+    };
+    document.addEventListener('keydown', keyHandler, true);
+    this._modalReleaseKey = () => document.removeEventListener('keydown', keyHandler, true);
+
+    // Focus trap on the modal card so Tab / Shift+Tab cycle within it.
+    this._modalReleaseTrap = installModalFocusTrap(card);
+
+    // Move initial focus inside the modal. Defer to next frame so the body
+    // has been laid out (some callers populate after openModal returns).
+    const focusOnce = () => {
+      if (!this.modal.overlay.classList.contains('open')) return;
+      const focusables = card ? card.querySelectorAll('button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])') : [];
+      // Prefer the first non-close-button focusable so the user lands inside
+      // the content (the close X is always present in the scaffold).
+      let target = null;
+      for (const el of focusables) {
+        if (el.classList && el.classList.contains('modal-close')) continue;
+        target = el;
+        break;
+      }
+      if (!target) target = focusables[0] || null;
+      if (target) {
+        target.focus();
+      } else if (card) {
+        // No focusables in the modal — pin focus on the card itself.
+        if (!card.hasAttribute('tabindex')) card.setAttribute('tabindex', '-1');
+        card.focus();
+      }
+    };
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(focusOnce);
+    } else {
+      focusOnce();
+    }
   }
 
   function closeModal() {
     requireDeps('closeModal');
     this.modal.overlay.classList.remove('open');
     this.modal.overlay.querySelector('.modal-card')?.setAttribute('class', 'modal-card');
+    if (typeof this._modalReleaseTrap === 'function') {
+      this._modalReleaseTrap();
+      this._modalReleaseTrap = null;
+    }
+    if (typeof this._modalReleaseKey === 'function') {
+      this._modalReleaseKey();
+      this._modalReleaseKey = null;
+    }
     if (typeof this._modalCleanup === 'function') {
       const cleanup = this._modalCleanup;
       this._modalCleanup = null;
       cleanup();
     }
     if (this._modalPrevFocus && typeof this._modalPrevFocus.focus === 'function') {
-      this._modalPrevFocus.focus();
+      // Only restore if the previous element is still in the document.
+      if (!this._modalPrevFocus.ownerDocument || this._modalPrevFocus.ownerDocument.contains(this._modalPrevFocus)) {
+        this._modalPrevFocus.focus();
+      }
       this._modalPrevFocus = null;
     }
   }
@@ -268,6 +433,9 @@
   UI.overlays.Modal.createModal = createModal;
   UI.overlays.Modal.openModal = openModal;
   UI.overlays.Modal.closeModal = closeModal;
+  // Exposed for unit-testing the XSS sanitization in isolation; also handy
+  // for any future caller that wants to render a sanitized HTML snippet.
+  UI.overlays.Modal._sanitizeHtmlToFragment = sanitizeHtmlToFragment;
   UI.overlays.Modal._mountGridSettingsPanel = _mountGridSettingsPanel;
   UI.overlays.Modal._mountDocumentSetupPanel = _mountDocumentSetupPanel;
   UI.overlays.Modal.installOn = (proto) => {
