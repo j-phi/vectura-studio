@@ -583,8 +583,10 @@ describe('MirrorPanel.build — DOM behavior (RGR for the v2 redesign)', () => {
     const fs = require('fs');
     const path = require('path');
     const algo = fs.readFileSync(path.join(__dirname, '..', '..', 'src/ui/panels/algo-config-panel.js'), 'utf8');
-    const legacy = fs.readFileSync(path.join(__dirname, '..', '..', 'src/ui/_ui-legacy.js'), 'utf8');
+    // Meridian Unit 1.10 (2026-05-20): `_ui-legacy.js` was merged into
+    // `src/ui/ui.js`; scan the consolidated entry instead.
+    const orchestrator = fs.readFileSync(path.join(__dirname, '..', '..', 'src/ui/ui.js'), 'utf8');
     expect(algo.includes('buildMirrorModifierControls')).toBe(false);
-    expect(legacy.includes('buildMirrorModifierControls')).toBe(false);
+    expect(orchestrator.includes('buildMirrorModifierControls')).toBe(false);
   });
 });

@@ -1,18 +1,27 @@
 /*
- * Compile gate for src/ui/ui.js (Phase 2 step 6 runtime entry).
+ * Compile gate for src/ui/ui.js (Meridian Unit 1.10 consolidated entry).
  *
- * Step 6 chose option (b): `_ui-legacy.js` carries the UI class + bind()
- * block + IIFE locals, and `ui.js` is a thin entry that aliases
- * `window.Vectura.UI` as `window.Vectura.UI.Orchestrator`. This test
- * confirms two things:
+ * Unit 1.10 (2026-05-20): the historical two-file split — `_ui-legacy.js`
+ * carrying the `class UI` + bootstrap IIFE and `ui.js` carrying only the
+ * orchestrator init shim — was collapsed into a single `src/ui/ui.js`.
+ * The trip-wire that protected against load-order regressions between the
+ * two files is no longer needed; the consolidated entry IS the class.
  *
- *   1. Loaded standalone (without `_ui-legacy.js`): the Orchestrator is
- *      a placeholder class that throws a clear "you forgot to load the
- *      legacy satellite" error on construction. This is the trip-wire
- *      that protects against accidental load-order regressions.
- *   2. Loaded after `_ui-legacy.js`: `Orchestrator` aliases the legacy
- *      class itself (so callers preferring the explicit name reach the
- *      same constructor as `new UI(app)`).
+ * This test asserts:
+ *
+ *   1. Loading `src/ui/ui.js` in isolation defines `window.Vectura.UI` as
+ *      the runtime UI class (a function/constructor).
+ *   2. `window.Vectura.UI.Orchestrator` is the same class (backwards-compat
+ *      alias for any fixture that prefers the explicit name).
+ *   3. `Orchestrator.init` is a function (the orchestrator constructor body).
+ *   4. `Orchestrator.installOn(proto)` installs `proto._init` on an
+ *      arbitrary prototype object — mirrors the satellite pattern used
+ *      throughout the panels.
+ *
+ * Note: this test loads ui.js standalone (no satellites, no controls
+ * registry). The bootstrap block inside the IIFE guards each
+ * `Panel.bind` / `Panel.installOn` call with `window.Vectura?.UI?.<X>?` so
+ * the IIFE completes cleanly even without any sibling modules loaded.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -37,48 +46,62 @@ const loadInJSDOM = (scriptPaths) => {
   return dom;
 };
 
-describe('ui.js orchestrator entry (option-b satellite shape)', () => {
+describe('ui.js consolidated orchestrator entry (Meridian Unit 1.10)', () => {
   let dom;
+  let UI;
   let Orchestrator;
 
   beforeAll(() => {
-    // Standalone load — `_ui-legacy.js` deliberately NOT loaded so we
-    // exercise the trip-wire path.
-    dom = loadInJSDOM([
-      'src/ui/ui.js',
-    ]);
+    // ui.js needs `window.Vectura.AlgorithmUtils.{clamp, lerp}` at IIFE
+    // load time (line ~166 of the file destructures them). Stub a minimal
+    // namespace before loading so the IIFE completes.
+    dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
+      url: 'http://localhost/',
+      pretendToBeVisual: true,
+      runScripts: 'outside-only',
+    });
+    const ctx = dom.getInternalVMContext();
+    // Seed the minimum window.Vectura surface ui.js inspects during the
+    // IIFE (the destructure at the top + AlgorithmUtils.clamp/lerp).
+    vm.runInContext(`
+      window.Vectura = {
+        AlgorithmUtils: {
+          clamp: (v, lo, hi) => Math.min(Math.max(v, lo), hi),
+          lerp: (a, b, t) => a + (b - a) * t,
+        },
+        UI: {},
+      };
+    `, ctx);
+    const code = fs.readFileSync(path.join(ROOT, 'src/ui/ui.js'), 'utf8');
+    vm.runInContext(code, ctx, { filename: 'src/ui/ui.js' });
     const w = dom.window;
     expect(w.Vectura).toBeTruthy();
-    expect(w.Vectura.UI).toBeTruthy();
-    Orchestrator = w.Vectura.UI.Orchestrator;
+    UI = w.Vectura.UI;
+    Orchestrator = UI && UI.Orchestrator;
   });
 
   afterAll(() => dom?.window?.close?.());
 
-  it('exposes window.Vectura.UI.Orchestrator as a class', () => {
-    expect(Orchestrator).toBeTruthy();
-    expect(typeof Orchestrator).toBe('function');
+  it('window.Vectura.UI is a class (constructor function)', () => {
+    expect(typeof UI).toBe('function');
   });
 
-  it('refuses to construct standalone with a clear "load order" error', () => {
-    expect(() => new Orchestrator({}))
-      .toThrow(/_ui-legacy\.js|legacy carries the runtime UI class/);
+  it('window.Vectura.UI.Orchestrator aliases the same class', () => {
+    expect(Orchestrator).toBe(UI);
   });
 
-  // Meridian Unit 1.9c (2026-05-20): the legacy `class UI { constructor() {...} }`
-  // body migrated to src/ui/ui.js. The orchestrator IIFE now also exposes:
-  //   - Orchestrator.init  — the constructor-body function (called as
-  //                          init.call(this, app) once _init is invoked).
-  //   - Orchestrator.installOn(proto) — installs proto._init on the UI
-  //                                     prototype so `new UI(app)` runs init.
-  it('exposes Orchestrator.init as a function (Unit 1.9c)', () => {
+  it('exposes Orchestrator.init as a function (Unit 1.9c → 1.10)', () => {
     expect(typeof Orchestrator.init).toBe('function');
   });
 
-  it('Orchestrator.installOn assigns _init to a prototype object (Unit 1.9c)', () => {
+  it('Orchestrator.installOn assigns _init to a prototype object (Unit 1.9c → 1.10)', () => {
     expect(typeof Orchestrator.installOn).toBe('function');
     const proto = {};
     Orchestrator.installOn(proto);
     expect(typeof proto._init).toBe('function');
+  });
+
+  it('UI.prototype._init is pre-installed by the IIFE', () => {
+    expect(typeof UI.prototype._init).toBe('function');
   });
 });

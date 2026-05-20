@@ -25,7 +25,9 @@ const shouldSkipScript = (src, options) => {
   } = options;
 
   if (!includeRenderer && src.includes('/src/render/renderer.js')) return true;
-  if (!includeUi && (src.includes('/src/ui/randomization-utils.js') || src.includes('/src/ui/_ui-legacy.js') || src.includes('/src/ui/ui.js'))) return true;
+  // Meridian Unit 1.10 (2026-05-20): `_ui-legacy.js` was merged into
+  // `src/ui/ui.js`; only the consolidated entry needs to be filtered out.
+  if (!includeUi && (src.includes('/src/ui/randomization-utils.js') || src.includes('/src/ui/ui.js'))) return true;
   if (!includeApp && src.includes('/src/app/app.js')) return true;
   if (!includeMain && src.includes('/src/main.js')) return true;
   return false;
