@@ -83,9 +83,8 @@
     return type;
   }
 
-  // Unit 1.8: scissor helper. expandCirclePath is a pure geometry helper kept
-  // local because its only consumer here is applyScissor; the legacy
-  // _ui-legacy.js copy stays until that file is deleted.
+  // Scissor helper: expandCirclePath is a pure geometry helper kept local
+  // because its only consumer here is applyScissor.
   function expandCirclePath(meta, segments = 80) {
     const cx = meta.cx ?? meta.x ?? 0;
     const cy = meta.cy ?? meta.y ?? 0;
@@ -414,9 +413,8 @@
   }
 
 
-  // ── Meridian Unit 1.9c (2026-05-20) ─────────────────────────────────
-  // `splitShapeLayer` migrated out of `class UI` in `_ui-legacy.js`. Reads
-  // the `Layer` constructor from DEPS (already injected via bind).
+  // `splitShapeLayer` reads the `Layer` constructor from DEPS (already
+  // injected via bind).
   function splitShapeLayer(layer, segments) {
     const { Layer } = requireDeps('splitShapeLayer');
     if (!Layer || !layer || !segments || !segments.length) return [];

@@ -13,8 +13,7 @@
  * `this.app.renderer` for the canvas preview pipeline; engine/renderer logic
  * is NOT duplicated.
  *
- * Methods exposed (each delegated by a 1-line UI.prototype passthrough in
- * `_ui-legacy.js`):
+ * Methods exposed (each installed onto UI.prototype via `installOn`):
  *   - openExportModal()                — opens the centered overlay modal,
  *                                        moves #optimization-controls into the
  *                                        modal's settings-scroll pane, wires
@@ -41,11 +40,10 @@
  *
  * DI bag: { getEl, SETTINGS, clamp, getThemeToken, getContrastTextColor,
  *           openColorPickerAnchoredTo }
- *   - EXPORT_INFO + OPTIMIZATION_STEPS now live as IIFE-locals in this file
- *     (relocated from _ui-legacy.js in Meridian Unit 1.3); both are also
- *     exposed on the public namespace as
+ *   - EXPORT_INFO + OPTIMIZATION_STEPS live as IIFE-locals in this file and
+ *     are exposed on the public namespace as
  *     window.Vectura.UI.Modals.ExportSvg.{EXPORT_INFO,OPTIMIZATION_STEPS} so
- *     legacy / sibling satellites can read them.
+ *     sibling satellites can read them.
  *
  * Compile gate at tests/unit/modals/export-svg-compile.test.js.
  * Lifecycle test at tests/integration/modals/export-svg.test.js.
@@ -60,10 +58,9 @@
 
   // ---------------------------------------------------------------------------
   // OPTIMIZATION_STEPS + EXPORT_INFO — export pipeline schema and tooltip copy.
-  // Moved from src/ui/_ui-legacy.js (Meridian Unit 1.3, 2026-05-19). Both are
-  // exposed on window.Vectura.UI.Modals.ExportSvg so legacy / sibling
-  // satellites (notably algo-config-panel.js, which consumes
-  // OPTIMIZATION_STEPS) can pull them back through the namespace.
+  // Exposed on window.Vectura.UI.Modals.ExportSvg so sibling satellites
+  // (notably algo-config-panel.js, which consumes OPTIMIZATION_STEPS) can
+  // pull them back through the namespace.
   // ---------------------------------------------------------------------------
   const OPTIMIZATION_STEPS = [
     {
@@ -991,10 +988,9 @@
   }
 
   /**
-   * Meridian Unit 1.9b (2026-05-20): grouped installer for the
-   * `#btn-export` click handler — previously inlined in `_ui-legacy.js`'s
-   * `bindGlobal()`. `this` is the legacy UI instance; the handler delegates
-   * to `this.openExportModal()` which is also installed by this module.
+   * Grouped installer for the `#btn-export` click handler. `this` is the
+   * UI instance; the handler delegates to `this.openExportModal()` which
+   * is also installed by this module.
    */
   function bindExportButton() {
     const { getEl } = requireDeps('bindExportButton');
@@ -1292,9 +1288,8 @@
     this.resizeExportPreviewCanvas();
   }
 
-  // ── Meridian Unit 1.9c (2026-05-20) ─────────────────────────────────
-  // Optimization-target methods migrated out of `class UI` in `_ui-legacy.js`.
-  // Pure `this.*`-based — only the SETTINGS read needs DI (already bound).
+  // Optimization-target methods: pure `this.*`-based — only the SETTINGS
+  // read needs DI (already bound).
   function getOptimizationTargets() {
     const SETTINGS = (DEPS && DEPS.SETTINGS) || (G.Vectura && G.Vectura.SETTINGS) || {};
     const scope = SETTINGS.optimizationScope || 'all';

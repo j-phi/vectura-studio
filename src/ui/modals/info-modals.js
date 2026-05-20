@@ -22,21 +22,19 @@
  *                                    `global.algorithm` which toggles the
  *                                    About pane via this.setAboutVisible).
  *
- * The legacy UI prototype delegates to this module via 1-line pass-throughs.
+ * UI.prototype delegates to this module via `installOn(UI.prototype)`.
  *
  * DI bag: { buildPreviewPair, escapeHtml, getEl, SETTINGS }
- *   - buildPreviewPair is an IIFE-local in _ui-legacy.js.
- *   - INFO now lives here as an IIFE-local (relocated from _ui-legacy.js in
- *     Meridian Unit 1.3); it is also exposed as
+ *   - buildPreviewPair is an IIFE-local in src/ui/ui.js.
+ *   - INFO lives here as an IIFE-local and is also exposed as
  *     window.Vectura.UI.Modals.InfoModals.INFO for any downstream consumer
- *     that still wants to read the table.
+ *     that wants to read the table.
  *   - showInfo passes `this` (the UI instance) into buildPreviewPair so its
  *     downstream chain (resolvePreviewConfig → buildVariantsFromDef →
  *     renderPreviewSvg, all IIFE-locals) keeps working unchanged.
  *
- * The module still composes the legacy `this.openModal` primitive (which
- * lives in _ui-legacy.js). Future Phase 3 work that promotes the modal-
- * overlay primitive at src/ui/overlays/modal.js will route those calls there.
+ * The module composes the `this.openModal` primitive provided by
+ * src/ui/overlays/modal.js.
  *
  * Compile gate at tests/unit/modals/info-modals-compile.test.js.
  */
@@ -49,11 +47,10 @@
   let DEPS = null;
 
   // ---------------------------------------------------------------------------
-  // INFO — tooltip/modal copy for every info-button across the UI.
-  // Moved from src/ui/_ui-legacy.js (Meridian Unit 1.3, 2026-05-19) so the
+  // INFO — tooltip/modal copy for every info-button across the UI. The
   // info-button satellite owns its copy table directly. Exposed on
-  // window.Vectura.UI.Modals.InfoModals.INFO so legacy or other satellites
-  // can read it back if ever needed.
+  // window.Vectura.UI.Modals.InfoModals.INFO so sibling satellites can read
+  // it back if ever needed.
   // ---------------------------------------------------------------------------
   const INFO = {
     'global.algorithm': {

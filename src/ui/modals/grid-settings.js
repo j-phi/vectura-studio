@@ -15,8 +15,7 @@
  *                                to live in index.html:747-787.
  *   - bindHandlers()          - wires the View > Grid Settings open trigger,
  *                                the close (✕) button, and all grid control
- *                                inputs. Was previously inlined in
- *                                _ui-legacy.js bindGlobal() lines ~7462-7545.
+ *                                inputs.
  *
  * The legacy UI.prototype delegates `_mountGridSettingsPanel` and
  * `_bindGridSettingsHandlers` to this module via 1-line pass-throughs.

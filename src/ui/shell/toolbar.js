@@ -934,9 +934,8 @@
     });
   }
 
-  // ── Meridian Unit 1.9c (2026-05-20) ─────────────────────────────────
-  // `startLightSourcePlacement` migrated out of `class UI` in `_ui-legacy.js`.
-  // No DEPS needed — composes `this.app.renderer` and `this.setActiveTool`.
+  // `startLightSourcePlacement` — composes `this.app.renderer` and
+  // `this.setActiveTool`. No DEPS needed.
   function startLightSourcePlacement() {
     if (!this.app?.renderer) return;
     this.setActiveTool?.('select');

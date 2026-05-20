@@ -3920,16 +3920,16 @@
   }
 
   /**
-   * Meridian Unit 1.9b (2026-05-20): grouped installer for the algorithm
-   * module dropdown (`generator-module` + `generator-module-trigger`) and
-   * the transform inputs (`inp-seed`, `inp-pos-x`/-y, `inp-scale-x`/-y,
-   * `inp-rotation`, `btn-rand-seed`). Previously these listeners lived
-   * inlined in `_ui-legacy.js`'s `bindGlobal()`. `this` is the legacy UI
-   * instance — handlers reach for `this.app`, `this.isModifierLayer`,
-   * `this.storeLayerParams`, `this.rememberDrawableLayerType`,
-   * `this.restoreLayerParams`, `this.getUniqueLayerName`, `this.buildControls`,
-   * `this.refreshModifierLayer`, `this._showModuleMenu`, `this.recenterLayerIfNeeded`,
-   * `this.updateFormula`, `this.parseDocumentNumber` via the prototype.
+   * Grouped installer for the algorithm module dropdown
+   * (`generator-module` + `generator-module-trigger`) and the transform
+   * inputs (`inp-seed`, `inp-pos-x`/-y, `inp-scale-x`/-y, `inp-rotation`,
+   * `btn-rand-seed`). `this` is the UI instance — handlers reach for
+   * `this.app`, `this.isModifierLayer`, `this.storeLayerParams`,
+   * `this.rememberDrawableLayerType`, `this.restoreLayerParams`,
+   * `this.getUniqueLayerName`, `this.buildControls`,
+   * `this.refreshModifierLayer`, `this._showModuleMenu`,
+   * `this.recenterLayerIfNeeded`, `this.updateFormula`,
+   * `this.parseDocumentNumber` via the prototype.
    */
   function bindAlgoConfigListeners() {
     const deps = requireDeps('bindAlgoConfigListeners');
@@ -4059,11 +4059,8 @@
     }
   }
 
-  // ── Meridian Unit 1.9c (2026-05-20) ─────────────────────────────────
-  // `toggleSeedControls` migrated out of `class UI` in `_ui-legacy.js`.
-  // Reads `getEl` from DEPS (already bound) and identifies seedless algos
-  // via the locally-defined SEEDLESS_ALGOS set (matches the legacy IIFE
-  // local `usesSeed` predicate exactly).
+  // `toggleSeedControls` reads `getEl` from DEPS (already bound) and
+  // identifies seedless algos via the locally-defined SEEDLESS_ALGOS set.
   const SEEDLESS_ALGOS_LIST = ['lissajous', 'harmonograph', 'shape', 'group'];
   function toggleSeedControls(type) {
     const getEl = (DEPS && DEPS.getEl)

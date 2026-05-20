@@ -54,10 +54,9 @@
   // (`.sect`, `.sect-hdr`, `.sect-body`, `.ctrl-sel`, `.num-step`, `.seg-ctrl`,
   // `.sw-toggle`, `.value-chip`, `.ctrl-slider`) so the drawer paints in the
   // same visual register as every other Vectura panel. Every #id from the
-  // legacy markup is preserved verbatim so the ~30 inline `set-*` handlers
-  // still living in `_ui-legacy.js`'s bindGlobal() keep wiring without
-  // modification. `bindHandlers()` adds the section collapse + num-step ±
-  // wiring needed by the new primitives.
+  // original markup is preserved verbatim so the ~30 `set-*` handlers wired
+  // by `bindHandlers()` keep matching the DOM. `bindHandlers()` adds the
+  // section collapse + num-step ± wiring needed by the new primitives.
   //
   // Sections are arranged top-to-bottom in roughly descending edit-frequency
   // order. All sections default to open (`.is-open` on `.sect-hdr`) so this
@@ -473,8 +472,8 @@
       });
 
       // Orientation dual-toggle — clicking Portrait/Landscape updates the hidden
-      // #set-orientation checkbox and fires its change event so the legacy
-      // bindGlobal handler in _ui-legacy.js still runs unchanged.
+      // #set-orientation checkbox and fires its change event so the
+      // `set-orientation` change-handler wired by `bindHandlers()` runs.
       const portraitBtn = settingsPanelEl.querySelector('#orientation-portrait');
       const landscapeBtn = settingsPanelEl.querySelector('#orientation-landscape');
       const orientationCb = getEl('set-orientation', { silent: true });
@@ -635,12 +634,11 @@
   }
 
   /**
-   * Wire all ~30 Document Setup input handlers (Meridian Unit 1.9a).
+   * Wire all ~30 Document Setup input handlers.
    *
-   * Previously these listeners lived inlined in `_ui-legacy.js`'s
-   * `bindGlobal()`. They are now grouped here so the document-setup panel
-   * owns every wire from open-trigger through last input. `this` is the UI
-   * instance — handlers reach for `this.app`, `this.parseDocumentNumber`,
+   * Grouped here so the document-setup panel owns every wire from
+   * open-trigger through last input. `this` is the UI instance — handlers
+   * reach for `this.app`, `this.parseDocumentNumber`,
    * `this.refreshDocumentUnitsUi`, `this.buildControls`, `this.initSettingsValues`
    * via the prototype, exactly as they did from inside bindGlobal.
    *
@@ -1120,13 +1118,11 @@
   }
 
   /**
-   * Meridian Unit 1.9b (2026-05-20): grouped installer for the Document
-   * Setup panel's background-color picker (`inp-bg-color` + `bg-color-pill`).
-   * Previously inlined in `_ui-legacy.js`'s `bindGlobal()`. The elements
-   * live inside this panel's markup, so the wiring belongs alongside the
-   * other Document Setup listeners. `this` is the legacy UI instance —
-   * handlers reach for `this.app.pushHistory`, `this.app.render` via the
-   * prototype.
+   * Grouped installer for the Document Setup panel's background-color
+   * picker (`inp-bg-color` + `bg-color-pill`). The elements live inside
+   * this panel's markup, so the wiring belongs alongside the other
+   * Document Setup listeners. `this` is the UI instance — handlers reach
+   * for `this.app.pushHistory`, `this.app.render` via the prototype.
    */
   function bindBgColorListeners() {
     const {

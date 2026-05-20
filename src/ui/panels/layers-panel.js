@@ -14,12 +14,10 @@
  *
  * DI bag: { SETTINGS, escapeHtml, Layer, clone, getEl }.
  *
- * Meridian Unit 1.9b (2026-05-20): added `bindLayerListListeners()` — a
- * grouped installer for the layer-list buttons (`btn-add-layer`,
- * `btn-insert-mirror-modifier`, `btn-group-layers`, `btn-ungroup-layers`,
- * `btn-undo`, `btn-redo`) and the layer-bar palette picker
- * (`layer-bar-palette-trigger`/menu/name/preview). These previously lived
- * inlined in `_ui-legacy.js`'s `bindGlobal()`.
+ * `bindLayerListListeners()` is a grouped installer for the layer-list
+ * buttons (`btn-add-layer`, `btn-insert-mirror-modifier`, `btn-group-layers`,
+ * `btn-ungroup-layers`, `btn-undo`, `btn-redo`) and the layer-bar palette
+ * picker (`layer-bar-palette-trigger`/menu/name/preview).
  *
  * Compile gate at tests/unit/layers-panel-compile.test.js.
  */
@@ -1813,14 +1811,13 @@
   }
 
   /**
-   * Meridian Unit 1.9b (2026-05-20): grouped installer for the layer-list
-   * buttons and the layer-bar palette picker. Previously these listeners
-   * lived inlined in `_ui-legacy.js`'s `bindGlobal()`.
+   * Grouped installer for the layer-list buttons and the layer-bar palette
+   * picker.
    *
    * Element scope: `btn-add-layer`, `btn-insert-mirror-modifier`,
    * `btn-group-layers`, `btn-ungroup-layers`, `btn-undo`, `btn-redo`,
    * `layer-bar-palette-trigger`/`-menu`/`-name`/`-preview`. `this` is the
-   * legacy UI instance — handlers reach for `this.app`, `this.renderLayers`,
+   * UI instance — handlers reach for `this.app`, `this.renderLayers`,
    * `this.getPreferredNewLayerType`, `this.rememberDrawableLayerType`,
    * `this.getLayerById`, `this.isModifierLayer`, `this.assignLayersToParent`,
    * `this.groupSelection`, `this.ungroupSelection`, `this.insertMirrorModifier`,
@@ -1958,12 +1955,10 @@
     _updateLBPTrigger();
   }
 
-  // ── Meridian Unit 1.9c (2026-05-20) ─────────────────────────────────
-  // Layer-state methods migrated out of the `class UI { ... }` body in
-  // `src/ui/_ui-legacy.js`. All preserve their original `this`-based
-  // signature so callers keep using `this.<name>(...)` on the UI instance.
-  // Reach into LAYER_PALETTES / Modifiers via window.Vectura at call time
-  // (no DI bag entries needed beyond what `bind()` already injects).
+  // Layer-state methods. All use a `this`-based signature so callers invoke
+  // them as `this.<name>(...)` on the UI instance. They reach into
+  // LAYER_PALETTES / Modifiers via window.Vectura at call time (no DI bag
+  // entries needed beyond what `bind()` already injects).
 
   function isDuplicateLayerName(name, excludeId) {
     const normalized = name.trim().toLowerCase();

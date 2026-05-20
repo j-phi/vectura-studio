@@ -680,8 +680,8 @@
     // surrounding pushHistory() captures a single undo step.
     //
     // Each touched layer is regenerated so its baked paths pick up the new
-    // transform — the same pattern bindTrans uses for the multi-selection
-    // transform inputs (see _ui-legacy.js: TRANSLATION_KEYS branch).
+    // transform — the same pattern the multi-selection transform inputs use
+    // (see the TRANSLATION_KEYS branch in src/ui/panels/algo-config-panel.js).
     applyAlignDeltas(deltaMap) {
       if (!deltaMap) return;
       const touchedIds = [];

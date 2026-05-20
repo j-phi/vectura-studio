@@ -1,8 +1,7 @@
 /**
- * Vectura control-defs data tables (Meridian Unit 1.5 — Phase 1B).
+ * Vectura control-defs data tables.
  *
- * Houses the static data tables that previously lived inside the
- * src/ui/_ui-legacy.js IIFE (lines 689–2081 prior to extraction):
+ * Houses the static data tables consumed by the UI satellites:
  *
  *   Wave/noise option tables:
  *     WAVE_NOISE_OPTIONS, WAVE_NOISE_DESCRIPTIONS,
@@ -29,14 +28,14 @@
  * can consume the single source of truth without re-declaring locals.
  *
  * Additionally republishes the NOISE_DEFS keys + IMAGE_EFFECT_DEFS on the
- * pre-existing window.Vectura._UINoiseDefs namespace (introduced by Phase 2
- * noise-rack-panel work). COMMON_CONTROLS still lives in _ui-legacy.js and
- * is merged into _UINoiseDefs by the legacy bootstrap.
+ * pre-existing window.Vectura._UINoiseDefs namespace (introduced by the
+ * noise-rack-panel work). COMMON_CONTROLS lives in src/ui/ui.js and is
+ * merged into _UINoiseDefs by the orchestrator bootstrap.
  *
  * Load order: must run AFTER src/config/defaults.js (consumes ALGO_DEFAULTS
  * for PETALIS_DESIGNER_DEFAULT_*) and AFTER src/core/algorithms (uses
  * AlgorithmUtils.clamp). Currently loaded BEFORE src/ui/controls-registry.js
- * and src/ui/_ui-legacy.js in index.html.
+ * and src/ui/ui.js in index.html.
  *
  * Compile gate at tests/unit/control-defs-data-compile.test.js.
  */

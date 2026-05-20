@@ -14,8 +14,7 @@
  *
  * Both call sites compose the same `loadNoiseImageFile` + `openNoiseImageModal`
  * primitives. The module preserves both method names for API compatibility:
- * `algo-config-panel.js`, `ui-noise-rack.js`, and the legacy `_ui-legacy.js`
- * delegators all still resolve.
+ * `algo-config-panel.js` and `ui-noise-rack.js` consumers all still resolve.
  *
  * Methods exposed:
  *   - openNoiseImageModal(layer, options)
