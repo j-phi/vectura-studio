@@ -1,7 +1,7 @@
 # Graph Report - /Users/jayphi/Documents/github/vectura-studio  (2026-05-20)
 
 ## Corpus Check
-- 337 files · ~4,564,655 words
+- 337 files · ~4,570,390 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -1367,12 +1367,12 @@ Nodes (1): City — Isometric aerial city of skyscrapers rendered entirely in de
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Renderer` connect `Community 2` to `Community 1`, `Community 21`, `Community 22`?**
-  _High betweenness centrality (0.077) - this node is a cross-community bridge._
-- **Why does `mt()` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 5`, `Community 6`, `Community 9`, `Community 11`, `Community 13`, `Community 17`, `Community 19`, `Community 24`?**
-  _High betweenness centrality (0.069) - this node is a cross-community bridge._
 - **Why does `sort()` connect `Community 8` to `Community 0`, `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 9`, `Community 11`, `Community 13`, `Community 14`, `Community 18`, `Community 21`?**
-  _High betweenness centrality (0.062) - this node is a cross-community bridge._
+  _High betweenness centrality (0.077) - this node is a cross-community bridge._
+- **Why does `Renderer` connect `Community 2` to `Community 1`, `Community 21`, `Community 22`?**
+  _High betweenness centrality (0.057) - this node is a cross-community bridge._
+- **Why does `mt()` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 5`, `Community 6`, `Community 9`, `Community 11`, `Community 13`, `Community 17`, `Community 19`, `Community 24`?**
+  _High betweenness centrality (0.056) - this node is a cross-community bridge._
 - **Are the 95 inferred relationships involving `mt()` (e.g. with `_e()` and `ye()`) actually correct?**
   _`mt()` has 95 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 89 inferred relationships involving `addEventListener()` (e.g. with `ki` and `LC()`) actually correct?**
