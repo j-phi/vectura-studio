@@ -254,6 +254,7 @@
     return outMin + (outMax - outMin) * t;
   };
   const simplifyPath = GeometryUtils?.simplifyPath || ((path) => path);
+  const smoothPath = GeometryUtils?.smoothPath || ((path) => path);
   const joinNearbyPaths = OptimizationUtils?.joinNearbyPaths || ((paths) => paths);
   const createModifierState = Modifiers.createModifierState || ((type) => ({ type, enabled: true, guidesVisible: true, guidesLocked: false, mirrors: [] }));
   const createMirrorLine = Modifiers.createMirrorLine || ((index) => ({ id: `mirror-${index + 1}`, enabled: true }));
@@ -735,25 +736,6 @@
   if (!CONTROL_DEFS) {
     console.warn('[UI] window.Vectura.UI.CONTROL_DEFS missing — load src/ui/controls-registry.js before src/ui/ui.js');
   }
-
-  const smoothPath = (path, amount) => {
-    if (!amount || amount <= 0 || path.length < 3) return path;
-    const smoothed = [path[0]];
-    for (let i = 1; i < path.length - 1; i++) {
-      const prev = path[i - 1];
-      const curr = path[i];
-      const next = path[i + 1];
-      const avgX = (prev.x + next.x) / 2;
-      const avgY = (prev.y + next.y) / 2;
-      smoothed.push({
-        x: curr.x * (1 - amount) + avgX * amount,
-        y: curr.y * (1 - amount) + avgY * amount,
-      });
-    }
-    smoothed.push(path[path.length - 1]);
-    if (path.meta) smoothed.meta = path.meta;
-    return smoothed;
-  };
 
   const createBounds = (width, height, margin) => {
     const m = margin;
