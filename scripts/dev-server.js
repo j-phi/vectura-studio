@@ -90,3 +90,10 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, HOST, () => {
   process.stdout.write(`dev-server listening on http://${HOST}:${PORT} (root: ${ROOT})\n`);
 });
+
+// Stay alive through Playwright's test-timeout SIGTERM signals. Playwright
+// sends SIGTERM to child processes on test timeout cleanup; without this the
+// server dies before the retry attempt can reconnect.
+process.on('SIGTERM', () => {
+  server.close(() => process.exit(0));
+});

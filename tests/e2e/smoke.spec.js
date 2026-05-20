@@ -1143,12 +1143,17 @@ test.describe('Vectura smoke interactions', () => {
     }
 
     const canvas = page.locator('#main-canvas');
+
+    await page.evaluate(() => window.app.ui.setActiveTool('shape-rect'));
+    // Wait for the tool switch to fully settle (any panel/toolbar layout shifts) before
+    // snapshotting canvas coordinates — stale coords from a pre-switch box cause ~47px world drift.
+    await expect
+      .poll(async () => page.locator('#main-canvas').evaluate((c) => c.dataset.cursorMode || ''))
+      .toBe('shape-reticle');
     const box = await canvas.boundingBox();
     expect(box).toBeTruthy();
     const start = { x: box.x + box.width * 0.28, y: box.y + box.height * 0.34 };
     const end = { x: box.x + box.width * 0.38, y: box.y + box.height * 0.47 };
-
-    await page.evaluate(() => window.app.ui.setActiveTool('shape-rect'));
     const worldStart = await page.evaluate(({ x, y }) => {
       const rect = document.getElementById('main-canvas').getBoundingClientRect();
       return window.app.renderer.screenToWorld(x - rect.left, y - rect.top);
