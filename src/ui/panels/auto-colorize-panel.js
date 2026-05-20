@@ -200,6 +200,9 @@
     const setCollapsed = (next) => {
       SETTINGS.autoColorizationCollapsed = next;
       section.classList.toggle('collapsed', next);
+      // CSS-10: strip the initial `.is-hidden` utility class so the inline
+      // `style.display` here governs visibility (the class is !important).
+      body.classList.remove('is-hidden');
       body.style.display = next ? 'none' : '';
       if (header) header.setAttribute('aria-expanded', next ? 'false' : 'true');
     };

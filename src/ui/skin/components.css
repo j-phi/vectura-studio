@@ -9205,3 +9205,21 @@ kbd {
 .help-badge--field       { background: rgb(20  184 166 / 0.14); color: #5eead4; }
 .help-badge--botanical   { background: rgb(34  197 94  / 0.14); color: #86efac; }
 .help-badge--structural  { background: rgb(234 179 8   / 0.14); color: #fde047; }
+
+/* ------------------------------------------------------------------
+ * Utilities (CSS-10, audit-2026-05-20 follow-up)
+ * ------------------------------------------------------------------
+ * `.is-hidden` is a display-none utility class introduced to replace
+ * inline `style="display:none"` declarations in index.html. Inline
+ * styles fight CSS specificity; a utility class with !important is
+ * easier to override deliberately than ad-hoc inline styles.
+ *
+ * Scope note: the `.is-hidden` token is ALSO used as a state modifier
+ * on `.lvl-card`, `.lvl-grp-hdr`, and `.lvl-ab.mask-outline-btn` in
+ * the layers panel, where it means "the layer is toggled off" and
+ * applies `opacity: .38` — those rows must remain visible. The
+ * :not() guards below keep the layer-panel modifier semantics intact.
+ * ------------------------------------------------------------------ */
+.is-hidden:not(.lvl-card):not(.lvl-grp-hdr):not(.mask-outline-btn) {
+  display: none !important;
+}

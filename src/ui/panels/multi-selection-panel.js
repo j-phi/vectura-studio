@@ -241,16 +241,30 @@
       const isMulti = selected.length > 1;
       const isCompoundEdit = selected.length === 1 && selected[0]?.type === 'compound';
       const showAlign = isMulti;
+      // CSS-10: strip the initial `.is-hidden` utility class from these
+      // sections so inline `style.display` can govern them. The class uses
+      // `display: none !important`, so without removing it the elements
+      // would stay hidden even when this refresh wants to show them.
+      section.classList.remove('is-hidden');
       section.style.display = showAlign || isCompoundEdit ? '' : 'none';
       // Align controls are only meaningful for 2+ layers; hide them when only
       // a single compound is selected (Pathfinder-only context).
       if (alignPanelEl) alignPanelEl.style.display = isMulti ? '' : 'none';
       // Info / Transform subpanels are only relevant in true multi-selection.
-      if (multiInfoSection) multiInfoSection.style.display = isMulti ? '' : 'none';
-      if (multiTransformSection) multiTransformSection.style.display = isMulti ? '' : 'none';
+      if (multiInfoSection) {
+        multiInfoSection.classList.remove('is-hidden');
+        multiInfoSection.style.display = isMulti ? '' : 'none';
+      }
+      if (multiTransformSection) {
+        multiTransformSection.classList.remove('is-hidden');
+        multiTransformSection.style.display = isMulti ? '' : 'none';
+      }
       // Pathfinder subpanel is visible for both multi-selection and the
       // single-compound edit case.
-      if (multiPathfinderSection) multiPathfinderSection.style.display = (isMulti || isCompoundEdit) ? '' : 'none';
+      if (multiPathfinderSection) {
+        multiPathfinderSection.classList.remove('is-hidden');
+        multiPathfinderSection.style.display = (isMulti || isCompoundEdit) ? '' : 'none';
+      }
       if (paneTitleEl) {
         paneTitleEl.textContent = isCompoundEdit
           ? 'PATHFINDER'
