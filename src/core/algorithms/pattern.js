@@ -1338,8 +1338,17 @@
     return result;
   };
 
-  const polygonalLinesComposite = (regions, density, angleOffset = 0, shiftX = 0, shiftY = 0, numAxes = 3, tileMethod = 'grid') => {
+  const polygonalLinesComposite = (regions, density, angleOffset = 0, shiftX = 0, shiftY = 0, numAxes = 3, tileMethod = 'grid', polyPadding = 0, polyRotation = 0, polyRotationStep = 0, polyScaleStep = 0) => {
     const { minX, maxX, minY, maxY } = compositeBounds(regions);
+    const transformsActive = polyPadding > 0 || polyRotation !== 0 || polyRotationStep !== 0 || polyScaleStep !== 0;
+    if (transformsActive) {
+      // Synthesize a bbox poly for the per-tile generator and clip to all
+      // regions via clipSegmentToComposite.
+      const bboxPoly = [
+        { x: minX, y: minY }, { x: maxX, y: minY }, { x: maxX, y: maxY }, { x: minX, y: maxY },
+      ];
+      return _polyTilesTransformed(bboxPoly, density, angleOffset, shiftX, shiftY, numAxes, tileMethod, polyPadding, polyRotation, polyRotationStep, polyScaleStep, (p0, p1) => clipSegmentToComposite(p0, p1, regions));
+    }
     return tessellateEdges(
       minX, maxX, minY, maxY, density, angleOffset, shiftX, shiftY, numAxes, tileMethod,
       (p0, p1) => clipSegmentToComposite(p0, p1, regions)
@@ -2590,8 +2599,91 @@
     return result;
   };
 
-  const polygonalLines = (region, density, angleOffset = 0, shiftX = 0, shiftY = 0, numAxes = 3, tileMethod = 'grid') => {
+  // ── C4: polygonal per-tile transforms ────────────────────────────────────
+  // When polyPadding / polyRotation / polyRotationStep / polyScaleStep are
+  // non-default, emit each tile as a transformed n-gon polygon (closed path)
+  // rather than relying on lattice-edge tessellation. The "ring index" used
+  // by rotationStep/scaleStep is the integer chebyshev distance of the tile
+  // from the bounding-box center, so the center tile is ring 0 and tiles
+  // step outward in concentric square shells.
+  const _polyTilesTransformed = (region, density, angleOffset, shiftX, shiftY, numAxes, tileMethod, polyPadding, polyRotation, polyRotationStep, polyScaleStep, clipFn) => {
+    const ar = angleOffset * Math.PI / 180;
+    const ca = Math.cos(ar), sa = Math.sin(ar);
+    const s = density;
     const xs = region.map(p => p.x), ys = region.map(p => p.y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const cx0 = (minX + maxX) / 2, cy0 = (minY + maxY) / 2;
+    // Lattice→world: rotation by angleOffset around origin, then translate by shift.
+    const toWorld = (lx, ly) => ({ x: shiftX + lx * ca - ly * sa, y: shiftY + lx * sa + ly * ca });
+    // Inverse: world→lattice for bounding the iteration.
+    const toLattice = (wx, wy) => ({ x: (wx - shiftX) * ca + (wy - shiftY) * sa, y: -(wx - shiftX) * sa + (wy - shiftY) * ca });
+    const c0 = toLattice(minX, minY), c1 = toLattice(maxX, minY);
+    const c2 = toLattice(maxX, maxY), c3 = toLattice(minX, maxY);
+    const lMinX = Math.min(c0.x, c1.x, c2.x, c3.x);
+    const lMaxX = Math.max(c0.x, c1.x, c2.x, c3.x);
+    const lMinY = Math.min(c0.y, c1.y, c2.y, c3.y);
+    const lMaxY = Math.max(c0.y, c1.y, c2.y, c3.y);
+    const n = Math.max(3, numAxes);
+    const step = 2 * s;
+
+    // Build centers in lattice coords per tileMethod.
+    const centers = [];
+    if (tileMethod === 'off') {
+      centers.push({ lx: (lMinX + lMaxX) / 2, ly: (lMinY + lMaxY) / 2 });
+    } else if (tileMethod === 'hexagonal') {
+      const rowH = step * Math.sin(Math.PI / 3);
+      let rowIdx = 0;
+      for (let y = lMinY - step; y <= lMaxY + step; y += rowH) {
+        const xOff = (rowIdx % 2) ? step / 2 : 0;
+        for (let x = lMinX - step + xOff; x <= lMaxX + step; x += step) centers.push({ lx: x, ly: y });
+        rowIdx++;
+      }
+    } else {
+      // brick (and 'grid' falls back to centered brick when transforms active)
+      let rowIdx = 0;
+      for (let y = lMinY - step; y <= lMaxY + step; y += step) {
+        const xOff = (tileMethod === 'brick' && rowIdx % 2) ? step / 2 : 0;
+        for (let x = lMinX - step + xOff; x <= lMaxX + step; x += step) centers.push({ lx: x, ly: y });
+        rowIdx++;
+      }
+    }
+
+    const result = [];
+    const baseRotRad = polyRotation * Math.PI / 180;
+    const ringRotPer = polyRotationStep * Math.PI / 180;
+    for (const c of centers) {
+      const wp = toWorld(c.lx, c.ly);
+      // Ring index from bbox center in tile-step units.
+      const ringIdx = Math.max(
+        Math.round(Math.abs(wp.x - cx0) / step),
+        Math.round(Math.abs(wp.y - cy0) / step),
+      );
+      const scale = Math.max(0.05, 1 + polyScaleStep * ringIdx);
+      const rot = baseRotRad + ringRotPer * ringIdx;
+      const r = s * scale - polyPadding;
+      if (r <= 0) continue;
+      // Build n-gon vertices in world coords centered at wp.
+      const verts = [];
+      for (let e = 0; e < n; e++) {
+        const t = 2 * Math.PI * e / n - Math.PI / 2 + rot;
+        verts.push({ x: wp.x + r * Math.cos(t), y: wp.y + r * Math.sin(t) });
+      }
+      // Emit each edge, clipped.
+      for (let i = 0; i < n; i++) {
+        const a = verts[i], b = verts[(i + 1) % n];
+        for (const seg of clipFn(a, b)) result.push(seg);
+      }
+    }
+    return result;
+  };
+
+  const polygonalLines = (region, density, angleOffset = 0, shiftX = 0, shiftY = 0, numAxes = 3, tileMethod = 'grid', polyPadding = 0, polyRotation = 0, polyRotationStep = 0, polyScaleStep = 0) => {
+    const xs = region.map(p => p.x), ys = region.map(p => p.y);
+    const transformsActive = polyPadding > 0 || polyRotation !== 0 || polyRotationStep !== 0 || polyScaleStep !== 0;
+    if (transformsActive) {
+      return _polyTilesTransformed(region, density, angleOffset, shiftX, shiftY, numAxes, tileMethod, polyPadding, polyRotation, polyRotationStep, polyScaleStep, (p0, p1) => clipSegmentToPoly(p0, p1, region));
+    }
     return tessellateEdges(
       Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys),
       density, angleOffset, shiftX, shiftY, numAxes, tileMethod,
@@ -2660,6 +2752,7 @@
       waveSmoothing = 1.0, waveHarmonics = 1,
       dotShape = 'circle', dotJitter = 0,
       lineCount = 1,
+      polyPadding = 0, polyRotation = 0, polyRotationStep = 0, polyScaleStep = 0,
     } = fill;
     // C3: hatch unified — compute the per-layer angle offsets up-front.
     // 1 layer = [0], 2 layers (crosshatch) = [0, 90], 3 layers (triaxial) = [0, 60, 120].
@@ -2698,7 +2791,7 @@
         case 'radial':      return radialFill(region, density, angle, shiftX, shiftY, centralDensity, outerDiameter);
         case 'grid':        return expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, 'grid', 'tick', dotJitter), dotLength, penWidth, dotRotation);
         case 'meander':     return meanderLines(region, density, angle, shiftX, shiftY);
-        case 'polygonal':   return polygonalLines(region, density, angle, shiftX, shiftY, axes, polyTile);
+        case 'polygonal':   return polygonalLines(region, density, angle, shiftX, shiftY, axes, polyTile, polyPadding, polyRotation, polyRotationStep, polyScaleStep);
         case 'triaxial':    return triaxialLines(region, density, angle, shiftX, shiftY);
         default:            return hatchLines(region, density, 0 + angle, shiftX, shiftY);
       }
@@ -2725,7 +2818,7 @@
       case 'radial':      return radialFillComposite(effectiveRegions, density, angle, shiftX, shiftY, centralDensity, outerDiameter);
       case 'grid':        return expandDotsToSpirals(dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, 'grid', 'tick', dotJitter), dotLength, penWidth, dotRotation);
       case 'meander':     return meanderLinesComposite(effectiveRegions, density, angle, shiftX, shiftY);
-      case 'polygonal':   return polygonalLinesComposite(effectiveRegions, density, angle, shiftX, shiftY, axes, polyTile);
+      case 'polygonal':   return polygonalLinesComposite(effectiveRegions, density, angle, shiftX, shiftY, axes, polyTile, polyPadding, polyRotation, polyRotationStep, polyScaleStep);
       case 'triaxial':    return triaxialLinesComposite(effectiveRegions, density, angle, shiftX, shiftY);
       default:            return hatchLinesComposite(effectiveRegions, density, 0 + angle, shiftX, shiftY);
     }
