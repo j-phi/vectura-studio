@@ -1,14 +1,14 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `index.html` is the app shell and loads Tailwind via CDN. `styles.css` contains custom UI styles.
+- `index.html` is the app shell and loads Tailwind via CDN. All UI styling lives under `src/ui/skin/` (tokens + motion + components + per-skin palette files) — the legacy `styles.css` was retired in v1.1.10.
 - `src/` holds modular JavaScript. Key areas: `src/app/` (bootstrap), `src/core/` (engine, RNG, layers), `src/render/` (canvas renderer), `src/ui/` (controls), `src/config/` (defaults, machines, descriptions), and `src/core/algorithms/`.
 - `dist/` contains prebuilt static assets if a bundled build is produced; it is not required for local development.
 - `README.md` contains information about the project design and capabilities; ALWAYS update this when adding/removing features and always review it to assess if updates are needed when making corrections or changes.
 - `CHANGELOG.md` is the human-curated release history. Keep `Unreleased` current during development and add release notes for every version.
 - `plans.md` is the active repo punchlist. Keep `Inbox`, `In Progress`, `Done`, and `Decisions` current as work evolves.
 - `docs/agentic-harness-strategy.md` is the source-of-truth metadocument for agentic development workflow in this repo.
-- `src/ui/skin/` holds the multi-skin theme system: `tokens.css` + `motion.css` + `components.css` (skin-agnostic) plus per-skin palette files (`classic-dark.css`, `classic-light.css`, `lark.css`, `meridian-dark.css`, `meridian-light.css`, `meridian-twilight.css`). Adding a new skin: run `npm run skin:new -- <id>` to scaffold from `_template.css`, edit the palette, then add a manifest entry to `src/config/defaults.js` under `window.Vectura.THEMES`. Full guide at `docs/skin-authoring.md`. Skin authoring is **CSS + manifest only** — do not branch JavaScript on skin id; gate behavior on `manifest.capabilities` instead.
+- `src/ui/skin/` holds the multi-skin theme system: `tokens.css` + `motion.css` + `components.css` (skin-agnostic) plus per-skin palette files (`classic-dark.css`, `classic-light.css`, `classic-lark.css`, `meridian-dark.css`, `meridian-light.css`, `meridian-lark.css`). Adding a new skin: run `npm run skin:new -- <id>` to scaffold from `_template.css`, edit the palette, then add a manifest entry to `src/config/defaults.js` under `window.Vectura.THEMES`. Full guide at `docs/skin-authoring.md`. Skin authoring is **CSS + manifest only** — do not branch JavaScript on skin id; gate behavior on `manifest.capabilities` instead.
 - `src/config/presets.js` is a shared preset registry for all systems (not Petalis-only). New presets must include `preset_system`, `id`, `name`, and `params`.
 - Preset naming convention (required for new entries): `id` must be lowercase kebab-case and prefixed with its system as `<preset_system>-<preset-name>` (example: `petalis-camellia-pink-perfection`).
 - `package.json` is the canonical version source. Run `npm run version:sync` whenever the version changes so `src/config/version.js` and the visible app badge stay aligned.
@@ -26,7 +26,7 @@
 - Use vanilla JavaScript, IIFE modules, and the `window.Vectura` namespace pattern seen in `src/app/app.js`.
 - Naming: PascalCase for classes (`App`, `Renderer`), camelCase for methods/variables, lowercase file names (e.g., `engine.js`).
 - Keep semicolons and existing formatting consistent with nearby files.
-- **CSS placement:** new panel/component/feature CSS lands in `src/ui/skin/components.css` (motion in `motion.css`, tokens in `tokens.css`) — NOT in the legacy `styles.css`, which is being drained as part of the Meridian cleanup and must not grow.
+- **CSS placement:** all new CSS lands in `src/ui/skin/` — panel/component/feature rules go in `components.css`, motion/transition rules in `motion.css`, and design tokens / CSS variables in `tokens.css`. The legacy `styles.css` was deleted in v1.1.10; there is no other CSS surface to grow.
 
 ## Testing Guidelines
 - Automated tests are configured and required where applicable: Vitest (`test:unit`, `test:integration`, `test:visual`, `test:perf`) and Playwright (`test:e2e`).

@@ -98,12 +98,12 @@ An Illustrator-style shared toolbar now drives the main canvas plus the embedded
 
 ### Algorithms
 
-14+ algorithm families power each layer, all seeded for repeatable results. The **Noise Rack** is a universal multi-algorithm noise stacking system shared across algorithms — add layers, pick noise types, blend modes, and octave shaping without touching algorithm-specific code.
+19+ algorithm families power each layer, all seeded for repeatable results. The **Noise Rack** is a universal multi-algorithm noise stacking system shared across algorithms — add layers, pick noise types, blend modes, and octave shaping without touching algorithm-specific code.
 
 <details>
 <summary>Full algorithm feature list</summary>
 
-- 14+ algorithm families: flowfield, boids, attractors, hyphae, lissajous, harmonograph, wavetable, rings, topo, grid, rainfall, phylla, petalis, spiral, shapepack
+- 19+ algorithm families: flowfield, boids, attractors, hyphae, lissajous, harmonograph, wavetable, rings, topo, grid, rainfall, phylla, petalis, spiral, shapepack, terrain, horizon, pattern, svgdistort
 - Universal **Noise Rack** with per-layer engine selection, blend modes, offsets, octave shaping — shared across flowfield, grid, phylla, rings, topo, wavetable, and petalis
 - Polygon Noise Rack layers now use intuitive zoom semantics: larger `Noise Zoom` / `Noise Scale` values create a larger polygon footprint, and vertical line-displacement systems treat positive amplitudes as upward motion
 - Seeded, repeatable generation; the `Transform & Seed` sub-panel (collapsed by default) exposes seed, position, scale, and rotation
@@ -155,7 +155,7 @@ Vectura's UI is Illustrator-familiar: a desktop menu bar with `File/View/Insert/
 
 - Desktop menu bar beside `VECTURA.STUDIO` with Illustrator-style shortcuts for Open/Save/Import/Export/Document Setup/Reset View/Help plus an `Insert` menu for modifier containers
 - Top menu dropdowns render as overlays above the canvas/panes so they're never clipped by the header
-- Multi-skin theme system: Classic Dark, Classic Light, Lark, **Meridian Blue · Dark**, **Meridian Blue · Light**, and **Meridian Blue · Twilight**. Switching skin restyles the full shell, flips the document background default, and swaps `Pen 1` to a contrast-appropriate color. New skins can be authored without JavaScript edits — see [`docs/skin-authoring.md`](docs/skin-authoring.md) and run `npm run skin:new -- <id>` to scaffold one from the template.
+- Multi-skin theme system: Classic Dark, Classic Light, Lark, **Meridian Blue · Dark**, **Meridian Blue · Light**, and **Meridian Blue · Lark**. Switching skin restyles the full shell, flips the document background default, and swaps `Pen 1` to a contrast-appropriate color. New skins can be authored without JavaScript edits — see [`docs/skin-authoring.md`](docs/skin-authoring.md) and run `npm run skin:new -- <id>` to scaffold one from the template.
 - `File > Document Setup` (`Cmd/Ctrl+K`) covers machine size, Metric/Imperial switch, optional blueprint-style dimension labels, margin, on-canvas crop, margin guides, selection-outline styling, plotter physics, optional 10mm grid overlay, and cookie preference saving with `Clear Saved Preferences`
 - Pen palette with assignable colors/widths, reorderable list, drag-to-assign per layer or selection, and double-click-to-apply on selected layers
 - Color controls use horizontal pills that open native color pickers; thickness controls use sliders with editable mm values and reset buttons
@@ -207,6 +207,9 @@ Vectura runs on phones. A touch-friendly shell with slide-over drawers, a bottom
 | **Spiral** | Archimedean spiral with optional closure that loops the outer end back in |
 | **Shape Pack** | Circle/polygon packing with perspective controls |
 | **Terrain** | Realistic terrain heightfield rendered as scanlines under selectable perspective (top-down, one-point, two-point, isometric), with native ridged mountains, V/U valleys, river carving, ocean coastlines, and dial-in style presets |
+| **Horizon** | Synthwave-style perspective grid draped over an opt-in mountain heightfield with center dampening, skyline relief, and an `Additional Noises` Noise Rack for layered displacement |
+| **Pattern** | Texture-fill layers with a nested-region paint-bucket workflow, library + custom-tile registry, live `3×3` seam validation, and `.vectura` round-trip for custom imported tiles |
+| **SVG Distort** | Import an SVG path and warp it through field-based distortion controls; integrates with the shared optimization pipeline for plotter-ready output |
 
 Algorithm defaults live in `src/config/defaults.js`, modifier defaults/descriptions in `src/config/modifiers.js`, and algorithm descriptions in `src/config/descriptions.js`.
 
@@ -280,6 +283,7 @@ Click `Export SVG` to download.
 |---|---|
 | **Tools** | |
 | Selection tool | `V` |
+| Lasso | `Q` |
 | Direct selection | `A` |
 | Hand / pan | `Space` |
 | Pen tool | `P` |
@@ -343,7 +347,7 @@ Click `Export SVG` to download.
 | `npm run test:visual` | SVG baseline regression checks against `tests/baselines/svg` |
 | `npm run test:visual:screenshots` | Optional Playwright screenshot snapshot checks for high-risk UI shells |
 | `npm run test:perf` | Stress/performance checks for generation and optimization |
-| `npm run test:ci` | PR-gating suite: unit + integration + e2e |
+| `npm run test:ci` | PR-gating suite: unit + integration + e2e + visual + perf |
 | `npm run test:update` | Regenerates visual SVG baselines (review before commit) |
 
 Vitest config: `vitest.config.mjs` · Playwright config: `playwright.config.js`
@@ -442,7 +446,7 @@ flowchart LR
 
   Config[src/config/*.js] --> UI
   Config --> Engine
-  Styles[styles.css] --> HTML
+  Skin[src/ui/skin/*.css] --> HTML
 ```
 
 ```mermaid
@@ -465,7 +469,7 @@ flowchart TD
 | Path | Purpose |
 |---|---|
 | `index.html` | App shell, Tailwind CDN config, and script load order |
-| `styles.css` | Custom UI styling and texture effects |
+| `src/ui/skin/` | Multi-skin theme system: `tokens.css` + `motion.css` + `components.css` plus per-skin palette files (classic + Meridian families) |
 | `src/app/app.js` | Application orchestration, theme switching, cookie persistence, undo/redo history |
 | `src/core/engine.js` | Layer lifecycle, algorithm execution, display geometry pipeline, serialization |
 | `src/core/algorithms/` | One file per algorithm; `index.js` assembles the registry |
@@ -516,6 +520,14 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.1.10
+- **Meridian cleanup chain — closed.** `_ui-legacy.js` (drained across units 1.5–1.10) and `styles.css` (drained across units 2.1–2.7) are both deleted. Every `var(--color-*)` reference under `src/` was rewritten to `var(--ui-*)`, the classic-skin alias maps were inlined and the `--color-*` defaults dropped from `components.css`, and the `data-theme` root mirror attribute is gone. New CSS now lands exclusively in `src/ui/skin/`.
+- Added **bezier handle editing in the pen reticule subtool** — direct-select an anchor to drag its handles, with snap-to-origin (5 px) and handle-collapse-to-anchor behavior.
+- Added **direct-select drag-to-merge anchors** — dragging an anchor onto another anchor on the same path merges them (Illustrator-parity); also fixes `sourcePaths.meta.anchors` being silently lost through Undo/Redo and `.vectura` save/load.
+- Replaced the **Topo algorithm icon** with a new brand mark.
+- Fixed **scissor on closed pen paths** — no more spurious extra split near the start anchor.
+- Fixed **recurring subagent termination** during `npm run test:e2e` runs.
+
 ### 1.1.0
 - **Wallpaper groups — correctness pass.** Nine of the 17 wallpaper groups (`pmg`, `pgg`, `cmm`, `p4g`, `p3`, `p3m1`, `p31m`, `p6`, `p6m`) were producing partial coverage, double-covered regions, or asymmetric overlaps from misplaced ops or wrong fundamental-domain shapes. All 17 now tile the cell exactly once, verified numerically.
 - Added **Domain scale** slider (0.30–2.00×) on every wallpaper mirror — scales the clip polygon around its centroid for intentional gaps (`<1`) or overlap (`>1`); 1.00 keeps exact tiling. Composes with all 17 groups.
@@ -534,12 +546,15 @@ CI lives in `.github/workflows/test.yml`:
 - Changed **disclosure chevrons unified** on the Lucide `chevron-down` glyph with directional rotation.
 - Internal: drained ~100 delegator stubs from `_ui-legacy.js` across panels, persistence, shell satellites, pens, pane-left, export-svg, modals, shortcuts, and grouping methods (continuation of the Meridian Blue UI architecture refactor).
 
+<details>
+<summary>Older releases (0.9.10 and earlier)</summary>
+
 ### 0.9.10
-- Added **Meridian Blue** skin family (Dark / Light / Twilight) — fourth, fifth, and sixth shipping skins, sourced from `themes-mockup.html`. Space Grotesk + JetBrains Mono typography, tighter pane geometry, slider/dial release halos, indeterminate progress bar, and family-scoped petal/pattern designer chrome.
+- Added **Meridian Blue** skin family (Dark / Light / Lark) — fourth, fifth, and sixth shipping skins, sourced from `themes-mockup.html`. Space Grotesk + JetBrains Mono typography, tighter pane geometry, slider/dial release halos, indeterminate progress bar, and family-scoped petal/pattern designer chrome.
 - Added **skin-authoring SDK**: `npm run skin:new -- <id>` scaffolds a new skin from `src/ui/skin/_template.css`. Full guide at `docs/skin-authoring.md`. New skins ship with one CSS file + one manifest entry — no JavaScript edits.
 - Added **empty-state illustrations** in the layer list and pattern fill panel (monochrome SVGs sourced from `--ui-muted`).
 - Added **indeterminate progress bar** wired into save / SVG export / engine generations exceeding ~200 ms.
-- Added **reduced-motion compliance pass**: every keyframe in `motion.css` has a matching `prefers-reduced-motion: reduce` fallback; `styles.css` ships the universal `*, *::before, *::after` guard.
+- Added **reduced-motion compliance pass**: every keyframe in `motion.css` has a matching `prefers-reduced-motion: reduce` fallback paired with a universal `*, *::before, *::after` guard.
 - Refactored UI from a single 16k-line `ui.js` into ~60 satellite modules under `src/ui/{shell,panels,components,overlays,modals,menus,skin}` while keeping the legacy class as a thin orchestrator. Renderer's `getThemeToken` cache supports both `--ui-*` and legacy `--color-*` aliases for cross-skin compatibility.
 
 ### 0.9.0
@@ -559,9 +574,6 @@ CI lives in `.github/workflows/test.yml`:
 ### 0.8.0
 - Added **Lark theme**: dark UI with white canvas, purpose-built for a plotter-on-paper workflow.
 - Added **Algorithm Drawing Tool** with a dedicated subtool submenu.
-
-<details>
-<summary>Older releases (0.7.0 and earlier)</summary>
 
 ### 0.7.0
 - Added **Terrain** algorithm: heightfield-driven scanlines with Top-down, One-point, Two-point, and Isometric perspectives; ridged-multifractal mountains, V/U-profile valleys, steepest-descent rivers, ocean clamping, and six style presets — all with full Noise Rack integration.

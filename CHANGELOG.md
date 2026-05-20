@@ -6,6 +6,32 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+## 1.1.10 - 2026-05-20
+
+Closes the Meridian cleanup chain that was tracked since the Meridian Blue migration merge. `_ui-legacy.js` and `styles.css` are both deleted; the `--color-*` → `--ui-*` token migration is complete; the `data-theme` root mirror is gone. All new CSS now lands exclusively in `src/ui/skin/`.
+
+### Added
+- **Pen tool — bezier handle editing in the reticule subtool.** Direct-select on a pen-drawn anchor now exposes draggable bezier handles with snap-to-origin (5 px screen-space) and handle collapse-to-anchor behavior. Pairs with the new close-drag snap-to-start gesture.
+- **Direct-select — drag-to-merge anchor nodes.** Dragging an anchor on top of another anchor on the same path merges the two into a single anchor (Illustrator-parity). Also fixes a regression where `sourcePaths.meta.anchors` were silently dropped through Undo/Redo and `.vectura` save/load.
+- **Topo algorithm icon** replaced with a new brand mark.
+
+### Changed
+- **Meridian cleanup chain — closed.** Twenty-plus refactor commits drain `_ui-legacy.js` into satellite modules and `styles.css` into `src/ui/skin/`, then delete both files. Highlights:
+  - Units 1.5–1.10: extract wave/noise tables + NOISE_DEFS, pen workflow methods, modal mount primitives, 6 algorithm-specific methods, Document Setup input handlers, the remaining `bindGlobal` handlers, and the constructor body into satellite modules — then `git rm src/ui/_ui-legacy.js` and drop its `<script>` tag.
+  - Units 2.1–2.7: drain Align/Pathfinder/Paint-Bucket, right-pane tabs + bottom-pane shell, wave/noise + step-dot + export-modal scaffold + info-popover, export-modal optimization cards, Layers V8 + algo dropdown + touch-tablet variants, Document Setup drawer + layer-bar palette picker, mobile shell + touch ergonomics + Pattern Designer, and the base/root + theme-toggle + chevron + tour + help-guide CSS into the skin layer — then `git rm styles.css` and drop its `<link>` tag.
+  - Steps 3.1–3.3a: rewrite every `var(--color-*)` reference under `src/` to `var(--ui-*)`, inline the `classic-*.css` aliases, and delete the `--color-*` defaults from `components.css`.
+  - Step 4.1: drop the `data-theme` root mirror attribute and its fallback read path.
+- **Scaffolding files** (`AGENTS.md`, `CLAUDE.md`, `docs/skin-authoring.md`, `docs/a11y-audit-phase5.md`, `plans.md`, `README.md`) updated to reflect the deletions; the "new CSS lands in `styles.css`" guidance is replaced with skin-only authoring.
+
+### Fixed
+- **Scissor tool on closed pen paths.** Closing a pen path then dragging the scissor across it no longer produces a spurious extra split near the start anchor. Affected paths that had an exact-coincident start/end pair.
+- **E2E harness — subagent termination.** Recurring subagent terminations during `npm run test:e2e` runs eliminated; the harness no longer reaps its own worker process under specific timing windows.
+
+### Removed
+- **`src/ui/_ui-legacy.js`** — drained and deleted (unit 1.10). The legacy `UI` constructor now lives in `src/ui/ui.js`; all behavior preserved.
+- **`styles.css`** — drained and deleted (unit 2.7). All rules now live under `src/ui/skin/{tokens,motion,components,*-skin}.css`.
+- **`--color-*` token aliases** removed from `components.css` and the classic skin files; `data-theme` root attribute mirror dropped from the runtime.
+
 ## 1.1.0 - 2026-05-19
 
 ### Added
