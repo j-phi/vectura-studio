@@ -1119,6 +1119,56 @@
     }
   }
 
+  /**
+   * Meridian Unit 1.9b (2026-05-20): grouped installer for the Document
+   * Setup panel's background-color picker (`inp-bg-color` + `bg-color-pill`).
+   * Previously inlined in `_ui-legacy.js`'s `bindGlobal()`. The elements
+   * live inside this panel's markup, so the wiring belongs alongside the
+   * other Document Setup listeners. `this` is the legacy UI instance —
+   * handlers reach for `this.app.pushHistory`, `this.app.render` via the
+   * prototype.
+   */
+  function bindBgColorListeners() {
+    const {
+      getEl,
+      SETTINGS,
+      getContrastTextColor,
+      openColorPickerAnchoredTo,
+    } = requireDeps('bindBgColorListeners');
+    const bgColor = getEl('inp-bg-color');
+    if (!bgColor) return;
+    const bgColorPill = getEl('bg-color-pill', { silent: true });
+    let armed = false;
+    const updatePill = (color) => {
+      if (!bgColorPill || !color) return;
+      bgColorPill.textContent = color.toUpperCase();
+      bgColorPill.style.background = color;
+      bgColorPill.style.color = getContrastTextColor(color);
+    };
+    if (bgColorPill) {
+      bgColorPill.onclick = () => {
+        if (!armed && this.app.pushHistory) this.app.pushHistory();
+        armed = true;
+        openColorPickerAnchoredTo(bgColor, bgColorPill, { title: 'Background Color', uiInstance: this });
+      };
+    }
+    bgColor.onfocus = () => {
+      if (!armed && this.app.pushHistory) this.app.pushHistory();
+      armed = true;
+    };
+    bgColor.oninput = (e) => {
+      SETTINGS.bgColor = e.target.value;
+      updatePill(e.target.value);
+      this.app.render();
+    };
+    bgColor.onchange = (e) => {
+      SETTINGS.bgColor = e.target.value;
+      updatePill(e.target.value);
+      armed = false;
+      this.app.render();
+    };
+  }
+
   Modals.DocumentSetup = {
     /**
      * Inject closure-captured legacy ui.js IIFE locals.
@@ -1138,6 +1188,7 @@
     closeSetupModal,
     toggleSetupModal,
     bindDocumentSetupListeners,
+    bindBgColorListeners,
     installOn(proto) {
       // Legacy alias preserved on the prototype.
       proto._bindDocumentSetupHandlers = function() { return bindHandlers.call(this); };
@@ -1146,6 +1197,10 @@
       // the residual bindGlobal() shell.
       proto.bindDocumentSetupListeners = function() {
         return bindDocumentSetupListeners.call(this);
+      };
+      // Meridian Unit 1.9b: bg color picker wiring (`inp-bg-color` + `bg-color-pill`).
+      proto.bindBgColorListeners = function() {
+        return bindBgColorListeners.call(this);
       };
     },
   };

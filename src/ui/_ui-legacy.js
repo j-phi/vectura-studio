@@ -1822,10 +1822,6 @@
       this.layerAddOpen    = false;
       this._lvlDblId       = null;
       this._lvlDblTime     = 0;
-      const addLayer = getEl('btn-add-layer');
-      const insertMirrorModifier = getEl('btn-insert-mirror-modifier');
-      const moduleSelect = getEl('generator-module');
-      const bgColor = getEl('inp-bg-color');
       // Phase 3 step 3: settings-panel + btn-settings + btn-close-settings
       // wiring moved to modals/document-setup.js (invoked via
       // _bindDocumentSetupHandlers below). No locals needed here.
@@ -1834,133 +1830,17 @@
       // handlers (machine-profile, set-*, paper W/H, orientation, plotter
       // opt, undo, etc.) moved to modals/document-setup.js's
       // bindDocumentSetupListeners(). Their local lookups moved with them.
-      const btnHelp = getEl('btn-help');
-      const themeToggle = getEl('theme-toggle', { silent: true });
-      const btnSaveVectura = getEl('btn-save-vectura');
-      const btnOpenVectura = getEl('btn-open-vectura');
-      const btnImportSvg = getEl('btn-import-svg');
-      const fileOpenVectura = getEl('file-open-vectura');
-      const fileImportSvg = getEl('file-import-svg');
-      const btnExport = getEl('btn-export');
-      const btnResetView = getEl('btn-reset-view');
-      const btnUndo = getEl('btn-undo', { silent: true });
-      const btnRedo = getEl('btn-redo', { silent: true });
-
-      if (addLayer && moduleSelect) {
-        addLayer.onclick = () => {
-          const activeLayer = this.app.engine.getActiveLayer?.();
-          const selectedModifier = this.isModifierLayer(activeLayer) ? activeLayer : null;
-          const t = selectedModifier ? this.getPreferredNewLayerType() : this.getPreferredNewLayerType();
-          if (this.app.pushHistory) this.app.pushHistory();
-          const id = this.app.engine.addLayer(t);
-          const createdLayer = this.getLayerById(id);
-          this.rememberDrawableLayerType(createdLayer || t);
-          if (selectedModifier && createdLayer) {
-            this.assignLayersToParent(selectedModifier.id, [createdLayer], {
-              selectAssigned: true,
-              primaryId: id,
-            });
-          } else if (this.app.renderer) {
-            this.app.renderer.setSelection([id], id);
-          }
-          this.renderLayers();
-          this.app.render();
-        };
-      }
-      if (btnUndo) {
-        btnUndo.onclick = () => { if (this.app.undo) this.app.undo(); };
-      }
-      if (btnRedo) {
-        btnRedo.onclick = () => { if (this.app.redo) this.app.redo(); };
-      }
-      const btnGroupLayers = getEl('btn-group-layers');
-      const btnUngroupLayers = getEl('btn-ungroup-layers');
-      if (btnGroupLayers) btnGroupLayers.onclick = () => this.groupSelection();
-      if (btnUngroupLayers) btnUngroupLayers.onclick = () => this.ungroupSelection();
-      if (insertMirrorModifier) {
-        insertMirrorModifier.onclick = () => {
-          this.insertMirrorModifier();
-        };
-      }
-
-      if (moduleSelect) {
-        moduleSelect.onchange = (e) => {
-          const l = this.app.engine.getActiveLayer();
-          if (l) {
-            if (this.app.pushHistory) this.app.pushHistory();
-            if (this.isModifierLayer(l)) {
-              const nextType = e.target.value;
-              l.modifier = createModifierState(nextType, {
-                mirrors: [createMirrorLine(0)],
-              });
-              this.buildControls();
-              this.refreshModifierLayer(l, { rebuildControls: false });
-              return;
-            }
-            this.storeLayerParams(l);
-            const nextType = e.target.value;
-            this.rememberDrawableLayerType(nextType);
-            this.restoreLayerParams(l, nextType);
-            if (l.type !== 'shape') l.sourcePaths = null;
-            if (this.app.renderer?.directSelection?.layerId === l.id) {
-              this.app.renderer.clearDirectSelection();
-            }
-            const label = ALGO_DEFAULTS[l.type]?.label;
-            const nextName = label || l.type.charAt(0).toUpperCase() + l.type.slice(1);
-            l.name = this.getUniqueLayerName(nextName, l.id);
-            this.buildControls();
-            this.app.regen();
-            this.renderLayers();
-          }
-        };
-      }
-
-      const moduleTrigger = document.getElementById('generator-module-trigger');
-      if (moduleTrigger) {
-        moduleTrigger.addEventListener('click', () => {
-          const select = getEl('generator-module', { silent: true });
-          if (select?.disabled) return;
-          const menu = document.getElementById('gm-module-menu');
-          if (menu && !menu.classList.contains('hidden')) {
-            menu.classList.add('hidden');
-          } else {
-            this._showModuleMenu();
-          }
-        });
-      }
-
-      if (bgColor) {
-        const bgColorPill = getEl('bg-color-pill', { silent: true });
-        let armed = false;
-        const updatePill = (color) => {
-          if (!bgColorPill || !color) return;
-          bgColorPill.textContent = color.toUpperCase();
-          bgColorPill.style.background = color;
-          bgColorPill.style.color = getContrastTextColor(color);
-        };
-        if (bgColorPill) {
-          bgColorPill.onclick = () => {
-            if (!armed && this.app.pushHistory) this.app.pushHistory();
-            armed = true;
-            openColorPickerAnchoredTo(bgColor, bgColorPill, { title: 'Background Color', uiInstance: this });
-          };
-        }
-        bgColor.onfocus = () => {
-          if (!armed && this.app.pushHistory) this.app.pushHistory();
-          armed = true;
-        };
-        bgColor.oninput = (e) => {
-          SETTINGS.bgColor = e.target.value;
-          updatePill(e.target.value);
-          this.app.render();
-        };
-        bgColor.onchange = (e) => {
-          SETTINGS.bgColor = e.target.value;
-          updatePill(e.target.value);
-          armed = false;
-          this.app.render();
-        };
-      }
+      //
+      // Meridian Unit 1.9b (2026-05-20): remaining bindGlobal() handlers
+      // swept into per-satellite installers. The element lookups below
+      // moved with each handler:
+      //   - layer-list buttons + palette picker → LayersPanel.bindLayerListListeners
+      //   - inp-bg-color + bg-color-pill        → DocumentSetup.bindBgColorListeners
+      //   - btn-export                          → ExportSvg.bindExportButton
+      //   - btn-save / btn-open / btn-import    → UI.FileIO.bindFileIoListeners
+      //   - module dropdown + transform inputs  → AlgoConfigPanel.bindAlgoConfigListeners
+      //   - theme-toggle                        → ThemeSwitcher.bindThemeToggle
+      //   - btn-help / btn-tour / btn-reset-view → Header.bindHeaderChromeListeners
 
       // Phase 3 step 3: open/close lifecycle moved to modals/document-setup.js.
       // Both onclick handlers forward to this.toggleSettingsPanel(). Guarded so
@@ -1976,55 +1856,6 @@
       if (typeof this.bindDocumentSetupListeners === 'function') {
         this.bindDocumentSetupListeners();
       }
-      if (btnHelp) {
-        btnHelp.onclick = () => this.openHelp(false);
-      }
-      const btnTour = getEl('btn-tour', { silent: true });
-      const btnTourWelcome = getEl('btn-tour-welcome', { silent: true });
-      const tourHandler = (e) => {
-          e.stopPropagation();
-          this.setTopMenuOpen(null, false);
-          const hasContent = (this.app?.engine?.layers?.length ?? 0) > 0;
-          const startTour = () => {
-            SETTINGS.tourSeen = false;
-            setTimeout(() => {
-              window.Vectura.Tutorial?.start(() => {
-                SETTINGS.tourSeen = true;
-                this.app?.persistPreferences?.();
-              });
-            }, 0);
-          };
-          if (hasContent) {
-            const body = '<p class="modal-text">Starting the tour will clear the current canvas. Continue?</p>'
-              + '<div class="color-modal-actions" style="margin-top:16px;">'
-              + '<button type="button" class="tour-cancel-btn">Cancel</button>'
-              + '<button type="button" class="tour-continue-btn color-modal-apply">Continue</button>'
-              + '</div>';
-            this.openModal({ title: 'Clear Canvas?', body });
-            this.modal.bodyEl.querySelector('.tour-cancel-btn').onclick = () => this.closeModal();
-            this.modal.bodyEl.querySelector('.tour-continue-btn').onclick = () => {
-              this.closeModal();
-              if (this.app.pushHistory) this.app.pushHistory();
-              this.app.engine.layers = [];
-              this.app.engine.activeLayerId = null;
-              this.app.setSelection?.([], null);
-              this.renderLayers();
-              this.buildControls();
-              this.app.render();
-              startTour();
-            };
-            return;
-          }
-          startTour();
-      };
-      if (btnTour) btnTour.onclick = tourHandler;
-      if (btnTourWelcome) btnTourWelcome.onclick = tourHandler;
-      if (themeToggle) {
-        this.refreshThemeUi();
-        themeToggle.onclick = () => {
-          this.app.toggleTheme?.();
-        };
-      }
 
       // Phase 3 step 2: grid-settings panel handlers delegated to
       // src/ui/modals/grid-settings.js. The module owns the panel markup
@@ -2037,188 +1868,33 @@
         this._bindGridSettingsHandlers();
       }
 
-      // ── Layer bar color palette picker ──────────────────────────────
-      {
-        const _updateSectBars = (p) => {
-          const panel = document.getElementById('settings-panel');
-          if (!panel) return;
-          const preview = p?.preview || [];
-          if (!preview.length) return;
-          panel.querySelectorAll('[class*="sect--color-"]').forEach((sect, i) => {
-            sect.style.setProperty('--sect-bar', preview[i % preview.length]);
-          });
-        };
-
-        const _updateLBPTrigger = () => {
-          const pid = SETTINGS.layerBarPaletteId || 'prism';
-          const palettes = window.Vectura.LAYER_PALETTES || [];
-          const p = palettes.find(x => x.id === pid);
-          const nameEl = getEl('layer-bar-palette-name', { silent: true });
-          const previewEl = getEl('layer-bar-palette-preview', { silent: true });
-          if (nameEl) nameEl.textContent = p?.name || pid;
-          if (previewEl) {
-            previewEl.innerHTML = '';
-            (p?.preview || []).forEach(hex => {
-              const s = document.createElement('span');
-              s.className = 'palette-swatch'; s.style.background = hex;
-              previewEl.appendChild(s);
-            });
-          }
-          _updateSectBars(p);
-        };
-
-        const _buildLBPMenu = () => {
-          const menu = getEl('layer-bar-palette-menu', { silent: true });
-          if (!menu) return;
-          const palettes = window.Vectura.LAYER_PALETTES || [];
-          const activePid = SETTINGS.layerBarPaletteId || 'prism';
-          menu.innerHTML = '';
-          palettes.forEach(p => {
-            const row = document.createElement('div');
-            row.className = 'palette-picker-row' + (p.id === activePid ? ' is-active' : '');
-            const lbl = document.createElement('span');
-            lbl.className = 'palette-picker-label'; lbl.textContent = p.name;
-            row.appendChild(lbl);
-            if (p.preview) {
-              const sw = document.createElement('div'); sw.className = 'palette-picker-swatches';
-              p.preview.forEach(hex => {
-                const s = document.createElement('span');
-                s.className = 'palette-swatch'; s.style.background = hex;
-                sw.appendChild(s);
-              });
-              row.appendChild(sw);
-            } else {
-              const note = document.createElement('span');
-              note.className = 'palette-picker-note'; note.textContent = 'uses pen color';
-              row.appendChild(note);
-            }
-            row.addEventListener('click', () => {
-              SETTINGS.layerBarPaletteId = p.id;
-              this.app.persistPreferencesDebounced?.();
-              _updateLBPTrigger();
-              _buildLBPMenu();
-              menu.classList.add('hidden');
-              this.renderLayers?.();
-              this._refreshAlgoSubmenuColors?.();
-              this._refreshAlgoPickerColors?.();
-              this._syncModuleDisplay?.();
-            });
-            menu.appendChild(row);
-          });
-        };
-
-        const lbpTrigger = getEl('layer-bar-palette-trigger', { silent: true });
-        if (lbpTrigger) {
-          lbpTrigger.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const menu = getEl('layer-bar-palette-menu', { silent: true });
-            if (!menu) return;
-            const opening = menu.classList.contains('hidden');
-            menu.classList.toggle('hidden', !opening);
-            if (opening) _buildLBPMenu();
-          });
-        }
-        document.addEventListener('click', () => {
-          getEl('layer-bar-palette-menu', { silent: true })?.classList.add('hidden');
-        });
-        _updateLBPTrigger();
+      // ── Meridian Unit 1.9b (2026-05-20) ─────────────────────────────
+      // Single-line invocations of each grouped satellite installer.
+      // Each is stub-`this` guarded for the legacy unit-test entry point
+      // that calls bindGlobal() against a plain object — those tests
+      // exercise specific input handlers further down (currently none
+      // left here), so we only invoke installers when they were attached
+      // to the prototype by the satellite's own installOn().
+      if (typeof this.bindLayerListListeners === 'function') {
+        this.bindLayerListListeners();
       }
-
-      if (btnExport) {
-        btnExport.onclick = () => this.openExportModal();
+      if (typeof this.bindBgColorListeners === 'function') {
+        this.bindBgColorListeners();
       }
-      if (btnResetView) {
-        btnResetView.onclick = () => {
-          this.app.renderer.center();
-          if (this.expandPanes) this.expandPanes();
-          this.app.render();
-        };
+      if (typeof this.bindAlgoConfigListeners === 'function') {
+        this.bindAlgoConfigListeners();
       }
-      if (btnSaveVectura) {
-        btnSaveVectura.onclick = () => this.saveVecturaFile();
+      if (typeof this.bindThemeToggle === 'function') {
+        this.bindThemeToggle();
       }
-      if (btnOpenVectura && fileOpenVectura) {
-        btnOpenVectura.onclick = () => fileOpenVectura.click();
-        fileOpenVectura.onchange = () => {
-          const file = fileOpenVectura.files?.[0];
-          if (file) this.openVecturaFile(file);
-          fileOpenVectura.value = '';
-        };
+      if (typeof this.bindHeaderChromeListeners === 'function') {
+        this.bindHeaderChromeListeners();
       }
-      if (btnImportSvg && fileImportSvg) {
-        btnImportSvg.onclick = () => fileImportSvg.click();
-        fileImportSvg.onchange = () => {
-          const file = fileImportSvg.files?.[0];
-          if (file) this.importSvgFile(file);
-          fileImportSvg.value = '';
-        };
+      if (typeof this.bindExportButton === 'function') {
+        this.bindExportButton();
       }
-
-      const TRANSLATION_KEYS = new Set(['posX', 'posY']);
-      const bindTrans = (id, key) => {
-        const el = getEl(id);
-        if (!el) return;
-        el.onchange = (e) => {
-          // In multi-selection mode the transform inputs apply to every selected
-          // layer; a blank value (placeholder "Multiple") means "leave unchanged".
-          const selected = this.app.renderer?.getSelectedLayers?.() || [];
-          const targets = selected.length > 1 ? selected : (this.app.engine.getActiveLayer() ? [this.app.engine.getActiveLayer()] : []);
-          if (!targets.length) return;
-          const rawValue = e.target.value;
-          if (rawValue === '' || rawValue == null) return;
-          if (this.app.pushHistory) this.app.pushHistory();
-          if (TRANSLATION_KEYS.has(key)) {
-            targets.forEach((layer) => {
-              const prev = layer.params[key] ?? 0;
-              const next = this.parseDocumentNumber(rawValue, { fallbackMm: prev });
-              layer.params[key] = next;
-              const delta = next - prev;
-              if (delta) {
-                const dx = key === 'posX' ? delta : 0;
-                const dy = key === 'posY' ? delta : 0;
-                window.Vectura?.PaintBucketOps?.translateLayerFills?.(layer, dx, dy);
-              }
-            });
-          } else {
-            const parsed = parseFloat(rawValue);
-            if (!Number.isFinite(parsed)) return;
-            targets.forEach((layer) => { layer.params[key] = parsed; });
-          }
-          // app.regen() only regenerates the active layer's geometry. For multi-
-          // selection the other selected layers need an explicit generate() pass
-          // so their baked paths pick up the new transform.
-          if (targets.length > 1) {
-            const activeId = this.app.engine.activeLayerId;
-            targets.forEach((layer) => {
-              if (layer.id !== activeId) this.app.engine.generate(layer.id);
-            });
-          }
-          this.app.regen();
-        };
-      };
-      bindTrans('inp-seed', 'seed');
-      bindTrans('inp-pos-x', 'posX');
-      bindTrans('inp-pos-y', 'posY');
-      bindTrans('inp-scale-x', 'scaleX');
-      bindTrans('inp-scale-y', 'scaleY');
-      bindTrans('inp-rotation', 'rotation');
-
-      const randSeed = getEl('btn-rand-seed');
-      if (randSeed) {
-        randSeed.onclick = () => {
-          const l = this.app.engine.getActiveLayer();
-          const seedInput = getEl('inp-seed');
-          if (l) {
-            if (this.app.pushHistory) this.app.pushHistory();
-            l.params.seed = Math.floor(Math.random() * 99999);
-            if (seedInput) seedInput.value = l.params.seed;
-            this.app.regen();
-            this.recenterLayerIfNeeded(l);
-            this.app.render();
-            this.buildControls();
-            this.updateFormula();
-          }
-        };
+      if (typeof this.bindFileIoListeners === 'function') {
+        this.bindFileIoListeners();
       }
     }
 
@@ -2498,6 +2174,15 @@
   // _UINoiseRackMixin) call. The mixin file (src/ui/ui-noise-rack.js)
   // was moved into panels/noise-rack-panel.js.
   Object.assign(UI.prototype, window.Vectura._UIFileIOMixin || {});
+  // Meridian Unit 1.9b: register the file-I/O button installer that
+  // ui-file-io.js exposes alongside the legacy mixin. Wires save/open/import
+  // buttons previously inlined in bindGlobal().
+  if (window.Vectura?.UI?.FileIO?.bind) {
+    window.Vectura.UI.FileIO.bind({ getEl });
+  }
+  if (window.Vectura?.UI?.FileIO?.installOn) {
+    window.Vectura.UI.FileIO.installOn(UI.prototype);
+  }
   // Phase 3 closure: auto-colorize mixin dissolved into AutoColorizePanel.
   // The panel installs its 4 methods directly on UI.prototype below (after
   // bind()), replacing the old Object.assign(UI.prototype, _UIAutoColorizeMixin)
@@ -2676,8 +2361,10 @@
 
   // Phase 2 step 4: hand legacy IIFE-locals to panels/layers-panel.js.
   // Meridian Unit 1.8: added `clone` for createManualLayerFromPath.
+  // Meridian Unit 1.9b: added `getEl` for bindLayerListListeners (layer-list
+  // buttons + layer-bar palette picker wiring).
   if (window.Vectura?.UI?.LayersPanel?.bind) {
-    window.Vectura.UI.LayersPanel.bind({ SETTINGS, escapeHtml, Layer, clone });
+    window.Vectura.UI.LayersPanel.bind({ SETTINGS, escapeHtml, Layer, clone, getEl });
   }
   if (window.Vectura?.UI?.LayersPanel?.installOn) {
     window.Vectura.UI.LayersPanel.installOn(UI.prototype);

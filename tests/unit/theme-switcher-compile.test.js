@@ -117,4 +117,19 @@ describe('theme-switcher compile gate', () => {
     expect(toggle.dataset.theme).toBe('light');
     expect(bgInput.value).toBe('#abcdef');
   });
+
+  // Meridian Unit 1.9b: bindThemeToggle moved from _ui-legacy.js bindGlobal
+  it('installOn registers bindThemeToggle on the UI prototype (Unit 1.9b)', () => {
+    expect(typeof ThemeSwitcher.bindThemeToggle).toBe('function');
+    const proto = {};
+    ThemeSwitcher.installOn(proto);
+    expect(typeof proto.bindThemeToggle).toBe('function');
+    expect(typeof proto.refreshThemeUi).toBe('function');
+  });
+
+  it('bindThemeToggle is a no-op when #theme-toggle is absent', () => {
+    // bind() was called above; rebind with getEl that always returns null.
+    ThemeSwitcher.bind({ getEl: () => null });
+    expect(() => ThemeSwitcher.bindThemeToggle.call({})).not.toThrow();
+  });
 });

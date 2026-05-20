@@ -134,6 +134,72 @@
     select.value = SETTINGS.paperSize && MACHINES[SETTINGS.paperSize] ? SETTINGS.paperSize : Object.keys(MACHINES)[0] || '';
   }
 
+  /**
+   * Meridian Unit 1.9b (2026-05-20): grouped installer for the top-menubar
+   * header chrome buttons (`btn-help`, `btn-tour`, `btn-tour-welcome`,
+   * `btn-reset-view`). Previously these listeners lived inlined in
+   * `_ui-legacy.js`'s `bindGlobal()`. `this` is the legacy UI instance —
+   * handlers reach for `this.openHelp`, `this.setTopMenuOpen`, `this.app`,
+   * `this.openModal`, `this.closeModal`, `this.modal`, `this.renderLayers`,
+   * `this.buildControls`, `this.expandPanes` via the prototype.
+   */
+  function bindHeaderChromeListeners() {
+    const { getEl, SETTINGS } = requireDeps('bindHeaderChromeListeners');
+    const btnHelp = getEl('btn-help', { silent: true });
+    const btnResetView = getEl('btn-reset-view', { silent: true });
+    const btnTour = getEl('btn-tour', { silent: true });
+    const btnTourWelcome = getEl('btn-tour-welcome', { silent: true });
+
+    if (btnHelp) {
+      btnHelp.onclick = () => this.openHelp(false);
+    }
+    if (btnResetView) {
+      btnResetView.onclick = () => {
+        this.app.renderer.center();
+        if (this.expandPanes) this.expandPanes();
+        this.app.render();
+      };
+    }
+    const tourHandler = (e) => {
+      e.stopPropagation();
+      this.setTopMenuOpen(null, false);
+      const hasContent = (this.app?.engine?.layers?.length ?? 0) > 0;
+      const startTour = () => {
+        SETTINGS.tourSeen = false;
+        setTimeout(() => {
+          window.Vectura.Tutorial?.start(() => {
+            SETTINGS.tourSeen = true;
+            this.app?.persistPreferences?.();
+          });
+        }, 0);
+      };
+      if (hasContent) {
+        const body = '<p class="modal-text">Starting the tour will clear the current canvas. Continue?</p>'
+          + '<div class="color-modal-actions" style="margin-top:16px;">'
+          + '<button type="button" class="tour-cancel-btn">Cancel</button>'
+          + '<button type="button" class="tour-continue-btn color-modal-apply">Continue</button>'
+          + '</div>';
+        this.openModal({ title: 'Clear Canvas?', body });
+        this.modal.bodyEl.querySelector('.tour-cancel-btn').onclick = () => this.closeModal();
+        this.modal.bodyEl.querySelector('.tour-continue-btn').onclick = () => {
+          this.closeModal();
+          if (this.app.pushHistory) this.app.pushHistory();
+          this.app.engine.layers = [];
+          this.app.engine.activeLayerId = null;
+          this.app.setSelection?.([], null);
+          this.renderLayers();
+          this.buildControls();
+          this.app.render();
+          startTour();
+        };
+        return;
+      }
+      startTour();
+    };
+    if (btnTour) btnTour.onclick = tourHandler;
+    if (btnTourWelcome) btnTourWelcome.onclick = tourHandler;
+  }
+
   UI.Header = {
     /**
      * Inject closure-captured legacy ui.js IIFE locals.
@@ -148,12 +214,14 @@
     _showModuleMenu,
     _syncModuleDisplay,
     initMachineDropdown,
+    bindHeaderChromeListeners,
     installOn(proto) {
       proto.initModuleDropdown = function() { return initModuleDropdown.call(this); };
       proto._buildModuleMenu = function() { return _buildModuleMenu.call(this); };
       proto._showModuleMenu = function() { return _showModuleMenu.call(this); };
       proto._syncModuleDisplay = function() { return _syncModuleDisplay.call(this); };
       proto.initMachineDropdown = function() { return initMachineDropdown.call(this); };
+      proto.bindHeaderChromeListeners = function() { return bindHeaderChromeListeners.call(this); };
     },
   };
 })();

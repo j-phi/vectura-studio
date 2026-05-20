@@ -69,6 +69,18 @@ describe('document-setup panel compile gate', () => {
     expect(typeof proto._bindDocumentSetupHandlers).toBe('function');
   });
 
+  it('installOn registers bindBgColorListeners on the UI prototype (Meridian Unit 1.9b)', () => {
+    // Unit 1.9b moved the inp-bg-color / bg-color-pill handlers from legacy
+    // bindGlobal() into a grouped installer on document-setup.js (the panel
+    // owns the markup for both elements). Surface check only — the runtime
+    // smoke for bindBgColorListeners runs further down to avoid polluting
+    // the "throws before bind()" assertions below.
+    expect(typeof DocumentSetup.bindBgColorListeners).toBe('function');
+    const proto = {};
+    DocumentSetup.installOn(proto);
+    expect(typeof proto.bindBgColorListeners).toBe('function');
+  });
+
   it('mount throws a clear error before bind()', () => {
     const host = dom.window.document.createElement('div');
     expect(() => DocumentSetup.mount(host))
@@ -299,5 +311,19 @@ describe('document-setup panel compile gate', () => {
     const opWrap = opacity.closest('[data-num-step]');
     opWrap.querySelector('[data-num-step-inc]').click();
     expect(parseFloat(opacity.value)).toBe(1); // clamped at max
+  });
+
+  it('bindBgColorListeners (Unit 1.9b) returns silently when #inp-bg-color is absent', () => {
+    // Runs near the end so the bind() call here doesn't pollute the "throws
+    // before bind()" assertions earlier in this file.
+    DocumentSetup.bind({
+      getEl: () => null,
+      SETTINGS: {},
+      MACHINES: {},
+      normalizeDocumentUnits: (v) => v,
+      getContrastTextColor: () => '#000',
+      openColorPickerAnchoredTo: () => {},
+    });
+    expect(() => DocumentSetup.bindBgColorListeners.call({})).not.toThrow();
   });
 });

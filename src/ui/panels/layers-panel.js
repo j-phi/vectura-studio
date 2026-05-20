@@ -12,7 +12,14 @@
  * IIFE-local SETTINGS / escapeHtml — those are injected via DI bag
  * once at startup from the legacy ui.js bind() call.
  *
- * DI bag: { SETTINGS, escapeHtml, Layer, clone }.
+ * DI bag: { SETTINGS, escapeHtml, Layer, clone, getEl }.
+ *
+ * Meridian Unit 1.9b (2026-05-20): added `bindLayerListListeners()` — a
+ * grouped installer for the layer-list buttons (`btn-add-layer`,
+ * `btn-insert-mirror-modifier`, `btn-group-layers`, `btn-ungroup-layers`,
+ * `btn-undo`, `btn-redo`) and the layer-bar palette picker
+ * (`layer-bar-palette-trigger`/menu/name/preview). These previously lived
+ * inlined in `_ui-legacy.js`'s `bindGlobal()`.
  *
  * Compile gate at tests/unit/layers-panel-compile.test.js.
  */
@@ -1805,11 +1812,157 @@
     this.app.render();
   }
 
+  /**
+   * Meridian Unit 1.9b (2026-05-20): grouped installer for the layer-list
+   * buttons and the layer-bar palette picker. Previously these listeners
+   * lived inlined in `_ui-legacy.js`'s `bindGlobal()`.
+   *
+   * Element scope: `btn-add-layer`, `btn-insert-mirror-modifier`,
+   * `btn-group-layers`, `btn-ungroup-layers`, `btn-undo`, `btn-redo`,
+   * `layer-bar-palette-trigger`/`-menu`/`-name`/`-preview`. `this` is the
+   * legacy UI instance — handlers reach for `this.app`, `this.renderLayers`,
+   * `this.getPreferredNewLayerType`, `this.rememberDrawableLayerType`,
+   * `this.getLayerById`, `this.isModifierLayer`, `this.assignLayersToParent`,
+   * `this.groupSelection`, `this.ungroupSelection`, `this.insertMirrorModifier`,
+   * `this._refreshAlgoSubmenuColors`, `this._refreshAlgoPickerColors`,
+   * `this._syncModuleDisplay` via the prototype.
+   */
+  function bindLayerListListeners() {
+    const { SETTINGS, getEl } = requireDeps('bindLayerListListeners');
+    const addLayer = getEl('btn-add-layer');
+    const insertMirrorModifier = getEl('btn-insert-mirror-modifier');
+    const moduleSelect = getEl('generator-module');
+    const btnUndo = getEl('btn-undo', { silent: true });
+    const btnRedo = getEl('btn-redo', { silent: true });
+    const btnGroupLayers = getEl('btn-group-layers');
+    const btnUngroupLayers = getEl('btn-ungroup-layers');
+
+    if (addLayer && moduleSelect) {
+      addLayer.onclick = () => {
+        const activeLayer = this.app.engine.getActiveLayer?.();
+        const selectedModifier = this.isModifierLayer(activeLayer) ? activeLayer : null;
+        const t = selectedModifier ? this.getPreferredNewLayerType() : this.getPreferredNewLayerType();
+        if (this.app.pushHistory) this.app.pushHistory();
+        const id = this.app.engine.addLayer(t);
+        const createdLayer = this.getLayerById(id);
+        this.rememberDrawableLayerType(createdLayer || t);
+        if (selectedModifier && createdLayer) {
+          this.assignLayersToParent(selectedModifier.id, [createdLayer], {
+            selectAssigned: true,
+            primaryId: id,
+          });
+        } else if (this.app.renderer) {
+          this.app.renderer.setSelection([id], id);
+        }
+        this.renderLayers();
+        this.app.render();
+      };
+    }
+    if (btnUndo) {
+      btnUndo.onclick = () => { if (this.app.undo) this.app.undo(); };
+    }
+    if (btnRedo) {
+      btnRedo.onclick = () => { if (this.app.redo) this.app.redo(); };
+    }
+    if (btnGroupLayers) btnGroupLayers.onclick = () => this.groupSelection();
+    if (btnUngroupLayers) btnUngroupLayers.onclick = () => this.ungroupSelection();
+    if (insertMirrorModifier) {
+      insertMirrorModifier.onclick = () => {
+        this.insertMirrorModifier();
+      };
+    }
+
+    // ── Layer bar color palette picker ──────────────────────────────
+    const _updateSectBars = (p) => {
+      const panel = document.getElementById('settings-panel');
+      if (!panel) return;
+      const preview = p?.preview || [];
+      if (!preview.length) return;
+      panel.querySelectorAll('[class*="sect--color-"]').forEach((sect, i) => {
+        sect.style.setProperty('--sect-bar', preview[i % preview.length]);
+      });
+    };
+
+    const _updateLBPTrigger = () => {
+      const pid = SETTINGS.layerBarPaletteId || 'prism';
+      const palettes = window.Vectura.LAYER_PALETTES || [];
+      const p = palettes.find(x => x.id === pid);
+      const nameEl = getEl('layer-bar-palette-name', { silent: true });
+      const previewEl = getEl('layer-bar-palette-preview', { silent: true });
+      if (nameEl) nameEl.textContent = p?.name || pid;
+      if (previewEl) {
+        previewEl.innerHTML = '';
+        (p?.preview || []).forEach(hex => {
+          const s = document.createElement('span');
+          s.className = 'palette-swatch'; s.style.background = hex;
+          previewEl.appendChild(s);
+        });
+      }
+      _updateSectBars(p);
+    };
+
+    const _buildLBPMenu = () => {
+      const menu = getEl('layer-bar-palette-menu', { silent: true });
+      if (!menu) return;
+      const palettes = window.Vectura.LAYER_PALETTES || [];
+      const activePid = SETTINGS.layerBarPaletteId || 'prism';
+      menu.innerHTML = '';
+      palettes.forEach(p => {
+        const row = document.createElement('div');
+        row.className = 'palette-picker-row' + (p.id === activePid ? ' is-active' : '');
+        const lbl = document.createElement('span');
+        lbl.className = 'palette-picker-label'; lbl.textContent = p.name;
+        row.appendChild(lbl);
+        if (p.preview) {
+          const sw = document.createElement('div'); sw.className = 'palette-picker-swatches';
+          p.preview.forEach(hex => {
+            const s = document.createElement('span');
+            s.className = 'palette-swatch'; s.style.background = hex;
+            sw.appendChild(s);
+          });
+          row.appendChild(sw);
+        } else {
+          const note = document.createElement('span');
+          note.className = 'palette-picker-note'; note.textContent = 'uses pen color';
+          row.appendChild(note);
+        }
+        row.addEventListener('click', () => {
+          SETTINGS.layerBarPaletteId = p.id;
+          this.app.persistPreferencesDebounced?.();
+          _updateLBPTrigger();
+          _buildLBPMenu();
+          menu.classList.add('hidden');
+          this.renderLayers?.();
+          this._refreshAlgoSubmenuColors?.();
+          this._refreshAlgoPickerColors?.();
+          this._syncModuleDisplay?.();
+        });
+        menu.appendChild(row);
+      });
+    };
+
+    const lbpTrigger = getEl('layer-bar-palette-trigger', { silent: true });
+    if (lbpTrigger) {
+      lbpTrigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const menu = getEl('layer-bar-palette-menu', { silent: true });
+        if (!menu) return;
+        const opening = menu.classList.contains('hidden');
+        menu.classList.toggle('hidden', !opening);
+        if (opening) _buildLBPMenu();
+      });
+    }
+    document.addEventListener('click', () => {
+      getEl('layer-bar-palette-menu', { silent: true })?.classList.add('hidden');
+    });
+    _updateLBPTrigger();
+  }
+
   UI.LayersPanel = {
     /**
      * Inject closure-captured legacy ui.js IIFE locals.
      * Idempotent. Called once from the legacy ui.js IIFE.
-     * @param {object} deps - { SETTINGS, escapeHtml, Layer, clone }
+     * @param {object} deps - { SETTINGS, escapeHtml, Layer, clone, getEl }
      */
     bind(deps) {
       DEPS = deps;
@@ -1819,6 +1972,7 @@
     groupSelection,
     ungroupSelection,
     createManualLayerFromPath,
+    bindLayerListListeners,
     installOn(proto) {
       proto.assignLayersToRoot = function(...args) { return assignLayersToRoot.apply(this, args); };
       proto.groupSelection = function(...args) { return groupSelection.apply(this, args); };
@@ -1834,6 +1988,7 @@
       proto._lvlToggleLockSel = function(...args) { return _lvlToggleLockSel.apply(this, args); };
       proto._lvlMaskSelGroup = function(...args) { return _lvlMaskSelGroup.apply(this, args); };
       proto.createManualLayerFromPath = function(payload) { return createManualLayerFromPath.call(this, payload); };
+      proto.bindLayerListListeners = function() { return bindLayerListListeners.call(this); };
     },
   };
 })();

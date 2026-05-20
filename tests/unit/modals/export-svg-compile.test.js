@@ -80,6 +80,22 @@ describe('export-svg compile gate', () => {
       .toThrow(/ExportSvg\.renderExportPreview invoked before ExportSvg\.bind/);
   });
 
+  // Meridian Unit 1.9b: bindExportButton moved from _ui-legacy.js bindGlobal
+  it('installOn registers bindExportButton on the UI prototype (Unit 1.9b)', () => {
+    expect(typeof ExportSvg.bindExportButton).toBe('function');
+    const proto = {};
+    ExportSvg.installOn(proto);
+    expect(typeof proto.bindExportButton).toBe('function');
+    expect(typeof proto.openExportModal).toBe('function');
+  });
+
+  it('bindExportButton returns silently when #btn-export is absent', () => {
+    ExportSvg.bind({
+      getEl: () => null,
+    });
+    expect(() => ExportSvg.bindExportButton.call({})).not.toThrow();
+  });
+
   it('after bind(), openExportModal is a no-op when #optimization-controls is missing', () => {
     ExportSvg.bind({
       getEl: (id, opts = {}) => dom.window.document.getElementById(id),

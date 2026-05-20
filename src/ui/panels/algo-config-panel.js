@@ -3919,6 +3919,146 @@
     }
   }
 
+  /**
+   * Meridian Unit 1.9b (2026-05-20): grouped installer for the algorithm
+   * module dropdown (`generator-module` + `generator-module-trigger`) and
+   * the transform inputs (`inp-seed`, `inp-pos-x`/-y, `inp-scale-x`/-y,
+   * `inp-rotation`, `btn-rand-seed`). Previously these listeners lived
+   * inlined in `_ui-legacy.js`'s `bindGlobal()`. `this` is the legacy UI
+   * instance — handlers reach for `this.app`, `this.isModifierLayer`,
+   * `this.storeLayerParams`, `this.rememberDrawableLayerType`,
+   * `this.restoreLayerParams`, `this.getUniqueLayerName`, `this.buildControls`,
+   * `this.refreshModifierLayer`, `this._showModuleMenu`, `this.recenterLayerIfNeeded`,
+   * `this.updateFormula`, `this.parseDocumentNumber` via the prototype.
+   */
+  function bindAlgoConfigListeners() {
+    const deps = requireDeps('bindAlgoConfigListeners');
+    const { getEl, isModifierLayer } = deps;
+    const ALGO_DEFAULTS = (typeof window !== 'undefined' && window.Vectura?.ALGO_DEFAULTS) || {};
+    const createModifierState =
+      deps.createModifierState
+        || (typeof window !== 'undefined' && window.Vectura?.Modifiers?.createModifierState)
+        || ((type) => ({ type, enabled: true, guidesVisible: true, guidesLocked: false, mirrors: [] }));
+    const createMirrorLine =
+      deps.createMirrorLine
+        || (typeof window !== 'undefined' && window.Vectura?.Modifiers?.createMirrorLine)
+        || ((index) => ({ id: `mirror-${index + 1}`, enabled: true }));
+
+    const moduleSelect = getEl('generator-module', { silent: true });
+    if (moduleSelect) {
+      moduleSelect.onchange = (e) => {
+        const l = this.app.engine.getActiveLayer();
+        if (l) {
+          if (this.app.pushHistory) this.app.pushHistory();
+          if (isModifierLayer(l)) {
+            const nextType = e.target.value;
+            l.modifier = createModifierState(nextType, {
+              mirrors: [createMirrorLine(0)],
+            });
+            this.buildControls();
+            this.refreshModifierLayer(l, { rebuildControls: false });
+            return;
+          }
+          this.storeLayerParams(l);
+          const nextType = e.target.value;
+          this.rememberDrawableLayerType(nextType);
+          this.restoreLayerParams(l, nextType);
+          if (l.type !== 'shape') l.sourcePaths = null;
+          if (this.app.renderer?.directSelection?.layerId === l.id) {
+            this.app.renderer.clearDirectSelection();
+          }
+          const label = (ALGO_DEFAULTS && ALGO_DEFAULTS[l.type]?.label);
+          const nextName = label || l.type.charAt(0).toUpperCase() + l.type.slice(1);
+          l.name = this.getUniqueLayerName(nextName, l.id);
+          this.buildControls();
+          this.app.regen();
+          this.renderLayers();
+        }
+      };
+    }
+
+    const moduleTrigger = document.getElementById('generator-module-trigger');
+    if (moduleTrigger) {
+      moduleTrigger.addEventListener('click', () => {
+        const select = getEl('generator-module', { silent: true });
+        if (select?.disabled) return;
+        const menu = document.getElementById('gm-module-menu');
+        if (menu && !menu.classList.contains('hidden')) {
+          menu.classList.add('hidden');
+        } else {
+          this._showModuleMenu();
+        }
+      });
+    }
+
+    const TRANSLATION_KEYS = new Set(['posX', 'posY']);
+    const bindTrans = (id, key) => {
+      const el = getEl(id, { silent: true });
+      if (!el) return;
+      el.onchange = (e) => {
+        // In multi-selection mode the transform inputs apply to every selected
+        // layer; a blank value (placeholder "Multiple") means "leave unchanged".
+        const selected = this.app.renderer?.getSelectedLayers?.() || [];
+        const targets = selected.length > 1 ? selected : (this.app.engine.getActiveLayer() ? [this.app.engine.getActiveLayer()] : []);
+        if (!targets.length) return;
+        const rawValue = e.target.value;
+        if (rawValue === '' || rawValue == null) return;
+        if (this.app.pushHistory) this.app.pushHistory();
+        if (TRANSLATION_KEYS.has(key)) {
+          targets.forEach((layer) => {
+            const prev = layer.params[key] ?? 0;
+            const next = this.parseDocumentNumber(rawValue, { fallbackMm: prev });
+            layer.params[key] = next;
+            const delta = next - prev;
+            if (delta) {
+              const dx = key === 'posX' ? delta : 0;
+              const dy = key === 'posY' ? delta : 0;
+              window.Vectura?.PaintBucketOps?.translateLayerFills?.(layer, dx, dy);
+            }
+          });
+        } else {
+          const parsed = parseFloat(rawValue);
+          if (!Number.isFinite(parsed)) return;
+          targets.forEach((layer) => { layer.params[key] = parsed; });
+        }
+        // app.regen() only regenerates the active layer's geometry. For multi-
+        // selection the other selected layers need an explicit generate() pass
+        // so their baked paths pick up the new transform.
+        if (targets.length > 1) {
+          const activeId = this.app.engine.activeLayerId;
+          targets.forEach((layer) => {
+            if (layer.id !== activeId) this.app.engine.generate(layer.id);
+          });
+        }
+        this.app.regen();
+      };
+    };
+    bindTrans('inp-seed', 'seed');
+    bindTrans('inp-pos-x', 'posX');
+    bindTrans('inp-pos-y', 'posY');
+    bindTrans('inp-scale-x', 'scaleX');
+    bindTrans('inp-scale-y', 'scaleY');
+    bindTrans('inp-rotation', 'rotation');
+
+    const randSeed = getEl('btn-rand-seed', { silent: true });
+    if (randSeed) {
+      randSeed.onclick = () => {
+        const l = this.app.engine.getActiveLayer();
+        const seedInput = getEl('inp-seed', { silent: true });
+        if (l) {
+          if (this.app.pushHistory) this.app.pushHistory();
+          l.params.seed = Math.floor(Math.random() * 99999);
+          if (seedInput) seedInput.value = l.params.seed;
+          this.app.regen();
+          this.recenterLayerIfNeeded(l);
+          this.app.render();
+          this.buildControls();
+          this.updateFormula();
+        }
+      };
+    }
+  }
+
   UI.AlgoConfigPanel = {
     /**
      * Inject closure-captured legacy ui.js IIFE locals.
@@ -3929,8 +4069,10 @@
       DEPS = deps;
     },
     buildControls,
+    bindAlgoConfigListeners,
     installOn(proto) {
       proto.buildControls = function() { return buildControls.call(this); };
+      proto.bindAlgoConfigListeners = function() { return bindAlgoConfigListeners.call(this); };
     },
   };
 })();

@@ -74,4 +74,24 @@ describe('layers-panel compile gate', () => {
     expect(() => LayersPanel.createManualLayerFromPath.call(ctx, { path: [{ x: 0, y: 0 }] })).not.toThrow();
     expect(() => LayersPanel.createManualLayerFromPath.call(ctx, null)).not.toThrow();
   });
+
+  // Unit 1.9b: bindLayerListListeners moved from _ui-legacy.js bindGlobal
+  it('installOn registers bindLayerListListeners on the UI prototype (Unit 1.9b)', () => {
+    expect(typeof LayersPanel.bindLayerListListeners).toBe('function');
+    const proto = {};
+    LayersPanel.installOn(proto);
+    expect(typeof proto.bindLayerListListeners).toBe('function');
+  });
+
+  it('bindLayerListListeners runs without throwing when DOM elements are absent', () => {
+    LayersPanel.bind({
+      SETTINGS: { pens: [], autoColorization: { enabled: false }, layerBarPaletteId: 'prism' },
+      escapeHtml: (s) => `${s}`,
+      Layer: function () {},
+      clone: (obj) => JSON.parse(JSON.stringify(obj)),
+      getEl: () => null,
+    });
+    const ctx = { app: { engine: { layers: [] }, persistPreferencesDebounced: () => {} } };
+    expect(() => LayersPanel.bindLayerListListeners.call(ctx)).not.toThrow();
+  });
 });

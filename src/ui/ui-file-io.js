@@ -654,4 +654,65 @@
       }
     },
   };
+
+  // ── Meridian Unit 1.9b (2026-05-20) ──────────────────────────────────────
+  // Promote ui-file-io.js to the canonical bind/installOn pattern used by
+  // sibling satellites. The grouped installer below wires the file-I/O
+  // buttons (`btn-save-vectura`, `btn-open-vectura`/`file-open-vectura`,
+  // `btn-import-svg`/`file-import-svg`) onto the UI instance — previously
+  // inlined in `_ui-legacy.js`'s `bindGlobal()`. `this` is the legacy UI
+  // instance and the handlers delegate to mixin methods (`saveVecturaFile`,
+  // `openVecturaFile`, `importSvgFile`) installed by the existing
+  // `_UIFileIOMixin` assignment.
+  let DEPS = null;
+
+  const requireDeps = (name) => {
+    if (!DEPS) {
+      throw new Error(`UIFileIO.${name} invoked before UIFileIO.bind(deps) — load order broken`);
+    }
+    return DEPS;
+  };
+
+  function bindFileIoListeners() {
+    const { getEl } = requireDeps('bindFileIoListeners');
+    const btnSaveVectura = getEl('btn-save-vectura', { silent: true });
+    const btnOpenVectura = getEl('btn-open-vectura', { silent: true });
+    const btnImportSvg = getEl('btn-import-svg', { silent: true });
+    const fileOpenVectura = getEl('file-open-vectura', { silent: true });
+    const fileImportSvg = getEl('file-import-svg', { silent: true });
+    if (btnSaveVectura) {
+      btnSaveVectura.onclick = () => this.saveVecturaFile();
+    }
+    if (btnOpenVectura && fileOpenVectura) {
+      btnOpenVectura.onclick = () => fileOpenVectura.click();
+      fileOpenVectura.onchange = () => {
+        const file = fileOpenVectura.files?.[0];
+        if (file) this.openVecturaFile(file);
+        fileOpenVectura.value = '';
+      };
+    }
+    if (btnImportSvg && fileImportSvg) {
+      btnImportSvg.onclick = () => fileImportSvg.click();
+      fileImportSvg.onchange = () => {
+        const file = fileImportSvg.files?.[0];
+        if (file) this.importSvgFile(file);
+        fileImportSvg.value = '';
+      };
+    }
+  }
+
+  window.Vectura.UI = window.Vectura.UI || {};
+  window.Vectura.UI.FileIO = {
+    /**
+     * Inject closure-captured legacy ui.js IIFE locals.
+     * @param {object} deps - { getEl }
+     */
+    bind(deps) {
+      DEPS = deps || {};
+    },
+    bindFileIoListeners,
+    installOn(proto) {
+      proto.bindFileIoListeners = function() { return bindFileIoListeners.call(this); };
+    },
+  };
 })();

@@ -108,6 +108,24 @@ describe('header compile gate', () => {
     doc.body.removeChild(select);
   });
 
+  // Meridian Unit 1.9b: bindHeaderChromeListeners moved from _ui-legacy.js bindGlobal
+  it('installOn registers bindHeaderChromeListeners on the UI prototype (Unit 1.9b)', () => {
+    expect(typeof Header.bindHeaderChromeListeners).toBe('function');
+    const proto = {};
+    Header.installOn(proto);
+    expect(typeof proto.bindHeaderChromeListeners).toBe('function');
+  });
+
+  it('bindHeaderChromeListeners runs without throwing when target elements are absent', () => {
+    Header.bind({
+      getEl: () => null,
+      ALGO_DEFAULTS: {},
+      MACHINES: {},
+      SETTINGS: {},
+    });
+    expect(() => Header.bindHeaderChromeListeners.call({})).not.toThrow();
+  });
+
   it('initMachineDropdown populates a select element with machine profiles', () => {
     const doc = dom.window.document;
     const select = doc.createElement('select');

@@ -140,4 +140,19 @@ describe('algo-config-panel compile gate', () => {
     };
     expect(() => AlgoConfigPanel.buildControls.call(fakeUi)).not.toThrow();
   });
+
+  // Meridian Unit 1.9b: bindAlgoConfigListeners moved from _ui-legacy.js bindGlobal
+  it('installOn registers bindAlgoConfigListeners on the UI prototype (Unit 1.9b)', () => {
+    expect(typeof AlgoConfigPanel.bindAlgoConfigListeners).toBe('function');
+    const proto = {};
+    AlgoConfigPanel.installOn(proto);
+    expect(typeof proto.bindAlgoConfigListeners).toBe('function');
+    expect(typeof proto.buildControls).toBe('function');
+  });
+
+  it('bindAlgoConfigListeners runs without throwing when target elements are absent', () => {
+    // Reuse the bound dep bag from the previous test, then verify the new
+    // installer is a no-op when none of its target IDs exist in the DOM.
+    expect(() => AlgoConfigPanel.bindAlgoConfigListeners.call({})).not.toThrow();
+  });
 });

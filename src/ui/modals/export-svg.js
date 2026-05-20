@@ -990,6 +990,19 @@
     });
   }
 
+  /**
+   * Meridian Unit 1.9b (2026-05-20): grouped installer for the
+   * `#btn-export` click handler — previously inlined in `_ui-legacy.js`'s
+   * `bindGlobal()`. `this` is the legacy UI instance; the handler delegates
+   * to `this.openExportModal()` which is also installed by this module.
+   */
+  function bindExportButton() {
+    const { getEl } = requireDeps('bindExportButton');
+    const btnExport = getEl('btn-export', { silent: true });
+    if (!btnExport) return;
+    btnExport.onclick = () => this.openExportModal();
+  }
+
   function openExportModal() {
     const { getEl, SETTINGS, clamp, getContrastTextColor, openColorPickerAnchoredTo } =
       requireDeps('openExportModal');
@@ -1301,6 +1314,7 @@
     bind(deps) {
       DEPS = deps || {};
     },
+    bindExportButton,
     openExportModal,
     fitExportPreview,
     resizeExportPreviewCanvas,
@@ -1314,6 +1328,7 @@
     buildExportPreviewPath,
     buildExportClipPolygons,
     installOn(proto) {
+      proto.bindExportButton = function() { return bindExportButton.call(this); };
       proto.openExportModal = function() { return openExportModal.call(this); };
       proto.fitExportPreview = function() { return fitExportPreview.call(this); };
       proto.resizeExportPreviewCanvas = function() { return resizeExportPreviewCanvas.call(this); };
