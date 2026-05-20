@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">
+  <style>rect { fill: url(javascript:alert(1)); background: url('javascript:alert(2)'); }</style>
+  <rect width="1" height="1"/>
+</svg>

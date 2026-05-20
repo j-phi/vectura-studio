@@ -40,18 +40,30 @@
     };
   };
 
+  // Sanitize SVG markup before persisting it on a pattern entry. Audit Bugs-2 +
+  // Bugs-5: hostile .vectura projects can smuggle <script>, on* handlers,
+  // external href refs, and animation-based href hijacks through pattern.svg
+  // unless we route them through the central sanitizer before storage.
+  const sanitizeSvgMarkup = (svgString) => {
+    const raw = `${svgString || ''}`;
+    if (!raw) return '';
+    const sanitize = window.Vectura?.SvgSanitize?.sanitize;
+    return typeof sanitize === 'function' ? sanitize(raw) : raw;
+  };
+
   const normalizePattern = (pattern, options = {}) => {
     if (!pattern || typeof pattern !== 'object') return null;
     const fallbackName = `${pattern.name || pattern.id || 'Custom Pattern'}`.trim() || 'Custom Pattern';
     const scope = options.scope || 'local';
     const source = scope === 'project' ? 'Project Patterns' : 'Custom Patterns';
-    const flags = inferPatternFlags(pattern);
+    const safeSvg = sanitizeSvgMarkup(pattern.svg);
+    const flags = inferPatternFlags({ ...pattern, svg: safeSvg });
     const normalized = {
       id: ensureCustomId(pattern.id || fallbackName, fallbackName),
       name: `${pattern.name || fallbackName}`.trim() || fallbackName,
       source: `${pattern.source || source}`.trim() || source,
       filename: `${pattern.filename || ''}`.trim(),
-      svg: `${pattern.svg || ''}`,
+      svg: safeSvg,
       lines: flags.lines,
       fills: flags.fills,
       custom: true,

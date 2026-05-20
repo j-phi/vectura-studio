@@ -187,3 +187,204 @@ describe('Pattern.js silent catches now warn', () => {
     expect(warnMatches.length).toBeGreaterThanOrEqual(2);
   });
 });
+
+describe('SvgSanitize attack corpus (Tests-Gap-6 / Bugs-5)', () => {
+  let env;
+  const fixturesDir = path.join(ROOT, 'tests/fixtures/svg-attacks');
+
+  beforeAll(() => {
+    env = loadSanitizerInJsdom();
+  });
+
+  afterAll(() => {
+    env.dom.window.close();
+  });
+
+  const loadFixture = (name) => fs.readFileSync(path.join(fixturesDir, name), 'utf8');
+  const parse = (out) => new env.dom.window.DOMParser().parseFromString(out, 'image/svg+xml');
+
+  test('fixtures directory contains every documented attack vector', () => {
+    const expected = [
+      'script-tag.svg',
+      'onerror-image.svg',
+      'external-image-href.svg',
+      'external-use-href.svg',
+      'animate-href-to-js.svg',
+      'set-href-to-js.svg',
+      'foreign-object-html.svg',
+      'css-url-javascript.svg',
+      'animate-values-js.svg',
+      'javascript-href-obfuscated.svg',
+      'external-gradient-href.svg',
+    ];
+    const actual = fs.readdirSync(fixturesDir).sort();
+    expected.forEach((name) => {
+      expect(actual).toContain(name);
+    });
+  });
+
+  test('script-tag.svg: <script> element is fully removed', () => {
+    const out = env.sanitize(loadFixture('script-tag.svg'));
+    expect(out).not.toMatch(/<script/i);
+    expect(parse(out).querySelector('script')).toBeNull();
+  });
+
+  test('onerror-image.svg: on* handlers are stripped, element survives', () => {
+    const out = env.sanitize(loadFixture('onerror-image.svg'));
+    expect(out).not.toMatch(/onerror/i);
+    const img = parse(out).querySelector('image');
+    expect(img).not.toBeNull();
+    expect(img.getAttribute('onerror')).toBeNull();
+  });
+
+  test('external-image-href.svg: non-fragment href / xlink:href is stripped from <image>', () => {
+    const out = env.sanitize(loadFixture('external-image-href.svg'));
+    expect(out).not.toMatch(/attacker\.example/);
+    const doc = parse(out);
+    doc.querySelectorAll('image').forEach((el) => {
+      expect(el.getAttribute('href')).toBeNull();
+      expect(el.getAttribute('xlink:href')).toBeNull();
+      expect(el.getAttributeNS('http://www.w3.org/1999/xlink', 'href')).toBeFalsy();
+    });
+  });
+
+  test('external-use-href.svg: <use> with non-fragment href is dropped entirely', () => {
+    const out = env.sanitize(loadFixture('external-use-href.svg'));
+    expect(out).not.toMatch(/attacker\.example/);
+    expect(parse(out).querySelector('use')).toBeNull();
+    // Sibling <rect> must survive (we only drop the offender).
+    expect(parse(out).querySelector('rect')).not.toBeNull();
+  });
+
+  test('animate-href-to-js.svg: <animate> targeting href is dropped', () => {
+    const out = env.sanitize(loadFixture('animate-href-to-js.svg'));
+    expect(out).not.toMatch(/javascript:/i);
+    expect(parse(out).querySelector('animate')).toBeNull();
+    // Parent <a> survives.
+    expect(parse(out).querySelector('a')).not.toBeNull();
+  });
+
+  test('set-href-to-js.svg: <set> targeting href is dropped', () => {
+    const out = env.sanitize(loadFixture('set-href-to-js.svg'));
+    expect(out).not.toMatch(/javascript:/i);
+    expect(parse(out).querySelector('set')).toBeNull();
+  });
+
+  test('animate-values-js.svg: <animate> with javascript: in values list is dropped', () => {
+    const out = env.sanitize(loadFixture('animate-values-js.svg'));
+    expect(out).not.toMatch(/javascript:/i);
+    expect(parse(out).querySelector('animate')).toBeNull();
+  });
+
+  test('foreign-object-html.svg: <foreignObject> is fully removed', () => {
+    const out = env.sanitize(loadFixture('foreign-object-html.svg'));
+    expect(out).not.toMatch(/<foreignObject/i);
+    expect(out).not.toMatch(/onclick/i);
+    expect(parse(out).querySelector('rect')).not.toBeNull();
+  });
+
+  test('css-url-javascript.svg: javascript: inside <style> never survives sanitization', () => {
+    // Policy: drop the entire <style> block. Inline CSS is not used by pattern import
+    // and is an established XSS surface (url(javascript:...), expression(...), @import).
+    const out = env.sanitize(loadFixture('css-url-javascript.svg'));
+    expect(out).not.toMatch(/javascript:/i);
+    expect(parse(out).querySelector('style')).toBeNull();
+  });
+
+  test('javascript-href-obfuscated.svg: leading whitespace / tabs / mixed case javascript: is neutralized', () => {
+    const out = env.sanitize(loadFixture('javascript-href-obfuscated.svg'));
+    expect(out).not.toMatch(/javascript:/i);
+    // Existing policy: <a href="javascript:..."> rewrites to "#". Either neutralization
+    // (rewrite to '#') or removal is acceptable; both prevent navigation.
+    const anchors = parse(out).querySelectorAll('a');
+    anchors.forEach((a) => {
+      const h = a.getAttribute('href') || '';
+      expect(/javascript:/i.test(h)).toBe(false);
+    });
+  });
+
+  test('external-gradient-href.svg: external xlink:href on <linearGradient> is stripped', () => {
+    const out = env.sanitize(loadFixture('external-gradient-href.svg'));
+    expect(out).not.toMatch(/attacker\.example/);
+    const grad = parse(out).querySelector('linearGradient');
+    // Element survives (it's still a valid gradient reference), but the external
+    // href attribute is gone.
+    expect(grad).not.toBeNull();
+    expect(grad.getAttribute('href')).toBeNull();
+    expect(grad.getAttribute('xlink:href')).toBeNull();
+    expect(grad.getAttributeNS('http://www.w3.org/1999/xlink', 'href')).toBeFalsy();
+  });
+
+  test('sanitize is idempotent across every fixture (sanitize(sanitize(x)) === sanitize(x))', () => {
+    fs.readdirSync(fixturesDir).filter((f) => f.endsWith('.svg')).forEach((name) => {
+      const raw = loadFixture(name);
+      const once = env.sanitize(raw);
+      const twice = env.sanitize(once);
+      expect(twice).toBe(once);
+    });
+  });
+
+  test('legitimate fragment href ("#id") is preserved (no over-stripping)', () => {
+    const input =
+      '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">' +
+      '<defs><symbol id="s"><rect width="1" height="1"/></symbol></defs>' +
+      '<use href="#s"/><use xlink:href="#s"/></svg>';
+    const out = env.sanitize(input);
+    const uses = parse(out).querySelectorAll('use');
+    expect(uses.length).toBe(2);
+    expect(uses[0].getAttribute('href')).toBe('#s');
+  });
+});
+
+describe('Pattern registry sanitizes stored SVG (Bugs-2 + Bugs-5)', () => {
+  // The audit's Bugs-2 entry expects pattern-registry.normalizePattern to route
+  // pattern.svg through Vectura.SvgSanitize.sanitize so hostile .vectura projects
+  // can't smuggle attack payloads through the persisted pattern.svg field.
+  let env;
+  const fixturesDir = path.join(ROOT, 'tests/fixtures/svg-attacks');
+
+  beforeAll(() => {
+    const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>', {
+      runScripts: 'outside-only',
+      pretendToBeVisual: true,
+      url: 'http://localhost/',
+    });
+    const ctx = dom.getInternalVMContext();
+    // Load sanitizer first, then registry (registry depends on Vectura.SvgSanitize).
+    vm.runInContext(
+      fs.readFileSync(path.join(ROOT, 'src/core/svg-sanitize.js'), 'utf8'),
+      ctx,
+      { filename: 'svg-sanitize.js' }
+    );
+    vm.runInContext(
+      fs.readFileSync(path.join(ROOT, 'src/core/pattern-registry.js'), 'utf8'),
+      ctx,
+      { filename: 'pattern-registry.js' }
+    );
+    env = { dom, registry: dom.window.Vectura.PatternRegistry };
+  });
+
+  afterAll(() => {
+    env.dom.window.close();
+  });
+
+  test('normalizePattern strips every attack-corpus payload from pattern.svg', () => {
+    const fixtures = fs.readdirSync(fixturesDir).filter((f) => f.endsWith('.svg'));
+    fixtures.forEach((name) => {
+      const svg = fs.readFileSync(path.join(fixturesDir, name), 'utf8');
+      const normalized = env.registry.normalizePattern({
+        id: `custom-attack-${name.replace(/\.svg$/, '')}`,
+        name: `Attack ${name}`,
+        svg,
+      }, { scope: 'project' });
+      expect(normalized).not.toBeNull();
+      const stored = `${normalized.svg}`;
+      // None of these substrings should ever appear in a sanitized pattern.
+      expect(stored).not.toMatch(/<script/i);
+      expect(stored).not.toMatch(/<foreignObject/i);
+      expect(stored).not.toMatch(/javascript:/i);
+      expect(stored).not.toMatch(/onerror|onclick|onload|onbegin/i);
+      expect(stored).not.toMatch(/attacker\.example/);
+    });
+  });
+});
