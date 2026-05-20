@@ -1226,7 +1226,7 @@
         cz.appendChild(car); hdr.appendChild(cz);
 
         const bar = document.createElement('div'); bar.className = 'lvl-clr-bar';
-        bar.style.background = _lvlBarColor(layer) || 'var(--color-border-strong)';
+        bar.style.background = _lvlBarColor(layer) || 'var(--ui-border-hi)';
         hdr.appendChild(bar);
 
         const gc = document.createElement('div'); gc.className = 'lvl-grp-content';

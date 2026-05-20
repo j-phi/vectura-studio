@@ -67,14 +67,13 @@ describe('Keyboard a11y audit', () => {
     // components.css `:focus-visible` rules paint a ring via outline + accent.
     // The :focus-visible rules originally lived in styles.css; they migrated to
     // components.css during Meridian Step 2 when styles.css was drained.
-    // Confirm components.css still ships at least one such rule sourced from --color-accent.
+    // Confirm components.css still ships at least one such rule sourced from --ui-accent.
     const components = read('src', 'ui', 'skin', 'components.css');
     // At least 5 :focus-visible rules per the manual audit.
     const matches = components.match(/:focus-visible/g) || [];
     expect(matches.length).toBeGreaterThanOrEqual(5);
-    // At least one outline rule references the accent token.
-    // Note: Step 3 will rewrite `--color-accent` → `--ui-accent`; update this assertion accordingly.
-    expect(components).toMatch(/outline:\s*2px\s+solid\s+var\(--color-accent\)/);
+    // At least one outline rule references the accent token (renamed from --color-accent → --ui-accent in Step 3.1, 2026-05-20).
+    expect(components).toMatch(/outline:\s*2px\s+solid\s+var\(--ui-accent\)/);
   });
 
   test('a11y audit doc exists and lists every audited surface', () => {
