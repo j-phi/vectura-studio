@@ -777,10 +777,7 @@
             'then <b>drag</b> to move it. Both layers travel together as one unit.',
           hideNext: true,
           onEnter: () => {
-            // Normalize viewport after Cmd+G so the shapes are visible at a comfortable zoom.
-            const app = getApp();
-            if (app?.renderer?.center) app.renderer.center();
-            app?.render?.();
+            getApp()?.render?.();
             return null;
           },
           completion: When.predicate(() => {
@@ -1157,7 +1154,10 @@
       }
 
       // Fit viewport to freshly-seeded canvas so the user sees the whole document.
+      // Set userHasManipulated=true after center() so ResizeObserver won't re-center on
+      // subsequent panel layout shifts (e.g. left pane resizing when a layer is selected).
       if (app?.renderer?.center) app.renderer.center();
+      if (app?.renderer) app.renderer.userHasManipulated = true;
       app?.render?.();
       getUI()?.renderLayers?.();
     }
