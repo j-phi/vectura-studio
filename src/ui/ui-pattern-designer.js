@@ -985,21 +985,37 @@
       const registry = getPatternRegistry();
       const state = data?.state || data;
       if (!state?.engine || !state?.settings) throw new Error('Missing state payload');
-      if (registry?.replaceProjectPatterns) {
-        registry.replaceProjectPatterns(Array.isArray(data?.customPatterns) ? data.customPatterns : []);
+      // Snapshot BEFORE any mutation so the open is transactional. If
+      // applyState throws partway through we roll the user back to where
+      // they started. Bugs-9.
+      const rollback = this.app.captureState();
+      const previousPatterns = registry?.getProjectPatterns
+        ? (() => { try { return registry.getProjectPatterns(); } catch (_) { return null; } })()
+        : null;
+      try {
+        if (registry?.replaceProjectPatterns) {
+          registry.replaceProjectPatterns(Array.isArray(data?.customPatterns) ? data.customPatterns : []);
+        }
+        if (data?.images) {
+          const store = (window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {});
+          Object.entries(data.images).forEach(([id, img]) => {
+            if (!img || !Array.isArray(img.data)) return;
+            store[id] = {
+              width: img.width,
+              height: img.height,
+              data: new Uint8ClampedArray(img.data),
+            };
+          });
+        }
+        this.app.applyState(state);
+      } catch (err) {
+        try { this.app.applyState(rollback); } catch (_) { /* best-effort */ }
+        if (previousPatterns && registry?.replaceProjectPatterns) {
+          try { registry.replaceProjectPatterns(previousPatterns); } catch (_) { /* best-effort */ }
+        }
+        throw err;
       }
-      if (data?.images) {
-        const store = (window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {});
-        Object.entries(data.images).forEach(([id, img]) => {
-          if (!img || !Array.isArray(img.data)) return;
-          store[id] = {
-            width: img.width,
-            height: img.height,
-            data: new Uint8ClampedArray(img.data),
-          };
-        });
-      }
-      this.app.applyState(state);
+      // History is only cleared after the import installs cleanly.
       this.app.history = [];
       this.app.pushHistory();
     },

@@ -6,6 +6,10 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed
+- **`.vectura` open is now transactional (Bugs-9).** Both the standard open path (`UI.openVecturaFile`) and the Pattern Designer's `_applyVecturaPayload` now snapshot the live engine + SETTINGS state *before* applying any imported payload. If parsing, layer construction, or settings mutation throws partway through (corrupted file, invalid layer geometry, missing payload), the pre-import snapshot is restored via `applyState`, leaving the user on the project they had open instead of a half-loaded mix. History is only cleared *after* the new state installs cleanly, so a failed import no longer wipes the undo stack.
+- **Imported numeric params are sanitized on load (Bugs-8).** `VectorEngine.importState` now recursively walks `layer.params` and replaces any value that should be numeric — driven both by the algorithm's declared default types in `ALGO_DEFAULTS` and a hard list of always-numeric globals (`posX`, `posY`, `scaleX`, `scaleY`, `rotation`, `seed`) — with a finite fallback whenever the imported value is `NaN`, `Infinity`, or a non-numeric string. Sanitization recurses into the nested `noises[]` / `imageEffects[]` stacks, mirrors the existing `strokeWidth` clamp pattern, and emits a `[Engine]` `console.warn` per clamp so legitimate-looking but invalid files are visible to developers without erroring out for end users. This stops NaN propagation through `p.scaleX`, `p.density`, `p.amplitude`, etc. into algorithm hot paths.
+
 ## 1.1.0 - 2026-05-19
 
 ### Added
