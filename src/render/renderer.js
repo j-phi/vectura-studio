@@ -46,12 +46,10 @@
   };
   const { clamp } = window.Vectura.AlgorithmUtils;
 
-  // Phase 2 step 7: theme-token cache reads --ui-* directly per the Meridian
-  // skin migration plan §"Token-cache migration ordering". Legacy palette files
-  // (classic-dark/light, lark) alias --ui-* → --color-*; Meridian palettes
-  // alias --color-* → --ui-* (when defined). So a single read path that
-  // consults --ui-* first works byte-equivalently for legacy skins AND adopts
-  // the canonical Meridian tokens.
+  // Theme-token cache: every renderer read consults a canonical `--ui-*` token
+  // directly. The legacy `--color-*` alias indirection was removed in Meridian
+  // Step 3.3b (2026-05-20) once the last JS caller migrated; every skin file
+  // under src/ui/skin/ now declares the `--ui-*` palette as ground truth.
   //
   // Invalidation is wired to two mechanisms so stale values can never persist:
   //   1. Synchronous key check: getThemeToken reads data-ui-skin on every call
@@ -68,15 +66,6 @@
   // exercise it without instantiating a full Renderer.
   const _themeTokenCache = new Map();
   let _themeTokenCacheKey = null;
-  const _UI_TOKEN_FOR_COLOR = (name) => {
-    // Map a legacy --color-* name to its --ui-* canonical sibling. Returns null
-    // when no analog exists (e.g., specialized renderer-only colors). Keep this
-    // narrow — it must mirror the aliases set by every skin file under
-    // src/ui/skin/*.css. Today only one --color-* token is consulted by the
-    // renderer (`--color-accent`), but new entries belong here.
-    if (name === '--color-accent') return '--ui-accent';
-    return null;
-  };
   const _readVar = (name) => {
     if (typeof document === 'undefined' || !document.documentElement) return '';
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -91,15 +80,7 @@
       _themeTokenCacheKey = themeKey;
     }
     if (_themeTokenCache.has(name)) return _themeTokenCache.get(name);
-    let value = '';
-    const uiAlias = _UI_TOKEN_FOR_COLOR(name);
-    if (uiAlias) {
-      // Try canonical --ui-* first (Meridian); fall back to the original
-      // --color-* (legacy skins where --ui-accent itself aliases to --color-accent).
-      value = _readVar(uiAlias) || _readVar(name);
-    } else {
-      value = _readVar(name);
-    }
+    const value = _readVar(name);
     const result = value || fallback;
     _themeTokenCache.set(name, result);
     return result;
@@ -5985,7 +5966,7 @@
       const w = Math.abs(draft.end.x - draft.start.x);
       const h = Math.abs(draft.end.y - draft.start.y);
       this.ctx.save();
-      const accentColor = getThemeToken('--color-accent', '#63b3ed');
+      const accentColor = getThemeToken('--ui-accent', '#63b3ed');
       this.ctx.strokeStyle = accentColor;
       this.ctx.globalAlpha = 0.85;
       this.ctx.lineWidth = 1.5 / this.scale;

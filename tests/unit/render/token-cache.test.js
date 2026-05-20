@@ -1,23 +1,18 @@
 /**
- * Phase 2 step 7 RGR test: renderer token cache reads `--ui-*` directly and
- * invalidates on `vectura:skin-change`.
+ * Renderer token-cache contract.
  *
- * The renderer historically read `--color-*` tokens via a closure-local
- * `getThemeToken(name, fallback)` cache, with the cache key derived from
- * `document.documentElement.dataset.theme`. The Phase 2 closure exposes that
- * helper as `window.Vectura.Renderer.__tokenCache.get(name, fallback)` and
- * makes it:
+ * The renderer exposes its closure-local `getThemeToken(name, fallback)` cache
+ * on `window.Vectura.Renderer.__tokenCache.get(name, fallback)`. The cache:
  *
- *   1. Read `--ui-*` tokens directly when present (e.g. `--ui-accent`),
- *      falling back to a legacy `--color-*` alias if the requested name
- *      starts with `--color-` and no `--ui-*` value is set.
- *   2. Invalidate on the `vectura:skin-change` event (dispatched by
+ *   1. Reads `--ui-*` tokens directly from `getComputedStyle`. The legacy
+ *      `--color-*` alias indirection was removed in Meridian Step 3.3b
+ *      (2026-05-20) once every JS caller migrated to `--ui-*`.
+ *   2. Invalidates on the `vectura:skin-change` event (dispatched by
  *      `src/ui/skin/skin-manager.js`) so the next read refetches from
  *      `getComputedStyle`.
  *
  * Without these guarantees the renderer reads stale values across skin
- * swaps and ignores Meridian's canonical `--ui-*` palette — both regressions
- * the visual baselines would catch on next CI run.
+ * swaps — a regression the visual baselines would catch on next CI run.
  */
 const { loadVecturaRuntime } = require('../../helpers/load-vectura-runtime');
 
@@ -41,7 +36,6 @@ describe('Renderer token cache', () => {
     const root = document.documentElement;
     root.style.removeProperty('--ui-test-token');
     root.style.removeProperty('--ui-accent');
-    root.style.removeProperty('--color-accent');
     cache.invalidate();
   });
 
@@ -85,20 +79,11 @@ describe('Renderer token cache', () => {
     expect(cache.get('--ui-test-token', '#000')).toBe('#bbbbbb');
   });
 
-  test('--color-accent reads honor --ui-accent first (Meridian canonical token)', () => {
-    // Meridian skins set --ui-accent canonically; legacy skins alias --ui-accent
-    // to --color-accent. Either way, asking for --color-accent should return the
-    // --ui-accent value when present.
+  test('reads --ui-accent directly (canonical Meridian accent token)', () => {
+    // Post Meridian Step 3.3b, every reader requests the canonical `--ui-*`
+    // token by name. The cache performs a direct getComputedStyle read.
     document.documentElement.style.setProperty('--ui-accent', '#4e9ee1');
     cache.invalidate();
-    expect(cache.get('--color-accent', '#000')).toBe('#4e9ee1');
-  });
-
-  test('--color-* fall back to direct read when no --ui-* equivalent is set', () => {
-    // Some legacy --color-* tokens (e.g. unusual ones) may not have a --ui-*
-    // shadow. In that case the cache should still resolve the underlying var.
-    document.documentElement.style.setProperty('--color-accent', '#0e6fe0');
-    cache.invalidate();
-    expect(cache.get('--color-accent', '#000')).toBe('#0e6fe0');
+    expect(cache.get('--ui-accent', '#000')).toBe('#4e9ee1');
   });
 });

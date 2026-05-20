@@ -997,7 +997,7 @@
       .map((path) => shapeToSvg(path, precision, useCurves))
       .filter(Boolean)
       .join('');
-    const strokeColor = getThemeToken('--color-accent', '#fafafa');
+    const strokeColor = getThemeToken('--ui-accent', '#fafafa');
     return `
       <svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">
         ${pathsSvg}
