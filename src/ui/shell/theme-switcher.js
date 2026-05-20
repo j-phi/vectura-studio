@@ -55,7 +55,7 @@
       toggle.setAttribute('aria-pressed', current === 'light' ? 'true' : 'false');
       toggle.setAttribute('aria-label', label);
       toggle.title = label;
-      toggle.dataset.theme = current;
+      toggle.dataset.activeIcon = current;
     }
     if (bgColorInput) bgColorInput.value = SETTINGS.bgColor || bgColorInput.value || '#ffffff';
 

@@ -100,3 +100,15 @@
   #btn-randomize-params  { animation: none !important; }
   .rand-spark-overlay    { display: none !important; }
 }
+
+/* === Migrated from styles.css (Unit 2.6: reduced-motion fallback, 2026-05-20) === */
+
+/* Accessibility: respect reduced-motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

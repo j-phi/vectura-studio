@@ -114,7 +114,7 @@ describe('theme-switcher compile gate', () => {
     expect(toggle.getAttribute('aria-pressed')).toBe('true');
     expect(toggle.getAttribute('aria-label')).toBe('Switch to Dark theme');
     expect(toggle.title).toBe('Switch to Dark theme');
-    expect(toggle.dataset.theme).toBe('light');
+    expect(toggle.dataset.activeIcon).toBe('light');
     expect(bgInput.value).toBe('#abcdef');
   });
 
