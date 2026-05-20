@@ -1829,47 +1829,13 @@
       // Phase 3 step 3: settings-panel + btn-settings + btn-close-settings
       // wiring moved to modals/document-setup.js (invoked via
       // _bindDocumentSetupHandlers below). No locals needed here.
+      //
+      // Meridian Unit 1.9a (2026-05-20): the ~30 Document Setup input
+      // handlers (machine-profile, set-*, paper W/H, orientation, plotter
+      // opt, undo, etc.) moved to modals/document-setup.js's
+      // bindDocumentSetupListeners(). Their local lookups moved with them.
       const btnHelp = getEl('btn-help');
       const themeToggle = getEl('theme-toggle', { silent: true });
-      const machineProfile = getEl('machine-profile');
-      const setDocumentUnits = getEl('set-document-units', { silent: true });
-      const setMargin = getEl('set-margin');
-      const setMarginSlider = getEl('set-margin-slider', { silent: true });
-      const setTruncate = getEl('set-truncate');
-      const setCropExports = getEl('set-crop-exports');
-      const setOutsideOpacity = getEl('set-outside-opacity');
-      const setMarginLine = getEl('set-margin-line');
-      const setMarginLineColorPill = getEl('set-margin-line-color-pill');
-      const setMarginLineWeight = getEl('set-margin-line-weight');
-      const setMarginLineWeightSlider = getEl('set-margin-line-weight-slider');
-      const setMarginLineColor = getEl('set-margin-line-color');
-      const setMarginLineDotting = getEl('set-margin-line-dotting');
-      const setMarginLineDottingSlider = getEl('set-margin-line-dotting-slider', { silent: true });
-      const setMarginLineStyleReset = getEl('set-margin-line-style-reset');
-      const setShowGuides = getEl('set-show-guides');
-      const setSnapGuides = getEl('set-snap-guides');
-      const setShowDocumentDimensions = getEl('set-show-document-dimensions', { silent: true });
-      const setSelectionOutline = getEl('set-selection-outline');
-      const setSelectionOutlineColorPill = getEl('set-selection-outline-color-pill');
-      const setSelectionOutlineColor = getEl('set-selection-outline-color');
-      const setSelectionOutlineWidthSlider = getEl('set-selection-outline-width-slider');
-      const setSelectionOutlineWidth = getEl('set-selection-outline-width');
-      const setSelectionOutlineStyleReset = getEl('set-selection-outline-style-reset');
-      const setCookiePreferences = getEl('set-cookie-preferences');
-      const btnClearPreferences = getEl('btn-clear-preferences', { silent: true });
-      const setSpeedDown = getEl('set-speed-down');
-      const setSpeedUp = getEl('set-speed-up');
-      const setStroke = getEl('set-stroke', { silent: true });
-      const setPrecision = getEl('set-precision', { silent: true });
-      const setPlotterOptEnabled = getEl('set-plotter-opt-enabled', { silent: true });
-      const setPlotterOpt = getEl('set-plotter-opt', { silent: true });
-      const setPlotterOptValue = getEl('set-plotter-opt-value', { silent: true });
-      const setUndo = getEl('set-undo');
-      const setPaperWidth = getEl('set-paper-width');
-      const setPaperHeight = getEl('set-paper-height');
-      const setOrientation = getEl('set-orientation');
-      const orientationLabel = getEl('orientation-label');
-      const customFields = getEl('custom-size-fields');
       const btnSaveVectura = getEl('btn-save-vectura');
       const btnOpenVectura = getEl('btn-open-vectura');
       const btnImportSvg = getEl('btn-import-svg');
@@ -1914,13 +1880,6 @@
       if (insertMirrorModifier) {
         insertMirrorModifier.onclick = () => {
           this.insertMirrorModifier();
-        };
-      }
-      if (setCropExports) {
-        setCropExports.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          SETTINGS.cropExports = e.target.checked;
-          this.app.persistPreferencesDebounced?.();
         };
       }
 
@@ -2010,6 +1969,13 @@
       if (typeof this._bindDocumentSetupHandlers === 'function') {
         this._bindDocumentSetupHandlers();
       }
+      // Meridian Unit 1.9a (2026-05-20): grouped install for the ~30 Document
+      // Setup input handlers (set-* inputs, paper W/H, orientation, plotter
+      // physics, undo, machine-profile, etc.). Guarded for stub-`this` unit
+      // tests, identical pattern as _bindDocumentSetupHandlers above.
+      if (typeof this.bindDocumentSetupListeners === 'function') {
+        this.bindDocumentSetupListeners();
+      }
       if (btnHelp) {
         btnHelp.onclick = () => this.openHelp(false);
       }
@@ -2060,202 +2026,6 @@
         };
       }
 
-      if (setDocumentUnits) {
-        setDocumentUnits.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          SETTINGS.documentUnits = normalizeDocumentUnits(e.target.value);
-          this.refreshDocumentUnitsUi();
-          this.buildControls();
-          this.app.render();
-        };
-      }
-
-      if (machineProfile) {
-        machineProfile.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          const next = e.target.value;
-          SETTINGS.paperSize = next;
-          if (customFields) customFields.classList.toggle('hidden', next !== 'custom');
-          if (next !== 'custom' && MACHINES && MACHINES[next]) {
-            SETTINGS.paperWidth = MACHINES[next].width;
-            SETTINGS.paperHeight = MACHINES[next].height;
-            this.refreshDocumentUnitsUi();
-          }
-          this.app.engine.setProfile(next);
-          this.app.renderer.center();
-          this.app.regen();
-        };
-      }
-      if (setMargin) {
-        const applyMargin = (raw, options = {}) => {
-          const { commit = false } = options;
-          if (commit && this.app.pushHistory) this.app.pushHistory();
-          const next = Math.max(0, this.parseDocumentNumber(raw, { fallbackMm: SETTINGS.margin }));
-          SETTINGS.margin = Number.isFinite(next) ? next : SETTINGS.margin;
-          this.refreshDocumentUnitsUi();
-          this.app.regen();
-        };
-        setMargin.oninput = (e) => applyMargin(e.target.value);
-        setMargin.onchange = (e) => applyMargin(e.target.value, { commit: true });
-        if (setMarginSlider) {
-          setMarginSlider.oninput = (e) => applyMargin(e.target.value);
-          setMarginSlider.onchange = (e) => applyMargin(e.target.value, { commit: true });
-        }
-      }
-      if (setTruncate) {
-        setTruncate.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          SETTINGS.truncate = e.target.checked;
-          this.app.render();
-        };
-      }
-      if (setOutsideOpacity) {
-        setOutsideOpacity.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          const next = Math.max(0, Math.min(1, parseFloat(e.target.value)));
-          SETTINGS.outsideOpacity = Number.isFinite(next) ? next : 0.5;
-          e.target.value = SETTINGS.outsideOpacity;
-          this.app.render();
-        };
-      }
-      if (setMarginLine) {
-        setMarginLine.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          SETTINGS.marginLineVisible = e.target.checked;
-          this.app.render();
-        };
-      }
-      if (setMarginLineWeight) {
-        const applyMarginLineWeight = (raw, options = {}) => {
-          const { commit = false } = options;
-          if (commit && this.app.pushHistory) this.app.pushHistory();
-          const next = Math.max(0.05, Math.min(2, this.parseDocumentNumber(raw, { fallbackMm: SETTINGS.marginLineWeight ?? 0.2 })));
-          SETTINGS.marginLineWeight = Number.isFinite(next) ? next : 0.2;
-          this.refreshDocumentUnitsUi();
-          this.app.render();
-        };
-        setMarginLineWeight.oninput = (e) => applyMarginLineWeight(e.target.value);
-        setMarginLineWeight.onchange = (e) => applyMarginLineWeight(e.target.value, { commit: true });
-        if (setMarginLineWeightSlider) {
-          setMarginLineWeightSlider.oninput = (e) => applyMarginLineWeight(e.target.value);
-          setMarginLineWeightSlider.onchange = (e) => applyMarginLineWeight(e.target.value, { commit: true });
-        }
-      }
-      if (setMarginLineColor && setMarginLineColorPill) {
-        setMarginLineColorPill.onclick = () => openColorPickerAnchoredTo(setMarginLineColor, setMarginLineColorPill, { title: 'Margin Color', uiInstance: this });
-        setMarginLineColor.oninput = (e) => {
-          const next = e.target.value || SETTINGS.marginLineColor || '#52525b';
-          SETTINGS.marginLineColor = next;
-          setMarginLineColorPill.textContent = next.toUpperCase();
-          setMarginLineColorPill.style.background = next;
-          setMarginLineColorPill.style.color = getContrastTextColor(next);
-          this.app.render();
-        };
-        setMarginLineColor.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          const next = e.target.value || SETTINGS.marginLineColor || '#52525b';
-          SETTINGS.marginLineColor = next;
-          setMarginLineColorPill.textContent = next.toUpperCase();
-          setMarginLineColorPill.style.background = next;
-          setMarginLineColorPill.style.color = getContrastTextColor(next);
-          this.app.render();
-        };
-      }
-      if (setMarginLineDotting) {
-        const applyMarginLineDotting = (raw, options = {}) => {
-          const { commit = false } = options;
-          if (commit && this.app.pushHistory) this.app.pushHistory();
-          const next = Math.max(0, this.parseDocumentNumber(raw, { fallbackMm: SETTINGS.marginLineDotting ?? 0 }));
-          SETTINGS.marginLineDotting = Number.isFinite(next) ? next : 0;
-          this.refreshDocumentUnitsUi();
-          this.app.render();
-        };
-        setMarginLineDotting.oninput = (e) => applyMarginLineDotting(e.target.value);
-        setMarginLineDotting.onchange = (e) => applyMarginLineDotting(e.target.value, { commit: true });
-        if (setMarginLineDottingSlider) {
-          setMarginLineDottingSlider.oninput = (e) => applyMarginLineDotting(e.target.value);
-          setMarginLineDottingSlider.onchange = (e) => applyMarginLineDotting(e.target.value, { commit: true });
-        }
-      }
-      if (setMarginLineStyleReset) {
-        setMarginLineStyleReset.onclick = () => {
-          if (this.app.pushHistory) this.app.pushHistory();
-
-          // Margin outline visibility
-          SETTINGS.marginLineVisible = false;
-          if (setMarginLine) {
-            setMarginLine.checked = false;
-            setMarginLine.closest('[role="switch"]')?.setAttribute('aria-checked', 'false');
-          }
-
-          // Margin outline style
-          SETTINGS.marginLineColor = '#52525b';
-          SETTINGS.marginLineWeight = 0.2;
-          SETTINGS.marginLineDotting = 0;
-          if (setMarginLineColor) setMarginLineColor.value = '#52525b';
-          if (setMarginLineColorPill) {
-            setMarginLineColorPill.textContent = '#52525B';
-            setMarginLineColorPill.style.background = '#52525b';
-            setMarginLineColorPill.style.color = getContrastTextColor('#52525b');
-          }
-          if (setMarginLineDotting) setMarginLineDotting.value = '0';
-          if (setMarginLineDottingSlider) setMarginLineDottingSlider.value = '0';
-
-          // Margin value
-          SETTINGS.margin = 20;
-
-          // Crop toggles
-          SETTINGS.truncate = true;
-          if (setTruncate) {
-            setTruncate.checked = true;
-            setTruncate.closest('[role="switch"]')?.setAttribute('aria-checked', 'true');
-          }
-          SETTINGS.cropExports = true;
-          if (setCropExports) {
-            setCropExports.checked = true;
-            setCropExports.closest('[role="switch"]')?.setAttribute('aria-checked', 'true');
-          }
-
-          // Outside opacity
-          SETTINGS.outsideOpacity = 0.5;
-          if (setOutsideOpacity) setOutsideOpacity.value = '0.5';
-
-          this.refreshDocumentUnitsUi();
-          this.app.regen();
-        };
-      }
-      if (setShowGuides) {
-        setShowGuides.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          SETTINGS.showGuides = e.target.checked;
-          this.app.render();
-        };
-      }
-      if (setSnapGuides) {
-        setSnapGuides.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          SETTINGS.snapGuides = e.target.checked;
-        };
-      }
-      if (setShowDocumentDimensions) {
-        setShowDocumentDimensions.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          SETTINGS.showDocumentDimensions = e.target.checked;
-          this.app.render();
-        };
-      }
-      const btnViewGridToggle = getEl('btn-view-grid-toggle');
-      if (btnViewGridToggle) {
-        btnViewGridToggle.onclick = () => {
-          SETTINGS.gridType = (SETTINGS.gridType && SETTINGS.gridType !== 'none') ? 'none' : 'standard';
-          if (this.app.pushHistory) this.app.pushHistory();
-          this.initSettingsValues();
-          this.app.render();
-          const p = getEl('top-menubar').querySelector('[data-top-menu-panel][aria-label="View menu"]');
-          if (p) p.classList.remove('open');
-        };
-      }
-
       // Phase 3 step 2: grid-settings panel handlers delegated to
       // src/ui/modals/grid-settings.js. The module owns the panel markup
       // (mounted earlier via _mountGridSettingsPanel) and wires the open
@@ -2265,218 +2035,6 @@
       // this line — the controls those tests exercise live further below.
       if (typeof this._bindGridSettingsHandlers === 'function') {
         this._bindGridSettingsHandlers();
-      }
-
-      if (setSelectionOutline) {
-        setSelectionOutline.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          SETTINGS.selectionOutline = e.target.checked;
-          this.app.render();
-        };
-      }
-      if (setSelectionOutlineColorPill && setSelectionOutlineColor) {
-        setSelectionOutlineColorPill.onclick = () =>
-          openColorPickerAnchoredTo(setSelectionOutlineColor, setSelectionOutlineColorPill, { title: 'Selection Color', uiInstance: this });
-        setSelectionOutlineColor.oninput = (e) => {
-          const nextColor = e.target.value || SETTINGS.selectionOutlineColor || '#ef4444';
-          SETTINGS.selectionOutlineColor = nextColor;
-          setSelectionOutlineColorPill.textContent = nextColor.toUpperCase();
-          setSelectionOutlineColorPill.style.background = nextColor;
-          setSelectionOutlineColorPill.style.color = getContrastTextColor(nextColor);
-          this.app.render();
-        };
-        setSelectionOutlineColor.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          const nextColor = e.target.value || SETTINGS.selectionOutlineColor || '#ef4444';
-          SETTINGS.selectionOutlineColor = nextColor;
-          setSelectionOutlineColorPill.textContent = nextColor.toUpperCase();
-          setSelectionOutlineColorPill.style.background = nextColor;
-          setSelectionOutlineColorPill.style.color = getContrastTextColor(nextColor);
-          this.app.render();
-        };
-      }
-      const applySelectionOutlineWidth = (raw, options = {}) => {
-        const { commit = false } = options;
-        if (commit && this.app.pushHistory) this.app.pushHistory();
-        const next = Math.max(0.1, Math.min(2, this.parseDocumentNumber(raw, { fallbackMm: SETTINGS.selectionOutlineWidth ?? 0.15 })));
-        SETTINGS.selectionOutlineWidth = Number.isFinite(next) ? next : 0.15;
-        this.refreshDocumentUnitsUi();
-        this.app.render();
-      };
-      if (setSelectionOutlineWidthSlider) {
-        setSelectionOutlineWidthSlider.oninput = (e) => applySelectionOutlineWidth(e.target.value);
-        setSelectionOutlineWidthSlider.onchange = (e) => applySelectionOutlineWidth(e.target.value, { commit: true });
-      }
-      if (setSelectionOutlineWidth) {
-        setSelectionOutlineWidth.oninput = (e) => applySelectionOutlineWidth(e.target.value);
-        setSelectionOutlineWidth.onchange = (e) => applySelectionOutlineWidth(e.target.value, { commit: true });
-      }
-      if (setSelectionOutlineStyleReset) {
-        setSelectionOutlineStyleReset.onclick = () => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          SETTINGS.selectionOutlineColor = '#ef4444';
-          SETTINGS.selectionOutlineWidth = 0.15;
-          if (setSelectionOutlineColorPill) {
-            setSelectionOutlineColorPill.textContent = '#EF4444';
-            setSelectionOutlineColorPill.style.background = '#ef4444';
-            setSelectionOutlineColorPill.style.color = getContrastTextColor('#ef4444');
-          }
-          this.refreshDocumentUnitsUi();
-          this.app.render();
-        };
-      }
-      if (setCookiePreferences) {
-        setCookiePreferences.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          SETTINGS.cookiePreferencesEnabled = e.target.checked;
-          if (!SETTINGS.cookiePreferencesEnabled) {
-            this.app.clearPreferenceCookie?.();
-          } else {
-            this.app.persistPreferences?.({ force: true });
-          }
-        };
-      }
-      const setShowTour = getEl('set-show-tour', { silent: true });
-      if (setShowTour) {
-        setShowTour.onchange = (e) => {
-          SETTINGS.showTourOnFirstLaunch = e.target.checked;
-          this.app?.persistPreferences?.();
-        };
-      }
-      if (btnClearPreferences) {
-        btnClearPreferences.onclick = () => {
-          this.app.clearSavedPreferences?.();
-          this.initSettingsValues();
-        };
-      }
-      if (setSpeedDown) {
-        setSpeedDown.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          SETTINGS.speedDown = parseInt(e.target.value, 10);
-          this.app.updateStats();
-        };
-      }
-      if (setSpeedUp) {
-        setSpeedUp.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          SETTINGS.speedUp = parseInt(e.target.value, 10);
-          this.app.updateStats();
-        };
-      }
-      if (setStroke) {
-        setStroke.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          SETTINGS.strokeWidth = parseFloat(e.target.value);
-          this.app.engine.layers.forEach((layer) => {
-            layer.strokeWidth = SETTINGS.strokeWidth;
-          });
-          this.app.render();
-        };
-      }
-      if (setPrecision) {
-        setPrecision.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          const next = Math.max(0, Math.min(6, parseInt(e.target.value, 10) || 3));
-          SETTINGS.precision = next;
-          e.target.value = next;
-        };
-      }
-      if (setPaperWidth) {
-        setPaperWidth.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          const next = Math.max(1, this.parseDocumentNumber(e.target.value, { fallbackMm: SETTINGS.paperWidth ?? 210 }));
-          if (Number.isFinite(next)) SETTINGS.paperWidth = next;
-          this.refreshDocumentUnitsUi();
-          if (SETTINGS.paperSize === 'custom') {
-            this.app.engine.setProfile('custom');
-            this.app.renderer.center();
-            this.app.regen();
-          }
-        };
-      }
-      if (setPaperHeight) {
-        setPaperHeight.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          const next = Math.max(1, this.parseDocumentNumber(e.target.value, { fallbackMm: SETTINGS.paperHeight ?? 297 }));
-          if (Number.isFinite(next)) SETTINGS.paperHeight = next;
-          this.refreshDocumentUnitsUi();
-          if (SETTINGS.paperSize === 'custom') {
-            this.app.engine.setProfile('custom');
-            this.app.renderer.center();
-            this.app.regen();
-          }
-        };
-      }
-      if (setOrientation) {
-        setOrientation.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          SETTINGS.paperOrientation = e.target.checked ? 'landscape' : 'portrait';
-          if (orientationLabel) {
-            orientationLabel.textContent = e.target.checked ? 'Landscape' : 'Portrait';
-          }
-          const key = machineProfile?.value || SETTINGS.paperSize || 'a4';
-          this.app.engine.setProfile(key);
-          this.app.renderer.center();
-          this.app.regen();
-        };
-      }
-      if (setPlotterOpt) {
-        const clampPlotterOptValue = (raw) => {
-          const next = parseFloat(raw);
-          if (!Number.isFinite(next)) return 0.1;
-          return Math.max(0.01, Math.min(1, next));
-        };
-        const applyPlotterOptValue = (raw, options = {}) => {
-          const { render = true } = options;
-          const enabled = setPlotterOptEnabled ? Boolean(setPlotterOptEnabled.checked) : true;
-          const next = clampPlotterOptValue(raw);
-          if (setPlotterOpt) setPlotterOpt.value = `${next}`;
-          if (setPlotterOptValue) setPlotterOptValue.value = next.toFixed(2);
-          SETTINGS.plotterOptimize = enabled ? next : 0;
-          if (render) this.app.render();
-        };
-        const syncPlotterOptEnabledState = (enabled) => {
-          if (setPlotterOpt) setPlotterOpt.disabled = !enabled;
-          if (setPlotterOptValue) setPlotterOptValue.disabled = !enabled;
-        };
-        if (setPlotterOptEnabled) {
-          setPlotterOptEnabled.onchange = (e) => {
-            if (this.app.pushHistory) this.app.pushHistory();
-            const enabled = Boolean(e.target.checked);
-            syncPlotterOptEnabledState(enabled);
-            applyPlotterOptValue(setPlotterOptValue?.value || setPlotterOpt?.value || 0.1);
-          };
-          syncPlotterOptEnabledState(Boolean(setPlotterOptEnabled.checked));
-        }
-        setPlotterOpt.oninput = (e) => {
-          applyPlotterOptValue(e.target.value);
-        };
-        setPlotterOpt.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          applyPlotterOptValue(e.target.value);
-        };
-        if (setPlotterOptValue) {
-          setPlotterOptValue.oninput = (e) => {
-            const next = clampPlotterOptValue(e.target.value);
-            if (setPlotterOpt) setPlotterOpt.value = `${next}`;
-            e.target.value = next.toFixed(2);
-            SETTINGS.plotterOptimize = setPlotterOptEnabled?.checked === false ? 0 : next;
-            this.app.render();
-          };
-          setPlotterOptValue.onchange = (e) => {
-            if (this.app.pushHistory) this.app.pushHistory();
-            applyPlotterOptValue(e.target.value);
-          };
-        }
-      }
-      if (setUndo) {
-        setUndo.onchange = (e) => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          const next = Math.max(1, Math.min(200, parseInt(e.target.value, 10) || 20));
-          SETTINGS.undoSteps = next;
-          e.target.value = next;
-          if (this.app.setUndoLimit) this.app.setUndoLimit(next);
-        };
       }
 
       // ── Layer bar color palette picker ──────────────────────────────
@@ -3236,7 +2794,14 @@
   // they're interleaved with shared selection-outline / margin-line / cookie
   // / paper handlers.
   if (window.Vectura?.UI?.Modals?.DocumentSetup?.bind) {
-    window.Vectura.UI.Modals.DocumentSetup.bind({ getEl });
+    window.Vectura.UI.Modals.DocumentSetup.bind({
+      getEl,
+      SETTINGS,
+      MACHINES,
+      normalizeDocumentUnits,
+      getContrastTextColor,
+      openColorPickerAnchoredTo,
+    });
   }
   if (window.Vectura?.UI?.Modals?.DocumentSetup?.installOn) {
     window.Vectura.UI.Modals.DocumentSetup.installOn(UI.prototype);

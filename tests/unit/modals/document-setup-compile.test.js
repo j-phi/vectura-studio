@@ -56,6 +56,19 @@ describe('document-setup panel compile gate', () => {
     expect(DocumentSetup.PANEL_ID).toBe('settings-panel');
   });
 
+  it('installOn registers bindDocumentSetupListeners on the UI prototype (Meridian Unit 1.9a)', () => {
+    // Unit 1.9a moved the 30 Document Setup input handlers out of legacy
+    // bindGlobal() and into a grouped installer on document-setup.js. The
+    // installer must mount on UI.prototype as `bindDocumentSetupListeners`
+    // so the residual bindGlobal() shell can invoke it as a single call.
+    expect(typeof DocumentSetup.installOn).toBe('function');
+    const proto = {};
+    DocumentSetup.installOn(proto);
+    expect(typeof proto.bindDocumentSetupListeners).toBe('function');
+    // Legacy alias preserved so external callers still resolve.
+    expect(typeof proto._bindDocumentSetupHandlers).toBe('function');
+  });
+
   it('mount throws a clear error before bind()', () => {
     const host = dom.window.document.createElement('div');
     expect(() => DocumentSetup.mount(host))

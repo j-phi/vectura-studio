@@ -23,7 +23,11 @@ describe('Crop Exports settings wiring', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     SETTINGS.cropExports = true;
 
-    UI.prototype.bindGlobal.call({
+    // Meridian Unit 1.9a (2026-05-20): the #set-crop-exports handler moved
+    // from bindGlobal() into modals/document-setup.js's
+    // bindDocumentSetupListeners(). Invoke the new installer directly — the
+    // legacy bindGlobal() now delegates to it via the same prototype method.
+    UI.prototype.bindDocumentSetupListeners.call({
       app: {
         pushHistory: () => {
           historyCalls += 1;
