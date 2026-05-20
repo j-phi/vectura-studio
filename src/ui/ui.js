@@ -173,15 +173,12 @@
     setTimeout(cleanup, 3000);
   };
 
-  const escapeHtml = (str) => {
-    if (typeof str !== 'string') return str;
-    return str
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  };
+  // IIFE-local alias for the canonical Vectura.UI.utils.escapeHtml. Kept as a
+  // const binding so the existing call sites (`escapeHtml(...)`) and the DI
+  // bags that pass `escapeHtml` through to panel modules continue to work
+  // without per-callsite changes. See docs/audit-2026-05-20.md (Redundancy-1
+  // PR1) and tests/unit/escape-html-single-source.test.js for the rationale.
+  const escapeHtml = window.Vectura.UI.utils.escapeHtml;
 
   const escapeXmlAttr = (value) =>
     `${value ?? ''}`

@@ -801,6 +801,11 @@
   <script src="./src/ui/skin/tokens.js" defer></script>
   <script src="./src/ui/skin/skin-manager.js" defer></script>
   <script src="./src/ui/icons.js" defer></script>
+  <!-- ui/utils.js is the canonical home for Vectura.UI.utils (clamp, escapeHtml,
+       formatNumber, etc.). Must load BEFORE any other UI script that consumes
+       these helpers at IIFE-execution time — including ui-pattern-designer.js,
+       which captures `escapeHtml` into an IIFE-local alias. -->
+  <script src="./src/ui/utils.js" defer></script>
   <script src="./src/ui/randomization-utils.js" defer></script>
   <script src="./src/ui/ui-touch.js" defer></script>
   <script src="./src/ui/ui-document-units.js" defer></script>
@@ -844,10 +849,9 @@
   <script src="./src/ui/persistence.js" defer></script>
   <script src="./src/ui/shortcuts.js" defer></script>
   <!-- Phase 1 utilities + overlays + components. Composed by menus, modals,
-       and panel chrome from Phase 3 onward. utils.js + focus.js are no-op
-       safe if absent, but overlays' best behavior (focus trap, on/off
-       cleanup) needs them loaded. -->
-  <script src="./src/ui/utils.js" defer></script>
+       and panel chrome from Phase 3 onward. utils.js is now loaded much
+       earlier (before ui-pattern-designer.js) because pattern-designer's
+       IIFE captures Vectura.UI.utils.escapeHtml at module-load time. -->
   <script src="./src/ui/focus.js" defer></script>
   <script src="./src/ui/motion.js" defer></script>
   <script src="./src/ui/overlays/modal.js" defer></script>

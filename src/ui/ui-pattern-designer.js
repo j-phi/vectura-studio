@@ -7,10 +7,12 @@
     (window.Vectura?.PatternRegistry?.getPatterns?.() || window.Vectura?.PATTERNS || []);
   const clone = (value) => JSON.parse(JSON.stringify(value));
 
-  const escapeHtml = (str) => {
-    if (typeof str !== 'string') return String(str ?? '');
-    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  };
+  // IIFE-local alias for the canonical Vectura.UI.utils.escapeHtml. The
+  // previous local copy omitted the `'` → `&#39;` substitution — a latent
+  // XSS-adjacent divergence flagged in docs/audit-2026-05-20.md
+  // (Redundancy-1 PR1). Do not re-introduce a local implementation; depend
+  // on this export. See tests/unit/escape-html-single-source.test.js.
+  const escapeHtml = window.Vectura.UI.utils.escapeHtml;
   const cloneRegion = (region = []) => (region || []).map((pt) => ({ ...pt }));
   const cloneFillRecord = (fill = {}) => ({
     ...fill,
