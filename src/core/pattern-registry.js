@@ -46,12 +46,21 @@
     const scope = options.scope || 'local';
     const source = scope === 'project' ? 'Project Patterns' : 'Custom Patterns';
     const flags = inferPatternFlags(pattern);
+    // SECURITY: project-scoped patterns arrive verbatim from .vectura files;
+    // local-scoped patterns come from this user's own designer but can be
+    // round-tripped through hostile project state, so we also sanitize on
+    // local hydrate. The SVG is later mounted via tempSvg.innerHTML in
+    // pattern.js — <image onerror>, <a href="javascript:...">, etc. will
+    // execute unless we strip them here.
+    const rawSvg = `${pattern.svg || ''}`;
+    const sanitizer = window.Vectura?.SvgSanitize?.sanitize;
+    const safeSvg = typeof sanitizer === 'function' && rawSvg ? sanitizer(rawSvg) : rawSvg;
     const normalized = {
       id: ensureCustomId(pattern.id || fallbackName, fallbackName),
       name: `${pattern.name || fallbackName}`.trim() || fallbackName,
       source: `${pattern.source || source}`.trim() || source,
       filename: `${pattern.filename || ''}`.trim(),
-      svg: `${pattern.svg || ''}`,
+      svg: safeSvg,
       lines: flags.lines,
       fills: flags.fills,
       custom: true,

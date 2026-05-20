@@ -82,11 +82,31 @@
         };
         const current = pens.find((pen) => pen.id === owner.penId) || pens[0];
         if (current) applyPen(current, { render: false, syncTargets: false });
-        penMenu.innerHTML = pens.map((pen) => `
-          <button type="button" class="pen-option" data-pen-id="${pen.id}" aria-pressed="${pen.id === owner.penId ? 'true' : 'false'}">
-            <span class="pen-icon" style="background:${pen.color}; color:${pen.color}; --pen-width:${pen.width}"></span>
-            <span class="pen-option-name">${escapeHtml(pen.name)}</span>
-          </button>`).join('');
+        // SECURITY: pen records can originate from untrusted .vectura files.
+        // Build the menu via DOM APIs so pen.id / pen.color / pen.width are
+        // never interpolated into HTML. Validators on the import path (see
+        // src/core/pen-validate.js) keep these to safe shapes, but defense
+        // in depth: setAttribute / style.background keep the attribute/value
+        // contexts safely separated.
+        penMenu.textContent = '';
+        pens.forEach((pen) => {
+          const btn = penMenu.ownerDocument.createElement('button');
+          btn.type = 'button';
+          btn.className = 'pen-option';
+          btn.setAttribute('data-pen-id', `${pen.id ?? ''}`);
+          btn.setAttribute('aria-pressed', pen.id === owner.penId ? 'true' : 'false');
+          const icon = penMenu.ownerDocument.createElement('span');
+          icon.className = 'pen-icon';
+          icon.style.background = `${pen.color ?? ''}`;
+          icon.style.color = `${pen.color ?? ''}`;
+          icon.style.setProperty('--pen-width', `${pen.width ?? ''}`);
+          const nameEl = penMenu.ownerDocument.createElement('span');
+          nameEl.className = 'pen-option-name';
+          nameEl.textContent = `${pen.name ?? ''}`;
+          btn.appendChild(icon);
+          btn.appendChild(nameEl);
+          penMenu.appendChild(btn);
+        });
         penMenu.querySelectorAll('.pen-option').forEach((opt) => {
           opt.onclick = (e) => {
             e.stopPropagation();

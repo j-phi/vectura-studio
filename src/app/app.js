@@ -591,7 +591,15 @@
         SETTINGS.optimizationDefaults = clone(s.optimizationDefaults);
       }
       if (Array.isArray(s.pens) && s.pens.length) {
-        SETTINGS.pens = clone(s.pens);
+        // SECURITY: .vectura is untrusted input. SETTINGS.pens is rendered
+        // into innerHTML by several panels (layers-panel, pens-panel,
+        // pattern-designer). Validate every field before persisting so a
+        // hostile pen.color="\"><img onerror=...> cannot survive an import.
+        const validator = window.Vectura?.PenValidate?.validatePens;
+        const validated = typeof validator === 'function' ? validator(s.pens) : clone(s.pens);
+        if (validated.length) {
+          SETTINGS.pens = validated;
+        }
       }
       SETTINGS.globalLayerCount = s.globalLayerCount ?? SETTINGS.globalLayerCount;
       if (this.engine && SETTINGS.paperSize) {
