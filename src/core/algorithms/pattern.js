@@ -3227,35 +3227,181 @@
     let start = -1;
     for (let i = 0; i < cols * rows; i++) if (inside[i]) { start = i; break; }
     if (start < 0) return [];
-    // DFS
-    const stack = [start];
-    visited[start] = 1;
     const branchBias = Math.max(0, Math.min(1, mazeBranchBias ?? 0.5));
-    while (stack.length) {
-      const idx = stack[stack.length - 1];
+    // Neighbours-of helper used by all carving algorithms.
+    const neighboursOf = (idx, requireUnvisited) => {
       const r = Math.floor(idx / cols), c = idx % cols;
-      const nbrs = [];
-      // N
-      if (r > 0 && inside[(r - 1) * cols + c] && !visited[(r - 1) * cols + c]) nbrs.push({ idx: (r - 1) * cols + c, wall: 'h', wr: r, wc: c });
-      // S
-      if (r < rows - 1 && inside[(r + 1) * cols + c] && !visited[(r + 1) * cols + c]) nbrs.push({ idx: (r + 1) * cols + c, wall: 'h', wr: r + 1, wc: c });
-      // W
-      if (c > 0 && inside[r * cols + c - 1] && !visited[r * cols + c - 1]) nbrs.push({ idx: r * cols + c - 1, wall: 'v', wr: r, wc: c });
-      // E
-      if (c < cols - 1 && inside[r * cols + c + 1] && !visited[r * cols + c + 1]) nbrs.push({ idx: r * cols + c + 1, wall: 'v', wr: r, wc: c + 1 });
-      if (!nbrs.length) { stack.pop(); continue; }
-      // branch bias: lower → more likely to pick first nbr (linear corridors)
-      let pick;
-      if (rng() < branchBias) pick = nbrs[Math.floor(rng() * nbrs.length)];
-      else pick = nbrs[0];
-      if (pick.wall === 'h') hWalls[pick.wr * cols + pick.wc] = 0;
-      else vWalls[pick.wr * cols + pick.wc] = 0;
-      visited[pick.idx] = 1;
-      stack.push(pick.idx);
+      const out = [];
+      if (r > 0 && inside[(r - 1) * cols + c] && (!requireUnvisited || !visited[(r - 1) * cols + c])) out.push({ idx: (r - 1) * cols + c, wall: 'h', wr: r, wc: c });
+      if (r < rows - 1 && inside[(r + 1) * cols + c] && (!requireUnvisited || !visited[(r + 1) * cols + c])) out.push({ idx: (r + 1) * cols + c, wall: 'h', wr: r + 1, wc: c });
+      if (c > 0 && inside[r * cols + c - 1] && (!requireUnvisited || !visited[r * cols + c - 1])) out.push({ idx: r * cols + c - 1, wall: 'v', wr: r, wc: c });
+      if (c < cols - 1 && inside[r * cols + c + 1] && (!requireUnvisited || !visited[r * cols + c + 1])) out.push({ idx: r * cols + c + 1, wall: 'v', wr: r, wc: c + 1 });
+      return out;
+    };
+    const carve = (e) => {
+      if (e.wall === 'h') hWalls[e.wr * cols + e.wc] = 0;
+      else vWalls[e.wr * cols + e.wc] = 0;
+    };
+    const algo = String(mazeAlgorithm || 'dfs').toLowerCase();
+    if (algo === 'prim') {
+      // Randomised Prim's: maintain a frontier list of edges adjacent to the
+      // carved region; repeatedly pick a random edge and carve through it.
+      visited[start] = 1;
+      const frontier = neighboursOf(start, true);
+      while (frontier.length) {
+        const pickIdx = Math.floor(rng() * frontier.length);
+        const e = frontier[pickIdx];
+        // swap-pop
+        frontier[pickIdx] = frontier[frontier.length - 1];
+        frontier.pop();
+        if (visited[e.idx]) continue;
+        carve(e);
+        visited[e.idx] = 1;
+        const more = neighboursOf(e.idx, true);
+        for (const m of more) if (!visited[m.idx]) frontier.push(m);
+      }
+    } else if (algo === 'wilson') {
+      // Wilson's: loop-erased random walk. Pick any unvisited cell, walk
+      // randomly until we hit a visited cell, then carve the (loop-erased) path.
+      visited[start] = 1;
+      const unvisitedList = [];
+      for (let i = 0; i < cols * rows; i++) if (inside[i] && !visited[i]) unvisitedList.push(i);
+      while (unvisitedList.length) {
+        const startWalk = unvisitedList[Math.floor(rng() * unvisitedList.length)];
+        if (visited[startWalk]) continue;
+        const path = [startWalk];
+        const seen = new Map(); seen.set(startWalk, 0);
+        let cur = startWalk;
+        let safety = cols * rows * 8;
+        while (!visited[cur] && safety-- > 0) {
+          const nbrs = neighboursOf(cur, false);
+          if (!nbrs.length) break;
+          const next = nbrs[Math.floor(rng() * nbrs.length)];
+          // loop-erase: if we've seen `next.idx` before in path, trim back to it.
+          if (seen.has(next.idx)) {
+            const cut = seen.get(next.idx);
+            for (let k = path.length - 1; k > cut; k--) seen.delete(path[k]);
+            path.length = cut + 1;
+            cur = next.idx;
+            continue;
+          }
+          path.push(next.idx);
+          seen.set(next.idx, path.length - 1);
+          cur = next.idx;
+        }
+        // carve walls along the path
+        for (let k = 0; k < path.length - 1; k++) {
+          const a = path[k], b = path[k + 1];
+          const ar = Math.floor(a / cols), ac = a % cols;
+          const br = Math.floor(b / cols), bc = b % cols;
+          if (ar === br) {
+            const wc = Math.max(ac, bc);
+            vWalls[ar * cols + wc] = 0;
+          } else {
+            const wr = Math.max(ar, br);
+            hWalls[wr * cols + ac] = 0;
+          }
+          visited[a] = 1;
+        }
+        if (path.length) visited[path[path.length - 1]] = 1;
+        // refresh unvisited list lazily by filtering
+        for (let i = unvisitedList.length - 1; i >= 0; i--) {
+          if (visited[unvisitedList[i]]) {
+            unvisitedList[i] = unvisitedList[unvisitedList.length - 1];
+            unvisitedList.pop();
+          }
+        }
+      }
+    } else if (algo === 'eller') {
+      // Sidewinder-style row carving (simpler cousin of Eller's that produces
+      // a similarly visually distinct pattern of long horizontal corridors
+      // capped by occasional vertical passages northward).
+      for (let r = 0; r < rows; r++) {
+        let runStart = -1;
+        for (let c = 0; c < cols; c++) {
+          if (!inside[r * cols + c]) { runStart = -1; continue; }
+          visited[r * cols + c] = 1;
+          const atEast = c === cols - 1 || !inside[r * cols + c + 1];
+          const carveEast = !atEast && rng() < 0.5;
+          if (runStart < 0) runStart = c;
+          if (carveEast) {
+            vWalls[r * cols + c + 1] = 0;
+          } else {
+            // close the run; carve north from a random cell in [runStart..c] if we can
+            if (r > 0) {
+              const pick = runStart + Math.floor(rng() * (c - runStart + 1));
+              if (inside[(r - 1) * cols + pick]) hWalls[r * cols + pick] = 0;
+            }
+            runStart = -1;
+          }
+        }
+      }
+    } else if (algo === 'recursive-division' || algo === 'division') {
+      // Recursive division: start with all walls REMOVED, then divide by adding
+      // walls with a single passage. Produces visibly different room structure.
+      hWalls.fill(0); vWalls.fill(0);
+      // Restore boundary walls between inside and outside cells (so the shape
+      // edge still reads correctly).
+      const divide = (r0, c0, r1, c1) => {
+        const h = r1 - r0, w = c1 - c0;
+        if (h < 2 && w < 2) return;
+        const horizontal = h > w ? true : (h < w ? false : rng() < 0.5);
+        if (horizontal && h >= 2) {
+          // pick wall row in (r0..r1-1) and a passage col in [c0..c1-1]
+          const wallRow = r0 + 1 + Math.floor(rng() * (h - 1));
+          const passCol = c0 + Math.floor(rng() * w);
+          for (let c = c0; c < c1; c++) {
+            if (c === passCol) continue;
+            if (inside[wallRow * cols + c] && inside[(wallRow - 1) * cols + c]) {
+              hWalls[wallRow * cols + c] = 1;
+            }
+          }
+          divide(r0, c0, wallRow, c1);
+          divide(wallRow, c0, r1, c1);
+        } else if (w >= 2) {
+          const wallCol = c0 + 1 + Math.floor(rng() * (w - 1));
+          const passRow = r0 + Math.floor(rng() * h);
+          for (let r = r0; r < r1; r++) {
+            if (r === passRow) continue;
+            if (inside[r * cols + wallCol] && inside[r * cols + wallCol - 1]) {
+              vWalls[r * cols + wallCol] = 1;
+            }
+          }
+          divide(r0, c0, r1, wallCol);
+          divide(r0, wallCol, r1, c1);
+        }
+      };
+      divide(0, 0, rows, cols);
+      for (let i = 0; i < cols * rows; i++) if (inside[i]) visited[i] = 1;
+    } else {
+      // DFS (default). Same behaviour as before.
+      const stack = [start];
+      visited[start] = 1;
+      while (stack.length) {
+        const idx = stack[stack.length - 1];
+        const nbrs = neighboursOf(idx, true);
+        if (!nbrs.length) { stack.pop(); continue; }
+        // branch bias: lower → more likely to pick first nbr (linear corridors)
+        let pick;
+        if (rng() < branchBias) pick = nbrs[Math.floor(rng() * nbrs.length)];
+        else pick = nbrs[0];
+        carve(pick);
+        visited[pick.idx] = 1;
+        stack.push(pick.idx);
+      }
     }
     const result = [];
-    const wantWalls = mazeWallMode !== 'path';
-    const wantPath = mazeWallMode === 'path' || mazeWallMode === 'both';
+    // Mode semantics:
+    //   walls (default): emit walls between adjacent cells where wall is present
+    //   corridors:       emit the inverse — segments where the wall was REMOVED
+    //                    (drawn at the wall's location, so the carved passages
+    //                    appear as the marks)
+    //   path:            connect cell centers across removed walls
+    //   both:            walls + path
+    const mode = String(mazeWallMode || 'walls').toLowerCase();
+    const wantWalls = mode === 'walls' || mode === 'both';
+    const wantPath = mode === 'path' || mode === 'both';
+    const wantCorridors = mode === 'corridors';
     if (wantWalls) {
       // emit remaining walls between adjacent cells
       for (let r = 1; r < rows; r++) {
@@ -3292,6 +3438,32 @@
           }
           if (c + 1 < cols && inside[r * cols + c + 1] && !vWalls[r * cols + c + 1]) {
             for (const [a, b] of clipSegmentToPoly({ x: cx, y: cy }, { x: cx + cs, y: cy }, poly)) result.push([a, b]);
+          }
+        }
+      }
+    }
+    if (wantCorridors) {
+      // Inverse of 'walls' — draw a segment AT every wall location that was
+      // CARVED (i.e. removed). Visually swaps which cell boundaries are inked.
+      for (let r = 1; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (!inside[r * cols + c] || !inside[(r - 1) * cols + c]) continue;
+          if (!hWalls[r * cols + c]) {
+            const y = bounds.minY + r * cs;
+            const x0 = bounds.minX + c * cs;
+            const x1 = bounds.minX + (c + 1) * cs;
+            for (const [a, b] of clipSegmentToPoly({ x: x0, y }, { x: x1, y }, poly)) result.push([a, b]);
+          }
+        }
+      }
+      for (let r = 0; r < rows; r++) {
+        for (let c = 1; c < cols; c++) {
+          if (!inside[r * cols + c] || !inside[r * cols + c - 1]) continue;
+          if (!vWalls[r * cols + c]) {
+            const x = bounds.minX + c * cs;
+            const y0 = bounds.minY + r * cs;
+            const y1 = bounds.minY + (r + 1) * cs;
+            for (const [a, b] of clipSegmentToPoly({ x, y: y0 }, { x, y: y1 }, poly)) result.push([a, b]);
           }
         }
       }
@@ -3594,12 +3766,31 @@
   // ── B10: Weave ───────────────────────────────────────────────────────────
   const _weaveOverUnder = (warpIdx, weftIdx, pattern, weaveOver, weaveUnder) => {
     // returns true if warp goes OVER at this crossing (weft goes under)
+    // NOTE: 'twill', 'basket', and 'satin' embed a minimum group size so the
+    // patterns differentiate visually at the default weaveOver = weaveUnder = 1
+    // (without this, all three collapse to plain). When the user raises Over or
+    // Under, the group multiplies accordingly.
     const over = Math.max(1, weaveOver || 1);
     const under = Math.max(1, weaveUnder || 1);
     if (pattern === 'plain') return (warpIdx + weftIdx) % 2 === 0;
-    if (pattern === 'twill') return ((warpIdx + weftIdx) % (over + under)) < over;
-    if (pattern === 'basket') return (Math.floor(warpIdx / over) + Math.floor(weftIdx / under)) % 2 === 0;
-    if (pattern === 'satin') return ((warpIdx + 5 * weftIdx) % (over + under)) < over;
+    if (pattern === 'twill') {
+      // diagonal twill: shift step is `over`, repeat period is over+under,
+      // and the minimum repeat is 3 so the diagonal is visible at o=u=1.
+      const period = Math.max(3, over + under);
+      return ((warpIdx + weftIdx) % period) < Math.max(1, over);
+    }
+    if (pattern === 'basket') {
+      // 2x2-grouped over/under at default o=u=1; multiplies up with knobs.
+      const gw = Math.max(2, over * 2);
+      const gh = Math.max(2, under * 2);
+      return (Math.floor(warpIdx / gw) + Math.floor(weftIdx / gh)) % 2 === 0;
+    }
+    if (pattern === 'satin') {
+      // 5-harness satin by default: warp floats over `over` per `over+under`
+      // repeat, with 2-step weft offset to stagger floats.
+      const period = Math.max(5, over + under);
+      return ((warpIdx + 2 * weftIdx) % period) < Math.max(1, over);
+    }
     return (warpIdx + weftIdx) % 2 === 0;
   };
   const _weaveFill = (poly, density, weavePattern, weaveStrandWidth, weaveGap, weaveAngle, weaveOver, weaveUnder) => {
