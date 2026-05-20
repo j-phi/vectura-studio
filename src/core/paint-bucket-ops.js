@@ -507,6 +507,8 @@
     spiralTurns: fillParams.fillSpiralTurns ?? 8,
     spiralTightness: fillParams.fillSpiralTightness ?? 0.5,
     spiralDirection: fillParams.fillSpiralDirection ?? 'cw',
+    radialSpokes: fillParams.fillRadialSpokes ?? 36,
+    radialSkip: fillParams.fillRadialSkip ?? 0,
     centralDensity: fillParams.fillRadialCentralDensity ?? 1.0,
     outerDiameter: fillParams.fillRadialOuterDiameter ?? 1.0,
     sensitivity: fillParams.fillSensitivity ?? 5,

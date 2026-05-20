@@ -56,6 +56,8 @@
     fillSpiralTurns: 8,
     fillSpiralTightness: 0.5,
     fillSpiralDirection: 'cw',
+    fillRadialSpokes: 36,
+    fillRadialSkip: 0,
     fillSensitivity: 5,
     penId: null,
   };
@@ -124,6 +126,8 @@
     { id: 'fillSpiralTurns',             label: 'Spiral Turns',      type: 'range',  min: 1,    max: 40,  step: 1,    capKey: 'spiralTurns' },
     { id: 'fillSpiralTightness',         label: 'Spiral Tightness',  type: 'range',  min: 0,    max: 1,   step: 0.01, capKey: 'spiralTightness' },
     { id: 'fillSpiralDirection',         label: 'Spiral Direction',  type: 'select', options: [{ value: 'cw', label: 'Clockwise' }, { value: 'ccw', label: 'Counterclockwise' }], capKey: 'spiralDirection' },
+    { id: 'fillRadialSpokes',            label: 'Radial Spokes',     type: 'range',  min: 4,    max: 360, step: 1,    capKey: 'radialSpokes' },
+    { id: 'fillRadialSkip',              label: 'Radial Skip',       type: 'range',  min: 0,    max: 5,   step: 1,    capKey: 'radialSkip' },
   ];
 
   function paintVariantButtons(state, controlsEl, hintEl) {
@@ -519,6 +523,8 @@
       fillSpiralTurns: rec.spiralTurns,
       fillSpiralTightness: rec.spiralTightness,
       fillSpiralDirection: rec.spiralDirection,
+      fillRadialSpokes: rec.radialSpokes,
+      fillRadialSkip: rec.radialSkip,
       fillRadialCentralDensity: rec.centralDensity,
       fillRadialOuterDiameter: rec.outerDiameter,
       fillSensitivity: rec.sensitivity,

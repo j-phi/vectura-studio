@@ -1275,17 +1275,21 @@
     return clipPolylineToComposite(spiralPts, regions);
   };
 
-  const radialFillComposite = (regions, density, angleDeg = 0, shiftX = 0, shiftY = 0, centralDensity = 1.0, outerDiameter = 1.0) => {
+  const radialFillComposite = (regions, density, angleDeg = 0, shiftX = 0, shiftY = 0, centralDensity = 1.0, outerDiameter = 1.0, radialSpokes = 0, radialSkip = 0) => {
     const bounds = compositeBounds(regions);
     const cx = (bounds.minX + bounds.maxX) / 2 + shiftX;
     const cy = (bounds.minY + bounds.maxY) / 2 + shiftY;
     const maxR = (0.5 * Math.sqrt(
       (bounds.maxX - bounds.minX) ** 2 + (bounds.maxY - bounds.minY) ** 2
     ) + density) * Math.max(0, outerDiameter);
-    const spokeCount = Math.max(8, Math.round(2 * Math.PI * (maxR / 2) / density * centralDensity));
+    const spokeCount = radialSpokes > 0
+      ? Math.max(4, Math.min(360, Math.round(radialSpokes)))
+      : Math.max(8, Math.round(2 * Math.PI * (maxR / 2) / density * centralDensity));
+    const skip = Math.max(0, Math.min(5, Math.round(radialSkip)));
     const angleOffset = angleDeg * Math.PI / 180;
     const result = [];
     for (let i = 0; i < spokeCount; i++) {
+      if (skip > 0 && ((i + 1) % (skip + 1)) === 0) continue;
       const angle = (i / spokeCount) * 2 * Math.PI + angleOffset;
       const cosA = Math.cos(angle), sinA = Math.sin(angle);
       const p0 = { x: cx, y: cy };
@@ -2185,17 +2189,23 @@
     return clipPolylineToPoly(spiralPts, region);
   };
 
-  const radialFill = (region, density, angleDeg = 0, shiftX = 0, shiftY = 0, centralDensity = 1.0, outerDiameter = 1.0) => {
+  const radialFill = (region, density, angleDeg = 0, shiftX = 0, shiftY = 0, centralDensity = 1.0, outerDiameter = 1.0, radialSpokes = 0, radialSkip = 0) => {
     const bounds = loopBounds(region);
     const cx = (bounds.minX + bounds.maxX) / 2 + shiftX;
     const cy = (bounds.minY + bounds.maxY) / 2 + shiftY;
     const maxR = (0.5 * Math.sqrt(
       (bounds.maxX - bounds.minX) ** 2 + (bounds.maxY - bounds.minY) ** 2
     ) + density) * Math.max(0, outerDiameter);
-    const spokeCount = Math.max(8, Math.round(2 * Math.PI * (maxR / 2) / density * centralDensity));
+    // C6: if radialSpokes is explicitly set (>0), use it directly; otherwise
+    // fall back to the legacy auto-derived spoke count from density+centralDensity.
+    const spokeCount = radialSpokes > 0
+      ? Math.max(4, Math.min(360, Math.round(radialSpokes)))
+      : Math.max(8, Math.round(2 * Math.PI * (maxR / 2) / density * centralDensity));
+    const skip = Math.max(0, Math.min(5, Math.round(radialSkip)));
     const angleOffset = angleDeg * Math.PI / 180;
     const result = [];
     for (let i = 0; i < spokeCount; i++) {
+      if (skip > 0 && ((i + 1) % (skip + 1)) === 0) continue;
       const angle = (i / spokeCount) * 2 * Math.PI + angleOffset;
       const cosA = Math.cos(angle), sinA = Math.sin(angle);
       const p0 = { x: cx, y: cy };
@@ -2770,6 +2780,7 @@
       lineCount = 1,
       polyPadding = 0, polyRotation = 0, polyRotationStep = 0, polyScaleStep = 0,
       spiralTurns = 0, spiralTightness = 0, spiralDirection = 'cw',
+      radialSpokes = 0, radialSkip = 0,
     } = fill;
     // C3: hatch unified — compute the per-layer angle offsets up-front.
     // 1 layer = [0], 2 layers (crosshatch) = [0, 90], 3 layers (triaxial) = [0, 60, 120].
@@ -2805,7 +2816,7 @@
         case 'stipple':     return expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation);
         case 'contour':     return contourLines(region, density);
         case 'spiral':      return spiralFill(region, density, angle, shiftX, shiftY, spiralTurns, spiralTightness, spiralDirection);
-        case 'radial':      return radialFill(region, density, angle, shiftX, shiftY, centralDensity, outerDiameter);
+        case 'radial':      return radialFill(region, density, angle, shiftX, shiftY, centralDensity, outerDiameter, radialSpokes, radialSkip);
         case 'grid':        return expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, 'grid', 'tick', dotJitter), dotLength, penWidth, dotRotation);
         case 'meander':     return meanderLines(region, density, angle, shiftX, shiftY);
         case 'polygonal':   return polygonalLines(region, density, angle, shiftX, shiftY, axes, polyTile, polyPadding, polyRotation, polyRotationStep, polyScaleStep);
@@ -2832,7 +2843,7 @@
       case 'stipple':     return expandDotsToSpirals(dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation);
       case 'contour':     return contourLinesComposite(effectiveRegions, density);
       case 'spiral':      return spiralFillComposite(effectiveRegions, density, angle, shiftX, shiftY, spiralTurns, spiralTightness, spiralDirection);
-      case 'radial':      return radialFillComposite(effectiveRegions, density, angle, shiftX, shiftY, centralDensity, outerDiameter);
+      case 'radial':      return radialFillComposite(effectiveRegions, density, angle, shiftX, shiftY, centralDensity, outerDiameter, radialSpokes, radialSkip);
       case 'grid':        return expandDotsToSpirals(dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, 'grid', 'tick', dotJitter), dotLength, penWidth, dotRotation);
       case 'meander':     return meanderLinesComposite(effectiveRegions, density, angle, shiftX, shiftY);
       case 'polygonal':   return polygonalLinesComposite(effectiveRegions, density, angle, shiftX, shiftY, axes, polyTile, polyPadding, polyRotation, polyRotationStep, polyScaleStep);
