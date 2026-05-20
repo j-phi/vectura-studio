@@ -2886,7 +2886,11 @@
     if (bw <= 0 || bh <= 0) return [];
     const cx = (bounds.minX + bounds.maxX) / 2;
     const cy = (bounds.minY + bounds.maxY) / 2;
-    const sep = Math.max(0.5, flowSeparation);
+    // Floor separation so candidate lattice never exceeds ~5000 cells on
+    // adversarially large regions.
+    const targetCandidates = 5000;
+    const minSepForCap = Math.sqrt((bw * bh) / targetCandidates);
+    const sep = Math.max(0.5, flowSeparation, minSepForCap);
     const step = Math.max(0.5, sep * 0.5);
     const maxSteps = Math.max(5, Math.min(200, Math.round(flowTraceLen)));
     // candidate seed lattice on rotated-bbox grid at ~sep spacing
@@ -3013,10 +3017,16 @@
     const seeds = _voronoiSeeds(poly, voronoiSeeds || 60, voronoiSeedMode || 'random', voronoiJitter ?? 0.5, 1);
     if (seeds.length === 0) return [];
     const bounds = loopBounds(poly);
-    // brute-force boundary extraction at 1mm grid resolution
-    const step = Math.max(0.6, Math.min(2.0, density * 0.5));
-    const cols = Math.max(2, Math.ceil((bounds.maxX - bounds.minX) / step));
-    const rows = Math.max(2, Math.ceil((bounds.maxY - bounds.minY) / step));
+    // brute-force boundary extraction at ~density-sized grid; floor step so
+    // cells × seeds stays bounded on large adversarial regions.
+    const rawStep = Math.max(0.6, Math.min(2.0, density * 0.5));
+    const bw = bounds.maxX - bounds.minX, bh = bounds.maxY - bounds.minY;
+    const targetCells = 40000;
+    const minStepForCap = Math.sqrt((bw * bh) / targetCells);
+    const step = Math.max(rawStep, minStepForCap);
+    const cols = Math.max(2, Math.ceil(bw / step));
+    const rows = Math.max(2, Math.ceil(bh / step));
+    if (cols * rows > targetCells * 2) return [];
     const owner = new Int32Array(cols * rows);
     for (let r = 0; r < rows; r++) {
       const py = bounds.minY + (r + 0.5) * step;
@@ -3152,7 +3162,11 @@
 
   const _truchetFill = (poly, density, truchetTileSet, truchetTileSize, truchetSeed, truchetRotations) => {
     const bounds = loopBounds(poly);
-    const size = Math.max(1, truchetTileSize || 6);
+    const bw = bounds.maxX - bounds.minX, bh = bounds.maxY - bounds.minY;
+    // Floor tile size to keep tile count bounded on large adversarial regions.
+    const targetTiles = 5000;
+    const minSizeForCap = Math.sqrt((bw * bh) / targetTiles);
+    const size = Math.max(1, truchetTileSize || 6, minSizeForCap);
     const rng = _mulberry32((truchetSeed | 0) + 31);
     const rotsAllowed = Math.max(1, Math.min(4, Math.round(truchetRotations || 4)));
     const tileLocal = _truchetTilePolys(truchetTileSet || 'quarter-arcs', size);
@@ -3455,7 +3469,12 @@
       if (invert) t = 1 - t;
       return Math.max(0, Math.min(1, t));
     };
-    const step = Math.max(0.5, density);
+    // Cap cell count to keep perf bounded on large regions × tiny density.
+    const rawStep = Math.max(0.5, density);
+    const bw = bounds.maxX - bounds.minX, bh = bounds.maxY - bounds.minY;
+    const targetCells = 40000;
+    const minStepForCap = Math.sqrt((bw * bh) / targetCells);
+    const step = Math.max(rawStep, minStepForCap);
     const result = [];
     for (let y = bounds.minY; y < bounds.maxY; y += step) {
       for (let x = bounds.minX; x < bounds.maxX; x += step) {
@@ -3546,7 +3565,8 @@
     if (halfSize <= 0) return [];
     // Lissajous (def=0): x = sin(A*t+phase), y = sin(B*t)
     // Hypotrochoid (def=1): x = (A-B)cos(t) + B*cos(((A-B)/B)*t + phase)
-    const sampleCount = turns * 200;
+    // Cap samples to keep perf bounded at high turn counts (max 200 turns → 40k samples uncapped).
+    const sampleCount = Math.min(8000, turns * 200);
     const pts = [];
     const tMax = turns * Math.PI * 2;
     let maxLissAmp = 1; // sin in [-1, 1]
