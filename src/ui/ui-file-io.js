@@ -659,7 +659,10 @@
       const a = document.createElement('a');
       a.href = url;
       a.download = 'vectura.svg';
+      document.body.appendChild(a);
       a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
       toast('SVG exported', 'success');
       } finally {
         progress.done();

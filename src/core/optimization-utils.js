@@ -112,8 +112,16 @@
     };
     const dot = (a, b) => a.x * b.x + a.y * b.y;
 
+    // Adversarial inputs (long chains of pairwise-mergeable paths in pathological
+    // ordering) can degrade quadratically. Cap iterations defensively. Bugs-11.
+    const maxIter = source.length * 4;
+    let iter = 0;
     let changed = true;
     while (changed) {
+      if (++iter > maxIter) {
+        console.warn(`[Optimization] joinNearbyPaths iteration cap hit (paths=${source.length}, iter=${iter}); aborting further merges`);
+        break;
+      }
       changed = false;
       outer: for (let i = 0; i < source.length; i += 1) {
         const a = source[i];

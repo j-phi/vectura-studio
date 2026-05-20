@@ -98,7 +98,7 @@
     try {
       window.localStorage?.setItem(STORAGE_KEY, JSON.stringify(localCustomPatterns));
     } catch (err) {
-      // Local persistence is best-effort only.
+      console.warn('[PatternRegistry] localStorage write failed:', err);
     }
   };
 
@@ -167,6 +167,7 @@
         .map((pattern) => normalizePattern(pattern, { scope: 'local' }))
         .filter(Boolean);
     } catch (err) {
+      console.warn('[PatternRegistry] hydrate failed; resetting local patterns:', err);
       localCustomPatterns = [];
     }
   };

@@ -683,7 +683,7 @@
           skinManager.activate(themeName);
         } catch (err) {
           // Don't let an unknown skin id throw out of applyTheme — log and continue.
-          if (typeof console !== 'undefined') console.warn('[applyTheme] SkinManager.activate failed:', err);
+          if (typeof console !== 'undefined') console.warn('[App] SkinManager.activate failed:', err);
         }
       }
 
