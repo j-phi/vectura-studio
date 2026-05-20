@@ -1,25 +1,10 @@
 /**
- * Vectura UI orchestrator + bootstrap (Meridian Unit 1.10 — consolidated).
+ * Vectura UI orchestrator + bootstrap.
  *
- * After Unit 1.10 (2026-05-20) this file owns BOTH the historical
- * `_ui-legacy.js` IIFE — the helper-locals, the `class UI` stub, every
- * satellite `bind()` + `installOn(UI.prototype)` call, and the
- * legacy-mixin `Object.assign` chain — AND the orchestrator init body
- * formerly hosted in the lightweight `src/ui/ui.js` shim.
- *
- * Migration history
- * -----------------
- *   - Phase 2/3 (Meridian merge): the original 7847-line `_ui-legacy.js`
- *     was the central knot of the post-merge cleanup. Methods were drained
- *     into per-satellite installers (Units 1.1-1.9) until only the IIFE
- *     bootstrap + a constructor-stub class remained (~1735 lines).
- *   - Unit 1.9c (2026-05-20): the constructor body migrated into
- *     `src/ui/ui.js#init` (installed as `_init` on UI.prototype via the
- *     Orchestrator.installOn pattern).
- *   - Unit 1.10 (2026-05-20, this commit): merged both files into the
- *     single `src/ui/ui.js` you're reading. `_ui-legacy.js` deleted; the
- *     orchestrator init folded back into the same IIFE so closure semantics
- *     and load-order guarantees collapse to one cohesive entry point.
+ * This file owns the entire UI entry point: the IIFE helper-locals, the
+ * `class UI` definition, every satellite `bind()` + `installOn(UI.prototype)`
+ * call, the legacy-mixin `Object.assign` chain, and the orchestrator init
+ * body that mounts modals and runs the global-sweep on construction.
  *
  * Load order
  * ----------
@@ -652,12 +637,12 @@
     },
   ];
 
-  // Meridian Unit 1.5 (2026-05-19): wave/noise option tables, algorithm
-  // NOISE_DEFS, and the Petalis registry data tables/factories moved to
-  // src/ui/panels/control-defs-data.js (loaded ahead of this file via
-  // index.html). The legacy identifiers are re-bound here as IIFE-locals so
-  // the remaining _ui-legacy.js code paths + the AlgoConfigPanel.bind() DI
-  // bag at the bottom of this file continue to work unchanged.
+  // Wave/noise option tables, algorithm NOISE_DEFS, and the Petalis registry
+  // data tables/factories live in src/ui/panels/control-defs-data.js (loaded
+  // ahead of this file via index.html). The identifiers are re-bound here as
+  // IIFE-locals so the in-IIFE code paths and the AlgoConfigPanel.bind() DI
+  // bag at the bottom of this file can consume the single source of truth
+  // without re-declaring them.
   const _ControlDefsData = (window.Vectura && window.Vectura.UI && window.Vectura.UI.ControlDefsData) || {};
   const {
     WAVE_NOISE_OPTIONS,
@@ -1361,10 +1346,6 @@
   //   - splitShapeLayer    → `src/ui/panels/algorithm-panel.js`.
   //   - startLightSourcePlacement → `src/ui/shell/toolbar.js`.
   //   - _showWelcomePanel  → `src/ui/shell/pane-left.js`.
-  //
-  // Unit 1.10 (this file): folded `src/ui/_ui-legacy.js` AND the former
-  // `src/ui/ui.js` orchestrator-entry shim together, eliminating the
-  // load-order trip-wire that the two-file split required.
   class UI {
     constructor(app) {
       this._init(app);

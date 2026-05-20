@@ -72,11 +72,9 @@
   }
 
   /**
-   * Meridian Unit 1.9b (2026-05-20): grouped installer for the
-   * `#theme-toggle` button click handler. Previously inlined in
-   * `_ui-legacy.js`'s `bindGlobal()`. Also calls `refreshThemeUi` once on
-   * mount so the toggle reflects the persisted skin id at startup, matching
-   * legacy ordering.
+   * Grouped installer for the `#theme-toggle` button click handler. Calls
+   * `refreshThemeUi` once on mount so the toggle reflects the persisted
+   * skin id at startup.
    */
   function bindThemeToggle() {
     const { getEl } = requireDeps();

@@ -655,15 +655,11 @@
     },
   };
 
-  // ── Meridian Unit 1.9b (2026-05-20) ──────────────────────────────────────
-  // Promote ui-file-io.js to the canonical bind/installOn pattern used by
-  // sibling satellites. The grouped installer below wires the file-I/O
-  // buttons (`btn-save-vectura`, `btn-open-vectura`/`file-open-vectura`,
-  // `btn-import-svg`/`file-import-svg`) onto the UI instance — previously
-  // inlined in `_ui-legacy.js`'s `bindGlobal()`. `this` is the legacy UI
-  // instance and the handlers delegate to mixin methods (`saveVecturaFile`,
-  // `openVecturaFile`, `importSvgFile`) installed by the existing
-  // `_UIFileIOMixin` assignment.
+  // Grouped installer for the file-I/O buttons (`btn-save-vectura`,
+  // `btn-open-vectura`/`file-open-vectura`, `btn-import-svg`/`file-import-svg`).
+  // `this` is the UI instance and the handlers delegate to mixin methods
+  // (`saveVecturaFile`, `openVecturaFile`, `importSvgFile`) installed by the
+  // existing `_UIFileIOMixin` assignment.
   let DEPS = null;
 
   const requireDeps = (name) => {

@@ -135,13 +135,12 @@
   }
 
   /**
-   * Meridian Unit 1.9b (2026-05-20): grouped installer for the top-menubar
-   * header chrome buttons (`btn-help`, `btn-tour`, `btn-tour-welcome`,
-   * `btn-reset-view`). Previously these listeners lived inlined in
-   * `_ui-legacy.js`'s `bindGlobal()`. `this` is the legacy UI instance —
-   * handlers reach for `this.openHelp`, `this.setTopMenuOpen`, `this.app`,
-   * `this.openModal`, `this.closeModal`, `this.modal`, `this.renderLayers`,
-   * `this.buildControls`, `this.expandPanes` via the prototype.
+   * Grouped installer for the top-menubar header chrome buttons
+   * (`btn-help`, `btn-tour`, `btn-tour-welcome`, `btn-reset-view`). `this`
+   * is the UI instance — handlers reach for `this.openHelp`,
+   * `this.setTopMenuOpen`, `this.app`, `this.openModal`, `this.closeModal`,
+   * `this.modal`, `this.renderLayers`, `this.buildControls`,
+   * `this.expandPanes` via the prototype.
    */
   function bindHeaderChromeListeners() {
     const { getEl, SETTINGS } = requireDeps('bindHeaderChromeListeners');

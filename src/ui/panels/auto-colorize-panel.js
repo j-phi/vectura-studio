@@ -136,9 +136,9 @@
     params: [...(mode.params || []), ...AUTO_COLOR_COMMON_PARAMS],
   }));
 
-  // --- Method implementations (formerly ui-auto-colorize.js mixin body). ---
-  // Each is called with `this` bound to a UI instance via the prototype
-  // delegators registered in _ui-legacy.js bind block.
+  // --- Method implementations. ---
+  // Each is called with `this` bound to a UI instance via the
+  // `installOn(UI.prototype)` pattern.
 
   function getAutoColorizationConfig() {
     const { SETTINGS } = requireDeps('getAutoColorizationConfig');

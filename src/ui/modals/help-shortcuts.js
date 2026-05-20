@@ -5,20 +5,15 @@
  * modal triggered by the View > Help button, the F1 shortcut, and the `?`
  * shortcut.
  *
- * Methods lifted verbatim from class UI in _ui-legacy.js (lines 6051-6385):
- *   - buildHelpContent      (was UI.prototype.buildHelpContent)
- *   - _applyHelpPlatform    (was UI.prototype._applyHelpPlatform)
- *   - openHelp              (was UI.prototype.openHelp)
- *
- * The legacy UI prototype delegates to this module via 1-line pass-throughs.
+ * Methods installed onto UI.prototype:
+ *   - buildHelpContent
+ *   - _applyHelpPlatform
+ *   - openHelp
  *
  * DI bag: {} (no IIFE-local dependencies — body is fully static markup).
  *
- * The modal still composes the legacy `this.openModal` / `this.closeModal`
- * primitive (which lives in `_ui-legacy.js`). Future Phase 3 work that
- * promotes the modal-overlay primitive at `src/ui/overlays/modal.js` will
- * route those calls there — until then, this lift preserves byte-identical
- * behavior.
+ * The modal composes the `this.openModal` / `this.closeModal` primitives
+ * provided by `src/ui/overlays/modal.js`.
  *
  * Compile gate at tests/unit/modals/help-shortcuts-compile.test.js.
  */

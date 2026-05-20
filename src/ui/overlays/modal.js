@@ -20,11 +20,10 @@
  *
  *     Returns: { el, body, isOpen, open, close, update, destroy }
  *
- * (2) Meridian Unit 1.7 promotion — the legacy mount wrappers that compose
- *     `this.modal` (the `#modal-overlay` overlay-card the rest of the UI uses
- *     via `this.openModal(...)` / `this.closeModal()`). Installed onto
- *     UI.prototype via `Modal.installOn(UI.prototype)`. These methods came
- *     from `src/ui/_ui-legacy.js`:
+ * (2) Mount wrappers that compose `this.modal` (the `#modal-overlay`
+ *     overlay-card the rest of the UI uses via `this.openModal(...)` /
+ *     `this.closeModal()`). Installed onto UI.prototype via
+ *     `Modal.installOn(UI.prototype)`:
  *       - createModal()                — creates the #modal-overlay scaffold
  *       - openModal({ title, body, cardClass, onClose })
  *       - closeModal()
@@ -169,7 +168,7 @@
   UI.overlays.Modal = create;
 
   // ---------------------------------------------------------------------------
-  // (2) Meridian Unit 1.7: legacy mount wrappers extracted from _ui-legacy.js.
+  // (2) Mount wrappers — installed onto UI.prototype via Modal.installOn.
   // ---------------------------------------------------------------------------
 
   let DEPS = null;

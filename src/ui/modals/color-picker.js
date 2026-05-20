@@ -2,9 +2,9 @@
  * Vectura color-picker modal (Phase 3 step 4 — first modal).
  *
  * Exposes window.Vectura.UI.Modals.ColorPicker — the touch-friendly HSV
- * color picker that powers every "Color" button in Vectura. The legacy
- * IIFE-local `openColorPickerAnchoredTo` (still in `_ui-legacy.js`) routes to
- * this module when the device is touch-primary, or when called directly via
+ * color picker that powers every "Color" button in Vectura. The IIFE-local
+ * `openColorPickerAnchoredTo` (in `src/ui/ui.js`) routes to this module when
+ * the device is touch-primary, or when called directly via
  * `this.openColorModal({ title, value, onApply })` (used by Layer Settings,
  * Layer Bar, the Auto-Colorize palette, and several pattern editors).
  *
@@ -17,11 +17,11 @@
  *       canvas updates HSV; typing 6 hex chars updates HSV. Apply invokes
  *       `onApply(hex)` and closes; Cancel closes without invoking onApply.
  *
- * The legacy UI prototype delegates `openColorModal` to this module via a
- * 1-line pass-through. Anchored color pickers (`openColorPickerAnchoredTo`)
- * stay in `_ui-legacy.js` for now — they are an IIFE-local helper, not a
- * UI.prototype method, and the touch-primary path already routes through
- * `uiInstance.openColorModal(...)` which now lands here.
+ * UI.prototype delegates `openColorModal` to this module via
+ * `installOn(UI.prototype)`. Anchored color pickers
+ * (`openColorPickerAnchoredTo`) remain as an IIFE-local helper in
+ * `src/ui/ui.js` — not a UI.prototype method — and the touch-primary path
+ * routes through `uiInstance.openColorModal(...)` which lands here.
  *
  * DI bag: {} (none — module is self-contained, depends only on
  *   `this.openModal`, `this.closeModal`, and `this.modal.bodyEl`).

@@ -1,16 +1,13 @@
 /**
  * Canonical filtered views of window.Vectura.PRESETS for UI consumers.
  *
- * Replaces the three previously-duplicated IIFE-local copies of
- * PETALIS_PRESET_LIBRARY, TERRAIN_PRESET_LIBRARY, RINGS_PRESET_LIBRARY,
- * PETALIS_LAYER_TYPES, and isPetalisLayerType in:
- *   - src/ui/_ui-legacy.js
- *   - src/ui/controls-registry.js
- *   - src/ui/ui-petal-designer.js
+ * Provides the single source of truth for PETALIS_PRESET_LIBRARY,
+ * TERRAIN_PRESET_LIBRARY, RINGS_PRESET_LIBRARY, PETALIS_LAYER_TYPES, and
+ * isPetalisLayerType, consumed by src/ui/ui.js, src/ui/controls-registry.js,
+ * src/ui/ui-petal-designer.js, and src/ui/panels/algo-config-panel.js.
  *
  * Must load AFTER src/config/presets.js and BEFORE any UI script that
- * consumes the libraries (controls-registry.js, ui-petal-designer.js,
- * _ui-legacy.js, algo-config-panel.js).
+ * consumes the libraries.
  */
 (function() {
   'use strict';

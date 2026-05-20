@@ -176,9 +176,8 @@
     }
   }
 
-  // ── Meridian Unit 1.9c (2026-05-20) ─────────────────────────────────
-  // `_showWelcomePanel` migrated out of `class UI` in `_ui-legacy.js`.
-  // No DEPS needed — pure DOM toggle on the legacy welcome panel.
+  // `_showWelcomePanel` — pure DOM toggle on the left welcome panel.
+  // No DEPS needed.
   function _showWelcomePanel(show) {
     const welcome = document.getElementById('left-welcome');
     const sections = document.querySelector('.left-panel-sections');
