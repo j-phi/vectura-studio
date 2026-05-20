@@ -63,15 +63,18 @@ describe('Keyboard a11y audit', () => {
   });
 
   test('skin CSS does not nuke focus-visible rings on focusable controls', () => {
-    // The skin CSS uses `outline: none` on a few controls, but the legacy
-    // styles.css `:focus-visible` rules paint a ring via outline + accent.
-    // Confirm styles.css still ships at least one such rule sourced from --color-accent.
-    const styles = read('styles.css');
+    // The skin CSS uses `outline: none` on a few controls, but the migrated
+    // components.css `:focus-visible` rules paint a ring via outline + accent.
+    // The :focus-visible rules originally lived in styles.css; they migrated to
+    // components.css during Meridian Step 2 when styles.css was drained.
+    // Confirm components.css still ships at least one such rule sourced from --color-accent.
+    const components = read('src', 'ui', 'skin', 'components.css');
     // At least 5 :focus-visible rules per the manual audit.
-    const matches = styles.match(/:focus-visible/g) || [];
+    const matches = components.match(/:focus-visible/g) || [];
     expect(matches.length).toBeGreaterThanOrEqual(5);
     // At least one outline rule references the accent token.
-    expect(styles).toMatch(/outline:\s*2px\s+solid\s+var\(--color-accent\)/);
+    // Note: Step 3 will rewrite `--color-accent` → `--ui-accent`; update this assertion accordingly.
+    expect(components).toMatch(/outline:\s*2px\s+solid\s+var\(--color-accent\)/);
   });
 
   test('a11y audit doc exists and lists every audited surface', () => {

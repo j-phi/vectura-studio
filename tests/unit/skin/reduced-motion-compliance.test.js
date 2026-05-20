@@ -12,8 +12,10 @@ const path = require('path');
  *   2. Locate the `@media (prefers-reduced-motion: reduce)` block.
  *   3. Confirm the reduced-motion block targets every keyframe consumer
  *      (either by selector that uses the animation, or by the keyframe name).
- *   4. Sanity-check `styles.css` has the global universal-selector reduced-motion
- *      guard (the catch-all that flattens animations + transitions).
+ *   4. Sanity-check `motion.css` carries the global universal-selector reduced-motion
+ *      guard (the catch-all that flattens animations + transitions). Originally
+ *      shipped in `styles.css`; migrated into `motion.css` during Meridian Step 2
+ *      Unit 2.6 when `styles.css` was drained.
  *
  * If a future skin author adds a new @keyframes block to motion.css without
  * also adding a reduced-motion fallback, this test fails.
@@ -21,7 +23,6 @@ const path = require('path');
 describe('Reduced-motion compliance', () => {
   const repoRoot = path.resolve(__dirname, '..', '..', '..');
   const motionCss = fs.readFileSync(path.join(repoRoot, 'src', 'ui', 'skin', 'motion.css'), 'utf8');
-  const stylesCss = fs.readFileSync(path.join(repoRoot, 'styles.css'), 'utf8');
 
   // Map keyframe name -> the selectors that consume it (animation:/animation-name:).
   // Per the project conventions every keyframe in motion.css must be referenced
@@ -82,11 +83,15 @@ describe('Reduced-motion compliance', () => {
     }
   });
 
-  test('styles.css ships the global *, *::before, *::after reduced-motion guard', () => {
-    expect(stylesCss).toMatch(/@media\s*\(\s*prefers-reduced-motion:\s*reduce\s*\)/);
-    // The block immediately following the @media should target the universal selector.
-    const idx = stylesCss.search(/@media\s*\(\s*prefers-reduced-motion:\s*reduce\s*\)/);
-    const after = stylesCss.slice(idx, idx + 600);
+  test('motion.css ships the global *, *::before, *::after reduced-motion guard', () => {
+    // Originally shipped in styles.css; migrated into motion.css when styles.css
+    // was drained (Meridian Step 2 Unit 2.6, 2026-05-20).
+    // Match the LAST @media (prefers-reduced-motion: reduce) block — the universal-
+    // selector guard sits at the bottom of motion.css, after the @keyframes-specific
+    // fallback block.
+    const universalIdx = motionCss.lastIndexOf('@media (prefers-reduced-motion: reduce)');
+    expect(universalIdx).toBeGreaterThan(-1);
+    const after = motionCss.slice(universalIdx, universalIdx + 600);
     expect(after).toMatch(/\*\s*,\s*\*::before\s*,\s*\*::after/);
     // Should collapse animation duration aggressively.
     expect(after).toMatch(/animation-duration:\s*0\.01ms/);
