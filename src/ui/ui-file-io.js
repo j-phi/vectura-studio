@@ -662,7 +662,7 @@
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      if (typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(url);
       toast('SVG exported', 'success');
       } finally {
         progress.done();
