@@ -6696,13 +6696,6 @@
   }
 
   window.Vectura = window.Vectura || {};
-  window.Vectura.ShapeUtils = {
-    buildRectangleVertices,
-    buildPolygonVertices,
-    getShapeVertices,
-    getCornerDescriptors,
-    buildShapeAnchors,
-  };
   window.Vectura.Renderer = Renderer;
   // Test-only surface: lets unit tests poke the token cache without standing
   // up a full Renderer instance. Production code should keep calling the
@@ -6710,5 +6703,18 @@
   Renderer.__tokenCache = {
     get: getThemeToken,
     invalidate: invalidateThemeTokenCache,
+  };
+  // Test-only surface (Arch-6, audit-2026-05-20): the legacy
+  // `window.Vectura.ShapeUtils` namespace looked like a public API but had
+  // no production consumers — only unit tests reach in for white-box
+  // geometry checks. Re-expose those helpers under a clearly-marked
+  // test-only handle so the dead public-API surface stops being
+  // advertised.
+  Renderer.__shapeUtils = {
+    buildRectangleVertices,
+    buildPolygonVertices,
+    getShapeVertices,
+    getCornerDescriptors,
+    buildShapeAnchors,
   };
 })();

@@ -96,10 +96,10 @@ describe('Shape tool geometry', () => {
   });
 
   test('corner descriptors clamp oversized radii and preserve per-corner rounding', () => {
-    const { ShapeUtils } = runtime.window.Vectura;
+    const { Renderer } = runtime.window.Vectura;
     const renderer = createRenderer();
     const baseRect = { type: 'rect', x1: 20, y1: 20, x2: 120, y2: 80, cornerRadii: [999, 0, 12, 0] };
-    const descriptors = ShapeUtils.getCornerDescriptors(baseRect);
+    const descriptors = Renderer.__shapeUtils.getCornerDescriptors(baseRect);
 
     expect(descriptors).toHaveLength(4);
     expect(descriptors[0].radius).toBeLessThanOrEqual(descriptors[0].maxRadius + 1e-6);
@@ -118,7 +118,7 @@ describe('Shape tool geometry', () => {
   });
 
   test('rotated primitive-shape handles stay attached to transformed vertices', () => {
-    const { Layer, ShapeUtils } = runtime.window.Vectura;
+    const { Layer, Renderer } = runtime.window.Vectura;
     const renderer = createRenderer();
     const shape = {
       type: 'polygon',
@@ -140,7 +140,7 @@ describe('Shape tool geometry', () => {
     renderer.engine.layers = [layer];
 
     const handles = renderer.getShapeCornerHandles(layer);
-    const expectedVertices = ShapeUtils.getShapeVertices(shape).map((vertex) => renderer.transformShapeSourcePoint(vertex, layer));
+    const expectedVertices = Renderer.__shapeUtils.getShapeVertices(shape).map((vertex) => renderer.transformShapeSourcePoint(vertex, layer));
     const bounds = renderer.getLayerBounds(layer);
 
     expect(handles).toHaveLength(expectedVertices.length);
