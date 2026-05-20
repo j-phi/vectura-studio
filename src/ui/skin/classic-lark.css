@@ -3,26 +3,28 @@
  *
  * Legacy "Lark" palette (formerly id "lark"). Now demoted to id "classic-lark"
  * because the primary "lark" slot is taken by the meridian-styled lark variant
- * (./meridian-lark.css). See classic-dark.css for the alias rationale.
+ * (./meridian-lark.css). Inlines its canonical `--ui-*` token values directly —
+ * no longer aliases via the legacy `--color-*` indirection (stripped in
+ * Meridian Step 3.3, 2026-05-20).
  */
 
 [data-ui-skin="classic-lark"] {
-  --ui-bg: var(--color-bg);
-  --ui-panel: var(--color-panel);
-  --ui-panel-alt: var(--color-surface);
-  --ui-border: var(--color-border);
-  --ui-border-hi: var(--color-border-strong);
-  --ui-text: var(--color-text);
-  --ui-text-2: var(--color-text-soft);
-  --ui-muted: var(--color-muted);
-  --ui-accent: var(--color-accent);
+  --ui-bg: #09090b;
+  --ui-panel: #18181b;
+  --ui-panel-alt: #0f0f12;
+  --ui-border: #27272a;
+  --ui-border-hi: #3f3f46;
+  --ui-text: #e4e4e7;
+  --ui-text-2: #a1a1aa;
+  --ui-muted: #71717a;
+  --ui-accent: #fafafa;
   --ui-accent-2: rgba(var(--vectura-accent-rgb), 0.12);
   --ui-danger: rgb(var(--vectura-danger-rgb));
-  --ui-ctrl: var(--color-control);
-  --ui-ctrl-hov: var(--color-control-hover);
-  --ui-workspace: var(--color-workspace);
-  --ui-formula: var(--color-formula-text);
-  --slider-start: var(--color-text-soft);
+  --ui-ctrl: #141417;
+  --ui-ctrl-hov: #1f1f23;
+  --ui-workspace: #121214;
+  --ui-formula: #d4d4d8;
+  --slider-start: #a1a1aa;
 
   --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.4);
   --shadow-md: var(--shadow-panel);
