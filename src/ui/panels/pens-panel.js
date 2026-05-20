@@ -282,8 +282,17 @@
       }
 
       if (colorInput) {
-        colorInput.oninput = (e) => {
-          pen.color = e.target.value;
+        // Drag-commit pattern (Bug-3 fix, v1.1.10 audit):
+        //   - `input` fires continuously during the drag → live update only,
+        //     no history mutation (would flood history with intermediate values).
+        //   - On commit, push ONE history entry. We accomplish this by
+        //     stashing the pre-drag value on pointerdown/focus and committing
+        //     a snapshot on `change` (drag release / picker close), so the
+        //     captured snapshot reflects the *pre-drag* state (matching the
+        //     "push-before-change" convention used elsewhere in the app).
+        // Mirrors the transform-commit pattern at app.js:111.
+        const applyColor = (value) => {
+          pen.color = value;
           applyIcon();
           this.app.engine.layers.forEach((layer) => {
             if (layer.penId === pen.id) {
@@ -296,11 +305,31 @@
           this.renderLayers();
           this.app.render();
         };
+        let preDragColor = null;
+        const beginColorEdit = () => {
+          if (preDragColor === null) preDragColor = pen.color;
+        };
+        colorInput.addEventListener('pointerdown', beginColorEdit);
+        colorInput.addEventListener('focus', beginColorEdit);
+        colorInput.oninput = (e) => applyColor(e.target.value);
+        colorInput.onchange = (e) => {
+          const committed = e.target.value;
+          if (preDragColor !== null && preDragColor !== committed) {
+            // Restore the pre-drag value, snapshot it as the history entry,
+            // then re-apply the committed value. This preserves the
+            // "push-before-change" invariant captureState() relies on.
+            pen.color = preDragColor;
+            if (this.app.pushHistory) this.app.pushHistory();
+          }
+          preDragColor = null;
+          applyColor(committed);
+        };
       }
 
       if (widthInput && widthValue) {
-        widthInput.oninput = (e) => {
-          pen.width = parseFloat(e.target.value);
+        // Drag-commit pattern for the width range slider — see Bug-3 fix above.
+        const applyWidth = (value) => {
+          pen.width = parseFloat(value);
           widthValue.textContent = pen.width.toFixed(2);
           applyIcon();
           this.app.engine.layers.forEach((layer) => {
@@ -312,6 +341,22 @@
             this.applyAutoColorization({ commit: false, skipLayerRender: true, source: 'continuous' });
           }
           this.app.render();
+        };
+        let preDragWidth = null;
+        const beginWidthEdit = () => {
+          if (preDragWidth === null) preDragWidth = pen.width;
+        };
+        widthInput.addEventListener('pointerdown', beginWidthEdit);
+        widthInput.addEventListener('focus', beginWidthEdit);
+        widthInput.oninput = (e) => applyWidth(e.target.value);
+        widthInput.onchange = (e) => {
+          const committed = parseFloat(e.target.value);
+          if (preDragWidth !== null && preDragWidth !== committed) {
+            pen.width = preDragWidth;
+            if (this.app.pushHistory) this.app.pushHistory();
+          }
+          preDragWidth = null;
+          applyWidth(e.target.value);
         };
       }
 

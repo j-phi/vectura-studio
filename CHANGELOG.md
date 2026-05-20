@@ -6,6 +6,10 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed
+- **Pen color and width drags push exactly one undo step on commit (Bugs-3, v1.1.10 audit).** The Pens panel previously bound only `oninput` on the color picker and width slider, so each release left no undo point — drag the slider, let go, and there was nothing to revert. Both inputs now stash their pre-drag value on `pointerdown`/`focus`, update live during the drag (no history mutation), and on `change` (drag release / picker close) push a single history entry that snapshots the pre-drag state — matching the "push-before-change" convention used by the rest of the app and mirroring the transform-commit pattern at `app.js:111`.
+- **`App.regen()` accepts an explicit `pushHistory` flag (Bugs-12, v1.1.10 audit).** The previous signature was a bare `regen()` that never touched history. Existing callers (~114 sites in panels/modals) follow the convention of calling `pushHistory()` *before* the param edit that triggers regen, so the default stays `{ pushHistory: false }` and no callers needed to change. User-initiated re-roll flows that *don't* edit params first can now opt in with `app.regen({ pushHistory: true })` to record an undo point for the generation change itself.
+
 ## 1.1.0 - 2026-05-19
 
 ### Added
