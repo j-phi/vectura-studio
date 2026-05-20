@@ -85,7 +85,7 @@ describe('theme-switcher compile gate', () => {
     expect(() => ThemeSwitcher.refreshThemeUi.call({})).not.toThrow();
   });
 
-  it('after bind(deps), refreshThemeUi writes aria-pressed/aria-label/title/dataset.theme onto the toggle element', () => {
+  it('after bind(deps), refreshThemeUi writes aria-pressed/aria-label/title/dataset.activeIcon onto the toggle element', () => {
     // Provide the elements the body looks for, then assert it mutates them
     // exactly as the legacy body did. This is the smoke test that proves the
     // verbatim extraction preserves observable behavior.

@@ -650,7 +650,6 @@
 
       const root = document.documentElement;
       if (root) {
-        root.dataset.theme = themeName;
         root.dataset.uiSkin = themeName;
         root.style.colorScheme = theme.colorScheme || themeName;
         // Clear inline cssVars left by any previously-active theme before applying

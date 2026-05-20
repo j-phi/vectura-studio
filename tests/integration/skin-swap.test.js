@@ -34,11 +34,10 @@ describe('Skin swap integration (registry + applyTheme)', () => {
     });
   });
 
-  test('applyTheme sets data-ui-skin and data-theme to the same id', () => {
+  test('applyTheme sets data-ui-skin to the active id', () => {
     app.applyTheme('classic-dark', { persist: false, render: false });
     const ds = runtime.document.documentElement.dataset;
     expect(ds.uiSkin).toBe('classic-dark');
-    expect(ds.theme).toBe('classic-dark');
   });
 
   test('applyTheme cycles every registered skin without throwing', () => {

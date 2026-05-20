@@ -85,7 +85,7 @@
     if (typeof document === 'undefined' || !document.documentElement) return fallback;
     // Synchronously invalidate when skin id changes. applyTheme sets data-ui-skin
     // before calling render(), so this always reflects the incoming theme.
-    const themeKey = document.documentElement.dataset.uiSkin || document.documentElement.dataset.theme || '';
+    const themeKey = document.documentElement.dataset.uiSkin || '';
     if (themeKey !== _themeTokenCacheKey) {
       _themeTokenCache.clear();
       _themeTokenCacheKey = themeKey;

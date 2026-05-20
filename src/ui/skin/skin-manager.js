@@ -113,7 +113,7 @@
 
   /**
    * Apply the side-effects that App.applyTheme delegates to us. App.applyTheme has
-   * already pushed theme.cssVars to `:root` and set data-theme — we only handle the
+   * already pushed theme.cssVars to `:root` and set data-ui-skin — we only handle the
    * skin-specific extras (stylesheet swap, motion/structural vars, swap-suppression
    * window, dispatch). Returns the manifest for chaining.
    */
@@ -127,8 +127,6 @@
     const isNoop = previous === id && !options.force;
 
     root.dataset.uiSkin = id;
-    // Mirror data-theme during the deprecation window so existing CSS selectors keep matching.
-    root.dataset.theme = id;
 
     const manifest = skinManifest(theme);
     const structuralChanged = writeStructuralVars(root, manifest);
