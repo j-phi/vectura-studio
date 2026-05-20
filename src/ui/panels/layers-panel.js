@@ -1675,7 +1675,7 @@
         .map((l) => allLayers.indexOf(l)));
       const gid = 'g' + Date.now();
       allLayers.splice(minIdx, 0, {
-        id: gid, name: this.getUniqueLayerName('Group', gid), isGroup: true, groupType: null,
+        id: gid, name: this.getUniqueLayerName('Group', gid), isGroup: true, groupType: 'group',
         visible: true, groupCollapsed: false, parentId: parentId ?? null,
       });
       ids.forEach((id) => {
