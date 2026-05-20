@@ -191,6 +191,32 @@ describe('UI namespace surface area (replaces *-compile.test.js cluster)', () =>
     });
   });
 
+  // FillPanel is a top-level Vectura namespace (not under Vectura.UI), but it
+  // follows the same satellite contract — assert its surface in the same boot.
+  it('publishes window.Vectura.FillPanel with constants + installOn for pattern-fill methods', () => {
+    const FillPanel = window.Vectura.FillPanel;
+    expect(FillPanel).toBeTruthy();
+    expect(Array.isArray(FillPanel.FILL_TYPE_OPTIONS)).toBe(true);
+    expect(typeof FillPanel.buildFillControlDefs).toBe('function');
+    expect(typeof FillPanel.bind).toBe('function');
+    expect(typeof FillPanel.installOn).toBe('function');
+    expect(typeof FillPanel._buildPatternFillPanel).toBe('function');
+    expect(typeof FillPanel._applyPatternFillFromCanvas).toBe('function');
+    const proto = {};
+    FillPanel.installOn(proto);
+    expect(typeof proto._buildPatternFillPanel).toBe('function');
+    expect(typeof proto._applyPatternFillFromCanvas).toBe('function');
+  });
+
+  // Modal overlay namespace is published under Vectura.UI.overlays.Modal.
+  it('publishes window.Vectura.UI.overlays.Modal with the bind/installOn satellite contract', () => {
+    const Modal = window.Vectura.UI.overlays?.Modal;
+    expect(Modal).toBeTruthy();
+    expect(typeof Modal).toBe('function');
+    expect(typeof Modal.bind).toBe('function');
+    expect(typeof Modal.installOn).toBe('function');
+  });
+
   it('reaches every panel namespace from the live app.ui instance prototype chain', () => {
     // Sanity check: a few load-bearing methods that installOn() wires onto
     // UI.prototype should be callable from app.ui. If installOn never ran
