@@ -7957,53 +7957,14 @@ body:not(.mobile-layout) .mobile-pane-backdrop {
 /* === Migrated from styles.css (Unit 2.6: base/root + theme-toggle + chevron + tour + tutorials + help guide modal, 2026-05-20) === */
 /* Note: 3 .theme-toggle[data-theme='X'] selectors rewritten to [data-active-icon='X'] (paired with src/ui/shell/theme-switcher.js dataset write rename). */
 
-:root {
-  color-scheme: dark;
-  --vectura-bg-rgb: 9 9 11;
-  --vectura-panel-rgb: 24 24 27;
-  --vectura-border-rgb: 39 39 42;
-  --vectura-text-rgb: 228 228 231;
-  --vectura-muted-rgb: 113 113 122;
-  --vectura-accent-rgb: 250 250 250;
-  --vectura-danger-rgb: 239 68 68;
-  --shadow-panel: 0 12px 30px rgba(0, 0, 0, 0.4);
-  --shadow-float: 0 10px 30px rgba(0, 0, 0, 0.35);
-  --render-canvas: #121214;
-  --render-shadow: rgba(0, 0, 0, 0.5);
-  --render-paper-outline: #333333;
-  --render-frame-stroke: rgba(255, 255, 255, 0.08);
-  --render-guide-faint: rgba(248, 250, 252, 0.75);
-  --render-selection-handle-fill: #111827;
-  --render-selection-handle-stroke: #f8fafc;
-  --render-marquee-stroke: rgba(148, 163, 184, 0.7);
-  --render-marquee-fill: rgba(148, 163, 184, 0.12);
-  --render-direct-stroke: #22d3ee;
-  --render-direct-handle-line: rgba(34, 211, 238, 0.65);
-  --render-direct-handle-fill: var(--ui-panel-alt);
-  --render-underlay-fill: rgb(var(--vectura-panel-rgb) / 0.92);
-  --render-underlay-stroke: rgba(15, 23, 42, 1);
-  --designer-grid-bg: #0f1116;
-  --designer-grid-line: rgba(148, 163, 184, 0.14);
-  --designer-fill-active: rgba(56, 189, 248, 0.1);
-  --designer-fill-inactive: rgba(34, 211, 238, 0.05);
-  --designer-stroke-active: #67e8f9;
-  --designer-stroke-inactive: rgba(103, 232, 249, 0.55);
-  --designer-shading-stroke: rgba(125, 211, 252, 0.6);
-  --designer-control-line: rgba(34, 211, 238, 0.55);
-  --designer-control-fill: var(--ui-panel-alt);
-  --designer-control-anchor: #22d3ee;
-  --designer-control-handle: #67e8f9;
-  --plotter-bg: #101115;
-  --plotter-path-base: rgba(113, 113, 122, 0.35);
-  --plotter-head: #fafafa;
-  --pane-left-width: 290px;
-  --pane-right-width: 258px;
-  --pane-collapsed-width: 56px;
-  --bottom-pane-height: 180px;
-  --lvl-cyan: #67e8f9;
-  --lvl-cyan45: rgba(103, 232, 249, 0.45);
-  --lvl-b2: #2d2d30;
-}
+/* CSS-3 closure (2026-05-20): the legacy `:root { … }` skin-fallback block
+ * that lived here was deleted. Its skin-palette tokens (--render-*,
+ * --designer-*, --plotter-*, --vectura-*-rgb, --shadow-panel, --shadow-float)
+ * now live inside each per-skin file (classic-{dark,light,lark}.css and
+ * meridian-{dark,light,lark}.css). Structural tokens it also carried
+ * (--pane-*, --bottom-pane-height, --lvl-*, color-scheme default) moved to
+ * `tokens.css`, which is the canonical home for skin-agnostic CSS variables.
+ */
 
 body {
   background-color: var(--ui-bg);

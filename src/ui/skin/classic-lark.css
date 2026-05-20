@@ -1,11 +1,20 @@
 /*
  * Vectura Studio — skin/classic-lark.css
  *
- * Legacy "Lark" palette (formerly id "lark"). Now demoted to id "classic-lark"
- * because the primary "lark" slot is taken by the meridian-styled lark variant
- * (./meridian-lark.css). Inlines its canonical `--ui-*` token values directly —
- * no longer aliases via the legacy `--color-*` indirection (stripped in
- * Meridian Step 3.3, 2026-05-20).
+ * Classic family · Lark variant. Mirrors the lark contract: dark UI chrome
+ * paired with a light workspace / canvas / designer / plotter — the
+ * classic-zinc cousin of meridian-lark.
+ *
+ * Inlines its canonical `--ui-*` token values directly (no longer aliases via
+ * the legacy `--color-*` indirection, stripped in Meridian Step 3.3,
+ * 2026-05-20).
+ *
+ * Full skin-token parity with meridian-*.css established 2026-05-20 (CSS-1 +
+ * CSS-3 closure): every --render-*, --designer-*, --plotter-* and
+ * --vectura-*-rgb token is declared here so the runtime never depends on a
+ * fallback :root block in components.css. These values match the manifest
+ * `cssVars` push in `src/config/defaults.js` for `classic-lark` (which the
+ * SkinManager pushes inline as a flash-of-unstyled-content guard).
  */
 
 [data-ui-skin="classic-lark"] {
@@ -22,12 +31,59 @@
   --ui-danger: rgb(var(--vectura-danger-rgb));
   --ui-ctrl: #141417;
   --ui-ctrl-hov: #1f1f23;
-  --ui-workspace: #121214;
+  /* Light workspace — the "lark" tell, paired with the dark chrome above. */
+  --ui-workspace: #dadde3;
   --ui-formula: #d4d4d8;
   --slider-start: #a1a1aa;
 
   --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.4);
-  --shadow-md: var(--shadow-panel);
-  --shadow-lg: var(--shadow-float);
-  --shadow-pane: var(--shadow-panel);
+  --shadow-md: 0 12px 30px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.35);
+  --shadow-pane: 4px 0 24px rgba(0, 0, 0, 0.35);
+  --shadow-panel: var(--shadow-md);
+  --shadow-float: var(--shadow-md);
+
+  /* Tailwind --vectura-*-rgb decomposition — classic zinc palette. */
+  --vectura-bg-rgb: 9 9 11;
+  --vectura-panel-rgb: 24 24 27;
+  --vectura-border-rgb: 39 39 42;
+  --vectura-text-rgb: 228 228 231;
+  --vectura-muted-rgb: 113 113 122;
+  --vectura-accent-rgb: 250 250 250;
+  --vectura-danger-rgb: 239 68 68;
+
+  /* Renderer canvas tokens — light canvas, dark paths read clearly. */
+  --render-canvas: #dadde3;
+  --render-shadow: rgba(15, 23, 42, 0.18);
+  --render-paper-outline: #a1a1aa;
+  --render-frame-stroke: rgba(24, 24, 27, 0.12);
+  --render-guide-faint: rgba(24, 24, 27, 0.45);
+  --render-selection-handle-fill: #ffffff;
+  --render-selection-handle-stroke: #18181b;
+  --render-cursor-stroke: #18181b;
+  --render-marquee-stroke: rgba(71, 85, 105, 0.55);
+  --render-marquee-fill: rgba(71, 85, 105, 0.10);
+  --render-direct-stroke: #0284c7;
+  --render-direct-handle-line: rgba(2, 132, 199, 0.55);
+  --render-direct-handle-fill: #ffffff;
+  --render-underlay-fill: rgba(255, 255, 255, 0.95);
+  --render-underlay-stroke: rgba(255, 255, 255, 1);
+
+  /* Petal / Pattern designer — overlays the dark chrome, not the light canvas. */
+  --designer-grid-bg: #0f0f12;
+  --designer-grid-line: rgba(161, 161, 170, 0.14);
+  --designer-fill-active: rgba(212, 212, 216, 0.10);
+  --designer-fill-inactive: rgba(212, 212, 216, 0.05);
+  --designer-stroke-active: #e4e4e7;
+  --designer-stroke-inactive: rgba(228, 228, 231, 0.55);
+  --designer-shading-stroke: rgba(212, 212, 216, 0.6);
+  --designer-control-line: rgba(228, 228, 231, 0.55);
+  --designer-control-fill: #0f0f12;
+  --designer-control-anchor: #fafafa;
+  --designer-control-handle: #e4e4e7;
+
+  /* Plotter visualizer — light to match the light canvas. */
+  --plotter-bg: #f4f5f8;
+  --plotter-path-base: rgba(82, 82, 91, 0.35);
+  --plotter-head: #18181b;
 }
