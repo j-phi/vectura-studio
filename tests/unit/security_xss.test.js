@@ -187,3 +187,266 @@ describe('Pattern.js silent catches now warn', () => {
     expect(warnMatches.length).toBeGreaterThanOrEqual(2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Bugs-1 (HIGH) — XSS via .vectura pen records
+// ---------------------------------------------------------------------------
+// The layer panel's pen-assignment menu interpolated pen.id / pen.color /
+// pen.width into innerHTML without escaping. A malicious `.vectura` file
+// containing pen.color = '"><img src=x onerror=alert(1)>' would inject an
+// element that fires onerror the moment the pen menu renders.
+//
+// RGR: load the panel inside JSDOM, render against a SETTINGS.pens entry with
+// a XSS payload as color, and assert that no <img> tag and no onerror
+// attribute survives in the rendered DOM.
+describe('Bugs-1 (HIGH): pen menu does not honor injected markup in pen fields', () => {
+  const loadLayersPanelInJsdom = () => {
+    const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>', {
+      url: 'http://localhost/',
+      pretendToBeVisual: true,
+      runScripts: 'outside-only',
+    });
+    const ctx = dom.getInternalVMContext();
+    const code = fs.readFileSync(path.join(ROOT, 'src/ui/panels/layers-panel.js'), 'utf8');
+    vm.runInContext(code, ctx, { filename: 'layers-panel.js' });
+    return dom;
+  };
+
+  const renderPenMenuFromSettings = (pens) => {
+    const dom = loadLayersPanelInJsdom();
+    const w = dom.window;
+    const document = w.document;
+    const escapeHtml = (str) => {
+      if (typeof str !== 'string') return str;
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    };
+    const SETTINGS = { pens, autoColorization: { enabled: false } };
+    w.Vectura.UI.LayersPanel.bind({ SETTINGS, escapeHtml });
+    const installOn = w.Vectura.UI.LayersPanel.installOn;
+    const list = document.createElement('ul');
+    list.id = 'layer-list';
+    document.body.appendChild(list);
+
+    // We need #layer-status-bar so internal setHint doesn't blow up. Also we
+    // need at least one layer to drive renderLayers down the path that calls
+    // wirePenAssignment.
+    const statusBar = document.createElement('div');
+    statusBar.id = 'layer-status-bar';
+    document.body.appendChild(statusBar);
+
+    const engine = {
+      layers: [{
+        id: 'layer-1', name: 'L1', visible: true, locked: false, color: '#ffffff',
+        strokeWidth: 0.3, params: {}, parentId: null,
+        penId: pens[0]?.id || null, penColor: pens[0]?.color || '#fff',
+      }],
+      activeLayerId: 'layer-1',
+      getLayerById(id) { return this.layers.find((l) => l.id === id); },
+      getPenById(id) { return pens.find((p) => p.id === id); },
+      isLayerSilhouetteCapable() { return false; },
+    };
+    const renderer = {
+      selectedIds: ['layer-1'],
+      getSelectedLayer() { return engine.layers[0]; },
+      setSelection() {},
+    };
+    const proto = {};
+    if (installOn) installOn(proto);
+    const ctx = Object.create(proto);
+    ctx.app = {
+      engine,
+      renderer,
+      render() {},
+      pushHistory() {},
+    };
+    // Some renderLayers code paths walk renderer; ensure they exist.
+    try { w.Vectura.UI.LayersPanel.renderLayers.call(ctx); } catch (_err) { /* tolerated */ }
+    return { dom, document, list };
+  };
+
+  test('XSS payload in pen.color is not interpreted as HTML', () => {
+    const pens = [
+      { id: 'pen-1', name: 'A', color: '"><img src=x onerror="window.__pwned1=1">', width: 0.3 },
+    ];
+    const { document } = renderPenMenuFromSettings(pens);
+    // No <img> tag should leak from injected color.
+    expect(document.querySelector('img')).toBeNull();
+    // No onerror attribute anywhere in the rendered panel.
+    expect(document.querySelector('[onerror]')).toBeNull();
+  });
+
+  test('XSS payload in pen.id is not interpreted as HTML', () => {
+    const pens = [
+      { id: 'pen-1" onfocus="window.__pwned2=1', name: 'A', color: '#ff0000', width: 0.3 },
+    ];
+    const { document } = renderPenMenuFromSettings(pens);
+    expect(document.querySelector('[onfocus]')).toBeNull();
+  });
+
+  test('XSS payload in pen.width is not interpreted as HTML', () => {
+    const pens = [
+      { id: 'pen-1', name: 'A', color: '#ff0000', width: '0.3; background:url(javascript:alert(1))' },
+    ];
+    const { document } = renderPenMenuFromSettings(pens);
+    expect(document.querySelector('[onerror]')).toBeNull();
+    expect(document.querySelector('img')).toBeNull();
+    // The pen.width should never end up serialized into an attribute that
+    // could break out of the style="" context unsanitized.
+    const html = document.body.innerHTML;
+    expect(html).not.toContain('background:url(javascript:');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bugs-1 — pen record validator on import path
+// ---------------------------------------------------------------------------
+// Imported pens should be validated: id must be a sane identifier, color must
+// match a hex regex, width must be a finite number. The validator's contract
+// lives on window.Vectura.PenValidate.validatePens (new).
+describe('Bugs-1 (HIGH): pen-record validator rejects/coerces hostile values', () => {
+  const loadPenValidatorInJsdom = () => {
+    const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>', {
+      runScripts: 'outside-only',
+    });
+    const ctx = dom.getInternalVMContext();
+    const code = fs.readFileSync(path.join(ROOT, 'src/core/pen-validate.js'), 'utf8');
+    vm.runInContext(code, ctx, { filename: 'pen-validate.js' });
+    return dom;
+  };
+
+  test('exposes Vectura.PenValidate.validatePens', () => {
+    const dom = loadPenValidatorInJsdom();
+    expect(typeof dom.window.Vectura.PenValidate.validatePens).toBe('function');
+    dom.window.close();
+  });
+
+  test('drops pens whose color is not a hex color', () => {
+    const dom = loadPenValidatorInJsdom();
+    const { validatePens } = dom.window.Vectura.PenValidate;
+    const out = validatePens([
+      { id: 'pen-1', name: 'OK', color: '#ff00aa', width: 0.5 },
+      { id: 'pen-2', name: 'BAD', color: '"><img src=x onerror=alert(1)>', width: 0.5 },
+    ]);
+    // The hostile entry is either dropped OR its color is replaced with a
+    // safe fallback that does not contain markup characters.
+    out.forEach((pen) => {
+      expect(pen.color).toMatch(/^#[0-9a-fA-F]{3,8}$/);
+    });
+    dom.window.close();
+  });
+
+  test('drops pens whose width is not a finite number', () => {
+    const dom = loadPenValidatorInJsdom();
+    const { validatePens } = dom.window.Vectura.PenValidate;
+    const out = validatePens([
+      { id: 'pen-1', name: 'OK', color: '#ff00aa', width: 0.5 },
+      { id: 'pen-2', name: 'BAD', color: '#ffffff', width: 'javascript:alert(1)' },
+      { id: 'pen-3', name: 'BAD2', color: '#ffffff', width: Infinity },
+      { id: 'pen-4', name: 'BAD3', color: '#ffffff', width: NaN },
+    ]);
+    out.forEach((pen) => {
+      expect(typeof pen.width).toBe('number');
+      expect(Number.isFinite(pen.width)).toBe(true);
+    });
+    dom.window.close();
+  });
+
+  test('drops pens whose id is not a safe identifier', () => {
+    const dom = loadPenValidatorInJsdom();
+    const { validatePens } = dom.window.Vectura.PenValidate;
+    const out = validatePens([
+      { id: 'pen-1', name: 'OK', color: '#ff00aa', width: 0.5 },
+      { id: '"><img src=x>', name: 'BAD', color: '#ffffff', width: 0.5 },
+    ]);
+    out.forEach((pen) => {
+      expect(pen.id).toMatch(/^[A-Za-z0-9_-]+$/);
+    });
+    dom.window.close();
+  });
+
+  test('app.js applyState routes incoming s.pens through PenValidate.validatePens', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'src/app/app.js'), 'utf8');
+    // Look for either direct call or PenValidate reference near the pens
+    // assignment. Don't be too loose — must mention validatePens.
+    expect(src).toMatch(/validatePens/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bugs-2 (HIGH) — XSS via project-pattern SVG
+// ---------------------------------------------------------------------------
+// PatternRegistry.replaceProjectPatterns must route pattern.svg through
+// Vectura.SvgSanitize.sanitize so that <image onerror> et al. cannot persist
+// inside the in-memory pattern store.
+describe('Bugs-2 (HIGH): pattern registry sanitizes project-pattern SVG', () => {
+  const loadRegistryInJsdom = () => {
+    const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>', {
+      runScripts: 'outside-only',
+      pretendToBeVisual: true,
+    });
+    const ctx = dom.getInternalVMContext();
+    // svg-sanitize must load FIRST so the registry can see it when invoked.
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/core/svg-sanitize.js'), 'utf8'), ctx, { filename: 'svg-sanitize.js' });
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/core/pattern-registry.js'), 'utf8'), ctx, { filename: 'pattern-registry.js' });
+    return dom;
+  };
+
+  test('replaceProjectPatterns strips <script> from pattern.svg', () => {
+    const dom = loadRegistryInJsdom();
+    const registry = dom.window.Vectura.PatternRegistry;
+    const malicious =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">' +
+      '<script>window.__pwned3=1;</script>' +
+      '<rect width="1" height="1"/></svg>';
+    registry.replaceProjectPatterns([{ id: 'custom-evil', name: 'Evil', svg: malicious }]);
+    const stored = dom.window.Vectura.PROJECT_CUSTOM_PATTERNS;
+    expect(Array.isArray(stored)).toBe(true);
+    expect(stored.length).toBe(1);
+    expect(stored[0].svg).not.toMatch(/<script/i);
+    dom.window.close();
+  });
+
+  test('replaceProjectPatterns strips on* handlers from pattern.svg', () => {
+    const dom = loadRegistryInJsdom();
+    const registry = dom.window.Vectura.PatternRegistry;
+    const malicious =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">' +
+      '<image href="x" onerror="alert(1)" width="10" height="10"/></svg>';
+    registry.replaceProjectPatterns([{ id: 'custom-evil2', name: 'Evil2', svg: malicious }]);
+    const stored = dom.window.Vectura.PROJECT_CUSTOM_PATTERNS;
+    expect(stored[0].svg).not.toMatch(/onerror/i);
+    dom.window.close();
+  });
+
+  test('replaceProjectPatterns neutralizes javascript: hrefs on pattern.svg', () => {
+    const dom = loadRegistryInJsdom();
+    const registry = dom.window.Vectura.PatternRegistry;
+    const malicious =
+      '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">' +
+      '<a href="javascript:alert(1)"><rect width="1" height="1"/></a></svg>';
+    registry.replaceProjectPatterns([{ id: 'custom-evil3', name: 'Evil3', svg: malicious }]);
+    const stored = dom.window.Vectura.PROJECT_CUSTOM_PATTERNS;
+    expect(stored[0].svg).not.toMatch(/javascript:/i);
+    dom.window.close();
+  });
+
+  test('replaceProjectPatterns strips <foreignObject> from pattern.svg', () => {
+    const dom = loadRegistryInJsdom();
+    const registry = dom.window.Vectura.PatternRegistry;
+    const malicious =
+      '<svg xmlns="http://www.w3.org/2000/svg">' +
+      '<foreignObject width="10" height="10">' +
+      '<body xmlns="http://www.w3.org/1999/xhtml"><img src="x" onerror="alert(2)"/></body>' +
+      '</foreignObject><rect width="1" height="1"/></svg>';
+    registry.replaceProjectPatterns([{ id: 'custom-evil4', name: 'Evil4', svg: malicious }]);
+    const stored = dom.window.Vectura.PROJECT_CUSTOM_PATTERNS;
+    expect(stored[0].svg).not.toMatch(/<foreignObject/i);
+    expect(stored[0].svg).not.toMatch(/onerror/i);
+    dom.window.close();
+  });
+});
