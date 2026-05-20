@@ -5,6 +5,12 @@
  * Inlines its canonical `--ui-*` token values directly — no longer aliases
  * via the legacy `--color-*` indirection (stripped in Meridian Step 3.3,
  * 2026-05-20).
+ *
+ * Full skin-token parity with meridian-*.css established 2026-05-20 (CSS-1 +
+ * CSS-3 closure): every --render-*, --designer-*, --plotter-* and
+ * --vectura-*-rgb token is declared here in a light-workspace palette so
+ * canvas paths, designer chrome and plotter previews stay legible — instead
+ * of falling through to dark-mode meridian-dark defaults.
  */
 
 [data-ui-skin="classic-light"] {
@@ -26,7 +32,53 @@
   --slider-start: #3f3f46;
 
   --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.08);
-  --shadow-md: var(--shadow-panel);
-  --shadow-lg: var(--shadow-float);
-  --shadow-pane: var(--shadow-panel);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.10);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --shadow-pane: 4px 0 20px rgba(0, 0, 0, 0.07);
+  --shadow-panel: var(--shadow-md);
+  --shadow-float: var(--shadow-md);
+
+  /* Tailwind --vectura-*-rgb decomposition — light zinc palette. */
+  --vectura-bg-rgb: 243 244 246;
+  --vectura-panel-rgb: 229 231 235;
+  --vectura-border-rgb: 212 212 216;
+  --vectura-text-rgb: 24 24 27;
+  --vectura-muted-rgb: 82 82 91;
+  --vectura-accent-rgb: 9 9 11;
+  --vectura-danger-rgb: 220 38 38;
+
+  /* Renderer canvas tokens — light workspace, dark paths read clearly. */
+  --render-canvas: #dadde3;
+  --render-shadow: rgba(15, 23, 42, 0.18);
+  --render-paper-outline: #a1a1aa;
+  --render-frame-stroke: rgba(24, 24, 27, 0.12);
+  --render-guide-faint: rgba(24, 24, 27, 0.45);
+  --render-selection-handle-fill: #ffffff;
+  --render-selection-handle-stroke: #09090b;
+  --render-cursor-stroke: #09090b;
+  --render-marquee-stroke: rgba(63, 63, 70, 0.55);
+  --render-marquee-fill: rgba(63, 63, 70, 0.10);
+  --render-direct-stroke: #0284c7;
+  --render-direct-handle-line: rgba(2, 132, 199, 0.55);
+  --render-direct-handle-fill: #ffffff;
+  --render-underlay-fill: rgba(255, 255, 255, 0.95);
+  --render-underlay-stroke: rgba(255, 255, 255, 1);
+
+  /* Petal / Pattern designer — light grid + cyan accent for affordances. */
+  --designer-grid-bg: #f4f5f8;
+  --designer-grid-line: rgba(63, 63, 70, 0.14);
+  --designer-fill-active: rgba(2, 132, 199, 0.12);
+  --designer-fill-inactive: rgba(2, 132, 199, 0.05);
+  --designer-stroke-active: #0284c7;
+  --designer-stroke-inactive: rgba(2, 132, 199, 0.50);
+  --designer-shading-stroke: rgba(14, 165, 233, 0.55);
+  --designer-control-line: rgba(2, 132, 199, 0.45);
+  --designer-control-fill: #ffffff;
+  --designer-control-anchor: #0284c7;
+  --designer-control-handle: #38bdf8;
+
+  /* Plotter visualizer (Pens panel preview). */
+  --plotter-bg: #f4f5f8;
+  --plotter-path-base: rgba(82, 82, 91, 0.35);
+  --plotter-head: var(--ui-accent);
 }

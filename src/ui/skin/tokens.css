@@ -14,10 +14,24 @@
  */
 
 :root {
+  /* Default color-scheme — overwritten by App.applyTheme via the active skin's
+   * manifest.colorScheme. The default lets pre-JS form-control rendering use a
+   * dark UA appearance (matches the meridian-dark default skin). */
+  color-scheme: dark;
+
+  /* Layout / pane widths. */
   --pane-left-width: 290px;
   --pane-right-width: 258px;
-  --bottom-pane-height: 148px;
+  --pane-collapsed-width: 56px;
+  --bottom-pane-height: 180px;
   --row-height: 30px;
+
+  /* Layers-panel accent (skin-agnostic affordance color — drag-drop hints,
+   * source-mask outlines, active filter buttons). Used only by `.lvl-*`
+   * selectors in components.css; not part of the per-skin --ui-* palette. */
+  --lvl-cyan: #67e8f9;
+  --lvl-cyan45: rgba(103, 232, 249, 0.45);
+  --lvl-b2: #2d2d30;
 
   --font-ui: 'Space Grotesk', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
