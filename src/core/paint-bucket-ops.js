@@ -449,6 +449,18 @@
       if (params.fillWaveSmoothing == null) params.fillWaveSmoothing = 0.0;
       return 'wave';
     }
+    // C2 migration:
+    //   - 'stipple' → 'dots' with shape=circle (preserve dotPattern)
+    //   - 'grid'    → 'dots' with pattern=grid, shape=tick
+    if (mode === 'stipple') {
+      if (params.fillDotShape == null) params.fillDotShape = 'circle';
+      return 'dots';
+    }
+    if (mode === 'grid') {
+      if (params.fillDotShape == null) params.fillDotShape = 'tick';
+      params.fillDotPattern = 'grid';
+      return 'dots';
+    }
     return mode;
   };
 
@@ -472,6 +484,8 @@
     shiftX: fillParams.fillShiftX ?? 0,
     shiftY: fillParams.fillShiftY ?? 0,
     dotPattern: fillParams.fillDotPattern ?? 'brick',
+    dotShape: fillParams.fillDotShape ?? 'circle',
+    dotJitter: fillParams.fillDotJitter ?? 0,
     axes: fillParams.fillAxes ?? 3,
     polyTile: fillParams.fillPolyTile ?? 'grid',
     centralDensity: fillParams.fillRadialCentralDensity ?? 1.0,

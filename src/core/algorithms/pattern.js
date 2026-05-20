@@ -2206,6 +2206,108 @@
     return result;
   };
 
+  // ── C2: Unified dots renderer ─────────────────────────────────────────────
+  // Combines stipple + grid into a single fill type with:
+  //   - pattern: grid | brick | hex | jitter (lattice arrangement)
+  //   - shape:   circle | square | cross | tick (per-stamp glyph)
+  //   - jitter:  0..1 fraction of cell spacing (applies to all patterns)
+  // Returns plain polyline segments; circle stamps are emitted as short
+  // horizontal ticks here and (when dotLength > 0) expanded into spirals by
+  // expandDotsToSpirals downstream — same contract as stippleDots/gridDots.
+  const _mulberry32 = (seed) => {
+    let s = (seed >>> 0) || 1;
+    return () => {
+      s |= 0; s = (s + 0x6D2B79F5) | 0;
+      let t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  };
+
+  const _emitDotStamp = (wp, dotR, shape, ca, sa, out) => {
+    // All stamps use the rotated local frame's basis vectors (ca, sa) — so the
+    // glyph orientation follows the fill angle. wp is already in world coords.
+    const ex = { x: ca * dotR, y: sa * dotR };       // local +x
+    const ey = { x: -sa * dotR, y: ca * dotR };      // local +y
+    if (shape === 'tick' || shape === 'circle') {
+      out.push([{ x: wp.x - ex.x, y: wp.y - ex.y }, { x: wp.x + ex.x, y: wp.y + ex.y }]);
+    } else if (shape === 'cross') {
+      out.push([{ x: wp.x - ex.x, y: wp.y - ex.y }, { x: wp.x + ex.x, y: wp.y + ex.y }]);
+      out.push([{ x: wp.x - ey.x, y: wp.y - ey.y }, { x: wp.x + ey.x, y: wp.y + ey.y }]);
+    } else if (shape === 'square') {
+      const c00 = { x: wp.x - ex.x - ey.x, y: wp.y - ex.y - ey.y };
+      const c10 = { x: wp.x + ex.x - ey.x, y: wp.y + ex.y - ey.y };
+      const c11 = { x: wp.x + ex.x + ey.x, y: wp.y + ex.y + ey.y };
+      const c01 = { x: wp.x - ex.x + ey.x, y: wp.y - ex.y + ey.y };
+      out.push([c00, c10]);
+      out.push([c10, c11]);
+      out.push([c11, c01]);
+      out.push([c01, c00]);
+    }
+  };
+
+  const dotsFill = (poly, density, dotSizeRatio = 1.0, angleDeg = 0, shiftX = 0, shiftY = 0, pattern = 'brick', shape = 'circle', jitter = 0) => {
+    const ar = angleDeg * Math.PI / 180;
+    const ca = Math.cos(ar), sa = Math.sin(ar);
+    const rotatePt   = ar !== 0 ? (p) => ({ x: p.x * ca + p.y * sa, y: -p.x * sa + p.y * ca }) : (p) => p;
+    const unrotatePt = ar !== 0 ? (p) => ({ x: p.x * ca - p.y * sa, y:  p.x * sa + p.y * ca }) : (p) => p;
+    const rotPoly = ar !== 0 ? poly.map(rotatePt) : poly;
+    const ys = rotPoly.map(p => p.y), xs = rotPoly.map(p => p.x);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const dotR = Math.max(density * 0.005, density * 0.12 * dotSizeRatio);
+    const rotShiftX = shiftX * ca + shiftY * sa;
+    const rotShiftY = -shiftX * sa + shiftY * ca;
+    const xPhase = ((rotShiftX % density) + density) % density;
+    const yPhase = ((rotShiftY % density) + density) % density;
+    const j = Math.max(0, Math.min(1, jitter));
+    const rng = _mulberry32(0x53D ^ Math.floor(density * 1000) ^ Math.floor(angleDeg * 13));
+    const result = [];
+    const emit = (x, y) => {
+      if (!polyContainsPoint(rotPoly, x, y)) return;
+      const wp = unrotatePt({ x, y });
+      _emitDotStamp(wp, dotR, shape, ca, sa, result);
+    };
+    if (pattern === 'hex') {
+      // Rows alternate; vertical spacing s * sqrt(3)/2.
+      const rowH = density * Math.sqrt(3) / 2;
+      const yStart = Math.ceil((minY - yPhase) / rowH) * rowH + yPhase;
+      let rowIdx = 0;
+      for (let y = yStart; y <= maxY + 1e-6; y += rowH) {
+        const off = (rowIdx % 2 === 0) ? 0 : density / 2;
+        const xStart = Math.ceil((minX - xPhase - off) / density) * density + xPhase + off;
+        for (let x = xStart; x <= maxX + 1e-6; x += density) {
+          const jx = j ? (rng() - 0.5) * density * j : 0;
+          const jy = j ? (rng() - 0.5) * density * j : 0;
+          emit(x + jx, y + jy);
+        }
+        rowIdx++;
+      }
+    } else {
+      const yStart = Math.ceil((minY - yPhase) / density) * density + yPhase;
+      let rowOff = false;
+      for (let y = yStart; y <= maxY + 1e-6; y += density) {
+        const off = (pattern === 'brick' && rowOff) ? density / 2 : 0;
+        const xStart = Math.ceil((minX - xPhase - off) / density) * density + xPhase + off;
+        for (let x = xStart; x <= maxX + 1e-6; x += density) {
+          const useJ = pattern === 'jitter' ? 1 : j;
+          const jx = useJ ? (rng() - 0.5) * density * useJ : 0;
+          const jy = useJ ? (rng() - 0.5) * density * useJ : 0;
+          emit(x + jx * (pattern === 'jitter' ? Math.max(j, 0.5) : j), y + jy * (pattern === 'jitter' ? Math.max(j, 0.5) : j));
+        }
+        rowOff = !rowOff;
+      }
+    }
+    return result;
+  };
+
+  const dotsFillComposite = (regions, density, dotSizeRatio, angleDeg, shiftX, shiftY, pattern, shape, jitter) => {
+    if (regions.length === 1) return dotsFill(regions[0], density, dotSizeRatio, angleDeg, shiftX, shiftY, pattern, shape, jitter);
+    const out = [];
+    for (const r of regions) out.push(...dotsFill(r, density, dotSizeRatio, angleDeg, shiftX, shiftY, pattern, shape, jitter));
+    return out;
+  };
+
   const meanderLines = (region, density, angleDeg = 0, shiftX = 0, shiftY = 0) => {
     const ar = angleDeg * Math.PI / 180;
     const ca = Math.cos(ar), sa = Math.sin(ar);
@@ -2556,6 +2658,7 @@
       padding = 0, shiftX = 0, shiftY = 0,
       dotPattern = 'brick', centralDensity = 1.0, outerDiameter = 1.0, axes = 3, polyTile = 'grid',
       waveSmoothing = 1.0, waveHarmonics = 1,
+      dotShape = 'circle', dotJitter = 0,
     } = fill;
     if (!regions.length) return [];
     const effectiveRegions = padding > 0
@@ -2574,11 +2677,12 @@
         case 'wave':        return waveLinesUnified(region, density, angle, amplitude, waveSmoothing, waveHarmonics, shiftX, shiftY);
         case 'wavelines':   return waveLinesUnified(region, density, angle, amplitude, 1.0, 1, shiftX, shiftY);
         case 'zigzag':      return waveLinesUnified(region, density, angle, amplitude, 0.0, 1, shiftX, shiftY);
-        case 'stipple':     return expandDotsToSpirals(stippleDots(region, density, dotSize, shiftX, shiftY, angle, dotPattern), dotLength, penWidth, dotRotation);
+        case 'dots':        return expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, dotShape, dotJitter), dotLength, penWidth, dotRotation);
+        case 'stipple':     return expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation);
         case 'contour':     return contourLines(region, density);
         case 'spiral':      return spiralFill(region, density, angle, shiftX, shiftY);
         case 'radial':      return radialFill(region, density, angle, shiftX, shiftY, centralDensity, outerDiameter);
-        case 'grid':        return expandDotsToSpirals(gridDots(region, density, angle, dotSize, shiftX, shiftY), dotLength, penWidth, dotRotation);
+        case 'grid':        return expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, 'grid', 'tick', dotJitter), dotLength, penWidth, dotRotation);
         case 'meander':     return meanderLines(region, density, angle, shiftX, shiftY);
         case 'polygonal':   return polygonalLines(region, density, angle, shiftX, shiftY, axes, polyTile);
         case 'triaxial':    return triaxialLines(region, density, angle, shiftX, shiftY);
@@ -2595,11 +2699,12 @@
       case 'wave':        return waveLinesUnifiedComposite(effectiveRegions, density, angle, amplitude, waveSmoothing, waveHarmonics, shiftX, shiftY);
       case 'wavelines':   return waveLinesUnifiedComposite(effectiveRegions, density, angle, amplitude, 1.0, 1, shiftX, shiftY);
       case 'zigzag':      return waveLinesUnifiedComposite(effectiveRegions, density, angle, amplitude, 0.0, 1, shiftX, shiftY);
-      case 'stipple':     return expandDotsToSpirals(stippleDotsComposite(effectiveRegions, density, dotSize, shiftX, shiftY, angle, dotPattern), dotLength, penWidth, dotRotation);
+      case 'dots':        return expandDotsToSpirals(dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, dotPattern, dotShape, dotJitter), dotLength, penWidth, dotRotation);
+      case 'stipple':     return expandDotsToSpirals(dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation);
       case 'contour':     return contourLinesComposite(effectiveRegions, density);
       case 'spiral':      return spiralFillComposite(effectiveRegions, density, angle, shiftX, shiftY);
       case 'radial':      return radialFillComposite(effectiveRegions, density, angle, shiftX, shiftY, centralDensity, outerDiameter);
-      case 'grid':        return expandDotsToSpirals(gridDotsComposite(effectiveRegions, density, angle, dotSize, shiftX, shiftY), dotLength, penWidth, dotRotation);
+      case 'grid':        return expandDotsToSpirals(dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, 'grid', 'tick', dotJitter), dotLength, penWidth, dotRotation);
       case 'meander':     return meanderLinesComposite(effectiveRegions, density, angle, shiftX, shiftY);
       case 'polygonal':   return polygonalLinesComposite(effectiveRegions, density, angle, shiftX, shiftY, axes, polyTile);
       case 'triaxial':    return triaxialLinesComposite(effectiveRegions, density, angle, shiftX, shiftY);

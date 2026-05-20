@@ -21,11 +21,10 @@
     { value: 'none',       label: 'None' },
     { value: 'hatch',      label: 'Hatch' },
     { value: 'wave',       label: 'Wave' },
-    { value: 'stipple',    label: 'Stipple' },
+    { value: 'dots',       label: 'Dots' },
     { value: 'contour',    label: 'Contour' },
     { value: 'spiral',     label: 'Spiral' },
     { value: 'radial',     label: 'Radial' },
-    { value: 'grid',       label: 'Grid Dots' },
     { value: 'polygonal',  label: 'Polygonal' },
   ];
 
@@ -41,6 +40,8 @@
     fillShiftX: 0,            // mm
     fillShiftY: 0,            // mm
     fillDotPattern: 'brick',
+    fillDotShape: 'circle',
+    fillDotJitter: 0,
     fillAxes: 3,
     fillPolyTile: 'grid',
     fillRadialCentralDensity: 1.0,
@@ -98,7 +99,9 @@
     { id: 'fillPadding',                 label: 'Padding',           type: 'range',  min: 0,    max: 10,  step: 0.1,  distance: true, showAlways: true },
     { id: 'fillShiftX',                  label: 'Shift X',           type: 'range',  min: -50,  max: 50,  step: 0.5,  distance: true, capKey: 'shift' },
     { id: 'fillShiftY',                  label: 'Shift Y',           type: 'range',  min: -50,  max: 50,  step: 0.5,  distance: true, capKey: 'shift' },
-    { id: 'fillDotPattern',              label: 'Dot Pattern',       type: 'select', options: [{ value: 'brick', label: 'Brick' }, { value: 'grid', label: 'Grid' }], capKey: 'dotPattern' },
+    { id: 'fillDotPattern',              label: 'Dot Pattern',       type: 'select', options: [{ value: 'brick', label: 'Brick' }, { value: 'grid', label: 'Grid' }, { value: 'hex', label: 'Hex' }, { value: 'jitter', label: 'Jitter' }], capKey: 'dotPattern' },
+    { id: 'fillDotShape',                label: 'Dot Shape',         type: 'select', options: [{ value: 'circle', label: 'Circle' }, { value: 'square', label: 'Square' }, { value: 'cross', label: 'Cross' }, { value: 'tick', label: 'Tick' }], capKey: 'dotShape' },
+    { id: 'fillDotJitter',               label: 'Dot Jitter',        type: 'range',  min: 0,    max: 1,   step: 0.01, capKey: 'dotJitter' },
     { id: 'fillAxes',                    label: 'Axes',              type: 'range',  min: 2,    max: 12,  step: 1,    capKey: 'axes' },
     { id: 'fillPolyTile',                label: 'Tile Method',       type: 'select', options: [{ value: 'grid', label: 'Grid' }, { value: 'brick', label: 'Brick' }, { value: 'hexagonal', label: 'Hexagonal' }, { value: 'off', label: 'Off (single)' }], capKey: 'polyTile' },
     { id: 'fillRadialCentralDensity',    label: 'Central Density',   type: 'range',  min: 0.1,  max: 4.0, step: 0.1,  capKey: 'radialCentralDensity' },
@@ -446,9 +449,12 @@
     // record carries an explicit `dotLength` field.
     const legacyDotLen = rec.dotLength != null ? rec.dotLength : 0;
     // C1 migration: legacy 'wavelines' / 'zigzag' map to 'wave' with smoothing.
+    // C2 migration: legacy 'stipple' / 'grid'  map to 'dots' with shape.
     let fillMode = rec.fillType ?? 'hatch';
     let waveSmoothing = rec.waveSmoothing;
     let waveHarmonics = rec.waveHarmonics;
+    let dotShape = rec.dotShape;
+    let dotPatternResolved = rec.dotPattern;
     if (fillMode === 'wavelines') {
       fillMode = 'wave';
       if (waveSmoothing == null) waveSmoothing = 1.0;
@@ -457,11 +463,20 @@
       fillMode = 'wave';
       if (waveSmoothing == null) waveSmoothing = 0.0;
       if (waveHarmonics == null) waveHarmonics = 1;
+    } else if (fillMode === 'stipple') {
+      fillMode = 'dots';
+      if (dotShape == null) dotShape = 'circle';
+    } else if (fillMode === 'grid') {
+      fillMode = 'dots';
+      if (dotShape == null) dotShape = 'tick';
+      dotPatternResolved = 'grid';
     }
     return {
       fillMode,
       fillWaveSmoothing: waveSmoothing,
       fillWaveHarmonics: waveHarmonics,
+      fillDotShape: dotShape,
+      fillDotJitter: rec.dotJitter,
       fillDensity: rec.density,
       fillAngle: rec.angle,
       fillAmplitude: rec.amplitude,
@@ -470,7 +485,7 @@
       fillPadding: rec.padding,
       fillShiftX: rec.shiftX,
       fillShiftY: rec.shiftY,
-      fillDotPattern: rec.dotPattern,
+      fillDotPattern: dotPatternResolved,
       fillAxes: rec.axes,
       fillPolyTile: rec.polyTile,
       fillRadialCentralDensity: rec.centralDensity,
