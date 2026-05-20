@@ -53,6 +53,9 @@
     fillRadialOuterDiameter: 1.0,
     fillWaveSmoothing: 1.0,
     fillWaveHarmonics: 1,
+    fillSpiralTurns: 8,
+    fillSpiralTightness: 0.5,
+    fillSpiralDirection: 'cw',
     fillSensitivity: 5,
     penId: null,
   };
@@ -118,6 +121,9 @@
     { id: 'fillRadialOuterDiameter',     label: 'Outer Diameter',    type: 'range',  min: 0.0,  max: 2.0, step: 0.05, capKey: 'radialOuterDiameter' },
     { id: 'fillWaveSmoothing',           label: 'Wave Smoothing',    type: 'range',  min: 0,    max: 1,   step: 0.01, capKey: 'waveSmoothing' },
     { id: 'fillWaveHarmonics',           label: 'Wave Harmonics',    type: 'range',  min: 1,    max: 3,   step: 1,    capKey: 'waveHarmonics' },
+    { id: 'fillSpiralTurns',             label: 'Spiral Turns',      type: 'range',  min: 1,    max: 40,  step: 1,    capKey: 'spiralTurns' },
+    { id: 'fillSpiralTightness',         label: 'Spiral Tightness',  type: 'range',  min: 0,    max: 1,   step: 0.01, capKey: 'spiralTightness' },
+    { id: 'fillSpiralDirection',         label: 'Spiral Direction',  type: 'select', options: [{ value: 'cw', label: 'Clockwise' }, { value: 'ccw', label: 'Counterclockwise' }], capKey: 'spiralDirection' },
   ];
 
   function paintVariantButtons(state, controlsEl, hintEl) {
@@ -510,6 +516,9 @@
       fillPolyRotation: rec.polyRotation,
       fillPolyRotationStep: rec.polyRotationStep,
       fillPolyScaleStep: rec.polyScaleStep,
+      fillSpiralTurns: rec.spiralTurns,
+      fillSpiralTightness: rec.spiralTightness,
+      fillSpiralDirection: rec.spiralDirection,
       fillRadialCentralDensity: rec.centralDensity,
       fillRadialOuterDiameter: rec.outerDiameter,
       fillSensitivity: rec.sensitivity,

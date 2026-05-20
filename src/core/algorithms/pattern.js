@@ -1230,23 +1230,48 @@
     return result;
   };
 
-  const spiralFillComposite = (regions, density, angleDeg = 0, shiftX = 0, shiftY = 0) => {
+  // ── C5: spiral with optional turns / tightness / direction ─────────────────
+  // tightness blends Archimedean (r ∝ θ, tightness=0) with log-spiral
+  // (r ∝ exp(k·θ), tightness=1); intermediate values lerp between the two.
+  // direction='ccw' negates angle progression. turns hard-caps total
+  // revolutions so the path stays inside the region's bbox circle.
+  const _buildSpiralPts = (cx, cy, density, angleDeg, maxR, turns, tightness, direction) => {
+    const angleOffset = angleDeg * Math.PI / 180;
+    const t = Math.max(0, Math.min(1, tightness));
+    const sign = direction === 'ccw' ? -1 : 1;
+    // Archimedean: r = (θ/2π) · density → θ_max for full bbox = (maxR/density)·2π
+    // Log-spiral: r = r0 · exp(k·θ), pick k so r doubles every 2π → k = ln2/2π.
+    //   choose r0 = density (so first turn radius ≈ density), then
+    //   θ_max_log = ln(maxR / r0) / k
+    const k = Math.log(2) / (2 * Math.PI);
+    const r0 = Math.max(density * 0.5, 0.5);
+    const archThetaMax = (maxR / density) * 2 * Math.PI + 2 * Math.PI;
+    const logThetaMax = Math.max(1, Math.log(Math.max(maxR / r0, 1.1)) / k);
+    // Cap by user-requested turns (if specified).
+    const turnsCap = (turns > 0 ? turns * 2 * Math.PI : Infinity);
+    const thetaMax = Math.min(turnsCap, (1 - t) * archThetaMax + t * logThetaMax);
+    const totalSteps = Math.min(50000, Math.ceil(thetaMax / 0.05));
+    const stepAngle = thetaMax / Math.max(1, totalSteps);
+    const pts = [];
+    for (let i = 0; i <= totalSteps; i++) {
+      const theta = i * stepAngle;
+      const rArch = (theta / (2 * Math.PI)) * density;
+      const rLog = r0 * Math.exp(k * theta);
+      const r = (1 - t) * rArch + t * rLog;
+      const a = sign * theta + angleOffset;
+      pts.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r });
+    }
+    return pts;
+  };
+
+  const spiralFillComposite = (regions, density, angleDeg = 0, shiftX = 0, shiftY = 0, turns = 0, tightness = 0, direction = 'cw') => {
     const bounds = compositeBounds(regions);
     const cx = (bounds.minX + bounds.maxX) / 2 + shiftX;
     const cy = (bounds.minY + bounds.maxY) / 2 + shiftY;
     const maxR = 0.5 * Math.sqrt(
       (bounds.maxX - bounds.minX) ** 2 + (bounds.maxY - bounds.minY) ** 2
     ) + density;
-    const maxAngle = (maxR / density) * 2 * Math.PI + 2 * Math.PI;
-    const totalSteps = Math.min(50000, Math.ceil(maxAngle / 0.05));
-    const stepAngle = maxAngle / totalSteps;
-    const angleOffset = angleDeg * Math.PI / 180;
-    const spiralPts = [];
-    for (let i = 0; i <= totalSteps; i++) {
-      const spiralAngle = i * stepAngle;
-      const r = (spiralAngle / (2 * Math.PI)) * density;
-      spiralPts.push({ x: cx + Math.cos(spiralAngle + angleOffset) * r, y: cy + Math.sin(spiralAngle + angleOffset) * r });
-    }
+    const spiralPts = _buildSpiralPts(cx, cy, density, angleDeg, maxR, turns, tightness, direction);
     return clipPolylineToComposite(spiralPts, regions);
   };
 
@@ -2149,23 +2174,14 @@
     return result;
   };
 
-  const spiralFill = (region, density, angleDeg = 0, shiftX = 0, shiftY = 0) => {
+  const spiralFill = (region, density, angleDeg = 0, shiftX = 0, shiftY = 0, turns = 0, tightness = 0, direction = 'cw') => {
     const bounds = loopBounds(region);
     const cx = (bounds.minX + bounds.maxX) / 2 + shiftX;
     const cy = (bounds.minY + bounds.maxY) / 2 + shiftY;
     const maxR = 0.5 * Math.sqrt(
       (bounds.maxX - bounds.minX) ** 2 + (bounds.maxY - bounds.minY) ** 2
     ) + density;
-    const maxAngle = (maxR / density) * 2 * Math.PI + 2 * Math.PI;
-    const totalSteps = Math.min(50000, Math.ceil(maxAngle / 0.05));
-    const stepAngle = maxAngle / totalSteps;
-    const angleOffset = angleDeg * Math.PI / 180;
-    const spiralPts = [];
-    for (let i = 0; i <= totalSteps; i++) {
-      const spiralAngle = i * stepAngle;
-      const r = (spiralAngle / (2 * Math.PI)) * density;
-      spiralPts.push({ x: cx + Math.cos(spiralAngle + angleOffset) * r, y: cy + Math.sin(spiralAngle + angleOffset) * r });
-    }
+    const spiralPts = _buildSpiralPts(cx, cy, density, angleDeg, maxR, turns, tightness, direction);
     return clipPolylineToPoly(spiralPts, region);
   };
 
@@ -2753,6 +2769,7 @@
       dotShape = 'circle', dotJitter = 0,
       lineCount = 1,
       polyPadding = 0, polyRotation = 0, polyRotationStep = 0, polyScaleStep = 0,
+      spiralTurns = 0, spiralTightness = 0, spiralDirection = 'cw',
     } = fill;
     // C3: hatch unified — compute the per-layer angle offsets up-front.
     // 1 layer = [0], 2 layers (crosshatch) = [0, 90], 3 layers (triaxial) = [0, 60, 120].
@@ -2787,7 +2804,7 @@
         case 'dots':        return expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, dotShape, dotJitter), dotLength, penWidth, dotRotation);
         case 'stipple':     return expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation);
         case 'contour':     return contourLines(region, density);
-        case 'spiral':      return spiralFill(region, density, angle, shiftX, shiftY);
+        case 'spiral':      return spiralFill(region, density, angle, shiftX, shiftY, spiralTurns, spiralTightness, spiralDirection);
         case 'radial':      return radialFill(region, density, angle, shiftX, shiftY, centralDensity, outerDiameter);
         case 'grid':        return expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, 'grid', 'tick', dotJitter), dotLength, penWidth, dotRotation);
         case 'meander':     return meanderLines(region, density, angle, shiftX, shiftY);
@@ -2814,7 +2831,7 @@
       case 'dots':        return expandDotsToSpirals(dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, dotPattern, dotShape, dotJitter), dotLength, penWidth, dotRotation);
       case 'stipple':     return expandDotsToSpirals(dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation);
       case 'contour':     return contourLinesComposite(effectiveRegions, density);
-      case 'spiral':      return spiralFillComposite(effectiveRegions, density, angle, shiftX, shiftY);
+      case 'spiral':      return spiralFillComposite(effectiveRegions, density, angle, shiftX, shiftY, spiralTurns, spiralTightness, spiralDirection);
       case 'radial':      return radialFillComposite(effectiveRegions, density, angle, shiftX, shiftY, centralDensity, outerDiameter);
       case 'grid':        return expandDotsToSpirals(dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, 'grid', 'tick', dotJitter), dotLength, penWidth, dotRotation);
       case 'meander':     return meanderLinesComposite(effectiveRegions, density, angle, shiftX, shiftY);
