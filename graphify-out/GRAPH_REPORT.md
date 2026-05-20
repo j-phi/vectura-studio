@@ -1,12 +1,12 @@
 # Graph Report - /Users/jayphi/Documents/github/vectura-studio  (2026-05-20)
 
 ## Corpus Check
-- 333 files · ~4,430,467 words
+- 335 files · ~4,432,774 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 3829 nodes · 9252 edges · 204 communities detected
-- Extraction: 79% EXTRACTED · 21% INFERRED · 0% AMBIGUOUS · INFERRED: 1940 edges (avg confidence: 0.8)
+- 3838 nodes · 9268 edges · 204 communities detected
+- Extraction: 79% EXTRACTED · 21% INFERRED · 0% AMBIGUOUS · INFERRED: 1948 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
@@ -234,10 +234,10 @@
   CLAUDE.md → tests/e2e/visual.spec.js-snapshots/rotated-rectangle-selection-canvas-desktop-visual-chromium-darwin.png
 - `runBenchmark()` --calls--> `fN()`  [INFERRED]
   scripts/benchmark_clone.js → /Users/jayphi/Documents/github/vectura-studio/playwright-report/trace/assets/defaultSettingsView-CJSZINFr.js
+- `listProfileFiles()` --calls--> `sort()`  [INFERRED]
+  scripts/build-petal-profile-library.js → /Users/jayphi/Documents/github/vectura-studio/src/vendor/polygon-clipping.umd.js
 - `src/core/modifiers.js — Modifiers` --references--> `Visual Snapshot: Mirrored Masked Circles (Two Mirrored Circle Layers with Grid Fill)`  [EXTRACTED]
   CLAUDE.md → tests/e2e/visual.spec.js-snapshots/mirrored-masked-circles-canvas-desktop-visual-chromium-darwin.png
-- `src/core/masking.js — Masking` --references--> `Visual Snapshot: Masking Horizon Rings Canvas (Rings + Topo Combined)`  [EXTRACTED]
-  CLAUDE.md → tests/e2e/visual.spec.js-snapshots/masking-horizon-rings-canvas-desktop-visual-chromium-darwin.png
 
 ## Hyperedges (group relationships)
 - **Core Engine Data Pipeline** — engine_js, algorithms_index_js, masking_js, modifiers_js, optimization_utils_js, renderer_js [EXTRACTED 0.95]
@@ -264,11 +264,11 @@
 
 ### Community 0 - "Community 0"
 Cohesion: 0.01
-Nodes (358): af(), ef(), ff(), Ja(), lf(), mt(), nf(), of() (+350 more)
+Nodes (360): af(), ef(), ff(), Ja(), lf(), mt(), nf(), of() (+352 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.01
-Nodes (313): computeHarmonographPlotterData(), getPreferredNewLayerType(), isDrawableLayerType(), isModifierType(), mountHarmonographPlotter(), rememberDrawableLayerType(), requireDeps(), splitShapeLayer() (+305 more)
+Nodes (292): bindAlgoConfigListeners(), fromVectura(), requireDeps(), toggleSeedControls(), computeHarmonographPlotterData(), getPreferredNewLayerType(), isDrawableLayerType(), isModifierType() (+284 more)
 
 ### Community 2 - "Community 2"
 Cohesion: 0.01
@@ -276,107 +276,107 @@ Nodes (139): read(), normalizePath(), normalizePaths(), pathSignature(), seriali
 
 ### Community 3 - "Community 3"
 Cohesion: 0.02
-Nodes (209): clamp(), lerp(), buildParams(), clone(), jsonClone(), runBenchmark(), createPetalisModifier(), createPetalisShading() (+201 more)
+Nodes (32): base(), rect(), sig(), recenterLayerIfNeeded(), buildMirrorGroup(), joinNearbyPaths(), persistAndRedraw(), round() (+24 more)
 
 ### Community 4 - "Community 4"
 Cohesion: 0.02
-Nodes (29): base(), rect(), sig(), joinNearbyPaths(), persistAndRedraw(), round(), rect(), buildBoundsFromVertices() (+21 more)
+Nodes (184): clamp(), lerp(), buildParams(), clone(), jsonClone(), runBenchmark(), listProfileFiles(), readJson() (+176 more)
 
 ### Community 5 - "Community 5"
 Cohesion: 0.02
-Nodes (111): bindAlgoConfigListeners(), buildControls(), fromVectura(), requireDeps(), toggleSeedControls(), applyScissor(), App, getThemeBrightness() (+103 more)
+Nodes (107): buildControls(), applyScissor(), App, getThemeBrightness(), getThemeConfig(), getThemeFamily(), getThemeIdForFamilySlot(), normalizeThemeFamily() (+99 more)
 
 ### Community 6 - "Community 6"
-Cohesion: 0.03
-Nodes (13): a_(), el(), gA(), hh, IA, mh, Qe, qh() (+5 more)
+Cohesion: 0.02
+Nodes (14): a_(), el(), gA(), hh, IA, mh, Qe, qh() (+6 more)
 
 ### Community 7 - "Community 7"
-Cohesion: 0.04
-Nodes (118): xAt(), yAt(), buildSourceFillSampler(), _buildSpiralPts(), choosePatternFillResolution(), clipPolylineToComposite(), clipPolylineToPoly(), clipSegmentToComposite() (+110 more)
+Cohesion: 0.03
+Nodes (145): aggregateRect(), align(), distribute(), distributeAxis(), distributeSpacing(), distributeSpacingAxis(), eligibleLayerRects(), getReferenceRect() (+137 more)
 
 ### Community 8 - "Community 8"
 Cohesion: 0.03
-Nodes (26): activate(), get(), register(), skinManifest(), swapStylesheet(), validate(), writeMotionVars(), writeStructuralVars() (+18 more)
+Nodes (102): documentUnitsToMm(), formatDocumentLength(), getDocumentUnitLabel(), getDocumentUnitPrecision(), getDocumentUnitStep(), mmToDocumentUnits(), normalizeDocumentUnits(), attachKeyboardRangeNudge() (+94 more)
 
 ### Community 9 - "Community 9"
-Cohesion: 0.05
-Nodes (77): documentUnitsToMm(), formatDocumentLength(), getDocumentUnitLabel(), getDocumentUnitPrecision(), getDocumentUnitStep(), mmToDocumentUnits(), normalizeDocumentUnits(), currentDocumentUnits() (+69 more)
+Cohesion: 0.03
+Nodes (25): activate(), get(), register(), skinManifest(), swapStylesheet(), validate(), writeMotionVars(), writeStructuralVars() (+17 more)
 
 ### Community 10 - "Community 10"
+Cohesion: 0.03
+Nodes (24): create(), jc, qv, attach(), startProgress(), captureSvgExport(), expectAllCoordsInsideMargin(), text() (+16 more)
+
+### Community 11 - "Community 11"
 Cohesion: 0.04
 Nodes (34): attach(), cmp(), compareVectorAngles(), cosineOfAngle(), crossProduct(), dotProduct(), estimate(), getBboxOverlap() (+26 more)
 
-### Community 11 - "Community 11"
+### Community 12 - "Community 12"
 Cohesion: 0.03
 Nodes (92): Documentation Synchronization Matrix, Public Process Contracts, Source-of-Truth Hierarchy, Legacy Doc Status Taxonomy, Agentic Harness Strategy, Task Lifecycle Protocol, Harness Testing Matrix, Agentic Harness Governance (+84 more)
 
-### Community 12 - "Community 12"
-Cohesion: 0.04
-Nodes (28): getBtn(), getIcon(), openPicker(), dx, qv, setViewport(), dispatchEvent(), makeFakeEngine() (+20 more)
-
 ### Community 13 - "Community 13"
 Cohesion: 0.05
-Nodes (70): Th(), closeRing(), difference(), intersection(), multiPolygonToPaths(), normalizeMultiPolygon(), normalizeRing(), rectToMultiPolygon() (+62 more)
+Nodes (72): Th(), closeRing(), difference(), intersection(), multiPolygonToPaths(), normalizeMultiPolygon(), normalizeRing(), rectToMultiPolygon() (+64 more)
 
 ### Community 14 - "Community 14"
-Cohesion: 0.03
-Nodes (41): create(), jc, kd, attach(), requireDeps(), _reset(), attach(), startProgress() (+33 more)
+Cohesion: 0.04
+Nodes (61): base(), countBands(), rect(), arcConfig(), bodyHtmlFor(), defaultParamsFor(), fillPct(), infoTrigger() (+53 more)
 
 ### Community 15 - "Community 15"
-Cohesion: 0.04
-Nodes (54): aggregateRect(), align(), distribute(), distributeAxis(), distributeSpacing(), distributeSpacingAxis(), eligibleLayerRects(), getReferenceRect() (+46 more)
+Cohesion: 0.05
+Nodes (50): applyPad(), clamp01(), frac(), cr(), G0(), id(), jS(), Qo() (+42 more)
 
 ### Community 16 - "Community 16"
 Cohesion: 0.06
-Nodes (39): applyPad(), clamp01(), frac(), cr(), G0(), id(), jS(), Qo() (+31 more)
+Nodes (20): cb, iterateSamples(), Circles, getActiveLayer(), getApp(), getEngine(), getLayers(), getUI() (+12 more)
 
 ### Community 17 - "Community 17"
 Cohesion: 0.08
-Nodes (11): d_, dt, f_, fx(), gc(), gT, h_, lh() (+3 more)
+Nodes (10): d_, dt, f_, fx(), gc(), h_, lh(), p_ (+2 more)
 
 ### Community 18 - "Community 18"
 Cohesion: 0.07
-Nodes (18): Circles, getActiveLayer(), getApp(), getEngine(), getLayers(), getUI(), Highlight, iconHtml() (+10 more)
+Nodes (37): getModifierState(), mkLayer(), applyArcMirrorToPaths(), applyMirrorToPaths(), applyRadialMirrorToPaths(), applyWallpaperMirrorToPaths(), buildAxisFromAngle(), classifyPieceSide() (+29 more)
 
 ### Community 19 - "Community 19"
-Cohesion: 0.08
-Nodes (34): mkLayer(), applyArcMirrorToPaths(), applyMirrorToPaths(), applyRadialMirrorToPaths(), applyWallpaperMirrorToPaths(), buildAxisFromAngle(), classifyPieceSide(), clipClosedPolygonByAxis() (+26 more)
-
-### Community 20 - "Community 20"
 Cohesion: 0.09
 Nodes (2): c_(), qC
 
-### Community 21 - "Community 21"
+### Community 20 - "Community 20"
 Cohesion: 0.1
 Nodes (29): applyFillAtPoint(), buildFillRecord(), clonePolygon(), collectBarrierPaths(), docBoundsPolygon(), findFillAtPoint(), findFillTargetStack(), findHoveredLayer() (+21 more)
 
-### Community 22 - "Community 22"
-Cohesion: 0.07
-Nodes (16): cb, iterateSamples(), baseLayerShape(), createEvaluator(), defaultConfigFor(), SimpleNoise, applyNoiseOffset(), applyTrailBreaks() (+8 more)
-
-### Community 23 - "Community 23"
+### Community 21 - "Community 21"
 Cohesion: 0.2
 Nodes (4): LS, MN(), Wh, oa
 
-### Community 24 - "Community 24"
+### Community 22 - "Community 22"
+Cohesion: 0.08
+Nodes (22): attach(), requireDeps(), _reset(), _route(), attach(), _ensureMenu(), _itemsFor(), _onContextMenu() (+14 more)
+
+### Community 23 - "Community 23"
 Cohesion: 0.12
 Nodes (21): applyMaskToPaths(), buildClosedPathSilhouettes(), buildMaskUnion(), expandCircle(), getGroupSilhouette(), getLayerMaskCapabilities(), getLayerSilhouette(), pathToPolygon() (+13 more)
 
+### Community 24 - "Community 24"
+Cohesion: 0.32
+Nodes (3): Ib(), oc, oh()
+
 ### Community 25 - "Community 25"
-Cohesion: 0.39
-Nodes (1): oc
+Cohesion: 0.18
+Nodes (10): getBtn(), getIcon(), openPicker(), setViewport(), dispatchEvent(), dragSelect(), getBtn(), getMenu() (+2 more)
 
 ### Community 26 - "Community 26"
-Cohesion: 0.33
-Nodes (10): checkNoRingPointInsideCrack(), generate(), interpolateArmAngle(), makeBaseParams(), makeCrackParams(), makeDefaultBounds(), pointAngle(), pointRadius() (+2 more)
+Cohesion: 0.3
+Nodes (13): applyEndpointTruncation(), buildEnvelope(), classifyEndpoint(), findEndTailCut(), findStartTailCut(), interpolatePoint(), pathLength(), pointEquals() (+5 more)
 
 ### Community 27 - "Community 27"
 Cohesion: 0.2
-Nodes (2): loadHorizonAlgorithm(), makeNoiseRackMock()
+Nodes (5): loadVecturaRuntime(), parseLocalScripts(), setupGroupedTwoShapeLayers(), setupTwoShapeLayers(), bootApp()
 
 ### Community 28 - "Community 28"
-Cohesion: 0.27
-Nodes (6): clone(), distance(), generate(), makeDefaultBounds(), ringLeft(), ringRight()
+Cohesion: 0.2
+Nodes (2): loadHorizonAlgorithm(), makeNoiseRackMock()
 
 ### Community 29 - "Community 29"
 Cohesion: 0.38
@@ -1357,11 +1357,11 @@ Nodes (1): City — Isometric aerial city of skyscrapers rendered entirely in de
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Renderer` connect `Community 4` to `Community 1`, `Community 5`, `Community 13`, `Community 14`, `Community 21`?**
-  _High betweenness centrality (0.069) - this node is a cross-community bridge._
-- **Why does `mt()` connect `Community 0` to `Community 1`, `Community 2`, `Community 5`, `Community 6`, `Community 8`, `Community 10`, `Community 12`, `Community 16`, `Community 17`, `Community 23`?**
-  _High betweenness centrality (0.064) - this node is a cross-community bridge._
-- **Why does `sort()` connect `Community 15` to `Community 0`, `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 10`, `Community 13`, `Community 16`, `Community 19`, `Community 21`?**
+- **Why does `sort()` connect `Community 7` to `Community 0`, `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 9`, `Community 11`, `Community 13`, `Community 15`, `Community 18`, `Community 20`, `Community 26`?**
+  _High betweenness centrality (0.070) - this node is a cross-community bridge._
+- **Why does `mt()` connect `Community 0` to `Community 1`, `Community 2`, `Community 5`, `Community 6`, `Community 9`, `Community 11`, `Community 15`, `Community 17`, `Community 21`?**
+  _High betweenness centrality (0.065) - this node is a cross-community bridge._
+- **Why does `Renderer` connect `Community 3` to `Community 1`, `Community 5`, `Community 13`, `Community 20`, `Community 22`?**
   _High betweenness centrality (0.054) - this node is a cross-community bridge._
 - **Are the 95 inferred relationships involving `mt()` (e.g. with `_e()` and `ye()`) actually correct?**
   _`mt()` has 95 INFERRED edges - model-reasoned connections that need verification._
