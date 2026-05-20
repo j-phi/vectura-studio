@@ -98,7 +98,7 @@
     const pens = SETTINGS.pens || [];
     const palette = this.getActivePalette();
     const colors = palette?.colors || [];
-    const color = colors.length ? colors[pens.length % colors.length] : getThemeToken('--color-accent', '#ffffff');
+    const color = colors.length ? colors[pens.length % colors.length] : getThemeToken('--ui-accent', '#ffffff');
     const nextIndex = pens.length + 1;
     const pen = {
       id: `pen-${Math.random().toString(36).slice(2, 9)}`,

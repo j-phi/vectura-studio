@@ -358,7 +358,7 @@
     const width = state.canvas.width / (window.devicePixelRatio || 1);
     const height = state.canvas.height / (window.devicePixelRatio || 1);
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = getThemeToken('--color-workspace', '#121214');
+    ctx.fillStyle = getThemeToken('--ui-workspace', '#121214');
     ctx.fillRect(0, 0, width, height);
 
     const { scale, offsetX, offsetY } = state.view;
