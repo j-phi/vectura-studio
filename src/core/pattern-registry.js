@@ -40,21 +40,24 @@
     };
   };
 
+  // Sanitize SVG markup before persisting it on a pattern entry. Audit Bugs-2 +
+  // Bugs-5: hostile .vectura projects can smuggle <script>, on* handlers,
+  // external href refs, and animation-based href hijacks through pattern.svg
+  // unless we route them through the central sanitizer before storage.
+  const sanitizeSvgMarkup = (svgString) => {
+    const raw = `${svgString || ''}`;
+    if (!raw) return '';
+    const sanitize = window.Vectura?.SvgSanitize?.sanitize;
+    return typeof sanitize === 'function' ? sanitize(raw) : raw;
+  };
+
   const normalizePattern = (pattern, options = {}) => {
     if (!pattern || typeof pattern !== 'object') return null;
     const fallbackName = `${pattern.name || pattern.id || 'Custom Pattern'}`.trim() || 'Custom Pattern';
     const scope = options.scope || 'local';
     const source = scope === 'project' ? 'Project Patterns' : 'Custom Patterns';
-    const flags = inferPatternFlags(pattern);
-    // SECURITY: project-scoped patterns arrive verbatim from .vectura files;
-    // local-scoped patterns come from this user's own designer but can be
-    // round-tripped through hostile project state, so we also sanitize on
-    // local hydrate. The SVG is later mounted via tempSvg.innerHTML in
-    // pattern.js — <image onerror>, <a href="javascript:...">, etc. will
-    // execute unless we strip them here.
-    const rawSvg = `${pattern.svg || ''}`;
-    const sanitizer = window.Vectura?.SvgSanitize?.sanitize;
-    const safeSvg = typeof sanitizer === 'function' && rawSvg ? sanitizer(rawSvg) : rawSvg;
+    const safeSvg = sanitizeSvgMarkup(pattern.svg);
+    const flags = inferPatternFlags({ ...pattern, svg: safeSvg });
     const normalized = {
       id: ensureCustomId(pattern.id || fallbackName, fallbackName),
       name: `${pattern.name || fallbackName}`.trim() || fallbackName,
