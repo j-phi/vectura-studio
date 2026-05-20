@@ -313,78 +313,168 @@
 
     applyPreferenceSnapshot(snapshot) {
       if (!snapshot || typeof snapshot !== 'object') return;
+      // Bugs-7 (audit-2026-05-20): every untrusted field is routed through
+      // Vectura.Validators. Anything that fails validation falls back to the
+      // existing SETTINGS value (already-validated default) and emits a
+      // console.warn. The bgColor field is the load-bearing case — it flows
+      // straight into inline `style.background` so a tampered cookie like
+      // `red; background: url(https://attacker/x)` would otherwise CSS-inject.
+      const V = (window.Vectura && window.Vectura.Validators) || null;
+      const warn = (field, value) => {
+        try {
+          // eslint-disable-next-line no-console
+          console.warn(`[App] preference ${field} rejected, falling back`, value);
+        } catch (_) { /* noop */ }
+      };
+      // Color helper — strict hex grammar. CSS-injection vectors (`;`, `(`,
+      // `url(...)`, `expression(...)`) all fail the regex and reject.
+      const takeColor = (field, fallback) => {
+        if (!(field in snapshot)) return fallback;
+        const v = snapshot[field];
+        if (V && V.isHexColor(v)) return v;
+        warn(field, v);
+        return fallback;
+      };
+      // Numeric helper — Number.isFinite + clamp. NaN / Infinity / strings
+      // like 'not-a-number' all reject; numeric strings ('5') coerce.
+      const takeNumber = (field, fallback, min, max, opts = {}) => {
+        if (!(field in snapshot)) return fallback;
+        const v = snapshot[field];
+        const out = opts.integer
+          ? V && V.finiteIntInRange(v, min, max)
+          : V && V.finiteInRange(v, min, max);
+        if (out == null) {
+          warn(field, v);
+          return fallback;
+        }
+        return out;
+      };
+      // Enum helper — strict allowlist. Path-traversal / unknown values reject.
+      const takeEnum = (field, fallback, allowed) => {
+        if (!(field in snapshot)) return fallback;
+        const v = snapshot[field];
+        const out = V && V.fromEnum(v, allowed);
+        if (out == null) {
+          warn(field, v);
+          return fallback;
+        }
+        return out;
+      };
+      // Free-form identifier (paletteId, paperSize, toolbarDock, etc.).
+      // Bounded length + character allowlist so a malicious cookie can't
+      // smuggle script text into a `data-*` attribute or DOM string.
+      const takeSafeString = (field, fallback, maxLen = 64) => {
+        if (!(field in snapshot)) return fallback;
+        const v = snapshot[field];
+        if (v == null) return null; // explicit null preserved
+        const out = V && V.safeString(v, maxLen);
+        if (out == null) {
+          warn(field, v);
+          return fallback;
+        }
+        return out;
+      };
+
       SETTINGS.uiTheme = normalizeThemeName(snapshot.uiTheme ?? SETTINGS.uiTheme);
       SETTINGS.cookiePreferencesEnabled = snapshot.cookiePreferencesEnabled === true;
-      SETTINGS.margin = snapshot.margin ?? SETTINGS.margin;
-      SETTINGS.speedDown = snapshot.speedDown ?? SETTINGS.speedDown;
-      SETTINGS.speedUp = snapshot.speedUp ?? SETTINGS.speedUp;
-      SETTINGS.precision = snapshot.precision ?? SETTINGS.precision;
-      SETTINGS.strokeWidth = snapshot.strokeWidth ?? SETTINGS.strokeWidth;
+      SETTINGS.margin = takeNumber('margin', SETTINGS.margin, 0, 10000);
+      SETTINGS.speedDown = takeNumber('speedDown', SETTINGS.speedDown, 0, 100000);
+      SETTINGS.speedUp = takeNumber('speedUp', SETTINGS.speedUp, 0, 100000);
+      SETTINGS.precision = takeNumber('precision', SETTINGS.precision, 0, 12, { integer: true });
+      SETTINGS.strokeWidth = takeNumber('strokeWidth', SETTINGS.strokeWidth, 0, 100);
       SETTINGS.strokeWidthOverride = snapshot.strokeWidthOverride === true;
-      SETTINGS.bgColor = snapshot.bgColor ?? SETTINGS.bgColor;
-      SETTINGS.truncate = snapshot.truncate ?? SETTINGS.truncate;
-      SETTINGS.cropExports = snapshot.cropExports ?? SETTINGS.cropExports;
-      SETTINGS.removeHiddenGeometry = snapshot.removeHiddenGeometry ?? SETTINGS.removeHiddenGeometry;
-      SETTINGS.outsideOpacity = snapshot.outsideOpacity ?? SETTINGS.outsideOpacity;
-      SETTINGS.marginLineVisible = snapshot.marginLineVisible ?? SETTINGS.marginLineVisible;
-      SETTINGS.marginLineWeight = snapshot.marginLineWeight ?? SETTINGS.marginLineWeight;
-      SETTINGS.marginLineColor = snapshot.marginLineColor ?? SETTINGS.marginLineColor;
-      SETTINGS.marginLineDotting = snapshot.marginLineDotting ?? SETTINGS.marginLineDotting;
-      SETTINGS.showGuides = snapshot.showGuides ?? SETTINGS.showGuides;
-      SETTINGS.snapGuides = snapshot.snapGuides ?? SETTINGS.snapGuides;
-      SETTINGS.selectionOutline = snapshot.selectionOutline ?? SETTINGS.selectionOutline;
-      SETTINGS.selectionOutlineColor = snapshot.selectionOutlineColor ?? SETTINGS.selectionOutlineColor;
-      SETTINGS.selectionOutlineWidth = snapshot.selectionOutlineWidth ?? SETTINGS.selectionOutlineWidth;
-      SETTINGS.gridType = snapshot.gridType ?? (snapshot.gridOverlay ? 'standard' : SETTINGS.gridType);
-      SETTINGS.gridOpacity = snapshot.gridOpacity ?? SETTINGS.gridOpacity;
-      SETTINGS.gridStyle = snapshot.gridStyle ?? SETTINGS.gridStyle;
-      SETTINGS.gridColor = snapshot.gridColor ?? SETTINGS.gridColor;
-      SETTINGS.gridSize = snapshot.gridSize ?? SETTINGS.gridSize;
-      SETTINGS.gridMinorOpacity = snapshot.gridMinorOpacity ?? SETTINGS.gridMinorOpacity;
-      SETTINGS.gridMinorColor = snapshot.gridMinorColor ?? SETTINGS.gridMinorColor;
-      SETTINGS.gridMinorSize = snapshot.gridMinorSize ?? SETTINGS.gridMinorSize;
+      SETTINGS.bgColor = takeColor('bgColor', SETTINGS.bgColor);
+      SETTINGS.truncate = snapshot.truncate === undefined ? SETTINGS.truncate : snapshot.truncate === true;
+      SETTINGS.cropExports = snapshot.cropExports === undefined ? SETTINGS.cropExports : snapshot.cropExports === true;
+      SETTINGS.removeHiddenGeometry = snapshot.removeHiddenGeometry === undefined
+        ? SETTINGS.removeHiddenGeometry
+        : snapshot.removeHiddenGeometry === true;
+      SETTINGS.outsideOpacity = takeNumber('outsideOpacity', SETTINGS.outsideOpacity, 0, 1);
+      SETTINGS.marginLineVisible = snapshot.marginLineVisible === undefined
+        ? SETTINGS.marginLineVisible
+        : snapshot.marginLineVisible === true;
+      SETTINGS.marginLineWeight = takeNumber('marginLineWeight', SETTINGS.marginLineWeight, 0, 100);
+      SETTINGS.marginLineColor = takeColor('marginLineColor', SETTINGS.marginLineColor);
+      SETTINGS.marginLineDotting = takeNumber('marginLineDotting', SETTINGS.marginLineDotting, 0, 10000);
+      SETTINGS.showGuides = snapshot.showGuides === undefined ? SETTINGS.showGuides : snapshot.showGuides === true;
+      SETTINGS.snapGuides = snapshot.snapGuides === undefined ? SETTINGS.snapGuides : snapshot.snapGuides === true;
+      SETTINGS.selectionOutline = snapshot.selectionOutline === undefined
+        ? SETTINGS.selectionOutline
+        : snapshot.selectionOutline === true;
+      SETTINGS.selectionOutlineColor = takeColor('selectionOutlineColor', SETTINGS.selectionOutlineColor);
+      SETTINGS.selectionOutlineWidth = takeNumber('selectionOutlineWidth', SETTINGS.selectionOutlineWidth, 0, 100);
+      // gridType: legacy `gridOverlay` boolean upgrade still honored.
+      const GRID_TYPES = ['none', 'standard', 'graph', 'iso', 'polar', 'dots'];
+      const gridFallback = snapshot.gridOverlay ? 'standard' : SETTINGS.gridType;
+      SETTINGS.gridType = 'gridType' in snapshot
+        ? (V && V.fromEnum(snapshot.gridType, GRID_TYPES)) || (warn('gridType', snapshot.gridType), gridFallback)
+        : gridFallback;
+      SETTINGS.gridOpacity = takeNumber('gridOpacity', SETTINGS.gridOpacity, 0, 1);
+      SETTINGS.gridStyle = takeEnum('gridStyle', SETTINGS.gridStyle, ['cartesian', 'isometric', 'polar']);
+      SETTINGS.gridColor = takeColor('gridColor', SETTINGS.gridColor);
+      SETTINGS.gridSize = takeNumber('gridSize', SETTINGS.gridSize, 0.001, 100000);
+      SETTINGS.gridMinorOpacity = takeNumber('gridMinorOpacity', SETTINGS.gridMinorOpacity, 0, 1);
+      SETTINGS.gridMinorColor = takeColor('gridMinorColor', SETTINGS.gridMinorColor);
+      SETTINGS.gridMinorSize = takeNumber('gridMinorSize', SETTINGS.gridMinorSize, 0.001, 100000);
       SETTINGS.gridSnapEnabled = snapshot.gridSnapEnabled === true;
-      SETTINGS.gridSnapSensitivity = snapshot.gridSnapSensitivity ?? SETTINGS.gridSnapSensitivity;
-      SETTINGS.undoSteps = snapshot.undoSteps ?? SETTINGS.undoSteps;
-      if (snapshot.uiSections && typeof snapshot.uiSections === 'object') {
+      SETTINGS.gridSnapSensitivity = takeNumber('gridSnapSensitivity', SETTINGS.gridSnapSensitivity, 0, 10000);
+      SETTINGS.undoSteps = takeNumber('undoSteps', SETTINGS.undoSteps, 1, 10000, { integer: true });
+      if (snapshot.uiSections && typeof snapshot.uiSections === 'object' && !Array.isArray(snapshot.uiSections)) {
         SETTINGS.uiSections = clone(snapshot.uiSections);
       }
       if (snapshot.aboutVisible !== undefined) SETTINGS.aboutVisible = snapshot.aboutVisible !== false;
-      if (snapshot.touchModifiers && typeof snapshot.touchModifiers === 'object') {
+      if (snapshot.touchModifiers && typeof snapshot.touchModifiers === 'object' && !Array.isArray(snapshot.touchModifiers)) {
         SETTINGS.touchModifiers = {
           ...(SETTINGS.touchModifiers || {}),
           ...snapshot.touchModifiers,
         };
       }
       SETTINGS.documentUnits = normalizeDocumentUnits(snapshot.documentUnits ?? SETTINGS.documentUnits);
-      SETTINGS.paperSize = snapshot.paperSize ?? SETTINGS.paperSize;
-      SETTINGS.paperWidth = snapshot.paperWidth ?? SETTINGS.paperWidth;
-      SETTINGS.paperHeight = snapshot.paperHeight ?? SETTINGS.paperHeight;
-      SETTINGS.paperOrientation = snapshot.paperOrientation ?? SETTINGS.paperOrientation;
+      SETTINGS.paperSize = takeSafeString('paperSize', SETTINGS.paperSize, 64);
+      SETTINGS.paperWidth = takeNumber('paperWidth', SETTINGS.paperWidth, 1, 100000);
+      SETTINGS.paperHeight = takeNumber('paperHeight', SETTINGS.paperHeight, 1, 100000);
+      SETTINGS.paperOrientation = takeEnum('paperOrientation', SETTINGS.paperOrientation, ['portrait', 'landscape']);
       SETTINGS.showDocumentDimensions = snapshot.showDocumentDimensions === true;
-      SETTINGS.optimizationScope = snapshot.optimizationScope ?? SETTINGS.optimizationScope;
-      SETTINGS.optimizationPreview = snapshot.optimizationPreview ?? SETTINGS.optimizationPreview;
-      SETTINGS.optimizationExport = snapshot.optimizationExport ?? SETTINGS.optimizationExport;
-      SETTINGS.optimizationOverlayColor = snapshot.optimizationOverlayColor ?? SETTINGS.optimizationOverlayColor;
-      SETTINGS.optimizationOverlayWidth = snapshot.optimizationOverlayWidth ?? SETTINGS.optimizationOverlayWidth;
-      SETTINGS.plotterOptimize = snapshot.plotterOptimize ?? SETTINGS.plotterOptimize;
-      SETTINGS.paletteId = snapshot.paletteId ?? SETTINGS.paletteId;
-      SETTINGS.layerBarPaletteId = snapshot.layerBarPaletteId ?? SETTINGS.layerBarPaletteId;
-      if (snapshot.autoColorization && typeof snapshot.autoColorization === 'object') {
+      SETTINGS.optimizationScope = takeEnum('optimizationScope', SETTINGS.optimizationScope, ['all', 'selected', 'visible']);
+      SETTINGS.optimizationPreview = takeEnum('optimizationPreview', SETTINGS.optimizationPreview, ['off', 'on', 'overlay']);
+      SETTINGS.optimizationExport = snapshot.optimizationExport === undefined
+        ? SETTINGS.optimizationExport
+        : snapshot.optimizationExport === true;
+      SETTINGS.optimizationOverlayColor = takeColor('optimizationOverlayColor', SETTINGS.optimizationOverlayColor);
+      SETTINGS.optimizationOverlayWidth = takeNumber('optimizationOverlayWidth', SETTINGS.optimizationOverlayWidth, 0, 100);
+      SETTINGS.plotterOptimize = takeNumber('plotterOptimize', SETTINGS.plotterOptimize, 0, 100, { integer: true });
+      SETTINGS.paletteId = takeSafeString('paletteId', SETTINGS.paletteId, 64);
+      SETTINGS.layerBarPaletteId = takeSafeString('layerBarPaletteId', SETTINGS.layerBarPaletteId, 64);
+      if (snapshot.autoColorization && typeof snapshot.autoColorization === 'object' && !Array.isArray(snapshot.autoColorization)) {
+        // Deep clone trusted as-is — schema is too freeform to enumerate here.
+        // Risk surface is bounded: values are read by colorization logic that
+        // numericizes them on use, never flowed into inline DOM strings.
         SETTINGS.autoColorization = clone(snapshot.autoColorization);
       }
       if (snapshot.autoColorizationCollapsed !== undefined) {
-        SETTINGS.autoColorizationCollapsed = snapshot.autoColorizationCollapsed;
+        SETTINGS.autoColorizationCollapsed = snapshot.autoColorizationCollapsed === true;
       }
       if (snapshot.pensCollapsed !== undefined) {
-        SETTINGS.pensCollapsed = snapshot.pensCollapsed;
+        SETTINGS.pensCollapsed = snapshot.pensCollapsed === true;
       }
       // activeTool intentionally NOT restored — a page refresh always boots
       // into the default Select tool regardless of what was persisted.
-      SETTINGS.scissorMode = snapshot.scissorMode ?? SETTINGS.scissorMode;
-      SETTINGS.penMode = snapshot.penMode ?? SETTINGS.penMode;
+      SETTINGS.scissorMode = takeEnum('scissorMode', SETTINGS.scissorMode, ['line', 'shape', 'all']);
+      SETTINGS.penMode = takeEnum('penMode', SETTINGS.penMode, ['draw', 'erase', 'shape']);
       if (Array.isArray(snapshot.pens) && snapshot.pens.length) {
-        SETTINGS.pens = clone(snapshot.pens);
+        // Validate each pen entry: id/name capped, color must be hex, width finite.
+        const cleanPens = [];
+        for (let i = 0; i < snapshot.pens.length && i < 32; i++) {
+          const p = snapshot.pens[i];
+          if (!p || typeof p !== 'object') continue;
+          const id = V && V.safeString(p.id, 64);
+          const color = V && V.isHexColor(p.color) ? p.color : null;
+          const width = V && V.finiteInRange(p.width, 0, 100);
+          if (!id || !color || width == null) { warn('pens[' + i + ']', p); continue; }
+          const name = (typeof p.name === 'string' && p.name.length <= 128) ? p.name : id;
+          cleanPens.push({ id, name, color, width });
+        }
+        if (cleanPens.length) SETTINGS.pens = cleanPens;
       }
       const clampPane = (v) => {
         const n = Number(v);
@@ -398,27 +488,54 @@
         if (typeof document !== 'undefined') {
           document.documentElement.style.setProperty('--pane-left-width', `${left}px`);
         }
+      } else if ('paneLeftWidth' in snapshot) {
+        warn('paneLeftWidth', snapshot.paneLeftWidth);
       }
       if (right != null) {
         SETTINGS.paneRightWidth = right;
         if (typeof document !== 'undefined') {
           document.documentElement.style.setProperty('--pane-right-width', `${right}px`);
         }
+      } else if ('paneRightWidth' in snapshot) {
+        warn('paneRightWidth', snapshot.paneRightWidth);
       }
       SETTINGS.showTourOnFirstLaunch = snapshot.showTourOnFirstLaunch === true;
       SETTINGS.tourSeen = snapshot.tourSeen === true;
-      SETTINGS.toolbarDock = snapshot.toolbarDock ?? null;
-      SETTINGS.toolbarX = typeof snapshot.toolbarX === 'number' ? snapshot.toolbarX : null;
-      SETTINGS.toolbarY = typeof snapshot.toolbarY === 'number' ? snapshot.toolbarY : null;
+      // toolbarDock: null is the canonical "no dock" sentinel; otherwise enum.
+      if ('toolbarDock' in snapshot) {
+        if (snapshot.toolbarDock == null) {
+          SETTINGS.toolbarDock = null;
+        } else {
+          const TOOLBAR_DOCKS = ['left', 'right', 'top', 'bottom'];
+          const dock = V && V.fromEnum(snapshot.toolbarDock, TOOLBAR_DOCKS);
+          if (dock) SETTINGS.toolbarDock = dock;
+          else { warn('toolbarDock', snapshot.toolbarDock); SETTINGS.toolbarDock = null; }
+        }
+      }
+      // toolbarX/Y default to null (no float position recorded). Only accept
+      // an actual number; missing-or-null leaves SETTINGS.toolbarX/Y at null.
+      const tbx = (typeof snapshot.toolbarX === 'number')
+        ? (V && V.finiteInRange(snapshot.toolbarX, -1000000, 1000000))
+        : null;
+      SETTINGS.toolbarX = tbx == null ? null : tbx;
+      const tby = (typeof snapshot.toolbarY === 'number')
+        ? (V && V.finiteInRange(snapshot.toolbarY, -1000000, 1000000))
+        : null;
+      SETTINGS.toolbarY = tby == null ? null : tby;
       SETTINGS.toolbarLocked = snapshot.toolbarLocked === true;
       SETTINGS.toolbarHorizontal = snapshot.toolbarHorizontal === true;
       SETTINGS.leftPaneCollapsed = snapshot.leftPaneCollapsed === true;
       SETTINGS.rightPaneCollapsed = snapshot.rightPaneCollapsed === true;
       SETTINGS.bottomPaneCollapsed = snapshot.bottomPaneCollapsed === true;
       if (typeof snapshot.bottomPaneHeight === 'number') {
-        SETTINGS.bottomPaneHeight = snapshot.bottomPaneHeight;
-        if (typeof document !== 'undefined') {
-          document.documentElement.style.setProperty('--bottom-pane-height', `${snapshot.bottomPaneHeight}px`);
+        const bottomPaneHeight = V && V.finiteInRange(snapshot.bottomPaneHeight, 50, 10000);
+        if (bottomPaneHeight != null) {
+          SETTINGS.bottomPaneHeight = bottomPaneHeight;
+          if (typeof document !== 'undefined') {
+            document.documentElement.style.setProperty('--bottom-pane-height', `${bottomPaneHeight}px`);
+          }
+        } else {
+          warn('bottomPaneHeight', snapshot.bottomPaneHeight);
         }
       }
     }
