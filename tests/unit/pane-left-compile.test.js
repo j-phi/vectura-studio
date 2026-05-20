@@ -181,4 +181,18 @@ describe('pane-left compile gate', () => {
     // Cleanup
     doc.body.removeChild(about);
   });
+
+  // Meridian Unit 1.9c: _showWelcomePanel moved from _ui-legacy.js
+  it('installOn registers _showWelcomePanel on the UI prototype (Unit 1.9c)', () => {
+    expect(typeof PaneLeft._showWelcomePanel).toBe('function');
+    const proto = {};
+    PaneLeft.installOn(proto);
+    expect(typeof proto._showWelcomePanel).toBe('function');
+  });
+
+  it('_showWelcomePanel runs without throwing when DOM elements are absent', () => {
+    const ctx = { app: { engine: { layers: [] } } };
+    expect(() => PaneLeft._showWelcomePanel.call(ctx, true)).not.toThrow();
+    expect(() => PaneLeft._showWelcomePanel.call(ctx, false)).not.toThrow();
+  });
 });

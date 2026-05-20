@@ -1292,6 +1292,51 @@
     this.resizeExportPreviewCanvas();
   }
 
+  // ── Meridian Unit 1.9c (2026-05-20) ─────────────────────────────────
+  // Optimization-target methods migrated out of `class UI` in `_ui-legacy.js`.
+  // Pure `this.*`-based — only the SETTINGS read needs DI (already bound).
+  function getOptimizationTargets() {
+    const SETTINGS = (DEPS && DEPS.SETTINGS) || (G.Vectura && G.Vectura.SETTINGS) || {};
+    const scope = SETTINGS.optimizationScope || 'all';
+    let targets = [];
+    if (scope === 'selected') {
+      targets = this.app.getSelectedLayers();
+    } else if (scope === 'all') {
+      targets = this.app.engine.layers.filter((layer) => !layer.isGroup);
+    } else {
+      const active = this.app.engine.getActiveLayer?.();
+      if (active) targets = [active];
+    }
+    if (!targets.length) {
+      const active = this.app.engine.getActiveLayer?.();
+      if (active) targets = [active];
+    }
+    return targets.filter((layer) => layer && !layer.isGroup);
+  }
+
+  function getOptimizationTargetIds() {
+    return new Set(this.getOptimizationTargets().map((layer) => layer.id));
+  }
+
+  function optimizeTargetsForCurrentScope(options = {}) {
+    const targets = this.getOptimizationTargets();
+    const targetIds = new Set(targets.map((layer) => layer.id));
+    if (!targets.length) return { targets, targetIds, config: null, map: new Map() };
+    const runOptions = { ...options };
+    if (!runOptions.config && targets.length > 1) {
+      // Deep-clone via JSON round-trip — matches legacy `clone()` (which was
+      // structurally `JSON.parse(JSON.stringify(x))` for plain config objects).
+      runOptions.config = JSON.parse(JSON.stringify(this.app.engine.ensureLayerOptimization(targets[0])));
+    }
+    const map = this.app.optimizeLayers(targets, runOptions);
+    return {
+      targets,
+      targetIds,
+      config: runOptions.config || null,
+      map,
+    };
+  }
+
   Modals.ExportSvg = {
     /**
      * Relocated tables (Meridian Unit 1.3). Exposed publicly so legacy /
@@ -1327,6 +1372,10 @@
     attachExportInfoButtons,
     buildExportPreviewPath,
     buildExportClipPolygons,
+    // ── Unit 1.9c: optimization-target methods ────────────────────────
+    getOptimizationTargets,
+    getOptimizationTargetIds,
+    optimizeTargetsForCurrentScope,
     installOn(proto) {
       proto.bindExportButton = function() { return bindExportButton.call(this); };
       proto.openExportModal = function() { return openExportModal.call(this); };
@@ -1341,6 +1390,10 @@
       proto.attachExportInfoButtons = function(panel) { return attachExportInfoButtons.call(this, panel); };
       proto.buildExportPreviewPath = function(...args) { return buildExportPreviewPath.apply(this, args); };
       proto.buildExportClipPolygons = function(...args) { return buildExportClipPolygons.apply(this, args); };
+      // ── Unit 1.9c installers ────────────────────────────────────────
+      proto.getOptimizationTargets = function() { return getOptimizationTargets.call(this); };
+      proto.getOptimizationTargetIds = function() { return getOptimizationTargetIds.call(this); };
+      proto.optimizeTargetsForCurrentScope = function(options) { return optimizeTargetsForCurrentScope.call(this, options); };
     },
   };
 })();

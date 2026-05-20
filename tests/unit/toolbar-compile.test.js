@@ -109,4 +109,17 @@ describe('toolbar compile gate', () => {
 
     doc.body.removeChild(toolbar);
   });
+
+  // Meridian Unit 1.9c: startLightSourcePlacement moved from _ui-legacy.js
+  it('installOn registers startLightSourcePlacement on the UI prototype (Unit 1.9c)', () => {
+    expect(typeof Toolbar.startLightSourcePlacement).toBe('function');
+    const proto = {};
+    Toolbar.installOn(proto);
+    expect(typeof proto.startLightSourcePlacement).toBe('function');
+  });
+
+  it('startLightSourcePlacement returns silently when renderer is absent', () => {
+    const ctx = { app: {} };
+    expect(() => Toolbar.startLightSourcePlacement.call(ctx)).not.toThrow();
+  });
 });

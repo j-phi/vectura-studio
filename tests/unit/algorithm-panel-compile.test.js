@@ -163,4 +163,12 @@ describe('algorithm-panel compile gate', () => {
     const ctx = { isModifierLayer: () => false };
     expect(() => AlgorithmPanel.syncPrimaryModuleDropdown.call(ctx, { type: 'flowfield' })).not.toThrow();
   });
+
+  // Meridian Unit 1.9c: splitShapeLayer moved from _ui-legacy.js class body
+  it('installOn registers splitShapeLayer on the UI prototype (Unit 1.9c)', () => {
+    expect(typeof AlgorithmPanel.splitShapeLayer).toBe('function');
+    const proto = {};
+    AlgorithmPanel.installOn(proto);
+    expect(typeof proto.splitShapeLayer).toBe('function');
+  });
 });

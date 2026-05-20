@@ -94,4 +94,30 @@ describe('layers-panel compile gate', () => {
     const ctx = { app: { engine: { layers: [] }, persistPreferencesDebounced: () => {} } };
     expect(() => LayersPanel.bindLayerListListeners.call(ctx)).not.toThrow();
   });
+
+  // Meridian Unit 1.9c: layer-state methods + renderLayers wrapper migrate
+  // out of _ui-legacy.js class body.
+  it('installOn registers layer-state methods on the UI prototype (Unit 1.9c)', () => {
+    const proto = {};
+    LayersPanel.installOn(proto);
+    expect(typeof proto.renderLayers).toBe('function');
+    expect(typeof proto.recenterLayerIfNeeded).toBe('function');
+    expect(typeof proto.isDuplicateLayerName).toBe('function');
+    expect(typeof proto.getLayerById).toBe('function');
+    expect(typeof proto.isModifierLayer).toBe('function');
+    expect(typeof proto.getModifierState).toBe('function');
+    expect(typeof proto.assignLayersToParent).toBe('function');
+    expect(typeof proto.unlockMirrorChildrenOnDelete).toBe('function');
+    expect(typeof proto.shouldLeaveParentScope).toBe('function');
+    expect(typeof proto.isDescendant).toBe('function');
+    expect(typeof proto.normalizeGroupOrder).toBe('function');
+    expect(typeof proto.moveSelectedLayers).toBe('function');
+    expect(typeof proto.duplicateLayers).toBe('function');
+    expect(typeof proto.getLayerChildren).toBe('function');
+    expect(typeof proto.getLayerDescendants).toBe('function');
+    expect(typeof proto.canLayerAcceptChildren).toBe('function');
+    expect(typeof proto.getUniqueLayerName).toBe('function');
+    expect(typeof proto.expandLayer).toBe('function');
+    expect(typeof proto.getGroupDescendants).toBe('function');
+  });
 });

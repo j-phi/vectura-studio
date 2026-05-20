@@ -64,4 +64,21 @@ describe('ui.js orchestrator entry (option-b satellite shape)', () => {
     expect(() => new Orchestrator({}))
       .toThrow(/_ui-legacy\.js|legacy carries the runtime UI class/);
   });
+
+  // Meridian Unit 1.9c (2026-05-20): the legacy `class UI { constructor() {...} }`
+  // body migrated to src/ui/ui.js. The orchestrator IIFE now also exposes:
+  //   - Orchestrator.init  — the constructor-body function (called as
+  //                          init.call(this, app) once _init is invoked).
+  //   - Orchestrator.installOn(proto) — installs proto._init on the UI
+  //                                     prototype so `new UI(app)` runs init.
+  it('exposes Orchestrator.init as a function (Unit 1.9c)', () => {
+    expect(typeof Orchestrator.init).toBe('function');
+  });
+
+  it('Orchestrator.installOn assigns _init to a prototype object (Unit 1.9c)', () => {
+    expect(typeof Orchestrator.installOn).toBe('function');
+    const proto = {};
+    Orchestrator.installOn(proto);
+    expect(typeof proto._init).toBe('function');
+  });
 });

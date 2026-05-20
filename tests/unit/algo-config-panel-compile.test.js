@@ -155,4 +155,16 @@ describe('algo-config-panel compile gate', () => {
     // installer is a no-op when none of its target IDs exist in the DOM.
     expect(() => AlgoConfigPanel.bindAlgoConfigListeners.call({})).not.toThrow();
   });
+
+  // Meridian Unit 1.9c: toggleSeedControls moved from _ui-legacy.js class body
+  it('installOn registers toggleSeedControls on the UI prototype (Unit 1.9c)', () => {
+    expect(typeof AlgoConfigPanel.toggleSeedControls).toBe('function');
+    const proto = {};
+    AlgoConfigPanel.installOn(proto);
+    expect(typeof proto.toggleSeedControls).toBe('function');
+  });
+
+  it('toggleSeedControls runs without throwing when seed-controls element is absent', () => {
+    expect(() => AlgoConfigPanel.toggleSeedControls.call({}, 'flowfield')).not.toThrow();
+  });
 });

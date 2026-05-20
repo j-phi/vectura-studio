@@ -1958,6 +1958,536 @@
     _updateLBPTrigger();
   }
 
+  // ── Meridian Unit 1.9c (2026-05-20) ─────────────────────────────────
+  // Layer-state methods migrated out of the `class UI { ... }` body in
+  // `src/ui/_ui-legacy.js`. All preserve their original `this`-based
+  // signature so callers keep using `this.<name>(...)` on the UI instance.
+  // Reach into LAYER_PALETTES / Modifiers via window.Vectura at call time
+  // (no DI bag entries needed beyond what `bind()` already injects).
+
+  function isDuplicateLayerName(name, excludeId) {
+    const normalized = name.trim().toLowerCase();
+    return this.app.engine.layers.some(
+      (layer) => layer.id !== excludeId && layer.name.trim().toLowerCase() === normalized
+    );
+  }
+
+  function getLayerById(id) {
+    return this.app.engine.layers.find((layer) => layer.id === id) || null;
+  }
+
+  function isModifierLayerMethod(layer) {
+    const fn = (G.Vectura && G.Vectura.Modifiers && G.Vectura.Modifiers.isModifierLayer) || (() => false);
+    return fn(layer);
+  }
+
+  function getModifierState(layer) {
+    if (!this.isModifierLayer(layer)) return null;
+    const Modifiers = (G.Vectura && G.Vectura.Modifiers) || {};
+    const createModifierState = Modifiers.createModifierState
+      || ((type) => ({ type, enabled: true, guidesVisible: true, guidesLocked: false, mirrors: [] }));
+    const createMirrorLine = Modifiers.createMirrorLine
+      || ((index) => ({ id: `mirror-${index + 1}`, enabled: true }));
+    if (!layer.modifier) {
+      layer.modifier = createModifierState('mirror', {
+        mirrors: [createMirrorLine(0)],
+      });
+    }
+    if (!Array.isArray(layer.modifier.mirrors)) layer.modifier.mirrors = [];
+    if (layer.modifier.guidesVisible === undefined) layer.modifier.guidesVisible = true;
+    if (layer.modifier.guidesLocked === undefined) layer.modifier.guidesLocked = false;
+    if (layer.modifier.enabled === undefined) layer.modifier.enabled = true;
+    return layer.modifier;
+  }
+
+  function assignLayersToParent(parentId, targetLayers, options = {}) {
+    const layers = (targetLayers || []).filter((layer) => layer && layer.id !== parentId);
+    if (!layers.length) return [];
+    const { selectAssigned = false, primaryId = null, captureHistory = false } = options;
+    const parent = this.getLayerById(parentId);
+    if (!parent || !this.canLayerAcceptChildren(parent)) return [];
+    const moveIds = layers
+      .filter((layer) => !(layer.isGroup && this.isDescendant(parentId, layer.id)))
+      .map((layer) => layer.id);
+    if (!moveIds.length) return [];
+
+    if (captureHistory && this.app.pushHistory) this.app.pushHistory();
+    if (parent.isGroup) parent.groupCollapsed = false;
+    const moveSet = new Set(moveIds);
+    const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
+    const remaining = this.app.engine.layers.filter((layer) => !moveSet.has(layer.id));
+    moveIds.forEach((id) => {
+      const layer = map.get(id);
+      if (layer) layer.parentId = parentId;
+    });
+    const insertIndex = remaining.findIndex((layer) => layer.id === parentId);
+    const engineInsert = insertIndex === -1 ? remaining.length : insertIndex;
+    const moveEngineOrder = moveIds.slice().reverse().map((id) => map.get(id)).filter(Boolean);
+    remaining.splice(engineInsert, 0, ...moveEngineOrder);
+    this.app.engine.reorderLayers(remaining);
+    this.normalizeGroupOrder();
+    this.app.computeDisplayGeometry();
+
+    if (this.isModifierLayer(parent) && parent.modifier?.type === 'mirror') {
+      moveIds.forEach((id) => this.layerLockedIds.add(id));
+    }
+
+    if (selectAssigned) {
+      const ids = moveIds.slice();
+      const nextPrimary = ids.includes(primaryId) ? primaryId : ids[ids.length - 1] || parentId;
+      this.app.setSelection(ids.length ? ids : [parentId], nextPrimary);
+      this.app.engine.setActiveLayerId(nextPrimary || parentId || null);
+    }
+
+    return moveIds.map((id) => map.get(id)).filter(Boolean);
+  }
+
+  function unlockMirrorChildrenOnDelete(layerId) {
+    const engine = this.app?.engine;
+    if (!engine || !this.layerLockedIds) return;
+    const layer = engine.layers.find((l) => l.id === layerId);
+    if (!layer || !this.isModifierLayer(layer) || layer.modifier?.type !== 'mirror') return;
+    const cascade = (pid) => {
+      engine.layers.filter((l) => l.parentId === pid).forEach((c) => {
+        this.layerLockedIds.delete(c.id);
+        cascade(c.id);
+      });
+    };
+    cascade(layerId);
+  }
+
+  function shouldLeaveParentScope(layer, prevId, nextId, selectedIds = new Set()) {
+    if (!layer?.parentId || selectedIds.has(layer.parentId)) return false;
+    const prevLayer = prevId ? this.getLayerById(prevId) : null;
+    const nextLayer = nextId ? this.getLayerById(nextId) : null;
+    const previousMatchesParent = prevId === layer.parentId || prevLayer?.parentId === layer.parentId;
+    const nextMatchesParent = nextLayer?.parentId === layer.parentId;
+    return !(previousMatchesParent || nextMatchesParent);
+  }
+
+  function isDescendant(targetId, ancestorId) {
+    let current = this.getLayerById(targetId);
+    while (current && current.parentId) {
+      if (current.parentId === ancestorId) return true;
+      current = this.getLayerById(current.parentId);
+    }
+    return false;
+  }
+
+  function normalizeGroupOrder() {
+    const layers = this.app.engine.layers;
+    const parents = layers.filter((layer) => this.canLayerAcceptChildren(layer));
+    const parentIds = new Set(parents.map((parent) => parent.id));
+    const childrenMap = new Map();
+    layers.forEach((layer) => {
+      if (layer.parentId && parentIds.has(layer.parentId)) {
+        if (!childrenMap.has(layer.parentId)) childrenMap.set(layer.parentId, []);
+        childrenMap.get(layer.parentId).push(layer);
+      }
+    });
+    const getDescendants = (parentId) => {
+      const children = childrenMap.get(parentId) || [];
+      const ids = [];
+      children.forEach((child) => {
+        ids.push(child.id);
+        if (parentIds.has(child.id)) ids.push(...getDescendants(child.id));
+      });
+      return ids;
+    };
+    parents.forEach((parent) => {
+      const descendantIds = getDescendants(parent.id);
+      if (!descendantIds.length) return;
+      const childIndexes = descendantIds
+        .map((id) => layers.findIndex((layer) => layer.id === id))
+        .filter((idx) => idx >= 0);
+      if (!childIndexes.length) return;
+      const maxIndex = Math.max(...childIndexes);
+      const currentIndex = layers.findIndex((layer) => layer.id === parent.id);
+      if (currentIndex === -1) return;
+      if (currentIndex === maxIndex + 1) return;
+      const [movedParent] = layers.splice(currentIndex, 1);
+      const insertIndex = Math.min(maxIndex + 1, layers.length);
+      layers.splice(insertIndex, 0, movedParent || parent);
+    });
+  }
+
+  function moveSelectedLayers(direction) {
+    const selectedIds = Array.from(this.app.renderer?.selectedLayerIds || []).filter((id) => {
+      const layer = this.getLayerById(id);
+      return layer && !layer.isGroup;
+    });
+    if (!selectedIds.length) return false;
+    const order = this.app.engine.layers.map((layer) => layer.id);
+    const selected = new Set(selectedIds);
+    const beforeOrder = order.slice();
+    if (direction === 'top' || direction === 'bottom') {
+      const keep = order.filter((id) => !selected.has(id));
+      const moving = order.filter((id) => selected.has(id));
+      const next = direction === 'top' ? [...keep, ...moving] : [...moving, ...keep];
+      const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
+      this.app.engine.layers = next.map((id) => map.get(id)).filter(Boolean);
+    } else if (direction === 'up') {
+      for (let i = order.length - 2; i >= 0; i--) {
+        if (selected.has(order[i]) && !selected.has(order[i + 1])) {
+          [order[i], order[i + 1]] = [order[i + 1], order[i]];
+        }
+      }
+      const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
+      this.app.engine.layers = order.map((id) => map.get(id)).filter(Boolean);
+    } else if (direction === 'down') {
+      for (let i = 1; i < order.length; i++) {
+        if (selected.has(order[i]) && !selected.has(order[i - 1])) {
+          [order[i - 1], order[i]] = [order[i], order[i - 1]];
+        }
+      }
+      const map = new Map(this.app.engine.layers.map((layer) => [layer.id, layer]));
+      this.app.engine.layers = order.map((id) => map.get(id)).filter(Boolean);
+    }
+    const changed = beforeOrder.some((id, index) => id !== this.app.engine.layers[index]?.id);
+    if (!changed) return false;
+    this.normalizeGroupOrder();
+    this.renderLayers();
+    this.app.render();
+    const scrollTargetId = this.app.renderer?.selectedLayerId || selectedIds[selectedIds.length - 1] || null;
+    if (scrollTargetId) {
+      window.requestAnimationFrame(() => this.scrollLayerToTop(scrollTargetId));
+    }
+    return true;
+  }
+
+  function duplicateLayers(targetLayers, options = {}) {
+    const { select = true } = options;
+    const targets = targetLayers || [];
+    if (!targets.length) return [];
+    if (this.app.pushHistory) this.app.pushHistory();
+
+    const targetIds = new Set(targets.map(l => l.id));
+    const filteredTargets = targets.filter((layer) => {
+      let pId = layer.parentId;
+      while (pId) {
+        if (targetIds.has(pId)) return false;
+        const pLayer = this.app.engine.layers.find(l => l.id === pId);
+        pId = pLayer ? pLayer.parentId : null;
+      }
+      return true;
+    });
+
+    const order = this.app.engine.layers.map((layer) => layer.id);
+    const sorted = filteredTargets
+      .slice()
+      .sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+
+    const duplicates = [];
+    const duplicateDescendants = [];
+    sorted.forEach((layer) => {
+      const dup = this.app.engine.duplicateLayer(layer.id);
+      if (dup) {
+        duplicates.push(dup);
+        if (dup.isGroup) {
+          const getDesc = (pid) => {
+            const out = [];
+            this.app.engine.layers.forEach(l => {
+              if (l.parentId === pid) {
+                out.push(l);
+                out.push(...getDesc(l.id));
+              }
+            });
+            return out;
+          };
+          duplicateDescendants.push(...getDesc(dup.id));
+        }
+      }
+    });
+
+    const allDups = [...duplicates, ...duplicateDescendants];
+    if (allDups.length && select && this.app.renderer) {
+      const ids = allDups.map((layer) => layer.id);
+      const nonGroupIds = allDups.filter(l => !l.isGroup).map(l => l.id);
+      const primary = nonGroupIds[nonGroupIds.length - 1] || ids[ids.length - 1] || null;
+      this.app.renderer.setSelection(ids, primary);
+    }
+    this.renderLayers();
+    this.buildControls();
+    this.app.render();
+    return duplicates;
+  }
+
+  function getLayerChildren(layerId) {
+    return (this.app.engine.layers || []).filter((layer) => layer?.parentId === layerId);
+  }
+
+  function getLayerDescendants(layerId) {
+    const out = [];
+    const visit = (parentId) => {
+      this.getLayerChildren(parentId).forEach((child) => {
+        out.push(child);
+        visit(child.id);
+      });
+    };
+    visit(layerId);
+    return out;
+  }
+
+  function canLayerAcceptChildren(layer) {
+    if (!layer) return false;
+    if (layer.isGroup) return true;
+    return Boolean(layer.maskCapabilities?.canSource);
+  }
+
+  function getUniqueLayerName(base, excludeId) {
+    const clean = base.trim() || 'Layer';
+    if (!this.isDuplicateLayerName(clean, excludeId)) return clean;
+    let count = 2;
+    let next = `${clean} ${count}`;
+    while (this.isDuplicateLayerName(next, excludeId)) {
+      count += 1;
+      next = `${clean} ${count}`;
+    }
+    return next;
+  }
+
+  function recenterLayerIfNeeded(layer) {
+    const SETTINGS = (G.Vectura && G.Vectura.SETTINGS) || {};
+    if (!layer || !this.app.renderer) return;
+    const bounds = this.app.renderer.getLayerBounds(layer);
+    if (!bounds) return;
+    const prof = this.app.engine.currentProfile;
+    const inset = SETTINGS.truncate ? SETTINGS.margin : 0;
+    const limitLeft = inset;
+    const limitRight = prof.width - inset;
+    const limitTop = inset;
+    const limitBottom = prof.height - inset;
+    const corners = Object.values(bounds.corners || {});
+    if (!corners.length) return;
+    const minX = Math.min(...corners.map((pt) => pt.x));
+    const maxX = Math.max(...corners.map((pt) => pt.x));
+    const minY = Math.min(...corners.map((pt) => pt.y));
+    const maxY = Math.max(...corners.map((pt) => pt.y));
+    const boundsW = maxX - minX;
+    const boundsH = maxY - minY;
+    const availableW = limitRight - limitLeft;
+    const availableH = limitBottom - limitTop;
+    let shiftX = 0;
+    let shiftY = 0;
+
+    if (boundsW > availableW) {
+      shiftX = (limitLeft + limitRight) / 2 - (minX + maxX) / 2;
+    } else {
+      if (minX < limitLeft) shiftX = limitLeft - minX;
+      if (maxX + shiftX > limitRight) shiftX = limitRight - maxX;
+    }
+
+    if (boundsH > availableH) {
+      shiftY = (limitTop + limitBottom) / 2 - (minY + maxY) / 2;
+    } else {
+      if (minY < limitTop) shiftY = limitTop - minY;
+      if (maxY + shiftY > limitBottom) shiftY = limitBottom - maxY;
+    }
+
+    if (Math.abs(shiftX) > 0.001 || Math.abs(shiftY) > 0.001) {
+      layer.params.posX += shiftX;
+      layer.params.posY += shiftY;
+      G.Vectura?.PaintBucketOps?.translateLayerFills?.(layer, shiftX, shiftY);
+      this.app.engine.generate(layer.id);
+    }
+  }
+
+  function expandLayer(layer, options = {}) {
+    const { Layer, clone } = requireDeps('expandLayer');
+    if (!layer || layer.isGroup) return;
+    // Local isPrimitiveShapeLayer (matches legacy IIFE-local predicate).
+    const isPrimitive = (l) => {
+      if (!l || l.isGroup) return false;
+      if (l.type !== 'shape') return false;
+      const meta = l.sourcePaths?.[0]?.meta;
+      const t = meta?.shape?.type;
+      return t === 'rect' || t === 'oval' || t === 'polygon';
+    };
+    if (isPrimitive(layer)) return;
+    const isEffLocked = (id) => {
+      if (this.layerLockedIds?.has(id)) return true;
+      let l = this.app.engine.getLayerById?.(id);
+      while (l?.parentId) {
+        if (this.layerLockedIds?.has(l.parentId)) return true;
+        l = this.app.engine.getLayerById?.(l.parentId);
+      }
+      return false;
+    };
+    if (isEffLocked(layer.id)) return;
+    if (!Layer) return;
+    const { skipHistory = false, returnChildren = false, suppressRender = false, selectChildren = true } = options;
+    if (!skipHistory && this.app.pushHistory) this.app.pushHistory();
+    if (!layer.paths || !layer.paths.length) {
+      this.app.engine.generate(layer.id);
+    }
+    if (!layer.paths || !layer.paths.length) return;
+
+    // Local clonePath (matches legacy IIFE-local helper).
+    const clonePath = (path) => {
+      if (!Array.isArray(path)) return path;
+      const next = path.map((pt) => ({ ...pt }));
+      if (path.meta) next.meta = JSON.parse(JSON.stringify(path.meta));
+      return next;
+    };
+
+    const groupId = layer.id;
+    const baseName = layer.name;
+    const pad = String(layer.paths.length).length;
+    const pathMeta = layer.paths.map((path, index) => {
+      let minX = Infinity;
+      let minY = Infinity;
+      const metaGroup = path?.meta?.group;
+      const metaLabel = path?.meta?.label;
+      if (path && path.meta && path.meta.kind === 'circle') {
+        const cx = path.meta.cx ?? path.meta.x ?? 0;
+        const cy = path.meta.cy ?? path.meta.y ?? 0;
+        const rx = path.meta.rx ?? path.meta.r ?? 0;
+        const ry = path.meta.ry ?? path.meta.r ?? 0;
+        minX = cx - rx;
+        minY = cy - ry;
+      } else if (Array.isArray(path)) {
+        path.forEach((pt) => {
+          if (!pt) return;
+          minX = Math.min(minX, pt.x);
+          minY = Math.min(minY, pt.y);
+        });
+      }
+      if (!Number.isFinite(minX)) minX = 0;
+      if (!Number.isFinite(minY)) minY = 0;
+      return { path, index, minX, minY, group: metaGroup, label: metaLabel };
+    });
+
+    pathMeta.sort((a, b) => {
+      if (a.minY !== b.minY) return a.minY - b.minY;
+      if (a.minX !== b.minX) return a.minX - b.minX;
+      return a.index - b.index;
+    });
+
+    const groupNodes = new Map();
+    const children = pathMeta.map((entry, index) => {
+      const newId = Math.random().toString(36).slice(2, 11);
+      const child = new Layer(newId, 'shape', `${baseName} - Line ${String(index + 1).padStart(pad, '0')}`);
+      child.parentId = groupId;
+      child.params.seed = 0;
+      child.params.posX = 0;
+      child.params.posY = 0;
+      child.params.scaleX = 1;
+      child.params.scaleY = 1;
+      child.params.rotation = 0;
+      child.params.curves = Boolean(layer.params.curves);
+      child.params.smoothing = 0;
+      child.params.simplify = 0;
+      child.sourcePaths = [clonePath(entry.path)];
+      child.penId = layer.penId;
+      child.color = layer.color;
+      child.strokeWidth = layer.strokeWidth;
+      child.lineCap = layer.lineCap;
+      child.visible = layer.visible;
+      if (entry.group) {
+        let groupNode = groupNodes.get(entry.group);
+        if (!groupNode) {
+          const gId = Math.random().toString(36).slice(2, 11);
+          groupNode = new Layer(gId, 'group', entry.group);
+          groupNode.isGroup = true;
+          groupNode.groupType = 'group';
+          groupNode.groupCollapsed = false;
+          groupNode.visible = layer.visible;
+          groupNode.parentId = layer.id;
+          groupNode.penId = layer.penId;
+          groupNode.color = layer.color;
+          groupNode.strokeWidth = layer.strokeWidth;
+          groupNode.lineCap = layer.lineCap;
+          groupNodes.set(entry.group, groupNode);
+        }
+        child.parentId = groupNode.id;
+        if (entry.label) child.name = entry.label;
+      } else if (entry.label) {
+        child.name = entry.label;
+      }
+      return child;
+    });
+
+    layer.isGroup = true;
+    layer.groupType = layer.type;
+    layer.groupParams = clone(layer.params);
+    layer.groupCollapsed = false;
+    layer.type = 'group';
+    layer.paths = [];
+    layer.sourcePaths = null;
+    layer.paramStates = {};
+    // Groups are skipped by computeAllDisplayGeometry(), so cached geometry from
+    // the pre-expansion type would otherwise be returned forever by getRenderablePaths().
+    layer.effectivePaths = [];
+    layer.displayPaths = [];
+    layer.optimizedPaths = null;
+    layer.effectiveStats = null;
+    layer.displayStats = null;
+
+    const idx = this.app.engine.layers.findIndex((l) => l.id === groupId);
+    const orderedItems = [];
+    const seenGroups = new Set();
+    pathMeta.forEach((entry, idxInner) => {
+      const child = children[idxInner];
+      if (entry.group) {
+        const groupNode = groupNodes.get(entry.group);
+        if (groupNode && !seenGroups.has(groupNode.id)) {
+          orderedItems.push(groupNode);
+          seenGroups.add(groupNode.id);
+        }
+      }
+      orderedItems.push(child);
+    });
+    const insertChildren = orderedItems.reverse();
+    if (idx >= 0) {
+      this.app.engine.layers.splice(idx + 1, 0, ...insertChildren);
+    } else {
+      this.app.engine.layers.push(...insertChildren);
+    }
+
+    children.forEach((child) => this.app.engine.generate(child.id));
+    if (selectChildren) {
+      this.app.engine.activeLayerId = layer.id;
+      if (this.app.renderer) this.app.renderer.setSelection([layer.id], layer.id);
+    }
+    if (!suppressRender) {
+      this.renderLayers();
+      this.buildControls();
+      this.updateFormula();
+      this.app.render();
+    }
+    if (returnChildren) return children;
+  }
+
+  function getGroupDescendants(groupId) {
+    const out = [];
+    const walk = (id) => {
+      this.app.engine.layers.forEach((layer) => {
+        if (layer.parentId !== id) return;
+        if (layer.isGroup) {
+          walk(layer.id);
+        } else {
+          out.push(layer);
+        }
+      });
+    };
+    walk(groupId);
+    return out;
+  }
+
+  // Wrapper around renderLayers that also re-attaches the layer right-click
+  // context menu after each render. Was previously inlined as the legacy
+  // `class UI` `renderLayers` method (which wrapped LayersPanel.renderLayers).
+  // Now installed on UI.prototype as `renderLayers` so legacy is methodless.
+  function renderLayersWithContextMenu() {
+    const result = renderLayers.call(this);
+    try {
+      if (G.Vectura?.UI?.Menus?.LayerContext?.attach) {
+        G.Vectura.UI.Menus.LayerContext.attach(this);
+      }
+    } catch (_) { /* missing menu module is non-fatal */ }
+    return result;
+  }
+
   UI.LayersPanel = {
     /**
      * Inject closure-captured legacy ui.js IIFE locals.
@@ -1973,6 +2503,25 @@
     ungroupSelection,
     createManualLayerFromPath,
     bindLayerListListeners,
+    // ── Unit 1.9c: layer-state methods ────────────────────────────────
+    recenterLayerIfNeeded,
+    isDuplicateLayerName,
+    getLayerById,
+    isModifierLayer: isModifierLayerMethod,
+    getModifierState,
+    assignLayersToParent,
+    unlockMirrorChildrenOnDelete,
+    shouldLeaveParentScope,
+    isDescendant,
+    normalizeGroupOrder,
+    moveSelectedLayers,
+    duplicateLayers,
+    getLayerChildren,
+    getLayerDescendants,
+    canLayerAcceptChildren,
+    getUniqueLayerName,
+    expandLayer,
+    getGroupDescendants,
     installOn(proto) {
       proto.assignLayersToRoot = function(...args) { return assignLayersToRoot.apply(this, args); };
       proto.groupSelection = function(...args) { return groupSelection.apply(this, args); };
@@ -1989,6 +2538,28 @@
       proto._lvlMaskSelGroup = function(...args) { return _lvlMaskSelGroup.apply(this, args); };
       proto.createManualLayerFromPath = function(payload) { return createManualLayerFromPath.call(this, payload); };
       proto.bindLayerListListeners = function() { return bindLayerListListeners.call(this); };
+      // ── Unit 1.9c installers ────────────────────────────────────────
+      // `renderLayers` wraps the panel's own renderLayers with the
+      // layer-context-menu reattach — replaces the legacy class wrapper.
+      proto.renderLayers = function() { return renderLayersWithContextMenu.call(this); };
+      proto.recenterLayerIfNeeded = function(layer) { return recenterLayerIfNeeded.call(this, layer); };
+      proto.isDuplicateLayerName = function(name, excludeId) { return isDuplicateLayerName.call(this, name, excludeId); };
+      proto.getLayerById = function(id) { return getLayerById.call(this, id); };
+      proto.isModifierLayer = function(layer) { return isModifierLayerMethod.call(this, layer); };
+      proto.getModifierState = function(layer) { return getModifierState.call(this, layer); };
+      proto.assignLayersToParent = function(...args) { return assignLayersToParent.apply(this, args); };
+      proto.unlockMirrorChildrenOnDelete = function(layerId) { return unlockMirrorChildrenOnDelete.call(this, layerId); };
+      proto.shouldLeaveParentScope = function(...args) { return shouldLeaveParentScope.apply(this, args); };
+      proto.isDescendant = function(targetId, ancestorId) { return isDescendant.call(this, targetId, ancestorId); };
+      proto.normalizeGroupOrder = function() { return normalizeGroupOrder.call(this); };
+      proto.moveSelectedLayers = function(direction) { return moveSelectedLayers.call(this, direction); };
+      proto.duplicateLayers = function(targetLayers, options) { return duplicateLayers.call(this, targetLayers, options); };
+      proto.getLayerChildren = function(layerId) { return getLayerChildren.call(this, layerId); };
+      proto.getLayerDescendants = function(layerId) { return getLayerDescendants.call(this, layerId); };
+      proto.canLayerAcceptChildren = function(layer) { return canLayerAcceptChildren.call(this, layer); };
+      proto.getUniqueLayerName = function(base, excludeId) { return getUniqueLayerName.call(this, base, excludeId); };
+      proto.expandLayer = function(layer, options) { return expandLayer.call(this, layer, options); };
+      proto.getGroupDescendants = function(groupId) { return getGroupDescendants.call(this, groupId); };
     },
   };
 })();

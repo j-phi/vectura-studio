@@ -4059,6 +4059,22 @@
     }
   }
 
+  // ── Meridian Unit 1.9c (2026-05-20) ─────────────────────────────────
+  // `toggleSeedControls` migrated out of `class UI` in `_ui-legacy.js`.
+  // Reads `getEl` from DEPS (already bound) and identifies seedless algos
+  // via the locally-defined SEEDLESS_ALGOS set (matches the legacy IIFE
+  // local `usesSeed` predicate exactly).
+  const SEEDLESS_ALGOS_LIST = ['lissajous', 'harmonograph', 'shape', 'group'];
+  function toggleSeedControls(type) {
+    const getEl = (DEPS && DEPS.getEl)
+      || ((id) => (typeof document !== 'undefined' ? document.getElementById(id) : null));
+    const show = !SEEDLESS_ALGOS_LIST.includes(type);
+    const seedControls = getEl('seed-controls', { silent: true });
+    if (seedControls) seedControls.style.display = show ? '' : 'none';
+    const label = getEl('transform-label', { silent: true });
+    if (label) label.textContent = show ? 'Transform & Seed' : 'Transform';
+  }
+
   UI.AlgoConfigPanel = {
     /**
      * Inject closure-captured legacy ui.js IIFE locals.
@@ -4070,9 +4086,11 @@
     },
     buildControls,
     bindAlgoConfigListeners,
+    toggleSeedControls,
     installOn(proto) {
       proto.buildControls = function() { return buildControls.call(this); };
       proto.bindAlgoConfigListeners = function() { return bindAlgoConfigListeners.call(this); };
+      proto.toggleSeedControls = function(type) { return toggleSeedControls.call(this, type); };
     },
   };
 })();

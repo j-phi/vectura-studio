@@ -176,6 +176,23 @@
     }
   }
 
+  // ── Meridian Unit 1.9c (2026-05-20) ─────────────────────────────────
+  // `_showWelcomePanel` migrated out of `class UI` in `_ui-legacy.js`.
+  // No DEPS needed — pure DOM toggle on the legacy welcome panel.
+  function _showWelcomePanel(show) {
+    const welcome = document.getElementById('left-welcome');
+    const sections = document.querySelector('.left-panel-sections');
+    if (welcome) welcome.style.display = show ? '' : 'none';
+    if (sections) sections.style.display = show ? 'none' : '';
+    if (show) {
+      const hasLayers = (this.app?.engine?.layers?.length ?? 0) > 0;
+      const intro = document.getElementById('left-welcome-intro');
+      const select = document.getElementById('left-welcome-select');
+      if (intro) intro.style.display = hasLayers ? 'none' : '';
+      if (select) select.style.display = hasLayers ? '' : 'none';
+    }
+  }
+
   UI.PaneLeft = {
     /**
      * Inject closure-captured legacy ui.js IIFE locals.
@@ -193,6 +210,7 @@
     initAlgorithmTransformSection,
     setAboutVisible,
     initAboutSection,
+    _showWelcomePanel,
     installOn(proto) {
       proto.getLeftSectionDefaults = function() { return getLeftSectionDefaults.call(this); };
       proto.getLeftSectionMap = function() { return getLeftSectionMap.call(this); };
@@ -202,6 +220,7 @@
       proto.initAlgorithmTransformSection = function() { return initAlgorithmTransformSection.call(this); };
       proto.setAboutVisible = function(...args) { return setAboutVisible.apply(this, args); };
       proto.initAboutSection = function() { return initAboutSection.call(this); };
+      proto._showWelcomePanel = function(show) { return _showWelcomePanel.call(this, show); };
     },
   };
 })();

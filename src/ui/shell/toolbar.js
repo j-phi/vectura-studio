@@ -934,6 +934,15 @@
     });
   }
 
+  // ── Meridian Unit 1.9c (2026-05-20) ─────────────────────────────────
+  // `startLightSourcePlacement` migrated out of `class UI` in `_ui-legacy.js`.
+  // No DEPS needed — composes `this.app.renderer` and `this.setActiveTool`.
+  function startLightSourcePlacement() {
+    if (!this.app?.renderer) return;
+    this.setActiveTool?.('select');
+    this.app.renderer.setLightSourceMode?.(true);
+  }
+
   UI.Toolbar = {
     /**
      * Inject closure-captured legacy ui.js IIFE locals.
@@ -945,9 +954,11 @@
     },
     updateLightSourceTool,
     initToolBar,
+    startLightSourcePlacement,
     installOn(proto) {
       proto.updateLightSourceTool = function() { return updateLightSourceTool.call(this); };
       proto.initToolBar = function() { return initToolBar.call(this); };
+      proto.startLightSourcePlacement = function() { return startLightSourcePlacement.call(this); };
     },
   };
 })();

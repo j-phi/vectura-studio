@@ -414,6 +414,45 @@
   }
 
 
+  // ── Meridian Unit 1.9c (2026-05-20) ─────────────────────────────────
+  // `splitShapeLayer` migrated out of `class UI` in `_ui-legacy.js`. Reads
+  // the `Layer` constructor from DEPS (already injected via bind).
+  function splitShapeLayer(layer, segments) {
+    const { Layer } = requireDeps('splitShapeLayer');
+    if (!Layer || !layer || !segments || !segments.length) return [];
+    const engine = this.app.engine;
+    const idx = engine.layers.findIndex((l) => l.id === layer.id);
+    const pad = String(segments.length).length;
+    const children = segments.map((seg, i) => {
+      const newId = Math.random().toString(36).slice(2, 11);
+      const child = new Layer(newId, 'shape', `${layer.name} Cut ${String(i + 1).padStart(pad, '0')}`);
+      child.parentId = layer.parentId;
+      child.params.seed = 0;
+      child.params.posX = 0;
+      child.params.posY = 0;
+      child.params.scaleX = 1;
+      child.params.scaleY = 1;
+      child.params.rotation = 0;
+      child.params.curves = Boolean(layer.params.curves);
+      child.params.smoothing = 0;
+      child.params.simplify = 0;
+      child.sourcePaths = [seg.map((pt) => ({ x: pt.x, y: pt.y }))];
+      child.penId = layer.penId;
+      child.color = layer.color;
+      child.strokeWidth = layer.strokeWidth;
+      child.lineCap = layer.lineCap;
+      child.visible = layer.visible;
+      return child;
+    });
+    if (idx >= 0) {
+      engine.layers.splice(idx, 1, ...children);
+    } else {
+      engine.layers.push(...children);
+    }
+    children.forEach((child) => engine.generate(child.id));
+    return children;
+  }
+
   UI.AlgorithmPanel = {
     /**
      * Inject closure-captured legacy ui.js IIFE locals.
@@ -430,6 +469,7 @@
     computeHarmonographPlotterData,
     mountHarmonographPlotter,
     applyScissor,
+    splitShapeLayer,
     installOn(proto) {
       proto.syncPrimaryModuleDropdown = function(layer) { return syncPrimaryModuleDropdown.call(this, layer); };
       proto.isModifierType = function(type) { return isModifierType.call(this, type); };
@@ -439,6 +479,7 @@
       proto.computeHarmonographPlotterData = function(layer) { return computeHarmonographPlotterData.call(this, layer); };
       proto.mountHarmonographPlotter = function(layer, target) { return mountHarmonographPlotter.call(this, layer, target); };
       proto.applyScissor = function(payload) { return applyScissor.call(this, payload); };
+      proto.splitShapeLayer = function(layer, segments) { return splitShapeLayer.call(this, layer, segments); };
     },
   };
 })();

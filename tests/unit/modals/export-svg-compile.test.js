@@ -198,4 +198,29 @@ describe('export-svg compile gate', () => {
     // app.renderer.exportModalOpen flipped to true (matches legacy contract).
     expect(stub.app.renderer.exportModalOpen).toBe(true);
   });
+
+  // Meridian Unit 1.9c: optimization-target methods moved from _ui-legacy.js
+  it('installOn registers optimization-target methods on the UI prototype (Unit 1.9c)', () => {
+    expect(typeof ExportSvg.getOptimizationTargets).toBe('function');
+    expect(typeof ExportSvg.getOptimizationTargetIds).toBe('function');
+    expect(typeof ExportSvg.optimizeTargetsForCurrentScope).toBe('function');
+    const proto = {};
+    ExportSvg.installOn(proto);
+    expect(typeof proto.getOptimizationTargets).toBe('function');
+    expect(typeof proto.getOptimizationTargetIds).toBe('function');
+    expect(typeof proto.optimizeTargetsForCurrentScope).toBe('function');
+  });
+
+  it('getOptimizationTargets returns empty array when engine has no layers', () => {
+    ExportSvg.bind({
+      getEl: () => null,
+      SETTINGS: { optimizationScope: 'all' },
+      clamp: (v) => v,
+      getThemeToken: (_, fb = '') => fb,
+      getContrastTextColor: () => '#000',
+      openColorPickerAnchoredTo: () => {},
+    });
+    const ctx = { app: { engine: { layers: [], getActiveLayer: () => null }, getSelectedLayers: () => [] } };
+    expect(ExportSvg.getOptimizationTargets.call(ctx)).toEqual([]);
+  });
 });
