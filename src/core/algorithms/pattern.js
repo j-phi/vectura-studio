@@ -3715,7 +3715,18 @@
       };
       // Re-enter dispatcher — guarded against recursion since stripePrimary/secondary
       // cannot be 'stripes' (filtered above)
-      return generatePatternFillPaths(sub);
+      const segs = generatePatternFillPaths(sub);
+      // The slab spans the region's full bounding-box width, so the sub-fill
+      // is only band-limited — it still leaks past a non-rectangular parent.
+      // Clip each band segment back to the actual region to mask the fill.
+      const clipped = [];
+      for (const seg of segs) {
+        for (const piece of clipPolylineToPoly(seg, region)) {
+          if (seg.meta) piece.meta = { ...seg.meta };
+          clipped.push(piece);
+        }
+      }
+      return clipped;
     };
     for (let y = minY; y < maxY; y += period) {
       const primSlab = makeSlab(y, y + stripeBandWidth);
