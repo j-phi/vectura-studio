@@ -100,8 +100,9 @@
         `;
     }
     if (seedDisplay) {
-      seedDisplay.style.display = usesSeed(l.type) ? '' : 'none';
-      seedDisplay.innerText = `Seed: ${l.params.seed}`;
+      const shouldShow = usesSeed(l.type) && l.params;
+      seedDisplay.style.display = shouldShow ? '' : 'none';
+      if (shouldShow) seedDisplay.innerText = `Seed: ${l.params.seed}`;
     }
   }
 

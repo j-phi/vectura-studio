@@ -2564,7 +2564,14 @@
       this.canvas.style.width = `${p.width}px`;
       this.canvas.style.height = `${p.height}px`;
       this.ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-      if (!this.userHasManipulated) this.center();
+      // Auto-fit only when the canvas pixel dimensions actually changed (e.g. window
+      // resize, pane toggle). ResizeObserver also fires for content-layout shifts that
+      // don't change canvas size (layers panel content height, etc.); those must not
+      // snap the viewport — that was the original "click-on-canvas zooms in" tutorial bug.
+      const sizeChanged = this._lastCanvasW !== p.width || this._lastCanvasH !== p.height;
+      this._lastCanvasW = p.width;
+      this._lastCanvasH = p.height;
+      if (sizeChanged && !this.userHasManipulated) this.center();
       this.draw();
     }
 
@@ -5937,8 +5944,17 @@
     getLayerBounds(layer, temp) {
       const primitiveBounds = this.getPrimitiveShapeBounds(layer, temp);
       if (primitiveBounds) return primitiveBounds;
+      // Group containers carry no params/paths of their own — their bounds are
+      // the union of their descendants'. Without this guard, accessing
+      // layer.params.posX below crashes draw() when a group is the sole
+      // selection (e.g. user clicks the group folder during the tutorial),
+      // which empties the canvas and reads as "zoomed in and locked."
+      if (layer?.isGroup) {
+        const children = this.engine.layers.filter((l) => l.parentId === layer.id);
+        return children.length ? this.getSelectionBounds(children, temp) : null;
+      }
       const basePaths = this.getInteractionPaths(layer);
-      if (!layer || !Array.isArray(basePaths)) return null;
+      if (!layer || !Array.isArray(basePaths) || !layer.params) return null;
       const prof = this.engine.currentProfile;
       const baseOrigin = {
         x: (layer.origin?.x ?? prof.width / 2) + (layer.params.posX ?? 0),

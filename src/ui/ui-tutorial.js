@@ -709,6 +709,8 @@
             'Watch for the <b>"Make clipping mask"</b> hint to appear, then <b>release</b> to apply. ' +
             'The circle becomes an invisible mask that clips the Wavetable to its shape.',
           hideNext: true,
+          hideSkip: true,
+          showBack: true,
           completion: When.predicate(() => getLayers().some((l) => l && l.mask?.enabled)),
         },
         {
@@ -969,11 +971,12 @@
       const mainSteps = STEPS.filter((s) => !s.sideQuest);
 
       // Back button: visible when not at the very first main slide and phase allows it
+      // phase.showBack explicitly enables back even inside a side quest
       const mainStepIndex = step.sideQuest ? -1 : mainSteps.indexOf(step);
       const slideIndex = step.sideQuest
         ? -1
         : mainSteps.slice(0, mainStepIndex).reduce((acc, s) => acc + (s.phases?.length || 1), 0) + this._phaseIndex;
-      const showBack = !phase.hideBack && !step.sideQuest && slideIndex > 0;
+      const showBack = (!phase.hideBack && !step.sideQuest && slideIndex > 0) || !!phase.showBack;
 
       // Forward arrow: visible unless both hideNext and hideSkip are set
       const showForward = !(phase.hideNext && phase.hideSkip);
@@ -1114,6 +1117,12 @@
     }
 
     _retreat() {
+      const step = STEPS[this._stepIndex];
+      // Backing out of the first phase of a side quest cancels it without completing
+      if (this._phaseIndex === 0 && step?.sideQuest && step.phases?.[0]?.showBack) {
+        this.exitSideQuest(null);
+        return;
+      }
       if (this._phaseIndex > 0) {
         this.goTo(this._stepIndex, this._phaseIndex - 1);
         return;
@@ -1142,8 +1151,10 @@
       if (questId === 'masking') {
         engine.addLayer('wavetable');
         const r = Math.min(width, height) * 0.35;
-        engine.addShapeLayer('Circle', [_sqCirclePath(cx, cy, r)]);
+        const circleId = engine.addShapeLayer('Circle', [_sqCirclePath(cx, cy, r)]);
         engine.activeLayerId = engine.layers.find((l) => l.type !== 'shape')?.id;
+        // Pre-select the circle: dragstart canArm requires isSingleSel, but layer reset leaves selectedLayerIds stale.
+        if (circleId && app?.renderer) app.renderer.setSelection([circleId], circleId);
       } else if (questId === 'grouping') {
         const r = Math.min(width, height) * 0.28;
         engine.addShapeLayer('Hexagon', [_sqPolygonPath(cx, cy, r, 6)]);
