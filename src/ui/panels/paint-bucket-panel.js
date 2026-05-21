@@ -176,7 +176,7 @@
     { id: 'fillDensity',                 label: 'Density',           type: 'range',  min: 0.1,  max: 50,  step: 0.1,  showAlways: true },
     { id: 'fillAngle',                   label: 'Angle',             type: 'angle',  capKey: 'angle' },
     { id: 'fillAmplitude',               label: 'Amplitude',         type: 'range',  min: 0.1,  max: 3.0, step: 0.05, capKey: 'amplitude' },
-    { id: 'fillDotLength',               label: 'Dot Length',        type: 'range',  min: 0,    max: 10,  step: 0.1,  distance: true, capKey: 'dotSize' },
+    { id: 'fillDotLength',               label: 'Dot Size',          type: 'range',  min: 0,    max: 10,  step: 0.1,  distance: true, capKey: 'dotSize' },
     { id: 'fillDotRotation',             label: 'Dot Rotation',      type: 'angle',  capKey: 'dotSize', showIfDotLen: true },
     { id: 'fillPadding',                 label: 'Padding',           type: 'range',  min: 0,    max: 10,  step: 0.1,  distance: true, showAlways: true },
     { id: 'fillShiftX',                  label: 'Shift X',           type: 'range',  min: -50,  max: 50,  step: 0.5,  distance: true, capKey: 'shift' },

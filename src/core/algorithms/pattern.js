@@ -2332,7 +2332,7 @@
     }
   };
 
-  const dotsFill = (poly, density, dotSizeRatio = 1.0, angleDeg = 0, shiftX = 0, shiftY = 0, pattern = 'brick', shape = 'circle', jitter = 0) => {
+  const dotsFill = (poly, density, dotSizeRatio = 1.0, angleDeg = 0, shiftX = 0, shiftY = 0, pattern = 'brick', shape = 'circle', jitter = 0, glyphSize = 0) => {
     const ar = angleDeg * Math.PI / 180;
     const ca = Math.cos(ar), sa = Math.sin(ar);
     const rotatePt   = ar !== 0 ? (p) => ({ x: p.x * ca + p.y * sa, y: -p.x * sa + p.y * ca }) : (p) => p;
@@ -2341,7 +2341,9 @@
     const ys = rotPoly.map(p => p.y), xs = rotPoly.map(p => p.x);
     const minY = Math.min(...ys), maxY = Math.max(...ys);
     const minX = Math.min(...xs), maxX = Math.max(...xs);
-    const dotR = Math.max(density * 0.005, density * 0.12 * dotSizeRatio);
+    // glyphSize (mm) sizes the stamp glyph directly when > 0 (Paint Bucket
+    // "Dot Size"); otherwise fall back to the density/ratio-derived radius.
+    const dotR = glyphSize > 0 ? glyphSize / 2 : Math.max(density * 0.005, density * 0.12 * dotSizeRatio);
     const rotShiftX = shiftX * ca + shiftY * sa;
     const rotShiftY = -shiftX * sa + shiftY * ca;
     const xPhase = ((rotShiftX % density) + density) % density;
@@ -2372,14 +2374,16 @@
     } else {
       const yStart = Math.ceil((minY - yPhase) / density) * density + yPhase;
       let rowOff = false;
+      // 'jitter' pattern always perturbs (min 0.5); other patterns scale
+      // linearly with the slider. Applied once — no squaring.
+      const jAmt = pattern === 'jitter' ? Math.max(j, 0.5) : j;
       for (let y = yStart; y <= maxY + 1e-6; y += density) {
         const off = (pattern === 'brick' && rowOff) ? density / 2 : 0;
         const xStart = Math.ceil((minX - xPhase - off) / density) * density + xPhase + off;
         for (let x = xStart; x <= maxX + 1e-6; x += density) {
-          const useJ = pattern === 'jitter' ? 1 : j;
-          const jx = useJ ? (rng() - 0.5) * density * useJ : 0;
-          const jy = useJ ? (rng() - 0.5) * density * useJ : 0;
-          emit(x + jx * (pattern === 'jitter' ? Math.max(j, 0.5) : j), y + jy * (pattern === 'jitter' ? Math.max(j, 0.5) : j));
+          const jx = jAmt ? (rng() - 0.5) * density * jAmt : 0;
+          const jy = jAmt ? (rng() - 0.5) * density * jAmt : 0;
+          emit(x + jx, y + jy);
         }
         rowOff = !rowOff;
       }
@@ -2387,10 +2391,10 @@
     return result;
   };
 
-  const dotsFillComposite = (regions, density, dotSizeRatio, angleDeg, shiftX, shiftY, pattern, shape, jitter) => {
-    if (regions.length === 1) return dotsFill(regions[0], density, dotSizeRatio, angleDeg, shiftX, shiftY, pattern, shape, jitter);
+  const dotsFillComposite = (regions, density, dotSizeRatio, angleDeg, shiftX, shiftY, pattern, shape, jitter, glyphSize = 0) => {
+    if (regions.length === 1) return dotsFill(regions[0], density, dotSizeRatio, angleDeg, shiftX, shiftY, pattern, shape, jitter, glyphSize);
     const out = [];
-    for (const r of regions) out.push(...dotsFill(r, density, dotSizeRatio, angleDeg, shiftX, shiftY, pattern, shape, jitter));
+    for (const r of regions) out.push(...dotsFill(r, density, dotSizeRatio, angleDeg, shiftX, shiftY, pattern, shape, jitter, glyphSize));
     return out;
   };
 
@@ -3934,7 +3938,9 @@
         case 'wave':        return waveLinesUnified(region, density, angle, amplitude, waveSmoothing, waveHarmonics, shiftX, shiftY);
         case 'wavelines':   return waveLinesUnified(region, density, angle, amplitude, 1.0, 1, shiftX, shiftY);
         case 'zigzag':      return waveLinesUnified(region, density, angle, amplitude, 0.0, 1, shiftX, shiftY);
-        case 'dots':        return expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, dotShape, dotJitter), dotLength, penWidth, dotRotation);
+        case 'dots':        return dotShape === 'circle'
+          ? expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation)
+          : dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, dotShape, dotJitter, dotLength);
         case 'stipple':     return expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation);
         case 'contour':     return contourLines(region, density, contourDirection, contourStepVariance, contourSimplify);
         case 'spiral':      return spiralFill(region, density, angle, shiftX, shiftY, spiralTurns, spiralTightness, spiralDirection);
@@ -3971,7 +3977,9 @@
       case 'wave':        return waveLinesUnifiedComposite(effectiveRegions, density, angle, amplitude, waveSmoothing, waveHarmonics, shiftX, shiftY);
       case 'wavelines':   return waveLinesUnifiedComposite(effectiveRegions, density, angle, amplitude, 1.0, 1, shiftX, shiftY);
       case 'zigzag':      return waveLinesUnifiedComposite(effectiveRegions, density, angle, amplitude, 0.0, 1, shiftX, shiftY);
-      case 'dots':        return expandDotsToSpirals(dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, dotPattern, dotShape, dotJitter), dotLength, penWidth, dotRotation);
+      case 'dots':        return dotShape === 'circle'
+        ? expandDotsToSpirals(dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation)
+        : dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, dotPattern, dotShape, dotJitter, dotLength);
       case 'stipple':     return expandDotsToSpirals(dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation);
       case 'contour':     return contourLinesComposite(effectiveRegions, density, contourDirection, contourStepVariance, contourSimplify);
       case 'spiral':      return spiralFillComposite(effectiveRegions, density, angle, shiftX, shiftY, spiralTurns, spiralTightness, spiralDirection);
