@@ -254,6 +254,8 @@
       return;
     }
     if (!Array.isArray(path) || path.length < 2) return;
+    // Paths with non-trivial baked bezier handles already carry curvature in their points.
+    if (useCurves && window.Vectura?.GeometryUtils?.hasBakedBezierCurvature?.(path.meta?.anchors)) useCurves = false;
     if (!useCurves || path.length < 3) {
       ctx.moveTo(path[0].x, path[0].y);
       for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);

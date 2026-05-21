@@ -2175,9 +2175,14 @@
       if (!layer) return;
       const sourcePaths = this.ensureLayerSourcePaths(layer);
       const path = this.buildPenPathFromAnchors(sel.anchors, sel.closed);
+      // Direct edits are the new source-of-truth: rebase the originalAnchors snapshot
+      // that applyShapeAnchorRebuild uses, otherwise a stale null-handle baseline
+      // overwrites the user's handle drag on the next regen.
       const meta = this.normalizeEditedPathMeta({
         ...(sel.meta || {}),
         anchors: this.cloneAnchors(sel.anchors),
+        originalAnchors: this.cloneAnchors(sel.anchors),
+        originalClosed: Boolean(sel.closed),
         closed: Boolean(sel.closed),
       });
       path.meta = meta;
@@ -4708,6 +4713,12 @@
 
     tracePath(path, useCurves) {
       if (!path || path.length < 2) return;
+      // Skip quadratic smoothing only when the polyline genuinely carries bezier
+      // curvature baked in (any anchor with a non-trivial handle). Freeform Shape
+      // layers at curves=ON+smoothing=0 get TINY (0.0001) tangent handles whose
+      // resampled polyline is still chord-shaped — those must still get smoothed
+      // or the line renders as visible segments.
+      if (useCurves && window.Vectura?.GeometryUtils?.hasBakedBezierCurvature?.(path.meta?.anchors)) useCurves = false;
       if (!useCurves || path.length < 3) {
         this.ctx.moveTo(path[0].x, path[0].y);
         for (let i = 1; i < path.length; i++) this.ctx.lineTo(path[i].x, path[i].y);

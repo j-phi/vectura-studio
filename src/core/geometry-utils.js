@@ -327,6 +327,9 @@
     return keep;
   };
 
+  const clampRange = (n, lo, hi) => (n < lo ? lo : n > hi ? hi : n);
+  const TINY_HANDLE_LEN = 0.0001;
+
   /**
    * Rebuild anchors of a freeform shape path: decimate via RDP scaled by `simplify`,
    * then auto-generate cubic bezier .in/.out handles via Catmull-Rom-to-Bezier scaled
@@ -334,13 +337,18 @@
    *
    * opts:
    *   simplify   0..1 — RDP tolerance scale (tol = simplify * max(dW,dH) * 0.01)
-   *   smoothing  0..1 — Catmull-Rom tension; 0 keeps straight (null handles)
+   *   smoothing  0..2 — Catmull-Rom tension; 0 alone keeps straight (null handles)
+   *   curves     bool — convert corner anchors to bezier representation. At
+   *                     smoothing=0 the handles are 0.0001 in the tangent direction,
+   *                     so the shape renders identically to the polyline but is now
+   *                     structurally bezier (ready for smoothing > 0 to widen).
    *   closed     bool
    *   bounds     { dW, dH } — for tolerance scaling
    */
   const rebuildShapeAnchors = (anchors, opts = {}) => {
     const simplify = clamp01(opts.simplify ?? 0);
-    const smoothing = clamp01(opts.smoothing ?? 0);
+    const smoothing = clampRange(opts.smoothing ?? 0, 0, 2);
+    const curves = Boolean(opts.curves);
     const closed = Boolean(opts.closed);
     const dW = opts.bounds?.dW ?? 100;
     const dH = opts.bounds?.dH ?? 100;
@@ -358,11 +366,28 @@
       if (filtered.length >= 2) kept = filtered;
     }
 
-    // 2. Bezierize via Catmull-Rom-to-Bezier
+    // 2. Bezierize via Catmull-Rom-to-Bezier, respecting existing bezier handles
     const n = kept.length;
-    const out = kept.map((a) => ({ x: a.x, y: a.y, in: null, out: null }));
-    if (smoothing > 0 && n >= 2) {
+    const out = kept.map((a) => ({
+      x: a.x,
+      y: a.y,
+      in: a.in ? { x: a.in.x, y: a.in.y } : null,
+      out: a.out ? { x: a.out.x, y: a.out.y } : null,
+    }));
+    const bezierize = smoothing > 0 || curves;
+    if (bezierize && n >= 2) {
       const tension = smoothing;
+      const vLen = (v) => Math.sqrt(v.x * v.x + v.y * v.y);
+      const vNorm = (v) => { const l = vLen(v) || 1e-9; return { x: v.x / l, y: v.y / l }; };
+      const vDot = (a, b) => a.x * b.x + a.y * b.y;
+      const vScale = (v, s) => ({ x: v.x * s, y: v.y * s });
+      const vLerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+      // Grow handle offset to at least targetLen while preserving direction.
+      const floorOffset = (off, targetLen) => {
+        const l = vLen(off);
+        return l >= targetLen ? off : vScale(vNorm(off), targetLen);
+      };
+
       for (let i = 0; i < n; i++) {
         let prev;
         let next;
@@ -373,10 +398,77 @@
           prev = i === 0 ? kept[i] : kept[i - 1];
           next = i === n - 1 ? kept[i] : kept[i + 1];
         }
-        const dx = ((next.x - prev.x) * tension) / 6;
-        const dy = ((next.y - prev.y) * tension) / 6;
-        out[i].out = { x: out[i].x + dx, y: out[i].y + dy };
-        out[i].in = { x: out[i].x - dx, y: out[i].y - dy };
+        const tangentX = next.x - prev.x;
+        const tangentY = next.y - prev.y;
+        const tangentDir = vNorm({ x: tangentX, y: tangentY });
+        const crRawLen = (vLen({ x: tangentX, y: tangentY }) * tension) / 6;
+        const cornerLen = curves ? Math.max(crRawLen, TINY_HANDLE_LEN) : crRawLen;
+        const crDx = tangentDir.x * cornerLen;
+        const crDy = tangentDir.y * cornerLen;
+        const crVec = { x: crDx, y: crDy };   // offset in "out" direction
+        const crLen = cornerLen;
+        const crDir = tangentDir;              // unit tangent pointing "out"
+
+        const ax = kept[i].x;
+        const ay = kept[i].y;
+        const srcOut = kept[i].out;
+        const srcIn  = kept[i].in;
+        // Handle offsets relative to anchor (handles are stored as absolute positions).
+        const outOff = srcOut ? { x: srcOut.x - ax, y: srcOut.y - ay } : null;
+        const inOff  = srcIn  ? { x: srcIn.x  - ax, y: srcIn.y  - ay } : null;
+
+        if (!outOff && !inOff) {
+          // Corner node: apply CR handles (tiny when smoothing=0, CR-scaled otherwise).
+          out[i].out = { x: ax + crDx, y: ay + crDy };
+          out[i].in  = { x: ax - crDx, y: ay - crDy };
+        } else if (smoothing === 0) {
+          // curves=ON with no smoothing: leave existing bezier handles completely alone.
+          // They were already copied in the out.map() above.
+        } else {
+          // Bezier node with smoothing > 0: check each handle independently for hooks.
+          const outChord = { x: next.x - ax, y: next.y - ay };
+          const inChord  = { x: prev.x - ax, y: prev.y - ay };
+          // Handles are aligned when in/out offsets are ≈ antiparallel (within ~20°).
+          const aligned = outOff && inOff && vDot(vNorm(outOff), vNorm(inOff)) < -0.94;
+          // Lerp factor clamped to [0,1]: smoothing can be 0..2 but a factor > 1 overshoots.
+          const blendFactor = Math.min(smoothing, 1);
+
+          // out handle
+          if (outOff) {
+            const isHook = vDot(vNorm(outOff), vNorm(outChord)) < 0;
+            if (isHook) {
+              out[i].out = { x: ax + crDx, y: ay + crDy };
+            } else if (aligned) {
+              const newOff = floorOffset(outOff, crLen);
+              out[i].out = { x: ax + newOff.x, y: ay + newOff.y };
+            } else {
+              // Broken: lerp direction toward CR tangent, enforce min length.
+              const blendedDir = vNorm(vLerp(vNorm(outOff), crDir, blendFactor));
+              const blendedLen = Math.max(vLen(outOff), crLen);
+              out[i].out = { x: ax + blendedDir.x * blendedLen, y: ay + blendedDir.y * blendedLen };
+            }
+          } else {
+            out[i].out = { x: ax + crDx, y: ay + crDy };
+          }
+
+          // in handle (CR direction is reversed)
+          if (inOff) {
+            const isHook = vDot(vNorm(inOff), vNorm(inChord)) < 0;
+            if (isHook) {
+              out[i].in = { x: ax - crDx, y: ay - crDy };
+            } else if (aligned) {
+              const newOff = floorOffset(inOff, crLen);
+              out[i].in = { x: ax + newOff.x, y: ay + newOff.y };
+            } else {
+              const negCrDir = { x: -crDir.x, y: -crDir.y };
+              const blendedDir = vNorm(vLerp(vNorm(inOff), negCrDir, blendFactor));
+              const blendedLen = Math.max(vLen(inOff), crLen);
+              out[i].in = { x: ax + blendedDir.x * blendedLen, y: ay + blendedDir.y * blendedLen };
+            }
+          } else {
+            out[i].in = { x: ax - crDx, y: ay - crDy };
+          }
+        }
       }
       if (!closed) {
         // Endpoints get one-sided derivative — null the outward-pointing handle
@@ -385,8 +477,32 @@
       }
     }
 
-    const changed = out.length !== anchors.length || smoothing > 0;
+    const changed = out.length !== anchors.length || bezierize;
     return { anchors: out, changed };
+  };
+
+  // True when at least one anchor has a handle long enough to bend the
+  // resampled polyline. TINY_HANDLE_LEN (0.0001) handles produced by
+  // curves=ON+smoothing=0 stay below the threshold and read as "not baked",
+  // so quadratic smoothing can still apply downstream.
+  const BAKED_HANDLE_MIN_SQ = 0.25;
+  const hasBakedBezierCurvature = (anchors) => {
+    if (!Array.isArray(anchors)) return false;
+    for (let i = 0; i < anchors.length; i++) {
+      const a = anchors[i];
+      if (!a) continue;
+      if (a.out) {
+        const dx = a.out.x - a.x;
+        const dy = a.out.y - a.y;
+        if (dx * dx + dy * dy > BAKED_HANDLE_MIN_SQ) return true;
+      }
+      if (a.in) {
+        const dx = a.in.x - a.x;
+        const dy = a.in.y - a.y;
+        if (dx * dx + dy * dy > BAKED_HANDLE_MIN_SQ) return true;
+      }
+    }
+    return false;
   };
 
   const api = {
@@ -399,6 +515,7 @@
     pointsToAnchors,
     buildPolylineFromAnchors,
     rebuildShapeAnchors,
+    hasBakedBezierCurvature,
     cubicAtT,
     sampleCubicBezier,
     lerp,

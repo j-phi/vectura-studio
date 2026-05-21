@@ -2461,13 +2461,8 @@
             span.innerText = next ? 'ON' : 'OFF';
             layer.params[def.id] = next;
             this.storeLayerParams(layer);
-            if (def.id === 'curves') {
-              this.app.render();
-              this.updateFormula();
-            } else {
-              this.app.regen();
-              this.updateFormula();
-            }
+            this.app.regen();
+            this.updateFormula();
             maybeRebuildControls();
           };
           input.addEventListener('dblclick', (e) => {
@@ -2480,13 +2475,8 @@
             span.innerText = next ? 'ON' : 'OFF';
             layer.params[def.id] = next;
             this.storeLayerParams(layer);
-            if (def.id === 'curves') {
-              this.app.render();
-              this.updateFormula();
-            } else {
-              this.app.regen();
-              this.updateFormula();
-            }
+            this.app.regen();
+            this.updateFormula();
             maybeRebuildControls();
           });
         }
