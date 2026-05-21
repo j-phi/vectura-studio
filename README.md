@@ -78,7 +78,7 @@ An Illustrator-style shared toolbar now drives the main canvas plus the embedded
 - Shape tools (Rectangle `M`, Oval `L`, Line `U`, Polygon `Y`) live under a single long-press group on the toolbar — single-tap activates the most-recently-used variant, long-press opens the variant submenu. All four create editable expanded layers; fresh shapes stay straight-edged on mouse release
 - Custom canvas cursors: filled arrow for Selection (`V`), outline arrow for Direct Selection (`A`), pen-tip for Pen (`P`), and a paint-bucket overlay with an auto-positioning magnifier loupe for Fill (`F`) that stays inside the canvas viewport
 - Shape tools support center-draw / square-circle constraints (`Alt`), polygon side-count changes while dragging (`Arrow Up/Down`), and Illustrator-style corner rounding (Selection rounds all corners, Direct rounds one corner)
-- Pen long-press subtool menu with Illustrator-style modes: `+` add anchor, `-` delete anchor, `Shift+C` convert anchor
+- Pen long-press subtool menu with Illustrator-style modes: `+` add anchor, `-` delete anchor, `Shift+C` convert anchor; while dragging a new bezier point, `Alt/Option` freezes the mirrored handle and lets the active handle move freely
 - Scissor tool: drag a line/rect/circle to split intersecting paths
 - Fill tool supports nested closed regions in the Texture Designer: click the smallest containing region, `Shift`-click to fill the whole containing stack, drag to keep pouring across new regions, and hold `Alt/Option` to temporarily erase fills while dragging
 - The Texture Designer seam preview now includes a `Show Gaps` tolerance slider that reveals near-miss tile joins in yellow and offers auto-close fixes for closable seam endpoints
@@ -324,6 +324,7 @@ Click `Export SVG` to download.
 | Draw from center | `Alt/Option` while drawing |
 | Polygon sides | `Arrow Up/Down` while dragging |
 | Pen: close path | Double-click near start point |
+| Pen: freeze mirror handle | `Alt/Option` while dragging a bezier point |
 | Pen: commit | `Enter` |
 | Pen: cancel | `Esc` |
 | Reset value to default | Double-click control |

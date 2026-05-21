@@ -30,12 +30,12 @@ describe('Renderer pen snap-to-origin', () => {
     return renderer;
   };
 
-  const makeEvent = (clientX, clientY, metaKey = false, shiftKey = false) => ({
+  const makeEvent = (clientX, clientY, metaKey = false, shiftKey = false, altKey = false) => ({
     clientX,
     clientY,
     metaKey,
     shiftKey,
-    altKey: false,
+    altKey,
     ctrlKey: false,
     pointerType: 'mouse',
     preventDefault() {},
@@ -133,6 +133,55 @@ describe('Renderer pen snap-to-origin', () => {
 
     expect(committed).toBe(false);
     expect(renderer.penDraft.anchors.length).toBe(anchorsBefore + 1);
+  });
+
+  test('Alt freezes the mirrored handle while dragging a new bezier point', () => {
+    const renderer = makeRenderer();
+    renderer.penDraft = {
+      anchors: [
+        { x: 40, y: 100, in: null, out: null },
+        { x: 100, y: 100, in: null, out: null },
+      ],
+      closed: false,
+    };
+    renderer.isPenDragging = true;
+    renderer.penDragAnchor = 1;
+    renderer.activeTool = 'pen';
+    renderer.penMode = 'draw';
+
+    renderer.move(makeEvent(130, 100));
+    expect(renderer.penDraft.anchors[1].out).toEqual({ x: 130, y: 100 });
+    expect(renderer.penDraft.anchors[1].in).toEqual({ x: 70, y: 100 });
+
+    renderer.move(makeEvent(135, 120, false, false, true));
+    expect(renderer.penDraft.anchors[1].out).toEqual({ x: 135, y: 120 });
+    expect(renderer.penDraft.anchors[1].in).toEqual({ x: 70, y: 100 });
+
+    renderer.move(makeEvent(145, 130, false, false, true));
+    expect(renderer.penDraft.anchors[1].out).toEqual({ x: 145, y: 130 });
+    expect(renderer.penDraft.anchors[1].in).toEqual({ x: 70, y: 100 });
+  });
+
+  test('releasing Alt resumes mirrored handle updates while dragging a new bezier point', () => {
+    const renderer = makeRenderer();
+    renderer.penDraft = {
+      anchors: [
+        { x: 40, y: 100, in: null, out: null },
+        { x: 100, y: 100, in: null, out: null },
+      ],
+      closed: false,
+    };
+    renderer.isPenDragging = true;
+    renderer.penDragAnchor = 1;
+    renderer.activeTool = 'pen';
+    renderer.penMode = 'draw';
+
+    renderer.move(makeEvent(130, 100));
+    renderer.move(makeEvent(135, 120, false, false, true));
+    renderer.move(makeEvent(150, 130));
+
+    expect(renderer.penDraft.anchors[1].out).toEqual({ x: 150, y: 130 });
+    expect(renderer.penDraft.anchors[1].in).toEqual({ x: 50, y: 70 });
   });
 
   test('penSnapToOrigin resets to false after commitPenPath', () => {

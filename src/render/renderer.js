@@ -381,6 +381,7 @@
       this.isPenCloseDragging = false;
       this.penDragAnchor = null;
       this.penDragStart = null;
+      this.penDragMirrorLock = null;
       this._penLastClick = null;
       this.penSnapToOrigin = false;
       this.groupEditMode = null;
@@ -548,8 +549,10 @@
         this.penDraft = null;
         this.penPreview = null;
         this.isPenDragging = false;
+        this.isPenCloseDragging = false;
         this.penDragAnchor = null;
         this.penDragStart = null;
+        this.penDragMirrorLock = null;
         this.penPurpose = 'draw';
         this.penAnchorDrag = null;
       }
@@ -1067,8 +1070,10 @@
       this.guides = null;
       this.isLightDrag = false;
       this.isPenDragging = false;
+      this.isPenCloseDragging = false;
       this.penDragAnchor = null;
       this.penDragStart = null;
+      this.penDragMirrorLock = null;
       this.shapeCornerDrag = null;
       this.directDrag = null;
       this.isScissor = false;
@@ -1130,16 +1135,11 @@
       return { x: point.x, y: point.y, in: null, out: null };
     }
 
-    setAnchorHandles(anchor, target, options = {}) {
+    setAnchorHandles(anchor, target) {
       if (!anchor || !target) return;
-      const { breakHandle = false } = options;
       const vec = { x: target.x - anchor.x, y: target.y - anchor.y };
       anchor.out = { x: anchor.x + vec.x, y: anchor.y + vec.y };
-      if (breakHandle) {
-        anchor.in = null;
-      } else {
-        anchor.in = { x: anchor.x - vec.x, y: anchor.y - vec.y };
-      }
+      anchor.in = { x: anchor.x - vec.x, y: anchor.y - vec.y };
     }
 
     cubicAt(p0, c1, c2, p1, t) {
@@ -1204,6 +1204,7 @@
         this.isPenDragging = true;
         this.penDragAnchor = 0;
         this.penDragStart = world;
+        this.penDragMirrorLock = null;
         this.penPreview = null;
         this.canvas?.focus();
         this.draw();
@@ -1217,6 +1218,7 @@
         this.isPenDragging = true;
         this.penDragAnchor = anchors.length - 1;
         this.penDragStart = world;
+        this.penDragMirrorLock = null;
         this.draw();
         return;
       }
@@ -1246,6 +1248,7 @@
         this.isPenCloseDragging = true;
         this.penDragAnchor = 0;
         this.penDragStart = { x: first.x, y: first.y };
+        this.penDragMirrorLock = null;
         this.draw();
         return;
       }
@@ -1255,6 +1258,7 @@
       this.isPenDragging = true;
       this.penDragAnchor = anchors.length - 1;
       this.penDragStart = next;
+      this.penDragMirrorLock = null;
       if (isDoubleClick) {
         this.commitPenPath();
         return;
@@ -1298,6 +1302,7 @@
       this.isPenCloseDragging = false;
       this.penDragAnchor = null;
       this.penDragStart = null;
+      this.penDragMirrorLock = null;
       this._penLastClick = null;
       this.penSnapToOrigin = false;
       this.draw();
@@ -1310,6 +1315,7 @@
       this.isPenCloseDragging = false;
       this.penDragAnchor = null;
       this.penDragStart = null;
+      this.penDragMirrorLock = null;
       this._penLastClick = null;
       this.penSnapToOrigin = false;
       this.penPurpose = 'draw';
@@ -4221,10 +4227,27 @@
               }
             } else {
               if (dist <= minDist) {
-                anchor.in = null;
                 anchor.out = null;
+                if (modifiers.alt) {
+                  if (!this.penDragMirrorLock || this.penDragMirrorLock.index !== this.penDragAnchor) {
+                    this.penDragMirrorLock = { index: this.penDragAnchor, handle: cloneHandle(anchor.in) };
+                  }
+                  anchor.in = cloneHandle(this.penDragMirrorLock.handle);
+                } else {
+                  anchor.in = null;
+                  this.penDragMirrorLock = null;
+                }
               } else {
-                this.setAnchorHandles(anchor, target, { breakHandle: modifiers.alt });
+                if (modifiers.alt) {
+                  if (!this.penDragMirrorLock || this.penDragMirrorLock.index !== this.penDragAnchor) {
+                    this.penDragMirrorLock = { index: this.penDragAnchor, handle: cloneHandle(anchor.in) };
+                  }
+                  anchor.out = { x: target.x, y: target.y };
+                  anchor.in = cloneHandle(this.penDragMirrorLock.handle);
+                } else {
+                  this.penDragMirrorLock = null;
+                  this.setAnchorHandles(anchor, target);
+                }
               }
               this.penPreview = target;
             }
@@ -4384,6 +4407,7 @@
         this.isPenCloseDragging = false;
         this.penDragAnchor = null;
         this.penDragStart = null;
+        this.penDragMirrorLock = null;
         if (wasCloseDrag) {
           this.commitPenPath();
           clearActivePointer();

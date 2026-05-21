@@ -256,7 +256,7 @@
       <table class="help-kbd-table">
         <tbody>
           ${row(SHF,  'Constrain angle / handles')}
-          ${row(OPT,  'Break handles',   'also draws shape from center')}
+          ${row(OPT,  'Break/freeze handles',   'also draws shape from center')}
           ${row(CMD,  'Temporary selection while drawing')}
         </tbody>
       </table>`;
