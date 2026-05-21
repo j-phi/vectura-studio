@@ -794,43 +794,90 @@
       return this.isPrimitiveShapeType(shapeType) ? layer : null;
     }
 
+    // Arch-5: Pure cursor decision function. Returns `{ cursor, mode }` for
+    // every branch the cooperative trio (updateCursor + updateHoverCursor +
+    // _applyModifierCursorOverride) used to handle independently. The
+    // existing entry points are thin wrappers that gather inputs, call this,
+    // and write to the DOM.
+    //
+    // Branches covered:
+    //   1. Modifier overrides (Alt+select → copy-plus, CMD+fill → microscope).
+    //   2. Tool-default cursor (the original updateCursor() decision tree).
+    //
+    // The `shape-*` branch returns a sentinel { cursor: 'crosshair',
+    // mode: 'shape-reticle' } — the live entry point still calls
+    // `makeShapeReticleCursor(getThemeToken(...))` to honor the active theme,
+    // since baking the data-URL here would couple this pure function to the
+    // theme cache.
+    recomputeCursor({
+      tool,
+      isPan = false,
+      isLayerDrag = false,
+      isSelecting = false,
+      modState = { alt: false, meta: false },
+    } = {}) {
+      // 1. Modifier overrides (mirrors _applyModifierCursorOverride).
+      const altHeld = Boolean(modState && modState.alt);
+      const metaHeld = Boolean(modState && modState.meta);
+      if (altHeld && tool === 'select' && !isLayerDrag && !isSelecting) {
+        return { cursor: this.cursorDataUrl('copyPlus', 4, 4, 'copy'), mode: 'select-copy' };
+      }
+      if (metaHeld && tool === 'fill' && !isLayerDrag) {
+        return { cursor: this.cursorDataUrl('microscope', 10, 14, 'crosshair'), mode: 'fill-pickup' };
+      }
+      // 2. Tool-default branches (mirrors original updateCursor()).
+      if (tool === 'hand') {
+        return { cursor: isPan ? 'grabbing' : 'grab', mode: 'hand' };
+      }
+      if (tool === 'pen') {
+        return { cursor: this.cursorDataUrl('pen', 2, 19, 'crosshair'), mode: 'pen' };
+      }
+      if (`${tool}`.startsWith('shape-')) {
+        // Sentinel — caller resolves the themed reticle cursor.
+        return { cursor: 'crosshair', mode: 'shape-reticle' };
+      }
+      if (tool === 'algo-draw') {
+        return { cursor: 'crosshair', mode: 'algo-draw' };
+      }
+      if (tool === 'scissor') {
+        return { cursor: 'crosshair', mode: 'scissor' };
+      }
+      if (tool === 'fill' || tool === 'fill-erase' ||
+          tool === 'fill-pattern' || tool === 'fill-pattern-erase') {
+        return { cursor: this.cursorDataUrl('bucket', 20, 22, 'crosshair'), mode: 'fill' };
+      }
+      if (tool === 'direct') {
+        return { cursor: this.cursorDataUrl('outline', 4, 4, 'auto'), mode: 'direct' };
+      }
+      if (tool === 'select') {
+        return { cursor: this.cursorDataUrl('filled', 4, 4, 'auto'), mode: 'select' };
+      }
+      return { cursor: 'crosshair', mode: '' };
+    }
+
+    _gatherCursorInputs() {
+      return {
+        tool: this.activeTool,
+        isPan: this.isPan,
+        isLayerDrag: this.isLayerDrag,
+        isSelecting: this.isSelecting,
+        modState: this._modState || { alt: false, meta: false },
+      };
+    }
+
     updateCursor() {
       if (!this.canvas) return;
-      if (this._applyModifierCursorOverride()) return;
-      if (this.activeTool === 'hand') {
-        this.setCanvasCursor(this.isPan ? 'grabbing' : 'grab', 'hand');
+      const result = this.recomputeCursor(this._gatherCursorInputs());
+      // Shape-reticle branch needs the live theme token; resolve it here so
+      // recomputeCursor stays pure with respect to DOM/theme state.
+      if (result.mode === 'shape-reticle') {
+        this.setCanvasCursor(
+          makeShapeReticleCursor(getThemeToken('--render-cursor-stroke', 'white')),
+          'shape-reticle'
+        );
         return;
       }
-      if (this.activeTool === 'pen') {
-        this.setCanvasCursor(this.cursorDataUrl('pen', 2, 19, 'crosshair'), 'pen');
-        return;
-      }
-      if (`${this.activeTool}`.startsWith('shape-')) {
-        this.setCanvasCursor(makeShapeReticleCursor(getThemeToken('--render-cursor-stroke', 'white')), 'shape-reticle');
-        return;
-      }
-      if (this.activeTool === 'algo-draw') {
-        this.setCanvasCursor('crosshair', 'algo-draw');
-        return;
-      }
-      if (this.activeTool === 'scissor') {
-        this.setCanvasCursor('crosshair', 'scissor');
-        return;
-      }
-      if (this.activeTool === 'fill' || this.activeTool === 'fill-erase' ||
-          this.activeTool === 'fill-pattern' || this.activeTool === 'fill-pattern-erase') {
-        this.setCanvasCursor(this.cursorDataUrl('bucket', 20, 22, 'crosshair'), 'fill');
-        return;
-      }
-      if (this.activeTool === 'direct') {
-        this.setCanvasCursor(this.cursorDataUrl('outline', 4, 4, 'auto'), 'direct');
-        return;
-      }
-      if (this.activeTool === 'select') {
-        this.setCanvasCursor(this.cursorDataUrl('filled', 4, 4, 'auto'), 'select');
-        return;
-      }
-      this.setCanvasCursor('crosshair');
+      this.setCanvasCursor(result.cursor, result.mode);
     }
 
     hexToRgb(hex) {
@@ -6544,12 +6591,18 @@
       // _lastPointerEvent when CMD is released (that event still has metaKey:true).
       const altHeld = this._modState ? Boolean(this._modState.alt) : Boolean(e?.altKey);
       const metaHeld = this._modState ? Boolean(this._modState.meta) : Boolean(e?.metaKey || e?.ctrlKey);
-      if (altHeld && this.activeTool === 'select' && !this.isLayerDrag && !this.isSelecting) {
-        this.setCanvasCursor(this.cursorDataUrl('copyPlus', 4, 4, 'copy'), 'select-copy');
-        return true;
-      }
-      if (metaHeld && this.activeTool === 'fill' && !this.isLayerDrag) {
-        this.setCanvasCursor(this.cursorDataUrl('microscope', 10, 14, 'crosshair'), 'fill-pickup');
+      // Arch-5: delegate to recomputeCursor for the override decision so all
+      // cursor logic lives in one place. We only commit the write when the
+      // result is one of the modifier-override sentinels.
+      const result = this.recomputeCursor({
+        tool: this.activeTool,
+        isPan: this.isPan,
+        isLayerDrag: this.isLayerDrag,
+        isSelecting: this.isSelecting,
+        modState: { alt: altHeld, meta: metaHeld },
+      });
+      if (result.mode === 'select-copy' || result.mode === 'fill-pickup') {
+        this.setCanvasCursor(result.cursor, result.mode);
         return true;
       }
       return false;
