@@ -36,7 +36,7 @@ if [ -z "$GRAPHIFY_PYTHON" ]; then
 fi
 
 export GRAPHIFY_STAGED="$STAGED"
-$GRAPHIFY_PYTHON -c "
+$GRAPHIFY_PYTHON -P -c "
 import os, sys
 from pathlib import Path
 
