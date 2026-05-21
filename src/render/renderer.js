@@ -5310,6 +5310,8 @@
         ['density',        'fillDensity'],
         ['angle',          'fillAngle'],
         ['amplitude',      'fillAmplitude'],
+        ['waveSmoothing',  'fillWaveSmoothing'],
+        ['waveHarmonics',  'fillWaveHarmonics'],
         ['dotLength',      'fillDotLength'],
         ['dotRotation',    'fillDotRotation'],
         ['padding',        'fillPadding'],

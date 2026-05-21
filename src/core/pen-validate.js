@@ -15,7 +15,7 @@
  * returned array is empty.
  */
 (() => {
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
 
   const ID_RE = /^[A-Za-z0-9_-]+$/;
   // Allow only canonical CSS hex colors: #rgb, #rgba, #rrggbb, #rrggbbaa.
@@ -62,5 +62,5 @@
     return out;
   };
 
-  window.Vectura.PenValidate = { validatePens, validatePen };
+  Vectura.PenValidate = { validatePens, validatePen };
 })();
