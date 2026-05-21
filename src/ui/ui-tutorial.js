@@ -710,7 +710,6 @@
             'The circle becomes an invisible mask that clips the Wavetable to its shape.',
           hideNext: true,
           hideSkip: true,
-          showBack: true,
           completion: When.predicate(() => getLayers().some((l) => l && l.mask?.enabled)),
         },
         {
@@ -970,13 +969,14 @@
     _activatePhase(step, phase, placement) {
       const mainSteps = STEPS.filter((s) => !s.sideQuest);
 
-      // Back button: visible when not at the very first main slide and phase allows it
-      // phase.showBack explicitly enables back even inside a side quest
+      // Back button: visible when not at the very first main slide and phase allows it.
+      // All side quest phases show back (so the user can cancel the detour) unless
+      // the phase explicitly sets hideBack.
       const mainStepIndex = step.sideQuest ? -1 : mainSteps.indexOf(step);
       const slideIndex = step.sideQuest
         ? -1
         : mainSteps.slice(0, mainStepIndex).reduce((acc, s) => acc + (s.phases?.length || 1), 0) + this._phaseIndex;
-      const showBack = (!phase.hideBack && !step.sideQuest && slideIndex > 0) || !!phase.showBack;
+      const showBack = !phase.hideBack && (step.sideQuest || slideIndex > 0);
 
       // Forward arrow: visible unless both hideNext and hideSkip are set
       const showForward = !(phase.hideNext && phase.hideSkip);
@@ -1119,7 +1119,7 @@
     _retreat() {
       const step = STEPS[this._stepIndex];
       // Backing out of the first phase of a side quest cancels it without completing
-      if (this._phaseIndex === 0 && step?.sideQuest && step.phases?.[0]?.showBack) {
+      if (this._phaseIndex === 0 && step?.sideQuest) {
         this.exitSideQuest(null);
         return;
       }
