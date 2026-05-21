@@ -33,16 +33,24 @@
     return closePolygonIfNeeded(polygon);
   };
 
+  // A path is a closed loop — and therefore mask-capable — when ANY closure
+  // signal is present. Different producers express closure differently:
+  // primitives use `kind:'circle'|'polygon'`; pen paths, edited shapes and SVG
+  // imports declare `meta.closed`; legacy/algorithm output may only be closed
+  // geometrically (endpoints coincident). Honor all of them so every closed
+  // path can source a mask, regardless of how it was created.
+  const isClosedLoop = (path) => {
+    if (path?.meta?.kind === 'circle') return true;
+    if (!Array.isArray(path) || path.length < 3) return false;
+    if (path.meta?.closed === true) return true;
+    if (path.meta?.kind === 'polygon') return true;
+    return isClosedPath(path);
+  };
+
   const pathToPolygon = (path) => {
     if (path?.meta?.kind === 'circle') return expandCircle(path.meta);
     if (!Array.isArray(path) || path.length < 3) return [];
-    if (path.meta?.kind === 'polygon' || isClosedPath(path)) {
-      return closePolygonIfNeeded(path);
-    }
-    if (path.meta?.anchors?.length >= 3 && path.meta?.closed) {
-      return closePolygonIfNeeded(path);
-    }
-    return [];
+    return isClosedLoop(path) ? closePolygonIfNeeded(path) : [];
   };
 
   const buildClosedPathSilhouettes = (layer) => {

@@ -296,6 +296,19 @@
         });
       });
 
+      // Declare closure on the path geometry itself. The closure detection above
+      // tolerates a 1px endpoint gap (and fill-based closure has no gap test at
+      // all), but masking's geometric closure check is exact — so a closed import
+      // would be ineligible as a mask source unless we stamp meta.closed here.
+      order.forEach((key) => {
+        const group = groups.get(key);
+        if (!group.isClosed) return;
+        group.paths.forEach((path) => {
+          if (!Array.isArray(path) || path.length < 3) return;
+          path.meta = { ...(path.meta || {}), closed: true };
+        });
+      });
+
       if (scaleMm !== 1) {
         order.forEach((key) => {
           const group = groups.get(key);

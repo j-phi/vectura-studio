@@ -40,6 +40,45 @@ describe('Masking runtime', () => {
     expect(result.sourceType).toBe('closed-shape');
   });
 
+  test('paths declared closed via meta.closed are eligible mask parents even without coincident endpoints', () => {
+    const { Layer, Masking } = runtime.window.Vectura;
+    // Represents an imported/edited closed path: logically closed (meta.closed)
+    // but its sampled endpoints are not exactly coincident, and it carries no
+    // polygon/circle kind and no bezier anchors.
+    const layer = new Layer('declared-closed', 'shape', 'Declared Closed');
+    const path = [
+      { x: 60, y: 60 },
+      { x: 140, y: 60 },
+      { x: 140, y: 140 },
+      { x: 60, y: 140 },
+      { x: 60.4, y: 60.3 },
+    ];
+    path.meta = { closed: true };
+    layer.paths = [path];
+
+    const result = Masking.getLayerMaskCapabilities(layer, null, bounds);
+
+    expect(result.canSource).toBe(true);
+    expect(result.sourceType).toBe('closed-shape');
+  });
+
+  test('closed pen paths (kind:poly + meta.closed) are eligible mask parents', () => {
+    const { Layer, Masking } = runtime.window.Vectura;
+    const layer = new Layer('poly-closed', 'shape', 'Poly Closed');
+    const path = [
+      { x: 50, y: 50 },
+      { x: 150, y: 60 },
+      { x: 120, y: 150 },
+    ];
+    path.meta = { kind: 'poly', closed: true };
+    layer.paths = [path];
+
+    const result = Masking.getLayerMaskCapabilities(layer, null, bounds);
+
+    expect(result.canSource).toBe(true);
+    expect(result.sourceType).toBe('closed-shape');
+  });
+
   test('open paths are not eligible mask parents', () => {
     const { Layer, Masking } = runtime.window.Vectura;
     const layer = new Layer('open', 'shape', 'Open');
