@@ -5397,7 +5397,6 @@
         ['contourStepVariance', 'fillContourStepVariance'],
         ['contourSimplify',     'fillContourSimplify'],
         ['contourCenterPadding','fillContourCenterPadding'],
-        ['spiralTurns',         'fillSpiralTurns'],
         ['spiralTightness',     'fillSpiralTightness'],
         ['spiralDirection',     'fillSpiralDirection'],
       ];

@@ -1285,9 +1285,8 @@
     const maxR = 0.5 * Math.sqrt(
       (bounds.maxX - bounds.minX) ** 2 + (bounds.maxY - bounds.minY) ** 2
     ) + density;
-    // Density drives the spoke count: spokes sit ~`density` apart at mid-radius,
-    // so a smaller density spacing yields more spokes (consistent with hatch/etc).
-    const spokeCount = Math.max(8, Math.round(2 * Math.PI * (maxR / 2) / density));
+    // Higher density = more spokes (density is a count driver, not spacing).
+    const spokeCount = Math.max(8, Math.round(density * 4));
     const skip = Math.max(0, Math.min(5, Math.round(radialSkip)));
     const angleOffset = angleDeg * Math.PI / 180;
     const result = [];
