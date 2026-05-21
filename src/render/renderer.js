@@ -4713,6 +4713,31 @@
 
     tracePath(path, useCurves) {
       if (!path || path.length < 2) return;
+      // Native cubic rendering when bezier metadata is present. Canvas2D's
+      // bezierCurveTo evaluates the math itself, so the visible curve stays
+      // perfectly smooth at any zoom regardless of how dense the cached
+      // polyline is. Falls back to the midpoint-quadratic path below for
+      // algorithmically-generated polylines that carry no anchor handles.
+      const anchors = useCurves && !path.meta?.straight ? path.meta?.anchors : null;
+      if (Array.isArray(anchors) && anchors.length >= 2) {
+        const closed = path.meta?.closed === true;
+        this.ctx.moveTo(anchors[0].x, anchors[0].y);
+        for (let i = 0; i < anchors.length - 1; i++) {
+          const a = anchors[i];
+          const b = anchors[i + 1];
+          const c1 = a.out || a;
+          const c2 = b.in || b;
+          this.ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, b.x, b.y);
+        }
+        if (closed) {
+          const a = anchors[anchors.length - 1];
+          const b = anchors[0];
+          const c1 = a.out || a;
+          const c2 = b.in || b;
+          this.ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, b.x, b.y);
+        }
+        return;
+      }
       if (!useCurves || path.meta?.straight || path.length < 3) {
         this.ctx.moveTo(path[0].x, path[0].y);
         for (let i = 1; i < path.length; i++) this.ctx.lineTo(path[i].x, path[i].y);
@@ -6060,14 +6085,28 @@
 
     _drawSelectionGeometry(sel, worldAnchors) {
       if (!worldAnchors || !worldAnchors.length) return;
-      const path = this.buildPenPathFromAnchors(worldAnchors, Boolean(sel.closed));
       this.ctx.strokeStyle = getThemeToken('--render-direct-stroke', '#22d3ee');
       this.ctx.lineWidth = 1.1 / this.scale;
       this.ctx.setLineDash([4 / this.scale, 3 / this.scale]);
       this.ctx.beginPath();
-      if (path.length) {
-        this.ctx.moveTo(path[0].x, path[0].y);
-        for (let i = 1; i < path.length; i++) this.ctx.lineTo(path[i].x, path[i].y);
+      // Trace the editable outline as native cubic beziers when any segment
+      // carries handles — keeps the dashed overlay perfectly smooth at any
+      // zoom (the sampled buildPenPathFromAnchors polyline used to facet
+      // here at high zoom on segments with short chord + long handles).
+      if (worldAnchors.length >= 1) {
+        this.ctx.moveTo(worldAnchors[0].x, worldAnchors[0].y);
+        const segCount = sel.closed ? worldAnchors.length : worldAnchors.length - 1;
+        for (let i = 0; i < segCount; i++) {
+          const a = worldAnchors[i];
+          const b = worldAnchors[(i + 1) % worldAnchors.length];
+          if (a.out || b.in) {
+            const c1 = a.out || a;
+            const c2 = b.in || b;
+            this.ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, b.x, b.y);
+          } else {
+            this.ctx.lineTo(b.x, b.y);
+          }
+        }
         if (sel.closed) this.ctx.closePath();
       }
       this.ctx.stroke();
