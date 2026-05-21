@@ -2327,6 +2327,8 @@
         if (!this.directSelection.closed &&
             (drag.index === 0 || drag.index === this.directSelection.anchors.length - 1)) {
           const snapThresholdSq = (8 / this.scale) ** 2;
+          // Compare from the anchor's world position (accounts for grabOffset) rather than raw cursor
+          const effectiveWorld = this.sourceToWorldPoint(layer, effective);
           let closestSq = Infinity, bestSnapWorld = null;
           for (const cl of this.engine.layers) {
             if (!cl.visible || cl.isGroup || this.engine.hasCompoundAncestor?.(cl)) continue;
@@ -2335,7 +2337,7 @@
               if (cl.id === this.directSelection.layerId && pi === this.directSelection.pathIndex) return;
               if (!Array.isArray(path) || path.length < 2) return;
               for (const pt of [path[0], path[path.length - 1]]) {
-                const dsq = (world.x - pt.x) ** 2 + (world.y - pt.y) ** 2;
+                const dsq = (effectiveWorld.x - pt.x) ** 2 + (effectiveWorld.y - pt.y) ** 2;
                 if (dsq < snapThresholdSq && dsq < closestSq) { closestSq = dsq; bestSnapWorld = pt; }
               }
             });
