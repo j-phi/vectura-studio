@@ -137,7 +137,12 @@
       if (multiInfo) multiInfo.style.display = 'none';
       if (multiXform) multiXform.style.display = 'none';
       if (multiPf) multiPf.style.display = 'none';
-      if (paintBucketSection) paintBucketSection.style.display = '';
+      if (paintBucketSection) {
+        // CSS-10: drop the initial-state `.is-hidden` utility class before
+        // letting inline style govern visibility (the class is `!important`).
+        paintBucketSection.classList.remove('is-hidden');
+        paintBucketSection.style.display = '';
+      }
       this.app?.ui?.refreshPaintBucketPanel?.();
       restoreLeftPanelScroll();
       return;
@@ -185,10 +190,13 @@
       this._showWelcomePanel(false);
       if (algoSectionEl) algoSectionEl.style.display = 'none';
       if (algoConfigSectionEl) algoConfigSectionEl.style.display = 'none';
-      if (multiSelSection) multiSelSection.style.display = '';
-      if (multiInfoSection) multiInfoSection.style.display = '';
-      if (multiTransformSection) multiTransformSection.style.display = '';
-      if (multiPathfinderSection) multiPathfinderSection.style.display = '';
+      // CSS-10: each of these four sections begins life with `.is-hidden`
+      // (display:none !important). Strip the class on first reveal so the
+      // subsequent inline style.display='' actually unhides them.
+      if (multiSelSection) { multiSelSection.classList.remove('is-hidden'); multiSelSection.style.display = ''; }
+      if (multiInfoSection) { multiInfoSection.classList.remove('is-hidden'); multiInfoSection.style.display = ''; }
+      if (multiTransformSection) { multiTransformSection.classList.remove('is-hidden'); multiTransformSection.style.display = ''; }
+      if (multiPathfinderSection) { multiPathfinderSection.classList.remove('is-hidden'); multiPathfinderSection.style.display = ''; }
       if (primaryTitleEl) primaryTitleEl.textContent = 'Algorithm';
       if (moduleLabelWrap) moduleLabelWrap.style.display = '';
       if (moduleTriggerEl) moduleTriggerEl.style.display = '';
@@ -208,7 +216,11 @@
         const innerHeader = getEl('algorithm-transform-header', { silent: true });
         if (innerHeader) innerHeader.style.display = 'none';
         const innerBody = getEl('algorithm-transform-body', { silent: true });
-        if (innerBody) innerBody.style.display = '';
+        if (innerBody) {
+          // CSS-10: strip initial `.is-hidden` class before unhiding.
+          innerBody.classList.remove('is-hidden');
+          innerBody.style.display = '';
+        }
       }
 
       const notice = document.createElement('p');
@@ -305,6 +317,8 @@
       // Pathfinder compound: reveal the Pathfinder panel (lives in the
       // multi-selection section) so the user can change op type or expand.
       if (layer.type === 'compound' && multiSelSection) {
+        // CSS-10: strip the initial `.is-hidden` utility before unhiding.
+        multiSelSection.classList.remove('is-hidden');
         multiSelSection.style.display = '';
         if (primaryTitleEl) primaryTitleEl.textContent = 'Pathfinder';
         this.app?.ui?.refreshAlignPanel?.();

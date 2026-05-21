@@ -108,7 +108,13 @@
     if (!section) return;
     const body = getEl('algorithm-transform-body') || section.querySelector('.global-section-body');
     section.classList.toggle('collapsed', Boolean(collapsed));
-    if (body) body.style.display = collapsed ? 'none' : '';
+    if (body) {
+      // CSS-10: strip the `.is-hidden` initial-state utility class so an
+      // explicit `style.display = ''` actually unhides the body. The class
+      // declares `display: none !important`, which would otherwise win.
+      body.classList.remove('is-hidden');
+      body.style.display = collapsed ? 'none' : '';
+    }
     const transformHeader = getEl('algorithm-transform-header');
     if (transformHeader) transformHeader.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
     if (!persist) return;
@@ -182,13 +188,22 @@
     const welcome = document.getElementById('left-welcome');
     const sections = document.querySelector('.left-panel-sections');
     if (welcome) welcome.style.display = show ? '' : 'none';
-    if (sections) sections.style.display = show ? 'none' : '';
+    if (sections) {
+      // CSS-10: strip initial-state `.is-hidden` class so `style.display=''`
+      // re-shows the panel (the class uses `!important`).
+      sections.classList.remove('is-hidden');
+      sections.style.display = show ? 'none' : '';
+    }
     if (show) {
       const hasLayers = (this.app?.engine?.layers?.length ?? 0) > 0;
       const intro = document.getElementById('left-welcome-intro');
       const select = document.getElementById('left-welcome-select');
       if (intro) intro.style.display = hasLayers ? 'none' : '';
-      if (select) select.style.display = hasLayers ? '' : 'none';
+      if (select) {
+        // CSS-10: same — strip `.is-hidden` before letting inline style govern.
+        select.classList.remove('is-hidden');
+        select.style.display = hasLayers ? '' : 'none';
+      }
     }
   }
 

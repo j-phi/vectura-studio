@@ -87,5 +87,31 @@
     target.removeEventListener(event, handler, options);
   };
 
-  UI.utils = { clamp, formatNumber, tabularNum, cssVarPx, prefersReducedMotion, uid, on, off };
+  /**
+   * Canonical HTML escape — the single source of truth for `escapeHtml` across
+   * the codebase. Escapes the five XSS-relevant characters (& < > " '). Non-
+   * string inputs are coerced via `String(value ?? '')` so callers building
+   * template strings never accidentally interpolate `undefined`/`null`/an
+   * object literal that bypasses escaping.
+   *
+   * Order matters: `&` MUST be replaced first, otherwise the `&amp;` etc.
+   * produced by later steps would themselves get re-escaped.
+   *
+   * Per docs/audit-2026-05-20.md (Redundancy-1 PR1), duplicate copies of this
+   * helper previously diverged — one variant omitted the `'` → `&#39;`
+   * substitution. Do not re-introduce a local copy; depend on this export
+   * instead. The unit test `tests/unit/escape-html-single-source.test.js`
+   * enforces that exactly one definition exists in src/.
+   */
+  const escapeHtml = (value) => {
+    const str = typeof value === 'string' ? value : String(value ?? '');
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  };
+
+  UI.utils = { clamp, formatNumber, tabularNum, cssVarPx, prefersReducedMotion, uid, on, off, escapeHtml };
 })();
