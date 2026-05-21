@@ -842,6 +842,10 @@
   <script src="./src/ui/panels/layers-panel.js" defer></script>
   <script src="./src/ui/panels/pens-panel.js" defer></script>
   <script src="./src/ui/panels/modifiers-panel.js" defer></script>
+  <!-- Wallpaper creative-experience seams: preview substrate + presets/randomizer.
+       Must load before mirror-panel.js, which consumes both. -->
+  <script src="./src/ui/panels/wallpaper-preview.js" defer></script>
+  <script src="./src/ui/panels/wallpaper-presets.js" defer></script>
   <script src="./src/ui/panels/mirror-panel.js" defer></script>
   <script src="./src/ui/panels/algorithm-panel.js" defer></script>
   <script src="./src/ui/panels/multi-selection-panel.js" defer></script>
