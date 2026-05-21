@@ -119,10 +119,17 @@
       segments = nextSegments;
     });
 
+    const stripCurveMeta = typeof window !== 'undefined' ? window.Vectura?.GeometryUtils?.stripCurveMeta : null;
     return segments
       .map((segment) => {
         const next = clonePath(segment);
-        if (path.meta) next.meta = JSON.parse(JSON.stringify(path.meta));
+        if (path.meta) {
+          // Clipped fragments no longer match the source's parametric outline
+          // (bezier anchors / embedded shape) — drop it so the renderer traces
+          // the true clipped polyline rather than the original full curve.
+          const meta = JSON.parse(JSON.stringify(path.meta));
+          next.meta = stripCurveMeta ? stripCurveMeta(meta, next) : meta;
+        }
         return next;
       })
       .filter((segment) => segment.length >= (closed ? 3 : 2));

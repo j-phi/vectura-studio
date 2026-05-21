@@ -98,7 +98,13 @@
 
   const reflectPath = (path, axis) => {
     const next = path.map((pt) => reflectPointAcrossAxis(pt, axis));
-    if (path.meta) next.meta = clone(path.meta);
+    if (path.meta) {
+      // The reflected geometry's parametric outline (anchors/shape) is not
+      // itself reflected, so it would describe the wrong (un-mirrored) curve.
+      // Drop it; the reflected polyline is the source of truth.
+      const stripCurveMeta = typeof window !== 'undefined' ? window.Vectura?.GeometryUtils?.stripCurveMeta : null;
+      next.meta = stripCurveMeta ? stripCurveMeta(clone(path.meta), next) : clone(path.meta);
+    }
     return next;
   };
 

@@ -2,6 +2,29 @@
  * Shared geometry helpers for path smoothing/simplification and cloning.
  */
 (() => {
+  // A path's meta can carry a parametric description of its outline — bezier
+  // `anchors` and an embedded `shape` (oval/poly). Renderer.tracePath draws the
+  // visible curve from those anchors. Any step that MUTATES the point array
+  // (clip, reflect, simplify) invalidates that parametric outline: it still
+  // describes the pre-mutation curve. Drop it so the renderer falls back to the
+  // true polyline. `kind:'shape'` is demoted to polygon/polyline by closure of
+  // the mutated points; `kind:'circle'` is left to its own (separate) handling.
+  const stripCurveMeta = (meta, points) => {
+    if (!meta || typeof meta !== 'object') return meta;
+    if (!meta.anchors && !meta.shape && meta.kind !== 'shape') return meta;
+    const next = { ...meta };
+    delete next.anchors;
+    delete next.shape;
+    if (next.kind === 'shape') {
+      const closed = Array.isArray(points) && points.length > 2
+        ? Math.hypot(points[0].x - points[points.length - 1].x, points[0].y - points[points.length - 1].y) < 1e-6
+        : meta.closed === true;
+      next.kind = closed ? 'polygon' : 'polyline';
+      next.closed = closed;
+    }
+    return next;
+  };
+
   const smoothPath = (path, amount) => {
     if (!amount || amount <= 0 || path.length < 3) return path;
     const smoothed = [path[0]];
@@ -62,7 +85,7 @@
     }
 
     const simplified = path.filter((_, i) => keep[i]);
-    if (path.meta) simplified.meta = path.meta;
+    if (path.meta) simplified.meta = stripCurveMeta(path.meta, simplified);
     return simplified.length >= 2 ? simplified : path;
   };
 
@@ -107,7 +130,7 @@
     }
 
     const simplified = pts.filter((_, i) => keep[i]);
-    if (path.meta) simplified.meta = path.meta;
+    if (path.meta) simplified.meta = stripCurveMeta(path.meta, simplified);
     return simplified.length >= 2 ? simplified : path;
   };
 
@@ -426,6 +449,7 @@
   };
 
   const api = {
+    stripCurveMeta,
     smoothPath,
     simplifyPath,
     simplifyPathVisvalingam,
