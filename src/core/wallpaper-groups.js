@@ -486,6 +486,147 @@
     return LOCKED_AXES[lat] || { tileHeight: false, tileAngle: false };
   };
 
+  // ────────────────────────────────────────────────────────────────────────
+  // Composable symmetry model. The 17 crystallographic groups are the valid
+  // combinations of a (lattice, rotation, mirrors) tuple — this lets the UI
+  // present them as three orthogonal toggles instead of a flat 17-cell grid.
+  // ────────────────────────────────────────────────────────────────────────
+  const FEATURES = {
+    p1:   { lattice: 'oblique',     rotation: 1, mirrors: 'none' },
+    p2:   { lattice: 'oblique',     rotation: 2, mirrors: 'none' },
+    pm:   { lattice: 'rectangular', rotation: 1, mirrors: 'straight' },
+    pg:   { lattice: 'rectangular', rotation: 1, mirrors: 'glide' },
+    cm:   { lattice: 'rhombic',     rotation: 1, mirrors: 'straight' },
+    pmm:  { lattice: 'rectangular', rotation: 2, mirrors: 'straight' },
+    pmg:  { lattice: 'rectangular', rotation: 2, mirrors: 'straight+glide' },
+    pgg:  { lattice: 'rectangular', rotation: 2, mirrors: 'glide' },
+    cmm:  { lattice: 'rhombic',     rotation: 2, mirrors: 'straight' },
+    p4:   { lattice: 'square',      rotation: 4, mirrors: 'none' },
+    p4m:  { lattice: 'square',      rotation: 4, mirrors: 'straight' },
+    p4g:  { lattice: 'square',      rotation: 4, mirrors: 'glide' },
+    p3:   { lattice: 'hexagonal',   rotation: 3, mirrors: 'none' },
+    p3m1: { lattice: 'hexagonal',   rotation: 3, mirrors: 'corners' },
+    p31m: { lattice: 'hexagonal',   rotation: 3, mirrors: 'edges' },
+    p6:   { lattice: 'hexagonal',   rotation: 6, mirrors: 'none' },
+    p6m:  { lattice: 'hexagonal',   rotation: 6, mirrors: 'all' },
+  };
+
+  // Valid rotations per lattice — used to snap an incoming rotation to the
+  // nearest legal value when the user toggles lattices.
+  const LATTICE_ROTATIONS = {
+    oblique:     [1, 2],
+    rectangular: [1, 2],
+    rhombic:     [1, 2],
+    square:      [4],
+    hexagonal:   [3, 6],
+  };
+
+  // Resolver priority order per (lattice, rotation). Only contains mirror
+  // values that map to a real group for that tuple — the resolver walks this
+  // list to pick the best replacement when the user's mirror choice doesn't
+  // exist for the current lattice/rotation.
+  const MIRROR_CHAINS = {
+    'oblique:1':     ['none'],
+    'oblique:2':     ['none'],
+    'rectangular:1': ['straight', 'glide'],
+    'rectangular:2': ['straight', 'straight+glide', 'glide'],
+    'rhombic:1':     ['straight'],
+    'rhombic:2':     ['straight'],
+    'square:4':      ['straight', 'glide', 'none'],
+    'hexagonal:3':   ['none', 'corners', 'edges'],
+    'hexagonal:6':   ['none', 'all'],
+  };
+
+  // Complexity scale used for the canonical cycleInFamily ordering — keeps
+  // 'none' first, then matched pairs of straight/corners, glide/edges,
+  // straight+glide/all (the rectangular and hexagonal twins each step in
+  // parallel).
+  const MIRROR_COMPLEXITY = {
+    'none': 0,
+    'straight': 1,
+    'corners': 1,
+    'glide': 2,
+    'edges': 2,
+    'straight+glide': 3,
+    'all': 3,
+  };
+
+  // Build a (lattice, rotation, mirrors) → groupId lookup once.
+  const FEATURE_INDEX = {};
+  for (const id of Object.keys(FEATURES)) {
+    const f = FEATURES[id];
+    FEATURE_INDEX[`${f.lattice}:${f.rotation}:${f.mirrors}`] = id;
+  }
+
+  const featuresToGroupId = (target) => {
+    if (!target) return null;
+    const key = `${target.lattice}:${target.rotation}:${target.mirrors}`;
+    return FEATURE_INDEX[key] || null;
+  };
+
+  const snapRotation = (lattice, rotation) => {
+    const opts = LATTICE_ROTATIONS[lattice] || [1];
+    let best = opts[0];
+    let bestDist = Math.abs(rotation - best);
+    for (let i = 1; i < opts.length; i++) {
+      const dist = Math.abs(rotation - opts[i]);
+      // Ties prefer the higher rotation (per plan).
+      if (dist < bestDist || (dist === bestDist && opts[i] > best)) {
+        best = opts[i];
+        bestDist = dist;
+      }
+    }
+    return best;
+  };
+
+  const snapMirrors = (lattice, rotation, mirrors) => {
+    const chain = MIRROR_CHAINS[`${lattice}:${rotation}`] || ['none'];
+    if (chain.includes(mirrors)) return mirrors;
+    // Coming from 'none' and 'none' is allowed → keep 'none'.
+    if (mirrors === 'none' && chain.includes('none')) return 'none';
+    // Otherwise prefer the first non-'none' option so a user who *had*
+    // mirrors keeps mirrors after the snap (escalate-not-relax rule).
+    const firstNonNone = chain.find((m) => m !== 'none');
+    return firstNonNone || chain[0];
+  };
+
+  const nearestValidGroup = (target) => {
+    const t = target || {};
+    const lattice = LATTICE_ROTATIONS[t.lattice] ? t.lattice : 'square';
+    const rotation = snapRotation(lattice, Number.isFinite(t.rotation) ? t.rotation : 4);
+    const mirrors = snapMirrors(lattice, rotation, t.mirrors ?? 'none');
+    return featuresToGroupId({ lattice, rotation, mirrors }) || 'p4m';
+  };
+
+  // Canonical in-family order: rotation asc, then mirror complexity asc
+  // (with 'none' first). This is the order ⌘← / ⌘→ walks.
+  const familyOrder = (lattice) => {
+    const ids = Object.keys(FEATURES).filter((id) => FEATURES[id].lattice === lattice);
+    return ids.sort((a, b) => {
+      const fa = FEATURES[a], fb = FEATURES[b];
+      if (fa.rotation !== fb.rotation) return fa.rotation - fb.rotation;
+      const ca = MIRROR_COMPLEXITY[fa.mirrors] ?? 99;
+      const cb = MIRROR_COMPLEXITY[fb.mirrors] ?? 99;
+      if (ca !== cb) return ca - cb;
+      return a.localeCompare(b);
+    });
+  };
+
+  const cycleInFamily = (currentGroupId, dir = 1) => {
+    const feat = FEATURES[currentGroupId];
+    if (!feat) return currentGroupId;
+    const order = familyOrder(feat.lattice);
+    const idx = order.indexOf(currentGroupId);
+    if (idx < 0) return order[0] || currentGroupId;
+    const step = dir >= 0 ? 1 : -1;
+    const next = ((idx + step) % order.length + order.length) % order.length;
+    return order[next];
+  };
+
   const Vectura = (window.Vectura = window.Vectura || {});
-  window.Vectura.WallpaperGroups = { GROUPS, GROUP_IDS, getTileRange, getCell, rotPt, reflPt, getLockedAxes };
+  window.Vectura.WallpaperGroups = {
+    GROUPS, GROUP_IDS, getTileRange, getCell, rotPt, reflPt, getLockedAxes,
+    FEATURES, LATTICE_ROTATIONS, MIRROR_CHAINS, MIRROR_COMPLEXITY,
+    featuresToGroupId, nearestValidGroup, cycleInFamily,
+  };
 })();

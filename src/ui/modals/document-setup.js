@@ -290,6 +290,7 @@
             ${swToggle('set-cookie-preferences', 'Save preferences in cookie')}
             <button id="btn-clear-preferences" type="button" class="hdr-btn">Clear saved preferences</button>
             ${swToggle('set-show-tour', 'Show tour on first launch')}
+            ${swToggle('set-show-crystallographic-names', 'Show crystallographic group names (p4m, p3m1…)')}
           </div>
         </div>
 
@@ -978,6 +979,15 @@
       setShowTour.onchange = (e) => {
         SETTINGS.showTourOnFirstLaunch = e.target.checked;
         this.app?.persistPreferences?.();
+      };
+    }
+    const setShowCrystallographicNames = getEl('set-show-crystallographic-names', { silent: true });
+    if (setShowCrystallographicNames) {
+      setShowCrystallographicNames.onchange = (e) => {
+        if (this.app.pushHistory) this.app.pushHistory();
+        SETTINGS.showCrystallographicNames = e.target.checked;
+        this.app?.persistPreferences?.();
+        this.app?.render?.();
       };
     }
     if (btnClearPreferences) {

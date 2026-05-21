@@ -28,11 +28,15 @@ describe('MirrorPanel — module surface', () => {
     expect(typeof MirrorPanel.pointToAngleDeg).toBe('function');
     expect(Object.keys(MirrorPanel.TYPES).sort()).toEqual(['arc', 'line', 'radial', 'wallpaper']);
     expect(MirrorPanel.WALL_GROUPS).toHaveLength(17);
+    // Family is now keyed on the actual crystallographic lattice (5 values)
+    // instead of the legacy 3-bucket ad-hoc grouping. cmm correctly belongs
+    // to 'rhombic' here — the legacy list mis-classified it as 'sq'.
     const fams = new Set(MirrorPanel.WALL_GROUPS.map((g) => g.family));
-    expect(fams.size).toBe(3);
-    expect(fams.has('rect')).toBe(true);
-    expect(fams.has('sq')).toBe(true);
-    expect(fams.has('hex')).toBe(true);
+    expect(fams.size).toBe(5);
+    ['oblique', 'rectangular', 'rhombic', 'square', 'hexagonal'].forEach((lat) => {
+      expect(fams.has(lat)).toBe(true);
+    });
+    expect(MirrorPanel.WALL_GROUPS.find((g) => g.id === 'cmm').family).toBe('rhombic');
   });
 });
 
@@ -69,7 +73,11 @@ describe('MirrorPanel — pure helpers (would fail against legacy UI)', () => {
     expect(MirrorPanel.nameFor({ type: 'line', angle: 90 })).toBe('Line · 90°');
     expect(MirrorPanel.nameFor({ type: 'radial', count: 6, mode: 'dihedral' })).toBe('Radial · 6× dihedral');
     expect(MirrorPanel.nameFor({ type: 'arc', radius: 80 })).toBe('Arc · r 80');
-    expect(MirrorPanel.nameFor({ type: 'wallpaper', group: 'p4m' })).toBe('Wallpaper · p4m');
+    // Crystallographic name is hidden by default (pref off) — show a friendly
+    // composable summary instead. The `Wallpaper · p4m` form returns when the
+    // showCrystallographicNames preference is enabled (covered below).
+    expect(MirrorPanel.nameFor({ type: 'wallpaper', group: 'p4m' }))
+      .toBe('Wallpaper · square · 4-fold · mirrored');
 
     expect(MirrorPanel.summaryFor({ type: 'line', angle: 45, xShift: 10, yShift: -5, replacedSide: 'negative' }))
       .toBe('45° · SHIFT 10,-5 · SIDE −');
@@ -280,16 +288,23 @@ describe('MirrorPanel.build — DOM behavior (RGR for the v2 redesign)', () => {
     expect(container.querySelector('.mp-dial')).toBeTruthy();
   });
 
-  test('a wallpaper mirror renders all 17 group cells across 3 family sections', () => {
+  test('a wallpaper mirror renders composable chip rows (lattice / rotation / mirrors)', () => {
+    // 2026-05-21: flat 17-cell atlas → three composable chip rows. The math
+    // surface (group → fundamental domain) is unchanged, but the UI now
+    // surfaces the underlying (lattice, rotation, mirrors) tuple.
     const layer = mkLayer([Modifiers.createWallpaperMirror(0)]);
     const container = document.createElement('div');
     MirrorPanel.build(mkCtx(), layer, container);
-    const cells = container.querySelectorAll('[data-set="group"]');
-    expect(cells).toHaveLength(17);
-    expect(container.querySelectorAll('.mp-atlas-head')).toHaveLength(3);
-    // p4m is in 'sq' family
-    const active = container.querySelector('.mp-atlas-head.is-active-family');
-    expect(active.dataset.family).toBe('sq');
+    expect(container.querySelector('[data-symmetry-row="lattice"]')).toBeTruthy();
+    expect(container.querySelector('[data-symmetry-row="rotation"]')).toBeTruthy();
+    expect(container.querySelector('[data-symmetry-row="mirrors"]')).toBeTruthy();
+    // p4m → lattice=square, rotation=4, mirrors=straight
+    const activeLat = container.querySelector('[data-sym-axis="lattice"].is-active');
+    const activeRot = container.querySelector('[data-sym-axis="rotation"].is-active');
+    const activeMir = container.querySelector('[data-sym-axis="mirrors"].is-active');
+    expect(activeLat.dataset.symVal).toBe('square');
+    expect(activeRot.dataset.symVal).toBe('4');
+    expect(activeMir.dataset.symVal).toBe('straight');
   });
 
   test('tileHeight + tileAngle sliders are disabled when active group locks them', () => {
@@ -309,28 +324,32 @@ describe('MirrorPanel.build — DOM behavior (RGR for the v2 redesign)', () => {
     expect(heightSlider.closest('.mp-ctrl-grp').classList.contains('is-locked')).toBe(true);
     expect(angleSlider.closest('.mp-ctrl-grp').classList.contains('is-locked')).toBe(true);
 
-    // Switching to an oblique-lattice group (p1) should unlock both axes.
-    container.querySelector('[data-set="group"][data-val="p1"]').click();
+    // Toggling lattice to oblique resolves to p1 (snapping rotation 4→nearest
+    // legal rotation for oblique, which is 2), and both axes unlock.
+    container.querySelector('[data-sym-axis="lattice"][data-sym-val="oblique"]').click();
     const h2 = container.querySelector('input[type=range][data-param="tileHeight"]');
     const a2 = container.querySelector('input[type=range][data-param="tileAngle"]');
     expect(h2.disabled).toBe(false);
     expect(a2.disabled).toBe(false);
 
-    // Rhombic lattice (cm): height locked, angle free.
-    container.querySelector('[data-set="group"][data-val="cm"]').click();
+    // Rhombic lattice → cm/cmm (height locked, angle free).
+    container.querySelector('[data-sym-axis="lattice"][data-sym-val="rhombic"]').click();
     const h3 = container.querySelector('input[type=range][data-param="tileHeight"]');
     const a3 = container.querySelector('input[type=range][data-param="tileAngle"]');
     expect(h3.disabled).toBe(true);
     expect(a3.disabled).toBe(false);
   });
 
-  test('clicking a wallpaper cell updates mirror.group + active-family highlight', () => {
+  test('toggling lattice to hexagonal resolves to a hex group + updates active chip', () => {
     const layer = mkLayer([Modifiers.createWallpaperMirror(0)]);
     const container = document.createElement('div');
     MirrorPanel.build(mkCtx(), layer, container);
-    container.querySelector('[data-set="group"][data-val="p6m"]').click();
-    expect(layer.modifier.mirrors[0].group).toBe('p6m');
-    expect(container.querySelector('.mp-atlas-head.is-active-family').dataset.family).toBe('hex');
+    container.querySelector('[data-sym-axis="lattice"][data-sym-val="hexagonal"]').click();
+    const sym = layer.modifier.mirrors[0].symmetry;
+    expect(sym.lattice).toBe('hexagonal');
+    expect(layer.modifier.mirrors[0].group).toMatch(/^(p3|p3m1|p31m|p6|p6m)$/);
+    const activeLat = container.querySelector('[data-sym-axis="lattice"].is-active');
+    expect(activeLat.dataset.symVal).toBe('hexagonal');
   });
 
   test('info trigger opens a popover; close button dismisses it', () => {
@@ -588,5 +607,176 @@ describe('MirrorPanel.build — DOM behavior (RGR for the v2 redesign)', () => {
     const orchestrator = fs.readFileSync(path.join(__dirname, '..', '..', 'src/ui/ui.js'), 'utf8');
     expect(algo.includes('buildMirrorModifierControls')).toBe(false);
     expect(orchestrator.includes('buildMirrorModifierControls')).toBe(false);
+  });
+});
+
+// 2026-05-21: composable wallpaper-symmetry chip rows. Each test here would
+// fail against the pre-2026-05-21 flat 17-cell atlas (no chip rows, no
+// symmetry tuple, no legacy backfill path, no keyboard cycling).
+describe('MirrorPanel — wallpaper composable symmetry', () => {
+  let runtime, MirrorPanel, Modifiers, WG, document, SETTINGS;
+
+  beforeEach(async () => {
+    runtime = await loadVecturaRuntime();
+    MirrorPanel = runtime.window.Vectura.UI.MirrorPanel;
+    Modifiers = runtime.window.Vectura.Modifiers;
+    WG = runtime.window.Vectura.WallpaperGroups;
+    SETTINGS = runtime.window.Vectura.SETTINGS;
+    document = runtime.document;
+  });
+
+  afterEach(() => runtime?.cleanup());
+
+  const mkLayer = (mirrors) => ({
+    id: 'L1', name: 'Mirror Group', isGroup: true, containerRole: 'modifier',
+    modifier: Modifiers.createModifierState('mirror', {
+      mirrors: mirrors || [Modifiers.createWallpaperMirror(0)],
+    }),
+  });
+
+  const mkCtx = () => ({
+    app: { pushHistory: () => {} },
+    getModifierState: (l) => l.modifier,
+    refreshModifierLayer: () => {},
+  });
+
+  test('createWallpaperMirror dual-writes group + symmetry tuple', () => {
+    const w = Modifiers.createWallpaperMirror(0);
+    expect(w.group).toBe('p4m');
+    expect(w.symmetry).toEqual({ lattice: 'square', rotation: 4, mirrors: 'straight' });
+  });
+
+  test('toggling lattice from square→hexagonal snaps rotation 4→nearest hex rotation and dual-writes', () => {
+    const layer = mkLayer();
+    const container = document.createElement('div');
+    MirrorPanel.build(mkCtx(), layer, container);
+    container.querySelector('[data-sym-axis="lattice"][data-sym-val="hexagonal"]').click();
+    const m = layer.modifier.mirrors[0];
+    expect(m.symmetry.lattice).toBe('hexagonal');
+    // 4 is closer to 3 than 6 → snap to 3, mirrors=straight is not valid for
+    // hex rot 3 ({none, corners, edges}) → escalate to first non-'none'
+    // option → corners → p3m1.
+    expect(m.symmetry.rotation).toBe(3);
+    expect(m.symmetry.mirrors).toBe('corners');
+    expect(m.group).toBe('p3m1');
+  });
+
+  test('toggling mirrors none→straight on square rot 4 produces p4m', () => {
+    const layer = mkLayer();
+    const m0 = layer.modifier.mirrors[0];
+    m0.group = 'p4';
+    m0.symmetry = { ...WG.FEATURES.p4 };
+    const container = document.createElement('div');
+    MirrorPanel.build(mkCtx(), layer, container);
+    container.querySelector('[data-sym-axis="mirrors"][data-sym-val="straight"]').click();
+    expect(layer.modifier.mirrors[0].group).toBe('p4m');
+  });
+
+  test('rotation 3→6 in hex with mirrors=corners snaps to p6m (escalate-not-relax)', () => {
+    const layer = mkLayer();
+    const m0 = layer.modifier.mirrors[0];
+    m0.group = 'p3m1';
+    m0.symmetry = { ...WG.FEATURES.p3m1 };
+    const container = document.createElement('div');
+    MirrorPanel.build(mkCtx(), layer, container);
+    container.querySelector('[data-sym-axis="rotation"][data-sym-val="6"]').click();
+    expect(layer.modifier.mirrors[0].group).toBe('p6m');
+  });
+
+  test('a legacy mirror with only `group` (no `symmetry`) renders chip rows in correct active states', () => {
+    // Simulate loading a pre-2026-05-21 .vectura file: only `group` is set,
+    // the chip-row active state must be derived from FEATURES[group].
+    const layer = mkLayer();
+    const m0 = layer.modifier.mirrors[0];
+    m0.group = 'pmg';
+    delete m0.symmetry;
+    const container = document.createElement('div');
+    MirrorPanel.build(mkCtx(), layer, container);
+    const lat = container.querySelector('[data-sym-axis="lattice"].is-active');
+    const rot = container.querySelector('[data-sym-axis="rotation"].is-active');
+    const mir = container.querySelector('[data-sym-axis="mirrors"].is-active');
+    expect(lat.dataset.symVal).toBe('rectangular');
+    expect(rot.dataset.symVal).toBe('2');
+    expect(mir.dataset.symVal).toBe('straight+glide');
+  });
+
+  test('rotation chips that do not apply to the current lattice are disabled', () => {
+    // Square lattice only allows rotation 4 — the {1,2,3,6} chips must be
+    // disabled (clicks no-op).
+    const layer = mkLayer();
+    const container = document.createElement('div');
+    MirrorPanel.build(mkCtx(), layer, container);
+    [1, 2, 3, 6].forEach((rot) => {
+      const chip = container.querySelector(`[data-sym-axis="rotation"][data-sym-val="${rot}"]`);
+      expect(chip).toBeTruthy();
+      expect(chip.disabled).toBe(true);
+    });
+    const chip4 = container.querySelector('[data-sym-axis="rotation"][data-sym-val="4"]');
+    expect(chip4.disabled).toBe(false);
+  });
+
+  test('mirror.group + mirror.symmetry roundtrip through JSON.parse(JSON.stringify(...))', () => {
+    // The engine clones the entire modifier via JSON during import/export at
+    // engine.js:304/362/458. Make sure the new field survives without any
+    // engine-side change.
+    const w = Modifiers.createWallpaperMirror(0);
+    const round = JSON.parse(JSON.stringify(w));
+    expect(round.group).toBe('p4m');
+    expect(round.symmetry).toEqual({ lattice: 'square', rotation: 4, mirrors: 'straight' });
+  });
+
+  test('⌘→ cycles through every group in the current family, then wraps', () => {
+    const layer = mkLayer();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    MirrorPanel.build(mkCtx(), layer, container);
+    const family = ['p4', 'p4m', 'p4g'];
+    const visited = [layer.modifier.mirrors[0].group];
+    for (let i = 0; i < family.length; i++) {
+      document.dispatchEvent(new runtime.window.KeyboardEvent('keydown', {
+        key: 'ArrowRight', metaKey: true, bubbles: true,
+      }));
+      visited.push(layer.modifier.mirrors[0].group);
+    }
+    // After 3 steps from p4m, we should have wrapped back: p4m → p4g → p4 → p4m
+    expect(visited).toEqual(['p4m', 'p4g', 'p4', 'p4m']);
+    document.body.removeChild(container);
+  });
+
+  test('⌘← cycles backward through the family', () => {
+    const layer = mkLayer();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    MirrorPanel.build(mkCtx(), layer, container);
+    document.dispatchEvent(new runtime.window.KeyboardEvent('keydown', {
+      key: 'ArrowLeft', metaKey: true, bubbles: true,
+    }));
+    // p4m → cycle backward → p4 (forward order is p4, p4m, p4g)
+    expect(layer.modifier.mirrors[0].group).toBe('p4');
+    document.body.removeChild(container);
+  });
+
+  test('SETTINGS.showCrystallographicNames=false hides the wall-name badge; true reveals it', () => {
+    SETTINGS.showCrystallographicNames = false;
+    const layer = mkLayer();
+    const container = document.createElement('div');
+    MirrorPanel.build(mkCtx(), layer, container);
+    expect(container.querySelector('[data-testid="wall-name-badge"]')).toBeNull();
+
+    SETTINGS.showCrystallographicNames = true;
+    const container2 = document.createElement('div');
+    MirrorPanel.build(mkCtx(), layer, container2);
+    const badge = container2.querySelector('[data-testid="wall-name-badge"]');
+    expect(badge).toBeTruthy();
+    expect(badge.textContent).toContain('p4m');
+    SETTINGS.showCrystallographicNames = false; // restore
+  });
+
+  test('nameFor respects SETTINGS.showCrystallographicNames', () => {
+    SETTINGS.showCrystallographicNames = true;
+    expect(MirrorPanel.nameFor({ type: 'wallpaper', group: 'p3' })).toBe('Wallpaper · p3');
+    SETTINGS.showCrystallographicNames = false;
+    expect(MirrorPanel.nameFor({ type: 'wallpaper', group: 'p3' }))
+      .toBe('Wallpaper · hexagonal · 3-fold · no mirror');
   });
 });

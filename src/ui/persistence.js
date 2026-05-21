@@ -63,6 +63,7 @@
     const selectionOutlineWidth = getEl('set-selection-outline-width');
     const selectionOutlineStyleReset = getEl('set-selection-outline-style-reset');
     const cookiePreferences = getEl('set-cookie-preferences');
+    const showCrystallographicNames = getEl('set-show-crystallographic-names', { silent: true });
     const paperWidth = getEl('set-paper-width');
     const paperHeight = getEl('set-paper-height');
     const orientationToggle = getEl('set-orientation');
@@ -187,6 +188,7 @@
     }
     if (selectionOutlineStyleReset) selectionOutlineStyleReset.disabled = false;
     if (cookiePreferences) cookiePreferences.checked = SETTINGS.cookiePreferencesEnabled === true;
+    if (showCrystallographicNames) showCrystallographicNames.checked = SETTINGS.showCrystallographicNames === true;
     const showTourEl = getEl('set-show-tour', { silent: true });
     if (showTourEl) showTourEl.checked = SETTINGS.showTourOnFirstLaunch === true;
     if (bgColor) bgColor.value = SETTINGS.bgColor;

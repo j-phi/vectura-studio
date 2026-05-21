@@ -35,17 +35,48 @@
     wallpaper: { label: 'Wallpaper', hue: 'var(--mirror-wall-hue)',   hueRaw: '#5cd99a', tag: 'Tile with one of 17 symmetries',     preview: 'mp-prev-wall'   },
   };
 
-  const WALL_GROUPS = [
-    { id: 'p1',   family: 'rect' }, { id: 'p2',   family: 'rect' },
-    { id: 'pm',   family: 'rect' }, { id: 'pg',   family: 'rect' },
-    { id: 'cm',   family: 'rect' }, { id: 'pmm',  family: 'rect' },
-    { id: 'pmg',  family: 'rect' }, { id: 'pgg',  family: 'rect' },
-    { id: 'cmm',  family: 'sq'   }, { id: 'p4',   family: 'sq'   },
-    { id: 'p4m',  family: 'sq'   }, { id: 'p4g',  family: 'sq'   },
-    { id: 'p3',   family: 'hex'  }, { id: 'p3m1', family: 'hex'  },
-    { id: 'p31m', family: 'hex'  }, { id: 'p6',   family: 'hex'  },
-    { id: 'p6m',  family: 'hex'  },
-  ];
+  // Derived from WallpaperGroups.FEATURES so the family field stays in lockstep
+  // with the math file's lattice classification. (The pre-2026-05-21 hand-keyed
+  // list mis-classified cmm as 'sq' even though it's rhombic.) Falls back to a
+  // hard-coded list when the dependency isn't loaded yet — keeps the legacy
+  // unit-test shape (length 17, lattice families).
+  const buildWallGroups = () => {
+    const FEATURES = window.Vectura?.WallpaperGroups?.FEATURES;
+    if (FEATURES) {
+      return Object.keys(FEATURES).map((id) => ({ id, family: FEATURES[id].lattice }));
+    }
+    return [
+      { id: 'p1', family: 'oblique' }, { id: 'p2', family: 'oblique' },
+      { id: 'pm', family: 'rectangular' }, { id: 'pg', family: 'rectangular' },
+      { id: 'cm', family: 'rhombic' }, { id: 'pmm', family: 'rectangular' },
+      { id: 'pmg', family: 'rectangular' }, { id: 'pgg', family: 'rectangular' },
+      { id: 'cmm', family: 'rhombic' }, { id: 'p4', family: 'square' },
+      { id: 'p4m', family: 'square' }, { id: 'p4g', family: 'square' },
+      { id: 'p3', family: 'hexagonal' }, { id: 'p3m1', family: 'hexagonal' },
+      { id: 'p31m', family: 'hexagonal' }, { id: 'p6', family: 'hexagonal' },
+      { id: 'p6m', family: 'hexagonal' },
+    ];
+  };
+  const WALL_GROUPS = buildWallGroups();
+
+  // Friendly labels for the composable chip rows.
+  const LATTICE_LABELS = {
+    oblique:     'Parallelogram',
+    rectangular: 'Rectangle',
+    rhombic:     'Rhombus',
+    square:      'Square',
+    hexagonal:   'Hexagon',
+  };
+  const MIRROR_LABELS = {
+    'none':           'None',
+    'straight':       'Straight',
+    'glide':          'Glide',
+    'straight+glide': 'Straight + Glide',
+    'corners':        'Through corners',
+    'edges':          'Through edges',
+    'all':            'All',
+  };
+  const ROTATION_LABEL = (n) => `${n}-fold`;
 
   const WALL_GROUP_DESC = {
     p1:   'Translation only — the tile slides but never rotates or mirrors.',
@@ -621,12 +652,29 @@
     return {};
   }
 
+  function deriveWallpaperSymmetry(mirror) {
+    const WG = window.Vectura?.WallpaperGroups;
+    const fallback = { lattice: 'square', rotation: 4, mirrors: 'straight' };
+    if (mirror?.symmetry?.lattice) return mirror.symmetry;
+    if (WG?.FEATURES?.[mirror?.group]) return { ...WG.FEATURES[mirror.group] };
+    return fallback;
+  }
+
+  function showCrystallographicNames() {
+    return window.Vectura?.SETTINGS?.showCrystallographicNames === true;
+  }
+
   function nameFor(mirror) {
     switch (mirror.type) {
       case 'line':      return `Line · ${Math.round(mirror.angle ?? 0)}°`;
       case 'radial':    return `Radial · ${mirror.count ?? 6}× ${mirror.mode ?? 'dihedral'}`;
       case 'arc':       return `Arc · r ${Math.round(mirror.radius ?? 80)}`;
-      case 'wallpaper': return `Wallpaper · ${mirror.group ?? 'p4m'}`;
+      case 'wallpaper': {
+        if (showCrystallographicNames()) return `Wallpaper · ${mirror.group ?? 'p4m'}`;
+        const sym = deriveWallpaperSymmetry(mirror);
+        const mir = sym.mirrors === 'none' ? 'no mirror' : 'mirrored';
+        return `Wallpaper · ${sym.lattice} · ${sym.rotation}-fold · ${mir}`;
+      }
     }
     return 'Mirror';
   }
@@ -958,40 +1006,70 @@
   }
 
   function wallConfig(m) {
-    const activeFam = (WALL_GROUPS.find((g) => g.id === m.group) || {}).family;
-    const groupDef = window.Vectura?.WallpaperGroups?.GROUPS?.[m.group];
+    const WG = window.Vectura?.WallpaperGroups;
+    const sym = deriveWallpaperSymmetry(m);
+    const groupId = (WG?.featuresToGroupId?.(sym)) || m.group || 'p4m';
+    const groupDef = WG?.GROUPS?.[groupId];
     const hasV1 = !!(groupDef && groupDef.hasV1);
     const variantOn = hasV1 && !!m.variantV1;
-    const locked = window.Vectura?.WallpaperGroups?.getLockedAxes?.(m.group) || { tileHeight: false, tileAngle: false };
+    const locked = WG?.getLockedAxes?.(groupId) || { tileHeight: false, tileAngle: false };
     const lockedAttr = (on) => on ? 'disabled aria-disabled="true"' : '';
     const lockedCls  = (on) => on ? ' is-locked' : '';
-    const lockHint   = (on) => on ? ` <span class="mp-lock-hint" title="${m.group} forces this value">locked</span>` : '';
-    const families = [
-      { key: 'rect', topic: 'wall-rect', title: 'Rectangular & oblique' },
-      { key: 'sq',   topic: 'wall-sq',   title: 'Square symmetry' },
-      { key: 'hex',  topic: 'wall-hex',  title: 'Hexagonal symmetry' },
-    ];
-    const familyHtml = families.map((f) => {
-      const groups = WALL_GROUPS.filter((g) => g.family === f.key);
-      const isActive = activeFam === f.key;
-      return `
-        <div class="mp-atlas-head ${isActive ? 'is-active-family' : ''}" data-family="${f.key}">
-          <span class="mp-ash-title">${f.title} ${infoTrigger(f.topic, 'About ' + f.title)}</span>
-          <span class="mp-ash-count">${isActive ? '✓ ' : ''}${groups.length} groups</span>
-        </div>
-        <div class="mp-atlas-grid">
-          ${groups.map((g) => `
-            <button type="button" class="mp-atlas-cell ${g.id === m.group ? 'active' : ''}" aria-pressed="${g.id === m.group}"
-                    data-set="group" data-val="${g.id}" title="${g.id} — ${WALL_GROUP_DESC[g.id]}">
-              <svg><use href="#mp-wg-${g.id}"/></svg>
-              <span class="mp-ac-code">${g.id}</span>
-            </button>
-          `).join('')}
-        </div>`;
+    const lockHint   = (on) => on ? ` <span class="mp-lock-hint" title="${groupId} forces this value">locked</span>` : '';
+
+    // Lattice row
+    const lattices = ['oblique', 'rectangular', 'rhombic', 'square', 'hexagonal'];
+    const latticeChips = lattices.map((lat) => {
+      const active = lat === sym.lattice ? 'is-active' : '';
+      return `<button type="button" class="mp-chip ${active}" aria-pressed="${lat === sym.lattice}"
+        data-sym-axis="lattice" data-sym-val="${lat}"
+        title="${LATTICE_LABELS[lat]}">${LATTICE_LABELS[lat]}</button>`;
     }).join('');
+
+    // Rotation row — all 5 rotations; disable any that don't apply to the current lattice.
+    const allRotations = [1, 2, 3, 4, 6];
+    const validRotations = WG?.LATTICE_ROTATIONS?.[sym.lattice] || [sym.rotation];
+    const rotationChips = allRotations.map((rot) => {
+      const valid = validRotations.includes(rot);
+      const active = (rot === sym.rotation && valid) ? 'is-active' : '';
+      const dis = valid ? '' : 'disabled aria-disabled="true"';
+      const title = valid
+        ? `${rot}-fold rotation`
+        : `${rot}-fold rotation not available for ${LATTICE_LABELS[sym.lattice]?.toLowerCase() || sym.lattice} lattice`;
+      return `<button type="button" class="mp-chip ${active}" aria-pressed="${active === 'is-active'}"
+        data-sym-axis="rotation" data-sym-val="${rot}" ${dis}
+        title="${title}">${ROTATION_LABEL(rot)}</button>`;
+    }).join('');
+
+    // Mirror row — contextual on (lattice, rotation).
+    const mirrorOpts = WG?.MIRROR_CHAINS?.[`${sym.lattice}:${sym.rotation}`] || ['none'];
+    const mirrorChips = mirrorOpts.map((mir) => {
+      const active = mir === sym.mirrors ? 'is-active' : '';
+      const label = MIRROR_LABELS[mir] || mir;
+      return `<button type="button" class="mp-chip ${active}" aria-pressed="${mir === sym.mirrors}"
+        data-sym-axis="mirrors" data-sym-val="${mir}"
+        title="${label}">${label}</button>`;
+    }).join('');
+
+    const badge = showCrystallographicNames()
+      ? `<div class="mp-wall-badge" data-testid="wall-name-badge">→ ${groupId}</div>`
+      : '';
+    const desc = WALL_GROUP_DESC[groupId] || '';
     return `
-      ${renderPopovers(['wall-rect', 'wall-sq', 'wall-hex'])}
-      ${familyHtml}
+      ${renderPopovers([])}
+      <div class="mp-ctrl-grp">
+        <div class="mp-ctrl-lbl">Lattice</div>
+        <div class="mp-chip-row" data-symmetry-row="lattice">${latticeChips}</div>
+      </div>
+      <div class="mp-ctrl-grp">
+        <div class="mp-ctrl-lbl">Rotation order</div>
+        <div class="mp-chip-row" data-symmetry-row="rotation">${rotationChips}</div>
+      </div>
+      <div class="mp-ctrl-grp">
+        <div class="mp-ctrl-lbl">Mirrors</div>
+        <div class="mp-chip-row" data-symmetry-row="mirrors">${mirrorChips}</div>
+      </div>
+      ${desc ? `<div class="mp-wall-desc" data-testid="wall-desc">${desc}</div>` : ''}
       <div class="mp-ctrl-row-2">
         <div class="mp-ctrl-grp">
           <div class="mp-ctrl-lbl">Tile width <span class="mp-val-tag" data-tag="tileWidth">${Math.round(m.tileWidth)}</span></div>
@@ -1066,6 +1144,7 @@
         </div>
       </div>
       ` : ''}
+      ${badge}
     `;
   }
 
@@ -1490,7 +1569,7 @@
         });
       });
 
-      // Tile clicks: side / mode / clipToArc / group
+      // Tile clicks: side / mode / clipToArc / variantV1
       body.querySelectorAll('[data-set]').forEach((el) => {
         el.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -1502,6 +1581,31 @@
           commit(() => { mirror[param] = v; });
           // Tile state (active class, active-family header) is encoded in the
           // rendered HTML — re-render the panel so it reflects the new value.
+          renderAll();
+        });
+      });
+
+      // Wallpaper composable-symmetry chips: rebuild the (lattice, rotation,
+      // mirrors) tuple, resolve through nearestValidGroup, and dual-write
+      // mirror.group + mirror.symmetry so the engine keeps reading mirror.group
+      // and a roundtrip preserves both fields.
+      body.querySelectorAll('[data-sym-axis]').forEach((el) => {
+        el.addEventListener('click', (e) => {
+          if (el.disabled) return;
+          e.stopPropagation();
+          const WG = window.Vectura?.WallpaperGroups;
+          if (!WG?.nearestValidGroup) return;
+          const axis = el.dataset.symAxis;
+          let val = el.dataset.symVal;
+          if (axis === 'rotation') val = parseInt(val, 10);
+          const sym = deriveWallpaperSymmetry(mirror);
+          const next = { ...sym, [axis]: val };
+          const groupId = WG.nearestValidGroup(next);
+          const resolvedSym = WG.FEATURES[groupId] || sym;
+          commit(() => {
+            mirror.group = groupId;
+            mirror.symmetry = { ...resolvedSym };
+          });
           renderAll();
         });
       });
@@ -1602,6 +1706,27 @@
       return false;
     };
 
+    // Register the wallpaper-family cycle hook (⌘← / ⌘→). Returns true when
+    // it actually advanced a wallpaper mirror so the host can stopPropagation.
+    UI._mirrorPanelCycleHook = (dir) => {
+      if (pickerState !== 'closed') return false;
+      const sel = selectedMirror();
+      if (!sel || sel.type !== 'wallpaper' || sel.locked) return false;
+      const WG = window.Vectura?.WallpaperGroups;
+      if (!WG?.cycleInFamily || !WG.FEATURES) return false;
+      const curId = WG.featuresToGroupId(deriveWallpaperSymmetry(sel)) || sel.group || 'p4m';
+      const nextId = WG.cycleInFamily(curId, dir);
+      if (nextId === curId) return false;
+      const nextSym = WG.FEATURES[nextId];
+      if (!nextSym) return false;
+      commit(() => {
+        sel.group = nextId;
+        sel.symmetry = { ...nextSym };
+      });
+      renderAll();
+      return true;
+    };
+
     renderAll();
   }
 
@@ -1628,18 +1753,36 @@
   //   3. Otherwise, do nothing (let the host handle it).
   // We expose a single hook here so build() can register the active cancel.
   UI._mirrorPanelEscapeHook = UI._mirrorPanelEscapeHook || null;
+  UI._mirrorPanelCycleHook = UI._mirrorPanelCycleHook || null;
   if (typeof document !== 'undefined' && !UI._mirrorPanelEscBound) {
     document.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape') return;
-      const open = document.querySelector('.mp-info-popover.is-open');
-      if (open) {
-        closeAllPopovers();
-        e.stopPropagation();
+      if (e.key === 'Escape') {
+        const open = document.querySelector('.mp-info-popover.is-open');
+        if (open) {
+          closeAllPopovers();
+          e.stopPropagation();
+          return;
+        }
+        const hook = UI._mirrorPanelEscapeHook;
+        if (typeof hook === 'function') {
+          if (hook()) e.stopPropagation();
+        }
         return;
       }
-      const hook = UI._mirrorPanelEscapeHook;
-      if (typeof hook === 'function') {
-        if (hook()) e.stopPropagation();
+      // ⌘← / ⌘→ — cycle through groups sharing the current lattice. Only
+      // active when a wallpaper mirror is selected and editable.
+      const isArrow = e.key === 'ArrowLeft' || e.key === 'ArrowRight';
+      if (isArrow && (e.metaKey || e.ctrlKey) && !e.altKey) {
+        // Stay out of the way when the user is editing text.
+        const t = e.target;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        const hook = UI._mirrorPanelCycleHook;
+        if (typeof hook === 'function') {
+          if (hook(e.key === 'ArrowRight' ? 1 : -1)) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }
       }
     });
     UI._mirrorPanelEscBound = true;

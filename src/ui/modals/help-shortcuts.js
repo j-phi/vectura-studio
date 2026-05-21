@@ -236,10 +236,18 @@
           ${row(CMD + SHF + k(']'),   'Send to front')}
         </tbody>
       </table>`;
+    const wallpaperRows = `
+      <table class="help-kbd-table">
+        <tbody>
+          ${row(CMD + k('←'), 'Cycle wallpaper group within current lattice (back)')}
+          ${row(CMD + k('→'), 'Cycle wallpaper group within current lattice (forward)')}
+        </tbody>
+      </table>`;
     const layers = `
       ${accordion('Selecting Layers', layerSelectRows, true)}
       ${accordion('Organizing Layers', layerOrgRows, true)}
       ${accordion('Stack Order', layerStackRows)}
+      ${accordion('Wallpaper Modifier', wallpaperRows)}
       ${callout('Drag a layer into a <strong>Mirror Modifier</strong> to reflect it symmetrically. Enable <strong>Mask</strong> on a parent layer to clip all nested children inside its silhouette.')}`;
 
     /* -- Pen -- */

@@ -1602,6 +1602,7 @@
     scissorMode: 'line',
     shapeMode: 'oval',
     cookiePreferencesEnabled: false,
+    showCrystallographicNames: false,
     paneLeftWidth: 335,
     paneRightWidth: 335,
     lightSource: null,

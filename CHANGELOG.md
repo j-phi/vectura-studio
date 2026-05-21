@@ -6,6 +6,10 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Changed
+- **Wallpaper modifier picker reworked as composable symmetry chips.** The flat 17-cell crystallographic atlas in the Wallpaper mirror panel is replaced by three orthogonal chip rows — **Lattice** (parallelogram / rectangle / rhombus / square / hexagon), **Rotation order** (1 / 2 / 3 / 4 / 6), and **Mirrors** (None / Straight / Glide / …). The group ID is derived from the tuple via a new resolver (`WallpaperGroups.featuresToGroupId` + `nearestValidGroup`) that deterministically snaps invalid combinations to the nearest valid group and escalates rather than relaxes when a mirrored choice would otherwise be dropped (e.g. cycling from `p3m1` to hex rotation 6 lands on `p6m`, not `p6`). The engine still reads `mirror.group` for math; the new `mirror.symmetry` tuple is stored alongside and roundtrips through `.vectura` saves automatically. Crystallographic IDs (p4m, p3m1, …) are hidden by default — toggle **Show crystallographic group names** in Document Setup → History & Preferences to surface them.
+- **Keyboard cycling within a lattice family.** ⌘← / ⌘→ (Ctrl on Windows/Linux) walks through every group sharing the selected wallpaper's lattice in canonical order (rotation ascending, then mirror complexity), wrapping at the ends.
+
 ### Fixed
 - **Pen tool Alt-drag bezier authoring.** While dragging a newly placed bezier point, pressing and holding `Alt/Option` now freezes the mirrored handle at its current position and lets the active handle move freely with the pointer instead of deleting the mirrored handle.
 <<<<<<< HEAD

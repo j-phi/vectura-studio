@@ -2894,6 +2894,44 @@
 }
 .mp-root .mp-atlas-cell.active .mp-ac-code { color: var(--mirror-wall-hue); }
 
+/* wallpaper composable-symmetry chip rows (lattice / rotation / mirrors) */
+.mp-root .mp-chip-row {
+  display: flex; flex-wrap: wrap; gap: 4px;
+}
+.mp-root .mp-chip {
+  font-size: 11px; font-weight: 600;
+  background: var(--ui-ctrl);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  color: var(--ui-text-2);
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: background-color 0.12s, color 0.12s, border-color 0.12s;
+}
+.mp-root .mp-chip:hover:not(:disabled) { border-color: var(--ui-border-hi, var(--ui-border)); }
+.mp-root .mp-chip.is-active {
+  border-color: var(--mp-type-color);
+  background: color-mix(in srgb, var(--mp-type-color) 14%, var(--ui-ctrl));
+  color: var(--mp-type-color);
+}
+.mp-root .mp-chip:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.mp-root .mp-wall-desc {
+  font-size: var(--font-size-xs);
+  color: var(--ui-muted);
+  padding: 4px 0 0;
+  line-height: 1.35;
+}
+.mp-root .mp-wall-badge {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--mirror-wall-hue);
+  text-align: right;
+  padding-top: 2px;
+}
+
 /* info trigger + popover */
 .mp-root .mp-info-trigger {
   width: 14px; height: 14px;

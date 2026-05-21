@@ -238,6 +238,8 @@ Select a child nested under a Mirror Modifier to edit it normally — the left p
 
 The modifier row owns a Mirror Stack with per-axis show/hide, lock, delete, reorder, angle, and XY shift controls plus stack-level actions. Deleting the modifier dissolves only the wrapper and preserves its children.
 
+Wallpaper mirrors use a composable picker: pick a **Lattice** (parallelogram / rectangle / rhombus / square / hexagon), a **Rotation order** (1 / 2 / 3 / 4 / 6), and a **Mirror set** (None / Straight / Glide / …). The 17 crystallographic groups (`p4m`, `p3m1`, …) are derived from that tuple — invalid combinations snap deterministically to the closest valid group. ⌘← / ⌘→ cycles through every group sharing the current lattice. Enable **Show crystallographic group names** in Document Setup → History & Preferences to surface the IDs alongside the chips.
+
 </details>
 
 <details>
@@ -328,6 +330,7 @@ Click `Export SVG` to download.
 | Pen: commit | `Enter` |
 | Pen: cancel | `Esc` |
 | Reset value to default | Double-click control |
+| Cycle wallpaper group within current lattice | `Cmd/Ctrl + ←` / `Cmd/Ctrl + →` |
 | **UI** | |
 | Document Setup | `Cmd/Ctrl+K` |
 | Help / shortcuts | `?` |

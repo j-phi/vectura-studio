@@ -579,24 +579,33 @@
     return output.filter((p) => Array.isArray(p) && p.length >= 2);
   };
 
-  const createWallpaperMirror = (index = 0, overrides = {}) => ({
-    id: makeId('mirror'),
-    enabled: true,
-    guideVisible: true,
-    locked: false,
-    type: 'wallpaper',
-    group: 'p4m',
-    tileWidth: 60,
-    tileHeight: 60,
-    tileAngle: 90,
-    rotation: 0,
-    centerX: 0,
-    centerY: 0,
-    domainScale: 1,
-    variantV1: false,
-    color: getMirrorColor(index),
-    ...clone(overrides),
-  });
+  const createWallpaperMirror = (index = 0, overrides = {}) => {
+    const features = (WallpaperGroups.FEATURES && WallpaperGroups.FEATURES.p4m)
+      ? { ...WallpaperGroups.FEATURES.p4m }
+      : { lattice: 'square', rotation: 4, mirrors: 'straight' };
+    return {
+      id: makeId('mirror'),
+      enabled: true,
+      guideVisible: true,
+      locked: false,
+      type: 'wallpaper',
+      group: 'p4m',
+      // Composable feature tuple (lattice / rotation / mirrors). The engine
+      // continues to read `group`; the UI uses `symmetry` to drive the
+      // composable chip rows and re-derives `group` from it on every edit.
+      symmetry: features,
+      tileWidth: 60,
+      tileHeight: 60,
+      tileAngle: 90,
+      rotation: 0,
+      centerX: 0,
+      centerY: 0,
+      domainScale: 1,
+      variantV1: false,
+      color: getMirrorColor(index),
+      ...clone(overrides),
+    };
+  };
 
   const applyWallpaperMirrorToPaths = (paths, mirror, bounds) => {
     if (!mirror?.enabled) return (paths || []).map(clonePath).filter((p) => p.length >= 2);
