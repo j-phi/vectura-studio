@@ -593,6 +593,31 @@
       fillContourStepVariance: rec.contourStepVariance,
       fillContourSimplify: rec.contourSimplify,
       fillContourCenterPadding: rec.contourCenterPadding ?? 0,
+      // B3 Truchet
+      fillTruchetTileSet: rec.truchetTileSet,
+      fillTruchetTileSize: rec.truchetTileSize,
+      fillTruchetSeed: rec.truchetSeed,
+      fillTruchetRotations: rec.truchetRotations,
+      // B4 Maze
+      fillMazeCellSize: rec.mazeCellSize,
+      fillMazeAlgorithm: rec.mazeAlgorithm,
+      fillMazeBranchBias: rec.mazeBranchBias,
+      fillMazeSeed: rec.mazeSeed,
+      fillMazeWallMode: rec.mazeWallMode,
+      // B8 Stripes
+      fillStripeBandWidth: rec.stripeBandWidth,
+      fillStripeGap: rec.stripeGap,
+      fillStripeAngle: rec.stripeAngle,
+      fillStripePrimary: rec.stripePrimary,
+      fillStripeSecondary: rec.stripeSecondary,
+      fillStripeSecondaryDensity: rec.stripeSecondaryDensity,
+      // B10 Weave
+      fillWeavePattern: rec.weavePattern,
+      fillWeaveStrandWidth: rec.weaveStrandWidth,
+      fillWeaveGap: rec.weaveGap,
+      fillWeaveAngle: rec.weaveAngle,
+      fillWeaveOver: rec.weaveOver,
+      fillWeaveUnder: rec.weaveUnder,
       fillSensitivity: rec.sensitivity,
       penId: rec.penId,
     };
