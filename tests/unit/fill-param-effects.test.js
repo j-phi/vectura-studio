@@ -281,7 +281,7 @@ describe('Fill parameter effects (path-data hash)', () => {
     });
 
     test('radial: density drives spoke count; dead knobs removed', () => {
-      // Density is the sole spoke-count control — a smaller spacing yields more
+      // Density is the sole spoke-count control — higher density yields more
       // spokes, so the path data must change.
       expectDifferent(
         sq,

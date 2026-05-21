@@ -1,6 +1,6 @@
 /**
  * Radial fill params tests.
- *   - density drives the spoke count (smaller spacing → more spokes)
+ *   - density drives the spoke count (higher density → more spokes)
  *   - radialSkip (0..5) drops every Nth spoke
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
@@ -36,9 +36,9 @@ describe('Radial fill (C6 expanded params)', () => {
     expect(gen(base()).length).toBeGreaterThan(0);
   });
 
-  test('denser spacing increases the spoke count', () => {
-    const sparse = gen(base({ density: 20 })).length;
-    const dense = gen(base({ density: 4 })).length;
+  test('higher density increases the spoke count', () => {
+    const sparse = gen(base({ density: 4 })).length;
+    const dense = gen(base({ density: 20 })).length;
     expect(sparse).toBeGreaterThan(0);
     expect(dense).toBeGreaterThan(sparse);
   });

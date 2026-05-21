@@ -10,7 +10,7 @@ export default defineConfig({
     testTimeout: 20000,
     poolOptions: {
       forks: {
-        maxForks: 4,
+        maxForks: 10,
       },
     },
   },
