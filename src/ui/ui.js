@@ -1699,8 +1699,11 @@
 
   // Phase 2 step 4: hand legacy IIFE-locals to panels/algorithm-panel.js.
   // Meridian Unit 1.8: added `getThemeToken` for mountHarmonographPlotter.
+  // `Layer` is required by splitShapeLayer (scissor multi-segment branch) —
+  // without it the constructor lookup returns undefined and splitShapeLayer
+  // silently returns [], causing the scissor to no-op on every multi-piece cut.
   if (window.Vectura?.UI?.AlgorithmPanel?.bind) {
-    window.Vectura.UI.AlgorithmPanel.bind({ getEl, ALGO_DEFAULTS, MODIFIER_DEFAULTS, Algorithms, getThemeToken });
+    window.Vectura.UI.AlgorithmPanel.bind({ getEl, ALGO_DEFAULTS, MODIFIER_DEFAULTS, Algorithms, getThemeToken, Layer });
   }
   if (window.Vectura?.UI?.AlgorithmPanel?.installOn) {
     window.Vectura.UI.AlgorithmPanel.installOn(UI.prototype);

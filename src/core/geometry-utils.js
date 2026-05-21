@@ -259,16 +259,60 @@
 
   const splitPathByShape = (path, shape) => {
     if (!Array.isArray(path) || path.length < 2) return null;
-    const output = [];
-    let current = [path[0]];
-    let hit = false;
-    const addSegment = () => {
-      if (current.length > 1) output.push(current);
-      current = [];
+    const EPS = 1e-6;
+
+    // Side classification: +1 outside cut region, -1 inside, 0 on the cut shape.
+    // For a line cut "outside" is the +halfplane; for circle/rect "outside" is
+    // beyond the boundary. The sign convention doesn't matter — we only care
+    // whether two points lie on opposite sides.
+    const sideOf = (pt) => {
+      if (shape.mode === 'line' && shape.line) {
+        const { a, b } = shape.line;
+        const v = (b.x - a.x) * (pt.y - a.y) - (b.y - a.y) * (pt.x - a.x);
+        const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+        const sd = v / len;
+        return sd > EPS ? 1 : sd < -EPS ? -1 : 0;
+      }
+      if (shape.mode === 'circle' && shape.circle) {
+        const dx = pt.x - shape.circle.x;
+        const dy = pt.y - shape.circle.y;
+        const v = Math.hypot(dx, dy) - shape.circle.r;
+        return v > EPS ? 1 : v < -EPS ? -1 : 0;
+      }
+      if (shape.mode === 'rect' && shape.rect) {
+        const { x, y, w, h } = shape.rect;
+        const dx = Math.max(x - pt.x, pt.x - (x + w));
+        const dy = Math.max(y - pt.y, pt.y - (y + h));
+        if (dx > EPS || dy > EPS) return 1;
+        if (dx < -EPS && dy < -EPS) return -1;
+        return 0;
+      }
+      return 0;
     };
-    for (let i = 0; i < path.length - 1; i++) {
-      const a = path[i];
-      const b = path[i + 1];
+
+    const sides = path.map(sideOf);
+
+    const fp = path[0];
+    const lp = path[path.length - 1];
+    const isClosed = path.length > 2 &&
+      Math.abs(fp.x - lp.x) < 1e-4 && Math.abs(fp.y - lp.y) < 1e-4;
+
+    // Walk backward from index i to find the previous non-zero side. For closed
+    // paths, wraps through the end. Used to test "transversal vs tangent" at a
+    // vertex that sits exactly on the cut shape.
+    const prevNonZeroSide = (i) => {
+      for (let k = i - 1; k >= 0; k--) {
+        if (sides[k] !== 0) return sides[k];
+      }
+      if (isClosed) {
+        for (let k = path.length - 2; k > i; k--) {
+          if (sides[k] !== 0) return sides[k];
+        }
+      }
+      return 0;
+    };
+
+    const segmentTs = (a, b) => {
       let ts = [];
       if (shape.mode === 'line' && shape.line) {
         const t = segmentIntersection(a, b, shape.line.a, shape.line.b);
@@ -287,36 +331,79 @@
       } else if (shape.mode === 'circle' && shape.circle) {
         ts = segmentCircleIntersections(a, b, shape.circle, shape.circle.r);
       }
-      ts = ts.filter((t) => t > 1e-4 && t < 1 - 1e-4).sort((a, b) => a - b);
-      if (!ts.length) {
-        if (!current.length) current.push(a);
-        current.push(b);
-        continue;
+      return ts;
+    };
+
+    // Build a list of cuts in path order: { segIndex, t, point }. Each cut
+    // belongs to segment [segIndex, segIndex+1] at parameter t in [0, 1).
+    const cuts = [];
+    let startVertexIsCut = false;
+    for (let i = 0; i < path.length - 1; i++) {
+      const a = path[i];
+      const b = path[i + 1];
+      const sa = sides[i];
+      const sb = sides[i + 1];
+
+      if (sa !== 0 && sb !== 0) {
+        if (sa !== sb) {
+          // Interior crossing — use shape-specific intersection math.
+          let ts = segmentTs(a, b).filter((t) => t > EPS && t < 1 - EPS).sort((p, q) => p - q);
+          ts.forEach((t) => {
+            cuts.push({ segIndex: i, t, point: { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) } });
+          });
+        }
+      } else if (sa === 0 && sb !== 0) {
+        // Vertex `a` lies on the cut shape. Treat it as a true crossing only
+        // when the previous non-zero side is opposite to sb (transversal),
+        // not when the polyline merely grazes the cut (tangent).
+        const prev = prevNonZeroSide(i);
+        if (prev !== 0 && prev !== sb) {
+          cuts.push({ segIndex: i, t: 0, point: { x: a.x, y: a.y } });
+          if (i === 0) startVertexIsCut = true;
+        }
       }
-      hit = true;
-      if (!current.length) current.push(a);
-      ts.forEach((t) => {
-        const pt = { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) };
-        current.push(pt);
-        addSegment();
-        current.push(pt);
-      });
-      current.push(b);
+      // (sa !== 0, sb === 0) and (sa === 0, sb === 0) are handled by the next
+      // iteration where the zero vertex becomes `a`.
+    }
+
+    if (cuts.length === 0) return null;
+
+    // Walk the path and split at each cut. A cut at t === 0 is at the start of
+    // its segment; a cut at t > 0 is interior.
+    const output = [];
+    let current = [];
+    let cutIdx = 0;
+    for (let i = 0; i < path.length - 1; i++) {
+      const a = path[i];
+      const b = path[i + 1];
+      if (current.length === 0) current.push({ x: a.x, y: a.y });
+      while (cutIdx < cuts.length && cuts[cutIdx].segIndex === i) {
+        const cut = cuts[cutIdx];
+        if (cut.t > EPS) current.push({ x: cut.point.x, y: cut.point.y });
+        if (current.length > 1) output.push(current);
+        current = [{ x: cut.point.x, y: cut.point.y }];
+        cutIdx++;
+      }
+      current.push({ x: b.x, y: b.y });
     }
     if (current.length > 1) output.push(current);
-    if (!hit) return null;
-    // For closed polylines (first point == last point), the segment that started
-    // at path[0] and the final trailing segment that ends at path[0] are the
-    // same contiguous region of the closed loop. Merge them into one piece so
-    // the scissor does not emit a spurious extra segment near the start anchor.
-    const fp = path[0];
-    const lp = path[path.length - 1];
-    const isClosed = path.length > 2 &&
-      Math.abs(fp.x - lp.x) < 1e-4 && Math.abs(fp.y - lp.y) < 1e-4;
-    if (isClosed && output.length >= 2) {
-      const tail = output.pop();
-      const head = output.shift();
-      output.unshift([...tail, ...head.slice(1)]);
+
+    // For closed polylines (first point == last point), the head piece that
+    // started at path[0] and the tail piece that ends at path[0] are the same
+    // contiguous region of the loop separated only by the artificial loop seam
+    // — merge them so the cut doesn't emit a spurious extra segment near the
+    // start anchor. Skip this when path[0] is itself a real cut point, in
+    // which case the head/tail seam coincides with the cut and must be kept.
+    if (isClosed && output.length >= 2 && !startVertexIsCut) {
+      const head = output[0];
+      const tail = output[output.length - 1];
+      const headStartsAtStart = Math.abs(head[0].x - fp.x) < 1e-4 && Math.abs(head[0].y - fp.y) < 1e-4;
+      const tailEndsAtStart = Math.abs(tail[tail.length - 1].x - fp.x) < 1e-4 && Math.abs(tail[tail.length - 1].y - fp.y) < 1e-4;
+      if (headStartsAtStart && tailEndsAtStart) {
+        const merged = [...tail, ...head.slice(1)];
+        output.pop();
+        output[0] = merged;
+      }
     }
     return output;
   };
