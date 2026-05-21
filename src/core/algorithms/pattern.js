@@ -1114,26 +1114,16 @@
 
   // ── C1: Unified wave renderer (composite) ─────────────────────────────────
   // Samples a single waveform that interpolates between a triangle wave
-  // (smoothing=0) and a sinusoid (smoothing=1). harmonics ∈ {1,2,3} adds
-  // 2× and 3× sine terms (normalized so peak amplitude stays ≈1).
-  const _waveSample = (phase, smoothing, harmonics) => {
+  // (smoothing=0) and a sinusoid (smoothing=1).
+  const _waveSample = (phase, smoothing) => {
     const TAU = Math.PI * 2;
     const triBase = 4 * Math.abs(phase - Math.floor(phase + 0.5)) - 1;
-    // Build harmonic component (2nd and 3rd frequencies).
-    let harmonic = 0;
-    let normDen = 1;
-    if (harmonics >= 2) { harmonic += 0.5 * Math.sin(phase * TAU * 2); normDen += 0.5; }
-    if (harmonics >= 3) { harmonic += 0.33 * Math.sin(phase * TAU * 3); normDen += 0.33; }
-    // Sine: normalize so amplitude stays ≈1 regardless of harmonic count.
-    // Triangle: add harmonics without normalization — they add complexity/richness;
-    // dividing by normDen was incorrectly reducing triangle amplitude at h>1.
-    const sine = (Math.sin(phase * TAU) + harmonic) / normDen;
-    const tri  =  triBase               + harmonic;
+    const sine = Math.sin(phase * TAU);
     const s = Math.max(0, Math.min(1, smoothing));
-    return s * sine + (1 - s) * tri;
+    return s * sine + (1 - s) * triBase;
   };
 
-  const waveLinesUnifiedComposite = (regions, density, angleDeg = 0, amplitude = 1.0, smoothing = 1.0, harmonics = 1, shiftX = 0, shiftY = 0) => {
+  const waveLinesUnifiedComposite = (regions, density, angleDeg = 0, amplitude = 1.0, smoothing = 1.0, waveFrequency = 1.0, shiftX = 0, shiftY = 0) => {
     const ar = angleDeg * Math.PI / 180;
     const ca = Math.cos(ar), sa = Math.sin(ar);
     const rotatePt = ar !== 0 ? (p) => ({ x: p.x * ca + p.y * sa, y: -p.x * sa + p.y * ca }) : (p) => p;
@@ -1141,25 +1131,29 @@
     const rotRegions = ar !== 0 ? regions.map(r => r.map(rotatePt)) : regions;
     const bounds = compositeBounds(rotRegions);
     const amp = density * 0.4 * amplitude;
-    const wavelength = density * 1.5;
+    const wavelength = density * 1.5 / Math.max(0.01, waveFrequency);
     const s = Math.max(0, Math.min(1, smoothing));
-    // Triangle-only path: 4 samples per period are enough (corners). Sine path
-    // needs many samples per period. Blend the sample count so smoothing≈0
-    // preserves crisp corners and smoothing≈1 stays smooth.
-    const samplesPerWavelength = Math.max(4, Math.round(4 + s * 24));
-    const stepX = Math.max(0.25, wavelength / samplesPerWavelength);
+    // Zigzag (s≈0): one sample per half-wavelength, aligned to exact peaks/troughs.
+    // Sine (s≈1): many samples per wavelength for smooth curves.
+    const stepX = s < 0.01
+      ? wavelength / 2
+      : Math.max(0.25, wavelength / Math.max(4, Math.round(4 + s * 24)));
     const rotShiftX = shiftX * ca + shiftY * sa;
     const rotShiftY = -shiftX * sa + shiftY * ca;
     const yPhase = ((rotShiftY % density) + density) % density;
     const yStart = Math.ceil((bounds.minY - yPhase) / density) * density + yPhase;
-    const h = Math.max(1, Math.min(3, Math.round(harmonics) || 1));
+    // Align x-start to the nearest half-wavelength boundary so zigzag samples
+    // land exactly on triangle-wave peaks and troughs.
+    const xStart = s < 0.01
+      ? Math.floor((bounds.minX + rotShiftX) / (wavelength / 2)) * (wavelength / 2) - rotShiftX
+      : bounds.minX;
     const result = [];
     for (let cy = yStart; cy <= bounds.maxY + 1e-6; cy += density) {
       const rawPts = [];
-      for (let x = bounds.minX; x <= bounds.maxX + stepX; x += stepX) {
+      for (let x = xStart; x <= bounds.maxX + stepX; x += stepX) {
         const xc = Math.min(x, bounds.maxX);
         const phase = (xc + rotShiftX) / wavelength;
-        rawPts.push(unrotatePt({ x: xc, y: cy + amp * _waveSample(phase, s, h) }));
+        rawPts.push(unrotatePt({ x: xc, y: cy + amp * _waveSample(phase, s) }));
       }
       for (const seg of clipPolylineToComposite(rawPts, regions)) {
         if (s < 0.01) { if (!seg.meta) seg.meta = {}; seg.meta.straight = true; }
@@ -1169,7 +1163,7 @@
     return result;
   };
 
-  const waveLinesUnified =(poly, density, angleDeg = 0, amplitude = 1.0, smoothing = 1.0, harmonics = 1, shiftX = 0, shiftY = 0) => {
+  const waveLinesUnified = (poly, density, angleDeg = 0, amplitude = 1.0, smoothing = 1.0, waveFrequency = 1.0, shiftX = 0, shiftY = 0) => {
     const ar = angleDeg * Math.PI / 180;
     const ca = Math.cos(ar), sa = Math.sin(ar);
     const unrotatePt = ar !== 0 ? (p) => ({ x: p.x * ca - p.y * sa, y: p.x * sa + p.y * ca }) : (p) => p;
@@ -1178,22 +1172,25 @@
     const minY = Math.min(...ys), maxY = Math.max(...ys);
     const minX = Math.min(...xs), maxX = Math.max(...xs);
     const amp = density * 0.4 * amplitude;
-    const wavelength = density * 1.5;
+    const wavelength = density * 1.5 / Math.max(0.01, waveFrequency);
     const s = Math.max(0, Math.min(1, smoothing));
-    const samplesPerWavelength = Math.max(4, Math.round(4 + s * 24));
-    const stepX = Math.max(0.25, wavelength / samplesPerWavelength);
+    const stepX = s < 0.01
+      ? wavelength / 2
+      : Math.max(0.25, wavelength / Math.max(4, Math.round(4 + s * 24)));
     const rotShiftX = shiftX * ca + shiftY * sa;
     const rotShiftY = -shiftX * sa + shiftY * ca;
     const yPhase = ((rotShiftY % density) + density) % density;
     const yStart = Math.ceil((minY - yPhase) / density) * density + yPhase;
-    const h = Math.max(1, Math.min(3, Math.round(harmonics) || 1));
+    const xStart = s < 0.01
+      ? Math.floor((minX + rotShiftX) / (wavelength / 2)) * (wavelength / 2) - rotShiftX
+      : minX;
     const result = [];
     for (let cy = yStart; cy <= maxY + 1e-6; cy += density) {
       const rawPts = [];
-      for (let x = minX; x <= maxX + stepX; x += stepX) {
+      for (let x = xStart; x <= maxX + stepX; x += stepX) {
         const xc = Math.min(x, maxX);
         const phase = (xc + rotShiftX) / wavelength;
-        rawPts.push(unrotatePt({ x: xc, y: cy + amp * _waveSample(phase, s, h) }));
+        rawPts.push(unrotatePt({ x: xc, y: cy + amp * _waveSample(phase, s) }));
       }
       for (const seg of clipPolylineToPoly(rawPts, poly)) {
         if (s < 0.01) { if (!seg.meta) seg.meta = {}; seg.meta.straight = true; }
@@ -2323,7 +2320,12 @@
     // glyph orientation follows the fill angle. wp is already in world coords.
     const ex = { x: ca * dotR, y: sa * dotR };       // local +x
     const ey = { x: -sa * dotR, y: ca * dotR };      // local +y
-    if (shape === 'tick' || shape === 'circle') {
+    if (shape === 'circle') {
+      // Round dot: a zero-length point renders as a filled disc under round
+      // caps; when dotLength > 0 it also marks the spiral centre. Unlike a
+      // tick it carries no orientation, so it stays round at any fill angle.
+      out.push([{ x: wp.x, y: wp.y }, { x: wp.x, y: wp.y }]);
+    } else if (shape === 'tick') {
       out.push([{ x: wp.x - ex.x, y: wp.y - ex.y }, { x: wp.x + ex.x, y: wp.y + ex.y }]);
     } else if (shape === 'cross') {
       out.push([{ x: wp.x - ex.x, y: wp.y - ex.y }, { x: wp.x + ex.x, y: wp.y + ex.y }]);
@@ -3901,7 +3903,7 @@
       dotLength = 0, dotRotation = 0, penWidth = 0.3,
       padding = 0, shiftX = 0, shiftY = 0,
       dotPattern = 'brick', centralDensity = 1.0, outerDiameter = 1.0, axes = 3, polyTile = 'grid',
-      waveSmoothing = 1.0, waveHarmonics = 1,
+      waveSmoothing = 1.0, waveFrequency = 1.0,
       dotShape = 'circle', dotJitter = 0,
       lineCount = 1,
       polyPadding = 0, polyRotation = 0, polyRotationStep = 0, polyScaleStep = 0,
@@ -3954,9 +3956,9 @@
         case 'dhatch135':   return hatchLines(region, density, 135 + angle, shiftX, shiftY);
         case 'crosshatch':  return [...hatchLines(region, density, 0 + angle, shiftX, shiftY), ...hatchLines(region, density, 90 + angle, shiftX, shiftY)];
         case 'xcrosshatch': return [...hatchLines(region, density, 45 + angle, shiftX, shiftY), ...hatchLines(region, density, 135 + angle, shiftX, shiftY)];
-        case 'wave':        return waveLinesUnified(region, density, angle, amplitude, waveSmoothing, waveHarmonics, shiftX, shiftY);
-        case 'wavelines':   return waveLinesUnified(region, density, angle, amplitude, 1.0, 1, shiftX, shiftY);
-        case 'zigzag':      return waveLinesUnified(region, density, angle, amplitude, 0.0, 1, shiftX, shiftY);
+        case 'wave':        return waveLinesUnified(region, density, angle, amplitude, waveSmoothing, waveFrequency, shiftX, shiftY);
+        case 'wavelines':   return waveLinesUnified(region, density, angle, amplitude, 1.0, 1.0, shiftX, shiftY);
+        case 'zigzag':      return waveLinesUnified(region, density, angle, amplitude, 0.0, 1.0, shiftX, shiftY);
         case 'dots':        return dotShape === 'circle'
           ? expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation)
           : dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, dotShape, dotJitter, dotLength);
@@ -3993,9 +3995,9 @@
       case 'dhatch135':   return hatchLinesComposite(effectiveRegions, density, 135 + angle, shiftX, shiftY);
       case 'crosshatch':  return [...hatchLinesComposite(effectiveRegions, density, 0 + angle, shiftX, shiftY), ...hatchLinesComposite(effectiveRegions, density, 90 + angle, shiftX, shiftY)];
       case 'xcrosshatch': return [...hatchLinesComposite(effectiveRegions, density, 45 + angle, shiftX, shiftY), ...hatchLinesComposite(effectiveRegions, density, 135 + angle, shiftX, shiftY)];
-      case 'wave':        return waveLinesUnifiedComposite(effectiveRegions, density, angle, amplitude, waveSmoothing, waveHarmonics, shiftX, shiftY);
-      case 'wavelines':   return waveLinesUnifiedComposite(effectiveRegions, density, angle, amplitude, 1.0, 1, shiftX, shiftY);
-      case 'zigzag':      return waveLinesUnifiedComposite(effectiveRegions, density, angle, amplitude, 0.0, 1, shiftX, shiftY);
+      case 'wave':        return waveLinesUnifiedComposite(effectiveRegions, density, angle, amplitude, waveSmoothing, waveFrequency, shiftX, shiftY);
+      case 'wavelines':   return waveLinesUnifiedComposite(effectiveRegions, density, angle, amplitude, 1.0, 1.0, shiftX, shiftY);
+      case 'zigzag':      return waveLinesUnifiedComposite(effectiveRegions, density, angle, amplitude, 0.0, 1.0, shiftX, shiftY);
       case 'dots':        return dotShape === 'circle'
         ? expandDotsToSpirals(dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation)
         : dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, dotPattern, dotShape, dotJitter, dotLength);

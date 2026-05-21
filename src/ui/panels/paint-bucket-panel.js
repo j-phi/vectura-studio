@@ -26,15 +26,9 @@
     { value: 'spiral',     label: 'Spiral' },
     { value: 'radial',     label: 'Radial' },
     { value: 'polygonal',  label: 'Polygonal' },
-    { value: 'flowfield',  label: 'Flow Field' },
-    { value: 'voronoi',    label: 'Voronoi' },
     { value: 'truchet',    label: 'Truchet' },
     { value: 'maze',       label: 'Maze' },
-    { value: 'scribble',   label: 'Scribble' },
-    { value: 'lsystem',    label: 'L-System' },
-    { value: 'halftone',   label: 'Halftone' },
     { value: 'stripes',    label: 'Stripes' },
-    { value: 'spirograph', label: 'Spirograph' },
     { value: 'weave',      label: 'Weave' },
   ];
 
@@ -62,7 +56,7 @@
     fillRadialCentralDensity: 1.0,
     fillRadialOuterDiameter: 1.0,
     fillWaveSmoothing: 1.0,
-    fillWaveHarmonics: 1,
+    fillWaveFrequency: 1.0,
     fillSpiralTurns: 8,
     fillSpiralTightness: 0.5,
     fillSpiralDirection: 'cw',
@@ -71,17 +65,6 @@
     fillContourDirection: 'inset',
     fillContourStepVariance: 0,
     fillContourSimplify: 0.05,
-    // B1 Flow Field
-    fillFlowFieldType: 'perlin',
-    fillFlowNoiseScale: 6.0,
-    fillFlowSeed: 1,
-    fillFlowTraceLen: 60,
-    fillFlowSeparation: 2.5,
-    // B2 Voronoi
-    fillVoronoiSeeds: 60,
-    fillVoronoiJitter: 0.5,
-    fillVoronoiStroke: 'boundary',
-    fillVoronoiSeedMode: 'random',
     // B3 Truchet
     fillTruchetTileSet: 'quarter-arcs',
     fillTruchetTileSize: 6,
@@ -93,23 +76,6 @@
     fillMazeBranchBias: 0.5,
     fillMazeSeed: 1,
     fillMazeWallMode: 'walls',
-    // B5 Scribble
-    fillScribbleSmoothness: 0.6,
-    fillScribbleSeed: 1,
-    fillScribbleCoverage: 1.0,
-    // B6 L-System
-    fillLsysPreset: 'coral',
-    fillLsysIterations: 4,
-    fillLsysAngleVariance: 8,
-    fillLsysSeed: 1,
-    fillLsysScale: 1.0,
-    // B7 Halftone
-    fillHalftoneSource: 'radial',
-    fillHalftoneMinR: 0.2,
-    fillHalftoneMaxR: 1.5,
-    fillHalftoneFrequency: 5,
-    fillHalftoneAngle: 0,
-    fillHalftoneInvert: 'off',
     // B8 Stripes
     fillStripeBandWidth: 4,
     fillStripeGap: 2,
@@ -117,12 +83,6 @@
     fillStripePrimary: 'hatch',
     fillStripeSecondary: 'none',
     fillStripeSecondaryDensity: 2,
-    // B9 Spirograph
-    fillSpiroRatioA: 5,
-    fillSpiroRatioB: 3,
-    fillSpiroPhase: 0,
-    fillSpiroTurns: 50,
-    fillSpiroDeformation: 0,
     // B10 Weave
     fillWeavePattern: 'plain',
     fillWeaveStrandWidth: 1.5,
@@ -175,7 +135,7 @@
   const VARIANT_CONTROLS = [
     { id: 'fillDensity',                 label: 'Density',           type: 'range',  min: 0.1,  max: 50,  step: 0.1,  showAlways: true },
     { id: 'fillAngle',                   label: 'Angle',             type: 'angle',  capKey: 'angle' },
-    { id: 'fillAmplitude',               label: 'Amplitude',         type: 'range',  min: 0.1,  max: 3.0, step: 0.05, capKey: 'amplitude' },
+    { id: 'fillAmplitude',               label: 'Amplitude',         type: 'range',  min: 0,    max: 5.0, step: 0.05, capKey: 'amplitude' },
     { id: 'fillDotLength',               label: 'Dot Size',          type: 'range',  min: 0,    max: 10,  step: 0.1,  distance: true, capKey: 'dotSize' },
     { id: 'fillDotRotation',             label: 'Dot Rotation',      type: 'angle',  capKey: 'dotSize', showIfDotLen: true },
     { id: 'fillPadding',                 label: 'Padding',           type: 'range',  min: 0,    max: 10,  step: 0.1,  distance: true, showAlways: true },
@@ -194,7 +154,7 @@
     { id: 'fillRadialCentralDensity',    label: 'Central Density',   type: 'range',  min: 0.1,  max: 4.0, step: 0.1,  capKey: 'radialCentralDensity' },
     { id: 'fillRadialOuterDiameter',     label: 'Outer Diameter',    type: 'range',  min: 0.0,  max: 2.0, step: 0.05, capKey: 'radialOuterDiameter' },
     { id: 'fillWaveSmoothing',           label: 'Wave Smoothing',    type: 'range',  min: 0,    max: 1,   step: 0.01, capKey: 'waveSmoothing' },
-    { id: 'fillWaveHarmonics',           label: 'Wave Harmonics',    type: 'range',  min: 1,    max: 3,   step: 1,    capKey: 'waveHarmonics' },
+    { id: 'fillWaveFrequency',           label: 'Wave Frequency',    type: 'range',  min: 0.25, max: 4.0, step: 0.05, capKey: 'waveFrequency' },
     { id: 'fillSpiralTurns',             label: 'Spiral Turns',      type: 'range',  min: 1,    max: 40,  step: 1,    capKey: 'spiralTurns' },
     { id: 'fillSpiralTightness',         label: 'Spiral Tightness',  type: 'range',  min: 0,    max: 1,   step: 0.01, capKey: 'spiralTightness' },
     { id: 'fillSpiralDirection',         label: 'Spiral Direction',  type: 'select', options: [{ value: 'cw', label: 'Clockwise' }, { value: 'ccw', label: 'Counterclockwise' }], capKey: 'spiralDirection' },
@@ -203,17 +163,6 @@
     { id: 'fillContourDirection',        label: 'Contour Direction', type: 'select', options: [{ value: 'inset', label: 'Inset' }, { value: 'outset', label: 'Outset' }], capKey: 'contourDirection' },
     { id: 'fillContourStepVariance',     label: 'Step Variance',     type: 'range',  min: 0,    max: 1,   step: 0.01, capKey: 'contourStepVariance' },
     { id: 'fillContourSimplify',         label: 'Simplify',          type: 'range',  min: 0,    max: 0.5, step: 0.01, capKey: 'contourSimplify' },
-    // B1 Flow Field
-    { id: 'fillFlowFieldType',           label: 'Field Type',        type: 'select', options: [{ value: 'perlin', label: 'Perlin' }, { value: 'curl', label: 'Curl' }, { value: 'radial', label: 'Radial' }, { value: 'spiral', label: 'Spiral' }], capKey: 'flowFieldType' },
-    { id: 'fillFlowNoiseScale',          label: 'Noise Scale',       type: 'range',  min: 0.5,  max: 20,  step: 0.1,  capKey: 'flowNoiseScale' },
-    { id: 'fillFlowSeed',                label: 'Seed',              type: 'range',  min: 0,    max: 999, step: 1,    capKey: 'flowSeed' },
-    { id: 'fillFlowTraceLen',            label: 'Trace Length',      type: 'range',  min: 5,    max: 200, step: 1,    capKey: 'flowTraceLen' },
-    { id: 'fillFlowSeparation',          label: 'Separation',        type: 'range',  min: 0.5,  max: 10,  step: 0.1,  capKey: 'flowSeparation' },
-    // B2 Voronoi
-    { id: 'fillVoronoiSeeds',            label: 'Seeds',             type: 'range',  min: 5,    max: 400, step: 1,    capKey: 'voronoiSeeds' },
-    { id: 'fillVoronoiJitter',           label: 'Jitter',            type: 'range',  min: 0,    max: 1,   step: 0.01, capKey: 'voronoiJitter' },
-    { id: 'fillVoronoiStroke',           label: 'Stroke',            type: 'select', options: [{ value: 'boundary', label: 'Boundary' }, { value: 'centroid-spokes', label: 'Centroid Spokes' }, { value: 'concentric', label: 'Concentric' }, { value: 'boundary+centroid', label: 'Boundary + Centroid' }], capKey: 'voronoiStroke' },
-    { id: 'fillVoronoiSeedMode',         label: 'Seed Mode',         type: 'select', options: [{ value: 'random', label: 'Random' }, { value: 'hexgrid', label: 'Hex Grid' }, { value: 'square', label: 'Square' }], capKey: 'voronoiSeedMode' },
     // B3 Truchet
     { id: 'fillTruchetTileSet',          label: 'Tile Set',          type: 'select', options: [{ value: 'quarter-arcs', label: 'Quarter Arcs' }, { value: 'diagonals', label: 'Diagonals' }, { value: 'dots-and-lines', label: 'Dots & Lines' }, { value: 'triangle-split', label: 'Triangle Split' }, { value: 'scribble', label: 'Scribble' }], capKey: 'truchetTileSet' },
     { id: 'fillTruchetTileSize',         label: 'Tile Spacing',      type: 'range',  min: 1,    max: 30,  step: 0.5,  capKey: 'truchetTileSize' },
@@ -225,23 +174,6 @@
     { id: 'fillMazeBranchBias',          label: 'Branch Bias',       type: 'range',  min: 0,    max: 1,   step: 0.05, capKey: 'mazeBranchBias' },
     { id: 'fillMazeSeed',                label: 'Seed',              type: 'range',  min: 0,    max: 999, step: 1,    capKey: 'mazeSeed' },
     { id: 'fillMazeWallMode',            label: 'Render',            type: 'select', options: [{ value: 'walls', label: 'Walls' }, { value: 'path', label: 'Path' }, { value: 'both', label: 'Both' }], capKey: 'mazeWallMode' },
-    // B5 Scribble
-    { id: 'fillScribbleSmoothness',      label: 'Smoothness',        type: 'range',  min: 0,    max: 1,   step: 0.01, capKey: 'scribbleSmoothness' },
-    { id: 'fillScribbleSeed',            label: 'Seed',              type: 'range',  min: 0,    max: 999, step: 1,    capKey: 'scribbleSeed' },
-    { id: 'fillScribbleCoverage',        label: 'Coverage',          type: 'range',  min: 0.1,  max: 3,   step: 0.05, capKey: 'scribbleCoverage' },
-    // B6 L-System
-    { id: 'fillLsysPreset',              label: 'Preset',            type: 'select', options: [{ value: 'coral', label: 'Coral' }, { value: 'lichen', label: 'Lichen' }, { value: 'plant', label: 'Plant' }, { value: 'dendritic', label: 'Dendritic' }, { value: 'algae', label: 'Algae' }], capKey: 'lsysPreset' },
-    { id: 'fillLsysIterations',          label: 'Iterations',        type: 'range',  min: 1,    max: 6,   step: 1,    capKey: 'lsysIterations' },
-    { id: 'fillLsysAngleVariance',       label: 'Angle Variance',    type: 'range',  min: 0,    max: 30,  step: 0.5,  capKey: 'lsysAngleVariance' },
-    { id: 'fillLsysSeed',                label: 'Seed',              type: 'range',  min: 0,    max: 999, step: 1,    capKey: 'lsysSeed' },
-    { id: 'fillLsysScale',               label: 'Scale',             type: 'range',  min: 0.2,  max: 5,   step: 0.05, capKey: 'lsysScale' },
-    // B7 Halftone
-    { id: 'fillHalftoneSource',          label: 'Source',            type: 'select', options: [{ value: 'radial', label: 'Radial' }, { value: 'linear', label: 'Linear' }, { value: 'noise', label: 'Noise' }, { value: 'distance-to-edge', label: 'Distance to Edge' }], capKey: 'halftoneSource' },
-    { id: 'fillHalftoneMinR',            label: 'Min Radius',        type: 'range',  min: 0.05, max: 3,   step: 0.05, capKey: 'halftoneMinR' },
-    { id: 'fillHalftoneMaxR',            label: 'Max Radius',        type: 'range',  min: 0.1,  max: 5,   step: 0.05, capKey: 'halftoneMaxR' },
-    { id: 'fillHalftoneFrequency',       label: 'Noise Grid Spacing', type: 'range', min: 0.5,  max: 20,  step: 0.1,  capKey: 'halftoneFrequency' },
-    { id: 'fillHalftoneAngle',           label: 'Gradient Angle',    type: 'angle', capKey: 'halftoneAngle' },
-    { id: 'fillHalftoneInvert',          label: 'Invert',            type: 'select', options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }], capKey: 'halftoneInvert' },
     // B8 Stripes
     { id: 'fillStripeBandWidth',         label: 'Band Spacing',      type: 'range',  min: 0.5,  max: 50,  step: 0.1,  capKey: 'stripeBandWidth' },
     { id: 'fillStripeGap',               label: 'Gap',               type: 'range',  min: 0,    max: 50,  step: 0.1,  capKey: 'stripeGap' },
@@ -249,12 +181,6 @@
     { id: 'fillStripePrimary',           label: 'Primary Fill',      type: 'select', options: FILL_TYPE_OPTIONS.filter((o) => o.value !== 'none' && o.value !== 'stripes'), capKey: 'stripePrimary' },
     { id: 'fillStripeSecondary',         label: 'Secondary Fill',    type: 'select', options: FILL_TYPE_OPTIONS.filter((o) => o.value !== 'stripes'), capKey: 'stripeSecondary' },
     { id: 'fillStripeSecondaryDensity',  label: 'Secondary Density', type: 'range',  min: 0.1,  max: 10,  step: 0.1,  capKey: 'stripeSecondaryDensity' },
-    // B9 Spirograph
-    { id: 'fillSpiroRatioA',             label: 'Ratio A',           type: 'range',  min: 1,    max: 20,  step: 0.5,  capKey: 'spiroRatioA' },
-    { id: 'fillSpiroRatioB',             label: 'Ratio B',           type: 'range',  min: 1,    max: 20,  step: 0.5,  capKey: 'spiroRatioB' },
-    { id: 'fillSpiroPhase',              label: 'Phase',             type: 'angle', capKey: 'spiroPhase' },
-    { id: 'fillSpiroTurns',              label: 'Turns',             type: 'range',  min: 1,    max: 200, step: 1,    capKey: 'spiroTurns' },
-    { id: 'fillSpiroDeformation',        label: 'Deformation',       type: 'range',  min: 0,    max: 1,   step: 0.01, capKey: 'spiroDeformation' },
     // B10 Weave
     { id: 'fillWeavePattern',            label: 'Pattern',           type: 'select', options: [{ value: 'plain', label: 'Plain' }, { value: 'twill', label: 'Twill' }, { value: 'basket', label: 'Basket' }, { value: 'satin', label: 'Satin' }], capKey: 'weavePattern' },
     { id: 'fillWeaveStrandWidth',        label: 'Strand Spacing',    type: 'range',  min: 0.3,  max: 10,  step: 0.1,  capKey: 'weaveStrandWidth' },
@@ -606,18 +532,18 @@
     // C2 migration: legacy 'stipple' / 'grid'  map to 'dots' with shape.
     let fillMode = rec.fillType ?? 'hatch';
     let waveSmoothing = rec.waveSmoothing;
-    let waveHarmonics = rec.waveHarmonics;
+    let waveFrequency = rec.waveFrequency;
     let dotShape = rec.dotShape;
     let dotPatternResolved = rec.dotPattern;
     let lineCount = rec.lineCount;
     if (fillMode === 'wavelines') {
       fillMode = 'wave';
       if (waveSmoothing == null) waveSmoothing = 1.0;
-      if (waveHarmonics == null) waveHarmonics = 1;
+      if (waveFrequency == null) waveFrequency = 1.0;
     } else if (fillMode === 'zigzag') {
       fillMode = 'wave';
       if (waveSmoothing == null) waveSmoothing = 0.0;
-      if (waveHarmonics == null) waveHarmonics = 1;
+      if (waveFrequency == null) waveFrequency = 1.0;
     } else if (fillMode === 'stipple') {
       fillMode = 'dots';
       if (dotShape == null) dotShape = 'circle';
@@ -635,7 +561,7 @@
     return {
       fillMode,
       fillWaveSmoothing: waveSmoothing,
-      fillWaveHarmonics: waveHarmonics,
+      fillWaveFrequency: waveFrequency,
       fillDotShape: dotShape,
       fillDotJitter: rec.dotJitter,
       fillLineCount: lineCount,

@@ -52,7 +52,7 @@ describe('Fill param plumbing through PaintBucketOps.generateGeometryForLayer', 
     angle: 0,
     amplitude: 1.0,
     waveSmoothing: 1.0,
-    waveHarmonics: 1,
+    waveFrequency: 1.0,
     dotLength: 0,
     dotRotation: 0,
     dotSize: 0.6,
@@ -79,17 +79,6 @@ describe('Fill param plumbing through PaintBucketOps.generateGeometryForLayer', 
     contourSimplify: 0.05,
     centralDensity: 1.0,
     outerDiameter: 1.0,
-    // B1
-    flowFieldType: 'perlin',
-    flowNoiseScale: 6.0,
-    flowSeed: 1,
-    flowTraceLen: 60,
-    flowSeparation: 2.5,
-    // B2
-    voronoiSeeds: 60,
-    voronoiJitter: 0.5,
-    voronoiStroke: 'boundary',
-    voronoiSeedMode: 'random',
     // B3
     truchetTileSet: 'quarter-arcs',
     truchetTileSize: 6,
@@ -101,23 +90,6 @@ describe('Fill param plumbing through PaintBucketOps.generateGeometryForLayer', 
     mazeBranchBias: 0.5,
     mazeSeed: 1,
     mazeWallMode: 'walls',
-    // B5
-    scribbleSmoothness: 0.6,
-    scribbleSeed: 1,
-    scribbleCoverage: 1.0,
-    // B6
-    lsysPreset: 'coral',
-    lsysIterations: 4,
-    lsysAngleVariance: 8,
-    lsysSeed: 1,
-    lsysScale: 1.0,
-    // B7
-    halftoneSource: 'radial',
-    halftoneMinR: 0.2,
-    halftoneMaxR: 1.5,
-    halftoneFrequency: 5,
-    halftoneAngle: 0,
-    halftoneInvert: 'off',
     // B8
     stripeBandWidth: 4,
     stripeGap: 2,
@@ -125,12 +97,6 @@ describe('Fill param plumbing through PaintBucketOps.generateGeometryForLayer', 
     stripePrimary: 'hatch',
     stripeSecondary: 'none',
     stripeSecondaryDensity: 2,
-    // B9
-    spiroRatioA: 5,
-    spiroRatioB: 3,
-    spiroPhase: 0,
-    spiroTurns: 50,
-    spiroDeformation: 0,
     // B10
     weavePattern: 'plain',
     weaveStrandWidth: 1.5,
@@ -213,8 +179,8 @@ describe('Fill param plumbing through PaintBucketOps.generateGeometryForLayer', 
       // amplitude > 0 so the wave actually has shape.
       expectKnobMattersFor('wave', 'waveSmoothing', 0, { amplitude: 2 });
     });
-    test('waveHarmonics adds higher-frequency content', () => {
-      expectKnobMattersFor('wave', 'waveHarmonics', 4, { amplitude: 2 });
+    test('waveFrequency changes wavelength (higher = more cycles)', () => {
+      expectKnobMattersFor('wave', 'waveFrequency', 2.0, { amplitude: 2 });
     });
   });
 
@@ -302,50 +268,6 @@ describe('Fill param plumbing through PaintBucketOps.generateGeometryForLayer', 
     });
   });
 
-  // ---------------- Flow field (B1) ----------------
-  describe('flowfield', () => {
-    test('flowFieldType perlin vs radial', () => {
-      // The implemented types are: perlin (default), radial, spiral, curl.
-      // 'radial' produces tangent-vector swirls which differ markedly from perlin noise.
-      expectKnobMattersFor('flowfield', 'flowFieldType', 'radial');
-    });
-    test('flowNoiseScale changes field frequency', () => {
-      expectKnobMattersFor('flowfield', 'flowNoiseScale', 20.0);
-    });
-    test('flowSeed reseeds the field', () => {
-      expectKnobMattersFor('flowfield', 'flowSeed', 999);
-    });
-    test('flowTraceLen lengthens each streamline', () => {
-      expectKnobMattersFor('flowfield', 'flowTraceLen', 200);
-    });
-    test('flowSeparation controls streamline density', () => {
-      expectKnobMattersFor('flowfield', 'flowSeparation', 8.0);
-    });
-  });
-
-  // ---------------- Voronoi (B2) ----------------
-  describe('voronoi', () => {
-    test('voronoiSeeds count', () => {
-      expectKnobMattersFor('voronoi', 'voronoiSeeds', 12);
-    });
-    test('voronoiJitter perturbs seed positions', () => {
-      // Need a non-deterministic-grid seed mode for jitter to matter; default
-      // is 'random' which is already jittered, but jitter still scales spread.
-      expectKnobMattersFor('voronoi', 'voronoiJitter', 0.05);
-    });
-    test('voronoiStroke boundary vs concentric', () => {
-      // Implemented stroke modes: boundary (default), centroid-spokes,
-      // boundary+centroid, concentric. 'concentric' renders ring polylines
-      // around each seed → very different topology from boundary edges.
-      expectKnobMattersFor('voronoi', 'voronoiStroke', 'concentric');
-    });
-    test('voronoiSeedMode random vs square', () => {
-      // Implemented seed modes: random (default), square, hexgrid.
-      // 'square' lays seeds on a regular lattice — distinct from random sampling.
-      expectKnobMattersFor('voronoi', 'voronoiSeedMode', 'square');
-    });
-  });
-
   // ---------------- Truchet (B3) ----------------
   describe('truchet', () => {
     test('truchetTileSet swaps glyph family', () => {
@@ -387,63 +309,6 @@ describe('Fill param plumbing through PaintBucketOps.generateGeometryForLayer', 
     });
   });
 
-  // ---------------- Scribble (B5) ----------------
-  describe('scribble', () => {
-    test('scribbleSmoothness changes curve smoothing', () => {
-      expectKnobMattersFor('scribble', 'scribbleSmoothness', 0.05);
-    });
-    test('scribbleSeed reseeds the scribble', () => {
-      expectKnobMattersFor('scribble', 'scribbleSeed', 99);
-    });
-    test('scribbleCoverage changes amount of fill', () => {
-      expectKnobMattersFor('scribble', 'scribbleCoverage', 0.3);
-    });
-  });
-
-  // ---------------- L-System (B6) ----------------
-  describe('lsystem', () => {
-    test('lsysPreset swaps grammar', () => {
-      // Available presets: coral (default), lichen, plant, dendritic, algae.
-      expectKnobMattersFor('lsystem', 'lsysPreset', 'plant');
-    });
-    test('lsysIterations grows the system', () => {
-      expectKnobMattersFor('lsystem', 'lsysIterations', 2);
-    });
-    test('lsysAngleVariance perturbs turn angles', () => {
-      expectKnobMattersFor('lsystem', 'lsysAngleVariance', 30);
-    });
-    test('lsysSeed reseeds variance', () => {
-      expectKnobMattersFor('lsystem', 'lsysSeed', 99);
-    });
-    test('lsysScale changes step length', () => {
-      expectKnobMattersFor('lsystem', 'lsysScale', 2.0);
-    });
-  });
-
-  // ---------------- Halftone (B7) ----------------
-  describe('halftone', () => {
-    test('halftoneSource radial vs linear', () => {
-      expectKnobMattersFor('halftone', 'halftoneSource', 'linear');
-    });
-    test('halftoneFrequency changes noise frequency (only used in noise source)', () => {
-      // halftoneFrequency is only consumed when halftoneSource === 'noise'
-      // (it scales the value-noise sample step). Other sources ignore it.
-      expectKnobMattersFor('halftone', 'halftoneFrequency', 15, { halftoneSource: 'noise' });
-    });
-    test('halftoneMinR floor', () => {
-      expectKnobMattersFor('halftone', 'halftoneMinR', 1.0);
-    });
-    test('halftoneMaxR ceiling', () => {
-      expectKnobMattersFor('halftone', 'halftoneMaxR', 3.0);
-    });
-    test('halftoneAngle rotates the dot grid', () => {
-      expectKnobMattersFor('halftone', 'halftoneAngle', 45);
-    });
-    test('halftoneInvert flips near/far radii', () => {
-      expectKnobMattersFor('halftone', 'halftoneInvert', 'on');
-    });
-  });
-
   // ---------------- Stripes (B8) ----------------
   describe('stripes', () => {
     test('stripeBandWidth changes band size', () => {
@@ -464,25 +329,6 @@ describe('Fill param plumbing through PaintBucketOps.generateGeometryForLayer', 
     test('stripeSecondaryDensity changes secondary density', () => {
       // Only meaningful when secondary != 'none'; set it first.
       expectKnobMattersFor('stripes', 'stripeSecondaryDensity', 10, { stripeSecondary: 'hatch' });
-    });
-  });
-
-  // ---------------- Spirograph (B9) ----------------
-  describe('spirograph', () => {
-    test('spiroRatioA changes outer ratio', () => {
-      expectKnobMattersFor('spirograph', 'spiroRatioA', 11);
-    });
-    test('spiroRatioB changes inner ratio', () => {
-      expectKnobMattersFor('spirograph', 'spiroRatioB', 7);
-    });
-    test('spiroPhase rotates start angle', () => {
-      expectKnobMattersFor('spirograph', 'spiroPhase', 90);
-    });
-    test('spiroTurns lengthens the trace', () => {
-      expectKnobMattersFor('spirograph', 'spiroTurns', 200);
-    });
-    test('spiroDeformation warps the curve', () => {
-      expectKnobMattersFor('spirograph', 'spiroDeformation', 0.8);
     });
   });
 

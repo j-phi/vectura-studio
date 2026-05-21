@@ -6,7 +6,7 @@
  *   - smoothing=1 produces smooth (sinusoidal) sampling
  *   - smoothing=0.5 produces an intermediate shape
  *   - back-compat: legacy 'wavelines' and 'zigzag' fillTypes still render
- *   - waveHarmonics adds higher-frequency content
+ *   - waveFrequency controls wavelength (higher = more waves per row)
  *   - paths stay inside the region
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
@@ -37,6 +37,7 @@ describe('Wave fill (C1 consolidation)', () => {
     regions: [rect(0, 0, 100, 100)],
     density: 5,
     amplitude: 1.0,
+    waveFrequency: 1.0,
     angle: 0,
     shiftX: 0,
     shiftY: 0,
@@ -60,13 +61,13 @@ describe('Wave fill (C1 consolidation)', () => {
   };
 
   test('renders paths for fillType=wave with smoothing=0 (triangle)', () => {
-    const paths = gen(base({ fillType: 'wave', waveSmoothing: 0, waveHarmonics: 1 }));
+    const paths = gen(base({ fillType: 'wave', waveSmoothing: 0 }));
     expect(paths.length).toBeGreaterThan(0);
     for (const p of paths) expect(p.length).toBeGreaterThanOrEqual(2);
   });
 
   test('renders paths for fillType=wave with smoothing=1 (sine)', () => {
-    const paths = gen(base({ fillType: 'wave', waveSmoothing: 1, waveHarmonics: 1 }));
+    const paths = gen(base({ fillType: 'wave', waveSmoothing: 1 }));
     expect(paths.length).toBeGreaterThan(0);
     for (const p of paths) expect(p.length).toBeGreaterThanOrEqual(2);
   });
@@ -74,8 +75,8 @@ describe('Wave fill (C1 consolidation)', () => {
   test('triangle (smoothing=0) has notably more angle variation than sine (smoothing=1)', () => {
     // Use the longest path from each to compare.
     const longest = (paths) => paths.reduce((acc, p) => (p.length > acc.length ? p : acc), []);
-    const tri = longest(gen(base({ fillType: 'wave', waveSmoothing: 0, waveHarmonics: 1, amplitude: 2 })));
-    const sin = longest(gen(base({ fillType: 'wave', waveSmoothing: 1, waveHarmonics: 1, amplitude: 2 })));
+    const tri = longest(gen(base({ fillType: 'wave', waveSmoothing: 0, amplitude: 2 })));
+    const sin = longest(gen(base({ fillType: 'wave', waveSmoothing: 1, amplitude: 2 })));
     expect(tri.length).toBeGreaterThan(0);
     expect(sin.length).toBeGreaterThan(0);
     // Triangle has corner spikes; sine spreads angle changes — triangle should have
@@ -104,48 +105,60 @@ describe('Wave fill (C1 consolidation)', () => {
     expect(paths.length).toBeGreaterThan(0);
   });
 
-  test('waveHarmonics > 1 increases total angle variation (more wiggle)', () => {
+  test('waveFrequency=2 produces roughly twice as many wave cycles as waveFrequency=1', () => {
+    // Use smoothing=0 so stepX=wavelength/2 (no minimum floor), giving an exact 2:1 ratio.
     const longest = (paths) => paths.reduce((acc, p) => (p.length > acc.length ? p : acc), []);
-    const h1 = longest(gen(base({ fillType: 'wave', waveSmoothing: 1, waveHarmonics: 1, amplitude: 2 })));
-    const h3 = longest(gen(base({ fillType: 'wave', waveSmoothing: 1, waveHarmonics: 3, amplitude: 2 })));
-    expect(h1.length).toBeGreaterThan(0);
-    expect(h3.length).toBeGreaterThan(0);
-    expect(totalAngleVariation(h3)).toBeGreaterThan(totalAngleVariation(h1) * 0.95);
+    const f1 = longest(gen(base({ fillType: 'wave', waveSmoothing: 0, waveFrequency: 1, amplitude: 2 })));
+    const f2 = longest(gen(base({ fillType: 'wave', waveSmoothing: 0, waveFrequency: 2, amplitude: 2 })));
+    expect(f1.length).toBeGreaterThan(0);
+    expect(f2.length).toBeGreaterThan(0);
+    // Higher frequency = shorter wavelength = more samples per row (step = wavelength/2).
+    expect(f2.length).toBeGreaterThan(f1.length * 1.5);
   });
 
-  test('waveHarmonics > 1 is visible even at smoothing=0 (triangle mode)', () => {
-    // Harmonics must affect the triangle component too, not just the sine blend.
-    // Without the fix: all harmonic values produce identical triangle output at s=0
-    // (harmonic enrichment only applied to the sine side which s=0 ignores).
+  test('waveFrequency=0.5 produces wider waves than waveFrequency=1', () => {
     const longest = (paths) => paths.reduce((acc, p) => (p.length > acc.length ? p : acc), []);
-    const h1 = longest(gen(base({ fillType: 'wave', waveSmoothing: 0, waveHarmonics: 1, amplitude: 2 })));
-    const h3 = longest(gen(base({ fillType: 'wave', waveSmoothing: 0, waveHarmonics: 3, amplitude: 2 })));
-    expect(h1.length).toBeGreaterThan(0);
-    expect(h3.length).toBeGreaterThan(0);
-    // The two outputs must differ — before the fix they were identical because
-    // harmonics were silently dropped when smoothing=0.
-    expect(Math.abs(totalAngleVariation(h3) - totalAngleVariation(h1))).toBeGreaterThan(0.001);
+    const f1 = longest(gen(base({ fillType: 'wave', waveSmoothing: 1, waveFrequency: 1, amplitude: 2 })));
+    const f05 = longest(gen(base({ fillType: 'wave', waveSmoothing: 1, waveFrequency: 0.5, amplitude: 2 })));
+    expect(f05.length).toBeGreaterThan(0);
+    // Wider waves = fewer samples needed = shorter path.
+    expect(f05.length).toBeLessThan(f1.length);
   });
 
   test('smoothing=0 paths carry meta.straight=true (enables straight-line rendering)', () => {
-    const paths = gen(base({ fillType: 'wave', waveSmoothing: 0, waveHarmonics: 1 }));
+    const paths = gen(base({ fillType: 'wave', waveSmoothing: 0 }));
     expect(paths.length).toBeGreaterThan(0);
     for (const p of paths) expect(p.meta?.straight).toBe(true);
   });
 
   test('smoothing=1 paths do NOT carry meta.straight (uses curve rendering)', () => {
-    const paths = gen(base({ fillType: 'wave', waveSmoothing: 1, waveHarmonics: 1 }));
+    const paths = gen(base({ fillType: 'wave', waveSmoothing: 1 }));
     expect(paths.length).toBeGreaterThan(0);
     for (const p of paths) expect(p.meta?.straight).toBeFalsy();
   });
 
-  test('waveHarmonics=3 has greater amplitude than waveHarmonics=1 at smoothing=0', () => {
-    // Triangle side is no longer normalized by harmonic count — h>1 adds richness
-    // without dividing down the base amplitude.
+  test('smoothing=0 zigzag: samples land on exact peaks and troughs', () => {
+    // With x-alignment fix, the zigzag samples hit phase=0 (trough) and phase=0.5
+    // (peak) exactly, producing clean ±amp y-values at every sample point.
+    const paths = gen(base({ fillType: 'wave', waveSmoothing: 0, amplitude: 1 }));
+    expect(paths.length).toBeGreaterThan(0);
+    // amp = density * 0.4 * amplitude = 5 * 0.4 * 1 = 2.0
+    const amp = 5 * 0.4 * 1;
+    for (const p of paths) {
+      for (const pt of p) {
+        const scanY = Math.round(pt.y / 5) * 5;
+        const deviation = Math.abs(Math.abs(pt.y - scanY) - amp);
+        expect(deviation).toBeLessThanOrEqual(amp + 0.01);
+      }
+    }
+  });
+
+  test('waveFrequency affects zigzag step width (smoothing=0)', () => {
+    // At smoothing=0, step = wavelength/2 = (density*1.5/waveFrequency)/2.
+    // Higher frequency → shorter step → more points in same x-span.
     const longest = (paths) => paths.reduce((acc, p) => (p.length > acc.length ? p : acc), []);
-    const h1 = longest(gen(base({ fillType: 'wave', waveSmoothing: 0, waveHarmonics: 1, amplitude: 2 })));
-    const h3 = longest(gen(base({ fillType: 'wave', waveSmoothing: 0, waveHarmonics: 3, amplitude: 2 })));
-    const peakY = (p) => Math.max(...p.map((pt) => Math.abs(pt.y - 50)));
-    expect(peakY(h3)).toBeGreaterThanOrEqual(peakY(h1));
+    const f1 = longest(gen(base({ fillType: 'wave', waveSmoothing: 0, waveFrequency: 1, amplitude: 1 })));
+    const f4 = longest(gen(base({ fillType: 'wave', waveSmoothing: 0, waveFrequency: 4, amplitude: 1 })));
+    expect(f4.length).toBeGreaterThan(f1.length);
   });
 });

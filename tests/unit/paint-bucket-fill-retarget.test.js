@@ -1,9 +1,9 @@
 /**
  * Regression test: updateLastPaintedFills must forward waveSmoothing and
- * waveHarmonics when the paint-bucket panel sliders change.
+ * waveFrequency when the paint-bucket panel sliders change.
  *
  * Bug: FIELD_MAP in renderer.js omitted these two entries, so moving the
- * Wave Smoothing / Wave Harmonics sliders on an existing poured fill had
+ * Wave Smoothing / Wave Frequency sliders on an existing poured fill had
  * no visual effect — the stored fill record kept its original values.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
@@ -37,7 +37,7 @@ describe('Renderer.updateLastPaintedFills — wave param retargeting', () => {
     angle: 0,
     amplitude: 1.0,
     waveSmoothing: 1.0,
-    waveHarmonics: 1,
+    waveFrequency: 1.0,
     padding: 0,
     shiftX: 0,
     shiftY: 0,
@@ -59,28 +59,28 @@ describe('Renderer.updateLastPaintedFills — wave param retargeting', () => {
     expect(rec.waveSmoothing).toBe(0.0);
   });
 
-  test('waveHarmonics is updated in the fill record when slider changes', () => {
-    const rec = waveFillRecord({ waveHarmonics: 1 });
+  test('waveFrequency is updated in the fill record when slider changes', () => {
+    const rec = waveFillRecord({ waveFrequency: 1.0 });
     const engine = makeEngine([rec]);
     const renderer = makeRenderer(engine);
     renderer.lastPaintedFillRefs = [{ layerId: 'layer-1', fillId: 'fill-abc123' }];
 
-    const changed = renderer.updateLastPaintedFills({ fillWaveHarmonics: 3 });
+    const changed = renderer.updateLastPaintedFills({ fillWaveFrequency: 2.0 });
 
     expect(changed).toBe(true);
-    expect(rec.waveHarmonics).toBe(3);
+    expect(rec.waveFrequency).toBe(2.0);
   });
 
   test('both wave params updated together', () => {
-    const rec = waveFillRecord({ waveSmoothing: 1.0, waveHarmonics: 1 });
+    const rec = waveFillRecord({ waveSmoothing: 1.0, waveFrequency: 1.0 });
     const engine = makeEngine([rec]);
     const renderer = makeRenderer(engine);
     renderer.lastPaintedFillRefs = [{ layerId: 'layer-1', fillId: 'fill-abc123' }];
 
-    renderer.updateLastPaintedFills({ fillWaveSmoothing: 0.0, fillWaveHarmonics: 2 });
+    renderer.updateLastPaintedFills({ fillWaveSmoothing: 0.0, fillWaveFrequency: 2.0 });
 
     expect(rec.waveSmoothing).toBe(0.0);
-    expect(rec.waveHarmonics).toBe(2);
+    expect(rec.waveFrequency).toBe(2.0);
   });
 
   test('computeAllDisplayGeometry is called when wave params change', () => {

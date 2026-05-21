@@ -1,10 +1,10 @@
 /**
- * Regression test: fillWaveSmoothing / fillWaveHarmonics must be forwarded
+ * Regression test: fillWaveSmoothing / fillWaveFrequency must be forwarded
  * from SVG Distort layer params into generatePatternFillPaths.
  *
  * Bug: svgdistort.js built the fill-args object without waveSmoothing /
- * waveHarmonics, so changing those sliders had no effect — the wave
- * generator always received its defaults (smoothing=1.0, harmonics=1).
+ * waveFrequency, so changing those sliders had no effect — the wave
+ * generator always received its defaults (smoothing=1.0, frequency=1.0).
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
@@ -82,23 +82,24 @@ describe('SVG Distort — wave fill param forwarding', () => {
   };
 
   test('wave fill renders paths', () => {
-    const paths = generate({ fillWaveSmoothing: 1.0, fillWaveHarmonics: 1 });
+    const paths = generate({ fillWaveSmoothing: 1.0, fillWaveFrequency: 1.0 });
     expect(paths.length).toBeGreaterThan(0);
   });
 
   test('fillWaveSmoothing=0 (zigzag) produces sharper corners than smoothing=1 (sine)', () => {
-    const zigzag = generate({ fillWaveSmoothing: 0.0, fillWaveHarmonics: 1 });
-    const sine   = generate({ fillWaveSmoothing: 1.0, fillWaveHarmonics: 1 });
+    const zigzag = generate({ fillWaveSmoothing: 0.0, fillWaveFrequency: 1.0 });
+    const sine   = generate({ fillWaveSmoothing: 1.0, fillWaveFrequency: 1.0 });
     expect(zigzag.length).toBeGreaterThan(0);
     expect(sine.length).toBeGreaterThan(0);
     expect(maxAngleStep(zigzag)).toBeGreaterThan(maxAngleStep(sine));
   });
 
-  test('fillWaveHarmonics=3 produces more curvature than harmonics=1', () => {
-    const h1 = generate({ fillWaveSmoothing: 1.0, fillWaveHarmonics: 1 });
-    const h3 = generate({ fillWaveSmoothing: 1.0, fillWaveHarmonics: 3 });
-    expect(h1.length).toBeGreaterThan(0);
-    expect(h3.length).toBeGreaterThan(0);
-    expect(totalAngleVariation(h3)).toBeGreaterThan(totalAngleVariation(h1) * 0.95);
+  test('fillWaveFrequency=2 produces more total angle variation than frequency=1', () => {
+    // Higher frequency = more wave cycles per row = more direction changes.
+    const f1 = generate({ fillWaveSmoothing: 1.0, fillWaveFrequency: 1.0 });
+    const f2 = generate({ fillWaveSmoothing: 1.0, fillWaveFrequency: 2.0 });
+    expect(f1.length).toBeGreaterThan(0);
+    expect(f2.length).toBeGreaterThan(0);
+    expect(totalAngleVariation(f2)).toBeGreaterThan(totalAngleVariation(f1));
   });
 });

@@ -5341,7 +5341,7 @@
         ['angle',          'fillAngle'],
         ['amplitude',      'fillAmplitude'],
         ['waveSmoothing',  'fillWaveSmoothing'],
-        ['waveHarmonics',  'fillWaveHarmonics'],
+        ['waveFrequency',  'fillWaveFrequency'],
         ['dotLength',      'fillDotLength'],
         ['dotRotation',    'fillDotRotation'],
         ['padding',        'fillPadding'],

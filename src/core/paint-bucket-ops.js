@@ -482,7 +482,7 @@
     angle: fillParams.fillAngle ?? 0,
     amplitude: fillParams.fillAmplitude ?? 1.0,
     waveSmoothing: fillParams.fillWaveSmoothing ?? 1.0,
-    waveHarmonics: fillParams.fillWaveHarmonics ?? 1,
+    waveFrequency: fillParams.fillWaveFrequency ?? 1.0,
     // New semantics: dotLength is a physical length in mm (0 = single point,
     // up to 10mm). The stipple/grid renderers expand each dot into a
     // continuous spiral when dotLength > 0. dotSize (legacy ratio) is no
@@ -514,17 +514,6 @@
     contourSimplify: fillParams.fillContourSimplify ?? 0.05,
     centralDensity: fillParams.fillRadialCentralDensity ?? 1.0,
     outerDiameter: fillParams.fillRadialOuterDiameter ?? 1.0,
-    // B1 Flow Field
-    flowFieldType: fillParams.fillFlowFieldType ?? 'perlin',
-    flowNoiseScale: fillParams.fillFlowNoiseScale ?? 6.0,
-    flowSeed: fillParams.fillFlowSeed ?? 1,
-    flowTraceLen: fillParams.fillFlowTraceLen ?? 60,
-    flowSeparation: fillParams.fillFlowSeparation ?? 2.5,
-    // B2 Voronoi
-    voronoiSeeds: fillParams.fillVoronoiSeeds ?? 60,
-    voronoiJitter: fillParams.fillVoronoiJitter ?? 0.5,
-    voronoiStroke: fillParams.fillVoronoiStroke ?? 'boundary',
-    voronoiSeedMode: fillParams.fillVoronoiSeedMode ?? 'random',
     // B3 Truchet
     truchetTileSet: fillParams.fillTruchetTileSet ?? 'quarter-arcs',
     truchetTileSize: fillParams.fillTruchetTileSize ?? 6,
@@ -536,23 +525,6 @@
     mazeBranchBias: fillParams.fillMazeBranchBias ?? 0.5,
     mazeSeed: fillParams.fillMazeSeed ?? 1,
     mazeWallMode: fillParams.fillMazeWallMode ?? 'walls',
-    // B5 Scribble
-    scribbleSmoothness: fillParams.fillScribbleSmoothness ?? 0.6,
-    scribbleSeed: fillParams.fillScribbleSeed ?? 1,
-    scribbleCoverage: fillParams.fillScribbleCoverage ?? 1.0,
-    // B6 L-System
-    lsysPreset: fillParams.fillLsysPreset ?? 'coral',
-    lsysIterations: fillParams.fillLsysIterations ?? 4,
-    lsysAngleVariance: fillParams.fillLsysAngleVariance ?? 8,
-    lsysSeed: fillParams.fillLsysSeed ?? 1,
-    lsysScale: fillParams.fillLsysScale ?? 1.0,
-    // B7 Halftone
-    halftoneSource: fillParams.fillHalftoneSource ?? 'radial',
-    halftoneMinR: fillParams.fillHalftoneMinR ?? 0.2,
-    halftoneMaxR: fillParams.fillHalftoneMaxR ?? 1.5,
-    halftoneFrequency: fillParams.fillHalftoneFrequency ?? 5,
-    halftoneAngle: fillParams.fillHalftoneAngle ?? 0,
-    halftoneInvert: fillParams.fillHalftoneInvert ?? 'off',
     // B8 Stripes
     stripeBandWidth: fillParams.fillStripeBandWidth ?? 4,
     stripeGap: fillParams.fillStripeGap ?? 2,
@@ -560,12 +532,6 @@
     stripePrimary: fillParams.fillStripePrimary ?? 'hatch',
     stripeSecondary: fillParams.fillStripeSecondary ?? 'none',
     stripeSecondaryDensity: fillParams.fillStripeSecondaryDensity ?? 2,
-    // B9 Spirograph
-    spiroRatioA: fillParams.fillSpiroRatioA ?? 5,
-    spiroRatioB: fillParams.fillSpiroRatioB ?? 3,
-    spiroPhase: fillParams.fillSpiroPhase ?? 0,
-    spiroTurns: fillParams.fillSpiroTurns ?? 50,
-    spiroDeformation: fillParams.fillSpiroDeformation ?? 0,
     // B10 Weave
     weavePattern: fillParams.fillWeavePattern ?? 'plain',
     weaveStrandWidth: fillParams.fillWeaveStrandWidth ?? 1.5,
@@ -666,7 +632,7 @@
 
   // Build the argument object passed to AlgorithmRegistry._generatePatternFillPaths
   // from a stored fill record. Spreads the full record so every authored knob
-  // (~50 across the 17 fill types) flows through to the generator, then
+  // (across the 11 fill types) flows through to the generator, then
   // overrides `regions` (computed from region + optional innerRegion XOR hole)
   // and `penWidth` (resolved from the rec's penId) after the spread so the
   // computed values always win even if a stale key ever lands on the record.
