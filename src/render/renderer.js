@@ -2001,10 +2001,16 @@
       }
     }
 
-    buildMaskPreviewState(layer) {
+    buildMaskPreviewState(layer, { excludeLayerIds } = {}) {
       if (!layer) return null;
       if (layer.mask?.enabled && this.engine?.getLayerDescendants) {
-        const descendants = this.engine.getLayerDescendants(layer.id).filter((entry) => entry && !entry.isGroup);
+        // Descendants that move rigidly with the mask (selected alongside it) are
+        // excluded from the preview: they render normally with tempTransform, so the
+        // masked geometry simply translates as-is instead of being re-clipped.
+        const skip = excludeLayerIds instanceof Set ? excludeLayerIds : null;
+        const descendants = this.engine
+          .getLayerDescendants(layer.id)
+          .filter((entry) => entry && !entry.isGroup && !(skip && skip.has(entry.id)));
         if (!descendants.length) return null;
         const bounds = this.engine.getBounds ? this.engine.getBounds() : this.engine.currentProfile;
         const entries = descendants
@@ -2041,8 +2047,8 @@
       return null;
     }
 
-    startMaskPreview(layer) {
-      this.maskPreview = this.buildMaskPreviewState(layer);
+    startMaskPreview(layer, opts) {
+      this.maskPreview = this.buildMaskPreviewState(layer, opts);
       return this.maskPreview;
     }
 
@@ -2057,7 +2063,8 @@
       }
       const maskRoot = layers.find((l) => l?.mask?.enabled && l?.maskCapabilities?.canSource);
       if (maskRoot) {
-        this.startMaskPreview(maskRoot);
+        const excludeLayerIds = new Set(layers.map((l) => l.id).filter((id) => id !== maskRoot.id));
+        this.startMaskPreview(maskRoot, { excludeLayerIds });
       } else {
         this.clearMaskPreview();
       }
