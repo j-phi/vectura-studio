@@ -66,6 +66,19 @@
   --motion-modal-enter-dur: 220ms;
   --motion-toast-in-dur: 260ms;
   --motion-toast-out-dur: 200ms;
+
+  /*
+   * Foreground-on-accent tokens (CSS-5).
+   *
+   * Semantic colors for text/icons rendered ON TOP of an accent/danger/
+   * warning background. Default to #fff because every shipped skin uses
+   * saturated accents dark enough for white to clear WCAG AA contrast.
+   * Per-skin palette files may override these where contrast demands a
+   * darker on-color (see classic-* overrides for .seg-opt.active).
+   */
+  --ui-on-accent: #fff;
+  --ui-on-danger: #fff;
+  --ui-on-warning: #fff;
 }
 
 [data-skin-swapping="true"] *,

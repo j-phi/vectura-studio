@@ -135,8 +135,8 @@
   transition: background 0.1s, border-color 0.1s, color 0.1s;
 }
 .hdr-btn:hover { background: var(--ui-ctrl-hov); border-color: var(--ui-border-hi); color: var(--ui-accent); }
-.hdr-btn.is-danger { background: var(--ui-danger); border-color: var(--ui-danger); color: #fff; }
-.hdr-btn.is-danger:hover { opacity: 0.88; color: #fff; }
+.hdr-btn.is-danger { background: var(--ui-danger); border-color: var(--ui-danger); color: var(--ui-on-danger); }
+.hdr-btn.is-danger:hover { opacity: 0.88; color: var(--ui-on-danger); }
 
 /* ── MAIN LAYOUT ─────────────────────────────────────────────── */
 .app-main { display: flex; flex: 1; overflow: hidden; }
@@ -296,7 +296,7 @@
   cursor: pointer; transition: background 0.1s, color 0.1s; white-space: nowrap;
 }
 .seg-opt:first-child { border-left: none; }
-.seg-opt.active { background: var(--ui-accent); color: #fff; border-color: var(--ui-accent); }
+.seg-opt.active { background: var(--ui-accent); color: var(--ui-on-accent); border-color: var(--ui-accent); }
 .seg-opt:not(.active):hover { background: var(--ui-ctrl-hov); color: var(--ui-text); }
 /* Classic accents are near-white (#fafafa) — use a dark label so text is legible. */
 :root[data-ui-skin^="classic"] .seg-opt.active { color: var(--ui-bg); }
@@ -786,7 +786,8 @@
   display: flex; align-items: center; justify-content: center;
   background: none; border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  cursor: pointer; color: var(--ui-muted); transition: all 0.12s;
+  cursor: pointer; color: var(--ui-muted);
+  transition: background-color 0.12s, color 0.12s, border-color 0.12s, box-shadow 0.12s;
 }
 .tool-btn:hover { background: var(--ui-ctrl-hov); color: var(--ui-text); }
 .tool-btn.active {
@@ -939,7 +940,7 @@
 }
 .palette-btn:hover { border-color: var(--ui-border-hi); }
 .add-btn {
-  background: var(--ui-accent); color: #fff; border: none;
+  background: var(--ui-accent); color: var(--ui-on-accent); border: none;
   font-family: var(--font-ui); font-weight: 600;
   font-size: var(--font-size-xs);
   padding: 0 var(--spacing-sm); height: 24px;
@@ -1809,7 +1810,7 @@
   background: var(--ui-accent);
   border: none;
   border-radius: var(--radius-sm);
-  color: #fff;
+  color: var(--ui-on-accent);
   font-family: var(--font-ui);
   font-size: var(--font-size-xs);
   font-weight: 600;
@@ -1819,7 +1820,7 @@
 [data-ui-skin] .lvl-add-btn:hover {
   background: var(--ui-accent);
   border: none;
-  color: #fff;
+  color: var(--ui-on-accent);
   filter: brightness(1.05);
   opacity: 0.92;
 }
@@ -1919,7 +1920,7 @@
 [data-ui-skin] #btn-add-pen {
   background: var(--ui-accent);
   border: none;
-  color: #fff;
+  color: var(--ui-on-accent);
   font-family: var(--font-ui);
   font-weight: 600;
   font-size: var(--font-size-xs);
@@ -1932,7 +1933,7 @@
 }
 [data-ui-skin] #btn-add-pen:hover {
   background: var(--ui-accent);
-  color: #fff;
+  color: var(--ui-on-accent);
   opacity: 0.88;
 }
 
@@ -2141,7 +2142,7 @@
   color: var(--ui-muted); background: transparent; cursor: pointer;
   transition: background 0.1s, color 0.1s, border-color 0.1s;
 }
-[data-ui-skin] .noise-delete:hover { background: var(--ui-danger); color: #fff; border-color: var(--ui-danger); }
+[data-ui-skin] .noise-delete:hover { background: var(--ui-danger); color: var(--ui-on-danger); border-color: var(--ui-danger); }
 
 /* ── Noise reset / randomize buttons ─────────────────────────────────── */
 [data-ui-skin] .noise-reset,
@@ -2475,7 +2476,7 @@
   font-family: var(--font-ui);
   font-size: var(--font-size-sm); font-weight: 600;
   cursor: pointer;
-  transition: all 0.12s;
+  transition: background-color 0.12s, color 0.12s, border-color 0.12s;
   letter-spacing: 0.02em;
   margin-top: 2px;
 }
@@ -2580,7 +2581,7 @@
   stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round;
 }
 .mp-root .mp-change-cta.is-cancel {
-  background: var(--ui-danger); color: #fff;
+  background: var(--ui-danger); color: var(--ui-on-danger);
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--ui-danger) 50%, transparent),
     0 4px 14px color-mix(in srgb, var(--ui-danger) 30%, transparent);
@@ -2618,7 +2619,7 @@
   border-radius: var(--radius-md);
   padding: 10px 8px 8px;
   cursor: pointer;
-  transition: all 0.14s;
+  transition: background-color 0.14s, color 0.14s, border-color 0.14s, transform 0.14s;
   overflow: hidden;
   color: inherit;
 }
@@ -2734,7 +2735,7 @@
   padding: 6px 4px 4px;
   cursor: pointer;
   display: flex; flex-direction: column; align-items: center; gap: 3px;
-  transition: all 0.12s;
+  transition: background-color 0.12s, color 0.12s, border-color 0.12s;
   color: var(--ui-text-2);
 }
 .mp-root .mp-mode-tile:hover { border-color: var(--ui-border-hi, var(--ui-border)); }
@@ -2819,7 +2820,7 @@
   cursor: pointer;
   display: grid; grid-template-columns: 28px 1fr; gap: 8px;
   align-items: center;
-  transition: all 0.12s;
+  transition: background-color 0.12s, color 0.12s, border-color 0.12s;
   color: var(--ui-text-2);
 }
 .mp-root .mp-side-tile:hover { border-color: var(--ui-border-hi, var(--ui-border)); }
@@ -2867,7 +2868,7 @@
   position: relative;
   display: flex; align-items: center; justify-content: center;
   overflow: hidden;
-  transition: all 0.12s;
+  transition: background-color 0.12s, color 0.12s, border-color 0.12s, box-shadow 0.12s, transform 0.12s;
   color: var(--ui-text-2);
   padding: 0;
 }
@@ -2906,7 +2907,7 @@
   display: inline-flex; align-items: center; justify-content: center;
   cursor: pointer;
   padding: 0;
-  transition: all 0.14s;
+  transition: background-color 0.14s, color 0.14s, border-color 0.14s;
   flex-shrink: 0;
 }
 .mp-root .mp-info-trigger:hover {
@@ -2973,10 +2974,10 @@
   display: inline-flex; align-items: center; justify-content: center;
   padding: 0;
   flex-shrink: 0;
-  transition: all 0.12s;
+  transition: background-color 0.12s, color 0.12s, border-color 0.12s;
 }
 .mp-root .mp-ip-close:hover {
-  background: var(--ui-danger); border-color: var(--ui-danger); color: #fff;
+  background: var(--ui-danger); border-color: var(--ui-danger); color: var(--ui-on-danger);
 }
 .mp-root .mp-ip-close svg {
   width: 10px; height: 10px;
@@ -4426,7 +4427,7 @@
 
 .color-modal-apply {
   background: #ef4444 !important;
-  color: #fff !important;
+  color: var(--ui-on-danger) !important;
   border-color: #ef4444 !important;
   font-weight: 600;
 }
@@ -8215,7 +8216,7 @@ input[type='color']::-webkit-color-swatch {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 .tool-icon {
@@ -8286,7 +8287,7 @@ input[type='color']::-webkit-color-swatch {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 .tool-sub-btn svg {
