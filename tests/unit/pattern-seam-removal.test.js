@@ -6,11 +6,22 @@ const vm = require('vm');
 const loadSeamHelpers = () => {
   const filePath = path.resolve(__dirname, '../../src/core/algorithms/pattern.js');
   const code = fs.readFileSync(filePath, 'utf8');
+  // Stub OptimizationUtils.isClosedPath (matches canonical behavior). The
+  // canonical impl lives in src/core/optimization-utils.js but importing it
+  // into this vm context would pull in unrelated browser globals; the seam
+  // helpers only need a working isClosedPath function on the namespace.
+  const isClosedPathStub = (p = []) => {
+    if (!Array.isArray(p) || p.length < 3) return false;
+    const first = p[0]; const last = p[p.length - 1];
+    if (!first || !last) return false;
+    return Math.hypot(first.x - last.x, first.y - last.y) < 0.01;
+  };
   const context = {
     window: {
       Vectura: {
         AlgorithmRegistry: {},
         PATTERNS: [],
+        OptimizationUtils: { isClosedPath: isClosedPathStub },
       },
     },
     document: {

@@ -224,7 +224,7 @@
 
   const clipAndWriteToCompound = (layer, childLayers, mp) => {
     const PB = Vectura.PathBoolean;
-    const isClosedPath = Vectura.OptimizationUtils?.isClosedPath || (() => false);
+    const { isClosedPath } = Vectura.OptimizationUtils;
 
     // The boolean result outline is always the base — handles unfilled shapes.
     const outlinePaths = multiPolygonToPaths(mp);

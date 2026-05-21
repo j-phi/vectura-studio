@@ -38,6 +38,10 @@ globalThis.Vectura.ALGO_DEFAULTS = globalThis.Vectura.ALGO_DEFAULTS || {
   flowfield: { seed: 1 },
 };
 require(path2.resolve(__dirname, '../../src/core/layer.js'));
+// OptimizationUtils.isClosedPath is a hard dependency of masking.js and
+// pathfinder-ops.js — load it first so the destructure succeeds.
+require(path2.resolve(__dirname, '../../src/core/geometry-utils.js'));
+require(path2.resolve(__dirname, '../../src/core/optimization-utils.js'));
 require(path2.resolve(__dirname, '../../src/core/masking.js'));
 // 5. The module under test.
 require(path2.resolve(__dirname, '../../src/core/pathfinder-ops.js'));

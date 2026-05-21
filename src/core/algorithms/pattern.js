@@ -226,13 +226,7 @@
       index === 0 || Math.hypot(pt.x - arr[index - 1].x, pt.y - arr[index - 1].y) > tolerance
     );
 
-  const isClosedPath = window.Vectura.OptimizationUtils?.isClosedPath
-    || ((path = []) => {
-      if (!Array.isArray(path) || path.length < 3) return false;
-      const first = path[0]; const last = path[path.length - 1];
-      if (!first || !last) return false;
-      return Math.hypot(first.x - last.x, first.y - last.y) < 0.01;
-    });
+  const { isClosedPath } = window.Vectura.OptimizationUtils;
 
   const mergeTouchingChains = (inputPaths = []) => {
     const snap = (v) => Math.round(v * 20) / 20;

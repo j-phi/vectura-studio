@@ -6,7 +6,7 @@
   const GeometryUtils = window.Vectura?.GeometryUtils || {};
   const PathBoolean = window.Vectura?.PathBoolean || {};
 
-  const isClosedPath = OptimizationUtils.isClosedPath || (() => false);
+  const { isClosedPath } = OptimizationUtils;
   const clonePaths = GeometryUtils.clonePaths || ((paths) => (paths || []).map((path) => path));
   const closePolygonIfNeeded = PathBoolean.closePolygonIfNeeded || ((polygon) => polygon);
   const normalizePolygons = PathBoolean.normalizePolygons || ((polygons) => polygons);

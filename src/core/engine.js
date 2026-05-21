@@ -97,7 +97,7 @@
   const pathLength = OptimizationUtils.pathLength || (() => 0);
   const pathEndpoints = OptimizationUtils.pathEndpoints || (() => ({ start: { x: 0, y: 0 }, end: { x: 0, y: 0 } }));
   const pathCentroid = OptimizationUtils.pathCentroid || (() => ({ x: 0, y: 0 }));
-  const isClosedPath = OptimizationUtils.isClosedPath || (() => false);
+  const { isClosedPath } = OptimizationUtils;
   const closePathIfNeeded = OptimizationUtils.closePathIfNeeded || ((path) => path);
   const reversePath = OptimizationUtils.reversePath || ((path) => path);
   const offsetPath = OptimizationUtils.offsetPath || ((path) => path);
