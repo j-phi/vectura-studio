@@ -131,7 +131,7 @@
   // for display + input. Angle entries render as div-based dials matching
   // the rest of the UI (algo-config-panel, noise-rack-panel).
   const VARIANT_CONTROLS = [
-    { id: 'fillDensity',                 label: 'Density',           type: 'range',  min: 0.1,  max: 50,  step: 0.1,  showAlways: true },
+    { id: 'fillDensity',                 label: 'Density',           type: 'range',  min: 0.1,  max: 50,  step: 0.1,  showAlways: true, maxByMode: { contour: 100 } },
     { id: 'fillAngle',                   label: 'Angle',             type: 'angle',  capKey: 'angle' },
     { id: 'fillAmplitude',               label: 'Amplitude',         type: 'range',  min: 0,    max: 5.0, step: 0.05, capKey: 'amplitude' },
     { id: 'fillDotShape',                label: 'Dot Shape',         type: 'select', options: [{ value: 'circle', label: 'Circle' }, { value: 'square', label: 'Square' }, { value: 'filled-square', label: 'Filled Square' }, { value: 'cross', label: 'Cross' }, { value: 'tick', label: 'Tick' }], capKey: 'dotShape' },
@@ -204,6 +204,7 @@
       btn.addEventListener('click', () => {
         if (state.fillParams.fillMode === opt.value) return;
         state.fillParams.fillMode = opt.value;
+        if (opt.value === 'contour') state.fillParams.fillDensity = 50;
         persistAndRedraw(state);
         renderControls(state, controlsEl, hintEl);
         refreshVariantSelection(state);
@@ -260,19 +261,20 @@
         // Dot Rotation shows when dotLength > 0 (for circle spirals) OR when
         // a non-circle shape is selected (rotation always orients the glyph).
         const hidden = ctrl.showIfDotLen && !dotLenActive && dotShapeIsCircle;
-        return renderControl(ctrl, state.fillParams[ctrl.id], hidden);
+        return renderControl(ctrl, state.fillParams[ctrl.id], hidden, state.fillParams.fillMode);
       })
       .join('');
     controlsEl.innerHTML = html;
     bindControls(state, controlsEl);
   }
 
-  function renderControl(ctrl, value, hidden = false) {
+  function renderControl(ctrl, value, hidden = false, fillMode = '') {
     const hiddenAttr = hidden ? ' style="display:none"' : '';
     if (ctrl.type === 'range') {
       const distance = !!ctrl.distance;
+      const effectiveMax = ctrl.maxByMode?.[fillMode] ?? ctrl.max;
       const min = distance ? mmToDoc(ctrl.min) : ctrl.min;
-      const max = distance ? mmToDoc(ctrl.max) : ctrl.max;
+      const max = distance ? mmToDoc(effectiveMax) : effectiveMax;
       const step = distance
         ? (getDocUnits() === 'imperial' ? Math.max(0.001, ctrl.step / 25.4) : ctrl.step)
         : ctrl.step;
@@ -349,8 +351,8 @@
     const chip = controlsEl.querySelector(`#pb-${ctrl.id}-chip`);
     const distance = !!ctrl.distance;
     const unit = distance ? getUnitLabel() : (ctrl.unit || '');
-    const minDisplay = distance ? mmToDoc(ctrl.min) : ctrl.min;
-    const maxDisplay = distance ? mmToDoc(ctrl.max) : ctrl.max;
+    const minDisplay = Number(input.getAttribute('min'));
+    const maxDisplay = Number(input.getAttribute('max'));
     const writeChip = (displayNum) => {
       if (!chip) return;
       const txt = distance
