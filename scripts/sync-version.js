@@ -10,8 +10,8 @@ const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
 const version = packageJson.version;
 
 const versionFile = `(() => {
-  window.Vectura = window.Vectura || {};
-  window.Vectura.APP_VERSION = '${version}';
+  const Vectura = (window.Vectura = window.Vectura || {});
+  Vectura.APP_VERSION = '${version}';
 })();
 `;
 
