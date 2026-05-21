@@ -61,12 +61,16 @@ Unified dot fill with pattern + shape parameters.
   - `spiralTightness` (range 0..1, step 0.01, default 0.5) — 0 ≈ Archimedean, 1 ≈ logarithmic.
   - `spiralDirection` (select cw/ccw, default cw).
 
-### C6. Radial — expanded params
+### C6. Radial — density-driven spokes
 
-- Add caps: `radialSpokes`, `radialSkip`.
-- New params:
-  - `radialSpokes` (range 4..360, step 1, default 36).
+- Spoke count is derived from `density`: spokes sit ~`density` apart at mid-radius,
+  so a smaller density spacing yields more spokes (consistent with hatch et al.).
+- Caps: `radialSkip` (plus the shared `angle` / `shift`).
   - `radialSkip` (range 0..5, step 1, default 0) — skip every Nth spoke.
+- Region extent uses `padding` (region inset); there is no separate outer-diameter
+  knob. The earlier explicit `radialSpokes` / `centralDensity` / `outerDiameter`
+  knobs were removed (density now controls spoke count; the others were dead or
+  redundant).
 
 ### C7. Contour — expanded params
 

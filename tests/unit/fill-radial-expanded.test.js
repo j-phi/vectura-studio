@@ -1,6 +1,6 @@
 /**
- * C6 — Radial expanded params tests.
- *   - radialSpokes (4..360) caps the spoke count
+ * Radial fill params tests.
+ *   - density drives the spoke count (smaller spacing → more spokes)
  *   - radialSkip (0..5) drops every Nth spoke
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
@@ -36,16 +36,16 @@ describe('Radial fill (C6 expanded params)', () => {
     expect(gen(base()).length).toBeGreaterThan(0);
   });
 
-  test('radialSpokes increases the path count when raised', () => {
-    const few = gen(base({ radialSpokes: 12 })).length;
-    const many = gen(base({ radialSpokes: 80 })).length;
-    expect(few).toBeGreaterThan(0);
-    expect(many).toBeGreaterThan(few);
+  test('denser spacing increases the spoke count', () => {
+    const sparse = gen(base({ density: 20 })).length;
+    const dense = gen(base({ density: 4 })).length;
+    expect(sparse).toBeGreaterThan(0);
+    expect(dense).toBeGreaterThan(sparse);
   });
 
   test('radialSkip>0 reduces the path count', () => {
-    const full = gen(base({ radialSpokes: 60, radialSkip: 0 })).length;
-    const skipped = gen(base({ radialSpokes: 60, radialSkip: 2 })).length;
+    const full = gen(base({ density: 4, radialSkip: 0 })).length;
+    const skipped = gen(base({ density: 4, radialSkip: 2 })).length;
     expect(full).toBeGreaterThan(0);
     expect(skipped).toBeGreaterThan(0);
     expect(skipped).toBeLessThan(full);

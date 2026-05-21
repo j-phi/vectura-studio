@@ -89,7 +89,7 @@ describe('Fill boundary clipping — no path points escape the region', () => {
   });
 
   test('radial: no point escapes a circular region', () => {
-    const paths = gen({ ...baseFill, fillType: 'radial', centralDensity: 1, outerDiameter: 1 });
+    const paths = gen({ ...baseFill, fillType: 'radial' });
     expect(paths.length).toBeGreaterThan(0);
     assertAllPointsInsideRegion(paths, circlePoly, 'radial');
   });

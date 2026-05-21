@@ -8,6 +8,11 @@ export default defineConfig({
     include: ['tests/**/*.test.js'],
     exclude: ['tests/e2e/**'],
     testTimeout: 20000,
+    poolOptions: {
+      forks: {
+        maxForks: 4,
+      },
+    },
   },
   coverage: {
     provider: 'v8',

@@ -280,30 +280,23 @@ describe('Fill parameter effects (path-data hash)', () => {
       expect(def.showIf({ fillMode: 'stripes', fillStripeSecondary: 'none' })).toBe(false);
     });
 
-    test('radial: density+centralDensity dead when radialSpokes>0 + UI gated', () => {
-      const sqB = sq;
-      // density has no effect at spokes>0
-      const a = hash(sqB, { fillType: 'radial', radialSpokes: 12, density: 5 });
-      const b = hash(sqB, { fillType: 'radial', radialSpokes: 12, density: 20 });
-      expect(a).toBe(b);
-      // centralDensity has no effect at spokes>0
-      const c = hash(sqB, { fillType: 'radial', radialSpokes: 12, centralDensity: 1 });
-      const d = hash(sqB, { fillType: 'radial', radialSpokes: 12, centralDensity: 3 });
-      expect(c).toBe(d);
-      // density DOES have effect at spokes=0
+    test('radial: density drives spoke count; dead knobs removed', () => {
+      // Density is the sole spoke-count control — a smaller spacing yields more
+      // spokes, so the path data must change.
       expectDifferent(
-        sqB,
-        { fillType: 'radial', radialSpokes: 0, density: 5 },
-        { fillType: 'radial', radialSpokes: 0, density: 20 },
+        sq,
+        { fillType: 'radial', density: 5 },
+        { fillType: 'radial', density: 20 },
       );
-      // UI gating: density slider hidden when radialSpokes > 0
+      // Density slider is always shown for radial now (no spokes-override gate).
       const dens = controlMap.get('fillDensity');
-      expect(dens.showIf({ fillMode: 'radial', fillRadialSpokes: 12 })).toBe(false);
-      expect(dens.showIf({ fillMode: 'radial', fillRadialSpokes: 0 })).toBe(true);
-      // UI gating: centralDensity hidden when radialSpokes > 0
-      const cd = controlMap.get('fillRadialCentralDensity');
-      expect(cd.showIf({ fillMode: 'radial', fillRadialSpokes: 12 })).toBe(false);
-      expect(cd.showIf({ fillMode: 'radial', fillRadialSpokes: 0 })).toBe(true);
+      expect(dens.showIf({ fillMode: 'radial' })).toBe(true);
+      // The removed knobs no longer have control defs.
+      expect(controlMap.has('fillRadialCentralDensity')).toBe(false);
+      expect(controlMap.has('fillRadialOuterDiameter')).toBe(false);
+      expect(controlMap.has('fillRadialSpokes')).toBe(false);
+      // Radial Skip remains and is exposed.
+      expect(controlMap.has('fillRadialSkip')).toBe(true);
     });
 
     test('weaveOver/weaveUnder: hidden when weavePattern=plain', () => {

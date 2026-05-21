@@ -44,13 +44,13 @@ describe('Renderer paint-bucket: updateLastPaintedFills + hover clear', () => {
         {
           id: 'f1', fillType: 'hatch', density: 4, angle: 0, amplitude: 1, dotSize: 0.6,
           padding: 0, shiftX: 0, shiftY: 0, dotPattern: 'brick', axes: 3, polyTile: 'grid',
-          centralDensity: 1, outerDiameter: 1, sensitivity: 5, penId: 'pen-1',
+          sensitivity: 5, penId: 'pen-1',
           region: makeRect(0, 0, 100, 100),
         },
         {
           id: 'f2', fillType: 'hatch', density: 4, angle: 0, amplitude: 1, dotSize: 0.6,
           padding: 0, shiftX: 0, shiftY: 0, dotPattern: 'brick', axes: 3, polyTile: 'grid',
-          centralDensity: 1, outerDiameter: 1, sensitivity: 5, penId: 'pen-1',
+          sensitivity: 5, penId: 'pen-1',
           region: makeRect(10, 10, 50, 50),
         },
       ],
