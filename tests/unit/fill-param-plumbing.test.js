@@ -72,13 +72,10 @@ describe('Fill param plumbing through PaintBucketOps.generateGeometryForLayer', 
     spiralTurns: 8,
     spiralTightness: 0.5,
     spiralDirection: 'cw',
-    radialSpokes: 36,
     radialSkip: 0,
     contourDirection: 'inset',
     contourStepVariance: 0,
     contourSimplify: 0.05,
-    centralDensity: 1.0,
-    outerDiameter: 1.0,
     // B3
     truchetTileSet: 'quarter-arcs',
     truchetTileSize: 6,
@@ -227,6 +224,13 @@ describe('Fill param plumbing through PaintBucketOps.generateGeometryForLayer', 
       const b = runFill(mutated);
       expect(a.fp).not.toBe(b.fp);
     });
+    test('contourCenterPadding=0 produces more rings than a large centerPadding', () => {
+      const a = runFill(baseRec('contour', { density: 5, contourCenterPadding: 0 }));
+      const b = runFill(baseRec('contour', { density: 5, contourCenterPadding: 60 }));
+      expect(a.paths.length).toBeGreaterThan(0);
+      // Large center padding leaves only the outermost ring(s); fewer total paths.
+      expect(a.paths.length).toBeGreaterThan(b.paths.length);
+    });
   });
 
   // ---------------- Spiral ----------------
@@ -244,8 +248,8 @@ describe('Fill param plumbing through PaintBucketOps.generateGeometryForLayer', 
 
   // ---------------- Radial ----------------
   describe('radial', () => {
-    test('radialSpokes count', () => {
-      expectKnobMattersFor('radial', 'radialSpokes', 6);
+    test('density drives spoke count', () => {
+      expectKnobMattersFor('radial', 'density', 2);
     });
     test('radialSkip alternation', () => {
       expectKnobMattersFor('radial', 'radialSkip', 2);

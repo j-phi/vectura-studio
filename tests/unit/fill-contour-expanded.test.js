@@ -56,6 +56,13 @@ describe('Contour fill (C7 expanded params)', () => {
     expect(sig(a)).not.toBe(sig(b));
   });
 
+  test('contourCenterPadding=0 fills closer to center than a large value', () => {
+    const small = gen(base({ contourCenterPadding: 0 }));
+    const large = gen(base({ contourCenterPadding: 40 }));
+    expect(small.length).toBeGreaterThan(0);
+    expect(small.length).toBeGreaterThan(large.length);
+  });
+
   test('contourSimplify>0 reduces total vertex count', () => {
     // Use a many-vertex polygon (circle) so simplify has something to chew on.
     const circle = (() => {
