@@ -4743,7 +4743,14 @@
       // polyline is. Falls back to the midpoint-quadratic path below for
       // algorithmically-generated polylines that carry no anchor handles.
       const anchors = useCurves && !path.meta?.straight ? path.meta?.anchors : null;
-      if (Array.isArray(anchors) && anchors.length >= 2) {
+      // Only emit native cubics when at least one anchor actually carries a
+      // bezier handle. Chord-polyline shapes (e.g. exploded wavetables rebuilt
+      // by applyShapeAnchorRebuild at smoothing=0) populate meta.anchors with
+      // null in/out handles — feeding those to bezierCurveTo yields degenerate
+      // straight segments, reintroducing kinks. Those fall through to the
+      // midpoint-quadratic smoothing below instead.
+      const hasHandles = Array.isArray(anchors) && anchors.some((a) => a && (a.in || a.out));
+      if (hasHandles && anchors.length >= 2) {
         const closed = path.meta?.closed === true;
         this.ctx.moveTo(anchors[0].x, anchors[0].y);
         for (let i = 0; i < anchors.length - 1; i++) {

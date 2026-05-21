@@ -1086,21 +1086,52 @@
         return { x, y };
       };
 
+      const scaleX = p.scaleX ?? 1;
+      const scaleY = p.scaleY ?? 1;
+      const transformMetaPoint = (pt) => {
+        if (!pt || typeof pt !== 'object') return pt;
+        const t = transform({ x: pt.x, y: pt.y });
+        return { ...pt, x: t.x, y: t.y };
+      };
+      const transformAnchor = (a) => {
+        if (!a || typeof a !== 'object') return a;
+        const out = transformMetaPoint(a);
+        if (a.in) out.in = transformMetaPoint(a.in);
+        if (a.out) out.out = transformMetaPoint(a.out);
+        return out;
+      };
       const transformMeta = (meta) => {
         if (!meta) return meta;
-        if (meta.kind !== 'circle') return JSON.parse(JSON.stringify(meta));
-        const center = transform({ x: meta.cx, y: meta.cy });
-        const scaleX = p.scaleX ?? 1;
-        const scaleY = p.scaleY ?? 1;
-        const baseR = Number.isFinite(meta.r) ? meta.r : Math.max(meta.rx ?? 0, meta.ry ?? 0);
-        return {
-          ...meta,
-          cx: center.x,
-          cy: center.y,
-          rx: Math.abs(baseR * scaleX),
-          ry: Math.abs(baseR * scaleY),
-          rotation: rot,
-        };
+        if (meta.kind === 'circle') {
+          const center = transform({ x: meta.cx, y: meta.cy });
+          const baseR = Number.isFinite(meta.r) ? meta.r : Math.max(meta.rx ?? 0, meta.ry ?? 0);
+          return {
+            ...meta,
+            cx: center.x,
+            cy: center.y,
+            rx: Math.abs(baseR * scaleX),
+            ry: Math.abs(baseR * scaleY),
+            rotation: rot,
+          };
+        }
+        // Other meta (kind:'shape' ovals/polys, pen paths) carries bezier
+        // `anchors` and an embedded `shape` that the renderer's native-cubic
+        // tracePath draws from. These live in source space on rawPaths, so they
+        // must be carried through the same posX/posY/scale/rotation transform as
+        // the sampled points — otherwise the drawn outline stays at the origin
+        // while the points (and fill) translate.
+        const copy = JSON.parse(JSON.stringify(meta));
+        if (Array.isArray(meta.anchors)) copy.anchors = meta.anchors.map(transformAnchor);
+        if (meta.shape && typeof meta.shape === 'object') {
+          const s = meta.shape;
+          const sc = transform({ x: s.cx, y: s.cy });
+          copy.shape = { ...s, cx: sc.x, cy: sc.y };
+          if (Number.isFinite(s.rx)) copy.shape.rx = Math.abs(s.rx * scaleX);
+          if (Number.isFinite(s.ry)) copy.shape.ry = Math.abs(s.ry * scaleY);
+          if (Number.isFinite(s.r)) copy.shape.r = Math.abs(s.r * ((Math.abs(scaleX) + Math.abs(scaleY)) / 2));
+          copy.shape.rotation = (s.rotation ?? 0) + rot;
+        }
+        return copy;
       };
 
       const transformed = rawPaths.map((path) => {
