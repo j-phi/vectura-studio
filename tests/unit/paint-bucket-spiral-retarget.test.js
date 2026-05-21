@@ -67,14 +67,16 @@ describe('Paint Bucket Spiral fill — slider plumbing & geometry', () => {
       ...overrides,
     });
 
-    test('spiralTurns is updated in the fill record when slider changes', () => {
+    test('fillSpiralTurns is not in FIELD_MAP (turns control removed; density drives turns)', () => {
+      // The fillSpiralTurns slider was removed in favour of density-driven turn count.
+      // Passing fillSpiralTurns must NOT mutate the fill record or trigger a redraw.
       const rec = spiralFillRecord({ spiralTurns: 8 });
       const engine = makeEngine([rec]);
       const renderer = makeRenderer(engine);
       renderer.lastPaintedFillRefs = [{ layerId: 'layer-1', fillId: 'fill-spiral-1' }];
       const changed = renderer.updateLastPaintedFills({ fillSpiralTurns: 24 });
-      expect(changed).toBe(true);
-      expect(rec.spiralTurns).toBe(24);
+      expect(changed).toBe(false);
+      expect(rec.spiralTurns).toBe(8);
     });
 
     test('spiralTightness is updated in the fill record when slider changes', () => {
@@ -100,7 +102,7 @@ describe('Paint Bucket Spiral fill — slider plumbing & geometry', () => {
       const engine = makeEngine([rec]);
       const renderer = makeRenderer(engine);
       renderer.lastPaintedFillRefs = [{ layerId: 'layer-1', fillId: 'fill-spiral-1' }];
-      renderer.updateLastPaintedFills({ fillSpiralTurns: 20 });
+      renderer.updateLastPaintedFills({ fillSpiralTightness: 0.75 });
       expect(engine.computeAllDisplayGeometry).toHaveBeenCalled();
     });
   });
