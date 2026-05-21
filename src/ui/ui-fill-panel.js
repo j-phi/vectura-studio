@@ -61,9 +61,9 @@
     wave:        { angle: true,  amplitude: true,  dotSize: false, shift: true, waveSmoothing: true, waveFrequency: true },
     stipple:     { angle: true,  amplitude: false, dotSize: true,  shift: true,  dotPattern: true  },
     dots:        { angle: true,  amplitude: false, dotSize: true,  shift: true,  dotPattern: true, dotShape: true, dotJitter: true },
-    contour:     { angle: false, amplitude: false, dotSize: false, shift: false, contourDirection: true, contourStepVariance: true, contourSimplify: true },
+    contour:     { angle: false, amplitude: false, dotSize: false, shift: false, contourDirection: true, contourStepVariance: true, contourSimplify: true, contourCenterPadding: true },
     spiral:      { angle: true,  amplitude: false, dotSize: false, shift: true,  spiralTurns: true, spiralTightness: true, spiralDirection: true },
-    radial:      { angle: true,  amplitude: false, dotSize: false, shift: true,  radialCentralDensity: true, radialOuterDiameter: true, radialSpokes: true, radialSkip: true },
+    radial:      { angle: true,  amplitude: false, dotSize: false, shift: true,  radialSkip: true },
     grid:        { angle: true,  amplitude: false, dotSize: true,  shift: true  },
     meander:     { angle: true,  amplitude: false, dotSize: false, shift: true  },
     triaxial:    { angle: true,  amplitude: false, dotSize: false, shift: true  },
@@ -111,8 +111,6 @@
     shiftXParam = 'fillShiftX',
     shiftYParam = 'fillShiftY',
     dotPatternParam           = 'fillDotPattern',
-    radialCentralDensityParam = 'fillRadialCentralDensity',
-    radialOuterDiameterParam  = 'fillRadialOuterDiameter',
     axesParam                 = 'fillAxes',
     polyTileParam             = 'fillPolyTile',
     waveSmoothingParam        = 'fillWaveSmoothing',
@@ -127,11 +125,11 @@
     spiralTurnsParam          = 'fillSpiralTurns',
     spiralTightnessParam      = 'fillSpiralTightness',
     spiralDirectionParam      = 'fillSpiralDirection',
-    radialSpokesParam         = 'fillRadialSpokes',
     radialSkipParam           = 'fillRadialSkip',
     contourDirectionParam     = 'fillContourDirection',
     contourStepVarianceParam  = 'fillContourStepVariance',
     contourSimplifyParam      = 'fillContourSimplify',
+    contourCenterPaddingParam = 'fillContourCenterPadding',
     flowFieldTypeParam        = 'fillFlowFieldType',
     flowNoiseScaleParam       = 'fillFlowNoiseScale',
     flowSeedParam             = 'fillFlowSeed',
@@ -206,10 +204,7 @@
         // Honour FILL_CAPS.density. Default-true (undefined → true) so every
         // legacy fill keeps the slider; the six B-series fills that own their
         // own spacing knob opt out via `density: false`.
-        // Additionally hide for radial when the user has explicitly set
-        // radialSpokes > 0 — the C6 override path ignores density entirely.
-        showIf: (p) => isActive(p) && caps(p).density !== false
-          && !(p[typeParam] === 'radial' && (p[radialSpokesParam] || 0) > 0),
+        showIf: (p) => isActive(p) && caps(p).density !== false,
         infoKey: `${descKeyPrefix}.density`,
       },
       {
@@ -291,10 +286,11 @@
         label: 'Dot Shape',
         type: 'select',
         options: [
-          { value: 'circle', label: 'Circle' },
-          { value: 'square', label: 'Square' },
-          { value: 'cross',  label: 'Cross' },
-          { value: 'tick',   label: 'Tick' },
+          { value: 'circle',        label: 'Circle' },
+          { value: 'square',        label: 'Square' },
+          { value: 'filled-square', label: 'Filled Square' },
+          { value: 'cross',         label: 'Cross' },
+          { value: 'tick',          label: 'Tick' },
         ],
         showIf: (p) => isActive(p) && !!caps(p).dotShape,
         infoKey: `${descKeyPrefix}.dotShape`,
@@ -432,18 +428,6 @@
         infoKey: `${descKeyPrefix}.spiralDirection`,
       },
       {
-        id: radialCentralDensityParam,
-        label: 'Central Density',
-        type: 'range',
-        min: 0.1,
-        max: 4.0,
-        step: 0.1,
-        // Auto-derived from spokes when radialSpokes > 0 — hide to avoid confusion.
-        showIf: (p) => isActive(p) && !!caps(p).radialCentralDensity
-          && (p[radialSpokesParam] || 0) === 0,
-        infoKey: `${descKeyPrefix}.radialCentralDensity`,
-      },
-      {
         id: contourDirectionParam,
         label: 'Contour Direction',
         type: 'select',
@@ -472,14 +456,14 @@
         infoKey: `${descKeyPrefix}.contourSimplify`,
       },
       {
-        id: radialSpokesParam,
-        label: 'Radial Spokes',
+        id: contourCenterPaddingParam,
+        label: 'Center Padding',
         type: 'range',
-        min: 4,
-        max: 360,
-        step: 1,
-        showIf: (p) => isActive(p) && !!caps(p).radialSpokes,
-        infoKey: `${descKeyPrefix}.radialSpokes`,
+        min: 0,
+        max: 20,
+        step: 0.1,
+        showIf: (p) => isActive(p) && !!caps(p).contourCenterPadding,
+        infoKey: `${descKeyPrefix}.contourCenterPadding`,
       },
       {
         id: radialSkipParam,
@@ -490,16 +474,6 @@
         step: 1,
         showIf: (p) => isActive(p) && !!caps(p).radialSkip,
         infoKey: `${descKeyPrefix}.radialSkip`,
-      },
-      {
-        id: radialOuterDiameterParam,
-        label: 'Outer Diameter',
-        type: 'range',
-        min: 0.0,
-        max: 2.0,
-        step: 0.05,
-        showIf: (p) => isActive(p) && !!caps(p).radialOuterDiameter,
-        infoKey: `${descKeyPrefix}.radialOuterDiameter`,
       },
       // B1 Flow Field
       { id: flowFieldTypeParam, label: 'Field Type', type: 'select', options: [{ value: 'perlin', label: 'Perlin' }, { value: 'curl', label: 'Curl' }, { value: 'radial', label: 'Radial' }, { value: 'spiral', label: 'Spiral' }], showIf: (p) => isActive(p) && !!caps(p).flowFieldType, infoKey: `${descKeyPrefix}.flowFieldType` },

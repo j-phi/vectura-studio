@@ -38,7 +38,7 @@
     fillDensity: 1,
     fillAngle: 45,
     fillAmplitude: 1.0,
-    fillDotLength: 0,         // mm; 0 = single point, up to 10mm
+    fillDotLength: 0.5,       // mm; 0.5 default gives visible non-circle shapes
     fillDotRotation: 0,       // degrees, orients elongated dot
     fillPadding: 0,           // mm
     fillShiftX: 0,            // mm
@@ -53,18 +53,16 @@
     fillPolyRotation: 0,
     fillPolyRotationStep: 0,
     fillPolyScaleStep: 0,
-    fillRadialCentralDensity: 1.0,
-    fillRadialOuterDiameter: 1.0,
     fillWaveSmoothing: 1.0,
     fillWaveFrequency: 1.0,
     fillSpiralTurns: 8,
     fillSpiralTightness: 0.5,
     fillSpiralDirection: 'cw',
-    fillRadialSpokes: 36,
     fillRadialSkip: 0,
     fillContourDirection: 'inset',
     fillContourStepVariance: 0,
     fillContourSimplify: 0.05,
+    fillContourCenterPadding: 0,
     // B3 Truchet
     fillTruchetTileSet: 'quarter-arcs',
     fillTruchetTileSize: 6,
@@ -96,7 +94,7 @@
 
   // Distance-bearing params persisted in mm; the panel converts to/from
   // doc units at display time.
-  const DISTANCE_PARAMS = new Set(['fillDotLength', 'fillPadding', 'fillShiftX', 'fillShiftY']);
+  const DISTANCE_PARAMS = new Set(['fillDotLength', 'fillPadding', 'fillShiftX', 'fillShiftY', 'fillContourCenterPadding']);
 
   const getDocUnits = () => {
     const UU = Vectura.UnitUtils || {};
@@ -136,14 +134,14 @@
     { id: 'fillDensity',                 label: 'Density',           type: 'range',  min: 0.1,  max: 50,  step: 0.1,  showAlways: true },
     { id: 'fillAngle',                   label: 'Angle',             type: 'angle',  capKey: 'angle' },
     { id: 'fillAmplitude',               label: 'Amplitude',         type: 'range',  min: 0,    max: 5.0, step: 0.05, capKey: 'amplitude' },
+    { id: 'fillDotShape',                label: 'Dot Shape',         type: 'select', options: [{ value: 'circle', label: 'Circle' }, { value: 'square', label: 'Square' }, { value: 'filled-square', label: 'Filled Square' }, { value: 'cross', label: 'Cross' }, { value: 'tick', label: 'Tick' }], capKey: 'dotShape' },
+    { id: 'fillDotPattern',              label: 'Dot Pattern',       type: 'select', options: [{ value: 'brick', label: 'Brick' }, { value: 'grid', label: 'Grid' }, { value: 'hex', label: 'Hex' }, { value: 'jitter', label: 'Jitter' }], capKey: 'dotPattern' },
     { id: 'fillDotLength',               label: 'Dot Size',          type: 'range',  min: 0,    max: 10,  step: 0.1,  distance: true, capKey: 'dotSize' },
     { id: 'fillDotRotation',             label: 'Dot Rotation',      type: 'angle',  capKey: 'dotSize', showIfDotLen: true },
+    { id: 'fillDotJitter',               label: 'Dot Jitter',        type: 'range',  min: 0,    max: 1,   step: 0.01, capKey: 'dotJitter' },
     { id: 'fillPadding',                 label: 'Padding',           type: 'range',  min: 0,    max: 10,  step: 0.1,  distance: true, showAlways: true },
     { id: 'fillShiftX',                  label: 'Shift X',           type: 'range',  min: -50,  max: 50,  step: 0.5,  distance: true, capKey: 'shift' },
     { id: 'fillShiftY',                  label: 'Shift Y',           type: 'range',  min: -50,  max: 50,  step: 0.5,  distance: true, capKey: 'shift' },
-    { id: 'fillDotPattern',              label: 'Dot Pattern',       type: 'select', options: [{ value: 'brick', label: 'Brick' }, { value: 'grid', label: 'Grid' }, { value: 'hex', label: 'Hex' }, { value: 'jitter', label: 'Jitter' }], capKey: 'dotPattern' },
-    { id: 'fillDotShape',                label: 'Dot Shape',         type: 'select', options: [{ value: 'circle', label: 'Circle' }, { value: 'square', label: 'Square' }, { value: 'cross', label: 'Cross' }, { value: 'tick', label: 'Tick' }], capKey: 'dotShape' },
-    { id: 'fillDotJitter',               label: 'Dot Jitter',        type: 'range',  min: 0,    max: 1,   step: 0.01, capKey: 'dotJitter' },
     { id: 'fillLineCount',               label: 'Line Count',        type: 'range',  min: 1,    max: 3,   step: 1,    capKey: 'lineCount' },
     { id: 'fillAxes',                    label: 'Sides',             type: 'range',  min: 2,    max: 12,  step: 1,    capKey: 'axes' },
     { id: 'fillPolyTile',                label: 'Tile Method',       type: 'select', options: [{ value: 'grid', label: 'Grid' }, { value: 'brick', label: 'Brick' }, { value: 'hexagonal', label: 'Hexagonal' }, { value: 'off', label: 'Off (single)' }], capKey: 'polyTile' },
@@ -151,18 +149,16 @@
     { id: 'fillPolyRotation',            label: 'Poly Rotation',     type: 'angle',  capKey: 'polyRotation' },
     { id: 'fillPolyRotationStep',        label: 'Poly Rotation Step',type: 'range',  min: -45,  max: 45,  step: 0.5,  capKey: 'polyRotationStep' },
     { id: 'fillPolyScaleStep',           label: 'Poly Scale Step',   type: 'range',  min: -0.5, max: 0.5, step: 0.01, capKey: 'polyScaleStep' },
-    { id: 'fillRadialCentralDensity',    label: 'Central Density',   type: 'range',  min: 0.1,  max: 4.0, step: 0.1,  capKey: 'radialCentralDensity' },
-    { id: 'fillRadialOuterDiameter',     label: 'Outer Diameter',    type: 'range',  min: 0.0,  max: 2.0, step: 0.05, capKey: 'radialOuterDiameter' },
     { id: 'fillWaveSmoothing',           label: 'Wave Smoothing',    type: 'range',  min: 0,    max: 1,   step: 0.01, capKey: 'waveSmoothing' },
     { id: 'fillWaveFrequency',           label: 'Wave Frequency',    type: 'range',  min: 0.25, max: 4.0, step: 0.05, capKey: 'waveFrequency' },
     { id: 'fillSpiralTurns',             label: 'Spiral Turns',      type: 'range',  min: 1,    max: 40,  step: 1,    capKey: 'spiralTurns' },
     { id: 'fillSpiralTightness',         label: 'Spiral Tightness',  type: 'range',  min: 0,    max: 1,   step: 0.01, capKey: 'spiralTightness' },
     { id: 'fillSpiralDirection',         label: 'Spiral Direction',  type: 'select', options: [{ value: 'cw', label: 'Clockwise' }, { value: 'ccw', label: 'Counterclockwise' }], capKey: 'spiralDirection' },
-    { id: 'fillRadialSpokes',            label: 'Radial Spokes',     type: 'range',  min: 4,    max: 360, step: 1,    capKey: 'radialSpokes' },
     { id: 'fillRadialSkip',              label: 'Radial Skip',       type: 'range',  min: 0,    max: 5,   step: 1,    capKey: 'radialSkip' },
     { id: 'fillContourDirection',        label: 'Contour Direction', type: 'select', options: [{ value: 'inset', label: 'Inset' }, { value: 'outset', label: 'Outset' }], capKey: 'contourDirection' },
     { id: 'fillContourStepVariance',     label: 'Step Variance',     type: 'range',  min: 0,    max: 1,   step: 0.01, capKey: 'contourStepVariance' },
     { id: 'fillContourSimplify',         label: 'Simplify',          type: 'range',  min: 0,    max: 0.5, step: 0.01, capKey: 'contourSimplify' },
+    { id: 'fillContourCenterPadding',    label: 'Center Padding',    type: 'range',  min: 0,    max: 20,  step: 0.1,  distance: true, capKey: 'contourCenterPadding' },
     // B3 Truchet
     { id: 'fillTruchetTileSet',          label: 'Tile Set',          type: 'select', options: [{ value: 'quarter-arcs', label: 'Quarter Arcs' }, { value: 'diagonals', label: 'Diagonals' }, { value: 'dots-and-lines', label: 'Dots & Lines' }, { value: 'triangle-split', label: 'Triangle Split' }, { value: 'scribble', label: 'Scribble' }], capKey: 'truchetTileSet' },
     { id: 'fillTruchetTileSize',         label: 'Tile Spacing',      type: 'range',  min: 1,    max: 30,  step: 0.5,  capKey: 'truchetTileSize' },
@@ -254,13 +250,16 @@
     }
 
     const dotLenActive = (state.fillParams.fillDotLength ?? 0) > 0;
+    const dotShapeIsCircle = (state.fillParams.fillDotShape ?? 'circle') === 'circle';
     const html = VARIANT_CONTROLS
       .filter((ctrl) => {
         if (ctrl.showAlways) return true;
         return ctrl.capKey && caps[ctrl.capKey];
       })
       .map((ctrl) => {
-        const hidden = ctrl.showIfDotLen && !dotLenActive;
+        // Dot Rotation shows when dotLength > 0 (for circle spirals) OR when
+        // a non-circle shape is selected (rotation always orients the glyph).
+        const hidden = ctrl.showIfDotLen && !dotLenActive && dotShapeIsCircle;
         return renderControl(ctrl, state.fillParams[ctrl.id], hidden);
       })
       .join('');
@@ -332,6 +331,13 @@
         sel.addEventListener('change', () => {
           state.fillParams[ctrl.id] = sel.value;
           persistAndRedraw(state);
+          // Changing dot shape affects whether Dot Rotation row is visible.
+          if (ctrl.id === 'fillDotShape') {
+            const dotShapeIsCircle = sel.value === 'circle';
+            const dotLenActive = (state.fillParams.fillDotLength ?? 0) > 0;
+            const dotRotRow = controlsEl.querySelector('[data-ctrl="fillDotRotation"]');
+            if (dotRotRow) dotRotRow.style.display = (dotLenActive || !dotShapeIsCircle) ? '' : 'none';
+          }
         });
       }
     });
@@ -360,11 +366,11 @@
       writeChip(numDisplay);
       updateSliderFill(input);
       persistAndRedraw(state);
-      // Dot length > 0 unhides the dot-rotation row in place (no rerender so
-      // the active drag/listeners stay attached).
+      // Dot rotation shows when dotLength > 0 OR a non-circle shape is selected.
       if (ctrl.id === 'fillDotLength') {
+        const dotShapeIsCircle = (state.fillParams.fillDotShape ?? 'circle') === 'circle';
         const dotRotRow = controlsEl.querySelector('[data-ctrl="fillDotRotation"]');
-        if (dotRotRow) dotRotRow.style.display = stored > 0 ? '' : 'none';
+        if (dotRotRow) dotRotRow.style.display = (stored > 0 || !dotShapeIsCircle) ? '' : 'none';
       }
     };
     input.addEventListener('input', updateFromInput);
@@ -583,13 +589,11 @@
       fillSpiralTurns: rec.spiralTurns,
       fillSpiralTightness: rec.spiralTightness,
       fillSpiralDirection: rec.spiralDirection,
-      fillRadialSpokes: rec.radialSpokes,
       fillRadialSkip: rec.radialSkip,
       fillContourDirection: rec.contourDirection,
       fillContourStepVariance: rec.contourStepVariance,
       fillContourSimplify: rec.contourSimplify,
-      fillRadialCentralDensity: rec.centralDensity,
-      fillRadialOuterDiameter: rec.outerDiameter,
+      fillContourCenterPadding: rec.contourCenterPadding ?? 0,
       fillSensitivity: rec.sensitivity,
       penId: rec.penId,
     };

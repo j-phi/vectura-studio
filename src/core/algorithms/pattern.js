@@ -1263,27 +1263,31 @@
     return pts;
   };
 
-  const spiralFillComposite = (regions, density, angleDeg = 0, shiftX = 0, shiftY = 0, turns = 0, tightness = 0, direction = 'cw') => {
-    const bounds = compositeBounds(regions);
+  // `boundsRegions` anchors the spiral (center + maxR) and stays fixed across
+  // padding changes; `clipRegions` is what we trim the spiral against. Keeping
+  // them separate avoids the "padding wobble" where the inset polygon's bbox
+  // drifted non-monotonically and dragged the spiral center with it.
+  const spiralFillComposite = (boundsRegions, clipRegions, density, angleDeg = 0, shiftX = 0, shiftY = 0, turns = 0, tightness = 0, direction = 'cw') => {
+    const bounds = compositeBounds(boundsRegions);
     const cx = (bounds.minX + bounds.maxX) / 2 + shiftX;
     const cy = (bounds.minY + bounds.maxY) / 2 + shiftY;
     const maxR = 0.5 * Math.sqrt(
       (bounds.maxX - bounds.minX) ** 2 + (bounds.maxY - bounds.minY) ** 2
     ) + density;
     const spiralPts = _buildSpiralPts(cx, cy, density, angleDeg, maxR, turns, tightness, direction);
-    return clipPolylineToComposite(spiralPts, regions);
+    return clipPolylineToComposite(spiralPts, clipRegions);
   };
 
-  const radialFillComposite = (regions, density, angleDeg = 0, shiftX = 0, shiftY = 0, centralDensity = 1.0, outerDiameter = 1.0, radialSpokes = 0, radialSkip = 0) => {
+  const radialFillComposite = (regions, density, angleDeg = 0, shiftX = 0, shiftY = 0, radialSkip = 0) => {
     const bounds = compositeBounds(regions);
     const cx = (bounds.minX + bounds.maxX) / 2 + shiftX;
     const cy = (bounds.minY + bounds.maxY) / 2 + shiftY;
-    const maxR = (0.5 * Math.sqrt(
+    const maxR = 0.5 * Math.sqrt(
       (bounds.maxX - bounds.minX) ** 2 + (bounds.maxY - bounds.minY) ** 2
-    ) + density) * Math.max(0, outerDiameter);
-    const spokeCount = radialSpokes > 0
-      ? Math.max(4, Math.min(360, Math.round(radialSpokes)))
-      : Math.max(8, Math.round(2 * Math.PI * (maxR / 2) / density * centralDensity));
+    ) + density;
+    // Density drives the spoke count: spokes sit ~`density` apart at mid-radius,
+    // so a smaller density spacing yields more spokes (consistent with hatch/etc).
+    const spokeCount = Math.max(8, Math.round(2 * Math.PI * (maxR / 2) / density));
     const skip = Math.max(0, Math.min(5, Math.round(radialSkip)));
     const angleOffset = angleDeg * Math.PI / 180;
     const result = [];
@@ -2178,16 +2182,40 @@
     return density * (1 + variance * (r - 0.5));
   };
 
-  // Concentric inset (or outset) rings of the polygon boundary
-  const contourLines = (poly, density, direction = 'inset', stepVariance = 0, simplify = 0) => {
+  // Concentric inset (or outset) rings of the polygon boundary.
+  //
+  // density = approximate number of rings from boundary to geometric center;
+  // step is auto-calibrated as √(area/π)/density so the ring count is
+  // shape-independent (a circle and a rectangle at density=10 both yield ~10
+  // rings). Higher density → tighter spacing → more rings.
+  //
+  // centerPadding (mm): rings stop when the remaining polygon's inscribed
+  // radius drops below this value, leaving a clear centre zone. 0 = fill all
+  // the way to centre.
+  const contourLines = (poly, density, direction = 'inset', stepVariance = 0, simplify = 0, centerPadding = 0) => {
     const result = [];
     let current = poly.slice();
     const sign = direction === 'outset' ? -1 : 1;
-    for (let iter = 0; iter < 100; iter++) {
-      const step = _contourStepNoise(iter, density, stepVariance) * sign;
+    const shapeRadius = Math.sqrt(Math.abs(polyArea(poly)) / Math.PI);
+    const step0 = Math.max(0.01, shapeRadius / Math.max(0.01, density));
+    // minInradius: half a step keeps the last ring geometrically clean; centerPadding
+    // shifts the cutoff outward to leave a deliberate empty zone at centre.
+    // inradius = 2·area/perimeter (exact for circles and regular polygons).
+    const minInradius = Math.max(step0 * 0.5, centerPadding);
+    for (let iter = 0; iter < 500; iter++) {
+      const step = _contourStepNoise(iter, step0, stepVariance) * sign;
+      // Guard against centre artifacts: stop before the polygon is too small
+      // for a clean inset step (inradius = 2·area/perimeter).
+      if (sign > 0) {
+        const area = Math.abs(polyArea(current));
+        const perim = current.reduce((s, pt, i) => {
+          const nxt = current[(i + 1) % current.length];
+          return s + Math.hypot(nxt.x - pt.x, nxt.y - pt.y);
+        }, 0);
+        if (perim < 1e-6 || 2 * area / perim < minInradius) break;
+      }
       current = insetPolygon(current, step);
       if (!current || current.length < 3) break;
-      if (sign > 0 && Math.abs(polyArea(current)) < density * density) break;
       // outset has no natural inner-area termination; cap rings at 8 for outset
       if (sign < 0 && iter >= 8) break;
       let ring = [...current, current[0]];
@@ -2198,18 +2226,28 @@
   };
 
   // Contour for multi-region: insets the outer ring and segments rings around holes
-  const contourLinesComposite = (regions, density, direction = 'inset', stepVariance = 0, simplify = 0) => {
-    if (regions.length === 1) return contourLines(regions[0], density, direction, stepVariance, simplify);
+  const contourLinesComposite = (regions, density, direction = 'inset', stepVariance = 0, simplify = 0, centerPadding = 0) => {
+    if (regions.length === 1) return contourLines(regions[0], density, direction, stepVariance, simplify, centerPadding);
     const outer = regions[0];
     const holes = regions.slice(1);
     const result = [];
     let current = outer.slice();
     const sign = direction === 'outset' ? -1 : 1;
-    for (let iter = 0; iter < 100; iter++) {
-      const step = _contourStepNoise(iter, density, stepVariance) * sign;
+    const shapeRadius = Math.sqrt(Math.abs(polyArea(outer)) / Math.PI);
+    const step0 = Math.max(0.01, shapeRadius / Math.max(0.01, density));
+    const minInradius = Math.max(step0 * 0.5, centerPadding);
+    for (let iter = 0; iter < 500; iter++) {
+      const step = _contourStepNoise(iter, step0, stepVariance) * sign;
+      if (sign > 0) {
+        const area = Math.abs(polyArea(current));
+        const perim = current.reduce((s, pt, i) => {
+          const nxt = current[(i + 1) % current.length];
+          return s + Math.hypot(nxt.x - pt.x, nxt.y - pt.y);
+        }, 0);
+        if (perim < 1e-6 || 2 * area / perim < minInradius) break;
+      }
       const next = insetPolygon(current, step);
       if (!next || next.length < 3) break;
-      if (sign > 0 && Math.abs(polyArea(next)) < density * density) break;
       if (sign < 0 && iter >= 8) break;
       if (holes.length === 0) {
         let ring = [...next, next[0]];
@@ -2234,29 +2272,28 @@
     return result;
   };
 
-  const spiralFill = (region, density, angleDeg = 0, shiftX = 0, shiftY = 0, turns = 0, tightness = 0, direction = 'cw') => {
-    const bounds = loopBounds(region);
+  // See spiralFillComposite — boundsRegion anchors, clipRegion trims.
+  const spiralFill = (boundsRegion, clipRegion, density, angleDeg = 0, shiftX = 0, shiftY = 0, turns = 0, tightness = 0, direction = 'cw') => {
+    const bounds = loopBounds(boundsRegion);
     const cx = (bounds.minX + bounds.maxX) / 2 + shiftX;
     const cy = (bounds.minY + bounds.maxY) / 2 + shiftY;
     const maxR = 0.5 * Math.sqrt(
       (bounds.maxX - bounds.minX) ** 2 + (bounds.maxY - bounds.minY) ** 2
     ) + density;
     const spiralPts = _buildSpiralPts(cx, cy, density, angleDeg, maxR, turns, tightness, direction);
-    return clipPolylineToPoly(spiralPts, region);
+    return clipPolylineToPoly(spiralPts, clipRegion);
   };
 
-  const radialFill = (region, density, angleDeg = 0, shiftX = 0, shiftY = 0, centralDensity = 1.0, outerDiameter = 1.0, radialSpokes = 0, radialSkip = 0) => {
+  const radialFill = (region, density, angleDeg = 0, shiftX = 0, shiftY = 0, radialSkip = 0) => {
     const bounds = loopBounds(region);
     const cx = (bounds.minX + bounds.maxX) / 2 + shiftX;
     const cy = (bounds.minY + bounds.maxY) / 2 + shiftY;
-    const maxR = (0.5 * Math.sqrt(
+    const maxR = 0.5 * Math.sqrt(
       (bounds.maxX - bounds.minX) ** 2 + (bounds.maxY - bounds.minY) ** 2
-    ) + density) * Math.max(0, outerDiameter);
-    // C6: if radialSpokes is explicitly set (>0), use it directly; otherwise
-    // fall back to the legacy auto-derived spoke count from density+centralDensity.
-    const spokeCount = radialSpokes > 0
-      ? Math.max(4, Math.min(360, Math.round(radialSpokes)))
-      : Math.max(8, Math.round(2 * Math.PI * (maxR / 2) / density * centralDensity));
+    ) + density;
+    // Density drives the spoke count: spokes sit ~`density` apart at mid-radius,
+    // so a smaller density spacing yields more spokes (consistent with hatch/etc).
+    const spokeCount = Math.max(8, Math.round(2 * Math.PI * (maxR / 2) / density));
     const skip = Math.max(0, Math.min(5, Math.round(radialSkip)));
     const angleOffset = angleDeg * Math.PI / 180;
     const result = [];
@@ -2315,15 +2352,13 @@
     };
   };
 
-  const _emitDotStamp = (wp, dotR, shape, ca, sa, out) => {
+  const _emitDotStamp = (wp, dotR, shape, ca, sa, out, penW = 0.3) => {
     // All stamps use the rotated local frame's basis vectors (ca, sa) — so the
-    // glyph orientation follows the fill angle. wp is already in world coords.
+    // glyph orientation follows fill angle + dot rotation. wp is world coords.
     const ex = { x: ca * dotR, y: sa * dotR };       // local +x
     const ey = { x: -sa * dotR, y: ca * dotR };      // local +y
     if (shape === 'circle') {
-      // Round dot: a zero-length point renders as a filled disc under round
-      // caps; when dotLength > 0 it also marks the spiral centre. Unlike a
-      // tick it carries no orientation, so it stays round at any fill angle.
+      // Round dot: a zero-length point renders as a filled disc under round caps.
       out.push([{ x: wp.x, y: wp.y }, { x: wp.x, y: wp.y }]);
     } else if (shape === 'tick') {
       out.push([{ x: wp.x - ex.x, y: wp.y - ex.y }, { x: wp.x + ex.x, y: wp.y + ex.y }]);
@@ -2339,12 +2374,26 @@
       out.push([c10, c11]);
       out.push([c11, c01]);
       out.push([c01, c00]);
+    } else if (shape === 'filled-square') {
+      // Hatch lines along local-x direction at penW spacing — plotter-safe fill.
+      const step = Math.max(penW * 0.9, dotR * 0.15);
+      const nLines = Math.max(1, Math.round(2 * dotR / step) + 1);
+      for (let i = 0; i < nLines; i++) {
+        const t = nLines === 1 ? 0 : (i / (nLines - 1)) * 2 - 1; // -1..+1 in ey direction
+        out.push([
+          { x: wp.x + t * ey.x - ex.x, y: wp.y + t * ey.y - ex.y },
+          { x: wp.x + t * ey.x + ex.x, y: wp.y + t * ey.y + ex.y },
+        ]);
+      }
     }
   };
 
-  const dotsFill = (poly, density, dotSizeRatio = 1.0, angleDeg = 0, shiftX = 0, shiftY = 0, pattern = 'brick', shape = 'circle', jitter = 0, glyphSize = 0) => {
+  const dotsFill = (poly, density, dotSizeRatio = 1.0, angleDeg = 0, shiftX = 0, shiftY = 0, pattern = 'brick', shape = 'circle', jitter = 0, glyphSize = 0, rotationDeg = 0, penW = 0.3) => {
     const ar = angleDeg * Math.PI / 180;
     const ca = Math.cos(ar), sa = Math.sin(ar);
+    // Glyph orientation = fill angle + dot rotation (grid layout stays on angleDeg)
+    const gr = (angleDeg + rotationDeg) * Math.PI / 180;
+    const gca = Math.cos(gr), gsa = Math.sin(gr);
     const rotatePt   = ar !== 0 ? (p) => ({ x: p.x * ca + p.y * sa, y: -p.x * sa + p.y * ca }) : (p) => p;
     const unrotatePt = ar !== 0 ? (p) => ({ x: p.x * ca - p.y * sa, y:  p.x * sa + p.y * ca }) : (p) => p;
     const rotPoly = ar !== 0 ? poly.map(rotatePt) : poly;
@@ -2364,7 +2413,16 @@
     const emit = (x, y) => {
       if (!polyContainsPoint(rotPoly, x, y)) return;
       const wp = unrotatePt({ x, y });
-      _emitDotStamp(wp, dotR, shape, ca, sa, result);
+      if (shape === 'circle') {
+        _emitDotStamp(wp, dotR, shape, gca, gsa, result, penW);
+      } else {
+        // Clip non-circle stamps to the polygon so arms don't bleed past the boundary.
+        const temp = [];
+        _emitDotStamp(wp, dotR, shape, gca, gsa, temp, penW);
+        for (const seg of temp) {
+          for (const c of clipSegmentToPoly(seg[0], seg[1], poly)) result.push(c);
+        }
+      }
     };
     if (pattern === 'hex') {
       // Rows alternate; vertical spacing s * sqrt(3)/2.
@@ -2401,10 +2459,10 @@
     return result;
   };
 
-  const dotsFillComposite = (regions, density, dotSizeRatio, angleDeg, shiftX, shiftY, pattern, shape, jitter, glyphSize = 0) => {
-    if (regions.length === 1) return dotsFill(regions[0], density, dotSizeRatio, angleDeg, shiftX, shiftY, pattern, shape, jitter, glyphSize);
+  const dotsFillComposite = (regions, density, dotSizeRatio, angleDeg, shiftX, shiftY, pattern, shape, jitter, glyphSize = 0, rotationDeg = 0, penW = 0.3) => {
+    if (regions.length === 1) return dotsFill(regions[0], density, dotSizeRatio, angleDeg, shiftX, shiftY, pattern, shape, jitter, glyphSize, rotationDeg, penW);
     const out = [];
-    for (const r of regions) out.push(...dotsFill(r, density, dotSizeRatio, angleDeg, shiftX, shiftY, pattern, shape, jitter, glyphSize));
+    for (const r of regions) out.push(...dotsFill(r, density, dotSizeRatio, angleDeg, shiftX, shiftY, pattern, shape, jitter, glyphSize, rotationDeg, penW));
     return out;
   };
 
@@ -3902,14 +3960,14 @@
       angle = 0, amplitude = 1.0, dotSize = 1.0,
       dotLength = 0, dotRotation = 0, penWidth = 0.3,
       padding = 0, shiftX = 0, shiftY = 0,
-      dotPattern = 'brick', centralDensity = 1.0, outerDiameter = 1.0, axes = 3, polyTile = 'grid',
+      dotPattern = 'brick', axes = 3, polyTile = 'grid',
       waveSmoothing = 1.0, waveFrequency = 1.0,
       dotShape = 'circle', dotJitter = 0,
       lineCount = 1,
       polyPadding = 0, polyRotation = 0, polyRotationStep = 0, polyScaleStep = 0,
       spiralTurns = 0, spiralTightness = 0, spiralDirection = 'cw',
-      radialSpokes = 0, radialSkip = 0,
-      contourDirection = 'inset', contourStepVariance = 0, contourSimplify = 0,
+      radialSkip = 0,
+      contourDirection = 'inset', contourStepVariance = 0, contourSimplify = 0, contourCenterPadding = 0,
       // B1 Flow Field
       flowFieldType = 'perlin', flowNoiseScale = 6.0, flowSeed = 1, flowTraceLen = 60, flowSeparation = 2.5,
       // B2 Voronoi
@@ -3961,11 +4019,21 @@
         case 'zigzag':      return waveLinesUnified(region, density, angle, amplitude, 0.0, 1.0, shiftX, shiftY);
         case 'dots':        return dotShape === 'circle'
           ? expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation)
-          : dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, dotShape, dotJitter, dotLength);
+          : dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, dotShape, dotJitter, dotLength, dotRotation, penWidth);
         case 'stipple':     return expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation);
-        case 'contour':     return contourLines(region, density, contourDirection, contourStepVariance, contourSimplify);
-        case 'spiral':      return spiralFill(region, density, angle, shiftX, shiftY, spiralTurns, spiralTightness, spiralDirection);
-        case 'radial':      return radialFill(region, density, angle, shiftX, shiftY, centralDensity, outerDiameter, radialSpokes, radialSkip);
+        case 'contour':     return contourLines(region, density, contourDirection, contourStepVariance, contourSimplify, contourCenterPadding);
+        case 'spiral': {
+          // Slider "Density" is intuitive when higher = denser. Internally
+          // the Archimedean ring spacing is the *inverse* (smaller spacing
+          // → denser spiral), so we map density → 1/density. At the default
+          // value of 1 this is a no-op (spacing = 1mm), so saved fills with
+          // density=1 render the same before and after this change.
+          const spacing = density > 0 ? 1 / density : 1;
+          // Bounds: original `regions[0]`; clip: padded `region`. This keeps
+          // the spiral center anchored as padding sweeps.
+          return spiralFill(regions[0], region, spacing, angle, shiftX, shiftY, spiralTurns, spiralTightness, spiralDirection);
+        }
+        case 'radial':      return radialFill(region, density, angle, shiftX, shiftY, radialSkip);
         case 'grid':        return expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, 'grid', 'tick', dotJitter), dotLength, penWidth, dotRotation);
         case 'meander':     return meanderLines(region, density, angle, shiftX, shiftY);
         case 'polygonal':   return polygonalLines(region, density, angle, shiftX, shiftY, axes, polyTile, polyPadding, polyRotation, polyRotationStep, polyScaleStep);
@@ -4000,11 +4068,14 @@
       case 'zigzag':      return waveLinesUnifiedComposite(effectiveRegions, density, angle, amplitude, 0.0, 1.0, shiftX, shiftY);
       case 'dots':        return dotShape === 'circle'
         ? expandDotsToSpirals(dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation)
-        : dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, dotPattern, dotShape, dotJitter, dotLength);
+        : dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, dotPattern, dotShape, dotJitter, dotLength, dotRotation, penWidth);
       case 'stipple':     return expandDotsToSpirals(dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation);
-      case 'contour':     return contourLinesComposite(effectiveRegions, density, contourDirection, contourStepVariance, contourSimplify);
-      case 'spiral':      return spiralFillComposite(effectiveRegions, density, angle, shiftX, shiftY, spiralTurns, spiralTightness, spiralDirection);
-      case 'radial':      return radialFillComposite(effectiveRegions, density, angle, shiftX, shiftY, centralDensity, outerDiameter, radialSpokes, radialSkip);
+      case 'contour':     return contourLinesComposite(effectiveRegions, density, contourDirection, contourStepVariance, contourSimplify, contourCenterPadding);
+      case 'spiral': {
+        const spacing = density > 0 ? 1 / density : 1;
+        return spiralFillComposite(regions, effectiveRegions, spacing, angle, shiftX, shiftY, spiralTurns, spiralTightness, spiralDirection);
+      }
+      case 'radial':      return radialFillComposite(effectiveRegions, density, angle, shiftX, shiftY, radialSkip);
       case 'grid':        return expandDotsToSpirals(dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, 'grid', 'tick', dotJitter), dotLength, penWidth, dotRotation);
       case 'meander':     return meanderLinesComposite(effectiveRegions, density, angle, shiftX, shiftY);
       case 'polygonal':   return polygonalLinesComposite(effectiveRegions, density, angle, shiftX, shiftY, axes, polyTile, polyPadding, polyRotation, polyRotationStep, polyScaleStep);
