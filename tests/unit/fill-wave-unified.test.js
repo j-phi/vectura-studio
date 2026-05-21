@@ -126,4 +126,26 @@ describe('Wave fill (C1 consolidation)', () => {
     // harmonics were silently dropped when smoothing=0.
     expect(Math.abs(totalAngleVariation(h3) - totalAngleVariation(h1))).toBeGreaterThan(0.001);
   });
+
+  test('smoothing=0 paths carry meta.straight=true (enables straight-line rendering)', () => {
+    const paths = gen(base({ fillType: 'wave', waveSmoothing: 0, waveHarmonics: 1 }));
+    expect(paths.length).toBeGreaterThan(0);
+    for (const p of paths) expect(p.meta?.straight).toBe(true);
+  });
+
+  test('smoothing=1 paths do NOT carry meta.straight (uses curve rendering)', () => {
+    const paths = gen(base({ fillType: 'wave', waveSmoothing: 1, waveHarmonics: 1 }));
+    expect(paths.length).toBeGreaterThan(0);
+    for (const p of paths) expect(p.meta?.straight).toBeFalsy();
+  });
+
+  test('waveHarmonics=3 has greater amplitude than waveHarmonics=1 at smoothing=0', () => {
+    // Triangle side is no longer normalized by harmonic count — h>1 adds richness
+    // without dividing down the base amplitude.
+    const longest = (paths) => paths.reduce((acc, p) => (p.length > acc.length ? p : acc), []);
+    const h1 = longest(gen(base({ fillType: 'wave', waveSmoothing: 0, waveHarmonics: 1, amplitude: 2 })));
+    const h3 = longest(gen(base({ fillType: 'wave', waveSmoothing: 0, waveHarmonics: 3, amplitude: 2 })));
+    const peakY = (p) => Math.max(...p.map((pt) => Math.abs(pt.y - 50)));
+    expect(peakY(h3)).toBeGreaterThanOrEqual(peakY(h1));
+  });
 });

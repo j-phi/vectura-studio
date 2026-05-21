@@ -1124,10 +1124,11 @@
     let normDen = 1;
     if (harmonics >= 2) { harmonic += 0.5 * Math.sin(phase * TAU * 2); normDen += 0.5; }
     if (harmonics >= 3) { harmonic += 0.33 * Math.sin(phase * TAU * 3); normDen += 0.33; }
-    // Apply harmonics to BOTH blend targets so the effect is visible at any
-    // smoothing value — not only when the sine side is dominant.
+    // Sine: normalize so amplitude stays ≈1 regardless of harmonic count.
+    // Triangle: add harmonics without normalization — they add complexity/richness;
+    // dividing by normDen was incorrectly reducing triangle amplitude at h>1.
     const sine = (Math.sin(phase * TAU) + harmonic) / normDen;
-    const tri  = (triBase              + harmonic) / normDen;
+    const tri  =  triBase               + harmonic;
     const s = Math.max(0, Math.min(1, smoothing));
     return s * sine + (1 - s) * tri;
   };
@@ -1160,12 +1161,15 @@
         const phase = (xc + rotShiftX) / wavelength;
         rawPts.push(unrotatePt({ x: xc, y: cy + amp * _waveSample(phase, s, h) }));
       }
-      for (const seg of clipPolylineToComposite(rawPts, regions)) result.push(seg);
+      for (const seg of clipPolylineToComposite(rawPts, regions)) {
+        if (s < 0.01) { if (!seg.meta) seg.meta = {}; seg.meta.straight = true; }
+        result.push(seg);
+      }
     }
     return result;
   };
 
-  const waveLinesUnified = (poly, density, angleDeg = 0, amplitude = 1.0, smoothing = 1.0, harmonics = 1, shiftX = 0, shiftY = 0) => {
+  const waveLinesUnified =(poly, density, angleDeg = 0, amplitude = 1.0, smoothing = 1.0, harmonics = 1, shiftX = 0, shiftY = 0) => {
     const ar = angleDeg * Math.PI / 180;
     const ca = Math.cos(ar), sa = Math.sin(ar);
     const unrotatePt = ar !== 0 ? (p) => ({ x: p.x * ca - p.y * sa, y: p.x * sa + p.y * ca }) : (p) => p;
@@ -1191,7 +1195,10 @@
         const phase = (xc + rotShiftX) / wavelength;
         rawPts.push(unrotatePt({ x: xc, y: cy + amp * _waveSample(phase, s, h) }));
       }
-      for (const seg of clipPolylineToPoly(rawPts, poly)) result.push(seg);
+      for (const seg of clipPolylineToPoly(rawPts, poly)) {
+        if (s < 0.01) { if (!seg.meta) seg.meta = {}; seg.meta.straight = true; }
+        result.push(seg);
+      }
     }
     return result;
   };

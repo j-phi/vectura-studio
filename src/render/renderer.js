@@ -4713,7 +4713,7 @@
 
     tracePath(path, useCurves) {
       if (!path || path.length < 2) return;
-      if (!useCurves || path.length < 3) {
+      if (!useCurves || path.meta?.straight || path.length < 3) {
         this.ctx.moveTo(path[0].x, path[0].y);
         for (let i = 1; i < path.length; i++) this.ctx.lineTo(path[i].x, path[i].y);
         return;
