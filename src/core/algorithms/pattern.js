@@ -1236,7 +1236,7 @@
   // revolutions so the path stays inside the region's bbox circle.
   const _buildSpiralPts = (cx, cy, density, angleDeg, maxR, turns, tightness, direction) => {
     const angleOffset = angleDeg * Math.PI / 180;
-    const t = Math.max(0, Math.min(1, tightness));
+    const t = 1 - Math.max(0, Math.min(1, tightness));
     const sign = direction === 'ccw' ? -1 : 1;
     // Archimedean: r = (θ/2π) · density → θ_max for full bbox = (maxR/density)·2π
     // Log-spiral: r = r0 · exp(k·θ), pick k so r doubles every 2π → k = ln2/2π.

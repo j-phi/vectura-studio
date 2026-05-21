@@ -55,7 +55,7 @@
     fillPolyScaleStep: 0,
     fillWaveSmoothing: 1.0,
     fillWaveFrequency: 1.0,
-    fillSpiralTightness: 0.5,
+    fillSpiralTightness: 1,
     fillSpiralDirection: 'cw',
     fillRadialSkip: 0,
     fillContourDirection: 'inset',
@@ -130,7 +130,7 @@
   // for display + input. Angle entries render as div-based dials matching
   // the rest of the UI (algo-config-panel, noise-rack-panel).
   const VARIANT_CONTROLS = [
-    { id: 'fillDensity',                 label: 'Density',           type: 'range',  min: 0.1,  max: 50,  step: 0.1,  showAlways: true, maxByMode: { contour: 100 } },
+    { id: 'fillDensity',                 label: 'Density',           type: 'range',  min: 0.1,  max: 50,  step: 0.1,  showAlways: true, maxByMode: { contour: 100, spiral: 2 } },
     { id: 'fillAngle',                   label: 'Angle',             type: 'angle',  capKey: 'angle' },
     { id: 'fillAmplitude',               label: 'Amplitude',         type: 'range',  min: 0,    max: 5.0, step: 0.05, capKey: 'amplitude' },
     { id: 'fillDotShape',                label: 'Dot Shape',         type: 'select', options: [{ value: 'circle', label: 'Circle' }, { value: 'square', label: 'Square' }, { value: 'filled-square', label: 'Filled Square' }, { value: 'cross', label: 'Cross' }, { value: 'tick', label: 'Tick' }], capKey: 'dotShape' },
