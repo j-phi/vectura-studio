@@ -3841,11 +3841,18 @@
 
         if (!_groupHandled) {
           if (topLayer && !this.selectedLayerIds.has(topLayer.id)) {
-            const maskGroup = this._getMaskGroupLayers(topLayer);
-            if (maskGroup && maskGroup.length > 1) {
-              this.setSelection(maskGroup.map(l => l.id), topLayer.id);
-            } else {
-              this.selectLayer(topLayer);
+            // If the clicked layer's mask ancestor is already selected, keep the existing
+            // selection rather than auto-expanding to the whole mask group. The user is
+            // dragging within the mask parent's bounds, not trying to re-select.
+            const maskAncestors = this.engine.getAncestorMaskLayers?.(topLayer) ?? [];
+            const maskAncestorSelected = maskAncestors.some((a) => this.selectedLayerIds.has(a.id));
+            if (!maskAncestorSelected) {
+              const maskGroup = this._getMaskGroupLayers(topLayer);
+              if (maskGroup && maskGroup.length > 1) {
+                this.setSelection(maskGroup.map(l => l.id), topLayer.id);
+              } else {
+                this.selectLayer(topLayer);
+              }
             }
           } else if (topLayer && this.selectedLayerIds.size > 1 && !modifiers.shift && !modifiers.meta && !modifiers.ctrl) {
             this._pendingSingleSelect = topLayer;
