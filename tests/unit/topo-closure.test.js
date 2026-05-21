@@ -126,8 +126,8 @@ describe('Topo mapping closure', () => {
       truncate: true,
     };
     const baseParams = {
-      resolution: 120,
-      levels: 30,
+      resolution: 50,
+      levels: 15,
       noiseType: 'simplex',
       noiseScale: 0.003,
       noiseOffsetX: 0,
