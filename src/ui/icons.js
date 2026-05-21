@@ -257,14 +257,8 @@
     wave:       () => pbSvg(PB_FRAME + '<path d="M3.5 11 Q5.75 6 8 11 T12.5 11 T17 11 T18.5 9.5"/>'),
 
     // dots: loose, irregular pattern of 6 filled circles — distinct from
-    // halftone (graded grid) and stripes (banded). Mid-density swatch.
+    // stripes (banded). Mid-density swatch.
     dots:       () => pbSvg(PB_FRAME + '<circle cx="6"  cy="6"   r="1.1" fill="currentColor"/><circle cx="11" cy="5.5" r="1.1" fill="currentColor"/><circle cx="16" cy="7"   r="1.1" fill="currentColor"/><circle cx="7.5" cy="11.5" r="1.1" fill="currentColor"/><circle cx="13.5" cy="12" r="1.1" fill="currentColor"/><circle cx="9.5" cy="16" r="1.1" fill="currentColor"/><circle cx="15.5" cy="15.5" r="1.1" fill="currentColor"/>'),
-
-    // flowfield: 3 smooth parallel-ish streamlines following a noise field.
-    flowfield:  () => pbSvg(PB_FRAME + '<path d="M3.5 7 C7 5, 11 9, 14 7 T18.5 7"/><path d="M3.5 11 C7 9, 11 13, 14 11 T18.5 11"/><path d="M3.5 15 C7 13, 11 17, 14 15 T18.5 15"/>'),
-
-    // voronoi: 5 irregular polygonal cells with shared edges (cracked earth).
-    voronoi:    () => pbSvg(PB_FRAME + '<path d="M3 7 L9 4 L15 6 L18 11 L16 17 L9 18 L3 14 Z"/><path d="M9 4 L10 11 L18 11"/><path d="M10 11 L16 17"/><path d="M10 11 L3 14"/><path d="M10 11 L9 18"/>'),
 
     // truchet: 2x2 grid of quarter-arc tiles connecting tile edges into a
     // continuous weave. Tile size = 7. Each arc is a 90° arc of r=3.5.
@@ -293,34 +287,6 @@
       '<line x1="9"  y1="14" x2="14" y2="14"/>'
     ),
 
-    // scribble: one tangled but readable continuous loop, like a doodle.
-    scribble:   () => pbSvg(PB_FRAME + '<path d="M5 14 C4 11, 7 7, 10 9 C13 11, 8 14, 6 12 C4 10, 9 5, 13 7 C17 9, 14 15, 11 15 C8 15, 12 11, 16 14"/>'),
-
-    // lsystem: small bare tree silhouette with 3 branch levels.
-    lsystem:    () => pbSvg(PB_FRAME +
-      '<line x1="11" y1="18" x2="11" y2="12"/>' +
-      '<line x1="11" y1="12" x2="7"  y2="9"/>' +
-      '<line x1="11" y1="12" x2="15" y2="9"/>' +
-      '<line x1="7"  y1="9"  x2="5"  y2="6"/>' +
-      '<line x1="7"  y1="9"  x2="8.5" y2="5.5"/>' +
-      '<line x1="15" y1="9"  x2="13.5" y2="5.5"/>' +
-      '<line x1="15" y1="9"  x2="17" y2="6"/>'
-    ),
-
-    // halftone: 3x3 grid of dots, sizes growing from small (top-left) to
-    // large (bottom-right) — gradient density encoded as radius.
-    halftone:   () => pbSvg(PB_FRAME +
-      '<circle cx="6"  cy="6"  r="0.5" fill="currentColor"/>' +
-      '<circle cx="11" cy="6"  r="0.9" fill="currentColor"/>' +
-      '<circle cx="16" cy="6"  r="1.2" fill="currentColor"/>' +
-      '<circle cx="6"  cy="11" r="0.9" fill="currentColor"/>' +
-      '<circle cx="11" cy="11" r="1.4" fill="currentColor"/>' +
-      '<circle cx="16" cy="11" r="1.7" fill="currentColor"/>' +
-      '<circle cx="6"  cy="16" r="1.2" fill="currentColor"/>' +
-      '<circle cx="11" cy="16" r="1.7" fill="currentColor"/>' +
-      '<circle cx="16" cy="16" r="2.1" fill="currentColor"/>'
-    ),
-
     // stripes: 4 vertical bands, alternating filled and empty.
     stripes:    () => pbSvg(PB_FRAME +
       '<rect x="4"  y="4" width="3" height="14" fill="currentColor" stroke="none" opacity="0.85"/>' +
@@ -329,10 +295,6 @@
       '<rect x="13" y="4" width="3" height="14" fill="none"/>' +
       '<rect x="16" y="4" width="2" height="14" fill="currentColor" stroke="none" opacity="0.85"/>'
     ),
-
-    // spirograph: 5-lobed rosette curve, single closed loop with bilateral
-    // symmetry. Built from 5 cubic petals around centre (11, 11).
-    spirograph: () => pbSvg(PB_FRAME + '<path d="M11 4 C13.5 7, 17 7.5, 17.5 10.5 C18 13.5, 14 14, 13 17 C12 19.5, 10 19.5, 9 17 C8 14, 4 13.5, 4.5 10.5 C5 7.5, 8.5 7, 11 4 Z"/>'),
 
     // weave: basket-weave — 2 horizontal strands + 2 vertical strands, with
     // explicit over/under at intersections (gaps in occluded strand).

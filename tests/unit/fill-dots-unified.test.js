@@ -84,6 +84,14 @@ describe('Dots fill (C2 consolidation)', () => {
     expect(xs(gridPaths)).not.toBe(xs(jitPaths));
   });
 
+  test('Dot Size = 0 with shape=circle emits round point dots, not angle-oriented ovals', () => {
+    const paths = gen(base({ fillType: 'dots', dotPattern: 'grid', dotShape: 'circle', dotLength: 0, angle: 45 }));
+    expect(paths.length).toBeGreaterThan(0);
+    // a round dot is a zero-length segment (start === end); a tick/oval would
+    // have endpoints offset along the fill angle.
+    expect(paths.every((p) => p[0].x === p[p.length - 1].x && p[0].y === p[p.length - 1].y)).toBe(true);
+  });
+
   test('Dot Size > 0 with shape=square renders straight glyph edges, not spirals', () => {
     const paths = gen(base({ fillType: 'dots', dotPattern: 'grid', dotShape: 'square', dotLength: 4 }));
     expect(paths.length).toBeGreaterThan(0);
