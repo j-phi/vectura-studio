@@ -360,11 +360,12 @@
       const vh  = window.innerHeight;
 
       let left = 0, top = 0;
-      if (placement === 'right')  { left = r.right + GAP;                top = r.top + r.height / 2 - ph / 2; }
-      if (placement === 'left')   { left = r.left  - pw - GAP;           top = r.top + r.height / 2 - ph / 2; }
-      if (placement === 'bottom') { left = r.left  + r.width / 2 - pw/2; top = r.bottom + GAP; }
-      if (placement === 'top')    { left = r.left  + r.width / 2 - pw/2; top = r.top - ph - GAP; }
-      if (placement === 'over')   { left = r.left  + r.width / 2 - pw/2; top = r.top  + r.height / 2 - ph / 2; }
+      if (placement === 'right')       { left = r.right + GAP;                top = r.top + r.height / 2 - ph / 2; }
+      if (placement === 'left')        { left = r.left  - pw - GAP;           top = r.top + r.height / 2 - ph / 2; }
+      if (placement === 'left-bottom') { left = r.left  - pw - GAP;           top = r.bottom - ph; }
+      if (placement === 'bottom')      { left = r.left  + r.width / 2 - pw/2; top = r.bottom + GAP; }
+      if (placement === 'top')         { left = r.left  + r.width / 2 - pw/2; top = r.top - ph - GAP; }
+      if (placement === 'over')        { left = r.left  + r.width / 2 - pw/2; top = r.top  + r.height / 2 - ph / 2; }
 
       left += offsetX;
       top  += offsetY;
@@ -712,9 +713,9 @@
         },
         {
           title: 'Masking Complete!',
-          target: null,
+          target: '#right-pane',
           highlight: [],
-          placement: 'center',
+          placement: 'left-bottom',
           hideBack: true,
           body:
             '<p>The Wavetable is now clipped to the circle\'s outline. Only art inside the circle shows through.</p>' +
@@ -776,10 +777,7 @@
             'then <b>drag</b> to move it. Both layers travel together as one unit.',
           hideNext: true,
           onEnter: () => {
-            // Normalize viewport after Cmd+G so the shapes are visible at a comfortable zoom.
-            const app = getApp();
-            if (app?.renderer?.center) app.renderer.center();
-            app?.render?.();
+            getApp()?.render?.();
             return null;
           },
           completion: When.predicate(() => {
@@ -795,9 +793,9 @@
         },
         {
           title: 'Grouped!',
-          target: null,
+          target: '#right-pane',
           highlight: [],
-          placement: 'center',
+          placement: 'left-bottom',
           hideBack: true,
           body:
             '<p>Your layers move together as a group. Click the group folder to expand or collapse it, and drag layers in or out to reorganize.</p>' +
@@ -837,9 +835,9 @@
         },
         {
           title: 'Expanded!',
-          target: null,
+          target: '#right-pane',
           highlight: [],
-          placement: 'center',
+          placement: 'left-bottom',
           hideBack: true,
           body:
             '<p>Each individual path is now its own layer. You can delete, reorder, recolor, or animate them independently.</p>' +
@@ -1156,7 +1154,10 @@
       }
 
       // Fit viewport to freshly-seeded canvas so the user sees the whole document.
+      // Set userHasManipulated=true after center() so ResizeObserver won't re-center on
+      // subsequent panel layout shifts (e.g. left pane resizing when a layer is selected).
       if (app?.renderer?.center) app.renderer.center();
+      if (app?.renderer) app.renderer.userHasManipulated = true;
       app?.render?.();
       getUI()?.renderLayers?.();
     }

@@ -45,8 +45,11 @@
 
   // Per-algorithm capability flags.  padding is always true for non-none fills;
   // omitting it here since the panel always shows it when fill is active.
+  // `density: false` hides the global Fill Density slider for fills that have
+  // their own per-fill spacing knob (e.g. mazeCellSize, weaveStrandWidth).
+  // Default is `density: true` — only the six B-series fills below opt out.
   const FILL_CAPS = {
-    none:        { angle: false, amplitude: false, dotSize: false, shift: false },
+    none:        { angle: false, amplitude: false, dotSize: false, shift: false, density: false },
     hatch:       { angle: true,  amplitude: false, dotSize: false, shift: true,  lineCount: true },
     vhatch:      { angle: true,  amplitude: false, dotSize: false, shift: true  },
     dhatch45:    { angle: true,  amplitude: false, dotSize: false, shift: true  },
@@ -65,16 +68,16 @@
     meander:     { angle: true,  amplitude: false, dotSize: false, shift: true  },
     triaxial:    { angle: true,  amplitude: false, dotSize: false, shift: true  },
     polygonal:   { angle: true,  amplitude: false, dotSize: false, shift: true,  axes: true, polyTile: true, polyPadding: true, polyRotation: true, polyRotationStep: true, polyScaleStep: true },
-    flowfield:   { angle: false, amplitude: false, dotSize: false, shift: false, flowFieldType: true, flowNoiseScale: true, flowSeed: true, flowTraceLen: true, flowSeparation: true },
+    flowfield:   { angle: false, amplitude: false, dotSize: false, shift: false, density: false, flowFieldType: true, flowNoiseScale: true, flowSeed: true, flowTraceLen: true, flowSeparation: true },
     voronoi:     { angle: false, amplitude: false, dotSize: false, shift: false, voronoiSeeds: true, voronoiJitter: true, voronoiStroke: true, voronoiSeedMode: true },
-    truchet:     { angle: false, amplitude: false, dotSize: false, shift: false, truchetTileSet: true, truchetTileSize: true, truchetSeed: true, truchetRotations: true },
-    maze:        { angle: false, amplitude: false, dotSize: false, shift: false, mazeCellSize: true, mazeAlgorithm: true, mazeBranchBias: true, mazeSeed: true, mazeWallMode: true },
+    truchet:     { angle: false, amplitude: false, dotSize: false, shift: false, density: false, truchetTileSet: true, truchetTileSize: true, truchetSeed: true, truchetRotations: true },
+    maze:        { angle: false, amplitude: false, dotSize: false, shift: false, density: false, mazeCellSize: true, mazeAlgorithm: true, mazeBranchBias: true, mazeSeed: true, mazeWallMode: true },
     scribble:    { angle: false, amplitude: false, dotSize: false, shift: false, scribbleSmoothness: true, scribbleSeed: true, scribbleCoverage: true },
-    lsystem:     { angle: false, amplitude: false, dotSize: false, shift: false, lsysPreset: true, lsysIterations: true, lsysAngleVariance: true, lsysSeed: true, lsysScale: true },
+    lsystem:     { angle: false, amplitude: false, dotSize: false, shift: false, density: false, lsysPreset: true, lsysIterations: true, lsysAngleVariance: true, lsysSeed: true, lsysScale: true },
     halftone:    { angle: false, amplitude: false, dotSize: false, shift: false, halftoneSource: true, halftoneMinR: true, halftoneMaxR: true, halftoneFrequency: true, halftoneAngle: true, halftoneInvert: true },
     stripes:     { angle: false, amplitude: false, dotSize: false, shift: false, stripeBandWidth: true, stripeGap: true, stripeAngle: true, stripePrimary: true, stripeSecondary: true, stripeSecondaryDensity: true },
-    spirograph:  { angle: false, amplitude: false, dotSize: false, shift: false, spiroRatioA: true, spiroRatioB: true, spiroPhase: true, spiroTurns: true, spiroDeformation: true },
-    weave:       { angle: false, amplitude: false, dotSize: false, shift: false, weavePattern: true, weaveStrandWidth: true, weaveGap: true, weaveAngle: true, weaveOver: true, weaveUnder: true },
+    spirograph:  { angle: false, amplitude: false, dotSize: false, shift: false, density: false, spiroRatioA: true, spiroRatioB: true, spiroPhase: true, spiroTurns: true, spiroDeformation: true },
+    weave:       { angle: false, amplitude: false, dotSize: false, shift: false, density: false, weavePattern: true, weaveStrandWidth: true, weaveGap: true, weaveAngle: true, weaveOver: true, weaveUnder: true },
     // Rainfall-specific
     hash:        { angle: true,  amplitude: false, dotSize: false, shift: true  },
     snake:       { angle: true,  amplitude: true,  dotSize: false, shift: true  },
@@ -200,7 +203,13 @@
         min: 0.1,
         max: 50,
         step: 0.1,
-        showIf: isActive,
+        // Honour FILL_CAPS.density. Default-true (undefined → true) so every
+        // legacy fill keeps the slider; the six B-series fills that own their
+        // own spacing knob opt out via `density: false`.
+        // Additionally hide for radial when the user has explicitly set
+        // radialSpokes > 0 — the C6 override path ignores density entirely.
+        showIf: (p) => isActive(p) && caps(p).density !== false
+          && !(p[typeParam] === 'radial' && (p[radialSpokesParam] || 0) > 0),
         infoKey: `${descKeyPrefix}.density`,
       },
       {
@@ -429,7 +438,9 @@
         min: 0.1,
         max: 4.0,
         step: 0.1,
-        showIf: (p) => isActive(p) && !!caps(p).radialCentralDensity,
+        // Auto-derived from spokes when radialSpokes > 0 — hide to avoid confusion.
+        showIf: (p) => isActive(p) && !!caps(p).radialCentralDensity
+          && (p[radialSpokesParam] || 0) === 0,
         infoKey: `${descKeyPrefix}.radialCentralDensity`,
       },
       {
@@ -503,11 +514,11 @@
       { id: voronoiSeedModeParam, label: 'Seed Mode', type: 'select', options: [{ value: 'random', label: 'Random' }, { value: 'hexgrid', label: 'Hex Grid' }, { value: 'square', label: 'Square' }], showIf: (p) => isActive(p) && !!caps(p).voronoiSeedMode, infoKey: `${descKeyPrefix}.voronoiSeedMode` },
       // B3 Truchet
       { id: truchetTileSetParam, label: 'Tile Set', type: 'select', options: [{ value: 'quarter-arcs', label: 'Quarter Arcs' }, { value: 'diagonals', label: 'Diagonals' }, { value: 'dots-and-lines', label: 'Dots & Lines' }, { value: 'triangle-split', label: 'Triangle Split' }, { value: 'scribble', label: 'Scribble' }], showIf: (p) => isActive(p) && !!caps(p).truchetTileSet, infoKey: `${descKeyPrefix}.truchetTileSet` },
-      { id: truchetTileSizeParam, label: 'Tile Size', type: 'range', min: 1, max: 30, step: 0.5, showIf: (p) => isActive(p) && !!caps(p).truchetTileSize, infoKey: `${descKeyPrefix}.truchetTileSize` },
+      { id: truchetTileSizeParam, label: 'Tile Spacing', type: 'range', min: 1, max: 30, step: 0.5, showIf: (p) => isActive(p) && !!caps(p).truchetTileSize, infoKey: `${descKeyPrefix}.truchetTileSize` },
       { id: truchetSeedParam, label: 'Seed', type: 'range', min: 0, max: 999, step: 1, showIf: (p) => isActive(p) && !!caps(p).truchetSeed, infoKey: `${descKeyPrefix}.truchetSeed` },
       { id: truchetRotationsParam, label: 'Rotations', type: 'range', min: 1, max: 4, step: 1, showIf: (p) => isActive(p) && !!caps(p).truchetRotations, infoKey: `${descKeyPrefix}.truchetRotations` },
       // B4 Maze
-      { id: mazeCellSizeParam, label: 'Cell Size', type: 'range', min: 1, max: 20, step: 0.5, showIf: (p) => isActive(p) && !!caps(p).mazeCellSize, infoKey: `${descKeyPrefix}.mazeCellSize` },
+      { id: mazeCellSizeParam, label: 'Cell Spacing', type: 'range', min: 1, max: 20, step: 0.5, showIf: (p) => isActive(p) && !!caps(p).mazeCellSize, infoKey: `${descKeyPrefix}.mazeCellSize` },
       { id: mazeAlgorithmParam, label: 'Algorithm', type: 'select', options: [{ value: 'dfs', label: 'DFS' }, { value: 'wilson', label: 'Wilson' }, { value: 'eller', label: 'Eller' }, { value: 'recursive-division', label: 'Recursive Division' }], showIf: (p) => isActive(p) && !!caps(p).mazeAlgorithm, infoKey: `${descKeyPrefix}.mazeAlgorithm` },
       { id: mazeBranchBiasParam, label: 'Branch Bias', type: 'range', min: 0, max: 1, step: 0.05, showIf: (p) => isActive(p) && !!caps(p).mazeBranchBias, infoKey: `${descKeyPrefix}.mazeBranchBias` },
       { id: mazeSeedParam, label: 'Seed', type: 'range', min: 0, max: 999, step: 1, showIf: (p) => isActive(p) && !!caps(p).mazeSeed, infoKey: `${descKeyPrefix}.mazeSeed` },
@@ -526,16 +537,16 @@
       { id: halftoneSourceParam, label: 'Source', type: 'select', options: [{ value: 'radial', label: 'Radial' }, { value: 'linear', label: 'Linear' }, { value: 'noise', label: 'Noise' }, { value: 'distance-to-edge', label: 'Distance to Edge' }], showIf: (p) => isActive(p) && !!caps(p).halftoneSource, infoKey: `${descKeyPrefix}.halftoneSource` },
       { id: halftoneMinRParam, label: 'Min Radius', type: 'range', min: 0.05, max: 3, step: 0.05, showIf: (p) => isActive(p) && !!caps(p).halftoneMinR, infoKey: `${descKeyPrefix}.halftoneMinR` },
       { id: halftoneMaxRParam, label: 'Max Radius', type: 'range', min: 0.1, max: 5, step: 0.05, showIf: (p) => isActive(p) && !!caps(p).halftoneMaxR, infoKey: `${descKeyPrefix}.halftoneMaxR` },
-      { id: halftoneFrequencyParam, label: 'Frequency', type: 'range', min: 0.5, max: 20, step: 0.1, showIf: (p) => isActive(p) && !!caps(p).halftoneFrequency, infoKey: `${descKeyPrefix}.halftoneFrequency` },
+      { id: halftoneFrequencyParam, label: 'Noise Grid Spacing', type: 'range', min: 0.5, max: 20, step: 0.1, showIf: (p) => isActive(p) && !!caps(p).halftoneFrequency && p[halftoneSourceParam] === 'noise', infoKey: `${descKeyPrefix}.halftoneFrequency` },
       { id: halftoneAngleParam, label: 'Gradient Angle', type: 'angle', min: 0, max: 360, step: 1, displayUnit: '°', showIf: (p) => isActive(p) && !!caps(p).halftoneAngle, infoKey: `${descKeyPrefix}.halftoneAngle` },
       { id: halftoneInvertParam, label: 'Invert', type: 'select', options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }], showIf: (p) => isActive(p) && !!caps(p).halftoneInvert, infoKey: `${descKeyPrefix}.halftoneInvert` },
       // B8 Stripes
-      { id: stripeBandWidthParam, label: 'Band Width', type: 'range', min: 0.5, max: 50, step: 0.1, showIf: (p) => isActive(p) && !!caps(p).stripeBandWidth, infoKey: `${descKeyPrefix}.stripeBandWidth` },
+      { id: stripeBandWidthParam, label: 'Band Spacing', type: 'range', min: 0.5, max: 50, step: 0.1, showIf: (p) => isActive(p) && !!caps(p).stripeBandWidth, infoKey: `${descKeyPrefix}.stripeBandWidth` },
       { id: stripeGapParam, label: 'Gap', type: 'range', min: 0, max: 50, step: 0.1, showIf: (p) => isActive(p) && !!caps(p).stripeGap, infoKey: `${descKeyPrefix}.stripeGap` },
       { id: stripeAngleParam, label: 'Angle', type: 'angle', min: 0, max: 360, step: 1, displayUnit: '°', showIf: (p) => isActive(p) && !!caps(p).stripeAngle, infoKey: `${descKeyPrefix}.stripeAngle` },
       { id: stripePrimaryParam, label: 'Primary Fill', type: 'select', options: fillTypeOptions.filter((o) => o.value !== 'none' && o.value !== 'stripes'), showIf: (p) => isActive(p) && !!caps(p).stripePrimary, infoKey: `${descKeyPrefix}.stripePrimary` },
       { id: stripeSecondaryParam, label: 'Secondary Fill', type: 'select', options: fillTypeOptions.filter((o) => o.value !== 'stripes'), showIf: (p) => isActive(p) && !!caps(p).stripeSecondary, infoKey: `${descKeyPrefix}.stripeSecondary` },
-      { id: stripeSecondaryDensityParam, label: 'Secondary Density', type: 'range', min: 0.1, max: 10, step: 0.1, showIf: (p) => isActive(p) && !!caps(p).stripeSecondaryDensity, infoKey: `${descKeyPrefix}.stripeSecondaryDensity` },
+      { id: stripeSecondaryDensityParam, label: 'Secondary Density', type: 'range', min: 0.1, max: 10, step: 0.1, showIf: (p) => isActive(p) && !!caps(p).stripeSecondaryDensity && p[stripeSecondaryParam] && p[stripeSecondaryParam] !== 'none', infoKey: `${descKeyPrefix}.stripeSecondaryDensity` },
       // B9 Spirograph
       { id: spiroRatioAParam, label: 'Ratio A', type: 'range', min: 1, max: 20, step: 0.5, showIf: (p) => isActive(p) && !!caps(p).spiroRatioA, infoKey: `${descKeyPrefix}.spiroRatioA` },
       { id: spiroRatioBParam, label: 'Ratio B', type: 'range', min: 1, max: 20, step: 0.5, showIf: (p) => isActive(p) && !!caps(p).spiroRatioB, infoKey: `${descKeyPrefix}.spiroRatioB` },
@@ -544,11 +555,11 @@
       { id: spiroDeformationParam, label: 'Deformation', type: 'range', min: 0, max: 1, step: 0.01, showIf: (p) => isActive(p) && !!caps(p).spiroDeformation, infoKey: `${descKeyPrefix}.spiroDeformation` },
       // B10 Weave
       { id: weavePatternParam, label: 'Pattern', type: 'select', options: [{ value: 'plain', label: 'Plain' }, { value: 'twill', label: 'Twill' }, { value: 'basket', label: 'Basket' }, { value: 'satin', label: 'Satin' }], showIf: (p) => isActive(p) && !!caps(p).weavePattern, infoKey: `${descKeyPrefix}.weavePattern` },
-      { id: weaveStrandWidthParam, label: 'Strand Width', type: 'range', min: 0.3, max: 10, step: 0.1, showIf: (p) => isActive(p) && !!caps(p).weaveStrandWidth, infoKey: `${descKeyPrefix}.weaveStrandWidth` },
+      { id: weaveStrandWidthParam, label: 'Strand Spacing', type: 'range', min: 0.3, max: 10, step: 0.1, showIf: (p) => isActive(p) && !!caps(p).weaveStrandWidth, infoKey: `${descKeyPrefix}.weaveStrandWidth` },
       { id: weaveGapParam, label: 'Gap', type: 'range', min: 0, max: 5, step: 0.05, showIf: (p) => isActive(p) && !!caps(p).weaveGap, infoKey: `${descKeyPrefix}.weaveGap` },
       { id: weaveAngleParam, label: 'Angle', type: 'angle', min: 0, max: 360, step: 1, displayUnit: '°', showIf: (p) => isActive(p) && !!caps(p).weaveAngle, infoKey: `${descKeyPrefix}.weaveAngle` },
-      { id: weaveOverParam, label: 'Over', type: 'range', min: 1, max: 6, step: 1, showIf: (p) => isActive(p) && !!caps(p).weaveOver, infoKey: `${descKeyPrefix}.weaveOver` },
-      { id: weaveUnderParam, label: 'Under', type: 'range', min: 1, max: 6, step: 1, showIf: (p) => isActive(p) && !!caps(p).weaveUnder, infoKey: `${descKeyPrefix}.weaveUnder` },
+      { id: weaveOverParam, label: 'Over', type: 'range', min: 1, max: 6, step: 1, showIf: (p) => isActive(p) && !!caps(p).weaveOver && p[weavePatternParam] && p[weavePatternParam] !== 'plain', infoKey: `${descKeyPrefix}.weaveOver` },
+      { id: weaveUnderParam, label: 'Under', type: 'range', min: 1, max: 6, step: 1, showIf: (p) => isActive(p) && !!caps(p).weaveUnder && p[weavePatternParam] && p[weavePatternParam] !== 'plain', infoKey: `${descKeyPrefix}.weaveUnder` },
     ];
   };
 

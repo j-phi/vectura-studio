@@ -8501,8 +8501,8 @@ input[type='color']::-webkit-color-swatch {
   z-index: 10001;
   width: 270px;
   max-width: calc(100vw - 16px);
-  background: #1e293b;
-  border: 1px solid #334155;
+  background: var(--ui-panel);
+  border: 1px solid var(--ui-border);
   border-radius: 8px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
   padding: 14px 16px 12px;
@@ -8526,8 +8526,8 @@ input[type='color']::-webkit-color-swatch {
   position: absolute;
   width: 12px;
   height: 12px;
-  background: #1e293b;
-  border: 1px solid #334155;
+  background: var(--ui-panel);
+  border: 1px solid var(--ui-border);
   transform: rotate(45deg);
 }
 
@@ -8576,7 +8576,8 @@ input[type='color']::-webkit-color-swatch {
 }
 
 .tutorial-popover[data-placement="center"] .tutorial-arrow,
-.tutorial-popover[data-placement="over"] .tutorial-arrow {
+.tutorial-popover[data-placement="over"] .tutorial-arrow,
+.tutorial-popover[data-placement="left-bottom"] .tutorial-arrow {
   display: none;
 }
 

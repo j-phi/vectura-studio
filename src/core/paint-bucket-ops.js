@@ -664,6 +664,20 @@
     return Number.isFinite(w) && w > 0 ? w : 0.3;
   };
 
+  // Build the argument object passed to AlgorithmRegistry._generatePatternFillPaths
+  // from a stored fill record. Spreads the full record so every authored knob
+  // (~50 across the 17 fill types) flows through to the generator, then
+  // overrides `regions` (computed from region + optional innerRegion XOR hole)
+  // and `penWidth` (resolved from the rec's penId) after the spread so the
+  // computed values always win even if a stale key ever lands on the record.
+  const buildFillArg = (rec) => ({
+    ...rec,
+    // When innerRegion is set (band/donut fill), include it in regions so
+    // the generator's compositeContainsPoint XOR logic excludes the hole.
+    regions: rec.innerRegion ? [rec.region, rec.innerRegion] : [rec.region],
+    penWidth: resolvePenWidth(rec.penId),
+  });
+
   const generateGeometryForLayer = (layer) => {
     if (!layer || !Array.isArray(layer.fills) || !layer.fills.length) return [];
     const gen = Vectura.AlgorithmRegistry?._generatePatternFillPaths;
@@ -671,31 +685,9 @@
     const all = [];
     for (const rec of layer.fills) {
       if (!rec || !rec.region || rec.fillType === 'none') continue;
-      const fillArg = {
-        // When innerRegion is set (band/donut fill), include it in regions so
-        // the generator's compositeContainsPoint XOR logic excludes the hole.
-        regions: rec.innerRegion ? [rec.region, rec.innerRegion] : [rec.region],
-        region: rec.region,
-        fillType: rec.fillType,
-        density: rec.density,
-        angle: rec.angle,
-        amplitude: rec.amplitude,
-        dotSize: rec.dotSize,
-        dotLength: rec.dotLength,
-        dotRotation: rec.dotRotation,
-        penWidth: resolvePenWidth(rec.penId),
-        padding: rec.padding,
-        shiftX: rec.shiftX,
-        shiftY: rec.shiftY,
-        dotPattern: rec.dotPattern,
-        axes: rec.axes,
-        polyTile: rec.polyTile,
-        centralDensity: rec.centralDensity,
-        outerDiameter: rec.outerDiameter,
-      };
       let paths;
       try {
-        paths = gen(fillArg) || [];
+        paths = gen(buildFillArg(rec)) || [];
       } catch (err) {
         if (typeof console !== 'undefined') console.warn('[PaintBucketOps] fill generator failed', err);
         paths = [];
@@ -720,26 +712,7 @@
     if (!rec || !rec.region || rec.fillType === 'none') return [];
     let paths;
     try {
-      paths = gen({
-        regions: rec.innerRegion ? [rec.region, rec.innerRegion] : [rec.region],
-        region: rec.region,
-        fillType: rec.fillType,
-        density: rec.density,
-        angle: rec.angle,
-        amplitude: rec.amplitude,
-        dotSize: rec.dotSize,
-        dotLength: rec.dotLength,
-        dotRotation: rec.dotRotation,
-        penWidth: resolvePenWidth(rec.penId),
-        padding: rec.padding,
-        shiftX: rec.shiftX,
-        shiftY: rec.shiftY,
-        dotPattern: rec.dotPattern,
-        axes: rec.axes,
-        polyTile: rec.polyTile,
-        centralDensity: rec.centralDensity,
-        outerDiameter: rec.outerDiameter,
-      }) || [];
+      paths = gen(buildFillArg(rec)) || [];
     } catch (err) {
       if (typeof console !== 'undefined') console.warn('[PaintBucketOps] fill generator failed', err);
       paths = [];
