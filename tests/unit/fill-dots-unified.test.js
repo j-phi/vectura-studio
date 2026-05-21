@@ -84,6 +84,47 @@ describe('Dots fill (C2 consolidation)', () => {
     expect(xs(gridPaths)).not.toBe(xs(jitPaths));
   });
 
+  test('Dot Size > 0 with shape=square renders straight glyph edges, not spirals', () => {
+    const paths = gen(base({ fillType: 'dots', dotPattern: 'grid', dotShape: 'square', dotLength: 4 }));
+    expect(paths.length).toBeGreaterThan(0);
+    // square glyph edges are straight 2-point segments; spirals would be long polylines
+    expect(paths.every((p) => p.length === 2)).toBe(true);
+  });
+
+  test('Dot Size > 0 with shape=circle renders spiral polylines', () => {
+    const paths = gen(base({ fillType: 'dots', dotPattern: 'grid', dotShape: 'circle', dotLength: 4 }));
+    expect(paths.length).toBeGreaterThan(0);
+    // circle dots fill as spirals -> multi-point polylines
+    expect(paths.some((p) => p.length > 2)).toBe(true);
+  });
+
+  test('Dot Shape changes output when Dot Size > 0 (square != circle)', () => {
+    const sig = (paths) => paths.map((p) => p.length).sort((a, b) => a - b).join(',');
+    const sq = gen(base({ fillType: 'dots', dotPattern: 'grid', dotShape: 'square', dotLength: 4 }));
+    const ci = gen(base({ fillType: 'dots', dotPattern: 'grid', dotShape: 'circle', dotLength: 4 }));
+    expect(sig(sq)).not.toBe(sig(ci));
+  });
+
+  test('Dot Jitter scales linearly with the amount (not squared)', () => {
+    const density = 8;
+    const meanLatticeDist = (j) => {
+      const paths = gen(base({ fillType: 'dots', dotPattern: 'grid', dotShape: 'tick', dotJitter: j, density }));
+      const ds = paths.map((p) => {
+        const cx = (p[0].x + p[p.length - 1].x) / 2;
+        const cy = (p[0].y + p[p.length - 1].y) / 2;
+        const dx = cx - Math.round(cx / density) * density;
+        const dy = cy - Math.round(cy / density) * density;
+        return Math.hypot(dx, dy);
+      });
+      return ds.reduce((a, b) => a + b, 0) / ds.length;
+    };
+    const d05 = meanLatticeDist(0.5);
+    const d10 = meanLatticeDist(1.0);
+    expect(d05).toBeGreaterThan(0);
+    // linear scaling => ratio ~0.5; the old squared bug => ~0.25
+    expect(d05 / d10).toBeGreaterThan(0.4);
+  });
+
   test('back-compat: fillType=stipple still renders', () => {
     const paths = gen(base({ fillType: 'stipple', dotPattern: 'brick' }));
     expect(paths.length).toBeGreaterThan(0);
