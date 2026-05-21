@@ -390,7 +390,9 @@ describe('Bugs-2 (HIGH): pattern registry sanitizes project-pattern SVG', () => 
       pretendToBeVisual: true,
     });
     const ctx = dom.getInternalVMContext();
-    // svg-sanitize must load FIRST so the registry can see it when invoked.
+    // utils.js and svg-sanitize must load BEFORE pattern-registry — registry's
+    // IIFE captures Vectura.Utils.clone (Redundancy-1 PR4) and SvgSanitize.
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/core/utils.js'), 'utf8'), ctx, { filename: 'utils.js' });
     vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/core/svg-sanitize.js'), 'utf8'), ctx, { filename: 'svg-sanitize.js' });
     vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/core/pattern-registry.js'), 'utf8'), ctx, { filename: 'pattern-registry.js' });
     return dom;
@@ -613,7 +615,13 @@ describe('Pattern registry sanitizes stored SVG (Bugs-2 + Bugs-5)', () => {
       url: 'http://localhost/',
     });
     const ctx = dom.getInternalVMContext();
-    // Load sanitizer first, then registry (registry depends on Vectura.SvgSanitize).
+    // utils.js (Vectura.Utils.clone, Redundancy-1 PR4) and svg-sanitize must
+    // load before pattern-registry — registry's IIFE captures both.
+    vm.runInContext(
+      fs.readFileSync(path.join(ROOT, 'src/core/utils.js'), 'utf8'),
+      ctx,
+      { filename: 'utils.js' }
+    );
     vm.runInContext(
       fs.readFileSync(path.join(ROOT, 'src/core/svg-sanitize.js'), 'utf8'),
       ctx,
