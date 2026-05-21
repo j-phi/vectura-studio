@@ -112,4 +112,18 @@ describe('Wave fill (C1 consolidation)', () => {
     expect(h3.length).toBeGreaterThan(0);
     expect(totalAngleVariation(h3)).toBeGreaterThan(totalAngleVariation(h1) * 0.95);
   });
+
+  test('waveHarmonics > 1 is visible even at smoothing=0 (triangle mode)', () => {
+    // Harmonics must affect the triangle component too, not just the sine blend.
+    // Without the fix: all harmonic values produce identical triangle output at s=0
+    // (harmonic enrichment only applied to the sine side which s=0 ignores).
+    const longest = (paths) => paths.reduce((acc, p) => (p.length > acc.length ? p : acc), []);
+    const h1 = longest(gen(base({ fillType: 'wave', waveSmoothing: 0, waveHarmonics: 1, amplitude: 2 })));
+    const h3 = longest(gen(base({ fillType: 'wave', waveSmoothing: 0, waveHarmonics: 3, amplitude: 2 })));
+    expect(h1.length).toBeGreaterThan(0);
+    expect(h3.length).toBeGreaterThan(0);
+    // The two outputs must differ — before the fix they were identical because
+    // harmonics were silently dropped when smoothing=0.
+    expect(Math.abs(totalAngleVariation(h3) - totalAngleVariation(h1))).toBeGreaterThan(0.001);
+  });
 });

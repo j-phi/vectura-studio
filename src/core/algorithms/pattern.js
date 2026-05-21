@@ -1118,15 +1118,16 @@
   // 2× and 3× sine terms (normalized so peak amplitude stays ≈1).
   const _waveSample = (phase, smoothing, harmonics) => {
     const TAU = Math.PI * 2;
-    // Triangle wave in [-1,1] with period 1.
-    const tri = 4 * Math.abs(phase - Math.floor(phase + 0.5)) - 1;
-    // Smoothing power-blend: 1 = sine, 0 = triangle.
-    // Build sine + optional harmonics, then normalize peak amp.
-    let sine = Math.sin(phase * TAU);
+    const triBase = 4 * Math.abs(phase - Math.floor(phase + 0.5)) - 1;
+    // Build harmonic component (2nd and 3rd frequencies).
+    let harmonic = 0;
     let normDen = 1;
-    if (harmonics >= 2) { sine += 0.5 * Math.sin(phase * TAU * 2); normDen += 0.5; }
-    if (harmonics >= 3) { sine += 0.33 * Math.sin(phase * TAU * 3); normDen += 0.33; }
-    sine /= normDen;
+    if (harmonics >= 2) { harmonic += 0.5 * Math.sin(phase * TAU * 2); normDen += 0.5; }
+    if (harmonics >= 3) { harmonic += 0.33 * Math.sin(phase * TAU * 3); normDen += 0.33; }
+    // Apply harmonics to BOTH blend targets so the effect is visible at any
+    // smoothing value — not only when the sine side is dominant.
+    const sine = (Math.sin(phase * TAU) + harmonic) / normDen;
+    const tri  = (triBase              + harmonic) / normDen;
     const s = Math.max(0, Math.min(1, smoothing));
     return s * sine + (1 - s) * tri;
   };
