@@ -5,7 +5,7 @@
   const getPatternRegistry = () => window.Vectura?.PatternRegistry || null;
   const getPatternCatalog = () =>
     (window.Vectura?.PatternRegistry?.getPatterns?.() || window.Vectura?.PATTERNS || []);
-  const clone = (value) => JSON.parse(JSON.stringify(value));
+  const clone = window.Vectura.Utils.clone;
 
   // IIFE-local alias for the canonical Vectura.UI.utils.escapeHtml. The
   // previous local copy omitted the `'` → `&#39;` substitution — a latent

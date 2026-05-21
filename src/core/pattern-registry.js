@@ -13,7 +13,7 @@
   let draftPatterns = [];
   let registryVersion = 0;
 
-  const clone = (value) => JSON.parse(JSON.stringify(value));
+  const clone = window.Vectura.Utils.clone;
 
   const slugify = (value, fallback = 'pattern') => {
     const raw = `${value ?? ''}`.trim().toLowerCase();

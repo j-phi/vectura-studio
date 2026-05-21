@@ -8,8 +8,7 @@
     Layer,
   } = window.Vectura || {};
 
-  const clone =
-    typeof structuredClone === 'function' ? (obj) => structuredClone(obj) : (obj) => JSON.parse(JSON.stringify(obj));
+  const clone = window.Vectura.Utils.clone;
 
   // Phase 3 closure: toast helper. UI.overlays.Toast is a Phase 1 primitive
   // composed throughout the file-I/O surface for save/open/import/export

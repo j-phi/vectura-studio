@@ -216,8 +216,7 @@
     return `${text}${options.spaceBeforeUnit ? ' ' : ''}${unit}`;
   });
   const TRANSFORM_KEYS = ['seed', 'posX', 'posY', 'scaleX', 'scaleY', 'rotation'];
-  const clone =
-    typeof structuredClone === 'function' ? (obj) => structuredClone(obj) : (obj) => JSON.parse(JSON.stringify(obj));
+  const clone = window.Vectura.Utils.clone;
   const getThemeToken = (name, fallback = '') => {
     if (typeof document === 'undefined' || !document.documentElement) return fallback;
     const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();

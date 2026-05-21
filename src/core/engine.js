@@ -124,7 +124,7 @@
     if (isValidDrawableLayerType(fallback)) return fallback;
     return 'flowfield';
   };
-  const clone = (obj) => JSON.parse(JSON.stringify(obj));
+  const clone = window.Vectura.Utils.clone;
 
   // Bugs-8: sanitize imported numeric params so corrupted/legacy `.vectura`
   // files cannot inject NaN / Infinity / non-numeric strings into algorithm

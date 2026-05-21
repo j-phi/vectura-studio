@@ -10,7 +10,7 @@
   const OptimizationUtils = window.Vectura?.OptimizationUtils || {};
   const { GROUPS: WALLPAPER_GROUPS = {}, getTileRange = () => ({ nMin: -5, nMax: 5, mMin: -5, mMax: 5 }) } = WallpaperGroups;
 
-  const clone = (obj) => JSON.parse(JSON.stringify(obj));
+  const clone = window.Vectura.Utils.clone;
   const EPSILON = 1e-6;
   const closePathIfNeeded = OptimizationUtils.closePathIfNeeded || ((path) => path);
 

@@ -71,6 +71,7 @@ describe('ui.js consolidated orchestrator entry (Meridian Unit 1.10)', () => {
           clamp: (v, lo, hi) => Math.min(Math.max(v, lo), hi),
           lerp: (a, b, t) => a + (b - a) * t,
         },
+<<<<<<< HEAD
         UI: {
           utils: {
             escapeHtml: (v) => String(v ?? '')
@@ -78,6 +79,14 @@ describe('ui.js consolidated orchestrator entry (Meridian Unit 1.10)', () => {
               .replace(/"/g, '&quot;').replace(/'/g, '&#39;'),
           },
         },
+=======
+        Utils: {
+          clone: (typeof structuredClone === 'function')
+            ? (v) => structuredClone(v)
+            : (v) => JSON.parse(JSON.stringify(v)),
+        },
+        UI: {},
+>>>>>>> e5bf55e (refactor(utils): canonical clone with structuredClone (Redundancy-1 PR4))
       };
     `, ctx);
     const code = fs.readFileSync(path.join(ROOT, 'src/ui/ui.js'), 'utf8');

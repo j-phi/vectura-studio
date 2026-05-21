@@ -3,8 +3,7 @@
  */
 (() => {
   const { VectorEngine, Renderer, UI, SETTINGS, THEMES = {}, UnitUtils = {} } = window.Vectura || {};
-  const clone =
-    typeof structuredClone === 'function' ? (obj) => structuredClone(obj) : (obj) => JSON.parse(JSON.stringify(obj));
+  const clone = window.Vectura.Utils.clone;
   const PREFERENCE_COOKIE = 'vectura_prefs';
   const PREFERENCE_STORAGE_KEY = 'vectura_prefs';
   const PREFERENCE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;

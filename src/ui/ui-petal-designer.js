@@ -11,8 +11,7 @@
   } = window.Vectura || {};
 
   const { clamp, lerp } = window.Vectura.AlgorithmUtils;
-  const clone =
-    typeof structuredClone === 'function' ? (obj) => structuredClone(obj) : (obj) => JSON.parse(JSON.stringify(obj));
+  const clone = window.Vectura.Utils.clone;
   const getThemeToken = (name, fallback = '') => {
     const fn = window.Vectura?.UI?.getThemeToken || window.Vectura?.UI?.tokens?.get;
     return fn ? fn(name, fallback) : fallback;

@@ -42,8 +42,7 @@
   const { clamp } = window.Vectura.AlgorithmUtils;
   const PETALIS_LAYER_TYPES = new Set(['petalisDesigner']);
   const isPetalisLayerType = (type) => PETALIS_LAYER_TYPES.has(type);
-  const clone =
-    typeof structuredClone === 'function' ? (obj) => structuredClone(obj) : (obj) => JSON.parse(JSON.stringify(obj));
+  const clone = window.Vectura.Utils.clone;
 
   const roundToStep = (value, step) => (step ? Math.round(value / step) * step : value);
   const mapRange = (value, inMin, inMax, outMin, outMax) => {
