@@ -106,6 +106,8 @@
               density: spacing,
               angle: p.fillAngle ?? 0,
               amplitude: p.fillAmplitude ?? 1.0,
+              waveSmoothing: p.fillWaveSmoothing ?? 1.0,
+              waveHarmonics: p.fillWaveHarmonics ?? 1,
               dotSize: p.fillDotSize ?? 1.0,
               padding: p.fillPadding ?? 0,
               shiftX: p.fillShiftX ?? 0,
