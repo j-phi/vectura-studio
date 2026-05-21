@@ -157,15 +157,51 @@
     };
   };
 
-  const sampleCubicBezier = (p0, c1, c2, p1) => {
-    const dist = Math.hypot(p1.x - p0.x, p1.y - p0.y);
-    const handles =
-      Math.hypot(c1.x - p0.x, c1.y - p0.y) +
-      Math.hypot(c2.x - p1.x, c2.y - p1.y);
-    const rough = Math.max(dist, handles);
-    const steps = Math.min(120, Math.max(8, Math.round(rough / 4)));
-    const pts = [];
-    for (let i = 0; i <= steps; i++) pts.push(cubicAtT(p0, c1, c2, p1, i / steps));
+  // Adaptive cubic-bezier sampler — recursive de Casteljau subdivision until
+  // each emitted chord is within `tolerance` (world units, mm) of the true
+  // curve. Replaces the prior `rough / 4` uniform-step heuristic, which
+  // under-sampled segments with short chord + long handles and produced
+  // visible facets at high screen zoom.
+  //
+  // Flatness metric: perpendicular distance from each control point to the
+  // chord p0→p1. When both are below tolerance the curve segment is treated
+  // as visually flat and emitted as a single line; otherwise it's split at
+  // t=0.5 and the two halves are processed recursively. maxDepth bounds the
+  // worst-case sample count at 2^maxDepth + 1 per input segment so
+  // pathological inputs (huge handles, cusps) can't blow up render time.
+  const sampleCubicBezier = (p0, c1, c2, p1, tolerance = 0.1, maxDepth = 12) => {
+    const pts = [{ x: p0.x, y: p0.y }];
+    const tolSq = tolerance * tolerance;
+    const recurse = (a0, a1, a2, a3, depth) => {
+      const dx = a3.x - a0.x;
+      const dy = a3.y - a0.y;
+      const chordLenSq = dx * dx + dy * dy;
+      if (depth >= maxDepth || chordLenSq < tolSq) {
+        pts.push({ x: a3.x, y: a3.y });
+        return;
+      }
+      // Perpendicular distance² from each control point to the chord a0→a3.
+      // Numerator |cross| ÷ |chord| → distance; squaring both sides keeps the
+      // comparison sqrt-free: dist² ≤ tol²  ⇔  num² ≤ tol² · chord².
+      const c1Cross = (a1.x - a0.x) * dy - (a1.y - a0.y) * dx;
+      const c2Cross = (a2.x - a0.x) * dy - (a2.y - a0.y) * dx;
+      const flatThreshSq = tolSq * chordLenSq;
+      if (c1Cross * c1Cross <= flatThreshSq && c2Cross * c2Cross <= flatThreshSq) {
+        pts.push({ x: a3.x, y: a3.y });
+        return;
+      }
+      // de Casteljau split at t = 0.5.
+      const m01x = (a0.x + a1.x) * 0.5, m01y = (a0.y + a1.y) * 0.5;
+      const m12x = (a1.x + a2.x) * 0.5, m12y = (a1.y + a2.y) * 0.5;
+      const m23x = (a2.x + a3.x) * 0.5, m23y = (a2.y + a3.y) * 0.5;
+      const m012x = (m01x + m12x) * 0.5, m012y = (m01y + m12y) * 0.5;
+      const m123x = (m12x + m23x) * 0.5, m123y = (m12y + m23y) * 0.5;
+      const m0123x = (m012x + m123x) * 0.5, m0123y = (m012y + m123y) * 0.5;
+      const mid = { x: m0123x, y: m0123y };
+      recurse(a0, { x: m01x, y: m01y }, { x: m012x, y: m012y }, mid, depth + 1);
+      recurse(mid, { x: m123x, y: m123y }, { x: m23x, y: m23y }, a3, depth + 1);
+    };
+    recurse(p0, c1, c2, p1, 0);
     return pts;
   };
 
