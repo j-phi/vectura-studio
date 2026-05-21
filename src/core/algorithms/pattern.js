@@ -1230,8 +1230,8 @@
   };
 
   // ── C5: spiral with optional turns / tightness / direction ─────────────────
-  // tightness blends Archimedean (r ∝ θ, tightness=0) with log-spiral
-  // (r ∝ exp(k·θ), tightness=1); intermediate values lerp between the two.
+  // tightness blends Archimedean (r ∝ θ, tightness=1) with log-spiral
+  // (r ∝ exp(k·θ), tightness=0); intermediate values lerp between the two.
   // direction='ccw' negates angle progression. turns hard-caps total
   // revolutions so the path stays inside the region's bbox circle.
   const _buildSpiralPts = (cx, cy, density, angleDeg, maxR, turns, tightness, direction) => {
@@ -1245,10 +1245,20 @@
     const k = Math.log(2) / (2 * Math.PI);
     const r0 = Math.max(density * 0.5, 0.5);
     const archThetaMax = (maxR / density) * 2 * Math.PI + 2 * Math.PI;
-    const logThetaMax = Math.max(1, Math.log(Math.max(maxR / r0, 1.1)) / k);
     // Cap by user-requested turns (if specified).
     const turnsCap = (turns > 0 ? turns * 2 * Math.PI : Infinity);
-    const thetaMax = Math.min(turnsCap, (1 - t) * archThetaMax + t * logThetaMax);
+    // Binary-search for the theta where the blended radius first reaches maxR.
+    // Lerping the two individual thetaMax values fails because exp() grows so
+    // fast that even t=0.01 makes the blended r hit maxR far sooner than
+    // archThetaMax predicts — the spiral "blows up" just past tightness=1.
+    // archThetaMax is a safe upper bound: rArch(archThetaMax) >= maxR already.
+    let loTheta = 0, hiTheta = archThetaMax;
+    for (let iter = 0; iter < 52; iter++) {
+      const midTheta = (loTheta + hiTheta) * 0.5;
+      const rBlend = (1 - t) * (midTheta / (2 * Math.PI)) * density + t * r0 * Math.exp(k * midTheta);
+      if (rBlend < maxR) loTheta = midTheta; else hiTheta = midTheta;
+    }
+    const thetaMax = Math.min(turnsCap, hiTheta);
     const totalSteps = Math.min(50000, Math.ceil(thetaMax / 0.05));
     const stepAngle = thetaMax / Math.max(1, totalSteps);
     const pts = [];
@@ -1369,16 +1379,16 @@
     return result;
   };
 
-  const polygonalLinesComposite = (regions, density, angleOffset = 0, shiftX = 0, shiftY = 0, numAxes = 3, tileMethod = 'grid', polyPadding = 0, polyRotation = 0, polyRotationStep = 0, polyScaleStep = 0) => {
+  const polygonalLinesComposite = (regions, density, angleOffset = 0, shiftX = 0, shiftY = 0, numAxes = 3, tileMethod = 'grid', polyPadding = 0, polyRotation = 0, polyRotationStep = 0, polyScaleStep = 0, polyScale = 1) => {
     const { minX, maxX, minY, maxY } = compositeBounds(regions);
-    const transformsActive = polyPadding > 0 || polyRotation !== 0 || polyRotationStep !== 0 || polyScaleStep !== 0;
+    const transformsActive = polyPadding > 0 || polyRotation !== 0 || polyRotationStep !== 0 || polyScaleStep !== 0 || polyScale !== 1;
     if (transformsActive) {
       // Synthesize a bbox poly for the per-tile generator and clip to all
       // regions via clipSegmentToComposite.
       const bboxPoly = [
         { x: minX, y: minY }, { x: maxX, y: minY }, { x: maxX, y: maxY }, { x: minX, y: maxY },
       ];
-      return _polyTilesTransformed(bboxPoly, density, angleOffset, shiftX, shiftY, numAxes, tileMethod, polyPadding, polyRotation, polyRotationStep, polyScaleStep, (p0, p1) => clipSegmentToComposite(p0, p1, regions));
+      return _polyTilesTransformed(bboxPoly, density, angleOffset, shiftX, shiftY, numAxes, tileMethod, polyPadding, polyRotation, polyRotationStep, polyScaleStep, polyScale, (p0, p1) => clipSegmentToComposite(p0, p1, regions));
     }
     return tessellateEdges(
       minX, maxX, minY, maxY, density, angleOffset, shiftX, shiftY, numAxes, tileMethod,
@@ -2753,7 +2763,7 @@
   // by rotationStep/scaleStep is the integer chebyshev distance of the tile
   // from the bounding-box center, so the center tile is ring 0 and tiles
   // step outward in concentric square shells.
-  const _polyTilesTransformed = (region, density, angleOffset, shiftX, shiftY, numAxes, tileMethod, polyPadding, polyRotation, polyRotationStep, polyScaleStep, clipFn) => {
+  const _polyTilesTransformed = (region, density, angleOffset, shiftX, shiftY, numAxes, tileMethod, polyPadding, polyRotation, polyRotationStep, polyScaleStep, polyScale, clipFn) => {
     const ar = angleOffset * Math.PI / 180;
     const ca = Math.cos(ar), sa = Math.sin(ar);
     const s = density;
@@ -2806,9 +2816,9 @@
         Math.round(Math.abs(wp.x - cx0) / step),
         Math.round(Math.abs(wp.y - cy0) / step),
       );
-      const scale = Math.max(0.05, 1 + polyScaleStep * ringIdx);
+      const ringScale = Math.max(0.05, 1 + polyScaleStep * ringIdx);
       const rot = baseRotRad + ringRotPer * ringIdx;
-      const r = s * scale - polyPadding;
+      const r = s * polyScale * ringScale - polyPadding;
       if (r <= 0) continue;
       // Build n-gon vertices in world coords centered at wp.
       const verts = [];
@@ -2825,11 +2835,11 @@
     return result;
   };
 
-  const polygonalLines = (region, density, angleOffset = 0, shiftX = 0, shiftY = 0, numAxes = 3, tileMethod = 'grid', polyPadding = 0, polyRotation = 0, polyRotationStep = 0, polyScaleStep = 0) => {
+  const polygonalLines = (region, density, angleOffset = 0, shiftX = 0, shiftY = 0, numAxes = 3, tileMethod = 'grid', polyPadding = 0, polyRotation = 0, polyRotationStep = 0, polyScaleStep = 0, polyScale = 1) => {
     const xs = region.map(p => p.x), ys = region.map(p => p.y);
-    const transformsActive = polyPadding > 0 || polyRotation !== 0 || polyRotationStep !== 0 || polyScaleStep !== 0;
+    const transformsActive = polyPadding > 0 || polyRotation !== 0 || polyRotationStep !== 0 || polyScaleStep !== 0 || polyScale !== 1;
     if (transformsActive) {
-      return _polyTilesTransformed(region, density, angleOffset, shiftX, shiftY, numAxes, tileMethod, polyPadding, polyRotation, polyRotationStep, polyScaleStep, (p0, p1) => clipSegmentToPoly(p0, p1, region));
+      return _polyTilesTransformed(region, density, angleOffset, shiftX, shiftY, numAxes, tileMethod, polyPadding, polyRotation, polyRotationStep, polyScaleStep, polyScale, (p0, p1) => clipSegmentToPoly(p0, p1, region));
     }
     return tessellateEdges(
       Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys),
@@ -3962,7 +3972,7 @@
       waveSmoothing = 1.0, waveFrequency = 1.0,
       dotShape = 'circle', dotJitter = 0,
       lineCount = 1,
-      polyPadding = 0, polyRotation = 0, polyRotationStep = 0, polyScaleStep = 0,
+      polyPadding = 0, polyRotation = 0, polyRotationStep = 0, polyScaleStep = 0, polyScale = 1,
       spiralTurns = 0, spiralTightness = 0, spiralDirection = 'cw',
       radialSkip = 0,
       contourDirection = 'inset', contourStepVariance = 0, contourSimplify = 0, contourCenterPadding = 0,
@@ -4034,7 +4044,7 @@
         case 'radial':      return radialFill(region, density, angle, shiftX, shiftY, radialSkip);
         case 'grid':        return expandDotsToSpirals(dotsFill(region, density, dotSize, angle, shiftX, shiftY, 'grid', 'tick', dotJitter), dotLength, penWidth, dotRotation);
         case 'meander':     return meanderLines(region, density, angle, shiftX, shiftY);
-        case 'polygonal':   return polygonalLines(region, density, angle, shiftX, shiftY, axes, polyTile, polyPadding, polyRotation, polyRotationStep, polyScaleStep);
+        case 'polygonal':   return polygonalLines(region, density, angle, shiftX, shiftY, axes, polyTile, polyPadding, polyRotation, polyRotationStep, polyScaleStep, polyScale);
         case 'triaxial':    return triaxialLines(region, density, angle, shiftX, shiftY);
         case 'flowfield':   return _flowFieldFill(region, density, flowFieldType, flowNoiseScale, flowSeed, flowTraceLen, flowSeparation);
         case 'voronoi':     return _voronoiFill(region, density, voronoiSeeds, voronoiJitter, voronoiStroke, voronoiSeedMode);
@@ -4076,7 +4086,7 @@
       case 'radial':      return radialFillComposite(effectiveRegions, density, angle, shiftX, shiftY, radialSkip);
       case 'grid':        return expandDotsToSpirals(dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, 'grid', 'tick', dotJitter), dotLength, penWidth, dotRotation);
       case 'meander':     return meanderLinesComposite(effectiveRegions, density, angle, shiftX, shiftY);
-      case 'polygonal':   return polygonalLinesComposite(effectiveRegions, density, angle, shiftX, shiftY, axes, polyTile, polyPadding, polyRotation, polyRotationStep, polyScaleStep);
+      case 'polygonal':   return polygonalLinesComposite(effectiveRegions, density, angle, shiftX, shiftY, axes, polyTile, polyPadding, polyRotation, polyRotationStep, polyScaleStep, polyScale);
       case 'triaxial':    return triaxialLinesComposite(effectiveRegions, density, angle, shiftX, shiftY);
       case 'flowfield':   return _flowFieldFillComposite(effectiveRegions, density, flowFieldType, flowNoiseScale, flowSeed, flowTraceLen, flowSeparation);
       case 'voronoi':     return _voronoiFillComposite(effectiveRegions, density, voronoiSeeds, voronoiJitter, voronoiStroke, voronoiSeedMode);

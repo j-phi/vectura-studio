@@ -504,6 +504,7 @@
     polyRotation: fillParams.fillPolyRotation ?? 0,
     polyRotationStep: fillParams.fillPolyRotationStep ?? 0,
     polyScaleStep: fillParams.fillPolyScaleStep ?? 0,
+    polyScale: fillParams.fillPolyScale ?? 1,
     spiralTightness: fillParams.fillSpiralTightness ?? 0.5,
     spiralDirection: fillParams.fillSpiralDirection ?? 'cw',
     radialSkip: fillParams.fillRadialSkip ?? 0,
