@@ -12,3 +12,4 @@ graphify-out/.graphify_old.json
 .claude/scheduled_tasks.lock
 /mockups/
 /screenshots/
+/src/inspiration/
