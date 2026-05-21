@@ -815,7 +815,7 @@
       .filter(Boolean);
   };
 
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.Modifiers = {
     EPSILON,
     createModifierState,

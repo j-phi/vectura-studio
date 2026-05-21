@@ -1700,6 +1700,6 @@
     }
   }
 
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.VectorEngine = VectorEngine;
 })();

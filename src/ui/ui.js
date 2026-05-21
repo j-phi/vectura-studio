@@ -723,7 +723,7 @@
   // window.Vectura._UINoiseDefs.COMMON_CONTROLS at runtime; keeping the
   // bridge here means COMMON_CONTROLS (still legacy-local) stays a single
   // source of truth without round-tripping through ControlDefsData.
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura._UINoiseDefs = Object.assign(window.Vectura._UINoiseDefs || {}, {
     COMMON_CONTROLS,
   });
@@ -881,9 +881,8 @@
     return d ? `<path d="${d}"${attrMarkup} />` : '';
   };
 
-  // Expose SVG export utilities to ui-file-io.js
-  window.Vectura = window.Vectura || {};
-  window.Vectura._UIExportUtil = {
+  // Expose SVG export utilities to ui-file-io.js (Vectura aliased above)
+  Vectura._UIExportUtil = {
     escapeXmlAttr,
     shapeToSvg,
     buildClipPathMarkup,
@@ -1869,7 +1868,7 @@
     window.Vectura.UI.Modals.ExportSvg.installOn(UI.prototype);
   }
 
-  window.Vectura = window.Vectura || {};
+  // (Vectura aliased above)
   // Preserve namespace members other modules attach to window.Vectura.UI BEFORE
   // ui.js loads (controls-registry.js, panels/algo-config-panel.js, components/*,
   // overlays/*). Reassigning `window.Vectura.UI = UI` directly would clobber them

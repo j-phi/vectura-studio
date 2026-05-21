@@ -2,7 +2,7 @@
  * horizon algorithm definition.
  */
 (() => {
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
   const { clamp01, lerp } = window.Vectura.AlgorithmUtils;
   window.Vectura.AlgorithmRegistry.horizon = {

@@ -231,7 +231,7 @@
     return deduped.length >= 2 ? deduped : path;
   };
 
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
   window.Vectura.AlgorithmRegistry.lissajous = {
     generate: (p, rng, noise, bounds) => {

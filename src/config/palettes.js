@@ -2,7 +2,7 @@
  * Palette library for pen colors.
  */
 (() => {
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.PALETTES = [
   {
     "id": "blues-01",

@@ -4,7 +4,7 @@
 (() => {
   const getEl = (id) => document.getElementById(id);
 
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura._UITouchMixin = {
     isTouchCapable() {
       if (typeof window === 'undefined') return false;

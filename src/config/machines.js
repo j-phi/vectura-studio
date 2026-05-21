@@ -2,7 +2,7 @@
  * Machine profile definitions.
  */
 (() => {
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.MACHINES = {
     a0: { name: 'A0', width: 841, height: 1189 },
     a1: { name: 'A1', width: 594, height: 841 },

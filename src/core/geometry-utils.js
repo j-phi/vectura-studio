@@ -408,7 +408,7 @@
   };
 
   if (typeof window !== 'undefined') {
-    window.Vectura = window.Vectura || {};
+    const Vectura = (window.Vectura = window.Vectura || {});
     window.Vectura.GeometryUtils = {
       ...(window.Vectura.GeometryUtils || {}),
       ...api,

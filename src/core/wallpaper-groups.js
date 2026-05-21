@@ -486,6 +486,6 @@
     return LOCKED_AXES[lat] || { tileHeight: false, tileAngle: false };
   };
 
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.WallpaperGroups = { GROUPS, GROUP_IDS, getTileRange, getCell, rotPt, reflPt, getLockedAxes };
 })();

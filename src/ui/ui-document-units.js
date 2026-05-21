@@ -25,7 +25,7 @@
     return { normalizeDocumentUnits, getDocumentUnitLabel, mmToDocumentUnits, documentUnitsToMm, getDocumentUnitPrecision, getDocumentUnitStep };
   };
 
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura._UIDocumentUnitsMixin = {
     getDocumentUnits() {
       const { normalizeDocumentUnits } = resolveUnitUtils();

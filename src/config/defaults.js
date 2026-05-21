@@ -2,7 +2,7 @@
  * Default algorithm parameters and mutable app settings.
  */
 (() => {
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   const MM_PER_INCH = 25.4;
   const normalizeDocumentUnits = (value) => (`${value || ''}`.trim().toLowerCase() === 'imperial' ? 'imperial' : 'metric');
   const getDocumentUnitLabel = (units) => (normalizeDocumentUnits(units) === 'imperial' ? 'in' : 'mm');

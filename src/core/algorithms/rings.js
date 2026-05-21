@@ -2,7 +2,7 @@
  * rings algorithm definition.
  */
 (() => {
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
   window.Vectura.AlgorithmRegistry.rings = {
       generate: (p, rng, noise, bounds) => {

@@ -2,7 +2,7 @@
  * shapePack algorithm definition.
  */
 (() => {
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
   const { clamp } = window.Vectura.AlgorithmUtils;
   window.Vectura.AlgorithmRegistry.shapePack = {

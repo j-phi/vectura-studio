@@ -1,5 +1,5 @@
 (() => {
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.PATTERNS = [
   {
     "id": "hero_4-point-stars",

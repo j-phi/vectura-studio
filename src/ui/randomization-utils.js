@@ -309,7 +309,7 @@
   };
 
   if (typeof window !== 'undefined') {
-    window.Vectura = window.Vectura || {};
+    const Vectura = (window.Vectura = window.Vectura || {});
     window.Vectura.RandomizationUtils = {
       ...(window.Vectura.RandomizationUtils || {}),
       ...api,

@@ -2,7 +2,7 @@
  * Runtime pattern registry with bundled, local, and project-scoped custom patterns.
  */
 (() => {
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
 
   const STORAGE_KEY = 'vectura.custom-patterns.v1';
   const bundledPatterns = Array.isArray(window.Vectura.PATTERNS)

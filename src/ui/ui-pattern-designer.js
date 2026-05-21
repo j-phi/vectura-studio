@@ -21,7 +21,7 @@
     targetIds: Array.isArray(fill.targetIds) ? fill.targetIds.slice() : [],
   });
 
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura._UIPatternDesignerMixin = {
     destroyInlinePatternDesigner() {
       if (!this.inlinePatternDesigner) return;

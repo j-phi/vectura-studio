@@ -2,7 +2,7 @@
  * Algorithm descriptions for the UI.
  */
 (() => {
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.DESCRIPTIONS = {
     flowfield:
       'Particles traverse a Noise Rack vector field, with stacked noise layers driving angle or curl flow for organic, fluid-like textures.',

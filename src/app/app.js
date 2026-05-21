@@ -1001,6 +1001,6 @@
     }
   }
 
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.App = App;
 })();

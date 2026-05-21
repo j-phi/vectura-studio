@@ -10,7 +10,7 @@
  * flip, wave amplitude). Each algorithm continues to define its own.
  */
 (() => {
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
 
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
   const clamp01 = (value) => Math.max(0, Math.min(1, value));

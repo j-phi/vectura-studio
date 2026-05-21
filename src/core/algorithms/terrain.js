@@ -7,7 +7,7 @@
  * project per perspectiveMode -> hidden-line clip -> emit paths plus rivers/coastline.
  */
 (() => {
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
   const { clamp01, lerp } = window.Vectura.AlgorithmUtils;
   window.Vectura.AlgorithmRegistry.terrain = {

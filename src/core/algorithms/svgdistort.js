@@ -3,7 +3,7 @@
  * to plottable line fills, and applies Noise Rack point displacement.
  */
 (() => {
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
 
   // At default zoom=0.01, 4000 world-units = 40 noise-space units (far beyond simplex coherence)

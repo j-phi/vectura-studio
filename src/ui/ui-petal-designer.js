@@ -118,7 +118,7 @@
     { key: 'radiusScaleCurve', label: 'Radius Scale Curve', min: 0.5, max: 2.5, step: 0.05, precision: 2 },
   ];
 
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura._UIPetalDesignerMixin = {
     getPetalDesignerLayer() {
       const active = this.app.engine.getActiveLayer?.();

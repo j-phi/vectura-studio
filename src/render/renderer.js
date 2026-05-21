@@ -6755,8 +6755,8 @@
     }
   }
 
-  window.Vectura = window.Vectura || {};
-  window.Vectura.Renderer = Renderer;
+  const Vectura = (window.Vectura = window.Vectura || {});
+  Vectura.Renderer = Renderer;
   // Test-only surface: lets unit tests poke the token cache without standing
   // up a full Renderer instance. Production code should keep calling the
   // closure-local `getThemeToken` directly.

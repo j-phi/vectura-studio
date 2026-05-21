@@ -1,5 +1,5 @@
 (() => {
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
 
   const { clamp01, lerp } = window.Vectura.AlgorithmUtils;
   const DEFAULT_POLYGON_ZOOM_REFERENCE = 0.02;

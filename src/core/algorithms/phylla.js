@@ -2,7 +2,7 @@
  * phylla algorithm definition.
  */
 (() => {
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
   window.Vectura.AlgorithmRegistry.phylla = {
       generate: (p, rng, noise, bounds) => {

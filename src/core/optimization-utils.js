@@ -163,7 +163,7 @@
   };
 
   if (typeof window !== 'undefined') {
-    window.Vectura = window.Vectura || {};
+    const Vectura = (window.Vectura = window.Vectura || {});
     window.Vectura.OptimizationUtils = {
       ...(window.Vectura.OptimizationUtils || {}),
       ...api,

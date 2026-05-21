@@ -182,7 +182,7 @@
     applyMaskToPaths,
   };
 
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.Masking = {
     ...(window.Vectura.Masking || {}),
     ...api,

@@ -2,7 +2,7 @@
  * Procedural algorithm registry assembler.
  */
 (() => {
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   const registry = window.Vectura.AlgorithmRegistry || {};
   const PetalisAlgorithm = window.Vectura?.PetalisAlgorithm;
   const petalisDesignerFallback =

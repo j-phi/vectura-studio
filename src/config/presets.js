@@ -2,7 +2,7 @@
  * Preset library by system.
  */
 (() => {
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.PRESETS = [
       {
         id: "camellia-japonica-pink-perfection",

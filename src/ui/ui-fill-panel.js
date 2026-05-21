@@ -9,7 +9,7 @@
  * registries (PatternRegistry, AlgorithmRegistry, UI.EmptyStates).
  */
 (() => {
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
 
   let DEPS = null;
 

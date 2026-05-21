@@ -3,7 +3,7 @@
  * Tune these values here rather than hunting through the UI module.
  */
 (() => {
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.UI_CONSTANTS = {
     // Minimum pixels of space above a trigger before a popover flips upward.
     COLOR_PICKER_POPOVER_THRESHOLD_PX: 220,

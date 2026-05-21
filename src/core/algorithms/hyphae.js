@@ -2,7 +2,7 @@
  * hyphae algorithm definition.
  */
 (() => {
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
   window.Vectura.AlgorithmRegistry.hyphae = {
       generate: (p, rng, noise, bounds) => {

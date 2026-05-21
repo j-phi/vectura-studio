@@ -40,7 +40,7 @@
   };
   const isMaskLayerGeometryHidden = (layer) => Boolean(layer?.mask?.enabled && layer?.mask?.hideLayer);
 
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura._UIFileIOMixin = {
     getAppVersion() {
       const runtimeVersion = window.Vectura?.APP_VERSION;

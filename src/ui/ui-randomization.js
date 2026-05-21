@@ -3,7 +3,7 @@
  * randomizeLayerParams() stays in ui.js since it captures large IIFE-local noise-def arrays.
  */
 (() => {
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   const { clamp } = window.Vectura.AlgorithmUtils;
 
   window.Vectura._UIRandomizationMixin = {

@@ -140,7 +140,7 @@
   };
 
   if (typeof window !== 'undefined') {
-    window.Vectura = window.Vectura || {};
+    const Vectura = (window.Vectura = window.Vectura || {});
     window.Vectura.PathBoolean = {
       ...(window.Vectura.PathBoolean || {}),
       ...api,

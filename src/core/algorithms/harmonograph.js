@@ -2,7 +2,7 @@
  * harmonograph algorithm definition.
  */
 (() => {
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
   window.Vectura.AlgorithmRegistry.harmonograph = {
       generate: (p, rng, noise, bounds) => {

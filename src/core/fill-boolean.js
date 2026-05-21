@@ -171,7 +171,7 @@
     multiPolygonToPaths,
   };
 
-  window.Vectura = window.Vectura || {};
+  const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.FillBoolean = {
     ...(window.Vectura.FillBoolean || {}),
     ...api,
