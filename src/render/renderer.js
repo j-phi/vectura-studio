@@ -2371,15 +2371,21 @@
             if (oa.out) { oa.out.x += dx; oa.out.y += dy; }
           }
         }
-        // Merge-target detection: show snap ring if hovering over another anchor (path must have >3 nodes)
+        // Merge-target detection: show snap ring when hovering over another anchor (path must have 3+ nodes)
         drag.mergeTarget = null;
-        if (this.directSelection.anchors.length > 3) {
+        if (this.directSelection.anchors.length > 2) {
           const wdata = this.getDirectSelectionWorldAnchors();
           if (wdata) {
             const mergeTol = 5 / this.scale;
             const mergeTolSq = mergeTol * mergeTol;
+            const mLastIdx = this.directSelection.anchors.length - 1;
+            // When dragging an endpoint of an open path, only snap-merge with the
+            // other endpoint — intermediate anchors must not be detected first just
+            // because the loop happens to reach them before the far endpoint.
+            const isEndpointDrag = !this.directSelection.closed && (drag.index === 0 || drag.index === mLastIdx);
             for (let i = 0; i < wdata.anchors.length; i++) {
               if (i === drag.index) continue;
+              if (isEndpointDrag && i !== 0 && i !== mLastIdx) continue;
               const wa = wdata.anchors[i];
               const ddx = world.x - wa.x;
               const ddy = world.y - wa.y;
@@ -2434,14 +2440,37 @@
       if (moved && drag.mergeTarget != null && this.directSelection) {
         this.markDirectSelectionAsCustomPath();
         const sel = this.directSelection;
-        sel.anchors.splice(drag.index, 1);
-        if (sel.closed && sel.anchors.length < 3) sel.closed = false;
-        const nextIndices = new Set();
-        for (const i of sel.selectedIndices) {
-          if (i < drag.index) nextIndices.add(i);
-          else if (i > drag.index) nextIndices.add(i - 1);
+        const lastIdx = sel.anchors.length - 1;
+        const isEndpointMerge = !sel.closed && (
+          (drag.index === 0 && drag.mergeTarget === lastIdx) ||
+          (drag.index === lastIdx && drag.mergeTarget === 0)
+        );
+        if (isEndpointMerge) {
+          // Restore the dragged endpoint to its pre-drag position so the closing
+          // segment runs from the far end back to the original anchor location,
+          // preserving all existing segments rather than removing the first/last one.
+          const a = sel.anchors[drag.index];
+          if (a && drag.anchorStart) {
+            const revertDx = drag.anchorStart.x - a.x;
+            const revertDy = drag.anchorStart.y - a.y;
+            a.x = drag.anchorStart.x;
+            a.y = drag.anchorStart.y;
+            if (a.in) { a.in.x += revertDx; a.in.y += revertDy; }
+            if (a.out) { a.out.x += revertDx; a.out.y += revertDy; }
+          }
+          sel.closed = true;
+        } else {
+          sel.anchors.splice(drag.index, 1);
+          if (sel.closed && sel.anchors.length < 3) {
+            sel.closed = false;
+          }
+          const nextIndices = new Set();
+          for (const i of sel.selectedIndices) {
+            if (i < drag.index) nextIndices.add(i);
+            else if (i > drag.index) nextIndices.add(i - 1);
+          }
+          sel.selectedIndices = nextIndices;
         }
-        sel.selectedIndices = nextIndices;
         this.applyDirectPath();
         if (this.onDirectEditCommit) this.onDirectEditCommit();
         this.directDrag = null;
