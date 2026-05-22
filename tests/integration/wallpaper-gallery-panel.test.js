@@ -251,6 +251,51 @@ describe('Wallpaper gallery panel integration', () => {
     }
   });
 
+  const mkRectMirror = (tileAngle) => Object.assign(Modifiers.createWallpaperMirror(0), {
+    group: 'pgg', symmetry: { ...WG.FEATURES.pgg }, tileWidth: 60, tileHeight: 110, tileAngle,
+  });
+
+  test('tile-angle dial is a range gauge: upright = 90°, pin tilts right→135° / left→45°', () => {
+    SETTINGS.wallpaperPanelMode = 'build';
+    const cases = [[90, 0], [135, 90], [45, 270]]; // value → pin compass angle
+    for (const [angle, expectDeg] of cases) {
+      const layer = mkLayer(mkRectMirror(angle));
+      const container = document.createElement('div');
+      MirrorPanel.build(mkCtx(container, layer), layer, container);
+      const dial = container.querySelector('.mp-dial[data-dial-param="tileAngle"]');
+      expect(dial.getAttribute('data-dial-mode')).toBe('range');
+      const pin = dial.querySelector('.mp-dial-pin');
+      expect(pin.style.getPropertyValue('--angle').trim()).toBe(`${expectDeg}deg`);
+    }
+  });
+
+  test('pattern-angle dial stays a true compass (pin angle == value)', () => {
+    SETTINGS.wallpaperPanelMode = 'build';
+    const layer = mkLayer(Object.assign(Modifiers.createWallpaperMirror(0), { rotation: 210 }));
+    const container = document.createElement('div');
+    MirrorPanel.build(mkCtx(container, layer), layer, container);
+    const dial = container.querySelector('.mp-dial[data-dial-param="rotation"]');
+    expect(dial.getAttribute('data-dial-mode')).toBe('compass');
+    expect(dial.querySelector('.mp-dial-pin').style.getPropertyValue('--angle').trim()).toBe('210deg');
+  });
+
+  test('Crisp/Airy variant labels are accurate per group (Open/Woven for the denser 6-fold groups)', () => {
+    SETTINGS.wallpaperPanelMode = 'build';
+    const read = (group) => {
+      const layer = mkLayer(Object.assign(Modifiers.createWallpaperMirror(0), {
+        group, symmetry: { ...WG.FEATURES[group] },
+      }));
+      const container = document.createElement('div');
+      MirrorPanel.build(mkCtx(container, layer), layer, container);
+      return [...container.querySelectorAll('[data-set="variantV1"] .mp-st-name')].map((n) => n.textContent.trim());
+    };
+    expect(read('p4g')).toEqual(['Crisp', 'Airy']);
+    expect(read('p3')).toEqual(['Crisp', 'Airy']);
+    // p6 / p6m: v1 OVERLAPS into a denser weave, so the airy/crisp framing flips.
+    expect(read('p6')).toEqual(['Open', 'Woven']);
+    expect(read('p6m')).toEqual(['Open', 'Woven']);
+  });
+
   test('Build tile-angle range admits every recipe value (no silent clamp of 50–55° recipes)', () => {
     SETTINGS.wallpaperPanelMode = 'build';
     const layer = mkLayer();

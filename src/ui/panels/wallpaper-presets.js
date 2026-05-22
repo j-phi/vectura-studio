@@ -71,11 +71,11 @@
 
     // ── Rectangular (pm / pg / pmm / pmg / pgg) ────────────────────────────
     { id: 'wallpaper-picket-fence',   name: 'Picket Fence',      group: 'pm',  tileWidth: 56,  tileHeight: 120, tileAngle: 90 },
-    { id: 'wallpaper-herringbone',    name: 'Herringbone',       group: 'pgg', tileWidth: 60,  tileHeight: 110, tileAngle: 90 },
-    { id: 'wallpaper-tatami',         name: 'Tatami',            group: 'pgg', tileWidth: 70,  tileHeight: 130, tileAngle: 90 },
+    { id: 'wallpaper-switchback',     name: 'Switchback',        group: 'pgg', tileWidth: 60,  tileHeight: 110, tileAngle: 90 },
+    { id: 'wallpaper-lockstep',       name: 'Lockstep',          group: 'pgg', tileWidth: 70,  tileHeight: 130, tileAngle: 90 },
     { id: 'wallpaper-rolling-tide',   name: 'Rolling Tide',      group: 'pg',  tileWidth: 90,  tileHeight: 64,  tileAngle: 90, domainScale: 0.85 },
     { id: 'wallpaper-leaded-glass',   name: 'Leaded Glass',      group: 'pmm', tileWidth: 78,  tileHeight: 100, tileAngle: 90 },
-    { id: 'wallpaper-frieze-march',   name: 'Frieze March',      group: 'pmg', tileWidth: 64,  tileHeight: 96,  tileAngle: 90, domainScale: 1.05 },
+    { id: 'wallpaper-procession',     name: 'Procession',        group: 'pmg', tileWidth: 64,  tileHeight: 96,  tileAngle: 90, domainScale: 1.05 },
 
     // ── Rhombic (cm / cmm) — tileAngle drives the diamond skew ──────────────
     { id: 'wallpaper-kasbah',         name: 'Kasbah Tile',       group: 'cmm', tileWidth: 88,  tileAngle: 70 },
@@ -88,7 +88,7 @@
 
     // ── Hexagonal (p3 / p3m1 / p31m / p6 / p6m) ────────────────────────────
     { id: 'wallpaper-snowflake-lace', name: 'Snowflake Lace',    group: 'p6',  tileWidth: 84,  domainScale: 1.15, variantV1: true },
-    { id: 'wallpaper-honeycomb',      name: 'Honeycomb',         group: 'p6m', tileWidth: 78,  domainScale: 1 },
+    { id: 'wallpaper-hex-bloom',      name: 'Hex Bloom',         group: 'p6m', tileWidth: 78,  domainScale: 1 },
     { id: 'wallpaper-alpine-frost',   name: 'Alpine Frost',      group: 'p6m', tileWidth: 96,  domainScale: 1.4, variantV1: true },
     { id: 'wallpaper-trefoil',        name: 'Trefoil',           group: 'p3',  tileWidth: 90,  domainScale: 1, variantV1: true },
     { id: 'wallpaper-kaleidoscope',   name: 'Kaleidoscope',      group: 'p3m1', tileWidth: 88, domainScale: 0.85 },

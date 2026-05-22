@@ -122,6 +122,21 @@
     p6m:  'Hex Mirror',
   };
 
+  // Per-group labels for the alternate-domain (variantV1) toggle. `off` is the
+  // default v2 fundamental domain (variantV1 = false); `on` is the v1 domain
+  // (variantV1 = true). The Crisp/Airy framing is correct for the 3-fold groups
+  // and p4g (v1 opens spacing there), but INVERTED for the 6-fold groups where
+  // v1 overlaps copies into a denser weave — so those get Open/Woven instead.
+  const WALL_VARIANT_LABELS = {
+    p4g:  { off: 'Crisp', on: 'Airy',  note: 'Crisp packs the motif tight to the tile; Airy opens a glide gap between copies.' },
+    p3:   { off: 'Crisp', on: 'Airy',  note: 'Crisp tiles every triangle; Airy fills alternating triangles for open spacing.' },
+    p3m1: { off: 'Crisp', on: 'Airy',  note: 'Crisp is an exact tiling; Airy halves the coverage for airy spacing.' },
+    p6:   { off: 'Open',  on: 'Woven', note: 'Open is an exact wedge tiling; Woven overlaps copies into a dense weave.' },
+    p6m:  { off: 'Open',  on: 'Woven', note: 'Open is an exact wedge tiling; Woven overlaps copies for a subtle weave.' },
+  };
+  const variantLabelsFor = (groupId) =>
+    WALL_VARIANT_LABELS[groupId] || { off: 'Crisp', on: 'Airy', note: 'Two looks for the same symmetry — Crisp packs the motif tight; Airy gives it breathing room.' };
+
   /* ---------- info topics ---------- */
   const keyRow = (code, sym, text) => `
     <div class="mp-ip-key-row">
@@ -751,6 +766,34 @@
     return deg % 360;
   }
 
+  // ── Tile-angle dial uses a "range gauge" mapping instead of the full 0–360°
+  // compass: the TOP semicircle spans the slider's [min,max], so upright =
+  // the range center (90° = a square/upright cell) and a left/right tilt of the
+  // pin is a left/right skew of the lattice. This makes the whole top half of
+  // the dial live (the old shared compass mapping left ~¾ of the dial dead,
+  // clamping to the two extremes). The pattern-angle dial keeps the true
+  // compass mapping; mode is selected per-dial via data-dial-mode="range".
+  function dialRangeMeta(dial) {
+    const min = Number(dial?.getAttribute('aria-valuemin'));
+    const max = Number(dial?.getAttribute('aria-valuemax'));
+    return { min: Number.isFinite(min) ? min : 45, max: Number.isFinite(max) ? max : 135 };
+  }
+  // value → pin compass angle (deg, 0 = up, clockwise) for a range-gauge dial.
+  function rangePinAngle(value, min, max) {
+    const center = (min + max) / 2;
+    const half = (max - min) / 2 || 1;
+    const frac = Math.max(-1, Math.min(1, (value - center) / half));
+    return (frac * 90 + 360) % 360;
+  }
+  // pointer compass angle (deg, 0 = up, clockwise) → value for a range-gauge dial.
+  function rangeValueFromCompass(compassDeg, min, max) {
+    const center = (min + max) / 2;
+    const half = (max - min) / 2 || 1;
+    const signed = compassDeg <= 180 ? compassDeg : compassDeg - 360; // −180..180
+    const frac = Math.max(-1, Math.min(1, signed / 90));
+    return Math.round(center + frac * half);
+  }
+
   function fireDialBlip(dial) {
     const pin = dial.querySelector('.mp-dial-pin');
     if (!pin) return;
@@ -1213,10 +1256,11 @@
         </div>
       </div>
       <div class="mp-dial-row${lockedCls(locked.tileAngle)}">
-        <div class="mp-dial" role="slider" aria-valuemin="45" aria-valuemax="135" aria-valuenow="${m.tileAngle}" aria-label="Tile angle" data-dial-param="tileAngle" ${locked.tileAngle ? 'aria-disabled="true"' : ''}>
+        <div class="mp-dial" role="slider" aria-valuemin="45" aria-valuemax="135" aria-valuenow="${m.tileAngle}" aria-label="Tile angle" data-dial-param="tileAngle" data-dial-mode="range" ${locked.tileAngle ? 'aria-disabled="true"' : ''}>
           <span class="mp-dial-tick"></span>
           <span class="mp-dial-tick mp-tick-90"></span>
-          <div class="mp-dial-pin" style="--angle: ${m.tileAngle}deg;"></div>
+          <span class="mp-dial-tick mp-tick-270"></span>
+          <div class="mp-dial-pin" style="--angle: ${rangePinAngle(m.tileAngle, 45, 135)}deg;"></div>
           <div class="mp-dial-knob"></div>
         </div>
         <div class="mp-ctrl-grp${lockedCls(locked.tileAngle)}">
@@ -1227,7 +1271,7 @@
         </div>
       </div>
       <div class="mp-dial-row">
-        <div class="mp-dial" role="slider" aria-valuemin="0" aria-valuemax="360" aria-valuenow="${m.rotation}" aria-label="Pattern angle" data-dial-param="rotation">
+        <div class="mp-dial" role="slider" aria-valuemin="0" aria-valuemax="360" aria-valuenow="${m.rotation}" aria-label="Pattern angle" data-dial-param="rotation" data-dial-mode="compass">
           <span class="mp-dial-tick"></span>
           <span class="mp-dial-tick mp-tick-90"></span>
           <span class="mp-dial-tick mp-tick-180"></span>
@@ -1260,20 +1304,23 @@
                  data-param="domainScale" data-fmt="scale" style="--fill:${fillPct(m.domainScale ?? 1, 0.3, 2)}%;">
         </div>
       </div>
-      ${hasV1 ? `
+      ${hasV1 ? (() => {
+        const vl = variantLabelsFor(groupId);
+        return `
       <div class="mp-ctrl-grp">
         <div class="mp-ctrl-lbl">Tile layout</div>
         <div class="mp-side-row mp-side-row--text">
           <button type="button" class="mp-side-tile mp-side-tile--text ${!variantOn ? 'active' : ''}" aria-pressed="${!variantOn}" data-set="variantV1" data-val="false">
-            <div class="mp-st-name">Crisp</div>
+            <div class="mp-st-name">${vl.off}</div>
           </button>
           <button type="button" class="mp-side-tile mp-side-tile--text ${variantOn ? 'active' : ''}" aria-pressed="${variantOn}" data-set="variantV1" data-val="true">
-            <div class="mp-st-name">Airy</div>
+            <div class="mp-st-name">${vl.on}</div>
           </button>
         </div>
-        <div class="mp-wall-desc">Two looks for the same symmetry — Crisp packs the motif tight to the tile; Airy gives it breathing room.</div>
+        <div class="mp-wall-desc">${vl.note}</div>
       </div>
-      ` : ''}
+      `;
+      })() : ''}
       ${badge}
     `;
   }
@@ -1670,11 +1717,19 @@
               : fmt === 'scale' ? `${v.toFixed(2)}×`
               : `${Math.round(v)}`;
           }
-          // sync dial pin if present
+          // sync dial pin if present (range-gauge dials map the value through
+          // the top-semicircle, compass dials show the value angle directly)
           const dial = body.querySelector(`.mp-dial[data-dial-param="${param}"]`);
           if (dial) {
             const pin = dial.querySelector('.mp-dial-pin');
-            if (pin) pin.style.setProperty('--angle', `${v}deg`);
+            if (pin) {
+              let pinDeg = v;
+              if ((dial.dataset.dialMode || 'compass') === 'range') {
+                const { min, max } = dialRangeMeta(dial);
+                pinDeg = rangePinAngle(v, min, max);
+              }
+              pin.style.setProperty('--angle', `${pinDeg}deg`);
+            }
             dial.setAttribute('aria-valuenow', String(v));
           }
           refreshRowText();
@@ -1760,7 +1815,16 @@
         const apply = (ev) => {
           if (slider.disabled) return;
           const r = dial.getBoundingClientRect();
-          const v = pointToAngleDeg(ev.clientX, ev.clientY, r, ev.shiftKey);
+          let v;
+          if ((dial.dataset.dialMode || 'compass') === 'range') {
+            // Top-semicircle gauge: map pointer onto [min,max]; snap to 5° with Shift.
+            const { min, max } = dialRangeMeta(dial);
+            const compass = pointToAngleDeg(ev.clientX, ev.clientY, r, false);
+            v = rangeValueFromCompass(compass, min, max);
+            if (ev.shiftKey) v = Math.round(v / 5) * 5;
+          } else {
+            v = pointToAngleDeg(ev.clientX, ev.clientY, r, ev.shiftKey);
+          }
           if (+slider.value === v) return;
           slider.value = v;
           slider.dispatchEvent(new Event('input', { bubbles: true }));
