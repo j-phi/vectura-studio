@@ -196,6 +196,53 @@ describe('Wallpaper gallery panel integration', () => {
     expect(notes[0].textContent).toMatch(/symmetry/i);
   });
 
+  test('selecting a recipe marks exactly that recipe card as selected (not the bare group)', () => {
+    SETTINGS.wallpaperPanelMode = 'styles';
+    const presets = runtime.window.Vectura.WallpaperPresets.list();
+    const idx = presets.findIndex((p) => p.name === 'Op-Art Weave'); // p4g
+    expect(idx).toBeGreaterThanOrEqual(0);
+    const layer = mkLayer();
+    const container = document.createElement('div');
+    const ctx = mkCtx(container, layer);
+    MirrorPanel.build(ctx, layer, container);
+
+    container.querySelector(`[data-style-preset="${idx}"]`).click();
+
+    const card = container.querySelector(`[data-style-preset="${idx}"]`);
+    expect(card.classList.contains('is-active')).toBe(true);
+    expect(card.getAttribute('aria-pressed')).toBe('true');
+    // Its bare-group card (p4g) must NOT also light up (one clear pick).
+    const groupCard = container.querySelector('[data-style-group="p4g"]');
+    expect(groupCard.classList.contains('is-active')).toBe(false);
+  });
+
+  test('the Quarter-Turn (p4) group card applies a 45° diagonal so its icon matches the result', () => {
+    SETTINGS.wallpaperPanelMode = 'styles';
+    const layer = mkLayer();
+    const container = document.createElement('div');
+    const ctx = mkCtx(container, layer);
+    MirrorPanel.build(ctx, layer, container);
+
+    container.querySelector('[data-style-group="p4"]').click();
+    expect(layer.modifier.mirrors[0].group).toBe('p4');
+    expect(layer.modifier.mirrors[0].rotation).toBe(45);
+  });
+
+  test('selecting a bare group (no matching recipe) highlights the group card', () => {
+    SETTINGS.wallpaperPanelMode = 'styles';
+    const layer = mkLayer();
+    const container = document.createElement('div');
+    const ctx = mkCtx(container, layer);
+    MirrorPanel.build(ctx, layer, container);
+
+    container.querySelector('[data-style-group="p6m"]').click();
+    const groupCard = container.querySelector('[data-style-group="p6m"]');
+    expect(groupCard.classList.contains('is-active')).toBe(true);
+    expect(groupCard.getAttribute('aria-pressed')).toBe('true');
+    // No recipe matches a bare-group default, so no preset card is selected.
+    expect(container.querySelector('[data-style-preset].is-active')).toBeNull();
+  });
+
   // ── Gallery icon + label + a11y regressions (audit 2026-05-21) ───────────
 
   test('group cards use crisp short labels, not the full description sentence', () => {

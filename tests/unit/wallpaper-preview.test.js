@@ -72,6 +72,12 @@ describe('WallpaperPreview — substrate', () => {
       expect(typeof WP.cacheKey({})).toBe('string');
     });
 
+    test('includes stroke color so a re-skin (different --mp-type-color) busts the memo', () => {
+      const base = { mirror: { group: 'p4m' }, size: 96 };
+      expect(WP.cacheKey({ ...base, color: '#5cd99a' }))
+        .not.toBe(WP.cacheKey({ ...base, color: '#ff0000' }));
+    });
+
     test('includes devicePixelRatio so a 1× render is not served to a 2× card', () => {
       const win = runtime.window;
       const orig = win.devicePixelRatio;

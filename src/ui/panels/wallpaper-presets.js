@@ -62,18 +62,22 @@
   // (square/hex force H=W and a fixed cell angle; rhombic ignores tileAngle) are
   // sanitised at build time in list(), so authors needn't pre-strip them — but
   // recipes below already avoid setting conflicting fields for clarity.
+  // Curated so no recipe is a visual twin of another or of a bare-group card.
+  // A recipe earns its place by differing in a VISIBLE axis the icon shows:
+  // pattern angle, lattice skew (tileAngle), aspect (tileWidth:tileHeight), or
+  // the alternate domain (variantV1). Recipes that were merely "group X at the
+  // default look" (Windowpane=p4m, Hex Bloom=p6m, Kaleidoscope=p3m1, Star
+  // Anise=p31m, Pinwheel=diagonal p4 — now the p4 group card itself) were
+  // dropped, as was one of the two near-identical pgg rectangles.
   const RECIPES = [
     // ── Square (p4 / p4m / p4g) ────────────────────────────────────────────
-    { id: 'wallpaper-windowpane',     name: 'Windowpane',        group: 'p4m', tileWidth: 96,  domainScale: 1 },
-    { id: 'wallpaper-pinwheel',       name: 'Pinwheel',          group: 'p4',  tileWidth: 84,  domainScale: 1.1 },
     { id: 'wallpaper-op-art-weave',   name: 'Op-Art Weave',      group: 'p4g', tileWidth: 72,  domainScale: 1.6, variantV1: true },
     { id: 'wallpaper-courtyard',      name: 'Courtyard',         group: 'p4m', tileWidth: 120, domainScale: 0.78, rotation: 45 },
 
     // ── Rectangular (pm / pg / pmm / pmg / pgg) ────────────────────────────
     { id: 'wallpaper-picket-fence',   name: 'Picket Fence',      group: 'pm',  tileWidth: 56,  tileHeight: 120, tileAngle: 90 },
     { id: 'wallpaper-switchback',     name: 'Switchback',        group: 'pgg', tileWidth: 60,  tileHeight: 110, tileAngle: 90 },
-    { id: 'wallpaper-lockstep',       name: 'Lockstep',          group: 'pgg', tileWidth: 70,  tileHeight: 130, tileAngle: 90 },
-    { id: 'wallpaper-rolling-tide',   name: 'Rolling Tide',      group: 'pg',  tileWidth: 90,  tileHeight: 64,  tileAngle: 90, domainScale: 0.85 },
+    { id: 'wallpaper-brick-path',     name: 'Brick Path',        group: 'pg',  tileWidth: 90,  tileHeight: 64,  tileAngle: 90, domainScale: 0.85 },
     { id: 'wallpaper-leaded-glass',   name: 'Leaded Glass',      group: 'pmm', tileWidth: 78,  tileHeight: 100, tileAngle: 90 },
     { id: 'wallpaper-procession',     name: 'Procession',        group: 'pmg', tileWidth: 64,  tileHeight: 96,  tileAngle: 90, domainScale: 1.05 },
 
@@ -86,13 +90,10 @@
     { id: 'wallpaper-drift-grid',     name: 'Drift Grid',        group: 'p1',  tileWidth: 92,  tileHeight: 70,  tileAngle: 72 },
     { id: 'wallpaper-pinwheel-skew',  name: 'Skewed Pinwheel',   group: 'p2',  tileWidth: 84,  tileHeight: 96,  tileAngle: 66, domainScale: 1.08 },
 
-    // ── Hexagonal (p3 / p3m1 / p31m / p6 / p6m) ────────────────────────────
+    // ── Hexagonal (p3 / p6 / p6m) — bare p3m1/p31m live as group cards ──────
     { id: 'wallpaper-snowflake-lace', name: 'Snowflake Lace',    group: 'p6',  tileWidth: 84,  domainScale: 1.15, variantV1: true },
-    { id: 'wallpaper-hex-bloom',      name: 'Hex Bloom',         group: 'p6m', tileWidth: 78,  domainScale: 1 },
     { id: 'wallpaper-alpine-frost',   name: 'Alpine Frost',      group: 'p6m', tileWidth: 96,  domainScale: 1.4, variantV1: true },
     { id: 'wallpaper-trefoil',        name: 'Trefoil',           group: 'p3',  tileWidth: 90,  domainScale: 1, variantV1: true },
-    { id: 'wallpaper-kaleidoscope',   name: 'Kaleidoscope',      group: 'p3m1', tileWidth: 88, domainScale: 0.85 },
-    { id: 'wallpaper-star-anise',     name: 'Star Anise',        group: 'p31m', tileWidth: 92, domainScale: 1.1 },
   ];
 
   const list = () => RECIPES.map((r) => {

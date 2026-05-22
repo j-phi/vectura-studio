@@ -34,6 +34,9 @@
  *                          //   or empty, a built-in motif is tiled so the card still
  *                          //   communicates the symmetry.
  *     size:        number | {w,h}       // px (default 96, square)
+ *     color:       string?              // stroke color (default WALL_HUE); callers
+ *                          // pass the resolved --mp-type-color token so icons
+ *                          // follow the active skin. Included in cacheKey.
  *     bounds:      {x,y,width,height}?  // tiling bounds; derived from size if omitted
  *   }
  *
@@ -142,18 +145,24 @@
     };
   };
 
-  // ── Pure: an ASYMMETRIC built-in motif — a single connected "flag" polyline.
-  //    Asymmetry (no reflective OR rotational symmetry) is intentional so p4 vs
-  //    p4m vs pm produce visibly different silhouettes. One open subpath (no
-  //    detached strokes) so every symmetry copy stays a continuous line that
-  //    survives dense overlap (p6m makes 12 copies) and downsampling. Spans
-  //    ~12×16 about the origin; scaled to the tile by computeTiledPaths.
-  //    Centered on its own bbox so it can be placed precisely on a group's
-  //    fundamental-domain centroid.
+  // ── Pure: an ASYMMETRIC built-in motif — a single CURVED spiral comma.
+  //    The curve is deliberate: a rotational group (p4 etc.) turns a bent,
+  //    straight-legged hook into a swastika, but it turns a curved arm into a
+  //    floral pinwheel. So the reference glyph is a smooth open spiral with no
+  //    right-angle bends. It is still chiral (no reflective OR rotational self-
+  //    symmetry) so rotation groups read differently from mirror groups, and it
+  //    is one open subpath (no detached strokes) so every symmetry copy stays a
+  //    continuous line that survives dense overlap and downsampling. Centered on
+  //    its own bbox; scaled to the tile and placed on the domain centroid by
+  //    computeTiledPaths.
   const motifPaths = () => ([
-    [{ x: -6, y: 8 }, { x: -6, y: -8 }, { x: 6, y: -8 }, { x: 6, y: -1 }],
+    [
+      { x: -3, y: 0 }, { x: -4, y: 2.5 }, { x: -2.5, y: 4.5 },
+      { x: 0.5, y: 5 }, { x: 3.5, y: 3.5 }, { x: 4.5, y: 0 },
+      { x: 3, y: -3.5 }, { x: 0, y: -5 },
+    ],
   ]);
-  const MOTIF_SPAN = 16; // the larger (y) extent of motifPaths(), for tile scaling
+  const MOTIF_SPAN = 10; // the larger (y) extent of motifPaths(), for tile scaling
 
   const cacheKey = (opts = {}) => {
     const m = fullMirror(opts.mirror);
@@ -167,7 +176,7 @@
       m.group, m.symmetry && m.symmetry.lattice, m.symmetry && m.symmetry.rotation,
       m.symmetry && m.symmetry.mirrors, m.tileWidth, m.tileHeight, m.tileAngle,
       m.rotation, m.centerX, m.centerY, m.domainScale, m.variantV1, w, h,
-      getDPR(), boundsTag, geomHash,
+      getDPR(), (opts.color || ''), boundsTag, geomHash,
     ].join('|');
   };
 
@@ -336,7 +345,7 @@
       ctx.lineWidth = Math.max(0.75, Math.min(w, h) / 60);
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
-      ctx.strokeStyle = WALL_HUE;
+      ctx.strokeStyle = (opts && opts.color) || WALL_HUE;
       ctx.beginPath();
       for (const path of paths) {
         if (!path || path.length < 2) continue;

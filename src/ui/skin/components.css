@@ -3062,7 +3062,7 @@
 }
 .mp-root .mp-ip-key-row {
   display: grid;
-  grid-template-columns: 22px 36px 1fr;
+  grid-template-columns: 58px 36px 1fr;
   gap: 8px;
   align-items: center;
   font-size: var(--font-size-xs);
@@ -3075,9 +3075,10 @@
   background: color-mix(in srgb, var(--mp-type-color) 14%, var(--ui-ctrl));
   border: 1px solid color-mix(in srgb, var(--mp-type-color) 35%, var(--ui-border));
   border-radius: 3px;
-  padding: 1px 0;
+  padding: 1px 4px;
   color: var(--mp-type-color);
   text-align: center;
+  white-space: nowrap;
   font-weight: 700;
 }
 .mp-root .mp-ip-key-svg {
@@ -3160,6 +3161,7 @@
   .mp-root .mp-wallgrid { grid-template-columns: repeat(5, 1fr); }
 }
 .mp-root .mp-stylecard {
+  position: relative;
   display: flex; flex-direction: column; align-items: center; gap: 4px;
   padding: 6px 4px 5px;
   background: var(--ui-ctrl);
@@ -3167,7 +3169,7 @@
   border-radius: var(--radius-sm);
   cursor: pointer;
   color: var(--ui-text-2);
-  transition: border-color 0.12s, background-color 0.12s, transform 0.08s;
+  transition: border-color 0.12s, background-color 0.12s, box-shadow 0.12s, transform 0.08s;
 }
 .mp-root .mp-stylecard:hover { border-color: var(--ui-border-hi, var(--ui-border)); }
 .mp-root .mp-stylecard:active { transform: scale(0.97); }
@@ -3177,7 +3179,19 @@
 }
 .mp-root .mp-stylecard.is-active {
   border-color: var(--mp-type-color);
-  background: color-mix(in srgb, var(--mp-type-color) 12%, var(--ui-ctrl));
+  background: color-mix(in srgb, var(--mp-type-color) 16%, var(--ui-ctrl));
+  box-shadow: 0 0 0 1px var(--mp-type-color), 0 0 9px -3px var(--mp-type-color);
+}
+/* Unmistakable "selected" badge on the active card. */
+.mp-root .mp-stylecard.is-active::after {
+  content: '✓';
+  position: absolute; top: 4px; right: 4px;
+  width: 14px; height: 14px;
+  font-size: 10px; line-height: 14px; font-weight: 700; text-align: center;
+  border-radius: 50%;
+  background: var(--mp-type-color);
+  color: var(--ui-bg);
+  pointer-events: none;
 }
 .mp-root .mp-stylecard--preset {
   border-color: color-mix(in srgb, var(--mp-type-color) 30%, var(--ui-border));

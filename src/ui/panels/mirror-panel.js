@@ -137,6 +137,15 @@
   const variantLabelsFor = (groupId) =>
     WALL_VARIANT_LABELS[groupId] || { off: 'Crisp', on: 'Airy', note: 'Two looks for the same symmetry — Crisp packs the motif tight; Airy gives it breathing room.' };
 
+  // Per-group presentation overrides for the bare-group cards in the Styles
+  // gallery — both the icon AND what clicking the card applies, so the two
+  // always match. p4 (Quarter-Turn) is shown on a 45° diagonal: a quarter-turn
+  // pinwheel reads best tilted, and it keeps p4 visually distinct from the
+  // axis-aligned p4m / p4g square cards.
+  const WALL_GROUP_CARD_OVERRIDES = {
+    p4: { rotation: 45 },
+  };
+
   /* ---------- info topics ---------- */
   const keyRow = (code, sym, text) => `
     <div class="mp-ip-key-row">
@@ -173,47 +182,37 @@
         <p><code>Inner</code> — geometry inside the circle stays straight; the outside fans/splays away from the surface.</p>`,
     },
     'wall-rect': {
-      tag: 'Lattice family · 8 groups',
-      title: 'Rectangular & oblique',
+      tag: 'Lattice · the repeat grid',
+      title: 'Lattice shape',
       body: `
-        <p>Patterns that repeat on a <strong>rectangular grid</strong>. The name tells you three things — the lattice type, the strongest rotation, and which kinds of mirrors exist.</p>
-        <div class="mp-ip-key">
-          <h5>Reading the names</h5>
-          ${keyRow('p',  'kp',    'Primitive grid — one tile per repeat.')}
-          ${keyRow('c',  'kc',    'Centered grid — adds a half-step "rhombus" tile.')}
-          ${keyRow('1',  'kp',    'No rotation — just sliding (the <code>1</code> is implicit).')}
-          ${keyRow('2',  'krot2', 'Half-turn (180°) rotation lives somewhere in the tile.')}
-          ${keyRow('m',  'km',    'Straight mirror line — fold the tile and it matches.')}
-          ${keyRow('g',  'kg',    'Glide mirror — slide along the line, <em>then</em> flip.')}
-        </div>
-        <div class="mp-ip-note">So <code>pmm</code> = rectangular grid, two perpendicular straight mirrors. <code>pgg</code> = same grid but glide mirrors only.</div>`,
+        <p>The <strong>lattice</strong> is the invisible grid your motif repeats on — the shape of one tile before any mirroring or spinning.</p>
+        <p><strong>Square</strong> and <strong>Hexagon</strong> are the most symmetric, so they unlock the richest patterns. <strong>Rectangle</strong>, <strong>Rhombus</strong> (a stretched diamond), and <strong>Parallelogram</strong> (a leaning rectangle) give looser, more directional repeats.</p>
+        <div class="mp-ip-note">Pick the lattice first — it decides which rotations and mirrors are even possible. Then dial those in with the rows below. The Tile width / height sliders set the size of one repeat.</div>`,
     },
     'wall-sq': {
-      tag: 'Lattice family · 4 groups',
-      title: 'Square symmetry',
+      tag: 'Rotation · how many turns match',
+      title: 'Rotation order',
       body: `
-        <p>Patterns that fit a <strong>square grid</strong>, so a quarter-turn rotation (90°) brings the tile back onto itself.</p>
+        <p><strong>Rotation order</strong> is how many times you can spin the tile in a full circle and have it land back on itself. Higher numbers = more pinwheel energy.</p>
         <div class="mp-ip-key">
-          <h5>Reading the names</h5>
-          ${keyRow('4',  'krot4', 'Quarter-turn (90°) rotation — the defining feature.')}
-          ${keyRow('m',  'km',    'Straight mirror lines — full windowpane symmetry.')}
-          ${keyRow('g',  'kg',    'Glide mirrors instead of straight ones.')}
-          ${keyRow('cm', 'kc',    'Diagonal mirrors on a centered grid (used in <code>cmm</code>).')}
+          ${keyRow('2-fold', 'krot2', 'Half-turn (180°). The tile matches when flipped upside down.')}
+          ${keyRow('3-fold', 'krot3', 'Third-turn (120°). Triangular, three-armed spins.')}
+          ${keyRow('4-fold', 'krot4', 'Quarter-turn (90°). Crisp pinwheels — needs a square lattice.')}
+          ${keyRow('6-fold', 'krot6', 'Sixth-turn (60°). Snowflake spin — needs a hexagon lattice.')}
         </div>
-        <div class="mp-ip-note">So <code>p4</code> rotates only, <code>p4m</code> adds straight mirrors, <code>p4g</code> uses glides, and <code>cmm</code> sits on a 45°-rotated lattice.</div>`,
+        <div class="mp-ip-note"><strong>1-fold</strong> means no rotation at all — the tile only slides. Greyed-out options don’t fit the current lattice; switch lattice to unlock them.</div>`,
     },
     'wall-hex': {
-      tag: 'Lattice family · 5 groups',
-      title: 'Hexagonal symmetry',
+      tag: 'Mirrors · reflected vs slid copies',
+      title: 'Mirror type',
       body: `
-        <p>Six-fold lattices — <strong>honeycombs, snowflakes, kaleidoscopes</strong>. Rotations of 60° or 120° are possible.</p>
+        <p>Mirrors decide whether copies are <strong>flipped reflections</strong> or just <strong>slid-over duplicates</strong> — the difference between a kaleidoscope and a wallpaper roll.</p>
         <div class="mp-ip-key">
-          <h5>Reading the names</h5>
-          ${keyRow('3',  'krot3', 'Third-turn (120°) rotation — three-fold symmetry.')}
-          ${keyRow('6',  'krot6', 'Sixth-turn (60°) rotation — six-fold (snowflake) symmetry.')}
-          ${keyRow('m',  'km',    'Mirror line. In <code>p3m1</code> mirrors run through tile <em>corners</em>; in <code>p31m</code> through <em>edges</em>.')}
+          ${keyRow('Straight', 'km', 'A true reflection — fold the pattern on the line and both halves match.')}
+          ${keyRow('Glide', 'kg', 'Slide along the line, <em>then</em> flip — like staggered footprints.')}
         </div>
-        <div class="mp-ip-note"><code>p3</code> and <code>p6</code> rotate only. <code>p6m</code> is the most symmetric of the 17 — every mirror and every rotation that fits a hexagon.</div>`,
+        <p><strong>None</strong> leaves copies unmirrored. <strong>Through corners</strong> and <strong>Through edges</strong> are two ways mirror lines can cross a hexagon tile — corners point the reflections at the tile’s tips, edges run them along its sides. <strong>All</strong> turns on every mirror the lattice allows (full kaleidoscope).</p>
+        <div class="mp-ip-note">Only the mirror types that fit your lattice + rotation appear as chips — the rest are hidden automatically.</div>`,
     },
   };
 
@@ -1089,6 +1088,25 @@
     `;
   }
 
+  // True when the live mirror matches a recipe — every field the recipe sets
+  // equals the mirror's (numeric fields within a small tolerance). Fields the
+  // recipe omits (locked axes, variant) are ignored, mirroring how a recipe is
+  // applied via Object.assign. `symmetry` is derived from `group`, so skip it.
+  function matchesPresetMirror(mirror, recipeMirror) {
+    if (!mirror || !recipeMirror) return false;
+    for (const k of Object.keys(recipeMirror)) {
+      if (k === 'symmetry') continue;
+      const b = recipeMirror[k];
+      const a = mirror[k];
+      if (typeof b === 'number') {
+        if (Math.abs((Number(a) || 0) - b) > 1e-6) return false;
+      } else if (a !== b) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   // Friendly, evocative card label for a bare crystallographic group.
   function wallGroupLabel(groupId) {
     if (WALL_GROUP_SHORT[groupId]) return WALL_GROUP_SHORT[groupId];
@@ -1108,8 +1126,15 @@
     const activeGroup = (WG?.featuresToGroupId?.(sym)) || m.group || 'p4m';
     const groupIds = WG?.GROUP_IDS || WALL_GROUPS.map((g) => g.id);
 
+    const presets = (window.Vectura?.WallpaperPresets?.list?.() || []);
+    // The current mirror "is" a recipe when every field that recipe sets matches
+    // the live mirror (locked axes / unset fields are ignored). When one matches
+    // we highlight that recipe card and suppress the bare-group highlight so a
+    // single, unambiguous card reads as selected.
+    const activePreset = presets.findIndex((p) => matchesPresetMirror(m, p.mirror));
+
     const groupCards = groupIds.map((gid) => {
-      const isActive = gid === activeGroup;
+      const isActive = gid === activeGroup && activePreset === -1;
       const label = wallGroupLabel(gid);
       const sub = showCrystallographicNames() ? gid : '';
       const desc = WALL_GROUP_DESC[gid] || gid;
@@ -1124,19 +1149,19 @@
         </button>`;
     }).join('');
 
-    const presets = (window.Vectura?.WallpaperPresets?.list?.() || []);
     const presetCards = presets.map((p, i) => {
       const nm = String(p.name || p.id);
       const gid = p.mirror && p.mirror.group;
-      const sym = gid ? wallGroupLabel(gid) : 'Recipe';
-      const aria = `${nm} recipe — ${sym} symmetry`.replace(/"/g, '&quot;');
+      const symLbl = gid ? wallGroupLabel(gid) : 'Recipe';
+      const isActive = i === activePreset;
+      const aria = `${nm} recipe — ${symLbl} symmetry${isActive ? ' (selected)' : ''}`.replace(/"/g, '&quot;');
       return `
-        <button type="button" class="mp-stylecard mp-wallgrid-card mp-stylecard--preset"
-          data-style-preset="${i}" aria-pressed="false" aria-label="${aria}"
+        <button type="button" class="mp-stylecard mp-wallgrid-card mp-stylecard--preset ${isActive ? 'is-active' : ''}"
+          data-style-preset="${i}" aria-pressed="${isActive}" aria-label="${aria}"
           title="${nm.replace(/"/g, '&quot;')}">
           <span class="mp-stylecard-thumb" data-style-thumb data-style-preset-thumb="${i}" aria-hidden="true"></span>
           <span class="mp-stylecard-name">${nm}</span>
-          <span class="mp-stylecard-sub">${sym}</span>
+          <span class="mp-stylecard-sub">${symLbl}</span>
         </button>`;
     }).join('');
 
@@ -1936,14 +1961,22 @@
       // as the user clicks recipes (which would mutate the layer's
       // effectivePaths and repaint every card differently each time).
       const Preview = window.Vectura?.WallpaperPreview;
+      // Resolve the active skin's wallpaper accent once so icons stroke in the
+      // same colour as the rest of the wallpaper UI (re-skin friendly).
+      let iconColor;
+      try {
+        iconColor = (typeof getComputedStyle === 'function')
+          ? getComputedStyle(root).getPropertyValue('--mp-type-color').trim() || undefined
+          : undefined;
+      } catch (_) { iconColor = undefined; }
       const renderThumb = (el, mirrorCfg) => {
         if (!Preview?.render || !el) return;
-        try { Preview.render(el, { mirror: mirrorCfg, size: 72 }); } catch (_) {}
+        try { Preview.render(el, { mirror: mirrorCfg, size: 72, color: iconColor }); } catch (_) {}
       };
       const WG = window.Vectura?.WallpaperGroups;
       body.querySelectorAll('[data-style-group-thumb]').forEach((el) => {
         const gid = el.dataset.styleGroupThumb;
-        renderThumb(el, { group: gid, symmetry: WG?.FEATURES?.[gid] });
+        renderThumb(el, { group: gid, symmetry: WG?.FEATURES?.[gid], ...(WALL_GROUP_CARD_OVERRIDES[gid] || {}) });
       });
       const presets = window.Vectura?.WallpaperPresets?.list?.() || [];
       body.querySelectorAll('[data-style-preset-thumb]').forEach((el) => {
@@ -1957,9 +1990,14 @@
           e.stopPropagation();
           const gid = el.dataset.styleGroup;
           const resolvedSym = WG?.FEATURES?.[gid];
+          const override = WALL_GROUP_CARD_OVERRIDES[gid] || {};
           commit(() => {
             mirror.group = gid;
             if (resolvedSym) mirror.symmetry = { ...resolvedSym };
+            // Reset pattern angle to the group's canonical default (0, or the
+            // override) so the applied result matches the card's icon and a
+            // previous recipe's rotation doesn't linger.
+            mirror.rotation = override.rotation ?? 0;
           });
           renderAll();
         });
