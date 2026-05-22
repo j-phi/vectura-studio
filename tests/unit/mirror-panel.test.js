@@ -110,13 +110,14 @@ describe('MirrorPanel — pure helpers (would fail against legacy UI)', () => {
 });
 
 describe('MirrorPanel.build — DOM behavior (RGR for the v2 redesign)', () => {
-  let runtime, MirrorPanel, Modifiers, document;
+  let runtime, MirrorPanel, Modifiers, document, SETTINGS;
 
   beforeEach(async () => {
     runtime = await loadVecturaRuntime();
     MirrorPanel = runtime.window.Vectura.UI.MirrorPanel;
     Modifiers = runtime.window.Vectura.Modifiers;
     document = runtime.document;
+    SETTINGS = runtime.window.Vectura.SETTINGS;
   });
 
   afterEach(() => runtime?.cleanup());
@@ -292,6 +293,7 @@ describe('MirrorPanel.build — DOM behavior (RGR for the v2 redesign)', () => {
     // 2026-05-21: flat 17-cell atlas → three composable chip rows. The math
     // surface (group → fundamental domain) is unchanged, but the UI now
     // surfaces the underlying (lattice, rotation, mirrors) tuple.
+    SETTINGS.wallpaperPanelMode = 'build'; // chip rows live in Build mode
     const layer = mkLayer([Modifiers.createWallpaperMirror(0)]);
     const container = document.createElement('div');
     MirrorPanel.build(mkCtx(), layer, container);
@@ -311,6 +313,7 @@ describe('MirrorPanel.build — DOM behavior (RGR for the v2 redesign)', () => {
     // p4m (square lattice) hardcodes H = W and tileAngle = 90 in the math,
     // so dragging those sliders is a no-op. The panel must reflect that
     // by disabling them and showing a "locked" hint.
+    SETTINGS.wallpaperPanelMode = 'build'; // sliders live in Build mode
     const layer = mkLayer([Modifiers.createWallpaperMirror(0)]);
     const container = document.createElement('div');
     MirrorPanel.build(mkCtx(), layer, container);
@@ -341,6 +344,7 @@ describe('MirrorPanel.build — DOM behavior (RGR for the v2 redesign)', () => {
   });
 
   test('toggling lattice to hexagonal resolves to a hex group + updates active chip', () => {
+    SETTINGS.wallpaperPanelMode = 'build';
     const layer = mkLayer([Modifiers.createWallpaperMirror(0)]);
     const container = document.createElement('div');
     MirrorPanel.build(mkCtx(), layer, container);
@@ -580,7 +584,8 @@ describe('MirrorPanel.build — DOM behavior (RGR for the v2 redesign)', () => {
     );
     expect(arcLayer.modifier.mirrors[0].radius).toBe(80);
 
-    // wallpaper: tileWidth 200 → 60
+    // wallpaper: tileWidth 200 → 60 (sliders live in Build mode)
+    SETTINGS.wallpaperPanelMode = 'build';
     const wallLayer = mkLayer([Object.assign(Modifiers.createWallpaperMirror(0), { tileWidth: 200, rotation: 45 })]);
     const wc = document.createElement('div');
     MirrorPanel.build(mkCtx(), wallLayer, wc);
@@ -623,6 +628,10 @@ describe('MirrorPanel — wallpaper composable symmetry', () => {
     WG = runtime.window.Vectura.WallpaperGroups;
     SETTINGS = runtime.window.Vectura.SETTINGS;
     document = runtime.document;
+    // Composable chip rows live in the advanced "Build" mode of the wallpaper
+    // editor (the gallery-first "Styles" mode is the user-facing default since
+    // 2026-05-21). These tests exercise the Build-mode chip math.
+    SETTINGS.wallpaperPanelMode = 'build';
   });
 
   afterEach(() => runtime?.cleanup());
@@ -756,12 +765,17 @@ describe('MirrorPanel — wallpaper composable symmetry', () => {
     document.body.removeChild(container);
   });
 
-  test('SETTINGS.showCrystallographicNames=false hides the wall-name badge; true reveals it', () => {
+  test('wall-name badge is always shown (un-gated) so users see where a snap landed; crystallographic id appended only when the pref is on', () => {
+    // 2026-05-21: the friendly name badge is now ALWAYS rendered in Build mode
+    // (un-gated from showCrystallographicNames) so a snap always tells the user
+    // where they landed. The raw pXX id is appended only when the pref is on.
     SETTINGS.showCrystallographicNames = false;
     const layer = mkLayer();
     const container = document.createElement('div');
     MirrorPanel.build(mkCtx(), layer, container);
-    expect(container.querySelector('[data-testid="wall-name-badge"]')).toBeNull();
+    const badge0 = container.querySelector('[data-testid="wall-name-badge"]');
+    expect(badge0).toBeTruthy();
+    expect(badge0.textContent).not.toContain('p4m'); // friendly only, no raw id
 
     SETTINGS.showCrystallographicNames = true;
     const container2 = document.createElement('div');

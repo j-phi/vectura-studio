@@ -84,8 +84,28 @@
   animation: progress-indeterminate 1.05s cubic-bezier(0.65, 0, 0.35, 1) infinite;
 }
 
+/* Wallpaper snapping feedback — flash auto-changed chips + fade the line.
+   Namespaced .mp-snap-* per the mirror-panel CSS contract. Implemented with a
+   transition (not a @keyframes) so the global reduced-motion guard at the
+   bottom of this file neutralizes it without a per-keyframe fallback entry.
+   The .mp-snap-flash class is added on snap and removed ~1.4s later by JS; the
+   eased box-shadow transition produces the ring pulse on add + fade on remove.
+   The compound `.mp-chip.mp-snap-flash` selector out-specifies the base
+   `.mp-chip` transition in components.css, so the box-shadow easing applies
+   regardless of stylesheet load order. */
+.mp-root .mp-chip.mp-snap-flash {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mp-type-color) 55%, transparent);
+  transition: box-shadow 0.6s ease;
+}
+.mp-root .mp-snap-line {
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+.mp-root .mp-snap-line.mp-snap-show { opacity: 1; }
+
 /* Reduced-motion: collapse durations and disable expensive halos. */
 @media (prefers-reduced-motion: reduce) {
+  .mp-root .mp-chip.mp-snap-flash { box-shadow: none !important; }
   .ctrl-slider.just-released::-webkit-slider-thumb,
   .sld-fx-wrap.fx-active::after,
   .btn-pulse {

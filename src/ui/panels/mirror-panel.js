@@ -664,6 +664,41 @@
     return window.Vectura?.SETTINGS?.showCrystallographicNames === true;
   }
 
+  // Persisted Styles/Build mode for the wallpaper editor. Mirrors the
+  // showCrystallographicNames SETTINGS pattern — read/write window.Vectura.SETTINGS
+  // directly so the cookie-persistence layer (ui/persistence.js) round-trips it.
+  // 'styles' = gallery-first (default), 'build' = advanced chip/slider editor.
+  function wallpaperMode() {
+    const m = window.Vectura?.SETTINGS?.wallpaperPanelMode;
+    return m === 'build' ? 'build' : 'styles';
+  }
+  function setWallpaperMode(mode) {
+    const S = window.Vectura?.SETTINGS;
+    if (S) S.wallpaperPanelMode = mode === 'build' ? 'build' : 'styles';
+  }
+
+  // The wallpaper mirror's "source" geometry is the modifier container's
+  // descendant shape geometry — exactly what the engine reflects when it tiles.
+  // We read effectivePaths (post other-modifier) falling back to raw paths so
+  // the live preview matches the canvas. Returns Array<Array<{x,y}>>.
+  function wallpaperSourcePaths(uiCtx, layer) {
+    try {
+      const engine = uiCtx?.app?.engine;
+      if (!engine || !layer || typeof engine.getLayerDescendants !== 'function') return [];
+      const out = [];
+      engine.getLayerDescendants(layer.id).forEach((child) => {
+        if (!child || child.isGroup) return;
+        const paths = (child.effectivePaths && child.effectivePaths.length)
+          ? child.effectivePaths
+          : (child.paths || []);
+        paths.forEach((p) => { if (Array.isArray(p) && p.length) out.push(p); });
+      });
+      return out;
+    } catch (_) {
+      return [];
+    }
+  }
+
   function nameFor(mirror) {
     switch (mirror.type) {
       case 'line':      return `Line · ${Math.round(mirror.angle ?? 0)}°`;
@@ -1005,7 +1040,74 @@
     `;
   }
 
+  // Friendly, evocative card label for a bare crystallographic group.
+  function wallGroupLabel(groupId) {
+    const desc = WALL_GROUP_DESC[groupId] || '';
+    // Use the first clause of the description as a short human label.
+    const lead = desc.split(/[—.·]/)[0].trim();
+    return lead || groupId;
+  }
+
+  // STYLES (gallery) mode: a scrollable grid of cards — the 17 bare groups
+  // (friendly labels from WALL_GROUP_DESC, never raw pXX) plus the named recipes
+  // from WallpaperPresets.list(). Each card hosts a live WallpaperPreview thumb.
+  // A "Surprise me" dice button (WallpaperPresets.randomize) tops the grid.
+  function wallStylesHtml(m) {
+    const WG = window.Vectura?.WallpaperGroups;
+    const sym = deriveWallpaperSymmetry(m);
+    const activeGroup = (WG?.featuresToGroupId?.(sym)) || m.group || 'p4m';
+    const groupIds = WG?.GROUP_IDS || WALL_GROUPS.map((g) => g.id);
+
+    const groupCards = groupIds.map((gid) => {
+      const isActive = gid === activeGroup;
+      const label = wallGroupLabel(gid);
+      const sub = showCrystallographicNames() ? gid : '';
+      return `
+        <button type="button" class="mp-stylecard mp-wallgrid-card ${isActive ? 'is-active' : ''}"
+          data-style-group="${gid}" title="${(WALL_GROUP_DESC[gid] || gid).replace(/"/g, '&quot;')}">
+          <span class="mp-stylecard-thumb" data-style-thumb data-style-group-thumb="${gid}"></span>
+          <span class="mp-stylecard-name">${label}</span>
+          ${sub ? `<span class="mp-stylecard-sub">${sub}</span>` : ''}
+        </button>`;
+    }).join('');
+
+    const presets = (window.Vectura?.WallpaperPresets?.list?.() || []);
+    const presetCards = presets.map((p, i) => `
+        <button type="button" class="mp-stylecard mp-wallgrid-card mp-stylecard--preset"
+          data-style-preset="${i}" title="${String(p.name || p.id).replace(/"/g, '&quot;')}">
+          <span class="mp-stylecard-thumb" data-style-thumb data-style-preset-thumb="${i}"></span>
+          <span class="mp-stylecard-name">${p.name || p.id}</span>
+          <span class="mp-stylecard-sub">Recipe</span>
+        </button>`).join('');
+
+    return `
+      <div class="mp-wallgrid-bar">
+        <button type="button" class="mp-wallgrid-dice" data-act="surprise"
+          title="Surprise me — pick a random valid pattern. Hold Shift to keep the current lattice family.">
+          <span class="mp-wallgrid-dice-glyph">⚄</span> Surprise me
+        </button>
+        <span class="mp-wallgrid-dice-hint">Hold Shift to keep the lattice</span>
+      </div>
+      ${presetCards ? `<div class="mp-wallgrid-section">Recipes</div><div class="mp-wallgrid" data-wallgrid="presets">${presetCards}</div>` : ''}
+      <div class="mp-wallgrid-section">All symmetries</div>
+      <div class="mp-wallgrid" data-wallgrid="groups">${groupCards}</div>
+    `;
+  }
+
   function wallConfig(m) {
+    const mode = wallpaperMode();
+    const toggle = `
+      <div class="mp-wallmode" role="tablist" aria-label="Wallpaper editor mode">
+        <button type="button" class="mp-wallmode-btn ${mode === 'styles' ? 'is-active' : ''}"
+          role="tab" aria-selected="${mode === 'styles'}" data-wall-mode="styles">Styles</button>
+        <button type="button" class="mp-wallmode-btn ${mode === 'build' ? 'is-active' : ''}"
+          role="tab" aria-selected="${mode === 'build'}" data-wall-mode="build">Build</button>
+      </div>`;
+    const body = mode === 'styles' ? wallStylesHtml(m) : wallBuildHtml(m);
+    return `${toggle}${body}`;
+  }
+
+  function wallBuildHtml(m) {
     const WG = window.Vectura?.WallpaperGroups;
     const sym = deriveWallpaperSymmetry(m);
     const groupId = (WG?.featuresToGroupId?.(sym)) || m.group || 'p4m';
@@ -1015,7 +1117,14 @@
     const locked = WG?.getLockedAxes?.(groupId) || { tileHeight: false, tileAngle: false };
     const lockedAttr = (on) => on ? 'disabled aria-disabled="true"' : '';
     const lockedCls  = (on) => on ? ' is-locked' : '';
-    const lockHint   = (on) => on ? ` <span class="mp-lock-hint" title="${groupId} forces this value">locked</span>` : '';
+    // Touch-safe, actionable explanation of why a slider is locked — replaces the
+    // hover-only pXX `title`. Names the axis that forces the value in plain words.
+    const lockHint   = (on) => on
+      ? ` <span class="mp-lock-hint" data-testid="wall-lock-hint">locked by symmetry</span>`
+      : '';
+    const lockNote   = (on, what) => on
+      ? `<div class="mp-lock-note" data-testid="wall-lock-note">This pattern's symmetry sets ${what} automatically. Switch the Rotation order or Mirrors to unlock it.</div>`
+      : '';
 
     // Lattice row
     const lattices = ['oblique', 'rectangular', 'rhombic', 'square', 'hexagonal'];
@@ -1051,22 +1160,25 @@
         title="${label}">${label}</button>`;
     }).join('');
 
-    const badge = showCrystallographicNames()
-      ? `<div class="mp-wall-badge" data-testid="wall-name-badge">→ ${groupId}</div>`
-      : '';
+    // Friendly name badge is ALWAYS shown now (un-gated from the
+    // showCrystallographicNames pref) so users always see where they landed
+    // after a snap. The crystallographic id is appended when the pref is on.
+    const friendly = wallGroupLabel(groupId);
+    const badge = `<div class="mp-wall-badge" data-testid="wall-name-badge">→ ${friendly}${showCrystallographicNames() ? ` <span class="mp-wall-badge-id">${groupId}</span>` : ''}</div>`;
     const desc = WALL_GROUP_DESC[groupId] || '';
     return `
-      ${renderPopovers([])}
+      ${renderPopovers(['wall-rect', 'wall-sq', 'wall-hex'])}
+      <div class="mp-snap-line" data-testid="wall-snap-line" aria-live="polite" hidden></div>
       <div class="mp-ctrl-grp">
-        <div class="mp-ctrl-lbl">Lattice</div>
+        <div class="mp-ctrl-lbl">Lattice ${infoTrigger('wall-rect', 'About lattice families')}</div>
         <div class="mp-chip-row" data-symmetry-row="lattice">${latticeChips}</div>
       </div>
       <div class="mp-ctrl-grp">
-        <div class="mp-ctrl-lbl">Rotation order</div>
+        <div class="mp-ctrl-lbl">Rotation order ${infoTrigger('wall-sq', 'About rotation orders')}</div>
         <div class="mp-chip-row" data-symmetry-row="rotation">${rotationChips}</div>
       </div>
       <div class="mp-ctrl-grp">
-        <div class="mp-ctrl-lbl">Mirrors</div>
+        <div class="mp-ctrl-lbl">Mirrors ${infoTrigger('wall-hex', 'About mirror types')}</div>
         <div class="mp-chip-row" data-symmetry-row="mirrors">${mirrorChips}</div>
       </div>
       ${desc ? `<div class="mp-wall-desc" data-testid="wall-desc">${desc}</div>` : ''}
@@ -1080,6 +1192,7 @@
           <div class="mp-ctrl-lbl">Tile height <span class="mp-val-tag" data-tag="tileHeight">${Math.round(m.tileHeight)}</span>${lockHint(locked.tileHeight)}</div>
           <input type="range" class="mp-slider" min="20" max="400" value="${m.tileHeight}"
                  data-param="tileHeight" ${lockedAttr(locked.tileHeight)} style="--fill:${fillPct(m.tileHeight, 20, 400)}%;">
+          ${lockNote(locked.tileHeight, 'the tile height to match the tile width')}
         </div>
       </div>
       <div class="mp-dial-row${lockedCls(locked.tileAngle)}">
@@ -1095,10 +1208,11 @@
           <div class="mp-ctrl-lbl">Tile angle <span class="mp-val-tag" data-tag="tileAngle">${Math.round(m.tileAngle)}°</span>${lockHint(locked.tileAngle)}</div>
           <input type="range" class="mp-slider" min="60" max="120" value="${m.tileAngle}"
                  data-param="tileAngle" data-fmt="deg" ${lockedAttr(locked.tileAngle)} style="--fill:${fillPct(m.tileAngle, 60, 120)}%;">
+          ${lockNote(locked.tileAngle, 'the tile angle')}
         </div>
       </div>
       <div class="mp-dial-row">
-        <div class="mp-dial" role="slider" aria-valuemin="0" aria-valuemax="360" aria-valuenow="${m.rotation}" aria-label="Rotation" data-dial-param="rotation">
+        <div class="mp-dial" role="slider" aria-valuemin="0" aria-valuemax="360" aria-valuenow="${m.rotation}" aria-label="Pattern angle" data-dial-param="rotation">
           <span class="mp-dial-tick"></span>
           <span class="mp-dial-tick mp-tick-90"></span>
           <span class="mp-dial-tick mp-tick-180"></span>
@@ -1107,7 +1221,7 @@
           <div class="mp-dial-knob"></div>
         </div>
         <div class="mp-ctrl-grp">
-          <div class="mp-ctrl-lbl">Rotation <span class="mp-val-tag" data-tag="rotation">${Math.round(m.rotation)}°</span></div>
+          <div class="mp-ctrl-lbl">Pattern angle <span class="mp-val-tag" data-tag="rotation">${Math.round(m.rotation)}°</span></div>
           <input type="range" class="mp-slider" min="0" max="360" value="${m.rotation}"
                  data-param="rotation" data-fmt="deg" style="--fill:${fillPct(m.rotation, 0, 360)}%;">
         </div>
@@ -1126,7 +1240,7 @@
       </div>
       <div class="mp-ctrl-row-2">
         <div class="mp-ctrl-grp">
-          <div class="mp-ctrl-lbl">Domain scale <span class="mp-val-tag" data-tag="domainScale">${Number(m.domainScale ?? 1).toFixed(2)}×</span></div>
+          <div class="mp-ctrl-lbl">Tile scale <span class="mp-val-tag" data-tag="domainScale">${Number(m.domainScale ?? 1).toFixed(2)}×</span></div>
           <input type="range" class="mp-slider" min="0.3" max="2" step="0.05" value="${m.domainScale ?? 1}"
                  data-param="domainScale" data-fmt="scale" style="--fill:${fillPct(m.domainScale ?? 1, 0.3, 2)}%;">
         </div>
@@ -1136,12 +1250,13 @@
         <div class="mp-ctrl-lbl">Tile layout</div>
         <div class="mp-side-row mp-side-row--text">
           <button type="button" class="mp-side-tile mp-side-tile--text ${!variantOn ? 'active' : ''}" aria-pressed="${!variantOn}" data-set="variantV1" data-val="false">
-            <div class="mp-st-name">v2 (exact tile)</div>
+            <div class="mp-st-name">Crisp</div>
           </button>
           <button type="button" class="mp-side-tile mp-side-tile--text ${variantOn ? 'active' : ''}" aria-pressed="${variantOn}" data-set="variantV1" data-val="true">
-            <div class="mp-st-name">v1 (classic spacing)</div>
+            <div class="mp-st-name">Airy</div>
           </button>
         </div>
+        <div class="mp-wall-desc">Two looks for the same symmetry — Crisp packs the motif tight to the tile; Airy gives it breathing room.</div>
       </div>
       ` : ''}
       ${badge}
@@ -1602,6 +1717,16 @@
           const next = { ...sym, [axis]: val };
           const groupId = WG.nearestValidGroup(next);
           const resolvedSym = WG.FEATURES[groupId] || sym;
+          // SNAPPING FEEDBACK: detect axes the user did NOT click that the
+          // resolver changed anyway (because the requested tuple wasn't a valid
+          // group). We flash those chips + show a transient plain-language line.
+          const snapped = ['lattice', 'rotation', 'mirrors'].filter((a) =>
+            a !== axis && String(next[a]) !== String(resolvedSym[a]));
+          // Stash snap feedback in panel state so it survives the rebuild that
+          // refreshModifierLayer triggers (the last panel to render applies it).
+          if (snapped.length) {
+            pState.pendingSnap = { axes: snapped, sym: { ...resolvedSym } };
+          }
           commit(() => {
             mirror.group = groupId;
             mirror.symmetry = { ...resolvedSym };
@@ -1675,6 +1800,116 @@
           closeAllPopovers(body);
         });
       });
+
+      // Wallpaper-only wiring (Styles gallery, dice, mode toggle, previews).
+      if (mirror.type === 'wallpaper') bindWallpaperControls(body, mirror);
+    }
+
+    // Transient snap feedback: highlight auto-changed chips and surface a
+    // plain-language line. CSS owns the fade (motion.css, .mp-chip.mp-snap-*).
+    // Reads from pState.pendingSnap so it applies on the live (rebuilt) panel.
+    function applyPendingSnap() {
+      const snap = pState.pendingSnap;
+      if (!snap) return;
+      pState.pendingSnap = null;
+      flashSnap(snap.axes, snap.sym);
+    }
+
+    function flashSnap(snappedAxes, resolvedSym) {
+      const body = root.querySelector('.mp-editor-body');
+      if (!body) return;
+      snappedAxes.forEach((axis) => {
+        const chip = body.querySelector(`[data-sym-axis="${axis}"].is-active`);
+        if (chip) {
+          chip.classList.add('mp-snap-flash');
+          setTimeout(() => chip.classList.remove('mp-snap-flash'), 1400);
+        }
+      });
+      const labelFor = {
+        lattice: LATTICE_LABELS[resolvedSym.lattice] || resolvedSym.lattice,
+        rotation: ROTATION_LABEL(resolvedSym.rotation),
+        mirrors: MIRROR_LABELS[resolvedSym.mirrors] || resolvedSym.mirrors,
+      };
+      const parts = snappedAxes.map((a) => `${a === 'rotation' ? 'rotation' : a} → ${labelFor[a]}`);
+      const line = body.querySelector('[data-testid="wall-snap-line"]');
+      if (line) {
+        line.textContent = `Adjusted ${parts.join(' and ')} to keep a valid pattern.`;
+        line.hidden = false;
+        line.classList.add('mp-snap-show');
+        setTimeout(() => { line.classList.remove('mp-snap-show'); line.hidden = true; }, 2600);
+      }
+    }
+
+    function bindWallpaperControls(body, mirror) {
+      // Mode toggle: persist Styles/Build choice in SETTINGS, then rebuild.
+      body.querySelectorAll('[data-wall-mode]').forEach((el) => {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          setWallpaperMode(el.dataset.wallMode);
+          renderAll();
+        });
+      });
+
+      // Live preview thumbnails via the WallpaperPreview seam. We pass the
+      // active layer's descendant source geometry so cards preview the user's
+      // actual art under each symmetry/recipe.
+      const Preview = window.Vectura?.WallpaperPreview;
+      const sourcePaths = wallpaperSourcePaths(uiCtx, layer);
+      const renderThumb = (el, mirrorCfg) => {
+        if (!Preview?.render || !el) return;
+        try { Preview.render(el, { mirror: mirrorCfg, sourcePaths, size: 72 }); } catch (_) {}
+      };
+      const WG = window.Vectura?.WallpaperGroups;
+      body.querySelectorAll('[data-style-group-thumb]').forEach((el) => {
+        const gid = el.dataset.styleGroupThumb;
+        renderThumb(el, { group: gid, symmetry: WG?.FEATURES?.[gid] });
+      });
+      const presets = window.Vectura?.WallpaperPresets?.list?.() || [];
+      body.querySelectorAll('[data-style-preset-thumb]').forEach((el) => {
+        const p = presets[parseInt(el.dataset.stylePresetThumb, 10)];
+        if (p) renderThumb(el, p.mirror);
+      });
+
+      // Apply a bare group card. Dual-writes group + symmetry; pushes history.
+      body.querySelectorAll('[data-style-group]').forEach((el) => {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const gid = el.dataset.styleGroup;
+          const resolvedSym = WG?.FEATURES?.[gid];
+          commit(() => {
+            mirror.group = gid;
+            if (resolvedSym) mirror.symmetry = { ...resolvedSym };
+          });
+          renderAll();
+        });
+      });
+
+      // Apply a named recipe card. Recipe.mirror already dual-writes group +
+      // symmetry; merge the override fields over the current mirror.
+      body.querySelectorAll('[data-style-preset]').forEach((el) => {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const p = presets[parseInt(el.dataset.stylePreset, 10)];
+          if (!p) return;
+          commit(() => { Object.assign(mirror, p.mirror); });
+          renderAll();
+        });
+      });
+
+      // Surprise me — random valid group via the WallpaperPresets seam.
+      // Shift keeps the current lattice family (axis-lock); discoverable via
+      // the button title + hint text. Always undoable (commit pushes history).
+      body.querySelectorAll('[data-act="surprise"]').forEach((el) => {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const Presets = window.Vectura?.WallpaperPresets;
+          if (!Presets?.randomize) return;
+          const locked = { lattice: !!(e.shiftKey) };
+          const override = Presets.randomize({ locked, current: mirror });
+          commit(() => { Object.assign(mirror, override); });
+          renderAll();
+        });
+      });
     }
 
     function refreshRowText() {
@@ -1693,6 +1928,7 @@
       root.innerHTML = '';
       root.appendChild(renderStack());
       root.appendChild(renderEditor());
+      applyPendingSnap();
     }
 
     // Register ESC-cancels-picker for the currently-mounted panel.
