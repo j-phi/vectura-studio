@@ -328,6 +328,35 @@
       return;
     }
     this.updatePrimaryPanelMode(layer);
+    if (algoSection) {
+      const _SETTINGS = (G.Vectura && G.Vectura.SETTINGS) || {};
+      if (!_SETTINGS.uiSections) _SETTINGS.uiSections = this.getLeftSectionDefaults();
+      const _algoBody = algoSection.querySelector('.left-panel-section-body');
+      const _algoHdr = algoSection.querySelector('.left-panel-section-header');
+      if (isModifier) {
+        const secs = _SETTINGS.uiSections;
+        const modCollapsed = Object.prototype.hasOwnProperty.call(secs, 'modifierSection')
+          ? secs.modifierSection !== false
+          : true;
+        algoSection.classList.toggle('collapsed', modCollapsed);
+        if (_algoBody) _algoBody.style.display = modCollapsed ? 'none' : '';
+        if (_algoHdr) {
+          _algoHdr.setAttribute('aria-expanded', modCollapsed ? 'false' : 'true');
+          _algoHdr.onclick = () => {
+            const next = !algoSection.classList.contains('collapsed');
+            _SETTINGS.uiSections.modifierSection = next;
+            algoSection.classList.toggle('collapsed', next);
+            if (_algoBody) _algoBody.style.display = next ? 'none' : '';
+            _algoHdr.setAttribute('aria-expanded', next ? 'false' : 'true');
+            this.app.persistPreferencesDebounced?.();
+          };
+        }
+      } else if (_algoHdr) {
+        _algoHdr.onclick = () => {
+          this.setLeftSectionCollapsed('algorithm', !algoSection.classList.contains('collapsed'));
+        };
+      }
+    }
     this.syncPrimaryModuleDropdown(layer);
     if (moduleSelect) {
       if (!isModifier) {

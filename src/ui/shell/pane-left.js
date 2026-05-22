@@ -44,6 +44,7 @@
       algorithm: false,
       algorithmTransform: true,
       algorithmConfiguration: false,
+      modifierSection: true,
     };
   }
 
