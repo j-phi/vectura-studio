@@ -2445,32 +2445,21 @@
           (drag.index === 0 && drag.mergeTarget === lastIdx) ||
           (drag.index === lastIdx && drag.mergeTarget === 0)
         );
+        // Remove the dragged endpoint and close the path at the target endpoint.
+        // For endpoint→endpoint merges this closes the path; for node merges it
+        // removes the node and leaves the path in its current closed/open state.
+        sel.anchors.splice(drag.index, 1);
         if (isEndpointMerge) {
-          // Restore the dragged endpoint to its pre-drag position so the closing
-          // segment runs from the far end back to the original anchor location,
-          // preserving all existing segments rather than removing the first/last one.
-          const a = sel.anchors[drag.index];
-          if (a && drag.anchorStart) {
-            const revertDx = drag.anchorStart.x - a.x;
-            const revertDy = drag.anchorStart.y - a.y;
-            a.x = drag.anchorStart.x;
-            a.y = drag.anchorStart.y;
-            if (a.in) { a.in.x += revertDx; a.in.y += revertDy; }
-            if (a.out) { a.out.x += revertDx; a.out.y += revertDy; }
-          }
-          sel.closed = true;
-        } else {
-          sel.anchors.splice(drag.index, 1);
-          if (sel.closed && sel.anchors.length < 3) {
-            sel.closed = false;
-          }
-          const nextIndices = new Set();
-          for (const i of sel.selectedIndices) {
-            if (i < drag.index) nextIndices.add(i);
-            else if (i > drag.index) nextIndices.add(i - 1);
-          }
-          sel.selectedIndices = nextIndices;
+          sel.closed = sel.anchors.length >= 3;
+        } else if (sel.closed && sel.anchors.length < 3) {
+          sel.closed = false;
         }
+        const nextIndices = new Set();
+        for (const i of sel.selectedIndices) {
+          if (i < drag.index) nextIndices.add(i);
+          else if (i > drag.index) nextIndices.add(i - 1);
+        }
+        sel.selectedIndices = nextIndices;
         this.applyDirectPath();
         if (this.onDirectEditCommit) this.onDirectEditCommit();
         this.directDrag = null;

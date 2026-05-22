@@ -94,20 +94,16 @@ describe('direct-select snap-to-close — dragging endpoint onto other endpoint 
 
     // The path must now be closed.
     expect(layer.sourcePaths[0].meta.closed).toBe(true);
-    // All 4 anchors must be preserved (the dragged endpoint is reverted, not removed).
-    expect(layer.sourcePaths[0].meta.anchors).toHaveLength(4);
-    // The rendered polyline must include a closing segment — it should have enough
-    // points to span all four corners plus the return leg.
+    // The dragged endpoint (anchor[0]) is spliced out: 3 anchors remain.
+    // The path closes at the target anchor — no extra "revert" segment added.
+    expect(layer.sourcePaths[0].meta.anchors).toHaveLength(3);
+    // The rendered polyline spans the 3 remaining corners as a closed triangle.
     const rendered = layer.paths[0];
     expect(Array.isArray(rendered)).toBe(true);
-    // A closed 4-anchor straight-line path produces 4 segments × 2 pts each
-    // minus shared interior points = at least 5 points.
-    expect(rendered.length).toBeGreaterThanOrEqual(5);
-    // The closing segment runs from (0,100) back to (0,0), so rendered path
-    // must contain a point near (0,0) AND a point near (0,100).
-    const hasOrigin = rendered.some((p) => Math.abs(p.x) < 1 && Math.abs(p.y) < 1);
+    // 3 anchors closed → 3 segments → 4 points (last wraps back to first)
+    expect(rendered.length).toBeGreaterThanOrEqual(4);
+    // Original anchor[3] at (0,100) must survive.
     const hasCorner = rendered.some((p) => Math.abs(p.x) < 1 && Math.abs(p.y - 100) < 1);
-    expect(hasOrigin).toBe(true);
     expect(hasCorner).toBe(true);
   });
 
@@ -152,10 +148,11 @@ describe('direct-select snap-to-close — dragging endpoint onto other endpoint 
     renderer.endDirectDrag();
 
     expect(layer.sourcePaths[0].meta.closed).toBe(true);
-    expect(layer.sourcePaths[0].meta.anchors).toHaveLength(4);
+    // Dragged endpoint (anchor[lastIdx]) is spliced out: 3 anchors remain.
+    expect(layer.sourcePaths[0].meta.anchors).toHaveLength(3);
     const rendered = layer.paths[0];
     expect(Array.isArray(rendered)).toBe(true);
-    expect(rendered.length).toBeGreaterThanOrEqual(5);
+    expect(rendered.length).toBeGreaterThanOrEqual(4);
   });
 
   test('dragging an open path endpoint onto a MIDDLE anchor does NOT close — merges instead', () => {
