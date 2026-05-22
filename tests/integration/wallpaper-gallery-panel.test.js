@@ -195,4 +195,76 @@ describe('Wallpaper gallery panel integration', () => {
     expect(notes.length).toBeGreaterThanOrEqual(1);
     expect(notes[0].textContent).toMatch(/symmetry/i);
   });
+
+  // ── Gallery icon + label + a11y regressions (audit 2026-05-21) ───────────
+
+  test('group cards use crisp short labels, not the full description sentence', () => {
+    SETTINGS.wallpaperPanelMode = 'styles';
+    const layer = mkLayer();
+    const container = document.createElement('div');
+    MirrorPanel.build(mkCtx(container, layer), layer, container);
+    // p4g was the worst offender: its label used to be the whole sentence
+    // "Quarter-turn rotations plus glide mirrors instead of straight ones".
+    const card = container.querySelector('[data-style-group="p4g"]');
+    const name = card.querySelector('.mp-stylecard-name').textContent.trim();
+    expect(name).toBe('Square Glide');
+    expect(name.split(/\s+/).length).toBeLessThanOrEqual(3);
+    // The full description survives as the tooltip + accessible name.
+    expect(card.getAttribute('title')).toMatch(/glide/i);
+    expect(card.getAttribute('aria-label')).toContain('Square Glide');
+  });
+
+  test('style cards expose aria-pressed state and the thumb is decorative (aria-hidden)', () => {
+    SETTINGS.wallpaperPanelMode = 'styles';
+    const layer = mkLayer(); // active group p4m
+    const container = document.createElement('div');
+    MirrorPanel.build(mkCtx(container, layer), layer, container);
+    const active = container.querySelector('[data-style-group="p4m"]');
+    expect(active.getAttribute('aria-pressed')).toBe('true');
+    const inactive = container.querySelector('[data-style-group="p6"]');
+    expect(inactive.getAttribute('aria-pressed')).toBe('false');
+    expect(active.querySelector('[data-style-thumb]').getAttribute('aria-hidden')).toBe('true');
+  });
+
+  test('gallery icons are CANONICAL — never fed the layer\'s live geometry (no drift on click)', () => {
+    SETTINGS.wallpaperPanelMode = 'styles';
+    // A ctx whose layer HAS descendant geometry. The icons must still ignore it:
+    // feeding live effectivePaths is what made every card repaint on each click.
+    const layer = mkLayer();
+    const container = document.createElement('div');
+    const ctx = mkCtx(container, layer);
+    ctx.app.engine.getLayerDescendants = () => ([
+      { id: 'c1', isGroup: false, effectivePaths: [[{ x: 0, y: 0 }, { x: 9, y: 4 }, { x: 3, y: 9 }]] },
+    ]);
+    const Preview = runtime.window.Vectura.WallpaperPreview;
+    const calls = [];
+    const orig = Preview.render;
+    Preview.render = (el, opts) => { calls.push(opts); };
+    try {
+      MirrorPanel.build(ctx, layer, container);
+    } finally {
+      Preview.render = orig;
+    }
+    expect(calls.length).toBeGreaterThan(0);
+    for (const opts of calls) {
+      expect(opts.sourcePaths == null || opts.sourcePaths.length === 0).toBe(true);
+    }
+  });
+
+  test('Build tile-angle range admits every recipe value (no silent clamp of 50–55° recipes)', () => {
+    SETTINGS.wallpaperPanelMode = 'build';
+    const layer = mkLayer();
+    const container = document.createElement('div');
+    MirrorPanel.build(mkCtx(container, layer), layer, container);
+    const slider = container.querySelector('input[data-param="tileAngle"]');
+    const min = Number(slider.getAttribute('min'));
+    const max = Number(slider.getAttribute('max'));
+    const recipeAngles = runtime.window.Vectura.WallpaperPresets.list()
+      .map((p) => p.mirror.tileAngle)
+      .filter((a) => a !== undefined);
+    for (const a of recipeAngles) {
+      expect(a).toBeGreaterThanOrEqual(min); // pre-fix min was 60 → Harlequin(55)/Diamond Trellis(50) failed
+      expect(a).toBeLessThanOrEqual(max);
+    }
+  });
 });

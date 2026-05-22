@@ -3140,9 +3140,9 @@
   color: var(--ui-muted);
 }
 .mp-root .mp-wallgrid-section {
-  font-size: 9px; font-weight: 700;
+  font-size: 10px; font-weight: 700;
   letter-spacing: 0.12em; text-transform: uppercase;
-  color: var(--ui-text-3, var(--ui-muted));
+  color: var(--ui-text-2, var(--ui-muted));
   margin-top: 2px;
 }
 .mp-root .mp-wallgrid {
@@ -3171,6 +3171,10 @@
 }
 .mp-root .mp-stylecard:hover { border-color: var(--ui-border-hi, var(--ui-border)); }
 .mp-root .mp-stylecard:active { transform: scale(0.97); }
+.mp-root .mp-stylecard:focus-visible {
+  outline: 2px solid var(--mp-type-color);
+  outline-offset: 2px;
+}
 .mp-root .mp-stylecard.is-active {
   border-color: var(--mp-type-color);
   background: color-mix(in srgb, var(--mp-type-color) 12%, var(--ui-ctrl));
@@ -3192,10 +3196,10 @@
   color: var(--ui-text);
 }
 .mp-root .mp-stylecard-sub {
-  font-size: 8px;
-  letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--ui-muted);
-  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: var(--ui-text-2, var(--ui-muted));
+  text-align: center; line-height: 1.2;
 }
 
 /* ── Snapping feedback (auto-changed chips + transient line) ───────────────── */

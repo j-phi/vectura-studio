@@ -98,6 +98,30 @@
     p6m:  'Full hexagonal symmetry — every rotation and every mirror.',
   };
 
+  // Crisp ≤3-word card titles. The full WALL_GROUP_DESC sentence stays as the
+  // tooltip / aria description; this is the scannable label. Authored explicitly
+  // because deriving from the description left several groups (p4g, p3m1, p31m)
+  // with a whole sentence as their "short" label.
+  const WALL_GROUP_SHORT = {
+    p1:   'Slide Only',
+    p2:   'Half-Turn',
+    pm:   'Straight Mirrors',
+    pg:   'Glide Mirrors',
+    cm:   'Zig-Zag Mirrors',
+    pmm:  'Mirror Grid',
+    pmg:  'Mirror + Glide',
+    pgg:  'Glide Grid',
+    cmm:  'Diamond Grid',
+    p4:   'Quarter-Turn',
+    p4m:  'Square Mirror',
+    p4g:  'Square Glide',
+    p3:   'Third-Turn',
+    p3m1: 'Triangle Mirror',
+    p31m: 'Triangle Edge',
+    p6:   'Snowflake',
+    p6m:  'Hex Mirror',
+  };
+
   /* ---------- info topics ---------- */
   const keyRow = (code, sym, text) => `
     <div class="mp-ip-key-row">
@@ -681,24 +705,6 @@
   // descendant shape geometry — exactly what the engine reflects when it tiles.
   // We read effectivePaths (post other-modifier) falling back to raw paths so
   // the live preview matches the canvas. Returns Array<Array<{x,y}>>.
-  function wallpaperSourcePaths(uiCtx, layer) {
-    try {
-      const engine = uiCtx?.app?.engine;
-      if (!engine || !layer || typeof engine.getLayerDescendants !== 'function') return [];
-      const out = [];
-      engine.getLayerDescendants(layer.id).forEach((child) => {
-        if (!child || child.isGroup) return;
-        const paths = (child.effectivePaths && child.effectivePaths.length)
-          ? child.effectivePaths
-          : (child.paths || []);
-        paths.forEach((p) => { if (Array.isArray(p) && p.length) out.push(p); });
-      });
-      return out;
-    } catch (_) {
-      return [];
-    }
-  }
-
   function nameFor(mirror) {
     switch (mirror.type) {
       case 'line':      return `Line · ${Math.round(mirror.angle ?? 0)}°`;
@@ -1042,8 +1048,9 @@
 
   // Friendly, evocative card label for a bare crystallographic group.
   function wallGroupLabel(groupId) {
+    if (WALL_GROUP_SHORT[groupId]) return WALL_GROUP_SHORT[groupId];
+    // Fallback: first clause of the description (legacy groups without a short).
     const desc = WALL_GROUP_DESC[groupId] || '';
-    // Use the first clause of the description as a short human label.
     const lead = desc.split(/[—.·]/)[0].trim();
     return lead || groupId;
   }
@@ -1062,23 +1069,33 @@
       const isActive = gid === activeGroup;
       const label = wallGroupLabel(gid);
       const sub = showCrystallographicNames() ? gid : '';
+      const desc = WALL_GROUP_DESC[gid] || gid;
+      const aria = `${label} — ${desc}`.replace(/"/g, '&quot;');
       return `
         <button type="button" class="mp-stylecard mp-wallgrid-card ${isActive ? 'is-active' : ''}"
-          data-style-group="${gid}" title="${(WALL_GROUP_DESC[gid] || gid).replace(/"/g, '&quot;')}">
-          <span class="mp-stylecard-thumb" data-style-thumb data-style-group-thumb="${gid}"></span>
+          data-style-group="${gid}" aria-pressed="${isActive}" aria-label="${aria}"
+          title="${desc.replace(/"/g, '&quot;')}">
+          <span class="mp-stylecard-thumb" data-style-thumb data-style-group-thumb="${gid}" aria-hidden="true"></span>
           <span class="mp-stylecard-name">${label}</span>
           ${sub ? `<span class="mp-stylecard-sub">${sub}</span>` : ''}
         </button>`;
     }).join('');
 
     const presets = (window.Vectura?.WallpaperPresets?.list?.() || []);
-    const presetCards = presets.map((p, i) => `
+    const presetCards = presets.map((p, i) => {
+      const nm = String(p.name || p.id);
+      const gid = p.mirror && p.mirror.group;
+      const sym = gid ? wallGroupLabel(gid) : 'Recipe';
+      const aria = `${nm} recipe — ${sym} symmetry`.replace(/"/g, '&quot;');
+      return `
         <button type="button" class="mp-stylecard mp-wallgrid-card mp-stylecard--preset"
-          data-style-preset="${i}" title="${String(p.name || p.id).replace(/"/g, '&quot;')}">
-          <span class="mp-stylecard-thumb" data-style-thumb data-style-preset-thumb="${i}"></span>
-          <span class="mp-stylecard-name">${p.name || p.id}</span>
-          <span class="mp-stylecard-sub">Recipe</span>
-        </button>`).join('');
+          data-style-preset="${i}" aria-pressed="false" aria-label="${aria}"
+          title="${nm.replace(/"/g, '&quot;')}">
+          <span class="mp-stylecard-thumb" data-style-thumb data-style-preset-thumb="${i}" aria-hidden="true"></span>
+          <span class="mp-stylecard-name">${nm}</span>
+          <span class="mp-stylecard-sub">${sym}</span>
+        </button>`;
+    }).join('');
 
     return `
       <div class="mp-wallgrid-bar">
@@ -1196,18 +1213,16 @@
         </div>
       </div>
       <div class="mp-dial-row${lockedCls(locked.tileAngle)}">
-        <div class="mp-dial" role="slider" aria-valuemin="60" aria-valuemax="120" aria-valuenow="${m.tileAngle}" aria-label="Tile angle" data-dial-param="tileAngle" ${locked.tileAngle ? 'aria-disabled="true"' : ''}>
+        <div class="mp-dial" role="slider" aria-valuemin="45" aria-valuemax="135" aria-valuenow="${m.tileAngle}" aria-label="Tile angle" data-dial-param="tileAngle" ${locked.tileAngle ? 'aria-disabled="true"' : ''}>
           <span class="mp-dial-tick"></span>
           <span class="mp-dial-tick mp-tick-90"></span>
-          <span class="mp-dial-tick mp-tick-180"></span>
-          <span class="mp-dial-tick mp-tick-270"></span>
           <div class="mp-dial-pin" style="--angle: ${m.tileAngle}deg;"></div>
           <div class="mp-dial-knob"></div>
         </div>
         <div class="mp-ctrl-grp${lockedCls(locked.tileAngle)}">
           <div class="mp-ctrl-lbl">Tile angle <span class="mp-val-tag" data-tag="tileAngle">${Math.round(m.tileAngle)}°</span>${lockHint(locked.tileAngle)}</div>
-          <input type="range" class="mp-slider" min="60" max="120" value="${m.tileAngle}"
-                 data-param="tileAngle" data-fmt="deg" ${lockedAttr(locked.tileAngle)} style="--fill:${fillPct(m.tileAngle, 60, 120)}%;">
+          <input type="range" class="mp-slider" min="45" max="135" value="${m.tileAngle}"
+                 data-param="tileAngle" data-fmt="deg" ${lockedAttr(locked.tileAngle)} style="--fill:${fillPct(m.tileAngle, 45, 135)}%;">
           ${lockNote(locked.tileAngle, 'the tile angle')}
         </div>
       </div>
@@ -1850,14 +1865,16 @@
         });
       });
 
-      // Live preview thumbnails via the WallpaperPreview seam. We pass the
-      // active layer's descendant source geometry so cards preview the user's
-      // actual art under each symmetry/recipe.
+      // Identity thumbnails via the WallpaperPreview seam. These are CANONICAL
+      // icons: we deliberately pass NO sourcePaths so every card renders the
+      // same fixed reference motif under its own group's symmetry. This keeps
+      // each card stable and representative of the symmetry — it must not drift
+      // as the user clicks recipes (which would mutate the layer's
+      // effectivePaths and repaint every card differently each time).
       const Preview = window.Vectura?.WallpaperPreview;
-      const sourcePaths = wallpaperSourcePaths(uiCtx, layer);
       const renderThumb = (el, mirrorCfg) => {
         if (!Preview?.render || !el) return;
-        try { Preview.render(el, { mirror: mirrorCfg, sourcePaths, size: 72 }); } catch (_) {}
+        try { Preview.render(el, { mirror: mirrorCfg, size: 72 }); } catch (_) {}
       };
       const WG = window.Vectura?.WallpaperGroups;
       body.querySelectorAll('[data-style-group-thumb]').forEach((el) => {
