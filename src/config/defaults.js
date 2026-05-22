@@ -1603,6 +1603,7 @@
     shapeMode: 'oval',
     cookiePreferencesEnabled: false,
     showCrystallographicNames: false,
+    wallpaperPanelMode: 'styles',
     paneLeftWidth: 335,
     paneRightWidth: 335,
     lightSource: null,
