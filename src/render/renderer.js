@@ -2996,7 +2996,28 @@
               this.ctx.fill();
               this.ctx.globalAlpha = alpha;
             }
-            drawCenterHandle(origin.x, origin.y, color);
+            // Rotate ring (dashed circle) + rotate handle puck on the ring.
+            if (guide.rotateRadius > 0) {
+              this.ctx.save();
+              this.ctx.strokeStyle = color;
+              this.ctx.lineWidth = 0.6 / this.scale;
+              this.ctx.setLineDash([dash * 0.6, dash * 0.6]);
+              this.ctx.beginPath();
+              this.ctx.arc(origin.x, origin.y, guide.rotateRadius, 0, Math.PI * 2);
+              this.ctx.stroke();
+              this.ctx.setLineDash([]);
+              const rh = guide.rotateHandle;
+              this.ctx.fillStyle = underlay;
+              this.ctx.beginPath();
+              this.ctx.arc(rh.x, rh.y, guide.rotateHandleR + 1.5 / this.scale, 0, Math.PI * 2);
+              this.ctx.fill();
+              this.ctx.strokeStyle = color;
+              this.ctx.lineWidth = 1.4 / this.scale;
+              this.ctx.beginPath();
+              this.ctx.arc(rh.x, rh.y, guide.rotateHandleR, 0, Math.PI * 2);
+              this.ctx.stroke();
+              this.ctx.restore();
+            }
             if (latticeA && latticeB) {
               const p10 = { x: origin.x + latticeA.x, y: origin.y + latticeA.y };
               const p01 = { x: origin.x + latticeB.x, y: origin.y + latticeB.y };
@@ -3014,6 +3035,19 @@
                 this.ctx.restore();
               });
             }
+            // Center puck (draggable symmetry center) — solid filled dot drawn last so it
+            // reads above the ring and lattice handles.
+            this.ctx.save();
+            this.ctx.fillStyle = color;
+            this.ctx.beginPath();
+            this.ctx.arc(origin.x, origin.y, 4.5 / this.scale, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.strokeStyle = underlay;
+            this.ctx.lineWidth = 1.2 / this.scale;
+            this.ctx.beginPath();
+            this.ctx.arc(origin.x, origin.y, 4.5 / this.scale, 0, Math.PI * 2);
+            this.ctx.stroke();
+            this.ctx.restore();
             this.ctx.restore();
             return;
           }
@@ -3622,7 +3656,7 @@
           };
           this.setCanvasCursor(
             hitGuide.type === 'rotate' ? 'grabbing' :
-            (hitGuide.type === 'latticeA' || hitGuide.type === 'latticeB' || hitGuide.type === 'mirrorAxisRotate') ? 'crosshair' : 'move'
+            (hitGuide.type === 'latticeA' || hitGuide.type === 'latticeB' || hitGuide.type === 'mirrorAxisRotate' || hitGuide.type === 'wallpaperRotate') ? 'crosshair' : 'move'
           );
           e.preventDefault();
           return;
@@ -4151,6 +4185,14 @@
             mirror.tileHeight = Math.max(1, len);
             mirror.tileAngle = newTileAngle;
           }
+        } else if (drag.type === 'wallpaperCenter') {
+          const canvasCenter = drag.guide.canvasCenter || { x: 0, y: 0 };
+          const { centerX, centerY } = this.wallpaperCenterFromWorld(world, canvasCenter, { shift: modifiers.shift });
+          mirror.centerX = centerX;
+          mirror.centerY = centerY;
+        } else if (drag.type === 'wallpaperRotate') {
+          const origin = drag.startOrigin || drag.guide.origin;
+          mirror.rotation = this.wallpaperRotationFromWorld(world, origin, { shift: modifiers.shift });
         }
         this.onComputeDisplayGeometry ? this.onComputeDisplayGeometry() : this.engine.computeAllDisplayGeometry();
         this.draw();
@@ -4936,6 +4978,11 @@
           const cx = (profileBounds.width ?? 0) / 2 + (mirror.centerX ?? 0);
           const cy = (profileBounds.height ?? 0) / 2 + (mirror.centerY ?? 0);
           const { latticeA, latticeB, fundamentalDomain } = groupDef.getOps(W, H, tileAngle, cx, cy, rotDeg);
+          // Rotate ring radius: sit just outside the larger lattice vector so it never
+          // collides with the latticeA/latticeB endpoint handles.
+          const latLen = Math.max(Math.hypot(latticeA.x, latticeA.y), Math.hypot(latticeB.x, latticeB.y));
+          const rotateRadius = latLen + ROTATE_ARROW_OFFSET / this.scale;
+          const rotRad = rotDeg * Math.PI / 180;
           return {
             guideType: 'wallpaper',
             layer: modifierLayer, mirror, index, visible, locked,
@@ -4943,6 +4990,11 @@
             latticeA,
             latticeB,
             origin: { x: cx, y: cy },
+            canvasCenter: { x: (profileBounds.width ?? 0) / 2, y: (profileBounds.height ?? 0) / 2 },
+            rotateRadius,
+            // Rotate handle sits on the ring along the current global rotation direction.
+            rotateHandle: { x: cx + Math.cos(rotRad) * rotateRadius, y: cy + Math.sin(rotRad) * rotateRadius },
+            rotateHandleR: 5 / this.scale,
           };
         }
 
@@ -5078,11 +5130,24 @@
           continue;
         }
         if (guide.guideType === 'wallpaper') {
-          if (this.distanceToPointSq(world, guide.origin) <= centerTolSq) return { guide, type: 'move' };
+          // Center puck — symmetry-center drag.
+          if (this.distanceToPointSq(world, guide.origin) <= centerTolSq) return { guide, type: 'wallpaperCenter' };
+          // Tile-vector endpoint handles.
           const p10 = { x: guide.origin.x + guide.latticeA.x, y: guide.origin.y + guide.latticeA.y };
           if (this.distanceToPointSq(world, p10) <= centerTolSq) return { guide, type: 'latticeA' };
           const p01 = { x: guide.origin.x + guide.latticeB.x, y: guide.origin.y + guide.latticeB.y };
           if (this.distanceToPointSq(world, p01) <= centerTolSq) return { guide, type: 'latticeB' };
+          // Rotate handle puck on the ring, then the ring band itself.
+          if (guide.rotateHandle && this.distanceToPointSq(world, guide.rotateHandle) <= centerTolSq) {
+            return { guide, type: 'wallpaperRotate' };
+          }
+          if (guide.rotateRadius > 0) {
+            const ringBand = 5 / this.scale;
+            const distToCenter = Math.hypot(world.x - guide.origin.x, world.y - guide.origin.y);
+            if (Math.abs(distToCenter - guide.rotateRadius) <= ringBand) {
+              return { guide, type: 'wallpaperRotate' };
+            }
+          }
           continue;
         }
         // line guide
@@ -5631,6 +5696,34 @@
       const dx = a.x - b.x;
       const dy = a.y - b.y;
       return dx * dx + dy * dy;
+    }
+
+    // --- Wallpaper handle math (pure; extracted for unit testing) ---
+    // Map a dragged world point to the wallpaper mirror's centerX/centerY.
+    // The guide build computes origin = canvasCenter + {centerX, centerY}, so we invert
+    // that here: centerX = world.x - canvasCenter.x. Snap to the canvas center when the
+    // pointer is within `snapDist` of it, or when `shift` is held.
+    wallpaperCenterFromWorld(world, canvasCenter, { shift = false, snapDist = 8 } = {}) {
+      let centerX = world.x - canvasCenter.x;
+      let centerY = world.y - canvasCenter.y;
+      const tol = shift ? Infinity : snapDist;
+      if (Math.abs(centerX) <= tol && Math.abs(centerY) <= tol) {
+        if (shift || Math.hypot(centerX, centerY) <= snapDist) {
+          centerX = 0;
+          centerY = 0;
+        }
+      }
+      return { centerX, centerY };
+    }
+
+    // Map a dragged world point to the wallpaper mirror's global rotation (0–360 degrees):
+    // the angle from the symmetry origin to the pointer. Shift snaps to 15° increments
+    // (matching the lattice/dial snap convention).
+    wallpaperRotationFromWorld(world, origin, { shift = false } = {}) {
+      let deg = Math.atan2(world.y - origin.y, world.x - origin.x) * 180 / Math.PI;
+      if (shift) deg = Math.round(deg / 15) * 15;
+      deg = ((deg % 360) + 360) % 360;
+      return deg;
     }
 
     pointInTriangle(p, a, b, c) {
@@ -6861,7 +6954,7 @@
           this.setCanvasCursor(
             hitGuide.guide.locked ? 'not-allowed' :
             hitGuide.type === 'flip' ? 'pointer' :
-            (hitGuide.type === 'latticeA' || hitGuide.type === 'latticeB') ? 'crosshair' :
+            (hitGuide.type === 'latticeA' || hitGuide.type === 'latticeB' || hitGuide.type === 'wallpaperRotate') ? 'crosshair' :
             'move'
           );
           return;
