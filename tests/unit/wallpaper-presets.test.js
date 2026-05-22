@@ -127,6 +127,17 @@ describe('WallpaperPresets — curated gallery', () => {
     expect(bp.mirror.group).toBe('pg');
   });
 
+  test('Kaleidoscope and Star Anise are present and tilted off-axis from their group cards', () => {
+    const kal = items.find((it) => it.name === 'Kaleidoscope');
+    const star = items.find((it) => it.name === 'Star Anise');
+    expect(kal).toBeTruthy();
+    expect(star).toBeTruthy();
+    expect(kal.mirror.group).toBe('p3m1');
+    expect(star.mirror.group).toBe('p31m');
+    expect(kal.mirror.rotation).toBeGreaterThan(0);
+    expect(star.mirror.rotation).toBeGreaterThan(0);
+  });
+
   test('no recipe duplicates a bare group card — each differs in a visible axis', () => {
     // A recipe earns its slot only by differing from its group's default look in
     // an axis the icon SHOWS: pattern angle, alternate domain (variantV1), tile

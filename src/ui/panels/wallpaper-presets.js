@@ -90,10 +90,14 @@
     { id: 'wallpaper-drift-grid',     name: 'Drift Grid',        group: 'p1',  tileWidth: 92,  tileHeight: 70,  tileAngle: 72 },
     { id: 'wallpaper-pinwheel-skew',  name: 'Skewed Pinwheel',   group: 'p2',  tileWidth: 84,  tileHeight: 96,  tileAngle: 66, domainScale: 1.08 },
 
-    // ── Hexagonal (p3 / p6 / p6m) — bare p3m1/p31m live as group cards ──────
+    // ── Hexagonal (p3 / p3m1 / p31m / p6 / p6m) ────────────────────────────
     { id: 'wallpaper-snowflake-lace', name: 'Snowflake Lace',    group: 'p6',  tileWidth: 84,  domainScale: 1.15, variantV1: true },
     { id: 'wallpaper-alpine-frost',   name: 'Alpine Frost',      group: 'p6m', tileWidth: 96,  domainScale: 1.4, variantV1: true },
     { id: 'wallpaper-trefoil',        name: 'Trefoil',           group: 'p3',  tileWidth: 90,  domainScale: 1, variantV1: true },
+    // Restored: tilted off-axis (rotation) so each reads distinctly from its
+    // bare Triangle Mirror (p3m1) / Triangle Edge (p31m) group card.
+    { id: 'wallpaper-kaleidoscope',   name: 'Kaleidoscope',      group: 'p3m1', tileWidth: 88, domainScale: 0.85, rotation: 30 },
+    { id: 'wallpaper-star-anise',     name: 'Star Anise',        group: 'p31m', tileWidth: 92, domainScale: 1.1, rotation: 30 },
   ];
 
   const list = () => RECIPES.map((r) => {
