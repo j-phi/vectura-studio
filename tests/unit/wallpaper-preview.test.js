@@ -71,6 +71,20 @@ describe('WallpaperPreview — substrate', () => {
       expect(() => WP.cacheKey({ mirror: null, size: -5, sourcePaths: null })).not.toThrow();
       expect(typeof WP.cacheKey({})).toBe('string');
     });
+
+    test('includes devicePixelRatio so a 1× render is not served to a 2× card', () => {
+      const win = runtime.window;
+      const orig = win.devicePixelRatio;
+      try {
+        win.devicePixelRatio = 1;
+        const k1 = WP.cacheKey({ mirror: { group: 'p4m' }, size: 96 });
+        win.devicePixelRatio = 2;
+        const k2 = WP.cacheKey({ mirror: { group: 'p4m' }, size: 96 });
+        expect(k1).not.toBe(k2);
+      } finally {
+        win.devicePixelRatio = orig;
+      }
+    });
   });
 
   describe('pure helpers (_internal)', () => {
@@ -170,6 +184,16 @@ describe('WallpaperPreview — substrate', () => {
       expect(res.usedMotif).toBe(true);
       expect(res.paths.length).toBeGreaterThan(0);
     });
+
+    test('computeTiledPaths returns the fixed lattice window for consistent icon framing', () => {
+      const { computeTiledPaths } = WP._internal;
+      const res = computeTiledPaths({ mirror: { group: 'p4m', tileWidth: 80 }, size: 96 });
+      expect(res.bounds).toBeTruthy();
+      expect(res.bounds.width).toBeGreaterThan(0);
+      // Window is a fixed multiple of the tile (ICON_TILE_REPEATS), so it scales
+      // with the tile — this is what normalises on-screen pitch across cards.
+      expect(res.bounds.width).toBeCloseTo(80 * 2.5, 5);
+    });
   });
 
   describe('public render API defensiveness', () => {
@@ -193,6 +217,23 @@ describe('WallpaperPreview — substrate', () => {
     test('render() accepts a <canvas> target directly', () => {
       const cv = runtime.document.createElement('canvas');
       expect(() => WP.render(cv, { mirror: { group: 'cmm' }, size: 48 })).not.toThrow();
+    });
+
+    test('render() sizes the backing store at size × dpr (crisp on Retina) while the CSS box fills the card', () => {
+      const win = runtime.window;
+      const orig = win.devicePixelRatio;
+      try {
+        win.devicePixelRatio = 2;
+        const host = runtime.document.createElement('div');
+        WP.render(host, { mirror: { group: 'p4m' }, size: 72 });
+        const cv = host.querySelector('canvas[data-wp-preview]');
+        expect(cv).toBeTruthy();
+        expect(cv.width).toBe(144);
+        expect(cv.height).toBe(144);
+        expect(cv.style.width).toBe('100%');
+      } finally {
+        win.devicePixelRatio = orig;
+      }
     });
 
     test('thumbDataURL() returns a string and never throws', () => {

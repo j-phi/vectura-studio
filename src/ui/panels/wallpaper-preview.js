@@ -57,6 +57,21 @@
   const WALL_HUE = '#5cd99a';
   // Cap total stroked points so a grid of ~17-25 thumbnails stays cheap.
   const MAX_POINTS_PER_THUMB = 6000;
+  // Lattice copies shown across an icon. Fixed so every card reads at the same
+  // pitch (a 4-op group and a 12-op group occupy the same on-screen lattice),
+  // turning density differences into genuine symmetry differences, not zoom.
+  const ICON_TILE_REPEATS = 2.5;
+  // Reference motif extent as a fraction of the tile, so the motif fills the
+  // fundamental domain consistently regardless of the recipe's absolute tile.
+  const ICON_MOTIF_FRAC = 0.42;
+
+  // Crisp on Retina: render the backing store at size * dpr and scale the
+  // context, keeping the CSS box at the logical size. Clamp at 3 — 4×+ phones
+  // gain nothing legible here and just cost memory.
+  const getDPR = () => {
+    const r = (typeof G !== 'undefined' && Number(G.devicePixelRatio)) || 1;
+    return Math.max(1, Math.min(3, r));
+  };
 
   const normSize = (size) => {
     if (typeof size === 'number' && size > 0) return { w: Math.round(size), h: Math.round(size) };
@@ -82,7 +97,7 @@
     // ~2 tiles across reads as a repeating pattern without exploding the tile
     // count (cost grows with bounds/tile-size squared). Square region so the
     // thumbnail aspect (usually square) maps cleanly.
-    const side = Math.max(tw, th) * 2;
+    const side = Math.max(tw, th) * ICON_TILE_REPEATS;
     return { x: 0, y: 0, width: side, height: side, _aspect: w / h };
   };
 
@@ -127,16 +142,18 @@
     };
   };
 
-  // ── Pure: an ASYMMETRIC built-in motif (an L-shape with a tick). Asymmetry is
-  //    intentional — a symmetric motif would hide the difference between groups.
+  // ── Pure: an ASYMMETRIC built-in motif — a single connected "flag" polyline.
+  //    Asymmetry (no reflective OR rotational symmetry) is intentional so p4 vs
+  //    p4m vs pm produce visibly different silhouettes. One open subpath (no
+  //    detached strokes) so every symmetry copy stays a continuous line that
+  //    survives dense overlap (p6m makes 12 copies) and downsampling. Spans
+  //    ~12×16 about the origin; scaled to the tile by computeTiledPaths.
+  //    Centered on its own bbox so it can be placed precisely on a group's
+  //    fundamental-domain centroid.
   const motifPaths = () => ([
-    // L-shape (no reflective/rotational symmetry of its own)
-    [{ x: -8, y: -10 }, { x: -8, y: 8 }, { x: 9, y: 8 }],
-    // short diagonal tick off the corner
-    [{ x: -8, y: -10 }, { x: 2, y: -4 }],
-    // small detached stroke to break any accidental symmetry
-    [{ x: 4, y: -8 }, { x: 9, y: -9 }],
+    [{ x: -6, y: 8 }, { x: -6, y: -8 }, { x: 6, y: -8 }, { x: 6, y: -1 }],
   ]);
+  const MOTIF_SPAN = 16; // the larger (y) extent of motifPaths(), for tile scaling
 
   const cacheKey = (opts = {}) => {
     const m = fullMirror(opts.mirror);
@@ -150,7 +167,7 @@
       m.group, m.symmetry && m.symmetry.lattice, m.symmetry && m.symmetry.rotation,
       m.symmetry && m.symmetry.mirrors, m.tileWidth, m.tileHeight, m.tileAngle,
       m.rotation, m.centerX, m.centerY, m.domainScale, m.variantV1, w, h,
-      boundsTag, geomHash,
+      getDPR(), boundsTag, geomHash,
     ].join('|');
   };
 
@@ -193,9 +210,32 @@
     let source = Array.isArray(opts.sourcePaths) ? opts.sourcePaths.filter((p) => Array.isArray(p) && p.length >= 2) : [];
     let usedMotif = false;
     if (!source.length) {
-      // Center the motif inside the derived bounds so the transform clips it
-      // within the fundamental domain (which is positioned around bounds center).
-      source = motifPaths().map((p) => p.map((pt) => ({ x: pt.x + cx, y: pt.y + cy })));
+      // Scale the reference motif to a fixed fraction of the tile so it fills
+      // the fundamental domain consistently across cards (independent of the
+      // recipe's absolute tile size), and center it on the group's
+      // fundamental-domain CENTROID. The lattice origin (cx,cy) is a corner/
+      // vertex of most fundamental domains, so a motif placed there gets
+      // clipped to almost nothing — the centroid guarantees visible geometry.
+      const tw = Math.max(1, Number(mirror.tileWidth) || 60);
+      const ms = (ICON_MOTIF_FRAC * tw) / MOTIF_SPAN;
+      let mcx = cx, mcy = cy;
+      const WG = Vectura.WallpaperGroups;
+      const gdef = WG && WG.GROUPS && WG.GROUPS[mirror.group];
+      if (gdef && typeof gdef.getOps === 'function') {
+        try {
+          const H = Math.max(1, Number(mirror.tileHeight) || 60);
+          const ta = Number(mirror.tileAngle) || 90;
+          const rot = Number(mirror.rotation) || 0;
+          const variant = mirror.variantV1 && gdef.hasV1 ? 'v1' : 'v2';
+          const fd = gdef.getOps(tw, H, ta, cx, cy, rot, { variant }).fundamentalDomain;
+          if (Array.isArray(fd) && fd.length) {
+            let sx = 0, sy = 0;
+            for (const v of fd) { sx += v.x; sy += v.y; }
+            mcx = sx / fd.length; mcy = sy / fd.length;
+          }
+        } catch (_e) { /* keep lattice origin */ }
+      }
+      source = motifPaths().map((p) => p.map((pt) => ({ x: pt.x * ms + mcx, y: pt.y * ms + mcy })));
       usedMotif = true;
     } else if (!explicitBounds) {
       // Auto-derived bounds: recenter the user's geometry onto the tile center so
@@ -220,7 +260,7 @@
 
     if (!mods || typeof mods.applyWallpaperMirrorToPaths !== 'function') {
       // No engine available — fall back to the raw source so we still draw lines.
-      return { paths: source, usedMotif };
+      return { paths: source, usedMotif, bounds };
     }
     let out;
     try {
@@ -229,7 +269,7 @@
       out = source;
     }
     if (!Array.isArray(out)) out = [];
-    return { paths: out, usedMotif };
+    return { paths: out, usedMotif, bounds };
   };
 
   // ── Pure: cap total point count by uniformly subsampling longer paths so a
@@ -255,6 +295,11 @@
   // ── The actual pixel paint. Strokes fitted paths onto a 2D context. Never
   //    throws; paints a neutral placeholder on degenerate input.
   const paint = (ctx, w, h, opts) => {
+    // Scale the context to the device pixel ratio so the backing store (sized
+    // w*dpr) maps 1:1 to physical pixels — all path math below stays in logical
+    // px. setTransform is absolute, so this also resets any prior transform.
+    const dpr = getDPR();
+    try { ctx.setTransform(dpr, 0, 0, dpr, 0, 0); } catch (_e) { /* stub ctx */ }
     try {
       ctx.clearRect(0, 0, w, h);
     } catch (_e) { /* no-op stub */ }
@@ -263,28 +308,32 @@
     try {
       tiled = computeTiledPaths(opts);
     } catch (_e) {
-      tiled = { paths: [], usedMotif: true };
+      tiled = { paths: [], usedMotif: true, bounds: null };
     }
     let paths = (tiled && tiled.paths) || [];
-    const bbox = pathsBBox(paths);
 
-    if (!bbox) {
+    // Framing: ICONS (built-in motif) fit a FIXED lattice window so every card
+    // shows the lattice at an identical on-screen pitch and density. Geometry
+    // previews fit their own content bbox so the user's art is framed.
+    let frame = null;
+    if (tiled && tiled.usedMotif && tiled.bounds) {
+      const b = tiled.bounds;
+      frame = { minX: 0, minY: 0, maxX: b.width, maxY: b.height, width: b.width, height: b.height };
+    } else {
+      frame = pathsBBox(paths);
+    }
+
+    if (!frame) {
       paintPlaceholder(ctx, w, h, fullMirror(opts.mirror));
       return;
     }
 
     paths = capPoints(paths, MAX_POINTS_PER_THUMB);
-    const margin = Math.max(2, Math.round(Math.min(w, h) * 0.06));
-    const t = fitTransform(bbox, w, h, margin);
-
-    // Very-light background so transparent cards still read on any surface.
-    try {
-      ctx.fillStyle = 'rgba(92, 217, 154, 0.06)';
-      ctx.fillRect(0, 0, w, h);
-    } catch (_e) { /* no-op */ }
+    const margin = Math.max(2, Math.round(Math.min(w, h) * 0.10));
+    const t = fitTransform(frame, w, h, margin);
 
     try {
-      ctx.lineWidth = Math.max(0.5, Math.min(w, h) / 96);
+      ctx.lineWidth = Math.max(0.75, Math.min(w, h) / 60);
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
       ctx.strokeStyle = WALL_HUE;
@@ -341,10 +390,18 @@
     }
   };
 
+  // Backing store at device resolution (w*dpr); the CSS box keeps filling the
+  // card via the existing width/height:100% style, so the canvas stays crisp
+  // whether the card renders slightly larger or smaller than the logical size.
+  const sizeCanvas = (cv, w, h) => {
+    const dpr = getDPR();
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+  };
+
   const getCanvas = (targetEl, w, h) => {
     if (targetEl && targetEl.tagName === 'CANVAS') {
-      targetEl.width = w;
-      targetEl.height = h;
+      sizeCanvas(targetEl, w, h);
       return targetEl;
     }
     let cv = targetEl && targetEl.querySelector ? targetEl.querySelector('canvas[data-wp-preview]') : null;
@@ -355,8 +412,7 @@
       cv.style.height = '100%';
       if (targetEl && targetEl.appendChild) targetEl.appendChild(cv);
     }
-    cv.width = w;
-    cv.height = h;
+    sizeCanvas(cv, w, h);
     return cv;
   };
 
@@ -365,8 +421,7 @@
   const offscreenCanvas = (w, h) => {
     if (typeof document === 'undefined' || !document.createElement) return null;
     if (!_offscreen) _offscreen = document.createElement('canvas');
-    _offscreen.width = w;
-    _offscreen.height = h;
+    sizeCanvas(_offscreen, w, h);
     return _offscreen;
   };
 
