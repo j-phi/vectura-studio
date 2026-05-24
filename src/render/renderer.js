@@ -2230,10 +2230,31 @@
       if (typeof containsFn !== 'function') return [];
       return (layer.fills || []).filter((rec) => {
         if (!rec?.region?.length) return false;
-        const cx = rec.region.reduce((s, p) => s + p.x, 0) / rec.region.length;
-        const cy = rec.region.reduce((s, p) => s + p.y, 0) / rec.region.length;
+        const { x: cx, y: cy } = this._areaPolygonCentroid(rec.region);
         return containsFn(worldPath, cx, cy);
       });
+    }
+
+    // Shoelace area centroid — lies inside the enclosed area even for concave polygons,
+    // unlike the simple boundary-point average which falls in the void for thin crescents.
+    _areaPolygonCentroid(poly) {
+      let ax = 0, ay = 0, area = 0;
+      const n = poly.length;
+      for (let i = 0, j = n - 1; i < n; j = i++) {
+        const cross = poly[j].x * poly[i].y - poly[i].x * poly[j].y;
+        ax += (poly[j].x + poly[i].x) * cross;
+        ay += (poly[j].y + poly[i].y) * cross;
+        area += cross;
+      }
+      area /= 2;
+      if (Math.abs(area) < 1e-9) {
+        // Degenerate polygon — fall back to boundary average
+        return {
+          x: poly.reduce((s, p) => s + p.x, 0) / n,
+          y: poly.reduce((s, p) => s + p.y, 0) / n,
+        };
+      }
+      return { x: ax / (6 * area), y: ay / (6 * area) };
     }
 
     _applyNewPathToFills(layer, pathIndex, fills) {

@@ -330,4 +330,98 @@ describe('Direct-select fill sync', () => {
 
     expect(centroid(fill.region).y).toBeGreaterThan(originalCentroidY + 30);
   });
+
+  // -------------------------------------------------------------------
+  // Crescent / concave shape: fill must keep syncing even when the
+  // boundary-point average falls in the concave void.
+  // The area centroid (shoelace) must be used instead.
+  // -------------------------------------------------------------------
+
+  test('fill syncs on a concave crescent shape whose boundary-centroid is in the void', () => {
+    // Approximate a thin crescent by taking the "C" shape:
+    //   outer arc: left half of a circle, x ≈ 0–100, centred at y=100
+    //   inner arc: indented right side, x ≈ 70–100
+    // The boundary-point average x would be pulled to the right (into the void),
+    // but the area centroid stays inside the crescent fill area.
+    const buildCresc = (indent) => {
+      const pts = [];
+      const cx = 100, cy = 100, r = 80;
+      // outer arc: 180° (full left half) + the closing arcs
+      for (let a = -90; a <= 270; a += 10) {
+        const rad = (a * Math.PI) / 180;
+        if (a <= 90 || a >= 270) {
+          // outer arc (left half)
+          pts.push({ x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) });
+        } else {
+          // inner arc indented toward center
+          pts.push({ x: cx + indent * Math.cos(rad), y: cy + r * Math.sin(rad) });
+        }
+      }
+      return pts;
+    };
+
+    // Previous frame crescent (mild indent)
+    const mildCresc = buildCresc(40);
+    // Current frame crescent (deeper indent — further toward center)
+    const deepCresc = buildCresc(20);
+
+    // The fill region IS the previous frame's crescent boundary (mildCresc)
+    const fill = {
+      id: 'fill-cresc',
+      fillType: 'hatch',
+      region: mildCresc.map((p) => ({ ...p })),
+      innerRegion: null,
+    };
+
+    const layer = makeLayer([fill], mildCresc);
+    const engine = makeEngine(layer, deepCresc);
+    const renderer = makeRenderer(engine);
+
+    renderer._applySelectionPath({
+      layerId: 'layer-1',
+      pathIndex: 0,
+      anchors: squareAnchors(), // anchors don't matter here; engine mock returns deepCresc
+      closed: true,
+      selectedIndices: new Set(),
+      meta: {},
+    });
+
+    // The outer arc is identical in both crescents (outer arc maxX stays the same).
+    // The inner arc is what differs — deepCresc has a HIGHER minX (indent=20, inner
+    // arc only reaches x = cx - 20 = 80) vs mildCresc (indent=40, reaches cx - 40 = 60).
+    const minX = Math.min(...fill.region.map((p) => p.x));
+    const mildMinX = Math.min(...mildCresc.map((p) => p.x));
+    const deepMinX = Math.min(...deepCresc.map((p) => p.x));
+
+    expect(minX).toBeGreaterThanOrEqual(deepMinX - 1);  // updated to deepCresc
+    expect(minX).toBeGreaterThan(mildMinX + 1);          // not still at mildCresc
+  });
+
+  // -------------------------------------------------------------------
+  // _areaPolygonCentroid: area centroid of a crescent is inside the shape
+  // -------------------------------------------------------------------
+
+  test('_areaPolygonCentroid places the centroid inside a crescent polygon', () => {
+    const layer = makeLayer([]);
+    const engine = makeEngine(layer, []);
+    const renderer = makeRenderer(engine);
+    const PBO = runtime.window.Vectura.PaintBucketOps;
+
+    // Build a C-shaped crescent: outer left arc + inner concave right arc
+    const crescent = [];
+    const cx = 100, cy = 100, r = 80, indent = 20;
+    for (let a = -90; a <= 270; a += 10) {
+      const rad = (a * Math.PI) / 180;
+      if (a <= 90 || a >= 270) {
+        crescent.push({ x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) });
+      } else {
+        crescent.push({ x: cx + indent * Math.cos(rad), y: cy + r * Math.sin(rad) });
+      }
+    }
+
+    const { x: acx, y: acy } = renderer._areaPolygonCentroid(crescent);
+
+    // Area centroid must be inside the crescent
+    expect(PBO.polyContainsPoint(crescent, acx, acy)).toBe(true);
+  });
 });
