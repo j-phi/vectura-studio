@@ -2213,8 +2213,53 @@
       path.meta = meta;
       sourcePaths[sel.pathIndex] = path;
       layer.sourcePaths = sourcePaths;
+      if (layer.fills?.length && sel.closed) {
+        this._syncFillRegionsToEditedPath(layer, sel);
+      }
       this.engine.generate(layer.id);
       sel.meta = meta;
+    }
+
+    _syncFillRegionsToEditedPath(layer, sel) {
+      const oldPolygon = this.directDrag?.oldPathPolygon;
+      if (!oldPolygon?.length) return;
+      const newPolygon = this._penAnchorsToPolygon(sel.anchors, true);
+      if (!newPolygon?.length) return;
+      const PBO = window.Vectura?.PaintBucketOps;
+      const containsFn = PBO?.polyContainsPoint;
+      if (typeof containsFn !== 'function') return;
+      for (const rec of layer.fills) {
+        if (!rec?.region?.length) continue;
+        const cx = rec.region.reduce((s, p) => s + p.x, 0) / rec.region.length;
+        const cy = rec.region.reduce((s, p) => s + p.y, 0) / rec.region.length;
+        if (containsFn(oldPolygon, cx, cy)) {
+          rec.region = newPolygon.map((p) => ({ x: p.x, y: p.y }));
+          rec.innerRegion = null;
+        }
+      }
+      this.directDrag.oldPathPolygon = newPolygon;
+    }
+
+    _penAnchorsToPolygon(anchors, closed, stepsPerSegment = 24) {
+      if (!anchors?.length) return [];
+      const pts = [];
+      const n = anchors.length;
+      const segments = closed ? n : n - 1;
+      for (let i = 0; i < segments; i++) {
+        const a = anchors[i];
+        const b = anchors[(i + 1) % n];
+        const cp1 = a.out ?? a;
+        const cp2 = b.in ?? b;
+        for (let s = 0; s < stepsPerSegment; s++) {
+          const t = s / stepsPerSegment;
+          const mt = 1 - t;
+          pts.push({
+            x: mt ** 3 * a.x + 3 * mt ** 2 * t * cp1.x + 3 * mt * t ** 2 * cp2.x + t ** 3 * b.x,
+            y: mt ** 3 * a.y + 3 * mt ** 2 * t * cp1.y + 3 * mt * t ** 2 * cp2.y + t ** 3 * b.y,
+          });
+        }
+      }
+      return pts;
     }
 
     applyDirectPath() {
@@ -2274,8 +2319,10 @@
       const sel = this.directSelection;
 
       if (control.type === 'anchor') {
-        // Multi-select: shift+click toggles anchor in/out of selection
-        if (modifiers.shift) {
+        if (control.preserveSelection) {
+          // Drag started inside an existing multi-selection — keep all selected anchors as-is
+        } else if (modifiers.shift) {
+          // Multi-select: shift+click toggles anchor in/out of selection
           if (sel.selectedIndices.has(control.index)) sel.selectedIndices.delete(control.index);
           else sel.selectedIndices.add(control.index);
         } else if (!sel.selectedIndices.has(control.index)) {
@@ -3806,7 +3853,20 @@
             const modifiers = this.getModifierState ? this.getModifierState(e) : { shift: e.shiftKey };
             const alreadySamePath = this.directSelection?.layerId === hit.layer.id
               && this.directSelection?.pathIndex === hit.pathIndex;
-            const selection = (modifiers.shift && alreadySamePath)
+            // Determine if this click lands on a segment connecting two already-selected anchors.
+            // In that case the whole selection stays intact and moves as a unit.
+            let segInSelection = false;
+            let precomputedSeg = -1;
+            if (alreadySamePath && this.directSelection.selectedIndices.size >= 2) {
+              const n = this.directSelection.anchors.length;
+              const s = Math.max(0, Math.min(hit.segmentIndex ?? 0, n - 1));
+              const sn = this.directSelection.closed ? (s + 1) % n : Math.min(s + 1, n - 1);
+              if (this.directSelection.selectedIndices.has(s) && this.directSelection.selectedIndices.has(sn)) {
+                segInSelection = true;
+                precomputedSeg = s;
+              }
+            }
+            const selection = (segInSelection || (modifiers.shift && alreadySamePath))
               ? this.directSelection
               : this.setDirectSelection(hit.layer, hit.pathIndex);
             if (selection && selection.anchors.length) {
@@ -3828,9 +3888,17 @@
                 if (!modifiers.shift) selection.selectedIndices = new Set([nearestIdx]);
                 this.startDirectDrag({ type: 'anchor', index: nearestIdx }, e);
               } else {
-                // On segment body — select both endpoints so dragging moves the whole segment
-                const { seg } = this._selectSegmentAnchors(selection, hit.segmentIndex ?? 0, modifiers.shift);
-                this.startDirectDrag({ type: 'anchor', index: seg }, e);
+                // On segment body
+                let seg;
+                if (segInSelection) {
+                  // Clicked inside the existing multi-selection — drag all selected anchors
+                  seg = precomputedSeg;
+                  this.startDirectDrag({ type: 'anchor', index: seg, preserveSelection: true }, e);
+                } else {
+                  // Clicked on an unselected segment — select both endpoints
+                  ({ seg } = this._selectSegmentAnchors(selection, hit.segmentIndex ?? 0, modifiers.shift));
+                  this.startDirectDrag({ type: 'anchor', index: seg }, e);
+                }
                 // grabOffset: drag tracks from the click point, not the anchor corner
                 if (this.directDrag) {
                   const dragLayer = this.getDirectSelectionLayer();

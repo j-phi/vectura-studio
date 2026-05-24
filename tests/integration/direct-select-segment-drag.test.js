@@ -252,4 +252,108 @@ describe('direct-select segment drag', () => {
     expect(sel.anchors[0].x).toBeCloseTo(0 + 10);
     expect(sel.anchors[0].y).toBeCloseTo(0 + 15);
   });
+
+  // ---------------------------------------------------------------------------
+  // Click within existing multi-selection — full selection preserved
+  // ---------------------------------------------------------------------------
+
+  test('clicking on a segment connecting two selected anchors keeps the full multi-selection', () => {
+    const { VectorEngine, Layer, Renderer } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    engine.layers = [];
+
+    // Open path with 4 anchors
+    const pts = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }];
+    const layer = setupLayer(engine, Layer, makeOpenPath(pts));
+
+    const canvas = runtime.document.getElementById('main-canvas');
+    const renderer = new Renderer(canvas, engine);
+
+    const sel = renderer.setDirectSelection(layer, 0);
+    // Pre-select anchors 0, 1, and 2 (a 3-anchor subset)
+    sel.selectedIndices = new Set([0, 1, 2]);
+
+    // Simulate a click on segment 1→2 (both endpoints in selectedIndices)
+    // The segInSelection path in the pointer-down handler is what we're testing here;
+    // invoke it via startDirectDrag with preserveSelection flag (the same flag the handler sets)
+    renderer.startDirectDrag({ type: 'anchor', index: 1, preserveSelection: true }, {});
+
+    // All three anchors must remain selected
+    expect(sel.selectedIndices.has(0)).toBe(true);
+    expect(sel.selectedIndices.has(1)).toBe(true);
+    expect(sel.selectedIndices.has(2)).toBe(true);
+    expect(sel.selectedIndices.size).toBe(3);
+  });
+
+  test('plain click on a segment where one endpoint is not selected replaces selection', () => {
+    const { VectorEngine, Layer, Renderer } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    engine.layers = [];
+
+    const pts = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }];
+    const layer = setupLayer(engine, Layer, makeOpenPath(pts));
+
+    const canvas = runtime.document.getElementById('main-canvas');
+    const renderer = new Renderer(canvas, engine);
+
+    const sel = renderer.setDirectSelection(layer, 0);
+    sel.selectedIndices = new Set([0, 1, 2]);
+
+    // Click on segment 2→3 — anchor 3 is NOT selected, so the full selection should be replaced
+    renderer._selectSegmentAnchors(sel, 2, false);
+    expect(sel.selectedIndices.size).toBe(2);
+    expect(sel.selectedIndices.has(2)).toBe(true);
+    expect(sel.selectedIndices.has(3)).toBe(true);
+    expect(sel.selectedIndices.has(0)).toBe(false);
+  });
+
+  test('dragging within multi-selection moves all selected anchors together', () => {
+    const { VectorEngine, Layer, Renderer } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    engine.layers = [];
+
+    // Open L-shaped path: 4 anchors
+    const pts = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 200, y: 100 }];
+    const layer = setupLayer(engine, Layer, makeOpenPath(pts));
+
+    const canvas = runtime.document.getElementById('main-canvas');
+    const renderer = new Renderer(canvas, engine);
+
+    const sel = renderer.setDirectSelection(layer, 0);
+    // Select anchors 0, 1, 2 — then click-drag on segment 1→2 (both selected)
+    sel.selectedIndices = new Set([0, 1, 2]);
+
+    const a0 = sel.anchors[0];
+    const a1 = sel.anchors[1];
+    const a2 = sel.anchors[2];
+    renderer.directDrag = {
+      type: 'anchor',
+      index: 1,
+      moved: false,
+      historyPushed: true,
+      anchorStart: { x: a1.x, y: a1.y },
+      otherStarts: [
+        { index: 0, x: a0.x, y: a0.y, inX: undefined, inY: undefined, outX: undefined, outY: undefined },
+        { index: 2, x: a2.x, y: a2.y, inX: undefined, inY: undefined, outX: undefined, outY: undefined },
+      ],
+      mergeTarget: null,
+      grabOffset: null,
+      endpointSnapTarget: null,
+      lastWorld: null,
+    };
+
+    // Move anchor[1] by (5, -10)
+    renderer.updateDirectDrag({ x: a1.x + 5, y: a1.y - 10 }, {});
+
+    // All three selected anchors move by (5, -10)
+    expect(sel.anchors[0].x).toBeCloseTo(0 + 5);
+    expect(sel.anchors[0].y).toBeCloseTo(0 - 10);
+    expect(sel.anchors[1].x).toBeCloseTo(100 + 5);
+    expect(sel.anchors[1].y).toBeCloseTo(0 - 10);
+    expect(sel.anchors[2].x).toBeCloseTo(100 + 5);
+    expect(sel.anchors[2].y).toBeCloseTo(100 - 10);
+    // Anchor 3 (not selected) must NOT have moved
+    expect(sel.anchors[3].x).toBeCloseTo(200);
+    expect(sel.anchors[3].y).toBeCloseTo(100);
+  });
 });
