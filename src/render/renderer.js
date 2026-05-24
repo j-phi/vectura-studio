@@ -2358,6 +2358,9 @@
         anchorStart: anchor ? { x: anchor.x, y: anchor.y } : null,
         otherStarts,
         mergeTarget: null,
+        oldPathPolygon: (sel.closed && sel.anchors?.length)
+          ? this._penAnchorsToPolygon(sel.anchors, true)
+          : null,
       };
       return true;
     }

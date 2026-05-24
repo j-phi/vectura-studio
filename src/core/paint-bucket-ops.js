@@ -978,5 +978,6 @@
     explodeFillLayer,
     transformLayerFills,
     translateLayerFills,
+    polyContainsPoint,
   };
 })();
