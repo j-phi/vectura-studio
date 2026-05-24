@@ -2158,6 +2158,25 @@
       return null;
     }
 
+    _selectSegmentAnchors(sel, segmentIndex, additive = false) {
+      const seg = Math.max(0, Math.min(segmentIndex, sel.anchors.length - 1));
+      const nextSeg = sel.closed
+        ? (seg + 1) % sel.anchors.length
+        : Math.min(seg + 1, sel.anchors.length - 1);
+      if (additive) {
+        if (sel.selectedIndices.has(seg) && sel.selectedIndices.has(nextSeg)) {
+          sel.selectedIndices.delete(seg);
+          sel.selectedIndices.delete(nextSeg);
+        } else {
+          sel.selectedIndices.add(seg);
+          if (nextSeg !== seg) sel.selectedIndices.add(nextSeg);
+        }
+      } else {
+        sel.selectedIndices = new Set(nextSeg !== seg ? [seg, nextSeg] : [seg]);
+      }
+      return { seg, nextSeg };
+    }
+
     hitDirectControl(world) {
       const mainData = this.getDirectSelectionWorldAnchors();
       if (mainData) {
@@ -3784,7 +3803,12 @@
           const hit = this.findPathHitAtPoint(world);
           if (hit) {
             if (!this.selectedLayerIds.has(hit.layer.id)) this.selectLayer(hit.layer);
-            const selection = this.setDirectSelection(hit.layer, hit.pathIndex);
+            const modifiers = this.getModifierState ? this.getModifierState(e) : { shift: e.shiftKey };
+            const alreadySamePath = this.directSelection?.layerId === hit.layer.id
+              && this.directSelection?.pathIndex === hit.pathIndex;
+            const selection = (modifiers.shift && alreadySamePath)
+              ? this.directSelection
+              : this.setDirectSelection(hit.layer, hit.pathIndex);
             if (selection && selection.anchors.length) {
               const worldAnchors = this.getDirectSelectionWorldAnchors();
               const anchorTol = 6 / this.scale;
@@ -3800,16 +3824,14 @@
                 });
               }
               if (nearestIdx >= 0 && nearestDistSq <= anchorTolSq) {
-                // Near an endpoint — select just that anchor
-                selection.selectedIndices = new Set([nearestIdx]);
+                // Near an endpoint — select just that anchor (shift toggle handled in startDirectDrag)
+                if (!modifiers.shift) selection.selectedIndices = new Set([nearestIdx]);
                 this.startDirectDrag({ type: 'anchor', index: nearestIdx }, e);
               } else {
                 // On segment body — select both endpoints so dragging moves the whole segment
-                const seg = Math.max(0, Math.min((hit.segmentIndex ?? 0), selection.anchors.length - 1));
-                const nextSeg = Math.min(seg + 1, selection.anchors.length - 1);
-                selection.selectedIndices = new Set(nextSeg !== seg ? [seg, nextSeg] : [seg]);
+                const { seg } = this._selectSegmentAnchors(selection, hit.segmentIndex ?? 0, modifiers.shift);
                 this.startDirectDrag({ type: 'anchor', index: seg }, e);
-                // Store grab offset so drag tracks from where the user clicked, not from the anchor corner
+                // grabOffset: drag tracks from the click point, not the anchor corner
                 if (this.directDrag) {
                   const dragLayer = this.getDirectSelectionLayer();
                   if (dragLayer) {
