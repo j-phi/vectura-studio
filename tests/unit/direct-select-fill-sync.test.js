@@ -1,14 +1,22 @@
 /**
- * Regression test: fill regions must update when direct select reshapes a closed path.
+ * Regression tests: fill regions must update whenever direct-select reshapes a
+ * closed pen path — regardless of whether the edit came from dragging an anchor,
+ * dragging a bezier handle, a keyboard nudge, or any other caller of
+ * _applySelectionPath().
  *
- * Bug: _applySelectionPath() called engine.generate() but never updated layer.fills[n].region.
- * The fill polygon stayed at the original boundary while the path moved, so the rendered
- * fill geometry no longer matched the new path shape.
+ * Bug: _applySelectionPath() called engine.generate() but never updated
+ * layer.fills[n].region. The fill polygon stayed at the original boundary while
+ * the path changed, so the rendered fill geometry no longer matched the path.
  *
- * Fix: _applySelectionPath() now calls _syncFillRegionsToEditedPath() before engine.generate(),
- * which re-derives rec.region from the current anchor positions using centroid-in-oldPolygon
- * matching. Renderer.startDirectDrag() snapshots the initial path polygon so subsequent frames
- * have a "previous boundary" to match against.
+ * Fix: _applySelectionPath() now uses a two-phase approach:
+ *   1. Before engine.generate(): identify fills whose centroid is inside
+ *      layer.paths[pathIndex] (the pre-edit world-space path from the last
+ *      engine.generate() call).
+ *   2. After engine.generate(): replace their rec.region with the new
+ *      layer.paths[pathIndex] (now reflecting the edited geometry).
+ *
+ * This works for all edit paths (drag, bezier, nudge, etc.) because
+ * layer.paths always holds the most recent world-space render of the path.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
@@ -25,28 +33,20 @@ describe('Direct-select fill sync', () => {
 
   // --- helpers ---
 
-  const makeLayer = (fills = []) => ({
-    id: 'layer-1',
-    type: 'shape',
-    fills,
-    sourcePaths: [[]],   // one empty path at index 0
-    paths: [],
-    params: { posX: 0, posY: 0, scaleX: 1, scaleY: 1, rotation: 0 },
-    visible: true,
-  });
+  // Square world-space path (the "old" path before editing, as engine would have set it)
+  const squareWorldPath = () => [
+    { x: 0,   y: 0   }, { x: 50,  y: 0   }, { x: 100, y: 0   },
+    { x: 100, y: 50  }, { x: 100, y: 100  },
+    { x: 50,  y: 100 }, { x: 0,   y: 100  }, { x: 0,   y: 50  },
+  ];
 
-  const makeEngine = (layer) => ({
-    layers: [layer],
-    generate: vi.fn(),
-    computeAllDisplayGeometry: vi.fn(),
-  });
+  // Taller rectangle world-space path (what engine would produce after moving bottom anchors to y=200)
+  const tallWorldPath = () => [
+    { x: 0,   y: 0   }, { x: 50,  y: 0   }, { x: 100, y: 0   },
+    { x: 100, y: 100  }, { x: 100, y: 200 },
+    { x: 50,  y: 200 }, { x: 0,   y: 200 }, { x: 0,   y: 100 },
+  ];
 
-  const makeRenderer = (engine) => {
-    const { Renderer } = runtime.window.Vectura;
-    return new Renderer('main-canvas', engine);
-  };
-
-  // Square anchors: 0,0 → 100,0 → 100,100 → 0,100 (closed)
   const squareAnchors = () => [
     { x: 0,   y: 0,   in: null, out: null },
     { x: 100, y: 0,   in: null, out: null },
@@ -54,7 +54,6 @@ describe('Direct-select fill sync', () => {
     { x: 0,   y: 100, in: null, out: null },
   ];
 
-  // Modified anchors: bottom edge shifted to y=200 (making a taller rectangle)
   const tallAnchors = () => [
     { x: 0,   y: 0,   in: null, out: null },
     { x: 100, y: 0,   in: null, out: null },
@@ -62,7 +61,7 @@ describe('Direct-select fill sync', () => {
     { x: 0,   y: 200, in: null, out: null },
   ];
 
-  // A fill whose region polygon lies inside the square (centroid at ~50,50)
+  // A fill whose region was sampled from the square (centroid ≈ 50, 50)
   const squareFill = () => ({
     id: 'fill-1',
     fillType: 'hatch',
@@ -71,13 +70,37 @@ describe('Direct-select fill sync', () => {
     shiftX: 0,
     shiftY: 0,
     region: [
-      { x: 5,  y: 5  },
-      { x: 95, y: 5  },
-      { x: 95, y: 95 },
-      { x: 5,  y: 95 },
+      { x: 5,  y: 5  }, { x: 95, y: 5  },
+      { x: 95, y: 95 }, { x: 5,  y: 95 },
     ],
     innerRegion: null,
   });
+
+  const makeLayer = (fills = [], oldWorldPath = null) => ({
+    id: 'layer-1',
+    type: 'shape',
+    fills,
+    sourcePaths: [[]],
+    // layer.paths[0] = the world-space path from the last engine.generate() call.
+    // This is what _findFillsForPath reads to identify which fills to update.
+    paths: oldWorldPath ? [oldWorldPath] : [],
+    params: { posX: 0, posY: 0, scaleX: 1, scaleY: 1, rotation: 0 },
+    visible: true,
+  });
+
+  // Mock engine.generate updates layer.paths[0] to newPath, simulating the engine.
+  const makeEngine = (layer, newWorldPath) => ({
+    layers: [layer],
+    generate: vi.fn(() => {
+      layer.paths = [newWorldPath];
+    }),
+    computeAllDisplayGeometry: vi.fn(),
+  });
+
+  const makeRenderer = (engine) => {
+    const { Renderer } = runtime.window.Vectura;
+    return new Renderer('main-canvas', engine);
+  };
 
   const centroid = (polygon) => ({
     x: polygon.reduce((s, p) => s + p.x, 0) / polygon.length,
@@ -85,23 +108,17 @@ describe('Direct-select fill sync', () => {
   });
 
   // -------------------------------------------------------------------
-  // Test: fill region updates when an endpoint is moved via direct select
+  // Core: fill region updates after any _applySelectionPath call
   // -------------------------------------------------------------------
 
-  test('fill region centroid moves downward after bottom anchors are shifted', () => {
+  test('fill region centroid moves when bottom anchors are shifted downward', () => {
     const fill = squareFill();
-    const layer = makeLayer([fill]);
-    const engine = makeEngine(layer);
+    const layer = makeLayer([fill], squareWorldPath());
+    const engine = makeEngine(layer, tallWorldPath());
     const renderer = makeRenderer(engine);
-
-    // Simulate startDirectDrag(): snapshot the old boundary from the initial anchors
-    renderer.directDrag = {
-      oldPathPolygon: renderer._penAnchorsToPolygon(squareAnchors(), true),
-    };
 
     const originalCentroidY = centroid(fill.region).y;  // ≈ 50
 
-    // Simulate the user having moved the bottom anchors to y=200
     renderer._applySelectionPath({
       layerId: 'layer-1',
       pathIndex: 0,
@@ -112,24 +129,39 @@ describe('Direct-select fill sync', () => {
     });
 
     const newCentroidY = centroid(fill.region).y;
+    // The new world path extends to y=200, centroid should be around 100
+    expect(newCentroidY).toBeGreaterThan(originalCentroidY + 30);
+  });
 
-    // Fill region should now be centred on the taller rectangle (~100) not the square (~50)
-    expect(newCentroidY).toBeGreaterThan(originalCentroidY + 20);
+  test('fill region is set to the new world-space path after edit', () => {
+    const fill = squareFill();
+    const layer = makeLayer([fill], squareWorldPath());
+    const engine = makeEngine(layer, tallWorldPath());
+    const renderer = makeRenderer(engine);
+
+    renderer._applySelectionPath({
+      layerId: 'layer-1',
+      pathIndex: 0,
+      anchors: tallAnchors(),
+      closed: true,
+      selectedIndices: new Set([2, 3]),
+      meta: {},
+    });
+
+    // region should now match the tall world path
+    const maxY = Math.max(...fill.region.map((p) => p.y));
+    expect(maxY).toBeCloseTo(200, 0);
   });
 
   // -------------------------------------------------------------------
-  // Test: open paths (non-closed) are skipped — fills not touched
+  // Open paths are skipped — fills not touched
   // -------------------------------------------------------------------
 
   test('fill region is NOT changed when path is open', () => {
     const fill = squareFill();
-    const layer = makeLayer([fill]);
-    const engine = makeEngine(layer);
+    const layer = makeLayer([fill], squareWorldPath());
+    const engine = makeEngine(layer, tallWorldPath());
     const renderer = makeRenderer(engine);
-
-    renderer.directDrag = {
-      oldPathPolygon: renderer._penAnchorsToPolygon(squareAnchors(), true),
-    };
 
     const regionSnapshot = fill.region.map((p) => ({ ...p }));
 
@@ -137,12 +169,11 @@ describe('Direct-select fill sync', () => {
       layerId: 'layer-1',
       pathIndex: 0,
       anchors: tallAnchors(),
-      closed: false,          // ← open path
+      closed: false,          // ← open path — fills must not be touched
       selectedIndices: new Set([2]),
       meta: {},
     });
 
-    // Region must be unchanged
     fill.region.forEach((pt, i) => {
       expect(pt.x).toBeCloseTo(regionSnapshot[i].x);
       expect(pt.y).toBeCloseTo(regionSnapshot[i].y);
@@ -150,11 +181,10 @@ describe('Direct-select fill sync', () => {
   });
 
   // -------------------------------------------------------------------
-  // Test: fill whose centroid is outside the old polygon is not touched
+  // Fill whose centroid is NOT inside the old path is left alone
   // -------------------------------------------------------------------
 
-  test('fill whose centroid is outside the edited path is left alone', () => {
-    // Fill is far away (at x=500, y=500) — centroid not inside the 0-100 square
+  test('fill whose centroid is outside the edited path is not touched', () => {
     const farFill = {
       id: 'fill-far',
       fillType: 'hatch',
@@ -164,14 +194,9 @@ describe('Direct-select fill sync', () => {
       ],
       innerRegion: null,
     };
-
-    const layer = makeLayer([farFill]);
-    const engine = makeEngine(layer);
+    const layer = makeLayer([farFill], squareWorldPath());
+    const engine = makeEngine(layer, tallWorldPath());
     const renderer = makeRenderer(engine);
-
-    renderer.directDrag = {
-      oldPathPolygon: renderer._penAnchorsToPolygon(squareAnchors(), true),
-    };
 
     const regionSnapshot = farFill.region.map((p) => ({ ...p }));
 
@@ -184,7 +209,6 @@ describe('Direct-select fill sync', () => {
       meta: {},
     });
 
-    // Far fill should be untouched
     farFill.region.forEach((pt, i) => {
       expect(pt.x).toBeCloseTo(regionSnapshot[i].x);
       expect(pt.y).toBeCloseTo(regionSnapshot[i].y);
@@ -192,37 +216,7 @@ describe('Direct-select fill sync', () => {
   });
 
   // -------------------------------------------------------------------
-  // Test: oldPathPolygon is updated for the next drag frame
-  // -------------------------------------------------------------------
-
-  test('oldPathPolygon updates to the new boundary after each apply', () => {
-    const fill = squareFill();
-    const layer = makeLayer([fill]);
-    const engine = makeEngine(layer);
-    const renderer = makeRenderer(engine);
-
-    renderer.directDrag = {
-      oldPathPolygon: renderer._penAnchorsToPolygon(squareAnchors(), true),
-    };
-
-    renderer._applySelectionPath({
-      layerId: 'layer-1',
-      pathIndex: 0,
-      anchors: tallAnchors(),
-      closed: true,
-      selectedIndices: new Set([2, 3]),
-      meta: {},
-    });
-
-    // After the apply, oldPathPolygon should reflect the tall rectangle
-    const newOld = renderer.directDrag.oldPathPolygon;
-    expect(newOld).toBeDefined();
-    const maxY = Math.max(...newOld.map((p) => p.y));
-    expect(maxY).toBeGreaterThan(150);  // tall rectangle reaches y=200
-  });
-
-  // -------------------------------------------------------------------
-  // Test: innerRegion (donut) is cleared when region is replaced
+  // innerRegion (donut) is cleared when region is replaced
   // -------------------------------------------------------------------
 
   test('innerRegion is cleared when fill region is replaced', () => {
@@ -238,14 +232,9 @@ describe('Direct-select fill sync', () => {
         { x: 70, y: 70 }, { x: 30, y: 70 },
       ],
     };
-
-    const layer = makeLayer([donutFill]);
-    const engine = makeEngine(layer);
+    const layer = makeLayer([donutFill], squareWorldPath());
+    const engine = makeEngine(layer, tallWorldPath());
     const renderer = makeRenderer(engine);
-
-    renderer.directDrag = {
-      oldPathPolygon: renderer._penAnchorsToPolygon(squareAnchors(), true),
-    };
 
     renderer._applySelectionPath({
       layerId: 'layer-1',
@@ -260,13 +249,43 @@ describe('Direct-select fill sync', () => {
   });
 
   // -------------------------------------------------------------------
-  // Test: _penAnchorsToPolygon returns sensible polygon for a square
+  // No layer.paths → graceful no-op (new layer, no previous generate)
+  // -------------------------------------------------------------------
+
+  test('gracefully skips fill sync when layer.paths is empty (new layer)', () => {
+    const fill = squareFill();
+    // layer.paths is empty — simulates a brand-new layer before first generate()
+    const layer = makeLayer([fill]);  // no oldWorldPath
+    const engine = makeEngine(layer, squareWorldPath());
+    const renderer = makeRenderer(engine);
+
+    const regionSnapshot = fill.region.map((p) => ({ ...p }));
+
+    expect(() => {
+      renderer._applySelectionPath({
+        layerId: 'layer-1',
+        pathIndex: 0,
+        anchors: squareAnchors(),
+        closed: true,
+        selectedIndices: new Set(),
+        meta: {},
+      });
+    }).not.toThrow();
+
+    // No old world path to match against → fill region stays unchanged
+    fill.region.forEach((pt, i) => {
+      expect(pt.x).toBeCloseTo(regionSnapshot[i].x);
+      expect(pt.y).toBeCloseTo(regionSnapshot[i].y);
+    });
+  });
+
+  // -------------------------------------------------------------------
+  // _penAnchorsToPolygon utility — kept as a helper for other uses
   // -------------------------------------------------------------------
 
   test('_penAnchorsToPolygon returns polygon covering the anchor bounds', () => {
-    const fill = squareFill();
-    const layer = makeLayer([fill]);
-    const engine = makeEngine(layer);
+    const layer = makeLayer([]);
+    const engine = makeEngine(layer, []);
     const renderer = makeRenderer(engine);
 
     const poly = renderer._penAnchorsToPolygon(squareAnchors(), true);
@@ -283,5 +302,32 @@ describe('Direct-select fill sync', () => {
     expect(maxX).toBeCloseTo(100, 0);
     expect(minY).toBeCloseTo(0, 0);
     expect(maxY).toBeCloseTo(100, 0);
+  });
+
+  // -------------------------------------------------------------------
+  // Works for bezier handle drag (no directDrag set — other call sites)
+  // -------------------------------------------------------------------
+
+  test('fill syncs even when directDrag is not set (bezier handle, nudge, etc.)', () => {
+    const fill = squareFill();
+    const layer = makeLayer([fill], squareWorldPath());
+    const engine = makeEngine(layer, tallWorldPath());
+    const renderer = makeRenderer(engine);
+
+    // Explicitly ensure directDrag is null — simulates non-drag callers
+    renderer.directDrag = null;
+
+    const originalCentroidY = centroid(fill.region).y;
+
+    renderer._applySelectionPath({
+      layerId: 'layer-1',
+      pathIndex: 0,
+      anchors: tallAnchors(),
+      closed: true,
+      selectedIndices: new Set(),
+      meta: {},
+    });
+
+    expect(centroid(fill.region).y).toBeGreaterThan(originalCentroidY + 30);
   });
 });

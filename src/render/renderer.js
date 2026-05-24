@@ -2213,31 +2213,37 @@
       path.meta = meta;
       sourcePaths[sel.pathIndex] = path;
       layer.sourcePaths = sourcePaths;
-      if (layer.fills?.length && sel.closed) {
-        this._syncFillRegionsToEditedPath(layer, sel);
-      }
+      // Identify fills inside the current (pre-edit) world path before engine.generate()
+      // overwrites layer.paths with the new geometry.
+      const fillsToSync = (sel.closed && layer.fills?.length)
+        ? this._findFillsForPath(layer, sel.pathIndex)
+        : [];
       this.engine.generate(layer.id);
+      if (fillsToSync.length) this._applyNewPathToFills(layer, sel.pathIndex, fillsToSync);
       sel.meta = meta;
     }
 
-    _syncFillRegionsToEditedPath(layer, sel) {
-      const oldPolygon = this.directDrag?.oldPathPolygon;
-      if (!oldPolygon?.length) return;
-      const newPolygon = this._penAnchorsToPolygon(sel.anchors, true);
-      if (!newPolygon?.length) return;
-      const PBO = window.Vectura?.PaintBucketOps;
-      const containsFn = PBO?.polyContainsPoint;
-      if (typeof containsFn !== 'function') return;
-      for (const rec of layer.fills) {
-        if (!rec?.region?.length) continue;
+    _findFillsForPath(layer, pathIndex) {
+      const worldPath = layer.paths?.[pathIndex];
+      if (!Array.isArray(worldPath) || worldPath.length < 3) return [];
+      const containsFn = window.Vectura?.PaintBucketOps?.polyContainsPoint;
+      if (typeof containsFn !== 'function') return [];
+      return (layer.fills || []).filter((rec) => {
+        if (!rec?.region?.length) return false;
         const cx = rec.region.reduce((s, p) => s + p.x, 0) / rec.region.length;
         const cy = rec.region.reduce((s, p) => s + p.y, 0) / rec.region.length;
-        if (containsFn(oldPolygon, cx, cy)) {
-          rec.region = newPolygon.map((p) => ({ x: p.x, y: p.y }));
-          rec.innerRegion = null;
-        }
+        return containsFn(worldPath, cx, cy);
+      });
+    }
+
+    _applyNewPathToFills(layer, pathIndex, fills) {
+      const newWorldPath = layer.paths?.[pathIndex];
+      if (!Array.isArray(newWorldPath) || newWorldPath.length < 2) return;
+      const newRegion = newWorldPath.map((p) => ({ x: p.x, y: p.y }));
+      for (const rec of fills) {
+        rec.region = newRegion;
+        rec.innerRegion = null;
       }
-      this.directDrag.oldPathPolygon = newPolygon;
     }
 
     _penAnchorsToPolygon(anchors, closed, stepsPerSegment = 24) {
