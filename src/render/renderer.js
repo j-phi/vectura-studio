@@ -1180,7 +1180,7 @@
         pts.push(...seg);
       };
       for (let i = 0; i < count - 1; i++) emit(anchors[i], anchors[i + 1]);
-      if (closed && count > 2) emit(anchors[count - 1], anchors[0]);
+      if (closed && count >= 2) emit(anchors[count - 1], anchors[0]);
       return pts;
     }
 
@@ -6563,7 +6563,7 @@
           const c2 = b.in || b;
           this.ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, b.x, b.y);
         }
-        if (this.penDraft?.closed && previewAnchors.length > 2) {
+        if (this.penDraft?.closed && previewAnchors.length >= 2) {
           const a = previewAnchors[previewAnchors.length - 1];
           const b = previewAnchors[0];
           this.ctx.bezierCurveTo((a.out || a).x, (a.out || a).y, (b.in || b).x, (b.in || b).y, b.x, b.y);

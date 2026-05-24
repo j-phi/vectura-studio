@@ -420,7 +420,7 @@
       pts.push(...seg);
     };
     for (let i = 0; i < count - 1; i++) emit(anchors[i], anchors[i + 1]);
-    if (closed && count > 2) emit(anchors[count - 1], anchors[0]);
+    if (closed && count >= 2) emit(anchors[count - 1], anchors[0]);
     return pts;
   };
 
