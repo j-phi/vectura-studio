@@ -2219,7 +2219,13 @@
         ? this._findFillsForPath(layer, sel.pathIndex)
         : [];
       this.engine.generate(layer.id);
-      if (fillsToSync.length) this._applyNewPathToFills(layer, sel.pathIndex, fillsToSync);
+      if (fillsToSync.length) {
+        this._applyNewPathToFills(layer, sel.pathIndex, fillsToSync);
+        // engine.generate() ran computeAllDisplayGeometry() with the old rec.region.
+        // Now that rec.region is updated, regenerate effective geometry so the renderer
+        // shows fill paths clipped to the new boundary, not the previous one.
+        this.engine.computeLayerEffectiveGeometry?.(layer.id);
+      }
       sel.meta = meta;
     }
 

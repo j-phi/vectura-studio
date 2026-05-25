@@ -398,6 +398,97 @@ describe('Direct-select fill sync', () => {
   });
 
   // -------------------------------------------------------------------
+  // effectivePaths must be refreshed after rec.region is updated.
+  //
+  // Bug: engine.generate() calls computeAllDisplayGeometry() internally, which
+  // regenerates layer.effectivePaths using the OLD rec.region.  After that,
+  // _applyNewPathToFills() updates rec.region to the new path — but
+  // effectivePaths is never regenerated.  The renderer draws stale fill
+  // geometry that overflows the new (smaller/different) path boundary.
+  //
+  // Fix: after _applyNewPathToFills, call engine.computeLayerEffectiveGeometry()
+  // so effectivePaths is rebuilt from the updated rec.region.
+  // -------------------------------------------------------------------
+
+  test('computeLayerEffectiveGeometry is called after fill region sync', () => {
+    const fill = squareFill();
+    const layer = makeLayer([fill], squareWorldPath());
+    const engine = {
+      ...makeEngine(layer, tallWorldPath()),
+      computeLayerEffectiveGeometry: vi.fn(),
+    };
+    const renderer = makeRenderer(engine);
+
+    renderer._applySelectionPath({
+      layerId: 'layer-1',
+      pathIndex: 0,
+      anchors: tallAnchors(),
+      closed: true,
+      selectedIndices: new Set([2, 3]),
+      meta: {},
+    });
+
+    // Without the fix, computeLayerEffectiveGeometry is never called and
+    // effectivePaths stays stale (generated with the old rec.region by
+    // computeAllDisplayGeometry inside engine.generate()).
+    expect(engine.computeLayerEffectiveGeometry).toHaveBeenCalledWith('layer-1');
+  });
+
+  test('effectivePaths reflects new region after fill sync, not old region from engine.generate', () => {
+    const fill = squareFill();
+    const layer = makeLayer([fill], squareWorldPath());
+
+    // Engine whose generate() stamps effectivePaths with a "stale" marker
+    // (simulating computeAllDisplayGeometry running with old rec.region),
+    // and computeLayerEffectiveGeometry stamps it with a "fresh" marker.
+    const engine = {
+      layers: [layer],
+      generate: vi.fn(() => {
+        layer.paths = [tallWorldPath()];
+        layer.effectivePaths = [{ _marker: 'stale-old-region' }];
+      }),
+      computeAllDisplayGeometry: vi.fn(),
+      computeLayerEffectiveGeometry: vi.fn(() => {
+        layer.effectivePaths = [{ _marker: 'fresh-new-region' }];
+      }),
+    };
+    const renderer = makeRenderer(engine);
+
+    renderer._applySelectionPath({
+      layerId: 'layer-1',
+      pathIndex: 0,
+      anchors: tallAnchors(),
+      closed: true,
+      selectedIndices: new Set([2, 3]),
+      meta: {},
+    });
+
+    // With the bug: generate() ran last and effectivePaths has the stale marker.
+    // With the fix: computeLayerEffectiveGeometry ran after and effectivePaths has fresh marker.
+    expect(layer.effectivePaths[0]._marker).toBe('fresh-new-region');
+  });
+
+  test('computeLayerEffectiveGeometry is NOT called when there are no fills to sync', () => {
+    const layer = makeLayer([]); // no fills
+    const engine = {
+      ...makeEngine(layer, squareWorldPath()),
+      computeLayerEffectiveGeometry: vi.fn(),
+    };
+    const renderer = makeRenderer(engine);
+
+    renderer._applySelectionPath({
+      layerId: 'layer-1',
+      pathIndex: 0,
+      anchors: squareAnchors(),
+      closed: true,
+      selectedIndices: new Set(),
+      meta: {},
+    });
+
+    expect(engine.computeLayerEffectiveGeometry).not.toHaveBeenCalled();
+  });
+
+  // -------------------------------------------------------------------
   // _areaPolygonCentroid: area centroid of a crescent is inside the shape
   // -------------------------------------------------------------------
 
