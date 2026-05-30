@@ -166,10 +166,11 @@
       }
       if (workingPath.length < 2) return;
       const isLoop = Boolean(workingPath.meta?.kind === 'circle' || isClosedPath(workingPath));
-      // Resample sparse paths (single long polylines like lissajous/spiral/attractor)
-      // so clipped segments have ≥3 points. Without this, each mask-boundary crossing
-      // produces a 2-point chord that the renderer draws as a straight line.
-      if (!isLoop) {
+      // Resample before clipping so mask-boundary crossings produce dense segments
+      // rather than 2- or 3-point chords that render as straight lines. Applies to
+      // ALL paths regardless of closure: a standard (no-damping) Lissajous is
+      // geometrically closed (isLoop=true), so gating on !isLoop skipped it.
+      {
         let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
         polygons.forEach((poly) => {
           (poly || []).forEach((pt) => {
