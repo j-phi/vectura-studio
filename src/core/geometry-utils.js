@@ -535,6 +535,32 @@
     return { anchors: out, changed };
   };
 
+  // Insert intermediate points along polyline edges that exceed maxEdgeLength.
+  // Used by the masking pipeline to ensure clipped segments always have ≥3
+  // points, so the renderer uses smooth quadratic curves instead of lineTo.
+  const resamplePath = (path, maxEdgeLength) => {
+    if (!path || path.length < 2 || !(maxEdgeLength > 0)) return path;
+    const out = [path[0]];
+    for (let i = 1; i < path.length; i++) {
+      const prev = path[i - 1];
+      const curr = path[i];
+      const dx = curr.x - prev.x;
+      const dy = curr.y - prev.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > maxEdgeLength) {
+        const steps = Math.ceil(dist / maxEdgeLength);
+        for (let s = 1; s <= steps; s++) {
+          const t = s / steps;
+          out.push({ x: prev.x + dx * t, y: prev.y + dy * t });
+        }
+      } else {
+        out.push(curr);
+      }
+    }
+    if (path.meta) out.meta = path.meta;
+    return out;
+  };
+
   const api = {
     stripCurveMeta,
     smoothPath,
@@ -552,6 +578,7 @@
     segmentIntersection,
     segmentCircleIntersections,
     splitPathByShape,
+    resamplePath,
   };
 
   if (typeof window !== 'undefined') {

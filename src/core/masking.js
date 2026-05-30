@@ -8,6 +8,7 @@
 
   const { isClosedPath } = OptimizationUtils;
   const clonePaths = GeometryUtils.clonePaths || ((paths) => (paths || []).map((path) => path));
+  const resamplePath = GeometryUtils.resamplePath || ((path) => path);
   const closePolygonIfNeeded = PathBoolean.closePolygonIfNeeded || ((polygon) => polygon);
   const normalizePolygons = PathBoolean.normalizePolygons || ((polygons) => polygons);
   const segmentPathByPolygons = PathBoolean.segmentPathByPolygons || ((path) => [path]);
@@ -165,6 +166,24 @@
       }
       if (workingPath.length < 2) return;
       const isLoop = Boolean(workingPath.meta?.kind === 'circle' || isClosedPath(workingPath));
+      // Resample sparse paths (single long polylines like lissajous/spiral/attractor)
+      // so clipped segments have ≥3 points. Without this, each mask-boundary crossing
+      // produces a 2-point chord that the renderer draws as a straight line.
+      if (!isLoop) {
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        polygons.forEach((poly) => {
+          (poly || []).forEach((pt) => {
+            if (pt.x < minX) minX = pt.x;
+            if (pt.x > maxX) maxX = pt.x;
+            if (pt.y < minY) minY = pt.y;
+            if (pt.y > maxY) maxY = pt.y;
+          });
+        });
+        const diag = Math.sqrt((maxX - minX) ** 2 + (maxY - minY) ** 2);
+        if (isFinite(diag) && diag > 0) {
+          workingPath = resamplePath(workingPath, diag / 150);
+        }
+      }
       if (options.invert) {
         polygons.forEach((polygon) => {
           const segments = segmentPathByPolygons(workingPath, [polygon], { invert: true, closed: isLoop });
