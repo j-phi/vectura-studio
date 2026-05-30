@@ -815,7 +815,10 @@
   const pathToSvg = (path, precision, useCurves, sharpEdges = false) => {
     if (!path || path.length < 2) return '';
     const fmt = (n) => Number(n).toFixed(precision);
-    if (!useCurves || path.length < 3) {
+    // Mirror Renderer.tracePath: `meta.straight` geometry (e.g. mask fragments
+    // pre-flattened by GeometryUtils.flattenSmoothedPath) is already baked and
+    // must be emitted verbatim, never re-smoothed, independent of `useCurves`.
+    if (!useCurves || path.meta?.straight || path.length < 3) {
       return `M ${path.map((pt) => `${fmt(pt.x)} ${fmt(pt.y)}`).join(' L ')}`;
     }
     const isClosed = window.Vectura?.OptimizationUtils?.isClosedPath?.(path);

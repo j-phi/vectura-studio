@@ -8,7 +8,7 @@
 
   const { isClosedPath } = OptimizationUtils;
   const clonePaths = GeometryUtils.clonePaths || ((paths) => (paths || []).map((path) => path));
-  const resamplePath = GeometryUtils.resamplePath || ((path) => path);
+  const flattenSmoothedPath = GeometryUtils.flattenSmoothedPath || ((path) => path);
   const closePolygonIfNeeded = PathBoolean.closePolygonIfNeeded || ((polygon) => polygon);
   const normalizePolygons = PathBoolean.normalizePolygons || ((polygons) => polygons);
   const segmentPathByPolygons = PathBoolean.segmentPathByPolygons || ((path) => [path]);
@@ -134,11 +134,15 @@
     );
     const ancestorMasks = getMaskingAncestors(layer, engine, options);
     if (!ancestorMasks.length) return sourcePaths;
+    // Curve-rendered layers need their displayed (smoothed) curve clipped, not
+    // the raw sparse polyline — see flattenSmoothedPath. Straight layers already
+    // are their own display geometry, so flattening would wrongly round them.
+    const useCurves = Boolean(layer.params && layer.params.curves);
     let currentPaths = clonePaths(sourcePaths);
     ancestorMasks.forEach((maskLayer) => {
       const maskPolygons = getLayerSilhouette(maskLayer, engine, bounds);
       if (!maskPolygons.length) return;
-      currentPaths = applyMaskToPaths(currentPaths, maskPolygons, { invert: true });
+      currentPaths = applyMaskToPaths(currentPaths, maskPolygons, { invert: true, useCurves });
     });
     return currentPaths;
   };
@@ -165,26 +169,15 @@
         workingPath = pts;
       }
       if (workingPath.length < 2) return;
-      const isLoop = Boolean(workingPath.meta?.kind === 'circle' || isClosedPath(workingPath));
-      // Resample before clipping so mask-boundary crossings produce dense segments
-      // rather than 2- or 3-point chords that render as straight lines. Applies to
-      // ALL paths regardless of closure: a standard (no-damping) Lissajous is
-      // geometrically closed (isLoop=true), so gating on !isLoop skipped it.
-      {
-        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-        polygons.forEach((poly) => {
-          (poly || []).forEach((pt) => {
-            if (pt.x < minX) minX = pt.x;
-            if (pt.x > maxX) maxX = pt.x;
-            if (pt.y < minY) minY = pt.y;
-            if (pt.y > maxY) maxY = pt.y;
-          });
-        });
-        const diag = Math.sqrt((maxX - minX) ** 2 + (maxY - minY) ** 2);
-        if (isFinite(diag) && diag > 0) {
-          workingPath = resamplePath(workingPath, diag / 150);
-        }
+      // Clip the curve the renderer actually draws, not the raw sparse polyline.
+      // flattenSmoothedPath bakes the midpoint-quadratic smoothing into dense
+      // points (gated on useCurves; straight layers are already display-exact),
+      // so mask-boundary crossings keep the curve's shape instead of collapsing
+      // into straight chords. See GeometryUtils.flattenSmoothedPath.
+      if (options.useCurves) {
+        workingPath = flattenSmoothedPath(workingPath);
       }
+      const isLoop = Boolean(workingPath.meta?.kind === 'circle' || isClosedPath(workingPath));
       if (options.invert) {
         polygons.forEach((polygon) => {
           const segments = segmentPathByPolygons(workingPath, [polygon], { invert: true, closed: isLoop });

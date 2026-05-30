@@ -535,30 +535,106 @@
     return { anchors: out, changed };
   };
 
-  // Insert intermediate points along polyline edges that exceed maxEdgeLength.
-  // Used by the masking pipeline to ensure clipped segments always have ≥3
-  // points, so the renderer uses smooth quadratic curves instead of lineTo.
-  const resamplePath = (path, maxEdgeLength) => {
-    if (!path || path.length < 2 || !(maxEdgeLength > 0)) return path;
-    const out = [path[0]];
-    for (let i = 1; i < path.length; i++) {
-      const prev = path[i - 1];
-      const curr = path[i];
-      const dx = curr.x - prev.x;
-      const dy = curr.y - prev.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist > maxEdgeLength) {
-        const steps = Math.ceil(dist / maxEdgeLength);
-        for (let s = 1; s <= steps; s++) {
-          const t = s / steps;
-          out.push({ x: prev.x + dx * t, y: prev.y + dy * t });
-        }
-      } else {
-        out.push(curr);
+  const isClosedLoopPath = (path) => {
+    const fn = typeof window !== 'undefined' && window.Vectura?.OptimizationUtils?.isClosedPath;
+    if (fn) return fn(path);
+    if (!Array.isArray(path) || path.length < 3) return false;
+    const dx = path[0].x - path[path.length - 1].x;
+    const dy = path[0].y - path[path.length - 1].y;
+    return dx * dx + dy * dy < 1e-6;
+  };
+
+  // The flattened polyline IS the display geometry now, so its parametric outline
+  // (anchors/shape) is stale and it must render verbatim — tag it `straight`.
+  const finalizeFlattened = (points, path, closed) => {
+    const meta = path.meta ? { ...path.meta } : {};
+    delete meta.anchors;
+    delete meta.shape;
+    if (meta.kind === 'shape' || meta.kind === 'circle') delete meta.kind;
+    meta.straight = true;
+    if (closed) meta.closed = true;
+    points.meta = meta;
+    return points;
+  };
+
+  // Flatten the *displayed* curve into a dense polyline that traces exactly what
+  // Renderer.tracePath / UI.pathToSvg draw. The masking pipeline clips THIS, not
+  // the raw sparse polyline: algorithm output (lissajous, spiral, …) is a coarse
+  // polyline whose on-screen smoothness comes entirely from the renderer's
+  // midpoint-quadratic interpolation. Clipping the raw polyline cuts along its
+  // chords and discards that interpolation, collapsing curves into straight
+  // lines at the mask boundary. Flattening first means a masked curve keeps the
+  // same shape it has unmasked.
+  //
+  // Mirrors tracePath's three branches exactly: native cubic when anchors carry
+  // bezier handles, straight passthrough (already flat), and midpoint-quadratic
+  // for plain polylines. Both curve branches route through sampleCubicBezier
+  // (adaptive, tolerance in world units, depth-bounded) by elevating each
+  // quadratic span to its equivalent cubic — no density heuristic, zoom-stable.
+  const flattenSmoothedPath = (path, tolerance = 0.1) => {
+    if (!Array.isArray(path) || path.length < 2 || path.meta?.straight) return path;
+
+    const out = [];
+    const append = (samples) => {
+      // samples[0] repeats the previous span's endpoint; skip it once chained.
+      for (let k = out.length ? 1 : 0; k < samples.length; k++) {
+        out.push({ x: samples[k].x, y: samples[k].y });
       }
+    };
+
+    const anchors = path.meta?.anchors;
+    const hasHandles = Array.isArray(anchors) && anchors.length >= 2
+      && anchors.some((a) => a && (a.in || a.out));
+    if (hasHandles) {
+      const closed = path.meta?.closed === true;
+      for (let i = 0; i < anchors.length - 1; i++) {
+        const a = anchors[i];
+        const b = anchors[i + 1];
+        append(sampleCubicBezier(a, a.out || a, b.in || b, b, tolerance));
+      }
+      if (closed) {
+        const a = anchors[anchors.length - 1];
+        const b = anchors[0];
+        append(sampleCubicBezier(a, a.out || a, b.in || b, b, tolerance));
+      }
+      return finalizeFlattened(out, path, closed);
     }
-    if (path.meta) out.meta = path.meta;
-    return out;
+
+    if (path.length < 3) return path; // tracePath renders this straight
+
+    // Quadratic span (start, control, end) → equivalent cubic control points.
+    const sampleQuad = (s, c, e) => sampleCubicBezier(
+      s,
+      { x: s.x + (2 / 3) * (c.x - s.x), y: s.y + (2 / 3) * (c.y - s.y) },
+      { x: e.x + (2 / 3) * (c.x - e.x), y: e.y + (2 / 3) * (c.y - e.y) },
+      e,
+      tolerance
+    );
+
+    const closed = isClosedLoopPath(path);
+    if (closed) {
+      const n = path.length - 1;
+      const m0 = { x: (path[0].x + path[1].x) / 2, y: (path[0].y + path[1].y) / 2 };
+      out.push({ x: m0.x, y: m0.y });
+      let prev = m0;
+      for (let i = 1; i < n; i++) {
+        const mid = { x: (path[i].x + path[i + 1].x) / 2, y: (path[i].y + path[i + 1].y) / 2 };
+        append(sampleQuad(prev, path[i], mid));
+        prev = mid;
+      }
+      append(sampleQuad(prev, path[0], m0));
+    } else {
+      out.push({ x: path[0].x, y: path[0].y });
+      let prev = path[0];
+      for (let i = 1; i < path.length - 1; i++) {
+        const mid = { x: (path[i].x + path[i + 1].x) / 2, y: (path[i].y + path[i + 1].y) / 2 };
+        append(sampleQuad(prev, path[i], mid));
+        prev = mid;
+      }
+      const last = path[path.length - 1];
+      out.push({ x: last.x, y: last.y });
+    }
+    return finalizeFlattened(out, path, closed);
   };
 
   const api = {
@@ -578,7 +654,7 @@
     segmentIntersection,
     segmentCircleIntersections,
     splitPathByShape,
-    resamplePath,
+    flattenSmoothedPath,
   };
 
   if (typeof window !== 'undefined') {
