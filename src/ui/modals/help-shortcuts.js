@@ -125,7 +125,8 @@
           ${algoRow('Flowfield',    'particle',    'Particles traverse a Noise Rack vector field — stacked noise layers drive angle or curl for organic, fluid-like textures.')}
           ${algoRow('Boids',        'particle',    'Flocking simulation using Separation, Alignment, and Cohesion rules — complex emergent movement trails.')}
           ${algoRow('Lissajous',    'math',        'Parametric curves from two sinusoidal waves — elegant looping harmonic figures used in signal physics.')}
-          ${algoRow('Harmonograph', 'math',        'Damped multi-pendulum curves combining decaying sine waves on the X and Y axes.')}
+          ${algoRow('Harmonograph', 'math',        'Damped multi-pendulum curves combining decaying sine waves on the X and Y axes. The Virtual Plotter is reveal-only — the figure is static, and Play traces the pen over it 0→100% on a loop.')}
+          ${algoRow('Pendula',      'math',        'A kinetic-harmonograph studio: a Motion Rack of drag-assigned temporal LFOs (sine/triangle/saw/square/sample-hold/random) baked into the figure, plus Lateral (damped) and Pintograph (non-decaying loop) machine types and animated SVG export.')}
           ${algoRow('Attractor',    'math',        'Strange Attractors (Lorenz, Aizawa) — chaotic systems where trajectories orbit a fractal state set.')}
           ${algoRow('Spiral',       'math',        'Archimedean spiral distorted by noise — vinyl-like grooves or organic coil patterns.')}
           ${algoRow('Wavetable',    'field',       'Terrain-like elevations by modulating line structures with one or more stacked noise sources.')}
@@ -307,7 +308,8 @@
           <li><strong>Remove Hidden Geometry</strong> — strip masked-out paths from output.</li>
         </ul>
         A live preview shows pen-order color coding before you download.
-      `)}`;
+      `)}
+      ${callout('<strong>Export Animated SVG…</strong> is a separate File action for the harmonograph/Pendula family — it emits a self-contained, looping <em>draw-on</em> SVG (the strokes draw themselves on repeat) for sharing the figure drawing itself. The canonical Export SVG stays clean and static.')}`;
 
     return `
       <div class="help-wrap">

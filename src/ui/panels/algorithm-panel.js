@@ -207,6 +207,14 @@
     const rememberedSpeed = this.harmonographPlotterState?.speed ?? 1;
     const initialSpeed = speeds.includes(rememberedSpeed) ? rememberedSpeed : 1;
     const initialReveal = clamp(this.harmonographPlotterState?.revealFrac ?? 1, 0, 1);
+    // Plot range (start/stop): a committed param pair that truncates the drawn
+    // line by arc-length fraction. Lives on layer.params so generate() (main
+    // canvas) and the plotter ghost both reflect it via the shared evaluator.
+    const PLOT_MIN_GAP = 1; // keep the two thumbs at least 1% apart
+    let plotStartInit = clamp(layer?.params?.plotStart ?? 0, 0, 100);
+    let plotEndInit = clamp(layer?.params?.plotEnd ?? 100, 0, 100);
+    if (plotEndInit < plotStartInit + PLOT_MIN_GAP) plotEndInit = Math.min(100, plotStartInit + PLOT_MIN_GAP);
+    const infoPrefix = layer?.type === 'pendula' ? 'pendula' : 'harmonograph';
     let drawable = data.path.length > 1;
     const wrapper = document.createElement('div');
     wrapper.className = 'harmonograph-plotter mb-4';
@@ -217,6 +225,17 @@
         </div>
         <canvas class="harmonograph-plotter-canvas" width="240" height="240"></canvas>
         <div class="harmonograph-plotter-meta text-[10px] text-vectura-muted">Play traces the pen along the figure on a loop. Shape the figure itself with LFOs in the Motion Rack.</div>
+        <div class="harmonograph-plotter-row harmonograph-plotter-plotrange-row">
+          <label class="text-[10px] uppercase tracking-widest text-vectura-muted">
+            Plot <span class="harmonograph-plotter-plotrange-val">${Math.round(plotStartInit)}–${Math.round(plotEndInit)}%</span>
+            <button type="button" class="info-btn" data-info="${infoPrefix}.plotStart">i</button>
+          </label>
+          <div class="harmonograph-plotter-plotrange" role="group" aria-label="Plot range">
+            <div class="hp-plotrange-track"><div class="hp-plotrange-fill"></div></div>
+            <input class="hp-plot-start" type="range" min="0" max="100" step="1" value="${Math.round(plotStartInit)}" aria-label="Plot start (%)">
+            <input class="hp-plot-end" type="range" min="0" max="100" step="1" value="${Math.round(plotEndInit)}" aria-label="Plot end (%)">
+          </div>
+        </div>
         <div class="harmonograph-plotter-row">
           <label class="text-[10px] uppercase tracking-widest text-vectura-muted">Reveal</label>
           <input class="harmonograph-plotter-range" type="range" min="0" max="${RANGE_MAX}" step="1" value="${Math.round(initialReveal * RANGE_MAX)}">
@@ -235,7 +254,22 @@
     const playBtn = wrapper.querySelector('.harmonograph-plotter-play');
     const range = wrapper.querySelector('.harmonograph-plotter-range');
     const speedSelect = wrapper.querySelector('.harmonograph-plotter-speed');
+    const plotStartInput = wrapper.querySelector('.hp-plot-start');
+    const plotEndInput = wrapper.querySelector('.hp-plot-end');
+    const plotFill = wrapper.querySelector('.hp-plotrange-fill');
+    const plotValLabel = wrapper.querySelector('.harmonograph-plotter-plotrange-val');
     if (!canvas || !range || !speedSelect || !playBtn) return;
+
+    // Crisp on Hi-DPI: back the canvas with a devicePixelRatio-scaled buffer and
+    // draw in a fixed 240-unit logical space. CSS still sizes the element
+    // responsively (width:100%, max 240px, height:auto) and downscales this
+    // higher-resolution buffer — so the plotter stays sharp on Retina instead of
+    // rendering at CSS resolution. We deliberately do NOT set an inline pixel
+    // width/height so the responsive CSS sizing is preserved.
+    const CSS_SIZE = 240;
+    const dpr = Math.max(1, Math.min((typeof window !== 'undefined' && window.devicePixelRatio) || 1, 3));
+    canvas.width = Math.round(CSS_SIZE * dpr);
+    canvas.height = Math.round(CSS_SIZE * dpr);
 
     const state = {
       rafId: null,
@@ -250,9 +284,14 @@
     if (!ctx) return;
 
     const draw = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Draw in logical (CSS) coordinates; the DPR-scaled backing store is
+      // handled by this transform so strokes stay crisp on Hi-DPI. Guarded for
+      // headless canvas mocks (jsdom) that omit setTransform — there dpr is 1,
+      // so the identity transform is a no-op anyway.
+      if (typeof ctx.setTransform === 'function') ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, CSS_SIZE, CSS_SIZE);
       ctx.fillStyle = getThemeToken('--plotter-bg', '#101115');
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, CSS_SIZE, CSS_SIZE);
       // Always the static cached figure — the grey ghost never changes while
       // playing; only the red reveal advances.
       const renderData = data;
@@ -272,10 +311,10 @@
       const spanY = maxY - minY;
       const span = Math.max(spanX, spanY, 1);
       const pad = 16;
-      const scale = (Math.min(canvas.width, canvas.height) - pad * 2) / span;
+      const scale = (CSS_SIZE - pad * 2) / span;
       const toCanvas = (pt) => ({
-        x: (pt.x - (minX + maxX) / 2) * scale + canvas.width / 2,
-        y: (pt.y - (minY + maxY) / 2) * scale + canvas.height / 2,
+        x: (pt.x - (minX + maxX) / 2) * scale + CSS_SIZE / 2,
+        y: (pt.y - (minY + maxY) / 2) * scale + CSS_SIZE / 2,
       });
 
       const pts = renderData.path;
@@ -346,6 +385,66 @@
       if (state.playing) state.lastTs = 0;
     };
 
+    // Plot range (start/stop): a dual-thumb slider that truncates the drawn line
+    // by arc-length %. Unlike Reveal (a transient preview scrubber), this commits
+    // plotStart/plotEnd onto the layer and regenerates — so the MAIN CANVAS and
+    // the plotter ghost both truncate, and the reveal then retraces the visible
+    // slice. The two thumbs are kept PLOT_MIN_GAP apart.
+    const plotState = { start: plotStartInit, end: plotEndInit };
+    const syncPlotUI = () => {
+      if (plotStartInput) plotStartInput.value = `${Math.round(plotState.start)}`;
+      if (plotEndInput) plotEndInput.value = `${Math.round(plotState.end)}`;
+      if (plotFill) {
+        plotFill.style.left = `${plotState.start}%`;
+        plotFill.style.width = `${Math.max(0, plotState.end - plotState.start)}%`;
+      }
+      if (plotValLabel) plotValLabel.textContent = `${Math.round(plotState.start)}–${Math.round(plotState.end)}%`;
+    };
+    // Heavy work (regenerating main-canvas geometry + the ghost) runs on COMMIT,
+    // i.e. range `change` (pointer release / keystroke), not on every `input`
+    // tick — mirroring the sibling range controls so a drag at high sample
+    // counts / long durations doesn't fire a full pipeline regen per pixel.
+    const commitPlot = () => {
+      if (!layer.params) layer.params = {};
+      if (layer.params.plotStart === plotState.start && layer.params.plotEnd === plotState.end) return;
+      this.app?.pushHistory?.(); // plot-range edits are undoable like every other param
+      layer.params.plotStart = plotState.start;
+      layer.params.plotEnd = plotState.end;
+      this.storeLayerParams?.(layer);
+      // regen() rebuilds main-canvas geometry AND the plotter ghost (app.js:955).
+      this.app?.regen?.();
+    };
+    if (plotStartInput && plotEndInput) {
+      // Dual overlapping range inputs: raise whichever thumb is nearer the
+      // pointer so a handle parked next to its sibling stays grabbable (the
+      // classic two-thumb overlap pitfall).
+      const plotrangeEl = wrapper.querySelector('.harmonograph-plotter-plotrange');
+      if (plotrangeEl) {
+        plotrangeEl.addEventListener('pointerdown', (e) => {
+          const rect = plotrangeEl.getBoundingClientRect();
+          const frac = rect.width ? ((e.clientX - rect.left) / rect.width) * 100 : 0;
+          const nearStart = Math.abs(frac - plotState.start) <= Math.abs(frac - plotState.end);
+          plotStartInput.style.zIndex = nearStart ? '5' : '4';
+          plotEndInput.style.zIndex = nearStart ? '4' : '5';
+        });
+      }
+      plotStartInput.oninput = () => {
+        let v = clamp(parseInt(plotStartInput.value, 10) || 0, 0, 100);
+        if (v > plotState.end - PLOT_MIN_GAP) v = Math.max(0, plotState.end - PLOT_MIN_GAP);
+        plotState.start = v;
+        syncPlotUI();
+      };
+      plotEndInput.oninput = () => {
+        let v = clamp(parseInt(plotEndInput.value, 10) || 100, 0, 100);
+        if (v < plotState.start + PLOT_MIN_GAP) v = Math.min(100, plotState.start + PLOT_MIN_GAP);
+        plotState.end = v;
+        syncPlotUI();
+      };
+      plotStartInput.onchange = commitPlot;
+      plotEndInput.onchange = commitPlot;
+      syncPlotUI();
+    }
+
     // Recompute the cached static figure in place — called by the Motion Rack
     // commit so editing an LFO updates the ghost without a full panel rebuild
     // (and without restarting playback).
@@ -356,6 +455,12 @@
       playBtn.disabled = !drawable;
       playBtn.classList.toggle('opacity-60', !drawable);
       playBtn.classList.toggle('cursor-not-allowed', !drawable);
+      // Keep the interactive controls' enabled state in sync with drawability so
+      // a figure that becomes drawable via another edit doesn't leave them stuck.
+      range.disabled = !drawable;
+      speedSelect.disabled = !drawable;
+      if (plotStartInput) plotStartInput.disabled = !drawable;
+      if (plotEndInput) plotEndInput.disabled = !drawable;
       draw();
     };
 
@@ -364,6 +469,8 @@
       playBtn.classList.add('opacity-60', 'cursor-not-allowed');
       range.disabled = true;
       speedSelect.disabled = true;
+      if (plotStartInput) plotStartInput.disabled = true;
+      if (plotEndInput) plotEndInput.disabled = true;
     }
 
     draw();

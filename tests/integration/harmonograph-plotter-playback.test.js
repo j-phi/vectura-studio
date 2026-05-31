@@ -197,4 +197,54 @@ describe('Pendula virtual plotter — ghost tracks ALL param edits via regen (no
     app.regen();
     expect(JSON.stringify(app.ui.harmonographPlotterState.figure.path)).not.toBe(before);
   });
+
+  test('the plot-range thumbs commit plotStart/plotEnd and truncate BOTH the ghost and the main canvas', () => {
+    const layer = app.engine.getActiveLayer();
+    const doc = window.document;
+    const startInput = doc.querySelector('.hp-plot-start');
+    const endInput = doc.querySelector('.hp-plot-end');
+    expect(startInput).toBeTruthy();
+    expect(endInput).toBeTruthy();
+    const fullPts = app.ui.harmonographPlotterState.figure.path.length;
+    const beforeCanvas = JSON.stringify(layer.paths || layer.sourcePaths);
+    // drag the end thumb down to 50%: `input` updates the live UI only...
+    endInput.value = '50';
+    endInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+    expect(layer.params.plotEnd).toBe(100); // not committed yet (heavy work waits for release)
+    // ...the commit (regen of canvas + ghost) lands on release (`change`).
+    endInput.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(layer.params.plotEnd).toBe(50);
+    expect(layer.params.plotStart).toBe(0);
+    // ghost is truncated (fewer vertices than the full figure)
+    expect(app.ui.harmonographPlotterState.figure.path.length).toBeLessThan(fullPts);
+    // and the committed main-canvas geometry changed too
+    expect(JSON.stringify(layer.paths || layer.sourcePaths)).not.toBe(beforeCanvas);
+  });
+
+  test('a plot-range commit is undoable (pushes history)', () => {
+    const layer = app.engine.getActiveLayer();
+    const doc = window.document;
+    const endInput = doc.querySelector('.hp-plot-end');
+    endInput.value = '60';
+    endInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+    endInput.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(layer.params.plotEnd).toBe(60);
+    app.undo();
+    expect(app.engine.getActiveLayer().params.plotEnd).toBe(100);
+  });
+
+  test('the start thumb cannot cross the end thumb (kept at least 1% apart)', () => {
+    const layer = app.engine.getActiveLayer();
+    const doc = window.document;
+    const startInput = doc.querySelector('.hp-plot-start');
+    const endInput = doc.querySelector('.hp-plot-end');
+    endInput.value = '40';
+    endInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+    endInput.dispatchEvent(new window.Event('change', { bubbles: true }));
+    startInput.value = '90'; // try to shove the start handle past the end
+    startInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+    startInput.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(layer.params.plotStart).toBeLessThan(layer.params.plotEnd);
+    expect(layer.params.plotEnd - layer.params.plotStart).toBeGreaterThanOrEqual(1);
+  });
 });

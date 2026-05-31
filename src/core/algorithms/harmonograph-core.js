@@ -95,10 +95,70 @@
     return { compiled, used };
   };
 
+  // Slice a {x,y,t} path to the arc-length window [lo, hi] (both 0..1),
+  // interpolating x/y/t at the two cut points. This is the single shared seam
+  // for the "plot range" start/stop control: both generate() (main canvas) and
+  // the virtual-plotter ghost consume evaluatePath, so truncating here makes the
+  // range affect both. A full [0,1] window returns the input untouched so the
+  // default stays byte-identical (preserving determinism + pendula==harmonograph
+  // equality). Mirrors generate()'s proven slicePathByDistance, carrying t.
+  const slicePathByRange = (pts, lo, hi) => {
+    const n = pts.length;
+    if (n < 2) return pts;
+    const loC = Math.min(Math.max(lo, 0), 1);
+    const hiC = Math.min(Math.max(hi, 0), 1);
+    if (loC <= 0 && hiC >= 1) return pts; // full range: no-op, byte-identical
+    let total = 0;
+    const segs = [];
+    for (let i = 1; i < n; i += 1) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      if (!len) continue;
+      segs.push({ a, b, len, start: total });
+      total += len;
+    }
+    if (total <= 0) return pts;
+    const start = loC * total;
+    const end = hiC * total;
+    if (end <= start) return [];
+    const out = [];
+    const lerp = (a, b, f) => ({
+      x: a.x + (b.x - a.x) * f,
+      y: a.y + (b.y - a.y) * f,
+      t: a.t + (b.t - a.t) * f,
+    });
+    const push = (pt) => {
+      const last = out[out.length - 1];
+      if (!last || last.x !== pt.x || last.y !== pt.y) out.push(pt);
+    };
+    for (let i = 0; i < segs.length; i += 1) {
+      const seg = segs[i];
+      const segStart = seg.start;
+      const segEnd = seg.start + seg.len;
+      if (segEnd < start) continue;
+      if (segStart > end) break;
+      if (start >= segStart && start <= segEnd) push(lerp(seg.a, seg.b, (start - segStart) / seg.len));
+      else if (segStart >= start) push(seg.a);
+      if (segEnd <= end) push(seg.b);
+      if (end >= segStart && end <= segEnd) {
+        push(lerp(seg.a, seg.b, (end - segStart) / seg.len));
+        break;
+      }
+    }
+    return out;
+  };
+
   const evaluatePath = (params, opts = {}) => {
     const p = params || {};
     const cx = opts.cx ?? 0;
     const cy = opts.cy ?? 0;
+    const plotLo = (Math.min(Math.max(p.plotStart ?? 0, 0), 100)) / 100;
+    const plotHi = (Math.min(Math.max(p.plotEnd ?? 100, 0), 100)) / 100;
+    const finalize = (rawPath) => {
+      const out = slicePathByRange(rawPath, plotLo, plotHi);
+      return { path: out, durationSec: out.length ? out[out.length - 1].t : 0 };
+    };
     const requested = Math.max(200, Math.floor(opts.samples ?? p.samples ?? 4000));
     const cap = Number.isFinite(opts.sampleCap) ? Math.max(2, Math.floor(opts.sampleCap)) : Infinity;
     const count = Math.min(requested, cap);
@@ -155,7 +215,7 @@
           if (settleCount >= settleWindow) break;
         }
       }
-      return { path, durationSec: path.length ? path[path.length - 1].t : 0 };
+      return finalize(path);
     }
 
     // Modulated path. Edges are resolved against `normalized` (original indices
@@ -213,7 +273,7 @@
       }
     }
 
-    return { path, durationSec: path.length ? path[path.length - 1].t : 0 };
+    return finalize(path);
   };
 
   Vectura.HarmonographCore = { evaluatePath, normalizePendulums };

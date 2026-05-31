@@ -472,118 +472,312 @@
       title: 'Close Lines',
       description: 'Trims loose tail ends back to self-intersection cutpoints instead of forcing the curve to loop closed.',
     },
+    'harmonograph.preset': {
+      title: 'Preset',
+      description: 'Loads a complete harmonograph recipe — every pendulum, frequency ratio, and damping value at once — as a starting point. Pick one that is close to what you want, then tune from there; classic ratios like 3:2 and 4:3 are where the most pleasing figures live.',
+    },
     'harmonograph.renderMode': {
       title: 'Render Mode',
-      description: 'Choose line, dashed, point field, or segment rendering.',
+      description: 'Decides how the traced path is drawn: a continuous Line, broken Dashes, a Point Field of dots, or short Segments. The same underlying figure can read as a crisp line drawing or a soft stippled field depending on which you choose.',
     },
     'harmonograph.samples': {
       title: 'Samples',
-      description: 'Number of points sampled along the curve.',
+      description: 'How many points are computed along the pen path. More samples render the curve smoothly and capture fine detail in fast-moving sections; fewer samples draw faster and can leave tight loops looking faceted.',
     },
     'harmonograph.duration': {
       title: 'Duration',
-      description: 'Time span of the simulated pendulum motion.',
+      description: 'How long the simulated pendulums are left to swing, in seconds. Because the swing decays over time, a longer duration lets the figure spiral further inward and lay down more overlapping loops before it settles to the center.',
     },
     'harmonograph.scale': {
       title: 'Scale',
-      description: 'Scales the overall drawing size.',
+      description: 'Sizes the whole figure up or down on the page without changing its shape. Use it to fit the drawing comfortably inside your margins.',
     },
     'harmonograph.paperRotation': {
       title: 'Paper Rotation',
-      description: 'Rotates the drawing over time to add complexity.',
+      description: 'Slowly turns the paper under the pen as it draws, in revolutions per second — exactly like a real harmonograph turntable. Even a gentle rate twists clean Lissajous loops into the dense, rosette-like spirals that make the machine special; small whole-number ratios against the pendulum frequencies give the cleanest results.',
     },
     'harmonograph.dashLength': {
       title: 'Dash Length',
-      description: 'Length of each dash segment.',
+      description: 'Length of each inked dash when drawing in Dashed mode (mm). Longer dashes feel like a solid line with breathing room; shorter ones read as a fine stitched trail.',
     },
     'harmonograph.dashGap': {
       title: 'Dash Gap',
-      description: 'Gap between dash segments.',
+      description: 'The blank space between dashes (mm). Widen it for an airy, dotted-line feel; tighten it toward zero for an almost-continuous stroke.',
     },
     'harmonograph.pointStride': {
       title: 'Point Stride',
-      description: 'Skips points to control point field density.',
+      description: 'In Point Field mode, plots only every Nth sample as a dot. Raise it to thin the stipple into sparse constellations; lower it to pack the dots into a dense, tonal field.',
     },
     'harmonograph.pointSize': {
       title: 'Point Size',
-      description: 'Radius of each point marker.',
+      description: 'Radius of each plotted dot in the Point Field (mm). Small points keep the figure delicate; larger ones build weight and read almost like a brushed tone.',
     },
     'harmonograph.segmentStride': {
       title: 'Segment Stride',
-      description: 'Spacing between short segment samples.',
+      description: 'Spacing between the short tick-marks drawn in Segments mode. Larger strides scatter the segments sparsely along the path; smaller strides line them up into a near-continuous dashed feel.',
     },
     'harmonograph.segmentLength': {
       title: 'Segment Length',
-      description: 'Length of each short segment.',
+      description: 'How long each individual tick-mark is in Segments mode (mm). Short segments read as crisp tally marks following the curve; longer ones start to merge back into a flowing line.',
     },
     'harmonograph.gapSize': {
       title: 'Gap Size',
-      description: 'Adds extra spacing between dashes, points, or segments.',
+      description: 'Adds extra breathing room between elements in Dashed, Point, or Segment modes (mm). A quick way to loosen up a pattern that feels too dense without touching its underlying spacing.',
     },
     'harmonograph.gapOffset': {
       title: 'Gap Offset',
-      description: 'Shifts the spacing pattern forward along the path.',
+      description: 'Slides the whole dash/point/segment pattern forward along the path. Useful for nudging marks off an awkward alignment so they fall where you want them.',
     },
     'harmonograph.gapRandomness': {
       title: 'Spacing Randomness',
-      description: 'Randomizes the spacing between elements (0 = none, 1 = maximum).',
+      description: 'Loosens the perfectly even spacing between marks (0 = mechanical and regular, 1 = freely scattered). A touch of randomness gives the broken-line modes a more hand-made, organic rhythm.',
     },
     'harmonograph.widthMultiplier': {
       title: 'Line Thickness',
-      description: 'Stacks multiple parallel strokes to build thicker lines.',
+      description: 'Builds a heavier line by stacking several parallel passes of the pen — the way a plotter fakes a thick stroke from a thin nib. Higher values give bolder, more present lines at the cost of extra plot time.',
     },
     'harmonograph.thickeningMode': {
       title: 'Thickening Mode',
-      description: 'Controls how the thickness strokes are arranged (parallel or sinusoidal).',
+      description: 'Arranges the stacked thickness passes. Parallel keeps them an even distance apart for a clean uniform weight; Sinusoidal lets the spacing swell and pinch along the path for a calligraphic, ribbon-like line.',
     },
     'harmonograph.loopDrift': {
       title: 'Anti-Loop Drift',
-      description: 'Adds a gradual frequency drift over time to break repeated loop closure.',
+      description: 'Adds a slow, continuous frequency drift so the figure never quite retraces the same loop twice. With it the overlapping passes fan out into a richer web instead of stacking exactly on top of one another.',
     },
     'harmonograph.settleThreshold': {
       title: 'Settle Cutoff',
-      description: 'Stops sampling once motion stays below this amplitude near the center (0 disables).',
+      description: 'Stops drawing once the decaying swing shrinks below this distance from the center (mm), trimming the long fade into a tiny knot at the middle. Set it to 0 to let the figure spiral all the way down.',
     },
     'harmonograph.showPendulumGuides': {
       title: 'Pendulum Guides',
-      description: 'Overlays each pendulum contribution to visualize the motion in the canvas.',
+      description: 'Overlays a helper trace for each pendulum so you can see how the individual swings combine into the final figure — a teaching aid for reading the machine, not part of the export.',
     },
     'harmonograph.pendulumGuideColor': {
       title: 'Guide Color',
-      description: 'Stroke color for the pendulum helper overlay.',
+      description: 'Color of the pendulum helper overlay. Pick something that contrasts with your line so the guides stay easy to read against the figure.',
     },
     'harmonograph.pendulumGuideWidth': {
       title: 'Guide Thickness',
-      description: 'Stroke weight for the pendulum helper overlay.',
+      description: 'Line weight of the pendulum helper overlay (mm). Keep it thin so the guides inform without crowding the artwork.',
     },
     'harmonograph.ampX': {
       title: 'Amplitude X',
-      description: 'Horizontal amplitude contribution of this pendulum.',
+      description: 'How far this pendulum swings the pen left-to-right — the size of its release. Larger amplitudes throw the figure wider across the page on the horizontal axis; a value of 0 takes this pendulum out of the X motion entirely.',
     },
     'harmonograph.ampY': {
       title: 'Amplitude Y',
-      description: 'Vertical amplitude contribution of this pendulum.',
+      description: 'How far this pendulum swings the pen up-and-down — its vertical release size. Pairing a large X amplitude with a small Y (or vice versa) is what stretches a circle into an ellipse or a flat ribbon.',
     },
     'harmonograph.phaseX': {
       title: 'Phase X',
-      description: 'Phase offset for the X oscillator.',
+      description: 'Where in its swing the X oscillator starts, in degrees — the direction the pendulum was released. Shifting it slides the figure between open and pinched forms; a 90° offset between X and Y is the classic way to turn a line into a circle.',
     },
     'harmonograph.phaseY': {
       title: 'Phase Y',
-      description: 'Phase offset for the Y oscillator.',
+      description: 'The starting point of the Y swing, in degrees. On a real harmonograph the relative phase of the pendulums changes every time you release them — sweep it to find the "eye"-shaped figures that live between the clean poses.',
     },
     'harmonograph.freq': {
       title: 'Frequency',
-      description: 'Oscillation frequency for this pendulum.',
+      description: 'How fast this pendulum swings — on a real machine, set by the length of the rod (shorter swings faster). The ratios between pendulum frequencies define the figure: simple ones like 2:1, 3:2, and 4:3 produce the recognizable star and petal shapes, while off-ratios drift toward chaos.',
     },
     'harmonograph.micro': {
       title: 'Micro Tuning',
-      description: 'Fine tuning offset that nudges the frequency.',
+      description: 'A tiny detune added on top of the frequency, for nudging a pendulum just off a clean ratio. This is the secret to lush figures: 2.00 against 3.00 closes into a static shape, but 2.001 makes the loops slowly precess and bloom.',
     },
     'harmonograph.damp': {
       title: 'Damping',
-      description: 'Decay rate applied to this pendulum.',
+      description: 'How quickly this pendulum loses energy and its swing shrinks toward the center — the source of the harmonograph\'s signature inward spiral. Low damping spreads the figure into many wide overlapping loops; high damping pulls it tight and quickly to rest. Different damping per pendulum gives the figure its organic, lopsided decay.',
     },
+    'harmonograph.enabled': {
+      title: 'Pendulum On/Off',
+      description: 'Mutes or activates this pendulum without deleting it. Switch one off to hear what it was contributing, or to stage a build-up — turn pendulums on one at a time to watch a simple loop grow into a complex figure.',
+    },
+    'harmonograph.plotStart': {
+      title: 'Plot Start',
+      description: 'Trims the start of the drawn line: nothing is inked before this point along the figure\'s path (as a percent of total length). Leave it at 0% to draw from the very beginning, or raise it to skip past the wide opening loops and start mid-figure. It affects both the main canvas and the virtual plotter.',
+    },
+    'harmonograph.plotEnd': {
+      title: 'Plot End',
+      description: 'Trims the end of the drawn line: nothing is inked after this point along the figure\'s path (as a percent of total length). Leave it at 100% to draw the whole figure, or pull it in to stop before the long fade into the center. Together with Plot Start it acts as a window onto any slice of the path — and applies to both the main canvas and the virtual plotter.',
+    },
+
+    // -----------------------------------------------------------------------
+    // Pendula — the kinetic-harmonograph studio. Its panel is derived from the
+    // harmonograph panel with every infoKey rewritten harmonograph.* -> pendula.*
+    // (see controls-registry.js), so each shared control needs a pendula mirror
+    // here or its (i) button would no-op. The mirrors share copy with their
+    // harmonograph twins; the pendula-only controls (machine type, Motion Rack
+    // LFOs, the drag-assigned modulation edge) are written fresh below.
+    // -----------------------------------------------------------------------
+    'pendula.preset': {
+      title: 'Preset',
+      description: 'Loads a full Pendula recipe — pendulums, frequency ratios, damping, and any Motion Rack modulation — as a launch pad. Start near the figure you want, then pluck, dice, and modulate from there; every preset is a fork point, not a final answer.',
+    },
+    'pendula.machineType': {
+      title: 'Machine',
+      description: 'Chooses the kind of harmonograph you are building. Lateral is the classic damped machine — the swing decays, so the figure spirals inward to a still center. Pintograph models constant-velocity rotating disks instead: damping is forced to zero, so the loops never decay and the figure draws forever, ideal for continuous looping playback and evolving snake-like shapes.',
+    },
+    'pendula.renderMode': {
+      title: 'Render Mode',
+      description: 'Decides how the traced path is drawn: a continuous Line, broken Dashes, a Point Field of dots, or short Segments. The same underlying figure can read as a crisp line drawing or a soft stippled field depending on which you choose.',
+    },
+    'pendula.samples': {
+      title: 'Samples',
+      description: 'How many points are computed along the pen path. More samples render the curve smoothly and capture fine detail in fast-moving sections; fewer samples draw faster and can leave tight loops looking faceted.',
+    },
+    'pendula.duration': {
+      title: 'Duration',
+      description: 'How long the simulated pendulums are left to swing, in seconds. Because the Lateral machine\'s swing decays over time, a longer duration lets the figure spiral further inward and lay down more overlapping loops before it settles.',
+    },
+    'pendula.scale': {
+      title: 'Scale',
+      description: 'Sizes the whole figure up or down on the page without changing its shape. Use it to fit the drawing comfortably inside your margins.',
+    },
+    'pendula.paperRotation': {
+      title: 'Paper Rotation',
+      description: 'Slowly turns the paper under the pen as it draws, in revolutions per second — exactly like a real harmonograph turntable. Even a gentle rate twists clean Lissajous loops into dense rosette spirals; small whole-number ratios against the pendulum frequencies give the cleanest results.',
+    },
+    'pendula.dashLength': {
+      title: 'Dash Length',
+      description: 'Length of each inked dash when drawing in Dashed mode (mm). Longer dashes feel like a solid line with breathing room; shorter ones read as a fine stitched trail.',
+    },
+    'pendula.dashGap': {
+      title: 'Dash Gap',
+      description: 'The blank space between dashes (mm). Widen it for an airy, dotted-line feel; tighten it toward zero for an almost-continuous stroke.',
+    },
+    'pendula.pointStride': {
+      title: 'Point Stride',
+      description: 'In Point Field mode, plots only every Nth sample as a dot. Raise it to thin the stipple into sparse constellations; lower it to pack the dots into a dense, tonal field.',
+    },
+    'pendula.pointSize': {
+      title: 'Point Size',
+      description: 'Radius of each plotted dot in the Point Field (mm). Small points keep the figure delicate; larger ones build weight and read almost like a brushed tone.',
+    },
+    'pendula.segmentStride': {
+      title: 'Segment Stride',
+      description: 'Spacing between the short tick-marks drawn in Segments mode. Larger strides scatter the segments sparsely along the path; smaller strides line them up into a near-continuous dashed feel.',
+    },
+    'pendula.segmentLength': {
+      title: 'Segment Length',
+      description: 'How long each individual tick-mark is in Segments mode (mm). Short segments read as crisp tally marks following the curve; longer ones start to merge back into a flowing line.',
+    },
+    'pendula.gapSize': {
+      title: 'Gap Size',
+      description: 'Adds extra breathing room between elements in Dashed, Point, or Segment modes (mm). A quick way to loosen a pattern that feels too dense without touching its underlying spacing.',
+    },
+    'pendula.gapOffset': {
+      title: 'Gap Offset',
+      description: 'Slides the whole dash/point/segment pattern forward along the path. Useful for nudging marks off an awkward alignment so they fall where you want them.',
+    },
+    'pendula.gapRandomness': {
+      title: 'Spacing Randomness',
+      description: 'Loosens the perfectly even spacing between marks (0 = mechanical and regular, 1 = freely scattered). A touch of randomness gives the broken-line modes a more hand-made rhythm.',
+    },
+    'pendula.widthMultiplier': {
+      title: 'Line Thickness',
+      description: 'Builds a heavier line by stacking several parallel passes of the pen — the way a plotter fakes a thick stroke from a thin nib. Higher values give bolder lines at the cost of extra plot time.',
+    },
+    'pendula.thickeningMode': {
+      title: 'Thickening Mode',
+      description: 'Arranges the stacked thickness passes. Parallel keeps them an even distance apart for a clean uniform weight; Sinusoidal lets the spacing swell and pinch along the path for a calligraphic, ribbon-like line.',
+    },
+    'pendula.loopDrift': {
+      title: 'Anti-Loop Drift',
+      description: 'Adds a slow, continuous frequency drift so the figure never quite retraces the same loop twice. With it the overlapping passes fan out into a richer web instead of stacking exactly on top of one another.',
+    },
+    'pendula.settleThreshold': {
+      title: 'Settle Cutoff',
+      description: 'Stops drawing once the decaying swing shrinks below this distance from the center (mm), trimming the long fade into a tiny knot. Set it to 0 to let the figure spiral all the way down. (Has no effect on the non-decaying Pintograph machine.)',
+    },
+    'pendula.showPendulumGuides': {
+      title: 'Pendulum Guides',
+      description: 'Overlays a helper trace for each pendulum so you can see how the individual swings combine into the final figure — a teaching aid for reading the machine, not part of the export.',
+    },
+    'pendula.pendulumGuideColor': {
+      title: 'Guide Color',
+      description: 'Color of the pendulum helper overlay. Pick something that contrasts with your line so the guides stay easy to read against the figure.',
+    },
+    'pendula.pendulumGuideWidth': {
+      title: 'Guide Thickness',
+      description: 'Line weight of the pendulum helper overlay (mm). Keep it thin so the guides inform without crowding the artwork.',
+    },
+    'pendula.ampX': {
+      title: 'Amplitude X',
+      description: 'How far this pendulum swings the pen left-to-right — the size of its release. Larger amplitudes throw the figure wider across the horizontal axis; a value of 0 takes this pendulum out of the X motion entirely.',
+    },
+    'pendula.ampY': {
+      title: 'Amplitude Y',
+      description: 'How far this pendulum swings the pen up-and-down — its vertical release size. Pairing a large X amplitude with a small Y (or vice versa) is what stretches a circle into an ellipse or a flat ribbon.',
+    },
+    'pendula.phaseX': {
+      title: 'Phase X',
+      description: 'Where in its swing the X oscillator starts, in degrees — the direction the pendulum was released. Shifting it slides the figure between open and pinched forms; a 90° offset between X and Y is the classic way to turn a line into a circle.',
+    },
+    'pendula.phaseY': {
+      title: 'Phase Y',
+      description: 'The starting point of the Y swing, in degrees. On a real machine the relative phase changes every time you release the pendulums — sweep it to find the "eye"-shaped figures that live between the clean poses.',
+    },
+    'pendula.freq': {
+      title: 'Frequency',
+      description: 'How fast this pendulum swings — on a real machine, set by the length of the rod (shorter swings faster). The ratios between pendulum frequencies define the figure: simple ones like 2:1, 3:2, and 4:3 produce recognizable star and petal shapes, while off-ratios drift toward chaos.',
+    },
+    'pendula.micro': {
+      title: 'Micro Tuning',
+      description: 'A tiny detune added on top of the frequency, for nudging a pendulum just off a clean ratio. This is the heart of the "lock then drift" craft: a perfectly locked ratio gives a static shape, but a hair of detune makes the loops slowly precess — and a slow Motion Rack LFO on this knob is what evolves a circle into a snake.',
+    },
+    'pendula.damp': {
+      title: 'Damping',
+      description: 'How quickly this pendulum loses energy and its swing shrinks toward the center — the source of the inward spiral. Low damping spreads the figure into many wide overlapping loops; high damping pulls it tight and quickly to rest. (On the Pintograph machine, damping is forced to zero so the figure never decays.)',
+    },
+    'pendula.enabled': {
+      title: 'Pendulum On/Off',
+      description: 'Mutes or activates this pendulum without deleting it. Switch one off to see what it was contributing, or to stage a build-up — turn pendulums on one at a time to watch a simple loop grow into a complex figure.',
+    },
+    'pendula.plotStart': {
+      title: 'Plot Start',
+      description: 'Trims the start of the drawn line: nothing is inked before this point along the figure\'s path (as a percent of total length). Leave it at 0% to draw from the very beginning, or raise it to skip the wide opening loops and start mid-figure. It affects both the main canvas and the virtual plotter.',
+    },
+    'pendula.plotEnd': {
+      title: 'Plot End',
+      description: 'Trims the end of the drawn line: nothing is inked after this point along the figure\'s path (as a percent of total length). Leave it at 100% to draw the whole figure, or pull it in to stop before the long fade. With Plot Start it acts as a window onto any slice of the path, on both the main canvas and the virtual plotter.',
+    },
+
+    // Motion Rack — the pendula-only LFO layer. Each modulator (source) is a slow
+    // oscillator whose output is routed onto a parameter via a signed edge. This
+    // is what turns the still figure into a temporal performance.
+    'pendula.motion.shape': {
+      title: 'LFO Shape',
+      description: 'The waveform this modulator sweeps through each cycle. Sine and Triangle glide smoothly for organic drift and breathing figures; Saw ramps in one direction then snaps back; Square jumps between two states to toggle the figure between poses; Sample & Hold and Random freeze a fresh value each cycle for stair-stepped, ever-reconfiguring motion.',
+    },
+    'pendula.motion.syncMode': {
+      title: 'Sync',
+      description: 'Sets the modulator\'s time base. Synced ties its rate to the figure\'s loop length, so it repeats exactly with the drawing — a clean, shareable, perfectly looping animation. Free runs in real Hz, independent of the loop, so the figure never quite repeats and drifts continuously into new territory.',
+    },
+    'pendula.motion.rate': {
+      title: 'Rate',
+      description: 'How fast the modulator oscillates. In Synced mode it counts cycles per figure loop (so 1 = one full sweep per drawing); in Free mode it is a frequency in Hz. Slow rates give a gentle evolving drift; fast rates add visible shimmer and texture to the figure.',
+    },
+    'pendula.motion.depth': {
+      title: 'Depth',
+      description: 'An attenuator on the modulator\'s output — how much of its full swing reaches the routings, from 0 (silent) to 1 (full strength). Pull it back to keep modulation subtle; the per-routing Amount then scales it further for each target.',
+    },
+    'pendula.motion.phase': {
+      title: 'Phase',
+      description: 'Shifts where in its cycle the modulator begins (0–1 of a full turn). Offsetting the phase of two modulators lets them push and pull against each other rather than moving in lockstep — useful for keeping a multi-LFO figure lively.',
+    },
+    'pendula.motion.polarity': {
+      title: 'Polarity',
+      description: 'Sets which way the modulation pushes from the parameter\'s base value. Bipolar swings both above and below the base (the base sits at center) — ideal for wobbling a locked circle symmetrically both ways. Unipolar only pushes in one direction, so the parameter is nudged away from its base and back, never past it.',
+    },
+    'pendula.motion.targetParamPath': {
+      title: 'Modulation Target',
+      description: 'The parameter this routing drives — assigned by dragging the modulator onto a control. One modulator can fan out to many targets at once, so a single slow sweep can detune a frequency, breathe an amplitude, and turn the paper together for a coordinated evolution.',
+    },
+    'pendula.motion.amount': {
+      title: 'Amount',
+      description: 'The signed strength of this one routing — how far, and in which direction, the modulator moves its target. Positive and negative values flip the direction of the effect, and a small amount on a frequency or micro-detune is exactly the recipe for slowly drifting a locked figure into a snake-like evolving shape.',
+    },
+
     'wavetable.lines': {
       title: 'Lines',
       description: 'Number of lines used by the selected wavetable line structure.',

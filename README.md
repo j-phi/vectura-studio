@@ -103,7 +103,7 @@ An Illustrator-style shared toolbar now drives the main canvas plus the embedded
 <details>
 <summary>Full algorithm feature list</summary>
 
-- 19+ algorithm families: flowfield, boids, attractors, hyphae, lissajous, harmonograph, wavetable, rings, topo, grid, rainfall, phylla, petalis, spiral, shapepack, terrain, horizon, pattern, svgdistort
+- 19+ algorithm families: flowfield, boids, attractors, hyphae, lissajous, harmonograph, pendula, wavetable, rings, topo, grid, rainfall, phylla, petalis, spiral, shapepack, terrain, horizon, pattern, svgdistort
 - Universal **Noise Rack** with per-layer engine selection, blend modes, offsets, octave shaping — shared across flowfield, grid, phylla, rings, topo, wavetable, and petalis
 - Polygon Noise Rack layers now use intuitive zoom semantics: larger `Noise Zoom` / `Noise Scale` values create a larger polygon footprint, and vertical line-displacement systems treat positive amplitudes as upward motion
 - Seeded, repeatable generation; the `Transform & Seed` sub-panel (collapsed by default) exposes seed, position, scale, and rotation
@@ -114,7 +114,8 @@ An Illustrator-style shared toolbar now drives the main canvas plus the embedded
 - Petalis has an embedded inline **Petal Designer** panel with a pop-out window (`⧉`) and pop-back-in (`↩`) action; shape comes from visible inner/outer designer curves with always-on dual-ring controls, a `PETAL VISUALIZER` (`Overlay` / `Side by Side`), a `PROFILE EDITOR` with per-side profile import/export plus shared `Export Pair`, and matching Shading Stack + Modifier Stack cards where each card has its own `Petal Shape` target (`Inner`/`Outer`/`Both`)
 - Wavetable supports line structures: horizontal, vertical, grid, isometric, and lattice
 - In Wavetable `Isometric`, `Line Gap` controls the visible cell spacing and `Row Shift` shears the whole lattice so the isometric cells stay locked together
-- Harmonograph multi-pendulum list with add/delete/toggle controls, anti-loop drift + settle cutoff, and a Virtual Plotter preview with playhead scrubbing and speed presets
+- Harmonograph multi-pendulum list with add/delete/toggle controls, anti-loop drift + settle cutoff, and a reveal-only Virtual Plotter preview with playhead scrubbing and speed presets: the figure is static and deterministic, and pressing Play traces the pen (red line) over the static grey figure 0→100% on a loop
+- **Pendula** — a kinetic-harmonograph studio built in parallel with Harmonograph (which is left untouched). It shares Harmonograph's static renderer but adds a **Motion Rack** of drag-assigned temporal LFOs (sine/triangle/saw/square/sample-hold/random; free-Hz or synced-to-loop; depth/phase/polarity) routed to any parameter and *baked into the figure itself* (you shape the figure, not the playback). **Machine types** — Lateral (the damped spiral-in) and Pintograph (damping forced to 0, so the figure loops perpetually without decaying). Ships its own preset gallery (Breathing Orbit, Drift Star, Tidal Lissajous, Pulsing Web) and a harmonograph-aware Dice/Mutate
 - Lissajous with per-endpoint truncation sliders and optional loose-tail trimming at self-intersection cutpoints
 - Rings with Noise Rack layering, per-noise `Orbit Field` / `Concentric` / `Top Down` sampling, and a controllable center diameter
 - Topo contours extracted from a Noise Rack height field with closed-contour mapping modes to avoid seam gaps
@@ -126,12 +127,13 @@ An Illustrator-style shared toolbar now drives the main canvas plus the embedded
 
 ### Export & Optimization
 
-The SVG export modal offers a large preview pane with zoom/pan inspection, plotter optimization controls, and multi-layer line sort. Output is plotter-ready: millimeter-accurate, grouped by pen, and physically trimmed to your frame.
+The SVG export modal offers a large preview pane with zoom/pan inspection, plotter optimization controls, and multi-layer line sort. Output is plotter-ready: millimeter-accurate, grouped by pen, and physically trimmed to your frame. A separate **Export Animated SVG** action emits a self-contained looping "draw-on" SVG for sharing the figure drawing itself.
 
 <details>
 <summary>Full export & optimization feature list</summary>
 
 - `File > Export SVG` opens an Illustrator-style modal: large left-side preview pane, right-side export settings, `Cancel` / `Export SVG` at bottom-right
+- `File > Export Animated SVG…` is a **separate** action that emits a self-contained, looping "draw-on" SVG whose strokes draw themselves on repeat (SMIL `stroke-dashoffset`), sequenced by cumulative stroke length over the active harmonograph/pendula layer's duration — so you can share the figure *drawing itself*. It is distinct from the canonical Export SVG, which stays clean and static (no animation contamination)
 - Preview is zoom/pan inspectable; export-preview `Line Sort` overlay styling stays scoped to the modal and never leaks into the main canvas
 - `Remove Hidden Geometry` is enabled by default — exported SVGs physically trim masked or frame-hidden geometry to match the visible frame; turning it off preserves hidden source geometry through SVG clip paths
 - Plotter optimization toggle with adjustable tolerance (mm) to remove fully overlapping paths per pen before export
@@ -196,7 +198,8 @@ Vectura runs on phones. A touch-friendly shell with slide-over drawers, a bottom
 | **Attractors** | Lorenz-like and chaotic strange attractor systems |
 | **Hyphae** | Branching, growth-like structures |
 | **Lissajous** | Harmonic parametric curves with per-endpoint truncation and self-intersection trim |
-| **Harmonograph** | Multi-pendulum curves with damping, anti-loop drift, settle cutoff, and a Virtual Plotter preview |
+| **Harmonograph** | Multi-pendulum curves with damping, anti-loop drift, settle cutoff, and a reveal-only Virtual Plotter preview (the pen traces the static figure on a loop) |
+| **Pendula** | A kinetic-harmonograph studio built in parallel with Harmonograph: a **Motion Rack** of assignable temporal LFOs baked into the figure, Lateral (damped spiral-in) and Pintograph (non-decaying loops) machine types, a preset gallery, and Export Animated SVG |
 | **Wavetable** | Layered noise wave stacks with multiple line structures (horizontal, vertical, grid, isometric, lattice) |
 | **Rings** | Concentric rings with Noise Rack layering, per-noise `Orbit Field` / `Concentric` / `Top Down` sampling, and a controllable center diameter |
 | **Topo** | Contours extracted from a Noise Rack height field with stacked layers and closed-contour mapping modes |

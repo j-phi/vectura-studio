@@ -219,3 +219,44 @@ describe('HarmonographCore.evaluatePath — machine types (Pintograph)', () => {
     expect(trail).toBeLessThan(lead * 1.05);
   });
 });
+
+describe('HarmonographCore.evaluatePath — plot range (start/stop truncation)', () => {
+  let core;
+  beforeAll(() => { core = loadCore(); });
+  const arcLen = (pts) => {
+    let t = 0;
+    for (let i = 1; i < pts.length; i += 1) t += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    return t;
+  };
+
+  test('default range (0..100) is a byte-identical no-op vs omitting plot range', () => {
+    const a = core.evaluatePath({ ...baseParams() }).path;
+    const b = core.evaluatePath({ ...baseParams(), plotStart: 0, plotEnd: 100 }).path;
+    expect(JSON.stringify(b)).toBe(JSON.stringify(a));
+  });
+
+  test('plotStart/plotEnd truncate the figure by arc-length fraction (~half for 25..75)', () => {
+    const full = core.evaluatePath({ ...baseParams() }).path;
+    const fullLen = arcLen(full);
+    const mid = core.evaluatePath({ ...baseParams(), plotStart: 25, plotEnd: 75 }).path;
+    const midLen = arcLen(mid);
+    expect(midLen).toBeGreaterThan(fullLen * 0.45);
+    expect(midLen).toBeLessThan(fullLen * 0.55);
+    // the slice no longer starts at the figure's origin point
+    expect(mid[0].x).not.toBeCloseTo(full[0].x, 6);
+  });
+
+  test('a leading-only range (0..50) keeps the figure start and drops the tail', () => {
+    const full = core.evaluatePath({ ...baseParams() }).path;
+    const head = core.evaluatePath({ ...baseParams(), plotStart: 0, plotEnd: 50 }).path;
+    expect(head[0].x).toBeCloseTo(full[0].x, 6);
+    expect(head[0].y).toBeCloseTo(full[0].y, 6);
+    expect(arcLen(head)).toBeLessThan(arcLen(full) * 0.55);
+  });
+
+  test('reversed/empty range does not throw and yields an empty path', () => {
+    const out = core.evaluatePath({ ...baseParams(), plotStart: 80, plotEnd: 20 }).path;
+    expect(Array.isArray(out)).toBe(true);
+    expect(out.length).toBe(0);
+  });
+});

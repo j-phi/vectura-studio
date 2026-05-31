@@ -222,7 +222,7 @@
         infoKey: 'harmonograph.renderMode',
       },
       { id: 'samples', label: 'Samples', type: 'range', min: 400, max: 12000, step: 100, infoKey: 'harmonograph.samples' },
-      { id: 'duration', label: 'Duration (s)', type: 'range', min: 5, max: 120, step: 1, infoKey: 'harmonograph.duration' },
+      { id: 'duration', label: 'Duration (s)', type: 'range', min: 5, max: 600, step: 1, infoKey: 'harmonograph.duration' },
       { id: 'scale', label: 'Scale', type: 'range', min: 0.2, max: 1.5, step: 0.05, infoKey: 'harmonograph.scale' },
       {
         id: 'paperRotation',
