@@ -174,59 +174,16 @@
     }
   }
 
-  function computeHarmonographPlotterData(layer) {
+  // Delegates to the shared, pipeline-free evaluator (HarmonographCore) so the
+  // live playback loop can re-evaluate the figure every frame without touching
+  // engine.generate()/computeAllDisplayGeometry(). `opts.sampleCap` caps the
+  // vertex count for cheap live preview; full resolution is used when idle.
+  function computeHarmonographPlotterData(layer, opts = {}) {
     requireDeps('computeHarmonographPlotterData');
+    const core = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.HarmonographCore;
     const params = layer?.params || {};
-    const samples = Math.max(200, Math.floor(params.samples ?? 4000));
-    const duration = Math.max(1, params.duration ?? 30);
-    const scale = params.scale ?? 1;
-    const rotSpeed = (params.paperRotation ?? 0) * Math.PI * 2;
-    const loopDrift = params.loopDrift ?? 0;
-    const settleThreshold = Math.max(0, params.settleThreshold ?? 0);
-    const settleWindow = Math.max(1, Math.floor(params.settleWindow ?? 24));
-    const pendulums = (Array.isArray(params.pendulums) ? params.pendulums : [])
-      .filter((pend) => pend?.enabled !== false)
-      .map((pend) => ({
-        ax: pend.ampX ?? 0,
-        ay: pend.ampY ?? 0,
-        phaseX: ((pend.phaseX ?? 0) * Math.PI) / 180,
-        phaseY: ((pend.phaseY ?? 0) * Math.PI) / 180,
-        freq: pend.freq ?? 1,
-        micro: pend.micro ?? 0,
-        damp: Math.max(0, pend.damp ?? 0),
-      }));
-    if (!pendulums.length) return { path: [], durationSec: 0 };
-    const dt = duration / samples;
-    const path = [];
-    let settleCount = 0;
-    for (let i = 0; i <= samples; i += 1) {
-      const t = i * dt;
-      let x = 0;
-      let y = 0;
-      pendulums.forEach((pend) => {
-        const freq = (pend.freq + pend.micro + loopDrift * t) * Math.PI * 2;
-        const decay = Math.exp(-pend.damp * t);
-        x += pend.ax * Math.sin(freq * t + pend.phaseX) * decay;
-        y += pend.ay * Math.sin(freq * t + pend.phaseY) * decay;
-      });
-      x *= scale;
-      y *= scale;
-      if (rotSpeed) {
-        const ang = rotSpeed * t;
-        const rx = x * Math.cos(ang) - y * Math.sin(ang);
-        const ry = x * Math.sin(ang) + y * Math.cos(ang);
-        x = rx;
-        y = ry;
-      }
-      path.push({ x, y, t });
-      if (settleThreshold > 0) {
-        const mag = Math.hypot(x, y);
-        settleCount = mag <= settleThreshold ? settleCount + 1 : 0;
-        if (settleCount >= settleWindow) break;
-      }
-    }
-
-    return { path, durationSec: path[path.length - 1]?.t ?? 0 };
+    if (!core) return { path: [], durationSec: 0 };
+    return core.evaluatePath(params, opts);
   }
 
   function mountHarmonographPlotter(layer, target) {
@@ -235,14 +192,22 @@
     const clamp =
       (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.AlgorithmUtils?.clamp ||
       ((value, min, max) => Math.min(Math.max(value, min), max));
+    // Live-playback tuning. The play loop advances a real-time clock and
+    // RE-EVALUATES the figure every frame (via the pipeline-free core) rather
+    // than sweeping a precomputed array, so the drawing can evolve as it plays.
+    const RANGE_MAX = 1000;          // reveal scrubber resolution (fraction * 1000)
+    const LIVE_SAMPLE_CAP = 1400;    // capped vertices while playing (perf); full when idle
+    const REVEAL_SECONDS = 7;        // seconds for the pen to draw the whole figure once (at 1x)
+    const EVOLVE_PERIOD = 22;        // seconds for one in/out breathe of the figure
+    const EVOLVE_DEPTH = 0.018;      // loopDrift modulation depth — Phase-1 stand-in for an LFO
+    const core = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.HarmonographCore;
+
     const data = this.computeHarmonographPlotterData(layer);
     const speeds = [0.25, 0.5, 1, 2, 4];
-    const maxPlayhead = Math.max(0, data.path.length - 1);
-    const initialPlayhead = clamp(this.harmonographPlotterState?.playhead ?? 0, 0, maxPlayhead);
     const rememberedSpeed = this.harmonographPlotterState?.speed ?? 1;
     const initialSpeed = speeds.includes(rememberedSpeed) ? rememberedSpeed : 1;
-    const durationSec = Math.max(0.1, data.durationSec || layer?.params?.duration || 1);
-    const progressPerMs = maxPlayhead > 0 ? maxPlayhead / (durationSec * 1000) : 0;
+    const initialReveal = clamp(this.harmonographPlotterState?.revealFrac ?? 1, 0, 1);
+    const drawable = data.path.length > 1;
     const wrapper = document.createElement('div');
     wrapper.className = 'harmonograph-plotter mb-4';
     wrapper.innerHTML = `
@@ -251,10 +216,10 @@
           <button type="button" class="harmonograph-plotter-play text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">Play</button>
         </div>
         <canvas class="harmonograph-plotter-canvas" width="240" height="240"></canvas>
-        <div class="harmonograph-plotter-meta text-[10px] text-vectura-muted">Scrub the playhead to preview the drawing sequence.</div>
+        <div class="harmonograph-plotter-meta text-[10px] text-vectura-muted">Play to watch the pen draw on a loop — the figure gently evolves as it runs.</div>
         <div class="harmonograph-plotter-row">
-          <label class="text-[10px] uppercase tracking-widest text-vectura-muted">Playhead</label>
-          <input class="harmonograph-plotter-range" type="range" min="0" max="${maxPlayhead}" step="1" value="${initialPlayhead}">
+          <label class="text-[10px] uppercase tracking-widest text-vectura-muted">Reveal</label>
+          <input class="harmonograph-plotter-range" type="range" min="0" max="${RANGE_MAX}" step="1" value="${Math.round(initialReveal * RANGE_MAX)}">
         </div>
         <div class="harmonograph-plotter-row">
           <label class="text-[10px] uppercase tracking-widest text-vectura-muted">Speed</label>
@@ -275,26 +240,42 @@
     const state = {
       rafId: null,
       playing: false,
-      playhead: clamp(parseInt(range.value, 10) || 0, 0, maxPlayhead),
+      revealFrac: initialReveal,   // 0..1 — how much of the curve is drawn
+      playbackClock: 0,            // seconds of playback, drives evolution
       speed: initialSpeed,
       lastTs: 0,
-      maxPlayhead,
-      progressPerMs,
+      baseLoopDrift: layer?.params?.loopDrift ?? 0,
+      liveData: data,              // re-evaluated each frame while playing
     };
     this.harmonographPlotterState = state;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // Re-evaluate the figure for the current playback clock (evolving loopDrift),
+    // capped to a cheap vertex count. This is the per-frame, pipeline-free path
+    // the whole "play button animates" premise rests on.
+    const evaluateLive = () => {
+      if (!core) return data;
+      const evoDrift = state.baseLoopDrift + EVOLVE_DEPTH * Math.sin((Math.PI * 2 / EVOLVE_PERIOD) * state.playbackClock);
+      const liveParams = Object.assign({}, layer?.params, { loopDrift: evoDrift });
+      return core.evaluatePath(liveParams, { sampleCap: LIVE_SAMPLE_CAP });
+    };
+
     const draw = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.fillStyle = getThemeToken('--plotter-bg', '#101115');
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      if (!data.path.length) return;
+      // Render the live (evolving) figure while playing, the full-res one when idle.
+      const renderData = state.playing && state.liveData?.path?.length ? state.liveData : data;
+      if (!renderData.path.length) return;
+      // Frame the view from the committed full-res figure so the view doesn't
+      // jitter as the live figure breathes; fall back to renderData if empty.
+      const bboxSrc = data.path.length ? data : renderData;
       let minX = Infinity;
       let maxX = -Infinity;
       let minY = Infinity;
       let maxY = -Infinity;
-      data.path.forEach((pt) => {
+      bboxSrc.path.forEach((pt) => {
         if (pt.x < minX) minX = pt.x;
         if (pt.x > maxX) maxX = pt.x;
         if (pt.y < minY) minY = pt.y;
@@ -310,30 +291,31 @@
         y: (pt.y - (minY + maxY) / 2) * scale + canvas.height / 2,
       });
 
+      const pts = renderData.path;
       ctx.strokeStyle = getThemeToken('--plotter-path-base', 'rgba(113,113,122,0.35)');
       ctx.lineWidth = 1;
       ctx.beginPath();
-      data.path.forEach((pt, idx) => {
+      pts.forEach((pt, idx) => {
         const c = toCanvas(pt);
         if (idx === 0) ctx.moveTo(c.x, c.y);
         else ctx.lineTo(c.x, c.y);
       });
       ctx.stroke();
 
-      // playhead accumulates as a float; floor it before indexing the path so
-      // we never read data.path[fractional] (undefined → throws in toCanvas).
-      const limit = clamp(Math.floor(state.playhead), 0, data.path.length - 1);
+      // revealFrac is a 0..1 fraction; floor the resulting index so we never
+      // read pts[fractional] (undefined → throws in toCanvas).
+      const limit = clamp(Math.floor(state.revealFrac * (pts.length - 1)), 0, pts.length - 1);
       ctx.strokeStyle = '#ef4444';
       ctx.lineWidth = 1.4;
       ctx.beginPath();
       for (let i = 0; i <= limit; i += 1) {
-        const c = toCanvas(data.path[i]);
+        const c = toCanvas(pts[i]);
         if (i === 0) ctx.moveTo(c.x, c.y);
         else ctx.lineTo(c.x, c.y);
       }
       ctx.stroke();
 
-      const head = toCanvas(data.path[limit]);
+      const head = toCanvas(pts[limit]);
       ctx.fillStyle = getThemeToken('--plotter-head', '#fafafa');
       ctx.beginPath();
       ctx.arc(head.x, head.y, 3, 0, Math.PI * 2);
@@ -343,31 +325,27 @@
     const tick = (ts) => {
       if (!state.playing) return;
       const last = state.lastTs || ts;
-      const delta = Math.max(0, ts - last);
+      const deltaSec = (Math.max(0, ts - last) / 1000) * state.speed;
       state.lastTs = ts;
-      const step = delta * state.progressPerMs * state.speed;
-      state.playhead += step;
-      if (state.playhead >= state.maxPlayhead) {
-        // Loop continuously so the drawing replays live (wrap the overshoot
-        // back to the start rather than halting at the end).
-        state.playhead = state.maxPlayhead > 0 ? state.playhead % state.maxPlayhead : 0;
-      }
-      range.value = `${Math.round(state.playhead)}`;
+      state.playbackClock += deltaSec;
+      // Advance the reveal and wrap it into [0,1) so the pen redraws on a loop.
+      state.revealFrac += deltaSec / REVEAL_SECONDS;
+      if (state.revealFrac >= 1) state.revealFrac -= Math.floor(state.revealFrac);
+      // Re-evaluate the evolving figure for this frame (the de-risk core).
+      state.liveData = evaluateLive();
+      range.value = `${Math.round(state.revealFrac * RANGE_MAX)}`;
       draw();
       if (state.playing) state.rafId = window.requestAnimationFrame(tick);
     };
 
     playBtn.onclick = () => {
-      if (state.maxPlayhead <= 0) return;
-      if (!state.playing && state.playhead >= state.maxPlayhead) {
-        state.playhead = 0;
-        range.value = '0';
-        draw();
-      }
+      if (!drawable) return;
       state.playing = !state.playing;
       playBtn.textContent = state.playing ? 'Pause' : 'Play';
       if (state.playing) {
         state.lastTs = 0;
+        state.baseLoopDrift = layer?.params?.loopDrift ?? 0;
+        state.liveData = evaluateLive();
         state.rafId = window.requestAnimationFrame(tick);
       } else if (state.rafId) {
         window.cancelAnimationFrame(state.rafId);
@@ -375,7 +353,7 @@
       }
     };
     range.oninput = (e) => {
-      state.playhead = clamp(parseInt(e.target.value, 10) || 0, 0, state.maxPlayhead);
+      state.revealFrac = clamp((parseInt(e.target.value, 10) || 0) / RANGE_MAX, 0, 1);
       if (state.playing) state.lastTs = 0;
       draw();
     };
@@ -384,7 +362,7 @@
       state.speed = Number.isFinite(nextSpeed) ? nextSpeed : 1;
       if (state.playing) state.lastTs = 0;
     };
-    if (state.maxPlayhead <= 0) {
+    if (!drawable) {
       playBtn.disabled = true;
       playBtn.classList.add('opacity-60', 'cursor-not-allowed');
       range.disabled = true;
