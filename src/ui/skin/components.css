@@ -4428,6 +4428,34 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  touch-action: none;
+}
+
+.harmonograph-plotter-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.harmonograph-plotter-popout,
+.harmonograph-plotter-popin {
+  border: 1px solid var(--ui-border);
+  background: var(--ui-ctrl);
+  color: var(--ui-text);
+  min-width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 6px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.harmonograph-plotter-popout:hover,
+.harmonograph-plotter-popin:hover {
+  border-color: var(--ui-accent);
+  color: var(--ui-accent);
 }
 
 .harmonograph-plotter-canvas {
@@ -4437,6 +4465,57 @@
   border: 1px solid var(--ui-border);
   border-radius: 8px;
   background: #101115;
+}
+
+/* Floating (popped-out) Virtual Plotter window: a fixed, draggable container
+ * over the canvas. `resize: both` provides robust user resizing watched by a
+ * ResizeObserver that re-renders the figure crisp at the new size. The header
+ * is the drag handle. */
+.harmonograph-plotter-float {
+  position: fixed;
+  z-index: 95;
+  width: 320px;
+  min-width: 200px;
+  min-height: 240px;
+  resize: both;
+  overflow: hidden;
+  border: 1px solid var(--ui-border-hi);
+  border-radius: 12px;
+  background: var(--ui-panel-alt);
+  box-shadow: 0 24px 64px rgb(var(--vectura-bg-rgb) / 0.6);
+}
+
+.harmonograph-plotter-float.dragging {
+  cursor: grabbing;
+}
+
+/* When floating, the widget fills the resizable container and its canvas grows
+ * to the container width (overriding the docked max-width:240px cap). */
+.harmonograph-plotter-floating {
+  margin-bottom: 0;
+  border: none;
+  border-radius: 12px;
+  height: 100%;
+}
+
+.harmonograph-plotter-floating .harmonograph-plotter-head {
+  cursor: grab;
+}
+
+.harmonograph-plotter-floating .harmonograph-plotter-canvas {
+  max-width: none;
+}
+
+/* Panel slot placeholder shown while the plotter is popped out. */
+.harmonograph-plotter-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px dashed var(--ui-border);
+  border-radius: 10px;
+  padding: 10px;
+  background: var(--ui-ctrl);
 }
 
 .harmonograph-plotter-row {

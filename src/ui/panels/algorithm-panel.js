@@ -221,7 +221,11 @@
     wrapper.innerHTML = `
         <div class="harmonograph-plotter-head">
           <span class="text-[10px] uppercase tracking-widest text-vectura-muted">Virtual Plotter</span>
-          <button type="button" class="harmonograph-plotter-play text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">Play</button>
+          <div class="harmonograph-plotter-head-actions">
+            <button type="button" class="harmonograph-plotter-play text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">Play</button>
+            <button type="button" class="harmonograph-plotter-popout" aria-label="Pop Out Virtual Plotter" title="Pop Out">⧉</button>
+            <button type="button" class="harmonograph-plotter-popin" aria-label="Pop In Virtual Plotter" title="Pop In">↩</button>
+          </div>
         </div>
         <canvas class="harmonograph-plotter-canvas" width="240" height="240"></canvas>
         <div class="harmonograph-plotter-meta text-[10px] text-vectura-muted">Play traces the pen along the figure on a loop. Shape the figure itself with LFOs in the Motion Rack.</div>
@@ -266,10 +270,15 @@
     // higher-resolution buffer — so the plotter stays sharp on Retina instead of
     // rendering at CSS resolution. We deliberately do NOT set an inline pixel
     // width/height so the responsive CSS sizing is preserved.
-    const CSS_SIZE = 240;
+    const DOCKED_SIZE = 240;
+    // `logicalSize` is the CSS-space coordinate extent draw() renders into. It
+    // stays 240 while docked (responsive CSS downscales the DPR-scaled buffer)
+    // and tracks the float's content-box size while popped so the figure
+    // re-renders at full resolution instead of being upscaled / blurry.
+    let logicalSize = DOCKED_SIZE;
     const dpr = Math.max(1, Math.min((typeof window !== 'undefined' && window.devicePixelRatio) || 1, 3));
-    canvas.width = Math.round(CSS_SIZE * dpr);
-    canvas.height = Math.round(CSS_SIZE * dpr);
+    canvas.width = Math.round(logicalSize * dpr);
+    canvas.height = Math.round(logicalSize * dpr);
 
     const state = {
       rafId: null,
@@ -289,9 +298,9 @@
       // headless canvas mocks (jsdom) that omit setTransform — there dpr is 1,
       // so the identity transform is a no-op anyway.
       if (typeof ctx.setTransform === 'function') ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, CSS_SIZE, CSS_SIZE);
+      ctx.clearRect(0, 0, logicalSize, logicalSize);
       ctx.fillStyle = getThemeToken('--plotter-bg', '#101115');
-      ctx.fillRect(0, 0, CSS_SIZE, CSS_SIZE);
+      ctx.fillRect(0, 0, logicalSize, logicalSize);
       // Always the static cached figure — the grey ghost never changes while
       // playing; only the red reveal advances.
       const renderData = data;
@@ -311,10 +320,10 @@
       const spanY = maxY - minY;
       const span = Math.max(spanX, spanY, 1);
       const pad = 16;
-      const scale = (CSS_SIZE - pad * 2) / span;
+      const scale = (logicalSize - pad * 2) / span;
       const toCanvas = (pt) => ({
-        x: (pt.x - (minX + maxX) / 2) * scale + CSS_SIZE / 2,
-        y: (pt.y - (minY + maxY) / 2) * scale + CSS_SIZE / 2,
+        x: (pt.x - (minX + maxX) / 2) * scale + logicalSize / 2,
+        y: (pt.y - (minY + maxY) / 2) * scale + logicalSize / 2,
       });
 
       const pts = renderData.path;
@@ -347,6 +356,19 @@
       ctx.arc(head.x, head.y, 3, 0, Math.PI * 2);
       ctx.fill();
     };
+
+    // Re-size the (square) canvas in CSS-logical px. The backing store is the
+    // logical size scaled by dpr so the figure re-renders crisp at the new size
+    // instead of being upscaled from the docked 240 buffer. Called on float
+    // resize (ResizeObserver) and on pop-in to restore the docked size.
+    const setPlotterSize = (px) => {
+      const next = Math.max(120, Math.round(px) || DOCKED_SIZE);
+      logicalSize = next;
+      canvas.width = Math.round(next * dpr);
+      canvas.height = Math.round(next * dpr);
+      draw();
+    };
+    state.setPlotterSize = setPlotterSize;
 
     const tick = (ts) => {
       if (!state.playing) return;
@@ -471,6 +493,204 @@
       speedSelect.disabled = true;
       if (plotStartInput) plotStartInput.disabled = true;
       if (plotEndInput) plotEndInput.disabled = true;
+    }
+
+    // ---- Pop-out / pop-in (view-only floating window) -----------------------
+    // The widget can detach into a fixed, draggable, resizable float over the
+    // canvas. The SAME wrapper node is MOVED (so playback state + handlers stay
+    // live) — only the canvas backing store is resized. Popped state persists on
+    // `this` so a buildControls() re-mount (dice / add-pendulum / preset) can
+    // immediately re-float the freshly built wrapper at the saved rect instead
+    // of orphaning the old float.
+    const FLOAT_ID = 'harmonograph-plotter-float';
+    const popOutBtn = wrapper.querySelector('.harmonograph-plotter-popout');
+    const popInBtn = wrapper.querySelector('.harmonograph-plotter-popin');
+
+    // Default rect: top-right of the workspace viewport, sensible square size.
+    const defaultRect = () => {
+      const vp = (typeof document !== 'undefined' && document.getElementById('viewport-container'))
+        ? document.getElementById('viewport-container').getBoundingClientRect()
+        : null;
+      const width = 320;
+      if (vp && vp.width) {
+        return { left: Math.max(12, vp.right - width - 24), top: Math.max(12, vp.top + 24), width };
+      }
+      return { left: 120, top: 80, width };
+    };
+
+    const ensureFloatContainer = () => {
+      let float = document.getElementById(FLOAT_ID);
+      if (!float) {
+        float = document.createElement('div');
+        float.id = FLOAT_ID;
+        float.className = 'harmonograph-plotter-float';
+        // Inline `position:fixed` so the float is detached from panel layout even
+        // before the skin CSS applies (jsdom reads it back off the style attr).
+        float.style.position = 'fixed';
+        document.body.appendChild(float);
+      }
+      return float;
+    };
+
+    // ResizeObserver → keep the canvas backing store square + crisp at the float
+    // content-box size. Tracked on `this` (NOT a closure-local) and disconnected
+    // before re-observing so a buildControls() re-mount while popped can't
+    // accumulate one stale observer per rebuild (each would keep firing an old
+    // setPlotterSize/draw on a detached canvas and retain its whole closure).
+    const observeFloatResize = (float) => {
+      if (this._harmonographPlotterResizeObserver) {
+        try { this._harmonographPlotterResizeObserver.disconnect(); } catch (_) { /* noop */ }
+        this._harmonographPlotterResizeObserver = null;
+      }
+      if (typeof ResizeObserver !== 'function') return;
+      const ro = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const box = entry.contentRect || float.getBoundingClientRect();
+          const size = Math.max(120, Math.min(box.width, box.height) || box.width);
+          if (Math.abs(size - logicalSize) >= 1) setPlotterSize(size);
+          // persist the resized width so a re-mount re-floats at the user's size
+          if (this.harmonographPlotterRect && Number.isFinite(box.width) && box.width > 0) {
+            this.harmonographPlotterRect.width = Math.round(box.width);
+          }
+        }
+      });
+      this._harmonographPlotterResizeObserver = ro;
+      ro.observe(float);
+    };
+
+    // Drag the float by its header (but NOT via the play / pop buttons). Pointer
+    // events only — mousedown is unreliable here (see the pluck-pad note in
+    // algo-config-panel.js). Listeners live on window so a fast drag that leaves
+    // the header still tracks; they're tagged so a re-mount can clean them up.
+    let dragState = null;
+    const head = wrapper.querySelector('.harmonograph-plotter-head');
+    const onHeadDown = (e) => {
+      const float = document.getElementById(FLOAT_ID);
+      if (!float || !float.contains(wrapper)) return;
+      if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select')) return;
+      const rect = float.getBoundingClientRect();
+      const baseLeft = parseFloat(float.style.left);
+      const baseTop = parseFloat(float.style.top);
+      dragState = {
+        dx: e.clientX - (Number.isFinite(baseLeft) ? baseLeft : rect.left),
+        dy: e.clientY - (Number.isFinite(baseTop) ? baseTop : rect.top),
+      };
+      float.classList.add('dragging');
+    };
+    const onWinMove = (e) => {
+      if (!dragState) return;
+      const float = document.getElementById(FLOAT_ID);
+      if (!float) return;
+      // Clamp to the viewport so the float (and its draggable header) can't be
+      // dragged fully off-screen and lost — keep a margin always reachable.
+      const vw = (typeof window !== 'undefined' && window.innerWidth) || 1200;
+      const vh = (typeof window !== 'undefined' && window.innerHeight) || 800;
+      const left = Math.min(Math.max(12, e.clientX - dragState.dx), Math.max(12, vw - 80));
+      const top = Math.min(Math.max(12, e.clientY - dragState.dy), Math.max(12, vh - 40));
+      float.style.left = `${left}px`;
+      float.style.top = `${top}px`;
+    };
+    const onWinUp = () => {
+      if (!dragState) return;
+      dragState = null;
+      const float = document.getElementById(FLOAT_ID);
+      if (float) {
+        float.classList.remove('dragging');
+        // persist the moved position so a re-mount re-floats in place
+        const left = parseFloat(float.style.left);
+        const top = parseFloat(float.style.top);
+        if (this.harmonographPlotterRect) {
+          if (Number.isFinite(left)) this.harmonographPlotterRect.left = left;
+          if (Number.isFinite(top)) this.harmonographPlotterRect.top = top;
+        }
+      }
+    };
+    // Tear down the previous mount's window listeners before adding ours so a
+    // buildControls() re-mount doesn't accumulate stale drag handlers on window.
+    if (this._harmonographPlotterDragCleanup) {
+      try { this._harmonographPlotterDragCleanup(); } catch (_) { /* noop */ }
+    }
+    if (head) head.addEventListener('pointerdown', onHeadDown);
+    window.addEventListener('pointermove', onWinMove);
+    window.addEventListener('pointerup', onWinUp);
+    this._harmonographPlotterDragCleanup = () => {
+      window.removeEventListener('pointermove', onWinMove);
+      window.removeEventListener('pointerup', onWinUp);
+    };
+
+    // Place the wrapper into the float at the given rect, leaving a placeholder
+    // in the panel slot. Reuses (clears) a single float container so a re-mount
+    // never leaves duplicates.
+    const floatInto = (rect) => {
+      const float = ensureFloatContainer();
+      // clear any stale wrapper (from a prior mount) before re-populating
+      float.innerHTML = '';
+      float.style.left = `${rect.left}px`;
+      float.style.top = `${rect.top}px`;
+      if (rect.width) float.style.width = `${rect.width}px`;
+      // leave a placeholder IN THE PLOTTER'S SLOT so the panel isn't confusingly
+      // empty and pop-in can restore the wrapper to exactly where it was (insert
+      // before the wrapper, not append at the panel bottom).
+      if (!wrapper.parentElement || !wrapper.parentElement.classList?.contains('harmonograph-plotter-float')) {
+        const placeholder = document.createElement('div');
+        placeholder.className = 'harmonograph-plotter-placeholder mb-4';
+        placeholder.innerHTML = `
+          <span class="text-[10px] uppercase tracking-widest text-vectura-muted">Virtual Plotter is popped out</span>
+          <button type="button" class="harmonograph-plotter-popin text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">Pop In</button>`;
+        if (wrapper.parentElement) wrapper.parentElement.insertBefore(placeholder, wrapper);
+        else target.appendChild(placeholder);
+        placeholder.querySelector('.harmonograph-plotter-popin').onclick = () => popIn();
+      }
+      float.appendChild(wrapper);
+      wrapper.classList.add('harmonograph-plotter-floating');
+      if (popOutBtn) popOutBtn.style.display = 'none';
+      if (popInBtn) popInBtn.style.display = '';
+      observeFloatResize(float);
+      // render crisp at the float size; ResizeObserver may not fire in jsdom.
+      const size = Math.max(120, (rect.width || DOCKED_SIZE));
+      setPlotterSize(size);
+    };
+
+    const popOut = () => {
+      if (this.harmonographPlotterPopped) return;
+      const rect = this.harmonographPlotterRect || defaultRect();
+      this.harmonographPlotterRect = { ...rect };
+      this.harmonographPlotterPopped = true;
+      floatInto(this.harmonographPlotterRect);
+    };
+
+    const popIn = () => {
+      const float = document.getElementById(FLOAT_ID);
+      if (this._harmonographPlotterResizeObserver) {
+        try { this._harmonographPlotterResizeObserver.disconnect(); } catch (_) { /* noop */ }
+        this._harmonographPlotterResizeObserver = null;
+      }
+      // Restore the wrapper into its ORIGINAL panel slot by replacing the
+      // placeholder in place (not appendChild, which would dock it at the bottom
+      // of the panel below Pendulum Guides instead of in the plotter's slot).
+      wrapper.classList.remove('harmonograph-plotter-floating');
+      const placeholder = target.querySelector('.harmonograph-plotter-placeholder');
+      if (placeholder) placeholder.replaceWith(wrapper);
+      else target.appendChild(wrapper);
+      if (float && float.parentElement) float.remove();
+      this.harmonographPlotterPopped = false;
+      if (popOutBtn) popOutBtn.style.display = '';
+      if (popInBtn) popInBtn.style.display = 'none';
+      setPlotterSize(DOCKED_SIZE);
+    };
+
+    if (popOutBtn) popOutBtn.onclick = popOut;
+    if (popInBtn) popInBtn.onclick = popIn;
+    // docked default: hide the pop-in glyph (only meaningful while floating)
+    if (popInBtn) popInBtn.style.display = 'none';
+
+    // Survive panel re-mounts: if we were popped before buildControls() rebuilt
+    // the widget, immediately re-float this fresh wrapper into the reused float
+    // container at the saved rect (clearing the orphaned old wrapper).
+    if (this.harmonographPlotterPopped) {
+      const rect = this.harmonographPlotterRect || defaultRect();
+      this.harmonographPlotterRect = { ...rect };
+      floatInto(this.harmonographPlotterRect);
     }
 
     draw();
