@@ -63,6 +63,7 @@
     terrain: TERRAIN_PRESET_LIBRARY = [],
     rings: RINGS_PRESET_LIBRARY = [],
     harmonograph: HARMONOGRAPH_PRESET_LIBRARY = [],
+    pendula: PENDULA_PRESET_LIBRARY = [],
     PETALIS_LAYER_TYPES = new Set(['petalisDesigner']),
     isPetalisLayerType = (type) => PETALIS_LAYER_TYPES.has(type),
   } = (window.Vectura && window.Vectura.PresetLibraries) || {};
@@ -243,7 +244,7 @@
     const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
     return luminance > 0.62 ? dark : light;
   };
-  const SEEDLESS_ALGOS = new Set(['lissajous', 'harmonograph', 'shape', 'group']);
+  const SEEDLESS_ALGOS = new Set(['lissajous', 'harmonograph', 'pendula', 'shape', 'group']);
   const usesSeed = (type) => !SEEDLESS_ALGOS.has(type);
   const mapRange = (value, inMin, inMax, outMin, outMax) => {
     if (inMax === inMin) return outMin;
@@ -1532,6 +1533,7 @@
       TERRAIN_PRESET_LIBRARY,
       RINGS_PRESET_LIBRARY,
       HARMONOGRAPH_PRESET_LIBRARY,
+      PENDULA_PRESET_LIBRARY,
       TRANSFORM_KEYS,
       // DOM / value helpers
       getEl,

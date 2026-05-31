@@ -10,6 +10,8 @@
       'Parametric curves created by the intersection of two sinusoidal waves. Produces elegant, looping harmonic figures often used in signal physics.',
     harmonograph:
       'Generates damped, multi-pendulum curves by combining decaying sine waves along the X and Y axes.',
+    pendula:
+      'A kinetic harmonograph studio — damped multi-pendulum curves you set in motion with stacked temporal LFOs (a Motion Rack) that modulate scale, drift, paper rotation, and per-pendulum frequency, detune, amplitude and phase as the virtual plotter loops.',
     wavetable:
       'Generates terrain-like elevations by modulating selectable line structures with one or more stacked noise sources.',
     rings:

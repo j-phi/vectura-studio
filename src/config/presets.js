@@ -5,6 +5,71 @@
   const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.PRESETS = [
       {
+        id: "pendula-breathing-orbit",
+        name: "Breathing Orbit",
+        preset_system: "pendula",
+        params: {
+          renderMode: "line", samples: 6000, duration: 32, scale: 0.55, loopDrift: 0, paperRotation: 0,
+          pendulums: [
+            { id: "pend-1", enabled: true, ampX: 110, ampY: 110, phaseX: 90, phaseY: 0, damp: 0.0004, freq: 2, micro: 0 },
+            { id: "pend-2", enabled: true, ampX: 22, ampY: 22, phaseX: 90, phaseY: 0, damp: 0, freq: 2, micro: 0 }
+          ],
+          motion: {
+            sources: [{ id: "lfo-breath", enabled: true, shape: "sine", syncMode: "sync", rate: 1, depth: 1, phase: 0, polarity: "bi" }],
+            edges: [{ id: "e-breath", sourceId: "lfo-breath", targetParamPath: "pendulums.1.freq", amount: 0.06 }]
+          }
+        }
+      },
+      {
+        id: "pendula-drift-star",
+        name: "Drift Star",
+        preset_system: "pendula",
+        params: {
+          renderMode: "line", samples: 7000, duration: 40, scale: 0.5, loopDrift: 0, paperRotation: 0,
+          pendulums: [
+            { id: "pend-1", enabled: true, ampX: 110, ampY: 0, phaseX: 90, phaseY: 0, damp: 0, freq: 3, micro: 0 },
+            { id: "pend-2", enabled: true, ampX: 0, ampY: 110, phaseX: 0, phaseY: 0, damp: 0, freq: 2, micro: 0 }
+          ],
+          motion: {
+            sources: [{ id: "lfo-drift", enabled: true, shape: "saw", syncMode: "sync", rate: 1, depth: 1, phase: 0, polarity: "uni" }],
+            edges: [{ id: "e-drift", sourceId: "lfo-drift", targetParamPath: "loopDrift", amount: 0.02 }]
+          }
+        }
+      },
+      {
+        id: "pendula-tidal-lissajous",
+        name: "Tidal Lissajous",
+        preset_system: "pendula",
+        params: {
+          renderMode: "line", samples: 6000, duration: 36, scale: 0.55, loopDrift: 0, paperRotation: 0,
+          pendulums: [
+            { id: "pend-1", enabled: true, ampX: 120, ampY: 0, phaseX: 90, phaseY: 0, damp: 0, freq: 3, micro: 0 },
+            { id: "pend-2", enabled: true, ampX: 0, ampY: 90, phaseX: 0, phaseY: 0, damp: 0, freq: 4, micro: 0 }
+          ],
+          motion: {
+            sources: [{ id: "lfo-tide", enabled: true, shape: "sine", syncMode: "sync", rate: 1, depth: 1, phase: 0, polarity: "bi" }],
+            edges: [
+              { id: "e-tide-phase", sourceId: "lfo-tide", targetParamPath: "pendulums.1.phaseY", amount: 120 },
+              { id: "e-tide-amp", sourceId: "lfo-tide", targetParamPath: "pendulums.0.ampY", amount: 40 }
+            ]
+          }
+        }
+      },
+      {
+        id: "pendula-pulsing-web",
+        name: "Pulsing Web",
+        preset_system: "pendula",
+        params: {
+          renderMode: "line", samples: 8000, duration: 44, scale: 0.45, loopDrift: 0.0008, paperRotation: 0.02,
+          pendulums: [
+            { id: "pend-1", enabled: true, ampX: 120, ampY: 0, phaseX: 90, phaseY: 0, damp: 0.0003, freq: 5, micro: 0 },
+            { id: "pend-2", enabled: true, ampX: 0, ampY: 120, phaseX: 0, phaseY: 0, damp: 0.0003, freq: 4, micro: 0 },
+            { id: "pend-3", enabled: true, ampX: 36, ampY: 36, phaseX: 45, phaseY: 45, damp: 0.0006, freq: 9, micro: 0 }
+          ],
+          motion: { sources: [], edges: [] }
+        }
+      },
+      {
         id: "harmonograph-unison-circle",
         name: "Unison Circle",
         preset_system: "harmonograph",

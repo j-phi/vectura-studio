@@ -34,7 +34,7 @@
     { v: 'spiral', l: 'Spiral' }, { v: 'rings', l: 'Rings' },
     { v: 'grid', l: 'Grid' }, { v: 'boids', l: 'Boids' },
     { v: 'attractor', l: 'Attractor' }, { v: 'lissajous', l: 'Lissajous' },
-    { v: 'harmonograph', l: 'Harmonograph' }, { v: 'rainfall', l: 'Rainfall' },
+    { v: 'harmonograph', l: 'Harmonograph' }, { v: 'pendula', l: 'Pendula' }, { v: 'rainfall', l: 'Rainfall' },
     { v: 'phylla', l: 'Phylla' }, { v: 'petalisDesigner', l: 'Petalis Designer' },
     { v: 'shapePack', l: 'Shapepack' },
   ];

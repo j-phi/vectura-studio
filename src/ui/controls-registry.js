@@ -18,6 +18,7 @@
     petalis: PETALIS_PRESET_LIBRARY = [],
     terrain: TERRAIN_PRESET_LIBRARY = [],
     harmonograph: HARMONOGRAPH_PRESET_LIBRARY = [],
+    pendula: PENDULA_PRESET_LIBRARY = [],
   } = (window.Vectura && window.Vectura.PresetLibraries) || {};
 
   const PETALIS_PRESET_OPTIONS = [
@@ -38,6 +39,13 @@
     { value: 'custom', label: 'Custom' },
     ...(Array.isArray(HARMONOGRAPH_PRESET_LIBRARY)
       ? HARMONOGRAPH_PRESET_LIBRARY.map((preset) => ({ value: preset.id, label: preset.name }))
+      : []),
+  ];
+
+  const PENDULA_PRESET_OPTIONS = [
+    { value: 'custom', label: 'Custom' },
+    ...(Array.isArray(PENDULA_PRESET_LIBRARY)
+      ? PENDULA_PRESET_LIBRARY.map((preset) => ({ value: preset.id, label: preset.name }))
       : []),
   ];
 
@@ -1610,6 +1618,25 @@
       }),
   ];
   CONTROL_DEFS.petalisDesigner = petalisDesignerControls;
+
+  // Pendula = the kinetic-harmonograph studio. Its control panel is the
+  // harmonograph panel (kept in lock-step by deriving from it here, not by
+  // duplicating ~190 lines) with two changes: the Preset selector lists the
+  // pendula library, and a Motion Rack (temporal LFOs) is grafted in right
+  // after the virtual-plotter widget. Motion stays pendula-only — harmonograph
+  // is intentionally left untouched.
+  CONTROL_DEFS.pendula = (CONTROL_DEFS.harmonograph || []).reduce((acc, def) => {
+    if (!def || typeof def !== 'object') { acc.push(def); return acc; }
+    const copy = { ...def };
+    if (copy.id === 'preset') copy.options = PENDULA_PRESET_OPTIONS;
+    if (typeof copy.infoKey === 'string') copy.infoKey = copy.infoKey.replace(/^harmonograph\./, 'pendula.');
+    acc.push(copy);
+    if (copy.type === 'harmonographPlotter') {
+      acc.push({ type: 'section', label: 'Motion' });
+      acc.push({ type: 'harmonographMotion' });
+    }
+    return acc;
+  }, []);
 
   const ns = (window.Vectura = window.Vectura || {});
   const ui = (ns.UI = ns.UI || {});

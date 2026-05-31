@@ -41,6 +41,7 @@
     attractor:    () => layerSvg(`<path d="M3 8c2.5 0 3.5-4 6-4a2 2 0 0 1 0 4c-2.5 0-3.5-4-6-4a2 2 0 1 0 0 4"/>`),
     lissajous:    () => layerSvg(`<path d="M2 6c0-2 1-3 2-3s2 2 4 2 2 1 2 3-1 3-2 3-2-2-4-2-2-1-2-3z"/>`),
     harmonograph: () => layerSvg(`<path d="M9 8.49h-3c-.55 0-.975.47-1.24.95A2 2 0 0 1 1 8.5c.005-.35.1-.7.285-1"/><path d="M3 8.5l1.565-2.89c.265-.485.05-1.09-.25-1.55a2 2 0 1 1 3.445-2.03"/><path d="M6 3l1.565 2.865C7.83 6.35 8.45 6.5 9 6.5a2 2 0 0 1 0 4"/>`),
+    pendula:      () => layerSvg(`<ellipse cx="6" cy="7.5" rx="4.5" ry="3"/><line x1="6" y1="1" x2="6" y2="4.2"/><circle cx="6" cy="5.4" r="1.2"/>`),
     rainfall:     () => layerSvg(`<line x1="3" y1="2" x2="2" y2="6"/><line x1="6" y1="1" x2="5" y2="7"/><line x1="9" y1="2" x2="8" y2="8"/><line x1="4" y1="8" x2="3.5" y2="11"/><line x1="8" y1="7" x2="7.5" y2="10"/>`),
     phylla:       () => layerSvg(`<circle cx="4" cy="4" r="1"/><circle cx="8" cy="3" r="1"/><circle cx="9" cy="7" r="1"/><circle cx="5" cy="9" r="1"/><circle cx="2" cy="7" r="1"/>`),
     petalisDesigner: () => layerSvg(`<circle cx="6" cy="6" r="1.5"/><path d="M6 8.25A2.25 2.25 0 1 1 3.75 6 2.25 2.25 0 1 1 6 3.75a2.25 2.25 0 1 1 2.25 2.25 2.25 2.25 0 1 1-2.25 2.25"/><path d="M6 3.75V4.5M3.75 6H4.5M8.25 6H7.5M6 8.25V7.5"/>`),

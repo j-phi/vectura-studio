@@ -87,7 +87,7 @@
       PETALIS_MODIFIER_TYPES, PETALIS_PETAL_MODIFIER_TYPES, PETALIS_SHADING_TYPES,
       PETALIS_LINE_TYPES,
       PETALIS_PRESET_LIBRARY, TERRAIN_PRESET_LIBRARY, RINGS_PRESET_LIBRARY,
-      HARMONOGRAPH_PRESET_LIBRARY,
+      HARMONOGRAPH_PRESET_LIBRARY, PENDULA_PRESET_LIBRARY,
       TRANSFORM_KEYS,
       // DOM / value helpers
       getEl, escapeHtml, roundToStep, clone, clamp,
@@ -1319,8 +1319,27 @@
         return;
       }
       if (def.type === 'harmonographPlotter') {
-        if (layer.type !== 'harmonograph') return;
+        // Harmonograph family: harmonograph + the pendula studio.
+        if (layer.type !== 'harmonograph' && layer.type !== 'pendula') return;
         this.mountHarmonographPlotter(layer, target);
+        return;
+      }
+      if (def.type === 'harmonographMotion') {
+        if (layer.type !== 'harmonograph' && layer.type !== 'pendula') return;
+        const rack = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.UI?.HarmonographMotionRack;
+        if (typeof rack !== 'function') return;
+        // The Motion Rack component OWNS its mount node (it clears it on every
+        // re-render), so give it a dedicated host appended to the shared panel
+        // container — never the container itself, or it would wipe every
+        // control rendered before it.
+        const host = document.createElement('div');
+        target.appendChild(host);
+        // Motion edits are playback-only (no regen): the virtual plotter reads
+        // layer.params.motion live, so patches take effect on the next frame.
+        rack(host, {
+          layer,
+          commit: () => { this.app.pushHistory?.(); this.storeLayerParams(layer); },
+        });
         return;
       }
       if (def.type === 'modifierList') {
@@ -2654,6 +2673,35 @@
               const base = ALGO_DEFAULTS?.harmonograph ? clone(ALGO_DEFAULTS.harmonograph) : {};
               // The preset defines the whole figure; keep only the layer's
               // transform so applying one doesn't move/resize it on the canvas.
+              const preserved = new Set([...TRANSFORM_KEYS]);
+              const nextParams = { ...base, ...(preset?.params || {}) };
+              preserved.forEach((key) => {
+                if (layer.params[key] !== undefined) nextParams[key] = layer.params[key];
+              });
+              nextParams.preset = next;
+              layer.params = { ...layer.params, ...nextParams };
+              this.storeLayerParams(layer);
+              span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
+              this.app.regen();
+              this.buildControls();
+              this.updateFormula();
+              return;
+            }
+            if (layer.type === 'pendula' && def.id === 'preset' && next === 'custom') {
+              layer.params.preset = 'custom';
+              this.storeLayerParams(layer);
+              span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
+              this.app.regen();
+              this.buildControls();
+              this.updateFormula();
+              return;
+            }
+            if (layer.type === 'pendula' && def.id === 'preset' && next !== 'custom') {
+              const preset = (PENDULA_PRESET_LIBRARY || []).find((item) => item.id === next);
+              const base = ALGO_DEFAULTS?.pendula ? clone(ALGO_DEFAULTS.pendula) : {};
+              // The preset defines the whole figure (and may ship a motion patch);
+              // keep only the layer's transform so applying it doesn't move/resize
+              // the figure on the canvas.
               const preserved = new Set([...TRANSFORM_KEYS]);
               const nextParams = { ...base, ...(preset?.params || {}) };
               preserved.forEach((key) => {
@@ -4133,7 +4181,7 @@
 
   // `toggleSeedControls` reads `getEl` from DEPS (already bound) and
   // identifies seedless algos via the locally-defined SEEDLESS_ALGOS set.
-  const SEEDLESS_ALGOS_LIST = ['lissajous', 'harmonograph', 'shape', 'group'];
+  const SEEDLESS_ALGOS_LIST = ['lissajous', 'harmonograph', 'pendula', 'shape', 'group'];
   function toggleSeedControls(type) {
     const getEl = (DEPS && DEPS.getEl)
       || ((id) => (typeof document !== 'undefined' ? document.getElementById(id) : null));

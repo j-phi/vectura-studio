@@ -461,6 +461,7 @@
         { type: 'harmonograph',    label: 'Harmonograph' },
         { type: 'hyphae',          label: 'Hyphae' },
         { type: 'lissajous',       label: 'Lissajous' },
+        { type: 'pendula',         label: 'Pendula' },
         { type: 'pattern',         label: 'Pattern' },
         { type: 'petalisDesigner', label: 'Petalis Designer' },
         { type: 'phylla',          label: 'Phylla' },

@@ -217,7 +217,7 @@
     defs.forEach((def) => {
       if (def.showIf && !def.showIf(layer.params)) return;
       if (def.randomize === false) return;
-      if (layer.type === 'harmonograph' && def.id === 'showPendulumGuides') return;
+      if ((layer.type === 'harmonograph' || layer.type === 'pendula') && def.id === 'showPendulumGuides') return;
       if (def.type === 'section' || def.type === 'file' || def.type === 'image' || def.type === 'svgImportButton') return;
 
       if (def.type === 'noiseList') {

@@ -43,12 +43,13 @@ describe('algo-draw toolbar', () => {
     expect(icon.querySelector('path')).toBeTruthy();
   });
 
-  test('long-press (400 ms hold) reveals the algorithm picker with all 18 algorithms', async () => {
+  test('long-press (400 ms hold) reveals the algorithm picker with all 19 algorithms', async () => {
     await openPicker();
     const picker = getPicker();
     expect(picker).toBeTruthy();
     expect(picker.classList.contains('hidden')).toBe(false);
-    expect(picker.querySelectorAll('.algo-pick-item').length).toBe(18);
+    // 19 = the 18 originals + the new Pendula studio algorithm.
+    expect(picker.querySelectorAll('.algo-pick-item').length).toBe(19);
     picker.classList.add('hidden');
   });
 
