@@ -320,7 +320,9 @@
       });
       ctx.stroke();
 
-      const limit = clamp(state.playhead, 0, data.path.length - 1);
+      // playhead accumulates as a float; floor it before indexing the path so
+      // we never read data.path[fractional] (undefined → throws in toCanvas).
+      const limit = clamp(Math.floor(state.playhead), 0, data.path.length - 1);
       ctx.strokeStyle = '#ef4444';
       ctx.lineWidth = 1.4;
       ctx.beginPath();
@@ -346,10 +348,9 @@
       const step = delta * state.progressPerMs * state.speed;
       state.playhead += step;
       if (state.playhead >= state.maxPlayhead) {
-        state.playhead = state.maxPlayhead;
-        state.playing = false;
-        state.rafId = null;
-        playBtn.textContent = 'Play';
+        // Loop continuously so the drawing replays live (wrap the overshoot
+        // back to the start rather than halting at the end).
+        state.playhead = state.maxPlayhead > 0 ? state.playhead % state.maxPlayhead : 0;
       }
       range.value = `${Math.round(state.playhead)}`;
       draw();
