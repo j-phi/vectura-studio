@@ -48,10 +48,12 @@ describe('Pendula oscillator controls — pluck pad, advanced disclosure, padloc
     });
   });
 
-  test('dragging the pluck pad sets ampX==ampY and phaseX==phaseY, commits, and pushes one history entry', () => {
+  test('the pluck pad sets the (ampX, ampY) swing vector, leaves phase alone, commits, and pushes one history entry', () => {
     const card = cards()[0];
     const pendulum = layer().params.pendulums[0];
     const pad = card.querySelector('.pendulum-pluck-pad canvas') || card.querySelector('.pendulum-pluck-pad');
+    const phaseXBefore = pendulum.phaseX;
+    const phaseYBefore = pendulum.phaseY;
 
     // Spy regen + pushHistory through the commit path.
     let regens = 0;
@@ -68,19 +70,17 @@ describe('Pendula oscillator controls — pluck pad, advanced disclosure, padloc
     });
     const cx = SIZE / 2;
     const cy = SIZE / 2;
-    // Drag straight to the right edge: full magnitude, angle 0deg.
-    const down = new window.MouseEvent('pointerdown', { bubbles: true, clientX: cx, clientY: cy });
-    pad.dispatchEvent(down);
-    const move = new window.MouseEvent('pointermove', { bubbles: true, clientX: SIZE, clientY: cy });
-    window.dispatchEvent(move);
-    const up = new window.MouseEvent('pointerup', { bubbles: true, clientX: SIZE, clientY: cy });
-    window.dispatchEvent(up);
+    // Drag to the right edge: full +X amplitude, zero Y amplitude.
+    pad.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, clientX: cx, clientY: cy }));
+    window.dispatchEvent(new window.MouseEvent('pointermove', { bubbles: true, clientX: SIZE, clientY: cy }));
+    window.dispatchEvent(new window.MouseEvent('pointerup', { bubbles: true, clientX: SIZE, clientY: cy }));
 
-    // Full magnitude (radius) → AMP_MAX (200); angle 0.
-    expect(pendulum.ampX).toBe(pendulum.ampY);
+    // Handle x = +radius → ampX ≈ +AMP_MAX (200); handle y = 0 → ampY ≈ 0.
     expect(Math.abs(pendulum.ampX - 200)).toBeLessThanOrEqual(1);
-    expect(pendulum.phaseX).toBe(pendulum.phaseY);
-    expect(pendulum.phaseX).toBeLessThanOrEqual(1); // ~0 degrees (or 360)
+    expect(Math.abs(pendulum.ampY)).toBeLessThanOrEqual(1);
+    // Phase is NEVER touched by the pad (that's what used to collapse the figure).
+    expect(pendulum.phaseX).toBe(phaseXBefore);
+    expect(pendulum.phaseY).toBe(phaseYBefore);
 
     expect(regens).toBeGreaterThan(0);
     if (origPush) expect(pushes).toBe(1); // one push per drag, on pointerdown
@@ -90,6 +90,22 @@ describe('Pendula oscillator controls — pluck pad, advanced disclosure, padloc
 
     app.regen = origRegen;
     if (origPush) app.pushHistory = origPush;
+  });
+
+  test('a small nudge never collapses the figure to a line (phaseX/phaseY stay distinct)', () => {
+    const card = cards()[0];
+    const pendulum = layer().params.pendulums[0];
+    const pad = card.querySelector('.pendulum-pluck-pad canvas') || card.querySelector('.pendulum-pluck-pad');
+    // The default pendulum has phaseX=90, phaseY=0 — a 90deg quadrature that
+    // gives the figure its 2D shape. The OLD pad forced phaseX===phaseY on any
+    // touch, collapsing x(t)=y(t) into a diagonal line. The pad must not do that.
+    expect(pendulum.phaseX).not.toBe(pendulum.phaseY);
+    const SIZE = 80;
+    pad.getBoundingClientRect = () => ({ left: 0, top: 0, right: SIZE, bottom: SIZE, width: SIZE, height: SIZE, x: 0, y: 0 });
+    // a tiny nudge near the centre
+    pad.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, clientX: 42, clientY: 41 }));
+    window.dispatchEvent(new window.MouseEvent('pointerup', { bubbles: true, clientX: 42, clientY: 41 }));
+    expect(pendulum.phaseX).not.toBe(pendulum.phaseY); // still a real 2D figure
   });
 
   test('a compatibility mousedown after pointerdown does NOT double-push history (no mouse listener)', () => {
@@ -109,7 +125,7 @@ describe('Pendula oscillator controls — pluck pad, advanced disclosure, padloc
     app.pushHistory = origPush;
   });
 
-  test('dragging up sets a ~270deg release direction (atan2 of dy<0)', () => {
+  test('dragging straight up sets a negative Y swing amplitude (signed vector)', () => {
     const card = cards()[0];
     const pendulum = layer().params.pendulums[0];
     const pad = card.querySelector('.pendulum-pluck-pad canvas') || card.querySelector('.pendulum-pluck-pad');
@@ -121,8 +137,9 @@ describe('Pendula oscillator controls — pluck pad, advanced disclosure, padloc
     pad.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, clientX: cx, clientY: cx }));
     window.dispatchEvent(new window.MouseEvent('pointermove', { bubbles: true, clientX: cx, clientY: 0 }));
     window.dispatchEvent(new window.MouseEvent('pointerup', { bubbles: true, clientX: cx, clientY: 0 }));
-    // straight up → dy negative → atan2(-1,0) = -90 → 270deg
-    expect(Math.abs(pendulum.phaseX - 270)).toBeLessThanOrEqual(1);
+    // straight up → handle y = -radius → ampY ≈ -AMP_MAX; ampX ≈ 0
+    expect(Math.abs(pendulum.ampY + 200)).toBeLessThanOrEqual(1);
+    expect(Math.abs(pendulum.ampX)).toBeLessThanOrEqual(1);
   });
 
   test('the four amp/phase numeric controls live inside the Advanced disclosure; freq/micro/damp do not', () => {
@@ -206,5 +223,29 @@ describe('Pendula oscillator controls — pluck pad, advanced disclosure, padloc
     ampSlider.value = '120';
     ampSlider.dispatchEvent(new window.Event('change', { bubbles: true }));
     expect(layer().params.pendulums[0].ampX).toBe(120);
+  });
+
+  test('the pluck pad is labelled "Release" with an info button', () => {
+    const card = cards()[0];
+    const label = card.querySelector('.pendulum-pluck-pad .pluck-pad-label .control-label');
+    expect(label).toBeTruthy();
+    expect(label.textContent.trim()).toBe('Release');
+    const info = card.querySelector('.pendulum-pluck-pad .info-btn');
+    expect(info).toBeTruthy();
+    expect(info.dataset.info).toBe('pendula.pluckPad');
+    // and the info entry exists
+    expect(window.Vectura.UI.Modals.InfoModals.INFO['pendula.pluckPad']).toBeTruthy();
+  });
+
+  test('an out-of-range inline value error names the allowed range', () => {
+    let body = '';
+    const orig = app.ui.openModal.bind(app.ui);
+    app.ui.openModal = (opts) => { body = (opts && opts.body) || ''; return orig(opts); };
+    // Micro Tuning ranges about -0.2..0.2; "2" must be rejected WITH the range.
+    app.ui.showValueError('2', { min: -0.2, max: 0.2, unit: '', precision: 3 });
+    expect(body).toMatch(/0\.200/);
+    expect(body).toMatch(/-0\.200/);
+    expect(body.toLowerCase()).toContain('from');
+    app.ui.openModal = orig;
   });
 });

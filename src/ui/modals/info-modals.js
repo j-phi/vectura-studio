@@ -560,6 +560,10 @@
       title: 'Guide Thickness',
       description: 'Line weight of the pendulum helper overlay (mm). Keep it thin so the guides inform without crowding the artwork.',
     },
+    'harmonograph.pluckPad': {
+      title: 'Release',
+      description: 'Drag to "release" this pendulum: the handle is its swing amplitude on the X (horizontal) and Y (vertical) axes at once. Far from the center is a big swing; out along one axis swings mostly that way; the center is no swing at all. It only sets the swing size — the phase (timing) that gives the figure its shape stays under Advanced, and the exact X/Y numbers live there too.',
+    },
     'harmonograph.ampX': {
       title: 'Amplitude X',
       description: 'How far this pendulum swings the pen left-to-right — the size of its release. Larger amplitudes throw the figure wider across the page on the horizontal axis; a value of 0 takes this pendulum out of the X motion entirely.',
@@ -582,7 +586,7 @@
     },
     'harmonograph.micro': {
       title: 'Micro Tuning',
-      description: 'A tiny detune added on top of the frequency, for nudging a pendulum just off a clean ratio. This is the secret to lush figures: 2.00 against 3.00 closes into a static shape, but 2.001 makes the loops slowly precess and bloom.',
+      description: 'A tiny detune added on top of this pendulum\'s Frequency — a small ± nudge, not an absolute frequency (it ranges only about −0.2 to +0.2). It is the secret to lush figures: with the frequencies sitting on a clean ratio the loops close into a static shape, but a Micro Tuning of just 0.001 makes them slowly precess and bloom. To change the actual pitch, use Frequency instead.',
     },
     'harmonograph.damp': {
       title: 'Damping',
@@ -701,6 +705,10 @@
       title: 'Guide Thickness',
       description: 'Line weight of the pendulum helper overlay (mm). Keep it thin so the guides inform without crowding the artwork.',
     },
+    'pendula.pluckPad': {
+      title: 'Release',
+      description: 'Drag to "release" this pendulum: the handle is its swing amplitude on the X (horizontal) and Y (vertical) axes at once. Far from the center is a big swing; out along one axis swings mostly that way; the center is no swing at all. It only sets the swing size — the phase (timing) that gives the figure its shape stays under Advanced, and the exact X/Y numbers live there too.',
+    },
     'pendula.ampX': {
       title: 'Amplitude X',
       description: 'How far this pendulum swings the pen left-to-right — the size of its release. Larger amplitudes throw the figure wider across the horizontal axis; a value of 0 takes this pendulum out of the X motion entirely.',
@@ -723,7 +731,7 @@
     },
     'pendula.micro': {
       title: 'Micro Tuning',
-      description: 'A tiny detune added on top of the frequency, for nudging a pendulum just off a clean ratio. This is the heart of the "lock then drift" craft: a perfectly locked ratio gives a static shape, but a hair of detune makes the loops slowly precess — and a slow Motion Rack LFO on this knob is what evolves a circle into a snake.',
+      description: 'A tiny detune added on top of this pendulum\'s Frequency — a small ± nudge, not an absolute frequency (it ranges only about −0.2 to +0.2). This is the heart of the "lock then drift" craft: a perfectly locked ratio gives a static shape, but a Micro Tuning of just 0.001 makes the loops slowly precess — and a slow Motion Rack LFO on this knob is what evolves a circle into a snake. To change the actual pitch, use Frequency instead.',
     },
     'pendula.damp': {
       title: 'Damping',
@@ -2561,11 +2569,21 @@
     });
   }
 
-  function showValueError(value) {
+  function showValueError(value, range) {
     const { escapeHtml } = requireDeps('showValueError');
+    let detail = 'is outside the allowed range or format.';
+    if (range && Number.isFinite(range.min) && Number.isFinite(range.max)) {
+      const unit = range.unit ? `${range.unit}` : '';
+      const fmt = (n) => {
+        const p = Number.isFinite(range.precision) ? range.precision : undefined;
+        const s = p !== undefined ? n.toFixed(p) : `${n}`;
+        return `${s}${unit}`;
+      };
+      detail = `is outside the allowed range. Enter a value from ${fmt(range.min)} to ${fmt(range.max)}.`;
+    }
     this.openModal({
       title: 'Invalid Value',
-      body: `<p class="modal-text">"${escapeHtml(value)}" is outside the allowed range or format.</p>`,
+      body: `<p class="modal-text">"${escapeHtml(value)}" ${detail}</p>`,
     });
   }
 
@@ -2710,7 +2728,7 @@
     installOn(proto) {
       proto.showInfo = function(key) { return showInfo.call(this, key); };
       proto.showDuplicateNameError = function(name) { return showDuplicateNameError.call(this, name); };
-      proto.showValueError = function(value) { return showValueError.call(this, value); };
+      proto.showValueError = function(value, range) { return showValueError.call(this, value, range); };
       proto.attachInfoButton = function(labelEl, key) { return attachInfoButton.call(this, labelEl, key); };
       proto.attachStaticInfoButtons = function() { return attachStaticInfoButtons.call(this); };
       proto.bindInfoButtons = function() { return bindInfoButtons.call(this); };

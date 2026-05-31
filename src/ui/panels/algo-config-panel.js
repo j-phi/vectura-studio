@@ -558,7 +558,7 @@
         }
         const parsed = Number.parseFloat(raw);
         if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
-          this.showValueError(`${raw}${unit}`);
+          this.showValueError(`${raw}${unit}`, { min, max, unit, precision });
           return false;
         }
         setValue(parsed, { commit: true });
@@ -1225,10 +1225,15 @@
         const AMP_MAX = 200; // matches the ampX/ampY slider max
         const buildPluckPad = (pendulum, onCommit) => {
           const afterCommit = () => { if (typeof onCommit === 'function') onCommit(); };
+          const infoPrefix = layer.type === 'pendula' ? 'pendula' : 'harmonograph';
           const pad = document.createElement('div');
           pad.className = 'pendulum-pluck-pad';
           pad.innerHTML = `
-            <canvas class="pluck-pad-canvas" aria-label="Pluck pad — drag to set amplitude and release direction"></canvas>
+            <div class="pluck-pad-label">
+              <span class="control-label">Release</span>
+              <button type="button" class="info-btn" data-info="${infoPrefix}.pluckPad">i</button>
+            </div>
+            <canvas class="pluck-pad-canvas" aria-label="Release pad — drag to set this pendulum's X (horizontal) and Y (vertical) swing amplitude"></canvas>
           `;
           const canvas = pad.querySelector('canvas');
           const CSS_SIZE = 92;
@@ -1249,13 +1254,17 @@
             const radius = (CSS_SIZE / 2) - 6;
             const accent = readToken('--ui-accent', '#6366f1');
             const base = readToken('--plotter-path-base', 'rgba(113,113,122,0.55)');
-            // Current handle derived from existing params.
-            const amp = clamp((Math.abs(pendulum.ampX || 0) + Math.abs(pendulum.ampY || 0)) / 2, 0, AMP_MAX);
-            const mag = (amp / AMP_MAX) * radius;
-            const angDeg = ((pendulum.phaseX || 0) % 360 + 360) % 360;
-            const ang = (angDeg * Math.PI) / 180;
-            const hx = cx + Math.cos(ang) * mag;
-            const hy = cy + Math.sin(ang) * mag;
+            // Handle = the (ampX, ampY) release vector. Each axis amplitude maps
+            // straight to its pad axis (clamped into the disk). The pad sets ONLY
+            // amplitude — phase (the timing offset that gives the figure its 2D
+            // shape) is left untouched under Advanced, so a nudge can never
+            // collapse the pendulum onto a diagonal line.
+            let vx = clamp((pendulum.ampX || 0) / AMP_MAX, -1, 1);
+            let vy = clamp((pendulum.ampY || 0) / AMP_MAX, -1, 1);
+            const vlen = Math.hypot(vx, vy);
+            if (vlen > 1) { vx /= vlen; vy /= vlen; }
+            const hx = cx + vx * radius;
+            const hy = cy + vy * radius;
             try {
               // bounding ring
               ctx.strokeStyle = base;
@@ -1292,17 +1301,16 @@
             const cx = rect.left + rect.width / 2;
             const cy = rect.top + rect.height / 2;
             const radius = rect.width / 2;
-            const dx = ev.clientX - cx;
-            const dy = ev.clientY - cy;
-            const dist = Math.hypot(dx, dy);
-            const magnitude = radius > 0 ? clamp(dist / radius, 0, 1) : 0;
-            const amp = magnitude * AMP_MAX;
-            let deg = (Math.atan2(dy, dx) * 180) / Math.PI;
-            if (deg < 0) deg += 360;
-            pendulum.ampX = amp;
-            pendulum.ampY = amp;
-            pendulum.phaseX = deg;
-            pendulum.phaseY = deg;
+            // The handle position IS the (ampX, ampY) release vector: horizontal
+            // = X swing, vertical = Y swing (signed), clamped into the disk. Phase
+            // is deliberately NOT changed here — keeping phaseX/phaseY distinct is
+            // what preserves the figure's 2D shape, so a nudge can't flatten it.
+            let vx = radius > 0 ? (ev.clientX - cx) / radius : 0;
+            let vy = radius > 0 ? (ev.clientY - cy) / radius : 0;
+            const vlen = Math.hypot(vx, vy);
+            if (vlen > 1) { vx /= vlen; vy /= vlen; }
+            pendulum.ampX = Math.round(vx * AMP_MAX);
+            pendulum.ampY = Math.round(vy * AMP_MAX);
             this.storeLayerParams(layer);
             this.app.regen();
             this.updateFormula();
