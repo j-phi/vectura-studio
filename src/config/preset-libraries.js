@@ -26,9 +26,11 @@
     .filter((preset) => preset?.preset_system === 'terrain');
   const rings = (Array.isArray(PRESETS) ? PRESETS : Array.isArray(RINGS_PRESETS) ? RINGS_PRESETS : [])
     .filter((preset) => preset?.preset_system === 'rings');
+  const harmonograph = (Array.isArray(PRESETS) ? PRESETS : [])
+    .filter((preset) => preset?.preset_system === 'harmonograph');
 
   const PETALIS_LAYER_TYPES = new Set(['petalisDesigner']);
   const isPetalisLayerType = (type) => PETALIS_LAYER_TYPES.has(type);
 
-  Vectura.PresetLibraries = { petalis, terrain, rings, PETALIS_LAYER_TYPES, isPetalisLayerType };
+  Vectura.PresetLibraries = { petalis, terrain, rings, harmonograph, PETALIS_LAYER_TYPES, isPetalisLayerType };
 })();

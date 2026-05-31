@@ -1064,6 +1064,7 @@
     },
     harmonograph: {
       label: 'Harmonograph',
+      preset: 'custom',
       renderMode: 'line',
       samples: 6000,
       duration: 30,

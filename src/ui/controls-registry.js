@@ -17,6 +17,7 @@
   const {
     petalis: PETALIS_PRESET_LIBRARY = [],
     terrain: TERRAIN_PRESET_LIBRARY = [],
+    harmonograph: HARMONOGRAPH_PRESET_LIBRARY = [],
   } = (window.Vectura && window.Vectura.PresetLibraries) || {};
 
   const PETALIS_PRESET_OPTIONS = [
@@ -30,6 +31,13 @@
     { value: 'custom', label: 'Custom' },
     ...(Array.isArray(TERRAIN_PRESET_LIBRARY)
       ? TERRAIN_PRESET_LIBRARY.map((preset) => ({ value: preset.id, label: preset.name }))
+      : []),
+  ];
+
+  const HARMONOGRAPH_PRESET_OPTIONS = [
+    { value: 'custom', label: 'Custom' },
+    ...(Array.isArray(HARMONOGRAPH_PRESET_LIBRARY)
+      ? HARMONOGRAPH_PRESET_LIBRARY.map((preset) => ({ value: preset.id, label: preset.name }))
       : []),
   ];
 
@@ -184,6 +192,14 @@
       { id: 'closeLines', label: 'Close Lines', type: 'checkbox', infoKey: 'lissajous.closeLines' },
     ],
     harmonograph: [
+      { type: 'section', label: 'Presets' },
+      {
+        id: 'preset',
+        label: 'Preset',
+        type: 'select',
+        options: HARMONOGRAPH_PRESET_OPTIONS,
+        infoKey: 'harmonograph.preset',
+      },
       { type: 'section', label: 'Render' },
       {
         id: 'renderMode',

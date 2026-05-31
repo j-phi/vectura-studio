@@ -5,6 +5,65 @@
   const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.PRESETS = [
       {
+        id: "harmonograph-unison-circle",
+        name: "Unison Circle",
+        preset_system: "harmonograph",
+        params: {
+          renderMode: "line",
+          duration: 30,
+          scale: 0.55,
+          loopDrift: 0,
+          pendulums: [
+            { id: "pend-1", enabled: true, ampX: 100, ampY: 100, phaseX: 90, phaseY: 0, freq: 2, micro: 0, damp: 0.0006 }
+          ]
+        }
+      },
+      {
+        id: "harmonograph-classic-3-2-star",
+        name: "Classic 3:2 Star",
+        preset_system: "harmonograph",
+        params: {
+          renderMode: "line",
+          duration: 40,
+          scale: 0.5,
+          loopDrift: 0,
+          pendulums: [
+            { id: "pend-1", enabled: true, ampX: 100, ampY: 0, phaseX: 90, phaseY: 0, freq: 3, micro: 0.006, damp: 0.0012 },
+            { id: "pend-2", enabled: true, ampX: 0, ampY: 100, phaseX: 0, phaseY: 0, freq: 2, micro: 0.006, damp: 0.0012 }
+          ]
+        }
+      },
+      {
+        id: "harmonograph-4-3-star",
+        name: "4:3 Star",
+        preset_system: "harmonograph",
+        params: {
+          renderMode: "line",
+          duration: 40,
+          scale: 0.5,
+          loopDrift: 0,
+          pendulums: [
+            { id: "pend-1", enabled: true, ampX: 100, ampY: 0, phaseX: 90, phaseY: 0, freq: 4, micro: 0.005, damp: 0.0012 },
+            { id: "pend-2", enabled: true, ampX: 0, ampY: 100, phaseX: 0, phaseY: 0, freq: 3, micro: 0.005, damp: 0.0012 }
+          ]
+        }
+      },
+      {
+        id: "harmonograph-evolving-snake",
+        name: "Evolving Snake",
+        preset_system: "harmonograph",
+        params: {
+          renderMode: "line",
+          duration: 30,
+          scale: 0.45,
+          loopDrift: 0.004,
+          pendulums: [
+            { id: "pend-1", enabled: true, ampX: 130, ampY: 16, phaseX: 90, phaseY: 0, freq: 0.06, micro: 0, damp: 0 },
+            { id: "pend-2", enabled: true, ampX: 15, ampY: 15, phaseX: 90, phaseY: 0, freq: 1.1, micro: 0, damp: 0 }
+          ]
+        }
+      },
+      {
         id: "camellia-japonica-pink-perfection",
         name: "Camellia Japonica Pink Perfection",
         preset_system: "petalisDesigner",

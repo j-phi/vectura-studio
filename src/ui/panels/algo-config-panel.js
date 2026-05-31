@@ -87,6 +87,7 @@
       PETALIS_MODIFIER_TYPES, PETALIS_PETAL_MODIFIER_TYPES, PETALIS_SHADING_TYPES,
       PETALIS_LINE_TYPES,
       PETALIS_PRESET_LIBRARY, TERRAIN_PRESET_LIBRARY, RINGS_PRESET_LIBRARY,
+      HARMONOGRAPH_PRESET_LIBRARY,
       TRANSFORM_KEYS,
       // DOM / value helpers
       getEl, escapeHtml, roundToStep, clone, clamp,
@@ -2626,6 +2627,34 @@
               const preset = (RINGS_PRESET_LIBRARY || []).find((item) => item.id === next);
               const base = ALGO_DEFAULTS?.rings ? clone(ALGO_DEFAULTS.rings) : {};
               const preserved = new Set([...TRANSFORM_KEYS, 'smoothing', 'simplify', 'curves', 'outerDiameter', 'centerDiameter']);
+              const nextParams = { ...base, ...(preset?.params || {}) };
+              preserved.forEach((key) => {
+                if (layer.params[key] !== undefined) nextParams[key] = layer.params[key];
+              });
+              nextParams.preset = next;
+              layer.params = { ...layer.params, ...nextParams };
+              this.storeLayerParams(layer);
+              span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
+              this.app.regen();
+              this.buildControls();
+              this.updateFormula();
+              return;
+            }
+            if (layer.type === 'harmonograph' && def.id === 'preset' && next === 'custom') {
+              layer.params.preset = 'custom';
+              this.storeLayerParams(layer);
+              span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
+              this.app.regen();
+              this.buildControls();
+              this.updateFormula();
+              return;
+            }
+            if (layer.type === 'harmonograph' && def.id === 'preset' && next !== 'custom') {
+              const preset = (HARMONOGRAPH_PRESET_LIBRARY || []).find((item) => item.id === next);
+              const base = ALGO_DEFAULTS?.harmonograph ? clone(ALGO_DEFAULTS.harmonograph) : {};
+              // The preset defines the whole figure; keep only the layer's
+              // transform so applying one doesn't move/resize it on the canvas.
+              const preserved = new Set([...TRANSFORM_KEYS]);
               const nextParams = { ...base, ...(preset?.params || {}) };
               preserved.forEach((key) => {
                 if (layer.params[key] !== undefined) nextParams[key] = layer.params[key];

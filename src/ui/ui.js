@@ -62,6 +62,7 @@
     petalis: PETALIS_PRESET_LIBRARY = [],
     terrain: TERRAIN_PRESET_LIBRARY = [],
     rings: RINGS_PRESET_LIBRARY = [],
+    harmonograph: HARMONOGRAPH_PRESET_LIBRARY = [],
     PETALIS_LAYER_TYPES = new Set(['petalisDesigner']),
     isPetalisLayerType = (type) => PETALIS_LAYER_TYPES.has(type),
   } = (window.Vectura && window.Vectura.PresetLibraries) || {};
@@ -1530,6 +1531,7 @@
       PETALIS_PRESET_LIBRARY,
       TERRAIN_PRESET_LIBRARY,
       RINGS_PRESET_LIBRARY,
+      HARMONOGRAPH_PRESET_LIBRARY,
       TRANSFORM_KEYS,
       // DOM / value helpers
       getEl,
