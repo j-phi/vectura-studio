@@ -1446,14 +1446,13 @@
         rack(host, {
           layer,
           // generate() bakes motion into the geometry, so a Motion Rack edit
-          // must regenerate the layer to update the MAIN canvas — regen()
-          // re-runs generate + renders. We also rebuild the plotter's cached
-          // ghost so the preview matches, all without a full panel rebuild.
+          // regenerates the layer to update the MAIN canvas — and regen() now
+          // also rebuilds the plotter's cached ghost (single refresh point), so
+          // the preview matches without a full panel rebuild.
           commit: () => {
             this.app.pushHistory?.();
             this.storeLayerParams(layer);
             this.app.regen?.();
-            this.harmonographPlotterState?.rebuild?.();
           },
         });
         return;

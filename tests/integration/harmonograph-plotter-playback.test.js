@@ -165,3 +165,36 @@ describe('Pendula Motion Rack — edits update the PRIMARY canvas', () => {
     expect(after).not.toBe(before); // the committed (main-canvas) geometry reflects the LFO
   });
 });
+
+describe('Pendula virtual plotter — ghost tracks ALL param edits via regen (not just Motion Rack)', () => {
+  let runtime, window, app;
+  beforeEach(async () => {
+    runtime = await loadVecturaRuntime(FULL_STACK);
+    ({ window } = runtime);
+    window.app = new window.Vectura.App();
+    app = window.app;
+    app.engine.addLayer('pendula');
+    app.ui.renderLayers();
+    app.ui.buildControls();
+  });
+  afterEach(() => { runtime?.cleanup?.(); runtime = null; });
+
+  test('editing a pendulum frequency + regen() refreshes the cached plotter ghost', () => {
+    const layer = app.engine.getActiveLayer();
+    const before = JSON.stringify(app.ui.harmonographPlotterState.figure.path);
+    // simulate a pendulum-card param edit: mutate params, then regen (what the
+    // card commit does) — without touching the Motion Rack
+    layer.params.pendulums[0].freq = (layer.params.pendulums[0].freq || 2) + 2;
+    app.regen();
+    const after = JSON.stringify(app.ui.harmonographPlotterState.figure.path);
+    expect(after).not.toBe(before); // ghost no longer stale
+  });
+
+  test('adding a third pendulum + regen() is reflected in the ghost', () => {
+    const layer = app.engine.getActiveLayer();
+    const before = JSON.stringify(app.ui.harmonographPlotterState.figure.path);
+    layer.params.pendulums.push({ id: 'pend-3', enabled: true, ampX: 60, ampY: 60, phaseX: 45, phaseY: 45, freq: 5, micro: 0, damp: 0.001 });
+    app.regen();
+    expect(JSON.stringify(app.ui.harmonographPlotterState.figure.path)).not.toBe(before);
+  });
+});

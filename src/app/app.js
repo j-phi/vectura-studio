@@ -948,6 +948,11 @@
       this.renderer?.refreshDirectSelection?.();
       this.render();
       this.ui.updateFormula();
+      // The harmonograph/pendula virtual plotter caches a STATIC figure; refresh
+      // it on every regen so its ghost tracks ALL param edits (pendulum stack,
+      // base params, dice, presets, Motion Rack), not just Motion Rack edits.
+      // No-op when no plotter is mounted (state is nulled for non-family layers).
+      this.ui?.harmonographPlotterState?.rebuild?.();
     }
 
     render() {
