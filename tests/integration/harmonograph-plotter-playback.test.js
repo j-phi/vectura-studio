@@ -133,3 +133,35 @@ describe('Pendula virtual plotter — Motion Rack edits rebuild the static ghost
     expect(after).not.toBe(before); // the LFO is baked into the cached ghost
   });
 });
+
+describe('Pendula Motion Rack — edits update the PRIMARY canvas', () => {
+  let runtime, window, document, app;
+  beforeEach(async () => {
+    runtime = await loadVecturaRuntime(FULL_STACK);
+    ({ window, document } = runtime);
+    window.app = new window.Vectura.App();
+    app = window.app;
+    app.engine.addLayer('pendula');
+    app.ui.renderLayers();
+    app.ui.buildControls();
+  });
+  afterEach(() => { runtime?.cleanup?.(); runtime = null; });
+
+  test('assigning an LFO via the Motion Rack regenerates the layer geometry (main canvas)', () => {
+    const layer = app.engine.getActiveLayer();
+    app.engine.generate(layer.id);
+    const before = JSON.stringify(layer.paths || layer.sourcePaths);
+
+    document.querySelector('.motion-add-lfo').click();
+    const tgt = document.querySelector('.motion-assign-target');
+    tgt.value = 'scale';
+    document.querySelector('.motion-assign-add').click();      // commit -> regen()
+    // make the edge strong so the baked geometry clearly differs, then re-commit
+    const amt = document.querySelector('.motion-edge-amount');
+    amt.value = '0.4';
+    amt.dispatchEvent(new window.Event('change', { bubbles: true }));
+
+    const after = JSON.stringify(app.engine.getActiveLayer().paths || app.engine.getActiveLayer().sourcePaths);
+    expect(after).not.toBe(before); // the committed (main-canvas) geometry reflects the LFO
+  });
+});

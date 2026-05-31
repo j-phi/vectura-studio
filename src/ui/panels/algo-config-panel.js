@@ -1443,17 +1443,16 @@
         // control rendered before it.
         const host = document.createElement('div');
         target.appendChild(host);
-        // Motion edits are playback-only (no regen): the virtual plotter reads
-        // layer.params.motion live, so patches take effect on the next frame.
         rack(host, {
           layer,
-          // Motion edits are playback-only (no regen), but the plotter caches a
-          // STATIC figure now — so rebuild that cached ghost so the LFO change
-          // is visible immediately without restarting playback or rebuilding
-          // the whole panel.
+          // generate() bakes motion into the geometry, so a Motion Rack edit
+          // must regenerate the layer to update the MAIN canvas — regen()
+          // re-runs generate + renders. We also rebuild the plotter's cached
+          // ghost so the preview matches, all without a full panel rebuild.
           commit: () => {
             this.app.pushHistory?.();
             this.storeLayerParams(layer);
+            this.app.regen?.();
             this.harmonographPlotterState?.rebuild?.();
           },
         });
