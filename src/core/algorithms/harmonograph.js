@@ -105,7 +105,16 @@
           return path;
         };
 
-        const path = buildPath(pendulums, samples);
+        // Route the main figure through the shared evaluator (single source of
+        // truth). This is byte-identical to the old buildPath for unmodulated
+        // params, and — crucially — bakes any motion (LFOs) into the geometry
+        // so the final canvas + SVG export reflect them, matching the live
+        // plotter preview. `buildPath` is retained below only for the optional
+        // per-pendulum guide overlays.
+        const HC = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.HarmonographCore;
+        const path = HC && typeof HC.evaluatePath === 'function'
+          ? HC.evaluatePath(p, { cx, cy, samples, motion: p.motion }).path.map((pt) => ({ x: pt.x, y: pt.y }))
+          : buildPath(pendulums, samples);
 
         const buildSegmentData = (path) => {
           const segs = [];

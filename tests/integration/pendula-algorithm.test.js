@@ -62,3 +62,31 @@ describe('Pendula algorithm — registration & render', () => {
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
 });
+
+describe('Pendula — LFOs reach the final algorithm output (Bug B)', () => {
+  let runtime, window, app;
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime(FULL_STACK);
+    ({ window } = runtime);
+    window.app = new window.Vectura.App();
+    app = window.app;
+  });
+  afterAll(() => { runtime?.cleanup?.(); runtime = null; });
+
+  test('a pendula layer with an active LFO edge produces DIFFERENT geometry than with motion stripped', () => {
+    app.engine.addLayer('pendula');
+    const layer = app.engine.getActiveLayer();
+    // strong, unambiguous edge: sine LFO on overall scale
+    layer.params.scale = 0.5;
+    layer.params.motion = {
+      sources: [{ id: 's', shape: 'sine', syncMode: 'sync', rate: 1, depth: 1, phase: 0, polarity: 'bi', enabled: true }],
+      edges: [{ id: 'e', sourceId: 's', targetParamPath: 'scale', amount: 0.4 }],
+    };
+    app.engine.generate(layer.id);
+    const withMotion = JSON.stringify(layer.paths || layer.sourcePaths);
+    layer.params.motion = { sources: [], edges: [] };
+    app.engine.generate(layer.id);
+    const without = JSON.stringify(layer.paths || layer.sourcePaths);
+    expect(withMotion).not.toBe(without); // the LFO is baked into the exported geometry
+  });
+});

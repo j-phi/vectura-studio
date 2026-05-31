@@ -192,22 +192,22 @@
     const clamp =
       (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.AlgorithmUtils?.clamp ||
       ((value, min, max) => Math.min(Math.max(value, min), max));
-    // Live-playback tuning. The play loop advances a real-time clock and
-    // RE-EVALUATES the figure every frame (via the pipeline-free core) rather
-    // than sweeping a precomputed array, so the drawing can evolve as it plays.
+    // REVEAL-ONLY playback. The grey "ghost" is the full STATIC figure (with
+    // any LFO motion already baked into its geometry by the shared evaluator —
+    // computeHarmonographPlotterData forwards params.motion). The red line just
+    // traces that fixed figure 0->100% on a loop, exactly like dragging the
+    // Reveal scrubber. Evolution lives in the figure (parameterized by its own
+    // progress t), never in wall-clock playback — so the ghost never morphs.
     const RANGE_MAX = 1000;          // reveal scrubber resolution (fraction * 1000)
-    const LIVE_SAMPLE_CAP = 1400;    // capped vertices while playing (perf); full when idle
-    const REVEAL_SECONDS = 7;        // seconds for the pen to draw the whole figure once (at 1x)
-    const EVOLVE_PERIOD = 22;        // seconds for one in/out breathe of the figure
-    const EVOLVE_DEPTH = 0.018;      // loopDrift modulation depth — Phase-1 stand-in for an LFO
-    const core = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.HarmonographCore;
+    const REVEAL_SECONDS = 7;        // seconds for the pen to trace the whole figure once (at 1x)
 
-    const data = this.computeHarmonographPlotterData(layer);
+    // Cached static figure; `let` so a Motion Rack edit can rebuild it in place.
+    let data = this.computeHarmonographPlotterData(layer);
     const speeds = [0.25, 0.5, 1, 2, 4];
     const rememberedSpeed = this.harmonographPlotterState?.speed ?? 1;
     const initialSpeed = speeds.includes(rememberedSpeed) ? rememberedSpeed : 1;
     const initialReveal = clamp(this.harmonographPlotterState?.revealFrac ?? 1, 0, 1);
-    const drawable = data.path.length > 1;
+    let drawable = data.path.length > 1;
     const wrapper = document.createElement('div');
     wrapper.className = 'harmonograph-plotter mb-4';
     wrapper.innerHTML = `
@@ -216,7 +216,7 @@
           <button type="button" class="harmonograph-plotter-play text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">Play</button>
         </div>
         <canvas class="harmonograph-plotter-canvas" width="240" height="240"></canvas>
-        <div class="harmonograph-plotter-meta text-[10px] text-vectura-muted">Play to watch the pen draw on a loop — the figure gently evolves as it runs.</div>
+        <div class="harmonograph-plotter-meta text-[10px] text-vectura-muted">Play traces the pen along the figure on a loop. Shape the figure itself with LFOs in the Motion Rack.</div>
         <div class="harmonograph-plotter-row">
           <label class="text-[10px] uppercase tracking-widest text-vectura-muted">Reveal</label>
           <input class="harmonograph-plotter-range" type="range" min="0" max="${RANGE_MAX}" step="1" value="${Math.round(initialReveal * RANGE_MAX)}">
@@ -241,46 +241,23 @@
       rafId: null,
       playing: false,
       revealFrac: initialReveal,   // 0..1 — how much of the curve is drawn
-      playbackClock: 0,            // seconds of playback, drives evolution
       speed: initialSpeed,
       lastTs: 0,
-      baseLoopDrift: layer?.params?.loopDrift ?? 0,
-      liveData: data,              // re-evaluated each frame while playing
+      figure: data,                // the cached static figure (exposed for rebuild/tests)
     };
     this.harmonographPlotterState = state;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Re-evaluate the figure for the current playback clock, capped to a cheap
-    // vertex count. This is the per-frame, pipeline-free path the whole "play
-    // button animates" premise rests on. If the layer has a Motion Rack patch
-    // (LFOs assigned to params) we drive the figure from it; otherwise we fall
-    // back to a gentle loopDrift breathe so preset figures still feel alive.
-    const modulation = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.HarmonographModulation;
-    const evaluateLive = () => {
-      if (!core) return data;
-      const params = layer?.params || {};
-      const duration = Math.max(1, params.duration ?? 30);
-      let liveParams;
-      if (modulation && modulation.hasActiveEdges(params.motion)) {
-        liveParams = modulation.applyModulation(params, params.motion, state.playbackClock, duration);
-      } else {
-        const evoDrift = state.baseLoopDrift + EVOLVE_DEPTH * Math.sin((Math.PI * 2 / EVOLVE_PERIOD) * state.playbackClock);
-        liveParams = Object.assign({}, params, { loopDrift: evoDrift });
-      }
-      return core.evaluatePath(liveParams, { sampleCap: LIVE_SAMPLE_CAP });
-    };
-
     const draw = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.fillStyle = getThemeToken('--plotter-bg', '#101115');
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      // Render the live (evolving) figure while playing, the full-res one when idle.
-      const renderData = state.playing && state.liveData?.path?.length ? state.liveData : data;
+      // Always the static cached figure — the grey ghost never changes while
+      // playing; only the red reveal advances.
+      const renderData = data;
       if (!renderData.path.length) return;
-      // Frame the view from the committed full-res figure so the view doesn't
-      // jitter as the live figure breathes; fall back to renderData if empty.
-      const bboxSrc = data.path.length ? data : renderData;
+      const bboxSrc = renderData;
       let minX = Infinity;
       let maxX = -Infinity;
       let minY = Infinity;
@@ -337,12 +314,10 @@
       const last = state.lastTs || ts;
       const deltaSec = (Math.max(0, ts - last) / 1000) * state.speed;
       state.lastTs = ts;
-      state.playbackClock += deltaSec;
-      // Advance the reveal and wrap it into [0,1) so the pen redraws on a loop.
+      // Advance ONLY the reveal and wrap it into [0,1) so the pen retraces the
+      // (static) figure on a loop. The figure itself never changes here.
       state.revealFrac += deltaSec / REVEAL_SECONDS;
       if (state.revealFrac >= 1) state.revealFrac -= Math.floor(state.revealFrac);
-      // Re-evaluate the evolving figure for this frame (the de-risk core).
-      state.liveData = evaluateLive();
       range.value = `${Math.round(state.revealFrac * RANGE_MAX)}`;
       draw();
       if (state.playing) state.rafId = window.requestAnimationFrame(tick);
@@ -354,8 +329,6 @@
       playBtn.textContent = state.playing ? 'Pause' : 'Play';
       if (state.playing) {
         state.lastTs = 0;
-        state.baseLoopDrift = layer?.params?.loopDrift ?? 0;
-        state.liveData = evaluateLive();
         state.rafId = window.requestAnimationFrame(tick);
       } else if (state.rafId) {
         window.cancelAnimationFrame(state.rafId);
@@ -372,6 +345,20 @@
       state.speed = Number.isFinite(nextSpeed) ? nextSpeed : 1;
       if (state.playing) state.lastTs = 0;
     };
+
+    // Recompute the cached static figure in place — called by the Motion Rack
+    // commit so editing an LFO updates the ghost without a full panel rebuild
+    // (and without restarting playback).
+    state.rebuild = () => {
+      data = this.computeHarmonographPlotterData(layer);
+      state.figure = data;
+      drawable = data.path.length > 1;
+      playBtn.disabled = !drawable;
+      playBtn.classList.toggle('opacity-60', !drawable);
+      playBtn.classList.toggle('cursor-not-allowed', !drawable);
+      draw();
+    };
+
     if (!drawable) {
       playBtn.disabled = true;
       playBtn.classList.add('opacity-60', 'cursor-not-allowed');

@@ -99,3 +99,87 @@ describe('HarmonographCore.evaluatePath', () => {
     expect(pts.every((p) => Number.isFinite(p.x))).toBe(true);
   });
 });
+
+describe('HarmonographCore.evaluatePath — per-sample motion (LFO baked into geometry)', () => {
+  let core, mod;
+  beforeAll(() => {
+    // load both core (with window stub shared) and the modulation engine
+    const fs = require('fs'); const path = require('path'); const vm = require('vm');
+    const window = {};
+    const ctx = { window }; vm.createContext(ctx);
+    vm.runInContext(fs.readFileSync(path.resolve(__dirname, '../../src/core/algorithms/harmonograph-modulation.js'), 'utf8'), ctx);
+    vm.runInContext(fs.readFileSync(path.resolve(__dirname, '../../src/core/algorithms/harmonograph-core.js'), 'utf8'), ctx);
+    // core references window.Vectura.HarmonographModulation at call time
+    global.window = window; // so core's window lookup resolves in-process
+    core = window.Vectura.HarmonographCore;
+    mod = window.Vectura.HarmonographModulation;
+  });
+  afterAll(() => { delete global.window; });
+
+  const params = (motion) => ({
+    samples: 1500, duration: 24, scale: 1,
+    pendulums: [
+      { ampX: 100, ampY: 0, phaseX: 90, phaseY: 0, freq: 3, micro: 0, damp: 0.001, enabled: true },
+      { ampX: 0, ampY: 100, phaseX: 0, phaseY: 0, freq: 2, micro: 0, damp: 0.001, enabled: true },
+    ],
+    motion,
+  });
+  const sineOn = (target, amount) => ({
+    sources: [{ id: 'l', shape: 'sine', syncMode: 'sync', rate: 1, depth: 1, phase: 0, polarity: 'bi', enabled: true }],
+    edges: [{ id: 'e', sourceId: 'l', targetParamPath: target, amount }],
+  });
+
+  test('a motion figure is deterministic + static (two evals identical, same length)', () => {
+    const a = core.evaluatePath(params(sineOn('pendulums.1.freq', 0.5)));
+    const b = core.evaluatePath(params(sineOn('pendulums.1.freq', 0.5)));
+    expect(b.path).toEqual(a.path);
+    expect(a.path.length).toBe(b.path.length);
+  });
+
+  test('motion changes the geometry vs no motion (LFO is baked in)', () => {
+    const withM = core.evaluatePath(params(sineOn('pendulums.1.freq', 0.6))).path;
+    const without = core.evaluatePath(params({ sources: [], edges: [] })).path;
+    let maxD = 0;
+    for (let i = 0; i < withM.length; i += 1) maxD = Math.max(maxD, Math.hypot(withM[i].x - without[i].x, withM[i].y - without[i].y));
+    expect(maxD).toBeGreaterThan(1);
+  });
+
+  test('no-motion path is byte-identical to passing an empty motion', () => {
+    const empty = core.evaluatePath(params({ sources: [], edges: [] })).path;
+    const noneAtAll = core.evaluatePath(params(undefined)).path;
+    expect(noneAtAll).toEqual(empty);
+  });
+
+  test('fast path equals an applyModulation-per-sample reference (unit conversions + no-clone correctness)', () => {
+    // reference: build the path by cloning params per sample via applyModulation at the sample t
+    const base = params(sineOn('pendulums.0.phaseX', 30)); // phase edge exercises DEG2RAD
+    const fast = core.evaluatePath(base).path;
+    const dur = 24; const count = 1500; const dt = dur / count;
+    // reference uses applyModulation (which clones) per sample, then a single-sample eval with sampleCap forcing that exact t
+    let maxD = 0;
+    for (let i = 0; i <= count; i += 50) {
+      const t = i * dt;
+      const live = mod.applyModulation(base, base.motion, t, dur);
+      // evaluate ONE point at t by reusing the evaluator on a 1-sample grid won't hit exact t; instead recompute inline
+      const pend = live.pendulums.map((pp) => ({
+        ax: pp.ampX, ay: pp.ampY, phaseX: (pp.phaseX) * Math.PI / 180, phaseY: (pp.phaseY) * Math.PI / 180,
+        freq: pp.freq, micro: pp.micro, damp: Math.max(0, pp.damp),
+      }));
+      let x = 0, y = 0;
+      pend.forEach((pp) => {
+        const f = (pp.freq + pp.micro + (live.loopDrift || 0) * t) * Math.PI * 2;
+        const decay = Math.exp(-pp.damp * t);
+        x += pp.ax * Math.sin(f * t + pp.phaseX) * decay;
+        y += pp.ay * Math.sin(f * t + pp.phaseY) * decay;
+      });
+      x *= (live.scale ?? 1); y *= (live.scale ?? 1);
+      maxD = Math.max(maxD, Math.hypot(fast[i].x - x, fast[i].y - y));
+    }
+    expect(maxD).toBeLessThan(1e-9);
+  });
+
+  test('a bipolar damp LFO stays bounded (per-sample clamp, no exp blow-up)', () => {
+    const { path: pts } = core.evaluatePath(params(sineOn('pendulums.0.damp', 0.01)));
+    expect(pts.every((pt) => Number.isFinite(pt.x) && Number.isFinite(pt.y) && Math.abs(pt.x) < 1e6)).toBe(true);
+  });
+});

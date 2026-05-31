@@ -1338,7 +1338,15 @@
         // layer.params.motion live, so patches take effect on the next frame.
         rack(host, {
           layer,
-          commit: () => { this.app.pushHistory?.(); this.storeLayerParams(layer); },
+          // Motion edits are playback-only (no regen), but the plotter caches a
+          // STATIC figure now — so rebuild that cached ghost so the LFO change
+          // is visible immediately without restarting playback or rebuilding
+          // the whole panel.
+          commit: () => {
+            this.app.pushHistory?.();
+            this.storeLayerParams(layer);
+            this.harmonographPlotterState?.rebuild?.();
+          },
         });
         return;
       }
