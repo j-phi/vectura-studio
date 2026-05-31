@@ -1067,10 +1067,103 @@
         header.className = 'pendulum-list-header';
         header.innerHTML = `
           <span class="text-[10px] uppercase tracking-widest text-vectura-muted">Pendulums</span>
+          <span class="pendulum-freq-ratio text-[10px] font-mono text-vectura-muted" title="Frequency ratio of enabled pendulums"></span>
           <button type="button" class="pendulum-add text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors">
             + Add Pendulum
           </button>
         `;
+        const ratioEl = header.querySelector('.pendulum-freq-ratio');
+
+        // Reduce the enabled pendulums' frequencies to a compact integer ratio
+        // (e.g. freqs 2 & 3 -> "3:2"). Non-integer freqs are scaled to a common
+        // 100ths denominator, then reduced by gcd. Returns '' for <2 enabled.
+        const computeFreqRatio = () => {
+          const freqs = pendulums
+            .filter((p) => p.enabled !== false)
+            .map((p) => Number(p.freq))
+            .filter((f) => Number.isFinite(f) && f > 0);
+          if (freqs.length < 2) return '';
+          const gcd2 = (a, b) => {
+            a = Math.abs(a);
+            b = Math.abs(b);
+            while (b) { [a, b] = [b, a % b]; }
+            return a || 1;
+          };
+          // Scale to integers (freqs use a 0.01 step), then reduce.
+          const ints = freqs.map((f) => Math.round(f * 100));
+          let g = ints[0];
+          for (let i = 1; i < ints.length; i += 1) g = gcd2(g, ints[i]);
+          const reduced = ints.map((n) => Math.round(n / g));
+          return reduced.join(':');
+        };
+        const updateFreqRatio = () => {
+          if (ratioEl) ratioEl.textContent = computeFreqRatio();
+        };
+        updateFreqRatio();
+
+        // Per-pendulum mini-trace: evaluate ONLY this pendulum's contribution
+        // via the shared core, auto-fit its bbox into the small canvas. Guarded
+        // for the jsdom no-op ctx (getContext may return a stub or null).
+        const HC = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.HarmonographCore;
+        const readToken = (name, fallback) => {
+          try {
+            const root = document.documentElement;
+            const v = root && getComputedStyle ? getComputedStyle(root).getPropertyValue(name) : '';
+            return (v && v.trim()) || fallback;
+          } catch (_) {
+            return fallback;
+          }
+        };
+        const drawMiniTrace = (canvas, pend) => {
+          if (!canvas || typeof canvas.getContext !== 'function') return;
+          const ctx = canvas.getContext('2d');
+          if (!ctx || typeof ctx.beginPath !== 'function') return;
+          const w = canvas.width;
+          const h = canvas.height;
+          try { ctx.clearRect(0, 0, w, h); } catch (_) { /* no-op ctx */ }
+          if (pend.enabled === false || !HC || typeof HC.evaluatePath !== 'function') return;
+          let path = [];
+          try {
+            path = HC.evaluatePath(
+              {
+                pendulums: [pend],
+                scale: layer.params.scale,
+                duration: layer.params.duration,
+                samples: 1200,
+              },
+              { sampleCap: 300 }
+            ).path || [];
+          } catch (_) {
+            path = [];
+          }
+          if (path.length < 2) return;
+          let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+          path.forEach((pt) => {
+            if (pt.x < minX) minX = pt.x;
+            if (pt.x > maxX) maxX = pt.x;
+            if (pt.y < minY) minY = pt.y;
+            if (pt.y > maxY) maxY = pt.y;
+          });
+          const span = Math.max(maxX - minX, maxY - minY, 1);
+          const pad = 4;
+          const s = (Math.min(w, h) - pad * 2) / span;
+          const toCanvas = (pt) => ({
+            x: (pt.x - (minX + maxX) / 2) * s + w / 2,
+            y: (pt.y - (minY + maxY) / 2) * s + h / 2,
+          });
+          try {
+            ctx.strokeStyle = readToken('--plotter-path-base', 'rgba(113,113,122,0.55)');
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            path.forEach((pt, i) => {
+              const c = toCanvas(pt);
+              if (i === 0) ctx.moveTo(c.x, c.y);
+              else ctx.lineTo(c.x, c.y);
+            });
+            ctx.stroke();
+          } catch (_) { /* no-op ctx */ }
+        };
+
         const addBtn = header.querySelector('.pendulum-add');
         if (addBtn) {
           addBtn.onclick = () => {
@@ -1085,7 +1178,8 @@
         }
         list.appendChild(header);
 
-        const buildRangeControl = (pendulum, def, idx) => {
+        const buildRangeControl = (pendulum, def, idx, onCommit) => {
+          const afterCommit = () => { if (typeof onCommit === 'function') onCommit(); };
           const control = document.createElement('div');
           control.className = 'pendulum-control';
           const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
@@ -1117,6 +1211,7 @@
             this.storeLayerParams(layer);
             this.app.regen();
             this.updateFormula();
+            afterCommit();
           };
           if (input && valueBtn) {
             input.disabled = !pendulum.enabled;
@@ -1133,6 +1228,7 @@
               this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
+              afterCommit();
             };
             attachKeyboardRangeNudge(input, (nextDisplay) => {
               pendulum[def.key] = fromDisplayValue(def, nextDisplay);
@@ -1140,6 +1236,7 @@
               this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
+              afterCommit();
             });
             input.addEventListener('dblclick', (e) => {
               e.preventDefault();
@@ -1157,13 +1254,15 @@
                 this.app.regen();
                 valueBtn.innerText = formatDisplayValue(def, pendulum[def.key]);
                 this.updateFormula();
+                afterCommit();
               },
             });
           }
           return control;
         };
 
-        const buildAngleControl = (pendulum, def, idx) => {
+        const buildAngleControl = (pendulum, def, idx, onCommit) => {
+          const afterCommit = () => { if (typeof onCommit === 'function') onCommit(); };
           const control = document.createElement('div');
           control.className = 'pendulum-control';
           const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
@@ -1201,6 +1300,7 @@
               this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
+              afterCommit();
             }
           };
           const resetAngle = () => {
@@ -1259,6 +1359,7 @@
           headerRow.className = 'pendulum-header';
           headerRow.innerHTML = `
             <label class="pendulum-title">Pendulum ${idx + 1}</label>
+            <canvas class="pendulum-mini-trace" width="64" height="40" aria-hidden="true"></canvas>
             <div class="pendulum-actions">
               <label class="pendulum-toggle">
                 <label class="sw-toggle" role="switch" aria-checked="${pendulum.enabled ? 'true' : 'false'}">
@@ -1271,6 +1372,14 @@
               <button type="button" class="pendulum-delete" aria-label="Delete pendulum">🗑</button>
             </div>
           `;
+          const miniTrace = headerRow.querySelector('.pendulum-mini-trace');
+          // Redraw THIS card's thumbnail + refresh the shared ratio whenever any
+          // of this pendulum's controls commit (no rAF loop).
+          const onCardCommit = () => {
+            drawMiniTrace(miniTrace, pendulum);
+            updateFreqRatio();
+          };
+          drawMiniTrace(miniTrace, pendulum);
           const toggle = headerRow.querySelector('input');
           const deleteBtn = headerRow.querySelector('.pendulum-delete');
           if (toggle) {
@@ -1307,8 +1416,8 @@
           pendulumParamDefs.forEach((pDef) => {
             controls.appendChild(
               pDef.type === 'angle'
-                ? buildAngleControl(pendulum, pDef, idx)
-                : buildRangeControl(pendulum, pDef, idx)
+                ? buildAngleControl(pendulum, pDef, idx, onCardCommit)
+                : buildRangeControl(pendulum, pDef, idx, onCardCommit)
             );
           });
           card.appendChild(controls);

@@ -168,6 +168,45 @@
     params.closeLines = random() < 0.85;
   };
 
+  const applyHarmonographFamilyBias = (params, random = Math.random) => {
+    if (!params || !Array.isArray(params.pendulums)) return;
+
+    // Tasteful frequency set: small whole-number ratios make legible
+    // Lissajous-family figures, with an occasional half-step for variety.
+    const pickFreq = () => {
+      // Favour small whole numbers; only occasionally land on a .5 value.
+      if (random() < 0.18) {
+        return random() < 0.5 ? 1.5 : 2.5;
+      }
+      return roundStep(randomInRange(1, 6.999, random), 1, 1, 6);
+    };
+
+    const isPintograph = params.machineType === 'pintograph';
+
+    params.pendulums.forEach((pendulum) => {
+      if (!pendulum || typeof pendulum !== 'object') return;
+      if (pendulum.enabled === false) return;
+
+      pendulum.freq = pickFreq();
+
+      // Damping low band keeps the figure alive long enough to read;
+      // pintograph rigs have no decay so force a clean zero.
+      pendulum.damp = isPintograph
+        ? 0
+        : roundStep(randomInRange(0.0005, 0.004, random), 0.0001, 0.0005, 0.004);
+
+      pendulum.micro = roundStep(randomInRange(-0.02, 0.02, random), 0.001, -0.02, 0.02);
+
+      // Snap phases to clean 15-degree increments within 0..360.
+      pendulum.phaseX = roundStep(randomInRange(0, 360, random), 15, 0, 360);
+      pendulum.phaseY = roundStep(randomInRange(0, 360, random), 15, 0, 360);
+
+      // Keep amplitudes balanced and non-degenerate so neither axis collapses.
+      pendulum.ampX = roundStep(randomInRange(40, 120, random), 5, 40, 120);
+      pendulum.ampY = roundStep(randomInRange(40, 120, random), 5, 40, 120);
+    });
+  };
+
   const applyAlgorithmBias = (layer, random = Math.random) => {
     if (!layer || !layer.params) return;
     switch (layer.type) {
@@ -182,6 +221,10 @@
         break;
       case 'lissajous':
         applyLissajousBias(layer.params, random);
+        break;
+      case 'harmonograph':
+      case 'pendula':
+        applyHarmonographFamilyBias(layer.params, random);
         break;
       default:
         break;

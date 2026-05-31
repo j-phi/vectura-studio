@@ -27,6 +27,10 @@
   const normalizePendulums = (p) => {
     // An explicit array (even empty) is authoritative — only fall back to the
     // legacy freq1/freq2/freq3 params when no pendulums array is present.
+    // Pintograph machine type = constant-velocity disks, no decay: damping is
+    // forced to 0 so the figure loops perpetually (vs the Lateral pendulum's
+    // exponential spiral-in). Applied at this single shared chokepoint.
+    const noDamp = p.machineType === 'pintograph';
     if (Array.isArray(p.pendulums)) {
       return p.pendulums.map((pend) => ({
         ax: pend.ampX ?? 0,
@@ -35,7 +39,7 @@
         phaseY: (pend.phaseY ?? 0) * DEG2RAD,
         freq: pend.freq ?? 1,
         micro: pend.micro ?? 0,
-        damp: Math.max(0, pend.damp ?? 0),
+        damp: noDamp ? 0 : Math.max(0, pend.damp ?? 0),
         enabled: pend.enabled !== false,
       }));
     }
@@ -46,7 +50,7 @@
       phaseY: (p[`phaseY${n}`] ?? 0) * DEG2RAD,
       freq: p[`freq${n}`] ?? 1,
       micro: p[`micro${n}`] ?? 0,
-      damp: Math.max(0, p[`damp${n}`] ?? 0),
+      damp: noDamp ? 0 : Math.max(0, p[`damp${n}`] ?? 0),
       enabled: true,
     }));
   };

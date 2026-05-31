@@ -1065,6 +1065,7 @@
     harmonograph: {
       label: 'Harmonograph',
       preset: 'custom',
+      machineType: 'lateral',
       renderMode: 'line',
       samples: 6000,
       duration: 30,
@@ -1129,6 +1130,7 @@
     pendula: {
       label: 'Pendula',
       preset: 'custom',
+      machineType: 'lateral',
       renderMode: 'line',
       samples: 6000,
       duration: 30,

@@ -183,3 +183,39 @@ describe('HarmonographCore.evaluatePath — per-sample motion (LFO baked into ge
     expect(pts.every((pt) => Number.isFinite(pt.x) && Number.isFinite(pt.y) && Math.abs(pt.x) < 1e6)).toBe(true);
   });
 });
+
+describe('HarmonographCore.evaluatePath — machine types (Pintograph)', () => {
+  let core;
+  beforeAll(() => { core = loadCore(); });
+
+  // Envelope = max |point - center| over a sample window (robust to superposition).
+  const envelope = (pts, lo, hi) => {
+    const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+    const cx = (Math.max(...xs) + Math.min(...xs)) / 2;
+    const cy = (Math.max(...ys) + Math.min(...ys)) / 2;
+    let m = 0;
+    const a = Math.floor(pts.length * lo), b = Math.floor(pts.length * hi);
+    for (let i = a; i < b; i += 1) m = Math.max(m, Math.hypot(pts[i].x - cx, pts[i].y - cy));
+    return m;
+  };
+  const params = (machineType) => ({
+    samples: 4000, duration: 60, scale: 1, machineType,
+    pendulums: [
+      { ampX: 100, ampY: 0, phaseX: 90, phaseY: 0, freq: 3, micro: 0, damp: 0.01, enabled: true },
+      { ampX: 0, ampY: 100, phaseX: 0, phaseY: 0, freq: 2, micro: 0, damp: 0.01, enabled: true },
+    ],
+  });
+
+  test('lateral (damped) decays — trailing envelope is much smaller than leading', () => {
+    const pts = core.evaluatePath(params('lateral')).path;
+    expect(envelope(pts, 0.85, 1.0)).toBeLessThan(envelope(pts, 0.0, 0.15) * 0.85);
+  });
+
+  test('pintograph forces damp=0 — trailing envelope ~= leading (perpetual, non-decaying)', () => {
+    const pts = core.evaluatePath(params('pintograph')).path;
+    const lead = envelope(pts, 0.0, 0.15);
+    const trail = envelope(pts, 0.85, 1.0);
+    expect(trail).toBeGreaterThan(lead * 0.95);
+    expect(trail).toBeLessThan(lead * 1.05);
+  });
+});

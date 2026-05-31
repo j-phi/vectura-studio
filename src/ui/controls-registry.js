@@ -1631,6 +1631,21 @@
     if (copy.id === 'preset') copy.options = PENDULA_PRESET_OPTIONS;
     if (typeof copy.infoKey === 'string') copy.infoKey = copy.infoKey.replace(/^harmonograph\./, 'pendula.');
     acc.push(copy);
+    if (copy.id === 'preset') {
+      // Machine type (pendula-only): Lateral = damped spiral-in; Pintograph =
+      // constant-velocity disks, damping forced to 0 for perpetual loops.
+      acc.push({ type: 'section', label: 'Machine' });
+      acc.push({
+        id: 'machineType',
+        label: 'Machine',
+        type: 'select',
+        options: [
+          { value: 'lateral', label: 'Lateral (damped)' },
+          { value: 'pintograph', label: 'Pintograph (perpetual)' },
+        ],
+        infoKey: 'pendula.machineType',
+      });
+    }
     if (copy.type === 'harmonographPlotter') {
       acc.push({ type: 'section', label: 'Motion' });
       acc.push({ type: 'harmonographMotion' });
