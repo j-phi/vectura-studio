@@ -251,13 +251,23 @@
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Re-evaluate the figure for the current playback clock (evolving loopDrift),
-    // capped to a cheap vertex count. This is the per-frame, pipeline-free path
-    // the whole "play button animates" premise rests on.
+    // Re-evaluate the figure for the current playback clock, capped to a cheap
+    // vertex count. This is the per-frame, pipeline-free path the whole "play
+    // button animates" premise rests on. If the layer has a Motion Rack patch
+    // (LFOs assigned to params) we drive the figure from it; otherwise we fall
+    // back to a gentle loopDrift breathe so preset figures still feel alive.
+    const modulation = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.HarmonographModulation;
     const evaluateLive = () => {
       if (!core) return data;
-      const evoDrift = state.baseLoopDrift + EVOLVE_DEPTH * Math.sin((Math.PI * 2 / EVOLVE_PERIOD) * state.playbackClock);
-      const liveParams = Object.assign({}, layer?.params, { loopDrift: evoDrift });
+      const params = layer?.params || {};
+      const duration = Math.max(1, params.duration ?? 30);
+      let liveParams;
+      if (modulation && modulation.hasActiveEdges(params.motion)) {
+        liveParams = modulation.applyModulation(params, params.motion, state.playbackClock, duration);
+      } else {
+        const evoDrift = state.baseLoopDrift + EVOLVE_DEPTH * Math.sin((Math.PI * 2 / EVOLVE_PERIOD) * state.playbackClock);
+        liveParams = Object.assign({}, params, { loopDrift: evoDrift });
+      }
       return core.evaluatePath(liveParams, { sampleCap: LIVE_SAMPLE_CAP });
     };
 

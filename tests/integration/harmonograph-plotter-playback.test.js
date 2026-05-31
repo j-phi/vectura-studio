@@ -114,6 +114,31 @@ describe('Harmonograph virtual plotter — Phase 1 playback', () => {
     expect(later).not.toEqual(early);
   });
 
+  test('a Motion Rack patch (LFO assigned to a param) drives the live figure', () => {
+    const layer = window.app.engine.getActiveLayer();
+    // A sine LFO (synced, 1 cycle/loop) modulating overall scale by ±0.3.
+    layer.params.scale = 0.5;
+    layer.params.motion = {
+      sources: [{ id: 's1', shape: 'sine', syncMode: 'sync', rate: 1, depth: 1, polarity: 'bi', enabled: true }],
+      edges: [{ id: 'e1', sourceId: 's1', targetParamPath: 'scale', amount: 0.3 }],
+    };
+    const span = (data) => {
+      const xs = data.path.map((p) => p.x);
+      return Math.max(...xs) - Math.min(...xs);
+    };
+    const playBtn = document.querySelector('.harmonograph-plotter-play');
+    playBtn.click();
+    const st = ui.harmonographPlotterState;
+
+    st.playbackClock = 7.5; st.lastTs = 0; flush(1000); // sine peak → scale ≈ 0.8
+    const spanPeak = span(st.liveData);
+    st.playbackClock = 22.5; st.lastTs = 0; flush(1000); // sine trough → scale ≈ 0.2
+    const spanTrough = span(st.liveData);
+
+    // Scale modulation must visibly change the figure size between peak/trough.
+    expect(spanPeak).toBeGreaterThan(spanTrough * 1.5);
+  });
+
   test('playback pushes NO undo history (per-frame state is transient)', () => {
     let pushes = 0;
     const orig = window.app.pushHistory;
