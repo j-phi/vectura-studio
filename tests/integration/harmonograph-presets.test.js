@@ -31,10 +31,8 @@ describe('Harmonograph presets', () => {
     runtime = null;
   });
 
-  const presetSelect = () =>
-    Array.from(document.querySelectorAll('select')).find((s) =>
-      Array.from(s.options).some((o) => o.value === 'harmonograph-classic-3-2-star')
-    );
+  // The preset selector is now the craft-ladder gallery, not a <select>.
+  const presetCard = (id) => document.querySelector(`.hg-preset-card[data-preset-id="${id}"]`);
 
   test('the harmonograph preset library is filtered out of PRESETS', () => {
     const lib = window.Vectura.PresetLibraries.harmonograph;
@@ -67,19 +65,15 @@ describe('Harmonograph presets', () => {
     });
   });
 
-  test('the preset selector renders with Custom + the 4 presets', () => {
-    const sel = presetSelect();
-    expect(sel).toBeTruthy();
-    const values = Array.from(sel.options).map((o) => o.value);
-    expect(values[0]).toBe('custom');
-    expect(values).toContain('harmonograph-unison-circle');
-    expect(values).toContain('harmonograph-evolving-snake');
+  test('the preset gallery renders a card for each of the 4 presets', () => {
+    expect(document.querySelector('.hg-preset-gallery')).toBeTruthy();
+    expect(document.querySelectorAll('.hg-preset-card').length).toBe(4);
+    expect(presetCard('harmonograph-unison-circle')).toBeTruthy();
+    expect(presetCard('harmonograph-evolving-snake')).toBeTruthy();
   });
 
   test('applying a preset merges its params into the active layer', () => {
-    const sel = presetSelect();
-    sel.value = 'harmonograph-classic-3-2-star';
-    sel.dispatchEvent(new window.Event('change', { bubbles: true }));
+    presetCard('harmonograph-classic-3-2-star').click();
 
     const layer = window.app.engine.getActiveLayer();
     expect(layer.params.preset).toBe('harmonograph-classic-3-2-star');
@@ -92,13 +86,9 @@ describe('Harmonograph presets', () => {
   });
 
   test('switching to a different preset replaces the figure (no stale pendulums)', () => {
-    const sel = presetSelect();
-    sel.value = 'harmonograph-classic-3-2-star';
-    sel.dispatchEvent(new window.Event('change', { bubbles: true }));
-    // selector was rebuilt by buildControls(); re-query before reusing.
-    const sel2 = presetSelect();
-    sel2.value = 'harmonograph-unison-circle';
-    sel2.dispatchEvent(new window.Event('change', { bubbles: true }));
+    presetCard('harmonograph-classic-3-2-star').click();
+    // gallery was rebuilt by buildControls(); re-query before reusing.
+    presetCard('harmonograph-unison-circle').click();
 
     const layer = window.app.engine.getActiveLayer();
     expect(layer.params.preset).toBe('harmonograph-unison-circle');

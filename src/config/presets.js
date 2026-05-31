@@ -8,6 +8,7 @@
         id: "pendula-breathing-orbit",
         name: "Breathing Orbit",
         preset_system: "pendula",
+        group: "Evolving",
         params: {
           renderMode: "line", samples: 6000, duration: 32, scale: 0.55, loopDrift: 0, paperRotation: 0,
           pendulums: [
@@ -24,6 +25,7 @@
         id: "pendula-drift-star",
         name: "Drift Star",
         preset_system: "pendula",
+        group: "Evolving",
         params: {
           renderMode: "line", samples: 7000, duration: 40, scale: 0.5, loopDrift: 0, paperRotation: 0,
           pendulums: [
@@ -40,6 +42,7 @@
         id: "pendula-tidal-lissajous",
         name: "Tidal Lissajous",
         preset_system: "pendula",
+        group: "Evolving",
         params: {
           renderMode: "line", samples: 6000, duration: 36, scale: 0.55, loopDrift: 0, paperRotation: 0,
           pendulums: [
@@ -59,6 +62,7 @@
         id: "pendula-pulsing-web",
         name: "Pulsing Web",
         preset_system: "pendula",
+        group: "Classic",
         params: {
           renderMode: "line", samples: 8000, duration: 44, scale: 0.45, loopDrift: 0.0008, paperRotation: 0.02,
           pendulums: [
@@ -73,6 +77,7 @@
         id: "harmonograph-unison-circle",
         name: "Unison Circle",
         preset_system: "harmonograph",
+        group: "Classic",
         params: {
           renderMode: "line",
           duration: 30,
@@ -87,6 +92,7 @@
         id: "harmonograph-classic-3-2-star",
         name: "Classic 3:2 Star",
         preset_system: "harmonograph",
+        group: "Classic",
         params: {
           renderMode: "line",
           duration: 40,
@@ -102,6 +108,7 @@
         id: "harmonograph-4-3-star",
         name: "4:3 Star",
         preset_system: "harmonograph",
+        group: "Detuned",
         params: {
           renderMode: "line",
           duration: 40,
@@ -117,6 +124,7 @@
         id: "harmonograph-evolving-snake",
         name: "Evolving Snake",
         preset_system: "harmonograph",
+        group: "Evolving",
         params: {
           renderMode: "line",
           duration: 30,

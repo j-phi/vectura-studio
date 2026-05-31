@@ -3216,6 +3216,81 @@
   text-align: center; line-height: 1.2;
 }
 
+/* ── Harmonograph craft-ladder preset gallery ──────────────────────────────
+   Grouped (Classic → Detuned → Evolving) grid of clickable figure thumbnails
+   that replaces the flat preset <select> for the harmonograph + pendula
+   studios. Mirrors the wallpaper style-card grid above; tokens-only. */
+.hg-preset-gallery {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.hg-preset-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.hg-preset-group-title {
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ui-text-2, var(--ui-muted));
+}
+.hg-preset-grid {
+  container-type: inline-size;
+  container-name: hg-preset-grid;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+@container hg-preset-grid (min-width: 260px) {
+  .hg-preset-grid { grid-template-columns: repeat(3, 1fr); }
+}
+.hg-preset-card {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 6px 4px 5px;
+  background: var(--ui-ctrl);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--ui-text-2);
+  transition: border-color 0.12s, background-color 0.12s, box-shadow 0.12s, transform 0.08s;
+}
+.hg-preset-card:hover { border-color: var(--ui-border-hi, var(--ui-border)); }
+.hg-preset-card:active { transform: scale(0.97); }
+.hg-preset-card:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+.hg-preset-card.is-active {
+  border-color: var(--ui-accent);
+  background: color-mix(in srgb, var(--ui-accent) 16%, var(--ui-ctrl));
+  box-shadow: 0 0 0 1px var(--ui-accent), 0 0 9px -3px var(--ui-accent);
+}
+.hg-preset-card.is-active::after {
+  content: '✓';
+  position: absolute; top: 4px; right: 4px;
+  width: 14px; height: 14px;
+  font-size: 10px; line-height: 14px; font-weight: 700; text-align: center;
+  border-radius: 50%;
+  background: var(--ui-accent);
+  color: var(--ui-bg);
+  pointer-events: none;
+}
+.hg-preset-thumb {
+  width: 100%; aspect-ratio: 1 / 1;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--ui-bg);
+  display: block;
+}
+.hg-preset-name {
+  font-size: 10px; font-weight: 600;
+  text-align: center; line-height: 1.2;
+  color: var(--ui-text);
+}
+
 /* ── Snapping feedback (auto-changed chips + transient line) ───────────────── */
 .mp-root .mp-snap-line {
   font-size: var(--font-size-xs);

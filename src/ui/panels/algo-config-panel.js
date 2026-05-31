@@ -783,6 +783,37 @@
       if (m.triggerThumbRelease) m.triggerThumbRelease(slider);
     };
 
+    // Shared apply path for the harmonograph-family preset selector (the
+    // craft-ladder gallery AND any future <select> route through this). A
+    // preset defines the whole figure (and may ship a motion patch); we keep
+    // only the layer's transform so applying one doesn't move/resize it on the
+    // canvas. `presetId === 'custom'` just stamps the custom marker. The caller
+    // owns pushHistory (one entry per user action).
+    const applyHarmonographFamilyPreset = (presetId) => {
+      if (presetId === 'custom') {
+        layer.params.preset = 'custom';
+        this.storeLayerParams(layer);
+        this.app.regen();
+        this.buildControls();
+        this.updateFormula();
+        return;
+      }
+      const lib = layer.type === 'pendula' ? PENDULA_PRESET_LIBRARY : HARMONOGRAPH_PRESET_LIBRARY;
+      const preset = (lib || []).find((item) => item.id === presetId);
+      const base = ALGO_DEFAULTS?.[layer.type] ? clone(ALGO_DEFAULTS[layer.type]) : {};
+      const preserved = new Set([...TRANSFORM_KEYS]);
+      const nextParams = { ...base, ...(preset?.params || {}) };
+      preserved.forEach((key) => {
+        if (layer.params[key] !== undefined) nextParams[key] = layer.params[key];
+      });
+      nextParams.preset = presetId;
+      layer.params = { ...layer.params, ...nextParams };
+      this.storeLayerParams(layer);
+      this.app.regen();
+      this.buildControls();
+      this.updateFormula();
+    };
+
     const renderDef = (def, targetEl) => {
       const target = targetEl || container;
       if (def.showIf && !def.showIf(layer.params)) return;
@@ -793,6 +824,27 @@
         target.appendChild(section);
         return;
       }
+      // Harmonograph family: the preset control is a craft-ladder GALLERY, not
+      // a <select>. The registry still declares it as a select (so the option
+      // data stays in one place); here we intercept it and mount the grouped
+      // card grid, which routes clicks through the SAME apply path.
+      if (def.id === 'preset' && (layer.type === 'harmonograph' || layer.type === 'pendula')) {
+        const gallery = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.UI?.HarmonographPresetGallery;
+        const libs = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.PresetLibraries;
+        const presets = (libs && libs[layer.type]) || [];
+        if (typeof gallery === 'function') {
+          gallery(target, {
+            layer,
+            presets,
+            onApply: (presetId) => {
+              if (this.app.pushHistory) this.app.pushHistory();
+              applyHarmonographFamilyPreset(presetId);
+            },
+          });
+        }
+        return;
+      }
+
       if (def.type === 'svgImportButton') {
         const wrap = document.createElement('div');
         wrap.className = 'mb-4';
@@ -2967,61 +3019,12 @@
               this.updateFormula();
               return;
             }
-            if (layer.type === 'harmonograph' && def.id === 'preset' && next === 'custom') {
-              layer.params.preset = 'custom';
-              this.storeLayerParams(layer);
-              span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
-              this.app.regen();
-              this.buildControls();
-              this.updateFormula();
-              return;
-            }
-            if (layer.type === 'harmonograph' && def.id === 'preset' && next !== 'custom') {
-              const preset = (HARMONOGRAPH_PRESET_LIBRARY || []).find((item) => item.id === next);
-              const base = ALGO_DEFAULTS?.harmonograph ? clone(ALGO_DEFAULTS.harmonograph) : {};
-              // The preset defines the whole figure; keep only the layer's
-              // transform so applying one doesn't move/resize it on the canvas.
-              const preserved = new Set([...TRANSFORM_KEYS]);
-              const nextParams = { ...base, ...(preset?.params || {}) };
-              preserved.forEach((key) => {
-                if (layer.params[key] !== undefined) nextParams[key] = layer.params[key];
-              });
-              nextParams.preset = next;
-              layer.params = { ...layer.params, ...nextParams };
-              this.storeLayerParams(layer);
-              span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
-              this.app.regen();
-              this.buildControls();
-              this.updateFormula();
-              return;
-            }
-            if (layer.type === 'pendula' && def.id === 'preset' && next === 'custom') {
-              layer.params.preset = 'custom';
-              this.storeLayerParams(layer);
-              span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
-              this.app.regen();
-              this.buildControls();
-              this.updateFormula();
-              return;
-            }
-            if (layer.type === 'pendula' && def.id === 'preset' && next !== 'custom') {
-              const preset = (PENDULA_PRESET_LIBRARY || []).find((item) => item.id === next);
-              const base = ALGO_DEFAULTS?.pendula ? clone(ALGO_DEFAULTS.pendula) : {};
-              // The preset defines the whole figure (and may ship a motion patch);
-              // keep only the layer's transform so applying it doesn't move/resize
-              // the figure on the canvas.
-              const preserved = new Set([...TRANSFORM_KEYS]);
-              const nextParams = { ...base, ...(preset?.params || {}) };
-              preserved.forEach((key) => {
-                if (layer.params[key] !== undefined) nextParams[key] = layer.params[key];
-              });
-              nextParams.preset = next;
-              layer.params = { ...layer.params, ...nextParams };
-              this.storeLayerParams(layer);
-              span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
-              this.app.regen();
-              this.buildControls();
-              this.updateFormula();
+            // Harmonograph family preset control is rendered as the craft-ladder
+            // gallery (intercepted above), so this <select> branch is normally
+            // unreachable — but keep it wired through the SAME shared apply path
+            // so any fallback select stays in lock-step (no duplicated merge).
+            if ((layer.type === 'harmonograph' || layer.type === 'pendula') && def.id === 'preset') {
+              applyHarmonographFamilyPreset(next);
               return;
             }
             layer.params[def.id] = next;
