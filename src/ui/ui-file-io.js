@@ -682,6 +682,77 @@
         progress.done();
       }
     },
+
+    // Phase 4: a SEPARATE "draw-on" animation export. Reuses the same export
+    // snapshot geometry but emits a screen-only SVG whose strokes draw
+    // themselves on a loop (SMIL stroke-dashoffset). Kept distinct from the
+    // canonical plotter SVG so the plotter-ready output stays clean/static.
+    exportAnimatedSVG() {
+      const builder = window.Vectura.AnimatedSvg;
+      if (!builder || typeof builder.buildDrawOn !== 'function') {
+        toast('Animated export unavailable', 'error');
+        return;
+      }
+      const progress = startProgress('Exporting animated SVG…');
+      try {
+        const snapshot =
+          typeof this.getExportSnapshot === 'function'
+            ? this.getExportSnapshot()
+            : window.Vectura.UI.prototype.getExportSnapshot.call(this);
+        const { prof, precision, groups } = snapshot;
+
+        // Collect continuous polylines (line-mode geometry). Skip meta shapes
+        // (circles) and degenerate paths.
+        const polylines = [];
+        let stroke = 'black';
+        let strokeWidth = 0.3;
+        let gotStroke = false;
+        groups.forEach((group) => {
+          const penColor = (group.pen && group.pen.color) || 'black';
+          group.items.forEach((item) => {
+            if (!gotStroke) { stroke = penColor; strokeWidth = item.strokeWidth || 0.3; gotStroke = true; }
+            const pts = Array.isArray(item.path) ? item.path : null;
+            if (pts && pts.length > 1 && pts.every((pt) => pt && Number.isFinite(pt.x) && Number.isFinite(pt.y))) {
+              polylines.push(pts.map((pt) => ({ x: pt.x, y: pt.y })));
+            }
+          });
+        });
+
+        if (!polylines.length) {
+          toast('Animated export needs line-mode paths (no continuous strokes found)', 'error');
+          return;
+        }
+
+        // Draw time: the active harmonograph-family layer's duration (capped for
+        // watchability), else a sensible default.
+        const active = this.app.engine.getActiveLayer?.();
+        const famDur = active && (active.type === 'pendula' || active.type === 'harmonograph')
+          ? active.params?.duration : null;
+        const durationSec = Math.min(14, Math.max(3, Number.isFinite(famDur) ? famDur : 8));
+
+        const svg = builder.buildDrawOn(polylines, {
+          width: prof.width,
+          height: prof.height,
+          stroke,
+          strokeWidth,
+          durationSec,
+          precision,
+          background: SETTINGS.bgColor || null,
+        });
+
+        const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'vectura-animated.svg';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        if (typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(url);
+        toast('Animated SVG exported', 'success');
+      } finally {
+        progress.done();
+      }
+    },
   };
 
   // Grouped installer for the file-I/O buttons (`btn-save-vectura`,

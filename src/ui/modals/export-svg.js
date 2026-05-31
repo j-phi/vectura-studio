@@ -995,8 +995,9 @@
   function bindExportButton() {
     const { getEl } = requireDeps('bindExportButton');
     const btnExport = getEl('btn-export', { silent: true });
-    if (!btnExport) return;
-    btnExport.onclick = () => this.openExportModal();
+    if (btnExport) btnExport.onclick = () => this.openExportModal();
+    const btnAnimated = getEl('btn-export-animated', { silent: true });
+    if (btnAnimated) btnAnimated.onclick = () => this.exportAnimatedSVG();
   }
 
   function openExportModal() {
