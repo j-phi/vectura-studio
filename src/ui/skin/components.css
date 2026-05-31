@@ -4228,6 +4228,97 @@
   grid-template-columns: 1fr;
 }
 
+/* Pluck Pad — promoted drag-vector control (drag length = amplitude, drag
+   angle = release direction). */
+.pendulum-pluck-pad {
+  display: flex;
+  justify-content: center;
+  margin: 4px 0 10px;
+}
+
+.pendulum-pluck-pad .pluck-pad-canvas {
+  width: 92px;
+  height: 92px;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: var(--ui-ctrl-2, var(--ui-ctrl));
+  cursor: crosshair;
+  touch-action: none;
+}
+
+/* A control + its per-param padlock laid out side by side. */
+.pendulum-control-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.pendulum-control-row > .pendulum-control {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pendulum-param-lock {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  color: var(--ui-text-2);
+  background: transparent;
+  cursor: pointer;
+}
+
+.pendulum-param-lock:hover {
+  background: var(--ui-border);
+  color: var(--ui-text);
+}
+
+.pendulum-param-lock.is-locked {
+  color: var(--ui-accent);
+  border-color: var(--ui-accent);
+}
+
+/* Advanced disclosure holding the numeric amp/phase source-of-truth controls. */
+.pendulum-advanced {
+  margin-top: 6px;
+}
+
+.pendulum-advanced > .pendulum-advanced-summary {
+  cursor: pointer;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ui-text-2);
+  padding: 4px 0;
+  list-style: none;
+}
+
+.pendulum-advanced > .pendulum-advanced-summary::-webkit-details-marker {
+  display: none;
+}
+
+.pendulum-advanced > .pendulum-advanced-summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s ease;
+}
+
+.pendulum-advanced[open] > .pendulum-advanced-summary::before {
+  transform: rotate(90deg);
+}
+
+.pendulum-advanced > .noise-controls {
+  display: grid;
+  gap: 10px;
+  margin-top: 6px;
+}
+
 .harmonograph-plotter {
   border: 1px solid var(--ui-border);
   border-radius: 10px;
@@ -4327,6 +4418,31 @@
 }
 .harmonograph-plotter-plotrange input[type='range']::-moz-range-track {
   background: transparent;
+}
+
+/* Motion Rack — macro value knob + draw-your-own LFO curve editor. The cards
+ * carry inline utility classes like the rest of the rack; these rules only add
+ * what utilities can't express (a delimiting frame on the draw surface, and
+ * touch-action so a pointer-drag shapes the curve instead of scrolling). */
+.motion-macro-value {
+  width: 100%;
+  accent-color: var(--ui-accent);
+  cursor: pointer;
+}
+.motion-drawn-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.motion-drawn-canvas {
+  display: block;
+  width: 220px;
+  max-width: 100%;
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  background: var(--plotter-bg, #101115);
+  cursor: crosshair;
+  touch-action: none;
 }
 
 

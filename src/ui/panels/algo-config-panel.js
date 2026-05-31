@@ -1164,6 +1164,159 @@
           } catch (_) { /* no-op ctx */ }
         };
 
+        // Pluck Pad — a square drag-vector control realizing Karl Sims' release
+        // gesture: drag LENGTH → release amplitude (both axes), drag ANGLE →
+        // release direction / phase (both axes). It commits through the exact
+        // same path the sliders use (storeLayerParams → app.regen →
+        // updateFormula → onCardCommit) so the main canvas, mini-trace, and the
+        // virtual-plotter ghost (via app.regen) all stay in sync.
+        const AMP_MAX = 200; // matches the ampX/ampY slider max
+        const buildPluckPad = (pendulum, onCommit) => {
+          const afterCommit = () => { if (typeof onCommit === 'function') onCommit(); };
+          const pad = document.createElement('div');
+          pad.className = 'pendulum-pluck-pad';
+          pad.innerHTML = `
+            <canvas class="pluck-pad-canvas" aria-label="Pluck pad — drag to set amplitude and release direction"></canvas>
+          `;
+          const canvas = pad.querySelector('canvas');
+          const CSS_SIZE = 92;
+          const dpr = Math.max(1, Math.min((typeof window !== 'undefined' && window.devicePixelRatio) || 1, 3));
+          canvas.width = Math.round(CSS_SIZE * dpr);
+          canvas.height = Math.round(CSS_SIZE * dpr);
+
+          const drawPad = () => {
+            if (!canvas || typeof canvas.getContext !== 'function') return;
+            const ctx = canvas.getContext('2d');
+            if (!ctx || typeof ctx.beginPath !== 'function') return;
+            // Draw in logical CSS coords; the DPR-scaled backing store is handled
+            // by this transform. Guarded for jsdom mocks lacking setTransform.
+            if (typeof ctx.setTransform === 'function') ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            try { ctx.clearRect(0, 0, CSS_SIZE, CSS_SIZE); } catch (_) { return; }
+            const cx = CSS_SIZE / 2;
+            const cy = CSS_SIZE / 2;
+            const radius = (CSS_SIZE / 2) - 6;
+            const accent = readToken('--ui-accent', '#6366f1');
+            const base = readToken('--plotter-path-base', 'rgba(113,113,122,0.55)');
+            // Current handle derived from existing params.
+            const amp = clamp((Math.abs(pendulum.ampX || 0) + Math.abs(pendulum.ampY || 0)) / 2, 0, AMP_MAX);
+            const mag = (amp / AMP_MAX) * radius;
+            const angDeg = ((pendulum.phaseX || 0) % 360 + 360) % 360;
+            const ang = (angDeg * Math.PI) / 180;
+            const hx = cx + Math.cos(ang) * mag;
+            const hy = cy + Math.sin(ang) * mag;
+            try {
+              // bounding ring
+              ctx.strokeStyle = base;
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+              ctx.stroke();
+              // faint center crosshair
+              ctx.beginPath();
+              ctx.moveTo(cx - 4, cy); ctx.lineTo(cx + 4, cy);
+              ctx.moveTo(cx, cy - 4); ctx.lineTo(cx, cy + 4);
+              ctx.stroke();
+              // vector line
+              ctx.strokeStyle = accent;
+              ctx.lineWidth = 1.5;
+              ctx.beginPath();
+              ctx.moveTo(cx, cy);
+              ctx.lineTo(hx, hy);
+              ctx.stroke();
+              // handle dot
+              ctx.fillStyle = accent;
+              ctx.beginPath();
+              ctx.arc(hx, hy, 4, 0, Math.PI * 2);
+              ctx.fill();
+            } catch (_) { /* no-op ctx */ }
+          };
+          // Expose the redraw so onCardCommit can refresh the handle when the
+          // numeric advanced controls change the source-of-truth params.
+          pad._redraw = drawPad;
+          drawPad();
+
+          const applyFromEvent = (ev) => {
+            const rect = canvas.getBoundingClientRect();
+            const cx = rect.left + rect.width / 2;
+            const cy = rect.top + rect.height / 2;
+            const radius = rect.width / 2;
+            const dx = ev.clientX - cx;
+            const dy = ev.clientY - cy;
+            const dist = Math.hypot(dx, dy);
+            const magnitude = radius > 0 ? clamp(dist / radius, 0, 1) : 0;
+            const amp = magnitude * AMP_MAX;
+            let deg = (Math.atan2(dy, dx) * 180) / Math.PI;
+            if (deg < 0) deg += 360;
+            pendulum.ampX = amp;
+            pendulum.ampY = amp;
+            pendulum.phaseX = deg;
+            pendulum.phaseY = deg;
+            this.storeLayerParams(layer);
+            this.app.regen();
+            this.updateFormula();
+            afterCommit();
+            drawPad();
+          };
+
+          if (canvas) {
+            const onDown = (e) => {
+              if (pendulum.enabled === false) return;
+              if (typeof e.preventDefault === 'function') e.preventDefault();
+              // Push history ONCE per drag, on pointerdown (sliders push on change).
+              if (this.app.pushHistory) this.app.pushHistory();
+              applyFromEvent(e);
+              const move = (ev) => applyFromEvent(ev);
+              const up = () => {
+                window.removeEventListener('pointermove', move);
+              };
+              window.addEventListener('pointermove', move);
+              window.addEventListener('pointerup', up, { once: true });
+            };
+            // Pointer events alone cover mouse, touch, and pen. Do NOT also bind
+            // mousedown — real browsers emit a compatibility mousedown after
+            // pointerdown, which would double-push history and double-regen.
+            canvas.addEventListener('pointerdown', onDown);
+          }
+          return pad;
+        };
+
+        // Per-parameter padlock — toggles a lock that the dice/mutate
+        // (applyHarmonographFamilyBias) reads to SKIP a param for this pendulum.
+        // Locks live in layer.params.pendulumParamLocks[pendulumId][paramKey]
+        // so they serialize with the params for free.
+        const lockIcon = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.Icons?.layer;
+        const buildParamLock = (pendulum, def) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'pendulum-param-lock';
+          btn.dataset.paramKey = def.key;
+          btn.setAttribute('aria-label', `Lock ${getDisplayLabel(def)} from dice`);
+          const isLocked = () => Boolean(layer.params.pendulumParamLocks?.[pendulum.id]?.[def.key]);
+          const renderState = () => {
+            const locked = isLocked();
+            btn.classList.toggle('is-locked', locked);
+            btn.setAttribute('aria-pressed', locked ? 'true' : 'false');
+            const ico = lockIcon ? (locked ? lockIcon.lock?.() : lockIcon.lockOpen?.()) : '';
+            btn.innerHTML = ico || (locked ? '🔒' : '🔓');
+          };
+          renderState();
+          btn.onclick = (e) => {
+            if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+            const locks = layer.params.pendulumParamLocks || (layer.params.pendulumParamLocks = {});
+            const forPend = locks[pendulum.id] || (locks[pendulum.id] = {});
+            if (forPend[def.key]) {
+              delete forPend[def.key];
+              if (Object.keys(forPend).length === 0) delete locks[pendulum.id];
+            } else {
+              forPend[def.key] = true;
+            }
+            // Persist (no regen — a lock changes nothing about the geometry).
+            this.storeLayerParams(layer);
+            renderState();
+          };
+          return btn;
+        };
+
         const addBtn = header.querySelector('.pendulum-add');
         if (addBtn) {
           addBtn.onclick = () => {
@@ -1373,11 +1526,15 @@
             </div>
           `;
           const miniTrace = headerRow.querySelector('.pendulum-mini-trace');
+          let pluckPadEl = null;
           // Redraw THIS card's thumbnail + refresh the shared ratio whenever any
-          // of this pendulum's controls commit (no rAF loop).
+          // of this pendulum's controls commit (no rAF loop). Editing the numeric
+          // advanced controls also refreshes the pluck-pad handle, since the
+          // numerics remain the source of truth.
           const onCardCommit = () => {
             drawMiniTrace(miniTrace, pendulum);
             updateFreqRatio();
+            if (pluckPadEl && typeof pluckPadEl._redraw === 'function') pluckPadEl._redraw();
           };
           drawMiniTrace(miniTrace, pendulum);
           const toggle = headerRow.querySelector('input');
@@ -1404,6 +1561,9 @@
               if (this.app.pushHistory) this.app.pushHistory();
               pendulums.splice(idx, 1);
               layer.params.pendulums = pendulums;
+              // Drop the deleted pendulum's dice locks so they don't accumulate
+              // as orphaned cruft in the serialized project.
+              if (layer.params.pendulumParamLocks) delete layer.params.pendulumParamLocks[pendulum.id];
               this.storeLayerParams(layer);
               this.app.regen();
               this.buildControls();
@@ -1411,16 +1571,49 @@
             };
           }
           card.appendChild(headerRow);
-          const controls = document.createElement('div');
-          controls.className = 'noise-controls';
-          pendulumParamDefs.forEach((pDef) => {
-            controls.appendChild(
+
+          // Pluck pad is the promoted control — mounted first, before the
+          // numeric controls.
+          pluckPadEl = buildPluckPad(pendulum, onCardCommit);
+          card.appendChild(pluckPadEl);
+
+          // Build a single control + its padlock, appended into a row.
+          const ADVANCED_KEYS = new Set(['ampX', 'ampY', 'phaseX', 'phaseY']);
+          const buildControlRow = (pDef) => {
+            const row = document.createElement('div');
+            row.className = 'pendulum-control-row';
+            const control =
               pDef.type === 'angle'
                 ? buildAngleControl(pendulum, pDef, idx, onCardCommit)
-                : buildRangeControl(pendulum, pDef, idx, onCardCommit)
-            );
-          });
+                : buildRangeControl(pendulum, pDef, idx, onCardCommit);
+            row.appendChild(control);
+            row.appendChild(buildParamLock(pendulum, pDef));
+            return row;
+          };
+
+          const visibleDefs = pendulumParamDefs.filter((d) => !ADVANCED_KEYS.has(d.key));
+          const advancedDefs = pendulumParamDefs.filter((d) => ADVANCED_KEYS.has(d.key));
+
+          const controls = document.createElement('div');
+          controls.className = 'noise-controls';
+          visibleDefs.forEach((pDef) => controls.appendChild(buildControlRow(pDef)));
           card.appendChild(controls);
+
+          // The four numeric amp/phase controls move behind an Advanced
+          // disclosure — the pad is the promoted control, but the numerics
+          // remain the editable source of truth.
+          const advanced = document.createElement('details');
+          advanced.className = 'pendulum-advanced';
+          const summary = document.createElement('summary');
+          summary.className = 'pendulum-advanced-summary';
+          summary.textContent = 'Advanced';
+          advanced.appendChild(summary);
+          const advancedControls = document.createElement('div');
+          advancedControls.className = 'noise-controls';
+          advancedDefs.forEach((pDef) => advancedControls.appendChild(buildControlRow(pDef)));
+          advanced.appendChild(advancedControls);
+          card.appendChild(advanced);
+
           list.appendChild(card);
         });
 

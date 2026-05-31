@@ -62,6 +62,43 @@ describe('HarmonographModulation.evaluateSource', () => {
   test('a disabled source contributes nothing', () => {
     expect(mod.evaluateSource({ id: 'a', enabled: false, shape: 'sine', rate: 1 }, 5, 30)).toBe(0);
   });
+
+  test('a macro source is time-independent (same value at every t)', () => {
+    const src = { id: 'm', type: 'macro', enabled: true, value: 0.5, depth: 1 };
+    const v0 = mod.evaluateSource(src, 0, 30);
+    const v1 = mod.evaluateSource(src, 7.5, 30);
+    const v2 = mod.evaluateSource(src, 21.3, 30);
+    expect(v1).toBe(v0);
+    expect(v2).toBe(v0);
+    expect(v0).toBeCloseTo(0.5, 9); // value * depth
+  });
+
+  test('a macro scales by depth', () => {
+    const src = { id: 'm', type: 'macro', enabled: true, value: 0.5, depth: 0.4 };
+    expect(mod.evaluateSource(src, 12, 30)).toBeCloseTo(0.2, 9); // 0.5 * 0.4
+  });
+
+  test('a disabled macro contributes nothing', () => {
+    expect(mod.evaluateSource({ id: 'm', type: 'macro', enabled: false, value: 0.7, depth: 1 }, 5, 30)).toBe(0);
+  });
+
+  test('a drawn shape linearly interpolates between its points', () => {
+    // Triangle: peak at the midpoint, troughs at the ends.
+    const src = {
+      id: 'd', shape: 'drawn', syncMode: 'sync', rate: 1, depth: 1, polarity: 'bi',
+      points: [{ x: 0, y: -1 }, { x: 0.5, y: 1 }, { x: 1, y: -1 }],
+    };
+    expect(mod.evaluateSource(src, 0, 30)).toBeCloseTo(-1, 6);    // phase 0 -> trough
+    expect(mod.evaluateSource(src, 15, 30)).toBeCloseTo(1, 6);    // phase 0.5 -> apex
+    expect(mod.evaluateSource(src, 7.5, 30)).toBeCloseTo(0, 6);   // phase 0.25 -> halfway up
+  });
+
+  test('a drawn shape with fewer than two points evaluates to 0', () => {
+    const src = { id: 'd', shape: 'drawn', syncMode: 'sync', rate: 1, depth: 1, points: [{ x: 0, y: 0.5 }] };
+    expect(mod.evaluateSource(src, 5, 30)).toBe(0);
+    const empty = { id: 'd2', shape: 'drawn', syncMode: 'sync', rate: 1, depth: 1, points: [] };
+    expect(mod.evaluateSource(empty, 5, 30)).toBe(0);
+  });
 });
 
 describe('HarmonographModulation.applyModulation', () => {
@@ -120,6 +157,33 @@ describe('HarmonographModulation.applyModulation', () => {
     };
     const live = mod.applyModulation(baseParams(), motion, 1, 30); // both squares = +1
     expect(live.scale).toBeCloseTo(0.5 + 0.1 + 0.2, 6);
+  });
+
+  test('one macro assigned to two edges drives both targets', () => {
+    const motion = {
+      sources: [{ id: 'm1', type: 'macro', enabled: true, value: 1, depth: 1 }],
+      edges: [
+        { id: 'e1', sourceId: 'm1', targetParamPath: 'scale', amount: 0.2 },
+        { id: 'e2', sourceId: 'm1', targetParamPath: 'pendulums.0.freq', amount: 0.5 },
+      ],
+    };
+    const live = mod.applyModulation(baseParams(), motion, 11, 30);
+    expect(live.scale).toBeCloseTo(0.5 + 0.2, 6);        // 0.5 + 0.2 * (1*1)
+    expect(live.pendulums[0].freq).toBeCloseTo(2 + 0.5, 6); // 2 + 0.5 * (1*1)
+  });
+
+  test('a drawn source round-trips through JSON and still interpolates', () => {
+    const motion = {
+      sources: [{
+        id: 'd1', shape: 'drawn', syncMode: 'sync', rate: 1, depth: 1, polarity: 'bi',
+        points: [{ x: 0, y: -1 }, { x: 0.5, y: 1 }, { x: 1, y: -1 }],
+      }],
+      edges: [{ id: 'e1', sourceId: 'd1', targetParamPath: 'scale', amount: 0.1 }],
+    };
+    const restored = JSON.parse(JSON.stringify(motion));
+    expect(restored.sources[0].points).toEqual(motion.sources[0].points);
+    const live = mod.applyModulation(baseParams(), restored, 15, 30); // phase 0.5 -> apex +1
+    expect(live.scale).toBeCloseTo(0.5 + 0.1, 6);
   });
 
   test('hasActiveEdges reflects whether modulation will do anything', () => {

@@ -7,7 +7,13 @@
  * Data model (lives in layer.params.motion, so it serializes into .vectura for
  * free and round-trips through undo):
  *   sources: [{ id, enabled, shape, rate, syncMode, depth, phase, polarity }]
- *     shape    'sine'|'triangle'|'saw'|'square'|'sample-hold'|'random'
+ *     shape    'sine'|'triangle'|'saw'|'square'|'sample-hold'|'random'|'drawn'
+ *     points   (shape 'drawn' only) [{x:0..1, y:-1..1}, ...] sorted by x with
+ *              endpoints at x=0 and x=1 — a hand-drawn per-loop curve, linearly
+ *              interpolated by phase
+ *   macro sources: [{ id, type:'macro', enabled, value: 0..1, depth }]
+ *     A static knob (no shape/rate/phase/sync). evaluateSource returns
+ *     value*depth at every t — one macro can drive many signed edges.
  *     syncMode 'free' (rate = Hz) | 'sync' (rate = cycles per figure duration —
  *              synced LFOs repeat exactly with the loop = a shareable animation)
  *     depth    0..1 attenuator on the source output
@@ -39,8 +45,9 @@
 
   const wrap01 = (v) => v - Math.floor(v);
 
-  // Raw shape in [-1, 1] for a phase in [0, 1).
-  const shapeValue = (shape, phase, sourceId, cycleIndex) => {
+  // Raw shape in [-1, 1] for a phase in [0, 1). `points` is only used by the
+  // 'drawn' shape (the per-loop hand-drawn curve).
+  const shapeValue = (shape, phase, sourceId, cycleIndex, points) => {
     const p = wrap01(phase);
     switch (shape) {
       case 'triangle':
@@ -58,10 +65,35 @@
         const f = p; // already the within-cycle fraction
         return a + (b - a) * f;
       }
+      case 'drawn':
+        // Draw-your-own LFO: linearly interpolate y between the two control
+        // points surrounding the cycle phase. `points` is sorted by x with
+        // endpoints at x=0 and x=1; <2 points means an empty curve → 0.
+        return drawnValue(points, p);
       case 'sine':
       default:
         return Math.sin(TAU * p);
     }
+  };
+
+  // Linear interpolation across a drawn curve's control points at phase p
+  // (0..1). points: [{x,y}, ...] sorted ascending by x. Returns 0 for <2 points.
+  const drawnValue = (points, p) => {
+    if (!Array.isArray(points) || points.length < 2) return 0;
+    if (p <= points[0].x) return points[0].y;
+    const last = points[points.length - 1];
+    if (p >= last.x) return last.y;
+    for (let i = 1; i < points.length; i += 1) {
+      const b = points[i];
+      if (p <= b.x) {
+        const a = points[i - 1];
+        const span = b.x - a.x;
+        if (span <= 0) return b.y;
+        const f = (p - a.x) / span;
+        return a.y + (b.y - a.y) * f;
+      }
+    }
+    return last.y;
   };
 
   // Evaluate one source at playback time clockT (seconds) over a loop of
@@ -69,6 +101,15 @@
   // bipolar, [0,1]*depth for unipolar.
   const evaluateSource = (source, clockT, duration) => {
     if (!source || source.enabled === false) return 0;
+    // Macro: a static, time-independent knob (0..1) scaled by depth. Unipolar by
+    // nature — one macro can drive many edges (each edge carries its own signed
+    // amount), so it acts like a hand-positioned constant the baked figure
+    // reflects. No shape/rate/phase/sync — value is the same at every t.
+    if (source.type === 'macro') {
+      const value = Number.isFinite(source.value) ? source.value : 0;
+      const macroDepth = Number.isFinite(source.depth) ? source.depth : 1;
+      return value * macroDepth;
+    }
     const rate = Number.isFinite(source.rate) ? source.rate : 1;
     const depth = Number.isFinite(source.depth) ? source.depth : 1;
     const phaseOff = Number.isFinite(source.phase) ? source.phase : 0;
@@ -84,7 +125,7 @@
     }
     const cycleIndex = Math.floor(c);
     const phase = wrap01(c);
-    let v = shapeValue(source.shape || 'sine', phase, source.id || 'src', cycleIndex);
+    let v = shapeValue(source.shape || 'sine', phase, source.id || 'src', cycleIndex, source.points);
     if (source.polarity === 'uni') v = (v + 1) / 2;
     return v * depth;
   };
@@ -145,6 +186,7 @@
     evaluateSource,
     applyModulation,
     hasActiveEdges,
-    SHAPES: ['sine', 'triangle', 'saw', 'square', 'sample-hold', 'random'],
+    shapeValue,
+    SHAPES: ['sine', 'triangle', 'saw', 'square', 'sample-hold', 'random', 'drawn'],
   };
 })();

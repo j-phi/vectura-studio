@@ -23,8 +23,16 @@
 
   const SHAPE_LABELS = {
     sine: 'Sine', triangle: 'Triangle', saw: 'Saw', square: 'Square',
-    'sample-hold': 'Sample & Hold', random: 'Random',
+    'sample-hold': 'Sample & Hold', random: 'Random', drawn: 'Drawn',
   };
+
+  // Default hand-drawn curve when a source first becomes 'drawn': a triangle
+  // (trough → apex → trough) so the editor opens with a visible, editable shape.
+  const defaultDrawnPoints = () => [
+    { x: 0, y: -1 },
+    { x: 0.5, y: 1 },
+    { x: 1, y: -1 },
+  ];
 
   const create = (target, opts = {}) => {
     if (!target) return null;
@@ -72,6 +80,18 @@
 
     const commit = () => { commitHost(); render(); };
 
+    // Resolve a CSS custom property from the live theme (for canvas strokes),
+    // with a fallback for headless/jsdom where computed styles are empty.
+    const getThemeToken = (name, fallback = '') => {
+      try {
+        if (typeof window !== 'undefined' && window.getComputedStyle && document.documentElement) {
+          const v = window.getComputedStyle(document.documentElement).getPropertyValue(name);
+          if (v && v.trim()) return v.trim();
+        }
+      } catch (_) { /* jsdom / no DOM */ }
+      return fallback;
+    };
+
     const el = (tag, cls, text) => {
       const n = document.createElement(tag);
       if (cls) n.className = cls;
@@ -92,6 +112,14 @@
         commit();
       };
       head.appendChild(addBtn);
+      const addMacroBtn = el('button', 'motion-add-macro text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors', '+ Macro');
+      addMacroBtn.type = 'button';
+      addMacroBtn.title = 'Macro — a static knob (0–1) you can patch to many params at once';
+      addMacroBtn.onclick = () => {
+        motion.sources.push({ id: nextId('macro'), type: 'macro', enabled: true, value: 0.5, depth: 1 });
+        commit();
+      };
+      head.appendChild(addMacroBtn);
       wrap.appendChild(head);
 
       if (!motion.sources.length) {
@@ -99,50 +127,22 @@
           'Add an LFO, then assign it to a parameter to make the figure move as it plays. Try a slow Sine on a pendulum Detune to drift a circle into a snake.'));
       }
 
-      motion.sources.forEach((src) => {
-        const card = el('div', 'motion-lfo-card border border-vectura-border p-2 mt-2');
-        card.dataset.sourceId = src.id;
+      // A labelled numeric input shared by LFO and macro cards.
+      const mkNum = (label, value, step, onChange, title, extraCls) => {
+        const w = el('label', 'text-[10px] text-vectura-muted flex items-center gap-1 flex-1');
+        if (title) w.title = title;
+        const inp = el('input', `motion-num bg-vectura-bg border border-vectura-border p-1 text-[10px] w-full text-vectura-text${extraCls ? ` ${extraCls}` : ''}`);
+        inp.type = 'number';
+        inp.step = String(step);
+        inp.value = String(value);
+        inp.onchange = (e) => onChange(parseFloat(e.target.value));
+        w.append(document.createTextNode(label), inp);
+        return w;
+      };
 
-        const r1 = el('div', 'motion-row flex items-center gap-2');
-        const shapeSel = el('select', 'motion-lfo-shape bg-vectura-bg border border-vectura-border p-1 text-[10px] flex-1');
-        shapeSel.innerHTML = SHAPES.map((s) => `<option value="${s}" ${s === src.shape ? 'selected' : ''}>${SHAPE_LABELS[s] || s}</option>`).join('');
-        shapeSel.onchange = (e) => { src.shape = e.target.value; commit(); };
-        const syncBtn = el('button', 'motion-lfo-sync text-[10px] border border-vectura-border px-2 py-1 text-vectura-text', src.syncMode === 'free' ? 'Free' : 'Sync');
-        syncBtn.type = 'button';
-        syncBtn.title = 'Sync = repeats exactly each loop; Free = drifts forever';
-        syncBtn.onclick = () => { src.syncMode = src.syncMode === 'free' ? 'sync' : 'free'; commit(); };
-        const delBtn = el('button', 'motion-lfo-remove text-[10px] border border-vectura-border px-2 py-1 text-vectura-danger', '×');
-        delBtn.type = 'button';
-        delBtn.title = 'Remove LFO';
-        delBtn.onclick = () => {
-          motion.sources = motion.sources.filter((s) => s.id !== src.id);
-          motion.edges = motion.edges.filter((edge) => edge.sourceId !== src.id);
-          commit();
-        };
-        r1.append(shapeSel, syncBtn, delBtn);
-        card.appendChild(r1);
-
-        const r2 = el('div', 'motion-row flex items-center gap-2 mt-1');
-        const mkNum = (label, value, step, onChange, title) => {
-          const w = el('label', 'text-[10px] text-vectura-muted flex items-center gap-1 flex-1');
-          if (title) w.title = title;
-          const inp = el('input', 'motion-num bg-vectura-bg border border-vectura-border p-1 text-[10px] w-full text-vectura-text');
-          inp.type = 'number';
-          inp.step = String(step);
-          inp.value = String(value);
-          inp.onchange = (e) => onChange(parseFloat(e.target.value));
-          w.append(document.createTextNode(label), inp);
-          return w;
-        };
-        r2.appendChild(mkNum(src.syncMode === 'free' ? 'Hz' : 'cyc/loop', src.rate ?? 1, 0.05, (v) => { src.rate = Number.isFinite(v) ? v : 1; commit(); }, 'Rate'));
-        r2.appendChild(mkNum('Depth', src.depth ?? 1, 0.05, (v) => { src.depth = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1; commit(); }, 'Output depth 0–1'));
-        const polBtn = el('button', 'motion-lfo-polarity text-[10px] border border-vectura-border px-2 py-1 text-vectura-text', src.polarity === 'uni' ? 'Uni' : 'Bi');
-        polBtn.type = 'button';
-        polBtn.title = 'Bipolar (−/+) or Unipolar (0/+)';
-        polBtn.onclick = () => { src.polarity = src.polarity === 'uni' ? 'bi' : 'uni'; commit(); };
-        r2.appendChild(polBtn);
-        card.appendChild(r2);
-
+      // Existing edges + the assign-to-target picker. Shared by every source
+      // type, so a macro patches into params exactly like an LFO.
+      const appendEdgeRows = (card, src) => {
         motion.edges.filter((e) => e.sourceId === src.id).forEach((edge) => {
           const row = el('div', 'motion-edge flex items-center gap-2 mt-1');
           row.appendChild(el('span', 'text-[10px] text-vectura-accent flex-1 truncate', `→ ${labelForPath(edge.targetParamPath)}`));
@@ -171,11 +171,255 @@
         };
         assignRow.append(tgtSel, addEdge);
         card.appendChild(assignRow);
+      };
 
+      const removeSource = (src) => {
+        motion.sources = motion.sources.filter((s) => s.id !== src.id);
+        motion.edges = motion.edges.filter((edge) => edge.sourceId !== src.id);
+        commit();
+      };
+
+      motion.sources.forEach((src) => {
+        if (src.type === 'macro') {
+          renderMacroCard(wrap, src, { mkNum, appendEdgeRows, removeSource });
+          return;
+        }
+
+        const card = el('div', 'motion-lfo-card border border-vectura-border p-2 mt-2');
+        card.dataset.sourceId = src.id;
+
+        const r1 = el('div', 'motion-row flex items-center gap-2');
+        const shapeSel = el('select', 'motion-lfo-shape bg-vectura-bg border border-vectura-border p-1 text-[10px] flex-1');
+        shapeSel.innerHTML = SHAPES.map((s) => `<option value="${s}" ${s === src.shape ? 'selected' : ''}>${SHAPE_LABELS[s] || s}</option>`).join('');
+        shapeSel.onchange = (e) => {
+          src.shape = e.target.value;
+          // Seed an editable curve the first time this source becomes 'drawn'.
+          if (src.shape === 'drawn' && (!Array.isArray(src.points) || src.points.length < 2)) {
+            src.points = defaultDrawnPoints();
+          }
+          commit();
+        };
+        const syncBtn = el('button', 'motion-lfo-sync text-[10px] border border-vectura-border px-2 py-1 text-vectura-text', src.syncMode === 'free' ? 'Free' : 'Sync');
+        syncBtn.type = 'button';
+        syncBtn.title = 'Sync = repeats exactly each loop; Free = drifts forever';
+        syncBtn.onclick = () => { src.syncMode = src.syncMode === 'free' ? 'sync' : 'free'; commit(); };
+        const delBtn = el('button', 'motion-lfo-remove text-[10px] border border-vectura-border px-2 py-1 text-vectura-danger', '×');
+        delBtn.type = 'button';
+        delBtn.title = 'Remove LFO';
+        delBtn.onclick = () => removeSource(src);
+        r1.append(shapeSel, syncBtn, delBtn);
+        card.appendChild(r1);
+
+        // Drawn shape: mount the hand-drawn curve editor below the shape row.
+        if (src.shape === 'drawn') {
+          if (!Array.isArray(src.points) || src.points.length < 2) src.points = defaultDrawnPoints();
+          card.appendChild(buildDrawnEditor(src));
+        }
+
+        const r2 = el('div', 'motion-row flex items-center gap-2 mt-1');
+        r2.appendChild(mkNum(src.syncMode === 'free' ? 'Hz' : 'cyc/loop', src.rate ?? 1, 0.05, (v) => { src.rate = Number.isFinite(v) ? v : 1; commit(); }, 'Rate'));
+        r2.appendChild(mkNum('Depth', src.depth ?? 1, 0.05, (v) => { src.depth = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1; commit(); }, 'Output depth 0–1'));
+        const polBtn = el('button', 'motion-lfo-polarity text-[10px] border border-vectura-border px-2 py-1 text-vectura-text', src.polarity === 'uni' ? 'Uni' : 'Bi');
+        polBtn.type = 'button';
+        polBtn.title = 'Bipolar (−/+) or Unipolar (0/+)';
+        polBtn.onclick = () => { src.polarity = src.polarity === 'uni' ? 'bi' : 'uni'; commit(); };
+        r2.appendChild(polBtn);
+        card.appendChild(r2);
+
+        appendEdgeRows(card, src);
         wrap.appendChild(card);
       });
 
       target.appendChild(wrap);
+    }
+
+    // ── Macro card ──────────────────────────────────────────────────────────
+    // A static knob: a single value slider (0..1) + a depth control. No
+    // shape/rate/phase/sync. One macro can be assigned to many params.
+    function renderMacroCard(wrap, src, helpers) {
+      const { mkNum, appendEdgeRows, removeSource } = helpers;
+      const card = el('div', 'motion-macro-card border border-vectura-border p-2 mt-2');
+      card.dataset.sourceId = src.id;
+
+      const r1 = el('div', 'motion-row flex items-center gap-2');
+      r1.appendChild(el('span', 'motion-macro-label text-[10px] uppercase tracking-widest text-vectura-accent flex-1', 'Macro'));
+      const delBtn = el('button', 'motion-macro-remove text-[10px] border border-vectura-border px-2 py-1 text-vectura-danger', '×');
+      delBtn.type = 'button';
+      delBtn.title = 'Remove macro';
+      delBtn.onclick = () => removeSource(src);
+      r1.appendChild(delBtn);
+      card.appendChild(r1);
+
+      const r2 = el('div', 'motion-row flex items-center gap-2 mt-1');
+      const valLabel = el('label', 'motion-macro-value-label text-[10px] text-vectura-muted flex items-center gap-1 flex-1');
+      valLabel.title = 'Macro value 0–1 — patched to params through signed edges';
+      const slider = el('input', 'motion-macro-value flex-1');
+      slider.type = 'range';
+      slider.min = '0';
+      slider.max = '1';
+      slider.step = '0.01';
+      slider.value = String(Number.isFinite(src.value) ? src.value : 0.5);
+      const readout = el('span', 'motion-macro-value-readout text-[10px] text-vectura-text w-8 text-right', slider.value);
+      slider.oninput = (e) => { readout.textContent = e.target.value; };
+      slider.onchange = (e) => {
+        const v = parseFloat(e.target.value);
+        src.value = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0;
+        commit();
+      };
+      valLabel.append(document.createTextNode('Value'), slider, readout);
+      r2.appendChild(valLabel);
+      card.appendChild(r2);
+
+      const r3 = el('div', 'motion-row flex items-center gap-2 mt-1');
+      r3.appendChild(mkNum('Depth', src.depth ?? 1, 0.05, (v) => { src.depth = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1; commit(); }, 'Output depth 0–1', 'motion-macro-depth'));
+      card.appendChild(r3);
+
+      appendEdgeRows(card, src);
+      wrap.appendChild(card);
+    }
+
+    // ── Drawn-curve editor ──────────────────────────────────────────────────
+    // A tiny canvas curve editor (LFOTool-style). Double-click to add a point,
+    // drag to move (x clamped within neighbors, y in −1..1), double-click a
+    // point (or right-click) to remove it (endpoints stay). Commits on every
+    // edit so the figure rebuilds. DPR-scaled like the virtual plotter.
+    function buildDrawnEditor(src) {
+      const W = 220;
+      const H = 64;
+      const PAD = 4;
+      const editor = el('div', 'motion-drawn-editor mt-1');
+      const canvas = el('canvas', 'motion-drawn-canvas');
+      canvas.dataset.sourceId = src.id;
+      const dpr = Math.max(1, Math.min((typeof window !== 'undefined' && window.devicePixelRatio) || 1, 3));
+      canvas.width = Math.round(W * dpr);
+      canvas.height = Math.round(H * dpr);
+      canvas.style.width = `${W}px`;
+      canvas.style.height = `${H}px`;
+      editor.appendChild(canvas);
+      editor.appendChild(el('div', 'motion-drawn-hint text-[9px] text-vectura-muted',
+        'Double-click to add a point · drag to shape · double-click a point to remove'));
+
+      const ctx = canvas.getContext('2d');
+
+      const sortPoints = () => { src.points.sort((a, b) => a.x - b.x); };
+      const toCanvas = (pt) => ({
+        cx: PAD + pt.x * (W - 2 * PAD),
+        cy: PAD + (1 - (pt.y + 1) / 2) * (H - 2 * PAD),
+      });
+      const fromCanvas = (cx, cy) => ({
+        x: (cx - PAD) / (W - 2 * PAD),
+        y: (1 - (cy - PAD) / (H - 2 * PAD)) * 2 - 1,
+      });
+      const eventPos = (ev) => {
+        const rect = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : { left: 0, top: 0, width: W, height: H };
+        const sx = rect.width ? W / rect.width : 1;
+        const sy = rect.height ? H / rect.height : 1;
+        return { cx: (ev.clientX - rect.left) * sx, cy: (ev.clientY - rect.top) * sy };
+      };
+
+      const draw = () => {
+        if (!ctx) return;
+        if (typeof ctx.setTransform === 'function') ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, W, H);
+        ctx.fillStyle = getThemeToken('--plotter-bg', '#101115');
+        ctx.fillRect(0, 0, W, H);
+        ctx.strokeStyle = getThemeToken('--ui-border', '#333');
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(PAD, H / 2);
+        ctx.lineTo(W - PAD, H / 2);
+        ctx.stroke();
+        ctx.strokeStyle = getThemeToken('--ui-accent', '#6cf');
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        src.points.forEach((pt, i) => {
+          const { cx, cy } = toCanvas(pt);
+          if (i === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
+        });
+        ctx.stroke();
+        ctx.fillStyle = getThemeToken('--ui-accent', '#6cf');
+        src.points.forEach((pt) => {
+          const { cx, cy } = toCanvas(pt);
+          ctx.beginPath();
+          ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      };
+
+      const hitPoint = (cx, cy) => {
+        for (let i = 0; i < src.points.length; i += 1) {
+          const { cx: px, cy: py } = toCanvas(src.points[i]);
+          if (Math.hypot(px - cx, py - cy) <= 6) return i;
+        }
+        return -1;
+      };
+
+      let dragIdx = -1;
+      canvas.onpointerdown = (ev) => {
+        const { cx, cy } = eventPos(ev);
+        const idx = hitPoint(cx, cy);
+        if (idx >= 0) {
+          dragIdx = idx;
+          if (canvas.setPointerCapture && ev.pointerId != null) {
+            try { canvas.setPointerCapture(ev.pointerId); } catch (_) { /* jsdom */ }
+          }
+        }
+      };
+      canvas.onpointermove = (ev) => {
+        if (dragIdx < 0) return;
+        const { cx, cy } = eventPos(ev);
+        const np = fromCanvas(cx, cy);
+        const pt = src.points[dragIdx];
+        const isFirst = dragIdx === 0;
+        const isLast = dragIdx === src.points.length - 1;
+        // Endpoints keep their x (0 or 1); interior points clamp within neighbors.
+        if (!isFirst && !isLast) {
+          const lo = src.points[dragIdx - 1].x + 0.001;
+          const hi = src.points[dragIdx + 1].x - 0.001;
+          pt.x = Math.max(lo, Math.min(hi, np.x));
+        }
+        pt.y = Math.max(-1, Math.min(1, np.y));
+        draw();
+      };
+      const endDrag = (ev) => {
+        if (dragIdx < 0) return;
+        dragIdx = -1;
+        if (canvas.releasePointerCapture && ev && ev.pointerId != null) {
+          try { canvas.releasePointerCapture(ev.pointerId); } catch (_) { /* jsdom */ }
+        }
+        commit();
+      };
+      canvas.onpointerup = endDrag;
+      canvas.onpointercancel = endDrag;
+      canvas.ondblclick = (ev) => {
+        const { cx, cy } = eventPos(ev);
+        const idx = hitPoint(cx, cy);
+        // Double-click a point removes it (never the endpoints).
+        if (idx > 0 && idx < src.points.length - 1) {
+          src.points.splice(idx, 1);
+          commit();
+          return;
+        }
+        // Double-click empty space adds a point.
+        const np = fromCanvas(cx, cy);
+        np.x = Math.max(0.001, Math.min(0.999, np.x));
+        np.y = Math.max(-1, Math.min(1, np.y));
+        src.points.push(np);
+        sortPoints();
+        commit();
+      };
+      canvas.oncontextmenu = (ev) => {
+        if (ev.preventDefault) ev.preventDefault();
+        const { cx, cy } = eventPos(ev);
+        const idx = hitPoint(cx, cy);
+        if (idx > 0 && idx < src.points.length - 1) {
+          src.points.splice(idx, 1);
+          commit();
+        }
+      };
+
+      draw();
+      return editor;
     }
 
     render();

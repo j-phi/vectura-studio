@@ -87,6 +87,54 @@ describe('Pendula studio — controls, presets, Motion Rack', () => {
     expect(layer().params.motion.edges[0].targetParamPath).toBe('pendulums.0.freq');
   });
 
+  test('Motion Rack: "+ Macro" adds a macro source with a value control and no shape selector', () => {
+    document.querySelector('.motion-add-macro').click();
+    const sources = layer().params.motion.sources;
+    expect(sources.length).toBe(1);
+    expect(sources[0].type).toBe('macro');
+    expect(typeof sources[0].value).toBe('number');
+    const card = document.querySelector('.motion-macro-card');
+    expect(card).toBeTruthy();
+    expect(card.querySelector('.motion-macro-value')).toBeTruthy();
+    expect(card.querySelector('.motion-lfo-shape')).toBeNull();
+  });
+
+  test('Motion Rack: a macro can be assigned to a param edge like any other source', () => {
+    document.querySelector('.motion-add-macro').click();
+    const tgt = document.querySelector('.motion-macro-card .motion-assign-target');
+    tgt.value = 'scale';
+    document.querySelector('.motion-macro-card .motion-assign-add').click();
+    const edges = layer().params.motion.edges;
+    expect(edges.length).toBe(1);
+    expect(edges[0].sourceId).toBe(layer().params.motion.sources[0].id);
+    expect(edges[0].targetParamPath).toBe('scale');
+  });
+
+  test('Motion Rack: selecting shape "drawn" mounts the curve editor and seeds points', () => {
+    document.querySelector('.motion-add-lfo').click();
+    const shapeSel = document.querySelector('.motion-lfo-shape');
+    expect(Array.from(shapeSel.options).some((o) => o.value === 'drawn')).toBe(true);
+    shapeSel.value = 'drawn';
+    shapeSel.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(layer().params.motion.sources[0].shape).toBe('drawn');
+    expect(Array.isArray(layer().params.motion.sources[0].points)).toBe(true);
+    expect(layer().params.motion.sources[0].points.length).toBeGreaterThanOrEqual(2);
+    expect(document.querySelector('.motion-drawn-editor')).toBeTruthy();
+  });
+
+  test('Motion Rack: macro and drawn sources serialize into layer.params.motion', () => {
+    document.querySelector('.motion-add-macro').click();
+    document.querySelector('.motion-add-lfo').click();
+    const shapeSel = document.querySelectorAll('.motion-lfo-shape')[0];
+    shapeSel.value = 'drawn';
+    shapeSel.dispatchEvent(new window.Event('change', { bubbles: true }));
+    const serialized = JSON.parse(JSON.stringify(layer().params.motion));
+    expect(serialized.sources.some((s) => s.type === 'macro')).toBe(true);
+    const drawn = serialized.sources.find((s) => s.shape === 'drawn');
+    expect(drawn).toBeTruthy();
+    expect(Array.isArray(drawn.points)).toBe(true);
+  });
+
   test('harmonograph is left untouched — no Motion Rack on a harmonograph layer', () => {
     app.engine.addLayer('harmonograph');
     app.ui.renderLayers();

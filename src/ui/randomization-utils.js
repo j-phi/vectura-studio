@@ -183,27 +183,36 @@
 
     const isPintograph = params.machineType === 'pintograph';
 
+    // Per-parameter padlocks: dice must SKIP any param a user has locked for a
+    // given pendulum. Locks serialize with params as
+    // pendulumParamLocks[pendulumId][paramKey] === true.
+    const locks = params.pendulumParamLocks || {};
+
     params.pendulums.forEach((pendulum) => {
       if (!pendulum || typeof pendulum !== 'object') return;
       if (pendulum.enabled === false) return;
 
-      pendulum.freq = pickFreq();
+      const lock = (pendulum.id && locks[pendulum.id]) || {};
+
+      if (!lock.freq) pendulum.freq = pickFreq();
 
       // Damping low band keeps the figure alive long enough to read;
       // pintograph rigs have no decay so force a clean zero.
-      pendulum.damp = isPintograph
-        ? 0
-        : roundStep(randomInRange(0.0005, 0.004, random), 0.0001, 0.0005, 0.004);
+      if (!lock.damp) {
+        pendulum.damp = isPintograph
+          ? 0
+          : roundStep(randomInRange(0.0005, 0.004, random), 0.0001, 0.0005, 0.004);
+      }
 
-      pendulum.micro = roundStep(randomInRange(-0.02, 0.02, random), 0.001, -0.02, 0.02);
+      if (!lock.micro) pendulum.micro = roundStep(randomInRange(-0.02, 0.02, random), 0.001, -0.02, 0.02);
 
       // Snap phases to clean 15-degree increments within 0..360.
-      pendulum.phaseX = roundStep(randomInRange(0, 360, random), 15, 0, 360);
-      pendulum.phaseY = roundStep(randomInRange(0, 360, random), 15, 0, 360);
+      if (!lock.phaseX) pendulum.phaseX = roundStep(randomInRange(0, 360, random), 15, 0, 360);
+      if (!lock.phaseY) pendulum.phaseY = roundStep(randomInRange(0, 360, random), 15, 0, 360);
 
       // Keep amplitudes balanced and non-degenerate so neither axis collapses.
-      pendulum.ampX = roundStep(randomInRange(40, 120, random), 5, 40, 120);
-      pendulum.ampY = roundStep(randomInRange(40, 120, random), 5, 40, 120);
+      if (!lock.ampX) pendulum.ampX = roundStep(randomInRange(40, 120, random), 5, 40, 120);
+      if (!lock.ampY) pendulum.ampY = roundStep(randomInRange(40, 120, random), 5, 40, 120);
     });
   };
 
@@ -348,6 +357,7 @@
   const api = {
     randomizeLayerParams,
     applyAlgorithmBias,
+    applyHarmonographFamilyBias,
     randomInRange,
   };
 
