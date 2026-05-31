@@ -248,4 +248,35 @@ describe('Pendula oscillator controls — pluck pad, advanced disclosure, padloc
     expect(body.toLowerCase()).toContain('from');
     app.ui.openModal = orig;
   });
+
+  test('each card has a Phase pad beside the Release pad, labelled "Phase"', () => {
+    const card = cards()[0];
+    const pads = card.querySelectorAll('.pendulum-pad-row .pendulum-pluck-pad');
+    expect(pads.length).toBe(2); // Release + Phase, side by side
+    const phasePad = card.querySelector('.pad-phase');
+    expect(phasePad).toBeTruthy();
+    const label = phasePad.querySelector('.pluck-pad-label .control-label');
+    expect(label.textContent.trim()).toBe('Phase');
+    const info = phasePad.querySelector('.info-btn');
+    expect(info.dataset.info).toBe('pendula.phasePad');
+    expect(window.Vectura.UI.Modals.InfoModals.INFO['pendula.phasePad']).toBeTruthy();
+  });
+
+  test('the Phase pad sets phaseX/phaseY and leaves amplitude alone', () => {
+    const card = cards()[0];
+    const pendulum = layer().params.pendulums[0];
+    const ampXBefore = pendulum.ampX;
+    const ampYBefore = pendulum.ampY;
+    const pad = card.querySelector('.pad-phase canvas');
+    const SIZE = 80;
+    pad.getBoundingClientRect = () => ({ left: 0, top: 0, right: SIZE, bottom: SIZE, width: SIZE, height: SIZE, x: 0, y: 0 });
+    // drag to the right edge: vx=+1 → phaseX=360; clientY at centre → vy=0 → phaseY=180.
+    pad.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, clientX: SIZE, clientY: SIZE / 2 }));
+    window.dispatchEvent(new window.MouseEvent('pointerup', { bubbles: true, clientX: SIZE, clientY: SIZE / 2 }));
+    expect(Math.abs(pendulum.phaseX - 360)).toBeLessThanOrEqual(1);
+    expect(Math.abs(pendulum.phaseY - 180)).toBeLessThanOrEqual(1);
+    // amplitude is NOT touched by the phase pad
+    expect(pendulum.ampX).toBe(ampXBefore);
+    expect(pendulum.ampY).toBe(ampYBefore);
+  });
 });

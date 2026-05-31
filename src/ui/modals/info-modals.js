@@ -564,6 +564,10 @@
       title: 'Release',
       description: 'Drag to "release" this pendulum: the handle is its swing amplitude on the X (horizontal) and Y (vertical) axes at once. Far from the center is a big swing; out along one axis swings mostly that way; the center is no swing at all. It only sets the swing size — the phase (timing) that gives the figure its shape stays under Advanced, and the exact X/Y numbers live there too.',
     },
+    'harmonograph.phasePad': {
+      title: 'Phase',
+      description: 'The companion to the Release pad: the handle sets this pendulum\'s phase (the point in its swing where it starts) on both axes at once — horizontal is Phase X, vertical is Phase Y, each running 0° to 360° across the pad (centre = 180°). The offset between the two is what turns a flat line into an ellipse or a circle, so sweeping the handle reshapes the figure without changing its size. The exact degrees live under Advanced.',
+    },
     'harmonograph.ampX': {
       title: 'Amplitude X',
       description: 'How far this pendulum swings the pen left-to-right — the size of its release. Larger amplitudes throw the figure wider across the page on the horizontal axis; a value of 0 takes this pendulum out of the X motion entirely.',
@@ -708,6 +712,10 @@
     'pendula.pluckPad': {
       title: 'Release',
       description: 'Drag to "release" this pendulum: the handle is its swing amplitude on the X (horizontal) and Y (vertical) axes at once. Far from the center is a big swing; out along one axis swings mostly that way; the center is no swing at all. It only sets the swing size — the phase (timing) that gives the figure its shape stays under Advanced, and the exact X/Y numbers live there too.',
+    },
+    'pendula.phasePad': {
+      title: 'Phase',
+      description: 'The companion to the Release pad: the handle sets this pendulum\'s phase (the point in its swing where it starts) on both axes at once — horizontal is Phase X, vertical is Phase Y, each running 0° to 360° across the pad (centre = 180°). The offset between the two is what turns a flat line into an ellipse or a circle, so sweeping the handle reshapes the figure without changing its size. The exact degrees live under Advanced.',
     },
     'pendula.ampX': {
       title: 'Amplitude X',

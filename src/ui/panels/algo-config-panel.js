@@ -1216,30 +1216,40 @@
           } catch (_) { /* no-op ctx */ }
         };
 
-        // Pluck Pad — a square drag-vector control realizing Karl Sims' release
-        // gesture: drag LENGTH → release amplitude (both axes), drag ANGLE →
-        // release direction / phase (both axes). It commits through the exact
-        // same path the sliders use (storeLayerParams → app.regen →
-        // updateFormula → onCardCommit) so the main canvas, mini-trace, and the
-        // virtual-plotter ghost (via app.regen) all stay in sync.
+        // A square drag-vector pad. Both the Release pad (the ampX/ampY swing
+        // vector) and the Phase pad (phaseX/phaseY) share this builder; `cfg`
+        // says how to read params into a [-1,1] handle and write a drag back.
+        // clampMode 'disk' keeps the handle inside the circle (amplitude as a
+        // magnitude); 'square' clamps each axis independently so every
+        // phaseX/phaseY combination stays reachable. It commits through the same
+        // path the sliders use (storeLayerParams → app.regen → updateFormula →
+        // onCardCommit) so the canvas, mini-trace, and virtual-plotter ghost all
+        // stay in sync. NOTE: the Release pad never touches phase (keeping
+        // phaseX≠phaseY is what stops a nudge collapsing the figure to a line).
         const AMP_MAX = 200; // matches the ampX/ampY slider max
-        const buildPluckPad = (pendulum, onCommit) => {
+        const buildVectorPad = (pendulum, onCommit, cfg) => {
           const afterCommit = () => { if (typeof onCommit === 'function') onCommit(); };
           const infoPrefix = layer.type === 'pendula' ? 'pendula' : 'harmonograph';
           const pad = document.createElement('div');
-          pad.className = 'pendulum-pluck-pad';
+          pad.className = `pendulum-pluck-pad pendulum-vector-pad pad-${cfg.padKey}`;
           pad.innerHTML = `
             <div class="pluck-pad-label">
-              <span class="control-label">Release</span>
-              <button type="button" class="info-btn" data-info="${infoPrefix}.pluckPad">i</button>
+              <span class="control-label">${cfg.label}</span>
+              <button type="button" class="info-btn" data-info="${infoPrefix}.${cfg.infoSuffix}">i</button>
             </div>
-            <canvas class="pluck-pad-canvas" aria-label="Release pad — drag to set this pendulum's X (horizontal) and Y (vertical) swing amplitude"></canvas>
+            <canvas class="pluck-pad-canvas" aria-label="${cfg.aria}"></canvas>
           `;
           const canvas = pad.querySelector('canvas');
           const CSS_SIZE = 92;
           const dpr = Math.max(1, Math.min((typeof window !== 'undefined' && window.devicePixelRatio) || 1, 3));
           canvas.width = Math.round(CSS_SIZE * dpr);
           canvas.height = Math.round(CSS_SIZE * dpr);
+
+          const clampVec = (vx, vy) => {
+            if (cfg.clampMode === 'square') return { vx: clamp(vx, -1, 1), vy: clamp(vy, -1, 1) };
+            const len = Math.hypot(vx, vy);
+            return len > 1 ? { vx: vx / len, vy: vy / len } : { vx, vy };
+          };
 
           const drawPad = () => {
             if (!canvas || typeof canvas.getContext !== 'function') return;
@@ -1254,15 +1264,8 @@
             const radius = (CSS_SIZE / 2) - 6;
             const accent = readToken('--ui-accent', '#6366f1');
             const base = readToken('--plotter-path-base', 'rgba(113,113,122,0.55)');
-            // Handle = the (ampX, ampY) release vector. Each axis amplitude maps
-            // straight to its pad axis (clamped into the disk). The pad sets ONLY
-            // amplitude — phase (the timing offset that gives the figure its 2D
-            // shape) is left untouched under Advanced, so a nudge can never
-            // collapse the pendulum onto a diagonal line.
-            let vx = clamp((pendulum.ampX || 0) / AMP_MAX, -1, 1);
-            let vy = clamp((pendulum.ampY || 0) / AMP_MAX, -1, 1);
-            const vlen = Math.hypot(vx, vy);
-            if (vlen > 1) { vx /= vlen; vy /= vlen; }
+            const r = cfg.read(pendulum);
+            const { vx, vy } = clampVec(r.vx, r.vy);
             const hx = cx + vx * radius;
             const hy = cy + vy * radius;
             try {
@@ -1301,16 +1304,11 @@
             const cx = rect.left + rect.width / 2;
             const cy = rect.top + rect.height / 2;
             const radius = rect.width / 2;
-            // The handle position IS the (ampX, ampY) release vector: horizontal
-            // = X swing, vertical = Y swing (signed), clamped into the disk. Phase
-            // is deliberately NOT changed here — keeping phaseX/phaseY distinct is
-            // what preserves the figure's 2D shape, so a nudge can't flatten it.
-            let vx = radius > 0 ? (ev.clientX - cx) / radius : 0;
-            let vy = radius > 0 ? (ev.clientY - cy) / radius : 0;
-            const vlen = Math.hypot(vx, vy);
-            if (vlen > 1) { vx /= vlen; vy /= vlen; }
-            pendulum.ampX = Math.round(vx * AMP_MAX);
-            pendulum.ampY = Math.round(vy * AMP_MAX);
+            const { vx, vy } = clampVec(
+              radius > 0 ? (ev.clientX - cx) / radius : 0,
+              radius > 0 ? (ev.clientY - cy) / radius : 0
+            );
+            cfg.write(pendulum, vx, vy);
             this.storeLayerParams(layer);
             this.app.regen();
             this.updateFormula();
@@ -1326,9 +1324,7 @@
               if (this.app.pushHistory) this.app.pushHistory();
               applyFromEvent(e);
               const move = (ev) => applyFromEvent(ev);
-              const up = () => {
-                window.removeEventListener('pointermove', move);
-              };
+              const up = () => { window.removeEventListener('pointermove', move); };
               window.addEventListener('pointermove', move);
               window.addEventListener('pointerup', up, { once: true });
             };
@@ -1339,6 +1335,28 @@
           }
           return pad;
         };
+
+        const RELEASE_PAD_CFG = {
+          padKey: 'release',
+          label: 'Release',
+          infoSuffix: 'pluckPad',
+          aria: "Release pad — drag to set this pendulum's X (horizontal) and Y (vertical) swing amplitude",
+          clampMode: 'disk',
+          read: (p) => ({ vx: (p.ampX || 0) / AMP_MAX, vy: (p.ampY || 0) / AMP_MAX }),
+          write: (p, vx, vy) => { p.ampX = Math.round(vx * AMP_MAX); p.ampY = Math.round(vy * AMP_MAX); },
+        };
+        const PHASE_PAD_CFG = {
+          padKey: 'phase',
+          label: 'Phase',
+          infoSuffix: 'phasePad',
+          aria: "Phase pad — drag to set this pendulum's X (horizontal) and Y (vertical) phase",
+          clampMode: 'square',
+          // phase 0..360 spans the pad: left/top = 0°, centre = 180°, right/bottom = 360°.
+          read: (p) => ({ vx: ((((p.phaseX || 0) % 360) + 360) % 360) / 180 - 1, vy: ((((p.phaseY || 0) % 360) + 360) % 360) / 180 - 1 }),
+          write: (p, vx, vy) => { p.phaseX = Math.round((vx + 1) * 180); p.phaseY = Math.round((vy + 1) * 180); },
+        };
+        const buildPluckPad = (pendulum, onCommit) => buildVectorPad(pendulum, onCommit, RELEASE_PAD_CFG);
+        const buildPhasePad = (pendulum, onCommit) => buildVectorPad(pendulum, onCommit, PHASE_PAD_CFG);
 
         // Per-parameter padlock — toggles a lock that the dice/mutate
         // (applyHarmonographFamilyBias) reads to SKIP a param for this pendulum.
@@ -1587,14 +1605,16 @@
           `;
           const miniTrace = headerRow.querySelector('.pendulum-mini-trace');
           let pluckPadEl = null;
+          let phasePadEl = null;
           // Redraw THIS card's thumbnail + refresh the shared ratio whenever any
           // of this pendulum's controls commit (no rAF loop). Editing the numeric
-          // advanced controls also refreshes the pluck-pad handle, since the
-          // numerics remain the source of truth.
+          // advanced controls also refreshes both pad handles, since the numerics
+          // remain the source of truth.
           const onCardCommit = () => {
             drawMiniTrace(miniTrace, pendulum);
             updateFreqRatio();
             if (pluckPadEl && typeof pluckPadEl._redraw === 'function') pluckPadEl._redraw();
+            if (phasePadEl && typeof phasePadEl._redraw === 'function') phasePadEl._redraw();
           };
           drawMiniTrace(miniTrace, pendulum);
           const toggle = headerRow.querySelector('input');
@@ -1632,10 +1652,16 @@
           }
           card.appendChild(headerRow);
 
-          // Pluck pad is the promoted control — mounted first, before the
-          // numeric controls.
+          // The two drag pads are the promoted controls — mounted first, side by
+          // side, before the numeric controls: Release sets the swing amplitude
+          // (ampX/ampY), Phase sets the timing offset (phaseX/phaseY).
+          const padRow = document.createElement('div');
+          padRow.className = 'pendulum-pad-row';
           pluckPadEl = buildPluckPad(pendulum, onCardCommit);
-          card.appendChild(pluckPadEl);
+          phasePadEl = buildPhasePad(pendulum, onCardCommit);
+          padRow.appendChild(pluckPadEl);
+          padRow.appendChild(phasePadEl);
+          card.appendChild(padRow);
 
           // Build a single control + its padlock, appended into a row.
           const ADVANCED_KEYS = new Set(['ampX', 'ampY', 'phaseX', 'phaseY']);

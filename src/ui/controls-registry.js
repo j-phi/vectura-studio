@@ -1630,6 +1630,14 @@
     const copy = { ...def };
     if (copy.id === 'preset') copy.options = PENDULA_PRESET_OPTIONS;
     if (typeof copy.infoKey === 'string') copy.infoKey = copy.infoKey.replace(/^harmonograph\./, 'pendula.');
+    if (copy.type === 'harmonographPlotter') {
+      // The Motion Rack sits ABOVE the Virtual Plotter for pendula — you shape
+      // the figure with LFOs, then the plotter below previews/plays it.
+      acc.push({ type: 'section', label: 'Motion' });
+      acc.push({ type: 'harmonographMotion' });
+      acc.push(copy);
+      return acc;
+    }
     acc.push(copy);
     if (copy.id === 'preset') {
       // Machine type (pendula-only): Lateral = damped spiral-in; Pintograph =
@@ -1645,10 +1653,6 @@
         ],
         infoKey: 'pendula.machineType',
       });
-    }
-    if (copy.type === 'harmonographPlotter') {
-      acc.push({ type: 'section', label: 'Motion' });
-      acc.push({ type: 'harmonographMotion' });
     }
     return acc;
   }, []);
