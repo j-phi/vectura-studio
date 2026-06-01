@@ -99,12 +99,24 @@
       return n;
     };
 
+    // An (i) badge. The global delegated handler in InfoModals (bound on
+    // .info-btn) gives it a hover teaser + click-opens-modal for free — no
+    // wiring here. dataset.info picks the INFO[key] copy.
+    const infoBtn = (key) => {
+      const b = el('button', 'info-btn', 'i');
+      b.type = 'button';
+      b.dataset.info = key;
+      return b;
+    };
+
     function render() {
       target.innerHTML = '';
       const wrap = el('div', 'motion-rack mb-4');
 
       const head = el('div', 'harmonograph-plotter-head');
-      head.appendChild(el('span', 'text-[10px] uppercase tracking-widest text-vectura-muted', 'Motion Rack'));
+      const headLabel = el('span', 'text-[10px] uppercase tracking-widest text-vectura-muted flex items-center gap-1', 'Motion Rack');
+      headLabel.appendChild(infoBtn('pendula.motion.rack'));
+      head.appendChild(headLabel);
       const addBtn = el('button', 'motion-add-lfo text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors', '+ LFO');
       addBtn.type = 'button';
       addBtn.onclick = () => {
@@ -112,6 +124,7 @@
         commit();
       };
       head.appendChild(addBtn);
+      head.appendChild(infoBtn('pendula.motion.addLfo'));
       const addMacroBtn = el('button', 'motion-add-macro text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors', '+ Macro');
       addMacroBtn.type = 'button';
       addMacroBtn.title = 'Macro — a static knob (0–1) you can patch to many params at once';
@@ -120,6 +133,7 @@
         commit();
       };
       head.appendChild(addMacroBtn);
+      head.appendChild(infoBtn('pendula.motion.addMacro'));
       wrap.appendChild(head);
 
       if (!motion.sources.length) {
@@ -128,7 +142,7 @@
       }
 
       // A labelled numeric input shared by LFO and macro cards.
-      const mkNum = (label, value, step, onChange, title, extraCls) => {
+      const mkNum = (label, value, step, onChange, title, extraCls, infoKey) => {
         const w = el('label', 'text-[10px] text-vectura-muted flex items-center gap-1 flex-1');
         if (title) w.title = title;
         const inp = el('input', `motion-num bg-vectura-bg border border-vectura-border p-1 text-[10px] w-full text-vectura-text${extraCls ? ` ${extraCls}` : ''}`);
@@ -137,6 +151,7 @@
         inp.value = String(value);
         inp.onchange = (e) => onChange(parseFloat(e.target.value));
         w.append(document.createTextNode(label), inp);
+        if (infoKey) w.appendChild(infoBtn(infoKey));
         return w;
       };
 
@@ -145,7 +160,18 @@
       const appendEdgeRows = (card, src) => {
         motion.edges.filter((e) => e.sourceId === src.id).forEach((edge) => {
           const row = el('div', 'motion-edge flex items-center gap-2 mt-1');
-          row.appendChild(el('span', 'text-[10px] text-vectura-accent flex-1 truncate', `→ ${labelForPath(edge.targetParamPath)}`));
+          // A → arrow indicator keeps the row reading as a routing.
+          row.appendChild(el('span', 'motion-edge-arrow text-[10px] text-vectura-accent', '→'));
+          // Re-target picker: re-point an existing edge without delete/re-add.
+          // Amount is left untouched on re-target (least surprise, undoable).
+          const retarget = el('select', 'motion-edge-retarget bg-vectura-bg border border-vectura-border p-1 text-[10px] flex-1 text-vectura-text');
+          retarget.innerHTML = assignableTargets()
+            .map((t) => `<option value="${t.path}" ${t.path === edge.targetParamPath ? 'selected' : ''}>${t.label}</option>`)
+            .join('');
+          retarget.value = edge.targetParamPath;
+          retarget.onchange = (e) => { edge.targetParamPath = e.target.value; commit(); };
+          row.appendChild(retarget);
+          row.appendChild(infoBtn('pendula.motion.targetParamPath'));
           const amt = el('input', 'motion-edge-amount bg-vectura-bg border border-vectura-border p-1 text-[10px] w-16 text-vectura-text');
           amt.type = 'number';
           amt.step = '0.01';
@@ -155,7 +181,7 @@
           const rm = el('button', 'motion-edge-remove text-[10px] border border-vectura-border px-2 text-vectura-danger', '×');
           rm.type = 'button';
           rm.onclick = () => { motion.edges = motion.edges.filter((x) => x.id !== edge.id); commit(); };
-          row.append(amt, rm);
+          row.append(amt, infoBtn('pendula.motion.amount'), rm);
           card.appendChild(row);
         });
 
@@ -169,7 +195,7 @@
           motion.edges.push({ id: nextId('edge'), sourceId: src.id, targetParamPath: path, amount: defaultAmountFor(path) });
           commit();
         };
-        assignRow.append(tgtSel, addEdge);
+        assignRow.append(tgtSel, infoBtn('pendula.motion.targetParamPath'), addEdge);
         card.appendChild(assignRow);
       };
 
@@ -199,6 +225,7 @@
           }
           commit();
         };
+        r1.append(shapeSel, infoBtn('pendula.motion.shape'));
         const syncBtn = el('button', 'motion-lfo-sync text-[10px] border border-vectura-border px-2 py-1 text-vectura-text', src.syncMode === 'free' ? 'Free' : 'Sync');
         syncBtn.type = 'button';
         syncBtn.title = 'Sync = repeats exactly each loop; Free = drifts forever';
@@ -207,23 +234,25 @@
         delBtn.type = 'button';
         delBtn.title = 'Remove LFO';
         delBtn.onclick = () => removeSource(src);
-        r1.append(shapeSel, syncBtn, delBtn);
+        r1.append(syncBtn, infoBtn('pendula.motion.syncMode'), delBtn);
         card.appendChild(r1);
 
         // Drawn shape: mount the hand-drawn curve editor below the shape row.
         if (src.shape === 'drawn') {
           if (!Array.isArray(src.points) || src.points.length < 2) src.points = defaultDrawnPoints();
-          card.appendChild(buildDrawnEditor(src));
+          const drawn = buildDrawnEditor(src);
+          drawn.appendChild(infoBtn('pendula.motion.drawn'));
+          card.appendChild(drawn);
         }
 
         const r2 = el('div', 'motion-row flex items-center gap-2 mt-1');
-        r2.appendChild(mkNum(src.syncMode === 'free' ? 'Hz' : 'cyc/loop', src.rate ?? 1, 0.05, (v) => { src.rate = Number.isFinite(v) ? v : 1; commit(); }, 'Rate'));
-        r2.appendChild(mkNum('Depth', src.depth ?? 1, 0.05, (v) => { src.depth = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1; commit(); }, 'Output depth 0–1'));
+        r2.appendChild(mkNum(src.syncMode === 'free' ? 'Hz' : 'cyc/loop', src.rate ?? 1, 0.05, (v) => { src.rate = Number.isFinite(v) ? v : 1; commit(); }, 'Rate', undefined, 'pendula.motion.rate'));
+        r2.appendChild(mkNum('Depth', src.depth ?? 1, 0.05, (v) => { src.depth = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1; commit(); }, 'Output depth 0–1', undefined, 'pendula.motion.depth'));
         const polBtn = el('button', 'motion-lfo-polarity text-[10px] border border-vectura-border px-2 py-1 text-vectura-text', src.polarity === 'uni' ? 'Uni' : 'Bi');
         polBtn.type = 'button';
         polBtn.title = 'Bipolar (−/+) or Unipolar (0/+)';
         polBtn.onclick = () => { src.polarity = src.polarity === 'uni' ? 'bi' : 'uni'; commit(); };
-        r2.appendChild(polBtn);
+        r2.append(polBtn, infoBtn('pendula.motion.polarity'));
         card.appendChild(r2);
 
         appendEdgeRows(card, src);
@@ -266,12 +295,12 @@
         src.value = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0;
         commit();
       };
-      valLabel.append(document.createTextNode('Value'), slider, readout);
+      valLabel.append(document.createTextNode('Value'), slider, readout, infoBtn('pendula.motion.macroValue'));
       r2.appendChild(valLabel);
       card.appendChild(r2);
 
       const r3 = el('div', 'motion-row flex items-center gap-2 mt-1');
-      r3.appendChild(mkNum('Depth', src.depth ?? 1, 0.05, (v) => { src.depth = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1; commit(); }, 'Output depth 0–1', 'motion-macro-depth'));
+      r3.appendChild(mkNum('Depth', src.depth ?? 1, 0.05, (v) => { src.depth = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1; commit(); }, 'Output depth 0–1', 'motion-macro-depth', 'pendula.motion.depth'));
       card.appendChild(r3);
 
       appendEdgeRows(card, src);

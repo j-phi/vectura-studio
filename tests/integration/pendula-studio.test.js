@@ -134,6 +134,59 @@ describe('Pendula studio — controls, presets, Motion Rack', () => {
     expect(Array.isArray(drawn.points)).toBe(true);
   });
 
+  test('Motion Rack: an existing edge row renders a re-target select that re-points the edge (amount unchanged)', () => {
+    document.querySelector('.motion-add-lfo').click();
+    const tgt = document.querySelector('.motion-assign-target');
+    tgt.value = 'paperRotation';
+    document.querySelector('.motion-assign-add').click();
+    expect(layer().params.motion.edges.length).toBe(1);
+    const originalAmount = layer().params.motion.edges[0].amount;
+
+    const retarget = document.querySelector('.motion-edge .motion-edge-retarget');
+    expect(retarget).toBeTruthy();
+    expect(retarget.value).toBe('paperRotation');
+    expect(layer().params.motion.edges[0].targetParamPath).toBe('paperRotation');
+
+    retarget.value = 'loopDrift';
+    retarget.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(layer().params.motion.edges[0].targetParamPath).toBe('loopDrift');
+    // Re-targeting must not rewrite the amount.
+    expect(layer().params.motion.edges[0].amount).toBe(originalAmount);
+  });
+
+  test('Motion Rack: every control wears an info button keyed pendula.motion.*', () => {
+    document.querySelector('.motion-add-lfo').click();
+    const tgt = document.querySelector('.motion-assign-target');
+    tgt.value = 'pendulums.0.freq';
+    document.querySelector('.motion-assign-add').click();
+
+    const infoBtns = document.querySelectorAll('.motion-rack .info-btn[data-info^="pendula.motion."]');
+    expect(infoBtns.length).toBeGreaterThan(0);
+    const keys = new Set(Array.from(infoBtns).map((b) => b.dataset.info));
+    ['pendula.motion.rack', 'pendula.motion.addLfo', 'pendula.motion.shape', 'pendula.motion.targetParamPath']
+      .forEach((k) => expect(keys.has(k)).toBe(true));
+  });
+
+  test('Motion Rack: no dangling info buttons — every emitted data-info key exists in INFO', () => {
+    // Build a rack rich enough to emit every key: an LFO (drawn) and a macro,
+    // each with an assigned edge.
+    document.querySelector('.motion-add-lfo').click();
+    const shapeSel = document.querySelector('.motion-lfo-shape');
+    shapeSel.value = 'drawn';
+    shapeSel.dispatchEvent(new window.Event('change', { bubbles: true }));
+    document.querySelector('.motion-lfo-card .motion-assign-target').value = 'scale';
+    document.querySelector('.motion-lfo-card .motion-assign-add').click();
+    document.querySelector('.motion-add-macro').click();
+    document.querySelector('.motion-macro-card .motion-assign-target').value = 'loopDrift';
+    document.querySelector('.motion-macro-card .motion-assign-add').click();
+
+    const INFO = window.Vectura.UI.Modals.InfoModals.INFO;
+    const keys = Array.from(document.querySelectorAll('.motion-rack .info-btn'))
+      .map((b) => b.dataset.info);
+    expect(keys.length).toBeGreaterThan(0);
+    keys.forEach((k) => expect(INFO[k], `missing INFO entry for ${k}`).toBeTruthy());
+  });
+
   test('harmonograph is left untouched — no Motion Rack on a harmonograph layer', () => {
     app.engine.addLayer('harmonograph');
     app.ui.renderLayers();

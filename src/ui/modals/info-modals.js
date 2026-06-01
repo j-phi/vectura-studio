@@ -761,6 +761,26 @@
     // Motion Rack — the pendula-only LFO layer. Each modulator (source) is a slow
     // oscillator whose output is routed onto a parameter via a signed edge. This
     // is what turns the still figure into a temporal performance.
+    'pendula.motion.rack': {
+      title: 'Motion Rack',
+      description: 'A patch bay of modulators — LFOs and macros — wired onto the figure\'s parameters to animate it as the virtual plotter loops. Every edit here is playback-only: it never regenerates the static figure, it just makes the live performance breathe, drift, and evolve. Patch a slow source onto a detune or amplitude and watch a locked shape come alive.',
+    },
+    'pendula.motion.addLfo': {
+      title: 'Add LFO',
+      description: 'Drops a new oscillator source into the rack — a time-varying signal you can shape (sine, saw, square, sample-and-hold, or a hand-drawn curve) and route onto any parameter. The LFO does nothing until you assign it to a target; once patched, it sweeps that parameter every cycle to give the figure continuous motion.',
+    },
+    'pendula.motion.addMacro': {
+      title: 'Add Macro',
+      description: 'Drops in a Macro source — a single static knob (0–1) rather than an oscillator. Patch one macro onto many parameters at once and a single slider becomes a master control that reshapes the whole figure in one move. Use it for poses and instant variations rather than continuous animation.',
+    },
+    'pendula.motion.macroValue': {
+      title: 'Macro Value',
+      description: 'The macro\'s current position from 0 to 1. Every parameter this macro is patched to follows it through its signed Amount, so sweeping this one slider drives all of those targets together. It is a static value — it holds where you leave it rather than oscillating.',
+    },
+    'pendula.motion.drawn': {
+      title: 'Drawn Curve',
+      description: 'A hand-drawn modulator shape: the editor traces an arbitrary waveform the LFO plays back instead of a stock sine or saw. Double-click empty space to add a point, drag a point to shape the curve (height is the output, left-to-right is one cycle), and double-click a point to remove it. The endpoints stay pinned so the curve loops cleanly.',
+    },
     'pendula.motion.shape': {
       title: 'LFO Shape',
       description: 'The waveform this modulator sweeps through each cycle. Sine and Triangle glide smoothly for organic drift and breathing figures; Saw ramps in one direction then snaps back; Square jumps between two states to toggle the figure between poses; Sample & Hold and Random freeze a fresh value each cycle for stair-stepped, ever-reconfiguring motion.',
