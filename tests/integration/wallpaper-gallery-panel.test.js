@@ -343,6 +343,97 @@ describe('Wallpaper gallery panel integration', () => {
     expect(read('p6m')).toEqual(['Open', 'Woven']);
   });
 
+  // ── State-leak regression: a recipe must produce identical geometry
+  // regardless of the previously selected recipe (Object.assign over the live
+  // mirror used to leak the prior recipe's unset fields — tileHeight,
+  // domainScale, etc.) ──────────────────────────────────────────────────────
+  const GEOM_FIELDS = ['group', 'symmetry', 'tileWidth', 'tileHeight', 'tileAngle', 'rotation', 'centerX', 'centerY', 'domainScale', 'variantV1'];
+
+  const snapshotGeom = (m) => GEOM_FIELDS.reduce((acc, k) => {
+    acc[k] = m[k];
+    return acc;
+  }, {});
+
+  const presetIdxByName = (name) => {
+    const presets = runtime.window.Vectura.WallpaperPresets.list();
+    const idx = presets.findIndex((p) => p.name === name);
+    expect(idx).toBeGreaterThanOrEqual(0);
+    return idx;
+  };
+
+  const mountStyles = () => {
+    SETTINGS.wallpaperPanelMode = 'styles';
+    const layer = mkLayer();
+    const container = document.createElement('div');
+    const ctx = mkCtx(container, layer);
+    MirrorPanel.build(ctx, layer, container);
+    return { layer, container };
+  };
+
+  const clickPreset = (container, name) => {
+    container.querySelector(`[data-style-preset="${presetIdxByName(name)}"]`).click();
+  };
+
+  test('the same recipe yields identical geometry regardless of the previously selected recipe (no state leak)', () => {
+    // Brick Path → Harlequin
+    let m = mountStyles();
+    clickPreset(m.container, 'Brick Path');
+    clickPreset(m.container, 'Harlequin');
+    const afterBrick = snapshotGeom(m.layer.modifier.mirrors[0]);
+
+    // Op-Art Weave → Harlequin
+    m = mountStyles();
+    clickPreset(m.container, 'Op-Art Weave');
+    clickPreset(m.container, 'Harlequin');
+    const afterOpArt = snapshotGeom(m.layer.modifier.mirrors[0]);
+
+    // Fresh mirror → Harlequin
+    m = mountStyles();
+    clickPreset(m.container, 'Harlequin');
+    const fresh = snapshotGeom(m.layer.modifier.mirrors[0]);
+
+    expect(afterBrick).toEqual(fresh);
+    expect(afterOpArt).toEqual(fresh);
+  });
+
+  test('a recipe resets unset geometry fields to factory defaults (no leak of the prior recipe values)', () => {
+    const factory = Modifiers.createWallpaperMirror(0);
+    const m = mountStyles();
+    // Brick Path sets domainScale:0.85 and tileHeight:64; Harlequin sets neither.
+    clickPreset(m.container, 'Brick Path');
+    clickPreset(m.container, 'Harlequin');
+    const mir = m.layer.modifier.mirrors[0];
+    expect(mir.domainScale).toBe(factory.domainScale); // 1, not Brick Path's 0.85
+    expect(mir.tileHeight).toBe(factory.tileHeight);    // 60, not Brick Path's 64
+  });
+
+  test('switching recipes preserves the mirror identity / UI fields (id, enabled, color)', () => {
+    const m = mountStyles();
+    const before = m.layer.modifier.mirrors[0];
+    const id = before.id;
+    const enabled = before.enabled;
+    const color = before.color;
+    clickPreset(m.container, 'Brick Path');
+    clickPreset(m.container, 'Harlequin');
+    const after = m.layer.modifier.mirrors[0];
+    expect(after.id).toBe(id);
+    expect(after.enabled).toBe(enabled);
+    expect(after.color).toBe(color);
+  });
+
+  test('Surprise me resets the panned center to factory defaults (same clean base as recipes)', () => {
+    const factory = Modifiers.createWallpaperMirror(0);
+    const m = mountStyles();
+    const mir = m.layer.modifier.mirrors[0];
+    // Pan the center, then roll — centerX/centerY must not survive the roll.
+    mir.centerX = 50;
+    mir.centerY = -30;
+    m.container.querySelector('[data-act="surprise"]').click();
+    const after = m.layer.modifier.mirrors[0];
+    expect(after.centerX).toBe(factory.centerX); // 0, not 50
+    expect(after.centerY).toBe(factory.centerY); // 0, not -30
+  });
+
   test('Build tile-angle range admits every recipe value (no silent clamp of 50–55° recipes)', () => {
     SETTINGS.wallpaperPanelMode = 'build';
     const layer = mkLayer();

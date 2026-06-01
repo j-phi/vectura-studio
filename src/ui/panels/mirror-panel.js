@@ -2003,14 +2003,29 @@
         });
       });
 
-      // Apply a named recipe card. Recipe.mirror already dual-writes group +
-      // symmetry; merge the override fields over the current mirror.
+      // Apply a named recipe card. Recipe.mirror is a PARTIAL — it only sets the
+      // fields that recipe cares about — so we first reset every preset-settable
+      // geometry field to the canonical factory defaults, then merge p.mirror
+      // over that clean base. Without the reset, a prior recipe's unset fields
+      // (tileHeight, domainScale, rotation, …) leak in and the same recipe would
+      // render differently depending on what was selected before it. The reset
+      // is derived from createWallpaperMirror so it never drifts from the factory;
+      // it spans only the geometry subset, preserving id/enabled/color/etc.
+      const GEOM_KEYS = ['group', 'symmetry', 'tileWidth', 'tileHeight', 'tileAngle', 'rotation', 'centerX', 'centerY', 'domainScale', 'variantV1'];
+      const geomDefaults = () => {
+        const base = window.Vectura?.Modifiers?.createWallpaperMirror?.(0) || {
+          group: 'p4m', symmetry: { lattice: 'square', rotation: 4, mirrors: 'straight' },
+          tileWidth: 60, tileHeight: 60, tileAngle: 90, rotation: 0,
+          centerX: 0, centerY: 0, domainScale: 1, variantV1: false,
+        };
+        return GEOM_KEYS.reduce((acc, k) => { acc[k] = base[k]; return acc; }, {});
+      };
       body.querySelectorAll('[data-style-preset]').forEach((el) => {
         el.addEventListener('click', (e) => {
           e.stopPropagation();
           const p = presets[parseInt(el.dataset.stylePreset, 10)];
           if (!p) return;
-          commit(() => { Object.assign(mirror, p.mirror); });
+          commit(() => { Object.assign(mirror, geomDefaults(), p.mirror); });
           renderAll();
         });
       });
@@ -2025,7 +2040,10 @@
           if (!Presets?.randomize) return;
           const locked = { lattice: !!(e.shiftKey) };
           const override = Presets.randomize({ locked, current: mirror });
-          commit(() => { Object.assign(mirror, override); });
+          // Same clean-base reset as the recipe path: randomize() omits
+          // centerX/centerY, so without geomDefaults() a panned center would
+          // survive a roll — making the same button depend on prior state.
+          commit(() => { Object.assign(mirror, geomDefaults(), override); });
           renderAll();
         });
       });
