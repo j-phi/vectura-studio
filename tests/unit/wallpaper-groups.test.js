@@ -158,4 +158,36 @@ describe('WallpaperGroups — composable symmetry resolver', () => {
   test('cycleInFamily returns input unchanged for an unknown group id', () => {
     expect(WG.cycleInFamily('not-a-group', 1)).toBe('not-a-group');
   });
+
+  // ── Tile-angle lock for the rectangular lattice ───────────────────────────
+  // A rectangular lattice is 90° by definition: its mirror/glide symmetries are
+  // only valid when the two cell axes are perpendicular. Allowing a non-90 tile
+  // angle shears the cell into a parallelogram, breaking the tessellation
+  // (reflected copies overlap and leave gaps). The free-angle case is the
+  // oblique ("Parallelogram") lattice — p1/p2 — which must stay unlocked.
+  describe('getLockedAxes — rectangular lattice locks tile angle to 90°', () => {
+    test('every rectangular group locks tileAngle (and leaves width free)', () => {
+      for (const id of ['pm', 'pg', 'pmm', 'pmg', 'pgg']) {
+        expect(WG.GROUPS[id].lattice).toBe('rectangular');
+        expect(WG.getLockedAxes(id).tileAngle).toBe(true);
+        // Width still varies independently on a rectangle, so height is not locked.
+        expect(WG.getLockedAxes(id).tileHeight).toBe(false);
+      }
+    });
+
+    test('oblique (Parallelogram) groups keep tileAngle free', () => {
+      for (const id of ['p1', 'p2']) {
+        expect(WG.GROUPS[id].lattice).toBe('oblique');
+        expect(WG.getLockedAxes(id).tileAngle).toBe(false);
+      }
+    });
+
+    test('rhombic still honors tileAngle; square/hex still lock it', () => {
+      // Unchanged contracts — guard against an over-broad edit.
+      expect(WG.getLockedAxes('cm').tileAngle).toBe(false);
+      expect(WG.getLockedAxes('cmm').tileAngle).toBe(false);
+      expect(WG.getLockedAxes('p4m').tileAngle).toBe(true);
+      expect(WG.getLockedAxes('p6m').tileAngle).toBe(true);
+    });
+  });
 });

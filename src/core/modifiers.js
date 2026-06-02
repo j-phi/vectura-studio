@@ -8,7 +8,7 @@
     WallpaperGroups = {},
   } = window.Vectura || {};
   const OptimizationUtils = window.Vectura?.OptimizationUtils || {};
-  const { GROUPS: WALLPAPER_GROUPS = {}, getTileRange = () => ({ nMin: -5, nMax: 5, mMin: -5, mMax: 5 }) } = WallpaperGroups;
+  const { GROUPS: WALLPAPER_GROUPS = {}, getTileRange = () => ({ nMin: -5, nMax: 5, mMin: -5, mMax: 5 }), getLockedAxes: getLockedAxesFn } = WallpaperGroups;
 
   const clone = window.Vectura.Utils.clone;
   const EPSILON = 1e-6;
@@ -614,7 +614,15 @@
 
     const W = Math.max(1, mirror.tileWidth ?? 60);
     const H = Math.max(1, mirror.tileHeight ?? 60);
-    const tileAngle = mirror.tileAngle ?? 90;
+    // Lattices that lock the cell angle are perpendicular (or hex-canonical) by
+    // definition; honoring a stored non-canonical angle there shears the cell
+    // and breaks the tessellation (overlapping/gapping copies). Coerce to the
+    // canonical angle so a project saved before the slider was locked — or one
+    // hand-edited — still renders an exact tiling.
+    const locks = (typeof getLockedAxesFn === 'function' && getLockedAxesFn(mirror.group || 'p4m')) || {};
+    const tileAngle = locks.tileAngle
+      ? (groupDef.lattice === 'hexagonal' ? 60 : 90)
+      : (mirror.tileAngle ?? 90);
     const rotDeg = mirror.rotation ?? 0;
     const cx = (bounds?.width ?? 0) / 2 + (mirror.centerX ?? 0);
     const cy = (bounds?.height ?? 0) / 2 + (mirror.centerY ?? 0);

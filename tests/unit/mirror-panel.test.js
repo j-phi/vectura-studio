@@ -341,6 +341,16 @@ describe('MirrorPanel.build — DOM behavior (RGR for the v2 redesign)', () => {
     const a3 = container.querySelector('input[type=range][data-param="tileAngle"]');
     expect(h3.disabled).toBe(true);
     expect(a3.disabled).toBe(false);
+
+    // Rectangular lattice → pmm/etc. A rectangle is perpendicular by definition,
+    // so width stays free but the tile angle is locked to 90° (a non-90 angle
+    // shears the cell into a parallelogram and the mirrors stop tessellating).
+    container.querySelector('[data-sym-axis="lattice"][data-sym-val="rectangular"]').click();
+    const h4 = container.querySelector('input[type=range][data-param="tileHeight"]');
+    const a4 = container.querySelector('input[type=range][data-param="tileAngle"]');
+    expect(h4.disabled).toBe(false);
+    expect(a4.disabled).toBe(true);
+    expect(a4.closest('.mp-ctrl-grp').classList.contains('is-locked')).toBe(true);
   });
 
   test('toggling lattice to hexagonal resolves to a hex group + updates active chip', () => {

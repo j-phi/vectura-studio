@@ -284,4 +284,34 @@ describe('Arc mirror modifier', () => {
     });
   });
 
+  describe('locked-angle lattices coerce a stored non-canonical tile angle', () => {
+    // A rectangular lattice is perpendicular by definition. A project saved
+    // before the tile-angle slider was locked (or hand-edited) may carry a
+    // sheared angle like 55°; honoring it parallelogram-shears the cell so the
+    // mirror copies overlap and gap instead of tiling. The engine must coerce
+    // the angle to 90° (60° for hex) so the render is always an exact tiling.
+    const CANVAS = { width: 400, height: 300 };
+    const INPUT = [[{ x: 205, y: 155 }, { x: 212, y: 158 }]];
+    const baseMirror = (tileAngle) => ({
+      enabled: true, type: 'wallpaper', group: 'pmm',
+      tileWidth: 80, tileHeight: 60, tileAngle, rotation: 0,
+      centerX: 0, centerY: 0,
+    });
+
+    test('pmm at a stored 55° renders identically to 90°', () => {
+      const { Modifiers } = runtime.window.Vectura;
+      const sheared = Modifiers.applyWallpaperMirrorToPaths(INPUT, baseMirror(55), CANVAS);
+      const square  = Modifiers.applyWallpaperMirrorToPaths(INPUT, baseMirror(90), CANVAS);
+      expect(sheared).toEqual(square);
+    });
+
+    test('oblique p2 still honors a stored 55° (angle is a real parameter there)', () => {
+      const { Modifiers } = runtime.window.Vectura;
+      const obl = (tileAngle) => ({ ...baseMirror(tileAngle), group: 'p2' });
+      const sheared = Modifiers.applyWallpaperMirrorToPaths(INPUT, obl(55), CANVAS);
+      const square  = Modifiers.applyWallpaperMirrorToPaths(INPUT, obl(90), CANVAS);
+      expect(sheared).not.toEqual(square);
+    });
+  });
+
 });

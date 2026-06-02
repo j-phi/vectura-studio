@@ -1208,7 +1208,7 @@
       ? ` <span class="mp-lock-hint" data-testid="wall-lock-hint">locked by symmetry</span>`
       : '';
     const lockNote   = (on, what) => on
-      ? `<div class="mp-lock-note" data-testid="wall-lock-note">This pattern's symmetry sets ${what} automatically. Switch the Rotation order or Mirrors to unlock it.</div>`
+      ? `<div class="mp-lock-note" data-testid="wall-lock-note">This pattern's symmetry sets ${what} automatically. Switch the Lattice (e.g. to Parallelogram) to unlock it.</div>`
       : '';
 
     // Lattice row

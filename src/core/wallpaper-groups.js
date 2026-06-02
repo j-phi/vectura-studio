@@ -474,11 +474,18 @@
   // hexagonal lattices force H = W and a fixed cell angle, so the
   // tileHeight / tileAngle sliders have no effect there. Rhombic lattices
   // use sz = W internally (H ignored) but still honor tileAngle.
+  //
+  // Rectangular locks tileAngle to 90°: a rectangular lattice is perpendicular
+  // by definition, and every rectangular group (pm/pg/pmm/pmg/pgg) carries a
+  // mirror or glide whose symmetry only holds when the two cell axes are
+  // perpendicular. A non-90 angle shears the cell into a parallelogram, so the
+  // reflected/rotated copies no longer tessellate — they overlap and gap. The
+  // free-angle case is the oblique ("Parallelogram") lattice (p1/p2).
   const LOCKED_AXES = {
     square:      { tileHeight: true,  tileAngle: true  },
     hexagonal:   { tileHeight: true,  tileAngle: true  },
     rhombic:     { tileHeight: true,  tileAngle: false },
-    rectangular: { tileHeight: false, tileAngle: false },
+    rectangular: { tileHeight: false, tileAngle: true  },
     oblique:     { tileHeight: false, tileAngle: false },
   };
   const getLockedAxes = (groupId) => {
