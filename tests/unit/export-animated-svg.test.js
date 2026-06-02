@@ -32,8 +32,24 @@ describe('AnimatedSvg.buildDrawOn (draw-on SVG export core)', () => {
     const svg = A.buildDrawOn([square], { width: 20, height: 20 });
     const len = A.polylineLength(square); // 0->10->10->10 open = 30
     expect(len).toBeCloseTo(30, 6);
-    expect(svg).toContain(`stroke-dasharray="30"`);
+    expect(svg).toContain(`stroke-dasharray="30 31"`); // dash = length, gap > length (no endpoint dot)
     expect(svg).toContain(`stroke-dashoffset="30"`); // starts fully hidden
+  });
+
+  test('stroke-dasharray gap exceeds the dash length so round caps never dot the endpoints', () => {
+    // Regression: a single dasharray value is duplicated by SVG into "L L" (gap === L),
+    // making the pattern period 2L. With stroke-linecap="round", a dash boundary lands
+    // exactly on the path endpoint in the holding states, rendering a stray round-cap dot
+    // at each line end. The gap must be strictly > the dash length to break that resonance.
+    const svg = A.buildDrawOn([square], { width: 20, height: 20 });
+    const len = A.polylineLength(square); // 30
+    const m = svg.match(/stroke-dasharray="([^"]+)"/);
+    expect(m).not.toBeNull();
+    const parts = m[1].trim().split(/[\s,]+/).map(Number);
+    expect(parts.length).toBe(2); // explicit dash + gap, never a single (auto-duplicated) value
+    const [dash, gap] = parts;
+    expect(dash).toBeCloseTo(len, 6);
+    expect(gap).toBeGreaterThan(dash);
   });
 
   test('keyTimes are valid SMIL: start at 0 and end at 1 for every path', () => {

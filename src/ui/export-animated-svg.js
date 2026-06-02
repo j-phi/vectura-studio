@@ -61,10 +61,16 @@
       // until the loop end, then repeat. keyTimes must start at 0 and end at 1.
       const kBegin = round(beginFrac, 4);
       const kEnd = Math.max(kBegin, round(endFrac, 4));
+      // Gap MUST be strictly > the dash length. A single dasharray value is
+      // auto-duplicated by SVG into "L L" (period 2L), which lands a dash
+      // boundary exactly on the path endpoint during the holding states; with
+      // stroke-linecap="round" that renders a stray dot at each line end. A
+      // larger gap pushes the next dash past the path so no endpoint dot forms.
+      const gap = round(s.len + 1, p);
       return (
         `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${strokeWidth}" ` +
         `stroke-linecap="round" stroke-linejoin="round" ` +
-        `stroke-dasharray="${L}" stroke-dashoffset="${L}">` +
+        `stroke-dasharray="${L} ${gap}" stroke-dashoffset="${L}">` +
         `<animate attributeName="stroke-dashoffset" values="${L};${L};0;0" ` +
         `keyTimes="0;${kBegin};${kEnd};1" ` +
         `dur="${durationSec}s" repeatCount="indefinite" calcMode="linear" />` +
