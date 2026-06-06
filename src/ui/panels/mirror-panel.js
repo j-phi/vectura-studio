@@ -1984,33 +1984,14 @@
         if (p) renderThumb(el, p.mirror);
       });
 
-      // Apply a bare group card. Dual-writes group + symmetry; pushes history.
-      body.querySelectorAll('[data-style-group]').forEach((el) => {
-        el.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const gid = el.dataset.styleGroup;
-          const resolvedSym = WG?.FEATURES?.[gid];
-          const override = WALL_GROUP_CARD_OVERRIDES[gid] || {};
-          commit(() => {
-            mirror.group = gid;
-            if (resolvedSym) mirror.symmetry = { ...resolvedSym };
-            // Reset pattern angle to the group's canonical default (0, or the
-            // override) so the applied result matches the card's icon and a
-            // previous recipe's rotation doesn't linger.
-            mirror.rotation = override.rotation ?? 0;
-          });
-          renderAll();
-        });
-      });
-
-      // Apply a named recipe card. Recipe.mirror is a PARTIAL — it only sets the
-      // fields that recipe cares about — so we first reset every preset-settable
-      // geometry field to the canonical factory defaults, then merge p.mirror
-      // over that clean base. Without the reset, a prior recipe's unset fields
-      // (tileHeight, domainScale, rotation, …) leak in and the same recipe would
-      // render differently depending on what was selected before it. The reset
-      // is derived from createWallpaperMirror so it never drifts from the factory;
-      // it spans only the geometry subset, preserving id/enabled/color/etc.
+      // Both bare-group and recipe cards reset every preset-settable geometry
+      // field to the canonical factory defaults before applying their own
+      // values. Recipe.mirror and a group card are both PARTIALs — they only set
+      // the fields they care about — so without the reset a prior selection's
+      // unset fields (tileWidth, tileHeight, domainScale, …) leak in and the same
+      // card renders differently depending on what was selected before it. The
+      // reset is derived from createWallpaperMirror so it never drifts from the
+      // factory; it spans only the geometry subset, preserving id/enabled/color/etc.
       const GEOM_KEYS = ['group', 'symmetry', 'tileWidth', 'tileHeight', 'tileAngle', 'rotation', 'centerX', 'centerY', 'domainScale', 'variantV1'];
       const geomDefaults = () => {
         const base = window.Vectura?.Modifiers?.createWallpaperMirror?.(0) || {
@@ -2020,6 +2001,28 @@
         };
         return GEOM_KEYS.reduce((acc, k) => { acc[k] = base[k]; return acc; }, {});
       };
+
+      // Apply a bare group card. Resets geometry to factory defaults, then writes
+      // the group + symmetry and any per-card override (e.g. p4's 45° tilt) so a
+      // previously selected recipe's spacing/aspect/rotation doesn't linger.
+      body.querySelectorAll('[data-style-group]').forEach((el) => {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const gid = el.dataset.styleGroup;
+          const resolvedSym = WG?.FEATURES?.[gid];
+          const override = WALL_GROUP_CARD_OVERRIDES[gid] || {};
+          commit(() => {
+            Object.assign(mirror, geomDefaults());
+            mirror.group = gid;
+            if (resolvedSym) mirror.symmetry = { ...resolvedSym };
+            Object.assign(mirror, override);
+          });
+          renderAll();
+        });
+      });
+
+      // Apply a named recipe card: reset to defaults, then merge p.mirror over
+      // that clean base.
       body.querySelectorAll('[data-style-preset]').forEach((el) => {
         el.addEventListener('click', (e) => {
           e.stopPropagation();

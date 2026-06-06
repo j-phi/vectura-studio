@@ -407,6 +407,43 @@ describe('Wallpaper gallery panel integration', () => {
     expect(mir.tileHeight).toBe(factory.tileHeight);    // 60, not Brick Path's 64
   });
 
+  const clickGroup = (container, gid) => {
+    container.querySelector(`[data-style-group="${gid}"]`).click();
+  };
+
+  test('a bare group card yields identical geometry regardless of the previously selected recipe (no state leak)', () => {
+    // Kaleidoscope (p3m1, domainScale 0.85 → gaps) → Half-Turn (p2)
+    let m = mountStyles();
+    clickPreset(m.container, 'Kaleidoscope');
+    clickGroup(m.container, 'p2');
+    const afterKaleidoscope = snapshotGeom(m.layer.modifier.mirrors[0]);
+
+    // Star Anise (p31m, domainScale 1.1 → overlap) → Half-Turn (p2)
+    m = mountStyles();
+    clickPreset(m.container, 'Star Anise');
+    clickGroup(m.container, 'p2');
+    const afterStarAnise = snapshotGeom(m.layer.modifier.mirrors[0]);
+
+    // Fresh mirror → Half-Turn (p2)
+    m = mountStyles();
+    clickGroup(m.container, 'p2');
+    const fresh = snapshotGeom(m.layer.modifier.mirrors[0]);
+
+    expect(afterKaleidoscope).toEqual(fresh);
+    expect(afterStarAnise).toEqual(fresh);
+  });
+
+  test('a bare group card resets unset geometry fields to factory defaults (no leak from prior recipe)', () => {
+    const factory = Modifiers.createWallpaperMirror(0);
+    const m = mountStyles();
+    // Star Anise sets domainScale:1.1 (overlap) and tileWidth:92; p2 sets neither.
+    clickPreset(m.container, 'Star Anise');
+    clickGroup(m.container, 'p2');
+    const mir = m.layer.modifier.mirrors[0];
+    expect(mir.domainScale).toBe(factory.domainScale); // 1, not Star Anise's 1.1
+    expect(mir.tileWidth).toBe(factory.tileWidth);      // 60, not Star Anise's 92
+  });
+
   test('switching recipes preserves the mirror identity / UI fields (id, enabled, color)', () => {
     const m = mountStyles();
     const before = m.layer.modifier.mirrors[0];
