@@ -91,6 +91,24 @@ describe('Universal preset gallery (all algorithms)', () => {
     });
   }
 
+  test('editing a param flips the trigger to Custom immediately (via regen, no rebuild); restoring it flips back', async () => {
+    await mount('lissajous');
+    const labelText = () => document.querySelector('.hg-preset-trigger-label').textContent.trim();
+    expect(labelText()).toBe('Default'); // fresh layer is on lissajous-default
+
+    const layer = app.engine.getActiveLayer();
+    const original = layer.params.freqX;
+    // Simulate a slider commit: mutate a param + regen (NO buildControls).
+    layer.params.freqX = original + 5;
+    app.regen();
+    expect(labelText()).toBe('Custom');
+
+    // Restoring the exact previous value flips back to the named preset.
+    layer.params.freqX = original;
+    app.regen();
+    expect(labelText()).toBe('Default');
+  });
+
   test('petalisDesigner is wired for the gallery (library + preset control present)', async () => {
     await mount('flowfield'); // any layer — we only need the loaded runtime globals
     const V = window.Vectura;
@@ -145,12 +163,24 @@ describe('Universal preset gallery (all algorithms)', () => {
     expect(after.centerDiameter).toBe(12);
   });
 
-  test('switching to Custom stamps the custom marker and deactivates every preset', async () => {
+  test('Custom is hidden while on a named preset, and appears (active) once the layer diverges', async () => {
     await mount('flowfield');
+    // On the factory Default at mount → Custom row is not rendered.
+    expect(card('custom')).toBeNull();
     card('flowfield-storm-cell').click();
     expect(app.engine.getActiveLayer().params.preset).toBe('flowfield-storm-cell');
-    card('custom').click();
-    expect(app.engine.getActiveLayer().params.preset).toBe('custom');
+    // Still on a named preset → Custom stays hidden.
+    expect(card('custom')).toBeNull();
+
+    // Diverge by editing a param away from the preset, then rebuild the panel.
+    const layer = app.engine.getActiveLayer();
+    layer.params.density = (layer.params.density || 0) + 137;
+    app.ui.buildControls();
+
+    // Now the layer no longer matches its preset → Custom appears and is active,
+    // and no named preset is highlighted.
+    expect(card('custom')).toBeTruthy();
+    expect(card('custom').classList.contains('is-active')).toBe(true);
     expect(document.querySelector('.hg-preset-option:not([data-preset-id="custom"]).is-active')).toBeNull();
   });
 });

@@ -178,7 +178,6 @@
     const system = layer ? layer.type : null;
     const builtInPresets = Array.isArray(opts.presets) ? opts.presets : [];
     const onApply = typeof opts.onApply === 'function' ? opts.onApply : () => {};
-    let activeId = layer && layer.params ? layer.params.preset : undefined;
 
     // Merge built-in + user (localStorage) presets.
     let userPresets = system ? loadUserPresets(system) : [];
@@ -192,6 +191,42 @@
 
     const presetMap = {};
     presets.forEach((p) => { presetMap[p.id] = p; });
+
+    // ── Divergence detection ────────────────────────────────────────────────
+    // "Custom" is hidden until the layer diverges from its named preset. Rather
+    // than instrument every param-edit site, we derive the active preset by
+    // comparing the layer's current params against the claimed preset's expected
+    // params ({...defaults, ...preset.params}), ignoring keys a preset apply
+    // never touches (transform/preserve set + the preset/label markers). A
+    // mismatch on any compared key means the user has edited away → 'custom'.
+    const IGNORED_KEYS = new Set([
+      'preset', 'label',
+      ...(Array.isArray(opts.preservedKeys) ? opts.preservedKeys : []),
+    ]);
+    const deepEqual = (a, b) => {
+      if (a === b) return true;
+      if (typeof a !== typeof b || !a || !b || typeof a !== 'object') return false;
+      if (Array.isArray(a) !== Array.isArray(b)) return false;
+      const ka = Object.keys(a), kb = Object.keys(b);
+      if (ka.length !== kb.length) return false;
+      return ka.every((k) => deepEqual(a[k], b[k]));
+    };
+    const isOnPreset = (presetId) => {
+      const p = presetMap[presetId];
+      if (!p || !layer || !layer.params) return false;
+      const expected = { ...defaults, ...(p.params || {}) };
+      for (const k of Object.keys(expected)) {
+        if (IGNORED_KEYS.has(k)) continue;
+        if (!deepEqual(layer.params[k], expected[k])) return false;
+      }
+      return true;
+    };
+    const computeActiveId = () => {
+      const claimed = layer && layer.params ? layer.params.preset : undefined;
+      if (claimed && claimed !== 'custom' && presetMap[claimed] && isOnPreset(claimed)) return claimed;
+      return 'custom';
+    };
+    let activeId = computeActiveId();
 
     // ── Wrapper ───────────────────────────────────────────────────────────────
     const wrap = document.createElement('div');
@@ -247,16 +282,29 @@
     };
 
     const open = () => {
+      // Re-derive divergence + rebuild on open so the list always reflects the
+      // latest params (the "Custom" row appears/disappears and the right option
+      // is highlighted). rebuildPopover stamps is-active from activeId.
+      activeId = computeActiveId();
+      updateTrigger(activeId);
+      rebuildPopover();
       popover.hidden = false;
       trigger.setAttribute('aria-expanded', 'true');
-      // Refresh active state in case activeId changed externally.
-      popover.querySelectorAll('.hg-preset-option').forEach((opt) => {
-        const isActive = opt.dataset.presetId === (activeId || 'custom');
-        opt.classList.toggle('is-active', isActive);
-        opt.setAttribute('aria-selected', isActive ? 'true' : 'false');
-      });
       outsideHandler = (e) => { if (!wrap.contains(e.target)) close(); };
       document.addEventListener('pointerdown', outsideHandler, true);
+    };
+
+    // Live divergence refresh — called after every param edit (via app.regen →
+    // the panel's registered hook). Recomputes whether the layer still matches
+    // its preset; the instant a param differs, the trigger flips to "Custom",
+    // and the instant it's restored to the exact value it flips back. Cheap: a
+    // param diff per call; the popover only re-renders when it's actually open.
+    const refresh = () => {
+      const fresh = computeActiveId();
+      if (fresh === activeId) return;
+      activeId = fresh;
+      updateTrigger(activeId);
+      if (!popover.hidden) rebuildPopover();
     };
 
     trigger.addEventListener('click', () => { if (!popover.hidden) close(); else open(); });
@@ -326,14 +374,19 @@
       };
 
       // ── "Custom" option ─────────────────────────────────────────────────────
-      const customOpt = makeOption('custom', 'Custom', null, false);
-      customOpt.addEventListener('click', () => {
-        activeId = 'custom';
-        updateTrigger('custom');
-        close();
-        onApply('custom');
-      });
-      popover.appendChild(customOpt);
+      // Only shown once the layer has diverged from its named preset (the user
+      // edited a param away from the preset). On a clean preset it stays hidden,
+      // so the gallery reads as a list of named looks, not a deselect affordance.
+      if (activeId === 'custom') {
+        const customOpt = makeOption('custom', 'Custom', null, false);
+        customOpt.addEventListener('click', () => {
+          activeId = 'custom';
+          updateTrigger('custom');
+          close();
+          onApply('custom');
+        });
+        popover.appendChild(customOpt);
+      }
 
       // ── Grouped preset options ──────────────────────────────────────────────
       GROUP_ORDER.forEach((groupName) => {
@@ -424,7 +477,7 @@
     rebuildPopover();
     updateTrigger(activeId);
     target.appendChild(wrap);
-    return { el: wrap };
+    return { el: wrap, refresh };
   };
 
   UI.PresetGallery = create;

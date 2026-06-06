@@ -14,6 +14,245 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Fix the remaining strict Playwright Pattern fidelity regressions as product bugs, with `Autumn` horizontal-seam mismatch and representative `Bamboo` / `Bathroom Floor` / `Dominos` silhouette drift still failing source-faithful smoke coverage.
 
 ## Inbox
+- **Morph Modifier Group** — generates interpolated transition paths between 2+ child layers' shapes, producing N graduated in-between rings that morph one shape into another — plotter-native shape blending integrated into the modifier container system. Implementation plan:
+
+  ### Overview & User Mental Model
+
+  The Morph Modifier Group follows the established modifier container contract: drop layers inside it, and it processes them. Where Mirror copies geometry across axes, Morph fills the space between child shapes with graduated intermediate paths. The user drops a circle layer and a wavetable layer into the group; the modifier generates N rings that begin as the circle and progressively become the wavetable. The originals remain visible. The output is plotter-ready — all emitted paths are polylines.
+
+  The mental model is the Illustrator/Inkscape Blend tool, but pipeline-integrated. "Steps" is the number of intermediate states, not counting the originals: 6 steps between A and B produces 8 total path sets (A + 6 blends + B). With 3+ children the modifier chains sequentially — A→B→C — each consecutive pair gets its own morph segment. Child layer order in the layer tree determines morph direction; reordering children reverses or resequences the chain.
+
+  Key use cases: concentric morphing geometric primitives (Rings → Lissajous blooming outward); shape-transition strips for plotter paper (Harmonograph → Wavetable → Spiral in sequence); topographic density fields (Topo at two frequency settings blended with 20 eased steps simulating terrain gradient).
+
+  ### Modifier State Shape
+
+  ```js
+  // layer.modifier for type === 'morph'
+  {
+    type: 'morph',
+    enabled: true,
+
+    // Transition
+    steps: 6,                        // int [1..64] — intermediate rings per child pair
+    easing: 'linear',                // 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out' | 'cubic-in' | 'cubic-out'
+    sequenceMode: 'sequential',      // 'sequential' (A→B→C open chain) | 'cyclic' (A→B→C→A loop)
+
+    // Geometry normalization
+    resampleCount: 128,              // int [8..512] — common vertex count after arc-length resampling
+    resampleMode: 'arc-length',      // 'arc-length' (perceptually even) | 'uniform-index' (faster/coarser)
+    correspondenceMode: 'centroid-angle', // 'centroid-angle' | 'nearest' (O(N²)) | 'arc-length'
+    windingCheck: true,              // auto-reverse path B if reverse produces lower correspondence cost
+
+    // Multi-path handling
+    multiPathStrategy: 'merge-centroid', // 'index-match' | 'merge-centroid' | 'merge-longest'
+    // merge-centroid is default when |pathCountA - pathCountB| > 3, else index-match
+
+    // Output control
+    emitSources: true,               // include original child paths in output alongside blends
+    closureMode: 'auto',             // 'auto' | 'force-open' | 'force-closed'
+    smoothing: 0.0,                  // 0=off, 1=full Catmull-Rom smoothing pass on output rings
+  }
+  ```
+
+  All fields are primitives — fully JSON-serializable, roundtrips through the existing `JSON.parse(JSON.stringify(layer.modifier))` clone path in `engine.js` with no special handling. `morphedPaths` is a transient computed property on the group layer — never serialized, always re-derived by `computeAllDisplayGeometry()`.
+
+  ### Controls (Panel Spec)
+
+  | # | Control | Type | Default | Range / Options | Description |
+  |---|---|---|---|---|---|
+  | 1 | Steps | Integer slider | 6 | 1–64 | Intermediate rings generated between each consecutive child pair. |
+  | 2 | Easing | Chip row | Linear | Linear / Ease In / Ease Out / Ease In-Out / Cubic In / Cubic Out | Distribution of interpolation weight. Ease In-Out clusters rings near both endpoints. |
+  | 3 | Sequence Mode | Chip row | Sequential | Sequential / Cyclic | Sequential: A→B→C open chain. Cyclic: A→B→C→A closed loop. |
+  | 4 | Resample Count | Integer slider | 128 | 8–512 | Vertices per path after normalization. Higher = smoother morphs; lower = faster compute. |
+  | 5 | Correspondence | Chip row | Centroid + Angle | Centroid + Angle / Nearest / Arc Length | How source and target start-vertices are aligned before interpolation. |
+  | 6 | Multi-Path | Chip row | Auto | Auto / Index Match / Merge Centroid / Merge Longest | When children have different path counts: Auto picks index-match for similar counts, merge-centroid for large mismatches. |
+  | 7 | Emit Sources | Toggle | On | On / Off | Whether original child paths are included in output alongside blended rings. |
+  | 8 | Closure | Select | Auto | Auto / Force Open / Force Closed | Resolves open-vs-closed ambiguity when children differ. Auto treats both as open. |
+  | 9 | Smoothing | Slider | 0 | 0–1 | Selective Catmull-Rom pass on output rings. 0 = off; 1 = all corners; 0.3 touches corners >45°. |
+
+  Panel header shows a live count: "2 children — morphing A→B" or "3 children: A→B→C (2 segments, 12 total steps)". With 0 or 1 visible children, shows a callout: "Add 2 or more child layers to begin morphing." Performance warning badge when total point budget (steps × resampleCount × childPairs) exceeds 200,000 points.
+
+  ### Core Algorithm
+
+  `applyMorphModifierToPaths(pathsPerChild, modifier, bounds)`:
+
+  **Input:** `pathsPerChild: paths[][]` — index `i` is the array of paths for child layer `i`. Each path is `{x,y}[]`.
+
+  1. **Guard.** If `pathsPerChild.length < 2` or `modifier.enabled === false`, return all paths concatenated (passthrough).
+  2. **Representative path selection** using `multiPathStrategy`: `merge-centroid` averages all paths (resampled); `merge-longest` uses the path with most points; `index-match` morphs corresponding index-i paths in parallel, padding the shorter child's last path. Auto-select: if `|P-Q| > 3`, use `merge-centroid`; else `index-match`. Non-representative paths go into a `supplemental[]` list for raw emission.
+  3. **Flatten curves.** If any representative path has `.in`/`.out` bezier anchors, call `GeometryUtils.flattenSmoothedPath`. Paths with `.meta.kind === 'circle'` flatten to `resampleCount` points around the circumference.
+  4. **Resample** each representative path to exactly `resampleCount` vertices via arc-length parameterization.
+  5. **Build morph pairs** from `sequenceMode`: `'sequential'` → `[(0,1),(1,2),...,(n-2,n-1)]`; `'cyclic'` appends `(n-1,0)`.
+  6. **For each pair (A, B)**, align correspondence using `correspondenceMode` to find start-vertex rotation offset `r`. If `windingCheck` and `cost(reverse(B_rotated)) < cost(B_rotated)`, reverse B. Open paths skip rotation alignment and use endpoint distance heuristic instead. Mixed open/closed respects `closureMode`.
+  7. **Generate `steps` interpolated rings per pair:**
+     ```
+     for i in 1..steps:
+       t_raw = i / (steps + 1)   // excludes endpoints
+       t = applyEasing(modifier.easing, t_raw)
+       ring = A.map((a, v) => ({ x: a.x + (B[v].x - a.x) * t, y: a.y + (B[v].y - a.y) * t }))
+       if modifier.smoothing > 0: apply selective Catmull-Rom pass
+       emit ring
+     ```
+  8. **Assemble output:** if `emitSources`, emit original paths from each child (non-resampled); emit supplemental paths; emit all interpolated rings in pair order.
+  9. **Degenerate cases:** child emits 0 paths → skip. `steps=0` → emit only child paths. `steps=0` + `emitSources=false` → empty output. All-coincident-points path → `resampleCount` copies of that point.
+
+  **Caching:** `modGroup._morphCache = { signature, morphedPaths }` where `signature = JSON.stringify({ modifier, childStats })`. Reuse when signature matches. Invalidate on child regen or modifier param change.
+
+  ### Path Morphing Math
+
+  **Arc-length resampling** (`resamplePath(pts, N, closed)`):
+  1. Build cumulative arc-length LUT: `cumLen[i] = cumLen[i-1] + dist(pts[i-1], pts[i])`. If closed, append `dist(pts[last], pts[0])`.
+  2. Total length `L`. Target positions: closed → `k * L / N` for k=0..N-1; open → `k * L / (N-1)` for k=0..N-1 (endpoints exact).
+  3. For each target, binary-search `cumLen` to find segment `[j, j+1]`, lerp within: `t_local = (target - cumLen[j]) / (cumLen[j+1] - cumLen[j])`.
+  4. If `L < 1e-6`: return N copies of `pts[0]`.
+
+  **Correspondence alignment** (`correspondenceAlign(A, B, mode)`):
+  - `'centroid-angle'`: find vertex in B whose angle from its centroid best matches the angle of `A[0]` from A's centroid. O(N). Return rotation offset `r`.
+  - `'nearest'`: for each candidate offset `r` in 0..N-1, compute `sum_v dist²(A[v], B[(v+r)%N])`. Return `r` minimizing sum. O(N²) — acceptable at N≤512; called once per regen, not per frame.
+  - `'arc-length'`: no rotation; vertex 0 is at arc-length origin for both paths. Best for open paths.
+
+  **Easing functions:**
+  ```js
+  const EASING = {
+    'linear':      t => t,
+    'ease-in':     t => t * t,
+    'ease-out':    t => t * (2 - t),
+    'ease-in-out': t => t < 0.5 ? 2*t*t : -1 + (4 - 2*t) * t,
+    'cubic-in':    t => t * t * t,
+    'cubic-out':   t => 1 - Math.pow(1 - t, 3),
+  };
+  ```
+
+  **Selective Catmull-Rom smoothing** (when `smoothing > 0`): for each vertex `i`, compute turning angle between `(pts[i-1]→pts[i])` and `(pts[i]→pts[i+1])`. If `|angle| > (1 - smoothing) * π/4`, replace `pts[i]` with the Catmull-Rom midpoint using tension 0.5. Single-pass, skip endpoints on open paths.
+
+  ### Files Changed
+
+  | File | Change |
+  |---|---|
+  | `src/config/modifiers.js` | Add `morph` entry to `MODIFIER_DEFAULTS` and `MODIFIER_DESCRIPTIONS` (+15 lines) |
+  | `src/core/morph-modifier.js` | **New file** — IIFE; `resamplePath`, `correspondenceAlign`, `blendPaths`, easing, `applyMorphModifierToPaths`, `applyModifierToMultiChildPaths` dispatch shim; appends to `window.Vectura.Modifiers` (~250 lines) |
+  | `src/core/engine.js` | (1) `computeAllDisplayGeometry` post-pass: detect morph groups, collect `pathsPerChild`, call `applyModifierToMultiChildPaths`, store `modGroup.morphedPaths`; (2) `getRenderablePaths`: morph group → return `morphedPaths`, morph child → return `[]`; (3) `expandModifierLayer`: emit each morphed ring as a shape layer (+35 lines) |
+  | `src/ui/panels/morph-panel.js` | **New file** — IIFE panel following `mirror-panel.js` pattern; `window.Vectura.UI.MorphPanel.build(uiCtx, layer, container)` (~280 lines) |
+  | `src/ui/panels/algo-config-panel.js` | In `isModifier` branch, dispatch on `modifier.type === 'morph'` → `MorphPanel.build()`, else existing `MirrorPanel.build()` (+4 lines) |
+  | `src/ui/panels/modifiers-panel.js` | Add `insertMorphModifier()` callable from Insert menu (+15 lines) |
+  | `src/render/renderer.js` | When iterating layers: if `layer.isGroup && layer.morphedPaths?.length`, render `morphedPaths` using first child's pen/color settings (+6 lines) |
+  | `index.html` | Two new `<script defer>` tags: `morph-modifier.js` (after `modifiers.js`), `morph-panel.js` (after `mirror-panel.js`) (+2 lines) |
+
+  **Architecture note:** `applyModifierToPaths(paths, modifier, bounds)` processes one child's paths at a time — the mirror contract. Morph needs all children simultaneously. Resolution: add `applyModifierToMultiChildPaths(pathsPerChild, modifier, bounds)` as a new additive function in `morph-modifier.js`. The engine's post-pass calls this only for morph groups. Mirror code path is entirely unchanged.
+
+  ### Work Units (parallel-deliverable)
+
+  **M2 — Config registration** (`src/config/modifiers.js` only). Add `morph` entry to `MODIFIER_DEFAULTS` and `MODIFIER_DESCRIPTIONS`. Do this first — it unblocks M1, M3, M4.
+
+  **M1 — Core math** (`src/core/morph-modifier.js` only). New IIFE. Implements: `resamplePath`, `correspondenceAlign`, `blendPaths`, all easing functions, `applyMorphModifierToPaths`, `applyModifierToMultiChildPaths` dispatch shim. Pure functions — testable with plain `{x,y}[]` arrays. No UI, no engine changes. Begin after M2.
+
+  **M3 — Engine integration** (`src/core/engine.js` only). Three surgical additions: `computeAllDisplayGeometry` morph post-pass, `getRenderablePaths` morph routing, `expandModifierLayer` morph handling. Depends on M1 and M2. Can proceed in parallel with M4.
+
+  **M4 — Panel UI** (`src/ui/panels/morph-panel.js` + 4-line change in `algo-config-panel.js`). New IIFE panel, all controls wired to `modifier.*` fields with live-update callbacks. Depends on M2 for defaults. Can proceed in parallel with M3.
+
+  **M5 — Renderer + Insert menu + script tags** (`src/render/renderer.js`, `src/ui/panels/modifiers-panel.js`, `index.html`). Render `morphedPaths` from morph group layers. Add `insertMorphModifier()`. Add two script tags. Depends on M3.
+
+  **M6 — Serialization round-trip test** (`tests/integration/morph-serialization.test.js`). Verifies `exportState → importState` preserves all morph modifier fields; `morphedPaths` absent from export; backward compat (older engine passthrough on unknown `type`). Depends on M1 + M3.
+
+  **Dependency chain:** M2 first (15 min). Then M1, M3, M4 in parallel. M5 after M3. M6 after M3. Visual baselines last.
+
+  ### Test Plan (RGR)
+
+  **Stage 0 — Guard tests (write first, run before touching source; all must pass)**
+
+  File: `tests/unit/morph-modifier-guard.test.js`
+  - [ ] **GUARD-01** `applyModifierToPaths` with `type:'unknown'` returns cloned input — confirms passthrough behavior intact
+  - [ ] **GUARD-02** `addModifierLayer('mirror')` produces `modifier.type === 'mirror'` — no silent migration
+  - [ ] **GUARD-03** Mirror modifier roundtrips through `exportState/importState` after morph module loads — module isolation
+  - [ ] **GUARD-04** `applyModifierToPaths` with `type:'morph'` currently returns passthrough — RED until M1 dispatch wired, GREEN after
+
+  **Stage 1 — Geometry unit tests** (RED until M1; file: `tests/unit/morph-modifier.test.js` Group A)
+  - [ ] **A-01** `resamplePath` identity: 3-point input, N=3 → 3 points
+  - [ ] **A-02** `resamplePath` arc-length uniformity: square resampled to 100 points; max gap ≈ perimeter/100 ± 2%
+  - [ ] **A-03** `resamplePath` single-point degenerate: returns N copies of that point, no crash
+  - [ ] **A-04** `resamplePath` empty input → empty output
+  - [ ] **A-05** `resamplePath` `.meta` preserved on output
+  - [ ] **A-06** `correspondenceAlign` identical paths → offset 0
+  - [ ] **A-07** `correspondenceAlign` rotated copy of A detected: `pathB = pathA.slice(4).concat(pathA.slice(0,4))` → offset 4
+  - [ ] **A-08** `correspondenceAlign` mismatched lengths → throws with message
+  - [ ] **A-09** `blendPaths(A, B, 0)` → points match A within 1e-9
+  - [ ] **A-10** `blendPaths(A, B, 1)` → points match B within 1e-9
+  - [ ] **A-11** `blendPaths(A, B, 0.5)` midpoints exact: `{0,0}` → `{10,10}` produces `{5,5}`
+  - [ ] **A-12** `blendPaths` with easing: `easeIn(0.5) = 0.25`, blended point at 25% not 50%
+
+  **Stage 2 — State creation tests** (RED until M2 + M1; Group C/D same file)
+  - [ ] **C-01** `createModifierState('morph')` returns: `type='morph'`, `enabled=true`, `steps=6`, `easing='linear'`, `resampleCount=128`, `emitSources=true`
+  - [ ] **C-02** Overrides applied over defaults: `createModifierState('morph', {steps:10})` → `steps=10`, other fields default
+  - [ ] **C-03** `addModifierLayer('morph')` creates: `containerRole='modifier'`, `modifier.type='morph'`, `isGroup=true`
+  - [ ] **C-04** Morph state roundtrips through `JSON.parse(JSON.stringify(...))` without loss
+  - [ ] **C-05** `isModifierLayer` returns true for morph layers (type-agnostic check on `containerRole`)
+  - [ ] **D-01** `applyModifierToPaths` dispatch: `type:'morph'` routes to morph handler; output has `steps+2` paths
+  - [ ] **D-02** `applyModifierToPaths` dispatch: `type:'unknown_future'` still returns passthrough (GUARD-01 stays green)
+
+  **Stage 3 — Core modifier function tests** (RED until M1; Group B same file)
+  - [ ] **B-01** 0 children → returns `[]`
+  - [ ] **B-02** 1 child, 0 targets → returns source paths unchanged
+  - [ ] **B-03** 2 children, `steps=0` → returns `[pathA_clone, pathB_clone]`, no blends
+  - [ ] **B-04** 2 children, 1 path each, `steps=5` → `output.length === 7` (source + 5 + target)
+  - [ ] **B-05** Intermediate path centroids lie strictly monotone between source and target centroid
+  - [ ] **B-06** Linear easing: gap between consecutive blend paths approximately constant (< 2% variance)
+  - [ ] **B-07** EaseIn: first intermediate closer to source than last; non-uniform spacing
+  - [ ] **B-08** Multi-path children (3 paths each), `steps=4`: `output.length === 18`
+  - [ ] **B-09** Mismatched path counts (2 vs 4): no crash; shorter side padded; output count predictable
+  - [ ] **B-10** `modifier.enabled=false`: source + target concatenated, no extra paths
+  - [ ] **B-11** `smoothing=0` vs `smoothing=1`: smoothed bounding box differs for jagged input
+  - [ ] **B-12** 3 children sequential: two morph segments present; B paths appear once as shared anchor
+
+  **Stage 4 — Engine integration tests** (RED until M3; file: `tests/integration/morph-modifier-panel.test.js` Group A)
+  - [ ] **INT-A-01** Full roundtrip: `addModifierLayer('morph')` + 2 children + `exportState/importState` → all morph fields intact, children have correct `parentId`
+  - [ ] **INT-A-02** 0 visible children → `computeAllDisplayGeometry` does not throw; group emits 0 paths
+  - [ ] **INT-A-03** 1 visible child → source paths passed through; count matches child path count
+  - [ ] **INT-A-04** 2 children, `steps=3` → total rendered paths = 5 (1+3+1)
+  - [ ] **INT-A-05** Invisible child (`visible=false`) excluded from morph chain
+  - [ ] **INT-A-06** Removing the last child does not auto-delete the morph modifier group
+  - [ ] **INT-A-07** Removing morph modifier dissolves it; children restored to root with `parentId=null`
+  - [ ] **INT-A-08** Undo/redo restores modifier + child structure at each step
+
+  **Stage 5 — Panel + edge case integration tests** (RED until M4; Groups B/C same file)
+  - [ ] **INT-B-01** `MorphPanel.build()` renders steps slider, easing chips, sequence mode chips, correspondence chips
+  - [ ] **INT-B-02** Steps slider change updates `modifier.steps` and triggers geometry recompute
+  - [ ] **INT-B-03** Easing chip change updates `modifier.easing`
+  - [ ] **INT-B-04** Panel state does not write any `_panel*` keys onto `modifier` object
+  - [ ] **INT-B-05** Each state-changing panel action pushes history exactly once
+  - [ ] **INT-B-06** Insert → "Morph Modifier Group" menu item exists; clicking it wraps selected layers
+  - [ ] **INT-B-07** Layers dragged into morph group are auto-locked (type-agnostic lock on `containerRole === 'modifier'`)
+  - [ ] **INT-B-08** Deleting morph modifier unlocks restored children (type-agnostic unlock)
+  - [ ] **INT-C-01** 3 children sequential: A→B segment + B→C segment both present; B appears as shared anchor
+  - [ ] **INT-C-02** Children with very different point counts: no crash; resampling normalizes before blend
+  - [ ] **INT-C-03** Child with bezier-handle paths: `flattenSmoothedPath` called before resample; output has no bezier metadata
+  - [ ] **INT-C-04** SVG export includes morph blend paths; path element count reflects `steps`
+
+  **Stage 6 — Visual baselines** (last, after all unit + integration green)
+  - [ ] **VIS-01** `morph-circle-to-wavetable-5steps` — Rings (3 rings) → Wavetable (4 lines), `steps=5`, `easing=linear`
+  - [ ] **VIS-02** `morph-same-shape-passthrough` — identical Lissajous children, `steps=4`; all intermediate rings geometrically identical to endpoints
+  - [ ] **VIS-03** `morph-easing-ease-in-out-7steps` — Flowfield → Spiral, `steps=7`, `easing=ease-in-out`; clustering near endpoints visible in SVG
+  - [ ] **VIS-04** `morph-3-children-chain` — 3 children (simple shape, circle, wavetable), `steps=3`; two distinct morph segments in SVG
+
+  **Existing tests at risk — run after every source change:**
+  ```
+  npm run test:unit -- --testPathPattern="modifiers|morph"
+  npm run test:integration -- --testPathPattern="modifier-workflow|morph|engine-workflow"
+  npm run test:visual
+  ```
+  High-risk: `tests/unit/modifiers.test.js` (dispatch guard); `tests/integration/modifier-workflow.test.js` (lock/unlock type-agnostic); `tests/visual/svg-baseline.test.js` mirrored-masked-circles baseline.
+
+  ### MVP vs Future
+
+  **In MVP:** `type:'morph'` created via Insert menu; 2-child sequential morph with arc-length resampling + centroid-angle correspondence; linear/ease-in/ease-out/ease-in-out/cubic-in/cubic-out easing; 3+ child sequential chaining; cyclic sequence mode; `emitSources` toggle; `correspondenceMode` chip; `multiPathStrategy` (auto/index-match/merge-centroid/merge-longest); `closureMode`; `windingCheck`; graceful fallback for 0/1 children with panel messaging; serialization roundtrip; performance warning badge; `MorphPanel.build()` in `morph-panel.js`; morph group children auto-locked; SVG export includes blend paths; full unit + integration + visual test suite.
+
+  **Deferred:** Catmull-Rom smoothing pass; radial outward layout mode (offset per step); fixed-gap mm/px spacing; scale normalization toggle; per-segment step counts; polar lerp mode; morph preview animation; canvas guide overlays; Step easing (quantized jump cuts); canvas handles (Offset X/Y puck).
+
+  ### Decisions
+
+  - **New multi-child dispatch path, not a change to `applyModifierToPaths`.** Adds `applyModifierToMultiChildPaths(pathsPerChild, modifier, bounds)` as a new function in `morph-modifier.js`. Engine's post-pass calls it only for morph groups. Mirror behavior is entirely unchanged — zero risk of mirror regressions.
+  - **Representative-path selection rather than N×M parallel morphing.** Morphing all N paths from child A to all M paths from child B when N≠M is visually uncontrollable. The representative-path model (merge to one shape per child, morph that shape) is predictable and composable. `index-match` remains available for explicit 1:1 parallel use.
+  - **`morphedPaths` as a transient computed property, never serialized.** Consistent with how `effectivePaths` and `displayPaths` work — computed geometry is always re-derived from serialized layer definitions. The renderer reads `layer.morphedPaths` when `layer.isGroup && layer.morphedPaths?.length`. No structural renderer change required beyond that guard.
+
 - **Pendula studio — Phase 3/4 remaining (tactile + craft + export).** Shipped so far is in Done; still to build:
   - **Per-loop morph animation export** (the second time axis: a series of distinct evolving figures) — blocked on a frame-packaging decision (no zip lib in the no-build repo).
   - **Plotter hygiene on export** — randomize closed-loop seam start ("reloop") to avoid the pen ink-blot artifact.
@@ -34,6 +273,7 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
+- **Preset gallery hides "Custom" until the layer diverges, flips to it instantly on any param change (2026-06-06, v1.1.62).** Follow-on polish: "Custom" was always the first row (a permanent deselect affordance) which now reads as clutter since every layer starts on a named preset. The gallery derives whether the layer is still on its preset by comparing live params to `{...defaults, ...preset.params}` (ignoring the transform/preserve set + `preset`/`label`); Custom is rendered only when diverged (then first + active, named preset deselected). The trigger flips to "Custom" the instant any param changes and back the instant the exact value is restored (manual or Undo) — driven by `app.regen()` calling a `refresh()` hook the gallery registers on mount (`this._activePresetGalleryRefresh`), so the param-comparison stays the single source of truth with no per-edit instrumentation. `preservedKeys` passed from the panel mount. RGR in `universal-preset-gallery.test.js` (Custom absent fresh + after apply; trigger flips to Custom on param edit + regen and back on restore; appears active after edit + rebuild). Full suite green (unit 1490, integration 500, visual 13, perf 5).
 - **Default-state presets — every algorithm initializes on a named, selected, first-in-list preset (2026-06-06, v1.1.61).** Follow-on to the universal preset system: a fresh layer no longer opens on the unnamed "Custom" state. Each of the 18 algorithms now sets `ALGO_DEFAULTS[type].preset` to a real preset rendered first in the gallery and active on mount. Three reuse the matching curated preset (wavetable→Rolling Hills, topo→Mountain Range, phylla→Sunflower); the other 15 gained a new "Default" preset (group Classic, empty `params` ⇒ byte-identical to the factory defaults, doubling as a one-click reset). Tests updated (harmonograph/pendula libraries 4→5; pendula-algorithm default assertion `custom`→`pendula-default`; new init-selection assertions in `universal-preset-gallery.test.js`). All 102 geometry-bearing presets validated; full suite green (unit 1490, integration 499, visual 13, perf 5).
 - **Universal preset system — thumbnail gallery for all 18 algorithms (2026-06-06, v1.1.60).** Replaced the patchwork (harmonograph/pendula gallery, petalis/terrain `<select>`, rings/svgDistort no UI, 12 algorithms preset-less) with one component, one apply path, one mount condition. Layer 0: `harmonograph-preset-gallery.js` exports the generic `Vectura.UI.PresetGallery` (HG alias kept) with a `drawThumb` that dispatches by layer type — HG-family via `HarmonographCore.evaluatePath`, all others via `Algorithms[type].generate(p, rng, noise, bounds)` (heavy params capped, try/catch → empty canvas); `preset-libraries.js` re-keyed by layer type so the mount is a dynamic `PresetLibraries[layer.type].length > 0` check; the 4 bespoke apply blocks collapsed into one `applyPreset(layer, id)` with a per-algorithm `EXTRA_PRESERVED` set; `controls-registry.js` injects a Presets section + preset control into the 14 algorithms that lacked one. Build/infra: `build-user-presets.js` scans every `user-presets/<algorithm>/` dir; new `build-user-wallpaper-recipes.js` bundles `user-presets/wallpaper/*.vectura` into the recipe gallery (`wallpaper-presets.js` `list()` appends `USER_WALLPAPER_RECIPES`); pre-commit hook auto-rebuilds both on staged `.vectura`. Layer 1: 58 new presets (12 algorithms + rings/svgDistort) under the universal vocabulary Classic/Geometric/Organic/Complex/Evolving/User; 31 existing presets gained group tags; harmonograph "Detuned" → "Geometric". Every geometry-bearing preset validated (88/88) to render non-degenerate output (svgDistort exempt — needs an imported SVG). RGR: new `universal-preset-gallery.test.js`; `pendula-preset-gallery.test.js` updated for the Classic→Geometric→Evolving order; harness canvas stub gained `setTransform`/`resetTransform`/`getLineDash`. Full suite green (unit 1490+, integration 489, visual 13, perf 5).
 - **Rectangle-lattice wallpaper mirrors lock tile angle to 90° (overlap fix) (2026-06-02, v1.1.57).** Reported as visible overlap on a Rectangle + 2-fold + Straight (pmm) pattern with Tile angle 55°. Root cause: a rectangular lattice is perpendicular by definition and all its groups (pm/pg/pmm/pmg/pgg) carry a mirror/glide whose symmetry only tessellates at 90°, but `LOCKED_AXES.rectangular.tileAngle` was `false`, so the slider sheared the cell into a parallelogram — `reflect(angleA2)∘reflect(angleA1)` then composes to `2·(angleA2−angleA1)` ≠ 180°, so the four ops stop forming a consistent group and the copies overlap/gap. (The genuine free-angle case is the Parallelogram/oblique lattice, p1/p2.) Fix: flip the rectangular `tileAngle` lock to `true`, and coerce a stored non-canonical angle to 90° (60° hex) in `applyWallpaperMirrorToPaths` so pre-lock/hand-edited `.vectura` files self-correct; lock note re-pointed to the Lattice row. RGR across `wallpaper-groups.test.js` (rectangular locks angle, oblique free, rhombic/square/hex unchanged), `mirror-panel.test.js` (Rectangle disables the angle slider + is-locked), `modifiers.test.js` (pmm 55°≡90°, oblique p2 still honors 55°). Full suite green (unit 1489, integration 474, visual 13, e2e 44+1).

@@ -948,6 +948,10 @@
       this.renderer?.refreshDirectSelection?.();
       this.render();
       this.ui.updateFormula();
+      // Live-refresh the preset gallery so the trigger flips to "Custom" the
+      // instant a param diverges from the active preset (and back when restored).
+      // No-op when the active layer has no preset gallery mounted.
+      this.ui?._activePresetGalleryRefresh?.();
       // The harmonograph/pendula virtual plotter caches a STATIC figure; refresh
       // it on every regen so its ghost tracks ALL param edits (pendulum stack,
       // base params, dice, presets, Motion Rack), not just Motion Rack edits.

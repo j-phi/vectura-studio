@@ -122,6 +122,8 @@
     this.destroyInlinePetalisDesigner();
     this.destroyInlinePatternDesigner();
     container.innerHTML = '';
+    // Cleared each rebuild; re-registered if this layer mounts a preset gallery.
+    this._activePresetGalleryRefresh = null;
     const paintBucketSection = getEl('left-section-paint-bucket', { silent: true });
     const paintBucketActive = this.activeTool === 'fill' || this.activeTool === 'fill-erase';
     if (paintBucketActive) {
@@ -861,14 +863,22 @@
         if (presetLib.length > 0) {
           const gallery = V?.UI?.PresetGallery || V?.UI?.HarmonographPresetGallery;
           if (typeof gallery === 'function') {
-            gallery(target, {
+            const inst = gallery(target, {
               layer,
               presets: presetLib,
+              // Keys a preset apply never overwrites — the gallery ignores these
+              // when deciding whether the layer still matches its named preset
+              // (so moving/resizing a layer doesn't read as "diverged").
+              preservedKeys: [...TRANSFORM_KEYS, ...(EXTRA_PRESERVED[layer.type] || [])],
               onApply: (presetId) => {
                 if (this.app.pushHistory) this.app.pushHistory();
                 applyPreset(presetId);
               },
             });
+            // Register the live divergence refresh so app.regen() (fired after
+            // every param edit) flips the trigger to "Custom" the instant a
+            // param differs from the preset — and back when it's restored.
+            this._activePresetGalleryRefresh = inst && typeof inst.refresh === 'function' ? inst.refresh : null;
           }
           return;
         }
