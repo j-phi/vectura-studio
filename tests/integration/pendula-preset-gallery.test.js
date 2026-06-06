@@ -39,11 +39,12 @@ describe('Harmonograph-family preset dropdown (craft ladder)', () => {
   describe('harmonograph layer', () => {
     beforeEach(async () => { await mount('harmonograph'); });
 
-    test('renders grouped sections in Classic → Detuned → Evolving order', () => {
+    test('renders grouped sections in Classic → Geometric → Evolving order', () => {
       expect(document.querySelector('.hg-preset-dropdown-wrap')).toBeTruthy();
-      // Unison Circle + Classic 3:2 Star → Classic; 4:3 Star → Detuned;
-      // Evolving Snake → Evolving. All three groups are present and ordered.
-      expect(groupTitles()).toEqual(['Classic', 'Detuned', 'Evolving']);
+      // Unison Circle + Classic 3:2 Star → Classic; 4:3 Star → Geometric;
+      // Evolving Snake → Evolving. All three groups are present and ordered
+      // (universal group vocabulary; "Detuned" was folded into "Geometric").
+      expect(groupTitles()).toEqual(['Classic', 'Geometric', 'Evolving']);
     });
 
     test('renders one option per preset (4 total), each with a thumbnail canvas', () => {
@@ -118,7 +119,7 @@ describe('Harmonograph-family preset dropdown (craft ladder)', () => {
 
     test('renders Classic (Pulsing Web) + Evolving (motion presets) groups', () => {
       // Breathing Orbit / Drift Star / Tidal Lissajous carry motion → Evolving;
-      // Pulsing Web has an empty motion block → Classic. No Detuned group, so
+      // Pulsing Web has an empty motion block → Classic. No Geometric group, so
       // it is omitted. Custom option is excluded from the preset count.
       expect(groupTitles()).toEqual(['Classic', 'Evolving']);
       expect(cards().length).toBe(4);

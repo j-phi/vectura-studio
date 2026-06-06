@@ -98,7 +98,7 @@ An Illustrator-style shared toolbar now drives the main canvas plus the embedded
 
 ### Algorithms
 
-19+ algorithm families power each layer, all seeded for repeatable results. The **Noise Rack** is a universal multi-algorithm noise stacking system shared across algorithms — add layers, pick noise types, blend modes, and octave shaping without touching algorithm-specific code.
+19+ algorithm families power each layer, all seeded for repeatable results. The **Noise Rack** is a universal multi-algorithm noise stacking system shared across algorithms — add layers, pick noise types, blend modes, and octave shaping without touching algorithm-specific code. Every algorithm also ships a **universal preset gallery**: a thumbnail dropdown of curated starting points grouped by Classic / Geometric / Organic / Complex / Evolving, plus a **User** section for presets you import from `.vectura` files.
 
 <details>
 <summary>Full algorithm feature list</summary>

@@ -60,6 +60,19 @@ except Exception as exc:
 git add graphify-out/graph.json graphify-out/GRAPH_REPORT.md graphify-out/graph.html 2>/dev/null || true
 # graphify-pre-commit-end
 
+# user-presets-bundle-start
+# Rebuild the user-preset + wallpaper-recipe bundles whenever a .vectura file
+# under user-presets/ is staged, then stage the regenerated config so the bundle
+# never drifts from its source files.
+VECTURA_FILES=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep -E '^user-presets/.*\.vectura$' || true)
+if [ -n "$VECTURA_FILES" ]; then
+    echo "[pre-commit] user-presets staged — rebuilding bundles..."
+    node scripts/build-user-presets.js || exit 1
+    node scripts/build-user-wallpaper-recipes.js || exit 1
+    git add src/config/user-presets.js src/config/user-wallpaper-recipes.js
+fi
+# user-presets-bundle-end
+
 # selector-lint-start
 # Warn (non-blocking) when staged tests/e2e/*.js files introduce role+name lookups
 # like getByRole('button', { name: 'Foo' }). These break when labels are renamed;

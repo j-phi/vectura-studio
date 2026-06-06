@@ -45,6 +45,11 @@ const create2DContextStub = () => ({
   translate() {},
   rotate() {},
   scale() {},
+  setTransform() {},
+  resetTransform() {},
+  getLineDash() {
+    return [];
+  },
   clearRect() {},
   fillRect() {},
   strokeRect() {},

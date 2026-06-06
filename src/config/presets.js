@@ -108,7 +108,7 @@
         id: "harmonograph-4-3-star",
         name: "4:3 Star",
         preset_system: "harmonograph",
-        group: "Detuned",
+        group: "Geometric",
         params: {
           renderMode: "line",
           duration: 40,
@@ -140,6 +140,7 @@
         id: "camellia-japonica-pink-perfection",
         name: "Camellia Japonica Pink Perfection",
         preset_system: "petalisDesigner",
+        group: "Complex",
         params: {
           petalProfile: "oval",
           petalScale: 28,
@@ -159,6 +160,7 @@
         id: "fenestraria-aurantiaca",
         name: "Fenestraria Aurantiaca",
         preset_system: "petalisDesigner",
+        group: "Organic",
         params: {
           petalProfile: "spoon",
           petalScale: 22,
@@ -175,6 +177,7 @@
         id: "pachyphytum-compactum",
         name: "Pachyphytum Compactum",
         preset_system: "petalisDesigner",
+        group: "Organic",
         params: {
           petalProfile: "lanceolate",
           petalScale: 24,
@@ -190,6 +193,7 @@
         id: "echeveria-agavoides",
         name: "Echeveria Agavoides",
         preset_system: "petalisDesigner",
+        group: "Organic",
         params: {
           petalProfile: "lanceolate",
           petalScale: 26,
@@ -205,6 +209,7 @@
         id: "dahlia-cornel",
         name: "Dahlia Cornel",
         preset_system: "petalisDesigner",
+        group: "Complex",
         params: {
           petalProfile: "teardrop",
           petalScale: 30,
@@ -224,6 +229,7 @@
         id: "dahlia-ivanetti",
         name: "Dahlia Ivanetti",
         preset_system: "petalisDesigner",
+        group: "Complex",
         params: {
           petalProfile: "teardrop",
           petalScale: 32,
@@ -239,6 +245,7 @@
         id: "rosa-chinensis-mutabilis",
         name: "Rosa Chinensis Mutabilis",
         preset_system: "petalisDesigner",
+        group: "Complex",
         params: {
           petalProfile: "heart",
           petalScale: 34,
@@ -256,6 +263,7 @@
         id: "chrysanthemum-morifolium",
         name: "Chrysanthemum Morifolium",
         preset_system: "petalisDesigner",
+        group: "Complex",
         params: {
           petalProfile: "lanceolate",
           petalScale: 26,
@@ -270,6 +278,7 @@
         id: "ranunculus-asiaticus",
         name: "Ranunculus Asiaticus",
         preset_system: "petalisDesigner",
+        group: "Classic",
         params: {
           petalProfile: "oval",
           petalScale: 26,
@@ -286,6 +295,7 @@
         id: "anemone-coronaria",
         name: "Anemone Coronaria",
         preset_system: "petalisDesigner",
+        group: "Classic",
         params: {
           petalProfile: "oval",
           petalScale: 36,
@@ -303,6 +313,7 @@
         id: "zinnia-elegans",
         name: "Zinnia Elegans",
         preset_system: "petalisDesigner",
+        group: "Classic",
         params: {
           petalProfile: "oval",
           petalScale: 30,
@@ -318,6 +329,7 @@
         id: "lotus-nelumbo-nucifera",
         name: "Lotus Nelumbo Nucifera",
         preset_system: "petalisDesigner",
+        group: "Geometric",
         params: {
           petalProfile: "spoon",
           petalScale: 42,
@@ -338,6 +350,7 @@
         id: "hellebore-niger",
         name: "Helleborus Niger",
         preset_system: "petalisDesigner",
+        group: "Classic",
         params: {
           petalProfile: "heart",
           petalScale: 38,
@@ -353,6 +366,7 @@
         id: "gerbera-jamesonii",
         name: "Gerbera Jamesonii",
         preset_system: "petalisDesigner",
+        group: "Classic",
         params: {
           petalProfile: "lanceolate",
           petalScale: 34,
@@ -367,6 +381,7 @@
         id: "tulipa-gesneriana",
         name: "Tulipa Gesneriana",
         preset_system: "petalisDesigner",
+        group: "Geometric",
         params: {
           petalProfile: "spoon",
           petalScale: 44,
@@ -382,6 +397,7 @@
         id: "iris-germanica",
         name: "Iris Germanica",
         preset_system: "petalisDesigner",
+        group: "Geometric",
         params: {
           petalProfile: "lanceolate",
           petalScale: 40,
@@ -397,6 +413,7 @@
         id: "gardenia-jasminoides",
         name: "Gardenia Jasminoides",
         preset_system: "petalisDesigner",
+        group: "Classic",
         params: {
           petalProfile: "oval",
           petalScale: 32,
@@ -413,6 +430,7 @@
         id: "plumeria-rubra",
         name: "Plumeria Rubra",
         preset_system: "petalisDesigner",
+        group: "Geometric",
         params: {
           petalProfile: "oval",
           petalScale: 46,
@@ -430,6 +448,7 @@
         id: "cosmos-bipinnatus",
         name: "Cosmos Bipinnatus",
         preset_system: "petalisDesigner",
+        group: "Geometric",
         params: {
           petalProfile: "lanceolate",
           petalScale: 38,
@@ -445,6 +464,7 @@
         id: "protea-cynaroides",
         name: "Protea Cynaroides",
         preset_system: "petalisDesigner",
+        group: "Complex",
         params: {
           petalProfile: "lanceolate",
           petalScale: 36,
@@ -461,6 +481,7 @@
         id: "terrain-alpine",
         name: "Alpine Range",
         preset_system: "terrain",
+        group: "Classic",
         params: {
           perspectiveMode: "one-point",
           horizonHeight: 45,
@@ -485,6 +506,7 @@
         id: "terrain-rolling-hills",
         name: "Rolling Hills",
         preset_system: "terrain",
+        group: "Classic",
         params: {
           perspectiveMode: "one-point",
           horizonHeight: 55,
@@ -509,6 +531,7 @@
         id: "terrain-canyon-mesa",
         name: "Canyon Mesa",
         preset_system: "terrain",
+        group: "Classic",
         params: {
           perspectiveMode: "one-point",
           horizonHeight: 50,
@@ -537,6 +560,7 @@
         id: "terrain-archipelago",
         name: "Archipelago",
         preset_system: "terrain",
+        group: "Organic",
         params: {
           perspectiveMode: "one-point",
           horizonHeight: 50,
@@ -562,6 +586,7 @@
         id: "terrain-river-delta",
         name: "River Delta",
         preset_system: "terrain",
+        group: "Organic",
         params: {
           perspectiveMode: "one-point",
           horizonHeight: 55,
@@ -592,6 +617,7 @@
         id: "terrain-tundra-flats",
         name: "Tundra Flats",
         preset_system: "terrain",
+        group: "Classic",
         params: {
           perspectiveMode: "orthographic",
           depthScale: 100,
@@ -611,6 +637,7 @@
         id: "rings-old-growth-oak",
         name: "Old Growth Oak",
         preset_system: "rings",
+        group: "Classic",
         params: {
           rings: 32,
           gap: 1.1,
@@ -636,6 +663,7 @@
         id: "rings-pine-cross-section",
         name: "Pine Cross-Section",
         preset_system: "rings",
+        group: "Classic",
         params: {
           rings: 22,
           gap: 1.15,
@@ -661,6 +689,7 @@
         id: "rings-ancient-redwood",
         name: "Ancient Redwood",
         preset_system: "rings",
+        group: "Classic",
         params: {
           rings: 48,
           gap: 1.05,
@@ -687,6 +716,7 @@
         id: 'svg-distort-plain',
         name: 'SVG Plain Import',
         preset_system: 'svgDistort',
+        group: "Classic",
         params: {
           showOutlines: true,
           fillMode: 'none',
@@ -700,6 +730,7 @@
         id: 'svg-distort-hatched',
         name: 'SVG Hatch Fill + Noise',
         preset_system: 'svgDistort',
+        group: "Classic",
         params: {
           showOutlines: true,
           fillMode: 'hatch',
@@ -744,6 +775,256 @@
             }
           ],
         }
+      },
+
+      // ── rings (added: Geometric + Complex) ───────────────────────────────
+      {
+        id: 'rings-fresh-cut', name: 'Fresh Cut', preset_system: 'rings', group: 'Geometric',
+        params: {
+          rings: 25, gap: 1.1, gapCurveStart: 1, gapCurveEnd: 1, spacingVariance: 0,
+          barkRings: 3, barkGap: 1.5, breakCount: 0, centerDrift: 0, biasStrength: 0,
+          rayCount: 0, knotCount: 0, seed: 1010,
+        }
+      },
+      {
+        id: 'rings-ancient', name: 'Ancient', preset_system: 'rings', group: 'Complex',
+        params: {
+          rings: 40, gap: 1.0, gapCurveStart: 1.8, gapCurveEnd: 0.6, spacingVariance: 0.5,
+          barkRings: 10, barkGap: 1, breakCount: 6, centerDrift: 0.6, biasStrength: 0.15,
+          biasAngle: 60, rayCount: 80, rayLength: 3.0, knotCount: 2, knotIntensity: 0.8,
+          crackCount: 3, crackDepth: 0.6, scarCount: 2, scarDepth: 3, seed: 777,
+        }
+      },
+
+      // ── svgDistort (added: Geometric + Organic). Thumbnails are empty until
+      //    an SVG is imported — these define fill style only. ─────────────────
+      {
+        id: 'svg-distort-cross-hatch', name: 'Cross Hatch', preset_system: 'svgDistort', group: 'Geometric',
+        params: { showOutlines: true, fillMode: 'crosshatch', fillDensity: 4, autoFit: true, scale: 1.0, noises: [] }
+      },
+      {
+        id: 'svg-distort-loose-fill', name: 'Loose Fill', preset_system: 'svgDistort', group: 'Organic',
+        params: { showOutlines: true, fillMode: 'hatch', fillDensity: 2, autoFit: true, scale: 1.0, noises: [] }
+      },
+
+      // ── flowfield ────────────────────────────────────────────────────────
+      {
+        id: 'flowfield-still-pool', name: 'Still Pool', preset_system: 'flowfield', group: 'Classic',
+        params: { flowMode: 'angle', density: 800, chaos: 0.05, stepLen: 5, maxSteps: 220, force: 1.0, octaves: 2 }
+      },
+      {
+        id: 'flowfield-river-current', name: 'River Current', preset_system: 'flowfield', group: 'Classic',
+        params: { flowMode: 'angle', density: 1200, chaos: 0.15, stepLen: 6, maxSteps: 260, force: 1.2, octaves: 2 }
+      },
+      {
+        id: 'flowfield-whirlpool', name: 'Whirlpool', preset_system: 'flowfield', group: 'Geometric',
+        params: { flowMode: 'curl', density: 1000, chaos: 0.06, stepLen: 5, maxSteps: 240, force: 1.0, octaves: 2 }
+      },
+      {
+        id: 'flowfield-storm-cell', name: 'Storm Cell', preset_system: 'flowfield', group: 'Complex',
+        params: { flowMode: 'angle', density: 2000, chaos: 0.5, stepLen: 7, maxSteps: 300, force: 1.4, octaves: 3 }
+      },
+
+      // ── boids ────────────────────────────────────────────────────────────
+      {
+        id: 'boids-squadron', name: 'Squadron', preset_system: 'boids', group: 'Classic',
+        params: { count: 80, steps: 120, speed: 2.2, mode: 'birds', sepWeight: 0.8, alignWeight: 1.5, cohWeight: 0.9, alignDist: 30 }
+      },
+      {
+        id: 'boids-schooling-fish', name: 'Schooling Fish', preset_system: 'boids', group: 'Classic',
+        params: { count: 120, steps: 140, speed: 2.0, mode: 'fish', sepWeight: 1.0, alignWeight: 1.2, cohWeight: 1.3, cohDist: 28 }
+      },
+      {
+        id: 'boids-scatter-field', name: 'Scatter Field', preset_system: 'boids', group: 'Organic',
+        params: { count: 200, steps: 100, speed: 2.5, mode: 'birds', sepWeight: 2.2, alignWeight: 0.5, cohWeight: 0.4, sepDist: 16 }
+      },
+      {
+        id: 'boids-murmuration', name: 'Murmuration', preset_system: 'boids', group: 'Complex',
+        params: { count: 400, steps: 200, speed: 2.0, mode: 'birds', sepWeight: 1.2, alignWeight: 1.0, cohWeight: 1.0 }
+      },
+
+      // ── attractor (only lorenz + the alternate non-lorenz model exist) ─────
+      {
+        id: 'attractor-lorenz-butterfly', name: 'Lorenz Butterfly', preset_system: 'attractor', group: 'Classic',
+        params: { type: 'lorenz', iter: 2000, scale: 3, dt: 0.01, sigma: 10, rho: 28, beta: 2.66 }
+      },
+      {
+        id: 'attractor-aizawa-shell', name: 'Aizawa Shell', preset_system: 'attractor', group: 'Classic',
+        params: { type: 'aizawa', iter: 3000, scale: 5, dt: 0.01 }
+      },
+      {
+        id: 'attractor-dense-lorenz', name: 'Dense Lorenz', preset_system: 'attractor', group: 'Complex',
+        params: { type: 'lorenz', iter: 5000, scale: 3, dt: 0.005, sigma: 10, rho: 28, beta: 2.66 }
+      },
+      {
+        id: 'attractor-sparse-web', name: 'Sparse Web', preset_system: 'attractor', group: 'Geometric',
+        params: { type: 'lorenz', iter: 600, scale: 6, dt: 0.02, sigma: 10, rho: 28, beta: 2.66 }
+      },
+
+      // ── hyphae ───────────────────────────────────────────────────────────
+      {
+        id: 'hyphae-mycelium', name: 'Mycelium', preset_system: 'hyphae', group: 'Classic',
+        params: { sources: 2, steps: 60, branchProb: 0.05, angleVar: 0.5, segLen: 3, maxBranches: 1000 }
+      },
+      {
+        id: 'hyphae-sparse-roots', name: 'Sparse Roots', preset_system: 'hyphae', group: 'Organic',
+        params: { sources: 1, steps: 70, branchProb: 0.02, angleVar: 0.6, segLen: 2.5, maxBranches: 600 }
+      },
+      {
+        id: 'hyphae-dense-web', name: 'Dense Web', preset_system: 'hyphae', group: 'Complex',
+        params: { sources: 5, steps: 60, branchProb: 0.12, angleVar: 0.5, segLen: 3, maxBranches: 2000 }
+      },
+      {
+        id: 'hyphae-tendrils', name: 'Tendrils', preset_system: 'hyphae', group: 'Organic',
+        params: { sources: 2, steps: 80, branchProb: 0.03, angleVar: 0.2, segLen: 4, maxBranches: 800 }
+      },
+
+      // ── lissajous (freqX/freqY coprime → closed curves) ───────────────────
+      {
+        id: 'lissajous-figure-eight', name: 'Figure Eight', preset_system: 'lissajous', group: 'Classic',
+        params: { freqX: 1, freqY: 2, phase: 1.57, damping: 0, resolution: 300, scale: 0.8 }
+      },
+      {
+        id: 'lissajous-trefoil', name: 'Trefoil', preset_system: 'lissajous', group: 'Classic',
+        params: { freqX: 1, freqY: 3, phase: 1.57, damping: 0, resolution: 400, scale: 0.8 }
+      },
+      {
+        id: 'lissajous-clover', name: 'Clover', preset_system: 'lissajous', group: 'Geometric',
+        params: { freqX: 3, freqY: 5, phase: 0.5, damping: 0, resolution: 500, scale: 0.8 }
+      },
+      {
+        id: 'lissajous-star', name: 'Star', preset_system: 'lissajous', group: 'Geometric',
+        params: { freqX: 4, freqY: 3, phase: 1.0, damping: 0, resolution: 500, scale: 0.8 }
+      },
+      {
+        id: 'lissajous-damped-knot', name: 'Damped Knot', preset_system: 'lissajous', group: 'Complex',
+        params: { freqX: 7, freqY: 5, phase: 1.5, damping: 0.001, resolution: 600, scale: 0.8 }
+      },
+
+      // ── wavetable ────────────────────────────────────────────────────────
+      {
+        id: 'wavetable-rolling-hills', name: 'Rolling Hills', preset_system: 'wavetable', group: 'Classic',
+        params: { lineStructure: 'horizontal', lines: 130, gap: 1.0, edgeFade: 0 }
+      },
+      {
+        id: 'wavetable-ripple-field', name: 'Ripple Field', preset_system: 'wavetable', group: 'Classic',
+        params: { lineStructure: 'vertical', lines: 100, lineOffset: 135, gap: 1.0 }
+      },
+      {
+        id: 'wavetable-interference', name: 'Interference', preset_system: 'wavetable', group: 'Geometric',
+        params: { lineStructure: 'horizontal-vertical', lines: 110, gap: 1.0, edgeFade: 20, edgeFadeMode: 'both' }
+      },
+      {
+        id: 'wavetable-storm-waves', name: 'Storm Waves', preset_system: 'wavetable', group: 'Complex',
+        params: { lineStructure: 'vertical', lines: 150, lineOffset: 135, verticalFade: 25, verticalFadeMode: 'both' }
+      },
+
+      // ── topo ─────────────────────────────────────────────────────────────
+      {
+        id: 'topo-mountain-range', name: 'Mountain Range', preset_system: 'topo', group: 'Classic',
+        params: { resolution: 120, levels: 30, sensitivity: 1.0, mappingMode: 'marching' }
+      },
+      {
+        id: 'topo-rolling-plains', name: 'Rolling Plains', preset_system: 'topo', group: 'Organic',
+        params: { resolution: 80, levels: 12, sensitivity: 1.8, mappingMode: 'smooth' }
+      },
+      {
+        id: 'topo-contour-survey', name: 'Contour Survey', preset_system: 'topo', group: 'Geometric',
+        params: { resolution: 160, levels: 40, sensitivity: 0.8, mappingMode: 'marching' }
+      },
+      {
+        id: 'topo-island', name: 'Island', preset_system: 'topo', group: 'Complex',
+        params: { resolution: 200, levels: 55, sensitivity: 1.2, mappingMode: 'bezier' }
+      },
+
+      // ── grid ─────────────────────────────────────────────────────────────
+      {
+        id: 'grid-graph-paper', name: 'Graph Paper', preset_system: 'grid', group: 'Geometric',
+        params: { rows: 20, cols: 20, distortion: 2, chaos: 0, type: 'warp' }
+      },
+      {
+        id: 'grid-warp-field', name: 'Warp Field', preset_system: 'grid', group: 'Organic',
+        params: { rows: 16, cols: 16, distortion: 15, chaos: 0, type: 'warp' }
+      },
+      {
+        id: 'grid-shift-tile', name: 'Shift Tile', preset_system: 'grid', group: 'Geometric',
+        params: { rows: 12, cols: 12, distortion: 8, chaos: 0, type: 'shift' }
+      },
+      {
+        id: 'grid-chaos-mesh', name: 'Chaos Mesh', preset_system: 'grid', group: 'Complex',
+        params: { rows: 25, cols: 25, distortion: 30, chaos: 8, type: 'warp' }
+      },
+
+      // ── rainfall ─────────────────────────────────────────────────────────
+      {
+        id: 'rainfall-drizzle', name: 'Drizzle', preset_system: 'rainfall', group: 'Classic',
+        params: { count: 80, traceLength: 60, traceStep: 3, turbulence: 0.1, rainfallAngle: 150 }
+      },
+      {
+        id: 'rainfall-summer-rain', name: 'Summer Rain', preset_system: 'rainfall', group: 'Classic',
+        params: { count: 200, traceLength: 120, traceStep: 3, turbulence: 0.25, rainfallAngle: 150 }
+      },
+      {
+        id: 'rainfall-downpour', name: 'Downpour', preset_system: 'rainfall', group: 'Complex',
+        params: { count: 500, traceLength: 180, traceStep: 3, turbulence: 0.4, rainfallAngle: 150 }
+      },
+      {
+        id: 'rainfall-windswept', name: 'Windswept', preset_system: 'rainfall', group: 'Organic',
+        params: { count: 150, traceLength: 130, traceStep: 3, turbulence: 0.3, rainfallAngle: 120, windAngle: 180, windStrength: 0.6 }
+      },
+
+      // ── phylla ───────────────────────────────────────────────────────────
+      {
+        id: 'phylla-sunflower', name: 'Sunflower', preset_system: 'phylla', group: 'Classic',
+        params: { count: 500, spacing: 5, angleStr: 137.5, divergence: 1.0, dotSize: 1.0, shapeType: 'circle' }
+      },
+      {
+        id: 'phylla-pinecone', name: 'Pinecone', preset_system: 'phylla', group: 'Classic',
+        params: { count: 300, spacing: 4, angleStr: 137.5, divergence: 1.0, dotSize: 1.2, shapeType: 'circle' }
+      },
+      {
+        id: 'phylla-honeycomb', name: 'Honeycomb', preset_system: 'phylla', group: 'Geometric',
+        params: { count: 400, spacing: 5, angleStr: 137.5, divergence: 0.9, dotSize: 1.5, shapeType: 'polygon', sides: 6 }
+      },
+      {
+        id: 'phylla-dense-field', name: 'Dense Field', preset_system: 'phylla', group: 'Complex',
+        params: { count: 1500, spacing: 5, angleStr: 137.5, divergence: 1.0, dotSize: 0.6, shapeType: 'circle' }
+      },
+
+      // ── spiral ───────────────────────────────────────────────────────────
+      {
+        id: 'spiral-simple', name: 'Simple Spiral', preset_system: 'spiral', group: 'Classic',
+        params: { loops: 5, res: 100, startR: 5, pulseAmp: 0 }
+      },
+      {
+        id: 'spiral-tight-coil', name: 'Tight Coil', preset_system: 'spiral', group: 'Geometric',
+        params: { loops: 20, res: 120, startR: 2, pulseAmp: 0 }
+      },
+      {
+        id: 'spiral-pulsing-vortex', name: 'Pulsing Vortex', preset_system: 'spiral', group: 'Organic',
+        params: { loops: 10, res: 120, startR: 5, pulseAmp: 8, pulseFreq: 3 }
+      },
+      {
+        id: 'spiral-galaxy', name: 'Galaxy', preset_system: 'spiral', group: 'Complex',
+        params: { loops: 35, res: 150, startR: 2, pulseAmp: 2, pulseFreq: 2 }
+      },
+
+      // ── shapePack ────────────────────────────────────────────────────────
+      {
+        id: 'shapepack-bubbles', name: 'Bubbles', preset_system: 'shapePack', group: 'Classic',
+        params: { shape: 'circle', count: 300, minR: 3, maxR: 18, padding: 2, attempts: 300, segments: 32 }
+      },
+      {
+        id: 'shapepack-pebble-beach', name: 'Pebble Beach', preset_system: 'shapePack', group: 'Organic',
+        params: { shape: 'circle', count: 500, minR: 2, maxR: 10, padding: 1, attempts: 400, segments: 24 }
+      },
+      {
+        id: 'shapepack-hexagonal-mosaic', name: 'Hexagonal Mosaic', preset_system: 'shapePack', group: 'Geometric',
+        params: { shape: 'polygon', count: 200, minR: 6, maxR: 12, padding: 1, attempts: 300, segments: 6 }
+      },
+      {
+        id: 'shapepack-confetti', name: 'Confetti', preset_system: 'shapePack', group: 'Complex',
+        params: { shape: 'circle', count: 800, minR: 1, maxR: 25, padding: 1, attempts: 500, segments: 24 }
       }
 
   ];

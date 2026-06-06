@@ -1657,6 +1657,36 @@
     return acc;
   }, []);
 
+  // ── Universal preset control ──────────────────────────────────────────────
+  // Every remaining algorithm gets a "Presets" section + preset selector at the
+  // top of its panel so the universal gallery (which intercepts any `preset`
+  // control whose library is non-empty) can mount. Algorithms that already
+  // declare a preset control (harmonograph, petalis, terrain, pendula) are left
+  // untouched. Options are derived from the per-system library so the <select>
+  // fallback (used only if the gallery component is missing) still lists them.
+  const PRESET_CONTROL_SYSTEMS = [
+    'rings', 'svgDistort', 'flowfield', 'boids', 'attractor', 'hyphae',
+    'lissajous', 'wavetable', 'topo', 'grid', 'rainfall', 'phylla',
+    'spiral', 'shapePack',
+  ];
+  const presetOptionsFor = (system) => {
+    const lib = (window.Vectura && window.Vectura.PresetLibraries
+      && window.Vectura.PresetLibraries[system]) || [];
+    return [
+      { value: 'custom', label: 'Custom' },
+      ...lib.map((preset) => ({ value: preset.id, label: preset.name })),
+    ];
+  };
+  PRESET_CONTROL_SYSTEMS.forEach((system) => {
+    const defs = CONTROL_DEFS[system];
+    if (!Array.isArray(defs)) return;
+    if (defs.some((def) => def && def.id === 'preset')) return; // already wired
+    defs.unshift(
+      { type: 'section', label: 'Presets' },
+      { id: 'preset', label: 'Preset', type: 'select', options: presetOptionsFor(system) },
+    );
+  });
+
   const ns = (window.Vectura = window.Vectura || {});
   const ui = (ns.UI = ns.UI || {});
   ui.CONTROL_DEFS = CONTROL_DEFS;

@@ -229,7 +229,7 @@
       <div class="pane-header pane-header-left p-4 border-b border-vectura-border flex justify-between items-center">
         <span class="pane-title font-bold text-vectura-accent">GENERATOR</span>
 
-        <span class="pane-meta text-[11px] text-vectura-muted">V.1.1.59</span>
+        <span class="pane-meta text-[11px] text-vectura-muted">V.1.1.60</span>
 
         <button id="btn-pane-toggle-left" class="pane-toggle pane-toggle-left" type="button"
           aria-label="Toggle left pane">
@@ -853,6 +853,9 @@
   <!-- Wallpaper creative-experience seams: preview substrate + presets/randomizer.
        Must load before mirror-panel.js, which consumes both. -->
   <script src="./src/ui/panels/wallpaper-preview.js" defer></script>
+  <!-- User-authored wallpaper recipes (bundled from user-presets/wallpaper/);
+       must load before wallpaper-presets.js, which appends them in list(). -->
+  <script src="./src/config/user-wallpaper-recipes.js" defer></script>
   <script src="./src/ui/panels/wallpaper-presets.js" defer></script>
   <script src="./src/ui/panels/mirror-panel.js" defer></script>
   <script src="./src/ui/panels/algorithm-panel.js" defer></script>

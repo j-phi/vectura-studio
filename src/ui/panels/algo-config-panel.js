@@ -783,25 +783,51 @@
       if (m.triggerThumbRelease) m.triggerThumbRelease(slider);
     };
 
-    // Shared apply path for the harmonograph-family preset selector (the
-    // craft-ladder gallery AND any future <select> route through this). A
-    // preset defines the whole figure (and may ship a motion patch); we keep
-    // only the layer's transform so applying one doesn't move/resize it on the
-    // canvas. `presetId === 'custom'` just stamps the custom marker. The caller
+    // Generic preset apply path — every algorithm with a preset library routes
+    // through this (the gallery mounts for any non-empty library). A preset
+    // defines the whole figure (and may ship a motion patch); we clone the
+    // algorithm's defaults, merge the preset params on top, then re-impose the
+    // layer's transform (and a small per-algorithm preserve set) so applying a
+    // preset never moves/resizes it on the canvas or drops algorithm-orthogonal
+    // tuning like smoothing. `presetId === 'custom'` just stamps the custom
+    // marker (petalisDesigner also clears its derived shading state). The caller
     // owns pushHistory (one entry per user action).
-    const applyHarmonographFamilyPreset = (presetId) => {
+    const EXTRA_PRESERVED = {
+      rings: ['smoothing', 'simplify', 'curves', 'outerDiameter', 'centerDiameter'],
+      petalisDesigner: ['smoothing', 'simplify', 'curves'],
+      terrain: ['smoothing', 'simplify', 'curves'],
+    };
+    const lookupPreset = (type, presetId) => {
+      const libs = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.PresetLibraries;
+      const builtIn = (libs && libs[type]) || [];
+      let hit = builtIn.find((item) => item.id === presetId);
+      if (hit) return hit;
+      // User presets live in localStorage (keyed by system); the gallery offers
+      // them in the same list, so apply must resolve them too.
+      try {
+        const raw = typeof localStorage !== 'undefined' && localStorage.getItem(`vectura.user_presets.${type}`);
+        const user = raw ? JSON.parse(raw) : [];
+        hit = Array.isArray(user) ? user.find((item) => item.id === presetId) : null;
+      } catch (_) { hit = null; }
+      return hit || null;
+    };
+    const applyPreset = (presetId) => {
       if (presetId === 'custom') {
         layer.params.preset = 'custom';
+        if (layer.type === 'petalisDesigner') {
+          layer.params.shadings = [];
+          layer.params.innerShading = false;
+          layer.params.outerShading = false;
+        }
         this.storeLayerParams(layer);
         this.app.regen();
         this.buildControls();
         this.updateFormula();
         return;
       }
-      const lib = layer.type === 'pendula' ? PENDULA_PRESET_LIBRARY : HARMONOGRAPH_PRESET_LIBRARY;
-      const preset = (lib || []).find((item) => item.id === presetId);
+      const preset = lookupPreset(layer.type, presetId);
       const base = ALGO_DEFAULTS?.[layer.type] ? clone(ALGO_DEFAULTS[layer.type]) : {};
-      const preserved = new Set([...TRANSFORM_KEYS]);
+      const preserved = new Set([...TRANSFORM_KEYS, ...(EXTRA_PRESERVED[layer.type] || [])]);
       const nextParams = { ...base, ...(preset?.params || {}) };
       preserved.forEach((key) => {
         if (layer.params[key] !== undefined) nextParams[key] = layer.params[key];
@@ -824,25 +850,28 @@
         target.appendChild(section);
         return;
       }
-      // Harmonograph family: the preset control is a craft-ladder GALLERY, not
-      // a <select>. The registry still declares it as a select (so the option
-      // data stays in one place); here we intercept it and mount the grouped
-      // card grid, which routes clicks through the SAME apply path.
-      if (def.id === 'preset' && (layer.type === 'harmonograph' || layer.type === 'pendula')) {
-        const gallery = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.UI?.HarmonographPresetGallery;
-        const libs = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.PresetLibraries;
-        const presets = (libs && libs[layer.type]) || [];
-        if (typeof gallery === 'function') {
-          gallery(target, {
-            layer,
-            presets,
-            onApply: (presetId) => {
-              if (this.app.pushHistory) this.app.pushHistory();
-              applyHarmonographFamilyPreset(presetId);
-            },
-          });
+      // Universal preset gallery: the preset control is a thumbnail GALLERY, not
+      // a <select>. The registry still declares it as a select (so the control
+      // slot exists); here we intercept it for ANY algorithm whose preset
+      // library is non-empty and mount the grouped popover, which routes clicks
+      // through the SAME generic apply path. No per-algorithm branches.
+      if (def.id === 'preset') {
+        const V = (typeof window !== 'undefined' ? window : globalThis)?.Vectura;
+        const presetLib = V?.PresetLibraries?.[layer.type] ?? [];
+        if (presetLib.length > 0) {
+          const gallery = V?.UI?.PresetGallery || V?.UI?.HarmonographPresetGallery;
+          if (typeof gallery === 'function') {
+            gallery(target, {
+              layer,
+              presets: presetLib,
+              onApply: (presetId) => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                applyPreset(presetId);
+              },
+            });
+          }
+          return;
         }
-        return;
       }
 
       if (def.type === 'svgImportButton') {
@@ -2971,94 +3000,14 @@
           input.onchange = (e) => {
             if (this.app.pushHistory) this.app.pushHistory();
             const next = e.target.value;
-            if (isPetalisLayerType(layer.type) && def.id === 'preset' && next === 'custom') {
-              layer.params.preset = 'custom';
-              layer.params.shadings = [];
-              layer.params.innerShading = false;
-              layer.params.outerShading = false;
-              this.storeLayerParams(layer);
-              span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
-              this.app.regen();
-              this.buildControls();
-              this.updateFormula();
-              return;
-            }
-            if (isPetalisLayerType(layer.type) && def.id === 'preset' && next !== 'custom') {
-              const preset = (PETALIS_PRESET_LIBRARY || []).find((item) => item.id === next);
-              const presetBase = 'petalisDesigner';
-              const base = ALGO_DEFAULTS?.[presetBase] ? clone(ALGO_DEFAULTS[presetBase]) : {};
-              const preserved = new Set([...TRANSFORM_KEYS, 'smoothing', 'simplify', 'curves']);
-              const nextParams = { ...base, ...(preset?.params || {}) };
-              preserved.forEach((key) => {
-                if (layer.params[key] !== undefined) nextParams[key] = layer.params[key];
-              });
-              nextParams.preset = next;
-              layer.params = { ...layer.params, ...nextParams };
-              this.storeLayerParams(layer);
-              span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
-              this.app.regen();
-              this.buildControls();
-              this.updateFormula();
-              return;
-            }
-            if (layer.type === 'terrain' && def.id === 'preset' && next === 'custom') {
-              layer.params.preset = 'custom';
-              this.storeLayerParams(layer);
-              span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
-              this.app.regen();
-              this.buildControls();
-              this.updateFormula();
-              return;
-            }
-            if (layer.type === 'terrain' && def.id === 'preset' && next !== 'custom') {
-              const preset = (TERRAIN_PRESET_LIBRARY || []).find((item) => item.id === next);
-              const base = ALGO_DEFAULTS?.terrain ? clone(ALGO_DEFAULTS.terrain) : {};
-              const preserved = new Set([...TRANSFORM_KEYS, 'smoothing', 'simplify', 'curves']);
-              const nextParams = { ...base, ...(preset?.params || {}) };
-              preserved.forEach((key) => {
-                if (layer.params[key] !== undefined) nextParams[key] = layer.params[key];
-              });
-              nextParams.preset = next;
-              layer.params = { ...layer.params, ...nextParams };
-              this.storeLayerParams(layer);
-              span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
-              this.app.regen();
-              this.buildControls();
-              this.updateFormula();
-              return;
-            }
-            if (layer.type === 'rings' && def.id === 'preset' && next === 'custom') {
-              layer.params.preset = 'custom';
-              this.storeLayerParams(layer);
-              span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
-              this.app.regen();
-              this.buildControls();
-              this.updateFormula();
-              return;
-            }
-            if (layer.type === 'rings' && def.id === 'preset' && next !== 'custom') {
-              const preset = (RINGS_PRESET_LIBRARY || []).find((item) => item.id === next);
-              const base = ALGO_DEFAULTS?.rings ? clone(ALGO_DEFAULTS.rings) : {};
-              const preserved = new Set([...TRANSFORM_KEYS, 'smoothing', 'simplify', 'curves', 'outerDiameter', 'centerDiameter']);
-              const nextParams = { ...base, ...(preset?.params || {}) };
-              preserved.forEach((key) => {
-                if (layer.params[key] !== undefined) nextParams[key] = layer.params[key];
-              });
-              nextParams.preset = next;
-              layer.params = { ...layer.params, ...nextParams };
-              this.storeLayerParams(layer);
-              span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
-              this.app.regen();
-              this.buildControls();
-              this.updateFormula();
-              return;
-            }
-            // Harmonograph family preset control is rendered as the craft-ladder
-            // gallery (intercepted above), so this <select> branch is normally
-            // unreachable — but keep it wired through the SAME shared apply path
-            // so any fallback select stays in lock-step (no duplicated merge).
-            if ((layer.type === 'harmonograph' || layer.type === 'pendula') && def.id === 'preset') {
-              applyHarmonographFamilyPreset(next);
+            // Preset control fallback: the universal gallery intercepts the
+            // preset control for any algorithm with a non-empty library (see
+            // renderDef), so this <select> branch is normally unreachable. Keep
+            // it wired to the SAME generic apply path so any fallback select
+            // (empty-library algorithm, or gallery component missing) stays in
+            // lock-step — no duplicated merge logic per algorithm.
+            if (def.id === 'preset') {
+              applyPreset(next);
               return;
             }
             layer.params[def.id] = next;
