@@ -437,6 +437,7 @@
   };
   window.Vectura.ALGO_DEFAULTS = {
     wavetable: {
+      preset: 'wavetable-rolling-hills',
       lineStructure: 'horizontal',
       lines: 130,
       noiseType: 'simplex',
@@ -549,7 +550,7 @@
     },
     rings: {
       label: 'Rings',
-      preset: 'custom',
+      preset: 'rings-default',
       rings: 15,
       centerDiameter: 0,
       outerDiameter: 140,
@@ -726,6 +727,7 @@
     },
     topo: {
       label: 'Topo',
+      preset: 'topo-mountain-range',
       resolution: 120,
       levels: 30,
       noises: [
@@ -820,7 +822,7 @@
     },
     petalisDesigner: {
       label: 'Petalis',
-      preset: 'custom',
+      preset: 'petalisdesigner-default',
       petalProfile: 'teardrop',
       petalScale: 32,
       petalWidthRatio: 1,
@@ -917,6 +919,7 @@
     },
     rainfall: {
       label: 'Rainfall',
+      preset: 'rainfall-default',
       count: 210,
       traceLength: 120,
       traceStep: 3,
@@ -966,6 +969,7 @@
       curves: false,
     },
     flowfield: {
+      preset: 'flowfield-default',
       flowMode: 'angle',
       noises: [
         {
@@ -1029,6 +1033,7 @@
       curves: false,
     },
     lissajous: {
+      preset: 'lissajous-default',
       freqX: 3,
       freqY: 2,
       damping: 0.001,
@@ -1064,7 +1069,7 @@
     },
     harmonograph: {
       label: 'Harmonograph',
-      preset: 'custom',
+      preset: 'harmonograph-default',
       machineType: 'lateral',
       renderMode: 'line',
       samples: 6000,
@@ -1132,7 +1137,7 @@
     },
     pendula: {
       label: 'Pendula',
-      preset: 'custom',
+      preset: 'pendula-default',
       machineType: 'lateral',
       renderMode: 'line',
       samples: 6000,
@@ -1169,6 +1174,7 @@
       curves: true,
     },
     spiral: {
+      preset: 'spiral-default',
       loops: 10,
       res: 100,
       noiseAmp: 10,
@@ -1264,6 +1270,7 @@
       curves: false,
     },
     grid: {
+      preset: 'grid-default',
       rows: 20,
       cols: 20,
       distortion: 10,
@@ -1318,6 +1325,7 @@
       curves: false,
     },
     phylla: {
+      preset: 'phylla-sunflower',
       count: 500,
       spacing: 5,
       angleStr: 137.5,
@@ -1375,6 +1383,7 @@
       curves: false,
     },
     boids: {
+      preset: 'boids-default',
       count: 100,
       steps: 100,
       speed: 2,
@@ -1391,6 +1400,7 @@
       curves: false,
     },
     attractor: {
+      preset: 'attractor-default',
       type: 'lorenz',
       iter: 1200,
       scale: 3,
@@ -1403,6 +1413,7 @@
       curves: false,
     },
     hyphae: {
+      preset: 'hyphae-default',
       sources: 2,
       steps: 50,
       branchProb: 0.05,
@@ -1415,6 +1426,7 @@
     },
     shapePack: {
       label: 'Shape Pack',
+      preset: 'shapepack-default',
       shape: 'circle',
       count: 500,
       minR: 2,
@@ -1433,7 +1445,7 @@
     },
     terrain: {
       label: 'Terrain',
-      preset: 'custom',
+      preset: 'terrain-default',
       perspectiveMode: 'one-point',
       horizonHeight: 50,
       vanishingPointX: 50,
@@ -1557,6 +1569,7 @@
     },
     svgDistort: {
       label: 'SVG Import',
+      preset: 'svgdistort-default',
       importedGroups: [],
       svgName: '',
       showOutlines: true,

@@ -4,6 +4,31 @@
 (() => {
   const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.PRESETS = [
+      // ── Factory-default presets ───────────────────────────────────────────
+      // The initialized state of each algorithm, surfaced as a named, selected,
+      // first-in-list preset (ALGO_DEFAULTS[type].preset points here). Empty
+      // `params` means "apply nothing over the algorithm defaults" — so the
+      // preset is, by construction, byte-identical to the factory state and also
+      // serves as a one-click "reset to default". Placed first in the array so
+      // each renders first within its (Classic) group. Algorithms whose default
+      // already equals a curated preset reuse that instead (wavetable → Rolling
+      // Hills, topo → Mountain Range, phylla → Sunflower).
+      { id: "pendula-default",         name: "Default", preset_system: "pendula",         group: "Classic", params: {} },
+      { id: "harmonograph-default",    name: "Default", preset_system: "harmonograph",    group: "Classic", params: {} },
+      { id: "petalisdesigner-default", name: "Default", preset_system: "petalisDesigner", group: "Classic", params: {} },
+      { id: "terrain-default",         name: "Default", preset_system: "terrain",         group: "Classic", params: {} },
+      { id: "rings-default",           name: "Default", preset_system: "rings",           group: "Classic", params: {} },
+      { id: "svgdistort-default",      name: "Default", preset_system: "svgDistort",       group: "Classic", params: {} },
+      { id: "flowfield-default",       name: "Default", preset_system: "flowfield",        group: "Classic", params: {} },
+      { id: "boids-default",           name: "Default", preset_system: "boids",            group: "Classic", params: {} },
+      { id: "attractor-default",       name: "Default", preset_system: "attractor",        group: "Classic", params: {} },
+      { id: "hyphae-default",          name: "Default", preset_system: "hyphae",           group: "Classic", params: {} },
+      { id: "lissajous-default",       name: "Default", preset_system: "lissajous",        group: "Classic", params: {} },
+      { id: "grid-default",            name: "Default", preset_system: "grid",             group: "Classic", params: {} },
+      { id: "rainfall-default",        name: "Default", preset_system: "rainfall",         group: "Classic", params: {} },
+      { id: "spiral-default",          name: "Default", preset_system: "spiral",           group: "Classic", params: {} },
+      { id: "shapepack-default",       name: "Default", preset_system: "shapePack",        group: "Classic", params: {} },
+
       {
         id: "pendula-breathing-orbit",
         name: "Breathing Orbit",

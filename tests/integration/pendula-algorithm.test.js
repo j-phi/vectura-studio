@@ -29,7 +29,10 @@ describe('Pendula algorithm — registration & render', () => {
     const def = window.Vectura.ALGO_DEFAULTS.pendula;
     expect(def).toBeTruthy();
     expect(def.label).toBe('Pendula');
-    expect(def.preset).toBe('custom');
+    // A fresh pendula layer initializes on the named factory Default preset
+    // (the universal preset system surfaces the initial state as a selected,
+    // first-in-list preset rather than the unnamed "custom" marker).
+    expect(def.preset).toBe('pendula-default');
     expect(def.motion).toEqual({ sources: [], edges: [] });
     expect(Array.isArray(def.pendulums)).toBe(true);
   });

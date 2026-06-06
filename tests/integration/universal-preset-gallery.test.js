@@ -66,6 +66,31 @@ describe('Universal preset gallery (all algorithms)', () => {
     });
   }
 
+  // A fresh layer must initialize on a named, selected, first-in-list preset —
+  // never the unnamed "Custom" state. Covers both the reuse case (the default
+  // equals a curated preset) and the synthetic "Default" case.
+  const DEFAULT_PRESET = {
+    flowfield: 'flowfield-default',
+    lissajous: 'lissajous-default',
+    shapePack: 'shapepack-default',
+    rings: 'rings-default',
+    terrain: 'terrain-default',
+    wavetable: 'wavetable-rolling-hills', // default equals a curated preset (reused)
+    topo: 'topo-mountain-range',
+    phylla: 'phylla-sunflower',
+  };
+  for (const [system, expectedId] of Object.entries(DEFAULT_PRESET)) {
+    test(`${system} initializes on its named default preset (${expectedId}) — selected + first`, async () => {
+      await mount(system);
+      expect(app.engine.getActiveLayer().params.preset).toBe(expectedId);
+      const firstPreset = options()[0];
+      expect(firstPreset.dataset.presetId).toBe(expectedId);
+      expect(firstPreset.classList.contains('is-active')).toBe(true);
+      // The trigger shows the named preset, not the "Custom" fallback label.
+      expect(document.querySelector('.hg-preset-trigger-label').textContent.trim()).not.toBe('Custom');
+    });
+  }
+
   test('petalisDesigner is wired for the gallery (library + preset control present)', async () => {
     await mount('flowfield'); // any layer — we only need the loaded runtime globals
     const V = window.Vectura;

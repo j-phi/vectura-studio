@@ -47,8 +47,8 @@ describe('Harmonograph-family preset dropdown (craft ladder)', () => {
       expect(groupTitles()).toEqual(['Classic', 'Geometric', 'Evolving']);
     });
 
-    test('renders one option per preset (4 total), each with a thumbnail canvas', () => {
-      expect(cards().length).toBe(4);
+    test('renders one option per preset (5 total — incl. Default), each with a thumbnail canvas', () => {
+      expect(cards().length).toBe(5);
       cards().forEach((c) => {
         expect(c.querySelector('canvas.hg-preset-option-thumb')).toBeTruthy();
       });
@@ -117,12 +117,20 @@ describe('Harmonograph-family preset dropdown (craft ladder)', () => {
   describe('pendula layer', () => {
     beforeEach(async () => { await mount('pendula'); });
 
-    test('renders Classic (Pulsing Web) + Evolving (motion presets) groups', () => {
+    test('renders Classic (Default + Pulsing Web) + Evolving (motion presets) groups', () => {
       // Breathing Orbit / Drift Star / Tidal Lissajous carry motion → Evolving;
-      // Pulsing Web has an empty motion block → Classic. No Geometric group, so
-      // it is omitted. Custom option is excluded from the preset count.
+      // Default + Pulsing Web have an empty motion block → Classic. No Geometric
+      // group, so it is omitted. Custom option is excluded from the preset count.
       expect(groupTitles()).toEqual(['Classic', 'Evolving']);
-      expect(cards().length).toBe(4);
+      expect(cards().length).toBe(5);
+    });
+
+    test('a fresh pendula layer initializes on the named Default preset (selected + first)', () => {
+      const layer = app.engine.getActiveLayer();
+      expect(layer.params.preset).toBe('pendula-default');
+      const firstPreset = document.querySelector('.hg-preset-option[data-preset-id]:not([data-preset-id="custom"])');
+      expect(firstPreset.dataset.presetId).toBe('pendula-default');
+      expect(card('pendula-default').classList.contains('is-active')).toBe(true);
     });
 
     test('clicking a motion-bearing card applies its live patch', () => {
