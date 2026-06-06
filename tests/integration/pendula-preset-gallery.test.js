@@ -9,19 +9,17 @@ const FULL_STACK = {
 };
 
 /*
- * The craft-ladder grouped preset gallery for the harmonograph family. Replaces
- * the flat <select> with a grid of clickable figure-thumbnail cards grouped by
- * craft-ladder stage (Classic → Detuned → Evolving). Covers both the
- * harmonograph and pendula layer types, since both reuse the same component and
- * the same shared apply path.
+ * The compact preset dropdown for the harmonograph family. Replaces the former
+ * card gallery with a trigger + grouped popover for both harmonograph and
+ * pendula layer types (same component, same apply path).
  */
-describe('Harmonograph-family preset gallery (craft ladder)', () => {
+describe('Harmonograph-family preset dropdown (craft ladder)', () => {
   let runtime, window, document, app;
 
   const groupTitles = () =>
     Array.from(document.querySelectorAll('.hg-preset-group-title')).map((el) => el.textContent.trim());
-  const cards = () => Array.from(document.querySelectorAll('.hg-preset-card'));
-  const card = (id) => document.querySelector(`.hg-preset-card[data-preset-id="${id}"]`);
+  const cards = () => Array.from(document.querySelectorAll('.hg-preset-option[data-preset-id]:not([data-preset-id="custom"])'));
+  const card = (id) => document.querySelector(`.hg-preset-option[data-preset-id="${id}"]`);
 
   const mount = async (layerType) => {
     runtime = await loadVecturaRuntime(FULL_STACK);
@@ -42,19 +40,19 @@ describe('Harmonograph-family preset gallery (craft ladder)', () => {
     beforeEach(async () => { await mount('harmonograph'); });
 
     test('renders grouped sections in Classic → Detuned → Evolving order', () => {
-      expect(document.querySelector('.hg-preset-gallery')).toBeTruthy();
+      expect(document.querySelector('.hg-preset-dropdown-wrap')).toBeTruthy();
       // Unison Circle + Classic 3:2 Star → Classic; 4:3 Star → Detuned;
       // Evolving Snake → Evolving. All three groups are present and ordered.
       expect(groupTitles()).toEqual(['Classic', 'Detuned', 'Evolving']);
     });
 
-    test('renders one card per preset (4 total), each with a thumbnail canvas', () => {
+    test('renders one option per preset (4 total), each with a thumbnail canvas', () => {
       expect(cards().length).toBe(4);
       cards().forEach((c) => {
-        expect(c.querySelector('canvas.hg-preset-thumb')).toBeTruthy();
+        expect(c.querySelector('canvas.hg-preset-option-thumb')).toBeTruthy();
       });
-      // Card labels match the preset names.
-      const names = cards().map((c) => c.querySelector('.hg-preset-name').textContent.trim());
+      // Option labels match the preset names.
+      const names = cards().map((c) => c.querySelector('.hg-preset-option-label').textContent.trim());
       expect(names).toEqual(
         expect.arrayContaining(['Unison Circle', 'Classic 3:2 Star', '4:3 Star', 'Evolving Snake'])
       );
@@ -81,7 +79,7 @@ describe('Harmonograph-family preset gallery (craft ladder)', () => {
       expect(after.params.x).toBe(123);
       expect(after.params.y).toBe(-45);
       expect(after.params.rotation).toBe(30);
-      // Active card highlighted after the gallery rebuilt.
+      // Active option highlighted after the dropdown rebuilt.
       expect(card('harmonograph-classic-3-2-star').classList.contains('is-active')).toBe(true);
       expect(card('harmonograph-unison-circle').classList.contains('is-active')).toBe(false);
     });
@@ -105,13 +103,13 @@ describe('Harmonograph-family preset gallery (craft ladder)', () => {
       expect(layer.params.pendulums.length).toBe(1);
     });
 
-    test('an unmatched (Custom) param state leaves every card inactive', () => {
+    test('an unmatched (Custom) param state leaves every preset option inactive', () => {
       card('harmonograph-unison-circle').click();
       const layer = app.engine.getActiveLayer();
       // Drift into a custom state.
       layer.params.preset = 'custom';
       app.ui.buildControls();
-      expect(document.querySelector('.hg-preset-card.is-active')).toBeNull();
+      expect(document.querySelector('.hg-preset-option:not([data-preset-id="custom"]).is-active')).toBeNull();
     });
   });
 
@@ -121,7 +119,7 @@ describe('Harmonograph-family preset gallery (craft ladder)', () => {
     test('renders Classic (Pulsing Web) + Evolving (motion presets) groups', () => {
       // Breathing Orbit / Drift Star / Tidal Lissajous carry motion → Evolving;
       // Pulsing Web has an empty motion block → Classic. No Detuned group, so
-      // it is omitted.
+      // it is omitted. Custom option is excluded from the preset count.
       expect(groupTitles()).toEqual(['Classic', 'Evolving']);
       expect(cards().length).toBe(4);
     });
@@ -132,7 +130,7 @@ describe('Harmonograph-family preset gallery (craft ladder)', () => {
       expect(p.preset).toBe('pendula-breathing-orbit');
       expect(window.Vectura.HarmonographModulation.hasActiveEdges(p.motion)).toBe(true);
       expect(p.motion.edges[0].targetParamPath).toBe('pendulums.1.freq');
-      expect(card('pendula-breathing-orbit').classList.contains('is-active')).toBe(true);
+      expect(card('pendula-breathing-orbit').classList.contains('is-active')).toBe(true); // set at mount
     });
 
     test('applying a preset clears stale per-param dice locks (fresh slate)', () => {
@@ -144,6 +142,49 @@ describe('Harmonograph-family preset gallery (craft ladder)', () => {
       // silently carry onto the new preset's same-id pendulums.
       const locks = app.engine.getActiveLayer().params.pendulumParamLocks || {};
       expect(locks['pend-1']?.freq).toBeFalsy();
+    });
+
+    test('import button is rendered in the popover', () => {
+      expect(document.querySelector('.hg-preset-import')).toBeTruthy();
+    });
+
+    test('User group does not appear when localStorage is empty', () => {
+      expect(groupTitles()).not.toContain('User');
+    });
+
+    test('user presets from localStorage appear under a User group', () => {
+      const userPreset = {
+        id: 'user-pendula-123', name: 'My Custom Orbit',
+        preset_system: 'pendula', group: 'User',
+        params: {
+          renderMode: 'line', samples: 6000, duration: 30, scale: 0.5,
+          pendulums: [{ id: 'pend-1', enabled: true, ampX: 100, ampY: 100, phaseX: 90, phaseY: 0, damp: 0, freq: 2, micro: 0 }],
+        },
+      };
+      window.localStorage.setItem('vectura.user_presets.pendula', JSON.stringify([userPreset]));
+      // Rebuild the controls to pick up the newly stored preset.
+      app.ui.buildControls();
+      expect(groupTitles()).toContain('User');
+      expect(card('user-pendula-123')).toBeTruthy();
+    });
+
+    test('delete button on a user preset removes it from localStorage and redraws', () => {
+      const userPreset = {
+        id: 'user-pendula-del', name: 'Deletable',
+        preset_system: 'pendula', group: 'User',
+        params: { renderMode: 'line', samples: 3000, duration: 20, scale: 0.5, pendulums: [] },
+      };
+      window.localStorage.setItem('vectura.user_presets.pendula', JSON.stringify([userPreset]));
+      app.ui.buildControls();
+
+      const delBtn = document.querySelector('.hg-preset-option[data-preset-id="user-pendula-del"] .hg-preset-delete');
+      expect(delBtn).toBeTruthy();
+      delBtn.click();
+
+      // localStorage cleared and option removed.
+      const stored = JSON.parse(window.localStorage.getItem('vectura.user_presets.pendula') || '[]');
+      expect(stored.length).toBe(0);
+      expect(document.querySelector('.hg-preset-option[data-preset-id="user-pendula-del"]')).toBeNull();
     });
   });
 });

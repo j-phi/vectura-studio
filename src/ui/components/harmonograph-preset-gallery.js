@@ -1,19 +1,17 @@
 /*
  * Vectura Studio — HarmonographPresetGallery component.
  *
- * The craft-ladder preset selector for the harmonograph family (harmonograph +
- * the pendula studio). Replaces the flat <select> with a grid of clickable
- * mini-thumbnail cards grouped by craft-ladder stage:
+ * Compact dropdown selector for harmonograph-family presets (harmonograph +
+ * pendula). A trigger button shows the active preset's 28 px canvas thumbnail
+ * and name; clicking it opens a grouped popover list where every option also
+ * renders the same thumbnail. Groups follow the craft-ladder order:
  *
- *   Classic → Detuned → Evolving
+ *   Classic → Detuned → Evolving   (empty groups are omitted)
  *
- * Each card renders the preset figure to a small DPR-scaled canvas (via the
- * shared HarmonographCore.evaluatePath) and shows the preset name. Clicking a
- * card routes through opts.onApply(presetId) — the host wires that to the SAME
- * apply path the legacy <select> used (merge params, preserve transform, set
- * layer.params.preset, storeLayerParams, regen, rebuild controls). The card for
- * the currently-applied preset (layer.params.preset) is highlighted; a
- * non-matching ("Custom") state simply leaves every card inactive.
+ * A "Custom" option is always first so users can deselect any preset.
+ * Clicking an option calls opts.onApply(presetId) — the same apply path the
+ * former gallery card used (merge params, preserve transform, storeLayerParams,
+ * regen, rebuild controls). The active option carries .is-active from mount.
  *
  * Usage:
  *   Vectura.UI.HarmonographPresetGallery(targetEl, { layer, presets, onApply });
@@ -24,7 +22,25 @@
   const UI = (Vectura.UI = Vectura.UI || {});
 
   // Craft-ladder order. Empty groups are omitted at render time.
-  const GROUP_ORDER = ['Classic', 'Detuned', 'Evolving'];
+  const GROUP_ORDER = ['Classic', 'Detuned', 'Evolving', 'User'];
+  const THUMB_SIZE = 28;
+
+  const LS_KEY = (system) => `vectura.user_presets.${system}`;
+
+  const loadUserPresets = (system) => {
+    try {
+      const raw = typeof localStorage !== 'undefined' && localStorage.getItem(LS_KEY(system));
+      return raw ? JSON.parse(raw) : [];
+    } catch (_) { return []; }
+  };
+
+  const saveUserPresets = (system, presets) => {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(LS_KEY(system), JSON.stringify(presets));
+      }
+    } catch (_) { /* quota or security error — silently ignore */ }
+  };
 
   const readToken = (name, fallback) => {
     try {
@@ -36,30 +52,24 @@
     }
   };
 
-  // Evaluate a preset's full figure (defaults ⊕ preset params) and stroke it
-  // fit-to-box into the thumbnail canvas. Mirrors the bbox/scale math in the
-  // virtual plotter draw() and the per-pendulum mini-trace. Guarded for the
-  // jsdom no-op ctx (getContext may return a stub lacking setTransform).
-  const drawThumb = (canvas, params) => {
+  // Evaluate a preset's full figure and stroke it fit-to-box into the canvas.
+  // Guarded for jsdom no-op contexts (getContext may return a stub lacking
+  // setTransform / beginPath). Size parameter controls both CSS and backing dims.
+  const drawThumb = (canvas, params, size = THUMB_SIZE) => {
     if (!canvas || typeof canvas.getContext !== 'function') return;
     const ctx = canvas.getContext('2d');
     if (!ctx || typeof ctx.beginPath !== 'function') return;
     const HC = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.HarmonographCore;
-    const CSS_SIZE = 64;
     const dpr = Math.max(1, Math.min((typeof window !== 'undefined' && window.devicePixelRatio) || 1, 3));
-    canvas.width = Math.round(CSS_SIZE * dpr);
-    canvas.height = Math.round(CSS_SIZE * dpr);
-    // Draw in logical CSS coords; the DPR-scaled backing store is handled by
-    // this transform. Guarded for jsdom mocks lacking setTransform.
+    canvas.width = Math.round(size * dpr);
+    canvas.height = Math.round(size * dpr);
     if (typeof ctx.setTransform === 'function') ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    try { ctx.clearRect(0, 0, CSS_SIZE, CSS_SIZE); } catch (_) { return; }
+    try { ctx.clearRect(0, 0, size, size); } catch (_) { return; }
     if (!HC || typeof HC.evaluatePath !== 'function') return;
     let path = [];
     try {
       path = HC.evaluatePath(params, { sampleCap: 1200 }).path || [];
-    } catch (_) {
-      path = [];
-    }
+    } catch (_) { path = []; }
     if (path.length < 2) return;
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     path.forEach((pt) => {
@@ -69,31 +79,37 @@
       if (pt.y > maxY) maxY = pt.y;
     });
     const span = Math.max(maxX - minX, maxY - minY, 1);
-    const pad = 6;
-    const s = (CSS_SIZE - pad * 2) / span;
-    const toCanvas = (pt) => ({
-      x: (pt.x - (minX + maxX) / 2) * s + CSS_SIZE / 2,
-      y: (pt.y - (minY + maxY) / 2) * s + CSS_SIZE / 2,
-    });
+    const pad = Math.max(2, Math.round(size * 0.09));
+    const s = (size - pad * 2) / span;
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
     try {
       ctx.strokeStyle = readToken('--ui-accent', '#6366f1');
-      ctx.lineWidth = 1;
+      ctx.lineWidth = 0.4;
       ctx.beginPath();
       path.forEach((pt, i) => {
-        const c = toCanvas(pt);
-        if (i === 0) ctx.moveTo(c.x, c.y);
-        else ctx.lineTo(c.x, c.y);
+        const x = (pt.x - cx) * s + size / 2;
+        const y = (pt.y - cy) * s + size / 2;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
       });
       ctx.stroke();
     } catch (_) { /* no-op ctx */ }
   };
 
+  const CHEVRON = `<svg class="hg-preset-chevron" viewBox="0 0 10 6" fill="none" aria-hidden="true"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
   const create = (target, opts = {}) => {
     if (!target) return null;
     const layer = opts.layer;
-    const presets = Array.isArray(opts.presets) ? opts.presets : [];
+    const system = layer ? layer.type : null;
+    const builtInPresets = Array.isArray(opts.presets) ? opts.presets : [];
     const onApply = typeof opts.onApply === 'function' ? opts.onApply : () => {};
-    const activeId = layer && layer.params ? layer.params.preset : undefined;
+    let activeId = layer && layer.params ? layer.params.preset : undefined;
+
+    // Merge built-in + user (localStorage) presets.
+    let userPresets = system ? loadUserPresets(system) : [];
+    let presets = [...builtInPresets, ...userPresets];
 
     const defaults = (() => {
       const all = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.ALGO_DEFAULTS;
@@ -101,59 +117,241 @@
       return base && typeof base === 'object' ? base : {};
     })();
 
-    const root = document.createElement('div');
-    root.className = 'hg-preset-gallery';
+    const presetMap = {};
+    presets.forEach((p) => { presetMap[p.id] = p; });
 
-    GROUP_ORDER.forEach((groupName) => {
-      const inGroup = presets.filter((p) => p.group === groupName);
-      if (!inGroup.length) return;
+    // ── Wrapper ───────────────────────────────────────────────────────────────
+    const wrap = document.createElement('div');
+    wrap.className = 'hg-preset-dropdown-wrap';
 
-      const section = document.createElement('div');
-      section.className = 'hg-preset-group';
+    // ── Trigger button ────────────────────────────────────────────────────────
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 'hg-preset-trigger';
+    trigger.setAttribute('aria-haspopup', 'listbox');
+    trigger.setAttribute('aria-expanded', 'false');
 
-      const header = document.createElement('div');
-      header.className = 'hg-preset-group-title';
-      header.textContent = groupName;
-      section.appendChild(header);
+    const triggerThumb = document.createElement('canvas');
+    triggerThumb.className = 'hg-preset-trigger-thumb';
+    triggerThumb.setAttribute('aria-hidden', 'true');
+    trigger.appendChild(triggerThumb);
 
-      const grid = document.createElement('div');
-      grid.className = 'hg-preset-grid';
+    const triggerLabel = document.createElement('span');
+    triggerLabel.className = 'hg-preset-trigger-label';
+    trigger.appendChild(triggerLabel);
 
-      inGroup.forEach((preset) => {
-        const isActive = preset.id === activeId;
-        const card = document.createElement('button');
-        card.type = 'button';
-        card.className = `hg-preset-card${isActive ? ' is-active' : ''}`;
-        card.dataset.presetId = preset.id;
-        card.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-        card.setAttribute('aria-label', `${preset.name} preset — ${groupName}`);
-        card.title = preset.name;
+    trigger.insertAdjacentHTML('beforeend', CHEVRON);
+    wrap.appendChild(trigger);
 
-        const thumb = document.createElement('canvas');
-        thumb.className = 'hg-preset-thumb';
-        thumb.setAttribute('aria-hidden', 'true');
-        card.appendChild(thumb);
+    // ── Popover ───────────────────────────────────────────────────────────────
+    const popover = document.createElement('div');
+    popover.className = 'hg-preset-popover';
+    popover.setAttribute('role', 'listbox');
+    popover.hidden = true;
+    wrap.appendChild(popover);
 
-        const name = document.createElement('span');
-        name.className = 'hg-preset-name';
-        name.textContent = preset.name;
-        card.appendChild(name);
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    const updateTrigger = (id) => {
+      const preset = id && id !== 'custom' ? presetMap[id] : null;
+      triggerLabel.textContent = preset ? preset.name : 'Custom';
+      if (preset) {
+        triggerThumb.style.display = '';
+        drawThumb(triggerThumb, { ...defaults, ...(preset.params || {}) }, THUMB_SIZE);
+      } else {
+        triggerThumb.style.display = 'none';
+      }
+    };
 
-        // Merge defaults ⊕ preset params for the figure preview — the same
-        // shape the apply path produces (minus the preserved transform, which
-        // doesn't affect the fit-to-box thumbnail).
-        drawThumb(thumb, { ...defaults, ...(preset.params || {}) });
+    let outsideHandler = null;
 
-        card.addEventListener('click', () => onApply(preset.id));
-        grid.appendChild(card);
+    const close = () => {
+      popover.hidden = true;
+      trigger.setAttribute('aria-expanded', 'false');
+      if (outsideHandler) {
+        document.removeEventListener('pointerdown', outsideHandler, true);
+        outsideHandler = null;
+      }
+    };
+
+    const open = () => {
+      popover.hidden = false;
+      trigger.setAttribute('aria-expanded', 'true');
+      // Refresh active state in case activeId changed externally.
+      popover.querySelectorAll('.hg-preset-option').forEach((opt) => {
+        const isActive = opt.dataset.presetId === (activeId || 'custom');
+        opt.classList.toggle('is-active', isActive);
+        opt.setAttribute('aria-selected', isActive ? 'true' : 'false');
       });
+      outsideHandler = (e) => { if (!wrap.contains(e.target)) close(); };
+      document.addEventListener('pointerdown', outsideHandler, true);
+    };
 
-      section.appendChild(grid);
-      root.appendChild(section);
+    trigger.addEventListener('click', () => { if (!popover.hidden) close(); else open(); });
+
+    popover.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { close(); trigger.focus(); }
     });
 
-    target.appendChild(root);
-    return { el: root };
+    // ── Popover rebuild (called on init, after import, after delete) ──────────
+    const rebuildPopover = () => {
+      // Re-sync merged preset list and map.
+      userPresets = system ? loadUserPresets(system) : [];
+      presets = [...builtInPresets, ...userPresets];
+      Object.keys(presetMap).forEach((k) => delete presetMap[k]);
+      presets.forEach((p) => { presetMap[p.id] = p; });
+
+      popover.innerHTML = '';
+
+      // ── Option factory ──────────────────────────────────────────────────────
+      const makeOption = (presetId, label, params, isUser) => {
+        const isActive = presetId === (activeId || 'custom');
+        const opt = document.createElement('button');
+        opt.type = 'button';
+        opt.className = `hg-preset-option${isActive ? ' is-active' : ''}`;
+        opt.dataset.presetId = presetId;
+        opt.setAttribute('role', 'option');
+        opt.setAttribute('aria-selected', isActive ? 'true' : 'false');
+
+        if (params) {
+          const thumb = document.createElement('canvas');
+          thumb.className = 'hg-preset-option-thumb';
+          thumb.setAttribute('aria-hidden', 'true');
+          opt.appendChild(thumb);
+          drawThumb(thumb, params, THUMB_SIZE);
+        } else {
+          const ph = document.createElement('span');
+          ph.className = 'hg-preset-option-thumb hg-preset-option-thumb--placeholder';
+          opt.appendChild(ph);
+        }
+
+        const lbl = document.createElement('span');
+        lbl.className = 'hg-preset-option-label';
+        lbl.textContent = label;
+        opt.appendChild(lbl);
+
+        if (isUser) {
+          const del = document.createElement('button');
+          del.type = 'button';
+          del.className = 'hg-preset-delete';
+          del.setAttribute('aria-label', `Delete "${label}"`);
+          del.innerHTML = `<svg viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+          del.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const updated = loadUserPresets(system).filter((p) => p.id !== presetId);
+            saveUserPresets(system, updated);
+            if (activeId === presetId) {
+              activeId = 'custom';
+              updateTrigger('custom');
+              onApply('custom');
+            }
+            rebuildPopover();
+          });
+          opt.appendChild(del);
+        }
+
+        return opt;
+      };
+
+      // ── "Custom" option ─────────────────────────────────────────────────────
+      const customOpt = makeOption('custom', 'Custom', null, false);
+      customOpt.addEventListener('click', () => {
+        activeId = 'custom';
+        updateTrigger('custom');
+        close();
+        onApply('custom');
+      });
+      popover.appendChild(customOpt);
+
+      // ── Grouped preset options ──────────────────────────────────────────────
+      GROUP_ORDER.forEach((groupName) => {
+        const inGroup = presets.filter((p) => p.group === groupName);
+        if (!inGroup.length) return;
+
+        const section = document.createElement('div');
+        section.className = 'hg-preset-group';
+
+        const header = document.createElement('div');
+        header.className = 'hg-preset-group-title';
+        header.textContent = groupName;
+        section.appendChild(header);
+
+        const isUserGroup = groupName === 'User';
+        inGroup.forEach((preset) => {
+          const opt = makeOption(
+            preset.id, preset.name,
+            { ...defaults, ...(preset.params || {}) },
+            isUserGroup
+          );
+          opt.setAttribute('aria-label', `${preset.name} — ${groupName}`);
+          opt.addEventListener('click', () => {
+            activeId = preset.id;
+            updateTrigger(preset.id);
+            close();
+            onApply(preset.id);
+          });
+          section.appendChild(opt);
+        });
+
+        popover.appendChild(section);
+      });
+
+      // ── Import button ───────────────────────────────────────────────────────
+      if (system) {
+        const importBtn = document.createElement('button');
+        importBtn.type = 'button';
+        importBtn.className = 'hg-preset-import';
+        importBtn.textContent = 'Import from .vectura…';
+        importBtn.addEventListener('click', () => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = '.vectura';
+          input.addEventListener('change', () => {
+            const file = input.files && input.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+              let doc;
+              try { doc = JSON.parse(reader.result); } catch (_) {
+                alert('Could not read .vectura file — invalid JSON.');
+                return;
+              }
+              const layers = Array.isArray(doc.layers) ? doc.layers : [];
+              const matchLayer = layers.find((l) => l.type === system);
+              if (!matchLayer) {
+                alert(`No ${system} layer found in this .vectura file.`);
+                return;
+              }
+              const stem = file.name.replace(/\.vectura$/i, '');
+              const defaultName = stem.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+              const promptFn = typeof window !== 'undefined' && typeof window.prompt === 'function'
+                ? window.prompt
+                : null;
+              const name = promptFn
+                ? (promptFn('Preset name:', defaultName) || '').trim() || defaultName
+                : defaultName;
+              const STRIP = new Set(['seed', 'posX', 'posY', 'scaleX', 'scaleY', 'rotation']);
+              const params = Object.fromEntries(
+                Object.entries(matchLayer.params || {}).filter(([k]) => !STRIP.has(k))
+              );
+              const id = `user-${system}-${Date.now()}`;
+              const newPreset = { id, name, preset_system: system, group: 'User', params };
+              const updated = [...loadUserPresets(system), newPreset];
+              saveUserPresets(system, updated);
+              rebuildPopover();
+            };
+            reader.readAsText(file);
+          });
+          input.click();
+        });
+        popover.appendChild(importBtn);
+      }
+    };
+
+    // ── Init ──────────────────────────────────────────────────────────────────
+    rebuildPopover();
+    updateTrigger(activeId);
+    target.appendChild(wrap);
+    return { el: wrap };
   };
 
   UI.HarmonographPresetGallery = create;

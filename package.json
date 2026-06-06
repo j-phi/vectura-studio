@@ -7,6 +7,7 @@
     "version:sync": "node scripts/sync-version.js",
     "patch:test-runtime": "node scripts/patch-vitest-unicode.js",
     "profiles:bundle": "node scripts/build-petal-profile-library.js",
+    "user-presets:bundle": "node scripts/build-user-presets.js",
     "skin:new": "node scripts/skin-new.js",
     "push": "sh scripts/push-and-watch.sh",
     "postinstall": "npm run patch:test-runtime",

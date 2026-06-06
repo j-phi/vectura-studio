@@ -31,8 +31,8 @@ describe('Harmonograph presets', () => {
     runtime = null;
   });
 
-  // The preset selector is now the craft-ladder gallery, not a <select>.
-  const presetCard = (id) => document.querySelector(`.hg-preset-card[data-preset-id="${id}"]`);
+  // The preset selector is now a compact dropdown, not a card gallery.
+  const presetCard = (id) => document.querySelector(`.hg-preset-option[data-preset-id="${id}"]`);
 
   test('the harmonograph preset library is filtered out of PRESETS', () => {
     const lib = window.Vectura.PresetLibraries.harmonograph;
@@ -65,9 +65,9 @@ describe('Harmonograph presets', () => {
     });
   });
 
-  test('the preset gallery renders a card for each of the 4 presets', () => {
-    expect(document.querySelector('.hg-preset-gallery')).toBeTruthy();
-    expect(document.querySelectorAll('.hg-preset-card').length).toBe(4);
+  test('the preset dropdown renders an option for each of the 4 presets', () => {
+    expect(document.querySelector('.hg-preset-dropdown-wrap')).toBeTruthy();
+    expect(document.querySelectorAll('.hg-preset-option[data-preset-id]:not([data-preset-id="custom"])').length).toBe(4);
     expect(presetCard('harmonograph-unison-circle')).toBeTruthy();
     expect(presetCard('harmonograph-evolving-snake')).toBeTruthy();
   });

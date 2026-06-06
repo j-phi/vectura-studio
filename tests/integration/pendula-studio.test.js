@@ -27,8 +27,8 @@ describe('Pendula studio — controls, presets, Motion Rack', () => {
   afterEach(() => { runtime?.cleanup?.(); runtime = null; });
 
   const layer = () => app.engine.getActiveLayer();
-  // The preset selector is now the craft-ladder gallery, not a <select>.
-  const presetCard = (id) => document.querySelector(`.hg-preset-card[data-preset-id="${id}"]`);
+  // The preset selector is now a compact dropdown, not a card gallery.
+  const presetCard = (id) => document.querySelector(`.hg-preset-option[data-preset-id="${id}"]`);
 
   test('the pendula preset library is filtered from PRESETS (4 presets)', () => {
     const lib = window.Vectura.PresetLibraries.pendula;
@@ -39,8 +39,8 @@ describe('Pendula studio — controls, presets, Motion Rack', () => {
     expect(lib.every((p) => p.preset_system === 'pendula')).toBe(true);
   });
 
-  test('pendula panel renders the preset gallery, the virtual plotter, and the Motion Rack', () => {
-    expect(document.querySelector('.hg-preset-gallery')).toBeTruthy();
+  test('pendula panel renders the preset dropdown, the virtual plotter, and the Motion Rack', () => {
+    expect(document.querySelector('.hg-preset-dropdown-wrap')).toBeTruthy();
     expect(presetCard('pendula-breathing-orbit')).toBeTruthy();
     expect(document.querySelector('.harmonograph-plotter')).toBeTruthy(); // reused live plotter
     expect(document.querySelector('.motion-rack')).toBeTruthy();
