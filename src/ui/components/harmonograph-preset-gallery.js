@@ -85,7 +85,7 @@
     const cy = (minY + maxY) / 2;
     try {
       ctx.strokeStyle = readToken('--ui-accent', '#6366f1');
-      ctx.lineWidth = 0.4;
+      ctx.lineWidth = 0.15;
       ctx.beginPath();
       path.forEach((pt, i) => {
         const x = (pt.x - cx) * s + size / 2;
