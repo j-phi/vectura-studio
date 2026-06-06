@@ -115,6 +115,24 @@
       restoreLeftPanelScroll();
       return;
     }
+    // Cmd/Ctrl+S, scoped to focus within the config panel, opens the preset Save
+    // modal when the active layer is dirty (its save pip is visible). Bound once
+    // — the container element persists across rebuilds (only innerHTML is reset).
+    // preventDefault stops the browser save dialog; stopPropagation keeps the
+    // global "Save .vectura" shortcut from also firing.
+    if (!this._presetSaveKeyBound) {
+      this._presetSaveKeyBound = true;
+      container.addEventListener('keydown', (e) => {
+        const primary = e.metaKey || e.ctrlKey;
+        if (!primary || e.shiftKey || e.altKey) return;
+        if ((e.key || '').toLowerCase() !== 's') return;
+        const pip = container.querySelector('.hg-preset-save-pip:not([hidden])');
+        if (!pip || typeof this._activePresetGallerySave !== 'function') return;
+        e.preventDefault();
+        e.stopPropagation();
+        this._activePresetGallerySave();
+      });
+    }
     if (this.harmonographPlotterState?.rafId) {
       window.cancelAnimationFrame(this.harmonographPlotterState.rafId);
     }
@@ -124,6 +142,7 @@
     container.innerHTML = '';
     // Cleared each rebuild; re-registered if this layer mounts a preset gallery.
     this._activePresetGalleryRefresh = null;
+    this._activePresetGallerySave = null;
     const paintBucketSection = getEl('left-section-paint-bucket', { silent: true });
     const paintBucketActive = this.activeTool === 'fill' || this.activeTool === 'fill-erase';
     if (paintBucketActive) {
@@ -874,11 +893,16 @@
                 if (this.app.pushHistory) this.app.pushHistory();
                 applyPreset(presetId);
               },
+              // The save flow mutates the preset marker — wrap it in history so
+              // Cmd+Z is consistent with onApply.
+              pushHistory: () => { if (this.app.pushHistory) this.app.pushHistory(); },
             });
             // Register the live divergence refresh so app.regen() (fired after
             // every param edit) flips the trigger to "Custom" the instant a
             // param differs from the preset — and back when it's restored.
             this._activePresetGalleryRefresh = inst && typeof inst.refresh === 'function' ? inst.refresh : null;
+            // The save pip's modal opener, surfaced for the Cmd/Ctrl+S accelerator.
+            this._activePresetGallerySave = inst && typeof inst.openSave === 'function' ? inst.openSave : null;
           }
           return;
         }

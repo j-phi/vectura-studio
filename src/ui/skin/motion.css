@@ -58,6 +58,16 @@
   }
 }
 
+/* Preset save pip — one-time glow + scale pulse when it appears (dirty state).
+   The class is added by JS on the hidden→visible transition; the global
+   reduced-motion guard at the bottom of this file neutralizes it. */
+@keyframes preset-pip-pulse {
+  0%   { transform: scale(0.6); opacity: 0; box-shadow: 0 0 0 0 var(--ui-accent-2, rgba(99,102,241,0.5)); }
+  40%  { transform: scale(1.12); opacity: 1; box-shadow: 0 0 0 6px var(--ui-accent-2, rgba(99,102,241,0.45)); }
+  100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 rgba(0,0,0,0); }
+}
+.hg-preset-save-pip.is-pulsing { animation: preset-pip-pulse 0.6s ease-out; }
+
 /* Indeterminate progress bar — Phase 4. Slides a 30% bar from -30% → 100%. */
 @keyframes progress-indeterminate {
   0%   { transform: translateX(-100%); }
@@ -119,6 +129,7 @@
   }
   #btn-randomize-params  { animation: none !important; }
   .rand-spark-overlay    { display: none !important; }
+  .hg-preset-save-pip.is-pulsing { animation: none !important; }
 }
 
 /* === Migrated from styles.css (Unit 2.6: reduced-motion fallback, 2026-05-20) === */

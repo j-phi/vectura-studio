@@ -289,6 +289,7 @@
           ${section('File',
             row(CMD + k('O'),       'Open project') +
             row(CMD + k('S'),       'Save project') +
+            row(CMD + k('S'),       'Save preset (config panel focused, after editing a preset)') +
             row(CMD + SHF + k('P'), 'Import SVG') +
             row(CMD + SHF + k('E'), 'Export SVG') +
             row(CMD + k('K'),       'Document Setup')

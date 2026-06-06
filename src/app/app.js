@@ -239,6 +239,7 @@
         uiTheme: SETTINGS.uiTheme || DEFAULT_THEME,
         cookiePreferencesEnabled: SETTINGS.cookiePreferencesEnabled === true,
         showCrystallographicNames: SETTINGS.showCrystallographicNames === true,
+        devMode: SETTINGS.devMode === true,
         margin: SETTINGS.margin,
         speedDown: SETTINGS.speedDown,
         speedUp: SETTINGS.speedUp,
@@ -378,6 +379,7 @@
       SETTINGS.uiTheme = normalizeThemeName(snapshot.uiTheme ?? SETTINGS.uiTheme);
       SETTINGS.cookiePreferencesEnabled = snapshot.cookiePreferencesEnabled === true;
       SETTINGS.showCrystallographicNames = snapshot.showCrystallographicNames === true;
+      SETTINGS.devMode = snapshot.devMode === true;
       SETTINGS.margin = takeNumber('margin', SETTINGS.margin, 0, 10000);
       SETTINGS.speedDown = takeNumber('speedDown', SETTINGS.speedDown, 0, 100000);
       SETTINGS.speedUp = takeNumber('speedUp', SETTINGS.speedUp, 0, 100000);

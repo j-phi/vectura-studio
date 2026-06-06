@@ -50,6 +50,18 @@
 
   const PANEL_ID = 'settings-panel';
 
+  // The Contributor / Presets section (Developer Mode) is only surfaced when the
+  // app is served locally — end users on the deployed site never see it exists.
+  const isDevEligible = () => {
+    try {
+      const loc = (typeof location !== 'undefined') ? location : null;
+      if (!loc) return false;
+      if (loc.protocol === 'file:') return true;
+      const h = loc.hostname || '';
+      return h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h === '0.0.0.0';
+    } catch (_) { return false; }
+  };
+
   // Markup rebuilt against the Meridian skin component vocabulary
   // (`.sect`, `.sect-hdr`, `.sect-body`, `.ctrl-sel`, `.num-step`, `.seg-ctrl`,
   // `.sw-toggle`, `.value-chip`, `.ctrl-slider`) so the drawer paints in the
@@ -293,7 +305,18 @@
             ${swToggle('set-show-crystallographic-names', 'Show crystallographic group names (p4m, p3m1…)')}
           </div>
         </div>
-
+${isDevEligible() ? `
+        <div class="sect sect--color-history">
+          <button type="button" class="sect-hdr" data-sect-toggle aria-expanded="false">
+            Contributor / Presets
+            <span class="sect-arrow"></span>
+          </button>
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
+            ${swToggle('set-dev-mode', 'Developer mode')}
+            <p class="ctrl-hint">When on, the preset Save dialog can download a bundler-ready .vectura into the project's user-presets/ workflow.</p>
+          </div>
+        </div>
+` : ''}
       </div>
     </div>
   `.trim();
@@ -988,6 +1011,13 @@
         SETTINGS.showCrystallographicNames = e.target.checked;
         this.app?.persistPreferences?.();
         this.app?.render?.();
+      };
+    }
+    const setDevMode = getEl('set-dev-mode', { silent: true });
+    if (setDevMode) {
+      setDevMode.onchange = (e) => {
+        SETTINGS.devMode = e.target.checked;
+        this.app?.persistPreferences?.();
       };
     }
     if (btnClearPreferences) {

@@ -1659,6 +1659,7 @@
     shapeMode: 'oval',
     cookiePreferencesEnabled: false,
     showCrystallographicNames: false,
+    devMode: false,
     wallpaperPanelMode: 'styles',
     paneLeftWidth: 335,
     paneRightWidth: 335,

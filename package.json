@@ -1,6 +1,6 @@
 {
   "name": "vectura-studio",
-  "version": "1.1.62",
+  "version": "1.1.63",
   "private": true,
   "description": "Vectura Studio - physics-inspired vector generator",
   "scripts": {

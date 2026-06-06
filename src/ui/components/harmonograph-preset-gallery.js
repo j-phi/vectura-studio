@@ -32,6 +32,18 @@
   const GROUP_ORDER = ['Classic', 'Geometric', 'Organic', 'Complex', 'Evolving', 'User'];
   const THUMB_SIZE = 28;
 
+  // Keys that belong to the layer's canvas placement, not the algorithm look —
+  // stripped from a preset's params on both import and save so a preset never
+  // carries a position/seed. Mirrors scripts/build-user-presets.js TRANSFORM_KEYS.
+  const STRIP = new Set(['seed', 'posX', 'posY', 'scaleX', 'scaleY', 'rotation']);
+
+  // Matches the bundler's slugify so a repo-download .vectura yields the same id.
+  const slugify = (str) =>
+    String(str).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+  const stripParams = (params) =>
+    Object.fromEntries(Object.entries(params || {}).filter(([k]) => !STRIP.has(k)));
+
   // Harmonograph-family types use the fast analytic evaluator; everything else
   // routes through the algorithm registry's generate().
   const HG_TYPES = new Set(['harmonograph', 'pendula']);
@@ -251,6 +263,19 @@
     trigger.insertAdjacentHTML('beforeend', CHEVRON);
     wrap.appendChild(trigger);
 
+    // ── Save pip ────────────────────────────────────────────────────────────────
+    // A colored disk that fades in next to the trigger the instant the layer
+    // diverges from its named preset (activeId === 'custom'). Clicking it opens
+    // the Save Preset modal. Hidden while the layer is on a named preset.
+    const savePip = document.createElement('button');
+    savePip.type = 'button';
+    savePip.className = 'hg-preset-save-pip';
+    savePip.hidden = true;
+    savePip.setAttribute('aria-label', 'Save current settings as a preset');
+    savePip.setAttribute('title', 'Save current settings as a preset');
+    savePip.innerHTML = `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 4h11l3 3v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8 4v5h7V4M8 21v-6h8v6" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>`;
+    if (system) wrap.appendChild(savePip);
+
     // ── Popover ───────────────────────────────────────────────────────────────
     const popover = document.createElement('div');
     popover.className = 'hg-preset-popover';
@@ -259,6 +284,24 @@
     wrap.appendChild(popover);
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+    // The pip shows only while the layer is "dirty" (diverged → activeId
+    // 'custom'). A one-time glow pulse fires on the hidden→visible transition;
+    // CSS gates it behind prefers-reduced-motion.
+    let pipVisible = false;
+    const updateSavePip = (id) => {
+      if (!system) return;
+      const shouldShow = id === 'custom';
+      if (shouldShow === pipVisible) return;
+      pipVisible = shouldShow;
+      savePip.hidden = !shouldShow;
+      if (shouldShow) {
+        savePip.classList.remove('is-pulsing');
+        // Force reflow so re-adding the class restarts the animation.
+        void savePip.offsetWidth;
+        savePip.classList.add('is-pulsing');
+      }
+    };
+
     const updateTrigger = (id) => {
       const preset = id && id !== 'custom' ? presetMap[id] : null;
       triggerLabel.textContent = preset ? preset.name : 'Custom';
@@ -268,6 +311,7 @@
       } else {
         triggerThumb.style.display = 'none';
       }
+      updateSavePip(id);
     };
 
     let outsideHandler = null;
@@ -455,10 +499,7 @@
               const name = promptFn
                 ? (promptFn('Preset name:', defaultName) || '').trim() || defaultName
                 : defaultName;
-              const STRIP = new Set(['seed', 'posX', 'posY', 'scaleX', 'scaleY', 'rotation']);
-              const params = Object.fromEntries(
-                Object.entries(matchLayer.params || {}).filter(([k]) => !STRIP.has(k))
-              );
+              const params = stripParams(matchLayer.params);
               const id = `user-${system}-${Date.now()}`;
               const newPreset = { id, name, preset_system: system, group: 'User', params };
               const updated = [...loadUserPresets(system), newPreset];
@@ -473,11 +514,129 @@
       }
     };
 
+    // ── Save flow ───────────────────────────────────────────────────────────────
+    // Classify where the layer's look came from (recoverable for free: the layer
+    // keeps its last *named* preset id even while diverged). Drives the modal's
+    // Save-as-new / Update fork and the name heuristic basis.
+    const classifyOrigin = () => {
+      const claimed = layer && layer.params ? layer.params.preset : undefined;
+      if (!claimed || claimed === 'custom') return { kind: 'scratch', preset: null };
+      const user = (system ? loadUserPresets(system) : []).find((p) => p.id === claimed);
+      if (user) return { kind: 'user', preset: { id: user.id, name: user.name, params: user.params } };
+      const builtIn = builtInPresets.find((p) => p.id === claimed);
+      if (builtIn) return { kind: 'builtin', preset: { id: builtIn.id, name: builtIn.name, params: builtIn.params } };
+      return { kind: 'scratch', preset: null };
+    };
+
+    const toast = (message, variant = 'success', onClick) => {
+      const T = window.Vectura && window.Vectura.UI && window.Vectura.UI.overlays && window.Vectura.UI.overlays.Toast;
+      if (T && typeof T.show === 'function') T.show({ message, variant, onClick, duration: 6000 });
+    };
+
+    // Developer-mode repo export: a bundler-exact single-layer .vectura whose
+    // filename slug matches scripts/build-user-presets.js so the resulting id is
+    // deterministic. Auto-routed to user-presets/<system>/ by layer type.
+    const downloadRepoPreset = (name, params) => {
+      try {
+        const V = window.Vectura || {};
+        const doc = { type: 'vectura', version: V.VERSION, name, layers: [{ type: system, params: { ...params } }] };
+        const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${slugify(name) || system}.vectura`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } catch (_) { /* download blocked */ }
+    };
+
+    const handleSave = ({ name, mode, destination }) => {
+      const cleanName = (name || '').trim();
+      const params = stripParams(layer.params);
+
+      if (destination === 'repo') {
+        downloadRepoPreset(cleanName || system, layer.params);
+        toast(`Saved "${cleanName}" — move into user-presets/${system}/ then commit (pre-commit auto-bundles).`, 'info');
+        return;
+      }
+
+      const prevPresetId = layer.params.preset;
+      if (typeof opts.pushHistory === 'function') opts.pushHistory();
+
+      const origin = classifyOrigin();
+      if (mode === 'update' && origin.preset) {
+        const list = loadUserPresets(system);
+        const idx = list.findIndex((p) => p.id === origin.preset.id);
+        if (idx >= 0) {
+          const prior = { ...list[idx], params: { ...list[idx].params } };
+          list[idx] = { ...list[idx], name: cleanName || list[idx].name, params };
+          saveUserPresets(system, list);
+          activeId = list[idx].id;
+          layer.params.preset = list[idx].id;
+          rebuildPopover();
+          updateTrigger(activeId);
+          toast(`Updated "${list[idx].name}" · Undo`, 'success', () => {
+            const cur = loadUserPresets(system);
+            const j = cur.findIndex((p) => p.id === prior.id);
+            if (j >= 0) cur[j] = prior;
+            saveUserPresets(system, cur);
+            layer.params.preset = prior.id;
+            activeId = computeActiveId();
+            rebuildPopover();
+            updateTrigger(activeId);
+          });
+          return;
+        }
+        // origin vanished → fall through to save-as-new.
+      }
+
+      // Save as new (default; also the update fallback).
+      const id = `user-${system}-${Date.now()}`;
+      const newPreset = { id, name: cleanName, preset_system: system, group: 'User', params };
+      saveUserPresets(system, [...loadUserPresets(system), newPreset]);
+      activeId = id;
+      layer.params.preset = id;
+      rebuildPopover();
+      updateTrigger(activeId);
+      toast(`Saved "${cleanName}" to User presets · Undo`, 'success', () => {
+        saveUserPresets(system, loadUserPresets(system).filter((p) => p.id !== id));
+        layer.params.preset = prevPresetId;
+        activeId = computeActiveId();
+        rebuildPopover();
+        updateTrigger(activeId);
+      });
+    };
+
+    const openSaveModal = () => {
+      const M = window.Vectura && window.Vectura.UI && window.Vectura.UI.PresetSaveModal;
+      if (!M || typeof M.open !== 'function' || !system || !layer) return;
+      const origin = classifyOrigin();
+      const basis = origin.preset ? { ...defaults, ...(origin.preset.params || {}) } : defaults;
+      const existingNames = (loadUserPresets(system) || []).map((p) => p.name);
+      const NH = window.Vectura && window.Vectura.PresetNameHeuristics;
+      const suggestedName = NH && typeof NH.suggestName === 'function'
+        ? NH.suggestName(system, layer.params, { basis, existingNames })
+        : 'My Preset';
+      M.open({
+        layerType: system,
+        params: layer.params,
+        suggestedName,
+        origin,
+        devMode: !!(window.Vectura && window.Vectura.SETTINGS && window.Vectura.SETTINGS.devMode === true),
+        drawThumb,
+        onConfirm: handleSave,
+      });
+    };
+
+    savePip.addEventListener('click', openSaveModal);
+
     // ── Init ──────────────────────────────────────────────────────────────────
     rebuildPopover();
     updateTrigger(activeId);
     target.appendChild(wrap);
-    return { el: wrap, refresh };
+    return { el: wrap, refresh, openSave: openSaveModal };
   };
 
   UI.PresetGallery = create;

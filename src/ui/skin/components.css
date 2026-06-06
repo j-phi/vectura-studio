@@ -3221,7 +3221,7 @@
    the harmonograph + pendula studios. Each option renders a 28 px figure
    thumbnail; groups follow the craft-ladder order (Classic → Detuned →
    Evolving). Tokens-only. */
-.hg-preset-dropdown-wrap { position: relative; margin-bottom: 8px; }
+.hg-preset-dropdown-wrap { position: relative; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
 
 .hg-preset-trigger {
   display: flex; align-items: center; gap: 8px;
@@ -3308,6 +3308,60 @@
 }
 .hg-preset-import:hover {
   color: var(--ui-accent); border-color: var(--ui-accent);
+}
+
+/* ── Save pip + Save Preset modal ──────────────────────────────────────────── */
+/* The dirty-state save affordance: a colored disk that appears beside the preset
+   trigger the instant the layer diverges from its named preset. */
+.hg-preset-save-pip {
+  flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; padding: 0;
+  border: 1px solid var(--ui-accent);
+  border-radius: var(--radius-sm);
+  background: var(--ui-accent); color: var(--ui-on-accent);
+  cursor: pointer;
+  transition: opacity 0.12s, transform 0.12s;
+}
+.hg-preset-save-pip svg { width: 15px; height: 15px; display: block; }
+.hg-preset-save-pip:hover { opacity: 0.88; }
+.hg-preset-save-pip:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 2px; }
+.hg-preset-save-pip[hidden] { display: none; }
+@media (pointer: coarse) {
+  .hg-preset-save-pip { width: 36px; height: 36px; }
+  .hg-preset-save-pip svg { width: 18px; height: 18px; }
+}
+
+.preset-save-body { display: flex; flex-direction: column; gap: 12px; min-width: 280px; }
+.preset-save-preview { display: flex; justify-content: center; }
+.preset-save-preview-thumb {
+  width: 96px; height: 96px; border-radius: var(--radius-sm);
+  background: var(--ui-bg); border: 1px solid var(--ui-border);
+}
+.preset-save-field { display: flex; flex-direction: column; gap: 4px; }
+.preset-save-label { font-size: var(--font-sm, 11px); color: var(--ui-text-2, var(--ui-muted)); }
+.preset-save-input {
+  width: 100%; height: 30px; padding: 0 8px; box-sizing: border-box;
+  background: var(--ui-ctrl); border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm); color: var(--ui-text);
+  font-size: var(--font-sm, 12px);
+}
+.preset-save-input:focus { outline: none; border-color: var(--ui-accent); box-shadow: 0 0 0 3px var(--ui-accent-2); }
+.preset-save-seg { width: 100%; }
+.preset-save-dest { width: 100%; }
+.preset-save-note { margin: 0; font-size: var(--font-size-xs, 10px); color: var(--ui-muted, #888); }
+.preset-save-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.preset-save-confirm[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+/* Settings hint copy (e.g. Developer mode explainer). */
+.ctrl-hint { margin: 4px 0 0; font-size: var(--font-size-xs, 10px); color: var(--ui-muted, #888); line-height: 1.4; }
+
+/* Touch: dock the Save Preset modal as a bottom sheet and pin Save above the
+   name input so the on-screen keyboard never covers the commit action. */
+@media (pointer: coarse) {
+  .vectura-modal-backdrop { align-items: flex-end !important; }
+  .vectura-modal { width: 100%; max-width: 100%; border-radius: 12px 12px 0 0; }
+  .preset-save-footer { order: -1; flex-direction: row-reverse; }
 }
 
 /* ── Snapping feedback (auto-changed chips + transient line) ───────────────── */
