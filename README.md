@@ -545,6 +545,12 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.1.75
+- **Morph in-between shapes are far cleaner.** Closed-shape morphs (e.g. hexagon → circle) no longer build every intermediate ring from 128 straight segments — each ring is now a corner-matched bézier shape (a hexagon↔circle keeps ~6 anchors and rounds smoothly), dropping ring point counts by ~5× for lighter, plotter-friendlier output while sharp corners stay sharp and curves stay smooth. Rings carry editable anchors. (Older behavior is still available via the morph's `cornerMatch` option.)
+- **Live morph preview while dragging.** Dragging a source layer inside a Morph group now updates the in-between rings in real time as you move it, instead of only snapping to the new morph when you release.
+- **Double-click a nested layer to select it.** Double-clicking a layer inside a group folder or modifier group now selects that child (and still opens inline rename), so the controls panel reflects the layer you're editing.
+- **Clearer lock icon.** An unlocked layer now shows a real open padlock (shackle swung free) instead of a dashed closed padlock that read as locked at a glance.
+
 ### 1.1.70
 - **Preset folder sync now works in Brave.** Folder sync needs the File System Access API, which Brave ships but **disables by default** behind a flag — so Brave users were wrongly told "needs Chrome or Edge." The Preset Storage panel now detects Brave and tells you exactly how to turn it on: enable `brave://flags/#file-system-access-api`, restart Brave, and the **Sync to a folder…** button appears. (The `file://` and other-browser hints are unchanged.) Copy/detection only — no change to how syncing works.
 

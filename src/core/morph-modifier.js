@@ -93,6 +93,212 @@
     return next;
   };
 
+  // ---------------------------------------------------------------------------
+  // Corner detection (structural complexity of a source outline)
+  // ---------------------------------------------------------------------------
+  // Turn angle (radians, 0..PI) at a flattened vertex i within a closed ring.
+  const turnAt = (pts, i, closed) => {
+    const n = pts.length;
+    const prev = pts[(i - 1 + n) % n];
+    const cur = pts[i];
+    const next = pts[(i + 1) % n];
+    if (!closed && (i === 0 || i === n - 1)) return 0;
+    const a1 = Math.atan2(cur.y - prev.y, cur.x - prev.x);
+    const a2 = Math.atan2(next.y - cur.y, next.x - cur.x);
+    let d = a2 - a1;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    return Math.abs(d);
+  };
+
+  // Structural corner count of a source path. Circles → 0 (no corners, fully
+  // round). Anchored shapes with null in/out handles → count of sharp anchors.
+  // Otherwise count flattened vertices whose turn exceeds a corner threshold.
+  // Drives the auto anchor count for corner-matched bezier morphing.
+  const CORNER_TURN_THRESHOLD = (28 * Math.PI) / 180; // ~28° = a real corner
+  const cornerCountOf = (rawPath) => {
+    const meta = rawPath && rawPath.meta;
+    if (meta && meta.kind === 'circle') return 0;
+    if (meta && Array.isArray(meta.anchors) && meta.anchors.length) {
+      let sharp = 0;
+      meta.anchors.forEach((a) => {
+        if (!a.in && !a.out) sharp += 1;
+      });
+      // A handle-less anchored polygon: every anchor is a sharp corner.
+      if (sharp === meta.anchors.length) return sharp;
+      // Mixed/curved anchored shape: fall through to geometric detection so a
+      // rounded-rect (4 sharp + 4 curved) doesn't undercount.
+    }
+    const pts = flattenForMorph(rawPath, 128);
+    const closed = isPathClosed(rawPath);
+    let n = pts.length;
+    // Drop a trailing wrap vertex so a closed ring isn't double-counted.
+    if (closed && n > 1 && Math.hypot(pts[0].x - pts[n - 1].x, pts[0].y - pts[n - 1].y) < 1e-6) {
+      n -= 1;
+    }
+    let corners = 0;
+    for (let i = 0; i < n; i += 1) {
+      if (turnAt(pts, i, closed) > CORNER_TURN_THRESHOLD) corners += 1;
+    }
+    return corners;
+  };
+
+  // ---------------------------------------------------------------------------
+  // Corner-matched bezier representation
+  // ---------------------------------------------------------------------------
+  // Build K anchors evenly along a source by arc length, plus per-anchor data
+  // needed to interpolate ROUNDNESS: each anchor carries its position and the
+  // half-segment length used to size tangential bezier handles for a smooth
+  // (circle-like) rendering, and a `round` 0..1 weight (0 = sharp corner → zero
+  // handles, 1 = fully round → tangential handles). A polygon source yields
+  // round≈0 at its corners; a circle yields round≈1 everywhere, so blending the
+  // handle weights rounds a hexagon smoothly into a circle while keeping K
+  // anchors throughout.
+  const buildCornerSamples = (rawPath, K, closed) => {
+    const resampled = resamplePath(rawPath, K, closed, 'arc-length');
+    const pts = resampled.map((p) => ({ x: p.x, y: p.y }));
+    const isCircle = !!(rawPath && rawPath.meta && rawPath.meta.kind === 'circle');
+    const n = pts.length;
+    const samples = [];
+    for (let i = 0; i < n; i += 1) {
+      const prev = pts[(i - 1 + n) % n];
+      const cur = pts[i];
+      const next = pts[(i + 1) % n];
+      // Tangent direction = chord prev→next (Catmull-Rom style), used to orient
+      // bezier handles tangentially for a smooth curve.
+      const tx = next.x - prev.x;
+      const ty = next.y - prev.y;
+      const tlen = Math.hypot(tx, ty) || 1;
+      const ux = tx / tlen;
+      const uy = ty / tlen;
+      // Handle length ≈ 1/3 of the local segment length (standard Catmull-Rom→
+      // bezier factor) — this is the length that, on a circle, reproduces the
+      // arc closely.
+      const segIn = Math.hypot(cur.x - prev.x, cur.y - prev.y);
+      const segOut = Math.hypot(next.x - cur.x, next.y - cur.y);
+      // Roundness weight: a circle is fully round; otherwise the local turn angle
+      // tells us how sharp this anchor is (small turn → already smooth/round,
+      // large turn → sharp corner that should stay sharp until blended).
+      let round;
+      if (isCircle) {
+        round = 1;
+      } else {
+        const turn = turnAt(pts, i, closed);
+        // turn 0 (flat) → round 1; turn >= threshold (sharp) → round 0.
+        round = clampFn(1 - turn / (Math.PI * 0.5), 0, 1);
+      }
+      samples.push({
+        x: cur.x,
+        y: cur.y,
+        ux,
+        uy,
+        hIn: (segIn / 3),
+        hOut: (segOut / 3),
+        round,
+      });
+    }
+    return samples;
+  };
+
+  // Rotate sample array by offset r (closed loops only) so two sample sets
+  // correspond anchor-to-anchor after correspondenceAlign.
+  const rotateSamples = (samples, r) => {
+    const n = samples.length;
+    const out = [];
+    for (let i = 0; i < n; i += 1) out.push(samples[(i + r) % n]);
+    return out;
+  };
+
+  // Reverse a sample ring's traversal direction, fixing per-anchor tangent data:
+  // reversing swaps each anchor's prev/next neighbours, so the tangent direction
+  // flips (negate ux/uy) and the in/out handle lengths swap. Reversing positions
+  // alone would leave handles pointing the wrong way and kink asymmetric shapes.
+  const reverseSamples = (samples) =>
+    samples.slice().reverse().map((s) => ({
+      x: s.x,
+      y: s.y,
+      ux: -s.ux,
+      uy: -s.uy,
+      hIn: s.hOut,
+      hOut: s.hIn,
+      round: s.round,
+    }));
+
+  // Build an anchored bezier ring from two corresponding sample sets at blend t.
+  // Positions lerp; handle lengths AND roundness lerp, so corners round
+  // gradually. Returns { points, anchors } where points is the flattened
+  // polyline (few, smoothly-curved vertices — NOT 128 straight segments) and
+  // anchors carry in/out handles for direct-selection editing and bezier export.
+  const blendCornerRing = (sa, sb, t, closed) => {
+    const n = Math.min(sa.length, sb.length);
+    const anchors = [];
+    for (let i = 0; i < n; i += 1) {
+      const a = sa[i];
+      const b = sb[i];
+      const x = a.x + (b.x - a.x) * t;
+      const y = a.y + (b.y - a.y) * t;
+      // Blend roundness and handle length independently per side, then scale the
+      // tangential handle by the roundness weight: round≈0 → null handle (sharp
+      // straight corner), round≈1 → full tangential handle (smooth curve).
+      const round = a.round + (b.round - a.round) * t;
+      const ux = a.ux + (b.ux - a.ux) * t;
+      const uy = a.uy + (b.uy - a.uy) * t;
+      const ulen = Math.hypot(ux, uy) || 1;
+      const dirx = ux / ulen;
+      const diry = uy / ulen;
+      const hIn = (a.hIn + (b.hIn - a.hIn) * t) * round;
+      const hOut = (a.hOut + (b.hOut - a.hOut) * t) * round;
+      const anchor = { x, y, in: null, out: null };
+      if (hIn > 1e-6) anchor.in = { x: x - dirx * hIn, y: y - diry * hIn };
+      if (hOut > 1e-6) anchor.out = { x: x + dirx * hOut, y: y + diry * hOut };
+      anchors.push(anchor);
+    }
+    const points = flattenAnchorRing(anchors, closed === true);
+    return { points, anchors };
+  };
+
+  // Flatten an anchored ring into a SPARSE polyline. Straight segments (null
+  // handles → sharp polygon corners) emit just the two endpoints; bezier
+  // segments are adaptively sampled with a COARSE tolerance so a smoothly
+  // rounded ring carries a few points per arc rather than ~16 (buildPolyline-
+  // FromAnchors' default tolerance 0.1 would emit ~90 points for a hexagon-
+  // sized ring). This is the plotter-efficiency win: corner anchors stay sharp
+  // and large, round arcs become a handful of points. Tolerance is scaled to
+  // the ring size so the chord error stays a small fraction of the shape.
+  const flattenAnchorRing = (anchors, closed) => {
+    const sampleBez = window.Vectura?.GeometryUtils?.sampleCubicBezier;
+    const n = anchors.length;
+    if (n < 2) return anchors.map((a) => ({ x: a.x, y: a.y }));
+    // Ring extent → tolerance ≈ 0.8% of the larger dimension (clamped), a good
+    // plotter/screen compromise that keeps arcs smooth without flooding points.
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (let i = 0; i < n; i += 1) {
+      if (anchors[i].x < minX) minX = anchors[i].x;
+      if (anchors[i].y < minY) minY = anchors[i].y;
+      if (anchors[i].x > maxX) maxX = anchors[i].x;
+      if (anchors[i].y > maxY) maxY = anchors[i].y;
+    }
+    const extent = Math.max(maxX - minX, maxY - minY) || 1;
+    const tol = clampFn(extent * 0.008, 0.25, 4);
+    const pts = [];
+    const emit = (a, b) => {
+      let seg;
+      if ((!a.out && !b.in) || typeof sampleBez !== 'function') {
+        seg = [{ x: a.x, y: a.y }, { x: b.x, y: b.y }];
+      } else {
+        seg = sampleBez(a, a.out || a, b.in || b, b, tol);
+      }
+      if (pts.length) seg.shift();
+      for (let i = 0; i < seg.length; i += 1) pts.push({ x: seg[i].x, y: seg[i].y });
+    };
+    for (let i = 0; i < n - 1; i += 1) emit(anchors[i], anchors[i + 1]);
+    if (closed && n >= 2) emit(anchors[n - 1], anchors[0]);
+    return pts;
+  };
+
   // A path is treated as a closed loop for morphing if its meta says so, if it's
   // a circle, or if its endpoints coincide. Closed shapes must blend with
   // rotational correspondence (not open index-matching) or their start vertices
@@ -323,6 +529,16 @@
     return {
       steps: clampFn(Math.round(m.steps ?? 6), 0, 64),
       resampleCount: clampFn(Math.round(m.resampleCount ?? 128), 8, 512),
+      // Corner-matched bezier morphing (default ON). When enabled and a pair is
+      // a closed loop, intermediate rings are built from a small set of anchors
+      // (≈ the busier source's structural complexity) with interpolated bezier
+      // handles — a hexagon keeps ~6 anchors and rounds smoothly into a circle,
+      // instead of every ring being a 128-point polyline. Falls back to dense
+      // arc-length resampling for open paths or when explicitly disabled.
+      cornerMatch: m.cornerMatch !== false,
+      // Max anchors the corner-matched path may use (keeps complex sources from
+      // exploding). Clamped to the dense resampleCount as an upper bound.
+      cornerMatchMax: clampFn(Math.round(m.cornerMatchMax ?? 64), 4, 256),
       resampleMode: m.resampleMode === 'uniform-index' ? 'uniform-index' : 'arc-length',
       easing: m.easing || 'linear',
       sequenceMode: m.sequenceMode || 'sequential',
@@ -416,11 +632,27 @@
   // ---------------------------------------------------------------------------
   // Meta for blend rings
   // ---------------------------------------------------------------------------
-  const buildRingMeta = (srcMeta, closureMode) => {
+  const buildRingMeta = (srcMeta, closureMode, keepAnchors = false) => {
     const meta = srcMeta ? clone(srcMeta) : {};
-    if (meta.anchors) delete meta.anchors;
-    if (meta.shape) delete meta.shape;
-    if (meta.kind === 'circle') meta.kind = 'polygon';
+    // In the corner-matched bezier path the caller supplies fresh per-ring
+    // anchors, so we keep an .anchors slot (overwritten downstream). In the
+    // legacy dense path anchors/shape are stripped and a circle is downgraded
+    // to a polygon (the ring is a plain polyline, no longer a true circle).
+    if (!keepAnchors) {
+      if (meta.anchors) delete meta.anchors;
+      if (meta.shape) delete meta.shape;
+      if (meta.kind === 'circle') meta.kind = 'polygon';
+    } else {
+      if (meta.shape) delete meta.shape;
+      if (meta.kind === 'circle') {
+        // A corner-matched ring is an anchored shape, not a circle; drop the
+        // stale circle primitive fields so no downstream reader keying off
+        // meta.r/cx/cy (without checking kind) picks up dead geometry.
+        meta.kind = 'shape';
+        delete meta.cx; delete meta.cy; delete meta.r;
+        delete meta.rx; delete meta.ry; delete meta.rotation;
+      }
+    }
     if (closureMode === 'force-closed') meta.closed = true;
     else if (closureMode === 'force-open') meta.closed = false;
     return meta;
@@ -602,6 +834,91 @@
       );
       const emitted = [];
       for (let k = 0; k < listA.length; k += 1) {
+        // --- Corner-matched bezier morph (default, closed pairs) -------------
+        // Represent both sources with K ≈ the busier source's structural corner
+        // count, interpolate anchor positions AND bezier handle roundness, and
+        // emit anchored rings whose flattened polyline carries only a handful of
+        // smoothly-curved vertices (per bezier segment) instead of 128 straight
+        // ones. resampleCount is still honored as the per-segment flatten cap and
+        // as the fallback density; cornerMatch can be disabled to force the dense
+        // legacy path.
+        if (params.cornerMatch && pairClosed) {
+          const cornersA = cornerCountOf(listA[k]);
+          const cornersB = cornerCountOf(listB[k]);
+          // Anchor count: at least the busier source's corners (min 3 for a
+          // closed loop), capped so complex sources stay bounded. A circle
+          // contributes 0 corners, so circle↔hexagon → 6 anchors.
+          let K = Math.max(cornersA, cornersB, 3);
+          K = Math.min(K, params.cornerMatchMax, params.resampleCount);
+          const samplesA = buildCornerSamples(listA[k], K, true);
+          let samplesB = buildCornerSamples(listB[k], K, true);
+          const KA = samplesA.length;
+          const KB = samplesB.length;
+          if (KA >= 3 && KB >= 3 && KA === KB) {
+            // Rotational correspondence on anchor positions.
+            const Apos = samplesA.map((s) => ({ x: s.x, y: s.y }));
+            const Bpos = samplesB.map((s) => ({ x: s.x, y: s.y }));
+            const r = correspondenceAlign(Apos, Bpos, params.correspondenceMode);
+            let sB = rotateSamples(samplesB, r);
+            // Winding check: reverse B samples if it lowers correspondence cost.
+            if (params.windingCheck) {
+              const cost = (cand) => {
+                let s = 0;
+                for (let v = 0; v < KA; v += 1) {
+                  const dx = samplesA[v].x - cand[v].x;
+                  const dy = samplesA[v].y - cand[v].y;
+                  s += dx * dx + dy * dy;
+                }
+                return s;
+              };
+              const rev = reverseSamples(sB);
+              if (cost(rev) < cost(sB)) sB = rev;
+            }
+            const ringMetaC = buildRingMeta(
+              (listA[k] && listA[k].meta) || null,
+              params.closureMode,
+              true
+            );
+            if (params.closureMode === 'auto') ringMetaC.closed = true;
+            else if (params.closureMode === 'force-open') ringMetaC.closed = false;
+            else ringMetaC.closed = true;
+            for (let i = 1; i <= params.steps; i += 1) {
+              const tRaw = i / (params.steps + 1);
+              const et = applyEasing(params.easing, tRaw);
+              const ringPenId = et < 0.5 ? childA.penId : childB.penId;
+              const built = blendCornerRing(samplesA, sB, et, ringMetaC.closed);
+              let ring = built.points;
+              if (params.smoothing > 0) ring = smoothRing(ring, params.smoothing, ringMetaC.closed);
+              // Close the flattened ring (first===last) like closed sources do.
+              if (ringMetaC.closed && ring.length > 1) {
+                const f = ring[0];
+                const l = ring[ring.length - 1];
+                if (Math.hypot(f.x - l.x, f.y - l.y) > 1e-9) ring.push({ x: f.x, y: f.y });
+              }
+              const meta = clone(ringMetaC);
+              meta.anchors = built.anchors.map((a) => ({
+                x: a.x,
+                y: a.y,
+                in: a.in ? { x: a.in.x, y: a.in.y } : null,
+                out: a.out ? { x: a.out.x, y: a.out.y } : null,
+              }));
+              if (ringPenId) meta.penId = ringPenId;
+              ring.meta = meta;
+              emitted.push(ring);
+              if (doFill && (fillEveryRing || i === midStep)) {
+                // Fills consume the ring as a region POLYGON — pass the flattened
+                // points (the ring array already is the bezier polyline), so an
+                // anchored ring still fills correctly.
+                const fillPaths = regenerateRingFill(ring, childA.fills, childB.fills, et, ringPenId);
+                fillPaths.forEach((p) => emitted.push(p));
+              }
+            }
+            continue;
+          }
+          // else: degenerate sample counts → fall through to dense legacy path.
+        }
+
+        // --- Dense arc-length morph (legacy / open paths / disabled) ----------
         const Arep = resamplePath(listA[k], params.resampleCount, pairClosed, params.resampleMode);
         let Brep = resamplePath(listB[k], params.resampleCount, pairClosed, params.resampleMode);
         const N = Arep.length;

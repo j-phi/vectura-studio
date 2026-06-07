@@ -401,6 +401,12 @@
       this.directMarqueeRect = null;
       this.maskPreview = null;
       this.mirrorDragState = null;
+      // When the active mirror drag includes a layer nested under a morph
+      // modifier, the parent's morphed output must be recomputed during the
+      // drag so in-between rings track the child live. Coalesced to one
+      // recompute per animation frame to keep dragging responsive.
+      this._morphDragActive = false;
+      this._morphDragRaf = null;
       this.scissorStart = null;
       this.scissorEnd = null;
       this.isScissor = false;
@@ -1063,6 +1069,7 @@
       this.clearTouchHold();
       this.isPan = false;
       this.isLayerDrag = false;
+      this._clearMorphDrag();
       this.dragMode = null;
       this.activeHandle = null;
       this.tempTransform = null;
@@ -2095,7 +2102,7 @@
 
     _startMirrorDrag(layers) {
       const ids = this._getMirrorDragPreviewLayerIds(new Set(layers.map((l) => l.id)));
-      if (!ids) { this.mirrorDragState = null; return; }
+      if (!ids) { this.mirrorDragState = null; this._morphDragActive = false; return; }
       const state = new Map();
       ids.forEach((id) => {
         const layer = this.engine.layers.find((l) => l.id === id);
@@ -2110,6 +2117,41 @@
         });
       });
       this.mirrorDragState = state.size ? state : null;
+      // Cache morph-ancestor detection once at drag start so the per-pointermove
+      // hot path never walks the layer tree.
+      this._morphDragActive = this._dragHasMorphAncestor(layers);
+    }
+
+    _dragHasMorphAncestor(layers) {
+      if (!this.engine?.getAncestorModifiers) return false;
+      return layers.some((layer) =>
+        this.engine.getAncestorModifiers(layer).some(
+          (mod) => mod?.modifier?.type === 'morph'
+        )
+      );
+    }
+
+    // Schedules at most one full display-geometry recompute per animation
+    // frame so a morph parent's morphedPaths refresh live while a descendant
+    // is dragged, without queueing a recompute per pointermove.
+    _scheduleMorphDragRecompute() {
+      if (this._morphDragRaf != null) return;
+      this._morphDragRaf = requestAnimationFrame(() => {
+        this._morphDragRaf = null;
+        if (!this._morphDragActive || !this.isLayerDrag) return;
+        this.onComputeDisplayGeometry
+          ? this.onComputeDisplayGeometry()
+          : this.engine.computeAllDisplayGeometry();
+        this.draw();
+      });
+    }
+
+    _clearMorphDrag() {
+      this._morphDragActive = false;
+      if (this._morphDragRaf != null) {
+        cancelAnimationFrame(this._morphDragRaf);
+        this._morphDragRaf = null;
+      }
     }
 
     getMaskPreviewLayer() {
@@ -4382,6 +4424,11 @@
               if (this.engine.computeLayerEffectiveGeometry) this.engine.computeLayerEffectiveGeometry(layer.id);
               if (this.engine.computeLayerDisplayGeometry) this.engine.computeLayerDisplayGeometry(layer.id);
             });
+            // When a dragged layer sits under a morph modifier, the cheap
+            // per-layer recompute above does not refresh the parent's morphed
+            // output. Schedule a coalesced full recompute so the in-between
+            // rings track the drag live (matches the released result).
+            if (this._morphDragActive) this._scheduleMorphDragRecompute();
           }
         } else if (this.dragMode === 'resize' && this.startBounds && this.activeHandle) {
           const fromCenter = modifiers.alt || modifiers.meta;
@@ -4807,6 +4854,10 @@
         this.rotateOrigin = null;
         this.snap = null;
       }
+      // Release flow already recomputes morph via engine.generate() →
+      // computeAllDisplayGeometry(); drop the live-preview flag and any pending
+      // frame so it can't leak into the next (possibly non-morph) drag.
+      this._clearMorphDrag();
       this._pendingSingleSelect = null;
       this.isPan = false;
       this.isLayerDrag = false;

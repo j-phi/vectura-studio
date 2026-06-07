@@ -93,12 +93,16 @@ describe('morph modifier — corner fidelity (polygon → circle)', () => {
   test('FID-01: intermediate rings keep corners (not instant circle)', () => {
     const rings = morph(0);
     expect(rings.length).toBe(5);
-    // First ring is mostly hexagon → a real corner remains, well above a circle's
-    // per-vertex turn (~360/128 ≈ 3°).
+    // First ring is mostly hexagon → a real corner remains. (v1.1.74: rings are
+    // now corner-matched SPARSE bezier polylines — ~25 pts, not 128 — so the
+    // per-vertex turn is larger than the old dense contract; the corner shows up
+    // as a single ~36° turn.)
     expect(maxTurn(rings[0])).toBeGreaterThan(25);
     // Last blend ring (t=5/6, emitSources off) is nearly the circle — corners
-    // largely gone, and much rounder than the first ring.
-    expect(maxTurn(rings[rings.length - 1])).toBeLessThan(18);
+    // largely rounded away, and much rounder than the first ring. Threshold is
+    // looser than the old dense path because a circle drawn with ~6 anchors /
+    // ~25 points has a coarser per-vertex turn than a 128-point polyline.
+    expect(maxTurn(rings[rings.length - 1])).toBeLessThan(22);
     expect(maxTurn(rings[rings.length - 1])).toBeLessThan(maxTurn(rings[0]) - 10);
   });
 
@@ -122,7 +126,10 @@ describe('morph modifier — corner fidelity (polygon → circle)', () => {
   test('FID-04: orientation-independent — flat-top and pointy-top match', () => {
     const a = morph(0).map((r) => +radii(r).max.toFixed(1));
     const b = morph(-Math.PI / 2).map((r) => +radii(r).max.toFixed(1));
-    a.forEach((v, i) => expect(Math.abs(v - b[i])).toBeLessThan(2));
+    // Tolerance is ~3 (was 2): the sparse corner-matched bezier flatten samples
+    // arcs adaptively, so the extreme radius can differ by a sub-point sampling
+    // margin between two start orientations. The shapes are still equivalent.
+    a.forEach((v, i) => expect(Math.abs(v - b[i])).toBeLessThan(3));
   });
 
   test('FID-05: both sources closed ⇒ every intermediate ring is closed', () => {

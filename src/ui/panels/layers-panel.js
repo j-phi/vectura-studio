@@ -945,6 +945,24 @@
         if (onName && !e.metaKey && !e.ctrlKey && !e.shiftKey
             && now - this._lvlDblTime < 350 && this._lvlDblId === id) {
           this._lvlDblTime = 0; this._lvlDblId = null;
+          // Double-click selects the target first so the panel/controls reflect
+          // it — this matters for a child nested inside a group/modifier whose
+          // single-click may not have left it active. Then enter rename. Use a
+          // live lookup so we never act on a stale captured layer object.
+          const live = engine.getLayerById?.(id);
+          const selIds = renderer?.selectedLayerIds;
+          const isSoleActive = engine.activeLayerId === id
+            && renderer?.selectedLayerId === id
+            && (selIds?.size ?? 0) === 1 && !!selIds?.has(id);
+          if (live && !isSoleActive) {
+            renderer.setSelection([id], id);
+            engine.activeLayerId = id;
+            this.lastLayerClickId = id;
+            this.buildControls?.();
+            this.updateFormula?.();
+            this.app.render?.();
+            this.renderLayers();
+          }
           const el = document.querySelector(
             `[data-lvl-id="${id}"] .lvl-name,[data-lvl-id="${id}"] .lvl-grp-name`);
           if (el) _lvlTriggerRename(el, engine.getLayerById?.(id));

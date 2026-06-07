@@ -17,7 +17,7 @@
     eye:      () => layerSvg(`<ellipse cx="6" cy="6" rx="5" ry="3.5"/><circle cx="6" cy="6" r="1.5" fill="currentColor" stroke="none"/>`),
     eyeOff:   () => layerSvg(`<path d="M1 1.5l10 9M3.5 3C2.2 3.9 1 6 1 6s2.2 3.5 5 3.5c.9 0 1.7-.2 2.4-.6"/><path d="M9 8.8C10 7.9 11 6 11 6S8.8 2.5 6 2.5c-.4 0-.7 0-1.1.1"/>`),
     lock:     () => layerSvg(`<rect x="2.5" y="5.5" width="7" height="5" rx="1"/><path d="M4 5.5V4a2 2 0 1 1 4 0v1.5"/><line x1="6" y1="7.5" x2="6" y2="8.5"/>`),
-    lockOpen: () => layerSvg(`<rect x="2.5" y="5.5" width="7" height="5" rx="1"/><path d="M4 5.5V4a2 2 0 1 1 4 0" stroke-dasharray="2 1.5"/>`),
+    lockOpen: () => layerSvg(`<rect x="2.5" y="5.5" width="7" height="5" rx="1"/><path d="M8 5.5V3.5a1.5 1.5 0 1 0-2.8-1.3"/>`),
     folder:   () => layerSvg(`<path d="M1 4C1 3 1.7 2.5 2.5 2.5H5l1 1.5h3.5C10.3 4 11 4.7 11 5.5V9c0 .8-.7 1.5-1.5 1.5h-7C1.7 10.5 1 9.8 1 9V4z"/>`),
     layer:    () => layerSvg(`<rect x="1.5" y="3" width="9" height="7.5" rx=".8"/><line x1="3.5" y1="1.5" x2="8.5" y2="1.5"/>`),
     grpPlus:  () => layerSvg(`<path d="M1 4C1 3 1.7 2.5 2.5 2.5H4.5l1 1.5h4C10.3 4 11 4.7 11 5.5V9c0 .8-.7 1.5-1.5 1.5h-7C1.7 10.5 1 9.8 1 9V4z"/><line x1="6" y1="6" x2="6" y2="9"/><line x1="4.5" y1="7.5" x2="7.5" y2="7.5"/>`),
