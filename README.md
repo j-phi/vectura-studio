@@ -545,6 +545,9 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.1.70
+- **Preset folder sync now works in Brave.** Folder sync needs the File System Access API, which Brave ships but **disables by default** behind a flag — so Brave users were wrongly told "needs Chrome or Edge." The Preset Storage panel now detects Brave and tells you exactly how to turn it on: enable `brave://flags/#file-system-access-api`, restart Brave, and the **Sync to a folder…** button appears. (The `file://` and other-browser hints are unchanged.) Copy/detection only — no change to how syncing works.
+
 ### 1.1.69
 - **Preset folder sync is now two-way.** A connected preset folder is read back into the app, not just written to — so presets edited on another machine (a Dropbox/iCloud/Drive folder shared between computers) or hand-edited on disk show up here. The pull runs on connect, on launch, on tab focus, and via a **Refresh from folder** button. It's **additive** (deleting a file on disk never deletes the in-app preset) and **last-write-wins** (the newer copy wins by timestamp; a newer in-app copy is never overwritten). Under the hood, saved `.vectura` files now embed a preset id so they round-trip reliably, and the filename is standardized — older Phase-2 files still import.
 

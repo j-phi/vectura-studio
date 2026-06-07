@@ -1224,6 +1224,33 @@ ${isDevEligible() ? `
    * unsupported the folder controls are omitted and only Export/Import remain.
    * `this` is the UI instance.
    */
+  // Brave ships the File System Access API but disables it behind a flag, so a
+  // Brave user gets `supported === false` even though folder sync is one toggle
+  // away — telling them "needs Chrome or Edge" is wrong and a dead end. The
+  // official `navigator.brave.isBrave()` is async, but the `navigator.brave`
+  // object is present only in Brave, so its synchronous presence is a reliable
+  // detector for a render path that can't await.
+  const isBraveBrowser = () => {
+    try {
+      return typeof navigator !== 'undefined' && !!navigator.brave
+        && typeof navigator.brave.isBrave === 'function';
+    } catch (_) { return false; }
+  };
+
+  // Pure: the hint shown in #preset-storage-folder when the File System Access
+  // API is unavailable. Three distinct causes → three distinct fixes:
+  //   - file:// page  → serve over http (any Chromium browser; checked first
+  //                      because the API is absent on file:// even in Chrome)
+  //   - Brave         → enable the flag + restart (then the http/Brave paths
+  //                      resolve and the "Sync to a folder…" button appears)
+  //   - anything else → switch to Chrome or Edge
+  // Exported for unit testing.
+  const presetFolderUnsupportedHint = ({ onFile, isBrave } = {}) => {
+    if (onFile) return `<p class="ctrl-hint">Live folder sync is unavailable on file:// pages. Serve the app over http — run <code>python -m http.server</code> and open <code>http://localhost:8000</code> in Chrome or Edge — and a “Sync to a folder…” button appears here. Until then, use Export / Import below.</p>`;
+    if (isBrave) return `<p class="ctrl-hint">Brave blocks folder access by default. Enable it at <code>brave://flags/#file-system-access-api</code>, restart Brave, and a “Sync to a folder…” button appears here. Until then, use Export / Import below.</p>`;
+    return `<p class="ctrl-hint">Live folder sync needs Chrome or Edge. On this browser, use Export / Import below to move presets between machines.</p>`;
+  };
+
   function renderPresetStorageUi() {
     const { getEl } = requireDeps('renderPresetStorageUi');
     const host = getEl('preset-storage-body', { silent: true });
@@ -1316,13 +1343,11 @@ ${isDevEligible() ? `
     if (!supported) {
       const folder = host.querySelector('#preset-storage-folder');
       // The File System Access API is gated to secure contexts: it is also
-      // absent on file:// pages even in Chrome/Edge. Distinguish the two causes
-      // so a Chromium user opening index.html directly isn't told (wrongly) to
-      // switch browsers — they just need to serve the app over http.
+      // absent on file:// pages even in Chrome/Edge, and disabled-by-default in
+      // Brave. Distinguish the causes so a user isn't told (wrongly) to switch
+      // browsers when they just need to serve over http or flip a Brave flag.
       const onFile = typeof window !== 'undefined' && window.location && window.location.protocol === 'file:';
-      if (folder) folder.innerHTML = onFile
-        ? `<p class="ctrl-hint">Live folder sync is unavailable on file:// pages. Serve the app over http — run <code>python -m http.server</code> and open <code>http://localhost:8000</code> in Chrome or Edge — and a “Sync to a folder…” button appears here. Until then, use Export / Import below.</p>`
-        : `<p class="ctrl-hint">Live folder sync needs Chrome or Edge. On this browser, use Export / Import below to move presets between machines.</p>`;
+      if (folder) folder.innerHTML = presetFolderUnsupportedHint({ onFile, isBrave: isBraveBrowser() });
       return;
     }
 
@@ -1398,6 +1423,8 @@ ${isDevEligible() ? `
       DEPS = deps || {};
     },
     renderPresetStorageUi,
+    presetFolderUnsupportedHint,
+    isBraveBrowser,
     mount,
     bindHandlers,
     PANEL_HTML,
