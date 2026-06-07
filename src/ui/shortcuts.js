@@ -620,6 +620,9 @@
       } else if (t === 'mirror') {
         this.insertMirrorModifier();
         _toast('Added mirror modifier');
+      } else if (t === 'morph') {
+        this.insertMorphModifier();
+        _toast('Added morph modifier');
       }
       this.setActiveTool?.('select');
       this.renderLayers();

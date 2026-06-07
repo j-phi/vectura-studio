@@ -515,7 +515,8 @@
       const seenGroupOrder = [];
       const groupMap = new Map();
       (this.app.engine.layers || []).forEach((layer) => {
-        if (!layer?.visible || (layer.isGroup && layer.type !== 'compound') || isMaskLayerGeometryHidden(layer) || (this.app.engine.hasCompoundAncestor && this.app.engine.hasCompoundAncestor(layer))) return;
+        const isMorphGroup = layer.isGroup && Array.isArray(layer.morphedPaths) && layer.morphedPaths.length > 0;
+        if (!layer?.visible || (layer.isGroup && layer.type !== 'compound' && !isMorphGroup) || isMaskLayerGeometryHidden(layer) || (this.app.engine.hasCompoundAncestor && this.app.engine.hasCompoundAncestor(layer))) return;
         const pen = penMap.get(layer.penId) || fallbackPen;
         const key = pen.id || fallbackPen.id;
         if (!groupMap.has(key)) {

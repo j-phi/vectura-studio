@@ -433,6 +433,8 @@
   const getRawExportPaths = (layer, options = {}) => {
     if (!layer) return [];
     if (isMaskLayerGeometryHidden(layer)) return [];
+    if (layer._morphConsumed) return [];
+    if (layer.isGroup && Array.isArray(layer.morphedPaths)) return clonePathsWithMeta(layer.morphedPaths);
     const { useOptimized = false } = options;
     const source =
       useOptimized && Array.isArray(layer.optimizedPaths)
@@ -446,6 +448,7 @@
   const getVisibleExportPaths = (layer, options = {}) => {
     if (!layer) return [];
     if (isMaskLayerGeometryHidden(layer)) return [];
+    if (layer._morphConsumed) return [];
     if (layer.displayMaskActive && Array.isArray(layer.displayPaths) && layer.displayPaths.length) return clonePathsWithMeta(layer.displayPaths);
     return getRawExportPaths(layer, options);
   };

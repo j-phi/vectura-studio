@@ -254,9 +254,9 @@
       layer.groupType = 'modifier';
       layer.groupCollapsed = false;
       layer.visible = true;
-      layer.modifier = createModifierState(type, {
-        mirrors: [createMirrorLine(0)],
-      });
+      layer.modifier = type === 'mirror'
+        ? createModifierState(type, { mirrors: [createMirrorLine(0)] })
+        : createModifierState(type);
       this.layers.push(layer);
       this.activeLayerId = id;
       this.computeAllDisplayGeometry();
@@ -270,6 +270,76 @@
 
       const bounds = this.getBounds();
       const modifier = modLayer.modifier;
+
+      if (modifier.type === 'morph') {
+        // Recompute morph output fresh (group.morphedPaths may be stale or absent).
+        const multiFn = Modifiers.applyModifierToMultiChildPaths;
+        const morphLeaves = this.getLayerDescendants(modifierId)
+          .filter((l) => !l.isGroup && l.visible !== false);
+        // Mirror the live preview's source selection + pen stamping (see
+        // _computeMorphGroups) so Expand produces byte-identical geometry to
+        // what is on the canvas — including baked fills / nested modifiers.
+        const pathsPerChild = morphLeaves.map((child) => {
+          const src = (Array.isArray(child.effectivePaths) && child.effectivePaths.length)
+            ? child.effectivePaths
+            : (child.paths && child.paths.length ? child.paths : (child.sourcePaths || []));
+          return clonePaths(src).map((p) => {
+            if (!Array.isArray(p)) return p;
+            const meta = p.meta ? { ...p.meta } : {};
+            if (child.penId) meta.penId = child.penId;
+            p.meta = meta;
+            return p;
+          });
+        });
+        const morphed = (typeof multiFn === 'function'
+          ? multiFn(pathsPerChild, modifier, bounds)
+          : (modLayer.morphedPaths || [])) || [];
+        const firstChild = morphLeaves[0] || {};
+
+        const folderId = Math.random().toString(36).slice(2, 11);
+        SETTINGS.globalLayerCount = ++this._layerCounter;
+        const folder = new Layer(folderId, 'group', modLayer.name);
+        folder.isGroup = true;
+        folder.groupType = 'group';
+        folder.groupCollapsed = false;
+        folder.parentId = modLayer.parentId ?? null;
+        folder.visible = modLayer.visible;
+
+        const pad = String(morphed.length).length;
+        const shapeLayers = morphed.map((path, i) => {
+          const shapeId = Math.random().toString(36).slice(2, 11);
+          SETTINGS.globalLayerCount = ++this._layerCounter;
+          const shape = new Layer(shapeId, 'shape', `${modLayer.name} - Line ${String(i + 1).padStart(pad, '0')}`);
+          shape.parentId = folderId;
+          shape.sourcePaths = clonePaths([path]);
+          shape.params.seed = 0;
+          shape.params.posX = 0;
+          shape.params.posY = 0;
+          shape.params.scaleX = 1;
+          shape.params.scaleY = 1;
+          shape.params.rotation = 0;
+          shape.params.curves = false;
+          shape.params.smoothing = 0;
+          shape.params.simplify = 0;
+          // Prefer the morphed path's stamped penId, else fall back to first child's pen/style.
+          const stampedPen = (Array.isArray(path) && path.meta && path.meta.penId) || firstChild.penId;
+          shape.penId = stampedPen;
+          shape.color = firstChild.color;
+          shape.strokeWidth = firstChild.strokeWidth;
+          shape.lineCap = firstChild.lineCap;
+          shape.visible = true;
+          return shape;
+        });
+
+        const descendantIds = new Set(this.getLayerDescendants(modifierId).map((l) => l.id));
+        this.layers = this.layers.filter((l) => l.id !== modifierId && !descendantIds.has(l.id));
+        this.layers.splice(modIdx, 0, folder, ...shapeLayers);
+
+        shapeLayers.forEach((shape) => this.generate(shape.id));
+        this.activeLayerId = folderId;
+        this.computeAllDisplayGeometry();
+        return folderId;
+      }
 
       const leaves = this.getLayerDescendants(modifierId)
         .filter((l) => !l.isGroup && l.visible !== false);
@@ -881,10 +951,12 @@
       if (!layer || layer.isGroup) return;
       const basePaths = clonePaths(layer.paths || []);
       const { inside } = this._splitModifiersByMaskBoundary(layer);
-      const effective = inside.reduce(
-        (current, modifierLayer) => applyModifierToPaths(current, modifierLayer.modifier, this.getBounds()),
-        basePaths
-      );
+      const effective = inside
+        .filter((modifierLayer) => modifierLayer.modifier?.type !== 'morph')
+        .reduce(
+          (current, modifierLayer) => applyModifierToPaths(current, modifierLayer.modifier, this.getBounds()),
+          basePaths
+        );
       const baseEffective = clonePaths(effective || []);
       const fillPaths = window.Vectura?.PaintBucketOps?.generateGeometryForLayer?.(layer) || [];
       layer.effectivePaths = fillPaths.length ? baseEffective.concat(fillPaths) : baseEffective;
@@ -913,8 +985,9 @@
         layer.displayMaskActive = true;
       }
 
-      if (outside.length) {
-        currentPaths = outside.reduce(
+      const outsideNonMorph = outside.filter((modifierLayer) => modifierLayer.modifier?.type !== 'morph');
+      if (outsideNonMorph.length) {
+        currentPaths = outsideNonMorph.reduce(
           (current, modifierLayer) => applyModifierToPaths(current, modifierLayer.modifier, bounds),
           currentPaths
         );
@@ -926,6 +999,8 @@
 
     getRenderablePaths(layer, options = {}) {
       if (!layer) return [];
+      if (layer._morphConsumed) return [];
+      if (layer.isGroup && Array.isArray(layer.morphedPaths)) return layer.morphedPaths;
       if (layer.mask?.enabled && layer.mask?.hideLayer) return [];
       const { useOptimized = false } = options;
       if (layer.displayMaskActive && Array.isArray(layer.displayPaths)) return layer.displayPaths;
@@ -939,6 +1014,21 @@
     }
 
     computeAllDisplayGeometry() {
+      this.layers.forEach((layer) => {
+        if (!layer) return;
+        if (layer.morphedPaths) delete layer.morphedPaths;
+        if (layer._morphConsumed) delete layer._morphConsumed;
+        // Morph groups borrow the first child's pen/style as a render/export
+        // fallback. Reset it each pass so a group with no visible children
+        // doesn't serialize a stale child's style, and re-derivation is
+        // deterministic. (_computeMorphGroups repopulates below.)
+        if (layer.isGroup && layer.modifier?.type === 'morph') {
+          layer.penId = null;
+          layer.color = null;
+          layer.strokeWidth = null;
+          layer.lineCap = null;
+        }
+      });
       this.layers.forEach((layer) => {
         if (!layer || layer.isGroup) return;
         this.computeLayerEffectiveGeometry(layer.id);
@@ -957,7 +1047,46 @@
         if (!layer || layer.isGroup) return;
         this.computeLayerDisplayGeometry(layer.id);
       });
+      this._computeMorphGroups();
       this.optimizeLayers(this.layers);
+    }
+
+    _computeMorphGroups() {
+      const multiFn = Modifiers.applyModifierToMultiChildPaths;
+      if (typeof multiFn !== 'function') return;
+      const bounds = this.getBounds();
+      this.layers.forEach((group) => {
+        if (!isModifierLayer(group) || group.modifier?.type !== 'morph') return;
+        // Direct-and-nested LEAF descendants in tree order (depth-first).
+        const leaves = this.getLayerDescendants(group.id).filter((l) => l && !l.isGroup);
+        // Mark every leaf consumed so it does not render/export on its own.
+        leaves.forEach((l) => { l._morphConsumed = true; });
+        // Only VISIBLE leaves participate in the morph chain.
+        const visibleLeaves = leaves.filter((l) => l.visible !== false);
+        const pathsPerChild = visibleLeaves.map((child) => {
+          const src = (Array.isArray(child.effectivePaths) && child.effectivePaths.length)
+            ? child.effectivePaths
+            : (child.paths || []);
+          // clone + stamp penId so morphed paths inherit the child's pen/color
+          return clonePaths(src).map((p) => {
+            if (!Array.isArray(p)) return p;
+            const meta = p.meta ? { ...p.meta } : {};
+            if (child.penId) meta.penId = child.penId;
+            p.meta = meta;
+            return p;
+          });
+        });
+        const morphed = multiFn(pathsPerChild, group.modifier, bounds) || [];
+        group.morphedPaths = morphed;
+        // transient pen/style fallback for renderer/export/stats
+        const first = visibleLeaves[0];
+        if (first) {
+          group.penId = first.penId;
+          group.color = first.color;
+          group.strokeWidth = first.strokeWidth;
+          group.lineCap = first.lineCap;
+        }
+      });
     }
 
     resolveProfile() {
@@ -1665,6 +1794,11 @@
       const l = this.layers.find((x) => x.id === layerId);
       if (!l) return 'Select a layer...';
       if (isModifierLayer(l)) {
+        if (l.modifier?.type === 'morph') {
+          const childCount = this.getLayerDescendants(l.id).filter((c) => !c.isGroup && c.visible !== false).length;
+          const steps = l.modifier?.steps ?? 6;
+          return `Morph Modifier · ${childCount} child${childCount === 1 ? '' : 'ren'} · ${steps} steps per pair · graduated blend in layer order`;
+        }
         const mirrorCount = Array.isArray(l.modifier?.mirrors) ? l.modifier.mirrors.length : 0;
         return `Mirror Modifier · ${mirrorCount} axis${mirrorCount === 1 ? '' : 'es'} · child geometry is mirrored top-to-bottom by stack order`;
       }

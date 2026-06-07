@@ -433,7 +433,12 @@
     }
 
     if (isModifier) {
-      window.Vectura.UI.MirrorPanel.build(this, layer, container);
+      const modType = this.getModifierState(layer)?.type;
+      if (modType === 'morph' && window.Vectura.UI.MorphPanel) {
+        window.Vectura.UI.MorphPanel.build(this, layer, container);
+      } else {
+        window.Vectura.UI.MirrorPanel.build(this, layer, container);
+      }
       restoreLeftPanelScroll();
       return;
     }

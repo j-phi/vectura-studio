@@ -979,7 +979,8 @@
           const on = layer.modifier?.enabled !== false;
           b.className = 'lvl-ib' + (on ? '' : ' vis-off');
           b.innerHTML = on ? this._LVL_I.eye() : this._LVL_I.eyeOff();
-          b.title = on ? 'Disable mirror modifier' : 'Enable mirror modifier';
+          const modLabel = `${layer.modifier?.type === 'morph' ? 'morph' : 'mirror'} modifier`;
+          b.title = (on ? 'Disable ' : 'Enable ') + modLabel;
           b.addEventListener('click', (e) => {
             e.stopPropagation();
             if (this.app.pushHistory) this.app.pushHistory();
@@ -2008,9 +2009,13 @@
         mirrors: [createMirrorLine(0)],
       });
     }
-    if (!Array.isArray(layer.modifier.mirrors)) layer.modifier.mirrors = [];
-    if (layer.modifier.guidesVisible === undefined) layer.modifier.guidesVisible = true;
-    if (layer.modifier.guidesLocked === undefined) layer.modifier.guidesLocked = false;
+    // Mirror-only field backfill — don't graft `mirrors`/`guides*` onto other
+    // modifier types (e.g. morph), which would pollute their serialized state.
+    if (layer.modifier.type === 'mirror') {
+      if (!Array.isArray(layer.modifier.mirrors)) layer.modifier.mirrors = [];
+      if (layer.modifier.guidesVisible === undefined) layer.modifier.guidesVisible = true;
+      if (layer.modifier.guidesLocked === undefined) layer.modifier.guidesLocked = false;
+    }
     if (layer.modifier.enabled === undefined) layer.modifier.enabled = true;
     return layer.modifier;
   }
@@ -2043,7 +2048,7 @@
     this.normalizeGroupOrder();
     this.app.computeDisplayGeometry();
 
-    if (this.isModifierLayer(parent) && parent.modifier?.type === 'mirror') {
+    if (this.isModifierLayer(parent)) {
       moveIds.forEach((id) => this.layerLockedIds.add(id));
     }
 
@@ -2061,7 +2066,7 @@
     const engine = this.app?.engine;
     if (!engine || !this.layerLockedIds) return;
     const layer = engine.layers.find((l) => l.id === layerId);
-    if (!layer || !this.isModifierLayer(layer) || layer.modifier?.type !== 'mirror') return;
+    if (!layer || !this.isModifierLayer(layer)) return;
     const cascade = (pid) => {
       engine.layers.filter((l) => l.parentId === pid).forEach((c) => {
         this.layerLockedIds.delete(c.id);

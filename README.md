@@ -1,6 +1,6 @@
 # Vectura Studio
 
-**Physics-inspired vector generation for plotter-ready line art.** No build step, no framework — open `index.html` and go. Vectura combines a rich algorithm library (flowfields, boids, attractors, Petalis, and more) with a full layer system, mirror modifiers, SVG export with plotter optimization, and a Noise Rack for layered generative noise — all in vanilla JavaScript.
+**Physics-inspired vector generation for plotter-ready line art.** No build step, no framework — open `index.html` and go. Vectura combines a rich algorithm library (flowfields, boids, attractors, Petalis, and more) with a full layer system, mirror & morph modifiers, SVG export with plotter optimization, and a Noise Rack for layered generative noise — all in vanilla JavaScript.
 
 ---
 
@@ -42,7 +42,7 @@ npm run test:ci
 
 ### Layers & Modifiers
 
-Vectura uses an Illustrator-style layer system with full undo history for every structural edit — reorder, group, reparent, mask toggles, and modifier changes are all first-class history steps. Layers support per-layer stroke/line-cap settings, visibility, and drag-to-reorder. **Mirror Modifiers** let you wrap layers in a reflective container with a full mirror-axis stack.
+Vectura uses an Illustrator-style layer system with full undo history for every structural edit — reorder, group, reparent, mask toggles, and modifier changes are all first-class history steps. Layers support per-layer stroke/line-cap settings, visibility, and drag-to-reorder. **Mirror Modifiers** let you wrap layers in a reflective container with a full mirror-axis stack, and **Morph Modifiers** blend 2+ child layers into graduated in-between rings (an Illustrator-style Blend, but plotter-native).
 
 <details>
 <summary>Full layer & modifier feature list</summary>
@@ -50,6 +50,7 @@ Vectura uses an Illustrator-style layer system with full undo history for every 
 - Layered generation with visibility toggles, ordering, and per-layer stroke/line-cap settings
 - Illustrator-style parent masks from the Layers panel: a visible parent silhouette clips all indented descendants, with optional `Hide Mask Layer` for invisible mask artwork and a live dimmed-descendant preview while the mask parent is being transformed
 - `Insert > Mirror Modifier` adds a group-like container with drag-to-assign or drag-out child layers, `+ Add` child-layer creation from a selected modifier, fully editable selected child layers, and mirrored closed-mask silhouettes for masked subtrees
+- `Insert > Morph Modifier` adds a blend container: drop 2+ layers in and it generates N graduated in-between rings morphing one shape into the next (sequential A→B→C chaining or a cyclic loop), with controls for steps, easing, vertex resampling, start-vertex correspondence, multi-path handling, source emission, closure, and output smoothing; children auto-lock and Expand bakes each ring into its own shape layer
 - Mirror guides are dashed editor overlays with a centered reflection triangle; reflected geometry exports while guide lines stay editor-only
 - The modifier row owns a Mirror Stack with per-axis show/hide, lock, delete, reorder, angle, and XY shift controls plus stack-level add/show-hide/lock/clear actions; deleting the modifier dissolves the wrapper and preserves children
 - Layer grouping/ungrouping via `Cmd/Ctrl+G` and `Cmd/Ctrl+Shift+G`
@@ -98,7 +99,7 @@ An Illustrator-style shared toolbar now drives the main canvas plus the embedded
 
 ### Algorithms
 
-19+ algorithm families power each layer, all seeded for repeatable results. The **Noise Rack** is a universal multi-algorithm noise stacking system shared across algorithms — add layers, pick noise types, blend modes, and octave shaping without touching algorithm-specific code. Every algorithm also ships a **universal preset gallery**: a thumbnail dropdown of curated starting points grouped by Classic / Geometric / Organic / Complex / Evolving, plus a **User** section for presets you import from `.vectura` files.
+19+ algorithm families power each layer, all seeded for repeatable results. The **Noise Rack** is a universal multi-algorithm noise stacking system shared across algorithms — add layers, pick noise types, blend modes, and octave shaping without touching algorithm-specific code. Every algorithm also ships a **universal preset gallery**: a thumbnail dropdown of curated starting points grouped by Classic / Geometric / Organic / Complex / Evolving, plus a **User** section. Edit any preset and a colored **save pip** appears beside it — click it (or press `Cmd/Ctrl+S`) to name and save the look as your own preset, with one-click Undo; if you started from one of your own presets you can update it in place. Your presets save in the browser by default; in **Document Setup → Preset Storage** you can connect a folder on disk (Chrome/Edge) so they persist across sessions, or export/import a portable `vectura-presets.json` bundle to move them between machines. You can still import presets from `.vectura` files too.
 
 <details>
 <summary>Full algorithm feature list</summary>
@@ -248,6 +249,17 @@ Switch to **Build** mode for the composable picker: pick a **Lattice** (parallel
 </details>
 
 <details>
+<summary>Morph Modifier workflow</summary>
+
+Use `Insert > Morph Modifier` to add a blend container, then drop 2 or more layers into it in the Layers panel. The modifier fills the space between consecutive children with N graduated in-between rings — child A's shape progressively becoming child B's. Child layer order sets the morph direction; with 3+ children the chain runs sequentially (A→B→C, each pair its own segment) and **Cyclic** mode closes the loop back to A. The originals stay visible unless you turn off **Emit Sources**.
+
+The Morph panel exposes: **Steps** (intermediate rings per pair), **Easing** (Linear / Ease In / Ease Out / Ease In-Out / Cubic In / Cubic Out), **Sequence** (Sequential / Cyclic), **Resample Count** (common vertex count) and mode (Arc Length / Uniform Index), **Correspondence** (how start vertices align: Centroid + Angle / Nearest / Arc Length), **Multi-Path** handling when children have different path counts (Auto / Index Match / Merge Centroid / Merge Longest), **Closure**, and **Smoothing**. A live readout shows the child count and total step budget, with a warning when the point budget gets large.
+
+Children dropped into a Morph group auto-lock (like Mirror). Morph output is plotter-ready polylines and is included in SVG export; **Expand** bakes each ring into its own shape layer.
+
+</details>
+
+<details>
 <summary>Petalis & Petal Designer workflow</summary>
 
 Switch to the Petalis algorithm to access the embedded inline Petal Designer panel. Use `⧉` to pop it out into a floating window or `↩` to dock it back in.
@@ -335,6 +347,7 @@ Click `Export SVG` to download.
 | Pen: commit | `Enter` |
 | Pen: cancel | `Esc` |
 | Reset value to default | Double-click control |
+| Save current settings as a preset | `Cmd/Ctrl+S` (config panel focused, after editing a preset) |
 | Cycle wallpaper group within current lattice | `Cmd/Ctrl + ←` / `Cmd/Ctrl + →` |
 | **UI** | |
 | Document Setup | `Cmd/Ctrl+K` |
@@ -487,6 +500,7 @@ flowchart TD
 | `src/core/noise.js` | Core noise primitives |
 | `src/core/noise-rack.js` | Universal multi-algorithm noise stacking system |
 | `src/core/modifiers.js` | Mirror-axis geometry, clipping, and reflection routines |
+| `src/core/morph-modifier.js` | Morph blend math: arc-length/uniform resampling, correspondence alignment, path interpolation, and the multi-child dispatch path |
 | `src/core/masking.js` | Silhouette capability detection, mask unions, live display-geometry masking |
 | `src/core/path-boolean.js` | Polygon normalization and path segmentation used by masking |
 | `src/core/geometry-utils.js` | Shared path smoothing, simplification, and cloning helpers |
@@ -528,6 +542,9 @@ CI lives in `.github/workflows/test.yml`:
 ---
 
 ## Release Notes
+
+### 1.1.65
+- **Morph Modifier Group.** A second modifier type alongside Mirror, on the same group-like container contract. Drop 2+ layers into a Morph group and it fills the space between their shapes with N graduated in-between rings (a circle becoming a wavetable, Rings blooming into a Lissajous) — an Illustrator-style Blend, but pipeline-integrated and plotter-native (every emitted path is a polyline). Sequential A→B→C chaining plus a Cyclic loop; arc-length/uniform resampling, start-vertex correspondence with winding auto-reverse, multi-path reconciliation, six easings, source emission, closure, and Catmull-Rom output smoothing. Morph output is a transient `morphedPaths` re-derived each compute (never serialized) and flows through the renderer, SVG export, and Expand. Added via `Insert > Morph Modifier`; children auto-lock (now type-agnostic with Mirror).
 
 ### 1.1.10
 - **Meridian cleanup chain — closed.** `_ui-legacy.js` (drained across units 1.5–1.10) and `styles.css` (drained across units 2.1–2.7) are both deleted. Every `var(--color-*)` reference under `src/` was rewritten to `var(--ui-*)`, the classic-skin alias maps were inlined and the `--color-*` defaults dropped from `components.css`, and the `data-theme` root mirror attribute is gone. New CSS now lands exclusively in `src/ui/skin/`.
