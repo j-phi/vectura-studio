@@ -543,6 +543,9 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.1.66
+- **Preset Storage leads with live folder sync.** The Document Setup → Preset Storage panel now makes on-disk persistence the headline action — **Sync to a folder…** (pick a folder once; every preset you save mirrors there automatically, across sessions) — with **Export bundle… / Import…** demoted to a secondary "move between machines" row. The unsupported-browser fallback is smarter: opening the app from a `file://` path (where folder sync is unavailable even in Chrome/Edge) now tells you to serve it over http (`python -m http.server` → `http://localhost:8000`) instead of wrongly telling you to switch browsers. Copy/layout only — no change to how syncing works.
+
 ### 1.1.65
 - **Morph Modifier Group.** A second modifier type alongside Mirror, on the same group-like container contract. Drop 2+ layers into a Morph group and it fills the space between their shapes with N graduated in-between rings (a circle becoming a wavetable, Rings blooming into a Lissajous) — an Illustrator-style Blend, but pipeline-integrated and plotter-native (every emitted path is a polyline). Sequential A→B→C chaining plus a Cyclic loop; arc-length/uniform resampling, start-vertex correspondence with winding auto-reverse, multi-path reconciliation, six easings, source emission, closure, and Catmull-Rom output smoothing. Morph output is a transient `morphedPaths` re-derived each compute (never serialized) and flows through the renderer, SVG export, and Expand. Added via `Insert > Morph Modifier`; children auto-lock (now type-agnostic with Mirror).
 

@@ -3363,6 +3363,9 @@
 .preset-storage-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .preset-storage-dot.is-live { background: var(--ui-success, #3fb950); }
 .preset-storage-dot.is-paused { background: var(--ui-warning, #d29922); }
+/* Bundle Export/Import is demoted beneath the live-sync headline. */
+.preset-storage-secondary { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--ui-border); }
+.preset-storage-secondary-hint { margin: 0; text-transform: uppercase; letter-spacing: 0.04em; font-size: 10px; opacity: 0.7; }
 
 /* Touch: dock the Save Preset modal as a bottom sheet and pin Save above the
    name input so the on-screen keyboard never covers the commit action. */

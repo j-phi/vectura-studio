@@ -312,7 +312,7 @@
             <span class="sect-arrow"></span>
           </button>
           <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
-            <p class="ctrl-hint">Where your custom presets are stored. They always save in this browser; connect a folder to also keep them on disk across sessions, or export a bundle to move them between machines.</p>
+            <p class="ctrl-hint">Custom presets always save in this browser. Sync to a folder to keep a live copy on disk — every preset you save mirrors there automatically, across sessions. Or export a bundle to move them between machines.</p>
             <div id="preset-storage-body"><!-- rendered dynamically by renderPresetStorageUi() --></div>
           </div>
         </div>
@@ -1238,12 +1238,17 @@ ${isDevEligible() ? `
       if (T) T.show({ message: msg, variant });
     };
 
-    // Build the static shell; folder rows fill in after the async status query.
+    // Build the static shell: live folder sync is the headline (#preset-storage-folder,
+    // filled after the async status query); the bundle Export/Import flow is a
+    // demoted secondary row for moving presets between machines.
     host.innerHTML = `
       <div id="preset-storage-folder"></div>
-      <div class="preset-storage-actions">
-        <button id="btn-preset-export" type="button" class="hdr-btn">Export presets…</button>
-        <button id="btn-preset-import" type="button" class="hdr-btn">Import…</button>
+      <div class="preset-storage-secondary">
+        <p class="ctrl-hint preset-storage-secondary-hint">Move presets between machines</p>
+        <div class="preset-storage-actions">
+          <button id="btn-preset-export" type="button" class="hdr-btn">Export bundle…</button>
+          <button id="btn-preset-import" type="button" class="hdr-btn">Import…</button>
+        </div>
       </div>
     `;
 
@@ -1292,7 +1297,14 @@ ${isDevEligible() ? `
 
     if (!supported) {
       const folder = host.querySelector('#preset-storage-folder');
-      if (folder) folder.innerHTML = `<p class="ctrl-hint">Folder sync needs Chrome or Edge. On this browser, use Export / Import to move presets between machines.</p>`;
+      // The File System Access API is gated to secure contexts: it is also
+      // absent on file:// pages even in Chrome/Edge. Distinguish the two causes
+      // so a Chromium user opening index.html directly isn't told (wrongly) to
+      // switch browsers — they just need to serve the app over http.
+      const onFile = typeof window !== 'undefined' && window.location && window.location.protocol === 'file:';
+      if (folder) folder.innerHTML = onFile
+        ? `<p class="ctrl-hint">Live folder sync is unavailable on file:// pages. Serve the app over http — run <code>python -m http.server</code> and open <code>http://localhost:8000</code> in Chrome or Edge — and a “Sync to a folder…” button appears here. Until then, use Export / Import below.</p>`
+        : `<p class="ctrl-hint">Live folder sync needs Chrome or Edge. On this browser, use Export / Import below to move presets between machines.</p>`;
       return;
     }
 
@@ -1306,7 +1318,7 @@ ${isDevEligible() ? `
           <div class="preset-storage-folder-row">
             <span class="preset-storage-dot ${paused ? 'is-paused' : 'is-live'}"></span>
             <span class="preset-storage-folder-name">${status.name}</span>
-            <span class="ctrl-hint">${paused ? 'paused — reconnect to save to disk' : 'saving to disk'}</span>
+            <span class="ctrl-hint">${paused ? 'paused — reconnect to resume syncing' : 'live — syncing to disk'}</span>
           </div>
           <div class="preset-storage-actions">
             ${paused ? '<button id="btn-folder-reconnect" type="button" class="add-btn">Reconnect</button>' : ''}
@@ -1314,18 +1326,17 @@ ${isDevEligible() ? `
             <button id="btn-folder-disconnect" type="button" class="hdr-btn">Disconnect</button>
           </div>`;
         const rc = folder.querySelector('#btn-folder-reconnect');
-        if (rc) rc.onclick = async () => { if (await Store.reconnect()) { toast('Folder connected.', 'success'); } renderPresetStorageUi.call(ui); };
-        folder.querySelector('#btn-folder-change').onclick = async () => { const r = await Store.connect(); if (r) toast(`Saving presets to "${r.name}".`, 'success'); renderPresetStorageUi.call(ui); };
+        if (rc) rc.onclick = async () => { if (await Store.reconnect()) { toast('Folder reconnected — syncing resumed.', 'success'); } renderPresetStorageUi.call(ui); };
+        folder.querySelector('#btn-folder-change').onclick = async () => { const r = await Store.connect(); if (r) toast(`Syncing presets to "${r.name}".`, 'success'); renderPresetStorageUi.call(ui); };
         folder.querySelector('#btn-folder-disconnect').onclick = async () => { await Store.disconnect(); toast('Folder disconnected — presets stay in this browser.', 'info'); renderPresetStorageUi.call(ui); };
       } else {
         folder.innerHTML = `
-          <div class="preset-storage-actions">
-            <button id="btn-folder-connect" type="button" class="add-btn">Save to a folder…</button>
-          </div>`;
+          <button id="btn-folder-connect" type="button" class="add-btn">Sync to a folder…</button>
+          <p class="ctrl-hint">Pick a folder once — every preset you save (and each update) is written there automatically, across sessions.</p>`;
         folder.querySelector('#btn-folder-connect').onclick = async () => {
           const r = await Store.connect();
           if (!r) return;
-          toast(`Saving presets to "${r.name}".`, 'success');
+          toast(`Syncing presets to "${r.name}".`, 'success');
           // Offer to seed the folder with the user's existing browser presets.
           const all = Bundle && Bundle.exportAll();
           let copied = 0;
