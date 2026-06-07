@@ -58,7 +58,22 @@ describe('morph modifier — corner fidelity (polygon → circle)', () => {
   const child = (p) => ({ outline: [p], fillPaths: [], fills: [], penId: null });
   const centroid = (r) => { let x = 0, y = 0; r.forEach((p) => { x += p.x; y += p.y; }); return { x: x / r.length, y: y / r.length }; };
   const radii = (r) => { const c = centroid(r); const rs = r.map((p) => Math.hypot(p.x - c.x, p.y - c.y)); return { min: Math.min(...rs), max: Math.max(...rs), mean: rs.reduce((a, b) => a + b, 0) / rs.length }; };
-  const maxTurn = (ring) => {
+  // Drop a trailing closing vertex (first===last) before metrics that assume
+  // unique points.
+  const open = (ring) => {
+    if (ring.length > 1) {
+      const f = ring[0]; const l = ring[ring.length - 1];
+      if (Math.hypot(f.x - l.x, f.y - l.y) < 1e-9) return ring.slice(0, -1);
+    }
+    return ring;
+  };
+  const isClosedRing = (ring) => {
+    if (ring.length < 2) return false;
+    const f = ring[0]; const l = ring[ring.length - 1];
+    return Math.hypot(f.x - l.x, f.y - l.y) < 1e-9;
+  };
+  const maxTurn = (full) => {
+    const ring = open(full);
     let m = 0; const n = ring.length;
     for (let i = 0; i < n; i += 1) {
       const p0 = ring[(i - 1 + n) % n], p1 = ring[i], p2 = ring[(i + 1) % n];
@@ -108,5 +123,9 @@ describe('morph modifier — corner fidelity (polygon → circle)', () => {
     const a = morph(0).map((r) => +radii(r).max.toFixed(1));
     const b = morph(-Math.PI / 2).map((r) => +radii(r).max.toFixed(1));
     a.forEach((v, i) => expect(Math.abs(v - b[i])).toBeLessThan(2));
+  });
+
+  test('FID-05: both sources closed ⇒ every intermediate ring is closed', () => {
+    morph(0).forEach((ring) => expect(isClosedRing(ring)).toBe(true));
   });
 });

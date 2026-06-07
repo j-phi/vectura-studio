@@ -653,6 +653,16 @@
           const ringPenId = et < 0.5 ? childA.penId : childB.penId;
           let ring = blendPaths(Arep, Brot, tRaw, params.easing);
           if (params.smoothing > 0) ring = smoothRing(ring, params.smoothing, pairClosed);
+          // Rule: if both source shapes are closed, every in-between ring is
+          // closed. resamplePath(closed) returns N points around the loop WITHOUT
+          // the wrap vertex, so append a copy of the first point — matching how
+          // closed source paths store first===last — so the renderer and SVG
+          // export draw a closed shape (meta.closed alone isn't honored here).
+          if (pairClosed && ring.length > 1) {
+            const f = ring[0];
+            const l = ring[ring.length - 1];
+            if (Math.hypot(f.x - l.x, f.y - l.y) > 1e-9) ring.push({ x: f.x, y: f.y });
+          }
           const meta = clone(ringMeta);
           if (ringPenId) meta.penId = ringPenId;
           ring.meta = meta;
