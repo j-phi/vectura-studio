@@ -143,6 +143,8 @@ All defaults, machine profiles, palettes, presets, and descriptions live in `src
 
 **Preset naming:** `id` must be lowercase kebab-case prefixed by system: `<preset_system>-<preset-name>`.
 
+**User presets:** Place `.vectura` files in `user-presets/<layer_type>/` — the directory name must exactly match the layer `type` / `preset_system` value, including camelCase (e.g. `shapePack`, `svgDistort`, `petalisDesigner`). Run `npm run user-presets:bundle` to regenerate `src/config/user-presets.js`. When adding a new algorithm, create its `user-presets/<layer_type>/` directory (with a `.gitkeep`) at the same time.
+
 ## Coding Style
 
 - 2-space indentation, LF line endings, trim trailing whitespace (`.editorconfig`)

@@ -7,6 +7,11 @@
  *
  * Usage: npm run user-presets:bundle
  *
+ * IMPORTANT — directory naming: the subdirectory name must EXACTLY match the
+ * layer "type" field in the .vectura file, which is the same as preset_system.
+ * Many names are camelCase: shapePack, svgDistort, petalisDesigner. A snake_case
+ * or lowercase variant will not match and the preset will be silently skipped.
+ *
  * For each .vectura file the script finds the first layer whose type matches
  * the directory name, strips transform keys, and emits a preset object.
  * The preset name defaults to the title-cased filename stem; set a top-level
