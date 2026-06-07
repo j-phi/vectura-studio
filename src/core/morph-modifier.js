@@ -65,10 +65,17 @@
     if (path.meta && path.meta.kind === 'circle') {
       points = flattenCircle(path.meta, resampleCount);
     } else if (path.meta && path.meta.anchors) {
-      const flatten = window.Vectura?.GeometryUtils?.flattenSmoothedPath;
-      if (typeof flatten === 'function') {
-        const flat = flatten(path, 0.1);
-        points = (flat || []).map((pt) => ({ x: pt.x, y: pt.y }));
+      // Flatten from anchors HONORING handles: straight segments where in/out
+      // are null (sharp polygon corners), bezier where present (ovals/curves).
+      // NOT flattenSmoothedPath — that midpoint-smooths a handle-less polygon
+      // into a circle, which silently rounds away sharp corners before the morph
+      // ever sees them (a hexagon would blend as a circle).
+      const buildPoly = window.Vectura?.GeometryUtils?.buildPolylineFromAnchors;
+      if (typeof buildPoly === 'function') {
+        const flat = buildPoly(path.meta.anchors, path.meta.closed === true);
+        points = (flat && flat.length)
+          ? flat.map((pt) => ({ x: pt.x, y: pt.y }))
+          : path.map((pt) => ({ x: pt.x, y: pt.y }));
       } else {
         points = path.map((pt) => ({ x: pt.x, y: pt.y }));
       }
@@ -84,6 +91,22 @@
     const next = path.map((pt) => ({ x: pt.x, y: pt.y }));
     if (path.meta) next.meta = clone(path.meta);
     return next;
+  };
+
+  // A path is treated as a closed loop for morphing if its meta says so, if it's
+  // a circle, or if its endpoints coincide. Closed shapes must blend with
+  // rotational correspondence (not open index-matching) or their start vertices
+  // misalign and the in-between rings twist / collapse through the centroid.
+  const isPathClosed = (path) => {
+    if (!Array.isArray(path) || path.length < 3) return false;
+    const meta = path.meta;
+    if (meta) {
+      if (meta.kind === 'circle') return true;
+      if (typeof meta.closed === 'boolean') return meta.closed;
+    }
+    const a = path[0];
+    const b = path[path.length - 1];
+    return Math.hypot(a.x - b.x, a.y - b.y) < 1e-6;
   };
 
   // ---------------------------------------------------------------------------
@@ -349,7 +372,7 @@
    * each list having equal length K. Each representative is a raw (un-resampled)
    * path; resampling happens in the pair loop.
    */
-  const buildRepresentatives = (childA, childB, strategy, resampleCount) => {
+  const buildRepresentatives = (childA, childB, strategy, resampleCount, closed = false) => {
     const countA = childA.length;
     const countB = childB.length;
 
@@ -369,8 +392,8 @@
 
     if (resolved === 'merge-centroid') {
       return {
-        listA: [averagePaths(childA, resampleCount, false)],
-        listB: [averagePaths(childB, resampleCount, false)],
+        listA: [averagePaths(childA, resampleCount, closed)],
+        listB: [averagePaths(childB, resampleCount, closed)],
       };
     }
     if (resolved === 'merge-longest') {
@@ -539,9 +562,6 @@
       return out;
     }
 
-    const closed = params.closureMode === 'force-closed';
-    const isOpen = params.closureMode !== 'force-closed';
-
     // Build pairs of child indices.
     const pairs = [];
     for (let i = 0; i < activeChildren.length - 1; i += 1) pairs.push([i, i + 1]);
@@ -563,16 +583,27 @@
     const blendsForPair = pairs.map(([ai, bi]) => {
       const childA = activeChildren[ai];
       const childB = activeChildren[bi];
+      // Closure is per-pair: forced modes win; 'auto' treats the pair as closed
+      // only when BOTH children are entirely closed loops. Closed pairs use
+      // rotational correspondence so a hexagon's corners map to the circle's
+      // matching angles and round gradually instead of twisting / collapsing.
+      let pairClosed;
+      if (params.closureMode === 'force-closed') pairClosed = true;
+      else if (params.closureMode === 'force-open') pairClosed = false;
+      else pairClosed = childA.outline.length > 0 && childB.outline.length > 0
+        && childA.outline.every(isPathClosed) && childB.outline.every(isPathClosed);
+      const isOpen = !pairClosed;
       const { listA, listB } = buildRepresentatives(
         childA.outline,
         childB.outline,
         params.multiPathStrategy,
-        params.resampleCount
+        params.resampleCount,
+        pairClosed
       );
       const emitted = [];
       for (let k = 0; k < listA.length; k += 1) {
-        const Arep = resamplePath(listA[k], params.resampleCount, closed, params.resampleMode);
-        let Brep = resamplePath(listB[k], params.resampleCount, closed, params.resampleMode);
+        const Arep = resamplePath(listA[k], params.resampleCount, pairClosed, params.resampleMode);
+        let Brep = resamplePath(listB[k], params.resampleCount, pairClosed, params.resampleMode);
         const N = Arep.length;
         if (N === 0 || Brep.length === 0) continue;
 
@@ -613,6 +644,7 @@
         }
 
         const ringMeta = buildRingMeta(Arep.meta, params.closureMode);
+        if (params.closureMode === 'auto') ringMeta.closed = pairClosed;
         for (let i = 1; i <= params.steps; i += 1) {
           const tRaw = i / (params.steps + 1);
           const et = applyEasing(params.easing, tRaw);
@@ -620,7 +652,7 @@
           // there is no halfway pen — see plan: appearance out of scope).
           const ringPenId = et < 0.5 ? childA.penId : childB.penId;
           let ring = blendPaths(Arep, Brot, tRaw, params.easing);
-          if (params.smoothing > 0) ring = smoothRing(ring, params.smoothing, closed);
+          if (params.smoothing > 0) ring = smoothRing(ring, params.smoothing, pairClosed);
           const meta = clone(ringMeta);
           if (ringPenId) meta.penId = ringPenId;
           ring.meta = meta;
