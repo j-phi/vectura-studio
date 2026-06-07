@@ -1,0 +1,24 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Trefoil",
+  "meta": {
+    "presetId": "lissajous-trefoil",
+    "group": "Classic",
+    "system": "lissajous",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "lissajous",
+      "params": {
+        "freqX": 1,
+        "freqY": 3,
+        "phase": 1.57,
+        "damping": 0,
+        "resolution": 400,
+        "scale": 0.8
+      }
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Rolling Plains",
+  "meta": {
+    "presetId": "topo-rolling-plains",
+    "group": "Organic",
+    "system": "topo",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "topo",
+      "params": {
+        "resolution": 80,
+        "levels": 12,
+        "sensitivity": 1.8,
+        "mappingMode": "smooth"
+      }
+    }
+  ]
+}

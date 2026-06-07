@@ -1,0 +1,23 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Interference",
+  "meta": {
+    "presetId": "wavetable-interference",
+    "group": "Geometric",
+    "system": "wavetable",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "wavetable",
+      "params": {
+        "lineStructure": "horizontal-vertical",
+        "lines": 110,
+        "gap": 1,
+        "edgeFade": 20,
+        "edgeFadeMode": "both"
+      }
+    }
+  ]
+}

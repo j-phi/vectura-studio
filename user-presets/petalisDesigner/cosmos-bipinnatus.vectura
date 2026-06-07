@@ -1,0 +1,26 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Cosmos Bipinnatus",
+  "meta": {
+    "presetId": "cosmos-bipinnatus",
+    "group": "Geometric",
+    "system": "petalisDesigner",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "petalisDesigner",
+      "params": {
+        "petalProfile": "lanceolate",
+        "petalScale": 38,
+        "petalWidthRatio": 0.45,
+        "count": 8,
+        "spiralMode": "custom",
+        "customAngle": 45,
+        "centerType": "dot",
+        "centerRadius": 7
+      }
+    }
+  ]
+}

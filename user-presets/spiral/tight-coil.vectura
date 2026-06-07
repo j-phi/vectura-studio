@@ -1,0 +1,22 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Tight Coil",
+  "meta": {
+    "presetId": "spiral-tight-coil",
+    "group": "Geometric",
+    "system": "spiral",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "spiral",
+      "params": {
+        "loops": 20,
+        "res": 120,
+        "startR": 2,
+        "pulseAmp": 0
+      }
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Galaxy",
+  "meta": {
+    "presetId": "spiral-galaxy",
+    "group": "Complex",
+    "system": "spiral",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "spiral",
+      "params": {
+        "loops": 35,
+        "res": 150,
+        "startR": 2,
+        "pulseAmp": 2,
+        "pulseFreq": 2
+      }
+    }
+  ]
+}

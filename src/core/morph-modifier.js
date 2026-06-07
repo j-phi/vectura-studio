@@ -309,6 +309,8 @@
       emitSources: m.emitSources !== false,
       closureMode: m.closureMode || 'auto',
       smoothing: clampFn(Number(m.smoothing) || 0, 0, 1),
+      fillMode: m.fillMode === 'off' ? 'off' : 'morph',
+      fillRegenLimit: clampFn(Math.round(m.fillRegenLimit ?? 0), 0, 4096),
     };
   };
 
@@ -353,7 +355,16 @@
 
     let resolved = strategy;
     if (strategy === 'auto') {
-      resolved = Math.abs(countA - countB) > 3 ? 'merge-centroid' : 'index-match';
+      const minC = Math.min(countA, countB);
+      const maxC = Math.max(countA, countB);
+      if (minC === 1 && maxC > 1) {
+        // Cross-kind (shape↔algorithm, shape↔mirrored-group): one child is a
+        // single outline, the other is many paths. Merge to the dominant outline
+        // rather than averaging a dense polyline into mush.
+        resolved = 'merge-longest';
+      } else {
+        resolved = Math.abs(countA - countB) > 3 ? 'merge-centroid' : 'index-match';
+      }
     }
 
     if (resolved === 'merge-centroid') {
@@ -393,15 +404,120 @@
   };
 
   // ---------------------------------------------------------------------------
+  // Fill interpolation
+  //
+  // A paint-bucket fill record (src/core/paint-bucket-ops.js buildFillRecord)
+  // carries a `region` polygon + ~40 pattern params. To morph fill we synthesize
+  // an interpolated record per intermediate ring and re-fill the ring's own
+  // outline via PaintBucketOps.generatePathsForFillRecord. Same fillType →
+  // numeric params lerp; different fillType (or seeds) → threshold-switch at the
+  // visual midpoint (no meaningful param bridge across types/seeds).
+  // ---------------------------------------------------------------------------
+  // Keys that are set explicitly (not interpolated) on the synthesized record.
+  const FILL_SKIP_KEYS = new Set(['id', 'region', 'innerRegion', 'loopId', 'isDocBounds', 'createdAt']);
+  // Numeric keys whose interpolation is meaningless — threshold instead.
+  const FILL_THRESHOLD_NUM = new Set(['truchetSeed', 'mazeSeed']);
+  // Numeric keys that must stay integers after interpolation.
+  const FILL_INT_KEYS = new Set(['lineCount', 'axes', 'truchetRotations', 'weaveOver', 'weaveUnder', 'radialSkip']);
+
+  const lerpFillRecord = (a, b, t) => {
+    const out = {};
+    const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
+    keys.forEach((k) => {
+      if (FILL_SKIP_KEYS.has(k)) return;
+      const av = a ? a[k] : undefined;
+      const bv = b ? b[k] : undefined;
+      if (typeof av === 'number' && typeof bv === 'number' && !FILL_THRESHOLD_NUM.has(k)) {
+        let v = av + (bv - av) * t;
+        if (FILL_INT_KEYS.has(k)) v = Math.round(v);
+        out[k] = v;
+      } else {
+        out[k] = t < 0.5 ? av : bv;
+      }
+    });
+    return out;
+  };
+
+  /**
+   * Regenerate interpolated fill geometry for a single blended ring. Pairs the
+   * two children's fill records by index, synthesizes an interpolated record for
+   * each pair, sets its region to the ring outline, and generates clean fill
+   * polylines. Returns [] when no fills are present or the ring is degenerate.
+   * Each returned path is stamped meta.penId (the ring's threshold pen) and
+   * meta.morphFill = true (morph-owned, not an editable bucket fill).
+   */
+  const regenerateRingFill = (ring, fillsA, fillsB, et, ringPenId) => {
+    const gen = window.Vectura?.PaintBucketOps?.generatePathsForFillRecord;
+    if (typeof gen !== 'function') return [];
+    if (!Array.isArray(ring) || ring.length < 3) return [];
+    const fa = Array.isArray(fillsA) ? fillsA : [];
+    const fb = Array.isArray(fillsB) ? fillsB : [];
+    const pairCount = Math.max(fa.length, fb.length);
+    if (pairCount === 0) return [];
+    const region = ring.map((p) => ({ x: p.x, y: p.y }));
+    const out = [];
+    for (let i = 0; i < pairCount; i += 1) {
+      const recA = fa[i] || null;
+      const recB = fb[i] || null;
+      let rec = null;
+      if (recA && recB) {
+        rec = recA.fillType === recB.fillType ? lerpFillRecord(recA, recB, et) : clone(et < 0.5 ? recA : recB);
+      } else if (recA) {
+        if (et < 0.5) rec = clone(recA); else continue; // single-sided fill fades out past midpoint
+      } else if (recB) {
+        if (et >= 0.5) rec = clone(recB); else continue; // single-sided fill fades in past midpoint
+      }
+      if (!rec || rec.fillType === 'none') continue;
+      rec.region = region;
+      rec.innerRegion = null;
+      let paths;
+      try {
+        paths = gen(rec) || [];
+      } catch (err) {
+        paths = [];
+      }
+      paths.forEach((p) => {
+        if (!Array.isArray(p) || p.length < 2) return;
+        const meta = p.meta ? { ...p.meta } : {};
+        if (ringPenId) meta.penId = ringPenId;
+        if (meta.paintBucketFillId) delete meta.paintBucketFillId;
+        meta.morphFill = true;
+        p.meta = meta;
+        out.push(p);
+      });
+    }
+    return out;
+  };
+
+  // ---------------------------------------------------------------------------
   // THE CORE
   // ---------------------------------------------------------------------------
+  // Normalize a child entry into a payload { outline, fillPaths, fills, penId }.
+  // Back-compat: a plain path[] (old callers / unit tests) becomes an outline
+  // with no fills. The new engine caller passes the payload object directly.
+  const normalizeChild = (c) => {
+    if (Array.isArray(c)) {
+      return { outline: c, fillPaths: [], fills: [], penId: (c[0] && c[0].meta && c[0].meta.penId) || null };
+    }
+    if (c && typeof c === 'object') {
+      return {
+        outline: Array.isArray(c.outline) ? c.outline : [],
+        fillPaths: Array.isArray(c.fillPaths) ? c.fillPaths : [],
+        fills: Array.isArray(c.fills) ? c.fills : [],
+        penId: c.penId || null,
+      };
+    }
+    return { outline: [], fillPaths: [], fills: [], penId: null };
+  };
+
   const applyMorphModifierToPaths = (pathsPerChild, modifier, bounds) => {
-    const children = Array.isArray(pathsPerChild) ? pathsPerChild : [];
+    const children = (Array.isArray(pathsPerChild) ? pathsPerChild : []).map(normalizeChild);
 
     const passthrough = () => {
       const out = [];
       children.forEach((child) => {
-        (child || []).forEach((p) => out.push(clonePath(p)));
+        child.outline.forEach((p) => out.push(clonePath(p)));
+        child.fillPaths.forEach((p) => out.push(clonePath(p)));
       });
       return out;
     };
@@ -412,12 +528,14 @@
 
     const params = resolveMorphParams(modifier);
 
-    // Drop empty children entirely from the chain.
-    const activeChildren = children.filter((c) => Array.isArray(c) && c.length > 0);
+    // Drop children with no outline geometry from the chain.
+    const activeChildren = children.filter((c) => c.outline.length > 0);
     if (activeChildren.length < 2) {
-      // Passthrough of whatever non-empty children remain (clones).
       const out = [];
-      activeChildren.forEach((child) => child.forEach((p) => out.push(clonePath(p))));
+      activeChildren.forEach((child) => {
+        child.outline.forEach((p) => out.push(clonePath(p)));
+        child.fillPaths.forEach((p) => out.push(clonePath(p)));
+      });
       return out;
     }
 
@@ -433,15 +551,25 @@
       pairs.push([1, 0]);
     }
 
-    // Compute blend rings for each sequential/cyclic pair.
+    // Fill regeneration is the expensive part: gate it and cap total rings so a
+    // heavy morph doesn't explode plot/compute time. Beyond the cap, fill only
+    // the midpoint ring of each pair so the transition still reads.
+    const doFill = params.fillMode !== 'off';
+    const fillCap = params.fillRegenLimit > 0 ? params.fillRegenLimit : 32;
+    const fillEveryRing = doFill && pairs.length * params.steps <= fillCap;
+    const midStep = Math.round((params.steps + 1) / 2);
+
+    // Compute blend rings (outline + interpolated fill, interleaved) per pair.
     const blendsForPair = pairs.map(([ai, bi]) => {
+      const childA = activeChildren[ai];
+      const childB = activeChildren[bi];
       const { listA, listB } = buildRepresentatives(
-        activeChildren[ai],
-        activeChildren[bi],
+        childA.outline,
+        childB.outline,
         params.multiPathStrategy,
         params.resampleCount
       );
-      const rings = [];
+      const emitted = [];
       for (let k = 0; k < listA.length; k += 1) {
         const Arep = resamplePath(listA[k], params.resampleCount, closed, params.resampleMode);
         let Brep = resamplePath(listB[k], params.resampleCount, closed, params.resampleMode);
@@ -487,13 +615,23 @@
         const ringMeta = buildRingMeta(Arep.meta, params.closureMode);
         for (let i = 1; i <= params.steps; i += 1) {
           const tRaw = i / (params.steps + 1);
+          const et = applyEasing(params.easing, tRaw);
+          // Pen + fill switch together at the visual midpoint (pens are discrete;
+          // there is no halfway pen — see plan: appearance out of scope).
+          const ringPenId = et < 0.5 ? childA.penId : childB.penId;
           let ring = blendPaths(Arep, Brot, tRaw, params.easing);
           if (params.smoothing > 0) ring = smoothRing(ring, params.smoothing, closed);
-          ring.meta = clone(ringMeta);
-          rings.push(ring);
+          const meta = clone(ringMeta);
+          if (ringPenId) meta.penId = ringPenId;
+          ring.meta = meta;
+          emitted.push(ring);
+          if (doFill && (fillEveryRing || i === midStep)) {
+            const fillPaths = regenerateRingFill(ring, childA.fills, childB.fills, et, ringPenId);
+            fillPaths.forEach((p) => emitted.push(p));
+          }
         }
       }
-      return rings;
+      return emitted;
     });
 
     // Assemble output.
@@ -501,23 +639,28 @@
     const emitSources = params.emitSources;
     const cyclic = params.sequenceMode === 'cyclic';
 
+    const emitChildSources = (child) => {
+      child.outline.forEach((p) => output.push(clonePath(p)));
+      child.fillPaths.forEach((p) => output.push(clonePath(p)));
+    };
+
     if (emitSources) {
       // child0 sources, pair0 blends, child1 sources, pair1 blends, ...
       // For sequential chains each child's sources appear once; B is the
       // shared anchor and is emitted as the "next child" once, not duplicated.
       const linearPairCount = cyclic ? blendsForPair.length - 1 : blendsForPair.length;
       for (let i = 0; i < activeChildren.length; i += 1) {
-        activeChildren[i].forEach((p) => output.push(clonePath(p)));
+        emitChildSources(activeChildren[i]);
         if (i < linearPairCount && i < blendsForPair.length) {
-          blendsForPair[i].forEach((ring) => output.push(ring));
+          blendsForPair[i].forEach((p) => output.push(p));
         }
       }
       // Cyclic wrap pair: append its blends at the end (no extra source).
       if (cyclic && blendsForPair.length > 0) {
-        blendsForPair[blendsForPair.length - 1].forEach((ring) => output.push(ring));
+        blendsForPair[blendsForPair.length - 1].forEach((p) => output.push(p));
       }
     } else {
-      blendsForPair.forEach((rings) => rings.forEach((ring) => output.push(ring)));
+      blendsForPair.forEach((paths) => paths.forEach((p) => output.push(p)));
     }
 
     return output;
@@ -558,6 +701,8 @@
   Modifiers.correspondenceAlign = correspondenceAlign;
   Modifiers.blendPaths = blendPaths;
   Modifiers.applyEasing = applyEasing;
+  Modifiers.lerpFillRecord = lerpFillRecord;
+  Modifiers.regenerateRingFill = regenerateRingFill;
   Modifiers.applyMorphModifierToPaths = applyMorphModifierToPaths;
   Modifiers.applyModifierToMultiChildPaths = applyModifierToMultiChildPaths;
 })();

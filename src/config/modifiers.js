@@ -32,6 +32,9 @@
       emitSources: true,                     // include original child paths alongside blends
       closureMode: 'auto',                   // auto | force-open | force-closed
       smoothing: 0.0,                        // 0=off, 1=full Catmull-Rom pass on output rings
+      // Fill morphing
+      fillMode: 'morph',                     // morph (regenerate interpolated fill per ring) | off (outline only)
+      fillRegenLimit: 0,                     // 0=auto cap (~32 fill rings); >0 caps total fill regenerations
     },
   };
   window.Vectura.MODIFIER_DESCRIPTIONS = {

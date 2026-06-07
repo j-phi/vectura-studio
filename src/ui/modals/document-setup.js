@@ -1230,8 +1230,26 @@ ${isDevEligible() ? `
     if (!host) return;
     const Store = window.Vectura && window.Vectura.PresetFolderStore;
     const Bundle = window.Vectura && window.Vectura.PresetBundle;
+    const Sync = window.Vectura && window.Vectura.PresetSync;
     const supported = !!(Store && Store.isSupported());
     const ui = this;
+
+    // Pull external folder changes into the browser, refresh open galleries, and
+    // toast a summary. Shared by the Refresh button, connect, and reconnect.
+    const pullAndRefresh = async (announceClean) => {
+      if (!Sync || typeof Sync.pullFromFolder !== 'function') return;
+      let res;
+      try { res = await Sync.pullFromFolder(); } catch (_) { return; }
+      if (res && (res.imported || res.updated)) {
+        ui.buildControls?.();
+        const bits = [];
+        if (res.imported) bits.push(`imported ${res.imported}`);
+        if (res.updated) bits.push(`updated ${res.updated}`);
+        toast(`Preset folder: ${bits.join(', ')}.`, 'success');
+      } else if (announceClean) {
+        toast('Preset folder is up to date.', 'info');
+      }
+    };
 
     const toast = (msg, variant = 'success') => {
       const T = window.Vectura?.UI?.overlays?.Toast;
@@ -1321,13 +1339,15 @@ ${isDevEligible() ? `
             <span class="ctrl-hint">${paused ? 'paused — reconnect to resume syncing' : 'live — syncing to disk'}</span>
           </div>
           <div class="preset-storage-actions">
-            ${paused ? '<button id="btn-folder-reconnect" type="button" class="add-btn">Reconnect</button>' : ''}
+            ${paused ? '<button id="btn-folder-reconnect" type="button" class="add-btn">Reconnect</button>' : '<button id="btn-folder-refresh" type="button" class="hdr-btn">Refresh from folder</button>'}
             <button id="btn-folder-change" type="button" class="hdr-btn">Change folder…</button>
             <button id="btn-folder-disconnect" type="button" class="hdr-btn">Disconnect</button>
           </div>`;
         const rc = folder.querySelector('#btn-folder-reconnect');
-        if (rc) rc.onclick = async () => { if (await Store.reconnect()) { toast('Folder reconnected — syncing resumed.', 'success'); } renderPresetStorageUi.call(ui); };
-        folder.querySelector('#btn-folder-change').onclick = async () => { const r = await Store.connect(); if (r) toast(`Syncing presets to "${r.name}".`, 'success'); renderPresetStorageUi.call(ui); };
+        if (rc) rc.onclick = async () => { if (await Store.reconnect()) { toast('Folder reconnected — syncing resumed.', 'success'); await pullAndRefresh(false); } renderPresetStorageUi.call(ui); };
+        const rf = folder.querySelector('#btn-folder-refresh');
+        if (rf) rf.onclick = async () => { await pullAndRefresh(true); renderPresetStorageUi.call(ui); };
+        folder.querySelector('#btn-folder-change').onclick = async () => { const r = await Store.connect(); if (r) { toast(`Syncing presets to "${r.name}".`, 'success'); await pullAndRefresh(false); } renderPresetStorageUi.call(ui); };
         folder.querySelector('#btn-folder-disconnect').onclick = async () => { await Store.disconnect(); toast('Folder disconnected — presets stay in this browser.', 'info'); renderPresetStorageUi.call(ui); };
       } else {
         folder.innerHTML = `
@@ -1337,14 +1357,25 @@ ${isDevEligible() ? `
           const r = await Store.connect();
           if (!r) return;
           toast(`Syncing presets to "${r.name}".`, 'success');
-          // Offer to seed the folder with the user's existing browser presets.
+          // 1) Import any presets the folder already holds (re-connect, or a
+          //    cloud-synced folder shared with another machine).
+          await pullAndRefresh(false);
+          // 2) Seed the folder with the user's browser presets it doesn't have
+          //    yet, written in the meta-tagged format (filename = slug(name)).
+          //    Skip presets already on disk — rewriting them would bump the file
+          //    mtime and trigger a spurious "update" on the next pull.
+          const slugify = (Sync && Sync.slug) || ((s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''));
+          let onDisk = new Set();
+          try { onDisk = new Set(((await Store.readAll()) || []).map((e) => `${e.system}/${e.slug}`)); } catch (_) { /* ignore */ }
           const all = Bundle && Bundle.exportAll();
           let copied = 0;
           if (all) {
             for (const system of Object.keys(all.presets)) {
               for (const p of all.presets[system]) {
-                const slug = String(p.id || '').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'preset';
-                const doc = { type: 'vectura', name: p.name, layers: [{ type: system, params: p.params || {} }] };
+                const slug = slugify(p.name) || system;
+                if (onDisk.has(`${system}/${slug}`)) continue;
+                const doc = Sync && Sync.buildDoc ? Sync.buildDoc(system, p)
+                  : { type: 'vectura', name: p.name, layers: [{ type: system, params: p.params || {} }] };
                 if (await Store.writePreset(system, slug, doc)) copied += 1;
               }
             }

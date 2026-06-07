@@ -139,6 +139,14 @@
       // the user with a one-click reconnect toast (the click is the required
       // user gesture). Fully guarded + non-blocking; a no-op without FSA.
       this._maybePromptPresetFolderReconnect();
+      // Phase 3: re-pull the connected folder whenever the tab regains focus, so
+      // edits made on another machine (cloud-synced folder) or directly on disk
+      // appear without a manual refresh. Guarded + idempotent + non-blocking.
+      if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') this._pullPresetFolderAndRefresh();
+        });
+      }
     }
 
     _maybePromptPresetFolderReconnect() {
@@ -148,7 +156,9 @@
         .then(() => Store.init())
         .then(() => Store.getStatus())
         .then((status) => {
-          if (!status.connected || status.permission === 'granted') return;
+          if (!status.connected) return;
+          // Already granted → pull any external changes now (launch sync).
+          if (status.permission === 'granted') { this._pullPresetFolderAndRefresh(); return; }
           const Toast = window.Vectura?.UI?.overlays?.Toast;
           if (!Toast) return;
           Toast.show({
@@ -158,10 +168,39 @@
             onClick: async () => {
               const ok = await Store.reconnect();
               Toast.show({ message: ok ? 'Folder reconnected.' : 'Reconnect cancelled.', variant: ok ? 'success' : 'info' });
+              if (ok) this._pullPresetFolderAndRefresh();
             },
           });
         })
         .catch(() => { /* folder store unavailable — ignore */ });
+    }
+
+    // Pull external preset-folder changes into localStorage and refresh open
+    // galleries. Guarded (granted permission only), single-flight, and silent on
+    // no-op; toasts only when something actually changed.
+    async _pullPresetFolderAndRefresh() {
+      const V = (typeof window !== 'undefined') ? window.Vectura : null;
+      const Store = V && V.PresetFolderStore;
+      const Sync = V && V.PresetSync;
+      if (!Store || !Sync || !Store.isSupported() || !Store.hasHandle()) return;
+      if (this._presetPullInFlight) return;
+      this._presetPullInFlight = true;
+      try {
+        const status = await Store.getStatus();
+        if (!status.connected || status.permission !== 'granted') return;
+        const res = await Sync.pullFromFolder();
+        if (res && (res.imported || res.updated)) {
+          this.ui?.buildControls?.();
+          const Toast = V.UI?.overlays?.Toast;
+          if (Toast) {
+            const bits = [];
+            if (res.imported) bits.push(`imported ${res.imported}`);
+            if (res.updated) bits.push(`updated ${res.updated}`);
+            Toast.show({ message: `Preset folder: ${bits.join(', ')}.`, variant: 'success' });
+          }
+        }
+      } catch (_) { /* folder unavailable / permission revoked — ignore */ }
+      finally { this._presetPullInFlight = false; }
     }
 
     readCookie(name) {

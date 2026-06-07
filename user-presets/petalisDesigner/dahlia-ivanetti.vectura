@@ -1,0 +1,26 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Dahlia Ivanetti",
+  "meta": {
+    "presetId": "dahlia-ivanetti",
+    "group": "Complex",
+    "system": "petalisDesigner",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "petalisDesigner",
+      "params": {
+        "petalProfile": "teardrop",
+        "petalScale": 32,
+        "petalWidthRatio": 0.46,
+        "count": 380,
+        "edgeWaveAmp": 0.08,
+        "edgeWaveFreq": 5,
+        "innerShading": true,
+        "innerDensity": 0.55
+      }
+    }
+  ]
+}

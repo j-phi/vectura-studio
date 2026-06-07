@@ -1,0 +1,22 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Island",
+  "meta": {
+    "presetId": "topo-island",
+    "group": "Complex",
+    "system": "topo",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "topo",
+      "params": {
+        "resolution": 200,
+        "levels": 55,
+        "sensitivity": 1.2,
+        "mappingMode": "bezier"
+      }
+    }
+  ]
+}

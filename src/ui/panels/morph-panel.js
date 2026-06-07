@@ -117,11 +117,22 @@
       }
       wrap.appendChild(text);
 
-      if (steps * clampInt(modifier.resampleCount, 8, 512, 128) * segments > PERF_BUDGET) {
+      const fillOn = modifier.fillMode !== 'off';
+      const heaviness = steps * clampInt(modifier.resampleCount, 8, 512, 128) * segments * (fillOn ? 3 : 1);
+      if (heaviness > PERF_BUDGET) {
         const warn = document.createElement('span');
         warn.className = 'morph-warn';
-        warn.textContent = '⚠ Heavy: high step/resample count';
+        warn.textContent = fillOn
+          ? '⚠ Heavy: high step/resample count with Morph Fill'
+          : '⚠ Heavy: high step/resample count';
         wrap.appendChild(warn);
+      }
+      const fillCap = clampInt(modifier.fillRegenLimit, 0, 4096, 0) || 32;
+      if (fillOn && segments * steps > fillCap) {
+        const note = document.createElement('span');
+        note.className = 'morph-warn';
+        note.textContent = `⚠ Fill capped: only midpoint rings filled (>${fillCap})`;
+        wrap.appendChild(note);
       }
       return wrap;
     }
@@ -255,6 +266,29 @@
       return sec;
     }
 
+    // Enum-backed on/off toggle: stores a string value (onValue/offValue) on the
+    // modifier so the field stays self-describing (e.g. fillMode: 'morph'|'off').
+    function buildEnumToggle({ title, testid, field, onValue, offValue }) {
+      const { sec } = labeledSection(title);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'morph-toggle';
+      btn.dataset.testid = testid;
+      const isOn = () => modifier[field] !== offValue;
+      const sync = () => {
+        const on = isOn();
+        btn.classList.toggle('active', on);
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        btn.textContent = on ? 'On' : 'Off';
+      };
+      sync();
+      btn.addEventListener('click', () => {
+        commit(() => { modifier[field] = isOn() ? offValue : onValue; });
+      });
+      sec.appendChild(btn);
+      return sec;
+    }
+
     function buildSelect({ title, field, options }) {
       const { sec } = labeledSection(title);
       const select = document.createElement('select');
@@ -324,6 +358,12 @@
     root.appendChild(buildChips({
       title: 'Multi-Path', className: 'morph-multipath-chips', dataAttr: 'multipath',
       options: MULTIPATH_OPTIONS, field: 'multiPathStrategy',
+    }));
+
+    /* ---------- Morph Fill (regenerate interpolated fill per ring) ---------- */
+    root.appendChild(buildEnumToggle({
+      title: 'Morph Fill', testid: 'morph-fill', field: 'fillMode',
+      onValue: 'morph', offValue: 'off',
     }));
 
     /* ---------- 8. Emit Sources ---------- */

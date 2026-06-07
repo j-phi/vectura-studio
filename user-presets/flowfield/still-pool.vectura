@@ -1,0 +1,25 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Still Pool",
+  "meta": {
+    "presetId": "flowfield-still-pool",
+    "group": "Classic",
+    "system": "flowfield",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "flowfield",
+      "params": {
+        "flowMode": "angle",
+        "density": 800,
+        "chaos": 0.05,
+        "stepLen": 5,
+        "maxSteps": 220,
+        "force": 1,
+        "octaves": 2
+      }
+    }
+  ]
+}

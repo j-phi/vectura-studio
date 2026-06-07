@@ -1,0 +1,23 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Graph Paper",
+  "meta": {
+    "presetId": "grid-graph-paper",
+    "group": "Geometric",
+    "system": "grid",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "grid",
+      "params": {
+        "rows": 20,
+        "cols": 20,
+        "distortion": 2,
+        "chaos": 0,
+        "type": "warp"
+      }
+    }
+  ]
+}

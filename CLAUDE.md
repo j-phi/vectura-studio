@@ -139,11 +139,13 @@ index.html → main.js → App → VectorEngine + Renderer + UI
 
 ### Configuration
 
-All defaults, machine profiles, palettes, presets, and descriptions live in `src/config/`. Never hardcode values in UI or engine — put them in config. Cross-system presets belong in `src/config/presets.js` (not per-system files); use `preset_system` filtering in code.
+All defaults, machine profiles, palettes, and descriptions live in `src/config/`. Never hardcode values in UI or engine — put them in config.
+
+**Presets are file-based (single source of truth).** `src/config/presets.js` was deleted in v1.1.68 — there is no hand-authored preset file. Every preset is a `.vectura` file under `user-presets/<layer_type>/`; `npm run user-presets:bundle` regenerates `src/config/user-presets.js` (the only generated library file, loaded into `window.Vectura.PRESETS`). Do not hand-edit `user-presets.js`. The directory name must exactly match the layer `type` / `preset_system`, including camelCase (e.g. `shapePack`, `svgDistort`, `petalisDesigner`). When adding a new algorithm, create its `user-presets/<layer_type>/` directory (with a `.gitkeep`).
+
+**On-disk file format:** identity/category live in a canonical `meta:{presetId, group, system, savedAt}` block (written by `PresetSync.buildDoc`; the bundler also reads it, falling back to top-level `id`/`group`, then a computed user id + `User` group). The 15 empty-params `<type>-default` "reset to factory" markers are **synthesized by the bundler** from `ALGO_DEFAULTS[type].preset` — never store them as files.
 
 **Preset naming:** `id` must be lowercase kebab-case prefixed by system: `<preset_system>-<preset-name>`.
-
-**User presets:** Place `.vectura` files in `user-presets/<layer_type>/` — the directory name must exactly match the layer `type` / `preset_system` value, including camelCase (e.g. `shapePack`, `svgDistort`, `petalisDesigner`). Run `npm run user-presets:bundle` to regenerate `src/config/user-presets.js`. When adding a new algorithm, create its `user-presets/<layer_type>/` directory (with a `.gitkeep`) at the same time.
 
 ## Coding Style
 

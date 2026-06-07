@@ -1,0 +1,24 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Sparse Roots",
+  "meta": {
+    "presetId": "hyphae-sparse-roots",
+    "group": "Organic",
+    "system": "hyphae",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "hyphae",
+      "params": {
+        "sources": 1,
+        "steps": 70,
+        "branchProb": 0.02,
+        "angleVar": 0.6,
+        "segLen": 2.5,
+        "maxBranches": 600
+      }
+    }
+  ]
+}

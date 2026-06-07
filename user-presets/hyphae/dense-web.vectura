@@ -1,0 +1,24 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Dense Web",
+  "meta": {
+    "presetId": "hyphae-dense-web",
+    "group": "Complex",
+    "system": "hyphae",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "hyphae",
+      "params": {
+        "sources": 5,
+        "steps": 60,
+        "branchProb": 0.12,
+        "angleVar": 0.5,
+        "segLen": 3,
+        "maxBranches": 2000
+      }
+    }
+  ]
+}

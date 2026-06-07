@@ -1,0 +1,30 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Tundra Flats",
+  "meta": {
+    "presetId": "terrain-tundra-flats",
+    "group": "Classic",
+    "system": "terrain",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "terrain",
+      "params": {
+        "perspectiveMode": "orthographic",
+        "depthScale": 100,
+        "depthSlices": 60,
+        "xResolution": 240,
+        "mountainAmplitude": 18,
+        "mountainFrequency": 0.005,
+        "mountainOctaves": 3,
+        "mountainGain": 0.4,
+        "peakSharpness": 1.4,
+        "valleyCount": 0,
+        "riversEnabled": false,
+        "oceansEnabled": false
+      }
+    }
+  ]
+}

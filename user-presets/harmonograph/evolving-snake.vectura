@@ -1,0 +1,46 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Evolving Snake",
+  "meta": {
+    "presetId": "harmonograph-evolving-snake",
+    "group": "Evolving",
+    "system": "harmonograph",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "harmonograph",
+      "params": {
+        "renderMode": "line",
+        "duration": 30,
+        "scale": 0.45,
+        "loopDrift": 0.004,
+        "pendulums": [
+          {
+            "id": "pend-1",
+            "enabled": true,
+            "ampX": 130,
+            "ampY": 16,
+            "phaseX": 90,
+            "phaseY": 0,
+            "freq": 0.06,
+            "micro": 0,
+            "damp": 0
+          },
+          {
+            "id": "pend-2",
+            "enabled": true,
+            "ampX": 15,
+            "ampY": 15,
+            "phaseX": 90,
+            "phaseY": 0,
+            "freq": 1.1,
+            "micro": 0,
+            "damp": 0
+          }
+        ]
+      }
+    }
+  ]
+}

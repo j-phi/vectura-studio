@@ -1,0 +1,24 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Dense Field",
+  "meta": {
+    "presetId": "phylla-dense-field",
+    "group": "Complex",
+    "system": "phylla",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "phylla",
+      "params": {
+        "count": 1500,
+        "spacing": 5,
+        "angleStr": 137.5,
+        "divergence": 1,
+        "dotSize": 0.6,
+        "shapeType": "circle"
+      }
+    }
+  ]
+}

@@ -974,6 +974,7 @@
     applyFillAtPoint,
     buildFillRecord,
     generateGeometryForLayer,
+    generatePathsForFillRecord,
     expandFill,
     explodeFillLayer,
     transformLayerFills,

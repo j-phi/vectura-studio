@@ -1,0 +1,25 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Gerbera Jamesonii",
+  "meta": {
+    "presetId": "gerbera-jamesonii",
+    "group": "Classic",
+    "system": "petalisDesigner",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "petalisDesigner",
+      "params": {
+        "petalProfile": "lanceolate",
+        "petalScale": 34,
+        "petalWidthRatio": 0.32,
+        "count": 260,
+        "centerType": "starburst",
+        "centerRadius": 7,
+        "centerDensity": 48
+      }
+    }
+  ]
+}

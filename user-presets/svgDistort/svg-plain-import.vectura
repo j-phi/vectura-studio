@@ -1,0 +1,23 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "SVG Plain Import",
+  "meta": {
+    "presetId": "svg-distort-plain",
+    "group": "Classic",
+    "system": "svgDistort",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "svgDistort",
+      "params": {
+        "showOutlines": true,
+        "fillMode": "none",
+        "autoFit": true,
+        "scale": 1,
+        "noises": []
+      }
+    }
+  ]
+}

@@ -44,6 +44,23 @@
   const stripParams = (params) =>
     Object.fromEntries(Object.entries(params || {}).filter(([k]) => !STRIP.has(k)));
 
+  // Collapse duplicate ids so a localStorage override shadows the bundled preset
+  // of the same id (e.g. a dev overwriting a curated preset). Keeps the FIRST
+  // occurrence's position but the LAST occurrence's data — so an overridden
+  // preset stays put in the list yet reflects the user's edits.
+  const dedupeById = (arr) => {
+    const lastById = new Map();
+    arr.forEach((p) => { if (p && p.id) lastById.set(p.id, p); });
+    const seen = new Set();
+    const out = [];
+    for (const p of arr) {
+      if (!p || !p.id || seen.has(p.id)) continue;
+      seen.add(p.id);
+      out.push(lastById.get(p.id));
+    }
+    return out;
+  };
+
   // Harmonograph-family types use the fast analytic evaluator; everything else
   // routes through the algorithm registry's generate().
   const HG_TYPES = new Set(['harmonograph', 'pendula']);
@@ -191,9 +208,10 @@
     const builtInPresets = Array.isArray(opts.presets) ? opts.presets : [];
     const onApply = typeof opts.onApply === 'function' ? opts.onApply : () => {};
 
-    // Merge built-in + user (localStorage) presets.
+    // Merge built-in + user (localStorage) presets, deduped so localStorage
+    // overrides shadow a bundled preset of the same id.
     let userPresets = system ? loadUserPresets(system) : [];
-    let presets = [...builtInPresets, ...userPresets];
+    let presets = dedupeById([...builtInPresets, ...userPresets]);
 
     const defaults = (() => {
       const all = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.ALGO_DEFAULTS;
@@ -359,11 +377,13 @@
 
     // ── Popover rebuild (called on init, after import, after delete) ──────────
     const rebuildPopover = () => {
-      // Re-sync merged preset list and map.
+      // Re-sync merged preset list and map (deduped: localStorage overrides win).
       userPresets = system ? loadUserPresets(system) : [];
-      presets = [...builtInPresets, ...userPresets];
+      presets = dedupeById([...builtInPresets, ...userPresets]);
       Object.keys(presetMap).forEach((k) => delete presetMap[k]);
       presets.forEach((p) => { presetMap[p.id] = p; });
+      // ids backed by localStorage are deletable from the popover (revert/remove).
+      const userIds = new Set(userPresets.map((p) => p.id));
 
       popover.innerHTML = '';
 
@@ -433,7 +453,11 @@
       }
 
       // ── Grouped preset options ──────────────────────────────────────────────
-      GROUP_ORDER.forEach((groupName) => {
+      // Known groups first (canonical order), then any custom categories a dev
+      // created via the Save dialog, appended in first-seen order.
+      const customGroups = [...new Set(presets.map((p) => p.group))]
+        .filter((g) => g && !GROUP_ORDER.includes(g));
+      [...GROUP_ORDER, ...customGroups].forEach((groupName) => {
         const inGroup = presets.filter((p) => p.group === groupName);
         if (!inGroup.length) return;
 
@@ -445,12 +469,11 @@
         header.textContent = groupName;
         section.appendChild(header);
 
-        const isUserGroup = groupName === 'User';
         inGroup.forEach((preset) => {
           const opt = makeOption(
             preset.id, preset.name,
             { ...defaults, ...(preset.params || {}) },
-            isUserGroup
+            userIds.has(preset.id)
           );
           opt.setAttribute('aria-label', `${preset.name} — ${groupName}`);
           opt.addEventListener('click', () => {
@@ -522,10 +545,17 @@
       const claimed = layer && layer.params ? layer.params.preset : undefined;
       if (!claimed || claimed === 'custom') return { kind: 'scratch', preset: null };
       const user = (system ? loadUserPresets(system) : []).find((p) => p.id === claimed);
-      if (user) return { kind: 'user', preset: { id: user.id, name: user.name, params: user.params } };
+      if (user) return { kind: 'user', preset: { id: user.id, name: user.name, group: user.group || 'User', params: user.params } };
       const builtIn = builtInPresets.find((p) => p.id === claimed);
-      if (builtIn) return { kind: 'builtin', preset: { id: builtIn.id, name: builtIn.name, params: builtIn.params } };
+      if (builtIn) return { kind: 'builtin', preset: { id: builtIn.id, name: builtIn.name, group: builtIn.group || 'User', params: builtIn.params } };
       return { kind: 'scratch', preset: null };
+    };
+
+    // True when a disk folder is connected (FSA, Chromium) and could be written.
+    const folderConnected = () => {
+      const Store = window.Vectura && window.Vectura.PresetFolderStore;
+      return !!(Store && typeof Store.isSupported === 'function' && Store.isSupported()
+        && typeof Store.hasHandle === 'function' && Store.hasHandle());
     };
 
     const toast = (message, variant = 'success', onClick) => {
@@ -537,26 +567,51 @@
     // <folder>/<system>/<slug>.vectura. localStorage stays authoritative; this is
     // a fire-and-forget one-way write that silently no-ops without a folder /
     // permission (the Settings reconnect path handles the paused case).
-    const mirrorToFolder = (name, params) => {
+    const mirrorToFolder = (preset, oldName) => {
       const Store = window.Vectura && window.Vectura.PresetFolderStore;
       if (!Store || typeof Store.writePreset !== 'function' || !Store.isSupported() || !Store.hasHandle()) return;
-      const slug = slugify(name) || system;
-      const doc = { type: 'vectura', version: (window.Vectura || {}).VERSION, name, layers: [{ type: system, params: { ...params } }] };
-      try { Promise.resolve(Store.writePreset(system, slug, doc)).catch(() => {}); } catch (_) { /* ignore */ }
+      const Sync = window.Vectura && window.Vectura.PresetSync;
+      const newSlug = slugify(preset.name) || system;
+      // A rename changes the filename slug — remove the stale file so the folder
+      // doesn't accumulate orphans (and the old name can't re-import on pull).
+      if (oldName) {
+        const oldSlug = slugify(oldName) || system;
+        if (oldSlug !== newSlug && typeof Store.deletePreset === 'function') {
+          try { Promise.resolve(Store.deletePreset(system, oldSlug)).catch(() => {}); } catch (_) { /* ignore */ }
+        }
+      }
+      const doc = Sync && typeof Sync.buildDoc === 'function'
+        ? Sync.buildDoc(system, preset)
+        : { type: 'vectura', version: (window.Vectura || {}).VERSION, name: preset.name, layers: [{ type: system, params: { ...preset.params } }] };
+      try { Promise.resolve(Store.writePreset(system, newSlug, doc)).catch(() => {}); } catch (_) { /* ignore */ }
     };
 
-    // Developer-mode repo export: a bundler-exact single-layer .vectura whose
-    // filename slug matches scripts/build-user-presets.js so the resulting id is
-    // deterministic. Auto-routed to user-presets/<system>/ by layer type.
-    const downloadRepoPreset = (name, params) => {
+    // Remove a preset's file from the folder so an Undone save isn't re-imported
+    // by the next folder pull (additive-only sync never deletes on its own).
+    const unmirrorFromFolder = (name) => {
+      const Store = window.Vectura && window.Vectura.PresetFolderStore;
+      if (!Store || typeof Store.deletePreset !== 'function' || !Store.isSupported() || !Store.hasHandle()) return;
+      const s = slugify(name) || system;
+      try { Promise.resolve(Store.deletePreset(system, s)).catch(() => {}); } catch (_) { /* ignore */ }
+    };
+
+    // Developer-mode repo export fallback (used when no folder is connected): a
+    // bundler-exact single-layer .vectura carrying the canonical PresetSync meta
+    // block so the resulting id + category survive the bundle. Drop into
+    // user-presets/<system>/ then run npm run user-presets:bundle.
+    const downloadRepoPreset = (preset) => {
       try {
-        const V = window.Vectura || {};
-        const doc = { type: 'vectura', version: V.VERSION, name, layers: [{ type: system, params: { ...params } }] };
+        const Sync = window.Vectura && window.Vectura.PresetSync;
+        const doc = Sync && typeof Sync.buildDoc === 'function'
+          ? Sync.buildDoc(system, preset)
+          : { type: 'vectura', version: (window.Vectura || {}).VERSION, name: preset.name,
+              meta: { presetId: preset.id, group: preset.group || 'User', system, savedAt: preset.savedAt || 0 },
+              layers: [{ type: system, params: { ...preset.params } }] };
         const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `${slugify(name) || system}.vectura`;
+        a.download = `${slugify(preset.name) || system}.vectura`;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -564,58 +619,68 @@
       } catch (_) { /* download blocked */ }
     };
 
-    const handleSave = ({ name, mode, destination }) => {
+    // Unified save: writes a localStorage entry (live + session-authoritative)
+    // and — depending on destination — mirrors a commit-ready .vectura into the
+    // connected repo folder (or downloads one as a fallback). 'update' overwrites
+    // the preset chosen by targetId (any preset, incl. built-ins, in dev mode);
+    // 'new' mints a fresh user id. group is the chosen category.
+    const handleSave = ({ name, mode, destination, targetId, group }) => {
       const cleanName = (name || '').trim();
       const params = stripParams(layer.params);
-
-      if (destination === 'repo') {
-        downloadRepoPreset(cleanName || system, layer.params);
-        toast(`Saved "${cleanName}" — move into user-presets/${system}/ then commit (pre-commit auto-bundles).`, 'info');
-        return;
-      }
-
+      const cat = ((group || 'User').trim()) || 'User';
+      const isDev = !!(window.Vectura && window.Vectura.SETTINGS && window.Vectura.SETTINGS.devMode === true);
+      const ts = Date.now();
       const prevPresetId = layer.params.preset;
       if (typeof opts.pushHistory === 'function') opts.pushHistory();
 
-      const origin = classifyOrigin();
-      if (mode === 'update' && origin.preset) {
-        const list = loadUserPresets(system);
-        const idx = list.findIndex((p) => p.id === origin.preset.id);
-        if (idx >= 0) {
-          const prior = { ...list[idx], params: { ...list[idx].params } };
-          list[idx] = { ...list[idx], name: cleanName || list[idx].name, params };
-          saveUserPresets(system, list);
-          mirrorToFolder(list[idx].name, params);
-          activeId = list[idx].id;
-          layer.params.preset = list[idx].id;
-          rebuildPopover();
-          updateTrigger(activeId);
-          toast(`Updated "${list[idx].name}" · Undo`, 'success', () => {
-            const cur = loadUserPresets(system);
-            const j = cur.findIndex((p) => p.id === prior.id);
-            if (j >= 0) cur[j] = prior;
-            saveUserPresets(system, cur);
-            layer.params.preset = prior.id;
-            activeId = computeActiveId();
-            rebuildPopover();
-            updateTrigger(activeId);
-          });
-          return;
-        }
-        // origin vanished → fall through to save-as-new.
-      }
+      // The id we persist under: an existing preset (overwrite) or a fresh one.
+      const saveId = (mode === 'update' && targetId) ? targetId : `user-${system}-${ts}`;
+      const wasBundled = builtInPresets.some((p) => p.id === saveId);
 
-      // Save as new (default; also the update fallback).
-      const id = `user-${system}-${Date.now()}`;
-      const newPreset = { id, name: cleanName, preset_system: system, group: 'User', params };
-      saveUserPresets(system, [...loadUserPresets(system), newPreset]);
-      mirrorToFolder(cleanName, params);
-      activeId = id;
-      layer.params.preset = id;
+      const list = loadUserPresets(system);
+      const idx = list.findIndex((p) => p.id === saveId);
+      const prior = idx >= 0 ? { ...list[idx], params: { ...list[idx].params } } : null;
+      const entry = {
+        id: saveId,
+        name: cleanName || (prior && prior.name) || saveId,
+        preset_system: system,
+        group: cat,
+        params,
+        savedAt: ts,
+      };
+      if (idx >= 0) list[idx] = entry; else list.push(entry);
+      saveUserPresets(system, list);
+
+      // Commit-ready write. Non-dev always mirrors to a connected folder (Phase 2
+      // sync); dev mirrors only when the destination is the repo. A repo save with
+      // no folder connected falls back to a download.
+      const wantFolder = !isDev || destination === 'repo';
+      let downloaded = false;
+      if (wantFolder) mirrorToFolder(entry, prior ? prior.name : null);
+      if (destination === 'repo' && !folderConnected()) { downloadRepoPreset(entry); downloaded = true; }
+
+      activeId = saveId;
+      layer.params.preset = saveId;
       rebuildPopover();
       updateTrigger(activeId);
-      toast(`Saved "${cleanName}" to User presets · Undo`, 'success', () => {
-        saveUserPresets(system, loadUserPresets(system).filter((p) => p.id !== id));
+
+      const verb = (idx >= 0 || wasBundled) ? 'Updated' : 'Saved';
+      const where = destination === 'repo'
+        ? (downloaded ? 'downloaded .vectura' : (folderConnected() ? 'repo folder' : 'this browser'))
+        : 'this browser';
+      toast(`${verb} "${entry.name}" → ${cat} · ${where} · Undo`, 'success', () => {
+        const cur = loadUserPresets(system);
+        if (prior) {
+          const j = cur.findIndex((p) => p.id === saveId);
+          if (j >= 0) cur[j] = prior; else cur.push(prior);
+          saveUserPresets(system, cur);
+          if (wantFolder && folderConnected()) mirrorToFolder(prior, entry.name);
+        } else {
+          saveUserPresets(system, cur.filter((p) => p.id !== saveId));
+          // Only delete the file if this save created a brand-new one (never a
+          // built-in's file, which an overwrite would have clobbered in place).
+          if (!wasBundled && wantFolder && folderConnected()) unmirrorFromFolder(entry.name);
+        }
         layer.params.preset = prevPresetId;
         activeId = computeActiveId();
         rebuildPopover();
@@ -633,12 +698,20 @@
       const suggestedName = NH && typeof NH.suggestName === 'function'
         ? NH.suggestName(system, layer.params, { basis, existingNames })
         : 'My Preset';
+      // The deduped library (built-in + localStorage) drives the dev-mode
+      // "Overwrite existing" picker and the Category list.
+      const merged = dedupeById([...builtInPresets, ...loadUserPresets(system)])
+        .filter((p) => p && p.id && p.id !== 'custom');
+      const presetsForModal = merged.map((p) => ({ id: p.id, name: p.name, group: p.group || 'User' }));
+      const customGroups = [...new Set(presetsForModal.map((p) => p.group))].filter((g) => !GROUP_ORDER.includes(g));
       M.open({
         layerType: system,
         params: layer.params,
         suggestedName,
         origin,
         devMode: !!(window.Vectura && window.Vectura.SETTINGS && window.Vectura.SETTINGS.devMode === true),
+        presets: presetsForModal,
+        groups: [...GROUP_ORDER, ...customGroups],
         drawThumb,
         onConfirm: handleSave,
       });

@@ -1,0 +1,23 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Pulsing Vortex",
+  "meta": {
+    "presetId": "spiral-pulsing-vortex",
+    "group": "Organic",
+    "system": "spiral",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "spiral",
+      "params": {
+        "loops": 10,
+        "res": 120,
+        "startR": 5,
+        "pulseAmp": 8,
+        "pulseFreq": 3
+      }
+    }
+  ]
+}

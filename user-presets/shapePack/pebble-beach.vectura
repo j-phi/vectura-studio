@@ -1,0 +1,25 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Pebble Beach",
+  "meta": {
+    "presetId": "shapepack-pebble-beach",
+    "group": "Organic",
+    "system": "shapePack",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "shapePack",
+      "params": {
+        "shape": "circle",
+        "count": 500,
+        "minR": 2,
+        "maxR": 10,
+        "padding": 1,
+        "attempts": 400,
+        "segments": 24
+      }
+    }
+  ]
+}

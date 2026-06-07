@@ -182,7 +182,9 @@
   };
 
   // Scan the folder: each subdirectory is a system; each *.vectura file a preset.
-  // Returns [{ system, slug, doc }]. Empty on no-permission/failure.
+  // Returns [{ system, slug, doc, mtime }] where mtime is the file's last-modified
+  // epoch ms (the two-way sync's last-write-wins tiebreak for hand-edited files
+  // whose embedded meta.savedAt is stale). Empty on no-permission/failure.
   const readAll = async () => {
     const h = await ensureWritable(false);
     if (!h || typeof h.values !== 'function') return [];
@@ -196,7 +198,12 @@
           try {
             const file = await f.getFile();
             const text = await file.text();
-            out.push({ system, slug: f.name.replace(/\.vectura$/i, ''), doc: JSON.parse(text) });
+            out.push({
+              system,
+              slug: f.name.replace(/\.vectura$/i, ''),
+              doc: JSON.parse(text),
+              mtime: file && typeof file.lastModified === 'number' ? file.lastModified : 0,
+            });
           } catch (_) { /* skip unreadable/invalid file */ }
         }
       }

@@ -1,0 +1,25 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Lorenz Butterfly",
+  "meta": {
+    "presetId": "attractor-lorenz-butterfly",
+    "group": "Classic",
+    "system": "attractor",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "attractor",
+      "params": {
+        "type": "lorenz",
+        "iter": 2000,
+        "scale": 3,
+        "dt": 0.01,
+        "sigma": 10,
+        "rho": 28,
+        "beta": 2.66
+      }
+    }
+  ]
+}

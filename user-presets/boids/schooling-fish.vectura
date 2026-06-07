@@ -1,0 +1,26 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Schooling Fish",
+  "meta": {
+    "presetId": "boids-schooling-fish",
+    "group": "Classic",
+    "system": "boids",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "boids",
+      "params": {
+        "count": 120,
+        "steps": 140,
+        "speed": 2,
+        "mode": "fish",
+        "sepWeight": 1,
+        "alignWeight": 1.2,
+        "cohWeight": 1.3,
+        "cohDist": 28
+      }
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Helleborus Niger",
+  "meta": {
+    "presetId": "hellebore-niger",
+    "group": "Classic",
+    "system": "petalisDesigner",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "petalisDesigner",
+      "params": {
+        "petalProfile": "heart",
+        "petalScale": 38,
+        "petalWidthRatio": 0.7,
+        "count": 80,
+        "centerType": "dot",
+        "centerRadius": 6,
+        "innerShading": true,
+        "innerDensity": 0.4
+      }
+    }
+  ]
+}

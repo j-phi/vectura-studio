@@ -1,0 +1,23 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Drizzle",
+  "meta": {
+    "presetId": "rainfall-drizzle",
+    "group": "Classic",
+    "system": "rainfall",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "rainfall",
+      "params": {
+        "count": 80,
+        "traceLength": 60,
+        "traceStep": 3,
+        "turbulence": 0.1,
+        "rainfallAngle": 150
+      }
+    }
+  ]
+}

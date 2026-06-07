@@ -25,8 +25,8 @@
  *
  * ── SOURCE OF TRUTH ───────────────────────────────────────────────────────────
  *   list() is the SINGLE source of truth for the wallpaper gallery. These recipes
- *   are NOT mirrored into src/config/presets.js: that file stores algorithm-`params`
- *   presets keyed by `preset_system` (petalisDesigner / terrain / rings / svgDistort),
+ *   are NOT mirrored into the preset library (user-presets/ → src/config/user-presets.js):
+ *   that library stores algorithm-`params` presets keyed by `preset_system`,
  *   each consumed by a parameter-driven algorithm. A wallpaper mirror is a different
  *   shape (a mirror-modifier config, not algorithm params) and nothing in the app
  *   reads a `wallpaperMirror` system out of PRESETS. Duplicating here would create a

@@ -1,0 +1,25 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Whirlpool",
+  "meta": {
+    "presetId": "flowfield-whirlpool",
+    "group": "Geometric",
+    "system": "flowfield",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "flowfield",
+      "params": {
+        "flowMode": "curl",
+        "density": 1000,
+        "chaos": 0.06,
+        "stepLen": 5,
+        "maxSteps": 240,
+        "force": 1,
+        "octaves": 2
+      }
+    }
+  ]
+}

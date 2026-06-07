@@ -1,0 +1,30 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Camellia Japonica Pink Perfection",
+  "meta": {
+    "presetId": "camellia-japonica-pink-perfection",
+    "group": "Complex",
+    "system": "petalisDesigner",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "petalisDesigner",
+      "params": {
+        "petalProfile": "oval",
+        "petalScale": 28,
+        "petalWidthRatio": 0.55,
+        "count": 320,
+        "ringMode": "dual",
+        "innerCount": 140,
+        "outerCount": 200,
+        "ringSplit": 0.4,
+        "centerType": "disk",
+        "centerRadius": 6,
+        "innerShading": true,
+        "innerDensity": 0.5
+      }
+    }
+  ]
+}

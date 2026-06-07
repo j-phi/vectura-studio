@@ -1,0 +1,46 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "4:3 Star",
+  "meta": {
+    "presetId": "harmonograph-4-3-star",
+    "group": "Geometric",
+    "system": "harmonograph",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "harmonograph",
+      "params": {
+        "renderMode": "line",
+        "duration": 40,
+        "scale": 0.5,
+        "loopDrift": 0,
+        "pendulums": [
+          {
+            "id": "pend-1",
+            "enabled": true,
+            "ampX": 100,
+            "ampY": 0,
+            "phaseX": 90,
+            "phaseY": 0,
+            "freq": 4,
+            "micro": 0.005,
+            "damp": 0.0012
+          },
+          {
+            "id": "pend-2",
+            "enabled": true,
+            "ampX": 0,
+            "ampY": 100,
+            "phaseX": 0,
+            "phaseY": 0,
+            "freq": 3,
+            "micro": 0.005,
+            "damp": 0.0012
+          }
+        ]
+      }
+    }
+  ]
+}

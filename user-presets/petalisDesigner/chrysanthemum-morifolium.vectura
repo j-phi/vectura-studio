@@ -1,0 +1,25 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Chrysanthemum Morifolium",
+  "meta": {
+    "presetId": "chrysanthemum-morifolium",
+    "group": "Complex",
+    "system": "petalisDesigner",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "petalisDesigner",
+      "params": {
+        "petalProfile": "lanceolate",
+        "petalScale": 26,
+        "petalWidthRatio": 0.25,
+        "count": 520,
+        "edgeWaveAmp": 0.02,
+        "centerType": "disk",
+        "centerRadius": 5
+      }
+    }
+  ]
+}

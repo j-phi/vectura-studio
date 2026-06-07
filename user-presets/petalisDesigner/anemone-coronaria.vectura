@@ -1,0 +1,28 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Anemone Coronaria",
+  "meta": {
+    "presetId": "anemone-coronaria",
+    "group": "Classic",
+    "system": "petalisDesigner",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "petalisDesigner",
+      "params": {
+        "petalProfile": "oval",
+        "petalScale": 36,
+        "petalWidthRatio": 0.62,
+        "count": 120,
+        "centerType": "starburst",
+        "centerRadius": 8,
+        "centerDensity": 40,
+        "centerConnectors": true,
+        "connectorCount": 32,
+        "connectorLength": 12
+      }
+    }
+  ]
+}

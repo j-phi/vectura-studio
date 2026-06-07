@@ -1,0 +1,25 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Windswept",
+  "meta": {
+    "presetId": "rainfall-windswept",
+    "group": "Organic",
+    "system": "rainfall",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "rainfall",
+      "params": {
+        "count": 150,
+        "traceLength": 130,
+        "traceStep": 3,
+        "turbulence": 0.3,
+        "rainfallAngle": 120,
+        "windAngle": 180,
+        "windStrength": 0.6
+      }
+    }
+  ]
+}

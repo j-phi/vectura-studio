@@ -1,0 +1,25 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Bubbles",
+  "meta": {
+    "presetId": "shapepack-bubbles",
+    "group": "Classic",
+    "system": "shapePack",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "shapePack",
+      "params": {
+        "shape": "circle",
+        "count": 300,
+        "minR": 3,
+        "maxR": 18,
+        "padding": 2,
+        "attempts": 300,
+        "segments": 32
+      }
+    }
+  ]
+}

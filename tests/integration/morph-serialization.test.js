@@ -77,6 +77,8 @@ describe('Morph modifier serialization', () => {
     expect(m.closureMode).toBe('auto');
     expect(m.windingCheck).toBe(true);
     expect(m.smoothing).toBe(0);
+    expect(m.fillMode).toBe('morph');
+    expect(m.fillRegenLimit).toBe(0);
 
     // Children re-parent correctly.
     const importedChildren = next.layers.filter((l) => l.parentId === modifierId);

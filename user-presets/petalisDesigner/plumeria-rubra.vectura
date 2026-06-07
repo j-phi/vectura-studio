@@ -1,0 +1,28 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Plumeria Rubra",
+  "meta": {
+    "presetId": "plumeria-rubra",
+    "group": "Geometric",
+    "system": "petalisDesigner",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "petalisDesigner",
+      "params": {
+        "petalProfile": "oval",
+        "petalScale": 46,
+        "petalWidthRatio": 0.72,
+        "count": 5,
+        "spiralMode": "custom",
+        "customAngle": 72,
+        "centerType": "disk",
+        "centerRadius": 9,
+        "outerShading": true,
+        "outerDensity": 0.35
+      }
+    }
+  ]
+}

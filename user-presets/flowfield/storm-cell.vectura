@@ -1,0 +1,25 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Storm Cell",
+  "meta": {
+    "presetId": "flowfield-storm-cell",
+    "group": "Complex",
+    "system": "flowfield",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "flowfield",
+      "params": {
+        "flowMode": "angle",
+        "density": 2000,
+        "chaos": 0.5,
+        "stepLen": 7,
+        "maxSteps": 300,
+        "force": 1.4,
+        "octaves": 3
+      }
+    }
+  ]
+}

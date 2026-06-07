@@ -413,6 +413,25 @@ describe('Morph modifier panel', () => {
     expect(pushHistory).toHaveBeenCalledTimes(1);
   });
 
+  test('INT-B-05b: Morph Fill toggle flips fillMode and pushes history once', () => {
+    const { container, modifier, pushHistory } = buildPanelFixture();
+    const toggle = container.querySelector('[data-testid="morph-fill"]');
+    expect(toggle).toBeTruthy();
+    // Defaults to 'morph' (on).
+    expect(modifier.fillMode === 'off' ? false : true).toBe(true);
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+
+    pushHistory.mockClear();
+    toggle.dispatchEvent(new runtime.window.Event('click', { bubbles: true }));
+    expect(modifier.fillMode).toBe('off');
+    expect(pushHistory).toHaveBeenCalledTimes(1);
+
+    // Toggling back restores 'morph'.
+    const toggle2 = container.querySelector('[data-testid="morph-fill"]');
+    toggle2.dispatchEvent(new runtime.window.Event('click', { bubbles: true }));
+    expect(modifier.fillMode).toBe('morph');
+  });
+
   test('INT-B-06: Insert menu item for morph exists in the index.html DOM', async () => {
     let domRuntime;
     try {

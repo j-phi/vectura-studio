@@ -1,0 +1,26 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Iris Germanica",
+  "meta": {
+    "presetId": "iris-germanica",
+    "group": "Geometric",
+    "system": "petalisDesigner",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "petalisDesigner",
+      "params": {
+        "petalProfile": "lanceolate",
+        "petalScale": 40,
+        "petalWidthRatio": 0.4,
+        "count": 90,
+        "tipTwist": 0.8,
+        "rotationJitter": 14,
+        "centerType": "disk",
+        "centerRadius": 5
+      }
+    }
+  ]
+}

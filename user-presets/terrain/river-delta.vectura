@@ -1,0 +1,41 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "River Delta",
+  "meta": {
+    "presetId": "terrain-river-delta",
+    "group": "Organic",
+    "system": "terrain",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "terrain",
+      "params": {
+        "perspectiveMode": "one-point",
+        "horizonHeight": 55,
+        "depthCompression": 55,
+        "depthSlices": 80,
+        "xResolution": 240,
+        "mountainAmplitude": 30,
+        "mountainFrequency": 0.007,
+        "mountainOctaves": 4,
+        "mountainGain": 0.45,
+        "peakSharpness": 1.3,
+        "valleyCount": 2,
+        "valleyDepth": 35,
+        "valleyWidth": 25,
+        "valleyShape": 0.85,
+        "valleyMeander": 60,
+        "riversEnabled": true,
+        "riverCount": 4,
+        "riverWidth": 3,
+        "riverDepth": 10,
+        "riverMeander": 75,
+        "oceansEnabled": true,
+        "waterLevel": 18,
+        "drawCoastline": true
+      }
+    }
+  ]
+}

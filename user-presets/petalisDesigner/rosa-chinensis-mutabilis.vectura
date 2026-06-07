@@ -1,0 +1,28 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Rosa Chinensis Mutabilis",
+  "meta": {
+    "presetId": "rosa-chinensis-mutabilis",
+    "group": "Complex",
+    "system": "petalisDesigner",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "petalisDesigner",
+      "params": {
+        "petalProfile": "heart",
+        "petalScale": 34,
+        "petalWidthRatio": 0.6,
+        "count": 160,
+        "centerSizeMorph": -0.4,
+        "centerShapeMorph": 0.4,
+        "ringMode": "dual",
+        "innerCount": 60,
+        "outerCount": 120,
+        "ringSplit": 0.32
+      }
+    }
+  ]
+}

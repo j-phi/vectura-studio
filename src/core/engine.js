@@ -283,13 +283,17 @@
           const src = (Array.isArray(child.effectivePaths) && child.effectivePaths.length)
             ? child.effectivePaths
             : (child.paths && child.paths.length ? child.paths : (child.sourcePaths || []));
-          return clonePaths(src).map((p) => {
-            if (!Array.isArray(p)) return p;
+          const outline = [];
+          const fillPaths = [];
+          clonePaths(src).forEach((p) => {
+            if (!Array.isArray(p)) return;
             const meta = p.meta ? { ...p.meta } : {};
             if (child.penId) meta.penId = child.penId;
             p.meta = meta;
-            return p;
+            (meta.paintBucketFillId ? fillPaths : outline).push(p);
           });
+          const fills = Array.isArray(child.fills) ? child.fills.map((rec) => clone(rec)) : [];
+          return { outline, fillPaths, fills, penId: child.penId || null };
         });
         const morphed = (typeof multiFn === 'function'
           ? multiFn(pathsPerChild, modifier, bounds)
@@ -1067,14 +1071,23 @@
           const src = (Array.isArray(child.effectivePaths) && child.effectivePaths.length)
             ? child.effectivePaths
             : (child.paths || []);
-          // clone + stamp penId so morphed paths inherit the child's pen/color
-          return clonePaths(src).map((p) => {
-            if (!Array.isArray(p)) return p;
+          // effectivePaths mixes outline polylines with paint-bucket fill
+          // geometry (fill paths carry meta.paintBucketFillId — see
+          // paint-bucket-ops.js). The morph blends OUTLINES only; fill is
+          // regenerated per intermediate ring from the child's fill records.
+          const outline = [];
+          const fillPaths = [];
+          clonePaths(src).forEach((p) => {
+            if (!Array.isArray(p)) return;
             const meta = p.meta ? { ...p.meta } : {};
             if (child.penId) meta.penId = child.penId;
             p.meta = meta;
-            return p;
+            (meta.paintBucketFillId ? fillPaths : outline).push(p);
           });
+          const fills = Array.isArray(child.fills)
+            ? child.fills.map((rec) => clone(rec))
+            : [];
+          return { outline, fillPaths, fills, penId: child.penId || null };
         });
         const morphed = multiFn(pathsPerChild, group.modifier, bounds) || [];
         group.morphedPaths = morphed;

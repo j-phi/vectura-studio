@@ -1,0 +1,27 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Protea Cynaroides",
+  "meta": {
+    "presetId": "protea-cynaroides",
+    "group": "Complex",
+    "system": "petalisDesigner",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "petalisDesigner",
+      "params": {
+        "petalProfile": "lanceolate",
+        "petalScale": 36,
+        "petalWidthRatio": 0.38,
+        "count": 280,
+        "edgeWaveAmp": 0.12,
+        "edgeWaveFreq": 6,
+        "centerType": "filament",
+        "centerRadius": 10,
+        "centerDensity": 40
+      }
+    }
+  ]
+}

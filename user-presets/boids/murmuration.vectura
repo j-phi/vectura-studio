@@ -1,0 +1,25 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Murmuration",
+  "meta": {
+    "presetId": "boids-murmuration",
+    "group": "Complex",
+    "system": "boids",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "boids",
+      "params": {
+        "count": 400,
+        "steps": 200,
+        "speed": 2,
+        "mode": "birds",
+        "sepWeight": 1.2,
+        "alignWeight": 1,
+        "cohWeight": 1
+      }
+    }
+  ]
+}
