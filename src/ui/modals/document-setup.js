@@ -305,6 +305,17 @@
             ${swToggle('set-show-crystallographic-names', 'Show crystallographic group names (p4m, p3m1…)')}
           </div>
         </div>
+
+        <div class="sect sect--color-history">
+          <button type="button" class="sect-hdr" data-sect-toggle aria-expanded="false">
+            Preset Storage
+            <span class="sect-arrow"></span>
+          </button>
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
+            <p class="ctrl-hint">Where your custom presets are stored. They always save in this browser; connect a folder to also keep them on disk across sessions, or export a bundle to move them between machines.</p>
+            <div id="preset-storage-body"><!-- rendered dynamically by renderPresetStorageUi() --></div>
+          </div>
+        </div>
 ${isDevEligible() ? `
         <div class="sect sect--color-history">
           <button type="button" class="sect-hdr" data-sect-toggle aria-expanded="false">
@@ -1020,6 +1031,8 @@ ${isDevEligible() ? `
         this.app?.persistPreferences?.();
       };
     }
+    // Preset Storage section is rendered dynamically (async folder status).
+    this.renderPresetStorageUi?.();
     if (btnClearPreferences) {
       btnClearPreferences.onclick = () => {
         this.app.clearSavedPreferences?.();
@@ -1205,6 +1218,135 @@ ${isDevEligible() ? `
     };
   }
 
+  /**
+   * Render the dynamic body of the "Preset Storage" section based on the live
+   * File System Access folder status. Safe on every browser: when FSA is
+   * unsupported the folder controls are omitted and only Export/Import remain.
+   * `this` is the UI instance.
+   */
+  function renderPresetStorageUi() {
+    const { getEl } = requireDeps('renderPresetStorageUi');
+    const host = getEl('preset-storage-body', { silent: true });
+    if (!host) return;
+    const Store = window.Vectura && window.Vectura.PresetFolderStore;
+    const Bundle = window.Vectura && window.Vectura.PresetBundle;
+    const supported = !!(Store && Store.isSupported());
+    const ui = this;
+
+    const toast = (msg, variant = 'success') => {
+      const T = window.Vectura?.UI?.overlays?.Toast;
+      if (T) T.show({ message: msg, variant });
+    };
+
+    // Build the static shell; folder rows fill in after the async status query.
+    host.innerHTML = `
+      <div id="preset-storage-folder"></div>
+      <div class="preset-storage-actions">
+        <button id="btn-preset-export" type="button" class="hdr-btn">Export presets…</button>
+        <button id="btn-preset-import" type="button" class="hdr-btn">Import…</button>
+      </div>
+    `;
+
+    // ── Export / Import (all browsers) ─────────────────────────────────────────
+    const exportBtn = host.querySelector('#btn-preset-export');
+    if (exportBtn) exportBtn.onclick = () => {
+      if (!Bundle) return;
+      const n = Bundle.countAll();
+      if (!n) { toast('No custom presets to export yet.', 'info'); return; }
+      const stamp = new Date().toISOString().slice(0, 10);
+      if (Bundle.download(stamp)) toast(`Exported ${n} preset${n === 1 ? '' : 's'}.`, 'success');
+    };
+    const importBtn = host.querySelector('#btn-preset-import');
+    if (importBtn) importBtn.onclick = () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.json,application/json';
+      input.onchange = () => {
+        const file = input.files && input.files[0];
+        if (!file || !Bundle) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          let bundle;
+          try { bundle = JSON.parse(reader.result); } catch (_) { toast('Could not read bundle — invalid JSON.', 'danger'); return; }
+          if (!Bundle.isValidBundle(bundle)) { toast('Not a Vectura preset bundle.', 'danger'); return; }
+          const Dialog = window.Vectura?.UI?.overlays?.Dialog;
+          const doImport = (mode) => {
+            const res = Bundle.importBundle(bundle, mode);
+            if (res) { toast(`Imported ${res.imported} preset${res.imported === 1 ? '' : 's'} across ${res.systems.length} algorithm${res.systems.length === 1 ? '' : 's'}.`, 'success'); ui.buildControls?.(); }
+          };
+          if (Dialog) {
+            const dlg = Dialog(document.body, {
+              title: 'Import presets',
+              message: 'Merge these presets into your library, or replace your presets for the included algorithms?',
+              confirmLabel: 'Replace', cancelLabel: 'Merge', destructive: true,
+              onConfirm: () => { dlg.destroy(); doImport('replace'); },
+              onCancel: () => { dlg.destroy(); doImport('merge'); },
+            });
+            dlg.open();
+          } else { doImport('merge'); }
+        };
+        reader.readAsText(file);
+      };
+      input.click();
+    };
+
+    if (!supported) {
+      const folder = host.querySelector('#preset-storage-folder');
+      if (folder) folder.innerHTML = `<p class="ctrl-hint">Folder sync needs Chrome or Edge. On this browser, use Export / Import to move presets between machines.</p>`;
+      return;
+    }
+
+    // ── Folder controls (Chromium) ─────────────────────────────────────────────
+    const renderFolder = (status) => {
+      const folder = host.querySelector('#preset-storage-folder');
+      if (!folder) return;
+      if (status.connected) {
+        const paused = status.permission !== 'granted';
+        folder.innerHTML = `
+          <div class="preset-storage-folder-row">
+            <span class="preset-storage-dot ${paused ? 'is-paused' : 'is-live'}"></span>
+            <span class="preset-storage-folder-name">${status.name}</span>
+            <span class="ctrl-hint">${paused ? 'paused — reconnect to save to disk' : 'saving to disk'}</span>
+          </div>
+          <div class="preset-storage-actions">
+            ${paused ? '<button id="btn-folder-reconnect" type="button" class="add-btn">Reconnect</button>' : ''}
+            <button id="btn-folder-change" type="button" class="hdr-btn">Change folder…</button>
+            <button id="btn-folder-disconnect" type="button" class="hdr-btn">Disconnect</button>
+          </div>`;
+        const rc = folder.querySelector('#btn-folder-reconnect');
+        if (rc) rc.onclick = async () => { if (await Store.reconnect()) { toast('Folder connected.', 'success'); } renderPresetStorageUi.call(ui); };
+        folder.querySelector('#btn-folder-change').onclick = async () => { const r = await Store.connect(); if (r) toast(`Saving presets to "${r.name}".`, 'success'); renderPresetStorageUi.call(ui); };
+        folder.querySelector('#btn-folder-disconnect').onclick = async () => { await Store.disconnect(); toast('Folder disconnected — presets stay in this browser.', 'info'); renderPresetStorageUi.call(ui); };
+      } else {
+        folder.innerHTML = `
+          <div class="preset-storage-actions">
+            <button id="btn-folder-connect" type="button" class="add-btn">Save to a folder…</button>
+          </div>`;
+        folder.querySelector('#btn-folder-connect').onclick = async () => {
+          const r = await Store.connect();
+          if (!r) return;
+          toast(`Saving presets to "${r.name}".`, 'success');
+          // Offer to seed the folder with the user's existing browser presets.
+          const all = Bundle && Bundle.exportAll();
+          let copied = 0;
+          if (all) {
+            for (const system of Object.keys(all.presets)) {
+              for (const p of all.presets[system]) {
+                const slug = String(p.id || '').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'preset';
+                const doc = { type: 'vectura', name: p.name, layers: [{ type: system, params: p.params || {} }] };
+                if (await Store.writePreset(system, slug, doc)) copied += 1;
+              }
+            }
+          }
+          if (copied) toast(`Copied ${copied} existing preset${copied === 1 ? '' : 's'} into the folder.`, 'success');
+          renderPresetStorageUi.call(ui);
+        };
+      }
+    };
+
+    Store.getStatus().then(renderFolder).catch(() => renderFolder({ connected: false }));
+  }
+
   Modals.DocumentSetup = {
     /**
      * Inject closure-captured legacy ui.js IIFE locals.
@@ -1213,6 +1355,7 @@ ${isDevEligible() ? `
     bind(deps) {
       DEPS = deps || {};
     },
+    renderPresetStorageUi,
     mount,
     bindHandlers,
     PANEL_HTML,
@@ -1237,6 +1380,10 @@ ${isDevEligible() ? `
       // Meridian Unit 1.9b: bg color picker wiring (`inp-bg-color` + `bg-color-pill`).
       proto.bindBgColorListeners = function() {
         return bindBgColorListeners.call(this);
+      };
+      // Phase 2: dynamic Preset Storage section (FSA folder status + export/import).
+      proto.renderPresetStorageUi = function() {
+        return renderPresetStorageUi.call(this);
       };
     },
   };

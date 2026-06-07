@@ -134,6 +134,34 @@
       document.addEventListener('vectura:skin-change', () => {
         if (this.renderer && this.renderer.ready) this.render();
       });
+      // Phase 2: a folder-backed preset store loses its permission across reloads
+      // ("Reconnect Thaw"). Load the saved handle and, if it's now paused, nudge
+      // the user with a one-click reconnect toast (the click is the required
+      // user gesture). Fully guarded + non-blocking; a no-op without FSA.
+      this._maybePromptPresetFolderReconnect();
+    }
+
+    _maybePromptPresetFolderReconnect() {
+      const Store = (typeof window !== 'undefined' && window.Vectura) ? window.Vectura.PresetFolderStore : null;
+      if (!Store || !Store.isSupported()) return;
+      Promise.resolve()
+        .then(() => Store.init())
+        .then(() => Store.getStatus())
+        .then((status) => {
+          if (!status.connected || status.permission === 'granted') return;
+          const Toast = window.Vectura?.UI?.overlays?.Toast;
+          if (!Toast) return;
+          Toast.show({
+            message: `Preset folder "${status.name}" is paused — click to reconnect.`,
+            variant: 'warning',
+            duration: 0,
+            onClick: async () => {
+              const ok = await Store.reconnect();
+              Toast.show({ message: ok ? 'Folder reconnected.' : 'Reconnect cancelled.', variant: ok ? 'success' : 'info' });
+            },
+          });
+        })
+        .catch(() => { /* folder store unavailable — ignore */ });
     }
 
     readCookie(name) {

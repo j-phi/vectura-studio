@@ -3356,6 +3356,14 @@
 /* Settings hint copy (e.g. Developer mode explainer). */
 .ctrl-hint { margin: 4px 0 0; font-size: var(--font-size-xs, 10px); color: var(--ui-muted, #888); line-height: 1.4; }
 
+/* Preset Storage settings section (Phase 2 — folder persistence). */
+.preset-storage-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.preset-storage-folder-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.preset-storage-folder-name { font-size: var(--font-sm, 12px); color: var(--ui-text); font-weight: 600; }
+.preset-storage-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.preset-storage-dot.is-live { background: var(--ui-success, #3fb950); }
+.preset-storage-dot.is-paused { background: var(--ui-warning, #d29922); }
+
 /* Touch: dock the Save Preset modal as a bottom sheet and pin Save above the
    name input so the on-screen keyboard never covers the commit action. */
 @media (pointer: coarse) {

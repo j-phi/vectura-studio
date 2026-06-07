@@ -533,6 +533,18 @@
       if (T && typeof T.show === 'function') T.show({ message, variant, onClick, duration: 6000 });
     };
 
+    // Phase 2: when a folder is connected (FSA, Chromium), mirror the save to
+    // <folder>/<system>/<slug>.vectura. localStorage stays authoritative; this is
+    // a fire-and-forget one-way write that silently no-ops without a folder /
+    // permission (the Settings reconnect path handles the paused case).
+    const mirrorToFolder = (name, params) => {
+      const Store = window.Vectura && window.Vectura.PresetFolderStore;
+      if (!Store || typeof Store.writePreset !== 'function' || !Store.isSupported() || !Store.hasHandle()) return;
+      const slug = slugify(name) || system;
+      const doc = { type: 'vectura', version: (window.Vectura || {}).VERSION, name, layers: [{ type: system, params: { ...params } }] };
+      try { Promise.resolve(Store.writePreset(system, slug, doc)).catch(() => {}); } catch (_) { /* ignore */ }
+    };
+
     // Developer-mode repo export: a bundler-exact single-layer .vectura whose
     // filename slug matches scripts/build-user-presets.js so the resulting id is
     // deterministic. Auto-routed to user-presets/<system>/ by layer type.
@@ -573,6 +585,7 @@
           const prior = { ...list[idx], params: { ...list[idx].params } };
           list[idx] = { ...list[idx], name: cleanName || list[idx].name, params };
           saveUserPresets(system, list);
+          mirrorToFolder(list[idx].name, params);
           activeId = list[idx].id;
           layer.params.preset = list[idx].id;
           rebuildPopover();
@@ -596,6 +609,7 @@
       const id = `user-${system}-${Date.now()}`;
       const newPreset = { id, name: cleanName, preset_system: system, group: 'User', params };
       saveUserPresets(system, [...loadUserPresets(system), newPreset]);
+      mirrorToFolder(cleanName, params);
       activeId = id;
       layer.params.preset = id;
       rebuildPopover();
