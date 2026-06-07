@@ -3299,6 +3299,21 @@
 .hg-preset-option:hover .hg-preset-delete { display: flex; }
 .hg-preset-delete:hover { color: var(--ui-accent); opacity: 1; }
 
+/* Dev-only inline group reassignment select. Doubles as a visible group label at
+   rest (low opacity); brightens on row hover/focus. Sits before the delete X. */
+.hg-preset-group-select {
+  flex: none; max-width: 96px;
+  padding: 1px 4px; border-radius: 3px;
+  border: 1px solid var(--ui-border, rgba(255,255,255,0.12));
+  background: var(--ui-bg); color: var(--ui-muted, #888);
+  font-size: var(--font-size-xs, 11px); line-height: 1.4;
+  cursor: pointer; opacity: 0.55;
+  transition: opacity 0.08s, color 0.15s, border-color 0.15s;
+}
+.hg-preset-option:hover .hg-preset-group-select,
+.hg-preset-group-select:focus { opacity: 1; }
+.hg-preset-group-select:hover { color: var(--ui-text); border-color: var(--ui-accent); }
+
 .hg-preset-import {
   display: block; width: 100%; padding: 6px 10px; margin-top: 4px;
   border: 1px dashed var(--ui-border, rgba(255,255,255,0.12));

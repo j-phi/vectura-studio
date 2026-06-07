@@ -414,6 +414,49 @@
         lbl.textContent = label;
         opt.appendChild(lbl);
 
+        // Dev-only inline group reassignment: a compact select that moves the
+        // preset to another category. Shown for real presets (not the Custom row)
+        // whenever developer mode is on — built-ins included, since fixing the
+        // bundled library's grouping is the whole point. Sits before the delete X.
+        if (params && system && isDevMode()) {
+          const curGroup = (presetMap[presetId] && presetMap[presetId].group) || 'User';
+          const NEW_SENTINEL = '__new__';
+          const sel = document.createElement('select');
+          sel.className = 'hg-preset-group-select';
+          sel.setAttribute('aria-label', `Group for "${label}"`);
+          sel.title = 'Move to group';
+          const groups = allGroups();
+          if (!groups.includes(curGroup)) groups.push(curGroup);
+          groups.forEach((g) => {
+            const o = document.createElement('option');
+            o.value = g;
+            o.textContent = g;
+            if (g === curGroup) o.selected = true;
+            sel.appendChild(o);
+          });
+          const newOpt = document.createElement('option');
+          newOpt.value = NEW_SENTINEL;
+          newOpt.textContent = '+ New group…';
+          sel.appendChild(newOpt);
+          // Keep select interaction from bubbling to the option's apply click.
+          sel.addEventListener('click', (e) => e.stopPropagation());
+          sel.addEventListener('pointerdown', (e) => e.stopPropagation());
+          sel.addEventListener('change', (e) => {
+            e.stopPropagation();
+            let target = sel.value;
+            if (target === NEW_SENTINEL) {
+              const promptFn = (typeof window !== 'undefined' && typeof window.prompt === 'function')
+                ? window.prompt : null;
+              const raw = promptFn ? (promptFn('New group name:', '') || '').trim() : '';
+              if (!raw) { sel.value = curGroup; return; }
+              target = raw;
+            }
+            if (target === curGroup) { sel.value = curGroup; return; }
+            reassignGroup(presetId, target);
+          });
+          opt.appendChild(sel);
+        }
+
         if (isUser) {
           const del = document.createElement('button');
           del.type = 'button';
@@ -593,6 +636,53 @@
       if (!Store || typeof Store.deletePreset !== 'function' || !Store.isSupported() || !Store.hasHandle()) return;
       const s = slugify(name) || system;
       try { Promise.resolve(Store.deletePreset(system, s)).catch(() => {}); } catch (_) { /* ignore */ }
+    };
+
+    const isDevMode = () =>
+      !!(window.Vectura && window.Vectura.SETTINGS && window.Vectura.SETTINGS.devMode === true);
+
+    // The full ordered group vocabulary for the current library: canonical order
+    // first, then any custom categories present in the merged preset list.
+    const allGroups = () => {
+      const custom = [...new Set(presets.map((p) => p.group))]
+        .filter((g) => g && !GROUP_ORDER.includes(g));
+      return [...GROUP_ORDER, ...custom];
+    };
+
+    // Dev-only inline group reassignment. Moving a preset to another category
+    // writes a localStorage entry carrying the new group — a mutation for an
+    // existing user/override preset, or a fresh shadow entry minted under a
+    // built-in's id (deduped so it shadows the bundled preset). savedAt is bumped
+    // so the folder pull's last-write-wins treats the change as authoritative, and
+    // the change is mirrored to the connected folder so the on-disk source
+    // .vectura's meta.group is rewritten in place (the dev authoring path). Then
+    // the popover re-renders and the row relocates under its new header.
+    const reassignGroup = (presetId, newGroup) => {
+      const cat = (String(newGroup || '').trim()) || 'User';
+      const src = presetMap[presetId];
+      if (!src || !system) return;
+      if ((src.group || 'User') === cat) return;
+      const ts = Date.now();
+      const list = loadUserPresets(system);
+      const idx = list.findIndex((p) => p.id === presetId);
+      let entry;
+      if (idx >= 0) {
+        entry = { ...list[idx], group: cat, savedAt: ts };
+        list[idx] = entry;
+      } else {
+        entry = {
+          id: src.id,
+          name: src.name,
+          preset_system: system,
+          group: cat,
+          params: stripParams(src.params),
+          savedAt: ts,
+        };
+        list.push(entry);
+      }
+      saveUserPresets(system, list);
+      mirrorToFolder(entry, null); // name unchanged → no rename/orphan-delete
+      rebuildPopover();
     };
 
     // Developer-mode repo export fallback (used when no folder is connected): a

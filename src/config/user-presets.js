@@ -1843,7 +1843,7 @@
         "id": "wavetable-user-billowing-fabric",
         "name": "Billowing Fabric",
         "preset_system": "wavetable",
-        "group": "User",
+        "group": "Complex",
         "params": {
           "preset": "user-wavetable-1780851597059",
           "lineStructure": "horizontal",
@@ -1966,8 +1966,7 @@
           "verticalFadeMode": "both",
           "smoothing": 0,
           "simplify": 0,
-          "curves": true,
-          "seed": 63477
+          "curves": true
         }
       },
       {

@@ -1,6 +1,12 @@
 {
   "type": "vectura",
   "name": "Billowing Fabric",
+  "meta": {
+    "presetId": "wavetable-user-billowing-fabric",
+    "group": "Complex",
+    "system": "wavetable",
+    "savedAt": 1780864419383
+  },
   "layers": [
     {
       "type": "wavetable",
@@ -126,13 +132,7 @@
         "verticalFadeMode": "both",
         "smoothing": 0,
         "simplify": 0,
-        "curves": true,
-        "seed": 63477,
-        "posX": 0,
-        "posY": 0,
-        "scaleX": 1,
-        "scaleY": 1,
-        "rotation": 0
+        "curves": true
       }
     }
   ]
