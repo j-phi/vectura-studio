@@ -144,6 +144,30 @@
     } catch (_) { /* quota or security error — silently ignore */ }
   };
 
+  // Tombstones: ids of bundled built-in presets a developer has deleted. Built-ins
+  // live in the generated bundle (window.Vectura.PRESETS), not localStorage, so
+  // "deleting" one is recorded here and filtered out of the merged gallery list —
+  // hiding it now and across reloads. The real, permanent removal is deleting the
+  // preset's .vectura file from the synced user-presets/ folder + re-bundling; once
+  // the bundle no longer carries the id the tombstone self-prunes (see rebuild).
+  const LS_DELETED_KEY = (system) => `vectura.deleted_presets.${system}`;
+
+  const loadDeleted = (system) => {
+    try {
+      const raw = typeof localStorage !== 'undefined' && localStorage.getItem(LS_DELETED_KEY(system));
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch (_) { return []; }
+  };
+
+  const saveDeleted = (system, ids) => {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(LS_DELETED_KEY(system), JSON.stringify(ids));
+      }
+    } catch (_) { /* quota or security error — silently ignore */ }
+  };
+
   const readToken = (name, fallback) => {
     try {
       const root = document.documentElement;
@@ -218,6 +242,12 @@
       const base = all && layer ? all[layer.type] : null;
       return base && typeof base === 'object' ? base : {};
     })();
+
+    // The id a fresh layer initializes onto (ALGO_DEFAULTS[type].preset). This
+    // preset is protected from deletion — removing it would leave new layers
+    // pointing at a missing id (→ "Custom") and, for the synthesized
+    // "<type>-default" markers, there is no file to remove anyway.
+    const defaultPresetId = (typeof defaults.preset === 'string' && defaults.preset) || null;
 
     const presetMap = {};
     presets.forEach((p) => { presetMap[p.id] = p; });
@@ -379,7 +409,17 @@
     const rebuildPopover = () => {
       // Re-sync merged preset list and map (deduped: localStorage overrides win).
       userPresets = system ? loadUserPresets(system) : [];
-      presets = dedupeById([...builtInPresets, ...userPresets]);
+      const builtInIds = new Set(builtInPresets.map((p) => p.id));
+      // Tombstones hide developer-deleted built-ins. Self-prune any id the bundle
+      // no longer carries (a re-bundle made the deletion permanent) so the list
+      // can't grow stale, then filter the survivors out of the merged library.
+      let deletedIds = system ? loadDeleted(system) : [];
+      if (system) {
+        const live = deletedIds.filter((id) => builtInIds.has(id));
+        if (live.length !== deletedIds.length) { saveDeleted(system, live); deletedIds = live; }
+      }
+      const deletedSet = new Set(deletedIds);
+      presets = dedupeById([...builtInPresets, ...userPresets]).filter((p) => !deletedSet.has(p.id));
       Object.keys(presetMap).forEach((k) => delete presetMap[k]);
       presets.forEach((p) => { presetMap[p.id] = p; });
       // ids backed by localStorage are deletable from the popover (revert/remove).
@@ -457,24 +497,84 @@
           opt.appendChild(sel);
         }
 
-        if (isUser) {
-          const del = document.createElement('button');
-          del.type = 'button';
-          del.className = 'hg-preset-delete';
-          del.setAttribute('aria-label', `Delete "${label}"`);
-          del.innerHTML = `<svg viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
-          del.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const updated = loadUserPresets(system).filter((p) => p.id !== presetId);
-            saveUserPresets(system, updated);
+        // Per-row delete / revert affordance. The default-marker preset is never
+        // removable (deleting it would break fresh-layer init). Otherwise:
+        //   • Developer Mode → DELETE works on EVERY preset, built-ins included:
+        //     drops any localStorage override, tombstones a bundled built-in, and
+        //     removes the .vectura source file from the connected folder (a built-in
+        //     delete confirms first, since it touches the curated library).
+        //   • Non-dev → a user preset DELETEs (now also un-mirrors its file); an
+        //     overridden built-in REVERTs (drops the override, keeps the bundled
+        //     preset) — the X is relabeled so it no longer reads as a silent delete.
+        const isBuiltIn = builtInIds.has(presetId);
+        const isProtected = presetId === defaultPresetId;
+        let affordance = null;
+        if (params && system && !isProtected) {
+          if (isDevMode()) affordance = 'delete';
+          else if (isUser && isBuiltIn) affordance = 'revert';
+          else if (isUser) affordance = 'delete';
+        }
+
+        if (affordance) {
+          // Drop the localStorage entry (override or user preset). For a delete,
+          // also tombstone a built-in and un-mirror the source file; a revert keeps
+          // the bundled preset and the file intact.
+          const removeEntry = () => loadUserPresets(system).filter((p) => p.id !== presetId);
+          const doDelete = () => {
+            saveUserPresets(system, removeEntry());
+            if (isBuiltIn) {
+              const t = loadDeleted(system);
+              if (!t.includes(presetId)) { t.push(presetId); saveDeleted(system, t); }
+            }
+            unmirrorFromFolder(label); // label === preset.name → slug → <system>/<slug>.vectura
             if (activeId === presetId) {
               activeId = 'custom';
               updateTrigger('custom');
               onApply('custom');
             }
             rebuildPopover();
+          };
+          const doRevert = () => {
+            saveUserPresets(system, removeEntry());
+            if (activeId === presetId) { activeId = computeActiveId(); updateTrigger(activeId); }
+            rebuildPopover();
+          };
+          const confirmThenDelete = () => {
+            const D = window.Vectura && window.Vectura.UI && window.Vectura.UI.overlays
+              && window.Vectura.UI.overlays.Dialog;
+            if (!D) { doDelete(); return; }
+            const connected = folderConnected();
+            D(document.body, {
+              title: 'Delete preset',
+              message: connected
+                ? `Delete “${label}” and remove its .vectura file from the synced folder? Re-run the preset bundler (or commit) to make it permanent. This can’t be undone from here.`
+                : `Delete “${label}” from this browser? It returns on reload until you remove its .vectura file from user-presets/ and re-bundle.`,
+              confirmLabel: 'Delete',
+              destructive: true,
+              onConfirm: doDelete,
+            }).open();
+          };
+
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          if (affordance === 'revert') {
+            btn.className = 'hg-preset-delete hg-preset-revert';
+            btn.setAttribute('aria-label', `Revert “${label}” to default`);
+            btn.title = 'Revert to default';
+            btn.innerHTML = `<svg viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M2.2 3.2A3 3 0 1 1 1.7 5.3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M1 1.6V3.6H3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+          } else {
+            btn.className = 'hg-preset-delete';
+            btn.setAttribute('aria-label', `Delete “${label}”`);
+            btn.title = isBuiltIn ? 'Delete preset (removes the .vectura source file)' : 'Delete preset';
+            btn.innerHTML = `<svg viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+          }
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (affordance === 'revert') doRevert();
+            else if (isBuiltIn) confirmThenDelete();
+            else doDelete();
           });
-          opt.appendChild(del);
+          opt.appendChild(btn);
         }
 
         return opt;
@@ -741,6 +841,10 @@
       if (idx >= 0) list[idx] = entry; else list.push(entry);
       saveUserPresets(system, list);
 
+      // Re-creating a previously-deleted built-in un-hides it (clear its tombstone).
+      const tomb = loadDeleted(system);
+      if (tomb.includes(saveId)) saveDeleted(system, tomb.filter((x) => x !== saveId));
+
       // Commit-ready write. Non-dev always mirrors to a connected folder (Phase 2
       // sync); dev mirrors only when the destination is the repo. A repo save with
       // no folder connected falls back to a download.
@@ -789,9 +893,11 @@
         ? NH.suggestName(system, layer.params, { basis, existingNames })
         : 'My Preset';
       // The deduped library (built-in + localStorage) drives the dev-mode
-      // "Overwrite existing" picker and the Category list.
+      // "Overwrite existing" picker and the Category list. Tombstoned (deleted)
+      // built-ins are excluded so a delete doesn't linger as an overwrite target.
+      const tombstoned = new Set(loadDeleted(system));
       const merged = dedupeById([...builtInPresets, ...loadUserPresets(system)])
-        .filter((p) => p && p.id && p.id !== 'custom');
+        .filter((p) => p && p.id && p.id !== 'custom' && !tombstoned.has(p.id));
       const presetsForModal = merged.map((p) => ({ id: p.id, name: p.name, group: p.group || 'User' }));
       const customGroups = [...new Set(presetsForModal.map((p) => p.group))].filter((g) => !GROUP_ORDER.includes(g));
       M.open({

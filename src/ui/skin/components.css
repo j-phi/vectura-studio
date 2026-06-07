@@ -3314,6 +3314,10 @@
 .hg-preset-group-select:focus { opacity: 1; }
 .hg-preset-group-select:hover { color: var(--ui-text); border-color: var(--ui-accent); }
 
+/* Revert-to-default control: shares the delete button's sizing/hover-reveal but
+   reads as a restore (neutral hover), not a destructive action. */
+.hg-preset-revert:hover { color: var(--ui-text); opacity: 1; }
+
 .hg-preset-import {
   display: block; width: 100%; padding: 6px 10px; margin-top: 4px;
   border: 1px dashed var(--ui-border, rgba(255,255,255,0.12));
