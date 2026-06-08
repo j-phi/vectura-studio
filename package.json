@@ -25,16 +25,16 @@
     "hooks:install": "HOOKS_DIR=\"$(git rev-parse --git-common-dir)/hooks\" && cp scripts/hooks/pre-commit \"$HOOKS_DIR/pre-commit\" && cp scripts/hooks/pre-push \"$HOOKS_DIR/pre-push\" && chmod +x \"$HOOKS_DIR/pre-commit\" \"$HOOKS_DIR/pre-push\""
   },
   "devDependencies": {
-    "@playwright/test": "^1.59.1",
+    "@playwright/test": "^1.60.0",
     "@vitest/coverage-v8": "^3.2.4",
     "autoprefixer": "^10.5.0",
     "eslint": "^8.57.0",
     "eslint-config-prettier": "^10.1.8",
     "jsdom": "^24.1.1",
-    "postcss": "^8.5.8",
+    "postcss": "^8.5.15",
     "prettier": "^3.8.3",
-    "tailwindcss": "^4.2.4",
-    "vite": "^8.0.1",
+    "tailwindcss": "^4.3.0",
+    "vite": "^8.0.16",
     "vitest": "^3.2.4"
   },
   "engines": {
