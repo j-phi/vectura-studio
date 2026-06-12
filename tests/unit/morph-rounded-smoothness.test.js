@@ -121,4 +121,58 @@ describe('morph modifier — rounded polygon → circle stays smooth', () => {
     const rings = morph(4, 50);
     rings.forEach((ring) => expect(maxTurn(ring)).toBeLessThan(25));
   });
+
+  // Sample the ring's ACTUAL rendered bezier (from meta.anchors — what the canvas
+  // draws) so we measure the real curve, not the sparse stored polyline.
+  const sampleRingBezier = (ring) => {
+    const an = ring.meta && ring.meta.anchors;
+    if (!an || !an.some((a) => a.in || a.out)) return open(ring);
+    const pts = [];
+    const seg = (p0, c1, c2, p1) => {
+      for (let t = 0; t < 1; t += 0.04) {
+        const u = 1 - t;
+        pts.push({
+          x: u * u * u * p0.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * p1.x,
+          y: u * u * u * p0.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * p1.y,
+        });
+      }
+    };
+    for (let i = 0; i < an.length; i += 1) {
+      const a = an[i];
+      const b = an[(i + 1) % an.length];
+      seg(a, a.out || a, b.in || b, b);
+    }
+    return pts;
+  };
+  // Corner fidelity = max/min radius from the centroid. A rounded polygon's corners
+  // sit farther out than its edge midpoints (ratio > 1); a circle is ~1. Arc-length
+  // corner sampling starved the corners and over-rounded every in-between ring into
+  // a near-circle (ratio ≈ 1.03) even when blending toward an obviously square shape
+  // — that washout, plus the overshoot it caused, is the "Corner Match" artifact.
+  // Curvature-weighted sampling lands anchors on the corners so they survive.
+  const cornerRatio = (ring) => {
+    const pts = sampleRingBezier(ring);
+    let cx = 0;
+    let cy = 0;
+    pts.forEach((p) => { cx += p.x; cy += p.y; });
+    cx /= pts.length;
+    cy /= pts.length;
+    const rs = pts.map((p) => Math.hypot(p.x - cx, p.y - cy));
+    return Math.max(...rs) / Math.min(...rs);
+  };
+
+  test('RND-03: rounded square → circle — the near-square rings keep their corners', () => {
+    // morph(sides, r) chains rounded-poly (A) → circle (B); ring[0] is the most
+    // square. Arc-length sampling over-rounded it to ~1.03 (a circle); the
+    // curvature-sampled blend keeps a clearly square ratio.
+    const rings = morph(4, 45);
+    expect(cornerRatio(rings[0])).toBeGreaterThan(1.18);
+    // And every ring stays smooth (no overshoot spikes) — sparse-polyline turn.
+    rings.forEach((ring) => expect(maxTurn(ring)).toBeLessThan(25));
+  });
+
+  test('RND-04: rounded triangle / pentagon → circle keep their corners too', () => {
+    expect(cornerRatio(morph(3, 30)[0])).toBeGreaterThan(1.25);
+    expect(cornerRatio(morph(5, 35)[0])).toBeGreaterThan(1.12);
+  });
 });

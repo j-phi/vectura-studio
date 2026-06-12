@@ -158,6 +158,65 @@
   // round≈0 at its corners; a circle yields round≈1 everywhere, so blending the
   // handle weights rounds a hexagon smoothly into a circle while keeping K
   // anchors throughout.
+  // Curvature-weighted resample: place K samples so high-curvature regions
+  // (rounded corners) get MORE samples than the long flat sides. Pure arc-length
+  // distributes samples evenly by distance, so on a shape with long sides + tight
+  // corners (a rounded square / diamond) almost every sample lands on a side and
+  // none on the corner apex — the segment spanning a corner is then an L-shape no
+  // single cubic can follow, and the seg/3 handle overshoots into a concave notch
+  // (the artifact reported with Corner Match on). Weighting by turning pulls
+  // samples onto the corners so each segment is a clean arc the cubic can track.
+  // Only used for SMOOTH anchored shapes; sharp polygons keep arc-length (which
+  // already lands a sample on each vertex) so their corners aren't starved.
+  const CURVATURE_SAMPLE_WEIGHT = 5;
+  const curvatureResample = (rawPath, K, closed) => {
+    const dense = flattenForMorph(rawPath, Math.max(256, K * 8));
+    const n = dense.length;
+    if (n < 2) return dense.slice(0, K).map((p) => ({ x: p.x, y: p.y }));
+    // Per-vertex absolute turn on the dense curve.
+    const turn = new Array(n).fill(0);
+    for (let i = 0; i < n; i += 1) {
+      if (!closed && (i === 0 || i === n - 1)) continue;
+      const p = dense[(i - 1 + n) % n];
+      const c = dense[i];
+      const q = dense[(i + 1) % n];
+      let a = Math.atan2(c.y - p.y, c.x - p.x);
+      let b = Math.atan2(q.y - c.y, q.x - c.x);
+      let d = b - a;
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      turn[i] = Math.abs(d);
+    }
+    let L = 0;
+    for (let i = 1; i < n; i += 1) L += Math.hypot(dense[i].x - dense[i - 1].x, dense[i].y - dense[i - 1].y);
+    if (closed) L += Math.hypot(dense[0].x - dense[n - 1].x, dense[0].y - dense[n - 1].y);
+    // Importance = arc length + λ·turning. λ scales total turning (2π for a
+    // convex loop) up to ~CURVATURE_SAMPLE_WEIGHT perimeters' worth, so most
+    // samples concentrate at corners while sides still get a few.
+    const lambda = (L || 1) / (Math.PI * 2) * CURVATURE_SAMPLE_WEIGHT;
+    const step = (i, j) => Math.hypot(dense[j].x - dense[i].x, dense[j].y - dense[i].y)
+      + lambda * (turn[i] + turn[j]) * 0.5;
+    const cum = [0];
+    for (let i = 1; i < n; i += 1) cum.push(cum[i - 1] + step(i - 1, i));
+    let total = cum[n - 1];
+    if (closed) total += step(n - 1, 0);
+    if (!(total > 0)) return dense.slice(0, K).map((p) => ({ x: p.x, y: p.y }));
+    const sampleAt = (t) => {
+      let lo = 0;
+      let hi = cum.length - 1;
+      while (lo < hi) { const m = (lo + hi) >> 1; if (cum[m] < t) lo = m + 1; else hi = m; }
+      const seg = Math.max(0, lo - 1);
+      const segImp = ((cum[seg + 1] !== undefined ? cum[seg + 1] : total) - cum[seg]) || 1e-9;
+      const f = clampFn((t - cum[seg]) / segImp, 0, 1);
+      const a = dense[seg];
+      const b = dense[seg + 1] || dense[0];
+      return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+    };
+    const out = [];
+    for (let k = 0; k < K; k += 1) out.push(sampleAt((k / K) * total));
+    return out;
+  };
+
   // Arc-length positions of the GENUINELY sharp corners of an anchored source.
   // A sharp corner is an anchor with BOTH handles null (a polygon vertex). A
   // rounded/beveled corner is stored as TWO anchors that EACH carry one handle
@@ -212,9 +271,18 @@
   };
 
   const buildCornerSamples = (rawPath, K, closed) => {
-    const resampled = resamplePath(rawPath, K, closed, 'arc-length');
-    const pts = resampled.map((p) => ({ x: p.x, y: p.y }));
     const isCircle = !!(rawPath && rawPath.meta && rawPath.meta.kind === 'circle');
+    const meta = rawPath && rawPath.meta;
+    const anchors = meta && Array.isArray(meta.anchors) ? meta.anchors : null;
+    const hasSharp = anchors ? anchors.some((a) => !a.in && !a.out) : false;
+    // SMOOTH anchored shapes (rounded polygon, ellipse) sample by curvature so
+    // anchors land on their rounded corners — pure arc-length starves the corners
+    // and the seg/3 handles overshoot into notches. Sharp polygons, circles, and
+    // raw polylines keep arc-length (corners already get a sample, no overshoot).
+    const useCurvature = !isCircle && !!anchors && !hasSharp;
+    const pts = useCurvature
+      ? curvatureResample(rawPath, K, closed)
+      : resamplePath(rawPath, K, closed, 'arc-length').map((p) => ({ x: p.x, y: p.y }));
     // Roundness is driven by the source's ACTUAL anchor handles, not by the turn
     // angle of the coarse K-resampled polygon. Measuring turn on the K-gon
     // mis-reads an already-rounded corner as partly sharp (its turn ≈ the corner
