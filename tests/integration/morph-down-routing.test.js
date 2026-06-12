@@ -85,6 +85,39 @@ describe('Morph sub-selection — down() pointer routing', () => {
     expect(renderer.groupEditMode).toBeNull();
   });
 
+  function installSyncRaf(window) {
+    const pending = new Map();
+    let nextId = 1;
+    window.requestAnimationFrame = (cb) => { const id = nextId++; pending.set(id, cb); return id; };
+    window.cancelAnimationFrame = (id) => { pending.delete(id); };
+    if (typeof globalThis !== 'undefined') {
+      globalThis.requestAnimationFrame = window.requestAnimationFrame;
+      globalThis.cancelAnimationFrame = window.cancelAnimationFrame;
+    }
+    return { flush() { const cbs = [...pending.values()]; pending.clear(); cbs.forEach((cb) => cb(Date.now())); } };
+  }
+
+  // Real interactive flow: dragging an isolated end must refold the blend LIVE
+  // (mid-drag, before release) so the in-between rings track the moving end.
+  test('dragging an isolated end previews the morph live (mid-drag, before release)', async () => {
+    const { renderer, container, children } = await setup();
+    renderer.onComputeDisplayGeometry = () => renderer.engine.computeAllDisplayGeometry();
+    const raf = installSyncRaf(runtime.window);
+    renderer.enterMorphEditMode(children[0], container); // isolate child 0
+    const before = JSON.stringify(container.morphedPaths);
+
+    // Press inside child 0's bbox (x[20,60] y[20,60]) and drag — the real
+    // down()/move() handlers arm _startMirrorDrag and schedule the live refold.
+    renderer.down(evt(40, 40));
+    expect(renderer.isLayerDrag).toBe(true);
+    expect(renderer._morphDragActive).toBe(true);
+    renderer.move(evt(70, 70)); // drag the end by (+30,+30)
+    raf.flush();
+
+    expect(JSON.stringify(container.morphedPaths)).not.toBe(before); // refolded mid-drag
+    renderer.up(evt(70, 70));
+  });
+
   test('single click on the blend does NOT clear an existing selection (no marquee)', async () => {
     const { renderer, container } = await setup();
     renderer.down(evt(40, 20));

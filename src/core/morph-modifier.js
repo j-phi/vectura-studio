@@ -120,14 +120,18 @@
     const meta = rawPath && rawPath.meta;
     if (meta && meta.kind === 'circle') return 0;
     if (meta && Array.isArray(meta.anchors) && meta.anchors.length) {
-      let sharp = 0;
-      meta.anchors.forEach((a) => {
-        if (!a.in && !a.out) sharp += 1;
-      });
-      // A handle-less anchored polygon: every anchor is a sharp corner.
-      if (sharp === meta.anchors.length) return sharp;
-      // Mixed/curved anchored shape: fall through to geometric detection so a
-      // rounded-rect (4 sharp + 4 curved) doesn't undercount.
+      // The structural corner count of an anchored shape is its ANCHOR COUNT —
+      // a polygon and its beveled/rounded variant share the same corners; the
+      // bevel only softens them (adds in/out handles). Counting only SHARP
+      // anchors, or falling through to geometric turn-detection, undercounts a
+      // rounded/beveled polygon to ~0 (each rounded corner spreads its turn over
+      // many sub-threshold vertices), which floors K to 3 and degenerates every
+      // in-between ring to a triangle. De-dupe a trailing wrap anchor.
+      let n = meta.anchors.length;
+      const f = meta.anchors[0];
+      const l = meta.anchors[n - 1];
+      if (n > 1 && f && l && Math.hypot((f.x ?? 0) - (l.x ?? 0), (f.y ?? 0) - (l.y ?? 0)) < 1e-6) n -= 1;
+      return n;
     }
     const pts = flattenForMorph(rawPath, 128);
     const closed = isPathClosed(rawPath);
