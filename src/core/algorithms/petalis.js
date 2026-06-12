@@ -37,6 +37,43 @@
     return clamp(t, clampAmt, 1 - clampAmt);
   };
   const tipLengthScale = (tipCurl) => 1 - clamp(tipCurl ?? 0, 0, 1) * 0.35;
+  // True pseudo-3D petal cupping: fold the blade about its long axis as a
+  // cylindrical projection — lateral position y becomes arc length on a fold
+  // cylinder, so the projected y' = R·sin(y/R) leaves the midline untouched
+  // and foreshortens the edges progressively (a cup, not a uniform squeeze) —
+  // plus a slight perspective pull of the tip toward the receptacle as the
+  // blade tilts up out of the page. Pure petal-local transform applied just
+  // before the world rotate/translate (outline and shading alike, so the
+  // downstream silhouette clip stays consistent); null at cup 0 so the default
+  // look and every existing baseline stay byte-identical.
+  const makeCupTransform = ({ cup, length, halfWidth }) => {
+    const amt = clamp(cup ?? 0, 0, 1);
+    if (amt <= 1e-6 || !(halfWidth > 0) || !(length > 0)) return null;
+    const fold = amt * Math.PI * 0.45;
+    const radius = halfWidth / fold;
+    const persp = amt * 0.18;
+    const HALF_PI = Math.PI / 2;
+    return (pt) => {
+      const t = clamp(pt.x / length, 0, 1);
+      // Clamp the fold angle so overshoot (edge waves, curl offsets past the
+      // nominal half-width) maps monotonically instead of folding back over.
+      const arc = clamp(pt.y / radius, -HALF_PI, HALF_PI);
+      return {
+        x: pt.x * (1 - persp * t * t),
+        y: radius * Math.sin(arc),
+      };
+    };
+  };
+  const maxProfileHalfWidth = (points) => {
+    let max = 0;
+    if (Array.isArray(points)) {
+      for (const pt of points) {
+        const w = Math.abs(pt?.y ?? 0);
+        if (w > max) max = w;
+      }
+    }
+    return max;
+  };
   const pathLength = (path) => {
     if (!Array.isArray(path) || path.length < 2) return 0;
     let len = 0;
@@ -490,6 +527,7 @@
       waveFreq,
       wavePhase,
       profilePoints,
+      cupTransform,
       leafSidePos,
       leafSideWidth,
       leafBaseHandle,
@@ -534,10 +572,13 @@
     outline.push({ ...outline[0] });
     const cosA = Math.cos(angle);
     const sinA = Math.sin(angle);
-    const transformed = outline.map((pt) => ({
-      x: baseX + pt.x * cosA - pt.y * sinA,
-      y: baseY + pt.x * sinA + pt.y * cosA,
-    }));
+    const transformed = outline.map((pt) => {
+      const lp = cupTransform ? cupTransform(pt) : pt;
+      return {
+        x: baseX + lp.x * cosA - lp.y * sinA,
+        y: baseY + lp.x * sinA + lp.y * cosA,
+      };
+    });
     return transformed;
   };
 
@@ -586,6 +627,7 @@
       rng,
       noise,
       profilePoints,
+      cupTransform,
     } = opts;
     const lines = [];
     const active = Array.isArray(shadings) ? shadings.filter((s) => s && s.enabled !== false) : [];
@@ -659,10 +701,13 @@
       }
       const cosA = Math.cos(angle);
       const sinA = Math.sin(angle);
-      return path.map((pt) => ({
-        x: baseX + pt.x * cosA - pt.y * sinA,
-        y: baseY + pt.x * sinA + pt.y * cosA,
-      }));
+      return path.map((pt) => {
+        const lp = cupTransform ? cupTransform(pt) : pt;
+        return {
+          x: baseX + lp.x * cosA - lp.y * sinA,
+          y: baseY + lp.x * sinA + lp.y * cosA,
+        };
+      });
     };
 
     const buildOffsets = (shade, halfWidth) => {
@@ -733,7 +778,10 @@
         const reach = clamp(shade.veinReach ?? 0.62, 0.1, 0.95);
         const cosA = Math.cos(angle);
         const sinA = Math.sin(angle);
-        const toWorld = (lx, ly) => ({ x: baseX + lx * cosA - ly * sinA, y: baseY + lx * sinA + ly * cosA });
+        const toWorld = (lx, ly) => {
+          const lp = cupTransform ? cupTransform({ x: lx, y: ly }) : { x: lx, y: ly };
+          return { x: baseX + lp.x * cosA - lp.y * sinA, y: baseY + lp.x * sinA + lp.y * cosA };
+        };
         for (let k = 1; k <= veinPairs; k++) {
           const tb = lerp(0.12, 0.82, k / (veinPairs + 1));
           const tt = Math.min(0.96, tb + 0.18);
@@ -779,6 +827,7 @@
           waveAmp,
           waveFreq,
           wavePhase,
+          cupTransform,
         });
         emitLine(outline);
         if (type === 'rim') {
@@ -801,6 +850,7 @@
             waveAmp,
             waveFreq,
             wavePhase,
+            cupTransform,
           });
           emitLine(innerOutline);
         }
@@ -827,6 +877,7 @@
               waveAmp,
               waveFreq,
               wavePhase,
+              cupTransform,
             });
             emitLine(inner);
           }
@@ -881,8 +932,10 @@
               const curl = twist * effectiveLength * 0.02 * t * t;
               const cosA = Math.cos(angle);
               const sinA = Math.sin(angle);
-              const x = baseX + (t * effectiveLength) * cosA - (localY + curl) * sinA;
-              const y = baseY + (t * effectiveLength) * sinA + (localY + curl) * cosA;
+              const localPt = { x: t * effectiveLength, y: localY + curl };
+              const lp = cupTransform ? cupTransform(localPt) : localPt;
+              const x = baseX + lp.x * cosA - lp.y * sinA;
+              const y = baseY + lp.x * sinA + lp.y * cosA;
               lines.push([
                 { x, y },
                 { x: x + 0.2, y: y + 0.2 },
@@ -1700,6 +1753,10 @@
     // Petal asymmetry (0..100): per-petal lateral lean that breaks the perfect
     // mirror symmetry for a more organic, hand-drawn read. 0 = neutral.
     const petalAsymmetry = clamp(p.petalAsymmetry ?? 0, 0, 100) / 100;
+    // Petal cupping (0..100): true pseudo-3D fold about the petal's long axis
+    // (see makeCupTransform). Tied to ring position — inner whorls cup hardest
+    // (young petals incurve), outer whorls open flat. 0 = neutral.
+    const petalCupping = clamp(p.petalCupping ?? 0, 0, 100) / 100;
     const tipSharpness = designerShapeOnly ? 1 : p.tipSharpness ?? 0.5;
     const baseFlare = designerShapeOnly ? 0 : p.baseFlare ?? 0;
     const basePinch = designerShapeOnly ? 0 : p.basePinch ?? 0;
@@ -1976,6 +2033,16 @@
         }
         if (!profilePoints) profilePoints = fallbackProfile();
         profilePoints = applyDesignerProfileSymmetry(profilePoints, effectiveLength, ringSymmetry);
+        // Per-petal cup, tied to ring position: whorl rings use the populated-
+        // ring ramp (scaleT 0 innermost → 1 outermost — uniform within a ring,
+        // so no wrap-seam discontinuity); spiral falls back to the continuous
+        // centre-distance ramp. Inner petals fold hardest, like a real corolla.
+        const cupRingT = layoutMode === 'whorl' ? clamp(ring.scaleT ?? 0, 0, 1) : 1 - centerFactor;
+        const cupTransform = makeCupTransform({
+          cup: petalCupping * lerp(1, 0.35, cupRingT),
+          length: effectiveLength,
+          halfWidth: maxProfileHalfWidth(profilePoints) || (widthRatio * effectiveLength) / 2,
+        });
         let outline = buildPetal({
           length,
           widthRatio,
@@ -1996,6 +2063,7 @@
           waveFreq: p.edgeWaveFreq ?? 2,
           wavePhase,
           profilePoints,
+          cupTransform,
           leafSidePos: p.leafSidePos,
           leafSideWidth: p.leafSideWidth,
           leafBaseHandle: p.leafBaseHandle,
@@ -2027,6 +2095,7 @@
           rng: makeSubRng((p.seed ?? 0) * 2654435761 + (ringProgressOffset + i) * 40503 + 17),
           noise,
           profilePoints,
+          cupTransform,
         });
         const modifierBase = { x: baseX, y: baseY };
         outline = applyPetalModifiers([outline], ringModifierStack, modifierBase, angle, length, noise)[0] || outline;

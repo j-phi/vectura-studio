@@ -63,6 +63,8 @@
         params.petalScale = intBetween(26, 42);
         params.petalWidthRatio = clamp(between(0.6, 0.95), 0.2, 1.4);
         params.bloom = intBetween(55, 100);
+        // Sometimes cup the whorl for a volumetric, incurved corolla read.
+        params.petalCupping = rnd() < 0.45 ? intBetween(15, 60) : 0;
         // Often dress sparse whorls with venation.
         if (rnd() < 0.45) {
           params.shadings = [{
@@ -87,6 +89,7 @@
         params.petalScale = intBetween(18, 30);
         params.petalWidthRatio = clamp(between(0.45, 0.8), 0.2, 1.4);
         params.bloom = 100;
+        params.petalCupping = 0;
         params.shadings = [];
         const sum = params.innerCount + params.outerCount;
         if (sum > 420) {

@@ -411,6 +411,7 @@
       { id: 'petalScale', label: 'Petal Scale (mm)', type: 'range', min: 1, max: 80, step: 1, infoKey: 'petalis.petalScale' },
       { id: 'bloom', label: 'Bloom', type: 'range', min: 0, max: 100, step: 1, infoKey: 'petalis.bloom' },
       { id: 'petalAsymmetry', label: 'Petal Asymmetry', type: 'range', min: 0, max: 100, step: 1, infoKey: 'petalis.petalAsymmetry' },
+      { id: 'petalCupping', label: 'Petal Cupping', type: 'range', min: 0, max: 100, step: 1, infoKey: 'petalis.petalCupping' },
       {
         id: 'petalWidthRatio',
         label: 'Width/Length Ratio',

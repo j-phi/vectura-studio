@@ -2101,6 +2101,11 @@
       title: 'Tip Rounding',
       description: 'Rounds the outer petal tip. 0 keeps a sharp edge, 1 approaches a semicircular tip.',
     },
+    'petalis.petalCupping': {
+      title: 'Petal Cupping',
+      description:
+        'Folds each petal about its long axis for a pseudo-3D cupped, incurved read — edges foreshorten more than the midline, and inner whorls cup harder than outer ones like a real corolla. 0 keeps petals flat.',
+    },
     'petalis.baseFlare': {
       title: 'Base Flare',
       description: 'Flares the petal base outward, widening where it attaches to the center.',

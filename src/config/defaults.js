@@ -855,6 +855,7 @@
       layoutMode: 'whorl',
       bloom: 100,
       petalAsymmetry: 0,
+      petalCupping: 0,
       ringMode: 'dual',
       innerCount: 0,
       outerCount: 6,
