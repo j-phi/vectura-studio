@@ -15,13 +15,18 @@
         "petalProfile": "heart",
         "petalScale": 34,
         "petalWidthRatio": 0.6,
-        "count": 160,
+        "count": 5,
         "centerSizeMorph": -0.4,
         "centerShapeMorph": 0.4,
         "ringMode": "dual",
-        "innerCount": 60,
-        "outerCount": 120,
-        "ringSplit": 0.32
+        "innerCount": 0,
+        "outerCount": 5,
+        "ringSplit": 0.45,
+        "layoutMode": "whorl",
+        "ringOffset": 0,
+        "rotationJitter": 0,
+        "sizeJitter": 0,
+        "countJitter": 0
       }
     }
   ]

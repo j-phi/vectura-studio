@@ -849,16 +849,25 @@
         "preset_system": "petalisDesigner",
         "group": "Classic",
         "params": {
-          "petalProfile": "oval",
+          "petalProfile": "rounded",
           "petalScale": 36,
           "petalWidthRatio": 0.62,
-          "count": 120,
+          "count": 7,
           "centerType": "starburst",
           "centerRadius": 8,
           "centerDensity": 40,
           "centerConnectors": true,
           "connectorCount": 32,
-          "connectorLength": 12
+          "connectorLength": 12,
+          "layoutMode": "whorl",
+          "ringMode": "dual",
+          "innerCount": 0,
+          "outerCount": 7,
+          "ringSplit": 0.45,
+          "ringOffset": 0,
+          "rotationJitter": 0,
+          "sizeJitter": 0,
+          "countJitter": 0
         }
       },
       {
@@ -878,7 +887,12 @@
           "centerType": "disk",
           "centerRadius": 6,
           "innerShading": true,
-          "innerDensity": 0.5
+          "innerDensity": 0.5,
+          "layoutMode": "spiral",
+          "ringOffset": 12,
+          "rotationJitter": 0,
+          "sizeJitter": 0,
+          "countJitter": 0
         }
       },
       {
@@ -893,7 +907,16 @@
           "count": 520,
           "edgeWaveAmp": 0.02,
           "centerType": "disk",
-          "centerRadius": 5
+          "centerRadius": 5,
+          "layoutMode": "spiral",
+          "ringMode": "dual",
+          "innerCount": 220,
+          "outerCount": 300,
+          "ringSplit": 0.4,
+          "ringOffset": 12,
+          "rotationJitter": 0,
+          "sizeJitter": 0,
+          "countJitter": 0
         }
       },
       {
@@ -902,14 +925,23 @@
         "preset_system": "petalisDesigner",
         "group": "Geometric",
         "params": {
-          "petalProfile": "lanceolate",
+          "petalProfile": "spatulate",
           "petalScale": 38,
           "petalWidthRatio": 0.45,
           "count": 8,
           "spiralMode": "custom",
           "customAngle": 45,
           "centerType": "dot",
-          "centerRadius": 7
+          "centerRadius": 7,
+          "layoutMode": "whorl",
+          "ringMode": "dual",
+          "innerCount": 0,
+          "outerCount": 8,
+          "ringSplit": 0.45,
+          "ringOffset": 0,
+          "rotationJitter": 0,
+          "sizeJitter": 0,
+          "countJitter": 0
         }
       },
       {
@@ -929,7 +961,12 @@
           "innerShading": true,
           "innerDensity": 0.6,
           "outerShading": true,
-          "outerDensity": 0.4
+          "outerDensity": 0.4,
+          "layoutMode": "spiral",
+          "ringOffset": 12,
+          "rotationJitter": 0,
+          "sizeJitter": 0,
+          "countJitter": 0
         }
       },
       {
@@ -945,7 +982,16 @@
           "edgeWaveAmp": 0.08,
           "edgeWaveFreq": 5,
           "innerShading": true,
-          "innerDensity": 0.55
+          "innerDensity": 0.55,
+          "layoutMode": "spiral",
+          "ringMode": "dual",
+          "innerCount": 160,
+          "outerCount": 220,
+          "ringSplit": 0.35,
+          "ringOffset": 12,
+          "rotationJitter": 0,
+          "sizeJitter": 0,
+          "countJitter": 0
         }
       },
       {
@@ -954,14 +1000,23 @@
         "preset_system": "petalisDesigner",
         "group": "Organic",
         "params": {
-          "petalProfile": "lanceolate",
+          "petalProfile": "dagger",
           "petalScale": 26,
           "petalWidthRatio": 0.38,
           "count": 200,
           "spiralTightness": 1.45,
           "basePinch": 0.2,
           "centerType": "disk",
-          "centerRadius": 5
+          "centerRadius": 5,
+          "layoutMode": "spiral",
+          "ringMode": "dual",
+          "innerCount": 90,
+          "outerCount": 110,
+          "ringSplit": 0.3,
+          "ringOffset": 12,
+          "rotationJitter": 0,
+          "sizeJitter": 0,
+          "countJitter": 0
         }
       },
       {
@@ -973,12 +1028,21 @@
           "petalProfile": "spoon",
           "petalScale": 22,
           "petalWidthRatio": 0.7,
-          "count": 120,
+          "count": 14,
           "spiralTightness": 0.8,
           "budMode": true,
           "budRadius": 0.28,
           "centerType": "disk",
-          "centerRadius": 4
+          "centerRadius": 4,
+          "layoutMode": "whorl",
+          "ringMode": "dual",
+          "innerCount": 0,
+          "outerCount": 14,
+          "ringSplit": 0.45,
+          "ringOffset": 0,
+          "rotationJitter": 0,
+          "sizeJitter": 0,
+          "countJitter": 0
         }
       },
       {
@@ -995,7 +1059,12 @@
           "innerCount": 80,
           "outerCount": 140,
           "ringSplit": 0.35,
-          "centerType": "dome"
+          "centerType": "dome",
+          "layoutMode": "spiral",
+          "ringOffset": 12,
+          "rotationJitter": 0,
+          "sizeJitter": 0,
+          "countJitter": 0
         }
       },
       {
@@ -1007,10 +1076,19 @@
           "petalProfile": "lanceolate",
           "petalScale": 34,
           "petalWidthRatio": 0.32,
-          "count": 260,
+          "count": 34,
           "centerType": "starburst",
           "centerRadius": 7,
-          "centerDensity": 48
+          "centerDensity": 48,
+          "layoutMode": "whorl",
+          "ringMode": "dual",
+          "innerCount": 0,
+          "outerCount": 34,
+          "ringSplit": 0.45,
+          "ringOffset": 0,
+          "rotationJitter": 0,
+          "sizeJitter": 0,
+          "countJitter": 0
         }
       },
       {
@@ -1019,14 +1097,23 @@
         "preset_system": "petalisDesigner",
         "group": "Classic",
         "params": {
-          "petalProfile": "heart",
+          "petalProfile": "oval",
           "petalScale": 38,
           "petalWidthRatio": 0.7,
-          "count": 80,
+          "count": 5,
           "centerType": "dot",
           "centerRadius": 6,
           "innerShading": true,
-          "innerDensity": 0.4
+          "innerDensity": 0.4,
+          "layoutMode": "whorl",
+          "ringMode": "dual",
+          "innerCount": 0,
+          "outerCount": 5,
+          "ringSplit": 0.45,
+          "ringOffset": 0,
+          "rotationJitter": 0,
+          "sizeJitter": 0,
+          "countJitter": 0
         }
       },
       {
@@ -1038,11 +1125,19 @@
           "petalProfile": "lanceolate",
           "petalScale": 40,
           "petalWidthRatio": 0.4,
-          "count": 90,
+          "count": 6,
           "tipTwist": 0.8,
-          "rotationJitter": 14,
+          "rotationJitter": 0,
           "centerType": "disk",
-          "centerRadius": 5
+          "centerRadius": 5,
+          "layoutMode": "whorl",
+          "ringMode": "dual",
+          "innerCount": 3,
+          "outerCount": 3,
+          "ringSplit": 0.5,
+          "ringOffset": 60,
+          "sizeJitter": 0,
+          "countJitter": 0
         }
       },
       {
@@ -1063,7 +1158,12 @@
           "centerRadius": 10,
           "centerConnectors": true,
           "connectorCount": 24,
-          "connectorLength": 14
+          "connectorLength": 14,
+          "layoutMode": "spiral",
+          "ringOffset": 12,
+          "rotationJitter": 0,
+          "sizeJitter": 0,
+          "countJitter": 0
         }
       },
       {
@@ -1072,14 +1172,23 @@
         "preset_system": "petalisDesigner",
         "group": "Organic",
         "params": {
-          "petalProfile": "lanceolate",
+          "petalProfile": "oval",
           "petalScale": 24,
           "petalWidthRatio": 0.42,
           "count": 160,
           "spiralTightness": 1.2,
           "edgeWaveAmp": 0,
           "centerType": "dome",
-          "centerRadius": 6
+          "centerRadius": 6,
+          "layoutMode": "spiral",
+          "ringMode": "dual",
+          "innerCount": 70,
+          "outerCount": 90,
+          "ringSplit": 0.3,
+          "ringOffset": 12,
+          "rotationJitter": 0,
+          "sizeJitter": 0,
+          "countJitter": 0
         }
       },
       {
@@ -1097,7 +1206,16 @@
           "centerType": "disk",
           "centerRadius": 9,
           "outerShading": true,
-          "outerDensity": 0.35
+          "outerDensity": 0.35,
+          "layoutMode": "whorl",
+          "ringMode": "dual",
+          "innerCount": 0,
+          "outerCount": 5,
+          "ringSplit": 0.45,
+          "ringOffset": 0,
+          "rotationJitter": 0,
+          "sizeJitter": 0,
+          "countJitter": 0
         }
       },
       {
@@ -1106,7 +1224,7 @@
         "preset_system": "petalisDesigner",
         "group": "Complex",
         "params": {
-          "petalProfile": "lanceolate",
+          "petalProfile": "dagger",
           "petalScale": 36,
           "petalWidthRatio": 0.38,
           "count": 280,
@@ -1114,7 +1232,16 @@
           "edgeWaveFreq": 6,
           "centerType": "filament",
           "centerRadius": 10,
-          "centerDensity": 40
+          "centerDensity": 40,
+          "layoutMode": "spiral",
+          "ringMode": "dual",
+          "innerCount": 120,
+          "outerCount": 160,
+          "ringSplit": 0.35,
+          "ringOffset": 12,
+          "rotationJitter": 0,
+          "sizeJitter": 0,
+          "countJitter": 0
         }
       },
       {
@@ -1131,7 +1258,12 @@
           "innerCount": 120,
           "outerCount": 160,
           "ringSplit": 0.4,
-          "centerType": "dome"
+          "centerType": "dome",
+          "layoutMode": "spiral",
+          "ringOffset": 12,
+          "rotationJitter": 0,
+          "sizeJitter": 0,
+          "countJitter": 0
         }
       },
       {
@@ -1143,13 +1275,18 @@
           "petalProfile": "heart",
           "petalScale": 34,
           "petalWidthRatio": 0.6,
-          "count": 160,
+          "count": 5,
           "centerSizeMorph": -0.4,
           "centerShapeMorph": 0.4,
           "ringMode": "dual",
-          "innerCount": 60,
-          "outerCount": 120,
-          "ringSplit": 0.32
+          "innerCount": 0,
+          "outerCount": 5,
+          "ringSplit": 0.45,
+          "layoutMode": "whorl",
+          "ringOffset": 0,
+          "rotationJitter": 0,
+          "sizeJitter": 0,
+          "countJitter": 0
         }
       },
       {
@@ -1161,11 +1298,20 @@
           "petalProfile": "spoon",
           "petalScale": 44,
           "petalWidthRatio": 0.6,
-          "count": 60,
+          "count": 6,
           "budMode": true,
           "budRadius": 0.22,
           "centerType": "disk",
-          "centerRadius": 5
+          "centerRadius": 5,
+          "layoutMode": "whorl",
+          "ringMode": "dual",
+          "innerCount": 3,
+          "outerCount": 3,
+          "ringSplit": 0.5,
+          "ringOffset": 60,
+          "rotationJitter": 0,
+          "sizeJitter": 0,
+          "countJitter": 0
         }
       },
       {
@@ -1181,7 +1327,16 @@
           "outerShading": true,
           "outerDensity": 0.5,
           "centerType": "disk",
-          "centerRadius": 7
+          "centerRadius": 7,
+          "layoutMode": "spiral",
+          "ringMode": "dual",
+          "innerCount": 100,
+          "outerCount": 140,
+          "ringSplit": 0.4,
+          "ringOffset": 12,
+          "rotationJitter": 0,
+          "sizeJitter": 0,
+          "countJitter": 0
         }
       },
       {

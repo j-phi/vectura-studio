@@ -19,7 +19,16 @@
         "edgeWaveAmp": 0.08,
         "edgeWaveFreq": 5,
         "innerShading": true,
-        "innerDensity": 0.55
+        "innerDensity": 0.55,
+        "layoutMode": "spiral",
+        "ringMode": "dual",
+        "innerCount": 160,
+        "outerCount": 220,
+        "ringSplit": 0.35,
+        "ringOffset": 12,
+        "rotationJitter": 0,
+        "sizeJitter": 0,
+        "countJitter": 0
       }
     }
   ]

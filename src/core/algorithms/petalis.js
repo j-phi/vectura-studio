@@ -1578,6 +1578,11 @@
     const petalSteps = clamp(Math.round(p.petalSteps ?? 28), 12, 80);
     const rotationJitter = toRad(p.rotationJitter ?? 0);
     const sizeJitter = clamp(p.sizeJitter ?? 0, 0, 0.6);
+    // Layout mode gates the per-petal angle + radius math. 'whorl' (default)
+    // lays each band's petals at even TAU/count spacing on a constant per-band
+    // radius (clean concentric rings). 'spiral' is the verbatim golden-angle
+    // Vogel packing — correct for dense composites (dahlia/chrysanthemum).
+    const layoutMode = p.layoutMode === 'spiral' ? 'spiral' : 'whorl';
     const spiralMode = p.spiralMode || 'golden';
     const baseAngle = toRad(spiralMode === 'custom' ? p.customAngle ?? GOLDEN_ANGLE : GOLDEN_ANGLE);
     const spiralTightness = Math.max(0.5, p.spiralTightness ?? 1);
@@ -1594,7 +1599,15 @@
       0.1,
       0.9
     );
-    const ringSplit = designerDualRing ? designerCountSplit : clamp(p.ringSplit ?? 0.5, 0.1, 0.9);
+    // In whorl mode the ring radius must be count-INDEPENDENT (a clean ring at
+    // a predictable radius), so honour p.ringSplit directly. In spiral mode it
+    // stays count-derived to preserve dense-bloom band placement.
+    const ringSplit =
+      layoutMode === 'whorl'
+        ? clamp(p.ringSplit ?? 0.45, 0.1, 0.9)
+        : designerDualRing
+        ? designerCountSplit
+        : clamp(p.ringSplit ?? 0.5, 0.1, 0.9);
     const ringOffset = toRad(p.ringOffset ?? 0);
     const driftStrength = clamp(p.driftStrength ?? 0, 0, 1);
     const driftNoise = Math.max(0.01, p.driftNoise ?? 0.2);
@@ -1618,19 +1631,25 @@
     const getRingSymmetry = (ringTarget) =>
       ringTarget === 'inner' ? designerInnerSymmetry : designerOuterSymmetry;
 
+    // Whorl mode allows an empty inner (or outer) band — e.g. a single ring of
+    // petals around a center. Spiral mode keeps the legacy floor of 1.
+    const countFloor = layoutMode === 'whorl' ? 0 : 1;
+    const innerSplitR = visibleMaxR * ringSplit;
     const ringDefs =
       ringMode === 'dual'
         ? [
             {
-              count: Math.max(1, Math.round((p.innerCount ?? 0) * (1 + rng.nextRange(-countJitter, countJitter)))),
+              count: Math.max(countFloor, Math.round((p.innerCount ?? 0) * (1 + rng.nextRange(-countJitter, countJitter)))),
               minR: 0,
-              maxR: visibleMaxR * ringSplit,
+              maxR: innerSplitR,
+              midR: innerSplitR / 2,
               offset: 0,
             },
             {
-              count: Math.max(1, Math.round((p.outerCount ?? 0) * (1 + rng.nextRange(-countJitter, countJitter)))),
-              minR: visibleMaxR * ringSplit,
+              count: Math.max(countFloor, Math.round((p.outerCount ?? 0) * (1 + rng.nextRange(-countJitter, countJitter)))),
+              minR: innerSplitR,
               maxR: visibleMaxR,
+              midR: (innerSplitR + visibleMaxR) / 2,
               offset: ringOffset,
             },
           ]
@@ -1644,6 +1663,7 @@
               ),
               minR: 0,
               maxR: visibleMaxR,
+              midR: visibleMaxR / 2,
               offset: 0,
             },
           ];
@@ -1651,7 +1671,7 @@
     const totalRingCount = ringDefs.reduce((sum, ring) => sum + Math.max(0, ring.count || 0), 0);
     let ringProgressOffset = 0;
     ringDefs.forEach((ring, ringIndex) => {
-      const { count, minR, maxR, offset } = ring;
+      const { count, minR, maxR, offset, midR } = ring;
       const ringTarget = ringMode === 'dual' ? (ringIndex === 0 ? 'inner' : 'outer') : singleRingTarget;
       const ringSymmetry = getRingSymmetry(ringTarget);
       const ringShadingStack = getRingShadingStack(ringTarget);
@@ -1683,7 +1703,12 @@
       for (let i = 0; i < count; i++) {
         const t = count <= 1 ? 0.5 : i / (count - 1);
         const spiralT = lerp(spiralMin, spiralMax, Math.pow(t, spiralTightness));
-        const radial = lerp(minR, maxR, spiralT) * radialGrowth;
+        // Whorl: every petal in a band shares the band's constant radius (clean
+        // ring). Spiral: radius ramps with petal index (Vogel spiral).
+        const radial =
+          layoutMode === 'whorl'
+            ? midR * radialGrowth
+            : lerp(minR, maxR, spiralT) * radialGrowth;
         const radialProgress = clamp(radial / Math.max(1e-6, visibleMaxR), 0, 1);
         const countProgress = totalRingCount <= 1 ? 0.5 : (ringProgressOffset + i) / Math.max(1, totalRingCount - 1);
         const transitionBasis = designerDualRing ? countProgress : radialProgress;
@@ -1705,7 +1730,14 @@
             worldX: center.x,
             worldY: center.y,
           });
-        let angle = baseAngle * i + offset + drift;
+        // Whorl: even angular spacing TAU/count, with `offset` (0 for the inner
+        // band, ringOffset for the outer) giving a quincuncial interleave — the
+        // wrapping gap is exactly TAU/count, so no petal juts out alone.
+        // Spiral: cumulative golden/custom angle (Vogel packing) — unchanged.
+        let angle =
+          layoutMode === 'whorl'
+            ? offset + (count > 0 ? (TAU * i) / count : 0) + drift
+            : baseAngle * i + offset + drift;
         angle += (rng.nextFloat() - 0.5) * rotationJitter;
         const centerFactor = clamp(1 - radialBase / Math.max(1, visibleMaxR), 0, 1);
         const morphCurve = Math.pow(centerFactor, p.centerSizeCurve ?? 1);

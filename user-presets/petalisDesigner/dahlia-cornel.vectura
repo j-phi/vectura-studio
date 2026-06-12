@@ -23,7 +23,12 @@
         "innerShading": true,
         "innerDensity": 0.6,
         "outerShading": true,
-        "outerDensity": 0.4
+        "outerDensity": 0.4,
+        "layoutMode": "spiral",
+        "ringOffset": 12,
+        "rotationJitter": 0,
+        "sizeJitter": 0,
+        "countJitter": 0
       }
     }
   ]

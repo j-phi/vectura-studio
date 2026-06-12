@@ -25,8 +25,15 @@ const SCENARIOS = [
     type: 'petalisDesigner',
     seed: 303,
     overrides: {
-      count: 95,
-      ringMode: 'single',
+      // Representative double-whorl flower: two clean concentric rings with a
+      // quincuncial phase offset — exercises the whorl layout (even TAU/count
+      // spacing, constant per-ring radius) that is the default since v1.1.78.
+      layoutMode: 'whorl',
+      innerCount: 6,
+      outerCount: 12,
+      ringSplit: 0.45,
+      ringOffset: 15,
+      radialGrowth: 1,
       centerDensity: 12,
       centerRing: false,
       centerConnectors: false,

@@ -23,7 +23,12 @@
         "centerType": "disk",
         "centerRadius": 6,
         "innerShading": true,
-        "innerDensity": 0.5
+        "innerDensity": 0.5,
+        "layoutMode": "spiral",
+        "ringOffset": 12,
+        "rotationJitter": 0,
+        "sizeJitter": 0,
+        "countJitter": 0
       }
     }
   ]

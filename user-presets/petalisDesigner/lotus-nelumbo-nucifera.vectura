@@ -24,7 +24,12 @@
         "centerRadius": 10,
         "centerConnectors": true,
         "connectorCount": 24,
-        "connectorLength": 14
+        "connectorLength": 14,
+        "layoutMode": "spiral",
+        "ringOffset": 12,
+        "rotationJitter": 0,
+        "sizeJitter": 0,
+        "countJitter": 0
       }
     }
   ]

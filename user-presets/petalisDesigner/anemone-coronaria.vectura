@@ -12,16 +12,25 @@
     {
       "type": "petalisDesigner",
       "params": {
-        "petalProfile": "oval",
+        "petalProfile": "rounded",
         "petalScale": 36,
         "petalWidthRatio": 0.62,
-        "count": 120,
+        "count": 7,
         "centerType": "starburst",
         "centerRadius": 8,
         "centerDensity": 40,
         "centerConnectors": true,
         "connectorCount": 32,
-        "connectorLength": 12
+        "connectorLength": 12,
+        "layoutMode": "whorl",
+        "ringMode": "dual",
+        "innerCount": 0,
+        "outerCount": 7,
+        "ringSplit": 0.45,
+        "ringOffset": 0,
+        "rotationJitter": 0,
+        "sizeJitter": 0,
+        "countJitter": 0
       }
     }
   ]

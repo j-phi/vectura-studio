@@ -12,7 +12,7 @@
     {
       "type": "petalisDesigner",
       "params": {
-        "petalProfile": "lanceolate",
+        "petalProfile": "dagger",
         "petalScale": 36,
         "petalWidthRatio": 0.38,
         "count": 280,
@@ -20,7 +20,16 @@
         "edgeWaveFreq": 6,
         "centerType": "filament",
         "centerRadius": 10,
-        "centerDensity": 40
+        "centerDensity": 40,
+        "layoutMode": "spiral",
+        "ringMode": "dual",
+        "innerCount": 120,
+        "outerCount": 160,
+        "ringSplit": 0.35,
+        "ringOffset": 12,
+        "rotationJitter": 0,
+        "sizeJitter": 0,
+        "countJitter": 0
       }
     }
   ]

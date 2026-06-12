@@ -19,7 +19,16 @@
         "outerShading": true,
         "outerDensity": 0.5,
         "centerType": "disk",
-        "centerRadius": 7
+        "centerRadius": 7,
+        "layoutMode": "spiral",
+        "ringMode": "dual",
+        "innerCount": 100,
+        "outerCount": 140,
+        "ringSplit": 0.4,
+        "ringOffset": 12,
+        "rotationJitter": 0,
+        "sizeJitter": 0,
+        "countJitter": 0
       }
     }
   ]

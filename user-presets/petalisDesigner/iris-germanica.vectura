@@ -15,11 +15,19 @@
         "petalProfile": "lanceolate",
         "petalScale": 40,
         "petalWidthRatio": 0.4,
-        "count": 90,
+        "count": 6,
         "tipTwist": 0.8,
-        "rotationJitter": 14,
+        "rotationJitter": 0,
         "centerType": "disk",
-        "centerRadius": 5
+        "centerRadius": 5,
+        "layoutMode": "whorl",
+        "ringMode": "dual",
+        "innerCount": 3,
+        "outerCount": 3,
+        "ringSplit": 0.5,
+        "ringOffset": 60,
+        "sizeJitter": 0,
+        "countJitter": 0
       }
     }
   ]

@@ -15,11 +15,20 @@
         "petalProfile": "spoon",
         "petalScale": 44,
         "petalWidthRatio": 0.6,
-        "count": 60,
+        "count": 6,
         "budMode": true,
         "budRadius": 0.22,
         "centerType": "disk",
-        "centerRadius": 5
+        "centerRadius": 5,
+        "layoutMode": "whorl",
+        "ringMode": "dual",
+        "innerCount": 3,
+        "outerCount": 3,
+        "ringSplit": 0.5,
+        "ringOffset": 60,
+        "rotationJitter": 0,
+        "sizeJitter": 0,
+        "countJitter": 0
       }
     }
   ]

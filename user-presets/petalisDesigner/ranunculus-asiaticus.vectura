@@ -20,7 +20,12 @@
         "innerCount": 120,
         "outerCount": 160,
         "ringSplit": 0.4,
-        "centerType": "dome"
+        "centerType": "dome",
+        "layoutMode": "spiral",
+        "ringOffset": 12,
+        "rotationJitter": 0,
+        "sizeJitter": 0,
+        "countJitter": 0
       }
     }
   ]

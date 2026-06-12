@@ -308,10 +308,11 @@ describe('Petalis profile transitions', () => {
     expect(lowGrowthAssignments.filter((entry) => entry === 'outer')).toHaveLength(base.outerCount);
   });
 
-  test('petalis designer ignores ringSplit for dual-ring transitions', () => {
+  test('petalis designer profile transition is count-derived, not ringSplit-derived (ringSplit drives whorl radius)', () => {
     const { Algorithms, ALGO_DEFAULTS, SeededRNG, SimpleNoise } = runtime.window.Vectura;
     const base = {
       ...clone(ALGO_DEFAULTS.petalisDesigner || {}),
+      layoutMode: 'whorl',
       ringMode: 'dual',
       innerCount: 12,
       outerCount: 16,
@@ -345,9 +346,29 @@ describe('Petalis profile transitions', () => {
     };
     const render = (params, seed = 7771) =>
       Algorithms.petalisDesigner.generate(params, new SeededRNG(seed), new SimpleNoise(seed), bounds) || [];
+    const classify = (params) => {
+      const mixedOutlines = extractOutlines(render(clone(params)));
+      const innerOnlyOutlines = extractOutlines(
+        render({ ...clone(params), profileTransitionFeather: 0, designerOuter: clone(INNER_PROFILE) })
+      );
+      const outerOnlyOutlines = extractOutlines(
+        render({ ...clone(params), profileTransitionFeather: 0, designerInner: clone(OUTER_PROFILE) })
+      );
+      return classifyDesignerAssignments({ mixedOutlines, innerOnlyOutlines, outerOnlyOutlines });
+    };
+
+    // Which profile each petal uses is decided by the inner/outer COUNT split,
+    // independent of ringSplit — so the per-petal profile assignment is the
+    // same at ringSplit 0.2 and 0.8.
+    const lowAssignments = classify({ ...clone(base), ringSplit: 0.2 });
+    const highAssignments = classify({ ...clone(base), ringSplit: 0.8 });
+    expect(highAssignments).toEqual(lowAssignments);
+    expect(lowAssignments.filter((e) => e === 'inner')).toHaveLength(base.innerCount);
+    expect(lowAssignments.filter((e) => e === 'outer')).toHaveLength(base.outerCount);
+
+    // But ringSplit now drives the whorl ring RADIUS, so the geometry differs.
     const lowSplit = render({ ...clone(base), ringSplit: 0.2 });
     const highSplit = render({ ...clone(base), ringSplit: 0.8 });
-
-    expect(pathSignature(lowSplit)).toBe(pathSignature(highSplit));
+    expect(pathSignature(lowSplit)).not.toBe(pathSignature(highSplit));
   });
 });

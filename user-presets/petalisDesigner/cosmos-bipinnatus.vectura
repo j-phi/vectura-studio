@@ -12,14 +12,23 @@
     {
       "type": "petalisDesigner",
       "params": {
-        "petalProfile": "lanceolate",
+        "petalProfile": "spatulate",
         "petalScale": 38,
         "petalWidthRatio": 0.45,
         "count": 8,
         "spiralMode": "custom",
         "customAngle": 45,
         "centerType": "dot",
-        "centerRadius": 7
+        "centerRadius": 7,
+        "layoutMode": "whorl",
+        "ringMode": "dual",
+        "innerCount": 0,
+        "outerCount": 8,
+        "ringSplit": 0.45,
+        "ringOffset": 0,
+        "rotationJitter": 0,
+        "sizeJitter": 0,
+        "countJitter": 0
       }
     }
   ]

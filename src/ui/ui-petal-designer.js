@@ -107,17 +107,19 @@
   const PETAL_DESIGNER_PROFILE_BUNDLE_KEY = 'PETAL_PROFILE_LIBRARY';
   const PETAL_DESIGNER_WIDTH_MATCH_BASELINE = 0.85;
 
+  // Whorl mode uses small per-ring counts (iris=3) and allows an empty inner
+  // ring (innerCount 0), so the designer count floors are 0/1, not 5.
   const PETALIS_DESIGNER_DEFAULT_INNER_COUNT = Math.round(
-    clamp(ALGO_DEFAULTS?.petalisDesigner?.innerCount ?? 20, 5, 400)
+    clamp(ALGO_DEFAULTS?.petalisDesigner?.innerCount ?? 0, 0, 400)
   );
   const PETALIS_DESIGNER_DEFAULT_OUTER_COUNT = Math.round(
-    clamp(ALGO_DEFAULTS?.petalisDesigner?.outerCount ?? 20, 5, 600)
+    clamp(ALGO_DEFAULTS?.petalisDesigner?.outerCount ?? 6, 1, 600)
   );
   const PETALIS_DESIGNER_DEFAULT_COUNT = Math.round(
     clamp(
       ALGO_DEFAULTS?.petalisDesigner?.count ??
         PETALIS_DESIGNER_DEFAULT_INNER_COUNT + PETALIS_DESIGNER_DEFAULT_OUTER_COUNT,
-      5,
+      1,
       800
     )
   );
@@ -780,10 +782,10 @@
       const activeTarget = shapeTarget === 'outer' ? 'outer' : 'inner';
       const defaultSymmetry = this.normalizeDesignerSymmetryMode(params.designerSymmetry);
       const innerCount = Math.round(
-        clamp(params.innerCount ?? params.count ?? PETALIS_DESIGNER_DEFAULT_INNER_COUNT, 5, 400)
+        clamp(params.innerCount ?? params.count ?? PETALIS_DESIGNER_DEFAULT_INNER_COUNT, 0, 400)
       );
       const outerCount = Math.round(
-        clamp(params.outerCount ?? PETALIS_DESIGNER_DEFAULT_OUTER_COUNT, 5, 600)
+        clamp(params.outerCount ?? PETALIS_DESIGNER_DEFAULT_OUTER_COUNT, 1, 600)
       );
       const countSplit = innerCount / Math.max(1, innerCount + outerCount);
       const transitionPosition = clamp(countSplit * 100, 0, 100);
@@ -801,7 +803,9 @@
         designerSymmetry: defaultSymmetry,
         innerSymmetry: this.normalizeDesignerSymmetryMode(params.designerInnerSymmetry ?? defaultSymmetry),
         outerSymmetry: this.normalizeDesignerSymmetryMode(params.designerOuterSymmetry ?? defaultSymmetry),
-        count: Math.round(clamp(params.count ?? innerCount, 5, 800)),
+        count: Math.round(clamp(params.count ?? innerCount, 1, 800)),
+        layoutMode: params.layoutMode === 'spiral' ? 'spiral' : 'whorl',
+        ringSplit: clamp(params.ringSplit ?? 0.45, 0.1, 0.9),
         innerCount,
         outerCount,
         profileTransitionPosition: transitionPosition,
@@ -1127,12 +1131,12 @@
           <label class="petal-slider-label" data-petal-inner-count-wrap>
             <span>Inner Petal Count</span>
             <span class="petal-slider-value" data-petal-slider-value="inner-count" data-petal-slider-precision="0"></span>
-            <input type="range" min="5" max="400" step="1" data-petal-inner-count>
+            <input type="range" min="0" max="400" step="1" data-petal-inner-count>
           </label>
           <label class="petal-slider-label" data-petal-outer-count-wrap>
             <span>Outer Petal Count</span>
             <span class="petal-slider-value" data-petal-slider-value="outer-count" data-petal-slider-precision="0"></span>
-            <input type="range" min="5" max="600" step="1" data-petal-outer-count>
+            <input type="range" min="1" max="600" step="1" data-petal-outer-count>
           </label>
           <label class="petal-slider-label" data-petal-split-feather-wrap>
             <span>Split Feathering</span>
@@ -1276,11 +1280,11 @@
       if (!state) return 0.5;
       const inner = Math.max(
         0,
-        Math.round(clamp(state.innerCount ?? state.count ?? PETALIS_DESIGNER_DEFAULT_INNER_COUNT, 5, 400))
+        Math.round(clamp(state.innerCount ?? state.count ?? PETALIS_DESIGNER_DEFAULT_INNER_COUNT, 0, 400))
       );
       const outer = Math.max(
         0,
-        Math.round(clamp(state.outerCount ?? PETALIS_DESIGNER_DEFAULT_OUTER_COUNT, 5, 600))
+        Math.round(clamp(state.outerCount ?? PETALIS_DESIGNER_DEFAULT_OUTER_COUNT, 1, 600))
       );
       const total = inner + outer;
       if (total <= 0) return 0.5;
@@ -2061,12 +2065,12 @@
       pd.state.outerSymmetry = outerSymmetry;
       pd.state.designerSymmetry = this.getPetalDesignerSymmetryForSide(pd.state, side);
       pd.state.viewStyle = this.normalizePetalDesignerViewStyle(pd.state.viewStyle);
-      pd.state.count = Math.round(clamp(pd.state.count ?? PETALIS_DESIGNER_DEFAULT_COUNT, 5, 800));
+      pd.state.count = Math.round(clamp(pd.state.count ?? PETALIS_DESIGNER_DEFAULT_COUNT, 1, 800));
       pd.state.innerCount = Math.round(
-        clamp(pd.state.innerCount ?? pd.state.count ?? PETALIS_DESIGNER_DEFAULT_INNER_COUNT, 5, 400)
+        clamp(pd.state.innerCount ?? pd.state.count ?? PETALIS_DESIGNER_DEFAULT_INNER_COUNT, 0, 400)
       );
       pd.state.outerCount = Math.round(
-        clamp(pd.state.outerCount ?? PETALIS_DESIGNER_DEFAULT_OUTER_COUNT, 5, 600)
+        clamp(pd.state.outerCount ?? PETALIS_DESIGNER_DEFAULT_OUTER_COUNT, 1, 600)
       );
       this.syncPetalDesignerTransitionFromCounts(pd.state);
       pd.state.profileTransitionFeather = clamp(pd.state.profileTransitionFeather ?? 0, 0, 100);
@@ -2140,7 +2144,7 @@
         const onInnerCount = (live = false) => {
           const next = Number.parseFloat(innerCountInput.value);
           if (!Number.isFinite(next)) return;
-          pd.state.innerCount = Math.round(clamp(next, 5, 400));
+          pd.state.innerCount = Math.round(clamp(next, 0, 400));
           this.syncPetalDesignerControls(pd);
           applyChanges({ live });
         };
@@ -2151,7 +2155,7 @@
         const onOuterCount = (live = false) => {
           const next = Number.parseFloat(outerCountInput.value);
           if (!Number.isFinite(next)) return;
-          pd.state.outerCount = Math.round(clamp(next, 5, 600));
+          pd.state.outerCount = Math.round(clamp(next, 1, 600));
           this.syncPetalDesignerControls(pd);
           applyChanges({ live });
         };
@@ -3713,9 +3717,17 @@
       params.petalShape = state.activeTarget;
       params.petalRing = state.activeTarget;
       params.ringMode = 'dual';
+      const layoutMode = state.layoutMode === 'spiral' ? 'spiral' : 'whorl';
+      params.layoutMode = layoutMode;
       params.innerCount = state.innerCount;
       params.outerCount = state.outerCount;
-      params.ringSplit = countSplit;
+      // In whorl mode the ring radius is count-INDEPENDENT, so honour the
+      // explicit ringSplit (don't clobber it with the count-derived split,
+      // which would warp the ring radii). Spiral keeps the count-derived split.
+      params.ringSplit =
+        layoutMode === 'whorl'
+          ? clamp(state.ringSplit ?? params.ringSplit ?? 0.45, 0.1, 0.9)
+          : countSplit;
       params.innerOuterLock = Boolean(state.innerOuterLock);
       params.profileTransitionPosition = clamp(state.profileTransitionPosition ?? countSplit * 100, 0, 100);
       params.profileTransitionFeather = clamp(state.profileTransitionFeather ?? 0, 0, 100);

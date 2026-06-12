@@ -12,14 +12,23 @@
     {
       "type": "petalisDesigner",
       "params": {
-        "petalProfile": "heart",
+        "petalProfile": "oval",
         "petalScale": 38,
         "petalWidthRatio": 0.7,
-        "count": 80,
+        "count": 5,
         "centerType": "dot",
         "centerRadius": 6,
         "innerShading": true,
-        "innerDensity": 0.4
+        "innerDensity": 0.4,
+        "layoutMode": "whorl",
+        "ringMode": "dual",
+        "innerCount": 0,
+        "outerCount": 5,
+        "ringSplit": 0.45,
+        "ringOffset": 0,
+        "rotationJitter": 0,
+        "sizeJitter": 0,
+        "countJitter": 0
       }
     }
   ]
