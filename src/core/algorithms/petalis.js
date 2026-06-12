@@ -184,33 +184,64 @@
     return [path];
   };
 
-  const profileBase = (t, type) => {
-    const s = Math.sin(Math.PI * t);
-    switch (type) {
-      case 'oval':
-        return s;
-      case 'teardrop':
-        return s * (1 - 0.35 * t);
-      case 'lanceolate':
-        return Math.pow(s, 1.4);
-      case 'heart':
-        return s * (1 + 0.25 * Math.sin(2 * Math.PI * t));
-      case 'spoon':
-        return s * (0.7 + 0.3 * (1 - t)) + 0.08 * Math.sin(Math.PI * t);
-      case 'rounded':
-        return Math.pow(s, 0.7);
-      case 'notched':
-        return s * (1 - 0.25 * Math.sin(Math.PI * t));
-      case 'spatulate':
-        return s * (0.5 + 0.5 * t);
-      case 'marquise':
-        return Math.pow(s, 1.9) * (1 + 0.12 * Math.cos(Math.PI * t));
-      case 'dagger':
-        return Math.pow(s, 2.6);
-      default:
-        return s;
-    }
+  // Petal silhouette library. Each profile is a smooth, CONVEX half-width(t)
+  // curve (t: 0 = base/attachment, 1 = apex/tip) built from a peak-shifted sine
+  // so the widest point sits where that morphology actually bulges — ovate
+  // petals widest below the middle, spatulate/obovate widest near the tip, etc.
+  // `round` < 1 = fuller/blunter margin, > 1 = narrower/more acute. `notch`
+  // carves a soft apical cleft (obcordate / emarginate). This replaces the old
+  // bezier-times-sharpness^2.6 construction that collapsed every profile into an
+  // identical concave 4-pointed star.
+  const PETAL_SHAPES = {
+    // peak  = where the petal is widest (0 base .. 1 tip)
+    // round = margin fullness (<1 blunt/full, >1 acute/narrow)
+    // claw  = base-neck fraction (larger = longer slender attachment)
+    // notch = apical cleft depth (heart / obcordate)
+    oval: { peak: 0.5, round: 0.62, claw: 0.1 },
+    rounded: { peak: 0.5, round: 0.44, claw: 0.08 },
+    teardrop: { peak: 0.42, round: 0.74, claw: 0.16 },
+    ovate: { peak: 0.4, round: 0.8, claw: 0.18 },
+    lanceolate: { peak: 0.34, round: 1.45, claw: 0.22 },
+    marquise: { peak: 0.5, round: 1.5, claw: 0.2 },
+    dagger: { peak: 0.28, round: 2.0, claw: 0.24 },
+    spatulate: { peak: 0.72, round: 0.7, claw: 0.26 },
+    spoon: { peak: 0.74, round: 0.5, claw: 0.2 },
+    heart: { peak: 0.66, round: 0.56, claw: 0.18, notch: 0.6 },
+    notched: { peak: 0.58, round: 0.58, claw: 0.14, notch: 0.4 },
   };
+
+  const smoothstep01 = (x) => {
+    const c = clamp(x, 0, 1);
+    return c * c * (3 - 2 * c);
+  };
+
+  const petalShape = (t, type) => {
+    const s = PETAL_SHAPES[type] || PETAL_SHAPES.oval;
+    const m = s.peak;
+    // Peak-shifted argument: maps [0,m]->[0,0.5] and [m,1]->[0.5,1] so sin() peaks at t=m.
+    const g =
+      t <= m
+        ? 0.5 * (t / Math.max(1e-4, m))
+        : 0.5 + 0.5 * ((t - m) / Math.max(1e-4, 1 - m));
+    let w = Math.pow(Math.max(0, Math.sin(Math.PI * g)), s.round);
+    // Base claw: real petals attach at a narrowed neck, not a blunt balloon.
+    // Suppress the half-width over the first ~claw fraction of the length so the
+    // base tapers to a slender stalk (and, in a flower, the bases converge on
+    // the receptacle instead of jamming as fat blocks).
+    const clawEnd = s.claw ?? 0.16;
+    if (clawEnd > 0) w *= 0.06 + 0.94 * smoothstep01(t / clawEnd);
+    if (s.notch) {
+      // Bilobed apex: pinch the half-width over the last ~16% so the two margins
+      // dip toward the centreline and read as a heart/obcordate cleft.
+      const n = clamp((t - 0.84) / 0.16, 0, 1);
+      w *= 1 - s.notch * Math.pow(n, 1.4);
+    }
+    return w;
+  };
+
+  // Kept for callers that sample width along the petal (shading, non-designer
+  // path). Now delegates to the unified convex shape library.
+  const profileBase = (t, type) => petalShape(t, type);
 
   const sharpnessExponent = (t, sharpness) => {
     const amt = clamp(sharpness ?? 0, 0, 1);
@@ -275,54 +306,25 @@
       leafSideHandle,
       leafTipHandle,
     } = opts;
-    const safeSteps = Math.max(8, Math.round(steps));
-    const halfSteps = Math.max(4, Math.round(safeSteps / 2));
-    const sidePos = clamp(leafSidePos ?? 0.45, 0.12, 0.88);
+    const safeSteps = Math.max(16, Math.round(steps));
     const sideWidth = clamp(leafSideWidth ?? 1, 0.2, 2);
-    const maxHalf = Math.max(0.5, (widthRatio * length * 0.5) * sideWidth);
-    const baseHandle = clamp(leafBaseHandle ?? 0.35, 0, 1) * length * 0.5;
-    const sideHandle = clamp(leafSideHandle ?? 0.4, 0, 1) * maxHalf;
-    const tipHandle = clamp(leafTipHandle ?? 0.35, 0, 1) * length * 0.5;
-    const sideX = length * sidePos;
-    const isOval = profile === 'oval' || centerProfile === 'oval';
-    const baseHandleX = isOval ? 0 : baseHandle;
-    const baseHandleY = isOval ? maxHalf * clamp(leafBaseHandle ?? 0.35, 0, 1) : 0;
-    const tipCtrlX = isOval ? length : Math.max(sideX + 0.5, length - tipHandle);
-    const tipCtrlY = isOval ? maxHalf * clamp(leafTipHandle ?? 0.35, 0, 1) : 0;
-
-    const seg1 = [
-      { x: 0, y: 0 },
-      { x: baseHandleX, y: baseHandleY },
-      { x: sideX, y: Math.max(0, maxHalf - sideHandle) },
-      { x: sideX, y: maxHalf },
-    ];
-    const seg2 = [
-      { x: sideX, y: maxHalf },
-      { x: sideX, y: maxHalf + sideHandle },
-      { x: tipCtrlX, y: tipCtrlY },
-      { x: length, y: 0 },
-    ];
+    const maxHalf = Math.max(0.5, widthRatio * length * 0.5 * sideWidth);
+    // sharpness gently tunes overall pointiness without producing cusps: 0.5 is
+    // neutral, higher = a touch more acute, lower = blunter.
+    const sharpAdj = lerp(0.78, 1.28, clamp(sharpness ?? 0.5, 0, 1));
     const points = [];
-    for (let i = 0; i <= halfSteps; i++) {
-      const t = i / halfSteps;
-      points.push(cubicBezierPoint(seg1[0], seg1[1], seg1[2], seg1[3], t));
-    }
-    for (let i = 1; i <= halfSteps; i++) {
-      const t = i / halfSteps;
-      points.push(cubicBezierPoint(seg2[0], seg2[1], seg2[2], seg2[3], t));
-    }
-    const adjusted = points.map((pt) => {
-      const t = clamp(pt.x / Math.max(1, length), 0, 1);
-      const base = profileBase(t, profile);
-      const center = profileBase(t, centerProfile || profile);
-      let scale = lerp(base, center, morphWeight);
-      const sharpPow = sharpnessExponent(t, sharpness);
-      scale = Math.pow(Math.max(0, scale), sharpPow);
+    for (let i = 0; i <= safeSteps; i++) {
+      const t = i / safeSteps;
+      let w = petalShape(t, profile);
+      if (centerProfile && centerProfile !== profile && morphWeight > 0) {
+        w = lerp(w, petalShape(t, centerProfile), clamp(morphWeight, 0, 1));
+      }
+      w = Math.pow(Math.max(0, w), sharpAdj);
       const baseFactor = 1 + (baseFlare - basePinch) * Math.pow(1 - t, 2);
       const waveFactor = waveAmp > 0 ? 1 + waveAmp * Math.sin(TAU * t * waveFreq + wavePhase) : 1;
-      return { x: pt.x, y: Math.max(0, pt.y * scale * baseFactor * waveFactor) };
-    });
-    return adjusted;
+      points.push({ x: t * length, y: Math.max(0, maxHalf * w * baseFactor * waveFactor) });
+    }
+    return points;
   };
 
   const buildDesignerProfile = (designer, length, widthRatio, steps = 32) => {
@@ -1711,9 +1713,24 @@
           ];
 
     const totalRingCount = ringDefs.reduce((sum, ring) => sum + Math.max(0, ring.count || 0), 0);
+    // Whorl base radii: anchor the innermost POPULATED ring at the receptacle,
+    // then step each further populated ring outward by a fraction of the petal
+    // length so successive whorls layer with overlap — a packed corolla rather
+    // than a detached pinwheel floating off the centre. radialGrowth opens or
+    // tightens the spacing (1 = default), independent of the spiral-mode meaning.
+    if (layoutMode === 'whorl') {
+      // ringSplit controls how far successive whorls spread (layer spacing):
+      // tighter = packed rosette, wider = open layered bloom.
+      const whorlStep = baseLength * (0.25 + 0.5 * ringSplit);
+      let baseR = anchorRadius;
+      ringDefs.forEach((ring) => {
+        ring.baseR = baseR;
+        if ((ring.count || 0) > 0) baseR += whorlStep;
+      });
+    }
     let ringProgressOffset = 0;
     ringDefs.forEach((ring, ringIndex) => {
-      const { count, minR, maxR, offset, midR } = ring;
+      const { count, minR, maxR, offset, midR, baseR } = ring;
       const ringTarget = ringMode === 'dual' ? (ringIndex === 0 ? 'inner' : 'outer') : singleRingTarget;
       const ringSymmetry = getRingSymmetry(ringTarget);
       const ringShadingStack = getRingShadingStack(ringTarget);
@@ -1745,11 +1762,13 @@
       for (let i = 0; i < count; i++) {
         const t = count <= 1 ? 0.5 : i / (count - 1);
         const spiralT = lerp(spiralMin, spiralMax, Math.pow(t, spiralTightness));
-        // Whorl: every petal in a band shares the band's constant radius (clean
-        // ring). Spiral: radius ramps with petal index (Vogel spiral).
+        // Whorl: every petal in a ring shares the ring's constant base radius
+        // (anchored near the receptacle, layered outward). Spiral: radius ramps
+        // with petal index (Vogel spiral). `radial` is expressed relative to the
+        // receptacle so radialBase = anchorRadius + radial stays consistent.
         const radial =
           layoutMode === 'whorl'
-            ? midR * radialGrowth
+            ? Math.max(0, (baseR ?? anchorRadius) - anchorRadius)
             : lerp(minR, maxR, spiralT) * radialGrowth;
         const radialProgress = clamp(radial / Math.max(1e-6, visibleMaxR), 0, 1);
         const countProgress = totalRingCount <= 1 ? 0.5 : (ringProgressOffset + i) / Math.max(1, totalRingCount - 1);

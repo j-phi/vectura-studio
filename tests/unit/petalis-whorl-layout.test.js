@@ -50,6 +50,9 @@ const petalPolar = (paths) =>
       const c = centroid(p);
       let a = Math.atan2(c.y - CENTER.y, c.x - CENTER.x);
       if (a < 0) a += TAU;
+      // Snap a petal sitting at angle ~0 that floating-point wrapped to ~TAU
+      // back to ~0 so radius/angle sorting stays stable.
+      if (a >= TAU - 1e-3) a -= TAU;
       return { angle: a, radius: Math.hypot(c.x - CENTER.x, c.y - CENTER.y) };
     });
 
@@ -133,9 +136,12 @@ describe('Petalis Whorl layout mode', () => {
     expect(a[0].radius).toBeCloseTo(b[0].radius, 5);
   });
 
-  test('7 — spiral mode is byte-identical to pre-change golden behavior', () => {
-    // Oracle captured on main (no layoutMode key) for this exact dual config.
-    const SPIRAL_ORACLE = '4f9c285976866e09ff50a14b5a08331d08995c79ba608c7617db826e9d922979';
+  test('7 — spiral mode output is stable (golden packing, not whorl)', () => {
+    // Regression oracle for spiral-mode geometry. Originally proved the whorl
+    // layout change left spiral byte-identical to main; re-captured at v1.1.82
+    // when the petal-shape model was rewritten (which intentionally changes ALL
+    // petal geometry, both modes). Guards spiral packing against future drift.
+    const SPIRAL_ORACLE = '5e9b98dac90c8128fcef09837fb76718279779261a9d8df6277911bc73aa6ff9';
     const spiralParams = {
       seed: 4242, posX: 0, posY: 0, scaleX: 1, scaleY: 1, rotation: 0, smoothing: 0, simplify: 0,
       layoutMode: 'spiral',
