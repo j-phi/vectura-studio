@@ -4,16 +4,21 @@ const path = require('path');
 const vm = require('vm');
 
 /**
- * Regression: BEVELED / ROUNDED polygons collapsed the morph to triangles.
+ * Regression: BEVELED / ROUNDED polygons must not collapse or twist in a morph.
  *
- * The corner-matched morph picks an anchor count K ≈ the busier source's
- * structural corner count. `cornerCountOf` returned the count of SHARP anchors
- * for a handle-less polygon, but FELL THROUGH to geometric turn-counting once a
- * corner gained bezier handles (a bevel/round). Geometric counting spreads each
- * rounded corner over many sub-threshold vertices and finds ~0 corners, so a
- * rounded hexagon → 0, K floored to 3, and every in-between ring became a
- * TRIANGLE regardless of the real shape. A rounded hexagon has the same six
- * structural corners as a sharp one — the bevel only softens them.
+ * History: the corner-matched morph once floored a rounded hexagon to a 3-anchor
+ * TRIANGLE (cornerCountOf undercounted handle-carrying corners — fixed v1.1.78).
+ * Then the sparse corner-matched path itself proved harmful for fully-SMOOTH
+ * shapes: it over-rounded them toward circles and, because a rounded polygon and
+ * a circle sample to mismatched anchor rings, the in-between rings TWISTED
+ * (v1.1.89 regression). The resolution: the sparse corner-matched path now runs
+ * ONLY when the pair has a genuinely sharp corner to preserve; two smooth shapes
+ * (rounded/beveled-with-curves polygon + circle) blend through the DENSE path —
+ * smooth, faithful, no triangle collapse, no twist, no anchors.
+ *
+ * A real bevel (a straight chamfer) leaves SHARP anchors (null handles) at the
+ * chamfer ends, so a beveled polygon still routes through the sparse path; only a
+ * corner ROUND (tangential handles) is fully smooth and routes dense.
  */
 describe('morph modifier — beveled/rounded polygon corner count', () => {
   let runtime;
@@ -93,19 +98,47 @@ describe('morph modifier — beveled/rounded polygon corner count', () => {
       .filter((p) => !(p.meta && (p.meta.morphFill || p.meta.paintBucketFillId)));
   };
   const anchorCount = (ring) => (ring.meta && Array.isArray(ring.meta.anchors) ? ring.meta.anchors.length : 0);
+  const open = (ring) => {
+    if (ring.length > 1) {
+      const f = ring[0];
+      const l = ring[ring.length - 1];
+      if (Math.hypot(f.x - l.x, f.y - l.y) < 1e-9) return ring.slice(0, -1);
+    }
+    return ring;
+  };
+  // Min radius / mean radius — collapses (triangle pinch) or twists drop this low.
+  const minRadiusFrac = (ring) => {
+    const r = open(ring);
+    let cx = 0;
+    let cy = 0;
+    r.forEach((p) => { cx += p.x; cy += p.y; });
+    cx /= r.length;
+    cy /= r.length;
+    const rs = r.map((p) => Math.hypot(p.x - cx, p.y - cy));
+    const mean = rs.reduce((a, b) => a + b, 0) / rs.length;
+    return Math.min(...rs) / mean;
+  };
 
-  test('rounded hexagon → circle does NOT collapse to triangles', () => {
+  test('rounded hexagon → circle does NOT collapse or twist (dense, smooth, faithful)', () => {
     const rings = morph(roundedHex(700, 300, 80, 6, 0));
     expect(rings.length).toBe(5);
     rings.forEach((ring) => {
-      // A triangle ring carries 3 anchors; a hexagon-faithful ring keeps ~6.
-      expect(anchorCount(ring)).toBeGreaterThanOrEqual(5);
+      // Smooth shapes go through the DENSE path → no bezier anchors, no triangle.
+      expect(anchorCount(ring)).toBe(0);
+      // A 3-anchor triangle collapse (or a twist) pinches the radius; a faithful
+      // hexagon blend stays plump.
+      expect(open(ring).length).toBeGreaterThan(12);
+      expect(minRadiusFrac(ring)).toBeGreaterThan(0.6);
     });
   });
 
-  test('rounded and sharp hexagons morph to the same anchor count (bevel only softens corners)', () => {
+  test('a SHARP hexagon still routes through the corner-matched path (keeps its corners)', () => {
+    // The gate must not over-disable: a genuinely sharp polygon → circle keeps the
+    // sparse, corner-preserving bezier path (anchored rings), unlike the smooth
+    // rounded hexagon which goes dense.
     const sharpRings = morph(sharpHex(700, 300, 80, 6, 0));
     const roundRings = morph(roundedHex(700, 300, 80, 6, 0));
-    expect(anchorCount(roundRings[0])).toBe(anchorCount(sharpRings[0]));
+    expect(anchorCount(sharpRings[0])).toBeGreaterThanOrEqual(5);
+    expect(anchorCount(roundRings[0])).toBe(0);
   });
 });

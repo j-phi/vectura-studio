@@ -144,35 +144,46 @@ describe('morph modifier — rounded polygon → circle stays smooth', () => {
     }
     return pts;
   };
-  // Corner fidelity = max/min radius from the centroid. A rounded polygon's corners
-  // sit farther out than its edge midpoints (ratio > 1); a circle is ~1. Arc-length
-  // corner sampling starved the corners and over-rounded every in-between ring into
-  // a near-circle (ratio ≈ 1.03) even when blending toward an obviously square shape
-  // — that washout, plus the overshoot it caused, is the "Corner Match" artifact.
-  // Curvature-weighted sampling lands anchors on the corners so they survive.
-  const cornerRatio = (ring) => {
-    const pts = sampleRingBezier(ring);
+  void sampleRingBezier; // (kept for ad-hoc bezier inspection; unused by asserts)
+  // Min radius from the centroid as a fraction of the mean. A clean convex blend
+  // ring stays well above ~0.5; a TWISTED / self-crossing ring (the corner-match
+  // failure where a curvature-sampled rounded polygon got index-corresponded
+  // against an evenly-sampled circle) pinches vertices toward the centre and this
+  // collapses. The robust "did it twist" guard.
+  const minRadiusFrac = (ring) => {
+    const r = open(ring);
     let cx = 0;
     let cy = 0;
-    pts.forEach((p) => { cx += p.x; cy += p.y; });
-    cx /= pts.length;
-    cy /= pts.length;
-    const rs = pts.map((p) => Math.hypot(p.x - cx, p.y - cy));
-    return Math.max(...rs) / Math.min(...rs);
+    r.forEach((p) => { cx += p.x; cy += p.y; });
+    cx /= r.length;
+    cy /= r.length;
+    const rs = r.map((p) => Math.hypot(p.x - cx, p.y - cy));
+    const mean = rs.reduce((a, b) => a + b, 0) / rs.length;
+    return Math.min(...rs) / mean;
   };
+  const hasAnchors = (ring) => !!(ring.meta && Array.isArray(ring.meta.anchors) && ring.meta.anchors.length);
 
-  test('RND-03: rounded square → circle — the near-square rings keep their corners', () => {
-    // morph(sides, r) chains rounded-poly (A) → circle (B); ring[0] is the most
-    // square. Arc-length sampling over-rounded it to ~1.03 (a circle); the
-    // curvature-sampled blend keeps a clearly square ratio.
+  test('RND-03: rounded square → circle — smooth, untwisted, routed through the dense path', () => {
+    // Two smooth closed shapes (rounded polygon + circle) must blend via the dense
+    // path. The sparse corner-matched path over-rounds them AND — because the two
+    // anchor rings sample differently — TWISTS the in-between rings (Corner Match
+    // looked worse than off). Dense rings carry no bezier anchors, stay smooth, and
+    // never pinch toward the centroid.
     const rings = morph(4, 45);
-    expect(cornerRatio(rings[0])).toBeGreaterThan(1.18);
-    // And every ring stays smooth (no overshoot spikes) — sparse-polyline turn.
-    rings.forEach((ring) => expect(maxTurn(ring)).toBeLessThan(25));
+    rings.forEach((ring) => {
+      expect(hasAnchors(ring)).toBe(false);              // dense path engaged
+      expect(maxTurn(ring)).toBeLessThan(25);            // smooth, no notch/kink
+      expect(minRadiusFrac(ring)).toBeGreaterThan(0.55); // convex, no twist
+    });
   });
 
-  test('RND-04: rounded triangle / pentagon → circle keep their corners too', () => {
-    expect(cornerRatio(morph(3, 30)[0])).toBeGreaterThan(1.25);
-    expect(cornerRatio(morph(5, 35)[0])).toBeGreaterThan(1.12);
+  test('RND-04: rounded triangle / pentagon / hexagon → circle stay smooth & untwisted', () => {
+    [[3, 30], [5, 35], [6, 40]].forEach(([sides, radius]) => {
+      morph(sides, radius).forEach((ring) => {
+        expect(hasAnchors(ring)).toBe(false);
+        expect(maxTurn(ring)).toBeLessThan(25);
+        expect(minRadiusFrac(ring)).toBeGreaterThan(0.5);
+      });
+    });
   });
 });
