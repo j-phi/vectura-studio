@@ -545,6 +545,9 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.1.76
+- **Click a group or Morph to select it — double-click to edit one piece inside.** A single click on a group (or a Morph modifier's blended output, now selectable on the canvas) selects the whole thing as one object you can move, resize, and rotate. **Double-click** an unlocked child to step inside and edit just that piece — drag, resize, or rotate it and a Morph re-blends live around your edit; the piece you're editing is outlined and the rest dims. Press **Esc** to step back out. Works just like Adobe Illustrator's group isolation.
+
 ### 1.1.75
 - **Morph in-between shapes are far cleaner.** Closed-shape morphs (e.g. hexagon → circle) no longer build every intermediate ring from 128 straight segments — each ring is now a corner-matched bézier shape (a hexagon↔circle keeps ~6 anchors and rounds smoothly), dropping ring point counts by ~5× for lighter, plotter-friendlier output while sharp corners stay sharp and curves stay smooth. Rings carry editable anchors. (Older behavior is still available via the morph's `cornerMatch` option.)
 - **Live morph preview while dragging.** Dragging a source layer inside a Morph group now updates the in-between rings in real time as you move it, instead of only snapping to the new morph when you release.
