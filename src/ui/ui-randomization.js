@@ -38,30 +38,62 @@
     },
 
     applyPetalisRandomBias(params) {
-      params.petalSteps = Math.round(clamp(params.petalSteps ?? 32, 14, 44));
-      params.count = Math.round(clamp(params.count ?? 240, 40, 360));
-      params.innerCount = Math.round(clamp(params.innerCount ?? 110, 20, 190));
-      params.outerCount = Math.round(clamp(params.outerCount ?? 170, 30, 250));
-      params.spiralTightness = clamp(params.spiralTightness ?? 1.2, 0.7, 5);
-      params.radialGrowth = clamp(params.radialGrowth ?? 1, 0.25, 3.2);
+      const rnd = () => Math.random();
+      const between = (lo, hi) => lo + rnd() * (hi - lo);
+      const intBetween = (lo, hi) => Math.round(between(lo, hi));
+      const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
+
+      params.petalSteps = intBetween(28, 48);
+      params.centerType = pick(['disk', 'disk', 'dome', 'starburst', 'dot']);
       params.centerDensity = Math.round(clamp(params.centerDensity ?? 40, 6, 85));
       params.connectorCount = Math.round(clamp(params.connectorCount ?? 20, 4, 70));
-      const designerDual = Boolean(
-        params.useDesignerShapeOnly || params.label === 'Petalis' || params.label === 'Petalis Designer'
-      );
-      const dualRings = designerDual ? true : params.ringMode === 'dual';
-      if (dualRings) {
-        const sum = (params.innerCount || 0) + (params.outerCount || 0);
-        const maxDual = 420;
-        if (sum > maxDual) {
-          const ratio = maxDual / Math.max(1, sum);
+      params.petalAsymmetry = rnd() < 0.55 ? intBetween(0, 45) : 0;
+
+      // Roughly half clean few-petal whorls, half dense phyllotactic blooms.
+      if (rnd() < 0.55) {
+        // WHORL flower — a clean, recognizable bloom.
+        params.layoutMode = 'whorl';
+        params.ringMode = 'dual';
+        params.petalProfile = pick(['oval', 'rounded', 'teardrop', 'heart', 'spatulate', 'spoon', 'lanceolate', 'marquise', 'notched']);
+        const single = rnd() < 0.55;
+        params.innerCount = single ? 0 : intBetween(3, 8);
+        params.outerCount = single ? intBetween(5, 13) : intBetween(5, 14);
+        params.ringSplit = clamp(between(0.3, 0.7), 0.15, 0.85);
+        params.ringOffset = params.innerCount > 0 && rnd() < 0.6 ? Math.round(360 / Math.max(1, params.outerCount) / 2) : 0;
+        params.petalScale = intBetween(26, 42);
+        params.petalWidthRatio = clamp(between(0.6, 0.95), 0.2, 1.4);
+        params.bloom = intBetween(55, 100);
+        // Often dress sparse whorls with venation.
+        if (rnd() < 0.45) {
+          params.shadings = [{
+            id: 'designer-shade-1', enabled: true, type: 'vein', target: 'both',
+            veinCount: intBetween(3, 6), veinReach: clamp(between(0.5, 0.7), 0.1, 0.95),
+            lineType: 'solid', lineSpacing: 1, density: 1, widthX: 100, widthY: 100,
+            posX: 50, posY: 50, gapX: 0, gapY: 0, gapPosX: 50, gapPosY: 50, jitter: 0, lengthJitter: 0, angle: 0,
+          }];
+        } else {
+          params.shadings = [];
+        }
+      } else {
+        // SPIRAL bloom — dense, phyllotactic (golden angle is correct here).
+        params.layoutMode = 'spiral';
+        params.ringMode = 'dual';
+        params.petalProfile = pick(['lanceolate', 'teardrop', 'dagger', 'oval', 'spoon']);
+        params.innerCount = intBetween(40, 180);
+        params.outerCount = intBetween(60, 260);
+        params.spiralTightness = clamp(between(0.8, 3.5), 0.7, 5);
+        params.radialGrowth = clamp(between(0.5, 2.6), 0.25, 3.2);
+        params.ringSplit = clamp(between(0.3, 0.55), 0.15, 0.85);
+        params.petalScale = intBetween(18, 30);
+        params.petalWidthRatio = clamp(between(0.45, 0.8), 0.2, 1.4);
+        params.bloom = 100;
+        params.shadings = [];
+        const sum = params.innerCount + params.outerCount;
+        if (sum > 420) {
+          const ratio = 420 / sum;
           params.innerCount = Math.max(20, Math.round(params.innerCount * ratio));
           params.outerCount = Math.max(30, Math.round(params.outerCount * ratio));
         }
-      }
-      if (Math.random() < 0.12) {
-        params.count = Math.round(clamp(params.count * 1.35, 60, 520));
-        params.petalSteps = Math.round(clamp(params.petalSteps + 6, 14, 56));
       }
     },
 
