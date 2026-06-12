@@ -229,7 +229,7 @@
       <div class="pane-header pane-header-left p-4 border-b border-vectura-border flex justify-between items-center">
         <span class="pane-title font-bold text-vectura-accent">GENERATOR</span>
 
-        <span class="pane-meta text-[11px] text-vectura-muted">V.1.1.76</span>
+        <span class="pane-meta text-[11px] text-vectura-muted">V.1.1.77</span>
 
         <button id="btn-pane-toggle-left" class="pane-toggle pane-toggle-left" type="button"
           aria-label="Toggle left pane">
@@ -822,7 +822,6 @@
   <script src="./src/ui/ui-randomization.js" defer></script>
   <script src="./src/ui/ui-fill-panel.js" defer></script>
   <script src="./src/ui/ui-pattern-designer.js" defer></script>
-  <script src="./src/ui/ui-petal-designer.js" defer></script>
   <!-- Phase 3 closure: ui-noise-rack.js dissolved into panels/noise-rack-panel.js. -->
   <script src="./src/ui/export-animated-svg.js" defer></script>
   <script src="./src/ui/ui-file-io.js" defer></script>
@@ -835,6 +834,10 @@
        into src/ui/ui.js (the consolidated runtime UI entry). -->
 
   <script src="./src/ui/panels/control-defs-data.js" defer></script>
+  <!-- ui-petal-designer.js binds shading/modifier factories from
+       ControlDefsData at IIFE time, so it must load AFTER control-defs-data.js
+       and before src/ui/ui.js (which mixes its methods into UI.prototype). -->
+  <script src="./src/ui/ui-petal-designer.js" defer></script>
   <script src="./src/ui/controls-registry.js" defer></script>
   <script src="./src/ui/panels/algo-config-panel.js" defer></script>
   <script src="./src/ui/shell/theme-switcher.js" defer></script>

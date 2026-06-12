@@ -22,6 +22,25 @@
     isPetalisLayerType = (type) => PETALIS_LAYER_TYPES.has(type),
   } = (window.Vectura && window.Vectura.PresetLibraries) || {};
 
+  // Shading/modifier stack factories + option lists live in ControlDefsData.
+  // ui.js binds these into its OWN closure; this mixin file runs as a separate
+  // IIFE, so it must bind them here too or every Add-Shading / Add-Modifier /
+  // non-empty-stack hydration path throws a ReferenceError on the bare symbol.
+  const _ControlDefsData =
+    (window.Vectura && window.Vectura.UI && window.Vectura.UI.ControlDefsData) || {};
+  const {
+    createPetalisShading = () => ({}),
+    createPetalModifier = () => ({}),
+    PETALIS_SHADING_TYPES = [],
+    PETALIS_LINE_TYPES = [],
+    PETALIS_PETAL_MODIFIER_TYPES = [],
+  } = _ControlDefsData;
+  if (!_ControlDefsData.createPetalisShading) {
+    console.warn(
+      '[UI] window.Vectura.UI.ControlDefsData missing — load src/ui/panels/control-defs-data.js before src/ui/ui-petal-designer.js'
+    );
+  }
+
   // Document-units adapter for petal-designer range controls. When a def opts
   // into millimetre semantics (via `unit: 'mm'` or `displayUnit: 'mm'`), this
   // returns an adapter that maps stored mm values to the document's current
