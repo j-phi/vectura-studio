@@ -81,6 +81,41 @@ describe('Morph refolds when a source child is reshaped via direct-select', () =
     expect(JSON.stringify(container.morphedPaths)).not.toBe(before);
   });
 
+  // Direct-select must be able to ENGAGE on an isolated morph end (the child is
+  // consumed, so findPathHitAtPoint can't grab it). Switching to the direct tool
+  // in morph isolation establishes a direct selection on the active end, and a
+  // morph-child hit-test lets clicks on the consumed geometry re-engage it.
+  test('switching to the direct tool while a morph end is isolated establishes a direct selection on it', async () => {
+    const { renderer, container, children } = await setup();
+    renderer.enterMorphEditMode(children[0], container);
+    renderer.setTool('direct');
+    expect(renderer.directSelection?.layerId).toBe(children[0].id);
+    expect(renderer.directSelection.anchors.length).toBeGreaterThanOrEqual(4);
+  });
+
+  test('_morphChildPathHit hits the isolated end\'s consumed source geometry', async () => {
+    const { renderer, container, children } = await setup();
+    renderer.enterMorphEditMode(children[0], container);
+    // child 0 is the square x[20,60] y[20,60]; (40,20) is on its top edge.
+    const hit = renderer._morphChildPathHit({ x: 40, y: 20 });
+    expect(hit && hit.layer).toBe(children[0]);
+    // Off all of the end's geometry → no hit.
+    expect(renderer._morphChildPathHit({ x: 500, y: 500 })).toBeNull();
+  });
+
+  test('reshaping an isolated end via the established direct selection refolds the blend', async () => {
+    const { renderer, container, children } = await setup();
+    const raf = installSyncRaf(runtime.window);
+    renderer.enterMorphEditMode(children[0], container);
+    renderer.setTool('direct');
+    const before = JSON.stringify(container.morphedPaths);
+    renderer.directSelection.anchors[0].x -= 20;
+    renderer.directSelection.anchors[0].y -= 20;
+    renderer.applyDirectPath();
+    raf.flush();
+    expect(JSON.stringify(container.morphedPaths)).not.toBe(before);
+  });
+
   test('non-morph layer edit does not schedule a morph refold (no needless recompute)', async () => {
     runtime = await loadVecturaRuntime({ includeRenderer: true });
     const { VectorEngine, Renderer, Layer } = runtime.window.Vectura;

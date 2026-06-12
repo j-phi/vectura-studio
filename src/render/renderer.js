@@ -582,6 +582,17 @@
         this.lassoPath = null;
       }
       this.activeTool = tool;
+      // Entering direct-select while a morph end is isolated: the active child's
+      // geometry is consumed (findPathHitAtPoint can't grab it), so establish a
+      // direct selection on it directly so its anchors and shape (bevel) corner
+      // handles are immediately visible and editable. Edits refold the blend via
+      // engine.generate() -> computeAllDisplayGeometry().
+      if (tool === 'direct' && this.groupEditMode?.kind === 'morph') {
+        const child = this.engine.layers.find((l) => l.id === this.groupEditMode.activeLayerId);
+        if (child && !child.isGroup && this.directSelection?.layerId !== child.id) {
+          this.setDirectSelection(child, 0);
+        }
+      }
       this.updateCursor();
       if (!['fill', 'fill-erase', 'fill-pattern', 'fill-pattern-erase'].includes(tool)) {
         this.hideFillLoupe?.();
@@ -3991,7 +4002,10 @@
             this.startDirectDrag(directControl, e);
             return;
           }
-          const hit = this.findPathHitAtPoint(world);
+          // Fall back to the isolated morph end's consumed geometry so the direct
+          // tool can engage it (findPathHitAtPoint reads getInteractionPaths,
+          // which is empty for a morph child).
+          const hit = this.findPathHitAtPoint(world) || this._morphChildPathHit(world);
           if (hit) {
             if (!this.selectedLayerIds.has(hit.layer.id)) this.selectLayer(hit.layer);
             const modifiers = this.getModifierState ? this.getModifierState(e) : { shift: e.shiftKey };
@@ -6032,6 +6046,48 @@
         if (d < bestDist) {
           bestDist = d;
           best = leaf;
+        }
+      });
+      return best;
+    }
+
+    // Hit-test the ACTIVE isolated morph end's own (consumed) geometry so the
+    // direct-select tool can engage it: findPathHitAtPoint reads
+    // getInteractionPaths, which is empty for a _morphConsumed child. Returns a
+    // findPathHitAtPoint-shaped result on the active child, or null. pathIndex is
+    // forced to 0 (a morph end is a single source shape) so it maps to the
+    // child's sourcePaths for setDirectSelection.
+    _morphChildPathHit(world) {
+      if (this.groupEditMode?.kind !== 'morph' || !world) return null;
+      const child = this.engine.layers.find((l) => l.id === this.groupEditMode.activeLayerId);
+      if (!child || child.isGroup) return null;
+      if (this.isLayerLocked?.(child.id)) return null;
+      const paths = (child.effectivePaths?.length ? child.effectivePaths : child.paths) || [];
+      const stroke = child.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
+      const tol = Math.max(2.5 / (this.scale || 1), stroke * 2);
+      const tolSq = tol * tol;
+      let best = null;
+      let bestDistSq = Infinity;
+      paths.forEach((path) => {
+        if (path && path.meta && path.meta.kind === 'circle') {
+          const cx = path.meta.cx ?? path.meta.x ?? 0;
+          const cy = path.meta.cy ?? path.meta.y ?? 0;
+          const r = path.meta.r ?? Math.max(path.meta.rx ?? 0, path.meta.ry ?? 0);
+          const dist = Math.abs(Math.hypot(world.x - cx, world.y - cy) - r);
+          const dSq = dist * dist;
+          if (dSq <= tolSq && dSq < bestDistSq) {
+            bestDistSq = dSq;
+            best = { layer: child, pathIndex: 0, path, segmentIndex: 0, point: { x: world.x, y: world.y }, distSq: dSq };
+          }
+          return;
+        }
+        if (!Array.isArray(path) || path.length < 2) return;
+        for (let i = 0; i < path.length - 1; i++) {
+          const d = this.distanceToSegmentSq(world, path[i], path[i + 1]);
+          if (d <= tolSq && d < bestDistSq) {
+            bestDistSq = d;
+            best = { layer: child, pathIndex: 0, path, segmentIndex: i, point: { x: world.x, y: world.y }, distSq: d };
+          }
         }
       });
       return best;

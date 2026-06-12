@@ -251,7 +251,7 @@
       ${accordion('Organizing Layers', layerOrgRows, true)}
       ${accordion('Stack Order', layerStackRows)}
       ${accordion('Wallpaper Modifier', wallpaperRows)}
-      ${callout('Drag a layer into a <strong>Mirror Modifier</strong> to reflect it symmetrically. Enable <strong>Mask</strong> on a parent layer to clip all nested children inside its silhouette. <strong>Single-click</strong> a group or Morph to select it as one object; <strong>double-click</strong> to step inside and edit one unlocked child (the Morph re-blends live); <strong>Esc</strong> steps back out.')}`;
+      ${callout('Drag a layer into a <strong>Mirror Modifier</strong> to reflect it symmetrically. Enable <strong>Mask</strong> on a parent layer to clip all nested children inside its silhouette. <strong>Single-click</strong> a group or Morph to select it as one object; <strong>double-click</strong> to step inside and edit one unlocked child (the Morph re-blends live); switch to the <strong>direct-select</strong> tool to reshape that end’s points or bevel; <strong>Esc</strong> steps back out.')}`;
 
     /* -- Pen -- */
     const penDrawRows = `
