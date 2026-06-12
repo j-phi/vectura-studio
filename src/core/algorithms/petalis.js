@@ -1270,6 +1270,32 @@
   const bboxIntersects = (a, b) =>
     !(a.maxX < b.minX || a.minX > b.maxX || a.maxY < b.minY || a.minY > b.maxY);
 
+  // Precompute a polygon's closed edges with a per-edge AABB. clipSegmentOutside
+  // is the dominant cost when petal count is high (each petal outline is clipped
+  // against every overlapping occluder, ~O(n) of them, so the whole pass is
+  // O(n^2)). Caching the edges + their boxes once per occluder lets the clip skip
+  // — with a cheap box reject — the vast majority of occluder edges nowhere near
+  // a given segment, instead of running full intersection math on all of them.
+  // The set of edges actually tested for intersection is unchanged, so output is
+  // identical; only the wasted intersection tests are removed.
+  const buildOccluderEdges = (poly) => {
+    const edges = [];
+    const n = poly.length;
+    for (let i = 0; i < n; i++) {
+      const a = poly[i];
+      const b = poly[(i + 1) % n];
+      edges.push({
+        a,
+        b,
+        minX: a.x < b.x ? a.x : b.x,
+        maxX: a.x > b.x ? a.x : b.x,
+        minY: a.y < b.y ? a.y : b.y,
+        maxY: a.y > b.y ? a.y : b.y,
+      });
+    }
+    return edges;
+  };
+
   const pointInPoly = (pt, poly) => {
     let inside = false;
     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -1380,21 +1406,34 @@
 
   const clipSegmentOutside = (a, b, occluders) => {
     if (!occluders.length) return [[a, b]];
-    const segBox = bboxFromPoints([a, b]);
+    const segMinX = a.x < b.x ? a.x : b.x;
+    const segMaxX = a.x > b.x ? a.x : b.x;
+    const segMinY = a.y < b.y ? a.y : b.y;
+    const segMaxY = a.y > b.y ? a.y : b.y;
     const intersections = [];
-    const insideAny = (pt) => occluders.some((occ) => pointInPoly(pt, occ.points));
+    // A point outside an occluder's bbox cannot be inside that occluder, so the
+    // bbox guard skips the pointInPoly walk for occluders the point misses.
+    const insideAny = (pt) =>
+      occluders.some((occ) => {
+        const ob = occ.bbox;
+        if (pt.x < ob.minX || pt.x > ob.maxX || pt.y < ob.minY || pt.y > ob.maxY) return false;
+        return pointInPoly(pt, occ.points);
+      });
 
-    occluders.forEach((occ) => {
-      if (!bboxIntersects(segBox, occ.bbox)) return;
-      const pts = occ.points;
-      const count = pts.length;
-      for (let i = 0; i < count; i++) {
-        const p1 = pts[i];
-        const p2 = pts[(i + 1) % count];
-        const hit = segmentIntersection(a, b, p1, p2);
+    for (let o = 0; o < occluders.length; o++) {
+      const occ = occluders[o];
+      const ob = occ.bbox;
+      if (segMaxX < ob.minX || segMinX > ob.maxX || segMaxY < ob.minY || segMinY > ob.maxY) continue;
+      const edges = occ.edges || buildOccluderEdges(occ.points);
+      for (let i = 0; i < edges.length; i++) {
+        const e = edges[i];
+        // Per-edge AABB reject: the bulk of an occluder's edges sit far from any
+        // single segment, so this cheap test removes most intersection math.
+        if (segMaxX < e.minX || segMinX > e.maxX || segMaxY < e.minY || segMinY > e.maxY) continue;
+        const hit = segmentIntersection(a, b, e.a, e.b);
         if (hit && hit.t > 1e-6 && hit.t < 1 - 1e-6) intersections.push(hit.t);
       }
-    });
+    }
     const ts = [0, 1, ...intersections].sort((x, y) => x - y);
     const uniq = [];
     ts.forEach((t) => {
@@ -1463,16 +1502,23 @@
     return output;
   };
 
-  const clipSegmentInsidePolygon = (a, b, polygon) => {
+  // polyBox/edges may be precomputed once by the caller (the same polygon is
+  // reused across every segment of every shading line) — recomputing the
+  // polygon bbox + edge list per segment was a measurable cost on shaded petals.
+  const clipSegmentInsidePolygon = (a, b, polygon, polyBox, edges) => {
     if (!Array.isArray(polygon) || polygon.length < 3) return [[a, b]];
-    const segBox = bboxFromPoints([a, b]);
-    const polyBox = bboxFromPoints(polygon);
-    if (!bboxIntersects(segBox, polyBox)) return [];
+    const box = polyBox || bboxFromPoints(polygon);
+    const segMinX = a.x < b.x ? a.x : b.x;
+    const segMaxX = a.x > b.x ? a.x : b.x;
+    const segMinY = a.y < b.y ? a.y : b.y;
+    const segMaxY = a.y > b.y ? a.y : b.y;
+    if (segMaxX < box.minX || segMinX > box.maxX || segMaxY < box.minY || segMinY > box.maxY) return [];
+    const polyEdges = edges || buildOccluderEdges(polygon);
     const intersections = [];
-    for (let i = 0; i < polygon.length; i++) {
-      const p1 = polygon[i];
-      const p2 = polygon[(i + 1) % polygon.length];
-      const hit = segmentIntersection(a, b, p1, p2);
+    for (let i = 0; i < polyEdges.length; i++) {
+      const e = polyEdges[i];
+      if (segMaxX < e.minX || segMinX > e.maxX || segMaxY < e.minY || segMinY > e.maxY) continue;
+      const hit = segmentIntersection(a, b, e.a, e.b);
       if (hit && hit.t > 1e-6 && hit.t < 1 - 1e-6) intersections.push(hit.t);
     }
     const ts = [0, 1, ...intersections].sort((x, y) => x - y);
@@ -1496,9 +1542,11 @@
     return segments;
   };
 
-  const clipPathInsidePolygon = (path, polygon) => {
+  const clipPathInsidePolygon = (path, polygon, polyBox, edges) => {
     if (!Array.isArray(path) || path.length < 2) return [];
     if (!Array.isArray(polygon) || polygon.length < 3) return [path];
+    const box = polyBox || bboxFromPoints(polygon);
+    const polyEdges = edges || buildOccluderEdges(polygon);
     const output = [];
     let current = [];
     const eps = 1e-4;
@@ -1514,7 +1562,7 @@
     for (let i = 0; i < path.length - 1; i++) {
       const a = path[i];
       const b = path[i + 1];
-      const pieces = clipSegmentInsidePolygon(a, b, polygon);
+      const pieces = clipSegmentInsidePolygon(a, b, polygon, box, polyEdges);
       if (!pieces.length) {
         if (current.length > 1) output.push(current);
         current = [];
@@ -1545,9 +1593,13 @@
 
   const clipPathsInsidePolygon = (paths, polygon) => {
     if (!Array.isArray(paths) || !paths.length) return [];
+    // The polygon (a petal outline) is identical for every shading line, so its
+    // bbox + edge list are built once here rather than per line, per segment.
+    const polyBox = Array.isArray(polygon) && polygon.length >= 3 ? bboxFromPoints(polygon) : null;
+    const polyEdges = polyBox ? buildOccluderEdges(polygon) : null;
     const output = [];
     paths.forEach((path) => {
-      const clipped = clipPathInsidePolygon(path, polygon);
+      const clipped = clipPathInsidePolygon(path, polygon, polyBox, polyEdges);
       clipped.forEach((seg) => {
         if (seg.length < 2) return;
         if (path.meta) seg.meta = { ...path.meta };
@@ -2009,7 +2061,12 @@
       };
       const bboxesOverlap = (a, b) =>
         a && b && a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY;
-      const asOccluder = (petal) => ({ points: petal.outline, bbox: petal.bbox, ringIndex: petal.ringIndex });
+      const asOccluder = (petal) => {
+        // Cache the edge list on the petal so it is built once, not rebuilt for
+        // every overlapping petal that clips against it.
+        if (!petal._occEdges) petal._occEdges = buildOccluderEdges(petal.outline);
+        return { points: petal.outline, bbox: petal.bbox, edges: petal._occEdges, ringIndex: petal.ringIndex };
+      };
       const renderPetal = (petal, clipOccluders) => {
         let shadingLines = petal.shading;
         if (p.lightSource) {
