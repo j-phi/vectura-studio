@@ -3731,7 +3731,9 @@
       params.innerOuterLock = Boolean(state.innerOuterLock);
       params.profileTransitionPosition = clamp(state.profileTransitionPosition ?? countSplit * 100, 0, 100);
       params.profileTransitionFeather = clamp(state.profileTransitionFeather ?? 0, 0, 100);
-      params.petalSteps = Math.max(64, Math.round(params.petalSteps ?? 64));
+      // Honour the petalSteps slider (12-80) instead of silently forcing >=64,
+      // which doubled plotter output and made the control read as a no-op.
+      params.petalSteps = clamp(Math.round(params.petalSteps ?? 32), 12, 80);
       params.petalProfile = state.outer.profile || params.petalProfile || 'teardrop';
       params.petalWidthRatio = Number.isFinite(params.petalWidthRatio) ? params.petalWidthRatio : 1;
       state.widthRatio = this.normalizePetalDesignerWidthRatio(params.petalWidthRatio, 1);

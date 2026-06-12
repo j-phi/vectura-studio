@@ -105,7 +105,17 @@
         }
         return;
       }
-      if (this.inlinePetalDesigner?.focused && !e.metaKey && !e.ctrlKey) {
+      // Let the inline Petal Designer capture plain keys only when the user is
+      // actually working inside it (its DOM holds focus / the event came from
+      // it). Previously a sticky `focused` flag — set on mount, never cleared —
+      // swallowed every non-modifier app shortcut whenever a petalis layer was
+      // merely active.
+      const inlineRoot = this.inlinePetalDesigner?.root;
+      const inInlineDesigner =
+        inlineRoot &&
+        (inlineRoot.contains(e.target) ||
+          (typeof document !== 'undefined' && inlineRoot.contains(document.activeElement)));
+      if (inInlineDesigner && !e.metaKey && !e.ctrlKey) {
         return;
       }
 
