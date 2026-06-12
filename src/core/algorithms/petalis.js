@@ -539,6 +539,27 @@
     return transformed;
   };
 
+  // A small deterministic LCG (same constants as SeededRNG) used to give the
+  // shading pass its OWN random stream per petal, so raising shading jitter or
+  // adding a stipple shade never re-rolls the shared layout RNG (which would
+  // visibly rearrange the whole flower). Seed is derived from the layer seed +
+  // the petal's global index.
+  const makeSubRng = (seed) => {
+    const m = 0x80000000;
+    const a = 1103515245;
+    const c = 12345;
+    let state = Math.abs(Math.floor(seed)) % m || 1;
+    return {
+      nextFloat() {
+        state = (a * state + c) % m;
+        return state / (m - 1);
+      },
+      nextRange(min, max) {
+        return min + this.nextFloat() * (max - min);
+      },
+    };
+  };
+
   const buildShadingLines = (opts) => {
     const {
       length,
@@ -573,7 +594,11 @@
     const lengthScale = tipLengthScale(tipCurl);
     const effectiveLength = Math.max(1, length * lengthScale);
 
-    const makeLine = (offset, tStart, tEnd, hatchAngle, gradient = 0, spiral = 0) => {
+    // A constant half-width band (nominal max), used by 'parallel' so its lines
+    // stay straight in petal-local space (clipped to the silhouette downstream)
+    // instead of following the width taper like 'radial'.
+    const flatHalf = (widthRatio * effectiveLength) / 2;
+    const makeLine = (offset, tStart, tEnd, hatchAngle, gradient = 0, spiral = 0, flat = false) => {
       const path = [];
       for (let i = 0; i <= steps; i++) {
         const tRaw = lerp(tStart, tEnd, i / steps);
@@ -594,7 +619,11 @@
             wavePhase,
           });
         }
-        const half = profilePoints && profilePoints.length ? w : (w * widthRatio * effectiveLength) / 2;
+        const half = flat
+          ? flatHalf
+          : profilePoints && profilePoints.length
+          ? w
+          : (w * widthRatio * effectiveLength) / 2;
         const g = gradient ? lerp(1, 0.4, t) : 1;
         const spiralOffset = spiral ? offset + t * 0.3 * spiral : offset;
         const curl = twist * effectiveLength * 0.02 * t * t;
@@ -651,7 +680,7 @@
       const density = Math.max(0.2, shade.density ?? 1);
       const span = Math.abs(offsetEnd - offsetStart) * halfWidth;
       const count = Math.max(1, Math.round((span / spacing) * density));
-      return { offsetStart, offsetEnd, gapStart, gapEnd, count };
+      return { offsetStart, offsetEnd, gapStart, gapEnd, count, hasYGap: gapY > 0 };
     };
 
     const buildRanges = (shade) => {
@@ -677,7 +706,7 @@
 
     active.forEach((shade) => {
       const halfWidth = (widthRatio * effectiveLength) / 2;
-      const { offsetStart, offsetEnd, gapStart, gapEnd, count } = buildOffsets(shade, halfWidth);
+      const { offsetStart, offsetEnd, gapStart, gapEnd, count, hasYGap } = buildOffsets(shade, halfWidth);
       const ranges = buildRanges(shade);
       const type = shade.type || 'radial';
       const hatchAngle = shade.angle ?? 0;
@@ -775,7 +804,10 @@
           offset += (rng.nextFloat() - 0.5) * jitter * 0.4;
         }
         offset = clamp(offset, -1, 1);
-        if (offset >= gapStart && offset <= gapEnd) continue;
+        // The Y-gap carves a band out of the hatch — but only when it has a
+        // nonzero width. With gapY:0 the window is a single point (default at
+        // offset 0), which used to silently delete the centerline.
+        if (hasYGap && offset >= gapStart && offset <= gapEnd) continue;
         if (type === 'chiaroscuro') {
           offset = lerp(offsetStart, offsetEnd, Math.pow(frac, 1.6));
         }
@@ -828,7 +860,17 @@
           } else if (type === 'crosshatch') {
             emitLine(makeLine(offset, t0, t1, hatchAngle, 0, 0));
             emitLine(makeLine(offset, t0, t1, hatchAngle + 90, 0, 0));
+          } else if (type === 'parallel') {
+            // Straight constant-width bands (do not follow the width taper),
+            // clipped to the silhouette downstream.
+            emitLine(makeLine(offset, t0, t1, hatchAngle, 0, 0, true));
+          } else if (type === 'edge') {
+            // Cluster lines toward the rim: map |offset| 0..1 -> 0.5..1 so the
+            // centre stays open and the petal margin is emphasised.
+            const eo = (offset >= 0 ? 1 : -1) * (0.5 + 0.5 * Math.abs(offset));
+            emitLine(makeLine(eo, t0, t1, hatchAngle, 0, 0));
           } else {
+            // 'radial' (and any unknown type): width-following hatch.
             const path = makeLine(offset, t0, t1, hatchAngle, 0, 0);
             emitLine(path);
           }
@@ -1847,7 +1889,9 @@
           tipTwist: tipRotate,
           tipCurl,
           curlBoost,
-          rng,
+          // Shading gets its own per-petal RNG stream, isolated from the layout
+          // RNG, so editing shading never rearranges the flower.
+          rng: makeSubRng((p.seed ?? 0) * 2654435761 + (ringProgressOffset + i) * 40503 + 17),
           noise,
           profilePoints,
         });
@@ -1888,7 +1932,13 @@
           shadingLines.forEach((line) => {
             const pieces = splitPathByShadow(line, p.lightSource, center, occluders);
             pieces.forEach((seg) => {
-              if (seg.length > 1) shadowed.push(seg);
+              if (seg.length > 1) {
+                // splitPathByShadow returns bare point arrays — re-tag with the
+                // line's group/label so layers-panel grouping and SVG export
+                // navigation survive lighting (mirrors clipPathsInsidePolygon).
+                if (line.meta) seg.meta = { ...line.meta };
+                shadowed.push(seg);
+              }
             });
           });
           shadingLines = shadowed;
