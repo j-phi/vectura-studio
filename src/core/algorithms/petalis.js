@@ -724,6 +724,41 @@
         });
       };
 
+      if (type === 'vein') {
+        // Botanical venation: a midrib down the petal axis plus secondary veins
+        // branching toward the margins. Lines are clipped to the petal outline
+        // downstream, so they read as the central vein + pinnate side veins.
+        emitLine(makeLine(0, 0.04, 0.95, hatchAngle, 0, 0));
+        const veinPairs = clamp(Math.round(shade.veinCount ?? 4), 0, 12);
+        const reach = clamp(shade.veinReach ?? 0.62, 0.1, 0.95);
+        const cosA = Math.cos(angle);
+        const sinA = Math.sin(angle);
+        const toWorld = (lx, ly) => ({ x: baseX + lx * cosA - ly * sinA, y: baseY + lx * sinA + ly * cosA });
+        for (let k = 1; k <= veinPairs; k++) {
+          const tb = lerp(0.12, 0.82, k / (veinPairs + 1));
+          const tt = Math.min(0.96, tb + 0.18);
+          const wTt =
+            profilePoints && profilePoints.length
+              ? sampleProfileWidth(tt * effectiveLength, profilePoints)
+              : widthAt(tt, {
+                  profile,
+                  centerProfile,
+                  morphWeight,
+                  sharpness: effectiveSharpness,
+                  baseFlare,
+                  basePinch,
+                  waveAmp,
+                  waveFreq,
+                  wavePhase,
+                });
+          const halfTt = profilePoints && profilePoints.length ? wTt : (wTt * widthRatio * effectiveLength) / 2;
+          [1, -1].forEach((sgn) => {
+            emitLine([toWorld(tb * effectiveLength, 0), toWorld(tt * effectiveLength, sgn * halfTt * reach)]);
+          });
+        }
+        return;
+      }
+
       if (type === 'outline' || type === 'rim' || type === 'contour') {
         const outline = buildPetal({
           length,

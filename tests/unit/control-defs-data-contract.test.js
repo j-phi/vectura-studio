@@ -137,7 +137,7 @@ describe('control-defs-data compile gate (Meridian Unit 1.5)', () => {
     expect(Array.isArray(ControlDefsData.PETALIS_PETAL_MODIFIER_TYPES)).toBe(true);
     expect(ControlDefsData.PETALIS_PETAL_MODIFIER_TYPES.length).toBe(6);
     expect(Array.isArray(ControlDefsData.PETALIS_SHADING_TYPES)).toBe(true);
-    expect(ControlDefsData.PETALIS_SHADING_TYPES.length).toBe(11);
+    expect(ControlDefsData.PETALIS_SHADING_TYPES.length).toBe(12);
     expect(Array.isArray(ControlDefsData.PETALIS_LINE_TYPES)).toBe(true);
     expect(ControlDefsData.PETALIS_LINE_TYPES.length).toBe(4);
 

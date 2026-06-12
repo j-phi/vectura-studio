@@ -1330,6 +1330,7 @@
     { value: 'crosshatch', label: 'Crosshatch' },
     { value: 'chiaroscuro', label: 'Chiaroscuro' },
     { value: 'contour', label: 'Contour Lines' },
+    { value: 'vein', label: 'Venation' },
   ];
 
   const PETALIS_LINE_TYPES = [

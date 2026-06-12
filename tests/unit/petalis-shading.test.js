@@ -97,6 +97,17 @@ describe('Petalis shading engine', () => {
     expect(edge).not.toBe(parallel);
   });
 
+  test('venation shading emits a midrib plus secondary veins, clipped to the petal', () => {
+    const oneVein = onlyShades(gen(base({ outerCount: 1, shadings: [shade({ type: 'vein', veinCount: 0 })] })));
+    const manyVeins = onlyShades(gen(base({ outerCount: 1, shadings: [shade({ type: 'vein', veinCount: 5 })] })));
+    // A bare midrib produces at least one line; secondary veins add more.
+    expect(oneVein.length).toBeGreaterThan(0);
+    expect(manyVeins.length).toBeGreaterThan(oneVein.length);
+    // Distinct from a radial hatch.
+    const radial = onlyShades(gen(base({ outerCount: 1, shadings: [shade({ type: 'radial' })] })));
+    expect(sig(manyVeins)).not.toBe(sig(radial));
+  });
+
   test('enabling a light source keeps group/label meta on shading paths', () => {
     // layering:false → no occluders → all shading is "lit" and passes through
     // splitPathByShadow, which rebuilt the path and dropped its meta.

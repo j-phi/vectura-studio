@@ -867,7 +867,31 @@
           "ringOffset": 0,
           "rotationJitter": 0,
           "sizeJitter": 0,
-          "countJitter": 0
+          "countJitter": 0,
+          "shadings": [
+            {
+              "id": "designer-shade-1",
+              "enabled": true,
+              "type": "vein",
+              "target": "both",
+              "veinCount": 4,
+              "veinReach": 0.6,
+              "lineType": "solid",
+              "lineSpacing": 1,
+              "density": 1,
+              "widthX": 100,
+              "widthY": 100,
+              "posX": 50,
+              "posY": 50,
+              "gapX": 0,
+              "gapY": 0,
+              "gapPosX": 50,
+              "gapPosY": 50,
+              "jitter": 0,
+              "lengthJitter": 0,
+              "angle": 0
+            }
+          ]
         }
       },
       {
@@ -941,7 +965,31 @@
           "ringOffset": 0,
           "rotationJitter": 0,
           "sizeJitter": 0,
-          "countJitter": 0
+          "countJitter": 0,
+          "shadings": [
+            {
+              "id": "designer-shade-1",
+              "enabled": true,
+              "type": "vein",
+              "target": "both",
+              "veinCount": 4,
+              "veinReach": 0.6,
+              "lineType": "solid",
+              "lineSpacing": 1,
+              "density": 1,
+              "widthX": 100,
+              "widthY": 100,
+              "posX": 50,
+              "posY": 50,
+              "gapX": 0,
+              "gapY": 0,
+              "gapPosX": 50,
+              "gapPosY": 50,
+              "jitter": 0,
+              "lengthJitter": 0,
+              "angle": 0
+            }
+          ]
         }
       },
       {
@@ -1113,7 +1161,31 @@
           "ringOffset": 0,
           "rotationJitter": 0,
           "sizeJitter": 0,
-          "countJitter": 0
+          "countJitter": 0,
+          "shadings": [
+            {
+              "id": "designer-shade-1",
+              "enabled": true,
+              "type": "vein",
+              "target": "both",
+              "veinCount": 5,
+              "veinReach": 0.6,
+              "lineType": "solid",
+              "lineSpacing": 1,
+              "density": 1,
+              "widthX": 100,
+              "widthY": 100,
+              "posX": 50,
+              "posY": 50,
+              "gapX": 0,
+              "gapY": 0,
+              "gapPosX": 50,
+              "gapPosY": 50,
+              "jitter": 0,
+              "lengthJitter": 0,
+              "angle": 0
+            }
+          ]
         }
       },
       {
@@ -1137,7 +1209,31 @@
           "ringSplit": 0.5,
           "ringOffset": 60,
           "sizeJitter": 0,
-          "countJitter": 0
+          "countJitter": 0,
+          "shadings": [
+            {
+              "id": "designer-shade-1",
+              "enabled": true,
+              "type": "vein",
+              "target": "both",
+              "veinCount": 5,
+              "veinReach": 0.6,
+              "lineType": "solid",
+              "lineSpacing": 1,
+              "density": 1,
+              "widthX": 100,
+              "widthY": 100,
+              "posX": 50,
+              "posY": 50,
+              "gapX": 0,
+              "gapY": 0,
+              "gapPosX": 50,
+              "gapPosY": 50,
+              "jitter": 0,
+              "lengthJitter": 0,
+              "angle": 0
+            }
+          ]
         }
       },
       {
@@ -1215,7 +1311,31 @@
           "ringOffset": 0,
           "rotationJitter": 0,
           "sizeJitter": 0,
-          "countJitter": 0
+          "countJitter": 0,
+          "shadings": [
+            {
+              "id": "designer-shade-1",
+              "enabled": true,
+              "type": "vein",
+              "target": "both",
+              "veinCount": 4,
+              "veinReach": 0.6,
+              "lineType": "solid",
+              "lineSpacing": 1,
+              "density": 1,
+              "widthX": 100,
+              "widthY": 100,
+              "posX": 50,
+              "posY": 50,
+              "gapX": 0,
+              "gapY": 0,
+              "gapPosX": 50,
+              "gapPosY": 50,
+              "jitter": 0,
+              "lengthJitter": 0,
+              "angle": 0
+            }
+          ]
         }
       },
       {
@@ -1286,7 +1406,31 @@
           "ringOffset": 0,
           "rotationJitter": 0,
           "sizeJitter": 0,
-          "countJitter": 0
+          "countJitter": 0,
+          "shadings": [
+            {
+              "id": "designer-shade-1",
+              "enabled": true,
+              "type": "vein",
+              "target": "both",
+              "veinCount": 4,
+              "veinReach": 0.6,
+              "lineType": "solid",
+              "lineSpacing": 1,
+              "density": 1,
+              "widthX": 100,
+              "widthY": 100,
+              "posX": 50,
+              "posY": 50,
+              "gapX": 0,
+              "gapY": 0,
+              "gapPosX": 50,
+              "gapPosY": 50,
+              "jitter": 0,
+              "lengthJitter": 0,
+              "angle": 0
+            }
+          ]
         }
       },
       {
@@ -1311,7 +1455,31 @@
           "ringOffset": 60,
           "rotationJitter": 0,
           "sizeJitter": 0,
-          "countJitter": 0
+          "countJitter": 0,
+          "shadings": [
+            {
+              "id": "designer-shade-1",
+              "enabled": true,
+              "type": "vein",
+              "target": "both",
+              "veinCount": 5,
+              "veinReach": 0.6,
+              "lineType": "solid",
+              "lineSpacing": 1,
+              "density": 1,
+              "widthX": 100,
+              "widthY": 100,
+              "posX": 50,
+              "posY": 50,
+              "gapX": 0,
+              "gapY": 0,
+              "gapPosX": 50,
+              "gapPosY": 50,
+              "jitter": 0,
+              "lengthJitter": 0,
+              "angle": 0
+            }
+          ]
         }
       },
       {
