@@ -89,4 +89,37 @@ describe('Petal Designer shading/modifier stacks', () => {
     expect(state.petalModifiers.length).toBe(1);
     app.ui.closePetalDesigner();
   });
+
+  test('opening the designer does NOT mutate a clean named-profile layer (non-destructive mount)', () => {
+    const Layer = window.Vectura.Layer;
+    const defaults = window.Vectura.ALGO_DEFAULTS.petalisDesigner;
+    const layer = new Layer(`test-mount-${Date.now()}`, 'petalisDesigner', 'MountRT');
+    // A clean named-profile flower (the default / a preset): no drawn profiles.
+    layer.params = JSON.parse(JSON.stringify(defaults));
+    app.engine.layers.push(layer);
+    app.engine.activeLayerId = layer.id;
+
+    const before = {
+      innerCount: layer.params.innerCount,
+      outerCount: layer.params.outerCount,
+      designerInner: layer.params.designerInner,
+      designerOuter: layer.params.designerOuter,
+      petalProfile: layer.params.petalProfile,
+      petalSteps: layer.params.petalSteps,
+      rotationJitter: layer.params.rotationJitter,
+    };
+
+    app.ui.openPetalDesigner({ layer });
+
+    // Mounting the designer must not bump counts, synthesize drawn profiles,
+    // re-inject jitter, or force petalSteps. (Pre-fix it became 5/6 with
+    // designerInner/Outer set to 4-anchor drawn shapes → lumpy extra petals.)
+    expect(layer.params.innerCount).toBe(before.innerCount);
+    expect(layer.params.outerCount).toBe(before.outerCount);
+    expect(layer.params.designerInner ?? null).toBe(null);
+    expect(layer.params.designerOuter ?? null).toBe(null);
+    expect(layer.params.petalProfile).toBe(before.petalProfile);
+    expect(layer.params.rotationJitter ?? 0).toBe(0);
+    app.ui.closePetalDesigner();
+  });
 });

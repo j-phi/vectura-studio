@@ -2249,7 +2249,7 @@
       this.bindPetalDesignerUI(this.petalDesigner);
       this.bindPetalDesignerCanvases(this.petalDesigner);
       this.bindPetalDesignerShortcuts(this.petalDesigner);
-      this.applyPetalDesignerToLayer(state);
+      this.applyPetalDesignerToLayer(state, { mount: true });
       this.renderPetalDesigner(this.petalDesigner);
     },
 
@@ -2343,7 +2343,7 @@
       this.bindPetalDesignerUI(pd, { refreshControls: false });
       this.bindPetalDesignerCanvases(pd, { refreshControls: false });
       this.bindPetalDesignerShortcuts(pd, { allowClose: false, requireFocus: true });
-      this.applyPetalDesignerToLayer(state, { refreshControls: false });
+      this.applyPetalDesignerToLayer(state, { refreshControls: false, mount: true });
       this.renderPetalDesigner(pd);
     },
 
@@ -2428,6 +2428,19 @@
       const { refreshControls = true } = options;
       const applyChanges = (opts = {}) => {
         const live = Boolean(opts.live);
+        // Drawing on the profile canvas is the signal that this side is now a
+        // hand-drawn profile (so it persists as designerInner/Outer rather than
+        // falling back to the named profile).
+        if (pd.state) {
+          if (pd.state.innerOuterLock) {
+            pd.state.innerProfileEdited = true;
+            pd.state.outerProfileEdited = true;
+          } else if (pd.state.activeTarget === 'outer') {
+            pd.state.outerProfileEdited = true;
+          } else {
+            pd.state.innerProfileEdited = true;
+          }
+        }
         this.applyPetalDesignerToLayer(pd.state, {
           refreshControls: !live && refreshControls,
           persistState: !live,
@@ -3657,7 +3670,7 @@
     },
 
     applyPetalDesignerToLayer(state, options = {}) {
-      const { refreshControls = true, persistState = true } = options;
+      const { refreshControls = true, persistState = true, mount = false } = options;
       if (!state) return;
       const layer = this.getLayerById(state.layerId);
       if (!layer || !isPetalisLayerType(layer.type)) return;
@@ -3676,14 +3689,14 @@
       state.innerCount = Math.round(
         clamp(
           state.innerCount ?? params.innerCount ?? PETALIS_DESIGNER_DEFAULT_INNER_COUNT,
-          5,
+          0,
           400
         )
       );
       state.outerCount = Math.round(
         clamp(
           state.outerCount ?? params.outerCount ?? PETALIS_DESIGNER_DEFAULT_OUTER_COUNT,
-          5,
+          1,
           600
         )
       );
@@ -3692,21 +3705,32 @@
       state.count = Math.round(
         clamp(
           state.innerCount + state.outerCount,
-          5,
+          1,
           800
         )
       );
       state.seed = Math.round(clamp(state.seed ?? params.seed ?? 1, 0, 9999));
-      state.countJitter = clamp(state.countJitter ?? params.countJitter ?? 0.1, 0, 0.5);
-      state.sizeJitter = clamp(state.sizeJitter ?? params.sizeJitter ?? 0.12, 0, 0.5);
-      state.rotationJitter = clamp(state.rotationJitter ?? params.rotationJitter ?? 6, 0, 45);
+      // Jitters default OFF (clean flower); only honoured if explicitly set.
+      state.countJitter = clamp(state.countJitter ?? params.countJitter ?? 0, 0, 0.5);
+      state.sizeJitter = clamp(state.sizeJitter ?? params.sizeJitter ?? 0, 0, 0.5);
+      state.rotationJitter = clamp(state.rotationJitter ?? params.rotationJitter ?? 0, 0, 45);
       state.angularDrift = clamp(state.angularDrift ?? params.angularDrift ?? 0, 0, 45);
-      state.driftStrength = clamp(state.driftStrength ?? params.driftStrength ?? 0.1, 0, 1);
+      state.driftStrength = clamp(state.driftStrength ?? params.driftStrength ?? 0, 0, 1);
       state.driftNoise = clamp(state.driftNoise ?? params.driftNoise ?? 0.2, 0.05, 1);
       state.radiusScale = clamp(state.radiusScale ?? params.radiusScale ?? 0.2, -1, 1);
       state.radiusScaleCurve = clamp(state.radiusScaleCurve ?? params.radiusScaleCurve ?? 1.2, 0.5, 2.5);
-      params.designerOuter = JSON.parse(JSON.stringify(state.outer));
-      params.designerInner = JSON.parse(JSON.stringify(state.inner));
+      // On MOUNT, do not write any params back: the layer already carries its
+      // (clean, preset/default) params, and the designer's synthesized drawn
+      // profiles + count/jitter normalization would otherwise silently convert
+      // a named-profile flower into a lumpy drawn-profile one with extra petals.
+      // Param writes happen only on an actual designer edit.
+      if (!mount) {
+      const innerHasDrawn = Boolean(params.designerInner?.anchors?.length >= 2);
+      const outerHasDrawn = Boolean(params.designerOuter?.anchors?.length >= 2);
+      // Preserve the named-profile path (null) unless the layer already used a
+      // hand-drawn profile or the user has drawn one (state.profileEdited).
+      params.designerOuter = outerHasDrawn || state.outerProfileEdited ? JSON.parse(JSON.stringify(state.outer)) : params.designerOuter ?? null;
+      params.designerInner = innerHasDrawn || state.innerProfileEdited ? JSON.parse(JSON.stringify(state.inner)) : params.designerInner ?? null;
       params.designerSymmetry = state.designerSymmetry;
       params.designerInnerSymmetry = state.innerSymmetry;
       params.designerOuterSymmetry = state.outerSymmetry;
@@ -3768,6 +3792,7 @@
       params.petalModifiers = modifiers.map((modifier, index) =>
         this.normalizePetalDesignerModifier(modifier, index)
       );
+      } // end if (!mount)
       if (persistState) this.storeLayerParams(layer);
       this.app.engine.generate(layer.id);
       if (this.app.engine.activeLayerId === layer.id) {
