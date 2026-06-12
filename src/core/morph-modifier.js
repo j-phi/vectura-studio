@@ -158,10 +158,71 @@
   // round≈0 at its corners; a circle yields round≈1 everywhere, so blending the
   // handle weights rounds a hexagon smoothly into a circle while keeping K
   // anchors throughout.
+  // Arc-length positions of the GENUINELY sharp corners of an anchored source.
+  // A sharp corner is an anchor with BOTH handles null (a polygon vertex). A
+  // rounded/beveled corner is stored as TWO anchors that EACH carry one handle
+  // (see renderer.buildRoundedPolygonAnchors), so neither is "sharp" — the shape
+  // is smooth and morphs as smooth. Positions are measured on the same dense
+  // flattening resamplePath uses, so they line up with the K resampled samples.
+  const buildSharpProfile = (rawPath, closed) => {
+    const meta = rawPath && rawPath.meta;
+    const anchors = meta && Array.isArray(meta.anchors) ? meta.anchors : null;
+    if (!anchors || anchors.length < 2) return null;
+    // Any sharp anchors at all? If not, the source is fully smooth → no profile
+    // needed (round stays 1 everywhere) and we skip the dense scan.
+    let hasSharp = false;
+    for (let i = 0; i < anchors.length; i += 1) {
+      if (!anchors[i].in && !anchors[i].out) { hasSharp = true; break; }
+    }
+    if (!hasSharp) return { sharpS: [], L: 1, isSharpNear: () => false };
+
+    const dense = flattenForMorph(rawPath, 256);
+    const n = dense.length;
+    if (n < 2) return null;
+    const cum = [0];
+    for (let i = 1; i < n; i += 1) {
+      cum.push(cum[i - 1] + Math.hypot(dense[i].x - dense[i - 1].x, dense[i].y - dense[i - 1].y));
+    }
+    let L = cum[n - 1];
+    if (closed) L += Math.hypot(dense[0].x - dense[n - 1].x, dense[0].y - dense[n - 1].y);
+    if (!(L > 0)) return null;
+
+    const sharpS = [];
+    anchors.forEach((a) => {
+      if (a.in || a.out) return; // not a sharp corner
+      let best = 0;
+      let bd = Infinity;
+      for (let i = 0; i < n; i += 1) {
+        const d = Math.hypot(dense[i].x - a.x, dense[i].y - a.y);
+        if (d < bd) { bd = d; best = i; }
+      }
+      sharpS.push(cum[best]);
+    });
+
+    const isSharpNear = (s, window) => {
+      const half = window * 0.5;
+      for (let j = 0; j < sharpS.length; j += 1) {
+        let d = Math.abs(s - sharpS[j]);
+        if (closed) d = Math.min(d, L - d);
+        if (d <= half) return true;
+      }
+      return false;
+    };
+    return { sharpS, L, isSharpNear };
+  };
+
   const buildCornerSamples = (rawPath, K, closed) => {
     const resampled = resamplePath(rawPath, K, closed, 'arc-length');
     const pts = resampled.map((p) => ({ x: p.x, y: p.y }));
     const isCircle = !!(rawPath && rawPath.meta && rawPath.meta.kind === 'circle');
+    // Roundness is driven by the source's ACTUAL anchor handles, not by the turn
+    // angle of the coarse K-resampled polygon. Measuring turn on the K-gon
+    // mis-reads an already-rounded corner as partly sharp (its turn ≈ the corner
+    // angle spread over only a few samples), shrinking the bezier handles and
+    // re-introducing hard angles in the in-between rings even though both sources
+    // are smooth. The handle data is exact: a rounded corner carries handles
+    // (round 1), only a null-handle vertex is a true corner (round 0).
+    const sharpProfile = isCircle ? null : buildSharpProfile(rawPath, closed);
     const n = pts.length;
     const samples = [];
     for (let i = 0; i < n; i += 1) {
@@ -180,15 +241,20 @@
       // arc closely.
       const segIn = Math.hypot(cur.x - prev.x, cur.y - prev.y);
       const segOut = Math.hypot(next.x - cur.x, next.y - cur.y);
-      // Roundness weight: a circle is fully round; otherwise the local turn angle
-      // tells us how sharp this anchor is (small turn → already smooth/round,
-      // large turn → sharp corner that should stay sharp until blended).
+      // Roundness weight.
       let round;
       if (isCircle) {
         round = 1;
+      } else if (sharpProfile) {
+        // A circle/rounded source → no sharp positions → round 1 everywhere
+        // (smooth blend). A polygon → round 0 only at the samples that own a
+        // genuinely sharp corner; those stay sharp and round out gradually.
+        const s = sharpProfile.L > 0 ? (i / n) * sharpProfile.L : 0;
+        round = sharpProfile.isSharpNear(s, sharpProfile.L / n) ? 0 : 1;
       } else {
+        // No anchor metadata (raw polyline source): fall back to estimating
+        // sharpness from the local turn of the resampled ring.
         const turn = turnAt(pts, i, closed);
-        // turn 0 (flat) → round 1; turn >= threshold (sharp) → round 0.
         round = clampFn(1 - turn / (Math.PI * 0.5), 0, 1);
       }
       samples.push({

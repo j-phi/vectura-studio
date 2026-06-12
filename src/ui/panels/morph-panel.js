@@ -146,6 +146,19 @@
       return Math.min(max, Math.max(min, n));
     }
 
+    // Grouped, titled section container — visually clusters related controls
+    // (Transition / Shape Matching / Output / Fill).
+    function buildGroup(title) {
+      const grp = document.createElement('div');
+      grp.className = 'morph-group';
+      const head = document.createElement('div');
+      head.className = 'morph-group-title';
+      head.textContent = title;
+      grp.appendChild(head);
+      root.appendChild(grp);
+      return grp;
+    }
+
     function labeledSection(title) {
       const sec = document.createElement('div');
       sec.className = 'morph-section';
@@ -177,9 +190,12 @@
         ? clampInt(modifier[field], min, max, min)
         : (Number.isFinite(+modifier[field]) ? +modifier[field] : min));
 
-      const formatVal = (v) => (fmt === 'pct'
-        ? `${Math.round(v * 100)}%`
-        : `${isInt ? Math.round(v) : v}`);
+      const formatVal = (v) => {
+        if (fmt === 'pct') return `${Math.round(v * 100)}%`;
+        // 'auto0': a value of 0 means "auto" (e.g. fill cap auto-derives ~32).
+        if (fmt === 'auto0' && Math.round(v) === 0) return 'Auto';
+        return `${isInt ? Math.round(v) : v}`;
+      };
 
       const syncTag = (v) => { valTag.textContent = formatVal(v); };
 
@@ -246,47 +262,64 @@
       return sec;
     }
 
-    function buildToggle({ title, testid, field }) {
-      const { sec } = labeledSection(title);
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'morph-toggle';
-      btn.dataset.testid = testid;
-      const sync = () => {
-        const on = modifier[field] !== false;
-        btn.classList.toggle('active', on);
-        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-        btn.textContent = on ? 'On' : 'Off';
-      };
-      sync();
-      btn.addEventListener('click', () => {
-        commit(() => { modifier[field] = !(modifier[field] !== false); });
-      });
-      sec.appendChild(btn);
-      return sec;
-    }
+    // Switch-style toggle: title on the left, a sliding pill switch on the
+    // right. `isOn`/`toggle` are injected so this backs both boolean fields and
+    // enum on/off fields (e.g. fillMode: 'morph'|'off'). `hint` shows a small
+    // muted caption under the row.
+    function buildSwitchRow({ title, testid, hint, isOn, toggle }) {
+      const sec = document.createElement('div');
+      sec.className = 'morph-section morph-switch-row';
+      const head = document.createElement('div');
+      head.className = 'morph-switch-head';
+      const label = document.createElement('div');
+      label.className = 'morph-label control-label';
+      label.textContent = title;
+      head.appendChild(label);
 
-    // Enum-backed on/off toggle: stores a string value (onValue/offValue) on the
-    // modifier so the field stays self-describing (e.g. fillMode: 'morph'|'off').
-    function buildEnumToggle({ title, testid, field, onValue, offValue }) {
-      const { sec } = labeledSection(title);
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'morph-toggle';
       btn.dataset.testid = testid;
-      const isOn = () => modifier[field] !== offValue;
+      btn.setAttribute('role', 'switch');
+      const knob = document.createElement('span');
+      knob.className = 'morph-toggle-knob';
+      btn.appendChild(knob);
       const sync = () => {
         const on = isOn();
         btn.classList.toggle('active', on);
         btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-        btn.textContent = on ? 'On' : 'Off';
+        btn.setAttribute('aria-checked', on ? 'true' : 'false');
       };
       sync();
-      btn.addEventListener('click', () => {
-        commit(() => { modifier[field] = isOn() ? offValue : onValue; });
-      });
-      sec.appendChild(btn);
+      btn.addEventListener('click', () => { commit(() => toggle()); });
+      head.appendChild(btn);
+      sec.appendChild(head);
+
+      if (hint) {
+        const cap = document.createElement('div');
+        cap.className = 'morph-hint';
+        cap.textContent = hint;
+        sec.appendChild(cap);
+      }
       return sec;
+    }
+
+    function buildToggle({ title, testid, field, hint }) {
+      return buildSwitchRow({
+        title, testid, hint,
+        isOn: () => modifier[field] !== false,
+        toggle: () => { modifier[field] = !(modifier[field] !== false); },
+      });
+    }
+
+    // Enum-backed on/off toggle: stores a string value (onValue/offValue) on the
+    // modifier so the field stays self-describing (e.g. fillMode: 'morph'|'off').
+    function buildEnumToggle({ title, testid, field, onValue, offValue, hint }) {
+      return buildSwitchRow({
+        title, testid, hint,
+        isOn: () => modifier[field] !== offValue,
+        toggle: () => { modifier[field] = (modifier[field] !== offValue) ? offValue : onValue; },
+      });
     }
 
     function buildSelect({ title, field, options }) {
@@ -310,77 +343,89 @@
       return sec;
     }
 
-    /* ---------- 2. Steps ---------- */
-    root.appendChild(buildSlider({
+    /* ========== Transition ========== */
+    const gTransition = buildGroup('Transition');
+    gTransition.appendChild(buildSlider({
       title: 'Steps', testid: 'morph-steps', field: 'steps',
       min: 1, max: 64, step: 1, isInt: true,
     }));
-
-    /* ---------- 3. Easing ---------- */
-    root.appendChild(buildChips({
+    gTransition.appendChild(buildChips({
       title: 'Easing', className: 'morph-easing-chips', dataAttr: 'easing',
       options: EASING_OPTIONS, field: 'easing',
     }));
-
-    /* ---------- 4. Sequence Mode ---------- */
-    root.appendChild(buildChips({
+    gTransition.appendChild(buildChips({
       title: 'Sequence Mode', className: 'morph-sequence-chips', dataAttr: 'sequence',
       options: SEQUENCE_OPTIONS, field: 'sequenceMode',
     }));
 
-    /* ---------- 5. Resample Count ---------- */
-    root.appendChild(buildSlider({
+    /* ========== Shape Matching ========== */
+    const gMatch = buildGroup('Shape Matching');
+    // Corner Match: smooth bezier corner-matched morphing for closed pairs.
+    // When on, in-between rings are built from a small set of anchors with
+    // interpolated bezier handles — a rounded polygon stays smooth as it blends
+    // into a circle. Off falls back to the dense arc-length polyline morph.
+    const cornerMatchOn = modifier.cornerMatch !== false;
+    gMatch.appendChild(buildToggle({
+      title: 'Corner Match', testid: 'morph-corner-match', field: 'cornerMatch',
+      hint: 'Smooth bezier blend for closed shapes (keeps rounded corners round).',
+    }));
+    if (cornerMatchOn) {
+      gMatch.appendChild(buildSlider({
+        title: 'Max Anchors', testid: 'morph-corner-max', field: 'cornerMatchMax',
+        min: 4, max: 256, step: 1, isInt: true,
+      }));
+    }
+    gMatch.appendChild(buildSlider({
       title: 'Resample Count', testid: 'morph-resample', field: 'resampleCount',
       min: 8, max: 512, step: 1, isInt: true,
     }));
-
-    /* ---------- (Resample Mode select) ---------- */
-    root.appendChild(buildSelect({
+    gMatch.appendChild(buildSelect({
       title: 'Resample Mode', field: 'resampleMode',
       options: [
         { value: 'arc-length',    label: 'Arc Length' },
         { value: 'uniform-index', label: 'Uniform Index' },
       ],
     }));
-
-    /* ---------- 6. Correspondence ---------- */
-    root.appendChild(buildChips({
+    gMatch.appendChild(buildChips({
       title: 'Correspondence', className: 'morph-correspondence-chips', dataAttr: 'correspondence',
       options: CORRESPONDENCE_OPTIONS, field: 'correspondenceMode',
     }));
-
-    /* ---------- Winding check (near correspondence) ---------- */
-    root.appendChild(buildToggle({
+    gMatch.appendChild(buildToggle({
       title: 'Winding Check', testid: 'morph-winding', field: 'windingCheck',
+      hint: 'Auto-reverse a child if it lowers the correspondence cost.',
     }));
-
-    /* ---------- 7. Multi-Path ---------- */
-    root.appendChild(buildChips({
+    gMatch.appendChild(buildChips({
       title: 'Multi-Path', className: 'morph-multipath-chips', dataAttr: 'multipath',
       options: MULTIPATH_OPTIONS, field: 'multiPathStrategy',
     }));
 
-    /* ---------- Morph Fill (regenerate interpolated fill per ring) ---------- */
-    root.appendChild(buildEnumToggle({
-      title: 'Morph Fill', testid: 'morph-fill', field: 'fillMode',
-      onValue: 'morph', offValue: 'off',
-    }));
-
-    /* ---------- 8. Emit Sources ---------- */
-    root.appendChild(buildToggle({
+    /* ========== Output ========== */
+    const gOutput = buildGroup('Output');
+    gOutput.appendChild(buildToggle({
       title: 'Emit Sources', testid: 'morph-emit-sources', field: 'emitSources',
+      hint: 'Include the original child shapes alongside the blend rings.',
     }));
-
-    /* ---------- 9. Closure ---------- */
-    root.appendChild(buildSelect({
+    gOutput.appendChild(buildSelect({
       title: 'Closure', field: 'closureMode', options: CLOSURE_OPTIONS,
     }));
-
-    /* ---------- 10. Smoothing ---------- */
-    root.appendChild(buildSlider({
+    gOutput.appendChild(buildSlider({
       title: 'Smoothing', testid: 'morph-smoothing', field: 'smoothing',
       min: 0, max: 1, step: 0.05, isInt: false, fmt: 'pct',
     }));
+
+    /* ========== Fill ========== */
+    const gFill = buildGroup('Fill');
+    gFill.appendChild(buildEnumToggle({
+      title: 'Morph Fill', testid: 'morph-fill', field: 'fillMode',
+      onValue: 'morph', offValue: 'off',
+      hint: 'Regenerate interpolated fill geometry for each blend ring.',
+    }));
+    if (modifier.fillMode !== 'off') {
+      gFill.appendChild(buildSlider({
+        title: 'Fill Cap', testid: 'morph-fill-cap', field: 'fillRegenLimit',
+        min: 0, max: 512, step: 1, isInt: true, fmt: 'auto0',
+      }));
+    }
   }
 
   UI.MorphPanel = { build };

@@ -2932,6 +2932,172 @@
   padding-top: 2px;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   Morph modifier panel
+   Mirrors the mirror panel's control vocabulary (chips, sliders, switches) but
+   scoped to .morph-panel. Accent derives from the active theme's vectura accent.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.morph-panel {
+  --morph-accent: rgb(var(--vectura-accent-rgb, 78 158 225));
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 2px 0;
+}
+
+/* live child-count header */
+.morph-panel .morph-count {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--morph-accent) 7%, var(--ui-ctrl));
+  border: 1px solid color-mix(in srgb, var(--morph-accent) 22%, var(--ui-border));
+  border-radius: var(--radius-sm);
+}
+.morph-panel .morph-count-text {
+  font-size: var(--font-size-sm); font-weight: 600;
+  color: var(--ui-text-2);
+}
+.morph-panel .morph-callout {
+  font-size: var(--font-size-sm);
+  color: var(--ui-muted);
+  line-height: 1.4;
+}
+.morph-panel .morph-warn {
+  font-size: var(--font-size-xs);
+  color: #e6a23c;
+  line-height: 1.35;
+}
+
+/* titled groups */
+.morph-panel .morph-group {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 10px;
+  background: var(--ui-ctrl);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+}
+.morph-panel .morph-group-title {
+  font-size: var(--font-size-xs); font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--morph-accent);
+  padding-bottom: 2px;
+  border-bottom: 1px solid color-mix(in srgb, var(--morph-accent) 18%, transparent);
+}
+
+/* per-control section */
+.morph-panel .morph-section { display: flex; flex-direction: column; gap: 5px; }
+.morph-panel .morph-label {
+  font-size: var(--font-size-sm); font-weight: 500;
+  color: var(--ui-text-2);
+  display: flex; align-items: center; gap: 6px;
+}
+.morph-panel .morph-value {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--morph-accent);
+  font-variant-numeric: tabular-nums;
+}
+.morph-panel .morph-hint {
+  font-size: var(--font-size-xs);
+  color: var(--ui-muted);
+  line-height: 1.35;
+}
+
+/* sliders */
+.morph-panel .morph-slider {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 4px; border-radius: 2px;
+  cursor: pointer; outline: none;
+  background: var(--ui-border);
+}
+.morph-panel .morph-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--morph-accent);
+  border: 2.5px solid var(--ui-panel, var(--ui-ctrl));
+  box-shadow: 0 0 0 1.5px var(--morph-accent);
+  cursor: pointer;
+}
+.morph-panel .morph-slider::-moz-range-thumb {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--morph-accent);
+  border: 2.5px solid var(--ui-panel, var(--ui-ctrl));
+  box-shadow: 0 0 0 1.5px var(--morph-accent);
+  cursor: pointer;
+}
+
+/* chip rows */
+.morph-panel .morph-easing-chips,
+.morph-panel .morph-sequence-chips,
+.morph-panel .morph-correspondence-chips,
+.morph-panel .morph-multipath-chips {
+  display: flex; flex-wrap: wrap; gap: 4px;
+}
+.morph-panel .morph-chip {
+  font-size: 11px; font-weight: 600;
+  background: var(--ui-ctrl);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  color: var(--ui-text-2);
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: background-color 0.12s, color 0.12s, border-color 0.12s;
+}
+.morph-panel .morph-chip:hover { border-color: var(--ui-border-hi, var(--ui-border)); }
+.morph-panel .morph-chip.active {
+  border-color: var(--morph-accent);
+  background: color-mix(in srgb, var(--morph-accent) 14%, var(--ui-ctrl));
+  color: var(--morph-accent);
+}
+
+/* dropdowns */
+.morph-panel .morph-select {
+  width: 100%;
+  font-size: var(--font-size-sm);
+  background: var(--ui-ctrl);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  color: var(--ui-text-2);
+  padding: 5px 8px;
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+.morph-panel .morph-select:hover { border-color: var(--ui-border-hi, var(--ui-border)); }
+.morph-panel .morph-select:focus { outline: none; border-color: var(--morph-accent); }
+
+/* switch-style toggles */
+.morph-panel .morph-switch-row { gap: 4px; }
+.morph-panel .morph-switch-head {
+  display: flex; align-items: center; gap: 8px;
+}
+.morph-panel .morph-switch-head .morph-label { flex: 1; }
+.morph-panel .morph-toggle {
+  position: relative;
+  width: 34px; height: 18px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-border);
+  cursor: pointer;
+  padding: 0;
+  transition: background-color 0.16s, border-color 0.16s;
+}
+.morph-panel .morph-toggle .morph-toggle-knob {
+  position: absolute;
+  top: 50%; left: 2px;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: var(--ui-panel, #fff);
+  transform: translateY(-50%);
+  transition: left 0.16s;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.morph-panel .morph-toggle.active {
+  background: var(--morph-accent);
+  border-color: var(--morph-accent);
+}
+.morph-panel .morph-toggle.active .morph-toggle-knob { left: 18px; }
+.morph-panel .morph-toggle:focus-visible { outline: 2px solid var(--morph-accent); outline-offset: 2px; }
+
 /* info trigger + popover */
 .mp-root .mp-info-trigger {
   width: 14px; height: 14px;

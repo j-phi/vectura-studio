@@ -22,6 +22,8 @@
       easing: 'linear',                      // linear | ease-in | ease-out | ease-in-out | cubic-in | cubic-out
       sequenceMode: 'sequential',            // sequential (A→B→C) | cyclic (A→B→C→A)
       // Geometry normalization
+      cornerMatch: true,                     // smooth corner-matched bezier morph (closed pairs); off = dense legacy
+      cornerMatchMax: 64,                    // int [4..256] — anchor cap for corner-matched morph
       resampleCount: 128,                    // int [8..512] — common vertex count after resampling
       resampleMode: 'arc-length',            // arc-length | uniform-index
       correspondenceMode: 'centroid-angle',  // centroid-angle | nearest | arc-length

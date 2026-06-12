@@ -447,7 +447,7 @@ describe('Morph modifier panel', () => {
     }
   });
 
-  test('INT-B-07: layers assigned into a morph group are auto-locked', async () => {
+  test('INT-B-07: layers assigned into a morph group stay UNLOCKED (live editable ends)', async () => {
     let appRuntime;
     try {
       appRuntime = await loadVecturaRuntime({
@@ -468,6 +468,36 @@ describe('Morph modifier panel', () => {
 
       app.ui.assignLayersToParent(modifierId, [child]);
 
+      // Morph children are consumed as LIVE shapes — reshaping an end re-folds
+      // the blend — so they must remain unlocked (unlike mirror children).
+      expect(child.parentId).toBe(modifierId);
+      expect(app.ui.layerLockedIds.has(child.id)).toBe(false);
+    } finally {
+      appRuntime?.cleanup?.();
+    }
+  });
+
+  test('INT-B-07b: layers assigned into a MIRROR group are still auto-locked', async () => {
+    let appRuntime;
+    try {
+      appRuntime = await loadVecturaRuntime({
+        includeRenderer: true,
+        includeUi: true,
+        includeApp: true,
+        useIndexHtml: true,
+      });
+      const { window } = appRuntime;
+      window.app = new window.Vectura.App();
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      const app = window.app;
+
+      const modifierId = app.engine.addModifierLayer('mirror');
+      app.engine.addLayer('wavetable');
+      const child = app.engine.getActiveLayer();
+      expect(app.ui.layerLockedIds.has(child.id)).toBe(false);
+
+      app.ui.assignLayersToParent(modifierId, [child]);
+
       expect(child.parentId).toBe(modifierId);
       expect(app.ui.layerLockedIds.has(child.id)).toBe(true);
     } finally {
@@ -475,7 +505,7 @@ describe('Morph modifier panel', () => {
     }
   });
 
-  test('INT-B-08: deleting the morph modifier unlocks restored children', async () => {
+  test('INT-B-08: deleting the morph modifier restores children unlocked & re-parented', async () => {
     let appRuntime;
     try {
       appRuntime = await loadVecturaRuntime({
@@ -493,7 +523,8 @@ describe('Morph modifier panel', () => {
       app.engine.addLayer('wavetable');
       const child = app.engine.getActiveLayer();
       app.ui.assignLayersToParent(modifierId, [child]);
-      expect(app.ui.layerLockedIds.has(child.id)).toBe(true);
+      // Morph children were never locked to begin with.
+      expect(app.ui.layerLockedIds.has(child.id)).toBe(false);
 
       app.ui.unlockMirrorChildrenOnDelete(modifierId);
       app.engine.removeLayer(modifierId);

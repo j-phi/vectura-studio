@@ -2066,7 +2066,10 @@
     this.normalizeGroupOrder();
     this.app.computeDisplayGeometry();
 
-    if (this.isModifierLayer(parent)) {
+    // Morph consumes its children as live, editable shapes (you reshape an end
+    // and the blend re-folds) — so its children stay UNLOCKED. Mirror and other
+    // modifiers lock their children (they're consumed geometry, not editable).
+    if (this.isModifierLayer(parent) && parent?.modifier?.type !== 'morph') {
       moveIds.forEach((id) => this.layerLockedIds.add(id));
     }
 
