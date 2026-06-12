@@ -853,6 +853,8 @@
       count: 40,
       countJitter: 0,
       layoutMode: 'whorl',
+      bloom: 100,
+      petalAsymmetry: 0,
       ringMode: 'dual',
       innerCount: 0,
       outerCount: 6,

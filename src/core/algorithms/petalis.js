@@ -1638,7 +1638,16 @@
     const normalizeTipRotate = (value) => (value > 10 ? value / 10 : value);
     const tipTwist = designerShapeOnly ? 0 : p.tipTwist ?? 0;
     const tipRotate = normalizeTipRotate(tipTwist);
-    const tipCurl = designerShapeOnly ? 0 : p.tipCurl ?? 0;
+    // Bloom macro (0..100, 100 = fully open = neutral). Lower values curl the
+    // petal tips inward and pull the rings together into a closing bud. At 100
+    // it is a no-op, so the default look and baselines are unchanged.
+    const bloom = clamp(p.bloom ?? 100, 0, 100) / 100;
+    const bloomCurl = (1 - bloom) * 0.7;
+    const bloomRingFactor = lerp(0.45, 1, bloom);
+    const tipCurl = designerShapeOnly ? bloomCurl : p.tipCurl ?? 0;
+    // Petal asymmetry (0..100): per-petal lateral lean that breaks the perfect
+    // mirror symmetry for a more organic, hand-drawn read. 0 = neutral.
+    const petalAsymmetry = clamp(p.petalAsymmetry ?? 0, 0, 100) / 100;
     const tipSharpness = designerShapeOnly ? 1 : p.tipSharpness ?? 0.5;
     const baseFlare = designerShapeOnly ? 0 : p.baseFlare ?? 0;
     const basePinch = designerShapeOnly ? 0 : p.basePinch ?? 0;
@@ -1755,8 +1764,9 @@
     // tightens the spacing (1 = default), independent of the spiral-mode meaning.
     if (layoutMode === 'whorl') {
       // ringSplit controls how far successive whorls spread (layer spacing):
-      // tighter = packed rosette, wider = open layered bloom.
-      const whorlStep = baseLength * (0.25 + 0.5 * ringSplit);
+      // tighter = packed rosette, wider = open layered bloom. The Bloom macro
+      // pulls the rings together as the flower closes toward a bud.
+      const whorlStep = baseLength * (0.25 + 0.5 * ringSplit) * bloomRingFactor;
       let baseR = anchorRadius;
       ringDefs.forEach((ring) => {
         ring.baseR = baseR;
@@ -1858,6 +1868,15 @@
         const curlBoost = centerBoost * centerFactor;
         const waveBoost = (p.centerWaveBoost ?? 0) * centerFactor;
         const wavePhase = rng.nextFloat() * TAU;
+        // Per-petal asymmetry: a deterministic lateral lean from an isolated
+        // stream (so it doesn't disturb the layout RNG). Neutral at 0.
+        const petalTwist =
+          tipRotate +
+          (petalAsymmetry > 0
+            ? (makeSubRng((p.seed ?? 0) * 7919 + (ringProgressOffset + i) * 131 + 3).nextFloat() * 2 - 1) *
+              petalAsymmetry *
+              0.6
+            : 0);
         const lengthScale = tipLengthScale(tipCurl);
         const effectiveLength = Math.max(1, length * lengthScale);
         const waveAmp = Math.max(0, (p.edgeWaveAmp ?? 0) * (1 + waveBoost));
@@ -1901,7 +1920,7 @@
           length,
           widthRatio,
           steps: petalSteps,
-          tipTwist: tipRotate,
+          tipTwist: petalTwist,
           tipCurl,
           curlBoost,
           baseX,
@@ -1940,7 +1959,7 @@
           baseX,
           baseY,
           shadings: ringShadingStack,
-          tipTwist: tipRotate,
+          tipTwist: petalTwist,
           tipCurl,
           curlBoost,
           // Shading gets its own per-petal RNG stream, isolated from the layout

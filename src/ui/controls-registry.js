@@ -409,6 +409,8 @@
         infoKey: 'petalis.petalProfile',
       },
       { id: 'petalScale', label: 'Petal Scale (mm)', type: 'range', min: 1, max: 80, step: 1, infoKey: 'petalis.petalScale' },
+      { id: 'bloom', label: 'Bloom', type: 'range', min: 0, max: 100, step: 1, infoKey: 'petalis.bloom' },
+      { id: 'petalAsymmetry', label: 'Petal Asymmetry', type: 'range', min: 0, max: 100, step: 1, infoKey: 'petalis.petalAsymmetry' },
       {
         id: 'petalWidthRatio',
         label: 'Width/Length Ratio',
@@ -457,7 +459,17 @@
       { type: 'section', label: 'Petal Modifiers' },
       { type: 'petalModifierList', label: 'Petal Modifiers' },
       { type: 'section', label: 'Distribution & Spiral' },
-      { id: 'count', label: 'Petal Count', type: 'range', min: 5, max: 800, step: 1, infoKey: 'petalis.count' },
+      {
+        id: 'layoutMode',
+        label: 'Layout',
+        type: 'select',
+        options: [
+          { value: 'whorl', label: 'Whorl (clean rings)' },
+          { value: 'spiral', label: 'Spiral (phyllotaxis)' },
+        ],
+        infoKey: 'petalis.layoutMode',
+      },
+      { id: 'count', label: 'Petal Count', type: 'range', min: 5, max: 800, step: 1, showIf: (p) => p.ringMode !== 'dual', infoKey: 'petalis.count' },
       {
         id: 'ringMode',
         label: 'Ring Mode',
@@ -472,7 +484,7 @@
         id: 'innerCount',
         label: 'Inner Petal Count',
         type: 'range',
-        min: 5,
+        min: 0,
         max: 400,
         step: 1,
         showIf: (p) => p.ringMode === 'dual',
@@ -482,7 +494,7 @@
         id: 'outerCount',
         label: 'Outer Petal Count',
         type: 'range',
-        min: 5,
+        min: 1,
         max: 600,
         step: 1,
         showIf: (p) => p.ringMode === 'dual',
@@ -490,7 +502,9 @@
       },
       {
         id: 'ringSplit',
-        label: 'Ring Split',
+        // Whorl: how far successive rings spread (layer spacing). Spiral: the
+        // inner/outer band split.
+        label: 'Ring Spacing',
         type: 'range',
         min: 0.15,
         max: 0.85,
@@ -543,6 +557,7 @@
           { value: 'golden', label: 'Golden Angle' },
           { value: 'custom', label: 'Custom Angle' },
         ],
+        showIf: (p) => (p.layoutMode || 'whorl') === 'spiral',
         infoKey: 'petalis.spiralMode',
       },
       {
@@ -553,13 +568,13 @@
         max: 360,
         step: 1,
         displayUnit: '°',
-        showIf: (p) => p.spiralMode === 'custom',
+        showIf: (p) => (p.layoutMode || 'whorl') === 'spiral' && p.spiralMode === 'custom',
         infoKey: 'petalis.customAngle',
       },
-      { id: 'spiralTightness', label: 'Spiral Tightness', type: 'range', min: 0.5, max: 50, step: 0.1, infoKey: 'petalis.spiralTightness' },
-      { id: 'radialGrowth', label: 'Radial Growth', type: 'range', min: 0.05, max: 20, step: 0.05, infoKey: 'petalis.radialGrowth' },
-      { id: 'spiralStart', label: 'Spiral Start', type: 'range', min: 0, max: 1, step: 0.01, infoKey: 'petalis.spiralStart' },
-      { id: 'spiralEnd', label: 'Spiral End', type: 'range', min: 0, max: 1, step: 0.01, infoKey: 'petalis.spiralEnd' },
+      { id: 'spiralTightness', label: 'Spiral Tightness', type: 'range', min: 0.5, max: 50, step: 0.1, showIf: (p) => (p.layoutMode || 'whorl') === 'spiral', infoKey: 'petalis.spiralTightness' },
+      { id: 'radialGrowth', label: 'Radial Growth', type: 'range', min: 0.05, max: 20, step: 0.05, showIf: (p) => (p.layoutMode || 'whorl') === 'spiral', infoKey: 'petalis.radialGrowth' },
+      { id: 'spiralStart', label: 'Spiral Start', type: 'range', min: 0, max: 1, step: 0.01, showIf: (p) => (p.layoutMode || 'whorl') === 'spiral', infoKey: 'petalis.spiralStart' },
+      { id: 'spiralEnd', label: 'Spiral End', type: 'range', min: 0, max: 1, step: 0.01, showIf: (p) => (p.layoutMode || 'whorl') === 'spiral', infoKey: 'petalis.spiralEnd' },
       { type: 'section', label: 'Center Morphing' },
       { id: 'centerSizeMorph', label: 'Size Morph', type: 'range', min: -100, max: 100, step: 1, infoKey: 'petalis.centerSizeMorph' },
       { id: 'centerSizeCurve', label: 'Size Morph Curve', type: 'range', min: 0.5, max: 2.5, step: 0.05, infoKey: 'petalis.centerSizeCurve' },
@@ -1574,7 +1589,6 @@
     'ringMode',
     'innerCount',
     'outerCount',
-    'ringSplit',
     'innerOuterLock',
     'profileTransitionPosition',
     'profileTransitionFeather',
@@ -1604,18 +1618,28 @@
     'Randomness & Seed',
   ]);
   const PETALIS_DESIGNER_REMOVED_CONTROL_TYPES = new Set(['petalModifierList']);
+  // Presets-first: a newcomer should pick a bloom from the gallery before the
+  // inline designer. Hoist the Presets section/control above the designer, then
+  // the rest of the (filtered) petalis controls below it.
+  const petalisFiltered = (CONTROL_DEFS.petalis || [])
+    .map((def) => (def && typeof def === 'object' ? { ...def } : def))
+    .filter((def) => {
+      if (!def || typeof def !== 'object') return true;
+      if (def.id && PETALIS_DESIGNER_REMOVED_CONTROL_IDS.has(def.id)) return false;
+      if (PETALIS_DESIGNER_REMOVED_CONTROL_TYPES.has(def.type)) return false;
+      if (def.type === 'section' && PETALIS_DESIGNER_REMOVED_SECTION_LABELS.has(def.label)) return false;
+      return true;
+    });
+  const isPresetDef = (def) =>
+    def && typeof def === 'object' &&
+    ((def.type === 'section' && def.label === 'Presets') || def.id === 'preset');
+  const petalisPresetControls = petalisFiltered.filter(isPresetDef);
+  const petalisRest = petalisFiltered.filter((def) => !isPresetDef(def));
   const petalisDesignerControls = [
+    ...petalisPresetControls,
     { type: 'section', label: 'Petal Designer' },
     { type: 'petalDesignerInline' },
-    ...(CONTROL_DEFS.petalis || [])
-      .map((def) => (def && typeof def === 'object' ? { ...def } : def))
-      .filter((def) => {
-        if (!def || typeof def !== 'object') return true;
-        if (def.id && PETALIS_DESIGNER_REMOVED_CONTROL_IDS.has(def.id)) return false;
-        if (PETALIS_DESIGNER_REMOVED_CONTROL_TYPES.has(def.type)) return false;
-        if (def.type === 'section' && PETALIS_DESIGNER_REMOVED_SECTION_LABELS.has(def.label)) return false;
-        return true;
-      }),
+    ...petalisRest,
   ];
   CONTROL_DEFS.petalisDesigner = petalisDesignerControls;
 
