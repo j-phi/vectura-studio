@@ -321,7 +321,7 @@
   // gradually. Returns { points, anchors } where points is the flattened
   // polyline (few, smoothly-curved vertices — NOT 128 straight segments) and
   // anchors carry in/out handles for direct-selection editing and bezier export.
-  const blendCornerRing = (sa, sb, t, closed) => {
+  const blendCornerRing = (sa, sb, t, closed, detail = 0) => {
     const n = Math.min(sa.length, sb.length);
     const anchors = [];
     for (let i = 0; i < n; i += 1) {
@@ -345,7 +345,7 @@
       if (hOut > 1e-6) anchor.out = { x: x + dirx * hOut, y: y + diry * hOut };
       anchors.push(anchor);
     }
-    const points = flattenAnchorRing(anchors, closed === true);
+    const points = flattenAnchorRing(anchors, closed === true, detail);
     return { points, anchors };
   };
 
@@ -357,7 +357,16 @@
   // sized ring). This is the plotter-efficiency win: corner anchors stay sharp
   // and large, round arcs become a handful of points. Tolerance is scaled to
   // the ring size so the chord error stays a small fraction of the shape.
-  const flattenAnchorRing = (anchors, closed) => {
+  // `detail` (0..1) is the user's `smoothing` knob: at 0 the tolerance is the
+  // plotter-efficient default (byte-identical to pre-v1.1.91 — keeps EFF/FID/RND
+  // baselines), and as it rises the per-arc chord tolerance shrinks so the SMOOTH
+  // (bezier) arcs of a near-circle ring get more flattened points and read smooth
+  // instead of faceted. Sharp (straight) segments are unaffected — they always
+  // emit exactly two points — so the anchor count and corner sharpness are
+  // preserved; only the round arcs densify. This is what makes the `smoothing`
+  // slider actually de-lump the in-between rings (smoothRing alone only nudged
+  // existing vertices and could never add points to a faceted arc).
+  const flattenAnchorRing = (anchors, closed, detail = 0) => {
     const sampleBez = window.Vectura?.GeometryUtils?.sampleCubicBezier;
     const n = anchors.length;
     if (n < 2) return anchors.map((a) => ({ x: a.x, y: a.y }));
@@ -374,7 +383,13 @@
       if (anchors[i].y > maxY) maxY = anchors[i].y;
     }
     const extent = Math.max(maxX - minX, maxY - minY) || 1;
-    const tol = clampFn(extent * 0.008, 0.25, 4);
+    // detail 0 → 0.8% of extent (the plotter-efficient default). detail 1 →
+    // 0.08% (10× finer), so a smooth arc that was ~3 points becomes a smooth
+    // ~15-point curve. The floor drops below 0.25 only when detail>0 so the
+    // densification is real; at detail 0 the clamp is byte-identical to before.
+    const d = clampFn(Number(detail) || 0, 0, 1);
+    const tolFrac = 0.008 * (1 - 0.9 * d);
+    const tol = clampFn(extent * tolFrac, d > 0 ? 0.05 : 0.25, 4);
     const pts = [];
     const emit = (a, b) => {
       let seg;
@@ -991,7 +1006,12 @@
               const tRaw = i / (params.steps + 1);
               const et = applyEasing(params.easing, tRaw);
               const ringPenId = et < 0.5 ? childA.penId : childB.penId;
-              const built = blendCornerRing(samplesA, sB, et, ringMetaC.closed);
+              // smoothing densifies the smooth arcs of the flattened ring (more
+              // points along each round bezier span) so a near-circle ring reads
+              // smooth instead of faceted; the subsequent smoothRing then nudges
+              // any residual hard joints. At smoothing 0 both are no-ops and the
+              // ring is the plotter-efficient sparse polyline (EFF/FID baselines).
+              const built = blendCornerRing(samplesA, sB, et, ringMetaC.closed, params.smoothing);
               let ring = built.points;
               if (params.smoothing > 0) ring = smoothRing(ring, params.smoothing, ringMetaC.closed);
               // Close the flattened ring (first===last) like closed sources do.
@@ -1007,6 +1027,12 @@
                 in: a.in ? { x: a.in.x, y: a.in.y } : null,
                 out: a.out ? { x: a.out.x, y: a.out.y } : null,
               }));
+              // The ring is a smooth sparse bezier by construction; render it as
+              // native cubics on screen even though the morph GROUP layer defaults
+              // to curves:false (otherwise the renderer draws the few-point
+              // flattened polyline straight-segmented and it reads faceted). Plot/
+              // SVG export still emits the sparse polyline (plotter-efficient).
+              meta.forceCurves = true;
               if (ringPenId) meta.penId = ringPenId;
               ring.meta = meta;
               emitted.push(ring);

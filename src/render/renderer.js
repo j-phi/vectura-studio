@@ -5113,7 +5113,15 @@
       // perfectly smooth at any zoom regardless of how dense the cached
       // polyline is. Falls back to the midpoint-quadratic path below for
       // algorithmically-generated polylines that carry no anchor handles.
-      const anchors = useCurves && !path.meta?.straight ? path.meta?.anchors : null;
+      // `meta.forceCurves` is a per-path opt-in (mirror of `meta.straight`):
+      // the path's stored bezier anchors render as native cubics even when the
+      // owning layer has curves OFF. The morph modifier stamps it on its sparse
+      // corner-matched rings, which ARE smooth bezier curves by construction but
+      // live in a group layer whose curves default is false — without this they
+      // were drawn as their raw flattened polyline (visibly faceted / "excessive
+      // line segments") despite the geometry being smooth.
+      const forceCurves = path.meta?.forceCurves === true;
+      const anchors = (useCurves || forceCurves) && !path.meta?.straight ? path.meta?.anchors : null;
       // Only emit native cubics when at least one anchor actually carries a
       // bezier handle. Chord-polyline shapes (e.g. exploded wavetables rebuilt
       // by applyShapeAnchorRebuild at smoothing=0) populate meta.anchors with
