@@ -14,6 +14,12 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Fix the remaining strict Playwright Pattern fidelity regressions as product bugs, with `Autumn` horizontal-seam mismatch and representative `Bamboo` / `Bathroom Floor` / `Dominos` silhouette drift still failing source-faithful smoke coverage.
 
 ## Inbox
+- **Petalis overhaul — remaining delight + UX follow-ups.** The v1.1.77–88 overhaul shipped the core (whorl layout fixing the spiral-asymmetry, working/distinct shading + modifier stacks, convex botanically-legible petal profiles + centre-anchoring, opt-in venation, the Bloom/Asymmetry macros, a Layout toggle + spiral-knob gating + presets-first, a varied randomizer, and the non-destructive designer mount). Still to build:
+  - **Species morph A→B.** A crossfade between two species/profiles, reusing `blendProfilePoints`/`profileBlendWeight` (already in `petalis.js`) — needs a two-source picker + a single blend slider in the panel/designer.
+  - **Visual thumbnail profile picker.** Replace the `petalProfile` name-only `<select>` with a thumbnail strip of the ~10 silhouettes (render each via a single-petal `generate()` call).
+  - **True pseudo-3D per-petal cupping.** Bloom already curls tips via `tipCurl`; add a real cup/incurve (scale-Y + slight perspective in petal-local space, tied to ring index) for a fuller volumetric read.
+  - **Petal Designer undo.** The designer has zero `pushHistory` calls; route non-live commits in the canvas/shading/modifier/randomness bind sites through `this.app.pushHistory()` (hook point exists near `applyPetalDesignerToLayer`).
+  - **Per-type shading cards.** Render only the controls a shading type actually uses (mirror the modifier-card pattern); add info buttons; surface the new `veinCount`/`veinReach` controls on the Venation card.
 - **Pendula studio — Phase 3/4 remaining (tactile + craft + export).** Shipped so far is in Done; still to build:
   - **Per-loop morph animation export** (the second time axis: a series of distinct evolving figures) — blocked on a frame-packaging decision (no zip lib in the no-build repo).
   - **Plotter hygiene on export** — randomize closed-loop seam start ("reloop") to avoid the pen ink-blot artifact.
