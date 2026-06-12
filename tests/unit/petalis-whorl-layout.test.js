@@ -167,4 +167,90 @@ describe('Petalis Whorl layout mode', () => {
     const b = algo.generate(p, rng(7), noise(7), bounds);
     expect(pathSignature(a)).toBe(pathSignature(b));
   });
+
+  // Per-petal max extent from the flower center (baseR + petal length), one
+  // value per outline path. Equal tip radii within a ring ⟺ equal petal sizes.
+  const petalTipRadii = (paths) =>
+    paths
+      .filter((p) => Array.isArray(p) && p.meta && p.meta.label === 'Outline')
+      .map((path) => {
+        let best = 0;
+        for (const pt of path) {
+          const d = Math.hypot(pt.x - CENTER.x, pt.y - CENTER.y);
+          if (d > best) best = d;
+        }
+        return best;
+      });
+
+  test('9 — radiusScale does not ramp petal size around a single whorl (no seam)', () => {
+    // Regression: radiusScale ramped petal length by index t=i/(count-1) even in
+    // whorl mode, so the last petal rendered up to (1+radiusScale)× the first and
+    // the discontinuity landed at the ring's wrap-around seam (gerbera preset,
+    // radiusScale 0.2, 34 petals: one fat petal jutting out at 3 o'clock).
+    const out = algo.generate(
+      whorl({ innerCount: 0, outerCount: 34, radiusScale: 0.2, radiusScaleCurve: 1.2 }),
+      rng(), noise(), bounds
+    );
+    const tips = petalTipRadii(out);
+    expect(tips.length).toBe(34);
+    const t0 = tips[0];
+    tips.forEach((t) => expect(t).toBeCloseTo(t0, 5));
+  });
+
+  test('10 — whorl radiusScale grows petals by ring (inner unchanged, outer uniformly larger)', () => {
+    const base = { innerCount: 5, outerCount: 7, ringSplit: 0.5 };
+    const flat = algo.generate(whorl({ ...base, radiusScale: 0 }), rng(), noise(), bounds);
+    const ramped = algo.generate(whorl({ ...base, radiusScale: 0.5 }), rng(), noise(), bounds);
+    const ringSizes = (paths) => {
+      const polar = petalPolar(paths);
+      const tips = petalTipRadii(paths);
+      // Split petals into rings by centroid radius (inner 5 vs outer 7).
+      const tagged = polar.map((p, i) => ({ ...p, tip: tips[i] })).sort((a, b) => a.radius - b.radius);
+      return { inner: tagged.slice(0, 5).map((p) => p.tip), outer: tagged.slice(5).map((p) => p.tip) };
+    };
+    const a = ringSizes(flat);
+    const b = ringSizes(ramped);
+    // Within each ring every petal stays uniform.
+    b.inner.forEach((t) => expect(t).toBeCloseTo(b.inner[0], 5));
+    b.outer.forEach((t) => expect(t).toBeCloseTo(b.outer[0], 5));
+    // The innermost populated ring anchors the ramp (scale 1), the outer ring grows.
+    expect(b.inner[0]).toBeCloseTo(a.inner[0], 5);
+    expect(b.outer[0]).toBeGreaterThan(a.outer[0] + 1);
+  });
+
+  test('11 — layered whorl has no seam petal: occlusion is rotationally uniform', () => {
+    // Regression: layering drew petals in a total order, so the first petal of
+    // each whorl (always at angle 0 — 3 o'clock) was never clipped and "sat on
+    // top" of the design, while the last petals lost their entire bases. The
+    // ring's occlusion must close circularly: every petal tucks under its
+    // forward neighbours, so each petal keeps the same visible outline length.
+    const out = algo.generate(
+      whorl({ innerCount: 0, outerCount: 12, layering: true, centerRadius: 8, centerDensity: 1 }),
+      rng(), noise(), bounds
+    );
+    const lengthByGroup = new Map();
+    out
+      .filter((p) => Array.isArray(p) && p.meta && p.meta.label === 'Outline')
+      .forEach((p) => {
+        let len = 0;
+        for (let i = 1; i < p.length; i++) len += Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y);
+        const g = p.meta.group;
+        lengthByGroup.set(g, (lengthByGroup.get(g) || 0) + len);
+      });
+    const lens = [...lengthByGroup.values()];
+    expect(lens.length).toBe(12);
+    const min = Math.min(...lens);
+    const max = Math.max(...lens);
+    // Identical petals, even spacing → every petal must be clipped identically.
+    expect(max - min).toBeLessThan(max * 0.01);
+    // And clipping must actually be happening (petals overlap → shorter than raw).
+    const raw = algo.generate(
+      whorl({ innerCount: 0, outerCount: 12, layering: false, centerRadius: 8, centerDensity: 1 }),
+      rng(), noise(), bounds
+    ).filter((p) => Array.isArray(p) && p.meta && p.meta.label === 'Outline');
+    let rawLen = 0;
+    raw.forEach((p) => { for (let i = 1; i < p.length; i++) rawLen += Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y); });
+    const clippedTotal = lens.reduce((s, l) => s + l, 0);
+    expect(clippedTotal).toBeLessThan(rawLen * 0.99);
+  });
 });

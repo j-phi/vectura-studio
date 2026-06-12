@@ -1233,7 +1233,8 @@
               "lengthJitter": 0,
               "angle": 0
             }
-          ]
+          ],
+          "anchorToCenter": "all"
         }
       },
       {
@@ -1479,7 +1480,8 @@
               "lengthJitter": 0,
               "angle": 0
             }
-          ]
+          ],
+          "anchorToCenter": "all"
         }
       },
       {

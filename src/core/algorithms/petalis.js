@@ -1772,6 +1772,13 @@
         ring.baseR = baseR;
         if ((ring.count || 0) > 0) baseR += whorlStep;
       });
+      // radiusScale ramp basis: petals within one whorl are uniform (an index
+      // ramp would put a size discontinuity at the ring's wrap-around seam), so
+      // the ramp runs across populated rings — innermost 1×, outermost 1+scale.
+      const populated = ringDefs.filter((ring) => (ring.count || 0) > 0);
+      populated.forEach((ring, ord) => {
+        ring.scaleT = populated.length <= 1 ? 0 : ord / (populated.length - 1);
+      });
     }
     let ringProgressOffset = 0;
     ringDefs.forEach((ring, ringIndex) => {
@@ -1848,7 +1855,8 @@
         const centerFactor = clamp(1 - radialBase / Math.max(1, visibleMaxR), 0, 1);
         const morphCurve = Math.pow(centerFactor, p.centerSizeCurve ?? 1);
         const sizeMorph = 1 + (p.centerSizeMorph ?? 0) * 0.01 * morphCurve;
-        const radiusScale = 1 + (p.radiusScale ?? 0) * Math.pow(t, p.radiusScaleCurve ?? 1);
+        const radiusRampT = layoutMode === 'whorl' ? ring.scaleT ?? 0 : t;
+        const radiusScale = 1 + (p.radiusScale ?? 0) * Math.pow(radiusRampT, p.radiusScaleCurve ?? 1);
         const jitter = 1 + (rng.nextFloat() * 2 - 1) * sizeJitter;
         const length = Math.max(4, baseLength * sizeMorph * radiusScale * jitter);
 
@@ -1986,24 +1994,28 @@
           shading: shadingLines,
           bbox: bboxFromPoints(outline),
           ringIndex,
+          ringPetalIndex: i,
+          ringPetalCount: count,
         });
       }
       ringProgressOffset += count;
     });
 
     if (petals.length) {
-      const ordered = petals.slice().sort((a, b) => a.radius - b.radius);
       const pushSegment = (seg, meta) => {
         if (!seg || seg.length <= 1) return;
         if (meta) seg.meta = { ...meta };
         paths.push(seg);
       };
-      ordered.forEach((petal) => {
+      const bboxesOverlap = (a, b) =>
+        a && b && a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY;
+      const asOccluder = (petal) => ({ points: petal.outline, bbox: petal.bbox, ringIndex: petal.ringIndex });
+      const renderPetal = (petal, clipOccluders) => {
         let shadingLines = petal.shading;
         if (p.lightSource) {
           const shadowed = [];
           shadingLines.forEach((line) => {
-            const pieces = splitPathByShadow(line, p.lightSource, center, occluders);
+            const pieces = splitPathByShadow(line, p.lightSource, center, clipOccluders);
             pieces.forEach((seg) => {
               if (seg.length > 1) {
                 // splitPathByShadow returns bare point arrays — re-tag with the
@@ -2016,7 +2028,6 @@
           });
           shadingLines = shadowed;
         }
-        const clipOccluders = occluders;
         if (layering && clipOccluders.length) {
           const clippedOutline = clipPathOutside(petal.outline, clipOccluders);
           clippedOutline.forEach((seg) => pushSegment(seg, petal.outline.meta));
@@ -2030,8 +2041,49 @@
             if (line.length > 1) paths.push(line);
           });
         }
-        occluders.push({ points: petal.outline, bbox: petal.bbox, ringIndex: petal.ringIndex });
-      });
+      };
+      if (layoutMode === 'whorl') {
+        // A whorl is a CLOSED ring, so a painter's total order cannot close it:
+        // the first-drawn petal (always at angle 0 — 3 o'clock) sat fully on top
+        // of the design and the last-drawn petals lost their entire bases to the
+        // accumulated occluders. Instead each petal tucks under its forward
+        // neighbours (window < half the ring), which orients every overlapping
+        // pair exactly once — rotationally uniform, no seam, no holes. Rings
+        // still occlude each other innermost-on-top, matching a real corolla.
+        const ringGroups = new Map();
+        petals.forEach((petal) => {
+          const list = ringGroups.get(petal.ringIndex) || [];
+          list.push(petal);
+          ringGroups.set(petal.ringIndex, list);
+        });
+        const ringOrder = [...ringGroups.keys()].sort(
+          (a, b) => ringGroups.get(a)[0].radius - ringGroups.get(b)[0].radius
+        );
+        const completedRings = [];
+        ringOrder.forEach((ri) => {
+          const ringPetals = ringGroups.get(ri).slice().sort((a, b) => a.ringPetalIndex - b.ringPetalIndex);
+          const n = ringPetals.length;
+          const fwdWindow = Math.floor((n - 1) / 2);
+          ringPetals.forEach((petal, idx) => {
+            const clipOccluders = completedRings.slice();
+            for (let d = 1; d <= fwdWindow; d++) {
+              const neighbor = ringPetals[(idx + d) % n];
+              if (bboxesOverlap(petal.bbox, neighbor.bbox)) clipOccluders.push(asOccluder(neighbor));
+            }
+            renderPetal(petal, clipOccluders);
+          });
+          ringPetals.forEach((petal) => completedRings.push(asOccluder(petal)));
+        });
+        completedRings.forEach((occ) => occluders.push(occ));
+      } else {
+        // Spiral mode keeps the radial painter's order — a spiral has a genuine
+        // start and end, so inner petals legitimately sit on top of outer ones.
+        const ordered = petals.slice().sort((a, b) => a.radius - b.radius);
+        ordered.forEach((petal) => {
+          renderPetal(petal, occluders);
+          occluders.push(asOccluder(petal));
+        });
+      }
     }
 
     const centerPaths = buildCentralElements(p, rng, noise, center, maxRadius);
