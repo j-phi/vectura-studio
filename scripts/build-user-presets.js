@@ -21,10 +21,11 @@
  * "name" overrides it.
  *
  * Factory "Default" markers: every algorithm whose ALGO_DEFAULTS[type].preset is
- * "<type-lowercased>-default" gets an empty-params "<type>-default" preset
- * synthesized here (Classic group, first in the list) — they are byte-identical
- * to factory state and double as a one-click reset, so they are NOT stored as
- * files. The mapping is read from src/config/defaults.js.
+ * "<type-lowercased>-default" gets a "<type>-default" preset synthesized here
+ * (Classic group, first in the list). If a user-presets/<type>/default.vectura
+ * file exists for that algorithm, its params win over the synthesized empty-params
+ * sentinel — it becomes the file-based default. The mapping is read from
+ * src/config/defaults.js.
  */
 
 const fs = require('fs');
@@ -188,7 +189,16 @@ for (const system of SYSTEMS) {
   }
 }
 
-const presetsJson = JSON.stringify(presets, null, 2)
+// Deduplicate by id: file-based presets (added later in the loop) win over
+// synthesized empty-params sentinels (added first). Map insertion order is
+// preserved so the winning entry stays in the synthesized slot (Classic group).
+const dedupedMap = new Map();
+for (const p of presets) {
+  dedupedMap.set(p.id, p);
+}
+const finalPresets = [...dedupedMap.values()];
+
+const presetsJson = JSON.stringify(finalPresets, null, 2)
   .split('\n')
   .map((line) => '    ' + line)
   .join('\n')
@@ -208,4 +218,4 @@ const output = `(() => {
 `;
 
 fs.writeFileSync(OUTPUT_PATH, output, 'utf8');
-console.log(`[user-presets:bundle] Wrote ${presets.length} preset(s) to src/config/user-presets.js`);
+console.log(`[user-presets:bundle] Wrote ${finalPresets.length} preset(s) to src/config/user-presets.js`);

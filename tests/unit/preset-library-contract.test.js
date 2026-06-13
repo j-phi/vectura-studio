@@ -43,13 +43,15 @@ describe('Preset library contract (file-only source of truth)', () => {
     expect(dangling).toEqual([]);
   });
 
-  test('synthesized "<type>-default" markers have empty params and the Classic group', () => {
+  test('"<type>-default" markers exist and belong to the Classic group', () => {
     const markers = PRESETS.filter((p) => /-default$/.test(p.id) && p.name === 'Default');
     expect(markers.length).toBeGreaterThanOrEqual(15);
     for (const m of markers) {
-      expect(Object.keys(m.params || {})).toEqual([]);
       expect(m.group).toBe('Classic');
     }
+    // Each id must be unique — no duplicates from synthesized + file-based overlap.
+    const ids = markers.map((m) => m.id);
+    expect(ids).toEqual([...new Set(ids)]);
   });
 
   test('curated presets keep stable ids and non-User categories', () => {
