@@ -105,14 +105,14 @@
           btn.appendChild(nameEl);
           penMenu.appendChild(btn);
         });
-        penMenu.querySelectorAll('.pen-option').forEach((opt) => {
-          opt.onclick = (e) => {
-            e.stopPropagation();
-            if (this.app.pushHistory) this.app.pushHistory();
-            applyPen(pens.find((pen) => pen.id === opt.dataset.penId));
-            penMenu.classList.add('hidden');
-          };
-        });
+        penMenu.onclick = (e) => {
+          const opt = e.target.closest('.pen-option');
+          if (!opt) return;
+          e.stopPropagation();
+          if (this.app.pushHistory) this.app.pushHistory();
+          applyPen(pens.find((pen) => pen.id === opt.dataset.penId));
+          penMenu.classList.add('hidden');
+        };
         penPill.onclick = (e) => {
           e.stopPropagation();
           if (this.openPenMenu && this.openPenMenu !== penMenu) this.openPenMenu.classList.add('hidden');

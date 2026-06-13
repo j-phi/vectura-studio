@@ -220,6 +220,13 @@
     return out;
   };
 
+  const generateId = () => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    return generateId() + generateId();
+  };
+
   class VectorEngine {
     constructor() {
       this.layers = [];
@@ -231,7 +238,7 @@
 
     addLayer(type = 'wavetable') {
       type = resolveDrawableLayerType(type, 'wavetable');
-      const id = Math.random().toString(36).slice(2, 11);
+      const id = generateId();
       SETTINGS.globalLayerCount = ++this._layerCounter;
       const num = String(this._layerCounter).padStart(2, '0');
       const defaults = ALGO_DEFAULTS && ALGO_DEFAULTS[type];
@@ -245,7 +252,7 @@
     }
 
     addShapeLayer(name, paths) {
-      const id = Math.random().toString(36).slice(2, 11);
+      const id = generateId();
       SETTINGS.globalLayerCount = ++this._layerCounter;
       const layer = new Layer(id, 'shape', name || `Shape ${String(this._layerCounter).padStart(2, '0')}`);
       layer.sourcePaths = clonePaths(paths || []);
@@ -265,7 +272,7 @@
     }
 
     addModifierLayer(type = 'mirror') {
-      const id = Math.random().toString(36).slice(2, 11);
+      const id = generateId();
       SETTINGS.globalLayerCount = ++this._layerCounter;
       const num = String(this._layerCounter).padStart(2, '0');
       const prettyType = type.charAt(0).toUpperCase() + type.slice(1);
@@ -321,7 +328,7 @@
           : (modLayer.morphedPaths || [])) || [];
         const firstChild = morphLeaves[0] || {};
 
-        const folderId = Math.random().toString(36).slice(2, 11);
+        const folderId = generateId();
         SETTINGS.globalLayerCount = ++this._layerCounter;
         const folder = new Layer(folderId, 'group', modLayer.name);
         folder.isGroup = true;
@@ -332,7 +339,7 @@
 
         const pad = String(morphed.length).length;
         const shapeLayers = morphed.map((path, i) => {
-          const shapeId = Math.random().toString(36).slice(2, 11);
+          const shapeId = generateId();
           SETTINGS.globalLayerCount = ++this._layerCounter;
           const shape = new Layer(shapeId, 'shape', `${modLayer.name} - Line ${String(i + 1).padStart(pad, '0')}`);
           shape.parentId = folderId;
@@ -376,7 +383,7 @@
         mirrored.forEach((path) => expandedItems.push({ path, child }));
       });
 
-      const folderId = Math.random().toString(36).slice(2, 11);
+      const folderId = generateId();
       SETTINGS.globalLayerCount = ++this._layerCounter;
       const folder = new Layer(folderId, 'group', modLayer.name);
       folder.isGroup = true;
@@ -387,7 +394,7 @@
 
       const pad = String(expandedItems.length).length;
       const shapeLayers = expandedItems.map(({ path, child }, i) => {
-        const shapeId = Math.random().toString(36).slice(2, 11);
+        const shapeId = generateId();
         SETTINGS.globalLayerCount = ++this._layerCounter;
         const shape = new Layer(shapeId, 'shape', `${modLayer.name} - Line ${String(i + 1).padStart(pad, '0')}`);
         shape.parentId = folderId;
@@ -429,7 +436,7 @@
     }
 
     addGroupLayer() {
-      const id = Math.random().toString(36).slice(2, 11);
+      const id = generateId();
       SETTINGS.globalLayerCount = ++this._layerCounter;
       const num = String(this._layerCounter).padStart(2, '0');
       const layer = new Layer(id, 'group', `Group ${num}`);
@@ -442,7 +449,7 @@
     }
 
     addEmptyLayer() {
-      const id = Math.random().toString(36).slice(2, 11);
+      const id = generateId();
       SETTINGS.globalLayerCount = ++this._layerCounter;
       const num = String(this._layerCounter).padStart(2, '0');
       const layer = new Layer(id, 'group', `Layer ${num}`);
@@ -606,7 +613,7 @@
     duplicateLayer(id, state = null) {
       const source = this.layers.find((l) => l.id === id);
       if (!source) return null;
-      const newId = Math.random().toString(36).slice(2, 11);
+      const newId = generateId();
       SETTINGS.globalLayerCount = ++this._layerCounter;
       const baseName = `${source.name} Copy`;
       const existing = new Set(this.layers.map((l) => l.name));

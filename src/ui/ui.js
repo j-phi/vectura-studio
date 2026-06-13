@@ -1376,6 +1376,25 @@
     constructor(app) {
       this._init(app);
     }
+
+    updateStats(s) {
+      const dist = document.getElementById('stat-dist');
+      const time = document.getElementById('stat-time');
+      const lines = document.getElementById('stat-lines');
+      if (!dist || !time) return;
+      dist.innerText = s.distance;
+      time.innerText = s.time;
+      if (lines) lines.innerText = s.lines?.toString?.() || '0';
+    }
+
+    resetPanes() {
+      const leftPane = document.getElementById('left-pane');
+      const rightPane = document.getElementById('right-pane');
+      const bottomPane = document.getElementById('bottom-pane');
+      if (leftPane) leftPane.classList.remove('pane-collapsed', 'pane-force-open');
+      if (rightPane) rightPane.classList.remove('pane-collapsed', 'pane-force-open');
+      if (bottomPane) bottomPane.classList.remove('bottom-pane-collapsed');
+    }
   }
 
   // ── Orchestrator init (Meridian Unit 1.9c → 1.10) ──────────────────
