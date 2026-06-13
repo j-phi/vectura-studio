@@ -59,6 +59,17 @@
   const noiseActive = (p) =>
     p.noiseAmount > 0 && Array.isArray(p.noises) && p.noises.some((n) => n && n.enabled !== false);
 
+  // Pop-out / dock toggle glyphs (arrows-out / arrows-in).
+  const POPOUT_ICON = `<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M9 2h5v5M14 2L9 7M7 14H2V9M2 14l5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const DOCK_ICON = `<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13 3l-5 5M8 8V4M8 8h4M3 13l5-5M8 8v4M8 8H4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+  // Default top-left for the floating pane the first time it pops out — clear of
+  // the left controls panel, near the top of the canvas.
+  const popoutDefaultPos = () => ({
+    x: Math.min(420, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 260),
+    y: 96,
+  });
+
   function applyImageSourceNoise(layer, preset) {
     if (this.app && this.app.pushHistory) this.app.pushHistory();
     const p = layer.params;
@@ -117,6 +128,8 @@
     const root = document.createElement('div');
     root.className = 'image-source-widget mb-4';
 
+    const popout = this._imageSourcePopout || (this._imageSourcePopout = { open: false, x: null, y: null });
+
     const header = document.createElement('div');
     header.className = 'image-source-header';
     header.innerHTML = `
@@ -124,6 +137,24 @@
       <span class="image-source-name text-[10px] text-vectura-muted truncate"></span>
     `;
     const nameEl = header.querySelector('.image-source-name');
+    // Pop-out / dock toggle. Flips the floating state and rebuilds, which
+    // re-mounts the widget into the floating pane or back inline.
+    const toggleBtn = document.createElement('button');
+    toggleBtn.type = 'button';
+    toggleBtn.className = 'image-source-popout-toggle';
+    toggleBtn.title = popout.open ? 'Dock image source' : 'Pop out image source';
+    toggleBtn.setAttribute('aria-label', toggleBtn.title);
+    toggleBtn.innerHTML = popout.open ? DOCK_ICON : POPOUT_ICON;
+    toggleBtn.onclick = () => {
+      popout.open = !popout.open;
+      if (popout.open && (!Number.isFinite(popout.x) || !Number.isFinite(popout.y))) {
+        const d = popoutDefaultPos();
+        popout.x = d.x;
+        popout.y = d.y;
+      }
+      this.buildControls();
+    };
+    header.appendChild(toggleBtn);
     root.appendChild(header);
 
     const drawThumbTo = (canvasEl, img) => {
@@ -283,7 +314,62 @@
     actions.querySelector('.is-paint').onclick = () => this.openImagePaintModal(layer);
     root.appendChild(actions);
 
-    wrapper.appendChild(root);
+    // ── Placement: docked inline, or floating over the canvas ────────────────
+    if (popout.open) {
+      // Floating pane lives on <body> (a fixed overlay) so it survives the left
+      // panel being cleared. Re-created fresh each rebuild (the prior one is
+      // removed in buildControls' reset), positioned from the saved x/y.
+      const pane = document.createElement('div');
+      pane.className = 'image-source-popout';
+      pane.style.left = `${Number.isFinite(popout.x) ? popout.x : popoutDefaultPos().x}px`;
+      pane.style.top = `${Number.isFinite(popout.y) ? popout.y : popoutDefaultPos().y}px`;
+      pane.appendChild(root);
+      document.body.appendChild(pane);
+      this._imageSourcePopoutEl = pane;
+
+      // Drag by the header (ignoring the toggle button). Clamped to the viewport.
+      header.classList.add('is-drag-handle');
+      header.addEventListener('pointerdown', (e) => {
+        if (e.target.closest('button')) return;
+        e.preventDefault();
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const rect = pane.getBoundingClientRect();
+        const move = (ev) => {
+          const nx = Math.max(0, Math.min(window.innerWidth - 48, rect.left + (ev.clientX - startX)));
+          const ny = Math.max(0, Math.min(window.innerHeight - 32, rect.top + (ev.clientY - startY)));
+          pane.style.left = `${nx}px`;
+          pane.style.top = `${ny}px`;
+          popout.x = nx;
+          popout.y = ny;
+        };
+        const up = () => {
+          document.removeEventListener('pointermove', move);
+          document.removeEventListener('pointerup', up);
+        };
+        document.addEventListener('pointermove', move);
+        document.addEventListener('pointerup', up);
+      });
+
+      // Inline placeholder left behind in the panel, with a one-click dock.
+      const placeholder = document.createElement('div');
+      placeholder.className = 'image-source-docked-placeholder mb-4';
+      placeholder.innerHTML = '<span class="text-[11px] text-vectura-muted">Image source is floating</span>';
+      const dockBtn = document.createElement('button');
+      dockBtn.type = 'button';
+      dockBtn.className = 'image-source-btn is-dock';
+      dockBtn.textContent = 'Dock';
+      dockBtn.onclick = () => { popout.open = false; this.buildControls(); };
+      placeholder.appendChild(dockBtn);
+      wrapper.appendChild(placeholder);
+    } else {
+      if (this._imageSourcePopoutEl) {
+        this._imageSourcePopoutEl.remove();
+        this._imageSourcePopoutEl = null;
+      }
+      wrapper.appendChild(root);
+    }
+
     drawPreview();
     // Live-refresh the preview after every param edit (app.regen fires this
     // hook), so dragging Noise Amount or editing the stack updates the

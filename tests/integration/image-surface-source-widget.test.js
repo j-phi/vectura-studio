@@ -95,4 +95,46 @@ describe('Image Surface — source widget + paint modal', () => {
     expect(p.imageId).toBeTruthy();
     expect(window.Vectura.NOISE_IMAGES[p.imageId]).toBeTruthy();
   });
+
+  describe('pop-out / dock', () => {
+    const toggle = () => document.querySelector('.image-source-widget .image-source-popout-toggle');
+
+    test('mounts docked inline by default (no floating pane)', () => {
+      expect(toggle()).toBeTruthy();
+      // Docked: the widget lives inside the left panel, not in a floating pane.
+      expect(document.querySelector('.image-source-popout')).toBeFalsy();
+      expect(document.querySelector('#left-section-algorithm-configuration .image-source-widget')
+        || document.querySelector('.image-source-widget')).toBeTruthy();
+    });
+
+    test('the toggle pops the widget into a floating pane + leaves a Dock placeholder', () => {
+      toggle().click();
+      const pane = document.querySelector('.image-source-popout');
+      expect(pane).toBeTruthy();
+      // The actual widget moved into the floating pane (on <body>).
+      expect(pane.querySelector('.image-source-widget')).toBeTruthy();
+      expect(pane.parentElement).toBe(document.body);
+      // An inline placeholder with a Dock button is left behind in the panel.
+      expect(document.querySelector('.image-source-docked-placeholder .image-source-btn.is-dock')).toBeTruthy();
+    });
+
+    test('the Dock button re-docks the widget and removes the floating pane', () => {
+      toggle().click(); // pop out
+      expect(document.querySelector('.image-source-popout')).toBeTruthy();
+      document.querySelector('.image-source-docked-placeholder .image-source-btn.is-dock').click();
+      expect(document.querySelector('.image-source-popout')).toBeFalsy();
+      expect(document.querySelector('.image-source-docked-placeholder')).toBeFalsy();
+      expect(document.querySelector('.image-source-widget')).toBeTruthy();
+    });
+
+    test('selecting a different layer tears down the floating pane (no orphan)', () => {
+      toggle().click(); // pop out
+      expect(document.querySelector('.image-source-popout')).toBeTruthy();
+      // Switch to a non-imageSurface layer and rebuild controls.
+      app.engine.addLayer('flowfield');
+      app.ui.renderLayers();
+      app.ui.buildControls();
+      expect(document.querySelector('.image-source-popout')).toBeFalsy();
+    });
+  });
 });

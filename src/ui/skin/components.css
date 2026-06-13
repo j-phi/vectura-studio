@@ -10102,9 +10102,60 @@ kbd {
 }
 .image-source-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+.image-source-popout-toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 3px;
+  border: 1px solid var(--ui-border);
+  border-radius: 5px;
+  background: var(--ui-ctrl);
+  color: var(--ui-muted);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.image-source-popout-toggle:hover {
+  background: var(--ui-ctrl-hov);
+  border-color: var(--ui-border-hi);
+  color: var(--ui-accent);
+}
+.image-source-popout-toggle svg { width: 100%; height: 100%; }
+/* Floating ("popped out") image-source pane — fixed overlay above the canvas
+   and panels (z 200) but below modals/toasts (z 1000+). Dragged by its header. */
+.image-source-popout {
+  position: fixed;
+  z-index: 200;
+  width: 232px;
+  padding: 12px;
+  background: var(--ui-panel);
+  border: 1px solid var(--ui-border-hi);
+  border-radius: 10px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.45);
+}
+.image-source-popout .image-source-header.is-drag-handle {
+  cursor: move;
+  user-select: none;
+  touch-action: none;
+}
+.image-source-docked-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px dashed var(--ui-border);
+  border-radius: 8px;
+}
+.image-source-btn.is-dock {
+  flex: 0 0 auto;
+  padding: 4px 10px;
 }
 .image-source-name {
   max-width: 60%;

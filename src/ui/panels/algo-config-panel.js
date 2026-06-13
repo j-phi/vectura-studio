@@ -146,6 +146,14 @@
     // Cleared each rebuild; re-registered if this layer mounts the image-source
     // widget (imageSurface) so its preview can live-refresh after every edit.
     this._activeImageSourceRefresh = null;
+    // Tear down any floating image-source pane before the rebuild; the widget
+    // re-creates it (from the persisted _imageSourcePopout state) if the layer
+    // being built is still imageSurface and still popped out. Prevents the
+    // floating pane orphaning over the canvas when another layer is selected.
+    if (this._imageSourcePopoutEl) {
+      this._imageSourcePopoutEl.remove();
+      this._imageSourcePopoutEl = null;
+    }
     const paintBucketSection = getEl('left-section-paint-bucket', { silent: true });
     const paintBucketActive = this.activeTool === 'fill' || this.activeTool === 'fill-erase';
     if (paintBucketActive) {
