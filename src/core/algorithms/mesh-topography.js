@@ -231,7 +231,7 @@
   };
 
   const project3 = (pt, p, bounds) => {
-    const rotated = rotatePoint(pt, { yaw: finite(p.rotate, -28), pitch: finite(p.tilt, 34), roll: 0 });
+    const rotated = rotatePoint(pt, { yaw: finite(p.rotate, -28), pitch: finite(p.tilt, 34), roll: finite(p.roll, 0) });
     return {
       rotated,
       projected: projectPoint(rotated, { centerX: bounds.width / 2, centerY: bounds.height / 2, scale: 1, ...G3.resolveProjection(p) }),
@@ -305,7 +305,7 @@
         const tri = face.map((idx) => planeVertices[idx]);
         const seg = trianglePlaneSegment(tri, z);
         if (!seg) return;
-        const rotatedTri = tri.map((pt) => rotatePoint(pt, { yaw: finite(p.rotate, -28), pitch: finite(p.tilt, 34) }));
+        const rotatedTri = tri.map((pt) => rotatePoint(pt, { yaw: finite(p.rotate, -28), pitch: finite(p.tilt, 34), roll: finite(p.roll, 0) }));
         const front = faceNormal(rotatedTri).z >= -0.001;
         if (!front && !full) return;
         const projectedSeg = seg.map((pt) => project3(pt, p, bounds));

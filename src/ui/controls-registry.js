@@ -1895,7 +1895,8 @@
     { id: 'cameraDistance', label: 'Camera Distance', type: 'range', min: 150, max: 2000, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
     { id: 'focalLength', label: 'Depth Strength', type: 'range', min: 100, max: 1500, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
     { id: 'rotate', label: 'Rotate', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
-    { id: 'tilt', label: 'Tilt', type: 'range', min: 0, max: 89, step: 1, displayUnit: '°', livePreview: true },
+    { id: 'tilt', label: 'Tilt', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
+    { id: 'roll', label: 'Roll', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
     ...SHADING_LINE_CONTROLS,
   ];
 

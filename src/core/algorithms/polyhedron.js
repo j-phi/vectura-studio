@@ -14,6 +14,8 @@
     add,
     sub,
     mul,
+    dot,
+    cross,
     normalize,
     rotatePoint,
     projectPoint,
@@ -30,13 +32,149 @@
     return s - Math.floor(s);
   };
 
-  const regularRing = (count, radius, y = 0, phase = -Math.PI / 2) => {
+  const regularRing = (count, radius, z = 0, phase = -Math.PI / 2) => {
     const pts = [];
     for (let i = 0; i < count; i++) {
       const a = phase + (i / count) * TAU;
-      pts.push(v(Math.cos(a) * radius, y, Math.sin(a) * radius));
+      pts.push(v(Math.cos(a) * radius, Math.sin(a) * radius, z));
     }
     return pts;
+  };
+
+  const average3 = (points) => {
+    const total = (points || []).reduce((acc, pt) => add(acc, pt), v(0, 0, 0));
+    return mul(total, points?.length ? 1 / points.length : 0);
+  };
+
+  const lerp3 = (a, b, t) => v(
+    a.x + (b.x - a.x) * t,
+    a.y + (b.y - a.y) * t,
+    a.z + (b.z - a.z) * t
+  );
+
+  const meshBounds = (vertices) => {
+    let maxRadius = 0;
+    let maxDepth = 0;
+    (vertices || []).forEach((pt) => {
+      maxRadius = Math.max(maxRadius, Math.hypot(pt.x, pt.y, pt.z));
+      maxDepth = Math.max(maxDepth, Math.abs(pt.z));
+    });
+    return {
+      maxRadius: Math.max(1, maxRadius),
+      maxDepth: Math.max(1, maxDepth || maxRadius),
+    };
+  };
+
+  const withBounds = (mesh) => ({
+    ...mesh,
+    bounds: mesh.bounds || meshBounds(mesh.vertices),
+  });
+
+  const scaleMeshToRadius = (mesh, radius) => {
+    const current = meshBounds(mesh.vertices).maxRadius;
+    const scale = current > 0 ? radius / current : 1;
+    return withBounds({
+      vertices: mesh.vertices.map((pt) => mul(pt, scale)),
+      faces: mesh.faces.map((face) => face.slice()),
+    });
+  };
+
+  const orientFace = (face, vertices) => {
+    const indices = face.slice();
+    const points = indices.map((idx) => vertices[idx]);
+    if (dot(faceNormal(points), average3(points)) < 0) indices.reverse();
+    return indices;
+  };
+
+  const projectToTangent = (vector, normal) => sub(vector, mul(normal, dot(vector, normal)));
+
+  const buildNeighborsByVertex = (faces, vertexCount) => {
+    const neighbors = Array.from({ length: vertexCount }, () => []);
+    faces.forEach((face) => {
+      for (let i = 0; i < face.length; i++) {
+        const current = face[i];
+        const next = face[(i + 1) % face.length];
+        const previous = face[(i + face.length - 1) % face.length];
+        if (!neighbors[current].includes(next)) neighbors[current].push(next);
+        if (!neighbors[current].includes(previous)) neighbors[current].push(previous);
+      }
+    });
+    return neighbors;
+  };
+
+  const sortNeighborsAroundVertex = (vertexIndex, neighbors, vertices) => {
+    const origin = vertices[vertexIndex];
+    const normal = normalize(origin);
+    const reference = Math.abs(normal.z) < 0.9 ? v(0, 0, 1) : v(0, 1, 0);
+    const basisX = normalize(cross(reference, normal));
+    const basisY = normalize(cross(normal, basisX));
+    return (neighbors || []).slice().sort((left, right) => {
+      const leftVector = normalize(projectToTangent(sub(vertices[left], origin), normal));
+      const rightVector = normalize(projectToTangent(sub(vertices[right], origin), normal));
+      const leftAngle = Math.atan2(dot(leftVector, basisY), dot(leftVector, basisX));
+      const rightAngle = Math.atan2(dot(rightVector, basisY), dot(rightVector, basisX));
+      return leftAngle - rightAngle;
+    });
+  };
+
+  const createIcosahedronMesh = (radius) => {
+    const phi = (1 + Math.sqrt(5)) / 2;
+    const vertices = [
+      v(-1, phi, 0), v(1, phi, 0), v(-1, -phi, 0), v(1, -phi, 0),
+      v(0, -1, phi), v(0, 1, phi), v(0, -1, -phi), v(0, 1, -phi),
+      v(phi, 0, -1), v(phi, 0, 1), v(-phi, 0, -1), v(-phi, 0, 1),
+    ].map((pt) => mul(normalize(pt), radius));
+    return withBounds({
+      vertices,
+      faces: [
+        [0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11],
+        [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
+        [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9],
+        [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1],
+      ],
+    });
+  };
+
+  const createTruncatedIcosahedronMesh = (radius) => {
+    const base = createIcosahedronMesh(1);
+    const orientedBaseFaces = base.faces.map((face) => orientFace(face, base.vertices));
+    const directedVertexMap = new Map();
+    const vertices = [];
+
+    const getDirectedVertex = (start, end) => {
+      const key = `${start}:${end}`;
+      if (directedVertexMap.has(key)) return directedVertexMap.get(key);
+      const index = vertices.length;
+      vertices.push(lerp3(base.vertices[start], base.vertices[end], 1 / 3));
+      directedVertexMap.set(key, index);
+      return index;
+    };
+
+    const faces = [];
+    orientedBaseFaces.forEach((face) => {
+      const [a, b, c] = face;
+      faces.push([
+        getDirectedVertex(a, b),
+        getDirectedVertex(b, a),
+        getDirectedVertex(b, c),
+        getDirectedVertex(c, b),
+        getDirectedVertex(c, a),
+        getDirectedVertex(a, c),
+      ]);
+    });
+
+    const neighborsByVertex = buildNeighborsByVertex(orientedBaseFaces, base.vertices.length);
+    for (let vertexIndex = 0; vertexIndex < base.vertices.length; vertexIndex++) {
+      const neighbors = sortNeighborsAroundVertex(vertexIndex, neighborsByVertex[vertexIndex], base.vertices);
+      if (neighbors.length >= 3) {
+        faces.push(neighbors.map((neighbor) => getDirectedVertex(vertexIndex, neighbor)));
+      }
+    }
+
+    return scaleMeshToRadius({
+      vertices,
+      faces: faces.map((face) => orientFace(face, vertices)),
+    }, radius);
   };
 
   const createSolidMesh = (p) => {
@@ -49,13 +187,13 @@
       if (!mesh || !Array.isArray(mesh.vertices) || !mesh.vertices.length || !Array.isArray(mesh.faces)) {
         return { vertices: [], faces: [] };
       }
-      return {
+      return withBounds({
         vertices: mesh.vertices.map((vt) => v(finite(vt.x) * radius, finite(vt.y) * radius, finite(vt.z) * radius)),
         faces: mesh.faces.map((f) => f.slice()),
-      };
+      });
     }
     if (type === 'flatPolygon') {
-      return { vertices: regularRing(sides, radius, 0), faces: [Array.from({ length: sides }, (_, i) => i)] };
+      return withBounds({ vertices: regularRing(sides, radius, 0), faces: [Array.from({ length: sides }, (_, i) => i)] });
     }
     if (type === 'prism' || type === 'antiprism') {
       const top = regularRing(sides, radius, depth / 2, type === 'antiprism' ? Math.PI / sides - Math.PI / 2 : -Math.PI / 2);
@@ -71,117 +209,89 @@
           faces.push([i, n, sides + n, sides + i]);
         }
       }
-      return { vertices, faces };
+      return withBounds({ vertices, faces });
     }
     if (type === 'bipyramid') {
       const ring = regularRing(sides, radius, 0);
       const top = ring.length;
       const bottom = top + 1;
-      const vertices = ring.concat([v(0, depth / 2, 0), v(0, -depth / 2, 0)]);
+      const vertices = ring.concat([v(0, 0, depth / 2), v(0, 0, -depth / 2)]);
       const faces = [];
       for (let i = 0; i < sides; i++) {
         const n = (i + 1) % sides;
         faces.push([top, i, n]);
         faces.push([bottom, n, i]);
       }
-      return { vertices, faces };
+      return withBounds({ vertices, faces });
     }
     if (type === 'tetrahedron') {
       const a = radius / Math.sqrt(3);
-      return {
+      return withBounds({
         vertices: [v(a, a, a), v(-a, -a, a), v(-a, a, -a), v(a, -a, -a)].map((pt) => mul(normalize(pt), radius)),
         faces: [[0, 1, 2], [0, 3, 1], [0, 2, 3], [1, 3, 2]],
-      };
+      });
     }
     if (type === 'cube') {
       const r = radius / Math.sqrt(3);
-      return {
+      return withBounds({
         vertices: [
           v(-r, -r, -r), v(r, -r, -r), v(r, r, -r), v(-r, r, -r),
           v(-r, -r, r), v(r, -r, r), v(r, r, r), v(-r, r, r),
         ],
         faces: [[0, 1, 2, 3], [4, 7, 6, 5], [0, 4, 5, 1], [1, 5, 6, 2], [2, 6, 7, 3], [3, 7, 4, 0]],
-      };
+      });
     }
     if (type === 'octahedron') {
-      return {
+      return withBounds({
         vertices: [v(radius, 0, 0), v(-radius, 0, 0), v(0, radius, 0), v(0, -radius, 0), v(0, 0, radius), v(0, 0, -radius)],
         faces: [[0, 2, 4], [4, 2, 1], [1, 2, 5], [5, 2, 0], [4, 3, 0], [1, 3, 4], [5, 3, 1], [0, 3, 5]],
-      };
+      });
     }
     if (type === 'icosahedron') {
-      const phi = (1 + Math.sqrt(5)) / 2;
-      const raw = [
-        v(-1, phi, 0), v(1, phi, 0), v(-1, -phi, 0), v(1, -phi, 0),
-        v(0, -1, phi), v(0, 1, phi), v(0, -1, -phi), v(0, 1, -phi),
-        v(phi, 0, -1), v(phi, 0, 1), v(-phi, 0, -1), v(-phi, 0, 1),
-      ].map((pt) => mul(normalize(pt), radius));
-      return {
-        vertices: raw,
-        faces: [
-          [0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11],
-          [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
-          [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9],
-          [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1],
-        ],
-      };
+      return createIcosahedronMesh(radius);
     }
-
-    const lat = 5;
-    const lon = 10;
-    const vertices = [v(0, radius, 0)];
-    for (let y = 1; y < lat; y++) {
-      const vv = y / lat;
-      const theta = vv * Math.PI;
-      const rr = Math.sin(theta) * radius;
-      const yy = Math.cos(theta) * radius;
-      for (let x = 0; x < lon; x++) {
-        const a = (x / lon) * TAU + (y % 2) * (Math.PI / lon);
-        vertices.push(v(Math.cos(a) * rr, yy, Math.sin(a) * rr));
-      }
-    }
-    const bottom = vertices.length;
-    vertices.push(v(0, -radius, 0));
-    const faces = [];
-    for (let x = 0; x < lon; x++) faces.push([0, 1 + x, 1 + ((x + 1) % lon)]);
-    for (let y = 1; y < lat - 1; y++) {
-      const row = 1 + (y - 1) * lon;
-      const next = row + lon;
-      for (let x = 0; x < lon; x++) faces.push([row + x, row + ((x + 1) % lon), next + ((x + 1) % lon), next + x]);
-    }
-    const last = 1 + (lat - 2) * lon;
-    for (let x = 0; x < lon; x++) faces.push([bottom, last + ((x + 1) % lon), last + x]);
-    return { vertices, faces };
+    return createTruncatedIcosahedronMesh(radius);
   };
 
-  const applyVertexEffects = (pt, p) => {
-    const expand = clamp(finite(p.expand, 100) / 100, 0.1, 3);
+  const applyVertexEffects = (pt, p, boundsInfo = {}) => {
+    const expand = clamp(finite(p.expand, 100) / 100, 0.5, 1.8);
     let out = mul(pt, expand);
-    const bulge = finite(p.bulge, 0);
-    if (Math.abs(bulge) > 0.001) out = add(out, mul(normalize(out), bulge));
     const twist = finite(p.twist, 0);
     if (Math.abs(twist) > 0.001) {
-      const amount = (out.y / Math.max(1, finite(p.depth, 94))) * twist;
-      out = rotatePoint(out, { yaw: amount });
+      const safeDepth = Math.max(1, boundsInfo.maxDepth || boundsInfo.maxRadius || finite(p.depth, 94));
+      const amount = (out.z / safeDepth) * twist * (Math.PI / 180);
+      const c = Math.cos(amount);
+      const s = Math.sin(amount);
+      out = v(out.x * c - out.y * s, out.x * s + out.y * c, out.z);
     }
     return out;
   };
 
-  const renderedFace = (mesh, vertices, face, faceIndex, p) => {
+  const renderedFace = (mesh, vertices, face, faceIndex, p, faceBands = 0) => {
     const base = face.map((idx) => vertices[idx]);
-    const center = mul(base.reduce((acc, pt) => add(acc, pt), v(0, 0, 0)), 1 / Math.max(1, base.length));
+    const center = average3(base);
     const normal = faceNormal(base);
+    const outward = normalize(center);
     const explode = finite(p.explode, 0);
     const extrude = finite(p.extrude, 0);
     const shard = clamp(finite(p.shard, 0) / 100, 0, 1);
-    return base.map((pt, i) => {
-      let out = add(pt, mul(normal, extrude));
-      out = add(out, mul(normalize(center), explode));
-      if (shard > 0) {
-        out = add(out, mul(normal, (hash01(faceIndex * 19 + i * 7) - 0.5) * shard * 18));
-      }
-      return out;
+    const shiftedCenter = add(center, add(mul(normal, extrude), mul(outward, explode)));
+    const outer = base.map((pt, i) => {
+      const radial = sub(pt, center);
+      const shardScale = 1 + shard * ((hash01(faceIndex * 97 + i * 37) * 2) - 1) * 0.7;
+      return add(shiftedCenter, mul(radial, shardScale));
     });
+    const bands = [];
+    const bulge = finite(p.bulge, 0);
+    for (let band = 1; band <= faceBands; band++) {
+      const t = band / (faceBands + 1);
+      const bulgeProfile = Math.pow(1 - t, 1.35);
+      bands.push(outer.map((pt) => add(
+        lerp3(shiftedCenter, pt, t),
+        mul(normal, bulge * bulgeProfile)
+      )));
+    }
+    return { outer, bands };
   };
 
   const projectFace = (facePts, p, bounds) => {
@@ -213,11 +323,189 @@
     paths.push(path);
   };
 
-  const scaledFaceLoop = (face, scale) => {
-    const center = face.reduce((acc, pt) => ({ x: acc.x + pt.x, y: acc.y + pt.y }), { x: 0, y: 0 });
-    center.x /= Math.max(1, face.length);
-    center.y /= Math.max(1, face.length);
-    return face.map((pt) => ({ x: center.x + (pt.x - center.x) * scale, y: center.y + (pt.y - center.y) * scale }));
+  const pointDistance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+  const distanceToSegment = (point, start, end) => {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq <= 1e-9) return pointDistance(point, start);
+    const t = clamp(((point.x - start.x) * dx + (point.y - start.y) * dy) / lenSq, 0, 1);
+    return pointDistance(point, { x: start.x + dx * t, y: start.y + dy * t });
+  };
+
+  const distanceToPolygonEdge = (point, polygon) => {
+    let min = Infinity;
+    for (let i = 0; i < polygon.length; i++) {
+      min = Math.min(min, distanceToSegment(point, polygon[i], polygon[(i + 1) % polygon.length]));
+    }
+    return min;
+  };
+
+  const pointInPolygon = (point, polygon) => {
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const a = polygon[i];
+      const b = polygon[j];
+      const intersects = ((a.y > point.y) !== (b.y > point.y))
+        && (point.x < ((b.x - a.x) * (point.y - a.y)) / ((b.y - a.y) || 1e-9) + a.x);
+      if (intersects) inside = !inside;
+    }
+    return inside;
+  };
+
+  const dedupeVertexMarkers = (points, epsilon = 0.8) => {
+    const unique = [];
+    points.forEach((point) => {
+      const match = unique.find((existing) => pointDistance(existing, point) <= epsilon);
+      if (!match) {
+        unique.push({ ...point });
+      } else if (point.depth > match.depth + 1e-6) {
+        Object.assign(match, point);
+      } else if (point.front) {
+        match.front = true;
+      }
+    });
+    return unique;
+  };
+
+  const isPointOccludedByFaces = (point, faceRecords, tolerance) => {
+    for (const record of faceRecords) {
+      if (!record.front || record.depth <= point.depth + 0.02) continue;
+      if (distanceToPolygonEdge(point, record.projected) <= tolerance) continue;
+      if (pointInPolygon(point, record.projected)) return true;
+    }
+    return false;
+  };
+
+  const buildVertexMarkers = (faceRecords, p) => {
+    const candidates = [];
+    faceRecords.forEach((record) => {
+      if (p.surfaceMode !== 'all' && !record.front) return;
+      record.projected.forEach((screen, index) => {
+        const rotated = record.rotated[index];
+        candidates.push({
+          x: screen.x,
+          y: screen.y,
+          depth: rotated?.z ?? screen.z ?? record.depth,
+          front: record.front,
+        });
+      });
+    });
+
+    const size = Math.max(0.2, finite(p.vertexSize, 4.2));
+    const rings = Math.max(1, Math.round(finite(p.vertexRings, 1)));
+    const loops = [];
+    const masks = [];
+    dedupeVertexMarkers(candidates).forEach((point, index) => {
+      if (p.faceOpacityMode === 'opaque' && isPointOccludedByFaces(point, faceRecords, size * 0.16)) return;
+      if (p.vertexOcclusionMode === 'occlude') {
+        masks.push({ center: { x: point.x, y: point.y }, radius: size * 1.08 });
+      }
+      for (let ring = 0; ring < rings; ring++) {
+        const radius = size * (1 - ring * 0.28);
+        if (radius <= 0.15) continue;
+        const loop = circlePath(point.x, point.y, radius, 18, {
+          algorithm: 'polyhedron',
+          vertex: index,
+          closed: true,
+          straight: true,
+        });
+        if (!point.front && p.faceOpacityMode !== 'opaque') markHidden(loop);
+        loops.push(loop);
+      }
+    });
+    return { loops, masks };
+  };
+
+  const clonePathMeta = (source) => (source?.meta ? JSON.parse(JSON.stringify(source.meta)) : null);
+
+  const visibleCircleSegments = (start, end, mask) => {
+    const params = [0, 1];
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const fx = start.x - mask.center.x;
+    const fy = start.y - mask.center.y;
+    const a = dx * dx + dy * dy;
+    const b = 2 * (fx * dx + fy * dy);
+    const c = fx * fx + fy * fy - mask.radius * mask.radius;
+    const discriminant = b * b - 4 * a * c;
+    if (a > 1e-9 && discriminant > 1e-9) {
+      const root = Math.sqrt(discriminant);
+      const t1 = (-b - root) / (2 * a);
+      const t2 = (-b + root) / (2 * a);
+      if (t1 > 1e-6 && t1 < 1 - 1e-6) params.push(t1);
+      if (t2 > 1e-6 && t2 < 1 - 1e-6) params.push(t2);
+    }
+    params.sort((left, right) => left - right);
+    const deduped = [];
+    params.forEach((value) => {
+      if (!deduped.length || Math.abs(value - deduped[deduped.length - 1]) > 1e-6) deduped.push(value);
+    });
+    const parts = [];
+    for (let i = 0; i < deduped.length - 1; i++) {
+      const t0 = deduped[i];
+      const t1 = deduped[i + 1];
+      if (t1 - t0 <= 1e-6) continue;
+      const mid = {
+        x: start.x + dx * ((t0 + t1) * 0.5),
+        y: start.y + dy * ((t0 + t1) * 0.5),
+      };
+      if (pointDistance(mid, mask.center) < mask.radius - 0.01) continue;
+      parts.push([
+        { x: start.x + dx * t0, y: start.y + dy * t0 },
+        { x: start.x + dx * t1, y: start.y + dy * t1 },
+      ]);
+    }
+    return parts;
+  };
+
+  const splitPathByCircle = (path, mask) => {
+    if (!Array.isArray(path) || path.length < 2) return [];
+    const out = [];
+    let current = [];
+    const flush = () => {
+      if (current.length >= 2) {
+        const segment = current.map((pt) => ({ x: pt.x, y: pt.y }));
+        const meta = clonePathMeta(path);
+        if (meta) {
+          delete meta.closed;
+          segment.meta = meta;
+        }
+        out.push(segment);
+      }
+      current = [];
+    };
+    for (let i = 0; i < path.length - 1; i++) {
+      const parts = visibleCircleSegments(path[i], path[i + 1], mask);
+      if (!parts.length) {
+        flush();
+        continue;
+      }
+      parts.forEach((part) => {
+        if (!current.length) {
+          current = [part[0], part[1]];
+        } else if (pointDistance(current[current.length - 1], part[0]) <= 0.02) {
+          current.push(part[1]);
+        } else {
+          flush();
+          current = [part[0], part[1]];
+        }
+      });
+    }
+    flush();
+    return out;
+  };
+
+  const clipPathsByCircleMasks = (paths, masks) => {
+    if (!Array.isArray(masks) || !masks.length) return paths;
+    let clipped = paths;
+    masks.forEach((mask) => {
+      const next = [];
+      clipped.forEach((path) => splitPathByCircle(path, mask).forEach((fragment) => next.push(fragment)));
+      clipped = next;
+    });
+    return clipped;
   };
 
   window.Vectura.AlgorithmRegistry.polyhedron = {

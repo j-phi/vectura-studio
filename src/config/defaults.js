@@ -1704,6 +1704,7 @@
       showOutline: true,
       rotate: -28,
       tilt: 34,
+      roll: 0,
       projection: 'orthographic',
       cameraDistance: 620,
       focalLength: 520,
