@@ -184,6 +184,54 @@ describe('Vectura geometry algorithms', () => {
     expect(opaque.some((path) => path.meta?.hiddenLine)).toBe(false);
   });
 
+  test('polyhedron buckyball uses pentagon/hexagon topology', () => {
+    const vertexOnly = generate('polyhedron', {
+      solidType: 'buckyball',
+      surfaceMode: 'all',
+      faceOpacityMode: 'seeThrough',
+      showFaces: false,
+      showEdges: false,
+      showVertices: true,
+      vertexOcclusionMode: 'outline',
+      vertexRings: 1,
+    });
+    expect(vertexOnly.filter((path) => path.meta?.vertex !== undefined)).toHaveLength(60);
+
+    const edgeOnly = generate('polyhedron', {
+      solidType: 'buckyball',
+      surfaceMode: 'all',
+      faceOpacityMode: 'seeThrough',
+      showFaces: false,
+      showEdges: true,
+      edgeStyle: 'line',
+      showVertices: false,
+    });
+    expect(edgeOnly.filter((path) => path.meta?.edge)).toHaveLength(90);
+  });
+
+  test('polyhedron point fill masks underlying linework without culling markers', () => {
+    const base = {
+      solidType: 'cube',
+      surfaceMode: 'all',
+      faceOpacityMode: 'seeThrough',
+      showFaces: true,
+      faceBands: 2,
+      showEdges: true,
+      edgeStyle: 'line',
+      showVertices: true,
+      vertexSize: 10,
+      vertexRings: 1,
+    };
+    const outline = generate('polyhedron', { ...base, vertexOcclusionMode: 'outline' });
+    const masked = generate('polyhedron', { ...base, vertexOcclusionMode: 'occlude' });
+    expect(finitePaths(masked)).toBe(true);
+    expect(masked.filter((path) => path.meta?.vertex !== undefined)).toHaveLength(
+      outline.filter((path) => path.meta?.vertex !== undefined).length
+    );
+    expect(pathSignature(masked)).not.toBe(pathSignature(outline));
+    expect(countPoints(masked)).not.toBe(countPoints(outline));
+  });
+
   test('polyhedron wires the four shared 3D enhancements (each toggle changes output, default stays off)', () => {
     const baseline = generate('polyhedron');
     const baselineSig = pathSignature(baseline);

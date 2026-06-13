@@ -49,6 +49,11 @@
       : []),
   ];
 
+  const POLYHEDRON_SIDE_COUNT_SOLIDS = ['flatPolygon', 'prism', 'antiprism', 'bipyramid'];
+  const POLYHEDRON_DEPTH_SOLIDS = ['prism', 'antiprism', 'bipyramid'];
+  const polyhedronUsesSideCount = (p = {}) => POLYHEDRON_SIDE_COUNT_SOLIDS.includes(p.solidType);
+  const polyhedronUsesDepth = (p = {}) => POLYHEDRON_DEPTH_SOLIDS.includes(p.solidType);
+
   const PETAL_PROFILE_OPTIONS = [
     { value: 'oval', label: 'Oval' },
     { value: 'teardrop', label: 'Teardrop' },
@@ -1773,9 +1778,9 @@
       ],
     },
     { id: 'stlImport', type: 'stlImport', showIf: (p) => p.solidType === 'importedMesh' },
-    { id: 'sideCount', label: 'Sides', type: 'range', min: 3, max: 60, step: 1, livePreview: true },
+    { id: 'sideCount', label: 'Sides', type: 'range', min: 3, max: 180, step: 1, showIf: polyhedronUsesSideCount, livePreview: true },
     { id: 'radius', label: 'Radius', type: 'range', min: 20, max: 130, step: 1, displayUnit: 'mm', livePreview: true },
-    { id: 'depth', label: 'Depth', type: 'range', min: 0, max: 180, step: 1, displayUnit: 'mm', livePreview: true },
+    { id: 'depth', label: 'Depth', type: 'range', min: 0, max: 180, step: 1, displayUnit: 'mm', showIf: polyhedronUsesDepth, livePreview: true },
     { type: 'section', label: 'Visibility' },
     {
       id: 'surfaceMode',
@@ -1812,12 +1817,12 @@
     { id: 'showVertices', label: 'Vertices', type: 'checkbox' },
     {
       id: 'vertexOcclusionMode',
-      label: 'Vertex Mode',
+      label: 'Point Fill',
       type: 'select',
       showIf: (p) => p.showVertices !== false,
       options: [
-        { value: 'outline', label: 'Outline' },
-        { value: 'occlude', label: 'Occlude' },
+        { value: 'outline', label: 'Outline Only' },
+        { value: 'occlude', label: 'Hide Interior' },
       ],
     },
     { id: 'vertexSize', label: 'Vertex Size', type: 'range', min: 0.8, max: 12, step: 0.2, showIf: (p) => p.showVertices !== false, livePreview: true },

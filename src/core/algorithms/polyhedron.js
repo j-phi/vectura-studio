@@ -512,8 +512,8 @@
     generate: (params = {}, rng, noise, bounds = {}) => {
       const p = params || {};
       const mesh = createSolidMesh(p);
-      const vertices = mesh.vertices.map((pt) => applyVertexEffects(pt, p));
-      const paths = [];
+      const vertices = mesh.vertices.map((pt) => applyVertexEffects(pt, p, mesh.bounds));
+      let paths = [];
       const faceBands = Math.max(0, Math.round(clamp(finite(p.faceBands, 4), 0, 32)));
       const showFaces = p.showFaces !== false;
       const showEdges = p.showEdges !== false;
@@ -522,16 +522,28 @@
       const depthCueOn = (p.depthCue || 'off') !== 'off';
       const hiddenLineOn = (p.hiddenLineMode || 'backface') !== 'backface';
       const faceRecords = mesh.faces.map((face, index) => {
-        const pts = renderedFace(mesh, vertices, face, index, p);
-        return { index, face, ...projectFace(pts, p, bounds) };
+        const rendered = renderedFace(mesh, vertices, face, index, p, faceBands);
+        return {
+          index,
+          face,
+          rendered,
+          ...projectFace(rendered.outer, p, bounds),
+          projectedBands: rendered.bands.map((band) => projectFace(band, p, bounds)),
+        };
       }).sort((a, b) => a.depth - b.depth);
 
-      if (showFaces && faceBands > 0) {
+      if (showFaces) {
         faceRecords.forEach((record) => {
           const visible = p.surfaceMode === 'all' ? true : record.front;
-          for (let b = 1; b <= faceBands; b++) {
-            const loop = closePath(scaledFaceLoop(record.projected, b / (faceBands + 1)));
+          record.projectedBands.forEach((band) => {
+            const loop = closePath(band.projected);
             const meta = { face: record.index, closed: true };
+            if (depthCueOn) meta.depth = band.depth;
+            pushPath(paths, loop, visible && record.front, p, meta);
+          });
+          if (!showEdges) {
+            const loop = closePath(record.projected);
+            const meta = { face: record.index, closed: true, outline: true };
             if (depthCueOn) meta.depth = record.depth;
             pushPath(paths, loop, visible && record.front, p, meta);
           }
@@ -594,27 +606,6 @@
         }
       }
 
-      if (showVertices) {
-        const projectedVertices = vertices.map((pt) => {
-          const rotated = rotatePoint(pt, { yaw: finite(p.rotate, -18), pitch: finite(p.tilt, 28) });
-          return { ...projectPoint(rotated, { centerX: bounds.width / 2, centerY: bounds.height / 2, scale: 1, ...G3.resolveProjection(p) }), front: rotated.z >= 0 };
-        });
-        projectedVertices.forEach((pt, index) => {
-          const visible = p.vertexOcclusionMode === 'occlude' ? pt.front : true;
-          if ((!visible || !pt.front) && p.faceOpacityMode === 'opaque') return;
-          for (let ring = 1; ring <= Math.max(1, Math.round(finite(p.vertexRings, 1))); ring++) {
-            const loop = circlePath(pt.x, pt.y, Math.max(0.4, finite(p.vertexSize, 4.2) * ring * 0.45), 18, {
-              algorithm: 'polyhedron',
-              vertex: index,
-              closed: true,
-              straight: true,
-            });
-            if (!pt.front && p.faceOpacityMode !== 'opaque') markHidden(loop);
-            paths.push(loop);
-          }
-        });
-      }
-
       // Enhancement #3 — silhouette outline + feature creases. Both work off the
       // canonical (un-exploded) mesh topology so shared edges resolve correctly.
       if (p.emphasizeOutline || p.showCreases) {
@@ -657,6 +648,12 @@
             paths.push(path);
           });
         });
+      }
+
+      if (showVertices) {
+        const vertexData = buildVertexMarkers(faceRecords, p);
+        paths = clipPathsByCircleMasks(paths, vertexData.masks);
+        vertexData.loops.forEach((loop) => paths.push(loop));
       }
 
       const cleaned = cleanPaths(paths);
