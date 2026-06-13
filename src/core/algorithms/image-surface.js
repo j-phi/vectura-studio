@@ -193,25 +193,71 @@
     return current;
   };
 
+  // Mean camera-space z over a set of surface samples (or raw projected points),
+  // LARGER = NEARER — feeds G3.applyDepthCue (#2). Prefers the rotated camera z
+  // (matches the bars depth sort); falls back to the projected point's carried z.
+  // Returns null when no sample exposes a finite z, so callers can skip stamping.
+  const meanDepth = (samples) => {
+    let sum = 0;
+    let count = 0;
+    (samples || []).forEach((s) => {
+      const z = s && (s.rotated ? s.rotated.z : (s.point ? s.point.z : s.z));
+      if (Number.isFinite(z)) {
+        sum += z;
+        count++;
+      }
+    });
+    return count ? sum / count : null;
+  };
+
   const pathFromSurfaceSamples = (samples, meta = {}) => {
     const path = samples.map((pt) => {
       const projected = pt?.point || pt;
       return { x: projected.x, y: projected.y };
     });
     path.meta = { algorithm: 'imageSurface', straight: true, ...meta };
+    if (path.meta.depth == null) {
+      const depth = meanDepth(samples);
+      if (depth != null) path.meta.depth = depth;
+    }
     return path;
   };
 
   const pushVisibilityPaths = (paths, samples, p, meta = {}) => {
     if (!Array.isArray(samples) || samples.length < 2) return;
     const keepHidden = p.seeThrough !== false;
+    const depth = meta.depth == null ? meanDepth(samples) : null;
     splitPathByVisibility(samples, { keepHidden, visibleOnly: !keepHidden }).forEach((path) => {
       path.meta = { ...(path.meta || {}), algorithm: 'imageSurface', straight: true, ...meta };
+      if (path.meta.depth == null && depth != null) path.meta.depth = depth;
       paths.push(path);
     });
   };
 
   const faceVisible = (samples) => faceNormal(samples.map((sample) => sample.rotated || sample.object || sample)).z >= -0.001;
+
+  // Enhancement #5 — Lambert hatch one front face. `faceSamples` are surfaceSample
+  // results (carry .rotated for the normal + depth, .point for the screen polygon).
+  // Pushes lit-density scan lines into `paths`, tagged so they ride the same
+  // hidden-line/depth pipeline. No-op unless p.hatchEnable. Additive: never touches
+  // the wire output, so hatchEnable off leaves geometry byte-identical.
+  const pushFaceHatch = (paths, faceSamples, p, light, meta = {}) => {
+    if (!p.hatchEnable) return;
+    const polygon = faceSamples.map((s) => (s.point || s));
+    if (polygon.length < 3) return;
+    const normal = faceNormal(faceSamples.map((s) => s.rotated || s.object || s));
+    const depth = meanDepth(faceSamples);
+    const spacing = Math.max(1, finite(p.hatchSpacing, 6)) * (p.fastPreview ? 2 : 1);
+    G3.lambertHatch(normal, light, polygon, {
+      baseSpacing: spacing,
+      angleDeg: finite(p.hatchAngle, 45),
+      crossHatch: !!p.crossHatch,
+    }).forEach((seg) => {
+      seg.meta = { algorithm: 'imageSurface', straight: true, hatch: true, ...meta };
+      if (depth != null) seg.meta.depth = depth;
+      paths.push(seg);
+    });
+  };
 
   const pushSegment = (paths, a, b, hidden, meta = {}) => {
     const path = pathFromSurfaceSamples([a, b], meta);
@@ -308,6 +354,32 @@
     for (let x = 0; x <= cols; x++) {
       pushVisibilityPaths(paths, points.map((row) => row[x]), p, { mode: 'mesh', axis: 'column' });
     }
+    // Enhancement #5 — Lambert hatch front mesh cells (additive, off by default).
+    if (p.hatchEnable) {
+      const light = G3.resolveLight(p);
+      // Cap hatched cells under fast preview to keep density bounded.
+      const cap = (p.fastPreview || bounds.fastPreview) ? G3.previewCap(bounds, rows * cols) : rows * cols;
+      let hatched = 0;
+      for (let y = 0; y < rows && hatched < cap; y++) {
+        for (let x = 0; x < cols && hatched < cap; x++) {
+          const u0 = x / cols;
+          const v0 = y / rows;
+          const u1 = (x + 1) / cols;
+          const v1 = (y + 1) / rows;
+          const uc = (u0 + u1) / 2;
+          const vc = (v0 + v1) / 2;
+          if (!surfaceVisible(uc, vc, rect, p, sampler)) continue;
+          const cell = [
+            surfaceSample(rect.left + u0 * rect.width, rect.top + v0 * rect.height, sampler(u0, v0), p, bounds),
+            surfaceSample(rect.left + u1 * rect.width, rect.top + v0 * rect.height, sampler(u1, v0), p, bounds),
+            surfaceSample(rect.left + u1 * rect.width, rect.top + v1 * rect.height, sampler(u1, v1), p, bounds),
+            surfaceSample(rect.left + u0 * rect.width, rect.top + v1 * rect.height, sampler(u0, v1), p, bounds),
+          ];
+          pushFaceHatch(paths, cell, p, light, { mode: 'mesh', hatchCell: true });
+          hatched++;
+        }
+      }
+    }
     return paths;
   };
 
@@ -391,6 +463,12 @@
     const keepHidden = p.seeThrough !== false;
     const edgeMap = new Map();
     const sideDefinitions = [[0, 3], [3, 2], [2, 1], [1, 0]];
+    // Enhancement #5 — Lambert hatch the lit top faces (additive, off by default).
+    const barHatch = [];
+    const hatchLight = p.hatchEnable ? G3.resolveLight(p) : null;
+    const hatchCap = p.hatchEnable
+      ? ((p.fastPreview || bounds.fastPreview) ? G3.previewCap(bounds, rows * cols) : rows * cols)
+      : 0;
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         const u0 = x / cols;
@@ -421,6 +499,9 @@
         const depth = top.reduce((sum, samplePt) => sum + samplePt.rotated.z, 0) / top.length;
         const topVisible = faceVisible(top);
         if (topVisible || keepHidden) addMappedLoop(edgeMap, top, !topVisible, { mode: 'bars', barTop: true, depth, closed: true });
+        if (hatchLight && topVisible && barHatch.length < hatchCap * 8) {
+          pushFaceHatch(barHatch, top, p, hatchLight, { mode: 'bars', barTop: true, depth });
+        }
         sideDefinitions.forEach(([a, b]) => {
           const face = [bottom[a], bottom[b], top[b], top[a]];
           const visible = faceVisible(face);
@@ -441,6 +522,7 @@
       paths.push(pathFromSurfaceSamples(floor, { mode: 'bars', barFloor: true, closed: true }));
     }
     paths.push(...Array.from(edgeMap.values()).sort((a, b) => finite(a.meta?.depth, 0) - finite(b.meta?.depth, 0)));
+    if (barHatch.length) paths.push(...barHatch);
     return paths;
   };
 
@@ -585,6 +667,10 @@
       else if (mode === 'topography') paths = buildTopography(p, bounds, sampler);
       else if (mode === 'bars') paths = buildBars(p, bounds, sampler);
       else paths = buildLines(p, bounds, sampler);
+      // Enhancement #2 — depth cue via dash density (no-op when p.depthCue==='off').
+      // Each path was stamped meta.depth (mean camera z) at build time; this reads
+      // those stamps once across the whole frame, before cleanPaths.
+      G3.applyDepthCue(paths, p);
       return cleanPaths(paths);
     },
     formula: () => 'Sampled image relief projected as lines, mesh, contours, or bars.',
