@@ -154,7 +154,7 @@
         if (this.app.pushHistory) this.app.pushHistory();
         const created = [];
         groups.forEach((group) => {
-          const id = Math.random().toString(36).slice(2, 11);
+          const id = window.Vectura.generateId();
           const name = this.getUniqueLayerName(group.name || 'Imported SVG', id);
           const layer = new Layer(id, 'shape', name);
           layer.params.seed = 0;

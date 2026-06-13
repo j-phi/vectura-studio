@@ -37,6 +37,9 @@ globalThis.Vectura.ALGO_DEFAULTS = globalThis.Vectura.ALGO_DEFAULTS || {
   shape: { seed: 0, posX: 0, posY: 0, scaleX: 1, scaleY: 1, rotation: 0 },
   flowfield: { seed: 1 },
 };
+// core/utils.js registers Vectura.generateId — pathfinder-ops mints split/group
+// ids through it (in the real app it loads first; mirror that here).
+require(path2.resolve(__dirname, '../../src/core/utils.js'));
 require(path2.resolve(__dirname, '../../src/core/layer.js'));
 // OptimizationUtils.isClosedPath is a hard dependency of masking.js and
 // pathfinder-ops.js — load it first so the destructure succeeds.
