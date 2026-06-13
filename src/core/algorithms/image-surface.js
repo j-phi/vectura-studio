@@ -316,10 +316,16 @@
     paths.push(path);
   };
 
+  // A relief ribbon is a single curtain hanging from the top profile down to the
+  // baseline. Its only vertical edges are the two end caps (left + right) — there
+  // are NO dividers between interior samples (those would render as a picket
+  // fence across the plane). The top edge and back baseline are emitted
+  // per-segment so each still rides its own visibility/hidden-line state.
   const buildReliefPlanePaths = (topSamples, baseSamples, p, meta = {}) => {
     const paths = [];
     const keepHidden = p.seeThrough !== false;
-    for (let i = 0; i < Math.min(topSamples.length, baseSamples.length) - 1; i++) {
+    const last = Math.min(topSamples.length, baseSamples.length) - 1;
+    for (let i = 0; i < last; i++) {
       const topA = topSamples[i];
       const topB = topSamples[i + 1];
       const baseA = baseSamples[i];
@@ -331,7 +337,7 @@
       pushSegment(paths, topA, topB, hidden, { mode: 'lines', reliefPlane: true, planeTop: true, ...meta });
       pushSegment(paths, baseA, baseB, backEdgeHidden, { mode: 'lines', reliefPlane: true, planeBase: true, ...meta });
       if (i === 0) pushSegment(paths, baseA, topA, hidden, { mode: 'lines', reliefPlane: true, planeDrop: true, ...meta });
-      pushSegment(paths, baseB, topB, hidden, { mode: 'lines', reliefPlane: true, planeDrop: true, ...meta });
+      if (i === last - 1) pushSegment(paths, baseB, topB, hidden, { mode: 'lines', reliefPlane: true, planeDrop: true, ...meta });
     }
     return paths;
   };

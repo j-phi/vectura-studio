@@ -350,6 +350,25 @@ describe('Vectura geometry algorithms', () => {
     expect(planeSolid.some((path) => path.meta?.reliefPlane && path.meta?.hiddenLine)).toBe(false);
     expect(planeSeeThrough.some((path) => path.meta?.reliefPlane && path.meta?.hiddenLine)).toBe(true);
 
+    // Each relief ribbon is one curtain: vertical drops belong ONLY at the two
+    // ends (left + right caps), never between interior samples. A uniform grid
+    // (no clipBlackAreas splitting) with see-through on keeps every segment, so
+    // the drop count must be exactly 2 per row — not one-per-sample (the
+    // "picket fence" regression).
+    const flatGrid = Array.from({ length: 6 }, () => Array.from({ length: 6 }, () => 0.5));
+    const planeRows = 5;
+    const flatPlanes = generate('imageSurface', {
+      mode: 'lines',
+      horizontalLinesAsPlanes: true,
+      seeThrough: true,
+      fixtureGrid: flatGrid,
+      sampleDetail: 18,
+      rows: planeRows,
+      horizontalLineAngle: 0,
+    });
+    const dropCount = flatPlanes.filter((path) => path.meta?.planeDrop).length;
+    expect(dropCount).toBe(planeRows * 2);
+
     const solidBars = generate('imageSurface', {
       mode: 'bars',
       fixtureGrid,
