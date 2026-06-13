@@ -348,7 +348,7 @@
 /* ── ANGLE CONTROL ───────────────────────────────────────────── */
 .angle-ctrl { display: flex; align-items: center; gap: var(--spacing-sm); }
 .angle-dial { width: 38px; height: 38px; flex-shrink: 0; cursor: grab; }
-/* Scope SVG dial size to beat legacy styles.css which also sets width: 56px. */
+/* Scope SVG dial size to beat legacy CSS which also sets width. */
 [data-ui-skin] .angle-ctrl .angle-dial { width: 38px; height: 38px; background: none; border: none; }
 .dial-ring { fill: none; stroke: var(--ui-border); stroke-width: 1.5; }
 .dial-ring-inner { fill: none; stroke: var(--ui-border); stroke-width: 1; opacity: 0.4; }
@@ -402,7 +402,7 @@
 
 /*
  * Scoped to [data-ui-skin] so specificity (0,0,2,0) beats the legacy
- * input[type='range'] reset in styles.css (0,0,1,1) which loads after us.
+ * input[type='range'] reset in legacy CSS.
  */
 [data-ui-skin] .ctrl-slider {
   -webkit-appearance: none;
@@ -1290,7 +1290,7 @@
  * variants share one chrome vocabulary — only the palette tokens differ.
  *
  * Specificity note: the [data-ui-skin] attribute selector beats the bare
- * class selectors in styles.css that come later in load order, so these
+ * class selectors in legacy CSS that come later in load order, so these
  * rules win without !important.
  * ────────────────────────────────────────────────────────────────────── */
 
@@ -2046,7 +2046,7 @@
 }
 
 /* ─── Noise Rack & Parameter Controls ────────────────────────────────────
- * Overrides legacy styles.css rules that use hard-coded colors (#ef4444 red,
+ * Overrides legacy CSS rules that use hard-coded colors (#ef4444 red,
  * --color-* variables) for noise cards, angle dials, and control rows.
  * All selectors are scoped to [data-ui-skin] for skin-only activation.
  * ────────────────────────────────────────────────────────────────────── */
@@ -2071,7 +2071,7 @@
   transform: rotate(var(--angle, 0deg));
   transform-origin: center center;
 }
-/* Needle — was hardcoded #ef4444 (red) in styles.css */
+/* Needle — was hardcoded red in legacy CSS */
 [data-ui-skin] .angle-control .angle-indicator::before {
   content: ''; position: absolute;
   width: 2px; height: 20px;
@@ -2079,7 +2079,7 @@
   border-radius: 999px;
   transform: translate(-1px, -20px);
 }
-/* Handle dot — was hardcoded #ef4444 (red) in styles.css */
+/* Handle dot — was hardcoded red in legacy CSS */
 [data-ui-skin] .angle-control .angle-indicator::after {
   content: ''; position: absolute;
   width: 6px; height: 6px;
@@ -3653,7 +3653,7 @@
   pointer-events: none;
 }
 
-/* === Migrated from styles.css (Unit 2.1: Align / Pathfinder / Paint Bucket panels, 2026-05-20) === */
+/* === Migrated from legacy CSS (Unit 2.1: Align / Pathfinder / Paint Bucket panels, 2026-05-20) === */
 /* Align / Distribute panel (Illustrator-style multi-selection pane) */
 .align-panel {
   display: flex;
@@ -4316,7 +4316,7 @@
   --lvl-cyan45: rgba(2, 132, 199, 0.45);
 }
 
-/* === Migrated from styles.css (Unit 2.2a: right-pane tabs + bottom-pane shell + noise-card container queries, 2026-05-20) === */
+/* === Migrated from legacy CSS (Unit 2.2a: right-pane tabs + bottom-pane shell + noise-card container queries, 2026-05-20) === */
 /* ── Right pane: Layers / Pens tabs (live in pane header) ────── */
 .right-pane-tabs {
   display: flex;
@@ -4933,7 +4933,7 @@
 }
 
 
-/* === Migrated from styles.css (Unit 2.2b: wave/noise + step dots + export modal scaffold + info popover, 2026-05-20) === */
+/* === Migrated from legacy CSS (Unit 2.2b: wave/noise + step dots + export modal scaffold + info popover, 2026-05-20) === */
 
 /* Container-query 2-col layout — responds to noise-card width, not viewport.
  * Threshold sized so labels like "Blend Mode" / "Field Weight" stop wrapping
@@ -6313,7 +6313,7 @@
 }
 
 
-/* === Migrated from styles.css (Unit 2.2c: export modal optimization cards + per-card layout + info-btn, 2026-05-20) === */
+/* === Migrated from legacy CSS (Unit 2.2c: export modal optimization cards + per-card layout + info-btn, 2026-05-20) === */
 
 /*
  * Inside the modal, optimization cards are now 1-per-tab with the title +
@@ -6981,7 +6981,7 @@
 }
 
 
-/* === Migrated from styles.css (Unit 2.3: Layers Panel V8 + algo dropdown + touch-tablet variant + right-pane title bar, 2026-05-20) === */
+/* === Migrated from legacy CSS (Unit 2.3: Layers Panel V8 + algo dropdown + touch-tablet variant + right-pane title bar, 2026-05-20) === */
 /* Note: [data-theme='light'] rewritten to [data-ui-skin='light'] during move (19 selectors). */
 
 
@@ -7361,7 +7361,7 @@
 
 /* ── End Layers Panel V8 ─────────────────────────────────────── */
 
-/* === Migrated from styles.css (Unit 2.4: Document Setup + drawer + layer-bar palette picker, 2026-05-20) === */
+/* === Migrated from legacy CSS (Unit 2.4: Document Setup + drawer + layer-bar palette picker, 2026-05-20) === */
 
 .settings-panel {
   position: absolute;
@@ -7843,7 +7843,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* === Migrated from styles.css (Unit 2.5: Mobile shell + touch ergonomics + Pattern Designer Inline Panel, 2026-05-20) === */
+/* === Migrated from legacy CSS (Unit 2.5: Mobile shell + touch ergonomics + Pattern Designer Inline Panel, 2026-05-20) === */
 
 @media (max-width: 1024px) {
   .tool-bar {
@@ -8818,7 +8818,7 @@ body:not(.mobile-layout) .mobile-pane-backdrop {
 }
 
 
-/* === Migrated from styles.css (Unit 2.6: base/root + theme-toggle + chevron + tour + tutorials + help guide modal, 2026-05-20) === */
+/* === Migrated from legacy CSS (Unit 2.6: base/root + theme-toggle + chevron + tour + tutorials + help guide modal, 2026-05-20) === */
 /* Note: 3 .theme-toggle[data-theme='X'] selectors rewritten to [data-active-icon='X'] (paired with src/ui/shell/theme-switcher.js dataset write rename). */
 
 /* CSS-3 closure (2026-05-20): the legacy `:root { … }` skin-fallback block

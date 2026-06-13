@@ -134,7 +134,7 @@ Removing a registered skin: delete the manifest entry from `defaults.js`, `git r
 
 ## See also
 
-- `docs/design/meridian-migration-plan.md` — the migration that introduced this SDK, with full architectural rationale.
+- `plans.md` — the migration that introduced this SDK, with full architectural rationale.
 - `src/ui/skin/_template.css` — the canonical token list.
 - `src/ui/skin/skin-manager.js` — registration + activation + event dispatch.
 - `src/config/defaults.js` — the THEMES registry.

@@ -110,30 +110,4 @@ if [ -n "$E2E_FILES" ]; then
 fi
 # selector-lint-end
 
-# styles-css-growth-start
-# Warn (non-blocking) when styles.css is growing. The Meridian cleanup is draining
-# styles.css into src/ui/skin/components.css; new CSS should land in the skin, not
-# the legacy sheet. This check compares the staged styles.css against HEAD and
-# prints a yellow warning to stderr if line count increased. Does NOT block commits.
-if git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep -qx 'styles.css'; then
-    STYLES_OLD_LINES=$(git show HEAD:styles.css 2>/dev/null | wc -l | tr -d ' ')
-    STYLES_NEW_LINES=$(git diff --cached :styles.css 2>/dev/null | grep -c '^+[^+]' || echo 0)
-    STYLES_DEL_LINES=$(git diff --cached :styles.css 2>/dev/null | grep -c '^-[^-]' || echo 0)
-    STYLES_DELTA=$((STYLES_NEW_LINES - STYLES_DEL_LINES))
-    if [ -n "$STYLES_DELTA" ] && [ "$STYLES_DELTA" -gt 0 ]; then
-        # ANSI yellow for warning visibility; falls back gracefully if terminal ignores it
-        printf '\033[33m' >&2
-        echo "" >&2
-        echo "[pre-commit warning] styles.css is growing by ${STYLES_DELTA} line(s) in this commit." >&2
-        echo "styles.css is the legacy sheet being drained into src/ui/skin/ as part of the" >&2
-        echo "Meridian cleanup and must not grow. New panel/component/feature CSS belongs in" >&2
-        echo "src/ui/skin/components.css (motion -> motion.css, tokens -> tokens.css)." >&2
-        echo "Only edit styles.css to fix existing rules or migrate rules out of it." >&2
-        echo "(This is a warning, not a block.)" >&2
-        printf '\033[0m' >&2
-        echo "" >&2
-    fi
-fi
-# styles-css-growth-end
-
 exit 0

@@ -61,33 +61,6 @@
   --vectura-accent-rgb: 78 158 225;
   --vectura-danger-rgb: 224 82 82;
 
-  /* === Legacy --color-* aliases (DEPRECATED but required while styles.css lives) ===
-   * `styles.css` and `renderer.js`'s getThemeToken cache still resolve these
-   * legacy aliases. Do NOT remove them until styles.css is deleted in a future
-   * release. New skins must include them — the SDK template enforces this. */
-  --color-bg:               var(--ui-bg);
-  --color-panel:            var(--ui-panel);
-  --color-border:           var(--ui-border);
-  --color-border-strong:    var(--ui-border-hi);
-  --color-border-hover:     var(--ui-border-hi);
-  --color-text:             var(--ui-text);
-  --color-text-soft:        var(--ui-text-2);
-  --color-muted:            var(--ui-muted);
-  --color-formula-text:     var(--ui-formula);
-  --color-accent:           var(--ui-accent);
-  --color-surface:          var(--ui-panel-alt);
-  --color-surface-alt:      var(--ui-panel-alt);
-  --color-control:          var(--ui-ctrl);
-  --color-control-hover:    var(--ui-ctrl-hov);
-  --color-read-surface:     var(--ui-panel);
-  --color-workspace:        var(--ui-workspace);
-  --color-touch-border:     var(--ui-border);
-  --color-mobile-handle-bg: rgba(27, 27, 27, 0.94);
-
-  /* Shadow aliases (legacy callers). */
-  --shadow-panel: var(--shadow-md);
-  --shadow-float: var(--shadow-md);
-
   /* === Renderer canvas tokens ==============================================
    * Read by `src/render/renderer.js` via `getThemeToken('--render-*')`. Keep
    * these consistent across skins in the same family — wild differences will
