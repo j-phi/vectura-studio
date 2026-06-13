@@ -195,5 +195,34 @@ describe('Harmonograph-family preset dropdown (craft ladder)', () => {
       expect(stored.length).toBe(0);
       expect(document.querySelector('.hg-preset-option[data-preset-id="user-pendula-del"]')).toBeNull();
     });
+
+    // Regression: overwriting a "<type>-default" preset must survive a reload. A
+    // fresh layer starts on pure ALGO_DEFAULTS; the gallery's mount-time auto-apply
+    // is the only thing that re-applies a user-saved Default override (there is no
+    // project autosave). Commit e4e32f0 broke it — routing the apply through the
+    // never-assigned `window.Vectura.engine` and using a literal `{ k: v }` key —
+    // so the override silently never landed and the factory default reloaded.
+    test('a saved Default override is auto-applied to a fresh layer on (re)build', () => {
+      // Factory pendula.samples is 6000; persist a Default override to a sentinel.
+      const override = {
+        id: 'pendula-default', name: 'Default',
+        preset_system: 'pendula', group: 'Classic',
+        params: { preset: 'pendula-default', samples: 1234, duration: 30, scale: 0.35 },
+      };
+      window.localStorage.setItem('vectura.user_presets.pendula', JSON.stringify([override]));
+
+      // Simulate a reload: a brand-new pendula layer on pure factory defaults...
+      const id = app.engine.addLayer('pendula');
+      app.engine.setActiveLayerId(id);
+      const fresh = app.engine.getActiveLayer();
+      expect(fresh.params.samples).toBe(6000); // pristine factory before auto-apply
+
+      app.ui.buildControls();
+
+      // ...the gallery's auto-apply must restore the saved Default override...
+      expect(fresh.params.samples).toBe(1234);
+      // ...without leaking the loop variable as a literal "k" param.
+      expect('k' in fresh.params).toBe(false);
+    });
   });
 });

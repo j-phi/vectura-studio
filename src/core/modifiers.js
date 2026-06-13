@@ -18,7 +18,7 @@
   const pointsEqual = (a, b, epsilon = EPSILON) =>
     Boolean(a && b && Math.abs(a.x - b.x) <= epsilon && Math.abs(a.y - b.y) <= epsilon);
 
-  const makeId = (prefix = 'modifier') => window.Vectura.generateId();
+  const makeId = (prefix = 'modifier') => `${prefix}-${Math.random().toString(36).slice(2, 11)}`;
 
   const getMirrorColor = (index = 0) =>
     MODIFIER_GUIDE_COLORS[index % Math.max(1, MODIFIER_GUIDE_COLORS.length)] || '#56b4e9';

@@ -1258,7 +1258,7 @@
   ];
 
   const createPetalisModifier = (type = 'ripple') => ({
-    id: window.Vectura.generateId(),
+    id: `mod-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
     enabled: true,
     type,
     amount: 2,
@@ -1316,7 +1316,7 @@
   ];
 
   const createPetalModifier = (type = 'ripple') => ({
-    id: window.Vectura.generateId(),
+    id: `petal-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
     enabled: true,
     type,
     target: 'both',
@@ -1352,7 +1352,7 @@
   ];
 
   const createPetalisShading = (type = 'radial') => ({
-    id: window.Vectura.generateId(),
+    id: `shade-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
     enabled: true,
     type,
     target: 'both',

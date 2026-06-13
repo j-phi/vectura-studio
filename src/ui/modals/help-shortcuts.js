@@ -365,10 +365,10 @@
     this._applyHelpPlatform(wrap, this._helpPlatform);
 
     wrap.querySelectorAll('.help-platform-btn').forEach(btn => {
-      btn.addEventListener("click", () => {
+      btn.onclick = () => {
         this._helpPlatform = btn.dataset.platform;
         this._applyHelpPlatform(wrap, this._helpPlatform);
-      });
+      };
     });
 
     const switchTab = (id) => {
@@ -381,7 +381,7 @@
     };
 
     wrap.querySelectorAll('.help-tab-btn').forEach(btn => {
-      btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+      btn.onclick = () => switchTab(btn.dataset.tab);
     });
 
     const initial = focusShortcuts ? 'tools' : (this._lastHelpTab || 'quickstart');

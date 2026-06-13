@@ -772,7 +772,7 @@
         pendulumTemplates[index] || pendulumTemplates[pendulumTemplates.length - 1] || basePendulumTemplate;
       return {
         ...clone(template),
-        id: window.Vectura.generateId(),
+        id: `pend-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000)}`,
         enabled: true,
       };
     };

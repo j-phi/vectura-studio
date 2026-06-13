@@ -1030,9 +1030,9 @@
   function bindExportButton() {
     const { getEl } = requireDeps('bindExportButton');
     const btnExport = getEl('btn-export', { silent: true });
-    if (btnExport) btnExport.addEventListener("click", () => this.openExportModal());
+    if (btnExport) btnExport.onclick = () => this.openExportModal();
     const btnAnimated = getEl('btn-export-animated', { silent: true });
-    if (btnAnimated) btnAnimated.addEventListener("click", () => this.exportAnimatedSVG());
+    if (btnAnimated) btnAnimated.onclick = () => this.exportAnimatedSVG();
   }
 
   function openExportModal() {
@@ -1212,11 +1212,11 @@
     const previewModeSelect = root.querySelector('#export-preview-mode');
     if (previewModeSelect) {
       previewModeSelect.value = this.exportModalState.previewMode || 'overlay';
-      previewModeSelect.addEventListener("change", (e) => {
+      previewModeSelect.onchange = (e) => {
         if (!this.exportModalState) return;
         this.exportModalState.previewMode = e.target.value;
         if (this.exportModalState?.isOpen) this.renderExportPreview();
-      });
+      };
     }
 
     const gearBtn = root.querySelector('#export-legend-gear');
@@ -1241,40 +1241,34 @@
       btn.style.color = getContrastTextColor(color);
     };
     if (legendStartColorBtn && legendStartColorInput) {
-      legendStartColorBtn.addEventListener(
-        "click",
-        () => openColorPickerAnchoredTo(legendStartColorInput, legendStartColorBtn, { title: 'Legend Start Color', uiInstance: this })
-      );
+      legendStartColorBtn.onclick = () => openColorPickerAnchoredTo(legendStartColorInput, legendStartColorBtn, { title: 'Legend Start Color', uiInstance: this });
       legendStartColorInput.oninput = (e) => {
         if (!this.exportModalState) return;
         this.exportModalState.overlayColor = e.target.value;
         syncLegendPill(legendStartColorBtn, e.target.value);
         this.renderExportPreview();
       };
-      legendStartColorInput.addEventListener("change", (e) => {
+      legendStartColorInput.onchange = (e) => {
         if (!this.exportModalState) return;
         this.exportModalState.overlayColor = e.target.value;
         syncLegendPill(legendStartColorBtn, e.target.value);
         if (this.exportModalState?.isOpen) this.renderExportPreview();
-      });
+      };
     }
     if (legendEndColorBtn && legendEndColorInput) {
-      legendEndColorBtn.addEventListener(
-        "click",
-        () => openColorPickerAnchoredTo(legendEndColorInput, legendEndColorBtn, { title: 'Legend End Color', uiInstance: this })
-      );
+      legendEndColorBtn.onclick = () => openColorPickerAnchoredTo(legendEndColorInput, legendEndColorBtn, { title: 'Legend End Color', uiInstance: this });
       legendEndColorInput.oninput = (e) => {
         if (!this.exportModalState) return;
         this.exportModalState.lineSortSecondaryColor = e.target.value;
         syncLegendPill(legendEndColorBtn, e.target.value);
         this.renderExportPreview();
       };
-      legendEndColorInput.addEventListener("change", (e) => {
+      legendEndColorInput.onchange = (e) => {
         if (!this.exportModalState) return;
         this.exportModalState.lineSortSecondaryColor = e.target.value;
         syncLegendPill(legendEndColorBtn, e.target.value);
         if (this.exportModalState?.isOpen) this.renderExportPreview();
-      });
+      };
     }
     if (legendThicknessInput) {
       legendThicknessInput.value = `${this.exportModalState.overlayWidth ?? SETTINGS.optimizationOverlayWidth ?? 0.2}`;
@@ -1283,9 +1277,9 @@
         this.exportModalState.overlayWidth = Math.max(0.05, Math.min(1, parseFloat(e.target.value) || 0.2));
         this.renderExportPreview();
       };
-      legendThicknessInput.addEventListener("change", () => {
+      legendThicknessInput.onchange = () => {
         if (this.exportModalState?.isOpen) this.renderExportPreview();
-      });
+      };
     }
 
     this.openModal({

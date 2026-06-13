@@ -435,7 +435,7 @@
     return { stack: entries, includesDocBounds: true };
   };
 
-  const newFillId = () => window.Vectura.generateId();
+  const newFillId = () => `fill-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
   // C1 migration: legacy 'wavelines'/'zigzag' fillMode strings collapse onto
   // 'wave' with smoothing 1.0 / 0.0 respectively. Keeps dispatcher input
@@ -594,7 +594,7 @@
       const SETTINGS = Vectura.SETTINGS || {};
       SETTINGS.globalLayerCount = (SETTINGS.globalLayerCount || engine._layerCounter || 0) + 1;
       if (typeof engine._layerCounter === 'number') engine._layerCounter += 1;
-      const id = window.Vectura.generateId();
+      const id = Math.random().toString(36).slice(2, 11);
       app?.pushHistory?.();
       targetLayer = new Layer(id, 'shape', 'Background');
       // Empty paths: the layer hosts only the paint-bucket fill geometry. The
@@ -688,7 +688,7 @@
     const SETTINGS = Vectura.SETTINGS || {};
     SETTINGS.globalLayerCount = (SETTINGS.globalLayerCount || engine._layerCounter || 0) + 1;
     if (typeof engine._layerCounter === 'number') engine._layerCounter += 1;
-    return window.Vectura.generateId();
+    return Math.random().toString(36).slice(2, 11);
   };
 
   const generateGroupName = (engine, parentName) => {

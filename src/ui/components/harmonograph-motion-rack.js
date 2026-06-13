@@ -119,19 +119,19 @@
       head.appendChild(headLabel);
       const addBtn = el('button', 'motion-add-lfo text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors', '+ LFO');
       addBtn.type = 'button';
-      addBtn.addEventListener("click", () => {
+      addBtn.onclick = () => {
         motion.sources.push({ id: nextId('lfo'), enabled: true, shape: 'sine', syncMode: 'sync', rate: 1, depth: 1, phase: 0, polarity: 'bi' });
         commit();
-      });
+      };
       head.appendChild(addBtn);
       head.appendChild(infoBtn('pendula.motion.addLfo'));
       const addMacroBtn = el('button', 'motion-add-macro text-xs border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-accent transition-colors', '+ Macro');
       addMacroBtn.type = 'button';
       addMacroBtn.title = 'Macro — a static knob (0–1) you can patch to many params at once';
-      addMacroBtn.addEventListener("click", () => {
+      addMacroBtn.onclick = () => {
         motion.sources.push({ id: nextId('macro'), type: 'macro', enabled: true, value: 0.5, depth: 1 });
         commit();
-      });
+      };
       head.appendChild(addMacroBtn);
       head.appendChild(infoBtn('pendula.motion.addMacro'));
       wrap.appendChild(head);
@@ -149,7 +149,7 @@
         inp.type = 'number';
         inp.step = String(step);
         inp.value = String(value);
-        inp.addEventListener("change", (e) => onChange(parseFloat(e.target.value)));
+        inp.onchange = (e) => onChange(parseFloat(e.target.value));
         w.append(document.createTextNode(label), inp);
         if (infoKey) w.appendChild(infoBtn(infoKey));
         return w;
@@ -169,7 +169,7 @@
             .map((t) => `<option value="${t.path}" ${t.path === edge.targetParamPath ? 'selected' : ''}>${t.label}</option>`)
             .join('');
           retarget.value = edge.targetParamPath;
-          retarget.addEventListener("change", (e) => { edge.targetParamPath = e.target.value; commit(); });
+          retarget.onchange = (e) => { edge.targetParamPath = e.target.value; commit(); };
           row.appendChild(retarget);
           row.appendChild(infoBtn('pendula.motion.targetParamPath'));
           const amt = el('input', 'motion-edge-amount bg-vectura-bg border border-vectura-border p-1 text-[10px] w-16 text-vectura-text');
@@ -177,16 +177,10 @@
           amt.step = '0.01';
           amt.value = String(edge.amount ?? 0);
           amt.title = "Amount — signed depth in the parameter's own units";
-          amt.addEventListener(
-            "change",
-            (e) => { edge.amount = parseFloat(e.target.value) || 0; commit(); }
-          );
+          amt.onchange = (e) => { edge.amount = parseFloat(e.target.value) || 0; commit(); };
           const rm = el('button', 'motion-edge-remove text-[10px] border border-vectura-border px-2 text-vectura-danger', '×');
           rm.type = 'button';
-          rm.addEventListener(
-            "click",
-            () => { motion.edges = motion.edges.filter((x) => x.id !== edge.id); commit(); }
-          );
+          rm.onclick = () => { motion.edges = motion.edges.filter((x) => x.id !== edge.id); commit(); };
           row.append(amt, infoBtn('pendula.motion.amount'), rm);
           card.appendChild(row);
         });
@@ -196,11 +190,11 @@
         tgtSel.innerHTML = assignableTargets().map((t) => `<option value="${t.path}">${t.label}</option>`).join('');
         const addEdge = el('button', 'motion-assign-add text-[10px] border border-vectura-border px-2 py-1 text-vectura-accent', 'Assign');
         addEdge.type = 'button';
-        addEdge.addEventListener("click", () => {
+        addEdge.onclick = () => {
           const path = tgtSel.value;
           motion.edges.push({ id: nextId('edge'), sourceId: src.id, targetParamPath: path, amount: defaultAmountFor(path) });
           commit();
-        });
+        };
         assignRow.append(tgtSel, infoBtn('pendula.motion.targetParamPath'), addEdge);
         card.appendChild(assignRow);
       };
@@ -223,26 +217,23 @@
         const r1 = el('div', 'motion-row flex items-center gap-2');
         const shapeSel = el('select', 'motion-lfo-shape bg-vectura-bg border border-vectura-border p-1 text-[10px] flex-1');
         shapeSel.innerHTML = SHAPES.map((s) => `<option value="${s}" ${s === src.shape ? 'selected' : ''}>${SHAPE_LABELS[s] || s}</option>`).join('');
-        shapeSel.addEventListener("change", (e) => {
+        shapeSel.onchange = (e) => {
           src.shape = e.target.value;
           // Seed an editable curve the first time this source becomes 'drawn'.
           if (src.shape === 'drawn' && (!Array.isArray(src.points) || src.points.length < 2)) {
             src.points = defaultDrawnPoints();
           }
           commit();
-        });
+        };
         r1.append(shapeSel, infoBtn('pendula.motion.shape'));
         const syncBtn = el('button', 'motion-lfo-sync text-[10px] border border-vectura-border px-2 py-1 text-vectura-text', src.syncMode === 'free' ? 'Free' : 'Sync');
         syncBtn.type = 'button';
         syncBtn.title = 'Sync = repeats exactly each loop; Free = drifts forever';
-        syncBtn.addEventListener(
-          "click",
-          () => { src.syncMode = src.syncMode === 'free' ? 'sync' : 'free'; commit(); }
-        );
+        syncBtn.onclick = () => { src.syncMode = src.syncMode === 'free' ? 'sync' : 'free'; commit(); };
         const delBtn = el('button', 'motion-lfo-remove text-[10px] border border-vectura-border px-2 py-1 text-vectura-danger', '×');
         delBtn.type = 'button';
         delBtn.title = 'Remove LFO';
-        delBtn.addEventListener("click", () => removeSource(src));
+        delBtn.onclick = () => removeSource(src);
         r1.append(syncBtn, infoBtn('pendula.motion.syncMode'), delBtn);
         card.appendChild(r1);
 
@@ -260,10 +251,7 @@
         const polBtn = el('button', 'motion-lfo-polarity text-[10px] border border-vectura-border px-2 py-1 text-vectura-text', src.polarity === 'uni' ? 'Uni' : 'Bi');
         polBtn.type = 'button';
         polBtn.title = 'Bipolar (−/+) or Unipolar (0/+)';
-        polBtn.addEventListener(
-          "click",
-          () => { src.polarity = src.polarity === 'uni' ? 'bi' : 'uni'; commit(); }
-        );
+        polBtn.onclick = () => { src.polarity = src.polarity === 'uni' ? 'bi' : 'uni'; commit(); };
         r2.append(polBtn, infoBtn('pendula.motion.polarity'));
         card.appendChild(r2);
 
@@ -287,7 +275,7 @@
       const delBtn = el('button', 'motion-macro-remove text-[10px] border border-vectura-border px-2 py-1 text-vectura-danger', '×');
       delBtn.type = 'button';
       delBtn.title = 'Remove macro';
-      delBtn.addEventListener("click", () => removeSource(src));
+      delBtn.onclick = () => removeSource(src);
       r1.appendChild(delBtn);
       card.appendChild(r1);
 
@@ -302,11 +290,11 @@
       slider.value = String(Number.isFinite(src.value) ? src.value : 0.5);
       const readout = el('span', 'motion-macro-value-readout text-[10px] text-vectura-text w-8 text-right', slider.value);
       slider.oninput = (e) => { readout.textContent = e.target.value; };
-      slider.addEventListener("change", (e) => {
+      slider.onchange = (e) => {
         const v = parseFloat(e.target.value);
         src.value = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0;
         commit();
-      });
+      };
       valLabel.append(document.createTextNode('Value'), slider, readout, infoBtn('pendula.motion.macroValue'));
       r2.appendChild(valLabel);
       card.appendChild(r2);

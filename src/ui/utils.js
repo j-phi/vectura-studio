@@ -67,7 +67,7 @@
   };
 
   let uidCounter = 0;
-  const uid = (prefix = 'v') => window.Vectura.generateId();
+  const uid = (prefix = 'v') => `${prefix}-${(++uidCounter).toString(36)}-${Date.now().toString(36)}`;
 
   /**
    * Adds `handler` to `target` for `event` and returns a function that
@@ -142,9 +142,3 @@
     escapeHtml,
   };
 })();
-
-window.Vectura = window.Vectura || {};
-window.Vectura.generateId = () => {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
-  return window.Vectura.generateId() + window.Vectura.generateId();
-};

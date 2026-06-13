@@ -202,15 +202,15 @@
       }
     });
 
-    cancelBtn.addEventListener("click", () => this.closeModal());
-    applyBtn.addEventListener("click", () => {
+    cancelBtn.onclick = () => this.closeModal();
+    applyBtn.onclick = () => {
       const raw = hexInput.value.replace(/[^0-9a-fA-F]/g, '');
       const hex = raw.length === 6
         ? '#' + raw.toLowerCase()
         : (() => { const {r,g,b} = hsvToRgb(hsv.h, hsv.s, hsv.v); return rgbToHex(r,g,b); })();
       if (onApply) onApply(hex);
       this.closeModal();
-    });
+    };
   }
 
   Modals.ColorPicker = {

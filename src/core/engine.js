@@ -220,16 +220,14 @@
     return out;
   };
 
-  
-  class VectorEngine {
-  updateLayerParams(layerId, params) {
-    const layer = this.getLayerById(layerId);
-    if (layer) {
-      Object.assign(layer.params, params);
-      if (this.app?.renderer) this.app.renderer.draw();
+  const generateId = () => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID();
     }
-  }
+    return generateId() + generateId();
+  };
 
+  class VectorEngine {
     constructor() {
       this.layers = [];
       this.activeLayerId = null;
@@ -240,7 +238,7 @@
 
     addLayer(type = 'wavetable') {
       type = resolveDrawableLayerType(type, 'wavetable');
-      const id = window.Vectura.generateId();
+      const id = generateId();
       SETTINGS.globalLayerCount = ++this._layerCounter;
       const num = String(this._layerCounter).padStart(2, '0');
       const defaults = ALGO_DEFAULTS && ALGO_DEFAULTS[type];
@@ -254,37 +252,19 @@
     }
 
     addShapeLayer(name, paths) {
-      const id = window.Vectura.generateId();
+      const id = generateId();
       SETTINGS.globalLayerCount = ++this._layerCounter;
       const layer = new Layer(id, 'shape', name || `Shape ${String(this._layerCounter).padStart(2, '0')}`);
       layer.sourcePaths = clonePaths(paths || []);
-      window.Vectura.engine.updateLayerParams(layer.id, {
-        seed: 0
-      });
-      window.Vectura.engine.updateLayerParams(layer.id, {
-        posX: 0
-      });
-      window.Vectura.engine.updateLayerParams(layer.id, {
-        posY: 0
-      });
-      window.Vectura.engine.updateLayerParams(layer.id, {
-        scaleX: 1
-      });
-      window.Vectura.engine.updateLayerParams(layer.id, {
-        scaleY: 1
-      });
-      window.Vectura.engine.updateLayerParams(layer.id, {
-        rotation: 0
-      });
-      window.Vectura.engine.updateLayerParams(layer.id, {
-        curves: false
-      });
-      window.Vectura.engine.updateLayerParams(layer.id, {
-        smoothing: 0
-      });
-      window.Vectura.engine.updateLayerParams(layer.id, {
-        simplify: 0
-      });
+      layer.params.seed = 0;
+      layer.params.posX = 0;
+      layer.params.posY = 0;
+      layer.params.scaleX = 1;
+      layer.params.scaleY = 1;
+      layer.params.rotation = 0;
+      layer.params.curves = false;
+      layer.params.smoothing = 0;
+      layer.params.simplify = 0;
       this.layers.push(layer);
       this.activeLayerId = id;
       this.generate(id);
@@ -292,7 +272,7 @@
     }
 
     addModifierLayer(type = 'mirror') {
-      const id = window.Vectura.generateId();
+      const id = generateId();
       SETTINGS.globalLayerCount = ++this._layerCounter;
       const num = String(this._layerCounter).padStart(2, '0');
       const prettyType = type.charAt(0).toUpperCase() + type.slice(1);
@@ -348,7 +328,7 @@
           : (modLayer.morphedPaths || [])) || [];
         const firstChild = morphLeaves[0] || {};
 
-        const folderId = window.Vectura.generateId();
+        const folderId = generateId();
         SETTINGS.globalLayerCount = ++this._layerCounter;
         const folder = new Layer(folderId, 'group', modLayer.name);
         folder.isGroup = true;
@@ -359,7 +339,7 @@
 
         const pad = String(morphed.length).length;
         const shapeLayers = morphed.map((path, i) => {
-          const shapeId = window.Vectura.generateId();
+          const shapeId = generateId();
           SETTINGS.globalLayerCount = ++this._layerCounter;
           const shape = new Layer(shapeId, 'shape', `${modLayer.name} - Line ${String(i + 1).padStart(pad, '0')}`);
           shape.parentId = folderId;
@@ -403,7 +383,7 @@
         mirrored.forEach((path) => expandedItems.push({ path, child }));
       });
 
-      const folderId = window.Vectura.generateId();
+      const folderId = generateId();
       SETTINGS.globalLayerCount = ++this._layerCounter;
       const folder = new Layer(folderId, 'group', modLayer.name);
       folder.isGroup = true;
@@ -414,7 +394,7 @@
 
       const pad = String(expandedItems.length).length;
       const shapeLayers = expandedItems.map(({ path, child }, i) => {
-        const shapeId = window.Vectura.generateId();
+        const shapeId = generateId();
         SETTINGS.globalLayerCount = ++this._layerCounter;
         const shape = new Layer(shapeId, 'shape', `${modLayer.name} - Line ${String(i + 1).padStart(pad, '0')}`);
         shape.parentId = folderId;
@@ -456,7 +436,7 @@
     }
 
     addGroupLayer() {
-      const id = window.Vectura.generateId();
+      const id = generateId();
       SETTINGS.globalLayerCount = ++this._layerCounter;
       const num = String(this._layerCounter).padStart(2, '0');
       const layer = new Layer(id, 'group', `Group ${num}`);
@@ -469,7 +449,7 @@
     }
 
     addEmptyLayer() {
-      const id = window.Vectura.generateId();
+      const id = generateId();
       SETTINGS.globalLayerCount = ++this._layerCounter;
       const num = String(this._layerCounter).padStart(2, '0');
       const layer = new Layer(id, 'group', `Layer ${num}`);
@@ -633,7 +613,7 @@
     duplicateLayer(id, state = null) {
       const source = this.layers.find((l) => l.id === id);
       if (!source) return null;
-      const newId = window.Vectura.generateId();
+      const newId = generateId();
       SETTINGS.globalLayerCount = ++this._layerCounter;
       const baseName = `${source.name} Copy`;
       const existing = new Set(this.layers.map((l) => l.name));
@@ -888,12 +868,8 @@
         if (!delta || (!delta.dx && !delta.dy)) return;
         const layer = this.getLayerById(layerId);
         if (!layer || !layer.params) return;
-        window.Vectura.engine.updateLayerParams(layer.id, {
-          posX: (layer.params.posX || 0) + (delta.dx || 0)
-        });
-        window.Vectura.engine.updateLayerParams(layer.id, {
-          posY: (layer.params.posY || 0) + (delta.dy || 0)
-        });
+        layer.params.posX = (layer.params.posX || 0) + (delta.dx || 0);
+        layer.params.posY = (layer.params.posY || 0) + (delta.dy || 0);
         window.Vectura?.PaintBucketOps?.translateLayerFills?.(layer, delta.dx || 0, delta.dy || 0);
         touchedIds.push(layerId);
       });

@@ -234,9 +234,9 @@
       // whatever onEnter just opened on the current step.
       this._el.addEventListener('click', (ev) => ev.stopPropagation());
       const stop = (fn) => (ev) => { ev?.stopPropagation?.(); fn?.(); };
-      qs('.tutorial-close', this._el).addEventListener("click", stop(() => this._onClose?.()));
-      qs('.tutorial-btn--back', this._el).addEventListener("click", stop(() => this._onBack?.()));
-      qs('.tutorial-btn--next', this._el).addEventListener("click", stop(() => this._onNext?.()));
+      qs('.tutorial-close', this._el).onclick = stop(() => this._onClose?.());
+      qs('.tutorial-btn--back', this._el).onclick = stop(() => this._onBack?.());
+      qs('.tutorial-btn--next', this._el).onclick = stop(() => this._onNext?.());
       this._installDrag();
       return true;
     }

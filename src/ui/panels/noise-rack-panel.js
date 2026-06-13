@@ -375,9 +375,7 @@
         };
         this.normalizeImageEffects(legacy, base.imageEffects?.[0]);
         noises = [legacy];
-        window.Vectura.engine.updateLayerParams(layer.id, {
-          noises: noises
-        });
+        layer.params.noises = noises;
       }
       noises = noises.map((noise, idx) => {
         const template = templates[idx] || templates[templates.length - 1] || base;
@@ -406,9 +404,7 @@
         this.normalizeImageEffects(next, base.imageEffects?.[0]);
         return next;
       });
-      window.Vectura.engine.updateLayerParams(layer.id, {
-        noises: noises
-      });
+      layer.params.noises = noises;
       return noises;
     },
 
@@ -465,9 +461,7 @@
         };
         this.normalizeImageEffects(legacy, base.imageEffects?.[0]);
         noises = [legacy];
-        window.Vectura.engine.updateLayerParams(layer.id, {
-          noises: noises
-        });
+        layer.params.noises = noises;
       }
       noises = noises.map((noise, idx) => {
         const template = templates[idx] || templates[templates.length - 1] || base;
@@ -497,9 +491,7 @@
         this.normalizeImageEffects(next, base.imageEffects?.[0]);
         return next;
       });
-      window.Vectura.engine.updateLayerParams(layer.id, {
-        noises: noises
-      });
+      layer.params.noises = noises;
       return noises;
     },
 
@@ -559,9 +551,7 @@
         };
         this.normalizeImageEffects(legacy, base.imageEffects?.[0]);
         noises = [legacy];
-        window.Vectura.engine.updateLayerParams(layer.id, {
-          noises: noises
-        });
+        layer.params.noises = noises;
       }
       noises = noises.map((noise, idx) => {
         const template = templates[idx] || templates[templates.length - 1] || base;
@@ -593,9 +583,7 @@
         this.normalizeImageEffects(next, base.imageEffects?.[0]);
         return next;
       });
-      window.Vectura.engine.updateLayerParams(layer.id, {
-        noises: noises
-      });
+      layer.params.noises = noises;
       return noises;
     },
 
@@ -655,9 +643,7 @@
         };
         this.normalizeImageEffects(legacy, base.imageEffects?.[0]);
         noises = [legacy];
-        window.Vectura.engine.updateLayerParams(layer.id, {
-          noises: noises
-        });
+        layer.params.noises = noises;
       }
       noises = noises.map((noise, idx) => {
         const template = templates[idx] || templates[templates.length - 1] || base;
@@ -689,9 +675,7 @@
         this.normalizeImageEffects(next, base.imageEffects?.[0]);
         return next;
       });
-      window.Vectura.engine.updateLayerParams(layer.id, {
-        noises: noises
-      });
+      layer.params.noises = noises;
       return noises;
     },
 
@@ -707,9 +691,7 @@
         const seed = { ...clone(base), id: 'noise-1', enabled: true, amplitude: 1 };
         this.normalizeImageEffects(seed, base.imageEffects?.[0]);
         noises = [seed];
-        window.Vectura.engine.updateLayerParams(layer.id, {
-          noises: noises
-        });
+        layer.params.noises = noises;
       }
       noises = noises.map((noise, idx) => {
         const template = templates[idx] || templates[templates.length - 1] || base;
@@ -741,9 +723,7 @@
         this.normalizeImageEffects(next, base.imageEffects?.[0]);
         return next;
       });
-      window.Vectura.engine.updateLayerParams(layer.id, {
-        noises: noises
-      });
+      layer.params.noises = noises;
       return noises;
     },
 
@@ -753,9 +733,7 @@
       let noises = layer.params.noises;
       if (!Array.isArray(noises) || !noises.length) {
         const flowMode = layer.params.flowMode || (layer.params.noiseType === 'curl' ? 'curl' : base.fieldMode || 'angle');
-        if (!layer.params.flowMode) window.Vectura.engine.updateLayerParams(layer.id, {
-          flowMode: flowMode
-        });
+        if (!layer.params.flowMode) layer.params.flowMode = flowMode;
         const legacy = {
           id: 'noise-1',
           enabled: true,
@@ -808,9 +786,7 @@
         };
         this.normalizeImageEffects(legacy, base.imageEffects?.[0]);
         noises = [legacy];
-        window.Vectura.engine.updateLayerParams(layer.id, {
-          noises: noises
-        });
+        layer.params.noises = noises;
       }
       noises = noises.map((noise, idx) => {
         const template = templates[idx] || templates[templates.length - 1] || base;
@@ -843,9 +819,7 @@
         this.normalizeImageEffects(next, base.imageEffects?.[0]);
         return next;
       });
-      window.Vectura.engine.updateLayerParams(layer.id, {
-        noises: noises
-      });
+      layer.params.noises = noises;
       return noises;
     },
 
@@ -854,9 +828,7 @@
       const { base, templates } = this.getWavetableNoiseTemplates('svgDistort');
       let noises = layer.params.noises;
       if (!Array.isArray(noises) || !noises.length) {
-        window.Vectura.engine.updateLayerParams(layer.id, {
-          noises: []
-        });
+        layer.params.noises = [];
         return [];
       }
       noises = noises.map((noise, idx) => {
@@ -889,9 +861,7 @@
         this.normalizeImageEffects(next, base.imageEffects?.[0]);
         return next;
       });
-      window.Vectura.engine.updateLayerParams(layer.id, {
-        noises: noises
-      });
+      layer.params.noises = noises;
       return noises;
     },
 
@@ -951,9 +921,7 @@
         };
         this.normalizeImageEffects(legacy, base.imageEffects?.[0]);
         noises = [legacy];
-        window.Vectura.engine.updateLayerParams(layer.id, {
-          noises: noises
-        });
+        layer.params.noises = noises;
       }
       noises = noises.map((noise, idx) => {
         const template = templates[idx] || templates[templates.length - 1] || base;
@@ -985,9 +953,7 @@
         this.normalizeImageEffects(next, base.imageEffects?.[0]);
         return next;
       });
-      window.Vectura.engine.updateLayerParams(layer.id, {
-        noises: noises
-      });
+      layer.params.noises = noises;
       return noises;
     },
 
@@ -1047,9 +1013,7 @@
         };
         this.normalizeImageEffects(legacy, base.imageEffects?.[0]);
         noises = [legacy];
-        window.Vectura.engine.updateLayerParams(layer.id, {
-          noises: noises
-        });
+        layer.params.noises = noises;
       }
       noises = noises.map((noise, idx) => {
         const template = templates[idx] || templates[templates.length - 1] || base;
@@ -1081,9 +1045,7 @@
         this.normalizeImageEffects(next, base.imageEffects?.[0]);
         return next;
       });
-      window.Vectura.engine.updateLayerParams(layer.id, {
-        noises: noises
-      });
+      layer.params.noises = noises;
       return noises;
     },
 
@@ -1143,9 +1105,7 @@
         };
         this.normalizeImageEffects(legacy, base.imageEffects?.[0]);
         noises = [legacy];
-        window.Vectura.engine.updateLayerParams(layer.id, {
-          driftNoises: noises
-        });
+        layer.params.driftNoises = noises;
       }
       noises = noises.map((noise, idx) => {
         const template = templates[idx] || templates[templates.length - 1] || base;
@@ -1177,9 +1137,7 @@
         this.normalizeImageEffects(next, base.imageEffects?.[0]);
         return next;
       });
-      window.Vectura.engine.updateLayerParams(layer.id, {
-        driftNoises: noises
-      });
+      layer.params.driftNoises = noises;
       return noises;
     },
 
@@ -1289,7 +1247,7 @@
       const template = templates[index] || templates[templates.length - 1] || base;
       return {
         ...clone(template),
-        id: window.Vectura.generateId(),
+        id: `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
         enabled: true,
       };
     },
@@ -1299,7 +1257,7 @@
       const template = templates[index] || templates[templates.length - 1] || base;
       return {
         ...clone(template),
-        id: window.Vectura.generateId(),
+        id: `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
         enabled: true,
         applyMode: template.applyMode ?? 'topdown',
       };
@@ -1310,7 +1268,7 @@
       const template = templates[index] || templates[templates.length - 1] || base;
       return {
         ...clone(template),
-        id: window.Vectura.generateId(),
+        id: `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
         enabled: true,
         applyMode: template.applyMode ?? 'orbit',
       };
@@ -1321,7 +1279,7 @@
       const template = templates[index] || templates[templates.length - 1] || base;
       return {
         ...clone(template),
-        id: window.Vectura.generateId(),
+        id: `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
         enabled: true,
       };
     },
@@ -1331,7 +1289,7 @@
       const template = templates[index] || templates[templates.length - 1] || base;
       return {
         ...clone(template),
-        id: window.Vectura.generateId(),
+        id: `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
         enabled: true,
       };
     },
@@ -1341,7 +1299,7 @@
       const template = templates[index] || templates[templates.length - 1] || base;
       return {
         ...clone(template),
-        id: window.Vectura.generateId(),
+        id: `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
         enabled: true,
         fieldMode: template.fieldMode ?? 'angle',
       };
@@ -1352,7 +1310,7 @@
       const template = templates[index] || templates[templates.length - 1] || base;
       return {
         ...clone(template),
-        id: window.Vectura.generateId(),
+        id: `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
         enabled: true,
       };
     },
@@ -1362,7 +1320,7 @@
       const template = templates[index] || templates[templates.length - 1] || base;
       return {
         ...clone(template),
-        id: window.Vectura.generateId(),
+        id: `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
         enabled: true,
       };
     },
@@ -1372,7 +1330,7 @@
       const template = templates[index] || templates[templates.length - 1] || base;
       return {
         ...clone(template),
-        id: window.Vectura.generateId(),
+        id: `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
         enabled: true,
       };
     },
@@ -1382,7 +1340,7 @@
       const template = templates[index] || templates[templates.length - 1] || base;
       return {
         ...clone(template),
-        id: window.Vectura.generateId(),
+        id: `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
         enabled: true,
         zoom: index === 0 ? this.getPetalisModifierLegacyZoom(modifier || {}) : template.zoom ?? base.zoom,
         seed: modifier?.seed ?? template.seed ?? base.seed,
@@ -1456,9 +1414,7 @@
         const tileMethodDef = (this.controls?.pattern || []).find((d) => d.id === 'tileMethod');
         const options = (tileMethodDef?.options || []).filter((o) => o.value !== 'off');
         if (options.length) {
-          window.Vectura.engine.updateLayerParams(layer.id, {
-            tileMethod: options[Math.floor(Math.random() * options.length)].value
-          });
+          layer.params.tileMethod = options[Math.floor(Math.random() * options.length)].value;
         }
         return;
       }
@@ -1503,7 +1459,7 @@
       `;
       const addBtn = header.querySelector('.noise-add');
       if (addBtn) {
-        addBtn.addEventListener("click", () => {
+        addBtn.onclick = () => {
           if (this.app.pushHistory) this.app.pushHistory();
           const nextNoise = createNoise(noises.length);
           noises.push(nextNoise);
@@ -1512,7 +1468,7 @@
           this.app.regen();
           this.buildControls();
           this.updateFormula();
-        });
+        };
       }
       list.appendChild(header);
 
@@ -1566,14 +1522,14 @@
             const nextDisplay = parseFloat(e.target.value);
             valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
           };
-          input.addEventListener("change", (e) => {
+          input.onchange = (e) => {
             if (this.app.pushHistory) this.app.pushHistory();
             const nextDisplay = parseFloat(e.target.value);
             noise[def.key] = fromDisplayValue(def, nextDisplay);
             this.storeLayerParams(layer);
             this.app.regen();
             this.updateFormula();
-          });
+          };
           attachKeyboardRangeNudge(input, (nextDisplay) => {
             noise[def.key] = fromDisplayValue(def, nextDisplay);
             this.storeLayerParams(layer);
@@ -1635,7 +1591,7 @@
         const span = control.querySelector('span');
         if (input && span) {
           input.disabled = !noise.enabled;
-          input.addEventListener("change", (e) => {
+          input.onchange = (e) => {
             if (this.app.pushHistory) this.app.pushHistory();
             const next = e.target.value;
             const prev = noise[def.key];
@@ -1669,7 +1625,7 @@
             this.updateFormula();
             if (def.key === 'type') this.buildControls();
             else maybeRebuildNoiseControls();
-          });
+          };
           input.addEventListener('dblclick', (e) => {
             e.preventDefault();
             const defaultVal = getNoiseDefault(idx, def.key);
@@ -1823,7 +1779,7 @@
         const span = control.querySelector('span');
         if (input && span) {
           input.disabled = !noise.enabled;
-          input.addEventListener("change", (e) => {
+          input.onchange = (e) => {
             if (this.app.pushHistory) this.app.pushHistory();
             const next = Boolean(e.target.checked);
             noise[def.key] = next;
@@ -1831,7 +1787,7 @@
             this.storeLayerParams(layer);
             this.app.regen();
             this.updateFormula();
-          });
+          };
           input.addEventListener('dblclick', (e) => {
             e.preventDefault();
             const next = Boolean(getNoiseDefault(idx, def.key));
@@ -1939,18 +1895,18 @@
         }
         if (selectBtn && fileInput) {
           selectBtn.disabled = !noise.enabled;
-          selectBtn.addEventListener("click", () => {
+          selectBtn.onclick = () => {
             if (!noise.enabled) return;
             fileInput.click();
-          });
-          fileInput.addEventListener("change", () => {
+          };
+          fileInput.onchange = () => {
             const file = fileInput.files?.[0];
             applyFile(file);
-          });
+          };
         }
         if (clearBtn) {
           clearBtn.disabled = !noise.enabled;
-          clearBtn.addEventListener("click", () => {
+          clearBtn.onclick = () => {
             if (this.app.pushHistory) this.app.pushHistory();
             noise.imageId = '';
             noise.imageName = '';
@@ -1963,7 +1919,7 @@
             this.app.regen();
             this.buildControls();
             this.updateFormula();
-          });
+          };
         }
 
         wrap.classList.toggle('hidden', noise.type !== 'image');
@@ -1992,11 +1948,11 @@
         `;
         const addBtn = header.querySelector('.image-effect-add');
         if (addBtn) {
-          addBtn.addEventListener("click", () => {
+          addBtn.onclick = () => {
             if (this.app.pushHistory) this.app.pushHistory();
             const next = {
               ...clone(baseEffect),
-              id: window.Vectura.generateId(),
+              id: `effect-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
               enabled: true,
               mode: baseEffect.mode || 'luma',
             };
@@ -2006,7 +1962,7 @@
             this.app.regen();
             this.buildControls();
             this.updateFormula();
-          });
+          };
         }
         wrap.appendChild(header);
 
@@ -2050,14 +2006,14 @@
               const nextDisplay = parseFloat(e.target.value);
               valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
             };
-            input.addEventListener("change", (e) => {
+            input.onchange = (e) => {
               if (this.app.pushHistory) this.app.pushHistory();
               const nextDisplay = parseFloat(e.target.value);
               effect[def.key] = fromDisplayValue(def, nextDisplay);
               this.storeLayerParams(layer);
               this.app.regen();
               this.updateFormula();
-            });
+            };
             attachKeyboardRangeNudge(input, (nextDisplay) => {
               effect[def.key] = fromDisplayValue(def, nextDisplay);
               this.storeLayerParams(layer);
@@ -2127,7 +2083,7 @@
           const span = control.querySelector('span');
           if (input && span) {
             input.disabled = !noise.enabled || !effect.enabled;
-            input.addEventListener("change", (e) => {
+            input.onchange = (e) => {
               if (this.app.pushHistory) this.app.pushHistory();
               const next = e.target.value;
               effect[def.key] = next;
@@ -2136,7 +2092,7 @@
               this.app.regen();
               this.buildControls();
               this.updateFormula();
-            });
+            };
           }
           return control;
         };
@@ -2221,17 +2177,17 @@
           const grip = headerRow.querySelector('.noise-grip');
           bindEffectReorderGrip(grip, card, effect);
           if (toggle) {
-            toggle.addEventListener("change", (e) => {
+            toggle.onchange = (e) => {
               if (this.app.pushHistory) this.app.pushHistory();
               effect.enabled = Boolean(e.target.checked);
               this.storeLayerParams(layer);
               this.app.regen();
               this.buildControls();
               this.updateFormula();
-            });
+            };
           }
           if (deleteBtn) {
-            deleteBtn.addEventListener("click", () => {
+            deleteBtn.onclick = () => {
               if (effects.length <= 1) {
                 this.openModal({
                   title: 'Keep one effect',
@@ -2247,7 +2203,7 @@
               this.app.regen();
               this.buildControls();
               this.updateFormula();
-            });
+            };
           }
           card.appendChild(headerRow);
 
@@ -2345,17 +2301,17 @@
         const grip = headerRow.querySelector('.noise-grip');
         bindNoiseReorderGrip(grip, card, noise);
         if (toggle) {
-          toggle.addEventListener("change", (e) => {
+          toggle.onchange = (e) => {
             if (this.app.pushHistory) this.app.pushHistory();
             noise.enabled = Boolean(e.target.checked);
             this.storeLayerParams(layer);
             this.app.regen();
             this.buildControls();
             this.updateFormula();
-          });
+          };
         }
         if (deleteBtn) {
-          deleteBtn.addEventListener("click", () => {
+          deleteBtn.onclick = () => {
             if (noises.length <= 1) {
               this.openModal({
                 title: 'Keep one noise',
@@ -2371,7 +2327,7 @@
             this.app.regen();
             this.buildControls();
             this.updateFormula();
-          });
+          };
         }
         card.appendChild(headerRow);
 
@@ -2389,18 +2345,18 @@
         const randBtn = tools.querySelector('.noise-rand');
         if (resetBtn) {
           resetBtn.disabled = !noise.enabled;
-          resetBtn.addEventListener("click", () => {
+          resetBtn.onclick = () => {
             if (this.app.pushHistory) this.app.pushHistory();
             resetNoise(noise, idx);
             this.storeLayerParams(layer);
             this.app.regen();
             this.buildControls();
             this.updateFormula();
-          });
+          };
         }
         if (randBtn) {
           randBtn.disabled = !noise.enabled;
-          randBtn.addEventListener("click", () => {
+          randBtn.onclick = () => {
             if (this.app.pushHistory) this.app.pushHistory();
             noiseDefs.forEach((nDef) => {
               if (nDef.showIf && !nDef.showIf(noise)) return;
@@ -2433,7 +2389,7 @@
             this.app.regen();
             this.buildControls();
             this.updateFormula();
-          });
+          };
         }
 
         const controls = document.createElement('div');

@@ -1549,7 +1549,7 @@
     const selectedLayers = layers.filter((layer) => selectedSet.has(layer.id));
     const maxIndex = Math.max(...selectedLayers.map((layer) => layers.indexOf(layer)));
     SETTINGS.globalLayerCount++;
-    const groupId = window.Vectura.generateId();
+    const groupId = Math.random().toString(36).slice(2, 11);
     const group = new Layer(groupId, 'group', this.getUniqueLayerName('Group', groupId));
     group.isGroup = true;
     group.groupType = 'group';
@@ -1787,7 +1787,7 @@
     if (this.app.pushHistory) this.app.pushHistory();
     const engine = this.app.engine;
     SETTINGS.globalLayerCount++;
-    const id = window.Vectura.generateId();
+    const id = Math.random().toString(36).slice(2, 11);
     const shapeType = payload?.shape?.type || null;
     const shapeTypeMap = { oval: 'shape', rect: 'shape', polygon: 'shape' };
     const layerType = shapeTypeMap[shapeType] || 'shape';
@@ -2406,7 +2406,7 @@
 
     const groupNodes = new Map();
     const children = pathMeta.map((entry, index) => {
-      const newId = window.Vectura.generateId();
+      const newId = Math.random().toString(36).slice(2, 11);
       const child = new Layer(newId, 'shape', `${baseName} - Line ${String(index + 1).padStart(pad, '0')}`);
       child.parentId = groupId;
       child.params.seed = 0;
@@ -2427,7 +2427,7 @@
       if (entry.group) {
         let groupNode = groupNodes.get(entry.group);
         if (!groupNode) {
-          const gId = window.Vectura.generateId();
+          const gId = Math.random().toString(36).slice(2, 11);
           groupNode = new Layer(gId, 'group', entry.group);
           groupNode.isGroup = true;
           groupNode.groupType = 'group';

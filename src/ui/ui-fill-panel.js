@@ -571,17 +571,15 @@
         btn.style.background = pat.id === currentId ? 'var(--vectura-border)' : '';
         btn.textContent = pat.name || pat.id;
         btn.title = pat.name || pat.id;
-        btn.addEventListener("click", () => {
+        btn.onclick = () => {
           if (layer) {
             layer.params = layer.params || {};
-            window.Vectura.engine.updateLayerParams(layer.id, {
-              patternId: pat.id
-            });
+            layer.params.patternId = pat.id;
             this.storeLayerParams?.(layer);
             this.app.regen?.();
           }
           this._buildPatternFillPanel(container);
-        });
+        };
         list.appendChild(btn);
       });
       container.appendChild(list);
@@ -632,7 +630,7 @@
         typeSelect.appendChild(o);
       });
       typeSelect.value = this._patternFillSettings.fillType;
-      typeSelect.addEventListener("change", () => { this._patternFillSettings.fillType = typeSelect.value; });
+      typeSelect.onchange = () => { this._patternFillSettings.fillType = typeSelect.value; };
       typeRow.appendChild(typeSelect);
       container.appendChild(typeRow);
 
@@ -677,17 +675,13 @@
     if (!target) return;
 
     this.app.pushHistory?.();
-    if (!layer.params.patternFills) window.Vectura.engine.updateLayerParams(layer.id, {
-      patternFills: []
-    });
+    if (!layer.params.patternFills) layer.params.patternFills = [];
     const isErase = tool === 'fill-pattern-erase';
 
     if (isErase) {
-      window.Vectura.engine.updateLayerParams(layer.id, {
-        patternFills: layer.params.patternFills.filter(
-          (f) => !this._fillMatchesTarget?.(f, target)
-        )
-      });
+      layer.params.patternFills = layer.params.patternFills.filter(
+        (f) => !this._fillMatchesTarget?.(f, target)
+      );
     } else {
       const alreadyFilled = layer.params.patternFills.some(
         (f) => this._fillMatchesTarget?.(f, target)
@@ -696,7 +690,7 @@
         const fs = this._patternFillSettings || {};
         const cloneRegion = (r) => (Array.isArray(r) ? r.map((pt) => ({ ...pt })) : []);
         const record = {
-          id: window.Vectura.generateId(),
+          id: `fill-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
           targetIds: [target.id],
           regions: (target.regions || []).map((r) => cloneRegion(r)),
           region: cloneRegion(target.outer || target.regions?.[0] || []),

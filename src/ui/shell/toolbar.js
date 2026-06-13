@@ -189,38 +189,38 @@
     toolButtons.forEach((btn) => {
       if (btn.dataset.tool === 'scissor') return;
       if (btn.dataset.tool === 'shape') return;
-      btn.addEventListener("click", () => {
+      btn.onclick = () => {
         const tool = btn.dataset.tool;
         this.setActiveTool(tool);
-      });
+      };
     });
     scissorButtons.forEach((btn) => {
-      btn.addEventListener("click", () => {
+      btn.onclick = () => {
         const mode = btn.dataset.scissor;
         this.setActiveTool('scissor');
         this.setScissorMode(mode);
-      });
+      };
     });
     penButtons.forEach((btn) => {
-      btn.addEventListener("click", () => {
+      btn.onclick = () => {
         const mode = btn.dataset.pen;
         this.setActiveTool('pen');
         this.setPenMode(mode);
-      });
+      };
     });
     shapeButtons.forEach((btn) => {
-      btn.addEventListener("click", () => {
+      btn.onclick = () => {
         const mode = btn.dataset.shape;
         this.setActiveTool(shapeToolFromMode(mode));
-      });
+      };
     });
     fillButtons.forEach((btn) => {
-      btn.addEventListener("click", () => {
+      btn.onclick = () => {
         const mode = btn.dataset.fill;
         if (mode === 'erase')           this.setActiveTool('fill-erase');
         else if (mode === 'pattern')    this.setActiveTool('fill-pattern');
         else if (mode === 'pattern-erase') this.setActiveTool('fill-pattern-erase');
-      });
+      };
     });
 
     // Returns which side of the button the submenu should open toward,
@@ -388,7 +388,7 @@
     });
 
     if (lightSourceBtn) {
-      lightSourceBtn.addEventListener("click", () => this.startLightSourcePlacement());
+      lightSourceBtn.onclick = () => this.startLightSourcePlacement();
     }
 
     this.setActiveTool(this.activeTool);
@@ -425,18 +425,10 @@
             const newScaleY = oldScaleY * rect.h / lh;
             const cLocalX = (bounds.minX + bounds.maxX) / 2;
             const cLocalY = (bounds.minY + bounds.maxY) / 2;
-            window.Vectura.engine.updateLayerParams(layer.id, {
-              scaleX: newScaleX
-            });
-            window.Vectura.engine.updateLayerParams(layer.id, {
-              scaleY: newScaleY
-            });
-            window.Vectura.engine.updateLayerParams(layer.id, {
-              posX: (rect.x + rect.w / 2) - bounds.origin.x - cLocalX * rect.w / lw
-            });
-            window.Vectura.engine.updateLayerParams(layer.id, {
-              posY: (rect.y + rect.h / 2) - bounds.origin.y - cLocalY * rect.h / lh
-            });
+            layer.params.scaleX = newScaleX;
+            layer.params.scaleY = newScaleY;
+            layer.params.posX = (rect.x + rect.w / 2) - bounds.origin.x - cLocalX * rect.w / lw;
+            layer.params.posY = (rect.y + rect.h / 2) - bounds.origin.y - cLocalY * rect.h / lh;
             this.app.engine.generate(id);
           }
         }

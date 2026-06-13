@@ -90,10 +90,10 @@
       const collapsed = SETTINGS.uiSections[key] === true;
       this.setLeftSectionCollapsed(key, collapsed, { persist: false });
       if (!header) return;
-      header.addEventListener("click", () => {
+      header.onclick = () => {
         const next = !section.classList.contains('collapsed');
         this.setLeftSectionCollapsed(key, next);
-      });
+      };
     });
   }
 
@@ -137,10 +137,10 @@
     const collapsed = SETTINGS.uiSections.algorithmTransform !== false;
     this.setAlgorithmTransformCollapsed(collapsed, { persist: false });
     if (!header) return;
-    header.addEventListener("click", () => {
+    header.onclick = () => {
       const next = !section.classList.contains('collapsed');
       this.setAlgorithmTransformCollapsed(next);
-    });
+    };
   }
 
   function setAboutVisible(visible, options = {}) {
@@ -175,11 +175,11 @@
     }
     this.setAboutVisible(SETTINGS.aboutVisible, { persist: false });
     if (closeBtn) {
-      closeBtn.addEventListener("click", (e) => {
+      closeBtn.onclick = (e) => {
         e.preventDefault();
         e.stopPropagation();
         this.setAboutVisible(false);
-      });
+      };
     }
   }
 

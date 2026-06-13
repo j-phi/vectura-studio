@@ -157,7 +157,7 @@
         .replace(/-{2,}/g, '-')
         .replace(/^-|-$/g, '');
       if (cleaned) return cleaned;
-      return window.Vectura.generateId();
+      return `${fallback}-${Date.now().toString(36)}`;
     },
 
     normalizePetalDesignerProfileName(value, fallback = 'Petal Profile') {
@@ -1428,7 +1428,7 @@
         shadings = pd.state.shadings;
       };
 
-      addBtn.addEventListener("click", () => {
+      addBtn.onclick = () => {
         const activeSide = this.getPetalDesignerTarget(pd.state);
         shadings = shadings.concat([
           this.normalizePetalDesignerShading(createPetalisShading('radial'), shadings.length, {
@@ -1438,7 +1438,7 @@
         syncState();
         this.renderPetalDesignerShadingStack(pd, onApply);
         onApply();
-      });
+      };
 
       const rangeDefs = [
         { key: 'lineSpacing', label: 'Line Spacing', min: 0.2, max: 8, step: 0.1, precision: 1, unit: 'mm' },
@@ -1501,7 +1501,7 @@
           const valueLabel = wrap.querySelector('.petal-slider-value');
           if (input && valueLabel) {
             input.disabled = !shade.enabled;
-            input.addEventListener("change", () => {
+            input.onchange = () => {
               shade[key] =
                 key === 'target'
                   ? this.normalizePetalDesignerShadingTarget(input.value, 'both')
@@ -1510,7 +1510,7 @@
               syncState();
               valueLabel.textContent = options.find((opt) => opt.value === shade[key])?.label || shade[key];
               onApply();
-            });
+            };
           }
           return wrap;
         };
@@ -1542,7 +1542,7 @@
               onApply({ live });
             };
             input.oninput = () => onRange(true);
-            input.addEventListener("change", () => onRange(false));
+            input.onchange = () => onRange(false);
           }
           return wrap;
         };
@@ -1559,7 +1559,7 @@
         const deleteBtn = card.querySelector('[data-shade-delete]');
         if (upBtn) {
           upBtn.disabled = idx === 0;
-          upBtn.addEventListener("click", () => {
+          upBtn.onclick = () => {
             if (idx <= 0) return;
             const next = shadings.slice();
             [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
@@ -1567,11 +1567,11 @@
             syncState();
             this.renderPetalDesignerShadingStack(pd, onApply);
             onApply();
-          });
+          };
         }
         if (downBtn) {
           downBtn.disabled = idx >= shadings.length - 1;
-          downBtn.addEventListener("click", () => {
+          downBtn.onclick = () => {
             if (idx >= shadings.length - 1) return;
             const next = shadings.slice();
             [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
@@ -1579,24 +1579,24 @@
             syncState();
             this.renderPetalDesignerShadingStack(pd, onApply);
             onApply();
-          });
+          };
         }
         if (enabledInput) {
-          enabledInput.addEventListener("change", () => {
+          enabledInput.onchange = () => {
             shade.enabled = Boolean(enabledInput.checked);
             shadings[idx] = shade;
             syncState();
             this.renderPetalDesignerShadingStack(pd, onApply);
             onApply();
-          });
+          };
         }
         if (deleteBtn) {
-          deleteBtn.addEventListener("click", () => {
+          deleteBtn.onclick = () => {
             shadings.splice(idx, 1);
             syncState();
             this.renderPetalDesignerShadingStack(pd, onApply);
             onApply();
-          });
+          };
         }
         list.appendChild(card);
       });
@@ -1627,7 +1627,7 @@
         );
         modifiers = pd.state.petalModifiers;
       };
-      addBtn.addEventListener("click", () => {
+      addBtn.onclick = () => {
         const activeSide = this.getPetalDesignerTarget(pd.state);
         modifiers = modifiers.concat([
           this.normalizePetalDesignerModifier(
@@ -1641,7 +1641,7 @@
         syncState();
         this.renderPetalDesignerModifierStack(pd, onApply);
         onApply();
-      });
+      };
       const stepToPrecision = (step) => {
         const text = `${step ?? 1}`;
         if (!text.includes('.')) return 0;
@@ -1691,7 +1691,7 @@
           const valueLabel = wrap.querySelector('.petal-slider-value');
           if (input && valueLabel) {
             input.disabled = !modifier.enabled;
-            input.addEventListener("change", () => {
+            input.onchange = () => {
               modifiers[idx] = this.normalizePetalDesignerModifier(
                 {
                   ...modifier,
@@ -1702,7 +1702,7 @@
               syncState();
               this.renderPetalDesignerModifierStack(pd, onApply);
               onApply();
-            });
+            };
           }
           return wrap;
         };
@@ -1723,14 +1723,14 @@
           const valueLabel = wrap.querySelector('.petal-slider-value');
           if (input && valueLabel) {
             input.disabled = !modifier.enabled;
-            input.addEventListener("change", () => {
+            input.onchange = () => {
               modifier.target = this.normalizePetalDesignerModifierTarget(input.value, 'both');
               modifiers[idx] = this.normalizePetalDesignerModifier(modifier, idx);
               syncState();
               valueLabel.textContent =
                 PETAL_DESIGNER_TARGET_OPTIONS.find((opt) => opt.value === modifier.target)?.label || modifier.target;
               onApply();
-            });
+            };
           }
           return wrap;
         };
@@ -1762,7 +1762,7 @@
               onApply({ live });
             };
             input.oninput = () => onRange(true);
-            input.addEventListener("change", () => onRange(false));
+            input.onchange = () => onRange(false);
           }
           return wrap;
         };
@@ -1779,7 +1779,7 @@
         const deleteBtn = card.querySelector('[data-mod-delete]');
         if (upBtn) {
           upBtn.disabled = idx === 0;
-          upBtn.addEventListener("click", () => {
+          upBtn.onclick = () => {
             if (idx <= 0) return;
             const next = modifiers.slice();
             [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
@@ -1787,11 +1787,11 @@
             syncState();
             this.renderPetalDesignerModifierStack(pd, onApply);
             onApply();
-          });
+          };
         }
         if (downBtn) {
           downBtn.disabled = idx >= modifiers.length - 1;
-          downBtn.addEventListener("click", () => {
+          downBtn.onclick = () => {
             if (idx >= modifiers.length - 1) return;
             const next = modifiers.slice();
             [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
@@ -1799,24 +1799,24 @@
             syncState();
             this.renderPetalDesignerModifierStack(pd, onApply);
             onApply();
-          });
+          };
         }
         if (enabledInput) {
-          enabledInput.addEventListener("change", () => {
+          enabledInput.onchange = () => {
             modifier.enabled = Boolean(enabledInput.checked);
             modifiers[idx] = modifier;
             syncState();
             this.renderPetalDesignerModifierStack(pd, onApply);
             onApply();
-          });
+          };
         }
         if (deleteBtn) {
-          deleteBtn.addEventListener("click", () => {
+          deleteBtn.onclick = () => {
             modifiers.splice(idx, 1);
             syncState();
             this.renderPetalDesignerModifierStack(pd, onApply);
             onApply();
-          });
+          };
         }
         list.appendChild(card);
       });
@@ -1873,7 +1873,7 @@
             onApply({ live });
           };
           input.oninput = () => onRange(true);
-          input.addEventListener("change", () => onRange(false));
+          input.onchange = () => onRange(false);
         }
         stack.appendChild(wrap);
       });
@@ -1918,10 +1918,10 @@
         card.tabIndex = 0;
         card.setAttribute('role', 'button');
         card.setAttribute('aria-pressed', side === activeSide ? 'true' : 'false');
-        card.addEventListener("click", (e) => {
+        card.onclick = (e) => {
           if (e.target.closest('button, select, input, label')) return;
           activateSide({ rerender: true });
-        });
+        };
         card.onkeydown = (e) => {
           if (e.key !== 'Enter' && e.key !== ' ') return;
           e.preventDefault();
@@ -1953,7 +1953,7 @@
           profileSelect.onfocus = () => {
             activateSide({ rerender: true });
           };
-          profileSelect.addEventListener("change", () => {
+          profileSelect.onchange = () => {
             const selectedId = profileSelect.value;
             if (!selectedId) return;
             activateSide();
@@ -1967,7 +1967,7 @@
             }
             this.syncPetalDesignerControls(pd);
             onApply();
-          });
+          };
         }
         if (symmetrySelect) {
           const symmetry = this.getPetalDesignerSymmetryForSide(pd.state, side);
@@ -1976,21 +1976,21 @@
           symmetrySelect.onfocus = () => {
             activateSide({ rerender: true });
           };
-          symmetrySelect.addEventListener("change", () => {
+          symmetrySelect.onchange = () => {
             activateSide();
             this.setPetalDesignerSymmetryForSide(pd.state, side, symmetrySelect.value);
             if (symmetryLabel) symmetryLabel.textContent = symmetryLabelFromValue(symmetrySelect.value);
             this.syncPetalDesignerControls(pd);
             onApply();
-          });
+          };
         }
         if (importBtn && fileInput) {
-          importBtn.addEventListener("click", () => {
+          importBtn.onclick = () => {
             activateSide();
             fileInput.value = '';
             fileInput.click();
-          });
-          fileInput.addEventListener("change", async () => {
+          };
+          fileInput.onchange = async () => {
             const file = fileInput.files?.[0];
             if (!file) return;
             try {
@@ -2009,10 +2009,10 @@
             } finally {
               fileInput.value = '';
             }
-          });
+          };
         }
         if (exportBtn) {
-          exportBtn.addEventListener("click", () => {
+          exportBtn.onclick = () => {
             const fallback = `${side}-petal-profile`;
             const requested = window.prompt('Profile name', fallback);
             if (requested === null) return;
@@ -2022,12 +2022,12 @@
             });
             if (!payload) return;
             this.downloadJsonPayload(payload, `${payload.id}.json`);
-          });
+          };
         }
       });
       const exportPairBtn = pd.root.querySelector('[data-petal-profile-export-pair]');
       if (exportPairBtn) {
-        exportPairBtn.addEventListener("click", () => {
+        exportPairBtn.onclick = () => {
           const requested = window.prompt('Profile pair name', 'petal-profile-pair');
           if (requested === null) return;
           const payload = this.buildPetalDesignerProfileExportPayload(pd.state, {
@@ -2036,7 +2036,7 @@
           });
           if (!payload) return;
           this.downloadJsonPayload(payload, `${payload.id}.json`);
-        });
+        };
       }
     },
 
@@ -2137,11 +2137,11 @@
       const splitFeatherInput = pd.root.querySelector('input[data-petal-split-feather]');
       const lockToggle = pd.root.querySelector('input[data-petal-inner-outer-lock]');
       if (viewStyleSelect) {
-        viewStyleSelect.addEventListener("change", () => {
+        viewStyleSelect.onchange = () => {
           pd.state.viewStyle = this.normalizePetalDesignerViewStyle(viewStyleSelect.value);
           this.syncPetalDesignerControls(pd);
           this.renderPetalDesigner(pd);
-        });
+        };
       }
       if (innerCountInput) {
         const onInnerCount = (live = false) => {
@@ -2152,7 +2152,7 @@
           applyChanges({ live });
         };
         innerCountInput.oninput = () => onInnerCount(true);
-        innerCountInput.addEventListener("change", () => onInnerCount(false));
+        innerCountInput.onchange = () => onInnerCount(false);
       }
       if (outerCountInput) {
         const onOuterCount = (live = false) => {
@@ -2163,15 +2163,15 @@
           applyChanges({ live });
         };
         outerCountInput.oninput = () => onOuterCount(true);
-        outerCountInput.addEventListener("change", () => onOuterCount(false));
+        outerCountInput.onchange = () => onOuterCount(false);
       }
       if (lockToggle) {
-        lockToggle.addEventListener("change", () => {
+        lockToggle.onchange = () => {
           pd.state.innerOuterLock = Boolean(lockToggle.checked);
           this.syncInnerOuterLock(pd.state, this.getPetalDesignerTarget(pd.state));
           this.syncPetalDesignerControls(pd);
           applyChanges();
-        });
+        };
       }
       if (splitFeatherInput) {
         const onFeather = (live = false) => {
@@ -2182,18 +2182,18 @@
           applyChanges({ live });
         };
         splitFeatherInput.oninput = () => onFeather(true);
-        splitFeatherInput.addEventListener("change", () => onFeather(false));
+        splitFeatherInput.onchange = () => onFeather(false);
       }
       this.renderPetalDesignerProfileEditor(pd, applyChanges);
       pd.root.querySelectorAll('.petal-tool-btn').forEach((btn) => {
-        btn.addEventListener("click", () => setTool(btn.dataset.petalTool || 'direct'));
+        btn.onclick = () => setTool(btn.dataset.petalTool || 'direct');
       });
       const closeBtn = pd.root.querySelector('.petal-close');
-      if (closeBtn) closeBtn.addEventListener("click", () => this.closePetalDesigner());
+      if (closeBtn) closeBtn.onclick = () => this.closePetalDesigner();
       const popOutBtn = pd.root.querySelector('.petal-popout');
-      if (popOutBtn) popOutBtn.addEventListener("click", () => this.popOutInlinePetalDesigner());
+      if (popOutBtn) popOutBtn.onclick = () => this.popOutInlinePetalDesigner();
       const popInBtn = pd.root.querySelector('.petal-popin');
-      if (popInBtn) popInBtn.addEventListener("click", () => this.popInPetalDesigner());
+      if (popInBtn) popInBtn.onclick = () => this.popInPetalDesigner();
       this.renderPetalDesignerShadingStack(pd, applyChanges);
       this.renderPetalDesignerModifierStack(pd, applyChanges);
       this.renderPetalDesignerRandomnessPanel(pd, applyChanges);
@@ -2454,17 +2454,15 @@
         btn.appendChild(canvas);
         btn.appendChild(name);
         this.drawPetalProfileThumb(canvas, this.buildPetalProfileThumbPaths(opt.value));
-        btn.addEventListener("click", () => {
+        btn.onclick = () => {
           if (layer.params.petalProfile === opt.value) return;
           if (this.app.pushHistory) this.app.pushHistory();
-          window.Vectura.engine.updateLayerParams(layer.id, {
-            petalProfile: opt.value
-          });
+          layer.params.petalProfile = opt.value;
           this.storeLayerParams(layer);
           refreshActive();
           this.app.regen();
           this.updateFormula();
-        });
+        };
         strip.appendChild(btn);
       });
       refreshActive();

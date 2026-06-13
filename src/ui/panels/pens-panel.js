@@ -101,7 +101,7 @@
     const color = colors.length ? colors[pens.length % colors.length] : getThemeToken('--ui-accent', '#ffffff');
     const nextIndex = pens.length + 1;
     const pen = {
-      id: window.Vectura.generateId(),
+      id: `pen-${Math.random().toString(36).slice(2, 9)}`,
       name: `Pen ${nextIndex}`,
       color,
       width: SETTINGS.strokeWidth ?? 0.3,
@@ -148,7 +148,7 @@
     const addBtn = getEl('btn-add-pen');
     const palettes = this.getPaletteList();
     if (!toggle || !menu || !options || !search || !palettes.length) {
-      if (addBtn) addBtn.addEventListener("click", () => this.addPen());
+      if (addBtn) addBtn.onclick = () => this.addPen();
       return;
     }
 
@@ -179,14 +179,14 @@
               .join('')}
           </span>
         `;
-        btn.addEventListener("click", (e) => {
+        btn.onclick = (e) => {
           e.stopPropagation();
           SETTINGS.paletteId = palette.id;
           setActiveLabel();
           this.applyPaletteToPens(palette);
           menu.classList.add('hidden');
           this.openPaletteMenu = null;
-        });
+        };
         options.appendChild(btn);
       });
     };
@@ -194,7 +194,7 @@
     setActiveLabel();
     renderOptions();
 
-    toggle.addEventListener("click", (e) => {
+    toggle.onclick = (e) => {
       e.stopPropagation();
       const isHidden = menu.classList.contains('hidden');
       if (isHidden) {
@@ -214,13 +214,13 @@
         menu.classList.add('hidden');
         this.openPaletteMenu = null;
       }
-    });
+    };
 
     menu.addEventListener('click', (e) => e.stopPropagation());
     search.oninput = () => renderOptions(search.value);
 
     if (addBtn) {
-      addBtn.addEventListener("click", () => this.addPen());
+      addBtn.onclick = () => this.addPen();
     }
   }
 
@@ -274,11 +274,11 @@
       applyIcon();
 
       if (nameInput) {
-        nameInput.addEventListener("change", (e) => {
+        nameInput.onchange = (e) => {
           if (this.app.pushHistory) this.app.pushHistory();
           pen.name = e.target.value.trim() || pen.name;
           this.renderLayers();
-        });
+        };
       }
 
       if (colorInput) {
@@ -312,7 +312,7 @@
         colorInput.addEventListener('pointerdown', beginColorEdit);
         colorInput.addEventListener('focus', beginColorEdit);
         colorInput.oninput = (e) => applyColor(e.target.value);
-        colorInput.addEventListener("change", (e) => {
+        colorInput.onchange = (e) => {
           const committed = e.target.value;
           if (preDragColor !== null && preDragColor !== committed) {
             // Restore the pre-drag value, snapshot it as the history entry,
@@ -323,7 +323,7 @@
           }
           preDragColor = null;
           applyColor(committed);
-        });
+        };
       }
 
       if (widthInput && widthValue) {
@@ -349,7 +349,7 @@
         widthInput.addEventListener('pointerdown', beginWidthEdit);
         widthInput.addEventListener('focus', beginWidthEdit);
         widthInput.oninput = (e) => applyWidth(e.target.value);
-        widthInput.addEventListener("change", (e) => {
+        widthInput.onchange = (e) => {
           const committed = parseFloat(e.target.value);
           if (preDragWidth !== null && preDragWidth !== committed) {
             pen.width = preDragWidth;
@@ -357,15 +357,15 @@
           }
           preDragWidth = null;
           applyWidth(e.target.value);
-        });
+        };
       }
 
       if (removeBtn) {
-        removeBtn.addEventListener("click", (e) => {
+        removeBtn.onclick = (e) => {
           e.preventDefault();
           e.stopPropagation();
           this.removePen(pen.id);
-        });
+        };
       }
 
       if (icon) {

@@ -86,7 +86,7 @@
         ctx.drawImage(img, 0, 0);
         const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const store = (window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {});
-        const id = window.Vectura.generateId();
+        const id = `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
         store[id] = { width: data.width, height: data.height, data: data.data };
         if (this.app.pushHistory) this.app.pushHistory();
         const owner = target || layer.params;
@@ -163,10 +163,10 @@
       });
     }
     if (fileInput) {
-      fileInput.addEventListener("change", () => {
+      fileInput.onchange = () => {
         const file = fileInput.files?.[0];
         handleFile(file);
-      });
+      };
     }
   }
 
