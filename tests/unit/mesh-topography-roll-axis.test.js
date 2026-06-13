@@ -1,16 +1,22 @@
 /**
- * Regression test: Mesh Topography must honour a third rotation axis (`roll`),
- * matching 3D Spiral's three-axis (yaw/pitch/roll) view rotation.
+ * Regression test: Mesh Topography exposes 3D Spiral's exact three-axis view
+ * controller — `yaw` / `pitch` / `roll` — and honours all three.
  *
- * Bug (pre-fix): the viewport rotation in mesh-topography.js hard-coded
- * `roll: 0`, so the `roll` slider had no effect — changing it produced
- * byte-identical geometry. This test feeds two different roll angles and
- * asserts the projected output actually changes, then confirms an omitted
- * roll behaves exactly like roll:0 (backward compatibility).
+ * History:
+ *  - The viewport originally rotated on two axes named `rotate`/`tilt` with no
+ *    roll (roll was hard-coded 0 in mesh-topography.js).
+ *  - v1.1.109 added the third `roll` axis.
+ *  - v1.1.110 renamed the controls to `yaw`/`pitch`/`roll` to match the 3D
+ *    Spiral controller exactly, keeping the legacy `rotate`/`tilt` keys readable
+ *    for back-compat (existing presets / .vectura files).
+ *
+ * This test asserts each of the three axes changes the projected geometry, that
+ * an omitted roll is inert, and that the legacy `rotate`/`tilt` keys still
+ * orient identically to their `yaw`/`pitch` replacements.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
-describe('Mesh Topography — roll (third rotation axis)', () => {
+describe('Mesh Topography — yaw / pitch / roll view controller', () => {
   let runtime;
 
   beforeAll(async () => {
@@ -30,8 +36,8 @@ describe('Mesh Topography — roll (third rotation axis)', () => {
         primitiveScaleY: 60,
         primitiveScaleZ: 60,
         lineCount: 8,
-        rotate: -28,
-        tilt: 34,
+        yaw: -28,
+        pitch: 34,
         contourVisibility: 'fullContour',
         ...overrides,
       },
@@ -47,19 +53,30 @@ describe('Mesh Topography — roll (third rotation axis)', () => {
       .map((p) => p.map((pt) => `${pt.x.toFixed(2)},${pt.y.toFixed(2)}`).join('|'))
       .join(';');
 
+  it('changing yaw changes the projected geometry', () => {
+    expect(signature(generate({ yaw: -28 }))).not.toBe(signature(generate({ yaw: 60 })));
+  });
+
+  it('changing pitch changes the projected geometry', () => {
+    expect(signature(generate({ pitch: 34 }))).not.toBe(signature(generate({ pitch: -80 })));
+  });
+
   it('changing roll changes the projected geometry', () => {
-    const flat = signature(generate({ roll: 0 }));
-    const rolled = signature(generate({ roll: 90 }));
-    expect(rolled).not.toBe(flat);
+    expect(signature(generate({ roll: 0 }))).not.toBe(signature(generate({ roll: 90 })));
   });
 
   it('an omitted roll matches roll:0 (backward compatible default)', () => {
-    const omitted = signature(generate({}));
-    const zero = signature(generate({ roll: 0 }));
-    expect(omitted).toBe(zero);
+    expect(signature(generate({}))).toBe(signature(generate({ roll: 0 })));
   });
 
-  it('roll is deterministic for a fixed angle', () => {
-    expect(signature(generate({ roll: 45 }))).toBe(signature(generate({ roll: 45 })));
+  it('legacy rotate/tilt keys orient identically to yaw/pitch (back-compat)', () => {
+    const legacy = signature(generate({ yaw: undefined, pitch: undefined, rotate: 45, tilt: -50 }));
+    const renamed = signature(generate({ yaw: 45, pitch: -50 }));
+    expect(legacy).toBe(renamed);
+  });
+
+  it('is deterministic for a fixed orientation', () => {
+    expect(signature(generate({ yaw: 12, pitch: -40, roll: 45 })))
+      .toBe(signature(generate({ yaw: 12, pitch: -40, roll: 45 })));
   });
 });

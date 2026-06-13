@@ -23,8 +23,8 @@
         "planeTilt": 12,
         "contourVisibility": "fullContour",
         "showOutline": true,
-        "rotate": -32,
-        "tilt": 38
+        "yaw": -32,
+        "pitch": 38
       }
     }
   ]
