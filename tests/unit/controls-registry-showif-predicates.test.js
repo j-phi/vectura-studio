@@ -111,8 +111,11 @@ describe('controls-registry compile gate', () => {
       CONTROL_DEFS.petalisDesigner.map((d) => d?.id).filter(Boolean),
     );
     // Spot-check a few removed ids per the migration spec § PETALIS_DESIGNER_REMOVED_CONTROL_IDS
-    expect(petalisDesignerIds.has('petalProfile')).toBe(false);
     expect(petalisDesignerIds.has('count')).toBe(false);
     expect(petalisDesignerIds.has('innerCount')).toBe(false);
+    // petalProfile is intentionally NOT removed anymore: it surfaces in the
+    // designer panel as the visual thumbnail gallery (petalProfileGallery).
+    const profileDef = CONTROL_DEFS.petalisDesigner.find((d) => d?.id === 'petalProfile');
+    expect(profileDef?.type).toBe('petalProfileGallery');
   });
 });

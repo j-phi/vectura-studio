@@ -404,7 +404,7 @@
       {
         id: 'petalProfile',
         label: 'Petal Profile',
-        type: 'select',
+        type: 'petalProfileGallery',
         options: PETAL_PROFILE_OPTIONS,
         infoKey: 'petalis.petalProfile',
       },
@@ -1579,7 +1579,6 @@
   };
 
   const PETALIS_DESIGNER_REMOVED_CONTROL_IDS = new Set([
-    'petalProfile',
     'tipSharpness',
     'tipTwist',
     'centerCurlBoost',

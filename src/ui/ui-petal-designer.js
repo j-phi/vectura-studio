@@ -106,6 +106,9 @@
   const PETAL_DESIGNER_PROFILE_VERSION = 1;
   const PETAL_DESIGNER_PROFILE_BUNDLE_KEY = 'PETAL_PROFILE_LIBRARY';
   const PETAL_DESIGNER_WIDTH_MATCH_BASELINE = 0.85;
+  // Named-profile thumbnail outlines are deterministic (fixed params + seed),
+  // so render each silhouette's single-petal generate() once per session.
+  const PETAL_PROFILE_THUMB_CACHE = new Map();
 
   // Whorl mode uses small per-ring counts (iris=3) and allows an empty inner
   // ring (innerCount 0), so the designer count floors are 0/1, not 5.
@@ -2293,6 +2296,177 @@
       if (keyHandler) window.removeEventListener('keydown', keyHandler);
       if (root && root.parentElement) root.remove();
       this.inlinePetalDesigner = null;
+    },
+
+    // ---- Visual petal-profile gallery (thumbnail strip) ----
+    // Replaces the name-only petalProfile <select>: every named silhouette is
+    // rendered from a real single-petal generate() call so what you click is
+    // exactly what the engine draws.
+
+    buildPetalProfileThumbPaths(profileName) {
+      if (PETAL_PROFILE_THUMB_CACHE.has(profileName)) {
+        return PETAL_PROFILE_THUMB_CACHE.get(profileName);
+      }
+      const algo = window.Vectura.Algorithms?.petalisDesigner;
+      const SeededRNG = window.Vectura.SeededRNG;
+      const SimpleNoise = window.Vectura.SimpleNoise;
+      if (!algo || !SeededRNG || !SimpleNoise) return [];
+      // One clean, deterministic petal: a single whorl petal at angle 0 with
+      // every jitter/macro neutral and no center/shading clutter. The Outline
+      // path is the silhouette; everything else is filtered out.
+      const params = {
+        ...clone(ALGO_DEFAULTS.petalisDesigner || {}),
+        petalProfile: profileName,
+        centerProfile: profileName,
+        layoutMode: 'whorl',
+        ringMode: 'dual',
+        innerCount: 0,
+        outerCount: 1,
+        petalScale: 30,
+        petalLengthRatio: 1,
+        petalSizeRatio: 1,
+        petalWidthRatio: 0.74,
+        petalSteps: 32,
+        bloom: 100,
+        petalAsymmetry: 0,
+        petalCupping: 0,
+        radiusScale: 0,
+        countJitter: 0,
+        sizeJitter: 0,
+        rotationJitter: 0,
+        angularDrift: 0,
+        driftStrength: 0,
+        tipTwist: 0,
+        tipCurl: 0,
+        centerCurlBoost: 0,
+        edgeWaveAmp: 0,
+        budMode: false,
+        seed: 7,
+        posX: 0,
+        posY: 0,
+        scaleX: 1,
+        scaleY: 1,
+        rotation: 0,
+        smoothing: 0,
+        simplify: 0,
+        anchorToCenter: 'off',
+        centerRadius: 0,
+        centerDensity: 0,
+        connectorCount: 0,
+        layering: false,
+        lightSource: null,
+        shadings: [],
+        petalModifiers: [],
+        noises: [],
+        driftNoises: [],
+        designerInner: null,
+        designerOuter: null,
+      };
+      const bounds = { width: 120, height: 120, m: 10, dW: 100, dH: 100, truncate: true };
+      let outline = [];
+      try {
+        const paths = algo.generate(params, new SeededRNG(7), new SimpleNoise(7), bounds) || [];
+        outline =
+          paths.find((p) => Array.isArray(p) && p.meta && p.meta.label === 'Outline') || [];
+      } catch (err) {
+        console.warn('petal profile thumb generate failed', profileName, err);
+        outline = [];
+      }
+      PETAL_PROFILE_THUMB_CACHE.set(profileName, outline);
+      return outline;
+    },
+
+    drawPetalProfileThumb(canvas, outline) {
+      const ctx = canvas?.getContext?.('2d');
+      if (!ctx) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!Array.isArray(outline) || outline.length < 2) return;
+      // Rotate -90° so the petal points up — silhouettes read better upright.
+      const pts = outline.map((pt) => ({ x: pt.y, y: -pt.x }));
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      pts.forEach((pt) => {
+        if (pt.x < minX) minX = pt.x;
+        if (pt.x > maxX) maxX = pt.x;
+        if (pt.y < minY) minY = pt.y;
+        if (pt.y > maxY) maxY = pt.y;
+      });
+      const pad = 5;
+      const w = Math.max(1e-6, maxX - minX);
+      const h = Math.max(1e-6, maxY - minY);
+      const scale = Math.min((canvas.width - pad * 2) / w, (canvas.height - pad * 2) / h);
+      const ox = (canvas.width - w * scale) / 2 - minX * scale;
+      const oy = (canvas.height - h * scale) / 2 - minY * scale;
+      ctx.beginPath();
+      pts.forEach((pt, i) => {
+        const x = pt.x * scale + ox;
+        const y = pt.y * scale + oy;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.strokeStyle = getThemeToken('--designer-stroke-active', '#67e8f9');
+      ctx.lineWidth = 1.2;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    },
+
+    mountPetalProfileGallery(layer, container, def) {
+      if (!layer || !container) return;
+      const options = (def && def.options) || [];
+      const infoBtn = def?.infoKey
+        ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>`
+        : '';
+      const wrap = document.createElement('div');
+      wrap.className = 'petal-profile-gallery';
+      wrap.innerHTML = `
+        <div class="flex justify-between mb-1">
+          <div class="flex items-center gap-2">
+            <label class="control-label mb-0">${def?.label || 'Petal Profile'}</label>
+            ${infoBtn}
+          </div>
+          <span class="text-xs text-vectura-accent font-mono" data-petal-profile-current></span>
+        </div>
+        <div class="petal-profile-thumbs" data-petal-profile-thumbs></div>
+      `;
+      const strip = wrap.querySelector('[data-petal-profile-thumbs]');
+      const labelEl = wrap.querySelector('[data-petal-profile-current]');
+      const currentValue = () => layer.params.petalProfile || options[0]?.value || '';
+      const refreshActive = () => {
+        const cur = currentValue();
+        strip.querySelectorAll('.petal-profile-thumb').forEach((btn) => {
+          btn.classList.toggle('active', btn.dataset.profile === cur);
+        });
+        if (labelEl) {
+          labelEl.textContent = options.find((opt) => opt.value === cur)?.label || cur;
+        }
+      };
+      options.forEach((opt) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'petal-profile-thumb';
+        btn.dataset.profile = opt.value;
+        btn.title = opt.label;
+        const canvas = document.createElement('canvas');
+        canvas.width = 56;
+        canvas.height = 64;
+        const name = document.createElement('span');
+        name.className = 'petal-profile-thumb-name';
+        name.textContent = opt.label;
+        btn.appendChild(canvas);
+        btn.appendChild(name);
+        this.drawPetalProfileThumb(canvas, this.buildPetalProfileThumbPaths(opt.value));
+        btn.onclick = () => {
+          if (layer.params.petalProfile === opt.value) return;
+          if (this.app.pushHistory) this.app.pushHistory();
+          layer.params.petalProfile = opt.value;
+          this.storeLayerParams(layer);
+          refreshActive();
+          this.app.regen();
+          this.updateFormula();
+        };
+        strip.appendChild(btn);
+      });
+      refreshActive();
+      container.appendChild(wrap);
     },
 
     mountInlinePetalisDesigner(layer, mountTarget) {

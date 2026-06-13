@@ -970,6 +970,13 @@
         this.mountInlinePetalisDesigner(layer, wrapper);
         return;
       }
+      if (def.type === 'petalProfileGallery') {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'mb-4';
+        target.appendChild(wrapper);
+        this.mountPetalProfileGallery(layer, wrapper, def);
+        return;
+      }
       if (def.type === 'actionButton') {
         const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
         const wrapper = document.createElement('div');

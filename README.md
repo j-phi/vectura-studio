@@ -207,7 +207,7 @@ Vectura runs on phones. A touch-friendly shell with slide-over drawers, a bottom
 | **Grid** | Rectilinear mesh deformed by a stacked Noise Rack field with `Warp` and `Shift` distortion modes |
 | **Rainfall** | Rain traces with droplet shaping, wind, and silhouette/ground controls |
 | **Phylla** | Phyllotaxis point spirals with Noise Rack-driven organic drift over the golden-angle layout |
-| **Petalis** | Radial petal structures with presets, embedded inner/outer curve designer, dual-ring controls, shading/modifier stacks, and Noise Rack-driven angular drift |
+| **Petalis** | Radial petal structures with presets, a visual thumbnail gallery for the 10 petal silhouettes, embedded inner/outer curve designer, dual-ring controls, shading/modifier stacks, and Noise Rack-driven angular drift |
 | **Spiral** | Archimedean spiral with optional closure that loops the outer end back in |
 | **Shape Pack** | Circle/polygon packing with perspective controls |
 | **Terrain** | Realistic terrain heightfield rendered as scanlines under selectable perspective (top-down, one-point, two-point, isometric), with native ridged mountains, V/U valleys, river carving, ocean coastlines, and dial-in style presets |
