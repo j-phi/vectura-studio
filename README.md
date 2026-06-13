@@ -551,6 +551,9 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.1.111
+- **Image Surface "Curves" now actually curves the lines.** Turning on the layer **Curves** toggle for an Image Surface used to do nothing — every relief line, mesh wire, and contour stayed straight. Curves now bends every point into a smooth bézier across **Relief Lines**, **Deformed Mesh**, and **Topography**, and the **Curve Smoothing** slider (renamed from *Contour Smoothing*, now shown in any mode while Curves is on) controls how smooth — and how lean the exported curves are. Bars are unaffected, and existing files render exactly as before until you flip Curves on.
+
 ### 1.1.76
 - **Click a group or Morph to select it — double-click to edit one piece inside.** A single click on a group (or a Morph modifier's blended output, now selectable on the canvas) selects the whole thing as one object you can move, resize, and rotate. **Double-click** an unlocked child to step inside and edit just that piece — drag, resize, or rotate it and a Morph re-blends live around your edit; the piece you're editing is outlined and the rest dims. Press **Esc** to step back out. Works just like Adobe Illustrator's group isolation.
 

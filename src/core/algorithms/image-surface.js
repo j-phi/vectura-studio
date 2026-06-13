@@ -293,6 +293,46 @@
     return path;
   };
 
+  // Wire modes whose multi-point output respects the layer Curves toggle. Bars
+  // (2-point segments) and relief plane edges can't curve and are excluded.
+  const SURFACE_CURVE_MODES = new Set(['lines', 'mesh', 'topography']);
+
+  // Curve conversion shared by the wire modes, mirroring meshTopography's
+  // contract: the layer Curves toggle is the master enable, and the Curve
+  // Smoothing slider (contourSmoothing) drives bezier tension + a simplify
+  // tolerance so the result is smooth AND lean. A 2-point / sub-3-point path
+  // can't curve, so it passes through unchanged (meta.straight intact).
+  const curveSurfacePath = (path, p) => {
+    if (!Array.isArray(path) || path.length < 3) return path;
+    const mode = p.mode || 'lines';
+    if (!SURFACE_CURVE_MODES.has(mode)) return path;
+    const smoothAmt = clamp(finite(p.contourSmoothing, 0), 0, 100);
+    if (p.curves === true) {
+      // Curves ON — every point becomes a bezier. Tolerance scales with each
+      // path's own bounding-box diagonal so it adapts to artwork size: Curves-on
+      // alone trims the densest oversampling (~0.4% of the diagonal); the slider
+      // drives it up to ~2.4%. The tension floor keeps Curves-on smooth even at
+      // smoothing 0 (else the simplified anchors join as flat, faceted chords).
+      let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+      for (let i = 0; i < path.length; i++) {
+        const pt = path[i];
+        if (pt.x < minX) minX = pt.x;
+        if (pt.x > maxX) maxX = pt.x;
+        if (pt.y < minY) minY = pt.y;
+        if (pt.y > maxY) maxY = pt.y;
+      }
+      const diag = Math.hypot(maxX - minX, maxY - minY) || 1;
+      const tol = Math.max(diag * 0.004, (smoothAmt / 100) * diag * 0.024);
+      const tension = Math.min(100, 55 + smoothAmt * 0.45);
+      return G3.smoothToBezier(path, tension, { simplifyTolerance: tol });
+    }
+    // Curves OFF: topography keeps its legacy contour smoothing — its contours
+    // have always smoothed via the slider alone, independent of the toggle, so
+    // existing files/baselines render byte-identical. Lines / mesh stay straight.
+    if (mode === 'topography' && smoothAmt > 0) return G3.smoothToBezier(path, smoothAmt);
+    return path;
+  };
+
   const pushVisibilityPaths = (paths, samples, p, meta = {}) => {
     if (!Array.isArray(samples) || samples.length < 2) return;
     const keepHidden = p.seeThrough !== false;
@@ -300,7 +340,7 @@
     splitPathByVisibility(samples, { keepHidden, visibleOnly: !keepHidden }).forEach((path) => {
       path.meta = { ...(path.meta || {}), algorithm: 'imageSurface', straight: true, ...meta };
       if (path.meta.depth == null && depth != null) path.meta.depth = depth;
-      paths.push(path);
+      paths.push(curveSurfacePath(path, p));
     });
   };
 
@@ -409,7 +449,7 @@
     const emitRibbon = (samples, baseSamples, y) => {
       if (samples.length < 2) return;
       if (planes) paths.push(...buildReliefPlanePaths(samples, baseSamples, p, { row: y }, occluders, ribbonId++));
-      else paths.push(pathFromSurfaceSamples(samples, { mode: 'lines' }));
+      else paths.push(curveSurfacePath(pathFromSurfaceSamples(samples, { mode: 'lines' }), p));
     };
     for (let y = 0; y < rows; y++) {
       const v = rows === 1 ? 0.5 : y / (rows - 1);
@@ -516,8 +556,10 @@
         };
       });
       const split = [];
+      // pushVisibilityPaths applies curveSurfacePath, so the contour is already
+      // smoothed (toggle-on, or legacy slider-only back-compat) here.
       pushVisibilityPaths(split, samples, p, { mode: 'topography' });
-      return split.map((visiblePath) => G3.smoothToBezier(visiblePath, finite(p.contourSmoothing, 0)));
+      return split;
     });
   };
 
