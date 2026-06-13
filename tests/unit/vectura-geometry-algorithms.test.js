@@ -383,6 +383,53 @@ describe('Vectura geometry algorithms', () => {
     expect(hatch.some((path) => path.meta?.hatch)).toBe(true);
   });
 
+  test('imageSurface depth-cue + hatching enhancements are additive and toggle output', () => {
+    const fixtureGrid = [
+      [0, 0.1, 0.2, 0.3],
+      [0.2, 0.4, 0.6, 0.8],
+      [0.8, 0.6, 0.4, 0.2],
+      [0.3, 0.2, 0.1, 0],
+    ];
+    const common = { fixtureGrid, sampleDetail: 24, rows: 8, columns: 8, barRows: 5, barColumns: 5 };
+
+    // Depth cue applies to ALL modes. It is metadata-only (geometry byte-identical
+    // — pathSignature is purely geometric), so it must NOT move any vertex but it
+    // must stamp a depth-derived meta.strokeDash that the all-off output lacks.
+    ['lines', 'mesh', 'topography', 'bars'].forEach((mode) => {
+      const off = generate('imageSurface', { ...common, mode });
+      const cued = generate('imageSurface', { ...common, mode, depthCue: 'dash', depthCueStrength: 80 });
+      expect(finitePaths(cued)).toBe(true);
+      // Geometry unchanged by depth cue.
+      expect(pathSignature(off)).toBe(pathSignature(cued));
+      // Off state stamps no strokeDash; depth cue adds it to non-hidden paths.
+      expect(off.some((path) => !path.meta?.hiddenLine && Array.isArray(path.meta?.strokeDash))).toBe(false);
+      expect(cued.some((path) => !path.meta?.hiddenLine && Array.isArray(path.meta?.strokeDash))).toBe(true);
+      // Near vs far paths get different dash patterns (the actual depth cue).
+      const dashes = cued
+        .filter((path) => !path.meta?.hiddenLine && Array.isArray(path.meta?.strokeDash))
+        .map((path) => path.meta.strokeDash.join(','));
+      expect(new Set(dashes).size).toBeGreaterThan(1);
+    });
+
+    // Hatching applies to mesh + bars: adds Lambert scan lines (meta.hatch), keeps
+    // output finite, and differs from the hatch-off baseline.
+    ['mesh', 'bars'].forEach((mode) => {
+      const off = generate('imageSurface', { ...common, mode });
+      const hatched = generate('imageSurface', { ...common, mode, hatchEnable: true, hatchSpacing: 4, hatchAngle: 30 });
+      expect(finitePaths(hatched)).toBe(true);
+      expect(hatched.length).toBeGreaterThan(off.length);
+      expect(hatched.some((path) => path.meta?.hatch)).toBe(true);
+      expect(pathSignature(off)).not.toBe(pathSignature(hatched));
+    });
+
+    // Hatching is N/A for lines/topography: enabling it is a no-op (byte-identical).
+    ['lines', 'topography'].forEach((mode) => {
+      const off = generate('imageSurface', { ...common, mode });
+      const on = generate('imageSurface', { ...common, mode, hatchEnable: true });
+      expect(pathSignature(off)).toBe(pathSignature(on));
+    });
+  });
+
   test('perspective projection foreshortens depth and stays orthographic by default', () => {
     const G3 = V.Geometry3D;
     // resolveProjection: ortho by default (empty options), perspective when toggled.
