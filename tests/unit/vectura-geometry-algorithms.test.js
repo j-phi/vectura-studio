@@ -390,6 +390,27 @@ describe('Vectura geometry algorithms', () => {
     const dropCount = flatPlanes.filter((path) => path.meta?.planeDrop).length;
     expect(dropCount).toBe(planeRows * 2);
 
+    // See-through OFF must run real inter-ribbon hidden-line removal: a tall ridge
+    // band occludes the wires of the rows behind it, so the solid output carries
+    // materially fewer points than the see-through pass (which keeps the full back
+    // lattice). The bug was that solid relief planes never occluded — the model
+    // always read as see-through.
+    const ridgeGrid = Array.from({ length: 11 }, (_, y) =>
+      Array.from({ length: 11 }, () => (y === 5 ? 1 : 0.12)));
+    const ridgeCfg = {
+      mode: 'lines',
+      horizontalLinesAsPlanes: true,
+      fixtureGrid: ridgeGrid,
+      sampleDetail: 40,
+      rows: 22,
+      amplitude: 80,
+    };
+    const ridgeSolid = generate('imageSurface', { ...ridgeCfg, seeThrough: false });
+    const ridgeSeeThrough = generate('imageSurface', { ...ridgeCfg, seeThrough: true });
+    expect(finitePaths(ridgeSolid)).toBe(true);
+    expect(countPoints(ridgeSolid)).toBeGreaterThan(0);
+    expect(countPoints(ridgeSolid)).toBeLessThan(countPoints(ridgeSeeThrough) * 0.85);
+
     const solidBars = generate('imageSurface', {
       mode: 'bars',
       fixtureGrid,

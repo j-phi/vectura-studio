@@ -316,22 +316,53 @@
     paths.push(path);
   };
 
+  // Stamp a relief-plane edge with per-endpoint camera depth + its ribbon owner so
+  // screen-space painter occlusion (occludeBarEdges) can clip it against nearer
+  // ribbons when see-through is off. `owner` keeps a ribbon from occluding itself.
+  const pushPlaneEdge = (paths, a, b, owner, meta) => {
+    const path = pathFromSurfaceSamples([a, b], meta);
+    path.meta.depthA = a.rotated ? a.rotated.z : finite(a.z, 0);
+    path.meta.depthB = b.rotated ? b.rotated.z : finite(b.z, 0);
+    path.meta.cubeId = owner;
+    paths.push(path);
+  };
+
   // A relief ribbon is a single curtain hanging from the top profile down to the
   // baseline. Its only vertical edges are the two end caps (left + right) — there
   // are NO dividers between interior samples (those would render as a picket
   // fence across the plane). The top edge and back baseline are emitted
   // per-segment so each still rides its own visibility/hidden-line state.
-  const buildReliefPlanePaths = (topSamples, baseSamples, p, meta = {}) => {
+  //
+  // When `occluders` is supplied (see-through OFF) the ribbon does TRUE inter-row
+  // hidden-line removal: every curtain quad becomes a painter occluder (opaque
+  // from either side) and every edge is tagged with depth + owner, so a nearer
+  // ribbon's wall clips the troughs of farther ribbons behind it. Without it the
+  // wires just stack and the model always reads as see-through. With see-through
+  // ON we keep the legacy per-face dashing so the back lattice stays visible.
+  const buildReliefPlanePaths = (topSamples, baseSamples, p, meta = {}, occluders = null, owner = 0) => {
     const paths = [];
     const keepHidden = p.seeThrough !== false;
+    const occlude = !keepHidden && Array.isArray(occluders);
     const last = Math.min(topSamples.length, baseSamples.length) - 1;
     for (let i = 0; i < last; i++) {
       const topA = topSamples[i];
       const topB = topSamples[i + 1];
       const baseA = baseSamples[i];
       const baseB = baseSamples[i + 1];
-      const visible = faceVisible([baseA, baseB, topB, topA]);
-      if (!visible && !keepHidden) continue;
+      const face = [baseA, baseB, topB, topA];
+      if (occlude) {
+        pushPlaneEdge(paths, topA, topB, owner, { mode: 'lines', reliefPlane: true, planeTop: true, ...meta });
+        pushPlaneEdge(paths, baseA, baseB, owner, { mode: 'lines', reliefPlane: true, planeBase: true, ...meta });
+        if (i === 0) pushPlaneEdge(paths, baseA, topA, owner, { mode: 'lines', reliefPlane: true, planeDrop: true, ...meta });
+        if (i === last - 1) pushPlaneEdge(paths, baseB, topB, owner, { mode: 'lines', reliefPlane: true, planeDrop: true, ...meta });
+        const polygon = face.map((s) => ({ x: s.point.x, y: s.point.y }));
+        if (polygon.every((pt) => Number.isFinite(pt.x) && Number.isFinite(pt.y))) {
+          const depth = face.reduce((sum, s) => sum + s.rotated.z, 0) / face.length;
+          occluders.push({ polygon, depth, owner });
+        }
+        continue;
+      }
+      const visible = faceVisible(face);
       const hidden = !visible;
       const backEdgeHidden = hidden || (keepHidden && visible);
       pushSegment(paths, topA, topB, hidden, { mode: 'lines', reliefPlane: true, planeTop: true, ...meta });
@@ -348,6 +379,19 @@
     const cols = Math.max(4, Math.round(clamp(finite(p.sampleDetail, 84), 8, 240)));
     const paths = [];
     const angle = finite(p.horizontalLineAngle, 0);
+    const planes = !!p.horizontalLinesAsPlanes;
+    const keepHidden = p.seeThrough !== false;
+    // See-through OFF → collect every ribbon's curtain as a painter occluder and
+    // clip the wires behind nearer ribbons in one batched pass (below). Each
+    // ribbon gets a unique owner so it never occludes its own silhouette; a row
+    // split by clipBlackAreas yields several owners.
+    const occluders = planes && !keepHidden ? [] : null;
+    let ribbonId = 0;
+    const emitRibbon = (samples, baseSamples, y) => {
+      if (samples.length < 2) return;
+      if (planes) paths.push(...buildReliefPlanePaths(samples, baseSamples, p, { row: y }, occluders, ribbonId++));
+      else paths.push(pathFromSurfaceSamples(samples, { mode: 'lines' }));
+    };
     for (let y = 0; y < rows; y++) {
       const v = rows === 1 ? 0.5 : y / (rows - 1);
       const samples = [];
@@ -356,13 +400,7 @@
         const u = x / cols;
         const h = sampler(u, v);
         if (p.clipBlackAreas && h < 0.04) {
-          if (samples.length >= 2) {
-            if (p.horizontalLinesAsPlanes) {
-              paths.push(...buildReliefPlanePaths(samples, baseSamples, p, { row: y }));
-            } else {
-              paths.push(pathFromSurfaceSamples(samples, { mode: 'lines' }));
-            }
-          }
+          emitRibbon(samples, baseSamples, y);
           samples.length = 0;
           baseSamples.length = 0;
           continue;
@@ -374,17 +412,17 @@
           px = r.x;
           py = r.y;
         }
-        if (p.horizontalLinesAsPlanes) {
+        if (planes) {
           samples.push(surfaceSample(px, py, h, p, bounds));
           baseSamples.push(surfaceSample(px, py, 0, p, bounds));
         } else {
           samples.push(surfacePoint(px, py, h, p, bounds));
         }
       }
-      if (samples.length >= 2) {
-        if (p.horizontalLinesAsPlanes) paths.push(...buildReliefPlanePaths(samples, baseSamples, p, { row: y }));
-        else paths.push(pathFromSurfaceSamples(samples, { mode: 'lines' }));
-      }
+      emitRibbon(samples, baseSamples, y);
+    }
+    if (occluders && occluders.length) {
+      return occludeBarEdges(paths, occluders, finite(p.depthBias, 0.5));
     }
     return paths;
   };
