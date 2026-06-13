@@ -420,7 +420,14 @@
 
     const drawItem = (item, strokeStyle, options = {}) => {
       const alpha = options.alpha ?? 1;
-      const lineWidth = options.lineWidth ?? parseFloat(item.strokeWidth || SETTINGS.strokeWidth || 0.3);
+      const baseLineWidth = options.lineWidth ?? parseFloat(item.strokeWidth || SETTINGS.strokeWidth || 0.3);
+      // Variable line weight (silhouette / crease emphasis): scale per-path,
+      // clamped to 6x. Absent or 1 → unchanged.
+      const rawWeight = Number(item?.path?.meta?.weightScale);
+      const weightScale = Number.isFinite(rawWeight) && rawWeight !== 1
+        ? Math.max(0.1, Math.min(6, rawWeight))
+        : 1;
+      const lineWidth = baseLineWidth * weightScale;
       const clipPolygons = (item.ancestorClipLayerIds || [])
         .flatMap((layerId) => snapshot.clipPolygonsByLayerId.get(layerId) || []);
       ctx.save();

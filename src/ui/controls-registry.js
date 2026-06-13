@@ -62,6 +62,47 @@
     { value: 'dagger', label: 'Dagger' },
   ];
 
+  // Shared "Shading & Lines" block appended to every 3D-capable algorithm
+  // (spiral3d, polyhedron, meshTopography, imageSurface). Drives the four
+  // cross-cutting geometry3d.js enhancements: depth-cue dash (#2), silhouette /
+  // crease line-weight emphasis (#3), hidden-line removal (#4), Lambert hatching
+  // (#5). Every control defaults OFF/neutral so existing output is unchanged
+  // until the per-algorithm teams wire the helpers in.
+  const SHADING_LINE_CONTROLS = [
+    { type: 'section', label: 'Shading & Lines' },
+    {
+      id: 'depthCue',
+      label: 'Depth Cue',
+      type: 'select',
+      options: [
+        { value: 'off', label: 'Off' },
+        { value: 'dash', label: 'Dash by depth' },
+      ],
+    },
+    { id: 'depthCueStrength', label: 'Depth Strength', type: 'range', min: 0, max: 100, step: 1, showIf: (p) => (p.depthCue || 'off') !== 'off', livePreview: true },
+    { id: 'emphasizeOutline', label: 'Emphasize Outline', type: 'checkbox' },
+    { id: 'outlineWeight', label: 'Outline Weight', type: 'range', min: 1, max: 4, step: 0.1, showIf: (p) => p.emphasizeOutline === true, livePreview: true },
+    { id: 'showCreases', label: 'Show Creases', type: 'checkbox' },
+    { id: 'creaseAngle', label: 'Crease Angle', type: 'range', min: 10, max: 80, step: 1, displayUnit: '°', showIf: (p) => p.showCreases === true, livePreview: true },
+    {
+      id: 'hiddenLineMode',
+      label: 'Hidden Lines',
+      type: 'select',
+      options: [
+        { value: 'backface', label: 'Back-face only' },
+        { value: 'remove', label: 'Remove hidden' },
+        { value: 'dash', label: 'Dash hidden' },
+      ],
+    },
+    { id: 'depthBias', label: 'Depth Bias', type: 'range', min: 0, max: 3, step: 0.1, showIf: (p) => (p.hiddenLineMode || 'backface') !== 'backface', livePreview: true },
+    { id: 'hatchEnable', label: 'Lambert Hatching', type: 'checkbox' },
+    { id: 'lightAzimuth', label: 'Light Azimuth', type: 'range', min: 0, max: 360, step: 1, displayUnit: '°', showIf: (p) => p.hatchEnable === true, livePreview: true },
+    { id: 'lightElevation', label: 'Light Elevation', type: 'range', min: 0, max: 90, step: 1, displayUnit: '°', showIf: (p) => p.hatchEnable === true, livePreview: true },
+    { id: 'hatchAngle', label: 'Hatch Angle', type: 'range', min: 0, max: 180, step: 1, displayUnit: '°', showIf: (p) => p.hatchEnable === true, livePreview: true },
+    { id: 'hatchSpacing', label: 'Hatch Spacing', type: 'range', min: 2, max: 20, step: 0.5, showIf: (p) => p.hatchEnable === true, livePreview: true },
+    { id: 'crossHatch', label: 'Cross-Hatch', type: 'checkbox', showIf: (p) => p.hatchEnable === true },
+  ];
+
   const CONTROL_DEFS = {
     expanded: [],
     svgDistort: [
@@ -1703,6 +1744,7 @@
     { id: 'pitch', label: 'Pitch', type: 'range', min: -90, max: 90, step: 1, displayUnit: '°', livePreview: true },
     { id: 'roll', label: 'Roll', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
     { id: 'curveResolution', label: 'Resolution', type: 'range', min: 90, max: 1800, step: 10, livePreview: true },
+    ...SHADING_LINE_CONTROLS,
   ];
 
   CONTROL_DEFS.polyhedron = [
@@ -1787,6 +1829,7 @@
     { id: 'focalLength', label: 'Depth Strength', type: 'range', min: 100, max: 1500, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
     { id: 'rotate', label: 'Rotate', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
     { id: 'tilt', label: 'Tilt', type: 'range', min: 0, max: 89, step: 1, displayUnit: '°', livePreview: true },
+    ...SHADING_LINE_CONTROLS,
   ];
 
   CONTROL_DEFS.meshTopography = [
@@ -1847,6 +1890,7 @@
     { id: 'focalLength', label: 'Depth Strength', type: 'range', min: 100, max: 1500, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
     { id: 'rotate', label: 'Rotate', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
     { id: 'tilt', label: 'Tilt', type: 'range', min: 0, max: 89, step: 1, displayUnit: '°', livePreview: true },
+    ...SHADING_LINE_CONTROLS,
   ];
 
   CONTROL_DEFS.imageSurface = [
@@ -1915,6 +1959,7 @@
     { id: 'focalLength', label: 'Depth Strength', type: 'range', min: 100, max: 1500, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
     { id: 'rotate', label: 'Rotate', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
     { id: 'tilt', label: 'Tilt', type: 'range', min: 0, max: 89, step: 1, displayUnit: '°', livePreview: true },
+    ...SHADING_LINE_CONTROLS,
   ];
 
   const PETALIS_DESIGNER_REMOVED_CONTROL_IDS = new Set([
