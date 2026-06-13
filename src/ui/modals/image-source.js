@@ -462,8 +462,10 @@
     };
 
     body.appendChild(toolbar);
-    body.appendChild(canvasWrap);
+    // Cancel / Apply sit directly above the preview canvas (not under it) so the
+    // commit/dismiss actions stay reachable without scrolling past a tall image.
     body.appendChild(footer);
+    body.appendChild(canvasWrap);
 
     this.openModal({ title: 'Paint Image Source', body, cardClass: 'modal-card--paint' });
   }

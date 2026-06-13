@@ -910,6 +910,17 @@
     },
   ];
 
+  // Image Surface reuses topo's heightfield-style noise controls, but the rack
+  // is sampled across a fixed 1024-unit span (NOISE_SPAN), so it wants a far
+  // wider Noise Scale range (high zoom = fine surface detail) and a lower
+  // Frequency floor than topo's pixel-space defaults. Cloned so topo's own
+  // sliders are unaffected.
+  const IMAGE_SURFACE_NOISE_DEFS = TOPO_NOISE_DEFS.map((def) => {
+    if (def.key === 'zoom') return cloneNoiseDef(def, { min: 0.0001, max: 20, step: 0.001 });
+    if (def.key === 'freq') return cloneNoiseDef(def, { min: 0.001, step: 0.01 });
+    return def;
+  });
+
   const FLOWFIELD_NOISE_DEFS = [
     ...WAVE_NOISE_DEFS.filter((def) => def.key !== 'applyMode').map((def) => {
       if (def.key === 'amplitude') {
@@ -1424,6 +1435,7 @@
     cloneNoiseDef,
     RINGS_NOISE_DEFS,
     TOPO_NOISE_DEFS,
+    IMAGE_SURFACE_NOISE_DEFS,
     FLOWFIELD_NOISE_DEFS,
     GRID_NOISE_DEFS,
     PHYLLA_NOISE_DEFS,
@@ -1460,6 +1472,7 @@
     WAVE_NOISE_DEFS,
     RINGS_NOISE_DEFS,
     TOPO_NOISE_DEFS,
+    IMAGE_SURFACE_NOISE_DEFS,
     FLOWFIELD_NOISE_DEFS,
     GRID_NOISE_DEFS,
     PHYLLA_NOISE_DEFS,

@@ -82,7 +82,7 @@
     const {
       // constants & data
       COMMON_CONTROLS, OPTIMIZATION_STEPS, IMAGE_NOISE_DEFAULT_AMPLITUDE,
-      WAVE_NOISE_DEFS, RINGS_NOISE_DEFS, TOPO_NOISE_DEFS, FLOWFIELD_NOISE_DEFS,
+      WAVE_NOISE_DEFS, RINGS_NOISE_DEFS, TOPO_NOISE_DEFS, IMAGE_SURFACE_NOISE_DEFS, FLOWFIELD_NOISE_DEFS,
       GRID_NOISE_DEFS, PHYLLA_NOISE_DEFS, PETALIS_DRIFT_NOISE_DEFS,
       PETALIS_MODIFIER_TYPES, PETALIS_PETAL_MODIFIER_TYPES, PETALIS_SHADING_TYPES,
       PETALIS_LINE_TYPES,
@@ -2732,8 +2732,10 @@
         const noiseDefs =
           noiseSource === 'rings'
             ? RINGS_NOISE_DEFS
-            : noiseSource === 'topo' || noiseSource === 'imageSurface'
-              ? TOPO_NOISE_DEFS
+            : noiseSource === 'imageSurface'
+              ? IMAGE_SURFACE_NOISE_DEFS
+              : noiseSource === 'topo'
+                ? TOPO_NOISE_DEFS
               : noiseSource === 'flowfield' || noiseSource === 'svgDistort'
                 ? FLOWFIELD_NOISE_DEFS
                 : noiseSource === 'grid'
