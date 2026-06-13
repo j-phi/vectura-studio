@@ -95,6 +95,7 @@
         const wx = u * NOISE_SPAN;
         const wy = v * NOISE_SPAN;
         const isPoly = layer.type === 'polygon';
+        const isImage = layer.type === 'image';
         const tileMode = layer.tileMode || 'off';
         let value;
         // Single-octave `evaluate` path for: (a) tiled layers — the sample
@@ -121,6 +122,24 @@
             sx = isPoly ? (tiled.x - 0.5) * 2 : tiled.x;
             sy = isPoly ? (tiled.y - 0.5) * 2 : tiled.y;
           }
+          value = rack.evaluate(sx, sy, layer, { worldX: wx, worldY: wy }) * (layer.amplitude ?? 1);
+        } else if (isImage) {
+          // Image noise maps the source raster across the WHOLE surface in
+          // normalized [0,1] space. The generic world*zoom FBM path (below)
+          // multiplies the [0,1024] world coordinate by the tiny base zoom and
+          // then clamps inside evaluate()'s image branch, squashing the raster
+          // into a single corner pixel — so the effect rendered as a flat
+          // constant ("not working at all"). Sample 1:1, single-octave (an
+          // image is not fractal noise), honoring angle/shift for positioning.
+          // evaluate()'s non-wrapped image branch re-centers coords by +0.5, so
+          // feed it (uv - 0.5) to land the sample exactly on the surface uv.
+          const angle = ((layer.angle ?? 0) * Math.PI) / 180;
+          const cosA = Math.cos(angle);
+          const sinA = Math.sin(angle);
+          const cu = u - 0.5;
+          const cv = v - 0.5;
+          const sx = cu * cosA - cv * sinA + (layer.shiftX ?? 0);
+          const sy = cu * sinA + cv * cosA + (layer.shiftY ?? 0);
           value = rack.evaluate(sx, sy, layer, { worldX: wx, worldY: wy }) * (layer.amplitude ?? 1);
         } else {
           value = rack.sampleScalar(wx, wy, layer, { worldX: wx, worldY: wy }) * (layer.amplitude ?? 1);

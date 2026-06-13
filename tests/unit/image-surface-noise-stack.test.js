@@ -135,6 +135,65 @@ describe('Image Surface — noise rack stack', () => {
     expect(JSON.stringify(tiled2)).toBe(JSON.stringify(tiled));
   });
 
+  test('an image-type noise layer maps the raster across the whole surface', () => {
+    // Regression: a left-black / right-white split image used as an image-noise
+    // layer (default tileMode 'off') must displace the LEFT half of the surface
+    // differently from the RIGHT half. Before the fix, the image was sampled in
+    // world*zoom space and clamped into a single corner pixel, so the entire
+    // surface read one constant value — the image noise did nothing visible.
+    const w = 16;
+    const h = 16;
+    const data = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const o = (y * w + x) * 4;
+        const v = x < w / 2 ? 0 : 255; // left half black, right half white
+        data[o] = data[o + 1] = data[o + 2] = v;
+        data[o + 3] = 255;
+      }
+    }
+    V.NOISE_IMAGES = { split: { width: w, height: h, data } };
+
+    const imageLayer = () => ({
+      enabled: true,
+      type: 'image',
+      blend: 'add',
+      amplitude: 1,
+      zoom: 0.02,
+      freq: 1,
+      octaves: 3,
+      tileMode: 'off',
+      imageId: 'split',
+      noiseStyle: 'linear',
+      imageAlgo: 'luma',
+      imageEffects: [{ id: 'e', enabled: true, mode: 'luma' }],
+    });
+
+    const src = V.ImageSurfaceSource;
+    const W = 32;
+    const raster = src.renderPreviewRaster(
+      { seed: 5, noises: [imageLayer()], noiseAmount: 1, noiseMode: 'replace' },
+      W,
+      W,
+    );
+    const colAvg = (xStart, xEnd) => {
+      let sum = 0;
+      let count = 0;
+      for (let y = 0; y < W; y++) {
+        for (let x = xStart; x < xEnd; x++) {
+          sum += raster.data[(y * W + x) * 4];
+          count += 1;
+        }
+      }
+      return sum / count;
+    };
+    const leftAvg = colAvg(0, Math.floor(W / 4));
+    const rightAvg = colAvg(Math.floor((3 * W) / 4), W);
+    // The black left half must read meaningfully darker than the white right
+    // half — proof the image spans the surface instead of collapsing to a pixel.
+    expect(rightAvg - leftAvg).toBeGreaterThan(40);
+  });
+
   test('a polygon shape ignores FBM octaves (no concentric ghost polygons)', () => {
     // A polygon is a geometric SDF, not fractal noise — octaves must not stack
     // scaled copies of it. Before the fix, sampleScalar FBM summed the hexagon
