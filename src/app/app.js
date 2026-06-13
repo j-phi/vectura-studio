@@ -327,6 +327,7 @@
         selectionOutline: SETTINGS.selectionOutline,
         selectionOutlineColor: SETTINGS.selectionOutlineColor,
         selectionOutlineWidth: SETTINGS.selectionOutlineWidth,
+        selectionOutlineHide3d: SETTINGS.selectionOutlineHide3d !== false,
         gridType: SETTINGS.gridType,
         gridOpacity: SETTINGS.gridOpacity,
         gridStyle: SETTINGS.gridStyle,
@@ -474,6 +475,9 @@
         : snapshot.selectionOutline === true;
       SETTINGS.selectionOutlineColor = takeColor('selectionOutlineColor', SETTINGS.selectionOutlineColor);
       SETTINGS.selectionOutlineWidth = takeNumber('selectionOutlineWidth', SETTINGS.selectionOutlineWidth, 0, 100);
+      SETTINGS.selectionOutlineHide3d = snapshot.selectionOutlineHide3d === undefined
+        ? SETTINGS.selectionOutlineHide3d
+        : snapshot.selectionOutlineHide3d === true;
       // gridType: legacy `gridOverlay` boolean upgrade still honored.
       const GRID_TYPES = ['none', 'standard', 'graph', 'iso', 'polar', 'dots'];
       const gridFallback = snapshot.gridOverlay ? 'standard' : SETTINGS.gridType;
@@ -684,6 +688,7 @@
           selectionOutline: SETTINGS.selectionOutline,
           selectionOutlineColor: SETTINGS.selectionOutlineColor,
           selectionOutlineWidth: SETTINGS.selectionOutlineWidth,
+          selectionOutlineHide3d: SETTINGS.selectionOutlineHide3d !== false,
           gridOverlay: SETTINGS.gridOverlay,
           uiSections: SETTINGS.uiSections ? clone(SETTINGS.uiSections) : null,
           aboutVisible: SETTINGS.aboutVisible !== false,
@@ -744,6 +749,7 @@
       SETTINGS.selectionOutline = s.selectionOutline ?? SETTINGS.selectionOutline;
       SETTINGS.selectionOutlineColor = s.selectionOutlineColor ?? SETTINGS.selectionOutlineColor;
       SETTINGS.selectionOutlineWidth = s.selectionOutlineWidth ?? SETTINGS.selectionOutlineWidth;
+      SETTINGS.selectionOutlineHide3d = s.selectionOutlineHide3d ?? SETTINGS.selectionOutlineHide3d;
       SETTINGS.gridOverlay = s.gridOverlay ?? SETTINGS.gridOverlay;
       if (s.uiSections && typeof s.uiSections === 'object') {
         SETTINGS.uiSections = clone(s.uiSections);

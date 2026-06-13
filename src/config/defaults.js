@@ -1787,6 +1787,7 @@
     selectionOutline: true,
     selectionOutlineColor: '#ef4444',
     selectionOutlineWidth: 0.15,
+    selectionOutlineHide3d: true,
     gridType: 'none',
     gridOpacity: 0.2,
     gridStyle: 'cartesian',

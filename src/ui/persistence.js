@@ -183,6 +183,10 @@
     if (gridSnapSensitivityVal) gridSnapSensitivityVal.value = SETTINGS.gridSnapSensitivity ?? 50;
 
     if (selectionOutline) selectionOutline.checked = SETTINGS.selectionOutline !== false;
+    const selectionOutlineHide3d = getEl('set-selection-outline-hide3d', { silent: true });
+    const selectionOutlineHide3dRow = getEl('set-selection-outline-hide3d-row', { silent: true });
+    if (selectionOutlineHide3d) selectionOutlineHide3d.checked = SETTINGS.selectionOutlineHide3d !== false;
+    if (selectionOutlineHide3dRow) selectionOutlineHide3dRow.style.display = SETTINGS.selectionOutline !== false ? '' : 'none';
     if (selectionOutlineColorPill) {
       const color = SETTINGS.selectionOutlineColor || '#ef4444';
       selectionOutlineColorPill.textContent = color.toUpperCase();

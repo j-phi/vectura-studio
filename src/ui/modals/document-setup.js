@@ -243,6 +243,9 @@
               </span>
             </div>
             ${swToggle('set-selection-outline', 'Selection outline')}
+            <div id="set-selection-outline-hide3d-row">
+              ${swToggle('set-selection-outline-hide3d', 'Hide outline on 3D layers', 'true')}
+            </div>
             <div class="color-thickness-control">
               <div class="style-field">
                 <span class="style-field-label">Line Color</span>
@@ -959,10 +962,23 @@ ${isDevEligible() ? `
       };
     }
 
+    const selectionOutlineHide3dRow = getEl('set-selection-outline-hide3d-row', { silent: true });
+    const setSelectionOutlineHide3d = getEl('set-selection-outline-hide3d', { silent: true });
+    const syncHide3dRowVisibility = (outlineOn) => {
+      if (selectionOutlineHide3dRow) selectionOutlineHide3dRow.style.display = outlineOn ? '' : 'none';
+    };
     if (setSelectionOutline) {
       setSelectionOutline.onchange = (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         SETTINGS.selectionOutline = e.target.checked;
+        syncHide3dRowVisibility(e.target.checked);
+        this.app.render();
+      };
+    }
+    if (setSelectionOutlineHide3d) {
+      setSelectionOutlineHide3d.onchange = (e) => {
+        if (this.app.pushHistory) this.app.pushHistory();
+        SETTINGS.selectionOutlineHide3d = e.target.checked;
         this.app.render();
       };
     }

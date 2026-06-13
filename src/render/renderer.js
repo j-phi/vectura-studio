@@ -3475,6 +3475,7 @@
           if (!l.visible || (l.mask?.enabled && l.mask?.hideLayer)) return;
           if (l.isGroup) return;
           if (this.shouldSkipLayerForMaskPreview(l)) return;
+          if (SETTINGS.selectionOutlineHide3d !== false && ROTATION_3D_SPECS[l.type]) return;
           const pen = SETTINGS.pens?.find((p) => p.id === l.penId) || null;
           const strokeWidth = pen?.width ?? l.strokeWidth ?? SETTINGS.strokeWidth;
           const useCurves = Boolean(l.params && l.params.curves);
