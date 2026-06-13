@@ -7,12 +7,14 @@
  *    roll (roll was hard-coded 0 in mesh-topography.js).
  *  - v1.1.109 added the third `roll` axis.
  *  - v1.1.110 renamed the controls to `yaw`/`pitch`/`roll` to match the 3D
- *    Spiral controller exactly, keeping the legacy `rotate`/`tilt` keys readable
- *    for back-compat (existing presets / .vectura files).
+ *    Spiral controller exactly.
+ *  - v1.1.114 dropped the transitional `rotate`/`tilt` read-fallback (no
+ *    pre-rename `.vectura` files are supported); the engine reads only
+ *    `yaw`/`pitch`/`roll` now, so the legacy keys are inert.
  *
  * This test asserts each of the three axes changes the projected geometry, that
- * an omitted roll is inert, and that the legacy `rotate`/`tilt` keys still
- * orient identically to their `yaw`/`pitch` replacements.
+ * an omitted roll is inert, and that the dropped legacy `rotate`/`tilt` keys are
+ * now ignored (they no longer steer the view).
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
@@ -69,10 +71,10 @@ describe('Mesh Topography — yaw / pitch / roll view controller', () => {
     expect(signature(generate({}))).toBe(signature(generate({ roll: 0 })));
   });
 
-  it('legacy rotate/tilt keys orient identically to yaw/pitch (back-compat)', () => {
-    const legacy = signature(generate({ yaw: undefined, pitch: undefined, rotate: 45, tilt: -50 }));
-    const renamed = signature(generate({ yaw: 45, pitch: -50 }));
-    expect(legacy).toBe(renamed);
+  it('legacy rotate/tilt keys are ignored (fallback dropped) — view stays at default', () => {
+    const legacyOnly = signature(generate({ yaw: undefined, pitch: undefined, rotate: 45, tilt: -50 }));
+    const defaults = signature(generate({ yaw: undefined, pitch: undefined }));
+    expect(legacyOnly).toBe(defaults);
   });
 
   it('is deterministic for a fixed orientation', () => {
