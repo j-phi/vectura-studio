@@ -105,6 +105,38 @@ describe('Vectura geometry algorithms', () => {
     expect(dots.some(closed)).toBe(true);
   });
 
+  test('spiral3d 3D enhancements (depth-cue + emphasizeOutline + hidden-line dash) alter output', () => {
+    const baseOverrides = { curveResolution: 200 };
+    const off = generate('spiral3d', baseOverrides);
+    const on = generate('spiral3d', {
+      ...baseOverrides,
+      depthCue: 'dash',
+      depthCueStrength: 80,
+      emphasizeOutline: true,
+      outlineWeight: 3,
+      hiddenLineMode: 'dash',
+    });
+
+    // Still finite and non-empty.
+    expect(finitePaths(on)).toBe(true);
+
+    // Output differs from all-off.
+    expect(pathSignature(on)).not.toBe(pathSignature(off));
+
+    // Hidden-line 'dash' keeps back-facing wrap runs and marks them dashed.
+    expect(on.some((path) => path.meta?.hiddenLine && Array.isArray(path.meta.strokeDash))).toBe(true);
+    expect(on.length).toBeGreaterThan(off.length);
+
+    // emphasizeOutline stamps weightScale on the silhouette rings (off has none).
+    expect(on.some((path) => path.meta?.outline && path.meta.weightScale === 3)).toBe(true);
+    expect(off.every((path) => path.meta?.weightScale === undefined)).toBe(true);
+
+    // depthCue stamps a near/far strokeDash on visible (non-hidden) wrap paths;
+    // all-off leaves every path solid (no strokeDash).
+    expect(on.some((path) => !path.meta?.hiddenLine && Array.isArray(path.meta?.strokeDash))).toBe(true);
+    expect(off.every((path) => !Array.isArray(path.meta?.strokeDash))).toBe(true);
+  });
+
   test('polyhedron supports solids, toggles, and dashed hidden lines', () => {
     [
       'flatPolygon',
