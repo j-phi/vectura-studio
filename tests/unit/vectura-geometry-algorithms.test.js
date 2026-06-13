@@ -371,6 +371,54 @@ describe('Vectura geometry algorithms', () => {
     expect(hiddenBars.some((path) => path.meta?.vertical)).toBe(false);
   });
 
+  test('occludeSegments only lets occluders hide segments with a different owner', () => {
+    const G3 = V.Geometry3D;
+    // A flat near segment lying inside a nearer screen polygon.
+    const seg = { a: { x: 0, y: 5, z: 0 }, b: { x: 10, y: 5, z: 0 }, meta: { straight: true } };
+    const poly = [{ x: -2, y: 0 }, { x: 12, y: 0 }, { x: 12, y: 10 }, { x: -2, y: 10 }];
+    const occluder = { polygon: poly, depth: 50 };
+    // Different owner → the whole segment is removed.
+    const hidden = G3.occludeSegments([{ ...seg, owner: 1 }], [{ ...occluder, owner: 2 }], { mode: 'remove' });
+    expect(countPoints(hidden)).toBe(0);
+    // Same owner → self-occlusion is skipped, the segment survives.
+    const kept = G3.occludeSegments([{ ...seg, owner: 5 }], [{ ...occluder, owner: 5 }], { mode: 'remove' });
+    expect(kept.length).toBeGreaterThan(0);
+  });
+
+  test('imageSurface bars run hidden-line occlusion when see-through is off', () => {
+    // A tall spike in the centre with short bars around it: at the default iso
+    // view the spike's faces cover bars sitting behind it. With see-through off
+    // the algorithm must clip those hidden runs (otherwise far bars bleed through
+    // the gaps — the "bizarre gaps" regression).
+    const grid = Array.from({ length: 7 }, (_, y) =>
+      Array.from({ length: 7 }, (_, x) => (x === 3 && y === 3 ? 1 : 0.15)));
+    const cfg = { mode: 'bars', fixtureGrid: grid, barRows: 7, barColumns: 7, barGap: 0, amplitude: 60, seeThrough: false };
+
+    const occluded = generate('imageSurface', cfg);
+    expect(finitePaths(occluded)).toBe(true);
+    // Surviving bar edges collapse back to clean 2-point segments (the dense
+    // occlusion resampling must not bloat the export); the base floor loop is the
+    // only multi-point bar path.
+    expect(occluded.every((path) => path.length === 2 || path.meta?.barFloor)).toBe(true);
+
+    // Routing/effect proof: neutralise occlusion and confirm the geometry differs.
+    const G3 = V.Geometry3D;
+    const realOcclude = G3.occludeSegments;
+    G3.occludeSegments = (segments) =>
+      (segments || []).map((seg) => {
+        const path = [{ x: seg.a.x, y: seg.a.y }, { x: seg.b.x, y: seg.b.y }];
+        path.meta = seg.meta ? { ...seg.meta } : {};
+        return path;
+      });
+    let unoccluded;
+    try {
+      unoccluded = generate('imageSurface', cfg);
+    } finally {
+      G3.occludeSegments = realOcclude;
+    }
+    expect(pathSignature(occluded)).not.toBe(pathSignature(unoccluded));
+  });
+
   test('meshTopography 3D enhancements each produce finite output that differs from all-off', () => {
     const base = { sourceMode: 'cube', primitiveDetail: 6, lineCount: 8 };
     // All-off baseline (every shared 3D toggle at its default). pathSignature is

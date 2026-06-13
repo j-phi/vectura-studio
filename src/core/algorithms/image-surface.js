@@ -530,7 +530,16 @@
         meta,
       });
     });
-    const occluded = G3.occludeSegments(segments, occluders, { mode: 'remove', depthBias });
+    // occludeSegments resamples each edge into a dense polyline; every visible run
+    // is still perfectly collinear (a sub-span of a straight edge), so collapse it
+    // back to its two endpoints to keep the bar output lean for export.
+    const occluded = G3.occludeSegments(segments, occluders, { mode: 'remove', depthBias })
+      .map((path) => {
+        if (!path || path.length < 2) return path;
+        const ends = [path[0], path[path.length - 1]];
+        ends.meta = path.meta;
+        return ends;
+      });
     return passthrough.concat(occluded);
   };
 

@@ -524,6 +524,8 @@
   // NEARER occluder (occluder.depth > sample.z + depthBias). mode 'remove' drops
   // hidden runs; mode 'dash' routes them through markHidden. Per-segment AABB
   // rejection against occluder bounding boxes keeps the cost bounded. Deterministic.
+  // Optional: tag segments and occluders with a matching `owner` to exclude
+  // self-occlusion (an occluder never hides a segment sharing its owner).
   const occludeSegments = (segments, occluders, opts = {}) => {
     if (!Array.isArray(segments)) return [];
     const mode = opts.mode === 'dash' ? 'dash' : 'remove';
@@ -536,7 +538,7 @@
     }
     const occ = occluders
       .filter((o) => o && Array.isArray(o.polygon) && o.polygon.length >= 3)
-      .map((o) => ({ polygon: o.polygon, depth: finite(o.depth, 0), bbox: polygonBounds(o.polygon) }));
+      .map((o) => ({ polygon: o.polygon, depth: finite(o.depth, 0), bbox: polygonBounds(o.polygon), owner: o.owner }));
     const samplesFor = (seg) => {
       const len = Math.hypot(seg.b.x - seg.a.x, seg.b.y - seg.a.y);
       // ~one sample per 3px, clamped 8..120 for bounded cost.
@@ -551,8 +553,14 @@
       const segMaxX = Math.max(seg.a.x, seg.b.x);
       const segMinY = Math.min(seg.a.y, seg.b.y);
       const segMaxY = Math.max(seg.a.y, seg.b.y);
-      // AABB-reject occluders that cannot overlap this segment.
+      // AABB-reject occluders that cannot overlap this segment. When a segment
+      // carries an `owner` (e.g. a bar id), occluders from the SAME owner are
+      // skipped so a convex prism's large faces never self-occlude their own
+      // silhouette edges — depthBias alone can't separate a big face's near and
+      // far edges the way it can for small mesh triangles.
+      const segOwner = seg.owner;
       const relevant = occ.filter((o) =>
+        (o.owner == null || o.owner !== segOwner) &&
         o.bbox.maxX >= segMinX && o.bbox.minX <= segMaxX &&
         o.bbox.maxY >= segMinY && o.bbox.minY <= segMaxY);
       const steps = samplesFor(seg);
