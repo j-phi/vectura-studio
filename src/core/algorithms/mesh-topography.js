@@ -339,6 +339,14 @@
         emitRaw(visibleSegments, visibleDepths, false);
         emitRaw(hiddenSegments, hiddenDepths, true);
       } else {
+        // A contour curves when the layer's Curves toggle is on OR the Contour
+        // Smoothing slider is raised (smoothing implies curves for back-compat).
+        // Curves-on is the master enable; Contour Smoothing controls how hard the
+        // oversampled slice polyline is simplified before bezier handles are fit,
+        // so the result is smooth AND lean ("optimized, elegant lines" on export).
+        const smoothAmt = clamp(finite(p.contourSmoothing, 0), 0, 100);
+        const curvesOn = p.curves === true;
+        const wantBezier = curvesOn || smoothAmt > 0;
         const emit = (segments, depths, hidden) => {
           linkSegments(segments).forEach((path) => {
             path.meta = { algorithm: 'meshTopography', contour: true, straight: true };
@@ -346,7 +354,25 @@
               // Representative depth = mean of all contributing slice midpoints.
               path.meta.depth = depths.reduce((s, d) => s + d, 0) / depths.length;
             }
-            path = G3.smoothToBezier(path, finite(p.contourSmoothing, 0));
+            if (wantBezier) {
+              // Tolerance scales with each contour's own bounding-box diagonal so it
+              // adapts to artwork size: Curves-on alone trims the densest oversampling
+              // (~0.4% of the diagonal); the slider drives it up to ~2.4%.
+              let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+              for (let i = 0; i < path.length; i++) {
+                const pt = path[i];
+                if (pt.x < minX) minX = pt.x;
+                if (pt.x > maxX) maxX = pt.x;
+                if (pt.y < minY) minY = pt.y;
+                if (pt.y > maxY) maxY = pt.y;
+              }
+              const diag = Math.hypot(maxX - minX, maxY - minY) || 1;
+              const tol = Math.max(curvesOn ? diag * 0.004 : 0, (smoothAmt / 100) * diag * 0.024);
+              // Tension floor keeps Curves-on smooth even at smoothing 0 (else the
+              // simplified anchors would join as flat, faceted chords).
+              const tension = Math.min(100, 55 + smoothAmt * 0.45);
+              path = G3.smoothToBezier(path, tension, { simplifyTolerance: tol });
+            }
             if (hidden) markHidden(path);
             paths.push(path);
           });

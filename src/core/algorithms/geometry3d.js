@@ -333,13 +333,26 @@
   // a *Smoothing slider is what curves the line, independent of the layer flag.
   // amount is 0..100; amount <= 0 is a no-op that preserves the exact polyline
   // (and its `straight` flag), so smoothing-off output stays byte-identical.
+  // options.simplifyTolerance (px, default 0): when > 0 the densely-sampled input
+  // polyline is Visvalingam-simplified BEFORE handles are fit, so the emitted
+  // bezier is defined by a sparse set of shape-anchors instead of one cubic per
+  // ~2px sample. This is what makes a sliced contour both visibly smooth AND
+  // "optimized / elegant when deconstructed" in SVG export — fitting handles to
+  // an oversampled polyline yields sub-pixel handles whose curve is visually
+  // identical to the chords (i.e. smoothing with no perceptible effect).
   const smoothToBezier = (path, amount, options = {}) => {
     const tension = clamp(finite(amount) / 100, 0, 1);
     if (!Array.isArray(path) || tension <= EPS) return path;
     // Drop non-finite points up front (matching pathWithMeta/cleanPath) so a NaN
     // coordinate can't produce NaN bezier handles that survive into 'C NaN …'.
-    const clean = path.filter((pt) => pt && Number.isFinite(pt.x) && Number.isFinite(pt.y));
+    let clean = path.filter((pt) => pt && Number.isFinite(pt.x) && Number.isFinite(pt.y));
     if (clean.length < 3) return path;
+    const tol = finite(options.simplifyTolerance, 0);
+    if (tol > EPS) {
+      const GU = (typeof window !== 'undefined') && window.Vectura && window.Vectura.GeometryUtils;
+      const reduced = GU && GU.simplifyPathVisvalingam ? GU.simplifyPathVisvalingam(clean, tol) : clean;
+      if (Array.isArray(reduced) && reduced.length >= 3) clean = reduced;
+    }
     const closed = options.closed != null
       ? options.closed
       : pointEquals2(clean[0], clean[clean.length - 1]);

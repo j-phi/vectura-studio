@@ -272,6 +272,48 @@ describe('Vectura geometry algorithms', () => {
     expect(curved.meta.anchors.some((a) => a.in && a.out)).toBe(true);
   });
 
+  test('curves toggle alone turns mesh contours into beziers (no contourSmoothing needed)', () => {
+    const opts = { renderMode: 'contours', primitiveDetail: 16, lineCount: 16 };
+    const polyline = generate('meshTopography', { ...opts, curves: false, contourSmoothing: 0 });
+    const curved = generate('meshTopography', { ...opts, curves: true, contourSmoothing: 0 });
+
+    const rawContours = polyline.filter((p) => p.meta?.contour);
+    const curvedContours = curved.filter((p) => p.meta?.contour);
+    expect(rawContours.length).toBeGreaterThan(0);
+    expect(curvedContours.length).toBeGreaterThan(0);
+
+    // Curves OFF (and smoothing 0): verbatim straight polylines (unchanged contract).
+    expect(rawContours.every((p) => p.meta.straight === true && !p.meta.anchors)).toBe(true);
+    // Curves ON: every contour with enough points to curve becomes a native cubic
+    // bezier even without raising the smoothing slider (2-point fragments can't curve).
+    const curvable = curvedContours.filter((p) => p.length >= 3);
+    expect(curvable.length).toBeGreaterThan(0);
+    expect(curvable.every((p) => p.meta.forceCurves === true && !p.meta.straight)).toBe(true);
+    expect(curvable.some((p) => Array.isArray(p.meta.anchors) && p.meta.anchors.some((a) => a && (a.in || a.out)))).toBe(true);
+  });
+
+  test('contour smoothing simplifies before fitting: fewer anchors than raw samples, more so as it rises', () => {
+    const opts = { renderMode: 'contours', primitiveDetail: 18, lineCount: 18 };
+    const raw = generate('meshTopography', { ...opts, curves: false, contourSmoothing: 0 });
+    const gentle = generate('meshTopography', { ...opts, curves: true, contourSmoothing: 25 });
+    const strong = generate('meshTopography', { ...opts, curves: true, contourSmoothing: 90 });
+
+    const ctrlPoints = (paths) => paths.filter((p) => p.meta?.contour)
+      .reduce((s, p) => s + (Array.isArray(p.meta.anchors) ? p.meta.anchors.length : p.length), 0);
+
+    const rawPts = ctrlPoints(raw);
+    const gentleAnchors = ctrlPoints(gentle);
+    const strongAnchors = ctrlPoints(strong);
+    expect(rawPts).toBeGreaterThan(0);
+
+    // The densely-sampled slice polyline (one vertex per ~1-2px) is simplified
+    // before bezier handles are fit, so the curved output is materially leaner
+    // than the raw samples — "optimized, elegant lines" when deconstructed.
+    expect(strongAnchors).toBeLessThan(rawPts * 0.6);
+    // Stronger smoothing yields a sparser (more optimized) curve than gentle.
+    expect(strongAnchors).toBeLessThanOrEqual(gentleAnchors);
+  });
+
   test('imageSurface supports modes and image controls', () => {
     const fixtureGrid = [
       [0, 0.1, 0.2, 0.3],
