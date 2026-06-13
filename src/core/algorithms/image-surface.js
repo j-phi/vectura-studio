@@ -559,11 +559,39 @@
     });
   };
 
+  // Render the resolved height field — base source + tone (gamma/contrast/
+  // invert) + the live noise rack stack — to a grayscale raster. The source
+  // preview draws this so the panel thumbnail shows exactly what the 3D model
+  // samples (including the noise displacement). Reuses the engine's own
+  // `createSampler`, so preview and model can never drift. UI/runtime only.
+  const renderPreviewRaster = (p, w = 132, h = 132) => {
+    const W = Math.max(1, Math.round(w));
+    const H = Math.max(1, Math.round(h));
+    ensureSource(p);
+    // Match the engine: it builds `new SimpleNoise(layer.params.seed)` and seeds
+    // the rack with `imageSeed` internally (see createNoiseField).
+    const noise = Vectura.SimpleNoise ? new Vectura.SimpleNoise(p.seed) : null;
+    const sampler = createSampler(p, noise);
+    const data = new Uint8ClampedArray(W * H * 4);
+    const dx = W > 1 ? W - 1 : 1;
+    const dy = H > 1 ? H - 1 : 1;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const g = Math.round(clamp(sampler(x / dx, y / dy), 0, 1) * 255);
+        const o = (y * W + x) * 4;
+        data[o] = data[o + 1] = data[o + 2] = g;
+        data[o + 3] = 255;
+      }
+    }
+    return { width: W, height: H, data };
+  };
+
   window.Vectura.ImageSurfaceSource = {
     ensure: ensureSource,
     rehydrateAll,
     decodeToStore,
     renderBuiltinImageData,
+    renderPreviewRaster,
     SOURCE_RES,
   };
 

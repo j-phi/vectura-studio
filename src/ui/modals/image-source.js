@@ -50,6 +50,15 @@
     return img;
   };
 
+  // Same chevron the universal preset dropdown uses, so the source picker reads
+  // as a sibling of every other preset control in the app.
+  const CHEVRON_SVG = `<svg class="hg-preset-chevron" viewBox="0 0 10 6" fill="none" aria-hidden="true"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+  // The noise rack stack displaces the surface only when an enabled layer exists
+  // and the amount is non-zero — gates the noise-aware preview render.
+  const noiseActive = (p) =>
+    p.noiseAmount > 0 && Array.isArray(p.noises) && p.noises.some((n) => n && n.enabled !== false);
+
   function applyImageSourceNoise(layer, preset) {
     if (this.app && this.app.pushHistory) this.app.pushHistory();
     const p = layer.params;
@@ -117,6 +126,116 @@
     const nameEl = header.querySelector('.image-source-name');
     root.appendChild(header);
 
+    const drawThumbTo = (canvasEl, img) => {
+      if (img && render) render.drawToCanvas(canvasEl, img, { fit: true, smooth: true });
+    };
+
+    // ── Source preset dropdown (built-in relief + noise images) ───────────────
+    // Sits ABOVE the preview and reuses the universal preset gallery's skin
+    // classes so it matches every other preset control in the app.
+    const matchedPreset = () =>
+      presets.find((preset) => p.imageNoiseDef && p.imageNoiseDef.type === preset.noise.type
+        && p.imageName === preset.label) || null;
+    const currentSourceLabel = () => {
+      if (p.imageSrc) return p.imageName || (p.imageSourceKind === 'painted' ? 'Painted' : 'Imported');
+      const m = matchedPreset();
+      if (m) return m.label;
+      if (p.imageNoiseDef) return p.imageName || 'Noise';
+      return 'Built-in Relief';
+    };
+
+    const ddWrap = document.createElement('div');
+    ddWrap.className = 'hg-preset-dropdown-wrap image-source-preset-dropdown';
+
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 'hg-preset-trigger';
+    trigger.setAttribute('aria-haspopup', 'listbox');
+    trigger.setAttribute('aria-expanded', 'false');
+    const triggerThumb = document.createElement('canvas');
+    triggerThumb.className = 'hg-preset-trigger-thumb';
+    triggerThumb.width = 28;
+    triggerThumb.height = 28;
+    triggerThumb.setAttribute('aria-hidden', 'true');
+    trigger.appendChild(triggerThumb);
+    const triggerLabel = document.createElement('span');
+    triggerLabel.className = 'hg-preset-trigger-label';
+    trigger.appendChild(triggerLabel);
+    trigger.insertAdjacentHTML('beforeend', CHEVRON_SVG);
+    ddWrap.appendChild(trigger);
+
+    const popover = document.createElement('div');
+    popover.className = 'hg-preset-popover';
+    popover.setAttribute('role', 'listbox');
+    popover.hidden = true;
+    ddWrap.appendChild(popover);
+    root.appendChild(ddWrap);
+
+    let outsideHandler = null;
+    const closeDropdown = () => {
+      popover.hidden = true;
+      trigger.setAttribute('aria-expanded', 'false');
+      if (outsideHandler) {
+        document.removeEventListener('pointerdown', outsideHandler, true);
+        outsideHandler = null;
+      }
+    };
+    const openDropdown = () => {
+      popover.hidden = false;
+      trigger.setAttribute('aria-expanded', 'true');
+      outsideHandler = (e) => { if (!ddWrap.contains(e.target)) closeDropdown(); };
+      document.addEventListener('pointerdown', outsideHandler, true);
+    };
+    trigger.addEventListener('click', () => { if (popover.hidden) openDropdown(); else closeDropdown(); });
+
+    const makeOption = (label, active, imgFactory, onClick) => {
+      const opt = document.createElement('button');
+      opt.type = 'button';
+      opt.className = 'hg-preset-option image-source-option' + (active ? ' is-active' : '');
+      opt.setAttribute('role', 'option');
+      opt.setAttribute('aria-selected', active ? 'true' : 'false');
+      const thumb = document.createElement('canvas');
+      thumb.className = 'hg-preset-option-thumb';
+      thumb.width = 28;
+      thumb.height = 28;
+      thumb.setAttribute('aria-hidden', 'true');
+      opt.appendChild(thumb);
+      const lbl = document.createElement('span');
+      lbl.className = 'hg-preset-option-label';
+      lbl.textContent = label;
+      opt.appendChild(lbl);
+      drawThumbTo(thumb, imgFactory());
+      opt.addEventListener('click', () => { closeDropdown(); onClick(); });
+      popover.appendChild(opt);
+    };
+
+    const activePreset = matchedPreset();
+    makeOption(
+      'Built-in Relief',
+      !p.imageNoiseDef && !p.imageSrc,
+      () => (Source() && Source().renderBuiltinImageData ? Source().renderBuiltinImageData(64) : null),
+      () => applyImageSourceBuiltin.call(this, layer),
+    );
+    presets.forEach((preset) => {
+      makeOption(
+        preset.label,
+        activePreset === preset,
+        () => presetThumb(preset),
+        () => applyImageSourceNoise.call(this, layer, preset),
+      );
+    });
+
+    const updateTrigger = () => {
+      triggerLabel.textContent = currentSourceLabel();
+      const img = currentSourceImage(p);
+      if (img && render) {
+        triggerThumb.style.display = '';
+        drawThumbTo(triggerThumb, img);
+      } else {
+        triggerThumb.style.display = 'none';
+      }
+    };
+
     // Live preview of the active source.
     const previewWrap = document.createElement('div');
     previewWrap.className = 'image-source-preview';
@@ -128,11 +247,17 @@
 
     const drawPreview = () => {
       nameEl.textContent = p.imageName || 'Built-in Relief';
-      const img = currentSourceImage(p);
       const ctx = preview.getContext && preview.getContext('2d');
       if (!ctx) return;
       ctx.fillStyle = '#1a1a1a';
       ctx.fillRect(0, 0, preview.width, preview.height);
+      const src = Source();
+      // When the noise stack is live, render the resolved height field (base +
+      // noise) so the preview matches the 3D model; otherwise show the raw
+      // source raster as before.
+      const img = (noiseActive(p) && src && typeof src.renderPreviewRaster === 'function')
+        ? src.renderPreviewRaster(p, preview.width, preview.height)
+        : currentSourceImage(p);
       if (img && render) {
         render.drawToCanvas(preview, img, { fit: true, smooth: true });
       } else if (p.imageSrc) {
@@ -144,6 +269,7 @@
         };
         im.src = p.imageSrc;
       }
+      updateTrigger();
     };
 
     // Action buttons.
@@ -157,51 +283,12 @@
     actions.querySelector('.is-paint').onclick = () => this.openImagePaintModal(layer);
     root.appendChild(actions);
 
-    // Gallery: built-in + noise presets.
-    const galleryLabel = document.createElement('div');
-    galleryLabel.className = 'image-source-gallery-label';
-    galleryLabel.textContent = 'Presets';
-    root.appendChild(galleryLabel);
-
-    const gallery = document.createElement('div');
-    gallery.className = 'image-source-gallery';
-    root.appendChild(gallery);
-
-    const makeTile = (label, imgFactory, active, onClick) => {
-      const tile = document.createElement('button');
-      tile.type = 'button';
-      tile.className = 'image-source-tile' + (active ? ' is-active' : '');
-      tile.title = label;
-      const c = document.createElement('canvas');
-      c.width = 48;
-      c.height = 48;
-      tile.appendChild(c);
-      const cap = document.createElement('span');
-      cap.className = 'image-source-tile-cap';
-      cap.textContent = label;
-      tile.appendChild(cap);
-      const img = imgFactory();
-      if (img && render) render.drawToCanvas(c, img, { fit: true, smooth: true });
-      tile.onclick = onClick;
-      gallery.appendChild(tile);
-    };
-
-    const isBuiltin = !p.imageNoiseDef && !p.imageSrc;
-    makeTile(
-      'Built-in',
-      () => (Source() && Source().renderBuiltinImageData ? Source().renderBuiltinImageData(64) : null),
-      isBuiltin,
-      () => applyImageSourceBuiltin.call(this, layer),
-    );
-
-    presets.forEach((preset) => {
-      const active = !!(p.imageNoiseDef && p.imageNoiseDef.type === preset.noise.type
-        && p.imageName === preset.label);
-      makeTile(preset.label, () => presetThumb(preset), active, () => applyImageSourceNoise.call(this, layer, preset));
-    });
-
     wrapper.appendChild(root);
     drawPreview();
+    // Live-refresh the preview after every param edit (app.regen fires this
+    // hook), so dragging Noise Amount or editing the stack updates the
+    // thumbnail in lock-step with the model. Cleared on each buildControls.
+    this._activeImageSourceRefresh = drawPreview;
   }
 
   // ---------------------------------------------------------------------------

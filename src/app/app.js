@@ -1040,6 +1040,10 @@
       // instant a param diverges from the active preset (and back when restored).
       // No-op when the active layer has no preset gallery mounted.
       this.ui?._activePresetGalleryRefresh?.();
+      // Live-refresh the Image Surface source preview so its thumbnail tracks
+      // every edit — most importantly the noise stack displacing the surface.
+      // No-op unless the active layer mounted the image-source widget.
+      this.ui?._activeImageSourceRefresh?.();
       // The harmonograph/pendula virtual plotter caches a STATIC figure; refresh
       // it on every regen so its ghost tracks ALL param edits (pendulum stack,
       // base params, dice, presets, Motion Rack), not just Motion Rack edits.

@@ -1852,6 +1852,19 @@
   CONTROL_DEFS.imageSurface = [
     { type: 'section', label: 'Source' },
     { type: 'imageSource' },
+    { type: 'section', label: 'Surface Noise' },
+    {
+      id: 'noiseMode',
+      label: 'Noise Mode',
+      type: 'select',
+      options: [
+        { value: 'add', label: 'Add (emboss)' },
+        { value: 'multiply', label: 'Multiply' },
+        { value: 'replace', label: 'Replace' },
+      ],
+    },
+    { id: 'noiseAmount', label: 'Noise Amount', type: 'range', min: 0, max: 1, step: 0.01, livePreview: true },
+    { type: 'noiseList', source: 'imageSurface', label: 'Noise Stack' },
     { type: 'section', label: 'Surface' },
     {
       id: 'mode',
@@ -1882,19 +1895,6 @@
     { id: 'invert', label: 'Invert', type: 'checkbox' },
     { id: 'gamma', label: 'Gamma', type: 'range', min: 0.2, max: 3, step: 0.05, livePreview: true },
     { id: 'contrast', label: 'Contrast', type: 'range', min: -50, max: 100, step: 1, livePreview: true },
-    { type: 'section', label: 'Surface Noise' },
-    {
-      id: 'noiseMode',
-      label: 'Noise Mode',
-      type: 'select',
-      options: [
-        { value: 'add', label: 'Add (emboss)' },
-        { value: 'multiply', label: 'Multiply' },
-        { value: 'replace', label: 'Replace' },
-      ],
-    },
-    { id: 'noiseAmount', label: 'Noise Amount', type: 'range', min: 0, max: 1, step: 0.01, livePreview: true },
-    { type: 'noiseList', source: 'imageSurface', label: 'Noise Stack' },
     { type: 'section', label: 'Lines / Mesh' },
     { id: 'rows', label: 'Rows', type: 'range', min: 2, max: 120, step: 1, showIf: (p) => p.mode === 'lines' || p.mode === 'mesh', livePreview: true },
     { id: 'columns', label: 'Columns', type: 'range', min: 2, max: 120, step: 1, showIf: (p) => p.mode === 'mesh' || p.mode === 'topography', livePreview: true },

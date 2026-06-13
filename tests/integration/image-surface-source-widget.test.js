@@ -30,21 +30,33 @@ describe('Image Surface — source widget + paint modal', () => {
 
   const layer = () => app.engine.getActiveLayer();
 
-  test('the panel mounts the source widget: preview, gallery, Import + Paint', () => {
+  test('the panel mounts the source widget: preview, preset dropdown, Import + Paint', () => {
     expect(document.querySelector('.image-source-widget')).toBeTruthy();
     expect(document.querySelector('.image-source-preview canvas')).toBeTruthy();
     expect(document.querySelector('.image-source-btn.is-import')).toBeTruthy();
     expect(document.querySelector('.image-source-btn.is-paint')).toBeTruthy();
-    // Built-in tile + one tile per preloaded noise preset.
-    const tiles = document.querySelectorAll('.image-source-tile');
-    expect(tiles.length).toBe(1 + window.Vectura.NOISE_IMAGE_PRESETS.length);
+    // Source presets render as a universal-style dropdown (above the preview),
+    // not a tile grid: a trigger + a popover option per source.
+    expect(document.querySelector('.image-source-preset-dropdown .hg-preset-trigger')).toBeTruthy();
+    // Built-in Relief + one option per preloaded noise preset.
+    const options = document.querySelectorAll('.image-source-option');
+    expect(options.length).toBe(1 + window.Vectura.NOISE_IMAGE_PRESETS.length);
   });
 
-  test('clicking a noise preset commits a noise source and populates NOISE_IMAGES', () => {
+  test('the preset dropdown sits above the source preview', () => {
+    const root = document.querySelector('.image-source-widget');
+    const kids = Array.from(root.children);
+    const ddIdx = kids.findIndex((el) => el.classList.contains('image-source-preset-dropdown'));
+    const previewIdx = kids.findIndex((el) => el.classList.contains('image-source-preview'));
+    expect(ddIdx).toBeGreaterThanOrEqual(0);
+    expect(previewIdx).toBeGreaterThan(ddIdx);
+  });
+
+  test('choosing a noise preset commits a noise source and populates NOISE_IMAGES', () => {
     const preset = window.Vectura.NOISE_IMAGE_PRESETS[0];
-    // The first non-built-in tile is the first preset.
-    const tile = document.querySelectorAll('.image-source-tile')[1];
-    tile.click();
+    // The first non-built-in option is the first preset.
+    const option = document.querySelectorAll('.image-source-option')[1];
+    option.click();
 
     const p = layer().params;
     expect(p.imageSourceKind).toBe('noise');
@@ -56,12 +68,12 @@ describe('Image Surface — source widget + paint modal', () => {
     expect(window.Vectura.NOISE_IMAGES[p.imageId]).toBeTruthy();
   });
 
-  test('the Built-in tile reverts to the procedural source', () => {
+  test('the Built-in option reverts to the procedural source', () => {
     // First select a noise preset, then go back to built-in.
-    document.querySelectorAll('.image-source-tile')[1].click();
+    document.querySelectorAll('.image-source-option')[1].click();
     expect(layer().params.imageNoiseDef).toBeTruthy();
 
-    document.querySelectorAll('.image-source-tile')[0].click();
+    document.querySelectorAll('.image-source-option')[0].click();
     const p = layer().params;
     expect(p.imageSourceKind).toBe('builtin');
     expect(p.imageNoiseDef).toBeNull();

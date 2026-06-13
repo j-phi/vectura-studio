@@ -10109,6 +10109,11 @@ kbd {
 .image-source-name {
   max-width: 60%;
 }
+/* Source preset picker — reuses the universal .hg-preset-* dropdown skin; this
+   wrapper just guarantees it spans the panel width above the source preview. */
+.image-source-preset-dropdown {
+  width: 100%;
+}
 .image-source-preview {
   display: flex;
   justify-content: center;

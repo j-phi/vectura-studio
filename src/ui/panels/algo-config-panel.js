@@ -143,6 +143,9 @@
     // Cleared each rebuild; re-registered if this layer mounts a preset gallery.
     this._activePresetGalleryRefresh = null;
     this._activePresetGallerySave = null;
+    // Cleared each rebuild; re-registered if this layer mounts the image-source
+    // widget (imageSurface) so its preview can live-refresh after every edit.
+    this._activeImageSourceRefresh = null;
     const paintBucketSection = getEl('left-section-paint-bucket', { silent: true });
     const paintBucketActive = this.activeTool === 'fill' || this.activeTool === 'fill-erase';
     if (paintBucketActive) {

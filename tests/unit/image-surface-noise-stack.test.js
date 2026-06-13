@@ -79,6 +79,28 @@ describe('Image Surface — noise rack stack', () => {
     expect(JSON.stringify(multiply)).not.toBe(JSON.stringify(replace));
   });
 
+  test('renderPreviewRaster reflects the noise stack (preview tracks the model)', () => {
+    const src = V.ImageSurfaceSource;
+    expect(typeof src.renderPreviewRaster).toBe('function');
+    const plain = src.renderPreviewRaster({ seed: 5 }, 24, 24);
+    const noisy = src.renderPreviewRaster(
+      { seed: 5, noises: [layer()], noiseAmount: 0.9, noiseMode: 'replace' },
+      24,
+      24,
+    );
+    expect(plain.width).toBe(24);
+    expect(plain.data.length).toBe(24 * 24 * 4);
+    // Same base source, but the noise stack changes the rendered height raster.
+    expect(Array.from(noisy.data)).not.toEqual(Array.from(plain.data));
+    // Deterministic for identical params.
+    const again = src.renderPreviewRaster(
+      { seed: 5, noises: [layer()], noiseAmount: 0.9, noiseMode: 'replace' },
+      24,
+      24,
+    );
+    expect(Array.from(again.data)).toEqual(Array.from(noisy.data));
+  });
+
   test('replace mode renders pure noise terrain even with no image source', () => {
     // No imageNoiseDef / imageSrc: base resolves to the built-in relief, but at
     // amount 1 the noise fully takes over, so the result must differ from the
