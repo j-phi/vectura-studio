@@ -73,7 +73,13 @@ describe('SkinManager', () => {
     const link = document.getElementById('active-skin');
     expect(link).toBeTruthy();
     SkinManager.activate('light');
-    expect(link.getAttribute('href')).toBe('./src/ui/skin/meridian-light.css');
+    // The swap stamps the same ?v=<version> cache-busting query that version:sync
+    // applies to the static tags, so the runtime skin swap can't load stale CSS.
+    const version = runtime.window.Vectura.APP_VERSION;
+    const expected = version
+      ? `./src/ui/skin/meridian-light.css?v=${version}`
+      : './src/ui/skin/meridian-light.css';
+    expect(link.getAttribute('href')).toBe(expected);
   });
 
   test('activate() writes manifest motion specs to --motion-* CSS vars', () => {

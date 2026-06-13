@@ -104,10 +104,15 @@
     if (!theme || !theme.stylesheet) return false;
     const link = document.getElementById(LINK_ID);
     if (!link) return false;
+    // Cache-bust the runtime skin swap the same way version:sync stamps the
+    // static <link>/<script> tags — otherwise switching skins can load a stale
+    // cached palette CSS. Match the ?v=<version> stamped on the static tags.
+    const version = Vectura.APP_VERSION;
+    const stylesheet = version ? `${theme.stylesheet}?v=${version}` : theme.stylesheet;
     // Resolve to absolute so href comparison is reliable.
-    const next = new URL(theme.stylesheet, document.baseURI).href;
+    const next = new URL(stylesheet, document.baseURI).href;
     if (link.href === next) return false;
-    link.setAttribute('href', theme.stylesheet);
+    link.setAttribute('href', stylesheet);
     return true;
   };
 

@@ -138,7 +138,9 @@ const loadVecturaRuntime = async (options = {}) => {
   context.globalThis = context;
 
   scriptSources.forEach((src) => {
-    const normalized = src.replace(/^\.\//, '');
+    // Strip the ?v=<version> cache-busting query (stamped by version:sync) before
+    // resolving to a disk path — it's a browser cache key, not part of the filename.
+    const normalized = src.replace(/^\.\//, '').replace(/\?.*$/, '');
     const absPath = path.join(rootDir, normalized);
     const code = fs.readFileSync(absPath, 'utf8');
     vm.runInContext(code, context, { filename: absPath });
