@@ -11,6 +11,10 @@
     finite,
     rotatePoint,
     projectPoint,
+    normalize,
+    faceNormal,
+    splitPathByVisibility,
+    markHidden,
     circlePath,
     rotate2,
     marchingSquares,
@@ -46,10 +50,60 @@
     return Number.isFinite(value) ? clamp(value, 0, 1) : null;
   };
 
-  const createSampler = (p) => {
+  // Canonical world span the noise rack samples across. (u,v) in [0,1] map to
+  // [0, NOISE_SPAN], so a layer's `zoom` behaves the same way it does for the
+  // noise-image presets (which also normalize to a fixed span) — independent of
+  // the artwork's physical mm size.
+  const NOISE_SPAN = 1024;
+
+  // Build a (u,v) → [-1, 1] evaluator over the universal noise rack stack
+  // (`p.noises`), or return null when no enabled layers exist. Mirrors how
+  // topo/flowfield consume the rack so behavior stays consistent app-wide.
+  const createNoiseField = (p, noise) => {
+    const NoiseRack = Vectura.NoiseRack;
+    if (!NoiseRack || !noise || typeof noise.noise2D !== 'function') return null;
+    const layers = (Array.isArray(p.noises) ? p.noises : []).filter((n) => n && n.enabled !== false);
+    if (!layers.length) return null;
+    const rack = NoiseRack.createEvaluator({ noise, seed: finite(p.imageSeed, 1) });
+    const maxAmp = layers.reduce((sum, n) => sum + Math.abs(n.amplitude ?? 0), 0) || 1;
+    return (u, v) => {
+      let combined;
+      layers.forEach((layer) => {
+        const wx = u * NOISE_SPAN;
+        const wy = v * NOISE_SPAN;
+        const sx = layer.type === 'polygon' ? wx - NOISE_SPAN / 2 : wx;
+        const sy = layer.type === 'polygon' ? wy - NOISE_SPAN / 2 : wy;
+        const value = rack.sampleScalar(sx, sy, layer, { worldX: wx, worldY: wy }) * (layer.amplitude ?? 1);
+        combined = NoiseRack.combineBlend({ combined, value, blend: layer.blend || 'add', maxAmplitude: maxAmp });
+      });
+      return clamp((combined ?? 0) / maxAmp, -1, 1);
+    };
+  };
+
+  // Fold a signed noise sample `n` ∈ [-1, 1] into a base height ∈ [0, 1]. The
+  // mode + amount give the displacement that rides the surface — the visible
+  // 3D noise. `add` embosses onto the base, `multiply` modulates it, `replace`
+  // crossfades the base toward pure noise terrain.
+  const applyNoise = (base, n, mode, amount) => {
+    if (amount <= 0) return base;
+    switch (mode) {
+      case 'replace':
+        return clamp(base * (1 - amount) + (n * 0.5 + 0.5) * amount, 0, 1);
+      case 'multiply':
+        return clamp(base * (1 + n * amount), 0, 1);
+      case 'add':
+      default:
+        return clamp(base + n * 0.5 * amount, 0, 1);
+    }
+  };
+
+  const createSampler = (p, noise) => {
     const direct = p.imageData || p.fixtureImageData || null;
     const fixture = p.fixtureGrid || p.sampleGrid || null;
     const noiseImage = p.imageId && Vectura.NOISE_IMAGES ? Vectura.NOISE_IMAGES[p.imageId] : null;
+    const noiseField = createNoiseField(p, noise);
+    const noiseMode = p.noiseMode || 'add';
+    const noiseAmount = clamp(finite(p.noiseAmount, 0), 0, 1);
     return (u, v) => {
       const uu = clamp(u, 0, 1);
       const vv = p.normalFlipY ? 1 - clamp(v, 0, 1) : clamp(v, 0, 1);
@@ -66,15 +120,43 @@
       value = Math.pow(clamp(value, 0, 1), gamma);
       const contrast = finite(p.contrast, 0);
       value = clamp((value - 0.5) * (1 + contrast / 50) + 0.5, 0, 1);
+      // The noise rack stack rides on top of the resolved image height so it
+      // displaces the surface regardless of which base source is active.
+      if (noiseField) value = applyNoise(value, noiseField(uu, vv), noiseMode, noiseAmount);
       return value;
     };
   };
 
-  const surfacePoint = (x, y, h, p, bounds) => {
+  const viewAngles = (p) => ({ yaw: finite(p.rotate, -45), pitch: finite(p.tilt, 60), roll: 0 });
+
+  const surfaceSample = (x, y, h, p, bounds) => {
     const amp = finite(p.amplitude, 10);
     const centered = { x, y: (h - 0.5) * amp, z: y };
-    const rotated = rotatePoint(centered, { yaw: finite(p.rotate, -45), pitch: finite(p.tilt, 60) });
-    return projectPoint(rotated, { centerX: bounds.width / 2, centerY: bounds.height / 2, scale: 1, ...G3.resolveProjection(p) });
+    const rotated = rotatePoint(centered, viewAngles(p));
+    return {
+      object: centered,
+      rotated,
+      point: projectPoint(rotated, { centerX: bounds.width / 2, centerY: bounds.height / 2, scale: 1, ...G3.resolveProjection(p) }),
+    };
+  };
+
+  const surfacePoint = (x, y, h, p, bounds) => surfaceSample(x, y, h, p, bounds).point;
+
+  const surfaceNormal = (u, v, rect, p, sampler) => {
+    const d = 1 / Math.max(24, finite(p.sampleDetail, 84));
+    const hL = sampler(u - d, v);
+    const hR = sampler(u + d, v);
+    const hT = sampler(u, v - d);
+    const hB = sampler(u, v + d);
+    const amp = finite(p.amplitude, 10);
+    const dx = ((hR - hL) * amp) / Math.max(1e-6, rect.width * d * 2);
+    const dz = ((hB - hT) * amp) / Math.max(1e-6, rect.height * d * 2);
+    return normalize({ x: -dx, y: 1, z: -dz });
+  };
+
+  const surfaceVisible = (u, v, rect, p, sampler) => {
+    const normal = rotatePoint(surfaceNormal(u, v, rect, p, sampler), viewAngles(p));
+    return normal.z >= -0.001;
   };
 
   const artworkRect = (p) => {
@@ -112,9 +194,49 @@
   };
 
   const pathFromSurfaceSamples = (samples, meta = {}) => {
-    const path = samples.map((pt) => ({ x: pt.x, y: pt.y }));
+    const path = samples.map((pt) => {
+      const projected = pt?.point || pt;
+      return { x: projected.x, y: projected.y };
+    });
     path.meta = { algorithm: 'imageSurface', straight: true, ...meta };
     return path;
+  };
+
+  const pushVisibilityPaths = (paths, samples, p, meta = {}) => {
+    if (!Array.isArray(samples) || samples.length < 2) return;
+    const keepHidden = p.seeThrough !== false;
+    splitPathByVisibility(samples, { keepHidden, visibleOnly: !keepHidden }).forEach((path) => {
+      path.meta = { ...(path.meta || {}), algorithm: 'imageSurface', straight: true, ...meta };
+      paths.push(path);
+    });
+  };
+
+  const faceVisible = (samples) => faceNormal(samples.map((sample) => sample.rotated || sample.object || sample)).z >= -0.001;
+
+  const pushSegment = (paths, a, b, hidden, meta = {}) => {
+    const path = pathFromSurfaceSamples([a, b], meta);
+    if (hidden) markHidden(path, { strokeDash: [3.2, 2.2] });
+    paths.push(path);
+  };
+
+  const buildReliefPlanePaths = (topSamples, baseSamples, p, meta = {}) => {
+    const paths = [];
+    const keepHidden = p.seeThrough !== false;
+    for (let i = 0; i < Math.min(topSamples.length, baseSamples.length) - 1; i++) {
+      const topA = topSamples[i];
+      const topB = topSamples[i + 1];
+      const baseA = baseSamples[i];
+      const baseB = baseSamples[i + 1];
+      const visible = faceVisible([baseA, baseB, topB, topA]);
+      if (!visible && !keepHidden) continue;
+      const hidden = !visible;
+      const backEdgeHidden = hidden || (keepHidden && visible);
+      pushSegment(paths, topA, topB, hidden, { mode: 'lines', reliefPlane: true, planeTop: true, ...meta });
+      pushSegment(paths, baseA, baseB, backEdgeHidden, { mode: 'lines', reliefPlane: true, planeBase: true, ...meta });
+      if (i === 0) pushSegment(paths, baseA, topA, hidden, { mode: 'lines', reliefPlane: true, planeDrop: true, ...meta });
+      pushSegment(paths, baseB, topB, hidden, { mode: 'lines', reliefPlane: true, planeDrop: true, ...meta });
+    }
+    return paths;
   };
 
   const buildLines = (p, bounds, sampler) => {
@@ -126,25 +248,40 @@
     for (let y = 0; y < rows; y++) {
       const v = rows === 1 ? 0.5 : y / (rows - 1);
       const samples = [];
+      const baseSamples = [];
       for (let x = 0; x <= cols; x++) {
         const u = x / cols;
         const h = sampler(u, v);
         if (p.clipBlackAreas && h < 0.04) {
-          if (samples.length >= 2) paths.push(pathFromSurfaceSamples(samples, { mode: 'lines' }));
+          if (samples.length >= 2) {
+            if (p.horizontalLinesAsPlanes) {
+              paths.push(...buildReliefPlanePaths(samples, baseSamples, p, { row: y }));
+            } else {
+              paths.push(pathFromSurfaceSamples(samples, { mode: 'lines' }));
+            }
+          }
           samples.length = 0;
+          baseSamples.length = 0;
           continue;
         }
         let px = rect.left + u * rect.width;
         let py = rect.top + v * rect.height;
-        if (p.horizontalLinesAsPlanes) py += (h - 0.5) * finite(p.amplitude, 10) * 0.35;
         if (angle) {
           const r = rotate2({ x: px, y: py }, angle);
           px = r.x;
           py = r.y;
         }
-        samples.push(surfacePoint(px, py, h, p, bounds));
+        if (p.horizontalLinesAsPlanes) {
+          samples.push(surfaceSample(px, py, h, p, bounds));
+          baseSamples.push(surfaceSample(px, py, 0, p, bounds));
+        } else {
+          samples.push(surfacePoint(px, py, h, p, bounds));
+        }
       }
-      if (samples.length >= 2) paths.push(pathFromSurfaceSamples(samples, { mode: 'lines' }));
+      if (samples.length >= 2) {
+        if (p.horizontalLinesAsPlanes) paths.push(...buildReliefPlanePaths(samples, baseSamples, p, { row: y }));
+        else paths.push(pathFromSurfaceSamples(samples, { mode: 'lines' }));
+      }
     }
     return paths;
   };
@@ -159,14 +296,17 @@
       for (let x = 0; x <= cols; x++) {
         const u = x / cols;
         const v = y / rows;
-        row.push(surfacePoint(rect.left + u * rect.width, rect.top + v * rect.height, sampler(u, v), p, bounds));
+        row.push({
+          point: surfacePoint(rect.left + u * rect.width, rect.top + v * rect.height, sampler(u, v), p, bounds),
+          visible: surfaceVisible(u, v, rect, p, sampler),
+        });
       }
       points.push(row);
     }
     const paths = [];
-    for (let y = 0; y <= rows; y++) paths.push(pathFromSurfaceSamples(points[y], { mode: 'mesh', axis: 'row' }));
-    if (p.seeThrough !== false) {
-      for (let x = 0; x <= cols; x++) paths.push(pathFromSurfaceSamples(points.map((row) => row[x]), { mode: 'mesh', axis: 'column' }));
+    for (let y = 0; y <= rows; y++) pushVisibilityPaths(paths, points[y], p, { mode: 'mesh', axis: 'row' });
+    for (let x = 0; x <= cols; x++) {
+      pushVisibilityPaths(paths, points.map((row) => row[x]), p, { mode: 'mesh', axis: 'column' });
     }
     return paths;
   };
@@ -179,48 +319,128 @@
     const thresholds = Array.from({ length: levels }, (_, i) => (i + 1) / (levels + 1));
     const contours = marchingSquares(field, rect.width, rect.height, thresholds, { left: rect.left, top: rect.top });
     const angle = finite(p.topographyAngle, 0);
-    return contours.map((path) => {
-      const pts = path.map((pt) => {
+    return contours.flatMap((path) => {
+      const samples = path.map((pt) => {
         const r = angle ? rotate2(pt, angle) : pt;
-        return surfacePoint(r.x, r.y, sampler((pt.x - rect.left) / rect.width, (pt.y - rect.top) / rect.height), p, bounds);
+        const u = (pt.x - rect.left) / rect.width;
+        const v = (pt.y - rect.top) / rect.height;
+        return {
+          point: surfacePoint(r.x, r.y, sampler(u, v), p, bounds),
+          visible: surfaceVisible(u, v, rect, p, sampler),
+        };
       });
-      return G3.smoothToBezier(pathFromSurfaceSamples(pts, { mode: 'topography' }), finite(p.contourSmoothing, 0));
+      const split = [];
+      pushVisibilityPaths(split, samples, p, { mode: 'topography' });
+      return split.map((visiblePath) => G3.smoothToBezier(visiblePath, finite(p.contourSmoothing, 0)));
     });
+  };
+
+  const sampleBarFootprint = (sampler, u0, v0, u1, v1, p) => {
+    const detail = Math.max(1, Math.round(clamp(finite(p.sampleDetail, 84) / 42, 1, 5)));
+    let sum = 0;
+    let black = 0;
+    let count = 0;
+    for (let yy = 0; yy < detail; yy++) {
+      const v = v0 + ((yy + 0.5) / detail) * (v1 - v0);
+      for (let xx = 0; xx < detail; xx++) {
+        const u = u0 + ((xx + 0.5) / detail) * (u1 - u0);
+        const h = sampler(u, v);
+        sum += h;
+        if (h < 0.04) black++;
+        count++;
+      }
+    }
+    return {
+      value: count ? sum / count : sampler((u0 + u1) * 0.5, (v0 + v1) * 0.5),
+      blackRatio: count ? black / count : 0,
+    };
+  };
+
+  const quantizeBarHeight = (h, p) => {
+    const steps = Math.round(clamp(finite(p.barHeightSteps, 6), 0, 48));
+    return steps >= 2 ? Math.round(h * steps) / steps : h;
+  };
+
+  const segmentKey = (a, b) => {
+    const pa = `${a.x.toFixed(3)},${a.y.toFixed(3)}`;
+    const pb = `${b.x.toFixed(3)},${b.y.toFixed(3)}`;
+    return pa < pb ? `${pa}:${pb}` : `${pb}:${pa}`;
+  };
+
+  const addMappedSegment = (edgeMap, a, b, hidden, meta = {}) => {
+    const path = pathFromSurfaceSamples([a, b], meta);
+    if (hidden) markHidden(path, { strokeDash: [3.2, 2.2] });
+    const key = segmentKey(path[0], path[1]);
+    const previous = edgeMap.get(key);
+    if (!previous || (previous.meta?.hiddenLine && !path.meta?.hiddenLine)) edgeMap.set(key, path);
+  };
+
+  const addMappedLoop = (edgeMap, samples, hidden, meta = {}) => {
+    for (let i = 0; i < samples.length; i++) addMappedSegment(edgeMap, samples[i], samples[(i + 1) % samples.length], hidden, meta);
   };
 
   const buildBars = (p, bounds, sampler) => {
     const rect = artworkRect(p);
-    const rows = Math.max(1, Math.round(clamp(finite(p.barRows, 14), 1, 80)));
-    const cols = Math.max(1, Math.round(clamp(finite(p.barColumns, 14), 1, 80)));
-    const gap = clamp(finite(p.barGap, 0), 0, 0.8);
+    const rows = Math.max(2, Math.round(clamp(finite(p.barRows, 14), 2, 160)));
+    const cols = Math.max(2, Math.round(clamp(finite(p.barColumns, 14), 2, 160)));
     const cellW = rect.width / cols;
     const cellH = rect.height / rows;
-    const paths = [];
+    const gap = clamp(finite(p.barGap, 0), 0, Math.max(0, Math.min(cellW, cellH) - 0.2));
+    const insetX = gap / 2;
+    const insetY = gap / 2;
+    const keepHidden = p.seeThrough !== false;
+    const edgeMap = new Map();
+    const sideDefinitions = [[0, 3], [3, 2], [2, 1], [1, 0]];
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
-        const u = (x + 0.5) / cols;
-        const v = (y + 0.5) / rows;
-        const h = sampler(u, v);
-        if (p.clipBlackAreas && h < 0.04) continue;
-        const insetX = (cellW * gap) / 2;
-        const insetY = (cellH * gap) / 2;
+        const u0 = x / cols;
+        const v0 = y / rows;
+        const u1 = (x + 1) / cols;
+        const v1 = (y + 1) / rows;
+        const sample = sampleBarFootprint(sampler, u0, v0, u1, v1, p);
+        if (p.clipBlackAreas && sample.blackRatio >= 0.98) continue;
+        const h = quantizeBarHeight(sample.value, p);
+        if (h <= 0.01) continue;
         const x0 = rect.left + x * cellW + insetX;
         const x1 = rect.left + (x + 1) * cellW - insetX;
         const y0 = rect.top + y * cellH + insetY;
         const y1 = rect.top + (y + 1) * cellH - insetY;
+        if (x1 - x0 < 0.2 || y1 - y0 < 0.2) continue;
         const top = [
-          surfacePoint(x0, y0, h, p, bounds),
-          surfacePoint(x1, y0, h, p, bounds),
-          surfacePoint(x1, y1, h, p, bounds),
-          surfacePoint(x0, y1, h, p, bounds),
-          surfacePoint(x0, y0, h, p, bounds),
+          surfaceSample(x0, y0, h, p, bounds),
+          surfaceSample(x0, y1, h, p, bounds),
+          surfaceSample(x1, y1, h, p, bounds),
+          surfaceSample(x1, y0, h, p, bounds),
         ];
-        paths.push(pathFromSurfaceSamples(top, { mode: 'bars', closed: true }));
-        const base = surfacePoint((x0 + x1) / 2, (y0 + y1) / 2, 0, p, bounds);
-        const peak = surfacePoint((x0 + x1) / 2, (y0 + y1) / 2, h, p, bounds);
-        if (p.seeThrough !== false) paths.push(pathFromSurfaceSamples([base, peak], { mode: 'bars', vertical: true }));
+        const bottom = [
+          surfaceSample(x0, y0, 0, p, bounds),
+          surfaceSample(x0, y1, 0, p, bounds),
+          surfaceSample(x1, y1, 0, p, bounds),
+          surfaceSample(x1, y0, 0, p, bounds),
+        ];
+        const depth = top.reduce((sum, samplePt) => sum + samplePt.rotated.z, 0) / top.length;
+        const topVisible = faceVisible(top);
+        if (topVisible || keepHidden) addMappedLoop(edgeMap, top, !topVisible, { mode: 'bars', barTop: true, depth, closed: true });
+        sideDefinitions.forEach(([a, b]) => {
+          const face = [bottom[a], bottom[b], top[b], top[a]];
+          const visible = faceVisible(face);
+          if (!visible && !keepHidden) return;
+          addMappedLoop(edgeMap, face, !visible, { mode: 'bars', barSide: true, depth });
+        });
       }
     }
+    const paths = [];
+    if (p.showBarBase !== false) {
+      const floor = [
+        surfacePoint(rect.left, rect.top, 0, p, bounds),
+        surfacePoint(rect.left + rect.width, rect.top, 0, p, bounds),
+        surfacePoint(rect.left + rect.width, rect.top + rect.height, 0, p, bounds),
+        surfacePoint(rect.left, rect.top + rect.height, 0, p, bounds),
+        surfacePoint(rect.left, rect.top, 0, p, bounds),
+      ];
+      paths.push(pathFromSurfaceSamples(floor, { mode: 'bars', barFloor: true, closed: true }));
+    }
+    paths.push(...Array.from(edgeMap.values()).sort((a, b) => finite(a.meta?.depth, 0) - finite(b.meta?.depth, 0)));
     return paths;
   };
 
@@ -358,7 +578,7 @@
         p.barRows = Math.min(finite(p.barRows, 14), G3.previewCap(bounds, 26));
         p.barColumns = Math.min(finite(p.barColumns, 14), G3.previewCap(bounds, 26));
       }
-      const sampler = createSampler(p);
+      const sampler = createSampler(p, noise);
       const mode = p.mode || 'lines';
       let paths;
       if (mode === 'mesh') paths = buildMesh(p, bounds, sampler);

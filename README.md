@@ -219,7 +219,7 @@ Vectura runs on phones. A touch-friendly shell with slide-over drawers, a bottom
 | **3D Spiral** | Lines or dot loops wrapped around cone/cylinder/ellipsoid surfaces with front-only or see-through projection, curve smoothing, and orthographic or perspective view |
 | **Polyhedron** | Platonic/Archimedean solids **or imported STL meshes** — face bands, edges, and vertex rings with front-face culling, dashed hidden lines, extrude/explode/twist effects, and orthographic or perspective projection |
 | **Mesh Topography** | Primitive 3D meshes (sphere, torus, cube, cone, ellipsoid, cylinder, capsule, pyramid, superellipsoid, torus knot) **or imported STL meshes**, rendered as projected wireframes or depth-plane topographic contours — with detail up to 100, bezier contour smoothing, dashed hidden lines, and orthographic/perspective view |
-| **Image Surface** | A height source (built-in relief, preloaded noise, imported image, or hand-painted canvas) projected as line relief, deformed mesh, raster topography, or extruded bars, with orthographic or perspective view |
+| **Image Surface** | A height source (built-in relief, preloaded noise, imported image, or hand-painted canvas) projected as line relief, deformed mesh, raster topography, or extruded bars — plus a **Surface Noise** rack stack (add/multiply/replace) that displaces the surface live, with orthographic or perspective view |
 
 Algorithm defaults live in `src/config/defaults.js`, modifier defaults/descriptions in `src/config/modifiers.js`, and algorithm descriptions in `src/config/descriptions.js`.
 

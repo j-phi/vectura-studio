@@ -1,0 +1,92 @@
+/*
+ * Image Surface — noise rack stack (RGR coverage).
+ *
+ * Red-green proof for folding the universal Noise Rack stack into the
+ * imageSurface height field:
+ *   - With no enabled noise layers (or noiseAmount 0) the geometry is byte-for-
+ *     byte identical to the plain source — the feature is opt-in and inert by
+ *     default (guards the existing presets/baselines).
+ *   - An enabled stack with noiseAmount > 0 displaces the surface, so the
+ *     geometry diverges from the no-noise output — the visible 3D noise.
+ *   - Output is deterministic for a fixed seed and the three combine modes
+ *     (add / multiply / replace) each produce distinct geometry.
+ */
+const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+
+describe('Image Surface — noise rack stack', () => {
+  let runtime;
+  let V;
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    V = runtime.window.Vectura;
+  });
+
+  afterAll(() => runtime.cleanup());
+
+  beforeEach(() => {
+    V.NOISE_IMAGES = {};
+  });
+
+  const bounds = { width: 400, height: 400 };
+  const base = { mode: 'lines', rows: 12, sampleDetail: 28, smoothing: 0 };
+  const layer = () => ({
+    enabled: true,
+    type: 'simplex',
+    blend: 'add',
+    amplitude: 1,
+    zoom: 0.02,
+    octaves: 3,
+    lacunarity: 2,
+    gain: 0.5,
+  });
+  const gen = (extra, seed = 7) =>
+    V.AlgorithmRegistry.imageSurface.generate({ ...base, ...extra }, null, new V.SimpleNoise(seed), bounds);
+
+  test('an empty / disabled stack leaves the surface unchanged', () => {
+    const plain = gen({});
+    const emptyStack = gen({ noises: [], noiseAmount: 1, noiseMode: 'add' });
+    const disabled = gen({ noises: [{ ...layer(), enabled: false }], noiseAmount: 1, noiseMode: 'add' });
+    expect(JSON.stringify(emptyStack)).toBe(JSON.stringify(plain));
+    expect(JSON.stringify(disabled)).toBe(JSON.stringify(plain));
+  });
+
+  test('noiseAmount 0 is inert even with an enabled stack', () => {
+    const plain = gen({});
+    const zeroAmount = gen({ noises: [layer()], noiseAmount: 0, noiseMode: 'add' });
+    expect(JSON.stringify(zeroAmount)).toBe(JSON.stringify(plain));
+  });
+
+  test('an enabled stack with amount > 0 displaces the surface', () => {
+    const plain = gen({});
+    const noisy = gen({ noises: [layer()], noiseAmount: 0.8, noiseMode: 'add' });
+    expect(noisy.length).toBeGreaterThan(0);
+    expect(JSON.stringify(noisy)).not.toBe(JSON.stringify(plain));
+  });
+
+  test('is deterministic for a fixed seed', () => {
+    const a = gen({ noises: [layer()], noiseAmount: 0.8, noiseMode: 'replace' }, 11);
+    const b = gen({ noises: [layer()], noiseAmount: 0.8, noiseMode: 'replace' }, 11);
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+
+  test('the three combine modes each produce distinct geometry', () => {
+    const add = gen({ noises: [layer()], noiseAmount: 0.8, noiseMode: 'add' });
+    const multiply = gen({ noises: [layer()], noiseAmount: 0.8, noiseMode: 'multiply' });
+    const replace = gen({ noises: [layer()], noiseAmount: 0.8, noiseMode: 'replace' });
+    expect(JSON.stringify(add)).not.toBe(JSON.stringify(multiply));
+    expect(JSON.stringify(add)).not.toBe(JSON.stringify(replace));
+    expect(JSON.stringify(multiply)).not.toBe(JSON.stringify(replace));
+  });
+
+  test('replace mode renders pure noise terrain even with no image source', () => {
+    // No imageNoiseDef / imageSrc: base resolves to the built-in relief, but at
+    // amount 1 the noise fully takes over, so the result must differ from the
+    // relief-only surface and carry real vertical variation.
+    const relief = gen({});
+    const terrain = gen({ noises: [layer()], noiseAmount: 1, noiseMode: 'replace' });
+    expect(JSON.stringify(terrain)).not.toBe(JSON.stringify(relief));
+    const ys = terrain.flatMap((path) => path.map((pt) => pt.y));
+    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(1);
+  });
+});

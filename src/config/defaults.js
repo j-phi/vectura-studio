@@ -1585,7 +1585,8 @@
       label: '3D Spiral',
       is3d: true,
       preset: 'spiral3d-default',
-      shape: 'ellipsoid',
+      shape: 'sphere',
+      sphereRadius: 64,
       baseRadius: 68,
       coneHeight: 136,
       cylinderRadius: 58,
@@ -1704,6 +1705,14 @@
       invert: false,
       gamma: 1,
       contrast: 0,
+      // Surface Noise: the universal noise rack stack (`noises`) is sampled live
+      // and folded into the height field via `noiseMode` (add | multiply |
+      // replace) scaled by `noiseAmount`. Defaults keep noise off (empty stack,
+      // 0 amount) so existing surfaces and presets render unchanged until a
+      // layer is added and the amount is raised.
+      noiseMode: 'add',
+      noiseAmount: 0,
+      noises: [],
       rotate: -45,
       tilt: 60,
       rows: 42,
@@ -1716,6 +1725,8 @@
       barRows: 14,
       barColumns: 14,
       barGap: 0,
+      barHeightSteps: 6,
+      showBarBase: true,
       projection: 'orthographic',
       cameraDistance: 620,
       focalLength: 520,

@@ -2729,7 +2729,7 @@
         const noiseDefs =
           noiseSource === 'rings'
             ? RINGS_NOISE_DEFS
-            : noiseSource === 'topo'
+            : noiseSource === 'topo' || noiseSource === 'imageSurface'
               ? TOPO_NOISE_DEFS
               : noiseSource === 'flowfield' || noiseSource === 'svgDistort'
                 ? FLOWFIELD_NOISE_DEFS
@@ -2747,6 +2747,8 @@
               ? this.ensureRingsNoises(layer)
               : noiseSource === 'topo'
                 ? this.ensureTopoNoises(layer)
+                : noiseSource === 'imageSurface'
+                  ? this.ensureImageSurfaceNoises(layer)
                 : noiseSource === 'flowfield'
                   ? this.ensureFlowfieldNoises(layer)
                   : noiseSource === 'svgDistort'
@@ -2814,6 +2816,7 @@
             noiseSource === 'spiral' ? this.createSpiralNoise(idx)
             : noiseSource === 'rings' ? this.createRingsNoise(idx)
             : noiseSource === 'topo' ? this.createTopoNoise(idx)
+            : noiseSource === 'imageSurface' ? this.createImageSurfaceNoise(idx)
             : noiseSource === 'flowfield' ? this.createFlowfieldNoise(idx)
             : noiseSource === 'svgDistort' ? this.createFlowfieldNoise(idx)
             : noiseSource === 'grid' ? this.createGridNoise(idx)

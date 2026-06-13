@@ -183,7 +183,7 @@
         ringDrift: source === 'rings' ? 0.5 : undefined,
         ringRadius: source === 'rings' ? 100 : undefined,
         octaves:
-          source === 'topo'
+          source === 'topo' || source === 'imageSurface'
             ? 3
             : source === 'flowfield' || source === 'petalisDrift' || source === 'svgDistort'
               ? 2
@@ -191,11 +191,11 @@
                 ? 1
                 : undefined,
         lacunarity:
-          source === 'topo' || source === 'flowfield' || source === 'grid' || source === 'phylla' || source === 'petalisDrift' || source === 'svgDistort'
+          source === 'topo' || source === 'imageSurface' || source === 'flowfield' || source === 'grid' || source === 'phylla' || source === 'petalisDrift' || source === 'svgDistort'
             ? 2.0
             : undefined,
         gain:
-          source === 'topo' || source === 'flowfield' || source === 'grid' || source === 'phylla' || source === 'petalisDrift' || source === 'svgDistort'
+          source === 'topo' || source === 'imageSurface' || source === 'flowfield' || source === 'grid' || source === 'phylla' || source === 'petalisDrift' || source === 'svgDistort'
             ? 0.5
             : undefined,
         fieldMode: source === 'flowfield' ? 'angle' : undefined,
@@ -643,6 +643,54 @@
         };
         this.normalizeImageEffects(legacy, base.imageEffects?.[0]);
         noises = [legacy];
+        layer.params.noises = noises;
+      }
+      noises = noises.map((noise, idx) => {
+        const template = templates[idx] || templates[templates.length - 1] || base;
+        const next = {
+          ...base,
+          ...clone(template),
+          ...(noise || {}),
+          id: noise?.id || template.id || `noise-${idx + 1}`,
+          enabled: noise?.enabled !== false,
+        };
+        if (!next.tileMode) next.tileMode = next.type === 'image' ? 'off' : base.tileMode;
+        if (next.tileMode === 'off') next.tilePadding = 0;
+        if (next.octaves === undefined) next.octaves = base.octaves ?? 3;
+        if (next.lacunarity === undefined) next.lacunarity = base.lacunarity ?? 2.0;
+        if (next.gain === undefined) next.gain = base.gain ?? 0.5;
+        if (next.type === 'image' && next.imageWidth === undefined && next.freq !== undefined) {
+          next.imageWidth = next.freq;
+        }
+        if (next.type === 'image' && (noise?.amplitude === undefined || noise?.amplitude === null)) {
+          next.amplitude = IMAGE_NOISE_DEFAULT_AMPLITUDE;
+        }
+        if (!next.noiseStyle) next.noiseStyle = base.noiseStyle || 'linear';
+        if (next.noiseThreshold === undefined) next.noiseThreshold = base.noiseThreshold ?? 0;
+        if (next.imageWidth === undefined) next.imageWidth = base.imageWidth ?? 1;
+        if (next.imageHeight === undefined) next.imageHeight = base.imageHeight ?? 1;
+        if (next.microFreq === undefined) next.microFreq = base.microFreq ?? 0;
+        if (next.imageInvertColor === undefined) next.imageInvertColor = base.imageInvertColor || false;
+        if (next.imageInvertOpacity === undefined) next.imageInvertOpacity = base.imageInvertOpacity || false;
+        this.normalizeImageEffects(next, base.imageEffects?.[0]);
+        return next;
+      });
+      layer.params.noises = noises;
+      return noises;
+    },
+
+    ensureImageSurfaceNoises(layer) {
+      if (!layer || layer.type !== 'imageSurface') return [];
+      const { base, templates } = this.getWavetableNoiseTemplates('imageSurface');
+      let noises = layer.params.noises;
+      if (!Array.isArray(noises) || !noises.length) {
+        // No legacy single-noise param to migrate — `imageNoiseDef` drives the
+        // base image, this rack is the additive surface displacement. Seed one
+        // ready-to-use simplex layer so the stack is usable the moment the
+        // amount slider is raised.
+        const seed = { ...clone(base), id: 'noise-1', enabled: true, amplitude: 1 };
+        this.normalizeImageEffects(seed, base.imageEffects?.[0]);
+        noises = [seed];
         layer.params.noises = noises;
       }
       noises = noises.map((noise, idx) => {
@@ -1236,6 +1284,16 @@
       };
     },
 
+    createImageSurfaceNoise(index = 0) {
+      const { base, templates } = this.getWavetableNoiseTemplates('imageSurface');
+      const template = templates[index] || templates[templates.length - 1] || base;
+      return {
+        ...clone(template),
+        id: `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        enabled: true,
+      };
+    },
+
     createFlowfieldNoise(index = 0) {
       const { base, templates } = this.getWavetableNoiseTemplates('flowfield');
       const template = templates[index] || templates[templates.length - 1] || base;
@@ -1375,6 +1433,7 @@
         ensureSpiralNoises: () => this.ensureSpiralNoises(layer),
         ensureRingsNoises: () => this.ensureRingsNoises(layer),
         ensureTopoNoises: () => this.ensureTopoNoises(layer),
+        ensureImageSurfaceNoises: () => this.ensureImageSurfaceNoises(layer),
         ensureFlowfieldNoises: () => this.ensureFlowfieldNoises(layer),
         ensureSvgDistortNoises: () => this.ensureSvgDistortNoises(layer),
         ensureGridNoises: () => this.ensureGridNoises(layer),
