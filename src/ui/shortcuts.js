@@ -551,9 +551,13 @@
     const _showAlgoSub = () => {
       clearTimeout(_algoSubHideTimer);
       const r = algoParentItem.getBoundingClientRect();
-      algoSubmenuEl.style.top = `${r.top}px`;
-      algoSubmenuEl.style.left = `${r.left - _ALGO_SUB_W}px`;
+      // Reveal first so we can measure the (possibly scroll-capped) height.
       algoSubmenuEl.style.display = 'block';
+      const PAD = 8;
+      const mh = algoSubmenuEl.offsetHeight;
+      const top = Math.max(PAD, Math.min(window.innerHeight - mh - PAD, r.top));
+      algoSubmenuEl.style.top = `${top}px`;
+      algoSubmenuEl.style.left = `${r.left - _ALGO_SUB_W}px`;
     };
     const _hideAlgoSub = () => {
       _algoSubHideTimer = setTimeout(() => { algoSubmenuEl.style.display = 'none'; }, 80);

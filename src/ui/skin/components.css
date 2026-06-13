@@ -7058,7 +7058,9 @@
 .lvl-algo-submenu {
   display: none; position: fixed; width: 180px;
   background: var(--ui-panel-alt); border: 1px solid var(--ui-border);
-  border-radius: 6px; z-index: 9998; overflow: hidden;
+  border-radius: 6px; z-index: 9998;
+  max-height: calc(100vh - 16px); overflow-y: auto; overflow-x: hidden;
+  overscroll-behavior: contain;
   box-shadow: 0 4px 20px rgba(0,0,0,.7);
 }
 .lvl-algo-sub-item {
@@ -7076,7 +7078,10 @@
 .algo-draw-picker {
   position: fixed; z-index: 9999; width: 175px;
   background: var(--ui-panel-alt); border: 1px solid var(--ui-border);
-  border-radius: 6px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,.7);
+  border-radius: 6px;
+  max-height: calc(100vh - 16px); overflow-y: auto; overflow-x: hidden;
+  overscroll-behavior: contain;
+  box-shadow: 0 4px 20px rgba(0,0,0,.7);
 }
 .algo-draw-picker.hidden { display: none }
 .algo-pick-item {
