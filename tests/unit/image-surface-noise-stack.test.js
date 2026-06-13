@@ -111,4 +111,27 @@ describe('Image Surface — noise rack stack', () => {
     const ys = terrain.flatMap((path) => path.map((pt) => pt.y));
     expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(1);
   });
+
+  test('a polygon layer Tile Mode tiles the surface (was ignored before)', () => {
+    const poly = (tileMode) => ({
+      enabled: true,
+      type: 'polygon',
+      blend: 'add',
+      amplitude: 1,
+      zoom: 0.02,
+      freq: 1,
+      polygonSides: 6,
+      polygonRadius: 2,
+      polygonZoomReference: 0.02,
+      tileMode,
+    });
+    const off = gen({ noises: [poly('off')], noiseAmount: 1, noiseMode: 'replace' });
+    const tiled = gen({ noises: [poly('grid')], noiseAmount: 1, noiseMode: 'replace' });
+    // Before the fix, tileMode was dropped on the floor, so 'off' and 'grid'
+    // produced identical geometry. They must now differ.
+    expect(JSON.stringify(tiled)).not.toBe(JSON.stringify(off));
+    // And tiling stays deterministic.
+    const tiled2 = gen({ noises: [poly('grid')], noiseAmount: 1, noiseMode: 'replace' });
+    expect(JSON.stringify(tiled2)).toBe(JSON.stringify(tiled));
+  });
 });

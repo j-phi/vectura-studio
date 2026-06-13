@@ -50,6 +50,29 @@
     return Number.isFinite(value) ? clamp(value, 0, 1) : null;
   };
 
+  const AU = window.Vectura.AlgorithmUtils || {};
+  const frac = AU.frac || ((v) => v - Math.floor(v));
+  const applyPad = AU.applyPad || ((t) => t);
+
+  // Wrap a sample coordinate into a repeating tile cell. Byte-for-byte the same
+  // tiling topo applies, so a noise layer's Tile Mode behaves identically on the
+  // image surface (the rack itself is tiling-agnostic — the caller must wrap).
+  const applyTile = (nx, ny, mode, padding = 0) => {
+    const pad = Math.max(0, Math.min(0.45, padding));
+    switch (mode) {
+      case 'brick': { const row = Math.floor(ny); return { x: applyPad(frac(nx + (row % 2) * 0.5), pad), y: applyPad(frac(ny), pad) }; }
+      case 'hex': { const hy = ny / 0.866; const row = Math.floor(hy); return { x: applyPad(frac(nx + (row % 2) * 0.5), pad), y: applyPad(frac(hy), pad) }; }
+      case 'diamond': { const ax = nx + ny; const ay = -nx + ny; return { x: applyPad(frac(ax), pad), y: applyPad(frac(ay), pad) }; }
+      case 'triangle': { let fx = frac(nx); let fy = frac(ny); if (fx + fy > 1) { fx = 1 - fx; fy = 1 - fy; } return { x: applyPad(fx, pad), y: applyPad(fy, pad) }; }
+      case 'offset': { const col = Math.floor(nx); return { x: applyPad(frac(nx), pad), y: applyPad(frac(ny + (col % 2) * 0.5), pad) }; }
+      case 'radial': { const r = Math.hypot(nx, ny); const a = Math.atan2(ny, nx) / (Math.PI * 2) + 0.5; return { x: applyPad(frac(r), pad) * Math.cos(applyPad(frac(a), pad) * Math.PI * 2), y: applyPad(frac(r), pad) * Math.sin(applyPad(frac(a), pad) * Math.PI * 2) }; }
+      case 'checker': { const cx = Math.floor(nx); const cy = Math.floor(ny); let fx = frac(nx); if ((cx + cy) % 2 !== 0) fx = 1 - fx; return { x: applyPad(fx, pad), y: applyPad(frac(ny), pad) }; }
+      case 'wave': { return { x: applyPad(frac(nx + Math.sin(ny * Math.PI * 2) * 0.1), pad), y: applyPad(frac(ny + Math.sin(nx * Math.PI * 2) * 0.1), pad) }; }
+      case 'grid':
+      default: return { x: applyPad(frac(nx), pad), y: applyPad(frac(ny), pad) };
+    }
+  };
+
   // Canonical world span the noise rack samples across. (u,v) in [0,1] map to
   // [0, NOISE_SPAN], so a layer's `zoom` behaves the same way it does for the
   // noise-image presets (which also normalize to a fixed span) — independent of
@@ -71,9 +94,34 @@
       layers.forEach((layer) => {
         const wx = u * NOISE_SPAN;
         const wy = v * NOISE_SPAN;
-        const sx = layer.type === 'polygon' ? wx - NOISE_SPAN / 2 : wx;
-        const sy = layer.type === 'polygon' ? wy - NOISE_SPAN / 2 : wy;
-        const value = rack.sampleScalar(sx, sy, layer, { worldX: wx, worldY: wy }) * (layer.amplitude ?? 1);
+        const isPoly = layer.type === 'polygon';
+        const tileMode = layer.tileMode || 'off';
+        let value;
+        if (tileMode !== 'off') {
+          // Tiled layers wrap their sample coordinate into a repeating cell, then
+          // take a single-octave evaluate — FBM can't span tile seams cleanly, so
+          // octaves are skipped while tiling (matches topo). This is what makes a
+          // polygon (or any) Tile Mode actually repeat across the surface.
+          const zoom = NoiseRack.resolveEffectiveZoom(layer, 0.02);
+          const freq = Math.max(0.05, layer.freq ?? 1);
+          const angle = ((layer.angle ?? 0) * Math.PI) / 180;
+          const cosA = Math.cos(angle);
+          const sinA = Math.sin(angle);
+          const shiftX = layer.shiftX ?? 0;
+          const shiftY = layer.shiftY ?? 0;
+          const cx = isPoly ? wx - NOISE_SPAN / 2 : wx;
+          const cy = isPoly ? wy - NOISE_SPAN / 2 : wy;
+          const dx = cx * cosA - cy * sinA + shiftX;
+          const dy = cx * sinA + cy * cosA + shiftY;
+          const tiled = applyTile(dx * zoom * freq, dy * zoom, tileMode, layer.tilePadding ?? 0);
+          const sx = isPoly ? (tiled.x - 0.5) * 2 : tiled.x;
+          const sy = isPoly ? (tiled.y - 0.5) * 2 : tiled.y;
+          value = rack.evaluate(sx, sy, layer, { worldX: wx, worldY: wy }) * (layer.amplitude ?? 1);
+        } else {
+          const sx = isPoly ? wx - NOISE_SPAN / 2 : wx;
+          const sy = isPoly ? wy - NOISE_SPAN / 2 : wy;
+          value = rack.sampleScalar(sx, sy, layer, { worldX: wx, worldY: wy }) * (layer.amplitude ?? 1);
+        }
         combined = NoiseRack.combineBlend({ combined, value, blend: layer.blend || 'add', maxAmplitude: maxAmp });
       });
       return clamp((combined ?? 0) / maxAmp, -1, 1);
