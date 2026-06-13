@@ -105,6 +105,38 @@ describe('Vectura geometry algorithms', () => {
     expect(dots.some(closed)).toBe(true);
   });
 
+  test('spiral3d 3D enhancements (depth-cue + emphasizeOutline + hidden-line dash) alter output', () => {
+    const baseOverrides = { curveResolution: 200 };
+    const off = generate('spiral3d', baseOverrides);
+    const on = generate('spiral3d', {
+      ...baseOverrides,
+      depthCue: 'dash',
+      depthCueStrength: 80,
+      emphasizeOutline: true,
+      outlineWeight: 3,
+      hiddenLineMode: 'dash',
+    });
+
+    // Still finite and non-empty.
+    expect(finitePaths(on)).toBe(true);
+
+    // Output differs from all-off.
+    expect(pathSignature(on)).not.toBe(pathSignature(off));
+
+    // Hidden-line 'dash' keeps back-facing wrap runs and marks them dashed.
+    expect(on.some((path) => path.meta?.hiddenLine && Array.isArray(path.meta.strokeDash))).toBe(true);
+    expect(on.length).toBeGreaterThan(off.length);
+
+    // emphasizeOutline stamps weightScale on the silhouette rings (off has none).
+    expect(on.some((path) => path.meta?.outline && path.meta.weightScale === 3)).toBe(true);
+    expect(off.every((path) => path.meta?.weightScale === undefined)).toBe(true);
+
+    // depthCue stamps a near/far strokeDash on visible (non-hidden) wrap paths;
+    // all-off leaves every path solid (no strokeDash).
+    expect(on.some((path) => !path.meta?.hiddenLine && Array.isArray(path.meta?.strokeDash))).toBe(true);
+    expect(off.every((path) => !Array.isArray(path.meta?.strokeDash))).toBe(true);
+  });
+
   test('polyhedron supports solids, toggles, and dashed hidden lines', () => {
     [
       'flatPolygon',
@@ -129,6 +161,47 @@ describe('Vectura geometry algorithms', () => {
     const opaque = generate('polyhedron', { surfaceMode: 'all', faceOpacityMode: 'opaque' });
     expect(seeThrough.some((path) => path.meta?.hiddenLine)).toBe(true);
     expect(opaque.some((path) => path.meta?.hiddenLine)).toBe(false);
+  });
+
+  test('polyhedron wires the four shared 3D enhancements (each toggle changes output, default stays off)', () => {
+    const baseline = generate('polyhedron');
+    const baselineSig = pathSignature(baseline);
+    expect(finitePaths(baseline)).toBe(true);
+
+    // Geometry-changing toggles must alter the projected path geometry itself.
+    // (pathSignature hashes only x/y, so meta-only toggles are verified separately.)
+    const geometryCases = {
+      emphasizeOutline: { emphasizeOutline: true, outlineWeight: 3 },
+      showCreases: { showCreases: true, creaseAngle: 20 },
+      hiddenLineRemove: { hiddenLineMode: 'remove' },
+      hiddenLineDash: { hiddenLineMode: 'dash' },
+      hatchEnable: { hatchEnable: true, hatchSpacing: 5 },
+      crossHatch: { hatchEnable: true, crossHatch: true, hatchSpacing: 5 },
+    };
+    Object.entries(geometryCases).forEach(([name, overrides]) => {
+      const out = generate('polyhedron', overrides);
+      expect(finitePaths(out), `${name} produces finite non-empty geometry`).toBe(true);
+      expect(pathSignature(out), `${name} differs from all-off baseline`).not.toBe(baselineSig);
+    });
+
+    // #2 Depth cue is meta-only: stamps meta.depth + a depth-driven strokeDash on
+    // visible paths; default (off) leaves no depth meta anywhere.
+    const cued = generate('polyhedron', { depthCue: 'dash', depthCueStrength: 80 });
+    expect(finitePaths(cued)).toBe(true);
+    expect(cued.some((path) => Array.isArray(path.meta?.strokeDash) && path.meta?.depth !== undefined)).toBe(true);
+    expect(baseline.every((path) => path.meta?.depth === undefined)).toBe(true);
+
+    // #3 Silhouette emits outline-flagged edges; creases emit crease-flagged edges.
+    expect(generate('polyhedron', geometryCases.emphasizeOutline).some((path) => path.meta?.outline)).toBe(true);
+    expect(generate('polyhedron', geometryCases.showCreases).some((path) => path.meta?.crease)).toBe(true);
+
+    // #4 Hidden-line 'dash' marks occluded edge runs hidden; 'backface' (default) never does.
+    expect(generate('polyhedron', geometryCases.hiddenLineDash).some((path) => path.meta?.hiddenLine && path.meta?.edge)).toBe(true);
+    expect(baseline.some((path) => path.meta?.hiddenLine && path.meta?.edge)).toBe(false);
+
+    // #5 Hatching emits hatch-flagged scan segments; default emits none.
+    expect(generate('polyhedron', geometryCases.hatchEnable).some((path) => path.meta?.hatch)).toBe(true);
+    expect(baseline.some((path) => path.meta?.hatch)).toBe(false);
   });
 
   test('meshTopography supports primitive sources, render modes, and line count changes', () => {
@@ -254,6 +327,107 @@ describe('Vectura geometry algorithms', () => {
     expect(solidBars.some((path) => path.meta?.barSide)).toBe(true);
     expect(hiddenBars.some((path) => path.meta?.barSide && path.meta?.hiddenLine)).toBe(true);
     expect(hiddenBars.some((path) => path.meta?.vertical)).toBe(false);
+  });
+
+  test('meshTopography 3D enhancements each produce finite output that differs from all-off', () => {
+    const base = { sourceMode: 'cube', primitiveDetail: 6, lineCount: 8 };
+    // All-off baseline (every shared 3D toggle at its default). pathSignature is
+    // geometry-only (it ignores path.meta), so meta-only enhancements assert via a
+    // full structural snapshot; enhancements that add/clip geometry assert via the
+    // signature too.
+    const snapshot = (paths) =>
+      JSON.stringify((paths || []).map((p) => ({
+        pts: p.map((pt) => ({ x: Math.round(pt.x * 1e4), y: Math.round(pt.y * 1e4) })),
+        meta: p.meta || null,
+      })));
+    const offWire = generate('meshTopography', { ...base, renderMode: 'wireframe' });
+    const offContour = generate('meshTopography', { ...base, renderMode: 'contours' });
+    expect(finitePaths(offWire)).toBe(true);
+    const offWireSig = pathSignature(offWire);
+    const offContourSig = pathSignature(offContour);
+    const offWireSnap = snapshot(offWire);
+
+    // #2 depth cue — stamps strokeDash by per-path camera depth (meta-only).
+    const depthCue = generate('meshTopography', { ...base, renderMode: 'wireframe', depthCue: 'dash', depthCueStrength: 80 });
+    expect(finitePaths(depthCue)).toBe(true);
+    expect(snapshot(depthCue)).not.toBe(offWireSnap);
+    expect(depthCue.some((path) => Array.isArray(path.meta?.strokeDash))).toBe(true);
+
+    // #3 emphasize outline — weights the silhouette edges (meta-only).
+    const outline = generate('meshTopography', { ...base, renderMode: 'wireframe', emphasizeOutline: true, outlineWeight: 4 });
+    expect(finitePaths(outline)).toBe(true);
+    expect(snapshot(outline)).not.toBe(offWireSnap);
+    expect(outline.some((path) => path.meta?.outline && path.meta?.weightScale === 4)).toBe(true);
+
+    // #3 creases — feature edges sharper than creaseAngle (cube has 90° creases);
+    // adds geometry, so the geometric signature changes too.
+    const creases = generate('meshTopography', { ...base, renderMode: 'wireframe', showCreases: true, creaseAngle: 30 });
+    expect(finitePaths(creases)).toBe(true);
+    expect(pathSignature(creases)).not.toBe(offWireSig);
+    expect(creases.some((path) => path.meta?.crease)).toBe(true);
+
+    // #4 hidden-line dash — occlusion splits/dashes hidden runs (geometry changes).
+    const hiddenDash = generate('meshTopography', { ...base, renderMode: 'wireframe', hiddenLineMode: 'dash' });
+    expect(finitePaths(hiddenDash)).toBe(true);
+    expect(pathSignature(hiddenDash)).not.toBe(offWireSig);
+    expect(hiddenDash.some((path) => path.meta?.hiddenLine)).toBe(true);
+    // Hidden-line on contours also differs from the all-off contour render.
+    const hiddenContour = generate('meshTopography', { ...base, renderMode: 'contours', hiddenLineMode: 'dash' });
+    expect(finitePaths(hiddenContour)).toBe(true);
+    expect(pathSignature(hiddenContour)).not.toBe(offContourSig);
+
+    // #5 hatching — Lambert tonal fill on front faces (adds geometry).
+    const hatch = generate('meshTopography', { ...base, renderMode: 'wireframe', hatchEnable: true, hatchSpacing: 4 });
+    expect(finitePaths(hatch)).toBe(true);
+    expect(pathSignature(hatch)).not.toBe(offWireSig);
+    expect(hatch.some((path) => path.meta?.hatch)).toBe(true);
+  });
+
+  test('imageSurface depth-cue + hatching enhancements are additive and toggle output', () => {
+    const fixtureGrid = [
+      [0, 0.1, 0.2, 0.3],
+      [0.2, 0.4, 0.6, 0.8],
+      [0.8, 0.6, 0.4, 0.2],
+      [0.3, 0.2, 0.1, 0],
+    ];
+    const common = { fixtureGrid, sampleDetail: 24, rows: 8, columns: 8, barRows: 5, barColumns: 5 };
+
+    // Depth cue applies to ALL modes. It is metadata-only (geometry byte-identical
+    // — pathSignature is purely geometric), so it must NOT move any vertex but it
+    // must stamp a depth-derived meta.strokeDash that the all-off output lacks.
+    ['lines', 'mesh', 'topography', 'bars'].forEach((mode) => {
+      const off = generate('imageSurface', { ...common, mode });
+      const cued = generate('imageSurface', { ...common, mode, depthCue: 'dash', depthCueStrength: 80 });
+      expect(finitePaths(cued)).toBe(true);
+      // Geometry unchanged by depth cue.
+      expect(pathSignature(off)).toBe(pathSignature(cued));
+      // Off state stamps no strokeDash; depth cue adds it to non-hidden paths.
+      expect(off.some((path) => !path.meta?.hiddenLine && Array.isArray(path.meta?.strokeDash))).toBe(false);
+      expect(cued.some((path) => !path.meta?.hiddenLine && Array.isArray(path.meta?.strokeDash))).toBe(true);
+      // Near vs far paths get different dash patterns (the actual depth cue).
+      const dashes = cued
+        .filter((path) => !path.meta?.hiddenLine && Array.isArray(path.meta?.strokeDash))
+        .map((path) => path.meta.strokeDash.join(','));
+      expect(new Set(dashes).size).toBeGreaterThan(1);
+    });
+
+    // Hatching applies to mesh + bars: adds Lambert scan lines (meta.hatch), keeps
+    // output finite, and differs from the hatch-off baseline.
+    ['mesh', 'bars'].forEach((mode) => {
+      const off = generate('imageSurface', { ...common, mode });
+      const hatched = generate('imageSurface', { ...common, mode, hatchEnable: true, hatchSpacing: 4, hatchAngle: 30 });
+      expect(finitePaths(hatched)).toBe(true);
+      expect(hatched.length).toBeGreaterThan(off.length);
+      expect(hatched.some((path) => path.meta?.hatch)).toBe(true);
+      expect(pathSignature(off)).not.toBe(pathSignature(hatched));
+    });
+
+    // Hatching is N/A for lines/topography: enabling it is a no-op (byte-identical).
+    ['lines', 'topography'].forEach((mode) => {
+      const off = generate('imageSurface', { ...common, mode });
+      const on = generate('imageSurface', { ...common, mode, hatchEnable: true });
+      expect(pathSignature(off)).toBe(pathSignature(on));
+    });
   });
 
   test('perspective projection foreshortens depth and stays orthographic by default', () => {

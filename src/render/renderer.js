@@ -3007,10 +3007,18 @@
               if (key) seen.add(key);
             }
             const dash = this.getPathStrokeDash(path);
-            if (dash) {
+            // Variable line weight (silhouette / crease emphasis). A path carrying
+            // meta.weightScale != 1 is stroked in isolation at a scaled width
+            // (clamped to 6x) so it doesn't disturb the batched pen-group stroke.
+            const rawWeight = Number(path?.meta?.weightScale);
+            const weightScale = Number.isFinite(rawWeight) && rawWeight !== 1
+              ? Math.max(0.1, Math.min(6, rawWeight))
+              : 1;
+            if (dash || weightScale !== 1) {
               this.ctx.stroke();
               this.ctx.save();
-              this.ctx.setLineDash(dash);
+              if (dash) this.ctx.setLineDash(dash);
+              if (weightScale !== 1) this.ctx.lineWidth = currentStrokeWidth * weightScale;
               this.ctx.beginPath();
               this.traceLayerPath(path, l, temp, useCurves);
               this.ctx.stroke();

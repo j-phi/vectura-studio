@@ -663,6 +663,18 @@
             attrs = attrs || {};
             attrs['stroke-dasharray'] = dash.map((value) => Number(value).toFixed(3).replace(/\.?0+$/, '')).join(' ');
           }
+          // Variable line weight (silhouette / crease emphasis): emit a per-path
+          // stroke-width override only when meta.weightScale differs from 1, so
+          // default geometry keeps the group-level stroke-width untouched.
+          const rawWeight = Number(item.path?.meta?.weightScale);
+          if (Number.isFinite(rawWeight) && rawWeight !== 1) {
+            const weightScale = Math.max(0.1, Math.min(6, rawWeight));
+            const scaledWidth = (parseFloat(item.strokeWidth) || 0) * weightScale;
+            if (Number.isFinite(scaledWidth) && scaledWidth > 0) {
+              attrs = attrs || {};
+              attrs['stroke-width'] = Number(scaledWidth.toFixed(4));
+            }
+          }
           const markup = window.Vectura._UIExportUtil.shapeToSvg(item.path, precision, item.useCurves, attrs, item.sharpEdges);
           if (markup) svg += markup;
           svg += `</g>`;

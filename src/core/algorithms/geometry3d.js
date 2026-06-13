@@ -378,6 +378,285 @@
   // never below 4). Used by algorithms whose preview path caps a count/detail.
   const previewCap = (bounds, fullCap) => Math.max(4, Math.round(finite(fullCap) * previewDetailScale(bounds)));
 
+  // ── Shared 3D enhancement helpers (depth cue / silhouette / hidden-line / hatch) ──
+  // All of these are pure given their inputs and OFF unless an algorithm opts in.
+
+  // Resolve a unit light direction from azimuth (deg around the screen, 0 = +x,
+  // CCW) + elevation (deg above the screen plane toward the viewer, +z). Pure.
+  const resolveLight = (p) => {
+    const az = degToRad(finite(p && p.lightAzimuth, 135));
+    const el = degToRad(finite(p && p.lightElevation, 45));
+    const cosEl = Math.cos(el);
+    return normalize(v(Math.cos(az) * cosEl, Math.sin(az) * cosEl, Math.sin(el)));
+  };
+
+  // Enhancement #2 — depth cueing via dash density. Reads each path's
+  // `meta.depth` (a representative camera-space z the algorithm stamps; larger =
+  // nearer). Paths without a finite depth are skipped; paths flagged
+  // `meta.hiddenLine` are left untouched (their hidden dashes win). Near paths get
+  // a tight/solid dash, far paths an open/sparse dash, blended by strength
+  // (0–100). Mutates and returns the same array. Deterministic.
+  const applyDepthCue = (paths, p) => {
+    if (!Array.isArray(paths) || !paths.length) return paths;
+    if (((p && p.depthCue) || 'off') === 'off') return paths;
+    let min = Infinity;
+    let max = -Infinity;
+    paths.forEach((path) => {
+      const depth = path && path.meta ? Number(path.meta.depth) : NaN;
+      if (!Number.isFinite(depth)) return;
+      if (depth < min) min = depth;
+      if (depth > max) max = depth;
+    });
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return paths;
+    const range = max - min;
+    const strength = clamp(finite(p && p.depthCueStrength, 60), 0, 100) / 100;
+    paths.forEach((path) => {
+      if (!path || !path.meta) return;
+      if (path.meta.hiddenLine) return; // hidden-line dashes win
+      const depth = Number(path.meta.depth);
+      if (!Number.isFinite(depth)) return;
+      // 0 (far) .. 1 (near)
+      const near = range > EPS ? (depth - min) / range : 1;
+      const far = 1 - near;
+      // far → larger dash + larger gap (sparser); near → tight dash.
+      const dashLen = lerp(6, 2, near);
+      const gap = lerp(0.5, 5, far) * strength;
+      // strength 0 collapses the gap to ~0 (effectively solid); strength up opens it.
+      path.meta.strokeDash = [Math.max(1, dashLen), Math.max(0.1, gap)];
+    });
+    return paths;
+  };
+
+  // Enhancement #3 — silhouette (outline) extraction. Returns polyline paths for
+  // each edge shared by exactly one front + one back face. `faces` = vertex-index
+  // arrays; `projected` = screen {x,y} per vertex; `faceFront` = boolean per face.
+  // options.weightScale (default 2) is stamped on every emitted path's meta.
+  const extractSilhouette = (faces, projected, faceFront, options = {}) => {
+    if (!Array.isArray(faces) || !Array.isArray(projected) || !Array.isArray(faceFront)) return [];
+    const weightScale = finite(options.weightScale, 2);
+    const edges = collectEdges(faces);
+    const out = [];
+    edges.forEach((edge) => {
+      if (edge.faces.length !== 2) return;
+      const f0 = !!faceFront[edge.faces[0]];
+      const f1 = !!faceFront[edge.faces[1]];
+      if (f0 === f1) return; // need one front + one back
+      const a = projected[edge.a];
+      const b = projected[edge.b];
+      if (!a || !b || !Number.isFinite(a.x) || !Number.isFinite(b.x)) return;
+      out.push(pathWithMeta([a, b], { outline: true, weightScale, straight: true }));
+    });
+    return out;
+  };
+
+  // Enhancement #3 — crease (feature-edge) extraction. `edges` from collectEdges,
+  // `faceNormals` an array of 3D normals per face. Emits the screen edge when its
+  // two adjacent faces' normals differ by more than `angleDeg`. `projected` maps
+  // vertex index → screen point. options.weightScale default 2.
+  const extractCreases = (edges, faceNormals, angleDeg, projected, options = {}) => {
+    if (!Array.isArray(edges) || !Array.isArray(faceNormals) || !Array.isArray(projected)) return [];
+    const weightScale = finite(options.weightScale, 2);
+    const cosThreshold = Math.cos(degToRad(clamp(angleDeg, 0, 180)));
+    const out = [];
+    edges.forEach((edge) => {
+      if (edge.faces.length !== 2) return;
+      const n0 = faceNormals[edge.faces[0]];
+      const n1 = faceNormals[edge.faces[1]];
+      if (!n0 || !n1) return;
+      const d = clamp(dot(normalize(n0), normalize(n1)), -1, 1);
+      if (d >= cosThreshold) return; // angle <= threshold → not a crease
+      const a = projected[edge.a];
+      const b = projected[edge.b];
+      if (!a || !b || !Number.isFinite(a.x) || !Number.isFinite(b.x)) return;
+      out.push(pathWithMeta([a, b], { crease: true, weightScale, straight: true }));
+    });
+    return out;
+  };
+
+  const polygonBounds = (polygon) => {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (let i = 0; i < polygon.length; i++) {
+      const pt = polygon[i];
+      if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) continue;
+      if (pt.x < minX) minX = pt.x;
+      if (pt.x > maxX) maxX = pt.x;
+      if (pt.y < minY) minY = pt.y;
+      if (pt.y > maxY) maxY = pt.y;
+    }
+    return { minX, minY, maxX, maxY };
+  };
+
+  const pointInPolygon = (pt, polygon) => {
+    let inside = false;
+    const n = polygon.length;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const a = polygon[i];
+      const b = polygon[j];
+      if (!a || !b) continue;
+      const intersect =
+        ((a.y > pt.y) !== (b.y > pt.y)) &&
+        (pt.x < ((b.x - a.x) * (pt.y - a.y)) / ((b.y - a.y) || EPS) + a.x);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  };
+
+  // Enhancement #4 — screen-space painter occlusion. `segments` =
+  // [{a:{x,y,z}, b:{x,y,z}, meta}] (z = camera depth, larger = nearer).
+  // `occluders` = [{polygon:[{x,y}], depth}] front-facing screen polygons. Each
+  // segment is sampled along its length; a sample is hidden when it falls inside a
+  // NEARER occluder (occluder.depth > sample.z + depthBias). mode 'remove' drops
+  // hidden runs; mode 'dash' routes them through markHidden. Per-segment AABB
+  // rejection against occluder bounding boxes keeps the cost bounded. Deterministic.
+  const occludeSegments = (segments, occluders, opts = {}) => {
+    if (!Array.isArray(segments)) return [];
+    const mode = opts.mode === 'dash' ? 'dash' : 'remove';
+    const depthBias = finite(opts.depthBias, 0.5);
+    if (!Array.isArray(occluders) || !occluders.length) {
+      // Nothing occludes — return every segment as a visible path.
+      return segments
+        .filter((seg) => seg && seg.a && seg.b)
+        .map((seg) => pathWithMeta([seg.a, seg.b], seg.meta ? { ...seg.meta } : null));
+    }
+    const occ = occluders
+      .filter((o) => o && Array.isArray(o.polygon) && o.polygon.length >= 3)
+      .map((o) => ({ polygon: o.polygon, depth: finite(o.depth, 0), bbox: polygonBounds(o.polygon) }));
+    const samplesFor = (seg) => {
+      const len = Math.hypot(seg.b.x - seg.a.x, seg.b.y - seg.a.y);
+      // ~one sample per 3px, clamped 8..120 for bounded cost.
+      return clamp(Math.round(len / 3) + 2, 8, 120);
+    };
+    const out = [];
+    segments.forEach((seg) => {
+      if (!seg || !seg.a || !seg.b) return;
+      const za = finite(seg.a.z, 0);
+      const zb = finite(seg.b.z, 0);
+      const segMinX = Math.min(seg.a.x, seg.b.x);
+      const segMaxX = Math.max(seg.a.x, seg.b.x);
+      const segMinY = Math.min(seg.a.y, seg.b.y);
+      const segMaxY = Math.max(seg.a.y, seg.b.y);
+      // AABB-reject occluders that cannot overlap this segment.
+      const relevant = occ.filter((o) =>
+        o.bbox.maxX >= segMinX && o.bbox.minX <= segMaxX &&
+        o.bbox.maxY >= segMinY && o.bbox.minY <= segMaxY);
+      const steps = samplesFor(seg);
+      const runs = [];
+      let current = null;
+      let currentVisible = null;
+      const flush = () => {
+        if (current && current.length >= 2) runs.push({ visible: currentVisible, pts: current });
+        current = null;
+      };
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const x = lerp(seg.a.x, seg.b.x, t);
+        const y = lerp(seg.a.y, seg.b.y, t);
+        const z = lerp(za, zb, t);
+        let hidden = false;
+        for (let k = 0; k < relevant.length; k++) {
+          const o = relevant[k];
+          if (o.depth <= z + depthBias) continue; // not nearer than the sample
+          if (x < o.bbox.minX || x > o.bbox.maxX || y < o.bbox.minY || y > o.bbox.maxY) continue;
+          if (pointInPolygon({ x, y }, o.polygon)) { hidden = true; break; }
+        }
+        const visible = !hidden;
+        if (current && currentVisible !== visible) flush();
+        if (!current) { current = []; currentVisible = visible; }
+        current.push({ x, y });
+      }
+      flush();
+      runs.forEach((run) => {
+        if (run.visible) {
+          out.push(pathWithMeta(run.pts, seg.meta ? { ...seg.meta } : null));
+        } else if (mode === 'dash') {
+          const path = pathWithMeta(run.pts, seg.meta ? { ...seg.meta } : null);
+          out.push(markHidden(path));
+        }
+        // mode 'remove' drops hidden runs entirely.
+      });
+    });
+    return out;
+  };
+
+  // Enhancement #5 primitive — clip parallel scan lines to a closed screen
+  // polygon. Lines run at opts.angleDeg, spaced opts.spacing (hard floor 1). Each
+  // returned path is a 2-point segment with meta {hatch:true, straight:true}.
+  const hatchPolygon = (polygon, opts = {}) => {
+    if (!Array.isArray(polygon) || polygon.length < 3) return [];
+    const spacing = Math.max(1, finite(opts.spacing, 6));
+    const angle = degToRad(finite(opts.angleDeg, 45));
+    const dirX = Math.cos(angle);
+    const dirY = Math.sin(angle);
+    // Perpendicular axis we step along between scan lines.
+    const perpX = -dirY;
+    const perpY = dirX;
+    // Project all vertices onto the perpendicular axis to find scan-line extent.
+    let pMin = Infinity;
+    let pMax = -Infinity;
+    polygon.forEach((pt) => {
+      if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) return;
+      const proj = pt.x * perpX + pt.y * perpY;
+      if (proj < pMin) pMin = proj;
+      if (proj > pMax) pMax = proj;
+    });
+    if (!Number.isFinite(pMin) || !Number.isFinite(pMax)) return [];
+    const out = [];
+    const maxLines = 2000; // bounded cost
+    const count = Math.min(maxLines, Math.floor((pMax - pMin) / spacing));
+    const n = polygon.length;
+    for (let i = 1; i <= count; i++) {
+      const offset = pMin + i * spacing;
+      // Intersect the infinite line {p · perp = offset} with each polygon edge.
+      const hits = [];
+      for (let e = 0, f = n - 1; e < n; f = e++) {
+        const a = polygon[f];
+        const b = polygon[e];
+        if (!a || !b) continue;
+        const pa = a.x * perpX + a.y * perpY;
+        const pb = b.x * perpX + b.y * perpY;
+        if ((pa > offset) === (pb > offset)) continue; // edge doesn't cross
+        const t = (offset - pa) / ((pb - pa) || EPS);
+        const x = lerp(a.x, b.x, t);
+        const y = lerp(a.y, b.y, t);
+        // Position along the scan-line direction (sort key).
+        hits.push({ s: x * dirX + y * dirY, x, y });
+      }
+      if (hits.length < 2) continue;
+      hits.sort((p, q) => p.s - q.s);
+      // Pair consecutive crossings into interior spans (even-odd fill rule).
+      for (let h = 0; h + 1 < hits.length; h += 2) {
+        const p0 = hits[h];
+        const p1 = hits[h + 1];
+        if (Math.hypot(p1.x - p0.x, p1.y - p0.y) < EPS) continue;
+        out.push(pathWithMeta([{ x: p0.x, y: p0.y }, { x: p1.x, y: p1.y }], { hatch: true, straight: true }));
+      }
+    }
+    return out;
+  };
+
+  // Enhancement #5 — Lambert-shaded hatching of one front face. shade =
+  // max(0, dot(normalize(normal), lightVec)); darker (lower shade) → denser
+  // hatch. Emits one pass; when opts.crossHatch is on AND the face is dark enough
+  // (shade below crossThreshold) a second perpendicular pass is added.
+  const lambertHatch = (normal3d, lightVec, polygon, opts = {}) => {
+    if (!Array.isArray(polygon) || polygon.length < 3) return [];
+    const shade = Math.max(0, dot(normalize(normal3d || v(0, 0, 1)), normalize(lightVec || v(0, 0, 1))));
+    const baseSpacing = Math.max(1, finite(opts.baseSpacing, finite(opts.spacing, 6)));
+    const angleDeg = finite(opts.angleDeg, 45);
+    // Darker faces get tighter spacing; lit faces space out.
+    // shade 1 (fully lit) → 2.5× spacing; shade 0 (dark) → 1× spacing.
+    const spacing = Math.max(1, baseSpacing * (1 + shade * 1.5));
+    const out = hatchPolygon(polygon, { angleDeg, spacing });
+    const crossThreshold = clamp(finite(opts.crossThreshold, 0.45), 0, 1);
+    if (opts.crossHatch && shade < crossThreshold) {
+      hatchPolygon(polygon, { angleDeg: angleDeg + 90, spacing }).forEach((seg) => out.push(seg));
+    }
+    return out;
+  };
+
   const api = {
     TAU,
     EPS,
@@ -387,6 +666,13 @@
     lerp,
     smoothToBezier,
     resolveProjection,
+    resolveLight,
+    applyDepthCue,
+    extractSilhouette,
+    extractCreases,
+    occludeSegments,
+    hatchPolygon,
+    lambertHatch,
     previewDetailScale,
     previewCap,
     v,

@@ -22,7 +22,61 @@
     linkSegments,
     markHidden,
     cleanPaths,
+    extractCreases,
+    occludeSegments,
+    lambertHatch,
+    resolveLight,
+    applyDepthCue,
   } = G3;
+
+  // A 3D enhancement is active only when at least one opt-in toggle is set; this
+  // gate keeps the legacy path byte-identical when every control sits at its
+  // default (all off). Hidden-line is "on" only for the non-backface modes.
+  const hiddenLineActive = (p) => (p.hiddenLineMode || 'backface') !== 'backface';
+
+  // Front-facing screen polygons (with mean rotated z as painter depth) used as
+  // occluders for hidden-line removal/dashing. Built from the projected mesh.
+  const buildOccluders = (mesh, projected, bounds, cap) => {
+    const occluders = [];
+    for (let i = 0; i < mesh.faces.length; i++) {
+      const face = mesh.faces[i];
+      const rotated = face.map((idx) => projected[idx].rotated);
+      if (faceNormal(rotated).z < -0.001) continue; // back face — not an occluder
+      const polygon = face.map((idx) => {
+        const pr = projected[idx].projected;
+        return { x: pr.x, y: pr.y };
+      });
+      if (polygon.some((pt) => !Number.isFinite(pt.x) || !Number.isFinite(pt.y))) continue;
+      const depth = rotated.reduce((sum, pt) => sum + pt.z, 0) / (rotated.length || 1);
+      occluders.push({ polygon, depth });
+      if (cap && occluders.length >= cap) break;
+    }
+    return occluders;
+  };
+
+  // Run hidden-line occlusion over already-built paths whose meta carries a
+  // straight 2-point screen edge plus per-endpoint camera z (depthA/depthB).
+  // Paths that are not simple straight segments are passed through untouched.
+  const occludePaths = (paths, occluders, mode, depthBias) => {
+    const out = [];
+    paths.forEach((path) => {
+      if (!path || !path.meta || path.meta.straight !== true || path.length !== 2 ||
+          !Number.isFinite(path.meta.depthA) || !Number.isFinite(path.meta.depthB)) {
+        out.push(path);
+        return;
+      }
+      const meta = { ...path.meta };
+      delete meta.depthA;
+      delete meta.depthB;
+      const seg = {
+        a: { x: path[0].x, y: path[0].y, z: path.meta.depthA },
+        b: { x: path[1].x, y: path[1].y, z: path.meta.depthB },
+        meta,
+      };
+      occludeSegments([seg], occluders, { mode, depthBias }).forEach((p) => out.push(p));
+    });
+    return out;
+  };
 
   // Point on the perimeter of the unit square [-1,1]^2, parameterised t in [0,1).
   const squarePerimeter = (t) => {
@@ -201,7 +255,7 @@
     return [pts[0], pts[1]];
   };
 
-  const buildWireframe = (mesh, p, bounds) => {
+  const buildWireframe = (mesh, p, bounds, flags = {}) => {
     const projected = mesh.vertices.map((pt) => project3(pt, p, bounds));
     const faceFront = mesh.faces.map((face) => {
       const pts = face.map((idx) => projected[idx].rotated);
@@ -214,13 +268,17 @@
       if (!front && !full) return;
       const path = [projected[edge.a].projected, projected[edge.b].projected].map((pt) => ({ x: pt.x, y: pt.y }));
       path.meta = { algorithm: 'meshTopography', straight: true, meshEdge: true };
+      const za = projected[edge.a].rotated.z;
+      const zb = projected[edge.b].rotated.z;
+      if (flags.depthCue) path.meta.depth = (za + zb) / 2;
+      if (flags.occlude) { path.meta.depthA = za; path.meta.depthB = zb; }
       if (!front) markHidden(path);
       paths.push(path);
     });
     return paths;
   };
 
-  const buildContours = (mesh, p, bounds) => {
+  const buildContours = (mesh, p, bounds, flags = {}) => {
     const planeVertices = mesh.vertices.map((pt) => rotatePoint(pt, {
       yaw: finite(p.planeRotate, 0),
       pitch: finite(p.planeTilt, 0),
@@ -233,11 +291,16 @@
     });
     const count = Math.max(2, Math.round(clamp(finite(p.lineCount, 26), 2, 120)));
     const full = (p.contourVisibility || 'visibleOnly') === 'fullContour';
+    const stampDepth = flags.depthCue || flags.occlude;
     const paths = [];
     for (let level = 1; level <= count; level++) {
       const z = minZ + (level / (count + 1)) * (maxZ - minZ || 1);
       const visibleSegments = [];
       const hiddenSegments = [];
+      // Parallel array of mean rotated camera-z per slice segment, only when a
+      // depth-aware enhancement needs it (keeps the legacy path allocation-free).
+      const visibleDepths = stampDepth ? [] : null;
+      const hiddenDepths = stampDepth ? [] : null;
       mesh.faces.forEach((face) => {
         const tri = face.map((idx) => planeVertices[idx]);
         const seg = trianglePlaneSegment(tri, z);
@@ -245,36 +308,136 @@
         const rotatedTri = tri.map((pt) => rotatePoint(pt, { yaw: finite(p.rotate, -28), pitch: finite(p.tilt, 34) }));
         const front = faceNormal(rotatedTri).z >= -0.001;
         if (!front && !full) return;
-        const projected = seg.map((pt) => project3(pt, p, bounds).projected);
+        const projectedSeg = seg.map((pt) => project3(pt, p, bounds));
+        const projected = projectedSeg.map((pr) => pr.projected);
+        if (flags.occlude) {
+          // Carry per-endpoint camera z on the slice segment for occlusion.
+          projected.za = projectedSeg[0].rotated.z;
+          projected.zb = projectedSeg[1].rotated.z;
+        }
         (front ? visibleSegments : hiddenSegments).push(projected);
+        if (stampDepth) {
+          const meanZ = (projectedSeg[0].rotated.z + projectedSeg[1].rotated.z) / 2;
+          (front ? visibleDepths : hiddenDepths).push(meanZ);
+        }
       });
-      linkSegments(visibleSegments).forEach((path) => {
-        path.meta = { algorithm: 'meshTopography', contour: true, straight: true };
-        path = G3.smoothToBezier(path, finite(p.contourSmoothing, 0));
-        paths.push(path);
-      });
-      linkSegments(hiddenSegments).forEach((path) => {
-        path.meta = { algorithm: 'meshTopography', contour: true, straight: true };
-        path = G3.smoothToBezier(path, finite(p.contourSmoothing, 0));
-        markHidden(path);
-        paths.push(path);
-      });
+      if (flags.occlude) {
+        // Hidden-line mode: emit raw, occludable 2-point slice segments (with
+        // per-endpoint camera z) instead of linked+smoothed polylines, so the
+        // painter occluder can split them where front faces hide them.
+        const emitRaw = (segments, depths, hidden) => {
+          segments.forEach((seg, i) => {
+            const path = [{ x: seg[0].x, y: seg[0].y }, { x: seg[1].x, y: seg[1].y }];
+            path.meta = { algorithm: 'meshTopography', contour: true, straight: true };
+            path.meta.depthA = seg.za;
+            path.meta.depthB = seg.zb;
+            if (flags.depthCue && depths && depths[i] != null) path.meta.depth = depths[i];
+            if (hidden) markHidden(path);
+            paths.push(path);
+          });
+        };
+        emitRaw(visibleSegments, visibleDepths, false);
+        emitRaw(hiddenSegments, hiddenDepths, true);
+      } else {
+        const emit = (segments, depths, hidden) => {
+          linkSegments(segments).forEach((path) => {
+            path.meta = { algorithm: 'meshTopography', contour: true, straight: true };
+            if (stampDepth && depths && depths.length) {
+              // Representative depth = mean of all contributing slice midpoints.
+              path.meta.depth = depths.reduce((s, d) => s + d, 0) / depths.length;
+            }
+            path = G3.smoothToBezier(path, finite(p.contourSmoothing, 0));
+            if (hidden) markHidden(path);
+            paths.push(path);
+          });
+        };
+        emit(visibleSegments, visibleDepths, false);
+        emit(hiddenSegments, hiddenDepths, true);
+      }
     }
     return paths;
   };
 
-  const buildSilhouette = (mesh, p, bounds) => {
-    if (p.showOutline === false) return [];
+  const buildSilhouette = (mesh, p, bounds, flags = {}) => {
+    // Gate on the legacy outline toggle OR the new emphasizeOutline enhancement.
+    const emphasize = p.emphasizeOutline === true;
+    if (p.showOutline === false && !emphasize) return [];
     const projected = mesh.vertices.map((pt) => project3(pt, p, bounds));
     const faceFront = mesh.faces.map((face) => faceNormal(face.map((idx) => projected[idx].rotated)).z >= -0.001);
+    const weightScale = emphasize ? Math.max(0.1, finite(p.outlineWeight, 2)) : null;
     const paths = [];
     collectEdges(mesh.faces).forEach((edge) => {
       const sides = edge.faces.map((idx) => faceFront[idx]);
       if (sides.length < 2 || sides[0] === sides[1]) return;
       const path = [projected[edge.a].projected, projected[edge.b].projected].map((pt) => ({ x: pt.x, y: pt.y }));
       path.meta = { algorithm: 'meshTopography', silhouette: true, straight: true };
+      // #3 emphasize: stamp the outline weight so the renderer/SVG draws it heavier.
+      if (weightScale != null) { path.meta.outline = true; path.meta.weightScale = weightScale; }
+      if (flags.depthCue) {
+        path.meta.depth = (projected[edge.a].rotated.z + projected[edge.b].rotated.z) / 2;
+      }
       paths.push(path);
     });
+    return paths;
+  };
+
+  // #3 — crease (feature-edge) extraction. Per-face normals are computed from the
+  // rotated (camera-space) face vertices so the threshold is view-consistent.
+  const buildCreases = (mesh, p, bounds, flags = {}) => {
+    const projectedVerts = mesh.vertices.map((pt) => project3(pt, p, bounds));
+    const projected = projectedVerts.map((pr) => ({ x: pr.projected.x, y: pr.projected.y }));
+    const faceNormals = mesh.faces.map((face) => faceNormal(face.map((idx) => projectedVerts[idx].rotated)));
+    const edges = collectEdges(mesh.faces);
+    const paths = extractCreases(edges, faceNormals, finite(p.creaseAngle, 35), projected, {
+      weightScale: Math.max(0.1, finite(p.outlineWeight, 2)),
+    });
+    // Map a screen point back to a vertex camera z for optional depth cueing.
+    const zByKey = flags.depthCue ? new Map() : null;
+    if (zByKey) {
+      projectedVerts.forEach((pr) => {
+        zByKey.set(`${pr.projected.x.toFixed(3)},${pr.projected.y.toFixed(3)}`, pr.rotated.z);
+      });
+    }
+    paths.forEach((path) => {
+      path.meta = { ...(path.meta || {}), algorithm: 'meshTopography' };
+      if (zByKey && path.length === 2) {
+        const za = zByKey.get(`${path[0].x.toFixed(3)},${path[0].y.toFixed(3)}`);
+        const zb = zByKey.get(`${path[1].x.toFixed(3)},${path[1].y.toFixed(3)}`);
+        if (Number.isFinite(za) && Number.isFinite(zb)) path.meta.depth = (za + zb) / 2;
+      }
+    });
+    return paths;
+  };
+
+  // #5 — Lambert-shaded hatching, one pass per FRONT face. Spacing is raised and
+  // the face count capped during a fast preview to keep live drags responsive.
+  const buildHatching = (mesh, p, bounds, preview) => {
+    const projectedVerts = mesh.vertices.map((pt) => project3(pt, p, bounds));
+    const light = resolveLight(p);
+    const baseSpacing = Math.max(1, finite(p.hatchSpacing, 6) * (preview ? 2 : 1));
+    const angleDeg = finite(p.hatchAngle, 45);
+    const crossHatch = p.crossHatch === true;
+    const maxFaces = preview ? G3.previewCap(bounds, 600) : 4000;
+    const paths = [];
+    let faceCount = 0;
+    for (let i = 0; i < mesh.faces.length; i++) {
+      if (faceCount >= maxFaces) break;
+      const face = mesh.faces[i];
+      const rotated = face.map((idx) => projectedVerts[idx].rotated);
+      const normal = faceNormal(rotated);
+      if (normal.z < -0.001) continue; // hatch only front faces
+      const polygon = face.map((idx) => {
+        const pr = projectedVerts[idx].projected;
+        return { x: pr.x, y: pr.y };
+      });
+      if (polygon.some((pt) => !Number.isFinite(pt.x) || !Number.isFinite(pt.y))) continue;
+      const segments = lambertHatch(normal, light, polygon, { baseSpacing, angleDeg, crossHatch });
+      segments.forEach((seg) => {
+        seg.meta = { ...(seg.meta || {}), algorithm: 'meshTopography' };
+        paths.push(seg);
+      });
+      faceCount++;
+    }
     return paths;
   };
 
@@ -286,11 +449,39 @@
       const rawDetail = clamp(finite(p.primitiveDetail, 18), 4, preview ? G3.previewCap(bounds, 100) : 100);
       const detail = Math.max(4, Math.round(rawDetail * (1 - simplify * 0.65)));
       const mesh = createPrimitiveMesh(p, detail);
+
+      // Resolve the opt-in 3D enhancement toggles (all default OFF → legacy path).
+      const depthCueOn = (p.depthCue || 'off') !== 'off';
+      const occludeOn = hiddenLineActive(p);
+      const flags = { depthCue: depthCueOn, occlude: occludeOn };
+
       let paths = [];
       const mode = p.renderMode || 'contours';
-      if (mode === 'wireframe' || mode === 'triangleMesh') paths = buildWireframe(mesh, p, bounds);
-      else paths = buildContours(mesh, p, bounds);
-      paths.push(...buildSilhouette(mesh, p, bounds));
+      if (mode === 'wireframe' || mode === 'triangleMesh') paths = buildWireframe(mesh, p, bounds, flags);
+      else paths = buildContours(mesh, p, bounds, flags);
+
+      // #4 hidden-line: occlude the (straight, depth-carrying) wireframe/contour
+      // segments against the front-facing screen polygons. 'dash' marks hidden
+      // runs; anything else ('remove') drops them.
+      if (occludeOn) {
+        const occCap = preview ? G3.previewCap(bounds, 1200) : 0;
+        const occluders = buildOccluders(mesh, mesh.vertices.map((pt) => project3(pt, p, bounds)), bounds, occCap);
+        const occMode = (p.hiddenLineMode === 'dash') ? 'dash' : 'remove';
+        paths = occludePaths(paths, occluders, occMode, finite(p.depthBias, 0.5));
+      }
+
+      paths.push(...buildSilhouette(mesh, p, bounds, flags));
+
+      // #3 creases — feature edges sharper than creaseAngle.
+      if (p.showCreases === true) paths.push(...buildCreases(mesh, p, bounds, flags));
+
+      // #5 hatching — Lambert tonal fill on front faces.
+      if (p.hatchEnable === true) paths.push(...buildHatching(mesh, p, bounds, preview));
+
+      // #2 depth cue — stamp dash density by per-path camera depth (no-op when off,
+      // skips hidden-line paths). Runs once, just before the final cleanup.
+      applyDepthCue(paths, p);
+
       return cleanPaths(paths);
     },
     formula: () => 'Primitive mesh sliced by depth planes or drawn as a projected wireframe.',
