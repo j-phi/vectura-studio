@@ -137,7 +137,9 @@
       },
       { id: 'depthBias', label: 'Occlusion Bias', type: 'range', min: 0, max: 3, step: 0.1, showIf: gate(allowDepthBias, (p) => (p.hiddenLineMode || 'backface') !== 'backface'), livePreview: true },
       { id: 'hatchEnable', label: 'Lambert Hatching', type: 'checkbox', showIf: gate(allowHatch, null) },
-      { id: 'lightAzimuth', label: 'Light Azimuth', type: 'range', min: 0, max: 360, step: 1, displayUnit: '°', showIf: gate(allowHatch, (p) => p.hatchEnable === true), livePreview: true },
+      // UX7: Light Azimuth is a compass heading (0–360 wrap), so the circular
+      // angle dial matches the mental model better than a linear slider.
+      { id: 'lightAzimuth', label: 'Light Azimuth', type: 'angle', min: 0, max: 360, step: 1, displayUnit: '°', showIf: gate(allowHatch, (p) => p.hatchEnable === true), livePreview: true },
       { id: 'lightElevation', label: 'Light Elevation', type: 'range', min: 0, max: 90, step: 1, displayUnit: '°', showIf: gate(allowHatch, (p) => p.hatchEnable === true), livePreview: true },
       { id: 'hatchAngle', label: 'Hatch Angle', type: 'range', min: 0, max: 180, step: 1, displayUnit: '°', showIf: gate(allowHatch, (p) => p.hatchEnable === true), livePreview: true },
       { id: 'hatchSpacing', label: 'Hatch Spacing', type: 'range', min: 2, max: 20, step: 0.5, showIf: gate(allowHatch, (p) => p.hatchEnable === true), livePreview: true },
@@ -1961,7 +1963,10 @@
     { id: 'simplifyMesh', label: 'Simplify Mesh', type: 'range', min: 0, max: 1, step: 0.05, livePreview: true },
     { type: 'section', label: 'Contours' },
     { id: 'lineCount', label: 'Line Count', type: 'range', min: 2, max: 80, step: 1, showIf: (p) => p.renderMode !== 'wireframe' && p.renderMode !== 'triangleMesh', livePreview: true },
-    { id: 'planeRotate', label: 'Plane Rotate', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
+    // UX7: the cutting-plane rotation wraps around a full circle, so the angle
+    // dial fits better than a linear slider. (View yaw/pitch/roll are separate
+    // controls owned elsewhere and intentionally left as ranges.)
+    { id: 'planeRotate', label: 'Plane Rotate', type: 'angle', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
     { id: 'planeTilt', label: 'Plane Tilt', type: 'range', min: -90, max: 90, step: 1, displayUnit: '°', livePreview: true },
     {
       id: 'contourVisibility',
@@ -1988,6 +1993,15 @@
     { type: 'section', label: 'Source' },
     { type: 'imageSource' },
     { type: 'section', label: 'Surface Noise' },
+    // D3: gate Noise Mode/Amount behind a non-empty, enabled noise stack. The
+    // generator's createNoiseField (image-surface.js) returns null when the
+    // `noises` rack has no enabled layers, so these controls are inert until a
+    // layer is added — hiding them by default is baseline-neutral. The predicate
+    // mirrors createNoiseField's filter (`n && n.enabled !== false`, so a layer
+    // with `enabled` undefined counts as enabled). NOTE: an explicit empty-state
+    // hint ("Add a noise layer to enable") is DEFERRED — it needs a renderer
+    // change in algo-config-panel.js (out of scope this wave); the existing
+    // noiseList UI below already surfaces the empty stack + add affordance.
     {
       id: 'noiseMode',
       label: 'Noise Mode',
@@ -1997,8 +2011,9 @@
         { value: 'multiply', label: 'Multiply' },
         { value: 'replace', label: 'Replace' },
       ],
+      showIf: (p) => Array.isArray(p.noises) && p.noises.some((n) => n && n.enabled !== false),
     },
-    { id: 'noiseAmount', label: 'Noise Amount', type: 'range', min: 0, max: 1, step: 0.01, livePreview: true },
+    { id: 'noiseAmount', label: 'Noise Amount', type: 'range', min: 0, max: 1, step: 0.01, livePreview: true, showIf: (p) => Array.isArray(p.noises) && p.noises.some((n) => n && n.enabled !== false) },
     { type: 'noiseList', source: 'imageSurface', label: 'Noise Stack' },
     { type: 'section', label: 'Surface' },
     {

@@ -399,7 +399,18 @@
     const masks = [];
     dedupeVertexMarkers(candidates).forEach((point, index) => {
       if (p.faceOpacityMode === 'opaque' && isPointOccludedByFaces(point, faceRecords, size * 0.16)) return;
+      // D1 — 'Hide Interior' (vertexOcclusionMode === 'occlude'): drop the vertex
+      // glyph entirely when its projected point falls inside a NEARER opaque front
+      // face. isPointOccludedByFaces only counts front faces whose camera depth is
+      // closer than the vertex (with a +0.02 epsilon) and skips faces the vertex
+      // sits on the edge of (size * 0.16 tolerance), so a vertex never occludes
+      // itself or its own incident faces. On convex solids (default buckyball,
+      // platonics) no vertex is behind a nearer face, so this is a no-op there;
+      // the effect only manifests on self-occluding deformations (twist/shard/
+      // explode) or overlapping imported meshes. Default mode is 'outline', so
+      // baseline output is byte-identical.
       if (p.vertexOcclusionMode === 'occlude') {
+        if (isPointOccludedByFaces(point, faceRecords, size * 0.16)) return;
         masks.push({ center: { x: point.x, y: point.y }, radius: size * 1.08 });
       }
       for (let ring = 0; ring < rings; ring++) {
