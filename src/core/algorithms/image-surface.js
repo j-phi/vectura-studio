@@ -97,11 +97,12 @@
         const isPoly = layer.type === 'polygon';
         const tileMode = layer.tileMode || 'off';
         let value;
-        if (tileMode !== 'off') {
-          // Tiled layers wrap their sample coordinate into a repeating cell, then
-          // take a single-octave evaluate — FBM can't span tile seams cleanly, so
-          // octaves are skipped while tiling (matches topo). This is what makes a
-          // polygon (or any) Tile Mode actually repeat across the surface.
+        // Single-octave `evaluate` path for: (a) tiled layers — the sample
+        // coordinate is wrapped into a repeating cell, and FBM can't span tile
+        // seams cleanly; (b) polygon — a geometric SDF shape that must NOT be
+        // FBM-summed, since octaves would stack scaled copies into concentric
+        // "ghost" polygons. Everything else keeps the multi-octave sampleScalar.
+        if (tileMode !== 'off' || isPoly) {
           const zoom = NoiseRack.resolveEffectiveZoom(layer, 0.02);
           const freq = Math.max(0.05, layer.freq ?? 1);
           const angle = ((layer.angle ?? 0) * Math.PI) / 180;
@@ -113,14 +114,16 @@
           const cy = isPoly ? wy - NOISE_SPAN / 2 : wy;
           const dx = cx * cosA - cy * sinA + shiftX;
           const dy = cx * sinA + cy * cosA + shiftY;
-          const tiled = applyTile(dx * zoom * freq, dy * zoom, tileMode, layer.tilePadding ?? 0);
-          const sx = isPoly ? (tiled.x - 0.5) * 2 : tiled.x;
-          const sy = isPoly ? (tiled.y - 0.5) * 2 : tiled.y;
+          let sx = dx * zoom * freq;
+          let sy = dy * zoom;
+          if (tileMode !== 'off') {
+            const tiled = applyTile(sx, sy, tileMode, layer.tilePadding ?? 0);
+            sx = isPoly ? (tiled.x - 0.5) * 2 : tiled.x;
+            sy = isPoly ? (tiled.y - 0.5) * 2 : tiled.y;
+          }
           value = rack.evaluate(sx, sy, layer, { worldX: wx, worldY: wy }) * (layer.amplitude ?? 1);
         } else {
-          const sx = isPoly ? wx - NOISE_SPAN / 2 : wx;
-          const sy = isPoly ? wy - NOISE_SPAN / 2 : wy;
-          value = rack.sampleScalar(sx, sy, layer, { worldX: wx, worldY: wy }) * (layer.amplitude ?? 1);
+          value = rack.sampleScalar(wx, wy, layer, { worldX: wx, worldY: wy }) * (layer.amplitude ?? 1);
         }
         combined = NoiseRack.combineBlend({ combined, value, blend: layer.blend || 'add', maxAmplitude: maxAmp });
       });
@@ -489,6 +492,11 @@
 
   const addMappedSegment = (edgeMap, a, b, hidden, meta = {}) => {
     const path = pathFromSurfaceSamples([a, b], meta);
+    // Carry per-endpoint camera depth so screen-space painter occlusion (#4) can
+    // clip these edges against nearer bars when see-through is off. `owner` lets
+    // occludeSegments skip a bar's own faces (no self-occlusion of its silhouette).
+    path.meta.depthA = a.rotated ? a.rotated.z : finite(a.z, 0);
+    path.meta.depthB = b.rotated ? b.rotated.z : finite(b.z, 0);
     if (hidden) markHidden(path, { strokeDash: [3.2, 2.2] });
     const key = segmentKey(path[0], path[1]);
     const previous = edgeMap.get(key);
@@ -497,6 +505,33 @@
 
   const addMappedLoop = (edgeMap, samples, hidden, meta = {}) => {
     for (let i = 0; i < samples.length; i++) addMappedSegment(edgeMap, samples[i], samples[(i + 1) % samples.length], hidden, meta);
+  };
+
+  // Screen-space painter occlusion over the deduped bar edges (2-point, straight,
+  // meta.depthA/depthB + meta.cubeId). `occluders` are front-facing bar faces with
+  // a per-face painter depth and matching cubeId. Runs as a single batched call so
+  // the occluder bboxes are built once. Non-segment paths pass through untouched.
+  const occludeBarEdges = (edgePaths, occluders, depthBias) => {
+    const segments = [];
+    const passthrough = [];
+    edgePaths.forEach((path) => {
+      if (!path || !path.meta || path.length !== 2 ||
+          !Number.isFinite(path.meta.depthA) || !Number.isFinite(path.meta.depthB)) {
+        passthrough.push(path);
+        return;
+      }
+      const meta = { ...path.meta };
+      delete meta.depthA;
+      delete meta.depthB;
+      segments.push({
+        a: { x: path[0].x, y: path[0].y, z: path.meta.depthA },
+        b: { x: path[1].x, y: path[1].y, z: path.meta.depthB },
+        owner: path.meta.cubeId,
+        meta,
+      });
+    });
+    const occluded = G3.occludeSegments(segments, occluders, { mode: 'remove', depthBias });
+    return passthrough.concat(occluded);
   };
 
   const buildBars = (p, bounds, sampler) => {
@@ -511,6 +546,18 @@
     const keepHidden = p.seeThrough !== false;
     const edgeMap = new Map();
     const sideDefinitions = [[0, 3], [3, 2], [2, 1], [1, 0]];
+    // When see-through is off we run true inter-bar hidden-line removal: every
+    // front-facing bar face becomes a painter occluder (screen polygon + mean
+    // camera depth + its bar id), and the deduped edges are clipped where a
+    // NEARER bar covers them. Without this, far/short bars' tops and faces bleed
+    // through the gaps between near bars (the "bizarre gaps").
+    const occluders = keepHidden ? null : [];
+    const faceOccluder = (face, cubeId) => {
+      const polygon = face.map((s) => ({ x: s.point.x, y: s.point.y }));
+      if (polygon.some((pt) => !Number.isFinite(pt.x) || !Number.isFinite(pt.y))) return;
+      const fdepth = face.reduce((sum, s) => sum + s.rotated.z, 0) / face.length;
+      occluders.push({ polygon, depth: fdepth, owner: cubeId });
+    };
     // Enhancement #5 — Lambert hatch the lit top faces (additive, off by default).
     const barHatch = [];
     const hatchLight = p.hatchEnable ? G3.resolveLight(p) : null;
@@ -519,6 +566,7 @@
       : 0;
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
+        const cubeId = y * cols + x;
         const u0 = x / cols;
         const v0 = y / rows;
         const u1 = (x + 1) / cols;
@@ -546,7 +594,8 @@
         ];
         const depth = top.reduce((sum, samplePt) => sum + samplePt.rotated.z, 0) / top.length;
         const topVisible = faceVisible(top);
-        if (topVisible || keepHidden) addMappedLoop(edgeMap, top, !topVisible, { mode: 'bars', barTop: true, depth, closed: true });
+        if (topVisible || keepHidden) addMappedLoop(edgeMap, top, !topVisible, { mode: 'bars', barTop: true, depth, cubeId, closed: true });
+        if (topVisible && occluders) faceOccluder(top, cubeId);
         if (hatchLight && topVisible && barHatch.length < hatchCap * 8) {
           pushFaceHatch(barHatch, top, p, hatchLight, { mode: 'bars', barTop: true, depth });
         }
@@ -554,7 +603,8 @@
           const face = [bottom[a], bottom[b], top[b], top[a]];
           const visible = faceVisible(face);
           if (!visible && !keepHidden) return;
-          addMappedLoop(edgeMap, face, !visible, { mode: 'bars', barSide: true, depth });
+          addMappedLoop(edgeMap, face, !visible, { mode: 'bars', barSide: true, depth, cubeId });
+          if (visible && occluders) faceOccluder(face, cubeId);
         });
       }
     }
@@ -569,7 +619,11 @@
       ];
       paths.push(pathFromSurfaceSamples(floor, { mode: 'bars', barFloor: true, closed: true }));
     }
-    paths.push(...Array.from(edgeMap.values()).sort((a, b) => finite(a.meta?.depth, 0) - finite(b.meta?.depth, 0)));
+    let edges = Array.from(edgeMap.values());
+    if (occluders && occluders.length) {
+      edges = occludeBarEdges(edges, occluders, finite(p.depthBias, 0.5));
+    }
+    paths.push(...edges.sort((a, b) => finite(a.meta?.depth, 0) - finite(b.meta?.depth, 0)));
     if (barHatch.length) paths.push(...barHatch);
     return paths;
   };

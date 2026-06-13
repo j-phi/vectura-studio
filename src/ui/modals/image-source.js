@@ -327,7 +327,11 @@
       document.body.appendChild(pane);
       this._imageSourcePopoutEl = pane;
 
-      // Drag by the header (ignoring the toggle button). Clamped to the viewport.
+      // Drag by the header (ignoring the toggle button). Uses pointer capture so
+      // events keep flowing to the handle even while the cursor is over the
+      // canvas or other panels (which have their own pointer handlers that would
+      // otherwise swallow the move) — letting the pane be placed anywhere in the
+      // UI. Clamped only so it can never be dragged fully off-screen.
       header.classList.add('is-drag-handle');
       header.addEventListener('pointerdown', (e) => {
         if (e.target.closest('button')) return;
@@ -335,20 +339,26 @@
         const startX = e.clientX;
         const startY = e.clientY;
         const rect = pane.getBoundingClientRect();
+        const baseLeft = rect.left;
+        const baseTop = rect.top;
+        try { header.setPointerCapture(e.pointerId); } catch (_) { /* older engines */ }
         const move = (ev) => {
-          const nx = Math.max(0, Math.min(window.innerWidth - 48, rect.left + (ev.clientX - startX)));
-          const ny = Math.max(0, Math.min(window.innerHeight - 32, rect.top + (ev.clientY - startY)));
+          const nx = Math.max(0, Math.min(window.innerWidth - 48, baseLeft + (ev.clientX - startX)));
+          const ny = Math.max(0, Math.min(window.innerHeight - 32, baseTop + (ev.clientY - startY)));
           pane.style.left = `${nx}px`;
           pane.style.top = `${ny}px`;
           popout.x = nx;
           popout.y = ny;
         };
-        const up = () => {
-          document.removeEventListener('pointermove', move);
-          document.removeEventListener('pointerup', up);
+        const up = (ev) => {
+          try { header.releasePointerCapture(ev.pointerId); } catch (_) { /* no-op */ }
+          header.removeEventListener('pointermove', move);
+          header.removeEventListener('pointerup', up);
+          header.removeEventListener('pointercancel', up);
         };
-        document.addEventListener('pointermove', move);
-        document.addEventListener('pointerup', up);
+        header.addEventListener('pointermove', move);
+        header.addEventListener('pointerup', up);
+        header.addEventListener('pointercancel', up);
       });
 
       // Inline placeholder left behind in the panel, with a one-click dock.

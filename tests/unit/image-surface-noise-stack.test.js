@@ -134,4 +134,27 @@ describe('Image Surface — noise rack stack', () => {
     const tiled2 = gen({ noises: [poly('grid')], noiseAmount: 1, noiseMode: 'replace' });
     expect(JSON.stringify(tiled2)).toBe(JSON.stringify(tiled));
   });
+
+  test('a polygon shape ignores FBM octaves (no concentric ghost polygons)', () => {
+    // A polygon is a geometric SDF, not fractal noise — octaves must not stack
+    // scaled copies of it. Before the fix, sampleScalar FBM summed the hexagon
+    // at 1x/2x/4x frequency, producing concentric ghost polygons; now polygon
+    // takes a single-octave evaluate, so octave count can't change the shape.
+    const poly = (octaves) => ({
+      enabled: true,
+      type: 'polygon',
+      blend: 'add',
+      amplitude: 1,
+      zoom: 0.02,
+      freq: 1,
+      octaves,
+      polygonSides: 6,
+      polygonRadius: 3,
+      polygonZoomReference: 0.02,
+      tileMode: 'off',
+    });
+    const one = gen({ noises: [poly(1)], noiseAmount: 1, noiseMode: 'replace' });
+    const four = gen({ noises: [poly(4)], noiseAmount: 1, noiseMode: 'replace' });
+    expect(JSON.stringify(four)).toBe(JSON.stringify(one));
+  });
 });
