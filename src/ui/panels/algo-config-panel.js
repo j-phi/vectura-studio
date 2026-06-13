@@ -525,6 +525,14 @@
       return null;
     };
 
+    // The 3D algorithms (spiral3d, polyhedron, meshTopography, imageSurface) bake
+    // the Curves toggle into their geometry at GENERATE time — their paths are
+    // stamped `meta.straight` / `meta.forceCurves`, which override the renderer's
+    // draw-time curve smoothing — so toggling Curves must regenerate, not just
+    // re-render, or it has no visible effect.
+    const curvesBakedAtGenerate = (lyr) =>
+      !!(ALGO_DEFAULTS && lyr && ALGO_DEFAULTS[lyr.type] && ALGO_DEFAULTS[lyr.type].is3d);
+
     const valueEditorMap = new WeakMap();
     const collectValueChips = () =>
       Array.from(container.querySelectorAll('.value-chip')).filter((chip) => chip.offsetParent !== null);
@@ -3054,7 +3062,12 @@
             span.innerText = next ? 'ON' : 'OFF';
             layer.params[def.id] = next;
             this.storeLayerParams(layer);
-            if (def.id === 'curves') {
+            // `curves` is normally a render-time flag (the renderer smooths
+            // polylines on draw), so toggling it only needs a re-render. The 3D
+            // algorithms bake curves at GENERATE time (their paths are stamped
+            // straight / forceCurves), so for those the toggle must regenerate or
+            // it does nothing. See `curveSurfacePath` in image-surface.js.
+            if (def.id === 'curves' && !curvesBakedAtGenerate(layer)) {
               this.app.render();
               this.updateFormula();
             } else {
@@ -3073,7 +3086,7 @@
             span.innerText = next ? 'ON' : 'OFF';
             layer.params[def.id] = next;
             this.storeLayerParams(layer);
-            if (def.id === 'curves') {
+            if (def.id === 'curves' && !curvesBakedAtGenerate(layer)) {
               this.app.render();
               this.updateFormula();
             } else {
