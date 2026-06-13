@@ -131,6 +131,47 @@ describe('Vectura geometry algorithms', () => {
     expect(opaque.some((path) => path.meta?.hiddenLine)).toBe(false);
   });
 
+  test('polyhedron wires the four shared 3D enhancements (each toggle changes output, default stays off)', () => {
+    const baseline = generate('polyhedron');
+    const baselineSig = pathSignature(baseline);
+    expect(finitePaths(baseline)).toBe(true);
+
+    // Geometry-changing toggles must alter the projected path geometry itself.
+    // (pathSignature hashes only x/y, so meta-only toggles are verified separately.)
+    const geometryCases = {
+      emphasizeOutline: { emphasizeOutline: true, outlineWeight: 3 },
+      showCreases: { showCreases: true, creaseAngle: 20 },
+      hiddenLineRemove: { hiddenLineMode: 'remove' },
+      hiddenLineDash: { hiddenLineMode: 'dash' },
+      hatchEnable: { hatchEnable: true, hatchSpacing: 5 },
+      crossHatch: { hatchEnable: true, crossHatch: true, hatchSpacing: 5 },
+    };
+    Object.entries(geometryCases).forEach(([name, overrides]) => {
+      const out = generate('polyhedron', overrides);
+      expect(finitePaths(out), `${name} produces finite non-empty geometry`).toBe(true);
+      expect(pathSignature(out), `${name} differs from all-off baseline`).not.toBe(baselineSig);
+    });
+
+    // #2 Depth cue is meta-only: stamps meta.depth + a depth-driven strokeDash on
+    // visible paths; default (off) leaves no depth meta anywhere.
+    const cued = generate('polyhedron', { depthCue: 'dash', depthCueStrength: 80 });
+    expect(finitePaths(cued)).toBe(true);
+    expect(cued.some((path) => Array.isArray(path.meta?.strokeDash) && path.meta?.depth !== undefined)).toBe(true);
+    expect(baseline.every((path) => path.meta?.depth === undefined)).toBe(true);
+
+    // #3 Silhouette emits outline-flagged edges; creases emit crease-flagged edges.
+    expect(generate('polyhedron', geometryCases.emphasizeOutline).some((path) => path.meta?.outline)).toBe(true);
+    expect(generate('polyhedron', geometryCases.showCreases).some((path) => path.meta?.crease)).toBe(true);
+
+    // #4 Hidden-line 'dash' marks occluded edge runs hidden; 'backface' (default) never does.
+    expect(generate('polyhedron', geometryCases.hiddenLineDash).some((path) => path.meta?.hiddenLine && path.meta?.edge)).toBe(true);
+    expect(baseline.some((path) => path.meta?.hiddenLine && path.meta?.edge)).toBe(false);
+
+    // #5 Hatching emits hatch-flagged scan segments; default emits none.
+    expect(generate('polyhedron', geometryCases.hatchEnable).some((path) => path.meta?.hatch)).toBe(true);
+    expect(baseline.some((path) => path.meta?.hatch)).toBe(false);
+  });
+
   test('meshTopography supports primitive sources, render modes, and line count changes', () => {
     [
       'sphere', 'torus', 'cube', 'cone', 'ellipsoid',

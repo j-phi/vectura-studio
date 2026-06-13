@@ -193,6 +193,18 @@
     return { rotated, projected, normal, front: normal.z >= -0.001, depth };
   };
 
+  // Rotate + project every base mesh vertex once through the shared view. Used by
+  // the silhouette / crease / hidden-line enhancements, which need the canonical
+  // (un-exploded) topology where faces share vertices — renderedFace's
+  // explode/extrude/shard offsets break that sharing per-face. Returns a parallel
+  // array of { screen:{x,y}, z } so callers can read screen position + camera z.
+  const projectMeshVertices = (vertices, p, bounds) =>
+    vertices.map((pt) => {
+      const rotated = rotatePoint(pt, { yaw: finite(p.rotate, -18), pitch: finite(p.tilt, 28) });
+      const screen = projectPoint(rotated, { centerX: bounds.width / 2, centerY: bounds.height / 2, scale: 1, ...G3.resolveProjection(p) });
+      return { screen, z: rotated.z };
+    });
+
   const pushPath = (paths, pts, visible, p, meta = {}) => {
     if (!visible && (p.faceOpacityMode === 'opaque' || p.surfaceMode === 'front')) return;
     const path = pts.map((pt) => ({ x: pt.x, y: pt.y }));
@@ -218,6 +230,9 @@
       const showFaces = p.showFaces !== false;
       const showEdges = p.showEdges !== false;
       const showVertices = p.showVertices !== false;
+      // Enhancement toggles — all default OFF so generate() stays byte-identical.
+      const depthCueOn = (p.depthCue || 'off') !== 'off';
+      const hiddenLineOn = (p.hiddenLineMode || 'backface') !== 'backface';
       const faceRecords = mesh.faces.map((face, index) => {
         const pts = renderedFace(mesh, vertices, face, index, p);
         return { index, face, ...projectFace(pts, p, bounds) };
@@ -228,25 +243,50 @@
           const visible = p.surfaceMode === 'all' ? true : record.front;
           for (let b = 1; b <= faceBands; b++) {
             const loop = closePath(scaledFaceLoop(record.projected, b / (faceBands + 1)));
-            pushPath(paths, loop, visible && record.front, p, { face: record.index, closed: true });
+            const meta = { face: record.index, closed: true };
+            if (depthCueOn) meta.depth = record.depth;
+            pushPath(paths, loop, visible && record.front, p, meta);
           }
         });
       }
 
       if (showEdges) {
         const edgeStyle = p.edgeStyle || 'dash';
+        const edgeDash = edgeStyle === 'dash'
+          ? [Math.max(1, finite(p.edgeSpacing, 11) * 0.45), Math.max(1, finite(p.edgeSpacing, 11) * 0.35)]
+          : null;
         if (finite(p.explode, 0) || finite(p.extrude, 0) || finite(p.shard, 0)) {
           faceRecords.forEach((record) => {
             const visible = p.surfaceMode === 'all' ? true : record.front;
             for (let i = 0; i < record.projected.length; i++) {
               const a = record.projected[i];
               const b = record.projected[(i + 1) % record.projected.length];
-              pushPath(paths, [a, b], visible && record.front, p, {
-                edge: true,
-                strokeDash: edgeStyle === 'dash' ? [Math.max(1, finite(p.edgeSpacing, 11) * 0.45), Math.max(1, finite(p.edgeSpacing, 11) * 0.35)] : null,
-              });
+              const meta = { edge: true, strokeDash: edgeDash };
+              if (depthCueOn) meta.depth = record.depth;
+              pushPath(paths, [a, b], visible && record.front, p, meta);
             }
           });
+        } else if (hiddenLineOn) {
+          // Enhancement #4 — screen-space painter occlusion. Replace the legacy
+          // back-face cull with true hidden-line removal/dashing: occlude every
+          // mesh edge against the front faces' projected polygons.
+          const projVerts = projectMeshVertices(vertices, p, bounds);
+          const occluders = faceRecords
+            .filter((record) => record.front)
+            .map((record) => ({ polygon: record.projected, depth: record.depth }));
+          const segments = collectEdges(mesh.faces).map((edge) => {
+            const va = projVerts[edge.a];
+            const vb = projVerts[edge.b];
+            return {
+              a: { x: va.screen.x, y: va.screen.y, z: va.z },
+              b: { x: vb.screen.x, y: vb.screen.y, z: vb.z },
+              meta: depthCueOn
+                ? { algorithm: 'polyhedron', straight: true, edge: true, strokeDash: edgeDash, depth: (va.z + vb.z) / 2 }
+                : { algorithm: 'polyhedron', straight: true, edge: true, strokeDash: edgeDash },
+            };
+          });
+          G3.occludeSegments(segments, occluders, { mode: p.hiddenLineMode, depthBias: finite(p.depthBias, 0.5) })
+            .forEach((path) => paths.push(path));
         } else {
           collectEdges(mesh.faces).forEach((edge) => {
             const a3 = vertices[edge.a];
@@ -255,10 +295,13 @@
             const front = visibleFaces.some((record) => record.front);
             const a = projectPoint(rotatePoint(a3, { yaw: finite(p.rotate, -18), pitch: finite(p.tilt, 28) }), { centerX: bounds.width / 2, centerY: bounds.height / 2, scale: 1, ...G3.resolveProjection(p) });
             const b = projectPoint(rotatePoint(b3, { yaw: finite(p.rotate, -18), pitch: finite(p.tilt, 28) }), { centerX: bounds.width / 2, centerY: bounds.height / 2, scale: 1, ...G3.resolveProjection(p) });
-            pushPath(paths, [a, b], front, p, {
-              edge: true,
-              strokeDash: edgeStyle === 'dash' ? [Math.max(1, finite(p.edgeSpacing, 11) * 0.45), Math.max(1, finite(p.edgeSpacing, 11) * 0.35)] : null,
-            });
+            const meta = { edge: true, strokeDash: edgeDash };
+            if (depthCueOn) {
+              const za = rotatePoint(a3, { yaw: finite(p.rotate, -18), pitch: finite(p.tilt, 28) }).z;
+              const zb = rotatePoint(b3, { yaw: finite(p.rotate, -18), pitch: finite(p.tilt, 28) }).z;
+              meta.depth = (za + zb) / 2;
+            }
+            pushPath(paths, [a, b], front, p, meta);
           });
         }
       }
@@ -284,7 +327,54 @@
         });
       }
 
-      return cleanPaths(paths);
+      // Enhancement #3 — silhouette outline + feature creases. Both work off the
+      // canonical (un-exploded) mesh topology so shared edges resolve correctly.
+      if (p.emphasizeOutline || p.showCreases) {
+        const projVerts = projectMeshVertices(vertices, p, bounds);
+        const projectedScreen = projVerts.map((pv) => pv.screen);
+        if (p.emphasizeOutline) {
+          const faceFront = faceRecords.slice().sort((a, b) => a.index - b.index).map((record) => record.front);
+          G3.extractSilhouette(mesh.faces, projectedScreen, faceFront, { weightScale: finite(p.outlineWeight, 2) })
+            .forEach((path) => {
+              path.meta = { algorithm: 'polyhedron', ...(path.meta || {}) };
+              paths.push(path);
+            });
+        }
+        if (p.showCreases) {
+          // Per-face normals indexed by original face index (not depth-sorted).
+          const faceNormals = mesh.faces.map((face) =>
+            faceNormal(face.map((idx) => rotatePoint(vertices[idx], { yaw: finite(p.rotate, -18), pitch: finite(p.tilt, 28) }))));
+          G3.extractCreases(collectEdges(mesh.faces), faceNormals, finite(p.creaseAngle, 35), projectedScreen, { weightScale: finite(p.outlineWeight, 2) })
+            .forEach((path) => {
+              path.meta = { algorithm: 'polyhedron', ...(path.meta || {}) };
+              paths.push(path);
+            });
+        }
+      }
+
+      // Enhancement #5 — Lambert-shaded hatching of every visible (front) face.
+      if (p.hatchEnable) {
+        const lightVec = G3.resolveLight(p);
+        // Spacing floor rises under a fast preview to cap line density on drag.
+        const previewScale = G3.previewDetailScale(bounds);
+        const baseSpacing = Math.max(1, finite(p.hatchSpacing, 6) / Math.max(0.0001, previewScale));
+        faceRecords.forEach((record) => {
+          if (!record.front) return;
+          G3.lambertHatch(record.normal, lightVec, record.projected, {
+            baseSpacing,
+            angleDeg: finite(p.hatchAngle, 45),
+            crossHatch: !!p.crossHatch,
+          }).forEach((path) => {
+            path.meta = { algorithm: 'polyhedron', ...(path.meta || {}) };
+            paths.push(path);
+          });
+        });
+      }
+
+      const cleaned = cleanPaths(paths);
+      // Enhancement #2 — depth cueing via dash density (no-op when depthCue off).
+      G3.applyDepthCue(cleaned, p);
+      return cleaned;
     },
     formula: () => 'Polyhedral faces projected with face-normal visibility and dashed hidden paths.',
   };
