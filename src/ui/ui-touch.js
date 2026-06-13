@@ -50,11 +50,11 @@
       const shouldShowModBar = () => this.isTouchCapable() || document.body.classList.contains('mobile-layout');
       bar.classList.toggle('hidden', !shouldShowModBar());
       bar.querySelectorAll('.touch-mod-btn').forEach((btn) => {
-        btn.onclick = () => {
+        btn.addEventListener("click", () => {
           const key = btn.dataset.touchMod;
           if (!key) return;
           this.setTouchModifier(key, !Boolean((window.Vectura.SETTINGS || {}).touchModifiers?.[key]));
-        };
+        });
       });
       this.refreshTouchModifierButtons();
       window.addEventListener('resize', () => {

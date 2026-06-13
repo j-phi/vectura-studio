@@ -854,7 +854,9 @@
       if (destination === 'repo' && !folderConnected()) { downloadRepoPreset(entry); downloaded = true; }
 
       activeId = saveId;
-      layer.params.preset = saveId;
+      window.Vectura.engine.updateLayerParams(layer.id, {
+        preset: saveId
+      });
       rebuildPopover();
       updateTrigger(activeId);
 
@@ -875,7 +877,9 @@
           // built-in's file, which an overwrite would have clobbered in place).
           if (!wasBundled && wantFolder && folderConnected()) unmirrorFromFolder(entry.name);
         }
-        layer.params.preset = prevPresetId;
+        window.Vectura.engine.updateLayerParams(layer.id, {
+          preset: prevPresetId
+        });
         activeId = computeActiveId();
         rebuildPopover();
         updateTrigger(activeId);
@@ -932,7 +936,9 @@
         );
         if (isFactory) {
           Object.entries(userSaved.params).forEach(([k, v]) => {
-            if (!STRIP.has(k)) layer.params[k] = v;
+            if (!STRIP.has(k)) window.Vectura.engine.updateLayerParams(layer.id, {
+              k: v
+            });
           });
           activeId = computeActiveId();
         }

@@ -198,15 +198,15 @@
     const btnCloseGridSettings = getEl('btn-close-grid-settings');
 
     if (btnViewGridSettings && gridSettingsPanel) {
-      btnViewGridSettings.onclick = () => {
+      btnViewGridSettings.addEventListener("click", () => {
         gridSettingsPanel.classList.add('open');
         const p = getEl('top-menubar').querySelector('[data-top-menu-panel][aria-label="View menu"]');
         if (p) p.classList.remove('open');
-      };
+      });
     }
 
     if (btnCloseGridSettings && gridSettingsPanel) {
-      btnCloseGridSettings.onclick = () => gridSettingsPanel.classList.remove('open');
+      btnCloseGridSettings.addEventListener("click", () => gridSettingsPanel.classList.remove('open'));
     }
 
     const updateVisibility = () => {
@@ -244,24 +244,24 @@
     const gridTypeCtrl = getEl('grid-type-ctrl');
     if (gridTypeCtrl) {
       gridTypeCtrl.querySelectorAll('[data-grid-type]').forEach(btn => {
-        btn.onclick = () => {
+        btn.addEventListener("click", () => {
           SETTINGS.gridType = btn.dataset.gridType;
           if (this.app.pushHistory) this.app.pushHistory();
           this.initSettingsValues();
           this.app.render();
-        };
+        });
       });
     }
 
     // Style
     const setGridStyle = getEl('set-grid-style');
     if (setGridStyle) {
-      setGridStyle.onchange = (e) => {
+      setGridStyle.addEventListener("change", (e) => {
         SETTINGS.gridStyle = e.target.value;
         if (this.app.pushHistory) this.app.pushHistory();
         this.initSettingsValues();
         this.app.render();
-      };
+      });
     }
 
     // Major opacity
@@ -277,30 +277,33 @@
     const setGridOpacitySlider = getEl('set-grid-opacity-slider');
     if (setGridOpacitySlider) {
       setGridOpacitySlider.oninput = (e) => syncGridOpacity(e.target.value, false);
-      setGridOpacitySlider.onchange = (e) => syncGridOpacity(e.target.value, true);
+      setGridOpacitySlider.addEventListener("change", (e) => syncGridOpacity(e.target.value, true));
     }
     const setGridOpacity = getEl('set-grid-opacity');
     if (setGridOpacity) {
       setGridOpacity.oninput = (e) => syncGridOpacity(e.target.value, false);
-      setGridOpacity.onchange = (e) => syncGridOpacity(e.target.value, true);
+      setGridOpacity.addEventListener("change", (e) => syncGridOpacity(e.target.value, true));
     }
 
     // Major color
     const setGridColor = getEl('set-grid-color');
     const setGridColorPill = getEl('set-grid-color-pill');
     if (setGridColor && setGridColorPill) {
-      setGridColorPill.onclick = () => openColorPickerAnchoredTo(setGridColor, setGridColorPill, { title: 'Grid Color', uiInstance: this });
+      setGridColorPill.addEventListener(
+        "click",
+        () => openColorPickerAnchoredTo(setGridColor, setGridColorPill, { title: 'Grid Color', uiInstance: this })
+      );
       setGridColor.oninput = (e) => {
         SETTINGS.gridColor = e.target.value;
         this.initSettingsValues();
         this.app.render();
       };
-      setGridColor.onchange = (e) => {
+      setGridColor.addEventListener("change", (e) => {
         SETTINGS.gridColor = e.target.value;
         if (this.app.pushHistory) this.app.pushHistory();
         this.initSettingsValues();
         this.app.render();
-      };
+      });
     }
 
     // Major size
@@ -323,12 +326,12 @@
     const setGridSizeSlider = getEl('set-grid-size-slider');
     if (setGridSizeSlider) {
       setGridSizeSlider.oninput = (e) => syncGridSize(e.target.value, false);
-      setGridSizeSlider.onchange = (e) => syncGridSize(e.target.value, true);
+      setGridSizeSlider.addEventListener("change", (e) => syncGridSize(e.target.value, true));
     }
     const setGridSize = getEl('set-grid-size');
     if (setGridSize) {
       setGridSize.oninput = (e) => syncGridSize(e.target.value, false);
-      setGridSize.onchange = (e) => syncGridSize(e.target.value, true);
+      setGridSize.addEventListener("change", (e) => syncGridSize(e.target.value, true));
     }
 
     // Minor opacity
@@ -344,30 +347,33 @@
     const setGridMinorOpacitySlider = getEl('set-grid-minor-opacity-slider');
     if (setGridMinorOpacitySlider) {
       setGridMinorOpacitySlider.oninput = (e) => syncGridMinorOpacity(e.target.value, false);
-      setGridMinorOpacitySlider.onchange = (e) => syncGridMinorOpacity(e.target.value, true);
+      setGridMinorOpacitySlider.addEventListener("change", (e) => syncGridMinorOpacity(e.target.value, true));
     }
     const setGridMinorOpacity = getEl('set-grid-minor-opacity');
     if (setGridMinorOpacity) {
       setGridMinorOpacity.oninput = (e) => syncGridMinorOpacity(e.target.value, false);
-      setGridMinorOpacity.onchange = (e) => syncGridMinorOpacity(e.target.value, true);
+      setGridMinorOpacity.addEventListener("change", (e) => syncGridMinorOpacity(e.target.value, true));
     }
 
     // Minor color
     const setGridMinorColor = getEl('set-grid-minor-color');
     const setGridMinorColorPill = getEl('set-grid-minor-color-pill');
     if (setGridMinorColor && setGridMinorColorPill) {
-      setGridMinorColorPill.onclick = () => openColorPickerAnchoredTo(setGridMinorColor, setGridMinorColorPill, { title: 'Minor Grid Color', uiInstance: this });
+      setGridMinorColorPill.addEventListener(
+        "click",
+        () => openColorPickerAnchoredTo(setGridMinorColor, setGridMinorColorPill, { title: 'Minor Grid Color', uiInstance: this })
+      );
       setGridMinorColor.oninput = (e) => {
         SETTINGS.gridMinorColor = e.target.value;
         this.initSettingsValues();
         this.app.render();
       };
-      setGridMinorColor.onchange = (e) => {
+      setGridMinorColor.addEventListener("change", (e) => {
         SETTINGS.gridMinorColor = e.target.value;
         if (this.app.pushHistory) this.app.pushHistory();
         this.initSettingsValues();
         this.app.render();
-      };
+      });
     }
 
     // Minor size
@@ -390,23 +396,23 @@
     const setGridMinorSizeSlider = getEl('set-grid-minor-size-slider');
     if (setGridMinorSizeSlider) {
       setGridMinorSizeSlider.oninput = (e) => syncGridMinorSize(e.target.value, false);
-      setGridMinorSizeSlider.onchange = (e) => syncGridMinorSize(e.target.value, true);
+      setGridMinorSizeSlider.addEventListener("change", (e) => syncGridMinorSize(e.target.value, true));
     }
     const setGridMinorSize = getEl('set-grid-minor-size');
     if (setGridMinorSize) {
       setGridMinorSize.oninput = (e) => syncGridMinorSize(e.target.value, false);
-      setGridMinorSize.onchange = (e) => syncGridMinorSize(e.target.value, true);
+      setGridMinorSize.addEventListener("change", (e) => syncGridMinorSize(e.target.value, true));
     }
 
     // Snap to grid toggle
     const setGridSnapEnabled = getEl('set-grid-snap-enabled');
     if (setGridSnapEnabled) {
-      setGridSnapEnabled.onchange = (e) => {
+      setGridSnapEnabled.addEventListener("change", (e) => {
         SETTINGS.gridSnapEnabled = e.target.checked;
         if (this.app.pushHistory) this.app.pushHistory();
         this.initSettingsValues();
         this.app.render();
-      };
+      });
     }
 
     // Snap sensitivity
@@ -422,12 +428,12 @@
     const setGridSnapSensitivity = getEl('set-grid-snap-sensitivity');
     if (setGridSnapSensitivity) {
       setGridSnapSensitivity.oninput = (e) => syncGridSnapSensitivity(e.target.value, false);
-      setGridSnapSensitivity.onchange = (e) => syncGridSnapSensitivity(e.target.value, true);
+      setGridSnapSensitivity.addEventListener("change", (e) => syncGridSnapSensitivity(e.target.value, true));
     }
     const setGridSnapSensitivityVal = getEl('set-grid-snap-sensitivity-val');
     if (setGridSnapSensitivityVal) {
       setGridSnapSensitivityVal.oninput = (e) => syncGridSnapSensitivity(e.target.value, false);
-      setGridSnapSensitivityVal.onchange = (e) => syncGridSnapSensitivity(e.target.value, true);
+      setGridSnapSensitivityVal.addEventListener("change", (e) => syncGridSnapSensitivity(e.target.value, true));
     }
 
     updateVisibility();

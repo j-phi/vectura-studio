@@ -40,7 +40,9 @@
       const currentId = `${layer.params.patternId || ''}`;
       const hasCurrent = patterns.some((pattern) => pattern?.id === currentId);
       if (!hasCurrent) {
-        layer.params.patternId = patterns[0].id;
+        window.Vectura.engine.updateLayerParams(layer.id, {
+          patternId: patterns[0].id
+        });
       }
       return layer.params.patternId;
     },
@@ -100,7 +102,7 @@
       const densityEl = pd.root.querySelector('[data-pd-density]');
       const penEl = pd.root.querySelector('[data-pd-pen]');
       return {
-        id: `fill-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+        id: window.Vectura.generateId(),
         targetIds: [target.id],
         regions: (target.regions || []).map((region) => cloneRegion(region)),
         region: cloneRegion(target.outer || target.regions?.[0] || []),
@@ -1074,7 +1076,7 @@
     openPatternTileImportReview({ fileName = 'custom-pattern.svg', svgText = '', layer, pd = null }) {
       const draftName = `${fileName}`.replace(/\.svg$/i, '').replace(/[-_]+/g, ' ').trim() || 'Custom Pattern';
       const registry = getPatternRegistry();
-      const draftId = registry?.ensureCustomId?.(draftName) || `custom-${Date.now().toString(36)}`;
+      const draftId = registry?.ensureCustomId?.(draftName) || window.Vectura.generateId();
       const sanitizeSvg = window.Vectura?.SvgSanitize?.sanitize;
       const safeSvg = typeof sanitizeSvg === 'function' ? sanitizeSvg(svgText) : svgText;
       const draftMeta = {
@@ -1138,7 +1140,9 @@
           cachedTile: validation?.compiled || null,
         });
         if (!saved) return;
-        if (layer?.params) layer.params.patternId = saved.id;
+        if (layer?.params) window.Vectura.engine.updateLayerParams(layer.id, {
+          patternId: saved.id
+        });
         if (this.app.pushHistory) this.app.pushHistory();
         this.storeLayerParams(layer);
         this.app.regen();
@@ -1185,7 +1189,9 @@
             cachedTile: validation?.compiled || null,
           });
           if (!saved) return;
-          layer.params.patternId = saved.id;
+          window.Vectura.engine.updateLayerParams(layer.id, {
+            patternId: saved.id
+          });
           if (this.app.pushHistory) this.app.pushHistory();
           this.storeLayerParams(layer);
           this.app.regen();
@@ -1272,7 +1278,9 @@
           btn.addEventListener('click', () => {
             const targetId = btn.dataset.patternLoad;
             const switchPattern = () => {
-              layer.params.patternId = targetId;
+              window.Vectura.engine.updateLayerParams(layer.id, {
+                patternId: targetId
+              });
               if (this.app.pushHistory) this.app.pushHistory();
               this.storeLayerParams(layer);
               this.app.regen();
@@ -1638,24 +1646,30 @@
     _applyPatternDesignerChanges(pd, options = {}) {
       const layer = pd.layer;
       if (!options.skipHistoryPush && this.app.pushHistory) this.app.pushHistory();
-      layer.params.patternFills = pd.fills.map(f => ({
-        id: f.id,
-        targetIds: Array.isArray(f.targetIds) ? f.targetIds.slice() : [],
-        regions: (f.regions || (f.region ? [f.region] : [])).map((region) => cloneRegion(region)),
-        region: cloneRegion(f.region || f.regions?.[0] || []),
-        fillType: f.fillType,
-        density: f.density,
-        penId: f.penId || null,
-        angle: f.angle ?? 0,
-        amplitude: f.amplitude ?? 1.0,
-        dotSize: f.dotSize ?? 1.0,
-        padding: f.padding ?? 0,
-        shiftX: f.shiftX ?? 0,
-        shiftY: f.shiftY ?? 0,
-      }));
+      window.Vectura.engine.updateLayerParams(layer.id, {
+        patternFills: pd.fills.map(f => ({
+          id: f.id,
+          targetIds: Array.isArray(f.targetIds) ? f.targetIds.slice() : [],
+          regions: (f.regions || (f.region ? [f.region] : [])).map((region) => cloneRegion(region)),
+          region: cloneRegion(f.region || f.regions?.[0] || []),
+          fillType: f.fillType,
+          density: f.density,
+          penId: f.penId || null,
+          angle: f.angle ?? 0,
+          amplitude: f.amplitude ?? 1.0,
+          dotSize: f.dotSize ?? 1.0,
+          padding: f.padding ?? 0,
+          shiftX: f.shiftX ?? 0,
+          shiftY: f.shiftY ?? 0,
+        }))
+      });
       const sensitivityEl = pd.root.querySelector('[data-pd-sensitivity]');
-      if (sensitivityEl) layer.params.fillSensitivity = parseFloat(sensitivityEl.value) || 2.0;
-      layer.params.patternGapTolerance = pd.gapTolerance || 0;
+      if (sensitivityEl) window.Vectura.engine.updateLayerParams(layer.id, {
+        fillSensitivity: parseFloat(sensitivityEl.value) || 2.0
+      });
+      window.Vectura.engine.updateLayerParams(layer.id, {
+        patternGapTolerance: pd.gapTolerance || 0
+      });
       this.storeLayerParams(layer);
       this.app.regen();
       this._renderPatternDesigner(pd);

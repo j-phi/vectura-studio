@@ -56,7 +56,7 @@
     };
 
     const blankPen = () => {
-      const id = `pen-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      const id = window.Vectura.generateId();
       const color = PALETTE[value.length % PALETTE.length];
       return { id, label: `P${value.length + 1}`, color, weight: 0.4 };
     };
