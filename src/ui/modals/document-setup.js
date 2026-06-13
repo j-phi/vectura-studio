@@ -391,10 +391,10 @@ ${isDevEligible() ? `
     const btnCloseSettings = getEl('btn-close-settings');
 
     if (btnSettings && settingsPanel) {
-      btnSettings.onclick = () => this.toggleSettingsPanel();
+      btnSettings.addEventListener("click", () => this.toggleSettingsPanel());
     }
     if (btnCloseSettings && settingsPanel) {
-      btnCloseSettings.onclick = () => this.toggleSettingsPanel(false);
+      btnCloseSettings.addEventListener("click", () => this.toggleSettingsPanel(false));
     }
 
     const familyModern = getEl('theme-family-modern', { silent: true });
@@ -402,12 +402,12 @@ ${isDevEligible() ? `
     const ui = this;
     [familyModern, familyClassic].forEach((btn) => {
       if (!btn) return;
-      btn.onclick = () => {
+      btn.addEventListener("click", () => {
         const next = btn.dataset.family || 'meridian';
         if (ui.app && typeof ui.app.setThemeFamily === 'function') {
           ui.app.setThemeFamily(next);
         }
-      };
+      });
     });
 
     const settingsPanelEl = getEl('settings-panel');
@@ -527,7 +527,7 @@ ${isDevEligible() ? `
       const orientationCb = getEl('set-orientation', { silent: true });
       [portraitBtn, landscapeBtn].forEach((btn) => {
         if (!btn) return;
-        btn.onclick = () => {
+        btn.addEventListener("click", () => {
           const isLandscape = btn.dataset.orientation === 'landscape';
           if (orientationCb) {
             orientationCb.checked = isLandscape;
@@ -537,7 +537,7 @@ ${isDevEligible() ? `
           portraitBtn?.setAttribute('aria-checked', String(!isLandscape));
           landscapeBtn?.classList.toggle('active', isLandscape);
           landscapeBtn?.setAttribute('aria-checked', String(isLandscape));
-        };
+        });
       });
     }
   }
@@ -749,34 +749,34 @@ ${isDevEligible() ? `
     const customFields = getEl('custom-size-fields');
 
     if (setCropExports) {
-      setCropExports.onchange = (e) => {
+      setCropExports.addEventListener("change", (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         SETTINGS.cropExports = e.target.checked;
         this.app.persistPreferencesDebounced?.();
-      };
+      });
     }
 
     if (setPreview3dQuality) {
       setPreview3dQuality.value = SETTINGS.preview3dQuality || 'balanced';
-      setPreview3dQuality.onchange = (e) => {
+      setPreview3dQuality.addEventListener("change", (e) => {
         const next = e.target.value;
         SETTINGS.preview3dQuality = ['draft', 'balanced', 'high'].includes(next) ? next : 'balanced';
         this.app.persistPreferencesDebounced?.();
-      };
+      });
     }
 
     if (setDocumentUnits) {
-      setDocumentUnits.onchange = (e) => {
+      setDocumentUnits.addEventListener("change", (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         SETTINGS.documentUnits = normalizeDocumentUnits(e.target.value);
         this.refreshDocumentUnitsUi();
         this.buildControls();
         this.app.render();
-      };
+      });
     }
 
     if (machineProfile) {
-      machineProfile.onchange = (e) => {
+      machineProfile.addEventListener("change", (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         const next = e.target.value;
         SETTINGS.paperSize = next;
@@ -789,7 +789,7 @@ ${isDevEligible() ? `
         this.app.engine.setProfile(next);
         this.app.renderer.center();
         this.app.regen();
-      };
+      });
     }
     if (setMargin) {
       const applyMargin = (raw, options = {}) => {
@@ -801,34 +801,34 @@ ${isDevEligible() ? `
         this.app.regen();
       };
       setMargin.oninput = (e) => applyMargin(e.target.value);
-      setMargin.onchange = (e) => applyMargin(e.target.value, { commit: true });
+      setMargin.addEventListener("change", (e) => applyMargin(e.target.value, { commit: true }));
       if (setMarginSlider) {
         setMarginSlider.oninput = (e) => applyMargin(e.target.value);
-        setMarginSlider.onchange = (e) => applyMargin(e.target.value, { commit: true });
+        setMarginSlider.addEventListener("change", (e) => applyMargin(e.target.value, { commit: true }));
       }
     }
     if (setTruncate) {
-      setTruncate.onchange = (e) => {
+      setTruncate.addEventListener("change", (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         SETTINGS.truncate = e.target.checked;
         this.app.render();
-      };
+      });
     }
     if (setOutsideOpacity) {
-      setOutsideOpacity.onchange = (e) => {
+      setOutsideOpacity.addEventListener("change", (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         const next = Math.max(0, Math.min(1, parseFloat(e.target.value)));
         SETTINGS.outsideOpacity = Number.isFinite(next) ? next : 0.5;
         e.target.value = SETTINGS.outsideOpacity;
         this.app.render();
-      };
+      });
     }
     if (setMarginLine) {
-      setMarginLine.onchange = (e) => {
+      setMarginLine.addEventListener("change", (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         SETTINGS.marginLineVisible = e.target.checked;
         this.app.render();
-      };
+      });
     }
     if (setMarginLineWeight) {
       const applyMarginLineWeight = (raw, options = {}) => {
@@ -840,14 +840,17 @@ ${isDevEligible() ? `
         this.app.render();
       };
       setMarginLineWeight.oninput = (e) => applyMarginLineWeight(e.target.value);
-      setMarginLineWeight.onchange = (e) => applyMarginLineWeight(e.target.value, { commit: true });
+      setMarginLineWeight.addEventListener("change", (e) => applyMarginLineWeight(e.target.value, { commit: true }));
       if (setMarginLineWeightSlider) {
         setMarginLineWeightSlider.oninput = (e) => applyMarginLineWeight(e.target.value);
-        setMarginLineWeightSlider.onchange = (e) => applyMarginLineWeight(e.target.value, { commit: true });
+        setMarginLineWeightSlider.addEventListener("change", (e) => applyMarginLineWeight(e.target.value, { commit: true }));
       }
     }
     if (setMarginLineColor && setMarginLineColorPill) {
-      setMarginLineColorPill.onclick = () => openColorPickerAnchoredTo(setMarginLineColor, setMarginLineColorPill, { title: 'Margin Color', uiInstance: this });
+      setMarginLineColorPill.addEventListener(
+        "click",
+        () => openColorPickerAnchoredTo(setMarginLineColor, setMarginLineColorPill, { title: 'Margin Color', uiInstance: this })
+      );
       setMarginLineColor.oninput = (e) => {
         const next = e.target.value || SETTINGS.marginLineColor || '#52525b';
         SETTINGS.marginLineColor = next;
@@ -856,7 +859,7 @@ ${isDevEligible() ? `
         setMarginLineColorPill.style.color = getContrastTextColor(next);
         this.app.render();
       };
-      setMarginLineColor.onchange = (e) => {
+      setMarginLineColor.addEventListener("change", (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         const next = e.target.value || SETTINGS.marginLineColor || '#52525b';
         SETTINGS.marginLineColor = next;
@@ -864,7 +867,7 @@ ${isDevEligible() ? `
         setMarginLineColorPill.style.background = next;
         setMarginLineColorPill.style.color = getContrastTextColor(next);
         this.app.render();
-      };
+      });
     }
     if (setMarginLineDotting) {
       const applyMarginLineDotting = (raw, options = {}) => {
@@ -876,14 +879,14 @@ ${isDevEligible() ? `
         this.app.render();
       };
       setMarginLineDotting.oninput = (e) => applyMarginLineDotting(e.target.value);
-      setMarginLineDotting.onchange = (e) => applyMarginLineDotting(e.target.value, { commit: true });
+      setMarginLineDotting.addEventListener("change", (e) => applyMarginLineDotting(e.target.value, { commit: true }));
       if (setMarginLineDottingSlider) {
         setMarginLineDottingSlider.oninput = (e) => applyMarginLineDotting(e.target.value);
-        setMarginLineDottingSlider.onchange = (e) => applyMarginLineDotting(e.target.value, { commit: true });
+        setMarginLineDottingSlider.addEventListener("change", (e) => applyMarginLineDotting(e.target.value, { commit: true }));
       }
     }
     if (setMarginLineStyleReset) {
-      setMarginLineStyleReset.onclick = () => {
+      setMarginLineStyleReset.addEventListener("click", () => {
         if (this.app.pushHistory) this.app.pushHistory();
 
         // Margin outline visibility
@@ -927,31 +930,31 @@ ${isDevEligible() ? `
 
         this.refreshDocumentUnitsUi();
         this.app.regen();
-      };
+      });
     }
     if (setShowGuides) {
-      setShowGuides.onchange = (e) => {
+      setShowGuides.addEventListener("change", (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         SETTINGS.showGuides = e.target.checked;
         this.app.render();
-      };
+      });
     }
     if (setSnapGuides) {
-      setSnapGuides.onchange = (e) => {
+      setSnapGuides.addEventListener("change", (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         SETTINGS.snapGuides = e.target.checked;
-      };
+      });
     }
     if (setShowDocumentDimensions) {
-      setShowDocumentDimensions.onchange = (e) => {
+      setShowDocumentDimensions.addEventListener("change", (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         SETTINGS.showDocumentDimensions = e.target.checked;
         this.app.render();
-      };
+      });
     }
     const btnViewGridToggle = getEl('btn-view-grid-toggle');
     if (btnViewGridToggle) {
-      btnViewGridToggle.onclick = () => {
+      btnViewGridToggle.addEventListener("click", () => {
         SETTINGS.gridType = (SETTINGS.gridType && SETTINGS.gridType !== 'none') ? 'none' : 'standard';
         if (this.app.pushHistory) this.app.pushHistory();
         this.initSettingsValues();
@@ -959,7 +962,7 @@ ${isDevEligible() ? `
         const menubar = getEl('top-menubar', { silent: true });
         const p = menubar?.querySelector('[data-top-menu-panel][aria-label="View menu"]');
         if (p) p.classList.remove('open');
-      };
+      });
     }
 
     const selectionOutlineHide3dRow = getEl('set-selection-outline-hide3d-row', { silent: true });
@@ -968,23 +971,23 @@ ${isDevEligible() ? `
       if (selectionOutlineHide3dRow) selectionOutlineHide3dRow.style.display = outlineOn ? '' : 'none';
     };
     if (setSelectionOutline) {
-      setSelectionOutline.onchange = (e) => {
+      setSelectionOutline.addEventListener("change", (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         SETTINGS.selectionOutline = e.target.checked;
         syncHide3dRowVisibility(e.target.checked);
         this.app.render();
-      };
+      });
     }
     if (setSelectionOutlineHide3d) {
-      setSelectionOutlineHide3d.onchange = (e) => {
+      setSelectionOutlineHide3d.addEventListener("change", (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         SETTINGS.selectionOutlineHide3d = e.target.checked;
         this.app.render();
-      };
+      });
     }
     if (setSelectionOutlineColorPill && setSelectionOutlineColor) {
-      setSelectionOutlineColorPill.onclick = () =>
-        openColorPickerAnchoredTo(setSelectionOutlineColor, setSelectionOutlineColorPill, { title: 'Selection Color', uiInstance: this });
+      setSelectionOutlineColorPill.addEventListener("click", () =>
+        openColorPickerAnchoredTo(setSelectionOutlineColor, setSelectionOutlineColorPill, { title: 'Selection Color', uiInstance: this }));
       setSelectionOutlineColor.oninput = (e) => {
         const nextColor = e.target.value || SETTINGS.selectionOutlineColor || '#ef4444';
         SETTINGS.selectionOutlineColor = nextColor;
@@ -993,7 +996,7 @@ ${isDevEligible() ? `
         setSelectionOutlineColorPill.style.color = getContrastTextColor(nextColor);
         this.app.render();
       };
-      setSelectionOutlineColor.onchange = (e) => {
+      setSelectionOutlineColor.addEventListener("change", (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         const nextColor = e.target.value || SETTINGS.selectionOutlineColor || '#ef4444';
         SETTINGS.selectionOutlineColor = nextColor;
@@ -1001,7 +1004,7 @@ ${isDevEligible() ? `
         setSelectionOutlineColorPill.style.background = nextColor;
         setSelectionOutlineColorPill.style.color = getContrastTextColor(nextColor);
         this.app.render();
-      };
+      });
     }
     const applySelectionOutlineWidth = (raw, options = {}) => {
       const { commit = false } = options;
@@ -1013,14 +1016,20 @@ ${isDevEligible() ? `
     };
     if (setSelectionOutlineWidthSlider) {
       setSelectionOutlineWidthSlider.oninput = (e) => applySelectionOutlineWidth(e.target.value);
-      setSelectionOutlineWidthSlider.onchange = (e) => applySelectionOutlineWidth(e.target.value, { commit: true });
+      setSelectionOutlineWidthSlider.addEventListener(
+        "change",
+        (e) => applySelectionOutlineWidth(e.target.value, { commit: true })
+      );
     }
     if (setSelectionOutlineWidth) {
       setSelectionOutlineWidth.oninput = (e) => applySelectionOutlineWidth(e.target.value);
-      setSelectionOutlineWidth.onchange = (e) => applySelectionOutlineWidth(e.target.value, { commit: true });
+      setSelectionOutlineWidth.addEventListener(
+        "change",
+        (e) => applySelectionOutlineWidth(e.target.value, { commit: true })
+      );
     }
     if (setSelectionOutlineStyleReset) {
-      setSelectionOutlineStyleReset.onclick = () => {
+      setSelectionOutlineStyleReset.addEventListener("click", () => {
         if (this.app.pushHistory) this.app.pushHistory();
         SETTINGS.selectionOutlineColor = '#ef4444';
         SETTINGS.selectionOutlineWidth = 0.15;
@@ -1031,10 +1040,10 @@ ${isDevEligible() ? `
         }
         this.refreshDocumentUnitsUi();
         this.app.render();
-      };
+      });
     }
     if (setCookiePreferences) {
-      setCookiePreferences.onchange = (e) => {
+      setCookiePreferences.addEventListener("change", (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         SETTINGS.cookiePreferencesEnabled = e.target.checked;
         if (!SETTINGS.cookiePreferencesEnabled) {
@@ -1042,73 +1051,73 @@ ${isDevEligible() ? `
         } else {
           this.app.persistPreferences?.({ force: true });
         }
-      };
+      });
     }
     const setShowTour = getEl('set-show-tour', { silent: true });
     if (setShowTour) {
-      setShowTour.onchange = (e) => {
+      setShowTour.addEventListener("change", (e) => {
         SETTINGS.showTourOnFirstLaunch = e.target.checked;
         this.app?.persistPreferences?.();
-      };
+      });
     }
     const setShowCrystallographicNames = getEl('set-show-crystallographic-names', { silent: true });
     if (setShowCrystallographicNames) {
-      setShowCrystallographicNames.onchange = (e) => {
+      setShowCrystallographicNames.addEventListener("change", (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         SETTINGS.showCrystallographicNames = e.target.checked;
         this.app?.persistPreferences?.();
         this.app?.render?.();
-      };
+      });
     }
     const setDevMode = getEl('set-dev-mode', { silent: true });
     if (setDevMode) {
-      setDevMode.onchange = (e) => {
+      setDevMode.addEventListener("change", (e) => {
         SETTINGS.devMode = e.target.checked;
         this.app?.persistPreferences?.();
-      };
+      });
     }
     // Preset Storage section is rendered dynamically (async folder status).
     this.renderPresetStorageUi?.();
     if (btnClearPreferences) {
-      btnClearPreferences.onclick = () => {
+      btnClearPreferences.addEventListener("click", () => {
         this.app.clearSavedPreferences?.();
         this.initSettingsValues();
-      };
+      });
     }
     if (setSpeedDown) {
-      setSpeedDown.onchange = (e) => {
+      setSpeedDown.addEventListener("change", (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         SETTINGS.speedDown = parseInt(e.target.value, 10);
         this.app.updateStats();
-      };
+      });
     }
     if (setSpeedUp) {
-      setSpeedUp.onchange = (e) => {
+      setSpeedUp.addEventListener("change", (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         SETTINGS.speedUp = parseInt(e.target.value, 10);
         this.app.updateStats();
-      };
+      });
     }
     if (setStroke) {
-      setStroke.onchange = (e) => {
+      setStroke.addEventListener("change", (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         SETTINGS.strokeWidth = parseFloat(e.target.value);
         this.app.engine.layers.forEach((layer) => {
           layer.strokeWidth = SETTINGS.strokeWidth;
         });
         this.app.render();
-      };
+      });
     }
     if (setPrecision) {
-      setPrecision.onchange = (e) => {
+      setPrecision.addEventListener("change", (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         const next = Math.max(0, Math.min(6, parseInt(e.target.value, 10) || 3));
         SETTINGS.precision = next;
         e.target.value = next;
-      };
+      });
     }
     if (setPaperWidth) {
-      setPaperWidth.onchange = (e) => {
+      setPaperWidth.addEventListener("change", (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         const next = Math.max(1, this.parseDocumentNumber(e.target.value, { fallbackMm: SETTINGS.paperWidth ?? 210 }));
         if (Number.isFinite(next)) SETTINGS.paperWidth = next;
@@ -1118,10 +1127,10 @@ ${isDevEligible() ? `
           this.app.renderer.center();
           this.app.regen();
         }
-      };
+      });
     }
     if (setPaperHeight) {
-      setPaperHeight.onchange = (e) => {
+      setPaperHeight.addEventListener("change", (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         const next = Math.max(1, this.parseDocumentNumber(e.target.value, { fallbackMm: SETTINGS.paperHeight ?? 297 }));
         if (Number.isFinite(next)) SETTINGS.paperHeight = next;
@@ -1131,10 +1140,10 @@ ${isDevEligible() ? `
           this.app.renderer.center();
           this.app.regen();
         }
-      };
+      });
     }
     if (setOrientation) {
-      setOrientation.onchange = (e) => {
+      setOrientation.addEventListener("change", (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         SETTINGS.paperOrientation = e.target.checked ? 'landscape' : 'portrait';
         if (orientationLabel) {
@@ -1144,7 +1153,7 @@ ${isDevEligible() ? `
         this.app.engine.setProfile(key);
         this.app.renderer.center();
         this.app.regen();
-      };
+      });
     }
     if (setPlotterOpt) {
       const clampPlotterOptValue = (raw) => {
@@ -1166,21 +1175,21 @@ ${isDevEligible() ? `
         if (setPlotterOptValue) setPlotterOptValue.disabled = !enabled;
       };
       if (setPlotterOptEnabled) {
-        setPlotterOptEnabled.onchange = (e) => {
+        setPlotterOptEnabled.addEventListener("change", (e) => {
           if (this.app.pushHistory) this.app.pushHistory();
           const enabled = Boolean(e.target.checked);
           syncPlotterOptEnabledState(enabled);
           applyPlotterOptValue(setPlotterOptValue?.value || setPlotterOpt?.value || 0.1);
-        };
+        });
         syncPlotterOptEnabledState(Boolean(setPlotterOptEnabled.checked));
       }
       setPlotterOpt.oninput = (e) => {
         applyPlotterOptValue(e.target.value);
       };
-      setPlotterOpt.onchange = (e) => {
+      setPlotterOpt.addEventListener("change", (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         applyPlotterOptValue(e.target.value);
-      };
+      });
       if (setPlotterOptValue) {
         setPlotterOptValue.oninput = (e) => {
           const next = clampPlotterOptValue(e.target.value);
@@ -1189,20 +1198,20 @@ ${isDevEligible() ? `
           SETTINGS.plotterOptimize = setPlotterOptEnabled?.checked === false ? 0 : next;
           this.app.render();
         };
-        setPlotterOptValue.onchange = (e) => {
+        setPlotterOptValue.addEventListener("change", (e) => {
           if (this.app.pushHistory) this.app.pushHistory();
           applyPlotterOptValue(e.target.value);
-        };
+        });
       }
     }
     if (setUndo) {
-      setUndo.onchange = (e) => {
+      setUndo.addEventListener("change", (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         const next = Math.max(1, Math.min(200, parseInt(e.target.value, 10) || 20));
         SETTINGS.undoSteps = next;
         e.target.value = next;
         if (this.app.setUndoLimit) this.app.setUndoLimit(next);
-      };
+      });
     }
   }
 
@@ -1231,11 +1240,11 @@ ${isDevEligible() ? `
       bgColorPill.style.color = getContrastTextColor(color);
     };
     if (bgColorPill) {
-      bgColorPill.onclick = () => {
+      bgColorPill.addEventListener("click", () => {
         if (!armed && this.app.pushHistory) this.app.pushHistory();
         armed = true;
         openColorPickerAnchoredTo(bgColor, bgColorPill, { title: 'Background Color', uiInstance: this });
-      };
+      });
     }
     bgColor.onfocus = () => {
       if (!armed && this.app.pushHistory) this.app.pushHistory();
@@ -1246,12 +1255,12 @@ ${isDevEligible() ? `
       updatePill(e.target.value);
       this.app.render();
     };
-    bgColor.onchange = (e) => {
+    bgColor.addEventListener("change", (e) => {
       SETTINGS.bgColor = e.target.value;
       updatePill(e.target.value);
       armed = false;
       this.app.render();
-    };
+    });
   }
 
   /**
@@ -1335,19 +1344,19 @@ ${isDevEligible() ? `
 
     // ── Export / Import (all browsers) ─────────────────────────────────────────
     const exportBtn = host.querySelector('#btn-preset-export');
-    if (exportBtn) exportBtn.onclick = () => {
+    if (exportBtn) exportBtn.addEventListener("click", () => {
       if (!Bundle) return;
       const n = Bundle.countAll();
       if (!n) { toast('No custom presets to export yet.', 'info'); return; }
       const stamp = new Date().toISOString().slice(0, 10);
       if (Bundle.download(stamp)) toast(`Exported ${n} preset${n === 1 ? '' : 's'}.`, 'success');
-    };
+    });
     const importBtn = host.querySelector('#btn-preset-import');
-    if (importBtn) importBtn.onclick = () => {
+    if (importBtn) importBtn.addEventListener("click", () => {
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = '.json,application/json';
-      input.onchange = () => {
+      input.addEventListener("change", () => {
         const file = input.files && input.files[0];
         if (!file || !Bundle) return;
         const reader = new FileReader();
@@ -1372,9 +1381,9 @@ ${isDevEligible() ? `
           } else { doImport('merge'); }
         };
         reader.readAsText(file);
-      };
+      });
       input.click();
-    };
+    });
 
     if (!supported) {
       const folder = host.querySelector('#preset-storage-folder');
@@ -1405,16 +1414,28 @@ ${isDevEligible() ? `
             <button id="btn-folder-disconnect" type="button" class="hdr-btn">Disconnect</button>
           </div>`;
         const rc = folder.querySelector('#btn-folder-reconnect');
-        if (rc) rc.onclick = async () => { if (await Store.reconnect()) { toast('Folder reconnected — syncing resumed.', 'success'); await pullAndRefresh(false); } renderPresetStorageUi.call(ui); };
+        if (rc) rc.addEventListener(
+          "click",
+          async () => { if (await Store.reconnect()) { toast('Folder reconnected — syncing resumed.', 'success'); await pullAndRefresh(false); } renderPresetStorageUi.call(ui); }
+        );
         const rf = folder.querySelector('#btn-folder-refresh');
-        if (rf) rf.onclick = async () => { await pullAndRefresh(true); renderPresetStorageUi.call(ui); };
-        folder.querySelector('#btn-folder-change').onclick = async () => { const r = await Store.connect(); if (r) { toast(`Syncing presets to "${r.name}".`, 'success'); await pullAndRefresh(false); } renderPresetStorageUi.call(ui); };
-        folder.querySelector('#btn-folder-disconnect').onclick = async () => { await Store.disconnect(); toast('Folder disconnected — presets stay in this browser.', 'info'); renderPresetStorageUi.call(ui); };
+        if (rf) rf.addEventListener(
+          "click",
+          async () => { await pullAndRefresh(true); renderPresetStorageUi.call(ui); }
+        );
+        folder.querySelector('#btn-folder-change').addEventListener(
+          "click",
+          async () => { const r = await Store.connect(); if (r) { toast(`Syncing presets to "${r.name}".`, 'success'); await pullAndRefresh(false); } renderPresetStorageUi.call(ui); }
+        );
+        folder.querySelector('#btn-folder-disconnect').addEventListener(
+          "click",
+          async () => { await Store.disconnect(); toast('Folder disconnected — presets stay in this browser.', 'info'); renderPresetStorageUi.call(ui); }
+        );
       } else {
         folder.innerHTML = `
           <button id="btn-folder-connect" type="button" class="add-btn">Sync to a folder…</button>
           <p class="ctrl-hint">Pick a folder once — every preset you save (and each update) is written there automatically, across sessions.</p>`;
-        folder.querySelector('#btn-folder-connect').onclick = async () => {
+        folder.querySelector('#btn-folder-connect').addEventListener("click", async () => {
           const r = await Store.connect();
           if (!r) return;
           toast(`Syncing presets to "${r.name}".`, 'success');
@@ -1443,7 +1464,7 @@ ${isDevEligible() ? `
           }
           if (copied) toast(`Copied ${copied} existing preset${copied === 1 ? '' : 's'} into the folder.`, 'success');
           renderPresetStorageUi.call(ui);
-        };
+        });
       }
     };
 

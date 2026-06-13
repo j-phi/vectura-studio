@@ -167,14 +167,14 @@
     const btnTourWelcome = getEl('btn-tour-welcome', { silent: true });
 
     if (btnHelp) {
-      btnHelp.onclick = () => this.openHelp(false);
+      btnHelp.addEventListener("click", () => this.openHelp(false));
     }
     if (btnResetView) {
-      btnResetView.onclick = () => {
+      btnResetView.addEventListener("click", () => {
         this.app.renderer.center();
         if (this.expandPanes) this.expandPanes();
         this.app.render();
-      };
+      });
     }
     const tourHandler = (e) => {
       e.stopPropagation();
@@ -196,8 +196,8 @@
           + '<button type="button" class="tour-continue-btn color-modal-apply">Continue</button>'
           + '</div>';
         this.openModal({ title: 'Clear Canvas?', body });
-        this.modal.bodyEl.querySelector('.tour-cancel-btn').onclick = () => this.closeModal();
-        this.modal.bodyEl.querySelector('.tour-continue-btn').onclick = () => {
+        this.modal.bodyEl.querySelector('.tour-cancel-btn').addEventListener("click", () => this.closeModal());
+        this.modal.bodyEl.querySelector('.tour-continue-btn').addEventListener("click", () => {
           this.closeModal();
           if (this.app.pushHistory) this.app.pushHistory();
           this.app.engine.layers = [];
@@ -207,13 +207,13 @@
           this.buildControls();
           this.app.render();
           startTour();
-        };
+        });
         return;
       }
       startTour();
     };
-    if (btnTour) btnTour.onclick = tourHandler;
-    if (btnTourWelcome) btnTourWelcome.onclick = tourHandler;
+    if (btnTour) btnTour.addEventListener("click", tourHandler);
+    if (btnTourWelcome) btnTourWelcome.addEventListener("click", tourHandler);
   }
 
   UI.Header = {

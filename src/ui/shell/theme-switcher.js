@@ -81,9 +81,9 @@
     const themeToggle = getEl('theme-toggle', { silent: true });
     if (!themeToggle) return;
     this.refreshThemeUi();
-    themeToggle.onclick = () => {
+    themeToggle.addEventListener("click", () => {
       this.app?.toggleTheme?.();
-    };
+    });
   }
 
   UI.ThemeSwitcher = {

@@ -160,6 +160,15 @@ for (const system of SYSTEMS) {
       || (typeof doc.group === 'string' && doc.group.trim())
       || 'User';
     const params = stripTransformKeys(layer.params || {});
+    
+    // Validate keys against ALGO_DEFAULTS
+    const defaults = ALGO_DEFAULTS[system] || {};
+    for (const key of Object.keys(params)) {
+      if (!(key in defaults) && key !== 'seed' && !TRANSFORM_KEYS.has(key)) {
+        console.warn(`[user-presets:bundle] Warning: ${file} contains unknown key '${key}' for ${system}. Stripping it.`);
+        delete params[key];
+      }
+    }
 
     systemPresets.push({ id, name, preset_system: system, group, params });
   }

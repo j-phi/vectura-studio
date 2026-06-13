@@ -110,11 +110,11 @@
       const collapsed = SETTINGS.uiSections[key] === true;
       setSubSectionCollapsed(app, sectionEl, key, collapsed, { persist: false });
       if (!header) return;
-      header.onclick = (e) => {
+      header.addEventListener("click", (e) => {
         e.preventDefault();
         const next = !sectionEl.classList.contains('collapsed');
         setSubSectionCollapsed(app, sectionEl, key, next);
-      };
+      });
     });
 
     OUTER_SUBPANELS.forEach(({ key, sectionId }) => {
@@ -125,11 +125,11 @@
       const open = SETTINGS.uiSections[key] !== false;
       setOuterSubpanelCollapsed(app, sectionEl, key, !open, { persist: false });
       if (!header) return;
-      header.onclick = (e) => {
+      header.addEventListener("click", (e) => {
         e.preventDefault();
         const next = !sectionEl.classList.contains('collapsed');
         setOuterSubpanelCollapsed(app, sectionEl, key, next);
-      };
+      });
     });
   }
 

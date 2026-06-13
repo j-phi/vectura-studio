@@ -278,12 +278,7 @@
         }
       }
       if (typeof document !== 'undefined') {
-        const leftPane = document.getElementById('left-pane');
-        const rightPane = document.getElementById('right-pane');
-        const bottomPane = document.getElementById('bottom-pane');
-        if (leftPane) leftPane.classList.remove('pane-collapsed', 'pane-force-open');
-        if (rightPane) rightPane.classList.remove('pane-collapsed', 'pane-force-open');
-        if (bottomPane) bottomPane.classList.remove('bottom-pane-collapsed');
+        this.ui?.resetPanes?.();
       }
       // Reset toolbar back to its default float position. resetToolbarPosition
       // is wired by toolbar.js when present; falls back to no-op pre-init.
@@ -1059,13 +1054,7 @@
 
     updateStats() {
       const s = this.engine.getStats();
-      const dist = document.getElementById('stat-dist');
-      const time = document.getElementById('stat-time');
-      const lines = document.getElementById('stat-lines');
-      if (!dist || !time) return;
-      dist.innerText = s.distance;
-      time.innerText = s.time;
-      if (lines) lines.innerText = s.lines?.toString?.() || '0';
+      this.ui?.updateStats?.(s);
     }
 
     computeDisplayGeometry() {

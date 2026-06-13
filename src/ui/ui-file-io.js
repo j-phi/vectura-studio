@@ -154,13 +154,21 @@
         if (this.app.pushHistory) this.app.pushHistory();
         const created = [];
         groups.forEach((group) => {
-          const id = Math.random().toString(36).slice(2, 11);
+          const id = window.Vectura.generateId();
           const name = this.getUniqueLayerName(group.name || 'Imported SVG', id);
           const layer = new Layer(id, 'shape', name);
-          layer.params.seed = 0;
-          layer.params.smoothing = 0;
-          layer.params.simplify = 0;
-          layer.params.curves = false;
+          window.Vectura.engine.updateLayerParams(layer.id, {
+            seed: 0
+          });
+          window.Vectura.engine.updateLayerParams(layer.id, {
+            smoothing: 0
+          });
+          window.Vectura.engine.updateLayerParams(layer.id, {
+            simplify: 0
+          });
+          window.Vectura.engine.updateLayerParams(layer.id, {
+            curves: false
+          });
           layer.sourcePaths = clone(group.paths);
           if (group.stroke) layer.color = group.stroke;
           if (Number.isFinite(group.strokeWidth)) layer.strokeWidth = group.strokeWidth;
@@ -171,8 +179,12 @@
             bMaxX = Math.max(bMaxX, pt.x); bMaxY = Math.max(bMaxY, pt.y);
           }));
           if (Number.isFinite(bMinX)) {
-            layer.params.posX = width / 2 - (bMinX + bMaxX) / 2;
-            layer.params.posY = height / 2 - (bMinY + bMaxY) / 2;
+            window.Vectura.engine.updateLayerParams(layer.id, {
+              posX: width / 2 - (bMinX + bMaxX) / 2
+            });
+            window.Vectura.engine.updateLayerParams(layer.id, {
+              posY: height / 2 - (bMinY + bMaxY) / 2
+            });
           }
           created.push(layer);
           this.app.engine.layers.push(layer);
@@ -795,23 +807,23 @@
     const fileOpenVectura = getEl('file-open-vectura', { silent: true });
     const fileImportSvg = getEl('file-import-svg', { silent: true });
     if (btnSaveVectura) {
-      btnSaveVectura.onclick = () => this.saveVecturaFile();
+      btnSaveVectura.addEventListener("click", () => this.saveVecturaFile());
     }
     if (btnOpenVectura && fileOpenVectura) {
-      btnOpenVectura.onclick = () => fileOpenVectura.click();
-      fileOpenVectura.onchange = () => {
+      btnOpenVectura.addEventListener("click", () => fileOpenVectura.click());
+      fileOpenVectura.addEventListener("change", () => {
         const file = fileOpenVectura.files?.[0];
         if (file) this.openVecturaFile(file);
         fileOpenVectura.value = '';
-      };
+      });
     }
     if (btnImportSvg && fileImportSvg) {
-      btnImportSvg.onclick = () => fileImportSvg.click();
-      fileImportSvg.onchange = () => {
+      btnImportSvg.addEventListener("click", () => fileImportSvg.click());
+      fileImportSvg.addEventListener("change", () => {
         const file = fileImportSvg.files?.[0];
         if (file) this.importSvgFile(file);
         fileImportSvg.value = '';
-      };
+      });
     }
   }
 

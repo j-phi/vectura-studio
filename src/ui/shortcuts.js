@@ -450,8 +450,12 @@
         if (selectedLayers.length) {
           if (this.app.pushHistory) this.app.pushHistory();
           selectedLayers.forEach((layer) => {
-            layer.params.posX += dx;
-            layer.params.posY += dy;
+            window.Vectura.engine.updateLayerParams(layer.id, {
+              posX: layer.params.posX + dx
+            });
+            window.Vectura.engine.updateLayerParams(layer.id, {
+              posY: layer.params.posY + dy
+            });
             window.Vectura?.PaintBucketOps?.translateLayerFills?.(layer, dx, dy);
             this.app.engine.generate(layer.id);
           });
@@ -583,11 +587,11 @@
     const addMenuEl = document.getElementById('layer-add-menu');
     const addBtn = document.getElementById('btn-add-layer');
     if (addBtn) {
-      addBtn.onclick = (e) => {
+      addBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         this.layerAddOpen = !this.layerAddOpen;
         addMenuEl?.classList.toggle('hidden', !this.layerAddOpen);
-      };
+      });
     }
 
     const _toast = (message, variant = 'success') => {

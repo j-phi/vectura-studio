@@ -106,16 +106,20 @@
     input.type = 'file';
     input.accept = 'image/*';
     input.style.display = 'none';
-    input.onchange = () => {
+    input.addEventListener("change", () => {
       const file = input.files && input.files[0];
       if (file) {
-        layer.params.imageSourceKind = 'imported';
-        layer.params.imageNoiseDef = null;
+        window.Vectura.engine.updateLayerParams(layer.id, {
+          imageSourceKind: 'imported'
+        });
+        window.Vectura.engine.updateLayerParams(layer.id, {
+          imageNoiseDef: null
+        });
         // previewKey 'imageSrc' embeds the data URL for project persistence.
         this.loadNoiseImageFile(file, layer, null, 'imageId', 'imageName', null, 'imageSrc');
       }
       if (input.parentNode) input.parentNode.removeChild(input);
-    };
+    });
     document.body.appendChild(input);
     input.click();
   }
@@ -145,7 +149,7 @@
     toggleBtn.title = popout.open ? 'Dock image source' : 'Pop out image source';
     toggleBtn.setAttribute('aria-label', toggleBtn.title);
     toggleBtn.innerHTML = popout.open ? DOCK_ICON : POPOUT_ICON;
-    toggleBtn.onclick = () => {
+    toggleBtn.addEventListener("click", () => {
       popout.open = !popout.open;
       if (popout.open && (!Number.isFinite(popout.x) || !Number.isFinite(popout.y))) {
         const d = popoutDefaultPos();
@@ -153,7 +157,7 @@
         popout.y = d.y;
       }
       this.buildControls();
-    };
+    });
     header.appendChild(toggleBtn);
     root.appendChild(header);
 
@@ -310,8 +314,8 @@
       <button type="button" class="image-source-btn is-import">Import</button>
       <button type="button" class="image-source-btn is-paint">Paint</button>
     `;
-    actions.querySelector('.is-import').onclick = () => importImageSource.call(this, layer);
-    actions.querySelector('.is-paint').onclick = () => this.openImagePaintModal(layer);
+    actions.querySelector('.is-import').addEventListener("click", () => importImageSource.call(this, layer));
+    actions.querySelector('.is-paint').addEventListener("click", () => this.openImagePaintModal(layer));
     root.appendChild(actions);
 
     // ── Placement: docked inline, or floating over the canvas ────────────────
@@ -369,7 +373,7 @@
       dockBtn.type = 'button';
       dockBtn.className = 'image-source-btn is-dock';
       dockBtn.textContent = 'Dock';
-      dockBtn.onclick = () => { popout.open = false; this.buildControls(); };
+      dockBtn.addEventListener("click", () => { popout.open = false; this.buildControls(); });
       placeholder.appendChild(dockBtn);
       wrapper.appendChild(placeholder);
     } else {
@@ -444,11 +448,11 @@
     `;
 
     toolbar.querySelectorAll('.ip-swatch').forEach((sw) => {
-      sw.onclick = () => {
+      sw.addEventListener("click", () => {
         toolbar.querySelectorAll('.ip-swatch').forEach((s) => s.classList.remove('is-active'));
         sw.classList.add('is-active');
         paintValue = Number(sw.dataset.v);
-      };
+      });
     });
     const brushInput = toolbar.querySelector('.ip-brush');
     const brushVal = toolbar.querySelector('.ip-brush-val');
@@ -486,14 +490,14 @@
       ctx.fillRect(0, 0, RES, RES);
     };
     toolbar.querySelectorAll('.ip-op').forEach((btn) => {
-      btn.onclick = () => {
+      btn.addEventListener("click", () => {
         const op = btn.dataset.op;
         if (op === 'soften') softenCanvas();
         else if (op === 'invert') invertCanvas();
         else if (op === 'white') fillSolid(255);
         else if (op === 'black') fillSolid(0);
         else if (op === 'reset') seedFromCurrent();
-      };
+      });
     });
 
     // Brush painting.
@@ -529,12 +533,12 @@
       <button type="button" class="image-paint-cancel">Cancel</button>
       <button type="button" class="image-paint-apply">Apply</button>
     `;
-    footer.querySelector('.image-paint-cancel').onclick = () => this.closeModal();
-    footer.querySelector('.image-paint-apply').onclick = () => {
+    footer.querySelector('.image-paint-cancel').addEventListener("click", () => this.closeModal());
+    footer.querySelector('.image-paint-apply').addEventListener("click", () => {
       if (!ctx || typeof ctx.getImageData !== 'function') { this.closeModal(); return; }
       const data = ctx.getImageData(0, 0, RES, RES);
       const store = (window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {});
-      const id = `imgsrc-paint-${Date.now().toString(36)}-${Math.round(p.amplitude || 0)}`;
+      const id = window.Vectura.generateId();
       store[id] = { width: data.width, height: data.height, data: data.data };
       if (this.app && this.app.pushHistory) this.app.pushHistory();
       p.imageSourceKind = 'painted';
@@ -555,7 +559,7 @@
       this.buildControls();
       if (this.updateFormula) this.updateFormula();
       this.closeModal();
-    };
+    });
 
     body.appendChild(toolbar);
     // Cancel / Apply sit directly above the preview canvas (not under it) so the

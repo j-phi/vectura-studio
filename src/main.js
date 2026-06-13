@@ -6,9 +6,13 @@
     }
     const app = new window.Vectura.App();
     window.app = app;
-    window.Vectura.UI?.MultiSelectionPanel?.init?.(app);
-    window.Vectura.UI?.PathfinderPanel?.init?.(app);
-    window.Vectura.UI?.PaintBucketPanel?.init?.(app);
+    const UI = window.Vectura.UI;
+    if (!UI || !UI.MultiSelectionPanel || !UI.PathfinderPanel || !UI.PaintBucketPanel) {
+      console.warn('[Vectura] Critical UI panels failed to load.');
+    }
+    UI?.MultiSelectionPanel?.init?.(app);
+    UI?.PathfinderPanel?.init?.(app);
+    UI?.PaintBucketPanel?.init?.(app);
     const S = window.Vectura.SETTINGS;
     if (S && S.showTourOnFirstLaunch && !S.tourSeen) {
       setTimeout(() => {

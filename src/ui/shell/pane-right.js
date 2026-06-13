@@ -73,7 +73,7 @@
     };
 
     setCollapsed(SETTINGS.pensCollapsed === true);
-    header.onclick = () => setCollapsed(!section.classList.contains('collapsed'));
+    header.addEventListener("click", () => setCollapsed(!section.classList.contains('collapsed')));
   }
 
   UI.PaneRight = {
