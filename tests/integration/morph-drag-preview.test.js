@@ -118,9 +118,12 @@ describe('Morph modifier child-drag live preview', () => {
     };
   }
 
-  test('scheduled morph recompute refreshes the parent morphedPaths live during a child drag', async () => {
+  test('morph refold during a child drag is SYNCHRONOUS (no requestAnimationFrame dependence)', async () => {
     runtime = await loadVecturaRuntime({ includeRenderer: true });
     const { VectorEngine, Renderer, Layer } = runtime.window.Vectura;
+    // Track whether ANY rAF gets scheduled — the refold must not need one. A
+    // deferred rAF refold is starved by a fast pointermove stream (the live ghost
+    // then only updates while DevTools alters timing), so the refold runs inline.
     const raf = installSyncRaf(runtime.window);
 
     const engine = new VectorEngine();
@@ -136,7 +139,7 @@ describe('Morph modifier child-drag live preview', () => {
     expect(renderer._morphDragActive).toBe(true);
 
     // Simulate move(): translate the dragged child's source-of-truth paths,
-    // then schedule the coalesced morph recompute the move() branch performs.
+    // then refold the morph the way the move() branch does.
     const dx = 25;
     renderer.mirrorDragState.forEach((state, layerId) => {
       const layer = engine.layers.find((l) => l.id === layerId);
@@ -146,23 +149,16 @@ describe('Morph modifier child-drag live preview', () => {
       engine.computeLayerEffectiveGeometry?.(layer.id);
       engine.computeLayerDisplayGeometry?.(layer.id);
     });
-    // Multiple moves in a single frame must coalesce to one recompute.
-    renderer._scheduleMorphDragRecompute();
-    renderer._scheduleMorphDragRecompute();
-    expect(raf.count).toBe(1);
-    expect(renderer._morphDragRaf).not.toBeNull();
+    renderer._refoldMorphDuringDrag();
 
-    raf.flush();
-
-    const after = JSON.stringify(group.morphedPaths);
-    expect(after).not.toBe(before); // in-between rings updated live
-    expect(renderer._morphDragRaf).toBeNull();
+    // morphedPaths updated IMMEDIATELY — without any rAF flush.
+    expect(JSON.stringify(group.morphedPaths)).not.toBe(before);
+    expect(raf.count).toBe(0); // nothing was deferred to a frame callback
   });
 
-  test('_clearMorphDrag cancels a pending recompute and resets the flag (no leak into next drag)', async () => {
+  test('_clearMorphDrag resets the drag flags, and a refold after clear is a no-op', async () => {
     runtime = await loadVecturaRuntime({ includeRenderer: true });
     const { VectorEngine, Renderer, Layer } = runtime.window.Vectura;
-    const raf = installSyncRaf(runtime.window);
 
     const engine = new VectorEngine();
     engine.layers = [];
@@ -173,16 +169,15 @@ describe('Morph modifier child-drag live preview', () => {
     renderer.setTool('select');
     renderer.isLayerDrag = true;
     renderer._startMirrorDrag([children[0]]);
-    renderer._scheduleMorphDragRecompute();
-    expect(renderer._morphDragRaf).not.toBeNull();
+    expect(renderer._morphDragActive).toBe(true);
 
     const snapshot = JSON.stringify(group.morphedPaths);
     renderer._clearMorphDrag();
     expect(renderer._morphDragActive).toBe(false);
-    expect(renderer._morphDragRaf).toBeNull();
+    expect(renderer._morphDragGroupIds.size).toBe(0);
 
-    // Flushing must NOT run the cancelled recompute.
-    raf.flush();
+    // After clear, a stray refold call must not mutate the blend.
+    renderer._refoldMorphDuringDrag();
     expect(JSON.stringify(group.morphedPaths)).toBe(snapshot);
   });
 });
