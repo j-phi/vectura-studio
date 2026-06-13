@@ -2206,27 +2206,27 @@
       );
     }
 
-    // Refold the dragged children's morph group(s) SYNCHRONOUSLY so the per-move
-    // draw (the move/resize/rotate handlers call this.draw() immediately after)
-    // renders the FRESH blend. This deliberately does NOT defer to
-    // requestAnimationFrame: during a fast drag the pointermove stream saturates
-    // the main thread and starves rAF callbacks, so a deferred refold can be
-    // skipped entirely and the synchronous draw paints a STALE blend — observed
-    // as the live ghost only updating while DevTools is attached (which alters
-    // timing enough to let the rAF fire). Refolding inline removes that race.
-    // The targeted refold touches ONLY the morph group (not the whole-document
-    // effective/display/optimize sweep), so running it per move is cheap; it
-    // falls back to a full recompute only when the targeted path is unavailable.
-    _refoldMorphDuringDrag() {
-      if (!this._morphDragActive || !this.isLayerDrag) return;
-      const ids = this.mirrorDragState ? [...this.mirrorDragState.keys()] : [];
-      if (ids.length && typeof this.engine.refoldMorphGroupsForLayers === 'function') {
-        this.engine.refoldMorphGroupsForLayers(ids);
-      } else if (this.onComputeDisplayGeometry) {
-        this.onComputeDisplayGeometry();
-      } else {
-        this.engine.computeAllDisplayGeometry();
-      }
+    // Schedules at most one morph refold per animation frame so a morph parent's
+    // morphedPaths refresh live while a descendant is dragged, without queueing a
+    // recompute per pointermove. Refolds ONLY the dragged children's morph
+    // group(s) from their already-updated effective geometry (the move/preview
+    // branches refresh each dragged leaf before scheduling); falls back to a full
+    // recompute only when the targeted path is unavailable.
+    _scheduleMorphDragRecompute() {
+      if (this._morphDragRaf != null) return;
+      this._morphDragRaf = requestAnimationFrame(() => {
+        this._morphDragRaf = null;
+        if (!this._morphDragActive || !this.isLayerDrag) return;
+        const ids = this.mirrorDragState ? [...this.mirrorDragState.keys()] : [];
+        if (ids.length && typeof this.engine.refoldMorphGroupsForLayers === 'function') {
+          this.engine.refoldMorphGroupsForLayers(ids);
+        } else if (this.onComputeDisplayGeometry) {
+          this.onComputeDisplayGeometry();
+        } else {
+          this.engine.computeAllDisplayGeometry();
+        }
+        this.draw();
+      });
     }
 
     // Re-derive each drag-snapshot layer's geometry under the FULL temp
@@ -2252,7 +2252,7 @@
         if (this.engine.computeLayerEffectiveGeometry) this.engine.computeLayerEffectiveGeometry(layer.id);
         if (this.engine.computeLayerDisplayGeometry) this.engine.computeLayerDisplayGeometry(layer.id);
       });
-      this._refoldMorphDuringDrag();
+      this._scheduleMorphDragRecompute();
     }
 
     _clearMorphDrag() {
@@ -4714,10 +4714,9 @@
             });
             // When a dragged layer sits under a morph modifier, the cheap
             // per-layer recompute above does not refresh the parent's morphed
-            // output. Refold it inline (synchronously) so the draw() at the end
-            // of this move handler renders the updated in-between rings — see
-            // _refoldMorphDuringDrag for why this must NOT be deferred to a rAF.
-            if (this._morphDragActive) this._refoldMorphDuringDrag();
+            // output. Schedule a coalesced refold so the in-between rings track
+            // the drag live (matches the released result).
+            if (this._morphDragActive) this._scheduleMorphDragRecompute();
           }
         } else if (this.dragMode === 'resize' && this.startBounds && this.activeHandle) {
           const fromCenter = modifiers.alt || modifiers.meta;
