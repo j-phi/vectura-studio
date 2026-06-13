@@ -256,6 +256,60 @@ describe('Vectura geometry algorithms', () => {
     expect(hiddenBars.some((path) => path.meta?.vertical)).toBe(false);
   });
 
+  test('meshTopography 3D enhancements each produce finite output that differs from all-off', () => {
+    const base = { sourceMode: 'cube', primitiveDetail: 6, lineCount: 8 };
+    // All-off baseline (every shared 3D toggle at its default). pathSignature is
+    // geometry-only (it ignores path.meta), so meta-only enhancements assert via a
+    // full structural snapshot; enhancements that add/clip geometry assert via the
+    // signature too.
+    const snapshot = (paths) =>
+      JSON.stringify((paths || []).map((p) => ({
+        pts: p.map((pt) => ({ x: Math.round(pt.x * 1e4), y: Math.round(pt.y * 1e4) })),
+        meta: p.meta || null,
+      })));
+    const offWire = generate('meshTopography', { ...base, renderMode: 'wireframe' });
+    const offContour = generate('meshTopography', { ...base, renderMode: 'contours' });
+    expect(finitePaths(offWire)).toBe(true);
+    const offWireSig = pathSignature(offWire);
+    const offContourSig = pathSignature(offContour);
+    const offWireSnap = snapshot(offWire);
+
+    // #2 depth cue — stamps strokeDash by per-path camera depth (meta-only).
+    const depthCue = generate('meshTopography', { ...base, renderMode: 'wireframe', depthCue: 'dash', depthCueStrength: 80 });
+    expect(finitePaths(depthCue)).toBe(true);
+    expect(snapshot(depthCue)).not.toBe(offWireSnap);
+    expect(depthCue.some((path) => Array.isArray(path.meta?.strokeDash))).toBe(true);
+
+    // #3 emphasize outline — weights the silhouette edges (meta-only).
+    const outline = generate('meshTopography', { ...base, renderMode: 'wireframe', emphasizeOutline: true, outlineWeight: 4 });
+    expect(finitePaths(outline)).toBe(true);
+    expect(snapshot(outline)).not.toBe(offWireSnap);
+    expect(outline.some((path) => path.meta?.outline && path.meta?.weightScale === 4)).toBe(true);
+
+    // #3 creases — feature edges sharper than creaseAngle (cube has 90° creases);
+    // adds geometry, so the geometric signature changes too.
+    const creases = generate('meshTopography', { ...base, renderMode: 'wireframe', showCreases: true, creaseAngle: 30 });
+    expect(finitePaths(creases)).toBe(true);
+    expect(pathSignature(creases)).not.toBe(offWireSig);
+    expect(creases.some((path) => path.meta?.crease)).toBe(true);
+
+    // #4 hidden-line dash — occlusion splits/dashes hidden runs (geometry changes).
+    const hiddenDash = generate('meshTopography', { ...base, renderMode: 'wireframe', hiddenLineMode: 'dash' });
+    expect(finitePaths(hiddenDash)).toBe(true);
+    expect(pathSignature(hiddenDash)).not.toBe(offWireSig);
+    expect(hiddenDash.some((path) => path.meta?.hiddenLine)).toBe(true);
+    // Hidden-line on contours also differs from the all-off contour render.
+    const hiddenContour = generate('meshTopography', { ...base, renderMode: 'contours', hiddenLineMode: 'dash' });
+    expect(finitePaths(hiddenContour)).toBe(true);
+    expect(pathSignature(hiddenContour)).not.toBe(offContourSig);
+
+    // #5 hatching — Lambert tonal fill on front faces (adds geometry).
+    const hatch = generate('meshTopography', { ...base, renderMode: 'wireframe', hatchEnable: true, hatchSpacing: 4 });
+    expect(finitePaths(hatch)).toBe(true);
+    expect(pathSignature(hatch)).not.toBe(offWireSig);
+    expect(hatch.some((path) => path.meta?.hatch)).toBe(true);
+  });
+
   test('perspective projection foreshortens depth and stays orthographic by default', () => {
     const G3 = V.Geometry3D;
     // resolveProjection: ortho by default (empty options), perspective when toggled.
