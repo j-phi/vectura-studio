@@ -1,0 +1,31 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Torus Contours",
+  "meta": {
+    "presetId": "meshtopography-torus-contours",
+    "group": "Classic",
+    "system": "meshTopography",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "meshTopography",
+      "params": {
+        "sourceMode": "torus",
+        "renderMode": "contours",
+        "primitiveDetail": 22,
+        "primitiveScaleX": 70,
+        "primitiveScaleY": 62,
+        "primitiveScaleZ": 62,
+        "lineCount": 32,
+        "planeRotate": 16,
+        "planeTilt": 12,
+        "contourVisibility": "fullContour",
+        "showOutline": true,
+        "rotate": -32,
+        "tilt": 38
+      }
+    }
+  ]
+}

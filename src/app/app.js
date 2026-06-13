@@ -347,6 +347,7 @@
         paperHeight: SETTINGS.paperHeight,
         paperOrientation: SETTINGS.paperOrientation,
         showDocumentDimensions: SETTINGS.showDocumentDimensions === true,
+        preview3dQuality: SETTINGS.preview3dQuality,
         optimizationScope: SETTINGS.optimizationScope,
         optimizationPreview: SETTINGS.optimizationPreview,
         optimizationExport: SETTINGS.optimizationExport,
@@ -505,6 +506,7 @@
       SETTINGS.paperHeight = takeNumber('paperHeight', SETTINGS.paperHeight, 1, 100000);
       SETTINGS.paperOrientation = takeEnum('paperOrientation', SETTINGS.paperOrientation, ['portrait', 'landscape']);
       SETTINGS.showDocumentDimensions = snapshot.showDocumentDimensions === true;
+      SETTINGS.preview3dQuality = takeEnum('preview3dQuality', SETTINGS.preview3dQuality, ['draft', 'balanced', 'high']);
       SETTINGS.optimizationScope = takeEnum('optimizationScope', SETTINGS.optimizationScope, ['all', 'selected', 'visible']);
       SETTINGS.optimizationPreview = takeEnum('optimizationPreview', SETTINGS.optimizationPreview, ['off', 'on', 'overlay']);
       SETTINGS.optimizationExport = snapshot.optimizationExport === undefined
@@ -692,6 +694,7 @@
           paperHeight: SETTINGS.paperHeight,
           paperOrientation: SETTINGS.paperOrientation,
           showDocumentDimensions: SETTINGS.showDocumentDimensions === true,
+          preview3dQuality: SETTINGS.preview3dQuality,
           optimizationScope: SETTINGS.optimizationScope,
           optimizationPreview: SETTINGS.optimizationPreview,
           optimizationExport: SETTINGS.optimizationExport,
@@ -758,6 +761,7 @@
       SETTINGS.paperHeight = s.paperHeight ?? SETTINGS.paperHeight;
       SETTINGS.paperOrientation = s.paperOrientation ?? SETTINGS.paperOrientation;
       SETTINGS.showDocumentDimensions = s.showDocumentDimensions === true;
+      SETTINGS.preview3dQuality = s.preview3dQuality ?? SETTINGS.preview3dQuality;
       SETTINGS.optimizationScope = s.optimizationScope ?? SETTINGS.optimizationScope;
       SETTINGS.optimizationPreview = s.optimizationPreview ?? SETTINGS.optimizationPreview;
       SETTINGS.optimizationExport = s.optimizationExport ?? SETTINGS.optimizationExport;
@@ -826,6 +830,15 @@
       this.ui.buildControls();
       this.ui.updateFormula();
       this.render();
+      // Restore imageSurface sources. Noise sources resolve synchronously inside
+      // generate(); painted/imported sources decode their embedded data URL
+      // asynchronously, so re-generate the affected layer once it lands.
+      if (window.Vectura?.ImageSurfaceSource?.rehydrateAll) {
+        window.Vectura.ImageSurfaceSource.rehydrateAll(this.engine, (layer) => {
+          if (layer && this.engine.generate) this.engine.generate(layer.id);
+          this.render();
+        });
+      }
       this.persistPreferencesDebounced();
     }
 
@@ -1010,7 +1023,7 @@
     regen(options = {}) {
       const pushHistory = options && options.pushHistory === true;
       if (pushHistory) this.pushHistory();
-      this.engine.generate(this.engine.activeLayerId);
+      this.engine.generate(this.engine.activeLayerId, options);
       if (SETTINGS.autoColorization?.enabled && this.ui?.applyAutoColorization && !this.ui.isApplyingAutoColorization) {
         this.ui.applyAutoColorization({ commit: false, skipLayerRender: true, skipAppRender: true });
       }

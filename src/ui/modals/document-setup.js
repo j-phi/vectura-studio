@@ -216,6 +216,16 @@
           <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
             ${swToggle('set-show-guides', 'Show guides')}
             ${swToggle('set-snap-guides', 'Snap to guides')}
+            <div class="ctrl-row">
+              <label class="ctrl-lbl" for="set-preview-3d-quality">3D move preview</label>
+              <div class="ctrl-sel-wrap" style="width:120px">
+                <select id="set-preview-3d-quality" class="ctrl-sel">
+                  <option value="draft">Draft (fast)</option>
+                  <option value="balanced">Balanced</option>
+                  <option value="high">High fidelity</option>
+                </select>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -711,6 +721,7 @@ ${isDevEligible() ? `
     const setMarginLineStyleReset = getEl('set-margin-line-style-reset');
     const setShowGuides = getEl('set-show-guides');
     const setSnapGuides = getEl('set-snap-guides');
+    const setPreview3dQuality = getEl('set-preview-3d-quality', { silent: true });
     const setShowDocumentDimensions = getEl('set-show-document-dimensions', { silent: true });
     const setSelectionOutline = getEl('set-selection-outline');
     const setSelectionOutlineColorPill = getEl('set-selection-outline-color-pill');
@@ -738,6 +749,15 @@ ${isDevEligible() ? `
       setCropExports.onchange = (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         SETTINGS.cropExports = e.target.checked;
+        this.app.persistPreferencesDebounced?.();
+      };
+    }
+
+    if (setPreview3dQuality) {
+      setPreview3dQuality.value = SETTINGS.preview3dQuality || 'balanced';
+      setPreview3dQuality.onchange = (e) => {
+        const next = e.target.value;
+        SETTINGS.preview3dQuality = ['draft', 'balanced', 'high'].includes(next) ? next : 'balanced';
         this.app.persistPreferencesDebounced?.();
       };
     }

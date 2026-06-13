@@ -962,6 +962,57 @@
         target.appendChild(wrap);
         return;
       }
+      if (def.type === 'stlImport') {
+        const wrap = document.createElement('div');
+        wrap.className = 'mb-4';
+        const nameEl = document.createElement('div');
+        nameEl.className = 'text-[11px] text-vectura-muted mb-2';
+        const loaded = layer.params.importedMesh;
+        nameEl.textContent = layer.params.meshName
+          ? `Loaded: ${layer.params.meshName}${loaded && loaded.triangles ? ` · ${loaded.triangles} tris` : ''}`
+          : 'No STL loaded';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'w-full text-xs border border-vectura-border px-2 py-2 hover:bg-vectura-border text-vectura-accent transition-colors';
+        btn.textContent = layer.params.meshName ? 'Replace STL…' : 'Import STL…';
+        btn.onclick = () => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = '.stl,model/stl,application/vnd.ms-pki.stl';
+          input.onchange = () => {
+            const file = input.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+              let mesh;
+              try {
+                mesh = window.Vectura.StlParser.parse(reader.result, file.name);
+              } catch (err) {
+                this.openModal({ title: 'STL Import Failed', body: '<p class="modal-text">Could not read this STL file. Make sure it is a valid binary or ASCII .stl mesh.</p>' });
+                return;
+              }
+              if (!mesh || !mesh.vertices?.length || !mesh.faces?.length) {
+                this.openModal({ title: 'No Mesh Found', body: '<p class="modal-text">The STL contained no triangles.</p>' });
+                return;
+              }
+              if (this.app.pushHistory) this.app.pushHistory();
+              layer.params.importedMesh = mesh;
+              layer.params.meshName = mesh.name || file.name;
+              this.storeLayerParams(layer);
+              this.app.engine.generate(layer.id);
+              this.buildControls();
+              this.updateFormula();
+              this.app.render();
+            };
+            reader.readAsArrayBuffer(file);
+          };
+          input.click();
+        };
+        wrap.appendChild(nameEl);
+        wrap.appendChild(btn);
+        target.appendChild(wrap);
+        return;
+      }
       if (def.type === 'petalDesignerInline') {
         if (!isPetalisLayerType(layer.type)) return;
         const wrapper = document.createElement('div');
@@ -1133,6 +1184,14 @@
          
          target.appendChild(wrapper);
          return;
+      }
+      if (def.type === 'imageSource') {
+        const wrapper = document.createElement('div');
+        target.appendChild(wrapper);
+        if (typeof this.mountImageSourceWidget === 'function') {
+          this.mountImageSourceWidget(layer, wrapper);
+        }
+        return;
       }
       if (def.type === 'image') {
         const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
@@ -3351,17 +3410,29 @@
             this.updateFormula();
             maybeRebuildControls();
           };
+          let livePreviewHistoryPushed = false;
           input.oninput = (e) => {
             syncSliderFill(e.target);
             const nextDisplay = parseFloat(e.target.value);
             valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
+            if (def.livePreview) {
+              if (!livePreviewHistoryPushed && this.app.pushHistory) {
+                this.app.pushHistory();
+                livePreviewHistoryPushed = true;
+              }
+              layer.params[def.id] = fromDisplayValue(def, nextDisplay);
+              this.storeLayerParams(layer);
+              this.app.regen({ preview: true });
+              this.updateFormula();
+            }
           };
           input.onchange = (e) => {
             triggerSliderMotion(e.target);
             const nextDisplay = parseFloat(e.target.value);
             const nextVal = confirmHeavy(nextDisplay);
             if (nextVal === null) return;
-            if (this.app.pushHistory) this.app.pushHistory();
+            if (!livePreviewHistoryPushed && this.app.pushHistory) this.app.pushHistory();
+            livePreviewHistoryPushed = false;
             layer.params[def.id] = nextVal;
             this.storeLayerParams(layer);
             this.app.regen();

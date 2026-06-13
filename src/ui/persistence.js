@@ -56,6 +56,7 @@
     const marginLineStyleReset = getEl('set-margin-line-style-reset');
     const showGuides = getEl('set-show-guides');
     const snapGuides = getEl('set-snap-guides');
+    const preview3dQuality = getEl('set-preview-3d-quality', { silent: true });
     const showDocumentDimensions = getEl('set-show-document-dimensions', { silent: true });
     const selectionOutline = getEl('set-selection-outline');
     const selectionOutlineColorPill = getEl('set-selection-outline-color-pill');
@@ -104,6 +105,7 @@
     if (marginLineStyleReset) marginLineStyleReset.disabled = false;
     if (showGuides) showGuides.checked = SETTINGS.showGuides !== false;
     if (snapGuides) snapGuides.checked = SETTINGS.snapGuides !== false;
+    if (preview3dQuality) preview3dQuality.value = SETTINGS.preview3dQuality || 'balanced';
     if (showDocumentDimensions) showDocumentDimensions.checked = SETTINGS.showDocumentDimensions === true;
     const gridType = SETTINGS.gridType || 'none';
     const showGrid = gridType !== 'none';

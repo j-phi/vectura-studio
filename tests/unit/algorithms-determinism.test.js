@@ -45,6 +45,11 @@ const OVERRIDES = {
   attractor: { iter: 1000 },
   hyphae: { maxBranches: 500, steps: 45 },
   shapePack: { count: 130, attempts: 1400 },
+  spirograph: { curveResolution: 240 },
+  spiral3d: { curveResolution: 160, lineCount: 8 },
+  polyhedron: { faceBands: 2, showVertices: true },
+  meshTopography: { primitiveDetail: 10, lineCount: 10 },
+  imageSurface: { sampleDetail: 24, rows: 10, columns: 10, barRows: 6, barColumns: 6 },
 };
 
 const buildParams = (type, defaults) => {

@@ -658,6 +658,11 @@
             attrs.stroke = window.Vectura._UIExportUtil.escapeXmlAttr(item.strokeColor || 'black');
             attrs['stroke-width'] = item.strokeWidth;
           }
+          const dash = window.Vectura._UIExportUtil.getPathStrokeDash?.(item.path);
+          if (dash) {
+            attrs = attrs || {};
+            attrs['stroke-dasharray'] = dash.map((value) => Number(value).toFixed(3).replace(/\.?0+$/, '')).join(' ');
+          }
           const markup = window.Vectura._UIExportUtil.shapeToSvg(item.path, precision, item.useCurves, attrs, item.sharpEdges);
           if (markup) svg += markup;
           svg += `</g>`;

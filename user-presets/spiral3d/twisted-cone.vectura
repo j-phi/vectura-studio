@@ -1,0 +1,31 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Twisted Cone",
+  "meta": {
+    "presetId": "spiral3d-twisted-cone",
+    "group": "Classic",
+    "system": "spiral3d",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "spiral3d",
+      "params": {
+        "shape": "cone",
+        "baseRadius": 78,
+        "coneHeight": 146,
+        "surfaceMode": "seeThrough",
+        "outlineMode": "outline",
+        "wrapType": "twistedLines",
+        "renderStyle": "line",
+        "twistTurns": 7.5,
+        "lineCount": 20,
+        "yaw": -12,
+        "pitch": 34,
+        "roll": 0,
+        "curveResolution": 540
+      }
+    }
+  ]
+}

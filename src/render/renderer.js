@@ -45,6 +45,56 @@
     return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 16 16, crosshair`;
   };
   const { clamp } = window.Vectura.AlgorithmUtils;
+  const ROTATION_3D_SPECS = {
+    spiral3d: {
+      yawParam: 'yaw',
+      pitchParam: 'pitch',
+      rollParam: 'roll',
+      yawDefault: 0,
+      pitchDefault: 30,
+      rollDefault: 0,
+      pitchMin: -90,
+      pitchMax: 90,
+    },
+    polyhedron: {
+      yawParam: 'rotate',
+      pitchParam: 'tilt',
+      yawDefault: -18,
+      pitchDefault: 28,
+      pitchMin: 0,
+      pitchMax: 89,
+    },
+    meshTopography: {
+      yawParam: 'rotate',
+      pitchParam: 'tilt',
+      yawDefault: -28,
+      pitchDefault: 34,
+      pitchMin: 0,
+      pitchMax: 89,
+    },
+    imageSurface: {
+      yawParam: 'rotate',
+      pitchParam: 'tilt',
+      yawDefault: -45,
+      pitchDefault: 60,
+      pitchMin: 0,
+      pitchMax: 89,
+    },
+  };
+  const finiteNumber = (value, fallback = 0) => {
+    const next = Number(value);
+    return Number.isFinite(next) ? next : fallback;
+  };
+  const normalizeDegrees = (value) => {
+    let next = finiteNumber(value, 0) % 360;
+    if (next > 180) next -= 360;
+    if (next < -180) next += 360;
+    return Object.is(next, -0) ? 0 : next;
+  };
+  const tidyDegrees = (value) => {
+    const next = Math.round(finiteNumber(value, 0) * 10) / 10;
+    return Object.is(next, -0) ? 0 : next;
+  };
 
   // Theme-token cache: every renderer read consults a canonical `--ui-*` token
   // directly. The legacy `--color-*` alias indirection was removed in Meridian
@@ -346,6 +396,7 @@
       this.rotateOrigin = null;
       this.rotateStartAngle = 0;
       this.rotateStart = 0;
+      this.rotation3DDrag = null;
       this.guides = null;
       this.selectedLayerId = null;
       this.selectedLayerIds = new Set();
@@ -407,6 +458,8 @@
       // recompute per animation frame to keep dragging responsive.
       this._morphDragActive = false;
       this._morphDragRaf = null;
+      // Morph group ids whose blend should ghost-dim while their child is dragged.
+      this._morphDragGroupIds = new Set();
       this.scissorStart = null;
       this.scissorEnd = null;
       this.isScissor = false;
@@ -2113,7 +2166,7 @@
 
     _startMirrorDrag(layers) {
       const ids = this._getMirrorDragPreviewLayerIds(new Set(layers.map((l) => l.id)));
-      if (!ids) { this.mirrorDragState = null; this._morphDragActive = false; return; }
+      if (!ids) { this.mirrorDragState = null; this._morphDragActive = false; this._morphDragGroupIds = new Set(); return; }
       const state = new Map();
       ids.forEach((id) => {
         const layer = this.engine.layers.find((l) => l.id === id);
@@ -2131,6 +2184,17 @@
       // Cache morph-ancestor detection once at drag start so the per-pointermove
       // hot path never walks the layer tree.
       this._morphDragActive = this._dragHasMorphAncestor(layers);
+      // Record which morph group(s) the dragged children belong to so draw() can
+      // ghost-dim those blends during the drag (the preview reads as "not yet
+      // committed"), even when we're not inside morph edit isolation.
+      this._morphDragGroupIds = new Set();
+      if (this._morphDragActive && this.engine?.getAncestorModifiers) {
+        layers.forEach((layer) => {
+          this.engine.getAncestorModifiers(layer).forEach((mod) => {
+            if (mod?.modifier?.type === 'morph') this._morphDragGroupIds.add(mod.id);
+          });
+        });
+      }
     }
 
     _dragHasMorphAncestor(layers) {
@@ -2150,9 +2214,21 @@
       this._morphDragRaf = requestAnimationFrame(() => {
         this._morphDragRaf = null;
         if (!this._morphDragActive || !this.isLayerDrag) return;
-        this.onComputeDisplayGeometry
-          ? this.onComputeDisplayGeometry()
-          : this.engine.computeAllDisplayGeometry();
+        // Hot path: refold ONLY the dragged children's morph group(s) from their
+        // already-updated effective geometry (the move/preview branches refresh
+        // each dragged leaf before scheduling). A full computeAllDisplayGeometry()
+        // every frame re-runs masks, compounds and the plotter optimize sweep over
+        // the whole document, which on a heavy doc misses frames and makes the
+        // blend look like it only snaps on release. Fall back to the full recompute
+        // only when the targeted path is unavailable.
+        const ids = this.mirrorDragState ? [...this.mirrorDragState.keys()] : [];
+        if (ids.length && typeof this.engine.refoldMorphGroupsForLayers === 'function') {
+          this.engine.refoldMorphGroupsForLayers(ids);
+        } else if (this.onComputeDisplayGeometry) {
+          this.onComputeDisplayGeometry();
+        } else {
+          this.engine.computeAllDisplayGeometry();
+        }
         this.draw();
       });
     }
@@ -2185,6 +2261,7 @@
 
     _clearMorphDrag() {
       this._morphDragActive = false;
+      this._morphDragGroupIds = new Set();
       if (this._morphDragRaf != null) {
         cancelAnimationFrame(this._morphDragRaf);
         this._morphDragRaf = null;
@@ -2872,8 +2949,15 @@
           // active source child stands out.
           const fadeLayer = this.groupEditMode?.kind === 'group' && !l.isGroup
             && l.id !== this.groupEditMode.activeLayerId;
-          const dimMorphBlend = this.groupEditMode?.kind === 'morph' && l.isGroup
-            && l.id === this.groupEditMode.groupId && l.modifier?.type === 'morph';
+          // Ghost-dim the morph blend so its live-refolding in-between rings read
+          // as a preview of the result rather than the committed art: while a
+          // child is isolated in morph edit mode, AND while a child is actively
+          // being dragged/resized/rotated (even outside isolation — e.g. a child
+          // selected from the layers panel).
+          const dimMorphBlend = l.isGroup && l.modifier?.type === 'morph' && (
+            (this.groupEditMode?.kind === 'morph' && l.id === this.groupEditMode.groupId)
+            || (this._morphDragActive && this.isLayerDrag && this._morphDragGroupIds?.has(l.id))
+          );
           if (fadeLayer || dimMorphBlend) {
             this.ctx.save();
             this.ctx.globalAlpha = dimMorphBlend ? 0.35 : 0.2;
@@ -2925,6 +3009,22 @@
               const key = pathKey(next);
               if (key && seen.has(key)) return;
               if (key) seen.add(key);
+            }
+            const dash = this.getPathStrokeDash(path);
+            if (dash) {
+              this.ctx.stroke();
+              this.ctx.save();
+              this.ctx.setLineDash(dash);
+              this.ctx.beginPath();
+              this.traceLayerPath(path, l, temp, useCurves);
+              this.ctx.stroke();
+              this.ctx.restore();
+              this.ctx.beginPath();
+              this.ctx.lineWidth = currentStrokeWidth;
+              this.ctx.strokeStyle = currentStrokeStyle;
+              this.ctx.lineCap = l.lineCap || 'round';
+              this.ctx.lineJoin = 'round';
+              return;
             }
             this.traceLayerPath(path, l, temp, useCurves);
           });
@@ -3519,7 +3619,12 @@
         }
         const anyLocked = selectionLayersForBox.some((l) => this.isLayerLocked?.(l.id));
         const showHandles = !anyLocked;
-        if (bounds) this.drawSelection(bounds, { showHandles });
+        if (bounds) {
+          this.drawSelection(bounds, { showHandles });
+          if (showHandles && selectionLayersForBox.length === 1) {
+            this.draw3DRotationControl(selectionLayersForBox[0], bounds);
+          }
+        }
       }
       // Key-object emphasis: when an Illustrator-style key object is set,
       // overlay its individual bbox with a thicker, solid stroke so the
@@ -4095,6 +4200,18 @@
             if (shapeCorner && this.beginShapeCornerDrag(shapeLayer, 0, shapeCorner, 'all')) return;
           }
         }
+        if (
+          this.activeTool === 'select' &&
+          selectionBounds &&
+          selectedLayers.length === 1 &&
+          !this.isLayerLocked?.(selectedLayers[0].id)
+        ) {
+          const rotation3DHit = this.hit3DRotationControl(sx, sy, selectedLayers[0], selectionBounds);
+          if (rotation3DHit && this.begin3DRotationDrag(rotation3DHit, e)) {
+            e.preventDefault();
+            return;
+          }
+        }
         if (selectionBounds && !selectedLayers.some(l => this.isLayerLocked?.(l.id))) {
           const handle = this.hitHandle(sx, sy, selectionBounds);
           if (handle) {
@@ -4143,7 +4260,23 @@
               // Morph children are consumed (not returned by findLayerAtPoint),
               // so resolve clicks against the source geometry directly.
               const container = this.engine.layers.find(l => l.id === this.groupEditMode.groupId);
-              const child = container ? this.findMorphChildAtPoint(world, container.id) : null;
+              let child = container ? this.findMorphChildAtPoint(world, container.id) : null;
+              // findMorphChildAtPoint only hits a child's sparse OUTLINE, so pressing
+              // the filled INTERIOR of a child (the natural way to grab and drag it)
+              // misses — which previously fell through to exitGroupEditMode(), so the
+              // drag dropped isolation and the blend never refolded/ghosted. Fall back
+              // to a bounds hit (preferring the active child on overlap) so the body of
+              // a child grabs it and stays isolated.
+              if (!child && container) {
+                const leaves = this.engine.getLayerDescendants(container.id).filter((l) => l && !l.isGroup);
+                const hitByBounds = (l) => {
+                  if (!l || this.isLayerLocked?.(l.id)) return false;
+                  const b = this.getSelectionBounds([l]);
+                  return b && this.pointInBounds(world, b);
+                };
+                const active = leaves.find((l) => l.id === this.groupEditMode.activeLayerId);
+                child = (active && hitByBounds(active)) ? active : (leaves.find(hitByBounds) || null);
+              }
               if (child) {
                 this.groupEditMode.activeLayerId = child.id;
                 this.setSelection([child.id], child.id);
@@ -4181,10 +4314,30 @@
                   return;
                 }
               }
-              // Single click (or double-click off any source child): select the
-              // morph container as one object.
-              this.setSelection([morph.id], morph.id);
-              _groupHandled = true;
+              // A morph child already selected (e.g. from the layers panel) and
+              // pressed within its bounds must DRAG — not snap selection back to
+              // the container. Keep it selected so the drag-init below arms
+              // _startMirrorDrag([child]) and the blend ghost-previews live.
+              // (findMorphChildAtPoint only hits the sparse outline, so we gate on
+              // the selected child's bounds — pressing its filled interior counts,
+              // matching how an isolated child drags in morph edit mode.)
+              const soleSelId = this.selectedLayerIds.size === 1 ? [...this.selectedLayerIds][0] : null;
+              const soleSel = soleSelId ? this.engine.layers.find((l) => l.id === soleSelId) : null;
+              const selIsMorphChild = soleSel && !soleSel.isGroup
+                && this.engine.getLayerAncestors(soleSel).some((a) => a.id === morph.id);
+              const selChildBounds = selIsMorphChild ? this.getSelectionBounds([soleSel]) : null;
+              const draggingSelectedChild = selIsMorphChild && selChildBounds
+                && this.pointInBounds(world, selChildBounds)
+                && !this.isLayerLocked?.(soleSel.id);
+              if (draggingSelectedChild) {
+                // Leave the child selected; fall through to drag-init.
+                _groupHandled = true;
+              } else {
+                // Single click (or double-click off any source child): select the
+                // morph container as one object.
+                this.setSelection([morph.id], morph.id);
+                _groupHandled = true;
+              }
             } else if (topLayer) {
               const parentLayer = topLayer.parentId
                 ? this.engine.layers.find(l => l.id === topLayer.parentId)
@@ -4506,6 +4659,11 @@
         }
         this.onComputeDisplayGeometry ? this.onComputeDisplayGeometry() : this.engine.computeAllDisplayGeometry();
         this.draw();
+        return;
+      }
+
+      if (this.rotation3DDrag) {
+        this.apply3DRotationDrag(e);
         return;
       }
 
@@ -4881,6 +5039,11 @@
         this.hideDragTooltip();
         this.updateCursor();
         this.draw();
+        clearActivePointer();
+        return;
+      }
+      if (this.rotation3DDrag) {
+        this.end3DRotationDrag();
         clearActivePointer();
         return;
       }
@@ -6511,6 +6674,17 @@
       return buildBoundsFromVertices(vertices, origin, rotation);
     }
 
+    getPathStrokeDash(path) {
+      const shared = window.Vectura?.Geometry3D?.getPathStrokeDash;
+      if (typeof shared === 'function') return shared(path);
+      const meta = path?.meta || {};
+      if (Array.isArray(meta.strokeDash) && meta.strokeDash.length) {
+        const dash = meta.strokeDash.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0);
+        if (dash.length) return dash;
+      }
+      return meta.hiddenLine ? [3, 2] : null;
+    }
+
     traceLayerPath(path, layer, temp = null, useCurves = Boolean(layer?.params?.curves)) {
       if (path && path.meta && path.meta.kind === 'circle') {
         const meta = temp ? this.transformCircleMeta(path.meta, temp) : path.meta;
@@ -6825,6 +6999,132 @@
           this.ctx.fill();
           this.ctx.stroke();
         });
+      }
+      this.ctx.restore();
+    }
+
+    get3DRotationSpec(layer) {
+      if (!layer || layer.isGroup || !layer.params) return null;
+      return ROTATION_3D_SPECS[layer.type] || null;
+    }
+
+    get3DRotationControl(layer, bounds) {
+      const spec = this.get3DRotationSpec(layer);
+      if (!spec || !bounds?.corners) return null;
+      const unit = 1 / Math.max(this.scale || 1, 0.001);
+      const center = bounds.center || this.getBoundsCenter(bounds);
+      const target = bounds.corners.ne || center;
+      const vx = target.x - center.x;
+      const vy = target.y - center.y;
+      const len = Math.hypot(vx, vy) || 1;
+      const ux = vx / len;
+      const uy = vy / len;
+      const padRadius = 17 * unit;
+      const ringRadius = 28 * unit;
+      const controlCenter = {
+        x: target.x + ux * 35 * unit,
+        y: target.y + uy * 35 * unit,
+      };
+      const yaw = normalizeDegrees(layer.params[spec.yawParam] ?? spec.yawDefault);
+      const pitch = clamp(
+        finiteNumber(layer.params[spec.pitchParam], spec.pitchDefault),
+        spec.pitchMin,
+        spec.pitchMax
+      );
+      const yawRad = (yaw * Math.PI) / 180;
+      const pitchSpan = Math.max(1, spec.pitchMax - spec.pitchMin);
+      const pitchT = (pitch - spec.pitchMin) / pitchSpan;
+      const yawMarker = {
+        x: controlCenter.x + Math.sin(yawRad) * padRadius * 0.72,
+        y: controlCenter.y + Math.cos(yawRad) * padRadius * 0.24,
+      };
+      const pitchMarker = {
+        x: controlCenter.x,
+        y: controlCenter.y + (0.5 - pitchT) * padRadius * 1.28,
+      };
+      const roll = spec.rollParam
+        ? normalizeDegrees(layer.params[spec.rollParam] ?? spec.rollDefault)
+        : 0;
+      const rollRad = ((roll - 90) * Math.PI) / 180;
+      const rollHandle = spec.rollParam
+        ? {
+            x: controlCenter.x + Math.cos(rollRad) * ringRadius,
+            y: controlCenter.y + Math.sin(rollRad) * ringRadius,
+          }
+        : null;
+      return {
+        layer,
+        spec,
+        center: controlCenter,
+        padRadius,
+        ringRadius,
+        yawMarker,
+        pitchMarker,
+        rollHandle,
+      };
+    }
+
+    draw3DRotationControl(layer, bounds) {
+      const control = this.get3DRotationControl(layer, bounds);
+      if (!control) return;
+      const unit = 1 / Math.max(this.scale || 1, 0.001);
+      const { center, padRadius, ringRadius, yawMarker, pitchMarker, rollHandle } = control;
+      const accent = getThemeToken('--render-selection-handle-stroke', '#f8fafc');
+      const fill = getThemeToken('--render-selection-handle-fill', '#111827');
+      const underlay = getThemeToken('--render-underlay-fill', 'rgba(15, 23, 42, 0.92)');
+      this.ctx.save();
+      this.ctx.lineCap = 'round';
+      this.ctx.lineJoin = 'round';
+
+      this.ctx.fillStyle = underlay;
+      this.ctx.beginPath();
+      this.ctx.arc(center.x, center.y, padRadius + 4 * unit, 0, TAU);
+      this.ctx.fill();
+
+      this.ctx.strokeStyle = accent;
+      this.ctx.lineWidth = 1.1 * unit;
+      this.ctx.globalAlpha = 0.72;
+      this.ctx.beginPath();
+      this.ctx.ellipse(center.x, center.y, padRadius, padRadius * 0.34, 0, 0, TAU);
+      this.ctx.stroke();
+      this.ctx.beginPath();
+      this.ctx.ellipse(center.x, center.y, padRadius * 0.42, padRadius, 0, 0, TAU);
+      this.ctx.stroke();
+
+      this.ctx.globalAlpha = 0.92;
+      this.ctx.beginPath();
+      this.ctx.arc(center.x, center.y, 2.2 * unit, 0, TAU);
+      this.ctx.fillStyle = accent;
+      this.ctx.fill();
+
+      this.ctx.fillStyle = fill;
+      this.ctx.strokeStyle = accent;
+      this.ctx.lineWidth = 1 * unit;
+      [yawMarker, pitchMarker].forEach((pt) => {
+        this.ctx.beginPath();
+        this.ctx.arc(pt.x, pt.y, 3.2 * unit, 0, TAU);
+        this.ctx.fill();
+        this.ctx.stroke();
+      });
+
+      if (rollHandle) {
+        this.ctx.globalAlpha = 0.56;
+        this.ctx.setLineDash([2.4 * unit, 2.4 * unit]);
+        this.ctx.beginPath();
+        this.ctx.arc(center.x, center.y, ringRadius, 0, TAU);
+        this.ctx.stroke();
+        this.ctx.setLineDash([]);
+        this.ctx.globalAlpha = 1;
+        this.ctx.fillStyle = underlay;
+        this.ctx.beginPath();
+        this.ctx.arc(rollHandle.x, rollHandle.y, 5.8 * unit, 0, TAU);
+        this.ctx.fill();
+        this.ctx.fillStyle = fill;
+        this.ctx.strokeStyle = accent;
+        this.ctx.beginPath();
+        this.ctx.arc(rollHandle.x, rollHandle.y, 4.4 * unit, 0, TAU);
+        this.ctx.fill();
+        this.ctx.stroke();
       }
       this.ctx.restore();
     }
@@ -7221,6 +7521,132 @@
       return null;
     }
 
+    hit3DRotationControl(sx, sy, layer = null, bounds = null) {
+      const targetLayer = layer || this.getSelectedLayer();
+      const targetBounds = bounds || (targetLayer ? this.getSelectionBounds([targetLayer]) : null);
+      const control = this.get3DRotationControl(targetLayer, targetBounds);
+      if (!control) return null;
+      const unit = 1 / Math.max(this.scale || 1, 0.001);
+      const world = this.screenToWorld(sx, sy);
+      const centerDist = Math.hypot(world.x - control.center.x, world.y - control.center.y);
+      if (control.rollHandle) {
+        const rollDist = Math.hypot(world.x - control.rollHandle.x, world.y - control.rollHandle.y);
+        if (rollDist <= 9 * unit) {
+          return { type: 'roll', layer: targetLayer, spec: control.spec, control };
+        }
+        if (Math.abs(centerDist - control.ringRadius) <= 5 * unit) {
+          return { type: 'roll', layer: targetLayer, spec: control.spec, control };
+        }
+      }
+      if (centerDist <= control.padRadius + 7 * unit) {
+        return { type: 'orbit', layer: targetLayer, spec: control.spec, control };
+      }
+      return null;
+    }
+
+    begin3DRotationDrag(hit, event) {
+      if (!hit?.layer || !hit.spec) return false;
+      const { layer, spec, control } = hit;
+      const rect = this.canvas.getBoundingClientRect();
+      const startWorld = this.screenToWorld(
+        (event?.clientX ?? 0) - rect.left,
+        (event?.clientY ?? 0) - rect.top
+      );
+      const rollAngle = Math.atan2(startWorld.y - control.center.y, startWorld.x - control.center.x);
+      this.rotation3DDrag = {
+        type: hit.type,
+        layerId: layer.id,
+        spec,
+        center: { ...control.center },
+        startClient: { x: event?.clientX ?? 0, y: event?.clientY ?? 0 },
+        startYaw: normalizeDegrees(layer.params[spec.yawParam] ?? spec.yawDefault),
+        startPitch: clamp(
+          finiteNumber(layer.params[spec.pitchParam], spec.pitchDefault),
+          spec.pitchMin,
+          spec.pitchMax
+        ),
+        startRoll: spec.rollParam ? normalizeDegrees(layer.params[spec.rollParam] ?? spec.rollDefault) : 0,
+        startRollAngle: rollAngle,
+        historyPushed: false,
+        moved: false,
+      };
+      this.setCanvasCursor('grabbing', 'rotate-3d');
+      return true;
+    }
+
+    apply3DRotationDrag(event = {}) {
+      const drag = this.rotation3DDrag;
+      if (!drag) return false;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (!layer?.params) return false;
+      const modifiers = this.getModifierState(event);
+      const dx = (event.clientX ?? drag.startClient.x) - drag.startClient.x;
+      const dy = (event.clientY ?? drag.startClient.y) - drag.startClient.y;
+      if (!drag.moved && Math.hypot(dx, dy) < 1) return true;
+      if (!drag.historyPushed) {
+        if (this.app?.pushHistory) this.app.pushHistory();
+        else if (this.onCommitTransform) this.onCommitTransform();
+        drag.historyPushed = true;
+      }
+      drag.moved = true;
+
+      if (drag.type === 'roll' && drag.spec.rollParam) {
+        const rect = this.canvas.getBoundingClientRect();
+        const sx = (event.clientX ?? drag.startClient.x) - rect.left;
+        const sy = (event.clientY ?? drag.startClient.y) - rect.top;
+        const world = this.screenToWorld(sx, sy);
+        const angle = Math.atan2(world.y - drag.center.y, world.x - drag.center.x);
+        let delta = ((angle - drag.startRollAngle) * 180) / Math.PI;
+        if (modifiers.shift) delta = Math.round(delta / 15) * 15;
+        layer.params[drag.spec.rollParam] = tidyDegrees(normalizeDegrees(drag.startRoll + delta));
+      } else {
+        const sensitivity = modifiers.alt ? 0.18 : 0.45;
+        let nextYaw = normalizeDegrees(drag.startYaw + dx * sensitivity);
+        let nextPitch = clamp(drag.startPitch - dy * sensitivity, drag.spec.pitchMin, drag.spec.pitchMax);
+        if (modifiers.shift) {
+          nextYaw = Math.round(nextYaw / 15) * 15;
+          nextPitch = Math.round(nextPitch / 15) * 15;
+        }
+        layer.params[drag.spec.yawParam] = tidyDegrees(normalizeDegrees(nextYaw));
+        layer.params[drag.spec.pitchParam] = tidyDegrees(clamp(nextPitch, drag.spec.pitchMin, drag.spec.pitchMax));
+      }
+
+      this.engine.generate(layer.id, { preview: true });
+      this.app?.ui?.updateFormula?.();
+      this.app?.ui?._activePresetGalleryRefresh?.();
+      this.show3DRotationDragTooltip(layer, drag, event);
+      this.draw();
+      return true;
+    }
+
+    show3DRotationDragTooltip(layer, drag, event = {}) {
+      if (!layer?.params || !drag?.spec) return;
+      const yaw = Math.round(layer.params[drag.spec.yawParam] ?? 0);
+      const pitch = Math.round(layer.params[drag.spec.pitchParam] ?? 0);
+      if (drag.type === 'roll' && drag.spec.rollParam) {
+        this.showDragTooltip(`roll ${Math.round(layer.params[drag.spec.rollParam] ?? 0)}°`, event.clientX ?? 0, event.clientY ?? 0);
+        return;
+      }
+      const yawLabel = drag.spec.yawParam === 'yaw' ? 'yaw' : 'rot';
+      this.showDragTooltip(`${yawLabel} ${yaw}°  tilt ${pitch}°`, event.clientX ?? 0, event.clientY ?? 0);
+    }
+
+    end3DRotationDrag() {
+      const drag = this.rotation3DDrag;
+      this.rotation3DDrag = null;
+      this.hideDragTooltip();
+      if (!drag) return;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (layer && drag.historyPushed) {
+        this.engine.generate(layer.id);
+        this.app?.ui?.buildControls?.();
+        this.app?.ui?.updateFormula?.();
+        this.app?.ui?._activePresetGalleryRefresh?.();
+      }
+      this.updateCursor();
+      this.draw();
+    }
+
     getHandleVector(handle, bounds) {
       const center = bounds.center;
       const pt = this.getHandlePoint(handle, bounds);
@@ -7571,6 +7997,13 @@
           this.setCanvasCursor(this.cursorDataUrl('filled', 4, 4, 'auto'), 'select');
         }
         return;
+      }
+      if (this.activeTool === 'select' && activeLayers.length === 1 && !this.isLayerLocked?.(activeLayers[0].id)) {
+        const rotation3DHit = this.hit3DRotationControl(sx, sy, activeLayers[0], bounds);
+        if (rotation3DHit) {
+          this.setCanvasCursor('grab', 'rotate-3d');
+          return;
+        }
       }
       const handle = this.hitHandle(sx, sy, bounds);
       if (handle) {

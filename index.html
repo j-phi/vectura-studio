@@ -229,7 +229,7 @@
       <div class="pane-header pane-header-left p-4 border-b border-vectura-border flex justify-between items-center">
         <span class="pane-title font-bold text-vectura-accent">GENERATOR</span>
 
-        <span class="pane-meta text-[11px] text-vectura-muted">V.1.1.97</span>
+        <span class="pane-meta text-[11px] text-vectura-muted">V.1.1.98</span>
 
         <button id="btn-pane-toggle-left" class="pane-toggle pane-toggle-left" type="button"
           aria-label="Toggle left pane">
@@ -751,6 +751,7 @@
   <script src="./src/config/user-presets.js" defer></script>
   <script src="./src/config/descriptions.js" defer></script>
   <script src="./src/config/patterns.js" defer></script>
+  <script src="./src/config/noise-image-presets.js" defer></script>
   <script src="./src/core/utils.js" defer></script>
   <script src="./src/core/svg-sanitize.js" defer></script>
   <script src="./src/core/pattern-registry.js" defer></script>
@@ -760,11 +761,14 @@
   <script src="./src/config/preset-libraries.js" defer></script>
   <script src="./src/config/preset-name-heuristics.js" defer></script>
   <script src="./src/core/algorithm-utils.js" defer></script>
+  <script src="./src/core/algorithms/geometry3d.js" defer></script>
+  <script src="./src/core/stl-parser.js" defer></script>
   <script src="./src/core/pen-validate.js" defer></script>
   <script src="./src/core/validators.js" defer></script>
   <script src="./src/core/rng.js" defer></script>
   <script src="./src/core/noise.js" defer></script>
   <script src="./src/core/noise-rack.js" defer></script>
+  <script src="./src/core/noise-image-render.js" defer></script>
   <script src="./src/core/geometry-utils.js" defer></script>
   <script src="./src/core/optimization-utils.js" defer></script>
   <script src="./src/core/path-boolean.js" defer></script>
@@ -799,6 +803,11 @@
   <script src="./src/core/algorithms/petalisdesigner.js" defer></script>
   <script src="./src/core/algorithms/pattern.js" defer></script>
   <script src="./src/core/algorithms/svgdistort.js" defer></script>
+  <script src="./src/core/algorithms/spirograph.js" defer></script>
+  <script src="./src/core/algorithms/spiral3d.js" defer></script>
+  <script src="./src/core/algorithms/polyhedron.js" defer></script>
+  <script src="./src/core/algorithms/mesh-topography.js" defer></script>
+  <script src="./src/core/algorithms/image-surface.js" defer></script>
   <script src="./src/core/algorithms/index.js" defer></script>
   <script src="./src/core/layer.js" defer></script>
   <script src="./src/core/engine.js" defer></script>
@@ -907,6 +916,7 @@
   <script src="./src/ui/modals/info-modals.js" defer></script>
   <script src="./src/ui/modals/color-picker.js" defer></script>
   <script src="./src/ui/modals/image-asset.js" defer></script>
+  <script src="./src/ui/modals/image-source.js" defer></script>
   <script src="./src/ui/modals/export-svg.js" defer></script>
   <!-- Meridian Unit 1.10 (2026-05-20): `_ui-legacy.js` deleted; its IIFE
        (helper locals, satellite bootstrap block, `class UI` stub, legacy

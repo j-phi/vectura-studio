@@ -495,6 +495,17 @@
       .map(([key, value]) => ` ${key}="${escapeXmlAttr(value)}"`)
       .join('');
 
+  const getPathStrokeDash = (path) => {
+    const shared = window.Vectura?.Geometry3D?.getPathStrokeDash;
+    if (typeof shared === 'function') return shared(path);
+    const meta = path?.meta || {};
+    if (Array.isArray(meta.strokeDash) && meta.strokeDash.length) {
+      const dash = meta.strokeDash.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0);
+      if (dash.length) return dash;
+    }
+    return meta.hiddenLine ? [3, 2] : null;
+  };
+
   const stepPrecision = (step) => {
     const s = step?.toString?.() || '';
     if (!s.includes('.')) return 0;
@@ -820,6 +831,34 @@
   const pathToSvg = (path, precision, useCurves, sharpEdges = false) => {
     if (!path || path.length < 2) return '';
     const fmt = (n) => Number(n).toFixed(precision);
+    // Native cubic export when bezier metadata is present — mirrors
+    // Renderer.tracePath so the plotted SVG matches the on-screen curve exactly.
+    // `meta.forceCurves` (stamped by GeometryUtils smoothing / Geometry3D
+    // .smoothToBezier / the morph modifier) renders as cubics even when the
+    // layer's `curves` toggle is off, so a *Smoothing slider curves the line on
+    // its own. `meta.straight` always wins and forces a verbatim polyline.
+    const forceCurves = path.meta?.forceCurves === true;
+    const anchors = (useCurves || forceCurves) && !path.meta?.straight ? path.meta?.anchors : null;
+    const hasHandles = Array.isArray(anchors) && anchors.some((a) => a && (a.in || a.out));
+    if (hasHandles && anchors.length >= 2) {
+      const closed = path.meta?.closed === true;
+      let d = `M ${fmt(anchors[0].x)} ${fmt(anchors[0].y)}`;
+      for (let i = 0; i < anchors.length - 1; i++) {
+        const a = anchors[i];
+        const b = anchors[i + 1];
+        const c1 = a.out || a;
+        const c2 = b.in || b;
+        d += ` C ${fmt(c1.x)} ${fmt(c1.y)} ${fmt(c2.x)} ${fmt(c2.y)} ${fmt(b.x)} ${fmt(b.y)}`;
+      }
+      if (closed) {
+        const a = anchors[anchors.length - 1];
+        const b = anchors[0];
+        const c1 = a.out || a;
+        const c2 = b.in || b;
+        d += ` C ${fmt(c1.x)} ${fmt(c1.y)} ${fmt(c2.x)} ${fmt(c2.y)} ${fmt(b.x)} ${fmt(b.y)} Z`;
+      }
+      return d;
+    }
     // Mirror Renderer.tracePath: `meta.straight` geometry (e.g. mask fragments
     // pre-flattened by GeometryUtils.flattenSmoothedPath) is already baked and
     // must be emitted verbatim, never re-smoothed, independent of `useCurves`.
@@ -899,6 +938,7 @@
     getRawExportPaths,
     getVisibleExportPaths,
     hardClipExportPaths,
+    getPathStrokeDash,
   };
 
   const renderPreviewSvg = (type, params, options = {}) => {
@@ -1857,6 +1897,16 @@
   }
   if (window.Vectura?.UI?.Modals?.ImageAsset?.installOn) {
     window.Vectura.UI.Modals.ImageAsset.installOn(UI.prototype);
+  }
+
+  // imageSurface source widget + paint modal (mountImageSourceWidget /
+  // openImagePaintModal). Composes this.openModal / this.loadNoiseImageFile /
+  // this.app.regen — no IIFE-local deps.
+  if (window.Vectura?.UI?.Modals?.ImageSource?.bind) {
+    window.Vectura.UI.Modals.ImageSource.bind({});
+  }
+  if (window.Vectura?.UI?.Modals?.ImageSource?.installOn) {
+    window.Vectura.UI.Modals.ImageSource.installOn(UI.prototype);
   }
 
   // Phase 3 step 5 (final modal): register modals/export-svg.js. The largest

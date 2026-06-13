@@ -453,27 +453,15 @@
     const algoDrawBtn = toolbar.querySelector('.tool-btn[data-tool="algo-draw"]');
     if (algoDrawBtn) {
       algoDrawBtn.setAttribute('data-has-submenu', 'true');
-      const _ALGO_PICK_LIST = [
-        { type: 'attractor',       label: 'Attractor' },
-        { type: 'boids',           label: 'Boids' },
-        { type: 'flowfield',       label: 'Flowfield' },
-        { type: 'grid',            label: 'Grid' },
-        { type: 'harmonograph',    label: 'Harmonograph' },
-        { type: 'hyphae',          label: 'Hyphae' },
-        { type: 'lissajous',       label: 'Lissajous' },
-        { type: 'pendula',         label: 'Pendula' },
-        { type: 'pattern',         label: 'Pattern' },
-        { type: 'petalisDesigner', label: 'Petalis Designer' },
-        { type: 'phylla',          label: 'Phylla' },
-        { type: 'rainfall',        label: 'Rainfall' },
-        { type: 'rings',           label: 'Rings' },
-        { type: 'shapePack',       label: 'Shapepack' },
-        { type: 'spiral',          label: 'Spiral' },
-        { type: 'svgDistort',      label: 'SVG Import' },
-        { type: 'terrain',         label: 'Terrain' },
-        { type: 'topo',            label: 'Topo' },
-        { type: 'wavetable',       label: 'Wavetable' },
-      ];
+      const _ALGO_PICK_LIST = (() => {
+        const shared = window.Vectura.UI?.utils?.getDrawableAlgorithmOptions?.();
+        if (Array.isArray(shared) && shared.length) return shared;
+        const defaults = window.Vectura.ALGO_DEFAULTS || {};
+        return Object.keys(defaults)
+          .filter((type) => defaults[type] && !defaults[type].hidden)
+          .map((type) => ({ type, label: defaults[type]?.label || type, is3d: !!defaults[type]?.is3d }))
+          .sort((a, b) => a.label.localeCompare(b.label));
+      })();
       let _algoPickerTimer = null;
       const _buildAlgoPickerPopup = () => {
         let el = document.getElementById('algo-draw-picker');
@@ -481,10 +469,23 @@
           el = document.createElement('div');
           el.id = 'algo-draw-picker';
           el.className = 'algo-draw-picker hidden';
-          el.innerHTML = _ALGO_PICK_LIST.map(({ type, label }) =>
-            `<div class="algo-pick-item" data-algo-type="${type}">` +
-            `<span class="lvl-algo-sub-ico" style="color:${this._algoMenuColor?.(type) ?? 'currentColor'}">${(this._LVL_I?.[type] ?? this._LVL_I?.grid)?.() ?? ''}</span>${label}</div>`
-          ).join('');
+          {
+            const list2d = _ALGO_PICK_LIST.filter((item) => !item.is3d);
+            const list3d = _ALGO_PICK_LIST.filter((item) => item.is3d);
+            const renderItem = ({ type, label }) =>
+              `<div class="algo-pick-item" data-algo-type="${type}">` +
+              `<span class="lvl-algo-sub-ico" style="color:${this._algoMenuColor?.(type) ?? 'currentColor'}">${(this._LVL_I?.[type] ?? this._LVL_I?.grid)?.() ?? ''}</span>${label}</div>`;
+            const parts = [];
+            if (list2d.length) {
+              parts.push('<div class="algo-group-div">2D</div>');
+              list2d.forEach((item) => parts.push(renderItem(item)));
+            }
+            if (list3d.length) {
+              parts.push('<div class="algo-group-div algo-group-sep">3D</div>');
+              list3d.forEach((item) => parts.push(renderItem(item)));
+            }
+            el.innerHTML = parts.join('');
+          }
           this._refreshAlgoPickerColors = () => {
             el.querySelectorAll('.algo-pick-item').forEach((item) => {
               const type = item.getAttribute('data-algo-type');

@@ -7075,6 +7075,12 @@
   border-color: #38bdf8;
 }
 .lvl-algo-sub-ico { flex-shrink: 0; display: flex; align-items: center; }
+.algo-group-div {
+  padding: 4px 10px 2px;
+  font-size: 9px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--ui-border-hi); pointer-events: none; user-select: none;
+}
+.algo-group-sep { margin-top: 3px; padding-top: 5px; border-top: 1px solid var(--ui-border); }
 .algo-draw-picker {
   position: fixed; z-index: 9999; width: 175px;
   background: var(--ui-panel-alt); border: 1px solid var(--ui-border);
@@ -10081,4 +10087,203 @@ kbd {
  * ------------------------------------------------------------------ */
 .is-hidden:not(.lvl-card):not(.lvl-grp-hdr):not(.mask-outline-btn) {
   display: none !important;
+}
+
+/* ------------------------------------------------------------------
+ * Image Surface — source widget + paint modal (v1.1.97)
+ * ------------------------------------------------------------------
+ * The inline `imageSource` control: live preview, preset gallery,
+ * Import/Paint actions. The paint modal: full-size brush canvas.
+ * ------------------------------------------------------------------ */
+.image-source-widget {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.image-source-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.image-source-name {
+  max-width: 60%;
+}
+.image-source-preview {
+  display: flex;
+  justify-content: center;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-panel-alt);
+  border-radius: 8px;
+  padding: 6px;
+}
+.image-source-preview canvas {
+  width: 132px;
+  height: 132px;
+  image-rendering: auto;
+  border-radius: 4px;
+}
+.image-source-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.image-source-btn {
+  border: 1px solid var(--ui-border);
+  background: var(--ui-ctrl);
+  color: var(--ui-text);
+  font-size: 11px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.image-source-btn:hover {
+  background: var(--ui-ctrl-hov);
+  border-color: var(--ui-border-hi);
+  color: var(--ui-accent);
+}
+.image-source-gallery-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ui-muted);
+}
+.image-source-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(54px, 1fr));
+  gap: 6px;
+}
+.image-source-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-panel-alt);
+  border-radius: 6px;
+  padding: 4px 2px;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.image-source-tile:hover {
+  border-color: var(--ui-border-hi);
+  background: var(--ui-ctrl-hov);
+}
+.image-source-tile.is-active {
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 1px var(--ui-accent) inset;
+}
+.image-source-tile canvas {
+  width: 44px;
+  height: 44px;
+  border-radius: 3px;
+  display: block;
+}
+.image-source-tile-cap {
+  font-size: 9px;
+  color: var(--ui-text-2);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Paint modal */
+.modal-card--paint .modal-body {
+  max-width: none;
+}
+.image-paint-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 420px;
+}
+.image-paint-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.image-paint-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.image-paint-cap {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ui-muted);
+  min-width: 42px;
+}
+.image-paint-ops {
+  flex-wrap: wrap;
+}
+.ip-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--ui-border);
+  cursor: pointer;
+  padding: 0;
+}
+.ip-swatch.is-active {
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 2px var(--ui-accent);
+}
+.ip-brush {
+  flex: 1;
+}
+.ip-op {
+  border: 1px solid var(--ui-border);
+  background: var(--ui-ctrl);
+  color: var(--ui-text);
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ip-op:hover {
+  background: var(--ui-ctrl-hov);
+  border-color: var(--ui-border-hi);
+}
+.image-paint-canvas-wrap {
+  display: flex;
+  justify-content: center;
+  background: var(--ui-panel-alt);
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  padding: 8px;
+}
+.image-paint-canvas {
+  width: 384px;
+  height: 384px;
+  max-width: 70vh;
+  max-height: 70vh;
+  touch-action: none;
+  cursor: crosshair;
+  border-radius: 4px;
+  background: #fff;
+}
+.image-paint-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.image-paint-cancel,
+.image-paint-apply {
+  border: 1px solid var(--ui-border);
+  font-size: 12px;
+  padding: 6px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.image-paint-cancel {
+  background: var(--ui-ctrl);
+  color: var(--ui-text);
+}
+.image-paint-apply {
+  background: var(--ui-accent);
+  color: var(--ui-on-accent);
+  border-color: var(--ui-accent);
 }

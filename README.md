@@ -104,7 +104,8 @@ An Illustrator-style shared toolbar now drives the main canvas plus the embedded
 <details>
 <summary>Full algorithm feature list</summary>
 
-- 19+ algorithm families: flowfield, boids, attractors, hyphae, lissajous, harmonograph, pendula, wavetable, rings, topo, grid, rainfall, phylla, petalis, spiral, shapepack, terrain, horizon, pattern, svgdistort
+- 19+ algorithm families: flowfield, boids, attractors, hyphae, lissajous, harmonograph, pendula, wavetable, rings, topo, grid, rainfall, phylla, petalis, spiral, shapepack, terrain, horizon, pattern, svgdistort, plus a 3D family — spirograph, 3D spiral, polyhedron, mesh topography, image surface
+- **3D suite:** the mesh-rendering algorithms (Mesh Topography, Polyhedron) import binary or ASCII **`.stl` meshes** and render them as wireframes, depth-plane contours, or face/edge/vertex art with hidden-line removal; Mesh Topography ships 10 primitives (sphere, torus, cube, cone, ellipsoid, cylinder, capsule, pyramid, superellipsoid, torus knot) with detail up to 100. All four 3D algorithms support **orthographic or perspective projection**, and contour/line smoothing produces true bezier curves on screen and in export. The live preview fidelity while dragging a 3D shape is tunable in **Document Setup → Guides & Display → 3D move preview** (Draft / Balanced / High)
 - Universal **Noise Rack** with per-layer engine selection, blend modes, offsets, octave shaping — shared across flowfield, grid, phylla, rings, topo, wavetable, and petalis
 - Polygon Noise Rack layers now use intuitive zoom semantics: larger `Noise Zoom` / `Noise Scale` values create a larger polygon footprint, and vertical line-displacement systems treat positive amplitudes as upward motion
 - Seeded, repeatable generation; the `Transform & Seed` sub-panel (collapsed by default) exposes seed, position, scale, and rotation
@@ -214,6 +215,11 @@ Vectura runs on phones. A touch-friendly shell with slide-over drawers, a bottom
 | **Horizon** | Synthwave-style perspective grid draped over an opt-in mountain heightfield with center dampening, skyline relief, and an `Additional Noises` Noise Rack for layered displacement |
 | **Pattern** | Texture-fill layers with a nested-region paint-bucket workflow, library + custom-tile registry, live `3×3` seam validation, and `.vectura` round-trip for custom imported tiles |
 | **SVG Distort** | Import an SVG path and warp it through field-based distortion controls; integrates with the shared optimization pipeline for plotter-ready output |
+| **Spirograph** | Roulette curves rolling primitive gear shapes around a main primitive, with inside/outside/combined paths |
+| **3D Spiral** | Lines or dot loops wrapped around cone/cylinder/ellipsoid surfaces with front-only or see-through projection, curve smoothing, and orthographic or perspective view |
+| **Polyhedron** | Platonic/Archimedean solids **or imported STL meshes** — face bands, edges, and vertex rings with front-face culling, dashed hidden lines, extrude/explode/twist effects, and orthographic or perspective projection |
+| **Mesh Topography** | Primitive 3D meshes (sphere, torus, cube, cone, ellipsoid, cylinder, capsule, pyramid, superellipsoid, torus knot) **or imported STL meshes**, rendered as projected wireframes or depth-plane topographic contours — with detail up to 100, bezier contour smoothing, dashed hidden lines, and orthographic/perspective view |
+| **Image Surface** | A height source (built-in relief, preloaded noise, imported image, or hand-painted canvas) projected as line relief, deformed mesh, raster topography, or extruded bars, with orthographic or perspective view |
 
 Algorithm defaults live in `src/config/defaults.js`, modifier defaults/descriptions in `src/config/modifiers.js`, and algorithm descriptions in `src/config/descriptions.js`.
 

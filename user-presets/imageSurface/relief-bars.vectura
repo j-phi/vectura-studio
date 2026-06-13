@@ -1,0 +1,32 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Relief Bars",
+  "meta": {
+    "presetId": "imagesurface-relief-bars",
+    "group": "Classic",
+    "system": "imageSurface",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "imageSurface",
+      "params": {
+        "mode": "bars",
+        "mapType": "height",
+        "artworkSize": 146,
+        "amplitude": 24,
+        "sampleDetail": 64,
+        "smoothing": 12,
+        "gamma": 0.82,
+        "contrast": 18,
+        "rotate": -38,
+        "tilt": 58,
+        "barRows": 13,
+        "barColumns": 16,
+        "barGap": 0.16,
+        "seeThrough": true
+      }
+    }
+  ]
+}

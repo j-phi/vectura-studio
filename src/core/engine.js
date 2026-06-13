@@ -199,6 +199,27 @@
     return sanitizeParamTree(params, defaults, { key: null });
   };
 
+  // Deep-clone params for history/serialization, but SHARE the (immutable,
+  // potentially large — up to ~12k faces) imported STL mesh by reference rather
+  // than JSON-deep-copying it into every undo snapshot. `importedMesh` is only
+  // ever replaced wholesale on re-import, never mutated in place, so sharing the
+  // reference is safe and avoids hundreds of KB of JSON churn per interaction.
+  // JSON.stringify on save still follows the reference, so .vectura round-trips.
+  const cloneLayerParams = (params) => {
+    if (!params || typeof params !== 'object') return {};
+    const mesh = params.importedMesh;
+    if (!mesh || typeof mesh !== 'object') return JSON.parse(JSON.stringify(params));
+    const rest = JSON.parse(JSON.stringify({ ...params, importedMesh: null }));
+    rest.importedMesh = mesh;
+    return rest;
+  };
+  const cloneParamStates = (states) => {
+    if (!states || typeof states !== 'object') return {};
+    const out = {};
+    for (const key of Object.keys(states)) out[key] = cloneLayerParams(states[key]);
+    return out;
+  };
+
   class VectorEngine {
     constructor() {
       this.layers = [];
@@ -440,8 +461,8 @@
           id: layer.id,
           type: layer.type,
           name: layer.name,
-          params: JSON.parse(JSON.stringify(layer.params)),
-          paramStates: JSON.parse(JSON.stringify(layer.paramStates || {})),
+          params: cloneLayerParams(layer.params),
+          paramStates: cloneParamStates(layer.paramStates || {}),
           parentId: layer.parentId,
           isGroup: layer.isGroup,
           containerRole: layer.containerRole,
@@ -1061,45 +1082,80 @@
       const bounds = this.getBounds();
       this.layers.forEach((group) => {
         if (!isModifierLayer(group) || group.modifier?.type !== 'morph') return;
-        // Direct-and-nested LEAF descendants in tree order (depth-first).
-        const leaves = this.getLayerDescendants(group.id).filter((l) => l && !l.isGroup);
-        // Mark every leaf consumed so it does not render/export on its own.
-        leaves.forEach((l) => { l._morphConsumed = true; });
-        // Only VISIBLE leaves participate in the morph chain.
-        const visibleLeaves = leaves.filter((l) => l.visible !== false);
-        const pathsPerChild = visibleLeaves.map((child) => {
-          const src = (Array.isArray(child.effectivePaths) && child.effectivePaths.length)
-            ? child.effectivePaths
-            : (child.paths || []);
-          // effectivePaths mixes outline polylines with paint-bucket fill
-          // geometry (fill paths carry meta.paintBucketFillId — see
-          // paint-bucket-ops.js). The morph blends OUTLINES only; fill is
-          // regenerated per intermediate ring from the child's fill records.
-          const outline = [];
-          const fillPaths = [];
-          clonePaths(src).forEach((p) => {
-            if (!Array.isArray(p)) return;
-            const meta = p.meta ? { ...p.meta } : {};
-            if (child.penId) meta.penId = child.penId;
-            p.meta = meta;
-            (meta.paintBucketFillId ? fillPaths : outline).push(p);
-          });
-          const fills = Array.isArray(child.fills)
-            ? child.fills.map((rec) => clone(rec))
-            : [];
-          return { outline, fillPaths, fills, penId: child.penId || null };
-        });
-        const morphed = multiFn(pathsPerChild, group.modifier, bounds) || [];
-        group.morphedPaths = morphed;
-        // transient pen/style fallback for renderer/export/stats
-        const first = visibleLeaves[0];
-        if (first) {
-          group.penId = first.penId;
-          group.color = first.color;
-          group.strokeWidth = first.strokeWidth;
-          group.lineCap = first.lineCap;
-        }
+        this._refoldMorphGroup(group, bounds);
       });
+    }
+
+    // Refold ONE morph group's blend from its leaves' current effective
+    // geometry. Self-contained (sets the consumed flags + pen/style fallback it
+    // needs), so it doubles as the hot-path refold during a child drag without
+    // re-running the whole document's effective/display/optimize passes.
+    _refoldMorphGroup(group, bounds) {
+      const multiFn = Modifiers.applyModifierToMultiChildPaths;
+      if (typeof multiFn !== 'function' || !group) return;
+      const b = bounds || this.getBounds();
+      // Direct-and-nested LEAF descendants in tree order (depth-first).
+      const leaves = this.getLayerDescendants(group.id).filter((l) => l && !l.isGroup);
+      // Mark every leaf consumed so it does not render/export on its own.
+      leaves.forEach((l) => { l._morphConsumed = true; });
+      // Only VISIBLE leaves participate in the morph chain.
+      const visibleLeaves = leaves.filter((l) => l.visible !== false);
+      const pathsPerChild = visibleLeaves.map((child) => {
+        const src = (Array.isArray(child.effectivePaths) && child.effectivePaths.length)
+          ? child.effectivePaths
+          : (child.paths || []);
+        // effectivePaths mixes outline polylines with paint-bucket fill
+        // geometry (fill paths carry meta.paintBucketFillId — see
+        // paint-bucket-ops.js). The morph blends OUTLINES only; fill is
+        // regenerated per intermediate ring from the child's fill records.
+        const outline = [];
+        const fillPaths = [];
+        clonePaths(src).forEach((p) => {
+          if (!Array.isArray(p)) return;
+          const meta = p.meta ? { ...p.meta } : {};
+          if (child.penId) meta.penId = child.penId;
+          p.meta = meta;
+          (meta.paintBucketFillId ? fillPaths : outline).push(p);
+        });
+        const fills = Array.isArray(child.fills)
+          ? child.fills.map((rec) => clone(rec))
+          : [];
+        return { outline, fillPaths, fills, penId: child.penId || null };
+      });
+      const morphed = multiFn(pathsPerChild, group.modifier, b) || [];
+      group.morphedPaths = morphed;
+      // transient pen/style fallback for renderer/export/stats
+      const first = visibleLeaves[0];
+      if (first) {
+        group.penId = first.penId;
+        group.color = first.color;
+        group.strokeWidth = first.strokeWidth;
+        group.lineCap = first.lineCap;
+      }
+    }
+
+    // Hot-path refold for a live child drag: refold ONLY the morph groups that
+    // own the dragged layers (innermost group first, so a morph nested inside a
+    // morph settles before its parent reads it), reusing the leaves' already-
+    // updated effective geometry. Skips the full-document effective/display/
+    // optimize sweep so the in-between rings track the drag at frame rate; the
+    // drag's release path still runs a full computeAllDisplayGeometry().
+    refoldMorphGroupsForLayers(layerIds) {
+      if (typeof Modifiers.applyModifierToMultiChildPaths !== 'function') return;
+      const ids = Array.isArray(layerIds) ? layerIds : [layerIds];
+      const groups = new Map();
+      ids.forEach((id) => {
+        const layer = this.layers.find((l) => l.id === id);
+        if (!layer) return;
+        this.getAncestorModifiers(layer).forEach((mod) => {
+          if (mod?.modifier?.type === 'morph') groups.set(mod.id, mod);
+        });
+      });
+      if (!groups.size) return;
+      const bounds = this.getBounds();
+      [...groups.values()]
+        .sort((a, b) => this.getLayerDepth(b) - this.getLayerDepth(a))
+        .forEach((group) => this._refoldMorphGroup(group, bounds));
     }
 
     resolveProfile() {
@@ -1129,7 +1185,7 @@
       this.currentProfile = this.resolveProfile();
     }
 
-    generate(layerId) {
+    generate(layerId, options = {}) {
       const layer = this.layers.find((l) => l.id === layerId);
       if (!layer) return;
       if (layer.isGroup) return;
@@ -1147,12 +1203,14 @@
       const m = SETTINGS.margin;
       const dW = width - m * 2;
       const dH = height - m * 2;
-      const p =
+      const fastPreview = Boolean(options && (options.preview === true || options.fastPreview === true));
+      const baseParams =
         layer.type === 'petalisDesigner'
           ? { ...layer.params, lightSource: SETTINGS.lightSource }
           : layer.params;
+      const p = fastPreview ? { ...baseParams, fastPreview: true } : baseParams;
 
-      const bounds = { width, height, m, dW, dH, truncate: SETTINGS.truncate };
+      const bounds = { width, height, m, dW, dH, truncate: SETTINGS.truncate, fastPreview, preview3dQuality: SETTINGS.preview3dQuality };
 
       // Shape layers: bake simplify/smoothing destructively into sourcePath anchors
       // (reversible — originalAnchors snapshot lives on path.meta).
@@ -1174,7 +1232,8 @@
       // For shape layers the rebuild already baked smoothing/simplify into anchors;
       // zero the render-time pass so we don't double-apply on the resampled polyline.
       const isShape = usesManualSourceGeometry(layer);
-      const smooth = isShape ? 0 : Math.max(0, Math.min(1, p.smoothing ?? 0));
+      const algorithmOwnsSmoothing = layer.type === 'imageSurface';
+      const smooth = isShape || algorithmOwnsSmoothing ? 0 : Math.max(0, Math.min(1, p.smoothing ?? 0));
       const simplify = isShape ? 0 : Math.max(0, Math.min(1, p.simplify ?? 0));
 
       let minX = Infinity;

@@ -1,0 +1,31 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Dashed Buckyball",
+  "meta": {
+    "presetId": "polyhedron-dashed-buckyball",
+    "group": "Classic",
+    "system": "polyhedron",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "polyhedron",
+      "params": {
+        "solidType": "buckyball",
+        "radius": 76,
+        "surfaceMode": "all",
+        "faceOpacityMode": "seeThrough",
+        "showFaces": true,
+        "faceBands": 3,
+        "showEdges": true,
+        "edgeStyle": "dash",
+        "edgeSpacing": 10,
+        "showVertices": false,
+        "bulge": 4,
+        "rotate": -22,
+        "tilt": 31
+      }
+    }
+  ]
+}

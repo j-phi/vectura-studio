@@ -51,9 +51,23 @@
         "params": {}
       },
       {
+        "id": "imagesurface-default",
+        "name": "Default",
+        "preset_system": "imageSurface",
+        "group": "Classic",
+        "params": {}
+      },
+      {
         "id": "lissajous-default",
         "name": "Default",
         "preset_system": "lissajous",
+        "group": "Classic",
+        "params": {}
+      },
+      {
+        "id": "meshtopography-default",
+        "name": "Default",
+        "preset_system": "meshTopography",
         "group": "Classic",
         "params": {}
       },
@@ -68,6 +82,13 @@
         "id": "petalisdesigner-default",
         "name": "Default",
         "preset_system": "petalisDesigner",
+        "group": "Classic",
+        "params": {}
+      },
+      {
+        "id": "polyhedron-default",
+        "name": "Default",
+        "preset_system": "polyhedron",
         "group": "Classic",
         "params": {}
       },
@@ -96,6 +117,20 @@
         "id": "spiral-default",
         "name": "Default",
         "preset_system": "spiral",
+        "group": "Classic",
+        "params": {}
+      },
+      {
+        "id": "spiral3d-default",
+        "name": "Default",
+        "preset_system": "spiral3d",
+        "group": "Classic",
+        "params": {}
+      },
+      {
+        "id": "spirograph-default",
+        "name": "Default",
+        "preset_system": "spirograph",
         "group": "Classic",
         "params": {}
       },
@@ -535,6 +570,28 @@
         }
       },
       {
+        "id": "imagesurface-relief-bars",
+        "name": "Relief Bars",
+        "preset_system": "imageSurface",
+        "group": "Classic",
+        "params": {
+          "mode": "bars",
+          "mapType": "height",
+          "artworkSize": 146,
+          "amplitude": 24,
+          "sampleDetail": 64,
+          "smoothing": 12,
+          "gamma": 0.82,
+          "contrast": 18,
+          "rotate": -38,
+          "tilt": 58,
+          "barRows": 13,
+          "barColumns": 16,
+          "barGap": 0.16,
+          "seeThrough": true
+        }
+      },
+      {
         "id": "lissajous-clover",
         "name": "Clover",
         "preset_system": "lissajous",
@@ -602,6 +659,27 @@
           "damping": 0,
           "resolution": 400,
           "scale": 0.8
+        }
+      },
+      {
+        "id": "meshtopography-torus-contours",
+        "name": "Torus Contours",
+        "preset_system": "meshTopography",
+        "group": "Classic",
+        "params": {
+          "sourceMode": "torus",
+          "renderMode": "contours",
+          "primitiveDetail": 22,
+          "primitiveScaleX": 70,
+          "primitiveScaleY": 62,
+          "primitiveScaleZ": 62,
+          "lineCount": 32,
+          "planeRotate": 16,
+          "planeTilt": 12,
+          "contourVisibility": "fullContour",
+          "showOutline": true,
+          "rotate": -32,
+          "tilt": 38
         }
       },
       {
@@ -1567,6 +1645,27 @@
         }
       },
       {
+        "id": "polyhedron-dashed-buckyball",
+        "name": "Dashed Buckyball",
+        "preset_system": "polyhedron",
+        "group": "Classic",
+        "params": {
+          "solidType": "buckyball",
+          "radius": 76,
+          "surfaceMode": "all",
+          "faceOpacityMode": "seeThrough",
+          "showFaces": true,
+          "faceBands": 3,
+          "showEdges": true,
+          "edgeStyle": "dash",
+          "edgeSpacing": 10,
+          "showVertices": false,
+          "bulge": 4,
+          "rotate": -22,
+          "tilt": 31
+        }
+      },
+      {
         "id": "rainfall-downpour",
         "name": "Downpour",
         "preset_system": "rainfall",
@@ -1855,6 +1954,48 @@
           "res": 120,
           "startR": 2,
           "pulseAmp": 0
+        }
+      },
+      {
+        "id": "spiral3d-twisted-cone",
+        "name": "Twisted Cone",
+        "preset_system": "spiral3d",
+        "group": "Classic",
+        "params": {
+          "shape": "cone",
+          "baseRadius": 78,
+          "coneHeight": 146,
+          "surfaceMode": "seeThrough",
+          "outlineMode": "outline",
+          "wrapType": "twistedLines",
+          "renderStyle": "line",
+          "twistTurns": 7.5,
+          "lineCount": 20,
+          "yaw": -12,
+          "pitch": 34,
+          "roll": 0,
+          "curveResolution": 540
+        }
+      },
+      {
+        "id": "spirograph-inner-gear-bloom",
+        "name": "Inner Gear Bloom",
+        "preset_system": "spirograph",
+        "group": "Classic",
+        "params": {
+          "mainShape": "polygon",
+          "mainWidth": 148,
+          "mainHeight": 148,
+          "mainPoints": 7,
+          "mainTeeth": 252,
+          "gearShape": "oval",
+          "gearTeeth": 73,
+          "gearAspectX": 120,
+          "gearAspectY": 78,
+          "penAngle": 18,
+          "penOffset": 92,
+          "rollMode": "inside",
+          "curveResolution": 1000
         }
       },
       {

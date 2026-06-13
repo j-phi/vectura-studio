@@ -43,5 +43,15 @@
     group: 'Group container for expanded line sublayers.',
     svgDistort:
       'Imports an external SVG, converts filled shapes to plottable line fills (hatch, wavelines, contour, etc.), and applies Noise Rack point displacement.',
+    spirograph:
+      'Rolls primitive gear shapes around a main primitive to generate closed roulette curves with inside, outside, or combined paths.',
+    spiral3d:
+      'Wraps lines or dot loops around cone, cylinder, and ellipsoid surfaces, with front-only or see-through projection and optional orthographic or perspective view.',
+    polyhedron:
+      'Draws polyhedral (or imported STL) face bands, edges, and vertex rings with front-face culling, opaque pruning, dashed hidden-line styling, and orthographic or perspective projection.',
+    meshTopography:
+      'Builds primitive 3D meshes — sphere, torus, cube, cone, ellipsoid, cylinder, capsule, pyramid, superellipsoid, torus knot, or an imported STL — and renders them as projected wireframes or plane-sliced topographic contours, with curve smoothing and orthographic or perspective view.',
+    imageSurface:
+      'Samples a height source — a built-in relief, a preloaded noise image, an imported picture, or a canvas you paint by hand — and projects it as line relief, deformed mesh, raster topography, or extruded bars.',
   };
 })();
