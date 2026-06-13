@@ -1,0 +1,30 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Capsule Wrap",
+  "meta": {
+    "presetId": "spiral3d-capsule-wrap",
+    "group": "Classic",
+    "system": "spiral3d",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "spiral3d",
+      "params": {
+        "shape": "capsule",
+        "capsuleRadius": 48,
+        "capsuleHeight": 132,
+        "surfaceMode": "front",
+        "outlineMode": "outline",
+        "wrapType": "spiral",
+        "renderStyle": "line",
+        "turns": 36,
+        "yaw": 0,
+        "pitch": 28,
+        "roll": 0,
+        "curveResolution": 1100
+      }
+    }
+  ]
+}

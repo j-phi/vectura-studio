@@ -1,0 +1,30 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Torus Coil",
+  "meta": {
+    "presetId": "spiral3d-torus-coil",
+    "group": "Classic",
+    "system": "spiral3d",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "spiral3d",
+      "params": {
+        "shape": "torus",
+        "torusRingRadius": 68,
+        "torusTubeRadius": 28,
+        "surfaceMode": "front",
+        "outlineMode": "outline",
+        "wrapType": "spiral",
+        "renderStyle": "line",
+        "turns": 90,
+        "yaw": -18,
+        "pitch": 42,
+        "roll": 0,
+        "curveResolution": 1600
+      }
+    }
+  ]
+}

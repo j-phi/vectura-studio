@@ -46,7 +46,7 @@
     spirograph:
       'Rolls primitive gear shapes around a main primitive to generate closed roulette curves with inside, outside, or combined paths.',
     spiral3d:
-      'Wraps lines or dot loops around sphere, cone, cylinder, and ellipsoid surfaces, with front-only or see-through projection and optional orthographic or perspective view.',
+      'Wraps lines or dot loops around sphere, cone, cylinder, ellipsoid, torus, and capsule surfaces, with front-only or see-through projection and optional orthographic or perspective view.',
     polyhedron:
       'Draws polyhedral (or imported STL) face bands, edges, and vertex rings with front-face culling, opaque pruning, dashed hidden-line styling, and orthographic or perspective projection.',
     meshTopography:

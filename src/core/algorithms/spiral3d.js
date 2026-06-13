@@ -36,6 +36,53 @@
         normal: { x: Math.cos(longitude), y: 0, z: Math.sin(longitude) },
       };
     }
+    if (shape === 'torus') {
+      // u sweeps the major (toroidal) ring once; longitude winds the minor
+      // (poloidal) tube `turns` times, so a spiral wrap coils around the donut.
+      const R = Math.max(1, finite(p.torusRingRadius, 64));
+      const tube = Math.max(0.5, finite(p.torusTubeRadius, 26));
+      const phi = u * TAU;
+      const ct = Math.cos(longitude);
+      const ringR = R + tube * ct;
+      return {
+        point: { x: Math.cos(phi) * ringR, y: tube * Math.sin(longitude), z: Math.sin(phi) * ringR },
+        normal: { x: Math.cos(phi) * ct, y: Math.sin(longitude), z: Math.sin(phi) * ct },
+      };
+    }
+    if (shape === 'capsule') {
+      // Cylinder of height H radius r, capped by two hemispheres. u is allocated
+      // along the meridian arc length (cap, barrel, cap) so the wrap pitch stays
+      // even across the seams.
+      const r = Math.max(1, finite(p.capsuleRadius, 46));
+      const h = Math.max(0, finite(p.capsuleHeight, 120));
+      const capArc = (r * Math.PI) / 2;
+      const total = h + 2 * capArc;
+      const fCap = capArc / total;
+      const fCyl = h / total;
+      const cl = Math.cos(longitude);
+      const sl = Math.sin(longitude);
+      if (u < fCap) {
+        const lat = (u / fCap - 1) * (Math.PI / 2); // -PI/2 (south pole) .. 0
+        const cr = Math.cos(lat);
+        return {
+          point: { x: cl * cr * r, y: -h / 2 + r * Math.sin(lat), z: sl * cr * r },
+          normal: { x: cl * cr, y: Math.sin(lat), z: sl * cr },
+        };
+      }
+      if (u <= fCap + fCyl) {
+        const b = fCyl > 0 ? (u - fCap) / fCyl : 0;
+        return {
+          point: { x: cl * r, y: -h / 2 + b * h, z: sl * r },
+          normal: { x: cl, y: 0, z: sl },
+        };
+      }
+      const lat = ((u - fCap - fCyl) / fCap) * (Math.PI / 2); // 0 .. PI/2 (north pole)
+      const cr = Math.cos(lat);
+      return {
+        point: { x: cl * cr * r, y: h / 2 + r * Math.sin(lat), z: sl * cr * r },
+        normal: { x: cl * cr, y: Math.sin(lat), z: sl * cr },
+      };
+    }
     const sphereRadius = Math.max(1, finite(p.sphereRadius, finite(p.ellipsoidEquatorRadius, 64)));
     const rx = shape === 'sphere' ? sphereRadius : Math.max(1, finite(p.ellipsoidEquatorRadius, 76));
     const rz = rx;
@@ -162,12 +209,26 @@
     const weightScale = G3.finite(p.outlineWeight, 2);
     const depthCueOn = ((p.depthCue || 'off') !== 'off');
     const paths = [];
-    const rings = (p.shape || 'ellipsoid') === 'cylinder' ? [0, 1] : [0.08, 0.92];
-    rings.forEach((u) => {
+    const shape = p.shape || 'ellipsoid';
+    // Each spec maps the 0..1 sweep parameter to a (u, longitude) pair. For most
+    // shapes the outline rings are latitude bands (fixed u, longitude sweeps).
+    // The torus has no poles: its silhouette is the outer and inner equator, so
+    // there we sweep u (the toroidal ring) at a fixed poloidal longitude instead.
+    let ringSpecs;
+    if (shape === 'torus') {
+      ringSpecs = [
+        (t) => ({ u: t, longitude: 0 }),        // outer equator
+        (t) => ({ u: t, longitude: Math.PI }),  // inner equator
+      ];
+    } else {
+      const us = shape === 'cylinder' ? [0, 1] : [0.08, 0.92];
+      ringSpecs = us.map((u) => (t) => ({ u, longitude: t * TAU }));
+    }
+    ringSpecs.forEach((spec) => {
       const samples = [];
       const steps = 128;
       for (let i = 0; i <= steps; i++) {
-        const longitude = (i / steps) * TAU;
+        const { u, longitude } = spec(i / steps);
         samples.push(projectSample(p, bounds, u, longitude));
       }
       const loop = samples.map((sample) => sample.point);

@@ -83,7 +83,7 @@ describe('Vectura geometry algorithms', () => {
   });
 
   test('spiral3d supports shapes, see-through hidden dashes, and dot loops', () => {
-    ['sphere', 'cone', 'cylinder', 'ellipsoid'].forEach((shape) => {
+    ['sphere', 'cone', 'cylinder', 'ellipsoid', 'torus', 'capsule'].forEach((shape) => {
       expect(finitePaths(generate('spiral3d', { shape, curveResolution: 120 }))).toBe(true);
     });
 
@@ -103,6 +103,27 @@ describe('Vectura geometry algorithms', () => {
 
     const dots = generate('spiral3d', { renderStyle: 'dots', dotSpacing: 8, curveResolution: 100 });
     expect(dots.some(closed)).toBe(true);
+  });
+
+  test('spiral3d torus and capsule surfaces are finite and geometrically distinct', () => {
+    const opts = { curveResolution: 240, turns: 24 };
+    const sphere = generate('spiral3d', { shape: 'sphere', ...opts });
+    const torus = generate('spiral3d', { shape: 'torus', torusRingRadius: 64, torusTubeRadius: 24, ...opts });
+    const capsule = generate('spiral3d', { shape: 'capsule', capsuleRadius: 44, capsuleHeight: 120, ...opts });
+    [torus, capsule].forEach((paths) => {
+      expect(finitePaths(paths)).toBe(true);
+      expect(countPoints(paths)).toBeGreaterThan(0);
+    });
+    // Each surface produces a different wrap, so signatures must diverge.
+    expect(pathSignature(torus)).not.toBe(pathSignature(sphere));
+    expect(pathSignature(capsule)).not.toBe(pathSignature(sphere));
+    expect(pathSignature(torus)).not.toBe(pathSignature(capsule));
+
+    // A degenerate-height capsule collapses to a sphere of the same radius:
+    // both caps meet with no barrel, so the wrap matches a sphere wrap.
+    const flatCapsule = generate('spiral3d', { shape: 'capsule', capsuleRadius: 50, capsuleHeight: 0, ...opts });
+    const matchSphere = generate('spiral3d', { shape: 'sphere', sphereRadius: 50, ...opts });
+    expect(pathSignature(flatCapsule)).toBe(pathSignature(matchSphere));
   });
 
   test('spiral3d 3D enhancements (depth-cue + emphasizeOutline + hidden-line dash) alter output', () => {
