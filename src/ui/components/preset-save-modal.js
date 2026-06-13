@@ -39,7 +39,7 @@
     const layerType = opts.layerType;
     const params = opts.params || {};
     const origin = opts.origin || { kind: 'scratch', preset: null };
-    const canUpdate = origin.kind === 'user' && origin.preset && origin.preset.id;
+    const canUpdate = (origin.kind === 'user' || origin.kind === 'builtin') && origin.preset && origin.preset.id;
     const devMode = opts.devMode === true;
     const drawThumb = typeof opts.drawThumb === 'function' ? opts.drawThumb : null;
     const onConfirm = typeof opts.onConfirm === 'function' ? opts.onConfirm : () => {};

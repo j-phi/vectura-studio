@@ -90,13 +90,35 @@ describe('Universal preset save (save pip + modal)', () => {
     expect(pip().hidden).toBe(true);
   });
 
-  test('origin = built-in preset offers Save-as-new only (no Update fork)', async () => {
+  test('origin = built-in preset offers an Update fork', async () => {
     await mount('flowfield');
     document.querySelector('.hg-preset-option[data-preset-id="flowfield-storm-cell"]').click();
     diverge('density', 137);
     pip().click();
     expect(modal()).toBeTruthy();
-    expect(document.querySelector('.preset-save-seg')).toBeNull();
+    // Built-in origin now shows the Update fork (same as user-origin).
+    expect(document.querySelector('.preset-save-seg')).toBeTruthy();
+    expect(document.querySelector('.seg-opt[data-mode="update"]')).toBeTruthy();
+  });
+
+  test('overwriting a built-in preset shadows it in localStorage under the same id', async () => {
+    await mount('lissajous');
+    const layer = app.engine.getActiveLayer();
+    expect(layer.params.preset).toBe('lissajous-default');
+
+    diverge('freqX');
+    pip().click();
+    document.querySelector('.preset-save-seg .seg-opt[data-mode="update"]').click();
+    document.querySelector('.preset-save-confirm').click();
+    // Confirm the destructive overwrite dialog.
+    document.querySelector('.vectura-dialog-footer .hdr-btn.is-danger').click();
+
+    const saved = userPresets('lissajous');
+    const overwritten = saved.find((p) => p.id === 'lissajous-default');
+    expect(overwritten).toBeTruthy();
+    expect(overwritten.params.freqX).toBe(layer.params.freqX);
+    expect(layer.params.preset).toBe('lissajous-default');
+    expect(pip().hidden).toBe(true);
   });
 
   test('origin = user preset offers an Update fork that rewrites the preset in place', async () => {
@@ -141,6 +163,32 @@ describe('Universal preset save (save pip + modal)', () => {
 
     expect(userPresets('lissajous').length).toBe(0);
     expect(app.engine.getActiveLayer().params.preset).toBe(prevPreset);
+  });
+
+  test('a fresh layer auto-applies a user-overridden default preset on gallery init', async () => {
+    await mount('lissajous');
+    const factoryFreqX = app.engine.getActiveLayer().params.freqX;
+
+    // Overwrite the built-in Default with a modified freqX.
+    diverge('freqX');
+    const savedFreqX = app.engine.getActiveLayer().params.freqX;
+    pip().click();
+    document.querySelector('.preset-save-seg .seg-opt[data-mode="update"]').click();
+    document.querySelector('.preset-save-confirm').click();
+    document.querySelector('.vectura-dialog-footer .hdr-btn.is-danger').click();
+    expect(userPresets('lissajous').find((p) => p.id === 'lissajous-default')).toBeTruthy();
+
+    // Add a brand-new layer (simulates adding a layer after a hard refresh).
+    app.engine.addLayer('lissajous');
+    app.ui.renderLayers();
+    app.ui.buildControls();
+
+    const newLayer = app.engine.getActiveLayer();
+    // The gallery auto-apply should have merged the saved Default params.
+    expect(newLayer.params.freqX).not.toBe(factoryFreqX);
+    expect(newLayer.params.freqX).toBe(savedFreqX);
+    // Pip must be hidden — the layer matches its named preset.
+    expect(pip().hidden).toBe(true);
   });
 
   test('Cmd/Ctrl+S opens the modal only when the layer is dirty', async () => {

@@ -4259,25 +4259,13 @@
           if (this.groupEditMode) {
             if (this.groupEditMode.kind === 'morph') {
               // Morph children are consumed (not returned by findLayerAtPoint),
-              // so resolve clicks against the source geometry directly.
+              // so resolve clicks against the source geometry directly. Bounds-aware
+              // so pressing a child's filled INTERIOR grabs it (the outline-only
+              // findMorphChildAtPoint would miss and previously exited isolation).
               const container = this.engine.layers.find(l => l.id === this.groupEditMode.groupId);
-              let child = container ? this.findMorphChildAtPoint(world, container.id) : null;
-              // findMorphChildAtPoint only hits a child's sparse OUTLINE, so pressing
-              // the filled INTERIOR of a child (the natural way to grab and drag it)
-              // misses — which previously fell through to exitGroupEditMode(), so the
-              // drag dropped isolation and the blend never refolded/ghosted. Fall back
-              // to a bounds hit (preferring the active child on overlap) so the body of
-              // a child grabs it and stays isolated.
-              if (!child && container) {
-                const leaves = this.engine.getLayerDescendants(container.id).filter((l) => l && !l.isGroup);
-                const hitByBounds = (l) => {
-                  if (!l || this.isLayerLocked?.(l.id)) return false;
-                  const b = this.getSelectionBounds([l]);
-                  return b && this.pointInBounds(world, b);
-                };
-                const active = leaves.find((l) => l.id === this.groupEditMode.activeLayerId);
-                child = (active && hitByBounds(active)) ? active : (leaves.find(hitByBounds) || null);
-              }
+              const child = container
+                ? this._morphChildAtPointOrBounds(world, container.id, this.groupEditMode.activeLayerId)
+                : null;
               if (child) {
                 this.groupEditMode.activeLayerId = child.id;
                 this.setSelection([child.id], child.id);
@@ -4306,15 +4294,28 @@
             // under the cursor (children consumed, container skipped by
             // findLayerAtPoint), so probe it only when topLayer is null.
             const morph = !topLayer ? this.findMorphContainerAtPoint(world) : null;
-            if (morph) {
-              if (isDoubleClick) {
-                const child = this.findMorphChildAtPoint(world, morph.id);
-                if (child) {
-                  this.enterMorphEditMode(child, morph);
-                  e.preventDefault();
-                  return;
-                }
+            // Double-click → isolate a child. findMorphContainerAtPoint and
+            // findMorphChildAtPoint are BOTH outline-only, so double-clicking the
+            // filled body/centroid of a child (off every line) would otherwise miss
+            // entirely and never isolate. Resolve the child by bounds across all
+            // morph containers so double-clicking anywhere on a child isolates it.
+            let justIsolated = false;
+            if (isDoubleClick && !topLayer) {
+              const dbl = morph
+                ? { child: this._morphChildAtPointOrBounds(world, morph.id), container: morph }
+                : this._morphChildByBounds(world);
+              if (dbl && dbl.child) {
+                this.enterMorphEditMode(dbl.child, dbl.container);
+                e.preventDefault();
+                _groupHandled = true;
+                // Do NOT return: fall through to drag-init so a one-motion
+                // double-click-drag (the 2nd press held and dragged) moves the
+                // freshly-isolated child and the blend ghost-previews live. A
+                // return here swallowed the held drag (isLayerDrag never armed).
+                justIsolated = true;
               }
+            }
+            if (morph && !justIsolated) {
               // A morph child already selected (e.g. from the layers panel) and
               // pressed within its bounds must DRAG — not snap selection back to
               // the container. Keep it selected so the drag-init below arms
@@ -6223,6 +6224,44 @@
       return best;
     }
 
+    // Resolve which morph-source child a press targets. findMorphChildAtPoint
+    // only hits a child's sparse OUTLINE, so pressing/double-clicking a child's
+    // filled INTERIOR (the natural way to grab a shape) misses it — which made
+    // double-click never isolate, and an in-isolation body press exit isolation.
+    // Fall back to a bounds hit over the container's leaves (preferring the
+    // currently-active child on overlap) so the body of a child counts.
+    _morphChildAtPointOrBounds(world, containerId, preferActiveId = null) {
+      const outlineHit = this.findMorphChildAtPoint(world, containerId);
+      if (outlineHit) return outlineHit;
+      const leaves = (this.engine.getLayerDescendants(containerId) || [])
+        .filter((l) => l && !l.isGroup && l.visible !== false);
+      const hitByBounds = (l) => {
+        if (!l || this.isLayerLocked?.(l.id)) return false;
+        const b = this.getSelectionBounds([l]);
+        return b && this.pointInBounds(world, b);
+      };
+      const active = preferActiveId ? leaves.find((l) => l.id === preferActiveId) : null;
+      if (active && hitByBounds(active)) return active;
+      return leaves.find(hitByBounds) || null;
+    }
+
+    // Resolve a morph child purely by BOUNDS across every OUTERMOST morph
+    // container, so double-clicking the filled body of a child (off all lines —
+    // findMorphContainerAtPoint and findMorphChildAtPoint are both outline-only)
+    // still isolates it. Returns { child, container } or null.
+    _morphChildByBounds(world) {
+      const containers = this.engine.layers.filter((l) =>
+        l && l.isGroup && l.visible && l.modifier?.type === 'morph'
+        && Array.isArray(l.morphedPaths) && l.morphedPaths.length
+        && !this.isLayerLocked?.(l.id)
+        && !(this.engine.getAncestorModifiers?.(l) || []).some((m) => m.modifier?.type === 'morph'));
+      for (let i = containers.length - 1; i >= 0; i -= 1) {
+        const child = this._morphChildAtPointOrBounds(world, containers[i].id);
+        if (child) return { child, container: containers[i] };
+      }
+      return null;
+    }
+
     // Hit-test the ACTIVE isolated morph end's own (consumed) geometry so the
     // direct-select tool can engage it: findPathHitAtPoint reads
     // getInteractionPaths, which is empty for a _morphConsumed child. Returns a
@@ -7022,6 +7061,9 @@
       const uy = vy / len;
       const padRadius = 17 * unit;
       const ringRadius = 28 * unit;
+      const yawRadiusX = padRadius * 0.72;
+      const yawRadiusY = padRadius * 0.48;
+      const pitchRadiusX = padRadius * 0.62;
       const controlCenter = {
         x: target.x + ux * 35 * unit,
         y: target.y + uy * 35 * unit,
@@ -7036,11 +7078,11 @@
       const pitchSpan = Math.max(1, spec.pitchMax - spec.pitchMin);
       const pitchT = (pitch - spec.pitchMin) / pitchSpan;
       const yawMarker = {
-        x: controlCenter.x + Math.sin(yawRad) * padRadius * 0.72,
-        y: controlCenter.y + Math.cos(yawRad) * padRadius * 0.24,
+        x: controlCenter.x + Math.sin(yawRad) * yawRadiusX,
+        y: controlCenter.y + Math.cos(yawRad) * yawRadiusY,
       };
       const pitchMarker = {
-        x: controlCenter.x,
+        x: controlCenter.x - pitchRadiusX,
         y: controlCenter.y + (0.5 - pitchT) * padRadius * 1.28,
       };
       const roll = spec.rollParam
@@ -7059,6 +7101,10 @@
         center: controlCenter,
         padRadius,
         ringRadius,
+        yawRadiusX,
+        yawRadiusY,
+        pitchRadiusX,
+        pitchTrackHeight: padRadius * 1.28,
         yawMarker,
         pitchMarker,
         rollHandle,
@@ -7069,7 +7115,7 @@
       const control = this.get3DRotationControl(layer, bounds);
       if (!control) return;
       const unit = 1 / Math.max(this.scale || 1, 0.001);
-      const { center, padRadius, ringRadius, yawMarker, pitchMarker, rollHandle } = control;
+      const { center, padRadius, ringRadius, yawRadiusX, yawRadiusY, pitchRadiusX, yawMarker, pitchMarker, rollHandle } = control;
       const accent = getThemeToken('--render-selection-handle-stroke', '#f8fafc');
       const fill = getThemeToken('--render-selection-handle-fill', '#111827');
       const underlay = getThemeToken('--render-underlay-fill', 'rgba(15, 23, 42, 0.92)');
@@ -7086,10 +7132,10 @@
       this.ctx.lineWidth = 1.1 * unit;
       this.ctx.globalAlpha = 0.72;
       this.ctx.beginPath();
-      this.ctx.ellipse(center.x, center.y, padRadius, padRadius * 0.34, 0, 0, TAU);
+      this.ctx.ellipse(center.x, center.y, yawRadiusX, yawRadiusY, 0, 0, TAU);
       this.ctx.stroke();
       this.ctx.beginPath();
-      this.ctx.ellipse(center.x, center.y, padRadius * 0.42, padRadius, 0, 0, TAU);
+      this.ctx.ellipse(center.x, center.y, pitchRadiusX, padRadius, 0, 0, TAU);
       this.ctx.stroke();
 
       this.ctx.globalAlpha = 0.92;
@@ -7101,12 +7147,27 @@
       this.ctx.fillStyle = fill;
       this.ctx.strokeStyle = accent;
       this.ctx.lineWidth = 1 * unit;
-      [yawMarker, pitchMarker].forEach((pt) => {
-        this.ctx.beginPath();
-        this.ctx.arc(pt.x, pt.y, 3.2 * unit, 0, TAU);
-        this.ctx.fill();
-        this.ctx.stroke();
-      });
+      this.ctx.beginPath();
+      this.ctx.arc(yawMarker.x, yawMarker.y, 3.4 * unit, 0, TAU);
+      this.ctx.fill();
+      this.ctx.stroke();
+      this.ctx.beginPath();
+      this.ctx.moveTo(yawMarker.x - 4.6 * unit, yawMarker.y);
+      this.ctx.lineTo(yawMarker.x - 7.2 * unit, yawMarker.y);
+      this.ctx.moveTo(yawMarker.x + 4.6 * unit, yawMarker.y);
+      this.ctx.lineTo(yawMarker.x + 7.2 * unit, yawMarker.y);
+      this.ctx.stroke();
+
+      this.ctx.beginPath();
+      this.ctx.arc(pitchMarker.x, pitchMarker.y, 3.4 * unit, 0, TAU);
+      this.ctx.fill();
+      this.ctx.stroke();
+      this.ctx.beginPath();
+      this.ctx.moveTo(pitchMarker.x, pitchMarker.y - 4.6 * unit);
+      this.ctx.lineTo(pitchMarker.x, pitchMarker.y - 7.2 * unit);
+      this.ctx.moveTo(pitchMarker.x, pitchMarker.y + 4.6 * unit);
+      this.ctx.lineTo(pitchMarker.x, pitchMarker.y + 7.2 * unit);
+      this.ctx.stroke();
 
       if (rollHandle) {
         this.ctx.globalAlpha = 0.56;
@@ -7530,6 +7591,18 @@
       const unit = 1 / Math.max(this.scale || 1, 0.001);
       const world = this.screenToWorld(sx, sy);
       const centerDist = Math.hypot(world.x - control.center.x, world.y - control.center.y);
+      if (centerDist <= 5 * unit) {
+        return { type: 'orbit', layer: targetLayer, spec: control.spec, control };
+      }
+      const yawDist = Math.hypot(world.x - control.yawMarker.x, world.y - control.yawMarker.y);
+      const pitchDist = Math.hypot(world.x - control.pitchMarker.x, world.y - control.pitchMarker.y);
+      const markerHits = [];
+      if (yawDist <= 9 * unit) markerHits.push({ distance: yawDist, type: 'yaw' });
+      if (pitchDist <= 9 * unit) markerHits.push({ distance: pitchDist, type: 'pitch' });
+      if (markerHits.length) {
+        markerHits.sort((a, b) => a.distance - b.distance);
+        return { type: markerHits[0].type, layer: targetLayer, spec: control.spec, control };
+      }
       if (control.rollHandle) {
         const rollDist = Math.hypot(world.x - control.rollHandle.x, world.y - control.rollHandle.y);
         if (rollDist <= 9 * unit) {
@@ -7559,6 +7632,9 @@
         layerId: layer.id,
         spec,
         center: { ...control.center },
+        yawRadiusX: control.yawRadiusX,
+        yawRadiusY: control.yawRadiusY,
+        pitchTrackHeight: control.pitchTrackHeight,
         startClient: { x: event?.clientX ?? 0, y: event?.clientY ?? 0 },
         startYaw: normalizeDegrees(layer.params[spec.yawParam] ?? spec.yawDefault),
         startPitch: clamp(
@@ -7600,6 +7676,25 @@
         let delta = ((angle - drag.startRollAngle) * 180) / Math.PI;
         if (modifiers.shift) delta = Math.round(delta / 15) * 15;
         layer.params[drag.spec.rollParam] = tidyDegrees(normalizeDegrees(drag.startRoll + delta));
+      } else if (drag.type === 'yaw') {
+        const rect = this.canvas.getBoundingClientRect();
+        const sx = (event.clientX ?? drag.startClient.x) - rect.left;
+        const sy = (event.clientY ?? drag.startClient.y) - rect.top;
+        const world = this.screenToWorld(sx, sy);
+        const nx = (world.x - drag.center.x) / Math.max(1e-6, drag.yawRadiusX || 1);
+        const ny = (world.y - drag.center.y) / Math.max(1e-6, drag.yawRadiusY || 1);
+        let nextYaw = normalizeDegrees((Math.atan2(nx, ny) * 180) / Math.PI);
+        if (modifiers.shift) nextYaw = Math.round(nextYaw / 15) * 15;
+        layer.params[drag.spec.yawParam] = tidyDegrees(normalizeDegrees(nextYaw));
+      } else if (drag.type === 'pitch') {
+        const rect = this.canvas.getBoundingClientRect();
+        const sy = (event.clientY ?? drag.startClient.y) - rect.top;
+        const world = this.screenToWorld(0, sy);
+        const pitchSpan = Math.max(1, drag.spec.pitchMax - drag.spec.pitchMin);
+        const pitchT = clamp(0.5 - ((world.y - drag.center.y) / Math.max(1e-6, drag.pitchTrackHeight || 1)), 0, 1);
+        let nextPitch = drag.spec.pitchMin + pitchT * pitchSpan;
+        if (modifiers.shift) nextPitch = Math.round(nextPitch / 15) * 15;
+        layer.params[drag.spec.pitchParam] = tidyDegrees(clamp(nextPitch, drag.spec.pitchMin, drag.spec.pitchMax));
       } else {
         const sensitivity = modifiers.alt ? 0.18 : 0.45;
         let nextYaw = normalizeDegrees(drag.startYaw + dx * sensitivity);
@@ -7629,7 +7724,16 @@
         return;
       }
       const yawLabel = drag.spec.yawParam === 'yaw' ? 'yaw' : 'rot';
-      this.showDragTooltip(`${yawLabel} ${yaw}°  tilt ${pitch}°`, event.clientX ?? 0, event.clientY ?? 0);
+      const pitchLabel = drag.spec.pitchParam === 'pitch' ? 'pitch' : 'tilt';
+      if (drag.type === 'yaw') {
+        this.showDragTooltip(`${yawLabel} ${yaw}°`, event.clientX ?? 0, event.clientY ?? 0);
+        return;
+      }
+      if (drag.type === 'pitch') {
+        this.showDragTooltip(`${pitchLabel} ${pitch}°`, event.clientX ?? 0, event.clientY ?? 0);
+        return;
+      }
+      this.showDragTooltip(`${yawLabel} ${yaw}°  ${pitchLabel} ${pitch}°`, event.clientX ?? 0, event.clientY ?? 0);
     }
 
     end3DRotationDrag() {

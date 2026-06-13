@@ -36,9 +36,10 @@
         normal: { x: Math.cos(longitude), y: 0, z: Math.sin(longitude) },
       };
     }
-    const rx = Math.max(1, finite(p.ellipsoidEquatorRadius, 76));
+    const sphereRadius = Math.max(1, finite(p.sphereRadius, finite(p.ellipsoidEquatorRadius, 64)));
+    const rx = shape === 'sphere' ? sphereRadius : Math.max(1, finite(p.ellipsoidEquatorRadius, 76));
     const rz = rx;
-    const ry = Math.max(1, finite(p.ellipsoidPolarRadius, 52));
+    const ry = shape === 'sphere' ? sphereRadius : Math.max(1, finite(p.ellipsoidPolarRadius, 52));
     const lat = (u - 0.5) * Math.PI;
     const cl = Math.cos(lat);
     const point = {

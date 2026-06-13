@@ -587,7 +587,9 @@
           "tilt": 58,
           "barRows": 13,
           "barColumns": 16,
-          "barGap": 0.16,
+          "barGap": 2.2,
+          "barHeightSteps": 6,
+          "showBarBase": true,
           "seeThrough": true
         }
       },
@@ -1954,6 +1956,47 @@
           "res": 120,
           "startR": 2,
           "pulseAmp": 0
+        }
+      },
+      {
+        "id": "spiral3d-default",
+        "name": "Default",
+        "preset_system": "spiral3d",
+        "group": "Classic",
+        "params": {
+          "label": "3D Spiral",
+          "is3d": true,
+          "preset": "spiral3d-default",
+          "shape": "sphere",
+          "sphereRadius": 64,
+          "baseRadius": 68,
+          "coneHeight": 136,
+          "cylinderRadius": 58,
+          "cylinderHeight": 156,
+          "ellipsoidEquatorRadius": 76,
+          "ellipsoidPolarRadius": 52,
+          "surfaceMode": "seeThrough",
+          "outlineMode": "none",
+          "wrapType": "spiral",
+          "renderStyle": "line",
+          "turns": 18,
+          "twistTurns": 6,
+          "lineCount": 16,
+          "dotSpacing": 14,
+          "dotSizeStart": 4,
+          "dotSizeMiddle": 4,
+          "dotSizeEnd": 4,
+          "startLongitude": 0,
+          "yaw": 0,
+          "pitch": 30,
+          "roll": 0,
+          "curveResolution": 900,
+          "projection": "orthographic",
+          "cameraDistance": 620,
+          "focalLength": 520,
+          "smoothing": 0,
+          "simplify": 0,
+          "curves": false
         }
       },
       {

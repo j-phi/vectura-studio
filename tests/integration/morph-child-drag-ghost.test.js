@@ -167,4 +167,93 @@ describe('Morph child-drag ghost preview', () => {
     expect(JSON.stringify(container.morphedPaths)).not.toBe(before); // refolded live
     renderer.up(evt(200, 200));
   });
+
+  // The user's real gesture: DOUBLE-CLICK a child to isolate it, then drag. The
+  // bug: the double-click isolate decision gates enterMorphEditMode on
+  // findMorphChildAtPoint, which only hits a child's sparse OUTLINE — so
+  // double-clicking the filled INTERIOR never isolates, and the drag operates on
+  // the container with no live refold or ghost-dim.
+  test('double-clicking a child’s body isolates it, then dragging the body refolds live', async () => {
+    runtime = await loadVecturaRuntime({ includeRenderer: true });
+    const { VectorEngine, Renderer, Layer } = runtime.window.Vectura;
+    const raf = installSyncRaf(runtime.window);
+    const engine = new VectorEngine();
+    engine.layers = [];
+    const modifierId = engine.addModifierLayer('morph');
+    const oval = new Layer('oval-child', 'shape', 'Oval');
+    oval.parentId = modifierId; oval.sourcePaths = [circle(80, 90, 28)];
+    const poly = new Layer('poly-child', 'shape', 'Polygon');
+    poly.parentId = modifierId; poly.sourcePaths = [hexagon(200, 90, 32)];
+    engine.layers.push(oval, poly);
+    engine.generate(oval.id); engine.generate(poly.id);
+    engine.computeAllDisplayGeometry();
+    const container = engine.layers.find((l) => l.id === modifierId);
+    const renderer = new Renderer('main-canvas', engine);
+    renderer.ready = true; renderer.scale = 1; renderer.offsetX = 0; renderer.offsetY = 0;
+    renderer.onComputeDisplayGeometry = () => engine.computeAllDisplayGeometry();
+    renderer.setTool('select');
+    const before = JSON.stringify(container.morphedPaths);
+
+    const evt = (x, y) => ({
+      clientX: x, clientY: y, button: 0, pointerType: 'mouse', pointerId: 1,
+      shiftKey: false, ctrlKey: false, metaKey: false, altKey: false,
+      preventDefault() {}, stopPropagation() {},
+    });
+    // DOUBLE-CLICK on the hexagon's filled INTERIOR (centroid 200,90) — off the outline.
+    renderer.down(evt(200, 90)); renderer.up(evt(200, 90));
+    renderer.down(evt(200, 90)); renderer.up(evt(200, 90));
+    // Must have isolated the polygon child (NOT re-selected the container).
+    expect(renderer.groupEditMode).toEqual({ groupId: container.id, activeLayerId: poly.id, kind: 'morph' });
+    expect([...renderer.selectedLayerIds]).toEqual([poly.id]);
+
+    // Then a body-drag refolds the blend live.
+    renderer.down(evt(200, 90));
+    expect(renderer._morphDragActive).toBe(true);
+    renderer.move(evt(200, 200));
+    raf.flush();
+    expect(JSON.stringify(container.morphedPaths)).not.toBe(before);
+    renderer.up(evt(200, 200));
+  });
+
+  // The natural one-motion gesture: click, then the SECOND press is HELD and
+  // dragged (no release before moving). The double-click must isolate AND arm the
+  // drag in the same press — a return-after-enterMorphEditMode swallowed the held
+  // drag (isLayerDrag never armed) so the blend froze.
+  test('double-click-drag in one motion (held second press) isolates and refolds live', async () => {
+    runtime = await loadVecturaRuntime({ includeRenderer: true });
+    const { VectorEngine, Renderer, Layer } = runtime.window.Vectura;
+    const raf = installSyncRaf(runtime.window);
+    const engine = new VectorEngine();
+    engine.layers = [];
+    const modifierId = engine.addModifierLayer('morph');
+    const oval = new Layer('oval-child', 'shape', 'Oval');
+    oval.parentId = modifierId; oval.sourcePaths = [circle(80, 90, 28)];
+    const poly = new Layer('poly-child', 'shape', 'Polygon');
+    poly.parentId = modifierId; poly.sourcePaths = [hexagon(200, 90, 32)];
+    engine.layers.push(oval, poly);
+    engine.generate(oval.id); engine.generate(poly.id);
+    engine.computeAllDisplayGeometry();
+    const container = engine.layers.find((l) => l.id === modifierId);
+    const renderer = new Renderer('main-canvas', engine);
+    renderer.ready = true; renderer.scale = 1; renderer.offsetX = 0; renderer.offsetY = 0;
+    renderer.onComputeDisplayGeometry = () => engine.computeAllDisplayGeometry();
+    renderer.setTool('select');
+    const before = JSON.stringify(container.morphedPaths);
+
+    const evt = (x, y) => ({
+      clientX: x, clientY: y, button: 0, pointerType: 'mouse', pointerId: 1,
+      shiftKey: false, ctrlKey: false, metaKey: false, altKey: false,
+      preventDefault() {}, stopPropagation() {},
+    });
+    // click, then HOLD the second press and drag (no up between down#2 and move).
+    renderer.down(evt(200, 90)); renderer.up(evt(200, 90));
+    renderer.down(evt(200, 90)); // 2nd click of the double-click, held
+    expect(renderer.groupEditMode).toEqual({ groupId: container.id, activeLayerId: poly.id, kind: 'morph' });
+    expect(renderer.isLayerDrag).toBe(true);   // drag armed in the same press
+    expect(renderer._morphDragActive).toBe(true);
+    renderer.move(evt(200, 220));              // drag while still held
+    raf.flush();
+    expect(JSON.stringify(container.morphedPaths)).not.toBe(before); // refolded live
+    renderer.up(evt(200, 220));
+  });
 });

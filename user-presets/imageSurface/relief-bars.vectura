@@ -24,7 +24,9 @@
         "tilt": 58,
         "barRows": 13,
         "barColumns": 16,
-        "barGap": 0.16,
+        "barGap": 2.2,
+        "barHeightSteps": 6,
+        "showBarBase": true,
         "seeThrough": true
       }
     }

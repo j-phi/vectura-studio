@@ -83,9 +83,18 @@ describe('Vectura geometry algorithms', () => {
   });
 
   test('spiral3d supports shapes, see-through hidden dashes, and dot loops', () => {
-    ['cone', 'cylinder', 'ellipsoid'].forEach((shape) => {
+    ['sphere', 'cone', 'cylinder', 'ellipsoid'].forEach((shape) => {
       expect(finitePaths(generate('spiral3d', { shape, curveResolution: 120 }))).toBe(true);
     });
+
+    const sphere = generate('spiral3d', { shape: 'sphere', sphereRadius: 50, curveResolution: 120 });
+    const equalEllipsoid = generate('spiral3d', {
+      shape: 'ellipsoid',
+      ellipsoidEquatorRadius: 50,
+      ellipsoidPolarRadius: 50,
+      curveResolution: 120,
+    });
+    expect(pathSignature(sphere)).toBe(pathSignature(equalEllipsoid));
 
     const front = generate('spiral3d', { surfaceMode: 'front', curveResolution: 160 });
     const seeThrough = generate('spiral3d', { surfaceMode: 'seeThrough', curveResolution: 160 });
@@ -206,6 +215,45 @@ describe('Vectura geometry algorithms', () => {
     const flipped = generate('imageSurface', { fixtureGrid, sampleDetail: 24, rows: 8, normalFlipY: true });
     expect(pathSignature(base)).not.toBe(pathSignature(inverted));
     expect(pathSignature(base)).not.toBe(pathSignature(flipped));
+
+    const planeSolid = generate('imageSurface', {
+      mode: 'lines',
+      horizontalLinesAsPlanes: true,
+      seeThrough: false,
+      fixtureGrid,
+      sampleDetail: 18,
+      rows: 5,
+    });
+    const planeSeeThrough = generate('imageSurface', {
+      mode: 'lines',
+      horizontalLinesAsPlanes: true,
+      seeThrough: true,
+      fixtureGrid,
+      sampleDetail: 18,
+      rows: 5,
+    });
+    expect(planeSolid.some((path) => path.meta?.reliefPlane && path.meta?.hiddenLine)).toBe(false);
+    expect(planeSeeThrough.some((path) => path.meta?.reliefPlane && path.meta?.hiddenLine)).toBe(true);
+
+    const solidBars = generate('imageSurface', {
+      mode: 'bars',
+      fixtureGrid,
+      barRows: 4,
+      barColumns: 4,
+      barGap: 3,
+      seeThrough: false,
+    });
+    const hiddenBars = generate('imageSurface', {
+      mode: 'bars',
+      fixtureGrid,
+      barRows: 4,
+      barColumns: 4,
+      barGap: 3,
+      seeThrough: true,
+    });
+    expect(solidBars.some((path) => path.meta?.barSide)).toBe(true);
+    expect(hiddenBars.some((path) => path.meta?.barSide && path.meta?.hiddenLine)).toBe(true);
+    expect(hiddenBars.some((path) => path.meta?.vertical)).toBe(false);
   });
 
   test('perspective projection foreshortens depth and stays orthographic by default', () => {

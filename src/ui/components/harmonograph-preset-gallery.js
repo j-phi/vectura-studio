@@ -917,6 +917,28 @@
 
     // ── Init ──────────────────────────────────────────────────────────────────
     rebuildPopover();
+
+    // Auto-apply a user-modified default preset to a layer that still matches
+    // pure factory values (i.e. was just created and never manually edited).
+    // Without this, a fresh layer starts with ALGO_DEFAULTS and the gallery
+    // immediately shows the save pip because the factory values diverge from
+    // the user's saved Default params.
+    if (layer && system && defaultPresetId
+        && layer.params && layer.params.preset === defaultPresetId) {
+      const userSaved = userPresets.find((p) => p.id === defaultPresetId);
+      if (userSaved && userSaved.params && Object.keys(userSaved.params).length > 0) {
+        const isFactory = Object.keys(defaults).every((k) =>
+          IGNORED_KEYS.has(k) || deepEqual(layer.params[k], defaults[k])
+        );
+        if (isFactory) {
+          Object.entries(userSaved.params).forEach(([k, v]) => {
+            if (!STRIP.has(k)) layer.params[k] = v;
+          });
+          activeId = computeActiveId();
+        }
+      }
+    }
+
     updateTrigger(activeId);
     target.appendChild(wrap);
     return { el: wrap, refresh, openSave: openSaveModal };
