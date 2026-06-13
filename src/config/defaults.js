@@ -53,7 +53,7 @@
     formatDocumentLength,
   };
   // Shared manifest extras for the legacy "classic" skin family. Phase 0 carries the
-  // dimensions through unchanged from styles.css today, so these defaults land as
+  // dimensions through unchanged from the legacy CSS structure, so these defaults land as
   // no-ops visually but unlock the SkinManager pipeline (motion vars, swap-suppression).
   const CLASSIC_MANIFEST = {
     paneLeftWidth: 290,
@@ -125,7 +125,7 @@
       gridColor: '#000000',
       gridMinorColor: '#000000',
       // Light canvas/paper paired with dark UI chrome. The full --color-* alias
-      // set is pushed inline so styles.css :root defaults (which have the same
+      // set is pushed inline to maintain backward compatibility with legacy aliases (which have the same
       // specificity as [data-ui-skin] but load later) can't bleed through.
       cssVars: {
         '--vectura-bg-rgb': '27 27 27',
@@ -156,8 +156,7 @@
         '--ui-workspace': '#d5d5d5',
         '--render-canvas': '#d5d5d5',
         // Medium-grey selection bounds + handle stroke so the dashed rect around
-        // a selected object stays visible on the white artboard. styles.css :root
-        // defines this token to a near-white (#f8fafc); pushing inline wins.
+        // a selected object stays visible on the white artboard.
         '--render-selection-handle-stroke': '#9ca3af',
       },
     },
@@ -173,7 +172,7 @@
       pen1Color: '#0a1320',
       gridColor: '#000000',
       gridMinorColor: '#000000',
-      // Full --color-* alias set pushed inline so styles.css :root dark defaults
+      // Full --color-* alias set pushed inline to maintain backward compatibility with legacy aliases
       // (which load after meridian-light.css and tie on specificity) don't bleed
       // through and dark-tint .tool-btn / .pendulum-card / etc.
       cssVars: {
@@ -205,8 +204,7 @@
         '--ui-workspace': '#d5d5d5',
         '--render-canvas': '#d5d5d5',
         // Medium-grey selection bounds + handle stroke so the dashed rect around
-        // a selected object stays visible on the white artboard. styles.css :root
-        // defines this token to a near-white (#f8fafc); pushing inline wins.
+        // a selected object stays visible on the white artboard.
         '--render-selection-handle-stroke': '#9ca3af',
       },
     },
