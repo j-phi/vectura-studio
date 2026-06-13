@@ -71,42 +71,122 @@
   // (spiral3d, polyhedron, meshTopography, imageSurface). Drives the four
   // cross-cutting geometry3d.js enhancements: depth-cue dash (#2), silhouette /
   // crease line-weight emphasis (#3), hidden-line removal (#4), Lambert hatching
-  // (#5). Every control defaults OFF/neutral so existing output is unchanged
-  // until the per-algorithm teams wire the helpers in.
-  const SHADING_LINE_CONTROLS = [
-    { type: 'section', label: 'Shading & Lines' },
-    {
-      id: 'depthCue',
-      label: 'Depth Cue',
-      type: 'select',
-      options: [
-        { value: 'off', label: 'Off' },
-        { value: 'dash', label: 'Dash by depth' },
-      ],
+  // (#5).
+  //
+  // Capability-driven factory (R-CC): a flat array cannot show a control on one
+  // algo and hide it on another. `buildShadingControls(caps)` injects per-algo /
+  // per-mode capability predicates ANDed with each control's own self-toggle so
+  // that inapplicable controls are HIDDEN where the generator does not wire them.
+  // Single source of truth preserved: one factory, four call sites.
+  //
+  // Each capability flag is a function of `p` (so per-mode algos like imageSurface
+  // can vary by `p.mode`). Defaults to `() => true` (full block, today's behavior).
+  //   - allowOutline  → emphasizeOutline / outlineWeight
+  //   - allowCrease   → showCreases / creaseAngle
+  //   - hiddenLineModes → hiddenLineMode (face-derivable visibility)
+  //   - allowDepthBias → depthBias (occlusion bias; defaults to hiddenLineModes
+  //     but can be suppressed independently — e.g. spiral3d wires hidden-line
+  //     dash/backface but has no occlusion-bias surface).
+  //   - allowHatch    → hatchEnable + light/hatchAngle/hatchSpacing/crossHatch
+  //   - depthCue / depthCueStrength are ALWAYS present (work on every algo).
+  // The section header is ALWAYS emitted (R-CONSIST rule a).
+  const TRUE = () => true;
+  const buildShadingControls = (caps = {}) => {
+    const {
+      allowOutline = TRUE,
+      allowCrease = TRUE,
+      hiddenLineModes = TRUE,
+      allowHatch = TRUE,
+      allowDepthBias = hiddenLineModes,
+    } = caps;
+    // Compose a capability predicate with a control's own activation predicate
+    // via logical AND. When the capability is the always-true default this
+    // returns the original self-toggle (or omits showIf entirely), so the full
+    // block stays byte-equivalent for polyhedron / meshTopography.
+    const gate = (cap, self) => {
+      if (cap === TRUE) return self; // unconditional capability → keep self-toggle as-is
+      if (!self) return (p) => !!cap(p);
+      return (p) => !!cap(p) && !!self(p);
+    };
+    return [
+      { type: 'section', label: 'Shading & Lines' },
+      {
+        id: 'depthCue',
+        label: 'Depth Cue',
+        type: 'select',
+        options: [
+          { value: 'off', label: 'Off' },
+          { value: 'dash', label: 'Dash by depth' },
+        ],
+      },
+      { id: 'depthCueStrength', label: 'Depth Cue Strength', type: 'range', min: 0, max: 100, step: 1, showIf: (p) => (p.depthCue || 'off') !== 'off', livePreview: true },
+      { id: 'emphasizeOutline', label: 'Emphasize Outline', type: 'checkbox', showIf: gate(allowOutline, null) },
+      { id: 'outlineWeight', label: 'Outline Weight', type: 'range', min: 1, max: 4, step: 0.1, showIf: gate(allowOutline, (p) => p.emphasizeOutline === true), livePreview: true },
+      { id: 'showCreases', label: 'Show Creases', type: 'checkbox', showIf: gate(allowCrease, null) },
+      { id: 'creaseAngle', label: 'Crease Angle', type: 'range', min: 10, max: 80, step: 1, displayUnit: '°', showIf: gate(allowCrease, (p) => p.showCreases === true), livePreview: true },
+      {
+        id: 'hiddenLineMode',
+        label: 'Hidden Lines',
+        type: 'select',
+        options: [
+          { value: 'backface', label: 'Back-face only' },
+          { value: 'remove', label: 'Remove hidden' },
+          { value: 'dash', label: 'Dash hidden' },
+        ],
+        showIf: gate(hiddenLineModes, null),
+      },
+      { id: 'depthBias', label: 'Occlusion Bias', type: 'range', min: 0, max: 3, step: 0.1, showIf: gate(allowDepthBias, (p) => (p.hiddenLineMode || 'backface') !== 'backface'), livePreview: true },
+      { id: 'hatchEnable', label: 'Lambert Hatching', type: 'checkbox', showIf: gate(allowHatch, null) },
+      { id: 'lightAzimuth', label: 'Light Azimuth', type: 'range', min: 0, max: 360, step: 1, displayUnit: '°', showIf: gate(allowHatch, (p) => p.hatchEnable === true), livePreview: true },
+      { id: 'lightElevation', label: 'Light Elevation', type: 'range', min: 0, max: 90, step: 1, displayUnit: '°', showIf: gate(allowHatch, (p) => p.hatchEnable === true), livePreview: true },
+      { id: 'hatchAngle', label: 'Hatch Angle', type: 'range', min: 0, max: 180, step: 1, displayUnit: '°', showIf: gate(allowHatch, (p) => p.hatchEnable === true), livePreview: true },
+      { id: 'hatchSpacing', label: 'Hatch Spacing', type: 'range', min: 2, max: 20, step: 0.5, showIf: gate(allowHatch, (p) => p.hatchEnable === true), livePreview: true },
+      { id: 'crossHatch', label: 'Cross-Hatch', type: 'checkbox', showIf: gate(allowHatch, (p) => p.hatchEnable === true) },
+    ];
+  };
+
+  // Per-algo capability predicates (WU2). Only SHOW a shading control where the
+  // generator actually wires it (verified against the algorithm sources):
+  //   - spiral3d: line/dot geometry, NO closed faces. Keeps depthCue + outline +
+  //     hiddenLineMode (silhouette rings + backface/dash ARE wired); hides
+  //     hatch / crease / depthBias (no surface).
+  //   - imageSurface: per-mode. Only depthCue + hatch are actually wired by the
+  //     generator. hatch wired in mesh & bars (pushFaceHatch) → gated there.
+  //     hiddenLineMode is DEAD (image-surface.js never reads p.hiddenLineMode;
+  //     the real toggle is the existing seeThrough control) → hidden in all modes.
+  //     depthBias self-toggles on that dead hiddenLineMode → unreachable → hidden.
+  //     crease never meaningful on a height grid; outline NOT yet wired → hidden.
+  const IMG_FACE_MODES = ['mesh', 'bars'];
+  const imgFaceCapable = (p = {}) => IMG_FACE_MODES.includes(p.mode || 'lines');
+  const SHADING_CAPS = {
+    polyhedron: {},
+    meshTopography: {},
+    spiral3d: {
+      // KEEP: depthCue, depthCueStrength, emphasizeOutline, outlineWeight,
+      // hiddenLineMode. HIDE: showCreases, creaseAngle, hatchEnable, light*,
+      // hatch*, crossHatch, depthBias (line/dot geometry, no closed faces; the
+      // silhouette rings + hidden-line backface/dash are wired, occlusion bias is not).
+      allowHatch: () => false,
+      allowCrease: () => false,
+      hiddenLineModes: () => true,
+      allowDepthBias: () => false,
+      allowOutline: () => true,
     },
-    { id: 'depthCueStrength', label: 'Depth Strength', type: 'range', min: 0, max: 100, step: 1, showIf: (p) => (p.depthCue || 'off') !== 'off', livePreview: true },
-    { id: 'emphasizeOutline', label: 'Emphasize Outline', type: 'checkbox' },
-    { id: 'outlineWeight', label: 'Outline Weight', type: 'range', min: 1, max: 4, step: 0.1, showIf: (p) => p.emphasizeOutline === true, livePreview: true },
-    { id: 'showCreases', label: 'Show Creases', type: 'checkbox' },
-    { id: 'creaseAngle', label: 'Crease Angle', type: 'range', min: 10, max: 80, step: 1, displayUnit: '°', showIf: (p) => p.showCreases === true, livePreview: true },
-    {
-      id: 'hiddenLineMode',
-      label: 'Hidden Lines',
-      type: 'select',
-      options: [
-        { value: 'backface', label: 'Back-face only' },
-        { value: 'remove', label: 'Remove hidden' },
-        { value: 'dash', label: 'Dash hidden' },
-      ],
+    imageSurface: {
+      allowHatch: imgFaceCapable,
+      allowCrease: () => false,
+      // hiddenLineMode is dead on imageSurface: image-surface.js never reads
+      // p.hiddenLineMode (the real visibility toggle is the existing seeThrough
+      // control), so showing it is a dead, misleading, duplicative control.
+      hiddenLineModes: () => false,
+      // depthBias ("Occlusion Bias") self-toggles on the now-dead hiddenLineMode,
+      // so it can never be reached via a working control path — hide it this wave.
+      // (Properly exposing bar-occlusion bias keyed on seeThrough is deferred to
+      // the generator-wiring wave.)
+      allowDepthBias: () => false,
+      allowOutline: () => false,
     },
-    { id: 'depthBias', label: 'Depth Bias', type: 'range', min: 0, max: 3, step: 0.1, showIf: (p) => (p.hiddenLineMode || 'backface') !== 'backface', livePreview: true },
-    { id: 'hatchEnable', label: 'Lambert Hatching', type: 'checkbox' },
-    { id: 'lightAzimuth', label: 'Light Azimuth', type: 'range', min: 0, max: 360, step: 1, displayUnit: '°', showIf: (p) => p.hatchEnable === true, livePreview: true },
-    { id: 'lightElevation', label: 'Light Elevation', type: 'range', min: 0, max: 90, step: 1, displayUnit: '°', showIf: (p) => p.hatchEnable === true, livePreview: true },
-    { id: 'hatchAngle', label: 'Hatch Angle', type: 'range', min: 0, max: 180, step: 1, displayUnit: '°', showIf: (p) => p.hatchEnable === true, livePreview: true },
-    { id: 'hatchSpacing', label: 'Hatch Spacing', type: 'range', min: 2, max: 20, step: 0.5, showIf: (p) => p.hatchEnable === true, livePreview: true },
-    { id: 'crossHatch', label: 'Cross-Hatch', type: 'checkbox', showIf: (p) => p.hatchEnable === true },
-  ];
+  };
 
   const CONTROL_DEFS = {
     expanded: [],
@@ -1750,12 +1830,12 @@
     { type: 'section', label: 'View' },
     { id: 'projection', label: 'Projection', type: 'select', options: [{ value: 'orthographic', label: 'Orthographic' }, { value: 'perspective', label: 'Perspective' }] },
     { id: 'cameraDistance', label: 'Camera Distance', type: 'range', min: 150, max: 2000, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
-    { id: 'focalLength', label: 'Depth Strength', type: 'range', min: 100, max: 1500, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
+    { id: 'focalLength', label: 'Perspective Strength', type: 'range', min: 100, max: 1500, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
     { id: 'yaw', label: 'Yaw', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
     { id: 'pitch', label: 'Pitch', type: 'range', min: -90, max: 90, step: 1, displayUnit: '°', livePreview: true },
     { id: 'roll', label: 'Roll', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
     { id: 'curveResolution', label: 'Resolution', type: 'range', min: 90, max: 1800, step: 10, livePreview: true },
-    ...SHADING_LINE_CONTROLS,
+    ...buildShadingControls(SHADING_CAPS.spiral3d),
   ];
 
   CONTROL_DEFS.polyhedron = [
@@ -1793,7 +1873,7 @@
     },
     {
       id: 'faceOpacityMode',
-      label: 'Hidden Lines',
+      label: 'Hidden Faces',
       type: 'select',
       options: [
         { value: 'seeThrough', label: 'Dashed' },
@@ -1837,10 +1917,10 @@
     { type: 'section', label: 'View' },
     { id: 'projection', label: 'Projection', type: 'select', options: [{ value: 'orthographic', label: 'Orthographic' }, { value: 'perspective', label: 'Perspective' }] },
     { id: 'cameraDistance', label: 'Camera Distance', type: 'range', min: 150, max: 2000, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
-    { id: 'focalLength', label: 'Depth Strength', type: 'range', min: 100, max: 1500, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
+    { id: 'focalLength', label: 'Perspective Strength', type: 'range', min: 100, max: 1500, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
     { id: 'rotate', label: 'Rotate', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
     { id: 'tilt', label: 'Tilt', type: 'range', min: 0, max: 89, step: 1, displayUnit: '°', livePreview: true },
-    ...SHADING_LINE_CONTROLS,
+    ...buildShadingControls(SHADING_CAPS.polyhedron),
   ];
 
   CONTROL_DEFS.meshTopography = [
@@ -1874,7 +1954,6 @@
         { value: 'triangleMesh', label: 'Triangle Mesh' },
       ],
     },
-    { id: 'artworkSize', label: 'Artwork Size', type: 'range', min: 30, max: 260, step: 1, displayUnit: 'mm', livePreview: true },
     { id: 'primitiveDetail', label: 'Primitive Detail', type: 'range', min: 4, max: 100, step: 1, livePreview: true },
     { id: 'primitiveScaleX', label: 'Scale X', type: 'range', min: 10, max: 130, step: 1, displayUnit: 'mm', livePreview: true },
     { id: 'primitiveScaleY', label: 'Scale Y', type: 'range', min: 10, max: 130, step: 1, displayUnit: 'mm', livePreview: true },
@@ -1898,11 +1977,11 @@
     { type: 'section', label: 'View' },
     { id: 'projection', label: 'Projection', type: 'select', options: [{ value: 'orthographic', label: 'Orthographic' }, { value: 'perspective', label: 'Perspective' }] },
     { id: 'cameraDistance', label: 'Camera Distance', type: 'range', min: 150, max: 2000, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
-    { id: 'focalLength', label: 'Depth Strength', type: 'range', min: 100, max: 1500, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
+    { id: 'focalLength', label: 'Perspective Strength', type: 'range', min: 100, max: 1500, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
     { id: 'yaw', label: 'Yaw', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
     { id: 'pitch', label: 'Pitch', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
     { id: 'roll', label: 'Roll', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
-    ...SHADING_LINE_CONTROLS,
+    ...buildShadingControls(SHADING_CAPS.meshTopography),
   ];
 
   CONTROL_DEFS.imageSurface = [
@@ -1968,10 +2047,10 @@
     { type: 'section', label: 'View' },
     { id: 'projection', label: 'Projection', type: 'select', options: [{ value: 'orthographic', label: 'Orthographic' }, { value: 'perspective', label: 'Perspective' }] },
     { id: 'cameraDistance', label: 'Camera Distance', type: 'range', min: 150, max: 2000, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
-    { id: 'focalLength', label: 'Depth Strength', type: 'range', min: 100, max: 1500, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
+    { id: 'focalLength', label: 'Perspective Strength', type: 'range', min: 100, max: 1500, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
     { id: 'rotate', label: 'Rotate', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
     { id: 'tilt', label: 'Tilt', type: 'range', min: 0, max: 89, step: 1, displayUnit: '°', livePreview: true },
-    ...SHADING_LINE_CONTROLS,
+    ...buildShadingControls(SHADING_CAPS.imageSurface),
   ];
 
   const PETALIS_DESIGNER_REMOVED_CONTROL_IDS = new Set([

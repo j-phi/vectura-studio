@@ -1683,7 +1683,6 @@
       importedMesh: null,
       meshName: '',
       renderMode: 'contours',
-      artworkSize: 150,
       primitiveDetail: 18,
       primitiveScaleX: 65,
       primitiveScaleY: 65,

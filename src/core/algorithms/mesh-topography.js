@@ -109,9 +109,13 @@
 
   const createPrimitiveMesh = (p, detail) => {
     const mode = p.sourceMode || 'sphere';
-    const sx = Math.max(1, finite(p.scaleX3d ?? p.primitiveScaleX, finite(p.artworkSize, 150) * 0.42));
-    const sy = Math.max(1, finite(p.scaleY3d ?? p.primitiveScaleY, finite(p.artworkSize, 150) * 0.42));
-    const sz = Math.max(1, finite(p.scaleZ3d ?? p.primitiveScaleZ, finite(p.artworkSize, 150) * 0.42));
+    // Mesh size is driven solely by primitiveScaleX/Y/Z (defaulted in
+    // ALGO_DEFAULTS). The legacy `artworkSize` fallback was removed (audit D2):
+    // it was inert and duplicated primitiveScale. The numeric fallback (63 =
+    // 150 * 0.42) preserves identical behaviour if a scale is ever absent.
+    const sx = Math.max(1, finite(p.scaleX3d ?? p.primitiveScaleX, 63));
+    const sy = Math.max(1, finite(p.scaleY3d ?? p.primitiveScaleY, 63));
+    const sz = Math.max(1, finite(p.scaleZ3d ?? p.primitiveScaleZ, 63));
     if (mode === 'stlMesh') {
       const mesh = p.importedMesh;
       if (!mesh || !Array.isArray(mesh.vertices) || !mesh.vertices.length || !Array.isArray(mesh.faces)) {
