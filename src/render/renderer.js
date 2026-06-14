@@ -71,8 +71,8 @@
       yawDefault: -28,
       pitchDefault: 34,
       rollDefault: 0,
-      pitchMin: 0,
-      pitchMax: 89,
+      pitchMin: -90,
+      pitchMax: 90,
     },
     imageSurface: {
       yawParam: 'rotate',

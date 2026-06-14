@@ -188,6 +188,23 @@ describe('Renderer 3D rotation control', () => {
       expect(layer.params.yaw).toBe(0);
       expect(layer.params.pitch).toBe(30);
     }
+
+    // Pitch handle can tip below the horizon (negative pitch), not clamp at 0
+    {
+      const layer = makeLayer('meshTopography', { yaw: 0, pitch: 30, roll: 0 });
+      const { renderer } = makeRenderer(layer);
+      const bounds = renderer.getSelectionBounds([layer]);
+      const control = renderer.get3DRotationControl(layer, bounds);
+      const start = renderer.worldToScreen(control.pitchMarker.x, control.pitchMarker.y);
+      const move = renderer.worldToScreen(control.pitchMarker.x, control.center.y + control.pitchTrackHeight / 2);
+      const hit = renderer.hit3DRotationControl(start.x, start.y, layer, bounds);
+
+      expect(hit.type).toBe('pitch');
+      renderer.begin3DRotationDrag(hit, { clientX: start.x, clientY: start.y });
+      renderer.apply3DRotationDrag({ clientX: move.x, clientY: move.y });
+
+      expect(layer.params.pitch).toBeCloseTo(-90);
+    }
   });
 
   test('spiral3d roll handle updates roll independently', () => {
