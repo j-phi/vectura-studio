@@ -1,0 +1,30 @@
+{
+  "type": "vectura",
+  "name": "Default",
+  "meta": {
+    "presetId": "lissajous-default",
+    "group": "Classic",
+    "system": "lissajous",
+    "savedAt": 1781387706052
+  },
+  "layers": [
+    {
+      "type": "lissajous",
+      "params": {
+        "preset": "lissajous-default",
+        "freqX": 3,
+        "freqY": 2,
+        "damping": 0.001,
+        "phase": 1.5,
+        "resolution": 200,
+        "scale": 0.8,
+        "truncateStart": 0,
+        "truncateEnd": 0,
+        "smoothing": 0,
+        "simplify": 0,
+        "curves": true,
+        "closeLines": false
+      }
+    }
+  ]
+}

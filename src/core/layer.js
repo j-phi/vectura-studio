@@ -11,6 +11,16 @@
       this.type = type;
       this.name = name;
       this.params = JSON.parse(JSON.stringify(ALGO_DEFAULTS[type] || ALGO_DEFAULTS.flowfield));
+      // Apply file-based default preset params on top of ALGO_DEFAULTS
+      const _defaultId = this.params.preset;
+      if (_defaultId) {
+        const _dp = ((window.Vectura || {}).PRESETS || []).find(
+          p => p.id === _defaultId && p.preset_system === type
+        );
+        if (_dp && _dp.params && Object.keys(_dp.params).length > 0) {
+          Object.assign(this.params, _dp.params);
+        }
+      }
       this.params.seed = Math.floor(Math.random() * 99999);
       this.params.posX = 0;
       this.params.posY = 0;

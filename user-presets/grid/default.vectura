@@ -1,0 +1,70 @@
+{
+  "type": "vectura",
+  "name": "Default",
+  "meta": {
+    "presetId": "grid-default",
+    "group": "Classic",
+    "system": "grid",
+    "savedAt": 1781387706052
+  },
+  "layers": [
+    {
+      "type": "grid",
+      "params": {
+        "preset": "grid-default",
+        "rows": 20,
+        "cols": 20,
+        "distortion": 10,
+        "noises": [
+          {
+            "id": "noise-1",
+            "enabled": true,
+            "type": "simplex",
+            "blend": "add",
+            "amplitude": 1,
+            "zoom": 0.05,
+            "freq": 1,
+            "angle": 0,
+            "shiftX": 0,
+            "shiftY": 0,
+            "tileMode": "off",
+            "tilePadding": 0,
+            "patternScale": 1,
+            "warpStrength": 1,
+            "cellularScale": 1,
+            "cellularJitter": 1,
+            "stepsCount": 5,
+            "seed": 0,
+            "octaves": 1,
+            "lacunarity": 2,
+            "gain": 0.5,
+            "noiseStyle": "linear",
+            "noiseThreshold": 0,
+            "imageWidth": 1,
+            "imageHeight": 1,
+            "microFreq": 0,
+            "imageInvertColor": false,
+            "imageInvertOpacity": false,
+            "imageId": "",
+            "imageName": "",
+            "imagePreview": "",
+            "imageAlgo": "luma",
+            "imageEffects": [],
+            "polygonZoomReference": 0.05,
+            "polygonRadius": 2,
+            "polygonSides": 6,
+            "polygonRotation": 0,
+            "polygonOutline": 0,
+            "polygonEdgeRadius": 0
+          }
+        ],
+        "noiseScale": 0.05,
+        "type": "warp",
+        "chaos": 0,
+        "smoothing": 0,
+        "simplify": 0,
+        "curves": false
+      }
+    }
+  ]
+}

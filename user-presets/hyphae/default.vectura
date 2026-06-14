@@ -1,0 +1,27 @@
+{
+  "type": "vectura",
+  "name": "Default",
+  "meta": {
+    "presetId": "hyphae-default",
+    "group": "Classic",
+    "system": "hyphae",
+    "savedAt": 1781387706052
+  },
+  "layers": [
+    {
+      "type": "hyphae",
+      "params": {
+        "preset": "hyphae-default",
+        "sources": 2,
+        "steps": 50,
+        "branchProb": 0.05,
+        "angleVar": 0.5,
+        "segLen": 3,
+        "maxBranches": 1000,
+        "smoothing": 0,
+        "simplify": 0,
+        "curves": false
+      }
+    }
+  ]
+}

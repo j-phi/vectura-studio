@@ -497,6 +497,38 @@
           opt.appendChild(sel);
         }
 
+        // Dev-only: "Set as Default" button. Downloads a .vectura file pre-wired
+        // with this preset's full params under the current default preset id —
+        // drop into user-presets/<system>/ and run npm run user-presets:bundle
+        // to hardwire it as the factory default for fresh layers.
+        if (params && system && defaultPresetId && isDevMode()) {
+          const setDefaultBtn = document.createElement('button');
+          setDefaultBtn.type = 'button';
+          setDefaultBtn.className = 'hg-preset-set-default';
+          const _stem = defaultPresetId.replace(`${system.toLowerCase()}-`, '') || 'default';
+          setDefaultBtn.title = `Set as default — downloads ${_stem}.vectura for user-presets/${system}/`;
+          setDefaultBtn.setAttribute('aria-label', `Set "${label}" as default for ${system}`);
+          setDefaultBtn.innerHTML = `<svg viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M5 1l1.2 2.4L9 3.9 6.8 6l.6 3L5 7.8 2.6 9l.6-3L1 3.9l2.8-.5z" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/></svg>`;
+          setDefaultBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const doc = {
+              type: 'vectura',
+              name: 'Default',
+              meta: { presetId: defaultPresetId, group: 'Classic', system, savedAt: Date.now() },
+              layers: [{ type: system, params }],
+            };
+            const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `${_stem}.vectura`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(a.href);
+          });
+          opt.appendChild(setDefaultBtn);
+        }
+
         // Per-row delete / revert affordance. The default-marker preset is never
         // removable (deleting it would break fresh-layer init). Otherwise:
         //   • Developer Mode → DELETE works on EVERY preset, built-ins included:

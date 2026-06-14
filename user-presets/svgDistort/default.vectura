@@ -1,0 +1,42 @@
+{
+  "type": "vectura",
+  "name": "Default",
+  "meta": {
+    "presetId": "svgdistort-default",
+    "group": "Classic",
+    "system": "svgDistort",
+    "savedAt": 1781387706052
+  },
+  "layers": [
+    {
+      "type": "svgDistort",
+      "params": {
+        "label": "SVG Import",
+        "preset": "svgdistort-default",
+        "importedGroups": [],
+        "svgName": "",
+        "showOutlines": true,
+        "fillMode": "hatch",
+        "fillDensity": 8,
+        "fillAngle": 0,
+        "fillAmplitude": 1,
+        "fillDotSize": 1,
+        "fillPadding": 0,
+        "fillShiftX": 0,
+        "fillShiftY": 0,
+        "fillDotPattern": "brick",
+        "fillAxes": 3,
+        "autoFit": true,
+        "scale": 1,
+        "offsetX": 0,
+        "offsetY": 0,
+        "noises": [],
+        "noiseTarget": "all",
+        "seed": 0,
+        "smoothing": 0,
+        "simplify": 0,
+        "curves": false
+      }
+    }
+  ]
+}
