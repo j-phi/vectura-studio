@@ -76,7 +76,8 @@ describe('Renderer 3D rotation control', () => {
 
   test('only supported 3D algorithm layers expose a control', () => {
     ['spiral3d', 'polyhedron', 'meshTopography', 'imageSurface'].forEach((type) => {
-      const layer = makeLayer(type, type === 'spiral3d' ? { yaw: 0, pitch: 30, roll: 0 } : { rotate: 0, tilt: 30 });
+      const usesEuler = type === 'spiral3d' || type === 'meshTopography';
+      const layer = makeLayer(type, usesEuler ? { yaw: 0, pitch: 30, roll: 0 } : { rotate: 0, tilt: 30 });
       const { renderer } = makeRenderer(layer);
       const bounds = renderer.getSelectionBounds([layer]);
       expect(renderer.get3DRotationControl(layer, bounds)).toBeTruthy();
@@ -144,6 +145,48 @@ describe('Renderer 3D rotation control', () => {
 
       expect(layer.params.rotate).toBe(0);
       expect(layer.params.tilt).toBeCloseTo(89);
+    }
+  });
+
+  test('meshTopography yaw/pitch/roll handles update euler params (not rotate/tilt)', () => {
+    // Yaw handle drives params.yaw
+    {
+      const layer = makeLayer('meshTopography', { yaw: 0, pitch: 30, roll: 0 });
+      const { renderer } = makeRenderer(layer);
+      const bounds = renderer.getSelectionBounds([layer]);
+      const control = renderer.get3DRotationControl(layer, bounds);
+      const start = renderer.worldToScreen(control.yawMarker.x, control.yawMarker.y);
+      const move = renderer.worldToScreen(control.center.x + control.yawRadiusX, control.center.y);
+      const hit = renderer.hit3DRotationControl(start.x, start.y, layer, bounds);
+
+      expect(hit.type).toBe('yaw');
+      renderer.begin3DRotationDrag(hit, { clientX: start.x, clientY: start.y });
+      renderer.apply3DRotationDrag({ clientX: move.x, clientY: move.y });
+
+      expect(layer.params.yaw).toBeCloseTo(90);
+      expect(layer.params.pitch).toBe(30);
+      expect(layer.params.rotate).toBeUndefined();
+      expect(layer.params.tilt).toBeUndefined();
+    }
+
+    // Roll handle exists and drives params.roll
+    {
+      const layer = makeLayer('meshTopography', { yaw: 0, pitch: 30, roll: 0 });
+      const { renderer } = makeRenderer(layer);
+      const bounds = renderer.getSelectionBounds([layer]);
+      const control = renderer.get3DRotationControl(layer, bounds);
+      expect(control.rollHandle).toBeTruthy();
+      const start = renderer.worldToScreen(control.rollHandle.x, control.rollHandle.y);
+      const hit = renderer.hit3DRotationControl(start.x, start.y, layer, bounds);
+      const move = renderer.worldToScreen(control.center.x + control.ringRadius, control.center.y);
+
+      expect(hit.type).toBe('roll');
+      renderer.begin3DRotationDrag(hit, { clientX: start.x, clientY: start.y });
+      renderer.apply3DRotationDrag({ clientX: move.x, clientY: move.y });
+
+      expect(layer.params.roll).toBeCloseTo(90);
+      expect(layer.params.yaw).toBe(0);
+      expect(layer.params.pitch).toBe(30);
     }
   });
 
