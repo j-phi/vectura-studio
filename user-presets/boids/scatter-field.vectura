@@ -1,0 +1,26 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Scatter Field",
+  "meta": {
+    "presetId": "boids-scatter-field",
+    "group": "Organic",
+    "system": "boids",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "boids",
+      "params": {
+        "count": 200,
+        "steps": 100,
+        "speed": 2.5,
+        "mode": "birds",
+        "sepWeight": 2.2,
+        "alignWeight": 0.5,
+        "cohWeight": 0.4,
+        "sepDist": 16
+      }
+    }
+  ]
+}

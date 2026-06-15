@@ -1,0 +1,23 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Downpour",
+  "meta": {
+    "presetId": "rainfall-downpour",
+    "group": "Complex",
+    "system": "rainfall",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "rainfall",
+      "params": {
+        "count": 500,
+        "traceLength": 180,
+        "traceStep": 3,
+        "turbulence": 0.4,
+        "rainfallAngle": 150
+      }
+    }
+  ]
+}

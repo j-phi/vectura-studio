@@ -89,6 +89,38 @@ describe('SVG export hidden geometry toggle', () => {
     return engine;
   };
 
+  test('hidden-line dash metadata is preserved as SVG stroke-dasharray', async () => {
+    const { UI, SETTINGS, VectorEngine, Layer } = runtime.window.Vectura;
+    SETTINGS.margin = 10;
+    SETTINGS.cropExports = false;
+    SETTINGS.truncate = false;
+    SETTINGS.removeHiddenGeometry = false;
+    SETTINGS.optimizationExport = false;
+    SETTINGS.plotterOptimize = 0;
+    SETTINGS.pens = [{ id: 'p1', name: 'P1', color: '#111111', width: 0.4 }];
+
+    const engine = new VectorEngine();
+    engine.layers = [];
+    const layer = new Layer('hidden-lines', 'shape', 'Hidden Lines');
+    layer.penId = 'p1';
+    layer.strokeWidth = 0.4;
+    layer.lineCap = 'round';
+    layer.params.curves = false;
+    const path = [
+      { x: 24, y: 30 },
+      { x: 86, y: 30 },
+      { x: 110, y: 68 },
+    ];
+    path.meta = { hiddenLine: true, strokeDash: [5, 2.5] };
+    layer.paths = [path];
+    engine.layers.push(layer);
+
+    const app = { engine, computeDisplayGeometry() {} };
+    const svg = await captureSvgExport(() => UI.prototype.exportSVG.call({ app }));
+
+    expect(svg).toContain('stroke-dasharray="5 2.5"');
+  });
+
   test('remove hidden geometry trims masked descendants instead of exporting clip paths', async () => {
     const { UI, SETTINGS } = runtime.window.Vectura;
     SETTINGS.margin = 10;

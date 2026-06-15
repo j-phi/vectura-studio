@@ -1,0 +1,22 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Ripple Field",
+  "meta": {
+    "presetId": "wavetable-ripple-field",
+    "group": "Classic",
+    "system": "wavetable",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "wavetable",
+      "params": {
+        "lineStructure": "vertical",
+        "lines": 100,
+        "lineOffset": 135,
+        "gap": 1
+      }
+    }
+  ]
+}

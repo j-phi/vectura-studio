@@ -37,6 +37,43 @@
     return clamp(t, clampAmt, 1 - clampAmt);
   };
   const tipLengthScale = (tipCurl) => 1 - clamp(tipCurl ?? 0, 0, 1) * 0.35;
+  // True pseudo-3D petal cupping: fold the blade about its long axis as a
+  // cylindrical projection — lateral position y becomes arc length on a fold
+  // cylinder, so the projected y' = R·sin(y/R) leaves the midline untouched
+  // and foreshortens the edges progressively (a cup, not a uniform squeeze) —
+  // plus a slight perspective pull of the tip toward the receptacle as the
+  // blade tilts up out of the page. Pure petal-local transform applied just
+  // before the world rotate/translate (outline and shading alike, so the
+  // downstream silhouette clip stays consistent); null at cup 0 so the default
+  // look and every existing baseline stay byte-identical.
+  const makeCupTransform = ({ cup, length, halfWidth }) => {
+    const amt = clamp(cup ?? 0, 0, 1);
+    if (amt <= 1e-6 || !(halfWidth > 0) || !(length > 0)) return null;
+    const fold = amt * Math.PI * 0.45;
+    const radius = halfWidth / fold;
+    const persp = amt * 0.18;
+    const HALF_PI = Math.PI / 2;
+    return (pt) => {
+      const t = clamp(pt.x / length, 0, 1);
+      // Clamp the fold angle so overshoot (edge waves, curl offsets past the
+      // nominal half-width) maps monotonically instead of folding back over.
+      const arc = clamp(pt.y / radius, -HALF_PI, HALF_PI);
+      return {
+        x: pt.x * (1 - persp * t * t),
+        y: radius * Math.sin(arc),
+      };
+    };
+  };
+  const maxProfileHalfWidth = (points) => {
+    let max = 0;
+    if (Array.isArray(points)) {
+      for (const pt of points) {
+        const w = Math.abs(pt?.y ?? 0);
+        if (w > max) max = w;
+      }
+    }
+    return max;
+  };
   const pathLength = (path) => {
     if (!Array.isArray(path) || path.length < 2) return 0;
     let len = 0;
@@ -184,33 +221,64 @@
     return [path];
   };
 
-  const profileBase = (t, type) => {
-    const s = Math.sin(Math.PI * t);
-    switch (type) {
-      case 'oval':
-        return s;
-      case 'teardrop':
-        return s * (1 - 0.35 * t);
-      case 'lanceolate':
-        return Math.pow(s, 1.4);
-      case 'heart':
-        return s * (1 + 0.25 * Math.sin(2 * Math.PI * t));
-      case 'spoon':
-        return s * (0.7 + 0.3 * (1 - t)) + 0.08 * Math.sin(Math.PI * t);
-      case 'rounded':
-        return Math.pow(s, 0.7);
-      case 'notched':
-        return s * (1 - 0.25 * Math.sin(Math.PI * t));
-      case 'spatulate':
-        return s * (0.5 + 0.5 * t);
-      case 'marquise':
-        return Math.pow(s, 1.9) * (1 + 0.12 * Math.cos(Math.PI * t));
-      case 'dagger':
-        return Math.pow(s, 2.6);
-      default:
-        return s;
-    }
+  // Petal silhouette library. Each profile is a smooth, CONVEX half-width(t)
+  // curve (t: 0 = base/attachment, 1 = apex/tip) built from a peak-shifted sine
+  // so the widest point sits where that morphology actually bulges — ovate
+  // petals widest below the middle, spatulate/obovate widest near the tip, etc.
+  // `round` < 1 = fuller/blunter margin, > 1 = narrower/more acute. `notch`
+  // carves a soft apical cleft (obcordate / emarginate). This replaces the old
+  // bezier-times-sharpness^2.6 construction that collapsed every profile into an
+  // identical concave 4-pointed star.
+  const PETAL_SHAPES = {
+    // peak  = where the petal is widest (0 base .. 1 tip)
+    // round = margin fullness (<1 blunt/full, >1 acute/narrow)
+    // claw  = base-neck fraction (larger = longer slender attachment)
+    // notch = apical cleft depth (heart / obcordate)
+    oval: { peak: 0.5, round: 0.62, claw: 0.1 },
+    rounded: { peak: 0.5, round: 0.44, claw: 0.08 },
+    teardrop: { peak: 0.42, round: 0.74, claw: 0.16 },
+    ovate: { peak: 0.4, round: 0.8, claw: 0.18 },
+    lanceolate: { peak: 0.34, round: 1.45, claw: 0.22 },
+    marquise: { peak: 0.5, round: 1.5, claw: 0.2 },
+    dagger: { peak: 0.28, round: 2.0, claw: 0.24 },
+    spatulate: { peak: 0.72, round: 0.7, claw: 0.26 },
+    spoon: { peak: 0.74, round: 0.5, claw: 0.2 },
+    heart: { peak: 0.66, round: 0.56, claw: 0.18, notch: 0.6 },
+    notched: { peak: 0.58, round: 0.58, claw: 0.14, notch: 0.4 },
   };
+
+  const smoothstep01 = (x) => {
+    const c = clamp(x, 0, 1);
+    return c * c * (3 - 2 * c);
+  };
+
+  const petalShape = (t, type) => {
+    const s = PETAL_SHAPES[type] || PETAL_SHAPES.oval;
+    const m = s.peak;
+    // Peak-shifted argument: maps [0,m]->[0,0.5] and [m,1]->[0.5,1] so sin() peaks at t=m.
+    const g =
+      t <= m
+        ? 0.5 * (t / Math.max(1e-4, m))
+        : 0.5 + 0.5 * ((t - m) / Math.max(1e-4, 1 - m));
+    let w = Math.pow(Math.max(0, Math.sin(Math.PI * g)), s.round);
+    // Base claw: real petals attach at a narrowed neck, not a blunt balloon.
+    // Suppress the half-width over the first ~claw fraction of the length so the
+    // base tapers to a slender stalk (and, in a flower, the bases converge on
+    // the receptacle instead of jamming as fat blocks).
+    const clawEnd = s.claw ?? 0.16;
+    if (clawEnd > 0) w *= 0.06 + 0.94 * smoothstep01(t / clawEnd);
+    if (s.notch) {
+      // Bilobed apex: pinch the half-width over the last ~16% so the two margins
+      // dip toward the centreline and read as a heart/obcordate cleft.
+      const n = clamp((t - 0.84) / 0.16, 0, 1);
+      w *= 1 - s.notch * Math.pow(n, 1.4);
+    }
+    return w;
+  };
+
+  // Kept for callers that sample width along the petal (shading, non-designer
+  // path). Now delegates to the unified convex shape library.
+  const profileBase = (t, type) => petalShape(t, type);
 
   const sharpnessExponent = (t, sharpness) => {
     const amt = clamp(sharpness ?? 0, 0, 1);
@@ -275,54 +343,25 @@
       leafSideHandle,
       leafTipHandle,
     } = opts;
-    const safeSteps = Math.max(8, Math.round(steps));
-    const halfSteps = Math.max(4, Math.round(safeSteps / 2));
-    const sidePos = clamp(leafSidePos ?? 0.45, 0.12, 0.88);
+    const safeSteps = Math.max(16, Math.round(steps));
     const sideWidth = clamp(leafSideWidth ?? 1, 0.2, 2);
-    const maxHalf = Math.max(0.5, (widthRatio * length * 0.5) * sideWidth);
-    const baseHandle = clamp(leafBaseHandle ?? 0.35, 0, 1) * length * 0.5;
-    const sideHandle = clamp(leafSideHandle ?? 0.4, 0, 1) * maxHalf;
-    const tipHandle = clamp(leafTipHandle ?? 0.35, 0, 1) * length * 0.5;
-    const sideX = length * sidePos;
-    const isOval = profile === 'oval' || centerProfile === 'oval';
-    const baseHandleX = isOval ? 0 : baseHandle;
-    const baseHandleY = isOval ? maxHalf * clamp(leafBaseHandle ?? 0.35, 0, 1) : 0;
-    const tipCtrlX = isOval ? length : Math.max(sideX + 0.5, length - tipHandle);
-    const tipCtrlY = isOval ? maxHalf * clamp(leafTipHandle ?? 0.35, 0, 1) : 0;
-
-    const seg1 = [
-      { x: 0, y: 0 },
-      { x: baseHandleX, y: baseHandleY },
-      { x: sideX, y: Math.max(0, maxHalf - sideHandle) },
-      { x: sideX, y: maxHalf },
-    ];
-    const seg2 = [
-      { x: sideX, y: maxHalf },
-      { x: sideX, y: maxHalf + sideHandle },
-      { x: tipCtrlX, y: tipCtrlY },
-      { x: length, y: 0 },
-    ];
+    const maxHalf = Math.max(0.5, widthRatio * length * 0.5 * sideWidth);
+    // sharpness gently tunes overall pointiness without producing cusps: 0.5 is
+    // neutral, higher = a touch more acute, lower = blunter.
+    const sharpAdj = lerp(0.78, 1.28, clamp(sharpness ?? 0.5, 0, 1));
     const points = [];
-    for (let i = 0; i <= halfSteps; i++) {
-      const t = i / halfSteps;
-      points.push(cubicBezierPoint(seg1[0], seg1[1], seg1[2], seg1[3], t));
-    }
-    for (let i = 1; i <= halfSteps; i++) {
-      const t = i / halfSteps;
-      points.push(cubicBezierPoint(seg2[0], seg2[1], seg2[2], seg2[3], t));
-    }
-    const adjusted = points.map((pt) => {
-      const t = clamp(pt.x / Math.max(1, length), 0, 1);
-      const base = profileBase(t, profile);
-      const center = profileBase(t, centerProfile || profile);
-      let scale = lerp(base, center, morphWeight);
-      const sharpPow = sharpnessExponent(t, sharpness);
-      scale = Math.pow(Math.max(0, scale), sharpPow);
+    for (let i = 0; i <= safeSteps; i++) {
+      const t = i / safeSteps;
+      let w = petalShape(t, profile);
+      if (centerProfile && centerProfile !== profile && morphWeight > 0) {
+        w = lerp(w, petalShape(t, centerProfile), clamp(morphWeight, 0, 1));
+      }
+      w = Math.pow(Math.max(0, w), sharpAdj);
       const baseFactor = 1 + (baseFlare - basePinch) * Math.pow(1 - t, 2);
       const waveFactor = waveAmp > 0 ? 1 + waveAmp * Math.sin(TAU * t * waveFreq + wavePhase) : 1;
-      return { x: pt.x, y: Math.max(0, pt.y * scale * baseFactor * waveFactor) };
-    });
-    return adjusted;
+      points.push({ x: t * length, y: Math.max(0, maxHalf * w * baseFactor * waveFactor) });
+    }
+    return points;
   };
 
   const buildDesignerProfile = (designer, length, widthRatio, steps = 32) => {
@@ -467,6 +506,43 @@
     return { left: left.slice(0, -1), right: right.slice(0, -1), arc };
   };
 
+  // Base flare/pinch, edge wave, and tip sharpness shape ANY petal width profile, but
+  // the procedural buildLeafProfile (which applies them) is bypassed in designer mode
+  // where the silhouette comes from sampled anchor points. Re-apply the same width
+  // modulation to those sampled points so the Advanced "Base Flare / Base Pinch / Edge
+  // Wave / Wave Freq / Tip Sharpness" sliders actually do something on a designer
+  // profile. Returns the input array unchanged at neutral values (flare=pinch=0,
+  // amp=0, tipSharpness=1) so default output — and every existing baseline — is
+  // byte-identical.
+  //
+  // tipSharpness semantic on a designer profile (range [0,1], default/max 1 = neutral):
+  // 1 preserves the anchor-defined tip exactly; lowering it BLUNTS the tip by widening
+  // the half-width only in the outer tip region (t≳0.6, smoothly ramped). The very-tip
+  // anchor has half-width ≈0, so widening it by a factor keeps it ≈0 — closure and the
+  // anchor point are preserved while the shoulders feeding the tip round out. The boost
+  // is capped (TIP_BLUNT_MAX) so it stays subtle and never fights the anchor tip.
+  const TIP_BLUNT_MAX = 0.6;
+  const applyDesignerProfileWidthMods = (points, length, mods = {}) => {
+    const baseFlare = mods.baseFlare || 0;
+    const basePinch = mods.basePinch || 0;
+    const waveAmp = mods.waveAmp || 0;
+    const waveFreq = mods.waveFreq ?? 2;
+    const wavePhase = mods.wavePhase || 0;
+    const tipSharpness = clamp(mods.tipSharpness ?? 1, 0, 1);
+    const tipBlunt = 1 - tipSharpness;
+    if (!baseFlare && !basePinch && !(waveAmp > 0) && !(tipBlunt > 0)) return points;
+    if (!Array.isArray(points) || !points.length) return points;
+    const span = Math.max(1e-6, length);
+    return points.map((pt) => {
+      const t = clamp(pt.x / span, 0, 1);
+      const baseFactor = 1 + (baseFlare - basePinch) * Math.pow(1 - t, 2);
+      const waveFactor = waveAmp > 0 ? 1 + waveAmp * Math.sin(TAU * t * waveFreq + wavePhase) : 1;
+      const tipRegion = clamp((t - 0.6) / 0.4, 0, 1);
+      const tipFactor = tipBlunt > 0 ? 1 + tipBlunt * TIP_BLUNT_MAX * tipRegion * tipRegion : 1;
+      return { x: pt.x, y: Math.max(0, pt.y * baseFactor * waveFactor * tipFactor) };
+    });
+  };
+
   const buildPetal = (opts) => {
     const {
       length,
@@ -488,6 +564,7 @@
       waveFreq,
       wavePhase,
       profilePoints,
+      cupTransform,
       leafSidePos,
       leafSideWidth,
       leafBaseHandle,
@@ -500,7 +577,14 @@
     const effectiveLength = Math.max(1, length * lengthScale);
     const baseProfile =
       profilePoints && profilePoints.length
-        ? profilePoints
+        ? applyDesignerProfileWidthMods(profilePoints, effectiveLength, {
+            baseFlare,
+            basePinch,
+            waveAmp,
+            waveFreq,
+            wavePhase,
+            tipSharpness: sharpness,
+          })
         : buildLeafProfile({
             length: effectiveLength,
             widthRatio,
@@ -532,11 +616,35 @@
     outline.push({ ...outline[0] });
     const cosA = Math.cos(angle);
     const sinA = Math.sin(angle);
-    const transformed = outline.map((pt) => ({
-      x: baseX + pt.x * cosA - pt.y * sinA,
-      y: baseY + pt.x * sinA + pt.y * cosA,
-    }));
+    const transformed = outline.map((pt) => {
+      const lp = cupTransform ? cupTransform(pt) : pt;
+      return {
+        x: baseX + lp.x * cosA - lp.y * sinA,
+        y: baseY + lp.x * sinA + lp.y * cosA,
+      };
+    });
     return transformed;
+  };
+
+  // A small deterministic LCG (same constants as SeededRNG) used to give the
+  // shading pass its OWN random stream per petal, so raising shading jitter or
+  // adding a stipple shade never re-rolls the shared layout RNG (which would
+  // visibly rearrange the whole flower). Seed is derived from the layer seed +
+  // the petal's global index.
+  const makeSubRng = (seed) => {
+    const m = 0x80000000;
+    const a = 1103515245;
+    const c = 12345;
+    let state = Math.abs(Math.floor(seed)) % m || 1;
+    return {
+      nextFloat() {
+        state = (a * state + c) % m;
+        return state / (m - 1);
+      },
+      nextRange(min, max) {
+        return min + this.nextFloat() * (max - min);
+      },
+    };
   };
 
   const buildShadingLines = (opts) => {
@@ -563,6 +671,7 @@
       rng,
       noise,
       profilePoints,
+      cupTransform,
     } = opts;
     const lines = [];
     const active = Array.isArray(shadings) ? shadings.filter((s) => s && s.enabled !== false) : [];
@@ -573,7 +682,11 @@
     const lengthScale = tipLengthScale(tipCurl);
     const effectiveLength = Math.max(1, length * lengthScale);
 
-    const makeLine = (offset, tStart, tEnd, hatchAngle, gradient = 0, spiral = 0) => {
+    // A constant half-width band (nominal max), used by 'parallel' so its lines
+    // stay straight in petal-local space (clipped to the silhouette downstream)
+    // instead of following the width taper like 'radial'.
+    const flatHalf = (widthRatio * effectiveLength) / 2;
+    const makeLine = (offset, tStart, tEnd, hatchAngle, gradient = 0, spiral = 0, flat = false) => {
       const path = [];
       for (let i = 0; i <= steps; i++) {
         const tRaw = lerp(tStart, tEnd, i / steps);
@@ -594,7 +707,11 @@
             wavePhase,
           });
         }
-        const half = profilePoints && profilePoints.length ? w : (w * widthRatio * effectiveLength) / 2;
+        const half = flat
+          ? flatHalf
+          : profilePoints && profilePoints.length
+          ? w
+          : (w * widthRatio * effectiveLength) / 2;
         const g = gradient ? lerp(1, 0.4, t) : 1;
         const spiralOffset = spiral ? offset + t * 0.3 * spiral : offset;
         const curl = twist * effectiveLength * 0.02 * t * t;
@@ -628,10 +745,13 @@
       }
       const cosA = Math.cos(angle);
       const sinA = Math.sin(angle);
-      return path.map((pt) => ({
-        x: baseX + pt.x * cosA - pt.y * sinA,
-        y: baseY + pt.x * sinA + pt.y * cosA,
-      }));
+      return path.map((pt) => {
+        const lp = cupTransform ? cupTransform(pt) : pt;
+        return {
+          x: baseX + lp.x * cosA - lp.y * sinA,
+          y: baseY + lp.x * sinA + lp.y * cosA,
+        };
+      });
     };
 
     const buildOffsets = (shade, halfWidth) => {
@@ -651,7 +771,7 @@
       const density = Math.max(0.2, shade.density ?? 1);
       const span = Math.abs(offsetEnd - offsetStart) * halfWidth;
       const count = Math.max(1, Math.round((span / spacing) * density));
-      return { offsetStart, offsetEnd, gapStart, gapEnd, count };
+      return { offsetStart, offsetEnd, gapStart, gapEnd, count, hasYGap: gapY > 0 };
     };
 
     const buildRanges = (shade) => {
@@ -677,7 +797,7 @@
 
     active.forEach((shade) => {
       const halfWidth = (widthRatio * effectiveLength) / 2;
-      const { offsetStart, offsetEnd, gapStart, gapEnd, count } = buildOffsets(shade, halfWidth);
+      const { offsetStart, offsetEnd, gapStart, gapEnd, count, hasYGap } = buildOffsets(shade, halfWidth);
       const ranges = buildRanges(shade);
       const type = shade.type || 'radial';
       const hatchAngle = shade.angle ?? 0;
@@ -692,6 +812,44 @@
           if (seg.length > 1) lines.push(seg);
         });
       };
+
+      if (type === 'vein') {
+        // Botanical venation: a midrib down the petal axis plus secondary veins
+        // branching toward the margins. Lines are clipped to the petal outline
+        // downstream, so they read as the central vein + pinnate side veins.
+        emitLine(makeLine(0, 0.04, 0.95, hatchAngle, 0, 0));
+        const veinPairs = clamp(Math.round(shade.veinCount ?? 4), 0, 12);
+        const reach = clamp(shade.veinReach ?? 0.62, 0.1, 0.95);
+        const cosA = Math.cos(angle);
+        const sinA = Math.sin(angle);
+        const toWorld = (lx, ly) => {
+          const lp = cupTransform ? cupTransform({ x: lx, y: ly }) : { x: lx, y: ly };
+          return { x: baseX + lp.x * cosA - lp.y * sinA, y: baseY + lp.x * sinA + lp.y * cosA };
+        };
+        for (let k = 1; k <= veinPairs; k++) {
+          const tb = lerp(0.12, 0.82, k / (veinPairs + 1));
+          const tt = Math.min(0.96, tb + 0.18);
+          const wTt =
+            profilePoints && profilePoints.length
+              ? sampleProfileWidth(tt * effectiveLength, profilePoints)
+              : widthAt(tt, {
+                  profile,
+                  centerProfile,
+                  morphWeight,
+                  sharpness: effectiveSharpness,
+                  baseFlare,
+                  basePinch,
+                  waveAmp,
+                  waveFreq,
+                  wavePhase,
+                });
+          const halfTt = profilePoints && profilePoints.length ? wTt : (wTt * widthRatio * effectiveLength) / 2;
+          [1, -1].forEach((sgn) => {
+            emitLine([toWorld(tb * effectiveLength, 0), toWorld(tt * effectiveLength, sgn * halfTt * reach)]);
+          });
+        }
+        return;
+      }
 
       if (type === 'outline' || type === 'rim' || type === 'contour') {
         const outline = buildPetal({
@@ -713,6 +871,7 @@
           waveAmp,
           waveFreq,
           wavePhase,
+          cupTransform,
         });
         emitLine(outline);
         if (type === 'rim') {
@@ -735,6 +894,7 @@
             waveAmp,
             waveFreq,
             wavePhase,
+            cupTransform,
           });
           emitLine(innerOutline);
         }
@@ -761,6 +921,7 @@
               waveAmp,
               waveFreq,
               wavePhase,
+              cupTransform,
             });
             emitLine(inner);
           }
@@ -775,7 +936,10 @@
           offset += (rng.nextFloat() - 0.5) * jitter * 0.4;
         }
         offset = clamp(offset, -1, 1);
-        if (offset >= gapStart && offset <= gapEnd) continue;
+        // The Y-gap carves a band out of the hatch — but only when it has a
+        // nonzero width. With gapY:0 the window is a single point (default at
+        // offset 0), which used to silently delete the centerline.
+        if (hasYGap && offset >= gapStart && offset <= gapEnd) continue;
         if (type === 'chiaroscuro') {
           offset = lerp(offsetStart, offsetEnd, Math.pow(frac, 1.6));
         }
@@ -812,8 +976,10 @@
               const curl = twist * effectiveLength * 0.02 * t * t;
               const cosA = Math.cos(angle);
               const sinA = Math.sin(angle);
-              const x = baseX + (t * effectiveLength) * cosA - (localY + curl) * sinA;
-              const y = baseY + (t * effectiveLength) * sinA + (localY + curl) * cosA;
+              const localPt = { x: t * effectiveLength, y: localY + curl };
+              const lp = cupTransform ? cupTransform(localPt) : localPt;
+              const x = baseX + lp.x * cosA - lp.y * sinA;
+              const y = baseY + lp.x * sinA + lp.y * cosA;
               lines.push([
                 { x, y },
                 { x: x + 0.2, y: y + 0.2 },
@@ -828,7 +994,17 @@
           } else if (type === 'crosshatch') {
             emitLine(makeLine(offset, t0, t1, hatchAngle, 0, 0));
             emitLine(makeLine(offset, t0, t1, hatchAngle + 90, 0, 0));
+          } else if (type === 'parallel') {
+            // Straight constant-width bands (do not follow the width taper),
+            // clipped to the silhouette downstream.
+            emitLine(makeLine(offset, t0, t1, hatchAngle, 0, 0, true));
+          } else if (type === 'edge') {
+            // Cluster lines toward the rim: map |offset| 0..1 -> 0.5..1 so the
+            // centre stays open and the petal margin is emphasised.
+            const eo = (offset >= 0 ? 1 : -1) * (0.5 + 0.5 * Math.abs(offset));
+            emitLine(makeLine(eo, t0, t1, hatchAngle, 0, 0));
           } else {
+            // 'radial' (and any unknown type): width-following hatch.
             const path = makeLine(offset, t0, t1, hatchAngle, 0, 0);
             emitLine(path);
           }
@@ -1191,6 +1367,32 @@
   const bboxIntersects = (a, b) =>
     !(a.maxX < b.minX || a.minX > b.maxX || a.maxY < b.minY || a.minY > b.maxY);
 
+  // Precompute a polygon's closed edges with a per-edge AABB. clipSegmentOutside
+  // is the dominant cost when petal count is high (each petal outline is clipped
+  // against every overlapping occluder, ~O(n) of them, so the whole pass is
+  // O(n^2)). Caching the edges + their boxes once per occluder lets the clip skip
+  // — with a cheap box reject — the vast majority of occluder edges nowhere near
+  // a given segment, instead of running full intersection math on all of them.
+  // The set of edges actually tested for intersection is unchanged, so output is
+  // identical; only the wasted intersection tests are removed.
+  const buildOccluderEdges = (poly) => {
+    const edges = [];
+    const n = poly.length;
+    for (let i = 0; i < n; i++) {
+      const a = poly[i];
+      const b = poly[(i + 1) % n];
+      edges.push({
+        a,
+        b,
+        minX: a.x < b.x ? a.x : b.x,
+        maxX: a.x > b.x ? a.x : b.x,
+        minY: a.y < b.y ? a.y : b.y,
+        maxY: a.y > b.y ? a.y : b.y,
+      });
+    }
+    return edges;
+  };
+
   const pointInPoly = (pt, poly) => {
     let inside = false;
     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -1301,21 +1503,34 @@
 
   const clipSegmentOutside = (a, b, occluders) => {
     if (!occluders.length) return [[a, b]];
-    const segBox = bboxFromPoints([a, b]);
+    const segMinX = a.x < b.x ? a.x : b.x;
+    const segMaxX = a.x > b.x ? a.x : b.x;
+    const segMinY = a.y < b.y ? a.y : b.y;
+    const segMaxY = a.y > b.y ? a.y : b.y;
     const intersections = [];
-    const insideAny = (pt) => occluders.some((occ) => pointInPoly(pt, occ.points));
+    // A point outside an occluder's bbox cannot be inside that occluder, so the
+    // bbox guard skips the pointInPoly walk for occluders the point misses.
+    const insideAny = (pt) =>
+      occluders.some((occ) => {
+        const ob = occ.bbox;
+        if (pt.x < ob.minX || pt.x > ob.maxX || pt.y < ob.minY || pt.y > ob.maxY) return false;
+        return pointInPoly(pt, occ.points);
+      });
 
-    occluders.forEach((occ) => {
-      if (!bboxIntersects(segBox, occ.bbox)) return;
-      const pts = occ.points;
-      const count = pts.length;
-      for (let i = 0; i < count; i++) {
-        const p1 = pts[i];
-        const p2 = pts[(i + 1) % count];
-        const hit = segmentIntersection(a, b, p1, p2);
+    for (let o = 0; o < occluders.length; o++) {
+      const occ = occluders[o];
+      const ob = occ.bbox;
+      if (segMaxX < ob.minX || segMinX > ob.maxX || segMaxY < ob.minY || segMinY > ob.maxY) continue;
+      const edges = occ.edges || buildOccluderEdges(occ.points);
+      for (let i = 0; i < edges.length; i++) {
+        const e = edges[i];
+        // Per-edge AABB reject: the bulk of an occluder's edges sit far from any
+        // single segment, so this cheap test removes most intersection math.
+        if (segMaxX < e.minX || segMinX > e.maxX || segMaxY < e.minY || segMinY > e.maxY) continue;
+        const hit = segmentIntersection(a, b, e.a, e.b);
         if (hit && hit.t > 1e-6 && hit.t < 1 - 1e-6) intersections.push(hit.t);
       }
-    });
+    }
     const ts = [0, 1, ...intersections].sort((x, y) => x - y);
     const uniq = [];
     ts.forEach((t) => {
@@ -1384,16 +1599,23 @@
     return output;
   };
 
-  const clipSegmentInsidePolygon = (a, b, polygon) => {
+  // polyBox/edges may be precomputed once by the caller (the same polygon is
+  // reused across every segment of every shading line) — recomputing the
+  // polygon bbox + edge list per segment was a measurable cost on shaded petals.
+  const clipSegmentInsidePolygon = (a, b, polygon, polyBox, edges) => {
     if (!Array.isArray(polygon) || polygon.length < 3) return [[a, b]];
-    const segBox = bboxFromPoints([a, b]);
-    const polyBox = bboxFromPoints(polygon);
-    if (!bboxIntersects(segBox, polyBox)) return [];
+    const box = polyBox || bboxFromPoints(polygon);
+    const segMinX = a.x < b.x ? a.x : b.x;
+    const segMaxX = a.x > b.x ? a.x : b.x;
+    const segMinY = a.y < b.y ? a.y : b.y;
+    const segMaxY = a.y > b.y ? a.y : b.y;
+    if (segMaxX < box.minX || segMinX > box.maxX || segMaxY < box.minY || segMinY > box.maxY) return [];
+    const polyEdges = edges || buildOccluderEdges(polygon);
     const intersections = [];
-    for (let i = 0; i < polygon.length; i++) {
-      const p1 = polygon[i];
-      const p2 = polygon[(i + 1) % polygon.length];
-      const hit = segmentIntersection(a, b, p1, p2);
+    for (let i = 0; i < polyEdges.length; i++) {
+      const e = polyEdges[i];
+      if (segMaxX < e.minX || segMinX > e.maxX || segMaxY < e.minY || segMinY > e.maxY) continue;
+      const hit = segmentIntersection(a, b, e.a, e.b);
       if (hit && hit.t > 1e-6 && hit.t < 1 - 1e-6) intersections.push(hit.t);
     }
     const ts = [0, 1, ...intersections].sort((x, y) => x - y);
@@ -1417,9 +1639,11 @@
     return segments;
   };
 
-  const clipPathInsidePolygon = (path, polygon) => {
+  const clipPathInsidePolygon = (path, polygon, polyBox, edges) => {
     if (!Array.isArray(path) || path.length < 2) return [];
     if (!Array.isArray(polygon) || polygon.length < 3) return [path];
+    const box = polyBox || bboxFromPoints(polygon);
+    const polyEdges = edges || buildOccluderEdges(polygon);
     const output = [];
     let current = [];
     const eps = 1e-4;
@@ -1435,7 +1659,7 @@
     for (let i = 0; i < path.length - 1; i++) {
       const a = path[i];
       const b = path[i + 1];
-      const pieces = clipSegmentInsidePolygon(a, b, polygon);
+      const pieces = clipSegmentInsidePolygon(a, b, polygon, box, polyEdges);
       if (!pieces.length) {
         if (current.length > 1) output.push(current);
         current = [];
@@ -1466,9 +1690,13 @@
 
   const clipPathsInsidePolygon = (paths, polygon) => {
     if (!Array.isArray(paths) || !paths.length) return [];
+    // The polygon (a petal outline) is identical for every shading line, so its
+    // bbox + edge list are built once here rather than per line, per segment.
+    const polyBox = Array.isArray(polygon) && polygon.length >= 3 ? bboxFromPoints(polygon) : null;
+    const polyEdges = polyBox ? buildOccluderEdges(polygon) : null;
     const output = [];
     paths.forEach((path) => {
-      const clipped = clipPathInsidePolygon(path, polygon);
+      const clipped = clipPathInsidePolygon(path, polygon, polyBox, polyEdges);
       clipped.forEach((seg) => {
         if (seg.length < 2) return;
         if (path.meta) seg.meta = { ...path.meta };
@@ -1559,7 +1787,20 @@
     const normalizeTipRotate = (value) => (value > 10 ? value / 10 : value);
     const tipTwist = designerShapeOnly ? 0 : p.tipTwist ?? 0;
     const tipRotate = normalizeTipRotate(tipTwist);
-    const tipCurl = designerShapeOnly ? 0 : p.tipCurl ?? 0;
+    // Bloom macro (0..100, 100 = fully open = neutral). Lower values curl the
+    // petal tips inward and pull the rings together into a closing bud. At 100
+    // it is a no-op, so the default look and baselines are unchanged.
+    const bloom = clamp(p.bloom ?? 100, 0, 100) / 100;
+    const bloomCurl = (1 - bloom) * 0.7;
+    const bloomRingFactor = lerp(0.45, 1, bloom);
+    const tipCurl = designerShapeOnly ? bloomCurl : p.tipCurl ?? 0;
+    // Petal asymmetry (0..100): per-petal lateral lean that breaks the perfect
+    // mirror symmetry for a more organic, hand-drawn read. 0 = neutral.
+    const petalAsymmetry = clamp(p.petalAsymmetry ?? 0, 0, 100) / 100;
+    // Petal cupping (0..100): true pseudo-3D fold about the petal's long axis
+    // (see makeCupTransform). Tied to ring position — inner whorls cup hardest
+    // (young petals incurve), outer whorls open flat. 0 = neutral.
+    const petalCupping = clamp(p.petalCupping ?? 0, 0, 100) / 100;
     const tipSharpness = designerShapeOnly ? 1 : p.tipSharpness ?? 0.5;
     const baseFlare = designerShapeOnly ? 0 : p.baseFlare ?? 0;
     const basePinch = designerShapeOnly ? 0 : p.basePinch ?? 0;
@@ -1578,6 +1819,11 @@
     const petalSteps = clamp(Math.round(p.petalSteps ?? 28), 12, 80);
     const rotationJitter = toRad(p.rotationJitter ?? 0);
     const sizeJitter = clamp(p.sizeJitter ?? 0, 0, 0.6);
+    // Layout mode gates the per-petal angle + radius math. 'whorl' (default)
+    // lays each band's petals at even TAU/count spacing on a constant per-band
+    // radius (clean concentric rings). 'spiral' is the verbatim golden-angle
+    // Vogel packing — correct for dense composites (dahlia/chrysanthemum).
+    const layoutMode = p.layoutMode === 'spiral' ? 'spiral' : 'whorl';
     const spiralMode = p.spiralMode || 'golden';
     const baseAngle = toRad(spiralMode === 'custom' ? p.customAngle ?? GOLDEN_ANGLE : GOLDEN_ANGLE);
     const spiralTightness = Math.max(0.5, p.spiralTightness ?? 1);
@@ -1594,7 +1840,15 @@
       0.1,
       0.9
     );
-    const ringSplit = designerDualRing ? designerCountSplit : clamp(p.ringSplit ?? 0.5, 0.1, 0.9);
+    // In whorl mode the ring radius must be count-INDEPENDENT (a clean ring at
+    // a predictable radius), so honour p.ringSplit directly. In spiral mode it
+    // stays count-derived to preserve dense-bloom band placement.
+    const ringSplit =
+      layoutMode === 'whorl'
+        ? clamp(p.ringSplit ?? 0.45, 0.1, 0.9)
+        : designerDualRing
+        ? designerCountSplit
+        : clamp(p.ringSplit ?? 0.5, 0.1, 0.9);
     const ringOffset = toRad(p.ringOffset ?? 0);
     const driftStrength = clamp(p.driftStrength ?? 0, 0, 1);
     const driftNoise = Math.max(0.01, p.driftNoise ?? 0.2);
@@ -1618,19 +1872,25 @@
     const getRingSymmetry = (ringTarget) =>
       ringTarget === 'inner' ? designerInnerSymmetry : designerOuterSymmetry;
 
+    // Whorl mode allows an empty inner (or outer) band — e.g. a single ring of
+    // petals around a center. Spiral mode keeps the legacy floor of 1.
+    const countFloor = layoutMode === 'whorl' ? 0 : 1;
+    const innerSplitR = visibleMaxR * ringSplit;
     const ringDefs =
       ringMode === 'dual'
         ? [
             {
-              count: Math.max(1, Math.round((p.innerCount ?? 0) * (1 + rng.nextRange(-countJitter, countJitter)))),
+              count: Math.max(countFloor, Math.round((p.innerCount ?? 0) * (1 + rng.nextRange(-countJitter, countJitter)))),
               minR: 0,
-              maxR: visibleMaxR * ringSplit,
+              maxR: innerSplitR,
+              midR: innerSplitR / 2,
               offset: 0,
             },
             {
-              count: Math.max(1, Math.round((p.outerCount ?? 0) * (1 + rng.nextRange(-countJitter, countJitter)))),
-              minR: visibleMaxR * ringSplit,
+              count: Math.max(countFloor, Math.round((p.outerCount ?? 0) * (1 + rng.nextRange(-countJitter, countJitter)))),
+              minR: innerSplitR,
               maxR: visibleMaxR,
+              midR: (innerSplitR + visibleMaxR) / 2,
               offset: ringOffset,
             },
           ]
@@ -1644,18 +1904,75 @@
               ),
               minR: 0,
               maxR: visibleMaxR,
+              midR: visibleMaxR / 2,
               offset: 0,
             },
           ];
 
     const totalRingCount = ringDefs.reduce((sum, ring) => sum + Math.max(0, ring.count || 0), 0);
+    // When one designer band is empty (e.g. the shipped innerCount:0 / outerCount:6
+    // default), the inner↔outer profile blend must collapse to the single populated
+    // band's profile — otherwise the count-progress sweep parks the lowest-index
+    // petal on the empty band's (stale) profile, so editing the visible band leaves
+    // exactly one petal unchanged. Read the realized (post-jitter) ringDef counts so
+    // a count that rounds to 0 also counts as empty. Dual designer mode only.
+    const innerRingEmpty = designerDualRing && (ringDefs[0]?.count || 0) <= 0;
+    const outerRingEmpty = designerDualRing && (ringDefs[1]?.count || 0) <= 0;
+    // Whorl base radii: anchor the innermost POPULATED ring at the receptacle,
+    // then step each further populated ring outward by a fraction of the petal
+    // length so successive whorls layer with overlap — a packed corolla rather
+    // than a detached pinwheel floating off the centre. radialGrowth opens or
+    // tightens the spacing (1 = default), independent of the spiral-mode meaning.
+    if (layoutMode === 'whorl') {
+      // ringSplit controls how far successive whorls spread (layer spacing):
+      // tighter = packed rosette, wider = open layered bloom. The Bloom macro
+      // pulls the rings together as the flower closes toward a bud.
+      const whorlStep = baseLength * (0.25 + 0.5 * ringSplit) * bloomRingFactor;
+      let baseR = anchorRadius;
+      ringDefs.forEach((ring) => {
+        ring.baseR = baseR;
+        if ((ring.count || 0) > 0) baseR += whorlStep;
+      });
+      // radiusScale ramp basis: petals within one whorl are uniform (an index
+      // ramp would put a size discontinuity at the ring's wrap-around seam), so
+      // the ramp runs across populated rings — innermost 1×, outermost 1+scale.
+      const populated = ringDefs.filter((ring) => (ring.count || 0) > 0);
+      populated.forEach((ring, ord) => {
+        ring.scaleT = populated.length <= 1 ? 0 : ord / (populated.length - 1);
+      });
+    }
     let ringProgressOffset = 0;
     ringDefs.forEach((ring, ringIndex) => {
-      const { count, minR, maxR, offset } = ring;
+      const { count, minR, maxR, offset, midR, baseR } = ring;
       const ringTarget = ringMode === 'dual' ? (ringIndex === 0 ? 'inner' : 'outer') : singleRingTarget;
       const ringSymmetry = getRingSymmetry(ringTarget);
       const ringShadingStack = getRingShadingStack(ringTarget);
       const ringModifierStack = getRingModifierStack(ringTarget);
+      // Per-ring petal param overrides (set by petal designer advanced accordion)
+      const _rpo = ringTarget === 'inner' ? (p.innerRingParams || null) : (p.outerRingParams || null);
+      const _ringBloom = _rpo?.bloom != null ? clamp(_rpo.bloom, 0, 100) / 100 : bloom;
+      const _ringBloomCurl = (1 - _ringBloom) * 0.7;
+      const ringTipCurl = _rpo != null
+        ? (designerShapeOnly ? (typeof _rpo.tipCurl === 'number' ? _rpo.tipCurl : _ringBloomCurl) : (_rpo.tipCurl ?? tipCurl))
+        : tipCurl;
+      const ringTipSharpness = _rpo != null
+        ? (designerShapeOnly ? (_rpo.tipSharpness ?? 1) : (_rpo.tipSharpness ?? tipSharpness))
+        : tipSharpness;
+      const ringBaseFlare = _rpo != null
+        ? (designerShapeOnly ? (_rpo.baseFlare ?? 0) : (_rpo.baseFlare ?? baseFlare))
+        : baseFlare;
+      const ringBasePinch = _rpo != null
+        ? (designerShapeOnly ? (_rpo.basePinch ?? 0) : (_rpo.basePinch ?? basePinch))
+        : basePinch;
+      const _ringRawCenterBoost = _rpo?.centerCurlBoost != null ? _rpo.centerCurlBoost : (designerShapeOnly ? 0 : rawCenterBoost);
+      const ringCenterBoost = _ringRawCenterBoost > 2 ? _ringRawCenterBoost / 50 : _ringRawCenterBoost;
+      const ringPetalAsymmetry = _rpo?.petalAsymmetry != null ? clamp(_rpo.petalAsymmetry, 0, 100) / 100 : petalAsymmetry;
+      const ringPetalCupping = _rpo?.petalCupping != null ? clamp(_rpo.petalCupping, 0, 100) / 100 : petalCupping;
+      const ringBaseWidthRatio = _rpo?.petalWidthRatio != null ? _rpo.petalWidthRatio * sizeRatio : baseWidthRatio;
+      const ringBaseLength = _rpo?.petalScale != null ? Math.max(4, _rpo.petalScale * lengthRatio) : baseLength;
+      const ringEdgeWaveAmp = _rpo?.edgeWaveAmp != null ? _rpo.edgeWaveAmp : (p.edgeWaveAmp ?? 0);
+      const ringEdgeWaveFreq = _rpo?.edgeWaveFreq != null ? _rpo.edgeWaveFreq : (p.edgeWaveFreq ?? 2);
+      const ringTipRotate = _rpo?.tipTwist != null ? normalizeTipRotate(_rpo.tipTwist) : tipRotate;
       const ringDesigner =
         ringMode === 'dual'
           ? ringIndex === 0
@@ -1683,15 +2000,28 @@
       for (let i = 0; i < count; i++) {
         const t = count <= 1 ? 0.5 : i / (count - 1);
         const spiralT = lerp(spiralMin, spiralMax, Math.pow(t, spiralTightness));
-        const radial = lerp(minR, maxR, spiralT) * radialGrowth;
+        // Whorl: every petal in a ring shares the ring's constant base radius
+        // (anchored near the receptacle, layered outward). Spiral: radius ramps
+        // with petal index (Vogel spiral). `radial` is expressed relative to the
+        // receptacle so radialBase = anchorRadius + radial stays consistent.
+        const radial =
+          layoutMode === 'whorl'
+            ? Math.max(0, (baseR ?? anchorRadius) - anchorRadius)
+            : lerp(minR, maxR, spiralT) * radialGrowth;
         const radialProgress = clamp(radial / Math.max(1e-6, visibleMaxR), 0, 1);
         const countProgress = totalRingCount <= 1 ? 0.5 : (ringProgressOffset + i) / Math.max(1, totalRingCount - 1);
         const transitionBasis = designerDualRing ? countProgress : radialProgress;
         const transitionMix = canBlendDesignerProfiles
           ? profileBlendWeight(transitionBasis, transitionPosition, transitionFeather)
           : 0;
+        // Collapse the blend onto the populated band when the other band is empty,
+        // so every petal in the visible ring follows that band's profile. With both
+        // bands populated this is inert, preserving the count-derived split exactly.
+        let profileMix = transitionMix;
+        if (outerRingEmpty) profileMix = 0;
+        else if (innerRingEmpty) profileMix = 1;
         const ringProfile = canBlendDesignerProfiles
-          ? transitionMix < 0.5
+          ? profileMix < 0.5
             ? innerProfileName
             : outerProfileName
           : legacyRingProfile;
@@ -1705,16 +2035,24 @@
             worldX: center.x,
             worldY: center.y,
           });
-        let angle = baseAngle * i + offset + drift;
+        // Whorl: even angular spacing TAU/count, with `offset` (0 for the inner
+        // band, ringOffset for the outer) giving a quincuncial interleave — the
+        // wrapping gap is exactly TAU/count, so no petal juts out alone.
+        // Spiral: cumulative golden/custom angle (Vogel packing) — unchanged.
+        let angle =
+          layoutMode === 'whorl'
+            ? offset + (count > 0 ? (TAU * i) / count : 0) + drift
+            : baseAngle * i + offset + drift;
         angle += (rng.nextFloat() - 0.5) * rotationJitter;
         const centerFactor = clamp(1 - radialBase / Math.max(1, visibleMaxR), 0, 1);
         const morphCurve = Math.pow(centerFactor, p.centerSizeCurve ?? 1);
         const sizeMorph = 1 + (p.centerSizeMorph ?? 0) * 0.01 * morphCurve;
-        const radiusScale = 1 + (p.radiusScale ?? 0) * Math.pow(t, p.radiusScaleCurve ?? 1);
+        const radiusRampT = layoutMode === 'whorl' ? ring.scaleT ?? 0 : t;
+        const radiusScale = 1 + (p.radiusScale ?? 0) * Math.pow(radiusRampT, p.radiusScaleCurve ?? 1);
         const jitter = 1 + (rng.nextFloat() * 2 - 1) * sizeJitter;
-        const length = Math.max(4, baseLength * sizeMorph * radiusScale * jitter);
+        const length = Math.max(4, ringBaseLength * sizeMorph * radiusScale * jitter);
 
-        let widthRatio = baseWidthRatio;
+        let widthRatio = ringBaseWidthRatio;
         const budMode = Boolean(p.budMode);
         if (budMode) {
           const budRadius = clamp(p.budRadius ?? 0.15, 0.05, 2);
@@ -1727,12 +2065,21 @@
         const baseX = center.x + Math.cos(angle) * radialBase;
         const baseY = center.y + Math.sin(angle) * radialBase;
         const morphWeight = clamp((p.centerShapeMorph ?? 0) * (0.35 + 0.65 * morphCurve), 0, 1);
-        const curlBoost = centerBoost * centerFactor;
+        const curlBoost = ringCenterBoost * centerFactor;
         const waveBoost = (p.centerWaveBoost ?? 0) * centerFactor;
         const wavePhase = rng.nextFloat() * TAU;
-        const lengthScale = tipLengthScale(tipCurl);
+        // Per-petal asymmetry: a deterministic lateral lean from an isolated
+        // stream (so it doesn't disturb the layout RNG). Neutral at 0.
+        const petalTwist =
+          ringTipRotate +
+          (ringPetalAsymmetry > 0
+            ? (makeSubRng((p.seed ?? 0) * 7919 + (ringProgressOffset + i) * 131 + 3).nextFloat() * 2 - 1) *
+              ringPetalAsymmetry *
+              0.6
+            : 0);
+        const lengthScale = tipLengthScale(ringTipCurl);
         const effectiveLength = Math.max(1, length * lengthScale);
-        const waveAmp = Math.max(0, (p.edgeWaveAmp ?? 0) * (1 + waveBoost));
+        const waveAmp = Math.max(0, ringEdgeWaveAmp * (1 + waveBoost));
         const fallbackProfile = () =>
           buildLeafProfile({
             length: effectiveLength,
@@ -1741,11 +2088,11 @@
             profile: ringProfile,
             centerProfile: ringCenterProfile,
             morphWeight,
-            sharpness: tipSharpness,
-            baseFlare,
-            basePinch,
+            sharpness: ringTipSharpness,
+            baseFlare: ringBaseFlare,
+            basePinch: ringBasePinch,
             waveAmp,
-            waveFreq: p.edgeWaveFreq ?? 2,
+            waveFreq: ringEdgeWaveFreq,
             wavePhase,
             leafSidePos: p.leafSidePos,
             leafSideWidth: p.leafSideWidth,
@@ -1760,7 +2107,7 @@
           profilePoints = blendProfilePoints(
             innerPoints,
             outerPoints,
-            transitionMix,
+            profileMix,
             effectiveLength,
             petalSteps
           );
@@ -1769,12 +2116,22 @@
         }
         if (!profilePoints) profilePoints = fallbackProfile();
         profilePoints = applyDesignerProfileSymmetry(profilePoints, effectiveLength, ringSymmetry);
+        // Per-petal cup, tied to ring position: whorl rings use the populated-
+        // ring ramp (scaleT 0 innermost → 1 outermost — uniform within a ring,
+        // so no wrap-seam discontinuity); spiral falls back to the continuous
+        // centre-distance ramp. Inner petals fold hardest, like a real corolla.
+        const cupRingT = layoutMode === 'whorl' ? clamp(ring.scaleT ?? 0, 0, 1) : 1 - centerFactor;
+        const cupTransform = makeCupTransform({
+          cup: ringPetalCupping * lerp(1, 0.35, cupRingT),
+          length: effectiveLength,
+          halfWidth: maxProfileHalfWidth(profilePoints) || (widthRatio * effectiveLength) / 2,
+        });
         let outline = buildPetal({
           length,
           widthRatio,
           steps: petalSteps,
-          tipTwist: tipRotate,
-          tipCurl,
+          tipTwist: petalTwist,
+          tipCurl: ringTipCurl,
           curlBoost,
           baseX,
           baseY,
@@ -1782,13 +2139,14 @@
           profile: ringProfile,
           centerProfile: ringCenterProfile,
           morphWeight,
-          sharpness: tipSharpness,
-          baseFlare,
-          basePinch,
+          sharpness: ringTipSharpness,
+          baseFlare: ringBaseFlare,
+          basePinch: ringBasePinch,
           waveAmp,
-          waveFreq: p.edgeWaveFreq ?? 2,
+          waveFreq: ringEdgeWaveFreq,
           wavePhase,
           profilePoints,
+          cupTransform,
           leafSidePos: p.leafSidePos,
           leafSideWidth: p.leafSideWidth,
           leafBaseHandle: p.leafBaseHandle,
@@ -1802,22 +2160,25 @@
           profile: ringProfile,
           centerProfile: ringCenterProfile,
           morphWeight,
-          sharpness: tipSharpness,
-          baseFlare,
-          basePinch,
+          sharpness: ringTipSharpness,
+          baseFlare: ringBaseFlare,
+          basePinch: ringBasePinch,
           waveAmp,
-          waveFreq: p.edgeWaveFreq ?? 2,
+          waveFreq: ringEdgeWaveFreq,
           wavePhase,
           angle,
           baseX,
           baseY,
           shadings: ringShadingStack,
-          tipTwist: tipRotate,
-          tipCurl,
+          tipTwist: petalTwist,
+          tipCurl: ringTipCurl,
           curlBoost,
-          rng,
+          // Shading gets its own per-petal RNG stream, isolated from the layout
+          // RNG, so editing shading never rearranges the flower.
+          rng: makeSubRng((p.seed ?? 0) * 2654435761 + (ringProgressOffset + i) * 40503 + 17),
           noise,
           profilePoints,
+          cupTransform,
         });
         const modifierBase = { x: baseX, y: baseY };
         outline = applyPetalModifiers([outline], ringModifierStack, modifierBase, angle, length, noise)[0] || outline;
@@ -1837,31 +2198,45 @@
           shading: shadingLines,
           bbox: bboxFromPoints(outline),
           ringIndex,
+          ringPetalIndex: i,
+          ringPetalCount: count,
         });
       }
       ringProgressOffset += count;
     });
 
     if (petals.length) {
-      const ordered = petals.slice().sort((a, b) => a.radius - b.radius);
       const pushSegment = (seg, meta) => {
         if (!seg || seg.length <= 1) return;
         if (meta) seg.meta = { ...meta };
         paths.push(seg);
       };
-      ordered.forEach((petal) => {
+      const bboxesOverlap = (a, b) =>
+        a && b && a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY;
+      const asOccluder = (petal) => {
+        // Cache the edge list on the petal so it is built once, not rebuilt for
+        // every overlapping petal that clips against it.
+        if (!petal._occEdges) petal._occEdges = buildOccluderEdges(petal.outline);
+        return { points: petal.outline, bbox: petal.bbox, edges: petal._occEdges, ringIndex: petal.ringIndex };
+      };
+      const renderPetal = (petal, clipOccluders) => {
         let shadingLines = petal.shading;
         if (p.lightSource) {
           const shadowed = [];
           shadingLines.forEach((line) => {
-            const pieces = splitPathByShadow(line, p.lightSource, center, occluders);
+            const pieces = splitPathByShadow(line, p.lightSource, center, clipOccluders);
             pieces.forEach((seg) => {
-              if (seg.length > 1) shadowed.push(seg);
+              if (seg.length > 1) {
+                // splitPathByShadow returns bare point arrays — re-tag with the
+                // line's group/label so layers-panel grouping and SVG export
+                // navigation survive lighting (mirrors clipPathsInsidePolygon).
+                if (line.meta) seg.meta = { ...line.meta };
+                shadowed.push(seg);
+              }
             });
           });
           shadingLines = shadowed;
         }
-        const clipOccluders = occluders;
         if (layering && clipOccluders.length) {
           const clippedOutline = clipPathOutside(petal.outline, clipOccluders);
           clippedOutline.forEach((seg) => pushSegment(seg, petal.outline.meta));
@@ -1875,8 +2250,49 @@
             if (line.length > 1) paths.push(line);
           });
         }
-        occluders.push({ points: petal.outline, bbox: petal.bbox, ringIndex: petal.ringIndex });
-      });
+      };
+      if (layoutMode === 'whorl') {
+        // A whorl is a CLOSED ring, so a painter's total order cannot close it:
+        // the first-drawn petal (always at angle 0 — 3 o'clock) sat fully on top
+        // of the design and the last-drawn petals lost their entire bases to the
+        // accumulated occluders. Instead each petal tucks under its forward
+        // neighbours (window < half the ring), which orients every overlapping
+        // pair exactly once — rotationally uniform, no seam, no holes. Rings
+        // still occlude each other innermost-on-top, matching a real corolla.
+        const ringGroups = new Map();
+        petals.forEach((petal) => {
+          const list = ringGroups.get(petal.ringIndex) || [];
+          list.push(petal);
+          ringGroups.set(petal.ringIndex, list);
+        });
+        const ringOrder = [...ringGroups.keys()].sort(
+          (a, b) => ringGroups.get(a)[0].radius - ringGroups.get(b)[0].radius
+        );
+        const completedRings = [];
+        ringOrder.forEach((ri) => {
+          const ringPetals = ringGroups.get(ri).slice().sort((a, b) => a.ringPetalIndex - b.ringPetalIndex);
+          const n = ringPetals.length;
+          const fwdWindow = Math.floor((n - 1) / 2);
+          ringPetals.forEach((petal, idx) => {
+            const clipOccluders = completedRings.slice();
+            for (let d = 1; d <= fwdWindow; d++) {
+              const neighbor = ringPetals[(idx + d) % n];
+              if (bboxesOverlap(petal.bbox, neighbor.bbox)) clipOccluders.push(asOccluder(neighbor));
+            }
+            renderPetal(petal, clipOccluders);
+          });
+          ringPetals.forEach((petal) => completedRings.push(asOccluder(petal)));
+        });
+        completedRings.forEach((occ) => occluders.push(occ));
+      } else {
+        // Spiral mode keeps the radial painter's order — a spiral has a genuine
+        // start and end, so inner petals legitimately sit on top of outer ones.
+        const ordered = petals.slice().sort((a, b) => a.radius - b.radius);
+        ordered.forEach((petal) => {
+          renderPetal(petal, occluders);
+          occluders.push(asOccluder(petal));
+        });
+      }
     }
 
     const centerPaths = buildCentralElements(p, rng, noise, center, maxRadius);
@@ -1898,5 +2314,14 @@
   };
 
   const Vectura = (window.Vectura = window.Vectura || {});
-  window.Vectura.PetalisAlgorithm = { generate, formula };
+  // Expose the canonical named-profile half-width sampler so the Petal Designer can
+  // derive its editable anchor templates FROM the same shape the algorithm (and the
+  // gallery thumbnails) draw — keeping thumbnail == preview == flower for every
+  // named profile. petalShape(t,type) returns the half-width (0..~1) at length t.
+  window.Vectura.PetalisAlgorithm = {
+    generate,
+    formula,
+    profileHalfWidth: (t, type) => petalShape(clamp(t ?? 0, 0, 1), type),
+    profileNames: Object.keys(PETAL_SHAPES),
+  };
 })();

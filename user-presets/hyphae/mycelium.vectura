@@ -1,0 +1,24 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Mycelium",
+  "meta": {
+    "presetId": "hyphae-mycelium",
+    "group": "Classic",
+    "system": "hyphae",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "hyphae",
+      "params": {
+        "sources": 2,
+        "steps": 60,
+        "branchProb": 0.05,
+        "angleVar": 0.5,
+        "segLen": 3,
+        "maxBranches": 1000
+      }
+    }
+  ]
+}

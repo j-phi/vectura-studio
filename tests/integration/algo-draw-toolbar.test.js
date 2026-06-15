@@ -27,6 +27,11 @@ describe('algo-draw toolbar', () => {
   const getBtn = () => document.querySelector('.tool-btn[data-tool="algo-draw"]');
   const getIcon = () => getBtn()?.querySelector('.tool-icon');
   const getPicker = () => document.getElementById('algo-draw-picker');
+  // Returns algorithm types in grouped order: 2D (alpha) then 3D (alpha), matching menu rendering.
+  const expectedAlgorithmTypes = () => {
+    const items = window.Vectura.UI.utils.getDrawableAlgorithmOptions();
+    return [...items.filter((i) => !i.is3d), ...items.filter((i) => i.is3d)].map((i) => i.type);
+  };
 
   // Opens the algo-draw picker by simulating a 400ms hold, then waiting for the timer to fire.
   const openPicker = async () => {
@@ -43,14 +48,27 @@ describe('algo-draw toolbar', () => {
     expect(icon.querySelector('path')).toBeTruthy();
   });
 
-  test('long-press (400 ms hold) reveals the algorithm picker with all 19 algorithms', async () => {
+  test('long-press (400 ms hold) reveals the algorithm picker with all drawable algorithms', async () => {
     await openPicker();
     const picker = getPicker();
     expect(picker).toBeTruthy();
     expect(picker.classList.contains('hidden')).toBe(false);
-    // 19 = the 18 originals + the new Pendula studio algorithm.
-    expect(picker.querySelectorAll('.algo-pick-item').length).toBe(19);
+    const types = Array.from(picker.querySelectorAll('.algo-pick-item')).map((item) => item.dataset.algoType);
+    expect(types).toEqual(expectedAlgorithmTypes());
+    ['spirograph', 'spiralizer', 'polyhedron', 'topoform', 'rasterPlane'].forEach((type) => {
+      expect(types).toContain(type);
+    });
     picker.classList.add('hidden');
+  });
+
+  test('add-layer submenu lists every drawable algorithm from the registry', () => {
+    const submenu = document.getElementById('lvl-algo-submenu');
+    expect(submenu).toBeTruthy();
+    const types = Array.from(submenu.querySelectorAll('.lvl-algo-sub-item')).map((item) => item.dataset.algoType);
+    expect(types).toEqual(expectedAlgorithmTypes());
+    ['spirograph', 'spiralizer', 'polyhedron', 'topoform', 'rasterPlane'].forEach((type) => {
+      expect(types).toContain(type);
+    });
   });
 
   test('clicking a picker item selects the algorithm, updates the toolbar icon, and activates algo-draw', async () => {

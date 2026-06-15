@@ -1,0 +1,36 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Pine Cross-Section",
+  "meta": {
+    "presetId": "rings-pine-cross-section",
+    "group": "Classic",
+    "system": "rings",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "rings",
+      "params": {
+        "rings": 22,
+        "gap": 1.15,
+        "gapCurveStart": 1.4,
+        "gapCurveEnd": 0.85,
+        "spacingVariance": 0.25,
+        "barkRings": 4,
+        "barkGap": 2,
+        "breakCount": 0,
+        "centerDrift": 0.2,
+        "biasStrength": 0.08,
+        "biasAngle": 160,
+        "rayCount": 0,
+        "rayLength": 2.5,
+        "rayInnerFraction": 0.15,
+        "knotCount": 0,
+        "knotIntensity": 0.6,
+        "knotSpread": 30,
+        "seed": 8821
+      }
+    }
+  ]
+}

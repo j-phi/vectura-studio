@@ -1,0 +1,22 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Simple Spiral",
+  "meta": {
+    "presetId": "spiral-simple",
+    "group": "Classic",
+    "system": "spiral",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "spiral",
+      "params": {
+        "loops": 5,
+        "res": 100,
+        "startR": 5,
+        "pulseAmp": 0
+      }
+    }
+  ]
+}

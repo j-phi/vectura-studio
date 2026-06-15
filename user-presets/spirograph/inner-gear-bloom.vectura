@@ -1,0 +1,31 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Inner Gear Bloom",
+  "meta": {
+    "presetId": "spirograph-inner-gear-bloom",
+    "group": "Classic",
+    "system": "spirograph",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "spirograph",
+      "params": {
+        "mainShape": "polygon",
+        "mainWidth": 148,
+        "mainHeight": 148,
+        "mainPoints": 7,
+        "mainTeeth": 252,
+        "gearShape": "oval",
+        "gearTeeth": 73,
+        "gearAspectX": 120,
+        "gearAspectY": 78,
+        "penAngle": 18,
+        "penOffset": 92,
+        "rollMode": "inside",
+        "curveResolution": 1000
+      }
+    }
+  ]
+}

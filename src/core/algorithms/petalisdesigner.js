@@ -12,6 +12,9 @@
       ...source,
       label: 'Petalis',
       ringMode: 'dual',
+      // Whorl is the default layout (clean concentric rings). Spiral is opt-in
+      // for dense composites. Whorl operates inside the 2-band dual structure.
+      layoutMode: source.layoutMode === 'spiral' ? 'spiral' : 'whorl',
       useDesignerShapeOnly: true,
       petalWidthRatio: widthRatio,
       petalLengthRatio: 1,

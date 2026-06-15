@@ -35,6 +35,7 @@ describe('Reduced-motion compliance', () => {
     'progress-indeterminate': ['progress-bar', 'reduce'],
     'rand-glow-pulse': ['btn-randomize-params', 'reduce'],
     'rand-spark-fly':  ['rand-spark-overlay', 'reduce'],
+    'preset-pip-pulse': ['hg-preset-save-pip', 'reduce'],
   };
 
   test('motion.css declares a prefers-reduced-motion: reduce block', () => {

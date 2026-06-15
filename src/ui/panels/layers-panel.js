@@ -105,14 +105,14 @@
           btn.appendChild(nameEl);
           penMenu.appendChild(btn);
         });
-        penMenu.querySelectorAll('.pen-option').forEach((opt) => {
-          opt.onclick = (e) => {
-            e.stopPropagation();
-            if (this.app.pushHistory) this.app.pushHistory();
-            applyPen(pens.find((pen) => pen.id === opt.dataset.penId));
-            penMenu.classList.add('hidden');
-          };
-        });
+        penMenu.onclick = (e) => {
+          const opt = e.target.closest('.pen-option');
+          if (!opt) return;
+          e.stopPropagation();
+          if (this.app.pushHistory) this.app.pushHistory();
+          applyPen(pens.find((pen) => pen.id === opt.dataset.penId));
+          penMenu.classList.add('hidden');
+        };
         penPill.onclick = (e) => {
           e.stopPropagation();
           if (this.openPenMenu && this.openPenMenu !== penMenu) this.openPenMenu.classList.add('hidden');
@@ -945,6 +945,24 @@
         if (onName && !e.metaKey && !e.ctrlKey && !e.shiftKey
             && now - this._lvlDblTime < 350 && this._lvlDblId === id) {
           this._lvlDblTime = 0; this._lvlDblId = null;
+          // Double-click selects the target first so the panel/controls reflect
+          // it — this matters for a child nested inside a group/modifier whose
+          // single-click may not have left it active. Then enter rename. Use a
+          // live lookup so we never act on a stale captured layer object.
+          const live = engine.getLayerById?.(id);
+          const selIds = renderer?.selectedLayerIds;
+          const isSoleActive = engine.activeLayerId === id
+            && renderer?.selectedLayerId === id
+            && (selIds?.size ?? 0) === 1 && !!selIds?.has(id);
+          if (live && !isSoleActive) {
+            renderer.setSelection([id], id);
+            engine.activeLayerId = id;
+            this.lastLayerClickId = id;
+            this.buildControls?.();
+            this.updateFormula?.();
+            this.app.render?.();
+            this.renderLayers();
+          }
           const el = document.querySelector(
             `[data-lvl-id="${id}"] .lvl-name,[data-lvl-id="${id}"] .lvl-grp-name`);
           if (el) _lvlTriggerRename(el, engine.getLayerById?.(id));
@@ -979,7 +997,8 @@
           const on = layer.modifier?.enabled !== false;
           b.className = 'lvl-ib' + (on ? '' : ' vis-off');
           b.innerHTML = on ? this._LVL_I.eye() : this._LVL_I.eyeOff();
-          b.title = on ? 'Disable mirror modifier' : 'Enable mirror modifier';
+          const modLabel = `${layer.modifier?.type === 'morph' ? 'morph' : 'mirror'} modifier`;
+          b.title = (on ? 'Disable ' : 'Enable ') + modLabel;
           b.addEventListener('click', (e) => {
             e.stopPropagation();
             if (this.app.pushHistory) this.app.pushHistory();
@@ -1530,7 +1549,7 @@
     const selectedLayers = layers.filter((layer) => selectedSet.has(layer.id));
     const maxIndex = Math.max(...selectedLayers.map((layer) => layers.indexOf(layer)));
     SETTINGS.globalLayerCount++;
-    const groupId = Math.random().toString(36).slice(2, 11);
+    const groupId = window.Vectura.generateId();
     const group = new Layer(groupId, 'group', this.getUniqueLayerName('Group', groupId));
     group.isGroup = true;
     group.groupType = 'group';
@@ -1768,7 +1787,7 @@
     if (this.app.pushHistory) this.app.pushHistory();
     const engine = this.app.engine;
     SETTINGS.globalLayerCount++;
-    const id = Math.random().toString(36).slice(2, 11);
+    const id = window.Vectura.generateId();
     const shapeType = payload?.shape?.type || null;
     const shapeTypeMap = { oval: 'shape', rect: 'shape', polygon: 'shape' };
     const layerType = shapeTypeMap[shapeType] || 'shape';
@@ -2008,9 +2027,13 @@
         mirrors: [createMirrorLine(0)],
       });
     }
-    if (!Array.isArray(layer.modifier.mirrors)) layer.modifier.mirrors = [];
-    if (layer.modifier.guidesVisible === undefined) layer.modifier.guidesVisible = true;
-    if (layer.modifier.guidesLocked === undefined) layer.modifier.guidesLocked = false;
+    // Mirror-only field backfill — don't graft `mirrors`/`guides*` onto other
+    // modifier types (e.g. morph), which would pollute their serialized state.
+    if (layer.modifier.type === 'mirror') {
+      if (!Array.isArray(layer.modifier.mirrors)) layer.modifier.mirrors = [];
+      if (layer.modifier.guidesVisible === undefined) layer.modifier.guidesVisible = true;
+      if (layer.modifier.guidesLocked === undefined) layer.modifier.guidesLocked = false;
+    }
     if (layer.modifier.enabled === undefined) layer.modifier.enabled = true;
     return layer.modifier;
   }
@@ -2043,7 +2066,10 @@
     this.normalizeGroupOrder();
     this.app.computeDisplayGeometry();
 
-    if (this.isModifierLayer(parent) && parent.modifier?.type === 'mirror') {
+    // Morph consumes its children as live, editable shapes (you reshape an end
+    // and the blend re-folds) — so its children stay UNLOCKED. Mirror and other
+    // modifiers lock their children (they're consumed geometry, not editable).
+    if (this.isModifierLayer(parent) && parent?.modifier?.type !== 'morph') {
       moveIds.forEach((id) => this.layerLockedIds.add(id));
     }
 
@@ -2061,7 +2087,7 @@
     const engine = this.app?.engine;
     if (!engine || !this.layerLockedIds) return;
     const layer = engine.layers.find((l) => l.id === layerId);
-    if (!layer || !this.isModifierLayer(layer) || layer.modifier?.type !== 'mirror') return;
+    if (!layer || !this.isModifierLayer(layer)) return;
     const cascade = (pid) => {
       engine.layers.filter((l) => l.parentId === pid).forEach((c) => {
         this.layerLockedIds.delete(c.id);
@@ -2380,7 +2406,7 @@
 
     const groupNodes = new Map();
     const children = pathMeta.map((entry, index) => {
-      const newId = Math.random().toString(36).slice(2, 11);
+      const newId = window.Vectura.generateId();
       const child = new Layer(newId, 'shape', `${baseName} - Line ${String(index + 1).padStart(pad, '0')}`);
       child.parentId = groupId;
       child.params.seed = 0;
@@ -2401,7 +2427,7 @@
       if (entry.group) {
         let groupNode = groupNodes.get(entry.group);
         if (!groupNode) {
-          const gId = Math.random().toString(36).slice(2, 11);
+          const gId = window.Vectura.generateId();
           groupNode = new Layer(gId, 'group', entry.group);
           groupNode.isGroup = true;
           groupNode.groupType = 'group';

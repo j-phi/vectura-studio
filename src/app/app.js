@@ -134,6 +134,73 @@
       document.addEventListener('vectura:skin-change', () => {
         if (this.renderer && this.renderer.ready) this.render();
       });
+      // Phase 2: a folder-backed preset store loses its permission across reloads
+      // ("Reconnect Thaw"). Load the saved handle and, if it's now paused, nudge
+      // the user with a one-click reconnect toast (the click is the required
+      // user gesture). Fully guarded + non-blocking; a no-op without FSA.
+      this._maybePromptPresetFolderReconnect();
+      // Phase 3: re-pull the connected folder whenever the tab regains focus, so
+      // edits made on another machine (cloud-synced folder) or directly on disk
+      // appear without a manual refresh. Guarded + idempotent + non-blocking.
+      if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') this._pullPresetFolderAndRefresh();
+        });
+      }
+    }
+
+    _maybePromptPresetFolderReconnect() {
+      const Store = (typeof window !== 'undefined' && window.Vectura) ? window.Vectura.PresetFolderStore : null;
+      if (!Store || !Store.isSupported()) return;
+      Promise.resolve()
+        .then(() => Store.init())
+        .then(() => Store.getStatus())
+        .then((status) => {
+          if (!status.connected) return;
+          // Already granted → pull any external changes now (launch sync).
+          if (status.permission === 'granted') { this._pullPresetFolderAndRefresh(); return; }
+          const Toast = window.Vectura?.UI?.overlays?.Toast;
+          if (!Toast) return;
+          Toast.show({
+            message: `Preset folder "${status.name}" is paused — click to reconnect.`,
+            variant: 'warning',
+            duration: 0,
+            onClick: async () => {
+              const ok = await Store.reconnect();
+              Toast.show({ message: ok ? 'Folder reconnected.' : 'Reconnect cancelled.', variant: ok ? 'success' : 'info' });
+              if (ok) this._pullPresetFolderAndRefresh();
+            },
+          });
+        })
+        .catch(() => { /* folder store unavailable — ignore */ });
+    }
+
+    // Pull external preset-folder changes into localStorage and refresh open
+    // galleries. Guarded (granted permission only), single-flight, and silent on
+    // no-op; toasts only when something actually changed.
+    async _pullPresetFolderAndRefresh() {
+      const V = (typeof window !== 'undefined') ? window.Vectura : null;
+      const Store = V && V.PresetFolderStore;
+      const Sync = V && V.PresetSync;
+      if (!Store || !Sync || !Store.isSupported() || !Store.hasHandle()) return;
+      if (this._presetPullInFlight) return;
+      this._presetPullInFlight = true;
+      try {
+        const status = await Store.getStatus();
+        if (!status.connected || status.permission !== 'granted') return;
+        const res = await Sync.pullFromFolder();
+        if (res && (res.imported || res.updated)) {
+          this.ui?.buildControls?.();
+          const Toast = V.UI?.overlays?.Toast;
+          if (Toast) {
+            const bits = [];
+            if (res.imported) bits.push(`imported ${res.imported}`);
+            if (res.updated) bits.push(`updated ${res.updated}`);
+            Toast.show({ message: `Preset folder: ${bits.join(', ')}.`, variant: 'success' });
+          }
+        }
+      } catch (_) { /* folder unavailable / permission revoked — ignore */ }
+      finally { this._presetPullInFlight = false; }
     }
 
     readCookie(name) {
@@ -211,12 +278,7 @@
         }
       }
       if (typeof document !== 'undefined') {
-        const leftPane = document.getElementById('left-pane');
-        const rightPane = document.getElementById('right-pane');
-        const bottomPane = document.getElementById('bottom-pane');
-        if (leftPane) leftPane.classList.remove('pane-collapsed', 'pane-force-open');
-        if (rightPane) rightPane.classList.remove('pane-collapsed', 'pane-force-open');
-        if (bottomPane) bottomPane.classList.remove('bottom-pane-collapsed');
+        this.ui?.resetPanes?.();
       }
       // Reset toolbar back to its default float position. resetToolbarPosition
       // is wired by toolbar.js when present; falls back to no-op pre-init.
@@ -239,6 +301,7 @@
         uiTheme: SETTINGS.uiTheme || DEFAULT_THEME,
         cookiePreferencesEnabled: SETTINGS.cookiePreferencesEnabled === true,
         showCrystallographicNames: SETTINGS.showCrystallographicNames === true,
+        devMode: SETTINGS.devMode === true,
         margin: SETTINGS.margin,
         speedDown: SETTINGS.speedDown,
         speedUp: SETTINGS.speedUp,
@@ -259,6 +322,7 @@
         selectionOutline: SETTINGS.selectionOutline,
         selectionOutlineColor: SETTINGS.selectionOutlineColor,
         selectionOutlineWidth: SETTINGS.selectionOutlineWidth,
+        selectionOutlineHide3d: SETTINGS.selectionOutlineHide3d !== false,
         gridType: SETTINGS.gridType,
         gridOpacity: SETTINGS.gridOpacity,
         gridStyle: SETTINGS.gridStyle,
@@ -279,6 +343,7 @@
         paperHeight: SETTINGS.paperHeight,
         paperOrientation: SETTINGS.paperOrientation,
         showDocumentDimensions: SETTINGS.showDocumentDimensions === true,
+        preview3dQuality: SETTINGS.preview3dQuality,
         optimizationScope: SETTINGS.optimizationScope,
         optimizationPreview: SETTINGS.optimizationPreview,
         optimizationExport: SETTINGS.optimizationExport,
@@ -378,6 +443,7 @@
       SETTINGS.uiTheme = normalizeThemeName(snapshot.uiTheme ?? SETTINGS.uiTheme);
       SETTINGS.cookiePreferencesEnabled = snapshot.cookiePreferencesEnabled === true;
       SETTINGS.showCrystallographicNames = snapshot.showCrystallographicNames === true;
+      SETTINGS.devMode = snapshot.devMode === true;
       SETTINGS.margin = takeNumber('margin', SETTINGS.margin, 0, 10000);
       SETTINGS.speedDown = takeNumber('speedDown', SETTINGS.speedDown, 0, 100000);
       SETTINGS.speedUp = takeNumber('speedUp', SETTINGS.speedUp, 0, 100000);
@@ -404,6 +470,9 @@
         : snapshot.selectionOutline === true;
       SETTINGS.selectionOutlineColor = takeColor('selectionOutlineColor', SETTINGS.selectionOutlineColor);
       SETTINGS.selectionOutlineWidth = takeNumber('selectionOutlineWidth', SETTINGS.selectionOutlineWidth, 0, 100);
+      SETTINGS.selectionOutlineHide3d = snapshot.selectionOutlineHide3d === undefined
+        ? SETTINGS.selectionOutlineHide3d
+        : snapshot.selectionOutlineHide3d === true;
       // gridType: legacy `gridOverlay` boolean upgrade still honored.
       const GRID_TYPES = ['none', 'standard', 'graph', 'iso', 'polar', 'dots'];
       const gridFallback = snapshot.gridOverlay ? 'standard' : SETTINGS.gridType;
@@ -436,6 +505,7 @@
       SETTINGS.paperHeight = takeNumber('paperHeight', SETTINGS.paperHeight, 1, 100000);
       SETTINGS.paperOrientation = takeEnum('paperOrientation', SETTINGS.paperOrientation, ['portrait', 'landscape']);
       SETTINGS.showDocumentDimensions = snapshot.showDocumentDimensions === true;
+      SETTINGS.preview3dQuality = takeEnum('preview3dQuality', SETTINGS.preview3dQuality, ['draft', 'balanced', 'high']);
       SETTINGS.optimizationScope = takeEnum('optimizationScope', SETTINGS.optimizationScope, ['all', 'selected', 'visible']);
       SETTINGS.optimizationPreview = takeEnum('optimizationPreview', SETTINGS.optimizationPreview, ['off', 'on', 'overlay']);
       SETTINGS.optimizationExport = snapshot.optimizationExport === undefined
@@ -613,6 +683,7 @@
           selectionOutline: SETTINGS.selectionOutline,
           selectionOutlineColor: SETTINGS.selectionOutlineColor,
           selectionOutlineWidth: SETTINGS.selectionOutlineWidth,
+          selectionOutlineHide3d: SETTINGS.selectionOutlineHide3d !== false,
           gridOverlay: SETTINGS.gridOverlay,
           uiSections: SETTINGS.uiSections ? clone(SETTINGS.uiSections) : null,
           aboutVisible: SETTINGS.aboutVisible !== false,
@@ -623,6 +694,7 @@
           paperHeight: SETTINGS.paperHeight,
           paperOrientation: SETTINGS.paperOrientation,
           showDocumentDimensions: SETTINGS.showDocumentDimensions === true,
+          preview3dQuality: SETTINGS.preview3dQuality,
           optimizationScope: SETTINGS.optimizationScope,
           optimizationPreview: SETTINGS.optimizationPreview,
           optimizationExport: SETTINGS.optimizationExport,
@@ -672,6 +744,7 @@
       SETTINGS.selectionOutline = s.selectionOutline ?? SETTINGS.selectionOutline;
       SETTINGS.selectionOutlineColor = s.selectionOutlineColor ?? SETTINGS.selectionOutlineColor;
       SETTINGS.selectionOutlineWidth = s.selectionOutlineWidth ?? SETTINGS.selectionOutlineWidth;
+      SETTINGS.selectionOutlineHide3d = s.selectionOutlineHide3d ?? SETTINGS.selectionOutlineHide3d;
       SETTINGS.gridOverlay = s.gridOverlay ?? SETTINGS.gridOverlay;
       if (s.uiSections && typeof s.uiSections === 'object') {
         SETTINGS.uiSections = clone(s.uiSections);
@@ -689,6 +762,7 @@
       SETTINGS.paperHeight = s.paperHeight ?? SETTINGS.paperHeight;
       SETTINGS.paperOrientation = s.paperOrientation ?? SETTINGS.paperOrientation;
       SETTINGS.showDocumentDimensions = s.showDocumentDimensions === true;
+      SETTINGS.preview3dQuality = s.preview3dQuality ?? SETTINGS.preview3dQuality;
       SETTINGS.optimizationScope = s.optimizationScope ?? SETTINGS.optimizationScope;
       SETTINGS.optimizationPreview = s.optimizationPreview ?? SETTINGS.optimizationPreview;
       SETTINGS.optimizationExport = s.optimizationExport ?? SETTINGS.optimizationExport;
@@ -757,6 +831,15 @@
       this.ui.buildControls();
       this.ui.updateFormula();
       this.render();
+      // Restore rasterPlane sources. Noise sources resolve synchronously inside
+      // generate(); painted/imported sources decode their embedded data URL
+      // asynchronously, so re-generate the affected layer once it lands.
+      if (window.Vectura?.RasterPlaneSource?.rehydrateAll) {
+        window.Vectura.RasterPlaneSource.rehydrateAll(this.engine, (layer) => {
+          if (layer && this.engine.generate) this.engine.generate(layer.id);
+          this.render();
+        });
+      }
       this.persistPreferencesDebounced();
     }
 
@@ -941,13 +1024,21 @@
     regen(options = {}) {
       const pushHistory = options && options.pushHistory === true;
       if (pushHistory) this.pushHistory();
-      this.engine.generate(this.engine.activeLayerId);
+      this.engine.generate(this.engine.activeLayerId, options);
       if (SETTINGS.autoColorization?.enabled && this.ui?.applyAutoColorization && !this.ui.isApplyingAutoColorization) {
         this.ui.applyAutoColorization({ commit: false, skipLayerRender: true, skipAppRender: true });
       }
       this.renderer?.refreshDirectSelection?.();
       this.render();
       this.ui.updateFormula();
+      // Live-refresh the preset gallery so the trigger flips to "Custom" the
+      // instant a param diverges from the active preset (and back when restored).
+      // No-op when the active layer has no preset gallery mounted.
+      this.ui?._activePresetGalleryRefresh?.();
+      // Live-refresh the Raster-Plane source preview so its thumbnail tracks
+      // every edit — most importantly the noise stack displacing the surface.
+      // No-op unless the active layer mounted the image-source widget.
+      this.ui?._activeImageSourceRefresh?.();
       // The harmonograph/pendula virtual plotter caches a STATIC figure; refresh
       // it on every regen so its ghost tracks ALL param edits (pendulum stack,
       // base params, dice, presets, Motion Rack), not just Motion Rack edits.
@@ -963,13 +1054,7 @@
 
     updateStats() {
       const s = this.engine.getStats();
-      const dist = document.getElementById('stat-dist');
-      const time = document.getElementById('stat-time');
-      const lines = document.getElementById('stat-lines');
-      if (!dist || !time) return;
-      dist.innerText = s.distance;
-      time.innerText = s.time;
-      if (lines) lines.innerText = s.lines?.toString?.() || '0';
+      this.ui?.updateStats?.(s);
     }
 
     computeDisplayGeometry() {

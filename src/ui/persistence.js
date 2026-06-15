@@ -56,6 +56,7 @@
     const marginLineStyleReset = getEl('set-margin-line-style-reset');
     const showGuides = getEl('set-show-guides');
     const snapGuides = getEl('set-snap-guides');
+    const preview3dQuality = getEl('set-preview-3d-quality', { silent: true });
     const showDocumentDimensions = getEl('set-show-document-dimensions', { silent: true });
     const selectionOutline = getEl('set-selection-outline');
     const selectionOutlineColorPill = getEl('set-selection-outline-color-pill');
@@ -64,6 +65,7 @@
     const selectionOutlineStyleReset = getEl('set-selection-outline-style-reset');
     const cookiePreferences = getEl('set-cookie-preferences');
     const showCrystallographicNames = getEl('set-show-crystallographic-names', { silent: true });
+    const devMode = getEl('set-dev-mode', { silent: true });
     const paperWidth = getEl('set-paper-width');
     const paperHeight = getEl('set-paper-height');
     const orientationToggle = getEl('set-orientation');
@@ -103,6 +105,7 @@
     if (marginLineStyleReset) marginLineStyleReset.disabled = false;
     if (showGuides) showGuides.checked = SETTINGS.showGuides !== false;
     if (snapGuides) snapGuides.checked = SETTINGS.snapGuides !== false;
+    if (preview3dQuality) preview3dQuality.value = SETTINGS.preview3dQuality || 'balanced';
     if (showDocumentDimensions) showDocumentDimensions.checked = SETTINGS.showDocumentDimensions === true;
     const gridType = SETTINGS.gridType || 'none';
     const showGrid = gridType !== 'none';
@@ -180,6 +183,10 @@
     if (gridSnapSensitivityVal) gridSnapSensitivityVal.value = SETTINGS.gridSnapSensitivity ?? 50;
 
     if (selectionOutline) selectionOutline.checked = SETTINGS.selectionOutline !== false;
+    const selectionOutlineHide3d = getEl('set-selection-outline-hide3d', { silent: true });
+    const selectionOutlineHide3dRow = getEl('set-selection-outline-hide3d-row', { silent: true });
+    if (selectionOutlineHide3d) selectionOutlineHide3d.checked = SETTINGS.selectionOutlineHide3d !== false;
+    if (selectionOutlineHide3dRow) selectionOutlineHide3dRow.style.display = SETTINGS.selectionOutline !== false ? '' : 'none';
     if (selectionOutlineColorPill) {
       const color = SETTINGS.selectionOutlineColor || '#ef4444';
       selectionOutlineColorPill.textContent = color.toUpperCase();
@@ -189,6 +196,7 @@
     if (selectionOutlineStyleReset) selectionOutlineStyleReset.disabled = false;
     if (cookiePreferences) cookiePreferences.checked = SETTINGS.cookiePreferencesEnabled === true;
     if (showCrystallographicNames) showCrystallographicNames.checked = SETTINGS.showCrystallographicNames === true;
+    if (devMode) devMode.checked = SETTINGS.devMode === true;
     const showTourEl = getEl('set-show-tour', { silent: true });
     if (showTourEl) showTourEl.checked = SETTINGS.showTourOnFirstLaunch === true;
     if (bgColor) bgColor.value = SETTINGS.bgColor;

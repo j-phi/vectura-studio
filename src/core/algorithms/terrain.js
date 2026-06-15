@@ -10,6 +10,61 @@
   const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.AlgorithmRegistry = window.Vectura.AlgorithmRegistry || {};
   const { clamp01, lerp } = window.Vectura.AlgorithmUtils;
+
+  // Marching-squares coastline at `threshold` over the heightfield grid, returned
+  // as world-space {xW, zW} segment pairs. Shared by every perspective mode so the
+  // coastline is projected through the same projector as the rest of the terrain
+  // (legacy project() or the free-3d Geometry3D engine).
+  const buildCoastlineSegs = (grid, gridRows, gridCols, threshold) => {
+    const cases = {
+      1: [[3, 0]], 2: [[0, 1]], 3: [[3, 1]], 4: [[1, 2]],
+      5: [[3, 2], [0, 1]], 6: [[0, 2]], 7: [[3, 2]],
+      8: [[2, 3]], 9: [[0, 2]], 10: [[0, 3], [1, 2]],
+      11: [[1, 2]], 12: [[1, 3]], 13: [[0, 1]], 14: [[3, 0]],
+    };
+    const segs = [];
+    const cellRows = gridRows - 1;
+    const cellCols = gridCols - 1;
+    for (let r = 0; r < cellRows; r++) {
+      for (let c = 0; c < cellCols; c++) {
+        const v0 = grid[r * gridCols + c];
+        const v1 = grid[r * gridCols + (c + 1)];
+        const v2 = grid[(r + 1) * gridCols + (c + 1)];
+        const v3 = grid[(r + 1) * gridCols + c];
+        const idx = (v0 > threshold ? 1 : 0)
+          | ((v1 > threshold ? 1 : 0) << 1)
+          | ((v2 > threshold ? 1 : 0) << 2)
+          | ((v3 > threshold ? 1 : 0) << 3);
+        if (idx === 0 || idx === 15) continue;
+        const interp = (va, vb) => {
+          const denom = vb - va || 1e-6;
+          return (threshold - va) / denom;
+        };
+        const xW0 = c / (gridCols - 1), xW1 = (c + 1) / (gridCols - 1);
+        const zW0 = r / (gridRows - 1), zW1 = (r + 1) / (gridRows - 1);
+        const edgePoint = (e) => {
+          switch (e) {
+            case 0: { const t = interp(v0, v1); return { xW: lerp(xW0, xW1, t), zW: zW0 }; }
+            case 1: { const t = interp(v1, v2); return { xW: xW1, zW: lerp(zW0, zW1, t) }; }
+            case 2: { const t = interp(v2, v3); return { xW: lerp(xW1, xW0, t), zW: zW1 }; }
+            case 3: { const t = interp(v3, v0); return { xW: xW0, zW: lerp(zW1, zW0, t) }; }
+            default: return { xW: xW0, zW: zW0 };
+          }
+        };
+        let edges = cases[idx];
+        if (idx === 5 || idx === 10) {
+          const center = (v0 + v1 + v2 + v3) / 4;
+          if (idx === 5) edges = center > threshold ? [[3, 0], [1, 2]] : [[3, 2], [0, 1]];
+          if (idx === 10) edges = center > threshold ? [[0, 1], [2, 3]] : [[0, 3], [1, 2]];
+        }
+        edges.forEach(([e0, e1]) => {
+          segs.push([edgePoint(e0), edgePoint(e1)]);
+        });
+      }
+    }
+    return segs;
+  };
+
   window.Vectura.AlgorithmRegistry.terrain = {
     generate: (p, rng, noise, bounds) => {
       const { m, width, height } = bounds;
@@ -34,9 +89,10 @@
       const occlusionOn = p.occlusion !== false;
 
       // --- Perspective ---
-      const mode = ['orthographic', 'one-point', 'one-point-landscape', 'two-point', 'isometric'].includes(p.perspectiveMode)
+      const mode = ['orthographic', 'one-point', 'one-point-landscape', 'two-point', 'isometric', 'free-3d'].includes(p.perspectiveMode)
         ? p.perspectiveMode
         : 'one-point';
+      const isFree3d = mode === 'free-3d';
       // Pinhole modes (one-point and one-point-landscape) share projection math; the
       // landscape variant additionally emits an explicit horizon line at horizonY.
       const isPinholeOnePoint = mode === 'one-point' || mode === 'one-point-landscape';
@@ -149,7 +205,10 @@
         seed: (p.seed ?? 0) + 17,
       };
       const sampleMountain = (wx, wy) => {
-        const v = rack.evaluate(wx * mountainFreq, wy * mountainFreq, mountainLayer, { worldX: wx, worldY: wy });
+        // sampleScalar runs the FBM octave loop (octaves/lacunarity/gain); rack.evaluate
+        // is a SINGLE octave and silently ignores them. zoom already carries mountainFreq,
+        // so pass RAW world coords — pre-multiplying would square the base frequency.
+        const v = rack.sampleScalar(wx, wy, mountainLayer, { worldX: wx, worldY: wy });
         // Map ridged value [-1, 1] to [0, 1] then sharpen peaks.
         const n01 = clamp01((v + 1) * 0.5);
         return Math.pow(n01, peakSharpness);
@@ -220,11 +279,16 @@
         }
       }
 
-      // --- Rivers: steepest-descent traces, carved into the grid ---
+      // --- Rivers: DEM hydrology (priority-flood fill → D8 → flow accumulation →
+      // drainage network → dendritic channels), carved once into the grid. ---
       const riversEnabled = p.riversEnabled === true;
       const riverCount = Math.max(1, Math.floor(p.riverCount ?? 2));
       const riverWidth = Math.max(1, p.riverWidth ?? 3);
-      const riverDepth = Math.max(0, p.riverDepth ?? 8) / 100;
+      // Relief-relative depth: a fraction of the visible mountain relief (same idiom
+      // as waterLevel above), so the slider means the same thing at any
+      // mountainAmplitude — and a hard floor below keeps it from "dripping".
+      const reliefUnit = Math.max(0.02, mountainAmp);
+      const riverDepth = clamp01((p.riverDepth ?? 8) / 100) * reliefUnit;
       const riverMeander = clamp01((p.riverMeander ?? 50) / 100);
       const riverPaths = [];
 
@@ -241,69 +305,459 @@
         return lerp(lerp(v00, v10, tx), lerp(v01, v11, tx), ty);
       };
 
-      const carveAt = (xW, zW, depthFrac) => {
-        const cCenter = Math.round(xW * (gridCols - 1));
-        const rCenter = Math.round(zW * (gridRows - 1));
-        const radius = Math.max(1, Math.round(riverWidth / Math.max(1, cellW)));
-        for (let dr = -radius; dr <= radius; dr++) {
-          for (let dc = -radius; dc <= radius; dc++) {
-            const r = rCenter + dr;
-            const c = cCenter + dc;
-            if (r < 0 || r >= gridRows || c < 0 || c >= gridCols) continue;
-            const dist = Math.hypot(dr, dc);
-            if (dist > radius) continue;
-            const fall = Math.exp(-0.5 * Math.pow(dist / Math.max(0.5, radius * 0.5), 2));
-            const idx = r * gridCols + c;
-            grid[idx] = Math.max(oceansEnabled ? waterLevel : -Infinity, grid[idx] - depthFrac * fall);
-          }
-        }
-      };
-
+      // Rivers are computed by a small terrain-hydrology pipeline run ONCE over the
+      // heightfield. It is fully deterministic — derived from the (seed-stable) grid
+      // with no rand() — so the same terrain always yields the same drainage network.
       if (riversEnabled) {
-        for (let i = 0; i < riverCount; i++) {
-          // Seed at a high point — sample several candidates and pick the highest.
-          let seed = null;
-          let seedH = -Infinity;
-          for (let k = 0; k < 12; k++) {
-            const xC = rand();
-            const zC = rand() * 0.6; // bias toward back/upper (further) of canvas
-            const h = sampleGrid(xC, zC);
-            if (h > seedH) { seedH = h; seed = { xW: xC, zW: zC }; }
+        const N = gridRows * gridCols;
+        const idxOf = (r, c) => r * gridCols + c;
+        const rowOf = (idx) => (idx / gridCols) | 0;
+        // 8-neighbour offsets with their euclidean step length.
+        const NB = [
+          [-1, 0, 1], [1, 0, 1], [0, -1, 1], [0, 1, 1],
+          [-1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [1, 1, Math.SQRT2],
+        ];
+        const downstreamOf = (idx, d) => {
+          if (d < 0) return -1;
+          const r = rowOf(idx);
+          return idxOf(r + NB[d][0], (idx - r * gridCols) + NB[d][1]);
+        };
+
+        // (1) Priority-flood depression fill (+ε) so every cell drains to a border
+        // and raised flats still slope downhill. Flat array-backed binary min-heap
+        // keyed by elevation, tie-broken by cell index for determinism.
+        // Float64 (not Float32): the +EPS_FILL staircase can be smaller than a
+        // Float32 ULP at moderate absolute elevations, which would silently collapse
+        // raised flats back to true flats and leave interior drainage sinks.
+        const filled = Float64Array.from(grid);
+        const EPS_FILL = 1e-6 * reliefUnit;
+        const hKey = new Float64Array(N);
+        const hIdx = new Int32Array(N);
+        let hSize = 0;
+        const less = (i, j) => hKey[i] < hKey[j] || (hKey[i] === hKey[j] && hIdx[i] < hIdx[j]);
+        const swap = (i, j) => {
+          const k = hKey[i]; hKey[i] = hKey[j]; hKey[j] = k;
+          const x = hIdx[i]; hIdx[i] = hIdx[j]; hIdx[j] = x;
+        };
+        const hPush = (key, idx) => {
+          let i = hSize++; hKey[i] = key; hIdx[i] = idx;
+          while (i > 0) { const par = (i - 1) >> 1; if (!less(i, par)) break; swap(i, par); i = par; }
+        };
+        const hPop = () => {
+          const top = hIdx[0]; hSize--; hKey[0] = hKey[hSize]; hIdx[0] = hIdx[hSize];
+          let i = 0;
+          for (;;) {
+            const l = 2 * i + 1, r = 2 * i + 2; let m = i;
+            if (l < hSize && less(l, m)) m = l;
+            if (r < hSize && less(r, m)) m = r;
+            if (m === i) break; swap(i, m); i = m;
           }
-          if (!seed) continue;
-          const trace = [{ ...seed }];
-          let xW = seed.xW;
-          let zW = seed.zW;
-          let lastDir = 0;
-          for (let step = 0; step < 800; step++) {
-            const eps = 1 / Math.max(gridCols, gridRows);
-            const dHdx = (sampleGrid(Math.min(1, xW + eps), zW) - sampleGrid(Math.max(0, xW - eps), zW)) / (2 * eps);
-            const dHdz = (sampleGrid(xW, Math.min(1, zW + eps)) - sampleGrid(xW, Math.max(0, zW - eps))) / (2 * eps);
-            const grad = Math.hypot(dHdx, dHdz);
-            if (grad < 1e-5) break;
-            // Move opposite to gradient. Add meander as a tangent-perpendicular wiggle.
-            let dx = -dHdx / grad;
-            let dz = -dHdz / grad;
-            if (riverMeander > 0) {
-              const wiggle = Math.sin(step * 0.25 + lastDir) * riverMeander;
-              const tx = -dz, tz = dx;
-              dx += tx * wiggle * 0.6;
-              dz += tz * wiggle * 0.6;
-              const norm = Math.hypot(dx, dz) || 1;
-              dx /= norm; dz /= norm;
+          return top;
+        };
+        const closed = new Uint8Array(N);
+        for (let r = 0; r < gridRows; r++) {
+          for (let c = 0; c < gridCols; c++) {
+            if (r === 0 || r === gridRows - 1 || c === 0 || c === gridCols - 1) {
+              const idx = idxOf(r, c); closed[idx] = 1; hPush(filled[idx], idx);
             }
-            lastDir += rand() - 0.5;
-            const stepLen = 0.005;
-            xW = clamp01(xW + dx * stepLen);
-            zW = clamp01(zW + dz * stepLen);
-            const h = sampleGrid(xW, zW);
-            trace.push({ xW, zW });
-            carveAt(xW, zW, riverDepth);
-            if (oceansEnabled && h <= waterLevel + 1e-4) break;
-            if (xW <= 0 || xW >= 1 || zW <= 0 || zW >= 1) break;
           }
-          if (trace.length >= 2) riverPaths.push(trace);
         }
+        while (hSize > 0) {
+          const cur = hPop();
+          const cr = rowOf(cur), cc = cur - cr * gridCols;
+          for (let n = 0; n < 8; n++) {
+            const nr = cr + NB[n][0], nc = cc + NB[n][1];
+            if (nr < 0 || nr >= gridRows || nc < 0 || nc >= gridCols) continue;
+            const nidx = idxOf(nr, nc);
+            if (closed[nidx]) continue;
+            if (filled[nidx] <= filled[cur] + EPS_FILL) filled[nidx] = filled[cur] + EPS_FILL;
+            closed[nidx] = 1; hPush(filled[nidx], nidx);
+          }
+        }
+
+        // (2) D8 flow direction on the filled surface. Border cells (and below-water
+        // cells when oceans are on) are outlets; equal-slope ties break by lowest
+        // neighbour index, so the network is deterministic.
+        const dir = new Int8Array(N);
+        for (let r = 0; r < gridRows; r++) {
+          for (let c = 0; c < gridCols; c++) {
+            const idx = idxOf(r, c);
+            if (r === 0 || r === gridRows - 1 || c === 0 || c === gridCols - 1 ||
+                (oceansEnabled && filled[idx] <= waterLevel + 1e-6)) { dir[idx] = -1; continue; }
+            let best = -1, bestSlope = 0;
+            for (let n = 0; n < 8; n++) {
+              const nidx = idxOf(r + NB[n][0], c + NB[n][1]);
+              const slope = (filled[idx] - filled[nidx]) / NB[n][2];
+              if (slope > bestSlope) { bestSlope = slope; best = n; }
+            }
+            dir[idx] = best;
+          }
+        }
+
+        // (3) Flow accumulation: process cells high→low so each donates its full
+        // upstream count to its downstream neighbour. accum ≈ contributing area.
+        const order = Array.from({ length: N }, (_, i) => i);
+        order.sort((a, b) => (filled[b] - filled[a]) || (a - b));
+        const accum = new Float32Array(N).fill(1);
+        for (let i = 0; i < N; i++) {
+          const idx = order[i];
+          const ds = downstreamOf(idx, dir[idx]);
+          if (ds >= 0) accum[ds] += accum[idx];
+        }
+
+        // (4) Drainage network: a cell is a channel when its accumulation clears a
+        // threshold set as an accumulation percentile over land. riverCount sweeps
+        // that percentile (sparser → denser); it is a drainage-density knob, not a
+        // literal river count.
+        let accumMax = 1;
+        const landAccum = [];
+        for (let i = 0; i < N; i++) {
+          if (!oceansEnabled || filled[i] > waterLevel) {
+            landAccum.push(accum[i]); if (accum[i] > accumMax) accumMax = accum[i];
+          }
+        }
+        const channel = new Uint8Array(N);
+        if (accumMax > 1 && landAccum.length) {
+          landAccum.sort((a, b) => a - b);
+          const pct = lerp(0.985, 0.9, clamp01((riverCount - 1) / 5));
+          const T = Math.max(2, landAccum[Math.min(landAccum.length - 1, Math.floor(pct * landAccum.length))]);
+          for (let i = 0; i < N; i++) {
+            if ((!oceansEnabled || filled[i] > waterLevel) && accum[i] >= T) channel[i] = 1;
+          }
+        }
+
+        // (5) Trace channels into dendritic polylines: walk downstream from each
+        // source (a channel cell with no channel inflow), following D8 until an
+        // outlet or an already-traced cell (a confluence — its node is shared, so
+        // tributaries visually join the trunk). Long runs are plotter-friendly.
+        const inDeg = new Uint16Array(N);
+        for (let i = 0; i < N; i++) {
+          if (!channel[i]) continue;
+          const ds = downstreamOf(i, dir[i]);
+          if (ds >= 0 && channel[ds]) inDeg[ds]++;
+        }
+        const sources = [];
+        for (let i = 0; i < N; i++) if (channel[i] && inDeg[i] === 0) sources.push(i);
+        sources.sort((a, b) => (accum[a] - accum[b]) || (a - b));
+        const cellCenter = (idx) => {
+          const r = rowOf(idx), c = idx - r * gridCols;
+          return { xW: gridCols > 1 ? c / (gridCols - 1) : 0.5, zW: gridRows > 1 ? r / (gridRows - 1) : 0.5 };
+        };
+        const used = new Uint8Array(N);
+        for (let s = 0; s < sources.length; s++) {
+          let idx = sources[s];
+          const cells = [];
+          for (;;) {
+            cells.push(idx);
+            if (used[idx]) break;            // joined an existing chain (share the node)
+            used[idx] = 1;
+            const ds = downstreamOf(idx, dir[idx]);
+            if (ds < 0 || !channel[ds]) break; // reached an outlet / left the network
+            idx = ds;
+          }
+          if (cells.length >= 2) riverPaths.push(cells.map(cellCenter));
+        }
+
+        // Optional hydrology-conditioned sinuosity: a small deterministic lateral
+        // wobble (perpendicular to flow) that only opens up in wide, low-relief
+        // reaches. Bounded well under one cell so the line stays in its carved groove.
+        if (riverMeander > 0) {
+          // Keep the max lateral shift well under one cell so the meandered line
+          // stays inside its carved groove (the carve is centred on the channel
+          // cells, and a typical groove is ~1 cell wide).
+          const ampW = riverMeander * 0.3 / Math.max(1, gridCols - 1);
+          riverPaths.forEach((trace) => {
+            if (trace.length < 3) return;
+            const orig = trace.map((q) => ({ xW: q.xW, zW: q.zW }));
+            for (let i = 1; i < orig.length - 1; i++) {
+              let tx = orig[i + 1].xW - orig[i - 1].xW;
+              let tz = orig[i + 1].zW - orig[i - 1].zW;
+              const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
+              const wob = Math.sin(i * 0.9) * ampW;
+              trace[i] = { xW: clamp01(orig[i].xW - tz * wob), zW: clamp01(orig[i].zW + tx * wob) };
+            }
+          });
+        }
+
+        // (6) Carve the channels into the grid ONCE per cell, against a pre-carve
+        // snapshot so overlapping discs converge to a single target depth instead of
+        // accumulating (the old per-step subtract gouged cells to -∞ → the "drips").
+        // Depth/width scale with discharge; a hard floor guarantees no runaway.
+        const baseGrid = Float32Array.from(grid);
+        let gridMin = Infinity;
+        for (let i = 0; i < N; i++) if (baseGrid[i] < gridMin) gridMin = baseGrid[i];
+        const carveFloor = oceansEnabled ? waterLevel : (gridMin - riverDepth);
+        for (let i = 0; i < N; i++) {
+          if (!channel[i]) continue;
+          const q = Math.min(1, accum[i] / accumMax);
+          const wCells = Math.max(1, Math.round(riverWidth * Math.sqrt(q) / Math.max(1, cellW)));
+          const depthAmt = riverDepth * Math.pow(q, 0.3);
+          const cr = rowOf(i), cc = i - cr * gridCols;
+          const sigma = Math.max(0.5, wCells * 0.5);
+          for (let dr = -wCells; dr <= wCells; dr++) {
+            for (let dc = -wCells; dc <= wCells; dc++) {
+              const r = cr + dr, c = cc + dc;
+              if (r < 0 || r >= gridRows || c < 0 || c >= gridCols) continue;
+              const dist = Math.hypot(dr, dc);
+              if (dist > wCells) continue;
+              const fall = Math.exp(-0.5 * Math.pow(dist / sigma, 2));
+              const idx = idxOf(r, c);
+              const target = Math.max(carveFloor, baseGrid[idx] - depthAmt * fall);
+              if (target < grid[idx]) grid[idx] = target;
+            }
+          }
+        }
+      }
+
+      // --- Free 3D: route the same heightfield through the shared Geometry3D
+      // engine (yaw/pitch/roll + ortho/perspective) instead of the fixed
+      // vanishing-point projector, and do hidden-line removal with the engine's
+      // screen-space painter occlusion. All feature data above (grid, rivers,
+      // coastline) is projection-independent and reused verbatim. ---
+      if (isFree3d) {
+        const G3 = window.Vectura.Geometry3D;
+        const { finite } = G3;
+        const depthExtent = innerH * 1.4;          // world depth (far -> near) span
+        const heightScaleFree = innerH * 0.5;      // height -> world Y span
+        const centerX = inset + innerW / 2;
+        const centerY = inset + innerH / 2;
+        const proj = G3.resolveProjection(p);
+        const angles = { yaw: finite(p.yaw, -25), pitch: finite(p.pitch, 58), roll: finite(p.roll, 0) };
+        // Footprint fan: widen the FAR (top) edge relative to the near (base) edge
+        // so the rectangular footprint opens into a trapezoid. topWidth is the
+        // far/near width ratio (1 = native rectangle, up to 10×). The per-row scale
+        // ramps linearly from topWidth at zW=0 (far) to 1 at zW=1 (near).
+        const topWidthScale = clamp01((finite(p.topWidth, 1) - 1) / 9) * 9 + 1;
+        // World (xW in [0,1], zW in [0,1] far->near, h height) -> centered cube
+        // -> rotate -> project. Larger camera z = nearer (engine convention).
+        const project3d = (xW, zW, h) => {
+          const fan = 1 + (topWidthScale - 1) * (1 - zW);
+          const X = (xW - 0.5) * innerW * fan;
+          const Z = (zW - 0.5) * depthExtent;
+          const Y = h * heightScaleFree;
+          const rotated = G3.rotatePoint({ x: X, y: Y, z: Z }, angles);
+          const point = G3.projectPoint(rotated, { centerX, centerY, scale: 1, ...proj });
+          return { point, rotated };
+        };
+
+        const occlusionOn = p.occlusion !== false;
+        const fast = p.fastPreview || bounds.fastPreview;
+        const drawSlices = fast ? Math.min(depthSlices, G3.previewCap(bounds, 48)) : depthSlices;
+        const drawXRes = fast ? Math.min(xResolution, G3.previewCap(bounds, 120)) : xResolution;
+
+        // Project every grid vertex once — reused for occluders, silhouette,
+        // creases, and hatching.
+        const projGrid = new Array(gridRows);
+        for (let r = 0; r < gridRows; r++) {
+          const zW = gridRows === 1 ? 0.5 : r / (gridRows - 1);
+          const rowArr = new Array(gridCols);
+          for (let c = 0; c < gridCols; c++) {
+            const xW = gridCols === 1 ? 0.5 : c / (gridCols - 1);
+            rowArr[c] = project3d(xW, zW, grid[r * gridCols + c]);
+          }
+          projGrid[r] = rowArr;
+        }
+
+        // Silhouette/crease faces stay on the coarse projGrid — their topology (and
+        // the Shading & Lines baselines) is unaffected by the occluder change below.
+        const faceFront = [];
+        const faces = [];
+        const faceNormals = [];
+        const wantFaces = p.emphasizeOutline === true || p.showCreases === true;
+        if (wantFaces) {
+          for (let r = 0; r < gridRows - 1; r++) {
+            for (let c = 0; c < gridCols - 1; c++) {
+              const a = projGrid[r][c];
+              const b = projGrid[r][c + 1];
+              const cc = projGrid[r + 1][c + 1];
+              const d = projGrid[r + 1][c];
+              const normal = G3.faceNormal([a.rotated, b.rotated, cc.rotated, d.rotated]);
+              const i0 = r * gridCols + c;
+              faces.push([i0, i0 + 1, i0 + gridCols + 1, i0 + gridCols]);
+              faceFront.push(normal.z >= -0.001);
+              faceNormals.push(normal);
+            }
+          }
+        }
+
+        // Hidden-line removal is a floating-horizon sweep (the classic stacked-
+        // ridgeline algorithm). Build the drawable rows from the SAME projected
+        // heightfield grid: each scanline (constant zW) is one opaque row, while
+        // rivers and the coastline ride ON the surface — they're occluded by nearer
+        // terrain but never occlude (they don't extend the horizon). The sweep
+        // tests each row only against NEARER rows, never the surface it lies on, so
+        // there is no self-occlusion "acne", no quantisation gaps, and no back-slope
+        // leaks — visible spans come out as long continuous (plotter-friendly) runs.
+        const occRows = drawSlices;
+        const occCols = drawXRes;
+        const occGrid = new Array(occRows);
+        for (let r = 0; r < occRows; r++) {
+          const zW = occRows === 1 ? 0.5 : r / (occRows - 1);
+          const rowArr = new Array(occCols);
+          for (let c = 0; c < occCols; c++) {
+            const xW = occCols === 1 ? 0.5 : c / (occCols - 1);
+            rowArr[c] = project3d(xW, zW, sampleGrid(xW, zW));
+          }
+          occGrid[r] = rowArr;
+        }
+        const finitePt = (q) => q && q.point && !q.point.behind
+          && Number.isFinite(q.point.x) && Number.isFinite(q.point.y);
+
+        const rows = []; // { pts, depth, occludes, meta } for the horizon sweep
+        const rawPaths = []; // emitted directly when occlusion is off
+
+        // Scanlines (constant zW) — the opaque surface rows.
+        for (let i = 0; i < drawSlices; i++) {
+          const pts = [];
+          let zSum = 0;
+          for (let j = 0; j < drawXRes; j++) {
+            const cur = occGrid[i][j];
+            if (!finitePt(cur)) continue;
+            pts.push({ x: cur.point.x, y: cur.point.y });
+            zSum += cur.rotated.z;
+          }
+          if (pts.length < 2) continue;
+          const meta = { kind: 'scanline', depth: zSum / pts.length };
+          if (occlusionOn) rows.push({ pts, depth: meta.depth, occludes: true, meta });
+          else { pts.meta = meta; rawPaths.push(pts); }
+        }
+
+        // Rivers ride the surface — occluded by nearer terrain, never occluders.
+        if (riversEnabled) {
+          riverPaths.forEach((trace) => {
+            const pts = [];
+            let zSum = 0;
+            trace.forEach((pt) => {
+              const cur = project3d(pt.xW, pt.zW, sampleGrid(pt.xW, pt.zW));
+              if (!finitePt(cur)) return;
+              pts.push({ x: cur.point.x, y: cur.point.y });
+              zSum += cur.rotated.z;
+            });
+            if (pts.length < 2) return;
+            const meta = { kind: 'river', depth: zSum / pts.length };
+            if (occlusionOn) rows.push({ pts, depth: meta.depth, occludes: false, meta });
+            else { pts.meta = meta; rawPaths.push(pts); }
+          });
+        }
+
+        // Coastline contour at water level (each marching-squares segment a row).
+        if (oceansEnabled && drawCoastline) {
+          buildCoastlineSegs(grid, gridRows, gridCols, waterLevel + 1e-4).forEach(([a, b]) => {
+            const pa = project3d(a.xW, a.zW, waterLevel);
+            const pb = project3d(b.xW, b.zW, waterLevel);
+            if (!finitePt(pa) || !finitePt(pb)) return;
+            const pts = [{ x: pa.point.x, y: pa.point.y }, { x: pb.point.x, y: pb.point.y }];
+            const meta = { kind: 'coastline', depth: (pa.rotated.z + pb.rotated.z) / 2 };
+            if (occlusionOn) rows.push({ pts, depth: meta.depth, occludes: false, meta });
+            else { pts.meta = meta; rawPaths.push(pts); }
+          });
+        }
+
+        let paths;
+        if (occlusionOn && rows.length) {
+          const occMode = (p.hiddenLineMode || 'remove') === 'dash' ? 'dash' : 'remove';
+          // "Occlusion Bias" (depthBias) is the screen-space tolerance (px) that
+          // keeps silhouette-grazing lines whole and stops adjacent rows z-fighting.
+          paths = G3.occludeRowsFloatingHorizon(rows, {
+            mode: occMode,
+            eps: finite(p.depthBias, 0.5),
+            angle: finite(p.roll, 0) * Math.PI / 180,
+          });
+        } else {
+          paths = rawPaths;
+        }
+
+        // Enhancement #3 — silhouette / crease emphasis from the grid faces.
+        if (wantFaces && faces.length) {
+          const projectedFlat = [];
+          for (let r = 0; r < gridRows; r++) {
+            for (let c = 0; c < gridCols; c++) projectedFlat.push(projGrid[r][c].point);
+          }
+          if (p.emphasizeOutline === true) {
+            G3.extractSilhouette(faces, projectedFlat, faceFront, { weightScale: finite(p.outlineWeight, 2) })
+              .forEach((path) => paths.push(path));
+          }
+          if (p.showCreases === true) {
+            const edges = [];
+            const edgeMap = new Map();
+            faces.forEach((face, fi) => {
+              for (let k = 0; k < face.length; k++) {
+                const va = face[k];
+                const vb = face[(k + 1) % face.length];
+                const key = va < vb ? `${va}:${vb}` : `${vb}:${va}`;
+                if (!edgeMap.has(key)) edgeMap.set(key, { a: va, b: vb, faces: [] });
+                edgeMap.get(key).faces.push(fi);
+              }
+            });
+            edgeMap.forEach((e) => edges.push(e));
+            G3.extractCreases(edges, faceNormals, finite(p.creaseAngle, 35), projectedFlat, { weightScale: finite(p.outlineWeight, 2) })
+              .forEach((path) => paths.push(path));
+          }
+        }
+
+        // Enhancement #5 — Lambert hatching of the lit front faces.
+        if (p.hatchEnable === true) {
+          const light = G3.resolveLight(p);
+          const cap = fast ? G3.previewCap(bounds, (gridRows - 1) * (gridCols - 1)) : (gridRows - 1) * (gridCols - 1);
+          let hatched = 0;
+          for (let r = 0; r < gridRows - 1 && hatched < cap; r++) {
+            for (let c = 0; c < gridCols - 1 && hatched < cap; c++) {
+              const a = projGrid[r][c];
+              const b = projGrid[r][c + 1];
+              const cc = projGrid[r + 1][c + 1];
+              const d = projGrid[r + 1][c];
+              const normal = G3.faceNormal([a.rotated, b.rotated, cc.rotated, d.rotated]);
+              if (normal.z < -0.001) continue;
+              const polygon = [a.point, b.point, cc.point, d.point];
+              if (polygon.some((pt) => pt.behind || !Number.isFinite(pt.x) || !Number.isFinite(pt.y))) continue;
+              const depth = (a.rotated.z + b.rotated.z + cc.rotated.z + d.rotated.z) / 4;
+              G3.lambertHatch(normal, light, polygon, {
+                baseSpacing: Math.max(1, finite(p.hatchSpacing, 6)) * (fast ? 2 : 1),
+                angleDeg: finite(p.hatchAngle, 45),
+                crossHatch: !!p.crossHatch,
+              }).forEach((seg) => {
+                seg.meta = { kind: 'hatch', hatch: true, depth };
+                paths.push(seg);
+              });
+              hatched++;
+            }
+          }
+        }
+
+        // Enhancement #2 — depth-cue dash density (no-op when depthCue === 'off').
+        G3.applyDepthCue(paths, p);
+
+        // Fit-to-canvas: free rotation has no inherent screen size, so orbiting
+        // can swing the projected terrain well outside the artwork box. Frame the
+        // whole scene into the canvas (small margin, recentered) with one uniform
+        // 2D transform applied AFTER occlusion — hidden-line relationships were
+        // resolved in raw projected space, and a uniform scale/translate preserves
+        // them. The layer's own transform handles still allow manual resizing.
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        paths.forEach((path) => {
+          if (!Array.isArray(path)) return;
+          for (let i = 0; i < path.length; i++) {
+            const pt = path[i];
+            if (pt.x < minX) minX = pt.x;
+            if (pt.x > maxX) maxX = pt.x;
+            if (pt.y < minY) minY = pt.y;
+            if (pt.y > maxY) maxY = pt.y;
+          }
+        });
+        const bw = maxX - minX;
+        const bh = maxY - minY;
+        if (bw > 1e-6 && bh > 1e-6) {
+          const fit = 0.92 * Math.min(innerW / bw, innerH / bh);
+          const cx = (minX + maxX) / 2;
+          const cy = (minY + maxY) / 2;
+          paths.forEach((path) => {
+            if (!Array.isArray(path)) return;
+            for (let i = 0; i < path.length; i++) {
+              path[i] = { x: centerX + (path[i].x - cx) * fit, y: centerY + (path[i].y - cy) * fit };
+            }
+          });
+        }
+        return paths.filter((path) => Array.isArray(path) && path.length >= 2);
       }
 
       // --- Scanlines (constant zW each), processed near -> far for hidden-line removal ---
@@ -409,55 +863,7 @@
 
       // --- Coastline contour at h == waterLevel via marching squares on the grid ---
       if (oceansEnabled && drawCoastline) {
-        const cases = {
-          1: [[3, 0]], 2: [[0, 1]], 3: [[3, 1]], 4: [[1, 2]],
-          5: [[3, 2], [0, 1]], 6: [[0, 2]], 7: [[3, 2]],
-          8: [[2, 3]], 9: [[0, 2]], 10: [[0, 3], [1, 2]],
-          11: [[1, 2]], 12: [[1, 3]], 13: [[0, 1]], 14: [[3, 0]],
-        };
-        const segs = [];
-        const threshold = waterLevel + 1e-4;
-        const cellRows = gridRows - 1;
-        const cellCols = gridCols - 1;
-        for (let r = 0; r < cellRows; r++) {
-          for (let c = 0; c < cellCols; c++) {
-            const v0 = grid[r * gridCols + c];
-            const v1 = grid[r * gridCols + (c + 1)];
-            const v2 = grid[(r + 1) * gridCols + (c + 1)];
-            const v3 = grid[(r + 1) * gridCols + c];
-            const idx = (v0 > threshold ? 1 : 0)
-              | ((v1 > threshold ? 1 : 0) << 1)
-              | ((v2 > threshold ? 1 : 0) << 2)
-              | ((v3 > threshold ? 1 : 0) << 3);
-            if (idx === 0 || idx === 15) continue;
-            const interp = (a, b, va, vb) => {
-              const denom = vb - va || 1e-6;
-              return (threshold - va) / denom;
-            };
-            const xW0 = c / (gridCols - 1), xW1 = (c + 1) / (gridCols - 1);
-            const zW0 = r / (gridRows - 1), zW1 = (r + 1) / (gridRows - 1);
-            const edgePoint = (e) => {
-              switch (e) {
-                case 0: { const t = interp(0, 1, v0, v1); return { xW: lerp(xW0, xW1, t), zW: zW0 }; }
-                case 1: { const t = interp(0, 1, v1, v2); return { xW: xW1, zW: lerp(zW0, zW1, t) }; }
-                case 2: { const t = interp(0, 1, v2, v3); return { xW: lerp(xW1, xW0, t), zW: zW1 }; }
-                case 3: { const t = interp(0, 1, v3, v0); return { xW: xW0, zW: lerp(zW1, zW0, t) }; }
-                default: return { xW: xW0, zW: zW0 };
-              }
-            };
-            let edges = cases[idx];
-            if (idx === 5 || idx === 10) {
-              const center = (v0 + v1 + v2 + v3) / 4;
-              if (idx === 5) edges = center > threshold ? [[3, 0], [1, 2]] : [[3, 2], [0, 1]];
-              if (idx === 10) edges = center > threshold ? [[0, 1], [2, 3]] : [[0, 3], [1, 2]];
-            }
-            edges.forEach(([e0, e1]) => {
-              const a = edgePoint(e0);
-              const b = edgePoint(e1);
-              segs.push([a, b]);
-            });
-          }
-        }
+        const segs = buildCoastlineSegs(grid, gridRows, gridCols, waterLevel + 1e-4);
         // Project each coastline segment.
         segs.forEach(([a, b]) => {
           const ph = waterLevel; // coastline drawn at water level
@@ -537,7 +943,10 @@
       if ((p.valleyCount ?? 2) > 0 && (p.valleyDepth ?? 30) > 0) features.push('valleys');
       if (p.riversEnabled) features.push('rivers');
       if (p.oceansEnabled) features.push('oceans');
-      return `terrain · ${mode}\nslices=${p.depthSlices ?? 80} · res=${p.xResolution ?? 240}\nfeatures: ${features.join(', ') || 'flat'}`;
+      const view = mode === 'free-3d'
+        ? `\nyaw=${p.yaw ?? -25}° · pitch=${p.pitch ?? 58}° · roll=${p.roll ?? 0}°`
+        : '';
+      return `terrain · ${mode}${view}\nslices=${p.depthSlices ?? 80} · res=${p.xResolution ?? 240}\nfeatures: ${features.join(', ') || 'flat'}`;
     },
   };
 })();

@@ -1,0 +1,36 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Old Growth Oak",
+  "meta": {
+    "presetId": "rings-old-growth-oak",
+    "group": "Classic",
+    "system": "rings",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "rings",
+      "params": {
+        "rings": 32,
+        "gap": 1.1,
+        "gapCurveStart": 1.6,
+        "gapCurveEnd": 0.7,
+        "spacingVariance": 0.4,
+        "barkRings": 6,
+        "barkGap": 1.5,
+        "breakCount": 4,
+        "centerDrift": 0.4,
+        "biasStrength": 0.12,
+        "biasAngle": 210,
+        "rayCount": 45,
+        "rayLength": 2.8,
+        "rayInnerFraction": 0.12,
+        "knotCount": 1,
+        "knotIntensity": 0.7,
+        "knotSpread": 28,
+        "seed": 3714
+      }
+    }
+  ]
+}

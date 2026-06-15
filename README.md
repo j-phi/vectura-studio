@@ -1,6 +1,6 @@
 # Vectura Studio
 
-**Physics-inspired vector generation for plotter-ready line art.** No build step, no framework — open `index.html` and go. Vectura combines a rich algorithm library (flowfields, boids, attractors, Petalis, and more) with a full layer system, mirror modifiers, SVG export with plotter optimization, and a Noise Rack for layered generative noise — all in vanilla JavaScript.
+**Physics-inspired vector generation for plotter-ready line art.** No build step, no framework — open `index.html` and go. Vectura combines a rich algorithm library (flowfields, boids, attractors, Petalis, and more) with a full layer system, mirror & morph modifiers, SVG export with plotter optimization, and a Noise Rack for layered generative noise — all in vanilla JavaScript.
 
 ---
 
@@ -42,7 +42,7 @@ npm run test:ci
 
 ### Layers & Modifiers
 
-Vectura uses an Illustrator-style layer system with full undo history for every structural edit — reorder, group, reparent, mask toggles, and modifier changes are all first-class history steps. Layers support per-layer stroke/line-cap settings, visibility, and drag-to-reorder. **Mirror Modifiers** let you wrap layers in a reflective container with a full mirror-axis stack.
+Vectura uses an Illustrator-style layer system with full undo history for every structural edit — reorder, group, reparent, mask toggles, and modifier changes are all first-class history steps. Layers support per-layer stroke/line-cap settings, visibility, and drag-to-reorder. **Mirror Modifiers** let you wrap layers in a reflective container with a full mirror-axis stack, and **Morph Modifiers** blend 2+ child layers into graduated in-between rings (an Illustrator-style Blend, but plotter-native).
 
 <details>
 <summary>Full layer & modifier feature list</summary>
@@ -50,6 +50,7 @@ Vectura uses an Illustrator-style layer system with full undo history for every 
 - Layered generation with visibility toggles, ordering, and per-layer stroke/line-cap settings
 - Illustrator-style parent masks from the Layers panel: a visible parent silhouette clips all indented descendants, with optional `Hide Mask Layer` for invisible mask artwork and a live dimmed-descendant preview while the mask parent is being transformed
 - `Insert > Mirror Modifier` adds a group-like container with drag-to-assign or drag-out child layers, `+ Add` child-layer creation from a selected modifier, fully editable selected child layers, and mirrored closed-mask silhouettes for masked subtrees
+- `Insert > Morph Modifier` adds a blend container: drop 2+ layers in and it generates N graduated in-between rings morphing one shape into the next (sequential A→B→C chaining or a cyclic loop), with controls for steps, easing, vertex resampling, start-vertex correspondence, multi-path handling, source emission, closure, and output smoothing; children auto-lock and Expand bakes each ring into its own shape layer
 - Mirror guides are dashed editor overlays with a centered reflection triangle; reflected geometry exports while guide lines stay editor-only
 - The modifier row owns a Mirror Stack with per-axis show/hide, lock, delete, reorder, angle, and XY shift controls plus stack-level add/show-hide/lock/clear actions; deleting the modifier dissolves the wrapper and preserves children
 - Layer grouping/ungrouping via `Cmd/Ctrl+G` and `Cmd/Ctrl+Shift+G`
@@ -98,12 +99,13 @@ An Illustrator-style shared toolbar now drives the main canvas plus the embedded
 
 ### Algorithms
 
-19+ algorithm families power each layer, all seeded for repeatable results. The **Noise Rack** is a universal multi-algorithm noise stacking system shared across algorithms — add layers, pick noise types, blend modes, and octave shaping without touching algorithm-specific code.
+19+ algorithm families power each layer, all seeded for repeatable results. The **Noise Rack** is a universal multi-algorithm noise stacking system shared across algorithms — add layers, pick noise types, blend modes, and octave shaping without touching algorithm-specific code. Every algorithm also ships a **universal preset gallery**: a thumbnail dropdown of curated starting points grouped by Classic / Geometric / Organic / Complex / Evolving, plus a **User** section. Edit any preset and a colored **save pip** appears beside it — click it (or press `Cmd/Ctrl+S`) to name and save the look as your own preset, with one-click Undo; if you started from one of your own presets you can update it in place. Your presets save in the browser by default; in **Document Setup → Preset Storage** you can connect a folder on disk (Chrome/Edge) so they persist across sessions, or export/import a portable `vectura-presets.json` bundle to move them between machines. You can still import presets from `.vectura` files too. With **Developer Mode** on (Document Setup), the Save dialog becomes a small authoring tool: **overwrite any preset** — curated built-ins included — and **save into a category** (an existing group or a brand-new one you name), written straight into the repo's `user-presets/` folder so it's commit-ready.
 
 <details>
 <summary>Full algorithm feature list</summary>
 
-- 19+ algorithm families: flowfield, boids, attractors, hyphae, lissajous, harmonograph, pendula, wavetable, rings, topo, grid, rainfall, phylla, petalis, spiral, shapepack, terrain, horizon, pattern, svgdistort
+- 19+ algorithm families: flowfield, boids, attractors, hyphae, lissajous, harmonograph, pendula, wavetable, rings, topo, grid, rainfall, phylla, petalis, spiral, shapepack, terrain, horizon, pattern, svgdistort, plus a 3D family — spirograph, spiralizer, polyhedron, topoform, raster-plane
+- **3D suite:** the mesh-rendering algorithms (Topoform, Polyhedron) import binary or ASCII **`.stl` meshes** and render them as wireframes, depth-plane contours, or face/edge/vertex art with hidden-line removal; Topoform ships 10 primitives (sphere, torus, cube, cone, ellipsoid, cylinder, capsule, pyramid, superellipsoid, torus knot) with detail up to 100. All four 3D algorithms support **orthographic or perspective projection**, and contour/line smoothing produces true bezier curves on screen and in export. The live preview fidelity while dragging a 3D shape is tunable in **Document Setup → Guides & Display → 3D move preview** (Draft / Balanced / High)
 - Universal **Noise Rack** with per-layer engine selection, blend modes, offsets, octave shaping — shared across flowfield, grid, phylla, rings, topo, wavetable, and petalis
 - Polygon Noise Rack layers now use intuitive zoom semantics: larger `Noise Zoom` / `Noise Scale` values create a larger polygon footprint, and vertical line-displacement systems treat positive amplitudes as upward motion
 - Seeded, repeatable generation; the `Transform & Seed` sub-panel (collapsed by default) exposes seed, position, scale, and rotation
@@ -111,7 +113,7 @@ An Illustrator-style shared toolbar now drives the main canvas plus the embedded
 - Live formula display and estimated pen distance/time
 - `Reset to Defaults` restores full algorithm defaults including transform values
 - Collapsible left-panel sections with persisted state: `Algorithm` and `Algorithm Configuration`
-- Petalis has an embedded inline **Petal Designer** panel with a pop-out window (`⧉`) and pop-back-in (`↩`) action; shape comes from visible inner/outer designer curves with always-on dual-ring controls, a `PETAL VISUALIZER` (`Overlay` / `Side by Side`), a `PROFILE EDITOR` with per-side profile import/export plus shared `Export Pair`, and matching Shading Stack + Modifier Stack cards where each card has its own `Petal Shape` target (`Inner`/`Outer`/`Both`)
+- Petalis has an embedded inline **Petal Designer** panel with a pop-out window (`⧉`) and pop-back-in (`↩`) action; shape comes from visible inner/outer designer curves with always-on dual-ring controls, a `PETAL VISUALIZER` (`Overlay` / `Side by Side`), a `PROFILE EDITOR` with an `Inner | Outer` toggle (one side shown at a time, auto-switching to the side you touch), per-side profile import/export plus shared `Export Pair`, and matching Shading Stack + Modifier Stack cards where each card has its own `Petal Shape` target (`Inner`/`Outer`/`Both`)
 - Wavetable supports line structures: horizontal, vertical, grid, isometric, and lattice
 - In Wavetable `Isometric`, `Line Gap` controls the visible cell spacing and `Row Shift` shears the whole lattice so the isometric cells stay locked together
 - Harmonograph multi-pendulum list with add/delete/toggle controls, anti-loop drift + settle cutoff, and a reveal-only Virtual Plotter preview with playhead scrubbing and speed presets: the figure is static and deterministic, and pressing Play traces the pen (red line) over the static grey figure 0→100% on a loop
@@ -206,13 +208,18 @@ Vectura runs on phones. A touch-friendly shell with slide-over drawers, a bottom
 | **Grid** | Rectilinear mesh deformed by a stacked Noise Rack field with `Warp` and `Shift` distortion modes |
 | **Rainfall** | Rain traces with droplet shaping, wind, and silhouette/ground controls |
 | **Phylla** | Phyllotaxis point spirals with Noise Rack-driven organic drift over the golden-angle layout |
-| **Petalis** | Radial petal structures with presets, embedded inner/outer curve designer, dual-ring controls, shading/modifier stacks, and Noise Rack-driven angular drift |
+| **Petalis** | Radial petal structures with presets, a visual thumbnail gallery for the 10 petal silhouettes, embedded inner/outer curve designer, dual-ring controls, shading/modifier stacks, and Noise Rack-driven angular drift |
 | **Spiral** | Archimedean spiral with optional closure that loops the outer end back in |
 | **Shape Pack** | Circle/polygon packing with perspective controls |
-| **Terrain** | Realistic terrain heightfield rendered as scanlines under selectable perspective (top-down, one-point, two-point, isometric), with native ridged mountains, V/U valleys, river carving, ocean coastlines, and dial-in style presets |
+| **Terrain** | Realistic terrain heightfield rendered as scanlines under a selectable **projection mode** — top-down, one-point, two-point, isometric, or a **Free 3D** orbit (yaw/pitch/roll on the shared 3D engine, with sliders + on-canvas gizmo, hidden-line removal, and the Shading & Lines powers) — with native ridged mountains, V/U valleys, river carving, ocean coastlines, and dial-in style presets |
 | **Horizon** | Synthwave-style perspective grid draped over an opt-in mountain heightfield with center dampening, skyline relief, and an `Additional Noises` Noise Rack for layered displacement |
 | **Pattern** | Texture-fill layers with a nested-region paint-bucket workflow, library + custom-tile registry, live `3×3` seam validation, and `.vectura` round-trip for custom imported tiles |
 | **SVG Distort** | Import an SVG path and warp it through field-based distortion controls; integrates with the shared optimization pipeline for plotter-ready output |
+| **Spirograph** | Roulette curves rolling primitive gear shapes around a main primitive, with inside/outside/combined paths |
+| **Spiralizer** | Lines or marker styles (dots, filled points, plusses, crosses, squares, triangles, dashes) coiled around sphere/cone/cylinder/ellipsoid/torus/capsule and a twistable helix shape (2+ twists add DNA base-pair rungs). Markers scatter at mm spacing with a thickness selector, hollow glyphs take a universal fill (spiral, hatch, …), plus front-only or see-through projection, full-shape silhouette outlining, curve smoothing, and orthographic or perspective view |
+| **Polyhedron** | Platonic/Archimedean solids **or imported STL meshes** — face bands, edges, and vertex rings with front-face culling, dashed hidden lines, extrude/explode/twist effects, and orthographic or perspective projection |
+| **Topoform** | Primitive 3D meshes (sphere, torus, cube, cone, ellipsoid, cylinder, capsule, pyramid, superellipsoid, torus knot) **or imported STL meshes**, rendered as projected wireframes or depth-plane topographic contours — with detail up to 100 on every primitive, bezier contour smoothing, dashed hidden lines, an optional Scene Lighting pass, and orthographic/perspective view |
+| **Raster-Plane** | A height source (built-in relief, preloaded noise, imported image, or hand-painted canvas) projected as line relief, deformed mesh, raster topography, or extruded bars — plus a **Surface Noise** rack stack where each layer's own Blend Mode + Field Weight emboss the surface live, a **Base Height** lift for "Lines as Planes" curtains, clean hidden-line removal on opaque bars, and orthographic or perspective view |
 
 Algorithm defaults live in `src/config/defaults.js`, modifier defaults/descriptions in `src/config/modifiers.js`, and algorithm descriptions in `src/config/descriptions.js`.
 
@@ -248,11 +255,24 @@ Switch to **Build** mode for the composable picker: pick a **Lattice** (parallel
 </details>
 
 <details>
+<summary>Morph Modifier workflow</summary>
+
+Use `Insert > Morph Modifier` to add a blend container, then drop 2 or more layers into it in the Layers panel. The modifier fills the space between consecutive children with N graduated in-between rings — child A's shape progressively becoming child B's, including its **size, position, and rotation** (each child's transform is baked into its geometry, so moving or scaling a child drives the morph). Child layer order sets the morph direction; with 3+ children the chain runs sequentially (A→B→C, each pair its own segment) and **Cyclic** mode closes the loop back to A. The originals stay visible unless you turn off **Emit Sources**.
+
+The morph also transitions **fill**: if the children carry paint-bucket fills, each in-between ring is re-filled with interpolated fill parameters (density, angle, and so on lerp between the two children when they share a fill type; a different fill type or seed switches at the midpoint). Toggle **Morph Fill** off for outline-only output. Pens stay discrete — each ring takes its nearest source child's pen.
+
+The Morph panel exposes: **Steps** (intermediate rings per pair), **Easing** (Linear / Ease In / Ease Out / Ease In-Out / Cubic In / Cubic Out), **Sequence** (Sequential / Cyclic), **Resample Count** (common vertex count) and mode (Arc Length / Uniform Index), **Correspondence** (how start vertices align: Centroid + Angle / Nearest / Arc Length), **Multi-Path** handling when children have different path counts (Auto / Index Match / Merge Centroid / Merge Longest), **Morph Fill** (on/off), **Closure**, and **Smoothing**. A live readout shows the child count and total step budget, with a warning when the point budget gets large.
+
+Children dropped into a Morph group auto-lock (like Mirror). Morph output is plotter-ready polylines and is included in SVG export; **Expand** bakes each ring into its own shape layer.
+
+</details>
+
+<details>
 <summary>Petalis & Petal Designer workflow</summary>
 
 Switch to the Petalis algorithm to access the embedded inline Petal Designer panel. Use `⧉` to pop it out into a floating window or `↩` to dock it back in.
 
-Petal shape is driven by visible inner/outer designer curves. Controls include: always-on inner/outer count + split controls, a `PETAL VISUALIZER` (`Overlay` / `Side by Side`), a `PROFILE EDITOR` with per-side profile import/export plus a shared `Export Pair` button below both cards, and `Shading Stack` + `Modifier Stack` cards where each entry has its own `Petal Shape` target (`Inner`/`Outer`/`Both`).
+Petal shape is driven by visible inner/outer designer curves. Controls include: always-on inner/outer count + split controls, a `PETAL VISUALIZER` (`Overlay` / `Side by Side`), a `PROFILE EDITOR` with an `Inner | Outer` toggle that shows one side at a time (it auto-switches to whichever side you interact with) plus per-side profile import/export and a shared `Export Pair` button, and `Shading Stack` + `Modifier Stack` cards where each entry has its own `Petal Shape` target (`Inner`/`Outer`/`Both`). Picking a named profile thumbnail also resets that side's `Advanced` sliders to a clean baseline so the shape isn't distorted by a leftover tweak; every `Advanced` slider (Base Flare, Base Pinch, Edge Wave, Tip Sharpness, …) shapes the designer profile.
 
 In overlay view, clicking the visible inactive silhouette selects that shape directly. Designer interactions support `Shift` to constrain, `Alt/Option` to convert/break/remove handles, `Cmd/Ctrl` for temporary direct mode, middle-drag pan, and wheel zoom-to-cursor.
 
@@ -335,6 +355,7 @@ Click `Export SVG` to download.
 | Pen: commit | `Enter` |
 | Pen: cancel | `Esc` |
 | Reset value to default | Double-click control |
+| Save current settings as a preset | `Cmd/Ctrl+S` (config panel focused, after editing a preset) |
 | Cycle wallpaper group within current lattice | `Cmd/Ctrl + ←` / `Cmd/Ctrl + →` |
 | **UI** | |
 | Document Setup | `Cmd/Ctrl+K` |
@@ -417,7 +438,7 @@ All asset paths are relative (`./...`), so the site works under a GitHub Pages s
 
 **Pen palettes:** live in `src/config/palettes.js` — edit or extend freely.
 
-**Presets:** live in `src/config/presets.js` as a shared registry. Each entry requires `preset_system`, `id` (lowercase kebab-case prefixed by system, e.g. `petalis-camellia-pink-perfection`), `name`, and `params`. Use `preset_system` filtering in UI/engine code.
+**Presets:** are file-based — every preset is a `.vectura` file under `user-presets/<layer_type>/` (the directory name matches the layer `type` / `preset_system`, camelCase included). Run `npm run user-presets:bundle` to regenerate `src/config/user-presets.js` (the single generated library, loaded into `window.Vectura.PRESETS`); don't hand-edit it. Identity/category live in a `meta:{presetId, group, system, savedAt}` block; the 15 `<type>-default` "reset to factory" markers are synthesized by the bundler from `ALGO_DEFAULTS`. `id` is lowercase kebab-case prefixed by system (e.g. `petalis-camellia-pink-perfection`). With **Developer Mode** on, the in-app Save dialog can write these files directly into a connected `user-presets/` folder.
 
 **Petalis profiles:** add `.json` files to `src/config/petal-profiles/`, list them in `index.json`, then run `npm run profiles:bundle` to update `library.js`. Keep profiles anchor-based (`inner`/`outer` shape payloads).
 
@@ -487,6 +508,7 @@ flowchart TD
 | `src/core/noise.js` | Core noise primitives |
 | `src/core/noise-rack.js` | Universal multi-algorithm noise stacking system |
 | `src/core/modifiers.js` | Mirror-axis geometry, clipping, and reflection routines |
+| `src/core/morph-modifier.js` | Morph blend math: arc-length/uniform resampling, correspondence alignment, path interpolation, and the multi-child dispatch path |
 | `src/core/masking.js` | Silhouette capability detection, mask unions, live display-geometry masking |
 | `src/core/path-boolean.js` | Polygon normalization and path segmentation used by masking |
 | `src/core/geometry-utils.js` | Shared path smoothing, simplification, and cloning helpers |
@@ -528,6 +550,9 @@ CI lives in `.github/workflows/test.yml`:
 ---
 
 ## Release Notes
+
+### 1.2.0
+- **A large feature release.** A **universal preset system** lands across every algorithm — a thumbnail gallery, one-click Save with a dirty-state pip, two-way folder-sync to disk, and a portable bundle. A new **Morph Modifier** blends 2+ layers into graduated in-between shapes with Illustrator-style group/child isolation. **Pendula** debuts — a kinetic-harmonograph studio with a Motion Rack of bakeable LFOs, machine types, a pop-out Virtual Plotter, and Export Animated SVG — and **Harmonograph** gains presets and a live plotter. **Petalis** is overhauled with real petal geometry, a thumbnail gallery, Bloom/Asymmetry/Cupping macros, venation, and ~10–12× faster generation. Four new **3D algorithms** arrive — **Spiralizer** (coils lines/markers around a surface or a DNA-style helix), **Topoform** (primitive/STL mesh wireframes and depth contours, with Scene Lighting and a Specular Highlight), **Polyhedron** (Platonic/Archimedean solids and STL meshes), and **Raster-Plane** (a height source projected as relief, mesh, topography, or bars) — sharing STL import, perspective projection, and four rendering powers (depth cueing, silhouette emphasis, hidden-line removal, Lambert hatching). **Terrain** gains a **Free 3D** projection mode with floating-horizon hidden-line removal and a fully reworked river-hydrology pipeline (real drainage networks instead of "drips"), and its Octaves/Lacunarity/Gain controls now work. **Wallpaper** becomes gallery-first with one-click style cards, a "surprise me" dice, and on-canvas handles. Plus version-stamped cache-busting so JS/CSS changes always take effect, and a masking fix so masks no longer distort curve-based algorithms.
 
 ### 1.1.10
 - **Meridian cleanup chain — closed.** `_ui-legacy.js` (drained across units 1.5–1.10) and `styles.css` (drained across units 2.1–2.7) are both deleted. Every `var(--color-*)` reference under `src/` was rewritten to `var(--ui-*)`, the classic-skin alias maps were inlined and the `--color-*` defaults dropped from `components.css`, and the `data-theme` root mirror attribute is gone. New CSS now lands exclusively in `src/ui/skin/`.

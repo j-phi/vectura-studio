@@ -1,0 +1,63 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Pulsing Web",
+  "meta": {
+    "presetId": "pendula-pulsing-web",
+    "group": "Classic",
+    "system": "pendula",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "pendula",
+      "params": {
+        "renderMode": "line",
+        "samples": 8000,
+        "duration": 44,
+        "scale": 0.45,
+        "loopDrift": 0.0008,
+        "paperRotation": 0.02,
+        "pendulums": [
+          {
+            "id": "pend-1",
+            "enabled": true,
+            "ampX": 120,
+            "ampY": 0,
+            "phaseX": 90,
+            "phaseY": 0,
+            "damp": 0.0003,
+            "freq": 5,
+            "micro": 0
+          },
+          {
+            "id": "pend-2",
+            "enabled": true,
+            "ampX": 0,
+            "ampY": 120,
+            "phaseX": 0,
+            "phaseY": 0,
+            "damp": 0.0003,
+            "freq": 4,
+            "micro": 0
+          },
+          {
+            "id": "pend-3",
+            "enabled": true,
+            "ampX": 36,
+            "ampY": 36,
+            "phaseX": 45,
+            "phaseY": 45,
+            "damp": 0.0006,
+            "freq": 9,
+            "micro": 0
+          }
+        ],
+        "motion": {
+          "sources": [],
+          "edges": []
+        }
+      }
+    }
+  ]
+}

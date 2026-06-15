@@ -1,0 +1,24 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Clover",
+  "meta": {
+    "presetId": "lissajous-clover",
+    "group": "Geometric",
+    "system": "lissajous",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "lissajous",
+      "params": {
+        "freqX": 3,
+        "freqY": 5,
+        "phase": 0.5,
+        "damping": 0,
+        "resolution": 500,
+        "scale": 0.8
+      }
+    }
+  ]
+}

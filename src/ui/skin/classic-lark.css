@@ -87,3 +87,9 @@
   --plotter-path-base: rgba(82, 82, 91, 0.35);
   --plotter-head: #18181b;
 }
+
+/* Angle dial: light background to match the light canvas/workspace feel. */
+[data-ui-skin="classic-lark"] .angle-control .angle-dial,
+[data-ui-skin="classic-lark"] .light-pad {
+  background: #ffffff;
+}

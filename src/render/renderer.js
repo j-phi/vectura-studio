@@ -45,6 +45,72 @@
     return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 16 16, crosshair`;
   };
   const { clamp } = window.Vectura.AlgorithmUtils;
+  const ROTATION_3D_SPECS = {
+    spiralizer: {
+      yawParam: 'yaw',
+      pitchParam: 'pitch',
+      rollParam: 'roll',
+      yawDefault: 0,
+      pitchDefault: 30,
+      rollDefault: 0,
+      pitchMin: -90,
+      pitchMax: 90,
+    },
+    polyhedron: {
+      yawParam: 'rotate',
+      pitchParam: 'tilt',
+      yawDefault: -18,
+      pitchDefault: 28,
+      pitchMin: 0,
+      pitchMax: 89,
+    },
+    topoform: {
+      yawParam: 'yaw',
+      pitchParam: 'pitch',
+      rollParam: 'roll',
+      yawDefault: -28,
+      pitchDefault: 34,
+      rollDefault: 0,
+      pitchMin: -90,
+      pitchMax: 90,
+    },
+    rasterPlane: {
+      yawParam: 'rotate',
+      pitchParam: 'tilt',
+      yawDefault: -45,
+      pitchDefault: 60,
+      pitchMin: 0,
+      pitchMax: 89,
+    },
+    terrain: {
+      // Terrain is only 3D-rotatable in its 'free-3d' perspective mode; the
+      // legacy vanishing-point modes have no yaw/pitch/roll, so the on-canvas
+      // rotation helper is gated to free-3d via appliesIf.
+      yawParam: 'yaw',
+      pitchParam: 'pitch',
+      rollParam: 'roll',
+      yawDefault: -25,
+      pitchDefault: 58,
+      rollDefault: 0,
+      pitchMin: -90,
+      pitchMax: 90,
+      appliesIf: (params) => (params && params.perspectiveMode) === 'free-3d',
+    },
+  };
+  const finiteNumber = (value, fallback = 0) => {
+    const next = Number(value);
+    return Number.isFinite(next) ? next : fallback;
+  };
+  const normalizeDegrees = (value) => {
+    let next = finiteNumber(value, 0) % 360;
+    if (next > 180) next -= 360;
+    if (next < -180) next += 360;
+    return Object.is(next, -0) ? 0 : next;
+  };
+  const tidyDegrees = (value) => {
+    const next = Math.round(finiteNumber(value, 0) * 10) / 10;
+    return Object.is(next, -0) ? 0 : next;
+  };
 
   // Theme-token cache: every renderer read consults a canonical `--ui-*` token
   // directly. The legacy `--color-*` alias indirection was removed in Meridian
@@ -346,6 +412,7 @@
       this.rotateOrigin = null;
       this.rotateStartAngle = 0;
       this.rotateStart = 0;
+      this.rotation3DDrag = null;
       this.guides = null;
       this.selectedLayerId = null;
       this.selectedLayerIds = new Set();
@@ -401,6 +468,14 @@
       this.directMarqueeRect = null;
       this.maskPreview = null;
       this.mirrorDragState = null;
+      // When the active mirror drag includes a layer nested under a morph
+      // modifier, the parent's morphed output must be recomputed during the
+      // drag so in-between rings track the child live. Coalesced to one
+      // recompute per animation frame to keep dragging responsive.
+      this._morphDragActive = false;
+      this._morphDragRaf = null;
+      // Morph group ids whose blend should ghost-dim while their child is dragged.
+      this._morphDragGroupIds = new Set();
       this.scissorStart = null;
       this.scissorEnd = null;
       this.isScissor = false;
@@ -576,6 +651,17 @@
         this.lassoPath = null;
       }
       this.activeTool = tool;
+      // Entering direct-select while a morph end is isolated: the active child's
+      // geometry is consumed (findPathHitAtPoint can't grab it), so establish a
+      // direct selection on it directly so its anchors and shape (bevel) corner
+      // handles are immediately visible and editable. Edits refold the blend via
+      // engine.generate() -> computeAllDisplayGeometry().
+      if (tool === 'direct' && this.groupEditMode?.kind === 'morph') {
+        const child = this.engine.layers.find((l) => l.id === this.groupEditMode.activeLayerId);
+        if (child && !child.isGroup && this.directSelection?.layerId !== child.id) {
+          this.setDirectSelection(child, 0);
+        }
+      }
       this.updateCursor();
       if (!['fill', 'fill-erase', 'fill-pattern', 'fill-pattern-erase'].includes(tool)) {
         this.hideFillLoupe?.();
@@ -1063,6 +1149,7 @@
       this.clearTouchHold();
       this.isPan = false;
       this.isLayerDrag = false;
+      this._clearMorphDrag();
       this.dragMode = null;
       this.activeHandle = null;
       this.tempTransform = null;
@@ -2095,7 +2182,7 @@
 
     _startMirrorDrag(layers) {
       const ids = this._getMirrorDragPreviewLayerIds(new Set(layers.map((l) => l.id)));
-      if (!ids) { this.mirrorDragState = null; return; }
+      if (!ids) { this.mirrorDragState = null; this._morphDragActive = false; this._morphDragGroupIds = new Set(); return; }
       const state = new Map();
       ids.forEach((id) => {
         const layer = this.engine.layers.find((l) => l.id === id);
@@ -2110,6 +2197,87 @@
         });
       });
       this.mirrorDragState = state.size ? state : null;
+      // Cache morph-ancestor detection once at drag start so the per-pointermove
+      // hot path never walks the layer tree.
+      this._morphDragActive = this._dragHasMorphAncestor(layers);
+      // Record which morph group(s) the dragged children belong to so draw() can
+      // ghost-dim those blends during the drag (the preview reads as "not yet
+      // committed"), even when we're not inside morph edit isolation.
+      this._morphDragGroupIds = new Set();
+      if (this._morphDragActive && this.engine?.getAncestorModifiers) {
+        layers.forEach((layer) => {
+          this.engine.getAncestorModifiers(layer).forEach((mod) => {
+            if (mod?.modifier?.type === 'morph') this._morphDragGroupIds.add(mod.id);
+          });
+        });
+      }
+    }
+
+    _dragHasMorphAncestor(layers) {
+      if (!this.engine?.getAncestorModifiers) return false;
+      return layers.some((layer) =>
+        this.engine.getAncestorModifiers(layer).some(
+          (mod) => mod?.modifier?.type === 'morph'
+        )
+      );
+    }
+
+    // Schedules at most one morph refold per animation frame so a morph parent's
+    // morphedPaths refresh live while a descendant is dragged, without queueing a
+    // recompute per pointermove. Refolds ONLY the dragged children's morph
+    // group(s) from their already-updated effective geometry (the move/preview
+    // branches refresh each dragged leaf before scheduling); falls back to a full
+    // recompute only when the targeted path is unavailable.
+    _scheduleMorphDragRecompute() {
+      if (this._morphDragRaf != null) return;
+      this._morphDragRaf = requestAnimationFrame(() => {
+        this._morphDragRaf = null;
+        if (!this._morphDragActive || !this.isLayerDrag) return;
+        const ids = this.mirrorDragState ? [...this.mirrorDragState.keys()] : [];
+        if (ids.length && typeof this.engine.refoldMorphGroupsForLayers === 'function') {
+          this.engine.refoldMorphGroupsForLayers(ids);
+        } else if (this.onComputeDisplayGeometry) {
+          this.onComputeDisplayGeometry();
+        } else {
+          this.engine.computeAllDisplayGeometry();
+        }
+        this.draw();
+      });
+    }
+
+    // Re-derive each drag-snapshot layer's geometry under the FULL temp
+    // transform (resize/rotate, not just translate) and refold the morph blend.
+    // The move branch has its own translate-only fast path; this generalizes it
+    // for scale/rotate so an isolated morph child previews live.
+    _previewMirrorDragWithTemp(temp) {
+      if (!this.mirrorDragState || !temp) return;
+      this.mirrorDragState.forEach((state, layerId) => {
+        const layer = this.engine.layers.find((l) => l.id === layerId);
+        if (!layer) return;
+        layer.paths = (state.basePaths || []).map((path) => {
+          if (path && path.meta && path.meta.kind === 'circle') {
+            const pts = Array.isArray(path) ? path.map((pt) => this.transformPoint(pt, temp)) : [];
+            pts.meta = this.transformCircleMeta(path.meta, temp);
+            return pts;
+          }
+          if (!Array.isArray(path)) return path;
+          const t = path.map((pt) => this.transformPoint(pt, temp));
+          if (path.meta) t.meta = { ...path.meta };
+          return t;
+        });
+        if (this.engine.computeLayerEffectiveGeometry) this.engine.computeLayerEffectiveGeometry(layer.id);
+        if (this.engine.computeLayerDisplayGeometry) this.engine.computeLayerDisplayGeometry(layer.id);
+      });
+      this._scheduleMorphDragRecompute();
+    }
+
+    _clearMorphDrag() {
+      this._morphDragActive = false;
+      this._morphDragGroupIds = new Set();
+      if (this._morphDragRaf != null) {
+        cancelAnimationFrame(this._morphDragRaf);
+        this._morphDragRaf = null;
+      }
     }
 
     getMaskPreviewLayer() {
@@ -2787,8 +2955,25 @@
           // Children nested inside a compound (Pathfinder) group are consumed
           // by their parent's baked silhouette — don't draw them separately.
           if (this.engine.hasCompoundAncestor?.(l)) return;
-          const fadeLayer = this.groupEditMode && !l.isGroup && l.id !== this.groupEditMode.activeLayerId;
-          if (fadeLayer) { this.ctx.save(); this.ctx.globalAlpha = 0.2; }
+          // Plain-group isolation greys the rest of the document. Morph
+          // isolation must NOT (its leaves are consumed, and unrelated layers
+          // should stay normal); instead we dim only the morph blend so the
+          // active source child stands out.
+          const fadeLayer = this.groupEditMode?.kind === 'group' && !l.isGroup
+            && l.id !== this.groupEditMode.activeLayerId;
+          // Ghost-dim the morph blend so its live-refolding in-between rings read
+          // as a preview of the result rather than the committed art: while a
+          // child is isolated in morph edit mode, AND while a child is actively
+          // being dragged/resized/rotated (even outside isolation — e.g. a child
+          // selected from the layers panel).
+          const dimMorphBlend = l.isGroup && l.modifier?.type === 'morph' && (
+            (this.groupEditMode?.kind === 'morph' && l.id === this.groupEditMode.groupId)
+            || (this._morphDragActive && this.isLayerDrag && this._morphDragGroupIds?.has(l.id))
+          );
+          if (fadeLayer || dimMorphBlend) {
+            this.ctx.save();
+            this.ctx.globalAlpha = dimMorphBlend ? 0.35 : 0.2;
+          }
           const layerPen = SETTINGS.pens?.find((p) => p.id === l.penId) || null;
           const defaultPenId = l.penId || layerPen?.id || 'default';
 
@@ -2837,10 +3022,82 @@
               if (key && seen.has(key)) return;
               if (key) seen.add(key);
             }
+            // Filled glyphs (e.g. spiralizer "Points" solid discs) carry meta.fill.
+            // Flush the batched stroke group, then fill this path in isolation
+            // with the active stroke color so the marker reads as a solid dot.
+            if (path?.meta?.fill) {
+              this.ctx.stroke();
+              this.ctx.save();
+              this.ctx.beginPath();
+              this.traceLayerPath(path, l, temp, useCurves);
+              this.ctx.fillStyle = currentStrokeStyle;
+              this.ctx.fill();
+              this.ctx.restore();
+              this.ctx.beginPath();
+              this.ctx.lineWidth = currentStrokeWidth;
+              this.ctx.strokeStyle = currentStrokeStyle;
+              this.ctx.lineCap = l.lineCap || 'round';
+              this.ctx.lineJoin = 'round';
+              return;
+            }
+            const dash = this.getPathStrokeDash(path);
+            // Variable line weight (silhouette / crease emphasis). A path carrying
+            // meta.weightScale != 1 is stroked in isolation at a scaled width
+            // (clamped to 6x) so it doesn't disturb the batched pen-group stroke.
+            const rawWeight = Number(path?.meta?.weightScale);
+            const weightScale = Number.isFinite(rawWeight) && rawWeight !== 1
+              ? Math.max(0.1, Math.min(6, rawWeight))
+              : 1;
+            if (dash || weightScale !== 1) {
+              this.ctx.stroke();
+              this.ctx.save();
+              if (dash) this.ctx.setLineDash(dash);
+              if (weightScale !== 1) this.ctx.lineWidth = currentStrokeWidth * weightScale;
+              this.ctx.beginPath();
+              this.traceLayerPath(path, l, temp, useCurves);
+              this.ctx.stroke();
+              this.ctx.restore();
+              this.ctx.beginPath();
+              this.ctx.lineWidth = currentStrokeWidth;
+              this.ctx.strokeStyle = currentStrokeStyle;
+              this.ctx.lineCap = l.lineCap || 'round';
+              this.ctx.lineJoin = 'round';
+              return;
+            }
             this.traceLayerPath(path, l, temp, useCurves);
           });
           this.ctx.stroke();
-          if (fadeLayer) { this.ctx.restore(); }
+          if (fadeLayer || dimMorphBlend) { this.ctx.restore(); }
+
+          // Active morph child: its own geometry is consumed (drew nothing
+          // above), so outline the editable source shape in the selection color.
+          if (this.groupEditMode?.kind === 'morph' && l._morphConsumed
+              && l.id === this.groupEditMode.activeLayerId) {
+            const src = (l.effectivePaths?.length ? l.effectivePaths : l.paths) || [];
+            if (src.length) {
+              // During a live drag the child's effectivePaths are already
+              // rewritten under the transform (mirrorDragState), so applying
+              // tempTransform here too would double-offset the outline. Mirror
+              // the main render's isMirrorDrag guard (line ~2862).
+              const childTemp = !this.mirrorDragState?.has(l.id)
+                && this.selectedLayerIds?.has(l.id) && this.tempTransform ? this.tempTransform : null;
+              this.ctx.save();
+              this.ctx.setLineDash([4 / this.scale, 3 / this.scale]);
+              this.ctx.lineWidth = Math.max(0.4, 1 / this.scale);
+              this.ctx.strokeStyle = outlineColor;
+              this.ctx.beginPath();
+              src.forEach((path) => {
+                if (path && path.meta && path.meta.kind === 'circle') {
+                  this.traceCircle(childTemp ? this.transformCircleMeta(path.meta, childTemp) : path.meta);
+                } else {
+                  this.tracePath(childTemp ? this.transformPath(path, childTemp) : path, false);
+                }
+              });
+              this.ctx.stroke();
+              this.ctx.setLineDash([]);
+              this.ctx.restore();
+            }
+          }
         });
       };
       const drawOptimizedOverlay = () => {
@@ -3256,6 +3513,7 @@
           if (!l.visible || (l.mask?.enabled && l.mask?.hideLayer)) return;
           if (l.isGroup) return;
           if (this.shouldSkipLayerForMaskPreview(l)) return;
+          if (SETTINGS.selectionOutlineHide3d !== false && this.get3DRotationSpec(l)) return;
           const pen = SETTINGS.pens?.find((p) => p.id === l.penId) || null;
           const strokeWidth = pen?.width ?? l.strokeWidth ?? SETTINGS.strokeWidth;
           const useCurves = Boolean(l.params && l.params.curves);
@@ -3400,7 +3658,12 @@
         }
         const anyLocked = selectionLayersForBox.some((l) => this.isLayerLocked?.(l.id));
         const showHandles = !anyLocked;
-        if (bounds) this.drawSelection(bounds, { showHandles });
+        if (bounds) {
+          this.drawSelection(bounds, { showHandles });
+          if (showHandles && selectionLayersForBox.length === 1) {
+            this.draw3DRotationControl(selectionLayersForBox[0], bounds);
+          }
+        }
       }
       // Key-object emphasis: when an Illustrator-style key object is set,
       // overlay its individual bbox with a thicker, solid stroke so the
@@ -3883,7 +4146,10 @@
             this.startDirectDrag(directControl, e);
             return;
           }
-          const hit = this.findPathHitAtPoint(world);
+          // Fall back to the isolated morph end's consumed geometry so the direct
+          // tool can engage it (findPathHitAtPoint reads getInteractionPaths,
+          // which is empty for a morph child).
+          const hit = this.findPathHitAtPoint(world) || this._morphChildPathHit(world);
           if (hit) {
             if (!this.selectedLayerIds.has(hit.layer.id)) this.selectLayer(hit.layer);
             const modifiers = this.getModifierState ? this.getModifierState(e) : { shift: e.shiftKey };
@@ -3973,6 +4239,18 @@
             if (shapeCorner && this.beginShapeCornerDrag(shapeLayer, 0, shapeCorner, 'all')) return;
           }
         }
+        if (
+          this.activeTool === 'select' &&
+          selectionBounds &&
+          selectedLayers.length === 1 &&
+          !this.isLayerLocked?.(selectedLayers[0].id)
+        ) {
+          const rotation3DHit = this.hit3DRotationControl(sx, sy, selectedLayers[0], selectionBounds);
+          if (rotation3DHit && this.begin3DRotationDrag(rotation3DHit, e)) {
+            e.preventDefault();
+            return;
+          }
+        }
         if (selectionBounds && !selectedLayers.some(l => this.isLayerLocked?.(l.id))) {
           const handle = this.hitHandle(sx, sy, selectionBounds);
           if (handle) {
@@ -3982,6 +4260,11 @@
             this.dragStart = world;
             this.startBounds = selectionBounds;
             this.startMaskPreviewForSelection(selectedLayers);
+            // Snapshot geometry so a morph blend can refold live while an
+            // isolated child is resized/rotated (the move path arms this in its
+            // own branch). Gated to morph ancestors so mirror-child resize and
+            // rotate keep their existing tempTransform-only preview untouched.
+            if (this._dragHasMorphAncestor(selectedLayers)) this._startMirrorDrag(selectedLayers);
             if (handle === 'rotate' || handle.startsWith('rotate-')) {
               this.dragMode = 'rotate';
               this.rotateOrigin = this.getBoundsCenter(selectionBounds);
@@ -4012,31 +4295,105 @@
           this._selectLastClick = { time: now, x: sX, y: sY };
 
           if (this.groupEditMode) {
-            const inGroup = topLayer?.parentId === this.groupEditMode.groupId;
-            if (!inGroup) {
-              this.exitGroupEditMode();
+            if (this.groupEditMode.kind === 'morph') {
+              // Morph children are consumed (not returned by findLayerAtPoint),
+              // so resolve clicks against the source geometry directly. Bounds-aware
+              // so pressing a child's filled INTERIOR grabs it (the outline-only
+              // findMorphChildAtPoint would miss and previously exited isolation).
+              const container = this.engine.layers.find(l => l.id === this.groupEditMode.groupId);
+              const child = container
+                ? this._morphChildAtPointOrBounds(world, container.id, this.groupEditMode.activeLayerId)
+                : null;
+              if (child) {
+                this.groupEditMode.activeLayerId = child.id;
+                this.setSelection([child.id], child.id);
+                this.draw();
+                _groupHandled = true;
+              } else if (this.findMorphContainerAtPoint(world)) {
+                // Clicked the blend but no source child → stay isolated (no-op).
+                _groupHandled = true;
+              } else {
+                this.exitGroupEditMode();
+              }
             } else {
-              this.groupEditMode.activeLayerId = topLayer.id;
-              this.setSelection([topLayer.id], topLayer.id);
-              this.draw();
-              _groupHandled = true;
+              const inGroup = topLayer?.parentId === this.groupEditMode.groupId;
+              if (!inGroup) {
+                this.exitGroupEditMode();
+              } else {
+                this.groupEditMode.activeLayerId = topLayer.id;
+                this.setSelection([topLayer.id], topLayer.id);
+                this.draw();
+                _groupHandled = true;
+              }
             }
           }
-          if (!_groupHandled && topLayer && !modifiers.shift && !modifiers.meta && !modifiers.ctrl) {
-            const parentLayer = topLayer.parentId
-              ? this.engine.layers.find(l => l.id === topLayer.parentId)
-              : null;
-            if (parentLayer?.isGroup && parentLayer.groupType === 'group') {
-              if (isDoubleClick) {
-                this.enterGroupEditMode(topLayer);
+          if (!_groupHandled && !modifiers.shift && !modifiers.meta && !modifiers.ctrl) {
+            // A morph's blended output is only reachable when no normal layer is
+            // under the cursor (children consumed, container skipped by
+            // findLayerAtPoint), so probe it only when topLayer is null.
+            const morph = !topLayer ? this.findMorphContainerAtPoint(world) : null;
+            // Double-click → isolate a child. findMorphContainerAtPoint and
+            // findMorphChildAtPoint are BOTH outline-only, so double-clicking the
+            // filled body/centroid of a child (off every line) would otherwise miss
+            // entirely and never isolate. Resolve the child by bounds across all
+            // morph containers so double-clicking anywhere on a child isolates it.
+            let justIsolated = false;
+            if (isDoubleClick && !topLayer) {
+              const dbl = morph
+                ? { child: this._morphChildAtPointOrBounds(world, morph.id), container: morph }
+                : this._morphChildByBounds(world);
+              if (dbl && dbl.child) {
+                this.enterMorphEditMode(dbl.child, dbl.container);
                 e.preventDefault();
-                return;
-              }
-              const siblings = this.engine.getLayerChildren(topLayer.parentId)
-                .filter(l => l.visible && !this.isLayerLocked?.(l.id));
-              if (siblings.length > 1) {
-                this.setSelection(siblings.map(l => l.id), topLayer.id);
                 _groupHandled = true;
+                // Do NOT return: fall through to drag-init so a one-motion
+                // double-click-drag (the 2nd press held and dragged) moves the
+                // freshly-isolated child and the blend ghost-previews live. A
+                // return here swallowed the held drag (isLayerDrag never armed).
+                justIsolated = true;
+              }
+            }
+            if (morph && !justIsolated) {
+              // A morph child already selected (e.g. from the layers panel) and
+              // pressed within its bounds must DRAG — not snap selection back to
+              // the container. Keep it selected so the drag-init below arms
+              // _startMirrorDrag([child]) and the blend ghost-previews live.
+              // (findMorphChildAtPoint only hits the sparse outline, so we gate on
+              // the selected child's bounds — pressing its filled interior counts,
+              // matching how an isolated child drags in morph edit mode.)
+              const soleSelId = this.selectedLayerIds.size === 1 ? [...this.selectedLayerIds][0] : null;
+              const soleSel = soleSelId ? this.engine.layers.find((l) => l.id === soleSelId) : null;
+              const selIsMorphChild = soleSel && !soleSel.isGroup
+                && this.engine.getLayerAncestors(soleSel).some((a) => a.id === morph.id);
+              const selChildBounds = selIsMorphChild ? this.getSelectionBounds([soleSel]) : null;
+              const draggingSelectedChild = selIsMorphChild && selChildBounds
+                && this.pointInBounds(world, selChildBounds)
+                && !this.isLayerLocked?.(soleSel.id);
+              if (draggingSelectedChild) {
+                // Leave the child selected; fall through to drag-init.
+                _groupHandled = true;
+              } else {
+                // Single click (or double-click off any source child): select the
+                // morph container as one object.
+                this.setSelection([morph.id], morph.id);
+                _groupHandled = true;
+              }
+            } else if (topLayer) {
+              const parentLayer = topLayer.parentId
+                ? this.engine.layers.find(l => l.id === topLayer.parentId)
+                : null;
+              if (parentLayer?.isGroup && parentLayer.groupType === 'group') {
+                if (isDoubleClick && !this.isLayerLocked?.(topLayer.id)) {
+                  this.enterGroupEditMode(topLayer);
+                  e.preventDefault();
+                  return;
+                }
+                const siblings = this.engine.getLayerChildren(topLayer.parentId)
+                  .filter(l => l.visible && !this.isLayerLocked?.(l.id));
+                if (siblings.length > 1) {
+                  this.setSelection(siblings.map(l => l.id), topLayer.id);
+                  _groupHandled = true;
+                }
               }
             }
           }
@@ -4110,7 +4467,9 @@
         } else if (topLayer) {
           // no-op
         } else {
-          if (!this.findLayerAtPoint(world, true)) {
+          // A click on a morph's blended output must not clear the selection or
+          // start a marquee (the container is not returned by findLayerAtPoint).
+          if (!this.findLayerAtPoint(world, true) && !this.findMorphContainerAtPoint(world)) {
             this.clearMaskPreview();
             this.isSelecting = true;
             this.selectionStart = world;
@@ -4343,6 +4702,11 @@
         return;
       }
 
+      if (this.rotation3DDrag) {
+        this.apply3DRotationDrag(e);
+        return;
+      }
+
       if (this.isLayerDrag) {
         const rect = this.canvas.getBoundingClientRect();
         const sx = e.clientX - rect.left;
@@ -4382,6 +4746,11 @@
               if (this.engine.computeLayerEffectiveGeometry) this.engine.computeLayerEffectiveGeometry(layer.id);
               if (this.engine.computeLayerDisplayGeometry) this.engine.computeLayerDisplayGeometry(layer.id);
             });
+            // When a dragged layer sits under a morph modifier, the cheap
+            // per-layer recompute above does not refresh the parent's morphed
+            // output. Schedule a coalesced refold so the in-between rings track
+            // the drag live (matches the released result).
+            if (this._morphDragActive) this._scheduleMorphDragRecompute();
           }
         } else if (this.dragMode === 'resize' && this.startBounds && this.activeHandle) {
           const fromCenter = modifiers.alt || modifiers.meta;
@@ -4409,6 +4778,8 @@
           const _tw = Math.round(Math.abs((this.startBounds.maxX - this.startBounds.minX) * scaleX));
           const _th = Math.round(Math.abs((this.startBounds.maxY - this.startBounds.minY) * scaleY));
           this.showDragTooltip(`${_tw} × ${_th}`, e.clientX, e.clientY);
+          // Live-refold a morph blend while a descendant child is resized.
+          if (this.mirrorDragState && this._morphDragActive) this._previewMirrorDragWithTemp(this.tempTransform);
         } else if (this.dragMode === 'rotate' && this.rotateOrigin) {
           const angle = Math.atan2(world.y - this.rotateOrigin.y, world.x - this.rotateOrigin.x);
           let delta = ((angle - this.rotateStartAngle) * 180) / Math.PI;
@@ -4418,6 +4789,8 @@
           }
           this.tempTransform = { dx: 0, dy: 0, scaleX: 1, scaleY: 1, origin: this.rotateOrigin, rotation: delta };
           this.showDragTooltip(`${Math.round(delta)}°`, e.clientX, e.clientY);
+          // Live-refold a morph blend while a descendant child is rotated.
+          if (this.mirrorDragState && this._morphDragActive) this._previewMirrorDragWithTemp(this.tempTransform);
         }
         const activeLayers = this.getSelectedLayers();
         const bounds = activeLayers.length ? this.getSelectionBounds(activeLayers, this.tempTransform) : null;
@@ -4709,23 +5082,26 @@
         clearActivePointer();
         return;
       }
+      if (this.rotation3DDrag) {
+        this.end3DRotationDrag();
+        clearActivePointer();
+        return;
+      }
       if (this.isLayerDrag) {
         const selectedLayers = this.getSelectedLayers();
         if (selectedLayers.length && this.tempTransform) {
           if (this.onCommitTransform) this.onCommitTransform();
+          // Expand morph containers to their leaves so a container transform
+          // fans out; directly-selected leaves pass through unchanged.
+          const { targets, expandedMorph } = this._expandTransformTargets(selectedLayers);
           if (this.dragMode === 'move') {
             const snapDx = this.snapAllowed && this.snap ? this.snap.dx || 0 : 0;
             const snapDy = this.snapAllowed && this.snap ? this.snap.dy || 0 : 0;
             const committedDx = this.tempTransform.dx + snapDx;
             const committedDy = this.tempTransform.dy + snapDy;
             const moveTemp = { dx: committedDx, dy: committedDy, scaleX: 1, scaleY: 1, origin: { x: 0, y: 0 } };
-            selectedLayers.forEach((layer) => {
-              if (layer.isGroup) return;
-              layer.params.posX += committedDx;
-              layer.params.posY += committedDy;
-              this.transformLayerFillsByTemp(layer, moveTemp);
-              this.engine.generate(layer.id);
-            });
+            targets.forEach((layer) =>
+              this._applyCommittedTransformToLeaf(layer, 'move', { dx: committedDx, dy: committedDy, moveTemp }));
           } else if (this.dragMode === 'resize' && selectedLayers.length) {
             let scaleX = this.tempTransform.scaleX;
             let scaleY = this.tempTransform.scaleY;
@@ -4734,49 +5110,18 @@
               if (this.snap.scaleY) scaleY *= this.snap.scaleY;
             }
             const prof = this.engine.currentProfile;
-            selectedLayers.forEach((activeLayer) => {
-              if (activeLayer.isGroup) return;
-              const originLocal = activeLayer.origin || { x: prof.width / 2, y: prof.height / 2 };
-              const baseOrigin = {
-                x: originLocal.x + (activeLayer.params.posX ?? 0),
-                y: originLocal.y + (activeLayer.params.posY ?? 0),
-              };
-              const resizeOrigin = this.tempTransform.origin || baseOrigin;
-              activeLayer.params.scaleX *= scaleX;
-              activeLayer.params.scaleY *= scaleY;
-              activeLayer.params.posX =
-                (baseOrigin.x - resizeOrigin.x) * scaleX + resizeOrigin.x - originLocal.x;
-              activeLayer.params.posY =
-                (baseOrigin.y - resizeOrigin.y) * scaleY + resizeOrigin.y - originLocal.y;
-              this.transformLayerFillsByTemp(activeLayer, { dx: 0, dy: 0, scaleX, scaleY, origin: resizeOrigin });
-              this.engine.generate(activeLayer.id);
-            });
+            targets.forEach((layer) =>
+              this._applyCommittedTransformToLeaf(layer, 'resize', { scaleX, scaleY, prof }));
           } else if (this.dragMode === 'rotate') {
             const delta = this.tempTransform.rotation ?? 0;
             const origin = this.rotateOrigin || (this.startBounds ? this.startBounds.origin : null);
-            selectedLayers.forEach((layer) => {
-              if (layer.isGroup) return;
-              const baseOrigin = {
-                x: (layer.origin?.x ?? 0) + (layer.params.posX ?? 0),
-                y: (layer.origin?.y ?? 0) + (layer.params.posY ?? 0),
-              };
-              if (origin) {
-                const rot = (delta * Math.PI) / 180;
-                const cosR = Math.cos(rot);
-                const sinR = Math.sin(rot);
-                const dx = baseOrigin.x - origin.x;
-                const dy = baseOrigin.y - origin.y;
-                const rx = dx * cosR - dy * sinR;
-                const ry = dx * sinR + dy * cosR;
-                layer.params.posX = origin.x + rx - (layer.origin?.x ?? 0);
-                layer.params.posY = origin.y + ry - (layer.origin?.y ?? 0);
-              }
-              layer.params.rotation = (layer.params.rotation ?? 0) + delta;
-              if (origin) {
-                this.transformLayerFillsByTemp(layer, { dx: 0, dy: 0, scaleX: 1, scaleY: 1, origin, rotation: delta });
-              }
-              this.engine.generate(layer.id);
-            });
+            targets.forEach((layer) =>
+              this._applyCommittedTransformToLeaf(layer, 'rotate', { delta, origin }));
+          }
+          // Refold the blend if a morph container was fanned out or a morph
+          // descendant (isolation-mode child) was the drag target.
+          if (expandedMorph || this._dragHasMorphAncestor(selectedLayers)) {
+            this._refreshMorphGeometry();
           }
           const primary = this.getSelectedLayer();
           const effectivePrimary = (primary?.isGroup)
@@ -4807,6 +5152,10 @@
         this.rotateOrigin = null;
         this.snap = null;
       }
+      // Release flow already recomputes morph via engine.generate() →
+      // computeAllDisplayGeometry(); drop the live-preview flag and any pending
+      // frame so it can't leak into the next (possibly non-morph) drag.
+      this._clearMorphDrag();
       this._pendingSingleSelect = null;
       this.isPan = false;
       this.isLayerDrag = false;
@@ -4967,7 +5316,15 @@
       // perfectly smooth at any zoom regardless of how dense the cached
       // polyline is. Falls back to the midpoint-quadratic path below for
       // algorithmically-generated polylines that carry no anchor handles.
-      const anchors = useCurves && !path.meta?.straight ? path.meta?.anchors : null;
+      // `meta.forceCurves` is a per-path opt-in (mirror of `meta.straight`):
+      // the path's stored bezier anchors render as native cubics even when the
+      // owning layer has curves OFF. The morph modifier stamps it on its sparse
+      // corner-matched rings, which ARE smooth bezier curves by construction but
+      // live in a group layer whose curves default is false — without this they
+      // were drawn as their raw flattened polyline (visibly faceted / "excessive
+      // line segments") despite the geometry being smooth.
+      const forceCurves = path.meta?.forceCurves === true;
+      const anchors = (useCurves || forceCurves) && !path.meta?.straight ? path.meta?.anchors : null;
       // Only emit native cubics when at least one anchor actually carries a
       // bezier handle. Chord-polyline shapes (e.g. exploded wavetables rebuilt
       // by applyShapeAnchorRebuild at smoothing=0) populate meta.anchors with
@@ -5787,21 +6144,250 @@
     }
 
     enterGroupEditMode(layer) {
-      this.groupEditMode = { groupId: layer.parentId, activeLayerId: layer.id };
+      this.clearTouchHold();
+      this.groupEditMode = { groupId: layer.parentId, activeLayerId: layer.id, kind: 'group' };
       this.setSelection([layer.id], layer.id);
+      this.draw();
+    }
+
+    // Isolation for a MORPH modifier child. Unlike a plain group, the child's
+    // own geometry is consumed (_morphConsumed) and the morph container is the
+    // logical parent even when the leaf is nested under a sub-group, so the
+    // isolation is keyed on the container id with kind 'morph'. Escape returns
+    // to the container (see exitGroupEditMode), not to the consumed children.
+    enterMorphEditMode(child, container) {
+      this.clearTouchHold();
+      this.groupEditMode = { groupId: container.id, activeLayerId: child.id, kind: 'morph' };
+      this.setSelection([child.id], child.id);
       this.draw();
     }
 
     exitGroupEditMode() {
       if (!this.groupEditMode) return;
       const groupId = this.groupEditMode.groupId;
+      const kind = this.groupEditMode.kind;
       this.groupEditMode = null;
+      if (kind === 'morph') {
+        // Re-select the morph container as a single object (its children are
+        // consumed and would be invisible/non-selectable).
+        const container = this.engine.layers.find((l) => l.id === groupId);
+        if (container) this.setSelection([container.id], container.id);
+        this.draw();
+        return;
+      }
       const siblings = this.engine.getLayerChildren(groupId) || [];
       const selectable = siblings.filter(l => l.visible && !this.isLayerLocked?.(l.id));
       if (selectable.length > 0) {
         this.setSelection(selectable.map(l => l.id), selectable[0].id);
       }
       this.draw();
+    }
+
+    // Shared point/paths hit-test mirroring the circle/segment distance loop in
+    // findLayerAtPoint, but operating on an explicit `paths` array so it can run
+    // over geometry that getInteractionPaths would suppress (a morph container's
+    // morphedPaths, or a consumed child's effectivePaths). Returns the nearest
+    // squared distance, or Infinity if nothing is within `tolSq`.
+    _nearestPathDistSq(world, paths, tolSq) {
+      let best = Infinity;
+      (paths || []).forEach((path) => {
+        if (path && path.meta && path.meta.kind === 'circle') {
+          const cx = path.meta.cx ?? path.meta.x ?? 0;
+          const cy = path.meta.cy ?? path.meta.y ?? 0;
+          const r = path.meta.r ?? path.meta.rx ?? 0;
+          const dist = Math.abs(Math.hypot(world.x - cx, world.y - cy) - r);
+          const dSq = dist * dist;
+          if (dSq <= tolSq && dSq < best) best = dSq;
+          return;
+        }
+        if (!Array.isArray(path) || path.length < 2) return;
+        for (let i = 0; i < path.length - 1; i++) {
+          const d = this.distanceToSegmentSq(world, path[i], path[i + 1]);
+          if (d <= tolSq && d < best) best = d;
+        }
+      });
+      return best;
+    }
+
+    // Hit-test the rendered output (morphedPaths) of an outermost morph modifier.
+    // The container is skipped by findLayerAtPoint (isGroup && !compound), so a
+    // click on the blend would otherwise select nothing. Returns the nearest
+    // morph container under `world`, or null.
+    findMorphContainerAtPoint(world) {
+      const layers = this.engine.layers.slice().reverse();
+      let best = null;
+      let bestDist = Infinity;
+      layers.forEach((layer) => {
+        if (!layer || !layer.visible || !layer.isGroup) return;
+        if (layer.modifier?.type !== 'morph') return;
+        if (!Array.isArray(layer.morphedPaths) || !layer.morphedPaths.length) return;
+        if (this.isLayerLocked?.(layer.id)) return;
+        // Only the OUTERMOST morph is the click target (a nested morph's output
+        // is consumed by its ancestor morph).
+        if (this.engine.getAncestorModifiers?.(layer)?.some((m) => m.modifier?.type === 'morph')) return;
+        const stroke = layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
+        const tol = Math.max(5 / (this.scale || 1), stroke * 2);
+        const d = this._nearestPathDistSq(world, layer.morphedPaths, tol * tol);
+        if (d < bestDist) {
+          bestDist = d;
+          best = layer;
+        }
+      });
+      return best;
+    }
+
+    // Hit-test the SOURCE geometry of a morph container's leaf descendants so a
+    // double-click can resolve which child to isolate. The children are consumed
+    // (getInteractionPaths returns []), so read effectivePaths/paths directly.
+    // Locked / invisible leaves (and leaves under a locked ancestor) are skipped.
+    findMorphChildAtPoint(world, containerId) {
+      const leaves = (this.engine.getLayerDescendants(containerId) || []).filter((l) => {
+        if (!l || l.isGroup || l.visible === false) return false;
+        if (this.isLayerLocked?.(l.id)) return false;
+        if ((this.engine.getLayerAncestors?.(l) || []).some((a) => this.isLayerLocked?.(a.id))) return false;
+        return true;
+      });
+      let best = null;
+      let bestDist = Infinity;
+      leaves.forEach((leaf) => {
+        const src = (leaf.effectivePaths?.length ? leaf.effectivePaths : leaf.paths) || [];
+        const stroke = leaf.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
+        const tol = Math.max(5 / (this.scale || 1), stroke * 2);
+        const d = this._nearestPathDistSq(world, src, tol * tol);
+        if (d < bestDist) {
+          bestDist = d;
+          best = leaf;
+        }
+      });
+      return best;
+    }
+
+    // Resolve which morph-source child a press targets. findMorphChildAtPoint
+    // only hits a child's sparse OUTLINE, so pressing/double-clicking a child's
+    // filled INTERIOR (the natural way to grab a shape) misses it — which made
+    // double-click never isolate, and an in-isolation body press exit isolation.
+    // Fall back to a bounds hit over the container's leaves (preferring the
+    // currently-active child on overlap) so the body of a child counts.
+    _morphChildAtPointOrBounds(world, containerId, preferActiveId = null) {
+      const outlineHit = this.findMorphChildAtPoint(world, containerId);
+      if (outlineHit) return outlineHit;
+      const leaves = (this.engine.getLayerDescendants(containerId) || [])
+        .filter((l) => l && !l.isGroup && l.visible !== false);
+      const hitByBounds = (l) => {
+        if (!l || this.isLayerLocked?.(l.id)) return false;
+        const b = this.getSelectionBounds([l]);
+        return b && this.pointInBounds(world, b);
+      };
+      const active = preferActiveId ? leaves.find((l) => l.id === preferActiveId) : null;
+      if (active && hitByBounds(active)) return active;
+      return leaves.find(hitByBounds) || null;
+    }
+
+    // Resolve a morph child purely by BOUNDS across every OUTERMOST morph
+    // container, so double-clicking the filled body of a child (off all lines —
+    // findMorphContainerAtPoint and findMorphChildAtPoint are both outline-only)
+    // still isolates it. Returns { child, container } or null.
+    _morphChildByBounds(world) {
+      const containers = this.engine.layers.filter((l) =>
+        l && l.isGroup && l.visible && l.modifier?.type === 'morph'
+        && Array.isArray(l.morphedPaths) && l.morphedPaths.length
+        && !this.isLayerLocked?.(l.id)
+        && !(this.engine.getAncestorModifiers?.(l) || []).some((m) => m.modifier?.type === 'morph'));
+      for (let i = containers.length - 1; i >= 0; i -= 1) {
+        const child = this._morphChildAtPointOrBounds(world, containers[i].id);
+        if (child) return { child, container: containers[i] };
+      }
+      return null;
+    }
+
+    // Hit-test the ACTIVE isolated morph end's own (consumed) geometry so the
+    // direct-select tool can engage it: findPathHitAtPoint reads
+    // getInteractionPaths, which is empty for a _morphConsumed child. Returns a
+    // findPathHitAtPoint-shaped result on the active child, or null. pathIndex is
+    // forced to 0 (a morph end is a single source shape) so it maps to the
+    // child's sourcePaths for setDirectSelection.
+    _morphChildPathHit(world) {
+      if (this.groupEditMode?.kind !== 'morph' || !world) return null;
+      const child = this.engine.layers.find((l) => l.id === this.groupEditMode.activeLayerId);
+      if (!child || child.isGroup) return null;
+      if (this.isLayerLocked?.(child.id)) return null;
+      const paths = (child.effectivePaths?.length ? child.effectivePaths : child.paths) || [];
+      const stroke = child.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
+      const tol = Math.max(2.5 / (this.scale || 1), stroke * 2);
+      const tolSq = tol * tol;
+      let best = null;
+      let bestDistSq = Infinity;
+      paths.forEach((path) => {
+        if (path && path.meta && path.meta.kind === 'circle') {
+          const cx = path.meta.cx ?? path.meta.x ?? 0;
+          const cy = path.meta.cy ?? path.meta.y ?? 0;
+          const r = path.meta.r ?? Math.max(path.meta.rx ?? 0, path.meta.ry ?? 0);
+          const dist = Math.abs(Math.hypot(world.x - cx, world.y - cy) - r);
+          const dSq = dist * dist;
+          if (dSq <= tolSq && dSq < bestDistSq) {
+            bestDistSq = dSq;
+            best = { layer: child, pathIndex: 0, path, segmentIndex: 0, point: { x: world.x, y: world.y }, distSq: dSq };
+          }
+          return;
+        }
+        if (!Array.isArray(path) || path.length < 2) return;
+        for (let i = 0; i < path.length - 1; i++) {
+          const d = this.distanceToSegmentSq(world, path[i], path[i + 1]);
+          if (d <= tolSq && d < bestDistSq) {
+            bestDistSq = d;
+            best = { layer: child, pathIndex: 0, path, segmentIndex: i, point: { x: world.x, y: world.y }, distSq: d };
+          }
+        }
+      });
+      return best;
+    }
+
+    // Axis-aligned (rotation 0) bounds object built from a raw paths array,
+    // matching the shape returned by getSelectionBounds. Used for the morph
+    // container (morphedPaths, already world-space) and consumed children.
+    _boundsFromPaths(paths, temp) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      (paths || []).forEach((path) => {
+        if (path?.meta?.kind === 'circle') {
+          const meta = temp ? this.transformCircleMeta(path.meta, temp) : path.meta;
+          const cx = meta.cx ?? meta.x;
+          const cy = meta.cy ?? meta.y;
+          const rx = meta.rx ?? meta.r;
+          const ry = meta.ry ?? meta.r;
+          if (!Number.isFinite(cx) || !Number.isFinite(cy)) return;
+          minX = Math.min(minX, cx - rx); maxX = Math.max(maxX, cx + rx);
+          minY = Math.min(minY, cy - ry); maxY = Math.max(maxY, cy + ry);
+          return;
+        }
+        if (!Array.isArray(path)) return;
+        path.forEach((pt) => {
+          const next = temp ? this.transformPoint(pt, temp) : pt;
+          minX = Math.min(minX, next.x); minY = Math.min(minY, next.y);
+          maxX = Math.max(maxX, next.x); maxY = Math.max(maxY, next.y);
+        });
+      });
+      if (!Number.isFinite(minX)) return null;
+      const center = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+      const localMinX = minX - center.x;
+      const localMinY = minY - center.y;
+      const localMaxX = maxX - center.x;
+      const localMaxY = maxY - center.y;
+      const toWorld = (local) => ({ x: center.x + local.x, y: center.y + local.y });
+      return {
+        minX: localMinX,
+        minY: localMinY,
+        maxX: localMaxX,
+        maxY: localMaxY,
+        rotation: 0,
+        origin: center,
+        center,
+        corners: {
+          nw: toWorld({ x: localMinX, y: localMinY }),
+          ne: toWorld({ x: localMaxX, y: localMinY }),
+          se: toWorld({ x: localMaxX, y: localMaxY }),
+          sw: toWorld({ x: localMinX, y: localMaxY }),
+        },
+      };
     }
 
     _getMaskGroupLayers(layer) {
@@ -5938,7 +6524,13 @@
           });
           return;
         }
-        const basePaths = this.getInteractionPaths(layer);
+        // A morph container in a multi-selection is not consumed and exposes no
+        // own paths; bound its blend so the union box includes it.
+        const basePaths = layer?._morphConsumed
+          ? ((layer.effectivePaths?.length ? layer.effectivePaths : layer.paths) || [])
+          : (layer?.isGroup && layer.modifier?.type === 'morph' && Array.isArray(layer.morphedPaths))
+            ? layer.morphedPaths
+            : this.getInteractionPaths(layer);
         if (!Array.isArray(basePaths)) return;
         basePaths.forEach((path) => {
           if (path?.meta?.kind === 'circle') {
@@ -6160,6 +6752,17 @@
       return buildBoundsFromVertices(vertices, origin, rotation);
     }
 
+    getPathStrokeDash(path) {
+      const shared = window.Vectura?.Geometry3D?.getPathStrokeDash;
+      if (typeof shared === 'function') return shared(path);
+      const meta = path?.meta || {};
+      if (Array.isArray(meta.strokeDash) && meta.strokeDash.length) {
+        const dash = meta.strokeDash.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0);
+        if (dash.length) return dash;
+      }
+      return meta.hiddenLine ? [3, 2] : null;
+    }
+
     traceLayerPath(path, layer, temp = null, useCurves = Boolean(layer?.params?.curves)) {
       if (path && path.meta && path.meta.kind === 'circle') {
         const meta = temp ? this.transformCircleMeta(path.meta, temp) : path.meta;
@@ -6250,12 +6853,30 @@
     getLayerBounds(layer, temp) {
       const primitiveBounds = this.getPrimitiveShapeBounds(layer, temp);
       if (primitiveBounds) return primitiveBounds;
+      // A morph-consumed child renders nothing (getInteractionPaths -> []), so
+      // bound its still-present source geometry directly. Primitive consumed
+      // children were already handled above; this covers polyline children.
+      if (layer?._morphConsumed) {
+        const src = (layer.effectivePaths?.length ? layer.effectivePaths : layer.paths) || [];
+        // During a live drag the child's paths are physically rewritten to the
+        // dragged position (mirrorDragState), so applying temp on top double-counts
+        // the offset and the selection box creeps away from the child at ~2×.
+        // Bound the already-moved geometry without temp (mirrors the render path's
+        // mirrorDragState guard).
+        const t = this.mirrorDragState?.has(layer.id) ? null : temp;
+        return src.length ? this._boundsFromPaths(src, t) : null;
+      }
       // Group containers carry no params/paths of their own — their bounds are
       // the union of their descendants'. Without this guard, accessing
       // layer.params.posX below crashes draw() when a group is the sole
       // selection (e.g. user clicks the group folder during the tutorial),
       // which empties the canvas and reads as "zoomed in and locked."
       if (layer?.isGroup) {
+        // A morph container's single-object bbox is the BLEND (morphedPaths),
+        // not the union of its source children.
+        if (layer.modifier?.type === 'morph' && Array.isArray(layer.morphedPaths) && layer.morphedPaths.length) {
+          return this._boundsFromPaths(layer.morphedPaths, temp);
+        }
         const children = this.engine.layers.filter((l) => l.parentId === layer.id);
         return children.length ? this.getSelectionBounds(children, temp) : null;
       }
@@ -6337,6 +6958,88 @@
       };
     }
 
+    // Expand a transform selection into the concrete leaf layers to mutate.
+    // A morph container is not itself transformable (its geometry is the blend
+    // of its children), so a transform on the container fans out to every leaf
+    // descendant; the morph then refolds. Other group kinds carry no own params
+    // and are skipped (matching the historical `if (layer.isGroup) return;`).
+    _expandTransformTargets(selectedLayers) {
+      const targets = [];
+      let expandedMorph = false;
+      (selectedLayers || []).forEach((layer) => {
+        if (layer.isGroup) {
+          if (layer.modifier?.type === 'morph') {
+            (this.engine.getLayerDescendants(layer.id) || []).forEach((leaf) => {
+              if (!leaf.isGroup) targets.push(leaf);
+            });
+            expandedMorph = true;
+          }
+          return;
+        }
+        targets.push(layer);
+      });
+      return { targets, expandedMorph };
+    }
+
+    // Apply a committed move/resize/rotate to a single leaf layer. Factored out
+    // of up() so the same math serves both a directly-selected leaf and the
+    // per-leaf fan-out of a morph-container transform.
+    _applyCommittedTransformToLeaf(layer, mode, ctx) {
+      if (!layer || layer.isGroup || !layer.params) return;
+      if (mode === 'move') {
+        layer.params.posX += ctx.dx;
+        layer.params.posY += ctx.dy;
+        this.transformLayerFillsByTemp(layer, ctx.moveTemp);
+        this.engine.generate(layer.id);
+        return;
+      }
+      if (mode === 'resize') {
+        const prof = ctx.prof;
+        const originLocal = layer.origin || { x: prof.width / 2, y: prof.height / 2 };
+        const baseOrigin = {
+          x: originLocal.x + (layer.params.posX ?? 0),
+          y: originLocal.y + (layer.params.posY ?? 0),
+        };
+        const resizeOrigin = this.tempTransform.origin || baseOrigin;
+        layer.params.scaleX *= ctx.scaleX;
+        layer.params.scaleY *= ctx.scaleY;
+        layer.params.posX = (baseOrigin.x - resizeOrigin.x) * ctx.scaleX + resizeOrigin.x - originLocal.x;
+        layer.params.posY = (baseOrigin.y - resizeOrigin.y) * ctx.scaleY + resizeOrigin.y - originLocal.y;
+        this.transformLayerFillsByTemp(layer, { dx: 0, dy: 0, scaleX: ctx.scaleX, scaleY: ctx.scaleY, origin: resizeOrigin });
+        this.engine.generate(layer.id);
+        return;
+      }
+      if (mode === 'rotate') {
+        const { delta, origin } = ctx;
+        const baseOrigin = {
+          x: (layer.origin?.x ?? 0) + (layer.params.posX ?? 0),
+          y: (layer.origin?.y ?? 0) + (layer.params.posY ?? 0),
+        };
+        if (origin) {
+          const rot = (delta * Math.PI) / 180;
+          const cosR = Math.cos(rot);
+          const sinR = Math.sin(rot);
+          const dx = baseOrigin.x - origin.x;
+          const dy = baseOrigin.y - origin.y;
+          const rx = dx * cosR - dy * sinR;
+          const ry = dx * sinR + dy * cosR;
+          layer.params.posX = origin.x + rx - (layer.origin?.x ?? 0);
+          layer.params.posY = origin.y + ry - (layer.origin?.y ?? 0);
+        }
+        layer.params.rotation = (layer.params.rotation ?? 0) + delta;
+        if (origin) {
+          this.transformLayerFillsByTemp(layer, { dx: 0, dy: 0, scaleX: 1, scaleY: 1, origin, rotation: delta });
+        }
+        this.engine.generate(layer.id);
+      }
+    }
+
+    _refreshMorphGeometry() {
+      this.onComputeDisplayGeometry
+        ? this.onComputeDisplayGeometry()
+        : this.engine.computeAllDisplayGeometry();
+    }
+
     drawKeyObjectOutline(bounds) {
       if (!bounds || !bounds.corners) return;
       const { nw, ne, se, sw } = bounds.corners;
@@ -6380,6 +7083,156 @@
           this.ctx.fill();
           this.ctx.stroke();
         });
+      }
+      this.ctx.restore();
+    }
+
+    get3DRotationSpec(layer) {
+      if (!layer || layer.isGroup || !layer.params) return null;
+      const spec = ROTATION_3D_SPECS[layer.type] || null;
+      if (spec && typeof spec.appliesIf === 'function' && !spec.appliesIf(layer.params)) return null;
+      return spec;
+    }
+
+    get3DRotationControl(layer, bounds) {
+      const spec = this.get3DRotationSpec(layer);
+      if (!spec || !bounds?.corners) return null;
+      const unit = 1 / Math.max(this.scale || 1, 0.001);
+      const center = bounds.center || this.getBoundsCenter(bounds);
+      const target = bounds.corners.ne || center;
+      const vx = target.x - center.x;
+      const vy = target.y - center.y;
+      const len = Math.hypot(vx, vy) || 1;
+      const ux = vx / len;
+      const uy = vy / len;
+      const padRadius = 17 * unit;
+      const ringRadius = 28 * unit;
+      const yawRadiusX = padRadius * 0.72;
+      const yawRadiusY = padRadius * 0.48;
+      const pitchRadiusX = padRadius * 0.62;
+      const controlCenter = {
+        x: target.x + ux * 35 * unit,
+        y: target.y + uy * 35 * unit,
+      };
+      const yaw = normalizeDegrees(layer.params[spec.yawParam] ?? spec.yawDefault);
+      const pitch = clamp(
+        finiteNumber(layer.params[spec.pitchParam], spec.pitchDefault),
+        spec.pitchMin,
+        spec.pitchMax
+      );
+      const yawRad = (yaw * Math.PI) / 180;
+      const pitchSpan = Math.max(1, spec.pitchMax - spec.pitchMin);
+      const pitchT = (pitch - spec.pitchMin) / pitchSpan;
+      const yawMarker = {
+        x: controlCenter.x + Math.sin(yawRad) * yawRadiusX,
+        y: controlCenter.y + Math.cos(yawRad) * yawRadiusY,
+      };
+      const pitchMarker = {
+        x: controlCenter.x - pitchRadiusX,
+        y: controlCenter.y + (0.5 - pitchT) * padRadius * 1.28,
+      };
+      const roll = spec.rollParam
+        ? normalizeDegrees(layer.params[spec.rollParam] ?? spec.rollDefault)
+        : 0;
+      const rollRad = ((roll - 90) * Math.PI) / 180;
+      const rollHandle = spec.rollParam
+        ? {
+            x: controlCenter.x + Math.cos(rollRad) * ringRadius,
+            y: controlCenter.y + Math.sin(rollRad) * ringRadius,
+          }
+        : null;
+      return {
+        layer,
+        spec,
+        center: controlCenter,
+        padRadius,
+        ringRadius,
+        yawRadiusX,
+        yawRadiusY,
+        pitchRadiusX,
+        pitchTrackHeight: padRadius * 1.28,
+        yawMarker,
+        pitchMarker,
+        rollHandle,
+      };
+    }
+
+    draw3DRotationControl(layer, bounds) {
+      const control = this.get3DRotationControl(layer, bounds);
+      if (!control) return;
+      const unit = 1 / Math.max(this.scale || 1, 0.001);
+      const { center, padRadius, ringRadius, yawRadiusX, yawRadiusY, pitchRadiusX, yawMarker, pitchMarker, rollHandle } = control;
+      const accent = getThemeToken('--render-selection-handle-stroke', '#f8fafc');
+      const fill = getThemeToken('--render-selection-handle-fill', '#111827');
+      const underlay = getThemeToken('--render-underlay-fill', 'rgba(15, 23, 42, 0.92)');
+      this.ctx.save();
+      this.ctx.lineCap = 'round';
+      this.ctx.lineJoin = 'round';
+
+      this.ctx.fillStyle = underlay;
+      this.ctx.beginPath();
+      this.ctx.arc(center.x, center.y, padRadius + 4 * unit, 0, TAU);
+      this.ctx.fill();
+
+      this.ctx.strokeStyle = accent;
+      this.ctx.lineWidth = 1.1 * unit;
+      this.ctx.globalAlpha = 0.72;
+      this.ctx.beginPath();
+      this.ctx.ellipse(center.x, center.y, yawRadiusX, yawRadiusY, 0, 0, TAU);
+      this.ctx.stroke();
+      this.ctx.beginPath();
+      this.ctx.ellipse(center.x, center.y, pitchRadiusX, padRadius, 0, 0, TAU);
+      this.ctx.stroke();
+
+      this.ctx.globalAlpha = 0.92;
+      this.ctx.beginPath();
+      this.ctx.arc(center.x, center.y, 2.2 * unit, 0, TAU);
+      this.ctx.fillStyle = accent;
+      this.ctx.fill();
+
+      this.ctx.fillStyle = fill;
+      this.ctx.strokeStyle = accent;
+      this.ctx.lineWidth = 1 * unit;
+      this.ctx.beginPath();
+      this.ctx.arc(yawMarker.x, yawMarker.y, 3.4 * unit, 0, TAU);
+      this.ctx.fill();
+      this.ctx.stroke();
+      this.ctx.beginPath();
+      this.ctx.moveTo(yawMarker.x - 4.6 * unit, yawMarker.y);
+      this.ctx.lineTo(yawMarker.x - 7.2 * unit, yawMarker.y);
+      this.ctx.moveTo(yawMarker.x + 4.6 * unit, yawMarker.y);
+      this.ctx.lineTo(yawMarker.x + 7.2 * unit, yawMarker.y);
+      this.ctx.stroke();
+
+      this.ctx.beginPath();
+      this.ctx.arc(pitchMarker.x, pitchMarker.y, 3.4 * unit, 0, TAU);
+      this.ctx.fill();
+      this.ctx.stroke();
+      this.ctx.beginPath();
+      this.ctx.moveTo(pitchMarker.x, pitchMarker.y - 4.6 * unit);
+      this.ctx.lineTo(pitchMarker.x, pitchMarker.y - 7.2 * unit);
+      this.ctx.moveTo(pitchMarker.x, pitchMarker.y + 4.6 * unit);
+      this.ctx.lineTo(pitchMarker.x, pitchMarker.y + 7.2 * unit);
+      this.ctx.stroke();
+
+      if (rollHandle) {
+        this.ctx.globalAlpha = 0.56;
+        this.ctx.setLineDash([2.4 * unit, 2.4 * unit]);
+        this.ctx.beginPath();
+        this.ctx.arc(center.x, center.y, ringRadius, 0, TAU);
+        this.ctx.stroke();
+        this.ctx.setLineDash([]);
+        this.ctx.globalAlpha = 1;
+        this.ctx.fillStyle = underlay;
+        this.ctx.beginPath();
+        this.ctx.arc(rollHandle.x, rollHandle.y, 5.8 * unit, 0, TAU);
+        this.ctx.fill();
+        this.ctx.fillStyle = fill;
+        this.ctx.strokeStyle = accent;
+        this.ctx.beginPath();
+        this.ctx.arc(rollHandle.x, rollHandle.y, 4.4 * unit, 0, TAU);
+        this.ctx.fill();
+        this.ctx.stroke();
       }
       this.ctx.restore();
     }
@@ -6776,6 +7629,175 @@
       return null;
     }
 
+    hit3DRotationControl(sx, sy, layer = null, bounds = null) {
+      const targetLayer = layer || this.getSelectedLayer();
+      const targetBounds = bounds || (targetLayer ? this.getSelectionBounds([targetLayer]) : null);
+      const control = this.get3DRotationControl(targetLayer, targetBounds);
+      if (!control) return null;
+      const unit = 1 / Math.max(this.scale || 1, 0.001);
+      const world = this.screenToWorld(sx, sy);
+      const centerDist = Math.hypot(world.x - control.center.x, world.y - control.center.y);
+      if (centerDist <= 5 * unit) {
+        return { type: 'orbit', layer: targetLayer, spec: control.spec, control };
+      }
+      const yawDist = Math.hypot(world.x - control.yawMarker.x, world.y - control.yawMarker.y);
+      const pitchDist = Math.hypot(world.x - control.pitchMarker.x, world.y - control.pitchMarker.y);
+      const markerHits = [];
+      if (yawDist <= 9 * unit) markerHits.push({ distance: yawDist, type: 'yaw' });
+      if (pitchDist <= 9 * unit) markerHits.push({ distance: pitchDist, type: 'pitch' });
+      if (markerHits.length) {
+        markerHits.sort((a, b) => a.distance - b.distance);
+        return { type: markerHits[0].type, layer: targetLayer, spec: control.spec, control };
+      }
+      if (control.rollHandle) {
+        const rollDist = Math.hypot(world.x - control.rollHandle.x, world.y - control.rollHandle.y);
+        if (rollDist <= 9 * unit) {
+          return { type: 'roll', layer: targetLayer, spec: control.spec, control };
+        }
+        if (Math.abs(centerDist - control.ringRadius) <= 5 * unit) {
+          return { type: 'roll', layer: targetLayer, spec: control.spec, control };
+        }
+      }
+      if (centerDist <= control.padRadius + 7 * unit) {
+        return { type: 'orbit', layer: targetLayer, spec: control.spec, control };
+      }
+      return null;
+    }
+
+    begin3DRotationDrag(hit, event) {
+      if (!hit?.layer || !hit.spec) return false;
+      const { layer, spec, control } = hit;
+      const rect = this.canvas.getBoundingClientRect();
+      const startWorld = this.screenToWorld(
+        (event?.clientX ?? 0) - rect.left,
+        (event?.clientY ?? 0) - rect.top
+      );
+      const rollAngle = Math.atan2(startWorld.y - control.center.y, startWorld.x - control.center.x);
+      this.rotation3DDrag = {
+        type: hit.type,
+        layerId: layer.id,
+        spec,
+        center: { ...control.center },
+        yawRadiusX: control.yawRadiusX,
+        yawRadiusY: control.yawRadiusY,
+        pitchTrackHeight: control.pitchTrackHeight,
+        startClient: { x: event?.clientX ?? 0, y: event?.clientY ?? 0 },
+        startYaw: normalizeDegrees(layer.params[spec.yawParam] ?? spec.yawDefault),
+        startPitch: clamp(
+          finiteNumber(layer.params[spec.pitchParam], spec.pitchDefault),
+          spec.pitchMin,
+          spec.pitchMax
+        ),
+        startRoll: spec.rollParam ? normalizeDegrees(layer.params[spec.rollParam] ?? spec.rollDefault) : 0,
+        startRollAngle: rollAngle,
+        historyPushed: false,
+        moved: false,
+      };
+      this.setCanvasCursor('grabbing', 'rotate-3d');
+      return true;
+    }
+
+    apply3DRotationDrag(event = {}) {
+      const drag = this.rotation3DDrag;
+      if (!drag) return false;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (!layer?.params) return false;
+      const modifiers = this.getModifierState(event);
+      const dx = (event.clientX ?? drag.startClient.x) - drag.startClient.x;
+      const dy = (event.clientY ?? drag.startClient.y) - drag.startClient.y;
+      if (!drag.moved && Math.hypot(dx, dy) < 1) return true;
+      if (!drag.historyPushed) {
+        if (this.app?.pushHistory) this.app.pushHistory();
+        else if (this.onCommitTransform) this.onCommitTransform();
+        drag.historyPushed = true;
+      }
+      drag.moved = true;
+
+      if (drag.type === 'roll' && drag.spec.rollParam) {
+        const rect = this.canvas.getBoundingClientRect();
+        const sx = (event.clientX ?? drag.startClient.x) - rect.left;
+        const sy = (event.clientY ?? drag.startClient.y) - rect.top;
+        const world = this.screenToWorld(sx, sy);
+        const angle = Math.atan2(world.y - drag.center.y, world.x - drag.center.x);
+        let delta = ((angle - drag.startRollAngle) * 180) / Math.PI;
+        if (modifiers.shift) delta = Math.round(delta / 15) * 15;
+        layer.params[drag.spec.rollParam] = tidyDegrees(normalizeDegrees(drag.startRoll + delta));
+      } else if (drag.type === 'yaw') {
+        const rect = this.canvas.getBoundingClientRect();
+        const sx = (event.clientX ?? drag.startClient.x) - rect.left;
+        const sy = (event.clientY ?? drag.startClient.y) - rect.top;
+        const world = this.screenToWorld(sx, sy);
+        const nx = (world.x - drag.center.x) / Math.max(1e-6, drag.yawRadiusX || 1);
+        const ny = (world.y - drag.center.y) / Math.max(1e-6, drag.yawRadiusY || 1);
+        let nextYaw = normalizeDegrees((Math.atan2(nx, ny) * 180) / Math.PI);
+        if (modifiers.shift) nextYaw = Math.round(nextYaw / 15) * 15;
+        layer.params[drag.spec.yawParam] = tidyDegrees(normalizeDegrees(nextYaw));
+      } else if (drag.type === 'pitch') {
+        const rect = this.canvas.getBoundingClientRect();
+        const sy = (event.clientY ?? drag.startClient.y) - rect.top;
+        const world = this.screenToWorld(0, sy);
+        const pitchSpan = Math.max(1, drag.spec.pitchMax - drag.spec.pitchMin);
+        const pitchT = clamp(0.5 - ((world.y - drag.center.y) / Math.max(1e-6, drag.pitchTrackHeight || 1)), 0, 1);
+        let nextPitch = drag.spec.pitchMin + pitchT * pitchSpan;
+        if (modifiers.shift) nextPitch = Math.round(nextPitch / 15) * 15;
+        layer.params[drag.spec.pitchParam] = tidyDegrees(clamp(nextPitch, drag.spec.pitchMin, drag.spec.pitchMax));
+      } else {
+        const sensitivity = modifiers.alt ? 0.18 : 0.45;
+        let nextYaw = normalizeDegrees(drag.startYaw + dx * sensitivity);
+        let nextPitch = clamp(drag.startPitch - dy * sensitivity, drag.spec.pitchMin, drag.spec.pitchMax);
+        if (modifiers.shift) {
+          nextYaw = Math.round(nextYaw / 15) * 15;
+          nextPitch = Math.round(nextPitch / 15) * 15;
+        }
+        layer.params[drag.spec.yawParam] = tidyDegrees(normalizeDegrees(nextYaw));
+        layer.params[drag.spec.pitchParam] = tidyDegrees(clamp(nextPitch, drag.spec.pitchMin, drag.spec.pitchMax));
+      }
+
+      this.engine.generate(layer.id, { preview: true });
+      this.app?.ui?.updateFormula?.();
+      this.app?.ui?._activePresetGalleryRefresh?.();
+      this.show3DRotationDragTooltip(layer, drag, event);
+      this.draw();
+      return true;
+    }
+
+    show3DRotationDragTooltip(layer, drag, event = {}) {
+      if (!layer?.params || !drag?.spec) return;
+      const yaw = Math.round(layer.params[drag.spec.yawParam] ?? 0);
+      const pitch = Math.round(layer.params[drag.spec.pitchParam] ?? 0);
+      if (drag.type === 'roll' && drag.spec.rollParam) {
+        this.showDragTooltip(`roll ${Math.round(layer.params[drag.spec.rollParam] ?? 0)}°`, event.clientX ?? 0, event.clientY ?? 0);
+        return;
+      }
+      const yawLabel = drag.spec.yawParam === 'yaw' ? 'yaw' : 'rot';
+      const pitchLabel = drag.spec.pitchParam === 'pitch' ? 'pitch' : 'tilt';
+      if (drag.type === 'yaw') {
+        this.showDragTooltip(`${yawLabel} ${yaw}°`, event.clientX ?? 0, event.clientY ?? 0);
+        return;
+      }
+      if (drag.type === 'pitch') {
+        this.showDragTooltip(`${pitchLabel} ${pitch}°`, event.clientX ?? 0, event.clientY ?? 0);
+        return;
+      }
+      this.showDragTooltip(`${yawLabel} ${yaw}°  ${pitchLabel} ${pitch}°`, event.clientX ?? 0, event.clientY ?? 0);
+    }
+
+    end3DRotationDrag() {
+      const drag = this.rotation3DDrag;
+      this.rotation3DDrag = null;
+      this.hideDragTooltip();
+      if (!drag) return;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (layer && drag.historyPushed) {
+        this.engine.generate(layer.id);
+        this.app?.ui?.buildControls?.();
+        this.app?.ui?.updateFormula?.();
+        this.app?.ui?._activePresetGalleryRefresh?.();
+      }
+      this.updateCursor();
+      this.draw();
+    }
+
     getHandleVector(handle, bounds) {
       const center = bounds.center;
       const pt = this.getHandlePoint(handle, bounds);
@@ -7126,6 +8148,13 @@
           this.setCanvasCursor(this.cursorDataUrl('filled', 4, 4, 'auto'), 'select');
         }
         return;
+      }
+      if (this.activeTool === 'select' && activeLayers.length === 1 && !this.isLayerLocked?.(activeLayers[0].id)) {
+        const rotation3DHit = this.hit3DRotationControl(sx, sy, activeLayers[0], bounds);
+        if (rotation3DHit) {
+          this.setCanvasCursor('grab', 'rotate-3d');
+          return;
+        }
       }
       const handle = this.hitHandle(sx, sy, bounds);
       if (handle) {

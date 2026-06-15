@@ -1,0 +1,36 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Lotus Nelumbo Nucifera",
+  "meta": {
+    "presetId": "lotus-nelumbo-nucifera",
+    "group": "Geometric",
+    "system": "petalisDesigner",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "petalisDesigner",
+      "params": {
+        "petalProfile": "spoon",
+        "petalScale": 42,
+        "petalWidthRatio": 0.65,
+        "count": 120,
+        "ringMode": "dual",
+        "innerCount": 36,
+        "outerCount": 90,
+        "ringSplit": 0.3,
+        "centerType": "disk",
+        "centerRadius": 10,
+        "centerConnectors": true,
+        "connectorCount": 24,
+        "connectorLength": 14,
+        "layoutMode": "spiral",
+        "ringOffset": 12,
+        "rotationJitter": 0,
+        "sizeJitter": 0,
+        "countJitter": 0
+      }
+    }
+  ]
+}

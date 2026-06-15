@@ -1,0 +1,24 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Cross Hatch",
+  "meta": {
+    "presetId": "svg-distort-cross-hatch",
+    "group": "Geometric",
+    "system": "svgDistort",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "svgDistort",
+      "params": {
+        "showOutlines": true,
+        "fillMode": "crosshatch",
+        "fillDensity": 4,
+        "autoFit": true,
+        "scale": 1,
+        "noises": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Canyon Mesa",
+  "meta": {
+    "presetId": "terrain-canyon-mesa",
+    "group": "Classic",
+    "system": "terrain",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "terrain",
+      "params": {
+        "perspectiveMode": "one-point",
+        "horizonHeight": 50,
+        "depthCompression": 75,
+        "depthSlices": 90,
+        "xResolution": 260,
+        "mountainAmplitude": 50,
+        "mountainFrequency": 0.005,
+        "mountainOctaves": 4,
+        "mountainGain": 0.65,
+        "peakSharpness": 1,
+        "valleyCount": 2,
+        "valleyDepth": 60,
+        "valleyWidth": 14,
+        "valleyShape": 0.05,
+        "valleyMeander": 30,
+        "riversEnabled": true,
+        "riverCount": 1,
+        "riverWidth": 4,
+        "riverDepth": 18,
+        "riverMeander": 65,
+        "oceansEnabled": false
+      }
+    }
+  ]
+}

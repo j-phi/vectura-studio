@@ -1,0 +1,34 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Relief Bars",
+  "meta": {
+    "presetId": "rasterplane-relief-bars",
+    "group": "Classic",
+    "system": "rasterPlane",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "rasterPlane",
+      "params": {
+        "mode": "bars",
+        "mapType": "height",
+        "artworkSize": 146,
+        "amplitude": 24,
+        "sampleDetail": 64,
+        "smoothing": 0,
+        "gamma": 0.82,
+        "contrast": 18,
+        "rotate": -38,
+        "tilt": 58,
+        "barRows": 13,
+        "barColumns": 16,
+        "barGap": 2.2,
+        "barHeightSteps": 6,
+        "showBarBase": true,
+        "seeThrough": true
+      }
+    }
+  ]
+}

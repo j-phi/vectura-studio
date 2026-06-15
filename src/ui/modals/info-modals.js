@@ -2101,6 +2101,11 @@
       title: 'Tip Rounding',
       description: 'Rounds the outer petal tip. 0 keeps a sharp edge, 1 approaches a semicircular tip.',
     },
+    'petalis.petalCupping': {
+      title: 'Petal Cupping',
+      description:
+        'Folds each petal about its long axis for a pseudo-3D cupped, incurved read — edges foreshorten more than the midline, and inner whorls cup harder than outer ones like a real corolla. 0 keeps petals flat.',
+    },
     'petalis.baseFlare': {
       title: 'Base Flare',
       description: 'Flares the petal base outward, widening where it attaches to the center.',
@@ -2459,7 +2464,35 @@
     },
     'terrain.perspectiveMode': {
       title: 'Perspective Mode',
-      description: 'Top-down draws scanlines without convergence. One-point projects rows toward a single vanishing point. One-point with Landscape Horizon adds an explicit horizontal line at the horizon to anchor the scene. Two-point converges to two distinct vanishing points along the horizon for an off-axis terrain look. Isometric uses parallel-oblique projection — no convergence but with a tilted depth axis.',
+      description: 'Top-down draws scanlines without convergence. One-point projects rows toward a single vanishing point. One-point with Landscape Horizon adds an explicit horizontal line at the horizon to anchor the scene. Two-point converges to two distinct vanishing points along the horizon for an off-axis terrain look. Isometric uses parallel-oblique projection — no convergence but with a tilted depth axis. Free 3D routes the terrain through the shared 3D engine for free yaw/pitch/roll orbit plus the Shading & Lines powers (depth cue, silhouette, creases, hatching).',
+    },
+    'terrain.projection': {
+      title: 'Projection (Free 3D)',
+      description: 'Orthographic keeps parallel scanlines (no foreshortening). Perspective adds one-point pinhole convergence governed by Camera Distance and Perspective Strength.',
+    },
+    'terrain.cameraDistance': {
+      title: 'Camera Distance (Free 3D)',
+      description: 'Perspective only: how far the pinhole camera sits from the terrain. Larger distances flatten the perspective; smaller distances exaggerate it.',
+    },
+    'terrain.focalLength': {
+      title: 'Perspective Strength (Free 3D)',
+      description: 'Perspective only: focal length of the pinhole projection. Higher values strengthen the foreshortening of distant terrain.',
+    },
+    'terrain.yaw': {
+      title: 'Yaw (Free 3D)',
+      description: 'Rotates the terrain about the vertical axis — turn the landscape left/right to view it from a different compass bearing.',
+    },
+    'terrain.pitch': {
+      title: 'Pitch (Free 3D)',
+      description: 'Tilts the terrain toward or away from the camera — from a near top-down map to a low grazing horizon view.',
+    },
+    'terrain.roll': {
+      title: 'Roll (Free 3D)',
+      description: 'Banks the terrain about the view axis, rotating the whole scene within the canvas plane.',
+    },
+    'terrain.topWidth': {
+      title: 'Top Width (Free 3D)',
+      description: 'Fans the rectangular footprint into a trapezoid by widening the far (top) edge relative to the near (base) edge — 1× leaves it square, up to 10× opens the back of the scene out like a wide vista.',
     },
     'terrain.horizonHeight': {
       title: 'Horizon Height',

@@ -433,6 +433,8 @@
   const getRawExportPaths = (layer, options = {}) => {
     if (!layer) return [];
     if (isMaskLayerGeometryHidden(layer)) return [];
+    if (layer._morphConsumed) return [];
+    if (layer.isGroup && Array.isArray(layer.morphedPaths)) return clonePathsWithMeta(layer.morphedPaths);
     const { useOptimized = false } = options;
     const source =
       useOptimized && Array.isArray(layer.optimizedPaths)
@@ -446,6 +448,7 @@
   const getVisibleExportPaths = (layer, options = {}) => {
     if (!layer) return [];
     if (isMaskLayerGeometryHidden(layer)) return [];
+    if (layer._morphConsumed) return [];
     if (layer.displayMaskActive && Array.isArray(layer.displayPaths) && layer.displayPaths.length) return clonePathsWithMeta(layer.displayPaths);
     return getRawExportPaths(layer, options);
   };
@@ -491,6 +494,17 @@
       .filter(([, value]) => value !== undefined && value !== null && value !== false && value !== '')
       .map(([key, value]) => ` ${key}="${escapeXmlAttr(value)}"`)
       .join('');
+
+  const getPathStrokeDash = (path) => {
+    const shared = window.Vectura?.Geometry3D?.getPathStrokeDash;
+    if (typeof shared === 'function') return shared(path);
+    const meta = path?.meta || {};
+    if (Array.isArray(meta.strokeDash) && meta.strokeDash.length) {
+      const dash = meta.strokeDash.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0);
+      if (dash.length) return dash;
+    }
+    return meta.hiddenLine ? [3, 2] : null;
+  };
 
   const stepPrecision = (step) => {
     const s = step?.toString?.() || '';
@@ -661,6 +675,7 @@
     cloneNoiseDef,
     RINGS_NOISE_DEFS,
     TOPO_NOISE_DEFS,
+    RASTER_PLANE_NOISE_DEFS,
     FLOWFIELD_NOISE_DEFS,
     GRID_NOISE_DEFS,
     PHYLLA_NOISE_DEFS,
@@ -817,6 +832,34 @@
   const pathToSvg = (path, precision, useCurves, sharpEdges = false) => {
     if (!path || path.length < 2) return '';
     const fmt = (n) => Number(n).toFixed(precision);
+    // Native cubic export when bezier metadata is present — mirrors
+    // Renderer.tracePath so the plotted SVG matches the on-screen curve exactly.
+    // `meta.forceCurves` (stamped by GeometryUtils smoothing / Geometry3D
+    // .smoothToBezier / the morph modifier) renders as cubics even when the
+    // layer's `curves` toggle is off, so a *Smoothing slider curves the line on
+    // its own. `meta.straight` always wins and forces a verbatim polyline.
+    const forceCurves = path.meta?.forceCurves === true;
+    const anchors = (useCurves || forceCurves) && !path.meta?.straight ? path.meta?.anchors : null;
+    const hasHandles = Array.isArray(anchors) && anchors.some((a) => a && (a.in || a.out));
+    if (hasHandles && anchors.length >= 2) {
+      const closed = path.meta?.closed === true;
+      let d = `M ${fmt(anchors[0].x)} ${fmt(anchors[0].y)}`;
+      for (let i = 0; i < anchors.length - 1; i++) {
+        const a = anchors[i];
+        const b = anchors[i + 1];
+        const c1 = a.out || a;
+        const c2 = b.in || b;
+        d += ` C ${fmt(c1.x)} ${fmt(c1.y)} ${fmt(c2.x)} ${fmt(c2.y)} ${fmt(b.x)} ${fmt(b.y)}`;
+      }
+      if (closed) {
+        const a = anchors[anchors.length - 1];
+        const b = anchors[0];
+        const c1 = a.out || a;
+        const c2 = b.in || b;
+        d += ` C ${fmt(c1.x)} ${fmt(c1.y)} ${fmt(c2.x)} ${fmt(c2.y)} ${fmt(b.x)} ${fmt(b.y)} Z`;
+      }
+      return d;
+    }
     // Mirror Renderer.tracePath: `meta.straight` geometry (e.g. mask fragments
     // pre-flattened by GeometryUtils.flattenSmoothedPath) is already baked and
     // must be emitted verbatim, never re-smoothed, independent of `useCurves`.
@@ -896,6 +939,7 @@
     getRawExportPaths,
     getVisibleExportPaths,
     hardClipExportPaths,
+    getPathStrokeDash,
   };
 
   const renderPreviewSvg = (type, params, options = {}) => {
@@ -1332,6 +1376,25 @@
     constructor(app) {
       this._init(app);
     }
+
+    updateStats(s) {
+      const dist = document.getElementById('stat-dist');
+      const time = document.getElementById('stat-time');
+      const lines = document.getElementById('stat-lines');
+      if (!dist || !time) return;
+      dist.innerText = s.distance;
+      time.innerText = s.time;
+      if (lines) lines.innerText = s.lines?.toString?.() || '0';
+    }
+
+    resetPanes() {
+      const leftPane = document.getElementById('left-pane');
+      const rightPane = document.getElementById('right-pane');
+      const bottomPane = document.getElementById('bottom-pane');
+      if (leftPane) leftPane.classList.remove('pane-collapsed', 'pane-force-open');
+      if (rightPane) rightPane.classList.remove('pane-collapsed', 'pane-force-open');
+      if (bottomPane) bottomPane.classList.remove('bottom-pane-collapsed');
+    }
   }
 
   // ── Orchestrator init (Meridian Unit 1.9c → 1.10) ──────────────────
@@ -1521,6 +1584,7 @@
       WAVE_NOISE_DEFS,
       RINGS_NOISE_DEFS,
       TOPO_NOISE_DEFS,
+      RASTER_PLANE_NOISE_DEFS,
       FLOWFIELD_NOISE_DEFS,
       GRID_NOISE_DEFS,
       PHYLLA_NOISE_DEFS,
@@ -1854,6 +1918,16 @@
   }
   if (window.Vectura?.UI?.Modals?.ImageAsset?.installOn) {
     window.Vectura.UI.Modals.ImageAsset.installOn(UI.prototype);
+  }
+
+  // rasterPlane source widget + paint modal (mountImageSourceWidget /
+  // openImagePaintModal). Composes this.openModal / this.loadNoiseImageFile /
+  // this.app.regen — no IIFE-local deps.
+  if (window.Vectura?.UI?.Modals?.ImageSource?.bind) {
+    window.Vectura.UI.Modals.ImageSource.bind({});
+  }
+  if (window.Vectura?.UI?.Modals?.ImageSource?.installOn) {
+    window.Vectura.UI.Modals.ImageSource.installOn(UI.prototype);
   }
 
   // Phase 3 step 5 (final modal): register modals/export-svg.js. The largest

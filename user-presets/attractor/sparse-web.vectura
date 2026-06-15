@@ -1,0 +1,25 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Sparse Web",
+  "meta": {
+    "presetId": "attractor-sparse-web",
+    "group": "Geometric",
+    "system": "attractor",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "attractor",
+      "params": {
+        "type": "lorenz",
+        "iter": 600,
+        "scale": 6,
+        "dt": 0.02,
+        "sigma": 10,
+        "rho": 28,
+        "beta": 2.66
+      }
+    }
+  ]
+}

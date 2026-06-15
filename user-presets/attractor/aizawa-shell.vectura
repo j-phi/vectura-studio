@@ -1,0 +1,22 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Aizawa Shell",
+  "meta": {
+    "presetId": "attractor-aizawa-shell",
+    "group": "Classic",
+    "system": "attractor",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "attractor",
+      "params": {
+        "type": "aizawa",
+        "iter": 3000,
+        "scale": 5,
+        "dt": 0.01
+      }
+    }
+  ]
+}

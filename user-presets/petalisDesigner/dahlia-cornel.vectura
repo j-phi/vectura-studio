@@ -1,0 +1,35 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Dahlia Cornel",
+  "meta": {
+    "presetId": "dahlia-cornel",
+    "group": "Complex",
+    "system": "petalisDesigner",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "petalisDesigner",
+      "params": {
+        "petalProfile": "teardrop",
+        "petalScale": 30,
+        "petalWidthRatio": 0.5,
+        "count": 420,
+        "ringMode": "dual",
+        "innerCount": 180,
+        "outerCount": 260,
+        "ringSplit": 0.35,
+        "innerShading": true,
+        "innerDensity": 0.6,
+        "outerShading": true,
+        "outerDensity": 0.4,
+        "layoutMode": "spiral",
+        "ringOffset": 12,
+        "rotationJitter": 0,
+        "sizeJitter": 0,
+        "countJitter": 0
+      }
+    }
+  ]
+}

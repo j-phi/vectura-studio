@@ -1,0 +1,28 @@
+{
+  "type": "vectura",
+  "name": "Default",
+  "meta": {
+    "presetId": "attractor-default",
+    "group": "Classic",
+    "system": "attractor",
+    "savedAt": 1781387706052
+  },
+  "layers": [
+    {
+      "type": "attractor",
+      "params": {
+        "preset": "attractor-default",
+        "type": "lorenz",
+        "iter": 1200,
+        "scale": 3,
+        "sigma": 10,
+        "rho": 28,
+        "beta": 2.66,
+        "dt": 0.01,
+        "smoothing": 0,
+        "simplify": 0,
+        "curves": false
+      }
+    }
+  ]
+}

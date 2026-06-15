@@ -1,0 +1,60 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "SVG Hatch Fill + Noise",
+  "meta": {
+    "presetId": "svg-distort-hatched",
+    "group": "Classic",
+    "system": "svgDistort",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "svgDistort",
+      "params": {
+        "showOutlines": true,
+        "fillMode": "hatch",
+        "fillDensity": 6,
+        "autoFit": true,
+        "scale": 1,
+        "noises": [
+          {
+            "id": "noise-1",
+            "enabled": true,
+            "type": "simplex",
+            "blend": "add",
+            "amplitude": 3,
+            "zoom": 0.015,
+            "freq": 1,
+            "angle": 0,
+            "shiftX": 0,
+            "shiftY": 0,
+            "tileMode": "off",
+            "tilePadding": 0,
+            "patternScale": 1,
+            "warpStrength": 1,
+            "cellularScale": 1,
+            "cellularJitter": 1,
+            "stepsCount": 5,
+            "seed": 0,
+            "octaves": 2,
+            "lacunarity": 2,
+            "gain": 0.5,
+            "noiseStyle": "linear",
+            "noiseThreshold": 0,
+            "imageWidth": 1,
+            "imageHeight": 1,
+            "microFreq": 0,
+            "imageInvertColor": false,
+            "imageInvertOpacity": false,
+            "imageId": "",
+            "imageName": "",
+            "imagePreview": "",
+            "imageAlgo": "luma",
+            "imageEffects": []
+          }
+        ]
+      }
+    }
+  ]
+}

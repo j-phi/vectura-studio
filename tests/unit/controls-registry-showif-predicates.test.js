@@ -105,14 +105,36 @@ describe('controls-registry compile gate', () => {
     expect(failures, `predicates threw on {}:\n${failures.join('\n')}`).toEqual([]);
   });
 
+  it('polyhedron hides controls that do not affect the selected solid', () => {
+    const defs = CONTROL_DEFS.polyhedron;
+    const sideCount = defs.find((def) => def.id === 'sideCount');
+    const depth = defs.find((def) => def.id === 'depth');
+    const pointFill = defs.find((def) => def.id === 'vertexOcclusionMode');
+
+    expect(sideCount.showIf({ solidType: 'prism' })).toBe(true);
+    expect(sideCount.showIf({ solidType: 'buckyball' })).toBe(false);
+    expect(depth.showIf({ solidType: 'bipyramid' })).toBe(true);
+    expect(depth.showIf({ solidType: 'icosahedron' })).toBe(false);
+    expect(pointFill.label).toBe('Point Fill');
+    expect(pointFill.options.map((option) => option.label)).toEqual(['Outline Only', 'Hide Interior']);
+  });
+
   it('petalisDesigner controls are derived from petalis without designer-removed ids/labels/types', () => {
     expect(Array.isArray(CONTROL_DEFS.petalisDesigner)).toBe(true);
     const petalisDesignerIds = new Set(
       CONTROL_DEFS.petalisDesigner.map((d) => d?.id).filter(Boolean),
     );
     // Spot-check a few removed ids per the migration spec § PETALIS_DESIGNER_REMOVED_CONTROL_IDS
-    expect(petalisDesignerIds.has('petalProfile')).toBe(false);
     expect(petalisDesignerIds.has('count')).toBe(false);
     expect(petalisDesignerIds.has('innerCount')).toBe(false);
+    // The named-profile picker + per-petal shape params now live INSIDE the Petal
+    // Designer (its own thumbnail gallery + per-ring Advanced sliders), so the
+    // duplicate panel controls are stripped.
+    expect(petalisDesignerIds.has('petalProfile')).toBe(false);
+    expect(petalisDesignerIds.has('petalScale')).toBe(false);
+    expect(petalisDesignerIds.has('petalWidthRatio')).toBe(false);
+    expect(CONTROL_DEFS.petalisDesigner.some((d) => d?.type === 'petalProfileGallery')).toBe(false);
+    // Non-designer geometry params stay.
+    expect(petalisDesignerIds.has('petalSteps')).toBe(true);
   });
 });

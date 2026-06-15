@@ -2,18 +2,36 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
+const mockResolveZoom = (noiseDef, fallbackZoom = 1) => {
+  const rawZoom = Math.max(0.0001, noiseDef?.zoom ?? fallbackZoom);
+  if ((noiseDef?.type || 'simplex') !== 'polygon') return rawZoom;
+  const referenceZoom = Math.max(0.0001, noiseDef?.polygonZoomReference ?? fallbackZoom);
+  return (referenceZoom * referenceZoom) / rawZoom;
+};
+
 const makeNoiseRackMock = () => ({
   createEvaluator({ noise }) {
-    return {
-      evaluate(x, y) { return noise.noise2D(x, y); },
+    const evaluate = (x, y) => noise.noise2D(x, y);
+    // Mirror the real sampleScalar FBM loop so octaves/lacunarity/gain are exercised
+    // (terrain's sampleMountain now calls this, not the single-octave evaluate).
+    const sampleScalar = (x, y, noiseDef) => {
+      const zoom = mockResolveZoom(noiseDef, noiseDef?.zoom ?? 1);
+      const baseFreq = Math.max(0.05, noiseDef?.freq ?? 1);
+      const gain = Math.max(0.05, Math.min(1, noiseDef?.gain ?? 0.5));
+      const lacunarity = Math.max(1.05, noiseDef?.lacunarity ?? 2);
+      const octaves = Math.max(1, Math.floor(noiseDef?.octaves ?? 1));
+      let total = 0, amp = 1, freq = 1, norm = 0;
+      for (let i = 0; i < octaves; i++) {
+        const tx = x * zoom * baseFreq * freq;
+        const ty = y * zoom * baseFreq * freq;
+        total += evaluate(tx, ty) * amp;
+        norm += amp; amp *= gain; freq *= lacunarity;
+      }
+      return norm ? total / norm : total;
     };
+    return { evaluate, sampleScalar };
   },
-  resolveEffectiveZoom(noiseDef, fallbackZoom = 1) {
-    const rawZoom = Math.max(0.0001, noiseDef?.zoom ?? fallbackZoom);
-    if ((noiseDef?.type || 'simplex') !== 'polygon') return rawZoom;
-    const referenceZoom = Math.max(0.0001, noiseDef?.polygonZoomReference ?? fallbackZoom);
-    return (referenceZoom * referenceZoom) / rawZoom;
-  },
+  resolveEffectiveZoom: mockResolveZoom,
   combineBlend({ combined, value, blend = 'add' }) {
     if (combined === undefined) return value;
     if (blend === 'subtract') return combined - value;

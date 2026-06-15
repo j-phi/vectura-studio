@@ -105,7 +105,17 @@
         }
         return;
       }
-      if (this.inlinePetalDesigner?.focused && !e.metaKey && !e.ctrlKey) {
+      // Let the inline Petal Designer capture plain keys only when the user is
+      // actually working inside it (its DOM holds focus / the event came from
+      // it). Previously a sticky `focused` flag — set on mount, never cleared —
+      // swallowed every non-modifier app shortcut whenever a petalis layer was
+      // merely active.
+      const inlineRoot = this.inlinePetalDesigner?.root;
+      const inInlineDesigner =
+        inlineRoot &&
+        (inlineRoot.contains(e.target) ||
+          (typeof document !== 'undefined' && inlineRoot.contains(document.activeElement)));
+      if (inInlineDesigner && !e.metaKey && !e.ctrlKey) {
         return;
       }
 
@@ -485,27 +495,15 @@
     this._LVL_I = window.Vectura.Icons.layer;
 
     // ── Layers V8: add dropdown ──────────────────────────────────
-    const _ALGO_LIST = [
-      { type: 'attractor',       label: 'Attractor' },
-      { type: 'boids',           label: 'Boids' },
-      { type: 'flowfield',       label: 'Flowfield' },
-      { type: 'grid',            label: 'Grid' },
-      { type: 'harmonograph',    label: 'Harmonograph' },
-      { type: 'hyphae',          label: 'Hyphae' },
-      { type: 'lissajous',       label: 'Lissajous' },
-      { type: 'pendula',         label: 'Pendula' },
-      { type: 'pattern',         label: 'Pattern' },
-      { type: 'petalisDesigner', label: 'Petalis Designer' },
-      { type: 'phylla',          label: 'Phylla' },
-      { type: 'rainfall',        label: 'Rainfall' },
-      { type: 'rings',           label: 'Rings' },
-      { type: 'shapePack',       label: 'Shapepack' },
-      { type: 'spiral',          label: 'Spiral' },
-      { type: 'svgDistort',      label: 'SVG Import' },
-      { type: 'terrain',         label: 'Terrain' },
-      { type: 'topo',            label: 'Topo' },
-      { type: 'wavetable',       label: 'Wavetable' },
-    ];
+    const _ALGO_LIST = (() => {
+      const shared = window.Vectura.UI?.utils?.getDrawableAlgorithmOptions?.();
+      if (Array.isArray(shared) && shared.length) return shared;
+      const defaults = window.Vectura.ALGO_DEFAULTS || {};
+      return Object.keys(defaults)
+        .filter((type) => defaults[type] && !defaults[type].hidden)
+        .map((type) => ({ type, label: defaults[type]?.label || type, is3d: !!defaults[type]?.is3d }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+    })();
     // Build the algo submenu as a body-fixed element to escape pane stacking context
     let algoSubmenuEl = document.getElementById('lvl-algo-submenu');
     if (algoSubmenuEl) algoSubmenuEl.remove();
@@ -520,10 +518,23 @@
       if (!c) return 'currentColor';
       return c[type] || c._default || 'currentColor';
     };
-    algoSubmenuEl.innerHTML = _ALGO_LIST.map(({ type, label }) =>
-      `<div class="lvl-algo-sub-item" data-add="algo" data-algo-type="${type}">` +
-      `<span class="lvl-algo-sub-ico" style="color:${this._algoMenuColor(type)}">${(this._LVL_I[type] ?? this._LVL_I.grid)?.() ?? ''}</span>${label}</div>`
-    ).join('');
+    {
+      const list2d = _ALGO_LIST.filter((item) => !item.is3d);
+      const list3d = _ALGO_LIST.filter((item) => item.is3d);
+      const renderItem = ({ type, label }) =>
+        `<div class="lvl-algo-sub-item" data-add="algo" data-algo-type="${type}">` +
+        `<span class="lvl-algo-sub-ico" style="color:${this._algoMenuColor(type)}">${(this._LVL_I[type] ?? this._LVL_I.grid)?.() ?? ''}</span>${label}</div>`;
+      const parts = [];
+      if (list2d.length) {
+        parts.push('<div class="algo-group-div">2D</div>');
+        list2d.forEach((item) => parts.push(renderItem(item)));
+      }
+      if (list3d.length) {
+        parts.push('<div class="algo-group-div algo-group-sep">3D</div>');
+        list3d.forEach((item) => parts.push(renderItem(item)));
+      }
+      algoSubmenuEl.innerHTML = parts.join('');
+    }
     this._refreshAlgoSubmenuColors = () => {
       if (!algoSubmenuEl) return;
       algoSubmenuEl.querySelectorAll('.lvl-algo-sub-item').forEach((item) => {
@@ -541,9 +552,13 @@
     const _showAlgoSub = () => {
       clearTimeout(_algoSubHideTimer);
       const r = algoParentItem.getBoundingClientRect();
-      algoSubmenuEl.style.top = `${r.top}px`;
-      algoSubmenuEl.style.left = `${r.left - _ALGO_SUB_W}px`;
+      // Reveal first so we can measure the (possibly scroll-capped) height.
       algoSubmenuEl.style.display = 'block';
+      const PAD = 8;
+      const mh = algoSubmenuEl.offsetHeight;
+      const top = Math.max(PAD, Math.min(window.innerHeight - mh - PAD, r.top));
+      algoSubmenuEl.style.top = `${top}px`;
+      algoSubmenuEl.style.left = `${r.left - _ALGO_SUB_W}px`;
     };
     const _hideAlgoSub = () => {
       _algoSubHideTimer = setTimeout(() => { algoSubmenuEl.style.display = 'none'; }, 80);
@@ -620,6 +635,9 @@
       } else if (t === 'mirror') {
         this.insertMirrorModifier();
         _toast('Added mirror modifier');
+      } else if (t === 'morph') {
+        this.insertMorphModifier();
+        _toast('Added morph modifier');
       }
       this.setActiveTool?.('select');
       this.renderLayers();

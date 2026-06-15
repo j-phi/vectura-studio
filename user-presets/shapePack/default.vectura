@@ -1,0 +1,34 @@
+{
+  "type": "vectura",
+  "name": "Default",
+  "meta": {
+    "presetId": "shapepack-default",
+    "group": "Classic",
+    "system": "shapePack",
+    "savedAt": 1781387706052
+  },
+  "layers": [
+    {
+      "type": "shapePack",
+      "params": {
+        "label": "Shape Pack",
+        "preset": "shapepack-default",
+        "shape": "circle",
+        "count": 500,
+        "minR": 2,
+        "maxR": 20,
+        "padding": 1,
+        "attempts": 200,
+        "segments": 32,
+        "rotationStep": 0,
+        "perspectiveType": "none",
+        "perspective": 0,
+        "perspectiveX": 0,
+        "perspectiveY": 0,
+        "smoothing": 0,
+        "simplify": 0,
+        "curves": true
+      }
+    }
+  ]
+}

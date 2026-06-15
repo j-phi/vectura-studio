@@ -1,0 +1,24 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Damped Knot",
+  "meta": {
+    "presetId": "lissajous-damped-knot",
+    "group": "Complex",
+    "system": "lissajous",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "lissajous",
+      "params": {
+        "freqX": 7,
+        "freqY": 5,
+        "phase": 1.5,
+        "damping": 0.001,
+        "resolution": 600,
+        "scale": 0.8
+      }
+    }
+  ]
+}

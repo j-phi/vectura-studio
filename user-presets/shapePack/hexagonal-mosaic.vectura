@@ -1,0 +1,25 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Hexagonal Mosaic",
+  "meta": {
+    "presetId": "shapepack-hexagonal-mosaic",
+    "group": "Geometric",
+    "system": "shapePack",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "shapePack",
+      "params": {
+        "shape": "polygon",
+        "count": 200,
+        "minR": 6,
+        "maxR": 12,
+        "padding": 1,
+        "attempts": 300,
+        "segments": 6
+      }
+    }
+  ]
+}

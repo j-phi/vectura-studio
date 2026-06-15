@@ -1,0 +1,23 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Chaos Mesh",
+  "meta": {
+    "presetId": "grid-chaos-mesh",
+    "group": "Complex",
+    "system": "grid",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "grid",
+      "params": {
+        "rows": 25,
+        "cols": 25,
+        "distortion": 30,
+        "chaos": 8,
+        "type": "warp"
+      }
+    }
+  ]
+}

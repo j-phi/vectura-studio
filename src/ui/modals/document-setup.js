@@ -50,6 +50,18 @@
 
   const PANEL_ID = 'settings-panel';
 
+  // The Contributor / Presets section (Developer Mode) is only surfaced when the
+  // app is served locally — end users on the deployed site never see it exists.
+  const isDevEligible = () => {
+    try {
+      const loc = (typeof location !== 'undefined') ? location : null;
+      if (!loc) return false;
+      if (loc.protocol === 'file:') return true;
+      const h = loc.hostname || '';
+      return h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h === '0.0.0.0';
+    } catch (_) { return false; }
+  };
+
   // Markup rebuilt against the Meridian skin component vocabulary
   // (`.sect`, `.sect-hdr`, `.sect-body`, `.ctrl-sel`, `.num-step`, `.seg-ctrl`,
   // `.sw-toggle`, `.value-chip`, `.ctrl-slider`) so the drawer paints in the
@@ -204,6 +216,16 @@
           <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
             ${swToggle('set-show-guides', 'Show guides')}
             ${swToggle('set-snap-guides', 'Snap to guides')}
+            <div class="ctrl-row">
+              <label class="ctrl-lbl" for="set-preview-3d-quality">3D move preview</label>
+              <div class="ctrl-sel-wrap" style="width:120px">
+                <select id="set-preview-3d-quality" class="ctrl-sel">
+                  <option value="draft">Draft (fast)</option>
+                  <option value="balanced">Balanced</option>
+                  <option value="high">High fidelity</option>
+                </select>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -221,6 +243,9 @@
               </span>
             </div>
             ${swToggle('set-selection-outline', 'Selection outline')}
+            <div id="set-selection-outline-hide3d-row">
+              ${swToggle('set-selection-outline-hide3d', 'Hide outline on 3D layers', 'true')}
+            </div>
             <div class="color-thickness-control">
               <div class="style-field">
                 <span class="style-field-label">Line Color</span>
@@ -294,6 +319,28 @@
           </div>
         </div>
 
+        <div class="sect sect--color-history">
+          <button type="button" class="sect-hdr" data-sect-toggle aria-expanded="false">
+            Preset Storage
+            <span class="sect-arrow"></span>
+          </button>
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
+            <p class="ctrl-hint">Custom presets always save in this browser. Sync to a folder to keep a live copy on disk — every preset you save mirrors there automatically, across sessions. Or export a bundle to move them between machines.</p>
+            <div id="preset-storage-body"><!-- rendered dynamically by renderPresetStorageUi() --></div>
+          </div>
+        </div>
+${isDevEligible() ? `
+        <div class="sect sect--color-history">
+          <button type="button" class="sect-hdr" data-sect-toggle aria-expanded="false">
+            Contributor / Presets
+            <span class="sect-arrow"></span>
+          </button>
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
+            ${swToggle('set-dev-mode', 'Developer mode')}
+            <p class="ctrl-hint">When on, the preset Save dialog can download a bundler-ready .vectura into the project's user-presets/ workflow.</p>
+          </div>
+        </div>
+` : ''}
       </div>
     </div>
   `.trim();
@@ -677,6 +724,7 @@
     const setMarginLineStyleReset = getEl('set-margin-line-style-reset');
     const setShowGuides = getEl('set-show-guides');
     const setSnapGuides = getEl('set-snap-guides');
+    const setPreview3dQuality = getEl('set-preview-3d-quality', { silent: true });
     const setShowDocumentDimensions = getEl('set-show-document-dimensions', { silent: true });
     const setSelectionOutline = getEl('set-selection-outline');
     const setSelectionOutlineColorPill = getEl('set-selection-outline-color-pill');
@@ -704,6 +752,15 @@
       setCropExports.onchange = (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         SETTINGS.cropExports = e.target.checked;
+        this.app.persistPreferencesDebounced?.();
+      };
+    }
+
+    if (setPreview3dQuality) {
+      setPreview3dQuality.value = SETTINGS.preview3dQuality || 'balanced';
+      setPreview3dQuality.onchange = (e) => {
+        const next = e.target.value;
+        SETTINGS.preview3dQuality = ['draft', 'balanced', 'high'].includes(next) ? next : 'balanced';
         this.app.persistPreferencesDebounced?.();
       };
     }
@@ -905,10 +962,23 @@
       };
     }
 
+    const selectionOutlineHide3dRow = getEl('set-selection-outline-hide3d-row', { silent: true });
+    const setSelectionOutlineHide3d = getEl('set-selection-outline-hide3d', { silent: true });
+    const syncHide3dRowVisibility = (outlineOn) => {
+      if (selectionOutlineHide3dRow) selectionOutlineHide3dRow.style.display = outlineOn ? '' : 'none';
+    };
     if (setSelectionOutline) {
       setSelectionOutline.onchange = (e) => {
         if (this.app.pushHistory) this.app.pushHistory();
         SETTINGS.selectionOutline = e.target.checked;
+        syncHide3dRowVisibility(e.target.checked);
+        this.app.render();
+      };
+    }
+    if (setSelectionOutlineHide3d) {
+      setSelectionOutlineHide3d.onchange = (e) => {
+        if (this.app.pushHistory) this.app.pushHistory();
+        SETTINGS.selectionOutlineHide3d = e.target.checked;
         this.app.render();
       };
     }
@@ -990,6 +1060,15 @@
         this.app?.render?.();
       };
     }
+    const setDevMode = getEl('set-dev-mode', { silent: true });
+    if (setDevMode) {
+      setDevMode.onchange = (e) => {
+        SETTINGS.devMode = e.target.checked;
+        this.app?.persistPreferences?.();
+      };
+    }
+    // Preset Storage section is rendered dynamically (async folder status).
+    this.renderPresetStorageUi?.();
     if (btnClearPreferences) {
       btnClearPreferences.onclick = () => {
         this.app.clearSavedPreferences?.();
@@ -1175,6 +1254,202 @@
     };
   }
 
+  /**
+   * Render the dynamic body of the "Preset Storage" section based on the live
+   * File System Access folder status. Safe on every browser: when FSA is
+   * unsupported the folder controls are omitted and only Export/Import remain.
+   * `this` is the UI instance.
+   */
+  // Brave ships the File System Access API but disables it behind a flag, so a
+  // Brave user gets `supported === false` even though folder sync is one toggle
+  // away — telling them "needs Chrome or Edge" is wrong and a dead end. The
+  // official `navigator.brave.isBrave()` is async, but the `navigator.brave`
+  // object is present only in Brave, so its synchronous presence is a reliable
+  // detector for a render path that can't await.
+  const isBraveBrowser = () => {
+    try {
+      return typeof navigator !== 'undefined' && !!navigator.brave
+        && typeof navigator.brave.isBrave === 'function';
+    } catch (_) { return false; }
+  };
+
+  // Pure: the hint shown in #preset-storage-folder when the File System Access
+  // API is unavailable. Three distinct causes → three distinct fixes:
+  //   - file:// page  → serve over http (any Chromium browser; checked first
+  //                      because the API is absent on file:// even in Chrome)
+  //   - Brave         → enable the flag + restart (then the http/Brave paths
+  //                      resolve and the "Sync to a folder…" button appears)
+  //   - anything else → switch to Chrome or Edge
+  // Exported for unit testing.
+  const presetFolderUnsupportedHint = ({ onFile, isBrave } = {}) => {
+    if (onFile) return `<p class="ctrl-hint">Live folder sync is unavailable on file:// pages. Serve the app over http — run <code>python -m http.server</code> and open <code>http://localhost:8000</code> in Chrome or Edge — and a “Sync to a folder…” button appears here. Until then, use Export / Import below.</p>`;
+    if (isBrave) return `<p class="ctrl-hint">Brave blocks folder access by default. Enable it at <code>brave://flags/#file-system-access-api</code>, restart Brave, and a “Sync to a folder…” button appears here. Until then, use Export / Import below.</p>`;
+    return `<p class="ctrl-hint">Live folder sync needs Chrome or Edge. On this browser, use Export / Import below to move presets between machines.</p>`;
+  };
+
+  function renderPresetStorageUi() {
+    const { getEl } = requireDeps('renderPresetStorageUi');
+    const host = getEl('preset-storage-body', { silent: true });
+    if (!host) return;
+    const Store = window.Vectura && window.Vectura.PresetFolderStore;
+    const Bundle = window.Vectura && window.Vectura.PresetBundle;
+    const Sync = window.Vectura && window.Vectura.PresetSync;
+    const supported = !!(Store && Store.isSupported());
+    const ui = this;
+
+    // Pull external folder changes into the browser, refresh open galleries, and
+    // toast a summary. Shared by the Refresh button, connect, and reconnect.
+    const pullAndRefresh = async (announceClean) => {
+      if (!Sync || typeof Sync.pullFromFolder !== 'function') return;
+      let res;
+      try { res = await Sync.pullFromFolder(); } catch (_) { return; }
+      if (res && (res.imported || res.updated)) {
+        ui.buildControls?.();
+        const bits = [];
+        if (res.imported) bits.push(`imported ${res.imported}`);
+        if (res.updated) bits.push(`updated ${res.updated}`);
+        toast(`Preset folder: ${bits.join(', ')}.`, 'success');
+      } else if (announceClean) {
+        toast('Preset folder is up to date.', 'info');
+      }
+    };
+
+    const toast = (msg, variant = 'success') => {
+      const T = window.Vectura?.UI?.overlays?.Toast;
+      if (T) T.show({ message: msg, variant });
+    };
+
+    // Build the static shell: live folder sync is the headline (#preset-storage-folder,
+    // filled after the async status query); the bundle Export/Import flow is a
+    // demoted secondary row for moving presets between machines.
+    host.innerHTML = `
+      <div id="preset-storage-folder"></div>
+      <div class="preset-storage-secondary">
+        <p class="ctrl-hint preset-storage-secondary-hint">Move presets between machines</p>
+        <div class="preset-storage-actions">
+          <button id="btn-preset-export" type="button" class="hdr-btn">Export bundle…</button>
+          <button id="btn-preset-import" type="button" class="hdr-btn">Import…</button>
+        </div>
+      </div>
+    `;
+
+    // ── Export / Import (all browsers) ─────────────────────────────────────────
+    const exportBtn = host.querySelector('#btn-preset-export');
+    if (exportBtn) exportBtn.onclick = () => {
+      if (!Bundle) return;
+      const n = Bundle.countAll();
+      if (!n) { toast('No custom presets to export yet.', 'info'); return; }
+      const stamp = new Date().toISOString().slice(0, 10);
+      if (Bundle.download(stamp)) toast(`Exported ${n} preset${n === 1 ? '' : 's'}.`, 'success');
+    };
+    const importBtn = host.querySelector('#btn-preset-import');
+    if (importBtn) importBtn.onclick = () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.json,application/json';
+      input.onchange = () => {
+        const file = input.files && input.files[0];
+        if (!file || !Bundle) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          let bundle;
+          try { bundle = JSON.parse(reader.result); } catch (_) { toast('Could not read bundle — invalid JSON.', 'danger'); return; }
+          if (!Bundle.isValidBundle(bundle)) { toast('Not a Vectura preset bundle.', 'danger'); return; }
+          const Dialog = window.Vectura?.UI?.overlays?.Dialog;
+          const doImport = (mode) => {
+            const res = Bundle.importBundle(bundle, mode);
+            if (res) { toast(`Imported ${res.imported} preset${res.imported === 1 ? '' : 's'} across ${res.systems.length} algorithm${res.systems.length === 1 ? '' : 's'}.`, 'success'); ui.buildControls?.(); }
+          };
+          if (Dialog) {
+            const dlg = Dialog(document.body, {
+              title: 'Import presets',
+              message: 'Merge these presets into your library, or replace your presets for the included algorithms?',
+              confirmLabel: 'Replace', cancelLabel: 'Merge', destructive: true,
+              onConfirm: () => { dlg.destroy(); doImport('replace'); },
+              onCancel: () => { dlg.destroy(); doImport('merge'); },
+            });
+            dlg.open();
+          } else { doImport('merge'); }
+        };
+        reader.readAsText(file);
+      };
+      input.click();
+    };
+
+    if (!supported) {
+      const folder = host.querySelector('#preset-storage-folder');
+      // The File System Access API is gated to secure contexts: it is also
+      // absent on file:// pages even in Chrome/Edge, and disabled-by-default in
+      // Brave. Distinguish the causes so a user isn't told (wrongly) to switch
+      // browsers when they just need to serve over http or flip a Brave flag.
+      const onFile = typeof window !== 'undefined' && window.location && window.location.protocol === 'file:';
+      if (folder) folder.innerHTML = presetFolderUnsupportedHint({ onFile, isBrave: isBraveBrowser() });
+      return;
+    }
+
+    // ── Folder controls (Chromium) ─────────────────────────────────────────────
+    const renderFolder = (status) => {
+      const folder = host.querySelector('#preset-storage-folder');
+      if (!folder) return;
+      if (status.connected) {
+        const paused = status.permission !== 'granted';
+        folder.innerHTML = `
+          <div class="preset-storage-folder-row">
+            <span class="preset-storage-dot ${paused ? 'is-paused' : 'is-live'}"></span>
+            <span class="preset-storage-folder-name">${status.name}</span>
+            <span class="ctrl-hint">${paused ? 'paused — reconnect to resume syncing' : 'live — syncing to disk'}</span>
+          </div>
+          <div class="preset-storage-actions">
+            ${paused ? '<button id="btn-folder-reconnect" type="button" class="add-btn">Reconnect</button>' : '<button id="btn-folder-refresh" type="button" class="hdr-btn">Refresh from folder</button>'}
+            <button id="btn-folder-change" type="button" class="hdr-btn">Change folder…</button>
+            <button id="btn-folder-disconnect" type="button" class="hdr-btn">Disconnect</button>
+          </div>`;
+        const rc = folder.querySelector('#btn-folder-reconnect');
+        if (rc) rc.onclick = async () => { if (await Store.reconnect()) { toast('Folder reconnected — syncing resumed.', 'success'); await pullAndRefresh(false); } renderPresetStorageUi.call(ui); };
+        const rf = folder.querySelector('#btn-folder-refresh');
+        if (rf) rf.onclick = async () => { await pullAndRefresh(true); renderPresetStorageUi.call(ui); };
+        folder.querySelector('#btn-folder-change').onclick = async () => { const r = await Store.connect(); if (r) { toast(`Syncing presets to "${r.name}".`, 'success'); await pullAndRefresh(false); } renderPresetStorageUi.call(ui); };
+        folder.querySelector('#btn-folder-disconnect').onclick = async () => { await Store.disconnect(); toast('Folder disconnected — presets stay in this browser.', 'info'); renderPresetStorageUi.call(ui); };
+      } else {
+        folder.innerHTML = `
+          <button id="btn-folder-connect" type="button" class="add-btn">Sync to a folder…</button>
+          <p class="ctrl-hint">Pick a folder once — every preset you save (and each update) is written there automatically, across sessions.</p>`;
+        folder.querySelector('#btn-folder-connect').onclick = async () => {
+          const r = await Store.connect();
+          if (!r) return;
+          toast(`Syncing presets to "${r.name}".`, 'success');
+          // 1) Import any presets the folder already holds (re-connect, or a
+          //    cloud-synced folder shared with another machine).
+          await pullAndRefresh(false);
+          // 2) Seed the folder with the user's browser presets it doesn't have
+          //    yet, written in the meta-tagged format (filename = slug(name)).
+          //    Skip presets already on disk — rewriting them would bump the file
+          //    mtime and trigger a spurious "update" on the next pull.
+          const slugify = (Sync && Sync.slug) || ((s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''));
+          let onDisk = new Set();
+          try { onDisk = new Set(((await Store.readAll()) || []).map((e) => `${e.system}/${e.slug}`)); } catch (_) { /* ignore */ }
+          const all = Bundle && Bundle.exportAll();
+          let copied = 0;
+          if (all) {
+            for (const system of Object.keys(all.presets)) {
+              for (const p of all.presets[system]) {
+                const slug = slugify(p.name) || system;
+                if (onDisk.has(`${system}/${slug}`)) continue;
+                const doc = Sync && Sync.buildDoc ? Sync.buildDoc(system, p)
+                  : { type: 'vectura', name: p.name, layers: [{ type: system, params: p.params || {} }] };
+                if (await Store.writePreset(system, slug, doc)) copied += 1;
+              }
+            }
+          }
+          if (copied) toast(`Copied ${copied} existing preset${copied === 1 ? '' : 's'} into the folder.`, 'success');
+          renderPresetStorageUi.call(ui);
+        };
+      }
+    };
+
+    Store.getStatus().then(renderFolder).catch(() => renderFolder({ connected: false }));
+  }
+
   Modals.DocumentSetup = {
     /**
      * Inject closure-captured legacy ui.js IIFE locals.
@@ -1183,6 +1458,9 @@
     bind(deps) {
       DEPS = deps || {};
     },
+    renderPresetStorageUi,
+    presetFolderUnsupportedHint,
+    isBraveBrowser,
     mount,
     bindHandlers,
     PANEL_HTML,
@@ -1207,6 +1485,10 @@
       // Meridian Unit 1.9b: bg color picker wiring (`inp-bg-color` + `bg-color-pill`).
       proto.bindBgColorListeners = function() {
         return bindBgColorListeners.call(this);
+      };
+      // Phase 2: dynamic Preset Storage section (FSA folder status + export/import).
+      proto.renderPresetStorageUi = function() {
+        return renderPresetStorageUi.call(this);
       };
     },
   };

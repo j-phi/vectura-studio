@@ -8,6 +8,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { exec } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const PORT = Number(process.argv[2] || process.env.PORT || 4173);
@@ -46,6 +47,38 @@ const server = http.createServer((req, res) => {
     return finish(400);
   }
   if (pathname.endsWith('/')) pathname += 'index.html';
+
+  // Dev-mode bundle trigger — spawned by the browser after a repo preset write.
+  if (pathname === '/api/bundle-presets') {
+    const corsHeaders = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    };
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, corsHeaders);
+      res.end();
+      return finish(204);
+    }
+    if (req.method === 'POST') {
+      const cmd = 'node scripts/build-user-presets.js && node scripts/build-user-wallpaper-recipes.js';
+      exec(cmd, { cwd: ROOT }, (err, _stdout, stderr) => {
+        if (err) {
+          process.stdout.write(`bundle-presets FAILED: ${(stderr || err.message).trim()}\n`);
+          send(res, 500, JSON.stringify({ ok: false, error: stderr || err.message }), {
+            'Content-Type': 'application/json; charset=utf-8', ...corsHeaders,
+          });
+          return finish(500);
+        }
+        process.stdout.write('bundle-presets OK\n');
+        send(res, 200, JSON.stringify({ ok: true }), {
+          'Content-Type': 'application/json; charset=utf-8', ...corsHeaders,
+        });
+        finish(200);
+      });
+      return;
+    }
+  }
 
   const resolved = path.resolve(ROOT, '.' + pathname);
   if (resolved !== ROOT && !resolved.startsWith(ROOT + path.sep)) {

@@ -1,0 +1,32 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Gardenia Jasminoides",
+  "meta": {
+    "presetId": "gardenia-jasminoides",
+    "group": "Classic",
+    "system": "petalisDesigner",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "petalisDesigner",
+      "params": {
+        "petalProfile": "oval",
+        "petalScale": 32,
+        "petalWidthRatio": 0.58,
+        "count": 200,
+        "ringMode": "dual",
+        "innerCount": 80,
+        "outerCount": 140,
+        "ringSplit": 0.35,
+        "centerType": "dome",
+        "layoutMode": "spiral",
+        "ringOffset": 12,
+        "rotationJitter": 0,
+        "sizeJitter": 0,
+        "countJitter": 0
+      }
+    }
+  ]
+}

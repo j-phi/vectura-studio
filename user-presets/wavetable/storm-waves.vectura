@@ -1,0 +1,23 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Storm Waves",
+  "meta": {
+    "presetId": "wavetable-storm-waves",
+    "group": "Complex",
+    "system": "wavetable",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "wavetable",
+      "params": {
+        "lineStructure": "vertical",
+        "lines": 150,
+        "lineOffset": 135,
+        "verticalFade": 25,
+        "verticalFadeMode": "both"
+      }
+    }
+  ]
+}

@@ -43,5 +43,15 @@
     group: 'Group container for expanded line sublayers.',
     svgDistort:
       'Imports an external SVG, converts filled shapes to plottable line fills (hatch, wavelines, contour, etc.), and applies Noise Rack point displacement.',
+    spirograph:
+      'Rolls primitive gear shapes around a main primitive to generate closed roulette curves with inside, outside, or combined paths.',
+    spiralizer:
+      'Coils lines or marker styles (dots, filled points, plusses, crosses, squares, triangles, dashes) around sphere, cone, cylinder, ellipsoid, torus, capsule, and a twistable helix shape — two or more twists add DNA base-pair rungs. Markers scatter at mm spacing with selectable thickness, hollow glyphs take a universal fill (spiral, hatch, …), and the whole shape supports front-only or see-through projection, full-shape silhouette outlining, and orthographic or perspective view.',
+    polyhedron:
+      'Draws polyhedral (or imported STL) face bands, edges, and vertex rings with front-face culling, opaque pruning, dashed hidden-line styling, and orthographic or perspective projection.',
+    topoform:
+      'Builds primitive 3D meshes — sphere, torus, cube, cone, ellipsoid, cylinder, capsule, pyramid, superellipsoid, torus knot, or an imported STL — and renders them as projected wireframes or plane-sliced topographic contours, with curve smoothing and orthographic or perspective view.',
+    rasterPlane:
+      'Samples a height source — a built-in relief, a preloaded noise image, an imported picture, or a canvas you paint by hand — and projects it as line relief, deformed mesh, raster topography, or extruded bars.',
   };
 })();

@@ -1,0 +1,24 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Pinecone",
+  "meta": {
+    "presetId": "phylla-pinecone",
+    "group": "Classic",
+    "system": "phylla",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "phylla",
+      "params": {
+        "count": 300,
+        "spacing": 4,
+        "angleStr": 137.5,
+        "divergence": 1,
+        "dotSize": 1.2,
+        "shapeType": "circle"
+      }
+    }
+  ]
+}

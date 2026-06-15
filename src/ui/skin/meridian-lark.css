@@ -80,3 +80,11 @@
   --plotter-path-base: rgba(82, 82, 91, 0.35);
   --plotter-head: var(--ui-accent);
 }
+
+/* Angle dial: light background to match the light canvas/workspace feel. */
+[data-ui-skin="lark"] .angle-control .angle-dial,
+[data-ui-skin="meridian-lark"] .angle-control .angle-dial,
+[data-ui-skin="lark"] .light-pad,
+[data-ui-skin="meridian-lark"] .light-pad {
+  background: #ffffff;
+}

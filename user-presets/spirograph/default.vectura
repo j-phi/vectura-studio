@@ -1,0 +1,38 @@
+{
+  "type": "vectura",
+  "name": "Default",
+  "meta": {
+    "presetId": "spirograph-default",
+    "group": "Classic",
+    "system": "spirograph",
+    "savedAt": 1781387706052
+  },
+  "layers": [
+    {
+      "type": "spirograph",
+      "params": {
+        "label": "Spirograph",
+        "preset": "spirograph-default",
+        "mainShape": "polygon",
+        "mainWidth": 140,
+        "mainHeight": 140,
+        "mainCornerRadius": 17.5,
+        "mainPoints": 6,
+        "mainTeeth": 240,
+        "gearShape": "circle",
+        "gearTeeth": 59,
+        "gearAspectX": 100,
+        "gearAspectY": 100,
+        "gearCornerRadius": 0,
+        "gearPoints": 6,
+        "penAngle": 0,
+        "penOffset": 83,
+        "rollMode": "both",
+        "curveResolution": 1200,
+        "smoothing": 0,
+        "simplify": 0,
+        "curves": false
+      }
+    }
+  ]
+}

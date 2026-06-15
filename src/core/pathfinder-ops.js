@@ -306,7 +306,7 @@
     if (!Layer) return null;
 
     const SETTINGS = Vectura.SETTINGS || {};
-    const newId = Math.random().toString(36).slice(2, 11);
+    const newId = window.Vectura.generateId();
     SETTINGS.globalLayerCount = (SETTINGS.globalLayerCount || engine._layerCounter || 0) + 1;
     if (typeof engine._layerCounter === 'number') engine._layerCounter += 1;
     const ordered = sortFrontToBack(childLayers, engine);
@@ -449,7 +449,7 @@
     const SETTINGS = Vectura.SETTINGS || {};
     SETTINGS.globalLayerCount = (SETTINGS.globalLayerCount || engine._layerCounter || 0) + 1;
     if (typeof engine._layerCounter === 'number') engine._layerCounter += 1;
-    return Math.random().toString(36).slice(2, 11);
+    return window.Vectura.generateId();
   };
 
   const copyAppearance = (target, source, { stripStroke = false } = {}) => {

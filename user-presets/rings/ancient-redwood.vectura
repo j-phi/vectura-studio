@@ -1,0 +1,36 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Ancient Redwood",
+  "meta": {
+    "presetId": "rings-ancient-redwood",
+    "group": "Classic",
+    "system": "rings",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "rings",
+      "params": {
+        "rings": 48,
+        "gap": 1.05,
+        "gapCurveStart": 1.8,
+        "gapCurveEnd": 0.6,
+        "spacingVariance": 0.5,
+        "barkRings": 10,
+        "barkGap": 1,
+        "breakCount": 6,
+        "centerDrift": 0.6,
+        "biasStrength": 0.15,
+        "biasAngle": 45,
+        "rayCount": 80,
+        "rayLength": 3.2,
+        "rayInnerFraction": 0.1,
+        "knotCount": 2,
+        "knotIntensity": 0.8,
+        "knotSpread": 35,
+        "seed": 2266
+      }
+    }
+  ]
+}

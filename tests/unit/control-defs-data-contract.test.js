@@ -131,13 +131,32 @@ describe('control-defs-data compile gate (Meridian Unit 1.5)', () => {
     expect(Array.isArray(cloned.options)).toBe(true);
   });
 
+  it('Field Weight caps at max 4 across every noise stack', () => {
+    // Field Weight (the per-layer amplitude control) is labelled identically and
+    // shares a -2..4 range across every noise stack that exposes it. raster-plane
+    // inherits topo's def, so it must track too.
+    const stacks = {
+      TOPO_NOISE_DEFS: ControlDefsData.TOPO_NOISE_DEFS,
+      FLOWFIELD_NOISE_DEFS: ControlDefsData.FLOWFIELD_NOISE_DEFS,
+      GRID_NOISE_DEFS: ControlDefsData.GRID_NOISE_DEFS,
+      PHYLLA_NOISE_DEFS: ControlDefsData.PHYLLA_NOISE_DEFS,
+      RASTER_PLANE_NOISE_DEFS: ControlDefsData.RASTER_PLANE_NOISE_DEFS,
+    };
+    for (const [name, defs] of Object.entries(stacks)) {
+      const fw = defs.find((d) => d.label === 'Field Weight');
+      expect(fw, `${name} exposes a Field Weight control`).toBeTruthy();
+      expect(fw.max, `${name} Field Weight max`).toBe(4);
+      expect(fw.min, `${name} Field Weight min`).toBe(-2);
+    }
+  });
+
   it('publishes the Petalis registry tables and factories', () => {
     expect(Array.isArray(ControlDefsData.PETALIS_MODIFIER_TYPES)).toBe(true);
     expect(ControlDefsData.PETALIS_MODIFIER_TYPES.length).toBe(7);
     expect(Array.isArray(ControlDefsData.PETALIS_PETAL_MODIFIER_TYPES)).toBe(true);
     expect(ControlDefsData.PETALIS_PETAL_MODIFIER_TYPES.length).toBe(6);
     expect(Array.isArray(ControlDefsData.PETALIS_SHADING_TYPES)).toBe(true);
-    expect(ControlDefsData.PETALIS_SHADING_TYPES.length).toBe(11);
+    expect(ControlDefsData.PETALIS_SHADING_TYPES.length).toBe(12);
     expect(Array.isArray(ControlDefsData.PETALIS_LINE_TYPES)).toBe(true);
     expect(ControlDefsData.PETALIS_LINE_TYPES.length).toBe(4);
 

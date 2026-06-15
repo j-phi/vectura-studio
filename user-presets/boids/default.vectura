@@ -1,0 +1,32 @@
+{
+  "type": "vectura",
+  "name": "Default",
+  "meta": {
+    "presetId": "boids-default",
+    "group": "Classic",
+    "system": "boids",
+    "savedAt": 1781387706052
+  },
+  "layers": [
+    {
+      "type": "boids",
+      "params": {
+        "preset": "boids-default",
+        "count": 100,
+        "steps": 100,
+        "speed": 2,
+        "sepDist": 10,
+        "alignDist": 20,
+        "cohDist": 20,
+        "force": 0.05,
+        "sepWeight": 1.2,
+        "alignWeight": 1,
+        "cohWeight": 0.9,
+        "mode": "birds",
+        "smoothing": 0,
+        "simplify": 0,
+        "curves": false
+      }
+    }
+  ]
+}

@@ -255,6 +255,7 @@
     ensureSpiralNoises,
     ensureRingsNoises,
     ensureTopoNoises,
+    ensureRasterPlaneNoises,
     ensureFlowfieldNoises,
     ensureSvgDistortNoises,
     ensureGridNoises,
@@ -287,6 +288,9 @@
           noises.forEach((noise) => randomizeNoise({ noise, waveNoiseDefs: ringsNoiseDefs || waveNoiseDefs, random }));
         } else if (layer.type === 'topo' && typeof ensureTopoNoises === 'function') {
           const noises = ensureTopoNoises();
+          noises.forEach((noise) => randomizeNoise({ noise, waveNoiseDefs: topoNoiseDefs || waveNoiseDefs, random }));
+        } else if (layer.type === 'rasterPlane' && typeof ensureRasterPlaneNoises === 'function') {
+          const noises = ensureRasterPlaneNoises();
           noises.forEach((noise) => randomizeNoise({ noise, waveNoiseDefs: topoNoiseDefs || waveNoiseDefs, random }));
         } else if (layer.type === 'flowfield' && typeof ensureFlowfieldNoises === 'function') {
           const noises = ensureFlowfieldNoises();

@@ -66,6 +66,10 @@ beforeEach(() => {
     },
   };
 
+  // core/utils.js registers Vectura.generateId (used to mint fill/group ids).
+  // The bag was just wiped, so force its IIFE to re-run on the fresh Vectura.
+  delete require.cache[path.resolve(__dirname, '../../src/core/utils.js')];
+  require(path.resolve(__dirname, '../../src/core/utils.js'));
   require(path.resolve(__dirname, '../../src/core/layer.js'));
   // Clear any prior module load so PaintBucketOps re-registers on the fresh Vectura bag.
   delete require.cache[path.resolve(__dirname, '../../src/core/paint-bucket-ops.js')];

@@ -44,6 +44,28 @@
   const isPetalisLayerType = (type) => PETALIS_LAYER_TYPES.has(type);
   const clone = window.Vectura.Utils.clone;
 
+  // Image control defaults seeded onto the raster-plane `imageSource` base entry
+  // so its full Image control set (rendered on the card) binds cleanly. All
+  // defaults are no-ops — the raster-plane base keeps the raw-raster sampling
+  // path until the user changes one (see createBaseImageLuma in raster-plane.js).
+  const imageSourceControlDefaults = () => ({
+    amplitude: 1, // Field Weight: relief intensity (1 = as-sampled, 0 = flat)
+    zoom: 1, // Noise Scale: 1 = 1:1 mapping
+    freq: 1, // Frequency: tiling repeats
+    angle: 0, // Noise Angle
+    shiftX: 0, // Offset X
+    shiftY: 0, // Offset Y
+    imageWidth: 1,
+    imageHeight: 1,
+    noiseStyle: 'linear',
+    microFreq: 0,
+    noiseThreshold: 0,
+    imageInvertColor: false,
+    imageInvertOpacity: false,
+    imageAlgo: 'luma',
+    imageEffects: [],
+  });
+
   const roundToStep = (value, step) => (step ? Math.round(value / step) * step : value);
   const mapRange = (value, inMin, inMax, outMin, outMax) => {
     if (inMax === inMin) return outMin;
@@ -183,7 +205,7 @@
         ringDrift: source === 'rings' ? 0.5 : undefined,
         ringRadius: source === 'rings' ? 100 : undefined,
         octaves:
-          source === 'topo'
+          source === 'topo' || source === 'rasterPlane'
             ? 3
             : source === 'flowfield' || source === 'petalisDrift' || source === 'svgDistort'
               ? 2
@@ -191,11 +213,11 @@
                 ? 1
                 : undefined,
         lacunarity:
-          source === 'topo' || source === 'flowfield' || source === 'grid' || source === 'phylla' || source === 'petalisDrift' || source === 'svgDistort'
+          source === 'topo' || source === 'rasterPlane' || source === 'flowfield' || source === 'grid' || source === 'phylla' || source === 'petalisDrift' || source === 'svgDistort'
             ? 2.0
             : undefined,
         gain:
-          source === 'topo' || source === 'flowfield' || source === 'grid' || source === 'phylla' || source === 'petalisDrift' || source === 'svgDistort'
+          source === 'topo' || source === 'rasterPlane' || source === 'flowfield' || source === 'grid' || source === 'phylla' || source === 'petalisDrift' || source === 'svgDistort'
             ? 0.5
             : undefined,
         fieldMode: source === 'flowfield' ? 'angle' : undefined,
@@ -646,6 +668,70 @@
         layer.params.noises = noises;
       }
       noises = noises.map((noise, idx) => {
+        const template = templates[idx] || templates[templates.length - 1] || base;
+        const next = {
+          ...base,
+          ...clone(template),
+          ...(noise || {}),
+          id: noise?.id || template.id || `noise-${idx + 1}`,
+          enabled: noise?.enabled !== false,
+        };
+        if (!next.tileMode) next.tileMode = next.type === 'image' ? 'off' : base.tileMode;
+        if (next.tileMode === 'off') next.tilePadding = 0;
+        if (next.octaves === undefined) next.octaves = base.octaves ?? 3;
+        if (next.lacunarity === undefined) next.lacunarity = base.lacunarity ?? 2.0;
+        if (next.gain === undefined) next.gain = base.gain ?? 0.5;
+        if (next.type === 'image' && next.imageWidth === undefined && next.freq !== undefined) {
+          next.imageWidth = next.freq;
+        }
+        if (next.type === 'image' && (noise?.amplitude === undefined || noise?.amplitude === null)) {
+          next.amplitude = IMAGE_NOISE_DEFAULT_AMPLITUDE;
+        }
+        if (!next.noiseStyle) next.noiseStyle = base.noiseStyle || 'linear';
+        if (next.noiseThreshold === undefined) next.noiseThreshold = base.noiseThreshold ?? 0;
+        if (next.imageWidth === undefined) next.imageWidth = base.imageWidth ?? 1;
+        if (next.imageHeight === undefined) next.imageHeight = base.imageHeight ?? 1;
+        if (next.microFreq === undefined) next.microFreq = base.microFreq ?? 0;
+        if (next.imageInvertColor === undefined) next.imageInvertColor = base.imageInvertColor || false;
+        if (next.imageInvertOpacity === undefined) next.imageInvertOpacity = base.imageInvertOpacity || false;
+        this.normalizeImageEffects(next, base.imageEffects?.[0]);
+        return next;
+      });
+      layer.params.noises = noises;
+      return noises;
+    },
+
+    ensureRasterPlaneNoises(layer) {
+      if (!layer || layer.type !== 'rasterPlane') return [];
+      const { base, templates } = this.getWavetableNoiseTemplates('rasterPlane');
+      let noises = layer.params.noises;
+      if (!Array.isArray(noises) || !noises.length) {
+        // New layer default: start with just the Image base layer so the source
+        // selection is the first thing the user sees in the noise stack. Seed the
+        // Image control defaults so the card's sliders bind cleanly.
+        noises = [
+          {
+            type: 'imageSource',
+            id: `img-src-${Date.now().toString(36)}`,
+            enabled: true,
+            ...imageSourceControlDefaults(),
+          },
+        ];
+        layer.params.noises = noises;
+        return noises;
+      }
+      noises = noises.map((noise, idx) => {
+        // imageSource layers are the Image base marker — seed the Image control
+        // defaults for any missing field, but otherwise pass through (the source
+        // selection + image identity live on layer.params, not the entry).
+        if (noise && noise.type === 'imageSource') {
+          const defaults = imageSourceControlDefaults();
+          Object.keys(defaults).forEach((key) => {
+            if (noise[key] === undefined) noise[key] = defaults[key];
+          });
+          if (!Array.isArray(noise.imageEffects)) noise.imageEffects = [];
+          return noise;
+        }
         const template = templates[idx] || templates[templates.length - 1] || base;
         const next = {
           ...base,
@@ -1236,6 +1322,16 @@
       };
     },
 
+    createRasterPlaneNoise(index = 0) {
+      const { base, templates } = this.getWavetableNoiseTemplates('rasterPlane');
+      const template = templates[index] || templates[templates.length - 1] || base;
+      return {
+        ...clone(template),
+        id: `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        enabled: true,
+      };
+    },
+
     createFlowfieldNoise(index = 0) {
       const { base, templates } = this.getWavetableNoiseTemplates('flowfield');
       const template = templates[index] || templates[templates.length - 1] || base;
@@ -1375,6 +1471,7 @@
         ensureSpiralNoises: () => this.ensureSpiralNoises(layer),
         ensureRingsNoises: () => this.ensureRingsNoises(layer),
         ensureTopoNoises: () => this.ensureTopoNoises(layer),
+        ensureRasterPlaneNoises: () => this.ensureRasterPlaneNoises(layer),
         ensureFlowfieldNoises: () => this.ensureFlowfieldNoises(layer),
         ensureSvgDistortNoises: () => this.ensureSvgDistortNoises(layer),
         ensureGridNoises: () => this.ensureGridNoises(layer),
@@ -1870,7 +1967,9 @@
       const buildImageEffectsList = (noise) => {
         const wrap = document.createElement('div');
         wrap.className = 'image-effects';
-        if (noise.type !== 'image') {
+        // Effects apply to the `image` displacement type AND the raster-plane
+        // `imageSource` base layer (which reads through the same image pipeline).
+        if (noise.type !== 'image' && noise.type !== 'imageSource') {
           wrap.classList.add('hidden');
           return wrap;
         }
@@ -2226,7 +2325,7 @@
         headerRow.innerHTML = `
           <div class="flex items-center gap-2">
             ${noiseGripMarkup}
-            <span class="noise-title">Noise ${String(idx + 1).padStart(2, '0')}</span>
+            <span class="noise-title">${noise.type === 'imageSource' ? 'Image' : ('Noise ' + String(idx + 1).padStart(2, '0'))}</span>
           </div>
           <div class="noise-actions">
             <label class="sw-toggle" role="switch" aria-checked="${noise.enabled ? 'true' : 'false'}">
@@ -2336,29 +2435,54 @@
         const controls = document.createElement('div');
         controls.className = 'pendulum-controls';
         let toolsInserted = false;
-        noiseDefs.forEach((nDef) => {
-          if (nDef.showIf && !nDef.showIf(noise)) return;
-          if (nDef.type === 'angle') {
-            controls.appendChild(buildAngleControl(noise, nDef, idx));
-          } else if (nDef.type === 'select') {
-            controls.appendChild(buildSelectControl(noise, nDef, idx));
-          } else if (nDef.type === 'checkbox') {
-            controls.appendChild(buildCheckboxControl(noise, nDef, idx));
-          } else {
-            controls.appendChild(buildRangeControl(noise, nDef, idx));
+        if (noise.type === 'imageSource') {
+          // The "Image" base layer: a type dropdown (so the user can convert it
+          // to a procedural noise), the rich source picker (WHAT image), then the
+          // full Image control set (HOW it reads). Blend Mode is the only image
+          // control omitted — a base surface has no second operand to blend with.
+          const typeDef = noiseDefs.find((d) => d.key === 'type');
+          if (typeDef) controls.appendChild(buildSelectControl(noise, typeDef, idx));
+          if (typeof this.mountImageSourceInNoiseStack === 'function') {
+            this.mountImageSourceInNoiseStack(layer, controls);
           }
-          if (nDef.key === 'type') {
-            controls.appendChild(buildNoiseImageBlock(noise, idx));
-          }
-          if (nDef.key === 'imageInvertOpacity') {
-            controls.appendChild(buildImageEffectsList(noise));
-          }
-          if (nDef.key === 'blend' && !toolsInserted) {
-            controls.appendChild(tools);
-            toolsInserted = true;
-          }
-        });
-        if (!toolsInserted) controls.appendChild(tools);
+          [
+            'amplitude', 'zoom', 'freq', 'angle', 'shiftX', 'shiftY',
+            'imageWidth', 'imageHeight', 'noiseStyle', 'imageInvertColor',
+            'imageInvertOpacity', 'microFreq', 'noiseThreshold',
+          ].forEach((key) => {
+            const def = noiseDefs.find((d) => d.key === key);
+            if (!def) return;
+            if (def.type === 'angle') controls.appendChild(buildAngleControl(noise, def, idx));
+            else if (def.type === 'select') controls.appendChild(buildSelectControl(noise, def, idx));
+            else if (def.type === 'checkbox') controls.appendChild(buildCheckboxControl(noise, def, idx));
+            else controls.appendChild(buildRangeControl(noise, def, idx));
+          });
+          controls.appendChild(buildImageEffectsList(noise));
+        } else {
+          noiseDefs.forEach((nDef) => {
+            if (nDef.showIf && !nDef.showIf(noise)) return;
+            if (nDef.type === 'angle') {
+              controls.appendChild(buildAngleControl(noise, nDef, idx));
+            } else if (nDef.type === 'select') {
+              controls.appendChild(buildSelectControl(noise, nDef, idx));
+            } else if (nDef.type === 'checkbox') {
+              controls.appendChild(buildCheckboxControl(noise, nDef, idx));
+            } else {
+              controls.appendChild(buildRangeControl(noise, nDef, idx));
+            }
+            if (nDef.key === 'type') {
+              controls.appendChild(buildNoiseImageBlock(noise, idx));
+            }
+            if (nDef.key === 'imageInvertOpacity') {
+              controls.appendChild(buildImageEffectsList(noise));
+            }
+            if (nDef.key === 'blend' && !toolsInserted) {
+              controls.appendChild(tools);
+              toolsInserted = true;
+            }
+          });
+          if (!toolsInserted) controls.appendChild(tools);
+        }
         card.appendChild(controls);
         list.appendChild(card);
       });

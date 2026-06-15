@@ -25,8 +25,8 @@
  *
  * ── SOURCE OF TRUTH ───────────────────────────────────────────────────────────
  *   list() is the SINGLE source of truth for the wallpaper gallery. These recipes
- *   are NOT mirrored into src/config/presets.js: that file stores algorithm-`params`
- *   presets keyed by `preset_system` (petalisDesigner / terrain / rings / svgDistort),
+ *   are NOT mirrored into the preset library (user-presets/ → src/config/user-presets.js):
+ *   that library stores algorithm-`params` presets keyed by `preset_system`,
  *   each consumed by a parameter-driven algorithm. A wallpaper mirror is a different
  *   shape (a mirror-modifier config, not algorithm params) and nothing in the app
  *   reads a `wallpaperMirror` system out of PRESETS. Duplicating here would create a
@@ -100,22 +100,28 @@
     { id: 'wallpaper-star-anise',     name: 'Star Anise',        group: 'p31m', tileWidth: 92, domainScale: 1.1, rotation: 30 },
   ];
 
-  const list = () => RECIPES.map((r) => {
-    const { id, name } = r;
-    const group = r.group;
-    const sym = symFor(group);
-    const locks = lockedAxesFor(group);
-    const mirror = Object.assign({}, r);
-    delete mirror.id;
-    delete mirror.name;
-    mirror.group = group;
-    mirror.symmetry = sym;
-    // Respect locked axes: square/hex force tileHeight = tileWidth and a fixed
-    // cell angle, so never carry conflicting authored values into the mirror.
-    if (locks.tileHeight) delete mirror.tileHeight;
-    if (locks.tileAngle) delete mirror.tileAngle;
-    return { id, name, mirror };
-  });
+  const list = () => {
+    const curated = RECIPES.map((r) => {
+      const { id, name } = r;
+      const group = r.group;
+      const sym = symFor(group);
+      const locks = lockedAxesFor(group);
+      const mirror = Object.assign({}, r);
+      delete mirror.id;
+      delete mirror.name;
+      mirror.group = group;
+      mirror.symmetry = sym;
+      // Respect locked axes: square/hex force tileHeight = tileWidth and a fixed
+      // cell angle, so never carry conflicting authored values into the mirror.
+      if (locks.tileHeight) delete mirror.tileHeight;
+      if (locks.tileAngle) delete mirror.tileAngle;
+      return { id, name, mirror };
+    });
+    // User-authored recipes (bundled from user-presets/wallpaper/ .vectura files)
+    // already arrive in the { id, name, mirror } gallery shape — append as-is.
+    const user = (Vectura.USER_WALLPAPER_RECIPES || []).filter((r) => r && r.id && r.mirror);
+    return [...curated, ...user];
+  };
 
   const randomize = (opts = {}) => {
     const wg = WG();

@@ -61,6 +61,7 @@ const SOURCE_FILE_FOR = {
   svgDistort: 'svgdistort.js',
   terrain: 'terrain.js',
   horizon: 'horizon.js',
+  rasterPlane: 'raster-plane.js',
 };
 
 // Patterns that count as a raw noise bypass (outside the rack evaluator).

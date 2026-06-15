@@ -22,6 +22,25 @@
     isPetalisLayerType = (type) => PETALIS_LAYER_TYPES.has(type),
   } = (window.Vectura && window.Vectura.PresetLibraries) || {};
 
+  // Shading/modifier stack factories + option lists live in ControlDefsData.
+  // ui.js binds these into its OWN closure; this mixin file runs as a separate
+  // IIFE, so it must bind them here too or every Add-Shading / Add-Modifier /
+  // non-empty-stack hydration path throws a ReferenceError on the bare symbol.
+  const _ControlDefsData =
+    (window.Vectura && window.Vectura.UI && window.Vectura.UI.ControlDefsData) || {};
+  const {
+    createPetalisShading = () => ({}),
+    createPetalModifier = () => ({}),
+    PETALIS_SHADING_TYPES = [],
+    PETALIS_LINE_TYPES = [],
+    PETALIS_PETAL_MODIFIER_TYPES = [],
+  } = _ControlDefsData;
+  if (!_ControlDefsData.createPetalisShading) {
+    console.warn(
+      '[UI] window.Vectura.UI.ControlDefsData missing — load src/ui/panels/control-defs-data.js before src/ui/ui-petal-designer.js'
+    );
+  }
+
   // Document-units adapter for petal-designer range controls. When a def opts
   // into millimetre semantics (via `unit: 'mm'` or `displayUnit: 'mm'`), this
   // returns an adapter that maps stored mm values to the document's current
@@ -87,18 +106,23 @@
   const PETAL_DESIGNER_PROFILE_VERSION = 1;
   const PETAL_DESIGNER_PROFILE_BUNDLE_KEY = 'PETAL_PROFILE_LIBRARY';
   const PETAL_DESIGNER_WIDTH_MATCH_BASELINE = 0.85;
+  // Named-profile thumbnail outlines are deterministic (fixed params + seed),
+  // so render each silhouette's single-petal generate() once per session.
+  const PETAL_PROFILE_THUMB_CACHE = new Map();
 
+  // Whorl mode uses small per-ring counts (iris=3) and allows an empty inner
+  // ring (innerCount 0), so the designer count floors are 0/1, not 5.
   const PETALIS_DESIGNER_DEFAULT_INNER_COUNT = Math.round(
-    clamp(ALGO_DEFAULTS?.petalisDesigner?.innerCount ?? 20, 5, 400)
+    clamp(ALGO_DEFAULTS?.petalisDesigner?.innerCount ?? 0, 0, 400)
   );
   const PETALIS_DESIGNER_DEFAULT_OUTER_COUNT = Math.round(
-    clamp(ALGO_DEFAULTS?.petalisDesigner?.outerCount ?? 20, 5, 600)
+    clamp(ALGO_DEFAULTS?.petalisDesigner?.outerCount ?? 6, 1, 600)
   );
   const PETALIS_DESIGNER_DEFAULT_COUNT = Math.round(
     clamp(
       ALGO_DEFAULTS?.petalisDesigner?.count ??
         PETALIS_DESIGNER_DEFAULT_INNER_COUNT + PETALIS_DESIGNER_DEFAULT_OUTER_COUNT,
-      5,
+      1,
       800
     )
   );
@@ -117,6 +141,56 @@
     { key: 'radiusScale', label: 'Radius Scale', min: -1, max: 1, step: 0.05, precision: 2 },
     { key: 'radiusScaleCurve', label: 'Radius Scale Curve', min: 0.5, max: 2.5, step: 0.05, precision: 2 },
   ];
+  // Named petal profiles mirroring the Petalis algorithm's built-in silhouettes
+  const PETAL_DESIGNER_NAMED_PROFILES = [
+    { value: 'oval', label: 'Oval' },
+    { value: 'teardrop', label: 'Teardrop' },
+    { value: 'lanceolate', label: 'Lanceolate' },
+    { value: 'heart', label: 'Heart' },
+    { value: 'spoon', label: 'Spoon' },
+    { value: 'rounded', label: 'Rounded' },
+    { value: 'notched', label: 'Notched' },
+    { value: 'spatulate', label: 'Spatulate' },
+    { value: 'marquise', label: 'Marquise' },
+    { value: 'dagger', label: 'Dagger' },
+  ];
+  // Per-ring petal param definitions for the advanced accordion in each ring card
+  const PETAL_DESIGNER_RING_PARAM_DEFS = [
+    { key: 'petalScale', label: 'Petal Scale', min: 1, max: 80, step: 0.5, precision: 1, unit: 'mm', displayUnit: 'mm' },
+    { key: 'bloom', label: 'Bloom', min: 0, max: 100, step: 1, precision: 0 },
+    { key: 'petalAsymmetry', label: 'Asymmetry', min: 0, max: 100, step: 1, precision: 0 },
+    { key: 'petalCupping', label: 'Cupping', min: 0, max: 100, step: 1, precision: 0 },
+    { key: 'petalWidthRatio', label: 'Width Ratio', min: 0.01, max: 2, step: 0.01, precision: 2 },
+    { key: 'tipSharpness', label: 'Tip Sharpness', min: 0, max: 1, step: 0.01, precision: 2 },
+    { key: 'tipTwist', label: 'Tip Rotate', min: 0, max: 100, step: 1, precision: 0 },
+    { key: 'centerCurlBoost', label: 'Center Curl', min: 0, max: 100, step: 1, precision: 0 },
+    { key: 'tipCurl', label: 'Tip Curl', min: 0, max: 1, step: 0.01, precision: 2 },
+    { key: 'baseFlare', label: 'Base Flare', min: 0, max: 5, step: 0.05, precision: 2 },
+    { key: 'basePinch', label: 'Base Pinch', min: 0, max: 5, step: 0.05, precision: 2 },
+    { key: 'edgeWaveAmp', label: 'Edge Wave', min: 0, max: 0.6, step: 0.01, precision: 2 },
+    { key: 'edgeWaveFreq', label: 'Wave Freq', min: 0, max: 14, step: 0.5, precision: 1 },
+  ];
+  // Default values for ring params when the user hasn't set a per-ring override
+  const PETAL_RING_PARAM_DEFAULTS = {
+    petalScale: 30,
+    bloom: 100,
+    petalAsymmetry: 0,
+    petalCupping: 0,
+    petalWidthRatio: 0.74,
+    tipSharpness: 1,
+    tipTwist: 0,
+    centerCurlBoost: 0,
+    tipCurl: 0,
+    baseFlare: 0,
+    basePinch: 0,
+    edgeWaveAmp: 0,
+    edgeWaveFreq: 2,
+  };
+
+  // Advanced per-ring keys that survive a profile change because they describe
+  // size/openness (layout), not the petal silhouette (shape). Everything else is
+  // reset to its PETAL_RING_PARAM_DEFAULTS baseline when a new profile is picked.
+  const PETAL_DESIGNER_RING_PARAM_PRESERVED_ON_PROFILE = ['petalScale', 'bloom'];
 
   const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura._UIPetalDesignerMixin = {
@@ -494,149 +568,86 @@
 
     buildProfileDesignerShape(profile = 'teardrop', side = 'outer') {
       const widthScale = side === 'inner' ? 0.86 : 1;
-      const makeFourPointShape = ({
-        upperT,
-        upperW,
-        lowerT,
-        lowerW,
-        topOutT = null,
-        topOutW = 0,
-        upperInT = null,
-        upperOutT = null,
-        lowerInT = null,
-        lowerOutT = null,
-        bottomInT = null,
-        bottomInW = 0,
-      }) => {
-        const uT = clamp(upperT, 0.14, 0.45);
-        const lT = clamp(Math.max(uT + 0.16, lowerT), 0.5, 0.9);
-        const uW = Math.max(0.05, upperW);
-        const lW = Math.max(0.05, lowerW);
-        const PA = UI_CONSTANTS.PETALIS_CURVE_ANCHORS ?? {};
-        const oTop = clamp(topOutT ?? uT * (PA.oTopRatio ?? 0.42), 0.04, uT - 0.02);
-        const iUpper = clamp(upperInT ?? uT * (PA.iUpperRatio ?? 0.72), oTop + 0.01, uT - 0.02);
-        const oUpper = clamp(upperOutT ?? lerp(uT, lT, PA.oUpperLerp ?? 0.34), uT + 0.02, lT - 0.04);
-        const iLower = clamp(lowerInT ?? lerp(uT, lT, PA.iLowerLerp ?? 0.68), oUpper + 0.02, lT - 0.02);
-        const oLower = clamp(lowerOutT ?? lerp(lT, 1, PA.oLowerLerp ?? 0.38), lT + 0.02, 0.96);
-        const iBottom = clamp(bottomInT ?? lerp(lT, 1, PA.iBottomLerp ?? 0.62), oLower + 0.02, 0.98);
-        const iTop = clamp(-oTop * (PA.mirrorExtent ?? 0.7), -0.35, -0.02);
-        const oBottom = clamp(1 + (1 - iBottom) * (PA.mirrorExtent ?? 0.7), 1.02, 1.35);
-        return [
-          { t: 0, w: 0, in: { t: iTop, w: 0 }, out: { t: oTop, w: topOutW } },
-          {
-            t: uT,
-            w: uW,
-            in: { t: iUpper, w: uW },
-            out: { t: oUpper, w: uW },
-          },
-          {
-            t: lT,
-            w: lW,
-            in: { t: iLower, w: lW },
-            out: { t: oLower, w: lW },
-          },
-          { t: 1, w: 0, in: { t: iBottom, w: bottomInW }, out: { t: oBottom, w: 0 } },
-        ];
-      };
-      const scaleAnchor = (anchor) => ({
-        ...anchor,
-        w: Math.max(0, (anchor.w || 0) * widthScale),
-        in: anchor.in ? { ...anchor.in, w: Math.max(0, (anchor.in.w || 0) * widthScale) } : null,
-        out: anchor.out ? { ...anchor.out, w: Math.max(0, (anchor.out.w || 0) * widthScale) } : null,
+      // Reproduce the algorithm's CANONICAL named-profile silhouette
+      // (PetalisAlgorithm.profileHalfWidth — the same shape the gallery thumbnail and
+      // the flower draw) with the FEWEST editable bezier anchors: just base, the lobe
+      // peak, and tip. The peak carries horizontal handles for a smooth blade; the tip
+      // and base carry WIDE w-handles whose width tracks how full the canonical profile
+      // stays near each end — so blunt profiles (oval) round off and acute ones
+      // (dagger) stay pointed, with no dense point cloud to edit.
+      const sampleW = window.Vectura.PetalisAlgorithm?.profileHalfWidth;
+      const wAt = (t) =>
+        Math.max(0, (typeof sampleW === 'function' ? sampleW(t, profile) : Math.sin(Math.PI * clamp(t, 0, 1))) * widthScale);
+      // Locate the widest point of the canonical profile.
+      let tPeak = 0.5;
+      let wPeak = 0;
+      for (let i = 1; i < 60; i++) {
+        const t = i / 60;
+        const v = wAt(t);
+        if (v > wPeak) { wPeak = v; tPeak = t; }
+      }
+      if (wPeak <= 1e-4) wPeak = 0.6 * widthScale;
+      tPeak = clamp(tPeak, 0.18, 0.82);
+      // Five anchors: base, a shoulder on each side of the peak, the peak, and the tip.
+      // The shoulders are sampled from the canonical profile, so they carry its
+      // narrow-vs-full character (a dagger's fast falloff vs an oval's fullness) that a
+      // bare base/peak/tip triangle would flatten into the same egg. Interior anchors
+      // use Catmull-Rom tangents; the base and tip get WIDE w-handles so blunt profiles
+      // round and acute ones stay pointed.
+      const loT = tPeak * 0.55;
+      const hiT = lerp(tPeak, 1, 0.5);
+      const pts = [
+        { t: 0, w: 0 },
+        { t: loT, w: wAt(loT) },
+        { t: tPeak, w: wPeak },
+        { t: hiT, w: wAt(hiT) },
+        { t: 1, w: 0 },
+      ];
+      const tipFull = clamp(wAt(lerp(tPeak, 1, 0.72)) / wPeak, 0, 1);
+      const baseFull = clamp(wAt(lerp(tPeak, 0, 0.72)) / wPeak, 0, 1);
+      const tipRound = wPeak * (0.08 + 0.64 * tipFull);
+      const baseRound = wPeak * (0.08 + 0.6 * baseFull);
+      const lastIx = pts.length - 1;
+      const anchors = pts.map((p, i) => {
+        // Vertical end-cap handles (handle t == apex t) make the outline arrive
+        // horizontally in screen space — a rounded cap whose size is the handle's
+        // width: wide (blunt oval) rounds, narrow (acute dagger) stays a point.
+        if (i === 0) {
+          return { t: 0, w: 0, in: null, out: { t: 0, w: baseRound } };
+        }
+        if (i === lastIx) {
+          return { t: 1, w: 0, in: { t: 1, w: tipRound }, out: null };
+        }
+        const prev = pts[i - 1];
+        const next = pts[i + 1];
+        const tanT = (next.t - prev.t) / 6;
+        const tanW = (next.w - prev.w) / 6;
+        return {
+          t: p.t,
+          w: p.w,
+          in: { t: clamp(p.t - tanT, -1, 2), w: Math.max(0, p.w - tanW) },
+          out: { t: clamp(p.t + tanT, -1, 2), w: Math.max(0, p.w + tanW) },
+        };
       });
-      const templates = {
-        oval: makeFourPointShape({
-          upperT: 0.27,
-          upperW: 0.74,
-          lowerT: 0.73,
-          lowerW: 0.74,
-          topOutW: 0.08,
-          bottomInW: 0.08,
-        }),
-        teardrop: makeFourPointShape({
-          upperT: 0.24,
-          upperW: 0.36,
-          lowerT: 0.71,
-          lowerW: 0.86,
-          topOutW: 0.01,
-          topOutT: 0.095,
-          upperInT: 0.165,
-          upperOutT: 0.44,
-          lowerInT: 0.64,
-          lowerOutT: 0.86,
-          bottomInT: 0.95,
-          bottomInW: 0.04,
-        }),
-        lanceolate: makeFourPointShape({
-          upperT: 0.29,
-          upperW: 0.4,
-          lowerT: 0.68,
-          lowerW: 0.62,
-          topOutW: 0.01,
-          bottomInW: 0.04,
-        }),
-        heart: makeFourPointShape({
-          upperT: 0.24,
-          upperW: 0.72,
-          lowerT: 0.66,
-          lowerW: 0.9,
-          topOutW: 0.18,
-          bottomInW: 0.14,
-        }),
-        spoon: makeFourPointShape({
-          upperT: 0.32,
-          upperW: 0.36,
-          lowerT: 0.76,
-          lowerW: 1.08,
-          topOutW: 0.02,
-          bottomInW: 0.2,
-        }),
-        rounded: makeFourPointShape({
-          upperT: 0.31,
-          upperW: 0.84,
-          lowerT: 0.69,
-          lowerW: 0.84,
-          topOutW: 0.12,
-          bottomInW: 0.12,
-        }),
-        notched: makeFourPointShape({
-          upperT: 0.25,
-          upperW: 0.56,
-          lowerT: 0.69,
-          lowerW: 0.82,
-          topOutW: 0.2,
-          bottomInW: 0.1,
-        }),
-        spatulate: makeFourPointShape({
-          upperT: 0.36,
-          upperW: 0.42,
-          lowerT: 0.74,
-          lowerW: 1.02,
-          topOutW: 0.03,
-          bottomInW: 0.18,
-        }),
-        marquise: makeFourPointShape({
-          upperT: 0.3,
-          upperW: 0.64,
-          lowerT: 0.7,
-          lowerW: 0.64,
-          topOutW: 0.01,
-          bottomInW: 0.01,
-        }),
-        dagger: makeFourPointShape({
-          upperT: 0.27,
-          upperW: 0.28,
-          lowerT: 0.67,
-          lowerW: 0.4,
-          topOutW: 0,
-          bottomInW: 0,
-        }),
-      };
-      const template = templates[profile] || templates.teardrop;
-      return {
-        profile,
-        anchors: template.map((anchor) => scaleAnchor(anchor)),
-      };
+      return { profile, anchors };
+    },
+
+    // Selecting a named profile replaces the side's silhouette (its anchors fully
+    // describe the shape), so the Advanced per-ring overrides for that side must
+    // return to their clean baseline — otherwise a leftover tweak (a narrower
+    // Width Ratio, a sharper tip…) from the previous profile distorts the freshly
+    // chosen one and the sliders disagree with what is drawn. Size/openness
+    // (petalScale, bloom) are layout choices, not shape, so they are preserved.
+    resetPetalDesignerShapeAdvanced(state, side) {
+      if (!state) return;
+      const key = `${side}RingParams`;
+      const prev = state[key];
+      if (!prev || typeof prev !== 'object') return;
+      const preserved = {};
+      PETAL_DESIGNER_RING_PARAM_PRESERVED_ON_PROFILE.forEach((k) => {
+        if (prev[k] != null) preserved[k] = prev[k];
+      });
+      state[key] = Object.keys(preserved).length ? preserved : null;
     },
 
     cloneDesignerShape(shape) {
@@ -761,10 +772,10 @@
       const activeTarget = shapeTarget === 'outer' ? 'outer' : 'inner';
       const defaultSymmetry = this.normalizeDesignerSymmetryMode(params.designerSymmetry);
       const innerCount = Math.round(
-        clamp(params.innerCount ?? params.count ?? PETALIS_DESIGNER_DEFAULT_INNER_COUNT, 5, 400)
+        clamp(params.innerCount ?? params.count ?? PETALIS_DESIGNER_DEFAULT_INNER_COUNT, 0, 400)
       );
       const outerCount = Math.round(
-        clamp(params.outerCount ?? PETALIS_DESIGNER_DEFAULT_OUTER_COUNT, 5, 600)
+        clamp(params.outerCount ?? PETALIS_DESIGNER_DEFAULT_OUTER_COUNT, 1, 600)
       );
       const countSplit = innerCount / Math.max(1, innerCount + outerCount);
       const transitionPosition = clamp(countSplit * 100, 0, 100);
@@ -782,7 +793,9 @@
         designerSymmetry: defaultSymmetry,
         innerSymmetry: this.normalizeDesignerSymmetryMode(params.designerInnerSymmetry ?? defaultSymmetry),
         outerSymmetry: this.normalizeDesignerSymmetryMode(params.designerOuterSymmetry ?? defaultSymmetry),
-        count: Math.round(clamp(params.count ?? innerCount, 5, 800)),
+        count: Math.round(clamp(params.count ?? innerCount, 1, 800)),
+        layoutMode: params.layoutMode === 'spiral' ? 'spiral' : 'whorl',
+        ringSplit: clamp(params.ringSplit ?? 0.45, 0.1, 0.9),
         innerCount,
         outerCount,
         profileTransitionPosition: transitionPosition,
@@ -807,6 +820,8 @@
         radiusScale: clamp(params.radiusScale ?? 0.2, -1, 1),
         radiusScaleCurve: clamp(params.radiusScaleCurve ?? 1.2, 0.5, 2.5),
         randomnessOpen: false,
+        innerRingParams: params.innerRingParams ? { ...params.innerRingParams } : {},
+        outerRingParams: params.outerRingParams ? { ...params.outerRingParams } : {},
         views: {
           outer: { zoom: 1, panX: 0, panY: 0 },
           inner: { zoom: 1, panX: 0, panY: 0 },
@@ -1075,13 +1090,14 @@
       const buildProfileEditorCard = (side, title) => `
         <div class="petal-profile-editor-card" data-petal-profile-editor="${side}">
           <div class="petal-profile-editor-card-title">${title}</div>
-          <label class="petal-slider-label">
-            <span>Profile</span>
-            <span class="petal-slider-value" data-petal-profile-label="${side}">None</span>
-            <select data-petal-profile-select="${side}">
-              <option value="">No Profiles Found</option>
-            </select>
-          </label>
+          <div class="petal-ring-shape-selector">
+            <div class="petal-ring-shape-selector-label">Petal Profile</div>
+            <div class="petal-profile-editor-thumbs" data-petal-shape-thumbs="${side}"></div>
+          </div>
+          <details class="petal-ring-param-accordion">
+            <summary class="petal-ring-param-accordion-summary">Advanced</summary>
+            <div class="petal-ring-param-stack" data-petal-ring-params="${side}"></div>
+          </details>
           <label class="petal-slider-label">
             <span>Symmetry</span>
             <span class="petal-slider-value" data-petal-symmetry-label="${side}">None</span>
@@ -1098,7 +1114,6 @@
         <div class="petal-designer-header">
           <div class="petal-designer-title">Petal Designer</div>
           <div class="petal-designer-actions">
-            ${toolMarkup}
             ${showPopOut ? '<button type="button" class="petal-popout" aria-label="Pop Out Petal Designer" title="Pop Out">⧉</button>' : ''}
             ${showPopIn ? '<button type="button" class="petal-popin" aria-label="Pop In Petal Designer" title="Pop In">↩</button>' : ''}
             ${showClose ? '<button type="button" class="petal-close" aria-label="Close Petal Designer">✕</button>' : ''}
@@ -1108,12 +1123,12 @@
           <label class="petal-slider-label" data-petal-inner-count-wrap>
             <span>Inner Petal Count</span>
             <span class="petal-slider-value" data-petal-slider-value="inner-count" data-petal-slider-precision="0"></span>
-            <input type="range" min="5" max="400" step="1" data-petal-inner-count>
+            <input type="range" min="0" max="400" step="1" data-petal-inner-count>
           </label>
           <label class="petal-slider-label" data-petal-outer-count-wrap>
             <span>Outer Petal Count</span>
             <span class="petal-slider-value" data-petal-slider-value="outer-count" data-petal-slider-precision="0"></span>
-            <input type="range" min="5" max="600" step="1" data-petal-outer-count>
+            <input type="range" min="1" max="600" step="1" data-petal-outer-count>
           </label>
           <label class="petal-slider-label" data-petal-split-feather-wrap>
             <span>Split Feathering</span>
@@ -1139,6 +1154,7 @@
               <select data-petal-view-style>${viewStyleOptions}</select>
             </label>
           </div>
+          <div class="petal-designer-tools">${toolMarkup}</div>
           <div class="petal-designer-grid" data-petal-visualizer-grid>
             <div class="petal-cell" data-petal-cell="overlay">
               <div class="petal-cell-title" data-petal-canvas-title="overlay">Overlay</div>
@@ -1157,8 +1173,12 @@
         <div class="petal-designer-profile-editor">
           <div class="petal-designer-shading-header">
             <div class="petal-designer-shading-title">PROFILE EDITOR</div>
+            <div class="petal-profile-side-toggle" role="group" aria-label="Profile side" data-petal-profile-side-toggle>
+              <button type="button" class="petal-profile-side-btn" data-petal-profile-side="inner" aria-pressed="true">Inner</button>
+              <button type="button" class="petal-profile-side-btn" data-petal-profile-side="outer" aria-pressed="false">Outer</button>
+            </div>
           </div>
-          <div class="petal-profile-editor-grid">
+          <div class="petal-profile-editor-stack">
             ${buildProfileEditorCard('inner', 'Inner Shape')}
             ${buildProfileEditorCard('outer', 'Outer Shape')}
           </div>
@@ -1257,11 +1277,11 @@
       if (!state) return 0.5;
       const inner = Math.max(
         0,
-        Math.round(clamp(state.innerCount ?? state.count ?? PETALIS_DESIGNER_DEFAULT_INNER_COUNT, 5, 400))
+        Math.round(clamp(state.innerCount ?? state.count ?? PETALIS_DESIGNER_DEFAULT_INNER_COUNT, 0, 400))
       );
       const outer = Math.max(
         0,
-        Math.round(clamp(state.outerCount ?? PETALIS_DESIGNER_DEFAULT_OUTER_COUNT, 5, 600))
+        Math.round(clamp(state.outerCount ?? PETALIS_DESIGNER_DEFAULT_OUTER_COUNT, 1, 600))
       );
       const total = inner + outer;
       if (total <= 0) return 0.5;
@@ -1888,60 +1908,126 @@
           this.syncPetalDesignerControls(pd);
           if (rerender) this.renderPetalDesigner(pd);
         };
+        // Only the active side's card is shown; the Inner|Outer toggle (and every
+        // per-side control's activateSide call) owns side selection now, so the card
+        // itself is no longer a button.
         card.classList.toggle('is-active', side === activeSide);
-        card.tabIndex = 0;
-        card.setAttribute('role', 'button');
-        card.setAttribute('aria-pressed', side === activeSide ? 'true' : 'false');
-        card.onclick = (e) => {
-          if (e.target.closest('button, select, input, label')) return;
-          activateSide({ rerender: true });
-        };
-        card.onkeydown = (e) => {
-          if (e.key !== 'Enter' && e.key !== ' ') return;
-          e.preventDefault();
-          activateSide({ rerender: true });
-        };
-        const profileSelect = card.querySelector(`select[data-petal-profile-select="${side}"]`);
-        const profileLabel = card.querySelector(`[data-petal-profile-label="${side}"]`);
+        card.classList.toggle('hidden', side !== activeSide);
+        card.removeAttribute('role');
+        card.removeAttribute('tabindex');
+        card.removeAttribute('aria-pressed');
+        card.onclick = null;
+        card.onkeydown = null;
         const symmetrySelect = card.querySelector(`select[data-petal-symmetry-side="${side}"]`);
         const symmetryLabel = card.querySelector(`[data-petal-symmetry-label="${side}"]`);
         const importBtn = card.querySelector(`[data-petal-profile-import="${side}"]`);
         const exportBtn = card.querySelector(`[data-petal-profile-export="${side}"]`);
         const fileInput = card.querySelector(`input[data-petal-profile-file="${side}"]`);
-        const profiles = this.getPetalDesignerProfilesForSide(side);
-        if (profileSelect) {
-          profileSelect.innerHTML = profiles.length
-            ? profiles
-                .map((profile) => `<option value="${profile.id}">${profile.name}</option>`)
-                .join('')
-            : '<option value="">No Profiles Found</option>';
-          profileSelect.disabled = !profiles.length;
-          const currentId = `${selections[side] || ''}`;
-          const hasCurrent = profiles.some((profile) => profile.id === currentId);
-          const nextId = hasCurrent ? currentId : profiles[0]?.id || '';
-          profileSelect.value = nextId;
-          selections[side] = nextId;
-          if (profileLabel) {
-            profileLabel.textContent = profiles.find((profile) => profile.id === nextId)?.name || 'None';
-          }
-          profileSelect.onfocus = () => {
-            activateSide({ rerender: true });
-          };
-          profileSelect.onchange = () => {
-            const selectedId = profileSelect.value;
-            if (!selectedId) return;
-            activateSide();
-            const applied = this.applyPetalDesignerProfileSelection(pd.state, side, selectedId, {
-              applyBoth: false,
-              syncLock: true,
+
+        // Named petal profile thumbnail gallery
+        const thumbsContainer = card.querySelector(`[data-petal-shape-thumbs="${side}"]`);
+        if (thumbsContainer) {
+          if (!thumbsContainer.children.length) {
+            PETAL_DESIGNER_NAMED_PROFILES.forEach((opt) => {
+              const btn = document.createElement('button');
+              btn.type = 'button';
+              btn.className = 'petal-profile-thumb';
+              btn.dataset.profile = opt.value;
+              btn.title = opt.label;
+              const canvas = document.createElement('canvas');
+              canvas.width = 40;
+              canvas.height = 48;
+              const name = document.createElement('span');
+              name.className = 'petal-profile-thumb-name';
+              name.textContent = opt.label;
+              btn.appendChild(canvas);
+              btn.appendChild(name);
+              this.drawPetalProfileThumb(canvas, this.buildPetalProfileThumbPaths(opt.value));
+              btn.onclick = (e) => {
+                e.stopPropagation();
+                activateSide();
+                const shape = this.buildProfileDesignerShape(opt.value, side);
+                pd.state[side] = shape;
+                pd.state[`${side}ProfileEdited`] = true;
+                this.resetPetalDesignerShapeAdvanced(pd.state, side);
+                if (pd.state.innerOuterLock) {
+                  const otherSide = side === 'inner' ? 'outer' : 'inner';
+                  pd.state[otherSide] = this.cloneDesignerShape(shape);
+                  pd.state[`${otherSide}ProfileEdited`] = true;
+                  this.resetPetalDesignerShapeAdvanced(pd.state, otherSide);
+                }
+                thumbsContainer.querySelectorAll('.petal-profile-thumb').forEach((b) => {
+                  b.classList.toggle('active', b.dataset.profile === opt.value);
+                });
+                this.syncPetalDesignerControls(pd);
+                onApply();
+              };
+              thumbsContainer.appendChild(btn);
             });
-            if (!applied) return;
-            if (profileLabel) {
-              profileLabel.textContent = profiles.find((profile) => profile.id === selectedId)?.name || selectedId;
-            }
-            this.syncPetalDesignerControls(pd);
-            onApply();
-          };
+          }
+          const currentProfile = pd.state[side]?.profile || 'teardrop';
+          thumbsContainer.querySelectorAll('.petal-profile-thumb').forEach((btn) => {
+            btn.classList.toggle('active', btn.dataset.profile === currentProfile);
+          });
+        }
+
+        // Per-ring advanced param sliders
+        const ringParamsContainer = card.querySelector(`[data-petal-ring-params="${side}"]`);
+        if (ringParamsContainer) {
+          const stateKey = `${side}RingParams`;
+          if (!ringParamsContainer.children.length) {
+            PETAL_DESIGNER_RING_PARAM_DEFS.forEach((def) => {
+              const adpt = lengthAdapter(def);
+              const storedVal = pd.state[stateKey]?.[def.key];
+              const displayVal = adpt.toDisplay(storedVal ?? PETAL_RING_PARAM_DEFAULTS[def.key] ?? def.min);
+              const unitSuffix = adpt.unit || '';
+              const row = document.createElement('label');
+              row.className = 'petal-slider-label petal-ring-param-row';
+              row.innerHTML = `
+                <span>${decorateLabelForUnits(def.label)}</span>
+                <span class="petal-slider-value" data-ring-param-value="${side}-${def.key}">${Number(displayVal).toFixed(adpt.precision ?? 1)}${unitSuffix}</span>
+                <input type="range" min="${adpt.min}" max="${adpt.max}" step="${adpt.step}" value="${displayVal}"
+                       data-ring-param="${side}-${def.key}" />
+              `;
+              const input = row.querySelector('input');
+              const valueEl = row.querySelector('[data-ring-param-value]');
+              const applyParam = (commit) => {
+                // Touching a side's Advanced slider makes that side active so the
+                // Inner|Outer toggle follows the user's focus.
+                pd.state.activeTarget = side;
+                pd.state.target = side;
+                const raw = parseFloat(input.value);
+                const stored = adpt.fromDisplay(raw);
+                if (!pd.state[stateKey]) pd.state[stateKey] = {};
+                pd.state[stateKey][def.key] = stored;
+                if (valueEl) valueEl.textContent = Number(raw).toFixed(adpt.precision ?? 1) + unitSuffix;
+                if (pd.state.innerOuterLock) {
+                  const otherSide = side === 'inner' ? 'outer' : 'inner';
+                  const otherKey = `${otherSide}RingParams`;
+                  if (!pd.state[otherKey]) pd.state[otherKey] = {};
+                  pd.state[otherKey][def.key] = stored;
+                }
+                onApply(commit ? {} : { live: true });
+              };
+              input.oninput = () => applyParam(false);
+              input.onchange = () => applyParam(true);
+              ringParamsContainer.appendChild(row);
+            });
+          } else {
+            PETAL_DESIGNER_RING_PARAM_DEFS.forEach((def) => {
+              const adpt = lengthAdapter(def);
+              const storedVal = pd.state[stateKey]?.[def.key];
+              // Fall back to the baseline so a slider repaints even when its
+              // override was just cleared (e.g. by selecting a new profile);
+              // the early-return left stale values frozen on screen.
+              const effectiveVal = storedVal ?? PETAL_RING_PARAM_DEFAULTS[def.key] ?? def.min;
+              const displayVal = adpt.toDisplay(effectiveVal);
+              const input = ringParamsContainer.querySelector(`input[data-ring-param="${side}-${def.key}"]`);
+              const valueEl = ringParamsContainer.querySelector(`[data-ring-param-value="${side}-${def.key}"]`);
+              if (input) input.value = displayVal;
+              if (valueEl) valueEl.textContent = Number(displayVal).toFixed(adpt.precision ?? 1) + (adpt.unit || '');
+            });
+          }
         }
         if (symmetrySelect) {
           const symmetry = this.getPetalDesignerSymmetryForSide(pd.state, side);
@@ -2042,12 +2128,12 @@
       pd.state.outerSymmetry = outerSymmetry;
       pd.state.designerSymmetry = this.getPetalDesignerSymmetryForSide(pd.state, side);
       pd.state.viewStyle = this.normalizePetalDesignerViewStyle(pd.state.viewStyle);
-      pd.state.count = Math.round(clamp(pd.state.count ?? PETALIS_DESIGNER_DEFAULT_COUNT, 5, 800));
+      pd.state.count = Math.round(clamp(pd.state.count ?? PETALIS_DESIGNER_DEFAULT_COUNT, 1, 800));
       pd.state.innerCount = Math.round(
-        clamp(pd.state.innerCount ?? pd.state.count ?? PETALIS_DESIGNER_DEFAULT_INNER_COUNT, 5, 400)
+        clamp(pd.state.innerCount ?? pd.state.count ?? PETALIS_DESIGNER_DEFAULT_INNER_COUNT, 0, 400)
       );
       pd.state.outerCount = Math.round(
-        clamp(pd.state.outerCount ?? PETALIS_DESIGNER_DEFAULT_OUTER_COUNT, 5, 600)
+        clamp(pd.state.outerCount ?? PETALIS_DESIGNER_DEFAULT_OUTER_COUNT, 1, 600)
       );
       this.syncPetalDesignerTransitionFromCounts(pd.state);
       pd.state.profileTransitionFeather = clamp(pd.state.profileTransitionFeather ?? 0, 0, 100);
@@ -2081,6 +2167,14 @@
       if (outerCountWrap) outerCountWrap.classList.remove('hidden');
       if (splitFeatherWrap) splitFeatherWrap.classList.remove('hidden');
       if (lockToggle) lockToggle.checked = Boolean(pd.state.innerOuterLock);
+      // Inner|Outer segmented toggle reflects the single active-side source of truth.
+      pd.root.querySelectorAll('[data-petal-profile-side]').forEach((btn) => {
+        const isActive = btn.dataset.petalProfileSide === side;
+        btn.classList.toggle('is-active', isActive);
+        btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      });
+      const sideToggleGroup = pd.root.querySelector('[data-petal-profile-side-toggle]');
+      if (sideToggleGroup) sideToggleGroup.classList.toggle('is-locked', Boolean(pd.state.innerOuterLock));
       this.setPetalDesignerSliderValue(pd, 'inner-count', pd.state.innerCount);
       this.setPetalDesignerSliderValue(pd, 'outer-count', pd.state.outerCount);
       this.setPetalDesignerSliderValue(pd, 'split-feather', pd.state.profileTransitionFeather);
@@ -2121,7 +2215,7 @@
         const onInnerCount = (live = false) => {
           const next = Number.parseFloat(innerCountInput.value);
           if (!Number.isFinite(next)) return;
-          pd.state.innerCount = Math.round(clamp(next, 5, 400));
+          pd.state.innerCount = Math.round(clamp(next, 0, 400));
           this.syncPetalDesignerControls(pd);
           applyChanges({ live });
         };
@@ -2132,7 +2226,7 @@
         const onOuterCount = (live = false) => {
           const next = Number.parseFloat(outerCountInput.value);
           if (!Number.isFinite(next)) return;
-          pd.state.outerCount = Math.round(clamp(next, 5, 600));
+          pd.state.outerCount = Math.round(clamp(next, 1, 600));
           this.syncPetalDesignerControls(pd);
           applyChanges({ live });
         };
@@ -2147,6 +2241,15 @@
           applyChanges();
         };
       }
+      pd.root.querySelectorAll('[data-petal-profile-side]').forEach((btn) => {
+        btn.onclick = () => {
+          const nextSide = btn.dataset.petalProfileSide === 'outer' ? 'outer' : 'inner';
+          pd.state.activeTarget = nextSide;
+          pd.state.target = nextSide;
+          this.syncPetalDesignerControls(pd);
+          this.renderPetalDesigner(pd);
+        };
+      });
       if (splitFeatherInput) {
         const onFeather = (live = false) => {
           const next = Number.parseFloat(splitFeatherInput.value);
@@ -2226,7 +2329,7 @@
       this.bindPetalDesignerUI(this.petalDesigner);
       this.bindPetalDesignerCanvases(this.petalDesigner);
       this.bindPetalDesignerShortcuts(this.petalDesigner);
-      this.applyPetalDesignerToLayer(state);
+      this.applyPetalDesignerToLayer(state, { mount: true });
       this.renderPetalDesigner(this.petalDesigner);
     },
 
@@ -2270,6 +2373,201 @@
       if (keyHandler) window.removeEventListener('keydown', keyHandler);
       if (root && root.parentElement) root.remove();
       this.inlinePetalDesigner = null;
+    },
+
+    // ---- Visual petal-profile gallery (thumbnail strip) ----
+    // Replaces the name-only petalProfile <select>: every named silhouette is
+    // rendered from a real single-petal generate() call so what you click is
+    // exactly what the engine draws.
+
+    buildPetalProfileThumbPaths(profileName) {
+      if (PETAL_PROFILE_THUMB_CACHE.has(profileName)) {
+        return PETAL_PROFILE_THUMB_CACHE.get(profileName);
+      }
+      const algo = window.Vectura.Algorithms?.petalisDesigner;
+      const SeededRNG = window.Vectura.SeededRNG;
+      const SimpleNoise = window.Vectura.SimpleNoise;
+      if (!algo || !SeededRNG || !SimpleNoise) return [];
+      // One clean, deterministic petal: a single whorl petal at angle 0 with
+      // every jitter/macro neutral and no center/shading clutter. The Outline
+      // path is the silhouette; everything else is filtered out.
+      const params = {
+        ...clone(ALGO_DEFAULTS.petalisDesigner || {}),
+        petalProfile: profileName,
+        centerProfile: profileName,
+        layoutMode: 'whorl',
+        ringMode: 'dual',
+        innerCount: 0,
+        outerCount: 1,
+        petalScale: 30,
+        petalLengthRatio: 1,
+        petalSizeRatio: 1,
+        petalWidthRatio: 0.74,
+        petalSteps: 32,
+        bloom: 100,
+        petalAsymmetry: 0,
+        petalCupping: 0,
+        radiusScale: 0,
+        countJitter: 0,
+        sizeJitter: 0,
+        rotationJitter: 0,
+        angularDrift: 0,
+        driftStrength: 0,
+        tipTwist: 0,
+        tipCurl: 0,
+        centerCurlBoost: 0,
+        edgeWaveAmp: 0,
+        budMode: false,
+        seed: 7,
+        posX: 0,
+        posY: 0,
+        scaleX: 1,
+        scaleY: 1,
+        rotation: 0,
+        smoothing: 0,
+        simplify: 0,
+        anchorToCenter: 'off',
+        centerRadius: 0,
+        centerDensity: 0,
+        connectorCount: 0,
+        layering: false,
+        lightSource: null,
+        shadings: [],
+        petalModifiers: [],
+        noises: [],
+        driftNoises: [],
+        designerInner: null,
+        designerOuter: null,
+      };
+      const bounds = { width: 120, height: 120, m: 10, dW: 100, dH: 100, truncate: true };
+      let outline = [];
+      try {
+        const paths = algo.generate(params, new SeededRNG(7), new SimpleNoise(7), bounds) || [];
+        outline =
+          paths.find((p) => Array.isArray(p) && p.meta && p.meta.label === 'Outline') || [];
+      } catch (err) {
+        console.warn('petal profile thumb generate failed', profileName, err);
+        outline = [];
+      }
+      PETAL_PROFILE_THUMB_CACHE.set(profileName, outline);
+      return outline;
+    },
+
+    drawPetalProfileThumb(canvas, outline) {
+      const ctx = canvas?.getContext?.('2d');
+      if (!ctx) return;
+      // The canvas is laid out with `width:100%` inside a grid cell, so its CSS box
+      // is wider than the 40px backing store the thumb was created with — stretching
+      // that tiny bitmap is what made the silhouettes blurry/sketchy. Capture the
+      // creation size ONCE as the logical drawing space, then render the backing
+      // store at a higher (DPR-aware) resolution so the CSS downscale stays crisp.
+      // Downscaling a high-res bitmap is sharp; upscaling a low-res one is not.
+      let logicalW = Number(canvas.dataset.thumbLogicalW);
+      let logicalH = Number(canvas.dataset.thumbLogicalH);
+      if (!logicalW || !logicalH) {
+        logicalW = canvas.width || 40;
+        logicalH = canvas.height || 48;
+        canvas.dataset.thumbLogicalW = String(logicalW);
+        canvas.dataset.thumbLogicalH = String(logicalH);
+      }
+      const ss = Math.min(4, Math.max(2, Math.ceil(window.devicePixelRatio || 1) + 1));
+      const backW = Math.round(logicalW * ss);
+      const backH = Math.round(logicalH * ss);
+      if (canvas.width !== backW) canvas.width = backW;
+      if (canvas.height !== backH) canvas.height = backH;
+      ctx.setTransform(ss, 0, 0, ss, 0, 0); // draw in logical units; ss fills the backing store
+      ctx.clearRect(0, 0, logicalW, logicalH);
+      if (!Array.isArray(outline) || outline.length < 2) return;
+      // Rotate -90° so the petal points up — silhouettes read better upright.
+      const pts = outline.map((pt) => ({ x: pt.y, y: -pt.x }));
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      pts.forEach((pt) => {
+        if (pt.x < minX) minX = pt.x;
+        if (pt.x > maxX) maxX = pt.x;
+        if (pt.y < minY) minY = pt.y;
+        if (pt.y > maxY) maxY = pt.y;
+      });
+      const pad = Math.max(4, logicalW * 0.14);
+      const w = Math.max(1e-6, maxX - minX);
+      const h = Math.max(1e-6, maxY - minY);
+      const scale = Math.min((logicalW - pad * 2) / w, (logicalH - pad * 2) / h);
+      const ox = (logicalW - w * scale) / 2 - minX * scale;
+      const oy = (logicalH - h * scale) / 2 - minY * scale;
+      ctx.beginPath();
+      pts.forEach((pt, i) => {
+        const x = pt.x * scale + ox;
+        const y = pt.y * scale + oy;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.closePath();
+      // Fill first so the silhouette reads as a solid shape, then stroke the rim.
+      ctx.fillStyle = getThemeToken('--designer-fill-active', 'rgba(56, 189, 248, 0.12)');
+      ctx.fill();
+      ctx.strokeStyle = getThemeToken('--designer-stroke-active', '#67e8f9');
+      ctx.lineWidth = 1.1;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    },
+
+    mountPetalProfileGallery(layer, container, def) {
+      if (!layer || !container) return;
+      const options = (def && def.options) || [];
+      const infoBtn = def?.infoKey
+        ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>`
+        : '';
+      const wrap = document.createElement('div');
+      wrap.className = 'petal-profile-gallery';
+      wrap.innerHTML = `
+        <div class="flex justify-between mb-1">
+          <div class="flex items-center gap-2">
+            <label class="control-label mb-0">${def?.label || 'Petal Profile'}</label>
+            ${infoBtn}
+          </div>
+          <span class="text-xs text-vectura-accent font-mono" data-petal-profile-current></span>
+        </div>
+        <div class="petal-profile-thumbs" data-petal-profile-thumbs></div>
+      `;
+      const strip = wrap.querySelector('[data-petal-profile-thumbs]');
+      const labelEl = wrap.querySelector('[data-petal-profile-current]');
+      const currentValue = () => layer.params.petalProfile || options[0]?.value || '';
+      const refreshActive = () => {
+        const cur = currentValue();
+        strip.querySelectorAll('.petal-profile-thumb').forEach((btn) => {
+          btn.classList.toggle('active', btn.dataset.profile === cur);
+        });
+        if (labelEl) {
+          labelEl.textContent = options.find((opt) => opt.value === cur)?.label || cur;
+        }
+      };
+      options.forEach((opt) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'petal-profile-thumb';
+        btn.dataset.profile = opt.value;
+        btn.title = opt.label;
+        const canvas = document.createElement('canvas');
+        canvas.width = 56;
+        canvas.height = 64;
+        const name = document.createElement('span');
+        name.className = 'petal-profile-thumb-name';
+        name.textContent = opt.label;
+        btn.appendChild(canvas);
+        btn.appendChild(name);
+        this.drawPetalProfileThumb(canvas, this.buildPetalProfileThumbPaths(opt.value));
+        btn.onclick = () => {
+          if (layer.params.petalProfile === opt.value) return;
+          if (this.app.pushHistory) this.app.pushHistory();
+          layer.params.petalProfile = opt.value;
+          this.storeLayerParams(layer);
+          refreshActive();
+          this.app.regen();
+          this.updateFormula();
+        };
+        strip.appendChild(btn);
+      });
+      refreshActive();
+      container.appendChild(wrap);
     },
 
     mountInlinePetalisDesigner(layer, mountTarget) {
@@ -2320,7 +2618,7 @@
       this.bindPetalDesignerUI(pd, { refreshControls: false });
       this.bindPetalDesignerCanvases(pd, { refreshControls: false });
       this.bindPetalDesignerShortcuts(pd, { allowClose: false, requireFocus: true });
-      this.applyPetalDesignerToLayer(state, { refreshControls: false });
+      this.applyPetalDesignerToLayer(state, { refreshControls: false, mount: true });
       this.renderPetalDesigner(pd);
     },
 
@@ -2405,6 +2703,19 @@
       const { refreshControls = true } = options;
       const applyChanges = (opts = {}) => {
         const live = Boolean(opts.live);
+        // Drawing on the profile canvas is the signal that this side is now a
+        // hand-drawn profile (so it persists as designerInner/Outer rather than
+        // falling back to the named profile).
+        if (pd.state) {
+          if (pd.state.innerOuterLock) {
+            pd.state.innerProfileEdited = true;
+            pd.state.outerProfileEdited = true;
+          } else if (pd.state.activeTarget === 'outer') {
+            pd.state.outerProfileEdited = true;
+          } else {
+            pd.state.innerProfileEdited = true;
+          }
+        }
         this.applyPetalDesignerToLayer(pd.state, {
           refreshControls: !live && refreshControls,
           persistState: !live,
@@ -3624,6 +3935,10 @@
         return;
       }
       const canvas = overlayCanvas || innerCanvas || outerCanvas;
+      // Always overlay BOTH inner and outer so the composition reads at a glance,
+      // whichever side is selected. The inactive side is drawn first (and clears the
+      // canvas once, so re-selecting a profile never stacks on the previous outline);
+      // the active side is drawn last, on top, with editable control handles.
       const drawOrder = activeSide === 'inner' ? ['outer', 'inner'] : ['inner', 'outer'];
       drawOrder.forEach((side, index) => {
         drawSide(canvas, side, {
@@ -3634,7 +3949,7 @@
     },
 
     applyPetalDesignerToLayer(state, options = {}) {
-      const { refreshControls = true, persistState = true } = options;
+      const { refreshControls = true, persistState = true, mount = false } = options;
       if (!state) return;
       const layer = this.getLayerById(state.layerId);
       if (!layer || !isPetalisLayerType(layer.type)) return;
@@ -3653,14 +3968,14 @@
       state.innerCount = Math.round(
         clamp(
           state.innerCount ?? params.innerCount ?? PETALIS_DESIGNER_DEFAULT_INNER_COUNT,
-          5,
+          0,
           400
         )
       );
       state.outerCount = Math.round(
         clamp(
           state.outerCount ?? params.outerCount ?? PETALIS_DESIGNER_DEFAULT_OUTER_COUNT,
-          5,
+          1,
           600
         )
       );
@@ -3669,21 +3984,32 @@
       state.count = Math.round(
         clamp(
           state.innerCount + state.outerCount,
-          5,
+          1,
           800
         )
       );
       state.seed = Math.round(clamp(state.seed ?? params.seed ?? 1, 0, 9999));
-      state.countJitter = clamp(state.countJitter ?? params.countJitter ?? 0.1, 0, 0.5);
-      state.sizeJitter = clamp(state.sizeJitter ?? params.sizeJitter ?? 0.12, 0, 0.5);
-      state.rotationJitter = clamp(state.rotationJitter ?? params.rotationJitter ?? 6, 0, 45);
+      // Jitters default OFF (clean flower); only honoured if explicitly set.
+      state.countJitter = clamp(state.countJitter ?? params.countJitter ?? 0, 0, 0.5);
+      state.sizeJitter = clamp(state.sizeJitter ?? params.sizeJitter ?? 0, 0, 0.5);
+      state.rotationJitter = clamp(state.rotationJitter ?? params.rotationJitter ?? 0, 0, 45);
       state.angularDrift = clamp(state.angularDrift ?? params.angularDrift ?? 0, 0, 45);
-      state.driftStrength = clamp(state.driftStrength ?? params.driftStrength ?? 0.1, 0, 1);
+      state.driftStrength = clamp(state.driftStrength ?? params.driftStrength ?? 0, 0, 1);
       state.driftNoise = clamp(state.driftNoise ?? params.driftNoise ?? 0.2, 0.05, 1);
       state.radiusScale = clamp(state.radiusScale ?? params.radiusScale ?? 0.2, -1, 1);
       state.radiusScaleCurve = clamp(state.radiusScaleCurve ?? params.radiusScaleCurve ?? 1.2, 0.5, 2.5);
-      params.designerOuter = JSON.parse(JSON.stringify(state.outer));
-      params.designerInner = JSON.parse(JSON.stringify(state.inner));
+      // On MOUNT, do not write any params back: the layer already carries its
+      // (clean, preset/default) params, and the designer's synthesized drawn
+      // profiles + count/jitter normalization would otherwise silently convert
+      // a named-profile flower into a lumpy drawn-profile one with extra petals.
+      // Param writes happen only on an actual designer edit.
+      if (!mount) {
+      const innerHasDrawn = Boolean(params.designerInner?.anchors?.length >= 2);
+      const outerHasDrawn = Boolean(params.designerOuter?.anchors?.length >= 2);
+      // Preserve the named-profile path (null) unless the layer already used a
+      // hand-drawn profile or the user has drawn one (state.profileEdited).
+      params.designerOuter = outerHasDrawn || state.outerProfileEdited ? JSON.parse(JSON.stringify(state.outer)) : params.designerOuter ?? null;
+      params.designerInner = innerHasDrawn || state.innerProfileEdited ? JSON.parse(JSON.stringify(state.inner)) : params.designerInner ?? null;
       params.designerSymmetry = state.designerSymmetry;
       params.designerInnerSymmetry = state.innerSymmetry;
       params.designerOuterSymmetry = state.outerSymmetry;
@@ -3694,13 +4020,23 @@
       params.petalShape = state.activeTarget;
       params.petalRing = state.activeTarget;
       params.ringMode = 'dual';
+      const layoutMode = state.layoutMode === 'spiral' ? 'spiral' : 'whorl';
+      params.layoutMode = layoutMode;
       params.innerCount = state.innerCount;
       params.outerCount = state.outerCount;
-      params.ringSplit = countSplit;
+      // In whorl mode the ring radius is count-INDEPENDENT, so honour the
+      // explicit ringSplit (don't clobber it with the count-derived split,
+      // which would warp the ring radii). Spiral keeps the count-derived split.
+      params.ringSplit =
+        layoutMode === 'whorl'
+          ? clamp(state.ringSplit ?? params.ringSplit ?? 0.45, 0.1, 0.9)
+          : countSplit;
       params.innerOuterLock = Boolean(state.innerOuterLock);
       params.profileTransitionPosition = clamp(state.profileTransitionPosition ?? countSplit * 100, 0, 100);
       params.profileTransitionFeather = clamp(state.profileTransitionFeather ?? 0, 0, 100);
-      params.petalSteps = Math.max(64, Math.round(params.petalSteps ?? 64));
+      // Honour the petalSteps slider (12-80) instead of silently forcing >=64,
+      // which doubled plotter output and made the control read as a no-op.
+      params.petalSteps = clamp(Math.round(params.petalSteps ?? 32), 12, 80);
       params.petalProfile = state.outer.profile || params.petalProfile || 'teardrop';
       params.petalWidthRatio = Number.isFinite(params.petalWidthRatio) ? params.petalWidthRatio : 1;
       state.widthRatio = this.normalizePetalDesignerWidthRatio(params.petalWidthRatio, 1);
@@ -3715,6 +4051,9 @@
       params.centerWaveBoost = 0;
       params.edgeWaveAmp = 0;
       params.edgeWaveFreq = 0;
+      // Per-ring petal param overrides from the advanced accordion
+      params.innerRingParams = Object.keys(state.innerRingParams || {}).length ? { ...state.innerRingParams } : null;
+      params.outerRingParams = Object.keys(state.outerRingParams || {}).length ? { ...state.outerRingParams } : null;
       params.seed = state.seed;
       params.countJitter = state.countJitter;
       params.sizeJitter = state.sizeJitter;
@@ -3735,6 +4074,7 @@
       params.petalModifiers = modifiers.map((modifier, index) =>
         this.normalizePetalDesignerModifier(modifier, index)
       );
+      } // end if (!mount)
       if (persistState) this.storeLayerParams(layer);
       this.app.engine.generate(layer.id);
       if (this.app.engine.activeLayerId === layer.id) {

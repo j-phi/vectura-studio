@@ -1,0 +1,70 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Breathing Orbit",
+  "meta": {
+    "presetId": "pendula-breathing-orbit",
+    "group": "Evolving",
+    "system": "pendula",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "pendula",
+      "params": {
+        "renderMode": "line",
+        "samples": 6000,
+        "duration": 32,
+        "scale": 0.55,
+        "loopDrift": 0,
+        "paperRotation": 0,
+        "pendulums": [
+          {
+            "id": "pend-1",
+            "enabled": true,
+            "ampX": 110,
+            "ampY": 110,
+            "phaseX": 90,
+            "phaseY": 0,
+            "damp": 0.0004,
+            "freq": 2,
+            "micro": 0
+          },
+          {
+            "id": "pend-2",
+            "enabled": true,
+            "ampX": 22,
+            "ampY": 22,
+            "phaseX": 90,
+            "phaseY": 0,
+            "damp": 0,
+            "freq": 2,
+            "micro": 0
+          }
+        ],
+        "motion": {
+          "sources": [
+            {
+              "id": "lfo-breath",
+              "enabled": true,
+              "shape": "sine",
+              "syncMode": "sync",
+              "rate": 1,
+              "depth": 1,
+              "phase": 0,
+              "polarity": "bi"
+            }
+          ],
+          "edges": [
+            {
+              "id": "e-breath",
+              "sourceId": "lfo-breath",
+              "targetParamPath": "pendulums.1.freq",
+              "amount": 0.06
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

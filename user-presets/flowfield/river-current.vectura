@@ -1,0 +1,25 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "River Current",
+  "meta": {
+    "presetId": "flowfield-river-current",
+    "group": "Classic",
+    "system": "flowfield",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "flowfield",
+      "params": {
+        "flowMode": "angle",
+        "density": 1200,
+        "chaos": 0.15,
+        "stepLen": 6,
+        "maxSteps": 260,
+        "force": 1.2,
+        "octaves": 2
+      }
+    }
+  ]
+}

@@ -157,7 +157,6 @@ Current classification:
 | `docs/github-governance.md` | `operational` | Repo administrators + PR authors | Any repo-governance change |
 | `docs/noise-rack-architecture.md` | `authoritative` | Architecture owners + PR authors | Any universal-noise architecture change |
 | `plans.md` | `operational` | Product/feature planning owner + PR authors | Every feature/change PR |
-| `requirements.md` | `backlog` | Product/architecture owner | Monthly or when revived |
 | `docs/pre-release-hardening-log.md` | `operational` | Release/hardening owner + PR authors | On each deferred hardening item |
 
 ## 9) Future Project Bootstrap (Reusable Starter)

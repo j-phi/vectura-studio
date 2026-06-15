@@ -1,0 +1,76 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Tidal Lissajous",
+  "meta": {
+    "presetId": "pendula-tidal-lissajous",
+    "group": "Evolving",
+    "system": "pendula",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "pendula",
+      "params": {
+        "renderMode": "line",
+        "samples": 6000,
+        "duration": 36,
+        "scale": 0.55,
+        "loopDrift": 0,
+        "paperRotation": 0,
+        "pendulums": [
+          {
+            "id": "pend-1",
+            "enabled": true,
+            "ampX": 120,
+            "ampY": 0,
+            "phaseX": 90,
+            "phaseY": 0,
+            "damp": 0,
+            "freq": 3,
+            "micro": 0
+          },
+          {
+            "id": "pend-2",
+            "enabled": true,
+            "ampX": 0,
+            "ampY": 90,
+            "phaseX": 0,
+            "phaseY": 0,
+            "damp": 0,
+            "freq": 4,
+            "micro": 0
+          }
+        ],
+        "motion": {
+          "sources": [
+            {
+              "id": "lfo-tide",
+              "enabled": true,
+              "shape": "sine",
+              "syncMode": "sync",
+              "rate": 1,
+              "depth": 1,
+              "phase": 0,
+              "polarity": "bi"
+            }
+          ],
+          "edges": [
+            {
+              "id": "e-tide-phase",
+              "sourceId": "lfo-tide",
+              "targetParamPath": "pendulums.1.phaseY",
+              "amount": 120
+            },
+            {
+              "id": "e-tide-amp",
+              "sourceId": "lfo-tide",
+              "targetParamPath": "pendulums.0.ampY",
+              "amount": 40
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

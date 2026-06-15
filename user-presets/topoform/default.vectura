@@ -1,0 +1,59 @@
+{
+  "type": "vectura",
+  "name": "Default",
+  "meta": {
+    "presetId": "topoform-default",
+    "group": "Classic",
+    "system": "topoform",
+    "savedAt": 1781396764929
+  },
+  "layers": [
+    {
+      "type": "topoform",
+      "params": {
+        "label": "Topoform",
+        "is3d": true,
+        "preset": "topoform-default",
+        "sourceMode": "sphere",
+        "importedMesh": null,
+        "meshName": "",
+        "renderMode": "contours",
+        "primitiveDetail": 100,
+        "primitiveScaleX": 65,
+        "primitiveScaleY": 65,
+        "primitiveScaleZ": 65,
+        "simplifyMesh": 0,
+        "lineCount": 26,
+        "planeRotate": 0,
+        "planeTilt": 0,
+        "contourVisibility": "visibleOnly",
+        "contourSmoothing": 0,
+        "showOutline": true,
+        "yaw": -9.8,
+        "pitch": 52.6,
+        "roll": -134.6,
+        "projection": "orthographic",
+        "cameraDistance": 620,
+        "focalLength": 520,
+        "depthCue": "off",
+        "depthCueStrength": 60,
+        "emphasizeOutline": false,
+        "outlineWeight": 2,
+        "showCreases": false,
+        "creaseAngle": 35,
+        "hiddenLineMode": "backface",
+        "depthBias": 0.5,
+        "hatchEnable": false,
+        "lightAzimuth": 135,
+        "lightElevation": 45,
+        "hatchAngle": 45,
+        "hatchSpacing": 6,
+        "crossHatch": false,
+        "smoothing": 0,
+        "simplify": 0,
+        "curves": false,
+        "artworkSize": 150
+      }
+    }
+  ]
+}

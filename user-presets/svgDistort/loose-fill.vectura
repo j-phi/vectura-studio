@@ -1,0 +1,24 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Loose Fill",
+  "meta": {
+    "presetId": "svg-distort-loose-fill",
+    "group": "Organic",
+    "system": "svgDistort",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "svgDistort",
+      "params": {
+        "showOutlines": true,
+        "fillMode": "hatch",
+        "fillDensity": 2,
+        "autoFit": true,
+        "scale": 1,
+        "noises": []
+      }
+    }
+  ]
+}

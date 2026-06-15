@@ -38,14 +38,20 @@
       const bLabel = ALGO_DEFAULTS[b]?.label || b;
       return aLabel.localeCompare(bLabel);
     });
+    const group2d = document.createElement('optgroup');
+    group2d.label = '2D';
+    const group3d = document.createElement('optgroup');
+    group3d.label = '3D';
     keys.forEach((key) => {
       const def = ALGO_DEFAULTS[key];
       const opt = document.createElement('option');
       opt.value = key;
       const label = def?.label;
       opt.innerText = label || key.charAt(0).toUpperCase() + key.slice(1);
-      select.appendChild(opt);
+      (def?.is3d ? group3d : group2d).appendChild(opt);
     });
+    if (group2d.children.length) select.appendChild(group2d);
+    if (group3d.children.length) select.appendChild(group3d);
   }
 
   function _buildModuleMenu() {
@@ -79,22 +85,33 @@
   }
 
   function _showModuleMenu() {
-    const { getEl } = requireDeps('_showModuleMenu');
+    const { getEl, ALGO_DEFAULTS } = requireDeps('_showModuleMenu');
     const select = getEl('generator-module', { silent: true });
     const trigger = document.getElementById('generator-module-trigger');
     if (!select || !trigger) return;
     const menu = this._buildModuleMenu();
     const currentValue = select.value;
-    menu.innerHTML = Array.from(select.options).map((opt) => {
+    const allOpts = Array.from(select.options);
+    const opts2d = allOpts.filter((opt) => !(ALGO_DEFAULTS && ALGO_DEFAULTS[opt.value]?.is3d));
+    const opts3d = allOpts.filter((opt) => !!(ALGO_DEFAULTS && ALGO_DEFAULTS[opt.value]?.is3d));
+    const renderOpt = (opt) => {
       const type = opt.value;
       const ico = this._LVL_I?.[type];
       const color = this._algoMenuColor?.(type) ?? '';
-      const iconHtml = ico
-        ? `<span class="lvl-algo-sub-ico" style="color:${color}">${ico()}</span>`
-        : '';
+      const iconHtml = ico ? `<span class="lvl-algo-sub-ico" style="color:${color}">${ico()}</span>` : '';
       const activeClass = type === currentValue ? ' gm-item-active' : '';
       return `<div class="lvl-algo-sub-item${activeClass}" data-gm-value="${type}">${iconHtml}${opt.innerText}</div>`;
-    }).join('');
+    };
+    const parts = [];
+    if (opts2d.length) {
+      parts.push('<div class="algo-group-div">2D</div>');
+      opts2d.forEach((opt) => parts.push(renderOpt(opt)));
+    }
+    if (opts3d.length) {
+      parts.push('<div class="algo-group-div algo-group-sep">3D</div>');
+      opts3d.forEach((opt) => parts.push(renderOpt(opt)));
+    }
+    menu.innerHTML = parts.join('');
     const r = trigger.getBoundingClientRect();
     menu.style.top = `${r.bottom + 2}px`;
     menu.style.left = `${r.left}px`;

@@ -1,0 +1,25 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Honeycomb",
+  "meta": {
+    "presetId": "phylla-honeycomb",
+    "group": "Geometric",
+    "system": "phylla",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "phylla",
+      "params": {
+        "count": 400,
+        "spacing": 5,
+        "angleStr": 137.5,
+        "divergence": 0.9,
+        "dotSize": 1.5,
+        "shapeType": "polygon",
+        "sides": 6
+      }
+    }
+  ]
+}

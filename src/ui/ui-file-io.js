@@ -154,7 +154,7 @@
         if (this.app.pushHistory) this.app.pushHistory();
         const created = [];
         groups.forEach((group) => {
-          const id = Math.random().toString(36).slice(2, 11);
+          const id = window.Vectura.generateId();
           const name = this.getUniqueLayerName(group.name || 'Imported SVG', id);
           const layer = new Layer(id, 'shape', name);
           layer.params.seed = 0;
@@ -515,7 +515,8 @@
       const seenGroupOrder = [];
       const groupMap = new Map();
       (this.app.engine.layers || []).forEach((layer) => {
-        if (!layer?.visible || (layer.isGroup && layer.type !== 'compound') || isMaskLayerGeometryHidden(layer) || (this.app.engine.hasCompoundAncestor && this.app.engine.hasCompoundAncestor(layer))) return;
+        const isMorphGroup = layer.isGroup && Array.isArray(layer.morphedPaths) && layer.morphedPaths.length > 0;
+        if (!layer?.visible || (layer.isGroup && layer.type !== 'compound' && !isMorphGroup) || isMaskLayerGeometryHidden(layer) || (this.app.engine.hasCompoundAncestor && this.app.engine.hasCompoundAncestor(layer))) return;
         const pen = penMap.get(layer.penId) || fallbackPen;
         const key = pen.id || fallbackPen.id;
         if (!groupMap.has(key)) {
@@ -656,6 +657,29 @@
             attrs = attrs || {};
             attrs.stroke = window.Vectura._UIExportUtil.escapeXmlAttr(item.strokeColor || 'black');
             attrs['stroke-width'] = item.strokeWidth;
+          }
+          const dash = window.Vectura._UIExportUtil.getPathStrokeDash?.(item.path);
+          if (dash) {
+            attrs = attrs || {};
+            attrs['stroke-dasharray'] = dash.map((value) => Number(value).toFixed(3).replace(/\.?0+$/, '')).join(' ');
+          }
+          // Variable line weight (silhouette / crease emphasis): emit a per-path
+          // stroke-width override only when meta.weightScale differs from 1, so
+          // default geometry keeps the group-level stroke-width untouched.
+          const rawWeight = Number(item.path?.meta?.weightScale);
+          if (Number.isFinite(rawWeight) && rawWeight !== 1) {
+            const weightScale = Math.max(0.1, Math.min(6, rawWeight));
+            const scaledWidth = (parseFloat(item.strokeWidth) || 0) * weightScale;
+            if (Number.isFinite(scaledWidth) && scaledWidth > 0) {
+              attrs = attrs || {};
+              attrs['stroke-width'] = Number(scaledWidth.toFixed(4));
+            }
+          }
+          // Filled glyphs (spiralizer "Points" solid discs) override the group's
+          // fill="none" with the stroke color so the marker exports solid.
+          if (item.path?.meta?.fill) {
+            attrs = attrs || {};
+            attrs.fill = window.Vectura._UIExportUtil.escapeXmlAttr(item.strokeColor || group.pen?.color || 'black');
           }
           const markup = window.Vectura._UIExportUtil.shapeToSvg(item.path, precision, item.useCurves, attrs, item.sharpEdges);
           if (markup) svg += markup;

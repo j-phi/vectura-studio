@@ -3,6 +3,7 @@
  *
  * Public API: window.Vectura.UI.utils.{ clamp, formatNumber, tabularNum,
  *                                       cssVarPx, prefersReducedMotion,
+ *                                       getDrawableAlgorithmOptions,
  *                                       uid, on, off }
  *
  * Each helper is a pure function (no DOM mutation outside `on`/`off`). Loaded
@@ -87,6 +88,21 @@
     target.removeEventListener(event, handler, options);
   };
 
+  const getDrawableAlgorithmOptions = () => {
+    const defaults = (window.Vectura && window.Vectura.ALGO_DEFAULTS) || {};
+    return Object.keys(defaults)
+      .filter((type) => {
+        const def = defaults[type];
+        return def && typeof def === 'object' && !def.hidden;
+      })
+      .map((type) => ({
+        type,
+        label: defaults[type]?.label || type.charAt(0).toUpperCase() + type.slice(1),
+        is3d: !!defaults[type]?.is3d,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  };
+
   /**
    * Canonical HTML escape — the single source of truth for `escapeHtml` across
    * the codebase. Escapes the five XSS-relevant characters (& < > " '). Non-
@@ -113,5 +129,16 @@
       .replace(/'/g, '&#39;');
   };
 
-  UI.utils = { clamp, formatNumber, tabularNum, cssVarPx, prefersReducedMotion, uid, on, off, escapeHtml };
+  UI.utils = {
+    clamp,
+    formatNumber,
+    tabularNum,
+    cssVarPx,
+    prefersReducedMotion,
+    getDrawableAlgorithmOptions,
+    uid,
+    on,
+    off,
+    escapeHtml,
+  };
 })();

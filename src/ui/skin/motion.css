@@ -58,6 +58,16 @@
   }
 }
 
+/* Preset save pip — one-time glow + scale pulse when it appears (dirty state).
+   The class is added by JS on the hidden→visible transition; the global
+   reduced-motion guard at the bottom of this file neutralizes it. */
+@keyframes preset-pip-pulse {
+  0%   { transform: scale(0.6); opacity: 0; box-shadow: 0 0 0 0 var(--ui-accent-2, rgba(99,102,241,0.5)); }
+  40%  { transform: scale(1.12); opacity: 1; box-shadow: 0 0 0 6px var(--ui-accent-2, rgba(99,102,241,0.45)); }
+  100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 rgba(0,0,0,0); }
+}
+.hg-preset-save-pip.is-pulsing { animation: preset-pip-pulse 0.6s ease-out; }
+
 /* Indeterminate progress bar — Phase 4. Slides a 30% bar from -30% → 100%. */
 @keyframes progress-indeterminate {
   0%   { transform: translateX(-100%); }
@@ -119,6 +129,82 @@
   }
   #btn-randomize-params  { animation: none !important; }
   .rand-spark-overlay    { display: none !important; }
+  .hg-preset-save-pip.is-pulsing { animation: none !important; }
+}
+
+/* === Collapsible control sections (UX1 / WU10) ===
+ * `{ type:'section', collapsed:true }` renders `.control-section--collapsible`
+ * with a clickable `.control-section-toggle` header and a `.control-section-body`
+ * that collects the controls following the section. Closed = `.is-collapsed`.
+ *
+ * Collapse animation uses a grid-template-rows 0fr↔1fr transition (NOT a
+ * display:none↔max-height swap, per CLAUDE.md — that swap causes a visual gap).
+ * The body is a single-row grid whose row track animates between 0fr (closed)
+ * and 1fr (open); an inner min-height:0 overflow:hidden wrapper clips the
+ * content as the track collapses. Reuses the shared panel-slide motion tokens. */
+.control-section--collapsible > .control-section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 0.5rem;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  text-align: left;
+  /* Inherit the .control-section-title typography (size/transform/spacing/color). */
+  font: inherit;
+  color: inherit;
+}
+.control-section--collapsible > .control-section-toggle .control-section-caret {
+  flex: 0 0 auto;
+  width: 0;
+  height: 0;
+  border-left: 4px solid currentColor;
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+  opacity: 0.7;
+  transform: rotate(90deg);
+  transition: transform var(--motion-panel-slide-dur, 220ms) var(--motion-panel-slide-ease, ease);
+}
+.control-section--collapsible.is-collapsed > .control-section-toggle .control-section-caret {
+  transform: rotate(0deg);
+}
+/* The SECTION is the grid (header row = auto, body row = 1fr→0fr). The body
+ * holds all controls in normal block flow as a single grid item, so the collapse
+ * works for ANY number of controls. (Putting the grid on the body itself would
+ * leave the 2nd+ controls in implicit `auto` rows that never collapse — only the
+ * first control's row would animate.) */
+.control-section--collapsible {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  transition: grid-template-rows var(--motion-panel-slide-dur, 220ms) var(--motion-panel-slide-ease, ease);
+}
+.control-section--collapsible.is-collapsed {
+  grid-template-rows: auto 0fr;
+}
+.control-section--collapsible > .control-section-body {
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Empty-state section hint (R3/UX10 / WU9) — small muted line. */
+.control-section-hint {
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: var(--ui-text-2, rgba(150, 160, 175, 0.85));
+  opacity: 0.85;
+  margin: 0.35rem 0 0.5rem;
+}
+
+/* Reduced-motion: drop the caret + row-track animation. */
+@media (prefers-reduced-motion: reduce) {
+  .control-section--collapsible > .control-section-toggle .control-section-caret,
+  .control-section--collapsible {
+    transition: none !important;
+  }
 }
 
 /* === Migrated from styles.css (Unit 2.6: reduced-motion fallback, 2026-05-20) === */

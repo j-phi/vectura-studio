@@ -1,0 +1,59 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Iris Germanica",
+  "meta": {
+    "presetId": "iris-germanica",
+    "group": "Geometric",
+    "system": "petalisDesigner",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "petalisDesigner",
+      "params": {
+        "petalProfile": "lanceolate",
+        "petalScale": 40,
+        "petalWidthRatio": 0.4,
+        "count": 6,
+        "tipTwist": 0.8,
+        "rotationJitter": 0,
+        "centerType": "disk",
+        "centerRadius": 5,
+        "layoutMode": "whorl",
+        "ringMode": "dual",
+        "innerCount": 3,
+        "outerCount": 3,
+        "ringSplit": 0.5,
+        "ringOffset": 60,
+        "sizeJitter": 0,
+        "countJitter": 0,
+        "shadings": [
+          {
+            "id": "designer-shade-1",
+            "enabled": true,
+            "type": "vein",
+            "target": "both",
+            "veinCount": 5,
+            "veinReach": 0.6,
+            "lineType": "solid",
+            "lineSpacing": 1,
+            "density": 1,
+            "widthX": 100,
+            "widthY": 100,
+            "posX": 50,
+            "posY": 50,
+            "gapX": 0,
+            "gapY": 0,
+            "gapPosX": 50,
+            "gapPosY": 50,
+            "jitter": 0,
+            "lengthJitter": 0,
+            "angle": 0
+          }
+        ],
+        "anchorToCenter": "all"
+      }
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Rolling Hills",
+  "meta": {
+    "presetId": "wavetable-rolling-hills",
+    "group": "Classic",
+    "system": "wavetable",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "wavetable",
+      "params": {
+        "lineStructure": "horizontal",
+        "lines": 130,
+        "gap": 1,
+        "edgeFade": 0
+      }
+    }
+  ]
+}

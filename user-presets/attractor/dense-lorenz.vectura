@@ -1,0 +1,25 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Dense Lorenz",
+  "meta": {
+    "presetId": "attractor-dense-lorenz",
+    "group": "Complex",
+    "system": "attractor",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "attractor",
+      "params": {
+        "type": "lorenz",
+        "iter": 5000,
+        "scale": 3,
+        "dt": 0.005,
+        "sigma": 10,
+        "rho": 28,
+        "beta": 2.66
+      }
+    }
+  ]
+}

@@ -308,10 +308,11 @@ describe('Petalis profile transitions', () => {
     expect(lowGrowthAssignments.filter((entry) => entry === 'outer')).toHaveLength(base.outerCount);
   });
 
-  test('petalis designer ignores ringSplit for dual-ring transitions', () => {
+  test('petalis designer profile transition is count-derived, not ringSplit-derived (ringSplit drives whorl radius)', () => {
     const { Algorithms, ALGO_DEFAULTS, SeededRNG, SimpleNoise } = runtime.window.Vectura;
     const base = {
       ...clone(ALGO_DEFAULTS.petalisDesigner || {}),
+      layoutMode: 'whorl',
       ringMode: 'dual',
       innerCount: 12,
       outerCount: 16,
@@ -345,9 +346,78 @@ describe('Petalis profile transitions', () => {
     };
     const render = (params, seed = 7771) =>
       Algorithms.petalisDesigner.generate(params, new SeededRNG(seed), new SimpleNoise(seed), bounds) || [];
+    const classify = (params) => {
+      const mixedOutlines = extractOutlines(render(clone(params)));
+      const innerOnlyOutlines = extractOutlines(
+        render({ ...clone(params), profileTransitionFeather: 0, designerOuter: clone(INNER_PROFILE) })
+      );
+      const outerOnlyOutlines = extractOutlines(
+        render({ ...clone(params), profileTransitionFeather: 0, designerInner: clone(OUTER_PROFILE) })
+      );
+      return classifyDesignerAssignments({ mixedOutlines, innerOnlyOutlines, outerOnlyOutlines });
+    };
+
+    // Which profile each petal uses is decided by the inner/outer COUNT split,
+    // independent of ringSplit — so the per-petal profile assignment is the
+    // same at ringSplit 0.2 and 0.8.
+    const lowAssignments = classify({ ...clone(base), ringSplit: 0.2 });
+    const highAssignments = classify({ ...clone(base), ringSplit: 0.8 });
+    expect(highAssignments).toEqual(lowAssignments);
+    expect(lowAssignments.filter((e) => e === 'inner')).toHaveLength(base.innerCount);
+    expect(lowAssignments.filter((e) => e === 'outer')).toHaveLength(base.outerCount);
+
+    // But ringSplit now drives the whorl ring RADIUS, so the geometry differs.
     const lowSplit = render({ ...clone(base), ringSplit: 0.2 });
     const highSplit = render({ ...clone(base), ringSplit: 0.8 });
+    expect(pathSignature(lowSplit)).not.toBe(pathSignature(highSplit));
+  });
 
-    expect(pathSignature(lowSplit)).toBe(pathSignature(highSplit));
+  test('a single populated band assigns every petal to that band profile (no stale boundary petal)', () => {
+    const { Algorithms, ALGO_DEFAULTS, SeededRNG, SimpleNoise } = runtime.window.Vectura;
+    const bounds = { width: 320, height: 220, m: 20, dW: 280, dH: 180, truncate: true };
+    const base = {
+      ...clone(ALGO_DEFAULTS.petalisDesigner || {}),
+      layoutMode: 'whorl',
+      ringMode: 'dual',
+      countJitter: 0,
+      sizeJitter: 0,
+      rotationJitter: 0,
+      layering: false,
+      shadings: [],
+      petalModifiers: [],
+      centerModifiers: [],
+      centerRing: false,
+      centerConnectors: false,
+      centerRadius: 0,
+      centerDensity: 1,
+      anchorToCenter: 'off',
+      edgeWaveAmp: 0,
+      profileTransitionFeather: 0,
+      designerInner: clone(INNER_PROFILE),
+      designerOuter: clone(OUTER_PROFILE),
+    };
+    const render = (params, seed = 7) =>
+      Algorithms.petalisDesigner.generate(params, new SeededRNG(seed), new SimpleNoise(seed), bounds) || [];
+    const classify = (params) => {
+      const mixedOutlines = extractOutlines(render(clone(params)));
+      const innerOnlyOutlines = extractOutlines(
+        render({ ...clone(params), profileTransitionFeather: 0, designerOuter: clone(INNER_PROFILE) })
+      );
+      const outerOnlyOutlines = extractOutlines(
+        render({ ...clone(params), profileTransitionFeather: 0, designerInner: clone(OUTER_PROFILE) })
+      );
+      return classifyDesignerAssignments({ mixedOutlines, innerOnlyOutlines, outerOnlyOutlines });
+    };
+
+    // Empty inner band: all six visible (outer) petals must follow the OUTER profile.
+    // Before the ring-target gate, the lowest-index petal stayed on the inner profile.
+    const outerOnly = classify({ ...clone(base), innerCount: 0, outerCount: 6 });
+    expect(outerOnly).toHaveLength(6);
+    expect(outerOnly).toEqual(Array(6).fill('outer'));
+
+    // Symmetric case: empty outer band → every petal follows the INNER profile.
+    const innerOnly = classify({ ...clone(base), innerCount: 6, outerCount: 0 });
+    expect(innerOnly).toHaveLength(6);
+    expect(innerOnly).toEqual(Array(6).fill('inner'));
   });
 });

@@ -725,7 +725,7 @@
     const idx = engine.layers.findIndex((l) => l.id === layer.id);
     const pad = String(segments.length).length;
     const children = segments.map((seg, i) => {
-      const newId = Math.random().toString(36).slice(2, 11);
+      const newId = window.Vectura.generateId();
       const child = new Layer(newId, 'shape', `${layer.name} Cut ${String(i + 1).padStart(pad, '0')}`);
       child.parentId = layer.parentId;
       child.params.seed = 0;

@@ -1,0 +1,38 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Ancient",
+  "meta": {
+    "presetId": "rings-ancient",
+    "group": "Complex",
+    "system": "rings",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "rings",
+      "params": {
+        "rings": 40,
+        "gap": 1,
+        "gapCurveStart": 1.8,
+        "gapCurveEnd": 0.6,
+        "spacingVariance": 0.5,
+        "barkRings": 10,
+        "barkGap": 1,
+        "breakCount": 6,
+        "centerDrift": 0.6,
+        "biasStrength": 0.15,
+        "biasAngle": 60,
+        "rayCount": 80,
+        "rayLength": 3,
+        "knotCount": 2,
+        "knotIntensity": 0.8,
+        "crackCount": 3,
+        "crackDepth": 0.6,
+        "scarCount": 2,
+        "scarDepth": 3,
+        "seed": 777
+      }
+    }
+  ]
+}

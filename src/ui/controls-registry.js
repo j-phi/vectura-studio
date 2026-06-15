@@ -49,6 +49,11 @@
       : []),
   ];
 
+  const POLYHEDRON_SIDE_COUNT_SOLIDS = ['flatPolygon', 'prism', 'antiprism', 'bipyramid'];
+  const POLYHEDRON_DEPTH_SOLIDS = ['prism', 'antiprism', 'bipyramid'];
+  const polyhedronUsesSideCount = (p = {}) => POLYHEDRON_SIDE_COUNT_SOLIDS.includes(p.solidType);
+  const polyhedronUsesDepth = (p = {}) => POLYHEDRON_DEPTH_SOLIDS.includes(p.solidType);
+
   const PETAL_PROFILE_OPTIONS = [
     { value: 'oval', label: 'Oval' },
     { value: 'teardrop', label: 'Teardrop' },
@@ -61,6 +66,174 @@
     { value: 'marquise', label: 'Marquise' },
     { value: 'dagger', label: 'Dagger' },
   ];
+
+  // Shared "Shading & Lines" block appended to every 3D-capable algorithm
+  // (spiralizer, polyhedron, topoform, rasterPlane). Drives the four
+  // cross-cutting geometry3d.js enhancements: depth-cue dash (#2), silhouette /
+  // crease line-weight emphasis (#3), hidden-line removal (#4), Lambert hatching
+  // (#5).
+  //
+  // Capability-driven factory (R-CC): a flat array cannot show a control on one
+  // algo and hide it on another. `buildShadingControls(caps)` injects per-algo /
+  // per-mode capability predicates ANDed with each control's own self-toggle so
+  // that inapplicable controls are HIDDEN where the generator does not wire them.
+  // Single source of truth preserved: one factory, four call sites.
+  //
+  // Each capability flag is a function of `p` (so per-mode algos like rasterPlane
+  // can vary by `p.mode`). Defaults to `() => true` (full block, today's behavior).
+  //   - allowOutline  → emphasizeOutline / outlineWeight
+  //   - allowCrease   → showCreases / creaseAngle
+  //   - hiddenLineModes → hiddenLineMode (face-derivable visibility)
+  //   - allowDepthBias → depthBias (occlusion bias; defaults to hiddenLineModes
+  //     but can be suppressed independently — e.g. spiralizer wires hidden-line
+  //     dash/backface but has no occlusion-bias surface).
+  //   - allowHatch    → hatchEnable + light/hatchAngle/hatchSpacing/crossHatch
+  //   - depthCue / depthCueStrength are ALWAYS present (work on every algo).
+  // The section header is ALWAYS emitted (R-CONSIST rule a).
+  const TRUE = () => true;
+  const buildShadingControls = (caps = {}, options = {}) => {
+    const {
+      allowOutline = TRUE,
+      allowCrease = TRUE,
+      hiddenLineModes = TRUE,
+      allowHatch = TRUE,
+      allowDepthBias = hiddenLineModes,
+      // Self-activation predicate for Occlusion Bias. Defaults to "a non-backface
+      // Hidden Lines mode is selected" (the face-derived algos). rasterPlane drives
+      // its occlusion off the See-Through toggle, not hiddenLineMode, so it supplies
+      // its own predicate here.
+      depthBiasSelf = (p) => (p.hiddenLineMode || 'backface') !== 'backface',
+    } = caps;
+    // Topoform opt-in: a master "Scene Lighting" toggle (default OFF) that gates
+    // the LIGHTING group (Lambert hatch + depth cue). When the flag is absent
+    // (every other 3D algo) the block stays byte-equivalent — `litGate` returns
+    // the original gate untouched and no Scene Lighting control is inserted.
+    const { sceneLightingMaster = false } = options;
+    const lit = (p) => p.sceneLighting === true;
+    const litGate = (self) => {
+      if (!sceneLightingMaster) return self;
+      if (!self) return lit;
+      return (p) => lit(p) && !!self(p);
+    };
+    // Light DIRECTION (azimuth/elevation) positions BOTH the Lambert hatching and
+    // the specular highlight, so on Topoform it stays visible whenever Specular
+    // Highlight is on — even with Scene Lighting (hatching) off.
+    const litDirGate = (self) => {
+      if (!sceneLightingMaster) return self;
+      const base = litGate(self);
+      return (p) => base(p) || p.specularHighlight === true;
+    };
+    // Compose a capability predicate with a control's own activation predicate
+    // via logical AND. When the capability is the always-true default this
+    // returns the original self-toggle (or omits showIf entirely), so the full
+    // block stays byte-equivalent for polyhedron / topoform.
+    const gate = (cap, self) => {
+      if (cap === TRUE) return self; // unconditional capability → keep self-toggle as-is
+      if (!self) return (p) => !!cap(p);
+      return (p) => !!cap(p) && !!self(p);
+    };
+    return [
+      { type: 'section', label: 'Shading & Lines', collapsed: true },
+      ...(sceneLightingMaster ? [{ id: 'sceneLighting', label: 'Scene Lighting', type: 'checkbox' }] : []),
+      {
+        id: 'depthCue',
+        label: 'Depth Cue',
+        type: 'select',
+        options: [
+          { value: 'off', label: 'Off' },
+          { value: 'dash', label: 'Dash by depth' },
+        ],
+        ...(sceneLightingMaster ? { showIf: lit } : {}),
+      },
+      { id: 'depthCueStrength', label: 'Depth Cue Strength', type: 'range', min: 0, max: 100, step: 1, showIf: litGate((p) => (p.depthCue || 'off') !== 'off'), livePreview: true },
+      { id: 'emphasizeOutline', label: 'Emphasize Outline', type: 'checkbox', showIf: gate(allowOutline, null) },
+      { id: 'outlineWeight', label: 'Outline Weight', type: 'range', min: 1, max: 4, step: 0.1, showIf: gate(allowOutline, (p) => p.emphasizeOutline === true), livePreview: true },
+      { id: 'showCreases', label: 'Show Creases', type: 'checkbox', showIf: gate(allowCrease, null) },
+      { id: 'creaseAngle', label: 'Crease Angle', type: 'range', min: 10, max: 80, step: 1, displayUnit: '°', showIf: gate(allowCrease, (p) => p.showCreases === true), livePreview: true },
+      {
+        id: 'hiddenLineMode',
+        label: 'Hidden Lines',
+        type: 'select',
+        options: [
+          { value: 'backface', label: 'Back-face only' },
+          { value: 'remove', label: 'Remove hidden' },
+          { value: 'dash', label: 'Dash hidden' },
+        ],
+        showIf: gate(hiddenLineModes, null),
+      },
+      { id: 'depthBias', label: 'Occlusion Bias', type: 'range', min: 0, max: 3, step: 0.1, showIf: gate(allowDepthBias, depthBiasSelf), livePreview: true },
+      { id: 'hatchEnable', label: 'Lambert Hatching', type: 'checkbox', showIf: litGate(gate(allowHatch, null)) },
+      // Specular Highlight (Topoform only): a light-positioned mirror dot. Its
+      // light direction is shared with Lambert hatching, so the Light Position pad
+      // + Azimuth/Elevation surface whenever EITHER hatching or the highlight is on.
+      ...(sceneLightingMaster ? [
+        { id: 'specularHighlight', label: 'Specular Highlight', type: 'checkbox' },
+        { id: 'specularSize', label: 'Highlight Size', type: 'range', min: 0, max: 100, step: 1, showIf: (p) => p.specularHighlight === true, livePreview: true },
+        { id: 'lightDirection', label: 'Light Position', type: 'lightPad', azParam: 'lightAzimuth', elParam: 'lightElevation', azDefault: 135, elDefault: 45, showIf: litDirGate(gate(allowHatch, (p) => p.hatchEnable === true)) },
+      ] : []),
+      // UX7: Light Azimuth is a compass heading (0–360 wrap), so the circular
+      // angle dial matches the mental model better than a linear slider.
+      { id: 'lightAzimuth', label: 'Light Azimuth', type: 'angle', min: 0, max: 360, step: 1, displayUnit: '°', showIf: litDirGate(gate(allowHatch, (p) => p.hatchEnable === true)), livePreview: true },
+      { id: 'lightElevation', label: 'Light Elevation', type: 'range', min: 0, max: 90, step: 1, displayUnit: '°', showIf: litDirGate(gate(allowHatch, (p) => p.hatchEnable === true)), livePreview: true },
+      { id: 'hatchAngle', label: 'Hatch Angle', type: 'range', min: 0, max: 180, step: 1, displayUnit: '°', showIf: litGate(gate(allowHatch, (p) => p.hatchEnable === true)), livePreview: true },
+      { id: 'hatchSpacing', label: 'Hatch Spacing', type: 'range', min: 2, max: 20, step: 0.5, showIf: litGate(gate(allowHatch, (p) => p.hatchEnable === true)), livePreview: true },
+      { id: 'crossHatch', label: 'Cross-Hatch', type: 'checkbox', showIf: litGate(gate(allowHatch, (p) => p.hatchEnable === true)) },
+    ];
+  };
+
+  // Per-algo capability predicates (WU2). Only SHOW a shading control where the
+  // generator actually wires it (verified against the algorithm sources):
+  //   - spiralizer: line/dot geometry, NO closed faces. Keeps depthCue + outline +
+  //     hiddenLineMode (silhouette rings + backface/dash ARE wired); hides
+  //     hatch / crease / depthBias (no surface).
+  //   - rasterPlane: per-mode. Only depthCue + hatch are actually wired by the
+  //     generator. hatch wired in mesh & bars (pushFaceHatch) → gated there.
+  //     hiddenLineMode is DEAD (raster-plane.js never reads p.hiddenLineMode;
+  //     the real toggle is the existing seeThrough control) → hidden in all modes.
+  //     depthBias self-toggles on that dead hiddenLineMode → unreachable → hidden.
+  //     crease never meaningful on a height grid; outline NOT yet wired → hidden.
+  const IMG_FACE_MODES = ['mesh', 'bars'];
+  const imgFaceCapable = (p = {}) => IMG_FACE_MODES.includes(p.mode || 'lines');
+  const SHADING_CAPS = {
+    polyhedron: {},
+    topoform: {},
+    terrain: {
+      // Terrain's "Hidden-Line Removal" checkbox is the master occlusion toggle in
+      // free-3d (drives the floating-horizon sweep); the "Hidden Lines" select then
+      // chooses Remove vs Dash for the occluded spans (the terrain .map below trims
+      // the shared select to those two — "backface" is meaningless on an open
+      // heightfield). "Occlusion Bias" is the silhouette tolerance. depthCue /
+      // outline / crease / hatch all apply to the heightfield surface quads.
+      hiddenLineModes: (p = {}) => p.occlusion !== false,
+      allowDepthBias: (p = {}) => p.occlusion !== false,
+    },
+    spiralizer: {
+      // KEEP: depthCue, depthCueStrength, emphasizeOutline, outlineWeight,
+      // hiddenLineMode. HIDE: showCreases, creaseAngle, hatchEnable, light*,
+      // hatch*, crossHatch, depthBias (line/dot geometry, no closed faces; the
+      // silhouette rings + hidden-line backface/dash are wired, occlusion bias is not).
+      allowHatch: () => false,
+      allowCrease: () => false,
+      hiddenLineModes: () => true,
+      allowDepthBias: () => false,
+      allowOutline: () => true,
+    },
+    rasterPlane: {
+      allowHatch: imgFaceCapable,
+      allowCrease: () => false,
+      // hiddenLineMode is dead on rasterPlane: raster-plane.js never reads
+      // p.hiddenLineMode (the real visibility toggle is the existing seeThrough
+      // control), so showing it is a dead, misleading, duplicative control.
+      hiddenLineModes: () => false,
+      // Occlusion Bias IS wired for Lines: when See-Through is OFF, buildLines runs
+      // depth-spread painter occlusion and reads p.depthBias to scale how tightly
+      // nearer ridges hide farther ones. Keyed on See-Through (not the dead
+      // hiddenLineMode) per the deferred generator-wiring note.
+      allowDepthBias: (p = {}) => (p.mode || 'lines') === 'lines',
+      depthBiasSelf: (p = {}) => p.seeThrough === false,
+      allowOutline: () => false,
+    },
+  };
 
   const CONTROL_DEFS = {
     expanded: [],
@@ -404,11 +577,14 @@
       {
         id: 'petalProfile',
         label: 'Petal Profile',
-        type: 'select',
+        type: 'petalProfileGallery',
         options: PETAL_PROFILE_OPTIONS,
         infoKey: 'petalis.petalProfile',
       },
       { id: 'petalScale', label: 'Petal Scale (mm)', type: 'range', min: 1, max: 80, step: 1, infoKey: 'petalis.petalScale' },
+      { id: 'bloom', label: 'Bloom', type: 'range', min: 0, max: 100, step: 1, infoKey: 'petalis.bloom' },
+      { id: 'petalAsymmetry', label: 'Petal Asymmetry', type: 'range', min: 0, max: 100, step: 1, infoKey: 'petalis.petalAsymmetry' },
+      { id: 'petalCupping', label: 'Petal Cupping', type: 'range', min: 0, max: 100, step: 1, infoKey: 'petalis.petalCupping' },
       {
         id: 'petalWidthRatio',
         label: 'Width/Length Ratio',
@@ -457,7 +633,17 @@
       { type: 'section', label: 'Petal Modifiers' },
       { type: 'petalModifierList', label: 'Petal Modifiers' },
       { type: 'section', label: 'Distribution & Spiral' },
-      { id: 'count', label: 'Petal Count', type: 'range', min: 5, max: 800, step: 1, infoKey: 'petalis.count' },
+      {
+        id: 'layoutMode',
+        label: 'Layout',
+        type: 'select',
+        options: [
+          { value: 'whorl', label: 'Whorl (clean rings)' },
+          { value: 'spiral', label: 'Spiral (phyllotaxis)' },
+        ],
+        infoKey: 'petalis.layoutMode',
+      },
+      { id: 'count', label: 'Petal Count', type: 'range', min: 5, max: 800, step: 1, showIf: (p) => p.ringMode !== 'dual', infoKey: 'petalis.count' },
       {
         id: 'ringMode',
         label: 'Ring Mode',
@@ -472,7 +658,7 @@
         id: 'innerCount',
         label: 'Inner Petal Count',
         type: 'range',
-        min: 5,
+        min: 0,
         max: 400,
         step: 1,
         showIf: (p) => p.ringMode === 'dual',
@@ -482,7 +668,7 @@
         id: 'outerCount',
         label: 'Outer Petal Count',
         type: 'range',
-        min: 5,
+        min: 1,
         max: 600,
         step: 1,
         showIf: (p) => p.ringMode === 'dual',
@@ -490,7 +676,9 @@
       },
       {
         id: 'ringSplit',
-        label: 'Ring Split',
+        // Whorl: how far successive rings spread (layer spacing). Spiral: the
+        // inner/outer band split.
+        label: 'Ring Spacing',
         type: 'range',
         min: 0.15,
         max: 0.85,
@@ -543,6 +731,7 @@
           { value: 'golden', label: 'Golden Angle' },
           { value: 'custom', label: 'Custom Angle' },
         ],
+        showIf: (p) => (p.layoutMode || 'whorl') === 'spiral',
         infoKey: 'petalis.spiralMode',
       },
       {
@@ -553,13 +742,13 @@
         max: 360,
         step: 1,
         displayUnit: '°',
-        showIf: (p) => p.spiralMode === 'custom',
+        showIf: (p) => (p.layoutMode || 'whorl') === 'spiral' && p.spiralMode === 'custom',
         infoKey: 'petalis.customAngle',
       },
-      { id: 'spiralTightness', label: 'Spiral Tightness', type: 'range', min: 0.5, max: 50, step: 0.1, infoKey: 'petalis.spiralTightness' },
-      { id: 'radialGrowth', label: 'Radial Growth', type: 'range', min: 0.05, max: 20, step: 0.05, infoKey: 'petalis.radialGrowth' },
-      { id: 'spiralStart', label: 'Spiral Start', type: 'range', min: 0, max: 1, step: 0.01, infoKey: 'petalis.spiralStart' },
-      { id: 'spiralEnd', label: 'Spiral End', type: 'range', min: 0, max: 1, step: 0.01, infoKey: 'petalis.spiralEnd' },
+      { id: 'spiralTightness', label: 'Spiral Tightness', type: 'range', min: 0.5, max: 50, step: 0.1, showIf: (p) => (p.layoutMode || 'whorl') === 'spiral', infoKey: 'petalis.spiralTightness' },
+      { id: 'radialGrowth', label: 'Radial Growth', type: 'range', min: 0.05, max: 20, step: 0.05, showIf: (p) => (p.layoutMode || 'whorl') === 'spiral', infoKey: 'petalis.radialGrowth' },
+      { id: 'spiralStart', label: 'Spiral Start', type: 'range', min: 0, max: 1, step: 0.01, showIf: (p) => (p.layoutMode || 'whorl') === 'spiral', infoKey: 'petalis.spiralStart' },
+      { id: 'spiralEnd', label: 'Spiral End', type: 'range', min: 0, max: 1, step: 0.01, showIf: (p) => (p.layoutMode || 'whorl') === 'spiral', infoKey: 'petalis.spiralEnd' },
       { type: 'section', label: 'Center Morphing' },
       { id: 'centerSizeMorph', label: 'Size Morph', type: 'range', min: -100, max: 100, step: 1, infoKey: 'petalis.centerSizeMorph' },
       { id: 'centerSizeCurve', label: 'Size Morph Curve', type: 'range', min: 0.5, max: 2.5, step: 0.05, infoKey: 'petalis.centerSizeCurve' },
@@ -1456,6 +1645,7 @@
           { value: 'one-point-landscape', label: 'One-point with Landscape Horizon' },
           { value: 'two-point', label: 'Two-point' },
           { value: 'isometric', label: 'Isometric' },
+          { value: 'free-3d', label: 'Free 3D (yaw/pitch/roll)' },
         ],
         infoKey: 'terrain.perspectiveMode',
       },
@@ -1530,6 +1720,15 @@
         infoKey: 'terrain.depthScale',
         showIf: (p) => p.perspectiveMode === 'orthographic',
       },
+      // Free 3D view — orbit the terrain through the shared Geometry3D engine.
+      { type: 'section', label: '3D View', showIf: (p) => p.perspectiveMode === 'free-3d' },
+      { id: 'projection', label: 'Projection', type: 'select', options: [{ value: 'orthographic', label: 'Orthographic' }, { value: 'perspective', label: 'Perspective' }], infoKey: 'terrain.projection', showIf: (p) => p.perspectiveMode === 'free-3d' },
+      { id: 'cameraDistance', label: 'Camera Distance', type: 'range', min: 1, max: 2000, step: 10, infoKey: 'terrain.cameraDistance', showIf: (p) => p.perspectiveMode === 'free-3d' && p.projection === 'perspective', livePreview: true },
+      { id: 'focalLength', label: 'Perspective Strength', type: 'range', min: 1, max: 1500, step: 10, infoKey: 'terrain.focalLength', showIf: (p) => p.perspectiveMode === 'free-3d' && p.projection === 'perspective', livePreview: true },
+      { id: 'yaw', label: 'Yaw', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', infoKey: 'terrain.yaw', showIf: (p) => p.perspectiveMode === 'free-3d', livePreview: true },
+      { id: 'pitch', label: 'Pitch', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', infoKey: 'terrain.pitch', showIf: (p) => p.perspectiveMode === 'free-3d', livePreview: true },
+      { id: 'roll', label: 'Roll', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', infoKey: 'terrain.roll', showIf: (p) => p.perspectiveMode === 'free-3d', livePreview: true },
+      { id: 'topWidth', label: 'Top Width', type: 'range', min: 1, max: 10, step: 0.1, displayUnit: '×', infoKey: 'terrain.topWidth', showIf: (p) => p.perspectiveMode === 'free-3d', livePreview: true },
       { type: 'section', label: 'Depth & Resolution' },
       { id: 'depthSlices', label: 'Depth Slices', type: 'range', min: 10, max: 300, step: 1, infoKey: 'terrain.depthSlices' },
       { id: 'xResolution', label: 'X Resolution', type: 'range', min: 40, max: 600, step: 5, infoKey: 'terrain.xResolution' },
@@ -1559,11 +1758,417 @@
       { id: 'drawCoastline', label: 'Draw Coastline', type: 'checkbox', infoKey: 'terrain.drawCoastline', showIf: (p) => p.oceansEnabled === true },
       { type: 'section', label: 'Additional Noises' },
       { type: 'noiseList' },
+      // Shading & Lines — only meaningful for the engine-backed free-3d view, so
+      // every control (incl. the section header) is gated on perspectiveMode. The
+      // shared "Hidden Lines" select is trimmed to Remove/Dash here: on an open
+      // heightfield "back-face only" has no meaning (the master Hidden-Line Removal
+      // checkbox already governs on/off).
+      ...buildShadingControls(SHADING_CAPS.terrain).map((ctrl) => {
+        const self = ctrl.showIf;
+        const trimmed = ctrl.id === 'hiddenLineMode'
+          ? { ...ctrl, options: ctrl.options.filter((o) => o.value === 'remove' || o.value === 'dash') }
+          : ctrl;
+        return { ...trimmed, showIf: (p) => p.perspectiveMode === 'free-3d' && (self ? self(p) : true) };
+      }),
     ],
   };
 
+  CONTROL_DEFS.spirograph = [
+    { type: 'section', label: 'Main Shape' },
+    {
+      id: 'mainShape',
+      label: 'Shape',
+      type: 'select',
+      options: [
+        { value: 'rectangle', label: 'Rectangle' },
+        { value: 'roundedRectangle', label: 'Rounded Rectangle' },
+        { value: 'pill', label: 'Pill' },
+        { value: 'oval', label: 'Oval' },
+        { value: 'polygon', label: 'Polygon' },
+        { value: 'star', label: 'Star' },
+      ],
+    },
+    { id: 'mainWidth', label: 'Width', type: 'range', min: 20, max: 220, step: 1, displayUnit: 'mm', livePreview: true },
+    { id: 'mainHeight', label: 'Height', type: 'range', min: 20, max: 220, step: 1, displayUnit: 'mm', livePreview: true },
+    { id: 'mainCornerRadius', label: 'Corner Radius', type: 'range', min: 0, max: 60, step: 0.5, displayUnit: 'mm', livePreview: true },
+    { id: 'mainPoints', label: 'Points', type: 'range', min: 3, max: 18, step: 1, livePreview: true },
+    { id: 'mainTeeth', label: 'Main Teeth', type: 'range', min: 4, max: 500, step: 1, livePreview: true },
+    { type: 'section', label: 'Gear' },
+    {
+      id: 'gearShape',
+      label: 'Shape',
+      type: 'select',
+      options: [
+        { value: 'circle', label: 'Circle' },
+        { value: 'oval', label: 'Oval' },
+        { value: 'polygon', label: 'Polygon' },
+      ],
+    },
+    { id: 'gearTeeth', label: 'Gear Teeth', type: 'range', min: 3, max: 499, step: 1, livePreview: true },
+    { id: 'gearAspectX', label: 'Aspect X', type: 'range', min: 40, max: 180, step: 1, displayUnit: '%', livePreview: true },
+    { id: 'gearAspectY', label: 'Aspect Y', type: 'range', min: 40, max: 180, step: 1, displayUnit: '%', livePreview: true },
+    { id: 'gearCornerRadius', label: 'Gear Corner', type: 'range', min: 0, max: 45, step: 1, displayUnit: '%', livePreview: true },
+    { id: 'gearPoints', label: 'Gear Points', type: 'range', min: 3, max: 16, step: 1, livePreview: true },
+    { type: 'section', label: 'Pen' },
+    { id: 'penAngle', label: 'Pen Angle', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
+    { id: 'penOffset', label: 'Pen Offset', type: 'range', min: 0, max: 140, step: 1, displayUnit: '%', livePreview: true },
+    {
+      id: 'rollMode',
+      label: 'Roll Mode',
+      type: 'select',
+      options: [
+        { value: 'inside', label: 'Inside' },
+        { value: 'outside', label: 'Outside' },
+        { value: 'both', label: 'Both' },
+      ],
+    },
+    { id: 'curveResolution', label: 'Resolution', type: 'range', min: 120, max: 2400, step: 20, livePreview: true },
+  ];
+
+  CONTROL_DEFS.spiralizer = [
+    { type: 'section', label: 'Surface' },
+    {
+      id: 'shape',
+      label: 'Shape',
+      type: 'select',
+      options: [
+        { value: 'sphere', label: 'Sphere' },
+        { value: 'cone', label: 'Cone' },
+        { value: 'cylinder', label: 'Cylinder' },
+        { value: 'ellipsoid', label: 'Ellipsoid' },
+        { value: 'torus', label: 'Torus' },
+        { value: 'capsule', label: 'Capsule' },
+        { value: 'helix', label: 'Helix' },
+      ],
+    },
+    { id: 'sphereRadius', label: 'Radius', type: 'range', min: 10, max: 140, step: 1, displayUnit: 'mm', showIf: (p) => p.shape === 'sphere', livePreview: true },
+    { id: 'baseRadius', label: 'Radius', type: 'range', min: 10, max: 140, step: 1, displayUnit: 'mm', showIf: (p) => p.shape === 'cone', livePreview: true },
+    { id: 'coneHeight', label: 'Height', type: 'range', min: 20, max: 220, step: 1, displayUnit: 'mm', showIf: (p) => p.shape === 'cone', livePreview: true },
+    { id: 'cylinderRadius', label: 'Radius', type: 'range', min: 10, max: 140, step: 1, displayUnit: 'mm', showIf: (p) => p.shape === 'cylinder', livePreview: true },
+    { id: 'cylinderHeight', label: 'Height', type: 'range', min: 20, max: 240, step: 1, displayUnit: 'mm', showIf: (p) => p.shape === 'cylinder', livePreview: true },
+    { id: 'ellipsoidEquatorRadius', label: 'Equator Radius', type: 'range', min: 10, max: 140, step: 1, displayUnit: 'mm', showIf: (p) => p.shape === 'ellipsoid', livePreview: true },
+    { id: 'ellipsoidPolarRadius', label: 'Polar Radius', type: 'range', min: 10, max: 120, step: 1, displayUnit: 'mm', showIf: (p) => p.shape === 'ellipsoid', livePreview: true },
+    { id: 'torusRingRadius', label: 'Ring Radius', type: 'range', min: 10, max: 140, step: 1, displayUnit: 'mm', showIf: (p) => p.shape === 'torus', livePreview: true },
+    { id: 'torusTubeRadius', label: 'Tube Radius', type: 'range', min: 4, max: 80, step: 1, displayUnit: 'mm', showIf: (p) => p.shape === 'torus', livePreview: true },
+    { id: 'capsuleRadius', label: 'Radius', type: 'range', min: 10, max: 120, step: 1, displayUnit: 'mm', showIf: (p) => p.shape === 'capsule', livePreview: true },
+    { id: 'capsuleHeight', label: 'Height', type: 'range', min: 0, max: 220, step: 1, displayUnit: 'mm', showIf: (p) => p.shape === 'capsule', livePreview: true },
+    { id: 'helixRadius', label: 'Radius', type: 'range', min: 8, max: 140, step: 1, displayUnit: 'mm', showIf: (p) => p.shape === 'helix', livePreview: true },
+    { id: 'helixHeight', label: 'Height', type: 'range', min: 20, max: 260, step: 1, displayUnit: 'mm', showIf: (p) => p.shape === 'helix', livePreview: true },
+    { id: 'helixCount', label: 'Twists', type: 'range', min: 1, max: 8, step: 1, showIf: (p) => p.shape === 'helix', livePreview: true },
+    // Two or more twists read as a DNA double/multi-helix; the base-pair rungs
+    // bridge the strands. Only meaningful once there is a second strand to bridge.
+    { id: 'helixRungs', label: 'Base Pairs', type: 'checkbox', showIf: (p) => p.shape === 'helix' && (p.helixCount || 1) >= 2 },
+    { id: 'helixRungSpacing', label: 'Rung Spacing', type: 'range', min: 2, max: 60, step: 0.5, displayUnit: 'mm', showIf: (p) => p.shape === 'helix' && (p.helixCount || 1) >= 2 && p.helixRungs !== false, livePreview: true },
+    // Backbone phase offset for the DNA double helix (exactly 2 twists). 180° is a
+    // symmetric barber-pole; ~160° opens the unequal major/minor grooves of DNA.
+    { id: 'helixGrooveOffset', label: 'Groove', type: 'range', min: 120, max: 180, step: 1, displayUnit: '°', showIf: (p) => p.shape === 'helix' && (p.helixCount || 1) === 2, livePreview: true },
+    {
+      id: 'surfaceMode',
+      label: 'Visibility',
+      type: 'select',
+      options: [
+        { value: 'front', label: 'Front Only' },
+        { value: 'seeThrough', label: 'See-Through' },
+      ],
+    },
+    {
+      id: 'outlineMode',
+      label: 'Outline',
+      type: 'select',
+      options: [
+        { value: 'outline', label: 'Show' },
+        { value: 'none', label: 'Hide' },
+      ],
+    },
+    { type: 'section', label: 'Wrap' },
+    {
+      id: 'wrapType',
+      label: 'Wrap Type',
+      type: 'select',
+      // The helix shape always coils as a spiral (its strands ARE the wrap), so
+      // the wrap-type toggle is hidden and forced to spiral for it.
+      showIf: (p) => p.shape !== 'helix',
+      options: [
+        { value: 'spiral', label: 'Spiral' },
+        { value: 'twistedLines', label: 'Twisted Lines' },
+      ],
+    },
+    {
+      id: 'renderStyle',
+      label: 'Render Style',
+      type: 'select',
+      options: [
+        { value: 'line', label: 'Lines' },
+        { value: 'dots', label: 'Dots' },
+        { value: 'points', label: 'Points' },
+        { value: 'plusses', label: 'Plusses' },
+        { value: 'crosses', label: 'Crosses' },
+        { value: 'squares', label: 'Squares' },
+        { value: 'triangles', label: 'Triangles' },
+        { value: 'dashes', label: 'Dashes' },
+      ],
+    },
+    {
+      id: 'thickness',
+      label: 'Thickness',
+      type: 'select',
+      options: [
+        { value: '0.5', label: 'Thin' },
+        { value: '1', label: 'Medium' },
+        { value: '1.5', label: 'Bold' },
+        { value: '2', label: 'Heavy' },
+        { value: '3', label: 'Extra Heavy' },
+      ],
+    },
+    { id: 'turns', label: 'Turns', type: 'range', min: 1, max: 48, step: 0.5, showIf: (p) => p.shape === 'helix' || p.wrapType !== 'twistedLines', livePreview: true },
+    { id: 'twistTurns', label: 'Twist Turns', type: 'range', min: -24, max: 24, step: 0.1, showIf: (p) => p.shape !== 'helix' && p.wrapType === 'twistedLines', livePreview: true },
+    { id: 'lineCount', label: 'Line Count', type: 'range', min: 1, max: 160, step: 1, showIf: (p) => p.shape !== 'helix' && p.wrapType === 'twistedLines', livePreview: true },
+    { id: 'dotSpacing', label: 'Marker Spacing', type: 'range', min: 0.1, max: 30, step: 0.1, displayUnit: 'mm', showIf: (p) => p.renderStyle && p.renderStyle !== 'line', livePreview: true },
+    { id: 'dotSizeStart', label: 'Start Size', type: 'range', min: 0.8, max: 12, step: 0.1, showIf: (p) => p.renderStyle && p.renderStyle !== 'line', livePreview: true },
+    { id: 'dotSizeMiddle', label: 'Middle Size', type: 'range', min: 0.8, max: 12, step: 0.1, showIf: (p) => p.renderStyle && p.renderStyle !== 'line', livePreview: true },
+    { id: 'dotSizeEnd', label: 'End Size', type: 'range', min: 0.8, max: 12, step: 0.1, showIf: (p) => p.renderStyle && p.renderStyle !== 'line', livePreview: true },
+    // Universal Fill dropdown — patterns the interior of the hollow closed glyphs
+    // (Dots / Squares / Triangles) with the standard fill library (spiral, hatch,
+    // dots, …). Reuses the shared FillPanel control factory + pattern generator.
+    ...(window.Vectura.FillPanel?.buildFillControlDefs({
+      fillTypeOptions: [
+        { value: 'none',       label: 'None' },
+        { value: 'hatch',      label: 'Hatch' },
+        { value: 'crosshatch', label: 'Crosshatch' },
+        { value: 'spiral',     label: 'Spiral' },
+        { value: 'radial',     label: 'Radial' },
+        { value: 'dots',       label: 'Dots' },
+        { value: 'wave',       label: 'Wave' },
+      ],
+      typeParam: 'markerFill',
+      showIfBase: (p) => ['dots', 'squares', 'triangles'].includes(p.renderStyle),
+      descKeyPrefix: 'fill',
+    }) || []),
+    { id: 'startLongitude', label: 'Start Longitude', type: 'angle', min: 0, max: 360, step: 1, displayUnit: '°' },
+    { type: 'section', label: 'View' },
+    { id: 'projection', label: 'Projection', type: 'select', options: [{ value: 'orthographic', label: 'Orthographic' }, { value: 'perspective', label: 'Perspective' }] },
+    { id: 'cameraDistance', label: 'Camera Distance', type: 'range', min: 1, max: 2000, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
+    { id: 'focalLength', label: 'Perspective Strength', type: 'range', min: 1, max: 1500, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
+    { id: 'yaw', label: 'Yaw', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
+    { id: 'pitch', label: 'Pitch', type: 'range', min: -90, max: 90, step: 1, displayUnit: '°', livePreview: true },
+    { id: 'roll', label: 'Roll', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
+    { id: 'curveResolution', label: 'Resolution', type: 'range', min: 90, max: 1800, step: 10, livePreview: true },
+    ...buildShadingControls(SHADING_CAPS.spiralizer),
+  ];
+
+  CONTROL_DEFS.polyhedron = [
+    { type: 'section', label: 'Structure' },
+    {
+      id: 'solidType',
+      label: 'Solid',
+      type: 'select',
+      options: [
+        { value: 'flatPolygon', label: 'Flat Polygon' },
+        { value: 'prism', label: 'Prism' },
+        { value: 'antiprism', label: 'Antiprism' },
+        { value: 'bipyramid', label: 'Bipyramid' },
+        { value: 'tetrahedron', label: 'Tetrahedron' },
+        { value: 'cube', label: 'Cube' },
+        { value: 'octahedron', label: 'Octahedron' },
+        { value: 'icosahedron', label: 'Icosahedron' },
+        { value: 'buckyball', label: 'Buckyball' },
+        { value: 'importedMesh', label: 'STL Mesh…' },
+      ],
+    },
+    { id: 'stlImport', type: 'stlImport', showIf: (p) => p.solidType === 'importedMesh' },
+    { id: 'sideCount', label: 'Sides', type: 'range', min: 3, max: 180, step: 1, showIf: polyhedronUsesSideCount, livePreview: true },
+    { id: 'radius', label: 'Radius', type: 'range', min: 20, max: 130, step: 1, displayUnit: 'mm', livePreview: true },
+    { id: 'depth', label: 'Depth', type: 'range', min: 0, max: 180, step: 1, displayUnit: 'mm', showIf: polyhedronUsesDepth, livePreview: true },
+    { type: 'section', label: 'Visibility' },
+    {
+      id: 'surfaceMode',
+      label: 'Faces',
+      type: 'select',
+      options: [
+        { value: 'front', label: 'Front' },
+        { value: 'all', label: 'All' },
+      ],
+    },
+    {
+      id: 'faceOpacityMode',
+      label: 'Hidden Faces',
+      type: 'select',
+      options: [
+        { value: 'seeThrough', label: 'Dashed' },
+        { value: 'opaque', label: 'Pruned' },
+      ],
+    },
+    { id: 'showFaces', label: 'Face Bands', type: 'checkbox' },
+    { id: 'faceBands', label: 'Band Count', type: 'range', min: 0, max: 18, step: 1, showIf: (p) => p.showFaces !== false, livePreview: true },
+    { id: 'showEdges', label: 'Edges', type: 'checkbox' },
+    {
+      id: 'edgeStyle',
+      label: 'Edge Style',
+      type: 'select',
+      showIf: (p) => p.showEdges !== false,
+      options: [
+        { value: 'line', label: 'Line' },
+        { value: 'dash', label: 'Dash' },
+      ],
+    },
+    { id: 'edgeSpacing', label: 'Dash Spacing', type: 'range', min: 4, max: 28, step: 0.5, showIf: (p) => p.showEdges !== false && p.edgeStyle === 'dash', livePreview: true },
+    { id: 'showVertices', label: 'Vertices', type: 'checkbox' },
+    {
+      id: 'vertexOcclusionMode',
+      label: 'Point Fill',
+      type: 'select',
+      showIf: (p) => p.showVertices !== false,
+      options: [
+        { value: 'outline', label: 'Outline Only' },
+        { value: 'occlude', label: 'Hide Interior' },
+      ],
+    },
+    { id: 'vertexSize', label: 'Vertex Size', type: 'range', min: 0.8, max: 12, step: 0.2, showIf: (p) => p.showVertices !== false, livePreview: true },
+    { id: 'vertexRings', label: 'Vertex Rings', type: 'range', min: 1, max: 4, step: 1, showIf: (p) => p.showVertices !== false, livePreview: true },
+    { type: 'section', label: 'Effects' },
+    { id: 'bulge', label: 'Bulge', type: 'range', min: -30, max: 30, step: 0.5, displayUnit: 'mm', livePreview: true },
+    { id: 'extrude', label: 'Extrude', type: 'range', min: 0, max: 40, step: 0.5, displayUnit: 'mm', livePreview: true },
+    { id: 'explode', label: 'Explode', type: 'range', min: 0, max: 46, step: 0.5, displayUnit: 'mm', livePreview: true },
+    { id: 'expand', label: 'Expand', type: 'range', min: 50, max: 180, step: 1, displayUnit: '%', livePreview: true },
+    { id: 'shard', label: 'Shard', type: 'range', min: 0, max: 100, step: 1, displayUnit: '%', livePreview: true },
+    { id: 'twist', label: 'Twist', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
+    { type: 'section', label: 'View' },
+    { id: 'projection', label: 'Projection', type: 'select', options: [{ value: 'orthographic', label: 'Orthographic' }, { value: 'perspective', label: 'Perspective' }] },
+    { id: 'cameraDistance', label: 'Camera Distance', type: 'range', min: 1, max: 2000, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
+    { id: 'focalLength', label: 'Perspective Strength', type: 'range', min: 1, max: 1500, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
+    { id: 'rotate', label: 'Rotate', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
+    { id: 'tilt', label: 'Tilt', type: 'range', min: 0, max: 89, step: 1, displayUnit: '°', livePreview: true },
+    ...buildShadingControls(SHADING_CAPS.polyhedron),
+  ];
+
+  CONTROL_DEFS.topoform = [
+    { type: 'section', label: 'Source' },
+    {
+      id: 'sourceMode',
+      label: 'Primitive',
+      type: 'select',
+      options: [
+        { value: 'sphere', label: 'Sphere' },
+        { value: 'torus', label: 'Torus' },
+        { value: 'cube', label: 'Cube' },
+        { value: 'cone', label: 'Cone' },
+        { value: 'ellipsoid', label: 'Ellipsoid' },
+        { value: 'cylinder', label: 'Cylinder' },
+        { value: 'capsule', label: 'Capsule' },
+        { value: 'pyramid', label: 'Pyramid' },
+        { value: 'superellipsoid', label: 'Superellipsoid' },
+        { value: 'torusKnot', label: 'Torus Knot' },
+        { value: 'stlMesh', label: 'STL Mesh…' },
+      ],
+    },
+    { id: 'stlImport', type: 'stlImport', showIf: (p) => p.sourceMode === 'stlMesh' },
+    {
+      id: 'renderMode',
+      label: 'Render',
+      type: 'select',
+      options: [
+        { value: 'contours', label: 'Contours' },
+        { value: 'wireframe', label: 'Wireframe' },
+        { value: 'triangleMesh', label: 'Triangle Mesh' },
+      ],
+    },
+    { id: 'primitiveDetail', label: 'Primitive Detail', type: 'range', min: 4, max: 100, step: 1, livePreview: true },
+    { id: 'primitiveScaleX', label: 'Scale X', type: 'range', min: 10, max: 130, step: 1, displayUnit: 'mm', livePreview: true },
+    { id: 'primitiveScaleY', label: 'Scale Y', type: 'range', min: 10, max: 130, step: 1, displayUnit: 'mm', livePreview: true },
+    { id: 'primitiveScaleZ', label: 'Scale Z', type: 'range', min: 10, max: 130, step: 1, displayUnit: 'mm', livePreview: true },
+    { id: 'simplifyMesh', label: 'Simplify Mesh', type: 'range', min: 0, max: 1, step: 0.05, livePreview: true },
+    { type: 'section', label: 'Contours' },
+    { id: 'lineCount', label: 'Line Count', type: 'range', min: 2, max: 80, step: 1, showIf: (p) => p.renderMode !== 'wireframe' && p.renderMode !== 'triangleMesh', livePreview: true },
+    // UX7: the cutting-plane rotation wraps around a full circle, so the angle
+    // dial fits better than a linear slider. (View yaw/pitch/roll are separate
+    // controls owned elsewhere and intentionally left as ranges.)
+    { id: 'planeRotate', label: 'Plane Rotate', type: 'angle', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
+    { id: 'planeTilt', label: 'Plane Tilt', type: 'range', min: -90, max: 90, step: 1, displayUnit: '°', livePreview: true },
+    {
+      id: 'contourVisibility',
+      label: 'Visibility',
+      type: 'select',
+      options: [
+        { value: 'visibleOnly', label: 'Visible Only' },
+        { value: 'fullContour', label: 'See-Through (dashed)' },
+      ],
+    },
+    { id: 'contourSmoothing', label: 'Contour Smoothing', type: 'range', min: 0, max: 100, step: 1, livePreview: true },
+    { id: 'showOutline', label: 'Silhouette', type: 'checkbox' },
+    { type: 'section', label: 'View' },
+    { id: 'projection', label: 'Projection', type: 'select', options: [{ value: 'orthographic', label: 'Orthographic' }, { value: 'perspective', label: 'Perspective' }] },
+    { id: 'cameraDistance', label: 'Camera Distance', type: 'range', min: 1, max: 2000, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
+    { id: 'focalLength', label: 'Perspective Strength', type: 'range', min: 1, max: 1500, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
+    { id: 'yaw', label: 'Yaw', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
+    { id: 'pitch', label: 'Pitch', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
+    { id: 'roll', label: 'Roll', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
+    ...buildShadingControls(SHADING_CAPS.topoform, { sceneLightingMaster: true }),
+  ];
+
+  CONTROL_DEFS.rasterPlane = [
+    { type: 'section', label: 'Noise Preview' },
+    { type: 'noisePreview' },
+    { type: 'section', label: 'Noise Stack' },
+    // The global Noise Mode + Noise Amount were removed: each noise layer's own
+    // Blend Mode and Field Weight now fully drive how it embosses the surface
+    // (see createNoiseField + the additive fold in raster-plane.js). The stack
+    // itself is the only control needed here.
+    { type: 'noiseList', source: 'rasterPlane', label: 'Noise Stack' },
+    { type: 'section', label: 'Surface' },
+    {
+      id: 'mode',
+      label: 'Mode',
+      type: 'select',
+      options: [
+        { value: 'lines', label: 'Relief Lines' },
+        { value: 'mesh', label: 'Deformed Mesh' },
+        { value: 'topography', label: 'Topography' },
+        { value: 'bars', label: 'Bars' },
+      ],
+    },
+    {
+      id: 'mapType',
+      label: 'Map Type',
+      type: 'select',
+      options: [
+        { value: 'height', label: 'Height' },
+        { value: 'normal', label: 'Normal' },
+      ],
+    },
+    { id: 'normalFlipY', label: 'Flip Normal Y', type: 'checkbox', showIf: (p) => p.mapType === 'normal' },
+    { id: 'clipBlackAreas', label: 'Clip Black Areas', type: 'checkbox' },
+    { id: 'artworkSize', label: 'Artwork Size', type: 'range', min: 30, max: 260, step: 1, displayUnit: 'mm', livePreview: true },
+    { id: 'amplitude', label: 'Amplitude', type: 'range', min: 0, max: 160, step: 0.5, displayUnit: 'mm', livePreview: true },
+    { id: 'sampleDetail', label: 'Sample Detail', type: 'range', min: 12, max: 220, step: 1, livePreview: true },
+    { id: 'mapBlur', label: 'Map Blur', type: 'range', min: 0, max: 100, step: 1, showIf: (p) => p.mode === 'topography', livePreview: true },
+    { id: 'invert', label: 'Invert', type: 'checkbox' },
+    { id: 'gamma', label: 'Gamma', type: 'range', min: 0.2, max: 3, step: 0.05, livePreview: true },
+    { id: 'contrast', label: 'Contrast', type: 'range', min: -50, max: 100, step: 1, livePreview: true },
+    { type: 'section', label: 'Lines / Mesh' },
+    { id: 'rows', label: 'Rows', type: 'range', min: 2, max: 120, step: 1, showIf: (p) => p.mode === 'lines' || p.mode === 'mesh', livePreview: true },
+    { id: 'columns', label: 'Columns', type: 'range', min: 2, max: 120, step: 1, showIf: (p) => p.mode === 'mesh' || p.mode === 'topography', livePreview: true },
+    { id: 'horizontalLineAngle', label: 'Line Angle', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', showIf: (p) => p.mode === 'lines', livePreview: true },
+    { id: 'horizontalLinesAsPlanes', label: 'Lines as Planes', type: 'checkbox', showIf: (p) => p.mode === 'lines' },
+    { id: 'baseHeight', label: 'Base Height', type: 'range', min: 0, max: 1, step: 0.01, showIf: (p) => p.mode === 'lines' && p.horizontalLinesAsPlanes, livePreview: true },
+    { id: 'seeThrough', label: 'See-Through', type: 'checkbox', showIf: (p) => p.mode === 'mesh' || p.mode === 'topography' || p.mode === 'bars' || p.mode === 'lines' },
+    { type: 'section', label: 'Topography / Bars' },
+    { id: 'topographyAngle', label: 'Topo Angle', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', showIf: (p) => p.mode === 'topography', livePreview: true },
+    { id: 'contourSmoothing', label: 'Curve Smoothing', type: 'range', min: 0, max: 100, step: 1, showIf: (p) => p.mode === 'topography' || (p.curves === true && p.mode !== 'bars'), livePreview: true },
+    { id: 'barRows', label: 'Bar Rows', type: 'range', min: 2, max: 120, step: 1, showIf: (p) => p.mode === 'bars', livePreview: true },
+    { id: 'barColumns', label: 'Bar Columns', type: 'range', min: 2, max: 120, step: 1, showIf: (p) => p.mode === 'bars', livePreview: true },
+    { id: 'barGap', label: 'Bar Gap', type: 'range', min: 0, max: 12, step: 0.1, displayUnit: 'mm', showIf: (p) => p.mode === 'bars', livePreview: true },
+    { id: 'barHeightSteps', label: 'Height Steps', type: 'range', min: 0, max: 24, step: 1, showIf: (p) => p.mode === 'bars', livePreview: true },
+    { id: 'showBarBase', label: 'Base Outline', type: 'checkbox', showIf: (p) => p.mode === 'bars' },
+    { type: 'section', label: 'View' },
+    { id: 'projection', label: 'Projection', type: 'select', options: [{ value: 'orthographic', label: 'Orthographic' }, { value: 'perspective', label: 'Perspective' }] },
+    { id: 'cameraDistance', label: 'Camera Distance', type: 'range', min: 1, max: 2000, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
+    { id: 'focalLength', label: 'Perspective Strength', type: 'range', min: 1, max: 1500, step: 10, showIf: (p) => p.projection === 'perspective', livePreview: true },
+    { id: 'rotate', label: 'Rotate', type: 'range', min: -180, max: 180, step: 1, displayUnit: '°', livePreview: true },
+    { id: 'tilt', label: 'Tilt', type: 'range', min: 0, max: 89, step: 1, displayUnit: '°', livePreview: true },
+    ...buildShadingControls(SHADING_CAPS.rasterPlane),
+  ];
+
   const PETALIS_DESIGNER_REMOVED_CONTROL_IDS = new Set([
-    'petalProfile',
     'tipSharpness',
     'tipTwist',
     'centerCurlBoost',
@@ -1574,7 +2179,6 @@
     'ringMode',
     'innerCount',
     'outerCount',
-    'ringSplit',
     'innerOuterLock',
     'profileTransitionPosition',
     'profileTransitionFeather',
@@ -1597,6 +2201,16 @@
     'driftNoise',
     'radiusScale',
     'radiusScaleCurve',
+    // The named-profile picker and the per-petal shape params now live INSIDE the
+    // Petal Designer (its profile gallery + per-ring Advanced sliders), so drop the
+    // duplicate "Petal Geometry" panel controls. Resolution/layering/anchor-to-center
+    // stay — they are not in the designer.
+    'petalProfile',
+    'petalScale',
+    'bloom',
+    'petalAsymmetry',
+    'petalCupping',
+    'petalWidthRatio',
   ]);
   const PETALIS_DESIGNER_REMOVED_SECTION_LABELS = new Set([
     'Petal Modifiers',
@@ -1604,18 +2218,28 @@
     'Randomness & Seed',
   ]);
   const PETALIS_DESIGNER_REMOVED_CONTROL_TYPES = new Set(['petalModifierList']);
+  // Presets-first: a newcomer should pick a bloom from the gallery before the
+  // inline designer. Hoist the Presets section/control above the designer, then
+  // the rest of the (filtered) petalis controls below it.
+  const petalisFiltered = (CONTROL_DEFS.petalis || [])
+    .map((def) => (def && typeof def === 'object' ? { ...def } : def))
+    .filter((def) => {
+      if (!def || typeof def !== 'object') return true;
+      if (def.id && PETALIS_DESIGNER_REMOVED_CONTROL_IDS.has(def.id)) return false;
+      if (PETALIS_DESIGNER_REMOVED_CONTROL_TYPES.has(def.type)) return false;
+      if (def.type === 'section' && PETALIS_DESIGNER_REMOVED_SECTION_LABELS.has(def.label)) return false;
+      return true;
+    });
+  const isPresetDef = (def) =>
+    def && typeof def === 'object' &&
+    ((def.type === 'section' && def.label === 'Presets') || def.id === 'preset');
+  const petalisPresetControls = petalisFiltered.filter(isPresetDef);
+  const petalisRest = petalisFiltered.filter((def) => !isPresetDef(def));
   const petalisDesignerControls = [
+    ...petalisPresetControls,
     { type: 'section', label: 'Petal Designer' },
     { type: 'petalDesignerInline' },
-    ...(CONTROL_DEFS.petalis || [])
-      .map((def) => (def && typeof def === 'object' ? { ...def } : def))
-      .filter((def) => {
-        if (!def || typeof def !== 'object') return true;
-        if (def.id && PETALIS_DESIGNER_REMOVED_CONTROL_IDS.has(def.id)) return false;
-        if (PETALIS_DESIGNER_REMOVED_CONTROL_TYPES.has(def.type)) return false;
-        if (def.type === 'section' && PETALIS_DESIGNER_REMOVED_SECTION_LABELS.has(def.label)) return false;
-        return true;
-      }),
+    ...petalisRest,
   ];
   CONTROL_DEFS.petalisDesigner = petalisDesignerControls;
 
@@ -1656,6 +2280,37 @@
     }
     return acc;
   }, []);
+
+  // ── Universal preset control ──────────────────────────────────────────────
+  // Every remaining algorithm gets a "Presets" section + preset selector at the
+  // top of its panel so the universal gallery (which intercepts any `preset`
+  // control whose library is non-empty) can mount. Algorithms that already
+  // declare a preset control (harmonograph, petalis, terrain, pendula) are left
+  // untouched. Options are derived from the per-system library so the <select>
+  // fallback (used only if the gallery component is missing) still lists them.
+  const PRESET_CONTROL_SYSTEMS = [
+    'rings', 'svgDistort', 'flowfield', 'boids', 'attractor', 'hyphae',
+    'lissajous', 'wavetable', 'topo', 'grid', 'rainfall', 'phylla',
+    'spiral', 'shapePack', 'spirograph', 'spiralizer', 'polyhedron',
+    'topoform', 'rasterPlane',
+  ];
+  const presetOptionsFor = (system) => {
+    const lib = (window.Vectura && window.Vectura.PresetLibraries
+      && window.Vectura.PresetLibraries[system]) || [];
+    return [
+      { value: 'custom', label: 'Custom' },
+      ...lib.map((preset) => ({ value: preset.id, label: preset.name })),
+    ];
+  };
+  PRESET_CONTROL_SYSTEMS.forEach((system) => {
+    const defs = CONTROL_DEFS[system];
+    if (!Array.isArray(defs)) return;
+    if (defs.some((def) => def && def.id === 'preset')) return; // already wired
+    defs.unshift(
+      { type: 'section', label: 'Presets' },
+      { id: 'preset', label: 'Preset', type: 'select', options: presetOptionsFor(system) },
+    );
+  });
 
   const ns = (window.Vectura = window.Vectura || {});
   const ui = (ns.UI = ns.UI || {});

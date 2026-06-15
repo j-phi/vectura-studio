@@ -1,0 +1,35 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Echeveria Agavoides",
+  "meta": {
+    "presetId": "echeveria-agavoides",
+    "group": "Organic",
+    "system": "petalisDesigner",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "petalisDesigner",
+      "params": {
+        "petalProfile": "dagger",
+        "petalScale": 26,
+        "petalWidthRatio": 0.38,
+        "count": 200,
+        "spiralTightness": 1.45,
+        "basePinch": 0.2,
+        "centerType": "disk",
+        "centerRadius": 5,
+        "layoutMode": "spiral",
+        "ringMode": "dual",
+        "innerCount": 90,
+        "outerCount": 110,
+        "ringSplit": 0.3,
+        "ringOffset": 12,
+        "rotationJitter": 0,
+        "sizeJitter": 0,
+        "countJitter": 0
+      }
+    }
+  ]
+}

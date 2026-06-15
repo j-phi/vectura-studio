@@ -1,0 +1,25 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Confetti",
+  "meta": {
+    "presetId": "shapepack-confetti",
+    "group": "Complex",
+    "system": "shapePack",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "shapePack",
+      "params": {
+        "shape": "circle",
+        "count": 800,
+        "minR": 1,
+        "maxR": 25,
+        "padding": 1,
+        "attempts": 500,
+        "segments": 24
+      }
+    }
+  ]
+}

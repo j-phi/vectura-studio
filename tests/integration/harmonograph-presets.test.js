@@ -37,10 +37,12 @@ describe('Harmonograph presets', () => {
   test('the harmonograph preset library is filtered out of PRESETS', () => {
     const lib = window.Vectura.PresetLibraries.harmonograph;
     expect(Array.isArray(lib)).toBe(true);
-    expect(lib.length).toBe(4);
+    // Four curated presets + the factory Default (the selected initial state).
+    expect(lib.length).toBe(5);
     expect(lib.every((p) => p.preset_system === 'harmonograph')).toBe(true);
     expect(lib.map((p) => p.id)).toEqual(
       expect.arrayContaining([
+        'harmonograph-default',
         'harmonograph-unison-circle',
         'harmonograph-classic-3-2-star',
         'harmonograph-4-3-star',
@@ -65,11 +67,21 @@ describe('Harmonograph presets', () => {
     });
   });
 
-  test('the preset dropdown renders an option for each of the 4 presets', () => {
+  test('the preset dropdown renders an option for each of the 5 presets', () => {
     expect(document.querySelector('.hg-preset-dropdown-wrap')).toBeTruthy();
-    expect(document.querySelectorAll('.hg-preset-option[data-preset-id]:not([data-preset-id="custom"])').length).toBe(4);
+    expect(document.querySelectorAll('.hg-preset-option[data-preset-id]:not([data-preset-id="custom"])').length).toBe(5);
+    expect(presetCard('harmonograph-default')).toBeTruthy();
     expect(presetCard('harmonograph-unison-circle')).toBeTruthy();
     expect(presetCard('harmonograph-evolving-snake')).toBeTruthy();
+  });
+
+  test('a fresh harmonograph layer initializes on the named Default preset (selected + first)', () => {
+    const layer = window.app.engine.getActiveLayer();
+    expect(layer.params.preset).toBe('harmonograph-default');
+    // First non-custom option in the popover is the Default, and it is active.
+    const firstPreset = document.querySelector('.hg-preset-option[data-preset-id]:not([data-preset-id="custom"])');
+    expect(firstPreset.dataset.presetId).toBe('harmonograph-default');
+    expect(presetCard('harmonograph-default').classList.contains('is-active')).toBe(true);
   });
 
   test('applying a preset merges its params into the active layer', () => {

@@ -1,0 +1,244 @@
+{
+  "type": "vectura",
+  "version": "1.1.61",
+  "created": "2026-06-06T21:40:49.403Z",
+  "state": {
+    "engine": {
+      "activeLayerId": "9y4wlfqzw",
+      "layers": [
+        {
+          "id": "9y4wlfqzw",
+          "type": "shapePack",
+          "name": "Shape Pack 01",
+          "params": {
+            "label": "Shape Pack",
+            "preset": "shapepack-hexagonal-mosaic",
+            "shape": "polygon",
+            "count": 200,
+            "minR": 6,
+            "maxR": 12,
+            "padding": 1,
+            "attempts": 300,
+            "segments": 6,
+            "rotationStep": 0,
+            "perspectiveType": "none",
+            "perspective": 0,
+            "perspectiveX": 0,
+            "perspectiveY": 0,
+            "smoothing": 0,
+            "simplify": 0,
+            "curves": false,
+            "seed": 93021,
+            "posX": 0,
+            "posY": 0,
+            "scaleX": 1,
+            "scaleY": 1,
+            "rotation": 0
+          },
+          "paramStates": {
+            "shapePack": {
+              "label": "Shape Pack",
+              "preset": "shapepack-hexagonal-mosaic",
+              "shape": "polygon",
+              "count": 200,
+              "minR": 6,
+              "maxR": 12,
+              "padding": 1,
+              "attempts": 300,
+              "segments": 6,
+              "rotationStep": 0,
+              "perspectiveType": "none",
+              "perspective": 0,
+              "perspectiveX": 0,
+              "perspectiveY": 0,
+              "smoothing": 0,
+              "simplify": 0,
+              "curves": false
+            }
+          },
+          "parentId": null,
+          "isGroup": false,
+          "containerRole": null,
+          "groupType": null,
+          "groupParams": null,
+          "groupCollapsed": false,
+          "modifier": null,
+          "sourcePaths": null,
+          "compound": null,
+          "mask": {
+            "enabled": false,
+            "sourceIds": [],
+            "mode": "parent",
+            "hideLayer": false,
+            "invert": false,
+            "materialized": false
+          },
+          "penId": "pen-1",
+          "color": "#000000",
+          "strokeWidth": 0.3,
+          "lineCap": "round",
+          "visible": true,
+          "origin": {
+            "x": 139.54024924655465,
+            "y": 108.7746186747787
+          },
+          "fills": [],
+          "sourceFillRecord": null
+        }
+      ]
+    },
+    "settings": {
+      "margin": 0,
+      "speedDown": 250,
+      "speedUp": 300,
+      "precision": 3,
+      "strokeWidth": 0.3,
+      "strokeWidthOverride": false,
+      "bgColor": "#ffffff",
+      "undoSteps": 20,
+      "truncate": false,
+      "cropExports": false,
+      "removeHiddenGeometry": true,
+      "outsideOpacity": 0.5,
+      "marginLineVisible": false,
+      "marginLineWeight": 0.2,
+      "marginLineColor": "#52525b",
+      "marginLineDotting": 0,
+      "showGuides": true,
+      "snapGuides": true,
+      "selectionOutline": true,
+      "selectionOutlineColor": "#ef4444",
+      "selectionOutlineWidth": 0.15,
+      "uiSections": {
+        "algorithm": false,
+        "algorithmTransform": true,
+        "algorithmConfiguration": false,
+        "modifierSection": true,
+        "pathfinder": true,
+        "algorithmAbout": false,
+        "multiSelectionAlign": false,
+        "multiSelectionDistribute": false,
+        "multiSelectionSpacing": false,
+        "multiSelectionTarget": false,
+        "multiSelectionInfoOpen": true,
+        "multiSelectionTransformOpen": false,
+        "multiSelectionAlignPanelOpen": true,
+        "multiSelectionPathfinderOpen": true
+      },
+      "aboutVisible": false,
+      "touchModifiers": {
+        "shift": false,
+        "alt": false,
+        "meta": false,
+        "ctrl": false,
+        "pan": false
+      },
+      "documentUnits": "metric",
+      "paperSize": "letter",
+      "paperWidth": 216,
+      "paperHeight": 279,
+      "paperOrientation": "landscape",
+      "showDocumentDimensions": false,
+      "optimizationScope": "all",
+      "optimizationPreview": "off",
+      "optimizationExport": true,
+      "optimizationOverlayColor": "#38bdf8",
+      "optimizationOverlayWidth": 0.2,
+      "plotterOptimize": 0,
+      "paletteId": "blues-01",
+      "autoColorization": {
+        "enabled": false,
+        "scope": "all",
+        "mode": "none",
+        "params": {
+          "penOffset": 0,
+          "penStride": 1,
+          "penMirror": false,
+          "penJitter": 0,
+          "radiusStart": 0,
+          "radiusEnd": 100,
+          "bandSize": 20,
+          "bandOffset": 0,
+          "bandGrowth": 0,
+          "bandStart": 0,
+          "bandEnd": 100,
+          "angleOffset": 0,
+          "angleSpan": 360,
+          "spiralTurns": 1,
+          "sizeCurve": 1,
+          "sizeInvert": false,
+          "randomSeed": 1
+        }
+      },
+      "autoColorizationCollapsed": true,
+      "activeTool": "select",
+      "scissorMode": "line",
+      "penMode": "draw",
+      "cookiePreferencesEnabled": true,
+      "lightSource": null,
+      "optimizationDefaults": {
+        "bypassAll": false,
+        "steps": [
+          {
+            "id": "linesimplify",
+            "enabled": true,
+            "bypass": false,
+            "tolerance": 0.2,
+            "mode": "curve"
+          },
+          {
+            "id": "linesort",
+            "enabled": true,
+            "bypass": false,
+            "method": "nearest",
+            "direction": "vertical",
+            "grouping": "combined"
+          },
+          {
+            "id": "filter",
+            "enabled": false,
+            "bypass": false,
+            "minLength": 0,
+            "maxLength": 800,
+            "removeTiny": true
+          },
+          {
+            "id": "multipass",
+            "enabled": false,
+            "bypass": false,
+            "passes": 2,
+            "offset": 0.2,
+            "jitter": 0,
+            "seed": 0
+          }
+        ]
+      },
+      "pens": [
+        {
+          "id": "pen-1",
+          "name": "Pen 1",
+          "color": "#000000",
+          "width": 0.3
+        },
+        {
+          "id": "pen-2",
+          "name": "Pen 2",
+          "color": "#dbeafe",
+          "width": 0.5
+        },
+        {
+          "id": "pen-3",
+          "name": "Pen 3",
+          "color": "#93c5fd",
+          "width": 0.8
+        }
+      ],
+      "globalLayerCount": 1
+    },
+    "selectedLayerId": "9y4wlfqzw",
+    "selectedLayerIds": [
+      "9y4wlfqzw"
+    ]
+  },
+  "images": {}
+}

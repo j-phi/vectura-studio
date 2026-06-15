@@ -1,0 +1,35 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Pachyphytum Compactum",
+  "meta": {
+    "presetId": "pachyphytum-compactum",
+    "group": "Organic",
+    "system": "petalisDesigner",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "petalisDesigner",
+      "params": {
+        "petalProfile": "oval",
+        "petalScale": 24,
+        "petalWidthRatio": 0.42,
+        "count": 160,
+        "spiralTightness": 1.2,
+        "edgeWaveAmp": 0,
+        "centerType": "dome",
+        "centerRadius": 6,
+        "layoutMode": "spiral",
+        "ringMode": "dual",
+        "innerCount": 70,
+        "outerCount": 90,
+        "ringSplit": 0.3,
+        "ringOffset": 12,
+        "rotationJitter": 0,
+        "sizeJitter": 0,
+        "countJitter": 0
+      }
+    }
+  ]
+}

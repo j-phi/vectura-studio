@@ -1604,4 +1604,71 @@ test.describe('Vectura smoke interactions', () => {
     expect(pageErrors).toEqual([]);
     expect(await page.evaluate(() => document.getElementById('left-panel-content').scrollTop)).toBe(600);
   });
+
+  test('algorithm picker menus are wheel-scrollable when the list overflows the viewport', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name.includes('tablet-touch'), 'Long-press / hover menu opening is unreliable under touch emulation.');
+    const pageErrors = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+
+    await page.goto('/');
+
+    // ── Add Layer > Algorithm submenu (hover-triggered) ───────────────
+    await page.click('#btn-add-layer');
+    await page.hover('.lvl-add-has-sub[data-add="algo-parent"]');
+    const subMenu = page.locator('#lvl-algo-submenu');
+    await expect(subMenu).toBeVisible();
+
+    // The scroll mechanism: overflow-y must be auto/scroll with a bounded max-height
+    // (regression guard — previously `overflow: hidden` clipped the overflowing list).
+    const subStyle = await subMenu.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { overflowY: cs.overflowY, maxHeight: cs.maxHeight };
+    });
+    expect(['auto', 'scroll']).toContain(subStyle.overflowY);
+    expect(subStyle.maxHeight).not.toBe('none');
+
+    // Force the list to overflow (the desktop viewport is tall enough to fit it
+    // naturally), then prove the wheel actually scrolls the content.
+    await subMenu.evaluate((el) => { el.style.maxHeight = '120px'; el.scrollTop = 0; });
+    expect(await subMenu.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+    await subMenu.hover();
+    await page.mouse.wheel(0, 200);
+    await expect.poll(async () => subMenu.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+
+    await page.keyboard.press('Escape');
+
+    // ── Toolbar > Algorithm Draw picker (long-press-triggered) ────────
+    // Use a real mouse press-hold so the pointer is active (the handler calls
+    // setPointerCapture, which throws on a synthetic pointerdown with no pointer).
+    // Keep the button held down throughout: releasing fires a click that the
+    // document capture-listener treats as "outside" and would close the picker.
+    const algoDrawBtn = page.locator('.tool-btn[data-tool="algo-draw"]');
+    const btnBox = await algoDrawBtn.boundingBox();
+    expect(btnBox).toBeTruthy();
+    await page.mouse.move(btnBox.x + btnBox.width / 2, btnBox.y + btnBox.height / 2);
+    await page.mouse.down();
+    const picker = page.locator('#algo-draw-picker');
+    await expect(picker).toBeVisible();
+
+    const pickStyle = await picker.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { overflowY: cs.overflowY, maxHeight: cs.maxHeight };
+    });
+    expect(['auto', 'scroll']).toContain(pickStyle.overflowY);
+    expect(pickStyle.maxHeight).not.toBe('none');
+
+    const pickBox = await picker.evaluate((el) => {
+      el.style.maxHeight = '120px';
+      el.scrollTop = 0;
+      const r = el.getBoundingClientRect();
+      return { cx: r.left + r.width / 2, cy: r.top + r.height / 2, overflows: el.scrollHeight > el.clientHeight };
+    });
+    expect(pickBox.overflows).toBe(true);
+    await page.mouse.move(pickBox.cx, pickBox.cy);
+    await page.mouse.wheel(0, 200);
+    await expect.poll(async () => picker.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+
+    await page.mouse.up();
+    expect(pageErrors).toEqual([]);
+  });
 });

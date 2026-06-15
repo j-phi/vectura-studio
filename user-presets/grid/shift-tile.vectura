@@ -1,0 +1,23 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Shift Tile",
+  "meta": {
+    "presetId": "grid-shift-tile",
+    "group": "Geometric",
+    "system": "grid",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "grid",
+      "params": {
+        "rows": 12,
+        "cols": 12,
+        "distortion": 8,
+        "chaos": 0,
+        "type": "shift"
+      }
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Archipelago",
+  "meta": {
+    "presetId": "terrain-archipelago",
+    "group": "Organic",
+    "system": "terrain",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "terrain",
+      "params": {
+        "perspectiveMode": "one-point",
+        "horizonHeight": 50,
+        "depthCompression": 60,
+        "depthSlices": 90,
+        "xResolution": 260,
+        "mountainAmplitude": 35,
+        "mountainFrequency": 0.011,
+        "mountainOctaves": 4,
+        "peakSharpness": 1.5,
+        "valleyCount": 4,
+        "valleyDepth": 40,
+        "valleyWidth": 22,
+        "valleyShape": 0.6,
+        "valleyMeander": 60,
+        "riversEnabled": false,
+        "oceansEnabled": true,
+        "waterLevel": 32,
+        "drawCoastline": true
+      }
+    }
+  ]
+}

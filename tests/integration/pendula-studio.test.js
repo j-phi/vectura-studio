@@ -30,11 +30,11 @@ describe('Pendula studio — controls, presets, Motion Rack', () => {
   // The preset selector is now a compact dropdown, not a card gallery.
   const presetCard = (id) => document.querySelector(`.hg-preset-option[data-preset-id="${id}"]`);
 
-  test('the pendula preset library is filtered from PRESETS (4 presets)', () => {
+  test('the pendula preset library is filtered from PRESETS (5 presets — incl. Default)', () => {
     const lib = window.Vectura.PresetLibraries.pendula;
-    expect(lib.length).toBe(4);
+    expect(lib.length).toBe(5);
     expect(lib.map((p) => p.id)).toEqual(expect.arrayContaining([
-      'pendula-breathing-orbit', 'pendula-drift-star', 'pendula-tidal-lissajous', 'pendula-pulsing-web',
+      'pendula-default', 'pendula-breathing-orbit', 'pendula-drift-star', 'pendula-tidal-lissajous', 'pendula-pulsing-web',
     ]));
     expect(lib.every((p) => p.preset_system === 'pendula')).toBe(true);
   });

@@ -1,0 +1,31 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Torus Contours",
+  "meta": {
+    "presetId": "topoform-torus-contours",
+    "group": "Classic",
+    "system": "topoform",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "topoform",
+      "params": {
+        "sourceMode": "torus",
+        "renderMode": "contours",
+        "primitiveDetail": 22,
+        "primitiveScaleX": 70,
+        "primitiveScaleY": 62,
+        "primitiveScaleZ": 62,
+        "lineCount": 32,
+        "planeRotate": 16,
+        "planeTilt": 12,
+        "contourVisibility": "fullContour",
+        "showOutline": true,
+        "yaw": -32,
+        "pitch": 38
+      }
+    }
+  ]
+}

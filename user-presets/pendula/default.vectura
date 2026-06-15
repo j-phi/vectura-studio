@@ -1,0 +1,76 @@
+{
+  "type": "vectura",
+  "name": "Default",
+  "meta": {
+    "presetId": "pendula-default",
+    "group": "Classic",
+    "system": "pendula",
+    "savedAt": 1781387706052
+  },
+  "layers": [
+    {
+      "type": "pendula",
+      "params": {
+        "label": "Pendula",
+        "preset": "pendula-default",
+        "machineType": "lateral",
+        "renderMode": "line",
+        "samples": 6000,
+        "duration": 30,
+        "scale": 0.35,
+        "paperRotation": 0,
+        "dashLength": 4,
+        "dashGap": 2,
+        "pointStride": 4,
+        "pointSize": 0.4,
+        "segmentStride": 6,
+        "segmentLength": 6,
+        "gapSize": 0,
+        "gapOffset": 0,
+        "gapRandomness": 0,
+        "widthMultiplier": 1,
+        "thickeningMode": "parallel",
+        "loopDrift": 0,
+        "settleThreshold": 0,
+        "settleWindow": 24,
+        "plotStart": 0,
+        "plotEnd": 100,
+        "pendulumParamLocks": {},
+        "showPendulumGuides": false,
+        "pendulumGuideColor": "#f59e0b",
+        "pendulumGuideWidth": 0.25,
+        "pendulums": [
+          {
+            "id": "pend-1",
+            "enabled": true,
+            "ampX": 100,
+            "ampY": 100,
+            "phaseX": 90,
+            "phaseY": 0,
+            "damp": 0.0008,
+            "freq": 2,
+            "micro": 0
+          },
+          {
+            "id": "pend-2",
+            "enabled": true,
+            "ampX": 40,
+            "ampY": 40,
+            "phaseX": 0,
+            "phaseY": 90,
+            "damp": 0.0008,
+            "freq": 3,
+            "micro": 0
+          }
+        ],
+        "motion": {
+          "sources": [],
+          "edges": []
+        },
+        "smoothing": 0,
+        "simplify": 0,
+        "curves": true
+      }
+    }
+  ]
+}

@@ -211,7 +211,9 @@
       <table class="help-kbd-table">
         <tbody>
           ${row(CMD + k('A'),                                   'Select all')}
-          ${row(mouse('click'),                                 'Select layer')}
+          ${row(mouse('click'),                                 'Select layer (or whole group / morph)')}
+          ${row(mouse('double-click'),                          'Edit a child inside a group or morph')}
+          ${row(k('Esc'),                                       'Exit group / morph editing')}
           ${row(CMD + sep + mouse('click'),                     'Toggle selection')}
           ${row(SHF + sep + mouse('click'),                     'Range select')}
         </tbody>
@@ -249,7 +251,7 @@
       ${accordion('Organizing Layers', layerOrgRows, true)}
       ${accordion('Stack Order', layerStackRows)}
       ${accordion('Wallpaper Modifier', wallpaperRows)}
-      ${callout('Drag a layer into a <strong>Mirror Modifier</strong> to reflect it symmetrically. Enable <strong>Mask</strong> on a parent layer to clip all nested children inside its silhouette.')}`;
+      ${callout('Drag a layer into a <strong>Mirror Modifier</strong> to reflect it symmetrically. Enable <strong>Mask</strong> on a parent layer to clip all nested children inside its silhouette. <strong>Single-click</strong> a group or Morph to select it as one object; <strong>double-click</strong> to step inside and edit one unlocked child (the Morph re-blends live); switch to the <strong>direct-select</strong> tool to reshape that end’s points or bevel; <strong>Esc</strong> steps back out.')}`;
 
     /* -- Pen -- */
     const penDrawRows = `
@@ -289,6 +291,7 @@
           ${section('File',
             row(CMD + k('O'),       'Open project') +
             row(CMD + k('S'),       'Save project') +
+            row(CMD + k('S'),       'Save preset (config panel focused, after editing a preset)') +
             row(CMD + SHF + k('P'), 'Import SVG') +
             row(CMD + SHF + k('E'), 'Export SVG') +
             row(CMD + k('K'),       'Document Setup')

@@ -1,0 +1,31 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Fresh Cut",
+  "meta": {
+    "presetId": "rings-fresh-cut",
+    "group": "Geometric",
+    "system": "rings",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "rings",
+      "params": {
+        "rings": 25,
+        "gap": 1.1,
+        "gapCurveStart": 1,
+        "gapCurveEnd": 1,
+        "spacingVariance": 0,
+        "barkRings": 3,
+        "barkGap": 1.5,
+        "breakCount": 0,
+        "centerDrift": 0,
+        "biasStrength": 0,
+        "rayCount": 0,
+        "knotCount": 0,
+        "seed": 1010
+      }
+    }
+  ]
+}

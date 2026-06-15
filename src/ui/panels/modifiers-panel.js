@@ -60,6 +60,22 @@
     this.app.render();
   }
 
+  function insertMorphModifier() {
+    const { getEl } = requireDeps('insertMorphModifier');
+    const selectedLayers = this.app.getSelectedLayers().filter((layer) => layer && !layer.isGroup);
+    if (this.app.pushHistory) this.app.pushHistory();
+    const id = this.app.addModifierLayer('morph');
+    if (selectedLayers.length) {
+      this.assignLayersToParent(id, selectedLayers);
+    }
+    this.app.setSelection([id], id);
+    this.app.engine.setActiveLayerId(id);
+    this.renderLayers();
+    this.buildControls();
+    this.updateFormula();
+    this.app.render();
+  }
+
   function updatePrimaryPanelMode(layer) {
     const { getEl } = requireDeps('updatePrimaryPanelMode');
     const primaryTitle = getEl('left-section-primary-title', { silent: true });
@@ -133,6 +149,7 @@
     },
     refreshModifierLayer,
     insertMirrorModifier,
+    insertMorphModifier,
     updatePrimaryPanelMode,
     refreshMaskingViews,
     ensureLayerMaskState,
@@ -141,6 +158,7 @@
     installOn(proto) {
       proto.refreshModifierLayer = function(layer, options = {}) { return refreshModifierLayer.call(this, layer, options); };
       proto.insertMirrorModifier = function() { return insertMirrorModifier.call(this); };
+      proto.insertMorphModifier = function() { return insertMorphModifier.call(this); };
       proto.updatePrimaryPanelMode = function(layer) { return updatePrimaryPanelMode.call(this, layer); };
       proto.refreshMaskingViews = function() { return refreshMaskingViews.call(this); };
       proto.ensureLayerMaskState = function(layer) { return ensureLayerMaskState.call(this, layer); };

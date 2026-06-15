@@ -82,7 +82,7 @@
     const {
       // constants & data
       COMMON_CONTROLS, OPTIMIZATION_STEPS, IMAGE_NOISE_DEFAULT_AMPLITUDE,
-      WAVE_NOISE_DEFS, RINGS_NOISE_DEFS, TOPO_NOISE_DEFS, FLOWFIELD_NOISE_DEFS,
+      WAVE_NOISE_DEFS, RINGS_NOISE_DEFS, TOPO_NOISE_DEFS, RASTER_PLANE_NOISE_DEFS, FLOWFIELD_NOISE_DEFS,
       GRID_NOISE_DEFS, PHYLLA_NOISE_DEFS, PETALIS_DRIFT_NOISE_DEFS,
       PETALIS_MODIFIER_TYPES, PETALIS_PETAL_MODIFIER_TYPES, PETALIS_SHADING_TYPES,
       PETALIS_LINE_TYPES,
@@ -115,6 +115,24 @@
       restoreLeftPanelScroll();
       return;
     }
+    // Cmd/Ctrl+S, scoped to focus within the config panel, opens the preset Save
+    // modal when the active layer is dirty (its save pip is visible). Bound once
+    // — the container element persists across rebuilds (only innerHTML is reset).
+    // preventDefault stops the browser save dialog; stopPropagation keeps the
+    // global "Save .vectura" shortcut from also firing.
+    if (!this._presetSaveKeyBound) {
+      this._presetSaveKeyBound = true;
+      container.addEventListener('keydown', (e) => {
+        const primary = e.metaKey || e.ctrlKey;
+        if (!primary || e.shiftKey || e.altKey) return;
+        if ((e.key || '').toLowerCase() !== 's') return;
+        const pip = container.querySelector('.hg-preset-save-pip:not([hidden])');
+        if (!pip || typeof this._activePresetGallerySave !== 'function') return;
+        e.preventDefault();
+        e.stopPropagation();
+        this._activePresetGallerySave();
+      });
+    }
     if (this.harmonographPlotterState?.rafId) {
       window.cancelAnimationFrame(this.harmonographPlotterState.rafId);
     }
@@ -122,6 +140,20 @@
     this.destroyInlinePetalisDesigner();
     this.destroyInlinePatternDesigner();
     container.innerHTML = '';
+    // Cleared each rebuild; re-registered if this layer mounts a preset gallery.
+    this._activePresetGalleryRefresh = null;
+    this._activePresetGallerySave = null;
+    // Cleared each rebuild; re-registered if this layer mounts the image-source
+    // widget (rasterPlane) so its preview can live-refresh after every edit.
+    this._activeImageSourceRefresh = null;
+    // Tear down any floating image-source pane before the rebuild; the widget
+    // re-creates it (from the persisted _imageSourcePopout state) if the layer
+    // being built is still rasterPlane and still popped out. Prevents the
+    // floating pane orphaning over the canvas when another layer is selected.
+    if (this._imageSourcePopoutEl) {
+      this._imageSourcePopoutEl.remove();
+      this._imageSourcePopoutEl = null;
+    }
     const paintBucketSection = getEl('left-section-paint-bucket', { silent: true });
     const paintBucketActive = this.activeTool === 'fill' || this.activeTool === 'fill-erase';
     if (paintBucketActive) {
@@ -412,7 +444,12 @@
     }
 
     if (isModifier) {
-      window.Vectura.UI.MirrorPanel.build(this, layer, container);
+      const modType = this.getModifierState(layer)?.type;
+      if (modType === 'morph' && window.Vectura.UI.MorphPanel) {
+        window.Vectura.UI.MorphPanel.build(this, layer, container);
+      } else {
+        window.Vectura.UI.MirrorPanel.build(this, layer, container);
+      }
       restoreLeftPanelScroll();
       return;
     }
@@ -487,6 +524,14 @@
       if (def.default !== undefined) return def.default;
       return null;
     };
+
+    // The 3D algorithms (spiralizer, polyhedron, topoform, rasterPlane) bake
+    // the Curves toggle into their geometry at GENERATE time — their paths are
+    // stamped `meta.straight` / `meta.forceCurves`, which override the renderer's
+    // draw-time curve smoothing — so toggling Curves must regenerate, not just
+    // re-render, or it has no visible effect.
+    const curvesBakedAtGenerate = (lyr) =>
+      !!(ALGO_DEFAULTS && lyr && ALGO_DEFAULTS[lyr.type] && ALGO_DEFAULTS[lyr.type].is3d);
 
     const valueEditorMap = new WeakMap();
     const collectValueChips = () =>
@@ -783,25 +828,51 @@
       if (m.triggerThumbRelease) m.triggerThumbRelease(slider);
     };
 
-    // Shared apply path for the harmonograph-family preset selector (the
-    // craft-ladder gallery AND any future <select> route through this). A
-    // preset defines the whole figure (and may ship a motion patch); we keep
-    // only the layer's transform so applying one doesn't move/resize it on the
-    // canvas. `presetId === 'custom'` just stamps the custom marker. The caller
+    // Generic preset apply path — every algorithm with a preset library routes
+    // through this (the gallery mounts for any non-empty library). A preset
+    // defines the whole figure (and may ship a motion patch); we clone the
+    // algorithm's defaults, merge the preset params on top, then re-impose the
+    // layer's transform (and a small per-algorithm preserve set) so applying a
+    // preset never moves/resizes it on the canvas or drops algorithm-orthogonal
+    // tuning like smoothing. `presetId === 'custom'` just stamps the custom
+    // marker (petalisDesigner also clears its derived shading state). The caller
     // owns pushHistory (one entry per user action).
-    const applyHarmonographFamilyPreset = (presetId) => {
+    const EXTRA_PRESERVED = {
+      rings: ['smoothing', 'simplify', 'curves', 'outerDiameter', 'centerDiameter'],
+      petalisDesigner: ['smoothing', 'simplify', 'curves'],
+      terrain: ['smoothing', 'simplify', 'curves'],
+    };
+    const lookupPreset = (type, presetId) => {
+      const libs = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.PresetLibraries;
+      const builtIn = (libs && libs[type]) || [];
+      let hit = builtIn.find((item) => item.id === presetId);
+      if (hit) return hit;
+      // User presets live in localStorage (keyed by system); the gallery offers
+      // them in the same list, so apply must resolve them too.
+      try {
+        const raw = typeof localStorage !== 'undefined' && localStorage.getItem(`vectura.user_presets.${type}`);
+        const user = raw ? JSON.parse(raw) : [];
+        hit = Array.isArray(user) ? user.find((item) => item.id === presetId) : null;
+      } catch (_) { hit = null; }
+      return hit || null;
+    };
+    const applyPreset = (presetId) => {
       if (presetId === 'custom') {
         layer.params.preset = 'custom';
+        if (layer.type === 'petalisDesigner') {
+          layer.params.shadings = [];
+          layer.params.innerShading = false;
+          layer.params.outerShading = false;
+        }
         this.storeLayerParams(layer);
         this.app.regen();
         this.buildControls();
         this.updateFormula();
         return;
       }
-      const lib = layer.type === 'pendula' ? PENDULA_PRESET_LIBRARY : HARMONOGRAPH_PRESET_LIBRARY;
-      const preset = (lib || []).find((item) => item.id === presetId);
+      const preset = lookupPreset(layer.type, presetId);
       const base = ALGO_DEFAULTS?.[layer.type] ? clone(ALGO_DEFAULTS[layer.type]) : {};
-      const preserved = new Set([...TRANSFORM_KEYS]);
+      const preserved = new Set([...TRANSFORM_KEYS, ...(EXTRA_PRESERVED[layer.type] || [])]);
       const nextParams = { ...base, ...(preset?.params || {}) };
       preserved.forEach((key) => {
         if (layer.params[key] !== undefined) nextParams[key] = layer.params[key];
@@ -818,31 +889,83 @@
       const target = targetEl || container;
       if (def.showIf && !def.showIf(layer.params)) return;
       if (def.type === 'section') {
+        // Collapsible variant (UX1 / WU10): `{ type:'section', collapsed:true }`
+        // renders a closed disclosure whose body collects the controls that
+        // FOLLOW it (the render loop routes them via the returned body — see the
+        // `algoDefs` loop below). A plain section WITHOUT `collapsed` renders the
+        // exact same flat header + sibling controls as before (backward-compat).
+        if (def.collapsed) {
+          const section = document.createElement('div');
+          section.className = 'control-section control-section--collapsible is-collapsed';
+          const header = document.createElement('button');
+          header.type = 'button';
+          header.className = 'control-section-title control-section-toggle';
+          header.setAttribute('aria-expanded', 'false');
+          header.innerHTML = `<span class="control-section-label">${getDisplayLabel(def)}</span><span class="control-section-caret" aria-hidden="true"></span>`;
+          const body = document.createElement('div');
+          body.className = 'control-section-body';
+          const toggle = () => {
+            const open = section.classList.toggle('is-collapsed');
+            // classList.toggle returns the NEW presence of `is-collapsed`.
+            header.setAttribute('aria-expanded', open ? 'false' : 'true');
+          };
+          header.addEventListener('click', toggle);
+          section.appendChild(header);
+          section.appendChild(body);
+          target.appendChild(section);
+          // Signal the render loop to route subsequent controls into this body.
+          return body;
+        }
         const section = document.createElement('div');
         section.className = 'control-section';
         section.innerHTML = `<div class="control-section-title">${getDisplayLabel(def)}</div>`;
         target.appendChild(section);
         return;
       }
-      // Harmonograph family: the preset control is a craft-ladder GALLERY, not
-      // a <select>. The registry still declares it as a select (so the option
-      // data stays in one place); here we intercept it and mount the grouped
-      // card grid, which routes clicks through the SAME apply path.
-      if (def.id === 'preset' && (layer.type === 'harmonograph' || layer.type === 'pendula')) {
-        const gallery = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.UI?.HarmonographPresetGallery;
-        const libs = (typeof window !== 'undefined' ? window : globalThis)?.Vectura?.PresetLibraries;
-        const presets = (libs && libs[layer.type]) || [];
-        if (typeof gallery === 'function') {
-          gallery(target, {
-            layer,
-            presets,
-            onApply: (presetId) => {
-              if (this.app.pushHistory) this.app.pushHistory();
-              applyHarmonographFamilyPreset(presetId);
-            },
-          });
-        }
+      if (def.type === 'sectionHint') {
+        // Small muted empty-state hint (R3/UX10 / WU9). showIf already early-returns
+        // above, so reaching here means the hint should show.
+        const hint = document.createElement('div');
+        hint.className = 'control-section-hint';
+        hint.textContent = def.text || '';
+        target.appendChild(hint);
         return;
+      }
+      // Universal preset gallery: the preset control is a thumbnail GALLERY, not
+      // a <select>. The registry still declares it as a select (so the control
+      // slot exists); here we intercept it for ANY algorithm whose preset
+      // library is non-empty and mount the grouped popover, which routes clicks
+      // through the SAME generic apply path. No per-algorithm branches.
+      if (def.id === 'preset') {
+        const V = (typeof window !== 'undefined' ? window : globalThis)?.Vectura;
+        const presetLib = V?.PresetLibraries?.[layer.type] ?? [];
+        if (presetLib.length > 0) {
+          const gallery = V?.UI?.PresetGallery || V?.UI?.HarmonographPresetGallery;
+          if (typeof gallery === 'function') {
+            const inst = gallery(target, {
+              layer,
+              presets: presetLib,
+              // Keys a preset apply never overwrites — the gallery ignores these
+              // when deciding whether the layer still matches its named preset
+              // (so moving/resizing a layer doesn't read as "diverged").
+              preservedKeys: [...TRANSFORM_KEYS, ...(EXTRA_PRESERVED[layer.type] || [])],
+              onApply: (presetId) => {
+                if (this.app.pushHistory) this.app.pushHistory();
+                applyPreset(presetId);
+              },
+              // The save flow mutates the preset marker — wrap it in history so
+              // Cmd+Z is consistent with onApply.
+              pushHistory: () => { if (this.app.pushHistory) this.app.pushHistory(); },
+            });
+            // Register the live divergence refresh so app.regen() (fired after
+            // every param edit) flips the trigger to "Custom" the instant a
+            // param differs from the preset — and back when it's restored.
+            this._activePresetGalleryRefresh = inst && typeof inst.refresh === 'function' ? inst.refresh : null;
+            // The save pip's modal opener, surfaced for the Cmd/Ctrl+S accelerator.
+            this._activePresetGallerySave = inst && typeof inst.openSave === 'function' ? inst.openSave : null;
+          }
+          return;
+        }
       }
 
       if (def.type === 'svgImportButton') {
@@ -894,12 +1017,70 @@
         target.appendChild(wrap);
         return;
       }
+      if (def.type === 'stlImport') {
+        const wrap = document.createElement('div');
+        wrap.className = 'mb-4';
+        const nameEl = document.createElement('div');
+        nameEl.className = 'text-[11px] text-vectura-muted mb-2';
+        const loaded = layer.params.importedMesh;
+        nameEl.textContent = layer.params.meshName
+          ? `Loaded: ${layer.params.meshName}${loaded && loaded.triangles ? ` · ${loaded.triangles} tris` : ''}`
+          : 'No STL loaded';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'w-full text-xs border border-vectura-border px-2 py-2 hover:bg-vectura-border text-vectura-accent transition-colors';
+        btn.textContent = layer.params.meshName ? 'Replace STL…' : 'Import STL…';
+        btn.onclick = () => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = '.stl,model/stl,application/vnd.ms-pki.stl';
+          input.onchange = () => {
+            const file = input.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+              let mesh;
+              try {
+                mesh = window.Vectura.StlParser.parse(reader.result, file.name);
+              } catch (err) {
+                this.openModal({ title: 'STL Import Failed', body: '<p class="modal-text">Could not read this STL file. Make sure it is a valid binary or ASCII .stl mesh.</p>' });
+                return;
+              }
+              if (!mesh || !mesh.vertices?.length || !mesh.faces?.length) {
+                this.openModal({ title: 'No Mesh Found', body: '<p class="modal-text">The STL contained no triangles.</p>' });
+                return;
+              }
+              if (this.app.pushHistory) this.app.pushHistory();
+              layer.params.importedMesh = mesh;
+              layer.params.meshName = mesh.name || file.name;
+              this.storeLayerParams(layer);
+              this.app.engine.generate(layer.id);
+              this.buildControls();
+              this.updateFormula();
+              this.app.render();
+            };
+            reader.readAsArrayBuffer(file);
+          };
+          input.click();
+        };
+        wrap.appendChild(nameEl);
+        wrap.appendChild(btn);
+        target.appendChild(wrap);
+        return;
+      }
       if (def.type === 'petalDesignerInline') {
         if (!isPetalisLayerType(layer.type)) return;
         const wrapper = document.createElement('div');
         wrapper.className = 'petal-designer-inline-wrap mb-4';
         target.appendChild(wrapper);
         this.mountInlinePetalisDesigner(layer, wrapper);
+        return;
+      }
+      if (def.type === 'petalProfileGallery') {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'mb-4';
+        target.appendChild(wrapper);
+        this.mountPetalProfileGallery(layer, wrapper, def);
         return;
       }
       if (def.type === 'actionButton') {
@@ -1058,6 +1239,14 @@
          
          target.appendChild(wrapper);
          return;
+      }
+      if (def.type === 'noisePreview') {
+        const wrapper = document.createElement('div');
+        target.appendChild(wrapper);
+        if (typeof this.mountNoisePreviewWidget === 'function') {
+          this.mountNoisePreviewWidget(layer, wrapper);
+        }
+        return;
       }
       if (def.type === 'image') {
         const infoBtn = def.infoKey ? `<button type="button" class="info-btn" data-info="${def.infoKey}">i</button>` : '';
@@ -2595,8 +2784,10 @@
         const noiseDefs =
           noiseSource === 'rings'
             ? RINGS_NOISE_DEFS
-            : noiseSource === 'topo'
-              ? TOPO_NOISE_DEFS
+            : noiseSource === 'rasterPlane'
+              ? RASTER_PLANE_NOISE_DEFS
+              : noiseSource === 'topo'
+                ? TOPO_NOISE_DEFS
               : noiseSource === 'flowfield' || noiseSource === 'svgDistort'
                 ? FLOWFIELD_NOISE_DEFS
                 : noiseSource === 'grid'
@@ -2613,6 +2804,8 @@
               ? this.ensureRingsNoises(layer)
               : noiseSource === 'topo'
                 ? this.ensureTopoNoises(layer)
+                : noiseSource === 'rasterPlane'
+                  ? this.ensureRasterPlaneNoises(layer)
                 : noiseSource === 'flowfield'
                   ? this.ensureFlowfieldNoises(layer)
                   : noiseSource === 'svgDistort'
@@ -2680,6 +2873,7 @@
             noiseSource === 'spiral' ? this.createSpiralNoise(idx)
             : noiseSource === 'rings' ? this.createRingsNoise(idx)
             : noiseSource === 'topo' ? this.createTopoNoise(idx)
+            : noiseSource === 'rasterPlane' ? this.createRasterPlaneNoise(idx)
             : noiseSource === 'flowfield' ? this.createFlowfieldNoise(idx)
             : noiseSource === 'svgDistort' ? this.createFlowfieldNoise(idx)
             : noiseSource === 'grid' ? this.createGridNoise(idx)
@@ -2786,6 +2980,90 @@
           });
         }
         target.appendChild(div);
+        return;
+      }
+
+      if (def.type === 'lightPad') {
+        // Square XY pad: drag a point to position the light (and thus the specular
+        // highlight). The point's position is the light's screen-XY direction;
+        // distance from centre maps to elevation (centre = head-on, edge = grazing).
+        // Writes two params (azimuth + elevation) in one gesture.
+        const azKey = def.azParam || 'lightAzimuth';
+        const elKey = def.elParam || 'lightElevation';
+        const azDefault = def.azDefault ?? 135;
+        const elDefault = def.elDefault ?? 45;
+        const readAz = () => (Number.isFinite(layer.params[azKey]) ? layer.params[azKey] : azDefault);
+        const readEl = () => (Number.isFinite(layer.params[elKey]) ? layer.params[elKey] : elDefault);
+        div.innerHTML = `
+          <div class="angle-label">
+            <div class="flex items-center gap-2">
+              <label class="control-label mb-0">${getDisplayLabel(def)}</label>
+              ${infoBtn}
+            </div>
+            <button type="button" class="value-chip text-xs text-vectura-accent font-mono">${Math.round(readAz())}° · ${Math.round(readEl())}°</button>
+          </div>
+          <div class="light-pad" tabindex="0" title="Drag to position the light">
+            <div class="light-pad-disk"></div>
+            <div class="light-pad-handle"></div>
+          </div>
+        `;
+        const pad = div.querySelector('.light-pad');
+        const handle = div.querySelector('.light-pad-handle');
+        const valueBtn = div.querySelector('.value-chip');
+        // az/el → unit-square point (y up positive). mag = cos(el); point = mag·(cos az, sin az).
+        const place = (az, el) => {
+          const a = (az * Math.PI) / 180;
+          const mag = Math.cos((el * Math.PI) / 180);
+          const px = Math.cos(a) * mag;
+          const py = Math.sin(a) * mag;
+          handle.style.left = `${(px * 0.5 + 0.5) * 100}%`;
+          handle.style.top = `${(0.5 - py * 0.5) * 100}%`;
+          if (valueBtn) valueBtn.innerText = `${Math.round(az)}° · ${Math.round(el)}°`;
+        };
+        place(readAz(), readEl());
+        let pushed = false;
+        const apply = (e, commit) => {
+          const rect = pad.getBoundingClientRect();
+          let nx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+          let ny = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+          let mag = Math.hypot(nx, ny);
+          if (mag > 1) { nx /= mag; ny /= mag; mag = 1; }
+          let az = (Math.atan2(ny, nx) * 180) / Math.PI;
+          if (az < 0) az += 360;
+          const el = (Math.acos(clamp(mag, 0, 1)) * 180) / Math.PI;
+          layer.params[azKey] = Math.round(az);
+          layer.params[elKey] = Math.round(el);
+          place(Math.round(az), Math.round(el));
+          this.storeLayerParams(layer);
+          this.app.regen(commit ? undefined : { preview: true });
+          this.updateFormula();
+        };
+        pad.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          if (!pushed && this.app.pushHistory) { this.app.pushHistory(); pushed = true; }
+          apply(e, false);
+          const move = (ev) => apply(ev, false);
+          const up = (ev) => {
+            window.removeEventListener('mousemove', move);
+            apply(ev, true);
+            pushed = false;
+            maybeRebuildControls();
+          };
+          window.addEventListener('mousemove', move);
+          window.addEventListener('mouseup', up, { once: true });
+        });
+        pad.addEventListener('dblclick', (e) => {
+          e.preventDefault();
+          if (this.app.pushHistory) this.app.pushHistory();
+          layer.params[azKey] = azDefault;
+          layer.params[elKey] = elDefault;
+          place(azDefault, elDefault);
+          this.storeLayerParams(layer);
+          this.app.regen();
+          this.updateFormula();
+          maybeRebuildControls();
+        });
+        container.appendChild(div);
         return;
       }
 
@@ -2903,8 +3181,25 @@
             const next = Boolean(e.target.checked);
             span.innerText = next ? 'ON' : 'OFF';
             layer.params[def.id] = next;
+            // Enabling Raster-Plane "Lines as Planes" seeds the relief defaults that
+            // read best for extruded curtains: a small base lift so flat regions
+            // still extrude, see-through OFF so the solid faces occlude, and a gentle
+            // Occlusion Bias so the depth-occlusion reads without eating the front
+            // ridges (the raw default sits at maximum occlusion). Mirrors the
+            // wavetable/topoform param-cascade precedents in the sibling select
+            // onchange handler below.
+            if (layer.type === 'rasterPlane' && def.id === 'horizontalLinesAsPlanes' && next === true) {
+              layer.params.baseHeight = 0.33;
+              layer.params.seeThrough = false;
+              layer.params.depthBias = 1.5;
+            }
             this.storeLayerParams(layer);
-            if (def.id === 'curves') {
+            // `curves` is normally a render-time flag (the renderer smooths
+            // polylines on draw), so toggling it only needs a re-render. The 3D
+            // algorithms bake curves at GENERATE time (their paths are stamped
+            // straight / forceCurves), so for those the toggle must regenerate or
+            // it does nothing. See `curveSurfacePath` in raster-plane.js.
+            if (def.id === 'curves' && !curvesBakedAtGenerate(layer)) {
               this.app.render();
               this.updateFormula();
             } else {
@@ -2923,7 +3218,7 @@
             span.innerText = next ? 'ON' : 'OFF';
             layer.params[def.id] = next;
             this.storeLayerParams(layer);
-            if (def.id === 'curves') {
+            if (def.id === 'curves' && !curvesBakedAtGenerate(layer)) {
               this.app.render();
               this.updateFormula();
             } else {
@@ -2971,99 +3266,27 @@
           input.onchange = (e) => {
             if (this.app.pushHistory) this.app.pushHistory();
             const next = e.target.value;
-            if (isPetalisLayerType(layer.type) && def.id === 'preset' && next === 'custom') {
-              layer.params.preset = 'custom';
-              layer.params.shadings = [];
-              layer.params.innerShading = false;
-              layer.params.outerShading = false;
-              this.storeLayerParams(layer);
-              span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
-              this.app.regen();
-              this.buildControls();
-              this.updateFormula();
-              return;
-            }
-            if (isPetalisLayerType(layer.type) && def.id === 'preset' && next !== 'custom') {
-              const preset = (PETALIS_PRESET_LIBRARY || []).find((item) => item.id === next);
-              const presetBase = 'petalisDesigner';
-              const base = ALGO_DEFAULTS?.[presetBase] ? clone(ALGO_DEFAULTS[presetBase]) : {};
-              const preserved = new Set([...TRANSFORM_KEYS, 'smoothing', 'simplify', 'curves']);
-              const nextParams = { ...base, ...(preset?.params || {}) };
-              preserved.forEach((key) => {
-                if (layer.params[key] !== undefined) nextParams[key] = layer.params[key];
-              });
-              nextParams.preset = next;
-              layer.params = { ...layer.params, ...nextParams };
-              this.storeLayerParams(layer);
-              span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
-              this.app.regen();
-              this.buildControls();
-              this.updateFormula();
-              return;
-            }
-            if (layer.type === 'terrain' && def.id === 'preset' && next === 'custom') {
-              layer.params.preset = 'custom';
-              this.storeLayerParams(layer);
-              span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
-              this.app.regen();
-              this.buildControls();
-              this.updateFormula();
-              return;
-            }
-            if (layer.type === 'terrain' && def.id === 'preset' && next !== 'custom') {
-              const preset = (TERRAIN_PRESET_LIBRARY || []).find((item) => item.id === next);
-              const base = ALGO_DEFAULTS?.terrain ? clone(ALGO_DEFAULTS.terrain) : {};
-              const preserved = new Set([...TRANSFORM_KEYS, 'smoothing', 'simplify', 'curves']);
-              const nextParams = { ...base, ...(preset?.params || {}) };
-              preserved.forEach((key) => {
-                if (layer.params[key] !== undefined) nextParams[key] = layer.params[key];
-              });
-              nextParams.preset = next;
-              layer.params = { ...layer.params, ...nextParams };
-              this.storeLayerParams(layer);
-              span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
-              this.app.regen();
-              this.buildControls();
-              this.updateFormula();
-              return;
-            }
-            if (layer.type === 'rings' && def.id === 'preset' && next === 'custom') {
-              layer.params.preset = 'custom';
-              this.storeLayerParams(layer);
-              span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
-              this.app.regen();
-              this.buildControls();
-              this.updateFormula();
-              return;
-            }
-            if (layer.type === 'rings' && def.id === 'preset' && next !== 'custom') {
-              const preset = (RINGS_PRESET_LIBRARY || []).find((item) => item.id === next);
-              const base = ALGO_DEFAULTS?.rings ? clone(ALGO_DEFAULTS.rings) : {};
-              const preserved = new Set([...TRANSFORM_KEYS, 'smoothing', 'simplify', 'curves', 'outerDiameter', 'centerDiameter']);
-              const nextParams = { ...base, ...(preset?.params || {}) };
-              preserved.forEach((key) => {
-                if (layer.params[key] !== undefined) nextParams[key] = layer.params[key];
-              });
-              nextParams.preset = next;
-              layer.params = { ...layer.params, ...nextParams };
-              this.storeLayerParams(layer);
-              span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
-              this.app.regen();
-              this.buildControls();
-              this.updateFormula();
-              return;
-            }
-            // Harmonograph family preset control is rendered as the craft-ladder
-            // gallery (intercepted above), so this <select> branch is normally
-            // unreachable — but keep it wired through the SAME shared apply path
-            // so any fallback select stays in lock-step (no duplicated merge).
-            if ((layer.type === 'harmonograph' || layer.type === 'pendula') && def.id === 'preset') {
-              applyHarmonographFamilyPreset(next);
+            // Preset control fallback: the universal gallery intercepts the
+            // preset control for any algorithm with a non-empty library (see
+            // renderDef), so this <select> branch is normally unreachable. Keep
+            // it wired to the SAME generic apply path so any fallback select
+            // (empty-library algorithm, or gallery component missing) stays in
+            // lock-step — no duplicated merge logic per algorithm.
+            if (def.id === 'preset') {
+              applyPreset(next);
               return;
             }
             layer.params[def.id] = next;
             if (layer.type === 'wavetable' && def.id === 'lineStructure' && next === 'vertical') {
               layer.params.lineOffset = 135;
+            }
+            if (layer.type === 'topoform' && def.id === 'sourceMode' && next === 'capsule') {
+              const sx = layer.params.primitiveScaleX ?? 65;
+              const sy = layer.params.primitiveScaleY ?? 65;
+              const sz = layer.params.primitiveScaleZ ?? 65;
+              if (sy <= Math.min(sx, sz)) {
+                layer.params.primitiveScaleY = Math.round(Math.min(sx, sz) * 1.8);
+              }
             }
             this.storeLayerParams(layer);
             span.innerText = def.options.find((opt) => opt.value === next)?.label || next;
@@ -3356,17 +3579,29 @@
             this.updateFormula();
             maybeRebuildControls();
           };
+          let livePreviewHistoryPushed = false;
           input.oninput = (e) => {
             syncSliderFill(e.target);
             const nextDisplay = parseFloat(e.target.value);
             valueBtn.innerText = formatDisplayValue(def, fromDisplayValue(def, nextDisplay));
+            if (def.livePreview) {
+              if (!livePreviewHistoryPushed && this.app.pushHistory) {
+                this.app.pushHistory();
+                livePreviewHistoryPushed = true;
+              }
+              layer.params[def.id] = fromDisplayValue(def, nextDisplay);
+              this.storeLayerParams(layer);
+              this.app.regen({ preview: true });
+              this.updateFormula();
+            }
           };
           input.onchange = (e) => {
             triggerSliderMotion(e.target);
             const nextDisplay = parseFloat(e.target.value);
             const nextVal = confirmHeavy(nextDisplay);
             if (nextVal === null) return;
-            if (this.app.pushHistory) this.app.pushHistory();
+            if (!livePreviewHistoryPushed && this.app.pushHistory) this.app.pushHistory();
+            livePreviewHistoryPushed = false;
             layer.params[def.id] = nextVal;
             this.storeLayerParams(layer);
             this.app.regen();
@@ -4334,7 +4569,23 @@
 
     if (!isGroup) {
       let groupTarget = null;
+      // Routing pointer for collapsible sections (UX1 / WU10). When a
+      // `{ type:'section', collapsed:true }` is rendered, renderDef returns its
+      // body element; subsequent controls route into it until the NEXT section
+      // (collapsed or plain) or a collapsibleGroup boundary resets it back to the
+      // base target. Plain (non-collapsed) sections leave this null, so their
+      // following controls stay siblings exactly as before (backward-compat).
+      let sectionBody = null;
       for (const def of algoDefs) {
+        if (def.type === 'section') {
+          // Any new section ends the previous collapsible section's body. The
+          // header itself renders at the group/base level, never nested inside
+          // the prior collapsed body.
+          sectionBody = null;
+          const maybeBody = renderDef(def, groupTarget);
+          if (maybeBody) sectionBody = maybeBody;
+          continue;
+        }
         if (def.type === 'collapsibleGroup') {
           if (this.treeRingParamsCollapsed === undefined) this.treeRingParamsCollapsed = false;
           const collapsed = this.treeRingParamsCollapsed;
@@ -4358,16 +4609,30 @@
           group.appendChild(body);
           container.appendChild(group);
           groupTarget = body;
+          // A group boundary closes any open collapsible section.
+          sectionBody = null;
         } else if (def.type === 'collapsibleGroupEnd') {
           groupTarget = null;
+          sectionBody = null;
         } else {
-          renderDef(def, groupTarget);
+          renderDef(def, sectionBody || groupTarget);
         }
       }
     }
     if (commonDefs.length) {
       container.appendChild(globalSection);
-      commonDefs.forEach((def) => renderDef(def, globalBody));
+      // Mirror the algoDefs loop's collapsible-section routing so common defs can
+      // also use `{ type:'section', collapsed:true }`. globalBody is the base.
+      let commonSectionBody = null;
+      for (const def of commonDefs) {
+        if (def.type === 'section') {
+          commonSectionBody = null;
+          const maybeBody = renderDef(def, globalBody);
+          if (maybeBody) commonSectionBody = maybeBody;
+          continue;
+        }
+        renderDef(def, commonSectionBody || globalBody);
+      }
     }
     const optimizationTarget = getEl('optimization-controls');
     if (optimizationTarget && this.exportModalState?.isOpen) {

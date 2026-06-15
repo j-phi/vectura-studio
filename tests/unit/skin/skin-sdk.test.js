@@ -63,13 +63,11 @@ describe('Skin SDK', () => {
       });
     });
 
-    test('declares legacy --color-* aliases mapping to --ui-* tokens', () => {
-      const content = fs.readFileSync(templatePath, 'utf8');
-      // Sample a few — the full list is documented in skin-authoring.md.
-      expect(content).toMatch(/--color-bg:\s*var\(--ui-bg\)/);
-      expect(content).toMatch(/--color-text:\s*var\(--ui-text\)/);
-      expect(content).toMatch(/--color-accent:\s*var\(--ui-accent\)/);
-    });
+    // The legacy --color-* aliases were "DEPRECATED but required while styles.css
+    // lives"; styles.css was deleted in v1.1.10 and no skin or src/ reader still
+    // references var(--color-*), so the docs-cleanup pass (2c826d5) removed the
+    // dead alias block from _template.css. The assertion that required it is
+    // dropped accordingly — there is no longer a contract to cover.
 
     test('declares renderer + designer + plotter token groups', () => {
       const content = fs.readFileSync(templatePath, 'utf8');

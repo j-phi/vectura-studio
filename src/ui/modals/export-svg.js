@@ -254,7 +254,33 @@
       return;
     }
     if (!Array.isArray(path) || path.length < 2) return;
-    if (!useCurves || path.length < 3) {
+    // Native cubic preview when bezier metadata is present — mirrors
+    // Renderer.tracePath and ui.pathToSvg so the export preview matches the
+    // on-screen curve and the emitted SVG. `forceCurves` renders cubics even
+    // when the layer's `curves` toggle is off; `straight` always wins.
+    const forceCurves = path.meta?.forceCurves === true;
+    const anchors = (useCurves || forceCurves) && !path.meta?.straight ? path.meta?.anchors : null;
+    const hasHandles = Array.isArray(anchors) && anchors.some((a) => a && (a.in || a.out));
+    if (hasHandles && anchors.length >= 2) {
+      const closed = path.meta?.closed === true;
+      ctx.moveTo(anchors[0].x, anchors[0].y);
+      for (let i = 0; i < anchors.length - 1; i++) {
+        const a = anchors[i];
+        const b = anchors[i + 1];
+        const c1 = a.out || a;
+        const c2 = b.in || b;
+        ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, b.x, b.y);
+      }
+      if (closed) {
+        const a = anchors[anchors.length - 1];
+        const b = anchors[0];
+        const c1 = a.out || a;
+        const c2 = b.in || b;
+        ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, b.x, b.y);
+      }
+      return;
+    }
+    if (!useCurves || path.meta?.straight || path.length < 3) {
       ctx.moveTo(path[0].x, path[0].y);
       for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
       return;
@@ -394,7 +420,14 @@
 
     const drawItem = (item, strokeStyle, options = {}) => {
       const alpha = options.alpha ?? 1;
-      const lineWidth = options.lineWidth ?? parseFloat(item.strokeWidth || SETTINGS.strokeWidth || 0.3);
+      const baseLineWidth = options.lineWidth ?? parseFloat(item.strokeWidth || SETTINGS.strokeWidth || 0.3);
+      // Variable line weight (silhouette / crease emphasis): scale per-path,
+      // clamped to 6x. Absent or 1 → unchanged.
+      const rawWeight = Number(item?.path?.meta?.weightScale);
+      const weightScale = Number.isFinite(rawWeight) && rawWeight !== 1
+        ? Math.max(0.1, Math.min(6, rawWeight))
+        : 1;
+      const lineWidth = baseLineWidth * weightScale;
       const clipPolygons = (item.ancestorClipLayerIds || [])
         .flatMap((layerId) => snapshot.clipPolygonsByLayerId.get(layerId) || []);
       ctx.save();
@@ -410,6 +443,8 @@
       ctx.lineWidth = lineWidth;
       ctx.lineCap = item.lineCap || 'round';
       ctx.lineJoin = 'round';
+      const dash = renderer?.getPathStrokeDash?.(item.path) || window.Vectura?.Geometry3D?.getPathStrokeDash?.(item.path);
+      if (dash) ctx.setLineDash(dash);
       ctx.stroke();
       ctx.restore();
     };

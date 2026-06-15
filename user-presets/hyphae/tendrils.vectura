@@ -1,0 +1,24 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Tendrils",
+  "meta": {
+    "presetId": "hyphae-tendrils",
+    "group": "Organic",
+    "system": "hyphae",
+    "savedAt": 0
+  },
+  "layers": [
+    {
+      "type": "hyphae",
+      "params": {
+        "sources": 2,
+        "steps": 80,
+        "branchProb": 0.03,
+        "angleVar": 0.2,
+        "segLen": 4,
+        "maxBranches": 800
+      }
+    }
+  ]
+}
