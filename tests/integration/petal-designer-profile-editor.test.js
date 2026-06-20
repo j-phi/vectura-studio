@@ -177,6 +177,81 @@ describe('Petal Designer — Inner|Outer toggle + profile→advanced sync', () =
     app.ui.closePetalDesigner();
   });
 
+  test('applied silhouettes track their gallery icon (profileHalfWidth) with minimal anchors', () => {
+    // RGR: the fitted-anchor template for a profile is what loads into the pen
+    // editor; the gallery icon and flower draw from the algorithm's
+    // profileHalfWidth curve. They had drifted apart for these four profiles
+    // (e.g. lanceolate carried a stray mid-blade anchor that bowed it ~5.5% off
+    // its icon, notched peaked at the wrong t). The fix re-fits each table to the
+    // icon curve with the fewest control points; this guards both the alignment
+    // (the editable shape must match the icon) and the simplification (anchor
+    // budget) so a future re-fit can't silently re-introduce the wobble.
+    openDesigner();
+    const half = window.Vectura.PetalisAlgorithm.profileHalfWidth;
+
+    // Cubic-bezier point in (t,w) anchor space, mirroring buildLeafProfile's path.
+    const cub = (p0, p1, p2, p3, u) => {
+      const v = 1 - u;
+      return {
+        x: v * v * v * p0.x + 3 * v * v * u * p1.x + 3 * v * u * u * p2.x + u * u * u * p3.x,
+        y: v * v * v * p0.y + 3 * v * v * u * p1.y + 3 * v * u * u * p2.y + u * u * u * p3.y,
+      };
+    };
+    // Trace the anchor set into a dense (t,w) polyline.
+    const trace = (anchors) => {
+      const pts = [];
+      for (let i = 0; i < anchors.length - 1; i++) {
+        const a = anchors[i];
+        const b = anchors[i + 1];
+        const p0 = { x: a.t, y: a.w };
+        const p3 = { x: b.t, y: b.w };
+        const p1 = a.out ? { x: a.out.t, y: a.out.w } : { x: a.t + (b.t - a.t) / 3, y: a.w };
+        const p2 = b.in ? { x: b.in.t, y: b.in.w } : { x: a.t + (2 * (b.t - a.t)) / 3, y: b.w };
+        for (let s = i === 0 ? 0 : 1; s <= 120; s++) pts.push(cub(p0, p1, p2, p3, s / 120));
+      }
+      return pts;
+    };
+    // Vertical (half-width) error between the traced anchors and the icon curve.
+    const maxError = (anchors, profile) => {
+      const cv = trace(anchors);
+      // peak-normalize the icon curve so it shares the table's w-peak ~1.0 scale.
+      let peak = 0;
+      for (let i = 0; i <= 200; i++) peak = Math.max(peak, half(i / 200, profile));
+      let max = 0;
+      for (let i = 0; i <= 200; i++) {
+        const t = i / 200;
+        const target = half(t, profile) / (peak || 1);
+        let y = null;
+        for (let k = 0; k < cv.length - 1; k++) {
+          const lo = cv[k];
+          const hi = cv[k + 1];
+          if ((lo.x <= t && t <= hi.x) || (hi.x <= t && t <= lo.x)) {
+            const f = Math.abs(hi.x - lo.x) < 1e-9 ? 0 : (t - lo.x) / (hi.x - lo.x);
+            y = lo.y + f * (hi.y - lo.y);
+            break;
+          }
+        }
+        if (y === null) continue;
+        max = Math.max(max, Math.abs(y - target));
+      }
+      return max;
+    };
+
+    // profile → [max half-width error vs icon, max anchor count].
+    const SPECS = {
+      lanceolate: [0.03, 3],
+      dagger: [0.03, 3],
+      rounded: [0.04, 4],
+      notched: [0.05, 5],
+    };
+    for (const [profile, [tol, maxAnchors]] of Object.entries(SPECS)) {
+      const { anchors } = app.ui.buildProfileDesignerShape(profile, 'outer');
+      expect(anchors.length).toBeLessThanOrEqual(maxAnchors);
+      expect(maxError(anchors, profile)).toBeLessThan(tol);
+    }
+    app.ui.closePetalDesigner();
+  });
+
   test('overlay always draws BOTH inner and outer, active side last with handles', () => {
     const { pd } = openDesigner();
     pd.state.activeTarget = 'outer';

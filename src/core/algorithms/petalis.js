@@ -397,30 +397,59 @@
       y: point.w * maxHalf,
     });
     const samples = [];
-    const stepsPerSeg = Math.max(6, Math.round((steps || 32) / Math.max(1, usable.length - 1)));
+    // Adaptive flatness-based subdivision: emit points where the curve actually
+    // bends. Even-t sampling starved high-curvature caps (e.g. an oval/spoon round
+    // tip) no matter the step count, leaving a faceted polygon at the tip; chord-
+    // deviation subdivision puts dense points only where curvature demands and
+    // keeps flat stretches sparse, so every cap reads smooth with minimal points.
+    // `steps` still sets a per-segment MINIMUM so gentle curves keep some body.
+    const flatTol = Math.max(0.006, length * 0.0004);
+    const minPerSeg = Math.max(4, Math.round((steps || 32) / Math.max(1, usable.length - 1) / 2));
+    const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+    const emit = (pt) => {
+      const x = clamp(pt.x, 0, length);
+      const y = Math.max(0, pt.y);
+      const last = samples[samples.length - 1];
+      if (!last || Math.hypot(last.x - x, last.y - y) > 1e-6) samples.push({ x, y });
+    };
+    const subdivide = (p0, p1, p2, p3, depth) => {
+      const dx = p3.x - p0.x, dy = p3.y - p0.y;
+      const chord = Math.hypot(dx, dy) || 1;
+      const d1 = Math.abs((p1.x - p0.x) * dy - (p1.y - p0.y) * dx) / chord;
+      const d2 = Math.abs((p2.x - p0.x) * dy - (p2.y - p0.y) * dx) / chord;
+      if (depth >= 12 || (d1 + d2 <= flatTol && depth >= 1)) { emit(p3); return; }
+      const m01 = mid(p0, p1), m12 = mid(p1, p2), m23 = mid(p2, p3);
+      const m012 = mid(m01, m12), m123 = mid(m12, m23), m = mid(m012, m123);
+      subdivide(p0, m01, m012, m, depth + 1);
+      subdivide(m, m123, m23, p3, depth + 1);
+    };
     for (let i = 0; i < usable.length - 1; i++) {
       const a = usable[i];
       const b = usable[i + 1];
       const p0 = toLocal(a);
       const p3 = toLocal(b);
-      const outDefault = {
-        t: lerp(a.t, b.t, 1 / 3),
-        w: a.w,
-      };
-      const inDefault = {
-        t: lerp(a.t, b.t, 2 / 3),
-        w: b.w,
-      };
-      const p1 = toLocal(a.out || outDefault);
-      const p2 = toLocal(b.in || inDefault);
-      for (let s = 0; s <= stepsPerSeg; s++) {
-        const t = s / stepsPerSeg;
-        const pt = cubicBezierPoint(p0, p1, p2, p3, t);
-        if (samples.length && s === 0) continue;
-        samples.push({
-          x: clamp(pt.x, 0, length),
-          y: Math.max(0, pt.y),
-        });
+      const p1 = toLocal(a.out || { t: lerp(a.t, b.t, 1 / 3), w: a.w });
+      const p2 = toLocal(b.in || { t: lerp(a.t, b.t, 2 / 3), w: b.w });
+      if (i === 0) emit(p0);
+      // seed a few uniform splits so very flat segments still carry minimal body,
+      // then let adaptive subdivision refine the curvy parts (e.g. the tip cap).
+      for (let s = 1; s <= minPerSeg; s++) {
+        const ta = (s - 1) / minPerSeg, tb = s / minPerSeg;
+        const q0 = cubicBezierPoint(p0, p1, p2, p3, ta);
+        const q3 = cubicBezierPoint(p0, p1, p2, p3, tb);
+        // control points of the sub-cubic on [ta,tb] via de Casteljau scaling
+        const dt = (tb - ta) / 3;
+        const der = (t) => {
+          const u = 1 - t;
+          return {
+            x: 3 * (u * u * (p1.x - p0.x) + 2 * u * t * (p2.x - p1.x) + t * t * (p3.x - p2.x)),
+            y: 3 * (u * u * (p1.y - p0.y) + 2 * u * t * (p2.y - p1.y) + t * t * (p3.y - p2.y)),
+          };
+        };
+        const da = der(ta), db = der(tb);
+        const q1 = { x: q0.x + da.x * dt, y: q0.y + da.y * dt };
+        const q2 = { x: q3.x - db.x * dt, y: q3.y - db.y * dt };
+        subdivide(q0, q1, q2, q3, 0);
       }
     }
     return samples;
@@ -467,17 +496,29 @@
     if (!hasInner) return outerPoints.map((pt) => ({ x: pt.x, y: pt.y }));
     if (!hasOuter) return innerPoints.map((pt) => ({ x: pt.x, y: pt.y }));
     const mix = clamp(blend, 0, 1);
-    const sampleCount = Math.max(12, Math.round(steps));
-    const out = [];
+    // At a pure end (no blend) return that profile's own adaptive points verbatim,
+    // so a fully-inner / fully-outer petal is byte-identical to a single-profile
+    // render (the per-petal profile-assignment contract the transition tests lock).
+    if (mix <= 1e-9) return innerPoints.map((pt) => ({ x: pt.x, y: pt.y }));
+    if (mix >= 1 - 1e-9) return outerPoints.map((pt) => ({ x: pt.x, y: pt.y }));
     const safeLength = Math.max(1, length);
-    for (let i = 0; i <= sampleCount; i++) {
-      const t = i / sampleCount;
-      const x = safeLength * t;
-      const iw = sampleProfileWidth(x, innerPoints);
-      const ow = sampleProfileWidth(x, outerPoints);
-      out.push({ x, y: Math.max(0, lerp(iw, ow, mix)) });
-    }
-    return out;
+    // Blend at the UNION of both profiles' x-coordinates (plus a uniform floor),
+    // not a uniform 32-point grid. Uniform-in-x sampling flattened high-curvature
+    // caps — a round tip's points cluster near x=length, so an even x-grid put
+    // almost none there and the cap rendered as a faceted polygon. Carrying through
+    // every adaptive x from both inputs keeps the tip/base caps as dense as the
+    // source profiles, so the blended silhouette stays smooth.
+    const floor = Math.max(12, Math.round(steps));
+    const xs = new Set();
+    for (let i = 0; i <= floor; i++) xs.add(+((safeLength * i) / floor).toFixed(4));
+    innerPoints.forEach((p) => xs.add(+clamp(p.x, 0, safeLength).toFixed(4)));
+    outerPoints.forEach((p) => xs.add(+clamp(p.x, 0, safeLength).toFixed(4)));
+    return [...xs]
+      .sort((a, b) => a - b)
+      .map((x) => ({
+        x,
+        y: Math.max(0, lerp(sampleProfileWidth(x, innerPoints), sampleProfileWidth(x, outerPoints), mix)),
+      }));
   };
 
   const buildRoundedTipArc = (left, right, roundAmt) => {
@@ -565,6 +606,7 @@
       wavePhase,
       profilePoints,
       cupTransform,
+      asymmetry,
       leafSidePos,
       leafSideWidth,
       leafBaseHandle,
@@ -604,12 +646,24 @@
             leafSideHandle,
             leafTipHandle,
           });
+    // Asymmetry (0..1): a true bilateral LEAN — the petal's centreline bows to
+    // one side, growing from 0 at the base to a maximum near the tip, while the
+    // local width is preserved (both margins shift the same direction). This is
+    // distinct from tipTwist (which only rotates the tip) and reads as a curved
+    // scimitar petal. Null at 0 so the default look and baselines are untouched.
+    const leanAmt = clamp(asymmetry ?? 0, -1, 1);
     const left = baseProfile.map((pt) => {
       const t = clamp(pt.x / effectiveLength, 0, 1);
       const curl = curlAmt * effectiveLength * 0.02 * t * t;
-      return { x: pt.x, y: pt.y + curl };
+      const lean = leanAmt ? leanAmt * effectiveLength * 0.16 * t : 0;
+      return { x: pt.x, y: pt.y + curl + lean };
     });
-    const right = left.map((pt) => ({ x: pt.x, y: -pt.y }));
+    const right = baseProfile.map((pt) => {
+      const t = clamp(pt.x / effectiveLength, 0, 1);
+      const curl = curlAmt * effectiveLength * 0.02 * t * t;
+      const lean = leanAmt ? leanAmt * effectiveLength * 0.16 * t : 0;
+      return { x: pt.x, y: -(pt.y + curl) + lean };
+    });
     const roundAmt = clamp(tipCurl ?? 0, 0, 1);
     const rounded = buildRoundedTipArc(left, right, roundAmt);
     const outline = rounded.left.concat(rounded.arc, rounded.right.reverse());
@@ -668,6 +722,7 @@
       tipTwist,
       tipCurl,
       curlBoost,
+      asymmetry,
       rng,
       noise,
       profilePoints,
@@ -872,6 +927,7 @@
           waveFreq,
           wavePhase,
           cupTransform,
+          asymmetry,
         });
         emitLine(outline);
         if (type === 'rim') {
@@ -895,6 +951,7 @@
             waveFreq,
             wavePhase,
             cupTransform,
+            asymmetry,
           });
           emitLine(innerOutline);
         }
@@ -922,6 +979,7 @@
               waveFreq,
               wavePhase,
               cupTransform,
+              asymmetry,
             });
             emitLine(inner);
           }
@@ -1124,7 +1182,12 @@
                   })
                 : 0;
               const sign = dir === 0 ? Math.sign(n || 1) : Math.sign(dir);
-              r += sign * Math.abs(n) * amp * randomness;
+              // randomness modulates how much the per-element scatter varies, but
+              // must not gate the whole displacement to zero — at randomness 0 the
+              // offset should still push uniformly (otherwise the slider reads as
+              // a dead control whenever randomness is left at its minimum).
+              const intensity = 0.35 + 0.65 * randomness;
+              r += sign * Math.abs(n) * amp * intensity;
               break;
             }
             default:
@@ -1136,7 +1199,16 @@
         return { x: center.x + x, y: center.y + y };
       });
       if (closed && next.length) next[next.length - 1] = { ...next[0] };
-      if (path.meta) next.meta = { ...path.meta };
+      if (path.meta) {
+        // An active modifier has displaced this element's sampled points. If it
+        // was a circle, we must NOT keep the `kind:'circle'` meta — otherwise the
+        // renderer redraws a perfect circle from cx/cy/r and silently discards
+        // the displacement (this is why ripple/twist/radialNoise/circularOffset
+        // looked like no-ops on disk/dome/dot centers). Drop only the circle
+        // marker; keep group/label so layer organization is preserved.
+        const { kind, cx, cy, r: _r, ...rest } = path.meta;
+        next.meta = kind === 'circle' ? rest : { ...path.meta };
+      }
       return next;
     });
   };
@@ -1201,12 +1273,17 @@
             }
             case 'shear': {
               const amt = mod.amount ?? 0;
-              ly += lx * amt * 0.2;
+              // 0.2 was too gentle to read at the slider's extremes; 0.45 gives a
+              // clearly visible slant across the -1..1 range without folding the
+              // petal back on itself.
+              ly += lx * amt * 0.45;
               break;
             }
             case 'taper': {
               const amt = mod.amount ?? 0;
-              const scale = 1 + amt * (t - 0.5);
+              // Widen the per-end width delta so the taper is obvious at max
+              // (was ±0.5·amt, now ±0.7·amt around the midline).
+              const scale = 1 + amt * 1.4 * (t - 0.5);
               ly *= scale;
               break;
             }
@@ -1256,13 +1333,23 @@
       paths.push(circle);
     } else if (type === 'dome') {
       const rings = clamp(Math.round(density / 2), 2, 30);
+      // Drift the inner rings toward a fixed light direction so the nested stack
+      // reads as a raised 3D dome (eccentric contours) instead of a flat
+      // concentric bullseye. Spacing also tightens toward the rim for a fuller
+      // shoulder. Outermost ring stays centred (shift 0) to keep the silhouette.
+      const lightAng = -Math.PI / 4;
+      const lx = Math.cos(lightAng);
+      const ly = Math.sin(lightAng);
       for (let i = 0; i < rings; i++) {
-        const r = radius * (1 - i / rings);
+        const t = i / rings;
+        // ease the radius so rings bunch near the rim (sqrt-ish shoulder)
+        const r = radius * (1 - t * t);
+        const shift = radius * 0.4 * t;
         const circle = [];
         circle.meta = {
           kind: 'circle',
-          cx: center.x,
-          cy: center.y,
+          cx: center.x + lx * shift,
+          cy: center.y + ly * shift,
           r: Math.max(0.2, r),
           group: groupLabel,
           label: `Ring ${String(i + 1).padStart(2, '0')}`,
@@ -1337,10 +1424,15 @@
       for (let i = 0; i < count; i++) {
         const ang = (i / count) * TAU;
         const jitterAng = ang + (rng.nextFloat() - 0.5) * jitter;
-        const startR = radius * 0.6;
+        // Beyond angle, jitter also perturbs each connector's start radius and
+        // length so the effect is legible (pure angular jitter barely reads).
+        // Extra RNG draws are taken only when jitter>0 so the jitter=0 stream —
+        // and every existing baseline — is unchanged.
+        const startR = radius * 0.6 * (jitter > 0 ? 1 + (rng.nextFloat() - 0.5) * jitter * 0.7 : 1);
+        const segLen = len * (jitter > 0 ? 1 + (rng.nextFloat() - 0.5) * jitter * 0.7 : 1);
         const path = [
           { x: center.x + Math.cos(jitterAng) * startR, y: center.y + Math.sin(jitterAng) * startR },
-          { x: center.x + Math.cos(jitterAng) * (startR + len), y: center.y + Math.sin(jitterAng) * (startR + len) },
+          { x: center.x + Math.cos(jitterAng) * (startR + segLen), y: center.y + Math.sin(jitterAng) * (startR + segLen) },
         ];
         path.meta = { group: 'Center: Connectors', label: `Connector ${String(i + 1).padStart(2, '0')}` };
         paths.push(path);
@@ -2068,15 +2160,11 @@
         const curlBoost = ringCenterBoost * centerFactor;
         const waveBoost = (p.centerWaveBoost ?? 0) * centerFactor;
         const wavePhase = rng.nextFloat() * TAU;
-        // Per-petal asymmetry: a deterministic lateral lean from an isolated
-        // stream (so it doesn't disturb the layout RNG). Neutral at 0.
-        const petalTwist =
-          ringTipRotate +
-          (ringPetalAsymmetry > 0
-            ? (makeSubRng((p.seed ?? 0) * 7919 + (ringProgressOffset + i) * 131 + 3).nextFloat() * 2 - 1) *
-              ringPetalAsymmetry *
-              0.6
-            : 0);
+        // tipTwist carries only the ring's tip-rotate. Petal asymmetry is now a
+        // dedicated bilateral centreline lean applied inside buildPetal (the
+        // `asymmetry` opt below) — the old approach nudged tipTwist by a random
+        // amount, which only curled the tip ~0.3mm and never read as asymmetry.
+        const petalTwist = ringTipRotate;
         const lengthScale = tipLengthScale(ringTipCurl);
         const effectiveLength = Math.max(1, length * lengthScale);
         const waveAmp = Math.max(0, ringEdgeWaveAmp * (1 + waveBoost));
@@ -2147,6 +2235,7 @@
           wavePhase,
           profilePoints,
           cupTransform,
+          asymmetry: ringPetalAsymmetry,
           leafSidePos: p.leafSidePos,
           leafSideWidth: p.leafSideWidth,
           leafBaseHandle: p.leafBaseHandle,
@@ -2173,6 +2262,7 @@
           tipTwist: petalTwist,
           tipCurl: ringTipCurl,
           curlBoost,
+          asymmetry: ringPetalAsymmetry,
           // Shading gets its own per-petal RNG stream, isolated from the layout
           // RNG, so editing shading never rearranges the flower.
           rng: makeSubRng((p.seed ?? 0) * 2654435761 + (ringProgressOffset + i) * 40503 + 17),

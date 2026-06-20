@@ -154,6 +154,31 @@
     { value: 'marquise', label: 'Marquise' },
     { value: 'dagger', label: 'Dagger' },
   ];
+  // Minimal editable anchor sets (normalized: t in [0,1], w peak ~1.0) that
+  // faithfully reproduce each named profile's CANONICAL silhouette — the same
+  // shape the gallery icon and the flower draw. Fitted against the algorithm's
+  // profileHalfWidth curve to a max half-width error <= ~0.04 (~4% of peak)
+  // with the FEWEST control points: the acute profiles (lanceolate, dagger)
+  // collapse to just base/peak/tip (3 anchors → a clean 4-point silhouette),
+  // since an extra mid-blade anchor only re-introduced the wobble that pushed
+  // those silhouettes off their icons; fuller/notched profiles need one shoulder
+  // per cap (rounded 4, notched 5). Acute tips use a small `in.w` so the two
+  // side curves converge to a true point; full ends carry a wider `in.w` to
+  // round; bases leave on a near-horizontal handle. Applying a profile must
+  // reproduce its icon, so the apply path samples this table (not the old
+  // heuristic 5-anchor reconstruction, which rounded every tip into an egg).
+  const PETAL_PROFILE_FITTED_ANCHORS = {
+    oval: [{"t":0,"w":0,"in":null,"out":{"t":0.0607,"w":0}},{"t":0.1399,"w":0.6129,"in":{"t":0.0428,"w":0.3856},"out":{"t":0.2235,"w":0.8389}},{"t":0.5,"w":1,"in":{"t":0.3714,"w":0.9357},"out":{"t":0.5971,"w":1}},{"t":1,"w":0,"in":{"t":0.9835,"w":0.5895},"out":null}],
+    rounded: [{"t":0,"w":0,"in":null,"out":{"t":0.04,"w":0}},{"t":0.1,"w":0.6,"in":{"t":0.03,"w":0.364},"out":{"t":0.18,"w":0.9}},{"t":0.53,"w":1,"in":{"t":0.44,"w":1},"out":{"t":0.62,"w":1}},{"t":1,"w":0,"in":{"t":0.99,"w":0.85},"out":null}],
+    teardrop: [{"t":0,"w":0,"in":null,"out":{"t":0.08,"w":0.0361}},{"t":0.14,"w":0.5766,"in":{"t":0.11,"w":0.4584},"out":{"t":0.1986,"w":0.809}},{"t":0.462,"w":1,"in":{"t":0.314,"w":1},"out":{"t":0.672,"w":0.966}},{"t":1,"w":0,"in":{"t":0.952,"w":0.37},"out":null}],
+    lanceolate: [{"t":0,"w":0,"in":null,"out":{"t":0.17,"w":0}},{"t":0.34,"w":1,"in":{"t":0.16,"w":1},"out":{"t":0.59,"w":1}},{"t":1,"w":0,"in":{"t":0.89,"w":0},"out":null}],
+    dagger: [{"t":0,"w":0,"in":null,"out":{"t":0.19,"w":0}},{"t":0.28,"w":1,"in":{"t":0.16,"w":1},"out":{"t":0.53,"w":1}},{"t":1,"w":0,"in":{"t":0.74,"w":0},"out":null}],
+    marquise: [{"t":0,"w":0,"in":null,"out":{"t":0.14,"w":0}},{"t":0.1923,"w":0.42,"in":{"t":0.1677,"w":0.4192},"out":{"t":0.1992,"w":0.42}},{"t":0.5032,"w":0.9985,"in":{"t":0.34,"w":1},"out":{"t":0.7008,"w":1}},{"t":1,"w":0,"in":{"t":0.8908,"w":0},"out":null}],
+    heart: [{"t":0,"w":0,"in":null,"out":{"t":0.06,"w":0}},{"t":0.18,"w":0.611,"in":{"t":0.15,"w":0.55},"out":{"t":0.3,"w":0.85}},{"t":0.5378,"w":0.9544,"in":{"t":0.43,"w":0.935},"out":{"t":0.7956,"w":1}},{"t":0.8456,"w":0.7832,"in":{"t":0.82,"w":0.91},"out":{"t":0.9,"w":0.55}},{"t":1,"w":0,"in":{"t":0.95,"w":0.32},"out":null}],
+    notched: [{"t":0,"w":0,"in":null,"out":{"t":0.14,"w":0.36}},{"t":0.128,"w":0.494,"in":{"t":0.04,"w":0.124},"out":{"t":0.24,"w":0.85}},{"t":0.48,"w":1,"in":{"t":0.42,"w":1},"out":{"t":0.72,"w":1}},{"t":0.86,"w":0.62,"in":{"t":0.82,"w":0.82},"out":{"t":0.92,"w":0.45}},{"t":1,"w":0,"in":{"t":0.95,"w":0.3},"out":null}],
+    spoon: [{"t":0,"w":0,"in":null,"out":{"t":0.09,"w":0.142}},{"t":0.192,"w":0.581,"in":{"t":0.122,"w":0.439},"out":{"t":0.3647,"w":0.8987}},{"t":0.754,"w":0.9892,"in":{"t":0.3497,"w":0.98},"out":{"t":0.933,"w":1}},{"t":1,"w":0,"in":{"t":0.997,"w":0.288},"out":null}],
+    spatulate: [{"t":0,"w":0,"in":null,"out":{"t":0.031,"w":0.003}},{"t":0.209,"w":0.517,"in":{"t":0.089,"w":0},"out":{"t":0.227,"w":0.601}},{"t":0.7177,"w":1.0019,"in":{"t":0.426,"w":1},"out":{"t":0.825,"w":1}},{"t":1,"w":0,"in":{"t":0.962,"w":0.552},"out":null}],
+  };
   // Per-ring petal param definitions for the advanced accordion in each ring card
   const PETAL_DESIGNER_RING_PARAM_DEFS = [
     { key: 'petalScale', label: 'Petal Scale', min: 1, max: 80, step: 0.5, precision: 1, unit: 'mm', displayUnit: 'mm' },
@@ -568,6 +593,20 @@
 
     buildProfileDesignerShape(profile = 'teardrop', side = 'outer') {
       const widthScale = side === 'inner' ? 0.86 : 1;
+      // Named profiles use their hand-fitted minimal anchor set so the applied
+      // shape matches the gallery icon exactly. Inner ring is the same silhouette
+      // scaled narrower. Unknown/custom profiles fall through to dense sampling.
+      const fitted = PETAL_PROFILE_FITTED_ANCHORS[profile];
+      if (fitted) {
+        const scaleHandle = (h) => (h ? { t: h.t, w: Math.max(0, h.w * widthScale) } : null);
+        const anchors = fitted.map((a) => ({
+          t: a.t,
+          w: Math.max(0, a.w * widthScale),
+          in: scaleHandle(a.in),
+          out: scaleHandle(a.out),
+        }));
+        return { profile, anchors };
+      }
       // Reproduce the algorithm's CANONICAL named-profile silhouette
       // (PetalisAlgorithm.profileHalfWidth — the same shape the gallery thumbnail and
       // the flower draw) with the FEWEST editable bezier anchors: just base, the lobe
@@ -578,56 +617,35 @@
       const sampleW = window.Vectura.PetalisAlgorithm?.profileHalfWidth;
       const wAt = (t) =>
         Math.max(0, (typeof sampleW === 'function' ? sampleW(t, profile) : Math.sin(Math.PI * clamp(t, 0, 1))) * widthScale);
-      // Locate the widest point of the canonical profile.
-      let tPeak = 0.5;
-      let wPeak = 0;
-      for (let i = 1; i < 60; i++) {
-        const t = i / 60;
-        const v = wAt(t);
-        if (v > wPeak) { wPeak = v; tPeak = t; }
-      }
-      if (wPeak <= 1e-4) wPeak = 0.6 * widthScale;
-      tPeak = clamp(tPeak, 0.18, 0.82);
-      // Five anchors: base, a shoulder on each side of the peak, the peak, and the tip.
-      // The shoulders are sampled from the canonical profile, so they carry its
-      // narrow-vs-full character (a dagger's fast falloff vs an oval's fullness) that a
-      // bare base/peak/tip triangle would flatten into the same egg. Interior anchors
-      // use Catmull-Rom tangents; the base and tip get WIDE w-handles so blunt profiles
-      // round and acute ones stay pointed.
-      const loT = tPeak * 0.55;
-      const hiT = lerp(tPeak, 1, 0.5);
-      const pts = [
-        { t: 0, w: 0 },
-        { t: loT, w: wAt(loT) },
-        { t: tPeak, w: wPeak },
-        { t: hiT, w: wAt(hiT) },
-        { t: 1, w: 0 },
-      ];
-      const tipFull = clamp(wAt(lerp(tPeak, 1, 0.72)) / wPeak, 0, 1);
-      const baseFull = clamp(wAt(lerp(tPeak, 0, 0.72)) / wPeak, 0, 1);
-      const tipRound = wPeak * (0.08 + 0.64 * tipFull);
-      const baseRound = wPeak * (0.08 + 0.6 * baseFull);
-      const lastIx = pts.length - 1;
-      const anchors = pts.map((p, i) => {
-        // Vertical end-cap handles (handle t == apex t) make the outline arrive
-        // horizontally in screen space — a rounded cap whose size is the handle's
-        // width: wide (blunt oval) rounds, narrow (acute dagger) stays a point.
-        if (i === 0) {
-          return { t: 0, w: 0, in: null, out: { t: 0, w: baseRound } };
-        }
-        if (i === lastIx) {
-          return { t: 1, w: 0, in: { t: 1, w: tipRound }, out: null };
-        }
-        const prev = pts[i - 1];
-        const next = pts[i + 1];
-        const tanT = (next.t - prev.t) / 6;
-        const tanW = (next.w - prev.w) / 6;
-        return {
-          t: p.t,
-          w: p.w,
-          in: { t: clamp(p.t - tanT, -1, 2), w: Math.max(0, p.w - tanW) },
-          out: { t: clamp(p.t + tanT, -1, 2), w: Math.max(0, p.w + tanW) },
-        };
+      // FAITHFUL reconstruction: trace the canonical profile with evenly spaced
+      // anchors whose bezier handles follow the curve's LOCAL slope (Catmull-Rom),
+      // straight from the sampled data — no heuristic end-cap rounding. The old
+      // 5-anchor version applied a fixed "tipRound"/"baseRound" handle (~0.4 of the
+      // peak width) that bulged every tip into a rounded oval, so acute profiles
+      // (teardrop, dagger, lanceolate) lost their point and read as the same egg.
+      // Sampling the profile densely and deriving the tip/base tangents from the
+      // real taper makes the editable shape match the gallery icon and the flower:
+      // sharp profiles stay pointed, full profiles (oval, rounded) round.
+      const SEGMENTS = 8; // → 9 anchors: enough to trace the curve, few enough to edit
+      const ts = [];
+      for (let i = 0; i <= SEGMENTS; i++) ts.push(i / SEGMENTS);
+      const ws = ts.map((t) => wAt(t));
+      ws[0] = 0;
+      ws[SEGMENTS] = 0;
+      const anchors = ts.map((t, i) => {
+        const w = ws[i];
+        // Catmull-Rom tangent in (t,w) space from the neighbouring samples; the
+        // endpoints clamp their neighbour to themselves so the handle reflects the
+        // actual approach slope (a steep taper → tiny handle → a crisp point).
+        const tPrev = ts[Math.max(0, i - 1)];
+        const wPrev = ws[Math.max(0, i - 1)];
+        const tNext = ts[Math.min(SEGMENTS, i + 1)];
+        const wNext = ws[Math.min(SEGMENTS, i + 1)];
+        const tanT = (tNext - tPrev) / 6;
+        const tanW = (wNext - wPrev) / 6;
+        const inH = i === 0 ? null : { t: clamp(t - tanT, -1, 2), w: Math.max(0, w - tanW) };
+        const outH = i === SEGMENTS ? null : { t: clamp(t + tanT, -1, 2), w: Math.max(0, w + tanW) };
+        return { t, w, in: inH, out: outH };
       });
       return { profile, anchors };
     },

@@ -4,6 +4,24 @@ All notable changes to this project should be documented in this file.
 
 The format is intentionally human-curated with an `Unreleased` section that collects work before release.
 
+## 1.2.1 - 2026-06-19
+
+### Fixed
+- **Petalis profile silhouettes now match their gallery icons.** The editable pen-editor shape for
+  the **lanceolate, dagger, rounded, and notched** profiles had drifted off the icon the algorithm
+  actually draws (e.g. a stray mid-blade anchor bowed lanceolate ~5.5% off; notched peaked at the
+  wrong point). Each fitted-anchor template was re-fit to the canonical `profileHalfWidth` curve with
+  the fewest control points — lanceolate and dagger collapse to a clean base/peak/tip (3 anchors → a
+  4-point silhouette), rounded keeps one shoulder per cap (4), notched keeps a shoulder for both the
+  fast base and concave tip (5). A new integration guard asserts every applied silhouette tracks its
+  icon within tolerance and stays within its anchor budget.
+
+### Changed
+- **Smoother Petalis petal caps.** The petal-outline sampler now subdivides by chord flatness instead
+  of evenly in `t`, so high-curvature tip/base caps stay smooth with fewer points and gentle stretches
+  stay sparse. Pure single-profile and blended (inner/outer) petals carry their adaptive cap points
+  through the blend, so round caps no longer facet into polygons.
+
 ## 1.2.0 - 2026-06-15
 
 A large feature release spanning a universal preset system, a new Morph modifier, the Pendula
