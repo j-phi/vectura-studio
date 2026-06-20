@@ -239,6 +239,9 @@ describe('Petal Designer — Inner|Outer toggle + profile→advanced sync', () =
 
     // profile → [max half-width error vs icon, max anchor count].
     const SPECS = {
+      // oval is a clean ellipse body with a pointed base and round tip, defined
+      // by ONE bezier (no interior side shoulder → no angles): base, peak, tip.
+      oval: [0.02, 3],
       lanceolate: [0.03, 3],
       dagger: [0.03, 3],
       rounded: [0.04, 4],

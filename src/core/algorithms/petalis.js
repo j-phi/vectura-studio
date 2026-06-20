@@ -234,7 +234,10 @@
     // round = margin fullness (<1 blunt/full, >1 acute/narrow)
     // claw  = base-neck fraction (larger = longer slender attachment)
     // notch = apical cleft depth (heart / obcordate)
-    oval: { peak: 0.5, round: 0.62, claw: 0.1 },
+    // oval is defined by its own bezier half-profile (OVAL_PROFILE_ANCHORS), not
+    // the sin/peak/round model — see petalShape. The `profileBezier` marker keeps
+    // it in the profile-name list and routes petalShape to the LUT.
+    oval: { profileBezier: true },
     rounded: { peak: 0.5, round: 0.44, claw: 0.08 },
     teardrop: { peak: 0.42, round: 0.74, claw: 0.16 },
     ovate: { peak: 0.4, round: 0.8, claw: 0.18 },
@@ -247,6 +250,19 @@
     notched: { peak: 0.58, round: 0.58, claw: 0.14, notch: 0.4 },
   };
 
+  // The oval profile is defined directly by its editable bezier half-profile so
+  // the gallery icon, the editor shape, and the flower all draw from ONE source:
+  // a full ellipse-like body that tapers to a clean point at the base (where the
+  // petal meets the flower centre) and rounds at the tip, with smooth sides and
+  // no angled shoulder. These anchors are mirrored verbatim by the Petal
+  // Designer's PETAL_PROFILE_FITTED_ANCHORS.oval — keep the two in sync.
+  const OVAL_PROFILE_ANCHORS = [
+    { t: 0, w: 0, in: null, out: { t: 0.1, w: 0.34 } },
+    { t: 0.5, w: 1, in: { t: 0.27, w: 1 }, out: { t: 0.73, w: 1 } },
+    { t: 1, w: 0, in: { t: 1, w: 0.55 }, out: null },
+  ];
+  let _ovalLUT = null;
+
   const smoothstep01 = (x) => {
     const c = clamp(x, 0, 1);
     return c * c * (3 - 2 * c);
@@ -254,6 +270,12 @@
 
   const petalShape = (t, type) => {
     const s = PETAL_SHAPES[type] || PETAL_SHAPES.oval;
+    // oval: half-width comes from its bezier half-profile LUT (single source of
+    // truth shared with the editor) — a clean oval body, pointed base, round tip.
+    if (s.profileBezier) {
+      if (!_ovalLUT) _ovalLUT = buildProfileLUT(OVAL_PROFILE_ANCHORS);
+      return sampleProfileLUT(_ovalLUT, t);
+    }
     const m = s.peak;
     // Peak-shifted argument: maps [0,m]->[0,0.5] and [m,1]->[0.5,1] so sin() peaks at t=m.
     const g =
@@ -321,6 +343,43 @@
       x: uuu * p0.x + 3 * uu * t * p1.x + 3 * u * tt * p2.x + ttt * p3.x,
       y: uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y,
     };
+  };
+
+  // Sample a bezier half-profile (anchor list) into a t->w lookup table so callers
+  // can query the half-width at any length t. x (=t) is monotonic along the
+  // profile, so sampleProfileLUT binary-searches it.
+  const buildProfileLUT = (anchors, samplesPerSeg = 96) => {
+    const xs = [];
+    const ys = [];
+    for (let i = 0; i < anchors.length - 1; i++) {
+      const a = anchors[i];
+      const b = anchors[i + 1];
+      const p0 = { x: a.t, y: a.w };
+      const p3 = { x: b.t, y: b.w };
+      const p1 = a.out ? { x: a.out.t, y: a.out.w } : { x: lerp(a.t, b.t, 1 / 3), y: a.w };
+      const p2 = b.in ? { x: b.in.t, y: b.in.w } : { x: lerp(a.t, b.t, 2 / 3), y: b.w };
+      for (let snum = i === 0 ? 0 : 1; snum <= samplesPerSeg; snum++) {
+        const pt = cubicBezierPoint(p0, p1, p2, p3, snum / samplesPerSeg);
+        xs.push(clamp(pt.x, 0, 1));
+        ys.push(Math.max(0, pt.y));
+      }
+    }
+    return { xs, ys };
+  };
+  const sampleProfileLUT = (lut, t) => {
+    const { xs, ys } = lut;
+    const tc = clamp(t, 0, 1);
+    if (tc <= xs[0]) return ys[0];
+    if (tc >= xs[xs.length - 1]) return ys[ys.length - 1];
+    let lo = 0;
+    let hi = xs.length - 1;
+    while (hi - lo > 1) {
+      const m = (lo + hi) >> 1;
+      if (xs[m] <= tc) lo = m;
+      else hi = m;
+    }
+    const span = xs[hi] - xs[lo] || 1;
+    return lerp(ys[lo], ys[hi], (tc - xs[lo]) / span);
   };
 
   const buildLeafProfile = (opts) => {

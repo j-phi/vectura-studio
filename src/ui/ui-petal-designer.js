@@ -168,7 +168,9 @@
   // reproduce its icon, so the apply path samples this table (not the old
   // heuristic 5-anchor reconstruction, which rounded every tip into an egg).
   const PETAL_PROFILE_FITTED_ANCHORS = {
-    oval: [{"t":0,"w":0,"in":null,"out":{"t":0.0607,"w":0}},{"t":0.1399,"w":0.6129,"in":{"t":0.0428,"w":0.3856},"out":{"t":0.2235,"w":0.8389}},{"t":0.5,"w":1,"in":{"t":0.3714,"w":0.9357},"out":{"t":0.5971,"w":1}},{"t":1,"w":0,"in":{"t":0.9835,"w":0.5895},"out":null}],
+    // Mirrors petalis.js OVAL_PROFILE_ANCHORS exactly (single source of truth):
+    // pointed base, full smooth sides (no shoulder anchor → no angles), round tip.
+    oval: [{"t":0,"w":0,"in":null,"out":{"t":0.1,"w":0.34}},{"t":0.5,"w":1,"in":{"t":0.27,"w":1},"out":{"t":0.73,"w":1}},{"t":1,"w":0,"in":{"t":1,"w":0.55},"out":null}],
     rounded: [{"t":0,"w":0,"in":null,"out":{"t":0.04,"w":0}},{"t":0.1,"w":0.6,"in":{"t":0.03,"w":0.364},"out":{"t":0.18,"w":0.9}},{"t":0.53,"w":1,"in":{"t":0.44,"w":1},"out":{"t":0.62,"w":1}},{"t":1,"w":0,"in":{"t":0.99,"w":0.85},"out":null}],
     teardrop: [{"t":0,"w":0,"in":null,"out":{"t":0.08,"w":0.0361}},{"t":0.14,"w":0.5766,"in":{"t":0.11,"w":0.4584},"out":{"t":0.1986,"w":0.809}},{"t":0.462,"w":1,"in":{"t":0.314,"w":1},"out":{"t":0.672,"w":0.966}},{"t":1,"w":0,"in":{"t":0.952,"w":0.37},"out":null}],
     lanceolate: [{"t":0,"w":0,"in":null,"out":{"t":0.17,"w":0}},{"t":0.34,"w":1,"in":{"t":0.16,"w":1},"out":{"t":0.59,"w":1}},{"t":1,"w":0,"in":{"t":0.89,"w":0},"out":null}],
