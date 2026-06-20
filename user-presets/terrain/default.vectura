@@ -5,7 +5,7 @@
     "presetId": "terrain-default",
     "group": "Classic",
     "system": "terrain",
-    "savedAt": 1781379849841
+    "savedAt": 1781960378463
   },
   "layers": [
     {
@@ -14,7 +14,7 @@
         "label": "Terrain",
         "is3d": true,
         "preset": "terrain-default",
-        "perspectiveMode": "two-point",
+        "perspectiveMode": "free-3d",
         "horizonHeight": 50,
         "vanishingPointX": 50,
         "vpLeftX": 0,
@@ -44,6 +44,27 @@
         "oceansEnabled": false,
         "waterLevel": 20,
         "drawCoastline": true,
+        "yaw": -0.4,
+        "pitch": 17.3,
+        "roll": 0,
+        "projection": "orthographic",
+        "cameraDistance": 620,
+        "focalLength": 520,
+        "topWidth": 1,
+        "depthCue": "off",
+        "depthCueStrength": 60,
+        "emphasizeOutline": false,
+        "outlineWeight": 2,
+        "showCreases": false,
+        "creaseAngle": 35,
+        "hiddenLineMode": "remove",
+        "depthBias": 0.5,
+        "hatchEnable": false,
+        "lightAzimuth": 135,
+        "lightElevation": 45,
+        "hatchAngle": 45,
+        "hatchSpacing": 6,
+        "crossHatch": false,
         "noises": [
           {
             "enabled": true,

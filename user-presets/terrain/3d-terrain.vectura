@@ -1,11 +1,11 @@
 {
   "type": "vectura",
-  "name": "Rolling Hills",
+  "name": "3D Terrain",
   "meta": {
-    "presetId": "user-terrain-1781960463217",
+    "presetId": "user-terrain-1781960374184",
     "group": "Classic",
     "system": "terrain",
-    "savedAt": 1781960463217
+    "savedAt": 1781960374184
   },
   "layers": [
     {
@@ -14,7 +14,7 @@
         "label": "Terrain",
         "is3d": true,
         "preset": "terrain-default",
-        "perspectiveMode": "two-point",
+        "perspectiveMode": "free-3d",
         "horizonHeight": 50,
         "vanishingPointX": 50,
         "vpLeftX": 0,
@@ -44,8 +44,8 @@
         "oceansEnabled": false,
         "waterLevel": 20,
         "drawCoastline": true,
-        "yaw": -25,
-        "pitch": 58,
+        "yaw": -0.4,
+        "pitch": 17.3,
         "roll": 0,
         "projection": "orthographic",
         "cameraDistance": 620,
