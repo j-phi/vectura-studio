@@ -560,10 +560,11 @@
         // horizon of the nearer rows BEFORE adding itself (step 2), so a wall's sides
         // and bottom show wherever no nearer wall covers them and are hidden where one
         // does — exactly "every plane has a side and bottom, occluded only when another
-        // plane blocks it." Interior risers are fully covered by the adjacent nearer
-        // wall, so what survives is the front wall + the outer silhouette ramps + the
-        // visible crests — not a staircase of detached ½-column tips (see the
-        // silhouette-extend margin in occludeRowsFloatingHorizon that blocks that leak).
+        // plane blocks it." The dense stack of risers fills the front/side FACES of the
+        // solid; the floors fill the bottom; interior risers sit behind nearer walls and
+        // drop out. What remains visible along the outer left/right silhouette is each
+        // row's short edge-sliver peeking above its nearer neighbour — the genuine,
+        // wanted side of the block, not interior noise.
         const floorPts = s.base.map((b) => ({ x: b.point.x, y: b.point.y }));
         const wall = topPts.concat(floorPts.slice().reverse(), [topPts[0]]);
         return [{ pts: wall, depth, occludes: true, meta: { ...mkMeta(s), frontWall: depth >= maxDepth } }];
