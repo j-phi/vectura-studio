@@ -374,6 +374,7 @@
         optimizationPreview: SETTINGS.optimizationPreview,
         optimizationExport: SETTINGS.optimizationExport,
         optimizationOverlayColor: SETTINGS.optimizationOverlayColor,
+        optimizationOverlaySecondaryColor: SETTINGS.optimizationOverlaySecondaryColor,
         optimizationOverlayWidth: SETTINGS.optimizationOverlayWidth,
         plotterOptimize: SETTINGS.plotterOptimize,
         paletteId: SETTINGS.paletteId,

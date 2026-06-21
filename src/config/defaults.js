@@ -2160,10 +2160,10 @@
     // the eye, regardless of export/optimization-preview state.
     lineSortOverlayVisible: false,
     optimizationExport: true,
-    optimizationOverlayColor: '#38bdf8',
+    optimizationOverlayColor: '#EE00FF',
     // Overlay end (print-order) colour. '' = auto (per-layer line-sort secondary, else
     // the start colour's complement). Set via the canvas legend gear's End Color.
-    optimizationOverlaySecondaryColor: '',
+    optimizationOverlaySecondaryColor: '#00FBFF',
     optimizationOverlayWidth: 0.2,
     activeTool: 'select',
     penMode: 'draw',
