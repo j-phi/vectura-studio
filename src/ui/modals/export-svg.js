@@ -91,6 +91,7 @@
             { value: 'nearest', label: 'Nearest' },
             { value: 'greedy', label: 'Greedy' },
             { value: 'angle', label: 'Angle' },
+            { value: 'asdrawn', label: 'As Drawn' },
           ],
         },
         {
@@ -180,7 +181,7 @@
     },
     'linesort.method': {
       title: 'Method',
-      description: 'Nearest: greedy nearest-neighbor from the current pen position (fast, good results). Greedy: tries both directions of each path for shorter hops. Angle: sorts by path start angle from center.',
+      description: 'Nearest: greedy nearest-neighbor from the current pen position (fast, good results). Greedy: tries both directions of each path for shorter hops. Angle: sorts by path start angle from center. As Drawn: keeps the natural order the art was generated in (no travel optimization) — matches the on-canvas Draw Order reveal.',
     },
     'linesort.direction': {
       title: 'Direction',
@@ -1133,7 +1134,7 @@
         </div>
       </div>
       <div class="export-modal-footer" id="export-modal-footer">
-        <button type="button" id="export-modal-cancel">Cancel</button>
+        <button type="button" id="export-modal-cancel">Close</button>
         <button type="button" id="export-modal-submit" class="export-primary">Export SVG</button>
       </div>
     `;

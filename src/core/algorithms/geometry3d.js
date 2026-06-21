@@ -803,7 +803,7 @@
     const reRoll = (p) => ({ x: p.x * cs - p.y * sn, y: p.x * sn + p.y * cs });
     const valid = (Array.isArray(rows) ? rows : [])
       .map((r) => (r && Array.isArray(r.pts))
-        ? { meta: r.meta, depth: finite(r.depth, 0), occludes: r.occludes !== false,
+        ? { meta: r.meta, depth: finite(r.depth, 0), occludes: r.occludes !== false, draw: r.draw !== false,
             pts: r.pts.filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y)).map(deRoll) }
         : null)
       .filter((r) => r && r.pts.length >= 2);
@@ -849,6 +849,10 @@
     for (let oi = 0; oi < order.length; oi++) {
       const r = valid[order[oi]];
       // 1) Split the row into visible / hidden runs against the current horizon.
+      //    Occluder-only rows (draw === false) skip emission but still extend the
+      //    horizon in step 2 — used for hidden support geometry (e.g. a relief
+      //    curtain's interior floor contour) that must hide farther rows without
+      //    being drawn itself.
       let current = null, curVis = null;
       const flush = () => {
         if (current && current.length >= 2) {
@@ -867,16 +871,18 @@
         if (!current) { current = []; curVis = visible; }
         current.push({ x, y });
       };
-      for (let s = 0; s < r.pts.length - 1; s++) {
-        const a = r.pts[s], b = r.pts[s + 1];
-        const len = Math.hypot(b.x - a.x, b.y - a.y);
-        const steps = clamp(Math.round(len / res) + 1, 1, 4000);
-        for (let k = (s === 0 ? 0 : 1); k <= steps; k++) {
-          const t = k / steps;
-          test(lerp(a.x, b.x, t), lerp(a.y, b.y, t));
+      if (r.draw) {
+        for (let s = 0; s < r.pts.length - 1; s++) {
+          const a = r.pts[s], b = r.pts[s + 1];
+          const len = Math.hypot(b.x - a.x, b.y - a.y);
+          const steps = clamp(Math.round(len / res) + 1, 1, 4000);
+          for (let k = (s === 0 ? 0 : 1); k <= steps; k++) {
+            const t = k / steps;
+            test(lerp(a.x, b.x, t), lerp(a.y, b.y, t));
+          }
         }
+        flush();
       }
-      flush();
       // 2) Extend the horizon with this opaque row so farther rows see its
       //    silhouette. Rasterise every column the row spans (fills near-vertical
       //    segments) and accumulate the per-column top/bottom extent.

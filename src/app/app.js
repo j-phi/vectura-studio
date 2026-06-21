@@ -512,6 +512,8 @@
         ? SETTINGS.optimizationExport
         : snapshot.optimizationExport === true;
       SETTINGS.optimizationOverlayColor = takeColor('optimizationOverlayColor', SETTINGS.optimizationOverlayColor);
+      SETTINGS.optimizationOverlaySecondaryColor = (snapshot.optimizationOverlaySecondaryColor === '')
+        ? '' : takeColor('optimizationOverlaySecondaryColor', SETTINGS.optimizationOverlaySecondaryColor);
       SETTINGS.optimizationOverlayWidth = takeNumber('optimizationOverlayWidth', SETTINGS.optimizationOverlayWidth, 0, 100);
       SETTINGS.plotterOptimize = takeNumber('plotterOptimize', SETTINGS.plotterOptimize, 0, 100, { integer: true });
       SETTINGS.paletteId = takeSafeString('paletteId', SETTINGS.paletteId, 64);
@@ -699,6 +701,7 @@
           optimizationPreview: SETTINGS.optimizationPreview,
           optimizationExport: SETTINGS.optimizationExport,
           optimizationOverlayColor: SETTINGS.optimizationOverlayColor,
+          optimizationOverlaySecondaryColor: SETTINGS.optimizationOverlaySecondaryColor,
           optimizationOverlayWidth: SETTINGS.optimizationOverlayWidth,
           plotterOptimize: SETTINGS.plotterOptimize,
           paletteId: SETTINGS.paletteId,
@@ -767,6 +770,7 @@
       SETTINGS.optimizationPreview = s.optimizationPreview ?? SETTINGS.optimizationPreview;
       SETTINGS.optimizationExport = s.optimizationExport ?? SETTINGS.optimizationExport;
       SETTINGS.optimizationOverlayColor = s.optimizationOverlayColor ?? SETTINGS.optimizationOverlayColor;
+      SETTINGS.optimizationOverlaySecondaryColor = s.optimizationOverlaySecondaryColor ?? SETTINGS.optimizationOverlaySecondaryColor;
       SETTINGS.optimizationOverlayWidth = s.optimizationOverlayWidth ?? SETTINGS.optimizationOverlayWidth;
       SETTINGS.plotterOptimize = s.plotterOptimize ?? SETTINGS.plotterOptimize;
       SETTINGS.paletteId = s.paletteId ?? SETTINGS.paletteId;

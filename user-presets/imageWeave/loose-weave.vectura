@@ -1,0 +1,7 @@
+{
+  "type": "vectura", "version": null, "name": "Loose Weave",
+  "meta": { "presetId": "imageweave-loose-weave", "group": "Organic", "system": "imageWeave", "savedAt": 0 },
+  "layers": [ { "type": "imageWeave", "params": {
+    "lineCount": 90, "lineAngle": 0, "amplitude": 3.4, "frequency": 3200, "detail": 70, "continuity": "none", "drawWhiteAreas": true, "brightness": 0, "contrast": 0, "blackPoint": 4, "whitePoint": 96, "invert": false
+  } } ]
+}

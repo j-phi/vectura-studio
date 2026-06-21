@@ -504,27 +504,17 @@ describe('Vectura geometry algorithms', () => {
 
     const occluded = generate('rasterPlane', cfg);
     expect(finitePaths(occluded)).toBe(true);
-    // Surviving bar edges collapse back to clean 2-point segments (the dense
-    // occlusion resampling must not bloat the export); the base floor loop is the
-    // only multi-point bar path.
-    expect(occluded.every((path) => path.length === 2 || path.meta?.barFloor)).toBe(true);
+    // Solid bars use analytic hidden-line removal: pure stroked edges with the
+    // spike's hidden lines clipped away — no fills and no dashed hidden lines.
+    expect(occluded.some((path) => path.meta?.occludeFill)).toBe(false);
+    expect(occluded.some((path) => path.meta?.hiddenLine)).toBe(false);
 
-    // Routing/effect proof: neutralise occlusion and confirm the geometry differs.
-    const G3 = V.Geometry3D;
-    const realOcclude = G3.occludeSegments;
-    G3.occludeSegments = (segments) =>
-      (segments || []).map((seg) => {
-        const path = [{ x: seg.a.x, y: seg.a.y }, { x: seg.b.x, y: seg.b.y }];
-        path.meta = seg.meta ? { ...seg.meta } : {};
-        return path;
-      });
-    let unoccluded;
-    try {
-      unoccluded = generate('rasterPlane', cfg);
-    } finally {
-      G3.occludeSegments = realOcclude;
-    }
-    expect(pathSignature(occluded)).not.toBe(pathSignature(unoccluded));
+    // Effect proof: turning see-through ON keeps the full wireframe (every face
+    // edge, hidden ones dashed), so the geometry differs and has strictly more edges.
+    const seeThrough = generate('rasterPlane', { ...cfg, seeThrough: true });
+    expect(pathSignature(occluded)).not.toBe(pathSignature(seeThrough));
+    expect(occluded.length).toBeLessThan(seeThrough.length);
+    expect(seeThrough.some((path) => path.meta?.hiddenLine)).toBe(true);
   });
 
   test('topoform 3D enhancements each produce finite output that differs from all-off', () => {

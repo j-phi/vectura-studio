@@ -1,0 +1,7 @@
+{
+  "type": "vectura", "version": null, "name": "Coarse Dots",
+  "meta": { "presetId": "halftone-coarse-dots", "group": "Classic", "system": "halftone", "savedAt": 0 },
+  "layers": [ { "type": "halftone", "params": {
+    "dotSpacing": 7.5, "maxDotSize": 7, "minDotSize": 0, "dotThreshold": 5, "gridAngle": 15, "dotShape": "circle", "brightness": 0, "contrast": 12, "gamma": 1, "invert": false
+  } } ]
+}

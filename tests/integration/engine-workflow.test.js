@@ -266,6 +266,39 @@ describe('Engine integration workflows', () => {
     expect(bottom.optimizedPaths?.[1]?.meta?.lineSortOrder).toBe(3);
   });
 
+  test('"as drawn" line sort preserves generation order and stamps sequential lineSortOrder', () => {
+    const { VectorEngine, Layer } = runtime.window.Vectura;
+    const engine = new VectorEngine();
+    engine.layers = [];
+
+    const layer = new Layer('line-sort-asdrawn', 'shape', 'As Drawn');
+    layer.params.curves = false;
+    // Generation order is deliberately NOT travel-optimal in x — a nearest/
+    // directional sort would reorder to [0,10,20,30]; "as drawn" must not.
+    layer.sourcePaths = [
+      [{ x: 0, y: 0 }, { x: 0, y: 10 }],
+      [{ x: 30, y: 0 }, { x: 30, y: 10 }],
+      [{ x: 10, y: 0 }, { x: 10, y: 10 }],
+      [{ x: 20, y: 0 }, { x: 20, y: 10 }],
+    ];
+
+    engine.layers.push(layer);
+    engine.generate(layer.id);
+    engine.computeAllDisplayGeometry();
+
+    engine.optimizeLayers([layer], {
+      config: {
+        bypassAll: false,
+        steps: [{ id: 'linesort', enabled: true, bypass: false, method: 'asdrawn', direction: 'vertical', grouping: 'layer' }],
+      },
+    });
+
+    // Order is unchanged from generation order…
+    expect(centroidAxisOrder(layer.optimizedPaths, 'x')).toEqual([0, 30, 10, 20]);
+    // …and each path carries its sequential print-order index.
+    expect(layer.optimizedPaths.map((p) => p.meta?.lineSortOrder)).toEqual([0, 1, 2, 3]);
+  });
+
   test('nearest line sort with direction none keeps unconstrained nearest-neighbor traversal', () => {
     const { VectorEngine, Layer } = runtime.window.Vectura;
     const engine = new VectorEngine();

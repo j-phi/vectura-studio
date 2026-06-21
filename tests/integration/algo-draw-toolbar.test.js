@@ -30,7 +30,8 @@ describe('algo-draw toolbar', () => {
   // Returns algorithm types in grouped order: 2D (alpha) then 3D (alpha), matching menu rendering.
   const expectedAlgorithmTypes = () => {
     const items = window.Vectura.UI.utils.getDrawableAlgorithmOptions();
-    return [...items.filter((i) => !i.is3d), ...items.filter((i) => i.is3d)].map((i) => i.type);
+    // Mirror the picker's section grouping (2D / 3D / Typography / Image, …).
+    return window.Vectura.groupAlgorithmsForMenu(items).flatMap((g) => g.items.map((i) => i.type));
   };
 
   // Opens the algo-draw picker by simulating a 400ms hold, then waiting for the timer to fire.

@@ -470,20 +470,16 @@
           el.id = 'algo-draw-picker';
           el.className = 'algo-draw-picker hidden';
           {
-            const list2d = _ALGO_PICK_LIST.filter((item) => !item.is3d);
-            const list3d = _ALGO_PICK_LIST.filter((item) => item.is3d);
             const renderItem = ({ type, label }) =>
               `<div class="algo-pick-item" data-algo-type="${type}">` +
               `<span class="lvl-algo-sub-ico" style="color:${this._algoMenuColor?.(type) ?? 'currentColor'}">${(this._LVL_I?.[type] ?? this._LVL_I?.grid)?.() ?? ''}</span>${label}</div>`;
+            const groups = window.Vectura.groupAlgorithmsForMenu(_ALGO_PICK_LIST);
             const parts = [];
-            if (list2d.length) {
-              parts.push('<div class="algo-group-div">2D</div>');
-              list2d.forEach((item) => parts.push(renderItem(item)));
-            }
-            if (list3d.length) {
-              parts.push('<div class="algo-group-div algo-group-sep">3D</div>');
-              list3d.forEach((item) => parts.push(renderItem(item)));
-            }
+            groups.forEach((group, gi) => {
+              if (!group.items.length) return;
+              parts.push(`<div class="algo-group-div${gi ? ' algo-group-sep' : ''}">${group.label}</div>`);
+              group.items.forEach((item) => parts.push(renderItem(item)));
+            });
             el.innerHTML = parts.join('');
           }
           this._refreshAlgoPickerColors = () => {

@@ -1,0 +1,7 @@
+{
+  "type": "vectura", "version": null, "name": "Fine Screen",
+  "meta": { "presetId": "halftone-fine-screen", "group": "Classic", "system": "halftone", "savedAt": 0 },
+  "layers": [ { "type": "halftone", "params": {
+    "dotSpacing": 2.6, "maxDotSize": 2.6, "minDotSize": 0, "dotThreshold": 3, "gridAngle": 45, "dotShape": "circle", "brightness": 0, "contrast": 8, "gamma": 1, "invert": false
+  } } ]
+}

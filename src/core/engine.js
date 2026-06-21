@@ -1586,6 +1586,11 @@
           });
           return sortedItems;
         };
+        // "As drawn" preserves the algorithm's natural generation order — no
+        // travel-minimizing reorder, no path reversal. It still stamps a
+        // sequential lineSortOrder so the print-order overlay and the draw-order
+        // reveal track the same order the art was authored in.
+        if (method === 'asdrawn') return finalizeSorted(items.slice());
         const getKey = (item) => {
           const center = pathCentroid(item.path);
           if (direction === 'horizontal') return center.x;

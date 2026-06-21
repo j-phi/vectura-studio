@@ -1,0 +1,7 @@
+{
+  "type": "vectura", "version": null, "name": "Diamond Screen",
+  "meta": { "presetId": "halftone-diamond-screen", "group": "Geometric", "system": "halftone", "savedAt": 0 },
+  "layers": [ { "type": "halftone", "params": {
+    "dotSpacing": 5, "maxDotSize": 5.4, "minDotSize": 0.4, "dotThreshold": 4, "gridAngle": 45, "dotShape": "polygon", "dotSides": 4, "brightness": 0, "contrast": 18, "gamma": 1.1, "invert": false
+  } } ]
+}

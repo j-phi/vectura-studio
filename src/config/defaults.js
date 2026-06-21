@@ -1264,6 +1264,88 @@
       simplify: 0,
       curves: false,
     },
+    halftone: {
+      label: 'Dotscreen',
+      is3d: false,
+      category: 'Image',
+      preset: 'halftone-default',
+      imageSourceKind: 'builtin',
+      imageSrc: '',
+      imageId: '',
+      imageName: '',
+      dotSpacing: 4.8,
+      maxDotSize: 4.6,
+      minDotSize: 0,
+      dotThreshold: 4,
+      gridAngle: 0,
+      dotGrid: 'square',
+      dotShape: 'circle',
+      dotSides: 6,
+      dotPoints: 5,
+      dotPetals: 5,
+      dotTeeth: 8,
+      dotAspect: 1,
+      dotJitter: 0,
+      dotSpin: 0,
+      dotSpinAmount: 0,
+      dotSpinCurve: 'linear',
+      dotSpinDir: 0,
+      smartEdges: false,
+      maxDots: 14000,
+      brightness: 0,
+      contrast: 8,
+      gamma: 1,
+      invert: false,
+      smoothing: 0,
+      simplify: 0,
+      curves: false,
+    },
+    imageWeave: {
+      label: 'Weave',
+      is3d: false,
+      category: 'Image',
+      preset: 'imageweave-default',
+      imageSourceKind: 'builtin',
+      imageSrc: '',
+      imageId: '',
+      imageName: '',
+      lineCount: 160,
+      lineAngle: 0,
+      amplitude: 1.4,
+      frequency: 5000,
+      detail: 72,
+      continuity: 'none',
+      connectEnds: false,
+      drawWhiteAreas: true,
+      brightness: 0,
+      contrast: 0,
+      blackPoint: 0,
+      whitePoint: 100,
+      invert: false,
+      smoothing: 0,
+      simplify: 0,
+      curves: false,
+    },
+    text: {
+      label: 'Text',
+      is3d: false,
+      category: 'Typography',
+      preset: 'text-default',
+      text: 'VECTURA',
+      font: 'sans',
+      fontSize: 40,
+      tracking: 0,
+      lineHeight: 1.4,
+      align: 'center',
+      fitToFrame: true,
+      fillRatio: 0.9,
+      offsetX: 0,
+      offsetY: 0,
+      jitter: 0,
+      smoothing: 0,
+      simplify: 0,
+      curves: false,
+    },
     grid: {
       preset: 'grid-default',
       rows: 20,
@@ -1821,6 +1903,9 @@
       barGap: 0,
       barHeightSteps: 6,
       showBarBase: true,
+      barSides: 4,
+      barRotate: 0,
+      barCornerRadius: 0,
       projection: 'orthographic',
       cameraDistance: 620,
       focalLength: 520,
@@ -1886,6 +1971,38 @@
       curves: false,
     },
   };
+
+  // Canonical section order for the algorithm pickers. Typography and Image
+  // algorithms get their own section header after the dimensional groups.
+  window.Vectura.ALGO_CATEGORY_ORDER = ['2D', '3D', 'Typography', 'Image'];
+
+  // Group a list of picker items ([{ type, label, is3d? }, …]) into ordered
+  // sections for the algorithm menus. Shared by all three picker surfaces so the
+  // section headers stay in lock-step. Returns [{ label, items: [...] }, …].
+  window.Vectura.groupAlgorithmsForMenu = (items) => {
+    const A = window.Vectura.ALGO_DEFAULTS || {};
+    const order = window.Vectura.ALGO_CATEGORY_ORDER || ['2D', '3D'];
+    const buckets = new Map();
+    (items || []).forEach((item) => {
+      const def = A[item.type] || {};
+      const category = def.category || ((def.is3d || item.is3d) ? '3D' : '2D');
+      if (!buckets.has(category)) buckets.set(category, []);
+      buckets.get(category).push(item);
+    });
+    const ordered = [];
+    order.forEach((category) => {
+      if (buckets.has(category)) {
+        ordered.push({ label: category, items: buckets.get(category) });
+        buckets.delete(category);
+      }
+    });
+    // Any categories not in the canonical order trail alphabetically.
+    Array.from(buckets.keys()).sort().forEach((category) => {
+      ordered.push({ label: category, items: buckets.get(category) });
+    });
+    return ordered;
+  };
+
   window.Vectura.SETTINGS = {
     uiTheme: 'dark',
     margin: 20,
@@ -1946,8 +2063,16 @@
     preview3dQuality: 'balanced',
     optimizationScope: 'all',
     optimizationPreview: 'off',
+    // Canvas line-sort overlay (the eye toggle on the Draw Order subpanel). Kept
+    // separate from optimizationPreview — and intentionally NOT persisted — so the
+    // overlay is closed by default on every load and only opens when the user clicks
+    // the eye, regardless of export/optimization-preview state.
+    lineSortOverlayVisible: false,
     optimizationExport: true,
     optimizationOverlayColor: '#38bdf8',
+    // Overlay end (print-order) colour. '' = auto (per-layer line-sort secondary, else
+    // the start colour's complement). Set via the canvas legend gear's End Color.
+    optimizationOverlaySecondaryColor: '',
     optimizationOverlayWidth: 0.2,
     activeTool: 'select',
     penMode: 'draw',
@@ -2028,6 +2153,7 @@
         pattern: '#2DD4BF', svgDistort: '#FCA5A5', terrain: '#86EFAC',
         horizon: '#93C5FD', spirograph: '#14B8A6', spiralizer: '#8B5CF6',
         polyhedron: '#F472B6', topoform: '#06B6D4', rasterPlane: '#F59E0B',
+        text: '#A3E635', halftone: '#FB7185', imageWeave: '#5EEAD4',
         _group: '#6B7280', _pen: '#9CA3AF', _default: '#A1A1AA',
       },
     },
@@ -2044,6 +2170,7 @@
         pattern: '#1DE9B6', svgDistort: '#FF9100', terrain: '#B2FF59',
         horizon: '#40C4FF', spirograph: '#00FFCC', spiralizer: '#7C4DFF',
         polyhedron: '#FF00AA', topoform: '#00B8D4', rasterPlane: '#FFD600',
+        text: '#76FF03', halftone: '#FF4081', imageWeave: '#18FFFF',
         _group: '#78909C', _pen: '#B0BEC5', _default: '#BDBDBD',
       },
     },
@@ -2060,6 +2187,7 @@
         pattern: '#99F6E4', svgDistort: '#FED7AA', terrain: '#D9F99D',
         horizon: '#E0E7FF', spirograph: '#5EEAD4', spiralizer: '#C4B5FD',
         polyhedron: '#F9A8D4', topoform: '#67E8F9', rasterPlane: '#FDE68A',
+        text: '#BEF264', halftone: '#FDA4AF', imageWeave: '#A5F3FC',
         _group: '#9CA3AF', _pen: '#D1D5DB', _default: '#E5E7EB',
       },
     },
@@ -2076,6 +2204,7 @@
         pattern: '#0F766E', svgDistort: '#EA580C', terrain: '#65A30D',
         horizon: '#F59E0B', spirograph: '#2DD4BF', spiralizer: '#A855F7',
         polyhedron: '#E11D48', topoform: '#CA8A04', rasterPlane: '#FBBF24',
+        text: '#A3E635', halftone: '#F43F5E', imageWeave: '#0D9488',
         _group: '#6B7280', _pen: '#9CA3AF', _default: '#78716C',
       },
     },
@@ -2092,6 +2221,7 @@
         pattern: '#22D3EE', svgDistort: '#6366F1', terrain: '#4ADE80',
         horizon: '#BAE6FD', spirograph: '#2DD4BF', spiralizer: '#A78BFA',
         polyhedron: '#F472B6', topoform: '#06B6D4', rasterPlane: '#FACC15',
+        text: '#5EEAD4', halftone: '#C084FC', imageWeave: '#67E8F9',
         _group: '#64748B', _pen: '#94A3B8', _default: '#6366F1',
       },
     },
@@ -2108,6 +2238,7 @@
         pattern: '#FB7185', svgDistort: '#FDBA74', terrain: '#86EFAC',
         horizon: '#FDE68A', spirograph: '#14B8A6', spiralizer: '#C084FC',
         polyhedron: '#FB7185', topoform: '#38BDF8', rasterPlane: '#F59E0B',
+        text: '#FCD34D', halftone: '#F43F5E', imageWeave: '#22D3EE',
         _group: '#6B7280', _pen: '#9CA3AF', _default: '#F97316',
       },
     },
@@ -2124,6 +2255,7 @@
         pattern: '#2DD4BF', svgDistort: '#D9F99D', terrain: '#854D0E',
         horizon: '#A7F3D0', spirograph: '#2DD4BF', spiralizer: '#A78BFA',
         polyhedron: '#F9A8D4', topoform: '#22D3EE', rasterPlane: '#BEF264',
+        text: '#65A30D', halftone: '#FCD34D', imageWeave: '#5EEAD4',
         _group: '#6B7280', _pen: '#A1A1AA', _default: '#22C55E',
       },
     },
@@ -2140,6 +2272,7 @@
         pattern: '#A1A1AA', svgDistort: '#71717A', terrain: '#52525B',
         horizon: '#FAFAFA', spirograph: '#D4D4D8', spiralizer: '#E4E4E7',
         polyhedron: '#A1A1AA', topoform: '#71717A', rasterPlane: '#F4F4F5',
+        text: '#E4E4E7', halftone: '#D4D4D8', imageWeave: '#71717A',
         _group: '#6B7280', _pen: '#A1A1AA', _default: '#A1A1AA',
       },
     },
@@ -2156,6 +2289,7 @@
         pattern: '#76FF03', svgDistort: '#FFAB40', terrain: '#00E676',
         horizon: '#64FFDA', spirograph: '#00E5CC', spiralizer: '#A855F7',
         polyhedron: '#FF6B9D', topoform: '#40C4FF', rasterPlane: '#FFD600',
+        text: '#76FF03', halftone: '#FF4081', imageWeave: '#18FFFF',
         _group: '#78909C', _pen: '#B0BEC5', _default: '#FF6B9D',
       },
     },

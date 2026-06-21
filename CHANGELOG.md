@@ -4,6 +4,161 @@ All notable changes to this project should be documented in this file.
 
 The format is intentionally human-curated with an `Unreleased` section that collects work before release.
 
+## 1.2.7 - 2026-06-21
+
+### Added
+- **The line-sort overlay order now has an eye toggle on the Draw Order subpanel.** A new eye button
+  sits to the left of the Draw Order gear and shows/hides the plot-order overlay (both the gradient
+  colouring of the lines and its on-canvas legend). The overlay now rides its own dedicated flag that is
+  closed by default and not persisted, so it stays off on every load and only opens when you click the
+  eye — the export modal / optimization-preview state can no longer turn it on behind your back. The eye
+  is closed and grey when off; when on it becomes an open outline drawn with the overlay's start→end
+  print-order gradient, and those colours update live when you change the overlay colour in settings.
+  The on-canvas legend also gained a settings gear (matching the export menu's legend) that opens an
+  inline Start Color / End Color / Line Thickness dialogue right on the legend — editing the live canvas
+  overlay (a new `optimizationOverlaySecondaryColor` drives the end/print-order colour, '' = auto).
+- **Raster-Plane Bars gained Bar Sides and Bar Rotate controls.** Bar Sides (3–8, default 4)
+  changes how many sides each bar's footprint polygon has. The tileable counts interlock with no
+  gaps — 3 = triangles, 4 = squares, 6 = hexagons — while the other counts (5, 7, 8) draw as
+  regular polygons inscribed in each cell. Bar Rotate (−180…180°, default 0) spins each footprint
+  polygon about its own center, letting you orient the shapes and open or close the interlock. The
+  default 4-sided square footprint is unchanged from before.
+- **Raster-Plane Bars gained a Corner Radius control.** Corner Radius (0–100%, default 0) fillets the
+  corners of each bar's footprint polygon — squares become rounded-rectangle columns, hexagons become
+  rounded hexagonal columns, and at 100% a square rounds all the way to a near-circle. It rounds in
+  every render path (See-Through ON wireframe and the See-Through OFF solid hidden-line removal); at 0
+  the sharp-cornered output is byte-identical to before.
+
+### Fixed
+- **Lines as Planes (See-Through OFF) no longer leaves a fringe of tiny segments along the left/right
+  silhouette.** Each relief curtain was drawn as a closed top→floor→top loop; at the silhouette every
+  curtain's edge pokes ~one occlusion column past the row in front of it and, with its middle hidden,
+  survived only as a stray detached tip — a staircase of ticks down both edges. Curtains now draw their
+  top ridgeline plus (for the frontmost row) the front-bottom contour, with all interior floor contours
+  kept as occluder-only geometry (new `draw:false` row flag in `occludeRowsFloatingHorizon`). The opaque
+  band — and therefore back-row hiding — is identical, but the side risers and floor-end tips are no
+  longer drawn, so the fringe is gone.
+- **Solid bars (See-Through OFF) now draw a bottom contact line where each wall meets the surface.**
+  Previously the vertical sides of a bar that dropped to the surface vanished into the plane with no
+  edge connecting the wall to the base; the wall now closes with a bottom contact edge so the relief
+  reads as a solid sitting on the surface. The `raster-plane-bars-solid` visual baseline was
+  regenerated since the solid render now includes these contact edges.
+- **Polygonal bars (any non-square Bar Sides / any Bar Rotate) are now watertight.** The new prism
+  render path wound its side walls the opposite way from the legacy square path, which inverted each
+  wall's face normal — so the solid render drew (and occluded with) the BACK walls instead of the
+  front ones. Front faces vanished, the bottom contact lines went missing, and you could see straight
+  through hexagon/pentagon/triangle columns to the geometry behind them. Walls are now wound to match
+  the legacy outward-normal convention, so the camera-facing faces draw and occlude correctly for every
+  side count. Covered by a winding/occlusion regression test.
+- **The base outline now frames non-square bars on all four sides.** Polygonal lattices over/under-hang
+  the artwork rectangle, so a hexagon/pentagon/triangle relief used to spill past the base outline (or
+  float inside it). The base rim is now grown to the footprint bounding box, so the outermost sides and
+  corners touch it on every side — a clean frame from above. Square bars are unchanged (they tile the
+  artwork rect exactly). Covered by a base-framing regression test.
+
+## 1.2.6 - 2026-06-20
+
+### Changed
+- **Raster-Plane "Lines as Planes" now seeds a Base Height of 1 (was 0.33) and the Base Height slider
+  ranges up to 10 (was 1).** Enabling Lines as Planes gives a more pronounced curtain lift by default, and
+  the slider allows much taller relief.
+
+### Fixed
+- **Fill Density now reads higher = denser, everywhere.** The shared fill engine previously fed the slider
+  value straight in as line/dot *spacing*, so for most fills (hatch, crosshatch, wave, dots, stipple, grid,
+  meander, polygonal, scribble) a higher value made the fill *sparser* — the opposite of the label and of
+  how spiral/contour/radial already behaved. The value is now inverted once, centrally, for the spacing-based
+  fills (count-driven fills are untouched). The reference is chosen so the default density (4) still maps to
+  4 mm spacing, leaving default fills unchanged; non-default spacing-fill presets/saved layers flip direction.
+
+### Added
+- **Dotscreen: parametric dot shapes, a directional Rotation ramp, and an interior Fill.** The fixed
+  shape zoo is replaced by a compact, parametric set, and the dot controls are reorganised into Screen /
+  Rotation / Fill sections.
+  - **Parametric shapes.** Dot Shape is now **Circle, Polygon, Star, Gear, Flower, Cross, Heart**. The
+    Polygon takes a **Sides** count (3–24, so it covers triangle / square / diamond / pentagon / hexagon /
+    octagon / …), the Star a **Points** count (replacing the separate burst), the Gear a **Cogs** count,
+    and the Flower a **Petals** count — each shown only for its shape. Polygons use an area-preserving
+    circumradius so visual mass stays constant across side counts. Legacy shape ids in older `.vectura`
+    files and presets (square, diamond, triangle, …, burst) are transparently remapped.
+  - **Rotation.** A base **Rotation** plus a spatial **Offset** that ramps the per-dot angle across the
+    screen along a 360° **Offset Direction** dial, by an **Offset Amount** (°), following an **Offset
+    Curve** (linear / ease-in / ease-out / ease-in-out / exponential). Plus **Aspect** (area-preserving
+    squash) and **Jitter**. Dot size is owned entirely by Max/Min Dot + tone — there is no separate size
+    control (it would only duplicate those).
+  - **Fill.** The universal Fill library (hatch / crosshatch / spiral / radial / dots / wave) now patterns
+    the interior of each open-outline dot, mirroring the Spiralizer marker-fill bridge. Sub-mm dots are
+    skipped (which bounds the cost on fine screens); Smart-Edges only unions the dot outlines.
+  - At their defaults the classic circle screen is bit-for-bit unchanged; ramps and jitter use a spatial
+    hash so output stays deterministic and dots don't reshuffle as White Cutoff changes.
+
+## 1.2.5 - 2026-06-20
+
+### Fixed
+- **Raster-Plane Bars now render as a clean solid heightmap relief (See-Through OFF).** Previously the
+  bars drew as hollow wireframe boxes — you could see straight through every bar, internal walls between
+  touching bars showed, and edges fragmented. The render is now a true isometric solid with analytic
+  hidden-line removal:
+  - a cell contributes a **top edge only where its neighbour is shorter** (a real step), so touching
+    equal-height cells merge with no interior grid and no internal wall, plus the **exposed riser** of
+    each camera-facing step;
+  - every edge is then **clipped against the opaque faces of the bars in front of it** (painter's
+    algorithm, nearest-first, with per-vertex depth interpolated across each face), so hidden segments
+    are removed — no see-through, no floating verticals, no fragments, at any camera angle.
+
+  The output is pure plotter-ready vector segments (no fills). See-Through ON is unchanged (transparent
+  wireframe). A smooth height source renders as clean terraces; busy/high-frequency sources naturally
+  produce more steps (raise Map Blur or use a smoother source for a calmer relief).
+
+## 1.2.2 - 2026-06-20
+
+### Added
+- **Text algorithm.** A new 2D layer that sets a string in a built-in single-line (monoline) stroke
+  font and fits it to the document frame as pen-ready vector line art — no fills, no doubled outlines.
+  Supports multi-line text, left/center/right alignment, letter spacing, line height, frame-fit or
+  absolute (mm) sizing, manual offset, and an optional seed-stable hand-drawn jitter. The font covers
+  the printable ASCII set (upper/lowercase, digits, punctuation) and ships in
+  `src/core/algorithms/stroke-font.js`. A new free-text panel control (`text` / `textarea`) backs it.
+- **Dotscreen (halftone) algorithm.** Screens an uploaded picture into a rotatable grid of dots —
+  circle, square or diamond — whose diameter grows with local darkness, for a classic plotter-ready
+  halftone. Tone is shaped by brightness / contrast / gamma / invert; screen angle, dot spacing and
+  min/max dot size control the grid.
+- **Weave (image squiggle) algorithm.** Renders an uploaded picture as parallel lines that waver side
+  to side, with darkness driving both the wave amplitude and frequency (shadows wobble tightly,
+  highlights flatten). Lines can be joined into one continuous boustrophedon stroke.
+- **Picture source widget.** A new lightweight `imageUpload` panel control plus a shared image-source
+  helper (`src/core/algorithms/image-source-util.js`) decode an uploaded picture to a runtime raster
+  (persisted as a data URL, re-decoded on reload) and sample its luminance. With no picture set, both
+  picture algorithms render a built-in Lambert-shaded sphere so they produce output immediately.
+- **Algorithm menus gain named sections.** The Add Layer menu, the Algo-Draw toolbar picker, and the
+  Generator algorithm selector now group entries under section headers — the existing **2D** / **3D**
+  groups plus a new **Typography** section (Text) and **Image** section (Dotscreen, Weave) — driven by
+  a `category` field and the shared `groupAlgorithmsForMenu` helper. Each new algorithm also ships a
+  distinct picker icon.
+- **Font selector for Text.** The stroke font exposes five styles — Vectura Sans, Vectura Italic,
+  Condensed, Wide, and Backslant — derived from the base monoline glyphs via affine transforms, picked
+  from a new Font dropdown in the Text panel.
+- **Smart-Edge dot merging for Dotscreen.** An optional "Merge Dots" toggle unions overlapping dots
+  (via the bundled polygon-clipping engine) into clean single-traced outlines, so dense regions plot
+  as solid blobs instead of stacked, double-traced circles.
+- **Weave continuity modes.** A Continuity selector threads the woven rows into one boustrophedon
+  stroke (single) or stitches consecutive rows with ladder connectors on both ends (double), mirroring
+  Wavetable.
+- **Per-algorithm preset libraries** for Text, Dotscreen, and Weave (four hand-tuned `.vectura`
+  presets each), surfaced through the universal preset gallery.
+- **Drawing-order (plot progress) slider.** A low-profile horizontal slider with a vivid gradient sits
+  below the Layers panel; it reveals the first N% of the whole document's pen path in plot order —
+  truncating the straddling segment mid-stroke — as a pure render preview (export is unaffected).
+
+### Fixed
+- **Opaque Raster-Plane bars (See-Through OFF) now occlude correctly.** Bars hidden-line removal moved
+  from a single mean-depth-per-face painter test — which left co-depth neighbours fighting and
+  shattered edges into sub-pixel slivers, so far/short bars bled through the gaps — to an interpolated
+  screen-space **depth buffer**: every bar surface is triangulated with per-vertex camera depth, and
+  each candidate edge is clipped against the rasterised nearest-surface depth (with a slope-scaled
+  bias to avoid self-occlusion). Nearer bars now cleanly hide the bars behind them. The base outline
+  is occluded the same way, and surviving runs are merged back into clean spans.
+
 ## 1.2.1 - 2026-06-19
 
 ### Fixed

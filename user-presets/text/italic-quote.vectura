@@ -1,0 +1,9 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Italic Quote",
+  "meta": { "presetId": "text-italic-quote", "group": "Classic", "system": "text", "savedAt": 0 },
+  "layers": [ { "type": "text", "params": {
+    "text": "physics\nof line", "font": "italic", "align": "center", "fitToFrame": true, "fillRatio": 0.8, "tracking": 0, "lineHeight": 1.5, "jitter": 0
+  } } ]
+}

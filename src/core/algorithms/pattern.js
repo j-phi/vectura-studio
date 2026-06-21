@@ -3960,11 +3960,25 @@
     return out;
   };
 
+  // Fill Density semantics: the slider reads higher = denser, everywhere. Most
+  // fills consume `density` as a line/dot SPACING (smaller = denser), which is the
+  // inverse of the slider's intent, so we invert it for those. Fills that already
+  // grow denser with the value — contour (ring count), spiral (1/density internally)
+  // and radial (spoke count) — and the B-series fills with their own spacing knobs
+  // are NOT inverted. REF = 16 is the fixed point density·spacing, so the default
+  // density (4) still maps to 4 mm spacing → legacy default fills are unchanged.
+  const DENSITY_SPACING_REF = 16;
+  const SPACING_LIKE_FILLS = new Set([
+    'hatch', 'vhatch', 'dhatch45', 'dhatch135', 'crosshatch', 'xcrosshatch',
+    'wave', 'wavelines', 'zigzag', 'stipple', 'dots', 'grid',
+    'meander', 'polygonal', 'triaxial', 'scribble',
+  ]);
+
   // Dispatch to the right fill type → array of paths in tile-local SVG coords
   const generatePatternFillPaths = (fill) => {
     const regions = getFillRegions(fill);
     const {
-      fillType = 'hatch', density = 5,
+      fillType = 'hatch',
       angle = 0, amplitude = 1.0, dotSize = 1.0,
       dotLength = 0, dotRotation = 0, penWidth = 0.3,
       padding = 0, shiftX = 0, shiftY = 0,
@@ -3995,6 +4009,14 @@
       // B10 Weave
       weavePattern = 'plain', weaveStrandWidth = 1.5, weaveGap = 0.3, weaveAngle = 0, weaveOver = 1, weaveUnder = 1,
     } = fill;
+    // Apply the slider→spacing inversion (see DENSITY_SPACING_REF above). Spacing
+    // fills get REF/value (higher slider → tighter spacing → denser); count-driven
+    // and own-knob fills keep the raw value. Every `density` reference below uses
+    // this resolved value, so the whole engine flips to higher = denser at once.
+    const densityRaw = Number.isFinite(fill.density) ? fill.density : 5;
+    const density = SPACING_LIKE_FILLS.has(fillType)
+      ? (densityRaw > 0 ? DENSITY_SPACING_REF / densityRaw : DENSITY_SPACING_REF)
+      : densityRaw;
     // C3: hatch unified — compute the per-layer angle offsets up-front.
     // 1 layer = [0], 2 layers (crosshatch) = [0, 90], 3 layers (triaxial) = [0, 60, 120].
     const _hatchAnglesForCount = (n) => {

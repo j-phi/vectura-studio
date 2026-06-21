@@ -98,6 +98,12 @@
     return proxy;
   };
 
+  // Cleanup for the currently-open native picker session. The proxy input is a
+  // shared singleton, so re-opening (e.g. clicking the end-colour swatch while
+  // the start-colour panel is still up) must tear down the prior session first
+  // to avoid stacking listeners that double-apply onto the wrong target.
+  let activeColorPickerCleanup = null;
+
   const openColorPickerAnchoredTo = (colorInput, triggerEl, { title = 'Color', uiInstance = null } = {}) => {
     if (!colorInput || !triggerEl) return;
 
@@ -118,6 +124,10 @@
       });
       return;
     }
+
+    // Tear down any still-open native picker session before starting a new one
+    // (the proxy input is a singleton shared across every anchored swatch).
+    if (activeColorPickerCleanup) activeColorPickerCleanup();
 
     const rect = triggerEl.getBoundingClientRect();
     const proxyInput = getAnchoredColorProxyInput();
@@ -144,6 +154,7 @@
     const cleanup = () => {
       if (done) return;
       done = true;
+      if (activeColorPickerCleanup === cleanup) activeColorPickerCleanup = null;
       proxyInput.removeEventListener('input', handleInput);
       proxyInput.removeEventListener('change', handleChange);
       proxyInput.removeEventListener('blur', cleanup);
@@ -152,12 +163,16 @@
       proxyInput.style.top = '-9999px';
       proxyInput.style.transform = 'none';
     };
+    activeColorPickerCleanup = cleanup;
 
+    // Keep applying EVERY selection. The macOS system colour panel (and other
+    // persistent native pickers) stays open across multiple picks and fires one
+    // `change` per selection — tearing down on the first `change` would freeze
+    // the colour after a single pick. Instead we keep listening until the picker
+    // is dismissed: the window regains focus (`focus`), the proxy blurs, or a
+    // new anchored picker opens (force-cleanup above).
     const handleInput = () => syncToSource('input');
-    const handleChange = () => {
-      syncToSource('change');
-      cleanup();
-    };
+    const handleChange = () => syncToSource('change');
 
     proxyInput.addEventListener('input', handleInput);
     proxyInput.addEventListener('change', handleChange);
@@ -172,7 +187,6 @@
     } catch (_err) {
       proxyInput.click();
     }
-    setTimeout(cleanup, 3000);
   };
 
   // IIFE-local alias for the canonical Vectura.UI.utils.escapeHtml. Kept as a
@@ -1381,10 +1395,18 @@
       const dist = document.getElementById('stat-dist');
       const time = document.getElementById('stat-time');
       const lines = document.getElementById('stat-lines');
-      if (!dist || !time) return;
-      dist.innerText = s.distance;
-      time.innerText = s.time;
-      if (lines) lines.innerText = s.lines?.toString?.() || '0';
+      const lineCount = s.lines?.toString?.() || '0';
+      if (dist) dist.innerText = s.distance;
+      if (time) time.innerText = s.time;
+      if (lines) lines.innerText = lineCount;
+      // Mirror the same estimate into the draw-order readout row (distance |
+      // lines | time) beneath the plot-progress slider.
+      const doDist = document.getElementById('draw-order-stat-dist');
+      const doLines = document.getElementById('draw-order-stat-lines');
+      const doTime = document.getElementById('draw-order-stat-time');
+      if (doDist) doDist.innerText = s.distance;
+      if (doLines) doLines.innerText = `${lineCount} ${s.lines === 1 ? 'line' : 'lines'}`;
+      if (doTime) doTime.innerText = `~${s.time}`;
     }
 
     resetPanes() {
@@ -1459,6 +1481,7 @@
 
     this.app = app;
     this.controls = _CONTROL_DEFS;
+    this.openColorPickerAnchoredTo = openColorPickerAnchoredTo;
     this.modal = this.createModal();
     this._modalCleanup = null;
     this.openPenMenu = null;
@@ -1799,7 +1822,7 @@
 
   // Phase 2 step 5b: hand legacy IIFE-locals to shortcuts.js.
   if (window.Vectura?.UI?.Shortcuts?.bind) {
-    window.Vectura.UI.Shortcuts.bind({ getEl, SETTINGS, isPrimitiveShapeLayer });
+    window.Vectura.UI.Shortcuts.bind({ getEl, SETTINGS, isPrimitiveShapeLayer, getContrastTextColor, openColorPickerAnchoredTo });
   }
   if (window.Vectura?.UI?.Shortcuts?.installOn) {
     window.Vectura.UI.Shortcuts.installOn(UI.prototype);

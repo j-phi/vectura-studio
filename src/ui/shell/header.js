@@ -38,20 +38,23 @@
       const bLabel = ALGO_DEFAULTS[b]?.label || b;
       return aLabel.localeCompare(bLabel);
     });
-    const group2d = document.createElement('optgroup');
-    group2d.label = '2D';
-    const group3d = document.createElement('optgroup');
-    group3d.label = '3D';
-    keys.forEach((key) => {
-      const def = ALGO_DEFAULTS[key];
-      const opt = document.createElement('option');
-      opt.value = key;
-      const label = def?.label;
-      opt.innerText = label || key.charAt(0).toUpperCase() + key.slice(1);
-      (def?.is3d ? group3d : group2d).appendChild(opt);
+    const items = keys.map((key) => ({
+      type: key,
+      label: ALGO_DEFAULTS[key]?.label || key.charAt(0).toUpperCase() + key.slice(1),
+      is3d: !!ALGO_DEFAULTS[key]?.is3d,
+    }));
+    window.Vectura.groupAlgorithmsForMenu(items).forEach((group) => {
+      if (!group.items.length) return;
+      const optgroup = document.createElement('optgroup');
+      optgroup.label = group.label;
+      group.items.forEach((item) => {
+        const opt = document.createElement('option');
+        opt.value = item.type;
+        opt.innerText = item.label;
+        optgroup.appendChild(opt);
+      });
+      select.appendChild(optgroup);
     });
-    if (group2d.children.length) select.appendChild(group2d);
-    if (group3d.children.length) select.appendChild(group3d);
   }
 
   function _buildModuleMenu() {
@@ -92,8 +95,6 @@
     const menu = this._buildModuleMenu();
     const currentValue = select.value;
     const allOpts = Array.from(select.options);
-    const opts2d = allOpts.filter((opt) => !(ALGO_DEFAULTS && ALGO_DEFAULTS[opt.value]?.is3d));
-    const opts3d = allOpts.filter((opt) => !!(ALGO_DEFAULTS && ALGO_DEFAULTS[opt.value]?.is3d));
     const renderOpt = (opt) => {
       const type = opt.value;
       const ico = this._LVL_I?.[type];
@@ -102,15 +103,18 @@
       const activeClass = type === currentValue ? ' gm-item-active' : '';
       return `<div class="lvl-algo-sub-item${activeClass}" data-gm-value="${type}">${iconHtml}${opt.innerText}</div>`;
     };
+    const items = allOpts.map((opt) => ({
+      type: opt.value,
+      label: opt.innerText,
+      is3d: !!(ALGO_DEFAULTS && ALGO_DEFAULTS[opt.value]?.is3d),
+      opt,
+    }));
     const parts = [];
-    if (opts2d.length) {
-      parts.push('<div class="algo-group-div">2D</div>');
-      opts2d.forEach((opt) => parts.push(renderOpt(opt)));
-    }
-    if (opts3d.length) {
-      parts.push('<div class="algo-group-div algo-group-sep">3D</div>');
-      opts3d.forEach((opt) => parts.push(renderOpt(opt)));
-    }
+    window.Vectura.groupAlgorithmsForMenu(items).forEach((group, gi) => {
+      if (!group.items.length) return;
+      parts.push(`<div class="algo-group-div${gi ? ' algo-group-sep' : ''}">${group.label}</div>`);
+      group.items.forEach((item) => parts.push(renderOpt(item.opt)));
+    });
     menu.innerHTML = parts.join('');
     const r = trigger.getBoundingClientRect();
     menu.style.top = `${r.bottom + 2}px`;

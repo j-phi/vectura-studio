@@ -182,6 +182,13 @@
         }
       },
       {
+        "id": "halftone-default",
+        "name": "Default",
+        "preset_system": "halftone",
+        "group": "Classic",
+        "params": {}
+      },
+      {
         "id": "harmonograph-default",
         "name": "Default",
         "preset_system": "harmonograph",
@@ -272,6 +279,13 @@
           "simplify": 0,
           "curves": false
         }
+      },
+      {
+        "id": "imageweave-default",
+        "name": "Default",
+        "preset_system": "imageWeave",
+        "group": "Classic",
+        "params": {}
       },
       {
         "id": "lissajous-default",
@@ -1244,6 +1258,13 @@
         }
       },
       {
+        "id": "text-default",
+        "name": "Default",
+        "preset_system": "text",
+        "group": "Classic",
+        "params": {}
+      },
+      {
         "id": "topoform-default",
         "name": "Default",
         "preset_system": "topoform",
@@ -1525,6 +1546,81 @@
         }
       },
       {
+        "id": "halftone-coarse-dots",
+        "name": "Coarse Dots",
+        "preset_system": "halftone",
+        "group": "Classic",
+        "params": {
+          "dotSpacing": 7.5,
+          "maxDotSize": 7,
+          "minDotSize": 0,
+          "dotThreshold": 5,
+          "gridAngle": 15,
+          "dotShape": "circle",
+          "brightness": 0,
+          "contrast": 12,
+          "gamma": 1,
+          "invert": false
+        }
+      },
+      {
+        "id": "halftone-diamond-screen",
+        "name": "Diamond Screen",
+        "preset_system": "halftone",
+        "group": "Geometric",
+        "params": {
+          "dotSpacing": 5,
+          "maxDotSize": 5.4,
+          "minDotSize": 0.4,
+          "dotThreshold": 4,
+          "gridAngle": 45,
+          "dotShape": "polygon",
+          "dotSides": 4,
+          "brightness": 0,
+          "contrast": 18,
+          "gamma": 1.1,
+          "invert": false
+        }
+      },
+      {
+        "id": "halftone-fine-screen",
+        "name": "Fine Screen",
+        "preset_system": "halftone",
+        "group": "Classic",
+        "params": {
+          "dotSpacing": 2.6,
+          "maxDotSize": 2.6,
+          "minDotSize": 0,
+          "dotThreshold": 3,
+          "gridAngle": 45,
+          "dotShape": "circle",
+          "brightness": 0,
+          "contrast": 8,
+          "gamma": 1,
+          "invert": false
+        }
+      },
+      {
+        "id": "halftone-newsprint",
+        "name": "Newsprint",
+        "preset_system": "halftone",
+        "group": "Classic",
+        "params": {
+          "dotSpacing": 3.6,
+          "maxDotSize": 4,
+          "minDotSize": 0,
+          "dotThreshold": 6,
+          "gridAngle": 0,
+          "dotShape": "polygon",
+          "dotSides": 4,
+          "dotSpin": 45,
+          "brightness": -4,
+          "contrast": 22,
+          "gamma": 0.95,
+          "invert": false
+        }
+      },
+      {
         "id": "harmonograph-4-3-star",
         "name": "4:3 Star",
         "preset_system": "harmonograph",
@@ -1711,6 +1807,86 @@
           "angleVar": 0.2,
           "segLen": 4,
           "maxBranches": 800
+        }
+      },
+      {
+        "id": "imageweave-loose-weave",
+        "name": "Loose Weave",
+        "preset_system": "imageWeave",
+        "group": "Organic",
+        "params": {
+          "lineCount": 90,
+          "lineAngle": 0,
+          "amplitude": 3.4,
+          "frequency": 3200,
+          "detail": 70,
+          "continuity": "none",
+          "drawWhiteAreas": true,
+          "brightness": 0,
+          "contrast": 0,
+          "blackPoint": 4,
+          "whitePoint": 96,
+          "invert": false
+        }
+      },
+      {
+        "id": "imageweave-single-stroke",
+        "name": "Single Stroke",
+        "preset_system": "imageWeave",
+        "group": "Classic",
+        "params": {
+          "lineCount": 150,
+          "lineAngle": 0,
+          "amplitude": 1.6,
+          "frequency": 5200,
+          "detail": 74,
+          "continuity": "single",
+          "drawWhiteAreas": true,
+          "brightness": 0,
+          "contrast": 4,
+          "blackPoint": 0,
+          "whitePoint": 100,
+          "invert": false
+        }
+      },
+      {
+        "id": "imageweave-tight-weave",
+        "name": "Tight Weave",
+        "preset_system": "imageWeave",
+        "group": "Classic",
+        "params": {
+          "lineCount": 220,
+          "lineAngle": 0,
+          "amplitude": 1,
+          "frequency": 7200,
+          "detail": 80,
+          "continuity": "none",
+          "drawWhiteAreas": true,
+          "brightness": 0,
+          "contrast": 6,
+          "blackPoint": 0,
+          "whitePoint": 100,
+          "invert": false
+        }
+      },
+      {
+        "id": "imageweave-vertical-weave",
+        "name": "Vertical Weave",
+        "preset_system": "imageWeave",
+        "group": "Geometric",
+        "params": {
+          "lineCount": 160,
+          "lineAngle": 90,
+          "amplitude": 1.8,
+          "frequency": 5600,
+          "detail": 72,
+          "continuity": "none",
+          "drawWhiteAreas": true,
+          "brightness": 0,
+          "contrast": 8,
+          "blackPoint": 0,
+          "whitePoint": 100,
+          "invert": false
         }
       },
       {
@@ -4312,6 +4488,70 @@
           "smoothing": 0,
           "simplify": 0,
           "curves": true
+        }
+      },
+      {
+        "id": "text-headline",
+        "name": "Headline",
+        "preset_system": "text",
+        "group": "Classic",
+        "params": {
+          "text": "VECTURA",
+          "font": "sans",
+          "align": "center",
+          "fitToFrame": true,
+          "fillRatio": 0.92,
+          "tracking": 2,
+          "lineHeight": 1.4,
+          "jitter": 0
+        }
+      },
+      {
+        "id": "text-italic-quote",
+        "name": "Italic Quote",
+        "preset_system": "text",
+        "group": "Classic",
+        "params": {
+          "text": "physics\nof line",
+          "font": "italic",
+          "align": "center",
+          "fitToFrame": true,
+          "fillRatio": 0.8,
+          "tracking": 0,
+          "lineHeight": 1.5,
+          "jitter": 0
+        }
+      },
+      {
+        "id": "text-sketch-note",
+        "name": "Sketch Note",
+        "preset_system": "text",
+        "group": "Organic",
+        "params": {
+          "text": "hand\ndrawn",
+          "font": "sans",
+          "align": "left",
+          "fitToFrame": true,
+          "fillRatio": 0.75,
+          "tracking": 1,
+          "lineHeight": 1.5,
+          "jitter": 0.6
+        }
+      },
+      {
+        "id": "text-wide-label",
+        "name": "Wide Label",
+        "preset_system": "text",
+        "group": "Classic",
+        "params": {
+          "text": "STUDIO",
+          "font": "wide",
+          "align": "center",
+          "fitToFrame": true,
+          "fillRatio": 0.95,
+          "tracking": 4,
+          "lineHeight": 1.4,
+          "jitter": 0
         }
       },
       {

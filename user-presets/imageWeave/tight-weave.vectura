@@ -1,0 +1,7 @@
+{
+  "type": "vectura", "version": null, "name": "Tight Weave",
+  "meta": { "presetId": "imageweave-tight-weave", "group": "Classic", "system": "imageWeave", "savedAt": 0 },
+  "layers": [ { "type": "imageWeave", "params": {
+    "lineCount": 220, "lineAngle": 0, "amplitude": 1.0, "frequency": 7200, "detail": 80, "continuity": "none", "drawWhiteAreas": true, "brightness": 0, "contrast": 6, "blackPoint": 0, "whitePoint": 100, "invert": false
+  } } ]
+}

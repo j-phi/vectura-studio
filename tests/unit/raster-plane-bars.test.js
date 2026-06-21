@@ -85,6 +85,26 @@ describe('Raster-Plane — Bars see-through occlusion', () => {
     expect(run(noisy).length).toBeGreaterThan(run(flat).length);
   });
 
+  test('Corner Radius rounds bar footprints into many-edge outlines; radius 0 is identity', () => {
+    const N = 6;
+    const grid = Array.from({ length: N }, () => new Array(N).fill(0.7));
+    const run = (extra) => V.AlgorithmRegistry.rasterPlane.generate(
+      { mode: 'bars', fixtureGrid: grid, barRows: N, barColumns: N, barGap: 0.5, amplitude: 40, barHeightSteps: 4, ...extra },
+      null, null, bounds,
+    );
+    const topEdges = (ps) => ps.filter((p) => p.meta && p.meta.barTop).length;
+    const sharp = run({ seeThrough: true, barCornerRadius: 0 });
+    const rounded = run({ seeThrough: true, barCornerRadius: 70 });
+    // Fillet arcs replace each sharp corner with several short edges.
+    expect(topEdges(rounded)).toBeGreaterThan(topEdges(sharp) * 2);
+    // Radius 0 is byte-identical to omitting the control (legacy fast-path untouched).
+    expect(JSON.stringify(run({ seeThrough: true })))
+      .toBe(JSON.stringify(run({ seeThrough: true, barCornerRadius: 0 })));
+    // Rounded geometry stays finite through the See-Through OFF hidden-line path too.
+    const off = run({ seeThrough: false, barCornerRadius: 70 });
+    for (const p of off) for (const pt of p) expect(Number.isFinite(pt.x) && Number.isFinite(pt.y)).toBe(true);
+  });
+
   test('See-Through OFF: a raised block draws its riser at the camera-near (front) corner', () => {
     // Regression — the wall faceVisible winding once produced an inward normal, so it
     // selected the hidden BACK walls: risers landed on far corners (and occluders were

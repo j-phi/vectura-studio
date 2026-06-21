@@ -110,26 +110,45 @@ describe('Raster-Plane — hidden-line removal & occlusion bias', () => {
 
   // ---- 1. Lines-as-Planes solid occlusion (floating-horizon HLR) --------------
 
-  test('Lines as Planes, See-Through OFF: occlusion removes back rows', () => {
-    // Apples-to-apples (both draw the closed curtains): a tight Occlusion Bias (eps)
-    // hides the rows behind nearer curtains; a very loose eps keeps essentially
-    // everything. At a low, strongly-stacking view angle the default-tight pass
-    // hides roughly HALF the line — proof the relief is genuinely solid, not
-    // see-through. (A partial-occlusion regression would push this ratio toward 1.)
-    const tight = visibleLen(relief({ rotate: 0, tilt: 15, seeThrough: false, depthBias: 0.5 }));
-    const loose = visibleLen(relief({ rotate: 0, tilt: 15, seeThrough: false, depthBias: 50 }));
-    expect(tight).toBeGreaterThan(0);
-    expect(tight).toBeLessThan(loose * 0.6);
+  test('Lines as Planes, See-Through OFF: occludes back rows behind nearer curtains', () => {
+    // The relief draws the top ridgeline of each row plus the front-bottom contour;
+    // the curtain bodies (floor contours) are occluder-only, so this measures
+    // genuine top-on-top hidden-line removal. At a low, strongly-stacking tilt the
+    // nearer curtains hide the tops of the rows behind them, so See-Through OFF
+    // draws materially less ridge line than See-Through ON. (At the default high
+    // tilt the rows fan out and don't overlap — correctly a near-no-op.)
+    const cfg = { rotate: 0, tilt: 15, baseHeight: 1 };
+    const on = visibleLen(relief({ ...cfg, seeThrough: true }));
+    const off = visibleLen(relief({ ...cfg, seeThrough: false, depthBias: 0 }));
+    expect(off).toBeGreaterThan(0);
+    expect(off).toBeLessThan(on * 0.9); // ≥10% of the ridge hidden behind nearer curtains
+  });
+
+  test('Lines as Planes, See-Through OFF: no silhouette-edge fringe (tiny detached segments)', () => {
+    // Regression for the user-reported fringe: the old closed-curtain occluder left
+    // ~one tiny detached run per row along the left/right silhouette (each curtain
+    // edge pokes a column past the nearer row and, with its middle occluded, survives
+    // only as a stray tip). Drawing each curtain as a top ridgeline + an occluder-only
+    // floor contour eliminates them. This config matches the reported screenshot.
+    const paths = relief({ rotate: -45, tilt: 60, baseHeight: 1, seeThrough: false, depthBias: 0.5 });
+    expect(paths.length).toBeGreaterThan(10);
+    const lens = paths.map((p) => segLen(p));
+    const med = [...lens].sort((a, b) => a - b)[Math.floor(lens.length / 2)];
+    const tiny = lens.filter((l) => l < med * 0.1);
+    expect(tiny.length).toBe(0); // no detached silhouette ticks
   });
 
   // ---- 3. Occlusion Bias control ----------------------------------------------
 
   test('Occlusion Bias: raising it monotonically recovers occluded lines', () => {
     // depthBias is the floating-horizon screen tolerance (px): a larger value keeps
-    // more silhouette-grazing lines whole, so visible length is non-decreasing.
-    const tight = visibleLen(relief({ seeThrough: false, depthBias: 0 }));
-    const mid = visibleLen(relief({ seeThrough: false, depthBias: 3 }));
-    const loose = visibleLen(relief({ seeThrough: false, depthBias: 50 }));
+    // more silhouette-grazing lines whole, so visible length is non-decreasing. Use a
+    // low tilt where the ridgelines genuinely overlap (the default high tilt fans the
+    // rows apart, so there's nothing for the bias to recover).
+    const cfg = { rotate: 0, tilt: 15, baseHeight: 1, seeThrough: false };
+    const tight = visibleLen(relief({ ...cfg, depthBias: 0 }));
+    const mid = visibleLen(relief({ ...cfg, depthBias: 3 }));
+    const loose = visibleLen(relief({ ...cfg, depthBias: 50 }));
     expect(mid).toBeGreaterThanOrEqual(tight);
     expect(loose).toBeGreaterThanOrEqual(mid);
     // The control must actually bite across its range.
@@ -147,14 +166,15 @@ describe('Raster-Plane — hidden-line removal & occlusion bias', () => {
   // ---- 4. Floating-horizon integration locks (the user's reported angle) ------
 
   test('Lines as Planes, See-Through OFF: the curtain reads SOLID at rotate -60 / tilt 19', () => {
-    // The reported failure config. A solid extruded relief must occlude a large
-    // fraction of the curtains — not leak the back rows through. Apples-to-apples
-    // tight vs loose Occlusion Bias: the default-tight pass hides ≥30% of the line a
-    // no-occlusion pass would draw. The old painter left the model see-through here.
-    const tight = visibleLen(relief({ rotate: -60, tilt: 19, seeThrough: false, depthBias: 0.5 }));
-    const loose = visibleLen(relief({ rotate: -60, tilt: 19, seeThrough: false, depthBias: 50 }));
+    // The reported angle. A solid extruded relief must occlude the back rows behind
+    // nearer curtains rather than leak them through. Apples-to-apples tight vs loose
+    // Occlusion Bias: the tight pass hides a measurable fraction of the ridge that a
+    // no-occlusion pass would draw (the old painter left the model see-through here).
+    const cfg = { rotate: -60, tilt: 19, baseHeight: 1, seeThrough: false };
+    const tight = visibleLen(relief({ ...cfg, depthBias: 0 }));
+    const loose = visibleLen(relief({ ...cfg, depthBias: 50 }));
     expect(tight).toBeGreaterThan(0);
-    expect(tight).toBeLessThan(loose * 0.7);   // ≥30% hidden — genuinely solid
+    expect(tight).toBeLessThan(loose * 0.97);   // occlusion bites — back tops hidden
     expect(tight).toBeGreaterThan(loose * 0.3); // sanity: not collapsed to nothing
   });
 

@@ -40,7 +40,7 @@ describe('Raster-Plane — Lines as Planes seeds relief defaults', () => {
     return null;
   };
 
-  test('toggling Lines as Planes ON sets baseHeight=0.33 and seeThrough=false', () => {
+  test('toggling Lines as Planes ON sets baseHeight=1 and seeThrough=false', () => {
     app.engine.addLayer('rasterPlane');
     const layer = app.engine.getActiveLayer();
     layer.params.mode = 'lines';
@@ -57,7 +57,7 @@ describe('Raster-Plane — Lines as Planes seeds relief defaults', () => {
     cb.dispatchEvent(new window.Event('change'));
 
     expect(layer.params.horizontalLinesAsPlanes).toBe(true);
-    expect(layer.params.baseHeight).toBeCloseTo(0.33, 5);
+    expect(layer.params.baseHeight).toBeCloseTo(1, 5);
     expect(layer.params.seeThrough).toBe(false);
     expect(layer.params.depthBias).toBeCloseTo(1.5, 5);
   });
@@ -78,7 +78,7 @@ describe('Raster-Plane — Lines as Planes seeds relief defaults', () => {
     cb.checked = false;
     cb.dispatchEvent(new window.Event('change'));
 
-    // Turning it off must not clobber the user's tuned baseHeight back to 0.33.
+    // Turning it off must not clobber the user's tuned baseHeight back to the seed.
     expect(layer.params.horizontalLinesAsPlanes).toBe(false);
     expect(layer.params.baseHeight).toBeCloseTo(0.7, 5);
   });

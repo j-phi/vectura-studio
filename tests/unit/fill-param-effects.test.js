@@ -68,6 +68,43 @@ describe('Fill parameter effects (path-data hash)', () => {
   };
 
   // ──────────────────────────────────────────────────────────────────
+  // Fill Density slider direction: higher value = denser, for every fill.
+  // Total vertex count is the density proxy (works for line fills AND the
+  // single-path spiral). Before the slider-inversion fix, the spacing-based
+  // fills (hatch/dots/…) went the WRONG way — higher density = fewer lines.
+  // ──────────────────────────────────────────────────────────────────
+  describe('Fill Density reads higher = denser', () => {
+    const pointCount = (region, overrides) => gen(base(region, overrides)).reduce((s, p) => s + p.length, 0);
+    const denserWithHigherDensity = (overrides) => {
+      const sparse = pointCount(sq, { ...overrides, density: 2 });
+      const dense = pointCount(sq, { ...overrides, density: 20 });
+      return { sparse, dense };
+    };
+    test.each([
+      ['hatch', { fillType: 'hatch' }],
+      ['crosshatch', { fillType: 'crosshatch' }],
+      ['wave', { fillType: 'wave' }],
+      ['dots', { fillType: 'dots', dotPattern: 'grid', dotShape: 'tick' }],
+      ['meander', { fillType: 'meander' }],
+      ['polygonal', { fillType: 'polygonal' }],
+      ['scribble', { fillType: 'scribble' }],
+    ])('spacing fill %s: higher density → more geometry', (_label, overrides) => {
+      const { sparse, dense } = denserWithHigherDensity(overrides);
+      expect(dense).toBeGreaterThan(sparse);
+    });
+    // contour (ring count) and radial (spoke count) already grew denser with the
+    // value and are NOT inverted — confirm that still holds. (Spiral is excluded:
+    // its point budget saturates at a turn cap, so vertex count is a poor proxy.)
+    test.each([
+      ['contour', { fillType: 'contour' }],
+      ['radial', { fillType: 'radial' }],
+    ])('already-denser fill %s keeps higher density → more geometry', (_label, overrides) => {
+      const { sparse, dense } = denserWithHigherDensity(overrides);
+      expect(dense).toBeGreaterThan(sparse);
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────
   // Previously-dead knobs from the 2026-05-20 audit. After fixes these
   // must change the hash.
   // ──────────────────────────────────────────────────────────────────

@@ -2899,6 +2899,103 @@
         return `Lines ${rawLines}→${simpLines} · Points ${rawPoints}→${simpPoints}`;
       };
 
+      // Free-text parameter (single-line `text`, multi-line `textarea`). The only
+      // control that writes a raw string to layer.params; used by the Text
+      // algorithm. History is pushed once per edit session (on first keystroke).
+      if (def.type === 'text' || def.type === 'textarea') {
+        const cur = val == null ? '' : String(val);
+        const field = def.type === 'textarea'
+          ? `<textarea rows="${def.rows || 2}" class="value-input w-full bg-vectura-bg border border-vectura-border p-2 text-xs" style="resize:vertical;font-family:inherit;line-height:1.4;">${escapeHtml(cur)}</textarea>`
+          : `<input type="text" class="value-input w-full bg-vectura-bg border border-vectura-border p-2 text-xs" value="${escapeHtml(cur)}" />`;
+        div.innerHTML = `
+          <div class="flex items-center gap-2 mb-1">
+            <label class="control-label mb-0">${getDisplayLabel(def)}</label>
+            ${infoBtn}
+          </div>
+          ${field}
+        `;
+        const input = div.querySelector('textarea, input');
+        if (input) {
+          if (def.placeholder) input.setAttribute('placeholder', def.placeholder);
+          let pushed = false;
+          const commit = () => {
+            const next = input.value;
+            if (layer.params[def.id] === next) return;
+            if (!pushed && this.app.pushHistory) { this.app.pushHistory(); pushed = true; }
+            layer.params[def.id] = next;
+            this.storeLayerParams(layer);
+            this.app.regen();
+            this.updateFormula();
+          };
+          input.addEventListener('input', commit);
+          input.addEventListener('change', () => { commit(); pushed = false; });
+          input.addEventListener('blur', () => { pushed = false; });
+        }
+        container.appendChild(div);
+        return;
+      }
+
+      // Picture upload for the image-driven algorithms (Dotscreen, Weave). Decodes
+      // the chosen file to a data URL (persisted in params) + a runtime raster via
+      // Vectura.ImageSource, then regenerates. Falls back to a built-in subject when
+      // empty. Mirrors the other branches' history/store/regen contract.
+      if (def.type === 'imageUpload') {
+        const IS = window.Vectura.ImageSource;
+        const hasImg = Boolean(layer.params.imageSrc);
+        const thumb = hasImg
+          ? `<img src="${escapeHtml(layer.params.imageSrc)}" alt="" style="max-width:100%;max-height:120px;display:block;margin:0 auto;border:1px solid var(--vectura-border,#333);" />`
+          : '<div class="text-[10px] text-vectura-muted text-center py-4 border border-vectura-border">Built-in sphere — choose a picture</div>';
+        div.innerHTML = `
+          <div class="flex items-center gap-2 mb-1">
+            <label class="control-label mb-0">${getDisplayLabel(def)}</label>
+            ${infoBtn}
+          </div>
+          <div class="mb-2">${thumb}</div>
+          <div class="grid grid-cols-2 gap-2">
+            <button type="button" data-img-choose class="w-full text-xs border border-vectura-border px-2 py-2 hover:bg-vectura-border text-vectura-accent transition-colors">Choose…</button>
+            <button type="button" data-img-clear class="w-full text-xs border border-vectura-border px-2 py-2 hover:bg-vectura-border transition-colors" ${hasImg ? '' : 'disabled style="opacity:.4;"'}>Clear</button>
+          </div>
+          <input type="file" accept="image/*" data-img-file hidden />
+        `;
+        const fileInput = div.querySelector('[data-img-file]');
+        const chooseBtn = div.querySelector('[data-img-choose]');
+        const clearBtn = div.querySelector('[data-img-clear]');
+        if (chooseBtn && fileInput) chooseBtn.onclick = () => fileInput.click();
+        if (fileInput) {
+          fileInput.onchange = (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+              const dataUrl = String(reader.result || '');
+              if (this.app.pushHistory) this.app.pushHistory();
+              layer.params.imageSrc = dataUrl;
+              layer.params.imageName = file.name || 'picture';
+              layer.params.imageSourceKind = 'imported';
+              layer.params.imageId = IS ? IS.decode(dataUrl, () => { this.app.regen(); }) : '';
+              this.storeLayerParams(layer);
+              this.app.regen();
+              this.buildControls();
+            };
+            reader.readAsDataURL(file);
+          };
+        }
+        if (clearBtn && hasImg) {
+          clearBtn.onclick = () => {
+            if (this.app.pushHistory) this.app.pushHistory();
+            layer.params.imageSrc = '';
+            layer.params.imageName = '';
+            layer.params.imageId = '';
+            layer.params.imageSourceKind = 'builtin';
+            this.storeLayerParams(layer);
+            this.app.regen();
+            this.buildControls();
+          };
+        }
+        container.appendChild(div);
+        return;
+      }
+
       if (def.id === 'simplify') {
         const { min, max, step } = getDisplayConfig(def);
         const displayVal = toDisplayValue(def, val);
@@ -3189,7 +3286,7 @@
             // wavetable/topoform param-cascade precedents in the sibling select
             // onchange handler below.
             if (layer.type === 'rasterPlane' && def.id === 'horizontalLinesAsPlanes' && next === true) {
-              layer.params.baseHeight = 0.33;
+              layer.params.baseHeight = 1;
               layer.params.seeThrough = false;
               layer.params.depthBias = 1.5;
             }
@@ -3820,9 +3917,16 @@
         <option value="replace">Replace</option>
         <option value="overlay">Overlay</option>
       `;
-      previewSelect.value = SETTINGS.optimizationPreview || 'off';
+      previewSelect.value = SETTINGS.lineSortOverlayVisible
+        ? 'overlay'
+        : ((SETTINGS.optimizationPreview || 'off') === 'replace' ? 'replace' : 'off');
       previewSelect.onchange = (e) => {
-        SETTINGS.optimizationPreview = e.target.value;
+        const mode = e.target.value;
+        // The canvas line-sort overlay is its own (non-persisted) flag so it stays off
+        // by default and is only shown via the eye toggle / this select; 'replace' still
+        // rides optimizationPreview (it swaps the drawn geometry for the optimized paths).
+        SETTINGS.lineSortOverlayVisible = mode === 'overlay';
+        SETTINGS.optimizationPreview = mode === 'replace' ? 'replace' : 'off';
         this.buildControls();
         this.app.render();
         if (this.exportModalState?.isOpen) this.renderExportPreview();
@@ -3965,7 +4069,7 @@
       overlayStyleControls.appendChild(overlayThicknessField);
       overlayStyleControls.appendChild(overlayResetField);
       const overlayStyleRow = buildRow('Overlay Style', overlayStyleControls);
-      if ((SETTINGS.optimizationPreview || 'off') !== 'overlay') overlayStyleRow.classList.add('hidden');
+      if (!SETTINGS.lineSortOverlayVisible) overlayStyleRow.classList.add('hidden');
       panel.appendChild(overlayStyleRow);
 
       const resetBtn = document.createElement('button');
@@ -4508,17 +4612,18 @@
         if (applyToggle) {
           applyToggle.onchange = (e) => {
             const next = Boolean(e.target.checked);
-            if (def.id === 'linesort' && next) {
-              if (this.exportModalState?.isOpen) {
-                if ((this.exportModalState.previewMode || 'off') === 'off') {
-                  this.exportModalState.previewMode = 'overlay';
-                  const previewSelect = this.exportModalState.root?.querySelector('#export-preview-mode');
-                  if (previewSelect) previewSelect.value = 'overlay';
-                }
-                SETTINGS.optimizationPreview = this.exportModalState.previewMode;
-              } else if ((SETTINGS.optimizationPreview || 'off') === 'off') {
-                SETTINGS.optimizationPreview = 'overlay';
+            // Enabling line sort lights up the print-order overlay ONLY inside
+            // the export modal (where the gradient preview lives). On the main
+            // canvas we no longer force the overlay on — the Draw Order slider is
+            // the canonical print-order preview there, so an auto-overlay just
+            // adds a confusing second visualization the user didn't ask for.
+            if (def.id === 'linesort' && next && this.exportModalState?.isOpen) {
+              if ((this.exportModalState.previewMode || 'off') === 'off') {
+                this.exportModalState.previewMode = 'overlay';
+                const previewSelect = this.exportModalState.root?.querySelector('#export-preview-mode');
+                if (previewSelect) previewSelect.value = 'overlay';
               }
+              SETTINGS.optimizationPreview = this.exportModalState.previewMode;
             }
             applyOptimization((cfg) => {
               const step = cfg.steps.find((s) => s.id === def.id);

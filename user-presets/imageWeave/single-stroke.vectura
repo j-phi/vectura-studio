@@ -1,0 +1,7 @@
+{
+  "type": "vectura", "version": null, "name": "Single Stroke",
+  "meta": { "presetId": "imageweave-single-stroke", "group": "Classic", "system": "imageWeave", "savedAt": 0 },
+  "layers": [ { "type": "imageWeave", "params": {
+    "lineCount": 150, "lineAngle": 0, "amplitude": 1.6, "frequency": 5200, "detail": 74, "continuity": "single", "drawWhiteAreas": true, "brightness": 0, "contrast": 4, "blackPoint": 0, "whitePoint": 100, "invert": false
+  } } ]
+}

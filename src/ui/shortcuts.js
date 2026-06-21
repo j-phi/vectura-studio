@@ -82,7 +82,7 @@
   }
 
   function bindShortcuts() {
-    const { getEl, SETTINGS, isPrimitiveShapeLayer } = requireDeps('bindShortcuts');
+    const { getEl, SETTINGS, isPrimitiveShapeLayer, getContrastTextColor, openColorPickerAnchoredTo } = requireDeps('bindShortcuts');
     window.addEventListener('keydown', (e) => {
       const target = e.target;
       const isInput =
@@ -519,20 +519,16 @@
       return c[type] || c._default || 'currentColor';
     };
     {
-      const list2d = _ALGO_LIST.filter((item) => !item.is3d);
-      const list3d = _ALGO_LIST.filter((item) => item.is3d);
       const renderItem = ({ type, label }) =>
         `<div class="lvl-algo-sub-item" data-add="algo" data-algo-type="${type}">` +
         `<span class="lvl-algo-sub-ico" style="color:${this._algoMenuColor(type)}">${(this._LVL_I[type] ?? this._LVL_I.grid)?.() ?? ''}</span>${label}</div>`;
+      const groups = window.Vectura.groupAlgorithmsForMenu(_ALGO_LIST);
       const parts = [];
-      if (list2d.length) {
-        parts.push('<div class="algo-group-div">2D</div>');
-        list2d.forEach((item) => parts.push(renderItem(item)));
-      }
-      if (list3d.length) {
-        parts.push('<div class="algo-group-div algo-group-sep">3D</div>');
-        list3d.forEach((item) => parts.push(renderItem(item)));
-      }
+      groups.forEach((group, gi) => {
+        if (!group.items.length) return;
+        parts.push(`<div class="algo-group-div${gi ? ' algo-group-sep' : ''}">${group.label}</div>`);
+        group.items.forEach((item) => parts.push(renderItem(item)));
+      });
       algoSubmenuEl.innerHTML = parts.join('');
     }
     this._refreshAlgoSubmenuColors = () => {
@@ -652,6 +648,108 @@
       );
       this.renderLayers();
     });
+
+    // ── Drawing-order (plot progress) slider ─────────────────────
+    // Reveals the first N% of the whole document's pen path in plot order, like
+    // watching the plotter draw partway. Drives Renderer.drawProgress; the gradient
+    // fill tracks the value via a CSS var. Stays a pure render preview — no geometry
+    // is mutated, so export is unaffected unless the user leaves it below 100%.
+    const drawOrderInput = document.getElementById('draw-order-input');
+    if (drawOrderInput) {
+      const applyDrawOrder = (raw) => {
+        const pct = Math.max(0, Math.min(100, Number(raw)));
+        const frac = pct / 100;
+        if (this.app.renderer) this.app.renderer.drawProgress = frac;
+        const valEl = document.getElementById('draw-order-value');
+        if (valEl) valEl.textContent = `${Math.round(pct)}%`;
+        drawOrderInput.style.setProperty('--draw-order-fill', `${pct}%`);
+        this.app.render();
+      };
+      drawOrderInput.addEventListener('input', (e) => applyDrawOrder(e.target.value));
+      applyDrawOrder(drawOrderInput.value);
+    }
+    // Eye → toggle the line-sort overlay (the order colouring + its legend) on the
+    // primary canvas via its own non-persisted flag, so it is closed by default and
+    // only opens on click. The renderer syncs the eye's open/closed state and gradient.
+    document.getElementById('draw-order-overlay-toggle')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      SETTINGS.lineSortOverlayVisible = !(SETTINGS.lineSortOverlayVisible === true);
+      this.app.renderer?.updateDrawOrderOverlayToggle?.();
+      this.app.render();
+    });
+
+    // Gear → export settings: the draw-order readout (distance | lines | time)
+    // is driven by the same optimization/pen settings the export modal owns, so
+    // the gear opens that modal for the user to tune them.
+    document.getElementById('draw-order-settings')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.openExportModal?.();
+    });
+
+    // Legend gear → inline Start Color / End Color / Line Thickness dialogue, mirroring
+    // the export menu's legend gear, but editing the live canvas overlay settings.
+    const overlayGear = document.getElementById('optimization-overlay-legend-settings');
+    const overlayPanel = document.getElementById('optimization-overlay-legend-settings-panel');
+    const overlayStartBtn = document.getElementById('overlay-legend-start-color');
+    const overlayStartInput = document.getElementById('overlay-legend-start-color-input');
+    const overlayEndBtn = document.getElementById('overlay-legend-end-color');
+    const overlayEndInput = document.getElementById('overlay-legend-end-color-input');
+    const overlayThickness = document.getElementById('overlay-legend-thickness');
+    if (overlayGear && overlayPanel) {
+      const hexToCss = (c) => `#${[c.r, c.g, c.b].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')}`;
+      // Effective end colour: explicit override → per-layer line-sort secondary → the
+      // start colour's complement (matches the renderer's gradient).
+      const effectiveEndColor = () => {
+        const override = (SETTINGS.optimizationOverlaySecondaryColor || '').trim();
+        if (override) return override;
+        const r = this.app.renderer;
+        const secondary = r?.getLineSortOverlaySecondaryColor?.(this.app.engine?.layers || []);
+        if (secondary) return secondary;
+        const base = r?.hexToRgb?.(SETTINGS.optimizationOverlayColor || '#38bdf8');
+        return base && r?.getComplementRgb ? hexToCss(r.getComplementRgb(base)) : '#f59e0b';
+      };
+      const syncPill = (btn, color) => {
+        if (!btn) return;
+        btn.textContent = (color || '').toUpperCase();
+        btn.style.background = color;
+        btn.style.color = getContrastTextColor(color);
+      };
+      const syncOverlayLegendControls = () => {
+        const start = SETTINGS.optimizationOverlayColor || '#38bdf8';
+        const end = effectiveEndColor();
+        syncPill(overlayStartBtn, start);
+        if (overlayStartInput) overlayStartInput.value = start;
+        syncPill(overlayEndBtn, end);
+        if (overlayEndInput) overlayEndInput.value = end;
+        if (overlayThickness) overlayThickness.value = `${SETTINGS.optimizationOverlayWidth ?? 0.2}`;
+      };
+      overlayGear.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const willShow = overlayPanel.classList.contains('hidden');
+        overlayPanel.classList.toggle('hidden', !willShow);
+        if (willShow) syncOverlayLegendControls();
+      });
+      if (overlayStartBtn && overlayStartInput) {
+        overlayStartBtn.onclick = () => openColorPickerAnchoredTo(overlayStartInput, overlayStartBtn, { title: 'Overlay Start Color', uiInstance: this });
+        // Update ONLY the start pill — the end colour is edited independently and
+        // must not be rewritten (it would otherwise jump to the start complement
+        // on every start pick). The effective end is re-synced when the panel reopens.
+        const apply = (e) => { SETTINGS.optimizationOverlayColor = e.target.value; syncPill(overlayStartBtn, e.target.value); this.app.render(); };
+        overlayStartInput.oninput = apply;
+        overlayStartInput.onchange = apply;
+      }
+      if (overlayEndBtn && overlayEndInput) {
+        overlayEndBtn.onclick = () => openColorPickerAnchoredTo(overlayEndInput, overlayEndBtn, { title: 'Overlay End Color', uiInstance: this });
+        const apply = (e) => { SETTINGS.optimizationOverlaySecondaryColor = e.target.value; syncPill(overlayEndBtn, e.target.value); this.app.render(); };
+        overlayEndInput.oninput = apply;
+        overlayEndInput.onchange = apply;
+      }
+      if (overlayThickness) {
+        const apply = (e) => { SETTINGS.optimizationOverlayWidth = Math.max(0.05, Math.min(1, parseFloat(e.target.value) || 0.2)); this.app.render(); };
+        overlayThickness.oninput = apply;
+        overlayThickness.onchange = apply;
+      }
+    }
 
     // ── Layers V8: filter ────────────────────────────────────────
     // Phase 3 closure: layer filter dropdown migrated to UI.Menus.LayerFilter

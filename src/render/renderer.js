@@ -1036,11 +1036,38 @@
 
     updateOptimizationOverlayLegend(show, startColor = '', endColor = '') {
       const legend = document.getElementById('optimization-overlay-legend');
-      if (!legend) return;
-      legend.classList.toggle('hidden', !show);
-      if (!show) return;
-      const gradientEl = document.getElementById('optimization-overlay-legend-gradient');
-      if (gradientEl) gradientEl.style.background = `linear-gradient(90deg, ${startColor} 0%, ${endColor} 100%)`;
+      if (legend) {
+        legend.classList.toggle('hidden', !show);
+        if (show) {
+          const gradientEl = document.getElementById('optimization-overlay-legend-gradient');
+          if (gradientEl) gradientEl.style.background = `linear-gradient(90deg, ${startColor} 0%, ${endColor} 100%)`;
+        }
+      }
+      // Keep the Draw-Order subpanel eye toggle in lock-step with the overlay every
+      // render (the legend only appears for the gradient case, but the eye reflects the
+      // overlay being on at all and carries the same start→end print-order gradient).
+      this.updateDrawOrderOverlayToggle(startColor, endColor);
+    }
+
+    // Eye toggle on the Draw-Order subpanel: closed + grey when the line-sort overlay is
+    // off, an open eye outlined with the start→end print-order gradient when on. Colours
+    // fall back to the overlay colour (and its complement) so they track the Settings
+    // overlay colour even when no per-layer secondary colour is set.
+    updateDrawOrderOverlayToggle(startColor = '', endColor = '') {
+      const eye = document.getElementById('draw-order-overlay-toggle');
+      if (!eye) return;
+      const on = SETTINGS.lineSortOverlayVisible === true;
+      eye.classList.toggle('is-on', on);
+      eye.setAttribute('aria-pressed', on ? 'true' : 'false');
+      if (!on) return;
+      const baseRgb = this.hexToRgb(SETTINGS.optimizationOverlayColor || '#38bdf8');
+      const override = (SETTINGS.optimizationOverlaySecondaryColor || '').trim();
+      const start = startColor || this.rgbToCss(baseRgb, 1);
+      const end = endColor || this.rgbToCss(override ? this.hexToRgb(override) : this.getComplementRgb(baseRgb), 1);
+      const s = document.getElementById('draw-order-eye-grad-start');
+      const e = document.getElementById('draw-order-eye-grad-end');
+      if (s) s.setAttribute('stop-color', start);
+      if (e) e.setAttribute('stop-color', end);
     }
 
     getModifierState(e = {}) {
@@ -2930,7 +2957,10 @@
       const innerH = prof.height - m * 2;
       const previewMode = SETTINGS.optimizationPreview || 'off';
       const useOptimized = previewMode === 'replace';
-      const showOptimizedOverlay = previewMode === 'overlay';
+      // The canvas line-sort overlay rides its own (non-persisted) flag, toggled by the
+      // Draw Order eye, so it stays off by default and isn't turned on by the export
+      // modal / optimization-preview state.
+      const showOptimizedOverlay = SETTINGS.lineSortOverlayVisible === true;
       const optimizationTargetIds = this.getOptimizationTargetIds();
       const optimize = Math.max(0, SETTINGS.plotterOptimize ?? 0);
       const tol = optimize > 0 ? Math.max(0.001, optimize) : 0;
@@ -2947,6 +2977,104 @@
         return path
           .map((pt) => `${quant(pt.x)},${quant(pt.y)}`)
           .join('|');
+      };
+      // Drawing-order reveal (plot progress): renders the document up to the
+      // first `drawProgress` fraction of the total PLOT TIME — pen-down draw time
+      // (length ÷ draw speed) plus pen-up travel time between paths (gap ÷ travel
+      // speed) — walked in true print order (pen grouping + line sort), and
+      // truncated mid-path at the time cutoff by arc length. This makes the slider
+      // a faithful "watch the plotter draw" preview rather than a vertex-count
+      // sweep. drawProgress == 1 (or unset) disables it.
+      const revealActive = this.drawProgress != null && this.drawProgress < 1;
+      const PU = window.Vectura?.OptimizationUtils;
+      const pathLen = (path) => (PU?.pathLength ? PU.pathLength(path) : 0);
+      const pathEnds = (path) => (PU?.pathEndpoints
+        ? PU.pathEndpoints(path)
+        : (Array.isArray(path) && path.length
+          ? { start: path[0], end: path[path.length - 1] }
+          : { start: { x: 0, y: 0 }, end: { x: 0, y: 0 } }));
+      // Reveal a polyline up to a given arc length, interpolating the segment the
+      // cutoff lands inside.
+      const sliceByDistance = (pts, dist) => {
+        if (!Array.isArray(pts) || pts.length <= 1) return pts;
+        if (dist <= 0) return [pts[0]];
+        const out = [pts[0]];
+        let acc = 0;
+        for (let i = 1; i < pts.length; i++) {
+          const a = pts[i - 1]; const b = pts[i];
+          const seg = Math.hypot(b.x - a.x, b.y - a.y);
+          if (acc + seg >= dist) {
+            const t = seg > 0 ? (dist - acc) / seg : 0;
+            out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+            return out;
+          }
+          out.push(b);
+          acc += seg;
+        }
+        return out;
+      };
+      // While the reveal is engaged, draw the OPTIMIZED (export) geometry for
+      // every optimization target — that is what the plotter actually lays down,
+      // and it carries the lineSortOrder the print order depends on. Outside the
+      // reveal we honor the user's optimization-preview mode unchanged.
+      const layerDrawOptimized = (l) => (useOptimized || revealActive) && optimizationTargetIds.has(l.id);
+      // Drawing-order reveal: build the same plot order the SVG export uses
+      // (pen grouping + line-sort interleave) across exactly the optimized paths
+      // we are about to draw, then pace by plot time — so the slider reveals the
+      // document the way the plotter will actually print it. Computed once here so
+      // both the base layer draw AND the line-sort overlay reveal in lock-step.
+      let reveal = null;
+      if (revealActive) {
+        const records = [];
+        this.engine.layers.forEach((l, layerSeq) => {
+          if (!l.visible || this.shouldSkipLayerForMaskPreview(l) || this.engine.hasCompoundAncestor?.(l)) return;
+          const optimized = layerDrawOptimized(l);
+          const lp = this.engine.getRenderablePaths
+            ? this.engine.getRenderablePaths(l, { useOptimized: optimized })
+            : l.paths;
+          (lp || []).forEach((path, pathIndex) => {
+            const ends = pathEnds(path);
+            records.push({
+              path,
+              penKey: l.penId || 'default',
+              layerSeq,
+              pathIndex,
+              length: pathLen(path),
+              start: ends.start,
+              end: ends.end,
+              lineSortOrder: path && path.meta ? path.meta.lineSortOrder : undefined,
+              lineSortGrouping: path && path.meta ? path.meta.lineSortGrouping : undefined,
+              optimized,
+            });
+          });
+        });
+        reveal = Renderer.computePlotRevealOrder(records, {
+          drawProgress: this.drawProgress,
+          drawSpeed: SETTINGS.speedDown,
+          travelSpeed: SETTINGS.speedUp,
+        });
+      }
+      // Apply the plot-time reveal to a single path: returns the path truncated by
+      // arc length (or unchanged), or null when the pen hasn't reached it yet.
+      // Mirrors the per-path reveal logic in the base layer draw loop so the
+      // line-sort overlay adds/removes the same lines in lock-step.
+      const applyReveal = (path) => {
+        if (!revealActive || !reveal) return path;
+        const info = reveal.info.get(path);
+        // Unmapped path (reference drift) → draw it rather than silently drop
+        // geometry; the plot-order build covers every drawn path.
+        if (!info) return path;
+        const drawnTime = reveal.threshold - info.drawStart;
+        if (drawnTime <= 0) return null;
+        if (info.penDownTime > 0 && drawnTime < info.penDownTime
+          && Array.isArray(path) && !(path.meta && path.meta.kind === 'circle')) {
+          const revealLen = info.length * (drawnTime / info.penDownTime);
+          const sliced = sliceByDistance(path, revealLen);
+          if (!Array.isArray(sliced) || sliced.length < 2) return null;
+          if (path.meta) sliced.meta = path.meta;
+          return sliced;
+        }
+        return path;
       };
       const drawLayers = () => {
         this.engine.layers.forEach((l) => {
@@ -2987,7 +3115,7 @@
           this.ctx.strokeStyle = currentStrokeStyle;
 
           const useCurves = Boolean(l.params && l.params.curves);
-          const useLayerOptimized = useOptimized && optimizationTargetIds.has(l.id);
+          const useLayerOptimized = layerDrawOptimized(l);
           const paths = this.engine.getRenderablePaths
             ? this.engine.getRenderablePaths(l, { useOptimized: useLayerOptimized })
             : l.paths;
@@ -2996,6 +3124,16 @@
             ? this.tempTransform
             : null;
           (paths || []).forEach((path) => {
+            // Drawing-order reveal: reveal each path by where it sits on the plot
+            // TIMELINE (decoupled from this layer-by-layer draw loop). The path is
+            // hidden until the pen reaches it, fully drawn once the cutoff clears
+            // its pen-down window, and truncated by arc length for the single path
+            // the cutoff lands inside.
+            if (revealActive && reveal) {
+              const revealed = applyReveal(path);
+              if (revealed == null) return;
+              path = revealed;
+            }
             const next = path && path.meta && path.meta.kind === 'circle'
               ? { meta: temp ? this.transformCircleMeta(path.meta, temp) : path.meta }
               : temp ? this.transformPath(path, temp) : path;
@@ -3120,7 +3258,8 @@
           return aOrder - bOrder;
         });
         const hasLineSort = overlayItems.some((item) => this.hasLineSortOrderMetadata(item.path));
-        const lineSortSecondary = this.getLineSortOverlaySecondaryColor(targetLayers);
+        const secondaryOverride = (SETTINGS.optimizationOverlaySecondaryColor || '').trim();
+        const lineSortSecondary = secondaryOverride || this.getLineSortOverlaySecondaryColor(targetLayers);
         const shouldUseGradient = hasLineSort && overlayItems.length > 1;
         const base = this.hexToRgb(overlayColor);
         const startRgb = base;
@@ -3129,6 +3268,11 @@
           const total = Math.max(1, overlayItems.length - 1);
           overlayItems.forEach((item, index) => {
             const l = item.layer;
+            // Reveal in lock-step with the base draw: keep the gradient color tied
+            // to the path's full line-sort position (index/total), but skip lines
+            // the pen hasn't reached and truncate the in-progress line by arc length.
+            const revealed = applyReveal(item.path);
+            if (revealed == null) return;
             const t = index / total;
             const color = this.mixRgb(startRgb, endRgb, t);
             this.ctx.save();
@@ -3138,7 +3282,7 @@
             this.ctx.strokeStyle = this.rgbToCss(color, 0.9);
             this.ctx.beginPath();
             const temp = this.selectedLayerIds?.has(l.id) && this.tempTransform ? this.tempTransform : null;
-            this.traceLayerPath(item.path, l, temp, item.useCurves);
+            this.traceLayerPath(revealed, l, temp, item.useCurves);
             this.ctx.stroke();
             this.ctx.restore();
           });
@@ -3160,7 +3304,11 @@
           this.ctx.beginPath();
           const temp = this.selectedLayerIds?.has(l.id) && this.tempTransform ? this.tempTransform : null;
           l.optimizedPaths.forEach((path) => {
-            this.traceLayerPath(path, l, temp, useCurves);
+            // Reveal in lock-step with the base draw — skip un-reached lines and
+            // truncate the in-progress one by arc length.
+            const revealed = applyReveal(path);
+            if (revealed == null) return;
+            this.traceLayerPath(revealed, l, temp, useCurves);
           });
           this.ctx.stroke();
           this.ctx.restore();
@@ -8193,6 +8341,75 @@
       if (rotation) rotation.value = layer.params.rotation;
     }
   }
+
+  // Drawing-order reveal: turn raw per-layer draw records into the plot TIMELINE
+  // a plotter (and the SVG export window) actually traces, so the draw-order
+  // slider tracks real plot time — pen-down draw time plus pen-up travel time —
+  // in true print order rather than raw layer-stack vertex count.
+  //
+  // Ordering mirrors UI.getExportSnapshot: group by pen (first-appearance order),
+  // then — when a group's paths carry pen/combined line-sort metadata — interleave
+  // them by lineSortOrder (tie-broken by layer order, then path index). The flat
+  // print sequence is then walked once to accumulate time: each path contributes
+  // travel time from the previous path's end to its start (gap ÷ travelSpeed),
+  // then draw time (length ÷ drawSpeed).
+  //
+  // Returns { info: Map(path → { drawStart, penDownTime, length }), total, threshold }
+  // where total is the whole-document plot time and threshold = total × drawProgress.
+  // Pure and reference-keyed so the caller can decouple the reveal from its
+  // layer-by-layer draw loop. Each record is
+  // { path, penKey, layerSeq, pathIndex, length, start, end, lineSortOrder, lineSortGrouping, optimized }.
+  Renderer.computePlotRevealOrder = function computePlotRevealOrder(records, opts) {
+    const o = opts || {};
+    const drawSpeed = o.drawSpeed > 0 ? o.drawSpeed : 1;
+    const travelSpeed = o.travelSpeed > 0 ? o.travelSpeed : drawSpeed;
+    const groupOrder = [];
+    const groups = new Map();
+    (records || []).forEach((rec) => {
+      const penKey = rec.penKey || 'default';
+      if (!groups.has(penKey)) {
+        groups.set(penKey, []);
+        groupOrder.push(penKey);
+      }
+      groups.get(penKey).push(rec);
+    });
+    // Flatten the pen groups into one print-order sequence.
+    const seq = [];
+    groupOrder.forEach((penKey) => {
+      const items = groups.get(penKey);
+      const interleave = items.some((it) => it.optimized
+        && (it.lineSortGrouping === 'pen' || it.lineSortGrouping === 'combined'));
+      if (interleave) {
+        items.sort((a, b) => {
+          const ao = Number.isFinite(a.lineSortOrder) ? a.lineSortOrder : Number.MAX_SAFE_INTEGER;
+          const bo = Number.isFinite(b.lineSortOrder) ? b.lineSortOrder : Number.MAX_SAFE_INTEGER;
+          if (ao !== bo) return ao - bo;
+          if (a.layerSeq !== b.layerSeq) return a.layerSeq - b.layerSeq;
+          return a.pathIndex - b.pathIndex;
+        });
+      }
+      items.forEach((it) => seq.push(it));
+    });
+    // Walk the sequence to build the time line: pen-up travel, then pen-down draw.
+    const info = new Map();
+    let cursor = 0;
+    let prevEnd = null;
+    seq.forEach((it) => {
+      if (prevEnd && it.start) {
+        const dx = it.start.x - prevEnd.x;
+        const dy = it.start.y - prevEnd.y;
+        cursor += Math.hypot(dx, dy) / travelSpeed;
+      }
+      const drawStart = cursor;
+      const penDownTime = (it.length || 0) / drawSpeed;
+      cursor += penDownTime;
+      info.set(it.path, { drawStart, penDownTime, length: it.length || 0 });
+      prevEnd = it.end || prevEnd;
+    });
+    const total = cursor;
+    const frac = Number.isFinite(o.drawProgress) ? o.drawProgress : 1;
+    return { info, total, threshold: total * frac };
+  };
 
   const Vectura = (window.Vectura = window.Vectura || {});
   Vectura.Renderer = Renderer;

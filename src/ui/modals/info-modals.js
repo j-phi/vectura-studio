@@ -1111,6 +1111,10 @@
       title: 'Continuity',
       description: 'Connects adjacent wavetable rows on one side (single) or both sides (double).',
     },
+    'imageWeave.continuity': {
+      title: 'Continuity',
+      description: 'Threads adjacent weave rows into one boustrophedon stroke (single) or stitches them with ladder connectors on both ends (double).',
+    },
     'wavetable.edgeFadeMode': {
       title: 'Edge Noise Dampening Mode',
       description: 'Choose whether noise dampening affects the left, right, or both sides.',
@@ -1647,7 +1651,7 @@
     },
     'fill.density': {
       title: 'Fill Density',
-      description: 'Controls how tightly fill strokes or dots are packed inside the shape.',
+      description: 'How tightly fill strokes or dots are packed inside the shape — higher values pack them more densely.',
     },
     'fill.angle': {
       title: 'Fill Angle',

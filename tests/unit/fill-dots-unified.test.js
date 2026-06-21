@@ -58,10 +58,14 @@ describe('Dots fill (C2 consolidation)', () => {
   });
 
   test('fillType=dots with shape=square renders 4-segment stamps', () => {
-    const paths = gen(base({ fillType: 'dots', dotPattern: 'grid', dotShape: 'square' }));
+    // Use a sparse density (low value = sparse, since higher Fill Density = denser)
+    // so few stamps straddle the region boundary and the 4×-segments relationship
+    // is not masked by edge clipping.
+    const sparse = { fillType: 'dots', dotPattern: 'grid', density: 2 };
+    const paths = gen(base({ ...sparse, dotShape: 'square' }));
     expect(paths.length).toBeGreaterThan(0);
-    const tickPaths = gen(base({ fillType: 'dots', dotPattern: 'grid', dotShape: 'tick' }));
-    // Boundary clipping removes some sides of stamps at polygon edges — allow ~25 clipped sides.
+    const tickPaths = gen(base({ ...sparse, dotShape: 'tick' }));
+    // Boundary clipping removes some sides of stamps at polygon edges — allow ~30 clipped sides.
     expect(paths.length).toBeGreaterThanOrEqual(tickPaths.length * 4 - 30);
   });
 

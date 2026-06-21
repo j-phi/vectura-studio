@@ -188,7 +188,9 @@ describe('UI bootstrap – line sort overlay', () => {
 
     app.renderer.setSelection([left.id, right.id], right.id);
     SETTINGS.optimizationScope = 'selected';
-    SETTINGS.optimizationPreview = 'overlay';
+    // The canvas line-sort overlay is gated on its own flag (toggled by the Draw Order
+    // eye), decoupled from optimizationPreview so it stays off by default.
+    SETTINGS.lineSortOverlayVisible = true;
     app.ui.buildControls();
     app.ui.optimizeTargetsForCurrentScope({ includePlotterOptimize: true });
     app.render();

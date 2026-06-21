@@ -1,0 +1,9 @@
+{
+  "type": "vectura",
+  "version": null,
+  "name": "Wide Label",
+  "meta": { "presetId": "text-wide-label", "group": "Classic", "system": "text", "savedAt": 0 },
+  "layers": [ { "type": "text", "params": {
+    "text": "STUDIO", "font": "wide", "align": "center", "fitToFrame": true, "fillRatio": 0.95, "tracking": 4, "lineHeight": 1.4, "jitter": 0
+  } } ]
+}

@@ -1,0 +1,7 @@
+{
+  "type": "vectura", "version": null, "name": "Newsprint",
+  "meta": { "presetId": "halftone-newsprint", "group": "Classic", "system": "halftone", "savedAt": 0 },
+  "layers": [ { "type": "halftone", "params": {
+    "dotSpacing": 3.6, "maxDotSize": 4, "minDotSize": 0, "dotThreshold": 6, "gridAngle": 0, "dotShape": "polygon", "dotSides": 4, "dotSpin": 45, "brightness": -4, "contrast": 22, "gamma": 0.95, "invert": false
+  } } ]
+}

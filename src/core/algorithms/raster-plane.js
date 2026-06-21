@@ -534,21 +534,33 @@
     // ridgeline plot). Planes: the row is the CLOSED curtain outline (top profile +
     // floor profile) — drawn AND used as the occlusion band, so the extrusion reads
     // as a solid front face with the back rows hidden behind it.
-    const rows = segments.map((s) => {
-      let pts;
+    const mkMeta = (s) => ({ algorithm: 'rasterPlane', straight: true, mode: 'lines', reliefPlane: planes, row: s.row });
+    // The nearest segment's floor IS the block's front-bottom contour (nothing
+    // occludes it, so it draws clean); every farther floor is occluder-only.
+    const maxDepth = segments.reduce((m, s) => Math.max(m, finite(meanDepth(s.top), 0)), -Infinity);
+    const rows = segments.flatMap((s) => {
+      const topPts = s.top.map((t) => ({ x: t.point.x, y: t.point.y }));
+      const depth = finite(meanDepth(s.top), 0);
       if (planes && s.base && s.base.length === s.top.length) {
-        pts = s.top.map((t) => ({ x: t.point.x, y: t.point.y }));
-        for (let i = s.base.length - 1; i >= 0; i--) pts.push({ x: s.base[i].point.x, y: s.base[i].point.y });
-        pts.push({ x: s.top[0].point.x, y: s.top[0].point.y }); // close the curtain (left drop)
-      } else {
-        pts = s.top.map((t) => ({ x: t.point.x, y: t.point.y }));
+        // Emit the curtain as TWO open profiles — the top ridgeline and the floor
+        // contour — instead of one closed top→floor→top loop. Rasterised as
+        // occluders the pair still fills the full opaque band per column (the top
+        // sets each column's upper edge, the floor its lower edge), so farther rows
+        // are hidden behind nearer curtains exactly as before. But the near-vertical
+        // SIDE RISERS that used to close the loop are no longer drawn: those — plus
+        // the floor's own silhouette-edge ends — produced a fringe of tiny
+        // disconnected segments along the left/right silhouette (each curtain's edge
+        // pokes ~one column past the nearer row at the silhouette and, with its
+        // middle occluded, survives only as a detached tip). Interior floor contours
+        // are therefore occluder-only (draw:false); the frontmost floor stays drawn
+        // so the block keeps its clean front-bottom edge.
+        const floorPts = s.base.map((b) => ({ x: b.point.x, y: b.point.y }));
+        return [
+          { pts: topPts, depth, occludes: true, meta: mkMeta(s) },
+          { pts: floorPts, depth, occludes: true, draw: depth >= maxDepth, meta: mkMeta(s) },
+        ];
       }
-      return {
-        pts,
-        depth: finite(meanDepth(s.top), 0),
-        occludes: true,
-        meta: { algorithm: 'rasterPlane', straight: true, mode: 'lines', reliefPlane: planes, row: s.row },
-      };
+      return [{ pts: topPts, depth, occludes: true, meta: mkMeta(s) }];
     });
     // Roll: align the rows to screen-X so the horizon band is measured along the
     // near→far stacking axis. The projection's rotate + tilt + Line Angle all fold
@@ -795,6 +807,390 @@
     return runs;
   };
 
+  // Shared solid-bar finish pass — takes the per-bar { sortDepth, edges, occluders }
+  // list, sorts nearest-first, and runs analytic hidden-line removal (lazy uniform
+  // occluder grid + per-edge clip + de-dupe) plus the clipped floor rim. Used by
+  // BOTH the legacy square path and the N-sided prism path so the occlusion engine
+  // has a single source of truth.
+  const finishSolidBars = (bars, p, bounds, rect) => {
+    const paths = [];
+    bars.sort((a, b) => b.sortDepth - a.sortDepth); // nearest first
+
+    // Lazy uniform grid of accumulated occluder faces for broad-phase queries.
+    let cellSum = 0, cellN = 0;
+    bars.forEach((bar) => bar.occluders.forEach((o) => { cellSum += (o.maxX - o.minX) + (o.maxY - o.minY); cellN += 2; }));
+    const gridCell = cellN ? Math.max(4, cellSum / cellN) : 16;
+    const inv = 1 / gridCell;
+    const grid = new Map();
+    const addOccluder = (o) => {
+      for (let cy = Math.floor(o.minY * inv); cy <= Math.floor(o.maxY * inv); cy++) {
+        for (let cx = Math.floor(o.minX * inv); cx <= Math.floor(o.maxX * inv); cx++) {
+          const k = cx + ',' + cy; let arr = grid.get(k); if (!arr) grid.set(k, (arr = [])); arr.push(o);
+        }
+      }
+    };
+    const queryOccluders = (minX, minY, maxX, maxY) => {
+      const seen = new Set(), out = [];
+      for (let cy = Math.floor(minY * inv); cy <= Math.floor(maxY * inv); cy++) {
+        for (let cx = Math.floor(minX * inv); cx <= Math.floor(maxX * inv); cx++) {
+          const arr = grid.get(cx + ',' + cy); if (!arr) continue;
+          for (let i = 0; i < arr.length; i++) { const o = arr[i]; if (seen.has(o)) continue; seen.add(o); if (o.maxX < minX || o.minX > maxX || o.maxY < minY || o.minY > maxY) continue; out.push(o); }
+        }
+      }
+      return out;
+    };
+    const emitEdge = (edge) => {
+      const minX = Math.min(edge.ax, edge.bx), maxX = Math.max(edge.ax, edge.bx);
+      const minY = Math.min(edge.ay, edge.by), maxY = Math.max(edge.ay, edge.by);
+      const cand = queryOccluders(minX, minY, maxX, maxY);
+      const runs = clipEdge(edge.ax, edge.ay, edge.da, edge.bx, edge.by, edge.db, cand);
+      const ex = edge.bx - edge.ax, ey = edge.by - edge.ay;
+      for (let i = 0; i < runs.length; i++) {
+        const [t0, t1] = runs[i];
+        const p0 = { x: edge.ax + ex * t0, y: edge.ay + ey * t0 };
+        const p1 = { x: edge.ax + ex * t1, y: edge.ay + ey * t1 };
+        if (Math.hypot(p1.x - p0.x, p1.y - p0.y) < 0.4) continue;
+        const path = [p0, p1];
+        path.meta = { ...edge.meta };
+        paths.push(path);
+      }
+    };
+    const edgeKey = (e) => {
+      const ka = `${e.ax.toFixed(2)},${e.ay.toFixed(2)},${e.da.toFixed(1)}`;
+      const kb = `${e.bx.toFixed(2)},${e.by.toFixed(2)},${e.db.toFixed(1)}`;
+      return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+    };
+    const emittedEdges = new Set();
+    for (const bar of bars) {
+      for (const edge of bar.edges) {
+        const k = edgeKey(edge);
+        if (emittedEdges.has(k)) continue;
+        emittedEdges.add(k);
+        emitEdge(edge);
+      }
+      for (const o of bar.occluders) addOccluder(o);
+    }
+    if (p.showBarBase !== false) {
+      // Floor rim is the farthest geometry: clip it behind every bar.
+      const fc = [
+        surfaceSample(rect.left, rect.top, 0, p, bounds),
+        surfaceSample(rect.left + rect.width, rect.top, 0, p, bounds),
+        surfaceSample(rect.left + rect.width, rect.top + rect.height, 0, p, bounds),
+        surfaceSample(rect.left, rect.top + rect.height, 0, p, bounds),
+      ];
+      for (let i = 0; i < 4; i++) {
+        const sa = fc[i], sb = fc[(i + 1) % 4];
+        emitEdge({ ax: sa.point.x, ay: sa.point.y, da: sa.rotated.z, bx: sb.point.x, by: sb.point.y, db: sb.rotated.z, meta: { mode: 'bars', barFloor: true } });
+      }
+    }
+    return paths;
+  };
+
+  // ---------------------------------------------------------------------------
+  // N-sided bar footprints (Bar Sides + Bar Rotate).
+  //
+  // A footprint is a list of artwork-space (x,y) vertices fed to surfaceSample,
+  // so the polygon shape is fully decoupled from the projection. sides=4 + rotate=0
+  // stays on the legacy square path (byte-identical); every other side count or any
+  // rotation routes through buildPrismBars.
+  //
+  // Tiling with NO gaps at gap=0/rotate=0: 3 = alternating up/down triangle strips,
+  // 4 = square grid, 6 = pointy-top hex honeycomb. Other counts = a regular N-gon
+  // inscribed in each cell (gaps inherent, acceptable). Shared interior walls between
+  // equal/taller tiling neighbours are suppressed via an edge-ownership pre-pass, so
+  // flat regions stay clean exactly like the legacy quilt.
+  // ---------------------------------------------------------------------------
+  const polyCentroid = (verts) => {
+    let cx = 0, cy = 0;
+    for (const v of verts) { cx += v.x; cy += v.y; }
+    return { cx: cx / verts.length, cy: cy / verts.length };
+  };
+
+  // Shrink a footprint toward its centroid by gapFactor (Bar Gap) then rotate it
+  // about that centroid by `rotate` radians (Bar Rotate). gapFactor===1 && rotate===0
+  // is the identity (so an un-gapped, un-rotated footprint is exact).
+  const shapeFootprint = (verts, gapFactor, rotate) => {
+    const { cx, cy } = polyCentroid(verts);
+    const c = Math.cos(rotate), s = Math.sin(rotate);
+    return verts.map((v) => {
+      let dx = (v.x - cx) * gapFactor, dy = (v.y - cy) * gapFactor;
+      if (rotate) { const rx = dx * c - dy * s, ry = dx * s + dy * c; dx = rx; dy = ry; }
+      return { x: cx + dx, y: cy + dy };
+    });
+  };
+
+  // Round every corner of a footprint polygon by `frac` (Corner Radius, 0..1). Each
+  // corner is trimmed back along both adjacent edges by up to half the shorter edge
+  // (so frac=1 pulls the tangent points to the edge midpoints — a square becomes a
+  // near-circle) and replaced by a quadratic-Bézier fillet through the original
+  // vertex. Returns the polygon unchanged when frac<=0. Works for any side count.
+  const roundFootprint = (verts, frac) => {
+    const n = verts.length;
+    const f = clamp(finite(frac, 0), 0, 1);
+    if (n < 3 || f <= 0) return verts;
+    const steps = clamp(Math.round(8 * f), 2, 8);
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const P = verts[(i - 1 + n) % n], V = verts[i], N = verts[(i + 1) % n];
+      const d1 = Math.hypot(V.x - P.x, V.y - P.y);
+      const d2 = Math.hypot(N.x - V.x, N.y - V.y);
+      const cut = 0.5 * Math.min(d1, d2) * f;
+      if (cut < 1e-6 || d1 < 1e-9 || d2 < 1e-9) { out.push({ x: V.x, y: V.y }); continue; }
+      const t1 = { x: V.x - ((V.x - P.x) / d1) * cut, y: V.y - ((V.y - P.y) / d1) * cut };
+      const t2 = { x: V.x + ((N.x - V.x) / d2) * cut, y: V.y + ((N.y - V.y) / d2) * cut };
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps, mt = 1 - t;
+        out.push({
+          x: mt * mt * t1.x + 2 * mt * t * V.x + t * t * t2.x,
+          y: mt * mt * t1.y + 2 * mt * t * V.y + t * t * t2.y,
+        });
+      }
+    }
+    return out;
+  };
+
+  // Signed area in screen (y-down) coords. The legacy square winding
+  // [(x0,y0),(x0,y1),(x1,y1),(x1,y0)] is negative; faceVisible keys off the rotated
+  // normal sign, so every footprint must share that orientation or its top/walls read
+  // as back-facing (hidden). Reverse any polygon that comes out positive.
+  const signedArea = (v) => {
+    let a = 0;
+    for (let i = 0; i < v.length; i++) { const p1 = v[i], p2 = v[(i + 1) % v.length]; a += p1.x * p2.y - p2.x * p1.y; }
+    return a / 2;
+  };
+  const orientFootprint = (v) => (signedArea(v) > 0 ? v.slice().reverse() : v);
+
+  // Raw (full-size, pre-gap, pre-rotate) footprint polygons tiling the artwork rect.
+  const latticeFootprints = (sides, rect, rows, cols, cellW, cellH) => {
+    const cells = [];
+    if (sides === 3) {
+      // Alternating up/down triangles fill each row strip with no gaps; each triangle
+      // is its own bar (its own sampled height).
+      for (let r = 0; r < rows; r++) {
+        const yT = rect.top + r * cellH, yB = yT + cellH;
+        for (let j = 0; j < cols; j++) {
+          const xL = rect.left + j * cellW;
+          cells.push({ verts: [{ x: xL, y: yB }, { x: xL + cellW, y: yB }, { x: xL + cellW / 2, y: yT }] });
+          cells.push({ verts: [{ x: xL + cellW / 2, y: yT }, { x: xL + 1.5 * cellW, y: yT }, { x: xL + cellW, y: yB }] });
+        }
+      }
+      return cells;
+    }
+    if (sides === 6) {
+      // Pointy-top hex honeycomb: horizontal pitch = cellW, vertical pitch = 1.5*R,
+      // odd rows offset half a cell so neighbours share full edges.
+      const R = cellW / Math.sqrt(3);
+      const horiz = Math.sqrt(3) * R; // == cellW
+      const vert = 1.5 * R;
+      for (let row = 0; ; row++) {
+        const cy = rect.top + R + row * vert;
+        if (cy - R > rect.top + rect.height + 1e-6) break;
+        const off = (row & 1) ? horiz / 2 : 0;
+        for (let col = 0; ; col++) {
+          const cx = rect.left + horiz / 2 + off + col * horiz;
+          if (cx - horiz / 2 > rect.left + rect.width + 1e-6) break;
+          const verts = [];
+          for (let k = 0; k < 6; k++) {
+            const a = (Math.PI / 180) * (60 * k - 90);
+            verts.push({ x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) });
+          }
+          cells.push({ verts });
+        }
+      }
+      return cells;
+    }
+    // Regular N-gon inscribed in each square cell (5, 7, 8, and rotated squares).
+    const phase = (sides === 4) ? -Math.PI / 4 : -Math.PI / 2;
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const cx = rect.left + (x + 0.5) * cellW;
+        const cy = rect.top + (y + 0.5) * cellH;
+        const R = Math.min(cellW, cellH) / 2;
+        const verts = [];
+        for (let k = 0; k < sides; k++) {
+          const a = phase + (k / sides) * Math.PI * 2;
+          verts.push({ x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) });
+        }
+        cells.push({ verts });
+      }
+    }
+    return cells;
+  };
+
+  // N-sided extruded prisms with analytic hidden-line removal. Mirrors buildBars but
+  // generalizes the footprint to any polygon and drops the axis-aligned neighbour
+  // optimization in favour of a vertex-keyed edge-ownership pass.
+  const buildPrismBars = (p, bounds, sampler, sides, rotate) => {
+    const rect = artworkRect(p);
+    const rows = Math.max(2, Math.round(clamp(finite(p.barRows, 14), 2, 160)));
+    const cols = Math.max(2, Math.round(clamp(finite(p.barColumns, 14), 2, 160)));
+    const cellW = rect.width / cols;
+    const cellH = rect.height / rows;
+    const gap = clamp(finite(p.barGap, 0), 0, Math.max(0, Math.min(cellW, cellH) - 0.2));
+    const gapFactor = clamp(1 - gap / Math.min(cellW, cellH), 0, 1);
+    const cornerFrac = clamp(finite(p.barCornerRadius, 0) / 100, 0, 1); // Corner Radius (round bar corners)
+    const keepHidden = p.seeThrough !== false;
+    const hatchLight = p.hatchEnable ? G3.resolveLight(p) : null;
+
+    // One quantized height per footprint, sampled over its UV bounding box.
+    const rawCells = latticeFootprints(sides, rect, rows, cols, cellW, cellH);
+    const cells = [];
+    let footMinX = Infinity, footMinY = Infinity, footMaxX = -Infinity, footMaxY = -Infinity;
+    for (const rc of rawCells) {
+      let u0 = Infinity, v0 = Infinity, u1 = -Infinity, v1 = -Infinity;
+      for (const v of rc.verts) {
+        const uu = (v.x - rect.left) / rect.width, vv = (v.y - rect.top) / rect.height;
+        if (uu < u0) u0 = uu; if (uu > u1) u1 = uu; if (vv < v0) v0 = vv; if (vv > v1) v1 = vv;
+      }
+      const s = sampleBarFootprint(sampler, clamp(u0, 0, 1), clamp(v0, 0, 1), clamp(u1, 0, 1), clamp(v1, 0, 1), p);
+      let h = (p.clipBlackAreas && s.blackRatio >= 0.98) ? 0 : quantizeBarHeight(s.value, p);
+      if (h <= 0.01) continue;
+      const verts = roundFootprint(shapeFootprint(orientFootprint(rc.verts), gapFactor, rotate), cornerFrac);
+      let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity;
+      for (const v of verts) { if (v.x < mnx) mnx = v.x; if (v.x > mxx) mxx = v.x; if (v.y < mny) mny = v.y; if (v.y > mxy) mxy = v.y; }
+      if (mxx - mnx < 0.2 || mxy - mny < 0.2) continue;
+      // Accumulate the footprint extent so the floor rim can frame the actual art:
+      // polygonal lattices over/under-hang the artwork rect, so the base is grown to
+      // the footprint bounding box — the outermost sides/corners then touch the base
+      // on all four sides (a visible frame from above).
+      if (mnx < footMinX) footMinX = mnx; if (mny < footMinY) footMinY = mny;
+      if (mxx > footMaxX) footMaxX = mxx; if (mxy > footMaxY) footMaxY = mxy;
+      const { cx, cy } = polyCentroid(verts);
+      cells.push({ verts, h, cx, cy });
+    }
+    // Base rectangle = footprint bounding box (falls back to the artwork rect if no
+    // bars). Squares + rotate=0 never reach here (legacy path), so their base is
+    // unchanged; every polygonal/rotated/rounded footprint gets a framing base.
+    const baseRect = (cells.length && Number.isFinite(footMinX))
+      ? { left: footMinX, top: footMinY, width: footMaxX - footMinX, height: footMaxY - footMinY }
+      : rect;
+
+    const barHatch = [];
+    const hatchCap = hatchLight ? ((p.fastPreview || bounds.fastPreview) ? G3.previewCap(bounds, cells.length) : cells.length) : 0;
+    let hatchBars = 0;
+
+    if (keepHidden) {
+      // See-Through ON — full wireframe cage; each wall loop already includes its
+      // bottom edge, so the surface-contact line is present here for free.
+      const edgeMap = new Map();
+      const paths = [];
+      let cubeId = 0;
+      for (const cell of cells) {
+        const { verts, h } = cell;
+        const top = verts.map((v) => surfaceSample(v.x, v.y, h, p, bounds));
+        const bottom = verts.map((v) => surfaceSample(v.x, v.y, 0, p, bounds));
+        const depth = top.reduce((s, q) => s + q.rotated.z, 0) / top.length;
+        const topVisible = faceVisible(top);
+        addMappedLoop(edgeMap, top, !topVisible, { mode: 'bars', barTop: true, depth, cubeId, closed: true });
+        const n = top.length;
+        for (let k = 0; k < n; k++) {
+          const a = (k + 1) % n, b = k; // wound top→bottom for an outward normal
+          const face = [top[a], top[b], bottom[b], bottom[a]];
+          addMappedLoop(edgeMap, face, !faceVisible(face), { mode: 'bars', barSide: true, depth, cubeId });
+        }
+        if (hatchLight && topVisible && hatchBars < hatchCap) {
+          pushFaceHatch(barHatch, top, p, hatchLight, { mode: 'bars', barTop: true, depth });
+          hatchBars++;
+        }
+        cubeId++;
+      }
+      if (p.showBarBase !== false) {
+        const fc = [
+          surfaceSample(baseRect.left, baseRect.top, 0, p, bounds),
+          surfaceSample(baseRect.left + baseRect.width, baseRect.top, 0, p, bounds),
+          surfaceSample(baseRect.left + baseRect.width, baseRect.top + baseRect.height, 0, p, bounds),
+          surfaceSample(baseRect.left, baseRect.top + baseRect.height, 0, p, bounds),
+        ];
+        paths.push(pathFromSurfaceSamples(fc.concat([fc[0]]), { mode: 'bars', barFloor: true, closed: true }));
+      }
+      const edges = Array.from(edgeMap.values());
+      paths.push(...edges.sort((a, b) => finite(a.meta?.depth, 0) - finite(b.meta?.depth, 0)));
+      if (barHatch.length) paths.push(...barHatch);
+      return paths;
+    }
+
+    // See-Through OFF — solid hidden-line removal. Edge-ownership pre-pass records the
+    // tallest bar meeting each footprint edge (gap=0 only — a gap shrinks footprints
+    // apart so no edge is shared). A wall draws its riser + bottom contact line ONLY
+    // where it steps down to a shorter neighbour (or the floor); shared walls between
+    // equal/taller neighbours are suppressed, keeping plateaus clean.
+    const wallKey = (a, b) => {
+      const ka = `${a.x.toFixed(2)},${a.y.toFixed(2)}`;
+      const kb = `${b.x.toFixed(2)},${b.y.toFixed(2)}`;
+      return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+    };
+    const owners = new Map();
+    if (gap <= 0) {
+      for (const cell of cells) {
+        const vs = cell.verts, n = vs.length;
+        for (let k = 0; k < n; k++) {
+          const key = wallKey(vs[k], vs[(k + 1) % n]);
+          const arr = owners.get(key); if (arr) arr.push(cell.h); else owners.set(key, [cell.h]);
+        }
+      }
+    }
+    const neighbourHeight = (a, b, h) => {
+      if (gap > 0) return 0;
+      const arr = owners.get(wallKey(a, b)); if (!arr) return 0;
+      let nh = 0, selfRemoved = false;
+      for (const hv of arr) { if (!selfRemoved && hv === h) { selfRemoved = true; continue; } if (hv > nh) nh = hv; }
+      return nh;
+    };
+
+    const bars = [];
+    let cubeId = 0;
+    for (const cell of cells) {
+      const { verts, h, cx, cy } = cell;
+      const n = verts.length;
+      const top = verts.map((v) => surfaceSample(v.x, v.y, h, p, bounds));
+      const bottom = verts.map((v) => surfaceSample(v.x, v.y, 0, p, bounds));
+      const depth = top.reduce((s, q) => s + q.rotated.z, 0) / top.length;
+      const sortDepth = surfaceSample(cx, cy, 0, p, bounds).rotated.z;
+      const occluders = [];
+      const oTop = buildOccluder(top); if (oTop) occluders.push(oTop);
+      const edges = [];
+      const mkEdge = (sa, sb, meta) => ({ ax: sa.point.x, ay: sa.point.y, da: sa.rotated.z, bx: sb.point.x, by: sb.point.y, db: sb.rotated.z, meta });
+      for (let k = 0; k < n; k++) {
+        // Walk the edge BACKWARDS (a = k+1, b = k) so the wall [top[a],top[b],
+        // bottom[b],bottom[a]] is wound top→bottom with an OUTWARD normal — matching
+        // the legacy square path. (Forward winding inverts the normal, so faceVisible
+        // selected the BACK walls: front walls vanished and the back walls/occluders
+        // showed through, breaking watertightness.)
+        const a = (k + 1) % n, b = k;
+        const wall = [top[a], top[b], bottom[b], bottom[a]];
+        const camFacing = faceVisible(wall);
+        if (camFacing) { const o = buildOccluder(wall); if (o) occluders.push(o); }
+        edges.push(mkEdge(top[a], top[b], { mode: 'bars', barTop: true, depth, cubeId }));
+        const nh = neighbourHeight(verts[a], verts[b], h);
+        if (nh >= h - 1e-4) continue; // neighbour as tall or taller → shared wall, no riser
+        if (camFacing) {
+          const base = surfaceSample(verts[a].x, verts[a].y, nh, p, bounds);
+          const base2 = surfaceSample(verts[b].x, verts[b].y, nh, p, bounds);
+          edges.push(mkEdge(base, top[a], { mode: 'bars', barSide: true, depth, cubeId }));
+          edges.push(mkEdge(base2, top[b], { mode: 'bars', barSide: true, depth, cubeId }));
+          // Bottom contact line where the wall meets the surface/shorter neighbour.
+          edges.push(mkEdge(base2, base, { mode: 'bars', barSide: true, barContact: true, depth, cubeId }));
+        }
+      }
+      if (faceVisible(top) && hatchLight && hatchBars < hatchCap) {
+        const tmp = [];
+        pushFaceHatch(tmp, top, p, hatchLight, { mode: 'bars', barTop: true, depth, hatch: true });
+        if (tmp.length) {
+          const plane = oTop ? oTop.plane : null;
+          for (const seg of tmp) for (let i = 0; i < seg.length - 1; i++) {
+            const da = plane ? plane.A * seg[i].x + plane.B * seg[i].y + plane.C : depth;
+            const dbp = plane ? plane.A * seg[i + 1].x + plane.B * seg[i + 1].y + plane.C : depth;
+            edges.push({ ax: seg[i].x, ay: seg[i].y, da, bx: seg[i + 1].x, by: seg[i + 1].y, db: dbp, meta: { ...seg.meta } });
+          }
+          hatchBars++;
+        }
+      }
+      bars.push({ sortDepth, edges, occluders });
+      cubeId++;
+    }
+    return finishSolidBars(bars, p, bounds, baseRect);
+  };
+
   const buildBars = (p, bounds, sampler) => {
     const rect = artworkRect(p);
     const rows = Math.max(2, Math.round(clamp(finite(p.barRows, 14), 2, 160)));
@@ -805,6 +1201,15 @@
     const insetX = gap / 2;
     const insetY = gap / 2;
     const keepHidden = p.seeThrough !== false;
+    // Bar Sides / Bar Rotate. The default square grid (4 sides, no rotation) keeps the
+    // legacy code below byte-identical; anything else routes to the N-sided prism path.
+    const sides = Math.round(clamp(finite(p.barSides, 4), 3, 8));
+    const rotate = finite(p.barRotate, 0) * Math.PI / 180;
+    const cornerFrac = clamp(finite(p.barCornerRadius, 0) / 100, 0, 1);
+    // The legacy square fast-path stays byte-identical only for plain 4-sided,
+    // un-rotated, sharp-cornered bars; rounding (like Sides/Rotate) routes to the
+    // general N-gon prism builder, which rounds the footprint polygon.
+    if (!(sides === 4 && Math.abs(rotate) < 1e-9 && cornerFrac <= 0)) return buildPrismBars(p, bounds, sampler, sides, rotate);
     const edgeMap = new Map();
     const sideDefinitions = [[0, 3], [3, 2], [2, 1], [1, 0]];
     // Lambert hatch the lit top faces (additive, off by default).
@@ -944,6 +1349,9 @@
             const base2 = surfaceSample(cornerXY[b][0], cornerXY[b][1], nh, p, bounds);
             edges.push(mkEdge(base, top[a], { mode: 'bars', barSide: true, depth, cubeId }));
             edges.push(mkEdge(base2, top[b], { mode: 'bars', barSide: true, depth, cubeId }));
+            // Bottom contact line where the exposed wall meets the surface/shorter
+            // neighbour (height nh) — without it the risers vanish into the plane.
+            edges.push(mkEdge(base2, base, { mode: 'bars', barSide: true, barContact: true, depth, cubeId }));
           }
         });
         if (faceVisible(top) && hatchLight && hatchBars < hatchCap) {
@@ -962,82 +1370,7 @@
         bars.push({ sortDepth, edges, occluders });
       }
     }
-    bars.sort((a, b) => b.sortDepth - a.sortDepth); // nearest first
-
-    // Lazy uniform grid of accumulated occluder faces for broad-phase queries.
-    let cellSum = 0, cellN = 0;
-    bars.forEach((bar) => bar.occluders.forEach((o) => { cellSum += (o.maxX - o.minX) + (o.maxY - o.minY); cellN += 2; }));
-    const gridCell = cellN ? Math.max(4, cellSum / cellN) : 16;
-    const inv = 1 / gridCell;
-    const grid = new Map();
-    const addOccluder = (o) => {
-      for (let cy = Math.floor(o.minY * inv); cy <= Math.floor(o.maxY * inv); cy++) {
-        for (let cx = Math.floor(o.minX * inv); cx <= Math.floor(o.maxX * inv); cx++) {
-          const k = cx + ',' + cy; let arr = grid.get(k); if (!arr) grid.set(k, (arr = [])); arr.push(o);
-        }
-      }
-    };
-    const queryOccluders = (minX, minY, maxX, maxY) => {
-      const seen = new Set(), out = [];
-      for (let cy = Math.floor(minY * inv); cy <= Math.floor(maxY * inv); cy++) {
-        for (let cx = Math.floor(minX * inv); cx <= Math.floor(maxX * inv); cx++) {
-          const arr = grid.get(cx + ',' + cy); if (!arr) continue;
-          for (let i = 0; i < arr.length; i++) { const o = arr[i]; if (seen.has(o)) continue; seen.add(o); if (o.maxX < minX || o.minX > maxX || o.maxY < minY || o.minY > maxY) continue; out.push(o); }
-        }
-      }
-      return out;
-    };
-    const emitEdge = (edge) => {
-      const minX = Math.min(edge.ax, edge.bx), maxX = Math.max(edge.ax, edge.bx);
-      const minY = Math.min(edge.ay, edge.by), maxY = Math.max(edge.ay, edge.by);
-      const cand = queryOccluders(minX, minY, maxX, maxY);
-      const runs = clipEdge(edge.ax, edge.ay, edge.da, edge.bx, edge.by, edge.db, cand);
-      const ex = edge.bx - edge.ax, ey = edge.by - edge.ay;
-      for (let i = 0; i < runs.length; i++) {
-        const [t0, t1] = runs[i];
-        const p0 = { x: edge.ax + ex * t0, y: edge.ay + ey * t0 };
-        const p1 = { x: edge.ax + ex * t1, y: edge.ay + ey * t1 };
-        if (Math.hypot(p1.x - p0.x, p1.y - p0.y) < 0.4) continue;
-        const path = [p0, p1];
-        path.meta = { ...edge.meta };
-        paths.push(path);
-      }
-    };
-    // De-dupe identical edges so the pen draws each once: the shared top grid edge
-    // between two equal-height neighbours, and the riser shared by a cell's two
-    // visible walls at their common corner. Key on rounded screen endpoints + depth so
-    // genuinely distinct edges (a step's two top edges sit at different heights →
-    // different depths) survive. Bars are processed nearest-first, so the surviving
-    // copy is clipped in the nearest (correct) depth context.
-    const edgeKey = (e) => {
-      const ka = `${e.ax.toFixed(2)},${e.ay.toFixed(2)},${e.da.toFixed(1)}`;
-      const kb = `${e.bx.toFixed(2)},${e.by.toFixed(2)},${e.db.toFixed(1)}`;
-      return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
-    };
-    const emittedEdges = new Set();
-    for (const bar of bars) {
-      for (const edge of bar.edges) {
-        const k = edgeKey(edge);
-        if (emittedEdges.has(k)) continue;
-        emittedEdges.add(k);
-        emitEdge(edge);
-      }
-      for (const o of bar.occluders) addOccluder(o);
-    }
-    if (p.showBarBase !== false) {
-      // Floor rim is the farthest geometry: clip it behind every bar.
-      const fc = [
-        surfaceSample(rect.left, rect.top, 0, p, bounds),
-        surfaceSample(rect.left + rect.width, rect.top, 0, p, bounds),
-        surfaceSample(rect.left + rect.width, rect.top + rect.height, 0, p, bounds),
-        surfaceSample(rect.left, rect.top + rect.height, 0, p, bounds),
-      ];
-      for (let i = 0; i < 4; i++) {
-        const sa = fc[i], sb = fc[(i + 1) % 4];
-        emitEdge({ ax: sa.point.x, ay: sa.point.y, da: sa.rotated.z, bx: sb.point.x, by: sb.point.y, db: sb.rotated.z, meta: { mode: 'bars', barFloor: true } });
-      }
-    }
-    return paths;
+    return finishSolidBars(bars, p, bounds, rect);
   };
 
   // ---------------------------------------------------------------------------

@@ -1320,6 +1320,150 @@
   font-family: var(--font-mono);
 }
 
+/* ─── Drawing-order (plot progress) slider ───────────────────────────── */
+[data-ui-skin] .draw-order-bar {
+  flex: 0 0 auto;
+  padding: 7px 12px 10px;
+  border-top: 1px solid var(--ui-border);
+  background: var(--ui-panel);
+}
+[data-ui-skin] .draw-order-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+[data-ui-skin] .draw-order-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ui-muted);
+}
+[data-ui-skin] .draw-order-value {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ui-accent);
+  font-variant-numeric: tabular-nums;
+}
+[data-ui-skin] .draw-order-head-right {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+[data-ui-skin] .draw-order-settings {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ui-muted);
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+[data-ui-skin] .draw-order-settings:hover {
+  color: var(--ui-accent);
+  background: var(--ui-border);
+}
+/* Eye toggle: shows/hides the line-sort overlay order. Closed + grey by default;
+   open with a start→end print-order gradient outline when enabled. */
+[data-ui-skin] .draw-order-overlay-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ui-muted);
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+[data-ui-skin] .draw-order-overlay-toggle:hover {
+  background: var(--ui-border);
+  color: var(--ui-text-2);
+}
+[data-ui-skin] .draw-order-overlay-toggle .eye-open {
+  display: none;
+}
+[data-ui-skin] .draw-order-overlay-toggle .eye-closed {
+  display: inline;
+}
+[data-ui-skin] .draw-order-overlay-toggle.is-on .eye-open {
+  display: inline;
+  stroke: url(#draw-order-eye-grad);
+}
+[data-ui-skin] .draw-order-overlay-toggle.is-on .eye-closed {
+  display: none;
+}
+[data-ui-skin] .draw-order-overlay-toggle.is-on:hover {
+  background: var(--ui-border);
+}
+/* Plot estimate readout: distance | lines | time, pipe-separated, small + muted. */
+[data-ui-skin] .draw-order-stats {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  color: var(--ui-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-ui-skin] .draw-order-stat-sep {
+  color: var(--ui-border);
+}
+/* Low-profile track carrying a vivid plot-progress gradient. The filled portion is
+   painted with a left-anchored gradient via a CSS var the JS updates on input. */
+[data-ui-skin] .draw-order-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 6px;
+  outline: none;
+  cursor: pointer;
+  --draw-order-fill: 100%;
+  background:
+    linear-gradient(90deg,
+      #22d3ee 0%, #6366f1 35%, #a855f7 60%, #ec4899 82%, #f59e0b 100%)
+      no-repeat,
+    var(--ui-border);
+  background-size: var(--draw-order-fill) 100%, 100% 100%;
+}
+[data-ui-skin] .draw-order-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--ui-text, #fff);
+  border: 2px solid var(--ui-accent);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35);
+  transition: transform 0.08s ease;
+}
+[data-ui-skin] .draw-order-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.18);
+}
+[data-ui-skin] .draw-order-slider::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--ui-text, #fff);
+  border: 2px solid var(--ui-accent);
+}
+
 /* ─── Header & brand ─────────────────────────────────────────────────── */
 [data-ui-skin] #app-header {
   height: 38px;
@@ -7892,12 +8036,40 @@
   pointer-events: none;
 }
 
+.optimization-overlay-legend-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
 .optimization-overlay-legend-title {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--ui-text-2);
-  margin-bottom: 6px;
+}
+/* The legend is pointer-events:none so it never blocks the canvas; re-enable
+   pointer events on the gear alone so it stays clickable (matches the export
+   menu's legend gear). */
+.optimization-overlay-legend-settings {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ui-text-2);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.optimization-overlay-legend-settings:hover {
+  color: var(--ui-accent);
+  background: var(--ui-border);
 }
 
 .optimization-overlay-legend-gradient {
@@ -7911,6 +8083,41 @@
   justify-content: space-between;
   font-size: 9px;
   color: var(--ui-text-2);
+}
+/* Inline color/thickness dialogue toggled by the legend gear (mirrors the export
+   menu's legend settings). pointer-events:auto because the legend itself is
+   pass-through. */
+.optimization-overlay-legend-settings-panel {
+  pointer-events: auto;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ui-border);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.optimization-overlay-legend-setting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.optimization-overlay-legend-setting-label {
+  flex: 0 0 78px;
+  font-size: 10px;
+  color: var(--ui-text-2);
+}
+.optimization-overlay-legend-setting .color-thickness-pill {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--ui-border-hi);
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: center;
+}
+.optimization-overlay-legend-setting input[type="range"] {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .color-thickness-control {

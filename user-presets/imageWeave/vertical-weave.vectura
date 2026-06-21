@@ -1,0 +1,7 @@
+{
+  "type": "vectura", "version": null, "name": "Vertical Weave",
+  "meta": { "presetId": "imageweave-vertical-weave", "group": "Geometric", "system": "imageWeave", "savedAt": 0 },
+  "layers": [ { "type": "imageWeave", "params": {
+    "lineCount": 160, "lineAngle": 90, "amplitude": 1.8, "frequency": 5600, "detail": 72, "continuity": "none", "drawWhiteAreas": true, "brightness": 0, "contrast": 8, "blackPoint": 0, "whitePoint": 100, "invert": false
+  } } ]
+}
