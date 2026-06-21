@@ -4,6 +4,33 @@ All notable changes to this project should be documented in this file.
 
 The format is intentionally human-curated with an `Unreleased` section that collects work before release.
 
+## 1.2.13 - 2026-06-21
+
+### Changed
+- **Draw Order slider polish.** The progress bar now paints the full start→end print-order
+  gradient across the *entire* track width and the fill simply **reveals** the left portion of
+  it (an opaque track-coloured cap covers the unfilled right), so the colours map to absolute
+  plot position instead of squeezing the whole gradient into the filled width. The slider thumb's
+  halo (ring + glow) is now **tinted with the gradient colour sampled at the handle's current
+  stop**, recolouring live as it drags. The retired native runnable-track line that bisected the
+  bar is suppressed, and the `Start … distance | lines | time … End` readout is consolidated onto
+  a single, slightly smaller row.
+
+## 1.2.12 - 2026-06-21
+
+### Changed
+- **Draw Order panel — Start/End anchors and the plot estimate now share one row.** The
+  `Start … End` gradient labels and the `distance | lines | time` readout collapsed into a single
+  `.draw-order-meta` flex row (`Start … dist | lines | time … End`), so the Start/End anchors frame
+  the plot estimate on one line instead of stacking into two. Labels dropped to 8px to fit, and the
+  global 2px runnable-track line is suppressed on the draw-order slider (`::-webkit-slider-runnable-track`
+  / `::-moz-range-track` → transparent) so only the print-order gradient shows, with no blue-grey bar
+  bisecting the track.
+- **Line-sort colour controls relocated into the Draw Order panel** (carried from 1.2.11, previously
+  undocumented). The on-canvas colour legend was retired; its colour-configuration window now opens
+  from the palette button in the Draw Order panel, with the original element IDs preserved so the
+  wiring holds.
+
 ## 1.2.10 - 2026-06-21
 
 ### Changed

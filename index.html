@@ -19,10 +19,10 @@
   <!-- New "Skin SDK" stylesheets: structural tokens + motion keyframes are skin-independent;
        components.css provides skin-agnostic component CSS that all skins share; the per-skin
        palette file is swapped at runtime by SkinManager via the active-skin <link>. -->
-  <link rel="stylesheet" href="./src/ui/skin/tokens.css?v=1.2.11" />
-  <link rel="stylesheet" href="./src/ui/skin/motion.css?v=1.2.11" />
-  <link rel="stylesheet" href="./src/ui/skin/components.css?v=1.2.11" />
-  <link rel="stylesheet" id="active-skin" href="./src/ui/skin/meridian-dark.css?v=1.2.11" />
+  <link rel="stylesheet" href="./src/ui/skin/tokens.css?v=1.2.13" />
+  <link rel="stylesheet" href="./src/ui/skin/motion.css?v=1.2.13" />
+  <link rel="stylesheet" href="./src/ui/skin/components.css?v=1.2.13" />
+  <link rel="stylesheet" id="active-skin" href="./src/ui/skin/meridian-dark.css?v=1.2.13" />
 
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -229,7 +229,7 @@
       <div class="pane-header pane-header-left p-4 border-b border-vectura-border flex justify-between items-center">
         <span class="pane-title font-bold text-vectura-accent">GENERATOR</span>
 
-        <span class="pane-meta text-[11px] text-vectura-muted">V.1.2.11</span>
+        <span class="pane-meta text-[11px] text-vectura-muted">V.1.2.13</span>
 
         <button id="btn-pane-toggle-left" class="pane-toggle pane-toggle-left" type="button"
           aria-label="Toggle left pane">
@@ -707,17 +707,17 @@
           </div>
           <input id="draw-order-input" class="draw-order-slider" type="range" min="0" max="100" step="1" value="100"
             aria-label="Drawing order progress" />
-          <div class="draw-order-ends" aria-hidden="true">
-            <span>Start</span>
-            <span>End</span>
-          </div>
-          <div id="draw-order-stats" class="draw-order-stats" aria-live="polite"
-            title="Estimated plot distance, line count, and time">
-            <span id="draw-order-stat-dist">0m</span>
-            <span class="draw-order-stat-sep">|</span>
-            <span id="draw-order-stat-lines">0 lines</span>
-            <span class="draw-order-stat-sep">|</span>
-            <span id="draw-order-stat-time">~0:00</span>
+          <div class="draw-order-meta">
+            <span class="draw-order-end" aria-hidden="true">Start</span>
+            <div id="draw-order-stats" class="draw-order-stats" aria-live="polite"
+              title="Estimated plot distance, line count, and time">
+              <span id="draw-order-stat-dist">0m</span>
+              <span class="draw-order-stat-sep">|</span>
+              <span id="draw-order-stat-lines">0 lines</span>
+              <span class="draw-order-stat-sep">|</span>
+              <span id="draw-order-stat-time">~0:00</span>
+            </div>
+            <span class="draw-order-end" aria-hidden="true">End</span>
           </div>
           <!-- Colour configuration window opened by the palette button above. Relocated
                here from the retired on-canvas legend; IDs preserved so the wiring holds. -->
@@ -821,103 +821,103 @@
     <div id="optimization-controls"></div>
   </div>
 
-  <script src="./src/config/version.js?v=1.2.11" defer></script>
-  <script src="./src/config/machines.js?v=1.2.11" defer></script>
-  <script src="./src/config/defaults.js?v=1.2.11" defer></script>
-  <script src="./src/config/modifiers.js?v=1.2.11" defer></script>
-  <script src="./src/config/palettes.js?v=1.2.11" defer></script>
-  <script src="./src/config/user-presets.js?v=1.2.11" defer></script>
-  <script src="./src/config/descriptions.js?v=1.2.11" defer></script>
-  <script src="./src/config/patterns.js?v=1.2.11" defer></script>
-  <script src="./src/config/noise-image-presets.js?v=1.2.11" defer></script>
-  <script src="./src/core/utils.js?v=1.2.11" defer></script>
-  <script src="./src/core/svg-sanitize.js?v=1.2.11" defer></script>
-  <script src="./src/core/pattern-registry.js?v=1.2.11" defer></script>
-  <script src="./src/config/ui-constants.js?v=1.2.11" defer></script>
-  <script src="./src/config/petal-profiles/library.js?v=1.2.11" defer></script>
-  <script src="./src/config/algorithm-tuning.js?v=1.2.11" defer></script>
-  <script src="./src/config/preset-libraries.js?v=1.2.11" defer></script>
-  <script src="./src/config/preset-name-heuristics.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithm-utils.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/geometry3d.js?v=1.2.11" defer></script>
-  <script src="./src/core/stl-parser.js?v=1.2.11" defer></script>
-  <script src="./src/core/pen-validate.js?v=1.2.11" defer></script>
-  <script src="./src/core/validators.js?v=1.2.11" defer></script>
-  <script src="./src/core/rng.js?v=1.2.11" defer></script>
-  <script src="./src/core/noise.js?v=1.2.11" defer></script>
-  <script src="./src/core/noise-rack.js?v=1.2.11" defer></script>
-  <script src="./src/core/noise-image-render.js?v=1.2.11" defer></script>
-  <script src="./src/core/geometry-utils.js?v=1.2.11" defer></script>
-  <script src="./src/core/optimization-utils.js?v=1.2.11" defer></script>
-  <script src="./src/core/path-boolean.js?v=1.2.11" defer></script>
-  <script src="./src/vendor/polygon-clipping.umd.js?v=1.2.11" defer></script>
-  <script src="./src/core/fill-boolean.js?v=1.2.11" defer></script>
-  <script src="./src/core/masking.js?v=1.2.11" defer></script>
-  <script src="./src/core/pathfinder-ops.js?v=1.2.11" defer></script>
-  <script src="./src/core/paint-bucket-ops.js?v=1.2.11" defer></script>
-  <script src="./src/core/wallpaper-groups.js?v=1.2.11" defer></script>
-  <script src="./src/core/modifiers.js?v=1.2.11" defer></script>
-  <script src="./src/core/morph-modifier.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/petalis.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/flowfield.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/boids.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/attractor.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/hyphae.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/shapepack.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/lissajous.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/harmonograph-core.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/harmonograph-modulation.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/harmonograph.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/pendula.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/horizon.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/terrain.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/wavetable.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/rings.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/topo.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/rainfall.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/spiral.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/grid.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/phylla.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/petalisdesigner.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/pattern.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/svgdistort.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/spirograph.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/spiralizer.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/polyhedron.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/topoform.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/raster-plane.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/stroke-font.js?v=1.2.11" defer></script>
-  <script src="./src/core/google-fonts.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/text.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/image-source-util.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/halftone.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/image-weave.js?v=1.2.11" defer></script>
-  <script src="./src/core/algorithms/index.js?v=1.2.11" defer></script>
-  <script src="./src/core/layer.js?v=1.2.11" defer></script>
-  <script src="./src/core/engine.js?v=1.2.11" defer></script>
-  <script src="./src/core/align-ops.js?v=1.2.11" defer></script>
-  <script src="./src/render/renderer.js?v=1.2.11" defer></script>
+  <script src="./src/config/version.js?v=1.2.13" defer></script>
+  <script src="./src/config/machines.js?v=1.2.13" defer></script>
+  <script src="./src/config/defaults.js?v=1.2.13" defer></script>
+  <script src="./src/config/modifiers.js?v=1.2.13" defer></script>
+  <script src="./src/config/palettes.js?v=1.2.13" defer></script>
+  <script src="./src/config/user-presets.js?v=1.2.13" defer></script>
+  <script src="./src/config/descriptions.js?v=1.2.13" defer></script>
+  <script src="./src/config/patterns.js?v=1.2.13" defer></script>
+  <script src="./src/config/noise-image-presets.js?v=1.2.13" defer></script>
+  <script src="./src/core/utils.js?v=1.2.13" defer></script>
+  <script src="./src/core/svg-sanitize.js?v=1.2.13" defer></script>
+  <script src="./src/core/pattern-registry.js?v=1.2.13" defer></script>
+  <script src="./src/config/ui-constants.js?v=1.2.13" defer></script>
+  <script src="./src/config/petal-profiles/library.js?v=1.2.13" defer></script>
+  <script src="./src/config/algorithm-tuning.js?v=1.2.13" defer></script>
+  <script src="./src/config/preset-libraries.js?v=1.2.13" defer></script>
+  <script src="./src/config/preset-name-heuristics.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithm-utils.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/geometry3d.js?v=1.2.13" defer></script>
+  <script src="./src/core/stl-parser.js?v=1.2.13" defer></script>
+  <script src="./src/core/pen-validate.js?v=1.2.13" defer></script>
+  <script src="./src/core/validators.js?v=1.2.13" defer></script>
+  <script src="./src/core/rng.js?v=1.2.13" defer></script>
+  <script src="./src/core/noise.js?v=1.2.13" defer></script>
+  <script src="./src/core/noise-rack.js?v=1.2.13" defer></script>
+  <script src="./src/core/noise-image-render.js?v=1.2.13" defer></script>
+  <script src="./src/core/geometry-utils.js?v=1.2.13" defer></script>
+  <script src="./src/core/optimization-utils.js?v=1.2.13" defer></script>
+  <script src="./src/core/path-boolean.js?v=1.2.13" defer></script>
+  <script src="./src/vendor/polygon-clipping.umd.js?v=1.2.13" defer></script>
+  <script src="./src/core/fill-boolean.js?v=1.2.13" defer></script>
+  <script src="./src/core/masking.js?v=1.2.13" defer></script>
+  <script src="./src/core/pathfinder-ops.js?v=1.2.13" defer></script>
+  <script src="./src/core/paint-bucket-ops.js?v=1.2.13" defer></script>
+  <script src="./src/core/wallpaper-groups.js?v=1.2.13" defer></script>
+  <script src="./src/core/modifiers.js?v=1.2.13" defer></script>
+  <script src="./src/core/morph-modifier.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/petalis.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/flowfield.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/boids.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/attractor.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/hyphae.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/shapepack.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/lissajous.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/harmonograph-core.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/harmonograph-modulation.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/harmonograph.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/pendula.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/horizon.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/terrain.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/wavetable.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/rings.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/topo.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/rainfall.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/spiral.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/grid.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/phylla.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/petalisdesigner.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/pattern.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/svgdistort.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/spirograph.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/spiralizer.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/polyhedron.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/topoform.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/raster-plane.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/stroke-font.js?v=1.2.13" defer></script>
+  <script src="./src/core/google-fonts.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/text.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/image-source-util.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/halftone.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/image-weave.js?v=1.2.13" defer></script>
+  <script src="./src/core/algorithms/index.js?v=1.2.13" defer></script>
+  <script src="./src/core/layer.js?v=1.2.13" defer></script>
+  <script src="./src/core/engine.js?v=1.2.13" defer></script>
+  <script src="./src/core/align-ops.js?v=1.2.13" defer></script>
+  <script src="./src/render/renderer.js?v=1.2.13" defer></script>
   <!-- Skin SDK: tokens.js exposes window.Vectura.UI.tokens.get for renderer/UI lookups;
        skin-manager.js owns the active <link id="active-skin"> swap and dispatches the
        vectura:skin-change event. Both must load before app.js (which calls applyTheme
        in its constructor). -->
-  <script src="./src/ui/skin/tokens.js?v=1.2.11" defer></script>
-  <script src="./src/ui/skin/skin-manager.js?v=1.2.11" defer></script>
-  <script src="./src/ui/icons.js?v=1.2.11" defer></script>
+  <script src="./src/ui/skin/tokens.js?v=1.2.13" defer></script>
+  <script src="./src/ui/skin/skin-manager.js?v=1.2.13" defer></script>
+  <script src="./src/ui/icons.js?v=1.2.13" defer></script>
   <!-- ui/utils.js is the canonical home for Vectura.UI.utils (clamp, escapeHtml,
        formatNumber, etc.). Must load BEFORE any other UI script that consumes
        these helpers at IIFE-execution time — including ui-pattern-designer.js,
        which captures `escapeHtml` into an IIFE-local alias. -->
-  <script src="./src/ui/utils.js?v=1.2.11" defer></script>
-  <script src="./src/ui/randomization-utils.js?v=1.2.11" defer></script>
-  <script src="./src/ui/ui-touch.js?v=1.2.11" defer></script>
-  <script src="./src/ui/ui-document-units.js?v=1.2.11" defer></script>
-  <script src="./src/ui/ui-randomization.js?v=1.2.11" defer></script>
-  <script src="./src/ui/ui-fill-panel.js?v=1.2.11" defer></script>
-  <script src="./src/ui/ui-pattern-designer.js?v=1.2.11" defer></script>
+  <script src="./src/ui/utils.js?v=1.2.13" defer></script>
+  <script src="./src/ui/randomization-utils.js?v=1.2.13" defer></script>
+  <script src="./src/ui/ui-touch.js?v=1.2.13" defer></script>
+  <script src="./src/ui/ui-document-units.js?v=1.2.13" defer></script>
+  <script src="./src/ui/ui-randomization.js?v=1.2.13" defer></script>
+  <script src="./src/ui/ui-fill-panel.js?v=1.2.13" defer></script>
+  <script src="./src/ui/ui-pattern-designer.js?v=1.2.13" defer></script>
   <!-- Phase 3 closure: ui-noise-rack.js dissolved into panels/noise-rack-panel.js. -->
-  <script src="./src/ui/export-animated-svg.js?v=1.2.11" defer></script>
-  <script src="./src/ui/ui-file-io.js?v=1.2.11" defer></script>
+  <script src="./src/ui/export-animated-svg.js?v=1.2.13" defer></script>
+  <script src="./src/ui/ui-file-io.js?v=1.2.13" defer></script>
   <!-- Phase 3 closure: ui-auto-colorize.js dissolved into panels/auto-colorize-panel.js. -->
   <!-- Meridian Unit 1.5: wave/noise option tables + algo NOISE_DEFS + Petalis
        registry data. Must load BEFORE controls-registry.js + src/ui/ui.js so
@@ -926,90 +926,90 @@
   <!-- Unit 1.10 (2026-05-20): `_ui-legacy.js` was deleted; its IIFE merged
        into src/ui/ui.js (the consolidated runtime UI entry). -->
 
-  <script src="./src/ui/panels/control-defs-data.js?v=1.2.11" defer></script>
+  <script src="./src/ui/panels/control-defs-data.js?v=1.2.13" defer></script>
   <!-- ui-petal-designer.js binds shading/modifier factories from
        ControlDefsData at IIFE time, so it must load AFTER control-defs-data.js
        and before src/ui/ui.js (which mixes its methods into UI.prototype). -->
-  <script src="./src/ui/ui-petal-designer.js?v=1.2.11" defer></script>
-  <script src="./src/ui/controls-registry.js?v=1.2.11" defer></script>
-  <script src="./src/ui/panels/algo-config-panel.js?v=1.2.11" defer></script>
-  <script src="./src/ui/shell/theme-switcher.js?v=1.2.11" defer></script>
-  <script src="./src/ui/shell/menubar.js?v=1.2.11" defer></script>
-  <script src="./src/ui/shell/pane-left.js?v=1.2.11" defer></script>
-  <script src="./src/ui/shell/pane-right.js?v=1.2.11" defer></script>
-  <script src="./src/ui/shell/workspace.js?v=1.2.11" defer></script>
-  <script src="./src/ui/shell/bottom-pane.js?v=1.2.11" defer></script>
-  <script src="./src/ui/shell/toolbar.js?v=1.2.11" defer></script>
-  <script src="./src/ui/shell/header.js?v=1.2.11" defer></script>
-  <script src="./src/ui/panels/formula-panel.js?v=1.2.11" defer></script>
-  <script src="./src/ui/panels/auto-colorize-panel.js?v=1.2.11" defer></script>
-  <script src="./src/ui/panels/noise-rack-panel.js?v=1.2.11" defer></script>
-  <script src="./src/ui/panels/transform-panel.js?v=1.2.11" defer></script>
-  <script src="./src/ui/panels/layers-panel.js?v=1.2.11" defer></script>
-  <script src="./src/ui/panels/pens-panel.js?v=1.2.11" defer></script>
-  <script src="./src/ui/panels/modifiers-panel.js?v=1.2.11" defer></script>
+  <script src="./src/ui/ui-petal-designer.js?v=1.2.13" defer></script>
+  <script src="./src/ui/controls-registry.js?v=1.2.13" defer></script>
+  <script src="./src/ui/panels/algo-config-panel.js?v=1.2.13" defer></script>
+  <script src="./src/ui/shell/theme-switcher.js?v=1.2.13" defer></script>
+  <script src="./src/ui/shell/menubar.js?v=1.2.13" defer></script>
+  <script src="./src/ui/shell/pane-left.js?v=1.2.13" defer></script>
+  <script src="./src/ui/shell/pane-right.js?v=1.2.13" defer></script>
+  <script src="./src/ui/shell/workspace.js?v=1.2.13" defer></script>
+  <script src="./src/ui/shell/bottom-pane.js?v=1.2.13" defer></script>
+  <script src="./src/ui/shell/toolbar.js?v=1.2.13" defer></script>
+  <script src="./src/ui/shell/header.js?v=1.2.13" defer></script>
+  <script src="./src/ui/panels/formula-panel.js?v=1.2.13" defer></script>
+  <script src="./src/ui/panels/auto-colorize-panel.js?v=1.2.13" defer></script>
+  <script src="./src/ui/panels/noise-rack-panel.js?v=1.2.13" defer></script>
+  <script src="./src/ui/panels/transform-panel.js?v=1.2.13" defer></script>
+  <script src="./src/ui/panels/layers-panel.js?v=1.2.13" defer></script>
+  <script src="./src/ui/panels/pens-panel.js?v=1.2.13" defer></script>
+  <script src="./src/ui/panels/modifiers-panel.js?v=1.2.13" defer></script>
   <!-- Wallpaper creative-experience seams: preview substrate + presets/randomizer.
        Must load before mirror-panel.js, which consumes both. -->
-  <script src="./src/ui/panels/wallpaper-preview.js?v=1.2.11" defer></script>
+  <script src="./src/ui/panels/wallpaper-preview.js?v=1.2.13" defer></script>
   <!-- User-authored wallpaper recipes (bundled from user-presets/wallpaper/);
        must load before wallpaper-presets.js, which appends them in list(). -->
-  <script src="./src/config/user-wallpaper-recipes.js?v=1.2.11" defer></script>
-  <script src="./src/ui/panels/wallpaper-presets.js?v=1.2.11" defer></script>
-  <script src="./src/ui/panels/mirror-panel.js?v=1.2.11" defer></script>
-  <script src="./src/ui/panels/morph-panel.js?v=1.2.11" defer></script>
-  <script src="./src/ui/panels/algorithm-panel.js?v=1.2.11" defer></script>
-  <script src="./src/ui/panels/multi-selection-panel.js?v=1.2.11" defer></script>
-  <script src="./src/ui/panels/pathfinder-panel.js?v=1.2.11" defer></script>
-  <script src="./src/ui/panels/paint-bucket-panel.js?v=1.2.11" defer></script>
-  <script src="./src/ui/persistence.js?v=1.2.11" defer></script>
-  <script src="./src/ui/shortcuts.js?v=1.2.11" defer></script>
+  <script src="./src/config/user-wallpaper-recipes.js?v=1.2.13" defer></script>
+  <script src="./src/ui/panels/wallpaper-presets.js?v=1.2.13" defer></script>
+  <script src="./src/ui/panels/mirror-panel.js?v=1.2.13" defer></script>
+  <script src="./src/ui/panels/morph-panel.js?v=1.2.13" defer></script>
+  <script src="./src/ui/panels/algorithm-panel.js?v=1.2.13" defer></script>
+  <script src="./src/ui/panels/multi-selection-panel.js?v=1.2.13" defer></script>
+  <script src="./src/ui/panels/pathfinder-panel.js?v=1.2.13" defer></script>
+  <script src="./src/ui/panels/paint-bucket-panel.js?v=1.2.13" defer></script>
+  <script src="./src/ui/persistence.js?v=1.2.13" defer></script>
+  <script src="./src/ui/shortcuts.js?v=1.2.13" defer></script>
   <!-- Phase 1 utilities + overlays + components. Composed by menus, modals,
        and panel chrome from Phase 3 onward. utils.js is now loaded much
        earlier (before ui-pattern-designer.js) because pattern-designer's
        IIFE captures Vectura.UI.utils.escapeHtml at module-load time. -->
-  <script src="./src/ui/focus.js?v=1.2.11" defer></script>
-  <script src="./src/ui/motion.js?v=1.2.11" defer></script>
-  <script src="./src/ui/overlays/modal.js?v=1.2.11" defer></script>
-  <script src="./src/ui/overlays/dialog.js?v=1.2.11" defer></script>
-  <script src="./src/ui/overlays/menu.js?v=1.2.11" defer></script>
-  <script src="./src/ui/overlays/toast.js?v=1.2.11" defer></script>
-  <script src="./src/ui/overlays/tooltip.js?v=1.2.11" defer></script>
-  <script src="./src/ui/overlays/drag-drop.js?v=1.2.11" defer></script>
-  <script src="./src/ui/overlays/empty-state.js?v=1.2.11" defer></script>
-  <script src="./src/ui/components/info-badge.js?v=1.2.11" defer></script>
-  <script src="./src/ui/components/harmonograph-motion-rack.js?v=1.2.11" defer></script>
-  <script src="./src/ui/preset-folder-store.js?v=1.2.11" defer></script>
-  <script src="./src/ui/preset-bundle.js?v=1.2.11" defer></script>
-  <script src="./src/ui/preset-sync.js?v=1.2.11" defer></script>
-  <script src="./src/ui/components/preset-save-modal.js?v=1.2.11" defer></script>
-  <script src="./src/ui/components/harmonograph-preset-gallery.js?v=1.2.11" defer></script>
+  <script src="./src/ui/focus.js?v=1.2.13" defer></script>
+  <script src="./src/ui/motion.js?v=1.2.13" defer></script>
+  <script src="./src/ui/overlays/modal.js?v=1.2.13" defer></script>
+  <script src="./src/ui/overlays/dialog.js?v=1.2.13" defer></script>
+  <script src="./src/ui/overlays/menu.js?v=1.2.13" defer></script>
+  <script src="./src/ui/overlays/toast.js?v=1.2.13" defer></script>
+  <script src="./src/ui/overlays/tooltip.js?v=1.2.13" defer></script>
+  <script src="./src/ui/overlays/drag-drop.js?v=1.2.13" defer></script>
+  <script src="./src/ui/overlays/empty-state.js?v=1.2.13" defer></script>
+  <script src="./src/ui/components/info-badge.js?v=1.2.13" defer></script>
+  <script src="./src/ui/components/harmonograph-motion-rack.js?v=1.2.13" defer></script>
+  <script src="./src/ui/preset-folder-store.js?v=1.2.13" defer></script>
+  <script src="./src/ui/preset-bundle.js?v=1.2.13" defer></script>
+  <script src="./src/ui/preset-sync.js?v=1.2.13" defer></script>
+  <script src="./src/ui/components/preset-save-modal.js?v=1.2.13" defer></script>
+  <script src="./src/ui/components/harmonograph-preset-gallery.js?v=1.2.13" defer></script>
   <!-- Phase 4: empty-state illustrations + indeterminate progress bar. -->
-  <script src="./src/ui/components/empty-state-illustrations.js?v=1.2.11" defer></script>
-  <script src="./src/ui/overlays/progress-bar.js?v=1.2.11" defer></script>
+  <script src="./src/ui/components/empty-state-illustrations.js?v=1.2.13" defer></script>
+  <script src="./src/ui/overlays/progress-bar.js?v=1.2.13" defer></script>
   <!-- Phase 3 closure: composed menus (UI.Menus.*). -->
-  <script src="./src/ui/menus/layer-context-menu.js?v=1.2.11" defer></script>
-  <script src="./src/ui/menus/layer-filter-menu.js?v=1.2.11" defer></script>
-  <script src="./src/ui/menus/drag-drop-router.js?v=1.2.11" defer></script>
-  <script src="./src/ui/menus/engine-progress-tap.js?v=1.2.11" defer></script>
+  <script src="./src/ui/menus/layer-context-menu.js?v=1.2.13" defer></script>
+  <script src="./src/ui/menus/layer-filter-menu.js?v=1.2.13" defer></script>
+  <script src="./src/ui/menus/drag-drop-router.js?v=1.2.13" defer></script>
+  <script src="./src/ui/menus/engine-progress-tap.js?v=1.2.13" defer></script>
   <!-- Phase 3: modal extractions. Each modal module registers as
        window.Vectura.UI.Modals.<Name> and is bound from src/ui/ui.js
        (consolidated bootstrap after Meridian Unit 1.10). -->
-  <script src="./src/ui/modals/help-shortcuts.js?v=1.2.11" defer></script>
-  <script src="./src/ui/modals/grid-settings.js?v=1.2.11" defer></script>
-  <script src="./src/ui/modals/document-setup.js?v=1.2.11" defer></script>
-  <script src="./src/ui/modals/info-modals.js?v=1.2.11" defer></script>
-  <script src="./src/ui/modals/color-picker.js?v=1.2.11" defer></script>
-  <script src="./src/ui/modals/image-asset.js?v=1.2.11" defer></script>
-  <script src="./src/ui/modals/image-source.js?v=1.2.11" defer></script>
-  <script src="./src/ui/modals/export-svg.js?v=1.2.11" defer></script>
+  <script src="./src/ui/modals/help-shortcuts.js?v=1.2.13" defer></script>
+  <script src="./src/ui/modals/grid-settings.js?v=1.2.13" defer></script>
+  <script src="./src/ui/modals/document-setup.js?v=1.2.13" defer></script>
+  <script src="./src/ui/modals/info-modals.js?v=1.2.13" defer></script>
+  <script src="./src/ui/modals/color-picker.js?v=1.2.13" defer></script>
+  <script src="./src/ui/modals/image-asset.js?v=1.2.13" defer></script>
+  <script src="./src/ui/modals/image-source.js?v=1.2.13" defer></script>
+  <script src="./src/ui/modals/export-svg.js?v=1.2.13" defer></script>
   <!-- Meridian Unit 1.10 (2026-05-20): `_ui-legacy.js` deleted; its IIFE
        (helper locals, satellite bootstrap block, `class UI` stub, legacy
        mixin Object.assign chain) merged into `src/ui/ui.js` alongside the
        orchestrator init. Single entry point now owns the runtime UI class. -->
-  <script src="./src/ui/ui.js?v=1.2.11" defer></script>
-  <script src="./src/ui/ui-tutorial.js?v=1.2.11" defer></script>
-  <script src="./src/app/app.js?v=1.2.11" defer></script>
-  <script src="./src/main.js?v=1.2.11" defer></script>
+  <script src="./src/ui/ui.js?v=1.2.13" defer></script>
+  <script src="./src/ui/ui-tutorial.js?v=1.2.13" defer></script>
+  <script src="./src/app/app.js?v=1.2.13" defer></script>
+  <script src="./src/main.js?v=1.2.13" defer></script>
 
   <div id="tutorial-popover" class="tutorial-popover" aria-hidden="true"
        role="dialog" aria-modal="false" aria-label="Welcome tour">
