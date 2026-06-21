@@ -698,100 +698,101 @@
     for (let i = 0; i < samples.length; i++) addMappedSegment(edgeMap, samples[i], samples[(i + 1) % samples.length], hidden, meta);
   };
 
-  // Screen-space painter occlusion over the deduped bar edges (2-point, straight,
-  // meta.depthA/depthB + meta.cubeId). `occluders` are front-facing bar faces with
-  // a per-face painter depth and matching cubeId. Runs as a single batched call so
-  // the occluder bboxes are built once. Non-segment paths pass through untouched.
-  // Sub-span gap below which two collinear visible runs of the SAME edge are
-  // treated as a single line (the split was screen-space sampling jitter where a
-  // long edge grazes the silhouettes of many co-depth neighbor bars), and the
-  // minimum length a standalone exposed sliver must reach to survive. Without the
-  // merge, see-through-OFF bars shatter into hundreds of 1–4px ticks.
-  const BAR_RUN_MERGE_GAP = 5.0;
-  const BAR_RUN_MIN_LEN = 1.0;
-  // A PARTIALLY-occluded edge shorter than this is occlusion noise (a sub-pixel
-  // sliver peeking past a nearer bar) and is dropped; a COMPLETE edge (one that
-  // spans essentially its whole length) is always kept, however short, so genuine
-  // small far-bar edges survive.
-  const BAR_SLIVER_MIN = 2.5;
+  // ---------------------------------------------------------------------------
+  // Solid-bar rendering (See-Through OFF) — heightmap hidden-line removal.
+  //
+  // The relief is drawn as a clean isometric solid: every cell emits its full top quad
+  // outline (so each tile reads as its own block — a watertight gridded quilt), plus a
+  // vertical riser at each camera-facing step where a neighbour is shorter (from the
+  // neighbour's height up to this top). Every edge is then clipped against the opaque
+  // faces of the bars in front of it (painter's algorithm, nearest-first), so hidden
+  // segments are removed analytically — no see-through, no floating verticals, no
+  // fragments. Faces occlude as filled polygons with per-vertex camera depth,
+  // interpolated across the face.
 
-  const occludeBarEdges = (edgePaths, occluders, depthBias) => {
-    const segments = [];
-    const segEnds = [];
-    const passthrough = [];
-    edgePaths.forEach((path) => {
-      if (!path || !path.meta || path.length !== 2 ||
-          !Number.isFinite(path.meta.depthA) || !Number.isFinite(path.meta.depthB)) {
-        passthrough.push(path);
-        return;
+  // Affine depth plane (d = A*x + B*y + C) through a face's projected vertices, each
+  // carrying camera depth d (larger = nearer). Returns null for a degenerate face.
+  const facePlane = (v) => {
+    for (let i = 0; i < v.length; i++) {
+      const a = v[i], b = v[(i + 1) % v.length], c = v[(i + 2) % v.length];
+      const det = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
+      if (Math.abs(det) < 1e-7) continue;
+      const A = ((b.d - a.d) * (c.y - a.y) - (c.d - a.d) * (b.y - a.y)) / det;
+      const B = ((c.d - a.d) * (b.x - a.x) - (b.d - a.d) * (c.x - a.x)) / det;
+      return { A, B, C: a.d - A * a.x - B * a.y };
+    }
+    return null;
+  };
+
+  // Build an occluder polygon (screen loop + depth plane + bbox) from a face's
+  // surface samples. Returns null for a face that projects to a degenerate sliver.
+  const buildOccluder = (faceSamples) => {
+    const poly = faceSamples.map((s) => ({ x: s.point.x, y: s.point.y, d: s.rotated.z }));
+    if (poly.some((q) => !Number.isFinite(q.x) || !Number.isFinite(q.y) || !Number.isFinite(q.d))) return null;
+    const plane = facePlane(poly);
+    if (!plane) return null;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    poly.forEach((q) => { if (q.x < minX) minX = q.x; if (q.y < minY) minY = q.y; if (q.x > maxX) maxX = q.x; if (q.y > maxY) maxY = q.y; });
+    return { poly, plane, minX, minY, maxX, maxY };
+  };
+
+  const pointInPoly = (px, py, poly) => {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const xi = poly[i].x, yi = poly[i].y, xj = poly[j].x, yj = poly[j].y;
+      if (((yi > py) !== (yj > py)) && (px < ((xj - xi) * (py - yi)) / (yj - yi) + xi)) inside = !inside;
+    }
+    return inside;
+  };
+
+  // Parameter t along segment a→b where it crosses segment p1→p2, or null.
+  const segCrossT = (ax, ay, ex, ey, p1, p2) => {
+    const sx = p2.x - p1.x, sy = p2.y - p1.y;
+    const den = ex * sy - ey * sx;
+    if (Math.abs(den) < 1e-9) return null;
+    const t = ((p1.x - ax) * sy - (p1.y - ay) * sx) / den;
+    const u = ((p1.x - ax) * ey - (p1.y - ay) * ex) / den;
+    if (t <= 1e-6 || t >= 1 - 1e-6 || u < -1e-6 || u > 1 + 1e-6) return null;
+    return t;
+  };
+
+  // Screen-depth tolerance so a face does not occlude an edge lying on its own surface.
+  const OCC_EPS = 0.6;
+
+  // Clip one edge (endpoints carry camera depth da/db) against occluder faces in
+  // front of it. Splits the edge at every face-boundary crossing, then keeps each
+  // sub-span whose midpoint is not behind any covering face. Returns [t0,t1] runs.
+  const clipEdge = (ax, ay, da, bx, by, db, occluders) => {
+    if (!occluders.length) return [[0, 1]];
+    const ex = bx - ax, ey = by - ay, dd = db - da;
+    const splits = [0, 1];
+    for (let i = 0; i < occluders.length; i++) {
+      const poly = occluders[i].poly;
+      for (let k = 0; k < poly.length; k++) {
+        const t = segCrossT(ax, ay, ex, ey, poly[k], poly[(k + 1) % poly.length]);
+        if (t != null) splits.push(t);
       }
-      const meta = { ...path.meta };
-      delete meta.depthA;
-      delete meta.depthB;
-      // __segId lets us regroup the (possibly many) visible runs occludeSegments
-      // emits for this one straight edge so we can merge them back together.
-      meta.__segId = segments.length;
-      segEnds.push({ ax: path[0].x, ay: path[0].y, bx: path[1].x, by: path[1].y });
-      segments.push({
-        a: { x: path[0].x, y: path[0].y, z: path.meta.depthA },
-        b: { x: path[1].x, y: path[1].y, z: path.meta.depthB },
-        owner: path.meta.cubeId,
-        meta,
-      });
-    });
-    const runs = G3.occludeSegments(segments, occluders, { mode: 'remove', depthBias });
-    // Bucket every visible run by its source edge.
-    const byEdge = new Map();
-    runs.forEach((run) => {
-      if (!run || run.length < 2) return;
-      const id = run.meta ? run.meta.__segId : null;
-      if (id == null) { passthrough.push(run); return; }
-      if (!byEdge.has(id)) byEdge.set(id, []);
-      byEdge.get(id).push(run);
-    });
-    const merged = [];
-    byEdge.forEach((edgeRuns, id) => {
-      const ends = segEnds[id];
-      const dx = ends.bx - ends.ax;
-      const dy = ends.by - ends.ay;
-      const lenSq = dx * dx + dy * dy;
-      const len = Math.sqrt(lenSq) || 1;
-      const meta = { ...(edgeRuns[0].meta || {}) };
-      delete meta.__segId;
-      // Project each run onto the edge as a [t0,t1] parametric interval (all runs
-      // are collinear sub-spans of the straight edge), then merge intervals whose
-      // gap is jitter-sized and drop the leftover stubs.
-      const proj = (pt) => (lenSq ? ((pt.x - ends.ax) * dx + (pt.y - ends.ay) * dy) / lenSq : 0);
-      const intervals = edgeRuns.map((run) => {
-        const ts = run.map(proj);
-        return [Math.min(...ts), Math.max(...ts)];
-      }).sort((p, q) => p[0] - q[0]);
-      const gapT = BAR_RUN_MERGE_GAP / len;
-      let cur = intervals[0].slice();
-      const flush = () => {
-        const lenPx = (cur[1] - cur[0]) * len;
-        if (lenPx < BAR_RUN_MIN_LEN) return;
-        // Keep complete edges at any length; drop short partial occlusion slivers.
-        const complete = cur[0] <= 0.02 && cur[1] >= 0.98;
-        if (!complete && lenPx < BAR_SLIVER_MIN) return;
-        const seg = [
-          { x: ends.ax + cur[0] * dx, y: ends.ay + cur[0] * dy },
-          { x: ends.ax + cur[1] * dx, y: ends.ay + cur[1] * dy },
-        ];
-        seg.meta = { ...meta };
-        merged.push(seg);
-      };
-      for (let i = 1; i < intervals.length; i++) {
-        if (intervals[i][0] - cur[1] <= gapT) {
-          cur[1] = Math.max(cur[1], intervals[i][1]);
-        } else {
-          flush();
-          cur = intervals[i].slice();
-        }
+    }
+    splits.sort((u, v) => u - v);
+    const runs = [];
+    for (let i = 0; i < splits.length - 1; i++) {
+      const lo = splits[i], hi = splits[i + 1];
+      if (hi - lo < 1e-6) continue;
+      const tm = (lo + hi) / 2;
+      const px = ax + ex * tm, py = ay + ey * tm, ed = da + dd * tm;
+      let hidden = false;
+      for (let j = 0; j < occluders.length; j++) {
+        const oc = occluders[j];
+        if (px < oc.minX || px > oc.maxX || py < oc.minY || py > oc.maxY) continue;
+        if (!pointInPoly(px, py, oc.poly)) continue;
+        if (oc.plane.A * px + oc.plane.B * py + oc.plane.C > ed + OCC_EPS) { hidden = true; break; }
       }
-      flush();
-    });
-    return passthrough.concat(merged);
+      if (!hidden) {
+        const last = runs[runs.length - 1];
+        if (last && lo - last[1] < 1e-6) last[1] = hi; else runs.push([lo, hi]);
+      }
+    }
+    return runs;
   };
 
   const buildBars = (p, bounds, sampler) => {
@@ -806,95 +807,236 @@
     const keepHidden = p.seeThrough !== false;
     const edgeMap = new Map();
     const sideDefinitions = [[0, 3], [3, 2], [2, 1], [1, 0]];
-    // When see-through is off we run true inter-bar hidden-line removal: every
-    // front-facing bar face becomes a painter occluder (screen polygon + mean
-    // camera depth + its bar id), and the deduped edges are clipped where a
-    // NEARER bar covers them. Without this, far/short bars' tops and faces bleed
-    // through the gaps between near bars (the "bizarre gaps").
-    const occluders = keepHidden ? null : [];
-    const faceOccluder = (face, cubeId) => {
-      const polygon = face.map((s) => ({ x: s.point.x, y: s.point.y }));
-      if (polygon.some((pt) => !Number.isFinite(pt.x) || !Number.isFinite(pt.y))) return;
-      const fdepth = face.reduce((sum, s) => sum + s.rotated.z, 0) / face.length;
-      occluders.push({ polygon, depth: fdepth, owner: cubeId });
-    };
-    // Enhancement #5 — Lambert hatch the lit top faces (additive, off by default).
+    // Lambert hatch the lit top faces (additive, off by default).
     const barHatch = [];
     const hatchLight = p.hatchEnable ? G3.resolveLight(p) : null;
     const hatchCap = p.hatchEnable
       ? ((p.fastPreview || bounds.fastPreview) ? G3.previewCap(bounds, rows * cols) : rows * cols)
       : 0;
+    let hatchBars = 0;
+
+    // Pre-pass: quantized height per cell (0 = no bar). With See-Through OFF this
+    // drives the exposed-riser logic — a side wall is drawn ONLY where a bar steps
+    // down to a shorter neighbour, so touching bars share no internal wall and no
+    // vertical line appears except at a genuine height step.
+    const H = [];
+    for (let y = 0; y < rows; y++) {
+      const row = [];
+      for (let x = 0; x < cols; x++) {
+        const s = sampleBarFootprint(sampler, x / cols, y / rows, (x + 1) / cols, (y + 1) / rows, p);
+        let h = (p.clipBlackAreas && s.blackRatio >= 0.98) ? 0 : quantizeBarHeight(s.value, p);
+        if (h <= 0.01) h = 0;
+        row.push(h);
+      }
+      H.push(row);
+    }
+    const heightAt = (gx, gy) => (gx >= 0 && gy >= 0 && gx < cols && gy < rows ? H[gy][gx] : 0);
+
+    const paths = [];
+
+    if (keepHidden) {
+      // See-Through ON keeps the full transparent wireframe cage (every face,
+      // hidden faces dashed).
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          const cubeId = y * cols + x;
+          const h = H[y][x];
+          if (h <= 0.01) continue;
+          const x0 = rect.left + x * cellW + insetX;
+          const x1 = rect.left + (x + 1) * cellW - insetX;
+          const y0 = rect.top + y * cellH + insetY;
+          const y1 = rect.top + (y + 1) * cellH - insetY;
+          if (x1 - x0 < 0.2 || y1 - y0 < 0.2) continue;
+          const top = [
+            surfaceSample(x0, y0, h, p, bounds), surfaceSample(x0, y1, h, p, bounds),
+            surfaceSample(x1, y1, h, p, bounds), surfaceSample(x1, y0, h, p, bounds),
+          ];
+          const bottom = [
+            surfaceSample(x0, y0, 0, p, bounds), surfaceSample(x0, y1, 0, p, bounds),
+            surfaceSample(x1, y1, 0, p, bounds), surfaceSample(x1, y0, 0, p, bounds),
+          ];
+          const depth = top.reduce((s, q) => s + q.rotated.z, 0) / top.length;
+          const topVisible = faceVisible(top);
+          addMappedLoop(edgeMap, top, !topVisible, { mode: 'bars', barTop: true, depth, cubeId, closed: true });
+          sideDefinitions.forEach(([a, b]) => {
+            // Wound top→bottom for an outward normal, so faceVisible (→ !hidden dash)
+            // is true for the camera-facing walls. (Reversed winding inverted the
+            // hidden flag, dashing the front walls and leaving the back walls solid.)
+            const face = [top[a], top[b], bottom[b], bottom[a]];
+            addMappedLoop(edgeMap, face, !faceVisible(face), { mode: 'bars', barSide: true, depth, cubeId });
+          });
+          if (hatchLight && topVisible && hatchBars < hatchCap) {
+            pushFaceHatch(barHatch, top, p, hatchLight, { mode: 'bars', barTop: true, depth });
+            hatchBars++;
+          }
+        }
+      }
+      if (p.showBarBase !== false) {
+        const fc = [
+          surfaceSample(rect.left, rect.top, 0, p, bounds),
+          surfaceSample(rect.left + rect.width, rect.top, 0, p, bounds),
+          surfaceSample(rect.left + rect.width, rect.top + rect.height, 0, p, bounds),
+          surfaceSample(rect.left, rect.top + rect.height, 0, p, bounds),
+        ];
+        paths.push(pathFromSurfaceSamples(fc.concat([fc[0]]), { mode: 'bars', barFloor: true, closed: true }));
+      }
+      const edges = Array.from(edgeMap.values());
+      paths.push(...edges.sort((a, b) => finite(a.meta?.depth, 0) - finite(b.meta?.depth, 0)));
+      if (barHatch.length) paths.push(...barHatch);
+      return paths;
+    }
+
+    // See-Through OFF — solid heightmap with analytic hidden-line removal. Build per
+    // cell: its full top quad outline (every tile is outlined → a watertight gridded
+    // quilt, not a merged plateau), the exposed riser at each camera-facing step (a
+    // vertical from the shorter neighbour's height up to this top), and the cell's
+    // opaque OCCLUDER faces (top + camera-facing walls, floor-to-top). Then process the
+    // cells nearest-first, clipping each cell's edges against the faces of the bars
+    // already accumulated in front of it (de-duping the shared top grid edge so it is
+    // drawn once), and finally clip the floor rim against everything.
+    const bars = [];
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
-        const cubeId = y * cols + x;
-        const u0 = x / cols;
-        const v0 = y / rows;
-        const u1 = (x + 1) / cols;
-        const v1 = (y + 1) / rows;
-        const sample = sampleBarFootprint(sampler, u0, v0, u1, v1, p);
-        if (p.clipBlackAreas && sample.blackRatio >= 0.98) continue;
-        const h = quantizeBarHeight(sample.value, p);
+        const h = H[y][x];
         if (h <= 0.01) continue;
         const x0 = rect.left + x * cellW + insetX;
         const x1 = rect.left + (x + 1) * cellW - insetX;
         const y0 = rect.top + y * cellH + insetY;
         const y1 = rect.top + (y + 1) * cellH - insetY;
         if (x1 - x0 < 0.2 || y1 - y0 < 0.2) continue;
+        const cubeId = y * cols + x;
         const top = [
-          surfaceSample(x0, y0, h, p, bounds),
-          surfaceSample(x0, y1, h, p, bounds),
-          surfaceSample(x1, y1, h, p, bounds),
-          surfaceSample(x1, y0, h, p, bounds),
+          surfaceSample(x0, y0, h, p, bounds), surfaceSample(x0, y1, h, p, bounds),
+          surfaceSample(x1, y1, h, p, bounds), surfaceSample(x1, y0, h, p, bounds),
         ];
         const bottom = [
-          surfaceSample(x0, y0, 0, p, bounds),
-          surfaceSample(x0, y1, 0, p, bounds),
-          surfaceSample(x1, y1, 0, p, bounds),
-          surfaceSample(x1, y0, 0, p, bounds),
+          surfaceSample(x0, y0, 0, p, bounds), surfaceSample(x0, y1, 0, p, bounds),
+          surfaceSample(x1, y1, 0, p, bounds), surfaceSample(x1, y0, 0, p, bounds),
         ];
-        const depth = top.reduce((sum, samplePt) => sum + samplePt.rotated.z, 0) / top.length;
-        const topVisible = faceVisible(top);
-        if (topVisible || keepHidden) addMappedLoop(edgeMap, top, !topVisible, { mode: 'bars', barTop: true, depth, cubeId, closed: true });
-        if (topVisible && occluders) faceOccluder(top, cubeId);
-        if (hatchLight && topVisible && barHatch.length < hatchCap * 8) {
-          pushFaceHatch(barHatch, top, p, hatchLight, { mode: 'bars', barTop: true, depth });
-        }
+        const depth = top.reduce((s, q) => s + q.rotated.z, 0) / top.length;
+        const sortDepth = surfaceSample((x0 + x1) / 2, (y0 + y1) / 2, 0, p, bounds).rotated.z;
+        const cornerXY = [[x0, y0], [x0, y1], [x1, y1], [x1, y0]];
+        // sideDefinitions order: [0,3]=y0 edge, [3,2]=x1 edge, [2,1]=y1 edge, [1,0]=x0 edge.
+        const sideNbr = { '0,3': heightAt(x, y - 1), '3,2': heightAt(x + 1, y), '2,1': heightAt(x, y + 1), '1,0': heightAt(x - 1, y) };
+        const occluders = [];
+        const oTop = buildOccluder(top); if (oTop) occluders.push(oTop);
+        const edges = [];
+        const mkEdge = (sa, sb, meta) => ({ ax: sa.point.x, ay: sa.point.y, da: sa.rotated.z, bx: sb.point.x, by: sb.point.y, db: sb.rotated.z, meta });
         sideDefinitions.forEach(([a, b]) => {
-          const face = [bottom[a], bottom[b], top[b], top[a]];
-          const visible = faceVisible(face);
-          if (!visible && !keepHidden) return;
-          addMappedLoop(edgeMap, face, !visible, { mode: 'bars', barSide: true, depth, cubeId });
-          if (visible && occluders) faceOccluder(face, cubeId);
+          // Wall wound top→bottom so its face normal points OUTWARD; faceVisible is
+          // then true for the camera-facing (front) walls. (The reversed winding —
+          // bottom→top — gives an inward normal, which selected the hidden BACK walls:
+          // risers landed on hidden corners and occluders were built from walls that
+          // occlude nothing, i.e. the see-through.)
+          const wall = [top[a], top[b], bottom[b], bottom[a]];
+          const camFacing = faceVisible(wall);
+          if (camFacing) { const o = buildOccluder(wall); if (o) occluders.push(o); }
+          // Every cell draws its full top quad outline, so every tile reads as its own
+          // block — the watertight gridded-quilt look. Equal-height neighbours share
+          // this top edge; it is de-duped at emit time so the pen draws it once.
+          edges.push(mkEdge(top[a], top[b], { mode: 'bars', barTop: true, depth, cubeId }));
+          const nh = gap > 0 ? 0 : sideNbr[a + ',' + b];
+          if (nh >= h - 1e-4) return; // neighbour as tall or taller → shared wall, no exposed riser
+          // The exposed riser of a camera-facing step: a vertical at each corner from
+          // the neighbour's height up to this top (never the internal part below it).
+          if (camFacing) {
+            const base = surfaceSample(cornerXY[a][0], cornerXY[a][1], nh, p, bounds);
+            const base2 = surfaceSample(cornerXY[b][0], cornerXY[b][1], nh, p, bounds);
+            edges.push(mkEdge(base, top[a], { mode: 'bars', barSide: true, depth, cubeId }));
+            edges.push(mkEdge(base2, top[b], { mode: 'bars', barSide: true, depth, cubeId }));
+          }
         });
+        if (faceVisible(top) && hatchLight && hatchBars < hatchCap) {
+          const tmp = [];
+          pushFaceHatch(tmp, top, p, hatchLight, { mode: 'bars', barTop: true, depth, hatch: true });
+          if (tmp.length) {
+            const plane = oTop ? oTop.plane : null;
+            for (const seg of tmp) for (let i = 0; i < seg.length - 1; i++) {
+              const da = plane ? plane.A * seg[i].x + plane.B * seg[i].y + plane.C : depth;
+              const dbp = plane ? plane.A * seg[i + 1].x + plane.B * seg[i + 1].y + plane.C : depth;
+              edges.push({ ax: seg[i].x, ay: seg[i].y, da, bx: seg[i + 1].x, by: seg[i + 1].y, db: dbp, meta: { ...seg.meta } });
+            }
+            hatchBars++;
+          }
+        }
+        bars.push({ sortDepth, edges, occluders });
       }
     }
-    const paths = [];
+    bars.sort((a, b) => b.sortDepth - a.sortDepth); // nearest first
+
+    // Lazy uniform grid of accumulated occluder faces for broad-phase queries.
+    let cellSum = 0, cellN = 0;
+    bars.forEach((bar) => bar.occluders.forEach((o) => { cellSum += (o.maxX - o.minX) + (o.maxY - o.minY); cellN += 2; }));
+    const gridCell = cellN ? Math.max(4, cellSum / cellN) : 16;
+    const inv = 1 / gridCell;
+    const grid = new Map();
+    const addOccluder = (o) => {
+      for (let cy = Math.floor(o.minY * inv); cy <= Math.floor(o.maxY * inv); cy++) {
+        for (let cx = Math.floor(o.minX * inv); cx <= Math.floor(o.maxX * inv); cx++) {
+          const k = cx + ',' + cy; let arr = grid.get(k); if (!arr) grid.set(k, (arr = [])); arr.push(o);
+        }
+      }
+    };
+    const queryOccluders = (minX, minY, maxX, maxY) => {
+      const seen = new Set(), out = [];
+      for (let cy = Math.floor(minY * inv); cy <= Math.floor(maxY * inv); cy++) {
+        for (let cx = Math.floor(minX * inv); cx <= Math.floor(maxX * inv); cx++) {
+          const arr = grid.get(cx + ',' + cy); if (!arr) continue;
+          for (let i = 0; i < arr.length; i++) { const o = arr[i]; if (seen.has(o)) continue; seen.add(o); if (o.maxX < minX || o.minX > maxX || o.maxY < minY || o.minY > maxY) continue; out.push(o); }
+        }
+      }
+      return out;
+    };
+    const emitEdge = (edge) => {
+      const minX = Math.min(edge.ax, edge.bx), maxX = Math.max(edge.ax, edge.bx);
+      const minY = Math.min(edge.ay, edge.by), maxY = Math.max(edge.ay, edge.by);
+      const cand = queryOccluders(minX, minY, maxX, maxY);
+      const runs = clipEdge(edge.ax, edge.ay, edge.da, edge.bx, edge.by, edge.db, cand);
+      const ex = edge.bx - edge.ax, ey = edge.by - edge.ay;
+      for (let i = 0; i < runs.length; i++) {
+        const [t0, t1] = runs[i];
+        const p0 = { x: edge.ax + ex * t0, y: edge.ay + ey * t0 };
+        const p1 = { x: edge.ax + ex * t1, y: edge.ay + ey * t1 };
+        if (Math.hypot(p1.x - p0.x, p1.y - p0.y) < 0.4) continue;
+        const path = [p0, p1];
+        path.meta = { ...edge.meta };
+        paths.push(path);
+      }
+    };
+    // De-dupe identical edges so the pen draws each once: the shared top grid edge
+    // between two equal-height neighbours, and the riser shared by a cell's two
+    // visible walls at their common corner. Key on rounded screen endpoints + depth so
+    // genuinely distinct edges (a step's two top edges sit at different heights →
+    // different depths) survive. Bars are processed nearest-first, so the surviving
+    // copy is clipped in the nearest (correct) depth context.
+    const edgeKey = (e) => {
+      const ka = `${e.ax.toFixed(2)},${e.ay.toFixed(2)},${e.da.toFixed(1)}`;
+      const kb = `${e.bx.toFixed(2)},${e.by.toFixed(2)},${e.db.toFixed(1)}`;
+      return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+    };
+    const emittedEdges = new Set();
+    for (const bar of bars) {
+      for (const edge of bar.edges) {
+        const k = edgeKey(edge);
+        if (emittedEdges.has(k)) continue;
+        emittedEdges.add(k);
+        emitEdge(edge);
+      }
+      for (const o of bar.occluders) addOccluder(o);
+    }
     if (p.showBarBase !== false) {
-      const floor = [
-        surfacePoint(rect.left, rect.top, 0, p, bounds),
-        surfacePoint(rect.left + rect.width, rect.top, 0, p, bounds),
-        surfacePoint(rect.left + rect.width, rect.top + rect.height, 0, p, bounds),
-        surfacePoint(rect.left, rect.top + rect.height, 0, p, bounds),
-        surfacePoint(rect.left, rect.top, 0, p, bounds),
+      // Floor rim is the farthest geometry: clip it behind every bar.
+      const fc = [
+        surfaceSample(rect.left, rect.top, 0, p, bounds),
+        surfaceSample(rect.left + rect.width, rect.top, 0, p, bounds),
+        surfaceSample(rect.left + rect.width, rect.top + rect.height, 0, p, bounds),
+        surfaceSample(rect.left, rect.top + rect.height, 0, p, bounds),
       ];
-      paths.push(pathFromSurfaceSamples(floor, { mode: 'bars', barFloor: true, closed: true }));
+      for (let i = 0; i < 4; i++) {
+        const sa = fc[i], sb = fc[(i + 1) % 4];
+        emitEdge({ ax: sa.point.x, ay: sa.point.y, da: sa.rotated.z, bx: sb.point.x, by: sb.point.y, db: sb.rotated.z, meta: { mode: 'bars', barFloor: true } });
+      }
     }
-    let edges = Array.from(edgeMap.values());
-    if (occluders && occluders.length) {
-      // Co-planar / same-depth neighbor bars must NOT occlude an edge — otherwise
-      // a face whose mean depth wobbles just past the tiny default bias clips the
-      // edge in and out as it grazes neighbor after neighbor, shattering it. Floor
-      // the bias at a fraction of the occluder depth spread so only genuinely
-      // NEARER bars (a row/column closer to the camera) clip; grazing neighbors
-      // fall under the bias and are ignored.
-      let zmin = Infinity;
-      let zmax = -Infinity;
-      occluders.forEach((o) => { if (o.depth < zmin) zmin = o.depth; if (o.depth > zmax) zmax = o.depth; });
-      const bias = Math.max(finite(p.depthBias, 0.5), (zmax - zmin) * 0.03);
-      edges = occludeBarEdges(edges, occluders, bias);
-    }
-    paths.push(...edges.sort((a, b) => finite(a.meta?.depth, 0) - finite(b.meta?.depth, 0)));
-    if (barHatch.length) paths.push(...barHatch);
     return paths;
   };
 

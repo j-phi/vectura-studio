@@ -1,18 +1,11 @@
 /*
- * Raster-Plane — Bars see-through OFF occlusion (RGR coverage).
+ * Raster-Plane — Bars See-Through OFF solid heightmap (RGR coverage).
  *
- * Before the fix, Bars mode with See-Through OFF shattered every edge into
- * hundreds of 1–4px stubs: a long edge grazing the screen silhouettes of many
- * co-depth neighbor bars flipped hidden/visible from per-sample jitter, and each
- * flip spawned a sub-pixel "tick". (Empirically: 178 sub-2px stubs, 51% of paths
- * under 5px, median segment 3.8px — vs See-Through ON: 0 stubs, median 10px.)
- *
- * occludeBarEdges now regroups the occluded runs by source edge, merges collinear
- * sub-runs separated only by jitter-sized gaps, and drops the residual stubs:
- *   - No degenerate sub-1px segments survive.
- *   - The fragment fraction collapses to a small share of the output.
- *   - No hidden-line dashes leak through when See-Through is OFF.
- *   - See-Through ON is untouched (the occlusion path is never entered).
+ * Bars mode with See-Through OFF renders a clean isometric solid relief: every cell
+ * draws its full top quad outline (so every tile reads as its own block — a watertight
+ * gridded quilt), plus a camera-facing exposed riser at each height step. Every edge is
+ * then clipped against the front walls of the bars in front of it (analytic hidden-line
+ * removal). The wireframe failure modes are gone — no see-through, no fills.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
@@ -36,51 +29,77 @@ describe('Raster-Plane — Bars see-through occlusion', () => {
       bounds,
     );
 
-  const segLen = (path) => {
-    let len = 0;
-    for (let i = 1; i < path.length; i++) {
-      len += Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
-    }
-    return len;
-  };
-  // The bar edges (the geometry the occluder pass touches) — exclude the base
-  // floor outline and any (disabled) hatch so the fragmentation metrics measure
-  // exactly the occluded edge set.
-  const barEdges = (paths) => paths.filter((p) => p.meta && p.meta.mode === 'bars' && !p.meta.barFloor && !p.meta.hatch);
-
-  test('See-Through OFF: no degenerate sub-pixel stubs survive', () => {
+  test('See-Through OFF: pure stroked edges, no fills, no dashed hidden lines', () => {
     const off = gen({ seeThrough: false });
-    const edges = barEdges(off);
-    expect(edges.length).toBeGreaterThan(0);
-    const stubs = edges.filter((p) => segLen(p) < 1.0);
-    expect(stubs.length).toBe(0);
-  });
-
-  test('See-Through OFF: edges are not shattered into tiny fragments', () => {
-    const off = gen({ seeThrough: false });
-    const edges = barEdges(off);
-    const tiny = edges.filter((p) => segLen(p) < 5.0);
-    // Was ~51% on the buggy render; the merge pass must bring this well down.
-    expect(tiny.length / edges.length).toBeLessThan(0.2);
-  });
-
-  test('See-Through OFF: no hidden-line dashes leak through (faces removed)', () => {
-    const off = gen({ seeThrough: false });
+    expect(off.length).toBeGreaterThan(0);
+    expect(off.some((p) => p.meta && p.meta.occludeFill)).toBe(false);
     expect(off.some((p) => p.meta && p.meta.hiddenLine === true)).toBe(false);
   });
 
-  test('See-Through ON: keeps the full back lattice (occlusion not applied)', () => {
+  test('See-Through OFF: all geometry is finite', () => {
+    const off = gen({ seeThrough: false });
+    for (const p of off) for (const pt of p) {
+      expect(Number.isFinite(pt.x)).toBe(true);
+      expect(Number.isFinite(pt.y)).toBe(true);
+    }
+  });
+
+  test('See-Through ON: keeps the full back lattice (more edges, has hidden dashes)', () => {
     const on = gen({ seeThrough: true });
     const off = gen({ seeThrough: false });
-    // ON renders strictly more edge geometry than the hidden-line-removed OFF.
-    expect(barEdges(on).length).toBeGreaterThan(barEdges(off).length);
-    // ON is allowed to carry hidden-line dashes for the back faces.
-    expect(on.length).toBeGreaterThan(0);
+    expect(on.length).toBeGreaterThan(off.length);
+    expect(on.some((p) => p.meta && p.meta.hiddenLine)).toBe(true);
   });
 
   test('is deterministic for a fixed seed (See-Through OFF)', () => {
     const a = gen({ seeThrough: false }, 17);
     const b = gen({ seeThrough: false }, 17);
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+
+  test('See-Through OFF: taller bars produce longer step risers', () => {
+    // Risers run from a neighbour's height up to the cell top; raising the amplitude
+    // lifts every step, so the total side-edge length grows with extrusion.
+    const sideLen = (paths) => paths
+      .filter((p) => p.meta && p.meta.barSide && p.length === 2)
+      .reduce((sum, p) => sum + Math.hypot(p[1].x - p[0].x, p[1].y - p[0].y), 0);
+    const low = sideLen(gen({ seeThrough: false, amplitude: 5 }));
+    const tall = sideLen(gen({ seeThrough: false, amplitude: 80 }));
+    expect(low).toBeGreaterThan(0);
+    expect(tall).toBeGreaterThan(low * 1.3);
+  });
+
+  test('See-Through OFF: every tile is outlined (watertight quilt); steps add risers', () => {
+    // A uniform plateau draws a full O(N^2) interior grid (every tile outlined, no
+    // merge); a varied field adds exposed step risers on top of that grid, so it
+    // emits even more edges.
+    const N = 10;
+    const run = (grid) => V.AlgorithmRegistry.rasterPlane.generate(
+      { mode: 'bars', seeThrough: false, fixtureGrid: grid, barRows: N, barColumns: N, barGap: 0, amplitude: 40, barHeightSteps: 8 },
+      null, null, bounds,
+    );
+    const flat = Array.from({ length: N }, () => new Array(N).fill(0.6));
+    let s = 1; const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+    const noisy = Array.from({ length: N }, () => Array.from({ length: N }, () => rnd()));
+    expect(run(flat).length).toBeGreaterThan(N * N); // full interior grid, not merged
+    expect(run(noisy).length).toBeGreaterThan(run(flat).length);
+  });
+
+  test('See-Through OFF: a raised block draws its riser at the camera-near (front) corner', () => {
+    // Regression — the wall faceVisible winding once produced an inward normal, so it
+    // selected the hidden BACK walls: risers landed on far corners (and occluders were
+    // built from walls that occlude nothing → see-through). A single raised cube must
+    // show a vertical riser meeting its NEAREST (max screen-y) top corner.
+    const N = 5;
+    const grid = Array.from({ length: N }, (_, y) => Array.from({ length: N }, (_, x) => ((x === 2 && y === 2) ? 1 : 0)));
+    const out = gen({ seeThrough: false, fixtureGrid: grid, barRows: N, barColumns: N, amplitude: 50, showBarBase: false, barHeightSteps: 0 });
+    const sides = out.filter((p) => p.meta && p.meta.barSide && p.length === 2);
+    const topPts = out.filter((p) => p.meta && p.meta.barTop && p.length === 2).flatMap((p) => [p[0], p[1]]);
+    expect(sides.length).toBeGreaterThan(0);
+    expect(topPts.length).toBeGreaterThan(0);
+    const nearestY = Math.max(...topPts.map((q) => q.y));
+    const nearest = topPts.find((q) => q.y === nearestY);
+    const touchesFront = sides.some((p) => [p[0], p[1]].some((q) => Math.hypot(q.x - nearest.x, q.y - nearest.y) < 1e-6));
+    expect(touchesFront).toBe(true);
   });
 });

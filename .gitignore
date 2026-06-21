@@ -16,3 +16,6 @@ graphify-out/.graphify_old.json
 /screenshots/
 /tmp-screens/
 /src/inspiration/
+# Generated review/evidence artifacts (not source)
+/archive/
+/bars-occlusion-evidence/

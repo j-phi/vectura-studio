@@ -355,6 +355,23 @@ const SCENARIOS = [
     },
   },
   {
+    id: 'raster-plane-bars-solid',
+    type: 'rasterPlane',
+    seed: 807,
+    overrides: {
+      mode: 'bars',
+      seeThrough: false,
+      artworkSize: 150,
+      amplitude: 22,
+      barRows: 14,
+      barColumns: 14,
+      barGap: 0,
+      barHeightSteps: 6,
+      rotate: -35,
+      tilt: 34,
+    },
+  },
+  {
     id: 'raster-plane-topography',
     type: 'rasterPlane',
     seed: 808,
