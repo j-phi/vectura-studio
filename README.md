@@ -554,6 +554,9 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.2.14
+- **Type fills are watertight across every fill type.** Filling text used to be inconsistent — dots filled the holes (counters) inside R/A/O, contour drew only the first letter, and scribble left whole letters empty. Every fill type (dots, contour, scribble, halftone, voronoi, weave, and the rest) now carves letter counters correctly, fills every letter, and behaves identically to hatch and wave. Hairline-walled letters on high-contrast and script faces (Playfair, Lobster) fill cleanly instead of vanishing. Verified across 8 typefaces × 15 fills × 4 words × 3 densities with zero counter bleed.
+
 ### 1.2.10
 - **Raster-Plane base noise now dials up real relief.** The Image (Base) layer's **Field Weight** used to flatten the surface into a binary mask when you turned it up; it now scales the actual 3D relief height, so cranking it raises towering relief while keeping the smooth gradient — and its range widened so you can push it much further. **Bars** mode now defaults to **See-Through OFF**, rendering as a watertight solid relief instead of a hollow wireframe.
 

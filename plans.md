@@ -37,6 +37,20 @@ This file is the active repository punchlist. Update it whenever meaningful work
 - Add more modifier types beyond `Mirror`, reusing the shared modifier-container layer model and left-panel modifier registry.
 
 ## Done
+- **v1.2.14 — Type fills made watertight & consistent across all fill types.** Text feeds every glyph
+  contour (outer shells + counter holes) into the pattern-fill engine's composite branch; a dozen fills
+  (dots/stipple/grid, contour, scribble, halftone, voronoi, truchet, maze, lsystem, spirograph, weave,
+  flowfield) iterated per-loop and treated counters as solid (dots filled R/A counters; contour rendered
+  only the first letter; scribble left non-convex letters empty). Introduced a shared region-topology
+  layer (`classifyRegionTopology` + `interiorPointOf` + `groupCoherentClip`) and routed all composite
+  fills through one even-odd ink invariant matching hatch/wave. Contour rewritten as a wall-aware annulus
+  (offset outer inward + counters outward, step capped to wall thickness, thin-solid-shell fallback) so
+  hairline bowls on Playfair/Lobster render; scribble/per-shell fills clip against a parity-consistent
+  group-coherent set (fixing a neighbour-counter leak). Verified in-browser across 8 typefaces × 15 fills
+  × 4 words × 3 densities (0 counter bleed, 0 empty shells) + a 47-case watertightness regression suite;
+  full unit/integration/visual/perf suites green. Residual edge cases logged as PRH-012 (connected-script
+  overlap) and PRH-013 (halftone/maze extreme-density coverage). Built via SWE+adversarial-reviewer+judge
+  agent teams; the real-typeface browser pass caught two defects the synthetic tests missed.
 - **v1.2.13 — Draw Order slider polish: single-row readout, full-width reveal, position-tinted halo.** The
   `Start … End` gradient labels and the `distance | lines | time` readout collapsed into a single
   `.draw-order-meta` flex row (`Start … dist | lines | time … End`) instead of stacking; labels

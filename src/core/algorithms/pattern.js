@@ -1037,6 +1037,167 @@
     };
   };
 
+  // ── Region topology (watertight composite fills) ──────────────────────────
+  // The Type algorithm flattens every glyph contour — outer shells AND counter
+  // holes — into one flat region list. The single source of truth for "is this
+  // point ink" is the even-odd parity over the FULL cleaned region set
+  // (compositeContainsPoint), byte-identical to what hatch/wave already use.
+  // The helpers below derive a verified interior point per loop, prune
+  // degenerate loops, and group solid shells with their counter holes so the
+  // per-shell fills (contour, scribble, voronoi, …) can iterate convenient
+  // shapes while still clipping through the even-odd predicate.
+  const AREA_EPS = 1e-3; // matches the area cull used elsewhere in this module
+
+  const _hash32 = (i) => {
+    let h = (i + 1) * 0x9E3779B1 >>> 0;
+    h ^= h >>> 16;
+    h = Math.imul(h, 0x85EBCA6B) >>> 0;
+    h ^= h >>> 13;
+    return (h >>> 0) / 4294967296;
+  };
+
+  // Return a point provably strictly inside a simple polygon (convex OR not).
+  // Method: multi-probe scanline → midpoint of the WIDEST interior even-odd
+  // span. Deterministic jitter defeats vertex / horizontal-edge coincidence; a
+  // final polyContainsPoint verify makes it fail-safe (null ⇒ degenerate loop).
+  const interiorPointOf = (loop, loopIndex = 0) => {
+    const ded = dedupeSequentialPoints(loop, 1e-6);
+    if (!Array.isArray(ded) || ded.length < 3) return null;
+    if (Math.abs(polyArea(ded)) < AREA_EPS) return null;
+    const b = loopBounds(ded);
+    const h = Math.max(1e-6, b.maxY - b.minY);
+    const fracs = [0.5, 0.37, 0.63, 0.27, 0.73, 0.43, 0.57];
+    const jitter = (_hash32(loopIndex) - 0.5) * 2e-4;
+    for (const f of fracs) {
+      const y = b.minY + (f + jitter) * h;
+      let best = null, bestW = 1e-6;
+      for (const [x0, x1] of scanLineClip(ded, y)) {
+        const w = x1 - x0;
+        if (w > bestW) { bestW = w; best = { x: (x0 + x1) / 2, y }; }
+      }
+      if (best && polyContainsPoint(ded, best.x, best.y)) return best;
+    }
+    const g = findLoopInteriorPoint(ded);
+    return (g && polyContainsPoint(ded, g.x, g.y)) ? g : null;
+  };
+
+  // A point just INSIDE a loop, hugging its boundary — used for nesting/depth
+  // tests. The widest-span interior point of a solid outer shell can land inside
+  // its own counter (annulus trap: a 60×60 square's center is its hole), which
+  // would wrongly classify the shell as a hole. A near-edge point sits in the
+  // shell's own solid band, between the outer boundary and any concentric hole,
+  // so containment tests reflect true topological nesting.
+  const nearEdgePointOf = (loop) => {
+    const ded = dedupeSequentialPoints(loop, 1e-6);
+    if (!Array.isArray(ded) || ded.length < 3) return null;
+    const c = ded.reduce((a, p) => ({ x: a.x + p.x, y: a.y + p.y }), { x: 0, y: 0 });
+    c.x /= ded.length; c.y /= ded.length;
+    // Try several edge midpoints nudged toward the centroid by a small fraction;
+    // accept the first that is verified inside the loop itself.
+    const b = loopBounds(ded);
+    const diag = Math.max(1e-6, Math.hypot(b.maxX - b.minX, b.maxY - b.minY));
+    const eps = diag * 1e-3;
+    for (let i = 0; i < ded.length; i++) {
+      const a = ded[i], bb = ded[(i + 1) % ded.length];
+      const mx = (a.x + bb.x) / 2, my = (a.y + bb.y) / 2;
+      let dx = c.x - mx, dy = c.y - my;
+      const len = Math.hypot(dx, dy) || 1;
+      dx /= len; dy /= len;
+      const px = mx + dx * eps, py = my + dy * eps;
+      if (polyContainsPoint(ded, px, py)) return { x: px, y: py };
+    }
+    return interiorPointOf(loop);
+  };
+
+  // Classify a flat region list into solid shells + their counter holes.
+  //   interiorPoints — index-aligned to input (null for degenerate loops)
+  //   depth          — # of OTHER valid loops containing this loop (−1 degenerate)
+  //   groups         — one per even-depth (solid) loop; .all = [outer, ...holes]
+  //   valid          — the cleaned ink set for compositeContainsPoint
+  const classifyRegionTopology = (regions = []) => {
+    const meta = regions.map((loop, i) => {
+      const ip = interiorPointOf(loop, i);
+      // np = near-edge probe used for nesting: lives in the loop's own solid
+      // band so a shell whose widest-span midpoint falls inside its counter is
+      // still classified as a shell.
+      const np = ip ? nearEdgePointOf(loop) : null;
+      return { index: i, loop, ip, np: np || ip, area: Math.abs(polyArea(loop)), degenerate: !ip };
+    });
+    const valid = meta.filter((m) => !m.degenerate);
+    const validLoops = valid.map((m) => m.loop);
+    for (const m of valid) {
+      m.depth = 0; m.parent = -1;
+      let parentArea = Infinity;
+      for (const o of valid) {
+        if (o === m) continue;
+        if (o.area <= m.area) continue; // only strictly-larger loops can enclose
+        if (polyContainsPoint(o.loop, m.np.x, m.np.y)) {
+          m.depth += 1;
+          if (o.area < parentArea) { parentArea = o.area; m.parent = o.index; }
+        }
+      }
+    }
+    const byIndex = new Map(valid.map((m) => [m.index, m]));
+    const groups = [];
+    for (const m of valid) {
+      if (m.depth % 2 === 0) groups.push({ outer: m.loop, outerIndex: m.index, holes: [], all: [m.loop] });
+    }
+    const groupOf = new Map(groups.map((g) => [g.outerIndex, g]));
+    for (const m of valid) {
+      if (m.depth % 2 === 1 && m.parent >= 0) {
+        const p = byIndex.get(m.parent);
+        if (p && p.depth % 2 === 0) {
+          const g = groupOf.get(m.parent);
+          if (g) { g.holes.push(m.loop); g.all.push(m.loop); }
+        }
+      }
+    }
+    return {
+      interiorPoints: meta.map((m) => m.ip),
+      depth: meta.map((m) => (m.degenerate ? -1 : m.depth)),
+      groups,
+      valid: validLoops,
+    };
+  };
+
+  // Rejection-sample a point inside a group's solid area (inside the outer shell
+  // AND outside its counter holes). Deterministic via the passed-in mulberry RNG.
+  // Falls back to the outer's verified interior point only for pathologically
+  // thin glyphs where 200 tries all miss the solid band.
+  const rejectionSeed = (group, rng, tries = 200) => {
+    const b = loopBounds(group.outer);
+    for (let k = 0; k < tries; k++) {
+      const x = b.minX + rng() * (b.maxX - b.minX);
+      const y = b.minY + rng() * (b.maxY - b.minY);
+      if (compositeContainsPoint(group.all, x, y)) return { x, y };
+    }
+    return interiorPointOf(group.outer, group.outerIndex) || { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
+  };
+
+  // The even-odd clip set a per-shell fill must gate against — the loops of every
+  // group whose OUTER bbox overlaps the target group's outer bbox. This is the
+  // SINGLE ink invariant: per-shell fills (contour, scribble, voronoi, maze, …)
+  // must carve ink identically to the global hatch/wave reference, not just
+  // against their own counters (g.all). Gating against g.all alone fills the
+  // stroke-join overlaps of connected scripts (Pacifico) that the global
+  // even-odd set treats as holes — an inconsistency across fills. Group-coherent
+  // is provably even-odd-equivalent to the full valid set for any point inside
+  // the target group's span (any loop covering such a point belongs to an
+  // overlapping group) while skipping distant glyphs for performance. Whole
+  // groups are always included together so an outer is never split from its
+  // counters (splitting by individual-loop bbox is unsound — see scribble).
+  const groupCoherentClip = (groups, groupBounds, gi) => {
+    const gb = groupBounds[gi];
+    const clip = [];
+    for (let oi = 0; oi < groups.length; oi++) {
+      const b = groupBounds[oi];
+      if (b.minX <= gb.maxX && b.maxX >= gb.minX && b.minY <= gb.maxY && b.maxY >= gb.minY) {
+        for (const loop of groups[oi].all) clip.push(loop);
+      }
+    }
+    return clip;
+  };
+
   const hatchLinesComposite = (regions, density, angleDeg, shiftX = 0, shiftY = 0) => {
     const ar = angleDeg * Math.PI / 180;
     const ca = Math.cos(ar);
@@ -2201,12 +2362,72 @@
   // centerPadding (mm): rings stop when the remaining polygon's inscribed
   // radius drops below this value, leaving a clear centre zone. 0 = fill all
   // the way to centre.
-  const contourLines = (poly, density, direction = 'inset', stepVariance = 0, simplify = 0, centerPadding = 0) => {
-    const result = [];
-    let current = poly.slice();
+  const _loopPerim = (loop) => {
+    let s = 0;
+    for (let i = 0; i < loop.length; i++) {
+      const a = loop[i], b = loop[(i + 1) % loop.length];
+      s += Math.hypot(b.x - a.x, b.y - a.y);
+    }
+    return s;
+  };
+
+  const contourLines = (poly, density, direction = 'inset', stepVariance = 0, simplify = 0, centerPadding = 0, clipRegions = null, ownGroup = null) => {
     const sign = direction === 'outset' ? -1 : 1;
     const shapeRadius = Math.sqrt(Math.abs(polyArea(poly)) / Math.PI);
     const step0 = Math.max(0.01, shapeRadius / Math.max(0.01, density));
+    // When clipRegions carries counter holes (≥2 loops) the ring is carved by the
+    // even-odd predicate so the glyph's own counters punch through; with the
+    // default [poly] the clip branch is never taken and output is unchanged.
+    const clip = (clipRegions && clipRegions.length > 1) ? clipRegions : null;
+    // Annulus HOLES come from this glyph's own group (ownGroup) — never from the
+    // wider clip set, which may include neighbouring glyphs whose contours are not
+    // this glyph's counters. The ink GATE is still the full clip set (consistency).
+    const holeSrc = (ownGroup && ownGroup.length) ? ownGroup : (clip || [poly]);
+    const holes = holeSrc.filter((r) => r !== poly);
+
+    // ── Annular contour ──────────────────────────────────────────────────────
+    // A glyph with counters (R, A, O, B, 8) is a ring-shaped WALL, not a solid
+    // disc. Insetting ONLY the outer by a glyph-sized step skips straight past a
+    // thin wall (high-contrast serif / script faces) into the counter, where
+    // every ring is clipped away → the whole letter renders EMPTY. Offset the
+    // outer inward AND each counter outward, clip both to the even-odd wall, and
+    // cap the step to the wall thickness so even a hairline bowl gets a ring.
+    if (holes.length && sign > 0) {
+      const inkArea = Math.max(0, Math.abs(polyArea(poly)) - holes.reduce((s, h) => s + Math.abs(polyArea(h)), 0));
+      const inkPerim = _loopPerim(poly) + holes.reduce((s, h) => s + _loopPerim(h), 0);
+      const wall = inkPerim > 1e-6 ? 2 * inkArea / inkPerim : step0;   // ≈ mean wall thickness
+      const baseStep = Math.max(0.05, Math.min(step0, wall * 0.7));    // ≥1 ring fits any wall
+      const result = [];
+      let off = 0;
+      let emptyStreak = 0;
+      for (let iter = 1; iter <= 500; iter++) {
+        off += Math.max(0.02, _contourStepNoise(iter, baseStep, stepVariance));
+        const rings = [];
+        const inner = insetPolygon(poly, off);                        // outer → inward
+        if (inner && inner.length >= 3) rings.push(inner);
+        for (const h of holes) {
+          const grown = insetPolygon(h, -off);                        // counter → outward, into the wall
+          if (grown && grown.length >= 3) rings.push(grown);
+        }
+        if (!rings.length) break;                                     // every boundary collapsed
+        let emitted = 0;
+        for (const ring of rings) {
+          const closed = [...ring, ring[0]];
+          for (let seg of clipPolylineToComposite(closed, clip)) {
+            if (simplify > 0) seg = _douglasPeucker(seg, simplify);
+            if (seg.length >= 2) { result.push(seg); emitted++; }
+          }
+        }
+        // Rings march toward the wall's medial line from both sides; once they all
+        // overshoot the ink they stop emitting. Two dry iterations end the march.
+        if (emitted === 0) { if (++emptyStreak >= 2) break; } else emptyStreak = 0;
+      }
+      return result;
+    }
+
+    // ── Solid shape (no counters) or outset — original concentric inset ───────
+    const result = [];
+    let current = poly.slice();
     // minInradius: half a step keeps the last ring geometrically clean; centerPadding
     // shifts the cutoff outward to leave a deliberate empty zone at centre.
     // inradius = 2·area/perimeter (exact for circles and regular polygons).
@@ -2217,68 +2438,58 @@
       // for a clean inset step (inradius = 2·area/perimeter).
       if (sign > 0) {
         const area = Math.abs(polyArea(current));
-        const perim = current.reduce((s, pt, i) => {
-          const nxt = current[(i + 1) % current.length];
-          return s + Math.hypot(nxt.x - pt.x, nxt.y - pt.y);
-        }, 0);
+        const perim = _loopPerim(current);
         if (perim < 1e-6 || 2 * area / perim < minInradius) break;
       }
       current = insetPolygon(current, step);
       if (!current || current.length < 3) break;
       // outset has no natural inner-area termination; cap rings at 8 for outset
       if (sign < 0 && iter >= 8) break;
-      let ring = [...current, current[0]];
-      if (simplify > 0) ring = _douglasPeucker(ring, simplify);
-      result.push(ring);
+      const closed = [...current, current[0]];
+      if (clip) {
+        for (let seg of clipPolylineToComposite(closed, clip)) {
+          if (simplify > 0) seg = _douglasPeucker(seg, simplify);
+          if (seg.length >= 2) result.push(seg);
+        }
+      } else {
+        let ring = closed;
+        if (simplify > 0) ring = _douglasPeucker(ring, simplify);
+        result.push(ring);
+      }
+    }
+    // Thin solid shell (e.g. a script flourish): too narrow for the inradius-gated
+    // march, which breaks before the first inset. Emit one centreline-hugging ring
+    // so the shell is never left empty. Only fires when nothing was produced, so
+    // every existing non-empty contour output is byte-identical.
+    if (!result.length && sign > 0 && Math.abs(polyArea(poly)) > AREA_EPS) {
+      const inr = _loopPerim(poly) > 1e-6 ? 2 * Math.abs(polyArea(poly)) / _loopPerim(poly) : 0;
+      let ring = insetPolygon(poly, Math.max(0.02, inr * 0.5));
+      if (!ring || ring.length < 3) ring = poly.slice();
+      let closed = [...ring, ring[0]];
+      if (clip) {
+        for (let seg of clipPolylineToComposite(closed, clip)) {
+          if (simplify > 0) seg = _douglasPeucker(seg, simplify);
+          if (seg.length >= 2) result.push(seg);
+        }
+      } else {
+        if (simplify > 0) closed = _douglasPeucker(closed, simplify);
+        result.push(closed);
+      }
     }
     return result;
   };
 
-  // Contour for multi-region: insets the outer ring and segments rings around holes
-  const contourLinesComposite = (regions, density, direction = 'inset', stepVariance = 0, simplify = 0, centerPadding = 0) => {
-    if (regions.length === 1) return contourLines(regions[0], density, direction, stepVariance, simplify, centerPadding);
-    const outer = regions[0];
-    const holes = regions.slice(1);
-    const result = [];
-    let current = outer.slice();
-    const sign = direction === 'outset' ? -1 : 1;
-    const shapeRadius = Math.sqrt(Math.abs(polyArea(outer)) / Math.PI);
-    const step0 = Math.max(0.01, shapeRadius / Math.max(0.01, density));
-    const minInradius = Math.max(step0 * 0.5, centerPadding);
-    for (let iter = 0; iter < 500; iter++) {
-      const step = _contourStepNoise(iter, step0, stepVariance) * sign;
-      if (sign > 0) {
-        const area = Math.abs(polyArea(current));
-        const perim = current.reduce((s, pt, i) => {
-          const nxt = current[(i + 1) % current.length];
-          return s + Math.hypot(nxt.x - pt.x, nxt.y - pt.y);
-        }, 0);
-        if (perim < 1e-6 || 2 * area / perim < minInradius) break;
-      }
-      const next = insetPolygon(current, step);
-      if (!next || next.length < 3) break;
-      if (sign < 0 && iter >= 8) break;
-      if (holes.length === 0) {
-        let ring = [...next, next[0]];
-        if (simplify > 0) ring = _douglasPeucker(ring, simplify);
-        result.push(ring);
-      } else {
-        const closedRing = [...next, next[0]];
-        let seg = null;
-        for (const pt of closedRing) {
-          if (holes.some((h) => polyContainsPoint(h, pt.x, pt.y))) {
-            if (seg && seg.length >= 2) result.push(simplify > 0 ? _douglasPeucker(seg, simplify) : seg);
-            seg = null;
-          } else {
-            if (!seg) seg = [];
-            seg.push(pt);
-          }
-        }
-        if (seg && seg.length >= 2) result.push(simplify > 0 ? _douglasPeucker(seg, simplify) : seg);
-      }
-      current = next;
-    }
-    return result;
+  // Contour for multi-region: contour each solid shell independently, carving
+  // its own counter holes via the even-odd predicate (g.all). Disjoint glyphs
+  // each form their own group so every letter renders.
+  const contourLinesComposite = (topo, density, direction = 'inset', stepVariance = 0, simplify = 0, centerPadding = 0) => {
+    const out = [];
+    const groupBounds = topo.groups.map((g) => loopBounds(g.outer));
+    topo.groups.forEach((g, gi) => {
+      const clip = groupCoherentClip(topo.groups, groupBounds, gi);
+      out.push(...contourLines(g.outer, density, direction, stepVariance, simplify, centerPadding, clip, g.all));
+    });
+    return out;
   };
 
   // See spiralFillComposite — boundsRegion anchors, clipRegion trims.
@@ -2396,7 +2607,7 @@
     }
   };
 
-  const dotsFill = (poly, density, dotSizeRatio = 1.0, angleDeg = 0, shiftX = 0, shiftY = 0, pattern = 'brick', shape = 'circle', jitter = 0, glyphSize = 0, rotationDeg = 0, penW = 0.3) => {
+  const dotsFill = (poly, density, dotSizeRatio = 1.0, angleDeg = 0, shiftX = 0, shiftY = 0, pattern = 'brick', shape = 'circle', jitter = 0, glyphSize = 0, rotationDeg = 0, penW = 0.3, clipRegions = null) => {
     const ar = angleDeg * Math.PI / 180;
     const ca = Math.cos(ar), sa = Math.sin(ar);
     // Glyph orientation = fill angle + dot rotation (grid layout stays on angleDeg)
@@ -2404,7 +2615,12 @@
     const gca = Math.cos(gr), gsa = Math.sin(gr);
     const rotatePt   = ar !== 0 ? (p) => ({ x: p.x * ca + p.y * sa, y: -p.x * sa + p.y * ca }) : (p) => p;
     const unrotatePt = ar !== 0 ? (p) => ({ x: p.x * ca - p.y * sa, y:  p.x * sa + p.y * ca }) : (p) => p;
+    // Membership/clip set: default [poly] (single-region, provably identical to
+    // polyContainsPoint(poly)); the composite path threads the full ink set so
+    // counter holes (even-odd) are never stamped.
+    const clip = (clipRegions && clipRegions.length) ? clipRegions : [poly];
     const rotPoly = ar !== 0 ? poly.map(rotatePt) : poly;
+    const rotClip = ar !== 0 ? clip.map((r) => r.map(rotatePt)) : clip;
     const ys = rotPoly.map(p => p.y), xs = rotPoly.map(p => p.x);
     const minY = Math.min(...ys), maxY = Math.max(...ys);
     const minX = Math.min(...xs), maxX = Math.max(...xs);
@@ -2419,16 +2635,17 @@
     const rng = _mulberry32(0x53D ^ Math.floor(density * 1000) ^ Math.floor(angleDeg * 13));
     const result = [];
     const emit = (x, y) => {
-      if (!polyContainsPoint(rotPoly, x, y)) return;
+      if (!compositeContainsPoint(rotClip, x, y)) return;
       const wp = unrotatePt({ x, y });
       if (shape === 'circle') {
         _emitDotStamp(wp, dotR, shape, gca, gsa, result, penW);
       } else {
-        // Clip non-circle stamps to the polygon so arms don't bleed past the boundary.
+        // Clip non-circle stamps to the ink set so arms don't bleed past the
+        // boundary or poke into a counter hole.
         const temp = [];
         _emitDotStamp(wp, dotR, shape, gca, gsa, temp, penW);
         for (const seg of temp) {
-          for (const c of clipSegmentToPoly(seg[0], seg[1], poly)) result.push(c);
+          for (const c of clipSegmentToComposite(seg[0], seg[1], clip)) result.push(c);
         }
       }
     };
@@ -2467,11 +2684,20 @@
     return result;
   };
 
-  const dotsFillComposite = (regions, density, dotSizeRatio, angleDeg, shiftX, shiftY, pattern, shape, jitter, glyphSize = 0, rotationDeg = 0, penW = 0.3) => {
-    if (regions.length === 1) return dotsFill(regions[0], density, dotSizeRatio, angleDeg, shiftX, shiftY, pattern, shape, jitter, glyphSize, rotationDeg, penW);
-    const out = [];
-    for (const r of regions) out.push(...dotsFill(r, density, dotSizeRatio, angleDeg, shiftX, shiftY, pattern, shape, jitter, glyphSize, rotationDeg, penW));
-    return out;
+  // GLOBAL stamp fill: one lattice over the whole composite bounds, every stamp
+  // gated by the even-odd ink predicate over topo.valid. Counter holes are
+  // even-parity ⇒ never stamped; adjacent glyphs share one seam-free lattice.
+  const dotsFillComposite = (topo, density, dotSizeRatio, angleDeg, shiftX, shiftY, pattern, shape, jitter, glyphSize = 0, rotationDeg = 0, penW = 0.3) => {
+    const valid = topo.valid;
+    if (valid.length === 1) return dotsFill(valid[0], density, dotSizeRatio, angleDeg, shiftX, shiftY, pattern, shape, jitter, glyphSize, rotationDeg, penW);
+    // Driving poly = axis-aligned rectangle over the whole composite so the
+    // lattice spans every glyph; membership/clip uses the full ink set.
+    const b = compositeBounds(valid);
+    const drive = [
+      { x: b.minX, y: b.minY }, { x: b.maxX, y: b.minY },
+      { x: b.maxX, y: b.maxY }, { x: b.minX, y: b.maxY },
+    ];
+    return dotsFill(drive, density, dotSizeRatio, angleDeg, shiftX, shiftY, pattern, shape, jitter, glyphSize, rotationDeg, penW, valid);
   };
 
   const meanderLines = (region, density, angleDeg = 0, shiftX = 0, shiftY = 0) => {
@@ -2953,7 +3179,8 @@
     return { dx: Math.cos(a), dy: Math.sin(a) };
   };
 
-  const _flowFieldFill = (poly, density, flowFieldType, flowNoiseScale, flowSeed, flowTraceLen, flowSeparation) => {
+  const _flowFieldFill = (poly, density, flowFieldType, flowNoiseScale, flowSeed, flowTraceLen, flowSeparation, clipRegions = null) => {
+    const clip = (clipRegions && clipRegions.length) ? clipRegions : [poly];
     const bounds = loopBounds(poly);
     const bw = bounds.maxX - bounds.minX;
     const bh = bounds.maxY - bounds.minY;
@@ -2976,7 +3203,7 @@
       for (let c = 0; c < cols; c++) {
         const px = bounds.minX + (c + 0.5) * (bw / cols) + (rng() - 0.5) * sep * 0.4;
         const py = bounds.minY + (r + 0.5) * (bh / rows) + (rng() - 0.5) * sep * 0.4;
-        if (polyContainsPoint(poly, px, py)) candidates.push({ x: px, y: py });
+        if (compositeContainsPoint(clip, px, py)) candidates.push({ x: px, y: py });
       }
     }
     // shuffle for varied coverage
@@ -3017,7 +3244,7 @@
         const pts = [];
         let x = seed.x, y = seed.y;
         for (let i = 0; i < maxSteps; i++) {
-          if (!polyContainsPoint(poly, x, y)) break;
+          if (!compositeContainsPoint(clip, x, y)) break;
           if (i > 0 && tooClose(x, y)) break;
           pts.push({ x, y });
           const v = _flowVectorAt(x, y, ftype, flowNoiseScale, flowSeed | 0, cx, cy);
@@ -3034,19 +3261,25 @@
         // commit this stream's points to the separation grid so subsequent
         // seeds and traces stay clear
         for (const pt of path) recordPoint(pt.x, pt.y);
-        for (const seg of clipPolylineToPoly(path, poly)) result.push(seg);
+        for (const seg of clipPolylineToComposite(path, clip)) result.push(seg);
       }
     }
     return result;
   };
-  const _flowFieldFillComposite = (regions, density, flowFieldType, flowNoiseScale, flowSeed, flowTraceLen, flowSeparation) => {
+  // Per-shell: trace each glyph's solid area, counters carved by g.all even-odd.
+  const _flowFieldFillComposite = (topo, density, flowFieldType, flowNoiseScale, flowSeed, flowTraceLen, flowSeparation) => {
     const out = [];
-    for (const r of regions) out.push(..._flowFieldFill(r, density, flowFieldType, flowNoiseScale, flowSeed, flowTraceLen, flowSeparation));
+    const groupBounds = topo.groups.map((g) => loopBounds(g.outer));
+    topo.groups.forEach((g, gi) => {
+      const clip = groupCoherentClip(topo.groups, groupBounds, gi);
+      out.push(..._flowFieldFill(g.outer, density, flowFieldType, flowNoiseScale, flowSeed, flowTraceLen, flowSeparation, clip));
+    });
     return out;
   };
 
   // ── B2: Voronoi ──────────────────────────────────────────────────────────
-  const _voronoiSeeds = (poly, count, mode, jitter, seedSalt) => {
+  const _voronoiSeeds = (poly, count, mode, jitter, seedSalt, clip = null) => {
+    const inSet = (x, y) => (clip ? compositeContainsPoint(clip, x, y) : polyContainsPoint(poly, x, y));
     const bounds = loopBounds(poly);
     const bw = bounds.maxX - bounds.minX;
     const bh = bounds.maxY - bounds.minY;
@@ -3062,7 +3295,7 @@
           const offX = (mode === 'hexgrid' && r % 2 === 1) ? cw * 0.5 : 0;
           const px = bounds.minX + (c + 0.5) * cw + offX + (rng() - 0.5) * cw * jitter;
           const py = bounds.minY + (r + 0.5) * ch + (rng() - 0.5) * ch * jitter;
-          if (polyContainsPoint(poly, px, py)) pts.push({ x: px, y: py });
+          if (inSet(px, py)) pts.push({ x: px, y: py });
         }
       }
     } else {
@@ -3073,7 +3306,7 @@
         tries++;
         const px = bounds.minX + rng() * bw;
         const py = bounds.minY + rng() * bh;
-        if (!polyContainsPoint(poly, px, py)) continue;
+        if (!inSet(px, py)) continue;
         if (minDist > 0) {
           let ok = true;
           for (const p of pts) {
@@ -3087,8 +3320,9 @@
     return pts;
   };
 
-  const _voronoiFill = (poly, density, voronoiSeeds, voronoiJitter, voronoiStroke, voronoiSeedMode) => {
-    const seeds = _voronoiSeeds(poly, voronoiSeeds || 60, voronoiSeedMode || 'random', voronoiJitter ?? 0.5, 1);
+  const _voronoiFill = (poly, density, voronoiSeeds, voronoiJitter, voronoiStroke, voronoiSeedMode, clipRegions = null) => {
+    const clip = (clipRegions && clipRegions.length) ? clipRegions : [poly];
+    const seeds = _voronoiSeeds(poly, voronoiSeeds || 60, voronoiSeedMode || 'random', voronoiJitter ?? 0.5, 1, clip);
     if (seeds.length === 0) return [];
     const bounds = loopBounds(poly);
     // brute-force boundary extraction at ~density-sized grid; floor step so
@@ -3129,7 +3363,7 @@
       for (let i = 0; i < seeds.length; i++) {
         if (cnt[i] === 0) continue;
         const cx = sumX[i] / cnt[i], cy = sumY[i] / cnt[i];
-        for (const [a, b] of clipSegmentToPoly(seeds[i], { x: cx, y: cy }, poly)) result.push([a, b]);
+        for (const [a, b] of clipSegmentToComposite(seeds[i], { x: cx, y: cy }, clip)) result.push([a, b]);
       }
     }
     if (voronoiStroke === 'concentric') {
@@ -3152,7 +3386,7 @@
             const a = (s / steps) * Math.PI * 2;
             pts.push({ x: seeds[i].x + Math.cos(a) * rr, y: seeds[i].y + Math.sin(a) * rr });
           }
-          for (const seg of clipPolylineToPoly(pts, poly)) result.push(seg);
+          for (const seg of clipPolylineToComposite(pts, clip)) result.push(seg);
         }
       }
       return result;
@@ -3165,7 +3399,7 @@
             const x = bounds.minX + (c + 1) * step;
             const y0 = bounds.minY + r * step;
             const y1 = bounds.minY + (r + 1) * step;
-            for (const [a, b] of clipSegmentToPoly({ x, y: y0 }, { x, y: y1 }, poly)) result.push([a, b]);
+            for (const [a, b] of clipSegmentToComposite({ x, y: y0 }, { x, y: y1 }, clip)) result.push([a, b]);
           }
         }
       }
@@ -3175,16 +3409,17 @@
             const y = bounds.minY + (r + 1) * step;
             const x0 = bounds.minX + c * step;
             const x1 = bounds.minX + (c + 1) * step;
-            for (const [a, b] of clipSegmentToPoly({ x: x0, y }, { x: x1, y }, poly)) result.push([a, b]);
+            for (const [a, b] of clipSegmentToComposite({ x: x0, y }, { x: x1, y }, clip)) result.push([a, b]);
           }
         }
       }
     }
     return result;
   };
-  const _voronoiFillComposite = (regions, density, ...args) => {
+  const _voronoiFillComposite = (topo, density, ...args) => {
     const out = [];
-    for (const r of regions) out.push(..._voronoiFill(r, density, ...args));
+    const groupBounds = topo.groups.map((gg) => loopBounds(gg.outer));
+    topo.groups.forEach((g, gi) => out.push(..._voronoiFill(g.outer, density, ...args, groupCoherentClip(topo.groups, groupBounds, gi))));
     return out;
   };
 
@@ -3234,7 +3469,8 @@
     ];
   };
 
-  const _truchetFill = (poly, density, truchetTileSet, truchetTileSize, truchetSeed, truchetRotations) => {
+  const _truchetFill = (poly, density, truchetTileSet, truchetTileSize, truchetSeed, truchetRotations, clipRegions = null) => {
+    const clip = (clipRegions && clipRegions.length) ? clipRegions : [poly];
     const bounds = loopBounds(poly);
     const bw = bounds.maxX - bounds.minX, bh = bounds.maxY - bounds.minY;
     // Floor tile size to keep tile count bounded on large adversarial regions.
@@ -3248,10 +3484,10 @@
     for (let y = bounds.minY; y < bounds.maxY; y += size) {
       for (let x = bounds.minX; x < bounds.maxX; x += size) {
         const cx = x + size / 2, cy = y + size / 2;
-        if (!polyContainsPoint(poly, cx, cy)) {
+        if (!compositeContainsPoint(clip, cx, cy)) {
           // edge tile — still check via corner sampling
-          if (!polyContainsPoint(poly, x + size * 0.25, y + size * 0.25)
-            && !polyContainsPoint(poly, x + size * 0.75, y + size * 0.75)) continue;
+          if (!compositeContainsPoint(clip, x + size * 0.25, y + size * 0.25)
+            && !compositeContainsPoint(clip, x + size * 0.75, y + size * 0.75)) continue;
         }
         const rot = Math.floor(rng() * rotsAllowed) * (Math.PI / 2);
         const ca = Math.cos(rot), sa = Math.sin(rot);
@@ -3261,20 +3497,22 @@
             const lx = p.x - size / 2, ly = p.y - size / 2;
             return { x: cx + lx * ca - ly * sa, y: cy + lx * sa + ly * ca };
           });
-          for (const seg of clipPolylineToPoly(transformed, poly)) result.push(seg);
+          for (const seg of clipPolylineToComposite(transformed, clip)) result.push(seg);
         }
       }
     }
     return result;
   };
-  const _truchetFillComposite = (regions, density, ...args) => {
+  const _truchetFillComposite = (topo, density, ...args) => {
     const out = [];
-    for (const r of regions) out.push(..._truchetFill(r, density, ...args));
+    const groupBounds = topo.groups.map((gg) => loopBounds(gg.outer));
+    topo.groups.forEach((g, gi) => out.push(..._truchetFill(g.outer, density, ...args, groupCoherentClip(topo.groups, groupBounds, gi))));
     return out;
   };
 
   // ── B4: Maze (DFS) ───────────────────────────────────────────────────────
-  const _mazeFill = (poly, density, mazeCellSize, mazeAlgorithm, mazeBranchBias, mazeSeed, mazeWallMode) => {
+  const _mazeFill = (poly, density, mazeCellSize, mazeAlgorithm, mazeBranchBias, mazeSeed, mazeWallMode, clipRegions = null) => {
+    const clip = (clipRegions && clipRegions.length) ? clipRegions : [poly];
     const bounds = loopBounds(poly);
     const cs = Math.max(1, mazeCellSize || 5);
     const cols = Math.max(2, Math.ceil((bounds.maxX - bounds.minX) / cs));
@@ -3286,7 +3524,7 @@
       for (let c = 0; c < cols; c++) {
         const cx = bounds.minX + (c + 0.5) * cs;
         const cy = bounds.minY + (r + 0.5) * cs;
-        if (polyContainsPoint(poly, cx, cy)) inside[r * cols + c] = 1;
+        if (compositeContainsPoint(clip, cx, cy)) inside[r * cols + c] = 1;
       }
     }
     // walls between neighbours: stored as set of removed walls
@@ -3485,7 +3723,7 @@
             const y = bounds.minY + r * cs;
             const x0 = bounds.minX + c * cs;
             const x1 = bounds.minX + (c + 1) * cs;
-            for (const [a, b] of clipSegmentToPoly({ x: x0, y }, { x: x1, y }, poly)) result.push([a, b]);
+            for (const [a, b] of clipSegmentToComposite({ x: x0, y }, { x: x1, y }, clip)) result.push([a, b]);
           }
         }
       }
@@ -3496,7 +3734,7 @@
             const x = bounds.minX + c * cs;
             const y0 = bounds.minY + r * cs;
             const y1 = bounds.minY + (r + 1) * cs;
-            for (const [a, b] of clipSegmentToPoly({ x, y: y0 }, { x, y: y1 }, poly)) result.push([a, b]);
+            for (const [a, b] of clipSegmentToComposite({ x, y: y0 }, { x, y: y1 }, clip)) result.push([a, b]);
           }
         }
       }
@@ -3508,10 +3746,10 @@
           if (!inside[r * cols + c]) continue;
           const cx = bounds.minX + (c + 0.5) * cs, cy = bounds.minY + (r + 0.5) * cs;
           if (r + 1 < rows && inside[(r + 1) * cols + c] && !hWalls[(r + 1) * cols + c]) {
-            for (const [a, b] of clipSegmentToPoly({ x: cx, y: cy }, { x: cx, y: cy + cs }, poly)) result.push([a, b]);
+            for (const [a, b] of clipSegmentToComposite({ x: cx, y: cy }, { x: cx, y: cy + cs }, clip)) result.push([a, b]);
           }
           if (c + 1 < cols && inside[r * cols + c + 1] && !vWalls[r * cols + c + 1]) {
-            for (const [a, b] of clipSegmentToPoly({ x: cx, y: cy }, { x: cx + cs, y: cy }, poly)) result.push([a, b]);
+            for (const [a, b] of clipSegmentToComposite({ x: cx, y: cy }, { x: cx + cs, y: cy }, clip)) result.push([a, b]);
           }
         }
       }
@@ -3526,7 +3764,7 @@
             const y = bounds.minY + r * cs;
             const x0 = bounds.minX + c * cs;
             const x1 = bounds.minX + (c + 1) * cs;
-            for (const [a, b] of clipSegmentToPoly({ x: x0, y }, { x: x1, y }, poly)) result.push([a, b]);
+            for (const [a, b] of clipSegmentToComposite({ x: x0, y }, { x: x1, y }, clip)) result.push([a, b]);
           }
         }
       }
@@ -3537,21 +3775,23 @@
             const x = bounds.minX + c * cs;
             const y0 = bounds.minY + r * cs;
             const y1 = bounds.minY + (r + 1) * cs;
-            for (const [a, b] of clipSegmentToPoly({ x, y: y0 }, { x, y: y1 }, poly)) result.push([a, b]);
+            for (const [a, b] of clipSegmentToComposite({ x, y: y0 }, { x, y: y1 }, clip)) result.push([a, b]);
           }
         }
       }
     }
     return result;
   };
-  const _mazeFillComposite = (regions, density, ...args) => {
+  const _mazeFillComposite = (topo, density, ...args) => {
     const out = [];
-    for (const r of regions) out.push(..._mazeFill(r, density, ...args));
+    const groupBounds = topo.groups.map((gg) => loopBounds(gg.outer));
+    topo.groups.forEach((g, gi) => out.push(..._mazeFill(g.outer, density, ...args, groupCoherentClip(topo.groups, groupBounds, gi))));
     return out;
   };
 
   // ── B5: Scribble ─────────────────────────────────────────────────────────
-  const _scribbleFill = (poly, density, scribbleSmoothness, scribbleSeed, scribbleCoverage) => {
+  const _scribbleFill = (poly, density, scribbleSmoothness, scribbleSeed, scribbleCoverage, clipRegions = null, seedPt = null) => {
+    const clip = (clipRegions && clipRegions.length) ? clipRegions : [poly];
     const bounds = loopBounds(poly);
     const area = Math.abs(polyArea(poly));
     if (area <= 0) return [];
@@ -3563,8 +3803,19 @@
     const smoothness = Math.max(0, Math.min(1, scribbleSmoothness ?? 0.6));
     // momentum: higher smoothness → angle changes slowly
     const turnLimit = (1 - smoothness) * Math.PI * 0.6 + 0.05;
-    let x = (bounds.minX + bounds.maxX) / 2;
-    let y = (bounds.minY + bounds.maxY) / 2;
+    // Anchor the walk inside the ink (seedPt when supplied) — the bbox center
+    // falls OUTSIDE non-convex glyphs (V/C/U) and inside annulus counters, so a
+    // null seed must NEVER fall back to it directly. Probe a verified interior
+    // point of the loop (clipped to the composite ink) before the bbox center.
+    let seed = seedPt;
+    if (!seed) {
+      const ip = interiorPointOf(poly);
+      seed = (ip && compositeContainsPoint(clip, ip.x, ip.y))
+        ? ip
+        : { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
+    }
+    let x = seed.x;
+    let y = seed.y;
     let theta = rng() * Math.PI * 2;
     const path = [{ x, y }];
     // simple coarse grid memory for repulsion
@@ -3586,7 +3837,7 @@
         const t = theta + dt;
         const nx = x + Math.cos(t) * stepLen;
         const ny = y + Math.sin(t) * stepLen;
-        if (!polyContainsPoint(poly, nx, ny)) { continue; }
+        if (!compositeContainsPoint(clip, nx, ny)) { continue; }
         const cost = visitCount(nx, ny);
         if (cost < bestCost) { bestCost = cost; bestTheta = t; }
       }
@@ -3601,11 +3852,19 @@
       path.push({ x, y });
       recordVisit(x, y);
     }
-    return clipPolylineToPoly(path, poly);
+    return clipPolylineToComposite(path, clip);
   };
-  const _scribbleFillComposite = (regions, density, ...args) => {
+  const _scribbleFillComposite = (topo, density, scribbleSmoothness, scribbleSeed, scribbleCoverage) => {
     const out = [];
-    for (const r of regions) out.push(..._scribbleFill(r, density, ...args));
+    const rng = _mulberry32((scribbleSeed | 0) + 71);
+    // Group-coherent clip (see groupCoherentClip): gate the walk against the same
+    // even-odd ink set as hatch/wave, including overlapping neighbour glyphs, so a
+    // stroke can never leak into an adjacent counter.
+    const groupBounds = topo.groups.map((g) => loopBounds(g.outer));
+    topo.groups.forEach((g, gi) => {
+      const clip = groupCoherentClip(topo.groups, groupBounds, gi);
+      out.push(..._scribbleFill(g.outer, density, scribbleSmoothness, scribbleSeed, scribbleCoverage, clip, rejectionSeed(g, rng)));
+    });
     return out;
   };
 
@@ -3617,7 +3876,8 @@
     dendritic: { axiom: 'F', rules: { F: 'F[+F]F[-F][F]' }, angle: 22, lenFactor: 0.5 },
     algae:     { axiom: 'A', rules: { A: 'AB', B: 'A' }, angle: 30, lenFactor: 0.6 },
   };
-  const _lsystemFill = (poly, density, lsysPreset, lsysIterations, lsysAngleVariance, lsysSeed, lsysScale) => {
+  const _lsystemFill = (poly, density, lsysPreset, lsysIterations, lsysAngleVariance, lsysSeed, lsysScale, clipRegions = null, originPt = null) => {
+    const clip = (clipRegions && clipRegions.length) ? clipRegions : [poly];
     const preset = _LSYSTEM_PRESETS[lsysPreset] || _LSYSTEM_PRESETS.coral;
     const iters = Math.max(1, Math.min(6, Math.round(lsysIterations || 4)));
     // expand string
@@ -3630,8 +3890,10 @@
     }
     // turtle
     const bounds = loopBounds(poly);
-    const cx = (bounds.minX + bounds.maxX) / 2;
-    const cy = (bounds.minY + bounds.maxY) / 2;
+    // Turtle origin must be inside the ink (originPt for non-convex glyphs);
+    // the bbox center falls outside V/C/U and inside annulus counters.
+    const cx = originPt ? originPt.x : (bounds.minX + bounds.maxX) / 2;
+    const cy = originPt ? originPt.y : (bounds.minY + bounds.maxY) / 2;
     const baseLen = Math.max(0.3, Math.min(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY) / Math.pow(2, iters - 1)) * (lsysScale || 1);
     const rng = _mulberry32((lsysSeed | 0) + 97);
     const angVarRad = (lsysAngleVariance || 0) * Math.PI / 180;
@@ -3664,18 +3926,43 @@
     if (cur.length >= 2) segs.push(cur);
     const result = [];
     for (const seg of segs) {
-      for (const clipped of clipPolylineToPoly(seg, poly)) result.push(clipped);
+      for (const clipped of clipPolylineToComposite(seg, clip)) result.push(clipped);
     }
     return result;
   };
-  const _lsystemFillComposite = (regions, density, ...args) => {
+  const _lsystemFillComposite = (topo, density, lsysPreset, lsysIterations, lsysAngleVariance, lsysSeed, lsysScale) => {
     const out = [];
-    for (const r of regions) out.push(..._lsystemFill(r, density, ...args));
+    const rng = _mulberry32((lsysSeed | 0) + 97);
+    const groupBounds = topo.groups.map((gg) => loopBounds(gg.outer));
+    topo.groups.forEach((g, gi) => {
+      const clip = groupCoherentClip(topo.groups, groupBounds, gi);
+      // A single L-system tree is concentrated near its seed; tile several
+      // trees on a grid across the group's solid area (each origin verified
+      // inside the ink) so a wide shell is covered rather than left a sparse
+      // sliver. Seed salts stay deterministic.
+      const b = loopBounds(g.outer);
+      const span = Math.max(b.maxX - b.minX, b.maxY - b.minY);
+      const iters = Math.max(1, Math.min(6, Math.round(lsysIterations || 4)));
+      const treeFootprint = Math.max(1, span / Math.pow(2, iters - 1));
+      const n = Math.max(1, Math.min(6, Math.round(span / Math.max(1, treeFootprint))));
+      const w = b.maxX - b.minX, h = b.maxY - b.minY;
+      let t = 0;
+      for (let iy = 0; iy < n; iy++) {
+        for (let ix = 0; ix < n; ix++) {
+          const ox = b.minX + (ix + 0.5) / n * w;
+          const oy = b.minY + (iy + 0.5) / n * h;
+          // grid cell center if it is ink, else a rejection sample in this group
+          const origin = compositeContainsPoint(g.all, ox, oy) ? { x: ox, y: oy } : rejectionSeed(g, rng);
+          out.push(..._lsystemFill(g.outer, density, lsysPreset, lsysIterations, lsysAngleVariance, (lsysSeed | 0) + (t++) * 131, lsysScale, clip, origin));
+        }
+      }
+    });
     return out;
   };
 
   // ── B7: Halftone ─────────────────────────────────────────────────────────
-  const _halftoneFill = (poly, density, halftoneSource, halftoneMinR, halftoneMaxR, halftoneFrequency, halftoneAngle, halftoneInvert) => {
+  const _halftoneFill = (poly, density, halftoneSource, halftoneMinR, halftoneMaxR, halftoneFrequency, halftoneAngle, halftoneInvert, clipRegions = null) => {
+    const clip = (clipRegions && clipRegions.length) ? clipRegions : [poly];
     const bounds = loopBounds(poly);
     const minR = Math.max(0.05, halftoneMinR ?? 0.2);
     const maxR = Math.max(minR + 0.01, halftoneMaxR ?? 1.5);
@@ -3695,16 +3982,19 @@
       } else if (halftoneSource === 'noise') {
         t = _valueNoise2(x / freq, y / freq, 1);
       } else if (halftoneSource === 'distance-to-edge') {
-        // approximate: distance to polygon edge / half-diag
+        // approximate: distance to nearest edge across ALL ink loops / half-diag
+        // (so a dot near a counter rim shrinks correctly).
         let dmin = Infinity;
-        const n = poly.length;
-        for (let i = 0; i + 1 < n; i++) {
-          const a = poly[i], b = poly[i + 1];
-          const ex = b.x - a.x, ey = b.y - a.y;
-          const tt = Math.max(0, Math.min(1, ((x - a.x) * ex + (y - a.y) * ey) / (ex * ex + ey * ey || 1)));
-          const px = a.x + tt * ex, py = a.y + tt * ey;
-          const d = Math.hypot(x - px, y - py);
-          if (d < dmin) dmin = d;
+        for (const loop of clip) {
+          const n = loop.length;
+          for (let i = 0; i < n; i++) {
+            const a = loop[i], b = loop[(i + 1) % n];
+            const ex = b.x - a.x, ey = b.y - a.y;
+            const tt = Math.max(0, Math.min(1, ((x - a.x) * ex + (y - a.y) * ey) / (ex * ex + ey * ey || 1)));
+            const px = a.x + tt * ex, py = a.y + tt * ey;
+            const d = Math.hypot(x - px, y - py);
+            if (d < dmin) dmin = d;
+          }
         }
         t = Math.min(1, dmin / (maxDim * 0.5));
       } else {
@@ -3724,21 +4014,29 @@
     const result = [];
     for (let y = bounds.minY; y < bounds.maxY; y += step) {
       for (let x = bounds.minX; x < bounds.maxX; x += step) {
-        if (!polyContainsPoint(poly, x, y)) continue;
+        if (!compositeContainsPoint(clip, x, y)) continue;
         const t = sourceFn(x, y);
         const r = minR + t * (maxR - minR);
         if (r < 0.05) continue;
-        // emit tick mark of length 2r horizontally (rotate by halftoneAngle)
+        // emit tick mark of length 2r horizontally (rotate by halftoneAngle),
+        // clipped to the ink set so a rim tick doesn't poke into a counter.
         const dx = cax * r, dy = sax * r;
-        result.push([{ x: x - dx, y: y - dy }, { x: x + dx, y: y + dy }]);
+        for (const seg of clipSegmentToComposite({ x: x - dx, y: y - dy }, { x: x + dx, y: y + dy }, clip)) result.push(seg);
       }
     }
     return result;
   };
-  const _halftoneFillComposite = (regions, density, ...args) => {
-    const out = [];
-    for (const r of regions) out.push(..._halftoneFill(r, density, ...args));
-    return out;
+  // GLOBAL: one lattice over the whole composite bounds, every dot gated by the
+  // even-odd ink predicate; cx/cy (radial/linear source) = composite center.
+  const _halftoneFillComposite = (topo, density, ...args) => {
+    const valid = topo.valid;
+    if (valid.length === 1) return _halftoneFill(valid[0], density, ...args);
+    const b = compositeBounds(valid);
+    const drive = [
+      { x: b.minX, y: b.minY }, { x: b.maxX, y: b.minY },
+      { x: b.maxX, y: b.maxY }, { x: b.minX, y: b.maxY },
+    ];
+    return _halftoneFill(drive, density, ...args, valid);
   };
 
   // ── B8: Stripes ──────────────────────────────────────────────────────────
@@ -3809,15 +4107,17 @@
   };
 
   // ── B9: Spirograph ───────────────────────────────────────────────────────
-  const _spirographFill = (poly, density, spiroRatioA, spiroRatioB, spiroPhase, spiroTurns, spiroDeformation) => {
+  const _spirographFill = (poly, density, spiroRatioA, spiroRatioB, spiroPhase, spiroTurns, spiroDeformation, clipRegions = null, centerPt = null) => {
+    const clip = (clipRegions && clipRegions.length) ? clipRegions : [poly];
     const A = Math.max(0.5, spiroRatioA ?? 5);
     const B = Math.max(0.5, spiroRatioB ?? 3);
     const phase = (spiroPhase || 0) * Math.PI / 180;
     const turns = Math.max(1, Math.min(200, Math.round(spiroTurns || 50)));
     const def = Math.max(0, Math.min(1, spiroDeformation || 0));
     const bounds = loopBounds(poly);
-    const cx = (bounds.minX + bounds.maxX) / 2;
-    const cy = (bounds.minY + bounds.maxY) / 2;
+    // Anchor the figure in the ink (centerPt for non-convex glyphs).
+    const cx = centerPt ? centerPt.x : (bounds.minX + bounds.maxX) / 2;
+    const cy = centerPt ? centerPt.y : (bounds.minY + bounds.maxY) / 2;
     const halfSize = Math.min(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY) / 2;
     if (halfSize <= 0) return [];
     // Lissajous (def=0): x = sin(A*t+phase), y = sin(B*t)
@@ -3840,11 +4140,13 @@
       const ny = ly * (1 - def) / maxLissAmp + hy * def / maxHypoAmp;
       pts.push({ x: cx + nx * halfSize * 0.95, y: cy + ny * halfSize * 0.95 });
     }
-    return clipPolylineToPoly(pts, poly);
+    return clipPolylineToComposite(pts, clip);
   };
-  const _spirographFillComposite = (regions, density, ...args) => {
+  const _spirographFillComposite = (topo, density, ...args) => {
     const out = [];
-    for (const r of regions) out.push(..._spirographFill(r, density, ...args));
+    const rng = _mulberry32(0x5917);
+    const groupBounds = topo.groups.map((gg) => loopBounds(gg.outer));
+    topo.groups.forEach((g, gi) => out.push(..._spirographFill(g.outer, density, ...args, groupCoherentClip(topo.groups, groupBounds, gi), rejectionSeed(g, rng))));
     return out;
   };
 
@@ -3878,7 +4180,8 @@
     }
     return (warpIdx + weftIdx) % 2 === 0;
   };
-  const _weaveFill = (poly, density, weavePattern, weaveStrandWidth, weaveGap, weaveAngle, weaveOver, weaveUnder) => {
+  const _weaveFill = (poly, density, weavePattern, weaveStrandWidth, weaveGap, weaveAngle, weaveOver, weaveUnder, clipRegions = null) => {
+    const clip = (clipRegions && clipRegions.length) ? clipRegions : [poly];
     const width = Math.max(0.3, weaveStrandWidth || 1.5);
     const gap = Math.max(0, weaveGap || 0);
     const ang = (weaveAngle || 0) * Math.PI / 180;
@@ -3916,14 +4219,14 @@
         if (a > cursor) {
           const p0 = unrot({ x, y: cursor });
           const p1 = unrot({ x, y: a });
-          for (const seg of clipSegmentToPoly(p0, p1, poly)) result.push(seg);
+          for (const seg of clipSegmentToComposite(p0, p1, clip)) result.push(seg);
         }
         cursor = Math.max(cursor, b);
       }
       if (cursor < maxY) {
         const p0 = unrot({ x, y: cursor });
         const p1 = unrot({ x, y: maxY });
-        for (const seg of clipSegmentToPoly(p0, p1, poly)) result.push(seg);
+        for (const seg of clipSegmentToComposite(p0, p1, clip)) result.push(seg);
       }
     }
     // wefts: horizontal lines, cut where weft is under
@@ -3942,21 +4245,22 @@
         if (a > cursor) {
           const p0 = unrot({ x: cursor, y });
           const p1 = unrot({ x: a, y });
-          for (const seg of clipSegmentToPoly(p0, p1, poly)) result.push(seg);
+          for (const seg of clipSegmentToComposite(p0, p1, clip)) result.push(seg);
         }
         cursor = Math.max(cursor, b);
       }
       if (cursor < maxX) {
         const p0 = unrot({ x: cursor, y });
         const p1 = unrot({ x: maxX, y });
-        for (const seg of clipSegmentToPoly(p0, p1, poly)) result.push(seg);
+        for (const seg of clipSegmentToComposite(p0, p1, clip)) result.push(seg);
       }
     }
     return result;
   };
-  const _weaveFillComposite = (regions, density, ...args) => {
+  const _weaveFillComposite = (topo, density, ...args) => {
     const out = [];
-    for (const r of regions) out.push(..._weaveFill(r, density, ...args));
+    const groupBounds = topo.groups.map((gg) => loopBounds(gg.outer));
+    topo.groups.forEach((g, gi) => out.push(..._weaveFill(g.outer, density, ...args, groupCoherentClip(topo.groups, groupBounds, gi))));
     return out;
   };
 
@@ -4081,6 +4385,17 @@
         default:            return hatchLines(region, density, 0 + angle, shiftX, shiftY);
       }
     }
+    // Region topology for the watertight per-shell / global ink fills. The
+    // 7 already-watertight line fills (hatch/wave/radial/meander/spiral/
+    // polygonal/triaxial) clip globally via the even-odd helpers and are NOT
+    // touched. If pruning collapses the ink set to ≤1 loop, re-dispatch the
+    // single-region path on the lone surviving loop so degenerate composite
+    // input stays safe.
+    const topo = classifyRegionTopology(effectiveRegions);
+    if (topo.valid.length <= 1) {
+      if (!topo.valid.length) return [];
+      return generatePatternFillPaths({ ...fill, regions: [topo.valid[0]], region: topo.valid[0], padding: 0 });
+    }
     switch (fillType) {
       case 'hatch': {
         const offsets = _hatchAnglesForCount(lineCount);
@@ -4097,33 +4412,33 @@
       case 'wavelines':   return waveLinesUnifiedComposite(effectiveRegions, density, angle, amplitude, 1.0, 1.0, shiftX, shiftY);
       case 'zigzag':      return waveLinesUnifiedComposite(effectiveRegions, density, angle, amplitude, 0.0, 1.0, shiftX, shiftY);
       case 'dots':        return dotShape === 'circle'
-        ? expandDotsToSpirals(dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation)
-        : dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, dotPattern, dotShape, dotJitter, dotLength, dotRotation, penWidth);
-      case 'stipple':     return expandDotsToSpirals(dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation);
-      case 'contour':     return contourLinesComposite(effectiveRegions, density, contourDirection, contourStepVariance, contourSimplify, contourCenterPadding);
+        ? expandDotsToSpirals(dotsFillComposite(topo, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation)
+        : dotsFillComposite(topo, density, dotSize, angle, shiftX, shiftY, dotPattern, dotShape, dotJitter, dotLength, dotRotation, penWidth);
+      case 'stipple':     return expandDotsToSpirals(dotsFillComposite(topo, density, dotSize, angle, shiftX, shiftY, dotPattern, 'circle', dotJitter), dotLength, penWidth, dotRotation);
+      case 'contour':     return contourLinesComposite(topo, density, contourDirection, contourStepVariance, contourSimplify, contourCenterPadding);
       case 'spiral': {
         const spacing = density > 0 ? 1 / density : 1;
         return spiralFillComposite(regions, effectiveRegions, spacing, angle, shiftX, shiftY, spiralTurns, spiralTightness, spiralDirection);
       }
       case 'radial':      return radialFillComposite(effectiveRegions, density, angle, shiftX, shiftY, radialSkip);
-      case 'grid':        return expandDotsToSpirals(dotsFillComposite(effectiveRegions, density, dotSize, angle, shiftX, shiftY, 'grid', 'tick', dotJitter), dotLength, penWidth, dotRotation);
+      case 'grid':        return expandDotsToSpirals(dotsFillComposite(topo, density, dotSize, angle, shiftX, shiftY, 'grid', 'tick', dotJitter), dotLength, penWidth, dotRotation);
       case 'meander':     return meanderLinesComposite(effectiveRegions, density, angle, shiftX, shiftY);
       case 'polygonal':   return polygonalLinesComposite(effectiveRegions, density, angle, shiftX, shiftY, axes, polyTile, polyPadding, polyRotation, polyRotationStep, polyScaleStep, polyScale);
       case 'triaxial':    return triaxialLinesComposite(effectiveRegions, density, angle, shiftX, shiftY);
-      case 'flowfield':   return _flowFieldFillComposite(effectiveRegions, density, flowFieldType, flowNoiseScale, flowSeed, flowTraceLen, flowSeparation);
-      case 'voronoi':     return _voronoiFillComposite(effectiveRegions, density, voronoiSeeds, voronoiJitter, voronoiStroke, voronoiSeedMode);
-      case 'truchet':     return _truchetFillComposite(effectiveRegions, density, truchetTileSet, truchetTileSize, truchetSeed, truchetRotations);
-      case 'maze':        return _mazeFillComposite(effectiveRegions, density, mazeCellSize, mazeAlgorithm, mazeBranchBias, mazeSeed, mazeWallMode);
-      case 'scribble':    return _scribbleFillComposite(effectiveRegions, density, scribbleSmoothness, scribbleSeed, scribbleCoverage);
-      case 'lsystem':     return _lsystemFillComposite(effectiveRegions, density, lsysPreset, lsysIterations, lsysAngleVariance, lsysSeed, lsysScale);
-      case 'halftone':    return _halftoneFillComposite(effectiveRegions, density, halftoneSource, halftoneMinR, halftoneMaxR, halftoneFrequency, halftoneAngle, halftoneInvert);
+      case 'flowfield':   return _flowFieldFillComposite(topo, density, flowFieldType, flowNoiseScale, flowSeed, flowTraceLen, flowSeparation);
+      case 'voronoi':     return _voronoiFillComposite(topo, density, voronoiSeeds, voronoiJitter, voronoiStroke, voronoiSeedMode);
+      case 'truchet':     return _truchetFillComposite(topo, density, truchetTileSet, truchetTileSize, truchetSeed, truchetRotations);
+      case 'maze':        return _mazeFillComposite(topo, density, mazeCellSize, mazeAlgorithm, mazeBranchBias, mazeSeed, mazeWallMode);
+      case 'scribble':    return _scribbleFillComposite(topo, density, scribbleSmoothness, scribbleSeed, scribbleCoverage);
+      case 'lsystem':     return _lsystemFillComposite(topo, density, lsysPreset, lsysIterations, lsysAngleVariance, lsysSeed, lsysScale);
+      case 'halftone':    return _halftoneFillComposite(topo, density, halftoneSource, halftoneMinR, halftoneMaxR, halftoneFrequency, halftoneAngle, halftoneInvert);
       case 'stripes': {
         const out = [];
         for (const r of effectiveRegions) out.push(..._stripesFill(fill, r, [r], density));
         return out;
       }
-      case 'spirograph':  return _spirographFillComposite(effectiveRegions, density, spiroRatioA, spiroRatioB, spiroPhase, spiroTurns, spiroDeformation);
-      case 'weave':       return _weaveFillComposite(effectiveRegions, density, weavePattern, weaveStrandWidth, weaveGap, weaveAngle, weaveOver, weaveUnder);
+      case 'spirograph':  return _spirographFillComposite(topo, density, spiroRatioA, spiroRatioB, spiroPhase, spiroTurns, spiroDeformation);
+      case 'weave':       return _weaveFillComposite(topo, density, weavePattern, weaveStrandWidth, weaveGap, weaveAngle, weaveOver, weaveUnder);
       default:            return hatchLinesComposite(effectiveRegions, density, 0 + angle, shiftX, shiftY);
     }
   };
@@ -4131,6 +4446,8 @@
   // Expose for UI and testing
   window.Vectura.AlgorithmRegistry._generatePatternFillPaths = generatePatternFillPaths;
   window.Vectura.AlgorithmRegistry._polyContainsPoint = polyContainsPoint;
+  window.Vectura.AlgorithmRegistry._classifyRegionTopology = classifyRegionTopology;
+  window.Vectura.AlgorithmRegistry._interiorPointOf = interiorPointOf;
   window.Vectura.AlgorithmRegistry._compilePatternFillTargets = compilePatternFillTargetsFromData;
   window.Vectura.AlgorithmRegistry.patternGetFillTargets = (patternOrId, options = {}) => {
     const data = typeof patternOrId === 'object' && patternOrId?.groups ? patternOrId : compilePatternMeta(patternOrId, options);

@@ -4,6 +4,26 @@ All notable changes to this project should be documented in this file.
 
 The format is intentionally human-curated with an `Unreleased` section that collects work before release.
 
+## 1.2.14 - 2026-06-21
+
+### Fixed
+- **Type fills are now watertight and consistent across every fill type.** Text fills feed every
+  glyph contour — outer shells *and* counter holes (the gaps in R, A, O, B, 8, …) — into the
+  shared pattern-fill engine's composite branch. A dozen fills (dots/stipple/grid, contour,
+  scribble, halftone, voronoi, truchet, maze, lsystem, spirograph, weave, flowfield) iterated
+  per-loop and treated **every** loop, including counters, as solid — so dots filled the R/A
+  counters, contour rendered only the first letter, and scribble left whole non-convex letters
+  empty. All composite fills now route through one even-odd region-topology layer
+  (`classifyRegionTopology`) and a single ink invariant, matching the hatch/wave reference:
+  counters are always carved, every disjoint glyph is filled, and all fills agree on the same
+  ink set. Contour additionally offsets counters outward (not just the outer inward) and caps its
+  step to the wall thickness, so hairline bowls on high-contrast and script faces (Playfair,
+  Lobster) render instead of clipping to nothing. Scribble/per-shell fills now clip against a
+  parity-consistent **group-coherent** set, fixing a leak where a neighbour glyph's counter was
+  dropped from the clip. Verified across 8 typefaces × 15 fills × 4 words × 3 densities (counter
+  bleed = 0, empty shells = 0) plus a 47-case watertightness regression suite. Known edge cases
+  logged as PRH-012/PRH-013.
+
 ## 1.2.13 - 2026-06-21
 
 ### Changed
